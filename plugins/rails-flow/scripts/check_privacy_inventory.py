@@ -53,7 +53,7 @@ def _entry(value) -> dict:
     if not m:
         raise Unusable(f"expected `{{ category: ... }}` or a nested block, got {value!r}")
     out = {}
-    for part in m.group("body").split(","):
+    for part in _split_flow(m.group("body")):
         if not part.strip():
             continue
         k, sep, v = part.partition(":")
@@ -61,6 +61,26 @@ def _entry(value) -> dict:
             raise Unusable(f"cannot read `{part.strip()}` in {value!r}")
         out[k.strip()] = v.strip().strip("'\"")
     return out
+
+
+def _split_flow(body: str) -> list[str]:
+    """Split a flow map's body on commas OUTSIDE quotes, so a quoted value may contain a comma."""
+    parts, cur, quote = [], [], None
+    for ch in body:
+        if quote:
+            cur.append(ch)
+            if ch == quote:
+                quote = None
+        elif ch in "'\"":
+            quote = ch
+            cur.append(ch)
+        elif ch == ",":
+            parts.append("".join(cur))
+            cur = []
+        else:
+            cur.append(ch)
+    parts.append("".join(cur))
+    return parts
 
 
 def load_inventory(root: Path) -> dict[str, dict[str, dict]] | None:
@@ -199,6 +219,43 @@ def selftest() -> int:
         empty = t / "noschema"
         empty.mkdir()
         check_("no db/schema.rb: not applicable (exit 3)", check(empty)[0] == 3)
+
+        def entry_of(root: Path) -> dict:
+            """The users.email_address entry, or {} when the file cannot be read -- so a parser break
+            is reported by the fixture that names it, never by a crash that hides the rest."""
+            try:
+                return load_inventory(root)["users"]["email_address"]
+            except (Unusable, KeyError, TypeError):
+                return {}
+
+        # THREE PARSER DEFECTS, from a real schema and inventory (a check constraint with `::`, a `#`
+        # inside a value, a comma inside a quoted value). Each once read as a column or truncated.
+        constrained = schema.replace('    t.string "name"\n',
+                                     '    t.string "name"\n'
+                                     "    t.check_constraint \"(name)::text ~ '^[A-Z]{3}$'::text\", name: \"widgets_name_code\"\n")
+        code, out = check(app(t / "constraint", good, constrained))
+        check_("a check constraint is not a column", code == 0, f"{code} {out}")
+        # `#` FOLLOWS YAML: after whitespace it starts a comment, even mid-value, as every other reader
+        # of this file sees it. So the gate never truncates SILENTLY: inside an inline map the cut leaves
+        # the brace unclosed and is refused; a `#` with no space before it, or inside quotes, is kept.
+        tmp = app(t / "hash", good.replace("retention: account lifetime + 2 years", "retention: until the #893 rate review"))
+        code, out = check(tmp)
+        check_("an unquoted ` #` that cuts an inline entry is refused, not silently truncated", code == 2, f"{code} {out}")
+        tmp = app(t / "hashq", good.replace("retention: account lifetime + 2 years", 'retention: "until the #893 rate review"'))
+        check_("a quoted `#` is kept",
+               entry_of(tmp).get("retention") == "until the #893 rate review", repr(entry_of(tmp)))
+        tmp = app(t / "hashn", good.replace("retention: account lifetime + 2 years", "retention: rate#893 review"))
+        check_("a `#` with no space before it is part of the value",
+               entry_of(tmp).get("retention") == "rate#893 review", repr(entry_of(tmp)))
+        comma = good.replace("retention: account lifetime + 2 years", 'retention: "account lifetime, then 2 years"')
+        tmp = app(t / "comma", comma)
+        check_("a quoted value may contain a comma",
+               entry_of(tmp).get("retention") == "account lifetime, then 2 years", repr(entry_of(tmp)))
+        try:
+            trailing = load_inventory(app(t / "good2", good))["widgets"]["name"]
+        except (Unusable, KeyError):
+            trailing = None
+        check_("CONTROL: a trailing comment is still a comment", trailing == {"category": "none"}, repr(trailing))
 
         with contextlib.redirect_stdout(io.StringIO()):
             rc = main(["--root", str(t / "missing")])
