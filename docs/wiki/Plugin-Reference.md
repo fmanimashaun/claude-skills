@@ -2,12 +2,12 @@
      Rebuild:  python3 scripts/build_wiki.py
      Drift:    python3 scripts/build_wiki.py --check  (runs in the gate sweep) -->
 # Plugin reference
-Marketplace **1.150.0**.
+Marketplace **1.150.1**.
 
 | plugin | version | commands | what it does |
 |---|---|---|---|
 | `rails-stack` | 1.68.2 | — | Rails 8.1 + Hotwire development doctrine: vanilla-first stack, pure RSpec testing, Turbo |
-| `rails-flow` | 1.53.0 | 20 | Agentic development flow for Rails 8 projects |
+| `rails-flow` | 1.53.1 | 20 | Agentic development flow for Rails 8 projects |
 | `qa-flow` | 1.33.1 | 8 | Independent, stack-agnostic QA engineering flow. The QA engineer picks the stack in qa/q |
 | `pipeline` | 1.3.3 | 8 | Lifecycle orchestrator over rails-flow and qa-flow |
 | `design-flow` | 1.44.1 | 12 | Agentic UI/design flow for Rails 8 + Hotwire + Tailwind v4 |
