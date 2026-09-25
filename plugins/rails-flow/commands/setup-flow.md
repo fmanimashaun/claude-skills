@@ -812,6 +812,24 @@ The outcomes:
 
 Link all three from the footer (`design-system` `page-anatomies.md`).
 
+### Declare the issue labels, so an issue filed from the shell is labelled (#1311)
+
+Issue templates apply labels only through the GitHub web form. An agent files with `gh issue create`,
+which skips the template, so without a declaration its issues arrive bare. **Read the repository's
+labels** (`gh label list --limit 200`) and **ask which groups every issue must carry.** For example:
+one type (`bug` / `feature` / `enhancement`), and a severity when it is a bug. Record them:
+
+```json
+{"groups": [
+  {"one_of": ["bug", "feature", "enhancement"]},
+  {"when": "bug", "one_of": ["severity:s1", "severity:s2", "severity:s3", "severity:s4"]}
+]}
+```
+
+Save it as `.rails-flow/issue-labels.json`. A value ending in `*` is a prefix (`comp:*`). rails-flow's
+`guard-bash` hook then refuses a `gh issue create` that misses a group, and names what is allowed.
+Undeclared, it still refuses an issue with no label at all.
+
 ### Coverage that cannot catch a regression — propose the ratchet (#800)
 
 `testing.md` used to ship `minimum_coverage 90` **commented out** with *"enable once realistic"*.

@@ -246,6 +246,35 @@ def guard_bash_fixtures() -> None:
         check("guard-bash (#906): with lib/ missing the hook falls back to the raw text and still blocks `git add -A`", r1.returncode == 2)
         check("guard-bash (#906): ...and the fallback is honestly the OLD behaviour (git -C slips through), which is why the lib ships in the plugin", r2.returncode == 0)
 
+    # #1311: an issue filed from the shell is labelled against the project's declared groups, or refused.
+    groups = {"groups": [{"one_of": ["bug", "feature", "enhancement"]},
+                         {"when": "bug", "one_of": ["severity:s1", "severity:s2"]}]}
+    def labelled(cmd: str, *, declare: bool = True, drop_helper: bool = False) -> tuple[int, str]:
+        with tempfile.TemporaryDirectory() as td:
+            if declare:
+                (Path(td) / ".rails-flow").mkdir()
+                (Path(td) / ".rails-flow" / "issue-labels.json").write_text(json.dumps(groups), encoding="utf-8")
+            hook = HOOKS / "guard-bash.sh"
+            if drop_helper:
+                stage = Path(td) / "hooks"; shutil.copytree(HOOKS, stage); (stage / "lib" / "issue_labels.py").unlink()
+                hook = stage / "guard-bash.sh"
+            r = subprocess.run(["bash", str(hook)], input=json.dumps({"tool_input": {"command": cmd}}),
+                               capture_output=True, text=True, cwd=td)
+            return r.returncode, r.stderr
+    rc, err = labelled("gh issue create -t X --body-file b.md")
+    check("guard-bash (#1311): an unlabelled gh issue create is blocked", rc == 2 and "no --label" in err, err)
+    rc, err = labelled("gh issue create -t X --label bug")
+    check("guard-bash (#1311): a bug without its declared severity is blocked, and says why",
+          rc == 2 and "severity:s1" in err, err)
+    check("guard-bash (#1311): CONTROL: a bug with a severity passes",
+          labelled('gh issue create -t X --label bug --label "severity:s2"')[0] == 0)
+    check("guard-bash (#1311): an undeclared project still needs one label",
+          labelled("gh issue create -t X", declare=False)[0] == 2
+          and labelled("gh issue create -t X --label x", declare=False)[0] == 0)
+    rc, err = labelled("gh issue create -t X --label feature", drop_helper=True)
+    check("guard-bash (#1311): FAIL CLOSED: with the helper missing, a labelled create is refused, not let through",
+          rc == 2 and "could not run" in err, err)
+
 
 # ---- guard-claims.sh (#1106) --------------------------------------------------------------------
 # `claim-verifier` exists, works, covers "any number: counts, ratios, versions, timings", and is

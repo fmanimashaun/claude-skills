@@ -7,6 +7,11 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **This repository declares its issue-label groups: `comp:*`, `type:*`, `prio:*` — `.rails-flow/issue-labels.json`**
+  (#1311). Every issue filed since 2026-09-20 that lacked one of the three was relabelled by hand the same day.
+
 ### 2026-09-24 (release v1.147.0)
 
 - **`check_token_contrast`'s mutation guard stages `palette_gates.py` — `scripts/mutations/check_token_contrast.py`**
@@ -3367,6 +3372,20 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   - **Measured on Retask:** no inventory yet, so 629 columns across 47 tables are unclassified. It goes red on the
     bump until its inventory, already in design in #880, lands.
   - **Tests.** The guard catches 6 mutations.
+
+- **`guard-bash` refuses an unlabelled `gh issue create`, against the project's declared label groups —
+  `plugins/rails-flow/hooks/scripts/guard-bash.sh`, `plugins/rails-flow/hooks/scripts/lib/issue_labels.py`,
+  `plugins/rails-flow/scripts/check_hook_gates.py`, `plugins/rails-flow/commands/setup-flow.md`,
+  `scripts/mutations/hook_issue_labels.py`** (#1311). **Maintainer decision, 2026-09-25**, recorded on the issue.
+  - **Found:** 12 of Retask's 14 open issues had no labels, and most of claude-skills' issues from #1249 on lacked
+    `type:` and `prio:`. Templates label only through the web form; `gh issue create` skips them.
+  - **The guard.** Groups live in `.rails-flow/issue-labels.json` (`one_of`, an optional `when`, `*` as a prefix).
+    - An undeclared project, or `-R` naming another repository, needs at least one label.
+    - The raw command is parsed with `shlex`, because labels are usually quoted and the normalised form strips quotes.
+    - It **fails closed**: a helper that cannot run refuses the command.
+  - **`setup-flow`** now reads the repository's labels and records the groups.
+  - **Tests.** The helper's selftest runs 17 cases. The hook harness drives the real hook for 5 more, including fail
+    closed. The guard catches 7 mutations.
 
 ### 1.52.0 (release v1.149.0) — 2026-09-24
 
@@ -15179,6 +15198,10 @@ boot/validation path — with a bullet each so the promotion could close them se
 - **The quality-pass worked example's `class Unusable(RuntimeError)` count is refreshed to 9 —
   `skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`** (#1310). The privacy-inventory gate is
   the new copy; reach stays 6.
+
+- **The quality-pass worked example's `check()` harness count is refreshed to 38 copies, reach 21 —
+  `skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`** (#1311). The label guard's helper
+  is the new copy.
 
 ### 1.68.1 (release v1.149.0) — 2026-09-24
 
