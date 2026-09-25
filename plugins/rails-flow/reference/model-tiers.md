@@ -47,11 +47,18 @@ Six facts decide this whole document, and four of them contradict the shape #127
    for `sonnet` — correctly, all three are 4.5 — and then attached `opus` **= Opus 4.6** to the same
    group, where two of the three are Opus **5**. The argument was right and the illustration was
    wrong, which is the more dangerous shape: nothing about the conclusion looks off.
-4. **Pinning *up* mostly buys nothing.** *"Claude Code checks the environment variable,
-   per-invocation parameter, and frontmatter values against your organization's `availableModels`
-   allowlist. It skips a value that resolves to an excluded model and runs the subagent on the
-   inherited model instead"* ([cc-agents]). So `model: opus` in a plugin we ship either spends a
-   stranger's money on our say-so, or is silently ignored. Neither is a strategy.
+4. **Pinning *up* spends the user's money, even when their org blocks it.** *"Claude Code checks the
+   per-invocation parameter, frontmatter, and environment variable values against your organization's
+   `availableModels` allowlist. For a blocked value, it substitutes another model"*: *"When the blocked
+   value is a family alias such as `opus`, Claude Code runs the subagent on the newest version of that
+   family the allowlist permits … Before v2.1.222, Claude Code ran the subagent on the inherited model
+   for a blocked family alias as well"*, and only *"For any other blocked value, on providers where that
+   substitution doesn't operate, or when the allowlist permits no version of the family"* does it fall
+   back to the inherited model ([cc-agents], re-read 2026-09-25, #1329). So `model: opus` in a plugin
+   we ship runs the most expensive Opus the user's org permits, on our say-so. It is no longer silently
+   ignored either: *"In interactive sessions, Claude Code shows a warning naming the requested model and
+   the model the subagent runs on"*. This fact said "skips … and runs the subagent on the inherited model
+   instead" until #1329, which was true before v2.1.222. The policy it supports is unchanged.
 5. **`model` is honoured for plugin agents.** Only three fields are not: *"For security reasons,
    plugin subagents don't support the `hooks`, `mcpServers`, or `permissionMode` frontmatter
    fields"* ([cc-agents]). `model`, `effort`, `maxTurns` and `tools` all apply — so this is a real
@@ -108,8 +115,8 @@ value is being a *different* model from the one that wrote the change — a seco
 the author's blind spot is just a slower review. So the obvious move is to pin it to something else.
 
 We do not, for the reason in fact 4 above: pinning a **shipped** agent to an expensive alias spends a
-stranger's money on our authority, and a value outside their `availableModels` is skipped anyway. A
-pin cannot buy a second opinion here; it can only impose a cost.
+stranger's money on our authority, and since v2.1.222 a blocked `opus` is substituted with the newest
+Opus they permit rather than dropped. A pin cannot buy a second opinion here; it can only impose a cost.
 
 So getting one is the **caller's** act — a per-invocation `model`, or `CLAUDE_CODE_SUBAGENT_MODEL` with
 `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` (the env var alone no longer reaches an agent that has a `model:`
