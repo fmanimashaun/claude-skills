@@ -48,9 +48,28 @@ GUARD = Guard(
         ),
         Mutation(
             "the null_store warning is never raised",
-            "    if uses_rate_limit and test_env.is_file() and re.search(",
-            "    if False and re.search(",
+            "    if (storeless_limit and re.search(",
+            "    if (False and re.search(",
             "null_store with rate_limit is a WARNING on a clean result",
+        ),
+        # #1324: the two ways a limiter gets a real store, ignored again.
+        Mutation(
+            "a rate_limit passing store: still counts as storeless",
+            '        storeless_limit = storeless_limit or any(not re.search(r"\\bstore:", s) for s in limits)',
+            "        storeless_limit = storeless_limit or bool(limits)",
+            "null_store with every rate_limit passing store: is not warned",
+        ),
+        Mutation(
+            "config.action_controller.cache_store is not read",
+            '            and not (limiter_store and limiter_store.group(1) != ":null_store")):',
+            "            and True):",
+            "a non-null config.action_controller.cache_store is not warned",
+        ),
+        Mutation(
+            "any config.action_controller.cache_store silences the warning, even :null_store",
+            '            and not (limiter_store and limiter_store.group(1) != ":null_store")):',
+            "            and not limiter_store):",
+            "CONTROL: a null config.action_controller.cache_store is still warned",
         ),
     ),
 )
