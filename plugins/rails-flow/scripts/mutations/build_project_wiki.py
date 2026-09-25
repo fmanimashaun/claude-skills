@@ -10,6 +10,20 @@ GUARD = Guard(
     selftest="scripts/build_project_wiki.py",   # --selftest lives in the module itself
     deps=("scripts/generated_docs.py",),   # #1230: imported for the opt-in branch policy
     mutations=(
+        # Constraints read as columns again: the data-model page lists `(code)::text ~ ...` as a column.
+        Mutation(
+            "a check constraint is read as a column again",
+            'NON_COLUMN_CALLS = frozenset({"index", "check_constraint", "exclusion_constraint", "unique_constraint"})',
+            'NON_COLUMN_CALLS = frozenset({"index"})',
+            "schema.rb: a check constraint is not read as a column",
+        ),
+        # Every `#` a comment again, so `rate#893` is cut to `rate`.
+        Mutation(
+            "a `#` anywhere starts a comment again",
+            '        elif ch == "#" and (i == 0 or raw[i - 1].isspace()):',
+            '        elif ch == "#":',
+            "yaml: a `#` with no space before it is part of the value",
+        ),
         Mutation(
             "drift is never reported, so a page that no longer matches its sources passes --check",
             '        drift = [n for n, text in pages.items() if not (wiki / n).is_file() or (wiki / n).read_text(encoding="utf-8") != text]',
@@ -60,8 +74,8 @@ GUARD = Guard(
         ),
         Mutation(
             "commented-out examples in recurring.yml are read as real schedules",
-            '        line = raw.split("#", 1)[0].rstrip() if not raw.lstrip().startswith("#") else ""',
-            '        line = raw.rstrip()',
+            "            return raw[:i].rstrip()",
+            "            return raw.rstrip()",
             "commented examples are ignored",
         ),
         Mutation(

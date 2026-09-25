@@ -3358,6 +3358,22 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### 1.53.0 (release v1.150.0) — 2026-09-25
 
+- **The schema and YAML readers stop misreading three shapes — `plugins/rails-flow/scripts/build_project_wiki.py`,
+  `plugins/rails-flow/scripts/check_privacy_inventory.py`, `plugins/rails-flow/scripts/mutations/build_project_wiki.py`,
+  `plugins/rails-flow/scripts/mutations/check_privacy_inventory.py`.** Reported by Retask's coordinator while building
+  its inventory against #1314; confirmed in the source.
+  - **Check constraints read as columns.** `parse_schema` excluded only `t.index`, so a `t.check_constraint "(code)::text ~
+    ..."` became a column named for its expression. Retask has 21. This parser was already shipped, so the released
+    data-model wiki page listed them as columns too. Constraint, exclusion and unique calls are now excluded.
+  - **Every `#` read as a comment.** `parse_yaml_subset` cut each line at its first `#`. It now follows YAML: a `#` starts
+    a comment only at the line start or after whitespace, and never inside quotes. A value such as `until the #893
+    review` must be quoted, as for any YAML reader. Unquoted inside an inline map, it leaves the brace open and is
+    refused, never silently truncated.
+  - **A quoted value with a comma** split an inline entry. It is now split on commas outside quotes.
+  - **Tests.** Fixtures cover each shape, and the guards catch 19 and 7 mutations. One wiki mutation that pointed at the
+    replaced line was re-pointed at the new comment rule.
+  - **Upgrading:** a project's data-model wiki page re-renders once, without its constraint pseudo-columns.
+
 - **New gate `privacy-inventory`: every `db/schema.rb` column is classified in `config/privacy_inventory.yml` —
   `plugins/rails-flow/scripts/check_privacy_inventory.py`, `plugins/rails-flow/checks.json`,
   `plugins/rails-flow/scripts/mutations/check_privacy_inventory.py`, `plugins/rails-flow/commands/setup-flow.md`** (#1310).

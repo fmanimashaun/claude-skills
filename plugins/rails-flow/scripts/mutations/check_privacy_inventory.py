@@ -11,6 +11,13 @@ GUARD = Guard(
     selftest="scripts/check_privacy_inventory.py",
     deps=("scripts/build_project_wiki.py",),   # the one schema.rb and YAML reader
     mutations=(
+        # Every comma a separator again, so a quoted value with a comma breaks the entry.
+        Mutation(
+            "a comma inside quotes splits the entry",
+            "            quote = ch\n            cur.append(ch)",
+            "            cur.append(ch)",
+            "a quoted value may contain a comma",
+        ),
         Mutation(
             "no inventory at all reads as clean",
             "        return 1, [f\"no {INVENTORY}: all {len(columns)} column(s)",

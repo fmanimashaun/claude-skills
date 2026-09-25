@@ -54,6 +54,26 @@ def load_graph(root: Path) -> dict | None:
     return json.loads(p.read_text(encoding="utf-8"))
 
 
+# `t.<call> "..."` lines inside create_table that declare something other than a column.
+NON_COLUMN_CALLS = frozenset({"index", "check_constraint", "exclusion_constraint", "unique_constraint"})
+
+
+def _strip_yaml_comment(raw: str) -> str:
+    """The line with its comment removed, as YAML reads it: a `#` starts a comment only at the start of
+    the line or after whitespace, and never inside quotes. `until the #893 rate` is a value, not a
+    comment -- the first version cut every line at its first `#`, silently truncating the value."""
+    quote = None
+    for i, ch in enumerate(raw):
+        if quote:
+            if ch == quote:
+                quote = None
+        elif ch in "'\"":
+            quote = ch
+        elif ch == "#" and (i == 0 or raw[i - 1].isspace()):
+            return raw[:i].rstrip()
+    return raw.rstrip()
+
+
 def parse_schema(text: str) -> dict:
     """db/schema.rb -> {version, tables: {name: {columns: [(name, type, opts)], indexes: [(cols, name, unique)]}}}.
     schema.rb is Rails' own generated, regular DSL -- a structured source, not prose."""
@@ -65,7 +85,10 @@ def parse_schema(text: str) -> dict:
         cols, idx = [], []
         for line in body.splitlines():
             c = re.match(r'\s*t\.(\w+)\s+"([^"]+)"(.*)', line)
-            if c and c.group(1) != "index":
+            # NOT EVERY `t.x "..."` IS A COLUMN. A check constraint's expression was read as a column
+            # named `(finding::text = 'pending'::text) = ...`, on one app 21 of them, so the data-model
+            # page and every reader of this parser listed constraints as columns.
+            if c and c.group(1) not in NON_COLUMN_CALLS:
                 cols.append((c.group(2), c.group(1), c.group(3).strip(" ,")))
             # TWO FORMS, AND THE SECOND ONE CARRIED A GUARANTEE (#1157). Rails writes a plain
             # index as a bracketed column list and an EXPRESSION index as a bare string:
@@ -108,7 +131,7 @@ def parse_yaml_subset(text: str) -> dict:
     out: dict = {}
     cur: str | None = None
     for raw in text.splitlines():
-        line = raw.split("#", 1)[0].rstrip() if not raw.lstrip().startswith("#") else ""
+        line = _strip_yaml_comment(raw)
         if not line.strip():
             continue
         indent = len(line) - len(line.lstrip())
@@ -468,6 +491,14 @@ def selftest() -> int:
     # #1157. AN EXPRESSION INDEX IS AN INDEX. Rails writes `lower((code)::text)` as a bare string,
     # not a bracketed list, and the page dropped it -- so an app that moved uniqueness INTO the
     # index had the change documented as a removal.
+    cs = parse_schema('  create_table "w", force: :cascade do |t|\n    t.string "code"\n'
+                      "    t.check_constraint \"(code)::text ~ '^[A-Z]{3}$'::text\", name: \"w_code\"\n  end\n")
+    check("schema.rb: a check constraint is not read as a column",
+          [c[0] for c in cs["tables"]["w"]["columns"]] == ["code"], str(cs["tables"]["w"]["columns"]))
+    check("yaml: a `#` after whitespace starts a comment, as YAML reads it",
+          _strip_yaml_comment("  a: b  # note") == "  a: b")
+    check("yaml: a `#` with no space before it is part of the value", _strip_yaml_comment("  a: rate#893") == "  a: rate#893")
+    check("yaml: a `#` inside quotes is part of the value", _strip_yaml_comment('  a: "x #893"') == '  a: "x #893"')
     check("schema.rb: an EXPRESSION index is parsed, not skipped",
           s["tables"]["clients"]["indexes"] == [(["lower((code)::text)"], "idx_lower_code", True)],
           str(s["tables"]["clients"]["indexes"]))
