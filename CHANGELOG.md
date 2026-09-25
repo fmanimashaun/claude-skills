@@ -3356,6 +3356,20 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **The `erb-lint` FAIL row leads with counts, and errors are listed first — `plugins/rails-flow/scripts/herb_lint.py`,
+  `plugins/rails-flow/scripts/mutations/herb_lint.py`** (#1318). Reported by a Retask session; reproduced with the pinned
+  linter.
+  - **The defect.** `project_gates.summarise()` took the first `:line:col` line herb printed, and herb prints in file
+    order. A run failing on 2 errors showed its row on a hint, and three sessions chased hinted files.
+  - **The fix.** `herb_lint.py` now runs the linter with `--format json` (present in 0.10.3). It prints
+    `N herb finding(s): E error, W warning, I info, H hint -- most severe first`, which `project_gates` anchors on, then
+    every offence sorted error → hint. The exit code is unchanged, and output that isn't JSON passes through raw.
+  - **Tests.** A fixture with a hint before an error; `summarise()` is shown to take the new line as the row. The guard
+    catches 9 mutations; the older exit-code mutation was re-pointed at the new return.
+  - **Measured on Retask at `ddec4d43`:** 18 findings (0 error, 3 warning, 15 hint) across 175 files; it passes.
+
 ### 1.53.0 (release v1.150.0) — 2026-09-25
 
 - **The schema and YAML readers stop misreading three shapes — `plugins/rails-flow/scripts/build_project_wiki.py`,
