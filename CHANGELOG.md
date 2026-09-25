@@ -3358,6 +3358,21 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **New gate `privacy-inventory`: every `db/schema.rb` column is classified in `config/privacy_inventory.yml` —
+  `plugins/rails-flow/scripts/check_privacy_inventory.py`, `plugins/rails-flow/checks.json`,
+  `plugins/rails-flow/scripts/mutations/check_privacy_inventory.py`, `plugins/rails-flow/commands/setup-flow.md`** (#1310).
+  **Maintainer decision, 2026-09-25**, recorded on the issue.
+  - **The standard shape** is the one Retask designed: table → column → `{category, basis, retention}`, block or inline,
+    with `category: none` for "not personal".
+  - **The rules.** Every column is listed (the implicit `id` is exempt). A personal category needs `basis` and
+    `retention`. Stale tables and columns are findings, and a missing file names the unclassified count; it is never
+    clean.
+  - **One reader each:** the schema and YAML are read through `build_project_wiki.py`'s parsers.
+  - **`setup-flow`'s** legal-documents step now writes the inventory the privacy policy is drafted from.
+  - **Measured on Retask:** no inventory yet, so 629 columns across 47 tables are unclassified. It goes red on the
+    bump until its inventory, already in design in #880, lands.
+  - **Tests.** The guard catches 6 mutations.
+
 - **`guard-bash` refuses an unlabelled `gh issue create`, against the project's declared label groups —
   `plugins/rails-flow/hooks/scripts/guard-bash.sh`, `plugins/rails-flow/hooks/scripts/lib/issue_labels.py`,
   `plugins/rails-flow/scripts/check_hook_gates.py`, `plugins/rails-flow/commands/setup-flow.md`,
@@ -15179,6 +15194,10 @@ boot/validation path — with a bullet each so the promotion could close them se
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
 ### Unreleased
+
+- **The quality-pass worked example's `class Unusable(RuntimeError)` count is refreshed to 9 —
+  `skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`** (#1310). The privacy-inventory gate is
+  the new copy; reach stays 6.
 
 - **The quality-pass worked example's `check()` harness count is refreshed to 38 copies, reach 21 —
   `skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`** (#1311). The label guard's helper
