@@ -1,0 +1,67 @@
+name: upstream drift
+
+# Re-reads the Claude Code docs our doctrine quotes, and lists CHANGELOG entries we have not
+# reviewed (#1328). scripts/check_upstream_docs.py does the work; this only schedules it and
+# files the result.
+#
+# WHY IT FILES AN ISSUE INSTEAD OF FAILING A GATE. The check depends on the network and on
+# Anthropic's edits. As a PR gate it would fail a change for something we did not do, and a
+# gate that is red for someone else's reasons teaches people to ignore red. So it runs weekly,
+# and its findings land in the queue /maintainer-triage already reads.
+#
+# ONE ISSUE, UPDATED. A weekly run that opened a new issue each time would bury the queue. It
+# comments on the open `upstream-drift` issue when there is one.
+#
+# EXIT 2 (UNUSABLE) FAILS THE RUN. A fetch that failed is not "no drift", and a green run that
+# checked nothing is the failure this whole check exists to prevent.
+
+on:
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: upstream-drift
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Re-read upstream docs
+        id: run
+        run: |
+          set +e
+          python3 scripts/check_upstream_docs.py > report.txt 2>&1
+          code=$?
+          cat report.txt
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          if [ "$code" -eq 2 ]; then
+            echo "::error::upstream check could not run -- this is not a pass"
+            exit 1
+          fi
+      - name: File or update the upstream-drift issue
+        if: steps.run.outputs.code == '1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo "The weekly upstream check found Claude Code changes to review. Run \`/maintainer-upstream\`."
+            echo
+            echo '```'
+            cat report.txt
+            echo '```'
+          } > body.md
+          open=$(gh issue list --state open --label upstream-drift --limit 1 --json number -q '.[0].number')
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --body-file body.md
+          else
+            gh label create upstream-drift --color C5DEF5 --description "Claude Code docs or CHANGELOG changed under our doctrine" 2>/dev/null || true
+            gh issue create --title "Upstream drift: Claude Code changes to review" --body-file body.md \
+              --label upstream-drift --label comp:marketplace --label type:incorrect-doctrine --label prio:p2
+          fi

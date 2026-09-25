@@ -7,6 +7,28 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **A weekly check re-reads the Claude Code docs our doctrine quotes, and lists unreviewed CHANGELOG entries —
+  `scripts/check_upstream_docs.py`, `docs/evidence/upstream/claude-code.json`,
+  `scripts/mutations/check_upstream_docs.py`, `.claude/commands/maintainer-upstream.md`,
+  `.github/workflows/upstream.yml`, `scripts/maintainer_doctor.py`** (#1328). The maintainer asked for "a way to
+  check the latest updates from the docs and update agentic flow accordingly".
+  - **The problem.** 12 files cite `code.claude.com/docs` and nothing re-read them after the day they were fetched.
+    #1326 was one result: a resolution order that changed in v2.1.251.
+  - **The registry.** 20 rows, each a verbatim quote, its docs page and the files built on it. They cover every
+    docs page our live doctrine cites, plus the hook exit-code and stdin behaviour our 14 hook scripts rely on,
+    which nothing cited before.
+  - **The checker.** It fetches `<page>.md`, normalises markdown and asserts each quote is still there. It also
+    lists CHANGELOG entries after the committed cursor (2.1.282) that name a surface we build on.
+  - **Where it runs.** `--coverage` is local and gates: every cited docs page must have a row. The fetch mode
+    depends on the network and on upstream edits, so it runs weekly and comments on one `upstream-drift`
+    issue rather than failing PRs. `/maintainer-upstream` triages the findings through doctrine-verifier and
+    advances the cursor.
+  - **Found on its first run.** Two stale quotes in `plugins/rails-flow/reference/model-tiers.md`, fixed here
+    (see the rails-flow entry), and a changed `availableModels` behaviour, filed as #1329.
+  - **Tests.** Selftest with a control for each rule; the guard catches 8 mutations.
+
 ### 2026-09-25 (release v1.150.0)
 
 - **This repository declares its issue-label groups: `comp:*`, `type:*`, `prio:*` — `.rails-flow/issue-labels.json`**
@@ -3357,6 +3379,12 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 ## rails-flow (agentic flow plugin)
 
 ### Unreleased
+
+- **Two `model-tiers.md` quotes updated to the docs' current wording — `plugins/rails-flow/reference/model-tiers.md`**
+  (#1328). Found by the new upstream check. The skills page now reads *"isn't saved to settings. The session
+  model resumes when you send your next prompt"*. The `env` key's description moved from `settings` to
+  `settings-reference` and now reads *"Set environment variables for every session and its subprocesses"*. The
+  meaning is unchanged in both, so no doctrine changes; verified by fetching both `.md` pages on 2026-09-25.
 
 - **Model-tier doctrine re-checked against current Claude Code; effort is inherited and a pin is refused —
   `plugins/rails-flow/reference/model-tiers.md`, `plugins/qa-flow/reference/model-tiers.md`,
@@ -15271,6 +15299,12 @@ boot/validation path — with a bullet each so the promotion could close them se
   (token/logo/icon/brand-pack enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
+
+### Unreleased
+
+- **The quality-pass worked example's `Unusable` and `check()` harness counts are refreshed to 10 and 39 —
+  `skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`** (#1328). The upstream-docs checker
+  is the new copy of each; both reaches are unchanged (6 and 21).
 
 ### 1.68.2 (release v1.150.0) — 2026-09-25
 

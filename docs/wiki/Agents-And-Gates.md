@@ -2,7 +2,7 @@
      Rebuild:  python3 scripts/build_wiki.py
      Drift:    python3 scripts/build_wiki.py --check  (runs in the gate sweep) -->
 # Agents and gates
-**29 shipped agents · 48 shipped commands · 124 gates · 4 tier tables**, plus 5 maintainer agents and 5 maintainer commands that are not installed.
+**29 shipped agents · 48 shipped commands · 126 gates · 4 tier tables**, plus 5 maintainer agents and 6 maintainer commands that are not installed.
 
 | plugin | version | agents | commands | tier rows | gates |
 |---|---|---|---|---|---|
@@ -68,7 +68,7 @@
 
 | agent | tier · model | tools | named by | what proves its output |
 |---|---|---|---|---|
-| `doctrine-verifier` | sonnet | Read, Grep, Glob, Bash, WebFetch, WebSearch | `/maintainer-audit`, `/maintainer-onboard`, `/maintainer-setup-intake`, `/maintainer-work` | — |
+| `doctrine-verifier` | sonnet | Read, Grep, Glob, Bash, WebFetch, WebSearch | `/maintainer-audit`, `/maintainer-onboard`, `/maintainer-setup-intake`, `/maintainer-upstream`, `/maintainer-work` | — |
 | `issue-triager` | sonnet | Read, Grep, Glob, Bash | `/maintainer-triage` | — |
 | `plugin-doctor` | sonnet | Read, Grep, Glob, Edit, Write, Bash | `/maintainer-work` | — |
 | `release-manager` | sonnet | Read, Grep, Glob, Edit, Bash | `/maintainer-work` | — |
@@ -200,6 +200,8 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | structural grid selftest | `repo` | `python3 scripts/check_structural_grid.py --selftest` | selftest |
 | token contrast | `repo` | `python3 scripts/check_token_contrast.py` | live check |
 | token contrast selftest | `repo` | `python3 scripts/check_token_contrast.py --selftest` | selftest |
+| upstream check selftest | `repo` | `python3 scripts/check_upstream_docs.py --selftest` | selftest |
+| upstream citation coverage | `repo` | `python3 scripts/check_upstream_docs.py --coverage` | live check |
 | vendored alone | `repo` | `python3 scripts/check_vendored_alone.py` | live check |
 | vendored alone selftest | `repo` | `python3 scripts/check_vendored_alone.py --selftest` | selftest |
 | wiki reference drift | `repo` | `python3 scripts/build_wiki.py --check` | live check |
