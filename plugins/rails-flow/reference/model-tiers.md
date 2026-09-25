@@ -14,6 +14,7 @@ which of our agents counts as judgement work — is **ours**, recorded on
 [cc-model]: https://code.claude.com/docs/en/model-config
 [cc-skills]: https://code.claude.com/docs/en/skills
 [cc-settings]: https://code.claude.com/docs/en/settings
+[cc-settings-ref]: https://code.claude.com/docs/en/settings-reference
 [cc-advisor]: https://code.claude.com/docs/en/advisor
 
 ---
@@ -185,8 +186,9 @@ edits one line. Nothing here is locked.
 subagent's definition or a model Claude passes still takes precedence over it"* ([cc-agents]). Every
 agent we ship has a `model:` line (`inherit` included), so **on its own it changes none of them**. *"To
 apply one model to every subagent … also set `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` to `1`. Requires Claude
-Code v2.1.257 or later"* ([cc-agents]). `settings.json`'s `env` holds *"Environment variables applied to
-every session"* ([cc-settings]):
+Code v2.1.257 or later"* ([cc-agents]). `settings.json`'s `env` key is there to *"Set environment variables for
+every session and its subprocesses"* ([cc-settings-ref], re-read 2026-09-25, #1328; the description moved
+there from the settings page):
 
 ```json
 {
@@ -205,8 +207,8 @@ per-agent file above.
 ## What we declined, and why
 
 - **`model:` on the commands.** Skills and commands take the same field, but *"The override
-  applies for the rest of the current turn and is not saved to settings; the session model resumes
-  on your next prompt"* ([cc-skills]). Pinning `/rails-flow:feature` would seize the model for the
+  applies for the rest of the current turn and isn't saved to settings. The session model resumes
+  when you send your next prompt"* ([cc-skills], re-read 2026-09-25, #1328). Pinning `/rails-flow:feature` would seize the model for the
   whole orchestration — including every gate — from a user who already chose one. The orchestrator
   is the user's session, by decision.
 - **`model: opus` (or `fable`, or `best`) anywhere we ship.** Fact 4: it is either their money on

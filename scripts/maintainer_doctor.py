@@ -201,6 +201,11 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("doctrine map drift", ("python3", "scripts/doctrine_map.py", "--check")),
     ("doctrine map coverage", ("python3", "scripts/doctrine_map.py", "--audit-coverage")),
     ("doctrine map selftest", ("python3", "scripts/doctrine_map.py", "--selftest")),
+    # #1328. Only the LOCAL half gates: every cited Claude Code docs page has a registry row that the
+    # weekly upstream check re-reads. The fetch half is network- and upstream-dependent, so it runs
+    # in .github/workflows/upstream.yml and files an issue instead of turning PRs red.
+    ("upstream citation coverage", ("python3", "scripts/check_upstream_docs.py", "--coverage")),
+    ("upstream check selftest", ("python3", "scripts/check_upstream_docs.py", "--selftest")),
     ("rails-flow lane assigner selftest",
      ("python3", "plugins/rails-flow/scripts/assign_lanes.py", "--selftest")),
     ("design-flow prompt library selftest",
