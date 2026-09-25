@@ -3356,7 +3356,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.53.1 (release v1.150.1) — 2026-09-25
 
 - **The `erb-lint` NOTE names the `node_modules` linter's version, and a WARNING flags one the lock does not pin —
   `plugins/rails-flow/scripts/herb_lint.py`, `plugins/rails-flow/scripts/mutations/herb_lint.py`** (#1320). Found
