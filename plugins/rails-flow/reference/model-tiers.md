@@ -14,6 +14,7 @@ which of our agents counts as judgement work — is **ours**, recorded on
 [cc-model]: https://code.claude.com/docs/en/model-config
 [cc-skills]: https://code.claude.com/docs/en/skills
 [cc-settings]: https://code.claude.com/docs/en/settings
+[cc-advisor]: https://code.claude.com/docs/en/advisor
 
 ---
 
@@ -21,19 +22,24 @@ which of our agents counts as judgement work — is **ours**, recorded on
 
 Six facts decide this whole document, and four of them contradict the shape #127 proposed.
 
-1. **The default is `inherit`, not a model.** The field accepts *"`sonnet`, `opus`, `haiku`,
-   `fable`, a full model ID (for example, `claude-opus-5`), or `inherit`. Defaults to `inherit`"*
-   ([cc-agents]). So an agent with **no** `model:` line already follows the user's session.
-2. **A pin is a cap, in both directions.** Resolution is *"1. The `CLAUDE_CODE_SUBAGENT_MODEL`
-   environment variable … 2. The per-invocation `model` parameter 3. The subagent definition's
-   `model` frontmatter 4. The main conversation's model"* ([cc-agents]). Frontmatter beats the
-   session. Pinning `sonnet` on a reviewer means a user who deliberately started an Opus session
+1. **The default is `inherit`, not a model.** The field accepts *"one of the available aliases:
+   `sonnet`, `opus`, `haiku`, or `fable`"*, *"a full model ID such as `claude-opus-5-5`"*, or
+   `inherit`, which *"use[s] the same model as the main conversation"* ([cc-agents], re-read 2026-09-25,
+   #1326). So an agent with **no** `model:` line already follows the user's session.
+2. **A pin is a cap, in both directions.** Resolution is *"1. The per-invocation `model` parameter
+   2. The subagent definition's `model` frontmatter, where `inherit` selects the main conversation's
+   model 3. The `CLAUDE_CODE_SUBAGENT_MODEL` environment variable, when you set it to a model alias or
+   model ID 4. The main conversation's model"* ([cc-agents]). Frontmatter beats the session **and the
+   env var**. *"Before v2.1.251, `CLAUDE_CODE_SUBAGENT_MODEL` came first in this order and overrode
+   both the per-invocation parameter and the frontmatter, including `model: inherit`"* ([cc-agents]);
+   this paragraph quoted that older order until #1326. Pinning `sonnet` on a reviewer means a user who deliberately started an Opus session
    gets a **Sonnet** reviewer — we spent their upgrade for them, downwards.
 3. **An alias is not a tier; it is a per-provider lookup that moves over time.** `sonnet` resolves
    to **three different versions** depending on the provider — Sonnet 5 on the Anthropic API,
    **Sonnet 4.6** on Claude Platform on AWS, **Sonnet 4.5** on Amazon Bedrock and Google Cloud's
-   Agent Platform *and* on Microsoft Foundry. `opus` is Opus 5 on every one of those **except
-   Microsoft Foundry**, where it is **Opus 4.6** ([cc-model]). And *"Aliases point to the
+   Agent Platform *and* on Microsoft Foundry. `opus` is **Opus 5.5** on every one of those
+   **except Microsoft Foundry**, where it is **Opus 4.6** ([cc-model], re-read 2026-09-25; it was Opus 5
+   when this was first written, which is the point of the next sentence). And *"Aliases point to the
    recommended version for your provider and update over time"* ([cc-model]). A shipped plugin
    cannot know which model its own frontmatter selects.
 
@@ -105,7 +111,9 @@ We do not, for the reason in fact 4 above: pinning a **shipped** agent to an exp
 stranger's money on our authority, and a value outside their `availableModels` is skipped anyway. A
 pin cannot buy a second opinion here; it can only impose a cost.
 
-So getting one is the **caller's** act — a per-invocation `model`, or `CLAUDE_CODE_SUBAGENT_MODEL` —
+So getting one is the **caller's** act — a per-invocation `model`, or `CLAUDE_CODE_SUBAGENT_MODEL` with
+`CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` (the env var alone no longer reaches an agent that has a `model:`
+line, and every shipped agent has one — see *Session-wide* below) —
 and the agent is required to **say which model it ran as**, and to state plainly when that matches the
 session, so a reader can tell whether the second opinion was actually second. That is the honest
 alternative to a pin that pretends to be free, and it is why the tier vocabulary did **not** need a
@@ -136,11 +144,33 @@ subagent is active. Overrides the session effort level. Default: inherits from s
 `effort` composes with `inherit` in a way `model` cannot: it lowers *how hard* an agent thinks
 without capping *what* it can be. That is the honest home for "constrained execution, cheaper".
 
-**We do not set it in this pass, deliberately.** *"available levels depend on the model"* and
-Claude Code does not publish which levels each model accepts, so we cannot tell what
-`effort: low` on a Haiku agent resolves to — or whether it is accepted at all. Shipping an
-unverifiable value into ten downstream projects to save tokens is the wrong trade. Recorded here as
-the next lever, with the reason it is not pulled yet, so it is a decision rather than an omission.
+**No shipped agent sets it, and `check_handoff.py --tiers` refuses one that does (#1326).** This
+section first deferred the lever because Claude Code did not say which levels each model accepts. It
+now does: its effort table lists Fable, Opus and Sonnet models, and *"Models not listed here do not
+support effort"* ([cc-model], re-read 2026-09-25) — Haiku 4.5 is not listed. That settles it:
+
+- The **6 `haiku` agents** cannot take an effort level at all.
+- The **23 `inherit` agents** are the judgement agents, and a pin *below* the session is the same cap
+  as a model pin: *"Frontmatter effort applies when that skill or subagent is active, overriding the
+  session level but not the environment variable"* ([cc-model]). A user who ran `/effort high` for a
+  security review would get our `medium`.
+
+So there is no agent in the catalogue the lever fits. Every agent inherits the session's effort,
+which on Opus 5.5 is `medium` unless the user chose otherwise ([cc-model]). A project that wants one
+agent at another level overrides it in `.claude/agents/`, as below.
+
+### The advisor rides along, and that is the user's call
+
+*"Subagents inherit the configured advisor and apply the same pairing check against their own
+model"* ([cc-advisor]), and Haiku 4.5 accepts a Fable, Opus or Sonnet advisor. So with `/advisor`
+on, our mechanical agents can consult it too, and *"Each advisor call processes the full transcript
+anew"*. There is no per-agent opt-out and *"no setting to cap or force advisor calls"*.
+
+We do **not** tell agents to avoid it. Choosing an advisor is a session decision like choosing a
+model, and an instruction baked into a shipped prompt would be another hidden cap on it. The cost is
+also small where we could reach it: a subagent's transcript is short, and the long transcripts belong
+to the user's own session. The controls are the user's: `/advisor off`, or
+`CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1` to remove the tool.
 
 ## Overriding this in a project (both mechanisms are documented)
 
@@ -151,16 +181,21 @@ the same name, Claude Code uses the one from the higher-priority location"*. So 
 wants `test-runner` on its session model copies the file to `.claude/agents/test-runner.md` and
 edits one line. Nothing here is locked.
 
-**Session-wide — one env var.** `CLAUDE_CODE_SUBAGENT_MODEL` is *"The model Claude Code uses for
-all subagents … and overrides the per-invocation `model` parameter and the subagent definition's
-`model` frontmatter. Set to `inherit` to use normal model resolution instead"* ([cc-model]), and
-`settings.json`'s `env` holds *"Environment variables applied to every session"* ([cc-settings]):
+**Session-wide — two env vars.** `CLAUDE_CODE_SUBAGENT_MODEL` alone is now a *default*: *"a
+subagent's definition or a model Claude passes still takes precedence over it"* ([cc-agents]). Every
+agent we ship has a `model:` line (`inherit` included), so **on its own it changes none of them**. *"To
+apply one model to every subagent … also set `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` to `1`. Requires Claude
+Code v2.1.257 or later"* ([cc-agents]). `settings.json`'s `env` holds *"Environment variables applied to
+every session"* ([cc-settings]):
 
 ```json
 {
-  "env": { "CLAUDE_CODE_SUBAGENT_MODEL": "haiku" }
+  "env": { "CLAUDE_CODE_SUBAGENT_MODEL": "haiku", "CLAUDE_CODE_SUBAGENT_MODEL_FORCE": "1" }
 }
 ```
+
+Before v2.1.251 the first variable alone did this; this section said so until #1326, and a user
+following it on a current Claude Code got no change and no error.
 
 Say plainly what that does, because it is blunt: it overrides **every** agent's frontmatter, the
 three mechanical ones and the seven judgement ones alike. It is the right tool for "this whole

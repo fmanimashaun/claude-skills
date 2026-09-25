@@ -44,10 +44,12 @@ WHAT IT DOES NOT
     A project wanting a third forks the table and points `--tiers` at its own copy.
 
 EXTERNAL CLAIMS THIS ENCODES, AND THEIR SOURCES (verified 2026-07-31)
-    * The subagent `model` field takes "`sonnet`, `opus`, `haiku`, `fable`, a full model ID (for
-      example, `claude-opus-5`), or `inherit`. Defaults to `inherit`", and frontmatter beats the
-      session model: resolution is `CLAUDE_CODE_SUBAGENT_MODEL`, then the per-invocation parameter,
-      then "the subagent definition's `model` frontmatter", then "the main conversation's model".
+    * The subagent `model` field takes an alias (`sonnet`, `opus`, `haiku`, `fable`), "a full model
+      ID such as `claude-opus-5-5`", or `inherit`, and frontmatter beats the session model:
+      resolution is "the per-invocation `model` parameter", then "the subagent definition's `model`
+      frontmatter, where `inherit` selects the main conversation's model", then
+      `CLAUDE_CODE_SUBAGENT_MODEL`, then "the main conversation's model" (re-read 2026-09-25, #1326;
+      before v2.1.251 the env var came first).
       So a pin is a CAP -- which is why judgement agents must say `inherit`.
       https://code.claude.com/docs/en/sub-agents
     * Pinning UP mostly buys nothing: Claude Code "skips a value that resolves to an excluded model
@@ -715,6 +717,18 @@ def agent_models(directory: Path) -> dict[str, tuple[Path, str | None]]:
     return out
 
 
+def _declared_effort(path: Path) -> str | None:
+    """The agent's `effort:` frontmatter value, or None when it declares none (#1326)."""
+    lines = path.read_text(encoding="utf-8").splitlines()
+    for line in lines[1:]:
+        if line.strip() == "---":
+            break
+        match = FRONTMATTER_FIELD_RE.match(line)
+        if match and match.group("key") == "effort":
+            return match.group("value").strip("\"'")
+    return None
+
+
 def check_tiers(rows: list[TierRow], agents: dict[str, tuple[Path, str | None]] | None) -> list[str]:
     findings: list[str] = []
     seen: dict[str, int] = {}
@@ -765,6 +779,14 @@ def check_tiers(rows: list[TierRow], agents: dict[str, tuple[Path, str | None]] 
         return findings
 
     for name, (path, model) in agents.items():
+        effort = _declared_effort(path)
+        if effort is not None:
+            findings.append(
+                f"{path}: agent `{name}` pins `effort: {effort}` -- a shipped agent inherits the "
+                "session's effort (model-tiers.md, #1326): a pin below the session caps a user who "
+                "chose more, and Haiku 4.5 supports no effort level at all. A project that wants one "
+                "overrides the agent in its own .claude/agents/."
+            )
         row = next((r for r in rows if r.agent == name), None)
         if row is None:
             findings.append(

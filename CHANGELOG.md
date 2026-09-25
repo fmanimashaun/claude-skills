@@ -3356,6 +3356,29 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **Model-tier doctrine re-checked against current Claude Code; effort is inherited and a pin is refused —
+  `plugins/rails-flow/reference/model-tiers.md`, `plugins/qa-flow/reference/model-tiers.md`,
+  `plugins/rails-flow/scripts/check_handoff.py`, `plugins/rails-flow/scripts/check_handoff_selftest.py`,
+  `plugins/rails-flow/scripts/mutations/check_handoff.py`** (#1326).
+  - **External claims (doctrine-verifier, 2026-09-25, against code.claude.com/docs `sub-agents` and `model-config`).**
+    - CONFIRMED: the subagent model order is now per-invocation → frontmatter (`inherit` included) →
+      `CLAUDE_CODE_SUBAGENT_MODEL` → main model. The env var came first only before v2.1.251. Alone, it no longer
+      reaches an agent that has a `model:` line, and all 29 shipped agents have one; it takes
+      `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` (v2.1.257+). Our "session-wide" recipe used to set the env var alone and
+      now sets both.
+    - REFUTED in part: `opus` is Opus 5.5 everywhere except Microsoft Foundry (Opus 4.6), not Opus 5.
+    - CONFIRMED: `effort:` frontmatter overrides the session level but not `CLAUDE_CODE_EFFORT_LEVEL`, and "Models
+      not listed here do not support effort" — Haiku 4.5 is not listed.
+  - **Our design (the maintainer delegated this decision on 2026-09-25, recorded on #1326).**
+    - Shipped agents inherit effort: a pin below the session is the same cap as a model pin, and Haiku takes no
+      level. `check_handoff.py --tiers` now refuses an agent that declares `effort:`.
+    - The advisor is documented rather than suppressed: subagents inherit it, and whether to use it is the user's
+      session choice.
+  - **Tests.** A new selftest fixture refuses `effort: medium` (89 checks pass). The guard catches 12 mutations;
+    1 is new. All four plugins' tier tables reconcile against their agents.
+
 ### 1.53.1 (release v1.150.1) — 2026-09-25
 
 - **The `:null_store` rate_limit WARNING no longer fires on a limiter that has its own store —
