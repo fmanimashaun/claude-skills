@@ -3416,6 +3416,11 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### 1.54.0 (release v1.151.0) — 2026-09-26
 
+- **`migration-writer` sequences a live rename or retype as expand–contract — `plugins/rails-flow/agents/migration-writer.md`**
+  (#1347). It said only "treat strong_migrations' errors as law", which helps only where the gem is installed. It now
+  states the six steps and splits the final drop into `ignored_columns` then the migration, each shipped on its own. It
+  writes the migration for the current step and reports the rest. doctrine-verifier on 2026-09-26: the mechanism is CONFIRMED and the recipe corrected. Source: the strong_migrations README ("Renaming a column", "Changing the type of a column", "Removing a column"); the Rails 8.1 migrations guide says nothing about this and is not cited. `ignored_columns` belongs to the drop step only.
+
 - **Agents told to consult a skill can now load it — `plugins/rails-flow/agents/rails-developer.md`,
   `plugins/rails-flow/agents/code-reviewer.md`, `plugins/rails-flow/agents/pr-reviewer.md`,
   `plugins/rails-flow/agents/design-auditor.md`, `plugins/rails-flow/agents/claude-skills-reporter.md`** (#1345). doctrine-verifier CONFIRMED on 2026-09-26 against code.claude.com/docs/en/sub-agents: *"To prevent a subagent from invoking skills entirely, omit `Skill` from the `tools` list or add it to `disallowedTools`."* A `skills:` preload is the other route (*"The full skill content is injected"*), and plugin agents honour both.
@@ -15483,6 +15488,17 @@ boot/validation path — with a bullet each so the promotion could close them se
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
 ### 1.68.3 (release v1.151.0) — 2026-09-26
+
+- **rails-8 no longer says 8.1 alphabetizes `schema.rb` columns without the 8.1.4 revert — `skills/rails-8/references/models.md`,
+  `skills/rails-8/SKILL.md`, `skills/rails-8/references/project-setup.md`, `dist/rails-8.skill`** (#1356). doctrine-verifier
+  CONFIRMED on 2026-09-26: the v8.1.0 activerecord CHANGELOG says *"The table columns inside `schema.rb` are now sorted
+  alphabetically"*; v8.1.4 says *"Revert alphabetical sorting of table columns inside `schema.rb`. Alphabetical sorting
+  of table columns inside the schema creates improper production tables when using `db:prepare`."* There is no config
+  option. `SKILL.md`'s Version facts already had the revert, and three other passages contradicted it; all three now
+  state the 8.1.0–8.1.3 / 8.1.4 boundary. Found while working #1347.
+
+- **`rename_column` on a live table is only the last step of expand–contract — `skills/rails-8/references/models.md`,
+  `dist/rails-8.skill`** (#1347). The ops list offered `rename_column` with no warning. doctrine-verifier on 2026-09-26: the mechanism is CONFIRMED and the recipe corrected. Source: the strong_migrations README ("Renaming a column", "Changing the type of a column", "Removing a column"); the Rails 8.1 migrations guide says nothing about this and is not cited. `ignored_columns` belongs to the drop step only.
 
 - **The quality-pass worked example's `Unusable` count is refreshed to 11 — `skills/quality-pass/references/worked-example.md`,
   `dist/quality-pass.skill`** (#1341). The deploy secret scanner is the new copy; reach stays 6.
