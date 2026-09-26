@@ -31,7 +31,8 @@ then deploys.
      (generate via `kamal init` if absent, else patch, never clobber).
    - `RAILS_ENV` and non-secret toggles → deploy.yml `env.clear`.
 2. **Safety pass (BLOCKING)**: `.kamal/deploy.env`, `.kamal/secrets*`, `*.key` gitignored AND
-   dockerignored; `git diff` proves no plaintext secret in a committed file;
+   dockerignored; `scan_committed_secrets.py` exits 0 (no secret value in any file git would
+   commit, including an untracked deploy.yml; `git diff` cannot prove this, #1341);
    credentials round-trip verified.
 3. **Confirm & deploy**: show the resolved plan — host, domain, image, destination,
    and the NAMES routed to each bucket (never values) — get explicit approval, then
