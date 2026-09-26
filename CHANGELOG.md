@@ -9,6 +9,13 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### 2026-09-26 (release v1.151.0)
 
+- **A gate that every shipped frontmatter is valid YAML — `scripts/check_frontmatter.py`,
+  `scripts/mutations/check_frontmatter.py`, `scripts/maintainer_doctor.py`** (#1344). It covers 97 files: commands,
+  agents and skills, shipped and maintainer. Stdlib only, because CI has no PyYAML. It encodes YAML's own rule for a
+  plain scalar: no `": "`, which is a mapping indicator, and no `" #"`, which starts a comment and truncates the
+  value. The selftest cross-checks the rule against PyYAML where it is installed. Before the fix it named the same
+  2 files PyYAML refused; after, 0. The guard catches 5 mutations.
+
 - **A gate that every plugin hook command survives an install path containing a space —
   `scripts/check_hook_commands.py`, `scripts/mutations/check_hook_commands.py`, `scripts/maintainer_doctor.py`,
   `scripts/lint_markdown_shell.py`, `scripts/mutations/lint_markdown_shell.py`** (#1334).
@@ -3391,6 +3398,12 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 ## rails-flow (agentic flow plugin)
 
 ### 1.54.0 (release v1.151.0) — 2026-09-26
+
+- **`/rails-flow:report` and `/rails-flow:escalate` frontmatter is valid YAML again — `plugins/rails-flow/commands/report.md`,
+  `plugins/rails-flow/commands/escalate.md`** (#1344). Found by running `yaml.safe_load` over all 97 command, agent and
+  skill frontmatters while reviewing mattpocock/skills: these 2 failed with "mapping values are not allowed here". Each
+  description held an unquoted `: `. Both are now single-quoted, and a real parser confirms each value is exactly as
+  written. The doctor gate that keeps it so is in the Repository entry.
 
 - **guard-bash refuses the other ways git discards work with no undo — `plugins/rails-flow/hooks/scripts/guard-bash.sh`,
   `plugins/rails-flow/scripts/check_hook_gates.py`, `plugins/rails-flow/scripts/generated_docs.py`,

@@ -2,7 +2,7 @@
      Rebuild:  python3 scripts/build_wiki.py
      Drift:    python3 scripts/build_wiki.py --check  (runs in the gate sweep) -->
 # Agents and gates
-**29 shipped agents · 48 shipped commands · 128 gates · 4 tier tables**, plus 5 maintainer agents and 6 maintainer commands that are not installed.
+**29 shipped agents · 48 shipped commands · 130 gates · 4 tier tables**, plus 5 maintainer agents and 6 maintainer commands that are not installed.
 
 | plugin | version | agents | commands | tier rows | gates |
 |---|---|---|---|---|---|
@@ -163,6 +163,8 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | doctrine map drift | `repo` | `python3 scripts/doctrine_map.py --check` | live check |
 | doctrine map selftest | `repo` | `python3 scripts/doctrine_map.py --selftest` | selftest |
 | evals gates | `repo` | `python3 evals/selftest.py` | live check |
+| frontmatter is valid YAML | `repo` | `python3 scripts/check_frontmatter.py` | live check |
+| frontmatter selftest | `repo` | `python3 scripts/check_frontmatter.py --selftest` | selftest |
 | generated artifacts registered | `repo` | `python3 scripts/rebuild_generated.py --selftest` | selftest |
 | hook commands selftest | `repo` | `python3 scripts/check_hook_commands.py --selftest` | selftest |
 | hook commands survive a spaced path | `repo` | `python3 scripts/check_hook_commands.py` | live check |
