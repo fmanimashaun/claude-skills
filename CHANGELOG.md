@@ -9,6 +9,13 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### 2026-09-26 (release v1.151.0)
 
+- **`check_frontmatter.py` pins which commands are user-only, in both directions — `scripts/check_frontmatter.py`,
+  `scripts/mutations/check_frontmatter.py`, `docs/evidence/upstream/claude-code.json`** (#1335). `USER_ONLY` declares the
+  set, starting with `/pipeline:deploy-cloud`. A listed command without `disable-model-invocation: true` is refused, and
+  so is the flag on an unlisted command, because it would silently break any chain that reaches it. 3 registry rows
+  are added for the quoted docs sentences (commands are skills, the user-only flag, the subagent Skill tool). 2 new
+  mutations.
+
 - **`check_frontmatter.py` refuses an agent told to use a skill it cannot load — `scripts/check_frontmatter.py`,
   `scripts/mutations/check_frontmatter.py`** (#1345). Rule `agent-unloadable-skill`: the body names one of our skills (as
   "the X skill" or a `skills/X/` path), and the agent has no `Skill` in its tools, `Skill` in `disallowedTools`, and no
@@ -6297,6 +6304,15 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 ## pipeline (lifecycle orchestrator)
 
 ### 1.3.4 (release v1.151.0) — 2026-09-26
+
+- **`/pipeline:deploy-cloud` runs only when a human types it — `plugins/pipeline/commands/deploy-cloud.md`** (#1335). Claude
+  Code: *"Custom commands have been merged into skills"*, and `disable-model-invocation: true` is for *"workflows with side
+  effects ... You don't want Claude deciding to deploy because your code looks ready"* (code.claude.com/docs/en/skills,
+  read 2026-09-26; now a registry row the weekly upstream check re-reads). None of our 48 commands set it. The
+  maintainer approved flagging `release` and `deploy-cloud` on the condition that no chain invokes them. The check
+  found that `pipeline-coordinator` runs `/pipeline:release` as the chain's last gated stage (behind the
+  certification gate, the release-gate hook and the deploy guard), so only `deploy-cloud`, which nothing chains, is
+  flagged. The narrowing is recorded on the issue.
 
 - **The BLOCKING deploy safety pass checks for secrets with a real scan, not `git diff` — `plugins/pipeline/scripts/scan_committed_secrets.py`,
   `plugins/pipeline/scripts/mutations/scan_committed_secrets.py`, `plugins/pipeline/agents/kamal-configurator.md`,
