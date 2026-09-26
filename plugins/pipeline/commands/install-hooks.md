@@ -9,7 +9,7 @@ leave a marker the SessionStart hook surfaces; they NEVER invoke Claude or spend
 tokens):
 
 ```bash
-bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/install-git-hooks.sh
+bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/install-git-hooks.sh"
 ```
 
 Requires `pipeline.yml` (run `/pipeline:setup-pipeline` first). Report what was
