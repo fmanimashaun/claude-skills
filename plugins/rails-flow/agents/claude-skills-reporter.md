@@ -6,7 +6,7 @@ description: >
   on the upstream marketplace repo. Scope-guarded to the toolchain only. Drafts by default;
   files only on explicit MODE: FILE. Use via /rails-flow:report, or when the user wants to
   report a toolchain bug/feature upstream.
-tools: Read, Grep, Glob, Bash, Write
+tools: Read, Grep, Glob, Bash, Write, Skill
 model: inherit
 ---
 

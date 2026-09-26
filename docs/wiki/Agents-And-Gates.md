@@ -19,11 +19,11 @@
 
 | agent | tier · model | tools | named by | what proves its output |
 |---|---|---|---|---|
-| `brand-guardian` | judgement · inherit | Read, Grep, Glob, Edit, Bash | `/design-flow:variants` | — |
-| `design-auditor` | judgement · inherit | Read, Grep, Glob, Bash | `/design-flow:audit`, `/design-flow:variants` | — |
-| `design-critic` | judgement · inherit | Read, Grep, Glob | `/design-flow:critique` | — |
-| `design-porter` | judgement · inherit | Read, Grep, Glob, Edit, Write, Bash | `/design-flow:canvas`, `/design-flow:port` | — |
-| `ui-composer` | judgement · inherit | Read, Grep, Glob, Edit, Write, Bash | `/design-flow:component`, `/design-flow:mobile`, `/design-flow:port`, `/design-flow:variants` | — |
+| `brand-guardian` | judgement · inherit | Read, Grep, Glob, Edit, Bash, Skill | `/design-flow:variants` | — |
+| `design-auditor` | judgement · inherit | Read, Grep, Glob, Bash, Skill | `/design-flow:audit`, `/design-flow:variants` | — |
+| `design-critic` | judgement · inherit | Read, Grep, Glob, Skill | `/design-flow:critique` | — |
+| `design-porter` | judgement · inherit | Read, Grep, Glob, Edit, Write, Bash, Skill | `/design-flow:canvas`, `/design-flow:port` | — |
+| `ui-composer` | judgement · inherit | Read, Grep, Glob, Edit, Write, Bash, Skill | `/design-flow:component`, `/design-flow:mobile`, `/design-flow:port`, `/design-flow:variants` | — |
 
 ### `pipeline`
 
@@ -36,7 +36,7 @@
 
 | agent | tier · model | tools | named by | what proves its output |
 |---|---|---|---|---|
-| `a11y-auditor` | mechanical · haiku | Read, Grep, Glob, Write, Bash | `/qa-flow:certify`, `/qa-flow:crawl`, `/qa-flow:verify` | `@axe-core/playwright` returns the violation list; `validate_evidence.py` rejects an a11y row without a rule id and a screenshot |
+| `a11y-auditor` | mechanical · haiku | Read, Grep, Glob, Write, Bash, Skill | `/qa-flow:certify`, `/qa-flow:crawl`, `/qa-flow:verify` | `@axe-core/playwright` returns the violation list; `validate_evidence.py` rejects an a11y row without a rule id and a screenshot |
 | `api-contract-tester` | judgement · inherit | Read, Grep, Glob, Bash | `/qa-flow:certify`, `/qa-flow:verify` | — |
 | `case-author` | judgement · inherit | Read, Grep, Glob, Edit, Write, Bash | `/qa-flow:cases`, `/qa-flow:setup-qa` | — |
 | `e2e-tester` | judgement · inherit | Read, Grep, Glob, Write, Edit, Bash | `/qa-flow:certify`, `/qa-flow:verify`, `/qa-flow:walkthrough` | — |
@@ -53,13 +53,13 @@
 | agent | tier · model | tools | named by | what proves its output |
 |---|---|---|---|---|
 | `claim-verifier` | judgement · inherit | Read, Grep, Glob, Bash | `/rails-flow:issues` | — |
-| `claude-skills-reporter` | judgement · inherit | Read, Grep, Glob, Bash, Write | `/rails-flow:report`, `/rails-flow:setup-flow` | — |
-| `code-reviewer` | judgement · inherit | Read, Grep, Glob, Bash | `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:issues` | — |
-| `design-auditor` | mechanical · haiku | Read, Grep, Glob, Bash | `/rails-flow:feature`, `/rails-flow:issues`, `/rails-flow:review` | the mandated greps must come back empty (`form_with`, `f.label`) |
+| `claude-skills-reporter` | judgement · inherit | Read, Grep, Glob, Bash, Write, Skill | `/rails-flow:report`, `/rails-flow:setup-flow` | — |
+| `code-reviewer` | judgement · inherit | Read, Grep, Glob, Bash, Skill | `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:issues` | — |
+| `design-auditor` | mechanical · haiku | Read, Grep, Glob, Bash, Skill | `/rails-flow:feature`, `/rails-flow:issues`, `/rails-flow:review` | the mandated greps must come back empty (`form_with`, `f.label`) |
 | `doc-updater` | mechanical · haiku | Read, Grep, Glob, Edit, Write, Bash | `/rails-flow:explain`, `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:issues`, `/rails-flow:setup-flow` | `architecture_graph.py` regenerates and its digest guard fails on drift |
 | `migration-writer` | judgement · inherit | Read, Grep, Glob, Edit, Write, Bash | `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:issues`, `/rails-flow:review` | — |
-| `pr-reviewer` | judgement · inherit | Read, Grep, Glob, Bash | `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:issues`, `/rails-flow:pr-comments` | — |
-| `rails-developer` | judgement · inherit | Read, Grep, Glob, Edit, Write, Bash | `/rails-flow:feature`, `/rails-flow:fix` | — |
+| `pr-reviewer` | judgement · inherit | Read, Grep, Glob, Bash, Skill | `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:issues`, `/rails-flow:pr-comments` | — |
+| `rails-developer` | judgement · inherit | Read, Grep, Glob, Edit, Write, Bash, Skill | `/rails-flow:feature`, `/rails-flow:fix` | — |
 | `security-auditor` | judgement · inherit | Read, Grep, Glob, Bash | `/rails-flow:feature`, `/rails-flow:issues`, `/rails-flow:review` | — |
 | `skill-curator` | judgement · inherit | Read, Grep, Glob, Write, Edit, Bash | `/rails-flow:curate` | — |
 | `test-runner` | mechanical · haiku | Read, Grep, Glob, Bash | `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:issues`, `/rails-flow:pr-comments`, `/rails-flow:setup-flow` | `bundle exec rspec` exit status — 0 failures or the gate blocks |

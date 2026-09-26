@@ -9,6 +9,31 @@ GUARD = Guard(
     subject="scripts/check_frontmatter.py",
     selftest="scripts/check_frontmatter.py",   # --selftest lives in the module itself
     mutations=(
+        # #1345: an agent told to use a skill it cannot load passes again.
+        Mutation(
+            "an agent that cannot load the skill it names passes",
+            '    if named and not can_invoke and "skills" not in f:',
+            "    if False:",
+            "an agent told to consult a skill it cannot load is a finding",
+        ),
+        Mutation(
+            "path-style mentions (`skills/<name>/...`) are not recognised",
+            '                         r"|skills/(" + "|".join(map(re.escape, OUR_SKILLS)) + r")/", re.I)',
+            '                         r"|skills/(NEVER)/", re.I)',
+            "...including a path-style mention",
+        ),
+        Mutation(
+            "a Skill in disallowedTools still counts as able to load",
+            '    can_invoke = ("tools" not in f and not blocked) or "Skill" in tools',
+            '    can_invoke = "tools" not in f or "Skill" in tools',
+            "...and a Skill in disallowedTools blocks it",
+        ),
+        Mutation(
+            "a skills: preload is ignored, so a preloaded agent is a false finding",
+            '    if named and not can_invoke and "skills" not in f:',
+            "    if named and not can_invoke:",
+            "CONTROL: a skills: preload can load it",
+        ),
         # #1343: an agent that inherits every tool passes again.
         Mutation(
             "an agent with no tools declaration passes",

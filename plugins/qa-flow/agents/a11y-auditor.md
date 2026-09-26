@@ -3,7 +3,7 @@ name: a11y-auditor
 description: >
   Accessibility audit of the running app via @axe-core/playwright (WCAG 2.2 AA), plus an
   exhaustive keyboard/focus-order pass and a form-validation-state pass per route.
-tools: Read, Grep, Glob, Write, Bash
+tools: Read, Grep, Glob, Write, Bash, Skill
 model: haiku
 ---
 
