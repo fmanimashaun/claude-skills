@@ -15405,6 +15405,9 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### 1.68.3 (release v1.151.0) — 2026-09-26
 
+- **The quality-pass worked example's `Unusable` count is refreshed to 11 — `skills/quality-pass/references/worked-example.md`,
+  `dist/quality-pass.skill`** (#1341). The deploy secret scanner is the new copy; reach stays 6.
+
 - **The brand-pack commands in the design-system brand doctrine quote `${CLAUDE_PLUGIN_ROOT}` —
   `skills/design-system/references/brand.md`, `dist/design-system.skill`** (#1334). The new `unquoted-plugin-root` lint
   found them; unquoted, they split on an install path with a space.
