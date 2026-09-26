@@ -3405,6 +3405,21 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   description held an unquoted `: `. Both are now single-quoted, and a real parser confirms each value is exactly as
   written. The doctor gate that keeps it so is in the Repository entry.
 
+- **guard-bash refuses the other ways git discards work with no undo — `plugins/rails-flow/hooks/scripts/guard-bash.sh`,
+  `plugins/rails-flow/scripts/check_hook_gates.py`, `plugins/rails-flow/scripts/generated_docs.py`,
+  `plugins/rails-flow/commands/setup-flow.md`** (#1342). Found by running mattpocock/skills' `git-guardrails` payloads
+  against our guard. It blocked `git reset --hard` but allowed `git clean -fd`, `git checkout .`,
+  `git checkout -- <path>`, `git restore .`, `git branch -D` and `git stash drop`/`clear`.
+  - **The fix.** All of those are now denied, each message naming the safe alternative. Every safe twin stays
+    allowed and is a fixture: `clean -n`, `clean -fdn`, `checkout <branch>`, `checkout -b`, `restore -- <one path>`,
+    `restore --staged .`, `restore --source <base> --staged --worktree -- <paths>`, `branch -d`, `stash push`,
+    `stash list`, and a `grep` that merely mentions `git stash drop`.
+  - **Doctrine updated.** Three places told agents to run `git checkout -- <path>`: `setup-flow.md`,
+    `docs/doctrine/code-review-graph.md`, and the fix hint `generated_docs.py` prints. They now say `git restore`. The
+    hint uses `--staged --worktree`, because plain `restore --source` leaves the index alone and the follow-up
+    `git commit` would commit nothing (shown on a scratch repo).
+  - **Tests.** 19 new hook-gate cases (113 checks pass); the guard catches 10 mutations, 7 new.
+
 - **Every hook command quotes `${CLAUDE_PLUGIN_ROOT}`, so the guards still run when the plugin is installed under a path
   with a space — `plugins/rails-flow/hooks/hooks.json`, `plugins/rails-flow/agents/doc-updater.md`,
   `plugins/rails-flow/commands/graph.md`** (#1334). Found by running `claude plugin validate <plugin> --strict`
