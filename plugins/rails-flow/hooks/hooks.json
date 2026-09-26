@@ -6,12 +6,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/guard-bash.sh",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/guard-bash.sh\"",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/guard-claims.sh",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/guard-claims.sh\"",
             "timeout": 15
           }
         ]
@@ -21,7 +21,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/guard-lane.sh",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/guard-lane.sh\"",
             "timeout": 10
           }
         ]
@@ -33,12 +33,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/lint-ruby.sh",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/lint-ruby.sh\"",
             "timeout": 60
           },
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/self-consistency.sh",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/self-consistency.sh\"",
             "timeout": 20
           }
         ]
@@ -48,7 +48,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/ci-verdict-hint.sh",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/ci-verdict-hint.sh\"",
             "timeout": 10
           }
         ]
@@ -60,7 +60,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/ci-verdict-hint.sh",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/ci-verdict-hint.sh\"",
             "timeout": 10
           }
         ]
@@ -71,7 +71,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/stop-gate.sh",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/stop-gate.sh\"",
             "timeout": 150
           }
         ]
@@ -82,7 +82,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-start.sh",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-start.sh\"",
             "timeout": 10
           }
         ]

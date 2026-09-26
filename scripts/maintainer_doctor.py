@@ -201,6 +201,20 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("doctrine map drift", ("python3", "scripts/doctrine_map.py", "--check")),
     ("doctrine map coverage", ("python3", "scripts/doctrine_map.py", "--audit-coverage")),
     ("doctrine map selftest", ("python3", "scripts/doctrine_map.py", "--selftest")),
+    # #1328. Only the LOCAL half gates: every cited Claude Code docs page has a registry row that the
+    # weekly upstream check re-reads. The fetch half is network- and upstream-dependent, so it runs
+    # in .github/workflows/upstream.yml and files an issue instead of turning PRs red.
+    ("upstream citation coverage", ("python3", "scripts/check_upstream_docs.py", "--coverage")),
+    ("upstream check selftest", ("python3", "scripts/check_upstream_docs.py", "--selftest")),
+    # #1344. Every shipped frontmatter must be valid YAML: two command descriptions held an unquoted
+    # `: ` and a strict reader refused them. Stdlib, because CI has no PyYAML.
+    ("frontmatter is valid YAML", ("python3", "scripts/check_frontmatter.py")),
+    ("frontmatter selftest", ("python3", "scripts/check_frontmatter.py", "--selftest")),
+    # #1334. Every plugin hook command must survive an install path containing a space: the four
+    # fail-closed guards stop guarding when their command splits. Local and deterministic, so it
+    # gates; `claude plugin validate --strict` stays the authority and needs the CLI, which CI may lack.
+    ("hook commands survive a spaced path", ("python3", "scripts/check_hook_commands.py")),
+    ("hook commands selftest", ("python3", "scripts/check_hook_commands.py", "--selftest")),
     ("rails-flow lane assigner selftest",
      ("python3", "plugins/rails-flow/scripts/assign_lanes.py", "--selftest")),
     ("design-flow prompt library selftest",
@@ -359,6 +373,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #1204. The installer reported success and wrote a hook git never runs under core.hooksPath
     # or from a linked worktree; the selftest proves each case with a real merge, not a file check.
     ("pipeline hook install", ("python3", "plugins/pipeline/scripts/install_git_hooks_selftest.py")),
+    # #1341. The deploy safety pass is BLOCKING; its "no secret in a committed file" step is this script.
+    ("pipeline committed-secret scan", ("python3", "plugins/pipeline/scripts/scan_committed_secrets.py", "--selftest")),
     ("qa-flow evidence", ("python3", "plugins/qa-flow/scripts/validate_evidence.py", "--selftest")),
     ("qa-flow route coverage", ("python3", "plugins/qa-flow/scripts/route_coverage.py", "--selftest")),
     # #792. The reader BOTH coverage loaders depend on, which had no fixture of its own while

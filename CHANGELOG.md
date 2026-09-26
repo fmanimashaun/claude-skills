@@ -7,6 +7,64 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### 2026-09-26 (release v1.151.0)
+
+- **`check_frontmatter.py` pins which commands are user-only, in both directions — `scripts/check_frontmatter.py`,
+  `scripts/mutations/check_frontmatter.py`, `docs/evidence/upstream/claude-code.json`** (#1335). `USER_ONLY` declares the
+  set, starting with `/pipeline:deploy-cloud`. A listed command without `disable-model-invocation: true` is refused, and
+  so is the flag on an unlisted command, because it would silently break any chain that reaches it. 3 registry rows
+  are added for the quoted docs sentences (commands are skills, the user-only flag, the subagent Skill tool). 2 new
+  mutations.
+
+- **`check_frontmatter.py` refuses an agent told to use a skill it cannot load — `scripts/check_frontmatter.py`,
+  `scripts/mutations/check_frontmatter.py`** (#1345). Rule `agent-unloadable-skill`: the body names one of our skills (as
+  "the X skill" or a `skills/X/` path), and the agent has no `Skill` in its tools, `Skill` in `disallowedTools`, and no
+  `skills:` preload. Replayed on origin/dev: 11 findings; after the fix: 0. 4 new mutations (12 caught).
+
+- **`check_frontmatter.py` refuses a shipped agent that declares neither `tools:` nor `disallowedTools:` —
+  `scripts/check_frontmatter.py`, `scripts/mutations/check_frontmatter.py`** (#1343). Without either, an agent inherits
+  every tool. The rule `agent-undeclared-tools` covers the 29 shipped agents; maintainer agents under `.claude/` are
+  out of scope. Before the fix it named `functional-tester`; after, 0. 3 new mutations.
+
+- **A gate that every shipped frontmatter is valid YAML — `scripts/check_frontmatter.py`,
+  `scripts/mutations/check_frontmatter.py`, `scripts/maintainer_doctor.py`** (#1344). It covers 97 files: commands,
+  agents and skills, shipped and maintainer. Stdlib only, because CI has no PyYAML. It encodes YAML's own rule for a
+  plain scalar: no `": "`, which is a mapping indicator, and no `" #"`, which starts a comment and truncates the
+  value. The selftest cross-checks the rule against PyYAML where it is installed. Before the fix it named the same
+  2 files PyYAML refused; after, 0. The guard catches 5 mutations.
+
+- **A gate that every plugin hook command survives an install path containing a space —
+  `scripts/check_hook_commands.py`, `scripts/mutations/check_hook_commands.py`, `scripts/maintainer_doctor.py`,
+  `scripts/lint_markdown_shell.py`, `scripts/mutations/lint_markdown_shell.py`** (#1334).
+  - **The gate** refuses an unquoted `${CLAUDE_PLUGIN_ROOT}` in a hook command. It also expands each command from a
+    copy of the plugin under `Application Support/`, with `bash` swapped for `printf` so nothing runs, and requires
+    the script argument to arrive as one word naming a real file. It needs no `claude` CLI.
+  - **Replayed** against the pre-fix manifests: 26 findings (13 static, 13 expansion); after the fix: 0.
+  - **The markdown shell lint** gains `unquoted-plugin-root`; assignments are exempt, because bash does not split
+    them.
+  - **Tests.** The guards catch 6 and 6 mutations.
+
+
+- **A weekly check re-reads the Claude Code docs our doctrine quotes, and lists unreviewed CHANGELOG entries —
+  `scripts/check_upstream_docs.py`, `docs/evidence/upstream/claude-code.json`,
+  `scripts/mutations/check_upstream_docs.py`, `.claude/commands/maintainer-upstream.md`,
+  `.github/workflows/upstream.yml`, `scripts/maintainer_doctor.py`** (#1328). The maintainer asked for "a way to
+  check the latest updates from the docs and update agentic flow accordingly".
+  - **The problem.** 12 files cite `code.claude.com/docs` and nothing re-read them after the day they were fetched.
+    #1326 was one result: a resolution order that changed in v2.1.251.
+  - **The registry.** 20 rows, each a verbatim quote, its docs page and the files built on it. They cover every
+    docs page our live doctrine cites, plus the hook exit-code and stdin behaviour our 14 hook scripts rely on,
+    which nothing cited before.
+  - **The checker.** It fetches `<page>.md`, normalises markdown and asserts each quote is still there. It also
+    lists CHANGELOG entries after the committed cursor (2.1.282) that name a surface we build on.
+  - **Where it runs.** `--coverage` is local and gates: every cited docs page must have a row. The fetch mode
+    depends on the network and on upstream edits, so it runs weekly and comments on one `upstream-drift`
+    issue rather than failing PRs. `/maintainer-upstream` triages the findings through doctrine-verifier and
+    advances the cursor.
+  - **Found on its first run.** Two stale quotes in `plugins/rails-flow/reference/model-tiers.md`, fixed here
+    (see the rails-flow entry), and a changed `availableModels` behaviour, filed as #1329.
+  - **Tests.** Selftest with a control for each rule; the guard catches 8 mutations.
+
 ### 2026-09-25 (release v1.150.0)
 
 - **This repository declares its issue-label groups: `comp:*`, `type:*`, `prio:*` — `.rails-flow/issue-labels.json`**
@@ -3356,6 +3414,116 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### 1.54.0 (release v1.151.0) — 2026-09-26
+
+- **`/rails-flow:fix` gains a diagnosis phase for defects whose cause is unknown — `plugins/rails-flow/commands/fix.md`**
+  (#1346). Adapted from mattpocock/skills `engineering/diagnosing-bugs`, and approved by the maintainer on the issue.
+  Phase 0 already classified the failure, and principle 3 already required a failing spec first. What was missing
+  sat between the two:
+  - a loop that goes red on this bug before any theory;
+  - minimising until every remaining piece is load-bearing;
+  - 3–5 ranked, falsifiable hypotheses;
+  - one-variable probes with a single tagged debug prefix;
+  - "no seam" treated as a finding, not papered over with a shallow spec.
+  Done means `git diff <base>...HEAD | grep -c '\[DEBUG-'` prints 0, and the PR names the hypothesis that proved
+  right.
+
+- **`migration-writer` sequences a live rename or retype as expand–contract — `plugins/rails-flow/agents/migration-writer.md`**
+  (#1347). It said only "treat strong_migrations' errors as law", which helps only where the gem is installed. It now
+  states the six steps and splits the final drop into `ignored_columns` then the migration, each shipped on its own. It
+  writes the migration for the current step and reports the rest. doctrine-verifier on 2026-09-26: the mechanism is CONFIRMED and the recipe corrected. Source: the strong_migrations README ("Renaming a column", "Changing the type of a column", "Removing a column"); the Rails 8.1 migrations guide says nothing about this and is not cited. `ignored_columns` belongs to the drop step only.
+
+- **Agents told to consult a skill can now load it — `plugins/rails-flow/agents/rails-developer.md`,
+  `plugins/rails-flow/agents/code-reviewer.md`, `plugins/rails-flow/agents/pr-reviewer.md`,
+  `plugins/rails-flow/agents/design-auditor.md`, `plugins/rails-flow/agents/claude-skills-reporter.md`** (#1345). doctrine-verifier CONFIRMED on 2026-09-26 against code.claude.com/docs/en/sub-agents: *"To prevent a subagent from invoking skills entirely, omit `Skill` from the `tools` list or add it to `disallowedTools`."* A `skills:` preload is the other route (*"The full skill content is injected"*), and plugin agents honour both.
+  - **The defect.** These agents said "consult the rails-8 skill", "apply the `code-review` skill", and so on, with a
+    `tools:` allowlist that omitted `Skill` and no `skills:` preload. The instruction could not be followed.
+  - **The fix.** `Skill` is added to their tools. The alternative, a `skills:` preload, injects the whole skill on
+    every start; `Skill` loads it only when the agent reaches for it, and needs no guess at the plugin skill's name.
+
+- **`code-reviewer` reviews staged and new files — `plugins/rails-flow/agents/code-reviewer.md`** (#1341). It started
+  from `git diff`, described as "staged + unstaged", which shows only unstaged edits. It now uses `git diff HEAD` plus
+  `git ls-files --others --exclude-standard` for new files, and `<base>...HEAD` on a branch.
+
+- **`/rails-flow:report` and `/rails-flow:escalate` frontmatter is valid YAML again — `plugins/rails-flow/commands/report.md`,
+  `plugins/rails-flow/commands/escalate.md`** (#1344). Found by running `yaml.safe_load` over all 97 command, agent and
+  skill frontmatters while reviewing mattpocock/skills: these 2 failed with "mapping values are not allowed here". Each
+  description held an unquoted `: `. Both are now single-quoted, and a real parser confirms each value is exactly as
+  written. The doctor gate that keeps it so is in the Repository entry.
+
+- **guard-bash refuses the other ways git discards work with no undo — `plugins/rails-flow/hooks/scripts/guard-bash.sh`,
+  `plugins/rails-flow/scripts/check_hook_gates.py`, `plugins/rails-flow/scripts/generated_docs.py`,
+  `plugins/rails-flow/commands/setup-flow.md`** (#1342). Found by running mattpocock/skills' `git-guardrails` payloads
+  against our guard. It blocked `git reset --hard` but allowed `git clean -fd`, `git checkout .`,
+  `git checkout -- <path>`, `git restore .`, `git branch -D` and `git stash drop`/`clear`.
+  - **The fix.** All of those are now denied, each message naming the safe alternative. Every safe twin stays
+    allowed and is a fixture: `clean -n`, `clean -fdn`, `checkout <branch>`, `checkout -b`, `restore -- <one path>`,
+    `restore --staged .`, `restore --source <base> --staged --worktree -- <paths>`, `branch -d`, `stash push`,
+    `stash list`, and a `grep` that merely mentions `git stash drop`.
+  - **Doctrine updated.** Three places told agents to run `git checkout -- <path>`: `setup-flow.md`,
+    `docs/doctrine/code-review-graph.md`, and the fix hint `generated_docs.py` prints. They now say `git restore`. The
+    hint uses `--staged --worktree`, because plain `restore --source` leaves the index alone and the follow-up
+    `git commit` would commit nothing (shown on a scratch repo).
+  - **Tests.** 19 new hook-gate cases (113 checks pass); the guard catches 10 mutations, 7 new.
+
+- **Every hook command quotes `${CLAUDE_PLUGIN_ROOT}`, so the guards still run when the plugin is installed under a path
+  with a space — `plugins/rails-flow/hooks/hooks.json`, `plugins/rails-flow/agents/doc-updater.md`,
+  `plugins/rails-flow/commands/graph.md`** (#1334). Found by running `claude plugin validate <plugin> --strict`
+  (Claude Code 2.1.282) while reviewing mattpocock/skills, whose CLAUDE.md requires it: all four plugins failed. We
+  had only ever validated `marketplace.json`. The validator warns: *"Shell command uses ${CLAUDE_PLUGIN_ROOT} without quotes … If the expanded path contains a space the command can split into several words and fail."*
+  - **The risk.** 13 hook commands across the four plugins ran `bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/<x>.sh`. On a
+    spaced path (a Windows or macOS user folder with a space in its name) every hook fails to start, including
+    `guard-bash`, `guard-claims` and `guard-lane`. A PreToolUse command that exits non-zero without exit code 2 does
+    not block, so the guards would stop guarding.
+  - **The fix.** Every command now quotes the placeholder, and all four plugins pass `--strict`. 14 uses in shipped
+    shell blocks across 4 files are quoted too.
+  - **What stops it coming back.** See the Repository entry: a new doctor gate expands each command from a spaced
+    path, and a new `unquoted-plugin-root` rule in the markdown shell lint.
+
+- **The issue-label guard no longer refuses a labelled `gh issue create` whose call also writes a heredoc body —
+  `plugins/rails-flow/hooks/scripts/lib/issue_labels.py`, `plugins/rails-flow/scripts/check_hook_gates.py`** (#1336).
+  Hit while filing #1334: a quoted-heredoc body with an apostrophe made shlex see an unterminated quote, so the guard
+  refused a correctly labelled create as unparseable. That is the command shape our own doctrine recommends
+  (quoted heredoc, then `--body-file`). Heredoc bodies, including `<<-` bodies, are now dropped before tokenising;
+  a genuinely unparseable create still refuses. Tests: 4 new selftest fixtures (the body fixture has one
+  apostrophe; the first draft had two, which pair up, so it proved nothing until the mutation run said so),
+  2 cases through `guard-bash.sh`, and 2 new mutations.
+
+
+- **A pin above the session is substituted, not dropped, when the org blocks it —
+  `plugins/rails-flow/reference/model-tiers.md`, `plugins/rails-flow/scripts/check_handoff.py`** (#1329). doctrine-verifier CONFIRMED on 2026-09-25 against `code.claude.com/docs/en/sub-agents`: *"When the blocked value is a family alias such as `opus`, Claude Code runs the subagent on the newest version of that family the allowlist permits … Before v2.1.222, Claude Code ran the subagent on the inherited model for a blocked family alias as well."*
+  Fact 4 said a blocked pin is skipped and the agent runs on the inherited model, which was true before
+  v2.1.222. The policy against `opus`/`fable` pins in shipped agents is unchanged: the pin now spends the user's
+  money either way. The finding text in `check_handoff.py` says so. Found by the #1328 upstream check, and a
+  registry row now re-reads it.
+
+- **Two `model-tiers.md` quotes updated to the docs' current wording — `plugins/rails-flow/reference/model-tiers.md`**
+  (#1328). Found by the new upstream check. The skills page now reads *"isn't saved to settings. The session
+  model resumes when you send your next prompt"*. The `env` key's description moved from `settings` to
+  `settings-reference` and now reads *"Set environment variables for every session and its subprocesses"*. The
+  meaning is unchanged in both, so no doctrine changes; verified by fetching both `.md` pages on 2026-09-25.
+
+- **Model-tier doctrine re-checked against current Claude Code; effort is inherited and a pin is refused —
+  `plugins/rails-flow/reference/model-tiers.md`, `plugins/qa-flow/reference/model-tiers.md`,
+  `plugins/rails-flow/scripts/check_handoff.py`, `plugins/rails-flow/scripts/check_handoff_selftest.py`,
+  `plugins/rails-flow/scripts/mutations/check_handoff.py`** (#1326).
+  - **External claims (doctrine-verifier, 2026-09-25, against code.claude.com/docs `sub-agents` and `model-config`).**
+    - CONFIRMED: the subagent model order is now per-invocation → frontmatter (`inherit` included) →
+      `CLAUDE_CODE_SUBAGENT_MODEL` → main model. The env var came first only before v2.1.251. Alone, it no longer
+      reaches an agent that has a `model:` line, and all 29 shipped agents have one; it takes
+      `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` (v2.1.257+). Our "session-wide" recipe used to set the env var alone and
+      now sets both.
+    - REFUTED in part: `opus` is Opus 5.5 everywhere except Microsoft Foundry (Opus 4.6), not Opus 5.
+    - CONFIRMED: `effort:` frontmatter overrides the session level but not `CLAUDE_CODE_EFFORT_LEVEL`, and "Models
+      not listed here do not support effort" — Haiku 4.5 is not listed.
+  - **Our design (the maintainer delegated this decision on 2026-09-25, recorded on #1326).**
+    - Shipped agents inherit effort: a pin below the session is the same cap as a model pin, and Haiku takes no
+      level. `check_handoff.py --tiers` now refuses an agent that declares `effort:`.
+    - The advisor is documented rather than suppressed: subagents inherit it, and whether to use it is the user's
+      session choice.
+  - **Tests.** A new selftest fixture refuses `effort: medium` (89 checks pass). The guard catches 12 mutations;
+    1 is new. All four plugins' tier tables reconcile against their agents.
+
 ### 1.53.1 (release v1.150.1) — 2026-09-25
 
 - **The `:null_store` rate_limit WARNING no longer fires on a limiter that has its own store —
@@ -6151,6 +6319,38 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 
 ## pipeline (lifecycle orchestrator)
+
+### 1.3.4 (release v1.151.0) — 2026-09-26
+
+- **`/pipeline:deploy-cloud` runs only when a human types it — `plugins/pipeline/commands/deploy-cloud.md`** (#1335). Claude
+  Code: *"Custom commands have been merged into skills"*, and `disable-model-invocation: true` is for *"workflows with side
+  effects ... You don't want Claude deciding to deploy because your code looks ready"* (code.claude.com/docs/en/skills,
+  read 2026-09-26; now a registry row the weekly upstream check re-reads). None of our 48 commands set it. The
+  maintainer approved flagging `release` and `deploy-cloud` on the condition that no chain invokes them. The check
+  found that `pipeline-coordinator` runs `/pipeline:release` as the chain's last gated stage (behind the
+  certification gate, the release-gate hook and the deploy guard), so only `deploy-cloud`, which nothing chains, is
+  flagged. The narrowing is recorded on the issue.
+
+- **The BLOCKING deploy safety pass checks for secrets with a real scan, not `git diff` — `plugins/pipeline/scripts/scan_committed_secrets.py`,
+  `plugins/pipeline/scripts/mutations/scan_committed_secrets.py`, `plugins/pipeline/agents/kamal-configurator.md`,
+  `plugins/pipeline/commands/deploy-cloud.md`** (#1341). Found in the mattpocock/skills review.
+  - **The defect.** The step said "`git diff` proves no plaintext secret entered a committed file". Plain `git diff`
+    shows only unstaged edits to tracked files, so a freshly generated, untracked `config/deploy.yml` (the file most
+    likely to carry one) was invisible, and the step passed vacuously.
+  - **The fix.** The step now runs `scan_committed_secrets.py`. It reads the secret-routed keys from
+    `.kamal/deploy.env` using the template's own `ROUTED TO:` tags (an untagged key counts as a secret). It searches
+    every file `git ls-files --cached --others --exclude-standard` lists and names the key and file, never the value.
+    Exit 2 means it could not check, which is not a pass.
+  - **Tests.** Selftest: an untracked file with a secret is found, a staged one too, a deploy.yml holding only names
+    and public facts is clean (control), and an ignored secrets file is not scanned (control). The guard catches 7
+    mutations.
+
+- **Hook commands quote `${CLAUDE_PLUGIN_ROOT}`, so the plugin works from an install path with a space — `plugins/pipeline/hooks/hooks.json`, `plugins/pipeline/commands/install-hooks.md`** (#1334).
+  `claude plugin validate --strict` failed this plugin on it. The validator warns: *"Shell command uses ${CLAUDE_PLUGIN_ROOT} without quotes … If the expanded path contains a space the command can split into several words and fail."* Same fix as rails-flow; see that entry.
+
+
+- **A blocked `opus` pin is substituted with the newest permitted Opus, not dropped — `plugins/pipeline/reference/model-tiers.md`** (#1329).
+  Same correction as rails-flow's `model-tiers.md`; doctrine-verifier CONFIRMED on 2026-09-25 against `code.claude.com/docs/en/sub-agents`: *"When the blocked value is a family alias such as `opus`, Claude Code runs the subagent on the newest version of that family the allowlist permits … Before v2.1.222, Claude Code ran the subagent on the inherited model for a blocked family alias as well."*
 
 ### 1.3.3 (release v1.144.1) — 2026-09-23
 
@@ -10294,6 +10494,41 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
+### 1.33.2 (release v1.151.0) — 2026-09-26
+
+- **Committing the certification stamp no longer invalidates it — `plugins/qa-flow/hooks/scripts/release-gate.sh`,
+  `plugins/qa-flow/commands/certify.md`, `plugins/qa-flow/agents/qa-reporter.md`, `plugins/qa-flow/commands/setup-qa.md`,
+  `plugins/rails-flow/scripts/check_hook_gates.py`** (#1337). Reported by the Retask certification session; the design
+  was approved by the maintainer on the issue.
+  - **The defect.** `setup-qa.md` says to commit `qa/CERTIFICATION`, and the gate required `origin/dev` to BE the
+    tested sha. Committing the stamp by PR moved dev, so the gate denied the promotion the stamp was written to allow.
+    Nothing said when to commit it.
+  - **The fix.** The gate also accepts a stamp whose sha is an ancestor of dev when the only path changed since is
+    `qa/CERTIFICATION`, or nothing. Any other change is denied, naming the paths. A failed rev-parse or diff denies,
+    never passes. The three docs now say to commit the stamp in a PR of its own, after certifying.
+  - **A second defect, found by the new fixtures.** The gate read dev with `git rev-parse origin/dev || git rev-parse
+    dev`. Plain `rev-parse` echoes the literal `origin/dev` to stdout before failing, so without a fetched origin/dev
+    the sha arrived as a second line and no stamp could ever match. It now uses `--verify -q`.
+  - **Tests.** 4 end-to-end cases on a scratch repo (stamp at the tip, stamp committed on top, a code change after
+    it, a stamp from another branch). 117 hook-gate checks pass. The guard catches 6 mutations, 4 new.
+
+- **`a11y-auditor` can load the design-system doctrine it cites — `plugins/qa-flow/agents/a11y-auditor.md`** (#1345).
+  Same defect and fix as design-flow's agents. doctrine-verifier CONFIRMED on 2026-09-26 against code.claude.com/docs/en/sub-agents: *"To prevent a subagent from invoking skills entirely, omit `Skill` from the `tools` list or add it to `disallowedTools`."* A `skills:` preload is the other route (*"The full skill content is injected"*), and plugin agents honour both.
+
+- **`functional-tester` can no longer edit code or spawn agents — `plugins/qa-flow/agents/functional-tester.md`** (#1343).
+  It had no `tools:` line, so it inherited every tool, although its body says it never modifies application code. It
+  now declares `disallowedTools: Edit, NotebookEdit, Agent`. That is a denylist, not an allowlist, because it drives
+  the browser through Playwright MCP tools whose names depend on what each user called the server. An allowlist
+  could silently cut it off from the browser. It keeps `Write` for its reports. Found in the mattpocock/skills
+  review.
+
+- **Hook commands quote `${CLAUDE_PLUGIN_ROOT}`, so the plugin works from an install path with a space — `plugins/qa-flow/hooks/hooks.json`** (#1334).
+  `claude plugin validate --strict` failed this plugin on it. The validator warns: *"Shell command uses ${CLAUDE_PLUGIN_ROOT} without quotes … If the expanded path contains a space the command can split into several words and fail."* Same fix as rails-flow; see that entry.
+
+
+- **A blocked `opus` pin is substituted with the newest permitted Opus, not dropped — `plugins/qa-flow/reference/model-tiers.md`** (#1329).
+  Same correction as rails-flow's `model-tiers.md`; doctrine-verifier CONFIRMED on 2026-09-25 against `code.claude.com/docs/en/sub-agents`: *"When the blocked value is a family alias such as `opus`, Claude Code runs the subagent on the newest version of that family the allowlist permits … Before v2.1.222, Claude Code ran the subagent on the inherited model for a blocked family alias as well."*
+
 ### 1.33.1 (release v1.149.0) — 2026-09-24
 
 - **The launch check no longer judges the declared health endpoint as a page — `plugins/qa-flow/scripts/launch_readiness.py`,
@@ -12370,6 +12605,21 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
+
+### 1.44.2 (release v1.151.0) — 2026-09-26
+
+- **design-flow agents can load the design-system doctrine they cite — `plugins/design-flow/agents/ui-composer.md`,
+  `plugins/design-flow/agents/brand-guardian.md`, `plugins/design-flow/agents/design-auditor.md`,
+  `plugins/design-flow/agents/design-critic.md`, `plugins/design-flow/agents/design-porter.md`** (#1345). Each pointed at
+  `skills/design-system/references/*.md`, a path that does not exist in a user's project (the skill lives in the plugin
+  cache), without the `Skill` tool that reaches it. `Skill` is added. doctrine-verifier CONFIRMED on 2026-09-26 against code.claude.com/docs/en/sub-agents: *"To prevent a subagent from invoking skills entirely, omit `Skill` from the `tools` list or add it to `disallowedTools`."* A `skills:` preload is the other route (*"The full skill content is injected"*), and plugin agents honour both.
+
+- **Hook commands quote `${CLAUDE_PLUGIN_ROOT}`, so the plugin works from an install path with a space — `plugins/design-flow/hooks/hooks.json`** (#1334).
+  `claude plugin validate --strict` failed this plugin on it. The validator warns: *"Shell command uses ${CLAUDE_PLUGIN_ROOT} without quotes … If the expanded path contains a space the command can split into several words and fail."* Same fix as rails-flow; see that entry.
+
+
+- **A blocked `opus` pin is substituted with the newest permitted Opus, not dropped — `plugins/design-flow/reference/model-tiers.md`** (#1329).
+  Same correction as rails-flow's `model-tiers.md`; doctrine-verifier CONFIRMED on 2026-09-25 against `code.claude.com/docs/en/sub-agents`: *"When the blocked value is a family alias such as `opus`, Claude Code runs the subagent on the newest version of that family the allowlist permits … Before v2.1.222, Claude Code ran the subagent on the inherited model for a blocked family alias as well."*
 
 ### 1.44.1 (release v1.149.1) — 2026-09-25
 
@@ -15248,6 +15498,31 @@ boot/validation path — with a bullet each so the promotion could close them se
   (token/logo/icon/brand-pack enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
+
+### 1.68.3 (release v1.151.0) — 2026-09-26
+
+- **rails-8 no longer says 8.1 alphabetizes `schema.rb` columns without the 8.1.4 revert — `skills/rails-8/references/models.md`,
+  `skills/rails-8/SKILL.md`, `skills/rails-8/references/project-setup.md`, `dist/rails-8.skill`** (#1356). doctrine-verifier
+  CONFIRMED on 2026-09-26: the v8.1.0 activerecord CHANGELOG says *"The table columns inside `schema.rb` are now sorted
+  alphabetically"*; v8.1.4 says *"Revert alphabetical sorting of table columns inside `schema.rb`. Alphabetical sorting
+  of table columns inside the schema creates improper production tables when using `db:prepare`."* There is no config
+  option. `SKILL.md`'s Version facts already had the revert, and three other passages contradicted it; all three now
+  state the 8.1.0–8.1.3 / 8.1.4 boundary. Found while working #1347.
+
+- **`rename_column` on a live table is only the last step of expand–contract — `skills/rails-8/references/models.md`,
+  `dist/rails-8.skill`** (#1347). The ops list offered `rename_column` with no warning. doctrine-verifier on 2026-09-26: the mechanism is CONFIRMED and the recipe corrected. Source: the strong_migrations README ("Renaming a column", "Changing the type of a column", "Removing a column"); the Rails 8.1 migrations guide says nothing about this and is not cited. `ignored_columns` belongs to the drop step only.
+
+- **The quality-pass worked example's `Unusable` count is refreshed to 11 — `skills/quality-pass/references/worked-example.md`,
+  `dist/quality-pass.skill`** (#1341). The deploy secret scanner is the new copy; reach stays 6.
+
+- **The brand-pack commands in the design-system brand doctrine quote `${CLAUDE_PLUGIN_ROOT}` —
+  `skills/design-system/references/brand.md`, `dist/design-system.skill`** (#1334). The new `unquoted-plugin-root` lint
+  found them; unquoted, they split on an install path with a space.
+
+
+- **The quality-pass worked example's `Unusable` and `check()` harness counts are refreshed to 10 and 39 —
+  `skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`** (#1328). The upstream-docs checker
+  is the new copy of each; both reaches are unchanged (6 and 21).
 
 ### 1.68.2 (release v1.150.0) — 2026-09-25
 

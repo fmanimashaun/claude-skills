@@ -44,15 +44,18 @@ WHAT IT DOES NOT
     A project wanting a third forks the table and points `--tiers` at its own copy.
 
 EXTERNAL CLAIMS THIS ENCODES, AND THEIR SOURCES (verified 2026-07-31)
-    * The subagent `model` field takes "`sonnet`, `opus`, `haiku`, `fable`, a full model ID (for
-      example, `claude-opus-5`), or `inherit`. Defaults to `inherit`", and frontmatter beats the
-      session model: resolution is `CLAUDE_CODE_SUBAGENT_MODEL`, then the per-invocation parameter,
-      then "the subagent definition's `model` frontmatter", then "the main conversation's model".
+    * The subagent `model` field takes an alias (`sonnet`, `opus`, `haiku`, `fable`), "a full model
+      ID such as `claude-opus-5-5`", or `inherit`, and frontmatter beats the session model:
+      resolution is "the per-invocation `model` parameter", then "the subagent definition's `model`
+      frontmatter, where `inherit` selects the main conversation's model", then
+      `CLAUDE_CODE_SUBAGENT_MODEL`, then "the main conversation's model" (re-read 2026-09-25, #1326;
+      before v2.1.251 the env var came first).
       So a pin is a CAP -- which is why judgement agents must say `inherit`.
       https://code.claude.com/docs/en/sub-agents
-    * Pinning UP mostly buys nothing: Claude Code "skips a value that resolves to an excluded model
-      and runs the subagent on the inherited model instead" when it is outside the organization's
-      `availableModels` allowlist.  (same page)
+    * Pinning UP spends the user's money: for a value outside the organization's `availableModels`,
+      "When the blocked value is a family alias such as `opus`, Claude Code runs the subagent on the
+      newest version of that family the allowlist permits"; other blocked values fall back to the
+      inherited model. Before v2.1.222 an alias fell back too (re-read 2026-09-25, #1329).  (same page)
     * `model` IS honoured for plugin agents -- only "`hooks`, `mcpServers`, or `permissionMode`" are
       ignored there.  (same page)
     * An alias is a per-provider lookup that moves: `sonnet` is Sonnet 5 on the Anthropic API but
@@ -493,9 +496,9 @@ def _executor_tier(section: Section, findings: list[str]) -> str | None:
     for bad in EXPENSIVE_ALIASES & models:
         findings.append(
             f"executor (line {section.start}): `{bad}` selects a more expensive model than the "
-            "session already chose. Claude Code skips a value outside the org's availableModels "
-            "and runs on the inherited model anyway, so the pin either spends someone else's "
-            "money on our authority or does nothing. Use `inherit`."
+            "session already chose. Where the org's availableModels blocks it, Claude Code runs the "
+            "newest version of that family the allowlist permits, so the pin spends someone else's "
+            "money on our authority either way. Use `inherit`."
         )
     return tier
 
@@ -715,6 +718,18 @@ def agent_models(directory: Path) -> dict[str, tuple[Path, str | None]]:
     return out
 
 
+def _declared_effort(path: Path) -> str | None:
+    """The agent's `effort:` frontmatter value, or None when it declares none (#1326)."""
+    lines = path.read_text(encoding="utf-8").splitlines()
+    for line in lines[1:]:
+        if line.strip() == "---":
+            break
+        match = FRONTMATTER_FIELD_RE.match(line)
+        if match and match.group("key") == "effort":
+            return match.group("value").strip("\"'")
+    return None
+
+
 def check_tiers(rows: list[TierRow], agents: dict[str, tuple[Path, str | None]] | None) -> list[str]:
     findings: list[str] = []
     seen: dict[str, int] = {}
@@ -738,9 +753,9 @@ def check_tiers(rows: list[TierRow], agents: dict[str, tuple[Path, str | None]] 
         if row.model in EXPENSIVE_ALIASES:
             findings.append(
                 f"tier table line {row.line}: `{row.agent}` pins `{row.model}`, which selects a "
-                "more expensive model than the user's session chose. Claude Code runs the agent on "
-                "the inherited model anyway when the alias is outside their availableModels, so it "
-                "either spends their money on our authority or does nothing."
+                "more expensive model than the user's session chose. When their availableModels blocks "
+                "the alias, Claude Code substitutes the newest version of that family they permit, so "
+                "it spends their money on our authority either way."
             )
         elif row.model.startswith("claude-"):
             findings.append(
@@ -765,6 +780,14 @@ def check_tiers(rows: list[TierRow], agents: dict[str, tuple[Path, str | None]] 
         return findings
 
     for name, (path, model) in agents.items():
+        effort = _declared_effort(path)
+        if effort is not None:
+            findings.append(
+                f"{path}: agent `{name}` pins `effort: {effort}` -- a shipped agent inherits the "
+                "session's effort (model-tiers.md, #1326): a pin below the session caps a user who "
+                "chose more, and Haiku 4.5 supports no effort level at all. A project that wants one "
+                "overrides the agent in its own .claude/agents/."
+            )
         row = next((r for r in rows if r.agent == name), None)
         if row is None:
             findings.append(

@@ -8,7 +8,7 @@ description: >
   porting is where raw hex, bespoke field CSS, `form_with` field forms and CDN fonts enter a
   codebase — one live audit found 20 alignable divergences concentrated in the two ad-hoc-ported
   surfaces.
-tools: Read, Grep, Glob, Edit, Write, Bash
+tools: Read, Grep, Glob, Edit, Write, Bash, Skill
 model: inherit
 ---
 

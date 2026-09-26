@@ -214,7 +214,14 @@ def self_consistency_fixtures() -> None:
 
 # ---- guard-bash.sh (#826, #906) -----------------------------------------------------------------
 NEGATIVES_906 = ['grep -ciE "git add -A" GUARDRAILS.md', 'echo "never git add -A"', 'git commit -m "docs: state the no \'git add -A\' rule"', '# git add -A', 'gh issue list --search "git add -A" --state all', 'for k in "force-push" "git add -A" "no-verify"; do printf "  %-24s %s\\n" "$k" "$(grep -ciE "$k" GUARDRAILS.md)"; done', 'echo "--no-verify"', 'grep db:reset lib/tasks/x.rake', 'echo "git reset --hard is bad"', 'git commit -m "wip; git add -A comes later"']
-POSITIVES_906 = ['FOO=1 git add -A', 'sudo git add .', 'git status && git add -A', 'git -C repo add -A', 'git commit --no-verify -m x', 'bin/rails db:reset', 'git push --force origin main', 'git reset --hard HEAD~1']
+POSITIVES_906 = ['FOO=1 git add -A', 'sudo git add .', 'git status && git add -A', 'git -C repo add -A', 'git commit --no-verify -m x', 'bin/rails db:reset', 'git push --force origin main', 'git reset --hard HEAD~1',
+                 # #1342: the other ways git discards work with no undo
+                 'git clean -fd', 'git checkout .', 'git checkout -- app/x.rb', 'git checkout main -- app/x.rb',
+                 'git restore .', 'git branch -D feature/x', 'git stash drop', 'git stash clear']
+# #1342 safe twins: each must stay allowed, or the new rules block the recovery they point to.
+NEGATIVES_1342 = ['git clean -n', 'git clean -fdn', 'git checkout feature/x', 'git checkout -b new',
+                  'git restore -- app/x.rb', 'git restore --staged .', 'git restore --source origin/dev --staged --worktree -- docs/a.md',
+                  'git branch -d feature/x', 'git stash push -m wip', 'git stash list', "grep 'git stash drop' notes.md"]
 
 
 def guard_bash_fixtures() -> None:
@@ -237,6 +244,8 @@ def guard_bash_fixtures() -> None:
         check(f"guard-bash (#906): `{cmd[:50]}` only mentions the rule and passes", run(cmd) == 0, "exit 2")
     for cmd in POSITIVES_906:
         check(f"guard-bash (#906): `{cmd}` is blocked", run(cmd) == 2, "exit 0")
+    for cmd in NEGATIVES_1342:
+        check(f"guard-bash (#1342): safe twin `{cmd[:60]}` stays allowed", run(cmd) == 0, "exit 2")
     # FAIL CLOSED without the lib: a staged copy of the hook with lib/ removed must still block the raw text.
     with tempfile.TemporaryDirectory() as td:
         stage = Path(td) / "hooks"; shutil.copytree(HOOKS, stage); shutil.rmtree(stage / "lib")
@@ -271,6 +280,13 @@ def guard_bash_fixtures() -> None:
     check("guard-bash (#1311): an undeclared project still needs one label",
           labelled("gh issue create -t X", declare=False)[0] == 2
           and labelled("gh issue create -t X --label x", declare=False)[0] == 0)
+    # #1336: the doctrine's own shape -- a quoted heredoc body, then a labelled create, one call.
+    heredoc = "cat > b.md <<'EOF'\nthe validator's `warning` is quoted\nEOF\n"  # one apostrophe: unpairable
+    rc, err = labelled(heredoc + "gh issue create -t X --label bug --label severity:s2 --body-file b.md")
+    check("guard-bash (#1336): a heredoc body before a labelled create is allowed", rc == 0, err)
+    rc, err = labelled(heredoc + "gh issue create -t X --body-file b.md")
+    check("guard-bash (#1336): ...and an unlabelled create after it is still blocked",
+          rc == 2 and "no --label" in err, err)
     rc, err = labelled("gh issue create -t X --label feature", drop_helper=True)
     check("guard-bash (#1311): FAIL CLOSED: with the helper missing, a labelled create is refused, not let through",
           rc == 2 and "could not run" in err, err)
@@ -417,6 +433,46 @@ def release_gate_fixtures() -> None:
           run("git push origin main", marketplace=True) == 0, "exit 2")
     check("release-gate: an ordinary repo with no certification is STILL blocked",
           run("git push origin main") == 2, "exit 0")
+
+    # #1337. The stamp is bound to the tested dev sha; committing it to dev by PR moves dev. The gate
+    # accepts an ANCESTOR of dev only when the delta since is the stamp itself.
+    g = ["git", "-c", "user.email=t@t", "-c", "user.name=t"]
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td)
+        _git_repo(repo)
+        sh = lambda *a: subprocess.run([*g, *a], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+        (repo / "app.rb").write_text("v1\n", encoding="utf-8")
+        sh("add", "app.rb"); sh("commit", "-q", "-m", "app")
+        tested = sh("rev-parse", "HEAD")
+        (repo / "qa").mkdir()
+        stamp = {"sha": tested, "date": "2026-09-26", "verdict": "PASS", "report": "qa/reports/r.md"}
+        (repo / "qa" / "CERTIFICATION").write_text(json.dumps(stamp), encoding="utf-8")
+        env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env["CLAUDE_PLUGIN_ROOT"] = str(QA_HOOK.parents[2])
+
+        def gate() -> tuple[int, str]:
+            sh("branch", "-f", "dev", "HEAD")
+            done = subprocess.run(["bash", str(QA_HOOK)], cwd=repo, env=env, capture_output=True, text=True, timeout=60,
+                                  input=json.dumps({"tool_input": {"command": "git push origin main"}}))
+            return done.returncode, done.stderr
+
+        rc, err = gate()
+        check("release-gate (#1337): CONTROL: an uncommitted stamp for dev's tip permits", rc == 0, err)
+        sh("add", "qa/CERTIFICATION"); sh("commit", "-q", "-m", "stamp")
+        rc, err = gate()
+        check("release-gate (#1337): the stamp committed on top of the tested sha still permits", rc == 0, err)
+        (repo / "app.rb").write_text("v2\n", encoding="utf-8")
+        sh("commit", "-q", "-am", "untested change")
+        rc, err = gate()
+        check("release-gate (#1337): a code change after the tested sha is denied, naming the path",
+              rc == 2 and "app.rb" in err, err)
+        sh("checkout", "-q", "-b", "side", tested + "~1")
+        (repo / "other.rb").write_text("x\n", encoding="utf-8")
+        sh("add", "other.rb"); sh("commit", "-q", "-m", "side")
+        stamp["sha"] = sh("rev-parse", "HEAD"); sh("checkout", "-q", "-")
+        (repo / "qa" / "CERTIFICATION").write_text(json.dumps(stamp), encoding="utf-8")
+        rc, err = gate()
+        check("release-gate (#1337): a stamp for a sha that is not an ancestor of dev is denied",
+              rc == 2 and "dev moved" in err, err)
 
 
 # ---- ci-verdict-hint.sh (#1173) -----------------------------------------------------------------

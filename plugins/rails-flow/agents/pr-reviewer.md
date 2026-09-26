@@ -4,7 +4,7 @@ description: >
   Structured pull-request review before merge — the default merge gate. Understands the
   change, checks invariants, reviews by file type, and returns a CLEAN/BLOCKED verdict.
   A self-written review comment is the OUTPUT of a review, not the review.
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob, Bash, Skill
 model: inherit
 ---
 

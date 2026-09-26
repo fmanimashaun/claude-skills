@@ -1,5 +1,5 @@
 ---
-description: Ask the human a question on a GitHub issue, park the thread, and pick the answer up on a later tick — the async human-in-the-loop. Pillar 3 of the autonomous flow driver. Nothing blocks: the human answers on their own schedule, the flow notices whenever it next cycles, and the state survives a restart.
+description: 'Ask the human a question on a GitHub issue, park the thread, and pick the answer up on a later tick — the async human-in-the-loop. Pillar 3 of the autonomous flow driver. Nothing blocks: the human answers on their own schedule, the flow notices whenever it next cycles, and the state survives a restart.'
 ---
 
 # /rails-flow:escalate

@@ -49,6 +49,28 @@ if hit '^git[[:space:]]+reset[[:space:]]+--hard\b'; then
   deny "git reset --hard requires explicit user approval (uncommitted work loss)."
 fi
 
+# #1342. The other ways git throws away work with no undo. Each keeps a safe twin allowed:
+# `clean -n` (dry run), `branch -d` (refuses an unmerged branch), `checkout <branch>`,
+# `restore --staged` (unstage only) and `restore -- <explicit path>` (one named file, on purpose).
+if hit '^git[[:space:]]+clean\b.*([[:space:]]-[a-zA-Z]*f|[[:space:]]--force\b)' \
+   && ! hit '^git[[:space:]]+clean\b.*([[:space:]]-[a-zA-Z]*n|[[:space:]]--dry-run\b)'; then
+  deny "git clean -f deletes untracked files with no undo. Run 'git clean -n' first and show the user what it would remove; delete named paths with approval."
+fi
+if hit '^git[[:space:]]+checkout\b.*[[:space:]]--([[:space:]]|$)' \
+   || hit '^git[[:space:]]+checkout([[:space:]]+-[a-zA-Z-]+)*[[:space:]]+(\./?|:/)($|[[:space:]])'; then
+  deny "git checkout -- <path> / git checkout . overwrites uncommitted edits with no undo. To keep them: git stash push -m <why> -- <path>. To discard ONE file you own: git restore -- <that path>."
+fi
+if hit '^git[[:space:]]+restore\b.*[[:space:]](\./?|:/|\*)($|[[:space:]])' \
+   && ! hit '^git[[:space:]]+restore\b.*--staged\b' ; then
+  deny "git restore . discards every uncommitted edit in the tree. Name the one file you mean: git restore -- <path>."
+fi
+if hit '^git[[:space:]]+branch\b.*[[:space:]](-[a-zA-Z]*D\b|--delete[[:space:]]+--force\b|--force[[:space:]]+--delete\b)'; then
+  deny "git branch -D deletes an unmerged branch. Use 'git branch -d' (refuses unmerged work), or ask the user."
+fi
+if hit '^git[[:space:]]+stash[[:space:]]+(drop|clear)\b'; then
+  deny "git stash drop/clear is refused: the stash stack is shared by every session in this repository, so the top entry may not be yours. Ask the user."
+fi
+
 # An issue filed from the shell skips the templates that apply labels, so it is labelled HERE or
 # never (#1311). The raw command goes to the helper, because a label value is usually quoted and the
 # normalised `seg` strips quotes. FAIL CLOSED: a helper that cannot run blocks the command.
