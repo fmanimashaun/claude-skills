@@ -5,7 +5,7 @@ description: >
   iconography (Lucide), typography roles, and the two-brand (one-system) model. Use when
   adding brand elements (logos, marketing surfaces), setting up a project's brand, or reviewing
   brand fidelity.
-tools: Read, Grep, Glob, Edit, Bash
+tools: Read, Grep, Glob, Edit, Bash, Skill
 model: inherit
 ---
 

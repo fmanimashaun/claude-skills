@@ -4,7 +4,7 @@ description: >
   Reviews code changes for Rails best practices, authorization coverage, query safety,
   Hotwire correctness and project-convention compliance. Use after writing or modifying
   code, before every commit. Diff-driven.
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob, Bash, Skill
 model: inherit
 ---
 
