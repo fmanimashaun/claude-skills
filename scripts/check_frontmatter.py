@@ -15,6 +15,11 @@ mapping indicator, and cannot contain `" #"`, which starts a comment and silentl
 value. Only single-line top-level `key: value` pairs are read, which is the shape every
 frontmatter here uses. A value that needs either sequence is quoted.
 
+AN AGENT RULE: a frontmatter that says less than the body assumes.
+  * agent-undeclared-tools (#1343): a shipped agent with neither `tools:` nor `disallowedTools:`
+    inherits EVERY tool. `functional-tester` did, so an agent told "never modify code" held Edit
+    and could spawn nested agents. Declaring one of the two is the decision; which is the agent's.
+
 Exit codes:  0 clean · 1 a finding · 2 nothing found to check (never reported clean)
 """
 from __future__ import annotations
@@ -62,17 +67,40 @@ def problems(text: str) -> list[tuple[int, str]]:
     return found
 
 
+def fields(text: str) -> dict[str, str]:
+    fm = frontmatter(text) or []
+    out = {}
+    for _, line in fm:
+        m = re.match(r"^([A-Za-z_][\w-]*):[ \t]*(.*)$", line)
+        if m:
+            out[m.group(1)] = m.group(2).strip()
+    return out
+
+
+def agent_problems(text: str) -> list[str]:
+    f = fields(text)
+    found = []
+    if "tools" not in f and "disallowedTools" not in f:
+        found.append("[agent-undeclared-tools] declares neither `tools:` nor `disallowedTools:`, so it "
+                     "inherits every tool, including Edit and nested agents")
+    return found
+
+
 def check(root: Path) -> tuple[int, list[str]]:
     files = sorted({p for g in GLOBS for p in root.glob(g)})
     if not files:
         return 2, ["UNUSABLE: no frontmatter files found to check"]
     findings = []
     for path in files:
-        for lineno, why in problems(path.read_text(encoding="utf-8")):
+        text = path.read_text(encoding="utf-8")
+        for lineno, why in problems(text):
             findings.append(f"  [frontmatter-invalid-yaml] {path.relative_to(root)}:{lineno} {why}")
+        if path.parent.name == "agents" and path.parts[-3] != ".claude":
+            for why in agent_problems(text):
+                findings.append(f"  {path.relative_to(root)} {why}")
     if findings:
         return 1, [f"{len(findings)} finding(s) across {len(files)} frontmatter file(s):", *findings]
-    return 0, [f"all {len(files)} frontmatter blocks are valid YAML"]
+    return 0, [f"all {len(files)} frontmatter blocks are valid YAML, and every shipped agent declares its tools"]
 
 
 def selftest() -> int:
@@ -112,6 +140,14 @@ def selftest() -> int:
     except ImportError:
         pass
 
+    def agent(fm: str, body: str) -> str:
+        return f"---\nname: a\ndescription: x\n{fm}---\n\n{body}\n"
+
+    expect("an agent with no tools or disallowedTools is a finding",
+           any("agent-undeclared-tools" in p for p in agent_problems(agent("", "Do things."))))
+    expect("CONTROL: disallowedTools alone is a declaration",
+           not agent_problems(agent("disallowedTools: Edit, Agent\n", "Do things.")))
+
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         (root / "plugins/p/commands").mkdir(parents=True)
@@ -121,6 +157,12 @@ def selftest() -> int:
         cmd.write_text(block("description: Add MODE: FILE"), encoding="utf-8")
         code, out = check(root)
         expect("a bad file is named with its line", code == 1 and any("x.md:2" in l for l in out), str(out))
+        cmd.write_text(block('description: "fine"'), encoding="utf-8")
+        (root / "plugins/p/agents").mkdir()
+        (root / "plugins/p/agents/a.md").write_text(agent("", "Do things."), encoding="utf-8")
+        expect("a shipped agent with no tools declaration is named",
+               any("plugins/p/agents/a.md [agent-undeclared-tools]" in l for l in check(root)[1]), str(check(root)))
+        (root / "plugins/p/agents/a.md").unlink()
         cmd.unlink()
         expect("no files at all is UNUSABLE, never clean", check(root)[0] == 2)
 
