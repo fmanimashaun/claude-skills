@@ -15,10 +15,15 @@ mapping indicator, and cannot contain `" #"`, which starts a comment and silentl
 value. Only single-line top-level `key: value` pairs are read, which is the shape every
 frontmatter here uses. A value that needs either sequence is quoted.
 
-AN AGENT RULE: a frontmatter that says less than the body assumes.
+TWO AGENT RULES, for the same reason: a frontmatter that says less than the body assumes.
   * agent-undeclared-tools (#1343): a shipped agent with neither `tools:` nor `disallowedTools:`
     inherits EVERY tool. `functional-tester` did, so an agent told "never modify code" held Edit
     and could spawn nested agents. Declaring one of the two is the decision; which is the agent's.
+  * agent-unloadable-skill (#1345): Claude Code: "To prevent a subagent from invoking skills
+    entirely, omit `Skill` from the `tools` list". Eleven agents told the model to consult one of
+    our skills, or to read `skills/<name>/...` (a path that does not exist in a user's project,
+    since the skill lives in the plugin cache), with an allowlist that omitted Skill and no
+    `skills:` preload, so the instruction did nothing.
 
 Exit codes:  0 clean · 1 a finding · 2 nothing found to check (never reported clean)
 """
@@ -67,6 +72,12 @@ def problems(text: str) -> list[tuple[int, str]]:
     return found
 
 
+OUR_SKILLS = ("rails-8", "hotwire", "design-system", "code-review", "quality-pass", "derived-artifacts",
+              "parallel-session-lane")
+NAMES_SKILL = re.compile(r"\b(" + "|".join(map(re.escape, OUR_SKILLS)) + r")`?\*{0,2}(?:/[a-z-]+)?\s+skill\b"
+                         r"|skills/(" + "|".join(map(re.escape, OUR_SKILLS)) + r")/", re.I)
+
+
 def fields(text: str) -> dict[str, str]:
     fm = frontmatter(text) or []
     out = {}
@@ -83,6 +94,14 @@ def agent_problems(text: str) -> list[str]:
     if "tools" not in f and "disallowedTools" not in f:
         found.append("[agent-undeclared-tools] declares neither `tools:` nor `disallowedTools:`, so it "
                      "inherits every tool, including Edit and nested agents")
+    body = text.split("---", 2)[2] if text.count("---") >= 2 else ""
+    named = sorted({(m.group(1) or m.group(2)).lower() for m in NAMES_SKILL.finditer(body)})
+    tools = [t.strip() for t in f.get("tools", "").split(",") if t.strip()]
+    blocked = "Skill" in [t.strip() for t in f.get("disallowedTools", "").split(",")]
+    can_invoke = ("tools" not in f and not blocked) or "Skill" in tools
+    if named and not can_invoke and "skills" not in f:
+        found.append(f"[agent-unloadable-skill] tells the agent to use {', '.join(named)} but can neither "
+                     "invoke skills (no `Skill` in its tools) nor has them preloaded (`skills:`)")
     return found
 
 
@@ -100,7 +119,8 @@ def check(root: Path) -> tuple[int, list[str]]:
                 findings.append(f"  {path.relative_to(root)} {why}")
     if findings:
         return 1, [f"{len(findings)} finding(s) across {len(files)} frontmatter file(s):", *findings]
-    return 0, [f"all {len(files)} frontmatter blocks are valid YAML, and every shipped agent declares its tools"]
+    return 0, [f"all {len(files)} frontmatter blocks are valid YAML; every shipped agent declares its tools "
+               "and can load the skills it names"]
 
 
 def selftest() -> int:
@@ -147,6 +167,21 @@ def selftest() -> int:
            any("agent-undeclared-tools" in p for p in agent_problems(agent("", "Do things."))))
     expect("CONTROL: disallowedTools alone is a declaration",
            not agent_problems(agent("disallowedTools: Edit, Agent\n", "Do things.")))
+    expect("an agent told to consult a skill it cannot load is a finding",
+           any("agent-unloadable-skill" in p for p in
+               agent_problems(agent("tools: Read, Bash\n", "Consult the rails-8 skill for doctrine."))))
+    expect("...including a path-style mention",
+           any("agent-unloadable-skill" in p for p in
+               agent_problems(agent("tools: Read\n", "Follow `skills/design-system/SKILL.md`."))))
+    expect("...and a Skill in disallowedTools blocks it",
+           any("agent-unloadable-skill" in p for p in
+               agent_problems(agent("disallowedTools: Skill\n", "Apply the `code-review` skill."))))
+    expect("CONTROL: Skill in the tools list can load it",
+           not agent_problems(agent("tools: Read, Skill\n", "Consult the rails-8 skill.")))
+    expect("CONTROL: a skills: preload can load it",
+           not agent_problems(agent("tools: Read\nskills: rails-8\n", "Consult the rails-8 skill.")))
+    expect("CONTROL: a body naming no skill of ours is silent",
+           not agent_problems(agent("tools: Read\n", "Run its review-pr skill if installed.")))
 
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)

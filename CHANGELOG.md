@@ -9,6 +9,11 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### 2026-09-26 (release v1.151.0)
 
+- **`check_frontmatter.py` refuses an agent told to use a skill it cannot load — `scripts/check_frontmatter.py`,
+  `scripts/mutations/check_frontmatter.py`** (#1345). Rule `agent-unloadable-skill`: the body names one of our skills (as
+  "the X skill" or a `skills/X/` path), and the agent has no `Skill` in its tools, `Skill` in `disallowedTools`, and no
+  `skills:` preload. Replayed on origin/dev: 11 findings; after the fix: 0. 4 new mutations (12 caught).
+
 - **`check_frontmatter.py` refuses a shipped agent that declares neither `tools:` nor `disallowedTools:` —
   `scripts/check_frontmatter.py`, `scripts/mutations/check_frontmatter.py`** (#1343). Without either, an agent inherits
   every tool. The rule `agent-undeclared-tools` covers the 29 shipped agents; maintainer agents under `.claude/` are
@@ -3403,6 +3408,14 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 ## rails-flow (agentic flow plugin)
 
 ### 1.54.0 (release v1.151.0) — 2026-09-26
+
+- **Agents told to consult a skill can now load it — `plugins/rails-flow/agents/rails-developer.md`,
+  `plugins/rails-flow/agents/code-reviewer.md`, `plugins/rails-flow/agents/pr-reviewer.md`,
+  `plugins/rails-flow/agents/design-auditor.md`, `plugins/rails-flow/agents/claude-skills-reporter.md`** (#1345). doctrine-verifier CONFIRMED on 2026-09-26 against code.claude.com/docs/en/sub-agents: *"To prevent a subagent from invoking skills entirely, omit `Skill` from the `tools` list or add it to `disallowedTools`."* A `skills:` preload is the other route (*"The full skill content is injected"*), and plugin agents honour both.
+  - **The defect.** These agents said "consult the rails-8 skill", "apply the `code-review` skill", and so on, with a
+    `tools:` allowlist that omitted `Skill` and no `skills:` preload. The instruction could not be followed.
+  - **The fix.** `Skill` is added to their tools. The alternative, a `skills:` preload, injects the whole skill on
+    every start; `Skill` loads it only when the agent reaches for it, and needs no guess at the plugin skill's name.
 
 - **`code-reviewer` reviews staged and new files — `plugins/rails-flow/agents/code-reviewer.md`** (#1341). It started
   from `git diff`, described as "staged + unstaged", which shows only unstaged edits. It now uses `git diff HEAD` plus
@@ -10450,6 +10463,9 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ### 1.33.2 (release v1.151.0) — 2026-09-26
 
+- **`a11y-auditor` can load the design-system doctrine it cites — `plugins/qa-flow/agents/a11y-auditor.md`** (#1345).
+  Same defect and fix as design-flow's agents. doctrine-verifier CONFIRMED on 2026-09-26 against code.claude.com/docs/en/sub-agents: *"To prevent a subagent from invoking skills entirely, omit `Skill` from the `tools` list or add it to `disallowedTools`."* A `skills:` preload is the other route (*"The full skill content is injected"*), and plugin agents honour both.
+
 - **`functional-tester` can no longer edit code or spawn agents — `plugins/qa-flow/agents/functional-tester.md`** (#1343).
   It had no `tools:` line, so it inherited every tool, although its body says it never modifies application code. It
   now declares `disallowedTools: Edit, NotebookEdit, Agent`. That is a denylist, not an allowlist, because it drives
@@ -12542,6 +12558,12 @@ boot/validation path — with a bullet each so the promotion could close them se
 ## design-flow (UI/design plugin)
 
 ### 1.44.2 (release v1.151.0) — 2026-09-26
+
+- **design-flow agents can load the design-system doctrine they cite — `plugins/design-flow/agents/ui-composer.md`,
+  `plugins/design-flow/agents/brand-guardian.md`, `plugins/design-flow/agents/design-auditor.md`,
+  `plugins/design-flow/agents/design-critic.md`, `plugins/design-flow/agents/design-porter.md`** (#1345). Each pointed at
+  `skills/design-system/references/*.md`, a path that does not exist in a user's project (the skill lives in the plugin
+  cache), without the `Skill` tool that reaches it. `Skill` is added. doctrine-verifier CONFIRMED on 2026-09-26 against code.claude.com/docs/en/sub-agents: *"To prevent a subagent from invoking skills entirely, omit `Skill` from the `tools` list or add it to `disallowedTools`."* A `skills:` preload is the other route (*"The full skill content is injected"*), and plugin agents honour both.
 
 - **Hook commands quote `${CLAUDE_PLUGIN_ROOT}`, so the plugin works from an install path with a space — `plugins/design-flow/hooks/hooks.json`** (#1334).
   `claude plugin validate --strict` failed this plugin on it. The validator warns: *"Shell command uses ${CLAUDE_PLUGIN_ROOT} without quotes … If the expanded path contains a space the command can split into several words and fail."* Same fix as rails-flow; see that entry.
