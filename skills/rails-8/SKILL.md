@@ -238,8 +238,10 @@ generate, then trim what isn't needed.
   registry (`registry: server: localhost:5555`, which 8.1 generates for
   you); Kamal's own default is still Docker Hub, so a config written
   without that line needs credentials. (`deployment-kamal.md`)
-- **Alphabetized `schema.rb` columns** — expect reordered-but-equivalent
-  schema diffs after the first 8.1 migration; don't "fix" them.
+- **`schema.rb` column order moved twice** — 8.1.0–8.1.3 dumped columns
+  alphabetically and 8.1.4 reverted to definition order (see Version facts
+  above). Expect one reordered-but-equivalent schema diff at each boundary you
+  cross; commit it on its own, and don't hand-edit it back.
 - **Verbose redirect logs** in development
   (`config.action_dispatch.verbose_redirect_logs = true` in new apps).
 
