@@ -10450,6 +10450,22 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ### 1.33.2 (release v1.151.0) — 2026-09-26
 
+- **Committing the certification stamp no longer invalidates it — `plugins/qa-flow/hooks/scripts/release-gate.sh`,
+  `plugins/qa-flow/commands/certify.md`, `plugins/qa-flow/agents/qa-reporter.md`, `plugins/qa-flow/commands/setup-qa.md`,
+  `plugins/rails-flow/scripts/check_hook_gates.py`** (#1337). Reported by the Retask certification session; the design
+  was approved by the maintainer on the issue.
+  - **The defect.** `setup-qa.md` says to commit `qa/CERTIFICATION`, and the gate required `origin/dev` to BE the
+    tested sha. Committing the stamp by PR moved dev, so the gate denied the promotion the stamp was written to allow.
+    Nothing said when to commit it.
+  - **The fix.** The gate also accepts a stamp whose sha is an ancestor of dev when the only path changed since is
+    `qa/CERTIFICATION`, or nothing. Any other change is denied, naming the paths. A failed rev-parse or diff denies,
+    never passes. The three docs now say to commit the stamp in a PR of its own, after certifying.
+  - **A second defect, found by the new fixtures.** The gate read dev with `git rev-parse origin/dev || git rev-parse
+    dev`. Plain `rev-parse` echoes the literal `origin/dev` to stdout before failing, so without a fetched origin/dev
+    the sha arrived as a second line and no stamp could ever match. It now uses `--verify -q`.
+  - **Tests.** 4 end-to-end cases on a scratch repo (stamp at the tip, stamp committed on top, a code change after
+    it, a stamp from another branch). 117 hook-gate checks pass. The guard catches 6 mutations, 4 new.
+
 - **`functional-tester` can no longer edit code or spawn agents — `plugins/qa-flow/agents/functional-tester.md`** (#1343).
   It had no `tools:` line, so it inherited every tool, although its body says it never modifies application code. It
   now declares `disallowedTools: Edit, NotebookEdit, Agent`. That is a denylist, not an allowlist, because it drives

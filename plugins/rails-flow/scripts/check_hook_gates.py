@@ -434,6 +434,46 @@ def release_gate_fixtures() -> None:
     check("release-gate: an ordinary repo with no certification is STILL blocked",
           run("git push origin main") == 2, "exit 0")
 
+    # #1337. The stamp is bound to the tested dev sha; committing it to dev by PR moves dev. The gate
+    # accepts an ANCESTOR of dev only when the delta since is the stamp itself.
+    g = ["git", "-c", "user.email=t@t", "-c", "user.name=t"]
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td)
+        _git_repo(repo)
+        sh = lambda *a: subprocess.run([*g, *a], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+        (repo / "app.rb").write_text("v1\n", encoding="utf-8")
+        sh("add", "app.rb"); sh("commit", "-q", "-m", "app")
+        tested = sh("rev-parse", "HEAD")
+        (repo / "qa").mkdir()
+        stamp = {"sha": tested, "date": "2026-09-26", "verdict": "PASS", "report": "qa/reports/r.md"}
+        (repo / "qa" / "CERTIFICATION").write_text(json.dumps(stamp), encoding="utf-8")
+        env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env["CLAUDE_PLUGIN_ROOT"] = str(QA_HOOK.parents[2])
+
+        def gate() -> tuple[int, str]:
+            sh("branch", "-f", "dev", "HEAD")
+            done = subprocess.run(["bash", str(QA_HOOK)], cwd=repo, env=env, capture_output=True, text=True, timeout=60,
+                                  input=json.dumps({"tool_input": {"command": "git push origin main"}}))
+            return done.returncode, done.stderr
+
+        rc, err = gate()
+        check("release-gate (#1337): CONTROL: an uncommitted stamp for dev's tip permits", rc == 0, err)
+        sh("add", "qa/CERTIFICATION"); sh("commit", "-q", "-m", "stamp")
+        rc, err = gate()
+        check("release-gate (#1337): the stamp committed on top of the tested sha still permits", rc == 0, err)
+        (repo / "app.rb").write_text("v2\n", encoding="utf-8")
+        sh("commit", "-q", "-am", "untested change")
+        rc, err = gate()
+        check("release-gate (#1337): a code change after the tested sha is denied, naming the path",
+              rc == 2 and "app.rb" in err, err)
+        sh("checkout", "-q", "-b", "side", tested + "~1")
+        (repo / "other.rb").write_text("x\n", encoding="utf-8")
+        sh("add", "other.rb"); sh("commit", "-q", "-m", "side")
+        stamp["sha"] = sh("rev-parse", "HEAD"); sh("checkout", "-q", "-")
+        (repo / "qa" / "CERTIFICATION").write_text(json.dumps(stamp), encoding="utf-8")
+        rc, err = gate()
+        check("release-gate (#1337): a stamp for a sha that is not an ancestor of dev is denied",
+              rc == 2 and "dev moved" in err, err)
+
 
 # ---- ci-verdict-hint.sh (#1173) -----------------------------------------------------------------
 # An ADVISORY, so every fixture asserts exit 0 -- a hint that could fail the tool call would be a gate

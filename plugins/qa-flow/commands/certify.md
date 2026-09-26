@@ -44,3 +44,7 @@ FAIL, no stamp; defects filed, dev is not release-ready. Only a clean sweep →
 `qa-reporter` writes `qa/CERTIFICATION` (bound to the tested dev sha) and promotes
 the cycle's proven features into the `@regression` corpus. Report which sha is
 cleared for main and remind the user the release-gate hook now permits that promotion.
+**Committing the stamp** (#1337): commit `qa/CERTIFICATION` to dev by its own PR, and change
+nothing else before promoting. The gate accepts a stamp whose sha is an ancestor of dev when the
+only path changed since is `qa/CERTIFICATION`, so the stamp's own commit never invalidates it.
+Any other change after the tested sha means re-certify.
