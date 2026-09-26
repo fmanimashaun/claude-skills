@@ -9,6 +9,18 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### 2026-09-26 (release v1.151.0)
 
+- **A gate that every plugin hook command survives an install path containing a space —
+  `scripts/check_hook_commands.py`, `scripts/mutations/check_hook_commands.py`, `scripts/maintainer_doctor.py`,
+  `scripts/lint_markdown_shell.py`, `scripts/mutations/lint_markdown_shell.py`** (#1334).
+  - **The gate** refuses an unquoted `${CLAUDE_PLUGIN_ROOT}` in a hook command. It also expands each command from a
+    copy of the plugin under `Application Support/`, with `bash` swapped for `printf` so nothing runs, and requires
+    the script argument to arrive as one word naming a real file. It needs no `claude` CLI.
+  - **Replayed** against the pre-fix manifests: 26 findings (13 static, 13 expansion); after the fix: 0.
+  - **The markdown shell lint** gains `unquoted-plugin-root`; assignments are exempt, because bash does not split
+    them.
+  - **Tests.** The guards catch 6 and 6 mutations.
+
+
 - **A weekly check re-reads the Claude Code docs our doctrine quotes, and lists unreviewed CHANGELOG entries —
   `scripts/check_upstream_docs.py`, `docs/evidence/upstream/claude-code.json`,
   `scripts/mutations/check_upstream_docs.py`, `.claude/commands/maintainer-upstream.md`,
@@ -3380,6 +3392,30 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### 1.54.0 (release v1.151.0) — 2026-09-26
 
+- **Every hook command quotes `${CLAUDE_PLUGIN_ROOT}`, so the guards still run when the plugin is installed under a path
+  with a space — `plugins/rails-flow/hooks/hooks.json`, `plugins/rails-flow/agents/doc-updater.md`,
+  `plugins/rails-flow/commands/graph.md`** (#1334). Found by running `claude plugin validate <plugin> --strict`
+  (Claude Code 2.1.282) while reviewing mattpocock/skills, whose CLAUDE.md requires it: all four plugins failed. We
+  had only ever validated `marketplace.json`. The validator warns: *"Shell command uses ${CLAUDE_PLUGIN_ROOT} without quotes … If the expanded path contains a space the command can split into several words and fail."*
+  - **The risk.** 13 hook commands across the four plugins ran `bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/<x>.sh`. On a
+    spaced path (a Windows or macOS user folder with a space in its name) every hook fails to start, including
+    `guard-bash`, `guard-claims` and `guard-lane`. A PreToolUse command that exits non-zero without exit code 2 does
+    not block, so the guards would stop guarding.
+  - **The fix.** Every command now quotes the placeholder, and all four plugins pass `--strict`. 14 uses in shipped
+    shell blocks across 4 files are quoted too.
+  - **What stops it coming back.** See the Repository entry: a new doctor gate expands each command from a spaced
+    path, and a new `unquoted-plugin-root` rule in the markdown shell lint.
+
+- **The issue-label guard no longer refuses a labelled `gh issue create` whose call also writes a heredoc body —
+  `plugins/rails-flow/hooks/scripts/lib/issue_labels.py`, `plugins/rails-flow/scripts/check_hook_gates.py`** (#1336).
+  Hit while filing #1334: a quoted-heredoc body with an apostrophe made shlex see an unterminated quote, so the guard
+  refused a correctly labelled create as unparseable. That is the command shape our own doctrine recommends
+  (quoted heredoc, then `--body-file`). Heredoc bodies, including `<<-` bodies, are now dropped before tokenising;
+  a genuinely unparseable create still refuses. Tests: 4 new selftest fixtures (the body fixture has one
+  apostrophe; the first draft had two, which pair up, so it proved nothing until the mutation run said so),
+  2 cases through `guard-bash.sh`, and 2 new mutations.
+
+
 - **A pin above the session is substituted, not dropped, when the org blocks it —
   `plugins/rails-flow/reference/model-tiers.md`, `plugins/rails-flow/scripts/check_handoff.py`** (#1329). doctrine-verifier CONFIRMED on 2026-09-25 against `code.claude.com/docs/en/sub-agents`: *"When the blocked value is a family alias such as `opus`, Claude Code runs the subagent on the newest version of that family the allowlist permits … Before v2.1.222, Claude Code ran the subagent on the inherited model for a blocked family alias as well."*
   Fact 4 said a blocked pin is skipped and the agent runs on the inherited model, which was true before
@@ -6211,6 +6247,10 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 ## pipeline (lifecycle orchestrator)
 
 ### 1.3.4 (release v1.151.0) — 2026-09-26
+
+- **Hook commands quote `${CLAUDE_PLUGIN_ROOT}`, so the plugin works from an install path with a space — `plugins/pipeline/hooks/hooks.json`, `plugins/pipeline/commands/install-hooks.md`** (#1334).
+  `claude plugin validate --strict` failed this plugin on it. The validator warns: *"Shell command uses ${CLAUDE_PLUGIN_ROOT} without quotes … If the expanded path contains a space the command can split into several words and fail."* Same fix as rails-flow; see that entry.
+
 
 - **A blocked `opus` pin is substituted with the newest permitted Opus, not dropped — `plugins/pipeline/reference/model-tiers.md`** (#1329).
   Same correction as rails-flow's `model-tiers.md`; doctrine-verifier CONFIRMED on 2026-09-25 against `code.claude.com/docs/en/sub-agents`: *"When the blocked value is a family alias such as `opus`, Claude Code runs the subagent on the newest version of that family the allowlist permits … Before v2.1.222, Claude Code ran the subagent on the inherited model for a blocked family alias as well."*
@@ -10359,6 +10399,10 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ### 1.33.2 (release v1.151.0) — 2026-09-26
 
+- **Hook commands quote `${CLAUDE_PLUGIN_ROOT}`, so the plugin works from an install path with a space — `plugins/qa-flow/hooks/hooks.json`** (#1334).
+  `claude plugin validate --strict` failed this plugin on it. The validator warns: *"Shell command uses ${CLAUDE_PLUGIN_ROOT} without quotes … If the expanded path contains a space the command can split into several words and fail."* Same fix as rails-flow; see that entry.
+
+
 - **A blocked `opus` pin is substituted with the newest permitted Opus, not dropped — `plugins/qa-flow/reference/model-tiers.md`** (#1329).
   Same correction as rails-flow's `model-tiers.md`; doctrine-verifier CONFIRMED on 2026-09-25 against `code.claude.com/docs/en/sub-agents`: *"When the blocked value is a family alias such as `opus`, Claude Code runs the subagent on the newest version of that family the allowlist permits … Before v2.1.222, Claude Code ran the subagent on the inherited model for a blocked family alias as well."*
 
@@ -12440,6 +12484,10 @@ boot/validation path — with a bullet each so the promotion could close them se
 ## design-flow (UI/design plugin)
 
 ### 1.44.2 (release v1.151.0) — 2026-09-26
+
+- **Hook commands quote `${CLAUDE_PLUGIN_ROOT}`, so the plugin works from an install path with a space — `plugins/design-flow/hooks/hooks.json`** (#1334).
+  `claude plugin validate --strict` failed this plugin on it. The validator warns: *"Shell command uses ${CLAUDE_PLUGIN_ROOT} without quotes … If the expanded path contains a space the command can split into several words and fail."* Same fix as rails-flow; see that entry.
+
 
 - **A blocked `opus` pin is substituted with the newest permitted Opus, not dropped — `plugins/design-flow/reference/model-tiers.md`** (#1329).
   Same correction as rails-flow's `model-tiers.md`; doctrine-verifier CONFIRMED on 2026-09-25 against `code.claude.com/docs/en/sub-agents`: *"When the blocked value is a family alias such as `opus`, Claude Code runs the subagent on the newest version of that family the allowlist permits … Before v2.1.222, Claude Code ran the subagent on the inherited model for a blocked family alias as well."*
@@ -15323,6 +15371,11 @@ boot/validation path — with a bullet each so the promotion could close them se
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
 ### 1.68.3 (release v1.151.0) — 2026-09-26
+
+- **The brand-pack commands in the design-system brand doctrine quote `${CLAUDE_PLUGIN_ROOT}` —
+  `skills/design-system/references/brand.md`, `dist/design-system.skill`** (#1334). The new `unquoted-plugin-root` lint
+  found them; unquoted, they split on an install path with a space.
+
 
 - **The quality-pass worked example's `Unusable` and `check()` harness counts are refreshed to 10 and 39 —
   `skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`** (#1328). The upstream-docs checker

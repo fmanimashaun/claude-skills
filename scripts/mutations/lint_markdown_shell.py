@@ -10,6 +10,19 @@ GUARD = Guard(
     subject="scripts/lint_markdown_shell.py",
     selftest="scripts/lint_markdown_shell.py",
     mutations=(
+        # #1334: an unquoted ${CLAUDE_PLUGIN_ROOT} in shipped shell goes unreported again.
+        Mutation(
+            "quoted segments are not removed, so the rule cannot tell quoted from bare",
+            '    return bool(_PLUGIN_ROOT.search(_QUOTED_SEGMENT.sub("", line)))',
+            "    return bool(_PLUGIN_ROOT.search(line))",
+            "unquoted-plugin-root",
+        ),
+        Mutation(
+            "the unquoted-plugin-root rule never fires",
+            "            if unquoted_plugin_root(line):",
+            "            if False:",
+            "unquoted-plugin-root",
+        ),
         Mutation(
             "a swallowed verdict is no longer reported",
             "            if SWALLOWED.search(line):",

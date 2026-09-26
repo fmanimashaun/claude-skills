@@ -206,6 +206,11 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # in .github/workflows/upstream.yml and files an issue instead of turning PRs red.
     ("upstream citation coverage", ("python3", "scripts/check_upstream_docs.py", "--coverage")),
     ("upstream check selftest", ("python3", "scripts/check_upstream_docs.py", "--selftest")),
+    # #1334. Every plugin hook command must survive an install path containing a space: the four
+    # fail-closed guards stop guarding when their command splits. Local and deterministic, so it
+    # gates; `claude plugin validate --strict` stays the authority and needs the CLI, which CI may lack.
+    ("hook commands survive a spaced path", ("python3", "scripts/check_hook_commands.py")),
+    ("hook commands selftest", ("python3", "scripts/check_hook_commands.py", "--selftest")),
     ("rails-flow lane assigner selftest",
      ("python3", "plugins/rails-flow/scripts/assign_lanes.py", "--selftest")),
     ("design-flow prompt library selftest",

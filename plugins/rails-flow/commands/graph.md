@@ -18,10 +18,10 @@ it fails loudly.
 ## Run
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/architecture_graph.py            # regenerate
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/build_project_wiki.py          # then the docs/wiki reference pages, a join over the graph
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/architecture_graph.py --check    # drift check
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/architecture_graph.py --delta origin/main
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/architecture_graph.py"            # regenerate
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/build_project_wiki.py"          # then the docs/wiki reference pages, a join over the graph
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/architecture_graph.py" --check    # drift check
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/architecture_graph.py" --delta origin/main
 ```
 
 Stdlib Python 3 only — no gems, no graph tool, no network, no app boot. Pass `--enrich`

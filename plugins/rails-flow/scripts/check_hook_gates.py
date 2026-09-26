@@ -271,6 +271,13 @@ def guard_bash_fixtures() -> None:
     check("guard-bash (#1311): an undeclared project still needs one label",
           labelled("gh issue create -t X", declare=False)[0] == 2
           and labelled("gh issue create -t X --label x", declare=False)[0] == 0)
+    # #1336: the doctrine's own shape -- a quoted heredoc body, then a labelled create, one call.
+    heredoc = "cat > b.md <<'EOF'\nthe validator's `warning` is quoted\nEOF\n"  # one apostrophe: unpairable
+    rc, err = labelled(heredoc + "gh issue create -t X --label bug --label severity:s2 --body-file b.md")
+    check("guard-bash (#1336): a heredoc body before a labelled create is allowed", rc == 0, err)
+    rc, err = labelled(heredoc + "gh issue create -t X --body-file b.md")
+    check("guard-bash (#1336): ...and an unlabelled create after it is still blocked",
+          rc == 2 and "no --label" in err, err)
     rc, err = labelled("gh issue create -t X --label feature", drop_helper=True)
     check("guard-bash (#1311): FAIL CLOSED: with the helper missing, a labelled create is refused, not let through",
           rc == 2 and "could not run" in err, err)
