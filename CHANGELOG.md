@@ -3417,6 +3417,10 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   - **The fix.** `Skill` is added to their tools. The alternative, a `skills:` preload, injects the whole skill on
     every start; `Skill` loads it only when the agent reaches for it, and needs no guess at the plugin skill's name.
 
+- **`code-reviewer` reviews staged and new files — `plugins/rails-flow/agents/code-reviewer.md`** (#1341). It started
+  from `git diff`, described as "staged + unstaged", which shows only unstaged edits. It now uses `git diff HEAD` plus
+  `git ls-files --others --exclude-standard` for new files, and `<base>...HEAD` on a branch.
+
 - **`/rails-flow:report` and `/rails-flow:escalate` frontmatter is valid YAML again — `plugins/rails-flow/commands/report.md`,
   `plugins/rails-flow/commands/escalate.md`** (#1344). Found by running `yaml.safe_load` over all 97 command, agent and
   skill frontmatters while reviewing mattpocock/skills: these 2 failed with "mapping values are not allowed here". Each
@@ -6293,6 +6297,20 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 ## pipeline (lifecycle orchestrator)
 
 ### 1.3.4 (release v1.151.0) — 2026-09-26
+
+- **The BLOCKING deploy safety pass checks for secrets with a real scan, not `git diff` — `plugins/pipeline/scripts/scan_committed_secrets.py`,
+  `plugins/pipeline/scripts/mutations/scan_committed_secrets.py`, `plugins/pipeline/agents/kamal-configurator.md`,
+  `plugins/pipeline/commands/deploy-cloud.md`** (#1341). Found in the mattpocock/skills review.
+  - **The defect.** The step said "`git diff` proves no plaintext secret entered a committed file". Plain `git diff`
+    shows only unstaged edits to tracked files, so a freshly generated, untracked `config/deploy.yml` (the file most
+    likely to carry one) was invisible, and the step passed vacuously.
+  - **The fix.** The step now runs `scan_committed_secrets.py`. It reads the secret-routed keys from
+    `.kamal/deploy.env` using the template's own `ROUTED TO:` tags (an untagged key counts as a secret). It searches
+    every file `git ls-files --cached --others --exclude-standard` lists and names the key and file, never the value.
+    Exit 2 means it could not check, which is not a pass.
+  - **Tests.** Selftest: an untracked file with a secret is found, a staged one too, a deploy.yml holding only names
+    and public facts is clean (control), and an ignored secrets file is not scanned (control). The guard catches 7
+    mutations.
 
 - **Hook commands quote `${CLAUDE_PLUGIN_ROOT}`, so the plugin works from an install path with a space — `plugins/pipeline/hooks/hooks.json`, `plugins/pipeline/commands/install-hooks.md`** (#1334).
   `claude plugin validate --strict` failed this plugin on it. The validator warns: *"Shell command uses ${CLAUDE_PLUGIN_ROOT} without quotes … If the expanded path contains a space the command can split into several words and fail."* Same fix as rails-flow; see that entry.
@@ -15433,6 +15451,9 @@ boot/validation path — with a bullet each so the promotion could close them se
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
 ### 1.68.3 (release v1.151.0) — 2026-09-26
+
+- **The quality-pass worked example's `Unusable` count is refreshed to 11 — `skills/quality-pass/references/worked-example.md`,
+  `dist/quality-pass.skill`** (#1341). The deploy secret scanner is the new copy; reach stays 6.
 
 - **The brand-pack commands in the design-system brand doctrine quote `${CLAUDE_PLUGIN_ROOT}` —
   `skills/design-system/references/brand.md`, `dist/design-system.skill`** (#1334). The new `unquoted-plugin-root` lint
