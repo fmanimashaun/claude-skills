@@ -17,6 +17,16 @@ Hard rules (from GUARDRAILS.md — these override convenience):
 - Money columns: `decimal, precision: 15, scale: 2`. Never floats.
 - Never drop tables/columns with data, never truncate via type change, never `db:reset` —
   these require explicit user approval, so stop and ask.
+- **Renaming or retyping a column that is in use is several deploys, never one migration** (#1347).
+  strong_migrations: *"Renaming a column that's in use will cause errors in your application"*, and
+  changing a type *"causes the entire table to be rewritten. During this time, reads and writes are
+  blocked in Postgres"*. Expand, then contract, each step shipped on its own:
+  1. create the new column; 2. write to both columns; 3. backfill from the old to the new;
+  4. move reads to the new column; 5. stop writing to the old one; 6. drop the old one.
+  The drop in step 6 is itself two deploys: first `self.ignored_columns += ["old_name"]`, because
+  *"Active Record caches database columns at runtime, so if you drop a column, it can cause
+  exceptions until your app reboots"*; then the migration that removes it. Write the migration for
+  the step you are on and report the remaining steps for the orchestrator to schedule.
 - Respect project conventions from CLAUDE.md (e.g. every table gets `workspace_id` FK +
   `public_id` in multi-tenant projects; UUID keys; etc.).
 

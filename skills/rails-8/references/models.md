@@ -56,7 +56,10 @@ Rules of the road:
   schema.rb can't express (Postgres extensions, triggers). 8.1 alphabetizes
   columns in schema.rb.
 - Other useful ops: `change_column_null`, `change_column_default from:/to:`
-  (reversible), `rename_column`, `add_check_constraint`,
+  (reversible), `rename_column` (on a table the running app uses, only as the
+  last step of an expand–contract sequence: new column, dual-write, backfill,
+  switch reads, stop writing, then `ignored_columns` and drop; per the
+  strong_migrations README), `add_check_constraint`,
   `create_join_table`, `t.virtual` (generated columns),
   `disable_ddl_transaction!` + `add_index ..., algorithm: :concurrently`
   for big Postgres tables.
