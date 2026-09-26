@@ -135,7 +135,7 @@ def guard(root: Path, env=os.environ) -> tuple[int, str]:
         return 0, f"this branch changes no generated docs relative to {policy['base']}"
     lines = [f"{len(touched)} finding(s): this branch modifies generated docs, which a non-enforcing "
              f"branch must not carry ({why}):"] + [f"  - {p}" for p in touched]
-    lines.append(f"Fix: git checkout {policy['base']} -- {' '.join(policy['generated'])} "
+    lines.append(f"Fix: git restore --source {policy['base']} --staged --worktree -- {' '.join(policy['generated'])} "
                  f"&& git commit -m 'Drop generated docs'")
     return 1, "\n".join(lines)
 
