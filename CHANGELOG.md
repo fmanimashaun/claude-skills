@@ -3416,6 +3416,18 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### 1.54.0 (release v1.151.0) — 2026-09-26
 
+- **`/rails-flow:fix` gains a diagnosis phase for defects whose cause is unknown — `plugins/rails-flow/commands/fix.md`**
+  (#1346). Adapted from mattpocock/skills `engineering/diagnosing-bugs`, and approved by the maintainer on the issue.
+  Phase 0 already classified the failure, and principle 3 already required a failing spec first. What was missing
+  sat between the two:
+  - a loop that goes red on this bug before any theory;
+  - minimising until every remaining piece is load-bearing;
+  - 3–5 ranked, falsifiable hypotheses;
+  - one-variable probes with a single tagged debug prefix;
+  - "no seam" treated as a finding, not papered over with a shallow spec.
+  Done means `git diff <base>...HEAD | grep -c '\[DEBUG-'` prints 0, and the PR names the hypothesis that proved
+  right.
+
 - **Agents told to consult a skill can now load it — `plugins/rails-flow/agents/rails-developer.md`,
   `plugins/rails-flow/agents/code-reviewer.md`, `plugins/rails-flow/agents/pr-reviewer.md`,
   `plugins/rails-flow/agents/design-auditor.md`, `plugins/rails-flow/agents/claude-skills-reporter.md`** (#1345). doctrine-verifier CONFIRMED on 2026-09-26 against code.claude.com/docs/en/sub-agents: *"To prevent a subagent from invoking skills entirely, omit `Skill` from the `tools` list or add it to `disallowedTools`."* A `skills:` preload is the other route (*"The full skill content is injected"*), and plugin agents honour both.
