@@ -369,6 +369,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #1204. The installer reported success and wrote a hook git never runs under core.hooksPath
     # or from a linked worktree; the selftest proves each case with a real merge, not a file check.
     ("pipeline hook install", ("python3", "plugins/pipeline/scripts/install_git_hooks_selftest.py")),
+    # #1341. The deploy safety pass is BLOCKING; its "no secret in a committed file" step is this script.
+    ("pipeline committed-secret scan", ("python3", "plugins/pipeline/scripts/scan_committed_secrets.py", "--selftest")),
     ("qa-flow evidence", ("python3", "plugins/qa-flow/scripts/validate_evidence.py", "--selftest")),
     ("qa-flow route coverage", ("python3", "plugins/qa-flow/scripts/route_coverage.py", "--selftest")),
     # #792. The reader BOTH coverage loaders depend on, which had no fixture of its own while

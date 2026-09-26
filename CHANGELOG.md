@@ -3392,6 +3392,10 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### 1.54.0 (release v1.151.0) — 2026-09-26
 
+- **`code-reviewer` reviews staged and new files — `plugins/rails-flow/agents/code-reviewer.md`** (#1341). It started
+  from `git diff`, described as "staged + unstaged", which shows only unstaged edits. It now uses `git diff HEAD` plus
+  `git ls-files --others --exclude-standard` for new files, and `<base>...HEAD` on a branch.
+
 - **guard-bash refuses the other ways git discards work with no undo — `plugins/rails-flow/hooks/scripts/guard-bash.sh`,
   `plugins/rails-flow/scripts/check_hook_gates.py`, `plugins/rails-flow/scripts/generated_docs.py`,
   `plugins/rails-flow/commands/setup-flow.md`** (#1342). Found by running mattpocock/skills' `git-guardrails` payloads
@@ -6262,6 +6266,20 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 ## pipeline (lifecycle orchestrator)
 
 ### 1.3.4 (release v1.151.0) — 2026-09-26
+
+- **The BLOCKING deploy safety pass checks for secrets with a real scan, not `git diff` — `plugins/pipeline/scripts/scan_committed_secrets.py`,
+  `plugins/pipeline/scripts/mutations/scan_committed_secrets.py`, `plugins/pipeline/agents/kamal-configurator.md`,
+  `plugins/pipeline/commands/deploy-cloud.md`** (#1341). Found in the mattpocock/skills review.
+  - **The defect.** The step said "`git diff` proves no plaintext secret entered a committed file". Plain `git diff`
+    shows only unstaged edits to tracked files, so a freshly generated, untracked `config/deploy.yml` (the file most
+    likely to carry one) was invisible, and the step passed vacuously.
+  - **The fix.** The step now runs `scan_committed_secrets.py`. It reads the secret-routed keys from
+    `.kamal/deploy.env` using the template's own `ROUTED TO:` tags (an untagged key counts as a secret). It searches
+    every file `git ls-files --cached --others --exclude-standard` lists and names the key and file, never the value.
+    Exit 2 means it could not check, which is not a pass.
+  - **Tests.** Selftest: an untracked file with a secret is found, a staged one too, a deploy.yml holding only names
+    and public facts is clean (control), and an ignored secrets file is not scanned (control). The guard catches 7
+    mutations.
 
 - **Hook commands quote `${CLAUDE_PLUGIN_ROOT}`, so the plugin works from an install path with a space — `plugins/pipeline/hooks/hooks.json`, `plugins/pipeline/commands/install-hooks.md`** (#1334).
   `claude plugin validate --strict` failed this plugin on it. The validator warns: *"Shell command uses ${CLAUDE_PLUGIN_ROOT} without quotes … If the expanded path contains a space the command can split into several words and fail."* Same fix as rails-flow; see that entry.
