@@ -228,7 +228,12 @@ gh pr create --base <base> --title "feat: <summary>" --body "<the PR Documentati
 - Otherwise: delegate to `pr-reviewer` with the PR number.
 - A self-written review comment is the OUTPUT of a review, not the review. BLOCKED →
   fix on the same branch, push, re-run the gate. Repeat until CLEAN.
-- On CLEAN: if the base is `dev`, merge (`gh pr merge --squash`), then post a summary
+- On CLEAN, **classify the door first** (#1338):
+  `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/classify_door.py" --base <base>`. Exit 1 (ONE-WAY: a
+  destructive migration, an auth or permission change, a removed route or API field, a new outside
+  call) or exit 2 (could not classify) means stop and hand the merge to the user, quoting the
+  reasons it printed. A dropped column's data does not come back with `git revert`. Exit 0 continues.
+- On CLEAN and a two-way door: if the base is `dev`, merge (`gh pr merge --squash`), then post a summary
   comment citing the gate's findings. If the base is the default branch (no `dev`), stop
   after CLEAN and hand the merge decision to the user — and offer them a PR babysitter:
   `/loop "Check PR #<n>: if CI failed, read the log, fix on the branch, push; address
