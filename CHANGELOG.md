@@ -3416,6 +3416,18 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### 1.54.0 (release v1.151.0) — 2026-09-26
 
+- **`/rails-flow:fix` gains a diagnosis phase for defects whose cause is unknown — `plugins/rails-flow/commands/fix.md`**
+  (#1346). Adapted from mattpocock/skills `engineering/diagnosing-bugs`, and approved by the maintainer on the issue.
+  Phase 0 already classified the failure, and principle 3 already required a failing spec first. What was missing
+  sat between the two:
+  - a loop that goes red on this bug before any theory;
+  - minimising until every remaining piece is load-bearing;
+  - 3–5 ranked, falsifiable hypotheses;
+  - one-variable probes with a single tagged debug prefix;
+  - "no seam" treated as a finding, not papered over with a shallow spec.
+  Done means `git diff <base>...HEAD | grep -c '\[DEBUG-'` prints 0, and the PR names the hypothesis that proved
+  right.
+
 - **`migration-writer` sequences a live rename or retype as expand–contract — `plugins/rails-flow/agents/migration-writer.md`**
   (#1347). It said only "treat strong_migrations' errors as law", which helps only where the gem is installed. It now
   states the six steps and splits the final drop into `ignored_columns` then the migration, each shipped on its own. It
