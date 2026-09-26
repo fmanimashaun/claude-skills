@@ -9,6 +9,19 @@ GUARD = Guard(
     subject="scripts/check_frontmatter.py",
     selftest="scripts/check_frontmatter.py",   # --selftest lives in the module itself
     mutations=(
+        # #1335: the user-only declaration drifts in either direction.
+        Mutation(
+            "a declared user-only command may drop its flag",
+            "            if rel in USER_ONLY and not flagged:",
+            "            if False:",
+            "a declared user-only command without the flag is a finding",
+        ),
+        Mutation(
+            "any command may set the flag without being declared",
+            "            elif flagged and rel not in USER_ONLY:",
+            "            elif False:",
+            "a user-only flag on an undeclared command is a finding",
+        ),
         # #1345: an agent told to use a skill it cannot load passes again.
         Mutation(
             "an agent that cannot load the skill it names passes",

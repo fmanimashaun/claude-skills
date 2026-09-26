@@ -1,6 +1,7 @@
 ---
 description: One-command autonomous cloud deploy — read the prepared .kamal/deploy.env briefing sheet, route every value to its Rails-native home, wire Kamal, and deploy with self-verification
 argument-hint: "[optional: destination, e.g. production | staging]"
+disable-model-invocation: true
 ---
 
 # /pipeline:deploy-cloud — $ARGUMENTS

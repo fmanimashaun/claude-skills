@@ -25,6 +25,14 @@ TWO AGENT RULES, for the same reason: a frontmatter that says less than the body
     since the skill lives in the plugin cache), with an allowlist that omitted Skill and no
     `skills:` preload, so the instruction did nothing.
 
+USER-INVOKED COMMANDS, pinned both ways (#1335). Claude Code: commands "have been merged into skills",
+and `disable-model-invocation: true` is for "workflows with side effects ... You don't want Claude
+deciding to deploy because your code looks ready." `/pipeline:deploy-cloud` performs a production
+deploy and is never chained, so it is user-only. `/pipeline:release` is NOT: pipeline-coordinator
+runs it as the chain's last gated stage, and the flag would break that chain. So the set is a
+declaration, `USER_ONLY`, and both directions are refused: a listed command without the flag, and
+a flag on a command not listed (which would silently break any chain that reaches it).
+
 Exit codes:  0 clean · 1 a finding · 2 nothing found to check (never reported clean)
 """
 from __future__ import annotations
@@ -72,6 +80,8 @@ def problems(text: str) -> list[tuple[int, str]]:
     return found
 
 
+USER_ONLY = frozenset({"plugins/pipeline/commands/deploy-cloud.md"})
+
 OUR_SKILLS = ("rails-8", "hotwire", "design-system", "code-review", "quality-pass", "derived-artifacts",
               "parallel-session-lane")
 NAMES_SKILL = re.compile(r"\b(" + "|".join(map(re.escape, OUR_SKILLS)) + r")`?\*{0,2}(?:/[a-z-]+)?\s+skill\b"
@@ -114,6 +124,15 @@ def check(root: Path) -> tuple[int, list[str]]:
         text = path.read_text(encoding="utf-8")
         for lineno, why in problems(text):
             findings.append(f"  [frontmatter-invalid-yaml] {path.relative_to(root)}:{lineno} {why}")
+        rel = str(path.relative_to(root))
+        if path.parent.name == "commands" and path.parts[-3] != ".claude":
+            flagged = fields(text).get("disable-model-invocation", "").lower() == "true"
+            if rel in USER_ONLY and not flagged:
+                findings.append(f"  {rel} [user-only-command-invocable] is declared user-only (a side effect nobody "
+                                "should trigger for you) but lacks `disable-model-invocation: true`")
+            elif flagged and rel not in USER_ONLY:
+                findings.append(f"  {rel} [undeclared-user-only-command] sets `disable-model-invocation: true` but is "
+                                "not in USER_ONLY; declare it there, after checking no chain invokes it")
         if path.parent.name == "agents" and path.parts[-3] != ".claude":
             for why in agent_problems(text):
                 findings.append(f"  {path.relative_to(root)} {why}")
@@ -198,6 +217,20 @@ def selftest() -> int:
         expect("a shipped agent with no tools declaration is named",
                any("plugins/p/agents/a.md [agent-undeclared-tools]" in l for l in check(root)[1]), str(check(root)))
         (root / "plugins/p/agents/a.md").unlink()
+        cmd.write_text(block('description: "fine"').replace("---\n\n", "disable-model-invocation: true\n---\n\n", 1),
+                       encoding="utf-8")
+        expect("a user-only flag on an undeclared command is a finding",
+               any("[undeclared-user-only-command]" in l for l in check(root)[1]), str(check(root)))
+        (root / "plugins/pipeline/commands").mkdir(parents=True)
+        dc = root / "plugins/pipeline/commands/deploy-cloud.md"
+        dc.write_text(block('description: "deploy"'), encoding="utf-8")
+        cmd.write_text(block('description: "fine"'), encoding="utf-8")
+        expect("a declared user-only command without the flag is a finding",
+               any("[user-only-command-invocable]" in l for l in check(root)[1]), str(check(root)))
+        dc.write_text(block('description: "deploy"').replace("---\n\n", "disable-model-invocation: true\n---\n\n", 1),
+                      encoding="utf-8")
+        expect("CONTROL: the declared command carrying the flag is clean", check(root)[0] == 0, str(check(root)))
+        dc.unlink()
         cmd.unlink()
         expect("no files at all is UNUSABLE, never clean", check(root)[0] == 2)
 
