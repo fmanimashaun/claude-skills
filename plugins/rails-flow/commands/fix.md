@@ -116,7 +116,9 @@ before choosing how to respond.
 6. CLOSEOUT:  /rails-flow:pr-comments <n> — every review thread fixed on-branch or
               folded into a tracked repo issue; re-run the gate if code changed.
               A PR must close clean before the next phase starts.
-7. MERGE:     on CLEAN, merge to dev (squash); default-branch bases stop for the user
+7. MERGE:     on CLEAN, run classify_door.py --base <base> (#1338); exit 1 or 2 stops
+              for the user with its reasons. Otherwise merge to dev (squash);
+              default-branch bases stop for the user
 8. DOCS:      doc-updater; mark the phase done in the review report
 ```
 

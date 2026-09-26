@@ -3416,6 +3416,26 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### 1.54.0 (release v1.151.0) — 2026-09-26
 
+- **A one-way-door PR stops for a human before the automatic merge into dev — `plugins/rails-flow/scripts/classify_door.py`,
+  `plugins/rails-flow/scripts/mutations/classify_door.py`, `plugins/rails-flow/commands/feature.md`,
+  `plugins/rails-flow/commands/fix.md`** (#1338). Prompted by Matt Pocock's "one-way vs two-way doors" and approved by
+  the maintainer on the issue.
+  - **The defect.** On a CLEAN review, `/rails-flow:feature` and `/rails-flow:fix` merged into dev with no human,
+    whatever the diff did. A human was asked only at dev -> main, after the irreversible part had already happened
+    on every staging deploy.
+  - **The fix.** A deterministic classifier over `<base>...HEAD`, including uncommitted and untracked files. It
+    flags four kinds of change:
+    - `migration`: remove_column, drop_table, rename_column, change_column, remove_reference,
+      change_column_null to false, execute, or a backfill;
+    - `access`: the authentication concern, app/policies/, or an auth initializer;
+    - `contract`: a removed route, or a serializer or jbuilder line removed;
+    - `outbound`: a new Net::HTTP, Faraday, HTTParty, RestClient, Excon or URI.open call outside specs.
+    Exit 1 (one-way) or 2 (could not classify) hands the merge to the user with the reasons; exit 0 merges as
+    before.
+  - **Tests.** 14 cases, each trigger with a control (add_column, change_column_default, an added route and an
+    HTTP client in a spec are all two-way). The guard catches 8 mutations. The first draft missed brand-new files,
+    the #1341 blind spot again, and its own fixtures caught it.
+
 - **`migration-writer` sequences a live rename or retype as expand–contract — `plugins/rails-flow/agents/migration-writer.md`**
   (#1347). It said only "treat strong_migrations' errors as law", which helps only where the gem is installed. It now
   states the six steps and splits the final drop into `ignored_columns` then the migration, each shipped on its own. It
@@ -15488,6 +15508,9 @@ boot/validation path — with a bullet each so the promotion could close them se
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
 ### 1.68.3 (release v1.151.0) — 2026-09-26
+
+- **The quality-pass worked example's `Unusable` count is refreshed to 12 — `skills/quality-pass/references/worked-example.md`,
+  `dist/quality-pass.skill`** (#1338). The door classifier is the new copy; reach stays 6.
 
 - **rails-8 no longer says 8.1 alphabetizes `schema.rb` columns without the 8.1.4 revert — `skills/rails-8/references/models.md`,
   `skills/rails-8/SKILL.md`, `skills/rails-8/references/project-setup.md`, `dist/rails-8.skill`** (#1356). doctrine-verifier
