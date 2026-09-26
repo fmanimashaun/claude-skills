@@ -53,8 +53,10 @@ Rules of the road:
   DBs with `db:prepare`/`db:schema:load`, not by replaying years of
   migrations. Switch to `structure.sql`
   (`config.active_record.schema_format = :sql`) only when using DB features
-  schema.rb can't express (Postgres extensions, triggers). 8.1 alphabetizes
-  columns in schema.rb.
+  schema.rb can't express (Postgres extensions, triggers). 8.1.0–8.1.3
+  dumped schema.rb columns alphabetically; 8.1.4 reverted it, so columns are
+  in definition order again, with no option to opt back in (activerecord
+  CHANGELOG, v8.1.4).
 - Other useful ops: `change_column_null`, `change_column_default from:/to:`
   (reversible), `rename_column` (on a table the running app uses, only as the
   last step of an expand–contract sequence: new column, dual-write, backfill,

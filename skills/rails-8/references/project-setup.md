@@ -263,8 +263,11 @@ Other 8.1-specific watch items:
   explicit `= false` forward **silently downgrades** the framework default `:raise` to
   `:log` — you keep the setting and lose the protection. Details in
   `auth-security.md` §4.
-- `schema.rb` columns are now **alphabetized** — the first post-upgrade
-  migration rewrites column order. Commit it; don't hand-edit back.
+- `schema.rb` column order: 8.1.0–8.1.3 dump columns **alphabetically**, and
+  8.1.4 reverts to definition order (activerecord CHANGELOG, v8.1.4: the sort
+  "creates improper production tables when using `db:prepare`"). The first
+  dump after crossing either boundary rewrites column order. Commit it on its
+  own; don't hand-edit back.
 - Order-dependent finders (`.first`, `.last`, `#second`…) on relations with
   no inferable order → add explicit `.order(:id)` (or rely on the primary key
   where Rails can). Deprecated on the library default; **raising** once
