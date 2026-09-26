@@ -9,6 +9,11 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### 2026-09-26 (release v1.151.0)
 
+- **`check_frontmatter.py` refuses a shipped agent that declares neither `tools:` nor `disallowedTools:` —
+  `scripts/check_frontmatter.py`, `scripts/mutations/check_frontmatter.py`** (#1343). Without either, an agent inherits
+  every tool. The rule `agent-undeclared-tools` covers the 29 shipped agents; maintainer agents under `.claude/` are
+  out of scope. Before the fix it named `functional-tester`; after, 0. 3 new mutations.
+
 - **A gate that every shipped frontmatter is valid YAML — `scripts/check_frontmatter.py`,
   `scripts/mutations/check_frontmatter.py`, `scripts/maintainer_doctor.py`** (#1344). It covers 97 files: commands,
   agents and skills, shipped and maintainer. Stdlib only, because CI has no PyYAML. It encodes YAML's own rule for a
@@ -10426,6 +10431,13 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 ## qa-flow (independent QA plugin)
 
 ### 1.33.2 (release v1.151.0) — 2026-09-26
+
+- **`functional-tester` can no longer edit code or spawn agents — `plugins/qa-flow/agents/functional-tester.md`** (#1343).
+  It had no `tools:` line, so it inherited every tool, although its body says it never modifies application code. It
+  now declares `disallowedTools: Edit, NotebookEdit, Agent`. That is a denylist, not an allowlist, because it drives
+  the browser through Playwright MCP tools whose names depend on what each user called the server. An allowlist
+  could silently cut it off from the browser. It keeps `Write` for its reports. Found in the mattpocock/skills
+  review.
 
 - **Hook commands quote `${CLAUDE_PLUGIN_ROOT}`, so the plugin works from an install path with a space — `plugins/qa-flow/hooks/hooks.json`** (#1334).
   `claude plugin validate --strict` failed this plugin on it. The validator warns: *"Shell command uses ${CLAUDE_PLUGIN_ROOT} without quotes … If the expanded path contains a space the command can split into several words and fail."* Same fix as rails-flow; see that entry.

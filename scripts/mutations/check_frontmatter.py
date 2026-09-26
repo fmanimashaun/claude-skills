@@ -9,6 +9,25 @@ GUARD = Guard(
     subject="scripts/check_frontmatter.py",
     selftest="scripts/check_frontmatter.py",   # --selftest lives in the module itself
     mutations=(
+        # #1343: an agent that inherits every tool passes again.
+        Mutation(
+            "an agent with no tools declaration passes",
+            '    if "tools" not in f and "disallowedTools" not in f:',
+            "    if False:",
+            "an agent with no tools or disallowedTools is a finding",
+        ),
+        Mutation(
+            "disallowedTools no longer counts as a declaration",
+            '    if "tools" not in f and "disallowedTools" not in f:',
+            '    if "tools" not in f:',
+            "CONTROL: disallowedTools alone is a declaration",
+        ),
+        Mutation(
+            "only maintainer agents are checked, never the shipped ones",
+            '        if path.parent.name == "agents" and path.parts[-3] != ".claude":',
+            '        if path.parent.name == "agents" and path.parts[-3] == ".claude":',
+            "a shipped agent with no tools declaration is named",
+        ),
         Mutation(
             "an unquoted ': ' passes",
             '        if ": " in value:',
