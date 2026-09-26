@@ -111,11 +111,30 @@ fi
 # #2: the sha binding IS the gate — empty/garbled sha must fail closed, not pass on PASS alone.
 [ -n "$csha" ] || deny "certification has no sha — the stamp is invalid. Re-run /qa-flow:certify."
 
-devsha="$(git rev-parse origin/dev 2>/dev/null || git rev-parse dev 2>/dev/null || true)"
+# `--verify -q` prints NOTHING for a missing ref. Plain `rev-parse origin/dev` echoes the literal
+# "origin/dev" to stdout before failing, so the fallback's sha arrived on a second line and no stamp
+# could ever match in a repo without a fetched origin/dev (found by the #1337 fixtures).
+devsha="$(git rev-parse --verify -q origin/dev 2>/dev/null || git rev-parse --verify -q dev 2>/dev/null || true)"
 if [ -n "$devsha" ]; then
   case "$devsha" in
     "$csha"*) : ;;
-    *) deny "certification is for sha ${csha:0:12}, but dev is at ${devsha:0:12}. dev moved — re-certify before promoting." ;;
+    *)
+      # #1337. Committing the stamp to dev by PR moves dev to a commit nobody tested, so an exact-sha
+      # match denied the very promotion the stamp was written for. Accept an ANCESTOR of dev only when
+      # the delta since it is the stamp itself (or nothing). Any other change still means re-certify.
+      # A failed rev-parse or diff denies: an error must not read as "nothing changed".
+      full="$(git rev-parse --verify -q "${csha}^{commit}" 2>/dev/null || true)"
+      if [ -z "$full" ] || ! git merge-base --is-ancestor "$full" "$devsha" 2>/dev/null; then
+        deny "certification is for sha ${csha:0:12}, but dev is at ${devsha:0:12}. dev moved — re-certify before promoting."
+      fi
+      if ! delta="$(git diff --name-only "$full" "$devsha" 2>/dev/null)"; then
+        deny "could not diff the certified sha ${csha:0:12} against dev ${devsha:0:12}. Fetch and retry, or re-certify."
+      fi
+      case "$delta" in
+        ""|"qa/CERTIFICATION") : ;;
+        *) deny "certification is for sha ${csha:0:12}; dev (${devsha:0:12}) has changed more than the stamp since: $(printf '%s' "$delta" | head -3 | tr '\n' ' '). Re-certify before promoting." ;;
+      esac
+      ;;
   esac
 else
   deny "cannot resolve dev sha to compare against the certification. Fetch dev and retry."

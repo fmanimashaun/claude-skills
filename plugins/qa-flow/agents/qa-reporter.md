@@ -144,7 +144,8 @@ certified feature.
 `qa/CERTIFICATION` as JSON `{"sha":"<dev sha tested>","date":"<iso>","verdict":
 "PASS","report":"qa/reports/<file>"}`. The release-gate hook reads this. NEVER write
 it for verify runs, partial passes, or with open S1/S2 defects. State plainly which
-sha is cleared for main.
+sha is cleared for main, and that the stamp's commit (to dev, by PR, containing only
+`qa/CERTIFICATION`) keeps it valid; any other change after that sha needs re-certification (#1337).
 
 ## Output
 
