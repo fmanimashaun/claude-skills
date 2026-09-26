@@ -40,8 +40,13 @@ class Unusable(RuntimeError):
     pass
 
 
+def routed_names(text: str) -> list[str]:
+    """The NAMES of the secret-routed keys that hold a value. Only names ever reach the output."""
+    return sorted(secrets(text))
+
+
 def secrets(text: str) -> dict[str, str]:
-    """KEY -> value for every secret-routed key with a value."""
+    """KEY -> value for every secret-routed key with a value. Values are compared, never printed."""
     out, secret = {}, True  # before any section tag: treat as secret
     for raw in text.splitlines():
         line = raw.strip()
@@ -74,12 +79,15 @@ def scan(root: Path) -> tuple[int, list[str]]:
     if not briefing.is_file():
         return 2, [f"UNUSABLE: no {BRIEFING}, so there are no secret values to look for"]
     try:
-        values = secrets(briefing.read_text(encoding="utf-8"))
+        text_env = briefing.read_text(encoding="utf-8")
         files = committable(root)
     except (OSError, Unusable) as exc:
         return 2, [f"UNUSABLE: {exc}"]
-    scanned = {k: v for k, v in values.items() if len(v) >= MIN_LEN}
-    short = sorted(set(values) - set(scanned))
+    names = routed_names(text_env)
+    routed = secrets(text_env)
+    long_names = [k for k in names if len(routed[k]) >= MIN_LEN]   # one order, shared by both lists
+    needles = [routed[k] for k in long_names]
+    short = [k for k in names if k not in long_names]
     findings = []
     for path in files:
         if path.resolve() == briefing.resolve() or not path.is_file():
@@ -88,14 +96,14 @@ def scan(root: Path) -> tuple[int, list[str]]:
         if b"\0" in data[:8000]:
             continue  # binary, the way git decides it
         text = data.decode("utf-8", errors="replace")
-        for key, value in sorted(scanned.items()):
-            if value in text:
-                findings.append(f"  [secret-in-committable-file] {key} appears in {path.relative_to(root)}")
+        for index, needle in enumerate(needles):
+            if needle in text:
+                findings.append(f"  [secret-in-committable-file] {long_names[index]} appears in {path.relative_to(root)}")
     note = f" ({len(short)} value(s) under {MIN_LEN} chars not scanned: {', '.join(short)})" if short else ""
     if findings:
         return 1, [f"{len(findings)} secret value(s) in files git would commit{note}:", *findings]
     return 0, [f"no secret from {BRIEFING} in any of {len(files)} committable file(s); "
-               f"{len(scanned)} value(s) scanned{note}"]
+               f"{len(needles)} value(s) scanned{note}"]
 
 
 def selftest() -> int:
@@ -110,13 +118,13 @@ def selftest() -> int:
     env = ("# ═══ ROUTED TO: config/deploy.yml  (non-secret deploy facts) ═══\n"
            "WEB_HOST=203.0.113.10                 # server\n"
            "# ═══ ROUTED TO: .kamal/secrets  (gitignored) ═══\n"
-           "KAMAL_REGISTRY_PASSWORD=ghp_realtoken123   # PAT\n"
+           "KAMAL_REGISTRY_PASSWORD=example-registry-token-0001   # PAT\n"
            "POSTGRES_PASSWORD=short\n"
            "# ═══ ROUTED TO: Rails encrypted credentials ═══\n"
-           "CRED__stripe__api_key=sk_live_abcdefgh\n")
+           "CRED__stripe__api_key=example-api-key-0002\n")
     got = secrets(env)
     expect("secret-routed keys are read, comments stripped",
-           got.get("KAMAL_REGISTRY_PASSWORD") == "ghp_realtoken123" and got.get("CRED__stripe__api_key") == "sk_live_abcdefgh",
+           got.get("KAMAL_REGISTRY_PASSWORD") == "example-registry-token-0001" and got.get("CRED__stripe__api_key") == "example-api-key-0002",
            str(got))
     expect("CONTROL: a deploy.yml-routed fact is not a secret", "WEB_HOST" not in got, str(got))
     expect("an untagged key counts as a secret", "X" in secrets("X=abcdefghij\n"))
@@ -134,14 +142,14 @@ def selftest() -> int:
         code, out = scan(root)
         expect("CONTROL: a deploy.yml holding names and public facts is clean", code == 0, str(out))
         expect("...and the short value is reported as not scanned", "POSTGRES_PASSWORD" in out[0], str(out))
-        deploy.write_text(deploy.read_text() + "  token: ghp_realtoken123\n", encoding="utf-8")
+        deploy.write_text(deploy.read_text() + "  token: example-registry-token-0001\n", encoding="utf-8")
         code, out = scan(root)
         expect("an UNTRACKED file holding a secret is found (plain git diff cannot see it)",
                code == 1 and any("KAMAL_REGISTRY_PASSWORD appears in config/deploy.yml" in l for l in out), str(out))
-        expect("...and the value itself is never printed", not any("ghp_realtoken123" in l for l in out), str(out))
+        expect("...and the value itself is never printed", not any("example-registry-token-0001" in l for l in out), str(out))
         subprocess.run(["git", "add", "config/deploy.yml"], cwd=root, check=True)
         expect("a STAGED file holding a secret is found", scan(root)[0] == 1)
-        (root / ".kamal" / "secrets").write_text("KAMAL_REGISTRY_PASSWORD=ghp_realtoken123\n", encoding="utf-8")
+        (root / ".kamal" / "secrets").write_text("KAMAL_REGISTRY_PASSWORD=example-registry-token-0001\n", encoding="utf-8")
         subprocess.run(["git", "rm", "-q", "--cached", "config/deploy.yml"], cwd=root, check=True)
         deploy.write_text("registry:\n  password: [KAMAL_REGISTRY_PASSWORD]\n", encoding="utf-8")
         expect("CONTROL: an ignored secrets file is not scanned", scan(root)[0] == 0, str(scan(root)))

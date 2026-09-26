@@ -23,14 +23,14 @@ GUARD = Guard(
         ),
         Mutation(
             "a found secret is not reported",
-            "            if value in text:",
+            "            if needle in text:",
             "            if False:",
             "an UNTRACKED file holding a secret is found (plain git diff cannot see it)",
         ),
         Mutation(
             "the finding prints the secret value",
-            '                findings.append(f"  [secret-in-committable-file] {key} appears in {path.relative_to(root)}")',
-            '                findings.append(f"  [secret-in-committable-file] {key}={value} appears in {path.relative_to(root)}")',
+            '                findings.append(f"  [secret-in-committable-file] {long_names[index]} appears in {path.relative_to(root)}")',
+            '                findings.append(f"  [secret-in-committable-file] {long_names[index]}={needle} appears in {path.relative_to(root)}")',
             "...and the value itself is never printed",
         ),
         Mutation(
