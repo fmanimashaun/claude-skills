@@ -32,6 +32,13 @@ AND THE TAG IS CHECKED AGAINST THE REAL TAG LIST, never against the CHANGELOG's 
 CHANGELOG naming `v1.141.0` is the claim under test; using it as its own evidence would leave an
 already-promoted `dev` reporting as armed forever, and the window would never close.
 
+BUT THE TAG IS LATE, so it is not the only evidence of a promotion (#1372). `release.yml` creates the
+tag after its gate sweep on `main`, ten minutes or more after the promotion merges, and never if that
+run fails. In the gap, a promoted `dev` read as ARMED and this tool told a merge to FOLD its bullet into
+a block that had already left: #1365 landed in `(release v1.151.0)` with v1.151.0 shipping without
+it. So a version also counts as promoted once `origin/main`'s CHANGELOG carries its release heading.
+That is `main`'s file, not `dev`'s, so the claim under test is still never used as its own evidence.
+
 THE SECOND HALF IS THE `Closes` LIST, and it is the part the incident actually cost. Folding a bullet
 into the armed block without adding its `Closes #n` to the promotion is the same silent merge with
 the CHANGELOG tidied up: the issue then sits open over a release that contains it, and the next
@@ -72,6 +79,20 @@ def git(*args: str, cwd: Path | None = None) -> str:
 def existing_tags(cwd: Path | None = None) -> set[str]:
     """The REAL tag list. Never the CHANGELOG's own text -- see the module docstring."""
     return {t.strip() for t in git("tag", "-l", cwd=cwd).splitlines() if t.strip()}
+
+
+def promoted_versions(tags: set[str], main_changelog: str) -> set[str]:
+    """Tagged, OR already on main. The tag alone leaves the post-promotion gap armed (#1372)."""
+    return tags | set(RELEASE_BLOCK.findall(main_changelog))
+
+
+def run(base_changelog: str, head_changelog: str, main_changelog: str, tags: set[str],
+        promotion_body: str | None = None) -> tuple[list[str], str | None]:
+    """The whole decision, minus I/O -- main() and the selftest both come through here."""
+    promoted = promoted_versions(tags, main_changelog)
+    if promotion_body is not None:
+        return promotion_closes(base_changelog, promotion_body, promoted), armed_for(base_changelog, promoted)
+    return check(base_changelog, head_changelog, promoted), armed_for(base_changelog, promoted)
 
 
 def armed_for(changelog: str, tags: set[str]) -> str | None:
@@ -145,6 +166,9 @@ ARMED_PROMOTED = "## rails-flow\n\n### 1.47.0 (release v0.0.1) — 2026-09-22\n\
 OPEN = "## rails-flow\n\n### Unreleased\n\n- a thing (#1)\n"
 ARMED_PLUS_NEW = ARMED + "\n### Unreleased\n\n- my new bullet (#1170)\n"
 NO_BLOCKS = "## rails-flow\n\n- prose only, no headings\n"
+# main after the v9.9.9 promotion merged; the tag is not created yet.
+MAIN_PROMOTED = ARMED
+MAIN_BEFORE = "## rails-flow\n\n### 1.46.0 (release v0.0.1) — 2026-09-20\n\n- older (#1)\n"
 
 
 def selftest() -> int:
@@ -174,6 +198,17 @@ def selftest() -> int:
     check_that("an already-PROMOTED dev is not armed", armed_for(ARMED_PROMOTED, tags) is None)
     check_that("...so a merge into it is silent", check(ARMED_PROMOTED, ARMED_PROMOTED + "\n### Unreleased\n\n- x (#3)\n", tags) == [])
 
+    # THE LATE TAG (#1372), driven through run() -- the path main() takes. Promotion merged, tag
+    # not yet created: main already carries the block, so dev is NOT armed and Unreleased is right.
+    f, v = run(ARMED, ARMED_PLUS_NEW, MAIN_PROMOTED, tags)
+    check_that("a promoted dev whose tag is not created yet is not armed", v is None and f == [], f"{v} {f}")
+    # ITS CONTROL: without this, "treat everything as promoted" passes the case above.
+    f, v = run(ARMED, ARMED_PLUS_NEW, MAIN_BEFORE, tags)
+    check_that("...while a block main does not carry yet still reads armed", v == "v9.9.9" and bool(f), f"{v} {f}")
+    # An unreadable main ("") falls back to the tags alone: it errs toward a refusal, never silence.
+    f, v = run(ARMED, ARMED_PLUS_NEW, "", tags)
+    check_that("...and an unreadable main falls back to the tags, so it still reads armed", v == "v9.9.9" and bool(f), f"{v} {f}")
+
     # Both halves are required for "armed".
     check_that("zero release blocks is not armed", armed_for(NO_BLOCKS, tags) is None)
     check_that("an Unreleased heading anywhere means not armed", armed_for(ARMED + "\n### Unreleased\n", tags) is None)
@@ -202,6 +237,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--base", default="origin/dev", help="the ref this branch would merge into")
+    ap.add_argument("--main", default="origin/main", help="the published branch; a block it carries is promoted")
     ap.add_argument("--promotion-closes", metavar="BODY_FILE",
                     help="check a promotion PR body closes every issue the armed blocks ship")
     args = ap.parse_args()
@@ -212,19 +248,18 @@ def main() -> int:
     if not base_cl:
         print(f"check_arm_window: cannot read CHANGELOG.md at {args.base} — skipping, not passing")
         return 0
-    tags = existing_tags()
-
-    if args.promotion_closes:
-        findings = promotion_closes(base_cl, Path(args.promotion_closes).read_text(encoding="utf-8"), tags)
-    else:
-        findings = check(base_cl, (REPO / "CHANGELOG.md").read_text(encoding="utf-8"), tags)
+    # origin/main, never the local ref: in a shared checkout the local `main` is routinely stale.
+    # Unreadable -> "" -> tags alone, which errs toward ARMED (a refusal), never toward silence.
+    main_cl = git("show", f"{args.main}:CHANGELOG.md")
+    body = Path(args.promotion_closes).read_text(encoding="utf-8") if args.promotion_closes else None
+    findings, version = run(base_cl, (REPO / "CHANGELOG.md").read_text(encoding="utf-8"), main_cl,
+                            existing_tags(), body)
 
     if findings:
         print("arm window:")
         for f in findings:
             print(f"  {f}")
         return 1
-    version = armed_for(base_cl, tags)
     print(f"arm window: {args.base} is {'ARMED for ' + version + ', and this branch does not re-open Unreleased' if version else 'not armed'}")
     return 0
 
