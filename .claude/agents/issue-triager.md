@@ -51,6 +51,29 @@ and the version they were on.
   ```
   If found, comment linking the original and apply `duplicate`; do not queue it.
 
+## Check a skill gap against the skill first
+
+A `skill-gap` report says the skill does not cover something. It describes what an agent DID,
+and an agent that ignored guidance looks exactly like one that never had it. The two need
+opposite fixes, so search the named skill before queuing, in the reporter's words and in the
+words the doctrine would use (#1386):
+
+```bash
+git grep -n -i -F -e "<key phrase>" -- "skills/<skill>/"
+```
+
+- **No hit**: a real gap. Queue it as `type:skill-gap`, and say what you searched for in your
+  triage comment ("searched `skills/rails-8/` for X and Y: no hit").
+- **A hit that covers the case**: a **lapse**. Comment with the `file:line` and the quoted
+  sentence, apply `lapse`, and change `type:skill-gap` to `type:feature`. The fix is
+  enforcement (a hook, a lint or cop, a `guarantee` row in `docs/architecture/doctrine-map.html`),
+  or making the rule findable where the agent reads, never a second copy of the prose.
+- **A partial hit**: still a gap. Quote what exists, so the fix extends it instead of
+  duplicating it.
+
+A lapse does not mean the reporter was wrong: the agent really did the wrong thing. It says
+which layer is missing.
+
 ## Record the ordering you had to reason out
 
 If working out where an issue belongs meant reading prose in another issue to learn what it

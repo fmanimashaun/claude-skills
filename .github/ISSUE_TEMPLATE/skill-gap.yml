@@ -18,6 +18,13 @@ body:
     validations:
       required: true
   - type: textarea
+    id: already
+    attributes:
+      label: Does the skill already say this? (optional)
+      description: "Search the skill first. If you find it, quote the sentence and its file: the problem is then that the agent did not follow it, and the fix is enforcement, not more text. If not, say what you searched for."
+    validations:
+      required: false
+  - type: textarea
     id: scenario
     attributes:
       label: The scenario that needed it
