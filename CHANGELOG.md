@@ -3432,6 +3432,27 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **A Spec review beside the Standards review: `spec-reviewer` reads the diff against the acceptance criteria TEXT —
+  `plugins/rails-flow/agents/spec-reviewer.md`, `plugins/rails-flow/scripts/check_spec_review.py`,
+  `plugins/rails-flow/scripts/mutations/check_spec_review.py`, `plugins/rails-flow/commands/feature.md`,
+  `plugins/rails-flow/commands/fix.md`, `plugins/rails-flow/reference/model-tiers.md`** (#1370). Adapted from
+  mattpocock/skills `engineering/code-review` (two review axes, never merged or re-ranked), and approved by the
+  maintainer on the issue.
+  - **The gap.** `check_criteria.py --specs` proves every `AC-n` is cited and the mutation step proves a citing spec
+    can fail, but no reviewer read the criterion's words against the diff. `code-reviewer.md` and
+    `claim-verifier.md` mention criteria 0 times. So behaviour nobody asked for, and a criterion built against a
+    misreading (with a spec written from the same misreading), passed every gate.
+  - **The fix.** A read-only judgement agent reports each criterion as met, `spec-missing`, `spec-partial` or
+    `spec-misread`, and any `spec-unasked` behaviour. It runs as gate 1b in `/rails-flow:feature` and in
+    `/rails-flow:fix`'s VERIFY step, under its own heading. Its records go to
+    `docs/evidence/reviews/<date>/findings.jsonl`, the first per-PR review pass that persists findings (#1360).
+  - **What is enforced.** `check_spec_review.py` refuses a citation of a criterion the acceptance file does not
+    define, an unasked-for finding in a file the diff does not change (untracked new files included, #1341), and
+    CLEAN beside a P1 or P2 finding. A missing findings file is exit 2, not clean. 19 selftest cases, each refusal
+    with a control; the guard catches 9 mutations. Doctor gate "rails-flow spec-review citations".
+
 ### 1.54.0 (release v1.151.0) — 2026-09-26
 
 - **A one-way-door PR stops for a human before the automatic merge into dev — `plugins/rails-flow/scripts/classify_door.py`,

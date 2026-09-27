@@ -129,7 +129,9 @@ hypothesis that turned out to be the cause, so the next reader learns it.
 1. BRANCH:    git checkout <base> && git pull && git checkout -b fix/<phase-or-slug>
 2. IMPLEMENT: the loop above, one issue per commit; delegate big items to rails-developer,
               schema changes to migration-writer
-3. VERIFY:    test-runner → FULL suite, 0 failures; code-reviewer → VERDICT: CLEAN
+3. VERIFY:    test-runner → FULL suite, 0 failures; code-reviewer → VERDICT: CLEAN;
+              spec-reviewer against the phase's acceptance file → VERDICT: CLEAN with
+              check_spec_review.py exit 0 (#1370), reported apart from code-reviewer
 4. PUSH + PR: gh pr create --base <base> --title "fix: <phase — summary>" --body "<PR Documentation Contract>"
 5. GATE:      review-pr skill if the code-review-graph CLI + graph are present
               (command -v code-review-graph && [ -d .code-review-graph ]), else
