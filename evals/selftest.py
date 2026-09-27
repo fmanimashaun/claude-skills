@@ -131,6 +131,15 @@ expect(
 )
 
 expect(
+    "scoped-index",
+    {"app/controllers/application_controller.rb":
+        "class ApplicationController < ActionController::Base\n"
+        "  def set_current_user = Current.user = User.find_by(id: session[:user_id])\n"
+        "end\n"},
+    flagged=True, label="only the scaffold's ApplicationController (#1374)",
+)
+
+expect(
     "scoped-index", {"README.md": "nothing here\n"},
     flagged=True, label="no controller written at all",
 )
@@ -147,6 +156,23 @@ expect(
         "  <%= f.text_field :title %>\n"
         "<% end %>\n"},
     flagged=True, label="raw form_with despite project convention",
+)
+
+# The fixture above also lacks simple_form_for, so the whole-workspace finding flags it whether or
+# not the per-line form_with check works. Only a mix isolates the line check; without this, turning
+# form_with detection off left the selftest green (found by the evals_gates mutation guard, #1374).
+expect(
+    "simple-form-convention",
+    {**CONVENTION,
+     "app/views/invoices/_form.html.erb":
+        "<%= simple_form_for @invoice do |f| %>\n"
+        "  <%= f.input :title %>\n"
+        "<% end %>\n",
+     "app/views/invoices/_search.html.erb":
+        "<%= form_with url: invoices_path, method: :get do |f| %>\n"
+        "  <%= f.text_field :q %>\n"
+        "<% end %>\n"},
+    flagged=True, label="one raw form_with beside simple_form_for",
 )
 
 expect(
@@ -485,6 +511,48 @@ expect(
 )
 
 # --------------------------------------------------------------------------
+# ui-component-present (#1374)
+
+expect("ui-component-present", {}, flagged=True, label="nothing written")
+expect("ui-component-present", {
+    "app/components/ui/logo_component.rb": "class Ui::LogoComponent < ViewComponent::Base\nend\n",
+}, flagged=True, label="only the exempt Ui::Logo")
+expect("ui-component-present", {
+    "app/components/ui/invoice_card_component.html.erb": "<div class=\"bg-card\"></div>\n",
+}, flagged=True, label="template with no component class")
+expect("ui-component-present", {
+    "app/views/invoices/_card.html.erb": "<div class=\"bg-card\"></div>\n",
+}, flagged=True, label="a partial outside app/components/ui/")
+expect("ui-component-present", {
+    "app/components/ui/invoice_card_component.rb":
+        "class Ui::InvoiceCardComponent < ViewComponent::Base\nend\n",
+}, flagged=False, label="component class, compact name")
+expect("ui-component-present", {
+    "app/components/ui/invoice_card_component.rb":
+        "module Ui\n  class InvoiceCardComponent < ViewComponent::Base\n  end\nend\n",
+}, flagged=False, label="component class nested in module Ui")
+
+
+# --------------------------------------------------------------------------
+# EVERY CASE FAILS ON THE UNTOUCHED SCAFFOLD (#1374)
+#
+# A case whose rules all pass before the agent writes anything cannot tell the arms apart: it adds
+# the same PASS to none, weak and real. Case 03 was exactly that -- both of its rules were absence
+# rules and the scaffold holds no component for them to read. Checked per case against the real
+# scaffold, so a future case built only from absence rules fails here, not in a paid run.
+import scaffold  # noqa: E402
+
+_blank_scaffold = workspace(scaffold.FILES)
+for _case in json.loads((HERE / "suite.json").read_text(encoding="utf-8"))["cases"]:
+    CHECKS += 1
+    _passed, _ = gates.run_rules(_blank_scaffold, _case["rules"])
+    if _passed:
+        FAILURES.append(
+            f"case {_case['id']} PASSES on the untouched scaffold -- an agent that writes nothing "
+            f"scores the same in every arm. Add a rule that requires the artifact to exist.")
+
+
+# --------------------------------------------------------------------------
 # EVERY STAGED SKILL IS MEASURED (#646)
 #
 # `hotwire` sat in RAILS_STACK_SKILLS for the whole life of this benchmark with no case exercising
@@ -508,7 +576,7 @@ if _unmeasured:
 _ASSERTED = {
     "scoped-index", "simple-form-convention", "no-inline-dark",
     "no-literal-color", "job-idempotent", "spec-accompanies-behavior",
-    "stimulus-discipline",
+    "stimulus-discipline", "ui-component-present",
 }
 CHECKS += 1
 _missing = set(gates.RULES) - _ASSERTED

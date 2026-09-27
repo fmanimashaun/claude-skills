@@ -9,6 +9,19 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **Two benchmark cases passed when the agent wrote nothing — `evals/gates.py`, `evals/selftest.py`,
+  `evals/suite.json`, `scripts/mutations/evals_gates.py`** (#1374). `03-role-tokens` was gated only by
+  `no-literal-color` and `no-inline-dark`, which report only violations they find, and the scaffold has no
+  `app/components/ui/`. `01-scoped-index` treated "a controller exists" as the attempt, and the scaffold's
+  own `ApplicationController` sets `Current.user`. Both scored PASS in every arm on no work, pulling the
+  comparison toward "no difference". New precondition rule `ui-component-present` (`components.md:168`) on
+  case 03; `scoped-index` now requires an `index` action. The class-level guard: `selftest.py` runs every
+  case's rules on the untouched scaffold and refuses any that pass (it found case 01, which the issue had
+  not). New mutation guard covers all 8 rules, 9 of 9 caught; its first run found a third gap,
+  `simple-form-convention`'s per-line `form_with` check, which no fixture isolated (now one does). Selftest
+  47 → 62 assertions. Found while reviewing microsoft/SkillOpt, whose rule judges flag a check that cannot
+  tell a better answer from a non-answer. Our own design; no framework claim.
+
 - **The maintainer brain adopts 56 lessons from local memory — `docs/brain/memos/feedback/`, `docs/brain/MEMORY.md`.**
   They were rendered by `brain_local_sync.py`'s own `memo_text()`: bodies verbatim, with a provenance line appended. The
   maintainer picked them per D-002. There are 15 left out on purpose: 4 personal working preferences and 11

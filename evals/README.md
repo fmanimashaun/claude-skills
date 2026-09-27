@@ -98,6 +98,7 @@ doctrine behind it is taste, and taste belongs in a discussion.
 | `simple-form-convention` | `forms.md:3` | forms use `simple_form_for` where the project has adopted it |
 | `no-inline-dark` | `foundations-tokens.md:247` | zero inline `dark:` utilities in components/views |
 | `no-literal-color` | `brand.md:87` | no literal colours outside `Ui::Logo` |
+| `ui-component-present` | `components.md:168` | precondition: the card was written under `app/components/ui/` (`Ui::Logo` does not count) |
 | `job-idempotent` | `jobs-and-realtime.md:176` | jobs guard against re-running |
 | `spec-accompanies-behavior` | `rails-8/SKILL.md` | a concern ships with a spec that proves it |
 
@@ -120,6 +121,13 @@ regressions** — making the real-skill arm score worse than baseline and
 The general principle, and the reason `selftest.py` asserts it: **a gate must pass
 against the doctrine's own reference examples.** If a rule fails what
 `references/*.md` shows as correct, the rule is wrong — not the doctrine.
+
+The mirror principle: **every case must fail on the untouched scaffold.** A case that passes before
+the agent writes anything adds the same PASS to all three arms. `03-role-tokens` did exactly that,
+because both of its rules only report violations they find and the scaffold held no component, and
+`01-scoped-index` did too, because the scaffold's own `ApplicationController` counted as the
+attempt (#1374). `selftest.py` now runs each case's rules against the real scaffold and refuses any
+case that passes.
 
 A third case needed fairness work rather than correction: `form_with` is correct
 stock Rails, and `ecosystem-gems.md:29` makes simple_form conditional ("dozens of
