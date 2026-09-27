@@ -314,12 +314,14 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 </div>
 <div class="row" data-k="guarantee">
 <h2>simple_form is mandatory in this stack — no form, and no form element, is built any other way.</h2>
-<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>skills/rails-8/references/ecosystem-gems.md</code> &middot; #778</span></div>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>skills/rails-8/references/ecosystem-gems.md</code> &middot; #778 &middot; #1383</span></div>
 <ul class="enf">
 <li><code>script:plugins/rails-flow/scripts/check_mandated_gems.py</code></li>
 <li><code>mutation:check_mandated_gems</code></li>
+<li><code>script:plugins/rails-flow/scripts/check_simple_form_only.py</code></li>
+<li><code>mutation:check_simple_form_only</code></li>
 </ul>
-<p class="note">Two of the three `Always` gems already had gates (archspec, herb, each applies_when its config exists). This one had neither an installer nor a check, and was missing on both affected scaffolds.</p>
+<p class="note">Two halves. `check_mandated_gems` proves the gem is INSTALLED; until #1383 that was the whole enforcement, so a project with the gem and every form hand-built read green. `check_simple_form_only` proves it is USED: no form or field in app/views or app/components is built another way.</p>
 </div>
 <div class="row" data-k="guarantee">
 <h2>The prescribed testing stack is not a menu — a project missing simplecov, webmock or vcr is incomplete, not merely different.</h2>

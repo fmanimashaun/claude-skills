@@ -340,6 +340,20 @@
       ]
     },
     {
+      "id": "simple-form-only",
+      "why": "simple_form is mandatory in this stack, and the only check was design-auditor's review-time grep for form_with/form_for over app/views. It missed form_tag, raw <form>/<input>/<select>, *_tag field helpers, tag.input, and raw field methods called on a simple_form builder (f.text_field, f.label), and it never read app/components (#1383). Not applicable without simple_form in Gemfile.lock. Exemptions are declared, with a reason, in .rails-flow/raw-form-exemptions.json.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_simple_form_only.py"
+      ],
+      "applies_when": [
+        "Gemfile.lock"
+      ],
+      "requires": [
+        "python3"
+      ]
+    },
+    {
       "id": "unauthenticated-writes",
       "why": "Every public write route (POST/PATCH/PUT/DELETE an unauthenticated visitor can reach) needs a rate_limit covering its action. The launch baseline required it and nothing ran it, so a one-time-code check and a magic-link sender took unlimited requests while every gate read clean (#1300). Exemptions are declared, with a reason, in .rails-flow/unauthenticated-endpoints.json.",
       "command": [
