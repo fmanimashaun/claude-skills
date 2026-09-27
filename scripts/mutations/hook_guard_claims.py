@@ -24,6 +24,20 @@ GUARD = Guard(
            # ci-verdict-hint.sh runs it; unstaged, every mutation here read as caught (#1173).
            "plugins/rails-flow/scripts/ci_verdict_hint.py"),
     mutations=(
+        # #1389: the template check, removed from the hook -- the prose rule it replaced was
+        # followed 0 times in 5 downstream PRs.
+        Mutation(
+            "the PR-template check never runs",
+            "    if [ -n \"$gaps\" ]; then",
+            "    if false; then",
+            "a PR body missing a template section is blocked",
+        ),
+        Mutation(
+            "the template check is scoped to create only, so `gh pr edit` slips past it",
+            "if printf '%s' \"$cmd\" | grep -qE '\\bgh[[:space:]]+pr[[:space:]]+(create|edit)\\b'; then\n  tpl_lib",
+            "if printf '%s' \"$cmd\" | grep -qE '\\bgh[[:space:]]+pr[[:space:]]+(create)\\b'; then\n  tpl_lib",
+            "`gh pr edit` with the same body is blocked too",
+        ),
         Mutation(
             # #1141: the scope was `gh pr create|edit` alone. On the day this hook fired on a PR
             # body carrying eight unverified claims, four ISSUE COMMENTS carrying counts went out
