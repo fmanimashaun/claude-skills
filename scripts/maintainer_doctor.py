@@ -370,6 +370,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # breaker. Fixtures prove the breakers fire; only those can see the doctrine drifting away from
     # the code, which is the same defect one level up.
     ("pipeline stop conditions", ("python3", "plugins/pipeline/scripts/breaker.py", "--selftest")),
+    # #1366. The deploy-time monitoring advisory: advises when absent, silent when present, whole
+    # gem names, always exit 0, and both deploy commands actually run it.
+    ("pipeline apm advisory", ("python3", "plugins/pipeline/scripts/apm_advisory.py", "--selftest")),
     # #1204. The installer reported success and wrote a hook git never runs under core.hooksPath
     # or from a linked worktree; the selftest proves each case with a real merge, not a file check.
     ("pipeline hook install", ("python3", "plugins/pipeline/scripts/install_git_hooks_selftest.py")),

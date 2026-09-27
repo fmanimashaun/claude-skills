@@ -7,7 +7,7 @@
 | plugin | version | agents | commands | tier rows | gates |
 |---|---|---|---|---|---|
 | `design-flow` | 1.44.2 | 5 | 12 | 5 | 19 |
-| `pipeline` | 1.3.4 | 2 | 8 | 2 | 3 |
+| `pipeline` | 1.3.4 | 2 | 8 | 2 | 4 |
 | `qa-flow` | 1.33.2 | 11 | 8 | 11 | 15 |
 | `rails-flow` | 1.54.0 | 12 | 20 | 12 | 26 |
 
@@ -100,6 +100,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | design-flow tells vs our own doctrine | `design-flow` | `python3 plugins/design-flow/scripts/llm_tell_detector.py --doctrine-selfcheck` | live check |
 | design-flow token drift selftest | `design-flow` | `python3 plugins/design-flow/scripts/check_token_drift.py --selftest` | selftest |
 | design-flow variant conformance | `design-flow` | `python3 plugins/design-flow/scripts/variant_conformance.py --selftest` | selftest |
+| pipeline apm advisory | `pipeline` | `python3 plugins/pipeline/scripts/apm_advisory.py --selftest` | selftest |
 | pipeline committed-secret scan | `pipeline` | `python3 plugins/pipeline/scripts/scan_committed_secrets.py --selftest` | selftest |
 | pipeline hook install | `pipeline` | `python3 plugins/pipeline/scripts/install_git_hooks_selftest.py` | live check |
 | pipeline stop conditions | `pipeline` | `python3 plugins/pipeline/scripts/breaker.py --selftest` | selftest |

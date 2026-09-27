@@ -36,8 +36,21 @@ then deploys.
    commit, including an untracked deploy.yml; `git diff` cannot prove this, #1341);
    credentials round-trip verified.
 3. **Confirm & deploy**: show the resolved plan — host, domain, image, destination,
-   and the NAMES routed to each bucket (never values) — get explicit approval, then
+   the NAMES routed to each bucket (never values), and the monitoring advisory — get explicit approval, then
    `kamal setup` (first time) or `kamal deploy` (with `RAILS_FLOW_ALLOW_DEPLOY=1`).
+
+## Monitoring advisory (never blocks, #1366)
+
+Before the plan in step 3, check whether production will record anything about its own speed:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/apm_advisory.py" Gemfile.lock
+```
+
+It always exits `0`. Silence means a monitoring gem is present; one `apm advisory:` line
+means none is, and goes into the plan verbatim. It is a reminder, not a precondition —
+never refuse or delay the deploy on it, and never install a gem from here: the install
+steps live in the `rails-8` skill's `references/observability.md` §7.
 
 ## Bound the run before it starts (#128)
 
