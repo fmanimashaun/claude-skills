@@ -319,6 +319,14 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
      ("python3", "scripts/derive_mandated_gems.py", "--check")),
     ("mandated gems derived selftest",
      ("python3", "scripts/derive_mandated_gems.py", "--selftest")),
+    # #1361. The tenancy cop rails-flow installs is DERIVED from rails-8's multi-tenancy.md §7 and
+    # committed beside its checker -- the same cross-plugin reason as the mandated gems above.
+    ("tenancy cop derived",
+     ("python3", "scripts/derive_tenancy_cop.py", "--check")),
+    ("tenancy cop derived selftest",
+     ("python3", "scripts/derive_tenancy_cop.py", "--selftest")),
+    ("rails-flow tenancy cop",
+     ("python3", "plugins/rails-flow/scripts/check_tenancy_cop.py", "--selftest")),
     # #762's neighbour. The curated-doc drift signal is ADVISORY -- it blocks nothing -- and that is
     # exactly why its silent-false-clean survived: nothing ran it. The selftest drives the real hook
     # under a working, absent, broken and shasum-only hasher.

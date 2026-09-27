@@ -3526,6 +3526,23 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   - 11 helper selftest cases and 5 end-to-end hook fixtures. Mutations: 7 of 7 on the helper, 2 new on the hook.
     Doctor gate "rails-flow PR-template sections".
 
+- **`/rails-flow:setup-flow` installs the tenancy cop, and `tenancy-cop` keeps it honest — `plugins/rails-flow/scripts/check_tenancy_cop.py`,
+  `plugins/rails-flow/scaffold/tenancy/scoped_lookup.rb`, `plugins/rails-flow/checks.json`,
+  `plugins/rails-flow/commands/setup-flow.md`** (#1361). Maintainer decision on [#1361](https://github.com/fmanimashaun/claude-skills/issues/1361#issuecomment-5857528252): setup-flow asks whether the app
+  is multi-tenant, records `.rails-flow/tenancy.json` (`{"multi_tenant": false}` is an answer, and makes the check
+  not applicable), and copies the cop.
+  - **The check refuses** a missing or hand-edited cop, a `.rubocop.yml` that does not `require:` it, disables it or
+    leaves `SafeAutoCorrect` on, an **unknown key under it** (RuboCop swallows those silently, verified on 1.91.0), and
+    any `db/schema.rb` table carrying the tenant foreign key that `TenantOwnedModels` does not reach and
+    `unscoped_tables` does not excuse with a reason. It reads YAML through the project's Ruby and merges local
+    `inherit_from` files. 23 selftest assertions, each refusal paired with a control; driven end to end on a real
+    project (4 findings, exit 1; fixed, exit 0).
+  - **Derived, not copied by hand.** The shipped cop is generated from rails-8's `multi-tenancy.md` §7 by
+    `scripts/derive_tenancy_cop.py`, the same cross-plugin reason as `mandated_gems.json`, with doctor gates
+    `tenancy cop derived` (`--check`, reading the blob at `HEAD`) and its selftest, and a `rebuild_generated.py` entry.
+  - Mutation guards `plugins/rails-flow/scripts/mutations/check_tenancy_cop.py` (6/6 caught) and
+    `scripts/mutations/derive_tenancy_cop.py` (2/2 caught).
+
 - **Every per-PR review pass saves its findings, apart from a full review's — `plugins/rails-flow/agents/code-reviewer.md`,
   `plugins/rails-flow/agents/pr-reviewer.md`, `plugins/rails-flow/agents/spec-reviewer.md`,
   `plugins/rails-flow/commands/feature.md`, `plugins/rails-flow/commands/issues.md`** (#1360). **Owner decision
@@ -15813,6 +15830,22 @@ boot/validation path — with a bullet each so the promotion could close them se
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
 ### Unreleased
+
+- **A cop for the unscoped tenant lookup, and what it cannot see — `skills/rails-8/references/multi-tenancy.md`,
+  `dist/rails-8.skill`** (#1361). §7 said no tool enforced tenant scoping; it now ships `Tenancy/ScopedLookup`, a
+  project-local cop that flags `find` / `find_by` / `find_by!` / `find_sole_by` / `where` / `all` on a tenant-owned
+  model's constant in a controller, with its `.rubocop.yml` block and an 8-example spec. It says plainly what the cop
+  cannot see (a lookup through a variable, models and jobs, `joins`, raw SQL), so the §7 enforcement it adds to still stands.
+  - **Verified** by `doctrine-verifier` and by running it, on rubocop 1.91.0, rubocop-ast 1.50.0 and
+    rubocop-rails-omakase 1.1.0: the `Base` / `AutoCorrector` / `RESTRICT_ON_SEND` / `cop_config` API; `require:` with a
+    local path as the supported loader, with no deprecation (*"there are no plans to remove it in the future"*,
+    [RuboCop: Plugins](https://docs.rubocop.org/rubocop/plugins.html)); `SafeAutoCorrect: false` meaning `-a` reports and
+    `-A` rewrites; `Include`/`Exclude` scoping; `expect_offense` under the `:config` context; the inline
+    `rubocop:disable … -- reason` form.
+  - **Refuted, and shipped as the correction:** RuboCop does *not* warn about a local cop's unknown keys (a typo checks
+    nothing, silently), and omakase does *not* use `DisabledByDefault` (it disables ten departments by name, so `Tenancy`
+    is on by default).
+  - Where the cop lives is our own design, per the maintainer decision on [#1361](https://github.com/fmanimashaun/claude-skills/issues/1361#issuecomment-5857528252).
 
 - **The quality-pass worked example's `check(label, ok, detail)` count is refreshed to 40 — `skills/quality-pass/references/worked-example.md`,
   `dist/quality-pass.skill`** (#1367). The new copy is `plugins/qa-flow/scripts/text_resize.py`; reach stays 21. It reuses

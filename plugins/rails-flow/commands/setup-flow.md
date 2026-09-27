@@ -862,6 +862,42 @@ Save it as `.rails-flow/issue-labels.json`. A value ending in `*` is a prefix (`
 `guard-bash` hook then refuses a `gh issue create` that misses a group, and names what is allowed.
 Undeclared, it still refuses an issue with no label at all.
 
+### Multi-tenant? Install the tenancy cop, and record the answer (#1361)
+
+`Invoice.find(params[:id])` in a controller reads across every tenant, and review is the only thing
+that catches it. **Ask whether the app is multi-tenant, and which foreign key marks a tenant-owned
+table** (e.g. `organization_id`). Record the answer:
+
+```json
+{"multi_tenant": true, "tenant_foreign_key": "organization_id"}
+```
+
+Save it as `.rails-flow/tenancy.json`. `{"multi_tenant": false}` is an answer too: the `tenancy-cop`
+check then reports not applicable, which is not the same as never having asked. On yes:
+
+1. Copy the cop rails-flow ships, unmodified. The check refuses a hand-edited copy.
+
+   ```bash
+   mkdir -p lib/rubocop/cop/tenancy
+   cp "${CLAUDE_PLUGIN_ROOT}/scaffold/tenancy/scoped_lookup.rb" lib/rubocop/cop/tenancy/scoped_lookup.rb
+   ```
+
+2. Add the `.rubocop.yml` block from the rails-8 skill's `references/multi-tenancy.md` §7. Set
+   `TenantScope` to the app's `Current` attribute, and add one `TenantOwnedModels` entry per model whose
+   table carries the tenant foreign key. Add its spec, from the same section, at
+   `spec/rubocop/cop/tenancy/scoped_lookup_spec.rb`.
+3. Run the check. It names every table carrying the key that the model list does not reach, and any key
+   under the cop that RuboCop would ignore silently:
+
+   ```bash
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_tenancy_cop.py"
+   ```
+
+   A tenant-keyed table read across tenants on purpose goes in `"unscoped_tables": {"<table>":
+   "<why>"}`, and a reason is required.
+
+Offer the files as one approved diff; do not write them unasked.
+
 ### Coverage that cannot catch a regression — propose the ratchet (#800)
 
 `testing.md` used to ship `minimum_coverage 90` **commented out** with *"enable once realistic"*.

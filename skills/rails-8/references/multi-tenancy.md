@@ -384,5 +384,193 @@ block is real — `ActiveSupport::Notifications` on `sql.active_record` carries 
 test-time subscriber asserting that every query against a tenant-scoped table carries the tenant filter
 is a hand-roll, and worth writing if the data warrants it.
 
-Until then the enforcement is: a `NOT NULL` tenant FK on every scoped table, association traversal that
+What *can* be enforced statically is the one shape §2 calls a cross-tenant read waiting to happen: a
+lookup on a tenant-owned model's **constant** in a controller. A project-local cop catches it.
+`/rails-flow:setup-flow` asks whether the app is multi-tenant, records the answer in
+`.rails-flow/tenancy.json`, and installs the cop. The `tenancy-cop` check then keeps the installed copy,
+its config and its list of tenant-owned tables honest.
+
+The cop, at `lib/rubocop/cop/tenancy/scoped_lookup.rb`:
+
+```ruby
+# frozen_string_literal: true
+
+module RuboCop
+  module Cop
+    module Tenancy
+      # Flags a lookup on a tenant-owned model's CONSTANT — `Document.find(params[:id])` — which
+      # reads across every tenant, and points at the tenant-scoped association instead:
+      # `Current.organization.documents.find(params[:id])`.
+      #
+      #   Tenancy/ScopedLookup:
+      #     Enabled: true
+      #     SafeAutoCorrect: false          # `rubocop -a` reports it; only `-A` rewrites it
+      #     Include: [app/controllers/**/*.rb]
+      #     Exclude: [app/controllers/admin/**/*.rb]
+      #     TenantScope: Current.organization
+      #     TenantOwnedModels:
+      #       Document: documents
+      #       Billing::Invoice: invoices
+      class ScopedLookup < Base
+        extend AutoCorrector
+
+        MSG = "`%<model>s.%<method>s` reads across every tenant. Scope it: `%<scoped>s.%<method>s`."
+
+        # Fixed, not configurable: RuboCop does not validate a local cop's keys, so a mistyped
+        # method list would silently check nothing.
+        RESTRICT_ON_SEND = %i[find find_by find_by! find_sole_by where all].freeze
+
+        def on_send(node)
+          receiver = node.receiver
+          return unless receiver&.const_type?
+
+          model = receiver.const_name
+          association = tenant_owned_models[model]
+          return unless association
+
+          scoped = [tenant_scope, association].compact.join(".")
+          message = format(MSG, model: model, method: node.method_name, scoped: scoped)
+          add_offense(node, message: message) do |corrector|
+            corrector.replace(receiver, scoped) if tenant_scope
+          end
+        end
+
+        private
+
+        def tenant_owned_models
+          cop_config.fetch("TenantOwnedModels", {}).to_h { |model, assoc| [model.to_s.delete_prefix("::"), assoc.to_s] }
+        end
+
+        def tenant_scope
+          cop_config["TenantScope"]
+        end
+      end
+    end
+  end
+end
+```
+
+Load and scope it in `.rubocop.yml`:
+
+```yaml
+require:
+  - ./lib/rubocop/cop/tenancy/scoped_lookup.rb
+
+Tenancy/ScopedLookup:
+  Enabled: true
+  SafeAutoCorrect: false
+  Include:
+    - app/controllers/**/*.rb
+  Exclude:
+    - app/controllers/admin/**/*.rb   # the staff plane (§1) reads across tenants by design
+  TenantScope: Current.organization
+  TenantOwnedModels:
+    Invoice: invoices
+```
+
+Verified on rubocop 1.91.0, rubocop-ast 1.50.0 and rubocop-rails-omakase 1.1.0 (2026-09-27), by running
+it:
+
+- **`require:` with a local path is the supported loader** for a project cop, and prints no deprecation
+  warning: *"require is used for internal extensions such as custom cops and formatters, there are no
+  plans to remove it in the future"* ([RuboCop: Plugins](https://docs.rubocop.org/rubocop/plugins.html)).
+  `plugins:` is for extensions distributed as gems.
+- **RuboCop does not validate a local cop's parameters.** A typo in `TenantOwnedModels` silently checks
+  nothing, with no warning: `config_validator.rb` validates only cops in the default configuration. That
+  is why the method list is fixed in the cop rather than configured, and why the `tenancy-cop` check
+  validates the keys itself.
+- **rubocop-rails-omakase disables ten departments by name**, not with `DisabledByDefault`, so a new
+  `Tenancy` department is on by default. `Enabled: true` is there for the reader.
+- **`SafeAutoCorrect: false` is deliberate.** An agent's edit hook runs `rubocop -a`, and rewriting a query
+  onto an association changes what it returns, which someone should see. `-a` reports the offense and
+  leaves the file alone; `-A` rewrites it.
+- **What makes it a gate:** `bin/ci` runs RuboCop (SKILL.md, *Local CI*).
+
+A deliberate cross-tenant lookup (a share link resolved by an unguessable token, before any tenant is
+selected) says so on its own line:
+
+```ruby
+@invoice = Invoice.find_by!(share_token: params[:token]) # rubocop:disable Tenancy/ScopedLookup -- resolved by token, before any tenant exists
+```
+
+**What it cannot see**, so the enforcement above still stands: a lookup through a variable or a method
+that returns the class, queries inside models and jobs (it reads controllers only), `joins` and raw SQL.
+Beside it, the enforcement is a `NOT NULL` tenant FK on every scoped table, association traversal that
 makes an unscoped query *look* wrong in review, and per-job re-checks at the boundary in §3.
+
+Its spec, at `spec/rubocop/cop/tenancy/scoped_lookup_spec.rb`:
+
+```ruby
+# frozen_string_literal: true
+
+require "rubocop"
+require "rubocop/rspec/support"
+require_relative "../../../../lib/rubocop/cop/tenancy/scoped_lookup"
+
+RSpec.configure { |config| config.include RuboCop::RSpec::ExpectOffense }
+
+RSpec.describe RuboCop::Cop::Tenancy::ScopedLookup, :config do
+  let(:cop_config) do
+    { "TenantScope" => "Current.organization",
+      "TenantOwnedModels" => { "Document" => "documents", "Billing::Invoice" => "invoices" } }
+  end
+
+  it "flags a lookup on a tenant-owned model and scopes it" do
+    expect_offense(<<~RUBY)
+      Document.find(params[:id])
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^ `Document.find` reads across every tenant. Scope it: `Current.organization.documents.find`.
+    RUBY
+
+    expect_correction(<<~RUBY)
+      Current.organization.documents.find(params[:id])
+    RUBY
+  end
+
+  it "flags a top-level constant (::Document)" do
+    expect_offense(<<~RUBY)
+      ::Document.where(status: "draft")
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Document.where` reads across every tenant. Scope it: `Current.organization.documents.where`.
+    RUBY
+  end
+
+  it "flags a namespaced tenant-owned model by its full name" do
+    expect_offense(<<~RUBY)
+      Billing::Invoice.find_by!(number: n)
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `Billing::Invoice.find_by!` reads across every tenant. Scope it: `Current.organization.invoices.find_by!`.
+    RUBY
+
+    expect_correction(<<~RUBY)
+      Current.organization.invoices.find_by!(number: n)
+    RUBY
+  end
+
+  it "does not flag the already-scoped lookup" do
+    expect_no_offenses("Current.organization.documents.find(params[:id])")
+  end
+
+  it "does not flag a model that is not tenant-owned" do
+    expect_no_offenses("User.find_by(email_address: email)")
+  end
+
+  it "does not flag a namespaced constant that merely shares the short name" do
+    expect_no_offenses("Admin::Document.find(params[:id])")
+  end
+
+  it "does not flag a method that is not a lookup" do
+    expect_no_offenses("Document.new(document_params)")
+  end
+
+  context "without a TenantScope" do
+    let(:cop_config) { { "TenantOwnedModels" => { "Document" => "documents" } } }
+
+    it "still flags, and offers no correction it cannot write" do
+      expect_offense(<<~RUBY)
+        Document.find(1)
+        ^^^^^^^^^^^^^^^^ `Document.find` reads across every tenant. Scope it: `documents.find`.
+      RUBY
+
+      expect_no_corrections
+    end
+  end
+end
+```
