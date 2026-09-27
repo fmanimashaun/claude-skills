@@ -10744,6 +10744,20 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
+### Unreleased
+
+- **The crawl checks each page with its text enlarged: WCAG 2.2 SC 1.4.4 and SC 1.4.12 — `plugins/qa-flow/scripts/text_resize.py`,
+  `plugins/qa-flow/scripts/crawl_collector.js`, `plugins/qa-flow/scripts/mutations/text_resize.py`,
+  `plugins/qa-flow/commands/crawl.md`, `plugins/qa-flow/checks.json`, `scripts/maintainer_doctor.py`** (#1367). Nothing
+  shipped checked a page with enlarged text. `crawl_collector.js --text-resize` measures each route as served, with
+  the root font size doubled, and with the four text-spacing overrides. `text_resize.py` reports only loss the
+  enlargement caused (clipped or drawn outside its box, on either axis); what was hidden as served stays
+  `layout_fit.py`'s. A page whose text did not grow (px sizes) is unverified, not clean. doctrine-verifier CONFIRMED
+  both criteria and the test method against WCAG 2.2 and Understanding 1.4.4 (verdict recorded on #1367); the design
+  is the maintainer decision recorded there. Driven in Chromium against a fixture: a fixed-height card and a fixed-width
+  pill fire, a growing card and a scroll box stay silent, and a px page is unverified. 38 selftest assertions; 9
+  mutations caught.
+
 ### 1.33.2 (release v1.151.0) — 2026-09-26
 
 - **Committing the certification stamp no longer invalidates it — `plugins/qa-flow/hooks/scripts/release-gate.sh`,
@@ -15750,6 +15764,10 @@ boot/validation path — with a bullet each so the promotion could close them se
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
 ### Unreleased
+
+- **The quality-pass worked example's `check(label, ok, detail)` count is refreshed to 40 — `skills/quality-pass/references/worked-example.md`,
+  `dist/quality-pass.skill`** (#1367). The new copy is `plugins/qa-flow/scripts/text_resize.py`; reach stays 21. It reuses
+  `layout_fit.py`'s `Unusable` rather than declaring a thirteenth.
 
 - **rails-8 names a self-hosted APM and says when to adopt it — `skills/rails-8/references/observability.md`,
   `skills/rails-8/SKILL.md`, `dist/rails-8.skill`** (#1365). §7 listed hosted APMs and self-hosted
