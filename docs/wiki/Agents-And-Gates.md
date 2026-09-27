@@ -2,14 +2,14 @@
      Rebuild:  python3 scripts/build_wiki.py
      Drift:    python3 scripts/build_wiki.py --check  (runs in the gate sweep) -->
 # Agents and gates
-**30 shipped agents · 49 shipped commands · 139 gates · 4 tier tables**, plus 5 maintainer agents and 6 maintainer commands that are not installed.
+**30 shipped agents · 50 shipped commands · 140 gates · 4 tier tables**, plus 5 maintainer agents and 6 maintainer commands that are not installed.
 
 | plugin | version | agents | commands | tier rows | gates |
 |---|---|---|---|---|---|
 | `design-flow` | 1.44.2 | 5 | 12 | 5 | 19 |
 | `pipeline` | 1.3.4 | 2 | 8 | 2 | 4 |
 | `qa-flow` | 1.33.2 | 11 | 8 | 11 | 16 |
-| `rails-flow` | 1.54.0 | 12 | 21 | 12 | 29 |
+| `rails-flow` | 1.54.0 | 12 | 22 | 12 | 30 |
 
 ## Agents
 
@@ -143,6 +143,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | rails-flow product brief | `rails-flow` | `python3 plugins/rails-flow/scripts/check_brief.py --selftest` | selftest |
 | rails-flow self-consistency | `rails-flow` | `python3 plugins/rails-flow/scripts/self_consistency.py --selftest` | selftest |
 | rails-flow simple-form-only gate | `rails-flow` | `python3 plugins/rails-flow/scripts/check_simple_form_only.py --selftest` | selftest |
+| rails-flow slice plan | `rails-flow` | `python3 plugins/rails-flow/scripts/check_slices.py --selftest` | selftest |
 | rails-flow spec support wired | `rails-flow` | `python3 plugins/rails-flow/scripts/check_spec_support.py --selftest` | selftest |
 | rails-flow spec-review citations | `rails-flow` | `python3 plugins/rails-flow/scripts/check_spec_review.py --selftest` | selftest |
 | rails-flow technical spec | `rails-flow` | `python3 plugins/rails-flow/scripts/check_spec.py --selftest` | selftest |
