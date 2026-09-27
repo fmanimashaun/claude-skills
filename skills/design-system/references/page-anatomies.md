@@ -123,7 +123,9 @@ marketing-adjacent app pages, onboarding, single-purpose tools, reading views.
 
 - **Mobile** — the nav collapses behind a disclosure in the same bar. The bar itself
   never wraps to two rows; that is the signal you needed the sidebar shell.
-- **`shell`** gives the page gutters and max measure. Do not re-declare `max-w-*` inside it.
+- **`shell`** gives the page gutters and max measure. Do not re-declare `max-w-*` inside it. The inline
+  gutter is at least `--viewport-inset` plus the safe area, so no card in the page touches the viewport
+  ([components.md → Viewport inset](components.md#viewport-inset)).
 - **Separation** is `border-b border-border`, not a shadow. Elevate only genuine
   overlays (`foundations-tokens.md`).
 - Use `section-y-compact` for app pages; plain `section-y` is the marketing rhythm.
@@ -204,6 +206,9 @@ Answers "what needs my attention?" — not "here is everything."
 
 One record. The screen answers "what is this, and what can I do to it?"
 
+**A record reached from a table is not this page:** it opens as a
+[Details card](components.md#details-card) over the list, and its URL renders that same card (#1391).
+
 ```erb
 <div class="stack">
   <nav aria-label="Breadcrumb" class="text-step--1">…</nav>
@@ -269,8 +274,9 @@ screen with two panes**, and that is a structural swap rather than a wider layou
 }
 ```
 
-- **Composes** — the Detail anatomy (whole, in the second pane), Table or a `<ul role="list">` for
-  the first, Pagination under the list, Empty state per pane.
+- **Composes** — the Detail anatomy (whole, in the second pane), a `<ul role="list">` for the first,
+  Pagination under the list, Empty state per pane. A **table's** record opens as a
+  [Details card](components.md#details-card), not a pane (#1391).
 - **Panes per band** — Compact 1, Medium 1 recommended or 2, Expanded and above 2. M3 states this
   one as a table, and it is the only canonical layout that does
   ([list-detail](https://m3.material.io/foundations/layout/canonical-examples/list-detail)).
@@ -353,15 +359,16 @@ is where the decisions no single part can carry are made.
   <%# The count is ALWAYS here, truncated or not. %>
   <p class="text-step--2 text-muted-foreground" aria-live="polite">Showing 1–20 of 63</p>
 
-  <div class="overflow-x-auto">
-    <table class="w-full text-step--1 text-left"><%# Table (CRUD) %></table>
-  </div>
+  <%# NO overflow wrapper: the table fits its container (Table (CRUD)). Rows are summaries whose
+      name opens the record into the modal frame as its Details card. %>
+  <table class="hidden md:table w-full text-step--1 text-left"><%# Table (CRUD) %></table>
+  <ul role="list" class="md:hidden stack"><%# the same rows as designed summary cards %></ul>
 
   <nav aria-label="Pagination"><%# Pagination %></nav>
 </section>
 ```
 
-- **Composes** — [Table (CRUD)](components.md#table-crud), [Pagination](components.md#pagination),
+- **Composes** — [Table (CRUD)](components.md#table-crud) and the [Details card](components.md#details-card) it opens, [Pagination](components.md#pagination),
   [Empty state](components.md#empty-state), [Skeleton](components.md#skeleton--loading-placeholder),
   Search input, and the filter combobox (`coverage.md` — filtering is `aria-autocomplete` on an
   editable combobox; the typeahead half belongs to the select-only one and applying it here
@@ -402,12 +409,13 @@ class of defect as a rescue that swallows the exception.
 - The toolbar's controls **must not renumber the page under the reader** — no auto-submit that
   reorders rows while a pointer is travelling toward one.
 
-### Responsive is a choice that gets recorded
+### Responsive is not a per-table choice
 
-[Table (CRUD)](components.md#table-crud) says to pick horizontal scroll or a card-stack fallback
-*"per table and state it"*. This is where it is stated. Whichever is chosen, **the columns are
-defined once** and both renderings read that definition — two hand-written copies drift, and the
-drift shows up as a column present in one and missing in the other.
+There is one answer, and it lives in [Table (CRUD)](components.md#table-crud) (#1391): the table fits
+its container at 768px and wider, and below that it is a stack of designed summary cards. Horizontal
+scroll is never the answer at any width. **The columns are defined once** and both renderings read
+that definition — two hand-written copies drift, and the drift shows up as a column present in one
+and missing in the other.
 
 ### The toolbar's order (#970)
 
@@ -416,8 +424,8 @@ Configuration on the left, extraction on the right, and the left-hand order is f
 search input, then categorical filters, then per-page. **Export sits alone on the right** — it reads
 the configured query, so it must not sit among the controls that configure it. The toolbar is
 `--shell-toolbar` (56px) tall and `sticky top-0` when the table is long enough to scroll under it; the
-table header then sticks at `top-(--shell-toolbar)` and the selection and identifier columns at
-`left-0` ([Table (CRUD)](components.md#table-crud), [foundations-tokens.md](foundations-tokens.md) §3b).
+table header then sticks at `top-(--shell-toolbar)` ([Table (CRUD)](components.md#table-crud),
+[foundations-tokens.md](foundations-tokens.md) §3b). Nothing sticks sideways; the table does not scroll.
 
 ### Selection and bulk actions (#969)
 

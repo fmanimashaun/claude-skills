@@ -28,7 +28,8 @@ Reserve explicit breakpoints (`sm 640 · md 768 · lg 1024 · xl 1280 · 2xl 153
   `hidden sm:flex sm:w-[4rem] lg:hidden` between `sm` and `lg`, off-canvas drawer + backdrop below
   `sm`. The middle one is the one shells forget, and it is the difference between 532px and 696px of
   content in an 800px window. See [§4](#4-adaptive--when-scaling-stops-being-enough-the-position-stated).
-- **table → card-stack** on small screens (or keep `overflow-x-auto` — decide per table, state it).
+- **table → designed summary cards** below 768px; the table fits its container above it and never
+  scrolls sideways ([components.md → Table (CRUD)](components.md#table-crud), #1391).
 - **header chrome** show/hide (`role pill hidden sm:flex`, username `hidden lg:flex`).
 Use `@container` (via `Layout::Container`) when the switch depends on a component's *own* width,
 not the page's.
@@ -150,7 +151,7 @@ ultra-wide monitors"*) as distinct. The decision, so that silence stops being th
 | Card/stat grids | `grid-auto`, `--min: 16rem` (stacks → multi-col by space). |
 | Forms | `grid-auto`/`Switcher`, not hand `grid-cols`. |
 | Modal | width tiers `max-w-md…4xl`; wrapper `p-4 sm:p-0`; body `max-h-[70vh] overflow-y-auto`. |
-| Tables | `overflow-x-auto`, or `md:table` + `md:hidden` card-stack for dense data. |
+| Tables | `hidden md:table` that fits its container + `md:hidden` summary cards; never `overflow-x-auto` ([Table (CRUD)](components.md#table-crud)). |
 | Tap targets | `min-h-touch` (44px) on all interactive controls — **wire it** (was defined-but-unused). |
 | Mobile / native | apply `pt-safe`/`pb-safe` safe-area utilities on fixed chrome; `body.mobile-app` toggles for Hotwire Native shells. |
 

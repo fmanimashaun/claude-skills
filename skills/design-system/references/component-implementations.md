@@ -359,17 +359,22 @@ module Ui
   class ModalComponent < ViewComponent::Base
     renders_one :title
     renders_one :actions   # the BODY is the block content, not a slot — same shape as Alert
-    SIZE = { sm: "max-w-md", md: "max-w-lg", lg: "max-w-2xl", xl: "max-w-4xl", full: "max-w-full mx-4" }.freeze
+    SIZE = { sm: "max-w-md", md: "max-w-lg", lg: "max-w-2xl", xl: "max-w-4xl", full: "max-w-full" }.freeze
     # A DRAWER IS THIS COMPONENT AT AN EDGE (decision, no upstream): one dialog implementation, one
     # focus trap, one Esc handler. `placement:` is the whole difference, so a drawer never needs a
     # second component -- and never needs a caller passing raw positioning classes, which is what an
     # invented `class:` argument would have meant. NOTE: only the OVERLAY drawer is this component.
     # A persistent push sidebar is not a dialog at all and must not come through here.
+    # NOTHING IS FLUSH WITH THE VIEWPORT (#1391, decision, no upstream). The wrapper carries
+    # `inset-viewport` and is a flex box; a placement is only where the panel sits INSIDE it, so every
+    # panel keeps all four corners rounded and at least 16px (24px at 768px) plus the safe area from
+    # every edge. Not `imposter` here: its `max-inline-size: 100%` is measured against the viewport or
+    # the wrapper's padding box, and both let a wide panel reach the edge.
     PLACEMENT = {
-      center: "imposter",
-      left:   "fixed inset-y-0 left-0 h-full rounded-none",
-      right:  "fixed inset-y-0 right-0 h-full rounded-none",
-      bottom: "fixed inset-x-0 bottom-0 w-full rounded-t-lg rounded-b-none",
+      center: "relative m-auto",
+      left:   "relative mr-auto h-full",
+      right:  "relative ml-auto h-full",
+      bottom: "relative mt-auto mx-auto",
     }.freeze
     def initialize(size: :md, labelledby: "modal-title", placement: :center, **attrs)
       @size, @labelledby, @placement = size.to_sym, labelledby, placement.to_sym
@@ -392,9 +397,9 @@ end
     level. A `keydown.esc` filter does neither — Stimulus consults the filter only inside
     `event instanceof KeyboardEvent`, so a bare `new Event("keydown")` skips it and empties this
     frame. See stimulus.md, "A key filter is not a type check". %>
-<div data-controller="modal" class="fixed inset-0 z-50">
+<div data-controller="modal" class="fixed inset-0 z-50 flex inset-viewport">
   <div class="fixed inset-0 bg-overlay/50 backdrop-blur-sm" data-action="click->modal#backdrop"></div>
-  <div class="<%= panel %> p-4 sm:p-0" role="dialog" aria-modal="true" aria-labelledby="<%= @labelledby %>"
+  <div class="<%= panel %>" role="dialog" aria-modal="true" aria-labelledby="<%= @labelledby %>"
        data-modal-target="panel">
     <div class="box stack" style="--space: var(--space-s)">
       <div class="cluster" style="--justify: space-between">

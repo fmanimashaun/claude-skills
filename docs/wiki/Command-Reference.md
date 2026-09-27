@@ -68,7 +68,7 @@ Commands are namespaced by plugin: `/rails-flow:feature`, `/qa-flow:verify`.
 **Build** — build UI against the system
 
 - `/design-flow:component` — Author or refactor a UI component per the design system.
-- `/design-flow:mobile` — Scaffold Hotwire Native parity (Phase 2) into a Rails 8 + Hotwire app — native-app detection + body flags, JSON path configuration, bridge components (button/menu/tab-bar), safe-area + min-h-touch wiring, and table->card-stack.
+- `/design-flow:mobile` — Scaffold Hotwire Native parity (Phase 2) into a Rails 8 + Hotwire app — native-app detection + body flags, JSON path configuration, bridge components (button/menu/tab-bar), safe-area + min-h-touch wiring, and table->summary cards.
 - `/design-flow:variants` — Generate N brand-conformant compositions of one brief plus a dev-only switcher route.
 
 

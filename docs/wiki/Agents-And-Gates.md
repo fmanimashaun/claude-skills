@@ -6,7 +6,7 @@
 
 | plugin | version | agents | commands | tier rows | gates |
 |---|---|---|---|---|---|
-| `design-flow` | 1.44.2 | 5 | 12 | 5 | 19 |
+| `design-flow` | 1.44.2 | 5 | 12 | 5 | 20 |
 | `pipeline` | 1.3.4 | 2 | 8 | 2 | 4 |
 | `qa-flow` | 1.33.2 | 11 | 8 | 11 | 16 |
 | `rails-flow` | 1.54.0 | 12 | 21 | 12 | 30 |
@@ -97,6 +97,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | design-flow scale contiguity selftest | `design-flow` | `python3 plugins/design-flow/scripts/check_scale_contiguity.py --selftest` | selftest |
 | design-flow setup cross-check | `design-flow` | `python3 plugins/design-flow/scripts/setup_doctrine_crosscheck.py --quiet` | live check |
 | design-flow setup cross-check selftest | `design-flow` | `python3 plugins/design-flow/scripts/setup_doctrine_crosscheck.py --selftest` | selftest |
+| design-flow table layout | `design-flow` | `python3 plugins/design-flow/scripts/check_table_layout.py --selftest` | selftest |
 | design-flow tells vs our own doctrine | `design-flow` | `python3 plugins/design-flow/scripts/llm_tell_detector.py --doctrine-selfcheck` | live check |
 | design-flow token drift selftest | `design-flow` | `python3 plugins/design-flow/scripts/check_token_drift.py --selftest` | selftest |
 | design-flow variant conformance | `design-flow` | `python3 plugins/design-flow/scripts/variant_conformance.py --selftest` | selftest |

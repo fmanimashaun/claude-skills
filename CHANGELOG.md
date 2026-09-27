@@ -12906,6 +12906,23 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+*Version number assigned at promotion.*
+
+- **A table that scrolls sideways, forces a width, or opens no details card is refused — `plugins/design-flow/scripts/check_table_layout.py`,
+  `plugins/design-flow/scripts/mutations/check_table_layout.py`, `plugins/design-flow/checks.json`,
+  `plugins/design-flow/commands/mobile.md`, `plugins/design-flow/README.md`, `scripts/maintainer_doctor.py`** (#1391).
+  Three rules, each a construct: a `<table>` nested inside an x-scroller (so a tablist's `overflow-x-auto` is not a
+  finding), a fixed minimum width (a `min-w-*` class, an inline `min-width` including an interpolated one, or
+  `min_width:` on a table component's render call however it wraps), and a table whose directory has no row opening
+  a record into the modal frame (the directory, because an index's row link lives in its partial). A non-index table
+  declares `table-without-details: <why>`; mailer views are not judged. Driven against the app behind the issue: 221
+  files, 23 `table-min-width` findings that account for every one of its 22 `min_width:` call sites plus the
+  interpolated style inside its table component. The first run caught two defects in the check itself (a
+  single-line render match that found 3 of the 22; two mailer layouts reported as missing a details card), and both
+  now have fixtures. Eight mutations, all caught. `/design-flow:mobile` step 5 now scaffolds designed summary cards.
+
 ### 1.44.2 (release v1.151.0) — 2026-09-26
 
 - **design-flow agents can load the design-system doctrine they cite — `plugins/design-flow/agents/ui-composer.md`,
@@ -15804,6 +15821,25 @@ boot/validation path — with a bullet each so the promotion could close them se
 - **The quality-pass worked example's `check(label, ok, detail)` count is refreshed to 40 — `skills/quality-pass/references/worked-example.md`,
   `dist/quality-pass.skill`** (#1367). The new copy is `plugins/qa-flow/scripts/text_resize.py`; reach stays 21. It reuses
   `layout_fit.py`'s `Unusable` rather than declaring a thirteenth.
+
+- **Tables are master-detail with no horizontal scroll, and no card touches the viewport — `skills/design-system/references/components.md`,
+  `skills/design-system/references/page-anatomies.md`, `skills/design-system/references/mobile-reference-implementation.md`,
+  `skills/design-system/references/component-implementations.md`, `skills/design-system/references/foundations-tokens.md`,
+  `skills/design-system/references/responsive.md`, `skills/design-system/references/mobile.md`,
+  `skills/design-system/references/layout-primitives.md`, `skills/design-system/references/components-commerce.md`,
+  `skills/design-system/SKILL.md`, `skills/rails-8/references/models.md`, `dist/design-system.skill`, `dist/rails-8.skill`**
+  (#1391). The skill told agents to wrap a table in `overflow-x-auto`, pin its identifier columns, link the id to a
+  show page and dump every column into a phone card; an app built exactly that and the owner rejected it. *Table
+  (CRUD)* is now the one home: no horizontal scroll at any width, a six-column budget, rows as summaries of at most
+  five fields whose name opens a new **Details card** (header, at a glance, sectioned fields, related, activity), and
+  designed summary cards below 768px. The Data table anatomy, mobile §5, `responsive.md`, `mobile.md` and `rails-8`
+  `models.md` now link to it rather than restate it. A new **Viewport inset** entry, the `--inset-edge` tokens and an
+  `inset-viewport` utility keep every card, modal, drawer and sheet at least 16px plus the safe area (24px at 768px)
+  from the edge, and `Ui::Modal`'s placements now float inside that inset rather than pinning to an edge. The one
+  external claim proposed for the rewrite, that screen readers do not reliably announce CSS `content:` labels, came
+  back **REFUTED** from doctrine-verifier (accname 1.2 §4.3.2 includes generated content; WCAG F87 is marked
+  obsolete), so it was dropped and only the rule "labels are real elements" remains. Our own design, no upstream:
+  maintainer decision recorded on #1391.
 
 - **rails-8 names a self-hosted APM and says when to adopt it — `skills/rails-8/references/observability.md`,
   `skills/rails-8/SKILL.md`, `dist/rails-8.skill`** (#1365). §7 listed hosted APMs and self-hosted
