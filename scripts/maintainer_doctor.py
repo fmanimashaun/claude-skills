@@ -380,6 +380,7 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("pipeline committed-secret scan", ("python3", "plugins/pipeline/scripts/scan_committed_secrets.py", "--selftest")),
     # #1338. The auto-merge into dev stops for a human on a one-way door; this is the classifier.
     ("rails-flow one-way door classifier", ("python3", "plugins/rails-flow/scripts/classify_door.py", "--selftest")),
+    ("rails-flow PR-template sections", ("python3", "plugins/rails-flow/hooks/scripts/lib/pr_template.py", "--selftest")),
     ("rails-flow technical spec", ("python3", "plugins/rails-flow/scripts/check_spec.py", "--selftest")),
     ("rails-flow simple-form-only gate", ("python3", "plugins/rails-flow/scripts/check_simple_form_only.py", "--selftest")),
     ("rails-flow mock-up gate", ("python3", "plugins/rails-flow/scripts/check_mockup_gate.py", "--selftest")),
@@ -435,6 +436,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("skill routing", ("python3", "scripts/check_skill_routing.py")),
     ("skill routing selftest", ("python3", "scripts/check_skill_routing.py", "--selftest")),
     ("evals gates", ("python3", "evals/selftest.py")),
+    # #1384. The arm comparison is what turns a paid run into a claim; a comparison that called a
+    # CI touching 0 a win would publish noise as evidence, so its selftest is a gate too.
+    ("evals compare", ("python3", "evals/compare.py", "--selftest")),
     # The doctor's own selftest is a gate like any other. Not recursive: this runs `--selftest`,
     # which exercises fixtures and never re-enters `--gates`. Its absence was found by the
     # completeness rule in maintainer_doctor_selftest.py on that rule's first run.

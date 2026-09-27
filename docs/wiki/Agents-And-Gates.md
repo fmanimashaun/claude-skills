@@ -2,14 +2,14 @@
      Rebuild:  python3 scripts/build_wiki.py
      Drift:    python3 scripts/build_wiki.py --check  (runs in the gate sweep) -->
 # Agents and gates
-**30 shipped agents · 49 shipped commands · 139 gates · 4 tier tables**, plus 5 maintainer agents and 6 maintainer commands that are not installed.
+**30 shipped agents · 49 shipped commands · 140 gates · 4 tier tables**, plus 5 maintainer agents and 6 maintainer commands that are not installed.
 
 | plugin | version | agents | commands | tier rows | gates |
 |---|---|---|---|---|---|
 | `design-flow` | 1.44.2 | 5 | 12 | 5 | 19 |
 | `pipeline` | 1.3.4 | 2 | 8 | 2 | 4 |
 | `qa-flow` | 1.33.2 | 11 | 8 | 11 | 16 |
-| `rails-flow` | 1.54.0 | 12 | 21 | 12 | 29 |
+| `rails-flow` | 1.54.0 | 12 | 21 | 12 | 30 |
 
 ## Agents
 
@@ -128,6 +128,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | pipeline tiers | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --agents plugins/pipeline/agents --tiers plugins/pipeline/reference/model-tiers.md` | live check |
 | project gates | `rails-flow` | `python3 plugins/rails-flow/scripts/project_gates.py --selftest` | selftest |
 | qa-flow tiers | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --agents plugins/qa-flow/agents --tiers plugins/qa-flow/reference/model-tiers.md` | live check |
+| rails-flow PR-template sections | `rails-flow` | `python3 plugins/rails-flow/hooks/scripts/lib/pr_template.py --selftest` | selftest |
 | rails-flow ci runs tests | `rails-flow` | `python3 plugins/rails-flow/scripts/check_ci_runs_tests.py --selftest` | selftest |
 | rails-flow claim extraction | `rails-flow` | `python3 plugins/rails-flow/scripts/extract_claims.py --selftest` | selftest |
 | rails-flow coverage ratchets | `rails-flow` | `python3 plugins/rails-flow/scripts/check_coverage_ratchet.py --selftest` | selftest |
@@ -172,6 +173,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | doctrine map coverage | `repo` | `python3 scripts/doctrine_map.py --audit-coverage` | live check |
 | doctrine map drift | `repo` | `python3 scripts/doctrine_map.py --check` | live check |
 | doctrine map selftest | `repo` | `python3 scripts/doctrine_map.py --selftest` | selftest |
+| evals compare | `repo` | `python3 evals/compare.py --selftest` | selftest |
 | evals gates | `repo` | `python3 evals/selftest.py` | live check |
 | frontmatter is valid YAML | `repo` | `python3 scripts/check_frontmatter.py` | live check |
 | frontmatter selftest | `repo` | `python3 scripts/check_frontmatter.py --selftest` | selftest |

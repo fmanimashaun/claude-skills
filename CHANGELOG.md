@@ -20,6 +20,24 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   split. How often lapses happen is unmeasured, and the issue says so. This is triage prose, advisory: nothing
   mechanical checks that the search ran. Our own design, decided on the issue; no framework claim.
 
+- **The benchmark compares arms instead of printing rates side by side — `evals/compare.py`,
+  `scripts/mutations/evals_compare.py`, `scripts/maintainer_doctor.py`, `evals/README.md`** (#1384). `run.py`
+  printed a pass rate per (case, arm), and nothing said how uncertain a difference was. `compare.py` pairs arms by
+  case, bootstraps a CI over cases (the independent unit, not runs), names a winner only when the CI excludes 0,
+  prints the CI half-width as the resolution, lists every case that got worse even under an aggregate win, and
+  refuses to pool files whose model, marketplace version or tools differ. Needed before any paid run: simulated,
+  the default 6 cases × 3 runs detects a +20-point lift about 36% of the time, so a null from it is unreadable.
+  `--selftest` 26 checks, driven through `main()`; new doctor gate `evals compare`; guard catches 8 of 8
+  mutations. The README's "nothing here is wired into CI" was false (`evals gates` has run in every sweep) and
+  "5 cases" was 6; both corrected. Our own design, decided on the issue; no framework claim.
+
+- **A case cannot certify the doctrine edit it motivated — `evals/compare.py`, `evals/README.md`** (#1385).
+  `--motivated-by CASE` removes the cases an edit was written for from its evidence; if no other case moved, the
+  verdict is UNVERIFIED rather than a win (after SkillOpt-Sleep's `reject_unverified`). A typo'd case id is
+  refused, since it would exclude nothing and certify anyway. Enforced only when `compare.py` is run with the
+  flag: no PR has ever claimed a benchmark effect, so nothing parses one yet. Our own design, decided on the
+  issue; no framework claim.
+
 - **`unhonoured-config-toggle` no longer reads a GitHub issue form as our config — `scripts/lint_self_consistency.py`,
   `scripts/mutations/lint_self_consistency.py`** (#1376). The rule treats every boolean in a setup command's YAML
   block as a rails-flow toggle that some script must read. setup-flow's proposed Mock-up form field carries
@@ -3476,6 +3494,24 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   that never had it, and the two need opposite fixes upstream. If the skill already covers the case, the report is
   filed as a `lapse` (`type:feature`) quoting the `file:line`, so the fix is enforcement, not more prose. The search
   goes in the report either way.
+
+- **A PR body must carry the repo's own PR-template sections — `plugins/rails-flow/hooks/scripts/guard-claims.sh`,
+  `plugins/rails-flow/hooks/scripts/lib/pr_template.py`, `plugins/rails-flow/scripts/check_hook_gates.py`,
+  `scripts/mutations/hook_guard_claims.py`, `scripts/mutations/hook_pr_template.py`, `.github/pull_request_template.md`**
+  (#1389). **Owner decision recorded on the issue.**
+  - **Why.** A downstream pr-reviewer BLOCKED 5 of 5 PRs in one day because the body lacked the template's sections,
+    and 3 more had merged without them. The rule was prose, followed 0 times in 5.
+  - **The hook.** `guard-claims.sh` (fail-closed, scoped to `gh pr create|edit` with a body) now refuses a body missing
+    a `##` section of the repo's template and names each one. The headings are read from the template, never
+    hardcoded. An `## If …` section is conditional by its own wording. A heading matches on its core text (before an
+    em dash, a colon or a parenthesis). Headings in template comments or fences do not count. The template is found
+    case-insensitively in `.github/`, the root or `docs/`. It is dormant without a template, and issue comments are
+    exempt.
+  - **Our own template changes with it.** It said "Delete any section that genuinely does not apply", which the hook
+    would contradict; it now says keep it and write N/A. Measured before the change: this session's own PR bodies
+    lacked 7 of its 11 sections.
+  - 11 helper selftest cases and 5 end-to-end hook fixtures. Mutations: 7 of 7 on the helper, 2 new on the hook.
+    Doctor gate "rails-flow PR-template sections".
 
 - **Every per-PR review pass saves its findings, apart from a full review's — `plugins/rails-flow/agents/code-reviewer.md`,
   `plugins/rails-flow/agents/pr-reviewer.md`, `plugins/rails-flow/agents/spec-reviewer.md`,
