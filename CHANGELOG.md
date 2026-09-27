@@ -9,6 +9,24 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **The benchmark compares arms instead of printing rates side by side — `evals/compare.py`,
+  `scripts/mutations/evals_compare.py`, `scripts/maintainer_doctor.py`, `evals/README.md`** (#1384). `run.py`
+  printed a pass rate per (case, arm), and nothing said how uncertain a difference was. `compare.py` pairs arms by
+  case, bootstraps a CI over cases (the independent unit, not runs), names a winner only when the CI excludes 0,
+  prints the CI half-width as the resolution, lists every case that got worse even under an aggregate win, and
+  refuses to pool files whose model, marketplace version or tools differ. Needed before any paid run: simulated,
+  the default 6 cases × 3 runs detects a +20-point lift about 36% of the time, so a null from it is unreadable.
+  `--selftest` 26 checks, driven through `main()`; new doctor gate `evals compare`; guard catches 8 of 8
+  mutations. The README's "nothing here is wired into CI" was false (`evals gates` has run in every sweep) and
+  "5 cases" was 6; both corrected. Our own design, decided on the issue; no framework claim.
+
+- **A case cannot certify the doctrine edit it motivated — `evals/compare.py`, `evals/README.md`** (#1385).
+  `--motivated-by CASE` removes the cases an edit was written for from its evidence; if no other case moved, the
+  verdict is UNVERIFIED rather than a win (after SkillOpt-Sleep's `reject_unverified`). A typo'd case id is
+  refused, since it would exclude nothing and certify anyway. Enforced only when `compare.py` is run with the
+  flag: no PR has ever claimed a benchmark effect, so nothing parses one yet. Our own design, decided on the
+  issue; no framework claim.
+
 - **`unhonoured-config-toggle` no longer reads a GitHub issue form as our config — `scripts/lint_self_consistency.py`,
   `scripts/mutations/lint_self_consistency.py`** (#1376). The rule treats every boolean in a setup command's YAML
   block as a rails-flow toggle that some script must read. setup-flow's proposed Mock-up form field carries
