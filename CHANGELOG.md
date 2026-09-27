@@ -15521,6 +15521,20 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### 1.68.3 (release v1.151.0) — 2026-09-26
 
+- **rails-8 names a self-hosted APM and says when to adopt it — `skills/rails-8/references/observability.md`,
+  `skills/rails-8/SKILL.md`, `dist/rails-8.skill`** (#1365). §7 listed hosted APMs and self-hosted
+  error/trace stores, and nothing for request, query and job performance kept in-house. It now covers
+  Rails Pulse: install into a separate database (`db:prepare`), `config.authorize`, the two recurring
+  jobs, verification by `rails_pulse:status` exit 0, the 0.3 → 0.4 upgrade steps, and why it sits
+  beside `mission_control-jobs` but never beside a hosted APM. doctrine-verifier CONFIRMED against
+  rails_pulse **v0.4.1** (tag commit 420daa0): `lib/generators/rails_pulse/install_generator.rb:13-14,68-99`,
+  `app/controllers/rails_pulse/application_controller.rb:215-238`, `lib/tasks/rails_pulse_tasks.rake:26-32`,
+  `README.md:74-88`, `CHANGELOG.md:34-46`. Two proposed wordings were corrected by the verdict ("anything
+  falsy", not "anything but `true`", is a 403; separate-DB install runs `db:prepare`, not `db:migrate`), and
+  the proposed "Ruby 3.2+, Rails 7.2+" floor was REFUTED (gemspec: Ruby >= 3.1, Rails >= 7.1, < 9), so the
+  doctrine states the tested Rails set instead. The "when to adopt" rule is our design: maintainer decision
+  recorded on #1365.
+
 - **The quality-pass worked example's `Unusable` count is refreshed to 12 — `skills/quality-pass/references/worked-example.md`,
   `dist/quality-pass.skill`** (#1338). The door classifier is the new copy; reach stays 6.
 
