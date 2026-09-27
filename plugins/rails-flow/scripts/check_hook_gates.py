@@ -148,6 +148,89 @@ def guard_lane_fixtures() -> None:
           code == 0, f"exit {code}")
 
 
+# ---- guard-migrate.sh (#1362) --------------------------------------------------------------------
+def guard_migrate_fixtures() -> None:
+    def write(file_path_fn, *, rails: bool = True, existing: str | None = None) -> tuple[int, str]:
+        with tempfile.TemporaryDirectory() as td:
+            proj = Path(td) / "proj"
+            (proj / "db" / "migrate").mkdir(parents=True)
+            if rails:
+                (proj / "bin").mkdir()
+                (proj / "bin" / "rails").write_text("#!/usr/bin/env ruby\n")
+            if existing:
+                target = proj / existing
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text("class Existing < ActiveRecord::Migration[7.1]; end\n")
+            file_path = file_path_fn(proj)
+            payload = json.dumps({"tool_input": {"file_path": file_path}, "cwd": str(proj)})
+            return run_hook("guard-migrate.sh", cwd=proj, stdin=payload,
+                            unset=("CLAUDE_PROJECT_DIR",))
+
+    # THE BLOCKED SHAPE, both ways a path arrives: relative and absolute.
+    code, out = write(lambda p: "db/migrate/20260927120000_add_thing.rb")
+    check("guard-migrate: creating a NEW migration by a RELATIVE path is blocked",
+          code == 2, f"exit {code}: {out.strip()[:160]!r}")
+    check("...and the message steers to the generator", "bin/rails generate migration" in out, out.strip()[:200])
+    code, _ = write(lambda p: str(p / "db" / "migrate" / "20260927120000_add_thing.rb"))
+    check("guard-migrate: creating a NEW migration by an ABSOLUTE path is blocked", code == 2, f"exit {code}")
+
+    # CONTROL, existence: the identical path, but the file already exists -- Write is an overwrite,
+    # not a creation, and stays allowed.
+    code, _ = write(lambda p: "db/migrate/20260101000000_existing.rb",
+                    existing="db/migrate/20260101000000_existing.rb")
+    check("guard-migrate: CONTROL: overwriting an EXISTING migration via Write is allowed",
+          code == 0, f"exit {code}")
+    code, _ = write(lambda p: str(p / "db" / "migrate" / "20260101000000_existing.rb"),
+                    existing="db/migrate/20260101000000_existing.rb")
+    check("guard-migrate: CONTROL: ...the same holds for the absolute-path form", code == 0, f"exit {code}")
+
+    # CONTROL, directory: an ordinary write elsewhere is untouched.
+    code, _ = write(lambda p: "app/models/x.rb")
+    check("guard-migrate: CONTROL: a write elsewhere (app/models/x.rb) is allowed", code == 0, f"exit {code}")
+
+    # CONTROL, extension: a non-`.rb` file in db/migrate/ (a fixture, a README) is not a migration.
+    code, _ = write(lambda p: "db/migrate/notes.txt")
+    check("guard-migrate: CONTROL: a non-`.rb` file in db/migrate/ is allowed", code == 0, f"exit {code}")
+
+    # CONTROL, project kind: the identical new-migration path, in a project with no bin/rails.
+    code, _ = write(lambda p: "db/migrate/20260927120000_add_thing.rb", rails=False)
+    check("guard-migrate: CONTROL: the identical write in a NON-RAILS project is allowed",
+          code == 0, f"exit {code}")
+
+    # THE DOCUMENTED LIMIT (verified 2026-09-27): a custom `migrations_paths` in database.yml
+    # (Rails multi-database support) is not read here, so a non-existent file under a directory
+    # that is NOT the literal `db/migrate/` -- even one that looks purpose-built, like
+    # `db/animals_migrate/` -- is allowed. Reading database.yml was judged out of scope.
+    code, _ = write(lambda p: "db/animals_migrate/20260101000000_x.rb")
+    check("guard-migrate: KNOWN LIMIT: a custom migrations_paths directory (db/animals_migrate/) "
+          "is not covered and is allowed", code == 0, f"exit {code}")
+
+    # FAIL CLOSED, SCOPED: an unparsable payload. Judged on the raw text alone, paired on the one
+    # thing that differs -- whether a db/migrate/*.rb path appears in it at all.
+    def raw(stdin: str) -> tuple[int, str]:
+        with tempfile.TemporaryDirectory() as td:
+            proj = Path(td) / "proj"
+            (proj / "db" / "migrate").mkdir(parents=True)
+            (proj / "bin").mkdir()
+            (proj / "bin" / "rails").write_text("#!/usr/bin/env ruby\n")
+            return run_hook("guard-migrate.sh", cwd=proj, stdin=stdin, unset=("CLAUDE_PROJECT_DIR",))
+
+    code, _ = raw("not json, but it mentions db/migrate/20260927120000_add_thing.rb in passing")
+    check("guard-migrate: an UNPARSABLE payload naming a db/migrate/*.rb path is blocked",
+          code == 2, f"exit {code}")
+    code, _ = raw("not json, and names no migration path at all")
+    check("guard-migrate: CONTROL: an unparsable payload naming NO db/migrate path is allowed",
+          code == 0, f"exit {code}")
+
+    # WIRED SCOPE: hooks.json must route this hook from `Write` alone. `Edit`/`MultiEdit` cannot
+    # create a file, so there is no creation moment for either of them to carry into this hook.
+    manifest = json.loads((HOOKS.parent / "hooks.json").read_text(encoding="utf-8"))
+    matchers = [entry.get("matcher") for entry in manifest.get("hooks", {}).get("PreToolUse", [])
+                for hook in entry.get("hooks", []) if "guard-migrate.sh" in hook.get("command", "")]
+    check("guard-migrate: hooks.json wires it to exactly one PreToolUse entry, matcher `Write`",
+          matchers == ["Write"], f"found matcher(s) {matchers!r}")
+
+
 # ---- lint-ruby.sh (#824) ------------------------------------------------------------------------
 def lint_ruby_fixtures() -> None:
     def edit(rubocop_body: str, *, with_mise: bool = False) -> tuple[int, str]:
@@ -528,7 +611,7 @@ def ci_verdict_hint_fixtures() -> None:
 
 
 def selftest() -> int:
-    for fn in (stop_gate_fixtures, guard_lane_fixtures, lint_ruby_fixtures,
+    for fn in (stop_gate_fixtures, guard_lane_fixtures, guard_migrate_fixtures, lint_ruby_fixtures,
                self_consistency_fixtures, guard_bash_fixtures, guard_claims_fixtures,
                release_gate_fixtures, ci_verdict_hint_fixtures):
         fn()
