@@ -14,7 +14,8 @@ GUARD = Guard(
     # The harness resolves every hook from the selftest's own location, so the whole directory is
     # staged; `extract_claims.py` is what this hook shells out to, and without it every mutation
     # reads as caught against an unrun check (#1109).
-    needs=("plugins/rails-flow/hooks/scripts", "plugins/qa-flow/hooks/scripts",
+    needs=("plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362
+           "plugins/rails-flow/hooks/scripts", "plugins/qa-flow/hooks/scripts",
            "plugins/qa-flow/scripts",
            "plugins/rails-flow/scripts/check_criteria.py",
            "plugins/rails-flow/scripts/check_handoff.py",
