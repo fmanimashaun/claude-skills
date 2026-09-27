@@ -15845,6 +15845,9 @@ boot/validation path — with a bullet each so the promotion could close them se
   - **Refuted, and shipped as the correction:** RuboCop does *not* warn about a local cop's unknown keys (a typo checks
     nothing, silently), and omakase does *not* use `DisabledByDefault` (it disables ten departments by name, so `Tenancy`
     is on by default).
+  - `skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`: the measured shared-shape counts
+    move with the two new scripts (`class Unusable` 12 → 13; the `check(label, ok, detail)` harness 40 → 41, reach
+    21 → 22). One more copy does not change the recorded decision not to extract.
   - Where the cop lives is our own design, per the maintainer decision on [#1361](https://github.com/fmanimashaun/claude-skills/issues/1361#issuecomment-5857528252).
 
 - **The quality-pass worked example's `check(label, ok, detail)` count is refreshed to 40 — `skills/quality-pass/references/worked-example.md`,
