@@ -12913,15 +12913,19 @@ boot/validation path — with a bullet each so the promotion could close them se
 - **A table that scrolls sideways, forces a width, or opens no details card is refused — `plugins/design-flow/scripts/check_table_layout.py`,
   `plugins/design-flow/scripts/mutations/check_table_layout.py`, `plugins/design-flow/checks.json`,
   `plugins/design-flow/commands/mobile.md`, `plugins/design-flow/README.md`, `scripts/maintainer_doctor.py`** (#1391).
-  Three rules, each a construct: a `<table>` nested inside an x-scroller (so a tablist's `overflow-x-auto` is not a
-  finding), a fixed minimum width (a `min-w-*` class, an inline `min-width` including an interpolated one, or
+  Four rules, each a construct: a `<table>` nested inside an x-scroller, a fixed minimum width (a `min-w-*` class, an inline `min-width` including an interpolated one, or
   `min_width:` on a table component's render call however it wraps), and a table whose directory has no row opening
   a record into the modal frame (the directory, because an index's row link lives in its partial). A non-index table
-  declares `table-without-details: <why>`; mailer views are not judged. Driven against the app behind the issue: 221
-  files, 23 `table-min-width` findings that account for every one of its 22 `min_width:` call sites plus the
-  interpolated style inside its table component. The first run caught two defects in the check itself (a
-  single-line render match that found 3 of the 22; two mailer layouts reported as missing a details card), and both
-  now have fixtures. Eight mutations, all caught. `/design-flow:mobile` step 5 now scaffolds designed summary cards.
+  declares `table-without-details: <why>`; mailer views are not judged. The fourth refuses a tab strip that scrolls:
+  `role="tablist"`, or a scroller in a file named for tabs, since apps build strips as link lists. **A scroller is
+  what the app defines**: Tailwind's overflow classes plus any `@utility` in the app's own CSS whose body scrolls on
+  x. Driven against the app behind the issue: 221 files, 25 findings — 23 `table-min-width` (every one of its 22
+  `min_width:` call sites plus the interpolated style inside its table component), 1 `table-scroll-wrapper` (that
+  component's own `scroll-x` wrapper, which every table there goes through) and 1 `tablist-scroll` (its settings
+  strip). Real runs caught four defects in the check itself — a single-line render match that found 3 of the 22,
+  two mailer layouts reported as missing a details card, the app's own `scroll-x` read as no scroller at all, and a
+  substring match that called `table_component` a tab strip — and each now has a fixture. Twelve mutations, all
+  caught. `/design-flow:mobile` step 5 now scaffolds designed summary cards.
 
 ### 1.44.2 (release v1.151.0) — 2026-09-26
 
@@ -15835,7 +15839,10 @@ boot/validation path — with a bullet each so the promotion could close them se
   designed summary cards below 768px. The Data table anatomy, mobile §5, `responsive.md`, `mobile.md` and `rails-8`
   `models.md` now link to it rather than restate it. A new **Viewport inset** entry, the `--inset-edge` tokens and an
   `inset-viewport` utility keep every card, modal, drawer and sheet at least 16px plus the safe area (24px at 768px)
-  from the edge, and `Ui::Modal`'s placements now float inside that inset rather than pinning to an edge. The one
+  from the edge, and `Ui::Modal`'s placements now float inside that inset rather than pinning to an edge. *Tabs*
+  (the maintainer's scope addition on #1391) reverses "the tablist scrolls": at most four tabs in one row that
+  never wraps or scrolls, regrouped rather than overflowed, and a single labelled picker below 768px — and
+  `Ui::Tabs`'s implementation drops `overflow-x-auto` and renders that picker. The one
   external claim proposed for the rewrite, that screen readers do not reliably announce CSS `content:` labels, came
   back **REFUTED** from doctrine-verifier (accname 1.2 §4.3.2 includes generated content; WCAG F87 is marked
   obsolete), so it was dropped and only the rule "labels are real elements" remains. Our own design, no upstream:

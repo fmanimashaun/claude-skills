@@ -53,6 +53,31 @@ GUARD = Guard(
             'DECLARES = re.compile(r"table-without-details:")',
             "a declaration with no reason is not a declaration",
         ),
+        # THE FIRST REAL RUN READ CLEAN because the app's scroller was its own `@utility`.
+        Mutation(
+            "an app's own scroll utilities are no longer discovered from its CSS",
+            "    return {name for name, body in UTILITY.findall(css) if SCROLLS_X.search(body)}",
+            "    return set()",
+            "an @utility that scrolls is discovered",
+        ),
+        Mutation(
+            "a tab strip that scrolls stops being a finding",
+            "        if tab_file or TABLIST.search(m.group(3)):",
+            "        if False:",
+            "a scrolling tablist is caught",
+        ),
+        Mutation(
+            "a link-list strip in a tabs file is no longer recognised as a strip",
+            "        if tab_file or TABLIST.search(m.group(3)):",
+            "        if TABLIST.search(m.group(3)):",
+            "a scrolling link-list strip in a tabs file is caught",
+        ),
+        Mutation(
+            "`tab` is matched as a substring again, so a table component is called a tab strip",
+            "bool(TAB_FILE.search(Path(rel).name)))",
+            '"tab" in Path(rel).name)',
+            "a TABLE component's scroller is not a tab strip",
+        ),
         Mutation(
             "mailer views are judged again, and email layout tables fail",
             "        if MAILER.search(p.relative_to(root).as_posix()):\n            continue\n",

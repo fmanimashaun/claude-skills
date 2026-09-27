@@ -12,13 +12,12 @@ app built exactly that and the owner rejected it. Measured there: 25 tables forc
 them. The doctrine is now `design-system` `components.md` -> Table (CRUD); this checks the three
 parts of it that are visible in source.
 
-THREE RULES, each a construct and never a word:
+FOUR RULES, each a construct and never a word:
 
   table-scroll-wrapper   a `<table>` inside an element whose class scrolls on the x axis
                          (`overflow-x-auto|scroll`, or `overflow-auto|scroll`, which include x).
-                         `overflow-x-auto` on a TABLIST is the doctrine and is not a table, so the
-                         table has to be INSIDE the scroller, by element nesting, not merely later
-                         in the file.
+                         The table has to be INSIDE the scroller, by element nesting, not merely
+                         later in the file.
   table-min-width        a `<table>` given a fixed minimum width -- a `min-w-*` class other than
                          `min-w-0`/`min-w-full`, an inline `min-width`, or a `min_width:` keyword
                          passed to a table component (the shape the app above used 25 times).
@@ -27,6 +26,16 @@ THREE RULES, each a construct and never a word:
                          `data-turbo-frame="modal"`). THE DIRECTORY, NOT THE FILE: a Rails index
                          renders its rows from a partial beside it (`<%= render @people %>` ->
                          `_person.html.erb`), and the row link lives in the partial.
+  tablist-scroll         a tab strip that scrolls: an element with `role="tablist"`, or any scroller
+                         in a file named for tabs (`*tab*`) -- apps build strips as link lists on
+                         purpose, and the app behind #1391 does. A strip is one row of at most four
+                         that never wraps or scrolls, and a picker below 768px (the maintainer's
+                         scope addition on #1391). A scrolling `<pre>` elsewhere is not a strip.
+
+A SCROLLER IS WHAT THE APP DEFINES, not only Tailwind's names. The first run against the app behind
+#1391 reported its tables clean: it wraps them in `scroll-x`, its own `@utility` whose body is
+`overflow-x: auto`. So every `@utility` under `app/` whose body sets `overflow-x`/`overflow` to
+`auto`/`scroll` is read from the app's CSS and counted as a scroller alongside the Tailwind classes.
 
 A table that is not a record index -- a permissions matrix, a data-viz fallback, invoice lines --
 declares itself, in the file, with a reason: `<%# table-without-details: <why> %>`. A declaration
@@ -57,6 +66,12 @@ from source_text import strip_comments
 
 GATE = "table-layout"
 
+TABLIST = re.compile(r"""\brole\s*=\s*["']tablist["']""")
+# `tab`/`tabs` as a WORD in the file name. A substring test called `table_component` a tab strip on
+# the first real run.
+TAB_FILE = re.compile(r"(?:^|[_.-])tabs?(?=[_.-]|$)")
+UTILITY = re.compile(r"@utility\s+([\w-]+)\s*\{([^{}]*)\}", re.S)
+SCROLLS_X = re.compile(r"\boverflow(?:-x)?\s*:\s*(?:auto|scroll)\b")
 TAG = re.compile(r"<(/?)([a-zA-Z][\w-]*)\b([^>]*?)(/?)>", re.S)
 CLASS_VALUE = re.compile(r"""\bclass\s*=\s*(["'])(.*?)\1""", re.S)
 X_SCROLLER = re.compile(r"(?<![\w-])overflow(?:-x)?-(?:auto|scroll)(?![\w-])")
@@ -76,11 +91,20 @@ VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "met
         "track", "wbr"}
 
 
+def app_scrollers(css: str) -> set[str]:
+    """Names of `@utility` blocks that scroll horizontally, from an app's own stylesheets."""
+    return {name for name, body in UTILITY.findall(css) if SCROLLS_X.search(body)}
+
+
+def _scrolls(classes: str, scrollers: frozenset[str]) -> bool:
+    return bool(X_SCROLLER.search(classes)) or any(c in scrollers for c in classes.split())
+
+
 def _line(source: str, offset: int) -> int:
     return source.count("\n", 0, offset) + 1
 
 
-def tables_in(source: str) -> list[tuple[int, str, bool]]:
+def tables_in(source: str, scrollers: frozenset[str] = frozenset()) -> list[tuple[int, str, bool]]:
     """(line, attrs, inside an x-scroller) for every `<table>`, by element nesting."""
     stack: list[tuple[str, bool]] = []
     out: list[tuple[int, str, bool]] = []
@@ -93,12 +117,25 @@ def tables_in(source: str) -> list[tuple[int, str, bool]]:
                     break
             continue
         cls = CLASS_VALUE.search(attrs)
-        scrolls = bool(cls and X_SCROLLER.search(cls.group(2)))
+        scrolls = bool(cls and _scrolls(cls.group(2), scrollers))
         if name == "table":
             out.append((_line(source, m.start()), attrs, any(s for _, s in stack) or scrolls))
         if name not in VOID and not selfclose:
             stack.append((name, scrolls))
     return out
+
+
+def scrolling_strips(source: str, scrollers: frozenset[str], tab_file: bool) -> list[int]:
+    lines = []
+    for m in TAG.finditer(source):
+        if m.group(1):
+            continue
+        cls = CLASS_VALUE.search(m.group(3))
+        if not (cls and _scrolls(cls.group(2), scrollers)):
+            continue
+        if tab_file or TABLIST.search(m.group(3)):
+            lines.append(_line(source, m.start()))
+    return lines
 
 
 def fixed_min_width(attrs: str) -> str | None:
@@ -113,10 +150,11 @@ def fixed_min_width(attrs: str) -> str | None:
     return None
 
 
-def check_file(rel: str, raw: str, directory_has_target: bool) -> list[str]:
+def check_file(rel: str, raw: str, directory_has_target: bool,
+               scrollers: frozenset[str] = frozenset()) -> list[str]:
     source = strip_comments(raw)
     findings: list[str] = []
-    tables = tables_in(source)
+    tables = tables_in(source, scrollers)
     for line, attrs, scrolled in tables:
         if scrolled:
             findings.append(
@@ -129,6 +167,11 @@ def check_file(rel: str, raw: str, directory_has_target: bool) -> list[str]:
                 f"{rel}:{line}: table-min-width — `{width}` forces this table wider than its "
                 f"container, which is what makes it scroll on screens that could fit it. Let it "
                 f"fit; a column that does not fit belongs in the Details card.")
+    for line in scrolling_strips(source, scrollers, bool(TAB_FILE.search(Path(rel).name))):
+        findings.append(
+            f"{rel}:{line}: tablist-scroll — this tab strip scrolls sideways. A strip is one row of "
+            f"at most four tabs that never wraps or scrolls; regroup a fifth, and below 768px render "
+            f"a single labelled picker instead (design-system components.md → Tabs).")
     for m in RENDER_TAG.finditer(source):
         if not TABLE_CALL_MIN_WIDTH.search(m.group(1)):
             continue
@@ -147,6 +190,8 @@ def check_file(rel: str, raw: str, directory_has_target: bool) -> list[str]:
 def run(root: Path) -> tuple[list[str], int]:
     files = sorted(p for base in ("app/views", "app/components") for p in (root / base).glob("**/*")
                    if p.is_file() and p.suffix in {".erb", ".rb"})
+    css = "".join(p.read_text(encoding="utf-8", errors="replace") for p in sorted((root / "app").glob("**/*.css")))
+    scrollers = frozenset(app_scrollers(css))
     targets: dict[Path, bool] = {}
     for p in files:
         if DETAILS_TARGET.search(strip_comments(p.read_text(encoding="utf-8", errors="replace"))):
@@ -156,7 +201,7 @@ def run(root: Path) -> tuple[list[str], int]:
         if MAILER.search(p.relative_to(root).as_posix()):
             continue
         findings += check_file(str(p.relative_to(root)), p.read_text(encoding="utf-8", errors="replace"),
-                               targets.get(p.parent, False))
+                               targets.get(p.parent, False), scrollers)
     return findings, len(files)
 
 
@@ -172,8 +217,9 @@ def _selftest() -> int:
         if not cond:
             failures.append(label)
 
-    def rules(src: str, has_target: bool = True) -> list[str]:
-        return [content_floors.rule_of(f) for f in check_file("x.html.erb", src, has_target)]
+    def rules(src: str, has_target: bool = True, scrollers: frozenset[str] = frozenset(),
+              name: str = "x.html.erb") -> list[str]:
+        return [content_floors.rule_of(f) for f in check_file(name, src, has_target, scrollers)]
 
     # table-scroll-wrapper, and the controls that keep it from firing on everything.
     wrapped = f'<div class="overflow-x-auto">\n  <table class="w-full"><tr>{LINKED_ROW}</tr></table>\n</div>'
@@ -182,8 +228,29 @@ def _selftest() -> int:
            "table-scroll-wrapper" in rules('<div class="overflow-auto"><section><table></table></section></div>'))
     expect("a scroller on the table itself is caught",
            "table-scroll-wrapper" in rules('<table class="overflow-x-scroll w-full"></table>'))
-    expect("a tablist with overflow-x-auto and no table is silent",
-           rules('<div role="tablist" class="cluster overflow-x-auto">…</div>') == [])
+    # An APP-DEFINED scroller, the shape that made the first real run read clean.
+    expect("a table inside an app's own scroll utility is caught",
+           rules('<div class="scroll-x relative"><table></table></div>', scrollers=frozenset({"scroll-x"})) == ["table-scroll-wrapper"])
+    expect("...and the same markup with no such utility defined is silent",
+           rules('<div class="scroll-x relative"><table></table></div>') == [])
+    expect("an @utility that scrolls is discovered; one that does not is not",
+           app_scrollers("@utility scroll-x {\n  overflow-x: auto;\n  background: none;\n}\n"
+                         "@utility reel { display: flex; overflow-x: auto; }\n"
+                         "@utility card { padding: 1rem; overflow: hidden; }") == {"scroll-x", "reel"})
+
+    # tablist-scroll, and its controls.
+    expect("a scrolling tablist is caught",
+           rules('<div role="tablist" class="cluster overflow-x-auto">…</div>') == ["tablist-scroll"])
+    expect("a scrolling link-list strip in a tabs file is caught",
+           rules('<nav class="scroll-x" aria-label="Settings sections">…</nav>', scrollers=frozenset({"scroll-x"}),
+                 name="app/components/ui/settings_tabs_component.html.erb") == ["tablist-scroll"])
+    expect("a TABLE component's scroller is not a tab strip — `tab` is a word, not a substring",
+           "tablist-scroll" not in rules('<div class="scroll-x"><table></table></div>', scrollers=frozenset({"scroll-x"}),
+                                         name="app/components/ui/table_component.html.erb"))
+    expect("a tablist that does not scroll is silent",
+           rules('<div role="tablist" class="cluster border-b">…</div>') == [])
+    expect("a scroller that is neither a table nor a strip is silent",
+           rules('<pre class="overflow-x-auto"><code>long line</code></pre>') == [])
     expect("a table AFTER a closed scroller is silent — nesting, not order",
            rules('<div class="overflow-x-auto"><p>x</p></div>\n<table></table>') == [])
     expect("a vertical-only scroller is silent",
@@ -241,6 +308,16 @@ def _selftest() -> int:
                any(f.startswith("app/views/reports/mailer_stats.html.erb:") for f in found))
         expect("run(): every file was examined", examined == 6)
         expect("run(): a finding carries file and line", any(f.startswith("app/views/reports/index.html.erb:1: ") for f in found))
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        (root / "app/assets/tailwind").mkdir(parents=True)
+        (root / "app/assets/tailwind/application.css").write_text("@utility scroll-x {\n  overflow-x: auto;\n}\n")
+        (root / "app/components/ui").mkdir(parents=True)
+        (root / "app/components/ui/table_component.html.erb").write_text(
+            '<div class="scroll-x"><table><tr><td><%= link_to "x", "/x", data: { turbo_frame: "modal" } %></td></tr></table></div>')
+        found, _ = run(root)
+        expect("run(): an app's own scroll utility is read from its CSS",
+               [content_floors.rule_of(f) for f in found] == ["table-scroll-wrapper"])
 
     for f in failures:
         print(f"selftest FAIL: {f}")

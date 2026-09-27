@@ -362,7 +362,7 @@ is where the decisions no single part can carry are made.
   <%# NO overflow wrapper: the table fits its container (Table (CRUD)). Rows are summaries whose
       name opens the record into the modal frame as its Details card. %>
   <table class="hidden md:table w-full text-step--1 text-left"><%# Table (CRUD) %></table>
-  <ul role="list" class="md:hidden stack"><%# the same rows as designed summary cards %></ul>
+  <div class="md:hidden"><ul role="list" class="stack"><%# the same rows as designed summary cards %></ul></div>
 
   <nav aria-label="Pagination"><%# Pagination %></nav>
 </section>

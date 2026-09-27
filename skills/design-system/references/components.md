@@ -885,7 +885,11 @@ Breadcrumbs, Pagination, the sidebar rail and this bar all land on these, so the
   that produced this rule.
 
 ## Tabs
-- **HOW MANY IS NOT A NUMBER — the strip fits ONE ROW at the narrowest width the app supports.**
+- **AT MOST FOUR TABS, IN ONE ROW THAT NEVER WRAPS AND NEVER SCROLLS** (#1391, the maintainer's
+  decision; it replaces "fit one row at the narrowest width" as the capacity rule). An area holds at
+  most four tabs, and a fifth is a sign the area answers more than one question — regroup (below),
+  never overflow. Four is Material 3's own figure for fixed tabs (quoted below). The measurement that
+  motivated the old rule still stands as the reason a count alone was never enough: labels vary.
   **APG is silent on capacity** (verified 15 Sep 2026: the pattern's four sections cover terminology,
   examples, keyboard interaction and the ARIA wiring, and none addresses count, overflow or
   wrapping), so this is ours. A count alone would be wrong in both directions — measured downstream
@@ -901,9 +905,10 @@ Breadcrumbs, Pagination, the sidebar rail and this bar all land on these, so the
   Count × label length is the thing, and only the browser knows it. Before the rule, one area
   reached ten tabs: 1650px of strip at 1214px, five of the ten off-screen with no cue, two of them
   linked from the dashboard.
-- **DO NOT WRAP TO A SECOND ROW.** Of the systems that rule on this at all, all of them keep the
-  strip to one row and answer overflow with a mechanism instead — and they prescribe **different**
-  mechanisms, so pick one deliberately rather than blending them:
+- **DO NOT WRAP TO A SECOND ROW, AND DO NOT SCROLL.** Of the systems that rule on this at all, all of
+  them keep the strip to one row; they then answer overflow with different mechanisms. **Ours is none
+  of them:** we cap at four and regroup, so there is nothing to overflow. The vendor positions, for the
+  record:
   - **Microsoft Fluent 2** is explicit: *"Tabs in a horizontal tablist won't scroll or wrap to the
     next line… If you need to show more tabs, include an overflow menu button."* It also names the
     cost of its own answer — *"Tablists are less effective in smaller layouts that push several tabs
@@ -957,10 +962,12 @@ Breadcrumbs, Pagination, the sidebar rail and this bar all land on these, so the
   already requires is the state, so `aria-[selected=true]:border-primary` needs no second source of
   truth. (This row prescribed `data-[state=active]` while the worked implementation used
   `aria-[selected=true]`; the implementation was right and the row has been corrected.)
-- **Responsive:** the tablist scrolls, the panels do not — `overflow-x-auto` on the tablist alone.
-  Ours: past ~5 tabs on a phone the row stops being scannable, so switch to a `Ui::Dropdown` or a
-  `<select>` that swaps the panel. A wrapped tablist has lost the single-row affordance that made it
-  a tablist.
+- **Responsive — no scroll at any width, and a picker below 768px** (#1391). The strip never carries
+  `overflow-x-auto`. Below 768px it is replaced by **a single picker**: a labelled `<select>` whose
+  selected option names the current screen, at least `min-h-touch`, and whose change swaps the panel
+  exactly as choosing the tab would. The tablist and the picker are two renderings of one list, so the
+  panels, their ids and the selected index are shared, never duplicated. A wrapped or scrolled tablist
+  has lost the single-row affordance that made it a tablist.
 - **Behavior:** the `tabs` controller on the **list-navigation** mixin.
 
 ## Breadcrumbs

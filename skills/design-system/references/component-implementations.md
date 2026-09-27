@@ -805,9 +805,20 @@ landmark noise outweighs the structure.
 <%# requires — so nothing toggles a second data-state beside it. Four things here are required by  %>
 <%# the pattern and are the ones that go missing: the tablist's NAME, each tab's `id`, each panel's %>
 <%# `aria-labelledby` pointing back at that id, and `aria-orientation` on a vertical list.          %>
+<%# NEVER SCROLLS, NEVER WRAPS (#1391): at most four tabs, and below 768px the strip is replaced by %>
+<%# one labelled picker. Its change must select the same index the tab would, via the same action.   %>
 <div data-controller="tabs" data-tabs-activation-value="<%= activation %>">
+  <label class="block md:hidden">
+    <span class="sr-only"><%= label %></span>
+    <select class="min-h-touch w-full" data-tabs-target="picker" data-action="change->tabs#select">
+      <% tabs.each_with_index do |t, i| %><option value="<%= i %>" <%= "selected" if i.zero? %>><%= t[:label] %></option><% end %>
+    </select>
+  </label>
+  <%# The breakpoint lives on a WRAPPER: `hidden` and `cluster` both set `display`, so on one element %>
+  <%# the winner would depend on utility order.                                                     %>
+  <div class="hidden md:block">
   <div role="tablist" aria-label="<%= label %>" aria-orientation="<%= orientation %>"
-       class="cluster border-b border-border overflow-x-auto" style="--space: 0">
+       class="cluster border-b border-border" style="--space: 0">
     <% tabs.each_with_index do |t, i| %>
       <button role="tab" id="<%= id %>-tab-<%= i %>" data-tabs-target="tab" data-action="tabs#select"
               tabindex="<%= i.zero? ? 0 : -1 %>" aria-selected="<%= i.zero? %>"
@@ -815,6 +826,7 @@ landmark noise outweighs the structure.
               class="px-4 py-2 text-step--1 border-b-2 border-transparent -mb-px min-h-touch
                      aria-[selected=true]:border-primary aria-[selected=true]:text-primary"><%= t[:label] %></button>
     <% end %>
+  </div>
   </div>
   <% tabs.each_with_index do |t, i| %>
     <div id="<%= id %>-panel-<%= i %>" role="tabpanel" aria-labelledby="<%= id %>-tab-<%= i %>"

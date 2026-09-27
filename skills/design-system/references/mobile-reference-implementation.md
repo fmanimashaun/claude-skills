@@ -119,7 +119,8 @@ a floating card inset from the viewport on a phone, never an edge-to-edge sheet.
 
 ```erb
 <table class="hidden md:table w-full text-step--1">…</table>   <%# 768px and wider: fits, no scroll %>
-<ul role="list" class="md:hidden stack" style="--space: var(--space-xs)">
+<%# The breakpoint sits on its own element: `md:hidden` and `stack` both set `display`. %>
+<div class="md:hidden"><ul role="list" class="stack" style="--space: var(--space-xs)">
   <% rows.each do |r| %>
     <li class="relative box bg-card rounded-lg border border-border stack" style="--space: var(--space-2xs)">
       <div class="cluster items-start" style="--justify: space-between">
@@ -137,7 +138,7 @@ a floating card inset from the viewport on a phone, never an edge-to-edge sheet.
       </div>
     </li>
   <% end %>
-</ul>
+</ul></div>
 ```
 
 ## Notes
