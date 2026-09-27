@@ -52,6 +52,12 @@ GUARD = Guard(
             "a slice with no Mock-up declaration is refused",
         ),
         Mutation(
+            "check_criteria's refusal is swallowed, so the author is told only 'no criteria'",
+            '            findings.append(f"criteria: {err}")',
+            "            pass",
+            "a criteria file check_criteria refuses says why",
+        ),
+        Mutation(
             "check_criteria's rules stop reaching the slices",
             "    for problem in check_criteria.check(criteria) if criteria else []:",
             "    for problem in []:",

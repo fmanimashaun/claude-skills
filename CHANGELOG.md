@@ -3471,7 +3471,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   `--issue-body` rewrites edges to `depends-on: #n`, the syntax `check_issue_ready.py --queue` already reads, and
   `--blocked-by` / `--parent` (or the REST endpoints on an older `gh`) set GitHub's native links. doctrine-verifier
   CONFIRMED the sub-issue and blocked-by endpoints and the `gh issue create` flags (verdict on #1369); the design is
-  the maintainer decision recorded there. 24 selftest checks; 10 mutations caught.
+  the maintainer decision recorded there. 25 selftest checks; 11 mutations caught.
 
 - **Every per-PR review pass saves its findings, apart from a full review's — `plugins/rails-flow/agents/code-reviewer.md`,
   `plugins/rails-flow/agents/pr-reviewer.md`, `plugins/rails-flow/agents/spec-reviewer.md`,

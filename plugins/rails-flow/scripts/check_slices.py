@@ -193,8 +193,13 @@ def check(path: Path) -> tuple[list[Slice], list[str]]:
     # Criteria: check_criteria's reader and rules, attributed back to the slice.
     try:
         criteria = check_criteria.parse(path)
-    except check_criteria.Unusable:
+    except check_criteria.Unusable as err:
+        # "No criteria at all" is reported per slice below. Any OTHER refusal names a real defect
+        # (two ids on one line, a Given/When/Then with a buried id) and must reach the author, not be
+        # replaced by "every slice has no criteria", which would send them looking in the wrong place.
         criteria = []
+        if "contains no `AC-n` criteria" not in str(err):
+            findings.append(f"criteria: {err}")
     by_unit: dict[str, list] = {}
     for c in criteria:
         by_unit.setdefault(c.unit, []).append(c)
@@ -361,6 +366,10 @@ def selftest() -> int:  # noqa: PLR0915 -- a fixture list; each firing case sits
         happy = ("## S1 — Happy only\nMock-up: no visible change\n- **AC-1** Given a registered "
                  "address, when the user submits the sign-in form, then an email with a link is sent\n")
         check_that("check_criteria's error-path rule applies to each slice", has(findings(happy), "error-path"))
+        two_ids = ("## S1 — Two ids\nMock-up: no visible change\n- AC-1 AC-2 Given a thing, when the "
+                   "user acts on it, then a result is shown [error]\n")
+        check_that("a criteria file check_criteria refuses says why, not just 'no criteria'",
+                   has(findings(two_ids), "one definition line"), findings(two_ids))
 
         # ---- filing: the edges become the syntax check_issue_ready.py reads -------------------------
         body = issue_body(sl, "S3", {"S1": 101, "S2": 102}, "docs/product/specs/sign-in.md")
