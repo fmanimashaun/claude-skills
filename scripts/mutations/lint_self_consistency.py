@@ -145,6 +145,14 @@ GUARD = Guard(
             "a command that never contemplates a running server is out of scope",
         ),
 
+        # #1376. The issue-form carve-out, widened: every yaml block exempt, so a real dead toggle
+        # beside a GitHub form goes quiet. Its control fixture must catch it.
+        Mutation(
+            "every yaml block is exempt, not only GitHub issue forms",
+            "                if not any(ISSUE_FORM_FIELD.match(b) for _, b in block):",
+            "                if False:",
+            "CONTROL: a dead toggle beside an issue form is still found",
+        ),
         # #1082. The invariant, not the instance. `unhonoured-config-toggle` was computed in
         # run() and dropped from its return for months while its own fixtures passed, because
         # they call the check function directly. This mutation re-orphans it.
