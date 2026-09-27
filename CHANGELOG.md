@@ -3457,6 +3457,34 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     define, an unasked-for finding in a file the diff does not change (untracked new files included, #1341), and
     CLEAN beside a P1 or P2 finding. A missing findings file is exit 2, not clean. 19 selftest cases, each refusal
     with a control; the guard catches 9 mutations. Doctor gate "rails-flow spec-review citations".
+- **Creating a migration file directly is blocked; the generator is the only way in — `plugins/rails-flow/hooks/scripts/guard-migrate.sh`**
+  (#1362). Our own design, with no upstream to check — maintainer decision recorded on
+  [#1362](https://github.com/fmanimashaun/claude-skills/issues/1362#issuecomment-5857527899).
+  - **The defect.** Nothing made "use `bin/rails generate migration`" true. A `Write` straight into `db/migrate/`
+    skipped the timestamp ordering and the matching class name the generator gets right for free.
+  - **The fix.** A fifth fail-closed `PreToolUse[Write]` gate, scoped three ways: not a Rails project (no
+    `bin/rails` at the project root), not a new `.rb` file under `db/migrate/`, or the file already exists (an
+    overwrite, not a creation) all pass through untouched. Denial steers to
+    `bin/rails generate migration <Name> [field:type ...]`. Without python3, or on an unparsable payload, it
+    falls back to matching the raw text the way `guard-bash.sh` does. Wired `Write`-only (never `Edit`/`MultiEdit`,
+    which cannot create a file) in `plugins/rails-flow/hooks/hooks.json`;
+    `plugins/rails-flow/agents/migration-writer.md`'s workflow now names the generator step.
+  - **The denial's Rails claims are verified** (`doctrine-verifier`, generators run against Rails 8.0.2 and
+    8.1.2): the generator writes `db/migrate/<UTC YYYYMMDDHHMMSS>_<name>.rb` with the matching class
+    ([`migration.rb.tt`](https://github.com/rails/rails/blob/v8.0.2/activerecord/lib/rails/generators/active_record/migration/templates/migration.rb.tt),
+    [`Time.now.utc`](https://github.com/rails/rails/blob/v8.0.2/activerecord/lib/active_record/migration.rb#L1129)).
+    Refuted and removed: that `--help` documents `references`, and that multi-database migrations default to
+    `db/<name>_migrate/` (the path is whatever `migrations_paths` says in `database.yml`).
+  - **Known limit**, stated in the script's own header: a project with a custom `migrations_paths` in
+    `database.yml` (Rails multi-database support) is not covered — reading that config was judged out of scope.
+  - **Tests.** Driven end to end in `plugins/rails-flow/scripts/check_hook_gates.py`: relative- and
+    absolute-path creation, an existing-file overwrite, a write elsewhere, a non-`.rb` file, a non-Rails
+    project, the `migrations_paths` limit, an unparsable payload with and without a `db/migrate/` path, a bare
+    `PATH` holding neither python3 nor grep (the raw fallback matches with bash's own `=~`, because a
+    grep-based fallback read "grep: command not found" as a non-match and allowed the write), and the
+    `hooks.json` matcher wiring itself. Two mutation guards, `scripts/mutations/hook_guard_migrate.py` and
+    `scripts/mutations/hook_guard_migrate_matcher.py`, prove it catches a dropped existence check, a dropped
+    `bin/rails` check, and a matcher widened to also route `Edit`.
 
 ### 1.54.0 (release v1.151.0) — 2026-09-26
 
