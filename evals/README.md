@@ -19,7 +19,9 @@ authorised. This section stays empty rather than carrying provisional numbers �
 publishing an unverified figure is the exact failure #156 exists to correct.
 
 When a run happens, the table records date, model, `claude` version, marketplace
-version, and run count. A number without its conditions is not evidence.
+version, and run count. A number without its conditions is not evidence. A difference
+between arms goes here only as `compare.py` reports it — verdict and CI, never two rates
+side by side (see *Comparing arms*).
 
 | date | model | runs | case | none | weak | real |
 | ---- | ----- | ---- | ---- | ---- | ---- | ---- |
@@ -162,6 +164,8 @@ Free, no `claude` binary required:
 python3 evals/selftest.py                 # prove every gate fires and stays silent
 python3 evals/run.py --dry-run            # print exact commands, execute nothing
 python3 evals/gates.py <workspace-dir>    # run all gates over a directory
+python3 evals/compare.py --selftest       # prove the comparison refuses what it should
+python3 evals/compare.py results/<stamp>/aggregate-result.json   # compare arms of a run
 ```
 
 Paid — **costs real money**:
@@ -170,7 +174,7 @@ Paid — **costs real money**:
 # calibrate on one case before committing to a sweep
 python3 evals/run.py --case 01-scoped-index --runs 1 --max-total-usd 1.00
 
-# full matrix (5 cases x 3 arms x N runs)
+# full matrix (6 cases x 3 arms x N runs)
 python3 evals/run.py --runs 3 --model sonnet --max-total-usd 25.00
 ```
 
@@ -186,10 +190,52 @@ each run's directory for inspection.
 the `real` arm costs more than `none` by construction. Calibrate with one case
 before running a sweep.
 
+## Comparing arms
+
+`run.py` prints a pass rate per (case, arm). **A rate is not a comparison.**
+`compare.py` reads one or more `aggregate-result.json` files and, for each pair of arms
+(`real` vs `weak` first — that is the one that separates our doctrine from "any
+instructions help"):
+
+- **The case is the unit.** Runs of one case share a prompt and a scaffold, so they
+  are not independent; each case's valid runs are averaged, and the bootstrap
+  resamples cases. INVALID runs are excluded, never scored as failures.
+- **A winner is named only when the 95% CI excludes 0.** Otherwise the verdict is
+  *not detectable*, printed with the CI half-width as the **resolution**: an effect
+  smaller than that is invisible at this n. That is not evidence the arms are equal.
+- **Every case that got worse is listed**, even when the mean improves.
+- **Files are pooled only when `model`, `marketplace_version` and `tools` agree.**
+- `--aa ARM` compares an arm with itself — it must report 0 and a CI containing 0.
+
+**The default design cannot see a moderate effect.** Simulated for #1384 (weak-arm
+pass rate 0.4, the same lift on every case): 6 cases × 3 runs detects a +20-point
+lift about 36% of the time and +30 about 58%; 6 × 10 or 20 × 3 reach about 92–93% at
++30. Those figures are optimistic — real lifts vary by case, and a percentile
+bootstrap over six clusters runs narrow. A first run that reports *not detectable*
+says the benchmark was too small, not that the doctrine is inert.
+
+### A case cannot certify the edit it motivated (#1385)
+
+If a case fails, the doctrine is edited, and the case then passes, that pass is
+circular: the edit was written to make it pass. A doctrine PR that claims a
+benchmark effect **names the cases that motivated it**, and compares with them
+excluded:
+
+```bash
+python3 evals/compare.py results/<stamp>/aggregate-result.json --motivated-by 03-role-tokens
+```
+
+Motivated cases leave the evidence and are marked in the output. If no remaining
+case moved, the verdict is **UNVERIFIED**. A CHANGELOG entry cites a benchmark
+effect only from that output. This is enforced only when `compare.py` is run with
+the flag; nothing yet parses a PR for benchmark claims, because none has ever been
+made — the first one is the moment to add that check.
+
 ## Not in the release path
 
-Nothing here is wired into CI. It costs money, it is opt-in, and it must never
-gate a promotion. `results/` is committed output, not a build artifact.
+No paid run is wired into CI. A run costs money, it is opt-in, and it must never
+gate a promotion. The free parts are gates: `selftest.py` and `compare.py --selftest`
+run in every doctor sweep (`evals gates`, `evals compare`), so in CI too. `results/` is committed output, not a build artifact.
 
 ## What this benchmark covers, and what it deliberately does not
 
