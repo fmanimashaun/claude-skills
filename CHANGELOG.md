@@ -6516,6 +6516,15 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **A proceeding `breaker.py check` ends with `elapsed Xs / Ys` — `plugins/pipeline/scripts/breaker.py`,
+  `plugins/pipeline/scripts/breaker_selftest.py`, `plugins/pipeline/scripts/mutations/breaker.py`,
+  `plugins/pipeline/commands/pipeline.md`** (#1364). Before this, the model heard about time only once the budget was
+  already spent. `elapsed_line()` reads the same `_elapsed` and `budget_minutes` as the `budget` breaker, so the
+  line and the STOP cannot disagree. The hard stop is unchanged. `pipeline.md` says to pace against the line and
+  never pay for time with verification: the guide names that as the risk. Authority: the maintainer decision on
+  #1364, citing Anthropic's *Prompting Claude Opus 5.5* guide, "Time signals for multiagent harnesses". 3 selftest
+  checks with literal numbers, one driven through `main()`; 2 new mutations (16 caught).
+
 *Version number assigned at promotion.*
 
 - **A production deploy now says when the app has no performance monitoring — `plugins/pipeline/scripts/apm_advisory.py`,

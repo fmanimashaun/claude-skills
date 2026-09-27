@@ -188,6 +188,32 @@ def run() -> int:  # noqa: PLR0915 -- a fixture list; splitting it would hide th
     expect_proceed("one minute short of the budget still proceeds", ledger([]),
                    now="2026-08-01T10:59:00+00:00")
 
+    # ---- the pacing line (#1364) ---------------------------------------------------------
+    # Literal numbers, not recomputed ones: a fixture that asks the code for the expectation moves
+    # with the bug. 30 minutes into the default 120-minute budget.
+    _tick()
+    got = br.elapsed_line(ledger([]), br._now("2026-08-01T09:30:00+00:00"))
+    if got != "elapsed 1800s / 7200s":
+        FAILURES.append(f"the pacing line 30 minutes in: expected 'elapsed 1800s / 7200s', got {got!r}")
+    # ONE SOURCE with the breaker: one minute short, the line says 7140s of 7200s and the check
+    # proceeds; at the budget, the check stops. A line computed apart from the breaker could read
+    # "7200s / 7200s" beside a PROCEED, or "7140s" beside a STOP.
+    _tick()
+    near = br.elapsed_line(ledger([]), br._now("2026-08-01T10:59:00+00:00"))
+    if near != "elapsed 7140s / 7200s" or br.evaluate(ledger([]), "verify", br._now("2026-08-01T10:59:00+00:00"))[0]:
+        FAILURES.append(f"one minute short of the budget: expected PROCEED beside 'elapsed 7140s / 7200s', got {near!r}")
+    # THE CALLER, not just the helper: a proceeding `check` through main() must END with the line.
+    with tempfile.TemporaryDirectory() as tmp:
+        led = Path(tmp) / "pace.jsonl"
+        cli("start", "--stages", "verify", "--ledger", str(led), "--now", START)
+        out = io.StringIO()
+        _tick()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            code = br.main(["check", "verify", "--ledger", str(led), "--now", "2026-08-01T09:05:40+00:00"])
+        last = out.getvalue().strip().splitlines()[-1:] or [""]
+        if code != 0 or last[0] != "elapsed 340s / 7200s":
+            FAILURES.append(f"a proceeding check must end with 'elapsed 340s / 7200s'; exit {code}, last line {last[0]!r}")
+
     # ---- unusable, never a verdict -----------------------------------------------------
     expect_unusable("a stage outside the declared plan",
                     lambda: br.evaluate(ledger([]), "deploy-to-prod", br._now(START)))
