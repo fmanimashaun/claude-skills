@@ -98,9 +98,19 @@ def tenant_tables(schema: str, foreign_key: str) -> list[str]:
     return [m.group("table") for m in CREATE_TABLE.finditer(schema) if column.search(m.group(0))]
 
 
-def covered(table: str, associations: set[str]) -> bool:
-    """`invoices` covers `invoices`; it also covers a namespaced table like `billing_invoices`."""
-    return table in associations or any(table.endswith("_" + a) for a in associations)
+def snake(name: str) -> str:
+    return re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name).lower()
+
+
+def covered(table: str, models: dict) -> bool:
+    """`Invoice: invoices` covers `invoices`; `Billing::CreditNote: credit_notes` covers
+    `billing_credit_notes` -- the namespace prefixed, exactly. Not a suffix match: that would let
+    `Invoice: invoices` cover an unrelated `old_invoices`."""
+    for model, assoc in models.items():
+        namespace = "_".join(snake(part) for part in str(model).split("::")[:-1])
+        if table == assoc or (namespace and table == f"{namespace}_{assoc}"):
+            return True
+    return False
 
 
 def findings_for(project: Path, config: dict, shipped: str) -> list[str]:
@@ -151,14 +161,19 @@ def findings_for(project: Path, config: dict, shipped: str) -> list[str]:
     if section and not (isinstance(models, dict) and models):
         out.append(f".rubocop.yml: `{COP_NAME}` lists no `TenantOwnedModels` -- it can flag nothing")
         models = {}
-    associations = {str(v) for v in (models or {}).values()}
 
     if isinstance(fk, str) and fk:
         schema = project / "db" / "schema.rb"
         if not schema.is_file():
             raise CannotJudge("no db/schema.rb, so the tenant-owned tables cannot be listed")
-        for table in tenant_tables(schema.read_text(encoding="utf-8"), fk):
-            if table not in unscoped and not covered(table, associations):
+        tables = tenant_tables(schema.read_text(encoding="utf-8"), fk)
+        if not tables:
+            # Zero is not a pass: a misspelt key (`organisation_id`) matches nothing, and the
+            # coverage check below would then pass over input it never read.
+            out.append(f"db/schema.rb: no table carries `{fk}` -- is {DECLARATION}'s "
+                       f"tenant_foreign_key the column the app really uses?")
+        for table in tables:
+            if table not in unscoped and not covered(table, models or {}):
                 out.append(f"db/schema.rb: `{table}` carries {fk} but no `TenantOwnedModels` entry "
                            f"scopes it -- add it, or list it in {DECLARATION} `unscoped_tables` with a reason")
     return out
@@ -284,6 +299,16 @@ def selftest() -> int:
     check("a tenant-FK table outside TenantOwnedModels is refused",
           any("billing_credit_notes" in f for f in got), f"{got}")
     check("...and a table with no tenant FK is never demanded", not any("users" in f for f in got), f"{got}")
+    OLD = SCHEMA.replace('"billing_credit_notes"', '"old_invoices"')
+    got = judge(with_(TenantOwnedModels={"Invoice": "invoices"}), schema=OLD)
+    check("NEAR MISS: `Invoice: invoices` does not cover an unrelated `old_invoices`",
+          any("old_invoices" in f for f in got), f"{got}")
+    got = judge(with_(TenantOwnedModels={"Invoice": "invoices", "Billing::CreditNote": "notes"}))
+    check("NEAR MISS: a namespaced model covers only its exact table, not a suffix of it",
+          any("billing_credit_notes" in f for f in got), f"{got}")
+    got = judge(GOOD, decl={"multi_tenant": True, "tenant_foreign_key": "organisation_id"})
+    check("a foreign key no table carries is refused -- zero tables is not a pass",
+          any("no table carries" in f for f in got), f"{got}")
     got = judge(with_(TenantOwnedModels={"Invoice": "invoices"}), decl={
         "multi_tenant": True, "tenant_foreign_key": "organization_id",
         "unscoped_tables": {"billing_credit_notes": "written by the staff plane only"}})

@@ -19,9 +19,22 @@ GUARD = Guard(
         ),
         Mutation(
             "a tenant-FK table outside TenantOwnedModels passes, so a stale model list cannot fail",
-            "            if table not in unscoped and not covered(table, associations):",
+            "            if table not in unscoped and not covered(table, models or {}):",
             "            if False:",
             "a tenant-FK table outside TenantOwnedModels is refused",
+        ),
+        Mutation(
+            # Self-review found this: a suffix match let `Invoice: invoices` cover `old_invoices`.
+            "coverage loosens to a suffix match, so an unrelated table counts as scoped",
+            '        if table == assoc or (namespace and table == f"{namespace}_{assoc}"):',
+            '        if table == assoc or table.endswith("_" + assoc):',
+            "NEAR MISS: `Invoice: invoices` does not cover an unrelated `old_invoices`",
+        ),
+        Mutation(
+            "a foreign key no table carries passes, so the coverage check reads nothing",
+            "        if not tables:",
+            "        if False:",
+            "a foreign key no table carries is refused -- zero tables is not a pass",
         ),
         Mutation(
             "a hand-edited cop passes as the shipped one",

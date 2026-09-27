@@ -3534,13 +3534,14 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   - **The check refuses** a missing or hand-edited cop, a `.rubocop.yml` that does not `require:` it, disables it or
     leaves `SafeAutoCorrect` on, an **unknown key under it** (RuboCop swallows those silently, verified on 1.91.0), and
     any `db/schema.rb` table carrying the tenant foreign key that `TenantOwnedModels` does not reach and
-    `unscoped_tables` does not excuse with a reason. It reads YAML through the project's Ruby and merges local
-    `inherit_from` files. 23 selftest assertions, each refusal paired with a control; driven end to end on a real
+    `unscoped_tables` does not excuse with a reason (matched exactly, namespace included: `Invoice: invoices` does
+    not cover `old_invoices`), and a foreign key that no table carries (zero tables is not a pass). It reads YAML through the project's Ruby and merges local
+    `inherit_from` files. 26 selftest assertions, each refusal paired with a control; driven end to end on a real
     project (4 findings, exit 1; fixed, exit 0).
   - **Derived, not copied by hand.** The shipped cop is generated from rails-8's `multi-tenancy.md` §7 by
     `scripts/derive_tenancy_cop.py`, the same cross-plugin reason as `mandated_gems.json`, with doctor gates
     `tenancy cop derived` (`--check`, reading the blob at `HEAD`) and its selftest, and a `rebuild_generated.py` entry.
-  - Mutation guards `plugins/rails-flow/scripts/mutations/check_tenancy_cop.py` (6/6 caught) and
+  - Mutation guards `plugins/rails-flow/scripts/mutations/check_tenancy_cop.py` (8/8 caught) and
     `scripts/mutations/derive_tenancy_cop.py` (2/2 caught).
 
 - **Every per-PR review pass saves its findings, apart from a full review's — `plugins/rails-flow/agents/code-reviewer.md`,
