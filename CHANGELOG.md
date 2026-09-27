@@ -6432,6 +6432,22 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## pipeline (lifecycle orchestrator)
 
+### Unreleased
+
+*Version number assigned at promotion.*
+
+- **A production deploy now says when the app has no performance monitoring — `plugins/pipeline/scripts/apm_advisory.py`,
+  `plugins/pipeline/commands/deploy-cloud.md`, `plugins/pipeline/commands/release.md`,
+  `plugins/pipeline/scripts/mutations/apm_advisory.py`, `scripts/maintainer_doctor.py`** (#1366). Nothing checked, at the
+  one moment it matters, whether production would record anything about its own speed. Both deploy commands now run
+  `apm_advisory.py` against `Gemfile.lock`: silence when one of the gems `rails-8` `observability.md` §7 names is
+  present, one pointer line to §7 when none is. **Advisory, never a gate**: it always exits 0 and the commands say never
+  to hold the deploy on it — shipping without an APM is a legitimate choice. Names are matched whole (`skylight-extras`
+  and `sentry-ruby` are not APMs) in every lockfile section, so a transitive or git-sourced gem counts. Five mutations
+  (never advises, always advises, substring match, exits non-zero, crashes on a non-UTF-8 lockfile) are all caught. Driven against
+  four real lockfiles: three advised and one (`opentelemetry-instrumentation-rails`) stayed silent, each matching a
+  grep of the file. Our own design, no upstream: maintainer decision recorded on #1366.
+
 ### 1.3.4 (release v1.151.0) — 2026-09-26
 
 - **`/pipeline:deploy-cloud` runs only when a human types it — `plugins/pipeline/commands/deploy-cloud.md`** (#1335). Claude
