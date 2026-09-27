@@ -97,6 +97,23 @@ results checklist, Out of scope, Risk notes, Proof. A PR missing "How to test" o
 "Expected results" is BLOCKED: QA cannot plan from it. This is process enforcement,
 not style — the downstream QA flow depends on it.
 
+## Record every finding (#1360)
+
+Before the report, append one JSONL record per finding to `docs/evidence/reviews/prs/<branch-slug>/findings.jsonl`, in the shared shape that
+`findings.py` enforces, with `"pass": "pr-reviewer"`. Give each a stable `signature` for the *defect*, not
+the line (`missing-tenant-scope:InvoicesController#show`), so the same defect found on two PRs has
+one name. Then validate:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/findings.py" validate "docs/evidence/reviews/prs/<branch-slug>/findings.jsonl"
+```
+
+The file is committed on the branch with the fix. **That is what makes the finding outlive the
+session**: a finding reported only in the conversation is gone when the session ends, so nothing can
+ever count how often it recurs. Per-PR records live under `prs/`, apart from a full review's dated
+file, because `/rails-flow:issues` and `/rails-flow:fix` file and fix from the dated file, and a
+finding already fixed on its branch must not be filed again.
+
 ## Output
 
 A bounded finding list, and nothing else. **Your answer lands in the parent conversation and stays

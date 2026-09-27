@@ -115,6 +115,21 @@
       ]
     },
     {
+      "id": "text-resize",
+      "why": "A card with a fixed height looks finished at the served size and cuts its paragraph in half when the text is doubled; WCAG 2.2 SC 1.4.4 and 1.4.12 require no loss of content.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/text_resize.py",
+        "{match:qa/manual-tests/text-resize.json}"
+      ],
+      "applies_when": [
+        "qa/manual-tests"
+      ],
+      "requires": [
+        "python3"
+      ]
+    },
+    {
       "id": "interaction-sweep",
       "why": "A control can be named, focusable and correctly marked up, and still do nothing when clicked.",
       "command": [

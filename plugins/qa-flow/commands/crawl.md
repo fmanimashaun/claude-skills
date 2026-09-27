@@ -228,6 +228,35 @@ the route requested as **unverified**, so even without a policy the degradation 
 silent. The two were built together and the guard caught the run above without being told what to
 look for.
 
+## 3b. The page with its text enlarged (opt in with `--text-resize`)
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/crawl_collector.js" --text-resize \
+  --base "http://localhost:${PORT:-3000}" --routes / /dashboard \
+  --storage-state qa/manual-tests/admin-state.json --out qa/manual-tests
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/text_resize.py" qa/manual-tests/text-resize.json \
+  --config qa/qa.config.yml
+```
+
+Writes `qa/manual-tests/text-resize.json`. Exits 1 on findings **or unverified routes**, so it gates.
+
+WCAG 2.2 requires both of these at level AA:
+- **SC 1.4.4 Resize Text:** text can be resized to 200 percent without loss of content or functionality.
+- **SC 1.4.12 Text Spacing:** no loss when line height is 1.5 times the font size, spacing after
+  paragraphs 2 times, letter spacing 0.12 times and word spacing 0.16 times.
+
+The collector measures each route three times in the same page: as served, with the root font size
+doubled, and with those four overrides applied. `text_resize.py` reports only loss that the
+enlargement **caused**: an element that clips (`resize-clipped`, `spacing-clipped`) or draws outside
+its box (`resize-overlap`, `spacing-overlap`) on an axis where it did not as served. What was
+already hidden as served is §3a's, so the same defect is never reported twice. Content that becomes
+reachable by scrolling is not loss.
+
+**Text sized in `px` ignores the root font size**, so on such a page the 200% check measures
+nothing. It is reported **unverified**, naming how many text elements actually grew. Check that page
+with browser zoom instead. The spacing check still runs on it. `min_hidden` and `exclude` come from
+the same `layout:` section as §3a.
+
 ## 4. Broken links and missing assets (opt in with `--links`)
 
 ```bash

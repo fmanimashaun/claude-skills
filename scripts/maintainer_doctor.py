@@ -400,6 +400,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("qa-flow theme parity", ("python3", "plugins/qa-flow/scripts/theme_parity.py", "--selftest")),
     # #953. What a page hides INSIDE the viewport, which every boundary assertion passes on.
     ("qa-flow layout fit", ("python3", "plugins/qa-flow/scripts/layout_fit.py", "--selftest")),
+    # #1367. What enlarged text newly hides: WCAG 2.2 SC 1.4.4 and SC 1.4.12.
+    ("qa-flow text resize", ("python3", "plugins/qa-flow/scripts/text_resize.py", "--selftest")),
     ("qa-flow boot classifier", ("python3", "plugins/qa-flow/scripts/classify_boot_failure.py", "--selftest")),
     ("qa-flow interaction sweep", ("python3", "plugins/qa-flow/scripts/interaction_report.py", "--selftest")),
     ("qa-flow visual baselines", ("python3", "plugins/qa-flow/scripts/visual_baseline.py", "--selftest")),

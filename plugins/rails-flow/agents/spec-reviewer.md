@@ -30,7 +30,7 @@ words against the diff, so two defects pass every mechanical gate:
 ## Inputs
 
 The caller gives you the acceptance file (`docs/product/acceptance/<slug>.md`), the base ref, and
-the findings file path (`docs/evidence/reviews/<YYYY-MM-DD>/findings.jsonl`). If there is no
+the findings file path (`docs/evidence/reviews/prs/<branch-slug>/findings.jsonl`). If there is no
 acceptance file, stop and say so. There is nothing to review against, and inventing criteria from
 the code would review the code against itself.
 
@@ -74,9 +74,9 @@ or what the system does; `P3` for an advisory note. **Create the file even when 
 since its absence is how the check knows the pass never ran. Then run:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/findings.py" validate docs/evidence/reviews/<date>/findings.jsonl
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/findings.py" validate docs/evidence/reviews/prs/<branch-slug>/findings.jsonl
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_spec_review.py" --acceptance "docs/product/acceptance/<slug>.md" \
-  --findings docs/evidence/reviews/<date>/findings.jsonl --base "<base>" --verdict "<CLEAN or BLOCKED>"
+  --findings docs/evidence/reviews/prs/<branch-slug>/findings.jsonl --base "<base>" --verdict "<CLEAN or BLOCKED>"
 ```
 
 The check refuses a finding that cites a criterion the file does not define, flags unasked-for

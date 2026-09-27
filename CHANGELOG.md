@@ -3478,6 +3478,20 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   - 11 helper selftest cases and 5 end-to-end hook fixtures. Mutations: 7 of 7 on the helper, 2 new on the hook.
     Doctor gate "rails-flow PR-template sections".
 
+- **Every per-PR review pass saves its findings, apart from a full review's — `plugins/rails-flow/agents/code-reviewer.md`,
+  `plugins/rails-flow/agents/pr-reviewer.md`, `plugins/rails-flow/agents/spec-reviewer.md`,
+  `plugins/rails-flow/commands/feature.md`, `plugins/rails-flow/commands/issues.md`** (#1360). **Owner decision
+  recorded on the issue.**
+  - **The gap.** Measured on a downstream app: 0 review findings files and 0 GitHub reviews across 200 merged PRs.
+    `code-reviewer` and `pr-reviewer` returned findings only in the conversation, so nothing could count a finding
+    that recurs, and #1339's retro had no input.
+  - **The fix.** Both now append their records, in `findings.py`'s shape with a defect-level `signature`, to
+    `docs/evidence/reviews/prs/<branch-slug>/findings.jsonl`, validate them, and commit them with the fix.
+  - **And a defect this surfaced.** `spec-reviewer` (#1370, unreleased) wrote to the dated full-review file, which
+    `/rails-flow:issues` and `/rails-flow:fix` file and fix from, so a finding already fixed on its branch would have
+    been filed again. All three per-PR reviewers now use `prs/`, and `/rails-flow:issues` Phase 0 says never to file
+    from it.
+
 - **`/rails-flow:spec` turns an idea into a technical spec before anything is built — `plugins/rails-flow/commands/spec.md`,
   `plugins/rails-flow/scripts/check_spec.py`, `plugins/rails-flow/scripts/mutations/check_spec.py`,
   `plugins/rails-flow/scripts/check_brief.py`, `plugins/rails-flow/commands/feature.md`,
@@ -6533,6 +6547,15 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 ## pipeline (lifecycle orchestrator)
 
 ### Unreleased
+
+- **A proceeding `breaker.py check` ends with `elapsed Xs / Ys` — `plugins/pipeline/scripts/breaker.py`,
+  `plugins/pipeline/scripts/breaker_selftest.py`, `plugins/pipeline/scripts/mutations/breaker.py`,
+  `plugins/pipeline/commands/pipeline.md`** (#1364). Before this, the model heard about time only once the budget was
+  already spent. `elapsed_line()` reads the same `_elapsed` and `budget_minutes` as the `budget` breaker, so the
+  line and the STOP cannot disagree. The hard stop is unchanged. `pipeline.md` says to pace against the line and
+  never pay for time with verification: the guide names that as the risk. Authority: the maintainer decision on
+  #1364, citing Anthropic's *Prompting Claude Opus 5.5* guide, "Time signals for multiagent harnesses". 3 selftest
+  checks with literal numbers, one driven through `main()`; 2 new mutations (16 caught).
 
 *Version number assigned at promotion.*
 
@@ -10721,6 +10744,20 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
     where a guard turned out to have **no reachable failure path** until a fixture was added for it.
 
 ## qa-flow (independent QA plugin)
+
+### Unreleased
+
+- **The crawl checks each page with its text enlarged: WCAG 2.2 SC 1.4.4 and SC 1.4.12 — `plugins/qa-flow/scripts/text_resize.py`,
+  `plugins/qa-flow/scripts/crawl_collector.js`, `plugins/qa-flow/scripts/mutations/text_resize.py`,
+  `plugins/qa-flow/commands/crawl.md`, `plugins/qa-flow/checks.json`, `scripts/maintainer_doctor.py`** (#1367). Nothing
+  shipped checked a page with enlarged text. `crawl_collector.js --text-resize` measures each route as served, with
+  the root font size doubled, and with the four text-spacing overrides. `text_resize.py` reports only loss the
+  enlargement caused (clipped or drawn outside its box, on either axis); what was hidden as served stays
+  `layout_fit.py`'s. A page whose text did not grow (px sizes) is unverified, not clean. doctrine-verifier CONFIRMED
+  both criteria and the test method against WCAG 2.2 and Understanding 1.4.4 (verdict recorded on #1367); the design
+  is the maintainer decision recorded there. Driven in Chromium against a fixture: a fixed-height card and a fixed-width
+  pill fire, a growing card and a scroll box stay silent, and a px page is unverified. 38 selftest assertions; 9
+  mutations caught.
 
 ### 1.33.2 (release v1.151.0) — 2026-09-26
 
@@ -15728,6 +15765,10 @@ boot/validation path — with a bullet each so the promotion could close them se
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
 ### Unreleased
+
+- **The quality-pass worked example's `check(label, ok, detail)` count is refreshed to 40 — `skills/quality-pass/references/worked-example.md`,
+  `dist/quality-pass.skill`** (#1367). The new copy is `plugins/qa-flow/scripts/text_resize.py`; reach stays 21. It reuses
+  `layout_fit.py`'s `Unusable` rather than declaring a thirteenth.
 
 - **rails-8 names a self-hosted APM and says when to adopt it — `skills/rails-8/references/observability.md`,
   `skills/rails-8/SKILL.md`, `dist/rails-8.skill`** (#1365). §7 listed hosted APMs and self-hosted
