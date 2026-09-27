@@ -54,7 +54,7 @@ or skip-if-exists):
   `comp:packaging`, `comp:marketplace`
 - `type:incorrect-doctrine`, `type:skill-gap`, `type:bug`, `type:feature`, `type:chore`
 - `prio:P1`, `prio:P2`, `prio:P3`
-- `needs-info`, `duplicate`
+- `needs-info`, `duplicate`, `lapse`
 
 Keep a `.github/labels.yml` as the source of truth (name → color → description) so the
 set is reproducible and auditable.

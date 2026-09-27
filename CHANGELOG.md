@@ -9,6 +9,17 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **Triage checks a skill-gap report against what the skill already says — `.claude/agents/issue-triager.md`,
+  `.claude/commands/maintainer-work.md`, `.claude/commands/maintainer-setup-intake.md`, `.github/labels.yml`,
+  `.github/ISSUE_TEMPLATE/skill-gap.yml`** (#1386). The duplicate check compared an issue only with other issues, so
+  a report that an agent ignored a rule the skill already states was queued as `type:skill-gap` and sent to
+  `skill-doctor`, which adds a second copy of the prose. The triager now searches the named skill first: no hit is a
+  gap, and a covering hit is a **lapse** (new status label). It is relabelled `type:feature`, and `/maintainer-work`
+  routes it to enforcement (a hook, a cop, a doctrine-map `guarantee` row), never to skill-doctor. The template
+  gains an optional "does the skill already say this?" field. After SkillOpt's skill-defect / execution-lapse
+  split. How often lapses happen is unmeasured, and the issue says so. This is triage prose, advisory: nothing
+  mechanical checks that the search ran. Our own design, decided on the issue; no framework claim.
+
 - **`unhonoured-config-toggle` no longer reads a GitHub issue form as our config — `scripts/lint_self_consistency.py`,
   `scripts/mutations/lint_self_consistency.py`** (#1376). The rule treats every boolean in a setup command's YAML
   block as a rails-flow toggle that some script must read. setup-flow's proposed Mock-up form field carries
@@ -3459,6 +3470,12 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 ## rails-flow (agentic flow plugin)
 
 ### Unreleased
+
+- **`claude-skills-reporter` searches the installed skill before reporting a gap —
+  `plugins/rails-flow/agents/claude-skills-reporter.md`** (#1386). An agent that ignored a rule looks exactly like one
+  that never had it, and the two need opposite fixes upstream. If the skill already covers the case, the report is
+  filed as a `lapse` (`type:feature`) quoting the `file:line`, so the fix is enforcement, not more prose. The search
+  goes in the report either way.
 
 - **Every per-PR review pass saves its findings, apart from a full review's — `plugins/rails-flow/agents/code-reviewer.md`,
   `plugins/rails-flow/agents/pr-reviewer.md`, `plugins/rails-flow/agents/spec-reviewer.md`,

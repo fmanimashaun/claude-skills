@@ -77,3 +77,6 @@
 - name: "duplicate"
   color: "cfd3d7"
   description: "Already tracked by another issue"
+- name: "lapse"
+  color: "5319e7"
+  description: "The skill already says it and the agent did not follow it — fix with enforcement, not more prose"
