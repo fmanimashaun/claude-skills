@@ -20,6 +20,31 @@ GUARD = Guard(
            'plugins/qa-flow/scripts/read_certification.py',
            'plugins/rails-flow/scripts/self_consistency.py'),
     mutations=(
+        # #1337: the stamp's own commit invalidates it again, or any delta slips through.
+        Mutation(
+            "an ancestor stamp is never accepted, so committing the stamp denies its promotion",
+            '        ""|"qa/CERTIFICATION") : ;;',
+            '        "__never__") : ;;',
+            "release-gate (#1337): the stamp committed on top of the tested sha still permits",
+        ),
+        Mutation(
+            "any delta after an ancestor stamp is accepted",
+            '        ""|"qa/CERTIFICATION") : ;;',
+            '        *) : ;;',
+            "release-gate (#1337): a code change after the tested sha is denied, naming the path",
+        ),
+        Mutation(
+            "the ancestry check is skipped, so a stamp from another branch is accepted",
+            '      if [ -z "$full" ] || ! git merge-base --is-ancestor "$full" "$devsha" 2>/dev/null; then',
+            '      if [ -z "$full" ]; then',
+            "release-gate (#1337): a stamp for a sha that is not an ancestor of dev is denied",
+        ),
+        Mutation(
+            "the dev sha is read with plain rev-parse again, so a missing origin/dev poisons it",
+            'devsha="$(git rev-parse --verify -q origin/dev 2>/dev/null || git rev-parse --verify -q dev 2>/dev/null || true)"',
+            'devsha="$(git rev-parse origin/dev 2>/dev/null || git rev-parse dev 2>/dev/null || true)"',
+            "release-gate (#1337): CONTROL: an uncommitted stamp for dev's tip permits",
+        ),
         Mutation(
             # WITHOUT the carve-out the gate denies every promotion of its own source repo. That is
             # a gate wrong about correct code: the maintainer overrides it every release or turns

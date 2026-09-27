@@ -6,7 +6,7 @@ description: >
   as considered or mechanically assembled — and returns concrete, ranked improvements. Never
   pass/fail, never a merge condition. Use via /design-flow:critique, and to rank
   /design-flow:variants output. Complements design-auditor, which owns consistency and blocks.
-tools: Read, Grep, Glob
+tools: Read, Grep, Glob, Skill
 model: inherit
 ---
 

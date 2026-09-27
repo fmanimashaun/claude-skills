@@ -6,8 +6,9 @@ Everything else inherits the session model the user deliberately chose.
 The full argument and citations live in `plugins/rails-flow/reference/model-tiers.md`. The decisive
 facts, verified against [the sub-agents docs](https://code.claude.com/docs/en/sub-agents): `model`
 *"Defaults to `inherit`"*; frontmatter resolves **above** *"the main conversation's model"*, so a
-`sonnet` pin hands an Opus session a Sonnet agent; and pinning up is *"skipped"* when outside the
-org's `availableModels`, so it buys nothing.
+`sonnet` pin hands an Opus session a Sonnet agent; and pinning up spends the user's money even when their org
+blocks it, because a blocked `opus` runs on *"the newest version of that family the allowlist permits"*
+(since v2.1.222, #1329).
 
 <!-- pipeline:tiers:begin -->
 | Agent | Tier | `model:` | What proves its output |

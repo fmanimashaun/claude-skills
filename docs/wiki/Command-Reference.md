@@ -24,7 +24,7 @@ Commands are namespaced by plugin: `/rails-flow:feature`, `/qa-flow:verify`.
 - `/rails-flow:curate` — Convert project docs (PRDs, branding, architecture) into project-local skills and keep them synced as documentation evolves
 - `/rails-flow:issues` — Triage the repo's open issues and work them through the matching pipeline.
 - `/rails-flow:pr-comments` — Sweep a PR's review feedback.
-- `/rails-flow:report` — Report toolchain friction (a rails-flow/qa-flow/pipeline/design-flow/rails-stack bug, wrong guidance, a generated component that won't build, or a feature idea) upstream as a structured, deduped, version-pinned issue.
+- `/rails-flow:report` — 'Report toolchain friction (a rails-flow/qa-flow/pipeline/design-flow/rails-stack bug, wrong guidance, a generated component that won''t build, or a feature idea) upstream as a structured, deduped, version-pinned issue.
 
 
 **Memory** — durable project memory that survives a session ending
@@ -38,7 +38,7 @@ Commands are namespaced by plugin: `/rails-flow:feature`, `/qa-flow:verify`.
 **Autonomous** — one action per tick, asking the human asynchronously when it must
 
 - `/rails-flow:drive` — Pick the one next action from repository state and say whether you may take it alone.
-- `/rails-flow:escalate` — Ask the human a question on a GitHub issue, park the thread, and pick the answer up on a later tick — the async human-in-the-loop.
+- `/rails-flow:escalate` — 'Ask the human a question on a GitHub issue, park the thread, and pick the answer up on a later tick — the async human-in-the-loop.
 - `/rails-flow:toolchain-check` — Check whether this project's installed claude-skills toolchain is behind what is published, and carry a durable marker across the restart an update requires.
 
 

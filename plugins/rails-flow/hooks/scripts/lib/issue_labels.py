@@ -24,6 +24,7 @@ Run:  issue_labels.py [--root DIR] < command.txt
 from __future__ import annotations
 
 import json
+import re
 import shlex
 import subprocess
 import sys
@@ -32,8 +33,34 @@ from pathlib import Path
 CONFIG = Path(".rails-flow/issue-labels.json")
 
 
+HEREDOC = re.compile(r"<<(-?)[ \t]*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\2")
+
+
+def strip_heredocs(cmd: str) -> str:
+    """Drop every heredoc BODY, keeping the line that opens it (#1336).
+
+    Our own doctrine says to write issue bodies with a quoted heredoc and `--body-file`, never through
+    double quotes. A body is prose, so it holds apostrophes and backticks, and shlex read those as an
+    unterminated quote and refused a correctly labelled `gh issue create` in the same call. The body
+    is data the shell never tokenises, so it is not ours to parse either.
+    """
+    lines = cmd.split("\n")
+    out, i = [], 0
+    while i < len(lines):
+        line = lines[i]
+        out.append(line)
+        i += 1
+        for m in HEREDOC.finditer(line):
+            tag, dash = m.group(3), m.group(1) == "-"
+            while i < len(lines) and (lines[i].lstrip("\t") if dash else lines[i]) != tag:
+                i += 1
+            i += 1  # the closing tag line
+    return "\n".join(out)
+
+
 def issue_creates(cmd: str) -> list[list[str]]:
     """The argv of every `gh issue create` in the command, split on shell operators."""
+    cmd = strip_heredocs(cmd)
     try:
         lexer = shlex.shlex(cmd, posix=True, punctuation_chars=";&|")
         lexer.whitespace_split = True
@@ -184,6 +211,17 @@ def selftest() -> int:
         check("a create later in a compound command is checked",
               not verdict('cd x && gh issue create -t X --body-file b.md', r)[0])
         check("a quoted mention is not a command", verdict('echo "gh issue create"', r)[0])
+        # #1336: a quoted heredoc body in the same call is prose, not shell to tokenise.
+        body = "cat > b.md <<'EOF'\nThe validator's warning: `x` is \"quoted\"\nEOF\n"  # ONE apostrophe: odd, so shlex cannot pair it
+        check("a heredoc body with apostrophes does not break a labelled create",
+              verdict(body + 'gh issue create -t X --label "feature" --body-file b.md', r)[0],
+              verdict(body + 'gh issue create -t X --label "feature" --body-file b.md', r)[1])
+        ok, why = verdict(body + "gh issue create -t X --body-file b.md", r)
+        check("...and an unlabelled create after the heredoc is still refused", not ok and "no --label" in why, why)
+        ok, why = verdict("cat <<-EOF > b.md\n\tit's\n\tEOF\ngh issue create -t X", r)
+        check("a <<- heredoc (tab-indented close) is stripped too", not ok and "no --label" in why, why)
+        ok, why = verdict("gh issue create -t \"X --label feature", r)
+        check("CONTROL: a genuinely unparseable create still refuses", not ok and "could not be parsed" in why, why)
         (r / CONFIG).write_text("{not json", encoding="utf-8")
         check("an unreadable declaration refuses rather than allowing",
               not verdict("gh issue create -t X --label feature", r)[0])

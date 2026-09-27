@@ -209,7 +209,7 @@ A pack that omits a role the components consume would let that role fall back to
 Tailwind color — a silent, brand-breaking default. So completeness is checked, not trusted:
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/brand_pack_lint.py brands/<slug>
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/brand_pack_lint.py" brands/<slug>
 ```
 
 It verifies that `theme.css` defines **every role** in the contract, that surface roles have
@@ -244,8 +244,8 @@ Ten exist to make the first hour fast and correct; after that a pack has **one**
 every other pack.
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/palette_candidates.py --list
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/palette_candidates.py --emit harbor --out brands/acme
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/palette_candidates.py" --list
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/palette_candidates.py" --emit harbor --out brands/acme
 ```
 
 ### Choosing one — a decision path, not a gallery
@@ -270,7 +270,7 @@ Walk it in order and stop at the first answer. Do not browse.
 ### The client DOES have brand colours — snap, measure, report
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/palette_candidates.py --snap "#C8102E" --neutral warm
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/palette_candidates.py" --snap "#C8102E" --neutral warm
 ```
 
 It maps their colour onto the role structure, measures every text pair in both modes, and where
@@ -285,7 +285,7 @@ themeable — that is already the documented exception for `Ui::Logo`. What move
 Edited the pack afterwards? The numbers in its header are now stale. Re-measure it:
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/palette_candidates.py --measure brands/acme
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/palette_candidates.py" --measure brands/acme
 ```
 
 ### The bar, and where it comes from
@@ -311,7 +311,7 @@ keeps a client pack closer to the system, which is what preserves the one-update
 project property. So six pairings exist to be *offered*, and onboarding never requires a choice:
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/palette_candidates.py --list-fonts
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/palette_candidates.py" --list-fonts
 ```
 
 A pairing carries **three family names and nothing else**. It carries no type scale, and that

@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/release-gate.sh",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/release-gate.sh\"",
             "timeout": 15
           }
         ]
@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/qa-status.sh",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/qa-status.sh\"",
             "timeout": 10
           }
         ]

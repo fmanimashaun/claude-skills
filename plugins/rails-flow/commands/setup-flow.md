@@ -426,7 +426,7 @@ tools silently. For code-review-graph, wire it to coexist with the rails-flow ho
 1. **Protect authored files.** Its installer rewrites AGENTS.md/GEMINI.md/.cursorrules.
    Require a clean git state before `code-review-graph install`; afterwards run
    `git status` and restore any hand-authored file it clobbered
-   (`git checkout -- AGENTS.md`). Never gitignore an authored AGENTS.md.
+   (`git restore -- AGENTS.md`). Never gitignore an authored AGENTS.md.
 2. **Three-file settings pattern.** Keep `.claude/settings.json` permissions-only.
    Replace any installer-written PostToolUse graph hooks with a PID-guarded Stop hook in
    `.claude/settings.example.json` (committed; teammates copy to gitignored

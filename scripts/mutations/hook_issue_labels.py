@@ -11,6 +11,19 @@ GUARD = Guard(
     subject="plugins/rails-flow/hooks/scripts/lib/issue_labels.py",
     selftest="plugins/rails-flow/hooks/scripts/lib/issue_labels.py",
     mutations=(
+        # #1336: a heredoc body is tokenised again, so prose apostrophes refuse a labelled create.
+        Mutation(
+            "heredoc bodies are no longer stripped before tokenising",
+            "    cmd = strip_heredocs(cmd)\n",
+            "",
+            "a heredoc body with apostrophes does not break a labelled create",
+        ),
+        Mutation(
+            "a <<- heredoc keeps its tab-indented closing tag unrecognised",
+            '            while i < len(lines) and (lines[i].lstrip("\\t") if dash else lines[i]) != tag:',
+            "            while i < len(lines) and lines[i] != tag:",
+            "a <<- heredoc (tab-indented close) is stripped too",
+        ),
         Mutation(
             "a create with no label is allowed",
             "        if not labels:\n            where =",

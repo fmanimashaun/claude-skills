@@ -68,7 +68,7 @@ Expected new/modified files: `.mcp.json`, `.claude/skills/`, hook changes in
 (`AGENTS.md`, `GEMINI.md`, `.cursorrules`, `.opencode.json`, …).
 
 **Triage immediately:** if the repo has a hand-authored `AGENTS.md` or `CLAUDE.md` and
-the diff shows it rewritten, restore it now (`git checkout -- AGENTS.md`). Gitignore the
+the diff shows it rewritten, restore it now (`git restore -- AGENTS.md`). Gitignore the
 IDE noise you don't use — but never an authored `AGENTS.md`.
 
 #### Phase 3 — Build, embed, and prove the CLI layer

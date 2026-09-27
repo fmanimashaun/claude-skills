@@ -6,7 +6,7 @@ description: >
   missing a11y, off-catalog variants — with file:line and the exact fix. Use via
   /design-flow:audit and in UI review. Complements rails-flow's general design-auditor with
   design-system-specific rules.
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob, Bash, Skill
 model: inherit
 ---
 

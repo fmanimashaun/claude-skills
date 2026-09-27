@@ -210,7 +210,8 @@ human PRs carry what qa-lead needs. Ensure `qa/reports/*` (including
 `qa/reports/allure-results` and `qa/reports/allure-report`), **`/.playwright-mcp/`** (ephemeral
 Playwright-MCP session state — console logs + page-snapshot `.yml`s the functional-tester must
 never commit), and `node_modules` are gitignored; commit configs, specs, seed, and the stamp
-path is NOT gitignored (the gate reads it from the repo).
+path is NOT gitignored (the gate reads it from the repo). Commit the stamp in a PR of its own, after
+certifying: the gate allows exactly that one-file delta past the tested sha (#1337).
 
 ### Create the defect labels — the flow cannot file without them
 

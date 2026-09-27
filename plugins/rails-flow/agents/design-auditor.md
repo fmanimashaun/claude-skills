@@ -4,7 +4,7 @@ description: >
   Audits views and frontend changes for design-system compliance: form builder mandate,
   brand tokens, Tailwind patterns, dark-mode/contrast, Hotwire idioms. Use whenever
   views, partials, or Stimulus controllers were touched.
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob, Bash, Skill
 model: haiku
 ---
 

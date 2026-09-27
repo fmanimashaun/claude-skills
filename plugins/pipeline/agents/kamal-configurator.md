@@ -59,8 +59,12 @@ a value, never prompt, never deploy half-configured.
 
 - `.kamal/deploy.env`, `.kamal/secrets*`, and every `*.key` are in BOTH `.gitignore` and
   `.dockerignore`.
-- `git diff` proves no plaintext secret entered a committed file (deploy.yml holds
-  names + non-secret facts only; credentials is ciphertext).
+- `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/scan_committed_secrets.py"` exits 0: no secret value from
+  `.kamal/deploy.env` sits in any file git would commit, tracked or untracked (deploy.yml holds
+  names + non-secret facts only; credentials is ciphertext). Exit 1 names the key and file, never
+  the value, and is a stop; exit 2 means it could not check, which is NOT a pass. `git diff` is not
+  this proof: it shows only unstaged edits to tracked files, and a freshly generated deploy.yml is
+  neither (#1341).
 - Credentials round-trip verified (decrypt returns what you wrote).
 
 ## Deploy & self-troubleshoot

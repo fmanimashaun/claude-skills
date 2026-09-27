@@ -26,8 +26,8 @@ Given the session's changes (`git log --oneline <base>..HEAD` + `git diff --stat
    architecture graph:
 
    ```bash
-   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/architecture_graph.py
-   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/build_project_wiki.py     # the reference pages are a join over the graph (#887)
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/architecture_graph.py"
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/build_project_wiki.py"     # the reference pages are a join over the graph (#887)
    ```
 
    Commit `docs/architecture/graph.json`, `index.html`, `graph.md` and the regenerated `docs/wiki/` pages **together**. Report
@@ -40,7 +40,7 @@ Given the session's changes (`git log --oneline <base>..HEAD` + `git diff --stat
    human guide honest. Validate it, and name the areas that have gone stale:
 
    ```bash
-   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/check_guide.py docs/GUIDE.md --decisions docs/brain/DECISIONS.md
+   python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_guide.py" docs/GUIDE.md --decisions docs/brain/DECISIONS.md
    ```
 
    Exit 1 (findings) or a stale area → report `run /rails-flow:explain <area>` and stop

@@ -5,7 +5,7 @@ description: >
   callers, controllers, services, jobs, Hotwire views. Use for any non-trivial code generation
   after a plan exists. Produces production-quality code following the rails-8/hotwire skill
   doctrine plus the project's CLAUDE.md overrides.
-tools: Read, Grep, Glob, Edit, Write, Bash
+tools: Read, Grep, Glob, Edit, Write, Bash, Skill
 model: inherit
 ---
 

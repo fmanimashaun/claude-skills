@@ -27,6 +27,13 @@ GUARD = Guard(
         "agents",
     ),
     mutations=(
+        # #1326: effort is inherited like model; a shipped pin goes unrefused again.
+        Mutation(
+            "an agent's effort: pin is never read",
+            "        if effort is not None:\n",
+            "        if False:\n",
+            "an agent pinning effort is refused",
+        ),
         # #708. The comment said the NOTE must not fail the order; nothing inspected the prefix,
         # so the Stop gate refused every feature branch whose HEAD had moved past its base.
         Mutation(

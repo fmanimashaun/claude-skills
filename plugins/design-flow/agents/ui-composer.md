@@ -5,7 +5,7 @@ description: >
   COMPOSING the design system — layout primitives + semantic role tokens + catalog
   variants — never freehand CSS. Use via /design-flow:component, or whenever authoring UI in a
   design-system project.
-tools: Read, Grep, Glob, Edit, Write, Bash
+tools: Read, Grep, Glob, Edit, Write, Bash, Skill
 model: inherit
 ---
 

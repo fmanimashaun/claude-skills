@@ -94,6 +94,21 @@ UNQUOTED_TEST = re.compile(r"\[\s+-[a-z]\s+\$[A-Za-z_][A-Za-z0-9_]*\s+\]")
 GIT_GREP_ERE_BOUNDARY = re.compile(
     r"\bgit\s+grep\b(?=[^\n|;&]*\s(?:-[A-Za-z]*E[A-Za-z]*|--extended-regexp)\b)(?=[^\n|;&]*\\b)")
 
+# #1334. `${CLAUDE_PLUGIN_ROOT}` expands to the plugin's install path, which can contain a space
+# (a Windows or macOS user folder). Outside double quotes it word-splits and the command runs the
+# wrong thing, or nothing. The quoted segments are removed first so `"${CLAUDE_PLUGIN_ROOT}/x"` is
+# silent; an assignment (`X=${CLAUDE_PLUGIN_ROOT}/y`) is exempt because bash does not split the
+# right-hand side of an assignment.
+_QUOTED_SEGMENT = re.compile(r'"(?:[^"\\]|\\.)*"|\'[^\']*\'')
+_PLUGIN_ROOT = re.compile(r"\$\{?CLAUDE_PLUGIN_ROOT\b")
+_ASSIGNMENT = re.compile(r"^\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*=\$\{?CLAUDE_PLUGIN_ROOT\b[^\s;|&]*\s*$")
+
+
+def unquoted_plugin_root(line: str) -> bool:
+    if _ASSIGNMENT.match(line):
+        return False
+    return bool(_PLUGIN_ROOT.search(_QUOTED_SEGMENT.sub("", line)))
+
 
 class Finding:
     def __init__(self, path: str, line: int, kind: str, detail: str, snippet: str):
@@ -161,6 +176,12 @@ def lint_file(path: str) -> list[Finding]:
                     "`git grep -E` is POSIX ERE, where `\\b` is undefined: on macOS it matches nothing "
                     "and exits 1, which reads as 'not found'. Use `git grep -w` or `git grep -P`.",
                     line.strip()))
+            if unquoted_plugin_root(line):
+                findings.append(Finding(
+                    path, start + offset, "unquoted-plugin-root",
+                    "${CLAUDE_PLUGIN_ROOT} outside double quotes word-splits when the plugin is "
+                    'installed under a path with a space; quote it: bash "${CLAUDE_PLUGIN_ROOT}/x.sh"',
+                    line.strip()))
             if UNQUOTED_TEST.search(line):
                 findings.append(Finding(
                     path, start + offset, "unquoted-test",
@@ -193,6 +214,8 @@ def selftest() -> int:
     cases = [
         ("swallowed-verdict", "python3 x.py --check || echo skipped", "python3 x.py --check"),
         ("unquoted-test", "[ -f $FILE ] && echo ok", '[ -f "$FILE" ] && echo ok'),
+        ("unquoted-plugin-root", "bash ${CLAUDE_PLUGIN_ROOT}/hooks/x.sh", 'bash "${CLAUDE_PLUGIN_ROOT}/hooks/x.sh"'),
+        ("unquoted-plugin-root", "python3 $CLAUDE_PLUGIN_ROOT/s.py --check", "LINT=${CLAUDE_PLUGIN_ROOT}/s.py"),
         ("git-grep-ere-boundary", "git grep -nE '\\bfoo\\b' -- app", "git grep -nw 'foo' -- app"),
         ("git-grep-ere-boundary", "git grep --extended-regexp '\\bfoo' app", "git grep -P '\\bfoo' app"),
     ]
