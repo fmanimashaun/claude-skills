@@ -173,6 +173,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | doctrine map coverage | `repo` | `python3 scripts/doctrine_map.py --audit-coverage` | live check |
 | doctrine map drift | `repo` | `python3 scripts/doctrine_map.py --check` | live check |
 | doctrine map selftest | `repo` | `python3 scripts/doctrine_map.py --selftest` | selftest |
+| evals compare | `repo` | `python3 evals/compare.py --selftest` | selftest |
 | evals gates | `repo` | `python3 evals/selftest.py` | live check |
 | frontmatter is valid YAML | `repo` | `python3 scripts/check_frontmatter.py` | live check |
 | frontmatter selftest | `repo` | `python3 scripts/check_frontmatter.py --selftest` | selftest |
