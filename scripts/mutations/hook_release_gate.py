@@ -9,7 +9,8 @@ GUARD = Guard(
     # alongside rails-flow's (#906), so the whole hook tree plus qa-flow's scripts must be staged.
     # DECLARED, not assumed: an undeclared read makes the unmutated baseline die in the tempdir and
     # every mutation then reads as "caught" by an error that has nothing to do with the mutation.
-    needs=("plugins/rails-flow/hooks/scripts", "plugins/qa-flow/hooks/scripts",
+    needs=("plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362
+           "plugins/rails-flow/hooks/scripts", "plugins/qa-flow/hooks/scripts",
            "plugins/qa-flow/scripts",
            'plugins/rails-flow/scripts/check_criteria.py',
            'plugins/rails-flow/scripts/check_handoff.py',
