@@ -1153,6 +1153,9 @@ def check_unwired_claim_verifier() -> tuple[list[Finding], int]:
     return findings, examined
 
 
+ISSUE_FORM_FIELD = re.compile(r"^\s*-\s*type:\s*(textarea|input|dropdown|checkboxes|markdown)\s*$")
+
+
 def check_unhonoured_config_toggle() -> tuple[list[Finding], int]:
     """A boolean config key a plugin scaffolds must be read by one of that plugin's scripts.
 
@@ -1184,16 +1187,23 @@ def check_unhonoured_config_toggle() -> tuple[list[Finding], int]:
             if path.is_file() and path.suffix in {".py", ".js"})
         if not scripts:
             continue
-        body, in_yaml = read(command), False
+        body, block = read(command), None
+        toggles: list[tuple[int, str]] = []
         for number, line in enumerate(body.splitlines(), 1):
-            if re.match(r"^\s*```ya?ml", line):
-                in_yaml = True
+            if block is None and re.match(r"^\s*```ya?ml", line):
+                block = []
                 continue
-            if in_yaml and re.match(r"^\s*```\s*$", line):
-                in_yaml = False
+            if block is not None and re.match(r"^\s*```\s*$", line):
+                # A GitHub ISSUE FORM is read by GitHub, not by a script of ours: its
+                # `validations: required: true` is GitHub's own schema (#1376). Skip the whole block
+                # when it declares form fields; any other block is still judged line by line.
+                if not any(ISSUE_FORM_FIELD.match(b) for _, b in block):
+                    toggles.extend(block)
+                block = None
                 continue
-            if not in_yaml:
-                continue
+            if block is not None:
+                block.append((number, line))
+        for number, line in toggles:
             match = re.match(r"^\s*([a-z_][a-z0-9_]*):\s*(?:true|false)\b", line)
             if not match:
                 continue
@@ -4848,6 +4858,26 @@ def selftest() -> int:
         fence = f"```yaml\nlinks:\n{yaml_line}```\n" if yaml_line else "check_external: false\n"
         (root / "plugins/qa/commands/setup-qa.md").write_text(fence, encoding="utf-8")
         (root / "plugins/qa/scripts/a.py").write_text(script_body, encoding="utf-8")
+        ROOT = root
+        got, _ = check_unhonoured_config_toggle()
+        ROOT = _r
+        if bool(got) != expect:
+            failures.append(f"{UCT} / {label}: expected {'a finding' if expect else 'silence'}")
+
+    # The GitHub issue-form carve-out (#1376), and its control: a form's `required: true` is GitHub's,
+    # but a dead toggle in an ordinary block of the SAME file must still be found.
+    _form = ("```yaml\n  - type: textarea\n    id: mockup\n    validations:\n      required: true\n```\n")
+    for label, text, expect in (
+        ("a GitHub issue form's required: true is GitHub's, not ours", _form, False),
+        ("CONTROL: a dead toggle beside an issue form is still found",
+         _form + "```yaml\nlinks:\n  check_external: false\n```\n", True),
+    ):
+        checks += 1
+        root = Path(_t3.mkdtemp(prefix="toggle-"))
+        (root / "plugins/qa/commands").mkdir(parents=True)
+        (root / "plugins/qa/scripts").mkdir(parents=True)
+        (root / "plugins/qa/commands/setup-qa.md").write_text(text, encoding="utf-8")
+        (root / "plugins/qa/scripts/a.py").write_text("x = 1\n", encoding="utf-8")
         ROOT = root
         got, _ = check_unhonoured_config_toggle()
         ROOT = _r

@@ -9,6 +9,14 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **`unhonoured-config-toggle` no longer reads a GitHub issue form as our config — `scripts/lint_self_consistency.py`,
+  `scripts/mutations/lint_self_consistency.py`** (#1376). The rule treats every boolean in a setup command's YAML
+  block as a rails-flow toggle that some script must read. setup-flow's proposed Mock-up form field carries
+  `validations: required: true`, which GitHub reads, so the rule fired on the first real one. A block that
+  declares form fields (`- type: textarea|input|dropdown|checkboxes|markdown`) is now skipped as a whole. Its control
+  fixture keeps a dead toggle in an ordinary block of the same file flagged, and a new mutation that exempts
+  every block is caught by that control (136 of 136).
+
 - **The maintainer brain adopts 56 lessons from local memory — `docs/brain/memos/feedback/`, `docs/brain/MEMORY.md`.**
   They were rendered by `brain_local_sync.py`'s own `memo_text()`: bodies verbatim, with a provenance line appended. The
   maintainer picked them per D-002. There are 15 left out on purpose: 4 personal working preferences and 11
