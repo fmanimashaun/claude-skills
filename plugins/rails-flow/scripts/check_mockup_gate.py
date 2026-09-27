@@ -1,0 +1,232 @@
+#!/usr/bin/env python3
+"""A change a user can see is built only after the owner approved a clickable mock-up (#1376).
+
+Run:  check_mockup_gate.py --base dev [--root DIR]            # the branch's diff, before merge
+      check_mockup_gate.py --paths app/views/a.html.erb ...   # the plan's files, at Phase 1
+      check_mockup_gate.py --selftest
+      optional on either: --record docs/product/mockups/<slug>.md
+
+Exit: 0 no user-visible change, or an approved mock-up is recorded, or the project declared the
+gate off · 1 user-visible change with no approved mock-up recorded · 2 cannot classify.
+
+WHY. On a downstream app's first production day the owner reported about 14 screens built unlike
+what had been agreed in conversation: tables for cards, page forms for modals, a link for a
+dropdown. Each cost a PR, specs, screenshots and a redeploy. The one screen whose clickable mock-up
+was approved FIRST was right in one round, because the build had a target. So the owner's rule: a
+user-visible change waits for an approved mock-up, whatever the issue's label says.
+
+UI SCOPE IS A PATH RULE, not a judgement. A change touches what a user sees when it touches
+UI_PATHS: views (not JSON/XML templates, which API clients read), components, JavaScript,
+stylesheets, helpers, and locale files (visible copy). Everything else is backend. A mixed change is
+UI scope.
+
+THE RECORD is `docs/product/mockups/<slug>.md`, carrying one `Key: value` line for each of RECORD_KEYS.
+It must name the mock-up (a URL, or a repo file that exists), the issue, who approved it, the
+approval itself as a link to the comment where they said so, and the widths (a phone width ≤ 480
+and a desktop width ≥ 1024) and states it covers. The branch must add or change the record, or name
+it with --record. An approval with no link is a sentence anyone can type.
+
+WHAT IT DOES NOT: prove the linked comment says "approved", or that the build matches the mock-up.
+The first is the reviewer's click; the second is the screenshot comparison before merge.
+
+OPT-OUT. A project without a design reviewer declares `mockup-gate: off` on its own line in
+GUARDRAILS.md (setup-flow asks). Undeclared means ON: the owner set the default.
+
+Stdlib only; git is read like classify_door.py reads it, through the same helper.
+"""
+from __future__ import annotations
+
+import argparse
+import re
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from classify_door import Unusable, diff  # noqa: E402  -- one diff reader, never a second
+
+UI_PATHS = (re.compile(r"^app/views/"), re.compile(r"^app/components/"), re.compile(r"^app/javascript/"),
+            re.compile(r"^app/assets/(stylesheets|tailwind)/"), re.compile(r"^app/helpers/"),
+            re.compile(r"^config/locales/"))
+# An API template is read by a client, not seen by a person.
+NOT_UI = re.compile(r"\.(json|xml)(\.[a-z]+)?$")
+RECORD_DIR = "docs/product/mockups/"
+RECORD_KEYS = ("Mock-up", "Issue", "Approved-by", "Approval", "Widths", "States")
+APPROVAL_URL = re.compile(r"^https://github\.com/[^/\s]+/[^/\s]+/(issues|pull)/\d+"
+                          r"#(issuecomment-\d+|discussion_r\d+|pullrequestreview-\d+)$")
+OPT_OUT = re.compile(r"^\s*(?:[-*]\s*)?`?mockup-gate:\s*off`?\s*$", re.M | re.I)
+
+
+def ui_paths(paths: list[str]) -> list[str]:
+    return sorted(p for p in paths if any(r.match(p) for r in UI_PATHS) and not NOT_UI.search(p))
+
+
+def declared_off(root: Path) -> bool:
+    g = root / "GUARDRAILS.md"
+    return g.is_file() and bool(OPT_OUT.search(g.read_text(encoding="utf-8")))
+
+
+def record_problems(root: Path, rel: str) -> list[str]:
+    path = root / rel
+    if not path.is_file():
+        return [f"{rel}: no such mock-up record"]
+    fields: dict[str, str] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        m = re.match(r"^\s*(?:[-*]\s*)?\**([A-Za-z-]+)\**:\s*(.*?)\s*$", line)
+        if m and m.group(1) in RECORD_KEYS:
+            fields[m.group(1)] = m.group(2)
+    out = [f"{rel}: no `{k}:` line" for k in RECORD_KEYS if not fields.get(k)]
+    mock = fields.get("Mock-up", "")
+    if mock and not mock.startswith("https://") and not (root / mock).is_file():
+        out.append(f"{rel}: Mock-up {mock!r} is neither an https link nor a file in the repo")
+    approval = fields.get("Approval", "")
+    if approval and not APPROVAL_URL.match(approval):
+        out.append(f"{rel}: Approval must link the comment where the owner approved "
+                   f"(…/issues/N#issuecomment-M), got {approval!r}")
+    widths = [int(w) for w in re.findall(r"\d+", fields.get("Widths", ""))]
+    if fields.get("Widths") and not (any(w <= 480 for w in widths) and any(w >= 1024 for w in widths)):
+        out.append(f"{rel}: Widths {fields['Widths']!r} must include a phone width (≤ 480) and a desktop width (≥ 1024)")
+    return out
+
+
+def run(root: Path, changed: list[str], record: str | None) -> tuple[int, list[str]]:
+    """The whole decision. main() and the selftest both come through here."""
+    ui = ui_paths(changed)
+    if not ui:
+        return 0, ["no user-visible change: no mock-up needed"]
+    if declared_off(root):
+        return 0, [f"{len(ui)} user-visible file(s), and GUARDRAILS.md declares `mockup-gate: off`"]
+    records = [record] if record else sorted(p for p in changed if p.startswith(RECORD_DIR) and p.endswith(".md"))
+    if not records:
+        return 1, [f"{len(ui)} user-visible file(s) ({', '.join(ui[:5])}{' …' if len(ui) > 5 else ''}) and no "
+                   f"approved mock-up: publish one, stop for the owner's approval, then record it in "
+                   f"{RECORD_DIR}<slug>.md"]
+    problems = [p for r in records for p in record_problems(root, r)]
+    if problems:
+        return 1, problems
+    return 0, [f"{len(ui)} user-visible file(s); approved mock-up recorded in {', '.join(records)}"]
+
+
+# --------------------------------------------------------------------------- selftest
+
+GOOD = """# Mock-up — invoice bell
+Mock-up: https://example.com/mockups/bell
+Issue: #12
+Approved-by: @owner
+Approval: https://github.com/acme/app/issues/12#issuecomment-99
+Widths: 1280, 390
+States: default, empty, error
+"""
+
+
+def selftest() -> int:
+    failures: list[str] = []
+
+    def check_that(label: str, ok: bool, detail: object = "") -> None:
+        if not ok:
+            failures.append(f"{label}{(' — ' + str(detail)) if detail != '' else ''}")
+
+    check_that("a view is UI scope", ui_paths(["app/views/invoices/index.html.erb"]) != [])
+    check_that("a component is UI scope", ui_paths(["app/components/bell_component.rb"]) != [])
+    check_that("a Stimulus controller is UI scope", ui_paths(["app/javascript/controllers/bell_controller.js"]) != [])
+    check_that("a locale file (visible copy) is UI scope", ui_paths(["config/locales/en.yml"]) != [])
+    check_that("CONTROL: a model, migration, job and spec are not UI scope",
+               ui_paths(["app/models/invoice.rb", "db/migrate/1_x.rb", "app/jobs/sync_job.rb",
+                         "spec/models/invoice_spec.rb"]) == [])
+    check_that("CONTROL: a JSON template is read by a client, not seen",
+               ui_paths(["app/views/api/invoices/show.json.jbuilder"]) == [])
+    check_that("a mixed change is UI scope",
+               ui_paths(["app/models/invoice.rb", "app/views/invoices/_row.html.erb"]) == ["app/views/invoices/_row.html.erb"])
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        rec = root / "docs/product/mockups"
+        rec.mkdir(parents=True)
+        view = ["app/views/invoices/index.html.erb"]
+
+        code, _ = run(root, ["app/models/invoice.rb"], None)
+        check_that("CONTROL: a backend-only change passes with no record", code == 0)
+        code, msg = run(root, view, None)
+        check_that("a UI change with no mock-up record is held", code == 1, msg)
+
+        (rec / "bell.md").write_text(GOOD)
+        code, msg = run(root, view + ["docs/product/mockups/bell.md"], None)
+        check_that("CONTROL: a UI change with a complete, approved record passes", code == 0, msg)
+        code, msg = run(root, view, "docs/product/mockups/bell.md")
+        check_that("CONTROL: --record names a record the branch did not touch", code == 0, msg)
+
+        def with_record(text: str) -> tuple[int, list[str]]:
+            (rec / "r.md").write_text(text)
+            return run(root, view + ["docs/product/mockups/r.md"], None)
+
+        code, msg = with_record(GOOD.replace("Approval: https://github.com/acme/app/issues/12#issuecomment-99\n", ""))
+        check_that("a record with no approval line is held", code == 1 and any("Approval" in m for m in msg), msg)
+        code, msg = with_record(GOOD.replace("https://github.com/acme/app/issues/12#issuecomment-99", "approved in chat"))
+        check_that("an approval that is not a comment link is held", code == 1 and any("link the comment" in m for m in msg), msg)
+        code, msg = with_record(GOOD.replace("Widths: 1280, 390", "Widths: 1280"))
+        check_that("a mock-up with no phone width is held", code == 1 and any("phone width" in m for m in msg), msg)
+        code, msg = with_record(GOOD.replace("Widths: 1280, 390", "Widths: 390"))
+        check_that("a mock-up with no desktop width is held", code == 1 and any("phone width" in m for m in msg), msg)
+        code, msg = with_record(GOOD.replace("https://example.com/mockups/bell", "docs/product/mockups/missing.html"))
+        check_that("a mock-up file that does not exist is held", code == 1 and any("neither" in m for m in msg), msg)
+        (root / "docs/product/mockups/bell.html").write_text("<html></html>")
+        code, msg = with_record(GOOD.replace("https://example.com/mockups/bell", "docs/product/mockups/bell.html"))
+        check_that("CONTROL: a committed mock-up file passes", code == 0, msg)
+
+        (root / "GUARDRAILS.md").write_text("# Guardrails\n\n- mockup-gate: off\n")
+        code, msg = run(root, view, None)
+        check_that("a project that declared the gate off is not held", code == 0, msg)
+        (root / "GUARDRAILS.md").write_text("# Guardrails\n\nWe might set mockup-gate: off one day.\n")
+        code, msg = run(root, view, None)
+        check_that("CONTROL: prose mentioning the key is not a declaration", code == 1, msg)
+
+    # The git path main() takes: a new, untracked view must count (the #1341 blind spot). A FRESH
+    # directory: the one above holds untracked records, which would rightly count as on the branch.
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        def git(*a: str) -> None:
+            subprocess.run(("git",) + a, cwd=root, check=True, capture_output=True)
+        git("init", "-q", "-b", "dev"); git("config", "user.email", "t@example.com"); git("config", "user.name", "t")
+        (root / "README.md").write_text("x\n"); git("add", "README.md"); git("commit", "-qm", "base")
+        git("checkout", "-q", "-b", "feature")
+        (root / "app/views/invoices").mkdir(parents=True)
+        (root / "app/views/invoices/index.html.erb").write_text("<table></table>\n")   # untracked
+        code, msg = run(root, list(diff(root, "dev")), None)
+        check_that("an untracked new view, read through the diff, is held", code == 1, msg)
+        try:
+            diff(root, "no-such-base")
+            check_that("an unresolvable base is unusable", False)
+        except Unusable:
+            pass
+
+    for f in failures:
+        print(f"selftest FAIL: {f}")
+    print(f"check_mockup_gate selftest: {'FAILED' if failures else 'ok'} ({len(failures)} failure(s))")
+    return 1 if failures else 0
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(prog="check_mockup_gate.py", description=__doc__.splitlines()[0])
+    ap.add_argument("--base", default="dev")
+    ap.add_argument("--root", default=".", type=Path)
+    ap.add_argument("--paths", nargs="+", help="the plan's files, instead of the branch's diff")
+    ap.add_argument("--record", help=f"the mock-up record, when the branch does not touch one ({RECORD_DIR}<slug>.md)")
+    ap.add_argument("--selftest", action="store_true")
+    a = ap.parse_args(argv)
+    if a.selftest:
+        return selftest()
+    try:
+        changed = a.paths if a.paths else list(diff(a.root, a.base))
+    except Unusable as exc:
+        print(f"UNUSABLE: {exc} -- an unclassified change is not exempt; ask the owner", file=sys.stderr)
+        return 2
+    code, lines = run(a.root, changed, a.record)
+    print(("MOCK-UP GATE: HOLD -- " if code else "MOCK-UP GATE: ok -- ") + lines[0])
+    for line in lines[1:]:
+        print(f"  {line}")
+    return code
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

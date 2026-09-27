@@ -32,7 +32,9 @@ Hard rules (from GUARDRAILS.md — these override convenience):
 
 Workflow:
 1. `bin/rails db:migrate:status` to see current state.
-2. Write the migration; add the matching model changes only if asked.
+2. Generate the file with `bin/rails generate migration <Name> [field:type ...]`, then edit it —
+   the generator gets the timestamp and class name right; a Write straight into `db/migrate/` is
+   blocked. Add the matching model changes only if asked.
 3. Prove the round-trip: `bin/rails db:migrate && bin/rails db:rollback && bin/rails db:migrate`.
 4. If `strong_migrations` is in the Gemfile, treat its errors as law — apply its safe recipe.
 

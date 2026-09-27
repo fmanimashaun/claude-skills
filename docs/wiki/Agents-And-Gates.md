@@ -2,14 +2,14 @@
      Rebuild:  python3 scripts/build_wiki.py
      Drift:    python3 scripts/build_wiki.py --check  (runs in the gate sweep) -->
 # Agents and gates
-**29 shipped agents · 48 shipped commands · 132 gates · 4 tier tables**, plus 5 maintainer agents and 6 maintainer commands that are not installed.
+**30 shipped agents · 48 shipped commands · 135 gates · 4 tier tables**, plus 5 maintainer agents and 6 maintainer commands that are not installed.
 
 | plugin | version | agents | commands | tier rows | gates |
 |---|---|---|---|---|---|
 | `design-flow` | 1.44.2 | 5 | 12 | 5 | 19 |
-| `pipeline` | 1.3.4 | 2 | 8 | 2 | 3 |
+| `pipeline` | 1.3.4 | 2 | 8 | 2 | 4 |
 | `qa-flow` | 1.33.2 | 11 | 8 | 11 | 15 |
-| `rails-flow` | 1.54.0 | 11 | 20 | 11 | 24 |
+| `rails-flow` | 1.54.0 | 12 | 20 | 12 | 26 |
 
 ## Agents
 
@@ -62,6 +62,7 @@
 | `rails-developer` | judgement · inherit | Read, Grep, Glob, Edit, Write, Bash, Skill | `/rails-flow:feature`, `/rails-flow:fix` | — |
 | `security-auditor` | judgement · inherit | Read, Grep, Glob, Bash | `/rails-flow:feature`, `/rails-flow:issues`, `/rails-flow:review` | — |
 | `skill-curator` | judgement · inherit | Read, Grep, Glob, Write, Edit, Bash | `/rails-flow:curate` | — |
+| `spec-reviewer` | judgement · inherit | Read, Grep, Glob, Bash | `/rails-flow:feature`, `/rails-flow:fix` | — |
 | `test-runner` | mechanical · haiku | Read, Grep, Glob, Bash | `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:issues`, `/rails-flow:pr-comments`, `/rails-flow:setup-flow` | `bundle exec rspec` exit status — 0 failures or the gate blocks |
 
 ### `maintainer` (maintainer-only, not installed)
@@ -99,6 +100,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | design-flow tells vs our own doctrine | `design-flow` | `python3 plugins/design-flow/scripts/llm_tell_detector.py --doctrine-selfcheck` | live check |
 | design-flow token drift selftest | `design-flow` | `python3 plugins/design-flow/scripts/check_token_drift.py --selftest` | selftest |
 | design-flow variant conformance | `design-flow` | `python3 plugins/design-flow/scripts/variant_conformance.py --selftest` | selftest |
+| pipeline apm advisory | `pipeline` | `python3 plugins/pipeline/scripts/apm_advisory.py --selftest` | selftest |
 | pipeline committed-secret scan | `pipeline` | `python3 plugins/pipeline/scripts/scan_committed_secrets.py --selftest` | selftest |
 | pipeline hook install | `pipeline` | `python3 plugins/pipeline/scripts/install_git_hooks_selftest.py` | live check |
 | pipeline stop conditions | `pipeline` | `python3 plugins/pipeline/scripts/breaker.py --selftest` | selftest |
@@ -134,10 +136,12 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | rails-flow i18n wired | `rails-flow` | `python3 plugins/rails-flow/scripts/check_i18n_setup.py --selftest` | selftest |
 | rails-flow lane assigner selftest | `rails-flow` | `python3 plugins/rails-flow/scripts/assign_lanes.py --selftest` | selftest |
 | rails-flow mandated gems | `rails-flow` | `python3 plugins/rails-flow/scripts/check_mandated_gems.py --selftest` | selftest |
+| rails-flow mock-up gate | `rails-flow` | `python3 plugins/rails-flow/scripts/check_mockup_gate.py --selftest` | selftest |
 | rails-flow one-way door classifier | `rails-flow` | `python3 plugins/rails-flow/scripts/classify_door.py --selftest` | selftest |
 | rails-flow product brief | `rails-flow` | `python3 plugins/rails-flow/scripts/check_brief.py --selftest` | selftest |
 | rails-flow self-consistency | `rails-flow` | `python3 plugins/rails-flow/scripts/self_consistency.py --selftest` | selftest |
 | rails-flow spec support wired | `rails-flow` | `python3 plugins/rails-flow/scripts/check_spec_support.py --selftest` | selftest |
+| rails-flow spec-review citations | `rails-flow` | `python3 plugins/rails-flow/scripts/check_spec_review.py --selftest` | selftest |
 | rails-flow tiers | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --agents plugins/rails-flow/agents --tiers plugins/rails-flow/reference/model-tiers.md` | live check |
 | rails-flow toolchain version | `rails-flow` | `python3 plugins/rails-flow/scripts/toolchain_version.py --selftest` | selftest |
 | rails-flow work order | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --selftest` | selftest |
@@ -262,6 +266,7 @@ Parsed by `check_handoff.parse_tiers`, the arbiter four shipped gates trust.
 | `skill-curator` | judgement | — |
 | `claude-skills-reporter` | judgement | — |
 | `claim-verifier` | judgement | — |
+| `spec-reviewer` | judgement | — |
 | `test-runner` | mechanical | `bundle exec rspec` exit status — 0 failures or the gate blocks |
 | `design-auditor` | mechanical | the mandated greps must come back empty (`form_with`, `f.label`) |
 | `doc-updater` | mechanical | `architecture_graph.py` regenerates and its digest guard fails on drift |

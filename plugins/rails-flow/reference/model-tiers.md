@@ -102,6 +102,7 @@ not a nicety — and why the mechanical column below has to name the proof for e
 | `skill-curator` | judgement | `inherit` | — |
 | `claude-skills-reporter` | judgement | `inherit` | — |
 | `claim-verifier` | judgement | `inherit` | — |
+| `spec-reviewer` | judgement | `inherit` | — |
 | `test-runner` | mechanical | `haiku` | `bundle exec rspec` exit status — 0 failures or the gate blocks |
 | `design-auditor` | mechanical | `haiku` | the mandated greps must come back empty (`form_with`, `f.label`) |
 | `doc-updater` | mechanical | `haiku` | `architecture_graph.py` regenerates and its digest guard fails on drift |

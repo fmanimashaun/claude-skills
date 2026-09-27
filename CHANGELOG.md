@@ -22,6 +22,11 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   47 → 62 assertions. Found while reviewing microsoft/SkillOpt, whose rule judges flag a check that cannot
   tell a better answer from a non-answer. Our own design; no framework claim.
 
+- **The maintainer brain adopts 56 lessons from local memory — `docs/brain/memos/feedback/`, `docs/brain/MEMORY.md`.**
+  They were rendered by `brain_local_sync.py`'s own `memo_text()`: bodies verbatim, with a provenance line appended. The
+  maintainer picked them per D-002. There are 15 left out on purpose: 4 personal working preferences and 11
+  Retask-only facts. `--status` now reports 73 brain memos, 15 outbound candidates and 0 diverged.
+
 - **`check_arm_window.py` stops reading a promoted dev as armed while the release tag is pending —
   `scripts/check_arm_window.py`, `scripts/mutations/check_arm_window.py`** (#1372). The tag is created by
   `release.yml` after its gate sweep on main, so for 10+ minutes after a promotion (and forever, if that run
@@ -3445,6 +3450,75 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **A change a user can see waits for an owner-approved clickable mock-up, whatever the issue's label —
+  `plugins/rails-flow/scripts/check_mockup_gate.py`, `plugins/rails-flow/scripts/mutations/check_mockup_gate.py`,
+  `plugins/rails-flow/commands/feature.md`, `plugins/rails-flow/commands/fix.md`,
+  `plugins/rails-flow/commands/setup-flow.md`, `scripts/doctrine_map.py`** (#1376, enforcement half; the intake
+  templates and the screenshot comparison follow). **Owner decision recorded on the issue**, with two refinements:
+  the mock-up belongs to the issue when filed, and the trigger is UI impact, not the label.
+  - **Why.** On a downstream app's first production day the owner reported about 14 screens built unlike what had
+    been agreed in conversation. The one screen whose mock-up was approved first was right in one round.
+  - **The gate.** `/rails-flow:feature` Phase 1 and `/rails-flow:fix` step 1b classify the planned files. For UI
+    scope they build a mock-up, publish it, stop for the owner's approval, and record it in
+    `docs/product/mockups/<slug>.md`. The same check runs on the real diff before merge, so a view the plan did not
+    name is still caught. UI scope is a path rule: views (not JSON/XML templates), components, JavaScript,
+    stylesheets, helpers and locale copy.
+  - **What is enforced.** The record needs a mock-up (an https link or a committed file that exists), the issue, the
+    approver, an approval that is a link to the comment (`…#issuecomment-N`), and a phone width (≤ 480) and a
+    desktop width (≥ 1024). It does not prove the comment says yes or that the build matches; that is the
+    reviewer's click and the screenshot comparison. `mockup-gate: off` on its own GUARDRAILS.md line opts out;
+    undeclared means on. 21 selftest cases, every refusal with a control; the guard catches 10 mutations. Doctrine
+    map row (guarantee), doctor gate "rails-flow mock-up gate".
+
+- **A Spec review beside the Standards review: `spec-reviewer` reads the diff against the acceptance criteria TEXT —
+  `plugins/rails-flow/agents/spec-reviewer.md`, `plugins/rails-flow/scripts/check_spec_review.py`,
+  `plugins/rails-flow/scripts/mutations/check_spec_review.py`, `plugins/rails-flow/commands/feature.md`,
+  `plugins/rails-flow/commands/fix.md`, `plugins/rails-flow/reference/model-tiers.md`** (#1370). Adapted from
+  mattpocock/skills `engineering/code-review` (two review axes, never merged or re-ranked), and approved by the
+  maintainer on the issue.
+  - **The gap.** `check_criteria.py --specs` proves every `AC-n` is cited and the mutation step proves a citing spec
+    can fail, but no reviewer read the criterion's words against the diff. `code-reviewer.md` and
+    `claim-verifier.md` mention criteria 0 times. So behaviour nobody asked for, and a criterion built against a
+    misreading (with a spec written from the same misreading), passed every gate.
+  - **The fix.** A read-only judgement agent reports each criterion as met, `spec-missing`, `spec-partial` or
+    `spec-misread`, and any `spec-unasked` behaviour. It runs as gate 1b in `/rails-flow:feature` and in
+    `/rails-flow:fix`'s VERIFY step, under its own heading. Its records go to
+    `docs/evidence/reviews/<date>/findings.jsonl`, the first per-PR review pass that persists findings (#1360).
+  - **What is enforced.** `check_spec_review.py` refuses a citation of a criterion the acceptance file does not
+    define, an unasked-for finding in a file the diff does not change (untracked new files included, #1341), and
+    CLEAN beside a P1 or P2 finding. A missing findings file is exit 2, not clean. 19 selftest cases, each refusal
+    with a control; the guard catches 9 mutations. Doctor gate "rails-flow spec-review citations".
+- **Creating a migration file directly is blocked; the generator is the only way in — `plugins/rails-flow/hooks/scripts/guard-migrate.sh`**
+  (#1362). Our own design, with no upstream to check — maintainer decision recorded on
+  [#1362](https://github.com/fmanimashaun/claude-skills/issues/1362#issuecomment-5857527899).
+  - **The defect.** Nothing made "use `bin/rails generate migration`" true. A `Write` straight into `db/migrate/`
+    skipped the timestamp ordering and the matching class name the generator gets right for free.
+  - **The fix.** A fifth fail-closed `PreToolUse[Write]` gate, scoped three ways: not a Rails project (no
+    `bin/rails` at the project root), not a new `.rb` file under `db/migrate/`, or the file already exists (an
+    overwrite, not a creation) all pass through untouched. Denial steers to
+    `bin/rails generate migration <Name> [field:type ...]`. Without python3, or on an unparsable payload, it
+    falls back to matching the raw text the way `guard-bash.sh` does. Wired `Write`-only (never `Edit`/`MultiEdit`,
+    which cannot create a file) in `plugins/rails-flow/hooks/hooks.json`;
+    `plugins/rails-flow/agents/migration-writer.md`'s workflow now names the generator step.
+  - **The denial's Rails claims are verified** (`doctrine-verifier`, generators run against Rails 8.0.2 and
+    8.1.2): the generator writes `db/migrate/<UTC YYYYMMDDHHMMSS>_<name>.rb` with the matching class
+    ([`migration.rb.tt`](https://github.com/rails/rails/blob/v8.0.2/activerecord/lib/rails/generators/active_record/migration/templates/migration.rb.tt),
+    [`Time.now.utc`](https://github.com/rails/rails/blob/v8.0.2/activerecord/lib/active_record/migration.rb#L1129)).
+    Refuted and removed: that `--help` documents `references`, and that multi-database migrations default to
+    `db/<name>_migrate/` (the path is whatever `migrations_paths` says in `database.yml`).
+  - **Known limit**, stated in the script's own header: a project with a custom `migrations_paths` in
+    `database.yml` (Rails multi-database support) is not covered — reading that config was judged out of scope.
+  - **Tests.** Driven end to end in `plugins/rails-flow/scripts/check_hook_gates.py`: relative- and
+    absolute-path creation, an existing-file overwrite, a write elsewhere, a non-`.rb` file, a non-Rails
+    project, the `migrations_paths` limit, an unparsable payload with and without a `db/migrate/` path, a bare
+    `PATH` holding neither python3 nor grep (the raw fallback matches with bash's own `=~`, because a
+    grep-based fallback read "grep: command not found" as a non-match and allowed the write), and the
+    `hooks.json` matcher wiring itself. Two mutation guards, `scripts/mutations/hook_guard_migrate.py` and
+    `scripts/mutations/hook_guard_migrate_matcher.py`, prove it catches a dropped existence check, a dropped
+    `bin/rails` check, and a matcher widened to also route `Edit`.
+
 ### 1.54.0 (release v1.151.0) — 2026-09-26
 
 - **A one-way-door PR stops for a human before the automatic merge into dev — `plugins/rails-flow/scripts/classify_door.py`,
@@ -6370,6 +6444,22 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 
 ## pipeline (lifecycle orchestrator)
+
+### Unreleased
+
+*Version number assigned at promotion.*
+
+- **A production deploy now says when the app has no performance monitoring — `plugins/pipeline/scripts/apm_advisory.py`,
+  `plugins/pipeline/commands/deploy-cloud.md`, `plugins/pipeline/commands/release.md`,
+  `plugins/pipeline/scripts/mutations/apm_advisory.py`, `scripts/maintainer_doctor.py`** (#1366). Nothing checked, at the
+  one moment it matters, whether production would record anything about its own speed. Both deploy commands now run
+  `apm_advisory.py` against `Gemfile.lock`: silence when one of the gems `rails-8` `observability.md` §7 names is
+  present, one pointer line to §7 when none is. **Advisory, never a gate**: it always exits 0 and the commands say never
+  to hold the deploy on it — shipping without an APM is a legitimate choice. Names are matched whole (`skylight-extras`
+  and `sentry-ruby` are not APMs) in every lockfile section, so a transitive or git-sourced gem counts. Five mutations
+  (never advises, always advises, substring match, exits non-zero, crashes on a non-UTF-8 lockfile) are all caught. Driven against
+  four real lockfiles: three advised and one (`opentelemetry-instrumentation-rails`) stayed silent, each matching a
+  grep of the file. Our own design, no upstream: maintainer decision recorded on #1366.
 
 ### 1.3.4 (release v1.151.0) — 2026-09-26
 

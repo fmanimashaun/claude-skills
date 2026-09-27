@@ -370,6 +370,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # breaker. Fixtures prove the breakers fire; only those can see the doctrine drifting away from
     # the code, which is the same defect one level up.
     ("pipeline stop conditions", ("python3", "plugins/pipeline/scripts/breaker.py", "--selftest")),
+    # #1366. The deploy-time monitoring advisory: advises when absent, silent when present, whole
+    # gem names, always exit 0, and both deploy commands actually run it.
+    ("pipeline apm advisory", ("python3", "plugins/pipeline/scripts/apm_advisory.py", "--selftest")),
     # #1204. The installer reported success and wrote a hook git never runs under core.hooksPath
     # or from a linked worktree; the selftest proves each case with a real merge, not a file check.
     ("pipeline hook install", ("python3", "plugins/pipeline/scripts/install_git_hooks_selftest.py")),
@@ -377,6 +380,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("pipeline committed-secret scan", ("python3", "plugins/pipeline/scripts/scan_committed_secrets.py", "--selftest")),
     # #1338. The auto-merge into dev stops for a human on a one-way door; this is the classifier.
     ("rails-flow one-way door classifier", ("python3", "plugins/rails-flow/scripts/classify_door.py", "--selftest")),
+    ("rails-flow mock-up gate", ("python3", "plugins/rails-flow/scripts/check_mockup_gate.py", "--selftest")),
+    ("rails-flow spec-review citations", ("python3", "plugins/rails-flow/scripts/check_spec_review.py", "--selftest")),
     ("qa-flow evidence", ("python3", "plugins/qa-flow/scripts/validate_evidence.py", "--selftest")),
     ("qa-flow route coverage", ("python3", "plugins/qa-flow/scripts/route_coverage.py", "--selftest")),
     # #792. The reader BOTH coverage loaders depend on, which had no fixture of its own while

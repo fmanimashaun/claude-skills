@@ -127,9 +127,14 @@ hypothesis that turned out to be the cause, so the next reader learns it.
 
 ```
 1. BRANCH:    git checkout <base> && git pull && git checkout -b fix/<phase-or-slug>
+1b. MOCK-UP:  a fix that changes what a user sees waits for an approved mock-up (#1376):
+              check_mockup_gate.py --paths <files the fix will touch>; exit 1 → the mock-up
+              gate in /rails-flow:feature Phase 1 (build, publish, STOP for approval, record)
 2. IMPLEMENT: the loop above, one issue per commit; delegate big items to rails-developer,
               schema changes to migration-writer
-3. VERIFY:    test-runner → FULL suite, 0 failures; code-reviewer → VERDICT: CLEAN
+3. VERIFY:    test-runner → FULL suite, 0 failures; code-reviewer → VERDICT: CLEAN;
+              spec-reviewer against the phase's acceptance file → VERDICT: CLEAN with
+              check_spec_review.py exit 0 (#1370), reported apart from code-reviewer
 4. PUSH + PR: gh pr create --base <base> --title "fix: <phase — summary>" --body "<PR Documentation Contract>"
 5. GATE:      review-pr skill if the code-review-graph CLI + graph are present
               (command -v code-review-graph && [ -d .code-review-graph ]), else
@@ -137,7 +142,8 @@ hypothesis that turned out to be the cause, so the next reader learns it.
 6. CLOSEOUT:  /rails-flow:pr-comments <n> — every review thread fixed on-branch or
               folded into a tracked repo issue; re-run the gate if code changed.
               A PR must close clean before the next phase starts.
-7. MERGE:     on CLEAN, run classify_door.py --base <base> (#1338); exit 1 or 2 stops
+7. MERGE:     on CLEAN, run check_mockup_gate.py --base <base> (#1376) and
+              classify_door.py --base <base> (#1338); exit 1 or 2 from either stops
               for the user with its reasons. Otherwise merge to dev (squash);
               default-branch bases stop for the user
 8. DOCS:      doc-updater; mark the phase done in the review report
