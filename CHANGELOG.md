@@ -3460,6 +3460,20 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **Every per-PR review pass saves its findings, apart from a full review's — `plugins/rails-flow/agents/code-reviewer.md`,
+  `plugins/rails-flow/agents/pr-reviewer.md`, `plugins/rails-flow/agents/spec-reviewer.md`,
+  `plugins/rails-flow/commands/feature.md`, `plugins/rails-flow/commands/issues.md`** (#1360). **Owner decision
+  recorded on the issue.**
+  - **The gap.** Measured on a downstream app: 0 review findings files and 0 GitHub reviews across 200 merged PRs.
+    `code-reviewer` and `pr-reviewer` returned findings only in the conversation, so nothing could count a finding
+    that recurs, and #1339's retro had no input.
+  - **The fix.** Both now append their records, in `findings.py`'s shape with a defect-level `signature`, to
+    `docs/evidence/reviews/prs/<branch-slug>/findings.jsonl`, validate them, and commit them with the fix.
+  - **And a defect this surfaced.** `spec-reviewer` (#1370, unreleased) wrote to the dated full-review file, which
+    `/rails-flow:issues` and `/rails-flow:fix` file and fix from, so a finding already fixed on its branch would have
+    been filed again. All three per-PR reviewers now use `prs/`, and `/rails-flow:issues` Phase 0 says never to file
+    from it.
+
 - **`/rails-flow:spec` turns an idea into a technical spec before anything is built — `plugins/rails-flow/commands/spec.md`,
   `plugins/rails-flow/scripts/check_spec.py`, `plugins/rails-flow/scripts/mutations/check_spec.py`,
   `plugins/rails-flow/scripts/check_brief.py`, `plugins/rails-flow/commands/feature.md`,

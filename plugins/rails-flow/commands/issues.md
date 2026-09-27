@@ -32,6 +32,10 @@ they enter the queue below instead of becoming ad-hoc hot-fixes. Then triage nor
 
 ## Phase 0 — File from `findings.jsonl`, one issue per *defect*
 
+Only a full review's dated file, `docs/evidence/reviews/<date>/findings.jsonl`. **Never file from
+`docs/evidence/reviews/prs/`**: those records are per-PR review findings, already fixed on their
+branch, and kept so recurrence can be counted (#1360), not so they can be filed again.
+
 If a review produced `docs/evidence/reviews/<date>/findings.jsonl`, file from **that**, not from the markdown
 (#138). The distinction is the whole point:
 
