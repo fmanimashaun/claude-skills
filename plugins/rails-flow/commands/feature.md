@@ -24,6 +24,7 @@ one-line guard, a rename.
 | plan, criteria, spec-first loop | yes | yes |
 | **Phase 4 quality gates** | **all of them** | **all of them** |
 | `code-reviewer` | yes | yes |
+| `spec-reviewer` | yes | yes |
 | `security-auditor`, `design-auditor` | only if their trigger fires | only if their trigger fires |
 | substantial units delegated to `rails-developer` | you may do them directly | delegated |
 
@@ -166,6 +167,12 @@ as complete is worse than a stop, because it spends the reviewer's trust as well
 Run in order; loop fixes back through Phase 3 until every gate passes:
 
 1. `code-reviewer` on the branch diff → must end `VERDICT: CLEAN`
+1b. `spec-reviewer` with `docs/product/acceptance/<slug>.md`, the base, and the day's
+   `docs/evidence/reviews/<date>/findings.jsonl` → must end `VERDICT: CLEAN`, with
+   `check_spec_review.py` exit 0 (#1370). It asks only whether the diff does what the criteria
+   *say*: criteria missing, partial or misread, and behaviour nobody asked for. Report it under its
+   own **Spec** heading beside `code-reviewer`'s **Standards**, and never merge or re-rank the two.
+   A change can pass one and fail the other, and a merged list lets one hide the other.
 2. `test-runner` → FULL suite, 0 failures
 3. `security-auditor` → only if auth, authorization, APIs, or data handling changed
 4. `design-auditor` → only if views/partials/Stimulus changed

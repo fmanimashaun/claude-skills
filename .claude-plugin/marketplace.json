@@ -42,7 +42,7 @@
     },
     {
       "name": "rails-flow",
-      "description": "Agentic development flow for Rails 8 projects — /feature, /fix, /review, /setup-flow and /brain commands, eleven specialist subagents (rails-developer, migration-writer, code-reviewer, test-runner, security-auditor, design-auditor, doc-updater, pr-reviewer, claim-verifier, skill-curator, claude-skills-reporter), and guardrail hooks that mechanically enforce spec-proven changes, safe migrations and git discipline. Pairs with the rails-stack skills.",
+      "description": "Agentic development flow for Rails 8 projects — /feature, /fix, /review, /setup-flow and /brain commands, twelve specialist subagents (rails-developer, migration-writer, code-reviewer, spec-reviewer, test-runner, security-auditor, design-auditor, doc-updater, pr-reviewer, claim-verifier, skill-curator, claude-skills-reporter), and guardrail hooks that mechanically enforce spec-proven changes, safe migrations and git discipline. Pairs with the rails-stack skills.",
       "source": "./plugins/rails-flow",
       "strict": false,
       "author": {
