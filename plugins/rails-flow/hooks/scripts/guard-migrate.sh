@@ -40,8 +40,11 @@ input="$(cat)"
 # below, and by the parsed path when the payload names no `cwd` of its own.
 root_dir="${CLAUDE_PROJECT_DIR:-$PWD}"
 
+# bash's own `=~`, not grep: this path exists for a degraded environment, and a missing grep there
+# would otherwise make the fail-closed fallback allow (grep "not found" is a non-match).
+_raw_migrate_path='db/migrate/[^/"]*\.rb'
 _raw_fallback() {
-  if [ -f "$root_dir/bin/rails" ] && printf '%s' "$input" | grep -qE 'db/migrate/[^/"]*\.rb'; then
+  if [ -f "$root_dir/bin/rails" ] && [[ $input =~ $_raw_migrate_path ]]; then
     echo "BLOCKED by rails-flow migration guard: $DENY_MSG" >&2
     exit 2
   fi

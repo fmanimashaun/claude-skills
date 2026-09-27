@@ -3479,7 +3479,9 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     `database.yml` (Rails multi-database support) is not covered — reading that config was judged out of scope.
   - **Tests.** Driven end to end in `plugins/rails-flow/scripts/check_hook_gates.py`: relative- and
     absolute-path creation, an existing-file overwrite, a write elsewhere, a non-`.rb` file, a non-Rails
-    project, the `migrations_paths` limit, an unparsable payload with and without a `db/migrate/` path, and the
+    project, the `migrations_paths` limit, an unparsable payload with and without a `db/migrate/` path, a bare
+    `PATH` holding neither python3 nor grep (the raw fallback matches with bash's own `=~`, because a
+    grep-based fallback read "grep: command not found" as a non-match and allowed the write), and the
     `hooks.json` matcher wiring itself. Two mutation guards, `scripts/mutations/hook_guard_migrate.py` and
     `scripts/mutations/hook_guard_migrate_matcher.py`, prove it catches a dropped existence check, a dropped
     `bin/rails` check, and a matcher widened to also route `Edit`.
