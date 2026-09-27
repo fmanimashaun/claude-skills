@@ -54,6 +54,28 @@ if [ -z "$body" ] || [ ! -r "$body" ]; then
   exit 0
 fi
 
+# ---------------------------------------------------------------------------------------------
+# THE REPO'S OWN PR TEMPLATE (#1389). A downstream pr-reviewer BLOCKED 5 of 5 PRs in a day for the
+# same finding -- the body lacked the template's sections -- and 3 had merged without them. The rule
+# was prose, followed 0 times in 5. Its sections are read from the template, never hardcoded; a
+# `## If ...` section is conditional by its own wording; a section that does not apply stays and
+# says N/A. PR bodies only: an issue comment has no template. Dormant with no template.
+if printf '%s' "$cmd" | grep -qE '\bgh[[:space:]]+pr[[:space:]]+(create|edit)\b'; then
+  tpl_lib="$(dirname "$0")/lib/pr_template.py"
+  root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+  if [ -f "$tpl_lib" ] && command -v python3 >/dev/null 2>&1; then
+    gaps="$(python3 "$tpl_lib" "$root" "$body" 2>/dev/null)"
+    if [ -n "$gaps" ]; then
+      echo "BLOCKED by rails-flow claim guard: this PR body is missing section(s) the repo's PR template requires:" >&2
+      printf '%s\n' "$gaps" | sed 's/^/  ## /' >&2
+      echo "" >&2
+      echo "Add each one. A section that does not apply stays, saying N/A and why; only a '## If ...' section may be left out." >&2
+      echo "Deliberately shipping without them: RAILS_FLOW_CLAIMS_OK=1 (audited)." >&2
+      exit 2
+    fi
+  fi
+fi
+
 extract="${CLAUDE_PLUGIN_ROOT:-}/scripts/extract_claims.py"
 if [ ! -f "$extract" ] || ! command -v python3 >/dev/null 2>&1; then
   echo "rails-flow: extract_claims.py or python3 unavailable — claims NOT checked." >&2
