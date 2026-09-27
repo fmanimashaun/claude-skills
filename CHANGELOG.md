@@ -17,6 +17,19 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   fixture keeps a dead toggle in an ordinary block of the same file flagged, and a new mutation that exempts
   every block is caught by that control (136 of 136).
 
+- **Two benchmark cases passed when the agent wrote nothing — `evals/gates.py`, `evals/selftest.py`,
+  `evals/suite.json`, `scripts/mutations/evals_gates.py`** (#1374). `03-role-tokens` was gated only by
+  `no-literal-color` and `no-inline-dark`, which report only violations they find, and the scaffold has no
+  `app/components/ui/`. `01-scoped-index` treated "a controller exists" as the attempt, and the scaffold's
+  own `ApplicationController` sets `Current.user`. Both scored PASS in every arm on no work, pulling the
+  comparison toward "no difference". New precondition rule `ui-component-present` (`components.md:168`) on
+  case 03; `scoped-index` now requires an `index` action. The class-level guard: `selftest.py` runs every
+  case's rules on the untouched scaffold and refuses any that pass (it found case 01, which the issue had
+  not). New mutation guard covers all 8 rules, 9 of 9 caught; its first run found a third gap,
+  `simple-form-convention`'s per-line `form_with` check, which no fixture isolated (now one does). Selftest
+  47 → 62 assertions. Found while reviewing microsoft/SkillOpt, whose rule judges flag a check that cannot
+  tell a better answer from a non-answer. Our own design; no framework claim.
+
 - **The maintainer brain adopts 56 lessons from local memory — `docs/brain/memos/feedback/`, `docs/brain/MEMORY.md`.**
   They were rendered by `brain_local_sync.py`'s own `memo_text()`: bodies verbatim, with a provenance line appended. The
   maintainer picked them per D-002. There are 15 left out on purpose: 4 personal working preferences and 11
@@ -3465,6 +3478,26 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     required-field markers and navigation. A deviation needs a reason and the owner's re-approval.
   - 11 selftest cases: 5 declared forms accepted and 6 undecided ones refused. The guard catches 8 mutations. Doctor gate
     "rails-flow issue mock-up declaration".
+
+- **The simple_form mandate is a project gate, `simple-form-only`, not an agent's grep — `plugins/rails-flow/scripts/check_simple_form_only.py`,
+  `plugins/rails-flow/scripts/mutations/check_simple_form_only.py`, `plugins/rails-flow/checks.json`,
+  `plugins/rails-flow/agents/design-auditor.md`, `scripts/doctrine_map.py`** (#1383). Owner-reported: "nothing is
+  catching this". Our own enforcement design, with no framework claim.
+  - **The defect.** The doctrine map listed "no form, and no form element, is built any other way" as a guarantee,
+    enforced by `check_mandated_gems.py`, which proves the gem is INSTALLED and nothing about its use. The only
+    other check was design-auditor's review-time `\b(form_with|form_for)\b` grep over `app/views`. That missed
+    `form_tag`, raw markup, `*_tag` helpers, `tag.input` and raw field methods on the builder, and never read
+    `app/components`.
+  - **The gate.** It scans `app/views` and `app/components` ERB with comments blanked, so line numbers hold and a
+    comment explaining a past fix is not a finding. It refuses seven patterns, including `f.text_field` / `f.label`
+    on a builder read from `simple_form_for … do |f|`. It allows simple_form's own methods, `hidden_field_tag`, a
+    hidden `<input>` and `button_to`. Deliberate exceptions go in `.rails-flow/raw-form-exemptions.json`, each with a
+    reason, and a stale exemption is a finding. Without simple_form in Gemfile.lock it exits 3 (not applicable,
+    never a pass).
+  - **Measured on a downstream app.** 181 templates, 80 `simple_form_for`: it found exactly the 2 genuine
+    constructs (a `search_field_tag` in a component, a deliberate `tag.input`) and stayed silent on about 20 comment
+    mentions and every `hidden_field_tag`. 27 selftest cases, every refusal with a control; the guard catches 13
+    mutations.
 
 - **A change a user can see waits for an owner-approved clickable mock-up, whatever the issue's label —
   `plugins/rails-flow/scripts/check_mockup_gate.py`, `plugins/rails-flow/scripts/mutations/check_mockup_gate.py`,

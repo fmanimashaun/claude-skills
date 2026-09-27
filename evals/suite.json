@@ -70,6 +70,7 @@
       "title": "Component consuming role tokens",
       "prompt": "cases/03-role-tokens/prompt.md",
       "rules": [
+        "ui-component-present",
         "no-literal-color",
         "no-inline-dark"
       ],
