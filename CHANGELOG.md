@@ -9,6 +9,11 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **The maintainer brain adopts 56 lessons from local memory — `docs/brain/memos/feedback/`, `docs/brain/MEMORY.md`.**
+  They were rendered by `brain_local_sync.py`'s own `memo_text()`: bodies verbatim, with a provenance line appended. The
+  maintainer picked them per D-002. There are 15 left out on purpose: 4 personal working preferences and 11
+  Retask-only facts. `--status` now reports 73 brain memos, 15 outbound candidates and 0 diverged.
+
 - **`check_arm_window.py` stops reading a promoted dev as armed while the release tag is pending —
   `scripts/check_arm_window.py`, `scripts/mutations/check_arm_window.py`** (#1372). The tag is created by
   `release.yml` after its gate sweep on main, so for 10+ minutes after a promotion (and forever, if that run
