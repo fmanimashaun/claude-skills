@@ -240,6 +240,20 @@ def _elapsed(run: dict, now: datetime) -> float:
     return (now - begin).total_seconds() / 60
 
 
+def elapsed_line(records: list[dict], now: datetime) -> str:
+    """`elapsed 340s / 7200s` -- the pacing signal a proceeding `check` ends with (#1364).
+
+    Anthropic's *Prompting Claude Opus 5.5* guide ("Time signals for multiagent harnesses"): a
+    model told elapsed time against its budget, in seconds, paces itself to finish inside it.
+    Without it the model heard about time only once the budget was already spent. Built from the
+    same `_elapsed` and the same `budget_minutes` the budget breaker reads, so the line and the
+    STOP cannot disagree about how much is spent. Advisory: the hard stop stays `budget`.
+    """
+    run = _run_record(records)
+    spent = _elapsed(run, now)
+    return f"elapsed {spent * 60:.0f}s / {run['limits']['budget_minutes'] * 60}s"
+
+
 # ---------------------------------------------------------------------------------------------
 # check: read-only. It never writes into what it inspects -- the diagnosis is a separate,
 # deliberate act (`stop`), so a verdict can never be produced by the same call that records it.
@@ -438,6 +452,7 @@ def cmd_check(args: argparse.Namespace) -> int:
         )
         return 1
     print(f"PROCEED {args.stage}: {explanation}")
+    print(elapsed_line(records, _now(args.now)))
     return 0
 
 
