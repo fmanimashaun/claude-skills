@@ -410,8 +410,11 @@ def guard_bash_fixtures() -> None:
 
 
 def guard_claims_fixtures() -> None:
-    def run(cmd: str, body: str | None = None, env_extra=None) -> int:
+    def run(cmd: str, body: str | None = None, env_extra=None, template: str | None = None) -> int:
         with tempfile.TemporaryDirectory() as td:
+            if template is not None:
+                (Path(td) / ".github").mkdir()
+                (Path(td) / ".github" / "pull_request_template.md").write_text(template, encoding="utf-8")
             if body is not None:
                 (Path(td) / "body.md").write_text(body, encoding="utf-8")
                 cmd = cmd.replace("BODY", str(Path(td) / "body.md"))
@@ -443,6 +446,24 @@ def guard_claims_fixtures() -> None:
           run("gh pr create --base dev --body-file BODY", CHECKED) == 0, "exit 2")
     check("guard-claims: a PR body with no load-bearing claim passes",
           run("gh pr create --base dev --body-file BODY", PROSE) == 0, "exit 2")
+
+    # THE REPO'S PR TEMPLATE (#1389), driven through the real hook: 5 of 5 downstream PRs were
+    # BLOCKED by a reviewer for missing template sections that a rule in prose never stopped.
+    TPL = "## What changed\n\n## How to test\n\n## If this touches skills\n"
+    FULL = "## What changed\nTidy the README.\n## How to test\nN/A — copy only.\n"
+    check("guard-claims: a PR body missing a template section is blocked",
+          run("gh pr create --base dev --body-file BODY", "## What changed\nTidy the README.\n",
+              template=TPL) == 2, "exit 0")
+    check("guard-claims: ...and `gh pr edit` with the same body is blocked too",
+          run("gh pr edit 12 --body-file BODY", "## What changed\nTidy the README.\n", template=TPL) == 2,
+          "exit 0")
+    check("guard-claims: a PR body carrying every template section passes (an If-section may be left out)",
+          run("gh pr create --base dev --body-file BODY", FULL, template=TPL) == 0, "exit 2")
+    check("guard-claims: a repo with no PR template is not held to one",
+          run("gh pr create --base dev --body-file BODY", "## What changed\nTidy the README.\n") == 0,
+          "exit 2")
+    check("guard-claims: an issue comment is not held to the PR template",
+          run("gh issue comment 5 --body-file BODY", "Tidy the README.\n", template=TPL) == 0, "exit 2")
     # OUT OF SCOPE, AND THE BODY MUST CARRY A CLAIM. A first draft passed a claim-FREE body here,
     # so these could not reach the check at all: deleting the `gh pr create` scope test left them
     # green, and the mutation SURVIVED. A control that cannot reach the code it guards proves

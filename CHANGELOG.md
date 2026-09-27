@@ -3473,6 +3473,24 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   CONFIRMED the sub-issue and blocked-by endpoints and the `gh issue create` flags (verdict on #1369); the design is
   the maintainer decision recorded there. 25 selftest checks; 11 mutations caught.
 
+- **A PR body must carry the repo's own PR-template sections — `plugins/rails-flow/hooks/scripts/guard-claims.sh`,
+  `plugins/rails-flow/hooks/scripts/lib/pr_template.py`, `plugins/rails-flow/scripts/check_hook_gates.py`,
+  `scripts/mutations/hook_guard_claims.py`, `scripts/mutations/hook_pr_template.py`, `.github/pull_request_template.md`**
+  (#1389). **Owner decision recorded on the issue.**
+  - **Why.** A downstream pr-reviewer BLOCKED 5 of 5 PRs in one day because the body lacked the template's sections,
+    and 3 more had merged without them. The rule was prose, followed 0 times in 5.
+  - **The hook.** `guard-claims.sh` (fail-closed, scoped to `gh pr create|edit` with a body) now refuses a body missing
+    a `##` section of the repo's template and names each one. The headings are read from the template, never
+    hardcoded. An `## If …` section is conditional by its own wording. A heading matches on its core text (before an
+    em dash, a colon or a parenthesis). Headings in template comments or fences do not count. The template is found
+    case-insensitively in `.github/`, the root or `docs/`. It is dormant without a template, and issue comments are
+    exempt.
+  - **Our own template changes with it.** It said "Delete any section that genuinely does not apply", which the hook
+    would contradict; it now says keep it and write N/A. Measured before the change: this session's own PR bodies
+    lacked 7 of its 11 sections.
+  - 11 helper selftest cases and 5 end-to-end hook fixtures. Mutations: 7 of 7 on the helper, 2 new on the hook.
+    Doctor gate "rails-flow PR-template sections".
+
 - **Every per-PR review pass saves its findings, apart from a full review's — `plugins/rails-flow/agents/code-reviewer.md`,
   `plugins/rails-flow/agents/pr-reviewer.md`, `plugins/rails-flow/agents/spec-reviewer.md`,
   `plugins/rails-flow/commands/feature.md`, `plugins/rails-flow/commands/issues.md`** (#1360). **Owner decision

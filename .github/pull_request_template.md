@@ -3,8 +3,9 @@
   `dev → main` promotion, because closing keywords fire only on merge into the default branch
   and nothing on `dev` has reached a user yet.
 
-  Delete any section that genuinely does not apply. Do NOT delete a section to avoid answering
-  it — an unticked box is information, a missing section is not.
+  Keep every section. One that genuinely does not apply says "N/A" and why; only an `## If …`
+  section may be deleted. rails-flow's guard-claims hook refuses a body missing any other (#1389),
+  because a deleted section cannot be told apart from a forgotten one.
 -->
 
 ## What this changes
