@@ -331,6 +331,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #849. "Take the head of the queue" downstream was a claim nothing checked; the marketplace has
     # issue_graph.py --ready for itself, and this is the shipped equivalent for a project's tracker.
     ("issue readiness", ("python3", "plugins/rails-flow/scripts/check_issue_ready.py", "--selftest")),
+    # #1369. A slice plan with a cycle, a dangling edge or a slice without criteria is not filed.
+    ("rails-flow slice plan", ("python3", "plugins/rails-flow/scripts/check_slices.py", "--selftest")),
     # #423, and the gap the line above could not see. `project_gates.py --selftest` asserts each
     # manifest entry names a real SCRIPT; nothing asserted its `applies_when` paths and `{match:}`
     # globs name real ARTEFACTS. An absent path is reported as not-applicable, never as a failure,

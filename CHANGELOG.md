@@ -3489,6 +3489,19 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **`/rails-flow:slice` breaks a spec, brief or issue into dependency-ordered vertical slices and files them —
+  `plugins/rails-flow/commands/slice.md`, `plugins/rails-flow/scripts/check_slices.py`,
+  `plugins/rails-flow/scripts/mutations/check_slices.py`, `plugins/rails-flow/commands/spec.md`,
+  `plugins/rails-flow/commands/brief.md`, `README.md`, `scripts/maintainer_doctor.py`** (#1369). Nothing produced the
+  slices that `/rails-flow:brief` and `/rails-flow:spec` pointed at. The command drafts
+  `docs/product/slices/<slug>.md`, and each slice has criteria in `check_criteria.py`'s shape, a Mock-up declaration
+  (#1376) and `depends-on:` edges. `check_slices.py` refuses a cycle, a dangling edge, a slice with no criteria, a
+  loose edge line and any criterion `check_criteria.py` refuses. After approval, slices are filed blockers-first:
+  `--issue-body` rewrites edges to `depends-on: #n`, the syntax `check_issue_ready.py --queue` already reads, and
+  `--blocked-by` / `--parent` (or the REST endpoints on an older `gh`) set GitHub's native links. doctrine-verifier
+  CONFIRMED the sub-issue and blocked-by endpoints and the `gh issue create` flags (verdict on #1369); the design is
+  the maintainer decision recorded there. 25 selftest checks; 11 mutations caught.
+
 - **`claude-skills-reporter` searches the installed skill before reporting a gap —
   `plugins/rails-flow/agents/claude-skills-reporter.md`** (#1386). An agent that ignored a rule looks exactly like one
   that never had it, and the two need opposite fixes upstream. If the skill already covers the case, the report is

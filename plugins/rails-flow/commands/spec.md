@@ -117,7 +117,8 @@ On findings, fix the spec, never the check.
 
 ## What happens next
 
-The spec's stories become each slice's acceptance criteria in `docs/product/acceptance/<slug>.md`,
+`/rails-flow:slice` breaks the spec into dependency-ordered vertical slices and files one issue per
+slice, so the work proceeds in order (#1369). The spec's stories become each slice's acceptance criteria in `docs/product/acceptance/<slug>.md`,
 and `/rails-flow:feature` plans from the spec rather than from the conversation. If the spec changes
 what a user sees, the mock-up gate in `/rails-flow:feature` Phase 1 applies before any code (#1376).
 At merge, `spec-reviewer` checks the diff against the criteria text (#1370).
