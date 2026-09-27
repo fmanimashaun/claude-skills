@@ -34,5 +34,14 @@ GUARD = Guard(
             "    if line:\n        print(line)\n        return 1\n    return 0",
             "the advisory exits 0",
         ),
+        # A lockfile that is not UTF-8 raised past the OSError handler and exited 1 -- found by
+        # checking the PR body's "always exits 0" against the code. The mutant crashes, so any
+        # failure counts.
+        Mutation(
+            "an undecodable lockfile crashes the advisory instead of skipping",
+            "    except (OSError, UnicodeDecodeError):",
+            "    except OSError:",
+            "",
+        ),
     ),
 )

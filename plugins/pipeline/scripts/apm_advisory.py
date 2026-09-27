@@ -63,7 +63,7 @@ def main(argv: list[str]) -> int:
     path = Path(argv[0] if argv else "Gemfile.lock")
     try:
         text = path.read_text(encoding="utf-8")
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         # Not a skip dressed as a pass: say it did not run. Still 0 -- an advisory never blocks.
         print(f"apm advisory: skipped — no readable {path}")
         return 0
@@ -116,6 +116,11 @@ def selftest() -> int:
             rc = main([str(Path(d) / "Gemfile.lock")])
         check_that("a missing lockfile exits 0", rc == 0)
         check_that("a missing lockfile says it skipped", "skipped" in out.getvalue())
+        bad = Path(d) / "binary.lock"
+        bad.write_bytes(b"GEM\n  specs:\n    \xff\xfe (1.0)\n")
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc = main([str(bad)])
+        check_that("an undecodable lockfile exits 0", rc == 0)
         lock = Path(d) / "Gemfile.lock"
         lock.write_text(BARE, encoding="utf-8")
         out = io.StringIO()
