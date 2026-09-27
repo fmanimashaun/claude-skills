@@ -9,6 +9,15 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **`check_arm_window.py` stops reading a promoted dev as armed while the release tag is pending —
+  `scripts/check_arm_window.py`, `scripts/mutations/check_arm_window.py`** (#1372). The tag is created by
+  `release.yml` after its gate sweep on main, so for 10+ minutes after a promotion (and forever, if that run
+  fails) the gate told merges to FOLD into a block that had already shipped. #1365 was folded into
+  `(release v1.151.0)` that way, and v1.151.0 does not contain it; its bullet moves back to rails-stack
+  `### Unreleased`. A version now counts as promoted once `origin/main`'s CHANGELOG carries its heading
+  (`--main`, default `origin/main`). 3 selftest cases (promoted and untagged, not yet on main, unreadable main),
+  driven through the same `run()` main() uses; 2 new mutations (9 caught).
+
 - **First brain-review sweep of the maintainer brain — `docs/brain/STATUS.md`, `docs/brain/DECISIONS.md`,
   `docs/brain/HYPOTHESES.md`, `docs/brain/memos/feedback/`.** STATUS had not changed since 2026-09-03 (v1.113.0) and
   said the queue was empty; it now records v1.151.0 and the 10 open issues. D-002 named its mutation at
@@ -15528,7 +15537,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
-### 1.68.3 (release v1.151.0) — 2026-09-26
+### Unreleased
 
 - **rails-8 names a self-hosted APM and says when to adopt it — `skills/rails-8/references/observability.md`,
   `skills/rails-8/SKILL.md`, `dist/rails-8.skill`** (#1365). §7 listed hosted APMs and self-hosted
@@ -15543,6 +15552,8 @@ boot/validation path — with a bullet each so the promotion could close them se
   the proposed "Ruby 3.2+, Rails 7.2+" floor was REFUTED (gemspec: Ruby >= 3.1, Rails >= 7.1, < 9), so the
   doctrine states the tested Rails set instead. The "when to adopt" rule is our design: maintainer decision
   recorded on #1365.
+
+### 1.68.3 (release v1.151.0) — 2026-09-26
 
 - **The quality-pass worked example's `Unusable` count is refreshed to 12 — `skills/quality-pass/references/worked-example.md`,
   `dist/quality-pass.skill`** (#1338). The door classifier is the new copy; reach stays 6.
