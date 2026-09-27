@@ -3452,6 +3452,26 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **The simple_form mandate is a project gate, `simple-form-only`, not an agent's grep — `plugins/rails-flow/scripts/check_simple_form_only.py`,
+  `plugins/rails-flow/scripts/mutations/check_simple_form_only.py`, `plugins/rails-flow/checks.json`,
+  `plugins/rails-flow/agents/design-auditor.md`, `scripts/doctrine_map.py`** (#1383). Owner-reported: "nothing is
+  catching this". Our own enforcement design, with no framework claim.
+  - **The defect.** The doctrine map listed "no form, and no form element, is built any other way" as a guarantee,
+    enforced by `check_mandated_gems.py`, which proves the gem is INSTALLED and nothing about its use. The only
+    other check was design-auditor's review-time `\b(form_with|form_for)\b` grep over `app/views`. That missed
+    `form_tag`, raw markup, `*_tag` helpers, `tag.input` and raw field methods on the builder, and never read
+    `app/components`.
+  - **The gate.** It scans `app/views` and `app/components` ERB with comments blanked, so line numbers hold and a
+    comment explaining a past fix is not a finding. It refuses seven patterns, including `f.text_field` / `f.label`
+    on a builder read from `simple_form_for … do |f|`. It allows simple_form's own methods, `hidden_field_tag`, a
+    hidden `<input>` and `button_to`. Deliberate exceptions go in `.rails-flow/raw-form-exemptions.json`, each with a
+    reason, and a stale exemption is a finding. Without simple_form in Gemfile.lock it exits 3 (not applicable,
+    never a pass).
+  - **Measured on a downstream app.** 181 templates, 80 `simple_form_for`: it found exactly the 2 genuine
+    constructs (a `search_field_tag` in a component, a deliberate `tag.input`) and stayed silent on about 20 comment
+    mentions and every `hidden_field_tag`. 27 selftest cases, every refusal with a control; the guard catches 13
+    mutations.
+
 - **A change a user can see waits for an owner-approved clickable mock-up, whatever the issue's label —
   `plugins/rails-flow/scripts/check_mockup_gate.py`, `plugins/rails-flow/scripts/mutations/check_mockup_gate.py`,
   `plugins/rails-flow/commands/feature.md`, `plugins/rails-flow/commands/fix.md`,

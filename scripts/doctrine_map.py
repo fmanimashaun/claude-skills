@@ -229,11 +229,14 @@ CLAIMS: tuple[Claim, ...] = (
         anchor="simple_form is mandatory in this stack",
         kind=GUARANTEE,
         enforced_by=("script:plugins/rails-flow/scripts/check_mandated_gems.py",
-                     "mutation:check_mandated_gems"),
-        refs=(778,),
-        note="Two of the three `Always` gems already had gates (archspec, herb, each applies_when "
-             "its config exists). This one had neither an installer nor a check, and was missing "
-             "on both affected scaffolds.",
+                     "mutation:check_mandated_gems",
+                     "script:plugins/rails-flow/scripts/check_simple_form_only.py",
+                     "mutation:check_simple_form_only"),
+        refs=(778, 1383),
+        note="Two halves. `check_mandated_gems` proves the gem is INSTALLED; until #1383 that was the "
+             "whole enforcement, so a project with the gem and every form hand-built read green. "
+             "`check_simple_form_only` proves it is USED: no form or field in app/views or "
+             "app/components is built another way.",
     ),
 
     Claim(
