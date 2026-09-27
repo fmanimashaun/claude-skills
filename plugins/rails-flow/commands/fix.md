@@ -69,6 +69,27 @@ on a GitHub issue, parks the thread, and moves on. Use it when a decision is not
 happens earlier and usually needs no human at all: it decides **what kind of problem you have**
 before choosing how to respond.
 
+## Phase 0.5 — diagnose a defect whose cause is not yet known (#1346)
+
+For a **defect** (Phase 0) where the cause is not obvious from the report. When the report names the
+line and the cause, skip to the Principles. The failing spec of principle 3 is where this ends, not
+where it starts.
+
+1. **Build a loop that goes red on THIS bug.** One command you have already run: a spec, a curl
+   against `bin/dev`, a runner script. It must assert the reported symptom, not "does not crash". No
+   red loop, no theory: say what you tried and ask for the missing access or artifact.
+2. **Minimise.** Cut inputs, callers, data and steps one at a time, re-running after each cut. Done
+   when removing any remaining piece turns the loop green. The minimal repro becomes the spec.
+3. **Rank 3–5 falsifiable hypotheses before testing any.** Each states its prediction: "if X is the
+   cause, changing Y makes it pass". A hypothesis with no prediction is discarded.
+4. **Instrument one prediction at a time.** Tag every debug line with one unique prefix
+   (`Rails.logger.debug "[DEBUG-a4f2] ..."`), so cleanup is a grep.
+5. **No seam, no fake spec.** If the only spec you can write is too shallow to reproduce the bug's
+   real call chain, say so in the report. That is a design finding, not a pass.
+
+Before the PR, `git diff <base>...HEAD | grep -c '\[DEBUG-'` prints `0`, and the PR body names the
+hypothesis that turned out to be the cause, so the next reader learns it.
+
 ## Principles (non-negotiable)
 
 1. **Implement, don't comment.** A TODO is not a fix.
