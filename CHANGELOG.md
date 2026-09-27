@@ -3460,6 +3460,28 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **`/rails-flow:spec` turns an idea into a technical spec before anything is built — `plugins/rails-flow/commands/spec.md`,
+  `plugins/rails-flow/scripts/check_spec.py`, `plugins/rails-flow/scripts/mutations/check_spec.py`,
+  `plugins/rails-flow/scripts/check_brief.py`, `plugins/rails-flow/commands/feature.md`,
+  `plugins/rails-flow/commands/brief.md`, `README.md`** (#1375). **Owner decision recorded on the issue**: "turn an
+  idea into a well documented specs b4 building it out". Adapted from mattpocock/skills `grill-with-docs`, `to-spec`
+  and `domain-modeling`.
+  - **The gap.** `/rails-flow:brief` writes the product side (what, for whom, scope, journeys), and no command wrote
+    the technical side, so `/rails-flow:feature` planned inside a session and the plan left with it.
+  - **The command.** Read first (brief, issue and comments, decisions, glossary, the code the idea touches), show
+    what is already known, then grill only the gaps one question at a time. Each question carries a recommendation.
+    It challenges terms against the glossary, stress-tests with scenarios, checks the code against what it is told,
+    and agrees the test seam before any code. A resolved term goes to the glossary at once. A decision goes to
+    `docs/brain/DECISIONS.md` only when it is hard to reverse, surprising, and a real trade-off. It writes
+    `docs/product/specs/<slug>.md`, and `/rails-flow:feature` Phase 1 now plans from it.
+  - **What is enforced.** `check_spec.py` requires ten headings. It refuses a Sources section citing nothing, a
+    citation or `D-nnn` that resolves to nothing, a story not in "As a …, I want …, so that …" form, a file path
+    in Implementation decisions (fenced prototype code exempt), Testing decisions with no `Seam:` line, an Out of
+    scope of only "none", and an open question with no owner. It reuses check_brief's section parser (split out as
+    `split_sections`, with check_brief's 62 selftest checks and 14 mutations unchanged) and its citation and
+    decision checkers. 13 selftest cases; the guard catches 10 mutations. The command's own example spec passes
+    its checker. Doctor gate "rails-flow technical spec".
+
 - **Every issue declares whether it changes what a user sees, and the PR is compared with its approved mock-up —
   `plugins/rails-flow/scripts/check_issue_mockup.py`, `plugins/rails-flow/scripts/mutations/check_issue_mockup.py`,
   `plugins/rails-flow/commands/issues.md`, `plugins/rails-flow/commands/setup-flow.md`,

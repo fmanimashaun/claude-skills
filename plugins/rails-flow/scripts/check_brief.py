@@ -228,8 +228,8 @@ class CoverageRow:
     line: int
 
 
-def parse(path: Path) -> list[Section]:
-    """Split a brief into its `##` sections, or refuse to bless the file."""
+def split_sections(path: Path) -> list[Section]:
+    """Split any markdown file into its `##` sections, fences tracked. Shared with check_spec.py."""
     if not path.is_file():
         raise Unusable(f"no such file: {path}")
 
@@ -257,7 +257,12 @@ def parse(path: Path) -> list[Section]:
         if current is not None:
             current.lines.append(line)
             current.fenced.append(in_fence)
+    return sections
 
+
+def parse(path: Path) -> list[Section]:
+    """Split a brief into its `##` sections, or refuse to bless the file."""
+    sections = split_sections(path)
     if not sections:
         raise Unusable(
             f"{path} carries no `## ` sections -- refusing to report a file clean as a brief when "

@@ -51,6 +51,12 @@ way round.
 
 ## Phase 1 — Plan (delegated exploration)
 
+**If a spec exists, plan from it** (`docs/product/specs/<slug>.md`, written by `/rails-flow:spec`,
+#1375). Its stories become the criteria, its Testing decisions' `Seam:` is where the specs go, and
+its Out of scope bounds the plan. Do not re-derive in the session what the spec already decided. If
+the feature needs decisions no spec records, and it is more than one slice, offer
+`/rails-flow:spec` first.
+
 Delegate codebase exploration to a subagent so raw file contents stay out of your context:
 which models/controllers/views/jobs the feature touches, existing patterns to reuse, and
 schema impact. Then produce a short plan:
