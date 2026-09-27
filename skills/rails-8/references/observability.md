@@ -16,7 +16,7 @@ Four channels, four jobs. Pick the right one before writing telemetry code:
 4. Structured Event Reporting — `Rails.event` (8.1)
 5. Error reporting — `Rails.error`
 6. Logging: tags, levels, health-check silence
-7. Wiring up APMs / OpenTelemetry
+7. Wiring up APMs / OpenTelemetry (self-hosted: Rails Pulse)
 
 ---
 
@@ -211,3 +211,69 @@ vendor-neutral tracing, `opentelemetry-sdk` +
 `opentelemetry-instrumentation-rails` maps the same hooks to OTel spans
 exportable anywhere. Your custom `instrument`/`Rails.event` calls then ride
 along as first-class spans/events in whichever backend the app uses.
+
+### Self-hosted performance monitoring — Rails Pulse
+
+When the app needs request, query and job performance (P95 per route, SQL
+grouped by normalised shape, N+1 detection in production, deploy markers)
+and the data must stay in your own database, **rails_pulse** (MIT, 0.4.x;
+tested on Rails 7.2, 8.0 and 8.1) is the self-hosted APM. It captures through
+a Rack middleware and §2 subscribers, and writes off the request thread
+through a bounded queue that drops, rather than blocks, when full. It is not
+a replacement for **mission_control-jobs** (`ecosystem-gems.md`): Pulse
+observes job speed and failure rate; Mission Control operates the queue
+(retry, discard, pause). Run both. Do **not** run Pulse beside a hosted APM
+from the list above — two collectors on the same hooks is the double
+overhead this section warns against.
+
+**When to adopt:** the app serves real users in production and has no APM.
+Before launch there is no traffic to measure — Bullet and the log cover
+development.
+
+Install into its own database so the host's primary never carries the
+tables:
+
+```bash
+bundle add rails_pulse
+bin/rails generate rails_pulse:install --database=separate
+bin/rails db:prepare   # creates the Pulse database and loads its schema
+```
+
+(A single-database install omits `--database=separate` and runs
+`bin/rails db:migrate`.) Mount it and gate it on the app's own admin check:
+
+```ruby
+# config/routes.rb
+mount RailsPulse::Engine => "/rails_pulse"
+
+# config/initializers/rails_pulse.rb
+RailsPulse.configure do |config|
+  config.authorize = ->(controller) { controller.current_user&.admin? }
+end
+```
+
+A falsy result is a 403. With no `authorize` configured, outside development
+and test it falls back to HTTP Basic against `RAILS_PULSE_USERNAME` /
+`RAILS_PULSE_PASSWORD`, and refuses everyone when the password is unset.
+The host schedules the rollup and the retention jobs; with Solid Queue:
+
+```yaml
+# config/recurring.yml
+production:
+  rails_pulse_summary:
+    class: RailsPulse::SummaryJob
+    schedule: "5 * * * *"
+  rails_pulse_cleanup:
+    class: RailsPulse::CleanupJob
+    schedule: "0 1 * * *"
+```
+
+**The outcome is verified, not assumed:** `bin/rails rails_pulse:status`
+exits 0 (it exits 1 while a migration, backfill or initializer still needs
+action), and a signed-out request to `/rails_pulse` in production is refused.
+
+It is pre-1.0 and upgrades can carry data steps: 0.3 → 0.4 required a backup
+first, then `bin/rails generate rails_pulse:upgrade`, the migration
+(`bin/rails db:migrate:rails_pulse` for the separate database), and
+`bin/rails rails_pulse:migrate_routes`. Read its CHANGELOG before every
+`bundle update rails_pulse`, and finish with `rails_pulse:status`.
