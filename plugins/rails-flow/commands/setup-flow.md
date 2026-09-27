@@ -317,6 +317,17 @@ force-push, no `git add -A`, no `--no-verify`, stage specific files, small logic
 approval). Note at the top: *the rails-flow hooks enforce these mechanically; this document
 is the human-readable law they implement.*
 
+**Ask, and record the answer: the mock-up gate (#1376).** *"Does a change a user can see wait for
+your approval of a clickable mock-up before it is built?"* The default is **yes**, and it needs no
+line. A team with no one to approve designs answers no, and GUARDRAILS.md gets its own line:
+
+```markdown
+- mockup-gate: off
+```
+
+`check_mockup_gate.py` reads exactly that line. Undeclared means ON, and prose that merely mentions
+the key does not turn it off.
+
 ## 4. Seed the memory system (`docs/brain/`)
 
 The brain is the repo-side mirror of session memory: open the repo and reconstruct where the
