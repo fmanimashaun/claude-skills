@@ -7,6 +7,15 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **First brain-review sweep of the maintainer brain — `docs/brain/STATUS.md`, `docs/brain/DECISIONS.md`,
+  `docs/brain/HYPOTHESES.md`, `docs/brain/memos/feedback/`.** STATUS had not changed since 2026-09-03 (v1.113.0) and
+  said the queue was empty; it now records v1.151.0 and the 10 open issues. D-002 named its mutation at
+  `scripts/mutations/`, which #1109 moved to `plugins/rails-flow/scripts/mutations/`. The 5 memos that
+  `brain_local_sync.py --status` reported as diverged now carry their longer local bodies verbatim (0 diverged).
+  H-001 is parked with the reason its test cannot run here. `docs/brain/.last-review` is stamped.
+
 ### 2026-09-26 (release v1.151.0)
 
 - **`check_frontmatter.py` pins which commands are user-only, in both directions — `scripts/check_frontmatter.py`,

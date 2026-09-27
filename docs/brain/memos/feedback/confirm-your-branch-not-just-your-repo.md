@@ -19,8 +19,19 @@ merge into one unreviewable commit under the wrong message. This already happene
 other direction: `assign_lanes.py` reached `dev` inside `4471e0c`, a commit about work orders,
 undocumented and ungated, because it was in the tree when that commit was made.
 
+**AND A MERGED PR DELETES THE BRANCH UNDER YOU.** No second session needed: `gh pr merge
+--delete-branch` followed by `git checkout dev` leaves you on `dev`, so the next increment's commit
+lands directly on the integration branch — which is exactly what the git flow forbids. It happened
+on Retask, 9 Sep 2026, working F-19 in increments: increment 2's commit went onto `dev`.
+
+Recovery, before anything is pushed: `git branch <new-branch>` at the current commit, `git reset
+--hard origin/dev`, `git checkout <new-branch>`, then verify `git log --oneline dev -1` matches
+origin and `git diff --stat dev HEAD` shows the work. Cheap while it is local; a push makes it
+history.
+
 **How to apply:** re-read `git branch --show-current` and `git rev-parse HEAD` immediately
-before every commit and every push — treat them like a count, per
+before every commit and every push — and create the next branch as the FIRST act of the next
+increment, not as an afterthought before committing — treat them like a count, per
 [[verify-counts-before-stating-them]]. When a second session is detected, do not `git checkout`
 in the shared tree; take a worktree under `.claude/worktrees/<slice>` (gitignored, root-anchored)
 and `mv` your untracked files into it, which also removes your footprint from theirs. Never
@@ -32,5 +43,7 @@ accidental co-tenancy.
 
 Related: [[verify-counts-before-stating-them]], [[assert-ancestry-not-merge-output]],
 [[name-where-a-decision-landed]]
+
+**The branch line is the cheaper check than the paths.** On 2026-09-17 the status snapshot I was handed said `Current branch: fix/1004-unregistered-mirror-gate` — a branch I never created, named for a defect I had not yet heard of — one line above the modified paths I did read, and I claimed a peer's diff as mine. Read the branch line first and treat a branch you did not create as proof a peer is in the tree: [[a-dirty-file-in-a-shared-checkout-has-no-author]].
 
 _Provenance: [observed] — brought from a local Claude memory by `/rails-flow:brain-sync local`; body verbatim, confirm-your-branch-not-just-your-repo.md._
