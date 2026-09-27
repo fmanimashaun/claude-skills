@@ -2,14 +2,14 @@
      Rebuild:  python3 scripts/build_wiki.py
      Drift:    python3 scripts/build_wiki.py --check  (runs in the gate sweep) -->
 # Agents and gates
-**30 shipped agents · 48 shipped commands · 136 gates · 4 tier tables**, plus 5 maintainer agents and 6 maintainer commands that are not installed.
+**30 shipped agents · 49 shipped commands · 137 gates · 4 tier tables**, plus 5 maintainer agents and 6 maintainer commands that are not installed.
 
 | plugin | version | agents | commands | tier rows | gates |
 |---|---|---|---|---|---|
 | `design-flow` | 1.44.2 | 5 | 12 | 5 | 19 |
 | `pipeline` | 1.3.4 | 2 | 8 | 2 | 4 |
 | `qa-flow` | 1.33.2 | 11 | 8 | 11 | 15 |
-| `rails-flow` | 1.54.0 | 12 | 20 | 12 | 27 |
+| `rails-flow` | 1.54.0 | 12 | 21 | 12 | 28 |
 
 ## Agents
 
@@ -62,7 +62,7 @@
 | `rails-developer` | judgement · inherit | Read, Grep, Glob, Edit, Write, Bash, Skill | `/rails-flow:feature`, `/rails-flow:fix` | — |
 | `security-auditor` | judgement · inherit | Read, Grep, Glob, Bash | `/rails-flow:feature`, `/rails-flow:issues`, `/rails-flow:review` | — |
 | `skill-curator` | judgement · inherit | Read, Grep, Glob, Write, Edit, Bash | `/rails-flow:curate` | — |
-| `spec-reviewer` | judgement · inherit | Read, Grep, Glob, Bash | `/rails-flow:feature`, `/rails-flow:fix` | — |
+| `spec-reviewer` | judgement · inherit | Read, Grep, Glob, Bash | `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:spec` | — |
 | `test-runner` | mechanical · haiku | Read, Grep, Glob, Bash | `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:issues`, `/rails-flow:pr-comments`, `/rails-flow:setup-flow` | `bundle exec rspec` exit status — 0 failures or the gate blocks |
 
 ### `maintainer` (maintainer-only, not installed)
@@ -143,6 +143,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | rails-flow simple-form-only gate | `rails-flow` | `python3 plugins/rails-flow/scripts/check_simple_form_only.py --selftest` | selftest |
 | rails-flow spec support wired | `rails-flow` | `python3 plugins/rails-flow/scripts/check_spec_support.py --selftest` | selftest |
 | rails-flow spec-review citations | `rails-flow` | `python3 plugins/rails-flow/scripts/check_spec_review.py --selftest` | selftest |
+| rails-flow technical spec | `rails-flow` | `python3 plugins/rails-flow/scripts/check_spec.py --selftest` | selftest |
 | rails-flow tiers | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --agents plugins/rails-flow/agents --tiers plugins/rails-flow/reference/model-tiers.md` | live check |
 | rails-flow toolchain version | `rails-flow` | `python3 plugins/rails-flow/scripts/toolchain_version.py --selftest` | selftest |
 | rails-flow work order | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --selftest` | selftest |

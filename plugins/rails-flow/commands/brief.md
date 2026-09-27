@@ -184,7 +184,9 @@ conversation. The judgement stays yours.
 ## What happens next
 
 The brief feeds the phase plan, and its non-goals are load-bearing there: they are what a scope
-question gets measured against mid-build. Then `/rails-flow:setup-flow` to scaffold the project,
+question gets measured against mid-build. The brief is the product side; `/rails-flow:spec` writes
+the technical side (the model, the interfaces, the test seam, the decisions) for a feature before it
+is built (#1375). Then `/rails-flow:setup-flow` to scaffold the project,
 `/rails-flow:curate` to turn the source documents into project-local skills, and
 `/rails-flow:feature` for the first slice — whose `docs/product/acceptance/<slug>.md` is where "what
 success looks like" finally becomes falsifiable.

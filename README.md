@@ -101,7 +101,7 @@ Steps 1–2 are once per project. Steps 3–4 are the loop.
 <details>
 <summary><b>rails-flow</b> — build, fix, review, remember</summary>
 
-`feature` `fix` `review` `issues` `brief` `curate` `explain` `graph` `handoff` `pr-comments`
+`feature` `fix` `review` `issues` `brief` `spec` `curate` `explain` `graph` `handoff` `pr-comments`
 `report` `setup-flow` `toolchain-audit` · **memory:** `brain` `brain-review` `brain-sync` ·
 **autonomous:** `drive` `escalate` `toolchain-check` · **parallel sessions:** `coordinate`
 
