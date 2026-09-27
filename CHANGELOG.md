@@ -3439,6 +3439,26 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **A change a user can see waits for an owner-approved clickable mock-up, whatever the issue's label —
+  `plugins/rails-flow/scripts/check_mockup_gate.py`, `plugins/rails-flow/scripts/mutations/check_mockup_gate.py`,
+  `plugins/rails-flow/commands/feature.md`, `plugins/rails-flow/commands/fix.md`,
+  `plugins/rails-flow/commands/setup-flow.md`, `scripts/doctrine_map.py`** (#1376, enforcement half; the intake
+  templates and the screenshot comparison follow). **Owner decision recorded on the issue**, with two refinements:
+  the mock-up belongs to the issue when filed, and the trigger is UI impact, not the label.
+  - **Why.** On a downstream app's first production day the owner reported about 14 screens built unlike what had
+    been agreed in conversation. The one screen whose mock-up was approved first was right in one round.
+  - **The gate.** `/rails-flow:feature` Phase 1 and `/rails-flow:fix` step 1b classify the planned files. For UI
+    scope they build a mock-up, publish it, stop for the owner's approval, and record it in
+    `docs/product/mockups/<slug>.md`. The same check runs on the real diff before merge, so a view the plan did not
+    name is still caught. UI scope is a path rule: views (not JSON/XML templates), components, JavaScript,
+    stylesheets, helpers and locale copy.
+  - **What is enforced.** The record needs a mock-up (an https link or a committed file that exists), the issue, the
+    approver, an approval that is a link to the comment (`…#issuecomment-N`), and a phone width (≤ 480) and a
+    desktop width (≥ 1024). It does not prove the comment says yes or that the build matches; that is the
+    reviewer's click and the screenshot comparison. `mockup-gate: off` on its own GUARDRAILS.md line opts out;
+    undeclared means on. 21 selftest cases, every refusal with a control; the guard catches 10 mutations. Doctrine
+    map row (guarantee), doctor gate "rails-flow mock-up gate".
+
 - **A Spec review beside the Standards review: `spec-reviewer` reads the diff against the acceptance criteria TEXT —
   `plugins/rails-flow/agents/spec-reviewer.md`, `plugins/rails-flow/scripts/check_spec_review.py`,
   `plugins/rails-flow/scripts/mutations/check_spec_review.py`, `plugins/rails-flow/commands/feature.md`,
