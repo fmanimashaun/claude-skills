@@ -63,6 +63,21 @@ label, filter to it. Otherwise triage everything:
 - **needs-info**: the issue lacks enough detail to act (no reproduction, ambiguous
   intent). Comment with the specific questions, label it `needs-info`, and skip —
   never fabricate requirements.
+- **Every issue declares its mock-up (#1376)**, unless GUARDRAILS.md declares `mockup-gate: off`.
+  An issue whose resolution changes what a user sees (a feature, an enhancement, or a bug whose fix
+  alters a screen) links a clickable mock-up; every other issue says "no visible change". Check them
+  all at once:
+
+  ```bash
+  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_issue_mockup.py" --open
+  ```
+
+  For each `MISSING` issue, decide which it is. If the fix plainly touches no screen, add a
+  `## Mock-up` section saying "no visible change" and say why in one line. Otherwise comment asking
+  for the mock-up, label it `needs-info`, and skip it: it is not ready. On the day a project adopts
+  this, every open issue is missing, so settle the plain "no visible change" ones in one pass before
+  asking about the rest. `/rails-flow:feature` and `/rails-flow:fix` check the real change again, so
+  a wrong "no visible change" is caught before merge.
 - **Compute the order, don't reason it out.** Priority alone does not give an order — a P1 sitting
   behind an unstarted blocker is not the next task — and an order re-derived by hand each time is
   the reasoning that gets redone next time:

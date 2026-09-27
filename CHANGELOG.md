@@ -3439,6 +3439,25 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **Every issue declares whether it changes what a user sees, and the PR is compared with its approved mock-up —
+  `plugins/rails-flow/scripts/check_issue_mockup.py`, `plugins/rails-flow/scripts/mutations/check_issue_mockup.py`,
+  `plugins/rails-flow/commands/issues.md`, `plugins/rails-flow/commands/setup-flow.md`,
+  `plugins/rails-flow/agents/pr-reviewer.md`** (#1376, intake half; the enforcement half is the bullet below).
+  **Owner decision and refinements recorded on the issue.**
+  - **Filing.** A feature, an enhancement, or a bug whose fix alters a screen links a clickable mock-up; every other
+    issue says "no visible change". setup-flow proposes a required Mock-up field for each issue form. A form binds
+    only the web UI, and `gh issue create` skips it (#1311), so `check_issue_mockup.py` reads the body however it
+    was filed. It accepts a form's `### Mock-up`, an agent's `## Mock-up`, or a `Mock-up:` line, and refuses a
+    blank, `_No response_`, "TBD", or a link that sits under a later heading.
+  - **Triage.** `/rails-flow:issues` runs it over open issues (`--open`, bounded to 200). A missing answer is either
+    settled as "no visible change" with a reason, or asked about and labelled `needs-info`. Measured on a downstream
+    app before adoption: 0/18 open issues declare, so the doctrine says to settle the plain ones in one pass first.
+  - **Merge.** `pr-reviewer` BLOCKS a change a user can see unless the PR links the mock-up record, the reviewer has
+    opened the approval link, and screenshots at every recorded width match the mock-up's layout, controls,
+    required-field markers and navigation. A deviation needs a reason and the owner's re-approval.
+  - 11 selftest cases: 5 declared forms accepted and 6 undecided ones refused. The guard catches 8 mutations. Doctor gate
+    "rails-flow issue mock-up declaration".
+
 - **A change a user can see waits for an owner-approved clickable mock-up, whatever the issue's label —
   `plugins/rails-flow/scripts/check_mockup_gate.py`, `plugins/rails-flow/scripts/mutations/check_mockup_gate.py`,
   `plugins/rails-flow/commands/feature.md`, `plugins/rails-flow/commands/fix.md`,
