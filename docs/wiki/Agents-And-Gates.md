@@ -8,7 +8,7 @@
 |---|---|---|---|---|---|
 | `design-flow` | 1.44.2 | 5 | 12 | 5 | 19 |
 | `pipeline` | 1.3.4 | 2 | 8 | 2 | 4 |
-| `qa-flow` | 1.33.2 | 11 | 8 | 11 | 15 |
+| `qa-flow` | 1.33.2 | 11 | 8 | 11 | 16 |
 | `rails-flow` | 1.54.0 | 12 | 21 | 12 | 29 |
 
 ## Agents
@@ -116,6 +116,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | qa-flow link audit | `qa-flow` | `python3 plugins/qa-flow/scripts/link_audit.py --selftest` | selftest |
 | qa-flow route coverage | `qa-flow` | `python3 plugins/qa-flow/scripts/route_coverage.py --selftest` | selftest |
 | qa-flow route crawl | `qa-flow` | `python3 plugins/qa-flow/scripts/crawl_report.py --selftest` | selftest |
+| qa-flow text resize | `qa-flow` | `python3 plugins/qa-flow/scripts/text_resize.py --selftest` | selftest |
 | qa-flow theme parity | `qa-flow` | `python3 plugins/qa-flow/scripts/theme_parity.py --selftest` | selftest |
 | qa-flow visual baselines | `qa-flow` | `python3 plugins/qa-flow/scripts/visual_baseline.py --selftest` | selftest |
 | qa-flow walkthrough plan | `qa-flow` | `python3 plugins/qa-flow/scripts/walkthrough_plan.py --selftest` | selftest |
