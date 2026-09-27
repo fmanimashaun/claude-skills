@@ -48,6 +48,13 @@ mis-filing. Never put a downstream project's private code, data, or secrets into
   reproduction (the command/JSON payload and the observed vs expected), affected version,
   and OS/toolchain facts if a hook/script (bash/python3/gh availability).
 - **Feature**: motivation, proposed behavior, acceptance criteria, affected components.
+- **Skill gap**: before calling it a gap, search the installed skill for the guidance
+  (`skills/<skill>/` in the local marketplace clone), in your words and in the doctrine's. An
+  agent that ignored a rule looks exactly like one that never had it. If the skill already
+  covers the case, it is a **lapse**: quote the `file:line` and sentence, say what the agent did
+  instead, and classify it `type:feature` with the `lapse` label. The upstream fix is then
+  enforcement, not more prose. Put the search in the report either way ("searched
+  `skills/rails-8/` for X: no hit").
 - Classify and pre-label: `type:bug` / `type:feature` / `type:incorrect-doctrine` /
   `type:skill-gap` and the `comp:*` component. (These match the upstream taxonomy.)
 
