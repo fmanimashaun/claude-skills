@@ -6443,8 +6443,8 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   `apm_advisory.py` against `Gemfile.lock`: silence when one of the gems `rails-8` `observability.md` §7 names is
   present, one pointer line to §7 when none is. **Advisory, never a gate**: it always exits 0 and the commands say never
   to hold the deploy on it — shipping without an APM is a legitimate choice. Names are matched whole (`skylight-extras`
-  and `sentry-ruby` are not APMs) in every lockfile section, so a transitive or git-sourced gem counts. Four mutations
-  (never advises, always advises, substring match, exits non-zero) are each caught by their own fixture. Driven against
+  and `sentry-ruby` are not APMs) in every lockfile section, so a transitive or git-sourced gem counts. Five mutations
+  (never advises, always advises, substring match, exits non-zero, crashes on a non-UTF-8 lockfile) are all caught. Driven against
   four real lockfiles: three advised and one (`opentelemetry-instrumentation-rails`) stayed silent, each matching a
   grep of the file. Our own design, no upstream: maintainer decision recorded on #1366.
 
