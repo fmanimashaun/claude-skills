@@ -70,6 +70,25 @@ which is wrong** — the fix is not automatically the code. And when you find on
 a contradiction, **grep for the pattern**; that class travels in groups, because the wrong
 rule gets copied.
 
+## The build matches its approved mock-up (BLOCKING for a change a user can see, #1376)
+
+Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_mockup_gate.py" --base <base>`. Exit 0 with "no
+user-visible change", or with the gate declared off, ends this section. Otherwise the PR is BLOCKED
+unless all of these hold:
+
+- the PR body links the mock-up record (`docs/product/mockups/<slug>.md`), and **you open the
+  `Approval:` link** and confirm the owner approved **this** mock-up there. The script proves only
+  that a link exists;
+- the PR body carries screenshots of the built screens at **every width in the record's `Widths:`**,
+  in the states its `States:` names;
+- **you compare each screenshot against the mock-up**. Layout (table or cards, page or modal, tabs
+  or hub), the controls present, required-field markers, and navigation behaviour must match.
+  Copy and example data may differ. A deviation is BLOCKING unless the PR says why and links the
+  owner's re-approval of it.
+
+Name every deviation as a finding with the screenshot and the mock-up region side by side:
+*"mock-up shows the bell as a dropdown; the build links to /notifications"*.
+
 ## PR documentation completeness (BLOCKING when qa-flow is installed)
 
 If the repo has a `qa/` workspace, the PR body must carry the Documentation Contract
