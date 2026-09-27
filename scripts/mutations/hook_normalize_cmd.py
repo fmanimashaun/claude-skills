@@ -7,7 +7,8 @@ GUARD = Guard(
     name="hook_normalize_cmd",
     subject="plugins/rails-flow/hooks/scripts/lib/normalize_cmd.sh",
     selftest="plugins/rails-flow/scripts/check_hook_gates.py",
-    needs=("plugins/rails-flow/hooks/scripts", "plugins/qa-flow/hooks/scripts", "plugins/qa-flow/scripts",
+    needs=("plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362
+           "plugins/rails-flow/hooks/scripts", "plugins/qa-flow/hooks/scripts", "plugins/qa-flow/scripts",
            'plugins/rails-flow/scripts/check_criteria.py',
            'plugins/rails-flow/scripts/check_handoff.py',
            'plugins/rails-flow/scripts/extract_claims.py',
