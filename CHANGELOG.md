@@ -15839,7 +15839,9 @@ boot/validation path — with a bullet each so the promotion could close them se
   designed summary cards below 768px. The Data table anatomy, mobile §5, `responsive.md`, `mobile.md` and `rails-8`
   `models.md` now link to it rather than restate it. A new **Viewport inset** entry, the `--inset-edge` tokens and an
   `inset-viewport` utility keep every card, modal, drawer and sheet at least 16px plus the safe area (24px at 768px)
-  from the edge, and `Ui::Modal`'s placements now float inside that inset rather than pinning to an edge. *Tabs*
+  from the edge, and `Ui::Modal`'s placements now float inside that inset rather than pinning to an edge. It stops
+  using `imposter`, whose `max-inline-size: 100%` resolves against the viewport (fixed) or the wrapper's padding box
+  (absolute) — doctrine-verifier CONFIRMED against CSS 2.1 §10.1 and CSS Positioned Layout 3 §containing block. *Tabs*
   (the maintainer's scope addition on #1391) reverses "the tablist scrolls": at most four tabs in one row that
   never wraps or scrolls, regrouped rather than overflowed, and a single labelled picker below 768px — and
   `Ui::Tabs`'s implementation drops `overflow-x-auto` and renders that picker. The one
