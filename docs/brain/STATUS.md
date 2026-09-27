@@ -1,17 +1,17 @@
 # STATUS
 
-_Updated: 2026-09-03 · sha e63bf4d (dev) · main 4043056_
+_Updated: 2026-09-27 · sha 04f76fa (dev) · main de3bba6_
 
-**Phase:** maintenance; queue empty. `[observed]` 0 open issues, 0 open PRs at 13:20 WAT.
+**Phase:** maintenance. `[observed]` 10 open issues (all P2/P3, #1306 → #1367), 0 open PRs at 17:15 WAT
+(`gh issue list --state open --limit 200`). `git diff origin/dev origin/main` is empty: everything on dev is promoted.
 
-**Shipped today (six releases):** v1.108.0 (full-repo review, 19 issues) · v1.109.0 (architecture
-graph drawn, #850) · v1.110.0 / v1.111.0 (#849: project triage → issues → verify loop; the doctor's
-SAFE-repair contract) · v1.111.1 (mutation guards split into `scripts/mutations/*.py`; PR sweep 475 s →
-45 s, #866) · v1.112.0 (CLAUDE.md auditor/builder #875; rule-first CLAUDE.md with a ceiling #870;
-`components.md` split #871) · v1.113.0 (brain-sync `local` #877; shapes-check guard #874). `[observed]`
+**Shipped since the last STATUS (2026-09-03):** v1.114.0 → v1.151.0 on `main`; the newest GitHub release is
+v1.150.1 — v1.151.0's promotion (#1333) merged at 17:07 and has no release yet. `[observed]`
 
-**Now:** `docs/brain/` adopted; `brain-sync local` run for real — 17 memos accepted, 3 bridge defects fixed (#884). `[observed]`
+**Now:** first `/rails-flow:brain-review` sweep (this edit). The five memos that had diverged are synced from their
+longer local versions. 73 local memories are still outbound candidates, and the maintainer picks which ones to adopt
+(D-002). `[observed]`
 
-**Next:** nothing queued. Candidate: a downstream project's first `brain-sync local --propose`.
+**Next:** adopt the maintainer-scope candidates the sweep proposed; then the P2 issues #1361, #1362, #1306.
 
 **Blockers:** none.
