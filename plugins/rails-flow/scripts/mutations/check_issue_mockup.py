@@ -9,6 +9,9 @@ GUARD = Guard(
     name="check_issue_mockup",
     subject="scripts/check_issue_mockup.py",
     selftest="scripts/check_issue_mockup.py",   # --selftest lives in the module itself
+    # It imports the approval rule from check_mockup_gate, which reads the diff through classify_door;
+    # unstaged, the unmutated selftest failed and every mutation read as caught (INERT).
+    needs=("scripts/check_mockup_gate.py", "scripts/classify_door.py"),
     mutations=(
         Mutation(
             "an issue with no section reads as declared",
@@ -55,9 +58,23 @@ GUARD = Guard(
         ),
         Mutation(
             "a committed mock-up file is not a link",
-            r'LINK = re.compile(r"https://\S+|(?:^|\s)[\w./-]+\.(?:html?|png|jpe?g|webp|pdf|md)\b", re.I)',
-            r'LINK = re.compile(r"https://\S+", re.I)',
+            'LINK = re.compile(r"https://[^/\\s]+\\.[^\\s]+|(?:^|\\s)docs/product/mockups/\\S+"\n'
+            '                  r"|(?:^|\\s)[\\w./-]+\\.(?:html?|png|jpe?g|webp|pdf)\\b", re.I)',
+            'LINK = re.compile(r"https://[^/\\s]+\\.[^\\s]+", re.I)',
             "CONTROL: an agent-written section with a committed mock-up file is declared",
+        ),
+        # Pre-release review of #1387.
+        Mutation(
+            "any word ending in .md is a mock-up again",
+            '                  r"|(?:^|\\s)[\\w./-]+\\.(?:html?|png|jpe?g|webp|pdf)\\b", re.I)',
+            '                  r"|(?:^|\\s)[\\w./-]+\\.(?:html?|png|jpe?g|webp|pdf|md)\\b", re.I)',
+            "\"TBD, see notes.md\" is not a declaration",
+        ),
+        Mutation(
+            "triage accepts a linked mock-up with no approval",
+            '    if APPROVAL.search(answer(body) or ""):',
+            "    if True:",
+            "a linked but unapproved mock-up is not ready",
         ),
     ),
 )

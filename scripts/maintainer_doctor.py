@@ -440,6 +440,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("skill routing", ("python3", "scripts/check_skill_routing.py")),
     ("skill routing selftest", ("python3", "scripts/check_skill_routing.py", "--selftest")),
     ("evals gates", ("python3", "evals/selftest.py")),
+    # #1386 review. The triager searches the tag that carried the reporter's rails-stack version;
+    # a wrong mapping turns a rule the agent never had into a false lapse.
+    ("skill version tag selftest", ("python3", "scripts/skill_version_tag.py", "--selftest")),
     # #1384. The arm comparison is what turns a paid run into a claim; a comparison that called a
     # CI touching 0 a win would publish noise as evidence, so its selftest is a gate too.
     ("evals compare", ("python3", "evals/compare.py", "--selftest")),
