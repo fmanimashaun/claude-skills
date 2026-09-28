@@ -15906,10 +15906,12 @@ boot/validation path — with a bullet each so the promotion could close them se
       schema-load hook and aborts ("Could not find table 'rails_pulse_operations'"). That hits every fresh
       clone, CI run and first deploy. On a populated database, `db:schema:load_rails_pulse` marks *every*
       copied migration applied without running it, so a pending one is skipped while `status` reads 0. §7's
-      loop checks all ten of the gem's tables and returns an explicit code. Exit 3 (some or all missing,
-      including a partial database left by an interrupted load) loads; exit 0 skips; any other failure of the
-      check aborts rather than loading blind. It covers test in development, because `db:prepare` in
-      development also prepares test.
+      loop counts the gem's ten tables. It loads only when none exist (exit 3), skips when all exist (exit 0),
+      and aborts when some exist or the check fails. The load records every copied migration as applied, so on
+      a database with any Pulse tables it would skip pending migrations. That includes a populated one whose
+      pending upgrade adds a table. §7 gives the repair for the abort: `db:migrate:rails_pulse` for an upgrade
+      in progress, or dropping an empty, partly created Pulse database. The loop covers test in development,
+      because `db:prepare` in development also prepares test.
     - **The upgrade warnings are quoted and scoped to 0.4.0**, as upstream states them (`CHANGELOG.md:44,46`):
       restart every process together, not as a rolling deploy; and do not run `db:setup` / `db:prepare` in
       place of `db:migrate:rails_pulse`. On an entrypoint that runs `db:prepare` at boot, that migration runs
@@ -15923,9 +15925,16 @@ boot/validation path — with a bullet each so the promotion could close them se
       - The author then ran both shell blocks verbatim on Rails 8.1.4, from nothing, from a fresh clone, and
         on a populated database with a pending migration and a row. Every block exited 0, the migration was
         applied, and the row survived. An unguarded-load control reproduced the silent skip. After the
-        reviewer's fourth pass (CLEAN, with advisories), the guard was hardened to all ten tables and an
-        explicit exit code. It was re-run verbatim on a realistic partial database (exit 0, ten tables, status 0)
-        and on a check that fails (exit non-zero, no load attempted).
+        reviewer's fourth pass (CLEAN, with advisories), the guard was first hardened to "load unless all ten
+        exist". A narrow re-check BLOCKED that (reproduced): it silently skipped the column migrations of an
+        upgrade that also adds a table. The guard is now none/all/some. The author re-ran it verbatim on Rails
+        8.1.4 in each state:
+        - fresh clone: exit 0;
+        - populated with a pending migration and a row: exit 0, applied, row kept, nothing marked;
+        - upgrade adding a table: exit 4, nothing marked; `db:migrate:rails_pulse` repairs it and the row
+          survives;
+        - partial first load: exit 4; drop and re-run gives exit 0;
+        - a failing check: exit 1, no load.
       - PostgreSQL and MySQL were not run.
 
 ### 1.68.3 (release v1.151.0) — 2026-09-26
