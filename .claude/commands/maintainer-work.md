@@ -63,7 +63,9 @@ missing, apply `needs-info`, and stop — never fix a guess.
 - **`lapse`** (the skill already says it; the agent did not follow it) → **not skill-doctor**.
   More prose would be a second copy of a rule that is already there. The fix is enforcement:
   **plugin-doctor** for a hook or cop, or a `guarantee` row in the doctrine map. First re-run the
-  triager's search: if the quoted sentence is gone or does not cover the case, it is a gap again.
+  triager's search. If the quoted sentence is gone or does not cover the case, it is a gap again:
+  `gh issue edit <n> --remove-label lapse --remove-label type:feature --add-label type:skill-gap`,
+  then take the doctrine-verifier route below.
 - **`type:incorrect-doctrine` or `type:skill-gap` (comp:rails-8 / comp:hotwire)** →
   **doctrine-verifier FIRST** (BLOCKING). Only a **CONFIRMED** verdict authorizes
   **skill-doctor** to edit; REFUTED → close the issue with the citation; INCONCLUSIVE →

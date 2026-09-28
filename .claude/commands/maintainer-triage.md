@@ -34,8 +34,10 @@ untriaged.
 ## Phase 2 — Delegate classification
 
 For each issue, hand it to the **issue-triager** agent, which applies exactly one
-`comp:*`, one `type:*`, and one `prio:*` label, and flags `needs-info` or `duplicate`.
-Trust existing labels; infer and apply where missing. Never adjudicate correctness here
+`comp:*`, one `type:*`, and one `prio:*` label, and flags `needs-info`, `duplicate` or
+`lapse`. Trust existing labels; infer and apply where missing. The one exception is a lapse:
+the triager replaces the template's `type:skill-gap` with `type:feature`, so the issue still
+carries one `type:*`. Never adjudicate correctness here
 — a report of "wrong doctrine" is routed, not judged (that's the verifier's job in the
 work loop).
 

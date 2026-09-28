@@ -48,13 +48,29 @@ mis-filing. Never put a downstream project's private code, data, or secrets into
   reproduction (the command/JSON payload and the observed vs expected), affected version,
   and OS/toolchain facts if a hook/script (bash/python3/gh availability).
 - **Feature**: motivation, proposed behavior, acceptance criteria, affected components.
-- **Skill gap**: before calling it a gap, search the installed skill for the guidance
-  (`skills/<skill>/` in the local marketplace clone), in your words and in the doctrine's. An
-  agent that ignored a rule looks exactly like one that never had it. If the skill already
-  covers the case, it is a **lapse**: quote the `file:line` and sentence, say what the agent did
-  instead, and classify it `type:feature` with the `lapse` label. The upstream fix is then
-  enforcement, not more prose. Put the search in the report either way ("searched
-  `skills/rails-8/` for X: no hit").
+- **Skill gap**: before calling it a gap, search the skill **this project loaded**. An agent
+  that ignored a rule looks exactly like one that never had it. Not the marketplace clone: that
+  is a different tree, and several projects on one machine can run different versions (#1407).
+
+  ```bash
+  tv="${CLAUDE_PLUGIN_ROOT}/scripts/toolchain_version.py"
+  installed="$(python3 "$tv" --project "$PWD" --installed-path rails-stack)" &&
+    grep -rn -i -F -e "<key phrase>" -- "$installed/skills/<skill>/"
+  ```
+
+  Search in your words and in the doctrine's. Then exactly one of:
+  - **A hit that covers the case**: a **lapse**. The agent had the rule and did not follow it.
+    Quote the `file:line` and sentence, say what the agent did instead, and classify it
+    `type:feature` with the `lapse` label. The upstream fix is enforcement, not more prose.
+  - **No hit, and rails-stack is behind the published version** (the version pin above): a
+    **stale install**. It may be covered in a later version, so do not file a gap. Tell the user
+    to update and re-check.
+  - **No hit on a current install**: a gap.
+
+  If the first command exits 2, the installed skill is unresolved: say so, and do not call it a
+  lapse. Put the verdict and the search in the report BODY either way ("searched rails-stack
+  1.63.0 `skills/rails-8/` for X: no hit"). A label set by someone without push access may be
+  dropped, so the body is what the triager reads.
 - Classify and pre-label: `type:bug` / `type:feature` / `type:incorrect-doctrine` /
   `type:skill-gap` and the `comp:*` component. (These match the upstream taxonomy.)
 
@@ -82,6 +98,8 @@ body="$(mktemp)"; : > "$body"    # write the composed body into $body via Write/
 gh issue create --repo <upstream> --title "<type: concise summary>" \
   --body-file "$body" --label "<type:*>" --label "<comp:*>"
 ```
+
+For a lapse, add `--label lapse` as well.
 
 Using `--body-file` keeps trigger phrases (`git merge`, `gh pr merge`) out of the command
 line — belt-and-suspenders even though the upstream release-gate now tokenizes properly.

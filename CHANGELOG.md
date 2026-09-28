@@ -10,8 +10,8 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 ### 2026-09-28 (release v1.152.0)
 
 - **Triage checks a skill-gap report against what the skill already says — `.claude/agents/issue-triager.md`,
-  `.claude/commands/maintainer-work.md`, `.claude/commands/maintainer-setup-intake.md`, `.github/labels.yml`,
-  `.github/ISSUE_TEMPLATE/skill-gap.yml`** (#1386). The duplicate check compared an issue only with other issues, so
+  `.claude/commands/maintainer-work.md`, `.claude/commands/maintainer-triage.md`,
+  `.claude/commands/maintainer-setup-intake.md`, `.github/labels.yml`, `.github/ISSUE_TEMPLATE/skill-gap.yml`** (#1386). The duplicate check compared an issue only with other issues, so
   a report that an agent ignored a rule the skill already states was queued as `type:skill-gap` and sent to
   `skill-doctor`, which adds a second copy of the prose. The triager now searches the named skill first: no hit is a
   gap, and a covering hit is a **lapse** (new status label). It is relabelled `type:feature`, and `/maintainer-work`
@@ -19,6 +19,10 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   gains an optional "does the skill already say this?" field. After SkillOpt's skill-defect / execution-lapse
   split. How often lapses happen is unmeasured, and the issue says so. This is triage prose, advisory: nothing
   mechanical checks that the search ran. Our own design, decided on the issue; no framework claim.
+  An independent review before promotion found that the search ran over `dev`, not the version the report pins,
+  so a rule added since would read as a lapse. It now searches at the pinned tag (fixed since → `needs-info`, ask
+  the reporter to update), and checks first that the path exists, since a typo'd skill also returns no hit. The
+  relabel is one `--remove-label`/`--add-label` command, so an issue never carries two `type:*` labels.
 
 - **The benchmark compares arms instead of printing rates side by side — `evals/compare.py`,
   `scripts/mutations/evals_compare.py`, `scripts/maintainer_doctor.py`, `evals/README.md`** (#1384). `run.py`
@@ -3506,7 +3510,19 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   `plugins/rails-flow/agents/claude-skills-reporter.md`** (#1386). An agent that ignored a rule looks exactly like one
   that never had it, and the two need opposite fixes upstream. If the skill already covers the case, the report is
   filed as a `lapse` (`type:feature`) quoting the `file:line`, so the fix is enforcement, not more prose. The search
-  goes in the report either way.
+  goes in the report body either way. It searches the tree THIS project loaded (`toolchain_version.py
+  --installed-path rails-stack`), not the marketplace clone. An independent review found the first draft searched the
+  clone: on this machine that is rails-stack 1.68.0, while fidara-ledger runs 1.63.0, so a rule added since would have
+  been filed as a false lapse. No hit on an install behind the published version is a stale install, not a gap.
+
+- **`toolchain_version.py` resolves installs per project, not machine-wide — `plugins/rails-flow/scripts/toolchain_version.py`,
+  `plugins/rails-flow/scripts/toolchain_version_selftest.py`, `plugins/rails-flow/scripts/mutations/toolchain_version.py`,
+  `plugins/rails-flow/commands/toolchain-check.md`** (#1407). It picked the newest install record across every
+  project, so a project on an older version was reported as current. Measured: `--project` fidara-ledger printed
+  rails-flow 1.51.0 and rails-stack 1.68.0 (Retask-platform's versions); it runs 1.46.0 and 1.63.0. A record with a
+  `projectPath` now applies only to that project, and one without applies everywhere. New `--installed-path PLUGIN`
+  prints the tree this project loads, and exits 2 when there is none. Selftest 29 → 40, including the regression
+  through `main()` (a project behind the machine's newest install exits 1, not 0). Guard 2 → 5 mutations, all caught.
 
 - **A PR body must carry the repo's own PR-template sections — `plugins/rails-flow/hooks/scripts/guard-claims.sh`,
   `plugins/rails-flow/hooks/scripts/lib/pr_template.py`, `plugins/rails-flow/scripts/check_hook_gates.py`,

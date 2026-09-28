@@ -30,7 +30,8 @@ and the version they were on.
      scrutiny; a wrong doctrine misleads every downstream agent).
    - `type:skill-gap` — missing coverage a skill should have.
    - `type:bug` — a plugin agent/command/hook misbehaves (script error, wrong gate).
-   - `type:feature` — a new capability request.
+   - `type:feature` — a new capability request, or enforcement for a rule a skill already
+     states (`lapse`, below).
    - `type:chore` — docs, packaging, housekeeping.
 3. **Priority** — apply one `prio:*` label: `prio:P1` (wrong doctrine agents act on,
    broken safety gate, packaging that ships corrupt skills), `prio:P2` (real defect
@@ -56,18 +57,30 @@ and the version they were on.
 A `skill-gap` report says the skill does not cover something. It describes what an agent DID,
 and an agent that ignored guidance looks exactly like one that never had it. The two need
 opposite fixes, so search the named skill before queuing, in the reporter's words and in the
-words the doctrine would use (#1386):
+words the doctrine would use (#1386). Search **the version the report pins**, not `dev`: a rule
+added since then is one the agent never had. With no pinned version, search `origin/dev` and
+say so.
 
 ```bash
-git grep -n -i -F -e "<key phrase>" -- "skills/<skill>/"
+skill="skills/<skill>"; ref="v<reported marketplace metadata.version>"
+if ! git cat-file -e "$ref:$skill" 2>/dev/null; then echo "no $skill at $ref: fix the name or version first" >&2; fi
+git grep -n -i -F -e "<key phrase>" "$ref" -- "$skill/"
 ```
 
+A mistyped skill or tag also returns no hit, which is why the existence check comes first: an
+empty search of a path that does not exist is not evidence of a gap.
+
 - **No hit**: a real gap. Queue it as `type:skill-gap`, and say what you searched for in your
-  triage comment ("searched `skills/rails-8/` for X and Y: no hit").
+  triage comment ("searched `skills/rails-8/` at v1.148.0 for X and Y: no hit").
+- **No hit at the pinned version, but a hit at `origin/dev`**: fixed since. Comment with the
+  version it landed in, apply `needs-info`, and ask the reporter to update and re-check.
 - **A hit that covers the case**: a **lapse**. Comment with the `file:line` and the quoted
-  sentence, apply `lapse`, and change `type:skill-gap` to `type:feature`. The fix is
-  enforcement (a hook, a lint or cop, a `guarantee` row in `docs/architecture/doctrine-map.html`),
-  or making the rule findable where the agent reads, never a second copy of the prose.
+  sentence, then relabel in place. The template applied `type:skill-gap`, and one issue carries
+  one `type:*`:
+  `gh issue edit <n> --remove-label type:skill-gap --add-label type:feature --add-label lapse`.
+  The fix is enforcement (a hook, a lint or cop, a `guarantee` row in
+  `docs/architecture/doctrine-map.html`), or making the rule findable where the agent reads,
+  never a second copy of the prose.
 - **A partial hit**: still a gap. Quote what exists, so the fix extends it instead of
   duplicating it.
 
