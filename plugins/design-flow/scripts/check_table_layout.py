@@ -18,15 +18,20 @@ FOUR RULES, each a construct and never a word:
                          (`overflow-x-auto|scroll`, or `overflow-auto|scroll`, which include x).
                          The table has to be INSIDE the scroller, by element nesting, not merely
                          later in the file.
-  table-min-width        a `<table>` given a fixed minimum width -- a `min-w-*` class other than
-                         `min-w-0`/`min-w-full`, an inline `min-width`, or a `min_width:` keyword
-                         passed to a table component (the shape the app above used 25 times).
+  table-min-width        a `<table>`, `<th>`, `<td>` or `<col>` given a fixed minimum width -- a
+                         `min-w-*` class other than `min-w-0`/`min-w-full`, an inline `min-width`,
+                         or a `min_width:` keyword passed to a table component (the shape the app
+                         above used 22 times).
   table-no-details       a file with a `<table>` and no details target anywhere in its directory:
                          no link into the modal frame (`turbo_frame: "modal"` / `:modal`, or
                          `data-turbo-frame="modal"`). THE DIRECTORY, NOT THE FILE: a Rails index
                          renders its rows from a partial beside it (`<%= render @people %>` ->
-                         `_person.html.erb`), and the row link lives in the partial.
-  tablist-scroll         a tab strip that scrolls: an element with `role="tablist"`, or any scroller
+                         `_person.html.erb`), and the row link lives in the partial. A modal link
+                         that is a CRUD ACTION -- `new_*`/`edit_*` helpers, `/new`, `/edit`, a
+                         delete method -- is not a details target: a "New" button that opens the
+                         modal says nothing about where the ROWS go.
+  tablist-scroll         a tab strip that scrolls: a `role="tablist"` that scrolls or sits inside a
+                         scroller (by nesting), or any scroller
                          in a file named for tabs (`*tab*`) -- apps build strips as link lists on
                          purpose, and the app behind #1391 does. A strip is one row of at most four
                          that never wraps or scrolls, and a picker below 768px (the maintainer's
@@ -46,8 +51,10 @@ anti-pattern is not reported as committing it. The declaration is read from the 
 it is itself a comment.
 
 KNOWN LIMITS, stated so a clean run is not over-read: a wrapper built with `content_tag`/`tag.div`
-rather than markup is not seen, and a table rendered by a component whose own template holds the
-`<table>` is judged in that component's file.
+rather than markup is not seen; a table rendered by a component whose own template holds the
+`<table>` is judged in that component's file, so its details target is judged by that component's
+directory and not by each call site; the six-column budget, the five-field summary and the four-tab
+cap are not counted; and a CRUD action is recognised by Rails' helper and path conventions only.
 
 Stdlib only, no network. Exit 0 clean or not applicable, 1 findings. An app that already has
 findings records them once with `--set-floor` and is then refused only on a regression
@@ -82,6 +89,11 @@ RENDER_TAG = re.compile(r"<%=?\s*render\b(.*?)%>", re.S)
 TABLE_CALL_MIN_WIDTH = re.compile(r"Table\w*[\s\S]*?\bmin_width:")
 DETAILS_TARGET = re.compile(
     r"""turbo_frame:\s*(?:["']modal["']|:modal)|data-turbo-frame\s*=\s*["']modal["']|["']turbo-frame["']\s*=>\s*["']modal["']""")
+# A modal link that is a CRUD ACTION is not a details target. Found in review: a "New person" button
+# opening the modal satisfied the rule while every row still linked to a show page.
+CRUD_ACTION = re.compile(
+    r"""\b(?:new|edit)_\w*(?:path|url)\b|/(?:new|edit)\b|\baction:\s*:(?:new|edit)\b"""
+    r"""|(?:turbo_)?method:\s*:delete\b|data-turbo-method\s*=\s*["']delete""")
 DECLARES = re.compile(r"table-without-details:[ \t]*\w")
 # EMAIL IS LAID OUT WITH TABLES, and has no modal to open. Found on the first run against the app
 # behind #1391: both `table-no-details` findings were a mailer layout and a mailer view. Action Mailer
@@ -89,6 +101,17 @@ DECLARES = re.compile(r"table-without-details:[ \t]*\w")
 MAILER = re.compile(r"(?:^|/)(?:[\w]+_mailer/|layouts/[\w.]*mailer[\w.]*$)")
 VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source",
         "track", "wbr"}
+
+
+def opens_a_record(source: str) -> bool:
+    """Is any modal-frame link here a RECORD link, not new/edit/delete? Judged per enclosing tag."""
+    for m in DETAILS_TARGET.finditer(source):
+        start = source.rfind("<", 0, m.start())
+        end = source.find(">", m.end())
+        construct = source[start if start >= 0 else 0: end + 1 if end >= 0 else len(source)]
+        if not CRUD_ACTION.search(construct):
+            return True
+    return False
 
 
 def app_scrollers(css: str) -> set[str]:
@@ -104,6 +127,14 @@ def _line(source: str, offset: int) -> int:
     return source.count("\n", 0, offset) + 1
 
 
+def _close(stack: list[tuple[str, bool]], name: str) -> None:
+    """Pop back to the nearest open element of this name -- ONE place, so both walkers nest alike."""
+    for i in range(len(stack) - 1, -1, -1):
+        if stack[i][0] == name:
+            del stack[i:]
+            break
+
+
 def tables_in(source: str, scrollers: frozenset[str] = frozenset()) -> list[tuple[int, str, bool]]:
     """(line, attrs, inside an x-scroller) for every `<table>`, by element nesting."""
     stack: list[tuple[str, bool]] = []
@@ -111,10 +142,7 @@ def tables_in(source: str, scrollers: frozenset[str] = frozenset()) -> list[tupl
     for m in TAG.finditer(source):
         closing, name, attrs, selfclose = m.group(1), m.group(2).lower(), m.group(3), m.group(4)
         if closing:
-            for i in range(len(stack) - 1, -1, -1):
-                if stack[i][0] == name:
-                    del stack[i:]
-                    break
+            _close(stack, name)
             continue
         cls = CLASS_VALUE.search(attrs)
         scrolls = bool(cls and _scrolls(cls.group(2), scrollers))
@@ -126,16 +154,30 @@ def tables_in(source: str, scrollers: frozenset[str] = frozenset()) -> list[tupl
 
 
 def scrolling_strips(source: str, scrollers: frozenset[str], tab_file: bool) -> list[int]:
+    """A strip that scrolls ITSELF, or sits inside a scroller -- by element nesting, as for tables."""
+    stack: list[tuple[str, bool]] = []
     lines = []
     for m in TAG.finditer(source):
-        if m.group(1):
+        closing, name, attrs, selfclose = m.group(1), m.group(2).lower(), m.group(3), m.group(4)
+        if closing:
+            _close(stack, name)
             continue
-        cls = CLASS_VALUE.search(m.group(3))
-        if not (cls and _scrolls(cls.group(2), scrollers)):
-            continue
-        if tab_file or TABLIST.search(m.group(3)):
+        cls = CLASS_VALUE.search(attrs)
+        scrolls = bool(cls and _scrolls(cls.group(2), scrollers))
+        if (scrolls and tab_file) or (TABLIST.search(attrs) and (scrolls or any(s for _, s in stack))):
             lines.append(_line(source, m.start()))
+        if name not in VOID and not selfclose:
+            stack.append((name, scrolls))
     return lines
+
+
+def cell_min_widths(source: str) -> list[tuple[int, str]]:
+    """A fixed minimum width on a column or cell forces the table wider exactly as one on the table."""
+    out = []
+    for m in TAG.finditer(source):
+        if not m.group(1) and m.group(2).lower() in {"th", "td", "col"} and (w := fixed_min_width(m.group(3))):
+            out.append((_line(source, m.start()), w))
+    return out
 
 
 def fixed_min_width(attrs: str) -> str | None:
@@ -172,6 +214,10 @@ def check_file(rel: str, raw: str, directory_has_target: bool,
             f"{rel}:{line}: tablist-scroll — this tab strip scrolls sideways. A strip is one row of "
             f"at most four tabs that never wraps or scrolls; regroup a fifth, and below 768px render "
             f"a single labelled picker instead (design-system components.md → Tabs).")
+    for line, width in cell_min_widths(source):
+        findings.append(
+            f"{rel}:{line}: table-min-width — `{width}` on a cell or column forces the table wider "
+            f"than its container. Let it fit; a column that does not fit belongs in the Details card.")
     for m in RENDER_TAG.finditer(source):
         if not TABLE_CALL_MIN_WIDTH.search(m.group(1)):
             continue
@@ -194,7 +240,7 @@ def run(root: Path) -> tuple[list[str], int]:
     scrollers = frozenset(app_scrollers(css))
     targets: dict[Path, bool] = {}
     for p in files:
-        if DETAILS_TARGET.search(strip_comments(p.read_text(encoding="utf-8", errors="replace"))):
+        if opens_a_record(strip_comments(p.read_text(encoding="utf-8", errors="replace"))):
             targets[p.parent] = True
     findings: list[str] = []
     for p in files:
@@ -247,6 +293,11 @@ def _selftest() -> int:
     expect("a TABLE component's scroller is not a tab strip — `tab` is a word, not a substring",
            "tablist-scroll" not in rules('<div class="scroll-x"><table></table></div>', scrollers=frozenset({"scroll-x"}),
                                          name="app/components/ui/table_component.html.erb"))
+    expect("a tablist inside a scrolling wrapper is caught",
+           rules('<div class="overflow-x-auto"><div role="tablist" class="flex">…</div></div>') == ["tablist-scroll"])
+    expect("min-w-* on a header cell is caught",
+           rules('<table><tr><th class="min-w-[12rem]">Name</th></tr></table>') == ["table-min-width"])
+    expect("min-w-0 on a cell is silent", rules('<table><tr><td class="min-w-0 truncate">x</td></tr></table>') == [])
     expect("a tablist that does not scroll is silent",
            rules('<div role="tablist" class="cluster border-b">…</div>') == [])
     expect("a scroller that is neither a table nor a strip is silent",
@@ -275,6 +326,14 @@ def _selftest() -> int:
     # table-no-details.
     expect("a table with no details target in its directory is caught",
            rules("<table><tr><td>x</td></tr></table>", has_target=False) == ["table-no-details"])
+    expect("a NEW button opening the modal is not a details target",
+           not opens_a_record('<%= link_to "New person", new_person_path, data: { turbo_frame: "modal" } %>\n'
+                              '<td><%= link_to p.name, p %></td>'))
+    expect("edit and delete links opening the modal are not details targets either",
+           not opens_a_record('<%= link_to "Edit", edit_person_path(p), data: { turbo_frame: "modal" } %>'
+                              '<%= button_to "Delete", p, method: :delete, data: { turbo_frame: "modal" } %>'))
+    expect("a row link into the modal IS a details target, beside a New button",
+           opens_a_record('<%= link_to "New", new_person_path, data: { turbo_frame: "modal" } %>' + LINKED_ROW))
     expect("a target in the same directory satisfies it",
            rules("<table><tbody><%= render @people %></tbody></table>", has_target=True) == [])
     expect("a declared non-index table with a reason is silent",

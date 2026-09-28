@@ -150,7 +150,7 @@ ultra-wide monitors"*) as distinct. The decision, so that silence stops being th
 | Toolbars | `cluster` (wraps intrinsically); action buttons `w-full md:w-auto`. |
 | Card/stat grids | `grid-auto`, `--min: 16rem` (stacks → multi-col by space). |
 | Forms | `grid-auto`/`Switcher`, not hand `grid-cols`. |
-| Modal | width tiers `max-w-md…4xl`; wrapper `p-4 sm:p-0`; body `max-h-[70vh] overflow-y-auto`. |
+| Modal | width tiers `max-w-md…4xl` inside an `inset-viewport` wrapper; the panel is `max-h-full` and its body scrolls ([Modal / Dialog](components.md#modal--dialog), [Viewport inset](components.md#viewport-inset)). |
 | Tables | `hidden md:table` that fits its container + `md:hidden` summary cards; never `overflow-x-auto` ([Table (CRUD)](components.md#table-crud)). |
 | Tap targets | `min-h-touch` (44px) on all interactive controls — **wire it** (was defined-but-unused). |
 | Mobile / native | apply `pt-safe`/`pb-safe` safe-area utilities on fixed chrome; `body.mobile-app` toggles for Hotwire Native shells. |

@@ -19,8 +19,8 @@ GUARD = Guard(
         ),
         Mutation(
             "nesting is forgotten: a closed scroller still counts for a later table",
-            "                    del stack[i:]\n",
-            "                    pass\n",
+            "            del stack[i:]\n",
+            "            pass\n",
             "a table AFTER a closed scroller is silent",
         ),
         Mutation(
@@ -62,14 +62,14 @@ GUARD = Guard(
         ),
         Mutation(
             "a tab strip that scrolls stops being a finding",
-            "        if tab_file or TABLIST.search(m.group(3)):",
+            "        if (scrolls and tab_file) or (TABLIST.search(attrs) and (scrolls or any(s for _, s in stack))):",
             "        if False:",
             "a scrolling tablist is caught",
         ),
         Mutation(
             "a link-list strip in a tabs file is no longer recognised as a strip",
-            "        if tab_file or TABLIST.search(m.group(3)):",
-            "        if TABLIST.search(m.group(3)):",
+            "(scrolls and tab_file) or ",
+            "",
             "a scrolling link-list strip in a tabs file is caught",
         ),
         Mutation(
@@ -77,6 +77,25 @@ GUARD = Guard(
             "bool(TAB_FILE.search(Path(rel).name)))",
             '"tab" in Path(rel).name)',
             "a TABLE component's scroller is not a tab strip",
+        ),
+        # REVIEW FINDING: a "New" button opening the modal satisfied table-no-details.
+        Mutation(
+            "a new/edit/delete modal link counts as a details target again",
+            "        if not CRUD_ACTION.search(construct):",
+            "        if True:",
+            "a NEW button opening the modal is not a details target",
+        ),
+        Mutation(
+            "a tablist inside a scroller is no longer seen -- only one that scrolls itself",
+            "(TABLIST.search(attrs) and (scrolls or any(s for _, s in stack)))",
+            "(TABLIST.search(attrs) and scrolls)",
+            "a tablist inside a scrolling wrapper is caught",
+        ),
+        Mutation(
+            "a min-width on a cell or column is no longer a finding",
+            '        if not m.group(1) and m.group(2).lower() in {"th", "td", "col"} and (w := fixed_min_width(m.group(3))):',
+            '        if False and (w := fixed_min_width(m.group(3))):',
+            "min-w-* on a header cell is caught",
         ),
         Mutation(
             "mailer views are judged again, and email layout tables fail",

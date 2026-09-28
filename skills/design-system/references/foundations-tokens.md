@@ -356,7 +356,12 @@ because v4 uses native CSS cascade layers instead of hijacking `@layer` the way 
 
 ```css
 /* Page shell + prose measure — the two-level nesting both corpora converge on. */
-@utility shell { max-inline-size: var(--width-shell); margin-inline: auto; }
+@utility shell {
+  max-inline-size: var(--width-shell); margin-inline: auto;
+  /* The page gutter IS the viewport inset (#1391), so no card in the page can touch the edge. */
+  padding-left: calc(var(--viewport-inset) + env(safe-area-inset-left, 0px));
+  padding-right: calc(var(--viewport-inset) + env(safe-area-inset-right, 0px));
+}
 @utility prose-measure { max-inline-size: var(--width-prose); }
 
 /* Section rhythm — fluid, no breakpoint pair needed. */
@@ -373,15 +378,15 @@ because v4 uses native CSS cascade layers instead of hijacking `@layer` the way 
 @utility pr-safe { padding-right: env(safe-area-inset-right); }
 @utility mb-safe { margin-bottom: env(safe-area-inset-bottom); }
 
-/* A card never touches the viewport (#1391): per side, the larger of the edge floor and the
-   device's safe area. One definition — the modal wrapper, the drawer and the shell gutter use it. */
+/* A card never touches the viewport (#1391): per side, the edge floor PLUS the device's safe area.
+   One definition — the modal wrapper, the drawer and the shell gutter use it. */
 :root { --viewport-inset: var(--inset-edge); }
 @media (min-width: 48rem) { :root { --viewport-inset: var(--inset-edge-md); } }
 @utility inset-viewport {
-  padding: max(var(--viewport-inset), env(safe-area-inset-top))
-           max(var(--viewport-inset), env(safe-area-inset-right))
-           max(var(--viewport-inset), env(safe-area-inset-bottom))
-           max(var(--viewport-inset), env(safe-area-inset-left));
+  padding: calc(var(--viewport-inset) + env(safe-area-inset-top, 0px))
+           calc(var(--viewport-inset) + env(safe-area-inset-right, 0px))
+           calc(var(--viewport-inset) + env(safe-area-inset-bottom, 0px))
+           calc(var(--viewport-inset) + env(safe-area-inset-left, 0px));
 }
 ```
 

@@ -208,6 +208,8 @@ One record. The screen answers "what is this, and what can I do to it?"
 
 **A record reached from a table is not this page:** it opens as a
 [Details card](components.md#details-card) over the list, and its URL renders that same card (#1391).
+This page is for a record **with no table index** — one reached only from a notification, a search
+result or a link inside another record — where there is no list to render a card over.
 
 ```erb
 <div class="stack">

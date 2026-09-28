@@ -297,14 +297,15 @@ DEFAULTS = { variant: :primary, size: :md }
 **A card never touches the viewport edge, at any width** (#1391) — list cards, section cards, modals,
 sheets and drawers alike. On a phone the floor is **16px plus the device's safe area**
 (`env(safe-area-inset-*)`) on every side; at 768px and up it is **24px**. One definition carries it:
-the `--inset-edge` / `--inset-edge-md` structural tokens and the `inset-viewport` utility
+the `--inset-edge` / `--inset-edge-md` structural tokens, added to the safe area rather than traded
+against it, and the `inset-viewport` utility
 ([foundations-tokens.md](foundations-tokens.md) §3b and the utilities block).
 - **Overlays** put `inset-viewport` on the fixed wrapper, so the panel floats inside it with all four
   corners rounded. There is no edge-to-edge sheet: a bottom placement is a floating card whose foot
   sits 16px plus the safe area above the screen's edge, and at maximum height it stops 16px short
   of the top.
-- **Page content** gets it from the shell: the inline gutter is `--viewport-inset` (or the safe
-  area, where larger), so a card in the page is inset by construction and never adds its own margin.
+- **Page content** gets it from the shell: `shell`'s inline padding is `--viewport-inset` plus the safe
+  area, so a card in the page is inset by construction and never adds its own margin.
 
 ## Heading blocks (page / section / card)
 - **The region `page-anatomies.md` calls a "heading block".** Three scales, same anatomy, so a screen
@@ -340,7 +341,8 @@ the `--inset-edge` / `--inset-edge-md` structural tokens and the `inset-viewport
   surface → the `rounded-lg` token = 12px, not an arbitrary value); backdrop
   `bg-overlay/50 backdrop-blur-sm` (a role — the shipped implementation already used it while this line
   named the `fm-navy` primitive, against the non-negotiable at the top of this file). **Sizes:** `sm max-w-md · md max-w-lg · lg max-w-2xl · xl max-w-4xl · full`.
-  Body `max-h-[70vh] overflow-y-auto`. **Slots: `title` and `actions` (a `cluster`) — there is NO
+  The panel is `max-h-full` inside the inset wrapper and its body scrolls (`min-h-0 overflow-y-auto`),
+  so a short or landscape viewport keeps the top inset. **Slots: `title` and `actions` (a `cluster`) — there is NO
   `body` slot;** the body is the block content, same as Alert. This line advertised one for three
   releases, and `m.with_body` raises `NoMethodError` — the #168/#182 class, in prose the call-site
   linter cannot reach.
@@ -996,17 +998,39 @@ implements its phone half.
   reason to scroll. Measured on the app behind #1391: 25 tables forced a `min_width` of 36–60rem and
   scrolled sideways on tablets and laptops that had room for them.
 - **The row carries a summary of at most five fields**, chosen for scanning and deciding — never
-  every column the model has. **The whole row is clickable, and the name is its keyboard link**:
-  stretch the name's `<a>` over the row (`relative` on the `<tr>`, `after:absolute after:inset-0` on
-  the link, as [Stacked list](#stacked-list) does), so the row has one accessible name and one tab
-  stop. The link opens the record into the shared modal frame (`data: { turbo_frame: "modal" }`) as
-  its Details card, **not a show page**. Followed directly, the same URL renders the same card over
-  the list, so a record stays addressable and shareable.
+  every column the model has. **The whole row is clickable, and the name is its keyboard link**: the
+  name's `<a>` is the row's one link and one tab stop, and a click anywhere else on the row follows it
+  (the `row-link` controller below), so the row has one accessible name. The link opens the record
+  into the shared modal frame (`data: { turbo_frame: "modal" }`) as its Details card, **not a show
+  page**. Followed directly, the same URL renders the same card over the list, so a record stays
+  addressable and shareable. **Not a stretched overlay on a `<tr>`**: whether a table row contains an
+  absolutely positioned link is not something this kit has verified, so the row is made clickable by
+  behaviour, not by CSS.
+
+  ```js
+  // app/javascript/controllers/row_link_controller.js
+  // <tr data-controller="row-link" data-action="click->row-link#follow"> … the name's
+  // <a data-row-link-target="link" data-turbo-frame="modal"> … </tr>
+  import { Controller } from "@hotwired/stimulus"
+
+  export default class extends Controller {
+    static targets = ["link"]
+
+    follow(event) {
+      // The row's own controls keep their job: a checkbox ticks, an action acts.
+      if (event.target.closest("a, button, input, select, textarea, label")) return
+      // A modified click is a request for a new tab; only the real link can honour it.
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+      this.linkTarget.click()
+    }
+  }
+  ```
+
 - **Below 768px every table is a stack of designed summary cards**, not a label/value dump of its
   columns: the **name** (bold), the **reference** (muted, `tabular-nums`) and the **status** pill
   top-right; **two or three key facts** on one or two lines, each labelled only when a bare value is
-  ambiguous; **one primary action and a chevron**; and the whole card tappable, by the same stretched
-  link as the row. Any label is a real element in the markup, never CSS `content:` text. The columns
+  ambiguous; **one primary action and a chevron**; and the whole card tappable, by a stretched
+  link on the `<li>` exactly as [Stacked list](#stacked-list) does — a card is a list item, not a table row. Any label is a real element in the markup, never CSS `content:` text. The columns
   are defined once and both renderings read that definition; two hand-written copies drift.
 - **CRUD is modal-driven and in-page** — new/edit/delete open in the shared `turbo-frame` modal; success
   updates the list via Turbo Stream (`prepend`/`replace dom_id`/`remove dom_id`) + a toast; rows are
@@ -1042,8 +1066,7 @@ implements its phone half.
   named by the row's identifier (`aria-labelledby`), never "Select". What selection *does* — the bulk
   toolbar, select-all-matching, what survives a page change — is the anatomy's, not this entry's:
   [page-anatomies.md → Selection and bulk actions](page-anatomies.md#selection-and-bulk-actions-969).
-  A selected row's checkbox sits above the stretched link (`relative z-10`), so ticking it does not
-  open the record.
+  Ticking a row's checkbox never opens the record: `row-link` ignores clicks that land on a control.
 - **Unchanged by master-detail:** the five states (loaded, empty, filtered-empty, loading, error),
   the count always stated, and rows per page —
   [page-anatomies.md → Data table](page-anatomies.md#five-states-and-all-five-are-required).
@@ -1095,8 +1118,7 @@ renders over the list when its URL is followed directly.
 - **One form, one submit.** A matrix that saves per click produces forty toasts, forty audit entries and
   no undo. Unsaved changes are guarded ([forms.md → Unsaved changes](forms.md#unsaved-changes--leaving-a-dirty-form-978)).
 - **Density** is `--row-compact` by default — a matrix is dense by nature — with the sticky header row
-  of Table (CRUD). It is a form, not an index of records, so it has no Details card; it still fits its
-  container, and a role set past the column budget is split by module rather than scrolled.
+  of Table (CRUD).
 - **Tenancy note.** A multi-tenant app scopes the matrix to a workspace and says which in the
   `<caption>`; nothing else changes.
 
@@ -1324,8 +1346,8 @@ see [Activity feed / Timeline](#activity-feed--timeline).
 - **Responsive:** on a phone's summary card the cluster becomes **one primary action and a chevron**
   ([Table (CRUD)](#table-crud)); every other action lives in the [Details card](#details-card)'s
   header, not a shrunken cluster.
-- **Above the stretched row link:** each action is `relative z-10`, so pressing it does its job
-  instead of opening the record.
+- **Inside a clickable row:** `row-link` ignores a click that lands on an action, so pressing it
+  does its job instead of opening the record ([Table (CRUD)](#table-crud)).
 
 ## Media object
 - Fixed-size media beside flowing content — the row of the [Stacked list](#stacked-list), the

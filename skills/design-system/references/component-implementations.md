@@ -382,7 +382,9 @@ module Ui
     end
     # A modal is a card-class surface → `rounded-lg` (= --radius-lg = 12px via the token),
     # NOT an arbitrary `rounded-[12px]`. Stay in the radius vocabulary (SKILL non-negotiable).
-    def panel = [PLACEMENT.fetch(@placement), "bg-popover text-popover-foreground rounded-lg shadow-lg w-full", SIZE.fetch(@size)].join(" ")
+    # `max-h-full flex flex-col`: the panel never grows past the inset wrapper, and the BODY scrolls,
+    # so a short or landscape viewport keeps the top inset instead of pushing the header off-screen.
+    def panel = [PLACEMENT.fetch(@placement), "bg-popover text-popover-foreground rounded-lg shadow-lg w-full max-h-full flex flex-col", SIZE.fetch(@size)].join(" ")
     # Lucide via lucide-rails; NO px size — `with-icon` sizes it to 1em and `currentColor`
     # inherits (CSS overrides the gem's width/height attrs). See "Icons (Lucide)" at the top.
     def close_icon = helpers.lucide_icon("x")
@@ -401,13 +403,13 @@ end
   <div class="fixed inset-0 bg-overlay/50 backdrop-blur-sm" data-action="click->modal#backdrop"></div>
   <div class="<%= panel %>" role="dialog" aria-modal="true" aria-labelledby="<%= @labelledby %>"
        data-modal-target="panel">
-    <div class="box stack" style="--space: var(--space-s)">
+    <div class="box stack min-h-0" style="--space: var(--space-s)">
       <div class="cluster" style="--justify: space-between">
         <h2 id="<%= @labelledby %>" class="text-step-1 font-semibold"><%= title %></h2>
         <button type="button" data-action="modal#close" aria-label="Close"
                 class="with-icon min-h-touch rounded-md focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/30"><span class="sr-only">Close</span><%= close_icon %></button>
       </div>
-      <div class="max-h-[70vh] overflow-y-auto"><%= content %></div>
+      <div class="min-h-0 overflow-y-auto"><%= content %></div>
       <% if actions? %><div class="cluster" style="--justify: flex-end"><%= actions %></div><% end %>
     </div>
   </div>
@@ -807,6 +809,7 @@ landmark noise outweighs the structure.
 <%# `aria-labelledby` pointing back at that id, and `aria-orientation` on a vertical list.          %>
 <%# NEVER SCROLLS, NEVER WRAPS (#1391): at most four tabs, and below 768px the strip is replaced by %>
 <%# one labelled picker. Its change must select the same index the tab would, via the same action.   %>
+<%# `flex flex-nowrap`, not `cluster`: `cluster` wraps, and a strip that wraps is two rows.           %>
 <div data-controller="tabs" data-tabs-activation-value="<%= activation %>">
   <label class="block md:hidden">
     <span class="sr-only"><%= label %></span>
@@ -818,7 +821,7 @@ landmark noise outweighs the structure.
   <%# the winner would depend on utility order.                                                     %>
   <div class="hidden md:block">
   <div role="tablist" aria-label="<%= label %>" aria-orientation="<%= orientation %>"
-       class="cluster border-b border-border" style="--space: 0">
+       class="flex flex-nowrap border-b border-border">
     <% tabs.each_with_index do |t, i| %>
       <button role="tab" id="<%= id %>-tab-<%= i %>" data-tabs-target="tab" data-action="tabs#select"
               tabindex="<%= i.zero? ? 0 : -1 %>" aria-selected="<%= i.zero? %>"
@@ -836,6 +839,11 @@ landmark noise outweighs the structure.
 </div>
 ```
 
+- **The picker's contract with `tabs#select`** (#1391). One action serves both renderings. From a tab
+  click it takes the index of `event.currentTarget` among `tabTargets`; from the picker's `change` it
+  takes `pickerTarget.selectedIndex`. Either way it does the same four things: sets `aria-selected`
+  and the roving `tabindex` on the tabs, shows that index's panel and hides the rest, and sets
+  `pickerTarget.selectedIndex`, so a resize across 768px never shows the two renderings disagreeing.
 - **`label:` is not optional and there is no sensible default** — APG names the tablist via
   `aria-labelledby` when a visible heading exists, `aria-label` otherwise. Pass the heading's id as
   `labelledby:` when there is one; an unnamed tablist is an unnamed group of buttons.

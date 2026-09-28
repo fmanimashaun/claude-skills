@@ -12924,8 +12924,11 @@ boot/validation path — with a bullet each so the promotion could close them se
   component's own `scroll-x` wrapper, which every table there goes through) and 1 `tablist-scroll` (its settings
   strip). Real runs caught four defects in the check itself — a single-line render match that found 3 of the 22,
   two mailer layouts reported as missing a details card, the app's own `scroll-x` read as no scroller at all, and a
-  substring match that called `table_component` a tab strip — and each now has a fixture. Twelve mutations, all
-  caught. `/design-flow:mobile` step 5 now scaffolds designed summary cards.
+  substring match that called `table_component` a tab strip — and each now has a fixture. Independent review then
+  found a fifth — a "New" button opening the modal satisfied `table-no-details` while every row still linked to a
+  show page — so a modal link that is a CRUD action (`new_*`/`edit_*`, `/new`, `/edit`, a delete method) no longer
+  counts; the same review added a tablist nested in a scroller and `min-w-*` on `th`/`td`/`col`. Fifteen mutations,
+  all caught. `/design-flow:mobile` step 5 now scaffolds designed summary cards.
 
 ### 1.44.2 (release v1.151.0) — 2026-09-26
 
@@ -15844,7 +15847,11 @@ boot/validation path — with a bullet each so the promotion could close them se
   (absolute) — doctrine-verifier CONFIRMED against CSS 2.1 §10.1 and CSS Positioned Layout 3 §containing block. *Tabs*
   (the maintainer's scope addition on #1391) reverses "the tablist scrolls": at most four tabs in one row that
   never wraps or scrolls, regrouped rather than overflowed, and a single labelled picker below 768px — and
-  `Ui::Tabs`'s implementation drops `overflow-x-auto` and renders that picker. The one
+  `Ui::Tabs`'s implementation drops `overflow-x-auto` (and `cluster`, which wraps) and renders that picker, with
+  its contract with `tabs#select` written out. From independent review: the inset is the floor **plus** the safe
+  area, not the larger of the two; `shell` now carries that gutter; the Modal panel is `max-h-full` with a
+  scrolling body so a short viewport keeps its top inset; and a table row is made clickable by a `row-link`
+  Stimulus controller rather than a stretched overlay on a `<tr>`, which this kit has not verified. The one
   external claim proposed for the rewrite, that screen readers do not reliably announce CSS `content:` labels, came
   back **REFUTED** from doctrine-verifier (accname 1.2 §4.3.2 includes generated content; WCAG F87 is marked
   obsolete), so it was dropped and only the rule "labels are real elements" remains. Our own design, no upstream:
