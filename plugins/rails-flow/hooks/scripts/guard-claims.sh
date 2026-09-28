@@ -58,8 +58,8 @@ fi
 # THE REPO'S OWN PR TEMPLATE (#1389). A downstream pr-reviewer BLOCKED 5 of 5 PRs in a day for the
 # same finding -- the body lacked the template's sections -- and 3 had merged without them. The rule
 # was prose, followed 0 times in 5. Its sections are read from the template, never hardcoded; a
-# `## If ...` section is conditional by its own wording; a section that does not apply stays and
-# says N/A. PR bodies only: an issue comment has no template. Dormant with no template.
+# section the template marks conditional ('If ...', 'Optional', '(optional)', '(if ...)') may be left
+# out; a section that does not apply stays and says N/A. PR bodies only: an issue comment has no template. Dormant with no template.
 if printf '%s' "$cmd" | grep -qE '\bgh[[:space:]]+pr[[:space:]]+(create|edit)\b'; then
   tpl_lib="$(dirname "$0")/lib/pr_template.py"
   root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
@@ -68,12 +68,16 @@ if printf '%s' "$cmd" | grep -qE '\bgh[[:space:]]+pr[[:space:]]+(create|edit)\b'
   # silently through a fail-closed hook (pre-release review of #1398).
   # `-R/--repo` targets another repository, whose template this checkout does not have: say so rather
   # than judge the body against the wrong template (pre-release review of #1398).
-  if printf '%s' "$cmd" | grep -qE '(^|[[:space:]])(-R|--repo)([[:space:]=])'; then
+  # Only the `gh pr create|edit` segment's own flags: an unrelated `grep -R` earlier in the chain, or
+  # an `-R` inside a heredoc body, must not switch the check off (second pre-release review).
+  pr_seg="$(printf '%s' "$cmd" | grep -oE 'gh[[:space:]]+pr[[:space:]]+(create|edit)[^;&|]*' | head -1)"
+  if printf '%s' "$pr_seg" | grep -qE '(^|[[:space:]])(-R|--repo)'; then
     echo "rails-flow: PR-template sections NOT checked (-R/--repo targets another repository's template)." >&2
   elif [ ! -f "$tpl_lib" ] || ! command -v python3 >/dev/null 2>&1; then
     echo "rails-flow: PR-template sections NOT checked (lib/pr_template.py or python3 unavailable)." >&2
   else
     gaps="$(python3 "$tpl_lib" "$root" "$body" 2>/dev/null)"; tpl_rc=$?
+    # pr_template.py exits 1 ONLY with the missing sections listed; any failure to judge is exit 3.
     if [ "$tpl_rc" -ne 0 ] && [ "$tpl_rc" -ne 1 ]; then
       echo "rails-flow: PR-template sections NOT checked (pr_template.py exited $tpl_rc); check the body by hand." >&2
     elif [ "$tpl_rc" -eq 1 ] && [ -n "$gaps" ]; then

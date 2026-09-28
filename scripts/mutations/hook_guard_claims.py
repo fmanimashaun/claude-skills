@@ -25,6 +25,12 @@ GUARD = Guard(
            # ci-verdict-hint.sh runs it; unstaged, every mutation here read as caught (#1173).
            "plugins/rails-flow/scripts/ci_verdict_hint.py"),
     mutations=(
+        Mutation(
+            "-R is read from the whole compound command again, so an unrelated grep -R skips the check",
+            "  if printf '%s' \"$pr_seg\" | grep -qE '(^|[[:space:]])(-R|--repo)'; then",
+            "  if printf '%s' \"$cmd\" | grep -qE '(^|[[:space:]])(-R|--repo)'; then",
+            "an unrelated `grep -R` earlier in the chain does not switch the check off",
+        ),
         # #1389: the template check, removed from the hook -- the prose rule it replaced was
         # followed 0 times in 5 downstream PRs.
         Mutation(
@@ -35,7 +41,7 @@ GUARD = Guard(
         ),
         Mutation(
             "-R/--repo is no longer recognised, so another repository's PR is judged by this template",
-            "  if printf '%s' \"$cmd\" | grep -qE '(^|[[:space:]])(-R|--repo)([[:space:]=])'; then",
+            "  if printf '%s' \"$pr_seg\" | grep -qE '(^|[[:space:]])(-R|--repo)'; then",
             "  if false; then",
             "-R targets another repo, so its template is not judged here",
         ),

@@ -14,8 +14,9 @@ remembered.
 
 THE TEMPLATE IS THE AUTHORITY, AND IT IS READ, NEVER HARDCODED. Its `##` headings are required,
 with two refinements the templates themselves demand:
-  * a section headed `## If …` is conditional by its own wording ("If this touches skills/**"), so
-    it may be left out;
+  * a section the template marks conditional may be left out: a heading that starts with "If",
+    "Optional" or "Optionally" (after any decoration such as `**If**` or an emoji), or that carries
+    "(optional…)" or "(if …)";
   * a heading matches on its CORE text, before an em dash, a colon or a parenthesis, and case-
     and punctuation-insensitively, so "Change type — required, before the first edit" in the
     template is satisfied by "## Change type" in the body.
@@ -70,13 +71,18 @@ def headings(text: str, level: str | None = None) -> list[str]:
 # A section the template itself marks conditional may be left out. Judged on the FULL heading, before
 # `core()` drops the parenthesis: "Screenshots (if applicable)" and "Related issues (optional)" are
 # common downstream, and trimming first made them required (pre-release review of #1398).
-CONDITIONAL = re.compile(r"^\s*(if|optional)\b|\((optional|if\b[^)]*)\)", re.I)
+CONDITIONAL = re.compile(r"^\s*(if|optional(ly)?)\b|\((optional\b|if\b)[^)]*\)", re.I)
+
+
+def conditional(heading: str) -> bool:
+    """Marked conditional on the raw heading OR its core text, so `**If** …` and `🔧 If …` still count."""
+    return bool(CONDITIONAL.search(heading) or CONDITIONAL.search(core(heading)))
 
 
 def missing(template_text: str, body_text: str) -> list[str]:
     have = {core(h) for h in headings(body_text)}
     return [h for h in headings(template_text, "##")
-            if not CONDITIONAL.search(h) and core(h) and core(h) not in have]
+            if not conditional(h) and core(h) and core(h) not in have]
 
 
 def selftest() -> int:
@@ -112,6 +118,18 @@ def selftest() -> int:
     check_that("CONTROL: (if applicable), (optional) and a leading Optional mark a section conditional",
                missing(opt, "## Summary\nx\n") == [], missing(opt, "## Summary\nx\n"))
     check_that("...while an unmarked parenthesis does not", missing("## Proof (screens)\n", "## Summary\n") == ["Proof (screens)"])
+    deco = "## **If** this touches skills\n\n## 🔧 If UI changed\n\n## Notes (optional, for UI)\n\n## Optionally, a GIF\n"
+    check_that("CONTROL: decorated and qualified conditional headings may be left out",
+               missing(deco, "## Summary\n") == [], missing(deco, "## Summary\n"))
+
+    with tempfile.TemporaryDirectory() as tmp:
+        d = Path(tmp)
+        (d / ".github").mkdir()
+        (d / ".github/pull_request_template.md").write_text("## What changed\n")
+        (d / "stray.md").write_bytes(b"\xff\xfe## What changed\nx\n")
+        check_that("a body with stray bytes is still judged (not a crash)", main([str(d), str(d / "stray.md")]) in (0, 1))
+        check_that("a body that cannot be read is exit 3 (not judged), never exit 1",
+                   main([str(d), str(d / "no-such-dir")]) == 3 and main([str(d), str(d)]) == 3)
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -129,6 +147,17 @@ def selftest() -> int:
 def main(argv: list[str]) -> int:
     if argv[:1] == ["--selftest"]:
         return selftest()
+    # Exit 1 means "these sections are missing" and nothing else. Any failure to judge (an unreadable
+    # body, a directory, a bug) is exit 3, so the hook says NOT checked instead of reading an empty
+    # exit 1 as a pass (second pre-release review of #1398).
+    try:
+        return _judge(argv)
+    except Exception as exc:  # noqa: BLE001 -- the contract is "judged or said not judged"
+        print(f"pr_template: could not judge the body: {exc}", file=sys.stderr)
+        return 3
+
+
+def _judge(argv: list[str]) -> int:
     if len(argv) != 2:
         print("usage: pr_template.py <repo-root> <body-file>", file=sys.stderr)
         return 2

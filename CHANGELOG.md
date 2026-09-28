@@ -3526,13 +3526,19 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   - 11 helper selftest cases and 5 end-to-end hook fixtures. Mutations: 7 of 7 on the helper, 2 new on the hook.
     Doctor gate "rails-flow PR-template sections".
   - **Three defects the independent pre-release review found, fixed before release.**
-    1. The hook tested only stdout, so a helper crash (a body with stray bytes) or a missing helper passed silently
-       through a fail-closed hook. It now reads the exit status and says "NOT checked" out loud.
+    1. A helper crash (a body with stray bytes, a directory) or a missing helper passed silently through a
+       fail-closed hook. The helper now reads bodies with `errors="replace"` and turns any failure to judge into
+       exit 3 (exit 1 means only "these sections are missing"), and the hook says "NOT checked" for anything but 0
+       or 1.
     2. Only `## If …` counted as conditional, so a downstream template's `(if applicable)` / `(optional)` sections
        were demanded. Conditional is now judged on the full heading.
-    3. `gh pr create -R other/repo` was judged against this checkout's template. It is now reported as not checked.
+    3. `gh pr create -R other/repo` (or `-Rother/repo`) was judged against this checkout's template. It is now
+       reported as not checked. Only the `gh pr` segment's own flags count, so an unrelated `grep -R` in the chain
+       does not switch the check off.
+    4. Conditional is judged on the heading and its core text, so `**If** …`, `🔧 If …`, `(optional, for UI)` and
+       `Optionally …` count too.
 
-    3 more end-to-end hook fixtures (the harness runs 139 checks) and 2 more mutations.
+    6 more end-to-end hook fixtures (the harness runs 142 checks); guards: 11 of 11 on the helper, 6 of 6 on the hook.
 
 - **Every per-PR review pass saves its findings, apart from a full review's — `plugins/rails-flow/agents/code-reviewer.md`,
   `plugins/rails-flow/agents/pr-reviewer.md`, `plugins/rails-flow/agents/spec-reviewer.md`,

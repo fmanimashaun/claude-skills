@@ -410,7 +410,8 @@ def guard_bash_fixtures() -> None:
 
 
 def guard_claims_fixtures() -> None:
-    def run(cmd: str, body: str | None = None, env_extra=None, template: str | None = None) -> int:
+    def run(cmd: str, body: str | None = None, env_extra=None, template: str | None = None,
+            with_output: bool = False):
         with tempfile.TemporaryDirectory() as td:
             if template is not None:
                 (Path(td) / ".github").mkdir()
@@ -418,10 +419,12 @@ def guard_claims_fixtures() -> None:
             if body is not None:
                 (Path(td) / "body.md").write_text(body, encoding="utf-8")
                 cmd = cmd.replace("BODY", str(Path(td) / "body.md"))
-            return run_hook("guard-claims.sh", cwd=Path(td),
+            cmd = cmd.replace("BODYDIR", td)
+            done = run_hook("guard-claims.sh", cwd=Path(td),
                             stdin=json.dumps({"tool_input": {"command": cmd}}),
                             env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1]),
-                                       **(env_extra or {})})[0]
+                                       **(env_extra or {})})
+            return done if with_output else done[0]
 
     NUMERIC = "The selftest reports **292 assertions**, up from 285.\n"
     CHECKED = NUMERIC + "Verified against the v1.134.0 tag.\n"
@@ -471,6 +474,16 @@ def guard_claims_fixtures() -> None:
               template=TPL) == 0, "exit 2")
     check("guard-claims: ...and without -R the same body is blocked (control)",
           run("gh pr create --base dev --body-file BODY", "## What changed\nx\n", template=TPL) == 2, "exit 0")
+    # Second pre-release review: a crash is said out loud, and -R is read from the gh segment only.
+    rc, out = run("gh pr create --base dev --body-file BODYDIR", None, template=TPL, with_output=True)
+    check("guard-claims: a body the helper cannot judge (a directory) says NOT checked, never silence",
+          rc == 0 and "NOT checked" in out, f"exit {rc}: {out[-120:]}")
+    check("guard-claims: an unrelated `grep -R` earlier in the chain does not switch the check off",
+          run("grep -R TODO . >/dev/null; gh pr create --base dev --body-file BODY", "## What changed\nx\n",
+              template=TPL) == 2, "exit 0")
+    check("guard-claims: the attached form -Rother/repo is another repository too",
+          run("gh pr create -Rother/repo --base dev --body-file BODY", "## What changed\nx\n",
+              template=TPL) == 0, "exit 2")
     check("guard-claims: an issue comment is not held to the PR template",
           run("gh issue comment 5 --body-file BODY", "Tidy the README.\n", template=TPL) == 0, "exit 2")
     # OUT OF SCOPE, AND THE BODY MUST CARRY A CLAIM. A first draft passed a claim-FREE body here,
