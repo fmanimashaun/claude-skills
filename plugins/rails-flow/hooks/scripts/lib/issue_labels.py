@@ -14,6 +14,15 @@ THE DECLARATION: `.rails-flow/issue-labels.json` at the project root.
 A value ending in `*` is a prefix (`comp:*`). A group with `when` applies only if that label is set.
 Undeclared, or `-R/--repo` naming another repository (whose taxonomy is not ours): at least one label.
 
+THE DECLARATION IS THE TARGET REPOSITORY'S, not the session's (#1400). A coordinator working from one
+checkout runs `cd /path/to/other-repo && gh issue create ...`; the issue lands in the other repo, so
+its labels answer to the other repo's declaration. The hook used to read the session's file, refused
+a correctly labelled issue, and asked for labels the other repo does not have. So each create is
+tied to the directory it runs in: a `cd` earlier in the same command moves it, and that directory's
+git toplevel supplies both the declaration and the "is this our repo" answer for `-R`. A `cd` whose
+target cannot be resolved here (a `$VAR`, a missing path) is refused and named, because guessing
+would apply one repo's rules to another's issue -- the defect itself, in a different direction.
+
 Called by guard-bash.sh with the RAW command on stdin (the normalised form strips quotes, and a label
 value is usually quoted). Prints the refusal and exits 1; exits 0 to allow. The hook fails closed on
 any other exit.
@@ -24,6 +33,7 @@ Run:  issue_labels.py [--root DIR] < command.txt
 from __future__ import annotations
 
 import json
+import os
 import re
 import shlex
 import subprocess
@@ -58,26 +68,66 @@ def strip_heredocs(cmd: str) -> str:
     return "\n".join(out)
 
 
-def issue_creates(cmd: str) -> list[list[str]]:
-    """The argv of every `gh issue create` in the command, split on shell operators."""
+def issue_creates(cmd: str) -> list[tuple[list[str], str | None]]:
+    """(argv, the `cd` target in force) for every `gh issue create`, split on shell operators.
+
+    The `cd` target is the raw operand of the last `cd` before the create, or None when there was
+    none. Subshell parentheses are peeled off, so `(cd x && gh issue create ...)` reads the same.
+    """
     cmd = strip_heredocs(cmd)
     try:
         lexer = shlex.shlex(cmd, posix=True, punctuation_chars=";&|")
         lexer.whitespace_split = True
         tokens = list(lexer)
     except ValueError:
-        return [["__unparseable__"]]
-    out, cur = [], []
+        return [(["__unparseable__"], None)]
+    out, cur, cd = [], [], None
     for tok in tokens + [";"]:
         if tok and set(tok) <= set(";&|"):
-            for i in range(len(cur) - 2):
-                if cur[i] == "gh" and cur[i + 1] == "issue" and cur[i + 2] == "create":
-                    out.append(cur[i + 3:])
+            seg = [x.strip("()") for x in cur]
+            seg = [x for x in seg if x]
+            if seg and seg[0] == "cd":
+                target = next((x for x in seg[1:] if not x.startswith("-")), "~")
+                cd = target if cd is None or target.startswith(("/", "~", "$")) else f"{cd}/{target}"
+            for i in range(len(seg) - 2):
+                if seg[i] == "gh" and seg[i + 1] == "issue" and seg[i + 2] == "create":
+                    out.append((seg[i + 3:], cd))
                     break
             cur = []
         else:
             cur.append(tok)
     return out
+
+
+def target_root(cd: str | None, root: Path) -> tuple[Path | None, str]:
+    """The repository a create runs in: `root` without a `cd`, else the cd target's git toplevel."""
+    if cd is None:
+        return root, ""
+    if "$" in cd or "`" in cd:
+        return None, (f"cannot tell which repository `cd {cd}` enters, so its label rules are unknown. "
+                      "Use a literal path.")
+    path = Path(os.path.expanduser(cd))
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    if not path.is_dir():
+        return None, f"`cd {cd}` names no directory, so its label rules are unknown."
+    try:
+        top = subprocess.run(["git", "-C", str(path), "rev-parse", "--show-toplevel"],
+                             capture_output=True, text=True, timeout=10).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        top = ""
+    return (Path(top) if top else path.resolve()), ""
+
+
+def load_groups(target: Path) -> tuple[list | None, str]:
+    config_path = target / CONFIG
+    if not config_path.is_file():
+        return None, ""
+    try:
+        return json.loads(config_path.read_text(encoding="utf-8"))["groups"], ""
+    except (ValueError, KeyError, TypeError) as exc:
+        where = CONFIG if target == Path(".").resolve() else target / CONFIG
+        return None, f"{where} is unreadable ({exc}); fix it so labels can be checked"
 
 
 def parse_args(args: list[str]) -> tuple[list[str], str | None]:
@@ -122,17 +172,16 @@ def verdict(cmd: str, root: Path) -> tuple[bool, str]:
     creates = issue_creates(cmd)
     if not creates:
         return True, ""
-    config_path = root / CONFIG
-    groups = None
-    if config_path.is_file():
-        try:
-            groups = json.loads(config_path.read_text(encoding="utf-8"))["groups"]
-        except (ValueError, KeyError, TypeError) as exc:
-            return False, f"{CONFIG} is unreadable ({exc}); fix it so labels can be checked"
-    mine = own_repo(root)
-    for args in creates:
+    for args, cd in creates:
         if args == ["__unparseable__"]:
             return False, "the gh issue create command could not be parsed, so its labels cannot be checked"
+        target, why = target_root(cd, root)
+        if target is None:
+            return False, why
+        groups, why = load_groups(target)
+        if why:
+            return False, why
+        mine = own_repo(target)
         labels, repo = parse_args(args)
         foreign = repo is not None and repo != mine
         if not labels:
@@ -146,8 +195,9 @@ def verdict(cmd: str, root: Path) -> tuple[bool, str]:
             allowed = g.get("one_of") or []
             if not any(matches(l, p) for l in labels for p in allowed):
                 scope = f" (because it is `{g['when']}`)" if g.get("when") else ""
+                decl = CONFIG if cd is None else target / CONFIG
                 return False, (f"`gh issue create` needs one of {', '.join(allowed)}{scope}; it has "
-                               f"{', '.join(labels)}. Declared in {CONFIG}.")
+                               f"{', '.join(labels)}. Declared in {decl}.")
     return True, ""
 
 
@@ -222,6 +272,40 @@ def selftest() -> int:
         check("a <<- heredoc (tab-indented close) is stripped too", not ok and "no --label" in why, why)
         ok, why = verdict("gh issue create -t \"X --label feature", r)
         check("CONTROL: a genuinely unparseable create still refuses", not ok and "could not be parsed" in why, why)
+        # ---- #1400: the TARGET repository's declaration, not the session's ------------------------
+        # The reported case: a skills session files a correctly labelled Retask issue.
+        rt = "gh issue create -t X --label enhancement --label needs-decision"
+        ok, why = verdict(rt, s)
+        check("CONTROL: those labels fail the session's own declaration", not ok and "comp:*" in why, why)
+        ok, why = verdict(f"cd {r} && {rt}", s)
+        check("cd into another repo: that repo's declaration applies, and passes", ok, why)
+        ok, why = verdict(f"cd {r} && gh issue create -t X --label bug", s)
+        check("...and that repo's rules still refuse, naming its file",
+              not ok and "severity:s1" in why and str(r) in why, why)
+        check("a subshell cd reads the same", verdict(f"(cd {r} && {rt})", s)[0])
+        check("a cd separated by ; reads the same", verdict(f"cd {r}; {rt}", s)[0])
+        subprocess.run(["git", "init", "-q", str(r)], check=True)
+        (r / "app" / "models").mkdir(parents=True)
+        # Discriminating on purpose: a subdirectory with no declaration of its own would read as
+        # UNDECLARED, where one label passes -- so the fixture must be one only the toplevel refuses.
+        ok, why = verdict(f"cd {r}/app/models && gh issue create -t X --label bug", s)
+        check("a cd into a SUBDIRECTORY finds the repo's toplevel declaration",
+              not ok and "severity:s1" in why, why)
+        check("...and passes what the toplevel allows", verdict(f"cd {r}/app/models && {rt}", s)[0])
+        here = Path.cwd()
+        try:
+            os.chdir(td)
+            check("a relative cd resolves from where the command runs", verdict(f"cd retask && {rt}", s)[0],
+                  verdict(f"cd retask && {rt}", s)[1])
+        finally:
+            os.chdir(here)
+        ok, why = verdict(f"cd $OTHER && {rt}", s)
+        check("a cd to a variable is refused, not guessed", not ok and "cannot tell" in why, why)
+        ok, why = verdict(f"cd {td}/nowhere && {rt}", s)
+        check("a cd to a missing directory is refused", not ok and "names no directory" in why, why)
+        check("CONTROL: a create with no cd still uses the session's declaration",
+              not verdict(rt, s)[0] and verdict(f"cd {r} && {rt}", s)[0])
+
         (r / CONFIG).write_text("{not json", encoding="utf-8")
         check("an unreadable declaration refuses rather than allowing",
               not verdict("gh issue create -t X --label feature", r)[0])
