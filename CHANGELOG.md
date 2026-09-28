@@ -3500,14 +3500,17 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     guessed, when:
     - the `cd` is inside `( … )` (the create after the `)` is judged in the session), in a pipeline, or behind `&`;
     - it is `cd -`, `popd` or a `$VAR`;
-    - it may never have run (a conditional `cd` before a `;`), or the create runs only if the `cd` failed (`||`).
+    - it may never have run: a conditional `cd` before a `;`, a `cd` after `||`, or one inside an `if`/`while`/`for`/
+      `case`/`{ }`/function body (those keywords are counted, so a top-level `cd` after the block is followed);
+    - the create runs only if the `cd` failed (`cd x || gh …`).
   - **Also handled:** newlines separate commands; `pushd`, `builtin cd` and `command cd` move like `cd`; glued
     punctuation such as `);` is split. Unsplit, it hid the create entirely, and an unseen create was let through.
   - **`-R` / `GH_REPO`.** A repo named that way decides where the issue lands. If it is the session's own, the
     session's rules apply from any directory. A foreign one still needs one label, as before; it never applied the
     session's groups. The -R finding is recorded on #1400.
-  - **Tests.** 28 new selftest cases and 3 end-to-end hook fixtures. Mutations: 15 new, 24 of 24 caught. An
-    independent review found the subshell, `cd -` and `-R` holes before merge.
+  - **Tests.** 35 new selftest cases and 3 end-to-end hook fixtures. Mutations: 19 new, 28 of 28 caught. Two
+    independent reviews found the subshell, `cd -`, `-R`, `||` and compound-body holes before merge. A create inside
+    `sh -c`/`eval` is never checked, on dev as well; that is filed as #1423.
 
 - **`/rails-flow:slice` breaks a spec, brief or issue into dependency-ordered vertical slices and files them —
   `plugins/rails-flow/commands/slice.md`, `plugins/rails-flow/scripts/check_slices.py`,

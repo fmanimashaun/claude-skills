@@ -81,8 +81,8 @@ GUARD = Guard(
         ),
         Mutation(
             "an unresolvable cd is guessed instead of refused",
-            '                    or "$" in target or "`" in target or cd == UNKNOWN:',
-            "                    or cd == UNKNOWN:",
+            '                    or "$" in target or "`" in target or cd == UNKNOWN or depth > 0:',
+            "                    or cd == UNKNOWN or depth > 0:",
             "a cd to a variable is refused, not guessed",
         ),
         # #1400 review: each way an uncertain cd would be GUESSED instead of refused.
@@ -100,14 +100,14 @@ GUARD = Guard(
         ),
         Mutation(
             "a cd in a pipeline is followed",
-            '            if before in ("|", "&") or after in ("|", "&") or seg[0] == "popd" or target == "-" \\',
+            '            if before in ("|", "&", "||") or after in ("|", "&") or seg[0] == "popd" or target == "-" \\',
             '            if seg[0] == "popd" or target == "-" \\',
             "refused: a cd in a pipeline",
         ),
         Mutation(
             "cd - is read as a directory",
-            '            if before in ("|", "&") or after in ("|", "&") or seg[0] == "popd" or target == "-" \\',
-            '            if before in ("|", "&") or after in ("|", "&") or seg[0] == "popd" \\',
+            '            if before in ("|", "&", "||") or after in ("|", "&") or seg[0] == "popd" or target == "-" \\',
+            '            if before in ("|", "&", "||") or after in ("|", "&") or seg[0] == "popd" \\',
             "refused: cd - names no visible directory",
         ),
         Mutation(
@@ -133,6 +133,30 @@ GUARD = Guard(
             "        repo = repo or env_repo",
             "        repo = repo",
             "refused: GH_REPO naming the session's own repo keeps its rules",
+        ),
+        Mutation(
+            "a cd after || is followed as though it ran",
+            '            if before in ("|", "&", "||") or after in ("|", "&") or seg[0] == "popd" or target == "-" \\',
+            '            if before in ("|", "&") or after in ("|", "&") or seg[0] == "popd" or target == "-" \\',
+            "refused: a cd after || runs only if the command before it failed",
+        ),
+        Mutation(
+            "a cd inside a compound body is followed as though it ran",
+            '                    or "$" in target or "`" in target or cd == UNKNOWN or depth > 0:',
+            '                    or "$" in target or "`" in target or cd == UNKNOWN:',
+            "refused: a cd inside an if body may never have run",
+        ),
+        Mutation(
+            "the command after if/while is dropped, so a cd in a condition is never seen",
+            '            if word in ("for", "select", "case", "function"):',
+            '            if word in OPEN and word != "{":',
+            "refused: a cd in an if condition is not dropped",
+        ),
+        Mutation(
+            "closing keywords are not counted, so every cd after a block reads as inside it",
+            "            depth += 1 if word in OPEN else (-1 if word in CLOSE else 0)",
+            "            depth += 1 if word in OPEN else 0",
+            "CONTROL: a top-level cd after a closed if is followed",
         ),
         Mutation(
             "newlines stop separating commands",

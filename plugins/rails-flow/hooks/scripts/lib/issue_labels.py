@@ -83,7 +83,11 @@ def issue_creates(cmd: str) -> list[tuple[list[str], str | None, str | None]]:
       * a `cd` after `&&`/`||` holds for creates chained to it by `&&`, and is UNKNOWN past a
         later `;` or newline, where it may never have run; a create after `cd x ||` is UNKNOWN;
       * `cd -`, `popd` and a `$VAR` operand name no directory the text can see: UNKNOWN;
-      * `pushd` moves like `cd`; `builtin cd` and `command cd` are `cd`.
+      * `pushd` moves like `cd`; `builtin cd` and `command cd` are `cd`;
+      * a `cd` after `||` runs only if what came before FAILED: UNKNOWN;
+      * a `cd` inside a compound body (`if`/`while`/`for`/`case`/`{ }`/a function) may never run,
+        or run once per loop: UNKNOWN. The body's keywords are counted, so the tracker knows when
+        it is back at the top level.
     """
     cmd = strip_heredocs(cmd).replace("\\\n", " ").replace("\n", " ; ")
     try:
@@ -125,7 +129,11 @@ def issue_creates(cmd: str) -> list[tuple[list[str], str | None, str | None]]:
     def op_at(k: int) -> str | None:
         return items[k][1] if 0 <= k < len(items) and items[k][0] == "op" else None  # type: ignore[return-value]
 
+    OPEN = {"if", "while", "until", "for", "select", "case", "{", "function"}
+    CLOSE = {"fi", "done", "esac", "}"}
+    LEAD = {"then", "else", "elif", "do", "!"}     # prefix the command that follows them
     out: list[tuple[list[str], str | None, str | None]] = []
+    depth = 0
     cd: str | None = None
     conditional = False
     stack: list[tuple[str | None, bool]] = []
@@ -144,6 +152,15 @@ def issue_creates(cmd: str) -> list[tuple[list[str], str | None, str | None]]:
                 cd, conditional = UNKNOWN, False
             continue
         seg = list(val)  # type: ignore[arg-type]
+        while seg and (seg[0] in OPEN or seg[0] in CLOSE or seg[0] in LEAD):
+            word = seg.pop(0)
+            depth += 1 if word in OPEN else (-1 if word in CLOSE else 0)
+            if word in ("for", "select", "case", "function"):
+                seg = []           # the rest is a word list, a case word or a name: no command here
+                break
+            # After `if` / `while` / `until` comes a real command -- it may be a cd -- now inside the
+            # block (depth > 0), so a cd there is UNKNOWN rather than dropped.
+        depth = max(depth, 0)
         env = {}
         while seg and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", seg[0]):
             name, _, value = seg.pop(0).partition("=")
@@ -154,8 +171,8 @@ def issue_creates(cmd: str) -> list[tuple[list[str], str | None, str | None]]:
         if seg and seg[0] in ("cd", "pushd", "popd"):
             operands = [x for x in seg[1:] if x == "-" or not x.startswith("-")]
             target = operands[0] if operands else ("~" if seg[0] == "cd" else "-")
-            if before in ("|", "&") or after in ("|", "&") or seg[0] == "popd" or target == "-" \
-                    or "$" in target or "`" in target or cd == UNKNOWN:
+            if before in ("|", "&", "||") or after in ("|", "&") or seg[0] == "popd" or target == "-" \
+                    or "$" in target or "`" in target or cd == UNKNOWN or depth > 0:
                 cd = UNKNOWN
             elif cd is None or target.startswith(("/", "~")):
                 cd = target
@@ -407,6 +424,14 @@ def selftest() -> int:
         refused("a create that runs only if the cd failed", f"cd {u} || {one}", "cannot tell")
         refused("-R naming the session's own repo keeps its rules", f"cd {u} && {one} -R me/skills", "type:*")
         refused("GH_REPO naming the session's own repo keeps its rules", f"cd {u} && GH_REPO=me/skills {one}", "type:*")
+        refused("a cd after || runs only if the command before it failed", f"true || cd {u} && {one}", "cannot tell")
+        refused("a cd inside an if body may never have run", f"if false; then\n cd {u}\nfi\n{one}", "cannot tell")
+        refused("a cd inside a while body may never have run", f"while false; do\ncd {u}\ndone\n{one}", "cannot tell")
+        refused("a cd inside a function body runs only when it is called", f"f() {{\n cd {u}\n}}\n{one}", "cannot tell")
+        refused("a cd inside a case arm may never have run", f"case x in\n y) cd {u};;\nesac\n{one}", "cannot tell")
+        refused("a cd in an if condition is not dropped", f"if cd {u}; then {one}; fi", "cannot tell")
+        check("CONTROL: a top-level cd after a closed if is followed",
+              verdict(f"if true; then echo; fi\ncd {r} && {rt}", s)[0], verdict(f"if true; then echo; fi\ncd {r} && {rt}", s)[1])
         check("a newline separates commands, so a cd on its own line is followed",
               verdict(f"echo hi\ncd {r} && {rt}", s)[0], verdict(f"echo hi\ncd {r} && {rt}", s)[1])
         # The cd must itself be CONDITIONAL (behind &&) for the continuation rule to matter.
