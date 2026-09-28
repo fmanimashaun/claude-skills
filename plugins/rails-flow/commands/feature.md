@@ -51,7 +51,14 @@ way round.
 
 ## Phase 1 — Plan (delegated exploration)
 
-**If a spec exists, plan from it** (`docs/product/specs/<slug>.md`, written by `/rails-flow:spec`,
+**If the issue is a slice** (its body opens `Slice S<n> of <spec>`, filed by `/rails-flow:slice`,
+#1369), **its `AC-n` lines are this unit's criteria**, copied verbatim into
+`docs/product/acceptance/<branch-slug>.md`. They are the criteria the owner approved for this slice
+alone. The spec then supplies only the `Seam:`, the Out of scope and the decisions, never more
+criteria; turning every story in the spec into criteria would build other slices' work on this
+branch and break the order `/slice` filed.
+
+**Otherwise, if a spec exists, plan from it** (`docs/product/specs/<slug>.md`, written by `/rails-flow:spec`,
 #1375). Its stories become the criteria, its Testing decisions' `Seam:` is where the specs go, and
 its Out of scope bounds the plan. Do not re-derive in the session what the spec already decided. If
 the feature needs decisions no spec records, and it is more than one slice, offer
@@ -67,7 +74,7 @@ schema impact. Then produce a short plan:
 
 ### Acceptance criteria — write them BEFORE any code
 
-Every unit gets criteria, recorded in `docs/product/acceptance/<branch-slug>.md` (the layout's home for WHAT we are\nbuilding; a pre-layout `docs/acceptance/` is still recognised by the gate, #910) — the slug is the
+Every unit gets criteria, recorded in `docs/product/acceptance/<branch-slug>.md` (the layout's home for WHAT we are building; a pre-layout `docs/acceptance/` is still recognised by the gate, #910) — the slug is the
 branch name after `feature/`, with any remaining `/` flattened to `-` (so `feature/team/foo`
 → `docs/product/acceptance/team-foo.md`). One `##` section per unit:
 

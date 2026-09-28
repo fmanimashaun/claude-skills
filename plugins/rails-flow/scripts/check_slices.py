@@ -88,8 +88,12 @@ def parse(text: str) -> tuple[list[Slice], list[int]]:
     slices: list[Slice] = []
     orphans: list[int] = []
     current: Slice | None = None
+    fence: str | None = None     # the info string of the open fence, "" for a plain one
     for no, raw in enumerate(text.splitlines(), start=1):
-        m = SLICE_RE.match(raw)
+        f = re.match(r"^[ \t]*```[ \t]*(\w*)", raw)
+        if f:
+            fence = None if fence is not None else f.group(1)
+        m = SLICE_RE.match(raw) if fence is None else None
         if m:
             current = Slice(m.group(1), m.group(2), no)
             slices.append(current)
@@ -101,6 +105,11 @@ def parse(text: str) -> tuple[list[Slice], list[int]]:
                 orphans.append(no)
             continue
         current.body.append(raw)
+        # A `depends-on:` inside a plain or code fence is a SAMPLE, not an edge. check_issue_ready.py
+        # strips every non-`deps` fence, so counting it here would put an edge in the plan that the
+        # filed issue drops (pre-release review of #1397).
+        if fence not in (None, "deps"):
+            continue
         if EDGE_LINE.match(raw):
             strict = EDGE_STRICT.match(raw)
             if not strict:
@@ -330,6 +339,16 @@ def selftest() -> int:  # noqa: PLR0915 -- a fixture list; each firing case sits
         sl, fs = check(clean)
         check_that("a well-formed plan has no findings", fs == [], fs)
         check_that("...and orders blockers first", order(sl) == ["S1", "S2", "S3"], order(sl))
+        # Pre-release review of #1397: a `depends-on:` inside a plain fence is a sample, not an edge,
+        # exactly as check_issue_ready.py reads the filed body; a `deps` fence is an edge.
+        sample = "## S1 — First\n\n```\ndepends-on: S9\n```\n"
+        check_that("a depends-on inside a plain fence is not an edge",
+                   parse(sample)[0][0].slices == [], parse(sample)[0][0].slices)
+        deps = "## S1 — First\n\n```deps\ndepends-on: #93\n```\n"
+        check_that("CONTROL: a depends-on inside a deps fence is an edge",
+                   parse(deps)[0][0].issues == ["#93"], parse(deps)[0][0].issues)
+        check_that("CONTROL: a bare depends-on line is an edge",
+                   parse("## S1 — First\n\ndepends-on: #93\n")[0][0].issues == ["#93"])
         # Order follows the edges, not the numbering.
         sl2, _ = check(plan(_slice(1, deps="depends-on: S3"), _slice(2), _slice(3)))
         check_that("a slice numbered first but blocked by a later one is filed after it",
