@@ -3495,24 +3495,24 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   - **The bug.** `cd /path/to/other-repo && gh issue create ...` from one checkout was held to the session's
     `.rails-flow/issue-labels.json`. It refused a correctly labelled issue and asked for labels the other repo does
     not have.
-  - **The fix is an allowlist.** A create written `cd <literal path> && gh issue create …` is judged by that
-    directory's git toplevel. `cd` is the command's first word, `&&` joins it DIRECTLY to the create, and the
-    create is the segment's first word (a `GH_REPO=` prefix aside). Nothing may sit in between: `export GH_REPO=`,
-    `export GIT_DIR=`, `GIT_DIR=` and `env -C` each send the create elsewhere. A `cd` into another checkout of the
-    session's own repo keeps the session's rules. A command with no `cd` keeps the session's rules, as before.
-  - **Any other shape with a `cd` is refused, with the shape that works.** That includes `;`, a subshell, a
-    pipeline, `&`, `||`, a second `cd`, `cd -`, `$VAR`, `pushd`, `$(…)` or backticks, compound bodies, and any command
-    between the `cd` and the create.
-  - **Why an allowlist.** Three independent reviews of an earlier shell model (subshells, conditionals, block
-    keywords) each found a new leak: a `case` pattern's `)`, a `time` prefix, a quoted `fi`. A blocklist over shell
-    syntax never ends. A fourth review of the first allowlist found the in-between commands and the clone, and
-    those are why the shape is now exact.
-  - **Also.** `-R` / `GH_REPO` naming the session's own repo keeps its rules; a foreign one needs one label, as
-    before. An unterminated heredoc refuses only when it would hide a `gh issue create`, so `--body 'a<<EOF'` and
-    `$((1<<n))` are not parse errors. `<<<` is a herestring, not a heredoc: a pre-existing bug, fixed. A create
-    inside `sh -c`/`eval`, behind `/usr/bin/gh` or in backticks is never checked, on dev as well; that is filed as
-    #1423.
-  - **Tests.** 42 new selftest cases (63 in all), 3 end-to-end hook fixtures. Mutations: 16 new, 25 of 25 caught.
+  - **The fix.** A create written exactly `cd <literal path> && gh issue create …` is judged by that directory's
+    git toplevel when the issue certainly lands there:
+    - the create names no repo (`-R`, `--repo`, `GH_REPO`);
+    - the target has a remote;
+    - none of its remotes is the session's repo (gh may pick `upstream` over `origin`).
+  - **Every other command keeps the session's rules**, exactly as before. Five independent reviews of broader
+    versions each found a shape where another repo's rules were applied to an issue that did not land there: a
+    subshell `cd`, `cd -`, `||`, compound bodies, a `case` `)`, `time`, `export GIT_DIR=`, `env -C`, a clone, an
+    `upstream` remote. The session's rules are the check the same create gets with no `cd`, so the fallback cannot
+    let anything through, and it refuses nothing that dev allows.
+  - **Also fixed.**
+    - Repo names are compared normalised (URL, `github.com/`, `.git`, case), and a glued `-Rowner/name` is read.
+    - A quoted `<<X` is not a heredoc, and `<<<` is a herestring. A backslash-newline joins lines.
+    - An unclosed heredoc refuses only when it would hide a `gh issue create`.
+    - Still not covered: a create inside `sh -c`/`eval`, behind `/usr/bin/gh`, or in backticks, which is
+      pre-existing. That is #1423.
+  - **Tests.** 81 selftest checks run, 60 of them new, and 3 end-to-end hook fixtures. Mutations: 18 new, 27 of
+    27 caught.
 
 - **`/rails-flow:slice` breaks a spec, brief or issue into dependency-ordered vertical slices and files them —
   `plugins/rails-flow/commands/slice.md`, `plugins/rails-flow/scripts/check_slices.py`,
