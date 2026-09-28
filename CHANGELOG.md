@@ -15856,7 +15856,9 @@ boot/validation path — with a bullet each so the promotion could close them se
   left group never wrapping and the links wrapping below it; the bar always renders because it carries the count, so
   the Data table anatomy's count moves into it and rows per page leaves the toolbar. *Modal / Dialog*: never larger
   than the viewport minus the inset in either direction, header and action foot pinned, the body scrolling vertically
-  only (`overflow-x-hidden` explicit). *Table (CRUD)*: a table inside a modal keeps its total, pager, empty state and
+  only (`overflow-x-hidden` explicit — doctrine-verifier CONFIRMED against CSS Overflow 3 §overflow properties:
+  `visible` paired with a non-visible axis computes to `auto`, and `hidden` offers no user scrolling while script
+  still can; `min-w-0`/`min-h-0` against CSS Flexbox 1 §4.5, the automatic minimum size). *Table (CRUD)*: a table inside a modal keeps its total, pager, empty state and
   phone cards. A new **Bulk import preview** anatomy: one modal journey, rows judged refused / new / changed /
   identical / unchangeable, per-row Update/Skip **defaulting to Skip**, "Update all N"/"Skip all N" across pages,
   identical rows as a count, the outcome stated in the confirm foot, the file judged again at confirm (a record
