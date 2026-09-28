@@ -71,6 +71,9 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/release_evidence.py" first-boot "qa/manua
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/release_evidence.py" authz "qa/manual-tests/authz-<version>/sweep.csv"
 ```
 
+Both files live under `qa/manual-tests/` and are committed with the stamp: the stamp names them,
+and the release gate refuses evidence named anywhere else or not in git.
+
 A failing layer is a FAIL verdict like any open S1/S2. What the checks do NOT judge: whether the
 database was really empty, which roles the app has, and whether the sweep lists every action. Those
 belong to `qa-lead`'s plan and to review.

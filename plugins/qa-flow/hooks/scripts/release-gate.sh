@@ -144,7 +144,9 @@ if [ -n "$devsha" ]; then
       if [ -z "$full" ] || ! git merge-base --is-ancestor "$full" "$devsha" 2>/dev/null; then
         deny "certification is for sha ${csha:0:12}, but dev is at ${devsha:0:12}. dev moved — re-certify before promoting."
       fi
-      if ! delta="$(git diff --name-only "$full" "$devsha" 2>/dev/null)"; then
+      # quotePath off: a non-ASCII evidence filename must arrive as itself, not "\303\251"-quoted, or a
+      # legitimate evidence commit reads as an unrecognised change and is denied (#1437 review).
+      if ! delta="$(git -c core.quotePath=false diff --name-only "$full" "$devsha" 2>/dev/null)"; then
         deny "could not diff the certified sha ${csha:0:12} against dev ${devsha:0:12}. Fetch and retry, or re-certify."
       fi
       # The stamp's own commit may also carry the evidence it names (#1428): the walkthrough and the

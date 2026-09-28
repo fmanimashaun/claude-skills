@@ -150,7 +150,7 @@ stamp and report FAIL, because the release-gate hook runs the same check and wou
 The release-gate hook reads this. NEVER write
 it for verify runs, partial passes, or with open S1/S2 defects. State plainly which
 sha is cleared for main, and that the stamp's commit (to dev, by PR, containing only
-`qa/CERTIFICATION`) keeps it valid; any other change after that sha needs re-certification (#1337).
+`qa/CERTIFICATION` and the first-boot and authz evidence it names, under `qa/manual-tests/`) keeps it valid; any other change after that sha needs re-certification (#1337).
 
 ## Output
 

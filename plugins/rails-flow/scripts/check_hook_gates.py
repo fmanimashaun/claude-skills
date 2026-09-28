@@ -664,6 +664,37 @@ def release_gate_fixtures() -> None:
         check("release-gate (#1428): a look-alike of the evidence path is not evidence",
               rc == 2 and "first-boot-v1-other" in err, err)
         sh("rm", "-q", "-r", "qa/manual-tests/first-boot-v1-other"); sh("commit", "-q", "-m", "drop it")
+        # The allowance is a PREFIX match: the evidence path appearing inside another path is not it.
+        inner = repo / "vendor/qa/manual-tests/first-boot-v1/x.rb"
+        inner.parent.mkdir(parents=True); inner.write_text("x\n", encoding="utf-8")
+        sh("add", "vendor"); sh("commit", "-q", "-m", "evidence path embedded in another path")
+        rc, err = gate2()
+        check("release-gate (#1428): a path merely containing the evidence path is not evidence",
+              rc == 2 and "vendor/" in err, err)
+        sh("rm", "-q", "-r", "vendor"); sh("commit", "-q", "-m", "drop vendor")
+        # CONFINEMENT (#1437 review blocker): a stamp naming evidence outside qa/manual-tests/ would
+        # let the stamp's commit carry code. It is refused before any allowance is computed.
+        tip = sh("rev-parse", "HEAD")
+        (repo / "app").mkdir(exist_ok=True)
+        (repo / "app" / "pages.csv").write_text(fb_rows, encoding="utf-8")
+        (repo / "app" / "evil.rb").write_text("x\n", encoding="utf-8")
+        (repo / "qa" / "CERTIFICATION").write_text(json.dumps({**new_stamp, "sha": tip, "first_boot": "app"}),
+                                                   encoding="utf-8")
+        sh("add", "app", "qa"); sh("commit", "-q", "-m", "a stamp naming app/ as its evidence")
+        rc, err = gate2()
+        check("release-gate (#1428): a stamp naming evidence outside qa/manual-tests/ is denied",
+              rc == 2 and "evidence must be" in err, err)
+        sh("rm", "-q", "-r", "app")
+        # A non-ASCII evidence file name arrives unquoted and is recognised as evidence.
+        (repo / "qa" / "CERTIFICATION").write_text(json.dumps({**new_stamp, "sha": sh("rev-parse", "HEAD")}),
+                                                   encoding="utf-8")
+        sh("add", "qa"); sh("commit", "-q", "-m", "restore the stamp")
+        tip = sh("rev-parse", "HEAD")
+        (repo / "qa" / "CERTIFICATION").write_text(json.dumps({**new_stamp, "sha": tip}), encoding="utf-8")
+        (fb_dir / "écran-1.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+        sh("add", "qa"); sh("commit", "-q", "-m", "a non-ASCII screenshot name in the evidence")
+        rc, err = gate2()
+        check("release-gate (#1428): a non-ASCII evidence file name is recognised as evidence", rc == 0, err)
         # An old stamp names no evidence, so it gets no evidence allowance: certify the current tip.
         old_stamp = {k: v for k, v in new_stamp.items() if k in ("date", "verdict", "report")}
         old_stamp["sha"] = sh("rev-parse", "HEAD")

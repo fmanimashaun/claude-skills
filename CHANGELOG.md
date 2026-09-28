@@ -3519,8 +3519,9 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 - **The hook harness drives the certify layers through `release-gate.sh` — `plugins/rails-flow/scripts/check_hook_gates.py`**
   (#1428). New fixtures: a schema-2 stamp whose commit carries its passing evidence permits. A HOLE, and a Blocked row
   with no reason, each deny. A code change riding with the evidence is still denied, and so is a path that only starts
-  like the evidence directory. An old stamp is grandfathered with its warning, but gets no evidence allowance. 136 → 143
-  checks.
+  like the evidence directory, or merely contains it. A stamp naming evidence outside `qa/manual-tests/` is denied. A
+  non-ASCII evidence name is recognised. An old stamp is grandfathered with its warning, but gets no evidence
+  allowance. 136 → 146 checks.
 
 ### 1.55.0 (release v1.152.0) — 2026-09-28
 
@@ -10871,13 +10872,20 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
   - **The sweep:** `sweep.csv`. It fails on any HOLE or UI-ONLY row, a GUARDED row naming no guard, a location that
     is not `file:line`, or no row targeting root.
 
-  The stamp is `"schema": 2` and names both evidence paths. The **release gate re-judges them** (fail closed), and
-  it lets the stamp's own commit carry that evidence and nothing else. By the owner's decision on #1428, an older
+  The stamp is `"schema": 2` and names both evidence paths, which must sit under `qa/manual-tests/`, with no `..`,
+  and be committed. The **release gate re-judges them** (fail closed), and it lets the stamp's own commit carry that
+  evidence and nothing else. The independent review found that the first draft let a stamp naming `first_boot: "app"`
+  carry any code past the gate, and that `"schema": "2"` as a string was grandfathered with a HOLE sweep; both are
+  refused now. By the owner's decision on #1428, an older
   stamp is **grandfathered for one release**: it passes with a loud "re-run /qa-flow:certify" warning, and the next
   release refuses it. The window is one constant, `GRANDFATHER_OLD_STAMPS`. It was checked against a real downstream
   walkthrough (Retask `first-boot-v101`: 50 rows, 390 and 1280 wide), which passes. That run also exposed a false
-  positive in the recovery-code rule, which matched screenshot names, now fixed with a digit per half. Selftest 39
-  checks; guard 13 of 13; release-gate guard 6 → 10. Our own design, decided on the issue; no framework claim.
+  positive in the recovery-code rule, which matched screenshot names; the rule now needs a digit in each half and a
+  letter somewhere, because the same file's request references (`REQ-2026-000002`) matched too. The detector also
+  reads keys printed in groups of four and codes listed one per line. It does not flag an unlabelled base32 run,
+  which is declined, because it would fire on IDs and hashes. Selftest 56 checks; guard 23 of 23; release-gate
+  guard 6 → 12, including a prefix-versus-contains match and `core.quotePath`, which denied a non-ASCII evidence
+  name. Our own design, decided on the issue; no framework claim.
 
 ### 1.34.0 (release v1.152.0) — 2026-09-28
 

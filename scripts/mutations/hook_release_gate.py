@@ -56,6 +56,19 @@ GUARD = Guard(
             '          case "$f" in ("${p%/}"*) ok=1 ;; esac',
             "release-gate (#1428): a look-alike of the evidence path is not evidence",
         ),
+        # #1437 review: a contains-match survived every fixture. The allowance is a PREFIX.
+        Mutation(
+            "the evidence allowance matches the path anywhere, not as a prefix",
+            '          case "$f" in ("$p"*) ok=1 ;; esac',
+            '          case "$f" in (*"$p"*) ok=1 ;; esac',
+            "release-gate (#1428): a path merely containing the evidence path is not evidence",
+        ),
+        Mutation(
+            "git quotes non-ASCII names again, so a legitimate evidence commit is denied",
+            '      if ! delta="$(git -c core.quotePath=false diff --name-only "$full" "$devsha" 2>/dev/null)"; then',
+            '      if ! delta="$(git diff --name-only "$full" "$devsha" 2>/dev/null)"; then',
+            "release-gate (#1428): a non-ASCII evidence file name is recognised as evidence",
+        ),
         # The paths come from stdout; losing them denies the stamp's own evidence commit.
         Mutation(
             "the evidence paths are discarded, so the stamp's evidence commit is denied",
