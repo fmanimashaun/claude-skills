@@ -159,7 +159,8 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_mockup_gate.py" --paths <each file 
   2. **Publish it, post its link on the issue, and STOP for the owner's approval.** This is a hold
      like the one-way door's, not advice: approval is a human decision. Change requests mean
      iterate and ask again.
-  3. **Record the approval** in `docs/product/mockups/<slug>.md` on the branch, one line each:
+  3. **Record the approval** in `docs/product/mockups/<slug>.md` (committed on the branch once Phase 2
+     creates it), one line each:
      `Mock-up:` (link or committed file), `Issue:`, `Approved-by:`, `Approval:` (the link to the
      comment where the owner approved), `Widths:`, `States:`. Then proceed. The plan and the PR
      cite the record.

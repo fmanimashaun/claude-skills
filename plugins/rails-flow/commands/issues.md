@@ -69,16 +69,18 @@ label, filter to it. Otherwise triage everything:
   never fabricate requirements.
 - **Every issue declares its mock-up (#1376)**, unless GUARDRAILS.md declares `mockup-gate: off`.
   An issue whose resolution changes what a user sees (a feature, an enhancement, or a bug whose fix
-  alters a screen) links a clickable mock-up; every other issue says "no visible change". Check them
-  all at once:
+  alters a screen) links a clickable mock-up **and the owner's approval of it** (the link to the
+  comment where they said so); every other issue says "no visible change". Check them all at once:
 
   ```bash
-  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_issue_mockup.py" --open
+  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_issue_mockup.py" --open --ready
   ```
 
-  For each `MISSING` issue, decide which it is. If the fix plainly touches no screen, add a
+  `--ready` is triage's question: a linked mock-up with no approval link is not ready. For each
+  `MISSING` issue, decide which it is. If the fix plainly touches no screen, add a
   `## Mock-up` section saying "no visible change" and say why in one line. Otherwise comment asking
-  for the mock-up, label it `needs-info`, and skip it: it is not ready. On the day a project adopts
+  for the mock-up, or for the owner's approval of the one linked, label it `needs-info`, and skip it:
+  it is not ready. On the day a project adopts
   this, every open issue is missing, so settle the plain "no visible change" ones in one pass before
   asking about the rest. `/rails-flow:feature` and `/rails-flow:fix` check the real change again, so
   a wrong "no visible change" is caught before merge.
