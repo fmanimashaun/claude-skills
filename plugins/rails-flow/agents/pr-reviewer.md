@@ -72,12 +72,17 @@ rule gets copied.
 
 ## The build matches its approved mock-up (BLOCKING for a change a user can see, #1376)
 
-Run it on **the PR's own files**, never the checkout's diff: a reviewer checked out on `dev` would
-see an empty diff and read "no user-visible change" for every PR (pre-release review of #1387).
+Run it **at the PR's head**, never in your own checkout. A reviewer on `dev` sees an empty diff, and
+the mock-up record and GUARDRAILS.md opt-out it reads must be the PR's, not yours (pre-release
+reviews of #1387). A throwaway worktree gives the gate the PR's files, records and opt-out together:
 
 ```bash
-gh pr diff <n> --name-only > "${TMPDIR:-/tmp}/pr-files.txt"
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_mockup_gate.py" --paths $(cat "${TMPDIR:-/tmp}/pr-files.txt")
+head="$(gh pr view <n> --json headRefOid -q .headRefOid)"
+git fetch -q origin "pull/<n>/head"
+rev="$(mktemp -d)"
+git worktree add -q --detach "$rev" "$head"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_mockup_gate.py" --root "$rev" --base "origin/<base>"
+git worktree remove --force "$rev"
 ```
 
 Exit 0 with "no

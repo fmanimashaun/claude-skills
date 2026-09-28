@@ -54,7 +54,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   `validations: required: true`, which GitHub reads, so the rule fired on the first real one. A block that
   declares form fields (`- type: textarea|input|dropdown|checkboxes|markdown`) is now skipped as a whole. Its control
   fixture keeps a dead toggle in an ordinary block of the same file flagged, and a new mutation that exempts
-  every block is caught by that control (136 of 136). The pre-release review found that an **unterminated** yaml block (no
+  every block is caught by that control (137 of 137 with the unterminated-block mutation). The pre-release review found that an **unterminated** yaml block (no
   closing fence) was never judged. It is now read, with a fixture and a mutation.
 
 - **Two benchmark cases passed when the agent wrote nothing — `evals/gates.py`, `evals/selftest.py`,
@@ -3622,11 +3622,12 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     2. Triage accepted any link. The owner's rule is "attached **and approved**", so `check_issue_mockup.py
        --ready` now requires the link to the approving comment. Our `feature.yml` / `plugin-bug.yml` carry the
        Mock-up field, as the owner named `/maintainer-setup-intake`; `/rails-flow:report`'s body carries it through
-       the #1399 fix.
+       PR #1411 (claude-skills-dd).
     3. Any word ending in `.md` read as a mock-up ("TBD, see notes.md"). A link is now an https URL with a host,
        a record under `docs/product/mockups/`, or a mock-up file.
     4. `pr-reviewer` ran the gate on the checkout's diff, so a reviewer on `dev` saw "no user-visible change" for
-       every PR. It now passes the PR's own files with `--paths`.
+       every PR. It now runs the gate at the PR head, in a throwaway worktree, so the files, the record and the
+       opt-out it judges are all the PR's.
 
     The review's suggestions are fixed here too: a bare `https://` or any repo file is no longer a mock-up; a
     record must name its issue; a README in the records folder is not a record; a fenced example of
