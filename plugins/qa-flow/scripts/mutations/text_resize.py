@@ -52,6 +52,19 @@ GUARD = Guard(
             "",
             "a probe that threw is unverified",
         ),
+        # #1395 review: the cap applies to every mode, so each mode's truncation must be read.
+        Mutation(
+            "a truncated scaled list is trusted",
+            '            if mode.get("truncated"):\n                out.unverified.append(f"{route} ({CRITERION[name]}): the list',
+            '            if mode.get("truncated") and name != "scaled":\n                out.unverified.append(f"{route} ({CRITERION[name]}): the list',
+            "a truncated scaled list is unverified, never a pass",
+        ),
+        Mutation(
+            "a truncated spacing list is trusted",
+            '            if mode.get("truncated"):\n                out.unverified.append(f"{route} ({CRITERION[name]}): the list',
+            '            if mode.get("truncated") and name != "spacing":\n                out.unverified.append(f"{route} ({CRITERION[name]}): the list',
+            "a truncated spacing list is unverified, never a pass",
+        ),
         Mutation(
             "a truncated as-served list is trusted",
             '        if base.get("truncated"):',

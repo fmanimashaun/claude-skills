@@ -44,9 +44,9 @@ by at least 1.9x; below half of them, the `scaled` mode is reported unverified w
 Browser zoom enlarges px text too, and that is what to check such a page with. Spacing is judged
 regardless: its overrides apply to px text as much as to rem text.
 
-SO IS A ROUTE THAT REDIRECTED, a mode whose probe threw (`null`), and a `base` list the collector
-truncated -- a clip missing from a truncated base list may simply have been cut from it, so it
-cannot be proven new.
+SO IS A ROUTE THAT REDIRECTED, a mode whose probe threw (`null`), and any mode's list the collector
+truncated at its cap. A clip missing from a truncated base list cannot be proven new, and one
+missing from a truncated scaled or spacing list may simply have been cut from it.
 
 KNOWN LIMIT. Elements are matched across modes by their ref (tag and first two classes, root to
 leaf). Twenty identical cards share one ref, so if ANY of them clipped as served, a new clip in
@@ -197,6 +197,13 @@ def judge(doc: dict, *, min_hidden: float = DEFAULT_MIN_HIDDEN,
             mode = _mode(entry, name, route)
             if mode is None:
                 out.unverified.append(f"{route} ({CRITERION[name]}): the probe did not run")
+                continue
+            # The collector caps each mode's list (400 rows). A clip missing from a truncated list may
+            # simply have been cut from it, so the mode says nothing -- the same reason a truncated
+            # base list is unverified, applied to the lists the findings actually come from.
+            if mode.get("truncated"):
+                out.unverified.append(f"{route} ({CRITERION[name]}): the list was truncated at the "
+                                      "collector's cap, so a clip may have been cut from it")
                 continue
             if name == "scaled":
                 texts, grew = mode.get("textElements"), mode.get("grew")
@@ -399,6 +406,17 @@ def selftest() -> int:  # noqa: PLR0915 -- a fixture list; each firing case sits
     nobase["routes"][0]["modes"]["base"] = None
     check("no as-served measurement means nothing can be proven new",
           bool(judge(nobase).unverified) and not judge(nobase).findings)
+    for name, crit in (("scaled", "SC 1.4.4"), ("spacing", "SC 1.4.12")):
+        kw = {name: mode(clip, truncated=True, **({"grew": 100} if name == "scaled" else {}))}
+        tr = judge(doc(**kw))
+        check(f"a truncated {name} list is unverified, never a pass",
+              any(crit in u and "truncated" in u for u in tr.unverified), str(tr.unverified))
+        check(f"...and a truncated {name} list reports no finding from its partial rows",
+              not any(f.rule.startswith(PREFIX[name]) for f in tr.findings), str([f.rule for f in tr.findings]))
+    # The control: truncating ONE mode does not silence the other.
+    ctl = judge(doc(scaled=mode(clip, grew=100), spacing=mode(truncated=True)))
+    check("CONTROL: a truncated spacing list leaves the 200% check judged",
+          "resize-clipped" in {f.rule for f in ctl.findings}, str([f.rule for f in ctl.findings]))
     check("a truncated as-served list is unverified",
           bool(judge(doc(base=mode(truncated=True), scaled=mode(clip, grew=100))).unverified))
     check("a route measured somewhere else is unverified",

@@ -10795,6 +10795,13 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ### 1.34.0 (release v1.152.0) — 2026-09-28
 
+- **`text_resize.py` reports a truncated `scaled` or `spacing` list as unverified, not as a pass —
+  `plugins/qa-flow/scripts/text_resize.py`, `plugins/qa-flow/scripts/mutations/text_resize.py`** (#1367). The
+  collector caps each mode's list at 400 rows, and only the as-served list's `truncated` flag was read. So a page
+  whose 200% or spacing list was cut could read clean over a clip that fell past the cap. Each mode's truncation
+  now makes that mode unverified, and the other mode is still judged. 5 selftest checks: one per mode, plus a
+  control. 2 mutations, one per mode (11 of 11 caught). Found by the v1.152.0 promotion review.
+
 - **The crawl checks each page with its text enlarged: WCAG 2.2 SC 1.4.4 and SC 1.4.12 — `plugins/qa-flow/scripts/text_resize.py`,
   `plugins/qa-flow/scripts/crawl_collector.js`, `plugins/qa-flow/scripts/mutations/text_resize.py`,
   `plugins/qa-flow/commands/crawl.md`, `plugins/qa-flow/checks.json`, `scripts/maintainer_doctor.py`** (#1367). Nothing
