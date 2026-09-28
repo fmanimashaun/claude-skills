@@ -67,10 +67,16 @@ def headings(text: str, level: str | None = None) -> list[str]:
     return out
 
 
+# A section the template itself marks conditional may be left out. Judged on the FULL heading, before
+# `core()` drops the parenthesis: "Screenshots (if applicable)" and "Related issues (optional)" are
+# common downstream, and trimming first made them required (pre-release review of #1398).
+CONDITIONAL = re.compile(r"^\s*(if|optional)\b|\((optional|if\b[^)]*)\)", re.I)
+
+
 def missing(template_text: str, body_text: str) -> list[str]:
     have = {core(h) for h in headings(body_text)}
     return [h for h in headings(template_text, "##")
-            if not core(h).startswith("if ") and core(h) and core(h) not in have]
+            if not CONDITIONAL.search(h) and core(h) and core(h) not in have]
 
 
 def selftest() -> int:
@@ -102,6 +108,10 @@ def selftest() -> int:
     m = missing(tpl, "Everything in prose: what changed, how to test, change type, rules.\n")
     check_that("section names in prose are not sections", len(m) == 4, m)
     check_that("a body heading at ### still counts", missing(tpl, full.replace("## ", "### ")) == [])
+    opt = "## Summary\n\n## Screenshots (if applicable)\n\n## Related issues (optional)\n\n## Optional notes\n"
+    check_that("CONTROL: (if applicable), (optional) and a leading Optional mark a section conditional",
+               missing(opt, "## Summary\nx\n") == [], missing(opt, "## Summary\nx\n"))
+    check_that("...while an unmarked parenthesis does not", missing("## Proof (screens)\n", "## Summary\n") == ["Proof (screens)"])
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
@@ -125,7 +135,9 @@ def main(argv: list[str]) -> int:
     tpl = template_path(Path(argv[0]))
     if tpl is None:
         return 0
-    gaps = missing(tpl.read_text(encoding="utf-8"), Path(argv[1]).read_text(encoding="utf-8"))
+    # errors="replace": a body with stray bytes is still a body; a crash here must not decide anything.
+    gaps = missing(tpl.read_text(encoding="utf-8", errors="replace"),
+                   Path(argv[1]).read_text(encoding="utf-8", errors="replace"))
     for h in gaps:
         print(h)
     return 1 if gaps else 0

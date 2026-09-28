@@ -63,13 +63,24 @@ fi
 if printf '%s' "$cmd" | grep -qE '\bgh[[:space:]]+pr[[:space:]]+(create|edit)\b'; then
   tpl_lib="$(dirname "$0")/lib/pr_template.py"
   root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-  if [ -f "$tpl_lib" ] && command -v python3 >/dev/null 2>&1; then
-    gaps="$(python3 "$tpl_lib" "$root" "$body" 2>/dev/null)"
-    if [ -n "$gaps" ]; then
+  # Exit status, not stdout alone: 0 is clean, 1 names the missing sections, and anything else (a
+  # crash, a missing helper or python3) is said out loud. Reading only stdout let a crash pass
+  # silently through a fail-closed hook (pre-release review of #1398).
+  # `-R/--repo` targets another repository, whose template this checkout does not have: say so rather
+  # than judge the body against the wrong template (pre-release review of #1398).
+  if printf '%s' "$cmd" | grep -qE '(^|[[:space:]])(-R|--repo)([[:space:]=])'; then
+    echo "rails-flow: PR-template sections NOT checked (-R/--repo targets another repository's template)." >&2
+  elif [ ! -f "$tpl_lib" ] || ! command -v python3 >/dev/null 2>&1; then
+    echo "rails-flow: PR-template sections NOT checked (lib/pr_template.py or python3 unavailable)." >&2
+  else
+    gaps="$(python3 "$tpl_lib" "$root" "$body" 2>/dev/null)"; tpl_rc=$?
+    if [ "$tpl_rc" -ne 0 ] && [ "$tpl_rc" -ne 1 ]; then
+      echo "rails-flow: PR-template sections NOT checked (pr_template.py exited $tpl_rc); check the body by hand." >&2
+    elif [ "$tpl_rc" -eq 1 ] && [ -n "$gaps" ]; then
       echo "BLOCKED by rails-flow claim guard: this PR body is missing section(s) the repo's PR template requires:" >&2
       printf '%s\n' "$gaps" | sed 's/^/  ## /' >&2
       echo "" >&2
-      echo "Add each one. A section that does not apply stays, saying N/A and why; only a '## If ...' section may be left out." >&2
+      echo "Add each one. A section that does not apply stays, saying N/A and why; only a section the template marks conditional ('## If ...', '(optional)', '(if ...)') may be left out." >&2
       echo "Deliberately shipping without them: RAILS_FLOW_CLAIMS_OK=1 (audited)." >&2
       exit 2
     fi

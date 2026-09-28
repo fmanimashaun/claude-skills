@@ -462,6 +462,15 @@ def guard_claims_fixtures() -> None:
     check("guard-claims: a repo with no PR template is not held to one",
           run("gh pr create --base dev --body-file BODY", "## What changed\nTidy the README.\n") == 0,
           "exit 2")
+    # Pre-release review of #1398: a crash or a foreign repository must be said out loud, never pass silently.
+    check("guard-claims: a template-optional section ('(optional)') may be left out",
+          run("gh pr create --base dev --body-file BODY", "## What changed\nx\n## How to test\nN/A.\n",
+              template=TPL + "## Screenshots (optional)\n") == 0, "exit 2")
+    check("guard-claims: -R targets another repo, so its template is not judged here",
+          run("gh pr create -R other/repo --base dev --body-file BODY", "## What changed\nx\n",
+              template=TPL) == 0, "exit 2")
+    check("guard-claims: ...and without -R the same body is blocked (control)",
+          run("gh pr create --base dev --body-file BODY", "## What changed\nx\n", template=TPL) == 2, "exit 0")
     check("guard-claims: an issue comment is not held to the PR template",
           run("gh issue comment 5 --body-file BODY", "Tidy the README.\n", template=TPL) == 0, "exit 2")
     # OUT OF SCOPE, AND THE BODY MUST CARRY A CLAIM. A first draft passed a claim-FREE body here,

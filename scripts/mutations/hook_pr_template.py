@@ -11,8 +11,14 @@ GUARD = Guard(
     selftest="plugins/rails-flow/hooks/scripts/lib/pr_template.py",
     mutations=(
         Mutation(
+            "a template's (optional) marker is ignored, so the section is required",
+            'CONDITIONAL = re.compile(r"^\\s*(if|optional)\\b|\\((optional|if\\b[^)]*)\\)", re.I)',
+            'CONDITIONAL = re.compile(r"^\\s*if\\b", re.I)',
+            "CONTROL: (if applicable), (optional) and a leading Optional mark a section conditional",
+        ),
+        Mutation(
             "a missing section is never reported",
-            "            if not core(h).startswith(\"if \") and core(h) and core(h) not in have]",
+            "            if not CONDITIONAL.search(h) and core(h) and core(h) not in have]",
             "            if False]",
             "a body missing one section is refused, and names it",
         ),
@@ -24,7 +30,7 @@ GUARD = Guard(
         ),
         Mutation(
             "an `If …` section is required like any other",
-            "            if not core(h).startswith(\"if \") and core(h)",
+            "            if not CONDITIONAL.search(h) and core(h)",
             "            if core(h)",
             "CONTROL: an `If …` section is conditional and may be left out",
         ),

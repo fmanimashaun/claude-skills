@@ -29,9 +29,15 @@ GUARD = Guard(
         # followed 0 times in 5 downstream PRs.
         Mutation(
             "the PR-template check never runs",
-            "    if [ -n \"$gaps\" ]; then",
-            "    if false; then",
+            "    elif [ \"$tpl_rc\" -eq 1 ] && [ -n \"$gaps\" ]; then",
+            "    elif false; then",
             "a PR body missing a template section is blocked",
+        ),
+        Mutation(
+            "-R/--repo is no longer recognised, so another repository's PR is judged by this template",
+            "  if printf '%s' \"$cmd\" | grep -qE '(^|[[:space:]])(-R|--repo)([[:space:]=])'; then",
+            "  if false; then",
+            "-R targets another repo, so its template is not judged here",
         ),
         Mutation(
             "the template check is scoped to create only, so `gh pr edit` slips past it",

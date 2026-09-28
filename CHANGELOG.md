@@ -3525,6 +3525,14 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     lacked 7 of its 11 sections.
   - 11 helper selftest cases and 5 end-to-end hook fixtures. Mutations: 7 of 7 on the helper, 2 new on the hook.
     Doctor gate "rails-flow PR-template sections".
+  - **Three defects the independent pre-release review found, fixed before release.**
+    1. The hook tested only stdout, so a helper crash (a body with stray bytes) or a missing helper passed silently
+       through a fail-closed hook. It now reads the exit status and says "NOT checked" out loud.
+    2. Only `## If …` counted as conditional, so a downstream template's `(if applicable)` / `(optional)` sections
+       were demanded. Conditional is now judged on the full heading.
+    3. `gh pr create -R other/repo` was judged against this checkout's template. It is now reported as not checked.
+
+    3 more end-to-end hook fixtures (the harness runs 139 checks) and 2 more mutations.
 
 - **Every per-PR review pass saves its findings, apart from a full review's — `plugins/rails-flow/agents/code-reviewer.md`,
   `plugins/rails-flow/agents/pr-reviewer.md`, `plugins/rails-flow/agents/spec-reviewer.md`,
