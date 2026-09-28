@@ -34,8 +34,10 @@ untriaged.
 ## Phase 2 — Delegate classification
 
 For each issue, hand it to the **issue-triager** agent, which applies exactly one
-`comp:*`, one `type:*`, and one `prio:*` label, and flags `needs-info` or `duplicate`.
-Trust existing labels; infer and apply where missing. Never adjudicate correctness here
+`comp:*`, one `type:*`, and one `prio:*` label, and flags `needs-info`, `duplicate` or
+`lapse`. Trust existing labels; infer and apply where missing. The one exception is a lapse:
+the triager replaces the template's `type:skill-gap` with `type:feature`, so the issue still
+carries one `type:*`. Never adjudicate correctness here
 — a report of "wrong doctrine" is routed, not judged (that's the verifier's job in the
 work loop).
 
@@ -70,7 +72,9 @@ reading prose — that is the reasoning that would otherwise be redone next time
 
 Report a single ranked table to the user: **ready-now first**, then P1,
 `type:incorrect-doctrine` ahead of peers, oldest-first within a tier — with the skipped set
-(needs-info / duplicate) and why, and blocked issues listed under what blocks them.
+(needs-info / duplicate) and why, and blocked issues listed under what blocks them. Mark a
+`lapse` in the type column (`feature · lapse`): it is queued, but for enforcement, not a skill
+edit, and the table is where that routing is read.
 
 Quote the coverage line verbatim (`N/M open issues declare edges`). An ordering computed
 from three declared edges out of forty open issues is worth having, but reporting it
