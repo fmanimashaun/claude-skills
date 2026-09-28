@@ -9,6 +9,13 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### 2026-09-28 (release v1.152.0)
 
+- **Our own shipped ERB must pass the simple-form-only gate we ship — `scripts/check_shipped_erb_forms.py`,
+  `scripts/mutations/check_shipped_erb_forms.py`, `scripts/maintainer_doctor.py`** (#1383). The pre-release review
+  found 9 of our ERB blocks failing the gate: the gate had been measured on one downstream app and never on the text
+  agents copy from us. The check runs the gate's own `scan()` over every ```erb block under `skills/` and `plugins/`.
+  A block is excused only by an explicit `simple-form-only: primitive` marker. 5 selftest cases; the guard catches 4
+  mutations. Doctor gates "shipped ERB passes simple-form-only" and its selftest.
+
 - **Triage checks a skill-gap report against what the skill already says — `.claude/agents/issue-triager.md`,
   `.claude/commands/maintainer-work.md`, `.claude/commands/maintainer-triage.md`,
   `.claude/commands/maintainer-setup-intake.md`, `.github/labels.yml`, `.github/ISSUE_TEMPLATE/skill-gap.yml`,
@@ -3686,10 +3693,29 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     hidden `<input>` and `button_to`. Deliberate exceptions go in `.rails-flow/raw-form-exemptions.json`, each with a
     reason, and a stale exemption is a finding. Without simple_form in Gemfile.lock it exits 3 (not applicable,
     never a pass).
-  - **Measured on a downstream app.** 181 templates, 80 `simple_form_for`: it found exactly the 2 genuine
-    constructs (a `search_field_tag` in a component, a deliberate `tag.input`) and stayed silent on about 20 comment
-    mentions and every `hidden_field_tag`. 27 selftest cases, every refusal with a control; the guard catches 13
-    mutations.
+  - **Measured on a downstream app** (181 templates, 80 `simple_form_for`). It stayed silent on about 20 comment
+    mentions and every `hidden_field_tag`. It finds 4 genuine constructs:
+    - a `search_field_tag` in a component;
+    - a deliberate `tag.input`;
+    - an `f.collection_radio_buttons` and an `f.collection_check_boxes` on a builder opened by a multi-line
+      `simple_form_for`, which the first version could not see.
+
+    27 selftest cases at first merge, every refusal with a control; the guard caught 13 mutations.
+  - **Upgrading:** projects may now see findings for `f.collection_radio_buttons` / `f.collection_check_boxes` on a
+    multi-line `simple_form_for`. Use `f.input … as: :radio_buttons` / `as: :check_boxes`, or declare an exemption
+    with a reason in `.rails-flow/raw-form-exemptions.json`.
+  - **Fixed before release** (the independent pre-release review ran the gate over our OWN doctrine and found 9
+    shipped ERB blocks it refused). The verified rewrites of the filter panel and radio group ship in the rails-stack
+    block. Here, the gate:
+    - A read-only input with no `name` is a display (a copyable API key), not a field. The tag is read with ERB
+      inside it skipped, so `value="<%= @url %>"` does not hide its `readonly`.
+    - The Checkbox and Combobox primitives carry a `simple-form-only: primitive` marker, and prose giving the
+      exemption row a project declares.
+    - Suggestions fixed: a multi-line `simple_form_for` no longer hides its builder; an exemption's optional `match`
+      narrows it to one control, so it does not exempt later violations in the file; `"exemptions": null` is
+      unusable, not a crash.
+
+    The guard catches 19 mutations.
 
 - **A change a user can see waits for an owner-approved clickable mock-up, whatever the issue's label —
   `plugins/rails-flow/scripts/check_mockup_gate.py`, `plugins/rails-flow/scripts/mutations/check_mockup_gate.py`,
