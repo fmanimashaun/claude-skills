@@ -3539,6 +3539,15 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     `/rails-flow:issues` and `/rails-flow:fix` file and fix from, so a finding already fixed on its branch would have
     been filed again. All three per-PR reviewers now use `prs/`, and `/rails-flow:issues` Phase 0 says never to file
     from it.
+  - **One file per pass, replaced each round** (the independent pre-release review found two blockers in the first
+    version). With all three passes appending to one file, `check_spec_review.py` took "the file exists" as proof
+    the spec pass ran, so code-reviewer's records alone passed a CLEAN spec gate. And the file only grew, so a
+    finding fixed in round one blocked round two, and the only ways past were deleting history or reusing ids,
+    which `findings.py validate` refuses. Each pass now writes
+    `docs/evidence/reviews/prs/<branch-slug>/<pass>-findings.jsonl`, replaced each round and committed with the
+    fix, so `git log -p` holds every round. `<branch-slug>` is defined for any branch (`/` becomes `-`).
+    `check_spec_review.py` refuses a file holding records but none from `spec-reviewer` (exit 2), and an empty file
+    is a clean run; a selftest case and a mutation (10 of 10) cover both.
 
 - **`/rails-flow:spec` turns an idea into a technical spec before anything is built — `plugins/rails-flow/commands/spec.md`,
   `plugins/rails-flow/scripts/check_spec.py`, `plugins/rails-flow/scripts/mutations/check_spec.py`,
