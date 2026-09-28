@@ -64,7 +64,15 @@ GUARD = Guard(
             "another pass's records are judged as spec findings",
             'r.get("pass") == PASS]',
             "True]",
-            "CONTROL: another pass's records are not judged here",
+            "CONTROL: another pass's records beside spec records are not judged here",
+        ),
+        # #1393 review: a file with only another pass's records read as a CLEAN spec review, so the
+        # gate could not tell a spec pass that never ran from one that found nothing.
+        Mutation(
+            "a file holding only another pass's records reads as a clean spec review",
+            "    if loaded and not records:",
+            "    if False:",
+            "a file holding only another pass's records is unusable, not a clean spec review",
         ),
     ),
 )

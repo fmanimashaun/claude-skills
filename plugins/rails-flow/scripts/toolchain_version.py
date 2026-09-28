@@ -67,6 +67,8 @@ class Toolchain:
     # keeps old versions on disk — but they are what a naive [0] read would return, so the
     # gate names them rather than hiding them.
     shadowed: dict[str, list[str]] = field(default_factory=dict)
+    # installPath of the chosen record: the tree this project actually loads (#1407).
+    paths: dict[str, str] = field(default_factory=dict)
 
 
 def read_json(path: Path):
@@ -92,8 +94,33 @@ def newest_record(records: list[dict]) -> dict | None:
     return max(records, key=lambda r: (r or {}).get("lastUpdated") or "")
 
 
-def resolve_installed(home: Path, marketplace: str = MARKETPLACE) -> tuple[Toolchain, list[str]]:
-    """Read what is installed on this machine. Returns (toolchain, problems)."""
+def applies_to(record: dict, project: Path | None) -> bool:
+    """Whether an install record is one `project` loads.
+
+    #1407. A project-scoped record carries a `projectPath` and applies to that project only; a
+    record without one applies everywhere. Several projects on one machine run different
+    versions -- measured: rails-stack 1.63.0 for one project and 1.68.0 for another -- so the
+    newest record machine-wide is not this project's, and reading it reports a stale toolchain
+    as current. `project=None` keeps the machine-wide view.
+    """
+    if project is None:
+        return True
+    owner = (record or {}).get("projectPath")
+    if not owner:
+        return True
+    try:
+        root, here = Path(owner).resolve(), project.resolve()
+    except OSError:
+        return False
+    # A session run from a subdirectory still loads the project's plugins (drive.md runs the gate
+    # from wherever the session is). `resolve()` also folds a trailing slash and a symlinked
+    # path (/tmp vs /private/tmp on macOS) into one form.
+    return here == root or root in here.parents
+
+
+def resolve_installed(home: Path, marketplace: str = MARKETPLACE,
+                      project: Path | None = None) -> tuple[Toolchain, list[str]]:
+    """Read what is installed for `project` (or machine-wide). Returns (toolchain, problems)."""
     problems: list[str] = []
     tc = Toolchain()
     base = home / ".claude" / "plugins"
@@ -122,12 +149,18 @@ def resolve_installed(home: Path, marketplace: str = MARKETPLACE) -> tuple[Toolc
         if not key.endswith(suffix):
             continue
         name = key[: -len(suffix)]
-        rec = newest_record(records)
+        mine = [r for r in records if applies_to(r, project)] if isinstance(records, list) else records
+        if isinstance(records, list) and records and not mine:
+            problems.append(f"{name}: installed only for other projects, not {project}")
+            continue
+        rec = newest_record(mine)
         if rec is None or not rec.get("version"):
             problems.append(f"{name}: no usable install record")
             continue
         tc.plugins[name] = rec["version"]
-        others = [r.get("version") for r in records if r is not rec and (r or {}).get("version")]
+        if rec.get("installPath"):
+            tc.paths[name] = rec["installPath"]
+        others = [r.get("version") for r in mine if r is not rec and (r or {}).get("version")]
         if others:
             tc.shadowed[name] = others
 
@@ -311,7 +344,7 @@ def render(installed: Toolchain, published: Toolchain, findings: list[str]) -> N
         flag = "  <- update" if have != "—" and want != "—" and parse_version(have) < parse_version(want) else ""
         print(f"  {name:14} {have:10} {want:10}{flag}")
     for name, others in sorted(installed.shadowed.items()):
-        print(f"  note: {name} also has {', '.join(others)} in cache (older records, not active)")
+        print(f"  note: {name} also has {', '.join(others)} in cache (older records for this project, not active)")
     print()
     if findings:
         print(f"{len(findings)} update(s) available:")
@@ -330,6 +363,8 @@ def main(argv=None) -> int:
     ap.add_argument("--project", type=Path, default=Path.cwd(), help="project root holding docs/brain/")
     ap.add_argument("--arm", metavar="STEP", help="write the cross-restart marker, resuming at STEP")
     ap.add_argument("--resume", action="store_true", help="post-restart: confirm target reached, clear marker")
+    ap.add_argument("--installed-path", metavar="PLUGIN",
+                    help="print the install path of PLUGIN for --project, then exit (#1407)")
     ap.add_argument("--selftest", action="store_true")
     args = ap.parse_args(argv)
 
@@ -337,7 +372,17 @@ def main(argv=None) -> int:
         from toolchain_version_selftest import run
         return run()
 
-    installed, problems = resolve_installed(args.home)
+    installed, problems = resolve_installed(args.home, project=args.project)
+    if args.installed_path:
+        path = installed.paths.get(args.installed_path)
+        if not path:
+            for p in problems:
+                print(f"unusable: {p}", file=sys.stderr)
+            print(f"unusable: {args.installed_path} has no install record for {args.project}",
+                  file=sys.stderr)
+            return EXIT_UNUSABLE
+        print(path)
+        return EXIT_OK
     if args.resume:
         # Resume needs only the installed side; a network failure must not strand a marker.
         if not installed.plugins:

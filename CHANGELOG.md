@@ -10,8 +10,9 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 ### 2026-09-28 (release v1.152.0)
 
 - **Triage checks a skill-gap report against what the skill already says — `.claude/agents/issue-triager.md`,
-  `.claude/commands/maintainer-work.md`, `.claude/commands/maintainer-setup-intake.md`, `.github/labels.yml`,
-  `.github/ISSUE_TEMPLATE/skill-gap.yml`** (#1386). The duplicate check compared an issue only with other issues, so
+  `.claude/commands/maintainer-work.md`, `.claude/commands/maintainer-triage.md`,
+  `.claude/commands/maintainer-setup-intake.md`, `.github/labels.yml`, `.github/ISSUE_TEMPLATE/skill-gap.yml`,
+  `scripts/skill_version_tag.py`, `scripts/mutations/skill_version_tag.py`, `scripts/maintainer_doctor.py`** (#1386). The duplicate check compared an issue only with other issues, so
   a report that an agent ignored a rule the skill already states was queued as `type:skill-gap` and sent to
   `skill-doctor`, which adds a second copy of the prose. The triager now searches the named skill first: no hit is a
   gap, and a covering hit is a **lapse** (new status label). It is relabelled `type:feature`, and `/maintainer-work`
@@ -19,24 +20,43 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   gains an optional "does the skill already say this?" field. After SkillOpt's skill-defect / execution-lapse
   split. How often lapses happen is unmeasured, and the issue says so. This is triage prose, advisory: nothing
   mechanical checks that the search ran. Our own design, decided on the issue; no framework claim.
+  Two independent reviews before promotion corrected it. The search ran over `dev`, and then over the tag of the
+  MARKETPLACE version the report pinned, which is the machine's clone: v1.148.0 carries rails-stack 1.68.0 while
+  fidara-ledger runs 1.63.0, so a rule added since would read as a lapse. It now maps the project's rails-stack
+  version to the first release that carried it, with new `scripts/skill_version_tag.py` (1.63.0 → v1.138.0; a
+  selftest of 11 checks driven through `main()`, a guard catching 5 of 5 mutations including lexical tag
+  order and a tag printed to stderr, and a doctor gate). It also
+  searches only after the tag and path both resolve, since a typo'd skill also returns no hit. "Fixed since" gets
+  `needs-info`. The relabel is one `--remove-label`/`--add-label` command, so an issue never carries two `type:*`
+  labels. The web template now asks for the rails-stack version, and the queue table marks a lapse.
 
 - **The benchmark compares arms instead of printing rates side by side — `evals/compare.py`,
   `scripts/mutations/evals_compare.py`, `scripts/maintainer_doctor.py`, `evals/README.md`** (#1384). `run.py`
   printed a pass rate per (case, arm), and nothing said how uncertain a difference was. `compare.py` pairs arms by
-  case, bootstraps a CI over cases (the independent unit, not runs), names a winner only when the CI excludes 0,
-  prints the CI half-width as the resolution, lists every case that got worse even under an aggregate win, and
-  refuses to pool files whose model, marketplace version or tools differ. Needed before any paid run: simulated,
-  the default 6 cases × 3 runs detects a +20-point lift about 36% of the time, so a null from it is unreadable.
-  `--selftest` 26 checks, driven through `main()`; new doctor gate `evals compare`; guard catches 8 of 8
-  mutations. The README's "nothing here is wired into CI" was false (`evals gates` has run in every sweep) and
-  "5 cases" was 6; both corrected. Our own design, decided on the issue; no framework claim.
+  case, and every statistic is over per-case deltas (the independent unit, not runs). It names a winner only when
+  an **exact sign-flip test** gives p ≤ 0.05, and reports fewer than 6 cases that MOVED as *underpowered*, since a
+  tied case flips to itself and 2/2ᵏ cannot reach 0.05 below six. It lists every case that got worse even under an aggregate win, and refuses to pool files
+  whose model, marketplace version, tools or `claude` version differ. The bootstrap CI is printed as description
+  only. The first version decided from that CI. An independent review before promotion showed it called two
+  same-sign cases a win and gave 12% false wins under the null at 6 cases × 3 runs; the exact test replaced it
+  (under 1% measured). A second review found the floor counted tied cases, so a run that could never win read
+  "not detectable" instead of "underpowered"; fixed. Measured through the tool (300 simulations, about ±3 points),
+  the suite today detects a +30-point lift about 10% of the time, and 20 cases × 3 runs reach about 88%, so a null
+  from it is unreadable and the suite must grow first. `--selftest` 55 checks, pinned to hand-computed p values,
+  both tails of a pinned CI, a case where the CI excludes 0 but p does not, and the Monte Carlo branch, and driven
+  through `main()`; new doctor gate `evals compare`; guard catches 19 of 19 mutations, including counting runs as
+  samples. The README's "nothing here is wired into
+  CI" was false (`evals gates` has run in every sweep) and "5 cases" was 6; both corrected. Our own design,
+  decided on the issue; no framework claim.
 
 - **A case cannot certify the doctrine edit it motivated — `evals/compare.py`, `evals/README.md`** (#1385).
-  `--motivated-by CASE` removes the cases an edit was written for from its evidence; if no other case moved, the
-  verdict is UNVERIFIED rather than a win (after SkillOpt-Sleep's `reject_unverified`). A typo'd case id is
-  refused, since it would exclude nothing and certify anyway. Enforced only when `compare.py` is run with the
-  flag: no PR has ever claimed a benchmark effect, so nothing parses one yet. Our own design, decided on the
-  issue; no framework claim.
+  `--motivated-by CASE` removes the cases an edit was written for from its evidence. If the result is a win only
+  when they are counted, the verdict is UNVERIFIED rather than a win (after SkillOpt-Sleep's `reject_unverified`).
+  A significant loss on the independent cases stays a loss. A typo'd case id is refused, since it would exclude
+  nothing and certify anyway. With today's 6-case suite any
+  exclusion leaves too few cases to win at all. Enforced only when `compare.py` is run with the flag: no PR has
+  ever claimed a benchmark effect, so nothing parses one yet. Our own design, decided on the issue; no framework
+  claim.
 
 - **`unhonoured-config-toggle` no longer reads a GitHub issue form as our config — `scripts/lint_self_consistency.py`,
   `scripts/mutations/lint_self_consistency.py`** (#1376). The rule treats every boolean in a setup command's YAML
@@ -3506,7 +3526,24 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   `plugins/rails-flow/agents/claude-skills-reporter.md`** (#1386). An agent that ignored a rule looks exactly like one
   that never had it, and the two need opposite fixes upstream. If the skill already covers the case, the report is
   filed as a `lapse` (`type:feature`) quoting the `file:line`, so the fix is enforcement, not more prose. The search
-  goes in the report either way.
+  goes in the report body either way. It searches the tree THIS project loaded (`toolchain_version.py
+  --installed-path rails-stack`), not the marketplace clone. An independent review found the first draft searched the
+  clone: on this machine that is rails-stack 1.68.0, while fidara-ledger runs 1.63.0, so a rule added since would have
+  been filed as a false lapse. No hit on an install behind the published version is a stale install, not a gap.
+  The version pin now includes the rails-stack version THIS project runs, which is what the triager searches. Every
+  report also carries a `## Mock-up` section ("No visible change: <reason>" unless a downstream app's screen
+  changes), which `check_issue_mockup.py` requires.
+
+- **`toolchain_version.py` resolves installs per project, not machine-wide — `plugins/rails-flow/scripts/toolchain_version.py`,
+  `plugins/rails-flow/scripts/toolchain_version_selftest.py`, `plugins/rails-flow/scripts/mutations/toolchain_version.py`,
+  `plugins/rails-flow/commands/toolchain-check.md`** (#1407). It picked the newest install record across every
+  project, so a project on an older version was reported as current. Measured: `--project` fidara-ledger printed
+  rails-flow 1.51.0 and rails-stack 1.68.0 (Retask-platform's versions); it runs 1.46.0 and 1.63.0. A record with a
+  `projectPath` now applies only to that project, and one without applies everywhere. New `--installed-path PLUGIN`
+  prints the tree this project loads, and exits 2 when there is none. A subdirectory of the project, a trailing slash
+  and a symlinked path are the same project; a same-prefix sibling is not. Selftest 29 → 44, including the regression
+  through `main()` (a project behind the machine's newest install exits 1, not 0). Guard 2 → 8 mutations, all caught.
+  The same machine-wide pick in design-flow's `doctrine_path.py` is #1421, next release.
 
 - **A PR body must carry the repo's own PR-template sections — `plugins/rails-flow/hooks/scripts/guard-claims.sh`,
   `plugins/rails-flow/hooks/scripts/lib/pr_template.py`, `plugins/rails-flow/scripts/check_hook_gates.py`,
@@ -3539,6 +3576,15 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     `/rails-flow:issues` and `/rails-flow:fix` file and fix from, so a finding already fixed on its branch would have
     been filed again. All three per-PR reviewers now use `prs/`, and `/rails-flow:issues` Phase 0 says never to file
     from it.
+  - **One file per pass, replaced each round** (the independent pre-release review found two blockers in the first
+    version). With all three passes appending to one file, `check_spec_review.py` took "the file exists" as proof
+    the spec pass ran, so code-reviewer's records alone passed a CLEAN spec gate. And the file only grew, so a
+    finding fixed in round one blocked round two, and the only ways past were deleting history or reusing ids,
+    which `findings.py validate` refuses. Each pass now writes
+    `docs/evidence/reviews/prs/<branch-slug>/<pass>-findings.jsonl`, replaced each round and committed with the
+    fix, so `git log -p` holds every round. `<branch-slug>` is defined for any branch (`/` becomes `-`).
+    `check_spec_review.py` refuses a file holding records but none from `spec-reviewer` (exit 2), and an empty file
+    is a clean run; a selftest case and a mutation (10 of 10) cover both.
 
 - **`/rails-flow:spec` turns an idea into a technical spec before anything is built — `plugins/rails-flow/commands/spec.md`,
   `plugins/rails-flow/scripts/check_spec.py`, `plugins/rails-flow/scripts/mutations/check_spec.py`,
@@ -15872,6 +15918,57 @@ boot/validation path — with a bullet each so the promotion could close them se
   the proposed "Ruby 3.2+, Rails 7.2+" floor was REFUTED (gemspec: Ruby >= 3.1, Rails >= 7.1, < 9), so the
   doctrine states the tested Rails set instead. The "when to adopt" rule is our design: maintainer decision
   recorded on #1365.
+  - **The separate-database install is corrected before it ships (promotion review).**
+    - **The old commands created nothing.** `rails_pulse:install --database=separate` only *prints* the
+      wiring (rails_pulse 0.4.1 `install_generator.rb:68-99`).
+    - **§7 now gives the wiring:** the `rails_pulse:` `database.yml` entry (`migrations_paths:
+      db/rails_pulse_migrate`, `schema_dump: false`) and `config.connects_to = { database: { writing:
+      :rails_pulse, reading: :rails_pulse } }`.
+    - **It names what the gem's message omits.** An environment is multi-database only when every key under
+      it is a database entry (activerecord `database_configurations.rb`, `config.values.all?(Hash)`), so a
+      flat `development:` / `test:` block must move under `primary:`. Skipped, `db:prepare` either aborts with
+      `AdapterNotSpecified` (with `connects_to`) or writes all ten Pulse tables into the **primary**
+      (without it).
+    - **It adds a check that tells the two apart:** `RailsPulse::ApplicationRecord.connection_db_config.name`
+      must print `"rails_pulse"`. It printed `"primary"` on the misconfigured app.
+    - **The first install runs in a measured order:** `db:prepare` (development and test),
+      `rails_pulse:upgrade`, then `db:migrate:rails_pulse` in both. The upgrade generator copies nothing
+      until the Pulse tables exist, and `rails_pulse:status` stays at 1 until the migrations are copied and run.
+    - **Load the schema only into an EMPTY Pulse database, guarded, for every environment before any
+      `db:prepare`.** On an empty database, `db:prepare` runs the copied migrations before the gem's
+      schema-load hook and aborts ("Could not find table 'rails_pulse_operations'"). That hits every fresh
+      clone, CI run and first deploy. On a populated database, `db:schema:load_rails_pulse` marks *every*
+      copied migration applied without running it, so a pending one is skipped while `status` reads 0. §7's
+      loop counts the gem's ten tables. It loads only when none exist (exit 3), skips when all exist (exit 0),
+      and aborts when some exist or the check fails. The load records every copied migration as applied, so on
+      a database with any Pulse tables it would skip pending migrations. That includes a populated one whose
+      pending upgrade adds a table. §7 gives the repair for the abort: `db:migrate:rails_pulse` for an upgrade
+      in progress, or dropping an empty, partly created Pulse database. The loop covers test in development,
+      because `db:prepare` in development also prepares test.
+    - **The upgrade warnings are quoted and scoped to 0.4.0**, as upstream states them (`CHANGELOG.md:44,46`):
+      restart every process together, not as a rolling deploy; and do not run `db:setup` / `db:prepare` in
+      place of `db:migrate:rails_pulse`. On an entrypoint that runs `db:prepare` at boot, that migration runs
+      as a release step before the new version boots.
+    - **Who verified what:**
+      - doctrine-verifier CONFIRMED the generator and CHANGELOG claims against rails_pulse 0.4.1 (Rails
+        8.0.5.1 app).
+      - An independent reviewer ran §7 literally on fresh Rails 8.1.4 and 8.0.5.1 apps. It BLOCKED three
+        times: the flat-block and `status` claims; the empty-database abort; then the upgrade-before-tables
+        order and the load-on-a-populated-database skip.
+      - The author then ran both shell blocks verbatim on Rails 8.1.4, from nothing, from a fresh clone, and
+        on a populated database with a pending migration and a row. Every block exited 0, the migration was
+        applied, and the row survived. An unguarded-load control reproduced the silent skip. After the
+        reviewer's fourth pass (CLEAN, with advisories), the guard was first hardened to "load unless all ten
+        exist". A narrow re-check BLOCKED that (reproduced): it silently skipped the column migrations of an
+        upgrade that also adds a table. The guard is now none/all/some. The author re-ran it verbatim on Rails
+        8.1.4 in each state:
+        - fresh clone: exit 0;
+        - populated with a pending migration and a row: exit 0, applied, row kept, nothing marked;
+        - upgrade adding a table: exit 4, nothing marked; `db:migrate:rails_pulse` repairs it and the row
+          survives;
+        - partial first load: exit 4; drop and re-run gives exit 0;
+        - a failing check: exit 1, no load.
+      - PostgreSQL and MySQL were not run.
 
 ### 1.68.3 (release v1.151.0) — 2026-09-26
 
