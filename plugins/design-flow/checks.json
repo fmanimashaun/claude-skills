@@ -42,6 +42,20 @@
       ]
     },
     {
+      "id": "modal-fit",
+      "why": "No modal card is ever larger than the viewport, or flush with its edge (#1391, #1419): the maintainer's words, 'no modal card should be longer than the viewport vertically and horizontally, and every modal card should have a margin away from the viewport edges.' The doctrine carries it as an `inset-viewport` wrapper and a `max-h-full` panel whose body alone scrolls. Measured on the app behind the issue: its modal capped height with `max-h-[calc(100vh-3rem)]`, had no inset, and pinned its drawer to the edge with `fixed inset-y-0`; its privacy-policy <dialog> had no max height at all. Judged per dialog component, reading the template and its sibling .rb together.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_modal_fit.py"
+      ],
+      "applies_when": [
+        "app/components"
+      ],
+      "requires": [
+        "python3"
+      ]
+    },
+    {
       "id": "layout-composition",
       "why": "The doctrine is a priority order -- fluid, then intrinsic, then breakpoints as an exception that must justify itself -- and until now it was prose that nothing checked. Measured on a consumer app that declares 20-odd primitives of its own: grid-auto used 21 times, so the idea took, and 31 elements still hand-roll `flex` + an alignment + a gap, which is what cluster IS. Three more change the layout axis at a breakpoint where switcher, Sidebar and grid-auto adapt with no query. Sizing breakpoints are not flagged because the doctrine prescribes them, and a genuine structural swap is exempt when it is DECLARED.",
       "command": [

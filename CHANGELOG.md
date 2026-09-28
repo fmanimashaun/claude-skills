@@ -12923,6 +12923,15 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 *Version number assigned at promotion.*
 
+- **A pager with its summary first, and a modal that can outgrow or touch the viewport, are refused — `plugins/design-flow/scripts/check_modal_fit.py`,
+  `plugins/design-flow/scripts/check_table_layout.py`, `plugins/design-flow/scripts/mutations/check_modal_fit.py`,
+  `plugins/design-flow/scripts/mutations/check_table_layout.py`, `plugins/design-flow/checks.json`, `scripts/maintainer_doctor.py`**
+  (#1419). `check_table_layout.py` gains `pager-order`: a pager whose summary precedes its rows-per-page control
+  (a pager with no such control is not judged). New `check_modal_fit.py`, judged per dialog component with its sibling
+  `.rb`: `modal-exceeds-viewport` (no `inset-viewport` wrapper or no `max-h-full` panel) and `modal-touches-edge`
+  (`fixed` with `inset-y-0`/`inset-x-0`). Against the app behind the issue: 3 findings, its modal component on both
+  rules and its privacy-policy `<dialog>`, which has no max height. Mutations: 19/19 and 5/5 caught.
+
 - **A table that scrolls sideways, forces a width, or opens no details card is refused — `plugins/design-flow/scripts/check_table_layout.py`,
   `plugins/design-flow/scripts/mutations/check_table_layout.py`, `plugins/design-flow/checks.json`,
   `plugins/design-flow/commands/mobile.md`, `plugins/design-flow/README.md`, `scripts/maintainer_doctor.py`** (#1391).
@@ -15839,6 +15848,20 @@ boot/validation path — with a bullet each so the promotion could close them se
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
 ### Unreleased
+
+- **The pager sits bottom-left, no modal outgrows the viewport, a table in a modal is a full table, and a bulk import
+  asks before it updates — `skills/design-system/references/components.md`, `skills/design-system/references/page-anatomies.md`,
+  `skills/design-system/references/crud-modal-pattern.md`, `skills/design-system/references/component-implementations.md`,
+  `dist/design-system.skill`** (#1419). *Pagination*: rows per page then "Showing X–Y of Z" bottom-left, links right, the
+  left group never wrapping and the links wrapping below it; the bar always renders because it carries the count, so
+  the Data table anatomy's count moves into it and rows per page leaves the toolbar. *Modal / Dialog*: never larger
+  than the viewport minus the inset in either direction, header and action foot pinned, the body scrolling vertically
+  only (`overflow-x-hidden` explicit). *Table (CRUD)*: a table inside a modal keeps its total, pager, empty state and
+  phone cards. A new **Bulk import preview** anatomy: one modal journey, rows judged refused / new / changed /
+  identical / unchangeable, per-row Update/Skip **defaulting to Skip**, "Update all N"/"Skip all N" across pages,
+  identical rows as a count, the outcome stated in the confirm foot, the file judged again at confirm (a record
+  changed since the preview is a conflict, never overwritten), an audit entry per update, and the identity key never
+  updatable. Our own design, no upstream: maintainer decision recorded on #1419.
 
 - **The quality-pass worked example's `check(label, ok, detail)` count is refreshed to 40 — `skills/quality-pass/references/worked-example.md`,
   `dist/quality-pass.skill`** (#1367). The new copy is `plugins/qa-flow/scripts/text_resize.py`; reach stays 21. It reuses

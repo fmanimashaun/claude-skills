@@ -346,6 +346,13 @@ against it, and the `inset-viewport` utility
   `body` slot;** the body is the block content, same as Alert. This line advertised one for three
   releases, and `m.with_body` raises `NoMethodError` — the #168/#182 class, in prose the call-site
   linter cannot reach.
+- **Never larger than the viewport, in either direction** (#1419, the maintainer's decision). The
+  panel's maximum width and height are the viewport minus the [Viewport inset](#viewport-inset) on
+  every side, at every size — a short landscape phone included. The card shrinks to fit rather than
+  overflowing: its **header** (title, close) and its **action foot** are pinned, and only the body
+  scrolls, **vertically**. A modal never scrolls horizontally: the body is
+  `min-h-0 min-w-0 overflow-y-auto overflow-x-hidden`, and what it holds must fit its width — a table
+  inside it follows [Table (CRUD)](#table-crud), which never needs horizontal room.
 - **`placement:`** picks centre or an edge: `:center` (default) · `:left` · `:right` · `:bottom`. An
   **overlay drawer is this component with `placement: :right`** — one dialog implementation, one focus
   trap, one `Esc`. A *persistent* sidebar is not a dialog and must not come through here.
@@ -1073,6 +1080,9 @@ implements its phone half.
   toolbar, select-all-matching, what survives a page change — is the anatomy's, not this entry's:
   [page-anatomies.md → Selection and bulk actions](page-anatomies.md#selection-and-bulk-actions-969).
   Ticking a row's checkbox never opens the record: `row-link` ignores clicks that land on a control.
+- **A table inside a modal is still a full data table** (#1419): its stated total, pagination with
+  rows per page, the empty state inside the table, and phone summary cards — never "the first N" with
+  no way to the rest. Its pager's links target the modal frame, so paging stays inside the card.
 - **Unchanged by master-detail:** the five states (loaded, empty, filtered-empty, loading, error),
   the count always stated, and rows per page —
   [page-anatomies.md → Data table](page-anatomies.md#five-states-and-all-five-are-required).
@@ -1713,8 +1723,22 @@ can carry.
   complete. Above 10 the select always shows, including when a larger choice fits everything on one
   page, so a person who picked 25 can pick 10 again.
 - Keep the Pagy-based `shared/_pagination`: per-page `<select>`, "Showing X–Y of Z", windowed links + prev/next
-  Lucide chevrons, active = `bg-primary/10 text-primary`. Optional `turbo_frame` target. Responsive `flex-col
-  md:flex-row`.
+  Lucide chevrons, active = `bg-primary/10 text-primary`. Optional `turbo_frame` target.
+- **The bar's layout is fixed** (#1419, the maintainer's decision): **bottom-left** the rows-per-page
+  select, then "Showing X–Y of Z"; the page links on the **right**. The left pair is one group that
+  never wraps; the bar is a `cluster` with `justify-content: space-between`, so where the bar is
+  narrower than both groups the links wrap below the left group, with no breakpoint. The bar is always
+  rendered, because it carries the count ([page-anatomies.md → Data table](page-anatomies.md#data-table--the-index-of-a-resource)).
+
+  ```erb
+  <nav aria-label="Pagination" class="cluster" style="--justify: space-between">
+    <div class="flex flex-nowrap items-center gap-(--space-s)">
+      <%# rows-per-page select — hidden when the total is 10 or fewer %>
+      <p class="text-step--2 text-muted-foreground" aria-live="polite">Showing 1–20 of 63</p>
+    </div>
+    <%# windowed page links, prev/next — rendered only when there is more than one page %>
+  </nav>
+  ```
 - **a11y:** wrap it in `<nav aria-label="Pagination">` — there is usually more than one landmark of
   that type on a list screen. **The active page must not be colour-alone**: `aria-current="page"`
   carries it, and `bg-primary/10 text-primary` is then the visual half rather than the whole signal.

@@ -141,6 +141,8 @@ restored to the trigger.
   into the modal frame. A record opened from a table is its
   [Details card](components.md#details-card) in this same frame (#1391); a show *page* remains
   only for a record with no table index, and its edit/delete still open modals.
+- **A bulk import is one modal journey too** — choose, preview, decide, confirm, result — and it
+  never decides an existing record's fate silently: [page-anatomies.md → Bulk import preview](page-anatomies.md#bulk-import-preview--present-the-choice-never-make-it-silently) (#1419).
 - **Success mutates the list via Turbo Stream only** — prepend (create) / replace `dom_id`
   (update) / remove `dom_id` (delete) — never a full index re-render. Pair every mutation with
   a **toast**.

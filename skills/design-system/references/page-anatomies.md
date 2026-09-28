@@ -353,19 +353,19 @@ is where the decisions no single part can carry are made.
     <div class="cluster"><%# primary action %></div>
   </header>
 
-  <%# TOOLBAR. Search, filters, per-page. It owns the query, never the rows. %>
+  <%# TOOLBAR. Search and filters. It owns the query, never the rows. Rows per page is NOT here: %>
+  <%# it sits bottom-left in the pager bar (components.md → Pagination, #1419). %>
   <div class="cluster justify-between" role="search">
     <%# Search input (type=search, leading Lucide icon) + filter combobox(es) %>
   </div>
-
-  <%# The count is ALWAYS here, truncated or not. %>
-  <p class="text-step--2 text-muted-foreground" aria-live="polite">Showing 1–20 of 63</p>
 
   <%# NO overflow wrapper: the table fits its container (Table (CRUD)). Rows are summaries whose
       name opens the record into the modal frame as its Details card. %>
   <table class="hidden md:table w-full text-step--1 text-left"><%# Table (CRUD) %></table>
   <div class="md:hidden"><ul role="list" class="stack"><%# the same rows as designed summary cards %></ul></div>
 
+  <%# The pager bar: rows per page + "Showing X–Y of Z" bottom-left, links right. ALWAYS rendered, %>
+  <%# because it carries the count (components.md → Pagination, #1419). %>
   <nav aria-label="Pagination"><%# Pagination %></nav>
 </section>
 ```
@@ -393,10 +393,12 @@ to someone who filtered to `role: auditor` is a lie about the data, and it hides
 control: the one that clears the filter. The filtered branch gets `aria-live="polite"`, per
 [Empty state](components.md#empty-state) — *"or the user filters into silence"*.
 
-### The count is part of the table, not part of pagination
+### The count is always shown, bottom-left in the pager bar
 
-**"Showing X–Y of Z" appears whether or not the list is long enough to page**, so it is one control
-that grows rather than a control that appears. A reader cannot tell a complete list of 8 from a
+**"Showing X–Y of Z" appears whether or not the list is long enough to page** — the pager bar is
+rendered on every list for exactly this reason, with its links only when there is a second page
+([components.md → Pagination](components.md#pagination), #1419) — so it is one control that grows
+rather than a control that appears. A reader cannot tell a complete list of 8 from a
 capped list of 8 unless the page says which it is — see #963: a cap without a count is the same
 class of defect as a rescue that swallows the exception.
 
@@ -423,7 +425,8 @@ and missing in the other.
 
 Configuration on the left, extraction on the right, and the left-hand order is fixed: the
 [Period selector](components.md#period-selector) first when the screen is period-scoped, then the
-search input, then categorical filters, then per-page. **Export sits alone on the right** — it reads
+search input, then categorical filters. Rows per page is not a toolbar control: it sits bottom-left in
+the pager bar ([components.md → Pagination](components.md#pagination), #1419). **Export sits alone on the right** — it reads
 the configured query, so it must not sit among the controls that configure it. The toolbar is
 `--shell-toolbar` (56px) tall and `sticky top-0` when the table is long enough to scroll under it; the
 table header then sticks at `top-(--shell-toolbar)` ([Table (CRUD)](components.md#table-crud),
@@ -470,6 +473,40 @@ once — so every one of these is decided here, not per app.
   active only while the table has focus.
 - **Batches that take time are a Background operation.** Over about a second the action returns
   *accepted* and the progress banner takes over; the toolbar does not sit with a spinner in it.
+
+## Bulk import preview — present the choice, never make it silently
+
+A CSV or bulk upload that can match records that already exist (#1419, the maintainer's decision —
+*"present them first to the user to confirm if they should update or skip … instead of silently
+making that choice for them"*). It is **one modal journey** in the wide
+[Details card](components.md#details-card) frame: **choose the file → preview → decide → confirm →
+result**, each step replacing the last inside the same card.
+
+**The preview judges every row, into one of five kinds**, each with its own count:
+
+| kind | what it is | what the preview shows |
+|---|---|---|
+| **Refused** | the row cannot be imported | the reason, and the **spreadsheet row number** so it can be fixed at source |
+| **New** | no matching record | the row as it will be created |
+| **Changed** | matches an existing record, and at least one field differs | per field, **current → incoming**, the changed fields highlighted, and a per-row **Update / Skip** choice |
+| **Identical** | matches an existing record with nothing to change | **a count line**, collapsed — *"41 rows are identical"* — with a **Show them** expander |
+| **Unchangeable** | matches a record import may not change (e.g. merged) | the reason; no choice offered |
+
+- **The default is Skip.** Nothing about an existing record changes unless the person chooses it,
+  row by row or in bulk.
+- **"Update all N" and "Skip all N"** act on **every** changed row across every page of the preview,
+  not only the visible one, and their labels state N. The preview is a [Table (CRUD)](components.md#table-crud)
+  in the card, so it is a full data table: its total, its pager, and phone summary cards.
+- **The confirm foot states the outcome before it happens** — *"Create 12 · Update 3 · Skip 5"* — in
+  the card's pinned action foot ([Modal / Dialog](components.md#modal--dialog)).
+- **Confirm judges the file again, against the live data.** A record that changed since the preview
+  was drawn is a **conflict**: it is reported in the result and **never overwritten**. The preview is
+  a proposal, not a lock.
+- **Every update writes an audit entry with the before and after values**, per field.
+- **A record's identity key (its code) is never updatable by import** — it is how the row found its
+  record; an import that could change it could silently re-point the row at another one.
+- **The result step** states the outcome as it actually happened — created, updated, skipped,
+  refused, conflicts — which can differ from the preview's, because confirm judged the file again.
 
 ## Settings
 

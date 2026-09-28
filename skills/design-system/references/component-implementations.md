@@ -409,7 +409,9 @@ end
         <button type="button" data-action="modal#close" aria-label="Close"
                 class="with-icon min-h-touch rounded-md focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/30"><span class="sr-only">Close</span><%= close_icon %></button>
       </div>
-      <div class="min-h-0 overflow-y-auto"><%= content %></div>
+      <%# Vertical only (#1419): `overflow-x-hidden` is explicit, so wide content can never be scrolled %>
+      <%# sideways. `min-w-0` lets the body shrink to the panel instead of pushing it wider.            %>
+      <div class="min-h-0 min-w-0 overflow-y-auto overflow-x-hidden"><%= content %></div>
       <% if actions? %><div class="cluster" style="--justify: flex-end"><%= actions %></div><% end %>
     </div>
   </div>

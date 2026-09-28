@@ -2,11 +2,11 @@
      Rebuild:  python3 scripts/build_wiki.py
      Drift:    python3 scripts/build_wiki.py --check  (runs in the gate sweep) -->
 # Agents and gates
-**30 shipped agents · 50 shipped commands · 143 gates · 4 tier tables**, plus 5 maintainer agents and 6 maintainer commands that are not installed.
+**30 shipped agents · 50 shipped commands · 144 gates · 4 tier tables**, plus 5 maintainer agents and 6 maintainer commands that are not installed.
 
 | plugin | version | agents | commands | tier rows | gates |
 |---|---|---|---|---|---|
-| `design-flow` | 1.44.2 | 5 | 12 | 5 | 20 |
+| `design-flow` | 1.44.2 | 5 | 12 | 5 | 21 |
 | `pipeline` | 1.3.4 | 2 | 8 | 2 | 4 |
 | `qa-flow` | 1.33.2 | 11 | 8 | 11 | 16 |
 | `rails-flow` | 1.54.0 | 12 | 22 | 12 | 31 |
@@ -88,6 +88,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | design-flow conformance collector | `design-flow` | `python3 plugins/design-flow/scripts/rendered_conformance.py --check-collector` | live check |
 | design-flow design prompt selftest | `design-flow` | `python3 plugins/design-flow/scripts/design_prompt.py --selftest` | selftest |
 | design-flow doctrine path selftest | `design-flow` | `python3 plugins/design-flow/scripts/doctrine_path.py --selftest` | selftest |
+| design-flow modal fit | `design-flow` | `python3 plugins/design-flow/scripts/check_modal_fit.py --selftest` | selftest |
 | design-flow palette candidates | `design-flow` | `python3 plugins/design-flow/scripts/palette_candidates.py --check` | live check |
 | design-flow palette candidates selftest | `design-flow` | `python3 plugins/design-flow/scripts/palette_candidates.py --selftest` | selftest |
 | design-flow palette gates selftest | `design-flow` | `python3 plugins/design-flow/scripts/palette_gates.py --selftest` | selftest |
