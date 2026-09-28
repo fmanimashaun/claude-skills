@@ -1,8 +1,8 @@
-"""Mutation guard: hook_issue_labels. Declared here, run by scripts/mutation_check.py (#1311).
+"""Mutation guard: hook_issue_labels. Declared here, run by scripts/mutation_check.py (#1311, #1400).
 
 The mutations that matter let an unlabelled or under-labelled issue through: no label accepted,
-a `when` group ignored, a prefix never matching, a broken declaration read as "allow", or a
-compound command whose create is never seen.
+a `when` group ignored, a prefix never matching, a broken declaration read as "allow", a create the
+parser never sees, or (#1400) a `cd` the create may not have followed being trusted anyway.
 """
 from mutation_types import Guard, Mutation  # noqa: F401
 
@@ -14,8 +14,8 @@ GUARD = Guard(
         # #1336: a heredoc body is tokenised again, so prose apostrophes refuse a labelled create.
         Mutation(
             "heredoc bodies are no longer stripped before tokenising",
-            "    cmd = strip_heredocs(cmd).replace(",
-            "    cmd = (cmd).replace(",
+            "        cmd = strip_heredocs(cmd)\n    except ValueError:",
+            "        cmd = cmd\n    except ValueError:",
             "a heredoc body with apostrophes does not break a labelled create",
         ),
         Mutation(
@@ -23,6 +23,12 @@ GUARD = Guard(
             '            while i < len(lines) and (lines[i].lstrip("\\t") if dash else lines[i]) != tag:',
             "            while i < len(lines) and lines[i] != tag:",
             "a <<- heredoc (tab-indented close) is stripped too",
+        ),
+        Mutation(
+            "an unterminated heredoc swallows the rest of the command, including the create",
+            '            if i >= len(lines):\n                raise ValueError(f"heredoc <<{tag} is never closed")',
+            "            if False:\n                raise ValueError(f\"heredoc <<{tag} is never closed\")",
+            "an unterminated heredoc refuses rather than swallowing the create",
         ),
         Mutation(
             "a create with no label is allowed",
@@ -33,7 +39,7 @@ GUARD = Guard(
         Mutation(
             "a `when` group applies to every issue, so a feature is asked for a severity",
             '            if g.get("when") and not any(matches(l, g["when"]) for l in labels):\n                continue',
-            '            if False:\n                continue',
+            "            if False:\n                continue",
             "CONTROL: a feature is allowed",
         ),
         Mutation(
@@ -55,12 +61,18 @@ GUARD = Guard(
             "an unreadable declaration refuses rather than allowing",
         ),
         Mutation(
-            "only the first segment of a compound command is read",
-            "    for k, (kind, val) in enumerate(items):",
-            "    for k, (kind, val) in enumerate(items[:1]):",
-            "a create later in a compound command is checked",
+            "glued punctuation is left as one word, so the create after `);` vanishes",
+            "        if tok and set(tok) <= set(\";&|()\"):\n            i = 0",
+            "        if False:\n            i = 0",
+            "refused: a cd inside a subshell",
         ),
-        # #1400: the declaration is the TARGET repository's, not the session's.
+        Mutation(
+            "another repo's issue is held to this project's groups",
+            "        foreign = repo is not None and repo != mine",
+            "        foreign = False",
+            "another repo: one label is enough",
+        ),
+        # ---- #1400: the TARGET repository's declaration ------------------------------------------
         Mutation(
             "the session's declaration is applied again, whatever repository the create runs in",
             "        target, why = target_root(cd, root)",
@@ -68,59 +80,10 @@ GUARD = Guard(
             "cd into another repo: that repo's declaration applies, and passes",
         ),
         Mutation(
-            "a cd is no longer tracked, so the create is judged where the session stands",
-            "        if seg and seg[0] in (\"cd\", \"pushd\", \"popd\"):",
-            "        if False:",
-            "cd into another repo: that repo's declaration applies, and passes",
-        ),
-        Mutation(
             "the cd target is used as-is, so a subdirectory has no declaration",
-            "    return (Path(top) if top else path.resolve()), \"\"",
-            "    return path.resolve(), \"\"",
+            '    return (Path(top) if top else path.resolve()), ""',
+            '    return path.resolve(), ""',
             "a cd into a SUBDIRECTORY finds the repo's toplevel declaration",
-        ),
-        Mutation(
-            "an unresolvable cd is guessed instead of refused",
-            '                    or "$" in target or "`" in target or cd == UNKNOWN or depth > 0:',
-            "                    or cd == UNKNOWN or depth > 0:",
-            "a cd to a variable is refused, not guessed",
-        ),
-        # #1400 review: each way an uncertain cd would be GUESSED instead of refused.
-        Mutation(
-            "glued punctuation is left as one word, so the create after `);` vanishes",
-            "        if tok and set(tok) <= set(\";&|()\"):\n            i = 0",
-            "        if False:\n            i = 0",
-            "refused: a glued `)&&` still splits",
-        ),
-        Mutation(
-            "a subshell's cd outlives its closing parenthesis",
-            "            elif stack:\n                cd, conditional = stack.pop()",
-            "            elif stack:\n                stack.pop()",
-            "refused: a subshell cd ends at its )",
-        ),
-        Mutation(
-            "a cd in a pipeline is followed",
-            '            if before in ("|", "&", "||") or after in ("|", "&") or seg[0] == "popd" or target == "-" \\',
-            '            if seg[0] == "popd" or target == "-" \\',
-            "refused: a cd in a pipeline",
-        ),
-        Mutation(
-            "cd - is read as a directory",
-            '            if before in ("|", "&", "||") or after in ("|", "&") or seg[0] == "popd" or target == "-" \\',
-            '            if before in ("|", "&", "||") or after in ("|", "&") or seg[0] == "popd" \\',
-            "refused: cd - names no visible directory",
-        ),
-        Mutation(
-            "a conditional cd is trusted past a ;",
-            "            if val == \";\" and conditional:\n                cd, conditional = UNKNOWN, False",
-            "            if False:\n                cd, conditional = UNKNOWN, False",
-            "refused: a cd that may never have run",
-        ),
-        Mutation(
-            "a create after `cd x ||` is judged in x",
-            '            if after == "||":\n                cd = UNKNOWN',
-            '            if False:\n                cd = UNKNOWN',
-            "refused: a create that runs only if the cd failed",
         ),
         Mutation(
             "-R naming the session's own repo takes the cd's rules again",
@@ -134,53 +97,48 @@ GUARD = Guard(
             "        repo = repo",
             "refused: GH_REPO naming the session's own repo keeps its rules",
         ),
+        # ---- #1400: the ALLOWLIST -- each way a cd the create may not have followed is trusted -----
         Mutation(
-            "a cd after || is followed as though it ran",
-            '            if before in ("|", "&", "||") or after in ("|", "&") or seg[0] == "popd" or target == "-" \\',
-            '            if before in ("|", "&") or after in ("|", "&") or seg[0] == "popd" or target == "-" \\',
-            "refused: a cd after || runs only if the command before it failed",
+            "a cd anywhere is followed, not only as the first command",
+            '    if len(prefix) < 3 or prefix[0] != "cd" or prefix[2] != "&&":',
+            "    if len(prefix) < 3:",
+            "refused: a cd that is not the first command",
         ),
         Mutation(
-            "a cd inside a compound body is followed as though it ran",
-            '                    or "$" in target or "`" in target or cd == UNKNOWN or depth > 0:',
-            '                    or "$" in target or "`" in target or cd == UNKNOWN:',
-            "refused: a cd inside an if body may never have run",
+            "a separator other than && between the cd and the create is trusted",
+            '    if any(op != "&&" for op in ops) or any(t in ("(", ")") for t in rest):',
+            "    if False:",
+            "refused: a create after cd && exit;",
         ),
         Mutation(
-            "the command after if/while is dropped, so a cd in a condition is never seen",
-            '            if word in ("for", "select", "case", "function"):',
-            '            if word in OPEN and word != "{":',
-            "refused: a cd in an if condition is not dropped",
+            "a second cd before the create is ignored",
+            "    rest = prefix[3:]\n    if any(_is_cd_word(t) for t in rest):",
+            "    rest = prefix[3:]\n    if False:",
+            "refused: a second cd",
         ),
         Mutation(
-            "closing keywords are not counted, so every cd after a block reads as inside it",
-            "            depth += 1 if word in OPEN else (-1 if word in CLOSE else 0)",
-            "            depth += 1 if word in OPEN else 0",
-            "CONTROL: a top-level cd after a closed if is followed",
+            "a command whose first word is not cd reads as having no cd at all",
+            "    if not any(_is_cd_word(t) for t in prefix):\n        return None",
+            '    if prefix[:1] != ["cd"]:\n        return None',
+            "refused: a cd that is not the first command",
         ),
         Mutation(
-            "newlines stop separating commands",
-            '    cmd = strip_heredocs(cmd).replace("\\\\\\n", " ").replace("\\n", " ; ")',
-            "    cmd = strip_heredocs(cmd)",
-            "a newline separates commands",
+            "a cd glued into a backtick substitution is not seen",
+            '    return any(piece in CD_WORDS for piece in re.split(r"[`=$(){};]+", tok))',
+            "    return tok in CD_WORDS",
+            "refused: a cd inside backticks",
+        ),
+        Mutation(
+            "cd - or a $VAR operand is followed as a directory",
+            '    if target in ("-", "--") or target.startswith("-") or "$" in target or "`" in target:',
+            "    if False:",
+            "refused: a cd to a variable",
         ),
         Mutation(
             "a newline after && breaks the chain",
-            '            if val == ";" and op_at(k - 1) in ("&&", "||", "|"):\n                continue',
-            '            if False:\n                continue',
+            '        if tok == ";" and items and items[-1] in ("&&", "||", "|"):\n            continue',
+            "        if False:\n            continue",
             "a newline after && continues the chain",
-        ),
-        Mutation(
-            "builtin cd is not recognised as cd",
-            '        while seg and seg[0] in ("builtin", "command"):\n            seg.pop(0)',
-            '        while False:\n            seg.pop(0)',
-            "builtin cd is cd",
-        ),
-        Mutation(
-            "another repo's issue is held to this project's groups",
-            "        foreign = repo is not None and repo != mine",
-            "        foreign = False",
-            "another repo: one label is enough",
         ),
     ),
 )

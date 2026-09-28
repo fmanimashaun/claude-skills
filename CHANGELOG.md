@@ -3495,22 +3495,18 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   - **The bug.** `cd /path/to/other-repo && gh issue create ...` from one checkout was held to the session's
     `.rails-flow/issue-labels.json`. It refused a correctly labelled issue and asked for labels the other repo does
     not have.
-  - **The fix.** Each create is tied to the directory it certainly runs in, and that directory's git toplevel supplies
-    the declaration. A `cd` is followed only when it certainly ran first, in the same shell. It is refused, never
-    guessed, when:
-    - the `cd` is inside `( … )` (the create after the `)` is judged in the session), in a pipeline, or behind `&`;
-    - it is `cd -`, `popd` or a `$VAR`;
-    - it may never have run: a conditional `cd` before a `;`, a `cd` after `||`, or one inside an `if`/`while`/`for`/
-      `case`/`{ }`/function body (those keywords are counted, so a top-level `cd` after the block is followed);
-    - the create runs only if the `cd` failed (`cd x || gh …`).
-  - **Also handled:** newlines separate commands; `pushd`, `builtin cd` and `command cd` move like `cd`; glued
-    punctuation such as `);` is split. Unsplit, it hid the create entirely, and an unseen create was let through.
-  - **`-R` / `GH_REPO`.** A repo named that way decides where the issue lands. If it is the session's own, the
-    session's rules apply from any directory. A foreign one still needs one label, as before; it never applied the
-    session's groups. The -R finding is recorded on #1400.
-  - **Tests.** 35 new selftest cases and 3 end-to-end hook fixtures. Mutations: 19 new, 28 of 28 caught. Two
-    independent reviews found the subshell, `cd -`, `-R`, `||` and compound-body holes before merge. A create inside
+  - **The fix is an allowlist.** A create written `cd <literal path> && … && gh issue create …` is judged by that
+    directory's git toplevel: `cd` is the command's first word, only `&&` joins it to the create, and no other `cd`
+    appears before it. A command with no `cd` keeps the session's rules, as before.
+  - **Any other shape with a `cd` is refused, with the shape that works.** That includes `;`, a subshell, a
+    pipeline, `&`, `||`, a second `cd`, `cd -`, `$VAR`, `pushd`, `$(…)` or backticks, and compound bodies.
+  - **Why an allowlist.** Three independent reviews of an earlier shell model (subshells, conditionals, block
+    keywords) each found a new leak: a `case` pattern's `)`, a `time` prefix, a quoted `fi`. A blocklist over shell
+    syntax never ends; an allowlist cannot leak.
+  - **Also.** `-R` / `GH_REPO` naming the session's own repo keeps its rules; a foreign one needs one label, as
+    before. An unterminated heredoc now refuses rather than swallowing the create after it. A create inside
     `sh -c`/`eval` is never checked, on dev as well; that is filed as #1423.
+  - **Tests.** 34 new selftest cases (55 in all), 3 end-to-end hook fixtures. Mutations: 12 new, 21 of 21 caught.
 
 - **`/rails-flow:slice` breaks a spec, brief or issue into dependency-ordered vertical slices and files them —
   `plugins/rails-flow/commands/slice.md`, `plugins/rails-flow/scripts/check_slices.py`,

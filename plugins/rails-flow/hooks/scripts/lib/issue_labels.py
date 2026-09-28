@@ -17,11 +17,11 @@ Undeclared, or `-R/--repo` naming another repository (whose taxonomy is not ours
 THE DECLARATION IS THE TARGET REPOSITORY'S, not the session's (#1400). A coordinator working from one
 checkout runs `cd /path/to/other-repo && gh issue create ...`; the issue lands in the other repo, so
 its labels answer to the other repo's declaration. The hook used to read the session's file, refused
-a correctly labelled issue, and asked for labels the other repo does not have. So each create is
-tied to the directory it runs in: a `cd` earlier in the same command moves it, and that directory's
-git toplevel supplies both the declaration and the "is this our repo" answer for `-R`. A `cd` whose
-target cannot be resolved here (a `$VAR`, a missing path) is refused and named, because guessing
-would apply one repo's rules to another's issue -- the defect itself, in a different direction.
+a correctly labelled issue, and asked for labels the other repo does not have. So a create written
+`cd <literal path> && … && gh issue create …` is judged by that directory's git toplevel, which
+supplies both the declaration and the "is this our repo" answer for `-R`. Any OTHER shape with a
+`cd` in it is refused rather than guessed (see `issue_creates`), because a guess applies one repo's
+rules to another's issue -- the defect itself, in a different direction.
 
 Called by guard-bash.sh with the RAW command on stdin (the normalised form strips quotes, and a label
 value is usually quoted). Prints the refusal and exits 1; exits 0 to allow. The hook fails closed on
@@ -53,6 +53,10 @@ def strip_heredocs(cmd: str) -> str:
     double quotes. A body is prose, so it holds apostrophes and backticks, and shlex read those as an
     unterminated quote and refused a correctly labelled `gh issue create` in the same call. The body
     is data the shell never tokenises, so it is not ours to parse either.
+
+    A heredoc whose closing tag never arrives raises ValueError, which the caller turns into a
+    refusal: an unterminated `<<EOF` (or a quoted mention of one) would otherwise swallow every later
+    line, including a `gh issue create`, and a create nobody sees is a create let through.
     """
     lines = cmd.split("\n")
     out, i = [], 0
@@ -64,32 +68,42 @@ def strip_heredocs(cmd: str) -> str:
             tag, dash = m.group(3), m.group(1) == "-"
             while i < len(lines) and (lines[i].lstrip("\t") if dash else lines[i]) != tag:
                 i += 1
+            if i >= len(lines):
+                raise ValueError(f"heredoc <<{tag} is never closed")
             i += 1  # the closing tag line
     return "\n".join(out)
 
 
-UNKNOWN = "\0unknown"   # a cd whose effect on the create cannot be known from the text
+UNKNOWN = "\0unknown"   # a cd the create may or may not have followed
+CD_WORDS = {"cd", "pushd", "popd"}
+
+
+def _is_cd_word(tok: str) -> bool:
+    """`cd`, and `cd` glued into an assignment or substitution (`x=\\`cd`, `$(cd`): any way to move."""
+    return any(piece in CD_WORDS for piece in re.split(r"[`=$(){};]+", tok))
 
 
 def issue_creates(cmd: str) -> list[tuple[list[str], str | None, str | None]]:
-    """(argv, the directory in force, a GH_REPO prefix) for every `gh issue create` in the command.
+    """(argv, the directory it runs in, a GH_REPO prefix) for every `gh issue create` in the command.
 
-    The directory is None (the session's), a literal `cd` operand, or UNKNOWN. A `cd` is FOLLOWED
-    only when it certainly ran before the create, in the same shell. Anything less is UNKNOWN,
-    which the caller refuses, because a guess applies one repo's rules to another's issue -- the
-    defect itself (#1400). So:
-      * a `cd` inside `( … )` ends at the `)`;
-      * a `cd` in a pipeline or behind `&` runs in a subshell (or, in zsh, might not): UNKNOWN;
-      * a `cd` after `&&`/`||` holds for creates chained to it by `&&`, and is UNKNOWN past a
-        later `;` or newline, where it may never have run; a create after `cd x ||` is UNKNOWN;
-      * `cd -`, `popd` and a `$VAR` operand name no directory the text can see: UNKNOWN;
-      * `pushd` moves like `cd`; `builtin cd` and `command cd` are `cd`;
-      * a `cd` after `||` runs only if what came before FAILED: UNKNOWN;
-      * a `cd` inside a compound body (`if`/`while`/`for`/`case`/`{ }`/a function) may never run,
-        or run once per loop: UNKNOWN. The body's keywords are counted, so the tracker knows when
-        it is back at the top level.
+    The directory is None (the session's), a literal `cd` operand, or UNKNOWN, which the caller
+    refuses. It is an ALLOWLIST, and deliberately so (#1400). Three reviews of a shell model that
+    tracked subshells, pipelines, conditionals and compound bodies each found a new way a guessed
+    `cd` leaked -- a `case` pattern's `)`, a `time` prefix, a quoted `fi` -- because a blocklist over
+    shell syntax never ends. So a `cd` is followed in exactly ONE shape:
+
+        cd <literal path> && … && gh issue create …
+
+    the command's FIRST word is `cd`, every separator up to the create is `&&`, and no other `cd`
+    word appears before it. No cd word before the create: the session's own directory, as before.
+    Any other shape with a cd in it: UNKNOWN, refused with the shape that works. The cost is a
+    refusal of some valid commands, each fixable in one line; the benefit is that nothing leaks.
     """
-    cmd = strip_heredocs(cmd).replace("\\\n", " ").replace("\n", " ; ")
+    try:
+        cmd = strip_heredocs(cmd)
+    except ValueError:
+        return [(["__unparseable__"], None, None)]
+    cmd = cmd.replace("\\\n", " ").replace("\n", " ; ")
     try:
         lexer = shlex.shlex(cmd, posix=True, punctuation_chars=";&|()")
         lexer.whitespace_split = True
@@ -97,8 +111,7 @@ def issue_creates(cmd: str) -> list[tuple[list[str], str | None, str | None]]:
     except ValueError:
         return [(["__unparseable__"], None, None)]
     # shlex GLUES adjacent punctuation: `);` and `)&&` arrive as one token. Unsplit, such a token
-    # read as a word, and the `gh issue create` after it vanished -- and a create nobody sees is a
-    # create let through. So every punctuation run is split into shell operators here.
+    # read as a word, and the `gh issue create` after it vanished -- a create let through unseen.
     split: list[str] = []
     for tok in tokens:
         if tok and set(tok) <= set(";&|()"):
@@ -113,80 +126,49 @@ def issue_creates(cmd: str) -> list[tuple[list[str], str | None, str | None]]:
                     i += 1
         else:
             split.append(tok)
-    items: list[tuple[str, object]] = []
-    cur: list[str] = []
+    # A newline right after `&&` / `||` / `|` continues that chain; drop the `;` it became.
+    items: list[str] = []
     for tok in split:
-        if tok in ("(", ")") or (tok and set(tok) <= set(";&|")):
-            if cur:
-                items.append(("seg", cur))
-                cur = []
-            items.append(("paren" if tok in "()" else "op", tok))
-        else:
-            cur.append(tok)
-    if cur:
-        items.append(("seg", cur))
+        if tok == ";" and items and items[-1] in ("&&", "||", "|"):
+            continue
+        items.append(tok)
 
-    def op_at(k: int) -> str | None:
-        return items[k][1] if 0 <= k < len(items) and items[k][0] == "op" else None  # type: ignore[return-value]
-
-    OPEN = {"if", "while", "until", "for", "select", "case", "{", "function"}
-    CLOSE = {"fi", "done", "esac", "}"}
-    LEAD = {"then", "else", "elif", "do", "!"}     # prefix the command that follows them
     out: list[tuple[list[str], str | None, str | None]] = []
-    depth = 0
-    cd: str | None = None
-    conditional = False
-    stack: list[tuple[str | None, bool]] = []
-    for k, (kind, val) in enumerate(items):
-        if kind == "paren":
-            if val == "(":
-                stack.append((cd, conditional))
-            elif stack:
-                cd, conditional = stack.pop()
-            continue
-        if kind == "op":
-            # A newline right after `&&`/`||`/`|` continues that chain; it is not a sequence break.
-            if val == ";" and op_at(k - 1) in ("&&", "||", "|"):
-                continue
-            if val == ";" and conditional:
-                cd, conditional = UNKNOWN, False
-            continue
-        seg = list(val)  # type: ignore[arg-type]
-        while seg and (seg[0] in OPEN or seg[0] in CLOSE or seg[0] in LEAD):
-            word = seg.pop(0)
-            depth += 1 if word in OPEN else (-1 if word in CLOSE else 0)
-            if word in ("for", "select", "case", "function"):
-                seg = []           # the rest is a word list, a case word or a name: no command here
-                break
-            # After `if` / `while` / `until` comes a real command -- it may be a cd -- now inside the
-            # block (depth > 0), so a cd there is UNKNOWN rather than dropped.
-        depth = max(depth, 0)
-        env = {}
-        while seg and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", seg[0]):
-            name, _, value = seg.pop(0).partition("=")
-            env[name] = value
-        while seg and seg[0] in ("builtin", "command"):
-            seg.pop(0)
-        before, after = op_at(k - 1), op_at(k + 1)
-        if seg and seg[0] in ("cd", "pushd", "popd"):
-            operands = [x for x in seg[1:] if x == "-" or not x.startswith("-")]
-            target = operands[0] if operands else ("~" if seg[0] == "cd" else "-")
-            if before in ("|", "&", "||") or after in ("|", "&") or seg[0] == "popd" or target == "-" \
-                    or "$" in target or "`" in target or cd == UNKNOWN or depth > 0:
-                cd = UNKNOWN
-            elif cd is None or target.startswith(("/", "~")):
-                cd = target
-            else:
-                cd = f"{cd}/{target}"
-            conditional = before in ("&&", "||")
-            if after == "||":
-                cd = UNKNOWN          # what follows runs only if the cd FAILED
-            continue
-        for i in range(len(seg) - 2):
-            if seg[i] == "gh" and seg[i + 1] == "issue" and seg[i + 2] == "create":
-                out.append((seg[i + 3:], cd, env.get("GH_REPO")))
-                break
+    seg: list[str] = []
+    start = 0                    # index in `items` where `seg` began
+    for k, tok in enumerate(items + [";"]):
+        if tok in ("(", ")") or (tok and set(tok) <= set(";&|")):
+            words = list(seg)
+            env = {}
+            while words and "=" in words[0] and words[0].split("=", 1)[0].isidentifier():
+                name, _, value = words.pop(0).partition("=")
+                env[name] = value
+            for i in range(len(words) - 2):
+                if words[i] == "gh" and words[i + 1] == "issue" and words[i + 2] == "create":
+                    out.append((words[i + 3:], _cd_in_force(items[:start]), env.get("GH_REPO")))
+                    break
+            seg, start = [], k + 1
+        else:
+            seg.append(tok)
     return out
+
+
+def _cd_in_force(prefix: list[str]) -> str | None:
+    """The directory a create runs in, from everything before its own segment. See issue_creates."""
+    if not any(_is_cd_word(t) for t in prefix):
+        return None
+    if len(prefix) < 3 or prefix[0] != "cd" or prefix[2] != "&&":
+        return UNKNOWN
+    target = prefix[1]
+    if target in ("-", "--") or target.startswith("-") or "$" in target or "`" in target:
+        return UNKNOWN
+    rest = prefix[3:]
+    if any(_is_cd_word(t) for t in rest):
+        return UNKNOWN
+    ops = [t for t in rest if t and set(t) <= set(";&|")]
+    if any(op != "&&" for op in ops) or any(t in ("(", ")") for t in rest):
+        return UNKNOWN
+    return target
 
 
 def target_root(cd: str | None, root: Path) -> tuple[Path | None, str]:
@@ -194,9 +176,9 @@ def target_root(cd: str | None, root: Path) -> tuple[Path | None, str]:
     if cd is None:
         return root, ""
     if cd == UNKNOWN:
-        return None, ("cannot tell which directory this gh issue create runs in (a cd in a pipeline or "
-                      "subshell, `cd -`, a `$VAR`, or a cd that may not have run), so its label rules "
-                      "are unknown. Chain it: `cd /literal/path && gh issue create ...`.")
+        return None, ("cannot tell which directory this gh issue create runs in, so its label rules are "
+                      "unknown. A cd is followed only as the command's first word, joined to the create "
+                      "by && alone: `cd /literal/path && gh issue create ...`.")
     path = Path(os.path.expanduser(cd))
     if not path.is_absolute():
         path = Path.cwd() / path
@@ -369,8 +351,7 @@ def selftest() -> int:
         check("a <<- heredoc (tab-indented close) is stripped too", not ok and "no --label" in why, why)
         ok, why = verdict("gh issue create -t \"X --label feature", r)
         check("CONTROL: a genuinely unparseable create still refuses", not ok and "could not be parsed" in why, why)
-        # ---- #1400: the TARGET repository's declaration, not the session's ------------------------
-        # The reported case: a skills session files a correctly labelled Retask issue.
+        # ---- #1400: the TARGET repository's declaration, in the one shape that is followed -------
         rt = "gh issue create -t X --label enhancement --label needs-decision"
         ok, why = verdict(rt, s)
         check("CONTROL: those labels fail the session's own declaration", not ok and "comp:*" in why, why)
@@ -379,8 +360,10 @@ def selftest() -> int:
         ok, why = verdict(f"cd {r} && gh issue create -t X --label bug", s)
         check("...and that repo's rules still refuse, naming its file",
               not ok and "severity:s1" in why and str(r) in why, why)
-        check("a subshell cd reads the same", verdict(f"(cd {r} && {rt})", s)[0])
-        check("a cd separated by ; reads the same", verdict(f"cd {r}; {rt}", s)[0])
+        check("other && commands between the cd and the create are fine",
+              verdict(f"cd {r} && git status && {rt}", s)[0])
+        check("a newline after && continues the chain", verdict(f"cd {r} &&\n{rt}", s)[0],
+              verdict(f"cd {r} &&\n{rt}", s)[1])
         subprocess.run(["git", "init", "-q", str(r)], check=True)
         (r / "app" / "models").mkdir(parents=True)
         # Discriminating on purpose: a subdirectory with no declaration of its own would read as
@@ -396,53 +379,50 @@ def selftest() -> int:
                   verdict(f"cd retask && {rt}", s)[1])
         finally:
             os.chdir(here)
-        ok, why = verdict(f"cd $OTHER && {rt}", s)
-        check("a cd to a variable is refused, not guessed", not ok and "cannot tell" in why, why)
         ok, why = verdict(f"cd {td}/nowhere && {rt}", s)
         check("a cd to a missing directory is refused", not ok and "names no directory" in why, why)
         check("CONTROL: a create with no cd still uses the session's declaration",
-              not verdict(rt, s)[0] and verdict(f"cd {r} && {rt}", s)[0])
+              not verdict(rt, s)[0] and not verdict(f"echo hi; {rt}", s)[0])
 
-        # ---- #1400 review: every shape where a cd's effect is uncertain is REFUSED, never guessed ----
-        # The session repo has an origin, so "-R names the session's own repo" is testable.
+        # ---- every OTHER shape with a cd is refused, never guessed ---------------------------------
+        # Each was a real leak in an earlier draft (three independent reviews), or is its near kin.
+        # The labels pass the target repo, so a guess would let them through; UNKNOWN must refuse.
         subprocess.run(["git", "init", "-q", str(s)], check=True)
         subprocess.run(["git", "-C", str(s), "remote", "add", "origin", "https://github.com/me/skills.git"], check=True)
         u = Path(td) / "undeclared"
         u.mkdir()
         one = "gh issue create -t X --label comp:x"     # one label: passes an undeclared dir, fails skills
-        def refused(name: str, cmd: str, needle: str) -> None:
+        def refused(name: str, cmd: str, needle: str = "cannot tell") -> None:
             ok, why = verdict(cmd, s)
             check(f"refused: {name}", not ok and needle in why, why)
-        refused("a subshell cd ends at its )", f"(cd {u}); {one}", "type:*")
-        refused("a subshell cd ends at its ) before &&", f"(cd {u} && true) && {one}", "type:*")
-        refused("a glued `)&&` still splits", f"(cd {u})&&{one}", "type:*")
-        refused("a cd in a pipeline", f"cd {u} | cat; {one}", "cannot tell")
-        refused("a cd sent to the background", f"cd {u} & {one}", "cannot tell")
-        refused("cd - names no visible directory", f"cd {u} && cd - && {one}", "cannot tell")
-        refused("popd names no visible directory", f"cd {u} && popd && {one}", "cannot tell")
-        refused("a cd that may never have run", f"false && cd {u}; {one}", "cannot tell")
-        refused("a create that runs only if the cd failed", f"cd {u} || {one}", "cannot tell")
+        for name, shape in (
+                ("a cd separated by ;", f"cd {r}; {rt}"),
+                ("a cd inside a subshell", f"(cd {r}); {rt}"),
+                ("a subshell cd before &&", f"(cd {r}) && {rt}"),
+                ("a create inside the subshell", f"(cd {r} && {rt})"),
+                ("a cd that is not the first command", f"true && cd {r} && {rt}"),
+                ("a cd on a later line", f"echo hi\ncd {r} && {rt}"),
+                ("a cd in a pipeline", f"cd {r} | cat && {rt}"),
+                ("a cd sent to the background", f"cd {r} & {rt}"),
+                ("a create after cd ||", f"cd {r} || {rt}"),
+                ("a second cd", f"cd {r} && cd {u} && {rt}"),
+                ("cd -", f"cd {u} && cd - && {rt}"),
+                ("a cd to a variable", f"cd $OTHER && {rt}"),
+                ("pushd", f"pushd {r} && {rt}"),
+                ("builtin cd", f"builtin cd {r} && {rt}"),
+                ("a cd inside $(...)", f"x=$(cd {r} && pwd) && {rt}"),
+                ("a cd inside backticks", f"x=`cd {r}` && {rt}"),
+                ("a cd inside an if body", f"if false; then\n cd {r}\nfi\n{rt}"),
+                ("a cd behind time", f"time if false; then cd {r}; fi; {rt}"),
+                ("a cd behind a case pattern's )", f"(case x in a) ;; esac; cd {r}); {rt}"),
+                ("a cd behind a quoted fi", f"if false; then 'fi'; cd {r}; fi; {rt}"),
+                ("a create after cd && exit;", f"cd {r} && exit; {rt}")):
+            refused(name, shape)
         refused("-R naming the session's own repo keeps its rules", f"cd {u} && {one} -R me/skills", "type:*")
         refused("GH_REPO naming the session's own repo keeps its rules", f"cd {u} && GH_REPO=me/skills {one}", "type:*")
-        refused("a cd after || runs only if the command before it failed", f"true || cd {u} && {one}", "cannot tell")
-        refused("a cd inside an if body may never have run", f"if false; then\n cd {u}\nfi\n{one}", "cannot tell")
-        refused("a cd inside a while body may never have run", f"while false; do\ncd {u}\ndone\n{one}", "cannot tell")
-        refused("a cd inside a function body runs only when it is called", f"f() {{\n cd {u}\n}}\n{one}", "cannot tell")
-        refused("a cd inside a case arm may never have run", f"case x in\n y) cd {u};;\nesac\n{one}", "cannot tell")
-        refused("a cd in an if condition is not dropped", f"if cd {u}; then {one}; fi", "cannot tell")
-        check("CONTROL: a top-level cd after a closed if is followed",
-              verdict(f"if true; then echo; fi\ncd {r} && {rt}", s)[0], verdict(f"if true; then echo; fi\ncd {r} && {rt}", s)[1])
-        check("a newline separates commands, so a cd on its own line is followed",
-              verdict(f"echo hi\ncd {r} && {rt}", s)[0], verdict(f"echo hi\ncd {r} && {rt}", s)[1])
-        # The cd must itself be CONDITIONAL (behind &&) for the continuation rule to matter.
-        check("a newline after && continues the chain", verdict(f"true && cd {r} &&\n{rt}", s)[0],
-              verdict(f"true && cd {r} &&\n{rt}", s)[1])
-        check("a conditional cd holds for a create chained to it by &&",
-              verdict(f"true && cd {r} && {rt}", s)[0])
-        check("pushd moves like cd", verdict(f"pushd {r} && {rt}", s)[0])
-        check("builtin cd is cd", verdict(f"builtin cd {r} && {rt}", s)[0])
-        check("CONTROL: a create INSIDE the subshell still follows its cd", verdict(f"(cd {r} && {rt})", s)[0])
-
+        ok, why = verdict("echo 'use <<EOF'\n" + one, s)
+        check("an unterminated heredoc refuses rather than swallowing the create",
+              not ok and "could not be parsed" in why, why)
         (r / CONFIG).write_text("{not json", encoding="utf-8")
         check("an unreadable declaration refuses rather than allowing",
               not verdict("gh issue create -t X --label feature", r)[0])
