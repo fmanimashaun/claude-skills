@@ -6,23 +6,29 @@ six cases can be noise, and nothing said so (#1384). This reads one or more `agg
 files and, for each pair of arms:
 
   * pairs the arms BY CASE. Runs of one case share a prompt and a scaffold, so they are not
-    independent samples; each case's valid runs are averaged into one rate, and the case is the
-    unit the bootstrap resamples. Treating 18 runs as 18 samples would shrink the interval by a
-    factor the data has not earned.
-  * reports the mean per-case delta (B - A) and a percentile-bootstrap CI over cases.
-  * names a winner ONLY when the CI excludes 0. Otherwise it says the difference is not
-    detectable, and prints the CI half-width as the resolution: an effect smaller than that is
-    indistinguishable from none at this n. A null from an underpowered design is not a finding
-    that the doctrine is inert.
+    independent samples; each case's valid runs are averaged into one rate, and the CASE is the
+    unit every statistic below is computed over. Treating 18 runs as 18 samples would manufacture
+    certainty the data has not earned.
+  * decides with an EXACT SIGN-FLIP TEST on the per-case deltas (B - A). Under the null the two
+    arms are interchangeable, so each case's delta is as likely to carry either sign; the p-value
+    is the share of all 2^n sign assignments whose mean is at least as far from 0 as the observed
+    one. It is exact up to 16 cases (a seeded Monte Carlo above, whose (k+1)/(M+1) form can never
+    report p = 0), so its false-win rate is bounded by alpha -- which a percentile
+    bootstrap is not: at n=2 it called every same-sign pair a win, and at 6 cases x 3 runs under
+    the null it named a winner 12% of the time against a nominal 5% (independent review of #1394).
+  * names a winner ONLY when p <= alpha. A case whose delta is 0 flips to itself, so with k cases
+    that MOVED the smallest possible p is 2 / 2^k: fewer than 6 moving cases can NEVER reach 0.05,
+    and that is reported as UNDERPOWERED rather than "not detectable".
+  * reports a percentile-bootstrap CI on the mean delta as DESCRIPTION only. It never decides.
   * lists every case B did worse on, even when the mean improves -- an aggregate win must not
     hide a regression on one case (the same reason SkillOpt-Sleep's gate reports task deltas).
   * `--motivated-by CASE` (#1385): a case that led to a doctrine edit cannot certify that edit,
-    because the edit was written to make it pass. Those cases are removed from the evidence, and
-    if no remaining case moved, the verdict is UNVERIFIED rather than a win.
+    because the edit was written to make it pass. Those cases leave the evidence; if the result
+    is a win only WITH them, the verdict is UNVERIFIED.
 
-Known limitation, stated rather than discovered: a percentile bootstrap over few clusters runs
-NARROW (under-covers), so at n=6 the reported CI is optimistic. It errs toward claiming an effect,
-which is why the verdict also needs the CI to exclude 0 rather than merely lean.
+A "not detectable" verdict is not evidence the arms are equal. How large an effect this design can
+see is a simulation question, answered in evals/README.md (Comparing arms), not a number this tool
+can print from one run.
 
 Usage:
   python3 evals/compare.py results/<stamp>/aggregate-result.json [more.json ...]
@@ -37,6 +43,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import io
+import itertools
 import json
 import random
 import sys
@@ -46,12 +53,25 @@ from pathlib import Path
 
 ALPHA = 0.05
 DEFAULT_BOOT = 10_000
+# A bootstrap of 1 resample is one number labelled as an interval (#1394 review: --boot 1 named a
+# winner in 110 of 200 seeds). The floor keeps each tail at least 25 draws deep.
+MIN_BOOT = 1_000
 MAX_BOOT = 1_000_000
+# Exact enumeration of 2^n sign assignments up to this many cases; beyond it, a seeded Monte Carlo
+# with the (count + 1) / (draws + 1) form, which can never report p = 0 and keeps the test valid.
+EXACT_MAX_CASES = 16
+MC_DRAWS = 100_000
+_TOL = 1e-12
 
 # The condition keys two result files must agree on before their runs may be pooled. A number
 # without its conditions is not evidence (evals/README.md); a number from two conditions averaged
-# together is worse, because it looks like one.
-POOLED_CONDITIONS = ("model", "marketplace_version", "tools")
+# together is worse, because it looks like one. `claude_version` is one of them: the README lists
+# it as a condition of every result.
+#
+# Deliberately NOT pooled on: per-run budget and timeout. They decide which runs end INVALID (and
+# INVALID runs are excluded), not whether a valid run passes, so pooling across them changes the
+# denominator of valid runs, never a verdict on one. Declined on the #1422 review, recorded here.
+POOLED_CONDITIONS = ("model", "marketplace_version", "tools", "claude_version")
 
 
 class CompareError(ValueError):
@@ -64,10 +84,11 @@ class Comparison:
     b: str
     n_cases: int
     mean_delta: float | None
-    ci_low: float | None
+    p_value: float | None        # exact (or corrected Monte Carlo) two-sided sign-flip p
+    min_p: float | None          # the smallest p these n cases could ever produce
+    ci_low: float | None         # descriptive percentile bootstrap; never decides
     ci_high: float | None
-    resolution: float | None     # CI half-width
-    verdict: str                 # b_better | b_worse | not_detectable | unverified | insufficient
+    verdict: str                 # b_better | b_worse | not_detectable | underpowered | unverified | insufficient
     per_case: dict[str, float] = field(default_factory=dict)       # case -> B rate - A rate
     regressions: list[str] = field(default_factory=list)           # cases where B < A
     excluded_no_data: list[str] = field(default_factory=list)      # no valid run in one arm
@@ -91,7 +112,9 @@ def load_runs(paths: list[Path]) -> list[dict]:
             raise CompareError(f"{path}: unreadable results ({exc})") from exc
         if not isinstance(payload, dict) or not isinstance(payload.get("runs"), list):
             raise CompareError(f"{path}: not an aggregate-result.json (no `runs` list)")
-        conditions = payload.get("conditions") or {}
+        conditions = payload.get("conditions", {})
+        if not isinstance(conditions, dict):
+            raise CompareError(f"{path}: `conditions` must be an object")
         key = tuple(json.dumps(conditions.get(k), sort_keys=True) for k in POOLED_CONDITIONS)
         if first is None:
             first = key
@@ -129,18 +152,72 @@ def case_rates(runs: list[dict], arm: str) -> dict[str, float]:
 
 
 # --------------------------------------------------------------------------
-# Comparing
+# Statistics -- all over per-case deltas, one number per case
 # --------------------------------------------------------------------------
+
+def min_possible_p(n: int) -> float:
+    """The smallest two-sided sign-flip p that n MOVING cases can produce: the observed signs and
+    their mirror image are the only two assignments as extreme as a unanimous result. A case with
+    delta 0 is not moving -- flipping it changes nothing -- so it must not be counted in n."""
+    return min(1.0, 2.0 / (2 ** n)) if n else 1.0
+
+
+def moving(deltas: list[float]) -> int:
+    """How many cases moved at all. Only these can carry a sign (#1422 review)."""
+    return sum(1 for d in deltas if abs(d) > _TOL)
+
+
+def sign_flip_p(deltas: list[float], *, seed: int = 0,
+                exact_max: int = EXACT_MAX_CASES) -> float:
+    """Two-sided p for H0: each case's delta is symmetric about 0 (the arms are exchangeable)."""
+    n = len(deltas)
+    observed = abs(sum(deltas))
+    if n <= exact_max:
+        extreme = sum(
+            1 for signs in itertools.product((1, -1), repeat=n)
+            if abs(sum(s * d for s, d in zip(signs, deltas))) >= observed - _TOL
+        )
+        return extreme / (2 ** n)
+    rng = random.Random(seed)
+    extreme = sum(
+        1 for _ in range(MC_DRAWS)
+        if abs(sum(d if rng.random() < 0.5 else -d for d in deltas)) >= observed - _TOL
+    )
+    return (extreme + 1) / (MC_DRAWS + 1)
+
 
 def bootstrap_ci(deltas: list[float], *, boot: int, seed: int,
                  alpha: float = ALPHA) -> tuple[float, float]:
-    """Percentile CI on the mean, resampling whole cases with replacement."""
+    """Descriptive percentile CI on the mean, resampling whole cases with replacement.
+
+    Symmetric nearest-rank tails: floor(alpha/2 * boot) draws below `lo` and the same number above
+    `hi`. It describes; it does not decide, because at few cases it under-covers.
+    """
     rng = random.Random(seed)
     n = len(deltas)
     means = sorted(sum(deltas[rng.randrange(n)] for _ in range(n)) / n for _ in range(boot))
-    lo = means[int((alpha / 2) * boot)]
-    hi = means[min(boot - 1, int((1 - alpha / 2) * boot))]
-    return lo, hi
+    tail = int((alpha / 2) * boot)
+    return means[tail], means[boot - 1 - tail]
+
+
+def _verdict(deltas: list[float], *, seed: int) -> tuple[str, float | None, float]:
+    """(verdict, p, min_p) for a list of per-case deltas."""
+    n = len(deltas)
+    floor = min_possible_p(moving(deltas))
+    if n < 2:
+        return "insufficient", None, floor
+    if moving(deltas) == 0:
+        # Nothing moved: the arms agree exactly (the A/A case). p is 1 by construction.
+        return "not_detectable", 1.0, floor
+    if floor > ALPHA:
+        return "underpowered", None, floor
+    p = sign_flip_p(deltas, seed=seed)
+    mean = sum(deltas) / n
+    if p <= ALPHA and mean > 0:
+        return "b_better", p, floor
+    if p <= ALPHA and mean < 0:
+        return "b_worse", p, floor
+    return "not_detectable", p, floor
 
 
 def compare(runs: list[dict], a: str, b: str, *, motivated: tuple[str, ...] = (),
@@ -163,27 +240,25 @@ def compare(runs: list[dict], a: str, b: str, *, motivated: tuple[str, ...] = ()
     evidence = {c: d for c, d in per_case.items() if c not in motivated}
     excluded_motivated = sorted(c for c in per_case if c in motivated)
 
-    result = Comparison(a=a, b=b, n_cases=len(evidence), mean_delta=None, ci_low=None,
-                        ci_high=None, resolution=None, verdict="insufficient",
+    deltas = [evidence[c] for c in sorted(evidence)]
+    verdict, p, floor = _verdict(deltas, seed=seed)
+    result = Comparison(a=a, b=b, n_cases=len(deltas), mean_delta=None, p_value=p, min_p=floor,
+                        ci_low=None, ci_high=None, verdict=verdict,
                         per_case=per_case, regressions=regressions,
                         excluded_no_data=no_data, excluded_motivated=excluded_motivated)
-    if len(evidence) < 2:
-        return result  # one case cannot be resampled into an interval
+    if deltas:
+        result.mean_delta = sum(deltas) / len(deltas)
+    if len(deltas) >= 2:
+        result.ci_low, result.ci_high = bootstrap_ci(deltas, boot=boot, seed=seed)
 
-    deltas = [evidence[c] for c in sorted(evidence)]
-    lo, hi = bootstrap_ci(deltas, boot=boot, seed=seed)
-    result.mean_delta = sum(deltas) / len(deltas)
-    result.ci_low, result.ci_high = lo, hi
-    result.resolution = (hi - lo) / 2
-    if motivated and not any(evidence.values()):
-        # #1385: every case that moved is one the edit was written for. Circular, so abstain.
-        result.verdict = "unverified"
-    elif lo > 0:
-        result.verdict = "b_better"
-    elif hi < 0:
-        result.verdict = "b_worse"
-    else:
-        result.verdict = "not_detectable"
+    # #1385: the edit is certified only by cases it was not written for. If the result is a win
+    # WITH the motivating cases and not without them, the win rests on them -- circular, so abstain.
+    # Only a NON-result on the independent cases can be "resting on" the motivating ones. A
+    # significant b_worse there is its own finding and must not be relabelled (#1422 review).
+    if excluded_motivated and verdict in {"not_detectable", "underpowered", "insufficient"}:
+        full_verdict, _, _ = _verdict([per_case[c] for c in sorted(per_case)], seed=seed)
+        if full_verdict == "b_better":
+            result.verdict = "unverified"
     return result
 
 
@@ -192,11 +267,12 @@ def compare(runs: list[dict], a: str, b: str, *, motivated: tuple[str, ...] = ()
 # --------------------------------------------------------------------------
 
 VERDICT_TEXT = {
-    "b_better": "{b} beats {a}: the CI excludes 0",
-    "b_worse": "{b} is worse than {a}: the CI excludes 0",
-    "not_detectable": "no detectable difference -- NOT evidence that the arms are equal; "
-                      "an effect under the resolution is invisible at this n",
-    "unverified": "UNVERIFIED -- every case that moved is one the edit was written for "
+    "b_better": "{b} beats {a}: exact sign-flip p <= 0.05",
+    "b_worse": "{b} is worse than {a}: exact sign-flip p <= 0.05",
+    "not_detectable": "no detectable difference -- NOT evidence that the arms are equal",
+    "underpowered": "UNDERPOWERED -- with this few cases no result could reach p <= 0.05; "
+                    "run more cases before reading anything into the deltas",
+    "unverified": "UNVERIFIED -- a win only when the cases the edit was written for are counted "
                   "(--motivated-by), so it cannot certify the edit",
     "insufficient": "insufficient data -- fewer than 2 comparable cases",
 }
@@ -205,9 +281,14 @@ VERDICT_TEXT = {
 def format_text(c: Comparison) -> str:
     lines = [f"{c.b} vs {c.a}: {VERDICT_TEXT[c.verdict].format(a=c.a, b=c.b)}"]
     if c.mean_delta is not None:
-        lines.append(f"  mean per-case delta {c.mean_delta:+.3f}  "
-                     f"95% CI [{c.ci_low:+.3f}, {c.ci_high:+.3f}]  "
-                     f"resolution +/-{c.resolution:.3f}  over {c.n_cases} case(s)")
+        stats = f"  mean per-case delta {c.mean_delta:+.3f} over {c.n_cases} case(s)"
+        if c.p_value is not None:
+            stats += f"  p = {c.p_value:.4f}"
+        stats += f"  (smallest possible p at this n: {c.min_p:.4f})"
+        lines.append(stats)
+        if c.ci_low is not None:
+            lines.append(f"  descriptive 95% bootstrap CI [{c.ci_low:+.3f}, {c.ci_high:+.3f}] "
+                         f"-- describes the spread, does not decide")
     for case, delta in sorted(c.per_case.items()):
         mark = "  (motivated -- not evidence)" if case in c.excluded_motivated else ""
         lines.append(f"    {case:<24} {delta:+.3f}{mark}")
@@ -234,8 +315,8 @@ def main(argv: list[str]) -> int:
         return selftest()
 
     try:
-        if not 1 <= args.boot <= MAX_BOOT:
-            raise CompareError(f"--boot must be between 1 and {MAX_BOOT}")
+        if not MIN_BOOT <= args.boot <= MAX_BOOT:
+            raise CompareError(f"--boot must be between {MIN_BOOT} and {MAX_BOOT}")
         runs = load_runs(args.results)
         arms = sorted({r["arm"] for r in runs})
         if args.aa:
@@ -293,82 +374,185 @@ def selftest() -> int:
         if not ok:
             failures.append(f"{label}: {detail}")
 
-    cases = [f"c{i}" for i in range(8)]
+    def close(x: float | None, y: float) -> bool:
+        return x is not None and abs(x - y) < 1e-9
 
-    # A large, uniform effect: every case fails under weak and passes under real.
+    cases = [f"c{i}" for i in range(8)]
+    ten_cases = [f"c{i}" for i in range(10)]
+
+    # -- the exact test, pinned to hand-computed values ---------------------------------------
+    # Unanimous sign over n cases: only the observed signs and their mirror are as extreme.
+    check("exact p: 6 unanimous cases = 2/64", close(sign_flip_p([1.0] * 6), 2 / 64),
+          sign_flip_p([1.0] * 6))
+    check("exact p: 8 unanimous cases = 2/256", close(sign_flip_p([0.5] * 8), 2 / 256))
+    # [1,1,1,1,1,-1]: |sum| >= 4 needs at most one minus sign -> 1 + 6, doubled for the mirror = 14.
+    check("exact p: one dissent in six = 14/64",
+          close(sign_flip_p([1, 1, 1, 1, 1, -1]), 14 / 64), sign_flip_p([1, 1, 1, 1, 1, -1]))
+    check("exact p: all-zero deltas = 1", close(sign_flip_p([0.0] * 6), 1.0))
+    check("min p: 5 cases cannot reach 0.05", min_possible_p(5) > ALPHA, min_possible_p(5))
+    check("min p: 6 cases can", min_possible_p(6) <= ALPHA, min_possible_p(6))
+    # #1422 review blocker: a tied case flips to itself. Five up and one tie cannot reach 0.05, so
+    # it is underpowered, not "not detectable" -- the floor counts MOVING cases.
+    check("zero deltas: 5 up + 1 tie has p = 2/32", close(sign_flip_p([1, 1, 1, 1, 1, 0]), 2 / 32))
+    check("zero deltas: 5 up + 1 tie is underpowered",
+          _verdict([1, 1, 1, 1, 1, 0], seed=0)[0] == "underpowered", _verdict([1, 1, 1, 1, 1, 0], seed=0))
+    check("zero deltas: 6 up + 1 tie can still win",
+          _verdict([1, 1, 1, 1, 1, 1, 0], seed=0)[0] == "b_better", _verdict([1, 1, 1, 1, 1, 1, 0], seed=0))
+
+    # The Monte Carlo branch (above EXACT_MAX_CASES), forced on a vector small enough to enumerate:
+    # it must agree with the exact answer, never report 0, and be seeded.
+    ten = [1, 1, 1, 1, 1, 1, 1, -1, 0.5, -0.5]
+    exact10 = sign_flip_p(ten, exact_max=16)
+    mc10 = sign_flip_p(ten, exact_max=0, seed=3)
+    check("monte carlo: agrees with exact within 0.01", abs(mc10 - exact10) < 0.01, (mc10, exact10))
+    check("monte carlo: unanimous is never p = 0",
+          sign_flip_p([1.0] * 20, exact_max=0) > 0, sign_flip_p([1.0] * 20, exact_max=0))
+    check("monte carlo: unanimous 20 is tiny but not below one draw",
+          close(sign_flip_p([1.0] * 20, exact_max=0), 1 / (MC_DRAWS + 1)))
+    check("monte carlo: seeded", sign_flip_p(ten, exact_max=0, seed=3) == mc10)
+
+    # -- verdicts ---------------------------------------------------------------------------
     strong = _runs({"weak": {c: [False] * 3 for c in cases},
                     "real": {c: [True] * 3 for c in cases}})
     r = compare(strong, "weak", "real", boot=2000)
     check("strong effect is detected", r.verdict == "b_better", r)
+    check("strong effect p is exact", close(r.p_value, 2 / 256), r.p_value)
     check("strong effect delta is 1.0", r.mean_delta == 1.0, r.mean_delta)
-
-    # The same effect reversed is a regression, not a win.
     r = compare(strong, "real", "weak", boot=2000)
     check("reversed strong effect reads worse", r.verdict == "b_worse", r.verdict)
 
-    # A/A: an arm against itself must be exactly zero with a CI containing 0 -- and must NOT be
-    # called a win. (A `lo >= 0` verdict would.)
+    # A/A: an arm against itself must be exactly zero, and must NOT be a win.
     r = compare(strong, "real", "real", boot=2000)
     check("A/A delta is 0", r.mean_delta == 0.0, r.mean_delta)
-    check("A/A CI contains 0", r.ci_low <= 0 <= r.ci_high, (r.ci_low, r.ci_high))
+    check("A/A p is 1", close(r.p_value, 1.0), r.p_value)
     check("A/A is not a win", r.verdict == "not_detectable", r.verdict)
 
-    # Mixed direction: the mean is positive but the CI straddles 0.
+    # #1394 review F1: two same-sign cases were called a win with a zero-width "95% CI".
+    two = _runs({"weak": {"c0": [True, False, False], "c1": [True, False, False]},
+                 "real": {"c0": [True, True, False], "c1": [True, True, False]}})
+    r = compare(two, "weak", "real", boot=2000)
+    check("two same-sign cases are underpowered, not a win", r.verdict == "underpowered", r)
+
+    # #1394 review F2: THE CASE IS THE UNIT. Two cases x 30 runs, every run favouring real, is 60
+    # agreeing runs but only two independent cases. Counting runs would make it a certain win.
+    many_runs = _runs({"weak": {"c0": [False] * 30, "c1": [False] * 30},
+                       "real": {"c0": [True] * 30, "c1": [True] * 30}})
+    r = compare(many_runs, "weak", "real", boot=2000)
+    check("runs are not cases: 2 cases x 30 runs stays underpowered",
+          r.verdict == "underpowered" and r.n_cases == 2, r)
+    # The six-case strong effect must report p for SIX cases -- a runs-as-samples count would give
+    # a far smaller p for the same data.
+    six = _runs({"weak": {c: [False] * 3 for c in cases[:6]},
+                 "real": {c: [True] * 3 for c in cases[:6]}})
+    r = compare(six, "weak", "real", boot=2000)
+    check("p is computed over cases (6), not runs (18)", close(r.p_value, 2 / 64), r.p_value)
+
+    # Mixed direction: a positive mean that is not significant.
     mixed = _runs({"weak": {"c0": [False] * 3, "c1": [True] * 3, "c2": [False] * 3,
                             "c3": [True] * 3, "c4": [False] * 3, "c5": [True] * 3},
                    "real": {"c0": [True] * 3, "c1": [False] * 3, "c2": [True] * 3,
                             "c3": [True] * 3, "c4": [True] * 3, "c5": [False] * 3}})
     r = compare(mixed, "weak", "real", boot=2000)
-    check("mixed effect is not a win", r.verdict == "not_detectable", r)
-    check("resolution is reported", r.resolution is not None and r.resolution > 0, r.resolution)
+    check("mixed effect is not a win", r.verdict in {"not_detectable", "underpowered"}, r)
+    # c3 ties (delta 0): a tie is not a regression. Only c1 and c5 got worse.
+    check("a tied case is not listed as a regression", r.regressions == ["c1", "c5"], r.regressions)
 
-    # A regression on one case survives an aggregate win.
-    hidden = _runs({"weak": {**{c: [False] * 3 for c in cases[:7]}, "c7": [True] * 3},
-                    "real": {**{c: [True] * 3 for c in cases[:7]}, "c7": [False] * 3}})
+    # THE CI DOES NOT DECIDE. Six moving cases, deltas +1/3 +1/3 +1/3 +2/3 +2/3 -1/3: the bootstrap
+    # CI is [0.056, 0.556] -- it excludes 0 -- while the exact p is 0.156. Not a win.
+    leans = _runs({"weak": {"c0": [False] * 3, "c1": [False] * 3, "c2": [False] * 3,
+                            "c3": [False] * 3, "c4": [False] * 3, "c5": [True, False, False]},
+                   "real": {"c0": [True, False, False], "c1": [True, False, False],
+                            "c2": [True, False, False], "c3": [True, True, False],
+                            "c4": [True, True, False], "c5": [False, False, False]}})
+    r = compare(leans, "weak", "real", boot=MIN_BOOT, seed=0)
+    check("a CI that excludes 0 is not a win when the exact p is not",
+          r.verdict == "not_detectable" and r.ci_low > 0 and close(r.p_value, 10 / 64), r)
+
+    # The false-win rate under the null is bounded by alpha. 6 cases x 3 runs, both arms 0.4: the
+    # percentile-bootstrap verdict it replaces measured 12% two-sided here.
+    rng = random.Random(1384)
+    sims, wins = 400, 0
+    for s in range(sims):
+        null = [{"case_id": f"c{i}", "arm": arm, "valid": True, "passed": rng.random() < 0.4}
+                for i in range(6) for arm in ("weak", "real") for _ in range(3)]
+        wins += compare(null, "weak", "real", boot=MIN_BOOT, seed=s).verdict in {"b_better", "b_worse"}
+    check("null 6x3: false-win rate <= alpha", wins / sims <= ALPHA, f"{wins}/{sims}")
+
+    # -- the descriptive CI, pinned so a narrower interval cannot slip in unseen -----------------
+    lo, hi = bootstrap_ci([1.0, 0.0, 0.0, 0.0], boot=MIN_BOOT, seed=0)
+    check("CI: pinned 95% bounds for [1,0,0,0] at seed 0", (lo, hi) == (0.0, 0.75), (lo, hi))
+    # Both tails non-trivial, so moving EITHER one is caught (the 25th percentile would be 0.1).
+    pinned = bootstrap_ci([1.0, 0.5, 0.0, -0.5, 0.5], boot=MIN_BOOT, seed=0)
+    check("CI: pinned both tails for a mixed vector", tuple(round(x, 9) for x in pinned) == (-0.2, 0.7),
+          pinned)
+    lo90, hi90 = bootstrap_ci([1.0, 0.0, 0.0, 0.0], boot=MIN_BOOT, seed=0, alpha=0.5)
+    check("CI: a 50% interval is narrower than the 95% one", lo90 >= lo and hi90 <= hi and
+          (lo90, hi90) != (lo, hi), (lo90, hi90))
+
+    # -- regressions, invalid runs, one-sided data ------------------------------------------
+    # Nine up and one down over ten cases: p = 22/1024, a win, with one case worse.
+    ten = [f"c{i}" for i in range(10)]
+    hidden = _runs({"weak": {**{c: [False] * 3 for c in ten[:9]}, "c9": [True] * 3},
+                    "real": {**{c: [True] * 3 for c in ten[:9]}, "c9": [False] * 3}})
     r = compare(hidden, "weak", "real", boot=2000)
-    check("aggregate still wins", r.verdict == "b_better", r.verdict)
-    check("one-case regression is listed despite the win", r.regressions == ["c7"], r.regressions)
+    check("aggregate still wins", r.verdict == "b_better" and close(r.p_value, 22 / 1024), r)
+    check("one-case regression is listed despite the win", r.regressions == ["c9"], r.regressions)
 
-    # INVALID runs are excluded, not scored as failures.
     invalid = _runs({"weak": {"c0": [False, None, None], "c1": [False] * 3},
                      "real": {"c0": [True, None, None], "c1": [True] * 3}})
     check("invalid runs do not dilute the rate",
           case_rates(invalid, "real") == {"c0": 1.0, "c1": 1.0}, case_rates(invalid, "real"))
 
-    # A case with no valid run in one arm is excluded and named, not counted as 0.
     one_sided = _runs({"weak": {"c0": [False] * 3, "c1": [False] * 3, "c2": [None] * 3},
                        "real": {"c0": [True] * 3, "c1": [True] * 3, "c2": [True] * 3}})
     r = compare(one_sided, "weak", "real", boot=2000)
     check("a case with no valid run in one arm is excluded",
           r.excluded_no_data == ["c2"] and "c2" not in r.per_case, r)
 
-    # Fewer than two comparable cases cannot make an interval.
     single = _runs({"weak": {"c0": [False] * 3}, "real": {"c0": [True] * 3}})
     r = compare(single, "weak", "real", boot=2000)
     check("one case is insufficient", r.verdict == "insufficient" and r.ci_low is None, r)
 
-    # #1385: the effect lives only on the case that motivated the edit.
-    only_motivated = _runs({"weak": {c: [False] * 3 for c in cases},
-                            "real": {"c0": [True] * 3, **{c: [False] * 3 for c in cases[1:]}}})
-    r = compare(only_motivated, "weak", "real", motivated=("c0",), boot=2000)
-    check("an effect only on the motivating case is unverified", r.verdict == "unverified", r)
-    check("the motivating case is removed from the evidence",
-          r.excluded_motivated == ["c0"] and r.n_cases == 7, r)
-    # Control on the same shape of input: the motivating case excluded, but others moved too.
-    r = compare(strong, "weak", "real", motivated=("c0",), boot=2000)
-    check("other cases moving still certify the edit", r.verdict == "b_better", r.verdict)
+    # -- #1385 ------------------------------------------------------------------------------
+    # Seven unanimous cases win (p = 2/128). Two of them motivated the edit; the remaining five
+    # cannot reach 0.05 on their own, so the win rests on the motivating cases.
+    seven = _runs({"weak": {c: [False] * 3 for c in cases[:7]},
+                   "real": {c: [True] * 3 for c in cases[:7]}})
+    r = compare(seven, "weak", "real", motivated=("c0", "c1"), boot=2000)
+    check("a win only with the motivating cases is unverified", r.verdict == "unverified", r)
+    check("the motivating cases are removed from the evidence",
+          r.excluded_motivated == ["c0", "c1"] and r.n_cases == 5, r)
+    # Control on the same shape: excluding ONE still leaves six unanimous cases, a win on its own.
+    r = compare(seven, "weak", "real", motivated=("c0",), boot=2000)
+    check("other cases alone still certify the edit", r.verdict == "b_better", r.verdict)
+    # A significant LOSS on the independent cases is a finding of its own, not "unverified" -- even
+    # when the full set, motivating cases included, is a significant WIN. 17 motivating cases up
+    # (full: 23 cases, 17 up 6 down, p ~= 0.035) and 6 independent cases down (p = 2/64).
+    up = [f"m{i}" for i in range(17)]
+    down = [f"d{i}" for i in range(6)]
+    worse = _runs({"weak": {**{c: [False] * 3 for c in up}, **{c: [True] * 3 for c in down}},
+                   "real": {**{c: [True] * 3 for c in up}, **{c: [False] * 3 for c in down}}})
+    full = compare(worse, "weak", "real", boot=MIN_BOOT)
+    r = compare(worse, "weak", "real", motivated=tuple(up), boot=MIN_BOOT)
+    check("a significant b_worse on independent cases is not relabelled",
+          full.verdict == "b_better" and r.verdict == "b_worse", (full.verdict, full.p_value, r.verdict))
+    # A motivated case with no comparable data excludes nothing, so it must not relabel anything.
+    gap = _runs({"weak": {**{c: [False] * 3 for c in cases[:7]}, "c7": [None] * 3},
+                 "real": {c: [True] * 3 for c in cases}})
+    r = compare(gap, "weak", "real", motivated=("c7",), boot=2000)
+    check("a motivated case with no data leaves the verdict alone",
+          r.verdict == "b_better" and r.excluded_motivated == [], r)
     try:
         compare(strong, "weak", "real", motivated=("c99",), boot=2000)
         check("an unknown --motivated-by case is refused", False, "accepted")
     except CompareError:
         check("an unknown --motivated-by case is refused", True)
 
-    # Same seed, same interval.
-    a1 = compare(mixed, "weak", "real", boot=500, seed=7)
-    a2 = compare(mixed, "weak", "real", boot=500, seed=7)
-    check("seeded bootstrap is reproducible", (a1.ci_low, a1.ci_high) == (a2.ci_low, a2.ci_high))
+    a1 = compare(mixed, "weak", "real", boot=MIN_BOOT, seed=7)
+    a2 = compare(mixed, "weak", "real", boot=MIN_BOOT, seed=7)
+    check("seeded result is reproducible", (a1.ci_low, a1.ci_high, a1.p_value) ==
+          (a2.ci_low, a2.ci_high, a2.p_value))
 
-    # Malformed runs are refused rather than read as failures.
     for label, bad in (("valid run with no verdict", {"case_id": "c0", "arm": "real",
                                                       "valid": True, "passed": None}),
                        ("non-bool valid", {"case_id": "c0", "arm": "real",
@@ -379,13 +563,13 @@ def selftest() -> int:
         except CompareError:
             check(f"refuses {label}", True)
 
-    # Through the real entry point: files on disk, pooling, and condition refusal.
+    # -- through the real entry point ---------------------------------------------------------
+    base_conditions = {"model": "sonnet", "marketplace_version": "1.0.0", "tools": "Read",
+                       "claude_version": "2.0.0"}
     with tempfile.TemporaryDirectory() as tmp:
-        def write(name: str, runs: list[dict], model: str = "sonnet") -> Path:
+        def write(name: str, runs: list[dict], **override) -> Path:
             path = Path(tmp) / name
-            path.write_text(json.dumps({"conditions": {"model": model,
-                                                       "marketplace_version": "1.0.0",
-                                                       "tools": "Read"},
+            path.write_text(json.dumps({"conditions": {**base_conditions, **override},
                                         "runs": runs}), encoding="utf-8")
             return path
 
@@ -400,11 +584,23 @@ def selftest() -> int:
             verdicts = json.loads(quiet.getvalue())
             check("main() reports the pooled verdict",
                   [v["verdict"] for v in verdicts] == ["b_better"], verdicts)
-            f3 = write("c.json", strong[half:], model="opus")
-            check("main() refuses pooling different conditions",
-                  main(["compare", str(f1), str(f3)]) == 2)
+            # Every pooled condition is refused on its own -- not only the one tested first. The
+            # keys are LITERAL: looping over POOLED_CONDITIONS would shrink with it and prove nothing.
+            for key in ("model", "marketplace_version", "tools", "claude_version"):
+                other = write(f"diff-{key}.json", strong[half:], **{key: "DIFFERENT"})
+                check(f"main() refuses pooling across a different {key}",
+                      main(["compare", str(f1), str(other)]) == 2)
+            bad = Path(tmp) / "bad.json"
+            bad.write_text(json.dumps({"conditions": "oops", "runs": []}), encoding="utf-8")
+            try:
+                rc = main(["compare", str(bad)])
+            except Exception as exc:  # a traceback is not a refusal
+                rc = f"raised {exc!r}"
+            check("main() refuses a non-object conditions", rc == 2, rc)
             check("main() refuses a missing arm",
                   main(["compare", *pair, "--a", "none", "--b", "real"]) == 2)
+            check("main() refuses a bootstrap too small to be an interval",
+                  main(["compare", *pair, "--boot", str(MIN_BOOT - 1)]) == 2)
             check("main() runs the A/A check", main(["compare", *pair, "--aa", "real"]) == 0)
         check("pooling keeps every run", len(load_runs([f1, f2])) == len(strong))
 

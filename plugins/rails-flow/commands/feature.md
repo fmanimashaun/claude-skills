@@ -166,7 +166,8 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_mockup_gate.py" --paths <each file 
   2. **Publish it, post its link on the issue, and STOP for the owner's approval.** This is a hold
      like the one-way door's, not advice: approval is a human decision. Change requests mean
      iterate and ask again.
-  3. **Record the approval** in `docs/product/mockups/<slug>.md` on the branch, one line each:
+  3. **Record the approval** in `docs/product/mockups/<slug>.md` (committed on the branch once Phase 2
+     creates it), one line each:
      `Mock-up:` (link or committed file), `Issue:`, `Approved-by:`, `Approval:` (the link to the
      comment where the owner approved), `Widths:`, `States:`. Then proceed. The plan and the PR
      cite the record.
@@ -210,8 +211,8 @@ as complete is worse than a stop, because it spends the reviewer's trust as well
 Run in order; loop fixes back through Phase 3 until every gate passes:
 
 1. `code-reviewer` on the branch diff → must end `VERDICT: CLEAN`
-1b. `spec-reviewer` with `docs/product/acceptance/<slug>.md`, the base, and the day's
-   `docs/evidence/reviews/prs/<branch-slug>/findings.jsonl` → must end `VERDICT: CLEAN`, with
+1b. `spec-reviewer` with `docs/product/acceptance/<slug>.md`, the base, and its own file
+   `docs/evidence/reviews/prs/<branch-slug>/spec-reviewer-findings.jsonl` → must end `VERDICT: CLEAN`, with
    `check_spec_review.py` exit 0 (#1370). It asks only whether the diff does what the criteria
    *say*: criteria missing, partial or misread, and behaviour nobody asked for. Report it under its
    own **Spec** heading beside `code-reviewer`'s **Standards**, and never merge or re-rank the two.

@@ -30,6 +30,7 @@ Stdlib only. `--issue` and `--open` need `gh`.
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 import json
 import re
 import subprocess
@@ -38,7 +39,10 @@ import sys
 HEADING = re.compile(r"^\s{0,3}#{1,6}\s*mock-?up\b[^\n]*$", re.I | re.M)
 INLINE = re.compile(r"^\s*(?:[-*]\s*)?\**mock-?up\**\s*:\s*(.+)$", re.I | re.M)
 NEXT_HEADING = re.compile(r"^\s{0,3}#{1,6}\s", re.M)
-LINK = re.compile(r"https://\S+|(?:^|\s)[\w./-]+\.(?:html?|png|jpe?g|webp|pdf|md)\b", re.I)
+# A link to something: an https URL with a host, a committed record under docs/product/mockups/, or a
+# mock-up file. NOT any word ending in `.md` -- "TBD, see notes.md" read as linked (review of #1387).
+LINK = re.compile(r"https://[^/\s]+\.[^\s]+|(?:^|\s)docs/product/mockups/\S+"
+                  r"|(?:^|\s)[\w./-]+\.(?:html?|png|jpe?g|webp|pdf)\b", re.I)
 NO_CHANGE = re.compile(r"\bno visible change\b", re.I)
 
 
@@ -64,6 +68,26 @@ def verdict(body: str) -> tuple[bool, str]:
     if LINK.search(text):
         return True, "declared: mock-up linked"
     return False, f"the Mock-up section neither links a mock-up nor says \"no visible change\": {text[:60]!r}"
+
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from check_mockup_gate import APPROVAL_URL  # noqa: E402 -- one approval rule, never a second
+APPROVAL = re.compile(APPROVAL_URL.pattern.strip("^$"))
+
+
+def ready(body: str) -> tuple[bool, str]:
+    """Triage's question, stricter than filing's: a linked mock-up is ready only once APPROVED.
+
+    The owner's rule (#1376): triage "refuses to mark a UI feature ready until the mock-up is
+    attached AND approved". Approved means the section links the comment where the owner said so
+    (`…/issues/N#issuecomment-M`), the same evidence check_mockup_gate.py demands of a record.
+    """
+    ok, why = verdict(body)
+    if not ok or why == "declared: no visible change":
+        return ok, why
+    if APPROVAL.search(answer(body) or ""):
+        return True, "ready: mock-up linked and approved"
+    return False, "the mock-up is linked but not approved: add the link to the owner's approving comment"
 
 
 def gh_json(*args: str) -> object:
@@ -94,6 +118,22 @@ def selftest() -> int:
         ok, why = verdict(body)
         check_that(f"CONTROL: {label} is declared", ok, why)
 
+    # Review of #1387: a word ending in .md is not a mock-up, and a bare scheme is not a link.
+    ok, why = verdict(form.format("TBD, see notes.md"))
+    check_that("\"TBD, see notes.md\" is not a declaration", not ok and "neither" in why, why)
+    ok, why = verdict(form.format("Will add later in README.md"))
+    check_that("a promise naming README.md is not a declaration", not ok, why)
+    ok, why = verdict(form.format("https://"))
+    check_that("a bare https:// is not a link", not ok, why)
+    # Triage's stricter question: linked is not ready until approved.
+    APPROVED = "https://example.com/mock/bell — approved https://github.com/acme/app/issues/12#issuecomment-99"
+    ok, why = ready(form.format("https://example.com/mock/bell"))
+    check_that("a linked but unapproved mock-up is not ready", not ok and "not approved" in why, why)
+    ok, why = ready(form.format(APPROVED))
+    check_that("CONTROL: a linked and approved mock-up is ready", ok, why)
+    ok, why = ready(form.format("No visible change: the job only retries."))
+    check_that("CONTROL: no visible change is ready with no approval", ok, why)
+
     ok, why = verdict("### What\n\nA bell.\n")
     check_that("an issue with no Mock-up section is missing", not ok and "no Mock-up section" in why, why)
     ok, why = verdict(form.format("_No response_"))
@@ -121,6 +161,8 @@ def main(argv: list[str]) -> int:
     src.add_argument("--body-file")
     src.add_argument("--issue", type=int)
     src.add_argument("--open", action="store_true", help="every open issue, bounded to 200")
+    ap.add_argument("--ready", action="store_true",
+                    help="triage's question: a linked mock-up must also link the owner's approval")
     ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args(argv)
     if a.selftest:
@@ -140,7 +182,7 @@ def main(argv: list[str]) -> int:
         return 2
     missing = 0
     for name, body in items:
-        ok, why = verdict(body)
+        ok, why = (ready if a.ready else verdict)(body)
         missing += not ok
         print(f"{'ok     ' if ok else 'MISSING'} {name}: {why}")
     print(f"{len(items) - missing}/{len(items)} issue(s) declare their mock-up or no visible change")
