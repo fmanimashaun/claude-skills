@@ -2,7 +2,7 @@
      Rebuild:  python3 scripts/build_wiki.py
      Drift:    python3 scripts/build_wiki.py --check  (runs in the gate sweep) -->
 # Agents and gates
-**30 shipped agents · 50 shipped commands · 143 gates · 4 tier tables**, plus 5 maintainer agents and 6 maintainer commands that are not installed.
+**30 shipped agents · 50 shipped commands · 145 gates · 4 tier tables**, plus 5 maintainer agents and 6 maintainer commands that are not installed.
 
 | plugin | version | agents | commands | tier rows | gates |
 |---|---|---|---|---|---|
@@ -211,6 +211,8 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | self-consistency selftest | `repo` | `python3 scripts/lint_self_consistency.py --selftest` | selftest |
 | shared shapes | `repo` | `python3 scripts/check_shared_shapes.py` | live check |
 | shared shapes selftest | `repo` | `python3 scripts/check_shared_shapes.py --selftest` | selftest |
+| shipped ERB forms selftest | `repo` | `python3 scripts/check_shipped_erb_forms.py --selftest` | selftest |
+| shipped ERB passes simple-form-only | `repo` | `python3 scripts/check_shipped_erb_forms.py` | live check |
 | skill routing | `repo` | `python3 scripts/check_skill_routing.py` | live check |
 | skill routing selftest | `repo` | `python3 scripts/check_skill_routing.py --selftest` | selftest |
 | skill version tag selftest | `repo` | `python3 scripts/skill_version_tag.py --selftest` | selftest |
