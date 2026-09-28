@@ -52,6 +52,43 @@ GUARD = Guard(
             "",
             "a probe that threw is unverified",
         ),
+        # #1395 review: the cap applies to every mode, so each mode's truncation must be read.
+        Mutation(
+            "a truncated scaled list is trusted",
+            '            if mode.get("truncated"):\n                out.unverified.append(f"{route} ({CRITERION[name]}): the list',
+            '            if mode.get("truncated") and name != "scaled":\n                out.unverified.append(f"{route} ({CRITERION[name]}): the list',
+            "a truncated scaled list is unverified, never a pass",
+        ),
+        Mutation(
+            "a truncated spacing list is trusted",
+            '            if mode.get("truncated"):\n                out.unverified.append(f"{route} ({CRITERION[name]}): the list',
+            '            if mode.get("truncated") and name != "spacing":\n                out.unverified.append(f"{route} ({CRITERION[name]}): the list',
+            "a truncated spacing list is unverified, never a pass",
+        ),
+        Mutation(
+            "a truncated scaled list stops the loop, so spacing is never judged",
+            "                                      \"collector's cap, so a clip may have been cut from it\")\n                continue",
+            "                                      \"collector's cap, so a clip may have been cut from it\")\n                break",
+            "CONTROL: a truncated scaled list leaves the spacing check judged",
+        ),
+        Mutation(
+            "a mode with no truncated flag is read as complete",
+            '    if not isinstance(mode.get("truncated"), bool):',
+            "    if False:",
+            "a mode with no truncated flag is unusable, not complete",
+        ),
+        Mutation(
+            "the route comparison stops normalising, so a trailing slash reads as a redirect",
+            "        if isinstance(landed, str) and landed.strip() and not same_page(route, landed):",
+            "        if isinstance(landed, str) and landed.strip() and landed != route:",
+            "a trailing slash is the same page",
+        ),
+        Mutation(
+            "the untested share of px-sized text is no longer reported",
+            "                if grew < texts:",
+            "                if False:",
+            "text that partly did not grow is reported with its untested share",
+        ),
         Mutation(
             "a truncated as-served list is trusted",
             '        if base.get("truncated"):',

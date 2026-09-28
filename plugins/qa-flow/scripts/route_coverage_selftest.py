@@ -865,6 +865,12 @@ def run() -> int:
     if got and next(iter(got.values())) != {"layout.json@390px"}:
         FAILURES.append(f"small_viewport_paths must attribute the width, got {got}")
 
+    # The collector now records landedOn as path + query (#1367): a query on arrival is the same route.
+    _tick()
+    _layout(_entry("/requests", landed="/requests?page=2"))
+    if set(rc.small_viewport_paths([small_dir], 480)) != {"/requests"}:
+        FAILURES.append("a landedOn carrying a query must still grant its route's coverage")
+
     # A DESKTOP MEASUREMENT IS NOT A SMALL ONE. This is the whole axis: the flow's only browser
     # sweep was pinned to 1280x900, so every route was "measured" and none was measured small.
     _tick()
