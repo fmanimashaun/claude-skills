@@ -15814,9 +15814,10 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
-- **Style §1 and §5 are advice, and say why no cop can enforce them — `skills/rails-8/references/style.md`,
+- **Style §1 and §5 are advice: neither can be enforced as written, because of their exceptions — `skills/rails-8/references/style.md`,
   `dist/rails-8.skill`** (#1363). The issue asked whether the two lint-shaped sections of the style doctrine could be
-  enforced by a cop. They cannot, and the doctrine now says so with the measurement:
+  enforced by a cop. Neither can be enforced as written, because of its exceptions, and the doctrine now says so
+  with the measurement:
   - **§5's "a project only has to flip `Enabled: true`" was wrong.** `Layout/IndentationConsistency` enforces only
     consistency: it flags mixed indentation inside a visibility section and passes a uniformly unindented `private`
     section. Three cops together do enforce §5's main shape exactly: `IndentationWidth` (which omakase disables),

@@ -188,12 +188,13 @@ and rubocop-rails-omakase 1.1.0:
 - **`Layout/EmptyLinesAroundAccessModifier` with `only_before` enforces the newline half of the main
   shape exactly**: it flags a blank line after `private` in an ordinary class. It also flags the blank
   line the private-only module requires. Under `around` it flags the main shape.
-- **Together, those three enforce the main shape and nothing else:** `IndentationWidth`, plus
+- **Together, those three enforce the main shape:** `IndentationWidth`, plus
   `IndentationConsistency` (`indented_internal_methods`), plus `EmptyLinesAroundAccessModifier`
   (`only_before`). They pass the class above, and flag an unindented section, a mixed one and a blank line
   under `private`. Their one false positive is the private-only module, flagged twice. A project that wants
   §5 enforced can adopt the three and mark each private-only module with a `rubocop:disable` for those two
-  cops, or `Exclude` it by path. That is a project's choice, not this doctrine's default.
+  cops, or `Exclude` it by path. The exempted modules are then unchecked, so their own shape is back to
+  review. That is a project's choice, not this doctrine's default.
 
 ## 6. CRUD controllers — a new resource, not a custom action (ALREADY OURS, now cited)
 
