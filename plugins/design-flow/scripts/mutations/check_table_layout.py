@@ -86,6 +86,12 @@ GUARD = Guard(
             "a NEW button opening the modal is not a details target",
         ),
         Mutation(
+            "our own doctrine's delete-confirmation link counts as a details target again",
+            "(?:new|edit|delete)_\\w*(?:path|url)",
+            "(?:new|edit)_\\w*(?:path|url)",
+            "the doctrine's delete-confirmation link is not a details target",
+        ),
+        Mutation(
             "a tablist inside a scroller is no longer seen -- only one that scrolls itself",
             "(TABLIST.search(attrs) and (scrolls or any(s for _, s in stack)))",
             "(TABLIST.search(attrs) and scrolls)",

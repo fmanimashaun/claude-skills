@@ -1485,7 +1485,8 @@ Empty state — arranged. What goes wrong is not the Ruby: it is a `<button>` ne
 <%# Tabbed style: role=tab in a tablist, one tab stop, arrows between thumbnails. A plain %>
 <%# <button> cannot carry aria-selected -- ARIA 1.2 scopes it to gridcell/option/row/tab. %>
 <%# (A thumbnail that OPENS a lightbox is the other case, and that one IS a button.) %>
-<div role="tablist" aria-label="Product images" class="cluster" data-controller="carousel">
+<%# `flex flex-nowrap`, not `cluster`: a strip never wraps into a second row (#1391). %>
+<div role="tablist" aria-label="Product images" class="flex flex-nowrap gap-(--space-s)" data-controller="carousel">
   <% images.each_with_index do |image, i| %>
     <button role="tab" id="thumb-<%= i %>" aria-controls="image-<%= i %>"
             aria-selected="<%= i.zero? %>" tabindex="<%= i.zero? ? 0 : -1 %>"

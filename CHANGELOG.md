@@ -12940,8 +12940,10 @@ boot/validation path — with a bullet each so the promotion could close them se
   substring match that called `table_component` a tab strip — and each now has a fixture. Independent review then
   found a fifth — a "New" button opening the modal satisfied `table-no-details` while every row still linked to a
   show page — so a modal link that is a CRUD action (`new_*`/`edit_*`, `/new`, `/edit`, a delete method) no longer
-  counts; the same review added a tablist nested in a scroller and `min-w-*` on `th`/`td`/`col`. Fifteen mutations,
-  all caught. `/design-flow:mobile` step 5 now scaffolds designed summary cards.
+  counts; the same review added a tablist nested in a scroller and `min-w-*` on `th`/`td`/`col`. Re-review found our
+  own doctrine's delete-confirmation link (`crud-modal-pattern.md`, `delete_confirmation_invoice_path` into the
+  modal) still counting as a details target, so `delete_*` helpers and `/delete` joined the CRUD actions, with that
+  exact line as a fixture. Sixteen mutations, all caught. `/design-flow:mobile` step 5 now scaffolds designed summary cards.
 
 ### 1.44.2 (release v1.151.0) — 2026-09-26
 
@@ -15864,7 +15866,9 @@ boot/validation path — with a bullet each so the promotion could close them se
   its contract with `tabs#select` written out. From independent review: the inset is the floor **plus** the safe
   area, not the larger of the two; `shell` now carries that gutter; the Modal panel is `max-h-full` with a
   scrolling body so a short viewport keeps its top inset; and a table row is made clickable by a `row-link`
-  Stimulus controller rather than a stretched overlay on a `<tr>`, which this kit has not verified.
+  Stimulus controller rather than a stretched overlay on a `<tr>`, which this kit has not verified; it ignores the
+  row's own controls (including `summary` and `[role=button]`) and the end of a text-selection drag. A Carousel's
+  thumbnail picker is out of the Tabs entry's scope (it picks a slide, it does not navigate) but no longer wraps.
   The **Permissions matrix** is exempt from master-detail — its cells are switches toggled in place — splits into one
   section per module on a phone, and keeps no horizontal scroll and the inset
   ([maintainer decision](https://github.com/fmanimashaun/claude-skills/issues/1391#issuecomment-5862494188)). The one

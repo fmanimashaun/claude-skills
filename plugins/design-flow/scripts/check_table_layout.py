@@ -27,8 +27,8 @@ FOUR RULES, each a construct and never a word:
                          `data-turbo-frame="modal"`). THE DIRECTORY, NOT THE FILE: a Rails index
                          renders its rows from a partial beside it (`<%= render @people %>` ->
                          `_person.html.erb`), and the row link lives in the partial. A modal link
-                         that is a CRUD ACTION -- `new_*`/`edit_*` helpers, `/new`, `/edit`, a
-                         delete method -- is not a details target: a "New" button that opens the
+                         that is a CRUD ACTION -- `new_*`/`edit_*`/`delete_*` helpers, `/new`,
+                         `/edit`, `/delete`, a delete method -- is not a details target: a "New" button that opens the
                          modal says nothing about where the ROWS go.
   tablist-scroll         a tab strip that scrolls: a `role="tablist"` that scrolls or sits inside a
                          scroller (by nesting), or any scroller
@@ -92,7 +92,7 @@ DETAILS_TARGET = re.compile(
 # A modal link that is a CRUD ACTION is not a details target. Found in review: a "New person" button
 # opening the modal satisfied the rule while every row still linked to a show page.
 CRUD_ACTION = re.compile(
-    r"""\b(?:new|edit)_\w*(?:path|url)\b|/(?:new|edit)\b|\baction:\s*:(?:new|edit)\b"""
+    r"""\b(?:new|edit|delete)_\w*(?:path|url)\b|/(?:new|edit|delete)\b|\baction:\s*:(?:new|edit)\b"""
     r"""|(?:turbo_)?method:\s*:delete\b|data-turbo-method\s*=\s*["']delete""")
 DECLARES = re.compile(r"table-without-details:[ \t]*\w")
 # EMAIL IS LAID OUT WITH TABLES, and has no modal to open. Found on the first run against the app
@@ -332,6 +332,11 @@ def _selftest() -> int:
     expect("edit and delete links opening the modal are not details targets either",
            not opens_a_record('<%= link_to "Edit", edit_person_path(p), data: { turbo_frame: "modal" } %>'
                               '<%= button_to "Delete", p, method: :delete, data: { turbo_frame: "modal" } %>'))
+    # OUR OWN DOCTRINE'S delete link, verbatim from crud-modal-pattern.md -- re-review found it passing.
+    expect("the doctrine's delete-confirmation link is not a details target",
+           not opens_a_record('<%= link_to "Delete", delete_confirmation_invoice_path(invoice), data: { turbo_frame: "modal" } %>'))
+    expect("a /delete path into the modal is not a details target",
+           not opens_a_record('<a href="/invoices/7/delete" data-turbo-frame="modal">Delete</a>'))
     expect("a row link into the modal IS a details target, beside a New button",
            opens_a_record('<%= link_to "New", new_person_path, data: { turbo_frame: "modal" } %>' + LINKED_ROW))
     expect("a target in the same directory satisfies it",

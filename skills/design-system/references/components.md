@@ -970,6 +970,10 @@ Breadcrumbs, Pagination, the sidebar rail and this bar all land on these, so the
   exactly as choosing the tab would. The tablist and the picker are two renderings of one list, so the
   panels, their ids and the selected index are shared, never duplicated. A wrapped or scrolled tablist
   has lost the single-row affordance that made it a tablist.
+- **Scope: navigation tab strips.** A Carousel's thumbnail picker is `role="tablist"` because it picks
+  a slide, not because it navigates, so it is outside this entry's capacity and picker rules
+  (coordinator ruling on #1391, relayed to the owner). It still never wraps: its row is
+  `flex flex-nowrap`, like every strip.
 - **Behavior:** the `tabs` controller on the **list-navigation** mixin.
 
 ## Breadcrumbs
@@ -1018,7 +1022,9 @@ implements its phone half.
 
     follow(event) {
       // The row's own controls keep their job: a checkbox ticks, an action acts.
-      if (event.target.closest("a, button, input, select, textarea, label")) return
+      if (event.target.closest("a, button, input, select, textarea, label, summary, [role=button]")) return
+      // The end of a text-selection drag is a click too; selecting a value must not open the record.
+      if (window.getSelection()?.toString()) return
       // A modified click is a request for a new tab; only the real link can honour it.
       if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
       this.linkTarget.click()
