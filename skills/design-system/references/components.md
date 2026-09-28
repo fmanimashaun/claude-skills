@@ -1119,6 +1119,12 @@ renders over the list when its URL is followed directly.
   no undo. Unsaved changes are guarded ([forms.md → Unsaved changes](forms.md#unsaved-changes--leaving-a-dirty-form-978)).
 - **Density** is `--row-compact` by default — a matrix is dense by nature — with the sticky header row
   of Table (CRUD).
+- **Exempt from master-detail** ([maintainer decision on #1391](https://github.com/fmanimashaun/claude-skills/issues/1391#issuecomment-5862494188)).
+  Its cells are switches toggled in place, so there is no record to open in a
+  [Details card](#details-card); declare it with `<%# table-without-details: permissions matrix %>`
+  so `check_table_layout.py` stands aside. **On a phone it splits into one section per module**, not
+  summary cards. It keeps every other rule: no horizontal scroll, and the
+  [Viewport inset](#viewport-inset).
 - **Tenancy note.** A multi-tenant app scopes the matrix to a workspace and says which in the
   `<caption>`; nothing else changes.
 

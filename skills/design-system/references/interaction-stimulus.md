@@ -444,6 +444,7 @@ nobody has specified yet:
 | `carousel` | Carousel, and the Lightbox inside `modal` | list-navigation |
 | `payment-element` | Payment / card entry (the PSP's own element) | — |
 | `list-detail` | the List-detail anatomy's pane swap (page-anatomies.md) | — (no mixin fits; see below) |
+| `row-link` | Table (CRUD)'s whole-row click, which follows the name's link (components.md, #1391) | — (one click handler; the code is in that entry) |
 | `native-bridge`, `bridge--button` | Hotwire Native surfaces (mobile.md) | — |
 
 - **`sidebar` is collapse only — the overlay drawer is `modal`.** This entry used to read "`sidebar`
