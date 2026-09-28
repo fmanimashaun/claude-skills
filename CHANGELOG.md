@@ -3526,22 +3526,29 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   - 11 helper selftest cases and 5 end-to-end hook fixtures. Mutations: 7 of 7 on the helper, 2 new on the hook.
     Doctor gate "rails-flow PR-template sections".
 
-- **`/rails-flow:setup-flow` installs the tenancy cop, and `tenancy-cop` keeps it honest — `plugins/rails-flow/scripts/check_tenancy_cop.py`,
+- **`/rails-flow:setup-flow` installs the tenancy cop, and `tenancy-cop` asks RuboCop whether it is on — `plugins/rails-flow/scripts/check_tenancy_cop.py`,
   `plugins/rails-flow/scaffold/tenancy/scoped_lookup.rb`, `plugins/rails-flow/checks.json`,
-  `plugins/rails-flow/commands/setup-flow.md`** (#1361). Maintainer decision on [#1361](https://github.com/fmanimashaun/claude-skills/issues/1361#issuecomment-5857528252): setup-flow asks whether the app
-  is multi-tenant, records `.rails-flow/tenancy.json` (`{"multi_tenant": false}` is an answer, and makes the check
-  not applicable), and copies the cop.
-  - **The check refuses** a missing or hand-edited cop, a `.rubocop.yml` that does not `require:` it, disables it or
-    leaves `SafeAutoCorrect` on, an **unknown key under it** (RuboCop swallows those silently, verified on 1.91.0), and
-    any `db/schema.rb` table carrying the tenant foreign key that `TenantOwnedModels` does not reach and
-    `unscoped_tables` does not excuse with a reason (matched exactly, namespace included: `Invoice: invoices` does
-    not cover `old_invoices`), and a foreign key that no table carries (zero tables is not a pass). It reads YAML through the project's Ruby and merges local
-    `inherit_from` files. 26 selftest assertions, each refusal paired with a control; driven end to end on a real
-    project (4 findings, exit 1; fixed, exit 0).
-  - **Derived, not copied by hand.** The shipped cop is generated from rails-8's `multi-tenancy.md` §7 by
-    `scripts/derive_tenancy_cop.py`, the same cross-plugin reason as `mandated_gems.json`, with doctor gates
-    `tenancy cop derived` (`--check`, reading the blob at `HEAD`) and its selftest, and a `rebuild_generated.py` entry.
-  - Mutation guards `plugins/rails-flow/scripts/mutations/check_tenancy_cop.py` (8/8 caught) and
+  `plugins/rails-flow/commands/setup-flow.md`** (#1361). Maintainer decision on [#1361](https://github.com/fmanimashaun/claude-skills/issues/1361#issuecomment-5857528252). setup-flow asks whether the app
+  is multi-tenant, records `.rails-flow/tenancy.json` (`{"multi_tenant": false}` makes the check not applicable), and
+  copies the cop.
+  - **RuboCop is the authority on its own config.** Independent review BLOCKED a first draft that re-derived
+    RuboCop's configuration in Python. Every gap in that copy was a hole (a department disable, `Enabled: pending`, an
+    `Exclude` swallowing controllers, `inherit_gem`, a remote `inherit_from`), and each left the cop off while the
+    check said clean.
+  - **The check asks the project's own RuboCop twice.** `rubocop --show-cops` returns the resolved config. A
+    `--force-exclusion --stdin` probe of `Key.find(1)` for every tenant-owned model, read as a controller, must draw
+    an offense for each key.
+  - **It refuses:** a missing or edited cop; a key the probe does not flag; `SafeAutoCorrect` not false; an unknown
+    key; a blank `TenantScope`; an association that is not an identifier; a model key that maps (by the project's own
+    inflector) to no table carrying the tenant key (`Invocie`); a tenant-keyed table in `db/schema.rb` or
+    `db/structure.sql` that no key reaches and `unscoped_tables` does not excuse with a reason; a foreign key no table
+    carries; and a RuboCop that will not start.
+  - **Tests:** 27 selftest assertions. Driven end to end on real rubocop 1.91.0, where the correct config exits 0 and
+    every reviewer scenario exits 1. In each case the checker's verdict matched what RuboCop did to a real controller.
+  - **Derived, not copied by hand.** The shipped cop is generated from rails-8's §7 by
+    `scripts/derive_tenancy_cop.py`, the cross-plugin reason `mandated_gems.json` has, with doctor gates
+    `tenancy cop derived` (`--check` reads the blob at `HEAD`) and its selftest, and a `rebuild_generated.py` entry.
+  - Mutation guards `plugins/rails-flow/scripts/mutations/check_tenancy_cop.py` (12/12 caught) and
     `scripts/mutations/derive_tenancy_cop.py` (2/2 caught).
 
 - **Every per-PR review pass saves its findings, apart from a full review's — `plugins/rails-flow/agents/code-reviewer.md`,
@@ -15832,23 +15839,31 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
-- **A cop for the unscoped tenant lookup, and what it cannot see — `skills/rails-8/references/multi-tenancy.md`,
-  `dist/rails-8.skill`** (#1361). §7 said no tool enforced tenant scoping; it now ships `Tenancy/ScopedLookup`, a
-  project-local cop that flags `find` / `find_by` / `find_by!` / `find_sole_by` / `where` / `all` on a tenant-owned
-  model's constant in a controller, with its `.rubocop.yml` block and an 8-example spec. It says plainly what the cop
-  cannot see (a lookup through a variable, models and jobs, `joins`, raw SQL), so the §7 enforcement it adds to still stands.
-  - **Verified** by `doctrine-verifier` and by running it, on rubocop 1.91.0, rubocop-ast 1.50.0 and
-    rubocop-rails-omakase 1.1.0: the `Base` / `AutoCorrector` / `RESTRICT_ON_SEND` / `cop_config` API; `require:` with a
-    local path as the supported loader, with no deprecation (*"there are no plans to remove it in the future"*,
-    [RuboCop: Plugins](https://docs.rubocop.org/rubocop/plugins.html)); `SafeAutoCorrect: false` meaning `-a` reports and
-    `-A` rewrites; `Include`/`Exclude` scoping; `expect_offense` under the `:config` context; the inline
-    `rubocop:disable … -- reason` form.
-  - **Refuted, and shipped as the correction:** RuboCop does *not* warn about a local cop's unknown keys (a typo checks
-    nothing, silently), and omakase does *not* use `DisabledByDefault` (it disables ten departments by name, so `Tenancy`
-    is on by default).
-  - `skills/quality-pass/references/worked-example.md`, `dist/quality-pass.skill`: the measured shared-shape counts
-    move with the two new scripts (`class Unusable` 12 → 13; the `check(label, ok, detail)` harness 40 → 41, reach
-    21 → 22). One more copy does not change the recorded decision not to extract.
+- **A cop for the unscoped tenant query, and what it cannot see — `skills/rails-8/references/multi-tenancy.md`,
+  `skills/quality-pass/references/worked-example.md`, `dist/rails-8.skill`, `dist/quality-pass.skill`** (#1361). §7
+  said no tool enforced tenant scoping. It now ships `Tenancy/ScopedLookup`, a project-local cop that flags every Active
+  Record query on a tenant-owned model's constant in a controller, with its `.rubocop.yml` block and a 12-example spec.
+  The query list is Rails' own 113 `ActiveRecord::Querying::QUERYING_METHODS` plus `unscoped`, `find_by_sql` and
+  `count_by_sql`, and `&.` calls are checked too. The spec's first example fails the project's suite if Rails adds a
+  querying method. §7 says plainly what the cop cannot see: a variable or method returning the class, a dynamic
+  namespace, dynamic finders, models and jobs, and SQL sent to the connection.
+  - **Verified** by `doctrine-verifier` and by running it, on rubocop 1.91.0, rubocop-ast 1.50.0,
+    rubocop-rails-omakase 1.1.0 and activerecord 8.0.2 / 8.1.2:
+    - `QUERYING_METHODS` holds the same 113 in both Rails versions (`delegate(*QUERYING_METHODS, to: :all)`,
+      `querying.rb:24`), and the cop's list is an exact 116-method match to it plus the three additions.
+    - `unscoped` is `Scoping::Default`; `find_by_sql` and `count_by_sql` are `Querying`.
+    - Dynamic finders come from `DynamicMatchers#method_missing`, so they are named as a limit, not configured.
+    - `RESTRICT_ON_SEND` gates `on_csend` too (`commissioner.rb`, `RESTRICTED_CALLBACKS`).
+    - `require:` with a local path is the supported loader (*"there are no plans to remove it in the future"*,
+      [RuboCop: Plugins](https://docs.rubocop.org/rubocop/plugins.html)).
+    - `SafeAutoCorrect: false` means `-a` reports and `-A` rewrites.
+    - The inline `rubocop:disable … -- reason` form works.
+  - **Refuted, and shipped as the correction:** RuboCop does *not* warn about a local cop's unknown keys, and omakase
+    does *not* use `DisabledByDefault`.
+  - Independent review BLOCKED the first draft, which covered six methods. The widened list closes the
+    `Invoice.includes(:lines).find`, `first`, `exists?`, `find_each` and `&.` gaps it reproduced.
+  - The shared-shape counts in the quality-pass worked example move with the new scripts. One more copy does not
+    change the recorded decision not to extract.
   - Where the cop lives is our own design, per the maintainer decision on [#1361](https://github.com/fmanimashaun/claude-skills/issues/1361#issuecomment-5857528252).
 
 - **The quality-pass worked example's `check(label, ok, detail)` count is refreshed to 40 — `skills/quality-pass/references/worked-example.md`,

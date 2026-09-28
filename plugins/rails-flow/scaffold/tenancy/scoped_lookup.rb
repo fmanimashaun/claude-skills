@@ -3,9 +3,10 @@
 module RuboCop
   module Cop
     module Tenancy
-      # Flags a lookup on a tenant-owned model's CONSTANT — `Document.find(params[:id])` — which
-      # reads across every tenant, and points at the tenant-scoped association instead:
-      # `Current.organization.documents.find(params[:id])`.
+      # Flags a query on a tenant-owned model's CONSTANT — `Invoice.find(params[:id])`,
+      # `Invoice.where(...)`, `Invoice.includes(:lines).find(...)` — which reads across every tenant,
+      # and points at the tenant-scoped association instead:
+      # `Current.organization.invoices.find(params[:id])`.
       #
       #   Tenancy/ScopedLookup:
       #     Enabled: true
@@ -14,16 +15,33 @@ module RuboCop
       #     Exclude: [app/controllers/admin/**/*.rb]
       #     TenantScope: Current.organization
       #     TenantOwnedModels:
-      #       Document: documents
-      #       Billing::Invoice: invoices
+      #       Invoice: invoices
+      #       Billing::CreditNote: credit_notes
       class ScopedLookup < Base
         extend AutoCorrector
 
         MSG = "`%<model>s.%<method>s` reads across every tenant. Scope it: `%<scoped>s.%<method>s`."
 
-        # Fixed, not configurable: RuboCop does not validate a local cop's keys, so a mistyped
-        # method list would silently check nothing.
-        RESTRICT_ON_SEND = %i[find find_by find_by! find_sole_by where all].freeze
+        # Every class method Active Record delegates to `all` — `ActiveRecord::Querying::QUERYING_METHODS`,
+        # identical in Rails 8.0 and 8.1 — plus three outside it that also read the whole table. Fixed,
+        # not configurable: RuboCop does not validate a local cop's keys, so a mistyped list would
+        # silently check nothing. The spec asserts this still covers Rails' own list.
+        RESTRICT_ON_SEND = (%i[
+          find find_by find_by! take take! sole find_sole_by first first! last last! second
+          second! third third! fourth fourth! fifth fifth! forty_two forty_two! third_to_last
+          third_to_last! second_to_last second_to_last! exists? any? many? none? one?
+          first_or_create first_or_create! first_or_initialize find_or_create_by
+          find_or_create_by! find_or_initialize_by create_or_find_by create_or_find_by! destroy
+          destroy_all delete delete_all update_all touch_all destroy_by delete_by find_each
+          find_in_batches in_batches select reselect order regroup in_order_of reorder group limit
+          offset joins left_joins left_outer_joins where rewhere invert_where preload
+          extract_associated eager_load includes from lock readonly and or annotate
+          optimizer_hints extending having create_with distinct references none unscope merge
+          except only count average minimum maximum sum calculate pluck pick ids async_ids
+          strict_loading excluding without with with_recursive async_count async_average
+          async_minimum async_maximum async_sum async_pluck async_pick insert insert_all insert!
+          insert_all! upsert upsert_all
+        ] + %i[unscoped find_by_sql count_by_sql]).freeze
 
         def on_send(node)
           receiver = node.receiver
@@ -33,12 +51,14 @@ module RuboCop
           association = tenant_owned_models[model]
           return unless association
 
-          scoped = [tenant_scope, association].compact.join(".")
+          target = association.empty? ? "<association>" : association
+          scoped = [tenant_scope, target].compact.join(".")
           message = format(MSG, model: model, method: node.method_name, scoped: scoped)
           add_offense(node, message: message) do |corrector|
-            corrector.replace(receiver, scoped) if tenant_scope
+            corrector.replace(receiver, scoped) if tenant_scope && !association.empty?
           end
         end
+        alias on_csend on_send
 
         private
 
@@ -47,7 +67,8 @@ module RuboCop
         end
 
         def tenant_scope
-          cop_config["TenantScope"]
+          scope = cop_config["TenantScope"].to_s.strip
+          scope unless scope.empty?
         end
       end
     end

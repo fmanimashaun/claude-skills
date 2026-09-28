@@ -121,8 +121,10 @@ def selftest() -> int:
         real = derive()
         check_("the shipped doctrine yields the cop", "module Tenancy" in real and
                "class ScopedLookup < Base" in real, real[:80])
-        check_("...with the fixed lookup list", "RESTRICT_ON_SEND = %i[find find_by find_by! "
-               "find_sole_by where all].freeze" in real)
+        check_("...with Rails' querying list plus the three it adds",
+               "RESTRICT_ON_SEND = (%i[" in real and "upsert_all" in real
+               and "] + %i[unscoped find_by_sql count_by_sql]).freeze" in real)
+        check_("...and the csend alias", "alias on_csend on_send" in real)
 
     for f in failures:
         print(f"FAIL {f}")
