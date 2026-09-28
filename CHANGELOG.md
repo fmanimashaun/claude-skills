@@ -3526,30 +3526,42 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   - 11 helper selftest cases and 5 end-to-end hook fixtures. Mutations: 7 of 7 on the helper, 2 new on the hook.
     Doctor gate "rails-flow PR-template sections".
 
-- **`/rails-flow:setup-flow` installs the tenancy cop, and `tenancy-cop` asks RuboCop whether it is on — `plugins/rails-flow/scripts/check_tenancy_cop.py`,
+- **`/rails-flow:setup-flow` installs the tenancy cop, and `tenancy-cop` asks RuboCop and the app whether it holds — `plugins/rails-flow/scripts/check_tenancy_cop.py`,
   `plugins/rails-flow/scaffold/tenancy/scoped_lookup.rb`, `plugins/rails-flow/checks.json`,
   `plugins/rails-flow/commands/setup-flow.md`** (#1361). Maintainer decision on [#1361](https://github.com/fmanimashaun/claude-skills/issues/1361#issuecomment-5857528252). setup-flow asks whether the app
-  is multi-tenant, records `.rails-flow/tenancy.json` (`{"multi_tenant": false}` makes the check not applicable), and
-  copies the cop.
-  - **RuboCop is the authority on its own config.** Independent review BLOCKED a first draft that re-derived
-    RuboCop's configuration in Python. Every gap in that copy was a hole (a department disable, `Enabled: pending`, an
-    `Exclude` swallowing controllers, `inherit_gem`, a remote `inherit_from`), and each left the cop off while the
-    check said clean.
-  - **The check asks the project's own RuboCop twice.** `rubocop --show-cops` returns the resolved config. A
-    `--force-exclusion --stdin` probe of `Key.find(1)` for every tenant-owned model, read as a controller, must draw
-    an offense for each key.
-  - **It refuses:** a missing or edited cop; a key the probe does not flag; `SafeAutoCorrect` not false; an unknown
-    key; a blank `TenantScope`; an association that is not an identifier; a model key that maps (by the project's own
-    inflector) to no table carrying the tenant key (`Invocie`); a tenant-keyed table in `db/schema.rb` or
-    `db/structure.sql` that no key reaches and `unscoped_tables` does not excuse with a reason; a foreign key no table
-    carries; and a RuboCop that will not start.
-  - **Tests:** 27 selftest assertions. Driven end to end on real rubocop 1.91.0, where the correct config exits 0 and
-    every reviewer scenario exits 1. In each case the checker's verdict matched what RuboCop did to a real controller.
-  - **Derived, not copied by hand.** The shipped cop is generated from rails-8's §7 by
-    `scripts/derive_tenancy_cop.py`, the cross-plugin reason `mandated_gems.json` has, with doctor gates
-    `tenancy cop derived` (`--check` reads the blob at `HEAD`) and its selftest, and a `rebuild_generated.py` entry.
-  - Mutation guards `plugins/rails-flow/scripts/mutations/check_tenancy_cop.py` (12/12 caught) and
-    `scripts/mutations/derive_tenancy_cop.py` (2/2 caught).
+  is multi-tenant, records `.rails-flow/tenancy.json` (`{"multi_tenant": false}` means the check is not applicable and
+  setup-flow does not ask again), and copies the cop.
+  - **RuboCop and the app are the authorities, never a copy of their rules.** Independent review BLOCKED twice.
+    - The first draft re-derived RuboCop's config in Python. A department disable, `Enabled: pending`, or an
+      `Exclude` over the controllers each left the cop off while the check said clean.
+    - The second draft probed one stand-in path. A non-recursive `Include`, a nested `app/controllers/api/.rubocop.yml`,
+      or a nested `SafeAutoCorrect: true` left real controllers unchecked, or let `rubocop -a` rewrite them silently.
+  - **Now:**
+    - **Every real `app/controllers/**/*.rb` path is probed** with `rubocop --force-exclusion --autocorrect --stdin
+      <path>`. Each tenant-owned key must draw an offense there, and it must come back not corrected. A controller left
+      unchecked on purpose is declared in `unchecked_controllers` with a reason (the admin plane §7 excludes).
+    - **Each key's table comes from the app** (`Key.constantize.table_name` via `rails runner`), so `Invocie` is no
+      model and `Billing::Invoice` counts only for its own table.
+    - **`db/structure.sql` is read** including partitioned, `UNLOGGED` and `IF NOT EXISTS` tables.
+    - **Output is capped** at ten paths.
+  - **It refuses:**
+    - a missing or edited cop;
+    - a controller where a key goes unflagged or would be autocorrected;
+    - an unknown key, a blank `TenantScope`, or an association that is not an identifier;
+    - a key that is no loadable model, or whose table lacks the tenant key;
+    - an unreached tenant-keyed table, or a foreign key no table carries;
+    - a RuboCop or app that will not start.
+  - **Tests:**
+    - 32 selftest assertions; `plugins/rails-flow/scripts/mutations/check_tenancy_cop.py` catches 17/17.
+    - Driven on a real Rails 8.1.4 app with rubocop 1.91.0, using each scenario the reviews reproduced:
+      - non-recursive `Include`, a nested disable, and an undeclared `api/` `Exclude` each exit 1 and name the controller;
+      - a nested `SafeAutoCorrect: true` exits 1, and a real `rubocop -a` did rewrite that file;
+      - `Invocie` exits 1, and an undeclared admin plane exits 1;
+      - the declared variants, and a cop configured only in an inherited file, exit 0.
+    - In every case the checker matched what RuboCop did to the real controller.
+  - **Derived, not copied by hand.** The shipped cop is generated from rails-8's §7 by `scripts/derive_tenancy_cop.py`,
+    for the cross-plugin reason `mandated_gems.json` has. The doctor gate `tenancy cop derived` compares both sides at
+    `HEAD`, and there is a `rebuild_generated.py` entry. `scripts/mutations/derive_tenancy_cop.py` catches 2/2.
 
 - **Every per-PR review pass saves its findings, apart from a full review's — `plugins/rails-flow/agents/code-reviewer.md`,
   `plugins/rails-flow/agents/pr-reviewer.md`, `plugins/rails-flow/agents/spec-reviewer.md`,

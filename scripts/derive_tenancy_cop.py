@@ -66,7 +66,12 @@ def write() -> int:
 
 
 def check() -> int:
-    want = derive()
+    # Both sides from HEAD (#833): a doctrine edit regenerated but not yet committed is not drift.
+    doc = subprocess.run(["git", "show", f"HEAD:{DOCTRINE.relative_to(ROOT).as_posix()}"], cwd=ROOT,
+                         capture_output=True, text=True, timeout=30)
+    if doc.returncode != 0:
+        raise Unusable(f"no {DOCTRINE.name} at HEAD -- cannot derive the cop from a doctrine that is not committed")
+    want = derive_from(doc.stdout)
     rel = ARTIFACT.relative_to(ROOT).as_posix()
     # The blob at HEAD, never the working copy (#833): regenerated-but-unstaged is not shipped.
     committed = subprocess.run(["git", "show", f"HEAD:{rel}"], cwd=ROOT,

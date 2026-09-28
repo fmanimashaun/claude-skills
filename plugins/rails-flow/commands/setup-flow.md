@@ -869,11 +869,14 @@ that catches it. **Ask whether the app is multi-tenant, and which foreign key ma
 table** (e.g. `organization_id`). Record the answer:
 
 ```json
-{"multi_tenant": true, "tenant_foreign_key": "organization_id"}
+{"multi_tenant": true, "tenant_foreign_key": "organization_id",
+ "unchecked_controllers": {"app/controllers/admin/*": "the staff plane reads across tenants"}}
 ```
 
-Save it as `.rails-flow/tenancy.json`. `{"multi_tenant": false}` is an answer too: the `tenancy-cop`
-check then reports not applicable, which is not the same as never having asked. On yes:
+Save it as `.rails-flow/tenancy.json`. `unchecked_controllers` names, with a reason, every controller
+the cop deliberately does not check, such as the admin plane that §7's config excludes. The check refuses
+any other controller the cop skips. `{"multi_tenant": false}` is an answer too: setup-flow does not ask
+again, and the `tenancy-cop` check reports not applicable. On yes:
 
 1. Copy the cop rails-flow ships, unmodified. The check refuses a hand-edited copy.
 
@@ -886,8 +889,9 @@ check then reports not applicable, which is not the same as never having asked. 
    `TenantScope` to the app's `Current` attribute, and add one `TenantOwnedModels` entry per model whose
    table carries the tenant foreign key. Add its spec, from the same section, at
    `spec/rubocop/cop/tenancy/scoped_lookup_spec.rb`.
-3. Run the check. It names every table carrying the key that the model list does not reach, and any key
-   under the cop that RuboCop would ignore silently:
+3. Run the check. It runs the project's own RuboCop at every real controller path, and names any where
+   the cop does not flag a model or where `rubocop -a` would rewrite. It asks the app for each model's table,
+   and names every table carrying the key that no model reaches, plus any key RuboCop would ignore silently:
 
    ```bash
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_tenancy_cop.py"

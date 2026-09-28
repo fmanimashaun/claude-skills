@@ -393,8 +393,9 @@ covers Rails' own, so a Rails upgrade that adds a querying method fails the proj
 opening a hole.
 `/rails-flow:setup-flow` asks whether the app is multi-tenant, records the answer in
 `.rails-flow/tenancy.json`, and installs the cop. The `tenancy-cop` check then runs the project's own
-RuboCop against a probe for every tenant-owned model, so it sees the config RuboCop really resolves, and keeps the installed copy,
-its config and its list of tenant-owned tables honest.
+RuboCop at every real controller path, so nested configs and `Include` globs are judged the way RuboCop
+applies them, and asks the app for each model's table. That keeps the installed copy, the controllers it
+covers and its list of tenant-owned tables honest.
 
 The cop, at `lib/rubocop/cop/tenancy/scoped_lookup.rb`:
 
@@ -489,7 +490,7 @@ Tenancy/ScopedLookup:
   Include:
     - app/controllers/**/*.rb
   Exclude:
-    - app/controllers/admin/**/*.rb   # the staff plane (§1) reads across tenants by design
+    - app/controllers/admin/**/*.rb   # the staff plane (§1) reads across tenants; declare it in unchecked_controllers
   TenantScope: Current.organization
   TenantOwnedModels:
     Invoice: invoices
