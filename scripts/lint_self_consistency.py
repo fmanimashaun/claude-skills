@@ -1203,6 +1203,10 @@ def check_unhonoured_config_toggle() -> tuple[list[Finding], int]:
                 continue
             if block is not None:
                 block.append((number, line))
+        # An UNTERMINATED block is still config someone will read; judging only closed blocks let a
+        # missing closing fence exempt everything after it (pre-release review of #1387).
+        if block is not None and not any(ISSUE_FORM_FIELD.match(b) for _, b in block):
+            toggles.extend(block)
         for number, line in toggles:
             match = re.match(r"^\s*([a-z_][a-z0-9_]*):\s*(?:true|false)\b", line)
             if not match:
@@ -4871,6 +4875,9 @@ def selftest() -> int:
         ("a GitHub issue form's required: true is GitHub's, not ours", _form, False),
         ("CONTROL: a dead toggle beside an issue form is still found",
          _form + "```yaml\nlinks:\n  check_external: false\n```\n", True),
+        # An unterminated block (no closing fence) is still read (pre-release review of #1387).
+        ("a dead toggle in an UNTERMINATED yaml block is still found",
+         "```yaml\nlinks:\n  check_external: false\n", True),
     ):
         checks += 1
         root = Path(_t3.mkdtemp(prefix="toggle-"))

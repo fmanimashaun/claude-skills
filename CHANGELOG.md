@@ -44,7 +44,8 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   `validations: required: true`, which GitHub reads, so the rule fired on the first real one. A block that
   declares form fields (`- type: textarea|input|dropdown|checkboxes|markdown`) is now skipped as a whole. Its control
   fixture keeps a dead toggle in an ordinary block of the same file flagged, and a new mutation that exempts
-  every block is caught by that control (136 of 136).
+  every block is caught by that control (136 of 136). The pre-release review found that an **unterminated** yaml block (no
+  closing fence) was never judged. It is now read, with a fixture and a mutation.
 
 - **Two benchmark cases passed when the agent wrote nothing — `evals/gates.py`, `evals/selftest.py`,
   `evals/suite.json`, `scripts/mutations/evals_gates.py`** (#1374). `03-role-tokens` was gated only by
@@ -3578,7 +3579,23 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   - **Merge.** `pr-reviewer` BLOCKS a change a user can see unless the PR links the mock-up record, the reviewer has
     opened the approval link, and screenshots at every recorded width match the mock-up's layout, controls,
     required-field markers and navigation. A deviation needs a reason and the owner's re-approval.
-  - 11 selftest cases: 5 declared forms accepted and 6 undecided ones refused. The guard catches 8 mutations. Doctor gate
+  - 11 selftest cases: 5 declared forms accepted and 6 undecided ones refused. The guard catches 8 mutations.
+  - **Fixed before release** (the independent pre-release review found 4 blockers):
+    1. The UI-scope rule missed what Rails 8 generates outside `app/views`: `public/*.html` error pages, the icon,
+       `app/assets/images/`, and the PWA manifest. They now count.
+    2. Triage accepted any link. The owner's rule is "attached **and approved**", so `check_issue_mockup.py
+       --ready` now requires the link to the approving comment. Our `feature.yml` / `plugin-bug.yml` carry the
+       Mock-up field, as the owner named `/maintainer-setup-intake`; `/rails-flow:report`'s body carries it through
+       the #1399 fix.
+    3. Any word ending in `.md` read as a mock-up ("TBD, see notes.md"). A link is now an https URL with a host,
+       a record under `docs/product/mockups/`, or a mock-up file.
+    4. `pr-reviewer` ran the gate on the checkout's diff, so a reviewer on `dev` saw "no user-visible change" for
+       every PR. It now passes the PR's own files with `--paths`.
+
+    The review's suggestions are fixed here too: a bare `https://` or any repo file is no longer a mock-up; a
+    record must name its issue; a README in the records folder is not a record; a fenced example of
+    `mockup-gate: off` does not turn the gate off; and feature.md no longer records "on the branch" before Phase 2
+    creates it. New selftest cases with controls. Guards: 17 of 17 on the gate, 10 of 10 on the issue check. Doctor gate
     "rails-flow issue mock-up declaration".
 
 - **The simple_form mandate is a project gate, `simple-form-only`, not an agent's grep — `plugins/rails-flow/scripts/check_simple_form_only.py`,

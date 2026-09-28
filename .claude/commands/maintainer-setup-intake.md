@@ -40,6 +40,9 @@ pre-applying its `type:*` label:
 - `packaging.yml` — the `.skill`/build problem, `package_core.py` output, OS + zlib.
   (`comp:packaging`, `type:bug`)
 - `feature.yml` — target component, the capability, the use case. (`type:feature`)
+- **`feature.yml` and `plugin-bug.yml` carry a required `Mock-up` field** (#1376): a clickable
+  mock-up when resolving the report would change what a downstream user sees, otherwise "No visible
+  change". `check_issue_mockup.py` reads the rendered `### Mock-up` section.
 - `config.yml` — `blank_issues_enabled: false` and a contact link to Discussions for
   usage questions (keep the tracker for actionable reports).
 

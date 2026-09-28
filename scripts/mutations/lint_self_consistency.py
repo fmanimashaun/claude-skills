@@ -145,6 +145,13 @@ GUARD = Guard(
             "a command that never contemplates a running server is out of scope",
         ),
 
+        # Pre-release review of #1387: an unterminated block went unjudged.
+        Mutation(
+            "an unterminated yaml block is skipped again",
+            "        if block is not None and not any(ISSUE_FORM_FIELD.match(b) for _, b in block):\n            toggles.extend(block)\n",
+            "",
+            "a dead toggle in an UNTERMINATED yaml block is still found",
+        ),
         # #1376. The issue-form carve-out, widened: every yaml block exempt, so a real dead toggle
         # beside a GitHub form goes quiet. Its control fixture must catch it.
         Mutation(

@@ -72,7 +72,15 @@ rule gets copied.
 
 ## The build matches its approved mock-up (BLOCKING for a change a user can see, #1376)
 
-Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_mockup_gate.py" --base <base>`. Exit 0 with "no
+Run it on **the PR's own files**, never the checkout's diff: a reviewer checked out on `dev` would
+see an empty diff and read "no user-visible change" for every PR (pre-release review of #1387).
+
+```bash
+gh pr diff <n> --name-only > "${TMPDIR:-/tmp}/pr-files.txt"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_mockup_gate.py" --paths $(cat "${TMPDIR:-/tmp}/pr-files.txt")
+```
+
+Exit 0 with "no
 user-visible change", or with the gate declared off, ends this section. Otherwise the PR is BLOCKED
 unless all of these hold:
 
