@@ -3531,7 +3531,8 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   `plugins/rails-flow/commands/setup-flow.md`** (#1361). Maintainer decision on [#1361](https://github.com/fmanimashaun/claude-skills/issues/1361#issuecomment-5857528252). setup-flow asks whether the app
   is multi-tenant, records `.rails-flow/tenancy.json` (`{"multi_tenant": false}` means the check is not applicable and
   setup-flow does not ask again), and copies the cop.
-  - **RuboCop and the app are the authorities, never a copy of their rules.** Independent review BLOCKED three times.
+  - **RuboCop, Ruby and the app are the authorities, never a copy of their rules.** Independent review BLOCKED three
+    times, then passed CLEAN in round 4, whose advisories are fixed here.
     - The first draft re-derived RuboCop's config in Python. A department disable, `Enabled: pending`, or an
       `Exclude` over the controllers each left the cop off while the check said clean.
     - The second draft probed one stand-in path. A non-recursive `Include`, a nested `app/controllers/api/.rubocop.yml`,
@@ -3546,9 +3547,12 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
       model and `Billing::Invoice` counts only for its own table.
     - **Silenced lines come from RuboCop:** the real controllers are linted with and without
       `--ignore-disable-comments`, and every silenced line must be §7's same-line
-      `# rubocop:disable Tenancy/ScopedLookup -- <reason>`. File-wide and range disables are refused.
-    - **`unchecked_controllers` globs match as RuboCop's `Exclude` does** (`*` stays in one directory, `**/`
-      spans any number). An excuse that matches nothing, or only excuses checked controllers, is reported.
+      `# rubocop:disable Tenancy/ScopedLookup -- <reason>` (or `rubocop:todo`). File-wide and range disables are
+      refused, as are a same-line list containing `all` and a "reason" that is only `#`. The line's comments come
+      from Ruby's own parser (Prism), so directive text inside a string cannot fake a reason.
+    - **`unchecked_controllers` globs are matched by Ruby's own `File.fnmatch(FNM_PATHNAME | FNM_EXTGLOB)`**,
+      RuboCop's semantics, braces included. An excuse that matches nothing, or only excuses checked controllers,
+      is reported.
     - **`db/structure.sql` is read** including partitioned, `UNLOGGED` and `IF NOT EXISTS` tables.
     - **Output is capped** at ten paths.
   - **It refuses:**
@@ -3559,13 +3563,16 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     - an unreached tenant-keyed table, or a foreign key no table carries;
     - a RuboCop or app that will not start.
   - **Tests:**
-    - 42 selftest assertions; `plugins/rails-flow/scripts/mutations/check_tenancy_cop.py` catches 23/23.
+    - 47 selftest assertions, whose directive and glob cases run real Prism and `File.fnmatch` on real files;
+      `plugins/rails-flow/scripts/mutations/check_tenancy_cop.py` catches 24/24, each by its named fixture.
     - Driven on a real Rails 8.1.4 app with rubocop 1.91.0, using each scenario the reviews reproduced:
       - non-recursive `Include`, a nested disable, and an undeclared `api/` `Exclude` each exit 1 and name the controller;
       - a nested `SafeAutoCorrect: true` exits 1, and a real `rubocop -a` did rewrite that file;
       - `Invocie` exits 1, and an undeclared admin plane exits 1;
       - a file-wide disable and a range disable each exit 1 at their line, and the reasoned same-line disable
         passes; a dead excuse exits 1;
+      - round 4's tricks, a fake reason inside a string, `disable all, Tenancy/ScopedLookup -- r` and `-- # x`,
+        each exit 1; a bare `a**` does not excuse `api/`; `{admin,ops}` does excuse `admin/`;
       - the declared variants, and a cop configured only in an inherited file, exit 0.
     - In every case the checker matched what RuboCop did to the real controller.
   - **Derived, not copied by hand.** The shipped cop is generated from rails-8's §7 by `scripts/derive_tenancy_cop.py`,

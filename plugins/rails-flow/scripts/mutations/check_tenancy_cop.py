@@ -2,8 +2,9 @@
 from mutation_types import Guard, Mutation  # noqa: F401
 
 GUARD = Guard(
-    # #1361. Review of #1403 BLOCKED twice: a checker that re-derived RuboCop's config, then one that
-    # probed a single stand-in path. It now asks RuboCop per real controller and the app for its tables;
+    # #1361. Review of #1403 BLOCKED three times: a checker that re-derived RuboCop's config, one that
+    # probed a single stand-in path, and one blind to a controller's own directives. It now asks RuboCop
+    # per real controller, the app for its tables, and Ruby (Prism, File.fnmatch) for comments and globs;
     # each mutation removes one refusal, and the fixture named in `expects` must be the one that notices.
     name="check_tenancy_cop",
     subject="scripts/check_tenancy_cop.py",
@@ -21,12 +22,6 @@ GUARD = Guard(
             '    fixed = [(p, v["autocorrected"]) for p, v in verdicts.items() if v["autocorrected"]]',
             '    fixed = []',
             'a controller where `-a` would rewrite (nested SafeAutoCorrect: true) is refused BY PATH',
-        ),
-        Mutation(
-            'every path counts as declared, so an unchecked controller needs no reason',
-            '        return any(glob_match(glob, path) for glob in unchecked)',
-            '        return True',
-            'a controller where the cop is off (nested config / non-recursive Include) is refused BY PATH',
         ),
         Mutation(
             'the output is no longer capped, so a misconfigured Include prints without bound',
@@ -113,30 +108,6 @@ GUARD = Guard(
             'structure.sql: partitioned, UNLOGGED and IF NOT EXISTS tables are each read, and none swallows the next',
         ),
         Mutation(
-            'a line silenced by a directive is no longer refused, so a file-wide disable passes (round 3)',
-            '    bare = [(p, n, t) for p, n, t in (silenced or []) if not excused(p) and not REASONED_DISABLE.search(t)]',
-            '    bare = []',
-            'a file-wide `rubocop:disable` (no reason) is refused at its line',
-        ),
-        Mutation(
-            'any same-line disable passes, with or without a reason',
-            'if not excused(p) and not REASONED_DISABLE.search(t)]',
-            'if not excused(p) and "rubocop:disable" not in t]',
-            '...but the same-line disable WITHOUT a reason is refused',
-        ),
-        Mutation(
-            'a glob `*` crosses `/` again (fnmatch), so one excuse covers every nested controller',
-            '            out, i = out + "[^/]*", i + 1',
-            '            out, i = out + ".*", i + 1',
-            'NEAR MISS: `*` does not cross `/`',
-        ),
-        Mutation(
-            '`**/` needs at least one directory again, so the §7 admin glob excuses nothing directly in admin/',
-            '            out, i = out + "(?:[^/]+/)*", i + 3',
-            '            out, i = out + "(?:[^/]+/)+", i + 3',
-            'glob: `admin/**/*.rb` matches a file directly in admin/ (zero directories)',
-        ),
-        Mutation(
             'an excuse that matches no controller is no longer reported',
             '        if not hits:',
             '        if False:',
@@ -147,6 +118,42 @@ GUARD = Guard(
             '        elif all(not verdicts[p]["unflagged"] for p in hits):',
             '        elif False:',
             'an excuse for controllers the cop DOES check is reported',
+        ),
+        Mutation(
+            'every path counts as declared, so an unchecked controller needs no reason',
+            '        return any(path in matches[g] for g in unchecked)',
+            '        return True',
+            'a controller where the cop is off (nested config / non-recursive Include) is refused BY PATH',
+        ),
+        Mutation(
+            'a line silenced by a directive is no longer refused, so a file-wide disable passes (round 3)',
+            '    bare = [(p, n) for p, n in silenced if not excused(p) and not sanctioned(comments.get(f"{p}:{n}", []))]',
+            '    bare = []',
+            'a file-wide `rubocop:disable` (no reason) is refused at the silenced line',
+        ),
+        Mutation(
+            '`all` in the cop list is accepted, silencing every cop on the line (round 4)',
+            '            if COP_NAME in cops and "all" not in cops:',
+            '            if COP_NAME in cops:',
+            'NEAR MISS: a list that includes `all` is not the sanctioned per-cop form',
+        ),
+        Mutation(
+            'any text after `--` counts as a reason, even `# x` (round 4)',
+            '(?P<reason>[^\\s#].*)',
+            '(?P<reason>.*)',
+            'a `--` followed only by `#` is no reason',
+        ),
+        Mutation(
+            "the comment is taken from the line's first `#`, which may sit inside a string, so a fake reason passes (round 4)",
+            'cs.select { |c| c.location.start_line == line }.map { |c| c.location.slice }',
+            '[File.readlines(path)[line - 1].to_s[/#.*/].to_s]',
+            'directive text inside a STRING is not a comment, so a file-wide disable is still refused',
+        ),
+        Mutation(
+            "globs lose RuboCop's flags, so `*` crosses `/` and braces stop expanding (round 4)",
+            'f = File::FNM_PATHNAME | File::FNM_EXTGLOB;',
+            'f = 0;',
+            'NEAR MISS: `*` does not cross `/`',
         ),
     ),
 )

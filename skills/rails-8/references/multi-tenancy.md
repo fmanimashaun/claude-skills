@@ -523,8 +523,9 @@ selected) says so on its own line:
 @invoice = Invoice.find_by!(share_token: params[:token]) # rubocop:disable Tenancy/ScopedLookup -- resolved by token, before any tenant exists
 ```
 
-The `tenancy-cop` check refuses every other way of silencing the cop: a file-wide or range
-`rubocop:disable`, and a same-line one with no reason.
+The `tenancy-cop` check refuses the other directives that silence it: a file-wide or range
+`rubocop:disable`, and a same-line one with no reason or with `all` in its list. It reads the line's real
+comments, so directive text inside a string does not count.
 
 **What it cannot see**, so the rest of the enforcement still stands: a query through a variable or a method
 that returns the class (`klass.find`, `self.class.where`), a dynamic namespace (`klass::Invoice`), dynamic

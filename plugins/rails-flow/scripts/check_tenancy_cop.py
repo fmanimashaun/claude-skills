@@ -27,11 +27,12 @@ one stand-in path, so a non-recursive `Include`, a nested `app/controllers/api/.
     file-wide `# rubocop:disable Tenancy/ScopedLookup`, or a range disable around real lookups. So the
     real controllers are linted twice, with and without `--ignore-disable-comments`. The difference is
     exactly the silenced lines, by RuboCop's own reading of its directives, and each must be the
-    doctrine's same-line form with a reason: `# rubocop:disable Tenancy/ScopedLookup -- <why>`.
+    doctrine's same-line form with a reason: `# rubocop:disable Tenancy/ScopedLookup -- <why>`. The
+    line's COMMENTS are read by Ruby's own parser (Prism), so directive text inside a string is not one.
   * `rubocop --show-cops` gives the root config's `TenantScope`, keys and association values.
-  * `unchecked_controllers` globs match as RuboCop's `Include`/`Exclude` do: `*` stays inside one
-    directory, and `**/` spans zero or more. A glob that matches no controller, or excuses only controllers
-    the cop does check, is reported: a dead excuse hides the next real one.
+  * `unchecked_controllers` globs are matched by Ruby's own `File.fnmatch(FNM_PATHNAME | FNM_EXTGLOB)`,
+    RuboCop's semantics, not a Python copy of them. A glob that matches no controller, or excuses only
+    controllers the cop does check, is reported: a dead excuse hides the next real one.
 
 COST: one RuboCop run per controller, 8 at a time -- about 0.3 s a controller (83 took 24-29 s).
   * Each model key's table comes from the app (`Key.constantize.table_name` through `rails runner`),
@@ -55,6 +56,7 @@ import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -155,24 +157,38 @@ def probe_all(project: Path, paths: list[str], keys: list[str]) -> dict[str, dic
         return dict(zip(paths, pool.map(lambda p: probe_path(project, p, keys), paths)))
 
 
-def glob_match(glob: str, path: str) -> bool:
-    """RuboCop's path-glob semantics: `**/` spans zero or more directories, `*` and `?` stay in one."""
-    out, i = "", 0
-    while i < len(glob):
-        if glob.startswith("**/", i):
-            out, i = out + "(?:[^/]+/)*", i + 3
-        elif glob.startswith("**", i):
-            out, i = out + ".*", i + 2
-        elif glob[i] == "*":
-            out, i = out + "[^/]*", i + 1
-        elif glob[i] == "?":
-            out, i = out + "[^/]", i + 1
-        else:
-            out, i = out + re.escape(glob[i]), i + 1
-    return re.fullmatch(out, path) is not None
+# The one sanctioned way to silence the cop: a same-line directive naming it (never `all`), with a reason.
+DIRECTIVE = re.compile(r"\A#\s*rubocop:(?:disable|todo)\s+(?P<cops>[^#]*?)\s+--\s*(?P<reason>[^\s#].*)\Z")
 
 
-REASONED_DISABLE = re.compile(r"#\s*rubocop:(?:disable|todo)\s[^#]*\bTenancy/ScopedLookup\b[^#]*--\s*\S")
+def sanctioned(comments: list[str]) -> bool:
+    for text in comments:
+        m = DIRECTIVE.match(text.strip())
+        if m:
+            cops = set(re.split(r"[\s,]+", m.group("cops").strip()))
+            if COP_NAME in cops and "all" not in cops:
+                return True
+    return False
+
+
+RUBY_FACTS = (
+    'require "prism"; q = JSON.parse(STDIN.read); f = File::FNM_PATHNAME | File::FNM_EXTGLOB; '
+    'comments = {}; q["lines"].group_by(&:first).each { |path, rows| '
+    'cs = (Prism.parse_file(path).comments rescue []); rows.each { |_, line| '
+    'comments["#{path}:#{line}"] = cs.select { |c| c.location.start_line == line }.map { |c| c.location.slice } } }; '
+    'puts JSON.generate("comments" => comments, "matches" => q["globs"].to_h { |g| '
+    '[g, q["paths"].select { |x| File.fnmatch(g, x, f) }] })')
+
+
+def ruby_facts(project: Path, lines: list[tuple[str, int]], globs: list[str], paths: list[str],
+               ruby: tuple[str, ...] = ("bundle", "exec", "ruby")) -> dict:
+    """Ruby's own answers: the comments on each silenced line (Prism), and which paths each glob
+    matches (File.fnmatch with RuboCop's flags)."""
+    query = json.dumps({"lines": [list(x) for x in lines], "globs": globs, "paths": paths})
+    done = _run(project, [*ruby, "-rjson", "-e", RUBY_FACTS], query)
+    if done.returncode != 0:
+        raise ProjectBroken(f"`ruby` could not read comments or match globs: {done.stderr.strip()[-300:]}")
+    return json.loads(done.stdout.strip().splitlines()[-1])
 
 
 def _offense_lines(project: Path, extra: list[str]) -> set[tuple[str, int]]:
@@ -188,19 +204,11 @@ def _offense_lines(project: Path, extra: list[str]) -> set[tuple[str, int]]:
             if o.get("cop_name") == COP_NAME}
 
 
-def silenced_lines(project: Path) -> list[tuple[str, int, str]]:
-    """Real controller lines the cop WOULD flag, silenced by a directive: (path, line, source line)."""
+def silenced_lines(project: Path) -> list[tuple[str, int]]:
+    """Real controller lines the cop WOULD flag, silenced by a directive -- by RuboCop's own reading."""
     if not (project / "app" / "controllers").is_dir():
         return []
-    hidden = _offense_lines(project, ["--ignore-disable-comments"]) - _offense_lines(project, [])
-    out = []
-    for path, line in sorted(hidden):
-        try:
-            text = (project / path).read_text(encoding="utf-8").splitlines()[line - 1]
-        except (OSError, IndexError):
-            text = ""
-        out.append((path, line, text))
-    return out
+    return sorted(_offense_lines(project, ["--ignore-disable-comments"]) - _offense_lines(project, []))
 
 
 MODEL_TABLES = ('keys = JSON.parse(ENV.fetch("TENANCY_KEYS")); '
@@ -287,10 +295,12 @@ def judge_config(section: dict | None) -> list[str]:
     return out
 
 
-def judge_paths(verdicts: dict[str, dict], unchecked: dict, silenced: list | None = None) -> list[str]:
+def judge_paths(verdicts: dict[str, dict], unchecked: dict, silenced: list, facts: dict) -> list[str]:
     """Per real controller: every key flagged there, none autocorrected, unless the path is declared."""
+    matches = {g: set(facts.get("matches", {}).get(g, [])) for g in unchecked}
+
     def excused(path: str) -> bool:
-        return any(glob_match(glob, path) for glob in unchecked)
+        return any(path in matches[g] for g in unchecked)
 
     off = [(p, v["unflagged"]) for p, v in verdicts.items() if v["unflagged"] and not excused(p)]
     fixed = [(p, v["autocorrected"]) for p, v in verdicts.items() if v["autocorrected"]]
@@ -307,15 +317,16 @@ def judge_paths(verdicts: dict[str, dict], unchecked: dict, silenced: list | Non
     if len(fixed) > SHOW_AT_MOST:
         out.append(f"...and {len(fixed) - SHOW_AT_MOST} more controller(s) where `-a` would rewrite")
     for glob in unchecked:
-        hits = [p for p in verdicts if glob_match(glob, p)]
+        hits = [p for p in verdicts if p in matches[glob]]
         if not hits:
             out.append(f"{DECLARATION}: unchecked_controllers `{glob}` matches no controller -- a dead excuse "
                        f"hides the next real one; remove it")
         elif all(not verdicts[p]["unflagged"] for p in hits):
             out.append(f"{DECLARATION}: unchecked_controllers `{glob}` excuses only controllers the cop does "
                        f"check -- remove it")
-    bare = [(p, n, t) for p, n, t in (silenced or []) if not excused(p) and not REASONED_DISABLE.search(t)]
-    for p, n, _ in bare[:SHOW_AT_MOST]:
+    comments = facts.get("comments", {})
+    bare = [(p, n) for p, n in silenced if not excused(p) and not sanctioned(comments.get(f"{p}:{n}", []))]
+    for p, n in bare[:SHOW_AT_MOST]:
         out.append(f"{p}:{n}: a `rubocop:disable` silences `{COP_NAME}` here without the same-line "
                    f"`# rubocop:disable {COP_NAME} -- <reason>` §7 sanctions")
     if len(bare) > SHOW_AT_MOST:
@@ -346,7 +357,8 @@ def judge_coverage(tables: list[str] | None, fk: str, owned: dict[str, dict], un
 
 
 def findings(project: Path, shipped: str, *, config=resolved_cop_config, paths=controller_paths,
-             probe=probe_all, owned=model_tables, tables=tenant_tables, silenced=silenced_lines) -> list[str]:
+             probe=probe_all, owned=model_tables, tables=tenant_tables, silenced=silenced_lines,
+             facts=ruby_facts) -> list[str]:
     decl, out = declaration(project)
     if decl is None:
         return out
@@ -362,8 +374,8 @@ def findings(project: Path, shipped: str, *, config=resolved_cop_config, paths=c
         models = (section or {}).get("TenantOwnedModels")
         keys = [str(k) for k in models] if isinstance(models, dict) else []
         if section is not None and keys:
-            out += judge_paths(probe(project, paths(project), keys), _reasons(decl, "unchecked_controllers")[0],
-                               silenced(project))
+            ps, unchecked, hidden = paths(project), _reasons(decl, "unchecked_controllers")[0], silenced(project)
+            out += judge_paths(probe(project, ps, keys), unchecked, hidden, facts(project, hidden, list(unchecked), ps))
         fk = decl.get("tenant_foreign_key")
         if isinstance(fk, str) and fk:
             out += judge_coverage(tables(project, fk), fk, owned(project, keys), _reasons(decl, "unscoped_tables")[0])
@@ -456,7 +468,7 @@ def selftest() -> int:
     CLEAN = {"unflagged": [], "autocorrected": []}
 
     def judge(*, config=GOOD, verdicts=None, owned=None, schema=SCHEMA, decl=None, cop="SHIPPED",
-              broken=None, paths=PATHS, silenced=()) -> list[str]:
+              broken=None, paths=PATHS, silenced=(), files=None) -> list[str]:
         with tempfile.TemporaryDirectory() as td:
             p = Path(td)
             (p / ".rails-flow").mkdir()
@@ -465,6 +477,9 @@ def selftest() -> int:
             if cop is not None:
                 (p / COP_PATH).parent.mkdir(parents=True)
                 (p / COP_PATH).write_text(shipped if cop == "SHIPPED" else cop, encoding="utf-8")
+            for rel, text in (files or {}).items():       # real files, so Prism reads real comments
+                (p / rel).parent.mkdir(parents=True, exist_ok=True)
+                (p / rel).write_text(text, encoding="utf-8")
 
             def cfg(_):
                 if broken:
@@ -476,7 +491,8 @@ def selftest() -> int:
                             owned=lambda _, keys: {k: (owned or OWNED).get(k, {"missing": "uninitialized constant"})
                                                    for k in keys},
                             tables=lambda _, fk: None if schema is None else tables_in_schema(schema, fk),
-                            silenced=lambda _: list(silenced))
+                            silenced=lambda _: [tuple(x) for x in silenced],
+                            facts=lambda proj, lines, globs, ps: ruby_facts(proj, lines, globs, ps, ruby=("ruby",)))
 
     def with_(**over) -> dict:
         return {**GOOD, **over}
@@ -507,28 +523,48 @@ def selftest() -> int:
     got = judge(verdicts={api: {"unflagged": [], "autocorrected": ["Invoice"]}})
     check("a controller where `-a` would rewrite (nested SafeAutoCorrect: true) is refused BY PATH",
           any(f.startswith(api) and "REWRITE" in f for f in got), f"{got}")
-    # ROUND 3'S BLOCKER: the controller's OWN directive. RuboCop says which lines are silenced; only
-    # the doctrine's same-line form with a reason passes.
+    # ROUND 3'S BLOCKER: the controller's OWN directive. RuboCop says which lines are silenced; Ruby's
+    # parser says what the COMMENTS on that line are; only the same-line form with a reason passes.
+    check("ruby is on PATH -- the directive and glob answers come from Ruby itself", shutil.which("ruby") is not None)
     top = "app/controllers/invoices_controller.rb"
-    got = judge(silenced=[(api, 1, "# rubocop:disable Tenancy/ScopedLookup")])
-    check("a file-wide `rubocop:disable` (no reason) is refused at its line",
-          any(f.startswith(f"{api}:1:") and "silences" in f for f in got), f"{got}")
-    got = judge(silenced=[(top, 8, "    @j = Invoice.find(1)")])
-    check("a line silenced by a RANGE disable (directive not on the line) is refused",
-          any(f.startswith(f"{top}:8:") for f in got), f"{got}")
-    got = judge(silenced=[(top, 3, "    @i = Invoice.find_by!(token: t) # rubocop:disable Tenancy/ScopedLookup -- resolved by token")])
-    check("CONTROL: the same-line disable WITH `-- reason` passes", got == [], f"{got}")
-    got = judge(silenced=[(top, 3, "    @i = Invoice.find_by!(token: t) # rubocop:disable Tenancy/ScopedLookup")])
-    check("...but the same-line disable WITHOUT a reason is refused", any(f.startswith(f"{top}:3:") for f in got), f"{got}")
-    got = judge(silenced=[(top, 3, "    @i = Invoice.find(1) # rubocop:disable all -- because")])
-    check("NEAR MISS: `disable all -- reason` is not the sanctioned per-cop form", any(f.startswith(f"{top}:3:") for f in got), f"{got}")
 
-    # GLOBS, as RuboCop matches them.
-    check("glob: `admin/**/*.rb` matches a file directly in admin/ (zero directories)",
-          glob_match("app/controllers/admin/**/*.rb", "app/controllers/admin/documents_controller.rb"))
-    check("glob: ...and a nested one", glob_match("app/controllers/admin/**/*.rb", "app/controllers/admin/x/y.rb"))
+    def silenced_at(line_src: str, extra_top: str = "") -> list[str]:
+        body = f"{extra_top}class InvoicesController < ApplicationController\n  def show\n{line_src}\n  end\nend\n"
+        n = body.splitlines().index(line_src) + 1
+        return judge(files={top: body}, silenced=[(top, n)])
+
+    got = silenced_at("    @i = Invoice.find(1)", extra_top="# rubocop:disable Tenancy/ScopedLookup\n")
+    check("a file-wide `rubocop:disable` (no reason) is refused at the silenced line",
+          any(f.startswith(f"{top}:") and "silences" in f for f in got), f"{got}")
+    got = silenced_at("    @i = Invoice.find_by!(token: t) # rubocop:disable Tenancy/ScopedLookup -- resolved by token")
+    check("CONTROL: the same-line disable WITH `-- reason` passes", got == [], f"{got}")
+    got = silenced_at("    @i = Invoice.find_by!(token: t) # rubocop:todo Tenancy/ScopedLookup -- legacy, ticket 12")
+    check("CONTROL: `rubocop:todo` with a reason is the same sanction", got == [], f"{got}")
+    got = silenced_at("    @i = Invoice.find_by!(token: t) # rubocop:disable Tenancy/ScopedLookup")
+    check("...but the same-line disable WITHOUT a reason is refused", any("silences" in f for f in got), f"{got}")
+    got = silenced_at("    @i = Invoice.find(1) # rubocop:disable Tenancy/ScopedLookup -- # x")
+    check("a `--` followed only by `#` is no reason", any("silences" in f for f in got), f"{got}")
+    got = silenced_at("    @i = Invoice.find(1) # rubocop:disable all, Tenancy/ScopedLookup -- r")
+    check("NEAR MISS: a list that includes `all` is not the sanctioned per-cop form", any("silences" in f for f in got), f"{got}")
+    got = silenced_at("    @i = Invoice.find(1) # rubocop:disable Tenancy -- whole department")
+    check("NEAR MISS: the department alone is not the cop", any("silences" in f for f in got), f"{got}")
+    got = silenced_at('    @i = Invoice.find_by!(note: "# rubocop:disable Tenancy/ScopedLookup -- fake")',
+                      extra_top="# rubocop:disable Tenancy/ScopedLookup\n")
+    check("directive text inside a STRING is not a comment, so a file-wide disable is still refused",
+          any("silences" in f for f in got), f"{got}")
+
+    # GLOBS, by Ruby's own File.fnmatch(FNM_PATHNAME | FNM_EXTGLOB).
+    def excuse(glob: str, path: str) -> list[str]:
+        return judge(paths=[path], verdicts={path: {"unflagged": ["Invoice"], "autocorrected": []}},
+                     decl={"multi_tenant": True, "tenant_foreign_key": "organization_id",
+                           "unchecked_controllers": {glob: "reason"}})
+    check("glob: `admin/**/*.rb` excuses a file directly in admin/ (zero directories)",
+          excuse("app/controllers/admin/**/*.rb", "app/controllers/admin/documents_controller.rb") == [])
+    check("glob: `{admin,ops}` braces are expanded", excuse("app/controllers/{admin,ops}/*.rb", "app/controllers/ops/x_controller.rb") == [])
     check("NEAR MISS: `*` does not cross `/`",
-          not glob_match("app/controllers/*_controller.rb", "app/controllers/api/invoices_controller.rb"))
+          any("draws no" in f for f in excuse("app/controllers/*_controller.rb", "app/controllers/api/x_controller.rb")))
+    check("NEAR MISS: a bare `**` does not cross `/` either",
+          any("draws no" in f for f in excuse("app/controllers/a**", "app/controllers/api/x_controller.rb")))
     got = judge(decl={"multi_tenant": True, "tenant_foreign_key": "organization_id",
                       "unchecked_controllers": {"app/controllers/legacy/**/*.rb": "gone"}})
     check("a dead excuse (matches no controller) is reported", any("matches no controller" in f for f in got), f"{got}")
