@@ -3531,17 +3531,24 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   `plugins/rails-flow/commands/setup-flow.md`** (#1361). Maintainer decision on [#1361](https://github.com/fmanimashaun/claude-skills/issues/1361#issuecomment-5857528252). setup-flow asks whether the app
   is multi-tenant, records `.rails-flow/tenancy.json` (`{"multi_tenant": false}` means the check is not applicable and
   setup-flow does not ask again), and copies the cop.
-  - **RuboCop and the app are the authorities, never a copy of their rules.** Independent review BLOCKED twice.
+  - **RuboCop and the app are the authorities, never a copy of their rules.** Independent review BLOCKED three times.
     - The first draft re-derived RuboCop's config in Python. A department disable, `Enabled: pending`, or an
       `Exclude` over the controllers each left the cop off while the check said clean.
     - The second draft probed one stand-in path. A non-recursive `Include`, a nested `app/controllers/api/.rubocop.yml`,
       or a nested `SafeAutoCorrect: true` left real controllers unchecked, or let `rubocop -a` rewrite them silently.
+    - The third probed synthetic source, so a controller's own file-wide `# rubocop:disable Tenancy/ScopedLookup`
+      (or `disable all`) was invisible, and the check said "on in every controller".
   - **Now:**
     - **Every real `app/controllers/**/*.rb` path is probed** with `rubocop --force-exclusion --autocorrect --stdin
       <path>`. Each tenant-owned key must draw an offense there, and it must come back not corrected. A controller left
       unchecked on purpose is declared in `unchecked_controllers` with a reason (the admin plane §7 excludes).
     - **Each key's table comes from the app** (`Key.constantize.table_name` via `rails runner`), so `Invocie` is no
       model and `Billing::Invoice` counts only for its own table.
+    - **Silenced lines come from RuboCop:** the real controllers are linted with and without
+      `--ignore-disable-comments`, and every silenced line must be §7's same-line
+      `# rubocop:disable Tenancy/ScopedLookup -- <reason>`. File-wide and range disables are refused.
+    - **`unchecked_controllers` globs match as RuboCop's `Exclude` does** (`*` stays in one directory, `**/`
+      spans any number). An excuse that matches nothing, or only excuses checked controllers, is reported.
     - **`db/structure.sql` is read** including partitioned, `UNLOGGED` and `IF NOT EXISTS` tables.
     - **Output is capped** at ten paths.
   - **It refuses:**
@@ -3552,11 +3559,13 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     - an unreached tenant-keyed table, or a foreign key no table carries;
     - a RuboCop or app that will not start.
   - **Tests:**
-    - 32 selftest assertions; `plugins/rails-flow/scripts/mutations/check_tenancy_cop.py` catches 17/17.
+    - 42 selftest assertions; `plugins/rails-flow/scripts/mutations/check_tenancy_cop.py` catches 23/23.
     - Driven on a real Rails 8.1.4 app with rubocop 1.91.0, using each scenario the reviews reproduced:
       - non-recursive `Include`, a nested disable, and an undeclared `api/` `Exclude` each exit 1 and name the controller;
       - a nested `SafeAutoCorrect: true` exits 1, and a real `rubocop -a` did rewrite that file;
       - `Invocie` exits 1, and an undeclared admin plane exits 1;
+      - a file-wide disable and a range disable each exit 1 at their line, and the reasoned same-line disable
+        passes; a dead excuse exits 1;
       - the declared variants, and a cop configured only in an inherited file, exit 0.
     - In every case the checker matched what RuboCop did to the real controller.
   - **Derived, not copied by hand.** The shipped cop is generated from rails-8's §7 by `scripts/derive_tenancy_cop.py`,

@@ -24,7 +24,7 @@ GUARD = Guard(
         ),
         Mutation(
             'every path counts as declared, so an unchecked controller needs no reason',
-            '        return any(fnmatch.fnmatch(path, glob) for glob in unchecked)',
+            '        return any(glob_match(glob, path) for glob in unchecked)',
             '        return True',
             'a controller where the cop is off (nested config / non-recursive Include) is refused BY PATH',
         ),
@@ -111,6 +111,42 @@ GUARD = Guard(
             '    r\'^CREATE\\s+(?:UNLOGGED\\s+)?TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?(?P<table>[\\w."]+)\\s*\\((?P<body>.*?)^\\)\',',
             '    r\'^CREATE\\s+(?:UNLOGGED\\s+)?TABLE\\s+(?:IF\\s+NOT\\s+EXISTS\\s+)?(?P<table>[\\w."]+)\\s*\\((?P<body>.*?)^\\);\',',
             'structure.sql: partitioned, UNLOGGED and IF NOT EXISTS tables are each read, and none swallows the next',
+        ),
+        Mutation(
+            'a line silenced by a directive is no longer refused, so a file-wide disable passes (round 3)',
+            '    bare = [(p, n, t) for p, n, t in (silenced or []) if not excused(p) and not REASONED_DISABLE.search(t)]',
+            '    bare = []',
+            'a file-wide `rubocop:disable` (no reason) is refused at its line',
+        ),
+        Mutation(
+            'any same-line disable passes, with or without a reason',
+            'if not excused(p) and not REASONED_DISABLE.search(t)]',
+            'if not excused(p) and "rubocop:disable" not in t]',
+            '...but the same-line disable WITHOUT a reason is refused',
+        ),
+        Mutation(
+            'a glob `*` crosses `/` again (fnmatch), so one excuse covers every nested controller',
+            '            out, i = out + "[^/]*", i + 1',
+            '            out, i = out + ".*", i + 1',
+            'NEAR MISS: `*` does not cross `/`',
+        ),
+        Mutation(
+            '`**/` needs at least one directory again, so the §7 admin glob excuses nothing directly in admin/',
+            '            out, i = out + "(?:[^/]+/)*", i + 3',
+            '            out, i = out + "(?:[^/]+/)+", i + 3',
+            'glob: `admin/**/*.rb` matches a file directly in admin/ (zero directories)',
+        ),
+        Mutation(
+            'an excuse that matches no controller is no longer reported',
+            '        if not hits:',
+            '        if False:',
+            'a dead excuse (matches no controller) is reported',
+        ),
+        Mutation(
+            'an excuse for controllers the cop does check is no longer reported',
+            '        elif all(not verdicts[p]["unflagged"] for p in hits):',
+            '        elif False:',
+            'an excuse for controllers the cop DOES check is reported',
         ),
     ),
 )

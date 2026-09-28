@@ -865,17 +865,19 @@ Undeclared, it still refuses an issue with no label at all.
 ### Multi-tenant? Install the tenancy cop, and record the answer (#1361)
 
 `Invoice.find(params[:id])` in a controller reads across every tenant, and review is the only thing
-that catches it. **Ask whether the app is multi-tenant, and which foreign key marks a tenant-owned
-table** (e.g. `organization_id`). Record the answer:
+that catches it. If `.rails-flow/tenancy.json` already exists, do not ask again; run the check in step 3.
+Otherwise, **ask whether the app is multi-tenant, and which foreign key marks a tenant-owned table**
+(e.g. `organization_id`). Record the answer:
 
 ```json
 {"multi_tenant": true, "tenant_foreign_key": "organization_id",
- "unchecked_controllers": {"app/controllers/admin/*": "the staff plane reads across tenants"}}
+ "unchecked_controllers": {"app/controllers/admin/**/*.rb": "the staff plane reads across tenants"}}
 ```
 
 Save it as `.rails-flow/tenancy.json`. `unchecked_controllers` names, with a reason, every controller
-the cop deliberately does not check, such as the admin plane that §7's config excludes. The check refuses
-any other controller the cop skips. `{"multi_tenant": false}` is an answer too: setup-flow does not ask
+the cop deliberately does not check, such as the admin plane that §7's config excludes. Globs match as
+RuboCop's `Exclude` does: `*` stays in one directory and `**/` spans any number. The check refuses any
+other controller the cop skips, and an excuse that matches nothing. `{"multi_tenant": false}` is an answer too: setup-flow does not ask
 again, and the `tenancy-cop` check reports not applicable. On yes:
 
 1. Copy the cop rails-flow ships, unmodified. The check refuses a hand-edited copy.
@@ -891,7 +893,9 @@ again, and the `tenancy-cop` check reports not applicable. On yes:
    `spec/rubocop/cop/tenancy/scoped_lookup_spec.rb`.
 3. Run the check. It runs the project's own RuboCop at every real controller path, and names any where
    the cop does not flag a model or where `rubocop -a` would rewrite. It asks the app for each model's table,
-   and names every table carrying the key that no model reaches, plus any key RuboCop would ignore silently:
+   and names every table carrying the key that no model reaches, plus any key RuboCop would ignore silently.
+   It also refuses a `rubocop:disable` that silences the cop anywhere except the same-line
+   `-- <reason>` form. It takes about 0.3 s per controller:
 
    ```bash
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_tenancy_cop.py"

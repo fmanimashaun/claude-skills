@@ -523,6 +523,9 @@ selected) says so on its own line:
 @invoice = Invoice.find_by!(share_token: params[:token]) # rubocop:disable Tenancy/ScopedLookup -- resolved by token, before any tenant exists
 ```
 
+The `tenancy-cop` check refuses every other way of silencing the cop: a file-wide or range
+`rubocop:disable`, and a same-line one with no reason.
+
 **What it cannot see**, so the rest of the enforcement still stands: a query through a variable or a method
 that returns the class (`klass.find`, `self.class.where`), a dynamic namespace (`klass::Invoice`), dynamic
 finders (`find_by_number`, which `ActiveRecord::DynamicMatchers` defines at runtime through
