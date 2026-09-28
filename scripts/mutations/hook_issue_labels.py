@@ -25,12 +25,6 @@ GUARD = Guard(
             "a <<- heredoc (tab-indented close) is stripped too",
         ),
         Mutation(
-            "an unterminated heredoc swallows the rest of the command, including the create",
-            '            if i >= len(lines):\n                raise ValueError(f"heredoc <<{tag} is never closed")',
-            "            if False:\n                raise ValueError(f\"heredoc <<{tag} is never closed\")",
-            "an unterminated heredoc refuses rather than swallowing the create",
-        ),
-        Mutation(
             "a create with no label is allowed",
             "        if not labels:\n            where =",
             "        if False:\n            where =",
@@ -99,22 +93,10 @@ GUARD = Guard(
         ),
         # ---- #1400: the ALLOWLIST -- each way a cd the create may not have followed is trusted -----
         Mutation(
-            "a cd anywhere is followed, not only as the first command",
+            "a first word other than cd (pushd) is followed as a cd",
             '    if len(prefix) < 3 or prefix[0] != "cd" or prefix[2] != "&&":',
             "    if len(prefix) < 3:",
-            "refused: a cd that is not the first command",
-        ),
-        Mutation(
-            "a separator other than && between the cd and the create is trusted",
-            '    if any(op != "&&" for op in ops) or any(t in ("(", ")") for t in rest):',
-            "    if False:",
-            "refused: a create after cd && exit;",
-        ),
-        Mutation(
-            "a second cd before the create is ignored",
-            "    rest = prefix[3:]\n    if any(_is_cd_word(t) for t in rest):",
-            "    rest = prefix[3:]\n    if False:",
-            "refused: a second cd",
+            "refused: pushd",
         ),
         Mutation(
             "a command whose first word is not cd reads as having no cd at all",
@@ -133,6 +115,48 @@ GUARD = Guard(
             '    if target in ("-", "--") or target.startswith("-") or "$" in target or "`" in target:',
             "    if False:",
             "refused: a cd to a variable",
+        ),
+        Mutation(
+            "an unterminated heredoc swallows the create after it",
+            '                    raise ValueError(f"heredoc <<{tag} is never closed")',
+            "                    pass",
+            "an unterminated heredoc refuses rather than swallowing the create",
+        ),
+        Mutation(
+            "every unterminated heredoc refuses, so a quoted <<EOF is a parse error again",
+            '                if re.search(r"\\bgh\\s+issue\\s+create\\b", "\\n".join(lines[start_of_swallow:])):',
+            "                if True:",
+            "CONTROL: a quoted <<EOF on the create's own line is not a parse error",
+        ),
+        Mutation(
+            "a <<< herestring is read as a heredoc and swallows the create",
+            """HEREDOC = re.compile(r"(?<!<)<<(?!<)(-?)""",
+            """HEREDOC = re.compile(r"<<(-?)""",
+            "a <<< herestring is not a heredoc",
+        ),
+        Mutation(
+            "a command between the cd and the create is trusted",
+            "    if len(prefix) != 3:\n        return UNKNOWN",
+            "    if False:\n        return UNKNOWN",
+            "refused: a command between the cd and the create",
+        ),
+        Mutation(
+            "after a followed cd, a create behind env -C or command is trusted",
+            '                    if cd not in (None, UNKNOWN) and (i != 0 or set(env) - {"GH_REPO"}):',
+            '                    if cd not in (None, UNKNOWN) and (set(env) - {"GH_REPO"}):',
+            "refused: env -C redirecting the create",
+        ),
+        Mutation(
+            "after a followed cd, a GIT_DIR prefix on the create is trusted",
+            '                    if cd not in (None, UNKNOWN) and (i != 0 or set(env) - {"GH_REPO"}):',
+            "                    if cd not in (None, UNKNOWN) and (i != 0):",
+            "refused: GIT_DIR on the create itself",
+        ),
+        Mutation(
+            "a cd into a clone of the session's repo takes the clone's (missing) rules",
+            "        elif cd is not None and session_repo is not None and own_repo(target) == session_repo:",
+            "        elif False:",
+            "a cd into a clone of the session's own repo keeps the session's rules",
         ),
         Mutation(
             "a newline after && breaks the chain",

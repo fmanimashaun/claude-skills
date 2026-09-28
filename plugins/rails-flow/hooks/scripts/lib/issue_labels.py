@@ -18,7 +18,7 @@ THE DECLARATION IS THE TARGET REPOSITORY'S, not the session's (#1400). A coordin
 checkout runs `cd /path/to/other-repo && gh issue create ...`; the issue lands in the other repo, so
 its labels answer to the other repo's declaration. The hook used to read the session's file, refused
 a correctly labelled issue, and asked for labels the other repo does not have. So a create written
-`cd <literal path> && … && gh issue create …` is judged by that directory's git toplevel, which
+`cd <literal path> && gh issue create …` is judged by that directory's git toplevel, which
 supplies both the declaration and the "is this our repo" answer for `-R`. Any OTHER shape with a
 `cd` in it is refused rather than guessed (see `issue_creates`), because a guess applies one repo's
 rules to another's issue -- the defect itself, in a different direction.
@@ -43,7 +43,7 @@ from pathlib import Path
 CONFIG = Path(".rails-flow/issue-labels.json")
 
 
-HEREDOC = re.compile(r"<<(-?)[ \t]*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\2")
+HEREDOC = re.compile(r"(?<!<)<<(?!<)(-?)[ \t]*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\2")  # not <<< (a herestring)
 
 
 def strip_heredocs(cmd: str) -> str:
@@ -54,9 +54,10 @@ def strip_heredocs(cmd: str) -> str:
     unterminated quote and refused a correctly labelled `gh issue create` in the same call. The body
     is data the shell never tokenises, so it is not ours to parse either.
 
-    A heredoc whose closing tag never arrives raises ValueError, which the caller turns into a
-    refusal: an unterminated `<<EOF` (or a quoted mention of one) would otherwise swallow every later
-    line, including a `gh issue create`, and a create nobody sees is a create let through.
+    A heredoc whose closing tag never arrives raises ValueError -- a refusal -- when the lines it
+    would swallow hold a `gh issue create`, because a create nobody sees is a create let through.
+    Otherwise it is a quoted mention or arithmetic, and is left alone. `<<<` is a herestring, not a
+    heredoc: it has no body to strip.
     """
     lines = cmd.split("\n")
     out, i = [], 0
@@ -66,10 +67,16 @@ def strip_heredocs(cmd: str) -> str:
         i += 1
         for m in HEREDOC.finditer(line):
             tag, dash = m.group(3), m.group(1) == "-"
+            start_of_swallow = i
             while i < len(lines) and (lines[i].lstrip("\t") if dash else lines[i]) != tag:
                 i += 1
             if i >= len(lines):
-                raise ValueError(f"heredoc <<{tag} is never closed")
+                # Never closed. Usually a quoted mention (`--body 'a<<EOF'`) or arithmetic
+                # (`$((1<<n))`), which is harmless -- UNLESS the lines it would swallow hold a
+                # `gh issue create`, which would then go unchecked. Refuse only that.
+                if re.search(r"\bgh\s+issue\s+create\b", "\n".join(lines[start_of_swallow:])):
+                    raise ValueError(f"heredoc <<{tag} is never closed")
+                break
             i += 1  # the closing tag line
     return "\n".join(out)
 
@@ -92,10 +99,11 @@ def issue_creates(cmd: str) -> list[tuple[list[str], str | None, str | None]]:
     `cd` leaked -- a `case` pattern's `)`, a `time` prefix, a quoted `fi` -- because a blocklist over
     shell syntax never ends. So a `cd` is followed in exactly ONE shape:
 
-        cd <literal path> && … && gh issue create …
+        cd <literal path> && gh issue create …
 
-    the command's FIRST word is `cd`, every separator up to the create is `&&`, and no other `cd`
-    word appears before it. No cd word before the create: the session's own directory, as before.
+    the command's FIRST word is `cd`, `&&` joins it DIRECTLY to the create, and the create is the
+    segment's first word (a `GH_REPO=` prefix aside). A fourth review showed why nothing may sit in
+    between: `export GH_REPO=`, `export GIT_DIR=`, `env -C <dir>` each send the create elsewhere. No cd word before the create: the session's own directory, as before.
     Any other shape with a cd in it: UNKNOWN, refused with the shape that works. The cost is a
     refusal of some valid commands, each fixable in one line; the benefit is that nothing leaks.
     """
@@ -145,7 +153,12 @@ def issue_creates(cmd: str) -> list[tuple[list[str], str | None, str | None]]:
                 env[name] = value
             for i in range(len(words) - 2):
                 if words[i] == "gh" and words[i + 1] == "issue" and words[i + 2] == "create":
-                    out.append((words[i + 3:], _cd_in_force(items[:start]), env.get("GH_REPO")))
+                    cd = _cd_in_force(items[:start])
+                    # After a followed cd, the create must BE the segment -- no `env -C`, no
+                    # `command`, no GIT_DIR=: each sends the create somewhere the cd did not.
+                    if cd not in (None, UNKNOWN) and (i != 0 or set(env) - {"GH_REPO"}):
+                        cd = UNKNOWN
+                    out.append((words[i + 3:], cd, env.get("GH_REPO")))
                     break
             seg, start = [], k + 1
         else:
@@ -162,11 +175,9 @@ def _cd_in_force(prefix: list[str]) -> str | None:
     target = prefix[1]
     if target in ("-", "--") or target.startswith("-") or "$" in target or "`" in target:
         return UNKNOWN
-    rest = prefix[3:]
-    if any(_is_cd_word(t) for t in rest):
-        return UNKNOWN
-    ops = [t for t in rest if t and set(t) <= set(";&|")]
-    if any(op != "&&" for op in ops) or any(t in ("(", ")") for t in rest):
+    # EXACTLY `cd <path> &&` and then the create. Any command in between -- `export GH_REPO=`,
+    # `export GIT_DIR=`, `source`, a second cd -- can send the create elsewhere (#1406 review).
+    if len(prefix) != 3:
         return UNKNOWN
     return target
 
@@ -257,6 +268,10 @@ def verdict(cmd: str, root: Path) -> tuple[bool, str]:
         # A repo NAMED with -R / GH_REPO decides where the issue lands, whatever the cd says: if it is
         # the session's own, the session's rules apply even from inside another directory.
         if repo is not None and session_repo is not None and repo == session_repo:
+            target, cd = root, None
+        # A cd into ANOTHER CHECKOUT of the session's own repo (a clone, a worktree) files into the
+        # session's repo, so the session's rules apply -- not the checkout's, which may declare none.
+        elif cd is not None and session_repo is not None and own_repo(target) == session_repo:
             target, cd = root, None
         groups, why = load_groups(target)
         if why:
@@ -360,8 +375,6 @@ def selftest() -> int:
         ok, why = verdict(f"cd {r} && gh issue create -t X --label bug", s)
         check("...and that repo's rules still refuse, naming its file",
               not ok and "severity:s1" in why and str(r) in why, why)
-        check("other && commands between the cd and the create are fine",
-              verdict(f"cd {r} && git status && {rt}", s)[0])
         check("a newline after && continues the chain", verdict(f"cd {r} &&\n{rt}", s)[0],
               verdict(f"cd {r} &&\n{rt}", s)[1])
         subprocess.run(["git", "init", "-q", str(r)], check=True)
@@ -416,13 +429,33 @@ def selftest() -> int:
                 ("a cd behind time", f"time if false; then cd {r}; fi; {rt}"),
                 ("a cd behind a case pattern's )", f"(case x in a) ;; esac; cd {r}); {rt}"),
                 ("a cd behind a quoted fi", f"if false; then 'fi'; cd {r}; fi; {rt}"),
-                ("a create after cd && exit;", f"cd {r} && exit; {rt}")):
+                ("a create after cd && exit;", f"cd {r} && exit; {rt}"),
+                ("a command between the cd and the create", f"cd {r} && git status && {rt}"),
+                ("export GH_REPO between the cd and the create", f"cd {r} && export GH_REPO=me/skills && {rt}"),
+                ("export GIT_DIR between the cd and the create", f"cd {r} && export GIT_DIR={s}/.git && {rt}"),
+                ("GIT_DIR on the create itself", f"cd {r} && GIT_DIR={s}/.git {rt}"),
+                ("env -C redirecting the create", f"cd {r} && env -C {s} {rt}")):
             refused(name, shape)
         refused("-R naming the session's own repo keeps its rules", f"cd {u} && {one} -R me/skills", "type:*")
         refused("GH_REPO naming the session's own repo keeps its rules", f"cd {u} && GH_REPO=me/skills {one}", "type:*")
         ok, why = verdict("echo 'use <<EOF'\n" + one, s)
         check("an unterminated heredoc refuses rather than swallowing the create",
               not ok and "could not be parsed" in why, why)
+        full = "gh issue create -t X --label comp:a --label type:b --label prio:P2"
+        check("CONTROL: a quoted <<EOF on the create's own line is not a parse error",
+              verdict(full + " --body 'a<<EOF'", s)[0], verdict(full + " --body 'a<<EOF'", s)[1])
+        check("CONTROL: arithmetic << is not a parse error",
+              verdict("echo $((1<<n)) && " + full, s)[0], verdict("echo $((1<<n)) && " + full, s)[1])
+        ok, why = verdict("cat <<< hi\ngh issue create -t X\nhi", s)
+        check("a <<< herestring is not a heredoc, so the unlabelled create after it is seen",
+              not ok and "no --label" in why, why)
+        # A cd into ANOTHER checkout of the session's own repo files into the session's repo.
+        clone = Path(td) / "clone"
+        clone.mkdir()
+        subprocess.run(["git", "init", "-q", str(clone)], check=True)
+        subprocess.run(["git", "-C", str(clone), "remote", "add", "origin", "https://github.com/me/skills.git"], check=True)
+        ok, why = verdict(f"cd {clone} && {one}", s)
+        check("a cd into a clone of the session's own repo keeps the session's rules", not ok and "type:*" in why, why)
         (r / CONFIG).write_text("{not json", encoding="utf-8")
         check("an unreadable declaration refuses rather than allowing",
               not verdict("gh issue create -t X --label feature", r)[0])
