@@ -213,18 +213,15 @@ def parse_args(args: list[str]) -> tuple[list[str], str | None]:
 
 
 def norm_repo(s: str | None) -> str | None:
-    """`owner/name`, lowercased, from any spelling gh accepts: a URL, `github.com/…`, `.git`, `git@`."""
+    """`owner/name`, lowercased, from ANY spelling of a repo: `owner/name`, a URL with or without
+    userinfo (`https://token@github.com/…`), an ssh port (`ssh://git@github.com:22/…`), an ssh alias
+    (`git@github-work:…`), an enterprise host, `.git`. The host is dropped on purpose: two remotes
+    naming the same owner/name are treated as the same repo, which only ever means MORE fallback to
+    the session's rules -- the safe direction."""
     if not s:
         return None
-    s = s.strip().lower()
-    for pre in ("https://", "http://", "ssh://", "git@"):
-        if s.startswith(pre):
-            s = s[len(pre):]
-    for host in ("github.com/", "github.com:"):
-        if s.startswith(host):
-            s = s[len(host):]
-    return s.removesuffix("/").removesuffix(".git").removesuffix("/") or None
-
+    m = re.search(r"([^/:@\s]+)/([^/:@\s]+?)(?:\.git)?/*$", s.strip().lower())
+    return f"{m.group(1)}/{m.group(2)}" if m else None
 
 def own_repo(root: Path) -> str | None:
     """The `origin` repo, normalised, or None."""
@@ -233,7 +230,7 @@ def own_repo(root: Path) -> str | None:
                              capture_output=True, text=True, timeout=10).stdout.strip()
     except (OSError, subprocess.SubprocessError):
         return None
-    return norm_repo(url) if "github.com" in url else None
+    return norm_repo(url)
 
 
 def remotes(root: Path) -> set[str]:
@@ -256,7 +253,6 @@ def verdict(cmd: str, root: Path) -> tuple[bool, str]:
     creates = issue_creates(cmd)
     if not creates:
         return True, ""
-    session_repo = own_repo(root)
     for args, cd, env_repo in creates:
         if args == ["__unparseable__"]:
             return False, "the gh issue create command could not be parsed, so its labels cannot be checked"
@@ -268,11 +264,15 @@ def verdict(cmd: str, root: Path) -> tuple[bool, str]:
         # was another repo's rules applied without that certainty; this default cannot leak,
         # because it is the check the same create gets with no cd at all.
         target = root
-        if cd is not None and repo is None and env_repo is None:
+        # GH_REPO in the hook's own environment (settings `env`) redirects gh too. One set only via
+        # CLAUDE_ENV_FILE is invisible here -- a known limit, recorded in #1400.
+        if cd is not None and repo is None and env_repo is None and not os.environ.get("GH_REPO"):
             found, _ = target_root(cd, root)
             if found is not None:
-                theirs = remotes(found)
-                if theirs and (session_repo is None or session_repo not in theirs):
+                theirs, ours = remotes(found), remotes(root)
+                # Certain only when BOTH sides have remotes and they share none: gh may file into
+                # any remote (`upstream` first), so one shared repo means the session's rules.
+                if theirs and ours and ours.isdisjoint(theirs):
                     target = found
         followed = target != root
         groups, why = load_groups(target)
@@ -369,7 +369,10 @@ def selftest() -> int:
         ok, why = verdict("gh issue create -t \"X --label feature", r)
         check("CONTROL: a genuinely unparseable create still refuses", not ok and "could not be parsed" in why, why)
         # ---- #1400: the TARGET repository's declaration, in the one shape that is followed -------
-        # The target is CERTAINLY another repo: a git checkout whose only remote is someone else's.
+        # Both sides need remotes for the cd to be certain: the session is me/skills, the target
+        # a git checkout whose only remote is someone else's.
+        subprocess.run(["git", "init", "-q", str(s)], check=True)
+        subprocess.run(["git", "-C", str(s), "remote", "add", "origin", "https://github.com/me/skills.git"], check=True)
         subprocess.run(["git", "init", "-q", str(r)], check=True)
         subprocess.run(["git", "-C", str(r), "remote", "add", "origin", "https://github.com/other/retask.git"], check=True)
         rt = "gh issue create -t X --label enhancement --label needs-decision"
@@ -413,8 +416,6 @@ def selftest() -> int:
         # ---- every OTHER shape with a cd is refused, never guessed ---------------------------------
         # Each was a real leak in an earlier draft (three independent reviews), or is its near kin.
         # The labels pass the target repo, so a guess would let them through; the session must judge.
-        subprocess.run(["git", "init", "-q", str(s)], check=True)
-        subprocess.run(["git", "-C", str(s), "remote", "add", "origin", "https://github.com/me/skills.git"], check=True)
         u = Path(td) / "undeclared"
         u.mkdir()
         one = "gh issue create -t X --label comp:x"     # one label: passes an undeclared dir, fails skills
@@ -488,6 +489,45 @@ def selftest() -> int:
         subprocess.run(["git", "-C", str(up), "remote", "add", "origin", "https://github.com/someone/fork.git"], check=True)
         ok, why = verdict(f"cd {up} && {rt}", s)
         check("...and so does a fork origin with the session repo as upstream", not ok and "comp:*" in why, why)
+        # The session's repo in every URL spelling a clone might carry (#1406 sixth review).
+        for n, (kind, url) in enumerate((("userinfo", "https://x-access-token:secret@github.com/me/skills.git"),
+                                         ("an ssh port", "ssh://git@github.com:22/me/skills.git"),
+                                         ("an ssh alias", "git@github-work:me/skills.git"),
+                                         ("an enterprise host", "https://github.example.com/Me/Skills"))):
+            c = Path(td) / f"spelling{n}"
+            (c / ".rails-flow").mkdir(parents=True)
+            (c / CONFIG).write_text(json.dumps(retask), encoding="utf-8")
+            subprocess.run(["git", "init", "-q", str(c)], check=True)
+            subprocess.run(["git", "-C", str(c), "remote", "add", "origin", url], check=True)
+            ok, why = verdict(f"cd {c} && {rt}", s)
+            check(f"a clone whose origin uses {kind} is the session's repo",
+                  not ok and "comp:*" in why, why)
+        # GH_REPO in the hook's environment redirects gh, so the cd is not certain.
+        saved = os.environ.get("GH_REPO")
+        os.environ["GH_REPO"] = "me/skills"
+        try:
+            ok, why = verdict(f"cd {r} && {rt}", s)
+            check("GH_REPO in the environment keeps the session's rules", not ok and "comp:*" in why, why)
+        finally:
+            if saved is None:
+                os.environ.pop("GH_REPO", None)
+            else:
+                os.environ["GH_REPO"] = saved
+        # A session whose origin is a fork and whose UPSTREAM is the real repo: gh files upstream.
+        s2 = Path(td) / "session-fork"
+        (s2 / ".rails-flow").mkdir(parents=True)
+        (s2 / CONFIG).write_text(json.dumps(skills), encoding="utf-8")
+        subprocess.run(["git", "init", "-q", str(s2)], check=True)
+        subprocess.run(["git", "-C", str(s2), "remote", "add", "origin", "https://github.com/someone/fork.git"], check=True)
+        subprocess.run(["git", "-C", str(s2), "remote", "add", "upstream", "https://github.com/me/skills.git"], check=True)
+        ok, why = verdict(f"cd {clone} && {rt}", s2)
+        check("a session whose upstream is the target's repo keeps its own rules", not ok and "comp:*" in why, why)
+        # A session with NO remote cannot be told apart from anything: never follow.
+        s3 = Path(td) / "session-bare"
+        (s3 / ".rails-flow").mkdir(parents=True)
+        (s3 / CONFIG).write_text(json.dumps(skills), encoding="utf-8")
+        ok, why = verdict(f"cd {r} && {rt}", s3)
+        check("a session with no remote keeps its own rules", not ok and "comp:*" in why, why)
         # Repo names in every spelling gh accepts.
         for spelling in ("-Rme/skills", "-R Me/Skills", "-R https://github.com/me/skills", "--repo=github.com/me/skills.git"):
             ok, why = verdict(f"{one} {spelling}", s)

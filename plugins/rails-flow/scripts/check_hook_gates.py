@@ -403,7 +403,9 @@ def guard_bash_fixtures() -> None:
         for repo, decl in ((session, {"groups": [{"one_of": ["comp:*"]}, {"one_of": ["type:*"]}]}), (other, groups)):
             (repo / ".rails-flow").mkdir(parents=True)
             (repo / ".rails-flow" / "issue-labels.json").write_text(json.dumps(decl), encoding="utf-8")
-        # The target is CERTAINLY another repo only if it has a remote that is not the session's.
+        # The target is CERTAINLY another repo only when both sides have remotes and share none.
+        subprocess.run(["git", "init", "-q", str(session)], check=True)
+        subprocess.run(["git", "-C", str(session), "remote", "add", "origin", "https://github.com/me/session.git"], check=True)
         subprocess.run(["git", "init", "-q", str(other)], check=True)
         subprocess.run(["git", "-C", str(other), "remote", "add", "origin", "https://github.com/other/repo.git"], check=True)
         def cross(cmd: str) -> tuple[int, str]:

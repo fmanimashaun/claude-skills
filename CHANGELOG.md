@@ -3497,13 +3497,15 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     not have.
   - **The fix.** A create written exactly `cd <literal path> && gh issue create …` is judged by that directory's
     git toplevel when the issue certainly lands there:
-    - the create names no repo (`-R`, `--repo`, `GH_REPO`);
-    - the target has a remote;
-    - none of its remotes is the session's repo (gh may pick `upstream` over `origin`).
+    - the create names no repo (`-R`, `--repo`, `GH_REPO`), and `GH_REPO` is not set in the environment;
+    - both the session and the target have remotes, and the two sets share none. gh may file into any
+      remote (`upstream` first), and repos are compared as `owner/name` from any URL spelling: userinfo, an
+      ssh port, an ssh alias, an enterprise host.
   - **Every other command keeps the session's rules**, exactly as before. Five independent reviews of broader
     versions each found a shape where another repo's rules were applied to an issue that did not land there: a
     subshell `cd`, `cd -`, `||`, compound bodies, a `case` `)`, `time`, `export GIT_DIR=`, `env -C`, a clone, an
-    `upstream` remote. The session's rules are the check the same create gets with no `cd`, so the fallback cannot
+    `upstream` remote, a session repo named by a URL the old normaliser missed. The session's rules are the check
+    the same create gets with no `cd`, so the fallback cannot
     let anything through, and it refuses nothing that dev allows.
   - **Also fixed.**
     - Repo names are compared normalised (URL, `github.com/`, `.git`, case), and a glued `-Rowner/name` is read.
@@ -3511,8 +3513,9 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     - An unclosed heredoc refuses only when it would hide a `gh issue create`.
     - Still not covered: a create inside `sh -c`/`eval`, behind `/usr/bin/gh`, or in backticks, which is
       pre-existing. That is #1423.
-  - **Tests.** 81 selftest checks run, 60 of them new, and 3 end-to-end hook fixtures. Mutations: 18 new, 27 of
-    27 caught.
+  - **Known limit.** A `GH_REPO` set only through `CLAUDE_ENV_FILE` is invisible to the hook; it is recorded on #1400.
+  - **Tests.** 88 selftest checks run, 67 of them new, and 3 end-to-end hook fixtures. Mutations: 22 new, 31 of
+    31 caught.
 
 - **`/rails-flow:slice` breaks a spec, brief or issue into dependency-ordered vertical slices and files them —
   `plugins/rails-flow/commands/slice.md`, `plugins/rails-flow/scripts/check_slices.py`,
