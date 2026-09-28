@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-09-28 (release v1.152.0)
 
 - **Triage checks a skill-gap report against what the skill already says — `.claude/agents/issue-triager.md`,
   `.claude/commands/maintainer-work.md`, `.claude/commands/maintainer-setup-intake.md`, `.github/labels.yml`,
@@ -3487,7 +3487,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.55.0 (release v1.152.0) — 2026-09-28
 
 - **`/rails-flow:slice` breaks a spec, brief or issue into dependency-ordered vertical slices and files them —
   `plugins/rails-flow/commands/slice.md`, `plugins/rails-flow/scripts/check_slices.py`,
@@ -6594,7 +6594,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## pipeline (lifecycle orchestrator)
 
-### Unreleased
+### 1.4.0 (release v1.152.0) — 2026-09-28
 
 - **A proceeding `breaker.py check` ends with `elapsed Xs / Ys` — `plugins/pipeline/scripts/breaker.py`,
   `plugins/pipeline/scripts/breaker_selftest.py`, `plugins/pipeline/scripts/mutations/breaker.py`,
@@ -10793,7 +10793,7 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 1.34.0 (release v1.152.0) — 2026-09-28
 
 - **The crawl checks each page with its text enlarged: WCAG 2.2 SC 1.4.4 and SC 1.4.12 — `plugins/qa-flow/scripts/text_resize.py`,
   `plugins/qa-flow/scripts/crawl_collector.js`, `plugins/qa-flow/scripts/mutations/text_resize.py`,
@@ -15812,7 +15812,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
-### Unreleased
+### 1.69.0 (release v1.152.0) — 2026-09-28
 
 - **The quality-pass worked example's `check(label, ok, detail)` count is refreshed to 40 — `skills/quality-pass/references/worked-example.md`,
   `dist/quality-pass.skill`** (#1367). The new copy is `plugins/qa-flow/scripts/text_resize.py`; reach stays 21. It reuses

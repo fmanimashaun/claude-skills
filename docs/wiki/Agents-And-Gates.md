@@ -7,9 +7,9 @@
 | plugin | version | agents | commands | tier rows | gates |
 |---|---|---|---|---|---|
 | `design-flow` | 1.44.2 | 5 | 12 | 5 | 19 |
-| `pipeline` | 1.3.4 | 2 | 8 | 2 | 4 |
-| `qa-flow` | 1.33.2 | 11 | 8 | 11 | 16 |
-| `rails-flow` | 1.54.0 | 12 | 22 | 12 | 31 |
+| `pipeline` | 1.4.0 | 2 | 8 | 2 | 4 |
+| `qa-flow` | 1.34.0 | 11 | 8 | 11 | 16 |
+| `rails-flow` | 1.55.0 | 12 | 22 | 12 | 31 |
 
 ## Agents
 
