@@ -78,10 +78,10 @@ GUARD = Guard(
             "a mode with no truncated flag is unusable, not complete",
         ),
         Mutation(
-            "the route comparison stops normalising, so a query string reads as a redirect",
-            "        if isinstance(landed, str) and landed.strip() and route_path(landed) != route_path(route):",
+            "the route comparison stops normalising, so a trailing slash reads as a redirect",
+            "        if isinstance(landed, str) and landed.strip() and not same_page(route, landed):",
             "        if isinstance(landed, str) and landed.strip() and landed != route:",
-            "a route with a query string is the page it lands on",
+            "a trailing slash is the same page",
         ),
         Mutation(
             "the untested share of px-sized text is no longer reported",

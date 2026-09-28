@@ -70,7 +70,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # are layout_fit's. A second copy here would drift the first time sr-only changed shape.
 from layout_fit import (  # noqa: E402
     CLIPS, DEFAULT_MIN_HIDDEN, MAX_EXAMPLES, SCROLLS, Unusable, is_visually_hidden, read_config,
-    route_path,
+    same_page,
 )
 
 SCHEMA = "qa-flow/text-resize/1"
@@ -185,7 +185,7 @@ def judge(doc: dict, *, min_hidden: float = DEFAULT_MIN_HIDDEN,
         landed = entry.get("landedOn")
         # The collector records `landedOn` as a PATHNAME, so a route asked for with a query string,
         # or differing only by a trailing slash, is the same page -- not "measured somewhere else".
-        if isinstance(landed, str) and landed.strip() and route_path(landed) != route_path(route):
+        if isinstance(landed, str) and landed.strip() and not same_page(route, landed):
             out.unverified.append(f"{route}: measured at {landed}")
             continue
         base = _mode(entry, "base", route)
@@ -447,7 +447,9 @@ def selftest() -> int:  # noqa: PLR0915 -- a fixture list; each firing case sits
         check("a mode with no truncated flag is unusable, not complete", True)
     # The route comparison: the collector records a PATHNAME.
     check("a route with a query string is the page it lands on",
-          not judge(doc(route="/r?page=2", landed="/r")).unverified)
+          not judge(doc(route="/r?page=2", landed="/r?page=2")).unverified)
+    check("a redirect that DROPS the query is unverified",
+          bool(judge(doc(route="/r?tab=a", landed="/r")).unverified))
     check("a trailing slash is the same page", not judge(doc(route="/r/", landed="/r")).unverified)
     check("CONTROL: a genuinely different page is still unverified",
           bool(judge(doc(route="/r?page=2", landed="/sign_in")).unverified))
