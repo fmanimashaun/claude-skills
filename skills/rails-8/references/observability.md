@@ -243,8 +243,13 @@ bin/rails generate rails_pulse:install --database=separate
 Add a `rails_pulse:` database to **every** environment in
 `config/database.yml`. Rails treats an environment as multi-database only when
 every key under it is a database entry, so a flat block (the usual
-`development:` and `test:`) must move under `primary:` first. Otherwise the Pulse
-entry is silently ignored and `db:prepare` creates nothing:
+`development:` and `test:`) must move under `primary:` first. Skip that and the
+install fails one of two ways. With `connects_to` set, `db:prepare` aborts with
+`ActiveRecord::AdapterNotSpecified`. Without it, `db:prepare` prints
+*"Successfully created tables"* and writes all ten Pulse tables into the
+**primary**. Production is already nested in Rails 8 (`primary`, `cache`,
+`queue`, `cable`), so it only needs the sibling. For PostgreSQL or MySQL,
+`database:` is a database name, not a file path:
 
 ```yaml
 development:
@@ -258,12 +263,20 @@ development:
     schema_dump: false
 ```
 
-Then connect it, uncommenting `connects_to` in the initializer the generator
-wrote (below), prepare the database, and restart the server:
+Then connect it by uncommenting `connects_to` in the initializer the generator
+wrote (below). Prepare both databases, copy this version's migrations (a fresh
+0.4.1 install reports them uncopied until you do), and restart the server:
 
 ```bash
-bin/rails db:prepare   # first install: loads db/rails_pulse_schema.rb into the Pulse database
+bin/rails db:prepare                   # loads db/rails_pulse_schema.rb into the Pulse database
+bin/rails generate rails_pulse:upgrade
+bin/rails db:migrate:rails_pulse
+RAILS_ENV=test bin/rails db:prepare    # the test Pulse database; db:test:prepare leaves it empty
+bin/rails runner 'p RailsPulse::ApplicationRecord.connection_db_config.name'   # must print "rails_pulse", not "primary"
 ```
+
+Run the test preparation in CI too. With an empty test Pulse database,
+`/rails_pulse` answers 503 in tests and tracking pauses without a word.
 
 (A single-database install omits `--database=separate`, the `database.yml`
 entry and `connects_to`, and runs `bin/rails db:migrate`.) Mount it and gate it
@@ -303,10 +316,12 @@ action), and a signed-out request to `/rails_pulse` in production is refused.
 It is pre-1.0 and upgrades can carry data steps: 0.3 → 0.4 required a backup
 first, then `bin/rails generate rails_pulse:upgrade`, the migration
 (`bin/rails db:migrate:rails_pulse` for the separate database), and
-`bin/rails rails_pulse:migrate_routes`. Two warnings from that upgrade apply to
-any data-carrying one. **Restart every process together, not as a rolling
+`bin/rails rails_pulse:migrate_routes`. For that upgrade upstream warns
+(`CHANGELOG.md`, 0.4.0) to **restart every process together, not as a rolling
 deploy**: *"A 0.3.x process left running against the migrated schema stops
-tracking and 500s on the routes page."* And on a separate database, *"do not run
-`db:setup` / `db:prepare` as a substitute for `db:migrate:rails_pulse`"*;
-`db:prepare` is for the first install only. Read its CHANGELOG before every
-`bundle update rails_pulse`, and finish with `rails_pulse:status`.
+tracking and 500s on the routes page."* On a separate database it adds: *"Do
+not run `db:setup` / `db:prepare` as a substitute for `db:migrate:rails_pulse`."*
+Both warnings are stated for 0.4.0, not as general rules. Rails 8's generated
+`bin/docker-entrypoint` runs `db:prepare` on every boot, so a data-carrying
+upgrade runs its migration before that deploy boots. Read its CHANGELOG before
+every `bundle update rails_pulse`, and finish with `rails_pulse:status`.

@@ -15885,19 +15885,30 @@ boot/validation path — with a bullet each so the promotion could close them se
   the proposed "Ruby 3.2+, Rails 7.2+" floor was REFUTED (gemspec: Ruby >= 3.1, Rails >= 7.1, < 9), so the
   doctrine states the tested Rails set instead. The "when to adopt" rule is our design: maintainer decision
   recorded on #1365.
-  - **The separate-database install is corrected before it ships (promotion review).** The three
-    commands alone created nothing. `rails_pulse:install --database=separate` only *prints* the
-    wiring (`install_generator.rb:68-99`, `display_separate_database_message`). §7 now spells out the
-    `rails_pulse:` `database.yml` entry (`migrations_paths: db/rails_pulse_migrate`,
-    `schema_dump: false`), `config.connects_to = { database: { writing: :rails_pulse, reading:
-    :rails_pulse } }`, `db:prepare`, and a restart. It also names a requirement the gem's own message omits:
-    an environment is multi-database only when every key under it is a database entry
-    (`activerecord` `database_configurations.rb`, `config.values.all?(Hash)`), so a flat `development:`
-    block must move under `primary:` first. Reproduced on Rails 8.0 by doctrine-verifier: the literal
-    commands left no Pulse database and no tables; with `primary:` nesting, `db:prepare` created all ten.
-    Also added, quoting rails_pulse `CHANGELOG.md:44,46`: restart every process together, not as a
-    rolling deploy; and on a separate database never run `db:setup` / `db:prepare` in place of
-    `db:migrate:rails_pulse`.
+  - **The separate-database install is corrected before it ships (promotion review).**
+    - **The old commands created nothing.** `rails_pulse:install --database=separate` only *prints* the
+      wiring (rails_pulse 0.4.1 `install_generator.rb:68-99`).
+    - **§7 now gives the wiring:** the `rails_pulse:` `database.yml` entry (`migrations_paths:
+      db/rails_pulse_migrate`, `schema_dump: false`) and `config.connects_to = { database: { writing:
+      :rails_pulse, reading: :rails_pulse } }`.
+    - **It names what the gem's message omits.** An environment is multi-database only when every key under
+      it is a database entry (activerecord `database_configurations.rb`, `config.values.all?(Hash)`), so a
+      flat `development:` / `test:` block must move under `primary:`. Skipped, `db:prepare` either aborts with
+      `AdapterNotSpecified` (with `connects_to`) or writes all ten Pulse tables into the **primary**
+      (without it).
+    - **It adds a check that tells the two apart:** `RailsPulse::ApplicationRecord.connection_db_config.name`
+      must print `"rails_pulse"`. It printed `"primary"` on the misconfigured app.
+    - **So that `rails_pulse:status` can exit 0:** a fresh 0.4.1 install reports its migrations uncopied, so
+      §7 now runs `rails_pulse:upgrade` and `db:migrate:rails_pulse` after `db:prepare`.
+    - **The test database:** `RAILS_ENV=test bin/rails db:prepare`, because `db:test:prepare` leaves the test
+      Pulse database empty and `/rails_pulse` answers 503 in tests.
+    - **The upgrade warnings are quoted and scoped to 0.4.0**, as upstream states them (`CHANGELOG.md:44,46`):
+      restart every process together, not as a rolling deploy; and do not run `db:setup` / `db:prepare` in
+      place of `db:migrate:rails_pulse`. §7 also notes that Rails 8's `bin/docker-entrypoint` runs
+      `db:prepare` on every boot.
+    - **Verified:** doctrine-verifier CONFIRMED the generator and CHANGELOG claims. An independent review ran
+      every step literally on fresh Rails 8.0 and 8.1.4 apps and first BLOCKED two claims, which are
+      corrected here.
 
 ### 1.68.3 (release v1.151.0) — 2026-09-26
 
