@@ -333,7 +333,14 @@ same recipe + a trailing chevron.
 
 ### Checkbox / Radio / Switch
 
+**Inside a form, a checkbox is `f.input :accept, as: :boolean`, never this markup.** simple_form is
+mandatory in this stack, and its wrapper is what renders the anatomy below. The block is the anatomy
+reference the wrapper must produce: the control beside its label, at touch height. Outside any form
+(a standalone toggle, for instance) it is a design-system primitive, so the project declares it in
+`.rails-flow/raw-form-exemptions.json`, with a reason, for the `simple-form-only` gate.
+
 ```erb
+<%# simple-form-only: primitive -- the anatomy the simple_form wrapper renders; see above %>
 <%# composition: control beside label is the field's anatomy %>
 <%# checkbox / radio — wrap in a cluster so control + label align %>
 <label class="cluster min-h-touch" style="--space: var(--space-2xs)">
@@ -511,7 +518,17 @@ module Ui
   end
 end
 ```
+The Combobox is a primitive that IS its own control: simple_form has no combobox input to wrap, so
+the component builds the `<input role="combobox">` itself. A project using it declares that one line
+for the `simple-form-only` gate, and `match` keeps the exemption from covering anything else in the file:
+
+```json
+{"file": "app/components/ui/combobox_component.html.erb", "rule": "tag-builder-field",
+ "match": "tag.input", "reason": "design-system Combobox primitive: the component is the control"}
+```
+
 ```erb
+<%# simple-form-only: primitive -- the Combobox builds its own input; declare it (above) %>
 <%# composition: input above listbox IS the combobox %>
 <%# combobox_component.html.erb — role=combobox goes on the INPUT, never a wrapper div. %>
 <%# A wrapper with aria-owns is the superseded ARIA 1.1 model and no longer conforms. %>

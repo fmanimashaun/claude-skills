@@ -9,6 +9,13 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### 2026-09-28 (release v1.152.0)
 
+- **Our own shipped ERB must pass the simple-form-only gate we ship — `scripts/check_shipped_erb_forms.py`,
+  `scripts/mutations/check_shipped_erb_forms.py`, `scripts/maintainer_doctor.py`** (#1383). The pre-release review
+  found 9 of our ERB blocks failing the gate: the gate had been measured on one downstream app and never on the text
+  agents copy from us. The check runs the gate's own `scan()` over every ```erb block under `skills/` and `plugins/`.
+  A block is excused only by an explicit `simple-form-only: primitive` marker. 5 selftest cases; the guard catches 4
+  mutations. Doctor gates "shipped ERB passes simple-form-only" and its selftest.
+
 - **Triage checks a skill-gap report against what the skill already says — `.claude/agents/issue-triager.md`,
   `.claude/commands/maintainer-work.md`, `.claude/commands/maintainer-setup-intake.md`, `.github/labels.yml`,
   `.github/ISSUE_TEMPLATE/skill-gap.yml`** (#1386). The duplicate check compared an issue only with other issues, so
@@ -3600,6 +3607,18 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     constructs (a `search_field_tag` in a component, a deliberate `tag.input`) and stayed silent on about 20 comment
     mentions and every `hidden_field_tag`. 27 selftest cases, every refusal with a control; the guard catches 13
     mutations.
+  - **Fixed before release** (the independent pre-release review ran the gate over our OWN doctrine and found 9
+    shipped ERB blocks it refused). The verified rewrites of the filter panel and radio group ship in the rails-stack
+    block. Here, the gate:
+    - A read-only input with no `name` is a display (a copyable API key), not a field. The tag is read with ERB
+      inside it skipped, so `value="<%= @url %>"` does not hide its `readonly`.
+    - The Checkbox and Combobox primitives carry a `simple-form-only: primitive` marker, and prose giving the
+      exemption row a project declares.
+    - Suggestions fixed: a multi-line `simple_form_for` no longer hides its builder; an exemption's optional `match`
+      narrows it to one control, so it does not exempt later violations in the file; `"exemptions": null` is
+      unusable, not a crash.
+
+    The guard catches 19 mutations.
 
 - **A change a user can see waits for an owner-approved clickable mock-up, whatever the issue's label —
   `plugins/rails-flow/scripts/check_mockup_gate.py`, `plugins/rails-flow/scripts/mutations/check_mockup_gate.py`,

@@ -385,6 +385,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("rails-flow PR-template sections", ("python3", "plugins/rails-flow/hooks/scripts/lib/pr_template.py", "--selftest")),
     ("rails-flow technical spec", ("python3", "plugins/rails-flow/scripts/check_spec.py", "--selftest")),
     ("rails-flow simple-form-only gate", ("python3", "plugins/rails-flow/scripts/check_simple_form_only.py", "--selftest")),
+    ("shipped ERB passes simple-form-only", ("python3", "scripts/check_shipped_erb_forms.py")),
+    ("shipped ERB forms selftest", ("python3", "scripts/check_shipped_erb_forms.py", "--selftest")),
     ("rails-flow mock-up gate", ("python3", "plugins/rails-flow/scripts/check_mockup_gate.py", "--selftest")),
     ("rails-flow issue mock-up declaration", ("python3", "plugins/rails-flow/scripts/check_issue_mockup.py", "--selftest")),
     ("rails-flow spec-review citations", ("python3", "plugins/rails-flow/scripts/check_spec_review.py", "--selftest")),
