@@ -15832,6 +15832,29 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### 1.69.0 (release v1.152.0) — 2026-09-28
 
+- **The design-system's own filter panel and billing radio group now use simple_form — `skills/design-system/references/component-implementations.md`,
+  `skills/design-system/references/page-anatomies.md`, `dist/design-system.skill`** (#1383, a framework claim).
+  - **Why.** The independent pre-release review ran the new `simple-form-only` gate over our own ERB. The filter
+    panel (`<form method="get">` with `check_box_tag`), its category anatomy, and the billing radio group
+    (`f.radio_button` / `f.label` inside `simple_form_for`) all failed it. An app copying them exactly would have
+    gone red on a rule we ship.
+  - **The fix.** The filter is `simple_form_for :filter, url:, method: :get, as: ""` with one
+    `f.input …, as: :check_boxes` per facet. `as: ""` drops the `filter[…]` namespace, so facets post as
+    `color[]=red`. The radio group is `f.input :default_method_id, as: :radio_buttons` with a lambda
+    `label_method` returning `safe_join`, which keeps the brand mark, "ending 4242" and the expiry. **Remove**
+    moves outside the form, because `button_to` generates a form of its own and HTML forbids a form inside a form.
+  - **doctrine-verifier CONFIRMED** all four claims, against simple_form **v5.3.1** and actionview **8.1.1**:
+    - `lib/simple_form/action_view_extensions/form_helper.rb:14-25` forwards to `form_for`, whose symbol record
+      becomes the scope (`form_helper.rb:438-441`), and a blank `as:` drops it (`form_helper.rb:1797-1801`,
+      `form_tag_helper.rb:131-142`);
+    - `CollectionCheckBoxesInput` posts an array (`tags/collection_check_boxes.rb:31-33`), with `checked:`,
+      `item_wrapper_tag` and `label_method`/`value_method` (README "label_method … accept lambda/procs");
+    - an html-safe `label_method` renders unescaped (`tags/label.rb:59-68`);
+    - `button_to` "Generates a form" (`url_helper.rb:210-211`), and the WHATWG form content model is "no form
+      element descendants".
+
+    Boundary: simple_form 5.x.
+
 - **The quality-pass worked example's `check(label, ok, detail)` count is refreshed to 40 — `skills/quality-pass/references/worked-example.md`,
   `dist/quality-pass.skill`** (#1367). The new copy is `plugins/qa-flow/scripts/text_resize.py`; reach stays 21. It reuses
   `layout_fit.py`'s `Unusable` rather than declaring a thirteenth.
