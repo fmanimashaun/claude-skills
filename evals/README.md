@@ -198,21 +198,41 @@ before running a sweep.
 instructions help"):
 
 - **The case is the unit.** Runs of one case share a prompt and a scaffold, so they
-  are not independent; each case's valid runs are averaged, and the bootstrap
-  resamples cases. INVALID runs are excluded, never scored as failures.
-- **A winner is named only when the 95% CI excludes 0.** Otherwise the verdict is
-  *not detectable*, printed with the CI half-width as the **resolution**: an effect
-  smaller than that is invisible at this n. That is not evidence the arms are equal.
+  are not independent; each case's valid runs are averaged into one delta, and every
+  statistic is over those per-case deltas. INVALID runs are excluded, never scored as
+  failures.
+- **A winner is named only when an exact sign-flip test gives p ≤ 0.05.** Under the
+  null the arms are interchangeable, so each case's delta is as likely to carry either
+  sign; p is the share of all 2ⁿ sign assignments at least as extreme as the one
+  observed. It is exact at any n, so its false-win rate cannot exceed 5%.
+- **Fewer than 6 cases can never win.** The smallest possible p is 2/2ⁿ: 0.0625 at
+  five cases, 0.031 at six. Below six the verdict is *underpowered* before any data
+  is read.
+- A percentile-bootstrap CI on the mean delta is printed as **description only**.
 - **Every case that got worse is listed**, even when the mean improves.
-- **Files are pooled only when `model`, `marketplace_version` and `tools` agree.**
-- `--aa ARM` compares an arm with itself — it must report 0 and a CI containing 0.
+- **Files are pooled only when `model`, `marketplace_version`, `tools` and
+  `claude_version` all agree.**
+- `--aa ARM` compares an arm with itself — it must report 0 and p = 1.
 
-**The default design cannot see a moderate effect.** Simulated for #1384 (weak-arm
-pass rate 0.4, the same lift on every case): 6 cases × 3 runs detects a +20-point
-lift about 36% of the time and +30 about 58%; 6 × 10 or 20 × 3 reach about 92–93% at
-+30. Those figures are optimistic — real lifts vary by case, and a percentile
-bootstrap over six clusters runs narrow. A first run that reports *not detectable*
-says the benchmark was too small, not that the doctrine is inert.
+The first version decided from the bootstrap CI. An independent review (#1394) showed
+it called two same-sign cases a win and, at 6 cases × 3 runs under the null, named a
+winner 12% of the time against a nominal 5%. The exact test replaced it.
+
+**The default design can barely see anything.** Measured through `compare.py` itself
+(300 simulations per row, weak-arm pass rate 0.4, the same lift on every case):
+
+| design | false wins, no effect | +20-point lift | +30-point lift |
+| --- | --- | --- | --- |
+| 6 cases × 3 runs (the suite today) | 0.3% | 4.3% | 9.7% |
+| 6 cases × 10 runs | | | 44% |
+| 12 cases × 3 runs | | | 56% |
+| 20 cases × 3 runs | | 50% | 88% |
+
+**More cases buy far more than more runs**: 12 × 3 beats 6 × 10 on fewer paid runs,
+because six cases can only ever win unanimously. Real lifts vary by case, so these
+figures are optimistic. A first run that reports *not detectable* or *underpowered*
+says the benchmark was too small, not that the doctrine is inert. Growing the suite
+past 6 cases comes before a paid run means anything.
 
 ### A case cannot certify the edit it motivated (#1385)
 
@@ -225,8 +245,10 @@ excluded:
 python3 evals/compare.py results/<stamp>/aggregate-result.json --motivated-by 03-role-tokens
 ```
 
-Motivated cases leave the evidence and are marked in the output. If no remaining
-case moved, the verdict is **UNVERIFIED**. A CHANGELOG entry cites a benchmark
+Motivated cases leave the evidence and are marked in the output. If the result is a
+win only when they are counted, the verdict is **UNVERIFIED**. With today's 6-case
+suite, excluding even one case leaves 5, which can never win: until the suite grows,
+every `--motivated-by` comparison is *underpowered* or *unverified*, never a win. A CHANGELOG entry cites a benchmark
 effect only from that output. This is enforced only when `compare.py` is run with
 the flag; nothing yet parses a PR for benchmark claims, because none has ever been
 made — the first one is the moment to add that check.
