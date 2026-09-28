@@ -12,11 +12,13 @@ files and, for each pair of arms:
   * decides with an EXACT SIGN-FLIP TEST on the per-case deltas (B - A). Under the null the two
     arms are interchangeable, so each case's delta is as likely to carry either sign; the p-value
     is the share of all 2^n sign assignments whose mean is at least as far from 0 as the observed
-    one. It is exact at any n, so its false-win rate is bounded by alpha -- which a percentile
+    one. It is exact up to 16 cases (a seeded Monte Carlo above, whose (k+1)/(M+1) form can never
+    report p = 0), so its false-win rate is bounded by alpha -- which a percentile
     bootstrap is not: at n=2 it called every same-sign pair a win, and at 6 cases x 3 runs under
     the null it named a winner 12% of the time against a nominal 5% (independent review of #1394).
-  * names a winner ONLY when p <= alpha. With n cases the smallest possible p is 2 / 2^n, so fewer
-    than 6 cases can NEVER reach 0.05; that is reported as UNDERPOWERED before any data is judged.
+  * names a winner ONLY when p <= alpha. A case whose delta is 0 flips to itself, so with k cases
+    that MOVED the smallest possible p is 2 / 2^k: fewer than 6 moving cases can NEVER reach 0.05,
+    and that is reported as UNDERPOWERED rather than "not detectable".
   * reports a percentile-bootstrap CI on the mean delta as DESCRIPTION only. It never decides.
   * lists every case B did worse on, even when the mean improves -- an aggregate win must not
     hide a regression on one case (the same reason SkillOpt-Sleep's gate reports task deltas).
@@ -56,7 +58,7 @@ DEFAULT_BOOT = 10_000
 MIN_BOOT = 1_000
 MAX_BOOT = 1_000_000
 # Exact enumeration of 2^n sign assignments up to this many cases; beyond it, a seeded Monte Carlo
-# with the (count + 1) / (draws + 1) correction, which stays valid (never below the exact p).
+# with the (count + 1) / (draws + 1) form, which can never report p = 0 and keeps the test valid.
 EXACT_MAX_CASES = 16
 MC_DRAWS = 100_000
 _TOL = 1e-12
@@ -65,6 +67,10 @@ _TOL = 1e-12
 # without its conditions is not evidence (evals/README.md); a number from two conditions averaged
 # together is worse, because it looks like one. `claude_version` is one of them: the README lists
 # it as a condition of every result.
+#
+# Deliberately NOT pooled on: per-run budget and timeout. They decide which runs end INVALID (and
+# INVALID runs are excluded), not whether a valid run passes, so pooling across them changes the
+# denominator of valid runs, never a verdict on one. Declined on the #1422 review, recorded here.
 POOLED_CONDITIONS = ("model", "marketplace_version", "tools", "claude_version")
 
 
@@ -150,16 +156,23 @@ def case_rates(runs: list[dict], arm: str) -> dict[str, float]:
 # --------------------------------------------------------------------------
 
 def min_possible_p(n: int) -> float:
-    """The smallest two-sided sign-flip p that n cases can produce: the observed signs and their
-    mirror image are the only two assignments as extreme as a unanimous result."""
+    """The smallest two-sided sign-flip p that n MOVING cases can produce: the observed signs and
+    their mirror image are the only two assignments as extreme as a unanimous result. A case with
+    delta 0 is not moving -- flipping it changes nothing -- so it must not be counted in n."""
     return min(1.0, 2.0 / (2 ** n)) if n else 1.0
 
 
-def sign_flip_p(deltas: list[float], *, seed: int = 0) -> float:
+def moving(deltas: list[float]) -> int:
+    """How many cases moved at all. Only these can carry a sign (#1422 review)."""
+    return sum(1 for d in deltas if abs(d) > _TOL)
+
+
+def sign_flip_p(deltas: list[float], *, seed: int = 0,
+                exact_max: int = EXACT_MAX_CASES) -> float:
     """Two-sided p for H0: each case's delta is symmetric about 0 (the arms are exchangeable)."""
     n = len(deltas)
     observed = abs(sum(deltas))
-    if n <= EXACT_MAX_CASES:
+    if n <= exact_max:
         extreme = sum(
             1 for signs in itertools.product((1, -1), repeat=n)
             if abs(sum(s * d for s, d in zip(signs, deltas))) >= observed - _TOL
@@ -190,9 +203,12 @@ def bootstrap_ci(deltas: list[float], *, boot: int, seed: int,
 def _verdict(deltas: list[float], *, seed: int) -> tuple[str, float | None, float]:
     """(verdict, p, min_p) for a list of per-case deltas."""
     n = len(deltas)
-    floor = min_possible_p(n)
+    floor = min_possible_p(moving(deltas))
     if n < 2:
         return "insufficient", None, floor
+    if moving(deltas) == 0:
+        # Nothing moved: the arms agree exactly (the A/A case). p is 1 by construction.
+        return "not_detectable", 1.0, floor
     if floor > ALPHA:
         return "underpowered", None, floor
     p = sign_flip_p(deltas, seed=seed)
@@ -237,7 +253,9 @@ def compare(runs: list[dict], a: str, b: str, *, motivated: tuple[str, ...] = ()
 
     # #1385: the edit is certified only by cases it was not written for. If the result is a win
     # WITH the motivating cases and not without them, the win rests on them -- circular, so abstain.
-    if excluded_motivated and verdict != "b_better":
+    # Only a NON-result on the independent cases can be "resting on" the motivating ones. A
+    # significant b_worse there is its own finding and must not be relabelled (#1422 review).
+    if excluded_motivated and verdict in {"not_detectable", "underpowered", "insufficient"}:
         full_verdict, _, _ = _verdict([per_case[c] for c in sorted(per_case)], seed=seed)
         if full_verdict == "b_better":
             result.verdict = "unverified"
@@ -360,6 +378,7 @@ def selftest() -> int:
         return x is not None and abs(x - y) < 1e-9
 
     cases = [f"c{i}" for i in range(8)]
+    ten_cases = [f"c{i}" for i in range(10)]
 
     # -- the exact test, pinned to hand-computed values ---------------------------------------
     # Unanimous sign over n cases: only the observed signs and their mirror are as extreme.
@@ -372,6 +391,25 @@ def selftest() -> int:
     check("exact p: all-zero deltas = 1", close(sign_flip_p([0.0] * 6), 1.0))
     check("min p: 5 cases cannot reach 0.05", min_possible_p(5) > ALPHA, min_possible_p(5))
     check("min p: 6 cases can", min_possible_p(6) <= ALPHA, min_possible_p(6))
+    # #1422 review blocker: a tied case flips to itself. Five up and one tie cannot reach 0.05, so
+    # it is underpowered, not "not detectable" -- the floor counts MOVING cases.
+    check("zero deltas: 5 up + 1 tie has p = 2/32", close(sign_flip_p([1, 1, 1, 1, 1, 0]), 2 / 32))
+    check("zero deltas: 5 up + 1 tie is underpowered",
+          _verdict([1, 1, 1, 1, 1, 0], seed=0)[0] == "underpowered", _verdict([1, 1, 1, 1, 1, 0], seed=0))
+    check("zero deltas: 6 up + 1 tie can still win",
+          _verdict([1, 1, 1, 1, 1, 1, 0], seed=0)[0] == "b_better", _verdict([1, 1, 1, 1, 1, 1, 0], seed=0))
+
+    # The Monte Carlo branch (above EXACT_MAX_CASES), forced on a vector small enough to enumerate:
+    # it must agree with the exact answer, never report 0, and be seeded.
+    ten = [1, 1, 1, 1, 1, 1, 1, -1, 0.5, -0.5]
+    exact10 = sign_flip_p(ten, exact_max=16)
+    mc10 = sign_flip_p(ten, exact_max=0, seed=3)
+    check("monte carlo: agrees with exact within 0.01", abs(mc10 - exact10) < 0.01, (mc10, exact10))
+    check("monte carlo: unanimous is never p = 0",
+          sign_flip_p([1.0] * 20, exact_max=0) > 0, sign_flip_p([1.0] * 20, exact_max=0))
+    check("monte carlo: unanimous 20 is tiny but not below one draw",
+          close(sign_flip_p([1.0] * 20, exact_max=0), 1 / (MC_DRAWS + 1)))
+    check("monte carlo: seeded", sign_flip_p(ten, exact_max=0, seed=3) == mc10)
 
     # -- verdicts ---------------------------------------------------------------------------
     strong = _runs({"weak": {c: [False] * 3 for c in cases},
@@ -415,7 +453,20 @@ def selftest() -> int:
                    "real": {"c0": [True] * 3, "c1": [False] * 3, "c2": [True] * 3,
                             "c3": [True] * 3, "c4": [True] * 3, "c5": [False] * 3}})
     r = compare(mixed, "weak", "real", boot=2000)
-    check("mixed effect is not a win", r.verdict == "not_detectable", r)
+    check("mixed effect is not a win", r.verdict in {"not_detectable", "underpowered"}, r)
+    # c3 ties (delta 0): a tie is not a regression. Only c1 and c5 got worse.
+    check("a tied case is not listed as a regression", r.regressions == ["c1", "c5"], r.regressions)
+
+    # THE CI DOES NOT DECIDE. Six moving cases, deltas +1/3 +1/3 +1/3 +2/3 +2/3 -1/3: the bootstrap
+    # CI is [0.056, 0.556] -- it excludes 0 -- while the exact p is 0.156. Not a win.
+    leans = _runs({"weak": {"c0": [False] * 3, "c1": [False] * 3, "c2": [False] * 3,
+                            "c3": [False] * 3, "c4": [False] * 3, "c5": [True, False, False]},
+                   "real": {"c0": [True, False, False], "c1": [True, False, False],
+                            "c2": [True, False, False], "c3": [True, True, False],
+                            "c4": [True, True, False], "c5": [False, False, False]}})
+    r = compare(leans, "weak", "real", boot=MIN_BOOT, seed=0)
+    check("a CI that excludes 0 is not a win when the exact p is not",
+          r.verdict == "not_detectable" and r.ci_low > 0 and close(r.p_value, 10 / 64), r)
 
     # The false-win rate under the null is bounded by alpha. 6 cases x 3 runs, both arms 0.4: the
     # percentile-bootstrap verdict it replaces measured 12% two-sided here.
@@ -430,6 +481,10 @@ def selftest() -> int:
     # -- the descriptive CI, pinned so a narrower interval cannot slip in unseen -----------------
     lo, hi = bootstrap_ci([1.0, 0.0, 0.0, 0.0], boot=MIN_BOOT, seed=0)
     check("CI: pinned 95% bounds for [1,0,0,0] at seed 0", (lo, hi) == (0.0, 0.75), (lo, hi))
+    # Both tails non-trivial, so moving EITHER one is caught (the 25th percentile would be 0.1).
+    pinned = bootstrap_ci([1.0, 0.5, 0.0, -0.5, 0.5], boot=MIN_BOOT, seed=0)
+    check("CI: pinned both tails for a mixed vector", tuple(round(x, 9) for x in pinned) == (-0.2, 0.7),
+          pinned)
     lo90, hi90 = bootstrap_ci([1.0, 0.0, 0.0, 0.0], boot=MIN_BOOT, seed=0, alpha=0.5)
     check("CI: a 50% interval is narrower than the 95% one", lo90 >= lo and hi90 <= hi and
           (lo90, hi90) != (lo, hi), (lo90, hi90))
@@ -470,6 +525,17 @@ def selftest() -> int:
     # Control on the same shape: excluding ONE still leaves six unanimous cases, a win on its own.
     r = compare(seven, "weak", "real", motivated=("c0",), boot=2000)
     check("other cases alone still certify the edit", r.verdict == "b_better", r.verdict)
+    # A significant LOSS on the independent cases is a finding of its own, not "unverified" -- even
+    # when the full set, motivating cases included, is a significant WIN. 17 motivating cases up
+    # (full: 23 cases, 17 up 6 down, p ~= 0.035) and 6 independent cases down (p = 2/64).
+    up = [f"m{i}" for i in range(17)]
+    down = [f"d{i}" for i in range(6)]
+    worse = _runs({"weak": {**{c: [False] * 3 for c in up}, **{c: [True] * 3 for c in down}},
+                   "real": {**{c: [True] * 3 for c in up}, **{c: [False] * 3 for c in down}}})
+    full = compare(worse, "weak", "real", boot=MIN_BOOT)
+    r = compare(worse, "weak", "real", motivated=tuple(up), boot=MIN_BOOT)
+    check("a significant b_worse on independent cases is not relabelled",
+          full.verdict == "b_better" and r.verdict == "b_worse", (full.verdict, full.p_value, r.verdict))
     # A motivated case with no comparable data excludes nothing, so it must not relabel anything.
     gap = _runs({"weak": {**{c: [False] * 3 for c in cases[:7]}, "c7": [None] * 3},
                  "real": {c: [True] * 3 for c in cases}})

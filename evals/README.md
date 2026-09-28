@@ -204,10 +204,11 @@ instructions help"):
 - **A winner is named only when an exact sign-flip test gives p ≤ 0.05.** Under the
   null the arms are interchangeable, so each case's delta is as likely to carry either
   sign; p is the share of all 2ⁿ sign assignments at least as extreme as the one
-  observed. It is exact at any n, so its false-win rate cannot exceed 5%.
-- **Fewer than 6 cases can never win.** The smallest possible p is 2/2ⁿ: 0.0625 at
-  five cases, 0.031 at six. Below six the verdict is *underpowered* before any data
-  is read.
+  observed. It is exact up to 16 cases (a seeded Monte Carlo above, which can never
+  report p = 0), so its false-win rate cannot exceed 5%.
+- **Fewer than 6 cases that moved can never win.** A case whose delta is 0 flips to
+  itself, so with k moving cases the smallest possible p is 2/2ᵏ: 0.0625 at five,
+  0.031 at six. Below six the verdict is *underpowered*, not "not detectable".
 - A percentile-bootstrap CI on the mean delta is printed as **description only**.
 - **Every case that got worse is listed**, even when the mean improves.
 - **Files are pooled only when `model`, `marketplace_version`, `tools` and
@@ -219,14 +220,15 @@ it called two same-sign cases a win and, at 6 cases × 3 runs under the null, na
 winner 12% of the time against a nominal 5%. The exact test replaced it.
 
 **The default design can barely see anything.** Measured through `compare.py` itself
-(300 simulations per row, weak-arm pass rate 0.4, the same lift on every case):
+(300 simulations per row, so each figure is good to about ±3 points; weak-arm pass
+rate 0.4, the same lift on every case):
 
 | design | false wins, no effect | +20-point lift | +30-point lift |
 | --- | --- | --- | --- |
-| 6 cases × 3 runs (the suite today) | 0.3% | 4.3% | 9.7% |
-| 6 cases × 10 runs | | | 44% |
-| 12 cases × 3 runs | | | 56% |
-| 20 cases × 3 runs | | 50% | 88% |
+| 6 cases × 3 runs (the suite today) | under 1% | about 4% | about 10% |
+| 6 cases × 10 runs | | | about 44% |
+| 12 cases × 3 runs | | | about 56% |
+| 20 cases × 3 runs | | about 50% | about 88% |
 
 **More cases buy far more than more runs**: 12 × 3 beats 6 × 10 on fewer paid runs,
 because six cases can only ever win unanimously. Real lifts vary by case, so these

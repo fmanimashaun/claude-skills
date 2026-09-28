@@ -32,7 +32,7 @@ GUARD = Guard(
             "the verdict is taken from the descriptive bootstrap CI instead of the exact test",
             "    if p <= ALPHA and mean > 0:\n        return \"b_better\", p, floor\n",
             "    if bootstrap_ci(deltas, boot=1000, seed=seed)[0] > 0:\n        return \"b_better\", p, floor\n",
-            "null 6x3: false-win rate <= alpha",
+            "a CI that excludes 0 is not a win when the exact p is not",
         ),
         Mutation(
             "the exact test counts only strictly more extreme assignments",
@@ -63,6 +63,38 @@ GUARD = Guard(
             "        if full_verdict == \"b_better\":\n",
             "        if False:\n",
             "a win only with the motivating cases is unverified",
+        ),
+        # #1422 review blocker: tied cases counted toward the floor, so "underpowered" became
+        # "not detectable" in most 6x3 runs.
+        Mutation(
+            "tied (zero-delta) cases count toward the p floor",
+            "    floor = min_possible_p(moving(deltas))\n",
+            "    floor = min_possible_p(len(deltas))\n",
+            "zero deltas: 5 up + 1 tie is underpowered",
+        ),
+        Mutation(
+            "a significant loss on the independent cases is relabelled unverified",
+            '    if excluded_motivated and verdict in {"not_detectable", "underpowered", "insufficient"}:\n',
+            '    if excluded_motivated and verdict != "b_better":\n',
+            "a significant b_worse on independent cases is not relabelled",
+        ),
+        Mutation(
+            "the Monte Carlo branch drops the +1 correction, so a unanimous result reports p = 0",
+            "    return (extreme + 1) / (MC_DRAWS + 1)\n",
+            "    return extreme / MC_DRAWS\n",
+            "monte carlo: unanimous is never p = 0",
+        ),
+        Mutation(
+            "a tie is listed as a regression",
+            "    regressions = sorted(c for c, d in per_case.items() if d < 0)\n",
+            "    regressions = sorted(c for c, d in per_case.items() if d <= 0)\n",
+            "a tied case is not listed as a regression",
+        ),
+        Mutation(
+            "the lower CI tail is cut at the 25th percentile",
+            "    return means[tail], means[boot - 1 - tail]\n",
+            "    return means[boot // 4], means[boot - 1 - tail]\n",
+            "CI: pinned both tails for a mixed vector",
         ),
         Mutation(
             "a typo'd --motivated-by case silently excludes nothing",
