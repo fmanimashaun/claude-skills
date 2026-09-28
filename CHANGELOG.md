@@ -33,20 +33,30 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 - **The benchmark compares arms instead of printing rates side by side — `evals/compare.py`,
   `scripts/mutations/evals_compare.py`, `scripts/maintainer_doctor.py`, `evals/README.md`** (#1384). `run.py`
   printed a pass rate per (case, arm), and nothing said how uncertain a difference was. `compare.py` pairs arms by
-  case, bootstraps a CI over cases (the independent unit, not runs), names a winner only when the CI excludes 0,
-  prints the CI half-width as the resolution, lists every case that got worse even under an aggregate win, and
-  refuses to pool files whose model, marketplace version or tools differ. Needed before any paid run: simulated,
-  the default 6 cases × 3 runs detects a +20-point lift about 36% of the time, so a null from it is unreadable.
-  `--selftest` 26 checks, driven through `main()`; new doctor gate `evals compare`; guard catches 8 of 8
-  mutations. The README's "nothing here is wired into CI" was false (`evals gates` has run in every sweep) and
-  "5 cases" was 6; both corrected. Our own design, decided on the issue; no framework claim.
+  case, and every statistic is over per-case deltas (the independent unit, not runs). It names a winner only when
+  an **exact sign-flip test** gives p ≤ 0.05, and reports fewer than 6 cases that MOVED as *underpowered*, since a
+  tied case flips to itself and 2/2ᵏ cannot reach 0.05 below six. It lists every case that got worse even under an aggregate win, and refuses to pool files
+  whose model, marketplace version, tools or `claude` version differ. The bootstrap CI is printed as description
+  only. The first version decided from that CI. An independent review before promotion showed it called two
+  same-sign cases a win and gave 12% false wins under the null at 6 cases × 3 runs; the exact test replaced it
+  (under 1% measured). A second review found the floor counted tied cases, so a run that could never win read
+  "not detectable" instead of "underpowered"; fixed. Measured through the tool (300 simulations, about ±3 points),
+  the suite today detects a +30-point lift about 10% of the time, and 20 cases × 3 runs reach about 88%, so a null
+  from it is unreadable and the suite must grow first. `--selftest` 55 checks, pinned to hand-computed p values,
+  both tails of a pinned CI, a case where the CI excludes 0 but p does not, and the Monte Carlo branch, and driven
+  through `main()`; new doctor gate `evals compare`; guard catches 19 of 19 mutations, including counting runs as
+  samples. The README's "nothing here is wired into
+  CI" was false (`evals gates` has run in every sweep) and "5 cases" was 6; both corrected. Our own design,
+  decided on the issue; no framework claim.
 
 - **A case cannot certify the doctrine edit it motivated — `evals/compare.py`, `evals/README.md`** (#1385).
-  `--motivated-by CASE` removes the cases an edit was written for from its evidence; if no other case moved, the
-  verdict is UNVERIFIED rather than a win (after SkillOpt-Sleep's `reject_unverified`). A typo'd case id is
-  refused, since it would exclude nothing and certify anyway. Enforced only when `compare.py` is run with the
-  flag: no PR has ever claimed a benchmark effect, so nothing parses one yet. Our own design, decided on the
-  issue; no framework claim.
+  `--motivated-by CASE` removes the cases an edit was written for from its evidence. If the result is a win only
+  when they are counted, the verdict is UNVERIFIED rather than a win (after SkillOpt-Sleep's `reject_unverified`).
+  A significant loss on the independent cases stays a loss. A typo'd case id is refused, since it would exclude
+  nothing and certify anyway. With today's 6-case suite any
+  exclusion leaves too few cases to win at all. Enforced only when `compare.py` is run with the flag: no PR has
+  ever claimed a benchmark effect, so nothing parses one yet. Our own design, decided on the issue; no framework
+  claim.
 
 - **`unhonoured-config-toggle` no longer reads a GitHub issue form as our config — `scripts/lint_self_consistency.py`,
   `scripts/mutations/lint_self_consistency.py`** (#1376). The rule treats every boolean in a setup command's YAML
@@ -15885,6 +15895,29 @@ boot/validation path — with a bullet each so the promotion could close them se
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
 ### 1.69.0 (release v1.152.0) — 2026-09-28
+
+- **The design-system's own filter panel and billing radio group now use simple_form — `skills/design-system/references/component-implementations.md`,
+  `skills/design-system/references/page-anatomies.md`, `dist/design-system.skill`** (#1383, a framework claim).
+  - **Why.** The independent pre-release review ran the new `simple-form-only` gate over our own ERB. The filter
+    panel (`<form method="get">` with `check_box_tag`), its category anatomy, and the billing radio group
+    (`f.radio_button` / `f.label` inside `simple_form_for`) all failed it. An app copying them exactly would have
+    gone red on a rule we ship.
+  - **The fix.** The filter is `simple_form_for :filter, url:, method: :get, as: ""` with one
+    `f.input …, as: :check_boxes` per facet. `as: ""` drops the `filter[…]` namespace, so facets post as
+    `color[]=red`. The radio group is `f.input :default_method_id, as: :radio_buttons` with a lambda
+    `label_method` returning `safe_join`, which keeps the brand mark, "ending 4242" and the expiry. **Remove**
+    moves outside the form, because `button_to` generates a form of its own and HTML forbids a form inside a form.
+  - **doctrine-verifier CONFIRMED** all four claims, against simple_form **v5.3.1** and actionview **8.1.1**:
+    - `lib/simple_form/action_view_extensions/form_helper.rb:14-25` forwards to `form_for`, whose symbol record
+      becomes the scope (`form_helper.rb:438-441`), and a blank `as:` drops it (`form_helper.rb:1797-1801`,
+      `form_tag_helper.rb:131-142`);
+    - `CollectionCheckBoxesInput` posts an array (`tags/collection_check_boxes.rb:31-33`), with `checked:`,
+      `item_wrapper_tag` and `label_method`/`value_method` (README "label_method … accept lambda/procs");
+    - an html-safe `label_method` renders unescaped (`tags/label.rb:59-68`);
+    - `button_to` "Generates a form" (`url_helper.rb:210-211`), and the WHATWG form content model is "no form
+      element descendants".
+
+    Boundary: simple_form 5.x.
 
 - **The quality-pass worked example's `check(label, ok, detail)` count is refreshed to 40 — `skills/quality-pass/references/worked-example.md`,
   `dist/quality-pass.skill`** (#1367). The new copy is `plugins/qa-flow/scripts/text_resize.py`; reach stays 21. It reuses
