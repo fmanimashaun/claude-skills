@@ -15899,16 +15899,24 @@ boot/validation path — with a bullet each so the promotion could close them se
     - **It adds a check that tells the two apart:** `RailsPulse::ApplicationRecord.connection_db_config.name`
       must print `"rails_pulse"`. It printed `"primary"` on the misconfigured app.
     - **So that `rails_pulse:status` can exit 0:** a fresh 0.4.1 install reports its migrations uncopied, so
-      §7 now runs `rails_pulse:upgrade` and `db:migrate:rails_pulse` after `db:prepare`.
-    - **The test database:** `RAILS_ENV=test bin/rails db:prepare`, because `db:test:prepare` leaves the test
-      Pulse database empty and `/rails_pulse` answers 503 in tests.
+      §7 runs `rails_pulse:upgrade` first.
+    - **Load the Pulse schema before `db:prepare`:** `bin/rails db:schema:load_rails_pulse db:prepare`, in
+      development and in test. With copied migrations, `db:prepare` on an EMPTY Pulse database runs them before
+      the gem's schema-load hook and aborts ("Could not find table 'rails_pulse_operations'"). §7 therefore puts
+      the load in front of `db:prepare` wherever an empty Pulse database meets it: `bin/setup`, CI, and a first
+      deploy through `bin/docker-entrypoint`. It is safe on every run: `db/rails_pulse_schema.rb` creates each
+      table only `unless connection.table_exists?`, and the task records the copied migrations as applied
+      (rails_pulse 0.4.1 `lib/tasks/rails_pulse.rake:6-24`).
     - **The upgrade warnings are quoted and scoped to 0.4.0**, as upstream states them (`CHANGELOG.md:44,46`):
       restart every process together, not as a rolling deploy; and do not run `db:setup` / `db:prepare` in
-      place of `db:migrate:rails_pulse`. §7 also notes that Rails 8's `bin/docker-entrypoint` runs
-      `db:prepare` on every boot.
-    - **Verified:** doctrine-verifier CONFIRMED the generator and CHANGELOG claims. An independent review ran
-      every step literally on fresh Rails 8.0 and 8.1.4 apps and first BLOCKED two claims, which are
-      corrected here.
+      place of `db:migrate:rails_pulse`. On an entrypoint that runs `db:prepare` at boot, that migration runs
+      as a release step before the new version boots.
+    - **Who verified what:**
+      - doctrine-verifier CONFIRMED the generator and CHANGELOG claims against rails_pulse 0.4.1 on a Rails
+        8.0.5.1 app.
+      - An independent reviewer ran §7 literally on fresh Rails 8.1.4 and 8.0.5.1 apps and BLOCKED it twice:
+        first the flat-block and `rails_pulse:status` claims, then the empty-database `db:prepare` abort. Each
+        is corrected here, and the final text was re-run by that reviewer before merge.
 
 ### 1.68.3 (release v1.151.0) — 2026-09-26
 

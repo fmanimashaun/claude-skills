@@ -264,19 +264,29 @@ development:
 ```
 
 Then connect it by uncommenting `connects_to` in the initializer the generator
-wrote (below). Prepare both databases, copy this version's migrations (a fresh
-0.4.1 install reports them uncopied until you do), and restart the server:
+wrote (below). Copy this version's migrations (a fresh 0.4.1 install reports
+them uncopied until you do), load the Pulse schema, prepare both environments,
+and restart the server:
 
 ```bash
-bin/rails db:prepare                   # loads db/rails_pulse_schema.rb into the Pulse database
 bin/rails generate rails_pulse:upgrade
-bin/rails db:migrate:rails_pulse
-RAILS_ENV=test bin/rails db:prepare    # the test Pulse database; db:test:prepare leaves it empty
+bin/rails db:schema:load_rails_pulse db:prepare
+RAILS_ENV=test bin/rails db:schema:load_rails_pulse db:prepare
 bin/rails runner 'p RailsPulse::ApplicationRecord.connection_db_config.name'   # must print "rails_pulse", not "primary"
 ```
 
-Run the test preparation in CI too. With an empty test Pulse database,
-`/rails_pulse` answers 503 in tests and tracking pauses without a word.
+**`db:schema:load_rails_pulse` runs before `db:prepare` on every empty Pulse
+database, not just this once.** Once the migrations are copied, `db:prepare`
+on an empty Pulse database runs them before the gem's own schema-load hook,
+and aborts with *"Could not find table 'rails_pulse_operations'"*. That
+happens on a fresh clone's `bin/setup`, in CI, and on a first deploy, because
+Rails 8's generated `bin/docker-entrypoint` runs `db:prepare` on every boot.
+So put the load in front of `db:prepare` in all three. It is safe to run every
+time: `db/rails_pulse_schema.rb` creates each table only
+`unless connection.table_exists?`, and the task records the copied migrations
+as applied. On PostgreSQL or MySQL, create the databases first
+(`bin/rails db:create`). With an empty test Pulse database, `/rails_pulse`
+answers 503 in tests and tracking pauses without a word.
 
 (A single-database install omits `--database=separate`, the `database.yml`
 entry and `connects_to`, and runs `bin/rails db:migrate`.) Mount it and gate it
@@ -321,7 +331,8 @@ first, then `bin/rails generate rails_pulse:upgrade`, the migration
 deploy**: *"A 0.3.x process left running against the migrated schema stops
 tracking and 500s on the routes page."* On a separate database it adds: *"Do
 not run `db:setup` / `db:prepare` as a substitute for `db:migrate:rails_pulse`."*
-Both warnings are stated for 0.4.0, not as general rules. Rails 8's generated
-`bin/docker-entrypoint` runs `db:prepare` on every boot, so a data-carrying
-upgrade runs its migration before that deploy boots. Read its CHANGELOG before
-every `bundle update rails_pulse`, and finish with `rails_pulse:status`.
+Both warnings are stated for 0.4.0, not as general rules. Because the
+entrypoint's `db:prepare` runs on boot, run a data-carrying upgrade's
+`bin/rails db:migrate:rails_pulse` as a step of the release itself, before the
+new version boots. Read its CHANGELOG
+before every `bundle update rails_pulse`, and finish with `rails_pulse:status`.
