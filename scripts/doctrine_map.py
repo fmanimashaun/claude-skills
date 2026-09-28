@@ -166,9 +166,10 @@ CLAIMS: tuple[Claim, ...] = (
              "approval LINK exists, never that the comment says yes; that is the reviewer's click.",
     ),
     # ---- the SHIPPED doctrine (#798) ------------------------------------------------------
-    # Five claims that already have gates to cite. Deliberately not more: a row nobody derived is
-    # the green artifact this file exists to replace, and `SHIPPED_FLOOR` tracks the rest as
-    # unmapped rather than pretending they are covered.
+    # Claims that already have gates to cite, plus the ADVICE rows #1363 recorded with the measured
+    # reason nothing enforces them. Deliberately not more: a row nobody derived is the green
+    # artifact this file exists to replace, and `SHIPPED_FLOOR` tracks the rest as unmapped rather
+    # than pretending they are covered.
     Claim(
         claim="Prefer expanded conditionals over guard clauses when writing new code (style.md §1).",
         stated_in="skills/rails-8/references/style.md",
@@ -186,11 +187,11 @@ CLAIMS: tuple[Claim, ...] = (
         stated_in="skills/rails-8/references/style.md",
         anchor="It cannot simply be switched on",
         kind=ADVICE,
-        note="#1363, verified on rubocop 1.91.0 / rubocop-rails-omakase 1.1.0: "
-             "IndentationConsistency enforces only consistency; IndentationWidth enforces the indent "
-             "but flags the private-only exception; EmptyLinesAroundAccessModifier flags the "
-             "exception under only_before and the main shape under around. Every stock cop that "
-             "could enforce §5 contradicts part of it.",
+        note="#1363, verified on rubocop 1.91.0 / rubocop-rails-omakase 1.1.0: IndentationWidth + "
+             "IndentationConsistency(indented_internal_methods) + EmptyLinesAroundAccessModifier"
+             "(only_before) enforce the main shape exactly, but flag the private-only-module exception "
+             "twice, and no option expresses that exception. Advice by default; a project may adopt "
+             "the three with a per-file carve-out for private-only modules.",
         refs=(1363,),
     ),
     Claim(
