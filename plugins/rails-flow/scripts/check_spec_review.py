@@ -2,7 +2,7 @@
 """Check what the spec review claims against the acceptance file and the diff it reviewed (#1370).
 
 Run:  python3 check_spec_review.py --acceptance docs/product/acceptance/<slug>.md \\
-          --findings docs/evidence/reviews/<date>/findings.jsonl --base <base> [--verdict CLEAN|BLOCKED]
+          --findings docs/evidence/reviews/prs/<branch-slug>/spec-reviewer-findings.jsonl --base <base> [--verdict CLEAN|BLOCKED]
       python3 check_spec_review.py --selftest
 
 WHY. `check_criteria.py --specs` proves every `AC-n` is cited by a spec, and feature.md's mutation
@@ -82,9 +82,16 @@ def run(acceptance: Path, findings_path: Path, changed: set[str], verdict: str |
         raise Unusable(f"no findings file at {findings_path}: the spec pass writes it even when "
                        f"it finds nothing, so its absence means the pass did not run")
     try:
-        records = [r for r in findings_mod.load(findings_path) if r.get("pass") == PASS]
+        loaded = findings_mod.load(findings_path)
     except findings_mod.Unusable as exc:
         raise Unusable(str(exc)) from exc
+    records = [r for r in loaded if r.get("pass") == PASS]
+    # The file is the spec pass's OWN (#1393 review). Records from another pass and none from this one
+    # means it is the wrong file, or another pass wrote here and this one never ran: exit 2, never a
+    # clean exit 0. An EMPTY file is a spec pass that ran and found nothing.
+    if loaded and not records:
+        raise Unusable(f"{findings_path} holds {len(loaded)} record(s) and none from {PASS}: this is "
+                       f"another pass's file, or the spec pass never ran")
 
     problems = [f"schema: {p}" for p in findings_mod.validate(records)]
     for r in records:
@@ -198,8 +205,16 @@ def selftest() -> int:
         p = verdict_of([_rec(1, "spec-missing", "spec-missing:AC-2", severity="P2")], "BLOCKED")
         check_that("CONTROL: BLOCKED beside a blocking finding passes", p == [], p)
 
-        p = verdict_of([_rec(1, "authz", "missing-scope:X", pass_="code-reviewer")])
-        check_that("CONTROL: another pass's records are not judged here", p == [], p)
+        p = verdict_of([_rec(1, "authz", "missing-scope:X", pass_="code-reviewer"),
+                        _rec(2, "spec-misread", "spec-misread:AC-1")])
+        check_that("CONTROL: another pass's records beside spec records are not judged here", p == [], p)
+        try:
+            verdict_of([_rec(1, "authz", "missing-scope:X", pass_="code-reviewer")], "CLEAN")
+            check_that("a file holding only another pass's records is unusable, not a clean spec review", False)
+        except Unusable:
+            pass
+        check_that("CONTROL: an empty file is a spec pass that ran and found nothing",
+                   verdict_of([""], "CLEAN") == [])
         p = verdict_of([_rec(1, "spec-misread", "spec-misread:AC-1"), _rec(1, "spec-misread", "spec-misread:AC-2")])
         check_that("the shared record schema still applies (duplicate id)", any("duplicate id" in x for x in p), p)
 

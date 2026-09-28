@@ -764,7 +764,8 @@ for (const route of routes) {
       // while reporting under the route that was asked for. Recording where we LANDED lets the
       // judge call that unverified instead of clean. Measured on a real app: five admin routes
       // silently degraded to the landing page after the first route's sweep.
-      landedOn: new URL(page.url()).pathname,
+      // Path AND query: a redirect that keeps the path but drops `?tab=archived` shows another view.
+      landedOn: ((u) => u.pathname + u.search)(new URL(page.url())),
       // Null rather than [] when the probe threw: an empty list means "measured, nothing hidden",
       // and laundering a failed probe into that is how a layer reports clean on what it never read.
       elements: fit,
@@ -842,7 +843,8 @@ for (const route of routes) {
       return {
         textElements: texts.length,
         grew: after.filter((a, i) => before[i] > 0 && a / before[i] >= 1.9).length,
-        // A truncated BASE list cannot prove a later clip is new, so the judge must be told.
+        // Every mode is capped. A truncated base list cannot prove a later clip is new, and a truncated
+        // scaled or spacing list may have lost the clip itself -- so the judge must be told, per mode.
         truncated: rows.length > CAP,
         elements: rows.slice(0, CAP),
       };
@@ -853,7 +855,8 @@ for (const route of routes) {
     textResize.push({
       route,
       viewport: `${VIEWPORT.width}x${VIEWPORT.height}`,
-      landedOn: new URL(page.url()).pathname,
+      // Path AND query: a redirect that keeps the path but drops `?tab=archived` shows another view.
+      landedOn: ((u) => u.pathname + u.search)(new URL(page.url())),
       // Each mode is NULL when its probe threw -- unverified, never "nothing hidden".
       modes: { base, scaled, spacing },
     });

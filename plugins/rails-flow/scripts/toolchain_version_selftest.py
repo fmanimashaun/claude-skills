@@ -17,6 +17,8 @@ reads the real files and one that reads the issue body:
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import tempfile
 from pathlib import Path
@@ -68,9 +70,12 @@ def checkout(tmp: Path, name: str, *, marketplace="1.0.0", bundle=None, code=Non
     return root
 
 
-def rec(version: str, updated: str) -> dict:
-    return {"scope": "project", "version": version, "lastUpdated": updated,
-            "installPath": f"/cache/{version}"}
+def rec(version: str, updated: str, project: str | None = None) -> dict:
+    r = {"scope": "project", "version": version, "lastUpdated": updated,
+         "installPath": f"/cache/{version}"}
+    if project is not None:
+        r["projectPath"] = project
+    return r
 
 
 # --------------------------------------------------------------------------------
@@ -181,6 +186,64 @@ def run() -> int:
             "qa-flow@claude-skills": [rec("1.24.1", "2026-08-07T00:00:00Z")]})
         rc = tv.main(["--home", str(stale), "--published-from", str(pub), "--project", str(proj)])
         check("unusable-not-ok: drift is 1, distinct from 2", rc, tv.EXIT_FINDINGS)
+
+        # -- #1407: records are per project; the newest machine-wide is not this project's -----
+        # The shape measured on the maintainer's machine: one project on 1.63.0, another on
+        # 1.68.0 installed later. Resolving machine-wide reported the later project's version.
+        pa, pb = tmp / "proj-a", tmp / "proj-b"
+        pa.mkdir(); pb.mkdir()
+        two = fake_home(tmp / "g", marketplace_version="1.73.0", plugins={
+            "rails-stack@claude-skills": [rec("1.41.0", "2026-08-01T00:00:00Z", str(pa)),
+                                          rec("1.42.1", "2026-08-07T00:00:00Z", str(pb))],
+            "rails-flow@claude-skills": [rec("1.18.2", "2026-08-01T00:00:00Z", str(pa)),
+                                         rec("1.19.0", "2026-08-07T00:00:00Z", str(pb))],
+            "qa-flow@claude-skills": [rec("1.24.1", "2026-08-07T00:00:00Z")]})   # user scope
+        got_a, _ = tv.resolve_installed(two, project=pa)
+        check("per-project: A resolves its own, older record", got_a.plugins.get("rails-stack"), "1.41.0")
+        check("per-project: A's install path is A's", got_a.paths.get("rails-stack"), "/cache/1.41.0")
+        check("per-project: another project's record is not A's shadow", got_a.shadowed, {})
+        got_b, _ = tv.resolve_installed(two, project=pb)
+        check("per-project: B resolves its own record", got_b.plugins.get("rails-stack"), "1.42.1")
+        check("per-project: a user-scope record applies to every project",
+              (got_a.plugins.get("qa-flow"), got_b.plugins.get("qa-flow")), ("1.24.1", "1.24.1"))
+        nowhere = tmp / "proj-none"
+        nowhere.mkdir()
+        got_n, probs_n = tv.resolve_installed(two, project=nowhere)
+        check("per-project: installed only elsewhere is not installed here",
+              "rails-stack" in got_n.plugins, False)
+        check("per-project: and it is reported",
+              any("rails-stack" in p and "other projects" in p for p in probs_n), True)
+        # The same project spelled three other ways, and run from inside it.
+        sub = pa / "app" / "models"
+        sub.mkdir(parents=True)
+        alias = tmp / "alias-a"
+        alias.symlink_to(pa)
+        for label, path in (("trailing slash", Path(str(pa) + "/")), ("symlinked path", alias),
+                            ("a subdirectory", sub)):
+            got, _ = tv.resolve_installed(two, project=path)
+            check(f"per-project: {label} is the same project", got.plugins.get("rails-stack"), "1.41.0")
+        # A sibling whose name merely starts with the project's is NOT inside it.
+        sibling = tmp / "proj-a-other"
+        sibling.mkdir()
+        got_s, _ = tv.resolve_installed(two, project=sibling)
+        check("per-project: a same-prefix sibling is another project", "rails-stack" in got_s.plugins, False)
+
+        # Through main(): A is BEHIND a published set equal to B's install. Machine-wide
+        # resolution read B's versions and called A up to date (exit 0); the truth is drift (1).
+        rc = tv.main(["--home", str(two), "--published-from", str(pub), "--project", str(pa)])
+        check("per-project: a project behind the machine's newest install is drift, not current",
+              rc, tv.EXIT_FINDINGS)
+        rc = tv.main(["--home", str(two), "--published-from", str(pub), "--project", str(pb)])
+        check("per-project: the project that IS current still reads current", rc, tv.EXIT_OK)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = tv.main(["--home", str(two), "--project", str(pa), "--installed-path", "rails-stack"])
+        check("installed-path: prints this project's tree", (rc, out.getvalue().strip()),
+              (tv.EXIT_OK, "/cache/1.41.0"))
+        with contextlib.redirect_stderr(io.StringIO()):
+            rc = tv.main(["--home", str(two), "--project", str(nowhere),
+                          "--installed-path", "rails-stack"])
+        check("installed-path: no record for this project -> 2, never an empty 0", rc, tv.EXIT_UNUSABLE)
 
         # -- arming is scoped to real drift ---------------------------------------------
         marker = tv.marker_path(proj)
