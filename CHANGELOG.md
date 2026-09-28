@@ -15885,6 +15885,19 @@ boot/validation path — with a bullet each so the promotion could close them se
   the proposed "Ruby 3.2+, Rails 7.2+" floor was REFUTED (gemspec: Ruby >= 3.1, Rails >= 7.1, < 9), so the
   doctrine states the tested Rails set instead. The "when to adopt" rule is our design: maintainer decision
   recorded on #1365.
+  - **The separate-database install is corrected before it ships (promotion review).** The three
+    commands alone created nothing. `rails_pulse:install --database=separate` only *prints* the
+    wiring (`install_generator.rb:68-99`, `display_separate_database_message`). §7 now spells out the
+    `rails_pulse:` `database.yml` entry (`migrations_paths: db/rails_pulse_migrate`,
+    `schema_dump: false`), `config.connects_to = { database: { writing: :rails_pulse, reading:
+    :rails_pulse } }`, `db:prepare`, and a restart. It also names a requirement the gem's own message omits:
+    an environment is multi-database only when every key under it is a database entry
+    (`activerecord` `database_configurations.rb`, `config.values.all?(Hash)`), so a flat `development:`
+    block must move under `primary:` first. Reproduced on Rails 8.0 by doctrine-verifier: the literal
+    commands left no Pulse database and no tables; with `primary:` nesting, `db:prepare` created all ten.
+    Also added, quoting rails_pulse `CHANGELOG.md:44,46`: restart every process together, not as a
+    rolling deploy; and on a separate database never run `db:setup` / `db:prepare` in place of
+    `db:migrate:rails_pulse`.
 
 ### 1.68.3 (release v1.151.0) — 2026-09-26
 

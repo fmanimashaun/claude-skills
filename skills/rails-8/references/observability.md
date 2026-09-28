@@ -231,16 +231,43 @@ Before launch there is no traffic to measure — Bullet and the log cover
 development.
 
 Install into its own database so the host's primary never carries the
-tables:
+tables. The generator writes `db/rails_pulse_schema.rb` and the initializer.
+It only *prints* the database wiring and does none of it, so those three
+commands alone create nothing:
 
 ```bash
 bundle add rails_pulse
 bin/rails generate rails_pulse:install --database=separate
-bin/rails db:prepare   # creates the Pulse database and loads its schema
 ```
 
-(A single-database install omits `--database=separate` and runs
-`bin/rails db:migrate`.) Mount it and gate it on the app's own admin check:
+Add a `rails_pulse:` database to **every** environment in
+`config/database.yml`. Rails treats an environment as multi-database only when
+every key under it is a database entry, so a flat block (the usual
+`development:` and `test:`) must move under `primary:` first. Otherwise the Pulse
+entry is silently ignored and `db:prepare` creates nothing:
+
+```yaml
+development:
+  primary:
+    <<: *default
+    database: storage/development.sqlite3
+  rails_pulse:
+    <<: *default
+    database: storage/development_rails_pulse.sqlite3
+    migrations_paths: db/rails_pulse_migrate
+    schema_dump: false
+```
+
+Then connect it, uncommenting `connects_to` in the initializer the generator
+wrote (below), prepare the database, and restart the server:
+
+```bash
+bin/rails db:prepare   # first install: loads db/rails_pulse_schema.rb into the Pulse database
+```
+
+(A single-database install omits `--database=separate`, the `database.yml`
+entry and `connects_to`, and runs `bin/rails db:migrate`.) Mount it and gate it
+on the app's own admin check:
 
 ```ruby
 # config/routes.rb
@@ -248,6 +275,7 @@ mount RailsPulse::Engine => "/rails_pulse"
 
 # config/initializers/rails_pulse.rb
 RailsPulse.configure do |config|
+  config.connects_to = { database: { writing: :rails_pulse, reading: :rails_pulse } } # separate database only
   config.authorize = ->(controller) { controller.current_user&.admin? }
 end
 ```
@@ -275,5 +303,10 @@ action), and a signed-out request to `/rails_pulse` in production is refused.
 It is pre-1.0 and upgrades can carry data steps: 0.3 → 0.4 required a backup
 first, then `bin/rails generate rails_pulse:upgrade`, the migration
 (`bin/rails db:migrate:rails_pulse` for the separate database), and
-`bin/rails rails_pulse:migrate_routes`. Read its CHANGELOG before every
+`bin/rails rails_pulse:migrate_routes`. Two warnings from that upgrade apply to
+any data-carrying one. **Restart every process together, not as a rolling
+deploy**: *"A 0.3.x process left running against the migrated schema stops
+tracking and 500s on the routes page."* And on a separate database, *"do not run
+`db:setup` / `db:prepare` as a substitute for `db:migrate:rails_pulse`"*;
+`db:prepare` is for the first install only. Read its CHANGELOG before every
 `bundle update rails_pulse`, and finish with `rails_pulse:status`.
