@@ -72,7 +72,9 @@ reading prose — that is the reasoning that would otherwise be redone next time
 
 Report a single ranked table to the user: **ready-now first**, then P1,
 `type:incorrect-doctrine` ahead of peers, oldest-first within a tier — with the skipped set
-(needs-info / duplicate) and why, and blocked issues listed under what blocks them.
+(needs-info / duplicate) and why, and blocked issues listed under what blocks them. Mark a
+`lapse` in the type column (`feature · lapse`): it is queued, but for enforcement, not a skill
+edit, and the table is where that routing is read.
 
 Quote the coverage line verbatim (`N/M open issues declare edges`). An ordering computed
 from three declared edges out of forty open issues is worth having, but reporting it

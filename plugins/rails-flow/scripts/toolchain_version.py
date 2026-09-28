@@ -109,9 +109,13 @@ def applies_to(record: dict, project: Path | None) -> bool:
     if not owner:
         return True
     try:
-        return Path(owner).resolve() == project.resolve()
+        root, here = Path(owner).resolve(), project.resolve()
     except OSError:
         return False
+    # A session run from a subdirectory still loads the project's plugins (drive.md runs the gate
+    # from wherever the session is). `resolve()` also folds a trailing slash and a symlinked
+    # path (/tmp vs /private/tmp on macOS) into one form.
+    return here == root or root in here.parents
 
 
 def resolve_installed(home: Path, marketplace: str = MARKETPLACE,

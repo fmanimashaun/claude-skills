@@ -213,6 +213,21 @@ def run() -> int:
               "rails-stack" in got_n.plugins, False)
         check("per-project: and it is reported",
               any("rails-stack" in p and "other projects" in p for p in probs_n), True)
+        # The same project spelled three other ways, and run from inside it.
+        sub = pa / "app" / "models"
+        sub.mkdir(parents=True)
+        alias = tmp / "alias-a"
+        alias.symlink_to(pa)
+        for label, path in (("trailing slash", Path(str(pa) + "/")), ("symlinked path", alias),
+                            ("a subdirectory", sub)):
+            got, _ = tv.resolve_installed(two, project=path)
+            check(f"per-project: {label} is the same project", got.plugins.get("rails-stack"), "1.41.0")
+        # A sibling whose name merely starts with the project's is NOT inside it.
+        sibling = tmp / "proj-a-other"
+        sibling.mkdir()
+        got_s, _ = tv.resolve_installed(two, project=sibling)
+        check("per-project: a same-prefix sibling is another project", "rails-stack" in got_s.plugins, False)
+
         # Through main(): A is BEHIND a published set equal to B's install. Machine-wide
         # resolution read B's versions and called A up to date (exit 0); the truth is drift (1).
         rc = tv.main(["--home", str(two), "--published-from", str(pub), "--project", str(pa)])

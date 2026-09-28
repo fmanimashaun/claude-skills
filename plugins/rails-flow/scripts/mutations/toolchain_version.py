@@ -43,5 +43,24 @@ GUARD = Guard(
             "        if False:\n            for p in problems:",
             "installed-path: no record for this project",
         ),
+        # #1411 review S2/S3: the path comparison was untested; string equality passed 40/40.
+        Mutation(
+            "project paths compare as strings, so a symlinked or trailing-slash path misses",
+            "        root, here = Path(owner).resolve(), project.resolve()",
+            "        root, here = Path(owner), project",
+            "per-project: symlinked path is the same project",
+        ),
+        Mutation(
+            "a subdirectory of the project is treated as another project",
+            "    return here == root or root in here.parents",
+            "    return here == root",
+            "per-project: a subdirectory is the same project",
+        ),
+        Mutation(
+            "a same-prefix sibling counts as inside the project",
+            "    return here == root or root in here.parents",
+            "    return str(here).startswith(str(root))",
+            "per-project: a same-prefix sibling is another project",
+        ),
     ),
 )

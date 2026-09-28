@@ -39,7 +39,12 @@ mis-filing. Never put a downstream project's private code, data, or secrets into
   - marketplace `metadata.version` and the relevant plugin `version` from the clone's
     `.claude-plugin/marketplace.json` / `plugins/<name>/.claude-plugin/plugin.json`;
   - the installed-vs-latest delta if determinable (e.g. `installed_plugins.json` under the
-    Claude config dir vs the clone) — note "running X, latest Y" when they differ.
+    Claude config dir vs the clone) — note "running X, latest Y" when they differ;
+  - **the versions THIS PROJECT runs**, which are not the clone's: one machine can hold a clone
+    with rails-stack 1.68.0 while this project runs 1.63.0 (#1407). Take them from
+    `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/toolchain_version.py" --project "$PWD"` and pin
+    them as `rails-stack <version> (this project)`. The triager searches the skill tree of THAT
+    version, so a pin taken from the clone would make a rule this project never had look present.
   Record what you could resolve; say "unresolved" for what you couldn't, never guess.
 
 ## Evidence (this is what makes a report actionable)
@@ -67,8 +72,9 @@ mis-filing. Never put a downstream project's private code, data, or secrets into
     to update and re-check.
   - **No hit on a current install**: a gap.
 
-  If the first command exits 2, the installed skill is unresolved: say so, and do not call it a
-  lapse. Put the verdict and the search in the report BODY either way ("searched rails-stack
+  If the first command exits 2, this project has no resolvable rails-stack install: say so, and
+  do not call it a lapse. If `grep` reports no such file or directory, the skill name is wrong:
+  fix it before reading "no hit" as a gap. Put the verdict and the search in the report BODY either way ("searched rails-stack
   1.63.0 `skills/rails-8/` for X: no hit"). A label set by someone without push access may be
   dropped, so the body is what the triager reads.
 - Classify and pre-label: `type:bug` / `type:feature` / `type:incorrect-doctrine` /
@@ -86,6 +92,20 @@ gh issue list --repo <upstream> --search "<key terms>" --state all --limit 20 \
 - Open match → do NOT file; propose adding a comment to that issue (show the comment).
 - Closed match → possible regression; reference it and say so in the new report.
 - No match → proceed to draft.
+
+## Mock-up (every report carries one)
+
+Give the body a `## Mock-up` section. `check_issue_mockup.py` refuses an issue without one. A
+toolchain report almost never changes a screen, so it is usually:
+
+```markdown
+## Mock-up
+
+No visible change: <reason, for example "a hook's exit code" or "wording in an agent">.
+```
+
+Link a mock-up instead only when the reported change would alter a screen that a user of a
+DOWNSTREAM APP sees, for example a component the design-system skill generates.
 
 ## Draft-by-default, file only on MODE: FILE
 

@@ -59,16 +59,28 @@ and an agent that ignored guidance looks exactly like one that never had it. The
 opposite fixes, so search the named skill before queuing, in the reporter's words and in the
 words the doctrine would use (#1386). Search **the version the report pins**, not `dev`: a rule
 added since then is one the agent never had. With no pinned version, search `origin/dev` and
-say so.
+say so in the comment, since a hit there may postdate the reporter's install.
+
+The pin to use is the **rails-stack version the project ran** ("rails-stack X (this project)"),
+not the marketplace version: a machine's marketplace clone can be several rails-stack versions
+ahead of a project on it, so its tag would show rules the agent never had (#1407). Map that
+version to the first release tag that carried it:
 
 ```bash
-skill="skills/<skill>"; ref="v<reported marketplace metadata.version>"
-if ! git cat-file -e "$ref:$skill" 2>/dev/null; then echo "no $skill at $ref: fix the name or version first" >&2; fi
-git grep -n -i -F -e "<key phrase>" "$ref" -- "$skill/"
+skill="skills/<skill>"
+ref="$(python3 scripts/skill_version_tag.py rails-stack "<reported rails-stack version>")"
+if [ -z "$ref" ]; then
+  echo "no release carries that rails-stack version: search origin/dev and say so" >&2
+elif ! git cat-file -e "$ref:$skill" 2>/dev/null; then
+  echo "no $skill at $ref: fix the skill name first" >&2
+else
+  git grep -n -i -F -e "<key phrase>" "$ref" -- "$skill/"
+fi
 ```
 
-A mistyped skill or tag also returns no hit, which is why the existence check comes first: an
-empty search of a path that does not exist is not evidence of a gap.
+A mistyped skill or version also returns no hit, which is why the search runs only after both
+resolve: an empty search of a tree that does not exist is not evidence of a gap. A report that
+pins only the marketplace version predates this rule; say which version you searched and why.
 
 - **No hit**: a real gap. Queue it as `type:skill-gap`, and say what you searched for in your
   triage comment ("searched `skills/rails-8/` at v1.148.0 for X and Y: no hit").

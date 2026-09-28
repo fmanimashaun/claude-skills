@@ -81,15 +81,16 @@ toolchain as current.
    `plugins/<name>/.claude-plugin/plugin.json`. Read either source alone and you miss the
    other set entirely — and miss it as "up to date".
 
+5. **The drift is real.** While this was written the installed marketplace was 1.72.0
+   against a published 1.73.0.
+
 6. **Install records are per project.** A project-scoped record carries a `projectPath`, and
    several projects on one machine run different versions. Measured: rails-stack 1.63.0 for
    one project and 1.68.0 for another, installed later. The newest record machine-wide is
    therefore not this project's, and reading it reported the older project as current (#1407).
    The gate resolves only records that apply to `--project`; a record without a `projectPath`
-   applies everywhere.
-
-5. **The drift is real.** While this was written the installed marketplace was 1.72.0
-   against a published 1.73.0.
+   applies everywhere. Unverified: which of a user-scope and a project record
+   Claude Code loads when both apply; the gate takes the newest, as before.
 
 ## Verifying the gate
 

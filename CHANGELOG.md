@@ -11,7 +11,8 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 - **Triage checks a skill-gap report against what the skill already says — `.claude/agents/issue-triager.md`,
   `.claude/commands/maintainer-work.md`, `.claude/commands/maintainer-triage.md`,
-  `.claude/commands/maintainer-setup-intake.md`, `.github/labels.yml`, `.github/ISSUE_TEMPLATE/skill-gap.yml`** (#1386). The duplicate check compared an issue only with other issues, so
+  `.claude/commands/maintainer-setup-intake.md`, `.github/labels.yml`, `.github/ISSUE_TEMPLATE/skill-gap.yml`,
+  `scripts/skill_version_tag.py`, `scripts/mutations/skill_version_tag.py`, `scripts/maintainer_doctor.py`** (#1386). The duplicate check compared an issue only with other issues, so
   a report that an agent ignored a rule the skill already states was queued as `type:skill-gap` and sent to
   `skill-doctor`, which adds a second copy of the prose. The triager now searches the named skill first: no hit is a
   gap, and a covering hit is a **lapse** (new status label). It is relabelled `type:feature`, and `/maintainer-work`
@@ -19,10 +20,14 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   gains an optional "does the skill already say this?" field. After SkillOpt's skill-defect / execution-lapse
   split. How often lapses happen is unmeasured, and the issue says so. This is triage prose, advisory: nothing
   mechanical checks that the search ran. Our own design, decided on the issue; no framework claim.
-  An independent review before promotion found that the search ran over `dev`, not the version the report pins,
-  so a rule added since would read as a lapse. It now searches at the pinned tag (fixed since → `needs-info`, ask
-  the reporter to update), and checks first that the path exists, since a typo'd skill also returns no hit. The
-  relabel is one `--remove-label`/`--add-label` command, so an issue never carries two `type:*` labels.
+  Two independent reviews before promotion corrected it. The search ran over `dev`, and then over the tag of the
+  MARKETPLACE version the report pinned, which is the machine's clone: v1.148.0 carries rails-stack 1.68.0 while
+  fidara-ledger runs 1.63.0, so a rule added since would read as a lapse. It now maps the project's rails-stack
+  version to the first release that carried it, with new `scripts/skill_version_tag.py` (1.63.0 → v1.138.0; a
+  selftest of 8 checks, a guard catching 3 of 3 mutations including lexical tag order, and a doctor gate). It also
+  searches only after the tag and path both resolve, since a typo'd skill also returns no hit. "Fixed since" gets
+  `needs-info`. The relabel is one `--remove-label`/`--add-label` command, so an issue never carries two `type:*`
+  labels. The web template now asks for the rails-stack version, and the queue table marks a lapse.
 
 - **The benchmark compares arms instead of printing rates side by side — `evals/compare.py`,
   `scripts/mutations/evals_compare.py`, `scripts/maintainer_doctor.py`, `evals/README.md`** (#1384). `run.py`
@@ -3514,6 +3519,9 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   --installed-path rails-stack`), not the marketplace clone. An independent review found the first draft searched the
   clone: on this machine that is rails-stack 1.68.0, while fidara-ledger runs 1.63.0, so a rule added since would have
   been filed as a false lapse. No hit on an install behind the published version is a stale install, not a gap.
+  The version pin now includes the rails-stack version THIS project runs, which is what the triager searches. Every
+  report also carries a `## Mock-up` section ("No visible change: <reason>" unless a downstream app's screen
+  changes), which `check_issue_mockup.py` requires.
 
 - **`toolchain_version.py` resolves installs per project, not machine-wide — `plugins/rails-flow/scripts/toolchain_version.py`,
   `plugins/rails-flow/scripts/toolchain_version_selftest.py`, `plugins/rails-flow/scripts/mutations/toolchain_version.py`,
@@ -3521,8 +3529,10 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   project, so a project on an older version was reported as current. Measured: `--project` fidara-ledger printed
   rails-flow 1.51.0 and rails-stack 1.68.0 (Retask-platform's versions); it runs 1.46.0 and 1.63.0. A record with a
   `projectPath` now applies only to that project, and one without applies everywhere. New `--installed-path PLUGIN`
-  prints the tree this project loads, and exits 2 when there is none. Selftest 29 → 40, including the regression
-  through `main()` (a project behind the machine's newest install exits 1, not 0). Guard 2 → 5 mutations, all caught.
+  prints the tree this project loads, and exits 2 when there is none. A subdirectory of the project, a trailing slash
+  and a symlinked path are the same project; a same-prefix sibling is not. Selftest 29 → 44, including the regression
+  through `main()` (a project behind the machine's newest install exits 1, not 0). Guard 2 → 8 mutations, all caught.
+  The same machine-wide pick in design-flow's `doctrine_path.py` is #1421, next release.
 
 - **A PR body must carry the repo's own PR-template sections — `plugins/rails-flow/hooks/scripts/guard-claims.sh`,
   `plugins/rails-flow/hooks/scripts/lib/pr_template.py`, `plugins/rails-flow/scripts/check_hook_gates.py`,
