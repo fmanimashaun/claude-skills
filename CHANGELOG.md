@@ -15898,25 +15898,30 @@ boot/validation path — with a bullet each so the promotion could close them se
       (without it).
     - **It adds a check that tells the two apart:** `RailsPulse::ApplicationRecord.connection_db_config.name`
       must print `"rails_pulse"`. It printed `"primary"` on the misconfigured app.
-    - **So that `rails_pulse:status` can exit 0:** a fresh 0.4.1 install reports its migrations uncopied, so
-      §7 runs `rails_pulse:upgrade` first.
-    - **Load the Pulse schema before `db:prepare`:** `bin/rails db:schema:load_rails_pulse db:prepare`, in
-      development and in test. With copied migrations, `db:prepare` on an EMPTY Pulse database runs them before
-      the gem's schema-load hook and aborts ("Could not find table 'rails_pulse_operations'"). §7 therefore puts
-      the load in front of `db:prepare` wherever an empty Pulse database meets it: `bin/setup`, CI, and a first
-      deploy through `bin/docker-entrypoint`. It is safe on every run: `db/rails_pulse_schema.rb` creates each
-      table only `unless connection.table_exists?`, and the task records the copied migrations as applied
-      (rails_pulse 0.4.1 `lib/tasks/rails_pulse.rake:6-24`).
+    - **The first install runs in a measured order:** `db:prepare` (development and test),
+      `rails_pulse:upgrade`, then `db:migrate:rails_pulse` in both. The upgrade generator copies nothing
+      until the Pulse tables exist, and `rails_pulse:status` stays at 1 until the migrations are copied and run.
+    - **Load the schema only into an EMPTY Pulse database, guarded, for every environment before any
+      `db:prepare`.** On an empty database, `db:prepare` runs the copied migrations before the gem's
+      schema-load hook and aborts ("Could not find table 'rails_pulse_operations'"). That hits every fresh
+      clone, CI run and first deploy. On a populated database, `db:schema:load_rails_pulse` marks *every*
+      copied migration applied without running it, so a pending one is skipped while `status` reads 0. §7's
+      loop guards on `table_exists?(:rails_pulse_routes)`, and covers test in development, because `db:prepare`
+      in development also prepares test.
     - **The upgrade warnings are quoted and scoped to 0.4.0**, as upstream states them (`CHANGELOG.md:44,46`):
       restart every process together, not as a rolling deploy; and do not run `db:setup` / `db:prepare` in
       place of `db:migrate:rails_pulse`. On an entrypoint that runs `db:prepare` at boot, that migration runs
       as a release step before the new version boots.
     - **Who verified what:**
-      - doctrine-verifier CONFIRMED the generator and CHANGELOG claims against rails_pulse 0.4.1 on a Rails
-        8.0.5.1 app.
-      - An independent reviewer ran §7 literally on fresh Rails 8.1.4 and 8.0.5.1 apps and BLOCKED it twice:
-        first the flat-block and `rails_pulse:status` claims, then the empty-database `db:prepare` abort. Each
-        is corrected here, and the final text was re-run by that reviewer before merge.
+      - doctrine-verifier CONFIRMED the generator and CHANGELOG claims against rails_pulse 0.4.1 (Rails
+        8.0.5.1 app).
+      - An independent reviewer ran §7 literally on fresh Rails 8.1.4 and 8.0.5.1 apps. It BLOCKED three
+        times: the flat-block and `status` claims; the empty-database abort; then the upgrade-before-tables
+        order and the load-on-a-populated-database skip.
+      - The author then ran both shell blocks verbatim on Rails 8.1.4, from nothing, from a fresh clone, and
+        on a populated database with a pending migration and a row. Every block exited 0, the migration was
+        applied, and the row survived. An unguarded-load control reproduced the silent skip.
+      - PostgreSQL and MySQL were not run.
 
 ### 1.68.3 (release v1.151.0) — 2026-09-26
 

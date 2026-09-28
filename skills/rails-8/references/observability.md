@@ -264,29 +264,51 @@ development:
 ```
 
 Then connect it by uncommenting `connects_to` in the initializer the generator
-wrote (below). Copy this version's migrations (a fresh 0.4.1 install reports
-them uncopied until you do), load the Pulse schema, prepare both environments,
-and restart the server:
+wrote (below). The first install runs in this order. The upgrade generator
+only copies this version's migrations once the Pulse tables exist, and
+`rails_pulse:status` stays at 1 until they are copied and run:
 
 ```bash
+bin/rails db:prepare
+RAILS_ENV=test bin/rails db:prepare
 bin/rails generate rails_pulse:upgrade
-bin/rails db:schema:load_rails_pulse db:prepare
-RAILS_ENV=test bin/rails db:schema:load_rails_pulse db:prepare
+bin/rails db:migrate:rails_pulse
+RAILS_ENV=test bin/rails db:migrate:rails_pulse
 bin/rails runner 'p RailsPulse::ApplicationRecord.connection_db_config.name'   # must print "rails_pulse", not "primary"
 ```
 
-**`db:schema:load_rails_pulse` runs before `db:prepare` on every empty Pulse
-database, not just this once.** Once the migrations are copied, `db:prepare`
-on an empty Pulse database runs them before the gem's own schema-load hook,
-and aborts with *"Could not find table 'rails_pulse_operations'"*. That
-happens on a fresh clone's `bin/setup`, in CI, and on a first deploy, because
-Rails 8's generated `bin/docker-entrypoint` runs `db:prepare` on every boot.
-So put the load in front of `db:prepare` in all three. It is safe to run every
-time: `db/rails_pulse_schema.rb` creates each table only
-`unless connection.table_exists?`, and the task records the copied migrations
-as applied. On PostgreSQL or MySQL, create the databases first
-(`bin/rails db:create`). With an empty test Pulse database, `/rails_pulse`
-answers 503 in tests and tracking pauses without a word.
+Restart the server afterwards. **After the first install, an empty Pulse
+database needs its schema loaded before `db:prepare`, and a populated one must
+never have it loaded.** The two cases fail in different ways:
+
+- **An empty database.** With the migrations copied, `db:prepare` runs them
+  before the gem's schema-load hook and aborts with *"Could not find table
+  'rails_pulse_operations'"*. That is every fresh clone's `bin/setup`, every CI
+  run, and the first deploy, whose `bin/docker-entrypoint` runs `db:prepare` on
+  boot.
+- **A populated database.** `db:schema:load_rails_pulse` marks *every* copied
+  migration as applied without running it, so a pending one is silently skipped
+  while `rails_pulse:status` still exits 0.
+
+So guard the load on the database being empty, and do it for **every**
+environment before any `db:prepare` runs. In development that means test too,
+because `db:prepare` in development also prepares test and aborts on its empty
+Pulse database. `bin/setup` loads development and test, CI loads test, and the
+entrypoint loads production:
+
+```bash
+for env in development test; do   # CI: test only. bin/docker-entrypoint: production only.
+  RAILS_ENV=$env bin/rails runner 'exit(RailsPulse::ApplicationRecord.connection.table_exists?(:rails_pulse_routes) ? 0 : 1)' ||
+    RAILS_ENV=$env bin/rails db:schema:load_rails_pulse
+done
+bin/rails db:prepare
+```
+
+On a populated database the guard skips the load, and `db:prepare` applies a
+pending Pulse migration normally. Measured on SQLite. On PostgreSQL or MySQL
+the database must exist before the load (`bin/rails db:create`), which was not
+run here. With an empty test Pulse database, `/rails_pulse` answers 503 in
+tests and tracking pauses without a word.
 
 (A single-database install omits `--database=separate`, the `database.yml`
 entry and `connects_to`, and runs `bin/rails db:migrate`.) Mount it and gate it
@@ -331,8 +353,9 @@ first, then `bin/rails generate rails_pulse:upgrade`, the migration
 deploy**: *"A 0.3.x process left running against the migrated schema stops
 tracking and 500s on the routes page."* On a separate database it adds: *"Do
 not run `db:setup` / `db:prepare` as a substitute for `db:migrate:rails_pulse`."*
-Both warnings are stated for 0.4.0, not as general rules. Because the
-entrypoint's `db:prepare` runs on boot, run a data-carrying upgrade's
+Both warnings are stated for 0.4.0, not as general rules. On 0.4.1 the
+entrypoint's `db:prepare` applies a pending Pulse migration on boot. An upgrade
+whose CHANGELOG says otherwise, as 0.3 → 0.4 did, runs
 `bin/rails db:migrate:rails_pulse` as a step of the release itself, before the
 new version boots. Read its CHANGELOG
 before every `bundle update rails_pulse`, and finish with `rails_pulse:status`.
