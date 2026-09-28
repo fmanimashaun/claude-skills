@@ -15906,8 +15906,10 @@ boot/validation path — with a bullet each so the promotion could close them se
       schema-load hook and aborts ("Could not find table 'rails_pulse_operations'"). That hits every fresh
       clone, CI run and first deploy. On a populated database, `db:schema:load_rails_pulse` marks *every*
       copied migration applied without running it, so a pending one is skipped while `status` reads 0. §7's
-      loop guards on `table_exists?(:rails_pulse_routes)`, and covers test in development, because `db:prepare`
-      in development also prepares test.
+      loop checks all ten of the gem's tables and returns an explicit code. Exit 3 (some or all missing,
+      including a partial database left by an interrupted load) loads; exit 0 skips; any other failure of the
+      check aborts rather than loading blind. It covers test in development, because `db:prepare` in
+      development also prepares test.
     - **The upgrade warnings are quoted and scoped to 0.4.0**, as upstream states them (`CHANGELOG.md:44,46`):
       restart every process together, not as a rolling deploy; and do not run `db:setup` / `db:prepare` in
       place of `db:migrate:rails_pulse`. On an entrypoint that runs `db:prepare` at boot, that migration runs
@@ -15920,7 +15922,10 @@ boot/validation path — with a bullet each so the promotion could close them se
         order and the load-on-a-populated-database skip.
       - The author then ran both shell blocks verbatim on Rails 8.1.4, from nothing, from a fresh clone, and
         on a populated database with a pending migration and a row. Every block exited 0, the migration was
-        applied, and the row survived. An unguarded-load control reproduced the silent skip.
+        applied, and the row survived. An unguarded-load control reproduced the silent skip. After the
+        reviewer's fourth pass (CLEAN, with advisories), the guard was hardened to all ten tables and an
+        explicit exit code. It was re-run verbatim on a realistic partial database (exit 0, ten tables, status 0)
+        and on a check that fails (exit non-zero, no load attempted).
       - PostgreSQL and MySQL were not run.
 
 ### 1.68.3 (release v1.151.0) — 2026-09-26

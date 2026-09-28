@@ -293,17 +293,31 @@ never have it loaded.** The two cases fail in different ways:
 So guard the load on the database being empty, and do it for **every**
 environment before any `db:prepare` runs. In development that means test too,
 because `db:prepare` in development also prepares test and aborts on its empty
-Pulse database. `bin/setup` loads development and test, CI loads test, and the
-entrypoint loads production:
+Pulse database. None of the generated scripts do this. Add the loop before
+their `db:prepare`: to `bin/setup` (development and test), to CI (test), and
+to `bin/docker-entrypoint` (production):
 
 ```bash
 for env in development test; do   # CI: test only. bin/docker-entrypoint: production only.
-  RAILS_ENV=$env bin/rails runner 'exit(RailsPulse::ApplicationRecord.connection.table_exists?(:rails_pulse_routes) ? 0 : 1)' ||
-    RAILS_ENV=$env bin/rails db:schema:load_rails_pulse
+  rc=0
+  RAILS_ENV=$env bin/rails runner '
+    c = RailsPulse::ApplicationRecord.connection
+    tables = %w[routes queries requests operations jobs job_runs summaries deployments exception_groups exception_occurrences]
+    exit(tables.all? { |t| c.table_exists?("rails_pulse_#{t}") } ? 0 : 3)' || rc=$?
+  if [ "$rc" -eq 3 ]; then
+    RAILS_ENV=$env bin/rails db:schema:load_rails_pulse   # some or all of the ten tables missing
+  elif [ "$rc" -ne 0 ]; then
+    exit "$rc"                                              # the check itself failed: never load blind
+  fi
 done
 bin/rails db:prepare
 ```
 
+The check reads all ten of the gem's tables, because the schema file creates
+them one at a time with no transaction, so an interrupted first load leaves
+some in place. The load then creates only the missing ones. Any other failure
+of the check aborts, and does not load: loading a populated database is the
+silent migration skip above.
 On a populated database the guard skips the load, and `db:prepare` applies a
 pending Pulse migration normally. Measured on SQLite. On PostgreSQL or MySQL
 the database must exist before the load (`bin/rails db:create`), which was not
