@@ -19,20 +19,49 @@ GUARD = Guard(
            # mutation reads as caught -- the harness reported this guard INERT until it was added (#1173).
            'plugins/rails-flow/scripts/ci_verdict_hint.py',
            'plugins/qa-flow/scripts/read_certification.py',
+           'plugins/qa-flow/scripts/release_evidence.py',
            'plugins/rails-flow/scripts/self_consistency.py'),
     mutations=(
         # #1337: the stamp's own commit invalidates it again, or any delta slips through.
         Mutation(
             "an ancestor stamp is never accepted, so committing the stamp denies its promotion",
-            '        ""|"qa/CERTIFICATION") : ;;',
-            '        "__never__") : ;;',
+            '        [ "$f" = "qa/CERTIFICATION" ] && continue',
+            '        [ "$f" = "__never__" ] && continue',
             "release-gate (#1337): the stamp committed on top of the tested sha still permits",
         ),
         Mutation(
             "any delta after an ancestor stamp is accepted",
-            '        ""|"qa/CERTIFICATION") : ;;',
-            '        *) : ;;',
+            '      if [ -n "$extra" ]; then',
+            '      if false; then',
             "release-gate (#1337): a code change after the tested sha is denied, naming the path",
+        ),
+        # #1428. The evidence check is skipped: a PASS stamp alone unlocks main again.
+        Mutation(
+            "the release-only layers are not checked, so a HOLE still promotes",
+            'if evidence="$(python3 "$ev" stamp 2>"$evtmp")"; then',
+            'if evidence="$(python3 "$ev" stamp 2>"$evtmp")" || true; then',
+            "release-gate (#1428): a HOLE in the sweep denies",
+        ),
+        # The allowance matches ANY path under the evidence's parent, so code rides along unchecked.
+        Mutation(
+            "every changed file counts as evidence",
+            '          case "$f" in ("$p"*) ok=1 ;; esac',
+            '          ok=1',
+            "release-gate (#1428): a code change riding with the evidence is still denied",
+        ),
+        # The trailing slash is what stops first-boot-v1-other matching first-boot-v1.
+        Mutation(
+            "the evidence directory is matched without its trailing slash",
+            '          case "$f" in ("$p"*) ok=1 ;; esac',
+            '          case "$f" in ("${p%/}"*) ok=1 ;; esac',
+            "release-gate (#1428): a look-alike of the evidence path is not evidence",
+        ),
+        # The paths come from stdout; losing them denies the stamp's own evidence commit.
+        Mutation(
+            "the evidence paths are discarded, so the stamp's evidence commit is denied",
+            '$evidence\nEVIDENCE',
+            '\nEVIDENCE',
+            "release-gate (#1428): a schema-2 stamp whose commit carries its passing evidence permits",
         ),
         Mutation(
             "the ancestry check is skipped, so a stamp from another branch is accepted",

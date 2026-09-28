@@ -16,6 +16,7 @@ GUARD = Guard(
            'plugins/rails-flow/scripts/check_criteria.py',
            'plugins/rails-flow/scripts/check_handoff.py',
            'plugins/qa-flow/scripts/read_certification.py',
+           'plugins/qa-flow/scripts/release_evidence.py',
            'plugins/rails-flow/scripts/self_consistency.py',
            'plugins/rails-flow/scripts/extract_claims.py',
            'plugins/rails-flow/scripts/ci_verdict_hint.py'),

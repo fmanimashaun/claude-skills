@@ -15,6 +15,7 @@ GUARD = Guard(
            'plugins/rails-flow/scripts/check_criteria.py',
            'plugins/rails-flow/scripts/check_handoff.py',
            'plugins/qa-flow/scripts/read_certification.py',
+           'plugins/qa-flow/scripts/release_evidence.py',
            'plugins/rails-flow/scripts/extract_claims.py',
            # ci-verdict-hint.sh runs ci_verdict_hint.py; unstaged, its fixtures fail and every
            # mutation reads as caught -- the harness reported this guard INERT until it was added (#1173).

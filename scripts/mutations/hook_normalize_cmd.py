@@ -16,6 +16,7 @@ GUARD = Guard(
            # mutation reads as caught -- the harness reported this guard INERT until it was added (#1173).
            'plugins/rails-flow/scripts/ci_verdict_hint.py',
            'plugins/qa-flow/scripts/read_certification.py',
+           'plugins/qa-flow/scripts/release_evidence.py',
            'plugins/rails-flow/scripts/self_consistency.py'),
     mutations=(
         Mutation(

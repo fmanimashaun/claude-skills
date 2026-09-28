@@ -7,6 +7,13 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **Guards that stage the hook harness declare `release_evidence.py` — `scripts/mutations/hook_release_gate.py` and nine
+  other `scripts/mutations/hook_*.py`** (#1428). `release-gate.sh` now runs it, so a staged mutant without it would fail
+  its unmutated baseline and every mutation would read as caught. `lint_self_consistency.py`'s
+  `harness-dependency-undeclared` rule found all ten.
+
 ### 2026-09-28 (release v1.152.0)
 
 - **Triage checks a skill-gap report against what the skill already says — `.claude/agents/issue-triager.md`,
@@ -3506,6 +3513,14 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   questions → Discussions) + `.github/labels.yml` taxonomy.
 
 ## rails-flow (agentic flow plugin)
+
+### Unreleased
+
+- **The hook harness drives the certify layers through `release-gate.sh` — `plugins/rails-flow/scripts/check_hook_gates.py`**
+  (#1428). New fixtures: a schema-2 stamp whose commit carries its passing evidence permits. A HOLE, and a Blocked row
+  with no reason, each deny. A code change riding with the evidence is still denied, and so is a path that only starts
+  like the evidence directory. An old stamp is grandfathered with its warning, but gets no evidence allowance. 136 → 143
+  checks.
 
 ### 1.55.0 (release v1.152.0) — 2026-09-28
 
@@ -10838,6 +10853,31 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
     where a guard turned out to have **no reachable failure path** until a fixture was added for it.
 
 ## qa-flow (independent QA plugin)
+
+### Unreleased
+
+- **Certification requires a first-boot operator walkthrough and a forged-request authorization sweep —
+  `plugins/qa-flow/scripts/release_evidence.py`, `plugins/qa-flow/scripts/mutations/release_evidence.py`,
+  `plugins/qa-flow/hooks/scripts/release-gate.sh`, `plugins/qa-flow/commands/certify.md`,
+  `plugins/qa-flow/agents/qa-reporter.md`, `plugins/qa-flow/README.md`** (#1428). A downstream release passed load,
+  DAST, race tests and three browsers, then shipped a root admin who could not create staff, two ways to sign in as
+  root that skipped its second factor, and a role that could demote root. The day-one walkthrough's root row was
+  `Blocked` with no reason and never re-run, and authorization was tested by action, never by target. certify's new
+  Phase 3b makes both layers mandatory:
+  - **The first-boot walkthrough:** `pages.csv` and its screenshots. It fails on a Blocked or Not walked row with no
+    documented reason, a Fail naming no issue, no phone width or no desktop width, or a missing screenshot. It also
+    fails on a second-factor secret committed as TEXT (`otpauth://`, a labelled base32 key, a line of recovery
+    codes, in text files and PNG text chunks). It cannot see pixels, and says so.
+  - **The sweep:** `sweep.csv`. It fails on any HOLE or UI-ONLY row, a GUARDED row naming no guard, a location that
+    is not `file:line`, or no row targeting root.
+
+  The stamp is `"schema": 2` and names both evidence paths. The **release gate re-judges them** (fail closed), and
+  it lets the stamp's own commit carry that evidence and nothing else. By the owner's decision on #1428, an older
+  stamp is **grandfathered for one release**: it passes with a loud "re-run /qa-flow:certify" warning, and the next
+  release refuses it. The window is one constant, `GRANDFATHER_OLD_STAMPS`. It was checked against a real downstream
+  walkthrough (Retask `first-boot-v101`: 50 rows, 390 and 1280 wide), which passes. That run also exposed a false
+  positive in the recovery-code rule, which matched screenshot names, now fixed with a digit per half. Selftest 39
+  checks; guard 13 of 13; release-gate guard 6 → 10. Our own design, decided on the issue; no framework claim.
 
 ### 1.34.0 (release v1.152.0) — 2026-09-28
 

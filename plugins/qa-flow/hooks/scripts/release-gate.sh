@@ -111,6 +111,23 @@ fi
 # #2: the sha binding IS the gate — empty/garbled sha must fail closed, not pass on PASS alone.
 [ -n "$csha" ] || deny "certification has no sha — the stamp is invalid. Re-run /qa-flow:certify."
 
+# #1428. A PASS is also a claim that the two release-only layers ran and passed: the first-boot
+# operator walkthrough on an empty database, and the forged-request authorization sweep. A release
+# certified without them shipped a root admin who could not create staff and three authorization
+# holes. `release_evidence.py stamp` re-judges the evidence the stamp names and prints its paths; an
+# older stamp (no schema 2) passes with a warning while it is grandfathered, for one release.
+# Fail-closed: a missing script, or any error, is a non-zero exit, and that denies.
+ev="${CLAUDE_PLUGIN_ROOT:-}/scripts/release_evidence.py"
+evtmp="$(mktemp 2>/dev/null || printf '%s' "${TMPDIR:-/tmp}/qa-release-evidence.$$")"
+if evidence="$(python3 "$ev" stamp 2>"$evtmp")"; then
+  grep '^WARNING' "$evtmp" | sed 's/^WARNING /qa-flow: /' >&2
+else
+  why="$(grep -E '^(FAIL|unusable)' "$evtmp" 2>/dev/null | head -3 | tr '\n' ' ')"
+  rm -f "$evtmp"
+  deny "the release-only layers do not pass (#1428): ${why:-release_evidence.py could not run.} Fix them and re-certify."
+fi
+rm -f "$evtmp"
+
 # `--verify -q` prints NOTHING for a missing ref. Plain `rev-parse origin/dev` echoes the literal
 # "origin/dev" to stdout before failing, so the fallback's sha arrived on a second line and no stamp
 # could ever match in a repo without a fetched origin/dev (found by the #1337 fixtures).
@@ -130,10 +147,25 @@ if [ -n "$devsha" ]; then
       if ! delta="$(git diff --name-only "$full" "$devsha" 2>/dev/null)"; then
         deny "could not diff the certified sha ${csha:0:12} against dev ${devsha:0:12}. Fetch and retry, or re-certify."
       fi
-      case "$delta" in
-        ""|"qa/CERTIFICATION") : ;;
-        *) deny "certification is for sha ${csha:0:12}; dev (${devsha:0:12}) has changed more than the stamp since: $(printf '%s' "$delta" | head -3 | tr '\n' ' '). Re-certify before promoting." ;;
-      esac
+      # The stamp's own commit may also carry the evidence it names (#1428): the walkthrough and the
+      # sweep are recorded AFTER the tested sha, so requiring them before it would be circular.
+      # Anything else changed since the tested sha still means re-certify.
+      extra="$(printf '%s\n' "$delta" | while IFS= read -r f; do
+        [ -z "$f" ] && continue
+        [ "$f" = "qa/CERTIFICATION" ] && continue
+        ok=0
+        while IFS= read -r p; do
+          [ -n "$p" ] || continue
+          # The leading "(" matters: inside $( ) a bare `pattern)` closes the substitution.
+          case "$f" in ("$p"*) ok=1 ;; esac
+        done <<EVIDENCE
+$evidence
+EVIDENCE
+        [ "$ok" = 1 ] || printf '%s\n' "$f"
+      done)"
+      if [ -n "$extra" ]; then
+        deny "certification is for sha ${csha:0:12}; dev (${devsha:0:12}) has changed more than the stamp since: $(printf '%s' "$extra" | head -3 | tr '\n' ' '). Re-certify before promoting."
+      fi
       ;;
   esac
 else

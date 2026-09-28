@@ -604,6 +604,81 @@ def release_gate_fixtures() -> None:
         check("release-gate (#1337): a stamp for a sha that is not an ancestor of dev is denied",
               rc == 2 and "dev moved" in err, err)
 
+    # #1428. A schema-2 stamp must name a passing first-boot walkthrough and authorization sweep; its
+    # own commit may carry that evidence and nothing else. An old stamp passes, loudly, for one release.
+    fb_rows = ("Step,Width,Actor,URL,Action,Expected,Actual,Status,Notes,Screenshot,Also,Issue,Env\n"
+               "1.1,1280,root,/login,Sign in,In,In,Pass,,,,,empty db\n"
+               "1.2,390,root,/login,Sign in,In,In,Pass,,,,,empty db\n")
+    az_head = "action,location,actor_role,target_role,guard,verdict,evidence,issue\n"
+    az_good = az_head + "demote,app/models/user.rb:40,it,root,root? refusal,GUARDED,,\n"
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td)
+        _git_repo(repo)
+        sh = lambda *a: subprocess.run([*g, *a], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+        (repo / "app.rb").write_text("v1\n", encoding="utf-8")
+        sh("add", "app.rb"); sh("commit", "-q", "-m", "app")
+        tested = sh("rev-parse", "HEAD")
+        fb_dir, az_file = repo / "qa/manual-tests/first-boot-v1", repo / "qa/manual-tests/authz-v1/sweep.csv"
+        fb_dir.mkdir(parents=True); az_file.parent.mkdir(parents=True)
+        (fb_dir / "pages.csv").write_text(fb_rows, encoding="utf-8")
+        az_file.write_text(az_good, encoding="utf-8")
+        new_stamp = {"sha": tested, "date": "2026-09-28", "verdict": "PASS", "report": "qa/reports/r.md",
+                     "schema": 2, "first_boot": "qa/manual-tests/first-boot-v1",
+                     "authz": "qa/manual-tests/authz-v1/sweep.csv"}
+        (repo / "qa" / "CERTIFICATION").write_text(json.dumps(new_stamp), encoding="utf-8")
+        env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env["CLAUDE_PLUGIN_ROOT"] = str(QA_HOOK.parents[2])
+
+        def gate2() -> tuple[int, str]:
+            sh("branch", "-f", "dev", "HEAD")
+            done = subprocess.run(["bash", str(QA_HOOK)], cwd=repo, env=env, capture_output=True, text=True, timeout=60,
+                                  input=json.dumps({"tool_input": {"command": "git push origin main"}}))
+            return done.returncode, done.stderr
+
+        sh("add", "qa"); sh("commit", "-q", "-m", "stamp + evidence")
+        rc, err = gate2()
+        check("release-gate (#1428): a schema-2 stamp whose commit carries its passing evidence permits",
+              rc == 0, err)
+        az_file.write_text(az_good + "demote,app/controllers/staff.rb:88,it,root,,HOLE,forged PATCH,#1\n",
+                           encoding="utf-8")
+        sh("commit", "-q", "-am", "sweep found a hole")
+        rc, err = gate2()
+        check("release-gate (#1428): a HOLE in the sweep denies, naming the layer",
+              rc == 2 and "#1428" in err and "HOLE" in err, err)
+        az_file.write_text(az_good, encoding="utf-8")
+        (fb_dir / "pages.csv").write_text(fb_rows + "2.1,1280,root,/users/new,Create,Created,,Blocked,,,,,x\n",
+                                          encoding="utf-8")
+        sh("commit", "-q", "-am", "blocked row")
+        rc, err = gate2()
+        check("release-gate (#1428): a Blocked row with no reason denies", rc == 2 and "Blocked" in err, err)
+        (fb_dir / "pages.csv").write_text(fb_rows, encoding="utf-8")
+        (repo / "app.rb").write_text("v2\n", encoding="utf-8")
+        sh("commit", "-q", "-am", "evidence fixed, and an untested code change")
+        rc, err = gate2()
+        check("release-gate (#1428): a code change riding with the evidence is still denied, naming it",
+              rc == 2 and "app.rb" in err, err)
+        (repo / "app.rb").write_text("v1\n", encoding="utf-8")
+        evil = repo / "qa/manual-tests/first-boot-v1-other/x.rb"
+        evil.parent.mkdir(parents=True); evil.write_text("x\n", encoding="utf-8")
+        sh("add", "qa"); sh("commit", "-q", "-am", "a path that only starts like the evidence dir")
+        rc, err = gate2()
+        check("release-gate (#1428): a look-alike of the evidence path is not evidence",
+              rc == 2 and "first-boot-v1-other" in err, err)
+        sh("rm", "-q", "-r", "qa/manual-tests/first-boot-v1-other"); sh("commit", "-q", "-m", "drop it")
+        # An old stamp names no evidence, so it gets no evidence allowance: certify the current tip.
+        old_stamp = {k: v for k, v in new_stamp.items() if k in ("date", "verdict", "report")}
+        old_stamp["sha"] = sh("rev-parse", "HEAD")
+        (repo / "qa" / "CERTIFICATION").write_text(json.dumps(old_stamp), encoding="utf-8")
+        sh("commit", "-q", "-am", "an old-style stamp")
+        rc, err = gate2()
+        check("release-gate (#1428): an old stamp is grandfathered -- it permits, and says re-certify",
+              rc == 0 and "re-run /qa-flow:certify" in err.lower(), err)
+        # ...and gets NO evidence allowance: evidence files changed after an OLD stamp's sha are just
+        # changes, because an old stamp names no evidence.
+        (fb_dir / "pages.csv").write_text(fb_rows + "9,1280,a,/,x,y,z,Pass,,,,,\n", encoding="utf-8")
+        sh("commit", "-q", "-am", "evidence edited after an old stamp")
+        rc, err = gate2()
+        check("release-gate (#1428): an old stamp gets no evidence allowance", rc == 2 and "pages.csv" in err, err)
+
 
 # ---- ci-verdict-hint.sh (#1173) -----------------------------------------------------------------
 # An ADVISORY, so every fixture asserts exit 0 -- a hint that could fail the tool call would be a gate
