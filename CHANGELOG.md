@@ -3693,10 +3693,17 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     hidden `<input>` and `button_to`. Deliberate exceptions go in `.rails-flow/raw-form-exemptions.json`, each with a
     reason, and a stale exemption is a finding. Without simple_form in Gemfile.lock it exits 3 (not applicable,
     never a pass).
-  - **Measured on a downstream app.** 181 templates, 80 `simple_form_for`: it found exactly the 2 genuine
-    constructs (a `search_field_tag` in a component, a deliberate `tag.input`) and stayed silent on about 20 comment
-    mentions and every `hidden_field_tag`. 27 selftest cases, every refusal with a control; the guard catches 13
-    mutations.
+  - **Measured on a downstream app** (181 templates, 80 `simple_form_for`). It stayed silent on about 20 comment
+    mentions and every `hidden_field_tag`. It finds 4 genuine constructs:
+    - a `search_field_tag` in a component;
+    - a deliberate `tag.input`;
+    - an `f.collection_radio_buttons` and an `f.collection_check_boxes` on a builder opened by a multi-line
+      `simple_form_for`, which the first version could not see.
+
+    27 selftest cases at first merge, every refusal with a control; the guard caught 13 mutations.
+  - **Upgrading:** projects may now see findings for `f.collection_radio_buttons` / `f.collection_check_boxes` on a
+    multi-line `simple_form_for`. Use `f.input … as: :radio_buttons` / `as: :check_boxes`, or declare an exemption
+    with a reason in `.rails-flow/raw-form-exemptions.json`.
   - **Fixed before release** (the independent pre-release review ran the gate over our OWN doctrine and found 9
     shipped ERB blocks it refused). The verified rewrites of the filter panel and radio group ship in the rails-stack
     block. Here, the gate:
