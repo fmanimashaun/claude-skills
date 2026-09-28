@@ -23,3 +23,14 @@ body:
       description: "The real workflow this enables — why it belongs in this component's charter."
     validations:
       required: true
+  - type: textarea
+    id: mockup
+    attributes:
+      label: Mock-up
+      description: >
+        Would resolving this change what a user of a downstream app sees (a generated component,
+        a page anatomy, a design-flow output)? If yes, link a clickable mock-up. If no, write
+        "No visible change" and why. Almost every toolchain report is "No visible change".
+      placeholder: "No visible change: this is a hook's exit code."
+    validations:
+      required: true

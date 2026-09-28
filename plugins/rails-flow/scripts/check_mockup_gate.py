@@ -47,24 +47,36 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from classify_door import Unusable, diff  # noqa: E402  -- one diff reader, never a second
 
 UI_PATHS = (re.compile(r"^app/views/"), re.compile(r"^app/components/"), re.compile(r"^app/javascript/"),
-            re.compile(r"^app/assets/(stylesheets|tailwind)/"), re.compile(r"^app/helpers/"),
-            re.compile(r"^config/locales/"))
-# An API template is read by a client, not seen by a person.
+            re.compile(r"^app/assets/(stylesheets|tailwind|images)/"), re.compile(r"^app/helpers/"),
+            re.compile(r"^config/locales/"),
+            # What Rails 8 generates for a user to see outside app/views: the error pages, the icon,
+            # the favicon (pre-release review of #1381).
+            re.compile(r"^public/[^/]+\.(html|png|svg|ico|webmanifest)$"))
+# An API template is read by a client, not seen by a person -- except the PWA manifest, which holds
+# the installed app's name and icons.
 NOT_UI = re.compile(r"\.(json|xml)(\.[a-z]+)?$")
+SEEN_ANYWAY = re.compile(r"^app/views/pwa/")
 RECORD_DIR = "docs/product/mockups/"
 RECORD_KEYS = ("Mock-up", "Issue", "Approved-by", "Approval", "Widths", "States")
 APPROVAL_URL = re.compile(r"^https://github\.com/[^/\s]+/[^/\s]+/(issues|pull)/\d+"
                           r"#(issuecomment-\d+|discussion_r\d+|pullrequestreview-\d+)$")
+MOCK_FILE = re.compile(r"\.(html?|png|jpe?g|webp|pdf)$", re.I)
+ISSUE_REF = re.compile(r"^(#\d+|https://github\.com/[^/\s]+/[^/\s]+/issues/\d+)\b")
 OPT_OUT = re.compile(r"^\s*(?:[-*]\s*)?`?mockup-gate:\s*off`?\s*$", re.M | re.I)
 
 
 def ui_paths(paths: list[str]) -> list[str]:
-    return sorted(p for p in paths if any(r.match(p) for r in UI_PATHS) and not NOT_UI.search(p))
+    return sorted(p for p in paths if any(r.match(p) for r in UI_PATHS)
+                  and (SEEN_ANYWAY.match(p) or not NOT_UI.search(p)))
 
 
 def declared_off(root: Path) -> bool:
     g = root / "GUARDRAILS.md"
-    return g.is_file() and bool(OPT_OUT.search(g.read_text(encoding="utf-8")))
+    if not g.is_file():
+        return False
+    # A fenced example of the line documents the opt-out; it does not declare it (review of #1381).
+    text = re.sub(r"^\s*(```|~~~).*?^\s*\1\s*$", "", g.read_text(encoding="utf-8"), flags=re.M | re.S)
+    return bool(OPT_OUT.search(text))
 
 
 def record_problems(root: Path, rel: str) -> list[str]:
@@ -78,8 +90,15 @@ def record_problems(root: Path, rel: str) -> list[str]:
             fields[m.group(1)] = m.group(2)
     out = [f"{rel}: no `{k}:` line" for k in RECORD_KEYS if not fields.get(k)]
     mock = fields.get("Mock-up", "")
-    if mock and not mock.startswith("https://") and not (root / mock).is_file():
-        out.append(f"{rel}: Mock-up {mock!r} is neither an https link nor a file in the repo")
+    if mock.startswith("https://"):
+        if not re.match(r"^https://[^/\s]+\.[^/\s]+", mock):
+            out.append(f"{rel}: Mock-up {mock!r} is not a link to anything")
+    elif mock and not ((root / mock).is_file() and (mock.startswith(RECORD_DIR) or MOCK_FILE.search(mock))):
+        out.append(f"{rel}: Mock-up {mock!r} is neither an https link nor a mock-up file in the repo "
+                   f"(under {RECORD_DIR}, or an .html/.png/.jpg/.webp/.pdf)")
+    issue = fields.get("Issue", "")
+    if issue and not ISSUE_REF.match(issue):
+        out.append(f"{rel}: Issue {issue!r} must name the issue this mock-up answers (#n, or its URL)")
     approval = fields.get("Approval", "")
     if approval and not APPROVAL_URL.match(approval):
         out.append(f"{rel}: Approval must link the comment where the owner approved "
@@ -97,7 +116,8 @@ def run(root: Path, changed: list[str], record: str | None) -> tuple[int, list[s
         return 0, ["no user-visible change: no mock-up needed"]
     if declared_off(root):
         return 0, [f"{len(ui)} user-visible file(s), and GUARDRAILS.md declares `mockup-gate: off`"]
-    records = [record] if record else sorted(p for p in changed if p.startswith(RECORD_DIR) and p.endswith(".md"))
+    records = [record] if record else sorted(p for p in changed if p.startswith(RECORD_DIR) and p.endswith(".md")
+                                             and Path(p).name.lower() != "readme.md")
     if not records:
         return 1, [f"{len(ui)} user-visible file(s) ({', '.join(ui[:5])}{' …' if len(ui) > 5 else ''}) and no "
                    f"approved mock-up: publish one, stop for the owner's approval, then record it in "
@@ -136,6 +156,14 @@ def selftest() -> int:
                          "spec/models/invoice_spec.rb"]) == [])
     check_that("CONTROL: a JSON template is read by a client, not seen",
                ui_paths(["app/views/api/invoices/show.json.jbuilder"]) == [])
+    # Pre-release review of #1381: what Rails 8 generates for a user to see outside app/views.
+    check_that("a public error page is UI scope", ui_paths(["public/404.html"]) == ["public/404.html"])
+    check_that("the app icon is UI scope", ui_paths(["public/icon.png"]) == ["public/icon.png"])
+    check_that("an image asset is UI scope", ui_paths(["app/assets/images/logo.svg"]) != [])
+    check_that("the PWA manifest is UI scope although it is JSON",
+               ui_paths(["app/views/pwa/manifest.json.erb"]) == ["app/views/pwa/manifest.json.erb"])
+    check_that("CONTROL: robots.txt and a public subdirectory file are not UI scope",
+               ui_paths(["public/robots.txt", "public/assets/app-1.css"]) == [])
     check_that("a mixed change is UI scope",
                ui_paths(["app/models/invoice.rb", "app/views/invoices/_row.html.erb"]) == ["app/views/invoices/_row.html.erb"])
 
@@ -174,6 +202,20 @@ def selftest() -> int:
         code, msg = with_record(GOOD.replace("https://example.com/mockups/bell", "docs/product/mockups/bell.html"))
         check_that("CONTROL: a committed mock-up file passes", code == 0, msg)
 
+        code, msg = with_record(GOOD.replace("https://example.com/mockups/bell", "https://"))
+        check_that("a bare https:// is not a mock-up", code == 1 and any("not a link" in m for m in msg), msg)
+        (root / "GUARDRAILS.md").write_text("x\n")
+        code, msg = with_record(GOOD.replace("https://example.com/mockups/bell", "GUARDRAILS.md"))
+        check_that("an arbitrary repo file is not a mock-up", code == 1 and any("mock-up file" in m for m in msg), msg)
+        (root / "GUARDRAILS.md").unlink()
+        code, msg = with_record(GOOD.replace("Issue: #12", "Issue: the bell one"))
+        check_that("a record that names no issue is held", code == 1 and any("Issue" in m for m in msg), msg)
+        (rec / "README.md").write_text("# How mock-up records work\n")
+        code, msg = run(root, view + ["docs/product/mockups/README.md", "docs/product/mockups/bell.md"], None)
+        check_that("CONTROL: a README in the records folder is not a record", code == 0, msg)
+        (root / "GUARDRAILS.md").write_text("# Guardrails\n\nTo opt out, add:\n\n```markdown\n- mockup-gate: off\n```\n")
+        code, msg = run(root, view, None)
+        check_that("a fenced example of the opt-out line is not a declaration", code == 1, msg)
         (root / "GUARDRAILS.md").write_text("# Guardrails\n\n- mockup-gate: off\n")
         code, msg = run(root, view, None)
         check_that("a project that declared the gate off is not held", code == 0, msg)

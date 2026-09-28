@@ -16,6 +16,13 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### 2026-09-28 (release v1.152.0)
 
+- **Our own shipped ERB must pass the simple-form-only gate we ship — `scripts/check_shipped_erb_forms.py`,
+  `scripts/mutations/check_shipped_erb_forms.py`, `scripts/maintainer_doctor.py`** (#1383). The pre-release review
+  found 9 of our ERB blocks failing the gate: the gate had been measured on one downstream app and never on the text
+  agents copy from us. The check runs the gate's own `scan()` over every ```erb block under `skills/` and `plugins/`.
+  A block is excused only by an explicit `simple-form-only: primitive` marker. 5 selftest cases; the guard catches 4
+  mutations. Doctor gates "shipped ERB passes simple-form-only" and its selftest.
+
 - **Triage checks a skill-gap report against what the skill already says — `.claude/agents/issue-triager.md`,
   `.claude/commands/maintainer-work.md`, `.claude/commands/maintainer-triage.md`,
   `.claude/commands/maintainer-setup-intake.md`, `.github/labels.yml`, `.github/ISSUE_TEMPLATE/skill-gap.yml`,
@@ -71,7 +78,8 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   `validations: required: true`, which GitHub reads, so the rule fired on the first real one. A block that
   declares form fields (`- type: textarea|input|dropdown|checkboxes|markdown`) is now skipped as a whole. Its control
   fixture keeps a dead toggle in an ordinary block of the same file flagged, and a new mutation that exempts
-  every block is caught by that control (136 of 136).
+  every block is caught by that control (137 of 137 with the unterminated-block mutation). The pre-release review found that an **unterminated** yaml block (no
+  closing fence) was never judged. It is now read, with a fixture and a mutation.
 
 - **Two benchmark cases passed when the agent wrote nothing — `evals/gates.py`, `evals/selftest.py`,
   `evals/suite.json`, `scripts/mutations/evals_gates.py`** (#1374). `03-role-tokens` was gated only by
@@ -3537,6 +3545,14 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   `--blocked-by` / `--parent` (or the REST endpoints on an older `gh`) set GitHub's native links. doctrine-verifier
   CONFIRMED the sub-issue and blocked-by endpoints and the `gh issue create` flags (verdict on #1369); the design is
   the maintainer decision recorded there. 25 selftest checks; 11 mutations caught.
+  - **Fixed before release** (the independent pre-release review found 1 blocker). `slice.md` said a slice's criteria
+    become its acceptance file when `/rails-flow:feature` picks it up, and nothing in `feature.md` did that: Phase 1
+    turned every story in the spec into criteria, which would build other slices' work on one branch. `feature.md`
+    Phase 1 now takes a slice issue's `AC-n` lines verbatim as the branch's criteria, with the spec supplying only
+    the seam, Out of scope and decisions. The suggestions are fixed too: a `depends-on:` inside a plain fence is no
+    longer an edge (matching `check_issue_ready.py`); `--blocked-by` is passed for existing-issue edges as well;
+    `check_spec.py` resolves `--decisions` against `--root` and its two weak fixtures now match the finding text;
+    and a literal `\n` in `feature.md` is gone. 28 selftest checks, 12 mutations on check_slices, 11 on check_spec.
 
 - **`claude-skills-reporter` searches the installed skill before reporting a gap —
   `plugins/rails-flow/agents/claude-skills-reporter.md`** (#1386). An agent that ignored a rule looks exactly like one
@@ -3576,8 +3592,26 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   - **Our own template changes with it.** It said "Delete any section that genuinely does not apply", which the hook
     would contradict; it now says keep it and write N/A. Measured before the change: this session's own PR bodies
     lacked 7 of its 11 sections.
-  - 11 helper selftest cases and 5 end-to-end hook fixtures. Mutations: 7 of 7 on the helper, 2 new on the hook.
-    Doctor gate "rails-flow PR-template sections".
+  - At first merge: 11 helper selftest cases and 5 end-to-end hook fixtures. Doctor gate "rails-flow PR-template
+    sections". Final counts are in the next sub-bullet.
+  - **Defects the independent pre-release reviews found, fixed before release.**
+    1. A helper crash (a body with stray bytes, a directory) or a missing helper passed silently through a
+       fail-closed hook. The helper now reads bodies with `errors="replace"` and turns any failure to judge into
+       exit 3 (exit 1 means only "these sections are missing"), and the hook says "NOT checked" for anything but 0
+       or 1.
+    2. Only `## If …` counted as conditional, so a downstream template's `(if applicable)` / `(optional)` sections
+       were demanded. Conditional is now judged on the full heading.
+    3. `gh pr create -R other/repo` (or `-Rother/repo`) was judged against this checkout's template. It is now
+       reported as not checked. Only the `gh pr` segment's own flags count, so an unrelated `grep -R` in the chain
+       does not switch the check off.
+    4. Conditional is judged on the heading and its core text, so `**If** …`, `🔧 If …`, `(optional, for UI)` and
+       `Optionally …` count too.
+
+    5. `GH_REPO` (on the command or inherited) and a `|` or `-R` inside a quoted `--title` are handled, and a
+       helper that dies at import (exit 1 with nothing listed) says NOT checked, proven by a fixture that runs a
+       copy of the hook with a broken helper.
+
+    Final: the harness runs 146 checks; guards 11 of 11 on the helper and 8 of 8 on the hook.
 
 - **Every per-PR review pass saves its findings, apart from a full review's — `plugins/rails-flow/agents/code-reviewer.md`,
   `plugins/rails-flow/agents/pr-reviewer.md`, `plugins/rails-flow/agents/spec-reviewer.md`,
@@ -3640,7 +3674,24 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   - **Merge.** `pr-reviewer` BLOCKS a change a user can see unless the PR links the mock-up record, the reviewer has
     opened the approval link, and screenshots at every recorded width match the mock-up's layout, controls,
     required-field markers and navigation. A deviation needs a reason and the owner's re-approval.
-  - 11 selftest cases: 5 declared forms accepted and 6 undecided ones refused. The guard catches 8 mutations. Doctor gate
+  - 11 selftest cases: 5 declared forms accepted and 6 undecided ones refused. The guard catches 8 mutations.
+  - **Fixed before release** (the independent pre-release review found 4 blockers):
+    1. The UI-scope rule missed what Rails 8 generates outside `app/views`: `public/*.html` error pages, the icon,
+       `app/assets/images/`, and the PWA manifest. They now count.
+    2. Triage accepted any link. The owner's rule is "attached **and approved**", so `check_issue_mockup.py
+       --ready` now requires the link to the approving comment. Our `feature.yml` / `plugin-bug.yml` carry the
+       Mock-up field, as the owner named `/maintainer-setup-intake`; `/rails-flow:report`'s body carries it through
+       PR #1411 (claude-skills-dd).
+    3. Any word ending in `.md` read as a mock-up ("TBD, see notes.md"). A link is now an https URL with a host,
+       a record under `docs/product/mockups/`, or a mock-up file.
+    4. `pr-reviewer` ran the gate on the checkout's diff, so a reviewer on `dev` saw "no user-visible change" for
+       every PR. It now runs the gate at the PR head, in a throwaway worktree, so the files, the record and the
+       opt-out it judges are all the PR's.
+
+    The review's suggestions are fixed here too: a bare `https://` or any repo file is no longer a mock-up; a
+    record must name its issue; a README in the records folder is not a record; a fenced example of
+    `mockup-gate: off` does not turn the gate off; and feature.md no longer records "on the branch" before Phase 2
+    creates it. New selftest cases with controls. Guards: 17 of 17 on the gate, 10 of 10 on the issue check. Doctor gate
     "rails-flow issue mock-up declaration".
 
 - **The simple_form mandate is a project gate, `simple-form-only`, not an agent's grep — `plugins/rails-flow/scripts/check_simple_form_only.py`,
@@ -3658,10 +3709,29 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     hidden `<input>` and `button_to`. Deliberate exceptions go in `.rails-flow/raw-form-exemptions.json`, each with a
     reason, and a stale exemption is a finding. Without simple_form in Gemfile.lock it exits 3 (not applicable,
     never a pass).
-  - **Measured on a downstream app.** 181 templates, 80 `simple_form_for`: it found exactly the 2 genuine
-    constructs (a `search_field_tag` in a component, a deliberate `tag.input`) and stayed silent on about 20 comment
-    mentions and every `hidden_field_tag`. 27 selftest cases, every refusal with a control; the guard catches 13
-    mutations.
+  - **Measured on a downstream app** (181 templates, 80 `simple_form_for`). It stayed silent on about 20 comment
+    mentions and every `hidden_field_tag`. It finds 4 genuine constructs:
+    - a `search_field_tag` in a component;
+    - a deliberate `tag.input`;
+    - an `f.collection_radio_buttons` and an `f.collection_check_boxes` on a builder opened by a multi-line
+      `simple_form_for`, which the first version could not see.
+
+    27 selftest cases at first merge, every refusal with a control; the guard caught 13 mutations.
+  - **Upgrading:** projects may now see findings for `f.collection_radio_buttons` / `f.collection_check_boxes` on a
+    multi-line `simple_form_for`. Use `f.input … as: :radio_buttons` / `as: :check_boxes`, or declare an exemption
+    with a reason in `.rails-flow/raw-form-exemptions.json`.
+  - **Fixed before release** (the independent pre-release review ran the gate over our OWN doctrine and found 9
+    shipped ERB blocks it refused). The verified rewrites of the filter panel and radio group ship in the rails-stack
+    block. Here, the gate:
+    - A read-only input with no `name` is a display (a copyable API key), not a field. The tag is read with ERB
+      inside it skipped, so `value="<%= @url %>"` does not hide its `readonly`.
+    - The Checkbox and Combobox primitives carry a `simple-form-only: primitive` marker, and prose giving the
+      exemption row a project declares.
+    - Suggestions fixed: a multi-line `simple_form_for` no longer hides its builder; an exemption's optional `match`
+      narrows it to one control, so it does not exempt later violations in the file; `"exemptions": null` is
+      unusable, not a crash.
+
+    The guard catches 19 mutations.
 
 - **A change a user can see waits for an owner-approved clickable mock-up, whatever the issue's label —
   `plugins/rails-flow/scripts/check_mockup_gate.py`, `plugins/rails-flow/scripts/mutations/check_mockup_gate.py`,
@@ -15925,6 +15995,29 @@ boot/validation path — with a bullet each so the promotion could close them se
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
 ### 1.69.0 (release v1.152.0) — 2026-09-28
+
+- **The design-system's own filter panel and billing radio group now use simple_form — `skills/design-system/references/component-implementations.md`,
+  `skills/design-system/references/page-anatomies.md`, `dist/design-system.skill`** (#1383, a framework claim).
+  - **Why.** The independent pre-release review ran the new `simple-form-only` gate over our own ERB. The filter
+    panel (`<form method="get">` with `check_box_tag`), its category anatomy, and the billing radio group
+    (`f.radio_button` / `f.label` inside `simple_form_for`) all failed it. An app copying them exactly would have
+    gone red on a rule we ship.
+  - **The fix.** The filter is `simple_form_for :filter, url:, method: :get, as: ""` with one
+    `f.input …, as: :check_boxes` per facet. `as: ""` drops the `filter[…]` namespace, so facets post as
+    `color[]=red`. The radio group is `f.input :default_method_id, as: :radio_buttons` with a lambda
+    `label_method` returning `safe_join`, which keeps the brand mark, "ending 4242" and the expiry. **Remove**
+    moves outside the form, because `button_to` generates a form of its own and HTML forbids a form inside a form.
+  - **doctrine-verifier CONFIRMED** all four claims, against simple_form **v5.3.1** and actionview **8.1.1**:
+    - `lib/simple_form/action_view_extensions/form_helper.rb:14-25` forwards to `form_for`, whose symbol record
+      becomes the scope (`form_helper.rb:438-441`), and a blank `as:` drops it (`form_helper.rb:1797-1801`,
+      `form_tag_helper.rb:131-142`);
+    - `CollectionCheckBoxesInput` posts an array (`tags/collection_check_boxes.rb:31-33`), with `checked:`,
+      `item_wrapper_tag` and `label_method`/`value_method` (README "label_method … accept lambda/procs");
+    - an html-safe `label_method` renders unescaped (`tags/label.rb:59-68`);
+    - `button_to` "Generates a form" (`url_helper.rb:210-211`), and the WHATWG form content model is "no form
+      element descendants".
+
+    Boundary: simple_form 5.x.
 
 - **The quality-pass worked example's `check(label, ok, detail)` count is refreshed to 40 — `skills/quality-pass/references/worked-example.md`,
   `dist/quality-pass.skill`** (#1367). The new copy is `plugins/qa-flow/scripts/text_resize.py`; reach stays 21. It reuses
