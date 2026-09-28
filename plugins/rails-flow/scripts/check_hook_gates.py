@@ -484,6 +484,32 @@ def guard_claims_fixtures() -> None:
     check("guard-claims: the attached form -Rother/repo is another repository too",
           run("gh pr create -Rother/repo --base dev --body-file BODY", "## What changed\nx\n",
               template=TPL) == 0, "exit 2")
+    # Third pre-release review: a helper that dies AT IMPORT exits 1 with nothing listed. Run a COPY of
+    # the hook whose helper cannot import, so the branch that says so is proven reachable.
+    with tempfile.TemporaryDirectory() as hd:
+        copy = Path(hd) / "scripts"
+        shutil.copytree(HOOKS, copy)
+        (copy / "lib" / "pr_template.py").write_text("import nonexistent_module_for_the_fixture\n", encoding="utf-8")
+        with tempfile.TemporaryDirectory() as td:
+            (Path(td) / ".github").mkdir()
+            (Path(td) / ".github" / "pull_request_template.md").write_text(TPL, encoding="utf-8")
+            (Path(td) / "body.md").write_text("## What changed\nx\n", encoding="utf-8")
+            env = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])}
+            env.pop("GH_REPO", None)
+            broke = subprocess.run(["bash", str(copy / "guard-claims.sh")], cwd=td, env=env, text=True,
+                                   capture_output=True, timeout=60,
+                                   input=json.dumps({"tool_input": {"command": f"gh pr create --base dev --body-file {td}/body.md"}}))
+    check("guard-claims: a helper that fails at import says NOT checked, never silence",
+          "NOT checked" in broke.stdout + broke.stderr, f"exit {broke.returncode}: {(broke.stdout + broke.stderr)[-120:]}")
+    check("guard-claims: `-R` inside a quoted --title is text, so the body is still judged",
+          run("gh pr create --title 'fix grep -R bug' --base dev --body-file BODY", "## What changed\nx\n",
+              template=TPL) == 2, "exit 0")
+    check("guard-claims: GH_REPO=other/repo targets another repository",
+          run("GH_REPO=o/r gh pr create --base dev --body-file BODY", "## What changed\nx\n", template=TPL) == 0,
+          "exit 2")
+    check("guard-claims: a | inside a quoted title does not hide a later -R",
+          run("gh pr create --title 'a|b' -R o/r --body-file BODY", "## What changed\nx\n", template=TPL) == 0,
+          "exit 2")
     check("guard-claims: an issue comment is not held to the PR template",
           run("gh issue comment 5 --body-file BODY", "Tidy the README.\n", template=TPL) == 0, "exit 2")
     # OUT OF SCOPE, AND THE BODY MUST CARRY A CLAIM. A first draft passed a claim-FREE body here,

@@ -3523,9 +3523,9 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   - **Our own template changes with it.** It said "Delete any section that genuinely does not apply", which the hook
     would contradict; it now says keep it and write N/A. Measured before the change: this session's own PR bodies
     lacked 7 of its 11 sections.
-  - 11 helper selftest cases and 5 end-to-end hook fixtures. Mutations: 7 of 7 on the helper, 2 new on the hook.
-    Doctor gate "rails-flow PR-template sections".
-  - **Three defects the independent pre-release review found, fixed before release.**
+  - At first merge: 11 helper selftest cases and 5 end-to-end hook fixtures. Doctor gate "rails-flow PR-template
+    sections". Final counts are in the next sub-bullet.
+  - **Defects the independent pre-release reviews found, fixed before release.**
     1. A helper crash (a body with stray bytes, a directory) or a missing helper passed silently through a
        fail-closed hook. The helper now reads bodies with `errors="replace"` and turns any failure to judge into
        exit 3 (exit 1 means only "these sections are missing"), and the hook says "NOT checked" for anything but 0
@@ -3538,7 +3538,11 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     4. Conditional is judged on the heading and its core text, so `**If** …`, `🔧 If …`, `(optional, for UI)` and
        `Optionally …` count too.
 
-    6 more end-to-end hook fixtures (the harness runs 142 checks); guards: 11 of 11 on the helper, 6 of 6 on the hook.
+    5. `GH_REPO` (on the command or inherited) and a `|` or `-R` inside a quoted `--title` are handled, and a
+       helper that dies at import (exit 1 with nothing listed) says NOT checked, proven by a fixture that runs a
+       copy of the hook with a broken helper.
+
+    Final: the harness runs 146 checks; guards 11 of 11 on the helper and 8 of 8 on the hook.
 
 - **Every per-PR review pass saves its findings, apart from a full review's — `plugins/rails-flow/agents/code-reviewer.md`,
   `plugins/rails-flow/agents/pr-reviewer.md`, `plugins/rails-flow/agents/spec-reviewer.md`,

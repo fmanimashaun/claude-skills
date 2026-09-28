@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Which of the repo's PR-template sections a PR body is missing (#1389). Called by guard-claims.sh.
 
-Run:  pr_template.py <repo-root> <body-file>   # prints each missing heading; exit 1 if any, 0 if none
+Run:  pr_template.py <repo-root> <body-file>   # exit 0 clean · 1 prints each missing heading ·
+                                               # 2 usage · 3 could not judge (the hook says NOT checked)
       pr_template.py --selftest
 
 Exit 0 also when the repo has no PR template: the rule is the project's own template, and a
@@ -127,9 +128,13 @@ def selftest() -> int:
         (d / ".github").mkdir()
         (d / ".github/pull_request_template.md").write_text("## What changed\n")
         (d / "stray.md").write_bytes(b"\xff\xfe## What changed\nx\n")
-        check_that("a body with stray bytes is still judged (not a crash)", main([str(d), str(d / "stray.md")]) in (0, 1))
-        check_that("a body that cannot be read is exit 3 (not judged), never exit 1",
-                   main([str(d), str(d / "no-such-dir")]) == 3 and main([str(d), str(d)]) == 3)
+        import contextlib, io
+        with contextlib.redirect_stdout(io.StringIO()):
+            stray_rc = main([str(d), str(d / "stray.md")])
+        check_that("a body with stray bytes is still judged (not a crash)", stray_rc in (0, 1))
+        with contextlib.redirect_stderr(io.StringIO()):
+            unread = (main([str(d), str(d / "no-such-dir")]), main([str(d), str(d)]))
+        check_that("a body that cannot be read is exit 3 (not judged), never exit 1", unread == (3, 3), unread)
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
