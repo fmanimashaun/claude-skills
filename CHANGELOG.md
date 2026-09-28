@@ -15895,6 +15895,57 @@ boot/validation path — with a bullet each so the promotion could close them se
   the proposed "Ruby 3.2+, Rails 7.2+" floor was REFUTED (gemspec: Ruby >= 3.1, Rails >= 7.1, < 9), so the
   doctrine states the tested Rails set instead. The "when to adopt" rule is our design: maintainer decision
   recorded on #1365.
+  - **The separate-database install is corrected before it ships (promotion review).**
+    - **The old commands created nothing.** `rails_pulse:install --database=separate` only *prints* the
+      wiring (rails_pulse 0.4.1 `install_generator.rb:68-99`).
+    - **§7 now gives the wiring:** the `rails_pulse:` `database.yml` entry (`migrations_paths:
+      db/rails_pulse_migrate`, `schema_dump: false`) and `config.connects_to = { database: { writing:
+      :rails_pulse, reading: :rails_pulse } }`.
+    - **It names what the gem's message omits.** An environment is multi-database only when every key under
+      it is a database entry (activerecord `database_configurations.rb`, `config.values.all?(Hash)`), so a
+      flat `development:` / `test:` block must move under `primary:`. Skipped, `db:prepare` either aborts with
+      `AdapterNotSpecified` (with `connects_to`) or writes all ten Pulse tables into the **primary**
+      (without it).
+    - **It adds a check that tells the two apart:** `RailsPulse::ApplicationRecord.connection_db_config.name`
+      must print `"rails_pulse"`. It printed `"primary"` on the misconfigured app.
+    - **The first install runs in a measured order:** `db:prepare` (development and test),
+      `rails_pulse:upgrade`, then `db:migrate:rails_pulse` in both. The upgrade generator copies nothing
+      until the Pulse tables exist, and `rails_pulse:status` stays at 1 until the migrations are copied and run.
+    - **Load the schema only into an EMPTY Pulse database, guarded, for every environment before any
+      `db:prepare`.** On an empty database, `db:prepare` runs the copied migrations before the gem's
+      schema-load hook and aborts ("Could not find table 'rails_pulse_operations'"). That hits every fresh
+      clone, CI run and first deploy. On a populated database, `db:schema:load_rails_pulse` marks *every*
+      copied migration applied without running it, so a pending one is skipped while `status` reads 0. §7's
+      loop counts the gem's ten tables. It loads only when none exist (exit 3), skips when all exist (exit 0),
+      and aborts when some exist or the check fails. The load records every copied migration as applied, so on
+      a database with any Pulse tables it would skip pending migrations. That includes a populated one whose
+      pending upgrade adds a table. §7 gives the repair for the abort: `db:migrate:rails_pulse` for an upgrade
+      in progress, or dropping an empty, partly created Pulse database. The loop covers test in development,
+      because `db:prepare` in development also prepares test.
+    - **The upgrade warnings are quoted and scoped to 0.4.0**, as upstream states them (`CHANGELOG.md:44,46`):
+      restart every process together, not as a rolling deploy; and do not run `db:setup` / `db:prepare` in
+      place of `db:migrate:rails_pulse`. On an entrypoint that runs `db:prepare` at boot, that migration runs
+      as a release step before the new version boots.
+    - **Who verified what:**
+      - doctrine-verifier CONFIRMED the generator and CHANGELOG claims against rails_pulse 0.4.1 (Rails
+        8.0.5.1 app).
+      - An independent reviewer ran §7 literally on fresh Rails 8.1.4 and 8.0.5.1 apps. It BLOCKED three
+        times: the flat-block and `status` claims; the empty-database abort; then the upgrade-before-tables
+        order and the load-on-a-populated-database skip.
+      - The author then ran both shell blocks verbatim on Rails 8.1.4, from nothing, from a fresh clone, and
+        on a populated database with a pending migration and a row. Every block exited 0, the migration was
+        applied, and the row survived. An unguarded-load control reproduced the silent skip. After the
+        reviewer's fourth pass (CLEAN, with advisories), the guard was first hardened to "load unless all ten
+        exist". A narrow re-check BLOCKED that (reproduced): it silently skipped the column migrations of an
+        upgrade that also adds a table. The guard is now none/all/some. The author re-ran it verbatim on Rails
+        8.1.4 in each state:
+        - fresh clone: exit 0;
+        - populated with a pending migration and a row: exit 0, applied, row kept, nothing marked;
+        - upgrade adding a table: exit 4, nothing marked; `db:migrate:rails_pulse` repairs it and the row
+          survives;
+        - partial first load: exit 4; drop and re-run gives exit 0;
+        - a failing check: exit 1, no load.
+      - PostgreSQL and MySQL were not run.
 
 ### 1.68.3 (release v1.151.0) — 2026-09-26
 
