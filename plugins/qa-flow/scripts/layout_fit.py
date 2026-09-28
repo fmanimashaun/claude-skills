@@ -256,7 +256,8 @@ def same_page(requested: str, landed: str) -> bool:
     from urllib.parse import parse_qsl
     ask = sorted(parse_qsl(requested.split("#", 1)[0].partition("?")[2], keep_blank_values=True))
     got = sorted(parse_qsl(landed.split("#", 1)[0].partition("?")[2], keep_blank_values=True))
-    return not ask or ask == got
+    from collections import Counter
+    return not (Counter(ask) - Counter(got))   # every requested parameter survived; extras are the app's
 
 
 def has_affordance(row: dict) -> bool:
@@ -671,6 +672,8 @@ def selftest() -> int:
           judge(doc(row(), route="/requests?page=2", landed="/requests?page=2")).redirected == [])
     check("...in any parameter order",
           judge(doc(row(), route="/requests?b=2&a=1", landed="/requests?a=1&b=2")).redirected == [])
+    check("a parameter the app ADDS on arrival is still arrival",
+          judge(doc(row(), route="/requests?a=1", landed="/requests?a=1&utm=x")).redirected == [])
     check("a redirect that DROPS the query is still a redirect",
           judge(doc(row(), route="/reports?tab=archived", landed="/reports")).redirected != [])
     check("a trailing slash is not a redirect",

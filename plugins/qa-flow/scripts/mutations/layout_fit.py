@@ -19,8 +19,14 @@ GUARD = Guard(
     mutations=(
         # #1395 review: `landedOn` is a pathname, so the requested route is compared as one too.
         Mutation(
-            "a redirect that drops the query reads as arrival",
+            "arrival demands the exact query, so a parameter the app adds reads as a redirect",
+            "    return not (Counter(ask) - Counter(got))   # every requested parameter survived; extras are the app's",
             "    return not ask or ask == got",
+            "a parameter the app ADDS on arrival is still arrival",
+        ),
+        Mutation(
+            "a redirect that drops the query reads as arrival",
+            "    return not (Counter(ask) - Counter(got))   # every requested parameter survived; extras are the app's",
             "    return True",
             "a redirect that DROPS the query is still a redirect",
         ),
