@@ -28,5 +28,18 @@ GUARD = Guard(
             "        if shown.returncode == 0 and carries(shown.stdout, plugin, version):\n            found = tag",
             "first tag carrying a version",
         ),
+        # #1411 review: the triager reads stdout; a tag printed anywhere else reads as "no release".
+        Mutation(
+            "the tag is printed to stderr, so the triager's $(...) captures nothing",
+            "    print(tag)\n    return 0",
+            "    print(tag, file=sys.stderr)\n    return 0",
+            "main(): the tag is printed on stdout",
+        ),
+        Mutation(
+            "a version matches by prefix",
+            'p.get("version") == version\n',
+            'str(p.get("version", "")).startswith(version)\n',
+            "a near-miss version is not a match",
+        ),
     ),
 )

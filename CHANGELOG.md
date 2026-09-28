@@ -24,7 +24,8 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   MARKETPLACE version the report pinned, which is the machine's clone: v1.148.0 carries rails-stack 1.68.0 while
   fidara-ledger runs 1.63.0, so a rule added since would read as a lapse. It now maps the project's rails-stack
   version to the first release that carried it, with new `scripts/skill_version_tag.py` (1.63.0 → v1.138.0; a
-  selftest of 8 checks, a guard catching 3 of 3 mutations including lexical tag order, and a doctor gate). It also
+  selftest of 11 checks driven through `main()`, a guard catching 5 of 5 mutations including lexical tag
+  order and a tag printed to stderr, and a doctor gate). It also
   searches only after the tag and path both resolve, since a typo'd skill also returns no hit. "Fixed since" gets
   `needs-info`. The relabel is one `--remove-label`/`--add-label` command, so an issue never carries two `type:*`
   labels. The web template now asks for the rails-stack version, and the queue table marks a lapse.

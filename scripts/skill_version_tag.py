@@ -15,7 +15,10 @@ Exit: 0 printed a tag · 1 no release carries that version · 2 cannot read the 
 """
 from __future__ import annotations
 
+import contextlib
+import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -117,6 +120,28 @@ def selftest() -> int:
         check("version sort, not lexical", first_tag(repo, "rails-stack", "1.68.0") == "v1.9.0",
               first_tag(repo, "rails-stack", "1.68.0"))
         check("an unshipped version is None", first_tag(repo, "rails-stack", "9.9.9") is None)
+        # Exact match only: a version that merely starts like a shipped one is not it.
+        check("a near-miss version is not a match", first_tag(repo, "rails-stack", "1.63") is None)
+
+        # Through main(), as the triager calls it: the tag must be on STDOUT, because the triager
+        # captures stdout with $(...). A tag on stderr reads as "no release" and the search
+        # silently falls back to dev.
+        def run_main(*args: str) -> tuple[int, str, str]:
+            out, err = io.StringIO(), io.StringIO()
+            here = Path.cwd()
+            try:
+                os.chdir(repo)
+                with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                    rc = main(["skill_version_tag.py", *args])
+            finally:
+                os.chdir(here)
+            return rc, out.getvalue().strip(), err.getvalue()
+
+        rc, out, _ = run_main("rails-stack", "1.63.0")
+        check("main(): the tag is printed on stdout, exit 0", (rc, out) == (0, "v1.2.0"), (rc, out))
+        rc, out, err = run_main("rails-stack", "9.9.9")
+        check("main(): an unshipped version exits 1 with nothing on stdout",
+              (rc, out) == (1, "") and "9.9.9" in err, (rc, out, err))
         check("a tag with no manifest is skipped, not fatal",
               first_tag(repo, "rails-stack", "1.63.0") is not None)
 
