@@ -3501,6 +3501,14 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   `--blocked-by` / `--parent` (or the REST endpoints on an older `gh`) set GitHub's native links. doctrine-verifier
   CONFIRMED the sub-issue and blocked-by endpoints and the `gh issue create` flags (verdict on #1369); the design is
   the maintainer decision recorded there. 25 selftest checks; 11 mutations caught.
+  - **Fixed before release** (the independent pre-release review found 1 blocker). `slice.md` said a slice's criteria
+    become its acceptance file when `/rails-flow:feature` picks it up, and nothing in `feature.md` did that: Phase 1
+    turned every story in the spec into criteria, which would build other slices' work on one branch. `feature.md`
+    Phase 1 now takes a slice issue's `AC-n` lines verbatim as the branch's criteria, with the spec supplying only
+    the seam, Out of scope and decisions. The suggestions are fixed too: a `depends-on:` inside a plain fence is no
+    longer an edge (matching `check_issue_ready.py`); `--blocked-by` is passed for existing-issue edges as well;
+    `check_spec.py` resolves `--decisions` against `--root` and its two weak fixtures now match the finding text;
+    and a literal `\n` in `feature.md` is gone. 28 selftest checks, 12 mutations on check_slices, 11 on check_spec.
 
 - **`claude-skills-reporter` searches the installed skill before reporting a gap —
   `plugins/rails-flow/agents/claude-skills-reporter.md`** (#1386). An agent that ignored a rule looks exactly like one
