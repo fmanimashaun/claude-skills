@@ -107,17 +107,19 @@ not style — the downstream QA flow depends on it.
 
 ## Record every finding (#1360)
 
-Before the report, append one JSONL record per finding to `docs/evidence/reviews/prs/<branch-slug>/findings.jsonl`, in the shared shape that
-`findings.py` enforces, with `"pass": "pr-reviewer"`. Give each a stable `signature` for the *defect*, not
+Before the report, **write this round's records** to `docs/evidence/reviews/prs/<branch-slug>/pr-reviewer-findings.jsonl`, one JSONL record per finding, in the shared
+shape that `findings.py` enforces, with `"pass": "pr-reviewer"`. Give each a stable `signature` for the *defect*, not
 the line (`missing-tenant-scope:InvoicesController#show`), so the same defect found on two PRs has
 one name. Then validate:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/findings.py" validate "docs/evidence/reviews/prs/<branch-slug>/findings.jsonl"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/findings.py" validate "docs/evidence/reviews/prs/<branch-slug>/pr-reviewer-findings.jsonl"
 ```
 
-The file is committed on the branch with the fix. **That is what makes the finding outlive the
-session**: a finding reported only in the conversation is gone when the session ends, so nothing can
+`<branch-slug>` is the branch name with each `/` replaced by `-` (`fix/invoice-total` → `fix-invoice-total`). The file belongs to this pass alone, and each review round **replaces** it: a finding fixed in
+round one must not read as current in round two. The earlier round is not lost, because the file is
+committed on the branch with each round's fix, so `git log -p` on it holds every round. **That is
+what makes the finding outlive the session**: a finding reported only in the conversation is gone when the session ends, so nothing can
 ever count how often it recurs. Per-PR records live under `prs/`, apart from a full review's dated
 file, because `/rails-flow:issues` and `/rails-flow:fix` file and fix from the dated file, and a
 finding already fixed on its branch must not be filed again.
