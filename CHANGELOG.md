@@ -3491,14 +3491,23 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 - **`guard-bash` checks an issue's labels against the repository it is filed in, not the session's —
   `plugins/rails-flow/hooks/scripts/lib/issue_labels.py`, `scripts/mutations/hook_issue_labels.py`,
-  `plugins/rails-flow/scripts/check_hook_gates.py`** (#1400). `cd /path/to/other-repo && gh issue create ...` from
-  one checkout was held to the session's `.rails-flow/issue-labels.json`. It refused a correctly labelled issue and
-  asked for labels the other repo does not have. Each create is now tied to the directory it runs in: a `cd` earlier
-  in the same command (after `&&` or `;`, or in a subshell) moves it, and that directory's git toplevel supplies
-  the declaration. A `cd` it cannot resolve (a `$VAR`, a missing path) is refused and named rather than guessed.
-  `-R/--repo` is unchanged: it never applied the session's groups, and an existing fixture already pins that
-  ("another repo: one label is enough"). Our own hook, a bug fix; the -R finding is recorded on #1400. 11 new
-  selftest cases, 3 end-to-end hook fixtures; 4 new mutations (13 of 13 caught).
+  `plugins/rails-flow/scripts/check_hook_gates.py`** (#1400).
+  - **The bug.** `cd /path/to/other-repo && gh issue create ...` from one checkout was held to the session's
+    `.rails-flow/issue-labels.json`. It refused a correctly labelled issue and asked for labels the other repo does
+    not have.
+  - **The fix.** Each create is tied to the directory it certainly runs in, and that directory's git toplevel supplies
+    the declaration. A `cd` is followed only when it certainly ran first, in the same shell. It is refused, never
+    guessed, when:
+    - the `cd` is inside `( … )` (the create after the `)` is judged in the session), in a pipeline, or behind `&`;
+    - it is `cd -`, `popd` or a `$VAR`;
+    - it may never have run (a conditional `cd` before a `;`), or the create runs only if the `cd` failed (`||`).
+  - **Also handled:** newlines separate commands; `pushd`, `builtin cd` and `command cd` move like `cd`; glued
+    punctuation such as `);` is split. Unsplit, it hid the create entirely, and an unseen create was let through.
+  - **`-R` / `GH_REPO`.** A repo named that way decides where the issue lands. If it is the session's own, the
+    session's rules apply from any directory. A foreign one still needs one label, as before; it never applied the
+    session's groups. The -R finding is recorded on #1400.
+  - **Tests.** 28 new selftest cases and 3 end-to-end hook fixtures. Mutations: 15 new, 24 of 24 caught. An
+    independent review found the subshell, `cd -` and `-R` holes before merge.
 
 - **`/rails-flow:slice` breaks a spec, brief or issue into dependency-ordered vertical slices and files them —
   `plugins/rails-flow/commands/slice.md`, `plugins/rails-flow/scripts/check_slices.py`,

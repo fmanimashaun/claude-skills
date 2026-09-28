@@ -14,8 +14,8 @@ GUARD = Guard(
         # #1336: a heredoc body is tokenised again, so prose apostrophes refuse a labelled create.
         Mutation(
             "heredoc bodies are no longer stripped before tokenising",
-            "    cmd = strip_heredocs(cmd)\n",
-            "",
+            "    cmd = strip_heredocs(cmd).replace(",
+            "    cmd = (cmd).replace(",
             "a heredoc body with apostrophes does not break a labelled create",
         ),
         Mutation(
@@ -56,8 +56,8 @@ GUARD = Guard(
         ),
         Mutation(
             "only the first segment of a compound command is read",
-            "                    out.append((seg[i + 3:], cd))\n                    break\n            cur = []",
-            "                    out.append((seg[i + 3:], cd))\n                    break\n            break",
+            "    for k, (kind, val) in enumerate(items):",
+            "    for k, (kind, val) in enumerate(items[:1]):",
             "a create later in a compound command is checked",
         ),
         # #1400: the declaration is the TARGET repository's, not the session's.
@@ -69,8 +69,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a cd is no longer tracked, so the create is judged where the session stands",
-            "            if seg and seg[0] == \"cd\":",
-            "            if False:",
+            "        if seg and seg[0] in (\"cd\", \"pushd\", \"popd\"):",
+            "        if False:",
             "cd into another repo: that repo's declaration applies, and passes",
         ),
         Mutation(
@@ -81,9 +81,76 @@ GUARD = Guard(
         ),
         Mutation(
             "an unresolvable cd is guessed instead of refused",
-            "    if \"$\" in cd or \"`\" in cd:",
-            "    if False:",
+            '                    or "$" in target or "`" in target or cd == UNKNOWN:',
+            "                    or cd == UNKNOWN:",
             "a cd to a variable is refused, not guessed",
+        ),
+        # #1400 review: each way an uncertain cd would be GUESSED instead of refused.
+        Mutation(
+            "glued punctuation is left as one word, so the create after `);` vanishes",
+            "        if tok and set(tok) <= set(\";&|()\"):\n            i = 0",
+            "        if False:\n            i = 0",
+            "refused: a glued `)&&` still splits",
+        ),
+        Mutation(
+            "a subshell's cd outlives its closing parenthesis",
+            "            elif stack:\n                cd, conditional = stack.pop()",
+            "            elif stack:\n                stack.pop()",
+            "refused: a subshell cd ends at its )",
+        ),
+        Mutation(
+            "a cd in a pipeline is followed",
+            '            if before in ("|", "&") or after in ("|", "&") or seg[0] == "popd" or target == "-" \\',
+            '            if seg[0] == "popd" or target == "-" \\',
+            "refused: a cd in a pipeline",
+        ),
+        Mutation(
+            "cd - is read as a directory",
+            '            if before in ("|", "&") or after in ("|", "&") or seg[0] == "popd" or target == "-" \\',
+            '            if before in ("|", "&") or after in ("|", "&") or seg[0] == "popd" \\',
+            "refused: cd - names no visible directory",
+        ),
+        Mutation(
+            "a conditional cd is trusted past a ;",
+            "            if val == \";\" and conditional:\n                cd, conditional = UNKNOWN, False",
+            "            if False:\n                cd, conditional = UNKNOWN, False",
+            "refused: a cd that may never have run",
+        ),
+        Mutation(
+            "a create after `cd x ||` is judged in x",
+            '            if after == "||":\n                cd = UNKNOWN',
+            '            if False:\n                cd = UNKNOWN',
+            "refused: a create that runs only if the cd failed",
+        ),
+        Mutation(
+            "-R naming the session's own repo takes the cd's rules again",
+            "        if repo is not None and session_repo is not None and repo == session_repo:",
+            "        if False:",
+            "refused: -R naming the session's own repo keeps its rules",
+        ),
+        Mutation(
+            "a GH_REPO prefix is ignored",
+            "        repo = repo or env_repo",
+            "        repo = repo",
+            "refused: GH_REPO naming the session's own repo keeps its rules",
+        ),
+        Mutation(
+            "newlines stop separating commands",
+            '    cmd = strip_heredocs(cmd).replace("\\\\\\n", " ").replace("\\n", " ; ")',
+            "    cmd = strip_heredocs(cmd)",
+            "a newline separates commands",
+        ),
+        Mutation(
+            "a newline after && breaks the chain",
+            '            if val == ";" and op_at(k - 1) in ("&&", "||", "|"):\n                continue',
+            '            if False:\n                continue',
+            "a newline after && continues the chain",
+        ),
+        Mutation(
+            "builtin cd is not recognised as cd",
+            '        while seg and seg[0] in ("builtin", "command"):\n            seg.pop(0)',
+            '        while False:\n            seg.pop(0)',
+            "builtin cd is cd",
         ),
         Mutation(
             "another repo's issue is held to this project's groups",

@@ -68,34 +68,107 @@ def strip_heredocs(cmd: str) -> str:
     return "\n".join(out)
 
 
-def issue_creates(cmd: str) -> list[tuple[list[str], str | None]]:
-    """(argv, the `cd` target in force) for every `gh issue create`, split on shell operators.
+UNKNOWN = "\0unknown"   # a cd whose effect on the create cannot be known from the text
 
-    The `cd` target is the raw operand of the last `cd` before the create, or None when there was
-    none. Subshell parentheses are peeled off, so `(cd x && gh issue create ...)` reads the same.
+
+def issue_creates(cmd: str) -> list[tuple[list[str], str | None, str | None]]:
+    """(argv, the directory in force, a GH_REPO prefix) for every `gh issue create` in the command.
+
+    The directory is None (the session's), a literal `cd` operand, or UNKNOWN. A `cd` is FOLLOWED
+    only when it certainly ran before the create, in the same shell. Anything less is UNKNOWN,
+    which the caller refuses, because a guess applies one repo's rules to another's issue -- the
+    defect itself (#1400). So:
+      * a `cd` inside `( … )` ends at the `)`;
+      * a `cd` in a pipeline or behind `&` runs in a subshell (or, in zsh, might not): UNKNOWN;
+      * a `cd` after `&&`/`||` holds for creates chained to it by `&&`, and is UNKNOWN past a
+        later `;` or newline, where it may never have run; a create after `cd x ||` is UNKNOWN;
+      * `cd -`, `popd` and a `$VAR` operand name no directory the text can see: UNKNOWN;
+      * `pushd` moves like `cd`; `builtin cd` and `command cd` are `cd`.
     """
-    cmd = strip_heredocs(cmd)
+    cmd = strip_heredocs(cmd).replace("\\\n", " ").replace("\n", " ; ")
     try:
-        lexer = shlex.shlex(cmd, posix=True, punctuation_chars=";&|")
+        lexer = shlex.shlex(cmd, posix=True, punctuation_chars=";&|()")
         lexer.whitespace_split = True
         tokens = list(lexer)
     except ValueError:
-        return [(["__unparseable__"], None)]
-    out, cur, cd = [], [], None
-    for tok in tokens + [";"]:
-        if tok and set(tok) <= set(";&|"):
-            seg = [x.strip("()") for x in cur]
-            seg = [x for x in seg if x]
-            if seg and seg[0] == "cd":
-                target = next((x for x in seg[1:] if not x.startswith("-")), "~")
-                cd = target if cd is None or target.startswith(("/", "~", "$")) else f"{cd}/{target}"
-            for i in range(len(seg) - 2):
-                if seg[i] == "gh" and seg[i + 1] == "issue" and seg[i + 2] == "create":
-                    out.append((seg[i + 3:], cd))
-                    break
-            cur = []
+        return [(["__unparseable__"], None, None)]
+    # shlex GLUES adjacent punctuation: `);` and `)&&` arrive as one token. Unsplit, such a token
+    # read as a word, and the `gh issue create` after it vanished -- and a create nobody sees is a
+    # create let through. So every punctuation run is split into shell operators here.
+    split: list[str] = []
+    for tok in tokens:
+        if tok and set(tok) <= set(";&|()"):
+            i = 0
+            while i < len(tok):
+                two = tok[i:i + 2]
+                if two in ("&&", "||"):
+                    split.append(two)
+                    i += 2
+                else:
+                    split.append(tok[i])
+                    i += 1
+        else:
+            split.append(tok)
+    items: list[tuple[str, object]] = []
+    cur: list[str] = []
+    for tok in split:
+        if tok in ("(", ")") or (tok and set(tok) <= set(";&|")):
+            if cur:
+                items.append(("seg", cur))
+                cur = []
+            items.append(("paren" if tok in "()" else "op", tok))
         else:
             cur.append(tok)
+    if cur:
+        items.append(("seg", cur))
+
+    def op_at(k: int) -> str | None:
+        return items[k][1] if 0 <= k < len(items) and items[k][0] == "op" else None  # type: ignore[return-value]
+
+    out: list[tuple[list[str], str | None, str | None]] = []
+    cd: str | None = None
+    conditional = False
+    stack: list[tuple[str | None, bool]] = []
+    for k, (kind, val) in enumerate(items):
+        if kind == "paren":
+            if val == "(":
+                stack.append((cd, conditional))
+            elif stack:
+                cd, conditional = stack.pop()
+            continue
+        if kind == "op":
+            # A newline right after `&&`/`||`/`|` continues that chain; it is not a sequence break.
+            if val == ";" and op_at(k - 1) in ("&&", "||", "|"):
+                continue
+            if val == ";" and conditional:
+                cd, conditional = UNKNOWN, False
+            continue
+        seg = list(val)  # type: ignore[arg-type]
+        env = {}
+        while seg and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", seg[0]):
+            name, _, value = seg.pop(0).partition("=")
+            env[name] = value
+        while seg and seg[0] in ("builtin", "command"):
+            seg.pop(0)
+        before, after = op_at(k - 1), op_at(k + 1)
+        if seg and seg[0] in ("cd", "pushd", "popd"):
+            operands = [x for x in seg[1:] if x == "-" or not x.startswith("-")]
+            target = operands[0] if operands else ("~" if seg[0] == "cd" else "-")
+            if before in ("|", "&") or after in ("|", "&") or seg[0] == "popd" or target == "-" \
+                    or "$" in target or "`" in target or cd == UNKNOWN:
+                cd = UNKNOWN
+            elif cd is None or target.startswith(("/", "~")):
+                cd = target
+            else:
+                cd = f"{cd}/{target}"
+            conditional = before in ("&&", "||")
+            if after == "||":
+                cd = UNKNOWN          # what follows runs only if the cd FAILED
+            continue
+        for i in range(len(seg) - 2):
+            if seg[i] == "gh" and seg[i + 1] == "issue" and seg[i + 2] == "create":
+                out.append((seg[i + 3:], cd, env.get("GH_REPO")))
+                break
     return out
 
 
@@ -103,9 +176,10 @@ def target_root(cd: str | None, root: Path) -> tuple[Path | None, str]:
     """The repository a create runs in: `root` without a `cd`, else the cd target's git toplevel."""
     if cd is None:
         return root, ""
-    if "$" in cd or "`" in cd:
-        return None, (f"cannot tell which repository `cd {cd}` enters, so its label rules are unknown. "
-                      "Use a literal path.")
+    if cd == UNKNOWN:
+        return None, ("cannot tell which directory this gh issue create runs in (a cd in a pipeline or "
+                      "subshell, `cd -`, a `$VAR`, or a cd that may not have run), so its label rules "
+                      "are unknown. Chain it: `cd /literal/path && gh issue create ...`.")
     path = Path(os.path.expanduser(cd))
     if not path.is_absolute():
         path = Path.cwd() / path
@@ -172,17 +246,23 @@ def verdict(cmd: str, root: Path) -> tuple[bool, str]:
     creates = issue_creates(cmd)
     if not creates:
         return True, ""
-    for args, cd in creates:
+    session_repo = own_repo(root)
+    for args, cd, env_repo in creates:
         if args == ["__unparseable__"]:
             return False, "the gh issue create command could not be parsed, so its labels cannot be checked"
+        labels, repo = parse_args(args)
+        repo = repo or env_repo
         target, why = target_root(cd, root)
         if target is None:
             return False, why
+        # A repo NAMED with -R / GH_REPO decides where the issue lands, whatever the cd says: if it is
+        # the session's own, the session's rules apply even from inside another directory.
+        if repo is not None and session_repo is not None and repo == session_repo:
+            target, cd = root, None
         groups, why = load_groups(target)
         if why:
             return False, why
         mine = own_repo(target)
-        labels, repo = parse_args(args)
         foreign = repo is not None and repo != mine
         if not labels:
             where = f" (the declared groups are in {CONFIG})" if groups and not foreign else ""
@@ -305,6 +385,38 @@ def selftest() -> int:
         check("a cd to a missing directory is refused", not ok and "names no directory" in why, why)
         check("CONTROL: a create with no cd still uses the session's declaration",
               not verdict(rt, s)[0] and verdict(f"cd {r} && {rt}", s)[0])
+
+        # ---- #1400 review: every shape where a cd's effect is uncertain is REFUSED, never guessed ----
+        # The session repo has an origin, so "-R names the session's own repo" is testable.
+        subprocess.run(["git", "init", "-q", str(s)], check=True)
+        subprocess.run(["git", "-C", str(s), "remote", "add", "origin", "https://github.com/me/skills.git"], check=True)
+        u = Path(td) / "undeclared"
+        u.mkdir()
+        one = "gh issue create -t X --label comp:x"     # one label: passes an undeclared dir, fails skills
+        def refused(name: str, cmd: str, needle: str) -> None:
+            ok, why = verdict(cmd, s)
+            check(f"refused: {name}", not ok and needle in why, why)
+        refused("a subshell cd ends at its )", f"(cd {u}); {one}", "type:*")
+        refused("a subshell cd ends at its ) before &&", f"(cd {u} && true) && {one}", "type:*")
+        refused("a glued `)&&` still splits", f"(cd {u})&&{one}", "type:*")
+        refused("a cd in a pipeline", f"cd {u} | cat; {one}", "cannot tell")
+        refused("a cd sent to the background", f"cd {u} & {one}", "cannot tell")
+        refused("cd - names no visible directory", f"cd {u} && cd - && {one}", "cannot tell")
+        refused("popd names no visible directory", f"cd {u} && popd && {one}", "cannot tell")
+        refused("a cd that may never have run", f"false && cd {u}; {one}", "cannot tell")
+        refused("a create that runs only if the cd failed", f"cd {u} || {one}", "cannot tell")
+        refused("-R naming the session's own repo keeps its rules", f"cd {u} && {one} -R me/skills", "type:*")
+        refused("GH_REPO naming the session's own repo keeps its rules", f"cd {u} && GH_REPO=me/skills {one}", "type:*")
+        check("a newline separates commands, so a cd on its own line is followed",
+              verdict(f"echo hi\ncd {r} && {rt}", s)[0], verdict(f"echo hi\ncd {r} && {rt}", s)[1])
+        # The cd must itself be CONDITIONAL (behind &&) for the continuation rule to matter.
+        check("a newline after && continues the chain", verdict(f"true && cd {r} &&\n{rt}", s)[0],
+              verdict(f"true && cd {r} &&\n{rt}", s)[1])
+        check("a conditional cd holds for a create chained to it by &&",
+              verdict(f"true && cd {r} && {rt}", s)[0])
+        check("pushd moves like cd", verdict(f"pushd {r} && {rt}", s)[0])
+        check("builtin cd is cd", verdict(f"builtin cd {r} && {rt}", s)[0])
+        check("CONTROL: a create INSIDE the subshell still follows its cd", verdict(f"(cd {r} && {rt})", s)[0])
 
         (r / CONFIG).write_text("{not json", encoding="utf-8")
         check("an unreadable declaration refuses rather than allowing",
