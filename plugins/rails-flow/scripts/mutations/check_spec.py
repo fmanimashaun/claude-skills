@@ -71,5 +71,12 @@ GUARD = Guard(
             "    if False:",
             "a file with none of the sections is unusable, not a list of misses",
         ),
+        # Pre-release review of #1390: --decisions resolved from the working directory.
+        Mutation(
+            "--decisions resolves from the cwd again",
+            "        decisions = a.decisions if a.decisions.is_absolute() else root / a.decisions",
+            "        decisions = a.decisions",
+            "a relative --decisions resolves against --root, not the cwd",
+        ),
     ),
 )

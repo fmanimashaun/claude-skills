@@ -81,5 +81,12 @@ GUARD = Guard(
             "            refs = TOKEN.findall(raw)",
             "a filed slice's edges are rewritten to issue numbers",
         ),
+        # Pre-release review of #1397: a fenced sample counted as an edge the filed issue drops.
+        Mutation(
+            "a depends-on inside a plain fence counts as an edge again",
+            '        if fence not in (None, "deps"):\n            continue\n',
+            "",
+            "a depends-on inside a plain fence is not an edge",
+        ),
     ),
 )

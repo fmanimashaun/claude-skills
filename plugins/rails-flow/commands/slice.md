@@ -59,8 +59,9 @@ Mock-up: docs/design/remember-device.png
 - **`Mock-up:`** is on every slice (#1376). A slice that changes a screen links its mock-up; every
   other slice says `no visible change`.
 - **Criteria** are stubs in `check_criteria.py`'s shape: Given / when / then, with at least one
-  `[error]` path per slice. They become the slice's `docs/product/acceptance/<slug>.md` when
-  `/rails-flow:feature` picks it up.
+  `[error]` path per slice. `/rails-flow:feature` copies them verbatim into
+  `docs/product/acceptance/<branch-slug>.md` when it picks the slice up (its Phase 1 says so): they,
+  not the spec's stories, are that branch's criteria.
 - **No `###` headings inside a slice.** A heading starts a new criteria unit and detaches the
   criteria below it.
 
@@ -93,7 +94,9 @@ gh issue create --title "S2 — Remember the device for 30 days" \
 ```
 
 The body's `depends-on: #101` line is the record `check_issue_ready.py` reads. `--blocked-by` and
-`--parent` also set GitHub's native relationship. Drop `--parent` when there is no parent issue.
+`--parent` also set GitHub's native relationship. Pass one `--blocked-by` for **every** edge, a
+filed slice (`101`) and an existing issue named in `depends-on:` (`93`) alike, so the native link
+matches the body. Drop `--parent` when there is no parent issue.
 `check_slices.py` refuses to render a slice whose blocker is not filed yet.
 
 If `gh help issue create` does not list `--blocked-by`, your `gh` predates the flags. Create the
