@@ -170,6 +170,30 @@ CLAIMS: tuple[Claim, ...] = (
     # the green artifact this file exists to replace, and `SHIPPED_FLOOR` tracks the rest as
     # unmapped rather than pretending they are covered.
     Claim(
+        claim="Prefer expanded conditionals over guard clauses when writing new code (style.md §1).",
+        stated_in="skills/rails-8/references/style.md",
+        anchor="No cop can enforce it the other way round, either.",
+        kind=ADVICE,
+        note="#1363, verified on rubocop 1.91.0: no stock cop prefers expanded conditionals, and "
+             "Style/GuardClause has no EnforcedStyle to invert. The rule's two exceptions (a return "
+             "at the start; a non-trivial body) are judgement, and it says to leave working code alone. "
+             "A cop would contradict the section it enforced.",
+        refs=(1363,),
+    ),
+    Claim(
+        claim="Indent under visibility modifiers, with no blank line after them; a private-only "
+              "module is the exception (style.md §5).",
+        stated_in="skills/rails-8/references/style.md",
+        anchor="It cannot simply be switched on",
+        kind=ADVICE,
+        note="#1363, verified on rubocop 1.91.0 / rubocop-rails-omakase 1.1.0: "
+             "IndentationConsistency enforces only consistency; IndentationWidth enforces the indent "
+             "but flags the private-only exception; EmptyLinesAroundAccessModifier flags the "
+             "exception under only_before and the main shape under around. Every stock cop that "
+             "could enforce §5 contradicts part of it.",
+        refs=(1363,),
+    ),
+    Claim(
         claim="The prescribed testing stack is not a menu — a project missing simplecov, webmock "
               "or vcr is incomplete, not merely different.",
         stated_in="skills/rails-8/references/testing.md",

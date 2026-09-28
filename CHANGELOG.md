@@ -15812,6 +15812,24 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
+### Unreleased
+
+- **Style §1 and §5 are advice, and say why no cop can enforce them — `skills/rails-8/references/style.md`,
+  `dist/rails-8.skill`** (#1363). The issue asked whether the two lint-shaped sections of the style doctrine could be
+  enforced by a cop. They cannot, and the doctrine now says so with the measurement:
+  - **§5's "a project only has to flip `Enabled: true`" was wrong.** `Layout/IndentationConsistency` enforces only
+    consistency: it flags mixed indentation inside a visibility section and passes a uniformly unindented `private`
+    section. The indent needs `Layout/IndentationWidth`, which omakase disables, and that flags the private-only
+    module §5 names as its exception. `Layout/EmptyLinesAroundAccessModifier` flags the exception under `only_before`
+    and the main shape under `around`.
+  - **§1:** no stock cop prefers expanded conditionals, `Style/GuardClause` has no `EnforcedStyle` to invert, and the
+    rule's exceptions are judgement.
+  - **Verified:** `doctrine-verifier` CONFIRMED all five claims by running each cop on the section's own shapes, on
+    rubocop 1.91.0, rubocop-ast 1.50.0 and rubocop-rails-omakase 1.1.0. It also corrected the author's probe:
+    `only_before` does flag a blank line after `private` in an ordinary class.
+  - Both sections become `advice` rows in `docs/architecture/doctrine-map.html` (`scripts/doctrine_map.py`), each
+    with its measured reason. The outcome is the one the issue proposed for "no", approved on [#1363](https://github.com/fmanimashaun/claude-skills/issues/1363).
+
 ### 1.69.0 (release v1.152.0) — 2026-09-28
 
 - **The quality-pass worked example's `check(label, ok, detail)` count is refreshed to 40 — `skills/quality-pass/references/worked-example.md`,
