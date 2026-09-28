@@ -70,6 +70,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # are layout_fit's. A second copy here would drift the first time sr-only changed shape.
 from layout_fit import (  # noqa: E402
     CLIPS, DEFAULT_MIN_HIDDEN, MAX_EXAMPLES, SCROLLS, Unusable, is_visually_hidden, read_config,
+    route_path,
 )
 
 SCHEMA = "qa-flow/text-resize/1"
@@ -124,6 +125,9 @@ class Judged:
     visually_hidden: int = 0
     below_threshold: int = 0
     excluded: int = 0
+    # Judged, but not all of it: text that did not grow at 200% (px-sized) was never enlarged, so
+    # it is untested there. Reported with its share rather than hidden inside a verified route.
+    partial: list[str] = field(default_factory=list)
 
 
 def load(path: Path) -> dict:
@@ -160,6 +164,10 @@ def _mode(entry: dict, name: str, route: str) -> dict | None:
         return None
     if not isinstance(mode, dict) or not isinstance(mode.get("elements"), list):
         raise Unusable(f"{route}: mode {name!r} is not an object with an `elements` list")
+    # A missing flag is not "complete": a list whose completeness is unknown cannot be judged clean.
+    if not isinstance(mode.get("truncated"), bool):
+        raise Unusable(f"{route}: mode {name!r} has no boolean `truncated`, so whether its list is "
+                       "complete is unknown")
     return mode
 
 
@@ -175,7 +183,9 @@ def judge(doc: dict, *, min_hidden: float = DEFAULT_MIN_HIDDEN,
         route = str(entry.get("route", "?"))
         out.routes += 1
         landed = entry.get("landedOn")
-        if isinstance(landed, str) and landed.strip() and landed != route:
+        # The collector records `landedOn` as a PATHNAME, so a route asked for with a query string,
+        # or differing only by a trailing slash, is the same page -- not "measured somewhere else".
+        if isinstance(landed, str) and landed.strip() and route_path(landed) != route_path(route):
             out.unverified.append(f"{route}: measured at {landed}")
             continue
         base = _mode(entry, "base", route)
@@ -217,6 +227,10 @@ def judge(doc: dict, *, min_hidden: float = DEFAULT_MIN_HIDDEN,
                         f"{route} ({CRITERION[name]}): only {grew} of {texts} text elements grew "
                         "— text sized in px ignores the root font size; check it with browser zoom")
                     continue
+                if grew < texts:
+                    out.partial.append(f"{route}: {texts - grew} of {texts} text elements did not grow "
+                                       "at 200% (px-sized), so they are untested there; check them "
+                                       "with browser zoom")
             for row in mode["elements"]:
                 ref = str(row.get("ref") or "(unnamed)")
                 if any(token and token in ref for token in exclude):
@@ -274,6 +288,9 @@ def render(result: Judged, viewport: str) -> str:
         lines.append(f"[{f.rule}] {f.ref}")
         lines.append(f"    {round(f.worst_ratio * 100)}% hidden — {f.detail}")
         lines.append(f"    {f.count} route(s): {', '.join(f.examples)}")
+    if result.partial:
+        lines.append(f"PARTIAL — {len(result.partial)} route(s) judged with some text untested at 200%:")
+        lines.extend(f"    {p}" for p in result.partial[:MAX_EXAMPLES * 3])
     if not result.findings:
         lines.append("no findings.")
     lines.append(f"  {result.preexisting} already hidden as served (layout_fit's); {result.scrollable} "
@@ -417,6 +434,28 @@ def selftest() -> int:  # noqa: PLR0915 -- a fixture list; each firing case sits
     ctl = judge(doc(scaled=mode(clip, grew=100), spacing=mode(truncated=True)))
     check("CONTROL: a truncated spacing list leaves the 200% check judged",
           "resize-clipped" in {f.rule for f in ctl.findings}, str([f.rule for f in ctl.findings]))
+    # The REVERSE control: truncating scaled must not stop the loop before spacing is judged.
+    rev = judge(doc(scaled=mode(truncated=True, grew=100), spacing=mode(clip)))
+    check("CONTROL: a truncated scaled list leaves the spacing check judged",
+          "spacing-clipped" in {f.rule for f in rev.findings}, str([f.rule for f in rev.findings]))
+    bad = doc()
+    del bad["routes"][0]["modes"]["spacing"]["truncated"]
+    try:
+        judge(bad)
+        check("a mode with no truncated flag is unusable, not complete", False)
+    except Unusable:
+        check("a mode with no truncated flag is unusable, not complete", True)
+    # The route comparison: the collector records a PATHNAME.
+    check("a route with a query string is the page it lands on",
+          not judge(doc(route="/r?page=2", landed="/r")).unverified)
+    check("a trailing slash is the same page", not judge(doc(route="/r/", landed="/r")).unverified)
+    check("CONTROL: a genuinely different page is still unverified",
+          bool(judge(doc(route="/r?page=2", landed="/sign_in")).unverified))
+    # The untested share: judged, but said.
+    part = judge(doc(scaled=mode(texts=100, grew=80)))
+    check("text that partly did not grow is reported with its untested share",
+          any("20 of 100" in p for p in part.partial) and not part.unverified, f"{part.partial} {part.unverified}")
+    check("CONTROL: text that all grew reports nothing partial", not judge(doc()).partial)
     check("a truncated as-served list is unverified",
           bool(judge(doc(base=mode(truncated=True), scaled=mode(clip, grew=100))).unverified))
     check("a route measured somewhere else is unverified",

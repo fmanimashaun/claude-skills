@@ -66,6 +66,30 @@ GUARD = Guard(
             "a truncated spacing list is unverified, never a pass",
         ),
         Mutation(
+            "a truncated scaled list stops the loop, so spacing is never judged",
+            "                                      \"collector's cap, so a clip may have been cut from it\")\n                continue",
+            "                                      \"collector's cap, so a clip may have been cut from it\")\n                break",
+            "CONTROL: a truncated scaled list leaves the spacing check judged",
+        ),
+        Mutation(
+            "a mode with no truncated flag is read as complete",
+            '    if not isinstance(mode.get("truncated"), bool):',
+            "    if False:",
+            "a mode with no truncated flag is unusable, not complete",
+        ),
+        Mutation(
+            "the route comparison stops normalising, so a query string reads as a redirect",
+            "        if isinstance(landed, str) and landed.strip() and route_path(landed) != route_path(route):",
+            "        if isinstance(landed, str) and landed.strip() and landed != route:",
+            "a route with a query string is the page it lands on",
+        ),
+        Mutation(
+            "the untested share of px-sized text is no longer reported",
+            "                if grew < texts:",
+            "                if False:",
+            "text that partly did not grow is reported with its untested share",
+        ),
+        Mutation(
             "a truncated as-served list is trusted",
             '        if base.get("truncated"):',
             "        if False:",

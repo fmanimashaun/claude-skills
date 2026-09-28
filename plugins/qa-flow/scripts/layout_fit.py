@@ -236,6 +236,16 @@ def read_config(path: Path | None) -> tuple[float, list[str]]:
     return threshold, [str(x) for x in exclude] if isinstance(exclude, list) else []
 
 
+def route_path(p: str) -> str:
+    """A route as the collector records `landedOn`: the pathname only, no trailing slash but `/`.
+
+    `landedOn` is `new URL(page.url()).pathname`, so a route asked for with a query string or a
+    trailing slash never compared equal and read as "measured somewhere else" on every run.
+    """
+    p = p.split("#", 1)[0].split("?", 1)[0]
+    return p.rstrip("/") or "/"
+
+
 def has_affordance(row: dict) -> bool:
     """Does anything on screen say this element scrolls? Three kinds of evidence, no guessing."""
     gutter = row.get("gutterPx")
@@ -299,7 +309,7 @@ def judge(doc: dict, *, min_hidden: float = DEFAULT_MIN_HIDDEN,
         route = str(entry.get("route", "?"))
         out.routes += 1
         landed = entry.get("landedOn")
-        if isinstance(landed, str) and landed.strip() and landed != route:
+        if isinstance(landed, str) and landed.strip() and route_path(landed) != route_path(route):
             # Named in full: "/requests measured at /" is the whole diagnosis, and a bare
             # "unverified" would send someone looking for a defect on the wrong page.
             out.redirected.append(f"{route} measured at {landed}")
@@ -643,6 +653,11 @@ def selftest() -> int:
     check("...and arriving where you asked is silent",
           judge(doc(row(), route="/requests", landed="/requests")).redirected == [],
           "an honest arrival was reported as a redirect")
+    # The collector records a PATHNAME, so a query string or a trailing slash is the same page.
+    check("a route asked for with a query string is not a redirect",
+          judge(doc(row(), route="/requests?page=2", landed="/requests")).redirected == [])
+    check("a trailing slash is not a redirect",
+          judge(doc(row(), route="/requests/", landed="/requests")).redirected == [])
     # A document from a collector that does not record it must still be judged, not all-unverified.
     no_landing = {"schema": SCHEMA, "viewport": "390x844",
                   "routes": [{"route": "/requests", "elements": [row()]}]}

@@ -842,7 +842,8 @@ for (const route of routes) {
       return {
         textElements: texts.length,
         grew: after.filter((a, i) => before[i] > 0 && a / before[i] >= 1.9).length,
-        // A truncated BASE list cannot prove a later clip is new, so the judge must be told.
+        // Every mode is capped. A truncated base list cannot prove a later clip is new, and a truncated
+        // scaled or spacing list may have lost the clip itself -- so the judge must be told, per mode.
         truncated: rows.length > CAP,
         elements: rows.slice(0, CAP),
       };
