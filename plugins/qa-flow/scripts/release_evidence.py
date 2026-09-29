@@ -170,8 +170,12 @@ def png_text(data: bytes) -> str:
     return "\n".join(out)
 
 
-def secrets_in(text: str) -> list[str]:
-    """Why `text` looks like it carries a second-factor secret; [] when it does not."""
+def leak_reasons(text: str) -> list[str]:
+    """Why `text` looks like it carries a second-factor secret; [] when it does not.
+
+    Returns fixed LABELS only, never the matched text: a finding is printed, and a finding that
+    quoted the secret would leak it a second time (the selftest asserts no finding carries it).
+    """
     found = []
     if OTPAUTH.search(text):
         found.append("an otpauth:// URI")
@@ -233,7 +237,7 @@ def check_first_boot(folder: Path) -> list[str]:
             text = png_text(path.read_bytes())
         else:
             continue
-        for why in secrets_in(text):
+        for why in leak_reasons(text):
             findings.append(f"{path.relative_to(folder)}: carries {why} -- redact it before committing")
     return findings
 
@@ -467,6 +471,11 @@ def selftest() -> int:
         leaky = GOOD_ROWS + [f'1.3,1280,root,/login/code,Enrol,QR,"{uri}",Pass,,,,,x']
         check("secrets: an otpauth URI in pages.csv fails",
               any("otpauth" in f for f in fb(leaky, name="s1")))
+        # A finding names WHERE and WHAT KIND, never the secret itself -- it is printed.
+        leaked = fb(leaky, name="s1b") + fb(GOOD_ROWS + ['1.3,1280,root,/c,Enrol,Key,"Setup key: JBSW Y3DP EHPK 3PXP",'
+                                                         'Pass,,,,,x'], name="s1c")
+        check("secrets: no finding quotes the secret it found",
+              leaked and not any("JBSW" in f or "secret=" in f for f in leaked), leaked)
         png_leak = {"a.png": _png([(b"tEXt", b"Comment\x00" + uri.encode())]), "b.png": _png([])}
         check("secrets: an otpauth URI in a PNG tEXt chunk fails",
               any("a.png" in f and "otpauth" in f for f in fb(GOOD_ROWS, png_leak, name="s2")))

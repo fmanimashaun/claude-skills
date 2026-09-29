@@ -10953,7 +10953,7 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
   positive in the recovery-code rule, which matched screenshot names; the rule now needs a digit in each half and a
   letter somewhere, because the same file's request references (`REQ-2026-000002`) matched too. The detector also
   reads keys printed in groups of four and codes listed one per line. It does not flag an unlabelled base32 run,
-  which is declined, because it would fire on IDs and hashes. Selftest 56 checks; guard 23 of 23; release-gate
+  which is declined, because it would fire on IDs and hashes. Selftest 57 checks, one asserting no printed finding quotes the secret it found; guard 24 of 24; release-gate
   guard 6 → 12, including a prefix-versus-contains match and `core.quotePath`, which denied a non-ASCII evidence
   name. Our own design, decided on the issue; no framework claim.
 

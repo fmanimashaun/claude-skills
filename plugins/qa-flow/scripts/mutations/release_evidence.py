@@ -11,6 +11,13 @@ GUARD = Guard(
     subject="scripts/release_evidence.py",
     selftest="scripts/release_evidence.py",
     mutations=(
+        # A finding is printed; one that quoted the matched secret would leak it again.
+        Mutation(
+            "a finding quotes the matched secret",
+            '        found.append("an otpauth:// URI")',
+            '        found.append("an otpauth:// URI " + text)',
+            "secrets: no finding quotes the secret it found",
+        ),
         # THE ESCAPED DEFECT: the root row was Blocked, with no reason, and never re-run.
         Mutation(
             "a Blocked or Not walked row passes with no documented reason",
