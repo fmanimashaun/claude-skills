@@ -3540,8 +3540,9 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   skipped as a display; `data-name=`, `data-readonly` and `placeholder="readonly"` no longer count as the
   attribute. The tag match stops at a bare `<`, so an `<input>` is no longer "closed" by the next tag's `>` and
   excused by its `readonly` — found by the new fixture, one step past the review's report — and an `<input>` with
-  no `>` at all is judged on its own line, not the rest of the file. Run against the app behind #1391 before and
-  after: identical findings. 23/23 mutations caught.
+  no `>` at all is judged on its own line, not the rest of the file. Run before and after against an export of the
+  app behind #1391 at its `origin/dev` (`42775b67`, with its `Gemfile.lock`, so the gate applies): the same 4
+  findings. 23/23 mutations caught.
 
 - **`guard-bash` checks an issue's labels against the repository it is filed in, not the session's —
   `plugins/rails-flow/hooks/scripts/lib/issue_labels.py`, `scripts/mutations/hook_issue_labels.py`,
