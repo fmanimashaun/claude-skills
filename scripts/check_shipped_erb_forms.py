@@ -36,7 +36,9 @@ sys.path.insert(0, str(ROOT / "plugins/rails-flow/scripts"))
 from check_simple_form_only import scan  # noqa: E402 -- the project gate's own scanner
 
 BLOCK = re.compile(r"^([ \t]*)```erb[^\n]*\n(.*?)^\1```", re.S | re.M)
-PRIMITIVE = re.compile(r"<%#\s*simple-form-only:\s*primitive\b[ \t]*(\S*)")
+# EVERY marker in a block counts, and each must name a construct AND give a reason (#1455 review).
+PRIMITIVE = re.compile(r"<%#\s*simple-form-only:\s*primitive\b(.*?)%>", re.S)
+VALID_MARKER = re.compile(r"^[ \t]*(\S+)[ \t]+--[ \t]*\w")
 
 
 def findings(files: list[Path], root: Path) -> list[str]:
@@ -46,13 +48,19 @@ def findings(files: list[Path], root: Path) -> list[str]:
         for m in BLOCK.finditer(text):
             body = m.group(2)
             start = text.count("\n", 0, m.start()) + 1
-            marker = PRIMITIVE.search(body)
-            named = marker.group(1) if marker else ""
-            if marker and (not named or named.startswith("--")):
-                out.append(f"{f.relative_to(root)}:{start + body.count(chr(10), 0, marker.start()) + 1} — "
-                           f"primitive-marker-unnamed: the marker names no construct, so it excuses nothing")
+            named: set[str] = set()
+            for marker in PRIMITIVE.finditer(body):
+                valid = VALID_MARKER.match(marker.group(1))
+                if valid and not valid.group(1).startswith("--"):
+                    named.add(valid.group(1).lower())
+                else:
+                    out.append(f"{f.relative_to(root)}:{start + body.count(chr(10), 0, marker.start()) + 1} — "
+                               f"primitive-marker-invalid: a marker must name one construct and give a reason "
+                               f"(`primitive <construct> -- why`), so this one excuses nothing")
             for rule, line, what in scan(str(f), body):
-                if named and not named.startswith("--") and what.lower().startswith(named.lower()):
+                # EQUALITY, never a prefix (#1455 review): `primitive <` would excuse every `<select`,
+                # `<textarea`, `<input` and `<form`, and `primitive t` both tag.input and text_field_tag.
+                if what.strip().lower() in named:
                     continue
                 out.append(f"{f.relative_to(root)}:{start + line} — {rule}: `{what[:50]}` in a shipped ERB block")
     return out
@@ -86,7 +94,18 @@ def selftest() -> int:
                    len(f) == 1 and "<select" in f[0], f)
         f = run("```erb\n<%# simple-form-only: primitive -- why %>\n<%= check_box_tag :a %>\n```\n")
         check_that("a marker that names nothing excuses nothing",
-                   any("primitive-marker-unnamed" in x for x in f) and any("check_box_tag" in x for x in f), f)
+                   any("primitive-marker-invalid" in x for x in f) and any("check_box_tag" in x for x in f), f)
+        f = run("```erb\n<%# simple-form-only: primitive < -- why %>\n<select name=\"a\"></select>\n<textarea></textarea>\n```\n")
+        check_that("`primitive <` is not a prefix that excuses every raw tag",
+                   sum("raw-field" in x for x in f) == 2, f)
+        f = run("```erb\n<%# simple-form-only: primitive t -- why %>\n<%= tag.input :a %>\n<%= text_field_tag :b %>\n```\n")
+        check_that("`primitive t` excuses neither tag.input nor text_field_tag", len(f) == 2, f)
+        f = run("```erb\n<%# simple-form-only: primitive check_box_tag %>\n<%= check_box_tag :a %>\n```\n")
+        check_that("a marker with no reason excuses nothing",
+                   any("primitive-marker-invalid" in x for x in f) and any("check_box_tag" in x for x in f), f)
+        f = run("```erb\n<%# simple-form-only: primitive check_box_tag -- one %>\n<%= check_box_tag :a %>\n"
+                "<%# simple-form-only: primitive tag.input -- two %>\n<%= tag.input :b %>\n```\n")
+        check_that("every marker in a block counts, not only the first", f == [], f)
         f = run("- item:\n\n  ```erb\n  <form method=\"get\">\n  </form>\n  ```\n")
         check_that("an INDENTED fence is read", any("raw-form" in x for x in f), f)
         check_that("...with the doc's own line number", any("SKILL.md:4" in x for x in f), f)

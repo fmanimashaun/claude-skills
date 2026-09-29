@@ -14,8 +14,9 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 - **The shipped-ERB check reads indented fences, and a primitive marker excuses only what it names — `scripts/check_shipped_erb_forms.py`,
   `scripts/mutations/check_shipped_erb_forms.py`** (#1443). A fence may be indented, and closes at a fence of the
   same indent; five blocks had been skipped (all clean today). The marker is now
-  `<%# simple-form-only: primitive <construct> -- why %>` and excuses only that construct, so a later, unrelated raw
-  field in a primitive's block is a finding, and a marker naming nothing excuses nothing. 7/7 mutations caught.
+  `<%# simple-form-only: primitive <construct> -- why %>` and excuses only that construct, matched **exactly** — a
+  prefix match let `primitive <` excuse every raw tag (independent review of #1455). Every marker in a block counts,
+  each must give a reason, and one that names nothing or gives no reason excuses nothing. 10/10 mutations caught.
 
 ### 2026-09-28 (release v1.152.0)
 
@@ -3538,11 +3539,13 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   `plugins/rails-flow/scripts/mutations/check_simple_form_only.py`** (#1443). A name set through ERB
   (`tag.attributes(name: "x")`) now counts as named, so a readonly input that posts is refused instead of
   skipped as a display; `data-name=`, `data-readonly` and `placeholder="readonly"` no longer count as the
-  attribute. The tag match stops at a bare `<`, so an `<input>` is no longer "closed" by the next tag's `>` and
-  excused by its `readonly` — found by the new fixture, one step past the review's report — and an `<input>` with
-  no `>` at all is judged on its own line, not the rest of the file. Run before and after against an export of the
-  app behind #1391 at its `origin/dev` (`42775b67`, with its `Gemfile.lock`, so the gate applies): the same 4
-  findings. 23/23 mutations caught.
+  attribute, and a hash-rocket name (`"name" =>`, `:name =>`) counts too. The tag match stops at a bare `<` — so an
+  `<input>` is no longer "closed" by the next tag's `>` and excused by its `readonly`, found by the new fixture one
+  step past the review's report — but reads quoted values whole, so `value="a<b"` no longer cuts a tag short of a
+  later `name=` (a regression the independent review of #1455 caught); an `<input>` with no `>` at all is judged on
+  its own line, not the rest of the file. Run before and after against an export of the
+  app behind #1391 at its `origin/dev` (`f0f84e1a`, with its `Gemfile.lock`, so the gate applies): the same 4
+  findings, two of them the pre-existing `collection_*` false positive filed as #1458. 25/25 mutations caught.
 
 - **`guard-bash` checks an issue's labels against the repository it is filed in, not the session's —
   `plugins/rails-flow/hooks/scripts/lib/issue_labels.py`, `scripts/mutations/hook_issue_labels.py`,

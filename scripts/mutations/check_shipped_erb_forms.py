@@ -16,24 +16,42 @@ GUARD = Guard(
             "            for rule, line, what in []:",
             "a raw <form> in a shipped ERB block is a finding",
         ),
-        # #1443: the marker excuses what it NAMES, not the block.
+        # #1443 / #1455 review: the marker excuses exactly what it NAMES, and only with a reason.
         Mutation(
             "the primitive marker excuses its whole block again",
-            "                if named and not named.startswith(\"--\") and what.lower().startswith(named.lower()):",
-            "                if marker:",
+            "                if what.strip().lower() in named:",
+            "                if named:",
             "the marker excuses only what it names: a later raw <select> is a finding",
         ),
         Mutation(
             "a named primitive construct is refused like any other",
-            "                if named and not named.startswith(\"--\") and what.lower().startswith(named.lower()):\n                    continue\n",
+            "                if what.strip().lower() in named:\n                    continue\n",
             "",
             "CONTROL: the construct a primitive marker names is excused",
         ),
         Mutation(
-            "a marker that names nothing is silently accepted",
-            "            if marker and (not named or named.startswith(\"--\")):",
-            "            if False:",
+            "the marker matches as a PREFIX again, so `primitive <` excuses every raw tag",
+            "                if what.strip().lower() in named:",
+            "                if any(what.strip().lower().startswith(n) for n in named):",
+            "`primitive <` is not a prefix that excuses every raw tag",
+        ),
+        Mutation(
+            "an invalid marker is silently accepted",
+            "                    out.append(f\"{f.relative_to(root)}:{start + body.count(chr(10), 0, marker.start()) + 1} — \"",
+            "                    pass; (f\"{f.relative_to(root)}:{start + body.count(chr(10), 0, marker.start()) + 1} — \"",
             "a marker that names nothing excuses nothing",
+        ),
+        Mutation(
+            "a marker no longer needs a reason",
+            'VALID_MARKER = re.compile(r"^[ \\t]*(\\S+)[ \\t]+--[ \\t]*\\w")',
+            'VALID_MARKER = re.compile(r"^[ \\t]*(\\S+)")',
+            "a marker with no reason excuses nothing",
+        ),
+        Mutation(
+            "only the first marker in a block counts",
+            "            for marker in PRIMITIVE.finditer(body):",
+            "            for marker in list(PRIMITIVE.finditer(body))[:1]:",
+            "every marker in a block counts, not only the first",
         ),
         # #1443: every fence, indented or not.
         Mutation(

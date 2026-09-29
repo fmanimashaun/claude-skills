@@ -123,16 +123,28 @@ GUARD = Guard(
         ),
         Mutation(
             "the tag is cut at an ERB %>, so a readonly after an ERB value is missed",
-            'WHOLE_TAG = re.compile(r"<input\\b(?:<%.*?%>|[^<>])*>", re.I | re.S)',
+            'WHOLE_TAG = re.compile(r"<input\\b(?:<%.*?%>|\\"[^\\"]*\\"|\'[^\']*\'|[^<>\\"\'])*>", re.I | re.S)',
             'WHOLE_TAG = re.compile(r"<input\\b[^>]*>", re.I | re.S)',
             "CONTROL: an ERB value inside the tag does not hide its readonly",
         ),
         # #1443: the tag stops at a bare `<`, and an unclosed tag is judged on its own line.
         Mutation(
             "the tag runs on into the NEXT tag again",
-            'WHOLE_TAG = re.compile(r"<input\\b(?:<%.*?%>|[^<>])*>", re.I | re.S)',
-            'WHOLE_TAG = re.compile(r"<input\\b(?:<%.*?%>|[^>])*>", re.I | re.S)',
+            'WHOLE_TAG = re.compile(r"<input\\b(?:<%.*?%>|\\"[^\\"]*\\"|\'[^\']*\'|[^<>\\"\'])*>", re.I | re.S)',
+            'WHOLE_TAG = re.compile(r"<input\\b(?:<%.*?%>|\\"[^\\"]*\\"|\'[^\']*\'|[^>\\"\'])*>", re.I | re.S)',
             "an <input> is not closed by the NEXT tag's `>`",
+        ),
+        Mutation(
+            "a quoted value is not read whole, so its `<` ends the tag again",
+            """|\\"[^\\"]*\\"|\'[^\']*\'|[^<>\\"\'])*>\", re.I | re.S)""",
+            """|[^<>])*>\", re.I | re.S)""",
+            "a `<` inside a quoted value does not end the tag before a later name=",
+        ),
+        Mutation(
+            "a hash-rocket name no longer counts as named",
+            """|(?<![\\w-])[:\\"\']?name[\\"\']?\\s*=>)\", re.I)""",
+            """)\", re.I)""",
+            'a "name" => hash rocket makes a readonly input a posting field',
         ),
         Mutation(
             "an unclosed tag falls back to the rest of the file again",
@@ -148,7 +160,7 @@ GUARD = Guard(
         ),
         Mutation(
             "a name set through ERB is no longer seen",
-            'NAMED = re.compile(r"(?:(?<=\\s)name\\s*=|(?<![\\w-])name:)", re.I)',
+            'NAMED = re.compile(r"(?:(?<=\\s)name\\s*=(?!>)|(?<![\\w-])name:|(?<![\\w-])[:\\"\']?name[\\"\']?\\s*=>)", re.I)',
             'NAMED = re.compile(r"\\bname\\s*=", re.I)',
             "a name set through ERB makes a readonly input a posting field",
         ),

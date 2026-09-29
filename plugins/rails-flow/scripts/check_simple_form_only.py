@@ -76,10 +76,11 @@ BUILDER = re.compile(r"\bsimple_(?:form_for|fields_for)\b[^%]*?\bdo\s*\|\s*(\w+)
 # so an input that POSTS could be skipped as a display. An attribute follows whitespace; an ERB
 # keyword follows neither a word character nor a hyphen.
 DISPLAY_INPUT = re.compile(r"(?:(?<=\s)readonly(?=[\s=/>]|$)|(?<![\w-])readonly:\s*true\b)", re.I)
-NAMED = re.compile(r"(?:(?<=\s)name\s*=|(?<![\w-])name:)", re.I)
-# A bare `<` cannot occur inside a tag outside ERB, so the match stops there (#1443): `[^>]` alone ran on
-# into the NEXT tag and let its `readonly` excuse this input.
-WHOLE_TAG = re.compile(r"<input\b(?:<%.*?%>|[^<>])*>", re.I | re.S)
+NAMED = re.compile(r"(?:(?<=\s)name\s*=(?!>)|(?<![\w-])name:|(?<![\w-])[:\"']?name[\"']?\s*=>)", re.I)
+# A bare `<` cannot occur inside a tag outside ERB or a quoted value, so the match stops there (#1443):
+# `[^>]` alone ran on into the NEXT tag and let its `readonly` excuse this input. Quoted values are read
+# whole, because `value="a<b"` is legal and stopping at its `<` cut the tag before a later `name=`.
+WHOLE_TAG = re.compile(r"<input\b(?:<%.*?%>|\"[^\"]*\"|'[^']*'|[^<>\"'])*>", re.I | re.S)
 EXEMPTIONS = ".rails-flow/raw-form-exemptions.json"
 
 
@@ -206,6 +207,14 @@ def selftest() -> int:
                "raw-field" in rules('<input value="a"\n<p readonly>later</p>'))
     check_that("an <input> with no `>` anywhere is judged on its own line only",
                "raw-field" in rules('<input value="a"\nreadonly'))
+    check_that("a `<` inside a quoted value does not end the tag before a later name=",
+               "raw-field" in rules('<input value="a<b" readonly\n       name="q">'))
+    check_that("CONTROL: a quoted `<` in a readonly display input is still excused",
+               "raw-field" not in rules('<input value="a<b" readonly>'))
+    check_that('a "name" => hash rocket makes a readonly input a posting field',
+               "raw-field" in rules('<input readonly <%= tag.attributes("name" => "q") %>>'))
+    check_that("a :name => hash rocket makes a readonly input a posting field",
+               "raw-field" in rules('<input readonly <%= tag.attributes(:name => "q") %>>'))
     check_that("CONTROL: ERB inside the tag still does not end it early",
                "raw-field" not in rules('<input value="<%= @url %>" readonly>'))
     check_that("a raw <textarea> is refused", "raw-field" in rules("<textarea></textarea>"))
