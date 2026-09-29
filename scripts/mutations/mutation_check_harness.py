@@ -32,5 +32,26 @@ GUARD = Guard(
             "    scan([n for n in ast.walk(tree)])",
             "",
         ),
+        Mutation(
+            # #1444: main's pool must keep run_guard's rule -- an INERT baseline scores nothing.
+            "the pool runs mutations of a guard whose baseline failed",
+            "zip(guards, baselines) if not b for m",
+            "zip(guards, baselines) for m",
+            "an INERT baseline must end its guard",
+        ),
+        Mutation(
+            # #1444: the transitive scan. check_slices went INERT through an import made by a need.
+            "the import scan stops at one level again",
+            "            pending.append(str(sibling.relative_to(base)))",
+            "            pass",
+            "an unstaged import's own imports must be reported too",
+        ),
+        Mutation(
+            # #1444: THE check_slices case -- a need's own imports went unread.
+            "needs files are no longer scanned for imports",
+            "    pending = sorted(staged | {n for n in guard.needs if (base / n).is_file()})",
+            "    pending = sorted(staged)",
+            "a need no staged file imports must still be scanned",
+        ),
     ),
 )
