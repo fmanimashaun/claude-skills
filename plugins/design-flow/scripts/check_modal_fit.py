@@ -66,7 +66,7 @@ import sys
 from pathlib import Path
 
 import content_floors
-from source_text import strip_comments
+from source_text import blank_html_comments, strip_comments
 
 GATE = "modal-fit"
 
@@ -167,7 +167,7 @@ def pinned_edges(rel: str, raw: str) -> list[str]:
     markers, or one comment spanning two placements -- declares nothing, because the maintainer's
     decision allows a drawer or sheet exactly one edge (#1451 review, round 2). HTML comments never count."""
     out = []
-    raw_lines = [re.sub(r"<!--.*?-->", "", ln) for ln in raw.split("\n")]
+    raw_lines = blank_html_comments(raw).split("\n")
     for n, line in enumerate(strip_comments(raw).split("\n")):
         placements = _placements(line)
         here = _comment_of(raw_lines[n]) if n < len(raw_lines) else ""
@@ -336,6 +336,15 @@ def _selftest() -> int:
     expect("an HTML comment never declares, even one holding a `#`",
            "modal-touches-edge" in rules('<div class="fixed right-0 top-6 bottom-6" role="dialog">'
                                          ' <!-- # modal-fit: edge-pinned right -- no --></div>'))
+    expect("a comment closed by `--!>` never declares",
+           "modal-touches-edge" in rules('<div class="fixed right-0 top-6 bottom-6" role="dialog">'
+                                         ' <!-- # modal-fit: edge-pinned right -- x --!></div>'))
+    expect("a marker AFTER `<!-- x --!>` is live, not swallowed up to a later `-->`",
+           "modal-touches-edge" not in rules('<!-- x --!><div class="fixed right-0 top-6 bottom-6" role="dialog">'
+                                             ' <%# modal-fit: edge-pinned right -- y %> <!-- z --></div>'))
+    expect("an unterminated HTML comment never declares",
+           "modal-touches-edge" in rules('<div class="fixed right-0 top-6 bottom-6" role="dialog">'
+                                         ' <!-- # modal-fit: edge-pinned right -- x'))
     expect("a variant-prefixed edge still counts",
            rules(GOOD_ERB, GOOD_RB + 'X = { right: "fixed md:right-0 top-6 bottom-6" }\n') == ["modal-touches-edge"])
     expect("a logical end-0 edge is an edge: undeclared, it is a finding",

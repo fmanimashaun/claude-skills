@@ -70,7 +70,7 @@ GUARD = Guard(
                  "        valid = markers[0] if len(markers) == 1 else None",
                  "one trailing comment cannot cover two placements on one line"),
         Mutation("an HTML comment declares again",
-                 '    raw_lines = [re.sub(r"<!--.*?-->", "", ln) for ln in raw.split("\\n")]',
+                 '    raw_lines = blank_html_comments(raw).split("\\n")',
                  '    raw_lines = raw.split("\\n")',
                  "an HTML comment never declares, even one holding a `#`"),
         Mutation("a variant prefix hides an edge again",

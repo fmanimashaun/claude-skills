@@ -20,6 +20,25 @@ GUARD = Guard(
             "    source = source",
             "an HTML comment's text is gone",
         ),
+        # CodeQL py/bad-tag-filter on #1451: the spec's other endings.
+        Mutation(
+            "`--!>` no longer ends a comment",
+            'HTML_COMMENT = re.compile(r"<!--(?:-?>|[\\s\\S]*?(?:--!?>|\\Z))")',
+            'HTML_COMMENT = re.compile(r"<!--(?:-?>|[\\s\\S]*?(?:-->|\\Z))")',
+            "...and the markup after it is live, not swallowed up to a later `-->`",
+        ),
+        Mutation(
+            "an unterminated comment is left live",
+            'HTML_COMMENT = re.compile(r"<!--(?:-?>|[\\s\\S]*?(?:--!?>|\\Z))")',
+            'HTML_COMMENT = re.compile(r"<!--(?:-?>|[\\s\\S]*?(?:--!?>))")',
+            "an unterminated comment runs to the end of input",
+        ),
+        Mutation(
+            "the abrupt `<!-->` / `<!--->` forms swallow what follows",
+            'HTML_COMMENT = re.compile(r"<!--(?:-?>|[\\s\\S]*?(?:--!?>|\\Z))")',
+            'HTML_COMMENT = re.compile(r"<!--(?:[\\s\\S]*?(?:--!?>|\\Z))")',
+            "`<!-->` and `<!--->` are complete empty comments",
+        ),
         Mutation(
             "Ruby whole-line comments are left in the source",
             "    return RUBY_LINE_COMMENT.sub(lambda m: m.group(1), source)",

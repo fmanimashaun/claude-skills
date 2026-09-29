@@ -13185,7 +13185,11 @@ boot/validation path — with a bullet each so the promotion could close them se
   placement in its modal component — left and right drawers touching top and bottom too, and the bottom sheet
   touching left and right — each at its own `.rb` line. An earlier run on a stale checkout (`80ac5d1a`, 308
   commits behind) had reported the centred modal and a `<dialog>` that in fact fit; both shapes are now fixtures.
-  Mutations: 23/23 and 26/26 caught, including one that removes comment stripping in each check.
+  Mutations: 23/23 and 26/26 caught, including one that removes comment stripping in each check. The shared
+  `plugins/design-flow/scripts/source_text.py` now blanks HTML comments as the HTML spec parses them (CodeQL
+  `py/bad-tag-filter`): a comment ends at `-->` **or** `--!>`, `<!-->`/`<!--->` are complete, and one never closed
+  runs to the end of input — so a browser-closed comment can no longer carry a live declaration, and markup after it
+  is no longer swallowed up to a later `-->`. Every check that uses it stays green (source_text 8/8).
 
 - **A table that scrolls sideways, forces a width, or opens no details card is refused — `plugins/design-flow/scripts/check_table_layout.py`,
   `plugins/design-flow/scripts/mutations/check_table_layout.py`, `plugins/design-flow/checks.json`,
