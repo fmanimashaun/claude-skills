@@ -25,7 +25,12 @@ A parser can only answer "no" about text it actually modelled. So:
   * redirections are split off before the refspec is read;
   * comments and heredoc bodies are removed by a quote-aware scanner that follows bash's rule
     (`#` starts a comment only at the start of a word), not shlex's;
-  * `git` is found anywhere in a segment, so `sudo -u x`, `timeout 60`, `env A=1` cannot hide a push;
+  * `git` (by basename: `/usr/bin/git`, `git.exe`, `\\git`) is found anywhere in a segment, so
+    `sudo -u x`, `timeout 60`, `command`, `( )`, `{ }`, `if ... then` cannot hide a push -- and the
+    HOOK hands over any command that mentions git or gh at all, not only one starting `git push`;
+  * `sh|bash|zsh -c '<string>'` and `eval ...` are parsed as commands in their own right;
+  * a backslash-newline is a line continuation; an inline `git -c alias.x=...` and `xargs ... git
+    push` are could-not-judge;
   * "no" is exit 10, not 1, so an uncaught exception (exit 1) can never read as "no".
 
 What counts as a destination, per `git help push`:
@@ -114,13 +119,18 @@ def strip_comments_and_heredocs(cmd: str) -> str:
         if quote:
             out.append(c)
             if c == "\\" and quote == '"' and i + 1 < n:
+                if cmd[i + 1] == "\n":           # a line continuation: both characters vanish
+                    out.pop(); i += 2; continue
                 out.append(cmd[i + 1]); i += 2; continue
             if c == quote:
                 quote = ""
             i += 1
             continue
         if c == "\\" and i + 1 < n:
-            out.append(c + cmd[i + 1]); i += 2; continue
+            # `git push origin \<newline>main` is ONE command (41's delta review of #1470)
+            if cmd[i + 1] != "\n":
+                out.append(c + cmd[i + 1])
+            i += 2; continue
         if c in "$<>" and cmd.startswith("(", i + 1) and (i == 0 or cmd[i - 1] != "<"):
             # `$(...)`, `<(...)`, `>(...)`: ONE word, or shlex splits at `(` and the refspecs after
             # it land in another "segment" nobody reads -- `git -C $(pwd) push origin main` passed.
@@ -190,23 +200,63 @@ def segments(toks: list[str]) -> list[list[str]]:
     return [s for s in out if s]
 
 
-def push_args(seg: list[str]) -> tuple[list[str], str | None] | None:
-    """The arguments after `push` and any `git -C <dir>`, wherever `git` appears in the segment
-    (after `sudo -u x`, `timeout 60`, `env A=1` ...); None if the segment is not a git push."""
+def is_command(word: str, names: set[str]) -> bool:
+    """`git`, `/usr/bin/git`, `git.exe` (shlex has already turned `\\git` into `git`)."""
+    base = word.rsplit("/", 1)[-1]
+    return base in names or (base.endswith(".exe") and base[:-4] in names)
+
+
+def git_verb(seg: list[str], verb: str) -> tuple[list[str], str | None] | None:
+    """The arguments after `git <verb>` and any `git -C <dir>`, wherever git appears in the segment
+    (after `sudo -u x`, `timeout 60`, `command`, `{`, a substitution ...); None if there is none."""
     for j, word in enumerate(seg):
-        if word != "git":
+        if not is_command(word, {"git"}):
             continue
         i, workdir = j + 1, None
         while i < len(seg) and seg[i].startswith("-"):
             if seg[i] in GIT_OPTS_WITH_VALUE:
+                if seg[i] == "-c" and i + 1 < len(seg) and seg[i + 1].startswith("alias."):
+                    raise Unjudgeable("a git alias defined inline can be any verb, push included")
                 if seg[i] == "-C" and i + 1 < len(seg):
                     workdir = seg[i + 1]
                 i += 2
             else:
                 i += 1
-        if i < len(seg) and seg[i] == "push":
+        if i < len(seg) and seg[i] == verb:
+            if verb == "push" and any(w == "xargs" for w in seg[:j]):
+                raise Unjudgeable("xargs appends its stdin to the push, so its refspecs are unknown")
             return seg[i + 1:], workdir
     return None
+
+
+def push_args(seg: list[str]) -> tuple[list[str], str | None] | None:
+    return git_verb(seg, "push")
+
+
+SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
+MAX_DEPTH = 4
+
+
+def all_segments(cmd: str, depth: int = 0):
+    """Every command segment, INCLUDING those inside `sh -c '<string>'`, `bash -lc`, and `eval ...`,
+    parsed as commands in their own right (41's delta review of #1470)."""
+    if depth > MAX_DEPTH:
+        raise Unjudgeable("shell strings nested too deeply to read")
+    for seg in segments(tokens(cmd)):
+        yield seg
+        for k, word in enumerate(seg):
+            if is_command(word, SHELLS):
+                i = k + 1
+                while i < len(seg) and seg[i].startswith("-"):
+                    if not seg[i].startswith("--") and "c" in seg[i][1:]:
+                        if i + 1 >= len(seg):
+                            raise Unjudgeable("`-c` with no command string")
+                        yield from all_segments(seg[i + 1], depth + 1)
+                        break
+                    i += 1
+            elif word == "eval":
+                yield from all_segments(" ".join(seg[k + 1:]), depth + 1)
+                break
 
 
 def branch_of(dst: str) -> str:
@@ -269,7 +319,7 @@ def destinations(args: list[str], current: Callable[[bool], str | None]) -> list
 def targets(cmd: str, current: Callable[[bool, str | None], str | None]) -> list[str]:
     hits = []
     cwd: str | None = None                    # a prior `cd <dir>` moves where a bare push resolves
-    for seg in segments(tokens(cmd)):
+    for seg in all_segments(cmd):
         if seg[0] == "cd" and len(seg) == 2:
             cwd = seg[1] if cwd is None or os.path.isabs(seg[1]) else os.path.join(cwd, seg[1])
             continue
@@ -283,6 +333,45 @@ def targets(cmd: str, current: Callable[[bool, str | None], str | None]) -> list
             if dst in PROTECTED or dst.startswith(("every branch", "the matching")):
                 hits.append(dst)
     return hits
+
+
+GH_MERGE_OPTS_WITH_VALUE = {"-b", "--body", "-F", "--body-file", "-t", "--subject",
+                            "-A", "--author-email", "--match-head-commit"}
+
+
+def pr_merge_selectors(cmd: str) -> list[str]:
+    """For every `gh pr merge`, the PR it names (number, URL or branch), or "" for the current
+    branch's PR. `-R/--repo` names another repository, whose base this repo cannot judge."""
+    out = []
+    for seg in all_segments(cmd):
+        for j, word in enumerate(seg):
+            if not (is_command(word, {"gh"}) and seg[j + 1:j + 3] == ["pr", "merge"]):
+                continue
+            rest, sel, i = seg[j + 3:], "", 0
+            while i < len(rest):
+                a = rest[i]
+                if a in ("-R", "--repo") or a.startswith("--repo="):
+                    raise Unjudgeable("gh pr merge --repo names another repository")
+                if a in GH_MERGE_OPTS_WITH_VALUE:
+                    i += 2; continue
+                if a.startswith("-"):
+                    i += 1; continue
+                sel = a
+                break
+            if SUBST in sel or EXPANDS & set(sel):
+                raise Unjudgeable(f"the PR {sel!r} is expanded by the shell")
+            out.append(sel)
+            break
+    return out
+
+
+def classify(cmd: str, current) -> list[str]:
+    """The hook's one question, answered from the RAW command: PUSH_MAIN, GIT_MERGE, PR_MERGE <sel>."""
+    lines = [f"PUSH_MAIN {d}" for d in sorted(set(targets(cmd, current)))]
+    if any(git_verb(seg, "merge") is not None for seg in all_segments(cmd)):
+        lines.append("GIT_MERGE")
+    lines += [f"PR_MERGE {s}".rstrip() for s in pr_merge_selectors(cmd)]
+    return lines
 
 
 def git_current(push: bool, workdir: str | None) -> str | None:
@@ -380,6 +469,28 @@ def selftest() -> int:
         ('git push -u origin "$(git branch --show-current)"', on_feature, False),
         ("git push -u origin `git rev-parse --abbrev-ref HEAD`", on_feature, False),
         ('git push -u origin "$(git branch --show-current)"', fake("main"), True),
+        # (41's delta review of #1470) a push the hook never handed over, because the segment did
+        # not START with `git push`, and a push hidden by a continuation or a shell string
+        ("timeout 60 git push origin main", on_feature, True),
+        ("command git push origin main", on_feature, True),
+        ("git --no-pager push origin main", on_feature, True),
+        ("$(true) git push origin main", on_feature, True),
+        ("`true` git push origin main", on_feature, True),
+        ("( git push origin main )", on_feature, True),
+        ("{ git push origin main; }", on_feature, True),
+        ("if true; then git push origin main; fi", on_feature, True),
+        ("/usr/bin/git push origin main", on_feature, True),
+        ("\\git push origin main", on_feature, True),
+        ("git.exe push origin main", on_feature, True),
+        ("git push origin \\\nmain", on_feature, True),
+        ('git push origin "ma\\\nin"', on_feature, True),
+        ("bash -c 'git push origin main'", on_feature, True),
+        ('sh -lc "cd x && git push origin main"', on_feature, True),
+        ('eval "git push origin main"', on_feature, True),
+        ("bash -c 'git push origin fix/x'", on_feature, False),
+        ("git -c alias.p=push p origin main", on_feature, True),
+        ("echo main | xargs git push origin", on_feature, True),
+        ("git push origin fix/x \\\n  --force-with-lease", on_feature, False),
         # a bare push FROM main, and from a branch whose @{push} is main (push.default=upstream)
         ("git push", fake("main"), True),
         ("git push origin HEAD", fake("main"), True),
@@ -406,10 +517,31 @@ def selftest() -> int:
             failures.append(f"{cmd!r}: must be unjudgeable (the hook denies), not answered")
         except Unjudgeable:
             pass
+    # --classify: the hook's other two questions, answered from the same raw parse
+    for cmd, want in (("gh pr merge 12", ["PR_MERGE 12"]), ("gh pr merge --squash", ["PR_MERGE"]),
+                      ('gh pr merge -b "a b" feat/x', ["PR_MERGE feat/x"]),
+                      ("gh pr merge --merge https://github.com/o/r/pull/3", ["PR_MERGE https://github.com/o/r/pull/3"]),
+                      ("timeout 60 gh pr merge 5", ["PR_MERGE 5"]),
+                      ("bash -c 'gh pr merge 7 --merge'", ["PR_MERGE 7"]),
+                      ("git merge dev", ["GIT_MERGE"]), ("sudo git merge dev", ["GIT_MERGE"]),
+                      ('git commit -m "merge it" && gh pr list', []),
+                      ("git push origin main", ["PUSH_MAIN main"])):
+        try:
+            got = classify(cmd, on_feature)
+        except Unjudgeable as exc:
+            got = [f"unjudgeable: {exc}"]
+        if got != want:
+            failures.append(f"classify {cmd!r}: expected {want}, got {got}")
+    for cmd in ("gh pr merge -R o/r 5", "gh pr merge $N"):
+        try:
+            classify(cmd, on_feature)
+            failures.append(f"classify {cmd!r}: must be unjudgeable (the hook denies)")
+        except Unjudgeable:
+            pass
     # "no" must not share an exit code with a crash: python's uncaught-exception exit is 1.
     if NO in (0, 1) or UNJUDGEABLE == NO:
         failures.append(f"exit codes: NO={NO} must differ from 0, 1 (a crash) and UNJUDGEABLE")
-    total = len(cases) + 5
+    total = len(cases) + 5 + 12
     if failures:
         print(f"push_targets selftest FAILED -- {len(failures)} of {total}:", file=sys.stderr)
         for f in failures:
@@ -422,6 +554,13 @@ def selftest() -> int:
 def main(argv: list[str]) -> int:
     if argv[1:] == ["--selftest"]:
         return selftest()
+    if argv[1:] == ["--classify"]:
+        try:
+            print("\n".join(classify(sys.stdin.read(), git_current)))
+            return 0
+        except Exception as exc:      # Unjudgeable or a crash: the hook denies
+            print(f"could not judge: {exc}")
+            return UNJUDGEABLE
     try:
         hits = targets(sys.stdin.read(), git_current)
     except Unjudgeable as exc:

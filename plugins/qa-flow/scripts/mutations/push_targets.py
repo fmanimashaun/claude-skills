@@ -131,5 +131,54 @@ GUARD = Guard(
             '        if spec == "::":',
             "'git push origin :': expected TARGETS main",
         ),
+        Mutation(
+            # 41's delta review of #1470: every one of these hid a push the hook never saw.
+            "git is matched by exact name again, so /usr/bin/git and git.exe hide the push",
+            '    return base in names or (base.endswith(".exe") and base[:-4] in names)',
+            "    return word in names",
+            "'/usr/bin/git push origin main': expected TARGETS main",
+        ),
+        Mutation(
+            "sh -c strings are no longer parsed, so bash -c 'git push origin main' passes",
+            "                        yield from all_segments(seg[i + 1], depth + 1)",
+            "                        pass",
+            "\"bash -c 'git push origin main'\": expected TARGETS main",
+        ),
+        Mutation(
+            "eval is no longer parsed",
+            "                yield from all_segments(\" \".join(seg[k + 1:]), depth + 1)",
+            "                pass",
+            "'eval \"git push origin main\"': expected TARGETS main",
+        ),
+        Mutation(
+            "a backslash-newline is kept, so the refspec after it is a new command",
+            '            if cmd[i + 1] != "\\n":\n                out.append(c + cmd[i + 1])',
+            '            if True:\n                out.append(c + cmd[i + 1])',
+            "'git push origin \\\\\\nmain': expected TARGETS main",
+        ),
+        Mutation(
+            "an inline alias is followed as its literal verb, so -c alias.p=push hides the push",
+            '                    raise Unjudgeable("a git alias defined inline can be any verb, push included")',
+            "                    pass",
+            "'git -c alias.p=push p origin main': expected TARGETS main",
+        ),
+        Mutation(
+            "xargs is read as if its stdin were empty",
+            '                raise Unjudgeable("xargs appends its stdin to the push, so its refspecs are unknown")',
+            "                pass",
+            "'echo main | xargs git push origin': expected TARGETS main",
+        ),
+        Mutation(
+            "gh pr merge ignores the PR it names and falls back to the current branch's",
+            "                sel = a\n                break",
+            "                break",
+            "classify 'gh pr merge 12'",
+        ),
+        Mutation(
+            "git merge is no longer reported when a wrapper precedes it",
+            '    if any(git_verb(seg, "merge") is not None for seg in all_segments(cmd)):',
+            "    if False:",
+            "classify 'git merge dev'",
+        ),
     ),
 )

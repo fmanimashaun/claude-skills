@@ -34,43 +34,59 @@ if [ -f "$_lib" ] && . "$_lib" 2>/dev/null && type normalize_segments >/dev/null
 else
   seg="$cmd"
 fi
-push_seg=0; merge_seg=0; ghmerge_seg=0
-# #1410. The normaliser says WHETHER a segment is a `git push`; it cannot say WHERE it goes. A
-# `\b(main|master)\b` regex over the segment refused `fix/1010-one-main` and
-# `feat/983-pr2-master-detail` (`\b` breaks at `-` and `/`), and -- because the normaliser strips
-# quoted spans -- ALLOWED `git push origin "main"`. `push_targets.py` reads the RAW command with shlex
-# and resolves destinations the way git does (refspecs, `--all`, `@{push}` for a bare push).
-# Exit 0 = targets main, 10 = does not, anything else = could not judge -> treated as main (CLOSED).
-# "does not" is 10, not 1, because 1 is what python exits with on an uncaught exception (#1470).
-if printf '%s\n' "$seg" | grep -qE '^[[:space:]]*git[[:space:]]+push\b'; then
-  _pt="${CLAUDE_PLUGIN_ROOT:-}/scripts/push_targets.py"
-  if [ -f "$_pt" ]; then
-    printf '%s' "$cmd" | python3 "$_pt" >/dev/null 2>&1
-    [ "$?" -eq 10 ] || push_seg=1
-  else
-    # The parser is missing: the old whole-word match, over the RAW command so a quoted `"main"` is
-    # still seen. Over-blocks a `-main` branch name; never under-blocks.
-    printf '%s' "$cmd" | grep -qE '\b(main|master)\b' && push_seg=1
-  fi
-fi
-printf '%s\n' "$seg" | grep -qE '^[[:space:]]*git[[:space:]]+merge\b' && merge_seg=1
-printf '%s\n' "$seg" | grep -qE '^[[:space:]]*gh[[:space:]]+pr[[:space:]]+merge\b' && ghmerge_seg=1
-
 targets_main=0
-[ "$push_seg" = 1 ] && targets_main=1
-[ "$merge_seg" = 1 ] && git rev-parse --abbrev-ref HEAD 2>/dev/null | grep -qE '^(main|master)$' && targets_main=1
-# gh pr merge: base is the PR's target. Handle explicit number AND bare (current branch).
-if [ "$ghmerge_seg" = 1 ]; then
-  # a bare integer arg (from the cleaned command) = PR number; else current branch's PR
-  num="$(printf '%s' "$seg" | grep -oE '(^|[[:space:]])[0-9]+([[:space:]]|$)' | tr -d ' ' | head -1)"
-  if [ -n "$num" ]; then
-    base="$(gh pr view "$num" --json baseRefName -q .baseRefName 2>/dev/null || true)"
+# #1410 / #1470. The destination is decided by `push_targets.py --classify`, over the RAW command:
+# the normaliser answers only for a segment that STARTS with the verb, so `timeout 60 git push origin
+# main`, `sudo -u x git ...`, `( git push ... )`, `bash -c '...'` and `eval` all passed it. The
+# classifier finds git and gh anywhere in a segment, recurses into `sh -c` strings and `eval`, and
+# prints one line per finding: PUSH_MAIN <dst>, GIT_MERGE, PR_MERGE <selector>. Exit 0 = read;
+# anything else = could not judge (an unreadable refspec, a substitution, a crash), which is treated
+# as a promotion -- CLOSED. It runs only when the raw command mentions git or gh at all.
+_pt="${CLAUDE_PLUGIN_ROOT:-}/scripts/push_targets.py"
+case "$cmd" in
+  *git*|*gh*) _mentions=1 ;;
+  *) _mentions=0 ;;
+esac
+if [ "$_mentions" = 1 ] && [ -f "$_pt" ]; then
+  if _found="$(printf '%s' "$cmd" | python3 "$_pt" --classify 2>/dev/null)"; then
+    while IFS= read -r _line; do
+      case "$_line" in
+        "PUSH_MAIN "*) targets_main=1 ;;
+        GIT_MERGE)
+          git rev-parse --abbrev-ref HEAD 2>/dev/null | grep -qE '^(main|master)$' && targets_main=1 ;;
+        PR_MERGE*)
+          # The PR the command NAMES (number, URL or branch); bare = the current branch's PR.
+          _sel="${_line#PR_MERGE}"; _sel="${_sel# }"
+          if [ -n "$_sel" ]; then
+            base="$(gh pr view "$_sel" --json baseRefName -q .baseRefName 2>/dev/null || true)"
+          else
+            base="$(gh pr view --json baseRefName -q .baseRefName 2>/dev/null || true)"
+          fi
+          case "$base" in main|master|"") targets_main=1 ;; esac ;;  # unresolved base -> promotion
+      esac
+    done <<EOF_FOUND
+$_found
+EOF_FOUND
   else
-    base="$(gh pr view --json baseRefName -q .baseRefName 2>/dev/null || true)"
+    targets_main=1
   fi
-  case "$base" in main|master) targets_main=1 ;; esac
-  # If we couldn't resolve the base at all on a merge command, fail safe: treat as promotion.
-  [ -z "$base" ] && targets_main=1
+elif [ "$_mentions" = 1 ]; then
+  # The classifier is missing: the pre-#1410 detection, with the whole-word match over the RAW
+  # command so a quoted `"main"` is still seen. Over-blocks a `-main` branch name; never under-blocks
+  # what it used to catch.
+  printf '%s\n' "$seg" | grep -qE '^[[:space:]]*git[[:space:]]+push\b' \
+    && printf '%s' "$cmd" | grep -qE '\b(main|master)\b' && targets_main=1
+  printf '%s\n' "$seg" | grep -qE '^[[:space:]]*git[[:space:]]+merge\b' \
+    && git rev-parse --abbrev-ref HEAD 2>/dev/null | grep -qE '^(main|master)$' && targets_main=1
+  if printf '%s\n' "$seg" | grep -qE '^[[:space:]]*gh[[:space:]]+pr[[:space:]]+merge\b'; then
+    num="$(printf '%s' "$seg" | grep -oE '(^|[[:space:]])[0-9]+([[:space:]]|$)' | tr -d ' ' | head -1)"
+    if [ -n "$num" ]; then
+      base="$(gh pr view "$num" --json baseRefName -q .baseRefName 2>/dev/null || true)"
+    else
+      base="$(gh pr view --json baseRefName -q .baseRefName 2>/dev/null || true)"
+    fi
+    case "$base" in main|master|"") targets_main=1 ;; esac
+  fi
 fi
 [ "$targets_main" -eq 1 ] || exit 0
 
