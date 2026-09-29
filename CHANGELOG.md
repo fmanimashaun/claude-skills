@@ -13152,9 +13152,14 @@ boot/validation path — with a bullet each so the promotion could close them se
   `plugins/design-flow/scripts/mutations/check_table_layout.py`, `plugins/design-flow/checks.json`, `scripts/maintainer_doctor.py`**
   (#1419). `check_table_layout.py` gains `pager-order`: a pager whose summary precedes its rows-per-page control
   (a pager with no such control is not judged). New `check_modal_fit.py`, judged per dialog component with its sibling
-  `.rb`: `modal-exceeds-viewport` (no `inset-viewport` wrapper or no `max-h-full` panel) and `modal-touches-edge`
-  (`fixed` with `inset-y-0`/`inset-x-0`). Against the app behind the issue: 3 findings, its modal component on both
-  rules and its privacy-policy `<dialog>`, which has no max height. Mutations: 19/19 and 5/5 caught.
+  `.rb`: `modal-exceeds-viewport` (no width bounded by the viewport — `inset-viewport`, or a `calc(100% - gap)`
+  width — or no height bounded by it — `max-h-full` inside the inset, or a `calc(100svh - gap)` max height as a class
+  or as an `@utility` read from the app's own CSS) and `modal-touches-edge` (`fixed` with `inset-y-0`/`inset-x-0`,
+  unless the component declares `modal-fit: edge-pinned -- <why>`). **Measured on an export of the app's current
+  `dev` (Retask `42775b67`): 1 finding**, its modal component's undeclared edge-pinned placements. The first run was
+  taken on a stale checkout (`80ac5d1a`, 308 commits behind) and reported 3; the two it got wrong — a centred modal
+  and a `<dialog>` that fit through a gutter width and the app's own `modal-max-h` utility — are now fixtures, as is
+  the reason-on-the-same-line rule the edge-pinned declaration needed. Mutations: 19/19 and 11/11 caught.
 
 - **A table that scrolls sideways, forces a width, or opens no details card is refused — `plugins/design-flow/scripts/check_table_layout.py`,
   `plugins/design-flow/scripts/mutations/check_table_layout.py`, `plugins/design-flow/checks.json`,
@@ -13165,10 +13170,12 @@ boot/validation path — with a bullet each so the promotion could close them se
   declares `table-without-details: <why>`; mailer views are not judged. The fourth refuses a tab strip that scrolls:
   `role="tablist"`, or a scroller in a file named for tabs, since apps build strips as link lists. **A scroller is
   what the app defines**: Tailwind's overflow classes plus any `@utility` in the app's own CSS whose body scrolls on
-  x. Driven against the app behind the issue: 221 files, 25 findings — 23 `table-min-width` (every one of its 22
-  `min_width:` call sites plus the interpolated style inside its table component), 1 `table-scroll-wrapper` (that
-  component's own `scroll-x` wrapper, which every table there goes through) and 1 `tablist-scroll` (its settings
-  strip). Real runs caught four defects in the check itself — a single-line render match that found 3 of the 22,
+  x. Driven against the app behind the issue at Retask `80ac5d1a`: 221 files, 25 findings — 23 `table-min-width`
+  (every one of its 22 `min_width:` call sites plus the interpolated style inside its table component), 1
+  `table-scroll-wrapper` (that component's own `scroll-x` wrapper, which every table there goes through) and 1
+  `tablist-scroll` (its settings strip). **That checkout was 308 commits behind the app's `dev`**; on an export of
+  `dev` itself (`42775b67`, 244 files) the check finds 2 — the table component's scroller and the settings strip —
+  because the fixed widths have since been removed there. The 25 described the old tree, not the app as it is. Real runs caught four defects in the check itself — a single-line render match that found 3 of the 22,
   two mailer layouts reported as missing a details card, the app's own `scroll-x` read as no scroller at all, and a
   substring match that called `table_component` a tab strip — and each now has a fixture. Independent review then
   found a fifth — a "New" button opening the modal satisfied `table-no-details` while every row still linked to a
