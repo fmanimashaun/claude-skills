@@ -212,7 +212,7 @@ def exact_power(cases: int, runs: int, weak: float, lift: float) -> dict[str, fl
     model of it. Feasible for the small designs where simulation noise matters most (6 x 3: 924
     multisets).
     """
-    if not (1 <= runs and 2 <= cases <= EXACT_MAX_CASES and 0.0 <= weak and 0.0 <= weak + lift <= 1.0):
+    if not (1 <= runs and 2 <= cases <= EXACT_MAX_CASES and 0.0 <= weak <= 1.0 and 0.0 <= weak + lift <= 1.0):
         # A pass rate outside [0, 1] gives negative "probabilities" that still sum to 1, and above
         # EXACT_MAX_CASES the verdict is a Monte Carlo draw the enumeration would call 10^5 times
         # per outcome (#1485 review).
@@ -492,7 +492,7 @@ def selftest() -> int:
         got = exact_power(6, 3, 0.4, lift)
         check(f"exact power, 6 x 3 at +{round(lift * 100)}: b_better {want:.2%}",
               round(got.get("b_better", 0.0), 4) == want and abs(sum(got.values()) - 1) < 1e-9, got)
-    for bad in ((6, 3, 0.4, 0.7), (6, 0, 0.4, 0.3), (1, 3, 0.4, 0.3), (17, 3, 0.4, 0.3)):
+    for bad in ((6, 3, 0.4, 0.7), (6, 3, 1.2, -0.3), (6, 0, 0.4, 0.3), (1, 3, 0.4, 0.3), (17, 3, 0.4, 0.3)):
         try:
             exact_power(*bad)
             check(f"exact power refuses {bad}", False, "accepted")

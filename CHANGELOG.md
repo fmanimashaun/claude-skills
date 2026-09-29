@@ -11,14 +11,14 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 *Version number assigned at promotion.*
 
-- **The benchmark's power figure for the suite today is exact, and every non-result the relabel covers has a fixture — `evals/compare.py`, `evals/README.md`, `scripts/mutations/evals_compare.py`** (#1432, from the final review of PR #1422). The README's 6 cases × 3 runs row said "about 4%" at a +20-point lift and "about 10%" at +30, from 300 simulations. New `exact_power()` (and `--exact-power CASES RUNS`, for 2–16 cases, refusing a pass rate outside [0, 1] with exit 2) enumerates every outcome and judges each with `_verdict` itself: **0.15% false wins, 2.6% at +20, 7.4% at +30**. The row now carries those figures and says it is exact. The v1.152.0 (#1384) bullet stays as published; this corrects it. Also:
+- **The benchmark's power figure for the suite today is exact, and every non-result the relabel covers has a fixture — `evals/compare.py`, `evals/README.md`, `scripts/mutations/evals_compare.py`** (#1432, from the final review of PR #1422). The README's 6 cases × 3 runs row said "about 4%" at a +20-point lift and "about 10%" at +30, from 300 simulations. New `exact_power()` (and `--exact-power CASES RUNS`, for 2–16 cases, refusing any pass rate outside [0, 1] with exit 2) enumerates every outcome and judges each with `_verdict` itself: **0.15% false wins, 2.6% at +20, 7.4% at +30**. The row now carries those figures and says it is exact. The v1.152.0 (#1384) bullet stays as published; this corrects it. Also:
   - fixtures for the `insufficient` and `not_detectable` relabels to UNVERIFIED, each with a control on the same cases;
   - the Monte Carlo value pinned as a literal (5656 / 100001), which catches a changed denominator or `MC_DRAWS`;
   - the verdict says "Monte Carlo (100,000 draws) sign-flip p" above 16 cases instead of "exact", with a control at exactly 16;
   - the floor line names the moving count ("with 6 moving case(s)"), which is what it is computed from; `Comparison` gains `n_moving`;
   - the README says an all-ties result is *not detectable* with p = 1, the A/A answer, not *underpowered*.
 
-  Selftest 70 checks; the guard catches 28/28 (9 new).
+  Selftest 71 checks; the guard catches 29/29 (10 new).
 
 - **`upstream.yml` pins its checkout by SHA and drops persisted credentials; a lint holds every workflow to both — `.github/workflows/upstream.yml`, `scripts/lint_self_consistency.py`, `scripts/mutations/lint_self_consistency.py`** (#1414). It pinned `actions/checkout@v7`, a tag, where every other workflow pins a SHA, and kept the token in `.git/config` for a job that never pushes with git. New rules `unpinned-workflow-action` and `checkout-persists-credentials` fire on origin/dev's `upstream.yml` at line 35 and on nothing after the fix. The checkout's step is read whole (a `with:` may precede `uses:`), a blank line before it no longer misplaces the scan (the independent review's blocker in PR #1482), and a quoted `'false'` counts: 13 selftest scenarios, 9 mutations.
 

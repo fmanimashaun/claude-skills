@@ -192,5 +192,11 @@ GUARD = Guard(
             '0.0 <= weak + lift):',
             'exact power refuses (6, 3, 0.4, 0.7)',
         ),
+        Mutation(
+            'exact power accepts a weak-arm pass rate above 1',
+            '0.0 <= weak <= 1.0 and',
+            '0.0 <= weak and',
+            'exact power refuses (6, 3, 1.2, -0.3)',
+        ),
     ),
 )
