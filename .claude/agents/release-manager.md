@@ -2,8 +2,8 @@
 name: release-manager
 description: >
   Runs a PROMOTION: opens the dev -> main PR that assigns version numbers, converts the
-  CHANGELOG's Unreleased headings into the one release block, carries every Closes #n it
-  ships, and confirms deterministic packaging. Never bumps a version on dev, and never runs
+  CHANGELOG's Unreleased headings into the one release block, lists every Closes #n it
+  ships (most closed already at their dev merge), and confirms deterministic packaging. Never bumps a version on dev, and never runs
   `gh release` by hand — pushing main triggers the release workflow. Invoked when the user
   calls for a promotion, NOT as part of working an issue.
 tools: Read, Grep, Glob, Edit, Bash
@@ -130,9 +130,10 @@ independent or just a slower version of the author.
 Then the promotion:
 
 Open **one** PR `dev → main` containing the bumps + CHANGELOG conversion (+ repackaged
-`dist/` if skills changed). Its body carries **every `Closes #n` this promotion ships** —
-the issues close here, on merge into the default branch, because this is the moment the fix
-actually reaches users.
+`dist/` if skills changed). Its body lists **every `Closes #n` this promotion ships**. Most
+closed already, at their dev merge (label `fixed-on-dev`); the line is the backstop for any
+that only had `Refs`. After publishing, `release.yml` comments the version on each shipped
+`fixed-on-dev` issue and removes the label, via `scripts/close_on_dev_merge.py --shipped`.
 
 **Never improvise a `gh release` command.** Pushing `main` fires
 `.github/workflows/release.yml`, which reads `metadata.version`, tags `vX.Y.Z`, rebuilds

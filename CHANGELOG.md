@@ -11,13 +11,26 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 *Version number assigned at promotion.*
 
+- **Issues close when their PR merges into `dev`, not at the promotion — `.github/workflows/close-on-dev-merge.yml`, `scripts/close_on_dev_merge.py`, `.github/workflows/release.yml`** (#1483, the owner's decision). A dev PR carries one `Fixes #n` line per issue it completes (`Refs #n` for partial work, which stays open); on merge the workflow closes each with label `fixed-on-dev` and a comment that it is not installable until the next release, because GitHub fires closing keywords only on the default branch (`main`). After publishing, `release.yml` comments the version on each shipped `fixed-on-dev` issue and removes the label. Only a line that is exactly `Fixes #n` closes anything, so prose that mentions an issue cannot. New gate `close-on-dev-merge selftest` (22 checks), which drives `close_for_pr` and `mark_shipped` against a stubbed `gh` that refuses unknown JSON fields the way the real one does; mutation guard `close_on_dev_merge` 9/9. The independent review found the first version asked `gh pr view` for a `merged` field that does not exist (every real run crashed, the parser-only selftest green), that a `Fixes` line naming a PR would close the PR, and that grouped citations `(#a, #b)` were missed; all three are fixtures and mutations now. One issue's failure no longer stops the rest, the post-publish step never turns a published release red, and fork PRs are skipped. CLAUDE.md, `.claude/commands/maintainer-work.md`, the PR template and `.claude/agents/release-manager.md` now say one thing. Applied by hand first: the 19 issues merged since v1.152.0 were closed the same way at the switch, and the coordinator has closed 6 more since (25 carry the label at this PR).
+
+- **The benchmark's power figure for the suite today is exact, and every non-result the relabel covers has a fixture — `evals/compare.py`, `evals/README.md`, `scripts/mutations/evals_compare.py`** (#1432, from the final review of PR #1422). The README's 6 cases × 3 runs row said "about 4%" at a +20-point lift and "about 10%" at +30, from 300 simulations. New `exact_power()` (and `--exact-power CASES RUNS`, for 2–16 cases, refusing any pass rate outside [0, 1] with exit 2) enumerates every outcome and judges each with `_verdict` itself: **0.15% false wins, 2.6% at +20, 7.4% at +30**. The row now carries those figures and says it is exact. The v1.152.0 (#1384) bullet stays as published; this corrects it. Also:
+  - fixtures for the `insufficient` and `not_detectable` relabels to UNVERIFIED, each with a control on the same cases;
+  - the Monte Carlo value pinned as a literal (5656 / 100001), which catches a changed denominator or `MC_DRAWS`;
+  - the verdict says "Monte Carlo (100,000 draws) sign-flip p" above 16 cases instead of "exact", with a control at exactly 16;
+  - the floor line names the moving count ("with 6 moving case(s)"), which is what it is computed from; `Comparison` gains `n_moving`;
+  - the README says an all-ties result is *not detectable* with p = 1, the A/A answer, not *underpowered*.
+
+  Selftest 71 checks; the guard catches 29/29 (10 new).
+
 - **`upstream.yml` pins its checkout by SHA and drops persisted credentials; a lint holds every workflow to both — `.github/workflows/upstream.yml`, `scripts/lint_self_consistency.py`, `scripts/mutations/lint_self_consistency.py`** (#1414). It pinned `actions/checkout@v7`, a tag, where every other workflow pins a SHA, and kept the token in `.git/config` for a job that never pushes with git. New rules `unpinned-workflow-action` and `checkout-persists-credentials` fire on origin/dev's `upstream.yml` at line 35 and on nothing after the fix. The checkout's step is read whole (a `with:` may precede `uses:`), a blank line before it no longer misplaces the scan (the independent review's blocker in PR #1482), and a quoted `'false'` counts: 13 selftest scenarios, 9 mutations.
 
-- **Five relative links in `docs/` that resolved to nothing are repaired, and a rule resolves every one from now on — `docs/brain/history/maintainer-history.md`, `docs/doctrine/architecture.md`, `docs/doctrine/harness-doctrine.md`, `docs/doctrine/issue-dependency-graph.md`, `scripts/lint_self_consistency.py`, `scripts/mutations/lint_self_consistency.py`** (#1415). The issue named two; a sweep found three more of the same shape — a repo-root path written inside a nested directory, which a renderer reads from the file's own directory. `broken-doc-pointer` resolves two pointer spellings and never a link target, which is why none was reported. New rule `broken-relative-link` covers `docs/**` (every path there is ours; shipped docs name paths in a user's project). It reads inline links (titled, `<angled>` or bare) and reference definitions, resolves a `/`-rooted target from the repo root, decodes `%`-escapes, and ignores what only quotes a link (``` and ~~~ fences of any length, inline code, HTML comments): 16 selftest scenarios, 14 mutations, and on the pre-fix tree it reports exactly the five. Two more broken links outside `docs/` are filed as #1480 and #1481.
+- **`upstream.yml` pins its checkout by SHA and drops persisted credentials; a lint holds every workflow to both — `.github/workflows/upstream.yml`, `scripts/lint_self_consistency.py`, `scripts/mutations/lint_self_consistency.py`** (#1414). It pinned `actions/checkout@v7`, a tag, where every other workflow pins a SHA, and kept the token in `.git/config` for a job that never pushes with git. New rules `unpinned-workflow-action` and `checkout-persists-credentials` fire on origin/dev's `upstream.yml` at line 35 and on nothing after the fix. The checkout's step is read whole (a `with:` may precede `uses:`), a blank line before it no longer misplaces the scan (the independent review's blocker in PR #1482), and a quoted `'false'` counts (matched quotes only): 15 selftest scenarios, 11 mutations.
+
+- **Five relative links in `docs/` that resolved to nothing are repaired, and a rule resolves every one from now on — `docs/brain/history/maintainer-history.md`, `docs/doctrine/architecture.md`, `docs/doctrine/harness-doctrine.md`, `docs/doctrine/issue-dependency-graph.md`, `scripts/lint_self_consistency.py`, `scripts/mutations/lint_self_consistency.py`** (#1415). The issue named two; a sweep found three more of the same shape — a repo-root path written inside a nested directory, which a renderer reads from the file's own directory. `broken-doc-pointer` resolves two pointer spellings and never a link target, which is why none was reported. New rule `broken-relative-link` covers `docs/**` (every path there is ours; shipped docs name paths in a user's project). It reads inline links (titled, `<angled>` or bare) and reference definitions, resolves a `/`-rooted target from the repo root, decodes `%`-escapes, and ignores what only quotes a link (``` and ~~~ fences of any length, inline code, HTML comments; a footnote definition and a four-space-indented ``` are not links or fences): 18 selftest scenarios, 16 mutations, and on the pre-fix tree it reports exactly the five. Two more broken links outside `docs/` are filed as #1480 and #1481.
 
 - **`Agents-And-Gates.md` no longer stamps a gate count, in the total or per plugin — `scripts/build_wiki.py`, `docs/wiki/Agents-And-Gates.md`, `scripts/mutations/build_wiki.py`** (#1404, [maintainer decision](https://github.com/fmanimashaun/claude-skills/issues/1404#issuecomment-5896594402)). Two open PRs that each added a gate made each other's committed page stale with no textual conflict (three times on PRs #1382 and #1401). One row per gate stays; it conflicts only when two PRs touch the same gate, and `maintainer_doctor.py` prints the live total. The selftest refuses a stamped count and a plugin row wider than its header, and a new mutation guard puts each count back, as a heading and as a bare cell (3/3 caught).
 
-- **The coverage generator carries the Bottom navigation clause d6e4383 added to the committed row — `scripts/build_coverage.py`, `docs/evidence/coverage.html`, `scripts/build_coverage_selftest.py`, `scripts/mutations/build_coverage.py`** (#1408). `build_coverage.py --check` failed whenever `design-corpora/` was present, because the generator was the stale side. The selftest now checks, with no corpora, that every `USE` value appears verbatim in the committed `coverage.md`; it fails on origin/dev and a mutation restoring the stale row is caught. `skills/design-system/references/coverage.md` is unchanged byte for byte; doctrine is unaffected.
+- **The coverage generator carries the Bottom navigation clause d6e4383 added to the committed row — `scripts/build_coverage.py`, `docs/evidence/coverage.html`, `scripts/build_coverage_selftest.py`, `scripts/mutations/build_coverage.py`** (#1408). `build_coverage.py --check` failed whenever `design-corpora/` was present, because the generator was the stale side. The selftest now checks, with no corpora, that every `USE` value appears as a whole cell in the committed `coverage.md`; it fails on origin/dev and a mutation restoring the stale row is caught. `skills/design-system/references/coverage.md` is unchanged byte for byte; doctrine is unaffected.
 
 - **`SLOW_GATES["mutation coverage"]` is set from the runner's own measurement: 1800 s — `scripts/maintainer_doctor.py`** (#1444). The first green dev push run printed `jobs=4, 604s` for 1602 mutations across 145 guards. The 5400 s placeholder from PR #1457 was 9x that, so a hung gate would take 90 minutes to surface; 1800 s is 3x.
 
@@ -3554,6 +3567,48 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 ## rails-flow (agentic flow plugin)
 
 ### Unreleased
+
+- **`guard-bash` label-checks `gh issue new`, `gh --repo … issue create`, and creates fed to a shell —
+  `plugins/rails-flow/hooks/scripts/guard-bash.sh`, `plugins/rails-flow/hooks/scripts/lib/issue_labels.py`,
+  `scripts/mutations/hook_issue_labels.py`, `scripts/mutations/hook_guard_bash.py`,
+  `plugins/rails-flow/scripts/check_hook_gates.py`** (#1462). This applies #1423's owner-decided rule to more forms.
+  - `gh issue new` (gh's alias) and a create behind gh's global flags are seen and label-checked, with a repo named
+    there carried into the create.
+  - A create fed to a shell is refused by name. That covers a pipe (including a multi-stage one and `|&`), a
+    herestring (spaced or glued), a heredoc, and a heredoc piped into a shell, behind any wrapper such as
+    `timeout 5`.
+  - A quoted subcommand (`gh issue "create"`) and a backslash-newline split no longer hide one.
+  - The hook's trigger ignores quotes and line joins, so it reaches the helper for all of these.
+
+- **An unquoted heredoc's substitutions are checked — `plugins/rails-flow/hooks/scripts/lib/issue_labels.py`** (#1467).
+  `cat <<EOF … $(gh issue create) … EOF` substitutes, so its body is now scanned for backtick and `$( )` creates.
+  A quoted delimiter (`<<'EOF'`, `<<"EOF"`, `<<\EOF`) keeps the body literal. Prose in an unquoted body stays
+  text, and so does an escaped backtick, so a commit or PR body written with `<<EOF` is not refused.
+
+- **An escaped backtick is literal — `plugins/rails-flow/hooks/scripts/lib/issue_labels.py`** (#1468).
+  `echo "use \`gh issue create\`"` is no longer refused. An unescaped backtick inside double quotes still runs,
+  so it is still refused. Declined, with the reason recorded on #1468: allowing `cd /x '&&' gh issue create`. It
+  fails safe, and allowing it would need proof that gh never runs.
+
+- **`check_slices.py` and `check_issue_ready.py` share one CommonMark fence reader —
+  `plugins/rails-flow/scripts/check_issue_ready.py`, `plugins/rails-flow/scripts/check_slices.py`** (#1461).
+  `fence_lines()` is the one reader. An unclosed fence runs to the end, and `deps extra` is a `deps` fence, so the
+  two scripts can no longer disagree on whether a `depends-on:` is an edge.
+
+- **The hook suite cannot crash on a slow subprocess, and leaves no orphans — `plugins/rails-flow/scripts/check_hook_gates.py`,
+  `scripts/mutations/check_hook_gates_harness.py`** (#1469).
+  - **The flake, measured.** At dev's head the unmutated suite crashed on an uncaught `TimeoutExpired`. That was 3
+    of 3 runs on 2026-09-29, and it read as "caught by the wrong fixture" or INERT.
+  - **The trigger was the machine.** macOS held new script execs at `_dyld_start` (43 of 44 stubs stuck), and a
+    stub the timeout left alive kept the output pipe open, so the read waited on it.
+  - **The fix.** Every fixture subprocess runs in its own process group. A timeout (180s floor) kills the whole
+    group and fails that fixture by name, and later fixtures still run. An unexpected timeout is always a recorded
+    failure, so a setup step that times out cannot pass silently. The read after the kill is bounded too.
+  - **Proven.** A unique-marker control shows 0 processes left against 2 for plain `subprocess.run`, and the timeout
+    returns promptly. A new guard, `check_hook_gates_harness`, mutates the harness itself. The mutation harness's
+    own 300s limit is #1444's.
+
+
 
 - **The mock-up checks close four holes from #1424's re-review — `plugins/rails-flow/scripts/check_issue_mockup.py`, `plugins/rails-flow/scripts/check_mockup_gate.py`** (#1430).
   - **An approval link is not a mock-up link.** A Mock-up section holding only the approving comment's URL read as linked AND approved; approval URLs are now stripped before the mock-up link is looked for, at filing (`verdict`) and at triage (`ready`).

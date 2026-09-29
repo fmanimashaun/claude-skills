@@ -37,6 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write   # `gh release create` makes the tag and the release
+      issues: write     # the shipped note on each issue this release carries (close_on_dev_merge.py)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -119,3 +120,11 @@ jobs:
             --title "${{ steps.v.outputs.tag }}" \
             --notes-file "${{ steps.notes.outputs.file }}"
           echo "Published ${{ steps.v.outputs.tag }}."
+
+      - name: Tell each issue this release ships that it is installable
+        # AFTER the publish, so an issue never reads "shipped" for a release that failed. Issues were
+        # closed at their dev merge with label `fixed-on-dev`; this names the version and drops it.
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/close_on_dev_merge.py --shipped "${{ steps.v.outputs.tag }}" --notes "${{ steps.notes.outputs.file }}"
