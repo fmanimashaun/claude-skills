@@ -6820,6 +6820,17 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## pipeline (lifecycle orchestrator)
 
+### Unreleased
+
+- **`deploy.env.example` no longer documents a key nothing reads — `plugins/pipeline/templates/deploy.env.example`** (#1418).
+  `DEPLOY_DESTINATION` had been flagged by every independent review's mechanical pass
+  (`self_consistency.py --all`, `dead-env-var`). A destination is already selected one way: the argument to
+  `/pipeline:deploy-cloud` (`argument-hint: [optional: destination, e.g. production | staging]`), which
+  `plugins/pipeline/commands/deploy-cloud.md` uses to scope `.kamal/secrets`. The key was a second, unread source for
+  the same value. Wiring it would have given one value two sources with no stated precedence, so the key is removed. The
+  template now says to pass the destination to the command. `self_consistency.py --all` now reports no findings
+  (37 files, 8 env keys). This is our own design: the issue body offers "wire it, or remove the line".
+
 ### 1.4.0 (release v1.152.0) — 2026-09-28
 
 - **A proceeding `breaker.py check` ends with `elapsed Xs / Ys` — `plugins/pipeline/scripts/breaker.py`,
