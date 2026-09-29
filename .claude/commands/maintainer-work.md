@@ -15,8 +15,8 @@ under the doctrine gate, and stay reviewable in one sitting. There is no fixed c
 CLAUDE.md, *Grouping related issues on one branch* (decision: #206). If the fixes never touch
 each other, grouping buys nothing — split then.
 
-When you do group, traceability is **not** pooled: one `Refs #n` per issue in the PR body, one
-CHANGELOG bullet per issue, and a separate `Closes #n` for each on the promotion.
+When you do group, traceability is **not** pooled: one `Fixes #n` (or `Refs #n`) line per issue in the
+PR body, and one CHANGELOG bullet per issue.
 
 ## Precondition — marketplace repo only (hard)
 
@@ -106,12 +106,14 @@ Push the branch and open a PR **into `dev`** whose body carries the fix and the 
 
 Two hard rules, both the opposite of what feels natural:
 
-- **Reference the issue, do not close it: write `Refs #<n>`, never `Closes #<n>`.** `main`
-  is the default branch, so a closing keyword here would either do nothing or — worse, if
-  someone flips defaults back — mark an issue done while its fix sits unshipped on `dev`.
-  The promotion PR closes it, when it actually ships. **On a grouped branch, one `Refs #n`
-  per issue and one CHANGELOG bullet per issue** — a single bullet covering "both issues"
-  loses which fix answered which report, and the promotion then cannot say what it closed.
+- **Close the issue at the dev merge: a line `Fixes #<n>` for each issue this PR completes.**
+  GitHub will not do it (closing keywords fire only on the default branch, `main`), so
+  `.github/workflows/close-on-dev-merge.yml` runs `scripts/close_on_dev_merge.py`: each
+  `Fixes #n` alone on its line closes with label `fixed-on-dev` and a comment saying it
+  ships in the next release; `release.yml` names the version when it does (owner's decision,
+  2026-09-29). **Partial work writes `Refs #<n>`** and stays open. **On a grouped branch, one
+  line and one CHANGELOG bullet per issue** — a single line covering "both issues" loses which
+  fix answered which report. Keep closing keywords out of commit messages.
 - **Bump NO versions.** Not `metadata.version`, not the plugin's `plugin.json`, not the
   rails-stack entry. A version is a claim about what a user can install, and nothing on
   `dev` is installable. Add the CHANGELOG notes under a **`### Unreleased`** heading in the
@@ -146,8 +148,8 @@ would ship.
 Promotion is its own decision, made per coherent slice (a feature, or a batch of related
 fixes) — not per issue, and not held until the queue is empty. When the user calls for it,
 hand to **release-manager** for the `dev → main` PR: assign the version numbers, rename the
-`Unreleased` headings, write the ONE `(release vX.Y.Z)` block, carry every `Closes #n` for
-what ships, confirm packaging is canonical, and merge. The workflow publishes the release —
+`Unreleased` headings, write the ONE `(release vX.Y.Z)` block, list every `Closes #n` for
+what ships (a backstop for any issue that only ever had `Refs`), confirm packaging is canonical, and merge. The workflow publishes the release —
 never run `gh release` by hand.
 
 ## Report
