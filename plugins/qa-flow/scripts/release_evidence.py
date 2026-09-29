@@ -10,7 +10,7 @@ make the two passes a precondition of `qa/CERTIFICATION`.
 
   first-boot DIR   the operator walkthrough on an EMPTY database: DIR/pages.csv plus screenshots.
   authz CSV        the forged-request sweep: one row per (action, actor, target).
-  stamp            read qa/CERTIFICATION, run both checks on the evidence it names, and print the
+  stamp [--rev R]  read qa/CERTIFICATION, run both checks on the evidence it names, and print the
                    evidence paths (the release gate lets the stamp's own commit carry them). A stamp
                    with `"schema": 2` must name both; an older one passes with a warning while
                    GRANDFATHER_OLD_STAMPS is on (one release), and fails once it is off.
@@ -48,7 +48,11 @@ WHAT stamp JUDGES
     on, refused once it is off. A stamp that carries any schema other than the integer 2 is refused.
   * `first_boot` and `authz` are relative paths under qa/manual-tests/, with no `..`. The release
     gate lets the stamp's commit carry them, so evidence named anywhere else would carry code.
-  * The evidence is committed (in git's index): what the gate cannot see in git is not evidence.
+  * With `--rev REV` (the release gate passes dev's sha) the evidence is judged AS COMMITTED at REV,
+    extracted with `git archive`: a HOLE committed on dev with its fix only staged still fails, and
+    symlinks are dropped, never followed. Without `--rev` (qa-reporter, before committing) it is
+    judged in the working tree.
+  * Printed findings redact any cell value or file name that itself looks like a secret.
   NOT JUDGED: whether the table lists EVERY action that changes another account. Deriving that
   from routes is the sweep's job, not this reader's.
 
@@ -70,6 +74,7 @@ import re
 import struct
 import subprocess
 import sys
+import tarfile
 import tempfile
 import zlib
 from pathlib import Path
@@ -106,8 +111,12 @@ EVIDENCE_ROOT = "qa/manual-tests/"
 OTPAUTH = re.compile(r"otpauth://", re.I)
 # The LABEL is case-insensitive; the secret is upper-case base32, optionally in groups of 4 ("JBSW Y3DP
 # EHPK 3PXP"), as authenticator screens print it. Lower-case prose after "key:" is not a secret.
-BASE32_SECRET = re.compile(r"(?i:\b(?:secret|key|seed|totp)\b)[^A-Za-z0-9\n]{0,4}"
-                           r"((?:[A-Z2-7]{4}[ -]?){3}[A-Z2-7]{4,}|[A-Z2-7]{16,})\b")
+# The separator may hold a table's pipes and backticks, or one line break (the key printed under its
+# label). Upper-case keys may run together; a lower-case key only counts in groups (JBSW-style), so a
+# run of lower-case prose is never read as one. A key must also carry a digit 2-7 (checked in
+# leak_reasons), so "Key: PASS FAIL SKIP WARN" is a legend, not a secret.
+BASE32_SECRET = re.compile(r"(?i:\b(?:secret|key|seed|totp)\b)[^A-Za-z0-9\n]{0,8}\n?[^A-Za-z0-9\n]{0,8}"
+                           r"((?:[A-Z2-7]{4}[ -]?){3}[A-Z2-7]{4,}|(?:[a-z2-7]{4}[ -]){3}[a-z2-7]{4,}|[A-Z2-7]{16,})\b")
 # Each half carries a digit. Without that, screenshot names on a line about recovery codes
 # ("1280-05-root-landed-security.png": root-landed, root-after) read as codes -- found by running
 # this on a real downstream walkthrough, which it flagged twice for nothing.
@@ -115,6 +124,13 @@ BASE32_SECRET = re.compile(r"(?i:\b(?:secret|key|seed|totp)\b)[^A-Za-z0-9\n]{0,4
 # walkthrough printed three times near the word "recovery".
 RECOVERY_CODE = re.compile(r"\b(?=[a-z0-9-]*[a-z])(?=[a-z]*\d)[a-z0-9]{4,6}-(?=[a-z]*\d)[a-z0-9]{4,6}\b", re.I)
 CODE_LINE = re.compile(r"^\s*(?:[-*]\s*|\d+[.)]\s*)?(\S+)\s*$")
+
+
+def shown(value: object) -> str:
+    """A cell value or file name as it may be PRINTED: redacted when it looks like a secret. A
+    finding is printed to the terminal and CI log, so quoting a leaked key there leaks it again."""
+    text = str(value)
+    return "<redacted: looks like a second-factor secret>" if leak_reasons(text) else text
 
 
 class Unusable(Exception):
@@ -179,7 +195,7 @@ def leak_reasons(text: str) -> list[str]:
     found = []
     if OTPAUTH.search(text):
         found.append("an otpauth:// URI")
-    if BASE32_SECRET.search(text):
+    if any(re.search(r"[2-7]", m.group(1)) for m in BASE32_SECRET.finditer(text)):
         found.append("a labelled base32 secret")
     # A line that says "recovery" with three or more codes ON it, or followed within twelve lines by
     # three or more lines that are nothing but a code (a list printed one per line is still a list).
@@ -204,26 +220,26 @@ def check_first_boot(folder: Path) -> list[str]:
     findings: list[str] = []
     widths: list[int] = []
     for row in rows:
-        step = row.get("Step") or "?"
+        step = shown(row.get("Step") or "?")
         status = row.get("Status", "").lower()
         if status not in STATUSES:
-            findings.append(f"step {step}: status {row.get('Status')!r} is not Pass, Fail, Blocked or Not walked")
+            findings.append(f"step {step}: status {shown(repr(row.get('Status')))} is not Pass, Fail, Blocked or Not walked")
         elif status in UNWALKED and not row.get("Notes"):
-            findings.append(f"step {step}: {row.get('Status')} with no documented reason in Notes -- "
+            findings.append(f"step {step}: {shown(row.get('Status'))} with no documented reason in Notes -- "
                             f"an unwalked step with no reason is the one that escaped")
         elif status == "fail" and not row.get("Issue"):
             findings.append(f"step {step}: Fail names no filed issue (Issue column)")
         try:
             widths.append(int(row.get("Width", "")))
         except ValueError:
-            findings.append(f"step {step}: Width {row.get('Width')!r} is not a number of pixels")
+            findings.append(f"step {step}: Width {shown(repr(row.get('Width')))} is not a number of pixels")
         for col in ("Screenshot", "Also"):
             for name in filter(None, (s.strip() for s in row.get(col, "").split(";"))):
                 target = (folder / name).resolve()
                 if Path(name).is_absolute() or folder.resolve() not in target.parents:
-                    findings.append(f"step {step}: {col} {name} is outside {folder.name}/ -- evidence is the folder")
+                    findings.append(f"step {step}: {col} {shown(name)} is outside {folder.name}/ -- evidence is the folder")
                 elif not target.is_file():
-                    findings.append(f"step {step}: {col} names {name}, which is not in {folder.name}/")
+                    findings.append(f"step {step}: {col} names {shown(name)}, which is not in {folder.name}/")
     if not any(w <= PHONE_MAX for w in widths):
         findings.append(f"no step was walked at a phone width (<= {PHONE_MAX}px)")
     if not any(w >= DESKTOP_MIN for w in widths):
@@ -238,7 +254,7 @@ def check_first_boot(folder: Path) -> list[str]:
         else:
             continue
         for why in leak_reasons(text):
-            findings.append(f"{path.relative_to(folder)}: carries {why} -- redact it before committing")
+            findings.append(f"{shown(path.relative_to(folder))}: carries {why} -- redact it before committing")
     return findings
 
 
@@ -248,10 +264,10 @@ def check_authz(table: Path, root_role: str = "root") -> list[str]:
     rows = read_table(table, AUTHZ_COLUMNS, casefold=True)
     findings: list[str] = []
     for i, row in enumerate(rows, 2):           # row 1 is the header
-        where = f"row {i} ({row.get('action') or '?'}: {row.get('actor_role')} -> {row.get('target_role')})"
+        where = shown(f"row {i} ({row.get('action') or '?'}: {row.get('actor_role')} -> {row.get('target_role')})")
         verdict = row.get("verdict", "").upper()
         if verdict not in VERDICTS:
-            findings.append(f"{where}: verdict {row.get('verdict')!r} is not GUARDED, HOLE or UI-ONLY")
+            findings.append(f"{where}: verdict {shown(repr(row.get('verdict')))} is not GUARDED, HOLE or UI-ONLY")
         elif verdict == "HOLE":
             findings.append(f"{where}: HOLE -- the forged request changed the target")
         elif verdict == "UI-ONLY":
@@ -259,7 +275,7 @@ def check_authz(table: Path, root_role: str = "root") -> list[str]:
         elif not row.get("guard"):
             findings.append(f"{where}: GUARDED names no guard")
         if not LOCATION.match(row.get("location", "")):
-            findings.append(f"{where}: location {row.get('location')!r} is not file:line")
+            findings.append(f"{where}: location {shown(repr(row.get('location')))} is not file:line")
     root_word = re.compile(rf"(?<![\w-]){re.escape(root_role)}(?![\w-])", re.I)
     if not any(root_word.search(row.get("target_role", "")) for row in rows):
         findings.append(f"no row targets the built-in {root_role!r} -- the escaped release's holes were all against it")
@@ -274,19 +290,44 @@ def evidence_path_ok(value: str) -> bool:
             and len(parts) > len(Path(EVIDENCE_ROOT).parts) and "\\" not in value)
 
 
-def tracked(base: Path, rel: str) -> bool:
-    """Whether `rel` is in git's index under `base`. Not a repo, or git missing, is False."""
+def committed_tree(base: Path, rev: str, rels: list[str], dest: Path) -> list[str]:
+    """Extract `rels` as committed at `rev` into `dest`, regular files and directories only.
+
+    The release gate judges what dev COMMITTED, not the working tree: a HOLE committed on dev, with
+    the fixed copy only staged in the gate's checkout, must still deny (#1437 review). Symlinks and
+    anything outside `dest` are dropped, never followed -- so a link under qa/manual-tests/ pointing
+    at app/ contributes nothing. Returns the problems; [] when every path was found at `rev`.
+    """
     try:
-        done = subprocess.run(["git", "-C", str(base), "ls-files", "--error-unmatch", "--", rel],
-                              capture_output=True, text=True, timeout=30)
-    except (OSError, subprocess.SubprocessError):
-        return False
-    return done.returncode == 0
+        done = subprocess.run(["git", "-C", str(base), "archive", "--format=tar", rev, "--", *rels],
+                              capture_output=True, timeout=60)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return [f"cannot read the evidence committed at {rev[:12]} ({exc})"]
+    if done.returncode != 0:
+        return [f"the evidence is not committed at {rev[:12]}: "
+                f"{done.stderr.decode('utf-8', 'replace').strip()[:200]}"]
+    root = dest.resolve()
+    with tarfile.open(fileobj=io.BytesIO(done.stdout)) as tar:
+        for member in tar.getmembers():
+            target = (dest / member.name).resolve()
+            if not (member.isfile() or member.isdir()) or (target != root and root not in target.parents):
+                continue
+            if member.isdir():
+                target.mkdir(parents=True, exist_ok=True)
+            else:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                source = tar.extractfile(member)
+                target.write_bytes(source.read() if source else b"")
+    return []
 
 
-def check_stamp(stamp: Path, base: Path,
-                grandfather: bool | None = None) -> tuple[list[str], list[str], list[str]]:
-    """(findings, evidence paths, warnings). A schema-2 stamp must NAME both layers, and both pass."""
+def check_stamp(stamp: Path, base: Path, grandfather: bool | None = None,
+                rev: str | None = None) -> tuple[list[str], list[str], list[str]]:
+    """(findings, evidence paths, warnings). A schema-2 stamp must NAME both layers, and both pass.
+
+    With `rev` (the release gate), the evidence is judged as committed at that revision; without it
+    (qa-reporter, before the stamp and its evidence are committed), as it is in the working tree.
+    """
     grandfather = GRANDFATHER_OLD_STAMPS if grandfather is None else grandfather
     try:
         data = json.loads(stamp.read_text(encoding="utf-8"))
@@ -320,15 +361,20 @@ def check_stamp(stamp: Path, base: Path,
                             f"`..` -- the gate lets the stamp's commit carry it, so anything else would carry code")
     if findings:
         return findings, [], []
-    for rel in (fb + "/pages.csv", az):
-        if not tracked(base, rel):
-            findings.append(f"{rel} is not committed -- evidence the gate cannot see in git is not evidence")
-    for label, fn in (("first-boot", lambda: check_first_boot(base / fb)),
-                      ("authz", lambda: check_authz(base / az, str(data.get("root_role") or "root")))):
-        try:
-            findings += [f"{label}: {f}" for f in fn()]
-        except Unusable as exc:
-            findings.append(f"{label}: {exc}")
+    with tempfile.TemporaryDirectory() as td:
+        root = base
+        if rev:
+            findings += committed_tree(base, rev, [fb, az], Path(td))
+            if findings:
+                return findings, [], []
+            root = Path(td)
+        for label, fn in (("first-boot", lambda: check_first_boot(root / fb)),
+                          ("authz", lambda: check_authz(root / az, str(data.get("root_role") or "root")))):
+            try:
+                findings += [f"{label}: {f}" for f in fn()]
+            except Unusable as exc:
+                findings.append(f"{label}: {exc}")
+    # A directory ends in "/" (the gate matches it as a prefix); the sweep is ONE file, matched exactly.
     return findings, [fb + "/", az], []
 
 
@@ -341,6 +387,7 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("authz"); p.add_argument("table", type=Path)
     p.add_argument("--root-role", default="root")
     p = sub.add_parser("stamp"); p.add_argument("--stamp", type=Path, default=Path("qa/CERTIFICATION"))
+    p.add_argument("--rev", help="judge the evidence as committed at REV (the release gate passes dev's sha)")
     ap.add_argument("--selftest", action="store_true")
     args = ap.parse_args(argv)
     if args.selftest:
@@ -351,7 +398,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.cmd == "authz":
             findings = check_authz(args.table, args.root_role)
         elif args.cmd == "stamp":
-            findings, paths, warnings = check_stamp(args.stamp, Path.cwd())
+            findings, paths, warnings = check_stamp(args.stamp, Path.cwd(), rev=args.rev)
             for w in warnings:
                 print(f"WARNING {w}", file=sys.stderr)
             if not findings:
@@ -487,7 +534,23 @@ def selftest() -> int:
         check("secrets: a labelled base32 key fails", any("base32" in f for f in fb(keyed, name="s4")))
         grouped = GOOD_ROWS + ['1.3,1280,root,/login/code,Enrol,Key,"Setup key: JBSW Y3DP EHPK 3PXP",Pass,,,,,x']
         check("secrets: a grouped base32 key fails", any("base32" in f for f in fb(grouped, name="s4b")))
-        prose = GOOD_ROWS + ['1.3,1280,root,/login/code,Enrol,Key,"key: internationalization issue",Pass,,,,,x']
+        for label, cell in (("lower-case grouped", "setup key: jbsw y3dp ehpk 3pxp"),
+                            ("under its label", "Setup key:\nJBSWY3DPEHPK3PXP"),
+                            ("in a markdown table", "| Setup key | `JBSWY3DPEHPK3PXP` |")):
+            (tmp / "kv").mkdir(exist_ok=True)
+            got = fb(GOOD_ROWS, {"a.png": _png([]), "b.png": _png([]), "notes.md": cell.encode()}, name=f"k-{label}")
+            check(f"secrets: a key {label} fails", any("base32" in f for f in got), got)
+        legend = GOOD_ROWS + ['1.3,1280,root,/r,Legend,Shown,"Key: PASS FAIL SKIP WARN",Pass,,,,,x']
+        check("secrets: an upper-case legend with no digit is not a key", fb(legend, name="k-leg") == [],
+              fb(legend, name="k-leg2"))
+        # A printed finding redacts a cell that itself looks like a secret.
+        cell = GOOD_ROWS + ['9,1280,a,/,x,y,z,"otpauth://totp/App:root?secret=JBSWY3DPEHPK3PXP",,,,,']
+        got = fb(cell, name="red")
+        check("secrets: a secret in a quoted cell is redacted in the finding", got and
+              not any("JBSWY3DP" in f for f in got) and any("redacted" in f for f in got), got)
+        # Lower-case prose that even carries a base32 digit: only an UPPER-case run is a key.
+        prose = GOOD_ROWS + ['1.3,1280,root,/login/code,Enrol,Key,"key: internationalization issue; '
+                             'key: q2roadmapdiscussion",Pass,,,,,x']
         check("secrets: lower-case prose after key: is not a secret", fb(prose, name="s4c") == [],
               fb(prose, name="s4d"))
         (tmp / "list").mkdir()
@@ -606,13 +669,34 @@ def selftest() -> int:
             f_conf, p_conf, _ = check_stamp(stamp, proj)
             check(f"stamp: {key}={value!r} outside the evidence root is refused",
                   any("evidence must be" in f for f in f_conf) and p_conf == [], (f_conf, p_conf))
-        # Evidence the gate cannot see in git is not evidence.
-        (proj / "qa/manual-tests/first-boot-v2").mkdir()
-        (proj / "qa/manual-tests/first-boot-v2/pages.csv").write_text(
-            HEADER + "".join(r + "\n" for r in GOOD_ROWS), encoding="utf-8")
+        # The gate (--rev) judges what is COMMITTED; the reporter, before committing, judges the tree.
+        _walk(proj / "qa/manual-tests/first-boot-v2", GOOD_ROWS)
         stamp.write_text(json.dumps({**base, **ev, "first_boot": "qa/manual-tests/first-boot-v2"}), encoding="utf-8")
-        f_unt, _, _ = check_stamp(stamp, proj)
-        check("stamp: uncommitted evidence is refused", any("not committed" in f for f in f_unt), f_unt)
+        f_tree, _, _ = check_stamp(stamp, proj)
+        check("stamp: uncommitted evidence passes in the working tree (the reporter's pre-commit check)",
+              f_tree == [], f_tree)
+        f_rev, p_rev, _ = check_stamp(stamp, proj, rev="HEAD")
+        check("stamp: uncommitted evidence is refused at --rev", any("not committed" in f for f in f_rev)
+              and p_rev == [], (f_rev, p_rev))
+        # #1437 review: a HOLE committed, with the fixed copy only in the working tree, still denies.
+        sweep = proj / "qa/manual-tests/authz-v1/sweep.csv"
+        sweep.write_text(AUTHZ_HEADER + "\n".join(hole) + "\n", encoding="utf-8")
+        subprocess.run([*g, "commit", "-q", "-am", "a HOLE, committed"], check=True)
+        sweep.write_text(AUTHZ_HEADER + "\n".join(AUTHZ_GOOD) + "\n", encoding="utf-8")
+        subprocess.run([*g, "add", str(sweep)], check=True)          # the fix is staged, not committed
+        stamp.write_text(json.dumps({**base, **ev}), encoding="utf-8")
+        f_c, _, _ = check_stamp(stamp, proj, rev="HEAD")
+        check("stamp: a committed HOLE denies at --rev though the fix is staged", any("HOLE" in f for f in f_c), f_c)
+        subprocess.run([*g, "commit", "-q", "-m", "fix the hole"], check=True)
+        # A symlink under the evidence root pointing at code contributes nothing: it is never followed.
+        (proj / "app").mkdir()
+        _walk(proj / "app", GOOD_ROWS)
+        (proj / "qa/manual-tests/first-boot-link").symlink_to(proj / "app", target_is_directory=True)
+        subprocess.run([*g, "add", "app", "qa/manual-tests/first-boot-link"], check=True)
+        subprocess.run([*g, "commit", "-q", "-m", "a link into app/"], check=True)
+        stamp.write_text(json.dumps({**base, **ev, "first_boot": "qa/manual-tests/first-boot-link"}), encoding="utf-8")
+        f_l, _, _ = check_stamp(stamp, proj, rev="HEAD")
+        check("stamp: a committed symlink into code is not evidence", f_l != [] and not any("ok" == f for f in f_l), f_l)
         (proj / "qa/manual-tests/first-boot-v1/pages.csv").write_text(
             HEADER + "".join(r + "\n" for r in blocked), encoding="utf-8")
         rc, out, err = run({**base, "first_boot": "qa/manual-tests/first-boot-v1",

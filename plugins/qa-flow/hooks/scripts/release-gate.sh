@@ -117,9 +117,16 @@ fi
 # holes. `release_evidence.py stamp` re-judges the evidence the stamp names and prints its paths; an
 # older stamp (no schema 2) passes with a warning while it is grandfathered, for one release.
 # Fail-closed: a missing script, or any error, is a non-zero exit, and that denies.
+# `--verify -q` prints NOTHING for a missing ref. Plain `rev-parse origin/dev` echoes the literal
+# "origin/dev" to stdout before failing, so the fallback's sha arrived on a second line and no stamp
+# could ever match in a repo without a fetched origin/dev (found by the #1337 fixtures).
+# Resolved HERE, before the evidence check, because that check judges the evidence COMMITTED at dev
+# -- not this checkout's working tree, where a staged fix could hide a committed HOLE (#1437 review).
+devsha="$(git rev-parse --verify -q origin/dev 2>/dev/null || git rev-parse --verify -q dev 2>/dev/null || true)"
+[ -n "$devsha" ] || deny "cannot resolve dev sha to compare against the certification. Fetch dev and retry."
 ev="${CLAUDE_PLUGIN_ROOT:-}/scripts/release_evidence.py"
 evtmp="$(mktemp 2>/dev/null || printf '%s' "${TMPDIR:-/tmp}/qa-release-evidence.$$")"
-if evidence="$(python3 "$ev" stamp 2>"$evtmp")"; then
+if evidence="$(python3 "$ev" stamp --rev "$devsha" 2>"$evtmp")"; then
   grep '^WARNING' "$evtmp" | sed 's/^WARNING /qa-flow: /' >&2
 else
   why="$(grep -E '^(FAIL|unusable)' "$evtmp" 2>/dev/null | head -3 | tr '\n' ' ')"
@@ -128,10 +135,7 @@ else
 fi
 rm -f "$evtmp"
 
-# `--verify -q` prints NOTHING for a missing ref. Plain `rev-parse origin/dev` echoes the literal
-# "origin/dev" to stdout before failing, so the fallback's sha arrived on a second line and no stamp
-# could ever match in a repo without a fetched origin/dev (found by the #1337 fixtures).
-devsha="$(git rev-parse --verify -q origin/dev 2>/dev/null || git rev-parse --verify -q dev 2>/dev/null || true)"
+# devsha was resolved above, before the evidence check.
 if [ -n "$devsha" ]; then
   case "$devsha" in
     "$csha"*) : ;;
@@ -146,7 +150,10 @@ if [ -n "$devsha" ]; then
       fi
       # quotePath off: a non-ASCII evidence filename must arrive as itself, not "\303\251"-quoted, or a
       # legitimate evidence commit reads as an unrecognised change and is denied (#1437 review).
-      if ! delta="$(git -c core.quotePath=false diff --name-only "$full" "$devsha" 2>/dev/null)"; then
+      # --no-renames: a rename lists BOTH paths. With rename detection on, moving app/x.rb into the
+      # evidence folder listed only the new path, so the code's removal from app/ was never judged
+      # (#1437 review, driven to rc 0).
+      if ! delta="$(git -c core.quotePath=false diff --no-renames --name-only "$full" "$devsha" 2>/dev/null)"; then
         deny "could not diff the certified sha ${csha:0:12} against dev ${devsha:0:12}. Fetch and retry, or re-certify."
       fi
       # The stamp's own commit may also carry the evidence it names (#1428): the walkthrough and the
@@ -158,8 +165,13 @@ if [ -n "$devsha" ]; then
         ok=0
         while IFS= read -r p; do
           [ -n "$p" ] || continue
-          # The leading "(" matters: inside $( ) a bare `pattern)` closes the substitution.
-          case "$f" in ("$p"*) ok=1 ;; esac
+          # A directory (trailing "/") matches as a prefix; the sweep is ONE file and matches exactly,
+          # or `sweep.csv.rb` would ride along. The leading "(" matters: inside $( ) a bare
+          # `pattern)` closes the substitution.
+          case "$p" in
+            (*/) case "$f" in ("$p"*) ok=1 ;; esac ;;
+            (*) [ "$f" = "$p" ] && ok=1 ;;
+          esac
         done <<EVIDENCE
 $evidence
 EVIDENCE

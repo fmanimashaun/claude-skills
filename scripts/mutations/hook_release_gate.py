@@ -38,35 +38,54 @@ GUARD = Guard(
         # #1428. The evidence check is skipped: a PASS stamp alone unlocks main again.
         Mutation(
             "the release-only layers are not checked, so a HOLE still promotes",
-            'if evidence="$(python3 "$ev" stamp 2>"$evtmp")"; then',
-            'if evidence="$(python3 "$ev" stamp 2>"$evtmp")" || true; then',
+            'if evidence="$(python3 "$ev" stamp --rev "$devsha" 2>"$evtmp")"; then',
+            'if evidence="$(python3 "$ev" stamp --rev "$devsha" 2>"$evtmp")" || true; then',
             "release-gate (#1428): a HOLE in the sweep denies",
         ),
         # The allowance matches ANY path under the evidence's parent, so code rides along unchecked.
         Mutation(
             "every changed file counts as evidence",
-            '          case "$f" in ("$p"*) ok=1 ;; esac',
-            '          ok=1',
+            '            (*/) case "$f" in ("$p"*) ok=1 ;; esac ;;',
+            '            (*/) ok=1 ;;',
             "release-gate (#1428): a code change riding with the evidence is still denied",
         ),
         # The trailing slash is what stops first-boot-v1-other matching first-boot-v1.
         Mutation(
             "the evidence directory is matched without its trailing slash",
-            '          case "$f" in ("$p"*) ok=1 ;; esac',
-            '          case "$f" in ("${p%/}"*) ok=1 ;; esac',
+            '            (*/) case "$f" in ("$p"*) ok=1 ;; esac ;;',
+            '            (*/) case "$f" in ("${p%/}"*) ok=1 ;; esac ;;',
             "release-gate (#1428): a look-alike of the evidence path is not evidence",
         ),
         # #1437 review: a contains-match survived every fixture. The allowance is a PREFIX.
         Mutation(
             "the evidence allowance matches the path anywhere, not as a prefix",
-            '          case "$f" in ("$p"*) ok=1 ;; esac',
-            '          case "$f" in (*"$p"*) ok=1 ;; esac',
+            '            (*/) case "$f" in ("$p"*) ok=1 ;; esac ;;',
+            '            (*/) case "$f" in (*"$p"*) ok=1 ;; esac ;;',
             "release-gate (#1428): a path merely containing the evidence path is not evidence",
+        ),
+        # #1437 review round 2: the sweep FILE matched as a prefix, so sweep.csv.rb rode along.
+        Mutation(
+            "the sweep file matches as a prefix",
+            '            (*) [ "$f" = "$p" ] && ok=1 ;;',
+            '            (*) case "$f" in ("$p"*) ok=1 ;; esac ;;',
+            "release-gate (#1428): a file that only starts with the sweep's name is not evidence",
+        ),
+        Mutation(
+            "rename detection is back, so code moved into the evidence folder is never judged",
+            '      if ! delta="$(git -c core.quotePath=false diff --no-renames --name-only "$full" "$devsha" 2>/dev/null)"; then',
+            '      if ! delta="$(git -c core.quotePath=false diff -M --name-only "$full" "$devsha" 2>/dev/null)"; then',
+            "release-gate (#1428): code renamed into the evidence folder is denied",
+        ),
+        Mutation(
+            "the evidence is judged in the working tree, not as committed at dev",
+            'if evidence="$(python3 "$ev" stamp --rev "$devsha" 2>"$evtmp")"; then',
+            'if evidence="$(python3 "$ev" stamp 2>"$evtmp")"; then',
+            "release-gate (#1428): a committed HOLE denies though the fix is only staged",
         ),
         Mutation(
             "git quotes non-ASCII names again, so a legitimate evidence commit is denied",
-            '      if ! delta="$(git -c core.quotePath=false diff --name-only "$full" "$devsha" 2>/dev/null)"; then',
-            '      if ! delta="$(git diff --name-only "$full" "$devsha" 2>/dev/null)"; then',
+            '      if ! delta="$(git -c core.quotePath=false diff --no-renames --name-only "$full" "$devsha" 2>/dev/null)"; then',
+            '      if ! delta="$(git diff --no-renames --name-only "$full" "$devsha" 2>/dev/null)"; then',
             "release-gate (#1428): a non-ASCII evidence file name is recognised as evidence",
         ),
         # The paths come from stdout; losing them denies the stamp's own evidence commit.

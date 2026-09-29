@@ -743,6 +743,37 @@ def release_gate_fixtures() -> None:
         sh("add", "qa"); sh("commit", "-q", "-m", "a non-ASCII screenshot name in the evidence")
         rc, err = gate2()
         check("release-gate (#1428): a non-ASCII evidence file name is recognised as evidence", rc == 0, err)
+        # #1437 review round 2. RENAME LAUNDERING: moving code into the evidence folder in the stamp's
+        # commit listed only the new path, so the code's removal from app/ was never judged.
+        (repo / "app.rb").write_text("v1\n", encoding="utf-8")
+        tip = sh("rev-parse", "HEAD")
+        (repo / "qa" / "CERTIFICATION").write_text(json.dumps({**new_stamp, "sha": tip}), encoding="utf-8")
+        sh("mv", "app.rb", "qa/manual-tests/first-boot-v1/app.rb")
+        sh("add", "qa"); sh("commit", "-q", "-m", "stamp commit that moves code into the evidence folder")
+        rc, err = gate2()
+        check("release-gate (#1428): code renamed into the evidence folder is denied, naming its old path",
+              rc == 2 and "app.rb" in err, err)
+        sh("mv", "qa/manual-tests/first-boot-v1/app.rb", "app.rb"); sh("commit", "-q", "-m", "move it back")
+        # The sweep is ONE file: a sibling that merely starts with its name is not evidence.
+        tip = sh("rev-parse", "HEAD")
+        (repo / "qa" / "CERTIFICATION").write_text(json.dumps({**new_stamp, "sha": tip}), encoding="utf-8")
+        (repo / "qa/manual-tests/authz-v1/sweep.csv.rb").write_text("x\n", encoding="utf-8")
+        sh("add", "qa"); sh("commit", "-q", "-m", "a file named after the sweep")
+        rc, err = gate2()
+        check("release-gate (#1428): a file that only starts with the sweep's name is not evidence",
+              rc == 2 and "sweep.csv.rb" in err, err)
+        sh("rm", "-q", "qa/manual-tests/authz-v1/sweep.csv.rb"); sh("commit", "-q", "-m", "drop it")
+        # The gate judges what dev COMMITTED: a HOLE committed on dev, fixed only in the index here.
+        tip = sh("rev-parse", "HEAD")
+        (repo / "qa" / "CERTIFICATION").write_text(json.dumps({**new_stamp, "sha": tip}), encoding="utf-8")
+        az_file.write_text(az_good + "demote,app/controllers/staff.rb:88,it,root,,HOLE,forged PATCH,#1\n",
+                           encoding="utf-8")
+        sh("add", "qa"); sh("commit", "-q", "-m", "the sweep, committed with a HOLE")
+        az_file.write_text(az_good, encoding="utf-8"); sh("add", "qa")
+        rc, err = gate2()
+        check("release-gate (#1428): a committed HOLE denies though the fix is only staged",
+              rc == 2 and "HOLE" in err, err)
+        sh("commit", "-q", "-m", "fix it for real")
         # An old stamp names no evidence, so it gets no evidence allowance: certify the current tip.
         old_stamp = {k: v for k, v in new_stamp.items() if k in ("date", "verdict", "report")}
         old_stamp["sha"] = sh("rev-parse", "HEAD")

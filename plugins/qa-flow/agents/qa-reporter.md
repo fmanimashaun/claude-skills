@@ -145,8 +145,10 @@ certified feature.
 "PASS","report":"qa/reports/<file>","schema":2,"first_boot":"qa/manual-tests/first-boot-<version>",
 "authz":"qa/manual-tests/authz-<version>/sweep.csv"}`, adding `"root_role"` when the app's root is
 not called root. `schema: 2` means the stamp names the two release-only layers (#1428). Then run
-`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/release_evidence.py" stamp`: on any non-zero exit DELETE the
-stamp and report FAIL, because the release-gate hook runs the same check and would deny it anyway.
+`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/release_evidence.py" stamp`, which judges the evidence in the
+working tree, before it is committed: on any non-zero exit DELETE the stamp and report FAIL. The
+release-gate hook runs the same check with `--rev <dev sha>` on the evidence as COMMITTED, so an
+uncommitted fix does not count there.
 The release-gate hook reads this. NEVER write
 it for verify runs, partial passes, or with open S1/S2 defects. State plainly which
 sha is cleared for main, and that the stamp's commit (to dev, by PR, containing only

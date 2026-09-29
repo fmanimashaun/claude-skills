@@ -69,14 +69,14 @@ GUARD = Guard(
         ),
         Mutation(
             "a key printed in groups of four is not recognised",
-            r'                           r"((?:[A-Z2-7]{4}[ -]?){3}[A-Z2-7]{4,}|[A-Z2-7]{16,})\b")',
-            r'                           r"([A-Z2-7]{16,})\b")',
+            r'r"((?:[A-Z2-7]{4}[ -]?){3}[A-Z2-7]{4,}|(?:[a-z2-7]{4}[ -]){3}',
+            r'r"((?:[a-z2-7]{4}[ -]){3}',
             "secrets: a grouped base32 key fails",
         ),
         Mutation(
             "the secret itself becomes case-insensitive, so prose after key: reads as a secret",
-            'BASE32_SECRET = re.compile(r"(?i:\\b(?:secret|key|seed|totp)\\b)[^A-Za-z0-9\\n]{0,4}"',
-            'BASE32_SECRET = re.compile(r"(?i)\\b(?:secret|key|seed|totp)\\b[^A-Za-z0-9\\n]{0,4}"',
+            'BASE32_SECRET = re.compile(r"(?i:\\b(?:secret|key|seed|totp)\\b)[^A-Za-z0-9\\n]{0,8}',
+            'BASE32_SECRET = re.compile(r"(?i)\\b(?:secret|key|seed|totp)\\b[^A-Za-z0-9\\n]{0,8}',
             "secrets: lower-case prose after key: is not a secret",
         ),
         Mutation(
@@ -93,10 +93,34 @@ GUARD = Guard(
             "outside the evidence root is refused",
         ),
         Mutation(
-            "uncommitted evidence is accepted",
-            "        if not tracked(base, rel):",
-            "        if False:",
-            "stamp: uncommitted evidence is refused",
+            "--rev is ignored, so the gate judges the working tree",
+            "        if rev:\n            findings += committed_tree(",
+            "        if False:\n            findings += committed_tree(",
+            "stamp: uncommitted evidence is refused at --rev",
+        ),
+        Mutation(
+            "a symlink in the committed evidence is followed",
+            "    with tarfile.open(fileobj=io.BytesIO(done.stdout)) as tar:\n        for member in tar.getmembers():",
+            '    with tarfile.open(fileobj=io.BytesIO(done.stdout)) as tar:\n        tar.extractall(dest, filter="fully_trusted")\n        for member in []:',
+            "stamp: a committed symlink into code is not evidence",
+        ),
+        Mutation(
+            "a printed finding quotes a cell that holds a secret",
+            '    return "<redacted: looks like a second-factor secret>" if leak_reasons(text) else text',
+            "    return text",
+            "secrets: a secret in a quoted cell is redacted in the finding",
+        ),
+        Mutation(
+            "a key need not carry a digit, so an upper-case legend reads as a key",
+            '    if any(re.search(r"[2-7]", m.group(1)) for m in BASE32_SECRET.finditer(text)):',
+            "    if BASE32_SECRET.search(text):",
+            "secrets: an upper-case legend with no digit is not a key",
+        ),
+        Mutation(
+            "a lower-case grouped key is not recognised",
+            r'|(?:[a-z2-7]{4}[ -]){3}[a-z2-7]{4,}|',
+            r'|',
+            "secrets: a key lower-case grouped fails",
         ),
         Mutation(
             "a malformed schema is grandfathered like an old stamp",
