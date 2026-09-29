@@ -3522,7 +3522,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### 1.55.0 (release v1.152.0) — 2026-09-28
+### Unreleased
 
 - **`guard-bash` checks an issue's labels against the repository it is filed in, not the session's —
   `plugins/rails-flow/hooks/scripts/lib/issue_labels.py`, `scripts/mutations/hook_issue_labels.py`,
@@ -3551,6 +3551,8 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   - **Known limit.** A `GH_REPO` set only through `CLAUDE_ENV_FILE` is invisible to the hook; it is recorded on #1400.
   - **Tests.** 88 selftest checks run, 67 of them new, and 3 end-to-end hook fixtures. Mutations: 22 new, 31 of
     31 caught.
+
+### 1.55.0 (release v1.152.0) — 2026-09-28
 
 - **`/rails-flow:slice` breaks a spec, brief or issue into dependency-ordered vertical slices and files them —
   `plugins/rails-flow/commands/slice.md`, `plugins/rails-flow/scripts/check_slices.py`,
