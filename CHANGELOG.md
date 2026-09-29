@@ -7,6 +7,10 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **The mutation gate fits CI again, and a timeout on the run that must prove it is a FAIL — `scripts/mutation_check.py`, `scripts/maintainer_doctor.py`, `.github/workflows/gates.yml`** (#1444). Every dev push run since the suite passed 900 s reported `mutation coverage` as a timeout-skip and went green, so the promotion's CI evidence did not exist. `mutation_check.py` now runs every baseline, then every mutation of every live guard, in one pool (`--jobs`, default the CPU count): the full 1514 mutations across 141 guards measured 1456 s at `--jobs 10`, against ~84 min serial, all caught. `SLOW_GATES["mutation coverage"]` is 5400 s, and the ok line prints `jobs=N, Xs` so the next value comes from a measured runner. `--require-slow` (CI's non-PR runs, and `scripts/release_local.sh`) turns a slow-gate timeout into FAIL; an ordinary gate's timeout, and a laptop run, keep SKIP. `unstaged_sibling_imports` now follows imports transitively, including those made by `needs` files — the one-level scan is how `check_slices` went INERT in CI; its fixture fails against the old function.
+
 ### 2026-09-28 (release v1.152.0)
 
 - **The `check_slices` mutation guard stages the files its imports now need — `plugins/rails-flow/scripts/mutations/check_slices.py`**.
@@ -3523,6 +3527,13 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 ## rails-flow (agentic flow plugin)
 
 ### Unreleased
+
+- **model-tiers: `sonnet` is Sonnet 5.5 on the Anthropic API from Claude Code v2.1.284 — `plugins/rails-flow/reference/model-tiers.md`,
+  `plugins/rails-flow/scripts/check_handoff.py`** (#1449). Verified against code.claude.com `model-config`, re-read
+  2026-09-29. Only the Anthropic API row moved: Claude Platform on AWS is still Sonnet 4.6, and Amazon Bedrock,
+  Google Cloud's Agent Platform and Microsoft Foundry are Sonnet 4.5. The claude.dev post that prompted this implied
+  every provider moved. Sonnet 5.5 defaults to `medium` effort in Claude Code, where the API default is `high`, and
+  its thinking cannot be turned off.
 
 - **`guard-migrate` folds case, names its Bash limit, and says a broken boot comes first — `plugins/rails-flow/hooks/scripts/guard-migrate.sh`,
   `plugins/rails-flow/scripts/check_hook_gates.py`** (#1416). From the independent review of #1380, whose verdict was CLEAN.
@@ -11036,6 +11047,12 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
+### Unreleased
+
+- **model-tiers: `sonnet` is Sonnet 5.5 on the Anthropic API from v2.1.284 — `plugins/qa-flow/reference/model-tiers.md`**
+  (#1449). This is the same verified per-provider table as rails-flow's; the paragraph now also names Claude
+  Platform on AWS (Sonnet 4.6), which it had omitted.
+
 ### 1.34.0 (release v1.152.0) — 2026-09-28
 
 - **`text_resize.py` never reads a partial measurement as a pass, and both judges compare routes as paths —
@@ -16126,6 +16143,17 @@ boot/validation path — with a bullet each so the promotion could close them se
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
 ### Unreleased
+
+- **ai-llm.md names Claude Sonnet 5.5, and says why the default stays `claude-sonnet-5` — `skills/rails-8/references/ai-llm.md`,
+  `dist/rails-8.skill`** (#1449). doctrine-verifier **CONFIRMED**:
+  - `claude-sonnet-5-5` is the current Sonnet (released 2026-09-28), and Sonnet 5 is legacy (retirement not sooner
+    than 2027-06-30); from platform.claude.com `models/sonnet-5-5/overview` and `models/sonnet-5/overview`.
+  - A non-default `temperature` / `top_p` / `top_k` returns 400 on **both** (their "Good to know"). The sampling
+    note now names 5.5 too.
+  - **REFUTED: that ruby_llm supports the new ID.** No release's `lib/ruby_llm/models.json` contains
+    `claude-sonnet-5-5` (checked at v2.0.0 and `main`, 2026-09-29), and `default_model` must be in the registry or
+    it raises. So the default stays `claude-sonnet-5`, with the reason and the trigger to switch written beside it.
+  - Boundary: ruby_llm 2.0.0.
 
 - **The Rails Pulse guard loads only a database with no Pulse table at all — `skills/rails-8/references/observability.md`,
   `dist/rails-8.skill`** (#1429). The final review of #1420 left three NITs, and all three came from the guard counting

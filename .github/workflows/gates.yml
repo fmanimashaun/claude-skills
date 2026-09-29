@@ -66,7 +66,7 @@ jobs:
       # sweep's 475 s) and REPORTS the skip. A push to dev -- the merge commit no PR tested -- and the
       # promotion (release.yml calls this workflow) run everything, so nothing reaches main without it (#866).
       - name: Gate sweep
-        run: python3 scripts/maintainer_doctor.py --gates-only ${{ github.event_name == 'pull_request' && '--fast' || '' }}
+        run: python3 scripts/maintainer_doctor.py --gates-only ${{ github.event_name == 'pull_request' && '--fast' || '--require-slow' }}
 
       # The PROMOTION pre-flight (#990): a pull request whose base is `main` is the one merge that
       # publishes, so it is the one place `### Unreleased` must not survive. The v1.127.0 promotion
