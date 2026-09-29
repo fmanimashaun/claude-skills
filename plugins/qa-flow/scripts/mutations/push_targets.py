@@ -55,7 +55,7 @@ GUARD = Guard(
             "shell expansions in a refspec are read literally again",
             '        if EXPANDS & set(word) or word.startswith("~"):      # `~user` is tilde expansion',
             "        if False:",
-            "'git push origin $(echo main)': expected TARGETS main",
+            "'git push origin {main,dev}': expected TARGETS main",
         ),
         Mutation(
             "redirections stop being split off, so main>/dev/null is one refspec",
@@ -100,10 +100,30 @@ GUARD = Guard(
             "'git push origin +main': expected TARGETS main",
         ),
         Mutation(
-            "--repo no longer shifts the positionals, so --repo=origin main reads main as the remote",
-            '        if a.startswith("--repo="):\n            repo_opt = True',
-            '        if False:\n            repo_opt = True',
-            "'git push --repo=origin main': expected TARGETS main",
+            # git help push: `--repo` equals the <repository> argument, and a positional wins.
+            "the first positional stops being the repository, so --repo=origin main reads main as a refspec",
+            "    refspecs = positional[1:]",
+            "    refspecs = positional",
+            "'git push --repo=origin main': expected does not target main",
+        ),
+        Mutation(
+            # #1470 round 2: `-v$(true)` hid the refspecs from the first parser.
+            "a substitution in an option word is read as a plain option again",
+            "        if SUBST in word:",
+            "        if False:",
+            '"git push origin -v$(echo \' main\')": expected TARGETS main',
+        ),
+        Mutation(
+            "unquoted $( is no longer one word, so shlex splits at ( and the refspecs vanish",
+            "            out.append(_placeholder(cmd[i + 2:end - 1]) if c == \"$\" else SUBST)\n            i = end\n            continue",
+            "            out.append(c)\n            i += 1\n            continue",
+            "'git -C $(pwd) push origin main': expected TARGETS main",
+        ),
+        Mutation(
+            "the current-branch idiom is refused like any substitution",
+            '    return "HEAD" if " ".join(body.split()) in CURRENT_BRANCH_IDIOMS else SUBST',
+            "    return SUBST",
+            "git branch --show-current)\"': expected does not target main",
         ),
         Mutation(
             "the bare `:` refspec no longer counts as the matching branches",

@@ -683,8 +683,11 @@ def release_gate_fixtures() -> None:
     # #1470 review: the five pushes to main the first parser ALLOWED. Each is blocked end to end.
     for cmd in ("git push origin $(echo main)", "git push origin main>/dev/null",
                 "echo done#1; git push origin main", "git push origin HEAD:heads/main",
-                "git push origin {main,dev}"):
+                "git push origin {main,dev}", "git -C $(pwd) push origin main",
+                "git push -v$(true) origin main", "git push --receive-pack=$(echo x) origin main"):
         check(f"release-gate (#1470): `{cmd}` reaches main and is blocked", run(cmd) == 2, "exit 0")
+    check("release-gate (#1470): the current-branch idiom on a feature branch passes",
+          run('git push -u origin "$(git branch --show-current)"') == 0, "exit 2")
     # ...and the false refusal that review found: an apostrophe in a heredoc body is not a quote.
     check("release-gate (#1470): a heredoc body with an apostrophe does not block a feature push",
           run("cat > n.md <<'EOF'\nit's done\nEOF\ngit push -u origin fix/x") == 0, "exit 2")

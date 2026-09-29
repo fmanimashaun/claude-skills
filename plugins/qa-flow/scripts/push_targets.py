@@ -62,6 +62,40 @@ class Unjudgeable(Exception):
     """The command could not be read well enough to say no. The caller must deny."""
 
 
+SUBST = "$__SUBST__"
+CURRENT_BRANCH_IDIOMS = {"git branch --show-current", "git rev-parse --abbrev-ref HEAD"}
+
+
+def _subst_end(cmd: str, i: int) -> int:
+    """Index just past the `)` closing the substitution whose `(` is at `i`, quote-aware."""
+    depth, quote, n = 0, "", len(cmd)
+    while i < n:
+        c = cmd[i]
+        if quote:
+            if c == "\\" and quote == '"':
+                i += 2; continue
+            if c == quote:
+                quote = ""
+        elif c == "\\":
+            i += 2; continue
+        elif c in "'\"":
+            quote = c
+        elif c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                return i + 1
+        i += 1
+    raise Unjudgeable("an unterminated command substitution")
+
+
+def _placeholder(body: str) -> str:
+    # `"$(git branch --show-current)"` is how agents spell "this branch": read it as HEAD, which
+    # resolves to the branch it names, instead of refusing every such push (#1470 round 2).
+    return "HEAD" if " ".join(body.split()) in CURRENT_BRANCH_IDIOMS else SUBST
+
+
 def strip_comments_and_heredocs(cmd: str) -> str:
     """Bash's rules, not shlex's: `#` opens a comment only at the start of a word, outside quotes;
     a heredoc's body runs from the next newline to its delimiter line."""
@@ -70,6 +104,13 @@ def strip_comments_and_heredocs(cmd: str) -> str:
     pending: list[tuple[str, bool]] = []          # heredoc delimiters awaiting the next newline
     while i < n:
         c = cmd[i]
+        if quote == '"' and (cmd.startswith("$(", i) or c == "`"):
+            end = _subst_end(cmd, i + 1) if c == "$" else cmd.find("`", i + 1) + 1
+            if end <= 0:
+                raise Unjudgeable("an unterminated backtick substitution")
+            out.append(_placeholder(cmd[i + 2:end - 1] if c == "$" else cmd[i + 1:end - 1]))
+            i = end
+            continue
         if quote:
             out.append(c)
             if c == "\\" and quote == '"' and i + 1 < n:
@@ -80,6 +121,20 @@ def strip_comments_and_heredocs(cmd: str) -> str:
             continue
         if c == "\\" and i + 1 < n:
             out.append(c + cmd[i + 1]); i += 2; continue
+        if c in "$<>" and cmd.startswith("(", i + 1) and (i == 0 or cmd[i - 1] != "<"):
+            # `$(...)`, `<(...)`, `>(...)`: ONE word, or shlex splits at `(` and the refspecs after
+            # it land in another "segment" nobody reads -- `git -C $(pwd) push origin main` passed.
+            end = _subst_end(cmd, i + 1)
+            out.append(_placeholder(cmd[i + 2:end - 1]) if c == "$" else SUBST)
+            i = end
+            continue
+        if c == "`":
+            end = cmd.find("`", i + 1) + 1
+            if end <= 0:
+                raise Unjudgeable("an unterminated backtick substitution")
+            out.append(_placeholder(cmd[i + 1:end - 1]))
+            i = end
+            continue
         if c in "'\"":
             quote = c; out.append(c); i += 1; continue
         if c == "#" and (i == 0 or cmd[i - 1] in " \t\n;&|()<>"):
@@ -164,8 +219,10 @@ def branch_of(dst: str) -> str:
 def destinations(args: list[str], current: Callable[[bool], str | None]) -> list[str]:
     """Every branch this push writes. `current(push)` resolves the current branch (push=False) or
     its `@{push}` destination (push=True); None = unknown."""
+    for word in args:
+        if SUBST in word:
+            raise Unjudgeable(f"{word!r} runs a command whose output git sees, not this text")
     positional: list[str] = []
-    repo_opt = False
     i = 0
     while i < len(args):
         a = args[i]
@@ -175,11 +232,8 @@ def destinations(args: list[str], current: Callable[[bool], str | None]) -> list
         if a in EVERY_BRANCH:
             return [f"every branch ({a})"]
         if a in PUSH_OPTS_WITH_VALUE:
-            repo_opt = repo_opt or a == "--repo"
             i += 2
             continue
-        if a.startswith("--repo="):
-            repo_opt = True
         if a.startswith("-"):
             i += 1
             continue
@@ -188,7 +242,10 @@ def destinations(args: list[str], current: Callable[[bool], str | None]) -> list
     for word in positional:
         if EXPANDS & set(word) or word.startswith("~"):      # `~user` is tilde expansion
             raise Unjudgeable(f"{word!r} is expanded by the shell before git sees it")
-    refspecs = positional if repo_opt else positional[1:]
+    # `--repo=<r>` "is equivalent to the <repository> argument. If both are specified, the
+    # command-line argument takes precedence" (git help push): the first positional is still the
+    # repository, so `--repo=origin main` pushes to a remote named main, not to branch main.
+    refspecs = positional[1:]
     if not refspecs:
         dst = current(True) or current(False)
         if not dst:
@@ -281,8 +338,8 @@ def selftest() -> int:
         ("git push origin --delete main", on_feature, True),
         ("git push --all origin", on_feature, True),
         ("git push origin :", on_feature, True),
-        ("git push --repo=origin main", on_feature, True),
-        ("git push --repo origin main", on_feature, True),
+        ("git push --repo=origin origin main", on_feature, True),
+        ("git push --repo=origin main", on_feature, False),
         ("git push -- origin main", on_feature, True),
         ("git push origin main dev", on_feature, True),
         ("git push --set-upstream origin main", on_feature, True),
@@ -308,6 +365,21 @@ def selftest() -> int:
         ("git push -o main origin feature/x", on_feature, False),
         ("git push origin $'main'", on_feature, True),
         ("git push origin 'refs/heads/*:refs/heads/*'", on_feature, True),
+        # (#1470 round 2) `$(` inside an OPTION word split the command at `(`, hiding the refspecs
+        ("git push -v$(true) origin main", on_feature, True),
+        ("git -C $(pwd) push origin main", on_feature, True),
+        ("git push --receive-pack=$(echo git-receive-pack) origin main", on_feature, True),
+        ("git push --no-verify$(true) origin main", on_feature, True),
+        # an unquoted substitution WORD-SPLITS: this expands to `-v main`, a push to main, and
+        # only the substitution check sees it -- the option word is otherwise skipped
+        ("git push origin -v$(echo ' main')", on_feature, True),
+        ("git push origin <(echo main)", on_feature, True),
+        # ...while the everyday forms stay usable: a substitution elsewhere, and the current-branch idioms
+        ('git commit -m "$(cat msg)" && git push origin fix/x', on_feature, False),
+        ("git -C $(pwd) push origin fix/x", on_feature, False),
+        ('git push -u origin "$(git branch --show-current)"', on_feature, False),
+        ("git push -u origin `git rev-parse --abbrev-ref HEAD`", on_feature, False),
+        ('git push -u origin "$(git branch --show-current)"', fake("main"), True),
         # a bare push FROM main, and from a branch whose @{push} is main (push.default=upstream)
         ("git push", fake("main"), True),
         ("git push origin HEAD", fake("main"), True),
