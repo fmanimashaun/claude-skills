@@ -19,9 +19,42 @@ GUARD = Guard(
            # mutation reads as caught -- the harness reported this guard INERT until it was added (#1173).
            'plugins/rails-flow/scripts/ci_verdict_hint.py',
            'plugins/qa-flow/scripts/read_certification.py',
+           'plugins/qa-flow/scripts/push_targets.py',  # release-gate.sh runs it (#1410)
            'plugins/qa-flow/scripts/release_evidence.py',
            'plugins/rails-flow/scripts/self_consistency.py'),
     mutations=(
+        # #1410 / #1470: the hook must hand the RAW command to the classifier, for ANY command that
+        # mentions git or gh, treat "could not judge" as a promotion, and keep a raw-text fallback.
+        Mutation(
+            "the classifier reads the normalised segment, so a quoted main is stripped and allowed",
+            """  if _found="$(printf '%s' "$cmd" | python3 "$_pt" --classify 2>/dev/null)"; then""",
+            """  if _found="$(printf '%s' "$seg" | python3 "$_pt" --classify 2>/dev/null)"; then""",
+            'release-gate (#1410): `git push origin "main"` targets main',
+        ),
+        Mutation(
+            "an unjudgeable command is allowed instead of treated as a promotion",
+            "  else\n    targets_main=1\n  fi\nelif",
+            "  else\n    :\n  fi\nelif",
+            "release-gate (#1410): an unparseable push is treated as a promotion",
+        ),
+        Mutation(
+            "only a command STARTING with git push is handed over again, so a wrapper hides it",
+            "  *git*|*gh*) _mentions=1 ;;",
+            '  "git push"*|"gh pr merge"*) _mentions=1 ;;',
+            "`'timeout 60 git push origin main'` reaches main",
+        ),
+        Mutation(
+            "the pre-check reads the raw text again, so g''it and gi\\t skip the classifier",
+            '_probe="$(printf \'%s\' "$cmd" | tr -d "\'\\"\\\\\\\\")"',
+            '_probe="$cmd"',
+            "`\"g''it push origin main\"` reaches main",
+        ),
+        Mutation(
+            "the fallback reads the normalised segment, losing a quoted main",
+            """    && printf '%s' "$cmd" | grep -qE '\\b(main|master)\\b' && targets_main=1""",
+            """    && printf '%s' "$seg" | grep -qE '\\b(main|master)\\b' && targets_main=1""",
+            "release-gate (#1410): parser missing -> a quoted `main` push is still blocked",
+        ),
         # #1337: the stamp's own commit invalidates it again, or any delta slips through.
         Mutation(
             "an ancestor stamp is never accepted, so committing the stamp denies its promotion",

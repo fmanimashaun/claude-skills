@@ -559,10 +559,10 @@ DEFAULT_TIMEOUT = 180
 # Keyed by gate NAME, exactly as CORPORA_GATES is, and the selftest asserts the names are real —
 # a rename would otherwise silently drop the allowance and the gate would start failing on time.
 SLOW_GATES: dict[str, int] = {
-    # #1444: 1514 mutations measured 1456 s at --jobs 10 on a 10-core laptop, and ~84 min serial.
-    # CI's runner has fewer cores; 5400 s covers a 4-core runner at the serial/10-way ratio with
-    # margin. Re-set it from the `jobs=N, Xs` a dev push run prints on this gate's ok line.
-    "mutation coverage": 5400,
+    # #1444, MEASURED on the runner: 1602 mutations / 145 guards took 604 s at jobs=4 (dev push run
+    # after PR #1471, 2026-09-29). 1800 s is 3x that: room for the suite to grow, while a hung gate
+    # still surfaces in 30 min rather than 90. Re-set it from the `jobs=N, Xs` on this gate's ok line.
+    "mutation coverage": 1800,
 }
 
 
