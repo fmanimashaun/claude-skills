@@ -49,7 +49,7 @@ GUARD = Guard(
         ),
         Mutation(
             "a mock-up file that does not exist passes",
-            "    elif mock and not ((root / mock).is_file() and (mock.startswith(RECORD_DIR) or MOCK_FILE.search(mock))):",
+            '    elif mock and not ((root / mock).is_file() and MOCK_FILE.search(mock)):',
             "    elif False:",
             "a mock-up file that does not exist is held",
         ),
@@ -93,7 +93,7 @@ GUARD = Guard(
         ),
         Mutation(
             "any repo file counts as a mock-up",
-            "    elif mock and not ((root / mock).is_file() and (mock.startswith(RECORD_DIR) or MOCK_FILE.search(mock))):",
+            '    elif mock and not ((root / mock).is_file() and MOCK_FILE.search(mock)):',
             "    elif mock and not (root / mock).is_file():",
             "an arbitrary repo file is not a mock-up",
         ),
@@ -111,9 +111,30 @@ GUARD = Guard(
         ),
         Mutation(
             "a fenced example of the opt-out line turns the gate off",
-            '    text = re.sub(r"^\\s*(```|~~~).*?^\\s*\\1\\s*$", "", g.read_text(encoding="utf-8"), flags=re.M | re.S)',
-            '    text = g.read_text(encoding="utf-8")',
+            '    return bool(OPT_OUT.search(unfenced(g.read_text(encoding="utf-8"))))',
+            '    return bool(OPT_OUT.search(g.read_text(encoding="utf-8")))',
             "a fenced example of the opt-out line is not a declaration",
+        ),
+        Mutation(
+            # #1430
+            'an unterminated fence no longer runs to the end of the file, so its opt-out counts',
+            '        if m:\n            fence = m.group(1)\n            continue',
+            '        if m and False:\n            fence = m.group(1)\n            continue',
+            'an opt-out inside an unterminated fence is not a declaration',
+        ),
+        Mutation(
+            # #1430
+            'a record may name itself as its mock-up again',
+            '    elif mock and (root / mock).resolve() == path.resolve():',
+            '    elif False:',
+            'a record naming itself is held',
+        ),
+        Mutation(
+            # #1430
+            'an .svg is not a mock-up file',
+            'MOCK_FILE = re.compile(r"\\.(html?|png|jpe?g|webp|pdf|svg)$", re.I)',
+            'MOCK_FILE = re.compile(r"\\.(html?|png|jpe?g|webp|pdf)$", re.I)',
+            'an .svg mock-up OUTSIDE the records folder is a mock-up file',
         ),
     ),
 )

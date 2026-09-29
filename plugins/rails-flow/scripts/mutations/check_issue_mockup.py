@@ -58,16 +58,15 @@ GUARD = Guard(
         ),
         Mutation(
             "a committed mock-up file is not a link",
-            'LINK = re.compile(r"https://[^/\\s]+\\.[^\\s]+|(?:^|\\s)docs/product/mockups/\\S+"\n'
-            '                  r"|(?:^|\\s)[\\w./-]+\\.(?:html?|png|jpe?g|webp|pdf)\\b", re.I)',
+            'LINK = re.compile(r"https://[^/\\s]+\\.[^\\s]+"\n                  r"|(?:^|\\s)docs/product/mockups/\\S+\\.(?:md|html?|png|jpe?g|webp|pdf|svg)\\b"\n                  r"|(?:^|\\s)[\\w./-]+\\.(?:html?|png|jpe?g|webp|pdf|svg)\\b", re.I)',
             'LINK = re.compile(r"https://[^/\\s]+\\.[^\\s]+", re.I)',
             "CONTROL: an agent-written section with a committed mock-up file is declared",
         ),
         # Pre-release review of #1387.
         Mutation(
             "any word ending in .md is a mock-up again",
-            '                  r"|(?:^|\\s)[\\w./-]+\\.(?:html?|png|jpe?g|webp|pdf)\\b", re.I)',
-            '                  r"|(?:^|\\s)[\\w./-]+\\.(?:html?|png|jpe?g|webp|pdf|md)\\b", re.I)',
+            '                  r"|(?:^|\\s)[\\w./-]+\\.(?:html?|png|jpe?g|webp|pdf|svg)\\b", re.I)',
+            '                  r"|(?:^|\\s)[\\w./-]+\\.(?:html?|png|jpe?g|webp|pdf|svg|md)\\b", re.I)',
             "\"TBD, see notes.md\" is not a declaration",
         ),
         Mutation(
@@ -75,6 +74,20 @@ GUARD = Guard(
             '    if APPROVAL.search(answer(body) or ""):',
             "    if True:",
             "a linked but unapproved mock-up is not ready",
+        ),
+        Mutation(
+            # #1430
+            'an approval link counts as the mock-up link again',
+            '    return bool(LINK.search(APPROVAL.sub(" ", text)))',
+            '    return bool(LINK.search(text))',
+            'a section holding ONLY the approval link is not ready',
+        ),
+        Mutation(
+            # #1430
+            'a record path needs no extension, so docs/product/mockups/TBD links',
+            '                  r"|(?:^|\\s)docs/product/mockups/\\S+\\.(?:md|html?|png|jpe?g|webp|pdf|svg)\\b"',
+            '                  r"|(?:^|\\s)docs/product/mockups/\\S+"',
+            'docs/product/mockups/TBD is a placeholder',
         ),
     ),
 )

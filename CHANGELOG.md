@@ -3542,6 +3542,13 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **The mock-up checks close four holes from #1424's re-review — `plugins/rails-flow/scripts/check_issue_mockup.py`, `plugins/rails-flow/scripts/check_mockup_gate.py`** (#1430).
+  - **An approval link is not a mock-up link.** A Mock-up section holding only the approving comment's URL read as linked AND approved; approval URLs are now stripped before the mock-up link is looked for, at filing (`verdict`) and at triage (`ready`).
+  - **A record path needs an extension.** `docs/product/mockups/TBD` counted as linked; the path must end in `.md` or a mock-up file type.
+  - **A record's `Mock-up:` must be a mock-up FILE.** Any file under `docs/product/mockups/` was accepted, so a record could name itself or another record; a local mock-up must now be `.html/.png/.jpg/.webp/.pdf/.svg`, and a record naming itself says so. `.svg` joins the file types.
+  - **An unterminated fence fences the rest of `GUARDRAILS.md`.** The regex removed only closed fences, so an opt-out after a stray ``` still turned the gate off; a line scanner now treats an unclosed fence as running to the end, as a renderer shows it. (The same class #1424 fixed in `lint_self_consistency.py`; a shared scanner is #1461.)
+  - Each has a selftest case with a control, and all six rejections fail against dev's code. Mutation guards: `check_mockup_gate` 20/20 (3 new), `check_issue_mockup` 12/12 (2 new), `check_slices` 14/14.
+
 - **toolchain_version: a linked worktree, and a recorded path differing only in case, are the same project — `plugins/rails-flow/scripts/toolchain_version.py`,
   `plugins/rails-flow/scripts/toolchain_version_selftest.py`, `plugins/rails-flow/scripts/mutations/toolchain_version.py`** (#1427 items 2, 3, 4).
   `applies_to` now matches a record against the session's path AND, for a linked git worktree (its `.git` is a file

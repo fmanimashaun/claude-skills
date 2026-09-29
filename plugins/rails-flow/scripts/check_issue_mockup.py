@@ -41,8 +41,10 @@ INLINE = re.compile(r"^\s*(?:[-*]\s*)?\**mock-?up\**\s*:\s*(.+)$", re.I | re.M)
 NEXT_HEADING = re.compile(r"^\s{0,3}#{1,6}\s", re.M)
 # A link to something: an https URL with a host, a committed record under docs/product/mockups/, or a
 # mock-up file. NOT any word ending in `.md` -- "TBD, see notes.md" read as linked (review of #1387).
-LINK = re.compile(r"https://[^/\s]+\.[^\s]+|(?:^|\s)docs/product/mockups/\S+"
-                  r"|(?:^|\s)[\w./-]+\.(?:html?|png|jpe?g|webp|pdf)\b", re.I)
+# A record path must end in a real extension: `docs/product/mockups/TBD` is a placeholder (#1430).
+LINK = re.compile(r"https://[^/\s]+\.[^\s]+"
+                  r"|(?:^|\s)docs/product/mockups/\S+\.(?:md|html?|png|jpe?g|webp|pdf|svg)\b"
+                  r"|(?:^|\s)[\w./-]+\.(?:html?|png|jpe?g|webp|pdf|svg)\b", re.I)
 NO_CHANGE = re.compile(r"\bno visible change\b", re.I)
 
 
@@ -57,6 +59,17 @@ def answer(body: str) -> str | None:
     return m.group(1).strip() if m else None
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from check_mockup_gate import APPROVAL_URL  # noqa: E402 -- one approval rule, never a second
+APPROVAL = re.compile(APPROVAL_URL.pattern.strip("^$"))
+
+
+def mockup_link(text: str) -> bool:
+    """A link to the MOCK-UP, not to the comment approving it: a section holding only the approval
+    URL read as linked and approved (#1430)."""
+    return bool(LINK.search(APPROVAL.sub(" ", text)))
+
+
 def verdict(body: str) -> tuple[bool, str]:
     text = answer(body)
     if text is None:
@@ -65,14 +78,9 @@ def verdict(body: str) -> tuple[bool, str]:
         return False, "the Mock-up section is empty"
     if NO_CHANGE.search(text):
         return True, "declared: no visible change"
-    if LINK.search(text):
+    if mockup_link(text):
         return True, "declared: mock-up linked"
     return False, f"the Mock-up section neither links a mock-up nor says \"no visible change\": {text[:60]!r}"
-
-
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from check_mockup_gate import APPROVAL_URL  # noqa: E402 -- one approval rule, never a second
-APPROVAL = re.compile(APPROVAL_URL.pattern.strip("^$"))
 
 
 def ready(body: str) -> tuple[bool, str]:
@@ -133,6 +141,19 @@ def selftest() -> int:
     check_that("CONTROL: a linked and approved mock-up is ready", ok, why)
     ok, why = ready(form.format("No visible change: the job only retries."))
     check_that("CONTROL: no visible change is ready with no approval", ok, why)
+
+    # #1430: an approval link is not a mock-up link, and a record path needs an extension.
+    ONLY_APPROVAL = "approved https://github.com/acme/app/issues/12#issuecomment-99"
+    ok, why = ready(form.format(ONLY_APPROVAL))
+    check_that("#1430: a section holding ONLY the approval link is not ready", not ok, why)
+    ok, why = verdict(form.format(ONLY_APPROVAL))
+    check_that("#1430: ...nor even linked, at filing", not ok and "neither" in why, why)
+    ok, why = verdict(form.format("docs/product/mockups/TBD"))
+    check_that("#1430: docs/product/mockups/TBD is a placeholder, not a link", not ok, why)
+    ok, why = verdict(form.format("docs/product/mockups/bell.md"))
+    check_that("#1430 CONTROL: a committed .md record path is linked", ok, why)
+    ok, why = verdict(form.format("docs/product/mockups/bell.svg"))
+    check_that("#1430 CONTROL: an .svg mock-up is linked", ok, why)
 
     ok, why = verdict("### What\n\nA bell.\n")
     check_that("an issue with no Mock-up section is missing", not ok and "no Mock-up section" in why, why)
