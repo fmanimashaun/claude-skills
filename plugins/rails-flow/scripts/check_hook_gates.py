@@ -53,6 +53,9 @@ def check(label: str, ok: bool, detail: str = "") -> None:
 # a flake with nothing wrong in the code. Now a timeout is exit 124 with a TIMEOUT line, the fixture
 # that ran it fails by name, and every later fixture still runs. HOOK_GATES_TIMEOUT overrides the
 # bound (the selftest sets it tiny to prove the no-crash path).
+_EXPECTING_TIMEOUT = False      # set only by timeout_fixtures, which times out on purpose
+
+
 def _run(*args, **kw):
     # The override is exact (the no-crash proof sets it tiny); otherwise a fixture's own bound is
     # raised to a 180s floor, since 60s was what a loaded machine outran. Read per call, not at import.
@@ -76,8 +79,19 @@ def _run(*args, **kw):
                 os.killpg(proc.pid, signal.SIGKILL)
             except (ProcessLookupError, PermissionError):
                 pass
-            proc.communicate()
+            # Bounded: a process that LEFT the group (its own setsid) would otherwise hold the pipe
+            # and bring the hang back. After a short wait, stop reading.
+            try:
+                proc.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                for pipe in (proc.stdin, proc.stdout, proc.stderr):
+                    if pipe:
+                        pipe.close()
             note = f"TIMEOUT after {limit}s: {proc.args}"
+            # A timeout is ALWAYS a recorded failure -- a setup step (`git init`, check=True) that
+            # times out must not pass silently -- unless timeout_fixtures asked for one on purpose.
+            if not _EXPECTING_TIMEOUT:
+                check(note, False)
             empty = "" if kw.get("text") else b""
             return subprocess.CompletedProcess(proc.args, 124, stdout=empty,
                                                stderr=note if kw.get("text") else note.encode())
@@ -837,8 +851,10 @@ def timeout_fixtures() -> None:
     the very flake it fixes worse. The wrapper is driven directly on a sleep that outruns a 0.2s
     bound, and the file is checked to route every subprocess call through it.
     """
+    global _EXPECTING_TIMEOUT
     saved = os.environ.get("HOOK_GATES_TIMEOUT")
     os.environ["HOOK_GATES_TIMEOUT"] = "0.2"
+    _EXPECTING_TIMEOUT = True
     marker = f"sleep 29.{os.getpid() % 1000:03d}"   # unique, so no other process can be counted
     import time
     began = time.monotonic()
@@ -847,6 +863,7 @@ def timeout_fixtures() -> None:
     except subprocess.TimeoutExpired:
         r = None
     finally:
+        _EXPECTING_TIMEOUT = False
         if saved is None:
             os.environ.pop("HOOK_GATES_TIMEOUT", None)
         else:
@@ -859,7 +876,7 @@ def timeout_fixtures() -> None:
     # returns at once; anything less waits out the 29s sleep.
     check("...and returns promptly, because nothing it started still holds the output pipe",
           took < 10, f"took {took:.1f}s")
-    left = subprocess.run(["pgrep", "-f", marker], capture_output=True, text=True).stdout.split()
+    left = _run(["pgrep", "-f", marker], capture_output=True, text=True).stdout.split()
     check("...and the timeout kills the hook's whole process group, leaving no orphaned stub",
           left == [], f"{len(left)} process(es) left: {left}")
     for pid in left:
@@ -867,10 +884,24 @@ def timeout_fixtures() -> None:
             os.kill(int(pid), 9)
         except (ProcessLookupError, ValueError):
             pass
+    # An UNEXPECTED timeout is a recorded failure (a setup step that times out must not pass).
+    before = len(FAILURES)
+    os.environ["HOOK_GATES_TIMEOUT"] = "0.2"
+    try:
+        _run([sys.executable, "-c", "import time; time.sleep(3)"], capture_output=True, text=True)
+    finally:
+        if saved is None:
+            os.environ.pop("HOOK_GATES_TIMEOUT", None)
+        else:
+            os.environ["HOOK_GATES_TIMEOUT"] = saved
+    recorded = FAILURES[before:]
+    del FAILURES[before:]
+    check("an UNEXPECTED timeout is recorded as a failure, never passed silently",
+          len(recorded) == 1 and "TIMEOUT after" in recorded[0], f"{recorded}")
     src = Path(__file__).read_text(encoding="utf-8")
     raw = src.count("subprocess" + ".run(")
-    check("every fixture subprocess goes through the no-crash wrapper", raw == 1,
-          f"{raw} direct subprocess.run call(s); only the one inside _run may remain")
+    check("every subprocess in this suite goes through the no-crash wrapper", raw == 0,
+          f"{raw} direct subprocess.run call(s); every one must go through _run")
 
 
 def selftest() -> int:

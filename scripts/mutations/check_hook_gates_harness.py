@@ -25,6 +25,12 @@ GUARD = Guard(
            'plugins/rails-flow/scripts/ci_verdict_hint.py'),
     mutations=(
         Mutation(
+            "an unexpected timeout is not recorded, so a setup step that times out passes silently",
+            "            if not _EXPECTING_TIMEOUT:\n                check(note, False)",
+            "            if False:\n                check(note, False)",
+            "an UNEXPECTED timeout is recorded as a failure",
+        ),
+        Mutation(
             "a subprocess timeout raises again, crashing the suite before later fixtures print",
             "        except subprocess.TimeoutExpired:\n            try:\n                os.killpg(proc.pid, signal.SIGKILL)",
             "        except OSError:\n            try:\n                os.killpg(proc.pid, signal.SIGKILL)",

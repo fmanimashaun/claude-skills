@@ -208,11 +208,17 @@ def hidden_create(cmd: str) -> str | None:
     # HEREDOC BODIES THAT RUN (#1462, #1467). A body fed to a shell is a script; an UNQUOTED body
     # substitutes `$(…)` and backticks. A quoted-delimiter body fed to `cat` is text.
     for opener, quoted, text in heredocs:
-        feeder = _command_word(opener[:opener.find("<<")])
-        if (feeder in SHELLS or feeder == "eval") and _names_create(text):
-            return f"a heredoc fed to `{feeder}`"
+        mark = opener.find("<<")
+        # The body goes to the command that owns the `<<`, or -- `cat <<'EOF' | bash` -- through a
+        # pipe to the command after it.
+        after = opener[mark:]
+        feeders = [_command_word(opener[:mark])] + ([_command_word(after)] if "|" in after else [])
+        for feeder in feeders:
+            if (feeder in SHELLS or feeder == "eval") and _names_create(text):
+                return f"a heredoc fed to `{feeder}`"
         if not quoted:
-            found = _substituted_create(text)
+            # An escaped character is literal in an unquoted body too: `\\`gh issue create\\`` is text.
+            found = _substituted_create(re.sub(r"\\.", "", text, flags=re.S))
             if found:
                 return f"{found} in an unquoted heredoc"
     # Inside SINGLE quotes nothing is substituted, so a backtick or `$(` there is text -- a commit
@@ -245,19 +251,12 @@ def hidden_create(cmd: str) -> str | None:
     except ValueError:
         return None
     seg: list[str] = []
-    prev_text, prev_op = "", ""      # the segment before, and the operator that ended it
+    prev_text, prev_op = "", ""      # the pipeline so far (every `|`-joined segment), and the last operator
     for tok in tokens + [";"]:
         if tok and set(tok) <= set(";&|()"):
             raw_seg = " ".join(seg)
             words = [w for w in seg if not ("=" in w and w.split("=", 1)[0].isidentifier())]
-            # Peel wrappers that run their arguments as a command: `env sh -c`, `sudo bash -c`,
-            # `timeout 5 sh -c`, `command eval`, … Their own flags (and timeout's duration) go too.
-            while words and os.path.basename(words[0]) in WRAPPERS:
-                wrapper = os.path.basename(words.pop(0))
-                while words and words[0].startswith("-"):
-                    words.pop(0)
-                if wrapper in ("timeout", "nice") and words and re.fullmatch(r"[\d.]+[smhd]?", words[0]):
-                    words.pop(0)
+            words = _peel(words)       # `env sh -c`, `sudo bash -c`, `timeout 5 sh -c`, `command eval`
             head = os.path.basename(words[0]) if words else ""
             rest = " ".join(words[1:])
             # `-c` may be bundled with other short flags: `bash -lc '…'`.
@@ -268,11 +267,14 @@ def hidden_create(cmd: str) -> str | None:
                 return "`eval`"
             # A shell reading its SCRIPT from stdin (#1462): a pipe into it, or a herestring.
             if head in SHELLS and not runs_string:
-                if prev_op == "|" and _names_create(prev_text):
+                if prev_op in ("|", "|&") and _names_create(prev_text):
                     return f"a pipe into `{head}`"
-                if "<<<" in words and _names_create(" ".join(words[words.index("<<<") + 1:])):
+                here = next((k for k, w in enumerate(words) if w.startswith("<<<")), None)
+                if here is not None and _names_create(" ".join([words[here][3:]] + words[here + 1:])):
                     return f"a herestring fed to `{head}`"
-            prev_text, prev_op = raw_seg, tok
+            # A pipeline feeds its whole upstream: `echo … | cat | bash` runs what echo wrote.
+            prev_text = (prev_text + " " + raw_seg) if prev_op in ("|", "|&") else raw_seg
+            prev_op = tok
             seg = []
         else:
             seg.append(tok)
@@ -316,14 +318,23 @@ def _substituted_create(text: str) -> str | None:
     return None
 
 
+def _peel(words: list[str]) -> list[str]:
+    """Drop wrappers that run their arguments as a command -- `env`, `sudo`, `timeout 5`, `command`,
+    … -- with their own flags and timeout's or nice's number. One peel, used everywhere."""
+    words = list(words)
+    while words and os.path.basename(words[0]) in WRAPPERS:
+        wrapper = os.path.basename(words.pop(0))
+        while words and words[0].startswith("-"):
+            words.pop(0)
+        if wrapper in ("timeout", "nice") and words and re.fullmatch(r"[\d.]+[smhd]?", words[0]):
+            words.pop(0)
+    return words
+
+
 def _command_word(text: str) -> str:
     """The command word of the LAST segment of TEXT, with assignments and wrappers peeled."""
     part = re.split(r"[;&|(]", text)[-1]
-    words = [w for w in part.split() if not ("=" in w and w.split("=", 1)[0].isidentifier())]
-    while words and os.path.basename(words[0]) in WRAPPERS:
-        words.pop(0)
-        while words and words[0].startswith("-"):
-            words.pop(0)
+    words = _peel([w for w in part.split() if not ("=" in w and w.split("=", 1)[0].isidentifier())])
     return os.path.basename(words[0]) if words else ""
 
 
@@ -759,6 +770,16 @@ def selftest() -> int:
               verdict("echo 'gh issue create' | grep create", bare)[0])
         check("CONTROL: a quoted heredoc fed to cat is text, even naming $(gh issue create)",
               verdict("cat <<'EOF' > b.md\nrun $(gh issue create) later\nEOF\n" + lab, bare)[0])
+        # Final review of #1477: more ways a shell reads a create from stdin.
+        for shape, cmd in (("a herestring fed to `bash`", "bash <<<'gh issue create -t X'"),
+                           ("a heredoc fed to `bash`", "cat <<'EOF' | bash\ngh issue create -t X\nEOF"),
+                           ("a heredoc fed to `bash`", "timeout 5 bash <<EOF\ngh issue create -t X\nEOF"),
+                           ("a pipe into `bash`", "echo 'gh issue create -t X' | cat | bash"),
+                           ("a pipe into `bash`", "echo 'gh issue create -t X' |& bash")):
+            ok, why = verdict(cmd, bare)
+            check(f"{cmd.splitlines()[0][:34]!r}: refused as {shape}", not ok and shape in why, why)
+        check("CONTROL: a multi-stage pipe ending in grep is not a hidden create",
+              verdict("echo 'gh issue create' | cat | grep create", bare)[0])
         # ---- #1467: an UNQUOTED heredoc's substitutions really run ----------------------------------
         ok, why = verdict('x="$(cat <<EOF\n$(gh issue create -t X)\nEOF\n)"', bare)
         check("a $( ) create inside an unquoted heredoc is refused", not ok and "unquoted heredoc" in why, why)
@@ -766,6 +787,10 @@ def selftest() -> int:
         check("a backtick create inside an unquoted heredoc is refused", not ok and "unquoted heredoc" in why, why)
         check("CONTROL: prose naming the command in an unquoted heredoc is text",
               verdict("cat <<EOF > b.md\nplease run gh issue create by hand\nEOF\n" + lab, bare)[0])
+        for name, cmd in (("a PR body", 'gh pr create --title T --body "$(cat <<EOF\nuse \\`gh issue create\\`\nEOF\n)"'),
+                          ("a commit message", "git commit -F - <<EOF\nsee \\`gh issue new\\`\nEOF")):
+            check(f"CONTROL: an escaped backtick in {name}'s unquoted heredoc is text",
+                  verdict(cmd, bare)[0], verdict(cmd, bare)[1])
         check("CONTROL: a \\EOF delimiter is quoted, so its body is literal",
               verdict("cat <<\\EOF > b.md\n$(gh issue create -t X)\nEOF\n" + lab, bare)[0])
         # ---- #1468: an escaped backtick is literal ---------------------------------------------------

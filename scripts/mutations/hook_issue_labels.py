@@ -229,20 +229,20 @@ GUARD = Guard(
         ),
         Mutation(
             "wrappers are not peeled, so env sh -c escapes",
-            "            while words and os.path.basename(words[0]) in WRAPPERS:",
-            "            while False:",
+            "    while words and os.path.basename(words[0]) in WRAPPERS:\n        wrapper = os.path.basename(words.pop(0))",
+            "    while False:\n        wrapper = os.path.basename(words.pop(0))",
             "a create behind `env` is refused",
         ),
         Mutation(
             "a wrapper's flags are not peeled, so sudo -E bash -c escapes",
-            "                while words and words[0].startswith(\"-\"):\n                    words.pop(0)",
-            "                while False:\n                    words.pop(0)",
+            "        while words and words[0].startswith(\"-\"):\n            words.pop(0)\n        if wrapper in",
+            "        while False:\n            words.pop(0)\n        if wrapper in",
             "a create behind `sudo` is refused",
         ),
         Mutation(
             "timeout's duration is not peeled, so timeout 5 bash -c escapes",
-            '                if wrapper in ("timeout", "nice") and words and re.fullmatch(r"[\\d.]+[smhd]?", words[0]):',
-            "                if False:",
+            '        if wrapper in ("timeout", "nice") and words and re.fullmatch(r"[\\d.]+[smhd]?", words[0]):',
+            "        if False:",
             "a create behind `timeout` is refused",
         ),
         # ---- #1462 / #1467 / #1468 (group C2) ---------------------------------------------------
@@ -266,14 +266,14 @@ GUARD = Guard(
         ),
         Mutation(
             "a heredoc fed to a shell is not refused",
-            '        if (feeder in SHELLS or feeder == "eval") and _names_create(text):',
-            "        if False:",
+            '            if (feeder in SHELLS or feeder == "eval") and _names_create(text):',
+            "            if False:",
             "a create in a heredoc fed to `bash` is refused and named",
         ),
         Mutation(
             "an unquoted heredoc's substitutions are not scanned",
-            "        if not quoted:\n            found = _substituted_create(text)",
-            "        if False:\n            found = _substituted_create(text)",
+            "        if not quoted:\n            # An escaped character",
+            "        if False:\n            # An escaped character",
             "a $( ) create inside an unquoted heredoc is refused",
         ),
         Mutation(
@@ -284,13 +284,13 @@ GUARD = Guard(
         ),
         Mutation(
             "a pipe into a shell is not refused",
-            '                if prev_op == "|" and _names_create(prev_text):',
+            '                if prev_op in ("|", "|&") and _names_create(prev_text):',
             "                if False:",
             "a create in a pipe into `bash` is refused and named",
         ),
         Mutation(
             "a herestring fed to a shell is not refused",
-            '                if "<<<" in words and _names_create(" ".join(words[words.index("<<<") + 1:])):',
+            '                if here is not None and _names_create(" ".join([words[here][3:]] + words[here + 1:])):',
             "                if False:",
             "a create in a herestring fed to `bash` is refused and named",
         ),
@@ -299,6 +299,37 @@ GUARD = Guard(
             '        if ch == "\\\\":\n            i += 1                   # the escaped character is literal: never a substitution\n            continue\n',
             "",
             "CONTROL: an escaped backtick inside double quotes is text",
+        ),
+        # Final review of #1477.
+        Mutation(
+            "escapes are kept in an unquoted heredoc, so an escaped backtick reads as a substitution",
+            '            found = _substituted_create(re.sub(r"\\\\.", "", text, flags=re.S))',
+            "            found = _substituted_create(text)",
+            "CONTROL: an escaped backtick in a PR body's unquoted heredoc is text",
+        ),
+        Mutation(
+            "a heredoc piped into a shell is not seen",
+            '        feeders = [_command_word(opener[:mark])] + ([_command_word(after)] if "|" in after else [])',
+            "        feeders = [_command_word(opener[:mark])]",
+            "refused as a heredoc fed to `bash`",
+        ),
+        Mutation(
+            "a herestring glued to its word is not seen",
+            '                here = next((k for k, w in enumerate(words) if w.startswith("<<<")), None)',
+            '                here = next((k for k, w in enumerate(words) if w == "<<<"), None)',
+            "refused as a herestring fed to `bash`",
+        ),
+        Mutation(
+            "only the segment just before the shell is read, so a multi-stage pipe escapes",
+            '            prev_text = (prev_text + " " + raw_seg) if prev_op in ("|", "|&") else raw_seg',
+            "            prev_text = raw_seg",
+            "refused as a pipe into `bash`",
+        ),
+        Mutation(
+            "|& is not a pipe",
+            '                if prev_op in ("|", "|&") and _names_create(prev_text):',
+            '                if prev_op == "|" and _names_create(prev_text):',
+            "refused as a pipe into `bash`",
         ),
         # ---- #1400: the ALLOWLIST -- each way a cd the create may not have followed is trusted -----
         Mutation(

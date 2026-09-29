@@ -3536,14 +3536,16 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   `plugins/rails-flow/scripts/check_hook_gates.py`** (#1462). This applies #1423's owner-decided rule to more forms.
   - `gh issue new` (gh's alias) and a create behind gh's global flags are seen and label-checked, with a repo named
     there carried into the create.
-  - A create fed to a shell is refused by name: through a pipe, a herestring, or a heredoc.
+  - A create fed to a shell is refused by name. That covers a pipe (including a multi-stage one and `|&`), a
+    herestring (spaced or glued), a heredoc, and a heredoc piped into a shell, behind any wrapper such as
+    `timeout 5`.
   - A quoted subcommand (`gh issue "create"`) and a backslash-newline split no longer hide one.
   - The hook's trigger ignores quotes and line joins, so it reaches the helper for all of these.
 
 - **An unquoted heredoc's substitutions are checked — `plugins/rails-flow/hooks/scripts/lib/issue_labels.py`** (#1467).
   `cat <<EOF … $(gh issue create) … EOF` substitutes, so its body is now scanned for backtick and `$( )` creates.
-  A quoted delimiter (`<<'EOF'`, `<<"EOF"`, `<<\EOF`) keeps the body literal, and prose in an unquoted body
-  stays text.
+  A quoted delimiter (`<<'EOF'`, `<<"EOF"`, `<<\EOF`) keeps the body literal. Prose in an unquoted body stays
+  text, and so does an escaped backtick, so a commit or PR body written with `<<EOF` is not refused.
 
 - **An escaped backtick is literal — `plugins/rails-flow/hooks/scripts/lib/issue_labels.py`** (#1468).
   `echo "use \`gh issue create\`"` is no longer refused. An unescaped backtick inside double quotes still runs,
@@ -3562,7 +3564,8 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   - **The trigger was the machine.** macOS held new script execs at `_dyld_start` (43 of 44 stubs stuck), and a
     stub the timeout left alive kept the output pipe open, so the read waited on it.
   - **The fix.** Every fixture subprocess runs in its own process group. A timeout (180s floor) kills the whole
-    group and fails that fixture by name, and later fixtures still run.
+    group and fails that fixture by name, and later fixtures still run. An unexpected timeout is always a recorded
+    failure, so a setup step that times out cannot pass silently. The read after the kill is bounded too.
   - **Proven.** A unique-marker control shows 0 processes left against 2 for plain `subprocess.run`, and the timeout
     returns promptly. A new guard, `check_hook_gates_harness`, mutates the harness itself. The mutation harness's
     own 300s limit is #1444's.
