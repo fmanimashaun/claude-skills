@@ -33,7 +33,7 @@ Ask of every rule you are about to write:
 
 The defect this prevents is not "the rule was wrong". It is someone reading a preference as a
 guarantee. `skills/code-review/SKILL.md` names that class first, as
-[`claims-vs-enforcement`](../skills/code-review/SKILL.md) — *a guarantee stated in prose that nothing
+[`claims-vs-enforcement`](../../skills/code-review/SKILL.md) — *a guarantee stated in prose that nothing
 makes true* — and calls it the class an author is structurally blind to, because the author read the
 claim and the code as one intention.
 
