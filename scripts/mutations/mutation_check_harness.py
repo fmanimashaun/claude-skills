@@ -13,6 +13,14 @@ GUARD = Guard(
     selftest="scripts/mutation_check_selftest.py",
     deps=("scripts/mutation_types.py",),
     mutations=(
+        # A wrong-fixture report that drops the mutant's output: the two CI-only catches in the
+        # release_evidence guard could not be diagnosed for exactly this reason.
+        Mutation(
+            "a wrong-fixture report drops the mutant's output",
+            '                    + "\\n".join(f"      {line}" for line in output.strip().splitlines()[-12:])]',
+            '                    + ""]',
+            "a wrong-fixture report does not carry the mutant's exit and output",
+        ),
         Mutation(
             # #1129: the import-completeness invariant. Adding an import to a shipped module orphans
             # every neighbouring guard that stages it without the new dependency -- the mutant dies
