@@ -396,6 +396,28 @@ def guard_bash_fixtures() -> None:
     rc, err = labelled(heredoc + "gh issue create -t X --body-file b.md")
     check("guard-bash (#1336): ...and an unlabelled create after it is still blocked",
           rc == 2 and "no --label" in err, err)
+    # #1400: the TARGET repository's declaration, through the real hook. The session stands in a repo
+    # that wants comp/type/prio; the command cds into one that wants a type and, for a bug, a severity.
+    with tempfile.TemporaryDirectory() as td:
+        session, other = Path(td) / "session", Path(td) / "other"
+        for repo, decl in ((session, {"groups": [{"one_of": ["comp:*"]}, {"one_of": ["type:*"]}]}), (other, groups)):
+            (repo / ".rails-flow").mkdir(parents=True)
+            (repo / ".rails-flow" / "issue-labels.json").write_text(json.dumps(decl), encoding="utf-8")
+        # The target is CERTAINLY another repo only when both sides have remotes and share none.
+        subprocess.run(["git", "init", "-q", str(session)], check=True)
+        subprocess.run(["git", "-C", str(session), "remote", "add", "origin", "https://github.com/me/session.git"], check=True)
+        subprocess.run(["git", "init", "-q", str(other)], check=True)
+        subprocess.run(["git", "-C", str(other), "remote", "add", "origin", "https://github.com/other/repo.git"], check=True)
+        def cross(cmd: str) -> tuple[int, str]:
+            r = subprocess.run(["bash", str(HOOKS / "guard-bash.sh")], input=json.dumps({"tool_input": {"command": cmd}}),
+                               capture_output=True, text=True, cwd=session)
+            return r.returncode, r.stderr
+        rc, err = cross(f"cd {other} && gh issue create -t X --label enhancement --body-file b.md")
+        check("guard-bash (#1400): a create after `cd <other repo>` answers to THAT repo's labels", rc == 0, err)
+        rc, err = cross(f"cd {other} && gh issue create -t X --label bug --body-file b.md")
+        check("guard-bash (#1400): ...and that repo's rules still refuse", rc == 2 and "severity:s1" in err, err)
+        rc, err = cross("gh issue create -t X --label enhancement --body-file b.md")
+        check("guard-bash (#1400): CONTROL: without the cd, the session's own rules apply", rc == 2 and "comp:*" in err, err)
     rc, err = labelled("gh issue create -t X --label feature", drop_helper=True)
     check("guard-bash (#1311): FAIL CLOSED: with the helper missing, a labelled create is refused, not let through",
           rc == 2 and "could not run" in err, err)

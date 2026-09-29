@@ -3522,6 +3522,36 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **`guard-bash` checks an issue's labels against the repository it is filed in, not the session's —
+  `plugins/rails-flow/hooks/scripts/lib/issue_labels.py`, `scripts/mutations/hook_issue_labels.py`,
+  `plugins/rails-flow/scripts/check_hook_gates.py`** (#1400).
+  - **The bug.** `cd /path/to/other-repo && gh issue create ...` from one checkout was held to the session's
+    `.rails-flow/issue-labels.json`. It refused a correctly labelled issue and asked for labels the other repo does
+    not have.
+  - **The fix.** A create written exactly `cd <literal path> && gh issue create …` is judged by that directory's
+    git toplevel when the issue certainly lands there:
+    - the create names no repo (`-R`, `--repo`, `GH_REPO`), and `GH_REPO` is not set in the environment;
+    - both the session and the target have remotes, and the two sets share none. gh may file into any
+      remote (`upstream` first), and repos are compared as `owner/name` from any URL spelling: userinfo, an
+      ssh port, an ssh alias, an enterprise host.
+  - **Every other command keeps the session's rules**, exactly as before. Five independent reviews of broader
+    versions each found a shape where another repo's rules were applied to an issue that did not land there: a
+    subshell `cd`, `cd -`, `||`, compound bodies, a `case` `)`, `time`, `export GIT_DIR=`, `env -C`, a clone, an
+    `upstream` remote, a session repo named by a URL the old normaliser missed. The session's rules are the check
+    the same create gets with no `cd`, so the fallback cannot
+    let anything through, and it refuses nothing that dev allows.
+  - **Also fixed.**
+    - Repo names are compared normalised (URL, `github.com/`, `.git`, case), and a glued `-Rowner/name` is read.
+    - A quoted `<<X` is not a heredoc, and `<<<` is a herestring. A backslash-newline joins lines.
+    - An unclosed heredoc refuses only when it would hide a `gh issue create`.
+    - Still not covered: a create inside `sh -c`/`eval`, behind `/usr/bin/gh`, or in backticks, which is
+      pre-existing. That is #1423.
+  - **Known limit.** A `GH_REPO` set only through `CLAUDE_ENV_FILE` is invisible to the hook; it is recorded on #1400.
+  - **Tests.** 88 selftest checks run, 67 of them new, and 3 end-to-end hook fixtures. Mutations: 22 new, 31 of
+    31 caught.
+
 ### 1.55.0 (release v1.152.0) — 2026-09-28
 
 - **`/rails-flow:slice` breaks a spec, brief or issue into dependency-ordered vertical slices and files them —
