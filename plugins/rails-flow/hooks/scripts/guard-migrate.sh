@@ -12,14 +12,26 @@
 #
 # SCOPED THREE WAYS, so nothing legitimate is caught in it:
 #   - not a Rails project (no bin/rails at the project root) -- silent, always.
-#   - not db/migrate/, or not a `.rb` file -- every other write stays exactly as free as it was.
+#   - not db/migrate/ (compared case-insensitively, and after resolving symlinks), or not a `.rb`
+#     file -- every other write stays as free as it was.
 #   - the file already EXISTS -- overwriting a migration via Write stays allowed; only creating
 #     one from scratch is blocked.
 #
 # THE KNOWN LIMIT (verified 2026-09-27): a project that overrides `migrations_paths` in
 # `database.yml` (Rails' multi-database support) writes migrations somewhere other than
 # `db/migrate/`, and this guard does not read `database.yml` to find that path -- judged out of
-# scope. It only ever refuses the literal `db/migrate/` directory.
+# scope. It only ever refuses `db/migrate/` itself, compared case-insensitively.
+#
+# THE SECOND KNOWN LIMIT: it guards the `Write` tool only (the maintainer decision on #1362). A shell
+# write -- `cat > db/migrate/x.rb`, `touch`, a `cp` -- goes through `Bash`, which this hook never sees.
+#
+# CASE (#1416): on a case-insensitive filesystem (macOS, Windows) a Write to `DB/Migrate/x.rb` lands
+# in `db/migrate/`, so the directory and the `.rb` extension are compared lower-cased. On a
+# case-sensitive one that also refuses a stray `DB/Migrate/`, which is no loss. The raw fallback also
+# accepts a Windows `\` separator.
+#
+# SYMLINKS (#1416): `db/mig -> migrate` would land a Write to `db/mig/x.rb` in `db/migrate/`, so the
+# parent is checked both as given and after `realpath`.
 #
 # FAILS CLOSED, SCOPED. Without python3, or when the JSON cannot be parsed at all, judge the raw
 # payload text the way guard-bash.sh does: block only if it contains a db/migrate/*.rb path AND
@@ -32,7 +44,9 @@ DENY_MSG='Creating files under db/migrate/ directly is blocked in this project. 
 
   bin/rails generate migration AddPartNumberToProducts part_number:string
 
-It picks the timestamped filename and matching class name. Once the file exists you can edit it freely — only creating it from scratch is blocked. Run `bin/rails generate migration --help` for the column syntax it accepts.'
+It picks the timestamped filename and matching class name. Once the file exists you can edit it freely — only creating it from scratch is blocked. Run `bin/rails generate migration --help` for the column syntax it accepts.
+
+If the app does not boot, the generator fails too: fix the boot first, then generate.'
 
 input="$(cat)"
 
@@ -42,9 +56,13 @@ root_dir="${CLAUDE_PROJECT_DIR:-$PWD}"
 
 # bash's own `=~`, not grep: this path exists for a degraded environment, and a missing grep there
 # would otherwise make the fail-closed fallback allow (grep "not found" is a non-match).
-_raw_migrate_path='db/migrate/[^/"]*\.rb'
+_raw_migrate_path='db[/\\]+migrate[/\\]+[^/\\"]*\.rb'
 _raw_fallback() {
-  if [ -f "$root_dir/bin/rails" ] && [[ $input =~ $_raw_migrate_path ]]; then
+  local hit=1
+  shopt -s nocasematch                     # bash 3.2 has no ${var,,}; this is its case-folding match
+  [[ $input =~ $_raw_migrate_path ]] && hit=0
+  shopt -u nocasematch
+  if [ -f "$root_dir/bin/rails" ] && [ "$hit" -eq 0 ]; then
     echo "BLOCKED by rails-flow migration guard: $DENY_MSG" >&2
     exit 2
   fi
@@ -61,6 +79,7 @@ import json, os, sys
 # read that config is a decision for later, and this is the one function that would change.
 def is_migrate_dir(parent):
     parent = parent.replace(os.sep, "/")
+    parent = parent.lower()                  # #1416: a case-insensitive filesystem lands DB/Migrate here
     return parent == "db/migrate" or parent.endswith("/db/migrate")
 
 try:
@@ -76,9 +95,10 @@ try:
 
     if not os.path.isfile(os.path.join(root, "bin", "rails")):
         print("ALLOW"); sys.exit(0)
-    if not file_path.endswith(".rb"):
+    if not file_path.lower().endswith(".rb"):
         print("ALLOW"); sys.exit(0)
-    if not is_migrate_dir(os.path.dirname(file_path)):
+    parent = os.path.dirname(file_path)
+    if not (is_migrate_dir(parent) or is_migrate_dir(os.path.realpath(parent))):
         print("ALLOW"); sys.exit(0)
     if os.path.exists(file_path):
         print("ALLOW"); sys.exit(0)

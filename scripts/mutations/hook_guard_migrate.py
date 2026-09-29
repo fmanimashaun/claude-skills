@@ -33,5 +33,41 @@ GUARD = Guard(
             '',
             'the identical write in a NON-RAILS project is allowed',
         ),
+        Mutation(
+            '#1416: the directory is compared case-sensitively again, so DB/Migrate/ slips through on macOS',
+            '    parent = parent.lower()                  # #1416: a case-insensitive filesystem lands DB/Migrate here',
+            '    parent = parent',
+            'guard-migrate (#1416): a mixed-case DB/Migrate/ path is blocked',
+        ),
+        Mutation(
+            '#1416: the extension is compared case-sensitively again, so `.RB` slips through',
+            '    if not file_path.lower().endswith(".rb"):',
+            '    if not file_path.endswith(".rb"):',
+            'guard-migrate (#1416): a `.RB` extension is blocked',
+        ),
+        Mutation(
+            '#1416: the bare-PATH fallback stops folding case',
+            '  shopt -s nocasematch                     # bash 3.2 has no ${var,,}; this is its case-folding match',
+            '  :',
+            'guard-migrate (#1416): the bare-PATH fallback folds case too (nocasematch)',
+        ),
+        Mutation(
+            '#1416: the deny message drops the boot line, leaving no way through when the app cannot boot',
+            'If the app does not boot, the generator fails too: fix the boot first, then generate.',
+            '',
+            '...and says a broken boot comes first, since the generator needs the app to boot (#1416)',
+        ),
+        Mutation(
+            '#1416: the parent is no longer resolved, so a symlink into db/migrate/ slips through',
+            '    if not (is_migrate_dir(parent) or is_migrate_dir(os.path.realpath(parent))):',
+            '    if not is_migrate_dir(parent):',
+            'guard-migrate (#1416): a Write through a symlink into db/migrate/ is blocked',
+        ),
+        Mutation(
+            '#1416: the fallback accepts only `/` again, so a Windows backslash path slips through',
+            '_raw_migrate_path=\'db[/\\\\]+migrate[/\\\\]+[^/\\\\"]*\\.rb\'',
+            '_raw_migrate_path=\'db/migrate/[^/"]*\\.rb\'',
+            'guard-migrate (#1416): the bare-PATH fallback accepts a Windows backslash separator',
+        ),
     ),
 )
