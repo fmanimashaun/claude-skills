@@ -1,0 +1,33 @@
+name: close issues on dev merge
+
+# Owner's decision (2026-09-29): an issue closes when the PR that fixes it merges into `dev`, not at
+# the release. GitHub cannot do it: a closing keyword fires only on a merge into the DEFAULT branch
+# (`main`). So this reads the merged PR's `Fixes #n` lines (alone on the line; `Refs #n` stays open)
+# and closes each with the `fixed-on-dev` label and a comment saying it ships in the next release.
+# release.yml names the version and drops the label when it ships. See scripts/close_on_dev_merge.py.
+on:
+  pull_request:
+    types: [closed]
+    branches: [dev]
+
+permissions:
+  contents: read
+
+jobs:
+  close:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Close the issues this PR fixes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        # The PR body is read through `gh`, never interpolated into this script.
+        run: python3 scripts/close_on_dev_merge.py --pr "$PR"
