@@ -136,5 +136,49 @@ GUARD = Guard(
             "        if False:\n",
             "refuses a non-object conditions",
         ),
+        # #1432 (final #1422 review): the relabel set, the Monte Carlo pin, the printed test and floor,
+        # and the exact power figures, each unguarded before.
+        Mutation(
+            'insufficient independent evidence is no longer relabelled',
+            '{"not_detectable", "underpowered", "insufficient"}',
+            '{"not_detectable", "underpowered"}',
+            'insufficient independent evidence behind a full win is unverified',
+        ),
+        Mutation(
+            'not-detectable independent evidence is no longer relabelled',
+            '{"not_detectable", "underpowered", "insufficient"}',
+            '{"underpowered", "insufficient"}',
+            'a not-detectable independent result behind a full win is unverified',
+        ),
+        Mutation(
+            'the Monte Carlo +1 correction is dropped from the denominator',
+            '    return (extreme + 1) / (MC_DRAWS + 1)',
+            '    return (extreme + 1) / MC_DRAWS',
+            'monte carlo: the seeded value is pinned',
+        ),
+        Mutation(
+            'the Monte Carlo draw count falls to 1000',
+            'MC_DRAWS = 100_000',
+            'MC_DRAWS = 1000',
+            'monte carlo: the seeded value is pinned',
+        ),
+        Mutation(
+            'the Monte Carlo branch is called exact again',
+            '    test = "exact" if c.n_cases <= EXACT_MAX_CASES else f"Monte Carlo ({MC_DRAWS:,} draws)"',
+            '    test = "exact"',
+            'above 16 cases the verdict says Monte Carlo',
+        ),
+        Mutation(
+            'the floor is labelled with n instead of the moving count',
+            '(smallest possible p with {c.n_moving} moving case(s)',
+            '(smallest possible p with {c.n_cases} moving case(s)',
+            'the floor names the MOVING count',
+        ),
+        Mutation(
+            'exact power drops the multinomial weight',
+            '            weight //= math.factorial(combo.count(v))',
+            '            weight = 1',
+            'exact power, 6 x 3 at +30',
+        ),
     ),
 )

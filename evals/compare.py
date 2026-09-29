@@ -457,6 +457,19 @@ def selftest() -> int:
     # +1 correction makes it 5,656 / 100,001. A changed denominator, or MC_DRAWS = 1000, moves it.
     check("monte carlo: the seeded value is pinned", mc10 == 5656 / 100_001, mc10)
 
+    # The printed verdict names the test that ran, and the floor names the count it came from (#1432).
+    many = _runs({"weak": {f"c{i}": [False] * 3 for i in range(17)},
+                  "real": {f"c{i}": [True] * 3 for i in range(17)}})
+    text = format_text(compare(many, "weak", "real", boot=MIN_BOOT))
+    check("above 16 cases the verdict says Monte Carlo, not exact",
+          "Monte Carlo" in text and "exact sign-flip" not in text, text.splitlines()[0])
+    few = _runs({"weak": {f"c{i}": [False] * 3 for i in range(7)},
+                 "real": {f"c{i}": [True] * 3 for i in range(6)} | {"c6": [False] * 3}})
+    text = format_text(compare(few, "weak", "real", boot=MIN_BOOT))
+    check("CONTROL: at 16 cases or fewer the verdict says exact", "exact sign-flip" in text,
+          text.splitlines()[0])
+    check("the floor names the MOVING count (6 of 7 cases)", "with 6 moving case(s)" in text, text)
+
     # The README's power table, 6 cases x 3 runs, computed exactly (#1432): literal figures.
     for lift, want in ((0.0, 0.0015), (0.2, 0.0260), (0.3, 0.0738)):
         got = exact_power(6, 3, 0.4, lift)
