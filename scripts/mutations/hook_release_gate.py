@@ -21,6 +21,26 @@ GUARD = Guard(
            'plugins/qa-flow/scripts/read_certification.py',
            'plugins/rails-flow/scripts/self_consistency.py'),
     mutations=(
+        # #1410: the hook must hand the RAW command to the parser, treat "could not judge" as main,
+        # and keep a raw-text fallback when the parser is missing.
+        Mutation(
+            "the parser reads the normalised segment, so a quoted main is stripped and allowed",
+            """    printf '%s' "$cmd" | python3 "$_pt" >/dev/null 2>&1""",
+            """    printf '%s' "$seg" | python3 "$_pt" >/dev/null 2>&1""",
+            "release-gate (#1410): `git push origin \"main\"` targets main",
+        ),
+        Mutation(
+            "an unjudgeable push is allowed instead of treated as main",
+            """    [ "$?" -eq 1 ] || push_seg=1""",
+            """    [ "$?" -ne 0 ] || push_seg=1""",
+            "release-gate (#1410): an unparseable push is treated as a promotion",
+        ),
+        Mutation(
+            "the parser-missing fallback reads the normalised segment, losing a quoted main",
+            """    printf '%s' "$cmd" | grep -qE '\\b(main|master)\\b' && push_seg=1""",
+            """    printf '%s' "$seg" | grep -qE '\\b(main|master)\\b' && push_seg=1""",
+            "release-gate (#1410): parser missing -> a quoted `main` push is still blocked",
+        ),
         # #1337: the stamp's own commit invalidates it again, or any delta slips through.
         Mutation(
             "an ancestor stamp is never accepted, so committing the stamp denies its promotion",

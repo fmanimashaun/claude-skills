@@ -10999,6 +10999,10 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
+### Unreleased
+
+- **The release gate decides a push's destination the way git does — `plugins/qa-flow/hooks/scripts/release-gate.sh`, `plugins/qa-flow/scripts/push_targets.py`** (#1410). It matched `\b(main|master)\b` anywhere in a push segment, and `\b` breaks at `-` and `/`, so `git push -u origin fix/1010-one-main` and `feat/983-pr2-master-detail` were refused as promotions twice in one day downstream; both authors renamed the branch. **The same regex also let promotions through:** it read the normalised segment, whose quoted spans are stripped, so `git push origin "main"` and `'HEAD:main'` were ALLOWED. `push_targets.py` reads the raw command with `shlex` and resolves destinations from refspecs (`src:dst`, `+`, `:dst`, `refs/heads/`), `--all`/`--branches`/`--mirror`, and `@{push}` for a bare push (so a branch tracking `origin/main` is caught). Could-not-judge (an unbalanced quote, an unresolvable HEAD) is treated as main; a missing parser falls back to a whole-word match over the RAW command. `check_hook_gates.py` drives both directions end to end and fails 8 of the new cases against the old hook; mutation guards `push_targets` and `hook_release_gate` cover each clause.
+
 ### 1.34.0 (release v1.152.0) — 2026-09-28
 
 - **`text_resize.py` never reads a partial measurement as a pass, and both judges compare routes as paths —

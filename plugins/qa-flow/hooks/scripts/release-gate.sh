@@ -35,7 +35,23 @@ else
   seg="$cmd"
 fi
 push_seg=0; merge_seg=0; ghmerge_seg=0
-printf '%s\n' "$seg" | grep -qE '^[[:space:]]*git[[:space:]]+push\b.*\b(origin[[:space:]]+)?(HEAD:)?(main|master)\b' && push_seg=1
+# #1410. The normaliser says WHETHER a segment is a `git push`; it cannot say WHERE it goes. A
+# `\b(main|master)\b` regex over the segment refused `fix/1010-one-main` and
+# `feat/983-pr2-master-detail` (`\b` breaks at `-` and `/`), and -- because the normaliser strips
+# quoted spans -- ALLOWED `git push origin "main"`. `push_targets.py` reads the RAW command with shlex
+# and resolves destinations the way git does (refspecs, `--all`, `@{push}` for a bare push).
+# Exit 0 = targets main, 1 = does not, anything else = could not judge -> treated as main (CLOSED).
+if printf '%s\n' "$seg" | grep -qE '^[[:space:]]*git[[:space:]]+push\b'; then
+  _pt="${CLAUDE_PLUGIN_ROOT:-}/scripts/push_targets.py"
+  if [ -f "$_pt" ]; then
+    printf '%s' "$cmd" | python3 "$_pt" >/dev/null 2>&1
+    [ "$?" -eq 1 ] || push_seg=1
+  else
+    # The parser is missing: the old whole-word match, over the RAW command so a quoted `"main"` is
+    # still seen. Over-blocks a `-main` branch name; never under-blocks.
+    printf '%s' "$cmd" | grep -qE '\b(main|master)\b' && push_seg=1
+  fi
+fi
 printf '%s\n' "$seg" | grep -qE '^[[:space:]]*git[[:space:]]+merge\b' && merge_seg=1
 printf '%s\n' "$seg" | grep -qE '^[[:space:]]*gh[[:space:]]+pr[[:space:]]+merge\b' && ghmerge_seg=1
 
