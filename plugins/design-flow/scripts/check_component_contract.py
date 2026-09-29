@@ -75,7 +75,60 @@ import content_floors
 from source_text import strip_comments
 
 RAW_BUTTON = re.compile(r"<button\b", re.I)
-COMPONENT_CLASS = re.compile(r"^\s*class (\w+Component) < ViewComponent::Base\s*$", re.M)
+COMPONENT_CLASS = re.compile(r"^[ \t]*class (\w+Component) < ViewComponent::Base[ \t]*$", re.M)
+
+
+# A nested body OPENER: `class Name`, `class << self`, `module Name`, or a block that defines a class
+# (`X = Struct.new(...) do`, `Data.define do`, `Class.new do`). Not `class: "..."` (a keyword
+# argument) or `class="..."` (ERB), both common in component bodies. Judged on the code before any
+# trailing `#` comment, so `class Error < StandardError; end # why` is a one-liner (#1487 review).
+NESTED = re.compile(r"^([ \t]*)(?:class[ \t]+(?:[A-Z]|<<)|module[ \t]+[A-Z]"
+                    r"|(?:[A-Z]\w*[ \t]*=[ \t]*)?(?:Struct\.new|Data\.define|Class\.new)\b.*(?:\bdo\b|\{)[ \t]*(?:\|[^|]*\|)?[ \t]*$)")
+ONE_LINER = re.compile(r"\bend\s*$")
+HEREDOC = re.compile(r"<<[~-]?(['\"]?)([A-Z_][A-Z0-9_]*)\1")
+
+
+def _code(line: str) -> str:
+    """`line` without a trailing `#` comment. Approximate -- a `#` inside a string ends it early --
+    but only ever used to find `end` and one-liners, where that cannot turn code into a match."""
+    return line.split("#", 1)[0].rstrip()
+
+
+def own_lines(body: list[str]) -> list[str]:
+    """The class body WITHOUT its nested `class` / `module` bodies (#1434).
+
+    A component with a nested helper class declared above its own initializer had the NESTED
+    class's `def initialize(` judged, because the scan took the first one in the body. Retask's
+    `Ui::DetailsCardComponent` (a nested `Section`) read as "a fixed keyword list" while its own
+    initializer took `**attrs`, and the downstream workaround was to reorder a correct file. A
+    nested body ends at the `end` at its own indent -- `end # Section` included -- the same rule the
+    component body uses. A heredoc's lines are text: a line in one starting `class X` opens nothing.
+    """
+    out, skip_indent, closer, heredoc = [], None, "end", None
+    for line in body:
+        if heredoc is not None:
+            if line.strip() == heredoc:
+                heredoc = None
+            if skip_indent is None:
+                out.append(line)
+            continue
+        h = HEREDOC.search(_code(line))
+        if skip_indent is not None:
+            if _code(line).strip() == closer and len(line) - len(line.lstrip()) == skip_indent:
+                skip_indent = None
+            elif h:
+                heredoc = h.group(2)
+            continue
+        # The OPENER is judged on code too: `Row = Struct.new(:a) # do not reorder` opens nothing.
+        m = NESTED.match(_code(line))
+        if m and not ONE_LINER.search(_code(line)):
+            skip_indent = len(m.group(1))
+            closer = "}" if _code(line).endswith("{") or re.search(r"\{[ \t]*\|[^|]*\|$", _code(line)) else "end"
+            continue
+        if h:
+            heredoc = h.group(2)
+        out.append(line)
+    return out
 
 
 def initializer_of(body: str) -> str | None:
@@ -141,7 +194,7 @@ def components_dropping_attributes(root: Path) -> list[str]:
                 if line.strip() == "end" and (len(line) - len(line.lstrip())) == indent:
                     break
                 body.append(line)
-            blob = "\n".join(body)
+            blob = "\n".join(own_lines(body))
             sig = initializer_of(blob)
             rel = path.relative_to(root)
             if sig is None:
@@ -264,6 +317,74 @@ def _selftest() -> int:
                not any("NamedSplatComponent" in f for f in findings))
         expect("CONTROL: the same splat left unstored is reported",
                any("NamedDropComponent" in f and "never stores" in f for f in findings))
+
+        # #1434: a NESTED class declared above the component's own initializer. Its fixed keyword
+        # list is not the component's; the component's own `**attrs`, stored, is what counts.
+        (root / "app/components/ui/details_card_component.rb").write_text(
+            "module Ui\n  class DetailsCardComponent < ViewComponent::Base\n"
+            "    class Section\n      def initialize(title:)\n        @title = title\n      end\n    end\n\n"
+            "    def initialize(**attrs)\n      @attrs = attrs\n    end\n  end\nend\n", encoding="utf-8")
+        # CONTROL: the component's OWN fixed list is still reported, with a nested class present.
+        (root / "app/components/ui/fixed_card_component.rb").write_text(
+            "module Ui\n  class FixedCardComponent < ViewComponent::Base\n"
+            "    class Section\n      def initialize(**opts)\n        @opts = opts\n      end\n    end\n\n"
+            "    def initialize(title:)\n      @title = title\n    end\n  end\nend\n", encoding="utf-8")
+        # A nested class STORING the splat does not make the component store its own.
+        (root / "app/components/ui/nested_store_component.rb").write_text(
+            "module Ui\n  class NestedStoreComponent < ViewComponent::Base\n"
+            "    def initialize(**attrs)\n      @variant = :x\n    end\n\n"
+            "    class Helper\n      def initialize(**attrs)\n        @attrs = attrs\n      end\n    end\n"
+            "  end\nend\n", encoding="utf-8")
+        # A `class:` keyword argument on its own line is not a nested class, and a blank line
+        # above a nested component does not make the regex swallow it into the body.
+        (root / "app/components/ui/tagged_component.rb").write_text(
+            "module Ui\n  class TaggedComponent < ViewComponent::Base\n"
+            "    def call\n      tag.div(\n        class: \"row\"\n      )\n    end\n\n"
+            "    def initialize(**attrs)\n      @attrs = attrs\n    end\n\n"
+            "    class ItemComponent < ViewComponent::Base\n"
+            "      def initialize(**attrs)\n        @attrs = attrs\n      end\n    end\n  end\nend\n",
+            encoding="utf-8")
+        findings, _, _ = run(root)
+        expect("a nested class's initializer declared first is not the component's (#1434)",
+               not any("DetailsCardComponent" in f for f in findings))
+        expect("CONTROL: the component's own fixed list is reported beside a nested class",
+               any("FixedCardComponent" in f and "fixed keyword list" in f for f in findings))
+        expect("a `class:` keyword line is not a nested class",
+               not any("TaggedComponent" in f for f in findings))
+        expect("a nested COMPONENT after a blank line is judged on its own initializer",
+               not any("ItemComponent" in f for f in findings))
+        expect("a nested class storing the splat does not store the component's",
+               any("NestedStoreComponent" in f and "never stores" in f for f in findings))
+
+        # #1487 review: the shapes a first version of own_lines() got wrong, each against the component.
+        (root / "app/components/ui/onelinecomment_component.rb").write_text(
+            "module Ui\n  class OneLineCommentComponent < ViewComponent::Base\n    class Error < StandardError; end # raised on bad input\n\n    def initialize(**attrs)\n      @attrs = attrs\n    end\n  end\nend\n", encoding="utf-8")
+        (root / "app/components/ui/endcomment_component.rb").write_text(
+            "module Ui\n  class EndCommentComponent < ViewComponent::Base\n    class Section\n      def initialize(title:)\n        @title = title\n      end\n    end # Section\n\n    def initialize(**attrs)\n      @attrs = attrs\n    end\n  end\nend\n", encoding="utf-8")
+        (root / "app/components/ui/structdo_component.rb").write_text(
+            "module Ui\n  class StructDoComponent < ViewComponent::Base\n    Section = Struct.new(:title) do\n      def initialize(title:)\n        super\n      end\n    end\n\n    def initialize(**attrs)\n      @attrs = attrs\n    end\n  end\nend\n", encoding="utf-8")
+        (root / "app/components/ui/heredocclass_component.rb").write_text(
+            "module Ui\n  class HeredocClassComponent < ViewComponent::Base\n    TEMPLATE = <<~RUBY\n      class Foo\n    RUBY\n\n    def initialize(**attrs)\n      @attrs = attrs\n    end\n  end\nend\n", encoding="utf-8")
+        (root / "app/components/ui/onlynested_component.rb").write_text(
+            "module Ui\n  class OnlyNestedComponent < ViewComponent::Base\n    class Section\n      def initialize(**attrs)\n        @attrs = attrs\n      end\n    end\n  end\nend\n", encoding="utf-8")
+        (root / "app/components/ui/structcomment_component.rb").write_text(
+            "module Ui\n  class StructCommentComponent < ViewComponent::Base\n"
+            "    Row = Struct.new(:a) # no block here, so nothing to do\n\n    def initialize(**attrs)\n      @attrs = attrs\n    end\n"
+            "  end\nend\n", encoding="utf-8")
+        (root / "app/components/ui/structbrace_component.rb").write_text(
+            "module Ui\n  class StructBraceComponent < ViewComponent::Base\n"
+            "    Row = Struct.new(:a) {\n      def initialize(a:)\n        super\n      end\n    }\n\n"
+            "    def initialize(**attrs)\n      @attrs = attrs\n    end\n  end\nend\n", encoding="utf-8")
+        findings, _, _ = run(root)
+        expect('a one-line nested class with a trailing comment opens no body', not any("OneLineCommentComponent" in f for f in findings))
+        expect('a nested body closed by `end # Section` ends there', not any("EndCommentComponent" in f for f in findings))
+        expect('a Struct.new block above the initializer is not the component', not any("StructDoComponent" in f for f in findings))
+        expect('a heredoc line starting `class` opens nothing', not any("HeredocClassComponent" in f for f in findings))
+        expect("a `do` inside an opener's trailing comment opens nothing (#1487 review)",
+               not any("StructCommentComponent" in f for f in findings))
+        expect("a Struct.new brace block above the initializer is not the component",
+               not any("StructBraceComponent" in f for f in findings))
+        expect('an initializer only inside a nested class is reported as none', any("OnlyNestedComponent" in f and "defines no initializer" in f for f in findings))
 
         # A tree with no views and no components cannot be judged -- and must not read as clean.
 
