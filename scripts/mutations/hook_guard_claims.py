@@ -26,16 +26,35 @@ GUARD = Guard(
            # ci-verdict-hint.sh runs it; unstaged, every mutation here read as caught (#1173).
            "plugins/rails-flow/scripts/ci_verdict_hint.py"),
     mutations=(
+        # #1435: the checker failing is a BLOCK, not a warning (owner decision).
+        Mutation(
+            "a crashed PR-template helper warns and lets the command through again",
+            '      echo "Fix it, or ship deliberately unchecked: RAILS_FLOW_CLAIMS_OK=1 (audited)." >&2\n      exit 2\n    elif [ "$tpl_rc" -eq 1 ] && [ -z "$gaps" ]; then',
+            '      echo "Fix it, or ship deliberately unchecked: RAILS_FLOW_CLAIMS_OK=1 (audited)." >&2\n    elif [ "$tpl_rc" -eq 1 ] && [ -z "$gaps" ]; then',
+            "a body the helper cannot judge (a directory) is BLOCKED",
+        ),
+        Mutation(
+            "a helper that died at import warns and lets the command through again",
+            '      echo "BLOCKED by rails-flow claim guard: the PR-template check died before judging (exit 1, no sections listed)." >&2\n      echo "Fix it, or ship deliberately unchecked: RAILS_FLOW_CLAIMS_OK=1 (audited)." >&2\n      exit 2',
+            '      echo "BLOCKED by rails-flow claim guard: the PR-template check died before judging (exit 1, no sections listed)." >&2\n      echo "Fix it, or ship deliberately unchecked: RAILS_FLOW_CLAIMS_OK=1 (audited)." >&2',
+            "a helper that fails at import is BLOCKED",
+        ),
+        Mutation(
+            "the quote scanner stops honouring an escaped quote inside a double-quoted string",
+            '    elif q == "\\"" and c == "\\\\":\n        i += 1',
+            '    elif False:\n        i += 1',
+            "an escaped quote inside the title does not end it early",
+        ),
         Mutation(
             "an empty exit 1 (the helper died at import) reads as a pass again",
             "    elif [ \"$tpl_rc\" -eq 1 ] && [ -z \"$gaps\" ]; then",
             "    elif false; then",
-            "a helper that fails at import says NOT checked, never silence",
+            "a helper that fails at import is BLOCKED",
         ),
         Mutation(
             "quoted strings are kept, so -R in a title switches the check off",
-            "unquoted=\"$(printf '%s' \"$cmd\" | sed -E \"s/'[^']*'//g; s/\\\"[^\\\"]*\\\"//g\")\"",
-            "unquoted=\"$cmd\"",
+            "  unquoted=\"$(printf '%s' \"$cmd\" | python3 -c '",
+            "  unquoted=\"$(printf '%s' \"$cmd\"; true || python3 -c '",
             "`-R` inside a quoted --title is text, so the body is still judged",
         ),
         Mutation(

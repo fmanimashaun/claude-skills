@@ -51,7 +51,8 @@ way round.
 
 ## Phase 1 — Plan (delegated exploration)
 
-**If the issue is a slice** (its body opens `Slice S<n> of <spec>`, filed by `/rails-flow:slice`,
+**If the issue is a slice** (its body opens `Slice S<n> of <spec>`, or `Slice S<n>.` when the plan
+named no source; filed by `/rails-flow:slice`,
 #1369), **its `AC-n` lines are this unit's criteria**, copied verbatim into
 `docs/product/acceptance/<branch-slug>.md`. They are the criteria the owner approved for this slice
 alone. The spec then supplies only the `Seam:`, the Out of scope and the decisions, never more

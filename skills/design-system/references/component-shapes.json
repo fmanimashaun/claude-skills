@@ -258,6 +258,17 @@
               {"kind": "text", "label": "/", "size": 13, "color": "muted-foreground"},
               {"kind": "text", "label": "Invoices", "size": 13}]
   },
+  "Details card": {
+    "shape": "surface", "width": 480,
+    "parts": [{"kind": "text", "label": "Record name · REF-0001", "size": 18, "weight": "600"},
+              {"kind": "pill", "label": "Status", "fill": "muted", "color": "muted-foreground"},
+              {"kind": "line"},
+              {"kind": "text", "label": "At a glance", "size": 14, "weight": "600"},
+              {"kind": "field"}, {"kind": "field"},
+              {"kind": "line"},
+              {"kind": "text", "label": "Activity", "size": 14, "color": "muted-foreground"}]
+  },
+  "Viewport inset": {"drawable": false, "why": "a rule, not a component -- it states that no card, modal, drawer or sheet touches the viewport edge, and names the tokens and utility that carry it (#1391). Nothing to draw."},
   "Table (CRUD)": {
     "shape": "surface", "width": 520,
     "parts": [{"kind": "box", "height": 32, "fill": "muted"},

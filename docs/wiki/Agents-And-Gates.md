@@ -2,14 +2,14 @@
      Rebuild:  python3 scripts/build_wiki.py
      Drift:    python3 scripts/build_wiki.py --check  (runs in the gate sweep) -->
 # Agents and gates
-**30 shipped agents · 50 shipped commands · 145 gates · 4 tier tables**, plus 5 maintainer agents and 6 maintainer commands that are not installed.
+**30 shipped agents · 50 shipped commands · 150 gates · 4 tier tables**, plus 5 maintainer agents and 6 maintainer commands that are not installed.
 
 | plugin | version | agents | commands | tier rows | gates |
 |---|---|---|---|---|---|
-| `design-flow` | 1.44.2 | 5 | 12 | 5 | 19 |
+| `design-flow` | 1.44.2 | 5 | 12 | 5 | 21 |
 | `pipeline` | 1.4.0 | 2 | 8 | 2 | 4 |
 | `qa-flow` | 1.34.0 | 11 | 8 | 11 | 16 |
-| `rails-flow` | 1.55.0 | 12 | 22 | 12 | 31 |
+| `rails-flow` | 1.55.0 | 12 | 22 | 12 | 32 |
 
 ## Agents
 
@@ -88,6 +88,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | design-flow conformance collector | `design-flow` | `python3 plugins/design-flow/scripts/rendered_conformance.py --check-collector` | live check |
 | design-flow design prompt selftest | `design-flow` | `python3 plugins/design-flow/scripts/design_prompt.py --selftest` | selftest |
 | design-flow doctrine path selftest | `design-flow` | `python3 plugins/design-flow/scripts/doctrine_path.py --selftest` | selftest |
+| design-flow modal fit | `design-flow` | `python3 plugins/design-flow/scripts/check_modal_fit.py --selftest` | selftest |
 | design-flow palette candidates | `design-flow` | `python3 plugins/design-flow/scripts/palette_candidates.py --check` | live check |
 | design-flow palette candidates selftest | `design-flow` | `python3 plugins/design-flow/scripts/palette_candidates.py --selftest` | selftest |
 | design-flow palette gates selftest | `design-flow` | `python3 plugins/design-flow/scripts/palette_gates.py --selftest` | selftest |
@@ -97,6 +98,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | design-flow scale contiguity selftest | `design-flow` | `python3 plugins/design-flow/scripts/check_scale_contiguity.py --selftest` | selftest |
 | design-flow setup cross-check | `design-flow` | `python3 plugins/design-flow/scripts/setup_doctrine_crosscheck.py --quiet` | live check |
 | design-flow setup cross-check selftest | `design-flow` | `python3 plugins/design-flow/scripts/setup_doctrine_crosscheck.py --selftest` | selftest |
+| design-flow table layout | `design-flow` | `python3 plugins/design-flow/scripts/check_table_layout.py --selftest` | selftest |
 | design-flow tells vs our own doctrine | `design-flow` | `python3 plugins/design-flow/scripts/llm_tell_detector.py --doctrine-selfcheck` | live check |
 | design-flow token drift selftest | `design-flow` | `python3 plugins/design-flow/scripts/check_token_drift.py --selftest` | selftest |
 | design-flow variant conformance | `design-flow` | `python3 plugins/design-flow/scripts/variant_conformance.py --selftest` | selftest |
@@ -148,6 +150,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | rails-flow spec support wired | `rails-flow` | `python3 plugins/rails-flow/scripts/check_spec_support.py --selftest` | selftest |
 | rails-flow spec-review citations | `rails-flow` | `python3 plugins/rails-flow/scripts/check_spec_review.py --selftest` | selftest |
 | rails-flow technical spec | `rails-flow` | `python3 plugins/rails-flow/scripts/check_spec.py --selftest` | selftest |
+| rails-flow tenancy cop | `rails-flow` | `python3 plugins/rails-flow/scripts/check_tenancy_cop.py --selftest` | selftest |
 | rails-flow tiers | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --agents plugins/rails-flow/agents --tiers plugins/rails-flow/reference/model-tiers.md` | live check |
 | rails-flow toolchain version | `rails-flow` | `python3 plugins/rails-flow/scripts/toolchain_version.py --selftest` | selftest |
 | rails-flow work order | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --selftest` | selftest |
@@ -197,7 +200,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | markdown shell lint | `repo` | `python3 scripts/lint_markdown_shell.py` | live check |
 | markdown shell selftest | `repo` | `python3 scripts/lint_markdown_shell.py --selftest` | selftest |
 | mutation check | `repo` | `python3 scripts/mutation_check.py --selftest` | selftest |
-| mutation coverage | `repo` | `python3 scripts/mutation_check.py` | live check · 900s budget |
+| mutation coverage | `repo` | `python3 scripts/mutation_check.py` | live check · 5400s budget |
 | packaging determinism | `repo` | `python3 scripts/package_core.py --selftest` | selftest |
 | page pacing | `repo` | `python3 scripts/check_page_pacing.py` | live check |
 | page pacing selftest | `repo` | `python3 scripts/check_page_pacing.py --selftest` | selftest |
@@ -218,6 +221,8 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | skill version tag selftest | `repo` | `python3 scripts/skill_version_tag.py --selftest` | selftest |
 | structural grid | `repo` | `python3 scripts/check_structural_grid.py` | live check |
 | structural grid selftest | `repo` | `python3 scripts/check_structural_grid.py --selftest` | selftest |
+| tenancy cop derived | `repo` | `python3 scripts/derive_tenancy_cop.py --check` | live check |
+| tenancy cop derived selftest | `repo` | `python3 scripts/derive_tenancy_cop.py --selftest` | selftest |
 | token contrast | `repo` | `python3 scripts/check_token_contrast.py` | live check |
 | token contrast selftest | `repo` | `python3 scripts/check_token_contrast.py --selftest` | selftest |
 | upstream check selftest | `repo` | `python3 scripts/check_upstream_docs.py --selftest` | selftest |

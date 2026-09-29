@@ -35,7 +35,7 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 <main>
 <h1>Doctrine &rarr; enforcement</h1>
 <p class="lede">One row per doctrinal claim in this repo: where it is stated, and what makes it true. <strong>The unenforced rows are the deliverable.</strong> A claim with no enforcement is not automatically a defect &mdash; plenty are judgement, and gating judgement is worse than not gating it. The value is making the distinction visible instead of discovering it by accident.</p>
-<div class="tally"><b>46 claims</b><b>36 enforced guarantees</b><b>10 advisory</b><b>0 tracked gaps</b></div>
+<div class="tally"><b>48 claims</b><b>36 enforced guarantees</b><b>12 advisory</b><b>0 tracked gaps</b></div>
 <div class="controls"><button data-k="all">all</button><button data-k="guarantee">guarantees</button><button data-k="advice">advisory</button><button data-k="gap">gaps</button></div>
 <div class="row" data-k="guarantee">
 <h2>A SessionStart hook&#x27;s output is charged again after every compaction, so its bytes are budgeted and ratcheted; a shipped agent states a bounded output or returns a path.</h2>
@@ -436,6 +436,18 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 <div class="meta"><span class="k k-advice">advice</span><span>stated in <code>skills/quality-pass/SKILL.md</code> &middot; #476</span></div>
 <p class="none">Nothing enforces this.</p>
 <p class="note">#476: a monotony gate flagged our own worked example on first real input. Cited to keep later gates advisory; unenforceable by construction, since it is the rule for deciding whether to build a gate at all.</p>
+</div>
+<div class="row" data-k="advice">
+<h2>Prefer expanded conditionals over guard clauses when writing new code (style.md §1).</h2>
+<div class="meta"><span class="k k-advice">advice</span><span>stated in <code>skills/rails-8/references/style.md</code> &middot; #1363</span></div>
+<p class="none">Nothing enforces this.</p>
+<p class="note">#1363, verified on rubocop 1.91.0: no stock cop prefers expanded conditionals, and Style/GuardClause has no EnforcedStyle to invert. The rule&#x27;s two exceptions (a return at the start; a non-trivial body) are judgement, and it says to leave working code alone. A cop would contradict the section it enforced.</p>
+</div>
+<div class="row" data-k="advice">
+<h2>Indent under visibility modifiers, with no blank line after them; a private-only module is the exception (style.md §5).</h2>
+<div class="meta"><span class="k k-advice">advice</span><span>stated in <code>skills/rails-8/references/style.md</code> &middot; #1363</span></div>
+<p class="none">Nothing enforces this.</p>
+<p class="note">#1363, verified on rubocop 1.91.0 / rubocop-rails-omakase 1.1.0: IndentationWidth + IndentationConsistency(indented_internal_methods) + EmptyLinesAroundAccessModifier(only_before) enforce the main shape exactly, but flag the private-only-module exception twice, and no option expresses that exception. Advice by default; a project may adopt the three with a per-file carve-out for private-only modules.</p>
 </div>
 <div class="floor"><strong>This map is a floor, not a ceiling.</strong> The audit can tell you a declared doctrine source has <em>no</em> rows; nothing here can tell you a source with four rows was not owed nine. A row count is evidence that someone looked, never proof the file is covered. Sources declared: <code>CLAUDE.md</code>, <code>AGENTS.md</code>, <code>docs/doctrine/harness-doctrine.md</code>, <code>skills/code-review/SKILL.md</code>, <code>skills/quality-pass/SKILL.md</code>, <code>skills/derived-artifacts/SKILL.md</code>, <code>skills/parallel-session-lane/SKILL.md</code>, <code>plugins/rails-flow/commands/feature.md</code>, <code>plugins/rails-flow/commands/handoff.md</code>, <code>plugins/rails-flow/commands/fix.md</code>, <code>plugins/design-flow/commands/generate.md</code>, <code>plugins/qa-flow/commands/certify.md</code>.</div>
 </main>

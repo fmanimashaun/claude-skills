@@ -160,7 +160,9 @@ step "4b. Run the gate sweep the hosted release runs first"
 # release.yml makes its `release` job `needs: gates` -- the whole sweep, before anything publishes.
 # This script ran none of it (#832), so a local release could ship what CI would have refused.
 # `--gates-only` is the same set CI runs: content gates only, no clone diagnostics.
-"$PY" scripts/maintainer_doctor.py --gates-only \
+# `--require-slow` too, as release.yml gets it through gates.yml on a push (#1444): a slow gate
+# that times out is FAIL here, not a skip.
+"$PY" scripts/maintainer_doctor.py --gates-only --require-slow \
   || fail "the gate sweep failed — the hosted release would not have published this. Fix the failures above, then re-run."
 
 step "5. Extract release notes from CHANGELOG"
