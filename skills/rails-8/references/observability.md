@@ -301,36 +301,45 @@ to `bin/docker-entrypoint` (production):
 for env in development test; do   # CI: test only. bin/docker-entrypoint: production only.
   rc=0
   RAILS_ENV=$env bin/rails runner '
-    c = RailsPulse::ApplicationRecord.connection
-    tables = %w[routes queries requests operations jobs job_runs summaries deployments exception_groups exception_occurrences]
-    n = tables.count { |t| c.table_exists?("rails_pulse_#{t}") }
-    exit(n == tables.size ? 0 : n.zero? ? 3 : 4)' || rc=$?
+    exit(RailsPulse::ApplicationRecord.connection.tables.grep(/\Arails_pulse_/).empty? ? 3 : 0)' || rc=$?
   if [ "$rc" -eq 3 ]; then
-    RAILS_ENV=$env bin/rails db:schema:load_rails_pulse   # empty: load the schema
+    RAILS_ENV=$env bin/rails db:schema:load_rails_pulse   # no Pulse table at all: load the schema
   elif [ "$rc" -ne 0 ]; then
-    echo "rails_pulse ($env): partly created, or the check failed. Not loading." >&2
-    exit "$rc"                                              # never load a database that has any Pulse tables
+    echo "rails_pulse ($env): the emptiness check itself failed (exit $rc). Not loading." >&2
+    exit "$rc"
   fi
 done
 bin/rails db:prepare
 ```
 
-**The load runs only when none of the ten tables exist**, because it does two
-things: it creates the missing tables, and it records every copied migration as
-applied. On a database that already has some tables, the second half is the
-silent skip above. That includes a populated one whose pending upgrade adds a
-table: the load would mark that upgrade's other migrations as run without
-running them. So "some" aborts, and so does a check that fails.
+**The load runs only on a Pulse database that has no `rails_pulse_` table at
+all.** The load does two things: it creates the tables, and it records every
+copied migration as applied. On a database that already has Pulse tables, the
+second half is the silent skip above.
 
-- **An upgrade in progress** is repaired with `bin/rails db:migrate:rails_pulse`.
-- **An interrupted first load, holding no data**, is repaired by dropping the Pulse
+On every other database the guard skips the load, and `db:prepare` applies
+pending Pulse migrations normally. That includes a populated one whose upgrade
+adds a table. The gem's own `db:prepare` hook calls the load as well, and it
+is a no-op there. The check names no table list, so a later version that
+renames a table changes nothing.
+
+The one case that fails is loud:
+
+- **An interrupted first load** leaves some tables and no migration records. It
+  passes the check, and `db:prepare` then aborts with *"Could not find table
+  'rails_pulse_operations'"*. Repair it by deleting that environment's Pulse
   database and running again.
+- **If the check itself fails**, the loop stops before loading, and names the
+  environment.
 
-When all ten tables exist the guard skips the load, and `db:prepare` applies a
-pending Pulse migration normally. Measured on SQLite. On PostgreSQL or MySQL
-the database must exist before the load (`bin/rails db:create`), which was not
-run here. With an empty test Pulse database, `/rails_pulse` answers 503 in
-tests and tracking pauses without a word.
+The check reads the Pulse database only because `connects_to` is set. Without
+it, `RailsPulse::ApplicationRecord` uses the primary, and the check would test
+the primary instead.
+
+Measured on SQLite, on Rails 8.0.5.1 and 8.1.4, in development, test and
+production. On PostgreSQL or MySQL the databases must exist before the load
+(`bin/rails db:create`), which was not run here. With an empty test Pulse
+database, `/rails_pulse` answers 503 in tests and tracking pauses without a word.
 
 (A single-database install omits `--database=separate`, the `database.yml`
 entry and `connects_to`, and runs `bin/rails db:migrate`.) Mount it and gate it

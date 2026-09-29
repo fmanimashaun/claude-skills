@@ -16064,6 +16064,26 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+- **The Rails Pulse guard loads only a database with no Pulse table at all — `skills/rails-8/references/observability.md`,
+  `dist/rails-8.skill`** (#1429). The final review of #1420 left three NITs, and all three came from the guard counting
+  a list of 0.4.1's ten tables. The pin meant a later version that renamed a table would abort every run. The three
+  states needed one message for two causes. And each repair named no environment.
+  - **Now the check asks one question:** does any `rails_pulse_` table exist? If none does, it loads the schema.
+    Otherwise it skips the load, and `db:prepare` migrates, including an upgrade that adds a table. The load still
+    never runs on a populated database, so the silent skip #1420 closed stays closed. There is no table list to pin.
+  - **The one failure is loud and has one cause.** An interrupted first load makes `db:prepare` abort with
+    *"Could not find table 'rails_pulse_operations'"*. The repair is to delete that environment's Pulse database and
+    re-run. A failing check stops the loop before any load, and names the environment.
+  - **Verified:** doctrine-verifier CONFIRMED all seven claims by running the block VERBATIM, on rails_pulse 0.4.1 with
+    Rails 8.1.4 and 8.0.5.1 (no difference between them), in development, test and production:
+    - a fresh clone: exit 0, 10 tables per environment, `status` 0;
+    - populated with a pending migration and a row: applied, kept, nothing Marked;
+    - a pending upgrade that adds a table and a column: both restored by `db:prepare`, nothing Marked;
+    - an interrupted first load: loud abort, repaired by drop and re-run;
+    - a failing check: no load.
+    The verifier also named the `connects_to` boundary §7 now states: without it the check would test the primary.
+    The shell block in §7 is byte-identical to the one it ran.
+
 *Version number assigned at promotion.*
 
 - **Tables are master-detail with no horizontal scroll, and no card touches the viewport — `skills/design-system/references/components.md`,
