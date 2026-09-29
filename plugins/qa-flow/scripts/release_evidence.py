@@ -404,8 +404,9 @@ def already_published(base: Path, rev: str, published: str, record: str) -> str 
     The last PUBLISHED release is main: a record whose PATH is already there is last release's
     evidence, and one whose blob is byte-identical to any record there is a copy of it. Records, not
     screenshots: an unchanged page can render to the same PNG bytes in two honest walks.
-    KNOWN LIMIT: a lightly EDITED copy (one line changed) has a new blob and passes; this check makes
-    an unedited copy impossible, not an edited one.
+    KNOWN LIMITS: a lightly EDITED copy (one line changed) has a new blob and passes; and so does an
+    unedited copy of an OLDER release whose evidence is no longer in main's TREE, because main's tree
+    is read, not its history. It makes an unedited copy of the LAST published release impossible.
     """
     def ids(ref: str) -> dict[str, str]:
         try:

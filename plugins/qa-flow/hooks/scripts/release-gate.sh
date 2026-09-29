@@ -20,7 +20,8 @@ if [ -n "$_missing" ]; then
   # is whitespace. Then it looks for the WORDS, anywhere, with anything between them -- so git's
   # global options (`git -C . push`, `git -c k=v push`) cannot hide the verb. It over-blocks in a
   # degraded environment (a message that merely mentions `git push … main` is denied), which is the
-  # safe direction for a gate that cannot tell. A ref under a path (`feature/main`) is not `main`.
+  # safe direction for a gate that cannot tell. A ref under a path (`feature/main`) is not `main` --
+  # except the fully qualified `refs/heads/main`, which is exactly main (#1437 round 4).
   _in="$input"
   for _esc in '\t' '\n' '\r' '\u0009' '\u000a' '\u000A' '\u000d' '\u000D' '\u0020'; do
     _in="${_in//"$_esc"/ }"
@@ -28,7 +29,7 @@ if [ -n "$_missing" ]; then
   _b='(^|[^[:alnum:]_])'; _e='([^[:alnum:]_]|$)'
   _looks_promotion=0
   if [[ $_in =~ ${_b}git${_e} ]]; then
-    if [[ $_in =~ ${_b}push${_e} ]] && [[ $_in =~ (^|[^[:alnum:]_/.-])(main|master)${_e} ]]; then
+    if [[ $_in =~ ${_b}push${_e} ]] && [[ $_in =~ (^|[^[:alnum:]_/.-]|refs/heads/)(main|master)${_e} ]]; then
       _looks_promotion=1
     fi
     [[ $_in =~ ${_b}merge${_e} ]] && _looks_promotion=1

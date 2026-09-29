@@ -65,7 +65,7 @@ GUARD = Guard(
         ),
         Mutation(
             "the fallback no longer recognises a push to main",
-            '    if [[ $_in =~ ${_b}push${_e} ]] && [[ $_in =~ (^|[^[:alnum:]_/.-])(main|master)${_e} ]]; then',
+            '    if [[ $_in =~ ${_b}push${_e} ]] && [[ $_in =~ (^|[^[:alnum:]_/.-]|refs/heads/)(main|master)${_e} ]]; then',
             "    if false; then",
             "with ONLY bash on PATH, a push to main is still blocked",
         ),
@@ -77,7 +77,7 @@ GUARD = Guard(
         ),
         Mutation(
             "the fallback's word boundary is dropped, so maintenance reads as main",
-            '    if [[ $_in =~ ${_b}push${_e} ]] && [[ $_in =~ (^|[^[:alnum:]_/.-])(main|master)${_e} ]]; then',
+            '    if [[ $_in =~ ${_b}push${_e} ]] && [[ $_in =~ (^|[^[:alnum:]_/.-]|refs/heads/)(main|master)${_e} ]]; then',
             "    if [[ $_in =~ push ]] && [[ $_in =~ (main|master) ]]; then",
             "`git push origin maintenance` is allowed",
         ),
@@ -89,9 +89,15 @@ GUARD = Guard(
         ),
         Mutation(
             "a ref under a path counts as main in the fallback",
-            "[[ $_in =~ (^|[^[:alnum:]_/.-])(main|master)${_e} ]]",
+            "[[ $_in =~ (^|[^[:alnum:]_/.-]|refs/heads/)(main|master)${_e} ]]",
             "[[ $_in =~ (^|[^[:alnum:]_])(main|master)${_e} ]]",
             "`git push origin feature/main` is allowed",
+        ),
+        Mutation(
+            "a fully qualified refs/heads/main is swallowed by the path-ref exclusion again",
+            "[[ $_in =~ (^|[^[:alnum:]_/.-]|refs/heads/)(main|master)${_e} ]]",
+            "[[ $_in =~ (^|[^[:alnum:]_/.-])(main|master)${_e} ]]",
+            "'git push origin refs/heads/main' is still blocked",
         ),
         # ROUND 3 FOLD-IN 4: the stamp is read as committed at dev.
         Mutation(

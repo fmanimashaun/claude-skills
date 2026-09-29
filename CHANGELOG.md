@@ -11192,9 +11192,10 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
   limit are a `scripts/doctrine_map.py` row, stated in `certify.md`, which becomes a declared doctrine source. The
   round-3 re-review found last release's evidence, renamed with `git mv` (or re-declared under the old version),
   still passing, because the copy check only saw evidence still at dev: a record already on `main` (the last
-  published release), by path or by blob, is now refused. KNOWN LIMIT, stated in `certify.md` and the map: a lightly
-  edited copy is not caught. The builtins fallback no longer matches raw JSON: it normalises JSON whitespace escapes
-  and matches the words, so `git -C . push`, `git -c k=v push` and an escaped tab are blocked too. By the owner's decision on #1428, an older
+  published release), by path or by blob, is now refused. KNOWN LIMITS, stated in `certify.md` and the map: a lightly
+  edited copy is not caught, and nor is an unedited copy of an OLDER release whose evidence is no longer in main's tree. The builtins fallback no longer matches raw JSON: it normalises JSON whitespace escapes
+  and matches the words, so `git -C . push`, `git -c k=v push`, an escaped tab and a fully qualified
+  `refs/heads/main` are blocked too. By the owner's decision on #1428, an older
   stamp is **grandfathered for one release**: it passes with a loud "re-run /qa-flow:certify" warning, and the next
   release refuses it. The window is one constant, `GRANDFATHER_OLD_STAMPS`. It was checked against a real downstream
   walkthrough (Retask `first-boot-v101`: 50 rows, 390 and 1280 wide), which passes. That run also exposed a false

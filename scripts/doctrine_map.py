@@ -172,7 +172,9 @@ CLAIMS: tuple[Claim, ...] = (
              "next arm. An agent's ordinary commit cannot carry an old committer date by accident. "
              "SECOND KNOWN LIMIT: evidence already on main, or byte-identical to a record there, is "
              "refused, but a lightly EDITED copy of last release's walkthrough (one line changed) is "
-             "not caught -- the check stops an unedited copy, not a dishonest one.",
+             "not caught, and neither is an unedited copy of an OLDER release whose evidence is no "
+             "longer in main's tree (main's tree is read, not its history) -- the check stops an "
+             "unedited copy of LAST release's evidence, not a dishonest one.",
     ),
     Claim(
         claim="A change a user can see is not built until the owner has approved a clickable "

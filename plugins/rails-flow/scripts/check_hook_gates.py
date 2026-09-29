@@ -924,7 +924,8 @@ def release_gate_fixtures() -> None:
     # Round 3 fold-in: the fallback matched raw JSON, so git's global options and a JSON-escaped tab
     # slipped past it. Each is a real way to write a push to main.
     for cmd in ("git -C . push origin main", "git -c k=v push origin main", "git\tpush origin main",
-                "git --git-dir=.git push origin HEAD:main"):
+                "git --git-dir=.git push origin HEAD:main", "git push origin refs/heads/main",
+                "git push origin HEAD:refs/heads/master"):
         code, out = bare_gate(cmd)
         check(f"release-gate: with ONLY bash on PATH, {cmd!r} is still blocked", code == 2,
               f"exit {code}: {out[:160]!r}")
