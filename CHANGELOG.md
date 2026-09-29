@@ -17,6 +17,9 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   `<%# simple-form-only: primitive <construct> -- why %>` and excuses only that construct, matched **exactly** — a
   prefix match let `primitive <` excuse every raw tag (independent review of #1455). Every marker in a block counts,
   each must give a reason, and one that names nothing or gives no reason excuses nothing. 10/10 mutations caught.
+- **The `rebuild_generated` mutation guard stages the tenancy-cop builder #1403 registered — `scripts/mutations/rebuild_generated.py`** (dev push run 36547806703, the first on which mutation coverage ran rather than timing out, in PR #1457). `scripts/rebuild_generated.py` registers `derive_tenancy_cop.py` with output `plugins/rails-flow/scaffold/`; the guard staged neither, so its unmutated selftest failed in the tempdir ("is registered here and does not exist") and the guard was INERT: all its mutations read as caught. Both are now in `needs`; 3/3 caught, and dev's version reports INERT on the same command. The only failure of 1602 on that run.
+
+- **The mutation gate fits CI again, and a timeout on the run that must prove it is a FAIL — `scripts/mutation_check.py`, `scripts/maintainer_doctor.py`, `.github/workflows/gates.yml`** (#1444). Every dev push run since the suite passed 900 s reported `mutation coverage` as a timeout-skip and went green, so the promotion's CI evidence did not exist. `mutation_check.py` now runs every baseline, then every mutation of every live guard, in one pool (`--jobs`, default the CPU count): the full 1514 mutations across 141 guards measured 1456 s at `--jobs 10`, against ~84 min serial, all caught. `SLOW_GATES["mutation coverage"]` is 5400 s, and the ok line prints `jobs=N, Xs` so the next value comes from a measured runner. `--require-slow` (CI's non-PR runs, and `scripts/release_local.sh`) turns a slow-gate timeout into FAIL; an ordinary gate's timeout, and a laptop run, keep SKIP. `unstaged_sibling_imports` now follows imports transitively, including those made by `needs` files — the one-level scan is how `check_slices` went INERT in CI; its fixture fails against the old function.
 
 ### 2026-09-28 (release v1.152.0)
 
@@ -3549,6 +3552,12 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   deadline (the old regex misses it; a mutation restores it). Run before and after against an export of the
   app behind #1391 at its `origin/dev` (`f0f84e1a`, with its `Gemfile.lock`, so the gate applies): the same 4
   findings, two of them the pre-existing `collection_*` false positive filed as #1458. 26/26 mutations caught.
+- **model-tiers: `sonnet` is Sonnet 5.5 on the Anthropic API from Claude Code v2.1.284 — `plugins/rails-flow/reference/model-tiers.md`,
+  `plugins/rails-flow/scripts/check_handoff.py`** (#1449). Verified against code.claude.com `model-config`, re-read
+  2026-09-29. Only the Anthropic API row moved: Claude Platform on AWS is still Sonnet 4.6, and Amazon Bedrock,
+  Google Cloud's Agent Platform and Microsoft Foundry are Sonnet 4.5. The claude.dev post that prompted this implied
+  every provider moved. Sonnet 5.5 defaults to `medium` effort in Claude Code, where the API default is `high`, and
+  its thinking cannot be turned off.
 
 - **`guard-migrate` folds case, names its Bash limit, and says a broken boot comes first — `plugins/rails-flow/hooks/scripts/guard-migrate.sh`,
   `plugins/rails-flow/scripts/check_hook_gates.py`** (#1416). From the independent review of #1380, whose verdict was CLEAN.
@@ -6845,6 +6854,36 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 
 ## pipeline (lifecycle orchestrator)
+
+### Unreleased
+
+- **`breaker.py`'s Anthropic citation is verified and linked, and it separates what is ours from the guide — `plugins/pipeline/scripts/breaker.py`** (#1417).
+  The `elapsed Xs / Ys` line cited *Prompting Claude Opus 5.5*, "Time signals for multiagent harnesses", and no check
+  against the source was recorded. `doctrine-verifier` CONFIRMED it against the live page on 2026-09-29
+  ([anchor `#time-signals-for-multi-agent-harnesses`](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5#time-signals-for-multi-agent-harnesses)):
+  the harness adds "the elapsed time against that budget, in seconds"; "The model paces its work to finish inside the
+  budget"; "The budget is advisory ... keep your own timeout".
+  - **The docstring now quotes the page and links it,** and marks three things as ours, not the guide's:
+    - the pre-#1364 behaviour;
+    - appending the line to each proceeding `check` where the guide says every message;
+    - one `budget_minutes` serving as both the advisory budget and the hard stop, where the guide advises an advisory
+      budget "somewhat above".
+  - **A correction to the published #1364 note** (v1.152.0), which cannot be edited: it said "the guide names that as
+    the risk" of paying for time with verification. The page says only that under time pressure the model "might search
+    and verify a little less". Never paying for time with verification is our own directive.
+
+- **`deploy.env.example` no longer documents a key nothing reads — `plugins/pipeline/templates/deploy.env.example`** (#1418).
+  `DEPLOY_DESTINATION` had been flagged by every independent review's mechanical pass
+  (`self_consistency.py --all`, `dead-env-var`). A destination is already selected one way: the argument to
+  `/pipeline:deploy-cloud` (`argument-hint: [optional: destination, e.g. production | staging]`), which
+  `plugins/pipeline/commands/deploy-cloud.md` uses to scope `.kamal/secrets`. The key was a second, unread source for
+  the same value. Wiring it would have given one value two sources with no stated precedence, so the key is removed. The
+  template now says to pass the destination to the command. `self_consistency.py --all` now reports no findings
+  (37 files, 8 env keys). This is our own design: the issue body offers "wire it, or remove the line".
+  - **If your `.kamal/deploy.env` sets `DEPLOY_DESTINATION`,** it was never read. Pass the destination as the
+    command argument instead. A non-default destination is still incomplete, because the deploy step does not pass
+    `-d <destination>` to Kamal. That is tracked in #1465, and the template now says so rather than implying the
+    argument alone is enough.
 
 ### 1.4.0 (release v1.152.0) — 2026-09-28
 
@@ -11044,6 +11083,12 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
     where a guard turned out to have **no reachable failure path** until a fixture was added for it.
 
 ## qa-flow (independent QA plugin)
+
+### Unreleased
+
+- **model-tiers: `sonnet` is Sonnet 5.5 on the Anthropic API from v2.1.284 — `plugins/qa-flow/reference/model-tiers.md`**
+  (#1449). This is the same verified per-provider table as rails-flow's; the paragraph now also names Claude
+  Platform on AWS (Sonnet 4.6), which it had omitted.
 
 ### 1.34.0 (release v1.152.0) — 2026-09-28
 
@@ -16135,6 +16180,17 @@ boot/validation path — with a bullet each so the promotion could close them se
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
 ### Unreleased
+
+- **ai-llm.md names Claude Sonnet 5.5, and says why the default stays `claude-sonnet-5` — `skills/rails-8/references/ai-llm.md`,
+  `dist/rails-8.skill`** (#1449). doctrine-verifier **CONFIRMED**:
+  - `claude-sonnet-5-5` is the current Sonnet (released 2026-09-28), and Sonnet 5 is legacy (retirement not sooner
+    than 2027-06-30); from platform.claude.com `models/sonnet-5-5/overview` and `models/sonnet-5/overview`.
+  - A non-default `temperature` / `top_p` / `top_k` returns 400 on **both** (their "Good to know"). The sampling
+    note now names 5.5 too.
+  - **REFUTED: that ruby_llm supports the new ID.** No release's `lib/ruby_llm/models.json` contains
+    `claude-sonnet-5-5` (checked at v2.0.0 and `main`, 2026-09-29), and `default_model` must be in the registry or
+    it raises. So the default stays `claude-sonnet-5`, with the reason and the trigger to switch written beside it.
+  - Boundary: ruby_llm 2.0.0.
 
 - **The Rails Pulse guard loads only a database with no Pulse table at all — `skills/rails-8/references/observability.md`,
   `dist/rails-8.skill`** (#1429). The final review of #1420 left three NITs, and all three came from the guard counting

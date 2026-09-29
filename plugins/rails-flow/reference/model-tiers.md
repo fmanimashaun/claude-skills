@@ -36,7 +36,8 @@ Six facts decide this whole document, and four of them contradict the shape #127
    this paragraph quoted that older order until #1326. Pinning `sonnet` on a reviewer means a user who deliberately started an Opus session
    gets a **Sonnet** reviewer — we spent their upgrade for them, downwards.
 3. **An alias is not a tier; it is a per-provider lookup that moves over time.** `sonnet` resolves
-   to **three different versions** depending on the provider — Sonnet 5 on the Anthropic API,
+   to **three different versions** depending on the provider — **Sonnet 5.5** on the Anthropic API
+   (from Claude Code v2.1.284; it was Sonnet 5 before, re-read 2026-09-29, #1449),
    **Sonnet 4.6** on Claude Platform on AWS, **Sonnet 4.5** on Amazon Bedrock and Google Cloud's
    Agent Platform *and* on Microsoft Foundry. `opus` is **Opus 5.5** on every one of those
    **except Microsoft Foundry**, where it is **Opus 4.6** ([cc-model], re-read 2026-09-25; it was Opus 5
@@ -165,7 +166,10 @@ support effort"* ([cc-model], re-read 2026-09-25) — Haiku 4.5 is not listed. T
   security review would get our `medium`.
 
 So there is no agent in the catalogue the lever fits. Every agent inherits the session's effort,
-which on Opus 5.5 is `medium` unless the user chose otherwise ([cc-model]). A project that wants one
+which on Opus 5.5 is `medium` unless the user chose otherwise ([cc-model]). Sonnet 5.5 also defaults
+to `medium` in Claude Code, where the API's default is `high`. Its thinking cannot be turned off:
+*"You can't turn thinking off on Opus 5.5, Sonnet 5.5, or the Fable models"* ([cc-model], re-read
+2026-09-29, #1449). A project that wants one
 agent at another level overrides it in `.claude/agents/`, as below.
 
 ### The advisor rides along, and that is the user's call
