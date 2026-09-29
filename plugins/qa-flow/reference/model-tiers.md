@@ -15,7 +15,8 @@ citations. The three facts that decide it, verified against
 3. Pinning *up* spends the user's money: since v2.1.222 a blocked family alias such as `opus` runs on
    *"the newest version of that family the allowlist permits"*, and only other blocked values fall back
    to the inherited model (re-read 2026-09-25, #1329). And an alias is a per-provider lookup that
-   *"update[s] over time"* — `sonnet` is Sonnet 5 on the Anthropic API, **Sonnet 4.5** on Amazon
+   *"update[s] over time"* — `sonnet` is **Sonnet 5.5** on the Anthropic API (from v2.1.284; Sonnet 5
+   before, re-read 2026-09-29, #1449), **Sonnet 4.6** on Claude Platform on AWS, **Sonnet 4.5** on Amazon
    Bedrock and Google Cloud's Agent Platform, **Sonnet 4.5** on Microsoft Foundry (where `opus` is
    **Opus 4.6** while it is Opus 5.5 everywhere else, re-read 2026-09-25, #1326). A shipped plugin cannot know what its own
    frontmatter selects.

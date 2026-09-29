@@ -58,8 +58,8 @@ EXTERNAL CLAIMS THIS ENCODES, AND THEIR SOURCES (verified 2026-07-31)
       inherited model. Before v2.1.222 an alias fell back too (re-read 2026-09-25, #1329).  (same page)
     * `model` IS honoured for plugin agents -- only "`hooks`, `mcpServers`, or `permissionMode`" are
       ignored there.  (same page)
-    * An alias is a per-provider lookup that moves: `sonnet` is Sonnet 5 on the Anthropic API but
-      Sonnet 4.5 on Amazon Bedrock and Microsoft Foundry, and "Aliases point to the recommended
+    * An alias is a per-provider lookup that moves: `sonnet` is Sonnet 5.5 on the Anthropic API
+      (from v2.1.284; Sonnet 5 before, #1449) but Sonnet 4.5 on Amazon Bedrock and Microsoft Foundry, and "Aliases point to the recommended
       version for your provider and update over time".  https://code.claude.com/docs/en/model-config
     * `maxTurns` is "Maximum number of agentic turns before the subagent stops" -- a turn bound, not
       an attempt bound, so it complements the attempt cap.  (sub-agents page)
