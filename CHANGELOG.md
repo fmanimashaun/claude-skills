@@ -11,6 +11,8 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 *Version number assigned at promotion.*
 
+- **`SLOW_GATES["mutation coverage"]` is set from the runner's own measurement: 1800 s — `scripts/maintainer_doctor.py`** (#1444). The first green dev push run printed `jobs=4, 604s` for 1602 mutations across 145 guards. The 5400 s placeholder from PR #1457 was 9x that, so a hung gate would take 90 minutes to surface; 1800 s is 3x.
+
 - **The skill-gap search tells "no hit" from "did not run", and names a version shipped with two skills trees — `.claude/agents/issue-triager.md`, `scripts/skill_version_tag.py`, `scripts/mutations/skill_version_tag.py`** (#1427 items 1, 5, 6). The triager's block exited 0 on both warning branches while a real no-hit exited 1; the warning branches now end `(exit 2)`, the prose names the three codes (0 hit, 1 no hit, 2 did not run), and an unreadable repo (`skill_version_tag` exit 2) gets its own message instead of "search origin/dev". Run verbatim in bash, zsh and sh. `skill_version_tag.py` now warns on stderr, naming one tag per distinct later `skills` tree carrying the same version, and the triager re-runs the search at each. Measured over every tag: 42 of 111 rails-stack versions ship in more than one tag, and one, 1.42.2, holds two trees: v1.75.0's, and one shared by v1.76.0, v1.77.0 and v1.79.0 (the warning names v1.76.0). The tag on stdout is unchanged. Its exit-2 branch (outside a repository) now has a fixture; 9/9 mutations are caught.
 
 - **The shipped-ERB check reads indented fences, and a primitive marker excuses only what it names — `scripts/check_shipped_erb_forms.py`,
