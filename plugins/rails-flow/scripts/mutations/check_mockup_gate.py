@@ -49,7 +49,7 @@ GUARD = Guard(
         ),
         Mutation(
             "a mock-up file that does not exist passes",
-            '    elif mock and not ((root / mock).is_file() and MOCK_FILE.search(mock)):',
+            '    elif mock and not ((root / mock).is_file() and (mock.startswith(RECORD_DIR) or MOCK_FILE.search(mock))):',
             "    elif False:",
             "a mock-up file that does not exist is held",
         ),
@@ -93,9 +93,9 @@ GUARD = Guard(
         ),
         Mutation(
             "any repo file counts as a mock-up",
-            '    elif mock and not ((root / mock).is_file() and MOCK_FILE.search(mock)):',
+            '    elif mock and not ((root / mock).is_file() and (mock.startswith(RECORD_DIR) or MOCK_FILE.search(mock))):',
             "    elif mock and not (root / mock).is_file():",
-            "an arbitrary repo file is not a mock-up",
+            'an arbitrary NON-Markdown repo file outside the folder is not a mock-up',
         ),
         Mutation(
             "a record need not name its issue",
@@ -135,6 +135,13 @@ GUARD = Guard(
             'MOCK_FILE = re.compile(r"\\.(html?|png|jpe?g|webp|pdf|svg)$", re.I)',
             'MOCK_FILE = re.compile(r"\\.(html?|png|jpe?g|webp|pdf)$", re.I)',
             'an .svg mock-up OUTSIDE the records folder is a mock-up file',
+        ),
+        Mutation(
+            # review of PR #1478
+            'a record may name another record (or a symlink onto one) as its mock-up',
+            '    elif mock and (root / mock).resolve().suffix.lower() == ".md":',
+            '    elif False:',
+            'a record naming another record is held',
         ),
     ),
 )

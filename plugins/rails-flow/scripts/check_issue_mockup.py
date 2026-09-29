@@ -41,9 +41,10 @@ INLINE = re.compile(r"^\s*(?:[-*]\s*)?\**mock-?up\**\s*:\s*(.+)$", re.I | re.M)
 NEXT_HEADING = re.compile(r"^\s{0,3}#{1,6}\s", re.M)
 # A link to something: an https URL with a host, a committed record under docs/product/mockups/, or a
 # mock-up file. NOT any word ending in `.md` -- "TBD, see notes.md" read as linked (review of #1387).
-# A record path must end in a real extension: `docs/product/mockups/TBD` is a placeholder (#1430).
+# A record path must end in an extension -- any: `docs/product/mockups/TBD` is a placeholder (#1430),
+# but `.gif` and `.avif` are mock-ups (review of PR #1478).
 LINK = re.compile(r"https://[^/\s]+\.[^\s]+"
-                  r"|(?:^|\s)docs/product/mockups/\S+\.(?:md|html?|png|jpe?g|webp|pdf|svg)\b"
+                  r"|(?:^|\s)docs/product/mockups/\S+\.[A-Za-z0-9]+\b"
                   r"|(?:^|\s)[\w./-]+\.(?:html?|png|jpe?g|webp|pdf|svg)\b", re.I)
 NO_CHANGE = re.compile(r"\bno visible change\b", re.I)
 
@@ -67,7 +68,9 @@ APPROVAL = re.compile(APPROVAL_URL.pattern.strip("^$"))
 def mockup_link(text: str) -> bool:
     """A link to the MOCK-UP, not to the comment approving it: a section holding only the approval
     URL read as linked and approved (#1430)."""
-    return bool(LINK.search(APPROVAL.sub(" ", text)))
+    # A mock-up can itself live in an issue comment, whose URL has the approval's shape: two DISTINCT
+    # comment links mean one of them is the mock-up (review of PR #1478).
+    return bool(LINK.search(APPROVAL.sub(" ", text))) or len({m.group(0) for m in APPROVAL.finditer(text)}) >= 2
 
 
 def verdict(body: str) -> tuple[bool, str]:
@@ -154,6 +157,16 @@ def selftest() -> int:
     check_that("#1430 CONTROL: a committed .md record path is linked", ok, why)
     ok, why = verdict(form.format("docs/product/mockups/bell.svg"))
     check_that("#1430 CONTROL: an .svg mock-up is linked", ok, why)
+    ok, why = verdict(form.format("docs/product/mockups/bell.gif"))
+    check_that("PR #1478 review: a .gif mock-up is linked (any extension)", ok, why)
+    TWO = ("mock-up: https://github.com/acme/app/issues/12#issuecomment-50 — approved "
+           "https://github.com/acme/app/issues/12#issuecomment-99")
+    ok, why = ready(form.format(TWO))
+    check_that("PR #1478 review: a mock-up posted as a comment, plus its approval, is ready", ok, why)
+    SAME = ("https://github.com/acme/app/issues/12#issuecomment-99 and again "
+            "https://github.com/acme/app/issues/12#issuecomment-99")
+    ok, why = verdict(form.format(SAME))
+    check_that("PR #1478 review: the SAME approval link twice is still not a mock-up", not ok, why)
 
     ok, why = verdict("### What\n\nA bell.\n")
     check_that("an issue with no Mock-up section is missing", not ok and "no Mock-up section" in why, why)

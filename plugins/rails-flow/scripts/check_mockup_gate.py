@@ -84,7 +84,8 @@ def unfenced(text: str) -> str:
     """The lines outside fenced code blocks. A fence closes on the same character, at least as long."""
     out, fence = [], ""
     for line in text.splitlines():
-        m = re.match(r"^\s{0,3}(`{3,}|~{3,})", line)
+        # Any indentation: in GUARDRAILS.md a fence usually sits inside a list item (review of PR #1478).
+        m = re.match(r"^\s*(`{3,}|~{3,})", line)
         if fence:
             if m and m.group(1)[0] == fence[0] and len(m.group(1)) >= len(fence) \
                     and not line.strip()[len(m.group(1)):].strip():
@@ -114,11 +115,14 @@ def record_problems(root: Path, rel: str) -> list[str]:
     elif mock and (root / mock).resolve() == path.resolve():
         # A record naming itself satisfied "a file under docs/product/mockups/" (#1430).
         out.append(f"{rel}: Mock-up names this record itself; name the mock-up it records")
-    elif mock and not ((root / mock).is_file() and MOCK_FILE.search(mock)):
-        # A local mock-up is a mock-up FILE. Living under docs/product/mockups/ no longer suffices:
-        # that let a record point at itself, or at another record (#1430).
+    elif mock and (root / mock).resolve().suffix.lower() == ".md":
+        # ...and so did naming another record. A record is not a mock-up, whatever a symlink calls it
+        # -- the RESOLVED target is judged. Any other committed file under the folder is still a
+        # mock-up (.gif, .avif, .html.erb): an allow-list refused real ones (review of PR #1478).
+        out.append(f"{rel}: Mock-up {mock!r} is a Markdown record, not a mock-up file")
+    elif mock and not ((root / mock).is_file() and (mock.startswith(RECORD_DIR) or MOCK_FILE.search(mock))):
         out.append(f"{rel}: Mock-up {mock!r} is neither an https link nor a mock-up file in the repo "
-                   f"(.html/.png/.jpg/.webp/.pdf/.svg)")
+                   f"(under {RECORD_DIR}, or an .html/.png/.jpg/.webp/.pdf/.svg)")
     issue = fields.get("Issue", "")
     if issue and not ISSUE_REF.match(issue):
         out.append(f"{rel}: Issue {issue!r} must name the issue this mock-up answers (#n, or its URL)")
@@ -230,6 +234,10 @@ def selftest() -> int:
         (root / "GUARDRAILS.md").write_text("x\n")
         code, msg = with_record(GOOD.replace("https://example.com/mockups/bell", "GUARDRAILS.md"))
         check_that("an arbitrary repo file is not a mock-up", code == 1 and any("mock-up file" in m for m in msg), msg)
+        (root / "notes.txt").write_text("x\n")
+        code, msg = with_record(GOOD.replace("https://example.com/mockups/bell", "notes.txt"))
+        check_that("an arbitrary NON-Markdown repo file outside the folder is not a mock-up",
+                   code == 1 and any("neither" in m for m in msg), msg)
         (root / "GUARDRAILS.md").unlink()
         code, msg = with_record(GOOD.replace("Issue: #12", "Issue: the bell one"))
         check_that("a record that names no issue is held", code == 1 and any("Issue" in m for m in msg), msg)
@@ -257,7 +265,7 @@ def selftest() -> int:
         code, msg = with_record(GOOD.replace("https://example.com/mockups/bell", "docs/product/mockups/r.md"))
         check_that("#1430: a record naming itself is held", code == 1 and any("itself" in m for m in msg), msg)
         code, msg = with_record(GOOD.replace("https://example.com/mockups/bell", "docs/product/mockups/bell.md"))
-        check_that("#1430: a record naming another record is held", code == 1 and any("mock-up file" in m for m in msg), msg)
+        check_that("#1430: a record naming another record is held", code == 1 and any("Markdown record" in m for m in msg), msg)
         (root / "docs/product/mockups/bell.svg").write_text("<svg/>")
         code, msg = with_record(GOOD.replace("https://example.com/mockups/bell", "docs/product/mockups/bell.svg"))
         check_that("#1430 CONTROL: a committed .svg mock-up passes", code == 0, msg)
@@ -265,6 +273,20 @@ def selftest() -> int:
         (root / "design/bell.svg").write_text("<svg/>")
         code, msg = with_record(GOOD.replace("https://example.com/mockups/bell", "design/bell.svg"))
         check_that("#1430: an .svg mock-up OUTSIDE the records folder is a mock-up file", code == 0, msg)
+        # Review of PR #1478: an allow-list refused real mock-ups committed under the folder.
+        for name in ("bell.gif", "bell.avif", "bell.html.erb"):
+            (root / "docs/product/mockups" / name).write_text("x")
+            code, msg = with_record(GOOD.replace("https://example.com/mockups/bell", f"docs/product/mockups/{name}"))
+            check_that(f"PR #1478 review: a committed {name} under the folder is a mock-up", code == 0, msg)
+        # ...and a symlink is judged by its TARGET: o.html -> bell.md is a record, not a mock-up.
+        (root / "docs/product/mockups/o.html").symlink_to("bell.md")
+        code, msg = with_record(GOOD.replace("https://example.com/mockups/bell", "docs/product/mockups/o.html"))
+        check_that("PR #1478 review: a symlink onto a record is held", code == 1 and any("Markdown record" in m for m in msg), msg)
+        # An example opt-out in an INDENTED fence (inside a list item) is still an example.
+        (root / "GUARDRAILS.md").write_text("# G\n\n- Example:\n\n    ```\n    - mockup-gate: off\n    ```\n")
+        code, msg = run(root, view, None)
+        check_that("PR #1478 review: an opt-out in an indented fence is not a declaration", code == 1, msg)
+        (root / "GUARDRAILS.md").unlink()
 
     # The git path main() takes: a new, untracked view must count (the #1341 blind spot). A FRESH
     # directory: the one above holds untracked records, which would rightly count as on the branch.

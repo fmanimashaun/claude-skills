@@ -58,7 +58,7 @@ GUARD = Guard(
         ),
         Mutation(
             "a committed mock-up file is not a link",
-            'LINK = re.compile(r"https://[^/\\s]+\\.[^\\s]+"\n                  r"|(?:^|\\s)docs/product/mockups/\\S+\\.(?:md|html?|png|jpe?g|webp|pdf|svg)\\b"\n                  r"|(?:^|\\s)[\\w./-]+\\.(?:html?|png|jpe?g|webp|pdf|svg)\\b", re.I)',
+            'LINK = re.compile(r"https://[^/\\s]+\\.[^\\s]+"\n                  r"|(?:^|\\s)docs/product/mockups/\\S+\\.[A-Za-z0-9]+\\b"\n                  r"|(?:^|\\s)[\\w./-]+\\.(?:html?|png|jpe?g|webp|pdf|svg)\\b", re.I)',
             'LINK = re.compile(r"https://[^/\\s]+\\.[^\\s]+", re.I)',
             "CONTROL: an agent-written section with a committed mock-up file is declared",
         ),
@@ -78,16 +78,23 @@ GUARD = Guard(
         Mutation(
             # #1430
             'an approval link counts as the mock-up link again',
-            '    return bool(LINK.search(APPROVAL.sub(" ", text)))',
+            '    return bool(LINK.search(APPROVAL.sub(" ", text))) or len({m.group(0) for m in APPROVAL.finditer(text)}) >= 2',
             '    return bool(LINK.search(text))',
             'a section holding ONLY the approval link is not ready',
         ),
         Mutation(
             # #1430
             'a record path needs no extension, so docs/product/mockups/TBD links',
-            '                  r"|(?:^|\\s)docs/product/mockups/\\S+\\.(?:md|html?|png|jpe?g|webp|pdf|svg)\\b"',
+            '                  r"|(?:^|\\s)docs/product/mockups/\\S+\\.[A-Za-z0-9]+\\b"',
             '                  r"|(?:^|\\s)docs/product/mockups/\\S+"',
             'docs/product/mockups/TBD is a placeholder',
+        ),
+        Mutation(
+            # review of PR #1478
+            'a mock-up posted as a comment is refused because its URL looks like an approval',
+            '    return bool(LINK.search(APPROVAL.sub(" ", text))) or len({m.group(0) for m in APPROVAL.finditer(text)}) >= 2',
+            '    return bool(LINK.search(APPROVAL.sub(" ", text)))',
+            'a mock-up posted as a comment, plus its approval, is ready',
         ),
     ),
 )
