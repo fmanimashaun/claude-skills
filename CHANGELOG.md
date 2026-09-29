@@ -3568,6 +3568,12 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **Mock-up checks, the #1430 remainder after PR #1478 — `plugins/rails-flow/scripts/check_issue_mockup.py`, `plugins/rails-flow/scripts/check_mockup_gate.py`, `plugins/rails-flow/scripts/mutations/check_issue_mockup.py`, `plugins/rails-flow/scripts/mutations/check_mockup_gate.py`** (#1430, from PR #1479's independent reviews; each gap measured against merged dev before editing).
+  - `check_issue_mockup.py`: a mock-up path in backticks or as a markdown link target (`[bell](docs/product/mockups/bell.md)`) now counts as linked; before, it read as "neither". Outside `docs/product/mockups/`, a mock-up file's extension must END its name (`foo.pdf.TBD` names nothing), and `.html.erb`, `.gif` and `.avif` count there too. A sentence's full stop may still follow.
+  - `check_mockup_gate.py`: a record naming itself is compared by `samefile` as well as `resolve()`, so a hard link to the record under another name is held.
+  - Not done here: an opt-out inside an INDENTED code block still counts. A rule for it was tried and dropped after the review measured it mishandling tabs, list continuation lines and code inside a list item; it needs a list-aware CommonMark scanner (#1490).
+  - Each change has a selftest case with a control. Guards: `check_issue_mockup` 18/18, `check_mockup_gate` 23/23, and `check_slices` 14/14; older mutations re-anchored to the new text.
+
 - **`guard-bash` label-checks `gh issue new`, `gh --repo … issue create`, and creates fed to a shell —
   `plugins/rails-flow/hooks/scripts/guard-bash.sh`, `plugins/rails-flow/hooks/scripts/lib/issue_labels.py`,
   `scripts/mutations/hook_issue_labels.py`, `scripts/mutations/hook_guard_bash.py`,
