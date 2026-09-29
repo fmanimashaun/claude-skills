@@ -32,7 +32,12 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      # Pinned by SHA like every other workflow here, and without persisted credentials: the job
+      # never pushes (it files through `gh` with GH_TOKEN), so a token left in .git/config would
+      # only be exposure (#1414). `issues: write` above is the one write it needs.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Re-read upstream docs
         id: run
         run: |

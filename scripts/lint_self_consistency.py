@@ -1841,6 +1841,75 @@ def check_doc_pointers() -> tuple[list[Finding], int]:
     return findings, examined
 
 
+
+# An inline link: `<target>` or a bare target, then an optional title. A reference definition
+# (`[r]: target`) is the other place a link target lives (independent review of #1482).
+_MD_LINK = re.compile(r"""\[[^\]\n]*\]\([ \t]*(?:<([^>\n]+)>|([^)\s]+))(?:[ \t]+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\)))?[ \t]*\)""")
+_MD_REFDEF = re.compile(r"^[ ]{0,3}\[[^\]\n]+\]:[ \t]*(?:<([^>\n]+)>|(\S+))", re.MULTILINE)
+_MD_FENCE_OPEN = re.compile(r"^[ \t]*(`{3,}|~{3,})")
+
+
+def _blank_markdown_code(body: str) -> str:
+    """Blank what only QUOTES a link -- fences (``` or ~~~, any length, closed by the same character
+    at least as long), HTML comments and inline code -- keeping every newline, so lines stay true."""
+    out, fence = [], None
+    for line in body.split("\n"):
+        if fence is None:
+            opened = _MD_FENCE_OPEN.match(line)
+            if opened:
+                fence = opened.group(1)
+                out.append("")
+                continue
+            out.append(line)
+        else:
+            if re.match(r"^[ \t]*" + re.escape(fence[0]) + "{" + str(len(fence)) + r",}[ \t]*$", line):
+                fence = None
+            out.append("")
+    prose = "\n".join(out)
+    prose = re.sub(r"<!--.*?-->", lambda m: re.sub(r"[^\n]", " ", m.group(0)), prose, flags=re.DOTALL)
+    return re.sub(r"(`+)[^\n]*?\1", lambda m: " " * len(m.group(0)), prose)
+
+
+def check_broken_relative_link() -> tuple[list[Finding], int]:
+    """A relative markdown link in `docs/` must resolve from the file that holds it.
+
+    #1415. `check_doc_pointers` resolves two pointer SPELLINGS (`${CLAUDE_PLUGIN_ROOT}/...`,
+    `skills/...`) and never a link target, so `[x](docs/doctrine/harness-doctrine.md)` written
+    inside `docs/brain/history/` -- which a renderer resolves to `docs/brain/history/docs/...` --
+    sat broken in five places across four files. A link is resolved against its own directory; a
+    path that reads right from the repo root is exactly the one that is wrong.
+
+    Scoped to `docs/**`: every file there is ours, so every relative link names a file of ours.
+    Shipped commands and skills are not, because their paths belong to a user's project. Inline
+    links (titled, `<angled>` or bare) and reference definitions are read; a `/`-rooted target is
+    resolved from the repo root, as GitHub does, and a percent-encoded one is decoded. A target
+    with no extension may name a wiki page (`[Loops](Loops)` -> `Loops.md`), which GitHub's wiki
+    resolves. Fences, inline code and HTML comments only quote a link; URLs and `#anchors` carry
+    no path to check.
+    """
+    from urllib.parse import unquote
+    findings: list[Finding] = []
+    examined = 0
+    for path in sorted((ROOT / "docs").rglob("*.md")):
+        prose = _blank_markdown_code(read(path))
+        matches = sorted(list(_MD_LINK.finditer(prose)) + list(_MD_REFDEF.finditer(prose)), key=lambda m: m.start())
+        for match in matches:
+            raw = match.group(1) or match.group(2)
+            target = unquote(raw.split("#", 1)[0])
+            if not target or re.match(r"[A-Za-z][A-Za-z0-9+.-]*:", target):
+                continue
+            examined += 1
+            resolved = ROOT / target.lstrip("/") if target.startswith("/") else path.parent / target
+            if resolved.exists() or (not resolved.suffix and resolved.with_name(resolved.name + ".md").exists()):
+                continue
+            findings.append(Finding(
+                "broken-relative-link", rel(path), prose[:match.start()].count("\n") + 1,
+                f"links to `{raw}`, which resolves to nothing from {rel(path.parent)}/ -- "
+                "a relative link is read from its own directory, not from the repo root",
+            ))
+    return findings, examined
+
+
 # ---------------------------------------------------------------------------
 # Rule: ci-gate-without-test-step
 # ---------------------------------------------------------------------------
@@ -2188,6 +2257,70 @@ def check_changelog_bullet_section() -> tuple[list[Finding], int]:
 # `@vX.Y.Z` next to our repo slug -- both are the same rotting literal.
 _PINNED_REF = re.compile(r"^\s*ref:\s*[\"']?(v\d+\.\d+\.\d+)", re.M)
 _SLUG_PIN = re.compile(r"fmanimashaun/claude-skills@(v\d+\.\d+\.\d+)")
+
+
+# `[ \t]`, never `\s`: `\s*` at a line start swallows a preceding blank line, which misplaced the
+# reported line and zeroed the step scan (independent review of #1482).
+_USES = re.compile(r"^([ \t]*)-?[ \t]*uses:[ \t]*([^\s#]+)", re.M)
+_SHA_PIN = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
+
+
+def check_workflow_action_pins() -> tuple[list[Finding], int]:
+    """Every workflow action is pinned by a full commit SHA, and every checkout drops its credentials.
+
+    #1414. `upstream.yml` pinned `actions/checkout@v7`, a TAG, while every other workflow pinned the
+    same action by SHA: a tag can be moved to other code after review, a SHA cannot. The same job
+    kept the default persisted credentials, which leaves the token in .git/config for every later
+    step; no job here pushes with git, so none needs it.
+
+    TWO SLUGS, so each clause can be proven alone (the #701 lesson): `unpinned-workflow-action` for
+    the ref, `checkout-persists-credentials` for the checkout. Local actions (`./...`) and
+    `docker://` images carry no git ref and are not judged.
+    """
+    findings: list[Finding] = []
+    examined = 0
+    for path in sorted(ROOT.glob(".github/workflows/*.yml")) + sorted(ROOT.glob(".github/workflows/*.yaml")):
+        examined += 1
+        body = read(path)
+        rel = path.relative_to(ROOT).as_posix()
+        lines = body.splitlines()
+        for match in _USES.finditer(body):
+            ref = match.group(2).strip("'\"")
+            if ref.startswith("./") or ref.startswith("docker://"):
+                continue
+            line = body[: match.start()].count("\n") + 1
+            if not _SHA_PIN.match(ref):
+                findings.append(Finding(
+                    "unpinned-workflow-action", rel, line,
+                    f"`{ref}` is not pinned by a full commit SHA. A tag or branch can be moved to "
+                    f"different code after review; pin the 40-character SHA with the tag as a comment, "
+                    f"like every other workflow here (`owner/action@<sha> # vX.Y.Z`)."))
+            if ref.split("@", 1)[0] == "actions/checkout":
+                # The WHOLE step: from its `- ` line (this one, or the nearest above it at a lower
+                # indent, since `with:` may come before `uses:`) to the next list item at the dash's
+                # indent or less, or a line that dedents out of it.
+                indent = len(match.group(1))
+                start = line - 1
+                if not lines[start].lstrip(" ").startswith("-"):
+                    while start > 0:
+                        start -= 1
+                        above = lines[start].lstrip(" ")
+                        if above.startswith("- ") and len(lines[start]) - len(above) < indent:
+                            break
+                dash = len(lines[start]) - len(lines[start].lstrip(" "))
+                step = [lines[start]]
+                for nxt in lines[start + 1:]:
+                    stripped = nxt.lstrip(" ")
+                    if stripped and len(nxt) - len(stripped) <= dash:
+                        break
+                    step.append(nxt)
+                if not any(re.match(r"""^[\s-]*persist-credentials:\s*["']?false["']?\s*(#.*)?$""", l) for l in step):
+                    findings.append(Finding(
+                        "checkout-persists-credentials", rel, line,
+                        "this checkout keeps its credentials (no `persist-credentials: false`), so the "
+                        "token stays in .git/config for every later step. No job here pushes with git; "
+                        "set `persist-credentials: false`."))
+    return findings, examined
 
 
 def check_pinned_toolchain_ref() -> tuple[list[Finding], int]:
@@ -3317,6 +3450,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     call_sites, call_coverage = check_doctrine_call_sites()
     invisible, invisible_examined = check_invisible_characters()
     pointers, pointers_examined = check_doc_pointers()
+    rel_links, rel_links_examined = check_broken_relative_link()
     uninstallable, plugins_installable = check_uninstallable_plugins()
     plugin_root, yaml_blocks = check_plugin_root_in_ci()
     mkt_ver, mkt_ver_examined = check_marketplace_version_duplicate()
@@ -3341,6 +3475,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     undoc_skill, undoc_skill_examined = check_undocumented_skill()
     rel_extract, rel_extract_examined = check_duplicated_release_extractor()
     pinned_ref, pinned_ref_examined = check_pinned_toolchain_ref()
+    action_pins, action_pins_examined = check_workflow_action_pins()
     xplugin, xplugin_examined = check_cross_plugin_doctrine_path()
     bullet_sec, bullet_sec_examined = check_changelog_bullet_section()
     cl_sections, cl_sections_examined = check_changelog_section_missing()
@@ -3367,6 +3502,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "documented_components": components_examined,
         "shipped_files_scanned_for_invisibles": invisible_examined,
         "doc_pointers_examined": pointers_examined,
+        "docs_relative_links_examined": rel_links_examined,
         "plugins_checked_for_install_lines": plugins_installable,
         "yaml_blocks_scanned": yaml_blocks,
         "skill_docs_scanned_for_v4_outline": outlines_examined,
@@ -3389,6 +3525,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "skill_directories_named_in_claude_md": undoc_skill_examined,
         "publish_paths_checked_for_own_extractor": rel_extract_examined,
         "shipped_docs_scanned_for_a_pinned_toolchain_tag": pinned_ref_examined,
+        "workflows_checked_for_action_pins": action_pins_examined,
         "design_flow_scripts_checked_for_a_clone_shaped_doctrine_path": xplugin_examined,
         "unreleased_changelog_bullets_placed": bullet_sec_examined,
         "plugins_with_a_changelog_section": cl_sections_examined,
@@ -3404,10 +3541,10 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         **call_coverage,
     }
     return (dead + unenforced + undocumented + undoc_cmds + growth + hook_lib + bare + misdesc + unbounded + author_me + components + call_sites + invisible
-            + pointers + outlines + uninstallable + plugin_root + mkt_ver + coercions + topologies + schema + unwired
+            + pointers + rel_links + outlines + uninstallable + plugin_root + mkt_ver + coercions + topologies + schema + unwired
             + ci_gates + cl_ignore + controllers + labels + comp_labels + orphans + keyfilter
             + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
-            + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref
+            + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref + action_pins
             + xplugin + unowned + toggles + ci_step + promo_ctx + bothways + harness_dep,
             coverage)
 
@@ -3656,6 +3793,97 @@ def selftest() -> int:
                  "rails-flow (agentic flow plugin)",
                  "- **Eleven agents ran for every job.** (#656) Now there is a pack size.",
                  heading="### 1.23.0 — 2026-08-20 (release v1.92.0)")})
+
+    # -- broken-relative-link (#1415) -----------------------------------------
+    BRL = "broken-relative-link"
+    _DOC = "docs/doctrine/harness-doctrine.md"
+    # THE #1415 SHAPE: a repo-root path written inside a nested directory.
+    scenario("a repo-root path inside docs/brain/history resolves to nothing", rule=BRL, expect_finding=True,
+             files={_DOC: "x\n", "docs/brain/history/h.md": "See [it](docs/doctrine/harness-doctrine.md).\n"})
+    scenario("...silent on the same link written relative to its own directory", rule=BRL, expect_finding=False,
+             files={_DOC: "x\n", "docs/brain/history/h.md": "See [it](../../doctrine/harness-doctrine.md).\n"})
+    scenario("...an #anchor does not rescue a missing file", rule=BRL, expect_finding=True,
+             files={_DOC: "x\n", "docs/doctrine/a.md": "See [it](gone.md#s5).\n"})
+    scenario("...silent on a wiki-style page link, URLs and bare anchors", rule=BRL, expect_finding=False,
+             files={"docs/wiki/Loops.md": "x\n", "docs/wiki/Home.md":
+                    "[Loops](Loops) [gh](https://github.com) [top](#top) [m](mailto:a@b)\n"})
+    # A wiki-style link is forgiven only when the page exists.
+    scenario("...a wiki-style link to a page that does not exist", rule=BRL, expect_finding=True,
+             files={"docs/wiki/Home.md": "[Loops](Loops)\n"})
+    scenario("...silent inside a fenced block", rule=BRL, expect_finding=False,
+             files={"docs/a.md": "```md\n[x](nowhere.md)\n```\n"})
+    # Every place a link target lives is read (independent review of #1482)...
+    scenario("...a titled link to a missing file", rule=BRL, expect_finding=True,
+             files={"docs/a.md": '[x](gone.md "title")\n'})
+    scenario("...an angle-bracket link to a missing file", rule=BRL, expect_finding=True,
+             files={"docs/a.md": "[x](<gone file.md>)\n"})
+    scenario("...a reference definition to a missing file", rule=BRL, expect_finding=True,
+             files={"docs/a.md": "[x][r]\n\n[r]: gone.md\n"})
+    scenario("...silent on titled, angled and reference links that resolve", rule=BRL, expect_finding=False,
+             files={"docs/b c.md": "x\n", "docs/a.md": '[x](b%20c.md "t") [y](<b c.md>)\n\n[r]: <b c.md>\n'})
+    # ...a `/`-rooted target resolves from the repo root, as GitHub does -- and must still exist.
+    scenario("...silent on a /-rooted link that resolves from the repo root", rule=BRL, expect_finding=False,
+             files={_DOC: "x\n", "docs/brain/a.md": "[x](/docs/doctrine/harness-doctrine.md)\n"})
+    scenario("...a /-rooted link to a missing file", rule=BRL, expect_finding=True,
+             files={"docs/brain/a.md": "[x](/docs/gone.md)\n"})
+    # ...and what only QUOTES a link is not one.
+    scenario("...silent inside a ~~~ fence and a four-backtick fence with an inner ```", rule=BRL, expect_finding=False,
+             files={"docs/a.md": "~~~\n[x](nowhere.md)\n~~~\n````md\n```\n[y](nowhere.md)\n```\n[z](nowhere.md)\n````\n"})
+    scenario("...silent in inline code and an HTML comment", rule=BRL, expect_finding=False,
+             files={"docs/a.md": "Write `[x](nowhere.md)` like so.\n<!-- [y](nowhere.md)\n-->\n"})
+    # CONTROL for the two above: the same link in prose after them still fires.
+    scenario("...a link after a closed fence and a closed comment still fires", rule=BRL, expect_finding=True,
+             files={"docs/a.md": "~~~\nx\n~~~\n<!-- c -->\n`code`\n[x](nowhere.md)\n"})
+    # SCOPE: shipped docs name paths in a USER's project, so outside docs/ is not judged.
+    scenario("...silent outside docs/", rule=BRL, expect_finding=False,
+             files={"plugins/p/commands/c.md": "[x](memos/nowhere.md)\n"})
+
+    # -- unpinned-workflow-action / checkout-persists-credentials (#1414) ------
+    UWA, CPC = "unpinned-workflow-action", "checkout-persists-credentials"
+    _SHA = "3d3c42e5aac5ba805825da76410c181273ba90b1"
+    _WF = ("jobs:\n  check:\n    steps:\n      - uses: actions/checkout@%s\n%s"
+           "      - name: next\n        run: echo hi\n")
+    _NOCRED = "        with:\n          persist-credentials: false\n"
+    scenario("an action pinned by a TAG", rule=UWA, expect_finding=True,
+             files={".github/workflows/x.yml": _WF % ("v7", _NOCRED)})
+    scenario("...silent on an action pinned by a full SHA", rule=UWA, expect_finding=False,
+             files={".github/workflows/x.yml": _WF % (_SHA + " # v7.0.1", _NOCRED)})
+    scenario("...silent on a local action and a docker image", rule=UWA, expect_finding=False,
+             files={".github/workflows/x.yml": "jobs:\n  a:\n    steps:\n      - uses: ./.github/actions/x\n"
+                                               "      - uses: docker://alpine:3\n"})
+    scenario("...a SHORT sha is not a full pin", rule=UWA, expect_finding=True,
+             files={".github/workflows/x.yml": _WF % ("3d3c42e", _NOCRED)})
+    scenario("a checkout that keeps its credentials", rule=CPC, expect_finding=True,
+             files={".github/workflows/x.yml": _WF % (_SHA, "")})
+    scenario("...persist-credentials: true is still kept", rule=CPC, expect_finding=True,
+             files={".github/workflows/x.yml": _WF % (_SHA, "        with:\n          persist-credentials: true\n")})
+    scenario("...silent on persist-credentials: false", rule=CPC, expect_finding=False,
+             files={".github/workflows/x.yml": _WF % (_SHA, _NOCRED)})
+    # The NEXT step's setting must not count for this checkout.
+    scenario("...a later step's persist-credentials does not cover this checkout", rule=CPC, expect_finding=True,
+             files={".github/workflows/x.yml": _WF % (_SHA, "") + "      - uses: actions/setup-node@" + _SHA +
+                    "\n        with:\n          persist-credentials: false\n"})
+
+    # A blank line before the step is ordinary YAML; it must not misplace or zero the step scan.
+    scenario("...silent on a conforming checkout preceded by a blank line", rule=CPC, expect_finding=False,
+             files={".github/workflows/x.yml": "jobs:\n  check:\n    steps:\n\n" + (_WF % (_SHA, _NOCRED)).split("steps:\n", 1)[1]})
+    scenario("...silent on a quoted 'false'", rule=CPC, expect_finding=False,
+             files={".github/workflows/x.yml": _WF % (_SHA, "        with:\n          persist-credentials: 'false'\n")})
+    # `with:` may be written before `uses:` in the same step.
+    scenario("...silent on persist-credentials written above uses: in the same step", rule=CPC, expect_finding=False,
+             files={".github/workflows/x.yml": "jobs:\n  a:\n    steps:\n      - with:\n          persist-credentials: false\n"
+                                               "        uses: actions/checkout@" + _SHA + "\n      - run: echo hi\n"})
+    # ...but the PREVIOUS step's setting is not this one's -- a checkout whose `uses:` is not on the
+    # dash line, so the backward scan must stop at its own `- `.
+    _PREV = ("jobs:\n  a:\n    steps:\n      - uses: actions/checkout@" + _SHA +
+             "\n        with:\n          persist-credentials: false\n%s      - name: again\n        uses: actions/checkout@" + _SHA + "\n")
+    scenario("...a previous step's persist-credentials does not cover this checkout", rule=CPC, expect_finding=True,
+             files={".github/workflows/x.yml": _PREV % ""})
+    # THE REVIEW'S BLOCKER: `\s*` at a line start swallowed a blank line, so the match began on it and
+    # the step scan ran back into the previous step's setting.
+    scenario("...nor across a blank line before this checkout", rule=CPC, expect_finding=True,
+             files={".github/workflows/x.yml": "jobs:\n  a:\n    steps:\n      - uses: actions/checkout@" + _SHA +
+                    "\n        with:\n          persist-credentials: false\n\n      - uses: actions/checkout@" + _SHA + "\n"})
 
     # -- pinned-toolchain-ref / -slug --------------------------------------
     PTR, PTS = "pinned-toolchain-ref", "pinned-toolchain-slug"
