@@ -513,6 +513,7 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # time -- the discriminator is an un-promoted release block, not the absence of Unreleased.
     ("arm window", ("python3", "scripts/check_arm_window.py")),
     ("arm window selftest", ("python3", "scripts/check_arm_window.py", "--selftest")),
+    ("close-on-dev-merge selftest", ("python3", "scripts/close_on_dev_merge.py", "--selftest")),
     ("vendored alone", ("python3", "scripts/check_vendored_alone.py")),
     ("vendored alone selftest", ("python3", "scripts/check_vendored_alone.py", "--selftest")),
 )
