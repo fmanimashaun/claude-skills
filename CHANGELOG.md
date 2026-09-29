@@ -9,6 +9,16 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+*Version number assigned at promotion.*
+
+- **The shipped-ERB check reads indented fences, and a primitive marker excuses only what it names — `scripts/check_shipped_erb_forms.py`,
+  `scripts/mutations/check_shipped_erb_forms.py`** (#1443). A fence may be indented, and closes at a fence of the
+  same indent; five blocks had been skipped (all clean today). The marker is now
+  `<%# simple-form-only: primitive <construct> -- why %>` and excuses only that construct, matched **exactly** — a
+  prefix match let `primitive <` excuse every raw tag (independent review of #1455). Every marker in a block counts,
+  each must give a reason, and one that names nothing or gives no reason excuses nothing. 10/10 mutations caught.
+- **The `rebuild_generated` mutation guard stages the tenancy-cop builder #1403 registered — `scripts/mutations/rebuild_generated.py`** (dev push run 36547806703, the first on which mutation coverage ran rather than timing out, in PR #1457). `scripts/rebuild_generated.py` registers `derive_tenancy_cop.py` with output `plugins/rails-flow/scaffold/`; the guard staged neither, so its unmutated selftest failed in the tempdir ("is registered here and does not exist") and the guard was INERT: all its mutations read as caught. Both are now in `needs`; 3/3 caught, and dev's version reports INERT on the same command. The only failure of 1602 on that run.
+
 - **The mutation gate fits CI again, and a timeout on the run that must prove it is a FAIL — `scripts/mutation_check.py`, `scripts/maintainer_doctor.py`, `.github/workflows/gates.yml`** (#1444). Every dev push run since the suite passed 900 s reported `mutation coverage` as a timeout-skip and went green, so the promotion's CI evidence did not exist. `mutation_check.py` now runs every baseline, then every mutation of every live guard, in one pool (`--jobs`, default the CPU count): the full 1514 mutations across 141 guards measured 1456 s at `--jobs 10`, against ~84 min serial, all caught. `SLOW_GATES["mutation coverage"]` is 5400 s, and the ok line prints `jobs=N, Xs` so the next value comes from a measured runner. `--require-slow` (CI's non-PR runs, and `scripts/release_local.sh`) turns a slow-gate timeout into FAIL; an ordinary gate's timeout, and a laptop run, keep SKIP. `unstaged_sibling_imports` now follows imports transitively, including those made by `needs` files — the one-level scan is how `check_slices` went INERT in CI; its fixture fails against the old function.
 
 ### 2026-09-28 (release v1.152.0)
@@ -3527,6 +3537,56 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 ## rails-flow (agentic flow plugin)
 
 ### Unreleased
+
+- **`simple-form-only` judges only real attributes, and stops at the tag it is in — `plugins/rails-flow/scripts/check_simple_form_only.py`,
+  `plugins/rails-flow/scripts/mutations/check_simple_form_only.py`** (#1443). A name set through ERB
+  (`tag.attributes(name: "x")`) now counts as named, so a readonly input that posts is refused instead of
+  skipped as a display; `data-name=`, `data-readonly` and `placeholder="readonly"` no longer count as the
+  attribute, and a hash-rocket name (`"name" =>`, `:name =>`) counts too. The tag match stops at a bare `<` — so an
+  `<input>` is no longer "closed" by the next tag's `>` and excused by its `readonly`, found by the new fixture one
+  step past the review's report — but reads quoted values whole, so `value="a<b"` no longer cuts a tag short of a
+  later `name=` (a regression the independent review of #1455 caught); an `<input>` with no `>` at all is judged on
+  its own line, not the rest of the file. The quoted-value rewrite first shipped a backtracking regex (CodeQL `py/redos`, HIGH): its
+  lazy ERB body could span `%><%`, so the match time grew ×4 per two repetitions. The ERB body now cannot contain
+  `%>`, so there is one way to match, and a selftest runs a 50,000-repetition input in a subprocess with a 2s
+  deadline (the old regex misses it; a mutation restores it). Run before and after against an export of the
+  app behind #1391 at its `origin/dev` (`f0f84e1a`, with its `Gemfile.lock`, so the gate applies): the same 4
+  findings, two of them the pre-existing `collection_*` false positive filed as #1458. 26/26 mutations caught.
+- **`guard-bash` refuses a `gh issue create` it cannot label-check, and names the shape —
+  `plugins/rails-flow/hooks/scripts/guard-bash.sh`, `plugins/rails-flow/hooks/scripts/lib/issue_labels.py`,
+  `scripts/mutations/hook_issue_labels.py`, `scripts/mutations/hook_guard_bash.py`,
+  `plugins/rails-flow/scripts/check_hook_gates.py`** (#1423). A create inside `sh -c`/`bash -c` (including a bundled
+  `-lc`), `eval`, backticks or `$( … )` ran as a create, but its labels were one quoted string, so it was never
+  checked. Behind `/usr/bin/gh` it was never seen at all. Now the hook calls the helper whenever the text names a
+  create anywhere. The helper refuses the string forms with "run it directly" and label-checks any path to gh. A
+  plain mention (`echo "gh issue create"`, a grep) stays allowed. Backticks are paired and `$( … )` is
+  depth-counted, so a substitution BEFORE a create is not mistaken for one around it. A command wrapper (`env`,
+  `sudo`, `timeout`, `nohup`, `command`, …) does not hide a string that runs. Single-quoted text and heredoc
+  bodies, including one opened inside `"$(cat <<'EOF'`, are literal, so a commit message or PR body quoting
+  `gh issue create` is not refused. The final review caught that false positive before merge. Owner decision
+  recorded on #1423. 20 selftest cases, 3 end-to-end hook fixtures; 15 new mutations (14 on `hook_issue_labels`, 1
+  on `hook_guard_bash`). Follow-ups: #1462 (`gh issue new`, a create fed to a shell on stdin).
+
+- **The followed `cd` shape needs an unquoted `&&` — `plugins/rails-flow/hooks/scripts/lib/issue_labels.py`,
+  `scripts/mutations/hook_issue_labels.py`** (#1440). shlex drops quotes, so `cd /x '&&' gh issue create …` read as
+  the followed shape. The raw text is now checked: `cd <operand>` then an unquoted `&&`, with the operand itself
+  allowed to be quoted. That made the tokenised first-word check redundant, and it is removed. 2 selftest cases;
+  1 new mutation (40 of 40 caught on `hook_issue_labels`).
+
+- **`guard-claims` fails closed on a helper failure, and five review follow-ups —
+  `plugins/rails-flow/hooks/scripts/guard-claims.sh`, `plugins/rails-flow/agents/pr-reviewer.md`,
+  `plugins/rails-flow/commands/feature.md`, `plugins/rails-flow/scripts/check_slices.py`,
+  `plugins/rails-flow/scripts/check_issue_ready.py`, `scripts/mutations/hook_guard_claims.py`** (#1435).
+  - A PR-template helper that is missing, crashes, or dies at import now BLOCKS instead of saying "NOT checked".
+    That is the owner's decision recorded on #1435, and `RAILS_FLOW_CLAIMS_OK=1` stays the audited escape.
+  - Quotes are stripped by one left-to-right scan, so `"it's -R"` and an escaped `\"` read as the shell reads them.
+  - `pr-reviewer`'s mock-up step captures the gate's `rc` before cleanup and exits with it, removes the worktree
+    with a `trap`, and refuses a head that moved between `gh pr view` and the fetch. Run verbatim against #1406,
+    plus a mismatched-head control.
+  - `feature.md` names both slice openings.
+  - `check_slices.py` and `check_issue_ready.py` read CommonMark fences the same way: backticks or tildes, three
+    or more, closed only by the same run. Two shapes where they still differ are filed as #1461.
+  - Mutations: 3 new on `hook_guard_claims` (11 of 11), 2 each on `check_slices` (14) and `check_issue_ready` (13).
 
 - **model-tiers: `sonnet` is Sonnet 5.5 on the Anthropic API from Claude Code v2.1.284 — `plugins/rails-flow/reference/model-tiers.md`,
   `plugins/rails-flow/scripts/check_handoff.py`** (#1449). Verified against code.claude.com `model-config`, re-read
@@ -16211,6 +16271,10 @@ boot/validation path — with a bullet each so the promotion could close them se
     The shell block in §7 is byte-identical to the one it ran.
 
 *Version number assigned at promotion.*
+
+- **The three primitive markers name their construct — `skills/design-system/references/component-implementations.md`,
+  `dist/design-system.skill`** (#1443). The Checkbox (`check_box_tag`), Combobox (`tag.input`) and Tabs picker
+  (`<select`) blocks now say which raw construct they excuse, matching the stricter `check_shipped_erb_forms.py`.
 
 - **The pager sits bottom-left, no modal outgrows the viewport, a table in a modal is a full table, and a bulk import
   asks before it updates — `skills/design-system/references/components.md`, `skills/design-system/references/page-anatomies.md`,

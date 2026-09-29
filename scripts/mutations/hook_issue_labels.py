@@ -142,8 +142,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a quoted <<X starts a heredoc and hides the create",
-            "            if before.count(\"'\") % 2 or before.count('\"') % 2:\n                continue",
-            "            if False:\n                continue",
+            "            if before.count(\"'\") % 2:\n                continue            # inside single quotes `<<X` is text",
+            "            if False:\n                continue            # inside single quotes `<<X` is text",
             "a quoted <<X is text",
         ),
         Mutation(
@@ -152,13 +152,100 @@ GUARD = Guard(
             '    cmd = cmd.replace("\\\\\\n", " ").replace("\\n", " ; ")',
             "a backslash-newline joins",
         ),
-        # ---- #1400: the ALLOWLIST -- each way a cd the create may not have followed is trusted -----
+        # ---- #1440: a quoted `&&` is not the separator ------------------------------------------
         Mutation(
-            "a first word other than cd (pushd) is followed as a cd",
-            '    if len(prefix) != 3 or prefix[0] != "cd" or prefix[2] != "&&":',
-            '    if len(prefix) != 3 or prefix[2] != "&&":',
-            "refused: pushd",
+            "the raw text is not checked, so a quoted '&&' makes the followed shape",
+            "                    cd = _cd_in_force(items[:start]) if raw_cd_shape else None",
+            "                    cd = _cd_in_force(items[:start])",
+            "a quoted '&&' does not make the followed cd shape",
         ),
+        # ---- #1423: a create the parser cannot check is refused (owner decision) ---------------
+        Mutation(
+            "a path to gh is not gh, so /usr/bin/gh issue create goes unchecked",
+            '                if os.path.basename(words[i]) == "gh" and words[i + 1] == "issue" and words[i + 2] == "create":',
+            '                if words[i] == "gh" and words[i + 1] == "issue" and words[i + 2] == "create":',
+            "a path to gh is gh",
+        ),
+        Mutation(
+            "a create in backticks is not refused",
+            '    if any(CREATE_TEXT.search(" " + span) for span in ticks[1::2]):',
+            "    if False:",
+            "a create inside backticks is refused",
+        ),
+        Mutation(
+            "backticks are not paired, so a create after a closed one reads as inside it",
+            '    if any(CREATE_TEXT.search(" " + span) for span in ticks[1::2]):',
+            '    if any(CREATE_TEXT.search(" " + span) for span in ticks[1:]):',
+            "CONTROL: a backtick BEFORE the create is not a hidden create",
+        ),
+        Mutation(
+            "a $( ) substitution runs to the end, so a create after it reads as inside it",
+            '        if CREATE_TEXT.search(" " + subst[m.end():j - (0 if depth else 1)]):',
+            '        if CREATE_TEXT.search(" " + subst[m.end():]):',
+            "CONTROL: $( ) BEFORE the create is not a hidden create",
+        ),
+        Mutation(
+            "a create in $( ) is not refused",
+            '        if CREATE_TEXT.search(" " + subst[m.end():j - (0 if depth else 1)]):',
+            "        if False:",
+            "a create inside a `$( … )` substitution is refused",
+        ),
+        Mutation(
+            "sh -c strings are not refused",
+            "            if head in SHELLS and runs_string and CREATE_TEXT.search(rest):",
+            "            if False:",
+            "a create inside `sh -c` is refused",
+        ),
+        Mutation(
+            "a bundled -c (bash -lc) is not recognised",
+            '            runs_string = any(w.startswith("-") and not w.startswith("--") and "c" in w for w in words[1:])',
+            '            runs_string = "-c" in words[1:]',
+            "a create inside `bash -c` is refused",
+        ),
+        Mutation(
+            "eval strings are not refused",
+            "            if head == \"eval\" and CREATE_TEXT.search(rest):",
+            "            if False:",
+            "a create inside `eval` is refused",
+        ),
+        Mutation(
+            "a hidden create is never checked",
+            "    shape = hidden_create(cmd)\n    if shape:",
+            "    shape = None\n    if shape:",
+            "a create inside `sh -c` is refused",
+        ),
+        # Final review of #1454: no false refusals of quoted text, and no wrapper escape.
+        Mutation(
+            "single-quoted text is scanned for substitutions, so a quoted commit message is refused",
+            "    subst = \"\".join(literal)",
+            "    subst = body",
+            "CONTROL: single-quoted backticks is not a hidden create",
+        ),
+        Mutation(
+            "a heredoc opened inside \"$( is read as text, so its body is scanned",
+            "            if before.count('\"') % 2 and \"$(\" not in before[before.rfind('\"'):]:",
+            "            if before.count('\"') % 2:",
+            "CONTROL: a commit message heredoc inside $( ) is not a hidden create",
+        ),
+        Mutation(
+            "wrappers are not peeled, so env sh -c escapes",
+            "            while words and os.path.basename(words[0]) in WRAPPERS:",
+            "            while False:",
+            "a create behind `env` is refused",
+        ),
+        Mutation(
+            "a wrapper's flags are not peeled, so sudo -E bash -c escapes",
+            "                while words and words[0].startswith(\"-\"):\n                    words.pop(0)",
+            "                while False:\n                    words.pop(0)",
+            "a create behind `sudo` is refused",
+        ),
+        Mutation(
+            "timeout's duration is not peeled, so timeout 5 bash -c escapes",
+            '                if wrapper in ("timeout", "nice") and words and re.fullmatch(r"[\\d.]+[smhd]?", words[0]):',
+            "                if False:",
+            "a create behind `timeout` is refused",
+        ),
+        # ---- #1400: the ALLOWLIST -- each way a cd the create may not have followed is trusted -----
         Mutation(
             "an unterminated heredoc swallows the create after it",
             '                    raise ValueError(f"heredoc <<{tag} is never closed")',
@@ -179,8 +266,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a command between the cd and the create is trusted",
-            '    if len(prefix) != 3 or prefix[0] != "cd" or prefix[2] != "&&":',
-            '    if len(prefix) < 3 or prefix[0] != "cd" or prefix[2] != "&&":',
+            '    if len(prefix) != 3 or prefix[2] != "&&":',
+            '    if len(prefix) < 3 or prefix[2] != "&&":',
             "refused: a command between the cd and the create",
         ),
         Mutation(
