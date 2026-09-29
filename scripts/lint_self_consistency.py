@@ -1845,8 +1845,8 @@ def check_doc_pointers() -> tuple[list[Finding], int]:
 # An inline link: `<target>` or a bare target, then an optional title. A reference definition
 # (`[r]: target`) is the other place a link target lives (independent review of #1482).
 _MD_LINK = re.compile(r"""\[[^\]\n]*\]\([ \t]*(?:<([^>\n]+)>|([^)\s]+))(?:[ \t]+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\)))?[ \t]*\)""")
-_MD_REFDEF = re.compile(r"^[ ]{0,3}\[[^\]\n]+\]:[ \t]*(?:<([^>\n]+)>|(\S+))", re.MULTILINE)
-_MD_FENCE_OPEN = re.compile(r"^[ \t]*(`{3,}|~{3,})")
+_MD_REFDEF = re.compile(r"^[ ]{0,3}\[(?!\^)[^\]\n]+\]:[ \t]*(?:<([^>\n]+)>|(\S+))", re.MULTILINE)
+_MD_FENCE_OPEN = re.compile(r"^[ ]{0,3}(`{3,}|~{3,})")
 
 
 def _blank_markdown_code(body: str) -> str:
@@ -2311,10 +2311,10 @@ def check_workflow_action_pins() -> tuple[list[Finding], int]:
                 step = [lines[start]]
                 for nxt in lines[start + 1:]:
                     stripped = nxt.lstrip(" ")
-                    if stripped and len(nxt) - len(stripped) <= dash:
+                    if stripped and not stripped.startswith("#") and len(nxt) - len(stripped) <= dash:
                         break
                     step.append(nxt)
-                if not any(re.match(r"""^[\s-]*persist-credentials:\s*["']?false["']?\s*(#.*)?$""", l) for l in step):
+                if not any(re.match(r"""^[\s-]*persist-credentials:\s*(["']?)false\1\s*(#.*)?$""", l) for l in step):
                     findings.append(Finding(
                         "checkout-persists-credentials", rel, line,
                         "this checkout keeps its credentials (no `persist-credentials: false`), so the "
@@ -3831,6 +3831,13 @@ def selftest() -> int:
              files={"docs/a.md": "~~~\n[x](nowhere.md)\n~~~\n````md\n```\n[y](nowhere.md)\n```\n[z](nowhere.md)\n````\n"})
     scenario("...silent in inline code and an HTML comment", rule=BRL, expect_finding=False,
              files={"docs/a.md": "Write `[x](nowhere.md)` like so.\n<!-- [y](nowhere.md)\n-->\n"})
+    # Four spaces before ``` is an indented code block in CommonMark, not a fence; treating it as
+    # one left every later link in the file unread.
+    scenario("...a four-space-indented ``` is not a fence that swallows the rest", rule=BRL, expect_finding=True,
+             files={"docs/a.md": "    ```\n[x](gone.md)\n"})
+    # A footnote definition is not a link (re-review of #1482).
+    scenario("...silent on a footnote definition", rule=BRL, expect_finding=False,
+             files={"docs/a.md": "Text.[^1]\n\n[^1]: Some note here.\n"})
     # CONTROL for the two above: the same link in prose after them still fires.
     scenario("...a link after a closed fence and a closed comment still fires", rule=BRL, expect_finding=True,
              files={"docs/a.md": "~~~\nx\n~~~\n<!-- c -->\n`code`\n[x](nowhere.md)\n"})
@@ -3867,6 +3874,10 @@ def selftest() -> int:
     # A blank line before the step is ordinary YAML; it must not misplace or zero the step scan.
     scenario("...silent on a conforming checkout preceded by a blank line", rule=CPC, expect_finding=False,
              files={".github/workflows/x.yml": "jobs:\n  check:\n    steps:\n\n" + (_WF % (_SHA, _NOCRED)).split("steps:\n", 1)[1]})
+    scenario("...mismatched quotes are not a false", rule=CPC, expect_finding=True,
+             files={".github/workflows/x.yml": _WF % (_SHA, "        with:\n          persist-credentials: \"false'\n")})
+    scenario("...silent past a comment at the dash's indent inside the step", rule=CPC, expect_finding=False,
+             files={".github/workflows/x.yml": _WF % (_SHA, "      # note\n" + _NOCRED)})
     scenario("...silent on a quoted 'false'", rule=CPC, expect_finding=False,
              files={".github/workflows/x.yml": _WF % (_SHA, "        with:\n          persist-credentials: 'false'\n")})
     # `with:` may be written before `uses:` in the same step.

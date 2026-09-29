@@ -15,11 +15,13 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 - **`upstream.yml` pins its checkout by SHA and drops persisted credentials; a lint holds every workflow to both — `.github/workflows/upstream.yml`, `scripts/lint_self_consistency.py`, `scripts/mutations/lint_self_consistency.py`** (#1414). It pinned `actions/checkout@v7`, a tag, where every other workflow pins a SHA, and kept the token in `.git/config` for a job that never pushes with git. New rules `unpinned-workflow-action` and `checkout-persists-credentials` fire on origin/dev's `upstream.yml` at line 35 and on nothing after the fix. The checkout's step is read whole (a `with:` may precede `uses:`), a blank line before it no longer misplaces the scan (the independent review's blocker in PR #1482), and a quoted `'false'` counts: 13 selftest scenarios, 9 mutations.
 
-- **Five relative links in `docs/` that resolved to nothing are repaired, and a rule resolves every one from now on — `docs/brain/history/maintainer-history.md`, `docs/doctrine/architecture.md`, `docs/doctrine/harness-doctrine.md`, `docs/doctrine/issue-dependency-graph.md`, `scripts/lint_self_consistency.py`, `scripts/mutations/lint_self_consistency.py`** (#1415). The issue named two; a sweep found three more of the same shape — a repo-root path written inside a nested directory, which a renderer reads from the file's own directory. `broken-doc-pointer` resolves two pointer spellings and never a link target, which is why none was reported. New rule `broken-relative-link` covers `docs/**` (every path there is ours; shipped docs name paths in a user's project). It reads inline links (titled, `<angled>` or bare) and reference definitions, resolves a `/`-rooted target from the repo root, decodes `%`-escapes, and ignores what only quotes a link (``` and ~~~ fences of any length, inline code, HTML comments): 16 selftest scenarios, 14 mutations, and on the pre-fix tree it reports exactly the five. Two more broken links outside `docs/` are filed as #1480 and #1481.
+- **`upstream.yml` pins its checkout by SHA and drops persisted credentials; a lint holds every workflow to both — `.github/workflows/upstream.yml`, `scripts/lint_self_consistency.py`, `scripts/mutations/lint_self_consistency.py`** (#1414). It pinned `actions/checkout@v7`, a tag, where every other workflow pins a SHA, and kept the token in `.git/config` for a job that never pushes with git. New rules `unpinned-workflow-action` and `checkout-persists-credentials` fire on origin/dev's `upstream.yml` at line 35 and on nothing after the fix. The checkout's step is read whole (a `with:` may precede `uses:`), a blank line before it no longer misplaces the scan (the independent review's blocker in PR #1482), and a quoted `'false'` counts (matched quotes only): 15 selftest scenarios, 11 mutations.
+
+- **Five relative links in `docs/` that resolved to nothing are repaired, and a rule resolves every one from now on — `docs/brain/history/maintainer-history.md`, `docs/doctrine/architecture.md`, `docs/doctrine/harness-doctrine.md`, `docs/doctrine/issue-dependency-graph.md`, `scripts/lint_self_consistency.py`, `scripts/mutations/lint_self_consistency.py`** (#1415). The issue named two; a sweep found three more of the same shape — a repo-root path written inside a nested directory, which a renderer reads from the file's own directory. `broken-doc-pointer` resolves two pointer spellings and never a link target, which is why none was reported. New rule `broken-relative-link` covers `docs/**` (every path there is ours; shipped docs name paths in a user's project). It reads inline links (titled, `<angled>` or bare) and reference definitions, resolves a `/`-rooted target from the repo root, decodes `%`-escapes, and ignores what only quotes a link (``` and ~~~ fences of any length, inline code, HTML comments; a footnote definition and a four-space-indented ``` are not links or fences): 18 selftest scenarios, 16 mutations, and on the pre-fix tree it reports exactly the five. Two more broken links outside `docs/` are filed as #1480 and #1481.
 
 - **`Agents-And-Gates.md` no longer stamps a gate count, in the total or per plugin — `scripts/build_wiki.py`, `docs/wiki/Agents-And-Gates.md`, `scripts/mutations/build_wiki.py`** (#1404, [maintainer decision](https://github.com/fmanimashaun/claude-skills/issues/1404#issuecomment-5896594402)). Two open PRs that each added a gate made each other's committed page stale with no textual conflict (three times on PRs #1382 and #1401). One row per gate stays; it conflicts only when two PRs touch the same gate, and `maintainer_doctor.py` prints the live total. The selftest refuses a stamped count and a plugin row wider than its header, and a new mutation guard puts each count back, as a heading and as a bare cell (3/3 caught).
 
-- **The coverage generator carries the Bottom navigation clause d6e4383 added to the committed row — `scripts/build_coverage.py`, `docs/evidence/coverage.html`, `scripts/build_coverage_selftest.py`, `scripts/mutations/build_coverage.py`** (#1408). `build_coverage.py --check` failed whenever `design-corpora/` was present, because the generator was the stale side. The selftest now checks, with no corpora, that every `USE` value appears verbatim in the committed `coverage.md`; it fails on origin/dev and a mutation restoring the stale row is caught. `skills/design-system/references/coverage.md` is unchanged byte for byte; doctrine is unaffected.
+- **The coverage generator carries the Bottom navigation clause d6e4383 added to the committed row — `scripts/build_coverage.py`, `docs/evidence/coverage.html`, `scripts/build_coverage_selftest.py`, `scripts/mutations/build_coverage.py`** (#1408). `build_coverage.py --check` failed whenever `design-corpora/` was present, because the generator was the stale side. The selftest now checks, with no corpora, that every `USE` value appears as a whole cell in the committed `coverage.md`; it fails on origin/dev and a mutation restoring the stale row is caught. `skills/design-system/references/coverage.md` is unchanged byte for byte; doctrine is unaffected.
 
 - **`SLOW_GATES["mutation coverage"]` is set from the runner's own measurement: 1800 s — `scripts/maintainer_doctor.py`** (#1444). The first green dev push run printed `jobs=4, 604s` for 1602 mutations across 145 guards. The 5400 s placeholder from PR #1457 was 9x that, so a hung gate would take 90 minutes to surface; 1800 s is 3x.
 
@@ -3557,6 +3559,22 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **The mock-up checks close four holes from #1424's re-review — `plugins/rails-flow/scripts/check_issue_mockup.py`, `plugins/rails-flow/scripts/check_mockup_gate.py`** (#1430).
+  - **An approval link is not a mock-up link.** A Mock-up section holding only the approving comment's URL read as linked AND approved; approval URLs are now stripped before the mock-up link is looked for, at filing (`verdict`) and at triage (`ready`).
+  - **A record path needs an extension.** `docs/product/mockups/TBD` counted as linked; the path must now end in an extension (any: `.gif` and `.avif` are mock-ups too). A mock-up posted as an issue comment still counts: two DISTINCT comment links mean one is the mock-up.
+  - **A record's `Mock-up:` may not be a record.** Any file under `docs/product/mockups/` was accepted, so a record could name itself or another record. Now a record naming itself, or any `.md` (judged by the symlink's resolved target), is refused; every other committed file under the folder still counts (`.gif`, `.avif`, `.html.erb`), and `.svg` joins the types accepted elsewhere.
+  - **An unterminated fence fences the rest of `GUARDRAILS.md`.** The regex removed only closed fences, so an opt-out after a stray ``` still turned the gate off; a line scanner now treats an unclosed fence as running to the end, as a renderer shows it, and a fence may be indented (it usually sits in a list item); it closes only on the same character, at least as long, with no info string. (The same class #1424 fixed in `lint_self_consistency.py`; a shared scanner is #1461.)
+  - Each has a selftest case with a control, and all six rejections fail against dev's code. The independent review of PR #1478 found two regressions in the first version (an indented fenced example turned the gate off; an allow-list refused `.gif`/`.avif`/`.html.erb` mock-ups); both are fixtures now. The final review found one more (a line opening with an inline code span, such as ```` ```x``` ````, was read as a fence and hid a real opt-out below it): a backtick fence may not contain another backtick, per CommonMark. A dotted FOLDER no longer satisfies the extension rule, and one comment reached as both `issues/` and `pull/` counts once. Mutation guards: `check_mockup_gate` 22/22, `check_issue_mockup` 15/15, `check_slices` 14/14.
+
+
+- **`simple-form-only` catches Rails 8's `rich_textarea` — `plugins/rails-flow/scripts/check_simple_form_only.py`,
+  `plugins/rails-flow/scripts/mutations/check_simple_form_only.py`** (#1439). `RAW_FIELD_METHODS` listed only
+  `rich_text_area`, so `f.rich_textarea :content` on a simple_form builder passed. Both spellings are now raw, and
+  so are the tag helpers `rich_textarea_tag` / `rich_text_area_tag` (a pre-existing gap in the field-tag-helper
+  rule, found in review).
+  doctrine-verifier CONFIRMED against `actiontext/app/helpers/action_text/tag_helper.rb`: `rich_textarea` is defined
+  from Rails **8.0.0** with `alias_method :rich_text_area, :rich_textarea`, not deprecated; 7.2 has only
+  `rich_text_area`. A fixture per spelling, a control for `f.input … as: :rich_text_area`, and a mutation.
 - **toolchain_version: a linked worktree, and a recorded path differing only in case, are the same project — `plugins/rails-flow/scripts/toolchain_version.py`,
   `plugins/rails-flow/scripts/toolchain_version_selftest.py`, `plugins/rails-flow/scripts/mutations/toolchain_version.py`** (#1427 items 2, 3, 4).
   `applies_to` now matches a record against the session's path AND, for a linked git worktree (its `.git` is a file
@@ -16366,6 +16384,26 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 *Version number assigned at promotion.*
 
+- **The rich-text example is simple_form — `skills/rails-8/references/mail-storage-richtext.md`, `dist/rails-8.skill`** (#1439).
+  §3 showed `form.rich_textarea :content`, which the simple_form mandate forbids. It is now
+  `f.input :content, as: :rich_text_area`. doctrine-verifier CONFIRMED against simple_form **5.4.1**:
+  `:rich_text_area` is the only name mapped (`form_builder.rb`, `map_type :rich_text_area`; added in 5.0.2),
+  `:rich_textarea` is not; and `as:` is required, because a `has_rich_text` attribute has no column to infer the
+  type from. It renders through `rich_text_area`, which Rails **8.0/8.1** keep as an alias of `rich_textarea`.
+
+- **Checkbox and radio rows keep their touch height, and the Remove list shows the brand mark — `skills/design-system/references/component-implementations.md`,
+  `dist/design-system.skill`** (#1436). The simple_form rewrites in #1431 dropped `min-h-touch` from the filter
+  checkbox rows and the payment radio group (WCAG 2.5.8 target size) and handed it to a wrapper nobody configured.
+  The touch target is the **label**, the element a person taps: with the doctrine's `boolean_style = :inline`,
+  simple_form renders the input and a sibling label inside the item wrapper, so both inputs now pass
+  `item_label_class: "cluster min-h-touch"` (the first fix put `min-h-touch` on the wrapper only, which the
+  independent review caught). doctrine-verifier CONFIRMED against simple_form **5.4.1** `lib/simple_form/tags.rb`:
+  `:51` / `:67` build the label class as `"#{@options[:item_label_class]} collection_radio_buttons"` (and
+  `collection_check_boxes`) — prepended, not replacing — reached through the collection input's
+  `apply_default_collection_options!`; `item_wrapper_class` lands on the wrapper (`:25`). The README documents
+  neither option, so the source is the citation. The Configure contract now says a checkbox or radio collection's
+  `min-h-touch` belongs on its label. The Remove list now shows the brand mark
+  its `aria-label` already names.
 - **The three primitive markers name their construct — `skills/design-system/references/component-implementations.md`,
   `dist/design-system.skill`** (#1443). The Checkbox (`check_box_tag`), Combobox (`tag.input`) and Tabs picker
   (`<select`) blocks now say which raw construct they excuse, matching the stricter `check_shipped_erb_forms.py`.
