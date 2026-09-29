@@ -45,6 +45,7 @@ import contextlib
 import io
 import itertools
 import json
+import math
 import random
 import sys
 import tempfile
@@ -93,6 +94,7 @@ class Comparison:
     regressions: list[str] = field(default_factory=list)           # cases where B < A
     excluded_no_data: list[str] = field(default_factory=list)      # no valid run in one arm
     excluded_motivated: list[str] = field(default_factory=list)    # #1385
+    n_moving: int = 0            # cases whose delta is not 0 -- the count min_p is computed from
 
 
 # --------------------------------------------------------------------------
@@ -200,6 +202,34 @@ def bootstrap_ci(deltas: list[float], *, boot: int, seed: int,
     return means[tail], means[boot - 1 - tail]
 
 
+def exact_power(cases: int, runs: int, weak: float, lift: float) -> dict[str, float]:
+    """The probability of each verdict for a design, computed EXACTLY, not simulated (#1432).
+
+    The README's power model: every case's weak arm passes with probability `weak` and the strong
+    arm with `weak + lift`, `runs` runs each. A case's delta takes one of 2*runs+1 values, so the
+    design has finitely many outcomes; each multiset of deltas is weighted by its multinomial
+    probability and judged by `_verdict` itself, so the figure is this script's behaviour, not a
+    model of it. Feasible for the small designs where simulation noise matters most (6 x 3: 924
+    multisets).
+    """
+    def pmf(p: float) -> list[float]:
+        return [math.comb(runs, k) * p ** k * (1 - p) ** (runs - k) for k in range(runs + 1)]
+    pa, pb = pmf(weak), pmf(weak + lift)
+    dist: dict[int, float] = {}
+    for ka, qa in enumerate(pa):
+        for kb, qb in enumerate(pb):
+            dist[kb - ka] = dist.get(kb - ka, 0.0) + qa * qb
+    out: dict[str, float] = {}
+    for combo in itertools.combinations_with_replacement(sorted(dist), cases):
+        weight, prob = math.factorial(cases), 1.0
+        for v in set(combo):
+            weight //= math.factorial(combo.count(v))
+            prob *= dist[v] ** combo.count(v)
+        verdict = _verdict([v / runs for v in combo], seed=0)[0]
+        out[verdict] = out.get(verdict, 0.0) + weight * prob
+    return out
+
+
 def _verdict(deltas: list[float], *, seed: int) -> tuple[str, float | None, float]:
     """(verdict, p, min_p) for a list of per-case deltas."""
     n = len(deltas)
@@ -242,7 +272,8 @@ def compare(runs: list[dict], a: str, b: str, *, motivated: tuple[str, ...] = ()
 
     deltas = [evidence[c] for c in sorted(evidence)]
     verdict, p, floor = _verdict(deltas, seed=seed)
-    result = Comparison(a=a, b=b, n_cases=len(deltas), mean_delta=None, p_value=p, min_p=floor,
+    result = Comparison(a=a, b=b, n_cases=len(deltas), n_moving=moving(deltas),
+                        mean_delta=None, p_value=p, min_p=floor,
                         ci_low=None, ci_high=None, verdict=verdict,
                         per_case=per_case, regressions=regressions,
                         excluded_no_data=no_data, excluded_motivated=excluded_motivated)
@@ -267,8 +298,8 @@ def compare(runs: list[dict], a: str, b: str, *, motivated: tuple[str, ...] = ()
 # --------------------------------------------------------------------------
 
 VERDICT_TEXT = {
-    "b_better": "{b} beats {a}: exact sign-flip p <= 0.05",
-    "b_worse": "{b} is worse than {a}: exact sign-flip p <= 0.05",
+    "b_better": "{b} beats {a}: {test} sign-flip p <= 0.05",
+    "b_worse": "{b} is worse than {a}: {test} sign-flip p <= 0.05",
     "not_detectable": "no detectable difference -- NOT evidence that the arms are equal",
     "underpowered": "UNDERPOWERED -- with this few cases no result could reach p <= 0.05; "
                     "run more cases before reading anything into the deltas",
@@ -279,12 +310,15 @@ VERDICT_TEXT = {
 
 
 def format_text(c: Comparison) -> str:
-    lines = [f"{c.b} vs {c.a}: {VERDICT_TEXT[c.verdict].format(a=c.a, b=c.b)}"]
+    # Above EXACT_MAX_CASES the p is a seeded Monte Carlo estimate; calling it exact overstates it (#1432).
+    test = "exact" if c.n_cases <= EXACT_MAX_CASES else f"Monte Carlo ({MC_DRAWS:,} draws)"
+    lines = [f"{c.b} vs {c.a}: {VERDICT_TEXT[c.verdict].format(a=c.a, b=c.b, test=test)}"]
     if c.mean_delta is not None:
         stats = f"  mean per-case delta {c.mean_delta:+.3f} over {c.n_cases} case(s)"
         if c.p_value is not None:
             stats += f"  p = {c.p_value:.4f}"
-        stats += f"  (smallest possible p at this n: {c.min_p:.4f})"
+        # The floor is set by the cases that MOVED, not by n: name that count (#1432).
+        stats += f"  (smallest possible p with {c.n_moving} moving case(s): {c.min_p:.4f})"
         lines.append(stats)
         if c.ci_low is not None:
             lines.append(f"  descriptive 95% bootstrap CI [{c.ci_low:+.3f}, {c.ci_high:+.3f}] "
@@ -310,9 +344,18 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--selftest", action="store_true")
+    parser.add_argument("--exact-power", nargs=2, type=int, metavar=("CASES", "RUNS"),
+                        help="print the exact verdict probabilities for a design (README power table)")
     args = parser.parse_args(argv[1:])
     if args.selftest:
         return selftest()
+    if args.exact_power:
+        cases, runs = args.exact_power
+        for lift in (0.0, 0.2, 0.3):
+            got = exact_power(cases, runs, 0.4, lift)
+            print(f"{cases} cases x {runs} runs, +{round(lift * 100)}-point lift: "
+                  f"b_better {got.get('b_better', 0.0):.2%}")
+        return 0
 
     try:
         if not MIN_BOOT <= args.boot <= MAX_BOOT:
@@ -410,6 +453,15 @@ def selftest() -> int:
     check("monte carlo: unanimous 20 is tiny but not below one draw",
           close(sign_flip_p([1.0] * 20, exact_max=0), 1 / (MC_DRAWS + 1)))
     check("monte carlo: seeded", sign_flip_p(ten, exact_max=0, seed=3) == mc10)
+    # A LITERAL, not a recomputation (#1432): 5,655 of 100,000 seeded draws are as extreme, and the
+    # +1 correction makes it 5,656 / 100,001. A changed denominator, or MC_DRAWS = 1000, moves it.
+    check("monte carlo: the seeded value is pinned", mc10 == 5656 / 100_001, mc10)
+
+    # The README's power table, 6 cases x 3 runs, computed exactly (#1432): literal figures.
+    for lift, want in ((0.0, 0.0015), (0.2, 0.0260), (0.3, 0.0738)):
+        got = exact_power(6, 3, 0.4, lift)
+        check(f"exact power, 6 x 3 at +{round(lift * 100)}: b_better {want:.2%}",
+              round(got.get("b_better", 0.0), 4) == want and abs(sum(got.values()) - 1) < 1e-9, got)
 
     # -- verdicts ---------------------------------------------------------------------------
     strong = _runs({"weak": {c: [False] * 3 for c in cases},
@@ -522,6 +574,25 @@ def selftest() -> int:
     check("a win only with the motivating cases is unverified", r.verdict == "unverified", r)
     check("the motivating cases are removed from the evidence",
           r.excluded_motivated == ["c0", "c1"] and r.n_cases == 5, r)
+    # The other two non-results the relabel covers (#1432): each was unguarded by any fixture.
+    # INSUFFICIENT: one independent case, seven motivated; all eight together are unanimous.
+    eight = _runs({"weak": {f"c{i}": [False] * 3 for i in range(8)},
+                   "real": {f"c{i}": [True] * 3 for i in range(8)}})
+    r = compare(eight, "weak", "real", motivated=tuple(f"c{i}" for i in range(7)), boot=2000)
+    check("insufficient independent evidence behind a full win is unverified",
+          r.verdict == "unverified" and r.n_cases == 1, r)
+    # NOT_DETECTABLE: six independent cases, one of them worse (p = 14/64); six motivated wins
+    # added make the full set 11 up and 1 down, p = 26/4096.
+    nd_table = {f"i{i}": ([False] * 3, [True] * 3) for i in range(5)}
+    nd_table["i5"] = ([True] * 3, [False] * 3)
+    nd_table.update({f"m{i}": ([False] * 3, [True] * 3) for i in range(6)})
+    nd_runs = _runs({"weak": {c: w for c, (w, _) in nd_table.items()},
+                        "real": {c: r_ for c, (_, r_) in nd_table.items()}})
+    r = compare(nd_runs, "weak", "real", motivated=tuple(f"m{i}" for i in range(6)), boot=2000)
+    check("a not-detectable independent result behind a full win is unverified",
+          r.verdict == "unverified" and r.n_cases == 6, r)
+    r = compare(nd_runs, "weak", "real", boot=2000)
+    check("CONTROL: the same twelve cases, none motivated, are a win", r.verdict == "b_better", r.verdict)
     # Control on the same shape: excluding ONE still leaves six unanimous cases, a win on its own.
     r = compare(seven, "weak", "real", motivated=("c0",), boot=2000)
     check("other cases alone still certify the edit", r.verdict == "b_better", r.verdict)
