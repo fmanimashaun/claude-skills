@@ -546,7 +546,10 @@ DEFAULT_TIMEOUT = 180
 # Keyed by gate NAME, exactly as CORPORA_GATES is, and the selftest asserts the names are real —
 # a rename would otherwise silently drop the allowance and the gate would start failing on time.
 SLOW_GATES: dict[str, int] = {
-    "mutation coverage": 900,
+    # #1444: 1514 mutations measured 1456 s at --jobs 10 on a 10-core laptop, and ~84 min serial.
+    # CI's runner has fewer cores; 5400 s covers a 4-core runner at the serial/10-way ratio with
+    # margin. Re-set it from the `jobs=N, Xs` a dev push run prints on this gate's ok line.
+    "mutation coverage": 5400,
 }
 
 
@@ -608,6 +611,9 @@ RULESET_ARGS: tuple[str, ...] = ()
 @dataclass
 class Doctor:
     fix: bool = False
+    # A push to dev and the promotion must PROVE the slow gates, not report them unknown (#1444).
+    # Set by --require-slow, which only CI's non-PR runs pass: there, a SLOW_GATES timeout is FAIL.
+    require_slow: bool = False
     results: list[Result] = field(default_factory=list)
     fixed: list[str] = field(default_factory=list)
 
@@ -1114,7 +1120,22 @@ class Doctor:
                 continue
             code, out = self.run(*cmd, timeout=SLOW_GATES.get(name, DEFAULT_TIMEOUT))
             if code == 0:
-                self.add(PASS, f"gate: {name}")
+                # A slow gate's own summary line (mutation_check prints jobs and elapsed) is the
+                # measurement SLOW_GATES is set from; on a runner this is the only place it exists.
+                last = out.strip().splitlines()[-1] if name in SLOW_GATES and out.strip() else ""
+                self.add(PASS, f"gate: {name}", last)
+            elif code == 124 and self.require_slow and name in SLOW_GATES:
+                # #1444. Every dev push run reported `mutation coverage` as a timeout-skip and the
+                # job still went green, so the promotion's evidence silently disappeared for a day.
+                # A skip stays the right verdict on a laptop; on the run whose purpose is to prove
+                # this gate, not running it IS the failure.
+                self.add(
+                    FAIL, f"gate: {name}",
+                    f"{out.strip() or 'timed out'} — this run requires the slow gates to COMPLETE "
+                    f"(--require-slow), and it did not. Raise SLOW_GATES['{name}'] from a measured "
+                    f"run, or make the gate faster; never drop the flag to get green",
+                    " ".join(cmd),
+                )
             elif code == 124:
                 # A TIMEOUT IS NOT A FAILURE, and it is not a pass either -- it is the third
                 # verdict this doctor already has. The check was killed; nothing is known about
@@ -1248,6 +1269,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--gates", action="store_true", help="also run the full gate sweep (slower)")
     p.add_argument("--gates-only", action="store_true",
                    help="run ONLY the gate sweep, skipping machine diagnostics (for CI)")
+    p.add_argument("--require-slow", action="store_true",
+                   help="a slow gate that times out is FAIL, not skip: for CI's push and promotion runs (#1444)")
     p.add_argument("--fast", action="store_true",
                    help="with --gates-only: skip the gates in PR_SKIPPED_GATES (reported as SKIP with the reason); "
                         "for pull requests -- dev pushes and the promotion run everything")
@@ -1260,7 +1283,7 @@ def main(argv: list[str] | None = None) -> int:
 
         return st.run()
 
-    return Doctor(fix=args.fix).diagnose(gates=args.gates or args.gates_only,
+    return Doctor(fix=args.fix, require_slow=args.require_slow).diagnose(gates=args.gates or args.gates_only,
                                          gates_only=args.gates_only, fast=args.fast)
 
 

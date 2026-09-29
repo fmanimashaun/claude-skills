@@ -265,6 +265,12 @@ def timeout_fixtures() -> None:
         _tick()
         if any(x.status == md.FAIL and "slow" in x.name for x in d.results):
             FAILURES.append("a timed-out gate still counts as a failure in the summary")
+        # #1444: the SAME timeout under --require-slow is FAIL. A push run that could not run the
+        # slow gate must not read green. Its control is the default doctor above, which still skips.
+        strict = md.Doctor(require_slow=True)
+        strict.check_gates()
+        expect("under --require-slow, a slow gate that times out is FAIL", strict, "selftest slow", md.FAIL)
+        expect("...and a real failure is still FAIL there", strict, "selftest fails", md.FAIL)
     finally:
         md.GATES, md.SLOW_GATES, md.REPO = saved_gates, saved_slow, real
 

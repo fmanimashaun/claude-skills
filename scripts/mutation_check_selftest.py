@@ -344,6 +344,22 @@ def run() -> int:
                             mutations=())
         if mc.unstaged_sibling_imports(declared, fixture_base):
             FAILURES.append("import-completeness: a DECLARED dependency must clear the finding")
+        _tick()
+        # TRANSITIVE, through a `needs` FILE (#1444): check_slices -> check_mockup_gate (a need)
+        # -> classify_door went INERT in CI because a one-level scan never read the need.
+        (fixture_base / "scripts/follower.py").write_text("import grandchild\n", encoding="utf-8")
+        (fixture_base / "scripts/grandchild.py").write_text("Z = 3\n", encoding="utf-8")
+        via_need = mc.Guard(name="fixture", subject="scripts/leader.py",
+                            selftest="scripts/leader.py", needs=("scripts/follower.py",),
+                            mutations=())
+        if not any("grandchild" in p for p in mc.unstaged_sibling_imports(via_need, fixture_base)):
+            FAILURES.append("import-completeness: an import made BY a staged need must be reported")
+        _tick()
+        # ...and its control: staging the grandchild too clears it.
+        both = mc.Guard(name="fixture", subject="scripts/leader.py", selftest="scripts/leader.py",
+                        needs=("scripts/follower.py", "scripts/grandchild.py"), mutations=())
+        if mc.unstaged_sibling_imports(both, fixture_base):
+            FAILURES.append("import-completeness: a staged grandchild must clear the finding")
     finally:
         shutil.rmtree(fixture_base, ignore_errors=True)
 
