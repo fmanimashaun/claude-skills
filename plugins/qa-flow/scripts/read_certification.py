@@ -80,14 +80,20 @@ def inspect(field: str, stamp: Path = STAMP) -> tuple[str, str]:
     return (OK, text) if text else (EMPTY, "")
 
 
-def explain(state: str, field: str, stamp: Path = STAMP) -> str:
-    """One line a human can act on. Naming the ACTUAL state is the whole point of this file."""
+def explain(state: str, field: str, stamp: Path = STAMP, shown_as: str | None = None) -> str:
+    """One line a human can act on. Naming the ACTUAL state is the whole point of this file.
+
+    `shown_as` names the stamp in the message when `stamp` is a copy (the release gate reads the stamp
+    as committed at dev into a temp file; the message should still say qa/CERTIFICATION).
+    """
+    real = stamp
+    stamp = shown_as or stamp
     if state == MISSING:
         return f"no {stamp} found. Run /qa-flow:certify against staging first."
     if state == NOT_JSON:
         first = ""
         try:
-            first = stamp.read_text(encoding="utf-8").splitlines()[0][:60]
+            first = real.read_text(encoding="utf-8").splitlines()[0][:60]
         except (OSError, IndexError):
             pass
         return (f"{stamp} is not JSON — it starts {first!r}. A certification is written by "
@@ -164,6 +170,20 @@ def _selftest() -> int:
         check("the text shape the issue asked us to parse is still refused",
               inspect("verdict", p)[0] == NOT_JSON)
 
+        # --stamp, through main(): the release gate reads the stamp as committed at dev into a copy.
+        import contextlib, io
+        p.write_text('{"verdict":"PASS","sha":"cafe1234"}', encoding="utf-8")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = main(["--stamp", str(p), "--field", "sha"])
+        check("--stamp reads the given file, not qa/CERTIFICATION", rc == 0 and out.getvalue().strip() == "cafe1234")
+        p.write_text("not json", encoding="utf-8")
+        err = io.StringIO()
+        with contextlib.redirect_stdout(err), contextlib.redirect_stderr(err):
+            main(["--stamp", str(p), "--field", "verdict", "--explain"])
+        check("...and its message names qa/CERTIFICATION, not the copy", "qa/CERTIFICATION (as committed at dev)"
+              in err.getvalue() and str(p) not in err.getvalue())
+
     print(f"\n{ok} passed, {len(bad)} failed")
     for b in bad:
         print(f"  FAIL {b}")
@@ -175,20 +195,24 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--field", choices=FIELDS)
     ap.add_argument("--explain", action="store_true",
                     help="print why the field is unusable, for a gate's deny message")
+    ap.add_argument("--stamp", type=Path, default=STAMP,
+                    help="read this file instead of qa/CERTIFICATION (the release gate passes the stamp "
+                         "as committed at dev, #1437)")
     ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args(argv)
 
     if a.selftest:
         return _selftest()
     field = a.field or "verdict"
-    state, value = inspect(field)
+    state, value = inspect(field, a.stamp)
+    shown_as = None if a.stamp == STAMP else f"{STAMP} (as committed at dev)"
     if a.explain:
-        print(explain(state, field))
+        print(explain(state, field, a.stamp, shown_as))
         return 0 if state == OK else 1
     if state == OK:
         print(value)
         return 0
-    print(explain(state, field), file=sys.stderr)
+    print(explain(state, field, a.stamp, shown_as), file=sys.stderr)
     return 1
 
 

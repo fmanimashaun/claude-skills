@@ -3537,7 +3537,8 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   like the evidence directory, or merely contains it. A stamp naming evidence outside `qa/manual-tests/` is denied. A
   non-ASCII evidence name is recognised. An old stamp is grandfathered with its warning, but gets no evidence
   allowance. So is code renamed into the evidence folder, a file that only starts with the sweep's name, and a
-  committed HOLE whose fix is only staged. 146 → 159 checks.
+  committed HOLE whose fix is only staged. An uncommitted stamp is denied, and so is a promotion with only bash, or
+  with python3 and git but no grep or sed, on PATH. 146 → 167 checks.
 
 ### 1.55.0 (release v1.152.0) — 2026-09-28
 
@@ -10938,7 +10939,8 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 - **Certification requires a first-boot operator walkthrough and a forged-request authorization sweep —
   `plugins/qa-flow/scripts/release_evidence.py`, `plugins/qa-flow/scripts/mutations/release_evidence.py`,
   `plugins/qa-flow/hooks/scripts/release-gate.sh`, `plugins/qa-flow/commands/certify.md`,
-  `plugins/qa-flow/agents/qa-reporter.md`, `plugins/qa-flow/README.md`** (#1428). A downstream release passed load,
+  `plugins/qa-flow/agents/qa-reporter.md`, `plugins/qa-flow/README.md`, `plugins/qa-flow/scripts/read_certification.py`,
+  `plugins/qa-flow/scripts/mutations/read_certification.py`** (#1428). A downstream release passed load,
   DAST, race tests and three browsers, then shipped a root admin who could not create staff, two ways to sign in as
   root that skipped its second factor, and a role that could demote root. The day-one walkthrough's root row was
   `Blocked` with no reason and never re-run, and authorization was tested by action, never by target. certify's new
@@ -10959,15 +10961,23 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
   matches exactly, and only the walkthrough directory matches by prefix. A committed HOLE passed when its fix was
   only staged; the gate now judges the evidence as committed at dev (`stamp --rev`), extracted with `git archive`,
   and never follows a symlink. Printed findings also redact any cell value that looks like a secret, so a finding
-  never quotes one (CodeQL had flagged the print; the label itself was never the leak). By the owner's decision on #1428, an older
+  never quotes one (CodeQL had flagged the print; the label itself was never the leak). The third round found a newline
+  inside an evidence path smuggling a second path (`app`) into the gate's line-by-line allowance: control characters
+  are now refused. Its fold-ins: grandfathering is decided from git, by the COMMITTER date of the commit that
+  introduced the stamp at dev, before `GRANDFATHER_BEFORE` (coordinator's ruling, keeping the owner's "never blocks a
+  project mid-release"), so a new stamp that merely omits `schema` is refused. KNOWN LIMIT: a deliberately backdated
+  commit passes for this one release. Evidence is named for the stamp's `version`, and a renamed copy of another
+  release's is refused by git object id. The gate reads the stamp itself as committed at dev (`read_certification.py
+  --stamp`), so an uncommitted stamp no longer permits. With any of python3, git, sed, awk, tr, grep or head missing,
+  it falls back to bash builtins and denies a promotion (tested with a bash-only PATH). By the owner's decision on #1428, an older
   stamp is **grandfathered for one release**: it passes with a loud "re-run /qa-flow:certify" warning, and the next
   release refuses it. The window is one constant, `GRANDFATHER_OLD_STAMPS`. It was checked against a real downstream
   walkthrough (Retask `first-boot-v101`: 50 rows, 390 and 1280 wide), which passes. That run also exposed a false
   positive in the recovery-code rule, which matched screenshot names; the rule now needs a digit in each half and a
   letter somewhere, because the same file's request references (`REQ-2026-000002`) matched too. The detector also
   reads keys printed in groups of four and codes listed one per line. It does not flag an unlabelled base32 run,
-  which is declined, because it would fire on IDs and hashes. Selftest 65 checks, one asserting no printed finding quotes the secret it found; guard 28 of 28; release-gate
-  guard 6 → 15, including a prefix-versus-contains match, the renamed-code and exact-file cases, and
+  which is declined, because it would fire on IDs and hashes. Selftest 83 checks, one asserting no printed finding quotes the secret it found; guard 36 of 36; release-gate
+  guard 6 → 20, including a prefix-versus-contains match, the renamed-code and exact-file cases, and
   `core.quotePath`, which denied a non-ASCII evidence name. Our own design, decided on the issue; no framework claim.
 
 ### 1.34.0 (release v1.152.0) — 2026-09-28

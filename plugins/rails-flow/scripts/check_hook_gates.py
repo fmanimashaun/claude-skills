@@ -626,6 +626,12 @@ def release_gate_fixtures() -> None:
         stamp = {"sha": tested, "date": "2026-09-26", "verdict": "PASS", "report": "qa/reports/r.md"}
         (repo / "qa" / "CERTIFICATION").write_text(json.dumps(stamp), encoding="utf-8")
         env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env["CLAUDE_PLUGIN_ROOT"] = str(QA_HOOK.parents[2])
+        # These are OLD-shape stamps (no schema), grandfathered only when their commit predates the
+        # #1428 cutoff -- so they are committed with an old committer date.
+        old_env = {**os.environ, "GIT_COMMITTER_DATE": "2026-09-01T00:00:00+00:00",
+                   "GIT_AUTHOR_DATE": "2026-09-01T00:00:00+00:00"}
+        sh_old = lambda *a: subprocess.run([*g, *a], cwd=repo, check=True, capture_output=True, text=True,
+                                           env=old_env).stdout.strip()
 
         def gate() -> tuple[int, str]:
             sh("branch", "-f", "dev", "HEAD")
@@ -634,8 +640,11 @@ def release_gate_fixtures() -> None:
             return done.returncode, done.stderr
 
         rc, err = gate()
-        check("release-gate (#1337): CONTROL: an uncommitted stamp for dev's tip permits", rc == 0, err)
-        sh("add", "qa/CERTIFICATION"); sh("commit", "-q", "-m", "stamp")
+        # #1437 review round 3: the stamp is read as COMMITTED at dev. An uncommitted one is not what
+        # main would receive, so it no longer permits -- the old "uncommitted control" inverts.
+        check("release-gate (#1428): an UNCOMMITTED stamp is denied -- main would not receive it",
+              rc == 2 and "committed at dev" in err, err)
+        sh("add", "qa/CERTIFICATION"); sh_old("commit", "-q", "-m", "stamp")
         rc, err = gate()
         check("release-gate (#1337): the stamp committed on top of the tested sha still permits", rc == 0, err)
         (repo / "app.rb").write_text("v2\n", encoding="utf-8")
@@ -648,6 +657,7 @@ def release_gate_fixtures() -> None:
         sh("add", "other.rb"); sh("commit", "-q", "-m", "side")
         stamp["sha"] = sh("rev-parse", "HEAD"); sh("checkout", "-q", "-")
         (repo / "qa" / "CERTIFICATION").write_text(json.dumps(stamp), encoding="utf-8")
+        sh("add", "qa/CERTIFICATION"); sh_old("commit", "-q", "-m", "a stamp for another branch")
         rc, err = gate()
         check("release-gate (#1337): a stamp for a sha that is not an ancestor of dev is denied",
               rc == 2 and "dev moved" in err, err)
@@ -671,7 +681,7 @@ def release_gate_fixtures() -> None:
         (fb_dir / "pages.csv").write_text(fb_rows, encoding="utf-8")
         az_file.write_text(az_good, encoding="utf-8")
         new_stamp = {"sha": tested, "date": "2026-09-28", "verdict": "PASS", "report": "qa/reports/r.md",
-                     "schema": 2, "first_boot": "qa/manual-tests/first-boot-v1",
+                     "schema": 2, "version": "v1", "first_boot": "qa/manual-tests/first-boot-v1",
                      "authz": "qa/manual-tests/authz-v1/sweep.csv"}
         (repo / "qa" / "CERTIFICATION").write_text(json.dumps(new_stamp), encoding="utf-8")
         env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env["CLAUDE_PLUGIN_ROOT"] = str(QA_HOOK.parents[2])
@@ -778,7 +788,8 @@ def release_gate_fixtures() -> None:
         old_stamp = {k: v for k, v in new_stamp.items() if k in ("date", "verdict", "report")}
         old_stamp["sha"] = sh("rev-parse", "HEAD")
         (repo / "qa" / "CERTIFICATION").write_text(json.dumps(old_stamp), encoding="utf-8")
-        sh("commit", "-q", "-am", "an old-style stamp")
+        subprocess.run([*g, "commit", "-q", "-am", "an old-style stamp"], cwd=repo, check=True, capture_output=True,
+                       env={**os.environ, "GIT_COMMITTER_DATE": "2026-09-01T00:00:00+00:00"})
         rc, err = gate2()
         check("release-gate (#1428): an old stamp is grandfathered -- it permits, and says re-certify",
               rc == 0 and "re-run /qa-flow:certify" in err.lower(), err)
@@ -788,6 +799,50 @@ def release_gate_fixtures() -> None:
         sh("commit", "-q", "-am", "evidence edited after an old stamp")
         rc, err = gate2()
         check("release-gate (#1428): an old stamp gets no evidence allowance", rc == 2 and "pages.csv" in err, err)
+        # Round 3: a NEW stamp that merely omits `schema` (committed now) is not grandfathered.
+        (fb_dir / "pages.csv").write_text(fb_rows, encoding="utf-8")
+        (repo / "qa" / "CERTIFICATION").write_text(json.dumps({**old_stamp, "sha": sh("rev-parse", "HEAD"),
+                                                                "date": "now"}), encoding="utf-8")
+        sh("commit", "-q", "-am", "a new stamp without schema")
+        rc, err = gate2()
+        check("release-gate (#1428): a NEW stamp that omits schema is denied, not grandfathered",
+              rc == 2 and "schema" in err, err)
+        # Round 3 BLOCKER: a newline in an evidence path smuggled `app` into the line-by-line allowance.
+        tip = sh("rev-parse", "HEAD")
+        (repo / "app").mkdir(exist_ok=True)
+        (repo / "app" / "policy.rb").write_text("x\n", encoding="utf-8")
+        sh("add", "app"); sh("commit", "-q", "-m", "policy"); tip = sh("rev-parse", "HEAD")
+        (repo / "qa" / "CERTIFICATION").write_text(json.dumps(
+            {**new_stamp, "sha": tip, "first_boot": "qa/manual-tests/first-boot-v1\napp"}), encoding="utf-8")
+        sh("rm", "-q", "app/policy.rb"); sh("add", "qa"); sh("commit", "-q", "-m", "stamp + delete app/policy.rb")
+        rc, err = gate2()
+        check("release-gate (#1428): a newline in an evidence path launders nothing", rc == 2, err)
+
+    # Round 3: a DEGRADED PATH -- only bash. grep, sed, awk, tr, head, python3 and git are all gone;
+    # the builtins-only fallback must still deny a promotion. PATH replaced, not prefixed.
+    def bare_gate(cmd: str, tools: tuple[str, ...] = ("bash",)) -> tuple[int, str]:
+        with tempfile.TemporaryDirectory() as td:
+            only = Path(td) / "only"
+            only.mkdir()
+            for tool in tools:
+                (only / tool).symlink_to(shutil.which(tool))
+            done = subprocess.run([str(only / "bash"), str(QA_HOOK)], cwd=td,
+                                  input=json.dumps({"tool_input": {"command": cmd}}),
+                                  env={"PATH": str(only)}, capture_output=True, text=True, timeout=60)
+            return done.returncode, done.stdout + done.stderr
+
+    code, out = bare_gate("git push origin main")
+    check("release-gate: with ONLY bash on PATH, a push to main is still blocked", code == 2, f"exit {code}: {out[:160]!r}")
+    code, out = bare_gate("gh pr merge 12")
+    check("release-gate: with ONLY bash on PATH, gh pr merge is still blocked", code == 2, f"exit {code}: {out[:160]!r}")
+    # python3 and git PRESENT, the text tools missing: the fallback must still fire, because the
+    # normaliser and the detection run on sed, awk, tr and grep, and without them nothing matches.
+    code, out = bare_gate("git push origin main", tools=("bash", "python3", "git"))
+    check("release-gate: with python3 and git but NO grep or sed, a push to main is still blocked",
+          code == 2, f"exit {code}: {out[:160]!r}")
+    for cmd in ("git status", "git push origin maintenance", "git push origin feature/x"):
+        code, out = bare_gate(cmd)
+        check(f"release-gate: CONTROL: with ONLY bash on PATH, `{cmd}` is allowed", code == 0, f"exit {code}: {out[:160]!r}")
 
 
 # ---- ci-verdict-hint.sh (#1173) -----------------------------------------------------------------

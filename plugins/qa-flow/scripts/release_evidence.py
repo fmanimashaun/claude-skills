@@ -67,6 +67,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+from datetime import datetime
 import csv
 import io
 import json
@@ -90,6 +91,13 @@ STAMP_SCHEMA = 2
 # Flip to False in the next release to make every stamp need the layers. ONE constant, deliberately:
 # the owner's decision on #1428 is a one-line change either way.
 GRANDFATHER_OLD_STAMPS = True
+# WHICH stamps are old is decided from git, not from the stamp: a stamp is old only if the commit that
+# introduced it (read at the tested sha) has a COMMITTER date before this instant. Without that, any
+# NEW stamp could simply omit `schema` and be grandfathered (#1437 review, round 3). Committer date,
+# because an agent's ordinary commit cannot carry an old one by accident. KNOWN LIMIT: a deliberately
+# backdated commit passes, for this one release, until GRANDFATHER_OLD_STAMPS is turned off. Set to
+# the date this rule merged to dev; the next release's arm flips GRANDFATHER_OLD_STAMPS to False.
+GRANDFATHER_BEFORE = "2026-09-29T00:00:00+00:00"
 
 FIRST_BOOT_COLUMNS = ("Step", "Width", "Actor", "URL", "Action", "Expected", "Actual", "Status",
                       "Notes", "Screenshot")
@@ -284,10 +292,53 @@ def check_authz(table: Path, root_role: str = "root") -> list[str]:
 
 # --------------------------------------------------------------------------- stamp
 
+CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+VERSION = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+
+
 def evidence_path_ok(value: str) -> bool:
+    # NO CONTROL CHARACTERS. The release gate reads the evidence paths one per line, so a newline
+    # inside one ("qa/manual-tests/x\napp") would smuggle a second path -- `app` -- into the allowance
+    # and carry any code past the gate (#1437 review, round 3). A tab or CR is refused for the same
+    # reason: nothing legitimate needs them in a path.
+    if CONTROL.search(value):
+        return False
     parts = Path(value).parts
     return (value.startswith(EVIDENCE_ROOT) and not Path(value).is_absolute() and ".." not in parts
             and len(parts) > len(Path(EVIDENCE_ROOT).parts) and "\\" not in value)
+
+
+def same_release(key: str, value: str, version: str) -> bool:
+    """The evidence is NAMED for the stamp's version: qa/manual-tests/first-boot-<version> and a sweep
+    under qa/manual-tests/authz-<version>/. A stamp naming last release's walkthrough is refused."""
+    if key == "first_boot":
+        return value == f"{EVIDENCE_ROOT}first-boot-{version}"
+    return value.startswith(f"{EVIDENCE_ROOT}authz-{version}/") and value.endswith(".csv")
+
+
+def copied_from(base: Path, rev: str, value: str, prefix: str) -> str | None:
+    """Another release's evidence whose git object is IDENTICAL to this one at `rev`, or None.
+
+    Renaming last release's walkthrough to this release's name keeps its tree (or the sweep's blob)
+    byte-identical, so the object id gives the copy away without reading a file. A walkthrough
+    genuinely re-run produces different rows, screenshots or dates, and a different id.
+    """
+    try:
+        done = subprocess.run(["git", "-C", str(base), "ls-tree", "-r", "-t", rev, "--", EVIDENCE_ROOT],
+                              capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    ids: dict[str, str] = {}
+    for line in done.stdout.splitlines():
+        meta, _, path = line.partition("\t")
+        ids[path] = meta.split()[-1] if meta.split() else ""
+    own = ids.get(value)
+    if not own:
+        return None
+    for path, oid in ids.items():
+        if path != value and oid == own and path.startswith(EVIDENCE_ROOT + prefix):
+            return path
+    return None
 
 
 def committed_tree(base: Path, rev: str, rels: list[str], dest: Path) -> list[str]:
@@ -321,8 +372,20 @@ def committed_tree(base: Path, rev: str, rels: list[str], dest: Path) -> list[st
     return []
 
 
+def committed_at(base: Path, rev: str, rel: str) -> int | None:
+    """Committer time (epoch) of the commit that last changed `rel` as of `rev`, or None."""
+    try:
+        done = subprocess.run(["git", "-C", str(base), "log", "-1", "--format=%ct", rev, "--", rel],
+                              capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    out = done.stdout.strip()
+    return int(out) if done.returncode == 0 and out.isdigit() else None
+
+
 def check_stamp(stamp: Path, base: Path, grandfather: bool | None = None,
-                rev: str | None = None) -> tuple[list[str], list[str], list[str]]:
+                rev: str | None = None,
+                grandfather_before: str | None = None) -> tuple[list[str], list[str], list[str]]:
     """(findings, evidence paths, warnings). A schema-2 stamp must NAME both layers, and both pass.
 
     With `rev` (the release gate), the evidence is judged as committed at that revision; without it
@@ -330,8 +393,19 @@ def check_stamp(stamp: Path, base: Path, grandfather: bool | None = None,
     """
     grandfather = GRANDFATHER_OLD_STAMPS if grandfather is None else grandfather
     try:
-        data = json.loads(stamp.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
+        if rev:
+            # The STAMP is read as committed at `rev` too, not from the working tree: an uncommitted
+            # or edited stamp in the gate's checkout is not what dev will promote (#1437 review).
+            rel = stamp.relative_to(base) if stamp.is_absolute() else stamp
+            shown_blob = subprocess.run(["git", "-C", str(base), "show", f"{rev}:{rel.as_posix()}"],
+                                        capture_output=True, text=True, timeout=30)
+            if shown_blob.returncode != 0:
+                raise Unusable(f"no {rel.as_posix()} is committed at {rev[:12]} -- commit the stamp to dev first")
+            raw = shown_blob.stdout
+        else:
+            raw = stamp.read_text(encoding="utf-8")
+        data = json.loads(raw)
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
         raise Unusable(f"{stamp}: not a readable JSON stamp ({exc})") from exc
     if not isinstance(data, dict):
         raise Unusable(f"{stamp}: not a JSON object")
@@ -345,9 +419,30 @@ def check_stamp(stamp: Path, base: Path, grandfather: bool | None = None,
         if not (isinstance(schema, int) and not isinstance(schema, bool) and schema >= STAMP_SCHEMA):
             return [f"the stamp's schema is {schema!r}; it must be the integer {STAMP_SCHEMA}. Re-run /qa-flow:certify"], [], []
     elif grandfather:
-        return [], [], [f"this stamp predates the first-boot walkthrough and authorization sweep layers "
-                        f"(#1428): accepted for this release only. Re-run /qa-flow:certify to add them -- "
-                        f"the next release refuses a stamp without them."]
+        cutoff = datetime.fromisoformat(grandfather_before or GRANDFATHER_BEFORE).timestamp()
+        rel = (stamp.relative_to(base) if stamp.is_absolute() else stamp).as_posix()
+        when = committed_at(base, rev or "HEAD", rel)
+        if not rev:
+            # Judged from the working tree: only the COMMITTED stamp's date means anything, so the file
+            # on disk must be that stamp.
+            try:
+                head = subprocess.run(["git", "-C", str(base), "show", f"HEAD:{rel}"],
+                                      capture_output=True, text=True, timeout=30)
+                if head.returncode != 0 or head.stdout != raw:
+                    when = None
+            except (OSError, subprocess.SubprocessError):
+                when = None
+        if when is not None and when < cutoff:
+            return [], [], [f"this stamp predates the first-boot walkthrough and authorization sweep layers "
+                            f"(#1428): accepted for this release only. Re-run /qa-flow:certify to add them -- "
+                            f"the next release refuses a stamp without them."]
+        return [f"the stamp carries no `schema` but was not committed before {grandfather_before or GRANDFATHER_BEFORE} "
+                f"-- a stamp written now must be schema {STAMP_SCHEMA} and name its evidence (#1428). "
+                f"Re-run /qa-flow:certify"], [], []
+    version = data.get("version")
+    if not isinstance(version, str) or not VERSION.match(version):
+        findings.append(f"the stamp's `version` is {shown(repr(version))}: a schema-2 stamp names the release it "
+                        f"certifies (letters, digits, `.`, `_`, `-`), and its evidence is named for it")
     for key in ("first_boot", "authz"):
         if not isinstance(data.get(key), str) or not data[key].strip():
             findings.append(f"the stamp names no `{key}` evidence -- it predates #1428, or the layer was "
@@ -356,11 +451,25 @@ def check_stamp(stamp: Path, base: Path, grandfather: bool | None = None,
         return findings, paths, []
     fb, az = data["first_boot"].strip().rstrip("/"), data["authz"].strip()
     for key, value in (("first_boot", fb), ("authz", az)):
-        if not evidence_path_ok(value):
+        # The RAW value too: a control character is refused even where strip() would have removed it.
+        if not evidence_path_ok(value) or CONTROL.search(data[key]):
             findings.append(f"`{key}` is {value!r}: evidence must be a relative path under {EVIDENCE_ROOT} with no "
-                            f"`..` -- the gate lets the stamp's commit carry it, so anything else would carry code")
+                            f"`..` or control character -- the gate lets the stamp's commit carry it, so anything "
+                            f"else would carry code")
+        elif not same_release(key, value, version):
+            findings.append(f"`{key}` is {value!r}, which is not named for this release ({version}): expected "
+                            + (f"{EVIDENCE_ROOT}first-boot-{version}" if key == "first_boot"
+                               else f"a .csv under {EVIDENCE_ROOT}authz-{version}/"))
     if findings:
         return findings, [], []
+    if rev:
+        for key, value, prefix in (("first_boot", fb, "first-boot-"), ("authz", az, "authz-")):
+            twin = copied_from(base, rev, value, prefix)
+            if twin:
+                findings.append(f"`{key}` {value} is byte-identical to {twin} -- another release's evidence, "
+                                f"renamed, is not this release's")
+        if findings:
+            return findings, [], []
     with tempfile.TemporaryDirectory() as td:
         root = base
         if rev:
@@ -611,106 +720,196 @@ def selftest() -> int:
 
         # -- stamp, through main(), as the release gate calls it -------------------------
         proj = tmp / "proj"
-        _walk(proj / "qa/manual-tests/first-boot-v1", GOOD_ROWS)
-        (proj / "qa/manual-tests/authz-v1").mkdir(parents=True)
-        (proj / "qa/manual-tests/authz-v1/sweep.csv").write_text(AUTHZ_HEADER + "\n".join(AUTHZ_GOOD) + "\n",
-                                                                 encoding="utf-8")
+        V = "v1"
+        _walk(proj / f"qa/manual-tests/first-boot-{V}", GOOD_ROWS)
+        (proj / f"qa/manual-tests/authz-{V}").mkdir(parents=True)
+        sweep = proj / f"qa/manual-tests/authz-{V}/sweep.csv"
+        sweep.write_text(AUTHZ_HEADER + "\n".join(AUTHZ_GOOD) + "\n", encoding="utf-8")
         stamp = proj / "qa/CERTIFICATION"
         g = ["git", "-C", str(proj), "-c", "user.email=t@t", "-c", "user.name=t"]
         subprocess.run(["git", "init", "-q", str(proj)], check=True)
         subprocess.run([*g, "add", "qa/manual-tests"], check=True)
         subprocess.run([*g, "commit", "-q", "-m", "evidence"], check=True)
 
-        def run(payload) -> tuple[int, str, str]:
+        def commit(msg: str, when: str | None = None) -> None:
+            import os
+            env = dict(os.environ)
+            if when:
+                env["GIT_COMMITTER_DATE"] = env["GIT_AUTHOR_DATE"] = when
+            subprocess.run([*g, "add", "qa"], check=True, env=env)
+            subprocess.run([*g, "commit", "-q", "--allow-empty", "-m", msg], check=True, env=env)
+
+        def put(payload, *, committed: bool = True, when: str | None = None) -> None:
             stamp.write_text(json.dumps(payload) if not isinstance(payload, str) else payload, encoding="utf-8")
+            if committed:
+                commit("stamp", when)
+
+        def run(*argv: str) -> tuple[int, str, str]:
             out, err = io.StringIO(), io.StringIO()
             here = Path.cwd()
             try:
                 import os
                 os.chdir(proj)
                 with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-                    rc = main(["stamp"])
+                    rc = main(["stamp", *argv])
             finally:
                 os.chdir(here)
             return rc, out.getvalue().strip(), err.getvalue()
 
         old = {"sha": "abc", "date": "2026-09-28", "verdict": "PASS", "report": "qa/reports/r.md"}
-        base = {**old, "schema": STAMP_SCHEMA}
-        rc, out, _ = run({**base, "first_boot": "qa/manual-tests/first-boot-v1",
-                          "authz": "qa/manual-tests/authz-v1/sweep.csv"})
+        ev = {"first_boot": f"qa/manual-tests/first-boot-{V}", "authz": f"qa/manual-tests/authz-{V}/sweep.csv"}
+        base = {**old, "schema": STAMP_SCHEMA, "version": V}
+        put({**base, **ev})
+        rc, out, _ = run("--rev", "HEAD")
         check("stamp: both layers passing -> 0 and the evidence paths on stdout",
-              (rc, out) == (0, "qa/manual-tests/first-boot-v1/\nqa/manual-tests/authz-v1/sweep.csv"), (rc, out))
-        rc, out, err = run(base)
+              (rc, out) == (0, f"qa/manual-tests/first-boot-{V}/\nqa/manual-tests/authz-{V}/sweep.csv"), (rc, out))
+        put(base)
+        rc, out, err = run("--rev", "HEAD")
         check("stamp: a schema-2 stamp naming no evidence is refused", rc == 1 and out == "" and "first_boot" in err,
               (rc, out, err))
-        # Grandfathering: an OLD stamp passes with a warning and no evidence paths while the constant
-        # is on, and is refused the moment it is off.
-        rc, out, err = run(old)
-        check("stamp: an old stamp passes, warned, while grandfathered",
-              rc == 0 and out == "" and "WARNING" in err and "re-run" in err.lower(), (rc, out, err))
-        stamp.write_text(json.dumps(old), encoding="utf-8")
-        f_off, _, w_off = check_stamp(stamp, proj, grandfather=False)
+
+        # GRANDFATHERING is decided from git: the committer date of the stamp's commit (#1437 round 3).
+        cut = "2026-09-29T00:00:00+00:00"
+        put({**old, "date": "old-1"}, when="2026-09-20T12:00:00+00:00")
+        f_o, p_o, w_o = check_stamp(stamp, proj, rev="HEAD", grandfather_before=cut)
+        check("stamp: an old stamp committed before the cutoff passes, warned", f_o == [] and p_o == [] and len(w_o) == 1,
+              (f_o, w_o))
+        f_off, _, w_off = check_stamp(stamp, proj, rev="HEAD", grandfather=False, grandfather_before=cut)
         check("stamp: an old stamp is refused once grandfathering is off",
               any("first_boot" in f for f in f_off) and w_off == [], (f_off, w_off))
-        # A stamp that CARRIES a schema is not old, whatever the value: a malformed one is refused even
-        # while old stamps are grandfathered (#1437 review: "2" as a string let a HOLE through).
-        ev = {"first_boot": "qa/manual-tests/first-boot-v1", "authz": "qa/manual-tests/authz-v1/sweep.csv"}
+        put({**old, "date": "at-cutoff"}, when="2026-09-29T00:00:00+00:00")
+        f_b, _, _ = check_stamp(stamp, proj, rev="HEAD", grandfather_before=cut)
+        check("stamp: a schema-less stamp committed AT the cutoff is refused", any("schema" in f for f in f_b), f_b)
+        put({**old, "date": "just-before"}, when="2026-09-28T23:59:59+00:00")
+        f_b2, _, w_b2 = check_stamp(stamp, proj, rev="HEAD", grandfather_before=cut)
+        check("stamp: one second before the cutoff is still grandfathered", f_b2 == [] and len(w_b2) == 1, (f_b2, w_b2))
+        put({**old, "date": "new"}, when="2026-10-02T09:00:00+00:00")
+        f_n, _, w_n = check_stamp(stamp, proj, rev="HEAD", grandfather_before=cut)
+        check("stamp: a NEW stamp that merely omits schema is refused", any("schema" in f for f in f_n) and w_n == [],
+              (f_n, w_n))
+        put({**old, "date": "old-2"}, when="2026-09-20T12:00:00+00:00")
+        stamp.write_text(json.dumps({**old, "sha": "edited"}), encoding="utf-8")   # edited, not committed
+        f_e, _, w_e = check_stamp(stamp, proj, grandfather_before=cut)
+        check("stamp: an old stamp edited in the working tree is not the committed one", f_e != [] and w_e == [],
+              (f_e, w_e))
+
+        # evidence_path_ok on its own, since check_stamp backs it up with other rules: each rule must be
+        # able to fail by itself.
+        for bad_path in ("qa/manual-tests/x\napp", "qa/manual-tests/x\ty", "docs/manual-tests/first-boot-v1",
+                         "app/qa/manual-tests/first-boot-v1"):
+            check(f"evidence_path_ok refuses {bad_path!r}", not evidence_path_ok(bad_path))
+        check("evidence_path_ok accepts a real evidence path", evidence_path_ok(f"qa/manual-tests/first-boot-{V}"))
+        # A stamp that CARRIES a schema is not old, whatever the value -- even one committed long before
+        # the cutoff, which is the case grandfathering would otherwise let through.
         for bad in (True, "2", 2.0, 1):
-            stamp.write_text(json.dumps({**old, **ev, "schema": bad}), encoding="utf-8")
-            f_bad, _, w_bad = check_stamp(stamp, proj, grandfather=True)
+            put({**old, **ev, "version": V, "schema": bad, "date": f"bad-{bad!r}"}, when="2026-09-20T12:00:00+00:00")
+            f_bad, _, w_bad = check_stamp(stamp, proj, rev="HEAD", grandfather_before=cut)
             check(f"stamp: schema {bad!r} is refused, not grandfathered",
                   any("schema" in f for f in f_bad) and w_bad == [], (f_bad, w_bad))
-        # CONFINEMENT (#1437 review blocker): the gate lets the stamp's commit carry its evidence, so
-        # evidence named outside qa/manual-tests/ would carry code.
+        # CONFINEMENT: evidence named outside qa/manual-tests/ would carry code, and a control character
+        # would smuggle a second path into the gate's line-by-line allowance (#1437 round 3 blocker).
         for key, value in (("first_boot", "app"), ("first_boot", "."), ("authz", "a"),
                            ("first_boot", "qa/manual-tests/../../app"), ("authz", "/etc/passwd"),
-                           ("first_boot", "qa/manual-tests")):
-            stamp.write_text(json.dumps({**base, **ev, key: value}), encoding="utf-8")
-            f_conf, p_conf, _ = check_stamp(stamp, proj)
+                           ("first_boot", "qa/manual-tests"), ("first_boot", f"qa/manual-tests/first-boot-{V}\napp"),
+                           ("authz", f"qa/manual-tests/authz-{V}/sweep.csv\napp.rb"),
+                           ("first_boot", f"qa/manual-tests/first-boot-{V}\r"),
+                           ("first_boot", f"qa/manual-tests/first-boot-{V}\tx")):
+            put({**base, **ev, key: value})
+            f_conf, p_conf, _ = check_stamp(stamp, proj, rev="HEAD")
             check(f"stamp: {key}={value!r} outside the evidence root is refused",
                   any("evidence must be" in f for f in f_conf) and p_conf == [], (f_conf, p_conf))
-        # The gate (--rev) judges what is COMMITTED; the reporter, before committing, judges the tree.
-        _walk(proj / "qa/manual-tests/first-boot-v2", GOOD_ROWS)
-        stamp.write_text(json.dumps({**base, **ev, "first_boot": "qa/manual-tests/first-boot-v2"}), encoding="utf-8")
+        # THE RELEASE: evidence is named for the stamp's version, and is not a renamed copy of another's.
+        put({**base, **ev, "first_boot": "qa/manual-tests/first-boot-v0"})
+        f_ver, _, _ = check_stamp(stamp, proj, rev="HEAD")
+        check("stamp: evidence named for another release is refused", any("not named for this release" in f
+                                                                          for f in f_ver), f_ver)
+        put({**base, **ev, "version": "../x"})
+        f_bv, _, _ = check_stamp(stamp, proj, rev="HEAD")
+        check("stamp: a version that is not a plain release name is refused", any("version" in f for f in f_bv), f_bv)
+        import shutil
+        shutil.copytree(proj / f"qa/manual-tests/first-boot-{V}", proj / "qa/manual-tests/first-boot-v2")
+        (proj / "qa/manual-tests/authz-v2").mkdir()
+        (proj / "qa/manual-tests/authz-v2/sweep.csv").write_text(
+            AUTHZ_HEADER + "\n".join(AUTHZ_GOOD) + "\nreset,app/models/user.rb:9,it,admin,g,GUARDED,,\n",
+            encoding="utf-8")
+        put({**base, "version": "v2", "first_boot": "qa/manual-tests/first-boot-v2",
+             "authz": "qa/manual-tests/authz-v2/sweep.csv"})
+        f_cp, _, _ = check_stamp(stamp, proj, rev="HEAD")
+        check("stamp: last release's walkthrough, renamed, is refused as a copy",
+              any("byte-identical" in f and "first-boot-v1" in f for f in f_cp), f_cp)
+        (proj / "qa/manual-tests/first-boot-v2/pages.csv").write_text(
+            HEADER + "".join(r + "\n" for r in GOOD_ROWS) + "1.9,1280,root,/x,x,y,z,Pass,,,,,re-walked\n",
+            encoding="utf-8")
+        put({**base, "version": "v2", "first_boot": "qa/manual-tests/first-boot-v2",
+             "authz": "qa/manual-tests/authz-v2/sweep.csv"})
+        f_rw, _, _ = check_stamp(stamp, proj, rev="HEAD")
+        check("stamp: a walkthrough genuinely re-walked is not a copy", f_rw == [], f_rw)
+
+        # --rev judges what is COMMITTED; the reporter, before committing, judges the working tree.
+        _walk(proj / "qa/manual-tests/first-boot-v3", GOOD_ROWS + ["1.8,1280,a,/,x,y,z,Pass,,,,,v3"])
+        (proj / "qa/manual-tests/authz-v3").mkdir()
+        (proj / "qa/manual-tests/authz-v3/sweep.csv").write_text(
+            AUTHZ_HEADER + "\n".join(AUTHZ_GOOD) + "\nx,app/a.rb:1,it,admin,g,GUARDED,,\n", encoding="utf-8")
+        v3 = {**base, "version": "v3", "first_boot": "qa/manual-tests/first-boot-v3",
+              "authz": "qa/manual-tests/authz-v3/sweep.csv"}
+        put(v3, committed=False)
         f_tree, _, _ = check_stamp(stamp, proj)
         check("stamp: uncommitted evidence passes in the working tree (the reporter's pre-commit check)",
               f_tree == [], f_tree)
+        # At --rev the COMMITTED stamp is judged, never the working-tree one: commit a stamp naming
+        # missing evidence, then write a valid one on disk. The gate must still see the committed one.
+        committed_bad = {**v3, "first_boot": "qa/manual-tests/first-boot-v3x"}
+        stamp.write_text(json.dumps(committed_bad), encoding="utf-8")
+        subprocess.run([*g, "add", "qa/CERTIFICATION"], check=True)
+        subprocess.run([*g, "commit", "-q", "-m", "a stamp naming missing evidence"], check=True)
+        stamp.write_text(json.dumps(v3), encoding="utf-8")
+        f_ws, _, _ = check_stamp(stamp, proj, rev="HEAD")
+        check("stamp: at --rev the committed stamp is judged, not the working-tree one",
+              any("first-boot-v3x" in f for f in f_ws), f_ws)
+        subprocess.run([*g, "add", "qa/CERTIFICATION"], check=True)
+        subprocess.run([*g, "commit", "-q", "-m", "stamp only"], check=True)
         f_rev, p_rev, _ = check_stamp(stamp, proj, rev="HEAD")
         check("stamp: uncommitted evidence is refused at --rev", any("not committed" in f for f in f_rev)
               and p_rev == [], (f_rev, p_rev))
-        # #1437 review: a HOLE committed, with the fixed copy only in the working tree, still denies.
-        sweep = proj / "qa/manual-tests/authz-v1/sweep.csv"
-        sweep.write_text(AUTHZ_HEADER + "\n".join(hole) + "\n", encoding="utf-8")
-        subprocess.run([*g, "commit", "-q", "-am", "a HOLE, committed"], check=True)
-        sweep.write_text(AUTHZ_HEADER + "\n".join(AUTHZ_GOOD) + "\n", encoding="utf-8")
-        subprocess.run([*g, "add", str(sweep)], check=True)          # the fix is staged, not committed
-        stamp.write_text(json.dumps({**base, **ev}), encoding="utf-8")
+        commit("the v3 evidence")
+        # A HOLE committed, with the fixed copy only staged, still denies at --rev.
+        sweep3 = proj / "qa/manual-tests/authz-v3/sweep.csv"
+        good3 = sweep3.read_text(encoding="utf-8")
+        sweep3.write_text(good3 + "\n".join(hole[-1:]) + "\n", encoding="utf-8")
+        commit("a HOLE, committed")
+        sweep3.write_text(good3, encoding="utf-8")
+        subprocess.run([*g, "add", str(sweep3)], check=True)
         f_c, _, _ = check_stamp(stamp, proj, rev="HEAD")
         check("stamp: a committed HOLE denies at --rev though the fix is staged", any("HOLE" in f for f in f_c), f_c)
-        subprocess.run([*g, "commit", "-q", "-m", "fix the hole"], check=True)
+        commit("fix the hole")
         # A symlink under the evidence root pointing at code contributes nothing: it is never followed.
         (proj / "app").mkdir()
         _walk(proj / "app", GOOD_ROWS)
-        (proj / "qa/manual-tests/first-boot-link").symlink_to(proj / "app", target_is_directory=True)
-        subprocess.run([*g, "add", "app", "qa/manual-tests/first-boot-link"], check=True)
-        subprocess.run([*g, "commit", "-q", "-m", "a link into app/"], check=True)
-        stamp.write_text(json.dumps({**base, **ev, "first_boot": "qa/manual-tests/first-boot-link"}), encoding="utf-8")
+        (proj / "qa/manual-tests/first-boot-v4").symlink_to(proj / "app", target_is_directory=True)
+        (proj / "qa/manual-tests/authz-v4").mkdir()
+        (proj / "qa/manual-tests/authz-v4/sweep.csv").write_text(good3 + "y,app/b.rb:2,it,admin,g,GUARDED,,\n",
+                                                                 encoding="utf-8")
+        subprocess.run([*g, "add", "app"], check=True)
+        put({**base, "version": "v4", "first_boot": "qa/manual-tests/first-boot-v4",
+             "authz": "qa/manual-tests/authz-v4/sweep.csv"})
         f_l, _, _ = check_stamp(stamp, proj, rev="HEAD")
-        check("stamp: a committed symlink into code is not evidence", f_l != [] and not any("ok" == f for f in f_l), f_l)
-        (proj / "qa/manual-tests/first-boot-v1/pages.csv").write_text(
-            HEADER + "".join(r + "\n" for r in blocked), encoding="utf-8")
-        rc, out, err = run({**base, "first_boot": "qa/manual-tests/first-boot-v1",
-                            "authz": "qa/manual-tests/authz-v1/sweep.csv"})
+        check("stamp: a committed symlink into code is not evidence", f_l != [], f_l)
+        # Planted defects in committed evidence block the stamp, through main().
+        pages3 = proj / "qa/manual-tests/first-boot-v3/pages.csv"
+        pages3.write_text(HEADER + "".join(r + "\n" for r in blocked), encoding="utf-8")
+        put(v3)
+        rc, out, err = run("--rev", "HEAD")
         check("stamp: a planted Blocked row blocks the stamp", rc == 1 and "Blocked" in err, (rc, err))
-        _walk(proj / "qa/manual-tests/first-boot-v1", GOOD_ROWS)
-        (proj / "qa/manual-tests/authz-v1/sweep.csv").write_text(
-            AUTHZ_HEADER + "\n".join(hole) + "\n", encoding="utf-8")
-        rc, out, err = run({**base, "first_boot": "qa/manual-tests/first-boot-v1",
-                            "authz": "qa/manual-tests/authz-v1/sweep.csv"})
+        _walk(proj / "qa/manual-tests/first-boot-v3", GOOD_ROWS + ["1.8,1280,a,/,x,y,z,Pass,,,,,v3"])
+        sweep3.write_text(good3 + "\n".join(hole[-1:]) + "\n", encoding="utf-8")
+        put(v3)
+        rc, out, err = run("--rev", "HEAD")
         check("stamp: a planted HOLE blocks the stamp", rc == 1 and "HOLE" in err, (rc, err))
-        rc, out, err = run({**base, "first_boot": "qa/manual-tests/nope", "authz": "qa/manual-tests/authz-v1/sweep.csv"})
+        put({**v3, "first_boot": "qa/manual-tests/nope"})
+        rc, out, err = run("--rev", "HEAD")
         check("stamp: evidence the stamp names but that is missing is refused", rc == 1 and "nope" in err, (rc, err))
-        rc, _, _ = run("not json")
+        put("not json")
+        rc, _, _ = run("--rev", "HEAD")
         check("stamp: an unreadable stamp is unusable (2), never 0", rc == 2, rc)
 
     print(f"release_evidence selftest: {checks} check(s)")

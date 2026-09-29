@@ -2,20 +2,28 @@
 # PreToolUse[Bash] — block dev->main promotion unless QA certified the exact dev sha.
 # Independent of rails-flow's guard; both can run. Exit 2 blocks with a reason.
 set -uo pipefail
-input="$(cat)"
-# python3 is required to parse certification + tool input. BLOCKING gate → fail CLOSED
-# if it's missing, but only when the command looks like a main-ward promotion.
-if ! type -P python3 >/dev/null 2>&1; then
-  # Word-boundary match on main/master as whole refs (not substrings like
-  # "maintenance"), mirroring the promotion detection below. Fail CLOSED only for a
-  # real promotion; stay out of the way otherwise.
+# The whole payload, read with a BUILTIN: `cat` missing would leave it empty, and an empty command
+# is never a promotion -- a fail-open (#1437 review, round 3).
+IFS= read -r -d '' input || true
+# python3, git, and the text tools the normaliser and the promotion detection use are all REQUIRED.
+# BLOCKING gate -> fail CLOSED when any is missing, but only for a command that looks like a
+# main-ward promotion. The fallback below uses bash builtins ONLY ([[ =~ ]], no grep): "grep:
+# command not found" reads as a non-match, which is exactly how a fallback fails open.
+_missing=""
+for _t in python3 git sed awk tr grep head; do
+  type -P "$_t" >/dev/null 2>&1 || _missing="$_missing $_t"
+done
+if [ -n "$_missing" ]; then
+  # Word boundaries without \b (not portable in [[ =~ ]]): a non-word character or the end. So
+  # "maintenance" is not "main", as in the full detection below.
+  _w='[^[:alnum:]_]'
   _looks_promotion=0
-  printf '%s' "$input" | grep -qE 'git[[:space:]]+push\b.*\b(origin[[:space:]]+)?(HEAD:)?(main|master)\b' && _looks_promotion=1
-  printf '%s' "$input" | grep -qE 'git[[:space:]]+merge\b'   && _looks_promotion=1
-  printf '%s' "$input" | grep -qE 'gh[[:space:]]+pr[[:space:]]+merge\b' && _looks_promotion=1
+  [[ $input =~ git[[:space:]]+push(${_w}|$)(.*${_w})?(origin[[:space:]]+)?(HEAD:)?(main|master)(${_w}|$) ]] && _looks_promotion=1
+  [[ $input =~ git[[:space:]]+merge(${_w}|$) ]] && _looks_promotion=1
+  [[ $input =~ gh[[:space:]]+pr[[:space:]]+merge(${_w}|$) ]] && _looks_promotion=1
   if [ "$_looks_promotion" = "1" ]; then
-    [ "${QA_ALLOW_MAIN:-0}" = "1" ] && { echo "qa-flow: python3 missing but QA_ALLOW_MAIN=1 — allowed (audited)." >&2; exit 0; }
-    echo "BLOCKED by qa-flow release gate: python3 not found — cannot verify certification. Install python3 (on Windows, run Claude Code in WSL/Git Bash), or set QA_ALLOW_MAIN=1 to override." >&2
+    [ "${QA_ALLOW_MAIN:-0}" = "1" ] && { echo "qa-flow:${_missing} missing but QA_ALLOW_MAIN=1 — allowed (audited)." >&2; exit 0; }
+    echo "BLOCKED by qa-flow release gate: not found on PATH:${_missing} — cannot verify certification. Install them (python3 on Windows: run Claude Code in WSL/Git Bash), or set QA_ALLOW_MAIN=1 to override." >&2
     exit 2
   fi
   exit 0
@@ -28,7 +36,8 @@ cmd="$(printf '%s' "$input" | python3 -c 'import json,sys;print(json.load(sys.st
 # byte-identical, #906). It strips quoted spans, comments and heredoc bodies, splits on ; | && ||
 # and newlines, and peels env/sudo/git-global-option prefixes, so the verb is at the START of a
 # segment. FAIL CLOSED if the lib is missing: match the raw text, as before #3/#7/#48.
-_lib="$(dirname "${BASH_SOURCE[0]}")/lib/normalize_cmd.sh"
+_here="${BASH_SOURCE[0]%/*}"; [ "$_here" = "${BASH_SOURCE[0]}" ] && _here=.
+_lib="$_here/lib/normalize_cmd.sh"
 if [ -f "$_lib" ] && . "$_lib" 2>/dev/null && type normalize_segments >/dev/null 2>&1; then
   seg="$(printf '%s' "$cmd" | normalize_segments)"
 else
@@ -79,8 +88,20 @@ fi
 
 [ "${QA_ALLOW_MAIN:-0}" = "1" ] && { echo "qa-flow: QA_ALLOW_MAIN=1 override — promotion allowed without a fresh stamp (audited)." >&2; exit 0; }
 
-stamp="qa/CERTIFICATION"
-[ -f "$stamp" ] || deny "no certification found. Run /qa-flow:certify against staging first."
+# `--verify -q` prints NOTHING for a missing ref. Plain `rev-parse origin/dev` echoes the literal
+# "origin/dev" to stdout before failing, so the fallback's sha arrived on a second line and no stamp
+# could ever match in a repo without a fetched origin/dev (found by the #1337 fixtures).
+devsha="$(git rev-parse --verify -q origin/dev 2>/dev/null || git rev-parse --verify -q dev 2>/dev/null || true)"
+[ -n "$devsha" ] || deny "cannot resolve dev sha to compare against the certification. Fetch dev and retry."
+
+# The STAMP is read as COMMITTED at dev, never from this checkout's working tree: main receives dev,
+# so an uncommitted or locally edited stamp certifies nothing that will ship (#1437 review, round 3).
+stamp_tmp="$(mktemp 2>/dev/null || printf '%s' "${TMPDIR:-/tmp}/qa-certification.$$")"
+evtmp="$(mktemp 2>/dev/null || printf '%s' "${TMPDIR:-/tmp}/qa-release-evidence.$$")"
+trap 'rm -f "$stamp_tmp" "$evtmp"' EXIT
+if ! git show "${devsha}:qa/CERTIFICATION" >"$stamp_tmp" 2>/dev/null; then
+  deny "no qa/CERTIFICATION is committed at dev (${devsha:0:12}). Run /qa-flow:certify against staging, then commit the stamp to dev by PR -- an uncommitted stamp is not what main will receive."
+fi
 
 # #721. One reader, shared with qa-status.sh. Four inline `json.load` copies lived here and there,
 # kept in step by nothing -- the shape of #699, where two copies of an extractor meant a bug survived
@@ -94,14 +115,14 @@ stamp="qa/CERTIFICATION"
 # Fail-closed is unchanged: `|| true` still swallows a missing python3 or a missing script, an empty
 # value still denies, and this whole block is still reached only for a command targeting `main`.
 reader="${CLAUDE_PLUGIN_ROOT:-}/scripts/read_certification.py"
-verdict="$(python3 "$reader" --field verdict 2>/dev/null || true)"
-csha="$(python3 "$reader" --field sha 2>/dev/null || true)"
+verdict="$(python3 "$reader" --stamp "$stamp_tmp" --field verdict 2>/dev/null || true)"
+csha="$(python3 "$reader" --stamp "$stamp_tmp" --field sha 2>/dev/null || true)"
 # TWO conditions, not one, because they need different sentences. Empty means the stamp could not
 # be READ -- ask the reader why. Non-empty but not PASS means the stamp is fine and the verdict is
 # genuinely negative; the reader has nothing to add, and calling --explain there produced the useless
 # "the stamp is readable and verdict is set" while denying the promotion. Caught by running it.
 if [ -z "$verdict" ]; then
-  why="$(python3 "$reader" --field verdict --explain 2>/dev/null || true)"
+  why="$(python3 "$reader" --stamp "$stamp_tmp" --field verdict --explain 2>/dev/null || true)"
   # A gate must still deny when it cannot explain itself.
   deny "${why:-certification verdict could not be read. Re-certify.}"
 elif [ "$verdict" != "PASS" ]; then
@@ -117,25 +138,16 @@ fi
 # holes. `release_evidence.py stamp` re-judges the evidence the stamp names and prints its paths; an
 # older stamp (no schema 2) passes with a warning while it is grandfathered, for one release.
 # Fail-closed: a missing script, or any error, is a non-zero exit, and that denies.
-# `--verify -q` prints NOTHING for a missing ref. Plain `rev-parse origin/dev` echoes the literal
-# "origin/dev" to stdout before failing, so the fallback's sha arrived on a second line and no stamp
-# could ever match in a repo without a fetched origin/dev (found by the #1337 fixtures).
-# Resolved HERE, before the evidence check, because that check judges the evidence COMMITTED at dev
-# -- not this checkout's working tree, where a staged fix could hide a committed HOLE (#1437 review).
-devsha="$(git rev-parse --verify -q origin/dev 2>/dev/null || git rev-parse --verify -q dev 2>/dev/null || true)"
-[ -n "$devsha" ] || deny "cannot resolve dev sha to compare against the certification. Fetch dev and retry."
+# The evidence check judges the evidence COMMITTED at dev (--rev), not this checkout's working tree,
+# where a staged fix could hide a committed HOLE (#1437 review).
 ev="${CLAUDE_PLUGIN_ROOT:-}/scripts/release_evidence.py"
-evtmp="$(mktemp 2>/dev/null || printf '%s' "${TMPDIR:-/tmp}/qa-release-evidence.$$")"
 if evidence="$(python3 "$ev" stamp --rev "$devsha" 2>"$evtmp")"; then
   grep '^WARNING' "$evtmp" | sed 's/^WARNING /qa-flow: /' >&2
 else
   why="$(grep -E '^(FAIL|unusable)' "$evtmp" 2>/dev/null | head -3 | tr '\n' ' ')"
-  rm -f "$evtmp"
   deny "the release-only layers do not pass (#1428): ${why:-release_evidence.py could not run.} Fix them and re-certify."
 fi
-rm -f "$evtmp"
-
-# devsha was resolved above, before the evidence check.
+# devsha was resolved above, before the stamp was read.
 if [ -n "$devsha" ]; then
   case "$devsha" in
     "$csha"*) : ;;

@@ -56,6 +56,38 @@ GUARD = Guard(
             '            (*/) case "$f" in ("${p%/}"*) ok=1 ;; esac ;;',
             "release-gate (#1428): a look-alike of the evidence path is not evidence",
         ),
+        # ROUND 3 FOLD-IN 3: the degraded-PATH fallback must use builtins only.
+        Mutation(
+            "stdin is read with cat, which a bare PATH does not have",
+            "IFS= read -r -d '' input || true",
+            'input="$(cat 2>/dev/null)"',
+            "with ONLY bash on PATH, a push to main is still blocked",
+        ),
+        Mutation(
+            "the fallback no longer recognises a push to main",
+            "  [[ $input =~ git[[:space:]]+push(${_w}|$)(.*${_w})?(origin[[:space:]]+)?(HEAD:)?(main|master)(${_w}|$) ]] && _looks_promotion=1",
+            "  :",
+            "with ONLY bash on PATH, a push to main is still blocked",
+        ),
+        Mutation(
+            "the fallback fires only when python3 is missing, not grep or sed",
+            "for _t in python3 git sed awk tr grep head; do",
+            "for _t in python3; do",
+            "with python3 and git but NO grep or sed, a push to main is still blocked",
+        ),
+        Mutation(
+            "the fallback's word boundary is dropped, so maintenance reads as main",
+            "  [[ $input =~ git[[:space:]]+push(${_w}|$)(.*${_w})?(origin[[:space:]]+)?(HEAD:)?(main|master)(${_w}|$) ]] && _looks_promotion=1",
+            "  [[ $input =~ git[[:space:]]+push.*(main|master) ]] && _looks_promotion=1",
+            "`git push origin maintenance` is allowed",
+        ),
+        # ROUND 3 FOLD-IN 4: the stamp is read as committed at dev.
+        Mutation(
+            "the stamp is read from the working tree again",
+            'if ! git show "${devsha}:qa/CERTIFICATION" >"$stamp_tmp" 2>/dev/null; then',
+            'if ! cp qa/CERTIFICATION "$stamp_tmp" 2>/dev/null; then',
+            "an UNCOMMITTED stamp is denied",
+        ),
         # #1437 review: a contains-match survived every fixture. The allowance is a PREFIX.
         Mutation(
             "the evidence allowance matches the path anywhere, not as a prefix",
@@ -105,7 +137,7 @@ GUARD = Guard(
             "the dev sha is read with plain rev-parse again, so a missing origin/dev poisons it",
             'devsha="$(git rev-parse --verify -q origin/dev 2>/dev/null || git rev-parse --verify -q dev 2>/dev/null || true)"',
             'devsha="$(git rev-parse origin/dev 2>/dev/null || git rev-parse dev 2>/dev/null || true)"',
-            "release-gate (#1337): CONTROL: an uncommitted stamp for dev's tip permits",
+            "release-gate (#1337): the stamp committed on top of the tested sha still permits",
         ),
         Mutation(
             # WITHOUT the carve-out the gate denies every promotion of its own source repo. That is

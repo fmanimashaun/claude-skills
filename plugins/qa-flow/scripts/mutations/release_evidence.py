@@ -11,6 +11,57 @@ GUARD = Guard(
     subject="scripts/release_evidence.py",
     selftest="scripts/release_evidence.py",
     mutations=(
+        # ROUND 3 BLOCKER: a newline in an evidence path smuggled a second path into the gate's
+        # line-by-line allowance.
+        Mutation(
+            "control characters are allowed in evidence paths",
+            "    if CONTROL.search(value):\n        return False",
+            "    if False:\n        return False",
+            "evidence_path_ok refuses 'qa/manual-tests/x",
+        ),
+        Mutation(
+            "only the stripped path is checked, so a control character strip() removes slips by",
+            "        if not evidence_path_ok(value) or CONTROL.search(data[key]):",
+            "        if not evidence_path_ok(value):",
+            "first_boot='qa/manual-tests/first-boot-v1\\r' outside the evidence root is refused",
+        ),
+        Mutation(
+            "evidence need not be named for the stamp's release",
+            "        elif not same_release(key, value, version):",
+            "        elif False:",
+            "stamp: evidence named for another release is refused",
+        ),
+        Mutation(
+            "a renamed copy of another release's evidence is accepted",
+            "            twin = copied_from(base, rev, value, prefix)",
+            "            twin = None",
+            "stamp: last release's walkthrough, renamed, is refused as a copy",
+        ),
+        Mutation(
+            "at --rev the stamp is read from the working tree",
+            "        if rev:\n            # The STAMP is read as committed at `rev` too",
+            "        if False:\n            # The STAMP is read as committed at `rev` too",
+            "stamp: at --rev the committed stamp is judged, not the working-tree one",
+        ),
+        # ROUND 3 FOLD-IN 1: grandfathering must not be spoofable by omitting `schema`.
+        Mutation(
+            "any schema-less stamp is grandfathered, whenever it was committed",
+            "        if when is not None and when < cutoff:",
+            "        if True:",
+            "stamp: a NEW stamp that merely omits schema is refused",
+        ),
+        Mutation(
+            "the cutoff itself counts as before",
+            "        if when is not None and when < cutoff:",
+            "        if when is not None and when <= cutoff:",
+            "stamp: a schema-less stamp committed AT the cutoff is refused",
+        ),
+        Mutation(
+            "a working-tree edit of an old stamp keeps its commit date",
+            "                if head.returncode != 0 or head.stdout != raw:",
+            "                if head.returncode != 0:",
+            "stamp: an old stamp edited in the working tree is not the committed one",
+        ),
         # A finding is printed; one that quoted the matched secret would leak it again.
         Mutation(
             "a finding quotes the matched secret",
@@ -88,9 +139,9 @@ GUARD = Guard(
         # #1437 review blocker: evidence outside qa/manual-tests/ let a stamp carry code.
         Mutation(
             "evidence paths are not confined to qa/manual-tests/",
-            "        if not evidence_path_ok(value):",
-            "        if False:",
-            "outside the evidence root is refused",
+            "    return (value.startswith(EVIDENCE_ROOT) and not Path(value).is_absolute()",
+            "    return (True and not Path(value).is_absolute()",
+            "evidence_path_ok refuses 'docs/manual-tests",
         ),
         Mutation(
             "--rev is ignored, so the gate judges the working tree",

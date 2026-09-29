@@ -71,8 +71,10 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/release_evidence.py" first-boot "qa/manua
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/release_evidence.py" authz "qa/manual-tests/authz-<version>/sweep.csv"
 ```
 
-Both files live under `qa/manual-tests/` and are committed with the stamp: the stamp names them,
-and the release gate refuses evidence named anywhere else or not in git.
+Both files live under `qa/manual-tests/`, are named for the release (`first-boot-<version>`,
+`authz-<version>/`), and are committed to dev with the stamp. The release gate reads the stamp and the
+evidence AS COMMITTED at dev: an uncommitted stamp, evidence named for another release, or a renamed
+copy of another release's evidence is refused.
 
 A failing layer is a FAIL verdict like any open S1/S2. What the checks do NOT judge: whether the
 database was really empty, which roles the app has, and whether the sweep lists every action. Those
