@@ -78,9 +78,20 @@ RAW_BUTTON = re.compile(r"<button\b", re.I)
 COMPONENT_CLASS = re.compile(r"^[ \t]*class (\w+Component) < ViewComponent::Base[ \t]*$", re.M)
 
 
-# A Ruby class/module OPENER: `class Name`, `class << self`, `module Name`. Not `class: "..."` (a
-# keyword argument) or `class="..."` (ERB), both common in component bodies.
-NESTED = re.compile(r"^([ \t]*)(?:class[ \t]+(?:[A-Z]|<<)|module[ \t]+[A-Z])(?!.*\bend\s*$)")
+# A nested body OPENER: `class Name`, `class << self`, `module Name`, or a block that defines a class
+# (`X = Struct.new(...) do`, `Data.define do`, `Class.new do`). Not `class: "..."` (a keyword
+# argument) or `class="..."` (ERB), both common in component bodies. Judged on the code before any
+# trailing `#` comment, so `class Error < StandardError; end # why` is a one-liner (#1487 review).
+NESTED = re.compile(r"^([ \t]*)(?:class[ \t]+(?:[A-Z]|<<)|module[ \t]+[A-Z]"
+                    r"|(?:[A-Z]\w*[ \t]*=[ \t]*)?(?:Struct\.new|Data\.define|Class\.new)\b.*\bdo\b)")
+ONE_LINER = re.compile(r"\bend\s*$")
+HEREDOC = re.compile(r"<<[~-]?(['\"]?)([A-Z_][A-Z0-9_]*)\1")
+
+
+def _code(line: str) -> str:
+    """`line` without a trailing `#` comment. Approximate -- a `#` inside a string ends it early --
+    but only ever used to find `end` and one-liners, where that cannot turn code into a match."""
+    return line.split("#", 1)[0].rstrip()
 
 
 def own_lines(body: list[str]) -> list[str]:
@@ -90,18 +101,30 @@ def own_lines(body: list[str]) -> list[str]:
     class's `def initialize(` judged, because the scan took the first one in the body. Retask's
     `Ui::DetailsCardComponent` (a nested `Section`) read as "a fixed keyword list" while its own
     initializer took `**attrs`, and the downstream workaround was to reorder a correct file. A
-    nested body ends at the `end` at its own indent, the same rule the component body uses.
+    nested body ends at the `end` at its own indent -- `end # Section` included -- the same rule the
+    component body uses. A heredoc's lines are text: a line in one starting `class X` opens nothing.
     """
-    out, skip_indent = [], None
+    out, skip_indent, heredoc = [], None, None
     for line in body:
+        if heredoc is not None:
+            if line.strip() == heredoc:
+                heredoc = None
+            if skip_indent is None:
+                out.append(line)
+            continue
+        h = HEREDOC.search(_code(line))
         if skip_indent is not None:
-            if line.strip() == "end" and len(line) - len(line.lstrip()) == skip_indent:
+            if _code(line).strip() == "end" and len(line) - len(line.lstrip()) == skip_indent:
                 skip_indent = None
+            elif h:
+                heredoc = h.group(2)
             continue
         m = NESTED.match(line)
-        if m:
+        if m and not ONE_LINER.search(_code(line)):
             skip_indent = len(m.group(1))
             continue
+        if h:
+            heredoc = h.group(2)
         out.append(line)
     return out
 
@@ -330,6 +353,24 @@ def _selftest() -> int:
                not any("ItemComponent" in f for f in findings))
         expect("a nested class storing the splat does not store the component's",
                any("NestedStoreComponent" in f and "never stores" in f for f in findings))
+
+        # #1487 review: the shapes a first version of own_lines() got wrong, each against the component.
+        (root / "app/components/ui/onelinecomment_component.rb").write_text(
+            "module Ui\n  class OneLineCommentComponent < ViewComponent::Base\n    class Error < StandardError; end # raised on bad input\n\n    def initialize(**attrs)\n      @attrs = attrs\n    end\n  end\nend\n", encoding="utf-8")
+        (root / "app/components/ui/endcomment_component.rb").write_text(
+            "module Ui\n  class EndCommentComponent < ViewComponent::Base\n    class Section\n      def initialize(title:)\n        @title = title\n      end\n    end # Section\n\n    def initialize(**attrs)\n      @attrs = attrs\n    end\n  end\nend\n", encoding="utf-8")
+        (root / "app/components/ui/structdo_component.rb").write_text(
+            "module Ui\n  class StructDoComponent < ViewComponent::Base\n    Section = Struct.new(:title) do\n      def initialize(title:)\n        super\n      end\n    end\n\n    def initialize(**attrs)\n      @attrs = attrs\n    end\n  end\nend\n", encoding="utf-8")
+        (root / "app/components/ui/heredocclass_component.rb").write_text(
+            "module Ui\n  class HeredocClassComponent < ViewComponent::Base\n    TEMPLATE = <<~RUBY\n      class Foo\n    RUBY\n\n    def initialize(**attrs)\n      @attrs = attrs\n    end\n  end\nend\n", encoding="utf-8")
+        (root / "app/components/ui/onlynested_component.rb").write_text(
+            "module Ui\n  class OnlyNestedComponent < ViewComponent::Base\n    class Section\n      def initialize(**attrs)\n        @attrs = attrs\n      end\n    end\n  end\nend\n", encoding="utf-8")
+        findings, _, _ = run(root)
+        expect('a one-line nested class with a trailing comment opens no body', not any("OneLineCommentComponent" in f for f in findings))
+        expect('a nested body closed by `end # Section` ends there', not any("EndCommentComponent" in f for f in findings))
+        expect('a Struct.new block above the initializer is not the component', not any("StructDoComponent" in f for f in findings))
+        expect('a heredoc line starting `class` opens nothing', not any("HeredocClassComponent" in f for f in findings))
+        expect('an initializer only inside a nested class is reported as none', any("OnlyNestedComponent" in f and "defines no initializer" in f for f in findings))
 
         # A tree with no views and no components cannot be judged -- and must not read as clean.
 

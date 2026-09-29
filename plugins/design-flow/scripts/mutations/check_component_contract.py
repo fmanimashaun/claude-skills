@@ -67,14 +67,14 @@ GUARD = Guard(
         ),
         Mutation(
             "a nested body never ends, so the component's own initializer after it vanishes",
-            '            if line.strip() == "end" and len(line) - len(line.lstrip()) == skip_indent:\n                skip_indent = None',
-            '            if line.strip() == "end" and len(line) - len(line.lstrip()) == skip_indent:\n                pass',
+            '            if _code(line).strip() == "end" and len(line) - len(line.lstrip()) == skip_indent:\n                skip_indent = None',
+            '            if _code(line).strip() == "end" and len(line) - len(line.lstrip()) == skip_indent:\n                pass',
             "a nested class's initializer declared first is not the component's",
         ),
         Mutation(
             'any line starting `class` or `module` opens a nested body, `class:` included',
-            'NESTED = re.compile(r"^([ \\t]*)(?:class[ \\t]+(?:[A-Z]|<<)|module[ \\t]+[A-Z])(?!.*\\bend\\s*$)")',
-            'NESTED = re.compile(r"^([ \\t]*)(?:class|module)\\b(?!.*\\bend\\s*$)")',
+            'NESTED = re.compile(r"^([ \\t]*)(?:class[ \\t]+(?:[A-Z]|<<)|module[ \\t]+[A-Z]"\n                    r"|(?:[A-Z]\\w*[ \\t]*=[ \\t]*)?(?:Struct\\.new|Data\\.define|Class\\.new)\\b.*\\bdo\\b)")',
+            'NESTED = re.compile(r"^([ \\t]*)(?:class|module)\\b")',
             'a `class:` keyword line is not a nested class',
         ),
         Mutation(
@@ -82,6 +82,31 @@ GUARD = Guard(
             'COMPONENT_CLASS = re.compile(r"^[ \\t]*class (\\w+Component) < ViewComponent::Base[ \\t]*$", re.M)',
             'COMPONENT_CLASS = re.compile(r"^\\s*class (\\w+Component) < ViewComponent::Base[ \\t]*$", re.M)',
             'a nested COMPONENT after a blank line',
+        ),
+        # #1487 review: trailing comments, heredocs and block-defined classes.
+        Mutation(
+            "a trailing comment hides a one-liner's `end`",
+            '        if m and not ONE_LINER.search(_code(line)):',
+            '        if m and not ONE_LINER.search(line):',
+            'a one-line nested class with a trailing comment opens no body',
+        ),
+        Mutation(
+            '`end # Section` no longer closes a nested body',
+            '            if _code(line).strip() == "end" and len(line) - len(line.lstrip()) == skip_indent:',
+            '            if line.strip() == "end" and len(line) - len(line.lstrip()) == skip_indent:',
+            'a nested body closed by `end # Section` ends there',
+        ),
+        Mutation(
+            "a heredoc's lines are read as code",
+            '        if h:\n            heredoc = h.group(2)\n        out.append(line)',
+            '        out.append(line)',
+            'a heredoc line starting `class` opens nothing',
+        ),
+        Mutation(
+            'a Struct.new / Data.define / Class.new block is not a nested body',
+            '                    r"|(?:[A-Z]\\w*[ \\t]*=[ \\t]*)?(?:Struct\\.new|Data\\.define|Class\\.new)\\b.*\\bdo\\b)")',
+            '                    r")")',
+            'a Struct.new block above the initializer is not the component',
         ),
     ),
 )

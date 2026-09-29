@@ -60,9 +60,20 @@ SOURCES = (
 CLASS = re.compile(r"^(?P<indent>[ \t]*)class (?P<name>\w+) < ViewComponent::Base[ \t]*$", re.M)
 
 
-# A Ruby class/module OPENER: `class Name`, `class << self`, `module Name`. Not `class: "..."` (a
-# keyword argument) or `class="..."` (ERB), both common in component bodies.
-NESTED = re.compile(r"^([ \t]*)(?:class[ \t]+(?:[A-Z]|<<)|module[ \t]+[A-Z])(?!.*\bend\s*$)")
+# A nested body OPENER: `class Name`, `class << self`, `module Name`, or a block that defines a class
+# (`X = Struct.new(...) do`, `Data.define do`, `Class.new do`). Not `class: "..."` (a keyword
+# argument) or `class="..."` (ERB), both common in component bodies. Judged on the code before any
+# trailing `#` comment, so `class Error < StandardError; end # why` is a one-liner (#1487 review).
+NESTED = re.compile(r"^([ \t]*)(?:class[ \t]+(?:[A-Z]|<<)|module[ \t]+[A-Z]"
+                    r"|(?:[A-Z]\w*[ \t]*=[ \t]*)?(?:Struct\.new|Data\.define|Class\.new)\b.*\bdo\b)")
+ONE_LINER = re.compile(r"\bend\s*$")
+HEREDOC = re.compile(r"<<[~-]?(['\"]?)([A-Z_][A-Z0-9_]*)\1")
+
+
+def _code(line: str) -> str:
+    """`line` without a trailing `#` comment. Approximate -- a `#` inside a string ends it early --
+    but only ever used to find `end` and one-liners, where that cannot turn code into a match."""
+    return line.split("#", 1)[0].rstrip()
 
 
 def own_lines(body: list[str]) -> list[str]:
@@ -72,18 +83,30 @@ def own_lines(body: list[str]) -> list[str]:
     class's `def initialize(` judged, because the scan took the first one in the body. Retask's
     `Ui::DetailsCardComponent` (a nested `Section`) read as "a fixed keyword list" while its own
     initializer took `**attrs`, and the downstream workaround was to reorder a correct file. A
-    nested body ends at the `end` at its own indent, the same rule the component body uses.
+    nested body ends at the `end` at its own indent -- `end # Section` included -- the same rule the
+    component body uses. A heredoc's lines are text: a line in one starting `class X` opens nothing.
     """
-    out, skip_indent = [], None
+    out, skip_indent, heredoc = [], None, None
     for line in body:
+        if heredoc is not None:
+            if line.strip() == heredoc:
+                heredoc = None
+            if skip_indent is None:
+                out.append(line)
+            continue
+        h = HEREDOC.search(_code(line))
         if skip_indent is not None:
-            if line.strip() == "end" and len(line) - len(line.lstrip()) == skip_indent:
+            if _code(line).strip() == "end" and len(line) - len(line.lstrip()) == skip_indent:
                 skip_indent = None
+            elif h:
+                heredoc = h.group(2)
             continue
         m = NESTED.match(line)
-        if m:
+        if m and not ONE_LINER.search(_code(line)):
             skip_indent = len(m.group(1))
             continue
+        if h:
+            heredoc = h.group(2)
         out.append(line)
     return out
 
@@ -210,10 +233,34 @@ def _selftest() -> int:
               "    class ItemComponent < ViewComponent::Base\n"
               "      def initialize(**attrs)\n        @attrs = attrs\n      end\n    end\n  end\nend\n```\n")
     got = dict((n, (sig, st)) for n, sig, st in classes_in(TAGGED))
-    expect("a `class:` keyword line is not a nested class, and a nested component after a blank "
-           "line keeps its own initializer",
-           set(got) == {"TaggedComponent", "ItemComponent"}
-           and all("**" in (sig or "") and st for sig, st in got.values()))
+    expect("a `class:` keyword line is not a nested class",
+           "**" in (got.get("TaggedComponent", (None, False))[0] or "") and got.get("TaggedComponent", (None, False))[1])
+    expect("a nested component after a blank line keeps its own initializer",
+           "ItemComponent" in got and "**" in (got["ItemComponent"][0] or "") and got["ItemComponent"][1])
+    # #1487 review: the shapes a first version of own_lines() got wrong.
+    got = classes_in("```ruby\nmodule Ui\n  class OneLineCommentComponent < ViewComponent::Base\n    class Error < StandardError; end # raised on bad input\n\n    def initialize(**attrs)\n      @attrs = attrs\n    end\n  end\nend\n```\n")
+    expect('a one-line nested class with a trailing comment opens no body', len(got) == 1 and "**" in (got[0][1] or "") and got[0][2])
+    got = classes_in("```ruby\nmodule Ui\n  class EndCommentComponent < ViewComponent::Base\n    class Section\n      def initialize(title:)\n        @title = title\n      end\n    end # Section\n\n    def initialize(**attrs)\n      @attrs = attrs\n    end\n  end\nend\n```\n")
+    expect('a nested body closed by `end # Section` ends there', len(got) == 1 and "**" in (got[0][1] or "") and got[0][2])
+    got = classes_in("```ruby\nmodule Ui\n  class StructDoComponent < ViewComponent::Base\n    Section = Struct.new(:title) do\n      def initialize(title:)\n        super\n      end\n    end\n\n    def initialize(**attrs)\n      @attrs = attrs\n    end\n  end\nend\n```\n")
+    expect('a Struct.new block above the initializer is not the component', len(got) == 1 and "**" in (got[0][1] or "") and got[0][2])
+    got = classes_in("```ruby\nmodule Ui\n  class HeredocClassComponent < ViewComponent::Base\n    TEMPLATE = <<~RUBY\n      class Foo\n    RUBY\n\n    def initialize(**attrs)\n      @attrs = attrs\n    end\n  end\nend\n```\n")
+    expect('a heredoc line starting `class` opens nothing', len(got) == 1 and "**" in (got[0][1] or "") and got[0][2])
+    got = classes_in("```ruby\nmodule Ui\n  class OnlyNestedComponent < ViewComponent::Base\n    class Section\n      def initialize(**attrs)\n        @attrs = attrs\n      end\n    end\n  end\nend\n```\n")
+    expect('an initializer only inside a nested class is reported as none', len(got) == 1 and got[0][1] is None)
+    # The shipped design-flow check carries the same own_lines(); a fix to one copy must reach both.
+    import ast as _ast
+    def _src(path: Path, names: tuple[str, ...]) -> list[str]:
+        tree = _ast.parse(path.read_text(encoding="utf-8"))
+        text = path.read_text(encoding="utf-8")
+        return [_ast.get_source_segment(text, n) for n in tree.body
+                if (isinstance(n, _ast.FunctionDef) and n.name in names)
+                or (isinstance(n, _ast.Assign) and any(getattr(t, "id", "") in names for t in n.targets))]
+    names = ("NESTED", "ONE_LINER", "HEREDOC", "_code", "own_lines")
+    shipped = REPO / "plugins/design-flow/scripts/check_component_contract.py"
+    expect("own_lines() and its patterns are identical in the shipped design-flow copy",
+           shipped.is_file() and _src(shipped, names) == _src(Path(__file__), names)
+           and len(_src(Path(__file__), names)) == len(names))
     got = classes_in(NESTED)
     expect("a nested class's initializer declared first is not the component's (#1434)",
            len(got) == 1 and "**" in (got[0][1] or "") and got[0][2])
