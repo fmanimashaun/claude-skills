@@ -18,10 +18,24 @@
 #  2. Strip quoted spans, THEN comments — quotes first so a '#' inside a string (-m "fix #43") is
 #     already gone and never mis-cut as a comment (which would drop a later segment → fail OPEN).
 #  3. Strip heredoc BODIES (unquoted text that quote-stripping cannot remove).
-#  4. Split on ; | && || and newlines; peel leading env assignments, sudo/env, and git global options
-#     (-C, -c, --git-dir, --work-tree, --namespace, --exec-path) so `FOO=1 git add -A`, `sudo git add .`
-#     and `git -C repo add -A` present as `git add …` at the START of a segment.
-# Here-strings (<<<) are intentionally left alone. bash 3.2 / BSD sed / POSIX awk only.
+#  4. Split on ; | && || ( ) and newlines, then peel what runs the real command (`_peel`): env
+#     assignments; `sudo`/`env`/`command`/`exec`/`nohup`/`nice`/`time`/`timeout`/`xargs` with their
+#     options; `{ ! if then elif else do while until`; git spelled `\git`, `/usr/bin/git`, `git.exe`;
+#     git's global options (`-C`, `-c`, `--git-dir`, `--no-pager`, `--attr-source`, …); and an inline
+#     alias (`git -c alias.p=push p` presents as `git push`). So `FOO=1 git add -A`, `sudo -u x git
+#     add .`, `( git add -A )` and `git -C repo add -A` present as `git add …` at the START of a segment.
+#  5. #1472. A quoted span is stripped in step 2, so a command inside one was never seen:
+#     `bash -c 'git add -A'`, `eval "git push --force"`, `echo "$(git add -A)"`. `_inner_strings`
+#     lexes the RAW command (quotes, escapes, comments, redirects and heredoc bodies understood) and
+#     prints each string a shell WILL run — the `-c` argument of sh/bash/zsh/dash/ksh, the arguments
+#     of `eval`, the body of `$( )`, backticks and `<( )` — and each is normalised as a command of its
+#     own, recursively (depth 3). A quote that only MENTIONS a command (`echo "bash -c 'git add -A'"`)
+#     is not one of those, so it stays invisible, as #906 requires.
+# KNOWN LIMITS (the threat model is an honest mistake, not obfuscation — the coordinator's ruling on
+# #1470): a run-time string (`bash -c "$cmd"`, `eval "$(…)"`'s output), a script fed to a shell by
+# heredoc, here-string or pipe (`bash <<EOF`, `… | bash`), an alias whose value was quoted
+# (`-c alias.p='push -f'`) or defined in git config, `env -S`, and `find -exec`.
+# bash 3.2 / BSD sed / POSIX awk only.
 _unquote_delims() { sed -E "s/<<(-?)[[:space:]]*[\"']([A-Za-z0-9_][A-Za-z0-9_-]*)[\"']/<<\1\2/g"; }
 _strip_quotes()   { sed -E "s/'[^']*'//g; s/\"[^\"]*\"//g"; }
 _strip_comments() { sed -E "s/^[[:space:]]*#.*\$//; s/([[:space:]])#.*\$/\1/"; }
@@ -41,13 +55,218 @@ _strip_heredocs() {
     }
   '
 }
-# normalize_segments: stdin = the raw command; stdout = one invoked segment per line, verb first.
-normalize_segments() {
+
+# Shared by `_peel` and `_inner_strings`: which leading words of a simple command are NOT the command.
+# peel(t, n) returns the index of the first word that is; a wrapper's options (and the value of the
+# ones that take a separate value) are stepped over, so `sudo -u deploy git` and `nice -n 5 git`
+# reach `git`.
+_NC_AWK_LIB='
+function skipopts(t, n, i, valued,    w, name) {
+  valued = " " valued " "
+  while (i <= n && t[i] ~ /^-/) {
+    w = t[i]; i++
+    if (w == "--") return i
+    name = w; sub(/=.*/, "", name)
+    if (w !~ /=/ && index(valued, " " name " ") && i <= n) i++
+  }
+  return i
+}
+function peel(t, n,    i, w) {
+  i = 1
+  while (i <= n) {
+    w = t[i]
+    if (w ~ /^[A-Za-z_][A-Za-z0-9_]*=/) { i++; continue }
+    if (w == "{" || w == "!" || w == "if" || w == "then" || w == "elif" || w == "else" || w == "do" || w == "while" || w == "until") { i++; continue }
+    if (w == "sudo")    { i = skipopts(t, n, i + 1, "-u -g -h -p -C -U -r -t -D -R -T --user --group --host --prompt --other-user --role --type --chdir --chroot --close-from --command-timeout"); continue }
+    if (w == "env")     { i = skipopts(t, n, i + 1, "-u -C --unset --chdir"); continue }
+    if (w == "command" || w == "builtin" || w == "nohup" || w == "time") { i = skipopts(t, n, i + 1, ""); continue }
+    if (w == "exec")    { i = skipopts(t, n, i + 1, "-a"); continue }
+    if (w == "nice")    { i = skipopts(t, n, i + 1, "-n --adjustment"); continue }
+    if (w == "timeout") { i = skipopts(t, n, i + 1, "-s -k --signal --kill-after"); if (i <= n) i++; continue }
+    if (w == "xargs")   { i = skipopts(t, n, i + 1, "-n -I -L -P -s -d -E -a --max-args --replace --max-lines --max-procs --max-chars --delimiter --eof --arg-file"); continue }
+    break
+  }
+  return i
+}
+'
+
+# Step 4's peel, one segment per line. git's global options were measured against git 2.50.1:
+# `-C -c --git-dir --work-tree --namespace --attr-source --config-env` take a separate value;
+# every other leading option (`--no-pager`, `-P`, `--exec-path`, …) is a flag.
+_peel() {
+  awk "$_NC_AWK_LIB"'
+  function isgit(w) { sub(/^\\/, "", w); return w ~ /^([^ \t]*\/)?git(\.exe)?$/ }
+  {
+    n = split($0, t, " ")
+    i = peel(t, n)
+    if (i <= n) { w = t[i]; sub(/^\\/, "", w); t[i] = w }
+    if (i <= n && isgit(t[i])) {
+      split("", al); j = i + 1
+      while (j <= n && t[j] ~ /^-/) {
+        w = t[j]; j++
+        if (w ~ /=/) continue
+        if (w == "-C" || w == "-c" || w == "--git-dir" || w == "--work-tree" || w == "--namespace" || w == "--attr-source" || w == "--config-env") {
+          if (w == "-c" && j <= n && tolower(t[j]) ~ /^alias\.[^=]+=./) {
+            a = t[j]; sub(/^[^.]*\./, "", a); v = a; sub(/^[^=]*=/, "", v); sub(/=.*/, "", a); al[tolower(a)] = v
+          }
+          j++
+        }
+      }
+      out = "git"
+      if (j <= n) { w = t[j]; if (tolower(w) in al) w = al[tolower(w)]; out = out " " w; j++ }
+      for (; j <= n; j++) out = out " " t[j]
+      print out; next
+    }
+    out = ""
+    for (j = i; j <= n; j++) out = out (j > i ? " " : "") t[j]
+    print out
+  }
+  '
+}
+
+# Step 5. One string per line, its own newlines carried as \001 so a multi-line string survives.
+_inner_strings() {
+  awk "$_NC_AWK_LIB"'
+  function emit(v) { if (SKIP) return; gsub(/\n/, "\001", v); print v }
+  function bt_end(s, i,    n, c) {
+    n = length(s)
+    while (i <= n) { c = substr(s, i, 1); if (c == "\\") { i += 2; continue } if (c == "`") return i; i++ }
+    return n + 1
+  }
+  function dquote(s, i,    n, c, d, j, v) {
+    n = length(s); v = ""
+    while (i <= n) {
+      c = substr(s, i, 1)
+      if (c == "\"") { DQV = v; return i + 1 }
+      if (c == "\\") {
+        d = substr(s, i + 1, 1)
+        if (d == "$" || d == "`" || d == "\"" || d == "\\") { v = v d; i += 2; continue }
+        if (d == "\n") { i += 2; continue }
+        v = v c; i++; continue
+      }
+      if (c == "$" && substr(s, i + 1, 1) == "(") { j = subst_end(s, i + 2); emit(substr(s, i + 2, j - i - 2)); v = v substr(s, i, j - i + 1); i = j + 1; continue }
+      if (c == "`") { j = bt_end(s, i + 1); emit(substr(s, i + 1, j - i - 1)); v = v substr(s, i, j - i + 1); i = j + 1; continue }
+      v = v c; i++
+    }
+    DQV = v; return n + 1
+  }
+  # i is just past "$(" (or "<("); returns the index of the matching ")". Nothing inside is emitted
+  # here: the body is emitted whole by the caller and lexed again on its own.
+  function subst_end(s, i,    n, c, depth, j) {
+    n = length(s); depth = 1; SKIP++
+    while (i <= n) {
+      c = substr(s, i, 1)
+      if (c == "\\") { i += 2; continue }
+      if (c == "\047") { j = index(substr(s, i + 1), "\047"); if (j == 0) break; i += j + 1; continue }
+      if (c == "\"") { i = dquote(s, i + 1); continue }
+      if (c == "`") { i = bt_end(s, i + 1) + 1; continue }
+      if (c == "(") depth++
+      if (c == ")") { depth--; if (depth == 0) { SKIP--; return i } }
+      i++
+    }
+    SKIP--; return n + 1
+  }
+  function endword() {
+    if (!HAS) return
+    if (HD) { HDN++; HDD[HDN] = W; HDT[HDN] = HDASH; HD = 0 }
+    else if (REDIR) REDIR = 0
+    else WORDS[++NW] = W
+    W = ""; HAS = 0
+  }
+  function endcmd(    k, b, j, w, seenc, v) {
+    endword()
+    k = peel(WORDS, NW)
+    if (k <= NW) {
+      b = WORDS[k]; sub(/^\\/, "", b); sub(/.*\//, "", b)
+      if (b == "eval") {
+        v = ""; for (j = k + 1; j <= NW; j++) v = v (j > k + 1 ? " " : "") WORDS[j]
+        if (v != "") emit(v)
+      } else if (b ~ /^(sh|bash|zsh|dash|ksh|ash|mksh)(\.exe)?$/) {
+        seenc = 0
+        for (j = k + 1; j <= NW; j++) {
+          w = WORDS[j]
+          if (w == "--") { if (seenc && j < NW) emit(WORDS[j + 1]); break }
+          if (w ~ /^[-+]./) {
+            if (w ~ /^-[A-Za-z]*c/) seenc = 1
+            if (w ~ /^[-+][oO]$/ || w == "--rcfile" || w == "--init-file") j++
+            continue
+          }
+          if (seenc) emit(w)
+          break
+        }
+      }
+    }
+    split("", WORDS); NW = 0; REDIR = 0
+  }
+  { S = S (NR > 1 ? "\n" : "") $0 }
+  END {
+    s = S; n = length(s); i = 1; W = ""; HAS = 0; NW = 0; HDN = 0; SKIP = 0
+    while (i <= n) {
+      c = substr(s, i, 1)
+      if (c == "\\") { d = substr(s, i + 1, 1); if (d != "\n" && d != "") { W = W d; HAS = 1 } i += 2; continue }
+      if (c == "\047") { j = index(substr(s, i + 1), "\047"); if (j == 0) break; W = W substr(s, i + 1, j - 1); HAS = 1; i += j + 1; continue }
+      if (c == "$" && substr(s, i + 1, 1) == "\047") {
+        i += 2
+        while (i <= n) {
+          c = substr(s, i, 1)
+          if (c == "\047") { i++; break }
+          if (c == "\\") { d = substr(s, i + 1, 1); W = W (d == "n" ? "\n" : d == "t" ? "\t" : d); i += 2; continue }
+          W = W c; i++
+        }
+        HAS = 1; continue
+      }
+      if (c == "\"") { i = dquote(s, i + 1); W = W DQV; HAS = 1; continue }
+      if (c == "$" && substr(s, i + 1, 1) == "(") { j = subst_end(s, i + 2); emit(substr(s, i + 2, j - i - 2)); W = W substr(s, i, j - i + 1); HAS = 1; i = j + 1; continue }
+      if (c == "`") { j = bt_end(s, i + 1); emit(substr(s, i + 1, j - i - 1)); W = W substr(s, i, j - i + 1); HAS = 1; i = j + 1; continue }
+      if (c == "#" && !HAS) { while (i <= n && substr(s, i, 1) != "\n") i++; continue }
+      if (c == " " || c == "\t") { endword(); i++; continue }
+      if (c == "\n") {
+        endcmd(); i++
+        for (k = 1; k <= HDN; k++) {
+          while (i <= n) {
+            e = index(substr(s, i), "\n"); if (e == 0) e = n - i + 2
+            line = substr(s, i, e - 1); i += e
+            if (HDT[k]) sub(/^\t+/, "", line)
+            if (line == HDD[k]) break
+          }
+        }
+        HDN = 0; continue
+      }
+      if (c == ";" || c == "&" || c == "|" || c == "(" || c == ")") { endcmd(); i++; continue }
+      if (c == "<" || c == ">") {
+        if (W ~ /^[0-9]*$/) { W = ""; HAS = 0 } else endword()
+        if ((substr(s, i + 1, 1) == "(") ) { j = subst_end(s, i + 2); emit(substr(s, i + 2, j - i - 2)); i = j + 1; continue }
+        if (substr(s, i, 3) == "<<<") { i += 3; REDIR = 1; continue }
+        if (substr(s, i, 2) == "<<") { i += 2; HDASH = 0; if (substr(s, i, 1) == "-") { HDASH = 1; i++ } HD = 1; continue }
+        i++
+        while (i <= n && (substr(s, i, 1) == ">" || substr(s, i, 1) == "&" || substr(s, i, 1) == "<")) i++
+        if (c == ">" && substr(s, i, 1) == "|") i++
+        REDIR = 1; continue
+      }
+      W = W c; HAS = 1; i++
+    }
+    endcmd()
+  }
+  '
+}
+
+_normalize_one() {
   _unquote_delims | _strip_quotes | _strip_comments | _strip_heredocs \
-    | tr ';|&' '\n' \
-    | sed -E 's/^[[:space:]]+//' \
-    | sed -E 's/^(([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*)[[:space:]]+)+//' \
-    | sed -E 's/^(sudo|env)[[:space:]]+//' \
-    | sed -E 's/^(([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*)[[:space:]]+)+//' \
-    | sed -E 's/^git[[:space:]]+((-C|-c|--git-dir|--work-tree|--namespace|--exec-path)([[:space:]]*=?[[:space:]]*[^[:space:]]+)?[[:space:]]+)+/git /'
+    | tr ';|&()' '\n' \
+    | _peel
+}
+
+# normalize_segments: stdin = the raw command; stdout = one invoked segment per line, verb first.
+# The raw text is read with a BUILTIN, never `cat`: a missing binary must not empty the command.
+normalize_segments() {
+  local raw=""
+  IFS= read -r -d '' raw || true
+  printf '%s' "$raw" | _normalize_one
+  [ "${_NC_DEPTH:-0}" -ge 3 ] && return 0
+  printf '%s' "$raw" | _inner_strings | {
+    _NC_DEPTH=$(( ${_NC_DEPTH:-0} + 1 ))
+    while IFS= read -r _nc_line; do
+      printf '%s' "$_nc_line" | tr '\001' '\n' | normalize_segments
+    done
+  }
 }

@@ -425,6 +425,24 @@ POSITIVES_906 = ['FOO=1 git add -A', 'sudo git add .', 'git status && git add -A
 NEGATIVES_1342 = ['git clean -n', 'git clean -fdn', 'git checkout feature/x', 'git checkout -b new',
                   'git restore -- app/x.rb', 'git restore --staged .', 'git restore --source origin/dev --staged --worktree -- docs/a.md',
                   'git branch -d feature/x', 'git stash push -m wip', 'git stash list', "grep 'git stash drop' notes.md"]
+# #1472: a command the shell RUNS from inside a string, a wrapper or a group, or git spelled another
+# way. The normaliser never classified any of these, so every guard-bash rule was blind to them.
+POSITIVES_1472 = ["bash -c 'git add -A'", 'sh -c "git push --force origin main"', "bash -lc 'git reset --hard'",
+                  "bash -o pipefail -c 'git add -A'", "zsh -c -- 'git add -A'", 'eval "git add -A"', "eval 'git add' '-A'",
+                  "bash -c \"eval 'git add -A'\"", 'echo "$(git add -A)"', 'echo `git add -A`', 'diff <(git add -A) x',
+                  'command git add -A', 'exec git add -A', 'time git add -A', 'nice -n 5 git add -A', 'env -i git add -A',
+                  'sudo -u deploy git add -A', 'timeout 60 git add -A', 'echo x | xargs git add -A', '{ git add -A; }',
+                  '( git add -A )', '(git add -A)', 'if true; then git add -A; fi', '\\git add -A', '/usr/bin/git add -A',
+                  'git.exe add -A', 'git --no-pager add -A', 'git --attr-source HEAD add -A',
+                  'git -c alias.p=push p --force origin main', "bash >log -c 'git add -A'"]
+# ...and each one's twin: the same shape doing something allowed, or a string that only MENTIONS it.
+NEGATIVES_1472 = ["bash -c 'git add app/x.rb'", "bash -c 'git push origin feature/x'", 'eval "git status"',
+                  'echo "$(git branch --show-current)"', 'command -v git', 'time git status', 'git --no-pager log -1',
+                  'git --attr-source HEAD status', 'git -c alias.p=push p origin feature/x', 'sudo -u deploy git status',
+                  'echo "bash -c \'git add -A\'"', 'git commit -m "never bash -c \'git add -A\'"',
+                  "echo 'eval \"git add -A\"'", "bash script.sh -c 'git add -A'",
+                  "cat <<'X' > s.sh\nbash -c 'git add -A'\nX\ngit status",
+                  "git commit -m \"$(cat <<'EOF'\nwhy: never git add -A\nEOF\n)\""]
 
 
 def guard_bash_fixtures() -> None:
@@ -449,6 +467,10 @@ def guard_bash_fixtures() -> None:
         check(f"guard-bash (#906): `{cmd}` is blocked", run(cmd) == 2, "exit 0")
     for cmd in NEGATIVES_1342:
         check(f"guard-bash (#1342): safe twin `{cmd[:60]}` stays allowed", run(cmd) == 0, "exit 2")
+    for cmd in POSITIVES_1472:
+        check(f"guard-bash (#1472): `{cmd!r}` runs the command and is blocked", run(cmd) == 2, "exit 0")
+    for cmd in NEGATIVES_1472:
+        check(f"guard-bash (#1472): CONTROL: `{cmd[:60]!r}` passes", run(cmd) == 0, "exit 2")
     # FAIL CLOSED without the lib: a staged copy of the hook with lib/ removed must still block the raw text.
     with tempfile.TemporaryDirectory() as td:
         stage = Path(td) / "hooks"; shutil.copytree(HOOKS, stage); shutil.rmtree(stage / "lib")
@@ -792,6 +814,12 @@ def release_gate_fixtures() -> None:
               run('git push origin "main"', plugin_root=Path(bare_root)) == 2, "exit 0")
         check("release-gate (#1410): parser missing -> CONTROL: a feature push still passes",
               run("git push origin feature/x", plugin_root=Path(bare_root)) == 0, "exit 2")
+        # #1472: without the parser the shared normaliser decides, and it now sees inside a shell string.
+        for cmd in ("bash -c 'git push origin main'", 'eval "git push origin main"', "command git push origin main"):
+            check(f"release-gate (#1472): parser missing -> `{cmd}` is blocked",
+                  run(cmd, plugin_root=Path(bare_root)) == 2, "exit 0")
+        check("release-gate (#1472): parser missing -> CONTROL: `bash -c 'git push origin feature/x'` passes",
+              run("bash -c 'git push origin feature/x'", plugin_root=Path(bare_root)) == 0, "exit 2")
 
     # THE DISCRIMINATING PAIR for the marketplace carve-out. The same command, the same absence of
     # a certification, and the ONLY difference is `.claude-plugin/marketplace.json`. Without the
