@@ -3574,12 +3574,18 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   `plugins/rails-flow/scripts/check_hook_gates.py`** (#1489).
   - `bash < file` names no create in its text, so neither the hook's trigger nor the helper saw it. The trigger now
     fires on a shell reading a redirect.
-  - The helper reads the file (spaced `< f` or glued `<f`, behind any wrapper, real files under 1 MB) and refuses by
-    name when it names a create, applying #1423's owner-decided rule.
-  - A file that cannot be read is allowed, as before. `cat < file` is not a shell running it, and `bash script.sh`,
-    a script passed as an argument, is out of scope.
-  - 5 selftest cases and 2 end-to-end hook fixtures; 3 new mutations (`hook_issue_labels` 61 of 61, `hook_guard_bash`
-    13 of 13).
+  - The trigger is coarse on purpose: `/bin/bash < f`, `bash --norc < f`, `bash -o errexit < f`, `sh<f` and
+    `bash 0< f` all reach the helper, which parses the command and decides.
+  - The helper reads the file (`< f`, `<f` or `0< f`, behind any wrapper; `$HOME` expanded; the first 1 MB) and
+    refuses by name when it names a create, applying #1423's owner-decided rule.
+  - A relative script resolves from the directory the command has `cd`'d to. A `cd` it cannot resolve (`cd $X`,
+    `cd -`, `pushd`, or one inside `( )`) makes the file unknown.
+  - An unknown or unreadable file is allowed, as before. `cat < file` is not a shell running it, and `bash
+    script.sh`, a script passed as an argument, is out of scope.
+  - `$'…'` quoting is decoded before parsing. A command the parser still cannot read is refused only when it names a
+    create or a shell redirect: valid bash that merely widened the trigger is not refused.
+  - 24 selftest cases and 7 end-to-end hook fixtures; 13 new mutations (`hook_issue_labels` 70 of 70,
+    `hook_guard_bash` 14 of 14).
 
 - **`guard-bash` label-checks `gh issue new`, `gh --repo … issue create`, and creates fed to a shell —
   `plugins/rails-flow/hooks/scripts/guard-bash.sh`, `plugins/rails-flow/hooks/scripts/lib/issue_labels.py`,

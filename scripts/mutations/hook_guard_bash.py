@@ -26,9 +26,15 @@ GUARD = Guard(
         # #1489: `bash < file` names no create, so the trigger must fire on the redirect itself.
         Mutation(
             "the trigger ignores a shell reading a redirect, so bash < file never reaches the helper",
-            "   || printf '%s' \"$cmd\" | grep -qE '(^|[[:space:];&|(])(sh|bash|zsh|dash|ksh)([[:space:]]+-[a-zA-Z]+)*[[:space:]]*<[^<(]'; then",
+            "   || printf '%s' \"$cmd\" | grep -qE '(^|[[:space:];&|(/])(sh|bash|zsh|dash|ksh)([[:space:]][^;&|]*)?<([^<(]|$)'; then",
             "   ; then",
             "a script with a create fed to bash by redirect is refused through the real hook",
+        ),
+        Mutation(
+            "the redirect trigger is the first version's, so /bin/bash, --norc, sh<f and 0< never reach the helper",
+            "   || printf '%s' \"$cmd\" | grep -qE '(^|[[:space:];&|(/])(sh|bash|zsh|dash|ksh)([[:space:]][^;&|]*)?<([^<(]|$)'; then",
+            "   || printf '%s' \"$cmd\" | grep -qE '(^|[[:space:];&|(])(sh|bash|zsh|dash|ksh)([[:space:]]+-[a-zA-Z]+)*[[:space:]]*<[^<(]'; then",
+            "guard-bash (#1489 review):",
         ),
         Mutation(
             "the trigger keeps quotes, so gh issue \"create\" never reaches the helper",

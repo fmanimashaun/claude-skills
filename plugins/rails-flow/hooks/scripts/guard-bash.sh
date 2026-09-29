@@ -81,9 +81,11 @@ fi
 # `gh issue \<newline>create` and `gh --repo o/r issue create` must reach the helper, which parses
 # the raw command properly and tells a create from a mention.
 # A shell reading a script by redirect (`bash < file`, #1489) names no create in its text at all, so it
-# triggers the helper too; the helper reads the file and decides.
+# triggers the helper too; the helper reads the file and decides. Coarse on purpose -- `/bin/bash < f`,
+# `bash --norc < f`, `bash -o errexit < f`, `sh<f`, `bash 0< f` -- because over-triggering costs one
+# parse, and under-triggering skips the check.
 if printf '%s' "$cmd" | tr -d "\"'\\\\" | tr '\n' ' ' | grep -qE 'gh[[:space:]].*issue[[:space:]]+(create|new)' \
-   || printf '%s' "$cmd" | grep -qE '(^|[[:space:];&|(])(sh|bash|zsh|dash|ksh)([[:space:]]+-[a-zA-Z]+)*[[:space:]]*<[^<(]'; then
+   || printf '%s' "$cmd" | grep -qE '(^|[[:space:];&|(/])(sh|bash|zsh|dash|ksh)([[:space:]][^;&|]*)?<([^<(]|$)'; then
   _root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
   _why="$(printf '%s' "$cmd" | python3 "$(dirname "${BASH_SOURCE[0]}")/lib/issue_labels.py" --root "$_root" 2>&1)"
   _rc=$?
