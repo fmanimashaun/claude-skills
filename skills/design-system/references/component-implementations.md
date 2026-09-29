@@ -232,7 +232,8 @@ spelling rather than the only one. What a fidara wrapper MUST produce, and what 
    child margins).
 2. Every class is a **role token or a documented recipe** — no literal colours, no stock
    `gray-*`/`blue-*`, no inline `dark:` variants (dark mode is one re-point of the roles).
-3. The control carries `min-h-touch` and a visible `focus-visible` ring.
+3. The control carries `min-h-touch` and a visible `focus-visible` ring — for a checkbox or radio
+   collection, that is the LABEL a person taps (`item_label_class:`), not the item wrapper.
 4. The error state is driven by simple_form's own `error_class` / `aria-invalid`, so
    `aria-describedby` wiring comes from the library rather than being hand-maintained.
 5. Label text is **always rendered** unless the field explicitly passes `label: false` **and**
@@ -1483,8 +1484,11 @@ Empty state — arranged. What goes wrong is not the Ruby: it is a `<button>` ne
 <%# by us, because the panel is not adjacent to its trigger in a wide sidebar. %>
 <%# simple_form, as everywhere (it is mandatory here). A symbol builds a GET form with no model, and %>
 <%# as: "" drops the `filter[...]` namespace so a facet posts as `color[]=red` and the URL stays %>
-<%# readable. Each row's touch height (2.5.8) is `item_wrapper_class: "min-h-touch"`: simple_form's %>
-<%# per-input option for the element wrapping EACH item (read in lib/simple_form/tags.rb, 5.x). %>
+<%# readable. Each row's touch target (2.5.8) is its LABEL, the element a person taps. With     %>
+<%# boolean_style :inline (the config above) simple_form renders the input and a SIBLING label    %>
+<%# inside the item wrapper, so the height goes on the label: `item_label_class:`, which it       %>
+<%# prepends to its own collection_check_boxes class (simple_form 5.4.1 lib/simple_form/tags.rb:67; %>
+<%# :51 for radios), reached through the collection input's apply_default_collection_options!.   %>
 <%= simple_form_for :filter, url: request.path, method: :get, as: "",
       html: { class: "stack", "aria-label": "Filter products" } do |f| %>
   <% facets.each do |facet| %>
@@ -1494,7 +1498,7 @@ Empty state — arranged. What goes wrong is not the Ruby: it is a `<button>` ne
         <fieldset class="stack">
           <legend class="sr-only"><%= facet.name %></legend>
           <%= f.input facet.slug, as: :check_boxes, label: false, item_wrapper_tag: :div,
-                item_wrapper_class: "min-h-touch",
+                item_wrapper_class: "min-h-touch", item_label_class: "cluster min-h-touch",
                 collection: facet.options, label_method: :label, value_method: :value,
                 checked: facet.options.select(&:selected?).map(&:value) %>
         </fieldset>
@@ -1763,6 +1767,7 @@ is a real `fieldset` of native radios.
     <legend class="text-step--1 text-muted-foreground">Default payment method</legend>
     <%= f.input :default_method_id, as: :radio_buttons, label: false, collection: @methods,
           value_method: :id, item_wrapper_tag: :div, item_wrapper_class: "min-h-touch",
+          item_label_class: "cluster min-h-touch",   # the tappable label is the 2.5.8 target (tags.rb:51)
           label_method: ->(m) {
             safe_join([content_tag(:span, "", class: "with-icon", role: "img", "aria-label": m.brand),
                        content_tag(:span, "ending #{m.last4}"),

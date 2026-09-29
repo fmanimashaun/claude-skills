@@ -3540,7 +3540,9 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 - **`simple-form-only` catches Rails 8's `rich_textarea` — `plugins/rails-flow/scripts/check_simple_form_only.py`,
   `plugins/rails-flow/scripts/mutations/check_simple_form_only.py`** (#1439). `RAW_FIELD_METHODS` listed only
-  `rich_text_area`, so `f.rich_textarea :content` on a simple_form builder passed. Both spellings are now raw.
+  `rich_text_area`, so `f.rich_textarea :content` on a simple_form builder passed. Both spellings are now raw, and
+  so are the tag helpers `rich_textarea_tag` / `rich_text_area_tag` (a pre-existing gap in the field-tag-helper
+  rule, found in review).
   doctrine-verifier CONFIRMED against `actiontext/app/helpers/action_text/tag_helper.rb`: `rich_textarea` is defined
   from Rails **8.0.0** with `alias_method :rich_text_area, :rich_textarea`, not deprecated; 7.2 has only
   `rich_text_area`. A fixture per spelling, a control for `f.input … as: :rich_text_area`, and a mutation.
@@ -16272,10 +16274,15 @@ boot/validation path — with a bullet each so the promotion could close them se
 - **Checkbox and radio rows keep their touch height, and the Remove list shows the brand mark — `skills/design-system/references/component-implementations.md`,
   `dist/design-system.skill`** (#1436). The simple_form rewrites in #1431 dropped `min-h-touch` from the filter
   checkbox rows and the payment radio group (WCAG 2.5.8 target size) and handed it to a wrapper nobody configured.
-  Both now pass `item_wrapper_class: "min-h-touch"`, simple_form's per-input class for the element wrapping each
-  item. doctrine-verifier CONFIRMED against simple_form **5.4.1** `lib/simple_form/tags.rb`
-  (`item_wrapper_class = @options[:item_wrapper_class]`, applied via `content_tag(item_wrapper_tag, …, class:)`);
-  the README does not document the option, so the source is the citation. The Remove list now shows the brand mark
+  The touch target is the **label**, the element a person taps: with the doctrine's `boolean_style = :inline`,
+  simple_form renders the input and a sibling label inside the item wrapper, so both inputs now pass
+  `item_label_class: "cluster min-h-touch"` (the first fix put `min-h-touch` on the wrapper only, which the
+  independent review caught). doctrine-verifier CONFIRMED against simple_form **5.4.1** `lib/simple_form/tags.rb`:
+  `:51` / `:67` build the label class as `"#{@options[:item_label_class]} collection_radio_buttons"` (and
+  `collection_check_boxes`) — prepended, not replacing — reached through the collection input's
+  `apply_default_collection_options!`; `item_wrapper_class` lands on the wrapper (`:25`). The README documents
+  neither option, so the source is the citation. The Configure contract now says a checkbox or radio collection's
+  `min-h-touch` belongs on its label. The Remove list now shows the brand mark
   its `aria-label` already names.
 - **The three primitive markers name their construct — `skills/design-system/references/component-implementations.md`,
   `dist/design-system.skill`** (#1443). The Checkbox (`check_box_tag`), Combobox (`tag.input`) and Tabs picker

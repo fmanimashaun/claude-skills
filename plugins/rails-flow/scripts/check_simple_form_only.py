@@ -63,7 +63,7 @@ RULES = (
     ("field-tag-helper", re.compile(
         r"(?<![\w.])(text_field|select|check_box|radio_button|text_area|number_field|email_field|"
         r"password_field|date_field|datetime_field|time_field|file_field|search_field|telephone_field|"
-        r"url_field|month_field|week_field|color_field|range_field)_tag\b")),
+        r"url_field|month_field|week_field|color_field|range_field|rich_textarea|rich_text_area)_tag\b")),
     ("tag-builder-field", re.compile(r"\btag\.(input|select|textarea|form)\b")),
 )
 # The block variable of a simple_form builder. The call may span lines (`simple_form_for @u,\n  url: x
@@ -261,6 +261,10 @@ def selftest() -> int:
                "raw-builder-call" in rules("<%= simple_form_for @u,\n      url: users_path do |f| %><%= f.text_field :a %><% end %>"))
     check_that("CONTROL: a hidden input is not a raw field",
                rules('<input type="hidden" name="t" value="1">') == [])
+    # Rails 8's Action Text tag helper and its kept alias (#1456 review): both render a raw editor field.
+    check_that("rich_textarea_tag is a raw field helper", "field-tag-helper" in rules('<%= rich_textarea_tag :body %>'))
+    check_that("rich_text_area_tag (the alias) is a raw field helper",
+               "field-tag-helper" in rules('<%= rich_text_area_tag :body %>'))
     check_that("CONTROL: hidden_field_tag carries state and is allowed",
                rules('<%= hidden_field_tag :sort, @sort %>') == [])
     check_that("CONTROL: button_to is a single-action button, not a form in markup",
