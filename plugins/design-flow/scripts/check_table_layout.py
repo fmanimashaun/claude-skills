@@ -7,12 +7,13 @@ Run:  python3 check_table_layout.py                 # app/views + app/components
 
 WHY THIS EXISTS. The shipped design-system skill told agents to wrap a table in `overflow-x-auto`,
 pin its identifier columns, link the id to a show page, and dump every column into a phone card. An
-app built exactly that and the owner rejected it. Measured there: 25 tables forced a fixed
-`min_width` of 36rem-60rem, so they scrolled sideways on tablets and laptops that had room to fit
-them. The doctrine is now `design-system` `components.md` -> Table (CRUD); this checks the three
-parts of it that are visible in source.
+app built exactly that and the owner rejected it. Measured on that app's checkout at `80ac5d1a`:
+22 table call sites forced a fixed `min_width` of 36rem-60rem, so they scrolled sideways on tablets
+and laptops that had room to fit them (its `dev` has since removed them). The doctrine is now
+`design-system` `components.md` -> Table (CRUD) and -> Pagination; this checks the parts of them
+that are visible in source.
 
-FOUR RULES, each a construct and never a word:
+FIVE RULES, each a construct and never a word:
 
   table-scroll-wrapper   a `<table>` inside an element whose class scrolls on the x axis
                          (`overflow-x-auto|scroll`, or `overflow-auto|scroll`, which include x).
@@ -36,6 +37,11 @@ FOUR RULES, each a construct and never a word:
                          purpose, and the app behind #1391 does. A strip is one row of at most four
                          that never wraps or scrolls, and a picker below 768px (the maintainer's
                          scope addition on #1391). A scrolling `<pre>` elsewhere is not a strip.
+
+  pager-order            a pager (a file named for pagination, or an `aria-label="Pagination"`
+                         nav) whose "Showing X–Y of Z" comes BEFORE its rows-per-page control. The
+                         bar is rows-per-page then the summary bottom-left, links right (#1419). A
+                         pager with no rows-per-page control is not judged here.
 
 A SCROLLER IS WHAT THE APP DEFINES, not only Tailwind's names. The first run against the app behind
 #1391 reported its tables clean: it wraps them in `scroll-x`, its own `@utility` whose body is
@@ -74,6 +80,12 @@ from source_text import strip_comments
 GATE = "table-layout"
 
 TABLIST = re.compile(r"""\brole\s*=\s*["']tablist["']""")
+# A pager is found by file name (Pagy's own partial is `_pagy_nav`) or by its nav's label, written as an
+# attribute or through a helper (`tag.nav aria: { label: "Pagination" }`) -- #1451 review.
+PAGER_FILE = re.compile(r"(?:^|[_.-])(?:pagination|pager|pagy)(?=[_.-]|$)")
+PAGER_NAV = re.compile(r"""aria-label\s*=\s*["']Pagination["']|aria:\s*\{[^}]*\blabel:\s*["']Pagination["']""")
+PER_PAGE = re.compile(r"<select\b|\bselect_tag\b|\.select\s*[(:]|\.input\s+:(?:limit|per_page|per|items)\b")
+PAGER_SUMMARY = re.compile(r"\bShowing\b|\bpagy_info\b|<%=\s*summary\s*%>|\bt\(\s*[\"'][\w.]*(?:showing|summary)[\"']")
 # `tab`/`tabs` as a WORD in the file name. A substring test called `table_component` a tab strip on
 # the first real run.
 TAB_FILE = re.compile(r"(?:^|[_.-])tabs?(?=[_.-]|$)")
@@ -180,6 +192,16 @@ def cell_min_widths(source: str) -> list[tuple[int, str]]:
     return out
 
 
+def pager_out_of_order(source: str, pager_file: bool) -> int | None:
+    """The line of a summary that precedes the rows-per-page control, in a pager; else None."""
+    if not (pager_file or PAGER_NAV.search(source)):
+        return None
+    per, summary = PER_PAGE.search(source), PAGER_SUMMARY.search(source)
+    if per and summary and summary.start() < per.start():
+        return _line(source, summary.start())
+    return None
+
+
 def fixed_min_width(attrs: str) -> str | None:
     cls = CLASS_VALUE.search(attrs)
     if cls and (m := MIN_WIDTH_CLASS.search(cls.group(2))):
@@ -218,6 +240,11 @@ def check_file(rel: str, raw: str, directory_has_target: bool,
         findings.append(
             f"{rel}:{line}: table-min-width — `{width}` on a cell or column forces the table wider "
             f"than its container. Let it fit; a column that does not fit belongs in the Details card.")
+    if (line := pager_out_of_order(source, bool(PAGER_FILE.search(Path(rel).name)))) is not None:
+        findings.append(
+            f"{rel}:{line}: pager-order — the summary comes before the rows-per-page control. The pager "
+            f"bar is rows-per-page, then \"Showing X–Y of Z\", bottom-left, with the page links on the "
+            f"right (design-system components.md → Pagination).")
     for m in RENDER_TAG.finditer(source):
         if not TABLE_CALL_MIN_WIDTH.search(m.group(1)):
             continue
@@ -283,6 +310,26 @@ def _selftest() -> int:
            app_scrollers("@utility scroll-x {\n  overflow-x: auto;\n  background: none;\n}\n"
                          "@utility reel { display: flex; overflow-x: auto; }\n"
                          "@utility card { padding: 1rem; overflow: hidden; }") == {"scroll-x", "reel"})
+
+    # pager-order, and its controls.
+    expect("a pager with the summary before rows-per-page is caught",
+           rules('<nav aria-label="Pagination"><p>Showing 1–20 of 63</p><select name="limit"></select></nav>') == ["pager-order"])
+    expect("a pager with rows-per-page before the summary is silent",
+           rules('<nav aria-label="Pagination"><select name="limit"></select><p>Showing 1–20 of 63</p></nav>') == [])
+    expect("a pager with no rows-per-page control is not judged",
+           rules('<nav aria-label="Pagination"><span><%= summary %></span></nav>') == [])
+    expect("a pagination FILE with a helper select after the summary is caught",
+           rules('<span><%= summary %></span>\n<%= select_tag :limit, options %>',
+                 name="app/components/ui/pagination_component.html.erb") == ["pager-order"])
+    expect("a tag.nav helper's Pagination label marks a pager",
+           rules('<%= tag.nav aria: { label: "Pagination" } do %><p>Showing</p><select name="limit"></select><% end %>')
+           == ["pager-order"])
+    expect("an i18n summary before rows-per-page is caught",
+           rules('<nav aria-label="Pagination"><%= t(".showing", from: 1) %><select name="limit"></select></nav>') == ["pager-order"])
+    expect("Pagy's _pagy_nav partial is a pager file",
+           rules('<%= t("pagy.showing") %>\n<%= select_tag :limit, opts %>', name="app/views/shared/_pagy_nav.html.erb") == ["pager-order"])
+    expect("a non-pager file with Showing before a select is silent",
+           rules('<p>Showing results</p><select name="sort"></select>') == [])
 
     # tablist-scroll, and its controls.
     expect("a scrolling tablist is caught",

@@ -13167,6 +13167,30 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 *Version number assigned at promotion.*
 
+- **A pager with its summary first, and a modal that can outgrow or touch the viewport, are refused — `plugins/design-flow/scripts/check_modal_fit.py`,
+  `plugins/design-flow/scripts/check_table_layout.py`, `plugins/design-flow/scripts/mutations/check_modal_fit.py`,
+  `plugins/design-flow/scripts/mutations/check_table_layout.py`, `plugins/design-flow/checks.json`, `scripts/maintainer_doctor.py`**
+  (#1419). `check_table_layout.py` gains `pager-order`: a pager whose summary precedes its rows-per-page control
+  (a pager with no such control is not judged). New `check_modal_fit.py`, judged per dialog component with its sibling
+  `.rb`: `modal-exceeds-viewport` (no width bounded by the viewport — `inset-viewport`, or a `calc(100% - gap)`
+  width as a class or inline style, with no fixed width that can outgrow it — or no height bounded by it —
+  `max-h-full` inside the inset, or a `calc(100svh - gap)` max height as a class, inline style, or `@utility` read
+  from the app's own CSS; a gap must be non-zero) and `modal-touches-edge`, judged **per placement**: the edges a
+  `fixed` class string touches come from its own tokens, and a drawer or sheet may touch **only the edge it slides in
+  from** — the [maintainer decision on #1419](https://github.com/fmanimashaun/claude-skills/issues/1419#issuecomment-5886265345) —
+  declared for that placement alone with ONE marker, in the comment on its line or the whole-line comment directly
+  above it (`# modal-fit: edge-pinned right -- why`); two markers, or one comment over two placements, declare nothing,
+  and neither a string nor an HTML comment ever declares. Variant-prefixed (`md:right-0`), logical (`start-0`/`end-0`)
+  and string-split edges count; an inline `max-height` outranks the classes, and a fixed `min-w-*` always overflows. **Measured on an export of the app's `dev` (Retask `a172f8dc`): 3 findings**, one per
+  placement in its modal component — left and right drawers touching top and bottom too, and the bottom sheet
+  touching left and right — each at its own `.rb` line. An earlier run on a stale checkout (`80ac5d1a`, 308
+  commits behind) had reported the centred modal and a `<dialog>` that in fact fit; both shapes are now fixtures.
+  Mutations: 23/23 and 26/26 caught, including one that removes comment stripping in each check. The shared
+  `plugins/design-flow/scripts/source_text.py` now blanks HTML comments as the HTML spec parses them (CodeQL
+  `py/bad-tag-filter`): a comment ends at `-->` **or** `--!>`, `<!-->`/`<!--->` are complete, and one never closed
+  runs to the end of input — so a browser-closed comment can no longer carry a live declaration, and markup after it
+  is no longer swallowed up to a later `-->`. Every check that uses it stays green (source_text 8/8).
+
 - **A table that scrolls sideways, forces a width, or opens no details card is refused — `plugins/design-flow/scripts/check_table_layout.py`,
   `plugins/design-flow/scripts/mutations/check_table_layout.py`, `plugins/design-flow/checks.json`,
   `plugins/design-flow/commands/mobile.md`, `plugins/design-flow/README.md`, `scripts/maintainer_doctor.py`** (#1391).
@@ -13176,10 +13200,12 @@ boot/validation path — with a bullet each so the promotion could close them se
   declares `table-without-details: <why>`; mailer views are not judged. The fourth refuses a tab strip that scrolls:
   `role="tablist"`, or a scroller in a file named for tabs, since apps build strips as link lists. **A scroller is
   what the app defines**: Tailwind's overflow classes plus any `@utility` in the app's own CSS whose body scrolls on
-  x. Driven against the app behind the issue: 221 files, 25 findings — 23 `table-min-width` (every one of its 22
-  `min_width:` call sites plus the interpolated style inside its table component), 1 `table-scroll-wrapper` (that
-  component's own `scroll-x` wrapper, which every table there goes through) and 1 `tablist-scroll` (its settings
-  strip). Real runs caught four defects in the check itself — a single-line render match that found 3 of the 22,
+  x. Driven against the app behind the issue at Retask `80ac5d1a`: 221 files, 25 findings — 23 `table-min-width`
+  (every one of its 22 `min_width:` call sites plus the interpolated style inside its table component), 1
+  `table-scroll-wrapper` (that component's own `scroll-x` wrapper, which every table there goes through) and 1
+  `tablist-scroll` (its settings strip). **That checkout was 308 commits behind the app's `dev`**; on an export of
+  `dev` itself (`42775b67`, 244 files) the check finds 2 — the table component's scroller and the settings strip —
+  because the fixed widths have since been removed there. The 25 described the old tree, not the app as it is. Real runs caught four defects in the check itself — a single-line render match that found 3 of the 22,
   two mailer layouts reported as missing a details card, the app's own `scroll-x` read as no scroller at all, and a
   substring match that called `table_component` a tab strip — and each now has a fixture. Independent review then
   found a fifth — a "New" button opening the modal satisfied `table-no-details` while every row still linked to a
@@ -16111,6 +16137,25 @@ boot/validation path — with a bullet each so the promotion could close them se
     The shell block in §7 is byte-identical to the one it ran.
 
 *Version number assigned at promotion.*
+
+- **The pager sits bottom-left, no modal outgrows the viewport, a table in a modal is a full table, and a bulk import
+  asks before it updates — `skills/design-system/references/components.md`, `skills/design-system/references/page-anatomies.md`,
+  `skills/design-system/references/crud-modal-pattern.md`, `skills/design-system/references/component-implementations.md`,
+  `dist/design-system.skill`** (#1419). *Pagination*: rows per page then "Showing X–Y of Z" bottom-left, links right, the
+  left group never wrapping and the links wrapping below it; the bar always renders because it carries the count, so
+  the Data table anatomy's count moves into it and rows per page leaves the toolbar. *Modal / Dialog*: never larger
+  than the viewport minus the inset in either direction, header and action foot pinned, the body scrolling vertically
+  only (`overflow-x-hidden` explicit — doctrine-verifier CONFIRMED against CSS Overflow 3 §overflow properties:
+  `visible` paired with a non-visible axis computes to `auto`; `hidden` offers no user scrolling while script still
+  can, and *"overflow: clip forbids scrolling entirely, through any mechanism"*; `min-w-0`/`min-h-0` against CSS
+  Flexbox 1 §4.5, the automatic minimum size). **Edge-anchored panels** (maintainer decision on #1419): a drawer or
+  sheet may touch only the edge it slides in from, declared per placement with one marker; a centred card keeps the
+  margin on every side. *Table (CRUD)*: a table inside a modal keeps its total, pager, empty state and
+  phone cards. A new **Bulk import preview** anatomy: one modal journey, rows judged refused / new / changed /
+  identical / unchangeable, per-row Update/Skip **defaulting to Skip**, "Update all N"/"Skip all N" across pages,
+  identical rows as a count, the outcome stated in the confirm foot, the file judged again at confirm (a record
+  changed since the preview is a conflict, never overwritten), an audit entry per update, and the identity key never
+  updatable. Our own design, no upstream: maintainer decision recorded on #1419.
 
 - **Tables are master-detail with no horizontal scroll, and no card touches the viewport — `skills/design-system/references/components.md`,
   `skills/design-system/references/page-anatomies.md`, `skills/design-system/references/mobile-reference-implementation.md`,
