@@ -6820,6 +6820,23 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## pipeline (lifecycle orchestrator)
 
+### Unreleased
+
+- **`breaker.py`'s Anthropic citation is verified and linked, and it separates what is ours from the guide — `plugins/pipeline/scripts/breaker.py`** (#1417).
+  The `elapsed Xs / Ys` line cited *Prompting Claude Opus 5.5*, "Time signals for multiagent harnesses", and no check
+  against the source was recorded. `doctrine-verifier` CONFIRMED it against the live page on 2026-09-29
+  ([anchor `#time-signals-for-multi-agent-harnesses`](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5#time-signals-for-multi-agent-harnesses)):
+  the harness adds "the elapsed time against that budget, in seconds"; "The model paces its work to finish inside the
+  budget"; "The budget is advisory ... keep your own timeout".
+  - **The docstring now quotes the page and links it,** and marks three things as ours, not the guide's:
+    - the pre-#1364 behaviour;
+    - appending the line to each proceeding `check` where the guide says every message;
+    - one `budget_minutes` serving as both the advisory budget and the hard stop, where the guide advises an advisory
+      budget "somewhat above".
+  - **A correction to the published #1364 note** (v1.152.0), which cannot be edited: it said "the guide names that as
+    the risk" of paying for time with verification. The page says only that under time pressure the model "might search
+    and verify a little less". Never paying for time with verification is our own directive.
+
 ### 1.4.0 (release v1.152.0) — 2026-09-28
 
 - **A proceeding `breaker.py check` ends with `elapsed Xs / Ys` — `plugins/pipeline/scripts/breaker.py`,
