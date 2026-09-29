@@ -43,7 +43,7 @@ second `setup` laid over the first's managed block — two packs' roles in one b
 - `/design-flow:mobile [ios|android|both]` — scaffold **Hotwire Native parity** (Phase 2):
   native-app detection + `body.mobile-app`, JSON path configuration, bridge components
   (button/menu/tab-bar, progressive-enhancement), safe-area + `min-h-touch` wiring, and
-  table→card-stack. Reuses the web components; the native Kotlin/Swift shells stay in their own
+  table→summary cards. Reuses the web components; the native Kotlin/Swift shells stay in their own
   repos.
 - `/design-flow:tokens [android|ios|both]` — **native token export** (Phase 3): generate
   Android (`colors.xml` + `Theme.Fidara`) and iOS (SwiftUI `Color`) tokens from the `@theme`

@@ -393,6 +393,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("rails-flow PR-template sections", ("python3", "plugins/rails-flow/hooks/scripts/lib/pr_template.py", "--selftest")),
     ("rails-flow technical spec", ("python3", "plugins/rails-flow/scripts/check_spec.py", "--selftest")),
     ("rails-flow simple-form-only gate", ("python3", "plugins/rails-flow/scripts/check_simple_form_only.py", "--selftest")),
+    ("shipped ERB passes simple-form-only", ("python3", "scripts/check_shipped_erb_forms.py")),
+    ("shipped ERB forms selftest", ("python3", "scripts/check_shipped_erb_forms.py", "--selftest")),
     ("rails-flow mock-up gate", ("python3", "plugins/rails-flow/scripts/check_mockup_gate.py", "--selftest")),
     ("rails-flow issue mock-up declaration", ("python3", "plugins/rails-flow/scripts/check_issue_mockup.py", "--selftest")),
     ("rails-flow spec-review citations", ("python3", "plugins/rails-flow/scripts/check_spec_review.py", "--selftest")),
@@ -420,6 +422,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("design-flow setup cross-check selftest", ("python3", "plugins/design-flow/scripts/setup_doctrine_crosscheck.py", "--selftest")),
     ("design-flow rendered conformance", ("python3", "plugins/design-flow/scripts/rendered_conformance.py", "--selftest")),
     ("rails-flow findings records", ("python3", "plugins/rails-flow/scripts/findings.py", "--selftest")),
+    # #1391. Tables are master-detail with no horizontal scroll: a scroller around a table, a fixed
+    # min-width, and a table with no details target. Driven against a real app on its first run.
+    ("design-flow table layout", ("python3", "plugins/design-flow/scripts/check_table_layout.py", "--selftest")),
     ("design-flow LLM-tell detector", ("python3", "plugins/design-flow/scripts/llm_tell_detector.py", "--selftest")),
     # #157 criterion 6, and NOT redundant with the selftest above: the selftest proves each rule
     # fires and stays silent on synthetic fixtures, while this runs the whole rule set against the
@@ -446,6 +451,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("skill routing", ("python3", "scripts/check_skill_routing.py")),
     ("skill routing selftest", ("python3", "scripts/check_skill_routing.py", "--selftest")),
     ("evals gates", ("python3", "evals/selftest.py")),
+    # #1386 review. The triager searches the tag that carried the reporter's rails-stack version;
+    # a wrong mapping turns a rule the agent never had into a false lapse.
+    ("skill version tag selftest", ("python3", "scripts/skill_version_tag.py", "--selftest")),
     # #1384. The arm comparison is what turns a paid run into a claim; a comparison that called a
     # CI touching 0 a win would publish noise as evidence, so its selftest is a gate too.
     ("evals compare", ("python3", "evals/compare.py", "--selftest")),

@@ -28,6 +28,20 @@
       ]
     },
     {
+      "id": "table-layout",
+      "why": "Every table is master-detail and none scrolls sideways (#1391). The skill once said to wrap a table in overflow-x-auto, pin its identifier columns and link the id to a show page; an app built exactly that and the owner rejected it. Measured there: 22 table call sites passed a fixed min_width, plus one inside the table component itself, so tables scrolled sideways on tablets and laptops that had room for them. This refuses a table inside a horizontal scroller, a table given a fixed minimum width, a table whose directory has no row opening a record into the modal frame, and a tab strip that scrolls (role=tablist, or a scroller in a file named for tabs). A scroller is Tailwind's overflow classes OR any @utility the app's own CSS defines with overflow-x auto/scroll -- the app above wrapped every table in its own `scroll-x`, and a check that knew only Tailwind's names called it clean. A table that is not a record index declares itself with `table-without-details: <why>`; mailer views are not judged, because email is laid out with tables.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_table_layout.py"
+      ],
+      "applies_when": [
+        "app/views"
+      ],
+      "requires": [
+        "python3"
+      ]
+    },
+    {
       "id": "layout-composition",
       "why": "The doctrine is a priority order -- fluid, then intrinsic, then breakpoints as an exception that must justify itself -- and until now it was prose that nothing checked. Measured on a consumer app that declares 20-odd primitives of its own: grid-auto used 21 times, so the idea took, and 31 elements still hand-roll `flex` + an alignment + a gap, which is what cluster IS. Three more change the layout axis at a breakpoint where switcher, Sidebar and grid-auto adapt with no query. Sizing breakpoints are not flagged because the doctrine prescribes them, and a genuine structural swap is exempt when it is DECLARED.",
       "command": [

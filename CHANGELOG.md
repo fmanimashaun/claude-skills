@@ -7,11 +7,26 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-09-28 (release v1.152.0)
+
+- **The `check_slices` mutation guard stages the files its imports now need — `plugins/rails-flow/scripts/mutations/check_slices.py`**.
+  `check_issue_mockup.py` began importing its approval rule from `check_mockup_gate.py`, which reads diffs through
+  `classify_door.py` (in PR #1424). The guard did not stage either file, so its unmutated selftest failed in the tempdir and
+  all 12 mutations read as caught while testing nothing (INERT). CI could not see it, because the mutation gate times
+  out there (open as issue #1444, not fixed in this release). The full local run at 49ea846 found it: 1 of 1,492 mutations, in about 84 minutes. Now 12 of 12
+  are genuinely caught.
+
+- **Our own shipped ERB must pass the simple-form-only gate we ship — `scripts/check_shipped_erb_forms.py`,
+  `scripts/mutations/check_shipped_erb_forms.py`, `scripts/maintainer_doctor.py`** (#1383). The pre-release review
+  found 9 of our ERB blocks failing the gate: the gate had been measured on one downstream app and never on the text
+  agents copy from us. The check runs the gate's own `scan()` over every ```erb block under `skills/` and `plugins/`.
+  A block is excused only by an explicit `simple-form-only: primitive` marker. 5 selftest cases; the guard catches 4
+  mutations. Doctor gates "shipped ERB passes simple-form-only" and its selftest.
 
 - **Triage checks a skill-gap report against what the skill already says — `.claude/agents/issue-triager.md`,
-  `.claude/commands/maintainer-work.md`, `.claude/commands/maintainer-setup-intake.md`, `.github/labels.yml`,
-  `.github/ISSUE_TEMPLATE/skill-gap.yml`** (#1386). The duplicate check compared an issue only with other issues, so
+  `.claude/commands/maintainer-work.md`, `.claude/commands/maintainer-triage.md`,
+  `.claude/commands/maintainer-setup-intake.md`, `.github/labels.yml`, `.github/ISSUE_TEMPLATE/skill-gap.yml`,
+  `scripts/skill_version_tag.py`, `scripts/mutations/skill_version_tag.py`, `scripts/maintainer_doctor.py`** (#1386). The duplicate check compared an issue only with other issues, so
   a report that an agent ignored a rule the skill already states was queued as `type:skill-gap` and sent to
   `skill-doctor`, which adds a second copy of the prose. The triager now searches the named skill first: no hit is a
   gap, and a covering hit is a **lapse** (new status label). It is relabelled `type:feature`, and `/maintainer-work`
@@ -19,24 +34,43 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   gains an optional "does the skill already say this?" field. After SkillOpt's skill-defect / execution-lapse
   split. How often lapses happen is unmeasured, and the issue says so. This is triage prose, advisory: nothing
   mechanical checks that the search ran. Our own design, decided on the issue; no framework claim.
+  Two independent reviews before promotion corrected it. The search ran over `dev`, and then over the tag of the
+  MARKETPLACE version the report pinned, which is the machine's clone: v1.148.0 carries rails-stack 1.68.0 while
+  fidara-ledger runs 1.63.0, so a rule added since would read as a lapse. It now maps the project's rails-stack
+  version to the first release that carried it, with new `scripts/skill_version_tag.py` (1.63.0 → v1.138.0; a
+  selftest of 11 checks driven through `main()`, a guard catching 5 of 5 mutations including lexical tag
+  order and a tag printed to stderr, and a doctor gate). It also
+  searches only after the tag and path both resolve, since a typo'd skill also returns no hit. "Fixed since" gets
+  `needs-info`. The relabel is one `--remove-label`/`--add-label` command, so an issue never carries two `type:*`
+  labels. The web template now asks for the rails-stack version, and the queue table marks a lapse.
 
 - **The benchmark compares arms instead of printing rates side by side — `evals/compare.py`,
   `scripts/mutations/evals_compare.py`, `scripts/maintainer_doctor.py`, `evals/README.md`** (#1384). `run.py`
   printed a pass rate per (case, arm), and nothing said how uncertain a difference was. `compare.py` pairs arms by
-  case, bootstraps a CI over cases (the independent unit, not runs), names a winner only when the CI excludes 0,
-  prints the CI half-width as the resolution, lists every case that got worse even under an aggregate win, and
-  refuses to pool files whose model, marketplace version or tools differ. Needed before any paid run: simulated,
-  the default 6 cases × 3 runs detects a +20-point lift about 36% of the time, so a null from it is unreadable.
-  `--selftest` 26 checks, driven through `main()`; new doctor gate `evals compare`; guard catches 8 of 8
-  mutations. The README's "nothing here is wired into CI" was false (`evals gates` has run in every sweep) and
-  "5 cases" was 6; both corrected. Our own design, decided on the issue; no framework claim.
+  case, and every statistic is over per-case deltas (the independent unit, not runs). It names a winner only when
+  an **exact sign-flip test** gives p ≤ 0.05, and reports fewer than 6 cases that MOVED as *underpowered*, since a
+  tied case flips to itself and 2/2ᵏ cannot reach 0.05 below six. It lists every case that got worse even under an aggregate win, and refuses to pool files
+  whose model, marketplace version, tools or `claude` version differ. The bootstrap CI is printed as description
+  only. The first version decided from that CI. An independent review before promotion showed it called two
+  same-sign cases a win and gave 12% false wins under the null at 6 cases × 3 runs; the exact test replaced it
+  (under 1% measured). A second review found the floor counted tied cases, so a run that could never win read
+  "not detectable" instead of "underpowered"; fixed. Measured through the tool (300 simulations, about ±3 points),
+  the suite today detects a +30-point lift about 10% of the time, and 20 cases × 3 runs reach about 88%, so a null
+  from it is unreadable and the suite must grow first. `--selftest` 55 checks, pinned to hand-computed p values,
+  both tails of a pinned CI, a case where the CI excludes 0 but p does not, and the Monte Carlo branch, and driven
+  through `main()`; new doctor gate `evals compare`; guard catches 19 of 19 mutations, including counting runs as
+  samples. The README's "nothing here is wired into
+  CI" was false (`evals gates` has run in every sweep) and "5 cases" was 6; both corrected. Our own design,
+  decided on the issue; no framework claim.
 
 - **A case cannot certify the doctrine edit it motivated — `evals/compare.py`, `evals/README.md`** (#1385).
-  `--motivated-by CASE` removes the cases an edit was written for from its evidence; if no other case moved, the
-  verdict is UNVERIFIED rather than a win (after SkillOpt-Sleep's `reject_unverified`). A typo'd case id is
-  refused, since it would exclude nothing and certify anyway. Enforced only when `compare.py` is run with the
-  flag: no PR has ever claimed a benchmark effect, so nothing parses one yet. Our own design, decided on the
-  issue; no framework claim.
+  `--motivated-by CASE` removes the cases an edit was written for from its evidence. If the result is a win only
+  when they are counted, the verdict is UNVERIFIED rather than a win (after SkillOpt-Sleep's `reject_unverified`).
+  A significant loss on the independent cases stays a loss. A typo'd case id is refused, since it would exclude
+  nothing and certify anyway. With today's 6-case suite any
+  exclusion leaves too few cases to win at all. Enforced only when `compare.py` is run with the flag: no PR has
+  ever claimed a benchmark effect, so nothing parses one yet. Our own design, decided on the issue; no framework
+  claim.
 
 - **`unhonoured-config-toggle` no longer reads a GitHub issue form as our config — `scripts/lint_self_consistency.py`,
   `scripts/mutations/lint_self_consistency.py`** (#1376). The rule treats every boolean in a setup command's YAML
@@ -44,7 +78,8 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   `validations: required: true`, which GitHub reads, so the rule fired on the first real one. A block that
   declares form fields (`- type: textarea|input|dropdown|checkboxes|markdown`) is now skipped as a whole. Its control
   fixture keeps a dead toggle in an ordinary block of the same file flagged, and a new mutation that exempts
-  every block is caught by that control (136 of 136).
+  every block is caught by that control (137 of 137 with the unterminated-block mutation). The pre-release review found that an **unterminated** yaml block (no
+  closing fence) was never judged. It is now read, with a fixture and a mutation.
 
 - **Two benchmark cases passed when the agent wrote nothing — `evals/gates.py`, `evals/selftest.py`,
   `evals/suite.json`, `scripts/mutations/evals_gates.py`** (#1374). `03-role-tokens` was gated only by
@@ -3489,42 +3524,33 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
-- **`/rails-flow:slice` breaks a spec, brief or issue into dependency-ordered vertical slices and files them —
-  `plugins/rails-flow/commands/slice.md`, `plugins/rails-flow/scripts/check_slices.py`,
-  `plugins/rails-flow/scripts/mutations/check_slices.py`, `plugins/rails-flow/commands/spec.md`,
-  `plugins/rails-flow/commands/brief.md`, `README.md`, `scripts/maintainer_doctor.py`** (#1369). Nothing produced the
-  slices that `/rails-flow:brief` and `/rails-flow:spec` pointed at. The command drafts
-  `docs/product/slices/<slug>.md`, and each slice has criteria in `check_criteria.py`'s shape, a Mock-up declaration
-  (#1376) and `depends-on:` edges. `check_slices.py` refuses a cycle, a dangling edge, a slice with no criteria, a
-  loose edge line and any criterion `check_criteria.py` refuses. After approval, slices are filed blockers-first:
-  `--issue-body` rewrites edges to `depends-on: #n`, the syntax `check_issue_ready.py --queue` already reads, and
-  `--blocked-by` / `--parent` (or the REST endpoints on an older `gh`) set GitHub's native links. doctrine-verifier
-  CONFIRMED the sub-issue and blocked-by endpoints and the `gh issue create` flags (verdict on #1369); the design is
-  the maintainer decision recorded there. 25 selftest checks; 11 mutations caught.
-
-- **`claude-skills-reporter` searches the installed skill before reporting a gap —
-  `plugins/rails-flow/agents/claude-skills-reporter.md`** (#1386). An agent that ignored a rule looks exactly like one
-  that never had it, and the two need opposite fixes upstream. If the skill already covers the case, the report is
-  filed as a `lapse` (`type:feature`) quoting the `file:line`, so the fix is enforcement, not more prose. The search
-  goes in the report either way.
-
-- **A PR body must carry the repo's own PR-template sections — `plugins/rails-flow/hooks/scripts/guard-claims.sh`,
-  `plugins/rails-flow/hooks/scripts/lib/pr_template.py`, `plugins/rails-flow/scripts/check_hook_gates.py`,
-  `scripts/mutations/hook_guard_claims.py`, `scripts/mutations/hook_pr_template.py`, `.github/pull_request_template.md`**
-  (#1389). **Owner decision recorded on the issue.**
-  - **Why.** A downstream pr-reviewer BLOCKED 5 of 5 PRs in one day because the body lacked the template's sections,
-    and 3 more had merged without them. The rule was prose, followed 0 times in 5.
-  - **The hook.** `guard-claims.sh` (fail-closed, scoped to `gh pr create|edit` with a body) now refuses a body missing
-    a `##` section of the repo's template and names each one. The headings are read from the template, never
-    hardcoded. An `## If …` section is conditional by its own wording. A heading matches on its core text (before an
-    em dash, a colon or a parenthesis). Headings in template comments or fences do not count. The template is found
-    case-insensitively in `.github/`, the root or `docs/`. It is dormant without a template, and issue comments are
-    exempt.
-  - **Our own template changes with it.** It said "Delete any section that genuinely does not apply", which the hook
-    would contradict; it now says keep it and write N/A. Measured before the change: this session's own PR bodies
-    lacked 7 of its 11 sections.
-  - 11 helper selftest cases and 5 end-to-end hook fixtures. Mutations: 7 of 7 on the helper, 2 new on the hook.
-    Doctor gate "rails-flow PR-template sections".
+- **`guard-bash` checks an issue's labels against the repository it is filed in, not the session's —
+  `plugins/rails-flow/hooks/scripts/lib/issue_labels.py`, `scripts/mutations/hook_issue_labels.py`,
+  `plugins/rails-flow/scripts/check_hook_gates.py`** (#1400).
+  - **The bug.** `cd /path/to/other-repo && gh issue create ...` from one checkout was held to the session's
+    `.rails-flow/issue-labels.json`. It refused a correctly labelled issue and asked for labels the other repo does
+    not have.
+  - **The fix.** A create written exactly `cd <literal path> && gh issue create …` is judged by that directory's
+    git toplevel when the issue certainly lands there:
+    - the create names no repo (`-R`, `--repo`, `GH_REPO`), and `GH_REPO` is not set in the environment;
+    - both the session and the target have remotes, and the two sets share none. gh may file into any
+      remote (`upstream` first), and repos are compared as `owner/name` from any URL spelling: userinfo, an
+      ssh port, an ssh alias, an enterprise host.
+  - **Every other command keeps the session's rules**, exactly as before. Five independent reviews of broader
+    versions each found a shape where another repo's rules were applied to an issue that did not land there: a
+    subshell `cd`, `cd -`, `||`, compound bodies, a `case` `)`, `time`, `export GIT_DIR=`, `env -C`, a clone, an
+    `upstream` remote, a session repo named by a URL the old normaliser missed. The session's rules are the check
+    the same create gets with no `cd`, so the fallback cannot
+    let anything through, and it refuses nothing that dev allows.
+  - **Also fixed.**
+    - Repo names are compared normalised (URL, `github.com/`, `.git`, case), and a glued `-Rowner/name` is read.
+    - A quoted `<<X` is not a heredoc, and `<<<` is a herestring. A backslash-newline joins lines.
+    - An unclosed heredoc refuses only when it would hide a `gh issue create`.
+    - Still not covered: a create inside `sh -c`/`eval`, behind `/usr/bin/gh`, or in backticks, which is
+      pre-existing. That is #1423.
+  - **Known limit.** A `GH_REPO` set only through `CLAUDE_ENV_FILE` is invisible to the hook; it is recorded on #1400.
+  - **Tests.** 88 selftest checks run, 67 of them new, and 3 end-to-end hook fixtures. Mutations: 22 new, 31 of
+    31 caught.
 
 - **`/rails-flow:setup-flow` installs the tenancy cop, and `tenancy-cop` asks RuboCop and the app whether it holds — `plugins/rails-flow/scripts/check_tenancy_cop.py`,
   `plugins/rails-flow/scaffold/tenancy/scoped_lookup.rb`, `plugins/rails-flow/checks.json`,
@@ -3579,6 +3605,88 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     for the cross-plugin reason `mandated_gems.json` has. The doctor gate `tenancy cop derived` compares both sides at
     `HEAD`, and there is a `rebuild_generated.py` entry. `scripts/mutations/derive_tenancy_cop.py` catches 2/2.
 
+### 1.55.0 (release v1.152.0) — 2026-09-28
+
+- **`/rails-flow:slice` breaks a spec, brief or issue into dependency-ordered vertical slices and files them —
+  `plugins/rails-flow/commands/slice.md`, `plugins/rails-flow/scripts/check_slices.py`,
+  `plugins/rails-flow/scripts/mutations/check_slices.py`, `plugins/rails-flow/commands/spec.md`,
+  `plugins/rails-flow/commands/brief.md`, `README.md`, `scripts/maintainer_doctor.py`** (#1369). Nothing produced the
+  slices that `/rails-flow:brief` and `/rails-flow:spec` pointed at. The command drafts
+  `docs/product/slices/<slug>.md`, and each slice has criteria in `check_criteria.py`'s shape, a Mock-up declaration
+  (#1376) and `depends-on:` edges. `check_slices.py` refuses a cycle, a dangling edge, a slice with no criteria, a
+  loose edge line and any criterion `check_criteria.py` refuses. After approval, slices are filed blockers-first:
+  `--issue-body` rewrites edges to `depends-on: #n`, the syntax `check_issue_ready.py --queue` already reads, and
+  `--blocked-by` / `--parent` (or the REST endpoints on an older `gh`) set GitHub's native links. doctrine-verifier
+  CONFIRMED the sub-issue and blocked-by endpoints and the `gh issue create` flags (verdict on #1369); the design is
+  the maintainer decision recorded there. 25 selftest checks; 11 mutations caught.
+  - **Fixed before release** (the independent pre-release review found 1 blocker). `slice.md` said a slice's criteria
+    become its acceptance file when `/rails-flow:feature` picks it up, and nothing in `feature.md` did that: Phase 1
+    turned every story in the spec into criteria, which would build other slices' work on one branch. `feature.md`
+    Phase 1 now takes a slice issue's `AC-n` lines verbatim as the branch's criteria, with the spec supplying only
+    the seam, Out of scope and decisions. The suggestions are fixed too: a `depends-on:` inside a plain fence is no
+    longer an edge (matching `check_issue_ready.py`); `--blocked-by` is passed for existing-issue edges as well;
+    `check_spec.py` resolves `--decisions` against `--root` and its two weak fixtures now match the finding text;
+    and a literal `\n` in `feature.md` is gone. 28 selftest checks, 12 mutations on check_slices, 11 on check_spec.
+
+- **`claude-skills-reporter` searches the installed skill before reporting a gap —
+  `plugins/rails-flow/agents/claude-skills-reporter.md`** (#1386). An agent that ignored a rule looks exactly like one
+  that never had it, and the two need opposite fixes upstream. If the skill already covers the case, the report is
+  filed as a `lapse` (`type:feature`) quoting the `file:line`, so the fix is enforcement, not more prose. The search
+  goes in the report body either way. It searches the tree THIS project loaded (`toolchain_version.py
+  --installed-path rails-stack`), not the marketplace clone. An independent review found the first draft searched the
+  clone: on this machine that is rails-stack 1.68.0, while fidara-ledger runs 1.63.0, so a rule added since would have
+  been filed as a false lapse. No hit on an install behind the published version is a stale install, not a gap.
+  The version pin now includes the rails-stack version THIS project runs, which is what the triager searches. Every
+  report also carries a `## Mock-up` section ("No visible change: <reason>" unless a downstream app's screen
+  changes), which `check_issue_mockup.py` requires.
+
+- **`toolchain_version.py` resolves installs per project, not machine-wide — `plugins/rails-flow/scripts/toolchain_version.py`,
+  `plugins/rails-flow/scripts/toolchain_version_selftest.py`, `plugins/rails-flow/scripts/mutations/toolchain_version.py`,
+  `plugins/rails-flow/commands/toolchain-check.md`** (#1407). It picked the newest install record across every
+  project, so a project on an older version was reported as current. Measured: `--project` fidara-ledger printed
+  rails-flow 1.51.0 and rails-stack 1.68.0 (Retask-platform's versions); it runs 1.46.0 and 1.63.0. A record with a
+  `projectPath` now applies only to that project, and one without applies everywhere. New `--installed-path PLUGIN`
+  prints the tree this project loads, and exits 2 when there is none. A subdirectory of the project, a trailing slash
+  and a symlinked path are the same project; a same-prefix sibling is not. Selftest 29 → 44, including the regression
+  through `main()` (a project behind the machine's newest install exits 1, not 0). Guard 2 → 8 mutations, all caught.
+  The same machine-wide pick in design-flow's `doctrine_path.py` is #1421, next release.
+
+- **A PR body must carry the repo's own PR-template sections — `plugins/rails-flow/hooks/scripts/guard-claims.sh`,
+  `plugins/rails-flow/hooks/scripts/lib/pr_template.py`, `plugins/rails-flow/scripts/check_hook_gates.py`,
+  `scripts/mutations/hook_guard_claims.py`, `scripts/mutations/hook_pr_template.py`, `.github/pull_request_template.md`**
+  (#1389). **Owner decision recorded on the issue.**
+  - **Why.** A downstream pr-reviewer BLOCKED 5 of 5 PRs in one day because the body lacked the template's sections,
+    and 3 more had merged without them. The rule was prose, followed 0 times in 5.
+  - **The hook.** `guard-claims.sh` (fail-closed, scoped to `gh pr create|edit` with a body) now refuses a body missing
+    a `##` section of the repo's template and names each one. The headings are read from the template, never
+    hardcoded. An `## If …` section is conditional by its own wording. A heading matches on its core text (before an
+    em dash, a colon or a parenthesis). Headings in template comments or fences do not count. The template is found
+    case-insensitively in `.github/`, the root or `docs/`. It is dormant without a template, and issue comments are
+    exempt.
+  - **Our own template changes with it.** It said "Delete any section that genuinely does not apply", which the hook
+    would contradict; it now says keep it and write N/A. Measured before the change: this session's own PR bodies
+    lacked 7 of its 11 sections.
+  - At first merge: 11 helper selftest cases and 5 end-to-end hook fixtures. Doctor gate "rails-flow PR-template
+    sections". Final counts are in the next sub-bullet.
+  - **Defects the independent pre-release reviews found, fixed before release.**
+    1. A helper crash (a body with stray bytes, a directory) or a missing helper passed silently through a
+       fail-closed hook. The helper now reads bodies with `errors="replace"` and turns any failure to judge into
+       exit 3 (exit 1 means only "these sections are missing"), and the hook says "NOT checked" for anything but 0
+       or 1.
+    2. Only `## If …` counted as conditional, so a downstream template's `(if applicable)` / `(optional)` sections
+       were demanded. Conditional is now judged on the full heading.
+    3. `gh pr create -R other/repo` (or `-Rother/repo`) was judged against this checkout's template. It is now
+       reported as not checked. Only the `gh pr` segment's own flags count, so an unrelated `grep -R` in the chain
+       does not switch the check off.
+    4. Conditional is judged on the heading and its core text, so `**If** …`, `🔧 If …`, `(optional, for UI)` and
+       `Optionally …` count too.
+
+    5. `GH_REPO` (on the command or inherited) and a `|` or `-R` inside a quoted `--title` are handled, and a
+       helper that dies at import (exit 1 with nothing listed) says NOT checked, proven by a fixture that runs a
+       copy of the hook with a broken helper.
+
+    Final: the harness runs 146 checks; guards 11 of 11 on the helper and 8 of 8 on the hook.
+
 - **Every per-PR review pass saves its findings, apart from a full review's — `plugins/rails-flow/agents/code-reviewer.md`,
   `plugins/rails-flow/agents/pr-reviewer.md`, `plugins/rails-flow/agents/spec-reviewer.md`,
   `plugins/rails-flow/commands/feature.md`, `plugins/rails-flow/commands/issues.md`** (#1360). **Owner decision
@@ -3592,6 +3700,15 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     `/rails-flow:issues` and `/rails-flow:fix` file and fix from, so a finding already fixed on its branch would have
     been filed again. All three per-PR reviewers now use `prs/`, and `/rails-flow:issues` Phase 0 says never to file
     from it.
+  - **One file per pass, replaced each round** (the independent pre-release review found two blockers in the first
+    version). With all three passes appending to one file, `check_spec_review.py` took "the file exists" as proof
+    the spec pass ran, so code-reviewer's records alone passed a CLEAN spec gate. And the file only grew, so a
+    finding fixed in round one blocked round two, and the only ways past were deleting history or reusing ids,
+    which `findings.py validate` refuses. Each pass now writes
+    `docs/evidence/reviews/prs/<branch-slug>/<pass>-findings.jsonl`, replaced each round and committed with the
+    fix, so `git log -p` holds every round. `<branch-slug>` is defined for any branch (`/` becomes `-`).
+    `check_spec_review.py` refuses a file holding records but none from `spec-reviewer` (exit 2), and an empty file
+    is a clean run; a selftest case and a mutation (10 of 10) cover both.
 
 - **`/rails-flow:spec` turns an idea into a technical spec before anything is built — `plugins/rails-flow/commands/spec.md`,
   `plugins/rails-flow/scripts/check_spec.py`, `plugins/rails-flow/scripts/mutations/check_spec.py`,
@@ -3631,7 +3748,24 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   - **Merge.** `pr-reviewer` BLOCKS a change a user can see unless the PR links the mock-up record, the reviewer has
     opened the approval link, and screenshots at every recorded width match the mock-up's layout, controls,
     required-field markers and navigation. A deviation needs a reason and the owner's re-approval.
-  - 11 selftest cases: 5 declared forms accepted and 6 undecided ones refused. The guard catches 8 mutations. Doctor gate
+  - 11 selftest cases: 5 declared forms accepted and 6 undecided ones refused. The guard catches 8 mutations.
+  - **Fixed before release** (the independent pre-release review found 4 blockers):
+    1. The UI-scope rule missed what Rails 8 generates outside `app/views`: `public/*.html` error pages, the icon,
+       `app/assets/images/`, and the PWA manifest. They now count.
+    2. Triage accepted any link. The owner's rule is "attached **and approved**", so `check_issue_mockup.py
+       --ready` now requires the link to the approving comment. Our `feature.yml` / `plugin-bug.yml` carry the
+       Mock-up field, as the owner named `/maintainer-setup-intake`; `/rails-flow:report`'s body carries it through
+       PR #1411 (claude-skills-dd).
+    3. Any word ending in `.md` read as a mock-up ("TBD, see notes.md"). A link is now an https URL with a host,
+       a record under `docs/product/mockups/`, or a mock-up file.
+    4. `pr-reviewer` ran the gate on the checkout's diff, so a reviewer on `dev` saw "no user-visible change" for
+       every PR. It now runs the gate at the PR head, in a throwaway worktree, so the files, the record and the
+       opt-out it judges are all the PR's.
+
+    The review's suggestions are fixed here too: a bare `https://` or any repo file is no longer a mock-up; a
+    record must name its issue; a README in the records folder is not a record; a fenced example of
+    `mockup-gate: off` does not turn the gate off; and feature.md no longer records "on the branch" before Phase 2
+    creates it. New selftest cases with controls. Guards: 17 of 17 on the gate, 10 of 10 on the issue check. Doctor gate
     "rails-flow issue mock-up declaration".
 
 - **The simple_form mandate is a project gate, `simple-form-only`, not an agent's grep — `plugins/rails-flow/scripts/check_simple_form_only.py`,
@@ -3649,10 +3783,29 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     hidden `<input>` and `button_to`. Deliberate exceptions go in `.rails-flow/raw-form-exemptions.json`, each with a
     reason, and a stale exemption is a finding. Without simple_form in Gemfile.lock it exits 3 (not applicable,
     never a pass).
-  - **Measured on a downstream app.** 181 templates, 80 `simple_form_for`: it found exactly the 2 genuine
-    constructs (a `search_field_tag` in a component, a deliberate `tag.input`) and stayed silent on about 20 comment
-    mentions and every `hidden_field_tag`. 27 selftest cases, every refusal with a control; the guard catches 13
-    mutations.
+  - **Measured on a downstream app** (181 templates, 80 `simple_form_for`). It stayed silent on about 20 comment
+    mentions and every `hidden_field_tag`. It finds 4 genuine constructs:
+    - a `search_field_tag` in a component;
+    - a deliberate `tag.input`;
+    - an `f.collection_radio_buttons` and an `f.collection_check_boxes` on a builder opened by a multi-line
+      `simple_form_for`, which the first version could not see.
+
+    27 selftest cases at first merge, every refusal with a control; the guard caught 13 mutations.
+  - **Upgrading:** projects may now see findings for `f.collection_radio_buttons` / `f.collection_check_boxes` on a
+    multi-line `simple_form_for`. Use `f.input … as: :radio_buttons` / `as: :check_boxes`, or declare an exemption
+    with a reason in `.rails-flow/raw-form-exemptions.json`.
+  - **Fixed before release** (the independent pre-release review ran the gate over our OWN doctrine and found 9
+    shipped ERB blocks it refused). The verified rewrites of the filter panel and radio group ship in the rails-stack
+    block. Here, the gate:
+    - A read-only input with no `name` is a display (a copyable API key), not a field. The tag is read with ERB
+      inside it skipped, so `value="<%= @url %>"` does not hide its `readonly`.
+    - The Checkbox and Combobox primitives carry a `simple-form-only: primitive` marker, and prose giving the
+      exemption row a project declares.
+    - Suggestions fixed: a multi-line `simple_form_for` no longer hides its builder; an exemption's optional `match`
+      narrows it to one control, so it does not exempt later violations in the file; `"exemptions": null` is
+      unusable, not a crash.
+
+    The guard catches 19 mutations.
 
 - **A change a user can see waits for an owner-approved clickable mock-up, whatever the issue's label —
   `plugins/rails-flow/scripts/check_mockup_gate.py`, `plugins/rails-flow/scripts/mutations/check_mockup_gate.py`,
@@ -6647,7 +6800,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## pipeline (lifecycle orchestrator)
 
-### Unreleased
+### 1.4.0 (release v1.152.0) — 2026-09-28
 
 - **A proceeding `breaker.py check` ends with `elapsed Xs / Ys` — `plugins/pipeline/scripts/breaker.py`,
   `plugins/pipeline/scripts/breaker_selftest.py`, `plugins/pipeline/scripts/mutations/breaker.py`,
@@ -10846,7 +10999,25 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 1.34.0 (release v1.152.0) — 2026-09-28
+
+- **`text_resize.py` never reads a partial measurement as a pass, and both judges compare routes as paths —
+  `plugins/qa-flow/scripts/text_resize.py`, `plugins/qa-flow/scripts/layout_fit.py`,
+  `plugins/qa-flow/scripts/crawl_collector.js`, `plugins/qa-flow/scripts/mutations/text_resize.py`,
+  `plugins/qa-flow/scripts/mutations/layout_fit.py`, `plugins/qa-flow/scripts/route_coverage_selftest.py`** (#1367). Found by the v1.152.0 promotion review and its
+  independent review:
+  - **A truncated mode is unverified.** The collector caps each mode's list at 400 rows, and only the as-served
+    list's flag was read. So a cut 200% or spacing list could read clean over a clip past the cap. Truncating one
+    mode leaves the other judged, proven in both directions. A mode with no `truncated` flag is unusable.
+  - **Partly untested text is reported.** A page where some text did not grow at 200% (px sizes) is judged, and a
+    PARTIAL line gives the untested share.
+  - **Arrival is compared by path and query.** A trailing slash is no longer read as "measured somewhere else", and a
+    redirect that drops the query (`/reports?tab=archived` to `/reports`, another view) is no longer read as
+    arrival. The collector now records `landedOn` as path plus query, and `text_resize.py` and `layout_fit.py` share
+    one `same_page`: every requested parameter must survive, and one the app adds is fine. An older collector's
+    pathname-only `landedOn` leaves a query route unverified, the safe direction.
+  - Tests: 13 new `text_resize` checks, 5 new `layout_fit` checks, 1 new `route_coverage` check (a `landedOn` carrying a
+    query still grants its route). Mutations: 6 new on `text_resize` (15 of 15 caught), 3 on `layout_fit` (18 of 18).
 
 - **The crawl checks each page with its text enlarged: WCAG 2.2 SC 1.4.4 and SC 1.4.12 — `plugins/qa-flow/scripts/text_resize.py`,
   `plugins/qa-flow/scripts/crawl_collector.js`, `plugins/qa-flow/scripts/mutations/text_resize.py`,
@@ -12971,6 +13142,32 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
+
+### Unreleased
+
+*Version number assigned at promotion.*
+
+- **A table that scrolls sideways, forces a width, or opens no details card is refused — `plugins/design-flow/scripts/check_table_layout.py`,
+  `plugins/design-flow/scripts/mutations/check_table_layout.py`, `plugins/design-flow/checks.json`,
+  `plugins/design-flow/commands/mobile.md`, `plugins/design-flow/README.md`, `scripts/maintainer_doctor.py`** (#1391).
+  Four rules, each a construct: a `<table>` nested inside an x-scroller, a fixed minimum width (a `min-w-*` class, an inline `min-width` including an interpolated one, or
+  `min_width:` on a table component's render call however it wraps), and a table whose directory has no row opening
+  a record into the modal frame (the directory, because an index's row link lives in its partial). A non-index table
+  declares `table-without-details: <why>`; mailer views are not judged. The fourth refuses a tab strip that scrolls:
+  `role="tablist"`, or a scroller in a file named for tabs, since apps build strips as link lists. **A scroller is
+  what the app defines**: Tailwind's overflow classes plus any `@utility` in the app's own CSS whose body scrolls on
+  x. Driven against the app behind the issue: 221 files, 25 findings — 23 `table-min-width` (every one of its 22
+  `min_width:` call sites plus the interpolated style inside its table component), 1 `table-scroll-wrapper` (that
+  component's own `scroll-x` wrapper, which every table there goes through) and 1 `tablist-scroll` (its settings
+  strip). Real runs caught four defects in the check itself — a single-line render match that found 3 of the 22,
+  two mailer layouts reported as missing a details card, the app's own `scroll-x` read as no scroller at all, and a
+  substring match that called `table_component` a tab strip — and each now has a fixture. Independent review then
+  found a fifth — a "New" button opening the modal satisfied `table-no-details` while every row still linked to a
+  show page — so a modal link that is a CRUD action (`new_*`/`edit_*`, `/new`, `/edit`, a delete method) no longer
+  counts; the same review added a tablist nested in a scroller and `min-w-*` on `th`/`td`/`col`. Re-review found our
+  own doctrine's delete-confirmation link (`crud-modal-pattern.md`, `delete_confirmation_invoice_path` into the
+  modal) still counting as a details target, so `delete_*` helpers and `/delete` joined the CRUD actions, with that
+  exact line as a fixture. Sixteen mutations, all caught. `/design-flow:mobile` step 5 now scaffolds designed summary cards.
 
 ### 1.44.2 (release v1.151.0) — 2026-09-26
 
@@ -15867,6 +16064,41 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+*Version number assigned at promotion.*
+
+- **Tables are master-detail with no horizontal scroll, and no card touches the viewport — `skills/design-system/references/components.md`,
+  `skills/design-system/references/page-anatomies.md`, `skills/design-system/references/mobile-reference-implementation.md`,
+  `skills/design-system/references/component-implementations.md`, `skills/design-system/references/foundations-tokens.md`,
+  `skills/design-system/references/responsive.md`, `skills/design-system/references/mobile.md`,
+  `skills/design-system/references/layout-primitives.md`, `skills/design-system/references/components-commerce.md`,
+  `skills/design-system/SKILL.md`, `skills/rails-8/references/models.md`, `dist/design-system.skill`, `dist/rails-8.skill`**
+  (#1391). The skill told agents to wrap a table in `overflow-x-auto`, pin its identifier columns, link the id to a
+  show page and dump every column into a phone card; an app built exactly that and the owner rejected it. *Table
+  (CRUD)* is now the one home: no horizontal scroll at any width, a six-column budget, rows as summaries of at most
+  five fields whose name opens a new **Details card** (header, at a glance, sectioned fields, related, activity), and
+  designed summary cards below 768px. The Data table anatomy, mobile §5, `responsive.md`, `mobile.md` and `rails-8`
+  `models.md` now link to it rather than restate it. A new **Viewport inset** entry, the `--inset-edge` tokens and an
+  `inset-viewport` utility keep every card, modal, drawer and sheet at least 16px plus the safe area (24px at 768px)
+  from the edge, and `Ui::Modal`'s placements now float inside that inset rather than pinning to an edge. It stops
+  using `imposter`, whose `max-inline-size: 100%` resolves against the viewport (fixed) or the wrapper's padding box
+  (absolute) — doctrine-verifier CONFIRMED against CSS 2.1 §10.1 and CSS Positioned Layout 3 §containing block. *Tabs*
+  (the maintainer's scope addition on #1391) reverses "the tablist scrolls": at most four tabs in one row that
+  never wraps or scrolls, regrouped rather than overflowed, and a single labelled picker below 768px — and
+  `Ui::Tabs`'s implementation drops `overflow-x-auto` (and `cluster`, which wraps) and renders that picker, with
+  its contract with `tabs#select` written out. From independent review: the inset is the floor **plus** the safe
+  area, not the larger of the two; `shell` now carries that gutter; the Modal panel is `max-h-full` with a
+  scrolling body so a short viewport keeps its top inset; and a table row is made clickable by a `row-link`
+  Stimulus controller rather than a stretched overlay on a `<tr>`, which this kit has not verified; it ignores the
+  row's own controls (including `summary` and `[role=button]`) and the end of a text-selection drag. A Carousel's
+  thumbnail picker is out of the Tabs entry's scope (it picks a slide, it does not navigate) but no longer wraps.
+  The **Permissions matrix** is exempt from master-detail — its cells are switches toggled in place — splits into one
+  section per module on a phone, and keeps no horizontal scroll and the inset
+  ([maintainer decision](https://github.com/fmanimashaun/claude-skills/issues/1391#issuecomment-5862494188)). The one
+  external claim proposed for the rewrite, that screen readers do not reliably announce CSS `content:` labels, came
+  back **REFUTED** from doctrine-verifier (accname 1.2 §4.3.2 includes generated content; WCAG F87 is marked
+  obsolete), so it was dropped and only the rule "labels are real elements" remains. Our own design, no upstream:
+  maintainer decision recorded on #1391.
+
 - **A cop for the unscoped tenant query, and what it cannot see — `skills/rails-8/references/multi-tenancy.md`,
   `skills/quality-pass/references/worked-example.md`, `dist/rails-8.skill`, `dist/quality-pass.skill`** (#1361). §7
   said no tool enforced tenant scoping. It now ships `Tenancy/ScopedLookup`, a project-local cop that flags every Active
@@ -15894,6 +16126,31 @@ boot/validation path — with a bullet each so the promotion could close them se
     change the recorded decision not to extract.
   - Where the cop lives is our own design, per the maintainer decision on [#1361](https://github.com/fmanimashaun/claude-skills/issues/1361#issuecomment-5857528252).
 
+### 1.69.0 (release v1.152.0) — 2026-09-28
+
+- **The design-system's own filter panel and billing radio group now use simple_form — `skills/design-system/references/component-implementations.md`,
+  `skills/design-system/references/page-anatomies.md`, `dist/design-system.skill`** (#1383, a framework claim).
+  - **Why.** The independent pre-release review ran the new `simple-form-only` gate over our own ERB. The filter
+    panel (`<form method="get">` with `check_box_tag`), its category anatomy, and the billing radio group
+    (`f.radio_button` / `f.label` inside `simple_form_for`) all failed it. An app copying them exactly would have
+    gone red on a rule we ship.
+  - **The fix.** The filter is `simple_form_for :filter, url:, method: :get, as: ""` with one
+    `f.input …, as: :check_boxes` per facet. `as: ""` drops the `filter[…]` namespace, so facets post as
+    `color[]=red`. The radio group is `f.input :default_method_id, as: :radio_buttons` with a lambda
+    `label_method` returning `safe_join`, which keeps the brand mark, "ending 4242" and the expiry. **Remove**
+    moves outside the form, because `button_to` generates a form of its own and HTML forbids a form inside a form.
+  - **doctrine-verifier CONFIRMED** all four claims, against simple_form **v5.3.1** and actionview **8.1.1**:
+    - `lib/simple_form/action_view_extensions/form_helper.rb:14-25` forwards to `form_for`, whose symbol record
+      becomes the scope (`form_helper.rb:438-441`), and a blank `as:` drops it (`form_helper.rb:1797-1801`,
+      `form_tag_helper.rb:131-142`);
+    - `CollectionCheckBoxesInput` posts an array (`tags/collection_check_boxes.rb:31-33`), with `checked:`,
+      `item_wrapper_tag` and `label_method`/`value_method` (README "label_method … accept lambda/procs");
+    - an html-safe `label_method` renders unescaped (`tags/label.rb:59-68`);
+    - `button_to` "Generates a form" (`url_helper.rb:210-211`), and the WHATWG form content model is "no form
+      element descendants".
+
+    Boundary: simple_form 5.x.
+
 - **The quality-pass worked example's `check(label, ok, detail)` count is refreshed to 40 — `skills/quality-pass/references/worked-example.md`,
   `dist/quality-pass.skill`** (#1367). The new copy is `plugins/qa-flow/scripts/text_resize.py`; reach stays 21. It reuses
   `layout_fit.py`'s `Unusable` rather than declaring a thirteenth.
@@ -15911,6 +16168,57 @@ boot/validation path — with a bullet each so the promotion could close them se
   the proposed "Ruby 3.2+, Rails 7.2+" floor was REFUTED (gemspec: Ruby >= 3.1, Rails >= 7.1, < 9), so the
   doctrine states the tested Rails set instead. The "when to adopt" rule is our design: maintainer decision
   recorded on #1365.
+  - **The separate-database install is corrected before it ships (promotion review).**
+    - **The old commands created nothing.** `rails_pulse:install --database=separate` only *prints* the
+      wiring (rails_pulse 0.4.1 `install_generator.rb:68-99`).
+    - **§7 now gives the wiring:** the `rails_pulse:` `database.yml` entry (`migrations_paths:
+      db/rails_pulse_migrate`, `schema_dump: false`) and `config.connects_to = { database: { writing:
+      :rails_pulse, reading: :rails_pulse } }`.
+    - **It names what the gem's message omits.** An environment is multi-database only when every key under
+      it is a database entry (activerecord `database_configurations.rb`, `config.values.all?(Hash)`), so a
+      flat `development:` / `test:` block must move under `primary:`. Skipped, `db:prepare` either aborts with
+      `AdapterNotSpecified` (with `connects_to`) or writes all ten Pulse tables into the **primary**
+      (without it).
+    - **It adds a check that tells the two apart:** `RailsPulse::ApplicationRecord.connection_db_config.name`
+      must print `"rails_pulse"`. It printed `"primary"` on the misconfigured app.
+    - **The first install runs in a measured order:** `db:prepare` (development and test),
+      `rails_pulse:upgrade`, then `db:migrate:rails_pulse` in both. The upgrade generator copies nothing
+      until the Pulse tables exist, and `rails_pulse:status` stays at 1 until the migrations are copied and run.
+    - **Load the schema only into an EMPTY Pulse database, guarded, for every environment before any
+      `db:prepare`.** On an empty database, `db:prepare` runs the copied migrations before the gem's
+      schema-load hook and aborts ("Could not find table 'rails_pulse_operations'"). That hits every fresh
+      clone, CI run and first deploy. On a populated database, `db:schema:load_rails_pulse` marks *every*
+      copied migration applied without running it, so a pending one is skipped while `status` reads 0. §7's
+      loop counts the gem's ten tables. It loads only when none exist (exit 3), skips when all exist (exit 0),
+      and aborts when some exist or the check fails. The load records every copied migration as applied, so on
+      a database with any Pulse tables it would skip pending migrations. That includes a populated one whose
+      pending upgrade adds a table. §7 gives the repair for the abort: `db:migrate:rails_pulse` for an upgrade
+      in progress, or dropping an empty, partly created Pulse database. The loop covers test in development,
+      because `db:prepare` in development also prepares test.
+    - **The upgrade warnings are quoted and scoped to 0.4.0**, as upstream states them (`CHANGELOG.md:44,46`):
+      restart every process together, not as a rolling deploy; and do not run `db:setup` / `db:prepare` in
+      place of `db:migrate:rails_pulse`. On an entrypoint that runs `db:prepare` at boot, that migration runs
+      as a release step before the new version boots.
+    - **Who verified what:**
+      - doctrine-verifier CONFIRMED the generator and CHANGELOG claims against rails_pulse 0.4.1 (Rails
+        8.0.5.1 app).
+      - An independent reviewer ran §7 literally on fresh Rails 8.1.4 and 8.0.5.1 apps. It BLOCKED three
+        times: the flat-block and `status` claims; the empty-database abort; then the upgrade-before-tables
+        order and the load-on-a-populated-database skip.
+      - The author then ran both shell blocks verbatim on Rails 8.1.4, from nothing, from a fresh clone, and
+        on a populated database with a pending migration and a row. Every block exited 0, the migration was
+        applied, and the row survived. An unguarded-load control reproduced the silent skip. After the
+        reviewer's fourth pass (CLEAN, with advisories), the guard was first hardened to "load unless all ten
+        exist". A narrow re-check BLOCKED that (reproduced): it silently skipped the column migrations of an
+        upgrade that also adds a table. The guard is now none/all/some. The author re-ran it verbatim on Rails
+        8.1.4 in each state:
+        - fresh clone: exit 0;
+        - populated with a pending migration and a row: exit 0, applied, row kept, nothing marked;
+        - upgrade adding a table: exit 4, nothing marked; `db:migrate:rails_pulse` repairs it and the row
+          survives;
+        - partial first load: exit 4; drop and re-run gives exit 0;
+        - a failing check: exit 1, no load.
+      - PostgreSQL and MySQL were not run.
 
 ### 1.68.3 (release v1.151.0) — 2026-09-26
 
