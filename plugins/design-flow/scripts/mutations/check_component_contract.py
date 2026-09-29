@@ -67,13 +67,13 @@ GUARD = Guard(
         ),
         Mutation(
             "a nested body never ends, so the component's own initializer after it vanishes",
-            '            if _code(line).strip() == "end" and len(line) - len(line.lstrip()) == skip_indent:\n                skip_indent = None',
-            '            if _code(line).strip() == "end" and len(line) - len(line.lstrip()) == skip_indent:\n                pass',
+            '            if _code(line).strip() == closer and len(line) - len(line.lstrip()) == skip_indent:\n                skip_indent = None',
+            '            if _code(line).strip() == closer and len(line) - len(line.lstrip()) == skip_indent:\n                pass',
             "a nested class's initializer declared first is not the component's",
         ),
         Mutation(
             'any line starting `class` or `module` opens a nested body, `class:` included',
-            'NESTED = re.compile(r"^([ \\t]*)(?:class[ \\t]+(?:[A-Z]|<<)|module[ \\t]+[A-Z]"\n                    r"|(?:[A-Z]\\w*[ \\t]*=[ \\t]*)?(?:Struct\\.new|Data\\.define|Class\\.new)\\b.*\\bdo\\b)")',
+            'NESTED = re.compile(r"^([ \\t]*)(?:class[ \\t]+(?:[A-Z]|<<)|module[ \\t]+[A-Z]"\n                    r"|(?:[A-Z]\\w*[ \\t]*=[ \\t]*)?(?:Struct\\.new|Data\\.define|Class\\.new)\\b.*(?:\\bdo\\b|\\{)[ \\t]*(?:\\|[^|]*\\|)?[ \\t]*$)")',
             'NESTED = re.compile(r"^([ \\t]*)(?:class|module)\\b")',
             'a `class:` keyword line is not a nested class',
         ),
@@ -92,8 +92,8 @@ GUARD = Guard(
         ),
         Mutation(
             '`end # Section` no longer closes a nested body',
-            '            if _code(line).strip() == "end" and len(line) - len(line.lstrip()) == skip_indent:',
-            '            if line.strip() == "end" and len(line) - len(line.lstrip()) == skip_indent:',
+            '            if _code(line).strip() == closer and len(line) - len(line.lstrip()) == skip_indent:',
+            '            if line.strip() == closer and len(line) - len(line.lstrip()) == skip_indent:',
             'a nested body closed by `end # Section` ends there',
         ),
         Mutation(
@@ -104,9 +104,21 @@ GUARD = Guard(
         ),
         Mutation(
             'a Struct.new / Data.define / Class.new block is not a nested body',
-            '                    r"|(?:[A-Z]\\w*[ \\t]*=[ \\t]*)?(?:Struct\\.new|Data\\.define|Class\\.new)\\b.*\\bdo\\b)")',
+            '                    r"|(?:[A-Z]\\w*[ \\t]*=[ \\t]*)?(?:Struct\\.new|Data\\.define|Class\\.new)\\b.*(?:\\bdo\\b|\\{)[ \\t]*(?:\\|[^|]*\\|)?[ \\t]*$)")',
             '                    r")")',
             'a Struct.new block above the initializer is not the component',
+        ),
+        Mutation(
+            'an opener is judged with its trailing comment again',
+            '        m = NESTED.match(_code(line))',
+            '        m = NESTED.match(line)',
+            "a `do` inside an opener's trailing comment opens nothing",
+        ),
+        Mutation(
+            'a brace block closes only on `end`, so it swallows the component',
+            '            closer = "}" if',
+            '            closer = "end" if False and',
+            'a Struct.new brace block above the initializer is not the component',
         ),
     ),
 )

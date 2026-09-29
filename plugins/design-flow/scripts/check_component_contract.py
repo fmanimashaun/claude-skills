@@ -83,7 +83,7 @@ COMPONENT_CLASS = re.compile(r"^[ \t]*class (\w+Component) < ViewComponent::Base
 # argument) or `class="..."` (ERB), both common in component bodies. Judged on the code before any
 # trailing `#` comment, so `class Error < StandardError; end # why` is a one-liner (#1487 review).
 NESTED = re.compile(r"^([ \t]*)(?:class[ \t]+(?:[A-Z]|<<)|module[ \t]+[A-Z]"
-                    r"|(?:[A-Z]\w*[ \t]*=[ \t]*)?(?:Struct\.new|Data\.define|Class\.new)\b.*\bdo\b)")
+                    r"|(?:[A-Z]\w*[ \t]*=[ \t]*)?(?:Struct\.new|Data\.define|Class\.new)\b.*(?:\bdo\b|\{)[ \t]*(?:\|[^|]*\|)?[ \t]*$)")
 ONE_LINER = re.compile(r"\bend\s*$")
 HEREDOC = re.compile(r"<<[~-]?(['\"]?)([A-Z_][A-Z0-9_]*)\1")
 
@@ -104,7 +104,7 @@ def own_lines(body: list[str]) -> list[str]:
     nested body ends at the `end` at its own indent -- `end # Section` included -- the same rule the
     component body uses. A heredoc's lines are text: a line in one starting `class X` opens nothing.
     """
-    out, skip_indent, heredoc = [], None, None
+    out, skip_indent, closer, heredoc = [], None, "end", None
     for line in body:
         if heredoc is not None:
             if line.strip() == heredoc:
@@ -114,14 +114,16 @@ def own_lines(body: list[str]) -> list[str]:
             continue
         h = HEREDOC.search(_code(line))
         if skip_indent is not None:
-            if _code(line).strip() == "end" and len(line) - len(line.lstrip()) == skip_indent:
+            if _code(line).strip() == closer and len(line) - len(line.lstrip()) == skip_indent:
                 skip_indent = None
             elif h:
                 heredoc = h.group(2)
             continue
-        m = NESTED.match(line)
+        # The OPENER is judged on code too: `Row = Struct.new(:a) # do not reorder` opens nothing.
+        m = NESTED.match(_code(line))
         if m and not ONE_LINER.search(_code(line)):
             skip_indent = len(m.group(1))
+            closer = "}" if _code(line).endswith("{") or re.search(r"\{[ \t]*\|[^|]*\|$", _code(line)) else "end"
             continue
         if h:
             heredoc = h.group(2)
@@ -365,11 +367,23 @@ def _selftest() -> int:
             "module Ui\n  class HeredocClassComponent < ViewComponent::Base\n    TEMPLATE = <<~RUBY\n      class Foo\n    RUBY\n\n    def initialize(**attrs)\n      @attrs = attrs\n    end\n  end\nend\n", encoding="utf-8")
         (root / "app/components/ui/onlynested_component.rb").write_text(
             "module Ui\n  class OnlyNestedComponent < ViewComponent::Base\n    class Section\n      def initialize(**attrs)\n        @attrs = attrs\n      end\n    end\n  end\nend\n", encoding="utf-8")
+        (root / "app/components/ui/structcomment_component.rb").write_text(
+            "module Ui\n  class StructCommentComponent < ViewComponent::Base\n"
+            "    Row = Struct.new(:a) # no block here, so nothing to do\n\n    def initialize(**attrs)\n      @attrs = attrs\n    end\n"
+            "  end\nend\n", encoding="utf-8")
+        (root / "app/components/ui/structbrace_component.rb").write_text(
+            "module Ui\n  class StructBraceComponent < ViewComponent::Base\n"
+            "    Row = Struct.new(:a) {\n      def initialize(a:)\n        super\n      end\n    }\n\n"
+            "    def initialize(**attrs)\n      @attrs = attrs\n    end\n  end\nend\n", encoding="utf-8")
         findings, _, _ = run(root)
         expect('a one-line nested class with a trailing comment opens no body', not any("OneLineCommentComponent" in f for f in findings))
         expect('a nested body closed by `end # Section` ends there', not any("EndCommentComponent" in f for f in findings))
         expect('a Struct.new block above the initializer is not the component', not any("StructDoComponent" in f for f in findings))
         expect('a heredoc line starting `class` opens nothing', not any("HeredocClassComponent" in f for f in findings))
+        expect("a `do` inside an opener's trailing comment opens nothing (#1487 review)",
+               not any("StructCommentComponent" in f for f in findings))
+        expect("a Struct.new brace block above the initializer is not the component",
+               not any("StructBraceComponent" in f for f in findings))
         expect('an initializer only inside a nested class is reported as none', any("OnlyNestedComponent" in f and "defines no initializer" in f for f in findings))
 
         # A tree with no views and no components cannot be judged -- and must not read as clean.

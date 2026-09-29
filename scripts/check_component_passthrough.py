@@ -65,7 +65,7 @@ CLASS = re.compile(r"^(?P<indent>[ \t]*)class (?P<name>\w+) < ViewComponent::Bas
 # argument) or `class="..."` (ERB), both common in component bodies. Judged on the code before any
 # trailing `#` comment, so `class Error < StandardError; end # why` is a one-liner (#1487 review).
 NESTED = re.compile(r"^([ \t]*)(?:class[ \t]+(?:[A-Z]|<<)|module[ \t]+[A-Z]"
-                    r"|(?:[A-Z]\w*[ \t]*=[ \t]*)?(?:Struct\.new|Data\.define|Class\.new)\b.*\bdo\b)")
+                    r"|(?:[A-Z]\w*[ \t]*=[ \t]*)?(?:Struct\.new|Data\.define|Class\.new)\b.*(?:\bdo\b|\{)[ \t]*(?:\|[^|]*\|)?[ \t]*$)")
 ONE_LINER = re.compile(r"\bend\s*$")
 HEREDOC = re.compile(r"<<[~-]?(['\"]?)([A-Z_][A-Z0-9_]*)\1")
 
@@ -86,7 +86,7 @@ def own_lines(body: list[str]) -> list[str]:
     nested body ends at the `end` at its own indent -- `end # Section` included -- the same rule the
     component body uses. A heredoc's lines are text: a line in one starting `class X` opens nothing.
     """
-    out, skip_indent, heredoc = [], None, None
+    out, skip_indent, closer, heredoc = [], None, "end", None
     for line in body:
         if heredoc is not None:
             if line.strip() == heredoc:
@@ -96,14 +96,16 @@ def own_lines(body: list[str]) -> list[str]:
             continue
         h = HEREDOC.search(_code(line))
         if skip_indent is not None:
-            if _code(line).strip() == "end" and len(line) - len(line.lstrip()) == skip_indent:
+            if _code(line).strip() == closer and len(line) - len(line.lstrip()) == skip_indent:
                 skip_indent = None
             elif h:
                 heredoc = h.group(2)
             continue
-        m = NESTED.match(line)
+        # The OPENER is judged on code too: `Row = Struct.new(:a) # do not reorder` opens nothing.
+        m = NESTED.match(_code(line))
         if m and not ONE_LINER.search(_code(line)):
             skip_indent = len(m.group(1))
+            closer = "}" if _code(line).endswith("{") or re.search(r"\{[ \t]*\|[^|]*\|$", _code(line)) else "end"
             continue
         if h:
             heredoc = h.group(2)
