@@ -3531,6 +3531,26 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   every provider moved. Sonnet 5.5 defaults to `medium` effort in Claude Code, where the API default is `high`, and
   its thinking cannot be turned off.
 
+- **`guard-migrate` folds case, names its Bash limit, and says a broken boot comes first — `plugins/rails-flow/hooks/scripts/guard-migrate.sh`,
+  `plugins/rails-flow/scripts/check_hook_gates.py`** (#1416). From the independent review of #1380, whose verdict was CLEAN.
+  - **Case (reproduced on macOS).** A `Write` to `DB/Migrate/x.rb` lands in `db/migrate/` on a case-insensitive
+    filesystem, and the hook exited 0. The directory and the `.rb` extension are now compared lower-cased. The
+    no-python3 fallback folds case with `shopt -s nocasematch` (bash 3.2, macOS's `/bin/bash`, has no `${var,,}`).
+    Run under `/bin/bash` 3.2 with neither python3 nor grep: mixed-case exits 2, and a write elsewhere exits 0.
+  - **The Bash bypass is named as the second known limit** in the hook's header. `cat > db/migrate/x.rb` goes through
+    `Bash`, which a `Write` guard never sees; that scope was the maintainer's decision on #1362.
+  - **The deny message** now says that if the app does not boot, the generator fails too, so the boot is fixed first.
+  - **From the independent review (CLEAN, with suggestions):**
+    - a symlink `db/mig -> migrate` bypassed the guard (reproduced, and older than this change). The parent is now
+      also checked after `realpath`;
+    - the no-python3 fallback now accepts a Windows `\` separator;
+    - the header no longer says it refuses only the "literal" `db/migrate/`.
+  - **Fixtures** cover `DB/Migrate/`, `.RB`, a symlink into `db/migrate/`, the case-folding and backslash fallbacks,
+    the fallback under `/bin/bash` 3.2 itself where that bash exists, and the boot line.
+  - **A filesystem-independent overwrite control:** the file exists at the literal mixed-case path, so it passes on
+    either filesystem. It would catch a future `exists(path.lower())` on case-sensitive CI.
+  - **Numbers:** selftest 157/157. `scripts/mutations/hook_guard_migrate.py` catches 8/8, each by its named fixture.
+
 - **`guard-bash` checks an issue's labels against the repository it is filed in, not the session's —
   `plugins/rails-flow/hooks/scripts/lib/issue_labels.py`, `scripts/mutations/hook_issue_labels.py`,
   `plugins/rails-flow/scripts/check_hook_gates.py`** (#1400).
@@ -16087,6 +16107,32 @@ boot/validation path — with a bullet each so the promotion could close them se
     `claude-sonnet-5-5` (checked at v2.0.0 and `main`, 2026-09-29), and `default_model` must be in the registry or
     it raises. So the default stays `claude-sonnet-5`, with the reason and the trigger to switch written beside it.
   - Boundary: ruby_llm 2.0.0.
+
+- **The Rails Pulse guard loads only a database with no Pulse table at all — `skills/rails-8/references/observability.md`,
+  `dist/rails-8.skill`** (#1429). The final review of #1420 left three NITs, and all three came from the guard counting
+  a list of 0.4.1's ten tables. The pin meant a later version that renamed a table would abort every run. The three
+  states needed one message for two causes. And each repair named no environment.
+  - **Now the check asks one question:** does any `rails_pulse_` table exist? If none does, it loads the schema.
+    Otherwise it skips the load, and `db:prepare` migrates, including an upgrade that adds a table. The load still
+    never runs on a populated database, so the silent skip #1420 closed stays closed. The check does not depend on
+    the table names.
+  - **The failures are loud.**
+    - An interrupted first load either finishes (if it got past `rails_pulse_operations`) or makes `db:prepare` abort
+      with *"Could not find table 'rails_pulse_operations'"*. The repair for the abort is to delete that environment's
+      Pulse database and re-run.
+    - A stray non-gem `rails_pulse_` table aborts the same way.
+    - A failing check stops the loop before any load, and names the environment.
+    The final independent review found no state where the rule is silent and wrong, including interrupted loads
+    truncated at every table.
+  - **Verified:** doctrine-verifier CONFIRMED all seven claims by running the block VERBATIM, on rails_pulse 0.4.1 with
+    Rails 8.1.4 and 8.0.5.1 (no difference between them), in development, test and production:
+    - a fresh clone: exit 0, 10 tables per environment, `status` 0;
+    - populated with a pending migration and a row: applied, kept, nothing Marked;
+    - a pending upgrade that adds a table and a column: both restored by `db:prepare`, nothing Marked;
+    - an interrupted first load: loud abort, repaired by drop and re-run;
+    - a failing check: no load.
+    The verifier also named the `connects_to` boundary §7 now states: without it the check would test the primary.
+    The shell block in §7 is byte-identical to the one it ran.
 
 *Version number assigned at promotion.*
 
