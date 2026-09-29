@@ -10,7 +10,9 @@ GUARD = Guard(
     name="check_hook_gates_harness",
     subject="plugins/rails-flow/scripts/check_hook_gates.py",
     selftest="plugins/rails-flow/scripts/check_hook_gates.py",
-    # Staged exactly as hook_guard_bash stages it: the suite drives every plugin's hooks.
+    # The same staging as hook_guard_bash: the suite drives every plugin's hooks. A literal, because
+    # lint_self_consistency's harness-dependency-undeclared rule reads it statically -- and that rule is
+    # what keeps this copy honest when a hook gains a script (it caught exactly that on #1477).
     needs=("plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362
            'plugins/rails-flow/hooks/scripts', 'plugins/qa-flow/hooks/scripts', 'plugins/qa-flow/scripts',
            # guard-claims.sh runs extract_claims.py; without it the harness's two claim
@@ -18,6 +20,8 @@ GUARD = Guard(
            'plugins/rails-flow/scripts/check_criteria.py',
            'plugins/rails-flow/scripts/check_handoff.py',
            'plugins/qa-flow/scripts/read_certification.py',
+           'plugins/qa-flow/scripts/push_targets.py',  # release-gate.sh runs it (#1410)
+           'plugins/qa-flow/scripts/release_evidence.py',
            'plugins/rails-flow/scripts/self_consistency.py',
            'plugins/rails-flow/scripts/extract_claims.py',
            # ci-verdict-hint.sh runs ci_verdict_hint.py; unstaged, its fixtures fail and every
