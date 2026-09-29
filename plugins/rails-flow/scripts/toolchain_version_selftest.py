@@ -222,6 +222,56 @@ def run() -> int:
                             ("a subdirectory", sub)):
             got, _ = tv.resolve_installed(two, project=path)
             check(f"per-project: {label} is the same project", got.plugins.get("rails-stack"), "1.41.0")
+        # #1427: the slash where it really arrives, in the RECORD. `Path(str(p) + "/")` above
+        # cannot fail -- pathlib already dropped the slash -- so a string comparison of the
+        # recorded projectPath would pass it and fail this.
+        slashed = fake_home(tmp / "g2", marketplace_version="1.73.0", plugins={
+            "rails-stack@claude-skills": [rec("1.41.0", "2026-08-01T00:00:00Z", str(pa) + "/")]})
+        got_sl, _ = tv.resolve_installed(slashed, project=pa)
+        check("per-project: a trailing slash in the recorded projectPath is the same project",
+              got_sl.plugins.get("rails-stack"), "1.41.0")
+        # #1427: a linked worktree lives OUTSIDE the project root; its `.git` file names the main one.
+        wt = tmp / "proj-a-wt"
+        (wt / "app").mkdir(parents=True)
+        (wt / ".git").write_text(f"gitdir: {pa / '.git' / 'worktrees' / 'wt'}\n", encoding="utf-8")
+        got_wt, _ = tv.resolve_installed(two, project=wt / "app")
+        check("per-project: a linked worktree of A is A", got_wt.plugins.get("rails-stack"), "1.41.0")
+        # ...and a record made from INSIDE the worktree names the worktree itself (#1474 review):
+        # mapping the session to the main checkout must not stop that record matching.
+        in_wt = fake_home(tmp / "g3", marketplace_version="1.73.0", plugins={
+            "rails-stack@claude-skills": [rec("1.41.0", "2026-08-01T00:00:00Z", str(wt))]})
+        got_iw, _ = tv.resolve_installed(in_wt, project=wt / "app")
+        check("per-project: a record naming the worktree itself applies in it",
+              got_iw.plugins.get("rails-stack"), "1.41.0")
+        # #1473 review, same rule: a project recorded BELOW its repository root, reached from the
+        # same subdirectory of a worktree, maps to `<main>/app`, not to `<main>`.
+        (pa / ".git").mkdir(exist_ok=True)
+        below = fake_home(tmp / "g4", marketplace_version="1.73.0", plugins={
+            "rails-stack@claude-skills": [rec("1.41.0", "2026-08-01T00:00:00Z", str(pa / "app"))]})
+        got_bl, _ = tv.resolve_installed(below, project=wt / "app")
+        check("per-project: a worktree subdirectory maps to the same subdirectory of the main checkout",
+              got_bl.plugins.get("rails-stack"), "1.41.0")
+        # A bare clone's worktree has no checkout to map to; it stays itself.
+        bare_wt = tmp / "bare-wt"
+        bare_wt.mkdir()
+        (bare_wt / ".git").write_text(f"gitdir: {tmp / 'repo.git' / 'worktrees' / 'b'}\n", encoding="utf-8")
+        check("per-project: a bare clone's worktree is not mapped", tv.main_checkout(bare_wt), bare_wt)
+        # A projectPath that is not a path string is not this project, and nothing raises.
+        try:
+            got_np = tv.applies_to({"projectPath": 7}, pa)
+        except Exception as exc:  # noqa: BLE001 -- the assertion IS that nothing escapes
+            got_np = f"raised {type(exc).__name__}"
+        check("per-project: a non-string projectPath is skipped, not raised", got_np, False)
+        # #1427: case alone differs. `samefile` is replaced by a case-folding stand-in so this runs
+        # on CI's Linux runner too, which does not fold case, rather than only on APFS.
+        real_samefile = tv.os.path.samefile
+        tv.os.path.samefile = lambda a, b: str(a).lower() == str(b).lower()
+        try:
+            got_up, _ = tv.resolve_installed(two, project=tmp / "PROJ-A")
+        finally:
+            tv.os.path.samefile = real_samefile
+        check("per-project: a path differing only in case is the same project",
+              got_up.plugins.get("rails-stack"), "1.41.0")
         # A sibling whose name merely starts with the project's is NOT inside it.
         sibling = tmp / "proj-a-other"
         sibling.mkdir()
