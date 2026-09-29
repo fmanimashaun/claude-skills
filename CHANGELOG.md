@@ -7,6 +7,16 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+*Version number assigned at promotion.*
+
+- **The shipped-ERB check reads indented fences, and a primitive marker excuses only what it names — `scripts/check_shipped_erb_forms.py`,
+  `scripts/mutations/check_shipped_erb_forms.py`** (#1443). A fence may be indented, and closes at a fence of the
+  same indent; five blocks had been skipped (all clean today). The marker is now
+  `<%# simple-form-only: primitive <construct> -- why %>` and excuses only that construct, so a later, unrelated raw
+  field in a primitive's block is a finding, and a marker naming nothing excuses nothing. 7/7 mutations caught.
+
 ### 2026-09-28 (release v1.152.0)
 
 - **The `check_slices` mutation guard stages the files its imports now need — `plugins/rails-flow/scripts/mutations/check_slices.py`**.
@@ -3523,6 +3533,15 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 ## rails-flow (agentic flow plugin)
 
 ### Unreleased
+
+- **`simple-form-only` judges only real attributes, and stops at the tag it is in — `plugins/rails-flow/scripts/check_simple_form_only.py`,
+  `plugins/rails-flow/scripts/mutations/check_simple_form_only.py`** (#1443). A name set through ERB
+  (`tag.attributes(name: "x")`) now counts as named, so a readonly input that posts is refused instead of
+  skipped as a display; `data-name=`, `data-readonly` and `placeholder="readonly"` no longer count as the
+  attribute. The tag match stops at a bare `<`, so an `<input>` is no longer "closed" by the next tag's `>` and
+  excused by its `readonly` — found by the new fixture, one step past the review's report — and an `<input>` with
+  no `>` at all is judged on its own line, not the rest of the file. Run against the app behind #1391 before and
+  after: identical findings. 23/23 mutations caught.
 
 - **`guard-bash` checks an issue's labels against the repository it is filed in, not the session's —
   `plugins/rails-flow/hooks/scripts/lib/issue_labels.py`, `scripts/mutations/hook_issue_labels.py`,
@@ -16065,6 +16084,10 @@ boot/validation path — with a bullet each so the promotion could close them se
 ### Unreleased
 
 *Version number assigned at promotion.*
+
+- **The three primitive markers name their construct — `skills/design-system/references/component-implementations.md`,
+  `dist/design-system.skill`** (#1443). The Checkbox (`check_box_tag`), Combobox (`tag.input`) and Tabs picker
+  (`<select`) blocks now say which raw construct they excuse, matching the stricter `check_shipped_erb_forms.py`.
 
 - **Tables are master-detail with no horizontal scroll, and no card touches the viewport — `skills/design-system/references/components.md`,
   `skills/design-system/references/page-anatomies.md`, `skills/design-system/references/mobile-reference-implementation.md`,

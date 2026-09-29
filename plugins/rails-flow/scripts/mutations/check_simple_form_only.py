@@ -123,9 +123,34 @@ GUARD = Guard(
         ),
         Mutation(
             "the tag is cut at an ERB %>, so a readonly after an ERB value is missed",
-            'WHOLE_TAG = re.compile(r"<input\\b(?:<%.*?%>|[^>])*>", re.I | re.S)',
+            'WHOLE_TAG = re.compile(r"<input\\b(?:<%.*?%>|[^<>])*>", re.I | re.S)',
             'WHOLE_TAG = re.compile(r"<input\\b[^>]*>", re.I | re.S)',
             "CONTROL: an ERB value inside the tag does not hide its readonly",
+        ),
+        # #1443: the tag stops at a bare `<`, and an unclosed tag is judged on its own line.
+        Mutation(
+            "the tag runs on into the NEXT tag again",
+            'WHOLE_TAG = re.compile(r"<input\\b(?:<%.*?%>|[^<>])*>", re.I | re.S)',
+            'WHOLE_TAG = re.compile(r"<input\\b(?:<%.*?%>|[^>])*>", re.I | re.S)',
+            "an <input> is not closed by the NEXT tag's `>`",
+        ),
+        Mutation(
+            "an unclosed tag falls back to the rest of the file again",
+            "                tag = end.group(0) if end else text[m.start(): eol if eol != -1 else len(text)]",
+            "                tag = end.group(0) if end else text[m.start():]",
+            "an <input> with no `>` anywhere is judged on its own line only",
+        ),
+        Mutation(
+            "readonly matches inside other attribute names and values again",
+            'DISPLAY_INPUT = re.compile(r"(?:(?<=\\s)readonly(?=[\\s=/>]|$)|(?<![\\w-])readonly:\\s*true\\b)", re.I)',
+            'DISPLAY_INPUT = re.compile(r"\\breadonly\\b", re.I)',
+            "data-readonly is not readonly",
+        ),
+        Mutation(
+            "a name set through ERB is no longer seen",
+            'NAMED = re.compile(r"(?:(?<=\\s)name\\s*=|(?<![\\w-])name:)", re.I)',
+            'NAMED = re.compile(r"\\bname\\s*=", re.I)',
+            "a name set through ERB makes a readonly input a posting field",
         ),
     ),
 )
