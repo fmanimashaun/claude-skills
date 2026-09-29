@@ -263,6 +263,21 @@
       ]
     },
     {
+      "id": "tenancy-cop",
+      "why": "A multi-tenant app's cop against unscoped lookups (Document.find in a controller) is installed unmodified, loaded, not disabled, not silently auto-correcting, free of mistyped keys RuboCop would swallow, and lists every table that carries the tenant foreign key. Without the table check an empty model list is a cop that cannot fail. Declared by .rails-flow/tenancy.json; single-tenant is n/a.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_tenancy_cop.py"
+      ],
+      "applies_when": [
+        ".rails-flow/tenancy.json"
+      ],
+      "requires": [
+        "python3",
+        "ruby"
+      ]
+    },
+    {
       "id": "claude-md-structure",
       "why": "CLAUDE.md is loaded by every session and accretes incident narrative until an agent skims it; past its recorded ceiling, or with none recorded, the check says which paragraphs to relocate — verbatim, never summarised.",
       "command": [
