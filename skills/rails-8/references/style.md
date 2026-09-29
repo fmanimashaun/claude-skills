@@ -77,6 +77,9 @@ rule of our own:
   `rubocop-rails-omakase`, and with `Style` disabled at the department level it is **off** — so
   RuboCop will not push an author either way. A project that re-enables the `Style` department inherits
   the stock cop and *will* fight this rule; that is the moment to decide, not before.
+- **No cop can enforce it the other way round, either.** `Style/GuardClause` has no `EnforcedStyle` to
+  invert, no stock cop prefers expanded conditionals (rubocop 1.91.0), and the two exceptions above are
+  judgement. So §1 is review-time advice, not a lint rule.
 - **Our own doctrine already contains a compliant guard clause.** `jobs-and-realtime.md` says to make
   jobs idempotent with `return if order.paid?` at the top of `perform` — which is exception #1, not a
   violation. Worth knowing before someone "corrects" it.
@@ -172,8 +175,26 @@ Layout/IndentationConsistency:
 with the comment *"Method definitions after `private` or `protected` isolated calls need one extra level
 of indentation. We break this rule in context, though, e.g. for private-only concerns, so we leave it
 disabled."* So the style matching this section is **pre-declared** in the config we already mandate, and
-the reason it is switched off is precisely the private-only-module case above. A project that wants this
-enforced only has to flip `Enabled: true`.
+switched off because of the private-only-module case above. **It cannot simply be switched on.** Three
+cops together do enforce the main shape, but no configuration of them honours the private-only exception,
+which is why §5 is review-time advice rather than a lint rule. Verified by running each on rubocop 1.91.0
+and rubocop-rails-omakase 1.1.0:
+
+- **Flipping `Enabled: true` enforces consistency, not the indent.** It flags mixed indentation inside a
+  visibility section, and passes a `private` section that is uniformly unindented.
+- **The indent itself needs `Layout/IndentationWidth` too**, which omakase also disables (*"Doesn't
+  behave properly with private-only concerns, so it's disabled"*). With it on, the private-only module
+  above is flagged.
+- **`Layout/EmptyLinesAroundAccessModifier` with `only_before` enforces the newline half of the main
+  shape exactly**: it flags a blank line after `private` in an ordinary class. It also flags the blank
+  line the private-only module requires. Under `around` it flags the main shape.
+- **Together, those three enforce the main shape:** `IndentationWidth`, plus
+  `IndentationConsistency` (`indented_internal_methods`), plus `EmptyLinesAroundAccessModifier`
+  (`only_before`). They pass the class above, and flag an unindented section, a mixed one and a blank line
+  under `private`. Their one false positive is the private-only module, flagged twice. A project that wants
+  §5 enforced can adopt the three and mark each private-only module with a `rubocop:disable` for those two
+  cops, or `Exclude` it by path. The exempted modules are then unchecked, so their own shape is back to
+  review. That is a project's choice, not this doctrine's default.
 
 ## 6. CRUD controllers — a new resource, not a custom action (ALREADY OURS, now cited)
 

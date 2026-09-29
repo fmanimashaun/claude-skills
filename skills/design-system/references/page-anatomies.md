@@ -1007,9 +1007,11 @@ A filtered, sorted list. Answers *"which of these?"*
 
 ```erb
 <div class="grid-auto items-start" style="--min: 14rem">
-  <form method="get" class="stack" aria-label="Filter products">
-    <%# filters are a FORM with a submit — see below. Checkbox groups in a fieldset+legend %>
-  </form>
+  <%= simple_form_for :filter, url: request.path, method: :get, as: "",
+        html: { class: "stack", "aria-label": "Filter products" } do |f| %>
+    <%# filters are a simple_form GET form with a submit: see the filter panel in %>
+    <%# component-implementations.md. Each facet is an f.input as: :check_boxes in a fieldset+legend. %>
+  <% end %>
 
   <div class="stack">
     <div class="cluster justify-between items-baseline">

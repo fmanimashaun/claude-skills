@@ -319,6 +319,14 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
      ("python3", "scripts/derive_mandated_gems.py", "--check")),
     ("mandated gems derived selftest",
      ("python3", "scripts/derive_mandated_gems.py", "--selftest")),
+    # #1361. The tenancy cop rails-flow installs is DERIVED from rails-8's multi-tenancy.md §7 and
+    # committed beside its checker -- the same cross-plugin reason as the mandated gems above.
+    ("tenancy cop derived",
+     ("python3", "scripts/derive_tenancy_cop.py", "--check")),
+    ("tenancy cop derived selftest",
+     ("python3", "scripts/derive_tenancy_cop.py", "--selftest")),
+    ("rails-flow tenancy cop",
+     ("python3", "plugins/rails-flow/scripts/check_tenancy_cop.py", "--selftest")),
     # #762's neighbour. The curated-doc drift signal is ADVISORY -- it blocks nothing -- and that is
     # exactly why its silent-false-clean survived: nothing ran it. The selftest drives the real hook
     # under a working, absent, broken and shasum-only hasher.
@@ -385,6 +393,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("rails-flow PR-template sections", ("python3", "plugins/rails-flow/hooks/scripts/lib/pr_template.py", "--selftest")),
     ("rails-flow technical spec", ("python3", "plugins/rails-flow/scripts/check_spec.py", "--selftest")),
     ("rails-flow simple-form-only gate", ("python3", "plugins/rails-flow/scripts/check_simple_form_only.py", "--selftest")),
+    ("shipped ERB passes simple-form-only", ("python3", "scripts/check_shipped_erb_forms.py")),
+    ("shipped ERB forms selftest", ("python3", "scripts/check_shipped_erb_forms.py", "--selftest")),
     ("rails-flow mock-up gate", ("python3", "plugins/rails-flow/scripts/check_mockup_gate.py", "--selftest")),
     ("rails-flow issue mock-up declaration", ("python3", "plugins/rails-flow/scripts/check_issue_mockup.py", "--selftest")),
     ("rails-flow spec-review citations", ("python3", "plugins/rails-flow/scripts/check_spec_review.py", "--selftest")),
@@ -443,6 +453,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("skill routing", ("python3", "scripts/check_skill_routing.py")),
     ("skill routing selftest", ("python3", "scripts/check_skill_routing.py", "--selftest")),
     ("evals gates", ("python3", "evals/selftest.py")),
+    # #1386 review. The triager searches the tag that carried the reporter's rails-stack version;
+    # a wrong mapping turns a rule the agent never had into a false lapse.
+    ("skill version tag selftest", ("python3", "scripts/skill_version_tag.py", "--selftest")),
     # #1384. The arm comparison is what turns a paid run into a claim; a comparison that called a
     # CI touching 0 a win would publish noise as evidence, so its selftest is a gate too.
     ("evals compare", ("python3", "evals/compare.py", "--selftest")),

@@ -236,6 +236,30 @@ def read_config(path: Path | None) -> tuple[float, list[str]]:
     return threshold, [str(x) for x in exclude] if isinstance(exclude, list) else []
 
 
+def route_path(p: str) -> str:
+    """The path of a route: no query, no fragment, no trailing slash except on `/`."""
+    p = p.split("#", 1)[0].split("?", 1)[0]
+    return p.rstrip("/") or "/"
+
+
+def same_page(requested: str, landed: str) -> bool:
+    """Did the browser arrive where it was sent? Same path, and every query the route asked for.
+
+    Comparing raw strings read a trailing slash as a redirect on every run. Comparing paths alone
+    read a redirect that DROPS the query (`/reports?tab=archived` -> `/reports`, another view) as
+    arrival. So the path must match and the requested query must survive, parameter order aside. A
+    collector that recorded the pathname only has no query to compare, so a route with one stays
+    unverified there -- the safe direction.
+    """
+    if route_path(requested) != route_path(landed):
+        return False
+    from urllib.parse import parse_qsl
+    ask = sorted(parse_qsl(requested.split("#", 1)[0].partition("?")[2], keep_blank_values=True))
+    got = sorted(parse_qsl(landed.split("#", 1)[0].partition("?")[2], keep_blank_values=True))
+    from collections import Counter
+    return not (Counter(ask) - Counter(got))   # every requested parameter survived; extras are the app's
+
+
 def has_affordance(row: dict) -> bool:
     """Does anything on screen say this element scrolls? Three kinds of evidence, no guessing."""
     gutter = row.get("gutterPx")
@@ -299,7 +323,7 @@ def judge(doc: dict, *, min_hidden: float = DEFAULT_MIN_HIDDEN,
         route = str(entry.get("route", "?"))
         out.routes += 1
         landed = entry.get("landedOn")
-        if isinstance(landed, str) and landed.strip() and landed != route:
+        if isinstance(landed, str) and landed.strip() and not same_page(route, landed):
             # Named in full: "/requests measured at /" is the whole diagnosis, and a bare
             # "unverified" would send someone looking for a defect on the wrong page.
             out.redirected.append(f"{route} measured at {landed}")
@@ -643,6 +667,17 @@ def selftest() -> int:
     check("...and arriving where you asked is silent",
           judge(doc(row(), route="/requests", landed="/requests")).redirected == [],
           "an honest arrival was reported as a redirect")
+    # The collector records a PATHNAME, so a query string or a trailing slash is the same page.
+    check("a route asked for with a query string is not a redirect",
+          judge(doc(row(), route="/requests?page=2", landed="/requests?page=2")).redirected == [])
+    check("...in any parameter order",
+          judge(doc(row(), route="/requests?b=2&a=1", landed="/requests?a=1&b=2")).redirected == [])
+    check("a parameter the app ADDS on arrival is still arrival",
+          judge(doc(row(), route="/requests?a=1", landed="/requests?a=1&utm=x")).redirected == [])
+    check("a redirect that DROPS the query is still a redirect",
+          judge(doc(row(), route="/reports?tab=archived", landed="/reports")).redirected != [])
+    check("a trailing slash is not a redirect",
+          judge(doc(row(), route="/requests/", landed="/requests")).redirected == [])
     # A document from a collector that does not record it must still be judged, not all-unverified.
     no_landing = {"schema": SCHEMA, "viewport": "390x844",
                   "routes": [{"route": "/requests", "elements": [row()]}]}

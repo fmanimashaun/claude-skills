@@ -58,18 +58,41 @@ fi
 # THE REPO'S OWN PR TEMPLATE (#1389). A downstream pr-reviewer BLOCKED 5 of 5 PRs in a day for the
 # same finding -- the body lacked the template's sections -- and 3 had merged without them. The rule
 # was prose, followed 0 times in 5. Its sections are read from the template, never hardcoded; a
-# `## If ...` section is conditional by its own wording; a section that does not apply stays and
-# says N/A. PR bodies only: an issue comment has no template. Dormant with no template.
+# section the template marks conditional ('If ...', 'Optional', '(optional)', '(if ...)') may be left
+# out; a section that does not apply stays and says N/A. PR bodies only: an issue comment has no template. Dormant with no template.
 if printf '%s' "$cmd" | grep -qE '\bgh[[:space:]]+pr[[:space:]]+(create|edit)\b'; then
   tpl_lib="$(dirname "$0")/lib/pr_template.py"
   root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-  if [ -f "$tpl_lib" ] && command -v python3 >/dev/null 2>&1; then
-    gaps="$(python3 "$tpl_lib" "$root" "$body" 2>/dev/null)"
-    if [ -n "$gaps" ]; then
+  # Exit status, not stdout alone: 0 is clean, 1 names the missing sections, and anything else (a
+  # crash, a missing helper or python3) is said out loud. Reading only stdout let a crash pass
+  # silently through a fail-closed hook (pre-release review of #1398).
+  # `-R/--repo` targets another repository, whose template this checkout does not have: say so rather
+  # than judge the body against the wrong template (pre-release review of #1398).
+  # Only the `gh pr create|edit` segment's own flags: an unrelated `grep -R` earlier in the chain, or
+  # an `-R` inside a heredoc body, must not switch the check off (second pre-release review).
+  # Quoted strings are removed first, so `-R` or a `|` inside `--title '…'` is text, not a flag or a
+  # pipe (third pre-release review). GH_REPO, set on the command or inherited, targets another repo too.
+  unquoted="$(printf '%s' "$cmd" | sed -E "s/'[^']*'//g; s/\"[^\"]*\"//g")"
+  pr_seg="$(printf '%s' "$unquoted" | grep -oE 'gh[[:space:]]+pr[[:space:]]+(create|edit)[^;&|]*' | head -1)"
+  if printf '%s' "$pr_seg" | grep -qE '(^|[[:space:]])(-R|--repo)' \
+     || printf '%s' "$unquoted" | grep -qE '(^|[[:space:];&|])GH_REPO=' || [ -n "${GH_REPO:-}" ]; then
+    echo "rails-flow: PR-template sections NOT checked (-R/--repo/GH_REPO targets another repository's template)." >&2
+  elif [ ! -f "$tpl_lib" ] || ! command -v python3 >/dev/null 2>&1; then
+    echo "rails-flow: PR-template sections NOT checked (lib/pr_template.py or python3 unavailable)." >&2
+  else
+    gaps="$(python3 "$tpl_lib" "$root" "$body" 2>/dev/null)"; tpl_rc=$?
+    # pr_template.py exits 1 ONLY with the missing sections listed; any failure to judge is exit 3.
+    if [ "$tpl_rc" -ne 0 ] && [ "$tpl_rc" -ne 1 ]; then
+      echo "rails-flow: PR-template sections NOT checked (pr_template.py exited $tpl_rc); check the body by hand." >&2
+    elif [ "$tpl_rc" -eq 1 ] && [ -z "$gaps" ]; then
+      # Exit 1 with nothing listed is not a verdict: the helper died before main() (an ImportError, a
+      # SyntaxError from a broken edit, a python3 too old for it). Say so; never read it as a pass.
+      echo "rails-flow: PR-template sections NOT checked (pr_template.py exited 1 with no sections listed)." >&2
+    elif [ "$tpl_rc" -eq 1 ]; then
       echo "BLOCKED by rails-flow claim guard: this PR body is missing section(s) the repo's PR template requires:" >&2
       printf '%s\n' "$gaps" | sed 's/^/  ## /' >&2
       echo "" >&2
-      echo "Add each one. A section that does not apply stays, saying N/A and why; only a '## If ...' section may be left out." >&2
+      echo "Add each one. A section that does not apply stays, saying N/A and why; only a section the template marks conditional ('## If ...', '(optional)', '(if ...)') may be left out." >&2
       echo "Deliberately shipping without them: RAILS_FLOW_CLAIMS_OK=1 (audited)." >&2
       exit 2
     fi
