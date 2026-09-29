@@ -286,9 +286,12 @@ def run_mutation(guard: Guard, mutation: Mutation) -> list[str]:
             return [f"{guard.name}: SURVIVED — {mutation.name}. The selftest passed with this "
                     "broken, so nothing guards it."]
         if mutation.expects and mutation.expects.lower() not in output.lower():
+            # The mutant's own last lines, as the INERT report prints: a wrong-fixture catch seen
+            # only on CI was undiagnosable without them, because CI keeps nothing else (#1428).
             return [f"{guard.name}: caught {mutation.name!r} but not by the expected fixture "
-                    f"(no mention of {mutation.expects!r}) — a coincidental catch would hide that "
-                    "fixture going quiet"]
+                    f"(no mention of {mutation.expects!r}, exit {result.returncode}) — a coincidental "
+                    "catch would hide that fixture going quiet\n"
+                    + "\n".join(f"      {line}" for line in output.strip().splitlines()[-12:])]
         return []
     except subprocess.TimeoutExpired:
         return [f"{guard.name}: {mutation.name} timed out"]

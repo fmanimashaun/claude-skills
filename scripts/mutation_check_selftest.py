@@ -190,6 +190,11 @@ def run() -> int:
                 "a catch by the WRONG fixture was accepted — that hides the intended fixture "
                 f"going quiet; got {problems}"
             )
+        # ...and the report carries the mutant's own output, or a catch seen only on CI cannot be
+        # diagnosed (#1428: two CI-only wrong-fixture catches, no output kept).
+        _tick()
+        if not any("not by the expected fixture" in p and "exit " in p and "\n      " in p for p in problems):
+            FAILURES.append(f"a wrong-fixture report does not carry the mutant's exit and output; got {problems}")
     finally:
         mc.REPO = original_repo
 
