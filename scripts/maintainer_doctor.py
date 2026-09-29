@@ -425,6 +425,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #1391. Tables are master-detail with no horizontal scroll: a scroller around a table, a fixed
     # min-width, and a table with no details target. Driven against a real app on its first run.
     ("design-flow table layout", ("python3", "plugins/design-flow/scripts/check_table_layout.py", "--selftest")),
+    # #1419. No modal card larger than the viewport or flush with its edge, judged per component.
+    ("design-flow modal fit", ("python3", "plugins/design-flow/scripts/check_modal_fit.py", "--selftest")),
     ("design-flow LLM-tell detector", ("python3", "plugins/design-flow/scripts/llm_tell_detector.py", "--selftest")),
     # #157 criterion 6, and NOT redundant with the selftest above: the selftest proves each rule
     # fires and stays silent on synthetic fixtures, while this runs the whole rule set against the
