@@ -43,9 +43,11 @@ NEXT_HEADING = re.compile(r"^\s{0,3}#{1,6}\s", re.M)
 # mock-up file. NOT any word ending in `.md` -- "TBD, see notes.md" read as linked (review of #1387).
 # A record path must end in an extension -- any: `docs/product/mockups/TBD` is a placeholder (#1430),
 # but `.gif` and `.avif` are mock-ups (review of PR #1478).
+# A path in backticks or as a markdown link target counts too, and a mock-up file's extension must END
+# its name: `foo.pdf.TBD` names no such file (#1479, after #1478).
 LINK = re.compile(r"https://[^/\s]+\.[^\s]+"
-                  r"|(?:^|\s)docs/product/mockups/(?:[^\s/]+/)*[^\s/]+\.[A-Za-z0-9]+(?=[\s),.;]|$)"
-                  r"|(?:^|\s)[\w./-]+\.(?:html?|png|jpe?g|webp|pdf|svg)\b", re.I)
+                  r"|(?:^|[\s(`\[])docs/product/mockups/(?:[^\s/`\]]+/)*[^\s/`\]]+\.[A-Za-z0-9]+(?=[\s),.;`\]]|$)"
+                  r"|(?:^|[\s(`\[])[\w./-]+\.(?:html?|png|jpe?g|webp|pdf|svg)(?![\w/-]|\.\w)", re.I)
 NO_CHANGE = re.compile(r"\bno visible change\b", re.I)
 
 
@@ -191,6 +193,17 @@ def selftest() -> int:
     # And prose that mentions mock-ups is not the section.
     ok, why = verdict("We should make a mock-up for this someday.\n")
     check_that("prose that mentions a mock-up is not a section", not ok and "no Mock-up section" in why, why)
+
+    # #1479: paths in backticks or as link targets are linked; a mock-up extension must end the name.
+    for label, text in (("a path in backticks", "`docs/product/mockups/bell.gif`"),
+                        ("a markdown link target", "[bell](docs/product/mockups/bell.html)"),
+                        ("a backticked mock-up file", "`design/bell.svg`")):
+        ok, why = verdict(form.format(text))
+        check_that(f"CONTROL: {label} is linked", ok, why)
+    ok, why = verdict(form.format("see foo.pdf.TBD"))
+    check_that("foo.pdf.TBD names no mock-up file", not ok, why)
+    ok, why = verdict(form.format("see foo.pdf."))
+    check_that("CONTROL: a mock-up file ending a sentence is linked", ok, why)
 
     for f in failures:
         print(f"selftest FAIL: {f}")

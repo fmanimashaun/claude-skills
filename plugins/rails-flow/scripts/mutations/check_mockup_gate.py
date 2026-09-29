@@ -111,8 +111,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a fenced example of the opt-out line turns the gate off",
-            '    return bool(OPT_OUT.search(unfenced(g.read_text(encoding="utf-8"))))',
-            '    return bool(OPT_OUT.search(g.read_text(encoding="utf-8")))',
+            '    return bool(OPT_OUT.search(unindented_code(unfenced(g.read_text(encoding="utf-8")))))',
+            '    return bool(OPT_OUT.search(unindented_code(g.read_text(encoding="utf-8"))))',
             "a fenced example of the opt-out line is not a declaration",
         ),
         Mutation(
@@ -125,7 +125,7 @@ GUARD = Guard(
         Mutation(
             # #1430
             'a record may name itself as its mock-up again',
-            '    elif mock and (root / mock).resolve() == path.resolve():',
+            '    elif mock and ((root / mock).resolve() == path.resolve()\n                   or ((root / mock).exists() and (root / mock).samefile(path))):',
             '    elif False:',
             'a record naming itself is held',
         ),
@@ -149,6 +149,25 @@ GUARD = Guard(
             '        m = re.match(r"^\\s*(`{3,})(?=[^`]*$)|^\\s*(~{3,})", line)',
             '        m = re.match(r"^\\s*(`{3,})|^\\s*(~{3,})", line)',
             'a code span at line start does not fence the opt-out',
+        ),
+        # #1479 (after #1478): the remainder #1478 did not cover.
+        Mutation(
+            'a hard link to the record is not the record',
+            '                   or ((root / mock).exists() and (root / mock).samefile(path))):',
+            '                   or False):',
+            'a record naming itself by another name is held',
+        ),
+        Mutation(
+            "an indented code block's opt-out counts again",
+            '    return bool(OPT_OUT.search(unindented_code(unfenced(g.read_text(encoding="utf-8")))))',
+            '    return bool(OPT_OUT.search(unfenced(g.read_text(encoding="utf-8"))))',
+            '#1479: an opt-out in an indented code block is not a declaration',
+        ),
+        Mutation(
+            'a list item no longer licenses a 4-space opt-out',
+            '        elif context_is_list:\n            kept.append(line)',
+            '        elif False:\n            kept.append(line)',
+            '#1479 CONTROL: an opt-out nested four spaces under a list item counts',
         ),
     ),
 )

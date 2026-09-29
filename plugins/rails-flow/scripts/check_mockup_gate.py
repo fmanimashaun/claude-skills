@@ -37,6 +37,7 @@ Stdlib only; git is read like classify_door.py reads it, through the same helper
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import subprocess
 import sys
@@ -78,7 +79,28 @@ def declared_off(root: Path) -> bool:
     # An UNTERMINATED fence runs to the end of the file (#1430) -- stricter than a renderer, which
     # ends one at the close of its list item; list-scoped fences are #1461's shared scanner. The
     # regex this replaces removed only closed fences, so an opt-out after a stray ``` still counted.
-    return bool(OPT_OUT.search(unfenced(g.read_text(encoding="utf-8"))))
+    return bool(OPT_OUT.search(unindented_code(unfenced(g.read_text(encoding="utf-8")))))
+
+
+LIST_ITEM = re.compile(r"^ {0,3}(?:[-*+]|\d+[.)])\s")
+
+
+def unindented_code(text: str) -> str:
+    """`text` without its INDENTED code blocks (#1479): a line indented four or more spaces is an
+    example, not a declaration -- unless it sits in a list, where four spaces is a nested item. It is
+    in a list when the nearest earlier line indented under four spaces is a list item."""
+    kept, context_is_list = [], False
+    for line in text.split("\n"):
+        if not line.strip():
+            kept.append(line)
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        if indent < 4:
+            context_is_list = bool(LIST_ITEM.match(line))
+            kept.append(line)
+        elif context_is_list:
+            kept.append(line)
+    return "\n".join(kept)
 
 
 def unfenced(text: str) -> str:
@@ -115,7 +137,9 @@ def record_problems(root: Path, rel: str) -> list[str]:
     if mock.startswith("https://"):
         if not re.match(r"^https://[^/\s]+\.[^/\s]+", mock):
             out.append(f"{rel}: Mock-up {mock!r} is not a link to anything")
-    elif mock and (root / mock).resolve() == path.resolve():
+    elif mock and ((root / mock).resolve() == path.resolve()
+                   or ((root / mock).exists() and (root / mock).samefile(path))):
+        # `samefile` too: a hard link is the record under another name, and resolve() keeps names (#1479).
         # A record naming itself satisfied "a file under docs/product/mockups/" (#1430).
         out.append(f"{rel}: Mock-up names this record itself; name the mock-up it records")
     elif mock and (root / mock).resolve().suffix.lower() == ".md":
@@ -260,6 +284,14 @@ def selftest() -> int:
         (root / "GUARDRAILS.md").write_text("# Guardrails\n\nExample:\n\n```\n- mockup-gate: off\n")
         code, msg = run(root, view, None)
         check_that("#1430: an opt-out inside an unterminated fence is not a declaration", code == 1, msg)
+        # #1479: an opt-out indented four spaces under a paragraph is an indented code block, an
+        # example; under a list item it is a nested item, and it counts.
+        (root / "GUARDRAILS.md").write_text("# Guardrails\n\nExample:\n\n    - mockup-gate: off\n")
+        code, msg = run(root, view, None)
+        check_that("#1479: an opt-out in an indented code block is not a declaration", code == 1, msg)
+        (root / "GUARDRAILS.md").write_text("# Guardrails\n\n- Gates:\n    - mockup-gate: off\n")
+        code, msg = run(root, view, None)
+        check_that("#1479 CONTROL: an opt-out nested four spaces under a list item counts", code == 0, msg)
         (root / "GUARDRAILS.md").write_text("# Guardrails\n\n```\nexample\n```\n\n- mockup-gate: off\n")
         code, msg = run(root, view, None)
         check_that("#1430 CONTROL: an opt-out AFTER a closed fence still declares", code == 0, msg)
@@ -267,6 +299,16 @@ def selftest() -> int:
         # #1430: a record may not name itself, or another record, as its mock-up.
         code, msg = with_record(GOOD.replace("https://example.com/mockups/bell", "docs/product/mockups/r.md"))
         check_that("#1430: a record naming itself is held", code == 1 and any("itself" in m for m in msg), msg)
+        # #1479: a HARD LINK is the record under another name; resolve() keeps the name, samefile
+        # does not. Named .html so the Markdown-record rule cannot be what holds it. Portable to Linux.
+        (rec / "r.md").write_text(GOOD)
+        alias = rec / "r-alias.html"
+        alias.unlink(missing_ok=True)
+        os.link(rec / "r.md", alias)
+        code, msg = with_record(GOOD.replace("https://example.com/mockups/bell", "docs/product/mockups/r-alias.html"))
+        check_that("#1479: a record naming itself by another name is held",
+                   code == 1 and any("itself" in m for m in msg), msg)
+        alias.unlink()
         code, msg = with_record(GOOD.replace("https://example.com/mockups/bell", "docs/product/mockups/bell.md"))
         check_that("#1430: a record naming another record is held", code == 1 and any("Markdown record" in m for m in msg), msg)
         (root / "docs/product/mockups/bell.svg").write_text("<svg/>")
