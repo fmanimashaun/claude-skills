@@ -46,21 +46,62 @@ GUARD = Guard(
         # #1411 review S2/S3: the path comparison was untested; string equality passed 40/40.
         Mutation(
             "project paths compare as strings, so a symlinked or trailing-slash path misses",
-            "        root, here = Path(owner).resolve(), project.resolve()",
-            "        root, here = Path(owner), project",
+            "        root, sessions = Path(owner).resolve(), {project.resolve(), main_checkout(project).resolve()}",
+            "        root, sessions = Path(owner), {project, main_checkout(project)}",
             "per-project: symlinked path is the same project",
         ),
         Mutation(
             "a subdirectory of the project is treated as another project",
-            "    return here == root or root in here.parents",
-            "    return here == root",
+            "    dirs = tuple(d for here in sessions for d in (here, *here.parents))",
+            "    dirs = tuple(sessions)",
             "per-project: a subdirectory is the same project",
         ),
         Mutation(
             "a same-prefix sibling counts as inside the project",
-            "    return here == root or root in here.parents",
-            "    return str(here).startswith(str(root))",
+            "    if root in dirs:\n        return True",
+            "    if any(str(d).startswith(str(root)) for d in dirs):\n        return True",
             "per-project: a same-prefix sibling is another project",
+        ),
+        # #1427: a linked worktree outside the root is its own "project" again, with no record.
+        Mutation(
+            "a linked worktree is not mapped to its main checkout",
+            "                return gitdir.parent.parent.parent / project.relative_to(d)\n            return project",
+            "                return project\n            return project",
+            "per-project: a linked worktree of A is A",
+        ),
+        # #1474 review: the session path REPLACED by its main checkout, so a record naming the
+        # worktree itself stops matching and drive.md's gate stops with "other projects".
+        Mutation(
+            "only the main checkout is compared, not the session's own path",
+            "{project.resolve(), main_checkout(project).resolve()}",
+            "{main_checkout(project).resolve()}",
+            "per-project: a record naming the worktree itself applies in it",
+        ),
+        # #1473 review B1, same rule: a worktree subdirectory maps to the main ROOT.
+        Mutation(
+            "a worktree subdirectory maps to the main checkout's root",
+            "                return gitdir.parent.parent.parent / project.relative_to(d)",
+            "                return gitdir.parent.parent.parent",
+            "per-project: a worktree subdirectory maps to the same subdirectory",
+        ),
+        Mutation(
+            "a bare clone's worktree is mapped like a checkout's",
+            '            if gitdir.parent.name == "worktrees" and gitdir.parent.parent.name == ".git":',
+            '            if gitdir.parent.name == "worktrees":',
+            "per-project: a bare clone's worktree is not mapped",
+        ),
+        Mutation(
+            "a non-string projectPath raises TypeError",
+            "    except (OSError, TypeError):         # a projectPath that is not a path string",
+            "    except OSError:",
+            "per-project: a non-string projectPath is skipped",
+        ),
+        # The case-only branch dropped. Its fixture stubs `samefile`, so this runs on Linux too.
+        Mutation(
+            "a projectPath differing only in case no longer applies",
+            "        return root.exists() and any(str(d).lower() == str(root).lower() and os.path.samefile(root, d)",
+            "        return False and any(str(d).lower() == str(root).lower() and os.path.samefile(root, d)",
+            "per-project: a path differing only in case is the same project",
         ),
     ),
 )

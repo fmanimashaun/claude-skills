@@ -68,15 +68,29 @@ version to the first release tag that carried it:
 
 ```bash
 skill="skills/<skill>"
-ref="$(python3 scripts/skill_version_tag.py rails-stack "<reported rails-stack version>")"
-if [ -z "$ref" ]; then
+rc=0
+ref="$(python3 scripts/skill_version_tag.py rails-stack "<reported rails-stack version>")" || rc=$?
+if [ "$rc" -eq 2 ]; then
+  echo "skill_version_tag could not read the repo: run this from the claude-skills clone" >&2
+  (exit 2)
+elif [ -z "$ref" ]; then
   echo "no release carries that rails-stack version: search origin/dev and say so" >&2
+  (exit 2)
 elif ! git cat-file -e "$ref:$skill" 2>/dev/null; then
   echo "no $skill at $ref: fix the skill name first" >&2
+  (exit 2)
 else
   git grep -n -i -F -e "<key phrase>" "$ref" -- "$skill/"
 fi
 ```
+
+The block's exit status tells the three outcomes apart: **0** a hit, **1** the search ran and found
+nothing, **2** the search did not run (the version or the skill did not resolve). Only a 1 is a
+no-hit; a 2 is a lookup to fix first. If `skill_version_tag.py` also warns that later tags carry the
+same version with a different skills tree, the skill changed without a version bump and the reporter
+may have had either tree: re-run the block with `ref=<tag>` set by hand, dropping the lookup line, for each tag
+the warning names. The first tag decides nothing alone. A skill missing at the first tag but present
+at a named one is such a case, not a mistyped name.
 
 A mistyped skill or version also returns no hit, which is why the search runs only after both
 resolve: an empty search of a tree that does not exist is not evidence of a gap. A report that
