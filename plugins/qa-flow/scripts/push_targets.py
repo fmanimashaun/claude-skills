@@ -2,8 +2,9 @@
 """Does this shell command `git push` to `main` or `master`? Decided the way git decides it.
 
 Run:  printf '%s' "$cmd" | python3 push_targets.py    # exit 0 = targets main/master (named on
-                                                       #   stdout), 1 = no push targets them,
-                                                       #   3 = could not judge (the caller fails CLOSED)
+                                                       #   stdout), 10 = no push targets them,
+                                                       #   anything else = could not judge, and
+                                                       #   the caller fails CLOSED
       python3 push_targets.py --selftest
 
 WHY THIS EXISTS (#1410). `release-gate.sh` matched `\\b(main|master)\\b` anywhere in a push segment,
@@ -14,87 +15,155 @@ its refusals are noise.
 
 AND THE OTHER DIRECTION, found while fixing it. The regex read the NORMALISED segment, and the
 normaliser strips quoted spans -- so `git push origin "main"` and `git push origin 'HEAD:main'`
-arrived as `git push origin ` and were ALLOWED. This parser reads the RAW command with `shlex`, so a
-quoted argument is an argument, and anything it cannot tokenise is exit 3, which the hook denies.
+arrived as `git push origin ` and were ALLOWED. This parser reads the RAW command with `shlex`.
+
+THE RULE THAT KEEPS IT CLOSED (the #1470 review found five pushes to main the first version allowed:
+`$(echo main)`, `main>/dev/null`, a mid-word `#` read as a comment, `HEAD:heads/main`, `{main,dev}`).
+A parser can only answer "no" about text it actually modelled. So:
+  * anything the shell would EXPAND in a refspec (`$`, a backtick, braces, a glob) is "could not
+    judge", never read literally;
+  * redirections are split off before the refspec is read;
+  * comments and heredoc bodies are removed by a quote-aware scanner that follows bash's rule
+    (`#` starts a comment only at the start of a word), not shlex's;
+  * `git` is found anywhere in a segment, so `sudo -u x`, `timeout 60`, `env A=1` cannot hide a push;
+  * "no" is exit 10, not 1, so an uncaught exception (exit 1) can never read as "no".
 
 What counts as a destination, per `git help push`:
   * a refspec `<src>:<dst>` names `<dst>` (a leading `+` only forces); `:<dst>` deletes `<dst>`;
     `<ref>` alone names `<ref>`; `HEAD` / `@` alone names the current branch; `:` alone is the
     matching branches, which may include main -- treated as targeting it;
+  * `refs/heads/main` and `heads/main` are `main` (git qualifies `heads/main` to `refs/heads/main`);
   * `--all`, `--branches`, `--mirror` push every branch, main included;
   * no refspec (`git push`, `git push origin`) pushes what `@{push}` resolves to -- which honours
     `push.default` and an upstream, so a branch tracking `origin/main` IS caught -- falling back to
-    the current branch's name.
-`refs/heads/main` is `main`. Anything unresolvable is exit 3, never "no".
+    the current branch's name, resolved in the directory the push runs in (`git -C`, a prior `cd`).
 """
 from __future__ import annotations
 
+import os
+import re
 import shlex
 import subprocess
 import sys
 from typing import Callable
 
 PROTECTED = {"main", "master"}
-SEPARATORS = {";", "&", "&&", "|", "||", "(", ")", "\n"}
-PREFIXES = {"sudo", "env", "command", "exec", "time", "nohup"}
-GIT_OPTS_WITH_VALUE = {"-C", "-c", "--git-dir", "--work-tree", "--namespace"}
+SEPARATOR_CHARS = set(";&|()\n")
 PUSH_OPTS_WITH_VALUE = {"-o", "--push-option", "--receive-pack", "--exec", "--repo"}
+GIT_OPTS_WITH_VALUE = {"-C", "-c", "--git-dir", "--work-tree", "--namespace"}
 EVERY_BRANCH = {"--all", "--branches", "--mirror"}
+EXPANDS = set("$`{}*?[")
+HEREDOC = re.compile(r"<<(-?)[ \t]*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\2")
+
+TARGETS, NO, UNJUDGEABLE = 0, 10, 3
 
 
 class Unjudgeable(Exception):
     """The command could not be read well enough to say no. The caller must deny."""
 
 
+def strip_comments_and_heredocs(cmd: str) -> str:
+    """Bash's rules, not shlex's: `#` opens a comment only at the start of a word, outside quotes;
+    a heredoc's body runs from the next newline to its delimiter line."""
+    out: list[str] = []
+    i, n, quote = 0, len(cmd), ""
+    pending: list[tuple[str, bool]] = []          # heredoc delimiters awaiting the next newline
+    while i < n:
+        c = cmd[i]
+        if quote:
+            out.append(c)
+            if c == "\\" and quote == '"' and i + 1 < n:
+                out.append(cmd[i + 1]); i += 2; continue
+            if c == quote:
+                quote = ""
+            i += 1
+            continue
+        if c == "\\" and i + 1 < n:
+            out.append(c + cmd[i + 1]); i += 2; continue
+        if c in "'\"":
+            quote = c; out.append(c); i += 1; continue
+        if c == "#" and (i == 0 or cmd[i - 1] in " \t\n;&|()<>"):
+            while i < n and cmd[i] != "\n":
+                i += 1
+            continue
+        if c == "<" and cmd.startswith("<<", i) and not cmd.startswith("<<<", i):
+            m = HEREDOC.match(cmd, i)
+            if m:
+                pending.append((m.group(3), m.group(1) == "-"))
+                out.append(" "); i = m.end(); continue
+        if c == "\n" and pending:
+            out.append("\n"); i += 1
+            for delim, tabs in pending:
+                while i < n:
+                    end = cmd.find("\n", i)
+                    line = cmd[i:] if end == -1 else cmd[i:end]
+                    i = n if end == -1 else end + 1
+                    if (line.lstrip("\t") if tabs else line) == delim:
+                        break
+            pending = []
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)               # an unterminated quote is left for shlex to refuse
+
+
 def tokens(cmd: str) -> list[str]:
-    lex = shlex.shlex(cmd, posix=True, punctuation_chars=";&|()\n")
+    lex = shlex.shlex(strip_comments_and_heredocs(cmd), posix=True, punctuation_chars=";&|()<>\n")
     lex.whitespace = " \t\r"          # a newline separates commands; it is not mere whitespace
     lex.whitespace_split = True
-    lex.commenters = "#"
+    lex.commenters = ""               # removed above, by bash's rule
     try:
         return list(lex)
-    except ValueError as exc:         # unbalanced quote: nothing after it can be read
+    except ValueError as exc:
         raise Unjudgeable(str(exc)) from exc
 
 
 def segments(toks: list[str]) -> list[list[str]]:
+    """Split on command separators; drop each redirection operator and its target."""
     out: list[list[str]] = [[]]
+    skip = False
     for t in toks:
-        if t in SEPARATORS or set(t) <= set(";&|()\n"):
+        if skip:
+            skip = False
+            continue
+        if set(t) <= SEPARATOR_CHARS:
             out.append([])
+        elif set(t) <= set("<>&") and set(t) & set("<>"):
+            skip = True               # `>`, `>>`, `2>&` ... : the next token is its target
         else:
             out[-1].append(t)
     return [s for s in out if s]
 
 
 def push_args(seg: list[str]) -> tuple[list[str], str | None] | None:
-    """The arguments after `push`, and any `git -C <dir>`; None if this segment is not a git push."""
-    i = 0
-    while i < len(seg) and ("=" in seg[i] and not seg[i].startswith("-") or seg[i] in PREFIXES):
-        i += 1
-    if i >= len(seg) or seg[i] != "git":
-        return None
-    i += 1
-    workdir = None
-    while i < len(seg) and seg[i].startswith("-"):
-        if seg[i] in GIT_OPTS_WITH_VALUE:
-            if seg[i] == "-C" and i + 1 < len(seg):
-                workdir = seg[i + 1]
-            i += 2
-        else:
-            i += 1
-    if i >= len(seg) or seg[i] != "push":
-        return None
-    return seg[i + 1:], workdir
+    """The arguments after `push` and any `git -C <dir>`, wherever `git` appears in the segment
+    (after `sudo -u x`, `timeout 60`, `env A=1` ...); None if the segment is not a git push."""
+    for j, word in enumerate(seg):
+        if word != "git":
+            continue
+        i, workdir = j + 1, None
+        while i < len(seg) and seg[i].startswith("-"):
+            if seg[i] in GIT_OPTS_WITH_VALUE:
+                if seg[i] == "-C" and i + 1 < len(seg):
+                    workdir = seg[i + 1]
+                i += 2
+            else:
+                i += 1
+        if i < len(seg) and seg[i] == "push":
+            return seg[i + 1:], workdir
+    return None
 
 
 def branch_of(dst: str) -> str:
-    return dst[len("refs/heads/"):] if dst.startswith("refs/heads/") else dst
+    for prefix in ("refs/", "heads/"):
+        if dst.startswith(prefix):
+            dst = dst[len(prefix):]
+    return dst
 
 
 def destinations(args: list[str], current: Callable[[bool], str | None]) -> list[str]:
-    """Every branch this push writes, as far as it can be known. `current(push)` resolves the
-    current branch (push=False) or its `@{push}` destination (push=True); None = unknown."""
+    """Every branch this push writes. `current(push)` resolves the current branch (push=False) or
+    its `@{push}` destination (push=True); None = unknown."""
     positional: list[str] = []
     repo_opt = False
     i = 0
@@ -116,6 +185,9 @@ def destinations(args: list[str], current: Callable[[bool], str | None]) -> list
             continue
         positional.append(a)
         i += 1
+    for word in positional:
+        if EXPANDS & set(word) or word.startswith("~"):      # `~user` is tilde expansion
+            raise Unjudgeable(f"{word!r} is expanded by the shell before git sees it")
     refspecs = positional if repo_opt else positional[1:]
     if not refspecs:
         dst = current(True) or current(False)
@@ -137,13 +209,20 @@ def destinations(args: list[str], current: Callable[[bool], str | None]) -> list
     return out
 
 
-def targets(cmd: str, current: Callable[[bool], str | None]) -> list[str]:
+def targets(cmd: str, current: Callable[[bool, str | None], str | None]) -> list[str]:
     hits = []
+    cwd: str | None = None                    # a prior `cd <dir>` moves where a bare push resolves
     for seg in segments(tokens(cmd)):
+        if seg[0] == "cd" and len(seg) == 2:
+            cwd = seg[1] if cwd is None or os.path.isabs(seg[1]) else os.path.join(cwd, seg[1])
+            continue
         parsed = push_args(seg)
         if parsed is None:
             continue
-        for dst in destinations(parsed[0], lambda push, d=parsed[1]: current(push, d)):
+        args, workdir = parsed
+        where = workdir if workdir and (cwd is None or os.path.isabs(workdir)) else (
+            os.path.join(cwd, workdir) if workdir else cwd)
+        for dst in destinations(args, lambda push, d=where: current(push, d)):
             if dst in PROTECTED or dst.startswith(("every branch", "the matching")):
                 hits.append(dst)
     return hits
@@ -164,8 +243,12 @@ def git_current(push: bool, workdir: str | None) -> str | None:
 def selftest() -> int:
     failures: list[str] = []
 
-    def fake(branch: str | None, upstream: str | None = None):
-        return lambda push, _d=None: (upstream if push else branch)
+    def fake(branch: str | None, upstream: str | None = None, by_dir: dict | None = None):
+        def cur(push: bool, d: str | None = None) -> str | None:
+            if by_dir is not None and d in by_dir:
+                return None if push else by_dir[d]
+            return upstream if push else branch
+        return cur
 
     on_feature = fake("fix/1010-one-main")
     cases = [
@@ -179,45 +262,82 @@ def selftest() -> int:
         ("git push origin HEAD", on_feature, False),
         ('git commit -m "push origin main" && git push origin feature/x', on_feature, False),
         ("git push origin --tags", on_feature, False),
+        ("git push origin feature/x > /tmp/log 2>&1", on_feature, False),
+        ("git push origin feature/x # not main", on_feature, False),
+        # (#1470 review) a heredoc body with an apostrophe is not an unbalanced quote
+        ("cat > note.md <<'EOF'\nit's done, push main later\nEOF\ngit push -u origin fix/x", on_feature, False),
+        ("cat <<-EOF\n\tdon't\n\tEOF\ngit push origin fix/x", on_feature, False),
         # the real promotions
         ("git push origin main", on_feature, True),
         ("git push origin HEAD:main", on_feature, True),
         ("git push origin dev:main", on_feature, True),
+        ("git push origin main:main", on_feature, True),
         ("git push origin refs/heads/main", on_feature, True),
+        ("git push origin HEAD:refs/heads/main", on_feature, True),
         ("git push origin dev:refs/heads/master", on_feature, True),
         ("git push origin +main", on_feature, True),
+        ("git push origin +HEAD:main", on_feature, True),
         ("git push origin :main", on_feature, True),
         ("git push origin --delete main", on_feature, True),
         ("git push --all origin", on_feature, True),
         ("git push origin :", on_feature, True),
         ("git push --repo=origin main", on_feature, True),
+        ("git push --repo origin main", on_feature, True),
+        ("git push -- origin main", on_feature, True),
+        ("git push origin main dev", on_feature, True),
+        ("git push --set-upstream origin main", on_feature, True),
+        ("git push --force origin main", on_feature, True),
         ("git -C repo push -o ci.skip origin main", on_feature, True),
         ("FOO=1 sudo git push origin main", on_feature, True),
+        ("sudo -u bob git push origin main", on_feature, True),
+        ("timeout 60 git push origin main", on_feature, True),
         ("git status; git push origin main", on_feature, True),
         ("git status\ngit push origin main", on_feature, True),
         # the bypass the regex had: the normaliser strips quoted spans, the parser must not
         ('git push origin "main"', on_feature, True),
         ("git push origin 'HEAD:main'", on_feature, True),
+        # (#1470 review) the five the first version ALLOWED
+        ("git push origin $(echo main)", on_feature, True),
+        ("git push origin `echo main`", on_feature, True),
+        ("git push origin main>/dev/null", on_feature, True),
+        ("git push origin main>log 2>&1", on_feature, True),
+        ("echo done#1; git push origin main", on_feature, True),
+        ("git push origin HEAD:heads/main", on_feature, True),
+        ("git push origin {main,dev}", on_feature, True),
+        ("git push origin ~main", on_feature, True),
+        ("git push -o main origin feature/x", on_feature, False),
+        ("git push origin $'main'", on_feature, True),
+        ("git push origin 'refs/heads/*:refs/heads/*'", on_feature, True),
         # a bare push FROM main, and from a branch whose @{push} is main (push.default=upstream)
         ("git push", fake("main"), True),
         ("git push origin HEAD", fake("main"), True),
         ("git push", fake("topic", "main"), True),
+        # a bare push resolves where it RUNS: `cd` into a clone that is on main
+        ("cd other && git push", fake("topic", by_dir={"other": "main"}), True),
+        ("cd other\ngit push", fake("topic", by_dir={"other": "main"}), True),
+        ("git -C other push", fake("topic", by_dir={"other": "main"}), True),
     ]
     for cmd, cur, want in cases:
         try:
             got = bool(targets(cmd, cur))
         except Unjudgeable as exc:
-            got = f"unjudgeable: {exc}"
+            got = "unjudgeable" if want else f"unjudgeable: {exc}"
+            if want:          # could-not-judge is denied by the hook: correct for a real promotion
+                continue
         if got is not want:
             failures.append(f"{cmd!r}: expected {'TARGETS main' if want else 'does not target main'}, got {got}")
     # Could not judge -> Unjudgeable, which the hook turns into a denial. Never a quiet "no".
-    for cmd, cur in (('git push origin "main', on_feature), ("git push", fake(None))):
+    for cmd, cur in (('git push origin "main', on_feature), ("git push", fake(None)),
+                     ("git push origin $BRANCH", on_feature), ("git push origin {a,b}", on_feature)):
         try:
             targets(cmd, cur)
             failures.append(f"{cmd!r}: must be unjudgeable (the hook denies), not answered")
         except Unjudgeable:
             pass
-    total = len(cases) + 2
+    # "no" must not share an exit code with a crash: python's uncaught-exception exit is 1.
+    if NO in (0, 1) or UNJUDGEABLE == NO:
+        failures.append(f"exit codes: NO={NO} must differ from 0, 1 (a crash) and UNJUDGEABLE")
+    total = len(cases) + 5
     if failures:
         print(f"push_targets selftest FAILED -- {len(failures)} of {total}:", file=sys.stderr)
         for f in failures:
@@ -234,11 +354,14 @@ def main(argv: list[str]) -> int:
         hits = targets(sys.stdin.read(), git_current)
     except Unjudgeable as exc:
         print(f"could not judge the push destination: {exc}")
-        return 3
+        return UNJUDGEABLE
+    except Exception as exc:          # a crash must deny, never fall through as "no"
+        print(f"push_targets crashed: {exc!r}")
+        return UNJUDGEABLE
     if hits:
         print(", ".join(sorted(set(hits))))
-        return 0
-    return 1
+        return TARGETS
+    return NO
 
 
 if __name__ == "__main__":

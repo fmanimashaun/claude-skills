@@ -40,12 +40,13 @@ push_seg=0; merge_seg=0; ghmerge_seg=0
 # `feat/983-pr2-master-detail` (`\b` breaks at `-` and `/`), and -- because the normaliser strips
 # quoted spans -- ALLOWED `git push origin "main"`. `push_targets.py` reads the RAW command with shlex
 # and resolves destinations the way git does (refspecs, `--all`, `@{push}` for a bare push).
-# Exit 0 = targets main, 1 = does not, anything else = could not judge -> treated as main (CLOSED).
+# Exit 0 = targets main, 10 = does not, anything else = could not judge -> treated as main (CLOSED).
+# "does not" is 10, not 1, because 1 is what python exits with on an uncaught exception (#1470).
 if printf '%s\n' "$seg" | grep -qE '^[[:space:]]*git[[:space:]]+push\b'; then
   _pt="${CLAUDE_PLUGIN_ROOT:-}/scripts/push_targets.py"
   if [ -f "$_pt" ]; then
     printf '%s' "$cmd" | python3 "$_pt" >/dev/null 2>&1
-    [ "$?" -eq 1 ] || push_seg=1
+    [ "$?" -eq 10 ] || push_seg=1
   else
     # The parser is missing: the old whole-word match, over the RAW command so a quoted `"main"` is
     # still seen. Over-blocks a `-main` branch name; never under-blocks.

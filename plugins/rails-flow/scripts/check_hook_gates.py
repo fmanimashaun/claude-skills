@@ -680,6 +680,14 @@ def release_gate_fixtures() -> None:
         check(f"release-gate (#1410): `{cmd}` targets main and is blocked without a certification",
               run(cmd) == 2, "exit 0")
     check("release-gate (#1410): a bare `git push` from a feature branch passes", run("git push") == 0, "exit 2")
+    # #1470 review: the five pushes to main the first parser ALLOWED. Each is blocked end to end.
+    for cmd in ("git push origin $(echo main)", "git push origin main>/dev/null",
+                "echo done#1; git push origin main", "git push origin HEAD:heads/main",
+                "git push origin {main,dev}"):
+        check(f"release-gate (#1470): `{cmd}` reaches main and is blocked", run(cmd) == 2, "exit 0")
+    # ...and the false refusal that review found: an apostrophe in a heredoc body is not a quote.
+    check("release-gate (#1470): a heredoc body with an apostrophe does not block a feature push",
+          run("cat > n.md <<'EOF'\nit's done\nEOF\ngit push -u origin fix/x") == 0, "exit 2")
     # An unbalanced quote cannot be tokenised; "could not judge" must deny, never read as "no".
     check("release-gate (#1410): an unparseable push is treated as a promotion",
           run('git push origin "feature/x') == 2, "exit 0")

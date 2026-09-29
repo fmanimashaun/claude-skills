@@ -32,7 +32,7 @@ GUARD = Guard(
         ),
         Mutation(
             "an unjudgeable push is allowed instead of treated as main",
-            """    [ "$?" -eq 1 ] || push_seg=1""",
+            """    [ "$?" -eq 10 ] || push_seg=1""",
             """    [ "$?" -ne 0 ] || push_seg=1""",
             "release-gate (#1410): an unparseable push is treated as a promotion",
         ),

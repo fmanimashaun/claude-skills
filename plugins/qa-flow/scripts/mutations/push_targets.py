@@ -22,8 +22,8 @@ GUARD = Guard(
         ),
         Mutation(
             "refs/heads/ is no longer stripped, so refs/heads/main slips through",
-            '    return dst[len("refs/heads/"):] if dst.startswith("refs/heads/") else dst',
-            "    return dst",
+            '    for prefix in ("refs/", "heads/"):',
+            '    for prefix in ("heads/",):',
             "'git push origin refs/heads/main': expected TARGETS main",
         ),
         Mutation(
@@ -42,13 +42,74 @@ GUARD = Guard(
             "a newline stops separating commands, so a second-line push is read as arguments",
             'lex.whitespace = " \\t\\r"',
             'lex.whitespace = " \\t\\r\\n"',
-            "'git status\\ngit push origin main': expected TARGETS main",
+            "'cd other\\ngit push': expected TARGETS main",
         ),
         Mutation(
             "an unbalanced quote is answered instead of refused",
             "        raise Unjudgeable(str(exc)) from exc",
             "        return []",
             "must be unjudgeable (the hook denies), not answered",
+        ),
+        Mutation(
+            # #1470 review: a shell expansion in a refspec was read literally, so $(echo main) passed.
+            "shell expansions in a refspec are read literally again",
+            '        if EXPANDS & set(word) or word.startswith("~"):      # `~user` is tilde expansion',
+            "        if False:",
+            "'git push origin $(echo main)': expected TARGETS main",
+        ),
+        Mutation(
+            "redirections stop being split off, so main>/dev/null is one refspec",
+            'punctuation_chars=";&|()<>\\n")',
+            'punctuation_chars=";&|()\\n")',
+            "'git push origin main>/dev/null': expected TARGETS main",
+        ),
+        Mutation(
+            "shlex's comment rule comes back, so a mid-word # hides the push",
+            '    lex.commenters = ""               # removed above, by bash\'s rule',
+            '    lex.commenters = "#"',
+            "'echo done#1; git push origin main': expected TARGETS main",
+        ),
+        Mutation(
+            "heads/ is no longer qualified, so HEAD:heads/main slips through",
+            '    for prefix in ("refs/", "heads/"):',
+            '    for prefix in ("refs/",):',
+            "'git push origin HEAD:heads/main': expected TARGETS main",
+        ),
+        Mutation(
+            "heredoc bodies are tokenised again, so an apostrophe denies a feature push",
+            "            if m:\n                pending.append",
+            "            if False:\n                pending.append",
+            "it's done, push main later",
+        ),
+        Mutation(
+            "a prior cd is ignored, so a bare push is resolved in the wrong clone",
+            "            cwd = seg[1] if cwd is None",
+            "            cwd = None if cwd is None",
+            "'cd other && git push': expected TARGETS main",
+        ),
+        Mutation(
+            "a crash exits like 'no' again",
+            "TARGETS, NO, UNJUDGEABLE = 0, 10, 3",
+            "TARGETS, NO, UNJUDGEABLE = 0, 1, 3",
+            "must differ from 0, 1 (a crash)",
+        ),
+        Mutation(
+            "a leading + is no longer stripped, so +HEAD:main reads as a push of '+HEAD'",
+            '        spec = spec.lstrip("+")',
+            "        pass",
+            "'git push origin +main': expected TARGETS main",
+        ),
+        Mutation(
+            "--repo no longer shifts the positionals, so --repo=origin main reads main as the remote",
+            '        if a.startswith("--repo="):\n            repo_opt = True',
+            '        if False:\n            repo_opt = True',
+            "'git push --repo=origin main': expected TARGETS main",
+        ),
+        Mutation(
+            "the bare `:` refspec no longer counts as the matching branches",
+            '        if spec == ":":',
+            '        if spec == "::":',
+            "'git push origin :': expected TARGETS main",
         ),
     ),
 )
