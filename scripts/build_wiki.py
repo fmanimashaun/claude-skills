@@ -245,11 +245,14 @@ def page_agents_and_gates() -> str:
     d = inv.collect_data()
     t = d["totals"]
     out = [BANNER, "# Agents and gates\n",
-           f"**{t['agents']} shipped agents · {t['commands']} shipped commands · {t['gates']} gates · {t['tierTables']} tier tables**, "
+           f"**{t['agents']} shipped agents · {t['commands']} shipped commands · {t['tierTables']} tier tables**, "
            f"plus {t['maintainerAgents']} maintainer agents and {t['maintainerCommands']} maintainer commands that are not installed.\n\n",
-           "| plugin | version | agents | commands | tier rows | gates |\n|---|---|---|---|---|---|\n"]
+           # No gate count, in the total or per plugin (#1404): two open PRs that each add a gate made each
+           # other's committed page stale with no textual conflict. One row per gate conflicts only when two
+           # PRs touch the same gate; `maintainer_doctor.py` prints the live total.
+           "| plugin | version | agents | commands | tier rows |\n|---|---|---|---|---|\n"]
     for p in d["plugins"]:
-        out.append(f"| `{p['name']}` | {p['version'] or '—'} | {p['agents'] or '—'} | {p['commands'] or '—'} | {p['tierRows'] or '—'} | {p['gates'] or '—'} |\n")
+        out.append(f"| `{p['name']}` | {p['version'] or '—'} | {p['agents'] or '—'} | {p['commands'] or '—'} | {p['tierRows'] or '—'} |\n")
     out.append("\n## Agents\n\n\"Named by\" lists the commands of the agent's own plugin whose text names it — what can be measured; "
                "dispatch is a judgement about intent, and this page does not guess at it.\n")
     for owner in sorted({a["owner"] for a in d["agents"]}, key=lambda o: (o == inv.OWNER_MAINTAINER, o)):
@@ -471,7 +474,11 @@ def selftest() -> int:
     check("every shipped agent appears on Agents-And-Gates", all(f"| `{a['name']}` |" in aag for a in data["agents"] if a["shipped"]))
     check("every registered gate appears", all(f"| {g['name']} |" in aag for g in data["gates"]))
     check("every tier table appears", all(f"### `{p}`" in aag for p in data["tables"]))
-    check("the totals are the data's own", f"**{data['totals']['agents']} shipped agents · {data['totals']['commands']} shipped commands · {data['totals']['gates']} gates" in aag)
+    check("the totals are the data's own", f"**{data['totals']['agents']} shipped agents · {data['totals']['commands']} shipped commands · {data['totals']['tierTables']} tier tables" in aag)
+    # #1404. The negative is paired with the control above on the same page: the totals line is there, and
+    # carries no gate count; the plugin table is there, and has no gates column.
+    check("no gate count is stamped, in the total or per plugin (#1404)",
+          "| plugin | version |" in aag and not re.search(r"\b\d+ gates\b|\| gates \|", aag))
     check("maintainer-only agents are marked as not installed", "(maintainer-only, not installed)" in aag)
 
     for name in GENERATED:
