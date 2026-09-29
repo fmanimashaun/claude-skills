@@ -3555,10 +3555,11 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
-- **Mock-up checks, the #1430 remainder after PR #1478 — `plugins/rails-flow/scripts/check_issue_mockup.py`, `plugins/rails-flow/scripts/check_mockup_gate.py`, `plugins/rails-flow/scripts/mutations/check_issue_mockup.py`, `plugins/rails-flow/scripts/mutations/check_mockup_gate.py`** (#1430, from PR #1479's independent review; each gap measured against merged dev before editing).
-  - `check_issue_mockup.py`: a mock-up path in backticks or as a markdown link target (`[bell](docs/product/mockups/bell.gif)`) now counts as linked; before, it read as "neither". A mock-up file's extension must END its name, so `foo.pdf.TBD` names nothing. A sentence's full stop may still follow.
-  - `check_mockup_gate.py`: a record naming itself is compared by `samefile` as well as `resolve()`, so a hard link to the record under another name is held. An opt-out line indented four or more spaces under a paragraph is an indented code block, an example, and no longer turns the gate off. Under a list item it is a nested item and still counts.
-  - Each has a selftest case with a control. Guards: `check_issue_mockup` 17/17, `check_mockup_gate` 25/25, and `check_slices` 14/14; six older mutations are re-anchored to the new text.
+- **Mock-up checks, the #1430 remainder after PR #1478 — `plugins/rails-flow/scripts/check_issue_mockup.py`, `plugins/rails-flow/scripts/check_mockup_gate.py`, `plugins/rails-flow/scripts/mutations/check_issue_mockup.py`, `plugins/rails-flow/scripts/mutations/check_mockup_gate.py`** (#1430, from PR #1479's independent reviews; each gap measured against merged dev before editing).
+  - `check_issue_mockup.py`: a mock-up path in backticks or as a markdown link target (`[bell](docs/product/mockups/bell.md)`) now counts as linked; before, it read as "neither". Outside `docs/product/mockups/`, a mock-up file's extension must END its name (`foo.pdf.TBD` names nothing), and `.html.erb`, `.gif` and `.avif` count there too. A sentence's full stop may still follow.
+  - `check_mockup_gate.py`: a record naming itself is compared by `samefile` as well as `resolve()`, so a hard link to the record under another name is held.
+  - Not done here: an opt-out inside an INDENTED code block still counts. A rule for it was tried and dropped after the review measured it mishandling tabs, list continuation lines and code inside a list item; it needs a list-aware CommonMark scanner (#1490).
+  - Each change has a selftest case with a control. Guards: `check_issue_mockup` 18/18, `check_mockup_gate` 23/23, and `check_slices` 14/14; older mutations re-anchored to the new text.
 
 - **The mock-up checks close four holes from #1424's re-review — `plugins/rails-flow/scripts/check_issue_mockup.py`, `plugins/rails-flow/scripts/check_mockup_gate.py`** (#1430).
   - **An approval link is not a mock-up link.** A Mock-up section holding only the approving comment's URL read as linked AND approved; approval URLs are now stripped before the mock-up link is looked for, at filing (`verdict`) and at triage (`ready`).

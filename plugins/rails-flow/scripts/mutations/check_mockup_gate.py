@@ -111,8 +111,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a fenced example of the opt-out line turns the gate off",
-            '    return bool(OPT_OUT.search(unindented_code(unfenced(g.read_text(encoding="utf-8")))))',
-            '    return bool(OPT_OUT.search(unindented_code(g.read_text(encoding="utf-8"))))',
+            '    return bool(OPT_OUT.search(unfenced(g.read_text(encoding="utf-8"))))',
+            '    return bool(OPT_OUT.search(g.read_text(encoding="utf-8")))',
             "a fenced example of the opt-out line is not a declaration",
         ),
         Mutation(
@@ -156,18 +156,6 @@ GUARD = Guard(
             '                   or ((root / mock).exists() and (root / mock).samefile(path))):',
             '                   or False):',
             'a record naming itself by another name is held',
-        ),
-        Mutation(
-            "an indented code block's opt-out counts again",
-            '    return bool(OPT_OUT.search(unindented_code(unfenced(g.read_text(encoding="utf-8")))))',
-            '    return bool(OPT_OUT.search(unfenced(g.read_text(encoding="utf-8"))))',
-            '#1479: an opt-out in an indented code block is not a declaration',
-        ),
-        Mutation(
-            'a list item no longer licenses a 4-space opt-out',
-            '        elif context_is_list:\n            kept.append(line)',
-            '        elif False:\n            kept.append(line)',
-            '#1479 CONTROL: an opt-out nested four spaces under a list item counts',
         ),
     ),
 )

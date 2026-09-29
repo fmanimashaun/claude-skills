@@ -58,15 +58,15 @@ GUARD = Guard(
         ),
         Mutation(
             "a committed mock-up file is not a link",
-            'LINK = re.compile(r"https://[^/\\s]+\\.[^\\s]+"\n                  r"|(?:^|[\\s(`\\[])docs/product/mockups/(?:[^\\s/`\\]]+/)*[^\\s/`\\]]+\\.[A-Za-z0-9]+(?=[\\s),.;`\\]]|$)"\n                  r"|(?:^|[\\s(`\\[])[\\w./-]+\\.(?:html?|png|jpe?g|webp|pdf|svg)(?![\\w/-]|\\.\\w)", re.I)',
+            'LINK = re.compile(r"https://[^/\\s]+\\.[^\\s]+"\n                  r"|(?:^|[\\s(`\\[])docs/product/mockups/(?:[^\\s/`\\]]+/)*[^\\s/`\\]]+\\.[A-Za-z0-9]+(?=[\\s),.;`\\]]|$)"\n                  r"|(?:^|[\\s(`\\[])[\\w./-]+\\.(?:html?|png|jpe?g|gif|avif|webp|pdf|svg)(?:\\.erb)?(?![\\w/-]|\\.\\w)", re.I)',
             'LINK = re.compile(r"https://[^/\\s]+\\.[^\\s]+", re.I)',
             "CONTROL: an agent-written section with a committed mock-up file is declared",
         ),
         # Pre-release review of #1387.
         Mutation(
             "any word ending in .md is a mock-up again",
-            '                  r"|(?:^|[\\s(`\\[])[\\w./-]+\\.(?:html?|png|jpe?g|webp|pdf|svg)(?![\\w/-]|\\.\\w)", re.I)',
-            '                  r"|(?:^|[\\s(`\\[])[\\w./-]+\\.(?:html?|png|jpe?g|webp|pdf|svg|md)(?![\\w/-]|\\.\\w)", re.I)',
+            '                  r"|(?:^|[\\s(`\\[])[\\w./-]+\\.(?:html?|png|jpe?g|gif|avif|webp|pdf|svg)(?:\\.erb)?(?![\\w/-]|\\.\\w)", re.I)',
+            '                  r"|(?:^|[\\s(`\\[])[\\w./-]+\\.(?:html?|png|jpe?g|gif|avif|webp|pdf|svg|md)(?:\\.erb)?(?![\\w/-]|\\.\\w)", re.I)',
             "\"TBD, see notes.md\" is not a declaration",
         ),
         Mutation(
@@ -115,13 +115,19 @@ GUARD = Guard(
             'a path in backticks or a link target is not seen',
             'r"|(?:^|[\\s(`\\[])docs/product/mockups/',
             'r"|(?:^|\\s)docs/product/mockups/',
-            'CONTROL: a path in backticks is linked',
+            'CONTROL: a record path in backticks is linked',
         ),
         Mutation(
             'a mock-up extension need not end the name',
-            'svg)(?![\\w/-]|\\.\\w)"',
-            'svg)\\b"',
+            'svg)(?:\\.erb)?(?![\\w/-]|\\.\\w)"',
+            'svg)(?:\\.erb)?\\b"',
             'foo.pdf.TBD names no mock-up file',
+        ),
+        Mutation(
+            'view templates are no longer mock-ups outside the folder',
+            '(?:\\.erb)?(?![\\w/-]|\\.\\w)", re.I)',
+            '(?![\\w/-]|\\.\\w)", re.I)',
+            'CONTROL: a view template mock-up is linked',
         ),
     ),
 )
