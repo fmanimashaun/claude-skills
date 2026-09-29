@@ -65,8 +65,8 @@ GUARD = Guard(
         ),
         Mutation(
             "the fallback no longer recognises a push to main",
-            "  [[ $input =~ git[[:space:]]+push(${_w}|$)(.*${_w})?(origin[[:space:]]+)?(HEAD:)?(main|master)(${_w}|$) ]] && _looks_promotion=1",
-            "  :",
+            '    if [[ $_in =~ ${_b}push${_e} ]] && [[ $_in =~ (^|[^[:alnum:]_/.-])(main|master)${_e} ]]; then',
+            "    if false; then",
             "with ONLY bash on PATH, a push to main is still blocked",
         ),
         Mutation(
@@ -77,9 +77,21 @@ GUARD = Guard(
         ),
         Mutation(
             "the fallback's word boundary is dropped, so maintenance reads as main",
-            "  [[ $input =~ git[[:space:]]+push(${_w}|$)(.*${_w})?(origin[[:space:]]+)?(HEAD:)?(main|master)(${_w}|$) ]] && _looks_promotion=1",
-            "  [[ $input =~ git[[:space:]]+push.*(main|master) ]] && _looks_promotion=1",
+            '    if [[ $_in =~ ${_b}push${_e} ]] && [[ $_in =~ (^|[^[:alnum:]_/.-])(main|master)${_e} ]]; then',
+            "    if [[ $_in =~ push ]] && [[ $_in =~ (main|master) ]]; then",
             "`git push origin maintenance` is allowed",
+        ),
+        Mutation(
+            "JSON whitespace escapes are not normalised, so an escaped tab hides the verb",
+            '    _in="${_in//"$_esc"/ }"',
+            "    :",
+            "'git\\tpush origin main' is still blocked",
+        ),
+        Mutation(
+            "a ref under a path counts as main in the fallback",
+            "[[ $_in =~ (^|[^[:alnum:]_/.-])(main|master)${_e} ]]",
+            "[[ $_in =~ (^|[^[:alnum:]_])(main|master)${_e} ]]",
+            "`git push origin feature/main` is allowed",
         ),
         # ROUND 3 FOLD-IN 4: the stamp is read as committed at dev.
         Mutation(

@@ -383,6 +383,55 @@ def committed_at(base: Path, rev: str, rel: str) -> int | None:
     return int(out) if done.returncode == 0 and out.isdigit() else None
 
 
+def published_ref(base: Path) -> str | None:
+    """The last PUBLISHED release: origin/main, else main. None when the repo has neither."""
+    for ref in ("origin/main", "main"):
+        try:
+            done = subprocess.run(["git", "-C", str(base), "rev-parse", "--verify", "-q", f"{ref}^{{commit}}"],
+                                  capture_output=True, text=True, timeout=30)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if done.returncode == 0 and done.stdout.strip():
+            return done.stdout.strip()
+    return None
+
+
+def already_published(base: Path, rev: str, published: str, record: str) -> str | None:
+    """Why `record` (the walkthrough's pages.csv, or the sweep) is last release's, or None.
+
+    The version tie trusts the stamp's own `version`, and the copy check only sees evidence still at
+    dev -- so `git mv first-boot-v1 first-boot-v2`, with the old folder gone, passed (#1437 round 3).
+    The last PUBLISHED release is main: a record whose PATH is already there is last release's
+    evidence, and one whose blob is byte-identical to any record there is a copy of it. Records, not
+    screenshots: an unchanged page can render to the same PNG bytes in two honest walks.
+    KNOWN LIMIT: a lightly EDITED copy (one line changed) has a new blob and passes; this check makes
+    an unedited copy impossible, not an edited one.
+    """
+    def ids(ref: str) -> dict[str, str]:
+        try:
+            done = subprocess.run(["git", "-C", str(base), "ls-tree", "-r", ref, "--", EVIDENCE_ROOT],
+                                  capture_output=True, text=True, timeout=60)
+        except (OSError, subprocess.SubprocessError):
+            return {}
+        out = {}
+        for line in done.stdout.splitlines():
+            meta, _, path = line.partition("\t")
+            parts = meta.split()
+            if len(parts) == 3:
+                out[path] = parts[2]
+        return out
+
+    shipped = ids(published)
+    own = ids(rev).get(record)
+    if record in shipped:
+        return f"{record} is already in the last published release (main) -- it is that release's evidence"
+    records = {p: oid for p, oid in shipped.items() if p.endswith("/pages.csv") or p.endswith(".csv")}
+    for path, oid in records.items():
+        if own and oid == own:
+            return f"{record} is byte-identical to {path}, published in the last release (main) -- a copy"
+    return None
+
+
 def check_stamp(stamp: Path, base: Path, grandfather: bool | None = None,
                 rev: str | None = None,
                 grandfather_before: str | None = None) -> tuple[list[str], list[str], list[str]]:
@@ -468,6 +517,12 @@ def check_stamp(stamp: Path, base: Path, grandfather: bool | None = None,
             if twin:
                 findings.append(f"`{key}` {value} is byte-identical to {twin} -- another release's evidence, "
                                 f"renamed, is not this release's")
+        published = published_ref(base)
+        if published:
+            for key, record in (("first_boot", fb + "/pages.csv"), ("authz", az)):
+                why = already_published(base, rev, published, record)
+                if why:
+                    findings.append(f"`{key}`: {why}")
         if findings:
             return findings, [], []
     with tempfile.TemporaryDirectory() as td:
@@ -727,7 +782,8 @@ def selftest() -> int:
         sweep.write_text(AUTHZ_HEADER + "\n".join(AUTHZ_GOOD) + "\n", encoding="utf-8")
         stamp = proj / "qa/CERTIFICATION"
         g = ["git", "-C", str(proj), "-c", "user.email=t@t", "-c", "user.name=t"]
-        subprocess.run(["git", "init", "-q", str(proj)], check=True)
+        # The work branch is dev; main is created below, only where a fixture needs a PUBLISHED release.
+        subprocess.run(["git", "init", "-q", "-b", "dev", str(proj)], check=True)
         subprocess.run([*g, "add", "qa/manual-tests"], check=True)
         subprocess.run([*g, "commit", "-q", "-m", "evidence"], check=True)
 
@@ -911,6 +967,47 @@ def selftest() -> int:
         put("not json")
         rc, _, _ = run("--rev", "HEAD")
         check("stamp: an unreadable stamp is unusable (2), never 0", rc == 2, rc)
+
+        # LAST RELEASE'S EVIDENCE (#1437 round 3): main is the last published release. Publish v5,
+        # then try to pass it off as v6 three ways.
+        _walk(proj / "qa/manual-tests/first-boot-v5", GOOD_ROWS + ["1.7,1280,a,/,x,y,z,Pass,,,,,v5"])
+        (proj / "qa/manual-tests/authz-v5").mkdir()
+        (proj / "qa/manual-tests/authz-v5/sweep.csv").write_text(good3 + "z,app/c.rb:3,it,admin,g,GUARDED,,\n",
+                                                                 encoding="utf-8")
+        v5 = {**base, "version": "v5", "first_boot": "qa/manual-tests/first-boot-v5",
+              "authz": "qa/manual-tests/authz-v5/sweep.csv"}
+        put(v5)
+        subprocess.run([*g, "branch", "-f", "main", "HEAD"], check=True)          # v5 is published
+        v6 = {**base, "version": "v6", "first_boot": "qa/manual-tests/first-boot-v6",
+              "authz": "qa/manual-tests/authz-v6/sweep.csv"}
+        # 1. `git mv` of last release's folders, the old ones gone.
+        subprocess.run([*g, "mv", "qa/manual-tests/first-boot-v5", "qa/manual-tests/first-boot-v6"], check=True)
+        subprocess.run([*g, "mv", "qa/manual-tests/authz-v5", "qa/manual-tests/authz-v6"], check=True)
+        put(v6)
+        f_mv, _, _ = check_stamp(stamp, proj, rev="HEAD")
+        check("stamp: last release's evidence, git-mv'd to this release's name, is refused",
+              any("published in the last release" in f and "pages.csv" in f for f in f_mv)
+              and any("published in the last release" in f and "sweep.csv" in f for f in f_mv), f_mv)
+        # 2. A new stamp that declares the OLD version and names the old, published evidence.
+        subprocess.run([*g, "mv", "qa/manual-tests/first-boot-v6", "qa/manual-tests/first-boot-v5"], check=True)
+        subprocess.run([*g, "mv", "qa/manual-tests/authz-v6", "qa/manual-tests/authz-v5"], check=True)
+        put({**v5, "date": "re-used"})
+        f_old, _, _ = check_stamp(stamp, proj, rev="HEAD")
+        check("stamp: a new stamp re-declaring the published version is refused",
+              any("already in the last published release" in f for f in f_old), f_old)
+        # 3. KNOWN LIMIT, pinned: a lightly edited copy (one line added) is NOT caught. It is stated in
+        # certify.md and the doctrine map; this fixture keeps the statement true.
+        import shutil as _sh
+        _sh.copytree(proj / "qa/manual-tests/first-boot-v5", proj / "qa/manual-tests/first-boot-v6")
+        (proj / "qa/manual-tests/first-boot-v6/pages.csv").write_text(
+            (proj / "qa/manual-tests/first-boot-v6/pages.csv").read_text(encoding="utf-8") + "\n", encoding="utf-8")
+        (proj / "qa/manual-tests/authz-v6").mkdir()
+        (proj / "qa/manual-tests/authz-v6/sweep.csv").write_text(good3 + "w,app/d.rb:4,it,admin,g,GUARDED,,\n",
+                                                                 encoding="utf-8")
+        put(v6)
+        f_near, _, _ = check_stamp(stamp, proj, rev="HEAD")
+        check("stamp: KNOWN LIMIT -- a copy with one line added is not caught (stated, not hidden)",
+              f_near == [], f_near)
 
     print(f"release_evidence selftest: {checks} check(s)")
     if failures:

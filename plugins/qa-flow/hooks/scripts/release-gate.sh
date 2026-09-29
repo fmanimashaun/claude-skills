@@ -14,13 +14,26 @@ for _t in python3 git sed awk tr grep head; do
   type -P "$_t" >/dev/null 2>&1 || _missing="$_missing $_t"
 done
 if [ -n "$_missing" ]; then
-  # Word boundaries without \b (not portable in [[ =~ ]]): a non-word character or the end. So
-  # "maintenance" is not "main", as in the full detection below.
-  _w='[^[:alnum:]_]'
+  # Judged with builtins, and deliberately COARSER than the full detection below, because it cannot
+  # parse the JSON or run the normaliser: it must not be steerable by syntax it cannot see (#1437
+  # round 3). JSON whitespace escapes (\t, \n, \u0009, ...) become spaces first, so an escaped tab
+  # is whitespace. Then it looks for the WORDS, anywhere, with anything between them -- so git's
+  # global options (`git -C . push`, `git -c k=v push`) cannot hide the verb. It over-blocks in a
+  # degraded environment (a message that merely mentions `git push … main` is denied), which is the
+  # safe direction for a gate that cannot tell. A ref under a path (`feature/main`) is not `main`.
+  _in="$input"
+  for _esc in '\t' '\n' '\r' '\u0009' '\u000a' '\u000A' '\u000d' '\u000D' '\u0020'; do
+    _in="${_in//"$_esc"/ }"
+  done
+  _b='(^|[^[:alnum:]_])'; _e='([^[:alnum:]_]|$)'
   _looks_promotion=0
-  [[ $input =~ git[[:space:]]+push(${_w}|$)(.*${_w})?(origin[[:space:]]+)?(HEAD:)?(main|master)(${_w}|$) ]] && _looks_promotion=1
-  [[ $input =~ git[[:space:]]+merge(${_w}|$) ]] && _looks_promotion=1
-  [[ $input =~ gh[[:space:]]+pr[[:space:]]+merge(${_w}|$) ]] && _looks_promotion=1
+  if [[ $_in =~ ${_b}git${_e} ]]; then
+    if [[ $_in =~ ${_b}push${_e} ]] && [[ $_in =~ (^|[^[:alnum:]_/.-])(main|master)${_e} ]]; then
+      _looks_promotion=1
+    fi
+    [[ $_in =~ ${_b}merge${_e} ]] && _looks_promotion=1
+  fi
+  [[ $_in =~ ${_b}gh${_e} ]] && [[ $_in =~ ${_b}pr${_e} ]] && [[ $_in =~ ${_b}merge${_e} ]] && _looks_promotion=1
   if [ "$_looks_promotion" = "1" ]; then
     [ "${QA_ALLOW_MAIN:-0}" = "1" ] && { echo "qa-flow:${_missing} missing but QA_ALLOW_MAIN=1 — allowed (audited)." >&2; exit 0; }
     echo "BLOCKED by qa-flow release gate: not found on PATH:${_missing} — cannot verify certification. Install them (python3 on Windows: run Claude Code in WSL/Git Bash), or set QA_ALLOW_MAIN=1 to override." >&2

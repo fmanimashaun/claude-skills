@@ -73,8 +73,10 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/release_evidence.py" authz "qa/manual-tes
 
 Both files live under `qa/manual-tests/`, are named for the release (`first-boot-<version>`,
 `authz-<version>/`), and are committed to dev with the stamp. The release gate reads the stamp and the
-evidence AS COMMITTED at dev: an uncommitted stamp, evidence named for another release, or a renamed
-copy of another release's evidence is refused.
+evidence AS COMMITTED at dev: an uncommitted stamp, evidence named for another release, evidence
+already in the last published release (`main`), or an UNEDITED copy of another release's records
+(pages.csv, the sweep) is refused. KNOWN LIMIT: a lightly edited copy -- one line changed -- has new
+bytes and is not caught; the check makes an unedited copy impossible, not a dishonest one.
 
 A failing layer is a FAIL verdict like any open S1/S2. What the checks do NOT judge: whether the
 database was really empty, which roles the app has, and whether the sweep lists every action. Those

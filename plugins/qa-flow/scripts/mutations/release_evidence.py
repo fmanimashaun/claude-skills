@@ -11,6 +11,26 @@ GUARD = Guard(
     subject="scripts/release_evidence.py",
     selftest="scripts/release_evidence.py",
     mutations=(
+        # ROUND 3 (second pass) BLOCKER: last release's evidence, renamed, passed because the copy
+        # check only saw evidence still at dev. main is the last published release.
+        Mutation(
+            "the published release is never consulted",
+            "        if published:\n            for key, record in",
+            "        if False:\n            for key, record in",
+            "stamp: last release's evidence, git-mv'd to this release's name, is refused",
+        ),
+        Mutation(
+            "a record already on main by PATH is accepted",
+            "    if record in shipped:",
+            "    if False:",
+            "stamp: a new stamp re-declaring the published version is refused",
+        ),
+        Mutation(
+            "a record byte-identical to a published one is accepted",
+            "        if own and oid == own:",
+            "        if False:",
+            "stamp: last release's evidence, git-mv'd to this release's name, is refused",
+        ),
         # ROUND 3 BLOCKER: a newline in an evidence path smuggled a second path into the gate's
         # line-by-line allowance.
         Mutation(

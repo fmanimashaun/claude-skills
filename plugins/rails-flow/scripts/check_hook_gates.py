@@ -675,6 +675,9 @@ def release_gate_fixtures() -> None:
         sh = lambda *a: subprocess.run([*g, *a], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
         (repo / "app.rb").write_text("v1\n", encoding="utf-8")
         sh("add", "app.rb"); sh("commit", "-q", "-m", "app")
+        # Work on a branch that is not `main`: main is the last PUBLISHED release, and evidence
+        # already there is last release's (#1437 round 3). main stays at the commit before any.
+        sh("checkout", "-q", "-b", "work")
         tested = sh("rev-parse", "HEAD")
         fb_dir, az_file = repo / "qa/manual-tests/first-boot-v1", repo / "qa/manual-tests/authz-v1/sweep.csv"
         fb_dir.mkdir(parents=True); az_file.parent.mkdir(parents=True)
@@ -840,7 +843,15 @@ def release_gate_fixtures() -> None:
     code, out = bare_gate("git push origin main", tools=("bash", "python3", "git"))
     check("release-gate: with python3 and git but NO grep or sed, a push to main is still blocked",
           code == 2, f"exit {code}: {out[:160]!r}")
-    for cmd in ("git status", "git push origin maintenance", "git push origin feature/x"):
+    # Round 3 fold-in: the fallback matched raw JSON, so git's global options and a JSON-escaped tab
+    # slipped past it. Each is a real way to write a push to main.
+    for cmd in ("git -C . push origin main", "git -c k=v push origin main", "git\tpush origin main",
+                "git --git-dir=.git push origin HEAD:main"):
+        code, out = bare_gate(cmd)
+        check(f"release-gate: with ONLY bash on PATH, {cmd!r} is still blocked", code == 2,
+              f"exit {code}: {out[:160]!r}")
+    for cmd in ("git status", "git push origin maintenance", "git push origin feature/x",
+                "git push origin feature/main"):
         code, out = bare_gate(cmd)
         check(f"release-gate: CONTROL: with ONLY bash on PATH, `{cmd}` is allowed", code == 0, f"exit {code}: {out[:160]!r}")
 

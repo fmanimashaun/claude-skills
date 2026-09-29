@@ -169,7 +169,10 @@ CLAIMS: tuple[Claim, ...] = (
              "committed at dev and fails closed. KNOWN LIMIT, for one release: an old-shape stamp is "
              "grandfathered when the commit that introduced it predates GRANDFATHER_BEFORE, so a "
              "deliberately BACKDATED commit passes until GRANDFATHER_OLD_STAMPS is turned off at the "
-             "next arm. An agent's ordinary commit cannot carry an old committer date by accident.",
+             "next arm. An agent's ordinary commit cannot carry an old committer date by accident. "
+             "SECOND KNOWN LIMIT: evidence already on main, or byte-identical to a record there, is "
+             "refused, but a lightly EDITED copy of last release's walkthrough (one line changed) is "
+             "not caught -- the check stops an unedited copy, not a dishonest one.",
     ),
     Claim(
         claim="A change a user can see is not built until the owner has approved a clickable "

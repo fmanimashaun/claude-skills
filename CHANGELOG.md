@@ -10970,7 +10970,12 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
   release's is refused by git object id. The gate reads the stamp itself as committed at dev (`read_certification.py
   --stamp`), so an uncommitted stamp no longer permits. With any of python3, git, sed, awk, tr, grep or head missing,
   it falls back to bash builtins and denies a promotion (tested with a bash-only PATH). The guarantee and its known
-  limit are a `scripts/doctrine_map.py` row, stated in `certify.md`, which becomes a declared doctrine source. By the owner's decision on #1428, an older
+  limit are a `scripts/doctrine_map.py` row, stated in `certify.md`, which becomes a declared doctrine source. The
+  round-3 re-review found last release's evidence, renamed with `git mv` (or re-declared under the old version),
+  still passing, because the copy check only saw evidence still at dev: a record already on `main` (the last
+  published release), by path or by blob, is now refused. KNOWN LIMIT, stated in `certify.md` and the map: a lightly
+  edited copy is not caught. The builtins fallback no longer matches raw JSON: it normalises JSON whitespace escapes
+  and matches the words, so `git -C . push`, `git -c k=v push` and an escaped tab are blocked too. By the owner's decision on #1428, an older
   stamp is **grandfathered for one release**: it passes with a loud "re-run /qa-flow:certify" warning, and the next
   release refuses it. The window is one constant, `GRANDFATHER_OLD_STAMPS`. It was checked against a real downstream
   walkthrough (Retask `first-boot-v101`: 50 rows, 390 and 1280 wide), which passes. That run also exposed a false
