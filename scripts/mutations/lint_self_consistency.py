@@ -288,6 +288,37 @@ GUARD = Guard(
         ),
         # #713. Three clauses, three mutations, two slugs -- a rule with N clauses needs a
         # finding per clause or none of them is provable.
+        # #1415: a relative link in docs/ resolved from its own directory; four clauses.
+        Mutation(
+            "a broken relative link in docs stops being reported",
+            "            if resolved.exists() or (not resolved.suffix and resolved.with_name(resolved.name + \".md\").exists()):",
+            "            if True:",
+            "a repo-root path inside docs/brain/history resolves to nothing",
+        ),
+        Mutation(
+            "a link is resolved from the repo root instead of its own directory",
+            "            resolved = path.parent / target",
+            "            resolved = ROOT / target",
+            "a repo-root path inside docs/brain/history resolves to nothing",
+        ),
+        Mutation(
+            "an #anchor makes a missing file pass",
+            "            if not target or target.startswith(\"<\")",
+            "            if \"#\" in match.group(1) or not target or target.startswith(\"<\")",
+            "...an #anchor does not rescue a missing file",
+        ),
+        Mutation(
+            "any extensionless link passes as a wiki page",
+            "(not resolved.suffix and resolved.with_name(resolved.name + \".md\").exists())",
+            "(not resolved.suffix)",
+            "...a wiki-style link to a page that does not exist",
+        ),
+        Mutation(
+            "a fenced block is scanned as prose",
+            '        prose = _MD_FENCE.sub(lambda m: "\\n" * m.group(0).count("\\n"), body)',
+            "        prose = body",
+            "...silent inside a fenced block",
+        ),
         # #1414: a workflow action pinned by a tag, and a checkout that keeps its credentials.
         Mutation(
             "a workflow action pinned by a tag stops being reported",

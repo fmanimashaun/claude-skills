@@ -1841,6 +1841,47 @@ def check_doc_pointers() -> tuple[list[Finding], int]:
     return findings, examined
 
 
+
+_MD_LINK = re.compile(r"\[[^\]\n]*\]\(([^)\s]+)\)")
+_MD_FENCE = re.compile(r"^[ \t]*```.*?^[ \t]*```[ \t]*$", re.MULTILINE | re.DOTALL)
+
+
+def check_broken_relative_link() -> tuple[list[Finding], int]:
+    """A relative markdown link in `docs/` must resolve from the file that holds it.
+
+    #1415. `check_doc_pointers` resolves two pointer SPELLINGS (`${CLAUDE_PLUGIN_ROOT}/...`,
+    `skills/...`) and never a link target, so `[x](docs/doctrine/harness-doctrine.md)` written
+    inside `docs/brain/history/` -- which a renderer resolves to `docs/brain/history/docs/...` --
+    sat broken in five places across four files. A link is resolved against its own directory; a
+    path that reads right from the repo root is exactly the one that is wrong.
+
+    Scoped to `docs/**`: every file there is ours, so every relative link names a file of ours.
+    Shipped commands and skills are not, because their paths belong to a user's project. A target
+    with no extension may name a wiki page (`[Loops](Loops)` -> `Loops.md`), which GitHub's wiki
+    resolves; fenced blocks, URLs and `#anchors` carry no path to check.
+    """
+    findings: list[Finding] = []
+    examined = 0
+    for path in sorted((ROOT / "docs").rglob("*.md")):
+        body = read(path)
+        # Blank a fence rather than delete it, so line numbers stay true.
+        prose = _MD_FENCE.sub(lambda m: "\n" * m.group(0).count("\n"), body)
+        for match in _MD_LINK.finditer(prose):
+            target = match.group(1).split("#", 1)[0]
+            if not target or target.startswith("<") or re.match(r"[A-Za-z][A-Za-z0-9+.-]*:", target):
+                continue
+            examined += 1
+            resolved = path.parent / target
+            if resolved.exists() or (not resolved.suffix and resolved.with_name(resolved.name + ".md").exists()):
+                continue
+            findings.append(Finding(
+                "broken-relative-link", rel(path), prose[:match.start()].count("\n") + 1,
+                f"links to `{match.group(1)}`, which resolves to nothing from {rel(path.parent)}/ -- "
+                "a relative link is read from its own directory, not from the repo root",
+            ))
+    return findings, examined
+
+
 # ---------------------------------------------------------------------------
 # Rule: ci-gate-without-test-step
 # ---------------------------------------------------------------------------
@@ -3372,6 +3413,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     call_sites, call_coverage = check_doctrine_call_sites()
     invisible, invisible_examined = check_invisible_characters()
     pointers, pointers_examined = check_doc_pointers()
+    rel_links, rel_links_examined = check_broken_relative_link()
     uninstallable, plugins_installable = check_uninstallable_plugins()
     plugin_root, yaml_blocks = check_plugin_root_in_ci()
     mkt_ver, mkt_ver_examined = check_marketplace_version_duplicate()
@@ -3423,6 +3465,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "documented_components": components_examined,
         "shipped_files_scanned_for_invisibles": invisible_examined,
         "doc_pointers_examined": pointers_examined,
+        "docs_relative_links_examined": rel_links_examined,
         "plugins_checked_for_install_lines": plugins_installable,
         "yaml_blocks_scanned": yaml_blocks,
         "skill_docs_scanned_for_v4_outline": outlines_examined,
@@ -3461,7 +3504,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         **call_coverage,
     }
     return (dead + unenforced + undocumented + undoc_cmds + growth + hook_lib + bare + misdesc + unbounded + author_me + components + call_sites + invisible
-            + pointers + outlines + uninstallable + plugin_root + mkt_ver + coercions + topologies + schema + unwired
+            + pointers + rel_links + outlines + uninstallable + plugin_root + mkt_ver + coercions + topologies + schema + unwired
             + ci_gates + cl_ignore + controllers + labels + comp_labels + orphans + keyfilter
             + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
             + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref + action_pins
@@ -3713,6 +3756,28 @@ def selftest() -> int:
                  "rails-flow (agentic flow plugin)",
                  "- **Eleven agents ran for every job.** (#656) Now there is a pack size.",
                  heading="### 1.23.0 — 2026-08-20 (release v1.92.0)")})
+
+    # -- broken-relative-link (#1415) -----------------------------------------
+    BRL = "broken-relative-link"
+    _DOC = "docs/doctrine/harness-doctrine.md"
+    # THE #1415 SHAPE: a repo-root path written inside a nested directory.
+    scenario("a repo-root path inside docs/brain/history resolves to nothing", rule=BRL, expect_finding=True,
+             files={_DOC: "x\n", "docs/brain/history/h.md": "See [it](docs/doctrine/harness-doctrine.md).\n"})
+    scenario("...silent on the same link written relative to its own directory", rule=BRL, expect_finding=False,
+             files={_DOC: "x\n", "docs/brain/history/h.md": "See [it](../../doctrine/harness-doctrine.md).\n"})
+    scenario("...an #anchor does not rescue a missing file", rule=BRL, expect_finding=True,
+             files={_DOC: "x\n", "docs/doctrine/a.md": "See [it](gone.md#s5).\n"})
+    scenario("...silent on a wiki-style page link, URLs and bare anchors", rule=BRL, expect_finding=False,
+             files={"docs/wiki/Loops.md": "x\n", "docs/wiki/Home.md":
+                    "[Loops](Loops) [gh](https://github.com) [top](#top) [m](mailto:a@b)\n"})
+    # A wiki-style link is forgiven only when the page exists.
+    scenario("...a wiki-style link to a page that does not exist", rule=BRL, expect_finding=True,
+             files={"docs/wiki/Home.md": "[Loops](Loops)\n"})
+    scenario("...silent inside a fenced block", rule=BRL, expect_finding=False,
+             files={"docs/a.md": "```md\n[x](nowhere.md)\n```\n"})
+    # SCOPE: shipped docs name paths in a USER's project, so outside docs/ is not judged.
+    scenario("...silent outside docs/", rule=BRL, expect_finding=False,
+             files={"plugins/p/commands/c.md": "[x](memos/nowhere.md)\n"})
 
     # -- unpinned-workflow-action / checkout-persists-credentials (#1414) ------
     UWA, CPC = "unpinned-workflow-action", "checkout-persists-credentials"
