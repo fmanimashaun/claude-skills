@@ -44,7 +44,7 @@ NEXT_HEADING = re.compile(r"^\s{0,3}#{1,6}\s", re.M)
 # A record path must end in an extension -- any: `docs/product/mockups/TBD` is a placeholder (#1430),
 # but `.gif` and `.avif` are mock-ups (review of PR #1478).
 LINK = re.compile(r"https://[^/\s]+\.[^\s]+"
-                  r"|(?:^|\s)docs/product/mockups/\S+\.[A-Za-z0-9]+\b"
+                  r"|(?:^|\s)docs/product/mockups/(?:[^\s/]+/)*[^\s/]+\.[A-Za-z0-9]+(?=[\s),.;]|$)"
                   r"|(?:^|\s)[\w./-]+\.(?:html?|png|jpe?g|webp|pdf|svg)\b", re.I)
 NO_CHANGE = re.compile(r"\bno visible change\b", re.I)
 
@@ -69,8 +69,9 @@ def mockup_link(text: str) -> bool:
     """A link to the MOCK-UP, not to the comment approving it: a section holding only the approval
     URL read as linked and approved (#1430)."""
     # A mock-up can itself live in an issue comment, whose URL has the approval's shape: two DISTINCT
-    # comment links mean one of them is the mock-up (review of PR #1478).
-    return bool(LINK.search(APPROVAL.sub(" ", text))) or len({m.group(0) for m in APPROVAL.finditer(text)}) >= 2
+    # comments -- by comment id, since issues/12#issuecomment-99 and pull/12#issuecomment-99 are the
+    # same comment -- mean one of them is the mock-up (review of PR #1478).
+    return bool(LINK.search(APPROVAL.sub(" ", text))) or len({m.group(0).rsplit('#', 1)[-1] for m in APPROVAL.finditer(text)}) >= 2
 
 
 def verdict(body: str) -> tuple[bool, str]:
@@ -163,6 +164,14 @@ def selftest() -> int:
            "https://github.com/acme/app/issues/12#issuecomment-99")
     ok, why = ready(form.format(TWO))
     check_that("PR #1478 review: a mock-up posted as a comment, plus its approval, is ready", ok, why)
+    ok, why = verdict(form.format("docs/product/mockups/v1.0/TBD"))
+    check_that("PR #1478 final review: a dotted FOLDER does not make a placeholder a link", not ok, why)
+    ok, why = verdict(form.format("docs/product/mockups/v1.0/bell.png"))
+    check_that("PR #1478 final review CONTROL: a file in a dotted folder is linked", ok, why)
+    ALIAS = ("https://github.com/acme/app/issues/12#issuecomment-99 and "
+             "https://github.com/acme/app/pull/12#issuecomment-99")
+    ok, why = verdict(form.format(ALIAS))
+    check_that("PR #1478 final review: one comment reached two ways is not a mock-up plus approval", not ok, why)
     SAME = ("https://github.com/acme/app/issues/12#issuecomment-99 and again "
             "https://github.com/acme/app/issues/12#issuecomment-99")
     ok, why = verdict(form.format(SAME))

@@ -118,8 +118,8 @@ GUARD = Guard(
         Mutation(
             # #1430
             'an unterminated fence no longer runs to the end of the file, so its opt-out counts',
-            '        if m:\n            fence = m.group(1)\n            continue',
-            '        if m and False:\n            fence = m.group(1)\n            continue',
+            '        if run:\n            fence = run\n            continue',
+            '        if run and False:\n            fence = run\n            continue',
             'an opt-out inside an unterminated fence is not a declaration',
         ),
         Mutation(
@@ -142,6 +142,13 @@ GUARD = Guard(
             '    elif mock and (root / mock).resolve().suffix.lower() == ".md":',
             '    elif False:',
             'a record naming another record is held',
+        ),
+        Mutation(
+            # final review of PR #1478
+            'a code span at line start opens a fence again, swallowing the opt-out below it',
+            '        m = re.match(r"^\\s*(`{3,})(?=[^`]*$)|^\\s*(~{3,})", line)',
+            '        m = re.match(r"^\\s*(`{3,})|^\\s*(~{3,})", line)',
+            'a code span at line start does not fence the opt-out',
         ),
     ),
 )

@@ -75,7 +75,8 @@ def declared_off(root: Path) -> bool:
     if not g.is_file():
         return False
     # A fenced example of the line documents the opt-out; it does not declare it (review of #1381).
-    # An UNTERMINATED fence runs to the end of the file, as a renderer shows it (#1430) -- the
+    # An UNTERMINATED fence runs to the end of the file (#1430) -- stricter than a renderer, which
+    # ends one at the close of its list item; list-scoped fences are #1461's shared scanner. The
     # regex this replaces removed only closed fences, so an opt-out after a stray ``` still counted.
     return bool(OPT_OUT.search(unfenced(g.read_text(encoding="utf-8"))))
 
@@ -85,14 +86,16 @@ def unfenced(text: str) -> str:
     out, fence = [], ""
     for line in text.splitlines():
         # Any indentation: in GUARDRAILS.md a fence usually sits inside a list item (review of PR #1478).
-        m = re.match(r"^\s*(`{3,}|~{3,})", line)
+        # A BACKTICK opener may not contain another backtick (CommonMark), so "```x``` inline" is a
+        # code span, not a fence -- read as one it swallowed a real opt-out below it (final review).
+        m = re.match(r"^\s*(`{3,})(?=[^`]*$)|^\s*(~{3,})", line)
+        run = (m.group(1) or m.group(2)) if m else ""
         if fence:
-            if m and m.group(1)[0] == fence[0] and len(m.group(1)) >= len(fence) \
-                    and not line.strip()[len(m.group(1)):].strip():
+            if run and run[0] == fence[0] and len(run) >= len(fence) and not line.strip()[len(run):].strip():
                 fence = ""
             continue
-        if m:
-            fence = m.group(1)
+        if run:
+            fence = run
             continue
         out.append(line)
     return "\n".join(out)
@@ -286,6 +289,13 @@ def selftest() -> int:
         (root / "GUARDRAILS.md").write_text("# G\n\n- Example:\n\n    ```\n    - mockup-gate: off\n    ```\n")
         code, msg = run(root, view, None)
         check_that("PR #1478 review: an opt-out in an indented fence is not a declaration", code == 1, msg)
+        # Final review: a line OPENING with an inline code span is not a fence.
+        (root / "GUARDRAILS.md").write_text("# G\n\n```x``` inline\n\n- mockup-gate: off\n")
+        code, msg = run(root, view, None)
+        check_that("PR #1478 final review: a code span at line start does not fence the opt-out", code == 0, msg)
+        (root / "GUARDRAILS.md").write_text("# G\n\n```sh\n- mockup-gate: off\n```\n")
+        code, msg = run(root, view, None)
+        check_that("PR #1478 final review CONTROL: an info-string fence still fences", code == 1, msg)
         (root / "GUARDRAILS.md").unlink()
 
     # The git path main() takes: a new, untracked view must count (the #1341 blind spot). A FRESH
