@@ -490,7 +490,7 @@ result**.
 
 | kind | what it is | what the preview shows |
 |---|---|---|
-| **Refused** | the row cannot be imported | the reason, and the **spreadsheet row number** so it can be fixed at source |
+| **Refused** | the row cannot be imported | the reason, and the **spreadsheet row number** |
 | **New** | no matching record | the row as it will be created |
 | **Changed** | matches an existing record, and at least one field differs | per field, **current → incoming**, the changed fields highlighted, and a per-row **Update / Skip** choice |
 | **Identical** | matches an existing record with nothing to change | **a count line**, collapsed — *"41 rows are identical"* — with a **Show them** expander |
