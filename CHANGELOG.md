@@ -16070,10 +16070,16 @@ boot/validation path — with a bullet each so the promotion could close them se
   states needed one message for two causes. And each repair named no environment.
   - **Now the check asks one question:** does any `rails_pulse_` table exist? If none does, it loads the schema.
     Otherwise it skips the load, and `db:prepare` migrates, including an upgrade that adds a table. The load still
-    never runs on a populated database, so the silent skip #1420 closed stays closed. There is no table list to pin.
-  - **The one failure is loud and has one cause.** An interrupted first load makes `db:prepare` abort with
-    *"Could not find table 'rails_pulse_operations'"*. The repair is to delete that environment's Pulse database and
-    re-run. A failing check stops the loop before any load, and names the environment.
+    never runs on a populated database, so the silent skip #1420 closed stays closed. The check does not depend on
+    the table names.
+  - **The failures are loud.**
+    - An interrupted first load either finishes (if it got past `rails_pulse_operations`) or makes `db:prepare` abort
+      with *"Could not find table 'rails_pulse_operations'"*. The repair for the abort is to delete that environment's
+      Pulse database and re-run.
+    - A stray non-gem `rails_pulse_` table aborts the same way.
+    - A failing check stops the loop before any load, and names the environment.
+    The final independent review found no state where the rule is silent and wrong, including interrupted loads
+    truncated at every table.
   - **Verified:** doctrine-verifier CONFIRMED all seven claims by running the block VERBATIM, on rails_pulse 0.4.1 with
     Rails 8.1.4 and 8.0.5.1 (no difference between them), in development, test and production:
     - a fresh clone: exit 0, 10 tables per environment, `status` 0;

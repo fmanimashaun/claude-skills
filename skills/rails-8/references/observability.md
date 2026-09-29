@@ -320,15 +320,19 @@ second half is the silent skip above.
 On every other database the guard skips the load, and `db:prepare` applies
 pending Pulse migrations normally. That includes a populated one whose upgrade
 adds a table. The gem's own `db:prepare` hook calls the load as well, and it
-is a no-op there. The check names no table list, so a later version that
-renames a table changes nothing.
+is a no-op there. The check does not depend on the table names.
 
-The one case that fails is loud:
+The cases that fail do so loudly:
 
 - **An interrupted first load** leaves some tables and no migration records. It
-  passes the check, and `db:prepare` then aborts with *"Could not find table
-  'rails_pulse_operations'"*. Repair it by deleting that environment's Pulse
-  database and running again.
+  passes the check. `db:prepare` then either finishes the schema (when the load
+  got as far as `rails_pulse_operations`), or aborts with *"Could not find table
+  'rails_pulse_operations'"*. `rails_pulse:status` exits 0 only when the schema
+  was finished. Repair the abort by deleting that environment's Pulse database
+  and running again.
+- **A non-gem table whose name starts with `rails_pulse_`** also passes the
+  check, and `db:prepare` aborts the same way. The Pulse database should hold
+  only the gem's tables; deleting it to repair would delete that table too.
 - **If the check itself fails**, the loop stops before loading, and names the
   environment.
 
