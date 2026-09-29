@@ -243,6 +243,25 @@ def run() -> int:
         got_iw, _ = tv.resolve_installed(in_wt, project=wt / "app")
         check("per-project: a record naming the worktree itself applies in it",
               got_iw.plugins.get("rails-stack"), "1.41.0")
+        # #1473 review, same rule: a project recorded BELOW its repository root, reached from the
+        # same subdirectory of a worktree, maps to `<main>/app`, not to `<main>`.
+        (pa / ".git").mkdir(exist_ok=True)
+        below = fake_home(tmp / "g4", marketplace_version="1.73.0", plugins={
+            "rails-stack@claude-skills": [rec("1.41.0", "2026-08-01T00:00:00Z", str(pa / "app"))]})
+        got_bl, _ = tv.resolve_installed(below, project=wt / "app")
+        check("per-project: a worktree subdirectory maps to the same subdirectory of the main checkout",
+              got_bl.plugins.get("rails-stack"), "1.41.0")
+        # A bare clone's worktree has no checkout to map to; it stays itself.
+        bare_wt = tmp / "bare-wt"
+        bare_wt.mkdir()
+        (bare_wt / ".git").write_text(f"gitdir: {tmp / 'repo.git' / 'worktrees' / 'b'}\n", encoding="utf-8")
+        check("per-project: a bare clone's worktree is not mapped", tv.main_checkout(bare_wt), bare_wt)
+        # A projectPath that is not a path string is not this project, and nothing raises.
+        try:
+            got_np = tv.applies_to({"projectPath": 7}, pa)
+        except Exception as exc:  # noqa: BLE001 -- the assertion IS that nothing escapes
+            got_np = f"raised {type(exc).__name__}"
+        check("per-project: a non-string projectPath is skipped, not raised", got_np, False)
         # #1427: case alone differs. `samefile` is replaced by a case-folding stand-in so this runs
         # on CI's Linux runner too, which does not fold case, rather than only on APFS.
         real_samefile = tv.os.path.samefile

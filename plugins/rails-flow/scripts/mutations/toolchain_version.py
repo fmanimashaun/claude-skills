@@ -65,8 +65,8 @@ GUARD = Guard(
         # #1427: a linked worktree outside the root is its own "project" again, with no record.
         Mutation(
             "a linked worktree is not mapped to its main checkout",
-            'return gitdir.parent.parent.parent if gitdir.parent.name == "worktrees" else project',
-            "return project",
+            "                return gitdir.parent.parent.parent / project.relative_to(d)\n            return project",
+            "                return project\n            return project",
             "per-project: a linked worktree of A is A",
         ),
         # #1474 review: the session path REPLACED by its main checkout, so a record naming the
@@ -76,6 +76,25 @@ GUARD = Guard(
             "{project.resolve(), main_checkout(project).resolve()}",
             "{main_checkout(project).resolve()}",
             "per-project: a record naming the worktree itself applies in it",
+        ),
+        # #1473 review B1, same rule: a worktree subdirectory maps to the main ROOT.
+        Mutation(
+            "a worktree subdirectory maps to the main checkout's root",
+            "                return gitdir.parent.parent.parent / project.relative_to(d)",
+            "                return gitdir.parent.parent.parent",
+            "per-project: a worktree subdirectory maps to the same subdirectory",
+        ),
+        Mutation(
+            "a bare clone's worktree is mapped like a checkout's",
+            '            if gitdir.parent.name == "worktrees" and gitdir.parent.parent.name == ".git":',
+            '            if gitdir.parent.name == "worktrees":',
+            "per-project: a bare clone's worktree is not mapped",
+        ),
+        Mutation(
+            "a non-string projectPath raises TypeError",
+            "    except (OSError, TypeError):         # a projectPath that is not a path string",
+            "    except OSError:",
+            "per-project: a non-string projectPath is skipped",
         ),
         # The case-only branch dropped. Its fixture stubs `samefile`, so this runs on Linux too.
         Mutation(

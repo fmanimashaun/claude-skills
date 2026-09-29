@@ -114,7 +114,7 @@ def applies_to(record: dict, project: Path | None) -> bool:
         # made from inside the worktree names the worktree, one made from the main checkout names
         # that, and either is this project.
         root, sessions = Path(owner).resolve(), {project.resolve(), main_checkout(project).resolve()}
-    except OSError:
+    except (OSError, TypeError):         # a projectPath that is not a path string
         return False
     # A session run from a subdirectory still loads the project's plugins (drive.md runs the gate
     # from wherever the session is). `resolve()` also folds a trailing slash and a symlinked
@@ -151,7 +151,12 @@ def main_checkout(project: Path) -> Path:
             gitdir = Path(line.partition("gitdir:")[2].strip())
             if not gitdir.is_absolute():
                 gitdir = d / gitdir
-            return gitdir.parent.parent.parent if gitdir.parent.name == "worktrees" else project
+            # `<main>/.git/worktrees/<n>` only: a bare clone's `repo.git/worktrees/<n>` has no
+            # checkout to map to. Keep the path below the worktree root, so a project recorded
+            # below the repository root (`<main>/app`) still matches from `<wt>/app`.
+            if gitdir.parent.name == "worktrees" and gitdir.parent.parent.name == ".git":
+                return gitdir.parent.parent.parent / project.relative_to(d)
+            return project
     return project
 
 
