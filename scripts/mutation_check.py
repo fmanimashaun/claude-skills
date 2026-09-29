@@ -296,16 +296,20 @@ def run_mutation(guard: Guard, mutation: Mutation) -> list[str]:
         shutil.rmtree(workdir, ignore_errors=True)
 
 
+def live_mutations(guards: list[Guard], baselines: list[list[str]]) -> list[tuple[Guard, Mutation]]:
+    """The mutations `main`'s pool still runs: every one of every guard whose baseline passed.
+
+    A baseline with findings ends its guard unscored -- the same rule `run_guard` applies serially.
+    """
+    return [(g, m) for g, b in zip(guards, baselines) if not b for m in g.mutations]
+
+
 def run_guard(guard: Guard) -> list[str]:
     """Failures for one guard. Empty list = every mutation was caught by the right fixture.
 
-    Serial, deliberately. Wall time is one subprocess per declared mutation and the list only
-    grows -- 236 of them crossed `maintainer_doctor`'s 180s per-gate budget while #129 was being
-    written. The fix is `SLOW_GATES` over there, which states the cost honestly, rather than a
-    thread pool here: every mutation does run in its own temp directory against its own
-    subprocess, so parallelising is safe and is the obvious next step, but it measured at only
-    ~7% on a machine that was running other agents' sweeps at the same time. An unmeasurable
-    speedup is not worth adding concurrency to the checker every other gate is judged by.
+    Serial within the guard; `main` parallelises ACROSS mutations instead (#1444), which is
+    safe because every mutation runs in its own temp directory against its own subprocess. This
+    serial form is what the selftest drives, and it must stay equivalent to `main`'s pool.
     """
     # The baseline runs the UNMUTATED selftest first. Without it a guard whose staged copy is
     # missing a dependency fails for that reason alone, and every mutation then reads as "caught"
@@ -355,11 +359,11 @@ def main(argv: list[str] | None = None) -> int:
     # (an INERT baseline still ends its guard, unscored), then every remaining mutation of every
     # guard runs in the same pool. Output is printed in declaration order, so it reads as a serial run.
     from concurrent.futures import ThreadPoolExecutor
-    jobs = args.jobs or os.cpu_count() or 1
+    jobs = max(1, args.jobs or os.cpu_count() or 1)
     started = time.monotonic()
-    with ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
         baselines = list(pool.map(run_baseline, guards))
-        live = [(g, m) for g, b in zip(guards, baselines) if not b for m in g.mutations]
+        live = live_mutations(guards, baselines)
         outcomes = list(pool.map(lambda gm: run_mutation(*gm), live))
     by_guard: dict[str, list[str]] = {g.name: list(b) for g, b in zip(guards, baselines)}
     for (g, _m), found in zip(live, outcomes):

@@ -168,5 +168,12 @@ GUARD = Guard(
             '    "mutation coverage": 30,',
             "silently TIGHTENS a gate",
         ),
+        Mutation(
+            # #1444: --require-slow must FAIL only a SLOW_GATES timeout; any other hang stays a skip.
+            "--require-slow fails every timed-out gate, not just the slow ones",
+            "elif code == 124 and self.require_slow and name in SLOW_GATES:",
+            "elif code == 124 and self.require_slow:",
+            "NON-slow gate that times out is still SKIP",
+        ),
     ),
 )

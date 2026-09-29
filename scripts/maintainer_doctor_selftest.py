@@ -237,6 +237,7 @@ def timeout_fixtures() -> None:
         scripts = work / "scripts"
         scripts.mkdir(parents=True, exist_ok=True)
         (scripts / "_slow.py").write_text("import time\ntime.sleep(30)\n", encoding="utf-8")
+        (scripts / "_hangs.py").write_text("import time\ntime.sleep(30)\n", encoding="utf-8")
         (scripts / "_fails.py").write_text(
             "import sys\nprint('a guard survived')\nsys.exit(1)\n", encoding="utf-8")
         md.GATES = (("selftest slow", ("python3", "scripts/_slow.py")),
@@ -271,6 +272,17 @@ def timeout_fixtures() -> None:
         strict.check_gates()
         expect("under --require-slow, a slow gate that times out is FAIL", strict, "selftest slow", md.FAIL)
         expect("...and a real failure is still FAIL there", strict, "selftest fails", md.FAIL)
+        # ...but ONLY a SLOW_GATES gate: an ordinary gate that hangs is still a skip under the flag,
+        # or `and name in SLOW_GATES` could be dropped with nothing noticing (#1457 review).
+        saved_timeout = md.DEFAULT_TIMEOUT
+        md.GATES, md.DEFAULT_TIMEOUT = (("selftest hangs", ("python3", "scripts/_hangs.py")),), 1
+        try:
+            hang = md.Doctor(require_slow=True)
+            hang.check_gates()
+        finally:
+            md.DEFAULT_TIMEOUT = saved_timeout
+        expect("under --require-slow, a NON-slow gate that times out is still SKIP", hang,
+               "selftest hangs", md.SKIP)
     finally:
         md.GATES, md.SLOW_GATES, md.REPO = saved_gates, saved_slow, real
 

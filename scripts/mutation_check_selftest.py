@@ -308,6 +308,17 @@ def run() -> int:
                     "fail if the rule broke. A guard-level mutation count cannot see this."
                 )
 
+    # ---- main's pool schedule (#1444): an INERT baseline ends its guard, unscored ------------
+    _tick()
+    inert = mc.Guard(name="inert", subject="s.py", selftest="t.py",
+                     mutations=(mc.Mutation("i1", "a", "b", ""),))
+    alive = mc.Guard(name="alive", subject="s.py", selftest="t.py",
+                     mutations=(mc.Mutation("a1", "a", "b", ""), mc.Mutation("a2", "c", "d", "")))
+    scheduled = [(g.name, m.name) for g, m in mc.live_mutations([inert, alive], [["INERT"], []])]
+    if scheduled != [("alive", "a1"), ("alive", "a2")]:
+        FAILURES.append(f"pool schedule: an INERT baseline must end its guard, and a passing one "
+                        f"must run every mutation -- scheduled {scheduled}")
+
     # ---- the import-completeness rule, on a FIXTURE rather than on this repo ----------------
     # The loop above reads the real repo through `original_repo`, which inside a staged tempdir is
     # the tempdir -- so it iterates zero guards and every assertion about it passes vacuously. That
@@ -354,6 +365,21 @@ def run() -> int:
                             mutations=())
         if not any("grandchild" in p for p in mc.unstaged_sibling_imports(via_need, fixture_base)):
             FAILURES.append("import-completeness: an import made BY a staged need must be reported")
+        _tick()
+        # A need NO staged file imports (run by path, as a subprocess) is still read: only the
+        # `needs` seed reaches it, since no import edge leads there.
+        (fixture_base / "scripts/runner.py").write_text("import solo\n", encoding="utf-8")
+        (fixture_base / "scripts/solo.py").write_text("W = 4\n", encoding="utf-8")
+        by_path = mc.Guard(name="fixture", subject="scripts/leader.py", selftest="scripts/leader.py",
+                           deps=("scripts/follower.py", "scripts/grandchild.py"),
+                           needs=("scripts/runner.py",), mutations=())
+        if not any("solo" in p for p in mc.unstaged_sibling_imports(by_path, fixture_base)):
+            FAILURES.append("import-completeness: a need no staged file imports must still be scanned")
+        _tick()
+        # TRANSITIVE proper: nothing declared, so follower is reported -- and so is what IT
+        # imports, in the same run, instead of one missing file per round of fixing.
+        if not any("grandchild" in p for p in mc.unstaged_sibling_imports(bare, fixture_base)):
+            FAILURES.append("import-completeness: an unstaged import's own imports must be reported too")
         _tick()
         # ...and its control: staging the grandchild too clears it.
         both = mc.Guard(name="fixture", subject="scripts/leader.py", selftest="scripts/leader.py",
