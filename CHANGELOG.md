@@ -7,6 +7,10 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **The mutation gate fits CI again, and a timeout on the run that must prove it is a FAIL — `scripts/mutation_check.py`, `scripts/maintainer_doctor.py`, `.github/workflows/gates.yml`** (#1444). Every dev push run since the suite passed 900 s reported `mutation coverage` as a timeout-skip and went green, so the promotion's CI evidence did not exist. `mutation_check.py` now runs every baseline, then every mutation of every live guard, in one pool (`--jobs`, default the CPU count): the full 1514 mutations across 141 guards measured 1456 s at `--jobs 10`, against ~84 min serial, all caught. `SLOW_GATES["mutation coverage"]` is 5400 s, and the ok line prints `jobs=N, Xs` so the next value comes from a measured runner. `--require-slow` (CI's non-PR runs, and `scripts/release_local.sh`) turns a slow-gate timeout into FAIL; an ordinary gate's timeout, and a laptop run, keep SKIP. `unstaged_sibling_imports` now follows imports transitively, including those made by `needs` files — the one-level scan is how `check_slices` went INERT in CI; its fixture fails against the old function.
+
 ### 2026-09-28 (release v1.152.0)
 
 - **The `check_slices` mutation guard stages the files its imports now need — `plugins/rails-flow/scripts/mutations/check_slices.py`**.
