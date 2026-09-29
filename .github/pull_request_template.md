@@ -1,7 +1,7 @@
 <!--
-  Branch off `dev`, PR into `dev`. No version bump, no closing keyword — issues close on the
-  `dev → main` promotion, because closing keywords fire only on merge into the default branch
-  and nothing on `dev` has reached a user yet.
+  Branch off `dev`, PR into `dev`. No version bump. For each issue this PR completes, a line
+  `Fixes #n` (alone on the line): on merge, close-on-dev-merge.yml closes it with label
+  `fixed-on-dev` ("ships in the next release"). Partial work writes `Refs #n` and stays open.
 
   Keep every section. One that genuinely does not apply says "N/A" and why; only an `## If …`
   section may be deleted. rails-flow's guard-claims hook refuses a body missing any other (#1389),
@@ -112,8 +112,7 @@ The fenced blocks are what an agent pastes verbatim into a user's project.
 ## Landing on `dev`
 
 - [ ] No version bump.
-- [ ] `Refs`, not a closing keyword. Issues close on the promotion PR, on their own merit.
-- [ ] **No closing keyword appears next to a real issue number anywhere in this body** — not in
-      prose, not inside backticks, not when quoting a past mistake. GitHub parses the pattern
-      wherever it appears and does not care what the sentence is about. Use a placeholder number,
-      or name the issue separately from the keyword.
+- [ ] One `Fixes #n` line per issue this PR completes (it closes at the merge); `Refs #n` for
+      partial work. Only a line that is exactly `Fixes #n` closes anything.
+- [ ] No closing keyword in a COMMIT message: commits reach `main` at the promotion, and GitHub
+      parses closing keywords there wherever they appear.
