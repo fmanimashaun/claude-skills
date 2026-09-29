@@ -166,9 +166,34 @@ CLAIMS: tuple[Claim, ...] = (
              "approval LINK exists, never that the comment says yes; that is the reviewer's click.",
     ),
     # ---- the SHIPPED doctrine (#798) ------------------------------------------------------
-    # Five claims that already have gates to cite. Deliberately not more: a row nobody derived is
-    # the green artifact this file exists to replace, and `SHIPPED_FLOOR` tracks the rest as
-    # unmapped rather than pretending they are covered.
+    # Claims that already have gates to cite, plus the ADVICE rows #1363 recorded with the measured
+    # reason nothing enforces them. Deliberately not more: a row nobody derived is the green
+    # artifact this file exists to replace, and `SHIPPED_FLOOR` tracks the rest as unmapped rather
+    # than pretending they are covered.
+    Claim(
+        claim="Prefer expanded conditionals over guard clauses when writing new code (style.md §1).",
+        stated_in="skills/rails-8/references/style.md",
+        anchor="No cop can enforce it the other way round, either.",
+        kind=ADVICE,
+        note="#1363, verified on rubocop 1.91.0: no stock cop prefers expanded conditionals, and "
+             "Style/GuardClause has no EnforcedStyle to invert. The rule's two exceptions (a return "
+             "at the start; a non-trivial body) are judgement, and it says to leave working code alone. "
+             "A cop would contradict the section it enforced.",
+        refs=(1363,),
+    ),
+    Claim(
+        claim="Indent under visibility modifiers, with no blank line after them; a private-only "
+              "module is the exception (style.md §5).",
+        stated_in="skills/rails-8/references/style.md",
+        anchor="It cannot simply be switched on",
+        kind=ADVICE,
+        note="#1363, verified on rubocop 1.91.0 / rubocop-rails-omakase 1.1.0: IndentationWidth + "
+             "IndentationConsistency(indented_internal_methods) + EmptyLinesAroundAccessModifier"
+             "(only_before) enforce the main shape exactly, but flag the private-only-module exception "
+             "twice, and no option expresses that exception. Advice by default; a project may adopt "
+             "the three with a per-file carve-out for private-only modules.",
+        refs=(1363,),
+    ),
     Claim(
         claim="The prescribed testing stack is not a menu — a project missing simplecov, webmock "
               "or vcr is incomplete, not merely different.",
