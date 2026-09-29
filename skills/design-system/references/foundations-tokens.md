@@ -231,6 +231,8 @@ token.
   --col-select: 3rem;              /* 48px  — the selection-checkbox column */
   --drawer-min: 30rem;             /* 480px — the detail drawer, narrowest */
   --drawer-max: 45rem;             /* 720px — the detail drawer, widest */
+  --inset-edge: 1rem;              /* 16px  — a card's floor from the viewport edge below 768px (#1391) */
+  --inset-edge-md: 1.5rem;         /* 24px  — the same floor at 768px and up */
 }
 ```
 <!-- structural-grid:end -->
@@ -354,7 +356,12 @@ because v4 uses native CSS cascade layers instead of hijacking `@layer` the way 
 
 ```css
 /* Page shell + prose measure — the two-level nesting both corpora converge on. */
-@utility shell { max-inline-size: var(--width-shell); margin-inline: auto; }
+@utility shell {
+  max-inline-size: var(--width-shell); margin-inline: auto;
+  /* The page gutter IS the viewport inset (#1391), so no card in the page can touch the edge. */
+  padding-left: calc(var(--viewport-inset) + env(safe-area-inset-left, 0px));
+  padding-right: calc(var(--viewport-inset) + env(safe-area-inset-right, 0px));
+}
 @utility prose-measure { max-inline-size: var(--width-prose); }
 
 /* Section rhythm — fluid, no breakpoint pair needed. */
@@ -370,6 +377,17 @@ because v4 uses native CSS cascade layers instead of hijacking `@layer` the way 
 @utility pl-safe { padding-left: env(safe-area-inset-left); }
 @utility pr-safe { padding-right: env(safe-area-inset-right); }
 @utility mb-safe { margin-bottom: env(safe-area-inset-bottom); }
+
+/* A card never touches the viewport (#1391): per side, the edge floor PLUS the device's safe area.
+   One definition — the modal wrapper, the drawer and the shell gutter use it. */
+:root { --viewport-inset: var(--inset-edge); }
+@media (min-width: 48rem) { :root { --viewport-inset: var(--inset-edge-md); } }
+@utility inset-viewport {
+  padding: calc(var(--viewport-inset) + env(safe-area-inset-top, 0px))
+           calc(var(--viewport-inset) + env(safe-area-inset-right, 0px))
+           calc(var(--viewport-inset) + env(safe-area-inset-bottom, 0px))
+           calc(var(--viewport-inset) + env(safe-area-inset-left, 0px));
+}
 ```
 
 ## Chart color tokens

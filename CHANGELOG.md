@@ -13090,6 +13090,32 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+*Version number assigned at promotion.*
+
+- **A table that scrolls sideways, forces a width, or opens no details card is refused — `plugins/design-flow/scripts/check_table_layout.py`,
+  `plugins/design-flow/scripts/mutations/check_table_layout.py`, `plugins/design-flow/checks.json`,
+  `plugins/design-flow/commands/mobile.md`, `plugins/design-flow/README.md`, `scripts/maintainer_doctor.py`** (#1391).
+  Four rules, each a construct: a `<table>` nested inside an x-scroller, a fixed minimum width (a `min-w-*` class, an inline `min-width` including an interpolated one, or
+  `min_width:` on a table component's render call however it wraps), and a table whose directory has no row opening
+  a record into the modal frame (the directory, because an index's row link lives in its partial). A non-index table
+  declares `table-without-details: <why>`; mailer views are not judged. The fourth refuses a tab strip that scrolls:
+  `role="tablist"`, or a scroller in a file named for tabs, since apps build strips as link lists. **A scroller is
+  what the app defines**: Tailwind's overflow classes plus any `@utility` in the app's own CSS whose body scrolls on
+  x. Driven against the app behind the issue: 221 files, 25 findings — 23 `table-min-width` (every one of its 22
+  `min_width:` call sites plus the interpolated style inside its table component), 1 `table-scroll-wrapper` (that
+  component's own `scroll-x` wrapper, which every table there goes through) and 1 `tablist-scroll` (its settings
+  strip). Real runs caught four defects in the check itself — a single-line render match that found 3 of the 22,
+  two mailer layouts reported as missing a details card, the app's own `scroll-x` read as no scroller at all, and a
+  substring match that called `table_component` a tab strip — and each now has a fixture. Independent review then
+  found a fifth — a "New" button opening the modal satisfied `table-no-details` while every row still linked to a
+  show page — so a modal link that is a CRUD action (`new_*`/`edit_*`, `/new`, `/edit`, a delete method) no longer
+  counts; the same review added a tablist nested in a scroller and `min-w-*` on `th`/`td`/`col`. Re-review found our
+  own doctrine's delete-confirmation link (`crud-modal-pattern.md`, `delete_confirmation_invoice_path` into the
+  modal) still counting as a details target, so `delete_*` helpers and `/delete` joined the CRUD actions, with that
+  exact line as a fixture. Sixteen mutations, all caught. `/design-flow:mobile` step 5 now scaffolds designed summary cards.
+
 ### 1.44.2 (release v1.151.0) — 2026-09-26
 
 - **design-flow agents can load the design-system doctrine they cite — `plugins/design-flow/agents/ui-composer.md`,
@@ -15982,6 +16008,43 @@ boot/validation path — with a bullet each so the promotion could close them se
   (token/logo/icon/brand-pack enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
+
+### Unreleased
+
+*Version number assigned at promotion.*
+
+- **Tables are master-detail with no horizontal scroll, and no card touches the viewport — `skills/design-system/references/components.md`,
+  `skills/design-system/references/page-anatomies.md`, `skills/design-system/references/mobile-reference-implementation.md`,
+  `skills/design-system/references/component-implementations.md`, `skills/design-system/references/foundations-tokens.md`,
+  `skills/design-system/references/responsive.md`, `skills/design-system/references/mobile.md`,
+  `skills/design-system/references/layout-primitives.md`, `skills/design-system/references/components-commerce.md`,
+  `skills/design-system/SKILL.md`, `skills/rails-8/references/models.md`, `dist/design-system.skill`, `dist/rails-8.skill`**
+  (#1391). The skill told agents to wrap a table in `overflow-x-auto`, pin its identifier columns, link the id to a
+  show page and dump every column into a phone card; an app built exactly that and the owner rejected it. *Table
+  (CRUD)* is now the one home: no horizontal scroll at any width, a six-column budget, rows as summaries of at most
+  five fields whose name opens a new **Details card** (header, at a glance, sectioned fields, related, activity), and
+  designed summary cards below 768px. The Data table anatomy, mobile §5, `responsive.md`, `mobile.md` and `rails-8`
+  `models.md` now link to it rather than restate it. A new **Viewport inset** entry, the `--inset-edge` tokens and an
+  `inset-viewport` utility keep every card, modal, drawer and sheet at least 16px plus the safe area (24px at 768px)
+  from the edge, and `Ui::Modal`'s placements now float inside that inset rather than pinning to an edge. It stops
+  using `imposter`, whose `max-inline-size: 100%` resolves against the viewport (fixed) or the wrapper's padding box
+  (absolute) — doctrine-verifier CONFIRMED against CSS 2.1 §10.1 and CSS Positioned Layout 3 §containing block. *Tabs*
+  (the maintainer's scope addition on #1391) reverses "the tablist scrolls": at most four tabs in one row that
+  never wraps or scrolls, regrouped rather than overflowed, and a single labelled picker below 768px — and
+  `Ui::Tabs`'s implementation drops `overflow-x-auto` (and `cluster`, which wraps) and renders that picker, with
+  its contract with `tabs#select` written out. From independent review: the inset is the floor **plus** the safe
+  area, not the larger of the two; `shell` now carries that gutter; the Modal panel is `max-h-full` with a
+  scrolling body so a short viewport keeps its top inset; and a table row is made clickable by a `row-link`
+  Stimulus controller rather than a stretched overlay on a `<tr>`, which this kit has not verified; it ignores the
+  row's own controls (including `summary` and `[role=button]`) and the end of a text-selection drag. A Carousel's
+  thumbnail picker is out of the Tabs entry's scope (it picks a slide, it does not navigate) but no longer wraps.
+  The **Permissions matrix** is exempt from master-detail — its cells are switches toggled in place — splits into one
+  section per module on a phone, and keeps no horizontal scroll and the inset
+  ([maintainer decision](https://github.com/fmanimashaun/claude-skills/issues/1391#issuecomment-5862494188)). The one
+  external claim proposed for the rewrite, that screen readers do not reliably announce CSS `content:` labels, came
+  back **REFUTED** from doctrine-verifier (accname 1.2 §4.3.2 includes generated content; WCAG F87 is marked
+  obsolete), so it was dropped and only the rule "labels are real elements" remains. Our own design, no upstream:
+  maintainer decision recorded on #1391.
 
 ### 1.69.0 (release v1.152.0) — 2026-09-28
 

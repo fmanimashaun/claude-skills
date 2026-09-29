@@ -2,11 +2,11 @@
      Rebuild:  python3 scripts/build_wiki.py
      Drift:    python3 scripts/build_wiki.py --check  (runs in the gate sweep) -->
 # Agents and gates
-**30 shipped agents · 50 shipped commands · 145 gates · 4 tier tables**, plus 5 maintainer agents and 6 maintainer commands that are not installed.
+**30 shipped agents · 50 shipped commands · 146 gates · 4 tier tables**, plus 5 maintainer agents and 6 maintainer commands that are not installed.
 
 | plugin | version | agents | commands | tier rows | gates |
 |---|---|---|---|---|---|
-| `design-flow` | 1.44.2 | 5 | 12 | 5 | 19 |
+| `design-flow` | 1.44.2 | 5 | 12 | 5 | 20 |
 | `pipeline` | 1.4.0 | 2 | 8 | 2 | 4 |
 | `qa-flow` | 1.34.0 | 11 | 8 | 11 | 16 |
 | `rails-flow` | 1.55.0 | 12 | 22 | 12 | 31 |
@@ -97,6 +97,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | design-flow scale contiguity selftest | `design-flow` | `python3 plugins/design-flow/scripts/check_scale_contiguity.py --selftest` | selftest |
 | design-flow setup cross-check | `design-flow` | `python3 plugins/design-flow/scripts/setup_doctrine_crosscheck.py --quiet` | live check |
 | design-flow setup cross-check selftest | `design-flow` | `python3 plugins/design-flow/scripts/setup_doctrine_crosscheck.py --selftest` | selftest |
+| design-flow table layout | `design-flow` | `python3 plugins/design-flow/scripts/check_table_layout.py --selftest` | selftest |
 | design-flow tells vs our own doctrine | `design-flow` | `python3 plugins/design-flow/scripts/llm_tell_detector.py --doctrine-selfcheck` | live check |
 | design-flow token drift selftest | `design-flow` | `python3 plugins/design-flow/scripts/check_token_drift.py --selftest` | selftest |
 | design-flow variant conformance | `design-flow` | `python3 plugins/design-flow/scripts/variant_conformance.py --selftest` | selftest |

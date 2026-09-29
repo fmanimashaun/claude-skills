@@ -339,8 +339,10 @@ readable **display number** (#1274, maintainer decision):
   guarantee. Two concurrent creates must never receive the same number, and a collision must not
   abort the transaction around it. Prove both with a spec that creates concurrently. A deleted
   record's number is not handed out again, so gaps are expected.
-- **Everywhere it is displayed, it is a link to the record's show page**, in tables, headings,
-  notifications, emails and audit logs. A number that cannot be clicked sends the reader to search.
+- **Everywhere it is displayed, it is a link to the record**, in tables, headings, notifications,
+  emails and audit logs. In a table index the link opens the record's details card in the modal frame
+  rather than a show page, and the same URL followed directly renders that card over the list
+  (`design-system` `components.md` → Table (CRUD)). A number that cannot be clicked sends the reader to search.
 - **The URL keeps the opaque public id** (`multi-tenancy.md` §5). The display number shows how many
   records exist, which is harmless on screen but is exactly what an address must not reveal or let
   someone guess.
