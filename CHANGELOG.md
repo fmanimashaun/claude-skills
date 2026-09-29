@@ -9,6 +9,8 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **The `rebuild_generated` mutation guard stages the tenancy-cop builder #1403 registered — `scripts/mutations/rebuild_generated.py`** (dev push run 36547806703, the first on which mutation coverage ran rather than timing out, in PR #1457). `scripts/rebuild_generated.py` registers `derive_tenancy_cop.py` with output `plugins/rails-flow/scaffold/`; the guard staged neither, so its unmutated selftest failed in the tempdir ("is registered here and does not exist") and the guard was INERT: all its mutations read as caught. Both are now in `needs`; 3/3 caught, and dev's version reports INERT on the same command. The only failure of 1602 on that run.
+
 - **The mutation gate fits CI again, and a timeout on the run that must prove it is a FAIL — `scripts/mutation_check.py`, `scripts/maintainer_doctor.py`, `.github/workflows/gates.yml`** (#1444). Every dev push run since the suite passed 900 s reported `mutation coverage` as a timeout-skip and went green, so the promotion's CI evidence did not exist. `mutation_check.py` now runs every baseline, then every mutation of every live guard, in one pool (`--jobs`, default the CPU count): the full 1514 mutations across 141 guards measured 1456 s at `--jobs 10`, against ~84 min serial, all caught. `SLOW_GATES["mutation coverage"]` is 5400 s, and the ok line prints `jobs=N, Xs` so the next value comes from a measured runner. `--require-slow` (CI's non-PR runs, and `scripts/release_local.sh`) turns a slow-gate timeout into FAIL; an ordinary gate's timeout, and a laptop run, keep SKIP. `unstaged_sibling_imports` now follows imports transitively, including those made by `needs` files — the one-level scan is how `check_slices` went INERT in CI; its fixture fails against the old function.
 
 ### 2026-09-28 (release v1.152.0)
@@ -6830,6 +6832,36 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 
 ## pipeline (lifecycle orchestrator)
+
+### Unreleased
+
+- **`breaker.py`'s Anthropic citation is verified and linked, and it separates what is ours from the guide — `plugins/pipeline/scripts/breaker.py`** (#1417).
+  The `elapsed Xs / Ys` line cited *Prompting Claude Opus 5.5*, "Time signals for multiagent harnesses", and no check
+  against the source was recorded. `doctrine-verifier` CONFIRMED it against the live page on 2026-09-29
+  ([anchor `#time-signals-for-multi-agent-harnesses`](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5#time-signals-for-multi-agent-harnesses)):
+  the harness adds "the elapsed time against that budget, in seconds"; "The model paces its work to finish inside the
+  budget"; "The budget is advisory ... keep your own timeout".
+  - **The docstring now quotes the page and links it,** and marks three things as ours, not the guide's:
+    - the pre-#1364 behaviour;
+    - appending the line to each proceeding `check` where the guide says every message;
+    - one `budget_minutes` serving as both the advisory budget and the hard stop, where the guide advises an advisory
+      budget "somewhat above".
+  - **A correction to the published #1364 note** (v1.152.0), which cannot be edited: it said "the guide names that as
+    the risk" of paying for time with verification. The page says only that under time pressure the model "might search
+    and verify a little less". Never paying for time with verification is our own directive.
+
+- **`deploy.env.example` no longer documents a key nothing reads — `plugins/pipeline/templates/deploy.env.example`** (#1418).
+  `DEPLOY_DESTINATION` had been flagged by every independent review's mechanical pass
+  (`self_consistency.py --all`, `dead-env-var`). A destination is already selected one way: the argument to
+  `/pipeline:deploy-cloud` (`argument-hint: [optional: destination, e.g. production | staging]`), which
+  `plugins/pipeline/commands/deploy-cloud.md` uses to scope `.kamal/secrets`. The key was a second, unread source for
+  the same value. Wiring it would have given one value two sources with no stated precedence, so the key is removed. The
+  template now says to pass the destination to the command. `self_consistency.py --all` now reports no findings
+  (37 files, 8 env keys). This is our own design: the issue body offers "wire it, or remove the line".
+  - **If your `.kamal/deploy.env` sets `DEPLOY_DESTINATION`,** it was never read. Pass the destination as the
+    command argument instead. A non-default destination is still incomplete, because the deploy step does not pass
+    `-d <destination>` to Kamal. That is tracked in #1465, and the template now says so rather than implying the
+    argument alone is enough.
 
 ### 1.4.0 (release v1.152.0) — 2026-09-28
 
