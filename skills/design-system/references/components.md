@@ -301,9 +301,9 @@ the `--inset-edge` / `--inset-edge-md` structural tokens, added to the safe area
 against it, and the `inset-viewport` utility
 ([foundations-tokens.md](foundations-tokens.md) §3b and the utilities block).
 - **Overlays** put `inset-viewport` on the fixed wrapper, so the panel floats inside it with all four
-  corners rounded. There is no edge-to-edge sheet: a bottom placement is a floating card whose foot
-  sits 16px plus the safe area above the screen's edge, and at maximum height it stops 16px short
-  of the top.
+  corners rounded; a bottom placement's foot sits 16px plus the safe area above the screen's edge, and
+  at maximum height it stops 16px short of the top. The one exception is an edge-anchored drawer or
+  sheet, which may touch **only the edge it slides in from** ([Modal / Dialog](#modal--dialog)).
 - **Page content** gets it from the shell: `shell`'s inline padding is `--viewport-inset` plus the safe
   area, so a card in the page is inset by construction and never adds its own margin.
 
@@ -353,6 +353,14 @@ against it, and the `inset-viewport` utility
   scrolls, **vertically**. A modal never scrolls horizontally: the body is
   `min-h-0 min-w-0 overflow-y-auto overflow-x-hidden`, and what it holds must fit its width — a table
   inside it follows [Table (CRUD)](#table-crud), which never needs horizontal room.
+- **An edge-anchored drawer or sheet may touch ONLY the edge it slides in from**
+  ([maintainer decision on #1419](https://github.com/fmanimashaun/claude-skills/issues/1419#issuecomment-5886265345)). A right drawer touches the right edge and keeps the margin
+  at its top, bottom and left; a left drawer is the mirror; a bottom sheet touches the bottom and keeps
+  it at top, left and right. A centred card keeps the margin on every side. Each such placement
+  **declares it, for that placement only**, in a comment on or above the placement's own line —
+  `# modal-fit: edge-pinned right -- slides in from the right` beside the `right:` entry — so the
+  right drawer's declaration can never cover the bottom sheet or the centred card.
+  `check_modal_fit.py` reads it from comments only, never from a string.
 - **`placement:`** picks centre or an edge: `:center` (default) · `:left` · `:right` · `:bottom`. An
   **overlay drawer is this component with `placement: :right`** — one dialog implementation, one focus
   trap, one `Esc`. A *persistent* sidebar is not a dialog and must not come through here.
@@ -384,7 +392,8 @@ against it, and the `inset-viewport` utility
 - **Responsive: render both, do not morph one.** Modal drawer below `lg`, persistent `<nav>` at `lg` and
   up. Toggling `aria-modal` and a focus trap by media query means the role changes under the user.
 - Panel `bg-popover text-popover-foreground shadow-lg rounded-lg` at `max-w-sm`, as tall as the
-  space inside the wrapper's `inset-viewport` — never flush with an edge ([Viewport inset](#viewport-inset));
+  space inside the wrapper's `inset-viewport` — flush with no edge except, if declared, the one it slides
+  in from ([Modal / Dialog](#modal--dialog), [Viewport inset](#viewport-inset));
   backdrop as Modal's. Slots as Modal: `title`, `body`, `actions`.
 - **The detail drawer** — a record opened beside its list without leaving it — is the overlay drawer
   with stated bounds (#978); the navigation drawer at compact keeps the `max-w-sm` panel above, this
@@ -392,7 +401,7 @@ against it, and the `inset-viewport` utility
   viewport between **480 and 720px**, both structural tokens ([foundations-tokens.md](foundations-tokens.md) §3b).
   Fixed header (title, close) and footer (`actions`), the body alone scrolls (`overflow-y-auto`);
   backdrop as Modal's. Below `md` it is a floating card as wide as the inset allows, since a third
-  of 640px is not a drawer — never an edge-to-edge sheet.
+  of 640px is not a drawer; it touches no edge but the one it slides from ([Modal / Dialog](#modal--dialog)).
   At two panes ([page-anatomies.md → List-detail](page-anatomies.md#list-detail--the-shape-most-authenticated-apps-are))
   the detail is a pane, not this drawer — the drawer is the one-pane answer.
 
@@ -1082,7 +1091,7 @@ implements its phone half.
   Ticking a row's checkbox never opens the record: `row-link` ignores clicks that land on a control.
 - **A table inside a modal is still a full data table** (#1419): its stated total, pagination with
   rows per page, the empty state inside the table, and phone summary cards — never "the first N" with
-  no way to the rest. Its pager's links target the modal frame, so paging stays inside the card.
+  no way to the rest.
 - **Unchanged by master-detail:** the five states (loaded, empty, filtered-empty, loading, error),
   the count always stated, and rows per page —
   [page-anatomies.md → Data table](page-anatomies.md#five-states-and-all-five-are-required).

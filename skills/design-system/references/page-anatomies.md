@@ -376,6 +376,10 @@ is where the decisions no single part can carry are made.
   editable combobox; the typeahead half belongs to the select-only one and applying it here
   swallows the space bar).
 
+**Inside a modal, it is the same table** (#1419): total, pager, empty state and phone cards — and the
+modal holding it never outgrows the viewport
+([components.md → Table (CRUD)](components.md#table-crud), [Modal / Dialog](components.md#modal--dialog)).
+
 ### Five states, and all five are required
 
 A screen that ships only the first is the normal defect, and the fourth is the one always missing.
@@ -480,9 +484,9 @@ A CSV or bulk upload that can match records that already exist (#1419, the maint
 *"present them first to the user to confirm if they should update or skip … instead of silently
 making that choice for them"*). It is **one modal journey** in the wide
 [Details card](components.md#details-card) frame: **choose the file → preview → decide → confirm →
-result**, each step replacing the last inside the same card.
+result**.
 
-**The preview judges every row, into one of five kinds**, each with its own count:
+**The preview judges every row, into one of five kinds:**
 
 | kind | what it is | what the preview shows |
 |---|---|---|
@@ -500,13 +504,9 @@ result**, each step replacing the last inside the same card.
 - **The confirm foot states the outcome before it happens** — *"Create 12 · Update 3 · Skip 5"* — in
   the card's pinned action foot ([Modal / Dialog](components.md#modal--dialog)).
 - **Confirm judges the file again, against the live data.** A record that changed since the preview
-  was drawn is a **conflict**: it is reported in the result and **never overwritten**. The preview is
-  a proposal, not a lock.
-- **Every update writes an audit entry with the before and after values**, per field.
-- **A record's identity key (its code) is never updatable by import** — it is how the row found its
-  record; an import that could change it could silently re-point the row at another one.
-- **The result step** states the outcome as it actually happened — created, updated, skipped,
-  refused, conflicts — which can differ from the preview's, because confirm judged the file again.
+  was drawn is a **conflict**, and it is **never overwritten**.
+- **Every update writes an audit entry with the before and after values.**
+- **A record's identity key (its code) is never updatable by import.**
 
 ## Settings
 

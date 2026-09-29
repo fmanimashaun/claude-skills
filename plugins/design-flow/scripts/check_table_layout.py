@@ -7,10 +7,11 @@ Run:  python3 check_table_layout.py                 # app/views + app/components
 
 WHY THIS EXISTS. The shipped design-system skill told agents to wrap a table in `overflow-x-auto`,
 pin its identifier columns, link the id to a show page, and dump every column into a phone card. An
-app built exactly that and the owner rejected it. Measured there: 25 tables forced a fixed
-`min_width` of 36rem-60rem, so they scrolled sideways on tablets and laptops that had room to fit
-them. The doctrine is now `design-system` `components.md` -> Table (CRUD); this checks the three
-parts of it that are visible in source.
+app built exactly that and the owner rejected it. Measured on that app's checkout at `80ac5d1a`:
+22 table call sites forced a fixed `min_width` of 36rem-60rem, so they scrolled sideways on tablets
+and laptops that had room to fit them (its `dev` has since removed them). The doctrine is now
+`design-system` `components.md` -> Table (CRUD) and -> Pagination; this checks the parts of them
+that are visible in source.
 
 FIVE RULES, each a construct and never a word:
 
@@ -79,10 +80,12 @@ from source_text import strip_comments
 GATE = "table-layout"
 
 TABLIST = re.compile(r"""\brole\s*=\s*["']tablist["']""")
-PAGER_FILE = re.compile(r"(?:^|[_.-])(?:pagination|pager)(?=[_.-]|$)")
-PAGER_NAV = re.compile(r"""aria-label\s*=\s*["']Pagination["']""")
+# A pager is found by file name (Pagy's own partial is `_pagy_nav`) or by its nav's label, written as an
+# attribute or through a helper (`tag.nav aria: { label: "Pagination" }`) -- #1451 review.
+PAGER_FILE = re.compile(r"(?:^|[_.-])(?:pagination|pager|pagy)(?=[_.-]|$)")
+PAGER_NAV = re.compile(r"""aria-label\s*=\s*["']Pagination["']|aria:\s*\{[^}]*\blabel:\s*["']Pagination["']""")
 PER_PAGE = re.compile(r"<select\b|\bselect_tag\b|\.select\s*[(:]|\.input\s+:(?:limit|per_page|per|items)\b")
-PAGER_SUMMARY = re.compile(r"\bShowing\b|\bpagy_info\b|<%=\s*summary\s*%>")
+PAGER_SUMMARY = re.compile(r"\bShowing\b|\bpagy_info\b|<%=\s*summary\s*%>|\bt\(\s*[\"'][\w.]*(?:showing|summary)[\"']")
 # `tab`/`tabs` as a WORD in the file name. A substring test called `table_component` a tab strip on
 # the first real run.
 TAB_FILE = re.compile(r"(?:^|[_.-])tabs?(?=[_.-]|$)")
@@ -318,6 +321,13 @@ def _selftest() -> int:
     expect("a pagination FILE with a helper select after the summary is caught",
            rules('<span><%= summary %></span>\n<%= select_tag :limit, options %>',
                  name="app/components/ui/pagination_component.html.erb") == ["pager-order"])
+    expect("a tag.nav helper's Pagination label marks a pager",
+           rules('<%= tag.nav aria: { label: "Pagination" } do %><p>Showing</p><select name="limit"></select><% end %>')
+           == ["pager-order"])
+    expect("an i18n summary before rows-per-page is caught",
+           rules('<nav aria-label="Pagination"><%= t(".showing", from: 1) %><select name="limit"></select></nav>') == ["pager-order"])
+    expect("Pagy's _pagy_nav partial is a pager file",
+           rules('<%= t("pagy.showing") %>\n<%= select_tag :limit, opts %>', name="app/views/shared/_pagy_nav.html.erb") == ["pager-order"])
     expect("a non-pager file with Showing before a select is silent",
            rules('<p>Showing results</p><select name="sort"></select>') == [])
 

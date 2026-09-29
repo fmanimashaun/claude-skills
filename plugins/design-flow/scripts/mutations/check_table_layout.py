@@ -122,6 +122,31 @@ GUARD = Guard(
             "    pass",
             "a non-pager file with Showing before a select is silent",
         ),
+        # #1451 review: comment stripping, and the pager shapes a real app writes.
+        Mutation(
+            "COMMENTS ARE NO LONGER STRIPPED, so a described anti-pattern counts as committed",
+            "    source = strip_comments(raw)\n",
+            "    source = raw\n",
+            "a scroller named only in a comment is silent",
+        ),
+        Mutation(
+            "a tag.nav helper's Pagination label is no longer seen",
+            r"""|aria:\s*\{[^}]*\blabel:\s*["']Pagination["']""",
+            "",
+            "a tag.nav helper's Pagination label marks a pager",
+        ),
+        Mutation(
+            "an i18n summary is no longer seen",
+            """|\\bt\\(\\s*[\\"'][\\w.]*(?:showing|summary)[\\"']")""",
+            """")""",
+            "an i18n summary before rows-per-page is caught",
+        ),
+        Mutation(
+            "Pagy's _pagy_nav is no longer a pager file",
+            "(?:pagination|pager|pagy)",
+            "(?:pagination|pager)",
+            "Pagy's _pagy_nav partial is a pager file",
+        ),
         Mutation(
             "mailer views are judged again, and email layout tables fail",
             "        if MAILER.search(p.relative_to(root).as_posix()):\n            continue\n",

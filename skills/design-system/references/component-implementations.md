@@ -417,9 +417,9 @@ end
                 class="with-icon min-h-touch rounded-md focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/30"><span class="sr-only">Close</span><%= close_icon %></button>
       </div>
       <%# Vertical only (#1419). `overflow-x-hidden` is explicit: with `overflow-y-auto` alone, x would  %>
-      <%# compute to auto and could scroll; hidden clips and offers the user no sideways scroll (script  %>
-      <%# can still scroll it — `clip` would forbid that too). `min-w-0`/`min-h-0` are the explicit form of %>
-      <%# "this flex item may shrink below its content", safe across engines.                         %>
+      <%# compute to auto and could scroll; hidden clips and offers the user no sideways scroll, while   %>
+      <%# `clip` also forbids script scrolling (CSS Overflow 3, overflow properties). `min-w-0`/`min-h-0` %>
+      <%# let this flex item shrink below its content (CSS Flexbox 1, 4.5 automatic minimum size).       %>
       <div class="min-h-0 min-w-0 overflow-y-auto overflow-x-hidden"><%= content %></div>
       <% if actions? %><div class="cluster" style="--justify: flex-end"><%= actions %></div><% end %>
     </div>

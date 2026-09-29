@@ -19,9 +19,13 @@ against the app behind #1391 reported its centred modal and its privacy <dialog>
 the check knew only `inset-viewport` + `max-h-full`. Both already fit, by another route: a width of
 `calc(100% - 2rem)` and the app's own `@utility modal-max-h` (`calc(100svh - 2rem - env(...))`). So:
 
-  horizontal fit  `inset-viewport`, OR a width class of `calc(100% | 100vw - <gap>)`.
-  vertical fit    `max-h-full` inside `inset-viewport`, OR a max height of `calc(100{s,d,l,}vh - <gap>)`,
-                  as a class or as an `@utility` read from the app's own CSS.
+  horizontal fit  `inset-viewport`, OR a width of `calc(100% | 100vw - <gap>)` as a class or an inline
+                  style -- and in either case no fixed `w-[Nrem]`/`width: Npx` that can outgrow it,
+                  unless it is capped with `max-w-full`.
+  vertical fit    `max-h-full` inside `inset-viewport`, OR a max height of `calc(100{s,d,l,}vh - <gap>)`
+                  as a class, an inline style, or an `@utility` read from the app's own CSS (with its
+                  CSS comments stripped, so a commented-out calc is not a bound).
+  A GAP IS NON-ZERO: `calc(100vh-0rem)` is the whole viewport.
 
 (And that first run was taken on a checkout 308 commits behind the app's `dev`. The check now gets
 driven against an EXPORT of the branch it judges; a number from a stale tree is a number about
@@ -31,12 +35,17 @@ TWO RULES, judged per DIALOG COMPONENT -- a file that declares `role="dialog"` (
 or a `<dialog>`, read together with its sibling (`x.rb` with `x.html.erb`), because a ViewComponent
 computes the panel's classes in Ruby and renders them in the template:
 
-  modal-exceeds-viewport   the component has no `inset-viewport` wrapper, or no `max-h-full` panel.
-  modal-touches-edge       the component pins a panel to an edge: `fixed` with `inset-y-0` or
-                           `inset-x-0`. A drawer or a bottom placement floats inside the inset. A
-                           placement pinned ON PURPOSE declares it, with a reason, in the component:
-                           `<%# modal-fit: edge-pinned -- why %>` (or `# modal-fit: edge-pinned -- why`
-                           in the `.rb`). A declaration with no reason is not one.
+  modal-exceeds-viewport   no width or no height bounded by the viewport, as above.
+  modal-touches-edge       a `fixed` panel class string touches an edge it has not declared. Its edges
+                           come from its own tokens, in any order: `inset-y-0` is top+bottom,
+                           `inset-x-0` left+right, `top-0`/`bottom-0`/`left-0`/`right-0` their edge;
+                           `inset-0` is the full-screen wrapper or backdrop, not a panel. The maintainer's
+                           decision on #1419: a drawer or sheet may touch ONLY the edge it slides in
+                           from, and a centred card none. So a placement declares ONE edge, for itself
+                           only, in a COMMENT on its own line or the whole-line comment directly above:
+                           `# modal-fit: edge-pinned right -- why`. A declaration never covers another
+                           placement, never another edge of its own placement, and never counts inside
+                           a string. The finding points at the file and line of the placement.
 
 COMMENTS ARE BLANKED before matching (`source_text.py`), so a component explaining the old shape is
 not reported as having it.
@@ -64,13 +73,25 @@ GATE = "modal-fit"
 DIALOG = re.compile(r"""\brole\s*[=:]\s*["']dialog["']|<dialog\b""")
 INSET = re.compile(r"(?<![\w-])inset-viewport(?![\w-])")
 MAX_H = re.compile(r"(?<![\w-])max-h-full(?![\w-])")
-WIDTH_GUTTER = re.compile(r"(?<![\w-])(?:max-)?w-\[calc\(100(?:%|vw)-[^\]]+\)\]")
-VH_CALC_CLASS = re.compile(r"(?<![\w-])max-h-\[calc\(100[sdl]?vh-[^\]]+\)\]")
+# A GAP is a non-zero term after the minus: `calc(100vh-0rem)` is the whole viewport (#1451 review).
+_GAP = r"-\s*(?!0+(?:\.0+)?[a-z%]*\s*[)\]])"
+WIDTH_GUTTER = re.compile(r"(?<![\w-])(?:max-)?w-\[calc\(100(?:%|vw)" + _GAP + r"[^\]]+\)\]")
+VH_CALC_CLASS = re.compile(r"(?<![\w-])max-h-\[calc\(100[sdl]?vh" + _GAP + r"[^\]]+\)\]")
+# The same two bounds written as an inline style count too, in both directions (#1451 review).
+WIDTH_GUTTER_STYLE = re.compile(r"(?<![\w-])(?:max-)?width\s*:\s*calc\(\s*100(?:%|vw)\s*" + _GAP)
+VH_CALC_DECL = re.compile(r"max-height\s*:\s*calc\(\s*100[sdl]?vh\s*" + _GAP)
+# A FIXED width can outgrow any wrapper, inset or not: `w-[80rem]` inside `inset-viewport` overflows.
+FIXED_WIDTH = re.compile(r"(?<![\w-])w-\[\d+(?:\.\d+)?(?:rem|px|em)\]|(?<![\w-])width\s*:\s*\d+(?:\.\d+)?(?:rem|px|em)\b")
+CAPPED = re.compile(r"(?<![\w-])max-w-(?:full|\[calc\(100)")
 UTILITY = re.compile(r"@utility\s+([\w-]+)\s*\{([^{}]*)\}", re.S)
-VH_CALC_DECL = re.compile(r"max-height\s*:\s*calc\(\s*100[sdl]?vh\s*-")
+CSS_COMMENT = re.compile(r"/\*.*?\*/", re.S)
+# EDGE-ANCHORED PANELS (maintainer decision on #1419): a drawer or sheet may touch ONLY the edge it slides
+# in from, declared per placement, in a comment on or directly above that placement's own line.
+EDGES = {"inset-y-0": {"top", "bottom"}, "inset-x-0": {"left", "right"},
+         "top-0": {"top"}, "bottom-0": {"bottom"}, "left-0": {"left"}, "right-0": {"right"}}
+QUOTED = re.compile(r"""(["'])((?:(?!\1).)*)\1""")
 # The reason is on the SAME line: `\s` would cross the newline and read the next line as a reason.
-EDGE_PINNED = re.compile(r"modal-fit:[ \t]*edge-pinned[ \t]*--[ \t]*\w")
-PINNED = re.compile(r"(?<![\w-])fixed(?![\w-])[^\"'\n]*?(?<![\w-])inset-[xy]-0(?![\w-])")
+DECLARE = re.compile(r"modal-fit:[ \t]*edge-pinned[ \t]+(top|right|bottom|left)[ \t]*--[ \t]*\w")
 
 
 def _line(source: str, offset: int) -> int:
@@ -89,17 +110,66 @@ def _sibling(path: Path) -> Path | None:
 
 
 def viewport_height_utilities(css: str) -> set[str]:
-    """App `@utility` names whose max-height is the viewport minus a gap."""
-    return {name for name, body in UTILITY.findall(css) if VH_CALC_DECL.search(body)}
+    """App `@utility` names whose max-height is the viewport minus a non-zero gap. CSS comments are
+    stripped first, so a commented-out `calc()` is not a bound (#1451 review)."""
+    return {name for name, body in UTILITY.findall(CSS_COMMENT.sub("", css)) if VH_CALC_DECL.search(body)}
 
 
 def _has_class(text: str, names: set[str]) -> bool:
     return any(re.search(rf"(?<![\w-]){re.escape(n)}(?![\w-])", text) for n in names)
 
 
-def check_component(rel: str, source: str, sibling: str = "", vh_utilities: frozenset[str] = frozenset()) -> list[str]:
+def _comment_of(line: str) -> str:
+    """The COMMENT on a raw line -- a whole-line `#`, an `<%# %>`, or a trailing `#` outside quotes --
+    never text inside a string, so a marker in a Ruby string declares nothing."""
+    stripped = line.lstrip()
+    if stripped.startswith("#"):
+        return stripped
+    erb = re.search(r"<%#(.*?)%>", line)
+    if erb:
+        return erb.group(1)
+    quote = None
+    for n, ch in enumerate(line):
+        if quote:
+            if ch == quote and line[n - 1] != "\\":
+                quote = None
+        elif ch in "\"'":
+            quote = ch
+        elif ch == "#":
+            return line[n + 1:]
+    return ""
+
+
+def pinned_edges(rel: str, raw: str) -> list[str]:
+    """Findings for every `fixed` panel class string here that touches an edge it has not declared."""
+    out = []
+    raw_lines = raw.split("\n")
+    for n, line in enumerate(strip_comments(raw).split("\n")):
+        for q in QUOTED.finditer(line):
+            tokens = set(q.group(2).split())
+            if "fixed" not in tokens:
+                continue                      # `inset-0` (wrapper, backdrop) is in no EDGES entry
+            touched = set().union(*(EDGES[t] for t in tokens if t in EDGES)) if tokens & EDGES.keys() else set()
+            if not touched:
+                continue
+            here = _comment_of(raw_lines[n]) if n < len(raw_lines) else ""
+            above = raw_lines[n - 1] if n > 0 else ""
+            above_comment = _comment_of(above) if (above.lstrip().startswith("#") or above.lstrip().startswith("<%#")) else ""
+            declared = {m.group(1) for m in DECLARE.finditer(here + "\n" + above_comment)}
+            bad = sorted(touched - declared)
+            if bad:
+                out.append(
+                    f"{rel}:{n + 1}: modal-touches-edge — `{q.group(2).strip()}` touches the "
+                    f"{', '.join(bad)} edge{'s' if len(bad) > 1 else ''}. A card keeps the inset on every "
+                    f"side; a drawer or sheet may touch ONLY the edge it slides in from, declared on its own "
+                    f"placement: `# modal-fit: edge-pinned <edge> -- why` (components.md → Modal / Dialog).")
+    return out
+
+
+def check_component(rel: str, source: str, sibling: str = "", vh_utilities: frozenset[str] = frozenset(),
+                    sibling_rel: str | None = None) -> list[str]:
     """Judge one dialog component; `source` declares the dialog, `sibling` is its pair."""
-    raw = source + "\n" + sibling
+    raw_source, raw_sibling = source, sibling
     source, sibling = strip_comments(source), strip_comments(sibling)
     m = DIALOG.search(source)
     if not m:
@@ -108,8 +178,10 @@ def check_component(rel: str, source: str, sibling: str = "", vh_utilities: froz
     line = _line(source, m.start())
     findings: list[str] = []
     inset = bool(INSET.search(both))
-    fits_x = inset or bool(WIDTH_GUTTER.search(both))
-    fits_y = (inset and bool(MAX_H.search(both))) or bool(VH_CALC_CLASS.search(both)) or _has_class(both, set(vh_utilities))
+    overflowing = bool(FIXED_WIDTH.search(both)) and not CAPPED.search(both)
+    fits_x = (inset or bool(WIDTH_GUTTER.search(both)) or bool(WIDTH_GUTTER_STYLE.search(both))) and not overflowing
+    fits_y = ((inset and bool(MAX_H.search(both))) or bool(VH_CALC_CLASS.search(both))
+              or bool(VH_CALC_DECL.search(both)) or _has_class(both, set(vh_utilities)))
     missing = [what for what, ok in (("a width bounded by the viewport", fits_x),
                                      ("a height bounded by the viewport", fits_y)) if not ok]
     if missing:
@@ -117,14 +189,11 @@ def check_component(rel: str, source: str, sibling: str = "", vh_utilities: froz
             f"{rel}:{line}: modal-exceeds-viewport — this dialog has no {' and no '.join(missing)}. "
             f"Its panel's maximum must be the viewport minus the inset on every side: the doctrine's "
             f"`inset-viewport` wrapper with a `max-h-full` panel, or a `calc(100% - gap)` width with a "
-            f"`calc(100svh - gap)` max height (design-system components.md → Modal / Dialog, Viewport inset).")
-    if EDGE_PINNED.search(raw):
-        return findings
-    for p in PINNED.finditer(both):
-        findings.append(
-            f"{rel}:{line}: modal-touches-edge — `{p.group(0)}` pins a panel to the viewport edge. A drawer "
-            f"or a bottom placement floats inside the inset with all corners rounded (Viewport inset).")
-        break
+            f"`calc(100svh - gap)` max height, and no fixed width that can outgrow either "
+            f"(design-system components.md → Modal / Dialog, Viewport inset).")
+    findings += pinned_edges(rel, raw_source)
+    if raw_sibling:
+        findings += pinned_edges(sibling_rel or rel, raw_sibling)
     return findings
 
 
@@ -138,7 +207,8 @@ def run(root: Path) -> tuple[list[str], int]:
         raw = p.read_text(encoding="utf-8", errors="replace")
         sib = _sibling(p)
         findings += check_component(str(p.relative_to(root)), raw,
-                                    sib.read_text(encoding="utf-8", errors="replace") if sib else "", vh_utilities)
+                                    sib.read_text(encoding="utf-8", errors="replace") if sib else "", vh_utilities,
+                                    str(sib.relative_to(root)) if sib else None)
     return findings, len(files)
 
 
@@ -191,12 +261,53 @@ def _selftest() -> int:
            viewport_height_utilities("@utility modal-max-h {\n  max-height: calc(100svh - 2rem - env(safe-area-inset-top));\n}\n"
                                      "@utility tall { max-height: 100vh; }\n@utility card { padding: 1rem; }") == {"modal-max-h"})
 
-    # A PLACEMENT PINNED ON PURPOSE, declared with a reason.
-    PINNED_RB = GOOD_RB + 'X = { right: "fixed inset-y-0 right-0 h-full rounded-none" }\n'
-    expect("a declared edge-pinned placement is not a finding",
-           rules(GOOD_ERB, "# modal-fit: edge-pinned -- the drawer is a side panel, probed by modal_bounds\n" + PINNED_RB) == [])
+    # EDGE-ANCHORED PANELS (maintainer decision on #1419): only the edge it slides from, per placement.
+    DRAWER = '    right: "fixed right-0 top-6 bottom-6 h-auto rounded-l-lg",\n'
+    DECL_R = '    # modal-fit: edge-pinned right -- slides in from the right\n'
+    expect("a declared right drawer touching only the right edge passes",
+           rules(GOOD_ERB, GOOD_RB + "X = {\n" + DECL_R + DRAWER + "}\n") == [])
+    expect("an undeclared right drawer is a finding",
+           rules(GOOD_ERB, GOOD_RB + "X = {\n" + DRAWER + "}\n") == ["modal-touches-edge"])
+    expect("the same right drawer touching the TOP fails even when right is declared",
+           rules(GOOD_ERB, GOOD_RB + "X = {\n" + DECL_R + DRAWER.replace("top-6", "top-0") + "}\n") == ["modal-touches-edge"])
+    expect("inset-y-0 on a declared right drawer touches top and bottom too",
+           rules(GOOD_ERB, GOOD_RB + "X = {\n" + DECL_R + '    right: "fixed inset-y-0 right-0",\n}\n') == ["modal-touches-edge"])
+    expect("a bottom sheet is not covered by the right drawer's declaration",
+           rules(GOOD_ERB, GOOD_RB + "X = {\n" + DECL_R + DRAWER + '    bottom: "fixed bottom-0 left-4 right-4",\n}\n')
+           == ["modal-touches-edge"])
+    expect("a declaration covers only its OWN placement, even a second one on the same edge",
+           rules(GOOD_ERB, GOOD_RB + "X = {\n" + DECL_R + DRAWER + '    wide_right: "fixed right-0 top-8 bottom-8 rounded-l-lg",\n}\n')
+           == ["modal-touches-edge"])
+    expect("a trailing same-line declaration covers its own placement",
+           rules(GOOD_ERB, GOOD_RB + 'X = { bottom: "fixed bottom-0 left-4 right-4" } # modal-fit: edge-pinned bottom -- a sheet\n') == [])
+    expect("a marker inside a Ruby STRING declares nothing",
+           rules(GOOD_ERB, GOOD_RB + 'X = { right: "fixed right-0 top-6 bottom-6 # modal-fit: edge-pinned right -- x" }\n')
+           == ["modal-touches-edge"])
     expect("a declaration with no reason is not a declaration",
-           rules(GOOD_ERB, "# modal-fit: edge-pinned --\n" + PINNED_RB) == ["modal-touches-edge"])
+           rules(GOOD_ERB, GOOD_RB + "X = {\n    # modal-fit: edge-pinned right --\n" + DRAWER + "}\n") == ["modal-touches-edge"])
+    expect("a trailing marker with no reason does not borrow the next line's words",
+           rules(GOOD_ERB, GOOD_RB + "X = {\n    # the drawer, see modal_bounds\n"
+                 '    right: "fixed right-0 top-6 bottom-6", # modal-fit: edge-pinned right --\n}\n') == ["modal-touches-edge"])
+    expect("an ERB marker with no reason does not borrow the ERB comment above it",
+           "modal-touches-edge" in rules('<%# a note about the sheet %>\n'
+                                         '<div class="fixed right-0 top-6 bottom-6" role="dialog"> <%# modal-fit: edge-pinned right -- %>\n</div>'))
+    expect("class order does not matter: `inset-y-0 fixed` is still pinned",
+           rules(GOOD_ERB, GOOD_RB + 'X = { right: "inset-y-0 right-0 fixed" }\n') == ["modal-touches-edge"])
+    expect("the pinned finding points at the .rb line that pins, not the template",
+           any(f.startswith("x.rb:3:") for f in check_component("x.html.erb", GOOD_ERB,
+               GOOD_RB + 'X = { right: "fixed inset-y-0 right-0" }\n', sibling_rel="x.rb")))
+
+    # SUGGESTIONS from the #1451 review.
+    expect("an inline style width and max-height bound it too",
+           rules('<div style="width: calc(100% - 2rem); max-height: calc(100svh - 2rem)" role="dialog"></div>') == [])
+    expect("a zero gap is the whole viewport, not a bound",
+           rules('<div class="w-[calc(100%-0rem)] max-h-[calc(100dvh-0px)]" role="dialog"></div>') == ["modal-exceeds-viewport"])
+    expect("a commented-out calc inside an @utility is not a bound",
+           viewport_height_utilities("@utility m { /* max-height: calc(100svh - 2rem); */ padding: 0; }") == set())
+    expect("inset-viewport does not excuse a fixed width that can outgrow it",
+           rules(GOOD_ERB.replace("<%= panel %>", "w-[80rem] max-h-full"), "") == ["modal-exceeds-viewport"])
+    expect("...unless the fixed width is capped with max-w-full",
+           rules(GOOD_ERB.replace("<%= panel %>", "w-[80rem] max-w-full max-h-full"), "") == [])
     expect("an HTML comment's max-h class does not make a dialog fit",
            rules('<!-- max-h-[calc(100dvh-3rem)] w-[calc(100%-2rem)] -->\n<div class="rounded-lg" role="dialog"></div>') == ["modal-exceeds-viewport"])
     expect("a file with no dialog is not judged", rules('<div class="fixed inset-y-0 left-0">nav</div>') == [])

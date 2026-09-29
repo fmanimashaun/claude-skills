@@ -13153,13 +13153,17 @@ boot/validation path — with a bullet each so the promotion could close them se
   (#1419). `check_table_layout.py` gains `pager-order`: a pager whose summary precedes its rows-per-page control
   (a pager with no such control is not judged). New `check_modal_fit.py`, judged per dialog component with its sibling
   `.rb`: `modal-exceeds-viewport` (no width bounded by the viewport — `inset-viewport`, or a `calc(100% - gap)`
-  width — or no height bounded by it — `max-h-full` inside the inset, or a `calc(100svh - gap)` max height as a class
-  or as an `@utility` read from the app's own CSS) and `modal-touches-edge` (`fixed` with `inset-y-0`/`inset-x-0`,
-  unless the component declares `modal-fit: edge-pinned -- <why>`). **Measured on an export of the app's current
-  `dev` (Retask `42775b67`): 1 finding**, its modal component's undeclared edge-pinned placements. The first run was
-  taken on a stale checkout (`80ac5d1a`, 308 commits behind) and reported 3; the two it got wrong — a centred modal
-  and a `<dialog>` that fit through a gutter width and the app's own `modal-max-h` utility — are now fixtures, as is
-  the reason-on-the-same-line rule the edge-pinned declaration needed. Mutations: 19/19 and 11/11 caught.
+  width as a class or inline style, with no fixed width that can outgrow it — or no height bounded by it —
+  `max-h-full` inside the inset, or a `calc(100svh - gap)` max height as a class, inline style, or `@utility` read
+  from the app's own CSS; a gap must be non-zero) and `modal-touches-edge`, judged **per placement**: the edges a
+  `fixed` class string touches come from its own tokens, and a drawer or sheet may touch **only the edge it slides in
+  from** — the [maintainer decision on #1419](https://github.com/fmanimashaun/claude-skills/issues/1419#issuecomment-5886265345) —
+  declared for that placement alone, in a comment on or above its line (`# modal-fit: edge-pinned right -- why`),
+  never read from a string. **Measured on an export of the app's `dev` (Retask `f0f84e1a`): 3 findings**, one per
+  placement in its modal component — left and right drawers touching top and bottom too, and the bottom sheet
+  touching left and right — each at its own `.rb` line. An earlier run on a stale checkout (`80ac5d1a`, 308
+  commits behind) had reported the centred modal and a `<dialog>` that in fact fit; both shapes are now fixtures.
+  Mutations: 23/23 and 18/18 caught, including one that removes comment stripping in each check.
 
 - **A table that scrolls sideways, forces a width, or opens no details card is refused — `plugins/design-flow/scripts/check_table_layout.py`,
   `plugins/design-flow/scripts/mutations/check_table_layout.py`, `plugins/design-flow/checks.json`,
