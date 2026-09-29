@@ -66,7 +66,14 @@ RULES = (
         r"url_field|month_field|week_field|color_field|range_field)_tag\b")),
     ("tag-builder-field", re.compile(r"\btag\.(input|select|textarea|form)\b")),
 )
-BUILDER = re.compile(r"\bsimple_(?:form_for|fields_for)\b[^\n]*?\bdo\s*\|\s*(\w+)")
+# The block variable of a simple_form builder. The call may span lines (`simple_form_for @u,\n  url: x
+# do |f|`), so match across newlines, but never past the ERB tag that opened it (pre-release review).
+BUILDER = re.compile(r"\bsimple_(?:form_for|fields_for)\b[^%]*?\bdo\s*\|\s*(\w+)", re.S)
+# A read-only input with no `name` is a DISPLAY (a copyable API key or invite URL), not a form field:
+# nothing posts it, and simple_form has nothing to wrap (pre-release review: our own clipboard doctrine).
+DISPLAY_INPUT = re.compile(r"\breadonly\b", re.I)
+NAMED = re.compile(r"\bname\s*=", re.I)
+WHOLE_TAG = re.compile(r"<input\b(?:<%.*?%>|[^>])*>", re.I | re.S)
 EXEMPTIONS = ".rails-flow/raw-form-exemptions.json"
 
 
@@ -88,6 +95,13 @@ def scan(rel: str, text: str) -> list[tuple[str, int, str]]:
         return text.count("\n", 0, pos) + 1
     for rule, rx in RULES:
         for m in rx.finditer(text):
+            if rule == "raw-field" and m.group(0).lower().startswith("<input"):
+                # The tag ends at the first `>` that is not inside an ERB `<% … %>`, so
+                # `value="<%= @url %>"` does not cut it short before `readonly`.
+                end = WHOLE_TAG.match(text, m.start())
+                tag = end.group(0) if end else text[m.start():]
+                if DISPLAY_INPUT.search(tag) and not NAMED.search(tag):
+                    continue
             hits.append((rule, at(m.start()), m.group(0).strip()))
     for var in set(BUILDER.findall(text)):
         for m in re.finditer(rf"(?<![\w.]){re.escape(var)}\.({RAW_FIELD_METHODS})\b", text):
@@ -102,6 +116,8 @@ def load_exemptions(root: Path) -> list[dict]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         rows = data["exemptions"]
+        if not isinstance(rows, list):
+            raise TypeError(f"`exemptions` is {type(rows).__name__}, not a list")
     except (ValueError, KeyError, TypeError) as exc:
         raise Unusable(f"{EXEMPTIONS} is not {{\"exemptions\": [...]}}: {exc}") from exc
     for row in rows:
@@ -124,7 +140,11 @@ def check(root: Path) -> tuple[int, list[str]]:
     for path in files:
         rel = path.relative_to(root).as_posix()
         for rule, line, what in scan(rel, path.read_text(encoding="utf-8", errors="replace")):
-            match = [i for i, e in enumerate(exemptions) if e["file"] == rel and e["rule"] == rule]
+            # An optional `match` narrows an exemption to hits whose text contains it, so a live
+            # exemption for one control does not also exempt the next violation of that rule in the
+            # same file (pre-release review).
+            match = [i for i, e in enumerate(exemptions) if e["file"] == rel and e["rule"] == rule
+                     and (not e.get("match") or e["match"] in what)]
             for i in match:
                 used[i] = True
             if not match:
@@ -174,6 +194,14 @@ def selftest() -> int:
     check_that("CONTROL: simple_form's own builder methods are not raw calls",
                rules("<%= simple_form_for @u do |f| %><%= f.input_field :q %><%= f.association :team %>"
                      "<%= f.hidden_field :id %><%= f.error :name %><%= f.simple_fields_for :x do |g| %><% end %><% end %>") == [])
+    check_that("CONTROL: a readonly, unnamed input is a display, not a field",
+               rules('<input type="text" readonly value="<%= @key %>"\n  data-clipboard-target="source">') == [])
+    check_that("CONTROL: an ERB value inside the tag does not hide its readonly",
+               rules('<input data-clipboard-target="source" value="<%= @invite_url %>" readonly>') == [])
+    check_that("...but a readonly input that posts (named) is still a raw field",
+               "raw-field" in rules('<input type="text" readonly name="token" value="x">'))
+    check_that("a raw call on a builder opened by a MULTI-LINE simple_form_for is refused",
+               "raw-builder-call" in rules("<%= simple_form_for @u,\n      url: users_path do |f| %><%= f.text_field :a %><% end %>"))
     check_that("CONTROL: a hidden input is not a raw field",
                rules('<input type="hidden" name="t" value="1">') == [])
     check_that("CONTROL: hidden_field_tag carries state and is allowed",
@@ -215,6 +243,23 @@ def selftest() -> int:
              "reason": "combobox query box; no model attribute"}]}))
         code, msg = check(root)
         check_that("a declared exemption with a reason is honoured", code == 0, msg)
+        (root / EXEMPTIONS).write_text(json.dumps({"exemptions": [
+            {"file": "app/components/ui/search_component.html.erb", "rule": "field-tag-helper",
+             "reason": "combobox query box", "match": "search_field_tag"}]}))
+        code, msg = check(root)
+        check_that("CONTROL: an exemption narrowed by `match` covers its own control", code == 0, msg)
+        (root / "app/components/ui/search_component.html.erb").write_text(
+            "<div>\n<%= search_field_tag :q %>\n<%= text_field_tag :sneaky %>\n</div>\n")
+        code, msg = check(root)
+        check_that("...and does not exempt a different violation of the same rule in the same file",
+                   code == 1 and any("text_field_tag" in m for m in msg), msg)
+        (root / "app/components/ui/search_component.html.erb").write_text("<div>\n<%= search_field_tag :q %>\n</div>\n")
+        (root / EXEMPTIONS).write_text(json.dumps({"exemptions": None}))
+        try:  # a crash here must report as THIS fixture, not take every later fixture down with it
+            code, msg = check(root)
+        except Exception as exc:  # noqa: BLE001
+            code, msg = -1, [repr(exc)]
+        check_that("`\"exemptions\": null` is unusable, not a crash", code == 2, msg)
         (root / EXEMPTIONS).write_text(json.dumps({"exemptions": [
             {"file": "app/components/ui/search_component.html.erb", "rule": "field-tag-helper", "reason": " "}]}))
         code, msg = check(root)
