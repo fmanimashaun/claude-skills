@@ -3562,6 +3562,15 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   - **An unterminated fence fences the rest of `GUARDRAILS.md`.** The regex removed only closed fences, so an opt-out after a stray ``` still turned the gate off; a line scanner now treats an unclosed fence as running to the end, as a renderer shows it, and a fence may be indented (it usually sits in a list item); it closes only on the same character, at least as long, with no info string. (The same class #1424 fixed in `lint_self_consistency.py`; a shared scanner is #1461.)
   - Each has a selftest case with a control, and all six rejections fail against dev's code. The independent review of PR #1478 found two regressions in the first version (an indented fenced example turned the gate off; an allow-list refused `.gif`/`.avif`/`.html.erb` mock-ups); both are fixtures now. The final review found one more (a line opening with an inline code span, such as ```` ```x``` ````, was read as a fence and hid a real opt-out below it): a backtick fence may not contain another backtick, per CommonMark. A dotted FOLDER no longer satisfies the extension rule, and one comment reached as both `issues/` and `pull/` counts once. Mutation guards: `check_mockup_gate` 22/22, `check_issue_mockup` 15/15, `check_slices` 14/14.
 
+
+- **`simple-form-only` catches Rails 8's `rich_textarea` — `plugins/rails-flow/scripts/check_simple_form_only.py`,
+  `plugins/rails-flow/scripts/mutations/check_simple_form_only.py`** (#1439). `RAW_FIELD_METHODS` listed only
+  `rich_text_area`, so `f.rich_textarea :content` on a simple_form builder passed. Both spellings are now raw, and
+  so are the tag helpers `rich_textarea_tag` / `rich_text_area_tag` (a pre-existing gap in the field-tag-helper
+  rule, found in review).
+  doctrine-verifier CONFIRMED against `actiontext/app/helpers/action_text/tag_helper.rb`: `rich_textarea` is defined
+  from Rails **8.0.0** with `alias_method :rich_text_area, :rich_textarea`, not deprecated; 7.2 has only
+  `rich_text_area`. A fixture per spelling, a control for `f.input … as: :rich_text_area`, and a mutation.
 - **toolchain_version: a linked worktree, and a recorded path differing only in case, are the same project — `plugins/rails-flow/scripts/toolchain_version.py`,
   `plugins/rails-flow/scripts/toolchain_version_selftest.py`, `plugins/rails-flow/scripts/mutations/toolchain_version.py`** (#1427 items 2, 3, 4).
   `applies_to` now matches a record against the session's path AND, for a linked git worktree (its `.git` is a file
@@ -16371,6 +16380,26 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 *Version number assigned at promotion.*
 
+- **The rich-text example is simple_form — `skills/rails-8/references/mail-storage-richtext.md`, `dist/rails-8.skill`** (#1439).
+  §3 showed `form.rich_textarea :content`, which the simple_form mandate forbids. It is now
+  `f.input :content, as: :rich_text_area`. doctrine-verifier CONFIRMED against simple_form **5.4.1**:
+  `:rich_text_area` is the only name mapped (`form_builder.rb`, `map_type :rich_text_area`; added in 5.0.2),
+  `:rich_textarea` is not; and `as:` is required, because a `has_rich_text` attribute has no column to infer the
+  type from. It renders through `rich_text_area`, which Rails **8.0/8.1** keep as an alias of `rich_textarea`.
+
+- **Checkbox and radio rows keep their touch height, and the Remove list shows the brand mark — `skills/design-system/references/component-implementations.md`,
+  `dist/design-system.skill`** (#1436). The simple_form rewrites in #1431 dropped `min-h-touch` from the filter
+  checkbox rows and the payment radio group (WCAG 2.5.8 target size) and handed it to a wrapper nobody configured.
+  The touch target is the **label**, the element a person taps: with the doctrine's `boolean_style = :inline`,
+  simple_form renders the input and a sibling label inside the item wrapper, so both inputs now pass
+  `item_label_class: "cluster min-h-touch"` (the first fix put `min-h-touch` on the wrapper only, which the
+  independent review caught). doctrine-verifier CONFIRMED against simple_form **5.4.1** `lib/simple_form/tags.rb`:
+  `:51` / `:67` build the label class as `"#{@options[:item_label_class]} collection_radio_buttons"` (and
+  `collection_check_boxes`) — prepended, not replacing — reached through the collection input's
+  `apply_default_collection_options!`; `item_wrapper_class` lands on the wrapper (`:25`). The README documents
+  neither option, so the source is the citation. The Configure contract now says a checkbox or radio collection's
+  `min-h-touch` belongs on its label. The Remove list now shows the brand mark
+  its `aria-label` already names.
 - **The three primitive markers name their construct — `skills/design-system/references/component-implementations.md`,
   `dist/design-system.skill`** (#1443). The Checkbox (`check_box_tag`), Combobox (`tag.input`) and Tabs picker
   (`<select`) blocks now say which raw construct they excuse, matching the stricter `check_shipped_erb_forms.py`.
