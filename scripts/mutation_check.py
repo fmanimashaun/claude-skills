@@ -280,18 +280,21 @@ def run_mutation(guard: Guard, mutation: Mutation) -> list[str]:
         argv = [sys.executable, str(entry)]
         if guard.selftest == guard.subject:
             argv.append("--selftest")   # the selftest is a flag on the module itself
-        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True, timeout=300)
+        # `errors="replace"`: a non-UTF-8 byte must not raise before the report can print (#1493).
+        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True, errors="replace",
+                                timeout=300)
         output = result.stdout + result.stderr
         if result.returncode == 0:
             return [f"{guard.name}: SURVIVED — {mutation.name}. The selftest passed with this "
                     "broken, so nothing guards it."]
         if mutation.expects and mutation.expects.lower() not in output.lower():
             # The mutant's own last lines, as the INERT report prints: a wrong-fixture catch seen
-            # only on CI was undiagnosable without them, because CI keeps nothing else (#1428).
+            # only on CI was undiagnosable without them, because CI keeps nothing else (#1493). The
+            # last 12 lines, each cut to 300 characters, so one huge line cannot flood the log.
             return [f"{guard.name}: caught {mutation.name!r} but not by the expected fixture "
                     f"(no mention of {mutation.expects!r}, exit {result.returncode}) — a coincidental "
                     "catch would hide that fixture going quiet\n"
-                    + "\n".join(f"      {line}" for line in output.strip().splitlines()[-12:])]
+                    + "\n".join(f"      {line[:300]}" for line in output.strip().splitlines()[-12:])]
         return []
     except subprocess.TimeoutExpired:
         return [f"{guard.name}: {mutation.name} timed out"]

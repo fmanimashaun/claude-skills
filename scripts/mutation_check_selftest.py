@@ -67,12 +67,24 @@ print("ok")
 '''
 
 
-def _fixture_guard(mutations: tuple[mc.Mutation, ...]) -> tuple[mc.Guard, Path]:
+# The same selftest, noisier on failure: 20 numbered lines, one non-UTF-8 byte and one 2,000-character
+# line before the verdict, so the report's tail bound, width bound and decoding are each observable.
+NOISY_SELFTEST = SELFTEST.replace(
+    'if failures:\n',
+    'if failures:\n'
+    '    for i in range(1, 21):\n'
+    '        print(f"noise-{i:02d}", file=sys.stderr)\n'
+    '    sys.stderr.flush(); sys.stderr.buffer.write(b"bad-byte-\\xff\\n"); sys.stderr.buffer.flush()\n'
+    '    print("wide-" + "w" * 2000, file=sys.stderr)\n', 1)
+assert NOISY_SELFTEST != SELFTEST
+
+
+def _fixture_guard(mutations: tuple[mc.Mutation, ...], selftest: str = SELFTEST) -> tuple[mc.Guard, Path]:
     """A real Guard pointing at a throwaway subject/selftest pair inside a temp 'repo'."""
     root = Path(tempfile.mkdtemp(prefix="mutcheck-selftest-"))
     (root / "scripts").mkdir()
     (root / "scripts" / "subject_under_test.py").write_text(SUBJECT, encoding="utf-8")
-    (root / "scripts" / "subject_selftest.py").write_text(SELFTEST, encoding="utf-8")
+    (root / "scripts" / "subject_selftest.py").write_text(selftest, encoding="utf-8")
     guard = mc.Guard(
         name="fixture",
         subject="scripts/subject_under_test.py",
@@ -190,11 +202,36 @@ def run() -> int:
                 "a catch by the WRONG fixture was accepted — that hides the intended fixture "
                 f"going quiet; got {problems}"
             )
-        # ...and the report carries the mutant's own output, or a catch seen only on CI cannot be
-        # diagnosed (#1428: two CI-only wrong-fixture catches, no output kept).
+    finally:
+        mc.REPO = original_repo
+
+    # ...and the report carries the mutant's own output, or a catch seen only on CI cannot be
+    # diagnosed (#1493: two CI-only wrong-fixture catches, no output kept). A NOISY mutant, so each
+    # bound is observable: the last 12 lines exactly, the first line gone, every line <= 300 chars,
+    # and a non-UTF-8 byte decoded rather than raised.
+    guard, root = _fixture_guard((
+        mc.Mutation("even numbers reported odd", "n % 2 == 0", "False", "fixture-odd"),
+    ), selftest=NOISY_SELFTEST)
+    mc.REPO = root
+    try:
         _tick()
-        if not any("not by the expected fixture" in p and "exit " in p and "\n      " in p for p in problems):
+        try:
+            problems = mc.run_guard(guard)
+        except UnicodeDecodeError as exc:
+            problems = []
+            FAILURES.append(f"a non-UTF-8 byte in a mutant's output raised before the report printed: {exc}")
+        report = next((p for p in problems if "not by the expected fixture" in p), "")
+        tail = [l for l in report.split("\n")[1:] if l.startswith("      ")]
+        if not (report and "exit 1" in report and tail):
             FAILURES.append(f"a wrong-fixture report does not carry the mutant's exit and output; got {problems}")
+        _tick()
+        if len(tail) != 12 or "noise-01" in report or "fixture-odd" not in report:
+            FAILURES.append(f"a wrong-fixture report does not carry exactly the last 12 lines of output; "
+                            f"got {len(tail)} line(s), first={tail[:1]}")
+        _tick()
+        if any(len(l) > 306 for l in tail):
+            FAILURES.append("a wrong-fixture report does not cut each output line to 300 characters; "
+                            f"widest {max(len(l) for l in tail)}")
     finally:
         mc.REPO = original_repo
 
