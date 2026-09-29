@@ -42,10 +42,10 @@ and platform integrations via bridge components.
 - **Nav** → the sidebar is already a mobile drawer `<lg`; under a native shell, prefer the
   **native tab bar** for top-level nav and reserve the drawer for secondary. Header collapses as
   specified in [responsive.md](responsive.md).
-- **Modal/Drawer** → the same Imposter + focus-trap components work in the webview; via a bridge
+- **Modal/Drawer** → the same Modal + focus-trap components work in the webview, inset from every edge; via a bridge
   they can promote to native sheets. Keep Esc/back-button parity (Android back closes the top
   dismissable layer).
-- **Tables** → use the card-stack fallback on mobile (not horizontal scroll) — thumb-friendly.
+- **Tables** → designed summary cards on a phone, never horizontal scroll ([components.md → Table (CRUD)](components.md#table-crud)).
 - **Toasts** → keep clear of the safe-area + native tab bar.
 - **Forms** → native keyboards; `inputmode`/`autocomplete` set correctly; inputs stay `min-h-touch`.
 
@@ -67,7 +67,7 @@ resource system so the look matches.
 1. **Phase 1 — Web (done).** Tokens, layout primitives, component catalog, responsive doctrine.
 2. **Phase 2 — Hotwire Native parity (reference code ready).** `native_app?`/`body.mobile-app`
    wiring; safe-area + `min-h-touch` on chrome; JSON path configuration; the first bridge
-   components (nav-button, action-sheet menu, native tab bar); table→card-stack on mobile.
+   components (nav-button, action-sheet menu, native tab bar); table→summary cards on mobile.
    **Largest win for least effort** — reuses all the web components. Concrete web-side code:
    [mobile-reference-implementation.md](mobile-reference-implementation.md); scaffold it with
    **`/design-flow:mobile`**. (Native Kotlin/Swift shells live in their own app repos.)

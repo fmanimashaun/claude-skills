@@ -291,6 +291,21 @@ DEFAULTS = { variant: :primary, size: :md }
   detail (**render the Description list component at `inline`** — do not re-implement `<dl>` rows here),
   selectable option (radio tile: selected =
   `border-primary bg-primary/5`), section/panel (`<fieldset>`). Host in `grid-auto` (`--min: 16rem`).
+- **Never flush with the viewport** — see [Viewport inset](#viewport-inset).
+
+## Viewport inset
+**A card never touches the viewport edge, at any width** (#1391) — list cards, section cards, modals,
+sheets and drawers alike. On a phone the floor is **16px plus the device's safe area**
+(`env(safe-area-inset-*)`) on every side; at 768px and up it is **24px**. One definition carries it:
+the `--inset-edge` / `--inset-edge-md` structural tokens, added to the safe area rather than traded
+against it, and the `inset-viewport` utility
+([foundations-tokens.md](foundations-tokens.md) §3b and the utilities block).
+- **Overlays** put `inset-viewport` on the fixed wrapper, so the panel floats inside it with all four
+  corners rounded. There is no edge-to-edge sheet: a bottom placement is a floating card whose foot
+  sits 16px plus the safe area above the screen's edge, and at maximum height it stops 16px short
+  of the top.
+- **Page content** gets it from the shell: `shell`'s inline padding is `--viewport-inset` plus the safe
+  area, so a card in the page is inset by construction and never adds its own margin.
 
 ## Heading blocks (page / section / card)
 - **The region `page-anatomies.md` calls a "heading block".** Three scales, same anatomy, so a screen
@@ -321,11 +336,13 @@ DEFAULTS = { variant: :primary, size: :md }
 
 ## Modal / Dialog
 - `Ui::Modal` rendered into the layout's `<turbo-frame id="modal">` (open via `data: { turbo_frame: "modal" }`).
-  **Imposter** positioning + `bg-popover text-popover-foreground rounded-lg shadow-lg` (card-class
+  Centred inside an `inset-viewport` wrapper ([Viewport inset](#viewport-inset)) +
+  `bg-popover text-popover-foreground rounded-lg shadow-lg` (card-class
   surface → the `rounded-lg` token = 12px, not an arbitrary value); backdrop
   `bg-overlay/50 backdrop-blur-sm` (a role — the shipped implementation already used it while this line
   named the `fm-navy` primitive, against the non-negotiable at the top of this file). **Sizes:** `sm max-w-md · md max-w-lg · lg max-w-2xl · xl max-w-4xl · full`.
-  Body `max-h-[70vh] overflow-y-auto`. **Slots: `title` and `actions` (a `cluster`) — there is NO
+  The panel is `max-h-full` inside the inset wrapper and its body scrolls (`min-h-0 overflow-y-auto`),
+  so a short or landscape viewport keeps the top inset. **Slots: `title` and `actions` (a `cluster`) — there is NO
   `body` slot;** the body is the block content, same as Alert. This line advertised one for three
   releases, and `m.with_body` raises `NoMethodError` — the #168/#182 class, in prose the call-site
   linter cannot reach.
@@ -343,7 +360,10 @@ DEFAULTS = { variant: :primary, size: :md }
   beside the field, the field is labelled, and the button is `aria-disabled` rather than `disabled`
   so it stays focusable and its tooltip can say what is missing. Never on a routine delete: friction
   that fires every time trains people to type without reading, which is the opposite of the point.
-- **Responsive:** wrapper `p-4 sm:p-0`; `full` → `max-w-full mx-4`.
+- **Responsive:** the fixed wrapper is `inset-viewport` at every width, so no size touches the edge;
+  `full` fills the space inside it. `placement: :bottom` is a **floating card**, not an edge-to-edge
+  sheet: all corners `rounded-lg`, its foot above the safe area
+  ([Viewport inset](#viewport-inset)).
 
 ## Drawer / off-canvas
 - **No APG pattern of its own** (the index lists 30; Drawer and Off-canvas are not among them), so it
@@ -356,14 +376,16 @@ DEFAULTS = { variant: :primary, size: :md }
   Trapping is what *modality* requires, not a property of being a drawer.
 - **Responsive: render both, do not morph one.** Modal drawer below `lg`, persistent `<nav>` at `lg` and
   up. Toggling `aria-modal` and a focus trap by media query means the role changes under the user.
-- Panel `bg-popover text-popover-foreground shadow-lg` at `max-w-sm`, full-height, `inset-y-0`;
+- Panel `bg-popover text-popover-foreground shadow-lg rounded-lg` at `max-w-sm`, as tall as the
+  space inside the wrapper's `inset-viewport` — never flush with an edge ([Viewport inset](#viewport-inset));
   backdrop as Modal's. Slots as Modal: `title`, `body`, `actions`.
 - **The detail drawer** — a record opened beside its list without leaving it — is the overlay drawer
   with stated bounds (#978); the navigation drawer at compact keeps the `max-w-sm` panel above, this
   one is wider because it holds a record: `w-[clamp(var(--drawer-min),33vw,var(--drawer-max))]`, so a third of the
   viewport between **480 and 720px**, both structural tokens ([foundations-tokens.md](foundations-tokens.md) §3b).
   Fixed header (title, close) and footer (`actions`), the body alone scrolls (`overflow-y-auto`);
-  backdrop as Modal's. Below `md` it is the full-width sheet, since a third of 640px is not a drawer.
+  backdrop as Modal's. Below `md` it is a floating card as wide as the inset allows, since a third
+  of 640px is not a drawer — never an edge-to-edge sheet.
   At two panes ([page-anatomies.md → List-detail](page-anatomies.md#list-detail--the-shape-most-authenticated-apps-are))
   the detail is a pane, not this drawer — the drawer is the one-pane answer.
 
@@ -865,7 +887,11 @@ Breadcrumbs, Pagination, the sidebar rail and this bar all land on these, so the
   that produced this rule.
 
 ## Tabs
-- **HOW MANY IS NOT A NUMBER — the strip fits ONE ROW at the narrowest width the app supports.**
+- **AT MOST FOUR TABS, IN ONE ROW THAT NEVER WRAPS AND NEVER SCROLLS** (#1391, the maintainer's
+  decision; it replaces "fit one row at the narrowest width" as the capacity rule). An area holds at
+  most four tabs, and a fifth is a sign the area answers more than one question — regroup (below),
+  never overflow. Four is Material 3's own figure for fixed tabs (quoted below). The measurement that
+  motivated the old rule still stands as the reason a count alone was never enough: labels vary.
   **APG is silent on capacity** (verified 15 Sep 2026: the pattern's four sections cover terminology,
   examples, keyboard interaction and the ARIA wiring, and none addresses count, overflow or
   wrapping), so this is ours. A count alone would be wrong in both directions — measured downstream
@@ -881,9 +907,10 @@ Breadcrumbs, Pagination, the sidebar rail and this bar all land on these, so the
   Count × label length is the thing, and only the browser knows it. Before the rule, one area
   reached ten tabs: 1650px of strip at 1214px, five of the ten off-screen with no cue, two of them
   linked from the dashboard.
-- **DO NOT WRAP TO A SECOND ROW.** Of the systems that rule on this at all, all of them keep the
-  strip to one row and answer overflow with a mechanism instead — and they prescribe **different**
-  mechanisms, so pick one deliberately rather than blending them:
+- **DO NOT WRAP TO A SECOND ROW, AND DO NOT SCROLL.** Of the systems that rule on this at all, all of
+  them keep the strip to one row; they then answer overflow with different mechanisms. **Ours is none
+  of them:** we cap at four and regroup, so there is nothing to overflow. The vendor positions, for the
+  record:
   - **Microsoft Fluent 2** is explicit: *"Tabs in a horizontal tablist won't scroll or wrap to the
     next line… If you need to show more tabs, include an overflow menu button."* It also names the
     cost of its own answer — *"Tablists are less effective in smaller layouts that push several tabs
@@ -937,10 +964,16 @@ Breadcrumbs, Pagination, the sidebar rail and this bar all land on these, so the
   already requires is the state, so `aria-[selected=true]:border-primary` needs no second source of
   truth. (This row prescribed `data-[state=active]` while the worked implementation used
   `aria-[selected=true]`; the implementation was right and the row has been corrected.)
-- **Responsive:** the tablist scrolls, the panels do not — `overflow-x-auto` on the tablist alone.
-  Ours: past ~5 tabs on a phone the row stops being scannable, so switch to a `Ui::Dropdown` or a
-  `<select>` that swaps the panel. A wrapped tablist has lost the single-row affordance that made it
-  a tablist.
+- **Responsive — no scroll at any width, and a picker below 768px** (#1391). The strip never carries
+  `overflow-x-auto`. Below 768px it is replaced by **a single picker**: a labelled `<select>` whose
+  selected option names the current screen, at least `min-h-touch`, and whose change swaps the panel
+  exactly as choosing the tab would. The tablist and the picker are two renderings of one list, so the
+  panels, their ids and the selected index are shared, never duplicated. A wrapped or scrolled tablist
+  has lost the single-row affordance that made it a tablist.
+- **Scope: navigation tab strips.** A Carousel's thumbnail picker is `role="tablist"` because it picks
+  a slide, not because it navigates, so it is outside this entry's capacity and picker rules
+  (coordinator ruling on #1391, relayed to the owner). It still never wraps: its row is
+  `flex flex-nowrap`, like every strip.
 - **Behavior:** the `tabs` controller on the **list-navigation** mixin.
 
 ## Breadcrumbs
@@ -958,6 +991,53 @@ Breadcrumbs, Pagination, the sidebar rail and this bar all land on these, so the
   is ambiguous the page needs a different shell, not a smarter breadcrumb.
 
 ## Table (CRUD)
+**Every table is master-detail** (#1391): the row is a summary for scanning and deciding, and the
+record itself opens in a [Details card](#details-card). This entry is the one home for table layout;
+[page-anatomies.md → Data table](page-anatomies.md#data-table--the-index-of-a-resource) composes it and
+[mobile-reference-implementation.md §5](mobile-reference-implementation.md#5-table--summary-cards-on-a-phone)
+implements its phone half.
+- **No horizontal scroll at any width.** At 768px and wider the table fits its container: no
+  `overflow-x-auto` wrapper, no fixed `min-width` on the table or its columns, and cells wrap. The
+  column budget is **six**; a seventh column is a field that belongs in the Details card, not a
+  reason to scroll. Measured on the app behind #1391: 25 tables forced a `min_width` of 36–60rem and
+  scrolled sideways on tablets and laptops that had room for them.
+- **The row carries a summary of at most five fields**, chosen for scanning and deciding — never
+  every column the model has. **The whole row is clickable, and the name is its keyboard link**: the
+  name's `<a>` is the row's one link and one tab stop, and a click anywhere else on the row follows it
+  (the `row-link` controller below), so the row has one accessible name. The link opens the record
+  into the shared modal frame (`data: { turbo_frame: "modal" }`) as its Details card, **not a show
+  page**. Followed directly, the same URL renders the same card over the list, so a record stays
+  addressable and shareable. **Not a stretched overlay on a `<tr>`**: whether a table row contains an
+  absolutely positioned link is not something this kit has verified, so the row is made clickable by
+  behaviour, not by CSS.
+
+  ```js
+  // app/javascript/controllers/row_link_controller.js
+  // <tr data-controller="row-link" data-action="click->row-link#follow"> … the name's
+  // <a data-row-link-target="link" data-turbo-frame="modal"> … </tr>
+  import { Controller } from "@hotwired/stimulus"
+
+  export default class extends Controller {
+    static targets = ["link"]
+
+    follow(event) {
+      // The row's own controls keep their job: a checkbox ticks, an action acts.
+      if (event.target.closest("a, button, input, select, textarea, label, summary, [role=button]")) return
+      // The end of a text-selection drag is a click too; selecting a value must not open the record.
+      if (window.getSelection()?.toString()) return
+      // A modified click is a request for a new tab; only the real link can honour it.
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+      this.linkTarget.click()
+    }
+  }
+  ```
+
+- **Below 768px every table is a stack of designed summary cards**, not a label/value dump of its
+  columns: the **name** (bold), the **reference** (muted, `tabular-nums`) and the **status** pill
+  top-right; **two or three key facts** on one or two lines, each labelled only when a bare value is
+  ambiguous; **one primary action and a chevron**; and the whole card tappable, by a stretched
+  link on the `<li>` exactly as [Stacked list](#stacked-list) does — a card is a list item, not a table row. Any label is a real element in the markup, never CSS `content:` text. The columns
+  are defined once and both renderings read that definition; two hand-written copies drift.
 - **CRUD is modal-driven and in-page** — new/edit/delete open in the shared `turbo-frame` modal; success
   updates the list via Turbo Stream (`prepend`/`replace dom_id`/`remove dom_id`) + a toast; rows are
   `dom_id`-addressable so streams can target them. No full-page new/edit forms. Full flow:
@@ -967,26 +1047,21 @@ Breadcrumbs, Pagination, the sidebar rail and this bar all land on these, so the
   with its header, and a `<div>` grid loses the table semantics entirely. Sortable headers carry
   `aria-sort` on the sorted column **only**. Row actions need names: an icon-only edit button is
   `aria-label`-ed with the row's subject, not "Edit".
-- **A record's id column shows its display number** (`TSK-0001`, `rails-8` `models.md` §12) as a
-  link to the record's show page, never a raw primary key or UUID. Put it in its own column in
-  `font-mono tabular-nums`, so the numbers line up.
+- **A record's reference shows its display number** (`TSK-0001`, `rails-8` `models.md` §12), never a
+  raw primary key or UUID, in `font-mono tabular-nums` so the numbers line up. It sits beside the
+  name, which is the row's link.
 - Keep the proven `shared/_crud_table`, `_crud_header`, `_crud_row_actions` partials, refactored to role
   tokens + components. `<table class="w-full text-step--1 text-left">`, header `text-step--1 uppercase
   bg-muted text-muted-foreground`, sortable headers (link + Lucide chevron), optional select-all.
-- **Responsive:** wrap in `overflow-x-auto` (horizontal scroll). For dense data on small screens prefer a
-  **card-stack** fallback (`hidden md:table` + a `md:hidden` [Stacked list](#stacked-list)) — pick per table
-  and state it; don't leave scroll as the only mobile story.
 - **Alignment follows the data type, and the header follows its column** (#978): numerals right-aligned
   with `tabular-nums` so magnitudes line up; text left; a single-badge status column centred. A
   right-aligned header over a left-aligned column is the tell that alignment was per cell, not per type.
 - **Truncate identifiers, wrap prose.** A reference, an email, a path gets `truncate` with the full value
   reachable — a Tooltip, or `title` at minimum — and never wraps; a description cell wraps. Never
   truncate the column that names the row.
-- **Sticky on both axes when the table scrolls** (#978): the header row `sticky top-0` — or
-  `top-(--shell-toolbar)` when a sticky toolbar sits above it — and the selection and identifier
-  columns `sticky left-0`, each with an opaque `bg-background`, inside the `overflow-x-auto` wrapper
-  (a sticky element sticks within its nearest scrolling ancestor, so both axes share one container).
-  The cell at the intersection carries the higher `z-index`; nothing else about the markup changes.
+- **The header row sticks to the top of the page** when the table is long — `sticky top-0`, or
+  `top-(--shell-toolbar)` under a sticky toolbar — with an opaque `bg-background`. Nothing sticks
+  sideways: a table that fits its container has nothing to scroll under a pinned column.
 - **Density is a per-person setting, not a per-table one** (#978): `--row-comfortable` (56px, default)
   or `--row-compact` (32px), applied as `data-density` on the table and persisted on the user, never in
   `localStorage` alone. Both heights are structural tokens ([foundations-tokens.md](foundations-tokens.md) §3b).
@@ -997,6 +1072,36 @@ Breadcrumbs, Pagination, the sidebar rail and this bar all land on these, so the
   named by the row's identifier (`aria-labelledby`), never "Select". What selection *does* — the bulk
   toolbar, select-all-matching, what survives a page change — is the anatomy's, not this entry's:
   [page-anatomies.md → Selection and bulk actions](page-anatomies.md#selection-and-bulk-actions-969).
+  Ticking a row's checkbox never opens the record: `row-link` ignores clicks that land on a control.
+- **Unchanged by master-detail:** the five states (loaded, empty, filtered-empty, loading, error),
+  the count always stated, and rows per page —
+  [page-anatomies.md → Data table](page-anatomies.md#five-states-and-all-five-are-required).
+
+## Details card
+**One information architecture for every record** (#1391), so a reader who has opened one record
+knows where everything is on the next. It is a [Modal / Dialog](#modal--dialog) — the shared
+`turbo-frame` modal, `lg` or `xl` — opened from a [Table (CRUD)](#table-crud) row, and the same card
+renders over the list when its URL is followed directly.
+1. **Header:** the name, the reference (`font-mono tabular-nums`), the status pill, the record's
+   actions, and close. The Modal's `title` and `actions` slots carry them.
+2. **At a glance:** three to six facts — the ones a reader opened the record to learn — as a
+   [Description list](#description-list).
+3. **Sectioned fields:** the rest of the record in named sections, and **a section renders only when
+   it has content**. An empty section heading is noise that reads as missing data.
+4. **Related records:** at most five, and **View all** when there are more. A record that *holds* a
+   collection (an invoice's lines, a project's tasks) uses the wide variant, where the collection is
+   the body rather than a side list.
+5. **Activity:** a timeline of what happened to the record, newest first —
+   [Activity feed / Timeline](#activity-feed--timeline).
+- **On a phone it is a floating card inset from the viewport** (`placement: :bottom`): at least 16px
+  plus `env(safe-area-inset-*)` from the left, right and bottom, at least 16px from the top at its
+  maximum height, all four corners rounded — never an edge-to-edge sheet
+  ([Viewport inset](#viewport-inset)). Its actions are pinned at its foot, so the primary action is
+  reachable by thumb without scrolling past the record.
+- **A queue's decision form lives in its action area** — approve / reject and its reason — so a
+  reviewer decides without leaving the card, and the list updates by Turbo Stream when they do.
+- **Edits stay modal:** Edit replaces the card's content in the same frame
+  ([crud-modal-pattern.md](crud-modal-pattern.md)); closing returns focus to the row that opened it.
 
 ## Permissions matrix
 - **What it is** (#978): roles as columns, features as rows grouped by module; the cell is a checkbox. It
@@ -1019,7 +1124,13 @@ Breadcrumbs, Pagination, the sidebar rail and this bar all land on these, so the
 - **One form, one submit.** A matrix that saves per click produces forty toasts, forty audit entries and
   no undo. Unsaved changes are guarded ([forms.md → Unsaved changes](forms.md#unsaved-changes--leaving-a-dirty-form-978)).
 - **Density** is `--row-compact` by default — a matrix is dense by nature — with the sticky header row
-  and sticky first column exactly as Table (CRUD).
+  of Table (CRUD).
+- **Exempt from master-detail** ([maintainer decision on #1391](https://github.com/fmanimashaun/claude-skills/issues/1391#issuecomment-5862494188)).
+  Its cells are switches toggled in place, so there is no record to open in a
+  [Details card](#details-card); declare it with `<%# table-without-details: permissions matrix %>`
+  so `check_table_layout.py` stands aside. **On a phone it splits into one section per module**, not
+  summary cards. It keeps every other rule: no horizontal scroll, and the
+  [Viewport inset](#viewport-inset).
 - **Tenancy note.** A multi-tenant app scopes the matrix to a workspace and says which in the
   `<caption>`; nothing else changes.
 
@@ -1244,12 +1355,11 @@ see [Activity feed / Timeline](#activity-feed--timeline).
   Ada Lovelace"`, not `"Edit"` — because a screen-reader user listing the page hears the verb N
   times with nothing to tell the rows apart. A destructive action is `variant: :destructive` and
   confirms; it never relies on the icon alone to say what it does.
-- **Responsive:** on the card-stack fallback the actions move into the card footer as full-width
-  stacked buttons (`w-full`), not a shrunken cluster — see [Table (CRUD)](#table-crud) for when the
-  stack replaces the table.
-- **Sticky interaction:** when the table sticks its identifier column, the action cell is the one
-  most likely to sit under a horizontal scrollbar. It is not sticky; scrolling to it is correct, and
-  pinning both ends leaves nothing scrollable on a phone.
+- **Responsive:** on a phone's summary card the cluster becomes **one primary action and a chevron**
+  ([Table (CRUD)](#table-crud)); every other action lives in the [Details card](#details-card)'s
+  header, not a shrunken cluster.
+- **Inside a clickable row:** `row-link` ignores a click that lands on an action, so pressing it
+  does its job instead of opening the record ([Table (CRUD)](#table-crud)).
 
 ## Media object
 - Fixed-size media beside flowing content — the row of the [Stacked list](#stacked-list), the

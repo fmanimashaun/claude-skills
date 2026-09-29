@@ -359,8 +359,8 @@ each entry. `coverage.md` counts both files as the catalogue.
   excepts *"parts of the content which require two-dimensional layout"*, and its Note 2 names them:
   *"data tables (not individual cells) … It is acceptable to provide two-dimensional scrolling for
   such parts of the content."* So **horizontal scroll of a wide matrix does not fail 1.4.10**, and any
-  doctrine implying it does is wrong. Our preference for a card-stack fallback on phones
-  (`mobile.md`) is **ergonomics — ours — not conformance**; say which you chose and why, and do not
+  doctrine implying it does is wrong. Our rule of no horizontal scroll at any width
+  ([components.md → Table (CRUD)](components.md#table-crud)) is **ergonomics — ours — not conformance**; say which you chose and why, and do not
   cite a criterion for it. Below the fold on a phone, prefer one column per plan stacked in full over
   a matrix scrolled sideways: the reader is comparing, and a comparison you have to scroll to make is
   not one.

@@ -202,9 +202,21 @@ def selftest() -> int:
         check_that("CONTROL: a path in Testing decisions is not an implementation path",
                    run(GOOD.replace("the existing header system specs", "`spec/system/header_spec.rb`")) == [])
         f = run(GOOD.replace("- Email digests: a separate delivery channel with its own consent question.", "- None"))
-        check_that("an Out of scope of only \"none\" is refused", f != [], f)
+        check_that("an Out of scope of only \"none\" is refused", any("no real non-goal" in x for x in f), f)
         f = run(GOOD.replace("? owner: product", "?"))
-        check_that("an open question with no owner is refused", f != [], f)
+        check_that("an open question with no owner is refused", any("names no owner" in x for x in f), f)
+        # Pre-release review of #1390: --decisions resolves against --root, not the working directory.
+        # Driven through main(), the path the CLI takes, from a directory that is NOT the root.
+        spec.write_text(GOOD)
+        import contextlib, io, os
+        here = os.getcwd()
+        try:
+            os.chdir(tempfile.gettempdir())
+            with contextlib.redirect_stdout(io.StringIO()):
+                rc = main([str(spec), "--root", str(root), "--decisions", "docs/brain/DECISIONS.md"])
+        finally:
+            os.chdir(here)
+        check_that("a relative --decisions resolves against --root, not the cwd", rc == 0, rc)
         spec.write_text("# notes\n\n## Random\ntext\n")
         try:
             check(spec, root, dec)
@@ -230,7 +242,10 @@ def main(argv: list[str]) -> int:
     if a.spec is None:
         ap.error("a spec path is required")
     try:
-        findings = check(a.spec, a.root.resolve(), a.decisions)
+        root = a.root.resolve()
+        # --decisions resolves against --root, like every citation (pre-release review of #1390).
+        decisions = a.decisions if a.decisions.is_absolute() else root / a.decisions
+        findings = check(a.spec, root, decisions)
     except cb.Unusable as exc:
         print(f"UNUSABLE: {exc}")
         return 2

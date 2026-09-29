@@ -110,21 +110,35 @@ component when not in a shell.
 Wire `min-h-touch` on every interactive control (was defined-but-unused); apply `pt-safe`/
 `pb-safe`/`pl-safe`/`pr-safe` to any fixed element.
 
-## 5. Table → card-stack on mobile (thumb-friendly)
+## 5. Table → summary cards on a phone
 
-Dense tables scroll poorly on phones; ship a card-stack fallback instead of horizontal scroll.
+The rules are [components.md → Table (CRUD)](components.md#table-crud) (#1391); this is their phone
+half. Below 768px each row is a **designed summary card**, not its columns as label/value lines, and
+the card opens the record into the modal frame as its [Details card](components.md#details-card) —
+a floating card inset from the viewport on a phone, never an edge-to-edge sheet.
 
 ```erb
-<table class="hidden md:table w-full text-step--1">…</table>   <%# desktop %>
-<ul role="list" class="md:hidden stack" style="--space: var(--space-xs)">  <%# mobile %>
+<table class="hidden md:table w-full text-step--1">…</table>   <%# 768px and wider: fits, no scroll %>
+<%# The breakpoint sits on its own element: `md:hidden` and `stack` both set `display`. %>
+<div class="md:hidden"><ul role="list" class="stack" style="--space: var(--space-xs)">
   <% rows.each do |r| %>
-    <li class="box bg-card rounded-lg border border-border">
-      <dl class="stack" style="--space: var(--space-3xs)">
-        <div class="cluster" style="--justify: space-between"><dt class="text-muted-foreground"><%= col %></dt><dd><%= val %></dd></div>
-      </dl>
+    <li class="relative box bg-card rounded-lg border border-border stack" style="--space: var(--space-2xs)">
+      <div class="cluster items-start" style="--justify: space-between">
+        <div class="stack gap-0">
+          <%= link_to r.name, r.path, data: { turbo_frame: "modal" },
+                      class: "font-semibold after:absolute after:inset-0" %>
+          <span class="text-step--2 text-muted-foreground tabular-nums"><%= r.reference %></span>
+        </div>
+        <%= render Ui::BadgeComponent.new(variant: r.status_variant) { r.status } %>
+      </div>
+      <p class="text-step--1"><%= r.key_facts.join(" · ") %></p>   <%# 2–3 facts; label only an ambiguous one %>
+      <div class="cluster" style="--justify: space-between">
+        <%= render Ui::ButtonComponent.new(variant: :secondary, size: :sm, class: "relative z-10") { r.primary_action } %>
+        <%= lucide_icon "chevron-right", aria: { hidden: true } %>
+      </div>
     </li>
   <% end %>
-</ul>
+</ul></div>
 ```
 
 ## Notes

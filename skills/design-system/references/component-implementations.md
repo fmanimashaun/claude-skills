@@ -333,7 +333,14 @@ same recipe + a trailing chevron.
 
 ### Checkbox / Radio / Switch
 
+**Inside a form, a checkbox is `f.input :accept, as: :boolean`, never this markup.** simple_form is
+mandatory in this stack, and its wrapper is what renders the anatomy below. The block is the anatomy
+reference the wrapper must produce: the control beside its label, at touch height. Outside any form
+(a standalone toggle, for instance) it is a design-system primitive, so the project declares it in
+`.rails-flow/raw-form-exemptions.json`, with a reason, for the `simple-form-only` gate.
+
 ```erb
+<%# simple-form-only: primitive -- the anatomy the simple_form wrapper renders; see above %>
 <%# composition: control beside label is the field's anatomy %>
 <%# checkbox / radio — wrap in a cluster so control + label align %>
 <label class="cluster min-h-touch" style="--space: var(--space-2xs)">
@@ -359,17 +366,22 @@ module Ui
   class ModalComponent < ViewComponent::Base
     renders_one :title
     renders_one :actions   # the BODY is the block content, not a slot — same shape as Alert
-    SIZE = { sm: "max-w-md", md: "max-w-lg", lg: "max-w-2xl", xl: "max-w-4xl", full: "max-w-full mx-4" }.freeze
+    SIZE = { sm: "max-w-md", md: "max-w-lg", lg: "max-w-2xl", xl: "max-w-4xl", full: "max-w-full" }.freeze
     # A DRAWER IS THIS COMPONENT AT AN EDGE (decision, no upstream): one dialog implementation, one
     # focus trap, one Esc handler. `placement:` is the whole difference, so a drawer never needs a
     # second component -- and never needs a caller passing raw positioning classes, which is what an
     # invented `class:` argument would have meant. NOTE: only the OVERLAY drawer is this component.
     # A persistent push sidebar is not a dialog at all and must not come through here.
+    # NOTHING IS FLUSH WITH THE VIEWPORT (#1391, decision, no upstream). The wrapper carries
+    # `inset-viewport` and is a flex box; a placement is only where the panel sits INSIDE it, so every
+    # panel keeps all four corners rounded and at least 16px (24px at 768px) plus the safe area from
+    # every edge. Not `imposter` here: its `max-inline-size: 100%` is measured against the viewport or
+    # the wrapper's padding box, and both let a wide panel reach the edge.
     PLACEMENT = {
-      center: "imposter",
-      left:   "fixed inset-y-0 left-0 h-full rounded-none",
-      right:  "fixed inset-y-0 right-0 h-full rounded-none",
-      bottom: "fixed inset-x-0 bottom-0 w-full rounded-t-lg rounded-b-none",
+      center: "relative m-auto",
+      left:   "relative mr-auto h-full",
+      right:  "relative ml-auto h-full",
+      bottom: "relative mt-auto mx-auto",
     }.freeze
     def initialize(size: :md, labelledby: "modal-title", placement: :center, **attrs)
       @size, @labelledby, @placement = size.to_sym, labelledby, placement.to_sym
@@ -377,7 +389,9 @@ module Ui
     end
     # A modal is a card-class surface → `rounded-lg` (= --radius-lg = 12px via the token),
     # NOT an arbitrary `rounded-[12px]`. Stay in the radius vocabulary (SKILL non-negotiable).
-    def panel = [PLACEMENT.fetch(@placement), "bg-popover text-popover-foreground rounded-lg shadow-lg w-full", SIZE.fetch(@size)].join(" ")
+    # `max-h-full flex flex-col`: the panel never grows past the inset wrapper, and the BODY scrolls,
+    # so a short or landscape viewport keeps the top inset instead of pushing the header off-screen.
+    def panel = [PLACEMENT.fetch(@placement), "bg-popover text-popover-foreground rounded-lg shadow-lg w-full max-h-full flex flex-col", SIZE.fetch(@size)].join(" ")
     # Lucide via lucide-rails; NO px size — `with-icon` sizes it to 1em and `currentColor`
     # inherits (CSS overrides the gem's width/height attrs). See "Icons (Lucide)" at the top.
     def close_icon = helpers.lucide_icon("x")
@@ -392,17 +406,17 @@ end
     level. A `keydown.esc` filter does neither — Stimulus consults the filter only inside
     `event instanceof KeyboardEvent`, so a bare `new Event("keydown")` skips it and empties this
     frame. See stimulus.md, "A key filter is not a type check". %>
-<div data-controller="modal" class="fixed inset-0 z-50">
+<div data-controller="modal" class="fixed inset-0 z-50 flex inset-viewport">
   <div class="fixed inset-0 bg-overlay/50 backdrop-blur-sm" data-action="click->modal#backdrop"></div>
-  <div class="<%= panel %> p-4 sm:p-0" role="dialog" aria-modal="true" aria-labelledby="<%= @labelledby %>"
+  <div class="<%= panel %>" role="dialog" aria-modal="true" aria-labelledby="<%= @labelledby %>"
        data-modal-target="panel">
-    <div class="box stack" style="--space: var(--space-s)">
+    <div class="box stack min-h-0" style="--space: var(--space-s)">
       <div class="cluster" style="--justify: space-between">
         <h2 id="<%= @labelledby %>" class="text-step-1 font-semibold"><%= title %></h2>
         <button type="button" data-action="modal#close" aria-label="Close"
                 class="with-icon min-h-touch rounded-md focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/30"><span class="sr-only">Close</span><%= close_icon %></button>
       </div>
-      <div class="max-h-[70vh] overflow-y-auto"><%= content %></div>
+      <div class="min-h-0 overflow-y-auto"><%= content %></div>
       <% if actions? %><div class="cluster" style="--justify: flex-end"><%= actions %></div><% end %>
     </div>
   </div>
@@ -511,7 +525,17 @@ module Ui
   end
 end
 ```
+The Combobox is a primitive that IS its own control: simple_form has no combobox input to wrap, so
+the component builds the `<input role="combobox">` itself. A project using it declares that one line
+for the `simple-form-only` gate, and `match` keeps the exemption from covering anything else in the file:
+
+```json
+{"file": "app/components/ui/combobox_component.html.erb", "rule": "tag-builder-field",
+ "match": "tag.input", "reason": "design-system Combobox primitive: the component is the control"}
+```
+
 ```erb
+<%# simple-form-only: primitive -- the Combobox builds its own input; declare it (above) %>
 <%# composition: input above listbox IS the combobox %>
 <%# combobox_component.html.erb — role=combobox goes on the INPUT, never a wrapper div. %>
 <%# A wrapper with aria-owns is the superseded ARIA 1.1 model and no longer conforms. %>
@@ -795,14 +819,27 @@ landmark noise outweighs the structure.
 ## Tabs — `app/components/ui/tabs_component.rb`
 
 ```erb
+<%# simple-form-only: primitive -- the picker below 768px is the Tabs control, not a submitted field %>
 <%# composition: tabs sit in a row; that is what a tablist is %>
 <%# tabs_controller uses list-navigation. `aria-selected` IS the state — the attribute APG already %>
 <%# requires — so nothing toggles a second data-state beside it. Four things here are required by  %>
 <%# the pattern and are the ones that go missing: the tablist's NAME, each tab's `id`, each panel's %>
 <%# `aria-labelledby` pointing back at that id, and `aria-orientation` on a vertical list.          %>
+<%# NEVER SCROLLS, NEVER WRAPS (#1391): at most four tabs, and below 768px the strip is replaced by %>
+<%# one labelled picker. Its change must select the same index the tab would, via the same action.   %>
+<%# `flex flex-nowrap`, not `cluster`: `cluster` wraps, and a strip that wraps is two rows.           %>
 <div data-controller="tabs" data-tabs-activation-value="<%= activation %>">
+  <label class="block md:hidden">
+    <span class="sr-only"><%= label %></span>
+    <select class="min-h-touch w-full" data-tabs-target="picker" data-action="change->tabs#select">
+      <% tabs.each_with_index do |t, i| %><option value="<%= i %>" <%= "selected" if i.zero? %>><%= t[:label] %></option><% end %>
+    </select>
+  </label>
+  <%# The breakpoint lives on a WRAPPER: `hidden` and `cluster` both set `display`, so on one element %>
+  <%# the winner would depend on utility order.                                                     %>
+  <div class="hidden md:block">
   <div role="tablist" aria-label="<%= label %>" aria-orientation="<%= orientation %>"
-       class="cluster border-b border-border overflow-x-auto" style="--space: 0">
+       class="flex flex-nowrap border-b border-border">
     <% tabs.each_with_index do |t, i| %>
       <button role="tab" id="<%= id %>-tab-<%= i %>" data-tabs-target="tab" data-action="tabs#select"
               tabindex="<%= i.zero? ? 0 : -1 %>" aria-selected="<%= i.zero? %>"
@@ -810,6 +847,7 @@ landmark noise outweighs the structure.
               class="px-4 py-2 text-step--1 border-b-2 border-transparent -mb-px min-h-touch
                      aria-[selected=true]:border-primary aria-[selected=true]:text-primary"><%= t[:label] %></button>
     <% end %>
+  </div>
   </div>
   <% tabs.each_with_index do |t, i| %>
     <div id="<%= id %>-panel-<%= i %>" role="tabpanel" aria-labelledby="<%= id %>-tab-<%= i %>"
@@ -819,6 +857,14 @@ landmark noise outweighs the structure.
 </div>
 ```
 
+- **The picker makes `Ui::Tabs` a primitive under `simple-form-only`:** its raw `<select>` switches a
+  panel and submits nothing, so the project declares the component in
+  `.rails-flow/raw-form-exemptions.json`, with a reason, exactly as for the Checkbox.
+- **The picker's contract with `tabs#select`** (#1391). One action serves both renderings. From a tab
+  click it takes the index of `event.currentTarget` among `tabTargets`; from the picker's `change` it
+  takes `pickerTarget.selectedIndex`. Either way it does the same four things: sets `aria-selected`
+  and the roving `tabindex` on the tabs, shows that index's panel and hides the rest, and sets
+  `pickerTarget.selectedIndex`, so a resize across 768px never shows the two renderings disagreeing.
 - **`label:` is not optional and there is no sensible default** — APG names the tablist via
   `aria-labelledby` when a visible heading exists, `aria-label` otherwise. Pass the heading's id as
   `labelledby:` when there is one; an unnamed tablist is an unnamed group of buttons.
@@ -1431,26 +1477,26 @@ Empty state — arranged. What goes wrong is not the Ruby: it is a `<button>` ne
 <%# One Ui::Disclosure per group: role=button + aria-expanded are APG's whole mandate, and %>
 <%# there are NO arrow keys on a disclosure. aria-controls is optional in APG and required %>
 <%# by us, because the panel is not adjacent to its trigger in a wide sidebar. %>
-<form method="get" class="stack" aria-label="Filter products">
+<%# simple_form, as everywhere (it is mandatory here). A symbol builds a GET form with no model, and %>
+<%# as: "" drops the `filter[...]` namespace so a facet posts as `color[]=red` and the URL stays %>
+<%# readable. The touch height of each row (2.5.8) belongs to the check_boxes wrapper, not here. %>
+<%= simple_form_for :filter, url: request.path, method: :get, as: "",
+      html: { class: "stack", "aria-label": "Filter products" } do |f| %>
   <% facets.each do |facet| %>
     <%= render Ui::DisclosureComponent.new(id: "facet-#{facet.slug}") do |d| %>
       <% d.with_trigger_content { facet.name } %>
       <% d.with_panel_content do %>
         <fieldset class="stack">
           <legend class="sr-only"><%= facet.name %></legend>
-          <% facet.options.each do |option| %>
-            <%# min-h-touch clears 2.5.8 outright rather than arguing about the Spacing exception. %>
-            <label class="cluster min-h-touch">
-              <%= check_box_tag "#{facet.slug}[]", option.value, option.selected? %>
-              <%= option.label %>
-            </label>
-          <% end %>
+          <%= f.input facet.slug, as: :check_boxes, label: false, item_wrapper_tag: :div,
+                collection: facet.options, label_method: :label, value_method: :value,
+                checked: facet.options.select(&:selected?).map(&:value) %>
         </fieldset>
       <% end %>
     <% end %>
   <% end %>
-  <%= submit_tag "Apply filters" %>
-</form>
+  <%= f.submit "Apply filters" %>
+<% end %>
 
 <%# The COUNT is the status message; the grid is not. Understanding 4.1.3 excludes the result %>
 <%# list by name, so role="status" here would announce every card on every filter change. %>
@@ -1460,7 +1506,8 @@ Empty state — arranged. What goes wrong is not the Ruby: it is a `<button>` ne
 <%# Tabbed style: role=tab in a tablist, one tab stop, arrows between thumbnails. A plain %>
 <%# <button> cannot carry aria-selected -- ARIA 1.2 scopes it to gridcell/option/row/tab. %>
 <%# (A thumbnail that OPENS a lightbox is the other case, and that one IS a button.) %>
-<div role="tablist" aria-label="Product images" class="cluster" data-controller="carousel">
+<%# `flex flex-nowrap`, not `cluster`: a strip never wraps into a second row (#1391). %>
+<div role="tablist" aria-label="Product images" class="flex flex-nowrap gap-(--space-s)" data-controller="carousel">
   <% images.each_with_index do |image, i| %>
     <button role="tab" id="thumb-<%= i %>" aria-controls="image-<%= i %>"
             aria-selected="<%= i.zero? %>" tabindex="<%= i.zero? ? 0 : -1 %>"
@@ -1703,26 +1750,35 @@ is a real `fieldset` of native radios.
 <%# Native radios: no roving tabindex to write, no aria-checked to keep in sync, and the group %>
 <%# posts with the form. The brand mark is non-text content, so it carries its own name -- and %>
 <%# "ending 4242" is visible text, because "Card" is not a name when there are four of them. %>
+<%# f.input as: :radio_buttons, never f.radio_button + f.label: simple_form is mandatory. A lambda %>
+<%# label_method returning safe_join keeps the rich label (brand mark, "ending 4242", expiry). %>
 <%= simple_form_for @billing, url: default_payment_method_path do |f| %>
   <fieldset class="stack divide-y divide-border">
     <legend class="text-step--1 text-muted-foreground">Default payment method</legend>
-    <% @methods.each do |m| %>
-      <div class="cluster justify-between py-2">
-        <%= f.radio_button :default_method_id, m.id, class: "min-h-touch" %>
-        <%= f.label "default_method_id_#{m.id}", class: "cluster" do %>
-          <span class="with-icon" role="img" aria-label="<%= m.brand %>"><%# brand mark %></span>
-          <span>ending <%= m.last4 %></span>
-          <span class="text-step--1 text-muted-foreground">Expires <%= m.expiry %></span>
-        <% end %>
-        <%# Names the card, not the row: four icon-only buttons otherwise announce identically. %>
-        <%= button_to "Remove", payment_method_path(m), method: :delete,
-              form: { data: { turbo_frame: "modal" } },
-              aria: { label: "Remove #{m.brand} ending #{m.last4}" } %>
-      </div>
-    <% end %>
+    <%= f.input :default_method_id, as: :radio_buttons, label: false, collection: @methods,
+          value_method: :id, item_wrapper_tag: :div,
+          label_method: ->(m) {
+            safe_join([content_tag(:span, "", class: "with-icon", role: "img", "aria-label": m.brand),
+                       content_tag(:span, "ending #{m.last4}"),
+                       content_tag(:span, "Expires #{m.expiry}", class: "text-step--1 text-muted-foreground")])
+          } %>
   </fieldset>
   <%= f.submit "Save" %>
 <% end %>
+
+<%# REMOVE sits OUTSIDE the form. button_to generates a form of its own, and a form inside a form %>
+<%# is non-conforming HTML (the parser drops the inner one), so a Remove nested in the radio group %>
+<%# above would submit the outer form instead. It names the card, not the row. %>
+<ul class="stack">
+  <% @methods.each do |m| %>
+    <li class="cluster justify-between">
+      <span>ending <%= m.last4 %></span>
+      <%= button_to "Remove", payment_method_path(m), method: :delete,
+            form: { data: { turbo_frame: "modal" } },
+            aria: { label: "Remove #{m.brand} ending #{m.last4}" } %>
+    </li>
+  <% end %>
+</ul>
 ```
 
 **A past-due notice that is already true at page load is ordinary content, not a live region.**

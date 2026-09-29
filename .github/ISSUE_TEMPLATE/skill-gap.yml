@@ -10,6 +10,13 @@ body:
       options: ["rails-8", "hotwire", "design-system"]
     validations:
       required: true
+  - type: input
+    id: version
+    attributes:
+      label: rails-stack version this project runs
+      description: "From /rails-flow:toolchain-check, the rails-stack row. Write \"unknown\" if you cannot tell. The maintainer searches the skill as it was at that version, since a rule added later is one your agent never had."
+    validations:
+      required: true
   - type: textarea
     id: missing
     attributes:

@@ -14,6 +14,15 @@ THE DECLARATION: `.rails-flow/issue-labels.json` at the project root.
 A value ending in `*` is a prefix (`comp:*`). A group with `when` applies only if that label is set.
 Undeclared, or `-R/--repo` naming another repository (whose taxonomy is not ours): at least one label.
 
+THE DECLARATION IS THE TARGET REPOSITORY'S, not the session's (#1400). A coordinator working from one
+checkout runs `cd /path/to/other-repo && gh issue create ...`; the issue lands in the other repo, so
+its labels answer to the other repo's declaration. The hook used to read the session's file, refused
+a correctly labelled issue, and asked for labels the other repo does not have. So a create written
+`cd <literal path> && gh issue create …` is judged by that directory's git toplevel, which
+supplies both the declaration and the "is this our repo" answer for `-R`. Any OTHER shape with a
+`cd` in it is refused rather than guessed (see `issue_creates`), because a guess applies one repo's
+rules to another's issue -- the defect itself, in a different direction.
+
 Called by guard-bash.sh with the RAW command on stdin (the normalised form strips quotes, and a label
 value is usually quoted). Prints the refusal and exits 1; exits 0 to allow. The hook fails closed on
 any other exit.
@@ -24,6 +33,7 @@ Run:  issue_labels.py [--root DIR] < command.txt
 from __future__ import annotations
 
 import json
+import os
 import re
 import shlex
 import subprocess
@@ -33,7 +43,7 @@ from pathlib import Path
 CONFIG = Path(".rails-flow/issue-labels.json")
 
 
-HEREDOC = re.compile(r"<<(-?)[ \t]*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\2")
+HEREDOC = re.compile(r"(?<!<)<<(?!<)(-?)[ \t]*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\2")  # not <<< (a herestring)
 
 
 def strip_heredocs(cmd: str) -> str:
@@ -43,6 +53,11 @@ def strip_heredocs(cmd: str) -> str:
     double quotes. A body is prose, so it holds apostrophes and backticks, and shlex read those as an
     unterminated quote and refused a correctly labelled `gh issue create` in the same call. The body
     is data the shell never tokenises, so it is not ours to parse either.
+
+    A heredoc whose closing tag never arrives raises ValueError -- a refusal -- when the lines it
+    would swallow hold a `gh issue create`, because a create nobody sees is a create let through.
+    Otherwise it is a quoted mention or arithmetic, and is left alone. `<<<` is a herestring, not a
+    heredoc: it has no body to strip.
     """
     lines = cmd.split("\n")
     out, i = [], 0
@@ -51,33 +66,127 @@ def strip_heredocs(cmd: str) -> str:
         out.append(line)
         i += 1
         for m in HEREDOC.finditer(line):
+            before = line[:m.start()]
+            if before.count("'") % 2 or before.count('"') % 2:
+                continue            # a quoted `<<X` is text, not a heredoc
             tag, dash = m.group(3), m.group(1) == "-"
+            start_of_swallow = i
             while i < len(lines) and (lines[i].lstrip("\t") if dash else lines[i]) != tag:
                 i += 1
+            if i >= len(lines):
+                # Never closed. Usually a quoted mention (`--body 'a<<EOF'`) or arithmetic
+                # (`$((1<<n))`), which is harmless -- UNLESS the lines it would swallow hold a
+                # `gh issue create`, which would then go unchecked. Refuse only that.
+                if re.search(r"\bgh\s+issue\s+create\b", "\n".join(lines[start_of_swallow:])):
+                    raise ValueError(f"heredoc <<{tag} is never closed")
+                break
             i += 1  # the closing tag line
     return "\n".join(out)
 
 
-def issue_creates(cmd: str) -> list[list[str]]:
-    """The argv of every `gh issue create` in the command, split on shell operators."""
-    cmd = strip_heredocs(cmd)
+def issue_creates(cmd: str) -> list[tuple[list[str], str | None, str | None]]:
+    """(argv, the directory it runs in, a GH_REPO prefix) for every `gh issue create` in the command.
+
+    The directory is None (the session's) or a literal `cd` operand, and a `cd` is followed in
+    exactly ONE shape (#1400):
+
+        cd <literal path> && gh issue create …
+
+    `cd` is the command's first word, `&&` joins it DIRECTLY to the create, and the create is its
+    segment's first word (a `GH_REPO=` prefix aside, which `verdict` treats as naming a repo).
+    Every other shape -- no cd, or a cd anywhere else -- is None: the session's rules, exactly as
+    before #1400. Why so narrow: five independent reviews of broader versions each found a shape
+    where ANOTHER repo's rules were applied to a create that did not land there (a subshell `cd`,
+    `cd -`, `||`, compound bodies, a `case` `)`, `time`, `export GIT_DIR=`, `env -C`). The session's
+    rules are the check the same create gets with no cd at all, so falling back to them cannot let
+    anything through that was refused before; `verdict` adds the remaining certainty checks.
+    """
     try:
-        lexer = shlex.shlex(cmd, posix=True, punctuation_chars=";&|")
+        cmd = strip_heredocs(cmd)
+    except ValueError:
+        return [(["__unparseable__"], None, None)]
+    cmd = cmd.replace("\\\n", "").replace("\n", " ; ")   # a backslash-newline JOINS: `cre\\<nl>ate`
+    try:
+        lexer = shlex.shlex(cmd, posix=True, punctuation_chars=";&|()")
         lexer.whitespace_split = True
         tokens = list(lexer)
     except ValueError:
-        return [["__unparseable__"]]
-    out, cur = [], []
-    for tok in tokens + [";"]:
-        if tok and set(tok) <= set(";&|"):
-            for i in range(len(cur) - 2):
-                if cur[i] == "gh" and cur[i + 1] == "issue" and cur[i + 2] == "create":
-                    out.append(cur[i + 3:])
+        return [(["__unparseable__"], None, None)]
+    # shlex glues adjacent punctuation (`);`, `&&(`). A glued run is read as a word, which can only
+    # keep the exact cd shape from matching -- and then the session's rules apply. It never hides a
+    # create: `gh issue create` is found anywhere in its segment.
+    split = tokens
+    # A newline right after `&&` / `||` / `|` continues that chain; drop the `;` it became.
+    items: list[str] = []
+    for tok in split:
+        if tok == ";" and items and items[-1] in ("&&", "||", "|"):
+            continue
+        items.append(tok)
+
+    out: list[tuple[list[str], str | None, str | None]] = []
+    seg: list[str] = []
+    start = 0                    # index in `items` where `seg` began
+    for k, tok in enumerate(items + [";"]):
+        if tok in ("(", ")") or (tok and set(tok) <= set(";&|")):
+            words = list(seg)
+            env = {}
+            while words and "=" in words[0] and words[0].split("=", 1)[0].isidentifier():
+                name, _, value = words.pop(0).partition("=")
+                env[name] = value
+            for i in range(len(words) - 2):
+                if words[i] == "gh" and words[i + 1] == "issue" and words[i + 2] == "create":
+                    cd = _cd_in_force(items[:start])
+                    # After a followed cd, the create must BE the segment -- no `env -C`, no
+                    # `command`, no GIT_DIR=: each sends the create somewhere the cd did not.
+                    if cd is not None and (i != 0 or set(env) - {"GH_REPO"}):
+                        cd = None
+                    out.append((words[i + 3:], cd, env.get("GH_REPO")))
                     break
-            cur = []
+            seg, start = [], k + 1
         else:
-            cur.append(tok)
+            seg.append(tok)
     return out
+
+
+def _cd_in_force(prefix: list[str]) -> str | None:
+    """The cd target when everything before the create's segment is EXACTLY `cd <literal> &&`.
+
+    Anything else is None: judged in the session's directory, which is what the hook did before
+    #1400 and is the one answer that cannot leak (see `verdict`).
+    """
+    if len(prefix) != 3 or prefix[0] != "cd" or prefix[2] != "&&":
+        return None
+    # A `-`, `$VAR` or backtick operand names no directory the text can see, so target_root finds
+    # nothing there and the session's rules apply -- no special case needed.
+    return prefix[1]
+
+
+def target_root(cd: str | None, root: Path) -> tuple[Path | None, str]:
+    """The repository a create runs in: `root` without a `cd`, else the cd target's git toplevel."""
+    if cd is None:
+        return root, ""
+    path = Path(os.path.expanduser(cd))
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    if not path.is_dir():
+        return None, f"`cd {cd}` names no directory, so its label rules are unknown."
+    try:
+        top = subprocess.run(["git", "-C", str(path), "rev-parse", "--show-toplevel"],
+                             capture_output=True, text=True, timeout=10).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        top = ""
+    return (Path(top) if top else path.resolve()), ""
+
+
+def load_groups(target: Path) -> tuple[list | None, str]:
+    config_path = target / CONFIG
+    if not config_path.is_file():
+        return None, ""
+    try:
+        return json.loads(config_path.read_text(encoding="utf-8"))["groups"], ""
+    except (ValueError, KeyError, TypeError) as exc:
+        where = CONFIG if target == Path(".").resolve() else target / CONFIG
+        return None, f"{where} is unreadable ({exc}); fix it so labels can be checked"
 
 
 def parse_args(args: list[str]) -> tuple[list[str], str | None]:
@@ -97,21 +206,43 @@ def parse_args(args: list[str]) -> tuple[list[str], str | None]:
             continue
         elif a.startswith("--repo="):
             repo = a.split("=", 1)[1]
+        elif a.startswith("-R") and len(a) > 2:
+            repo = a[2:]            # gh accepts the value glued to the short flag
         i += 1
     return labels, repo
 
 
+def norm_repo(s: str | None) -> str | None:
+    """`owner/name`, lowercased, from ANY spelling of a repo: `owner/name`, a URL with or without
+    userinfo (`https://token@github.com/…`), an ssh port (`ssh://git@github.com:22/…`), an ssh alias
+    (`git@github-work:…`), an enterprise host, `.git`. The host is dropped on purpose: two remotes
+    naming the same owner/name are treated as the same repo, which only ever means MORE fallback to
+    the session's rules -- the safe direction."""
+    if not s:
+        return None
+    m = re.search(r"([^/:@\s]+)/([^/:@\s]+?)(?:\.git)?/*$", s.strip().lower())
+    return f"{m.group(1)}/{m.group(2)}" if m else None
+
 def own_repo(root: Path) -> str | None:
+    """The `origin` repo, normalised, or None."""
     try:
         url = subprocess.run(["git", "-C", str(root), "remote", "get-url", "origin"],
                              capture_output=True, text=True, timeout=10).stdout.strip()
     except (OSError, subprocess.SubprocessError):
         return None
-    url = url.removesuffix(".git")
-    for sep in ("github.com/", "github.com:"):
-        if sep in url:
-            return url.split(sep, 1)[1]
-    return None
+    return norm_repo(url)
+
+
+def remotes(root: Path) -> set[str]:
+    """EVERY remote's repo, normalised. gh picks among them (`upstream` before `origin`), so a
+    checkout any of whose remotes is the session's repo may file there."""
+    try:
+        out = subprocess.run(["git", "-C", str(root), "remote", "-v"],
+                             capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    return {r for line in out.splitlines() if len(line.split()) >= 2
+            for r in [norm_repo(line.split()[1])] if r}
 
 
 def matches(label: str, pattern: str) -> bool:
@@ -122,19 +253,33 @@ def verdict(cmd: str, root: Path) -> tuple[bool, str]:
     creates = issue_creates(cmd)
     if not creates:
         return True, ""
-    config_path = root / CONFIG
-    groups = None
-    if config_path.is_file():
-        try:
-            groups = json.loads(config_path.read_text(encoding="utf-8"))["groups"]
-        except (ValueError, KeyError, TypeError) as exc:
-            return False, f"{CONFIG} is unreadable ({exc}); fix it so labels can be checked"
-    mine = own_repo(root)
-    for args in creates:
+    for args, cd, env_repo in creates:
         if args == ["__unparseable__"]:
             return False, "the gh issue create command could not be parsed, so its labels cannot be checked"
         labels, repo = parse_args(args)
-        foreign = repo is not None and repo != mine
+        # THE SAFE DEFAULT IS THE SESSION'S RULES -- exactly what the hook did before #1400. Another
+        # repo's rules apply only when the create CERTAINLY files there: the allowlisted cd shape,
+        # no repo named on the create (-R, --repo, GH_REPO), a target with remotes, and none of them
+        # the session's repo (gh may pick `upstream` over `origin`). Every leak five reviews found
+        # was another repo's rules applied without that certainty; this default cannot leak,
+        # because it is the check the same create gets with no cd at all.
+        target = root
+        # GH_REPO in the hook's own environment (settings `env`) redirects gh too. One set only via
+        # CLAUDE_ENV_FILE is invisible here -- a known limit, recorded in #1400.
+        if cd is not None and repo is None and env_repo is None and not os.environ.get("GH_REPO"):
+            found, _ = target_root(cd, root)
+            if found is not None:
+                theirs, ours = remotes(found), remotes(root)
+                # Certain only when BOTH sides have remotes and they share none: gh may file into
+                # any remote (`upstream` first), so one shared repo means the session's rules.
+                if theirs and ours and ours.isdisjoint(theirs):
+                    target = found
+        followed = target != root
+        groups, why = load_groups(target)
+        if why:
+            return False, why
+        mine = own_repo(target)
+        foreign = repo is not None and norm_repo(repo) != mine
         if not labels:
             where = f" (the declared groups are in {CONFIG})" if groups and not foreign else ""
             return False, f"`gh issue create` with no --label{where}. Label it when you file it; a template never applies here."
@@ -146,8 +291,9 @@ def verdict(cmd: str, root: Path) -> tuple[bool, str]:
             allowed = g.get("one_of") or []
             if not any(matches(l, p) for l in labels for p in allowed):
                 scope = f" (because it is `{g['when']}`)" if g.get("when") else ""
+                decl = target / CONFIG if followed else CONFIG
                 return False, (f"`gh issue create` needs one of {', '.join(allowed)}{scope}; it has "
-                               f"{', '.join(labels)}. Declared in {CONFIG}.")
+                               f"{', '.join(labels)}. Declared in {decl}.")
     return True, ""
 
 
@@ -222,6 +368,179 @@ def selftest() -> int:
         check("a <<- heredoc (tab-indented close) is stripped too", not ok and "no --label" in why, why)
         ok, why = verdict("gh issue create -t \"X --label feature", r)
         check("CONTROL: a genuinely unparseable create still refuses", not ok and "could not be parsed" in why, why)
+        # ---- #1400: the TARGET repository's declaration, in the one shape that is followed -------
+        # Both sides need remotes for the cd to be certain: the session is me/skills, the target
+        # a git checkout whose only remote is someone else's.
+        subprocess.run(["git", "init", "-q", str(s)], check=True)
+        subprocess.run(["git", "-C", str(s), "remote", "add", "origin", "https://github.com/me/skills.git"], check=True)
+        subprocess.run(["git", "init", "-q", str(r)], check=True)
+        subprocess.run(["git", "-C", str(r), "remote", "add", "origin", "https://github.com/other/retask.git"], check=True)
+        rt = "gh issue create -t X --label enhancement --label needs-decision"
+        ok, why = verdict(rt, s)
+        check("CONTROL: those labels fail the session's own declaration", not ok and "comp:*" in why, why)
+        ok, why = verdict(f"cd {r} && {rt}", s)
+        check("cd into another repo: that repo's declaration applies, and passes", ok, why)
+        ok, why = verdict(f"cd {r} && gh issue create -t X --label bug", s)
+        check("...and that repo's rules still refuse, naming its file",
+              not ok and "severity:s1" in why and str(r) in why, why)
+        ok, why = verdict("(true);gh issue create -t X", s)
+        check("a create right after a glued `);` is seen, and its missing label refused", not ok and "no --label" in why, why)
+        check("a newline after && continues the chain", verdict(f"cd {r} &&\n{rt}", s)[0],
+              verdict(f"cd {r} &&\n{rt}", s)[1])
+        (r / "app" / "models").mkdir(parents=True)
+        # Discriminating on purpose: a subdirectory with no declaration of its own would read as
+        # UNDECLARED, where one label passes -- so the fixture must be one only the toplevel refuses.
+        ok, why = verdict(f"cd {r}/app/models && gh issue create -t X --label bug", s)
+        check("a cd into a SUBDIRECTORY finds the repo's toplevel declaration",
+              not ok and "severity:s1" in why, why)
+        check("...and passes what the toplevel allows", verdict(f"cd {r}/app/models && {rt}", s)[0])
+        here = Path.cwd()
+        try:
+            os.chdir(td)
+            check("a relative cd resolves from where the command runs", verdict(f"cd retask && {rt}", s)[0],
+                  verdict(f"cd retask && {rt}", s)[1])
+        finally:
+            os.chdir(here)
+        ok, why = verdict(f"cd {td}/nowhere && {rt}", s)
+        check("a cd to a missing directory keeps the session's rules", not ok and "comp:*" in why, why)
+        bare_target = Path(td) / "noremote"
+        bare_target.mkdir()
+        (bare_target / ".rails-flow").mkdir()
+        (bare_target / CONFIG).write_text(json.dumps(retask), encoding="utf-8")
+        ok, why = verdict(f"cd {bare_target} && {rt}", s)
+        check("a target with no remote keeps the session's rules: gh's destination is unknown",
+              not ok and "comp:*" in why, why)
+        check("CONTROL: a create with no cd still uses the session's declaration",
+              not verdict(rt, s)[0] and not verdict(f"echo hi; {rt}", s)[0])
+
+        # ---- every OTHER shape with a cd is refused, never guessed ---------------------------------
+        # Each was a real leak in an earlier draft (three independent reviews), or is its near kin.
+        # The labels pass the target repo, so a guess would let them through; the session must judge.
+        u = Path(td) / "undeclared"
+        u.mkdir()
+        one = "gh issue create -t X --label comp:x"     # one label: passes an undeclared dir, fails skills
+        # "Refused" here means judged by the SESSION's rules: the labels pass the target's rules and
+        # fail the session's, so a refusal proves the cd was NOT followed -- the safe default.
+        def refused(name: str, cmd: str, needle: str = "comp:*") -> None:
+            ok, why = verdict(cmd, s)
+            check(f"refused: {name}", not ok and needle in why, why)
+        for name, shape in (
+                ("a cd separated by ;", f"cd {r}; {rt}"),
+                ("a cd inside a subshell", f"(cd {r}); {rt}"),
+                ("a subshell cd before &&", f"(cd {r}) && {rt}"),
+                ("a create inside the subshell", f"(cd {r} && {rt})"),
+                ("a cd that is not the first command", f"true && cd {r} && {rt}"),
+                ("a cd on a later line", f"echo hi\ncd {r} && {rt}"),
+                ("a cd in a pipeline", f"cd {r} | cat && {rt}"),
+                ("a cd sent to the background", f"cd {r} & {rt}"),
+                ("a create after cd ||", f"cd {r} || {rt}"),
+                ("a second cd", f"cd {r} && cd {u} && {rt}"),
+                ("cd -", f"cd {u} && cd - && {rt}"),
+                ("a cd to a variable", f"cd $OTHER && {rt}"),
+                ("pushd", f"pushd {r} && {rt}"),
+                ("builtin cd", f"builtin cd {r} && {rt}"),
+                ("a cd inside $(...)", f"x=$(cd {r} && pwd) && {rt}"),
+                ("a cd inside backticks", f"x=`cd {r}` && {rt}"),
+                ("a cd inside an if body", f"if false; then\n cd {r}\nfi\n{rt}"),
+                ("a cd behind time", f"time if false; then cd {r}; fi; {rt}"),
+                ("a cd behind a case pattern's )", f"(case x in a) ;; esac; cd {r}); {rt}"),
+                ("a cd behind a quoted fi", f"if false; then 'fi'; cd {r}; fi; {rt}"),
+                ("a create after cd && exit;", f"cd {r} && exit; {rt}"),
+                ("a command between the cd and the create", f"cd {r} && git status && {rt}"),
+                ("export GH_REPO between the cd and the create", f"cd {r} && export GH_REPO=me/skills && {rt}"),
+                ("export GIT_DIR between the cd and the create", f"cd {r} && export GIT_DIR={s}/.git && {rt}"),
+                ("GIT_DIR on the create itself", f"cd {r} && GIT_DIR={s}/.git {rt}"),
+                ("env -C redirecting the create", f"cd {r} && env -C {s} {rt}"),
+                ("a repo named with -R after the cd", f"cd {r} && {rt} -R me/skills"),
+                ("GH_REPO on the create after the cd", f"cd {r} && GH_REPO=someone/else {rt}")):
+            refused(name, shape)
+        refused("-R naming the session's own repo keeps its rules", f"cd {u} && {one} -R me/skills", "type:*")
+        refused("GH_REPO naming the session's own repo keeps its rules", f"cd {u} && GH_REPO=me/skills {one}", "type:*")
+        ok, why = verdict("cat <<EOF\n" + one, s)
+        check("an unterminated heredoc refuses rather than swallowing the create",
+              not ok and "could not be parsed" in why, why)
+        ok, why = verdict("echo '<<X'\ngh issue create -t t\nX", s)
+        check("a quoted <<X is text, so the unlabelled create after it is seen", not ok and "no --label" in why, why)
+        ok, why = verdict("gh issue cre\\\nate -t t", s)
+        check("a backslash-newline joins, so `cre\\<nl>ate` is still a create", not ok and "no --label" in why, why)
+        full = "gh issue create -t X --label comp:a --label type:b --label prio:P2"
+        check("CONTROL: a quoted <<EOF on the create's own line is not a parse error",
+              verdict(full + " --body 'a<<EOF'", s)[0], verdict(full + " --body 'a<<EOF'", s)[1])
+        check("CONTROL: arithmetic << is not a parse error",
+              verdict("echo $((1<<n)) && " + full, s)[0], verdict("echo $((1<<n)) && " + full, s)[1])
+        ok, why = verdict("cat <<< hi\ngh issue create -t X\nhi", s)
+        check("a <<< herestring is not a heredoc, so the unlabelled create after it is seen",
+              not ok and "no --label" in why, why)
+        # A cd into ANOTHER checkout of the session's own repo files into the session's repo.
+        clone = Path(td) / "clone"
+        clone.mkdir()
+        subprocess.run(["git", "init", "-q", str(clone)], check=True)
+        subprocess.run(["git", "-C", str(clone), "remote", "add", "origin", "https://github.com/me/skills.git"], check=True)
+        ok, why = verdict(f"cd {clone} && {one}", s)
+        check("a cd into a clone of the session's own repo keeps the session's rules", not ok and "type:*" in why, why)
+        up = Path(td) / "upstream-only"
+        up.mkdir()
+        (up / ".rails-flow").mkdir()
+        (up / CONFIG).write_text(json.dumps(retask), encoding="utf-8")
+        subprocess.run(["git", "init", "-q", str(up)], check=True)
+        subprocess.run(["git", "-C", str(up), "remote", "add", "upstream", "git@github.com:Me/Skills.git"], check=True)
+        ok, why = verdict(f"cd {up} && {rt}", s)
+        check("a target whose UPSTREAM is the session's repo keeps the session's rules", not ok and "comp:*" in why, why)
+        subprocess.run(["git", "-C", str(up), "remote", "add", "origin", "https://github.com/someone/fork.git"], check=True)
+        ok, why = verdict(f"cd {up} && {rt}", s)
+        check("...and so does a fork origin with the session repo as upstream", not ok and "comp:*" in why, why)
+        # The session's repo in every URL spelling a clone might carry (#1406 sixth review).
+        for n, (kind, url) in enumerate((("userinfo", "https://x-access-token:secret@github.com/me/skills.git"),
+                                         ("an ssh port", "ssh://git@github.com:22/me/skills.git"),
+                                         ("an ssh alias", "git@github-work:me/skills.git"),
+                                         ("an enterprise host", "https://github.example.com/Me/Skills"))):
+            c = Path(td) / f"spelling{n}"
+            (c / ".rails-flow").mkdir(parents=True)
+            (c / CONFIG).write_text(json.dumps(retask), encoding="utf-8")
+            subprocess.run(["git", "init", "-q", str(c)], check=True)
+            subprocess.run(["git", "-C", str(c), "remote", "add", "origin", url], check=True)
+            ok, why = verdict(f"cd {c} && {rt}", s)
+            check(f"a clone whose origin uses {kind} is the session's repo",
+                  not ok and "comp:*" in why, why)
+        # GH_REPO in the hook's environment redirects gh, so the cd is not certain.
+        saved = os.environ.get("GH_REPO")
+        os.environ["GH_REPO"] = "me/skills"
+        try:
+            ok, why = verdict(f"cd {r} && {rt}", s)
+            check("GH_REPO in the environment keeps the session's rules", not ok and "comp:*" in why, why)
+        finally:
+            if saved is None:
+                os.environ.pop("GH_REPO", None)
+            else:
+                os.environ["GH_REPO"] = saved
+        # A session whose origin is a fork and whose UPSTREAM is the real repo: gh files upstream.
+        s2 = Path(td) / "session-fork"
+        (s2 / ".rails-flow").mkdir(parents=True)
+        (s2 / CONFIG).write_text(json.dumps(skills), encoding="utf-8")
+        subprocess.run(["git", "init", "-q", str(s2)], check=True)
+        subprocess.run(["git", "-C", str(s2), "remote", "add", "origin", "https://github.com/someone/fork.git"], check=True)
+        subprocess.run(["git", "-C", str(s2), "remote", "add", "upstream", "https://github.com/me/skills.git"], check=True)
+        ok, why = verdict(f"cd {clone} && {rt}", s2)
+        check("a session whose upstream is the target's repo keeps its own rules", not ok and "comp:*" in why, why)
+        # A session with NO remote cannot be told apart from anything: never follow.
+        s3 = Path(td) / "session-bare"
+        (s3 / ".rails-flow").mkdir(parents=True)
+        (s3 / CONFIG).write_text(json.dumps(skills), encoding="utf-8")
+        ok, why = verdict(f"cd {r} && {rt}", s3)
+        check("a session with no remote keeps its own rules", not ok and "comp:*" in why, why)
+        # Repo names in every spelling gh accepts.
+        for spelling in ("-Rme/skills", "-R Me/Skills", "-R https://github.com/me/skills", "--repo=github.com/me/skills.git"):
+            ok, why = verdict(f"{one} {spelling}", s)
+            check(f"-R spelled `{spelling}` is the session's repo", not ok and "type:*" in why, why)
+        check("CONTROL: a glued -R naming another repo needs one label, like the spaced form",
+              verdict(f"{one} -Rsomeone/else", s)[0])
+        ok, why = verdict(f"GH_REPO=https://github.com/other/x {one}", s)
+        check("GH_REPO with no cd changes nothing, as before #1400", not ok and "type:*" in why, why)
+        # The reverse direction: a correctly labelled create with no followed cd is ALLOWED, as on dev.
+        for name, shape in (("echo cd", f"echo cd; {full}"), ("a subshell cd", f"(cd {u} && true); {full}"),
+                            ("popd", f"popd; {full}"), ("grep cd", f"grep -rn cd docs; {full}")):
+            check(f"CONTROL: `{name}` before a fully labelled create is allowed, as on dev",
+                  verdict(shape, s)[0], verdict(shape, s)[1])
         (r / CONFIG).write_text("{not json", encoding="utf-8")
         check("an unreadable declaration refuses rather than allowing",
               not verdict("gh issue create -t X --label feature", r)[0])

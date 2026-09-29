@@ -90,5 +90,42 @@ GUARD = Guard(
             "):",
             "an exemption with no reason is unusable",
         ),
+        # Pre-release review of #1388.
+        Mutation(
+            "a readonly display input is refused like a field again",
+            "                if DISPLAY_INPUT.search(tag) and not NAMED.search(tag):\n                    continue\n",
+            "",
+            "CONTROL: a readonly, unnamed input is a display, not a field",
+        ),
+        Mutation(
+            "a readonly input that POSTS slips through the display carve-out",
+            "                if DISPLAY_INPUT.search(tag) and not NAMED.search(tag):",
+            "                if DISPLAY_INPUT.search(tag):",
+            "...but a readonly input that posts (named) is still a raw field",
+        ),
+        Mutation(
+            "a multi-line simple_form_for call hides its builder again",
+            'BUILDER = re.compile(r"\\bsimple_(?:form_for|fields_for)\\b[^%]*?\\bdo\\s*\\|\\s*(\\w+)", re.S)',
+            'BUILDER = re.compile(r"\\bsimple_(?:form_for|fields_for)\\b[^\\n]*?\\bdo\\s*\\|\\s*(\\w+)")',
+            "a raw call on a builder opened by a MULTI-LINE simple_form_for is refused",
+        ),
+        Mutation(
+            "an exemption's `match` is ignored, so it exempts every violation of its rule in the file",
+            '                     and (not e.get("match") or e["match"] in what)]',
+            "                     ]",
+            "...and does not exempt a different violation of the same rule in the same file",
+        ),
+        Mutation(
+            "`exemptions: null` crashes instead of being unusable",
+            "        if not isinstance(rows, list):\n            raise TypeError(",
+            "        if False:\n            raise TypeError(",
+            "`\"exemptions\": null` is unusable, not a crash",
+        ),
+        Mutation(
+            "the tag is cut at an ERB %>, so a readonly after an ERB value is missed",
+            'WHOLE_TAG = re.compile(r"<input\\b(?:<%.*?%>|[^>])*>", re.I | re.S)',
+            'WHOLE_TAG = re.compile(r"<input\\b[^>]*>", re.I | re.S)',
+            "CONTROL: an ERB value inside the tag does not hide its readonly",
+        ),
     ),
 )
