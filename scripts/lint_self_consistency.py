@@ -2190,6 +2190,61 @@ _PINNED_REF = re.compile(r"^\s*ref:\s*[\"']?(v\d+\.\d+\.\d+)", re.M)
 _SLUG_PIN = re.compile(r"fmanimashaun/claude-skills@(v\d+\.\d+\.\d+)")
 
 
+_USES = re.compile(r"^(\s*)-?\s*uses:\s*([^\s#]+)", re.M)
+_SHA_PIN = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
+
+
+def check_workflow_action_pins() -> tuple[list[Finding], int]:
+    """Every workflow action is pinned by a full commit SHA, and every checkout drops its credentials.
+
+    #1414. `upstream.yml` pinned `actions/checkout@v7`, a TAG, while every other workflow pinned the
+    same action by SHA: a tag can be moved to other code after review, a SHA cannot. The same job
+    kept the default persisted credentials, which leaves the token in .git/config for every later
+    step; no job here pushes with git, so none needs it.
+
+    TWO SLUGS, so each clause can be proven alone (the #701 lesson): `unpinned-workflow-action` for
+    the ref, `checkout-persists-credentials` for the checkout. Local actions (`./...`) and
+    `docker://` images carry no git ref and are not judged.
+    """
+    findings: list[Finding] = []
+    examined = 0
+    for path in sorted(ROOT.glob(".github/workflows/*.yml")) + sorted(ROOT.glob(".github/workflows/*.yaml")):
+        examined += 1
+        body = read(path)
+        rel = path.relative_to(ROOT).as_posix()
+        lines = body.splitlines()
+        for match in _USES.finditer(body):
+            ref = match.group(2).strip("'\"")
+            if ref.startswith("./") or ref.startswith("docker://"):
+                continue
+            line = body[: match.start()].count("\n") + 1
+            if not _SHA_PIN.match(ref):
+                findings.append(Finding(
+                    "unpinned-workflow-action", rel, line,
+                    f"`{ref}` is not pinned by a full commit SHA. A tag or branch can be moved to "
+                    f"different code after review; pin the 40-character SHA with the tag as a comment, "
+                    f"like every other workflow here (`owner/action@<sha> # vX.Y.Z`)."))
+            if ref.split("@", 1)[0] == "actions/checkout":
+                # The step's own lines: until the next step (a list item at the same or lower
+                # indent) or a line that dedents out of the step.
+                indent = len(match.group(1))
+                step = []
+                for nxt in lines[line:]:
+                    stripped = nxt.lstrip(" ")
+                    if stripped.startswith("- ") and len(nxt) - len(stripped) <= indent:
+                        break
+                    if stripped and len(nxt) - len(stripped) < indent:
+                        break
+                    step.append(nxt)
+                if not any(re.match(r"^\s*persist-credentials:\s*false\s*(#.*)?$", l) for l in step):
+                    findings.append(Finding(
+                        "checkout-persists-credentials", rel, line,
+                        "this checkout keeps its credentials (no `persist-credentials: false`), so the "
+                        "token stays in .git/config for every later step. No job here pushes with git; "
+                        "set `persist-credentials: false`."))
+    return findings, examined
+
+
 def check_pinned_toolchain_ref() -> tuple[list[Finding], int]:
     """No shipped command may hardcode a version of THIS repo for a user to copy.
 
@@ -3341,6 +3396,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     undoc_skill, undoc_skill_examined = check_undocumented_skill()
     rel_extract, rel_extract_examined = check_duplicated_release_extractor()
     pinned_ref, pinned_ref_examined = check_pinned_toolchain_ref()
+    action_pins, action_pins_examined = check_workflow_action_pins()
     xplugin, xplugin_examined = check_cross_plugin_doctrine_path()
     bullet_sec, bullet_sec_examined = check_changelog_bullet_section()
     cl_sections, cl_sections_examined = check_changelog_section_missing()
@@ -3389,6 +3445,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "skill_directories_named_in_claude_md": undoc_skill_examined,
         "publish_paths_checked_for_own_extractor": rel_extract_examined,
         "shipped_docs_scanned_for_a_pinned_toolchain_tag": pinned_ref_examined,
+        "workflows_checked_for_action_pins": action_pins_examined,
         "design_flow_scripts_checked_for_a_clone_shaped_doctrine_path": xplugin_examined,
         "unreleased_changelog_bullets_placed": bullet_sec_examined,
         "plugins_with_a_changelog_section": cl_sections_examined,
@@ -3407,7 +3464,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
             + pointers + outlines + uninstallable + plugin_root + mkt_ver + coercions + topologies + schema + unwired
             + ci_gates + cl_ignore + controllers + labels + comp_labels + orphans + keyfilter
             + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
-            + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref
+            + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref + action_pins
             + xplugin + unowned + toggles + ci_step + promo_ctx + bothways + harness_dep,
             coverage)
 
@@ -3656,6 +3713,32 @@ def selftest() -> int:
                  "rails-flow (agentic flow plugin)",
                  "- **Eleven agents ran for every job.** (#656) Now there is a pack size.",
                  heading="### 1.23.0 — 2026-08-20 (release v1.92.0)")})
+
+    # -- unpinned-workflow-action / checkout-persists-credentials (#1414) ------
+    UWA, CPC = "unpinned-workflow-action", "checkout-persists-credentials"
+    _SHA = "3d3c42e5aac5ba805825da76410c181273ba90b1"
+    _WF = ("jobs:\n  check:\n    steps:\n      - uses: actions/checkout@%s\n%s"
+           "      - name: next\n        run: echo hi\n")
+    _NOCRED = "        with:\n          persist-credentials: false\n"
+    scenario("an action pinned by a TAG", rule=UWA, expect_finding=True,
+             files={".github/workflows/x.yml": _WF % ("v7", _NOCRED)})
+    scenario("...silent on an action pinned by a full SHA", rule=UWA, expect_finding=False,
+             files={".github/workflows/x.yml": _WF % (_SHA + " # v7.0.1", _NOCRED)})
+    scenario("...silent on a local action and a docker image", rule=UWA, expect_finding=False,
+             files={".github/workflows/x.yml": "jobs:\n  a:\n    steps:\n      - uses: ./.github/actions/x\n"
+                                               "      - uses: docker://alpine:3\n"})
+    scenario("...a SHORT sha is not a full pin", rule=UWA, expect_finding=True,
+             files={".github/workflows/x.yml": _WF % ("3d3c42e", _NOCRED)})
+    scenario("a checkout that keeps its credentials", rule=CPC, expect_finding=True,
+             files={".github/workflows/x.yml": _WF % (_SHA, "")})
+    scenario("...persist-credentials: true is still kept", rule=CPC, expect_finding=True,
+             files={".github/workflows/x.yml": _WF % (_SHA, "        with:\n          persist-credentials: true\n")})
+    scenario("...silent on persist-credentials: false", rule=CPC, expect_finding=False,
+             files={".github/workflows/x.yml": _WF % (_SHA, _NOCRED)})
+    # The NEXT step's setting must not count for this checkout.
+    scenario("...a later step's persist-credentials does not cover this checkout", rule=CPC, expect_finding=True,
+             files={".github/workflows/x.yml": _WF % (_SHA, "") + "      - uses: actions/setup-node@" + _SHA +
+                    "\n        with:\n          persist-credentials: false\n"})
 
     # -- pinned-toolchain-ref / -slug --------------------------------------
     PTR, PTS = "pinned-toolchain-ref", "pinned-toolchain-slug"

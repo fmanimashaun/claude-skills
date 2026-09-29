@@ -288,6 +288,31 @@ GUARD = Guard(
         ),
         # #713. Three clauses, three mutations, two slugs -- a rule with N clauses needs a
         # finding per clause or none of them is provable.
+        # #1414: a workflow action pinned by a tag, and a checkout that keeps its credentials.
+        Mutation(
+            "a workflow action pinned by a tag stops being reported",
+            "            if not _SHA_PIN.match(ref):",
+            "            if False:",
+            "an action pinned by a TAG",
+        ),
+        Mutation(
+            "a short sha passes as a full pin",
+            '_SHA_PIN = re.compile(r"^[^@\\s]+@[0-9a-f]{40}$")',
+            '_SHA_PIN = re.compile(r"^[^@\\s]+@[0-9a-f]{7,40}$")',
+            "...a SHORT sha is not a full pin",
+        ),
+        Mutation(
+            "a checkout that keeps its credentials stops being reported",
+            '                if not any(re.match(r"^\\s*persist-credentials:\\s*false\\s*(#.*)?$", l) for l in step):',
+            "                if False:",
+            "a checkout that keeps its credentials",
+        ),
+        Mutation(
+            "a later step's persist-credentials counts for this checkout",
+            '                    if stripped.startswith("- ") and len(nxt) - len(stripped) <= indent:\n                        break',
+            '                    if False:\n                        break',
+            "...a later step's persist-credentials does not cover this checkout",
+        ),
         Mutation(
             "a literal toolchain tag pinned for a user to copy stops being reported",
             "        for match in _PINNED_REF.finditer(body):",
