@@ -3552,6 +3552,59 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   - **Tests.** 88 selftest checks run, 67 of them new, and 3 end-to-end hook fixtures. Mutations: 22 new, 31 of
     31 caught.
 
+- **`/rails-flow:setup-flow` installs the tenancy cop, and `tenancy-cop` asks RuboCop and the app whether it holds — `plugins/rails-flow/scripts/check_tenancy_cop.py`,
+  `plugins/rails-flow/scaffold/tenancy/scoped_lookup.rb`, `plugins/rails-flow/checks.json`,
+  `plugins/rails-flow/commands/setup-flow.md`** (#1361). Maintainer decision on [#1361](https://github.com/fmanimashaun/claude-skills/issues/1361#issuecomment-5857528252). setup-flow asks whether the app
+  is multi-tenant, records `.rails-flow/tenancy.json` (`{"multi_tenant": false}` means the check is not applicable and
+  setup-flow does not ask again), and copies the cop.
+  - **RuboCop, Ruby and the app are the authorities, never a copy of their rules.** Independent review BLOCKED three
+    times, then passed CLEAN in round 4, whose advisories are fixed here.
+    - The first draft re-derived RuboCop's config in Python. A department disable, `Enabled: pending`, or an
+      `Exclude` over the controllers each left the cop off while the check said clean.
+    - The second draft probed one stand-in path. A non-recursive `Include`, a nested `app/controllers/api/.rubocop.yml`,
+      or a nested `SafeAutoCorrect: true` left real controllers unchecked, or let `rubocop -a` rewrite them silently.
+    - The third probed synthetic source, so a controller's own file-wide `# rubocop:disable Tenancy/ScopedLookup`
+      (or `disable all`) was invisible, and the check said "on in every controller".
+  - **Now:**
+    - **Every real `app/controllers/**/*.rb` path is probed** with `rubocop --force-exclusion --autocorrect --stdin
+      <path>`. Each tenant-owned key must draw an offense there, and it must come back not corrected. A controller left
+      unchecked on purpose is declared in `unchecked_controllers` with a reason (the admin plane §7 excludes).
+    - **Each key's table comes from the app** (`Key.constantize.table_name` via `rails runner`), so `Invocie` is no
+      model and `Billing::Invoice` counts only for its own table.
+    - **Silenced lines come from RuboCop:** the real controllers are linted with and without
+      `--ignore-disable-comments`, and every silenced line must be §7's same-line
+      `# rubocop:disable Tenancy/ScopedLookup -- <reason>` (or `rubocop:todo`). File-wide and range disables are
+      refused, as are a same-line list containing `all` and a "reason" that is only `#`. The line's comments come
+      from Ruby's own parser (Prism), so directive text inside a string cannot fake a reason.
+    - **`unchecked_controllers` globs are matched by Ruby's own `File.fnmatch(FNM_PATHNAME | FNM_EXTGLOB)`**,
+      RuboCop's semantics, braces included. An excuse that matches nothing, or only excuses checked controllers,
+      is reported.
+    - **`db/structure.sql` is read** including partitioned, `UNLOGGED` and `IF NOT EXISTS` tables.
+    - **Output is capped** at ten paths.
+  - **It refuses:**
+    - a missing or edited cop;
+    - a controller where a key goes unflagged or would be autocorrected;
+    - an unknown key, a blank `TenantScope`, or an association that is not an identifier;
+    - a key that is no loadable model, or whose table lacks the tenant key;
+    - an unreached tenant-keyed table, or a foreign key no table carries;
+    - a RuboCop or app that will not start.
+  - **Tests:**
+    - 47 selftest assertions, whose directive and glob cases run real Prism and `File.fnmatch` on real files;
+      `plugins/rails-flow/scripts/mutations/check_tenancy_cop.py` catches 24/24, each by its named fixture.
+    - Driven on a real Rails 8.1.4 app with rubocop 1.91.0, using each scenario the reviews reproduced:
+      - non-recursive `Include`, a nested disable, and an undeclared `api/` `Exclude` each exit 1 and name the controller;
+      - a nested `SafeAutoCorrect: true` exits 1, and a real `rubocop -a` did rewrite that file;
+      - `Invocie` exits 1, and an undeclared admin plane exits 1;
+      - a file-wide disable and a range disable each exit 1 at their line, and the reasoned same-line disable
+        passes; a dead excuse exits 1;
+      - round 4's tricks, a fake reason inside a string, `disable all, Tenancy/ScopedLookup -- r` and `-- # x`,
+        each exit 1; a bare `a**` does not excuse `api/`; `{admin,ops}` does excuse `admin/`;
+      - the declared variants, and a cop configured only in an inherited file, exit 0.
+    - In every case the checker matched what RuboCop did to the real controller.
+  - **Derived, not copied by hand.** The shipped cop is generated from rails-8's §7 by `scripts/derive_tenancy_cop.py`,
+    for the cross-plugin reason `mandated_gems.json` has. The doctor gate `tenancy cop derived` compares both sides at
+    `HEAD`, and there is a `rebuild_generated.py` entry. `scripts/mutations/derive_tenancy_cop.py` catches 2/2.
+
 ### 1.55.0 (release v1.152.0) — 2026-09-28
 
 - **`/rails-flow:slice` breaks a spec, brief or issue into dependency-ordered vertical slices and files them —
@@ -16045,6 +16098,33 @@ boot/validation path — with a bullet each so the promotion could close them se
   back **REFUTED** from doctrine-verifier (accname 1.2 §4.3.2 includes generated content; WCAG F87 is marked
   obsolete), so it was dropped and only the rule "labels are real elements" remains. Our own design, no upstream:
   maintainer decision recorded on #1391.
+
+- **A cop for the unscoped tenant query, and what it cannot see — `skills/rails-8/references/multi-tenancy.md`,
+  `skills/quality-pass/references/worked-example.md`, `dist/rails-8.skill`, `dist/quality-pass.skill`** (#1361). §7
+  said no tool enforced tenant scoping. It now ships `Tenancy/ScopedLookup`, a project-local cop that flags every Active
+  Record query on a tenant-owned model's constant in a controller, with its `.rubocop.yml` block and a 12-example spec.
+  The query list is Rails' own 113 `ActiveRecord::Querying::QUERYING_METHODS` plus `unscoped`, `find_by_sql` and
+  `count_by_sql`, and `&.` calls are checked too. The spec's first example fails the project's suite if Rails adds a
+  querying method. §7 says plainly what the cop cannot see: a variable or method returning the class, a dynamic
+  namespace, dynamic finders, models and jobs, and SQL sent to the connection.
+  - **Verified** by `doctrine-verifier` and by running it, on rubocop 1.91.0, rubocop-ast 1.50.0,
+    rubocop-rails-omakase 1.1.0 and activerecord 8.0.2 / 8.1.2:
+    - `QUERYING_METHODS` holds the same 113 in both Rails versions (`delegate(*QUERYING_METHODS, to: :all)`,
+      `querying.rb:24`), and the cop's list is an exact 116-method match to it plus the three additions.
+    - `unscoped` is `Scoping::Default`; `find_by_sql` and `count_by_sql` are `Querying`.
+    - Dynamic finders come from `DynamicMatchers#method_missing`, so they are named as a limit, not configured.
+    - `RESTRICT_ON_SEND` gates `on_csend` too (`commissioner.rb`, `RESTRICTED_CALLBACKS`).
+    - `require:` with a local path is the supported loader (*"there are no plans to remove it in the future"*,
+      [RuboCop: Plugins](https://docs.rubocop.org/rubocop/plugins.html)).
+    - `SafeAutoCorrect: false` means `-a` reports and `-A` rewrites.
+    - The inline `rubocop:disable … -- reason` form works.
+  - **Refuted, and shipped as the correction:** RuboCop does *not* warn about a local cop's unknown keys, and omakase
+    does *not* use `DisabledByDefault`.
+  - Independent review BLOCKED the first draft, which covered six methods. The widened list closes the
+    `Invoice.includes(:lines).find`, `first`, `exists?`, `find_each` and `&.` gaps it reproduced.
+  - The shared-shape counts in the quality-pass worked example move with the new scripts. One more copy does not
+    change the recorded decision not to extract.
+  - Where the cop lives is our own design, per the maintainer decision on [#1361](https://github.com/fmanimashaun/claude-skills/issues/1361#issuecomment-5857528252).
 
 ### 1.69.0 (release v1.152.0) — 2026-09-28
 
