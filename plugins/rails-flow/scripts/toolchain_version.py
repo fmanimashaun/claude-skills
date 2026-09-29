@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -109,13 +110,54 @@ def applies_to(record: dict, project: Path | None) -> bool:
     if not owner:
         return True
     try:
-        root, here = Path(owner).resolve(), project.resolve()
-    except OSError:
+        # BOTH the session's path and, for a linked worktree, its main checkout (#1427): a record
+        # made from inside the worktree names the worktree, one made from the main checkout names
+        # that, and either is this project.
+        root, sessions = Path(owner).resolve(), {project.resolve(), main_checkout(project).resolve()}
+    except (OSError, TypeError):         # a projectPath that is not a path string
         return False
     # A session run from a subdirectory still loads the project's plugins (drive.md runs the gate
     # from wherever the session is). `resolve()` also folds a trailing slash and a symlinked
     # path (/tmp vs /private/tmp on macOS) into one form.
-    return here == root or root in here.parents
+    dirs = tuple(d for here in sessions for d in (here, *here.parents))
+    if root in dirs:
+        return True
+    # On a case-insensitive volume (APFS by default) a recorded `projectPath` can differ from the
+    # session's path in case alone (#1427); `samefile` asks the filesystem, not the string.
+    try:
+        return root.exists() and any(str(d).lower() == str(root).lower() and os.path.samefile(root, d)
+                                       for d in dirs)
+    except OSError:
+        return False
+
+
+def main_checkout(project: Path) -> Path:
+    """`project`, or its main checkout when it lies inside a linked git worktree (#1427).
+
+    A worktree is usually OUTSIDE the project root (`../repo-wt/x`), so no `projectPath` contains
+    it, yet it is the same project. Its `.git` is a FILE, `gitdir: <main>/.git/worktrees/<name>`.
+    A submodule's `.git` file names `.git/modules/<name>` instead and is deliberately NOT mapped:
+    a submodule, or a worktree of one, is its own project.
+    """
+    for d in (project, *project.parents):
+        git = d / ".git"
+        if git.is_dir():
+            return project
+        if git.is_file():
+            try:
+                line = git.read_text(encoding="utf-8").strip()
+            except OSError:
+                return project
+            gitdir = Path(line.partition("gitdir:")[2].strip())
+            if not gitdir.is_absolute():
+                gitdir = d / gitdir
+            # `<main>/.git/worktrees/<n>` only: a bare clone's `repo.git/worktrees/<n>` has no
+            # checkout to map to. Keep the path below the worktree root, so a project recorded
+            # below the repository root (`<main>/app`) still matches from `<wt>/app`.
+            if gitdir.parent.name == "worktrees" and gitdir.parent.parent.name == ".git":
+                return gitdir.parent.parent.parent / project.relative_to(d)
+            return project
+    return project
 
 
 def resolve_installed(home: Path, marketplace: str = MARKETPLACE,

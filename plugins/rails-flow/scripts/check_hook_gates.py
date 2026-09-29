@@ -662,15 +662,20 @@ def release_gate_fixtures() -> None:
         check("release-gate.sh present beside rails-flow", False, str(QA_HOOK))
         return
 
-    def run(cmd: str, marketplace: bool = False) -> int:
+    def run(cmd: str, marketplace: bool = False, plugin_root: Path | None = None) -> int:
         with tempfile.TemporaryDirectory() as td:
             _git_repo(Path(td))
+            # ON A FEATURE BRANCH (#1410). `git init` leaves HEAD on main, where a bare `git push`
+            # really IS a push to main -- so a parser handed the quote-stripped `git push origin `
+            # was still blocked, and the fixture could not tell it from one reading the real argument.
+            subprocess.run(["git", "checkout", "-q", "-b", "feature/work"], cwd=td, check=True,
+                           capture_output=True)
             if marketplace:
                 # What MAKES a tree a marketplace. No consumer project has one.
                 (Path(td) / ".claude-plugin").mkdir(parents=True, exist_ok=True)
                 (Path(td) / ".claude-plugin" / "marketplace.json").write_text(
                     '{"name": "x", "plugins": []}', encoding="utf-8")
-            env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env["CLAUDE_PLUGIN_ROOT"] = str(QA_HOOK.parents[2])
+            env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env["CLAUDE_PLUGIN_ROOT"] = str(plugin_root or QA_HOOK.parents[2])
             done = subprocess.run(["bash", str(QA_HOOK)], cwd=td, input=json.dumps({"tool_input": {"command": cmd}}),
                                   env=env, capture_output=True, text=True, timeout=60)
             return done.returncode
@@ -679,6 +684,53 @@ def release_gate_fixtures() -> None:
         check(f"release-gate: `{cmd}` targets main and is blocked without a certification", run(cmd) == 2, "exit 0")
     for cmd in ('git commit -m "push origin main"', 'echo "git push origin main"', "# git push origin main", "git push origin feature/x"):
         check(f"release-gate: `{cmd}` does not target main and passes", run(cmd) == 0, "exit 2")
+    # #1410: `main`/`master` INSIDE a branch name is not a destination. Both were refused
+    # downstream on one day, and both authors renamed the branch to get past the gate.
+    for cmd in ("git push -u origin fix/1010-one-main", "git push origin feature/main-menu",
+                "git push origin main-nav", "git push -u origin feat/983-pr2-master-detail"):
+        check(f"release-gate (#1410): `{cmd}` names main only inside a branch name, and passes",
+              run(cmd) == 0, "exit 2")
+    # ...and every real destination form is still a promotion -- including the QUOTED ones, which
+    # the old regex allowed because the normaliser strips quoted spans before it looked.
+    for cmd in ("git push origin HEAD:main", "git push origin dev:main", "git push origin refs/heads/main",
+                "git push --all origin", 'git push origin "main"', "git push origin 'HEAD:main'"):
+        check(f"release-gate (#1410): `{cmd}` targets main and is blocked without a certification",
+              run(cmd) == 2, "exit 0")
+    check("release-gate (#1410): a bare `git push` from a feature branch passes", run("git push") == 0, "exit 2")
+    # #1470 review: the five pushes to main the first parser ALLOWED. Each is blocked end to end.
+    for cmd in ("git push origin $(echo main)", "git push origin main>/dev/null",
+                "echo done#1; git push origin main", "git push origin HEAD:heads/main",
+                "git push origin {main,dev}", "git -C $(pwd) push origin main",
+                "git push -v$(true) origin main", "git push --receive-pack=$(echo x) origin main"):
+        check(f"release-gate (#1470): `{cmd}` reaches main and is blocked", run(cmd) == 2, "exit 0")
+    # 41's delta review of #1470: the hook only handed the parser segments that STARTED with
+    # `git push`, so a wrapper, a group, a continuation or a shell string hid the push entirely.
+    for cmd in ("timeout 60 git push origin main", "sudo -u bob git push origin main",
+                "command git push origin main", "git --no-pager push origin main",
+                "( git push origin main )", "{ git push origin main; }", "/usr/bin/git push origin main",
+                "git push origin \\\nmain", "bash -c 'git push origin main'", 'eval "git push origin main"',
+                "git -c alias.p=push p origin main", "echo main | xargs git push origin",
+                "timeout 60 gh pr merge 5", "bash -o pipefail -c 'git push origin main'",
+                "g''it push origin main", "gi\\t push origin main", '"g"it push origin main'):
+        check(f"release-gate (#1470): `{cmd!r}` reaches main (or cannot be judged) and is blocked",
+              run(cmd) == 2, "exit 0")
+    for cmd in ("bash -c 'git push origin fix/x'", "timeout 60 git push origin fix/x", "gh pr list"):
+        check(f"release-gate (#1470): CONTROL: `{cmd}` passes", run(cmd) == 0, "exit 2")
+    check("release-gate (#1470): the current-branch idiom on a feature branch passes",
+          run('git push -u origin "$(git branch --show-current)"') == 0, "exit 2")
+    # ...and the false refusal that review found: an apostrophe in a heredoc body is not a quote.
+    check("release-gate (#1470): a heredoc body with an apostrophe does not block a feature push",
+          run("cat > n.md <<'EOF'\nit's done\nEOF\ngit push -u origin fix/x") == 0, "exit 2")
+    # An unbalanced quote cannot be tokenised; "could not judge" must deny, never read as "no".
+    check("release-gate (#1410): an unparseable push is treated as a promotion",
+          run('git push origin "feature/x') == 2, "exit 0")
+    # FAIL CLOSED without the parser: the whole-word match over the RAW command still sees a quoted
+    # main (the pair's control is the feature push beside it, which must still pass).
+    with tempfile.TemporaryDirectory() as bare_root:
+        check("release-gate (#1410): parser missing -> a quoted `main` push is still blocked",
+              run('git push origin "main"', plugin_root=Path(bare_root)) == 2, "exit 0")
+        check("release-gate (#1410): parser missing -> CONTROL: a feature push still passes",
+              run("git push origin feature/x", plugin_root=Path(bare_root)) == 0, "exit 2")
 
     # THE DISCRIMINATING PAIR for the marketplace carve-out. The same command, the same absence of
     # a certification, and the ONLY difference is `.claude-plugin/marketplace.json`. Without the
