@@ -41,6 +41,21 @@ GUARD = Guard(
             "    if False:\n        return None",
             "an Unreleased heading anywhere means not armed",
         ),
+        # THE LATE-TAG MUTATION (#1372). Dropping main's CHANGELOG from the evidence puts back the
+        # gap between a promotion's merge and its tag, where a promoted dev read as armed.
+        Mutation(
+            "main's CHANGELOG is ignored, so a promoted dev reads armed until its tag exists",
+            "    return tags | set(RELEASE_BLOCK.findall(main_changelog))",
+            "    return tags",
+            "a promoted dev whose tag is not created yet is not armed",
+        ),
+        # Its caller: run() must actually use the union, or the helper is proven and the path is not.
+        Mutation(
+            "run() bypasses promoted_versions, so main() never sees main's CHANGELOG",
+            "    promoted = promoted_versions(tags, main_changelog)",
+            "    promoted = tags",
+            "a promoted dev whose tag is not created yet is not armed",
+        ),
         # The `Closes` half.
         Mutation(
             "a promotion missing a Closes for a shipped issue stops being refused",

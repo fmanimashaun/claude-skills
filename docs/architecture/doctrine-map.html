@@ -35,7 +35,7 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 <main>
 <h1>Doctrine &rarr; enforcement</h1>
 <p class="lede">One row per doctrinal claim in this repo: where it is stated, and what makes it true. <strong>The unenforced rows are the deliverable.</strong> A claim with no enforcement is not automatically a defect &mdash; plenty are judgement, and gating judgement is worse than not gating it. The value is making the distinction visible instead of discovering it by accident.</p>
-<div class="tally"><b>44 claims</b><b>34 enforced guarantees</b><b>10 advisory</b><b>0 tracked gaps</b></div>
+<div class="tally"><b>45 claims</b><b>35 enforced guarantees</b><b>10 advisory</b><b>0 tracked gaps</b></div>
 <div class="controls"><button data-k="all">all</button><button data-k="guarantee">guarantees</button><button data-k="advice">advisory</button><button data-k="gap">gaps</button></div>
 <div class="row" data-k="guarantee">
 <h2>A SessionStart hook&#x27;s output is charged again after every compaction, so its bytes are budgeted and ratcheted; a shipped agent states a bounded output or returns a path.</h2>
@@ -214,6 +214,15 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 </ul>
 </div>
 <div class="row" data-k="guarantee">
+<h2>A change a user can see is not built until the owner has approved a clickable mock-up of it, and the approval is recorded as a link to the owner&#x27;s comment.</h2>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>plugins/rails-flow/commands/feature.md</code> &middot; #1376</span></div>
+<ul class="enf">
+<li><code>script:plugins/rails-flow/scripts/check_mockup_gate.py</code></li>
+<li><code>mutation:check_mockup_gate</code></li>
+</ul>
+<p class="note">The owner&#x27;s rule, after ~14 screens on one production day were built unlike what had been agreed. The trigger is UI paths, not the issue label. It proves a record with an approval LINK exists, never that the comment says yes; that is the reviewer&#x27;s click.</p>
+</div>
+<div class="row" data-k="guarantee">
 <h2>An acceptance criterion that no spec cites is unproven, and the work order says so.</h2>
 <div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>plugins/rails-flow/commands/feature.md</code></span></div>
 <ul class="enf">
@@ -305,12 +314,14 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 </div>
 <div class="row" data-k="guarantee">
 <h2>simple_form is mandatory in this stack — no form, and no form element, is built any other way.</h2>
-<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>skills/rails-8/references/ecosystem-gems.md</code> &middot; #778</span></div>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>skills/rails-8/references/ecosystem-gems.md</code> &middot; #778 &middot; #1383</span></div>
 <ul class="enf">
 <li><code>script:plugins/rails-flow/scripts/check_mandated_gems.py</code></li>
 <li><code>mutation:check_mandated_gems</code></li>
+<li><code>script:plugins/rails-flow/scripts/check_simple_form_only.py</code></li>
+<li><code>mutation:check_simple_form_only</code></li>
 </ul>
-<p class="note">Two of the three `Always` gems already had gates (archspec, herb, each applies_when its config exists). This one had neither an installer nor a check, and was missing on both affected scaffolds.</p>
+<p class="note">Two halves. `check_mandated_gems` proves the gem is INSTALLED; until #1383 that was the whole enforcement, so a project with the gem and every form hand-built read green. `check_simple_form_only` proves it is USED: no form or field in app/views or app/components is built another way.</p>
 </div>
 <div class="row" data-k="guarantee">
 <h2>The prescribed testing stack is not a menu — a project missing simplecov, webmock or vcr is incomplete, not merely different.</h2>

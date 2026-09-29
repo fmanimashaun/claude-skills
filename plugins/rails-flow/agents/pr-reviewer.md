@@ -70,6 +70,38 @@ which is wrong** — the fix is not automatically the code. And when you find on
 a contradiction, **grep for the pattern**; that class travels in groups, because the wrong
 rule gets copied.
 
+## The build matches its approved mock-up (BLOCKING for a change a user can see, #1376)
+
+Run it **at the PR's head**, never in your own checkout. A reviewer on `dev` sees an empty diff, and
+the mock-up record and GUARDRAILS.md opt-out it reads must be the PR's, not yours (pre-release
+reviews of #1387). A throwaway worktree gives the gate the PR's files, records and opt-out together:
+
+```bash
+head="$(gh pr view <n> --json headRefOid -q .headRefOid)"
+git fetch -q origin "pull/<n>/head"
+rev="$(mktemp -d)"
+git worktree add -q --detach "$rev" "$head"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_mockup_gate.py" --root "$rev" --base "origin/<base>"
+git worktree remove --force "$rev"
+```
+
+Exit 0 with "no
+user-visible change", or with the gate declared off, ends this section. Otherwise the PR is BLOCKED
+unless all of these hold:
+
+- the PR body links the mock-up record (`docs/product/mockups/<slug>.md`), and **you open the
+  `Approval:` link** and confirm the owner approved **this** mock-up there. The script proves only
+  that a link exists;
+- the PR body carries screenshots of the built screens at **every width in the record's `Widths:`**,
+  in the states its `States:` names;
+- **you compare each screenshot against the mock-up**. Layout (table or cards, page or modal, tabs
+  or hub), the controls present, required-field markers, and navigation behaviour must match.
+  Copy and example data may differ. A deviation is BLOCKING unless the PR says why and links the
+  owner's re-approval of it.
+
+Name every deviation as a finding with the screenshot and the mock-up region side by side:
+*"mock-up shows the bell as a dropdown; the build links to /notifications"*.
+
 ## PR documentation completeness (BLOCKING when qa-flow is installed)
 
 If the repo has a `qa/` workspace, the PR body must carry the Documentation Contract
@@ -77,6 +109,25 @@ sections — Summary, What was built, How to test (with expected results), Expec
 results checklist, Out of scope, Risk notes, Proof. A PR missing "How to test" or
 "Expected results" is BLOCKED: QA cannot plan from it. This is process enforcement,
 not style — the downstream QA flow depends on it.
+
+## Record every finding (#1360)
+
+Before the report, **write this round's records** to `docs/evidence/reviews/prs/<branch-slug>/pr-reviewer-findings.jsonl`, one JSONL record per finding, in the shared
+shape that `findings.py` enforces, with `"pass": "pr-reviewer"`. Give each a stable `signature` for the *defect*, not
+the line (`missing-tenant-scope:InvoicesController#show`), so the same defect found on two PRs has
+one name. Then validate:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/findings.py" validate "docs/evidence/reviews/prs/<branch-slug>/pr-reviewer-findings.jsonl"
+```
+
+`<branch-slug>` is the branch name with each `/` replaced by `-` (`fix/invoice-total` → `fix-invoice-total`). The file belongs to this pass alone, and each review round **replaces** it: a finding fixed in
+round one must not read as current in round two. The earlier round is not lost, because the file is
+committed on the branch with each round's fix, so `git log -p` on it holds every round. **That is
+what makes the finding outlive the session**: a finding reported only in the conversation is gone when the session ends, so nothing can
+ever count how often it recurs. Per-PR records live under `prs/`, apart from a full review's dated
+file, because `/rails-flow:issues` and `/rails-flow:fix` file and fix from the dated file, and a
+finding already fixed on its branch must not be filed again.
 
 ## Output
 

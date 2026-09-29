@@ -56,6 +56,19 @@ GUARD = Guard(
             "    if False:",
             "the wall-clock budget is spent",
         ),
+        # #1364: the pacing line must share the breaker's arithmetic and reach the caller.
+        Mutation(
+            "the pacing line reports minutes as seconds, so it drifts from the budget breaker",
+            "    return f\"elapsed {spent * 60:.0f}s / {run['limits']['budget_minutes'] * 60}s\"",
+            "    return f\"elapsed {spent:.0f}s / {run['limits']['budget_minutes'] * 60}s\"",
+            "the pacing line 30 minutes in",
+        ),
+        Mutation(
+            "a proceeding check stops printing the pacing line",
+            "    print(elapsed_line(records, _now(args.now)))\n",
+            "",
+            "a proceeding check must end with",
+        ),
         Mutation(
             "a passed stage may be re-attempted",
             '    if _passed(records, stage):\n        return "already-passed", (',

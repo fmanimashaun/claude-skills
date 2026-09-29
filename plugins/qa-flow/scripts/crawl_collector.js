@@ -86,7 +86,7 @@ if (!chromium) {
 // `links.check_external` toggle that nothing honoured.
 const VALUED_FLAGS = ['base', 'out', 'routes', 'max-controls', 'baselines', 'masks', 'theme',
                       'viewport', 'storage-state', 'skip-controls'];
-const BOOLEAN_FLAGS = ['visual', 'links', 'seeded', 'layout'];
+const BOOLEAN_FLAGS = ['visual', 'links', 'seeded', 'layout', 'text-resize'];
 const USAGE = [
   'crawl_collector.js — measure routes and controls for the qa-flow judges.',
   '',
@@ -102,6 +102,7 @@ const USAGE = [
   '  --skip-controls FILE  controls the sweep must not press, from interaction_report.py --skips',
   '  --visual              capture screenshots against the baselines',
   '  --layout              record what each page hides INSIDE the viewport',
+  '  --text-resize         re-measure each page with its text doubled and with WCAG text spacing',
   '  --links               inventory hrefs, fragments and 4xx/5xx sub-resources',
   '  --seeded              declare the app was seeded',
   '  --help                print this and exit 0',
@@ -172,6 +173,12 @@ const VIEWPORT = (() => {
 // is crushed to 118px instead, and every boundary assertion passes. Facts only here; `layout_fit.py`
 // decides, the same split as masks (#953).
 const LAYOUT = process.argv.includes('--layout');
+// ENLARGED TEXT (#1367): WCAG 2.2 SC 1.4.4 (text resized to 200% without loss of content) and SC
+// 1.4.12 (line height 1.5, paragraph spacing 2, letter spacing 0.12, word spacing 0.16 -- all times
+// the font size). Every route is measured three times in the same page -- as served, with the root
+// font size doubled, and with the four spacing overrides -- so `text_resize.py` can judge what the
+// enlargement NEWLY hides. Facts only here, the same split as `--layout`.
+const TEXT_RESIZE = process.argv.includes('--text-resize');
 // A baseline shot at deviceScaleFactor 2 shares not one pixel with the same page shot at 1, so the
 // ratio would read ~100% on a machine that merely has a different display. Playwright defaults this
 // to 1, but a default is not a pin: a device descriptor sets it to 2 or 3, and inheriting a value
@@ -258,6 +265,7 @@ const determinism = {
 
 const pages = [];
 const layout = [];
+const textResize = [];
 const controls = [];
 const linkPages = [];
 
@@ -467,7 +475,7 @@ async function measureContainment(page) {
 const crawlContext = await browser.newContext({
   // Pinned whenever a measurement depends on it, and left to Playwright's default otherwise so an
   // existing crawl or interaction sweep is not silently re-measured at a new size.
-  ...((VISUAL || LAYOUT || VIEWPORT_GIVEN) ? { viewport: VIEWPORT, deviceScaleFactor: SCALE } : {}),
+  ...((VISUAL || LAYOUT || TEXT_RESIZE || VIEWPORT_GIVEN) ? { viewport: VIEWPORT, deviceScaleFactor: SCALE } : {}),
   ...(STORAGE ? { storageState: STORAGE } : {}),
 });
 
@@ -756,10 +764,101 @@ for (const route of routes) {
       // while reporting under the route that was asked for. Recording where we LANDED lets the
       // judge call that unverified instead of clean. Measured on a real app: five admin routes
       // silently degraded to the landing page after the first route's sweep.
-      landedOn: new URL(page.url()).pathname,
+      // Path AND query: a redirect that keeps the path but drops `?tab=archived` shows another view.
+      landedOn: ((u) => u.pathname + u.search)(new URL(page.url())),
       // Null rather than [] when the probe threw: an empty list means "measured, nothing hidden",
       // and laundering a failed probe into that is how a layer reports clean on what it never read.
       elements: fit,
+    });
+  }
+
+  // ---- enlarged text on this route (#1367) ---------------------------------------------------
+  // Before the sweep for the same reason as the layout probe. Each mode restores what it changed,
+  // so the sweep that follows measures the page as served.
+  if (TEXT_RESIZE) {
+    const measure = (mode) => page.evaluate(async (m) => {
+      const root = document.documentElement;
+      const STYLE_ID = 'qa-flow-text-spacing';
+      const priorSize = root.style.getPropertyValue('font-size');
+      const priorPriority = root.style.getPropertyPriority('font-size');
+      const refOf = (el) => {
+        const parts = [];
+        for (let n = el; n && n !== document.body; n = n.parentElement) {
+          const tag = n.tagName.toLowerCase();
+          const cls = (n.getAttribute('class') || '').trim().split(/\s+/).filter(Boolean).slice(0, 2);
+          parts.unshift(cls.length ? `${tag}.${cls.join('.')}` : tag);
+        }
+        return parts.join(' > ');
+      };
+      // Text-bearing elements: a direct, non-blank text node. Their computed size before and after
+      // is how the judge learns whether the enlargement reached the text at all -- a page sized in
+      // px ignores the root font size, and a clean result over text that never grew is vacuous.
+      const texts = Array.from(document.querySelectorAll('body *')).filter((el) =>
+        Array.from(el.childNodes).some((n) => n.nodeType === 3 && n.textContent.trim()));
+      const before = texts.map((el) => parseFloat(getComputedStyle(el).fontSize) || 0);
+      if (m === 'scaled') {
+        // DOUBLE WHATEVER THE APP SET, not `200%` of the browser default: an app that sets
+        // `html { font-size: 62.5% }` would otherwise be enlarged 3.2x, not 2x.
+        const px = parseFloat(getComputedStyle(root).fontSize) || 16;
+        root.style.setProperty('font-size', `${px * 2}px`, 'important');
+      } else if (m === 'spacing') {
+        const style = document.createElement('style');
+        style.id = STYLE_ID;
+        // SC 1.4.12's four values, verbatim, as the W3C's own test bookmarklet applies them.
+        style.textContent = '* { line-height: 1.5 !important; letter-spacing: 0.12em !important; '
+          + 'word-spacing: 0.16em !important; } p { margin-bottom: 2em !important; }';
+        document.head.appendChild(style);
+      }
+      // Two frames, so layout driven by a ResizeObserver or a font swap has settled.
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const after = texts.map((el) => parseFloat(getComputedStyle(el).fontSize) || 0);
+      const rows = [];
+      for (const el of document.querySelectorAll('body *')) {
+        const clientWidth = el.clientWidth;
+        const clientHeight = el.clientHeight;
+        if (clientWidth === 0 && clientHeight === 0) continue;
+        const scrollWidth = el.scrollWidth;
+        const scrollHeight = el.scrollHeight;
+        // Both axes: enlarged text mostly grows DOWN, so a fixed-height box clips vertically.
+        if (scrollWidth - clientWidth <= 1 && scrollHeight - clientHeight <= 1) continue;
+        const cs = getComputedStyle(el);
+        rows.push({
+          ref: refOf(el),
+          tag: el.tagName.toLowerCase(),
+          clientWidth,
+          clientHeight,
+          scrollWidth,
+          scrollHeight,
+          overflowX: cs.overflowX,
+          overflowY: cs.overflowY,
+          clipPath: cs.clipPath,
+        });
+      }
+      // Restore exactly what was there, including an inline root size the app set itself.
+      root.style.removeProperty('font-size');
+      if (priorSize) root.style.setProperty('font-size', priorSize, priorPriority);
+      const added = document.getElementById(STYLE_ID);
+      if (added) added.remove();
+      const CAP = 400;
+      return {
+        textElements: texts.length,
+        grew: after.filter((a, i) => before[i] > 0 && a / before[i] >= 1.9).length,
+        // Every mode is capped. A truncated base list cannot prove a later clip is new, and a truncated
+        // scaled or spacing list may have lost the clip itself -- so the judge must be told, per mode.
+        truncated: rows.length > CAP,
+        elements: rows.slice(0, CAP),
+      };
+    }, mode).catch(() => null);
+    const base = await measure('base');
+    const scaled = await measure('scaled');
+    const spacing = await measure('spacing');
+    textResize.push({
+      route,
+      viewport: `${VIEWPORT.width}x${VIEWPORT.height}`,
+      // Path AND query: a redirect that keeps the path but drops `?tab=archived` shows another view.
+      landedOn: ((u) => u.pathname + u.search)(new URL(page.url())),
+      // Each mode is NULL when its probe threw -- unverified, never "nothing hidden".
+      modes: { base, scaled, spacing },
     });
   }
 
@@ -1008,6 +1107,14 @@ if (LAYOUT) {
     schema: 'qa-flow/layout-fit/1',
     viewport: `${VIEWPORT.width}x${VIEWPORT.height}`,
     routes: layout,
+  }, null, 2));
+}
+
+if (TEXT_RESIZE) {
+  writeFileSync(`${outDir}/text-resize.json`, JSON.stringify({
+    schema: 'qa-flow/text-resize/1',
+    viewport: `${VIEWPORT.width}x${VIEWPORT.height}`,
+    routes: textResize,
   }, null, 2));
 }
 

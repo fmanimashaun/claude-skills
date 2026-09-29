@@ -193,12 +193,21 @@ _NOT_A_MODEL = frozenset({"Current", "Rails", "Time", "Date", "DateTime", "Activ
                           "File", "Dir", "Struct", "Set", "Math", "Process", "URI"})
 
 
+_INDEX_DEF = re.compile(r"^[ \t]*def[ \t]+index\b")
+
+
 def check_scoped_index(workspace: Path) -> list[Finding]:
     findings: list[Finding] = []
     files = iter_files(workspace, CONTROLLER_GLOBS)
-    if not files:
+    # The scaffold's own ApplicationController sets `Current.user` and makes no
+    # collection call, so "a controller exists" held before the agent wrote a line
+    # and the case passed on no work (#1374). The task is an index action.
+    attempted = any(
+        _INDEX_DEF.search(line) for path in files for line in read_lines(path)
+    )
+    if not attempted:
         return [Finding("scoped-index", "app/controllers", 0,
-                        "no controller was written, so the task was not attempted")]
+                        "no controller defines an index action, so the task was not attempted")]
 
     for path in files:
         lines = read_lines(path)
@@ -364,6 +373,35 @@ def check_no_literal_color(workspace: Path) -> list[Finding]:
                     f"only Ui::Logo may carry literals (brand.md:87)",
                 ))
     return findings
+
+
+# --------------------------------------------------------------------------
+# Rule: ui-component-present
+# --------------------------------------------------------------------------
+
+# Doctrine: skills/design-system/references/components.md:168
+#   "# app/components/ui/button_component.rb (shape for every catalog component)"
+#
+# A PRECONDITION, NOT A STYLE RULE. no-literal-color and no-inline-dark are
+# absence rules: they report only a violation they find inside a file. The
+# scaffold has no app/components/ui/, so a run that wrote nothing -- or wrote the
+# component somewhere VIEW_GLOBS never reads -- passed case 03 in every arm and
+# pulled all three toward "no difference" (#1374). Ui::Logo does not count: it is
+# the exempt component, and writing only it is not the card the prompt asks for.
+
+COMPONENT_GLOBS = ("app/components/ui/**/*.rb",)
+_CLASS_DEF = re.compile(r"^[ \t]*class[ \t]+[A-Z]")
+
+
+def check_ui_component_present(workspace: Path) -> list[Finding]:
+    for path in iter_files(workspace, COMPONENT_GLOBS):
+        if rel(path, workspace).lower() in _LOGO_EXEMPT_PATHS:
+            continue
+        if any(_CLASS_DEF.search(line) for line in read_lines(path)):
+            return []
+    return [Finding("ui-component-present", "app/components/ui", 0,
+                    "no component class under app/components/ui/ (Ui::Logo excluded), "
+                    "so the task was not attempted")]
 
 
 # --------------------------------------------------------------------------
@@ -558,6 +596,11 @@ RULES: dict[str, Rule] = {
              "skills/design-system/references/brand.md:87",
              "no literal colours outside Ui::Logo",
              check_no_literal_color),
+        Rule("ui-component-present",
+             "skills/design-system/references/components.md:168",
+             "the component was written under app/components/ui/ (precondition for "
+             "the absence rules)",
+             check_ui_component_present),
         Rule("job-idempotent",
              "skills/rails-8/references/jobs-and-realtime.md:176",
              "jobs guard against re-running (NOT ids-only: doctrine passes records)",

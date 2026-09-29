@@ -152,6 +152,19 @@ DOCTRINE_SOURCES = (
 )
 
 CLAIMS: tuple[Claim, ...] = (
+    Claim(
+        claim="A change a user can see is not built until the owner has approved a clickable "
+              "mock-up of it, and the approval is recorded as a link to the owner's comment.",
+        stated_in="plugins/rails-flow/commands/feature.md",
+        anchor="a change a user can see waits for an approved mock-up",
+        kind=GUARANTEE,
+        enforced_by=("script:plugins/rails-flow/scripts/check_mockup_gate.py",
+                     "mutation:check_mockup_gate"),
+        refs=(1376,),
+        note="The owner's rule, after ~14 screens on one production day were built unlike what had "
+             "been agreed. The trigger is UI paths, not the issue label. It proves a record with an "
+             "approval LINK exists, never that the comment says yes; that is the reviewer's click.",
+    ),
     # ---- the SHIPPED doctrine (#798) ------------------------------------------------------
     # Five claims that already have gates to cite. Deliberately not more: a row nobody derived is
     # the green artifact this file exists to replace, and `SHIPPED_FLOOR` tracks the rest as
@@ -216,11 +229,14 @@ CLAIMS: tuple[Claim, ...] = (
         anchor="simple_form is mandatory in this stack",
         kind=GUARANTEE,
         enforced_by=("script:plugins/rails-flow/scripts/check_mandated_gems.py",
-                     "mutation:check_mandated_gems"),
-        refs=(778,),
-        note="Two of the three `Always` gems already had gates (archspec, herb, each applies_when "
-             "its config exists). This one had neither an installer nor a check, and was missing "
-             "on both affected scaffolds.",
+                     "mutation:check_mandated_gems",
+                     "script:plugins/rails-flow/scripts/check_simple_form_only.py",
+                     "mutation:check_simple_form_only"),
+        refs=(778, 1383),
+        note="Two halves. `check_mandated_gems` proves the gem is INSTALLED; until #1383 that was the "
+             "whole enforcement, so a project with the gem and every form hand-built read green. "
+             "`check_simple_form_only` proves it is USED: no form or field in app/views or "
+             "app/components is built another way.",
     ),
 
     Claim(

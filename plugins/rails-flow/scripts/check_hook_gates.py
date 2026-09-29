@@ -148,6 +148,115 @@ def guard_lane_fixtures() -> None:
           code == 0, f"exit {code}")
 
 
+# ---- guard-migrate.sh (#1362) --------------------------------------------------------------------
+def guard_migrate_fixtures() -> None:
+    def write(file_path_fn, *, rails: bool = True, existing: str | None = None) -> tuple[int, str]:
+        with tempfile.TemporaryDirectory() as td:
+            proj = Path(td) / "proj"
+            (proj / "db" / "migrate").mkdir(parents=True)
+            if rails:
+                (proj / "bin").mkdir()
+                (proj / "bin" / "rails").write_text("#!/usr/bin/env ruby\n")
+            if existing:
+                target = proj / existing
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text("class Existing < ActiveRecord::Migration[7.1]; end\n")
+            file_path = file_path_fn(proj)
+            payload = json.dumps({"tool_input": {"file_path": file_path}, "cwd": str(proj)})
+            return run_hook("guard-migrate.sh", cwd=proj, stdin=payload,
+                            unset=("CLAUDE_PROJECT_DIR",))
+
+    # THE BLOCKED SHAPE, both ways a path arrives: relative and absolute.
+    code, out = write(lambda p: "db/migrate/20260927120000_add_thing.rb")
+    check("guard-migrate: creating a NEW migration by a RELATIVE path is blocked",
+          code == 2, f"exit {code}: {out.strip()[:160]!r}")
+    check("...and the message steers to the generator", "bin/rails generate migration" in out, out.strip()[:200])
+    code, _ = write(lambda p: str(p / "db" / "migrate" / "20260927120000_add_thing.rb"))
+    check("guard-migrate: creating a NEW migration by an ABSOLUTE path is blocked", code == 2, f"exit {code}")
+
+    # CONTROL, existence: the identical path, but the file already exists -- Write is an overwrite,
+    # not a creation, and stays allowed.
+    code, _ = write(lambda p: "db/migrate/20260101000000_existing.rb",
+                    existing="db/migrate/20260101000000_existing.rb")
+    check("guard-migrate: CONTROL: overwriting an EXISTING migration via Write is allowed",
+          code == 0, f"exit {code}")
+    code, _ = write(lambda p: str(p / "db" / "migrate" / "20260101000000_existing.rb"),
+                    existing="db/migrate/20260101000000_existing.rb")
+    check("guard-migrate: CONTROL: ...the same holds for the absolute-path form", code == 0, f"exit {code}")
+
+    # CONTROL, directory: an ordinary write elsewhere is untouched.
+    code, _ = write(lambda p: "app/models/x.rb")
+    check("guard-migrate: CONTROL: a write elsewhere (app/models/x.rb) is allowed", code == 0, f"exit {code}")
+
+    # CONTROL, extension: a non-`.rb` file in db/migrate/ (a fixture, a README) is not a migration.
+    code, _ = write(lambda p: "db/migrate/notes.txt")
+    check("guard-migrate: CONTROL: a non-`.rb` file in db/migrate/ is allowed", code == 0, f"exit {code}")
+
+    # CONTROL, project kind: the identical new-migration path, in a project with no bin/rails.
+    code, _ = write(lambda p: "db/migrate/20260927120000_add_thing.rb", rails=False)
+    check("guard-migrate: CONTROL: the identical write in a NON-RAILS project is allowed",
+          code == 0, f"exit {code}")
+
+    # THE DOCUMENTED LIMIT (verified 2026-09-27): a custom `migrations_paths` in database.yml
+    # (Rails multi-database support) is not read here, so a non-existent file under a directory
+    # that is NOT the literal `db/migrate/` -- even one that looks purpose-built, like
+    # `db/animals_migrate/` -- is allowed. Reading database.yml was judged out of scope.
+    code, _ = write(lambda p: "db/animals_migrate/20260101000000_x.rb")
+    check("guard-migrate: KNOWN LIMIT: a custom migrations_paths directory (db/animals_migrate/) "
+          "is not covered and is allowed", code == 0, f"exit {code}")
+
+    # FAIL CLOSED, SCOPED: an unparsable payload. Judged on the raw text alone, paired on the one
+    # thing that differs -- whether a db/migrate/*.rb path appears in it at all.
+    def raw(stdin: str) -> tuple[int, str]:
+        with tempfile.TemporaryDirectory() as td:
+            proj = Path(td) / "proj"
+            (proj / "db" / "migrate").mkdir(parents=True)
+            (proj / "bin").mkdir()
+            (proj / "bin" / "rails").write_text("#!/usr/bin/env ruby\n")
+            return run_hook("guard-migrate.sh", cwd=proj, stdin=stdin, unset=("CLAUDE_PROJECT_DIR",))
+
+    code, _ = raw("not json, but it mentions db/migrate/20260927120000_add_thing.rb in passing")
+    check("guard-migrate: an UNPARSABLE payload naming a db/migrate/*.rb path is blocked",
+          code == 2, f"exit {code}")
+    code, _ = raw("not json, and names no migration path at all")
+    check("guard-migrate: CONTROL: an unparsable payload naming NO db/migrate path is allowed",
+          code == 0, f"exit {code}")
+
+    # THE DEGRADED ENVIRONMENT ITSELF: PATH holds only bash and cat -- no python3, and no grep. The
+    # fallback once piped to grep, and "grep: command not found" is a non-match, so this exact shape
+    # ALLOWED a new migration while claiming to fail closed. PATH is replaced, not prefixed, or the
+    # host's python3 would answer and the fallback would never run.
+    def bare(file_path: str) -> tuple[int, str]:
+        with tempfile.TemporaryDirectory() as td:
+            proj = Path(td) / "proj"
+            (proj / "db" / "migrate").mkdir(parents=True)
+            (proj / "bin").mkdir()
+            (proj / "bin" / "rails").write_text("#!/usr/bin/env ruby\n")
+            only = Path(td) / "only"
+            only.mkdir()
+            for tool in ("bash", "cat"):
+                (only / tool).symlink_to(shutil.which(tool))
+            done = subprocess.run([str(only / "bash"), str(HOOKS / "guard-migrate.sh")], cwd=proj,
+                                  input=json.dumps({"tool_input": {"file_path": file_path}}),
+                                  env={"PATH": str(only)}, capture_output=True, text=True, timeout=60)
+            return done.returncode, done.stdout + done.stderr
+
+    code, out = bare("db/migrate/20260927120000_add_thing.rb")
+    check("guard-migrate: with NEITHER python3 NOR grep on PATH, a new migration is still blocked",
+          code == 2, f"exit {code}: {out.strip()[:160]!r}")
+    code, _ = bare("app/models/x.rb")
+    check("guard-migrate: CONTROL: ...and the same bare PATH still allows a write elsewhere",
+          code == 0, f"exit {code}")
+
+    # WIRED SCOPE: hooks.json must route this hook from `Write` alone. `Edit`/`MultiEdit` cannot
+    # create a file, so there is no creation moment for either of them to carry into this hook.
+    manifest = json.loads((HOOKS.parent / "hooks.json").read_text(encoding="utf-8"))
+    matchers = [entry.get("matcher") for entry in manifest.get("hooks", {}).get("PreToolUse", [])
+                for hook in entry.get("hooks", []) if "guard-migrate.sh" in hook.get("command", "")]
+    check("guard-migrate: hooks.json wires it to exactly one PreToolUse entry, matcher `Write`",
+          matchers == ["Write"], f"found matcher(s) {matchers!r}")
+
+
 # ---- lint-ruby.sh (#824) ------------------------------------------------------------------------
 def lint_ruby_fixtures() -> None:
     def edit(rubocop_body: str, *, with_mise: bool = False) -> tuple[int, str]:
@@ -301,15 +410,21 @@ def guard_bash_fixtures() -> None:
 
 
 def guard_claims_fixtures() -> None:
-    def run(cmd: str, body: str | None = None, env_extra=None) -> int:
+    def run(cmd: str, body: str | None = None, env_extra=None, template: str | None = None,
+            with_output: bool = False):
         with tempfile.TemporaryDirectory() as td:
+            if template is not None:
+                (Path(td) / ".github").mkdir()
+                (Path(td) / ".github" / "pull_request_template.md").write_text(template, encoding="utf-8")
             if body is not None:
                 (Path(td) / "body.md").write_text(body, encoding="utf-8")
                 cmd = cmd.replace("BODY", str(Path(td) / "body.md"))
-            return run_hook("guard-claims.sh", cwd=Path(td),
+            cmd = cmd.replace("BODYDIR", td)
+            done = run_hook("guard-claims.sh", cwd=Path(td),
                             stdin=json.dumps({"tool_input": {"command": cmd}}),
                             env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1]),
-                                       **(env_extra or {})})[0]
+                                       **(env_extra or {})})
+            return done if with_output else done[0]
 
     NUMERIC = "The selftest reports **292 assertions**, up from 285.\n"
     CHECKED = NUMERIC + "Verified against the v1.134.0 tag.\n"
@@ -334,6 +449,69 @@ def guard_claims_fixtures() -> None:
           run("gh pr create --base dev --body-file BODY", CHECKED) == 0, "exit 2")
     check("guard-claims: a PR body with no load-bearing claim passes",
           run("gh pr create --base dev --body-file BODY", PROSE) == 0, "exit 2")
+
+    # THE REPO'S PR TEMPLATE (#1389), driven through the real hook: 5 of 5 downstream PRs were
+    # BLOCKED by a reviewer for missing template sections that a rule in prose never stopped.
+    TPL = "## What changed\n\n## How to test\n\n## If this touches skills\n"
+    FULL = "## What changed\nTidy the README.\n## How to test\nN/A — copy only.\n"
+    check("guard-claims: a PR body missing a template section is blocked",
+          run("gh pr create --base dev --body-file BODY", "## What changed\nTidy the README.\n",
+              template=TPL) == 2, "exit 0")
+    check("guard-claims: ...and `gh pr edit` with the same body is blocked too",
+          run("gh pr edit 12 --body-file BODY", "## What changed\nTidy the README.\n", template=TPL) == 2,
+          "exit 0")
+    check("guard-claims: a PR body carrying every template section passes (an If-section may be left out)",
+          run("gh pr create --base dev --body-file BODY", FULL, template=TPL) == 0, "exit 2")
+    check("guard-claims: a repo with no PR template is not held to one",
+          run("gh pr create --base dev --body-file BODY", "## What changed\nTidy the README.\n") == 0,
+          "exit 2")
+    # Pre-release review of #1398: a crash or a foreign repository must be said out loud, never pass silently.
+    check("guard-claims: a template-optional section ('(optional)') may be left out",
+          run("gh pr create --base dev --body-file BODY", "## What changed\nx\n## How to test\nN/A.\n",
+              template=TPL + "## Screenshots (optional)\n") == 0, "exit 2")
+    check("guard-claims: -R targets another repo, so its template is not judged here",
+          run("gh pr create -R other/repo --base dev --body-file BODY", "## What changed\nx\n",
+              template=TPL) == 0, "exit 2")
+    check("guard-claims: ...and without -R the same body is blocked (control)",
+          run("gh pr create --base dev --body-file BODY", "## What changed\nx\n", template=TPL) == 2, "exit 0")
+    # Second pre-release review: a crash is said out loud, and -R is read from the gh segment only.
+    rc, out = run("gh pr create --base dev --body-file BODYDIR", None, template=TPL, with_output=True)
+    check("guard-claims: a body the helper cannot judge (a directory) says NOT checked, never silence",
+          rc == 0 and "NOT checked" in out, f"exit {rc}: {out[-120:]}")
+    check("guard-claims: an unrelated `grep -R` earlier in the chain does not switch the check off",
+          run("grep -R TODO . >/dev/null; gh pr create --base dev --body-file BODY", "## What changed\nx\n",
+              template=TPL) == 2, "exit 0")
+    check("guard-claims: the attached form -Rother/repo is another repository too",
+          run("gh pr create -Rother/repo --base dev --body-file BODY", "## What changed\nx\n",
+              template=TPL) == 0, "exit 2")
+    # Third pre-release review: a helper that dies AT IMPORT exits 1 with nothing listed. Run a COPY of
+    # the hook whose helper cannot import, so the branch that says so is proven reachable.
+    with tempfile.TemporaryDirectory() as hd:
+        copy = Path(hd) / "scripts"
+        shutil.copytree(HOOKS, copy)
+        (copy / "lib" / "pr_template.py").write_text("import nonexistent_module_for_the_fixture\n", encoding="utf-8")
+        with tempfile.TemporaryDirectory() as td:
+            (Path(td) / ".github").mkdir()
+            (Path(td) / ".github" / "pull_request_template.md").write_text(TPL, encoding="utf-8")
+            (Path(td) / "body.md").write_text("## What changed\nx\n", encoding="utf-8")
+            env = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])}
+            env.pop("GH_REPO", None)
+            broke = subprocess.run(["bash", str(copy / "guard-claims.sh")], cwd=td, env=env, text=True,
+                                   capture_output=True, timeout=60,
+                                   input=json.dumps({"tool_input": {"command": f"gh pr create --base dev --body-file {td}/body.md"}}))
+    check("guard-claims: a helper that fails at import says NOT checked, never silence",
+          "NOT checked" in broke.stdout + broke.stderr, f"exit {broke.returncode}: {(broke.stdout + broke.stderr)[-120:]}")
+    check("guard-claims: `-R` inside a quoted --title is text, so the body is still judged",
+          run("gh pr create --title 'fix grep -R bug' --base dev --body-file BODY", "## What changed\nx\n",
+              template=TPL) == 2, "exit 0")
+    check("guard-claims: GH_REPO=other/repo targets another repository",
+          run("GH_REPO=o/r gh pr create --base dev --body-file BODY", "## What changed\nx\n", template=TPL) == 0,
+          "exit 2")
+    check("guard-claims: a | inside a quoted title does not hide a later -R",
+          run("gh pr create --title 'a|b' -R o/r --body-file BODY", "## What changed\nx\n", template=TPL) == 0,
+          "exit 2")
+    check("guard-claims: an issue comment is not held to the PR template",
+          run("gh issue comment 5 --body-file BODY", "Tidy the README.\n", template=TPL) == 0, "exit 2")
     # OUT OF SCOPE, AND THE BODY MUST CARRY A CLAIM. A first draft passed a claim-FREE body here,
     # so these could not reach the check at all: deleting the `gh pr create` scope test left them
     # green, and the mutation SURVIVED. A control that cannot reach the code it guards proves
@@ -528,7 +706,7 @@ def ci_verdict_hint_fixtures() -> None:
 
 
 def selftest() -> int:
-    for fn in (stop_gate_fixtures, guard_lane_fixtures, lint_ruby_fixtures,
+    for fn in (stop_gate_fixtures, guard_lane_fixtures, guard_migrate_fixtures, lint_ruby_fixtures,
                self_consistency_fixtures, guard_bash_fixtures, guard_claims_fixtures,
                release_gate_fixtures, ci_verdict_hint_fixtures):
         fn()

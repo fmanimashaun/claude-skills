@@ -103,10 +103,22 @@ invoice* gained a step" tells a reviewer something the image digest and a 40-fil
 cannot. A stale graph is a release defect, not a documentation chore: regenerate and commit
 before tagging.
 
+## Monitoring advisory (never blocks, #1366)
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/apm_advisory.py" Gemfile.lock
+```
+
+Always exits `0`. Silence means a performance-monitoring gem is present; an
+`apm advisory:` line means none is. Relay that line in the report verbatim and do not
+act on it — the release is not held, and the install steps live in the `rails-8`
+skill's `references/observability.md` §7.
+
 ## Report
 
 Image ref + digest (the pullable release), boot/deploy verdict, the registry URL
-a future server would pull from, and the architecture-graph verdict.
+a future server would pull from, the architecture-graph verdict, and the monitoring
+advisory line if one was printed.
 
 State the graph verdict **explicitly, as one of three words** — `verified`, `skipped` (no graph
 in this project), or `FAILED` — followed by the delta (or "no structural change"). Never report

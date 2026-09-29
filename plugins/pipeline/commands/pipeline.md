@@ -56,6 +56,11 @@ and **end the run** — in a gated chain nothing downstream is independent of a 
 "continuing" past it is the out-of-order escape under a friendlier name. Never wrap any of these
 in `|| true` or `|| echo`: the exit code is the verdict.
 
+A proceeding `check` ends with `elapsed <s>s / <s>s`: the time spent against the budget, in seconds,
+from the same arithmetic the `budget` STOP uses. Pace the run to it, but **never pay for time with
+verification**. A gate skipped to finish early is the out-of-order escape again. If the time runs out,
+that is the `budget` STOP to report, and the budget is not a reason to cut a check short (#1364).
+
 One invocation of a single stage does not need the ledger. Opening one costs nothing, though, and
 a run that turns out to need three attempts is one you wanted bounded from the start.
 

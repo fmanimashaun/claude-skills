@@ -14,12 +14,15 @@ Source of truth: the project CLAUDE.md design/UI section and `docs/design-system
 If the project defines none, audit against the hotwire skill's ground rules only and say so.
 
 Checks (driven by project rules — examples):
-- **Form builder mandate** (unconditional — simple_form is mandatory in this stack):
-  `grep -rn "form_with\|form_for" app/views`
-  on the changed files must come back empty (styling belongs in the initializer wrappers,
-  not per-input classes). Note `simple_form_for` contains `form_for`, so match on a word
-  boundary — `grep -rnE "\b(form_with|form_for)\b"` — or a bare `form_for` grep flags every
-  correct form and the check becomes noise everyone ignores.
+- **Form builder mandate** (unconditional — simple_form is mandatory in this stack): run the
+  gate, not a grep of your own (#1383):
+  `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_simple_form_only.py"`
+  It must exit 0. It reads `app/views` **and** `app/components` and refuses `form_with`,
+  `form_for`, `form_tag`, a literal `<form>`, `<input>`, `<select>` or `<textarea>`, the `*_tag`
+  field helpers, `tag.input`, and a raw field method called on a simple_form builder
+  (`f.text_field`, `f.label`). A deliberate exception is declared with a reason in
+  `.rails-flow/raw-form-exemptions.json`, never waved through here. Styling belongs in the
+  initializer wrappers, not per-input classes.
 - **No hand-rolled field anatomy** — the mandate covers form *elements*, not just the form tag,
   and this is where it actually gets violated:
   `grep -rnE "f\.label|<label" app/views app/components` should be empty. A `f.label` +

@@ -19,7 +19,9 @@ authorised. This section stays empty rather than carrying provisional numbers �
 publishing an unverified figure is the exact failure #156 exists to correct.
 
 When a run happens, the table records date, model, `claude` version, marketplace
-version, and run count. A number without its conditions is not evidence.
+version, and run count. A number without its conditions is not evidence. A difference
+between arms goes here only as `compare.py` reports it — verdict and CI, never two rates
+side by side (see *Comparing arms*).
 
 | date | model | runs | case | none | weak | real |
 | ---- | ----- | ---- | ---- | ---- | ---- | ---- |
@@ -98,6 +100,7 @@ doctrine behind it is taste, and taste belongs in a discussion.
 | `simple-form-convention` | `forms.md:3` | forms use `simple_form_for` where the project has adopted it |
 | `no-inline-dark` | `foundations-tokens.md:247` | zero inline `dark:` utilities in components/views |
 | `no-literal-color` | `brand.md:87` | no literal colours outside `Ui::Logo` |
+| `ui-component-present` | `components.md:168` | precondition: the card was written under `app/components/ui/` (`Ui::Logo` does not count) |
 | `job-idempotent` | `jobs-and-realtime.md:176` | jobs guard against re-running |
 | `spec-accompanies-behavior` | `rails-8/SKILL.md` | a concern ships with a spec that proves it |
 
@@ -120,6 +123,13 @@ regressions** — making the real-skill arm score worse than baseline and
 The general principle, and the reason `selftest.py` asserts it: **a gate must pass
 against the doctrine's own reference examples.** If a rule fails what
 `references/*.md` shows as correct, the rule is wrong — not the doctrine.
+
+The mirror principle: **every case must fail on the untouched scaffold.** A case that passes before
+the agent writes anything adds the same PASS to all three arms. `03-role-tokens` did exactly that,
+because both of its rules only report violations they find and the scaffold held no component, and
+`01-scoped-index` did too, because the scaffold's own `ApplicationController` counted as the
+attempt (#1374). `selftest.py` now runs each case's rules against the real scaffold and refuses any
+case that passes.
 
 A third case needed fairness work rather than correction: `form_with` is correct
 stock Rails, and `ecosystem-gems.md:29` makes simple_form conditional ("dozens of
@@ -154,6 +164,8 @@ Free, no `claude` binary required:
 python3 evals/selftest.py                 # prove every gate fires and stays silent
 python3 evals/run.py --dry-run            # print exact commands, execute nothing
 python3 evals/gates.py <workspace-dir>    # run all gates over a directory
+python3 evals/compare.py --selftest       # prove the comparison refuses what it should
+python3 evals/compare.py results/<stamp>/aggregate-result.json   # compare arms of a run
 ```
 
 Paid — **costs real money**:
@@ -162,7 +174,7 @@ Paid — **costs real money**:
 # calibrate on one case before committing to a sweep
 python3 evals/run.py --case 01-scoped-index --runs 1 --max-total-usd 1.00
 
-# full matrix (5 cases x 3 arms x N runs)
+# full matrix (6 cases x 3 arms x N runs)
 python3 evals/run.py --runs 3 --model sonnet --max-total-usd 25.00
 ```
 
@@ -178,10 +190,76 @@ each run's directory for inspection.
 the `real` arm costs more than `none` by construction. Calibrate with one case
 before running a sweep.
 
+## Comparing arms
+
+`run.py` prints a pass rate per (case, arm). **A rate is not a comparison.**
+`compare.py` reads one or more `aggregate-result.json` files and, for each pair of arms
+(`real` vs `weak` first — that is the one that separates our doctrine from "any
+instructions help"):
+
+- **The case is the unit.** Runs of one case share a prompt and a scaffold, so they
+  are not independent; each case's valid runs are averaged into one delta, and every
+  statistic is over those per-case deltas. INVALID runs are excluded, never scored as
+  failures.
+- **A winner is named only when an exact sign-flip test gives p ≤ 0.05.** Under the
+  null the arms are interchangeable, so each case's delta is as likely to carry either
+  sign; p is the share of all 2ⁿ sign assignments at least as extreme as the one
+  observed. It is exact up to 16 cases (a seeded Monte Carlo above, which can never
+  report p = 0), so its false-win rate cannot exceed 5%.
+- **Fewer than 6 cases that moved can never win.** A case whose delta is 0 flips to
+  itself, so with k moving cases the smallest possible p is 2/2ᵏ: 0.0625 at five,
+  0.031 at six. Below six the verdict is *underpowered*, not "not detectable".
+- A percentile-bootstrap CI on the mean delta is printed as **description only**.
+- **Every case that got worse is listed**, even when the mean improves.
+- **Files are pooled only when `model`, `marketplace_version`, `tools` and
+  `claude_version` all agree.**
+- `--aa ARM` compares an arm with itself — it must report 0 and p = 1.
+
+The first version decided from the bootstrap CI. An independent review (#1394) showed
+it called two same-sign cases a win and, at 6 cases × 3 runs under the null, named a
+winner 12% of the time against a nominal 5%. The exact test replaced it.
+
+**The default design can barely see anything.** Measured through `compare.py` itself
+(300 simulations per row, so each figure is good to about ±3 points; weak-arm pass
+rate 0.4, the same lift on every case):
+
+| design | false wins, no effect | +20-point lift | +30-point lift |
+| --- | --- | --- | --- |
+| 6 cases × 3 runs (the suite today) | under 1% | about 4% | about 10% |
+| 6 cases × 10 runs | | | about 44% |
+| 12 cases × 3 runs | | | about 56% |
+| 20 cases × 3 runs | | about 50% | about 88% |
+
+**More cases buy far more than more runs**: 12 × 3 beats 6 × 10 on fewer paid runs,
+because six cases can only ever win unanimously. Real lifts vary by case, so these
+figures are optimistic. A first run that reports *not detectable* or *underpowered*
+says the benchmark was too small, not that the doctrine is inert. Growing the suite
+past 6 cases comes before a paid run means anything.
+
+### A case cannot certify the edit it motivated (#1385)
+
+If a case fails, the doctrine is edited, and the case then passes, that pass is
+circular: the edit was written to make it pass. A doctrine PR that claims a
+benchmark effect **names the cases that motivated it**, and compares with them
+excluded:
+
+```bash
+python3 evals/compare.py results/<stamp>/aggregate-result.json --motivated-by 03-role-tokens
+```
+
+Motivated cases leave the evidence and are marked in the output. If the result is a
+win only when they are counted, the verdict is **UNVERIFIED**. With today's 6-case
+suite, excluding even one case leaves 5, which can never win: until the suite grows,
+every `--motivated-by` comparison is *underpowered* or *unverified*, never a win. A CHANGELOG entry cites a benchmark
+effect only from that output. This is enforced only when `compare.py` is run with
+the flag; nothing yet parses a PR for benchmark claims, because none has ever been
+made — the first one is the moment to add that check.
+
 ## Not in the release path
 
-Nothing here is wired into CI. It costs money, it is opt-in, and it must never
-gate a promotion. `results/` is committed output, not a build artifact.
+No paid run is wired into CI. A run costs money, it is opt-in, and it must never
+gate a promotion. The free parts are gates: `selftest.py` and `compare.py --selftest`
+run in every doctor sweep (`evals gates`, `evals compare`), so in CI too. `results/` is committed output, not a build artifact.
 
 ## What this benchmark covers, and what it deliberately does not
 

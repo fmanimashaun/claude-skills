@@ -32,6 +32,10 @@ they enter the queue below instead of becoming ad-hoc hot-fixes. Then triage nor
 
 ## Phase 0 — File from `findings.jsonl`, one issue per *defect*
 
+Only a full review's dated file, `docs/evidence/reviews/<date>/findings.jsonl`. **Never file from
+`docs/evidence/reviews/prs/`**: those records are per-PR review findings, already fixed on their
+branch, and kept so recurrence can be counted (#1360), not so they can be filed again.
+
 If a review produced `docs/evidence/reviews/<date>/findings.jsonl`, file from **that**, not from the markdown
 (#138). The distinction is the whole point:
 
@@ -63,6 +67,23 @@ label, filter to it. Otherwise triage everything:
 - **needs-info**: the issue lacks enough detail to act (no reproduction, ambiguous
   intent). Comment with the specific questions, label it `needs-info`, and skip —
   never fabricate requirements.
+- **Every issue declares its mock-up (#1376)**, unless GUARDRAILS.md declares `mockup-gate: off`.
+  An issue whose resolution changes what a user sees (a feature, an enhancement, or a bug whose fix
+  alters a screen) links a clickable mock-up **and the owner's approval of it** (the link to the
+  comment where they said so); every other issue says "no visible change". Check them all at once:
+
+  ```bash
+  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_issue_mockup.py" --open --ready
+  ```
+
+  `--ready` is triage's question: a linked mock-up with no approval link is not ready. For each
+  `MISSING` issue, decide which it is. If the fix plainly touches no screen, add a
+  `## Mock-up` section saying "no visible change" and say why in one line. Otherwise comment asking
+  for the mock-up, or for the owner's approval of the one linked, label it `needs-info`, and skip it:
+  it is not ready. On the day a project adopts
+  this, every open issue is missing, so settle the plain "no visible change" ones in one pass before
+  asking about the rest. `/rails-flow:feature` and `/rails-flow:fix` check the real change again, so
+  a wrong "no visible change" is caught before merge.
 - **Compute the order, don't reason it out.** Priority alone does not give an order — a P1 sitting
   behind an unstarted blocker is not the next task — and an order re-derived by hand each time is
   the reasoning that gets redone next time:

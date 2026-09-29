@@ -9,7 +9,8 @@ GUARD = Guard(
     selftest="plugins/rails-flow/scripts/check_hook_gates.py",
     # check_hook_gates drives every hook in both plugins from its own location, so the whole set is
     # staged, plus each script a hook shells out to -- one missing and every mutation reads as caught.
-    needs=("plugins/rails-flow/hooks/scripts", "plugins/qa-flow/hooks/scripts",
+    needs=("plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362
+           "plugins/rails-flow/hooks/scripts", "plugins/qa-flow/hooks/scripts",
            "plugins/qa-flow/scripts",
            "plugins/rails-flow/scripts/check_criteria.py",
            "plugins/rails-flow/scripts/check_handoff.py",

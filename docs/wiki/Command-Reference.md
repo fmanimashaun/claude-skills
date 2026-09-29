@@ -52,6 +52,8 @@ Commands are namespaced by plugin: `/rails-flow:feature`, `/qa-flow:verify`.
 **Ungrouped** — shipped but not yet placed in a group above
 
 - `/rails-flow:coordinate` — Cross-session coordination computed from the repository — who is idle with finished work, which announced paths collide, which conflicts are generated and which are the author's judgement.
+- `/rails-flow:slice` — Break a spec, a brief or an issue into dependency-ordered vertical slices.
+- `/rails-flow:spec` — Turn an idea or a brief into a technical spec before anything is built.
 - `/rails-flow:toolchain-audit` — Audit an existing project's whole claude-skills setup — update the toolchain, verify the scaffolding, run every check that applies, and report in three states.
 
 
@@ -151,4 +153,4 @@ Commands are namespaced by plugin: `/rails-flow:feature`, `/qa-flow:verify`.
 
 ---
 
-**48 commands** across 4 plugins.
+**50 commands** across 4 plugins.

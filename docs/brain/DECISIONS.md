@@ -13,7 +13,7 @@ than the relocated paragraph saved.
 **Choice:** the outbound direction renders memo files and writes nothing; `/rails-flow:brain` writes
 after a human picks. **Alternatives:** auto-write memos; a hook that writes on SessionStart.
 **Rationale:** the repo is reviewed truth, a local memory may be personal. **Enforced by:** the
-`propose writes nothing` fixture and its mutation (`scripts/mutations/brain_local_sync.py`). Refs #877.
+`propose writes nothing` fixture and its mutation (`plugins/rails-flow/scripts/mutations/brain_local_sync.py`; moved from `scripts/mutations/` by #1109). Refs #877.
 **Reversal condition:** a team that wants unreviewed memos and says so in a DECISIONS entry of its own.
 
 ## D-003 — A pointer memory carries the memo's own description (2026-09-03) `[decided]`

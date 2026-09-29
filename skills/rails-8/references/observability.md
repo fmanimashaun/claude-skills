@@ -16,7 +16,7 @@ Four channels, four jobs. Pick the right one before writing telemetry code:
 4. Structured Event Reporting — `Rails.event` (8.1)
 5. Error reporting — `Rails.error`
 6. Logging: tags, levels, health-check silence
-7. Wiring up APMs / OpenTelemetry
+7. Wiring up APMs / OpenTelemetry (self-hosted: Rails Pulse)
 
 ---
 
@@ -211,3 +211,173 @@ vendor-neutral tracing, `opentelemetry-sdk` +
 `opentelemetry-instrumentation-rails` maps the same hooks to OTel spans
 exportable anywhere. Your custom `instrument`/`Rails.event` calls then ride
 along as first-class spans/events in whichever backend the app uses.
+
+### Self-hosted performance monitoring — Rails Pulse
+
+When the app needs request, query and job performance (P95 per route, SQL
+grouped by normalised shape, N+1 detection in production, deploy markers)
+and the data must stay in your own database, **rails_pulse** (MIT, 0.4.x;
+tested on Rails 7.2, 8.0 and 8.1) is the self-hosted APM. It captures through
+a Rack middleware and §2 subscribers, and writes off the request thread
+through a bounded queue that drops, rather than blocks, when full. It is not
+a replacement for **mission_control-jobs** (`ecosystem-gems.md`): Pulse
+observes job speed and failure rate; Mission Control operates the queue
+(retry, discard, pause). Run both. Do **not** run Pulse beside a hosted APM
+from the list above — two collectors on the same hooks is the double
+overhead this section warns against.
+
+**When to adopt:** the app serves real users in production and has no APM.
+Before launch there is no traffic to measure — Bullet and the log cover
+development.
+
+Install into its own database so the host's primary never carries the
+tables. The generator writes `db/rails_pulse_schema.rb` and the initializer.
+It only *prints* the database wiring and does none of it, so those three
+commands alone create nothing:
+
+```bash
+bundle add rails_pulse
+bin/rails generate rails_pulse:install --database=separate
+```
+
+Add a `rails_pulse:` database to **every** environment in
+`config/database.yml`. Rails treats an environment as multi-database only when
+every key under it is a database entry, so a flat block (the usual
+`development:` and `test:`) must move under `primary:` first. Skip that and the
+install fails one of two ways. With `connects_to` set, `db:prepare` aborts with
+`ActiveRecord::AdapterNotSpecified`. Without it, `db:prepare` prints
+*"Successfully created tables"* and writes all ten Pulse tables into the
+**primary**. Production is already nested in Rails 8 (`primary`, `cache`,
+`queue`, `cable`), so it only needs the sibling. For PostgreSQL or MySQL,
+`database:` is a database name, not a file path:
+
+```yaml
+development:
+  primary:
+    <<: *default
+    database: storage/development.sqlite3
+  rails_pulse:
+    <<: *default
+    database: storage/development_rails_pulse.sqlite3
+    migrations_paths: db/rails_pulse_migrate
+    schema_dump: false
+```
+
+Then connect it by uncommenting `connects_to` in the initializer the generator
+wrote (below). The first install runs in this order. The upgrade generator
+only copies this version's migrations once the Pulse tables exist, and
+`rails_pulse:status` stays at 1 until they are copied and run:
+
+```bash
+bin/rails db:prepare
+RAILS_ENV=test bin/rails db:prepare
+bin/rails generate rails_pulse:upgrade
+bin/rails db:migrate:rails_pulse
+RAILS_ENV=test bin/rails db:migrate:rails_pulse
+bin/rails runner 'p RailsPulse::ApplicationRecord.connection_db_config.name'   # must print "rails_pulse", not "primary"
+```
+
+Restart the server afterwards. **After the first install, an empty Pulse
+database needs its schema loaded before `db:prepare`, and a populated one must
+never have it loaded.** The two cases fail in different ways:
+
+- **An empty database.** With the migrations copied, `db:prepare` runs them
+  before the gem's schema-load hook and aborts with *"Could not find table
+  'rails_pulse_operations'"*. That is every fresh clone's `bin/setup`, every CI
+  run, and the first deploy, whose `bin/docker-entrypoint` runs `db:prepare` on
+  boot.
+- **A populated database.** `db:schema:load_rails_pulse` marks *every* copied
+  migration as applied without running it, so a pending one is silently skipped
+  while `rails_pulse:status` still exits 0.
+
+So guard the load on the database being empty, and do it for **every**
+environment before any `db:prepare` runs. In development that means test too,
+because `db:prepare` in development also prepares test and aborts on its empty
+Pulse database. None of the generated scripts do this. Add the loop before
+their `db:prepare`: to `bin/setup` (development and test), to CI (test), and
+to `bin/docker-entrypoint` (production):
+
+```bash
+for env in development test; do   # CI: test only. bin/docker-entrypoint: production only.
+  rc=0
+  RAILS_ENV=$env bin/rails runner '
+    c = RailsPulse::ApplicationRecord.connection
+    tables = %w[routes queries requests operations jobs job_runs summaries deployments exception_groups exception_occurrences]
+    n = tables.count { |t| c.table_exists?("rails_pulse_#{t}") }
+    exit(n == tables.size ? 0 : n.zero? ? 3 : 4)' || rc=$?
+  if [ "$rc" -eq 3 ]; then
+    RAILS_ENV=$env bin/rails db:schema:load_rails_pulse   # empty: load the schema
+  elif [ "$rc" -ne 0 ]; then
+    echo "rails_pulse ($env): partly created, or the check failed. Not loading." >&2
+    exit "$rc"                                              # never load a database that has any Pulse tables
+  fi
+done
+bin/rails db:prepare
+```
+
+**The load runs only when none of the ten tables exist**, because it does two
+things: it creates the missing tables, and it records every copied migration as
+applied. On a database that already has some tables, the second half is the
+silent skip above. That includes a populated one whose pending upgrade adds a
+table: the load would mark that upgrade's other migrations as run without
+running them. So "some" aborts, and so does a check that fails.
+
+- **An upgrade in progress** is repaired with `bin/rails db:migrate:rails_pulse`.
+- **An interrupted first load, holding no data**, is repaired by dropping the Pulse
+  database and running again.
+
+When all ten tables exist the guard skips the load, and `db:prepare` applies a
+pending Pulse migration normally. Measured on SQLite. On PostgreSQL or MySQL
+the database must exist before the load (`bin/rails db:create`), which was not
+run here. With an empty test Pulse database, `/rails_pulse` answers 503 in
+tests and tracking pauses without a word.
+
+(A single-database install omits `--database=separate`, the `database.yml`
+entry and `connects_to`, and runs `bin/rails db:migrate`.) Mount it and gate it
+on the app's own admin check:
+
+```ruby
+# config/routes.rb
+mount RailsPulse::Engine => "/rails_pulse"
+
+# config/initializers/rails_pulse.rb
+RailsPulse.configure do |config|
+  config.connects_to = { database: { writing: :rails_pulse, reading: :rails_pulse } } # separate database only
+  config.authorize = ->(controller) { controller.current_user&.admin? }
+end
+```
+
+A falsy result is a 403. With no `authorize` configured, outside development
+and test it falls back to HTTP Basic against `RAILS_PULSE_USERNAME` /
+`RAILS_PULSE_PASSWORD`, and refuses everyone when the password is unset.
+The host schedules the rollup and the retention jobs; with Solid Queue:
+
+```yaml
+# config/recurring.yml
+production:
+  rails_pulse_summary:
+    class: RailsPulse::SummaryJob
+    schedule: "5 * * * *"
+  rails_pulse_cleanup:
+    class: RailsPulse::CleanupJob
+    schedule: "0 1 * * *"
+```
+
+**The outcome is verified, not assumed:** `bin/rails rails_pulse:status`
+exits 0 (it exits 1 while a migration, backfill or initializer still needs
+action), and a signed-out request to `/rails_pulse` in production is refused.
+
+It is pre-1.0 and upgrades can carry data steps: 0.3 → 0.4 required a backup
+first, then `bin/rails generate rails_pulse:upgrade`, the migration
+(`bin/rails db:migrate:rails_pulse` for the separate database), and
+`bin/rails rails_pulse:migrate_routes`. For that upgrade upstream warns
+(`CHANGELOG.md`, 0.4.0) to **restart every process together, not as a rolling
+deploy**: *"A 0.3.x process left running against the migrated schema stops
+tracking and 500s on the routes page."* On a separate database it adds: *"Do
+not run `db:setup` / `db:prepare` as a substitute for `db:migrate:rails_pulse`."*
+Both warnings are stated for 0.4.0, not as general rules. On 0.4.1 the
+entrypoint's `db:prepare` applies a pending Pulse migration on boot. An upgrade
+whose CHANGELOG says otherwise, as 0.3 → 0.4 did, runs
+`bin/rails db:migrate:rails_pulse` as a step of the release itself, before the
+new version boots. Read its CHANGELOG
+before every `bundle update rails_pulse`, and finish with `rails_pulse:status`.

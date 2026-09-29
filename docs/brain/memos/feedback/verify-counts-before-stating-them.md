@@ -21,4 +21,22 @@ command that proves it and paste the number from that output. Prefer hashing art
 believing a build step. If a listing could paginate, bound it explicitly. See
 [[name-where-a-decision-landed]] for the related habit on claims about decisions.
 
+**AN AUDIT COMMENT IS A MEASUREMENT WITH A DATE, AND IT READS AS CURRENT.** 2026-09-17: I quoted an
+audit on Retask #303 — *"still only canvas data (`screens.json`, `screens["account/root"]`), and MFA
+is unbuilt (#328)"* — and posted it as the present state. It was written against `ee7c2b2` and the
+control had since been built: `root_account.rb:24-27` reads `user.totp_enrolled?` and
+`user.recovery_codes_remaining` live, `GET /admin/actions/:kind/new` routes, and
+`live_actions.rb:346` calls `user.issue_recovery_codes!` and writes an audit entry. A QA session
+contradicted it from a live browser.
+
+The aggravating detail: **I had already caught that same audit being stale twice that morning** — I
+closed #288 precisely because its "not met" criterion had since been met — and still quoted it
+without re-measuring.
+
+**How to apply:** treat a GitHub issue body, an audit comment, a PROGRESS-LOG line and a handoff the
+same way as a status snapshot — each is true as of a commit that is named somewhere above it, and
+none of them updates. Before repeating any "X is not built / not done / missing" from prose, grep for
+X. The claim that something is ABSENT is the one worth re-running, because the repo only ever grows
+toward making it false.
+
 _Provenance: [observed] — brought from a local Claude memory by `/rails-flow:brain-sync local`; body verbatim, verify-counts-before-stating-them.md._

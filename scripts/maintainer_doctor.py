@@ -331,6 +331,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #849. "Take the head of the queue" downstream was a claim nothing checked; the marketplace has
     # issue_graph.py --ready for itself, and this is the shipped equivalent for a project's tracker.
     ("issue readiness", ("python3", "plugins/rails-flow/scripts/check_issue_ready.py", "--selftest")),
+    # #1369. A slice plan with a cycle, a dangling edge or a slice without criteria is not filed.
+    ("rails-flow slice plan", ("python3", "plugins/rails-flow/scripts/check_slices.py", "--selftest")),
     # #423, and the gap the line above could not see. `project_gates.py --selftest` asserts each
     # manifest entry names a real SCRIPT; nothing asserted its `applies_when` paths and `{match:}`
     # globs name real ARTEFACTS. An absent path is reported as not-applicable, never as a failure,
@@ -370,6 +372,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # breaker. Fixtures prove the breakers fire; only those can see the doctrine drifting away from
     # the code, which is the same defect one level up.
     ("pipeline stop conditions", ("python3", "plugins/pipeline/scripts/breaker.py", "--selftest")),
+    # #1366. The deploy-time monitoring advisory: advises when absent, silent when present, whole
+    # gem names, always exit 0, and both deploy commands actually run it.
+    ("pipeline apm advisory", ("python3", "plugins/pipeline/scripts/apm_advisory.py", "--selftest")),
     # #1204. The installer reported success and wrote a hook git never runs under core.hooksPath
     # or from a linked worktree; the selftest proves each case with a real merge, not a file check.
     ("pipeline hook install", ("python3", "plugins/pipeline/scripts/install_git_hooks_selftest.py")),
@@ -377,6 +382,14 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("pipeline committed-secret scan", ("python3", "plugins/pipeline/scripts/scan_committed_secrets.py", "--selftest")),
     # #1338. The auto-merge into dev stops for a human on a one-way door; this is the classifier.
     ("rails-flow one-way door classifier", ("python3", "plugins/rails-flow/scripts/classify_door.py", "--selftest")),
+    ("rails-flow PR-template sections", ("python3", "plugins/rails-flow/hooks/scripts/lib/pr_template.py", "--selftest")),
+    ("rails-flow technical spec", ("python3", "plugins/rails-flow/scripts/check_spec.py", "--selftest")),
+    ("rails-flow simple-form-only gate", ("python3", "plugins/rails-flow/scripts/check_simple_form_only.py", "--selftest")),
+    ("shipped ERB passes simple-form-only", ("python3", "scripts/check_shipped_erb_forms.py")),
+    ("shipped ERB forms selftest", ("python3", "scripts/check_shipped_erb_forms.py", "--selftest")),
+    ("rails-flow mock-up gate", ("python3", "plugins/rails-flow/scripts/check_mockup_gate.py", "--selftest")),
+    ("rails-flow issue mock-up declaration", ("python3", "plugins/rails-flow/scripts/check_issue_mockup.py", "--selftest")),
+    ("rails-flow spec-review citations", ("python3", "plugins/rails-flow/scripts/check_spec_review.py", "--selftest")),
     ("qa-flow evidence", ("python3", "plugins/qa-flow/scripts/validate_evidence.py", "--selftest")),
     ("qa-flow route coverage", ("python3", "plugins/qa-flow/scripts/route_coverage.py", "--selftest")),
     # #792. The reader BOTH coverage loaders depend on, which had no fixture of its own while
@@ -391,6 +404,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("qa-flow theme parity", ("python3", "plugins/qa-flow/scripts/theme_parity.py", "--selftest")),
     # #953. What a page hides INSIDE the viewport, which every boundary assertion passes on.
     ("qa-flow layout fit", ("python3", "plugins/qa-flow/scripts/layout_fit.py", "--selftest")),
+    # #1367. What enlarged text newly hides: WCAG 2.2 SC 1.4.4 and SC 1.4.12.
+    ("qa-flow text resize", ("python3", "plugins/qa-flow/scripts/text_resize.py", "--selftest")),
     ("qa-flow boot classifier", ("python3", "plugins/qa-flow/scripts/classify_boot_failure.py", "--selftest")),
     ("qa-flow interaction sweep", ("python3", "plugins/qa-flow/scripts/interaction_report.py", "--selftest")),
     ("qa-flow visual baselines", ("python3", "plugins/qa-flow/scripts/visual_baseline.py", "--selftest")),
@@ -425,6 +440,12 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("skill routing", ("python3", "scripts/check_skill_routing.py")),
     ("skill routing selftest", ("python3", "scripts/check_skill_routing.py", "--selftest")),
     ("evals gates", ("python3", "evals/selftest.py")),
+    # #1386 review. The triager searches the tag that carried the reporter's rails-stack version;
+    # a wrong mapping turns a rule the agent never had into a false lapse.
+    ("skill version tag selftest", ("python3", "scripts/skill_version_tag.py", "--selftest")),
+    # #1384. The arm comparison is what turns a paid run into a claim; a comparison that called a
+    # CI touching 0 a win would publish noise as evidence, so its selftest is a gate too.
+    ("evals compare", ("python3", "evals/compare.py", "--selftest")),
     # The doctor's own selftest is a gate like any other. Not recursive: this runs `--selftest`,
     # which exercises fixtures and never re-enters `--gates`. Its absence was found by the
     # completeness rule in maintainer_doctor_selftest.py on that rule's first run.

@@ -317,6 +317,38 @@ force-push, no `git add -A`, no `--no-verify`, stage specific files, small logic
 approval). Note at the top: *the rails-flow hooks enforce these mechanically; this document
 is the human-readable law they implement.*
 
+**Ask, and record the answer: the mock-up gate (#1376).** *"Does a change a user can see wait for
+your approval of a clickable mock-up before it is built?"* The default is **yes**, and it needs no
+line. A team with no one to approve designs answers no, and GUARDRAILS.md gets its own line:
+
+```markdown
+- mockup-gate: off
+```
+
+`check_mockup_gate.py` reads exactly that line. Undeclared means ON, and prose that merely mentions
+the key does not turn it off.
+
+With the gate on, **every issue template gets a Mock-up section**: feature, enhancement and bug.
+The trigger is UI impact, not the label. Propose adding this field to each form under
+`.github/ISSUE_TEMPLATE/`, and write it only once the owner approves the diff:
+
+```yaml
+  - type: textarea
+    id: mockup
+    attributes:
+      label: Mock-up
+      description: >
+        Does resolving this change what a user sees? If yes, link a clickable mock-up covering a
+        phone width and a desktop width, with the empty and error states. If no, write
+        "no visible change".
+    validations:
+      required: true
+```
+
+A form only binds the web UI. An agent filing with `gh issue create` skips it, so an agent writes the
+same `## Mock-up` section into the body itself, and `check_issue_mockup.py` checks the body
+whichever way it was filed.
+
 ## 4. Seed the memory system (`docs/brain/`)
 
 The brain is the repo-side mirror of session memory: open the repo and reconstruct where the

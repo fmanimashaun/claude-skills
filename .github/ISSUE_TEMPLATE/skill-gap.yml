@@ -10,6 +10,13 @@ body:
       options: ["rails-8", "hotwire", "design-system"]
     validations:
       required: true
+  - type: input
+    id: version
+    attributes:
+      label: rails-stack version this project runs
+      description: "From /rails-flow:toolchain-check, the rails-stack row. Write \"unknown\" if you cannot tell. The maintainer searches the skill as it was at that version, since a rule added later is one your agent never had."
+    validations:
+      required: true
   - type: textarea
     id: missing
     attributes:
@@ -17,6 +24,13 @@ body:
       description: "The topic/pattern the skill should cover but doesn't."
     validations:
       required: true
+  - type: textarea
+    id: already
+    attributes:
+      label: Does the skill already say this? (optional)
+      description: "Search the skill first. If you find it, quote the sentence and its file: the problem is then that the agent did not follow it, and the fix is enforcement, not more text. If not, say what you searched for."
+    validations:
+      required: false
   - type: textarea
     id: scenario
     attributes:

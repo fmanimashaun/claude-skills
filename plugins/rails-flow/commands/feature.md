@@ -24,6 +24,7 @@ one-line guard, a rename.
 | plan, criteria, spec-first loop | yes | yes |
 | **Phase 4 quality gates** | **all of them** | **all of them** |
 | `code-reviewer` | yes | yes |
+| `spec-reviewer` | yes | yes |
 | `security-auditor`, `design-auditor` | only if their trigger fires | only if their trigger fires |
 | substantial units delegated to `rails-developer` | you may do them directly | delegated |
 
@@ -50,6 +51,19 @@ way round.
 
 ## Phase 1 — Plan (delegated exploration)
 
+**If the issue is a slice** (its body opens `Slice S<n> of <spec>`, filed by `/rails-flow:slice`,
+#1369), **its `AC-n` lines are this unit's criteria**, copied verbatim into
+`docs/product/acceptance/<branch-slug>.md`. They are the criteria the owner approved for this slice
+alone. The spec then supplies only the `Seam:`, the Out of scope and the decisions, never more
+criteria; turning every story in the spec into criteria would build other slices' work on this
+branch and break the order `/slice` filed.
+
+**Otherwise, if a spec exists, plan from it** (`docs/product/specs/<slug>.md`, written by `/rails-flow:spec`,
+#1375). Its stories become the criteria, its Testing decisions' `Seam:` is where the specs go, and
+its Out of scope bounds the plan. Do not re-derive in the session what the spec already decided. If
+the feature needs decisions no spec records, and it is more than one slice, offer
+`/rails-flow:spec` first.
+
 Delegate codebase exploration to a subagent so raw file contents stay out of your context:
 which models/controllers/views/jobs the feature touches, existing patterns to reuse, and
 schema impact. Then produce a short plan:
@@ -60,7 +74,7 @@ schema impact. Then produce a short plan:
 
 ### Acceptance criteria — write them BEFORE any code
 
-Every unit gets criteria, recorded in `docs/product/acceptance/<branch-slug>.md` (the layout's home for WHAT we are\nbuilding; a pre-layout `docs/acceptance/` is still recognised by the gate, #910) — the slug is the
+Every unit gets criteria, recorded in `docs/product/acceptance/<branch-slug>.md` (the layout's home for WHAT we are building; a pre-layout `docs/acceptance/` is still recognised by the gate, #910) — the slug is the
 branch name after `feature/`, with any remaining `/` flattened to `-` (so `feature/team/foo`
 → `docs/product/acceptance/team-foo.md`). One `##` section per unit:
 
@@ -127,8 +141,39 @@ below, and an executor cannot honour a bound nobody wrote down. See `/rails-flow
 defaults and the reasoning.
 
 Post the plan **and the criteria** to the user, then proceed — the gates below are the control
-points, not a plan-approval pause. If the plan reveals genuine ambiguity about intent, ask
-first: criteria are the place ambiguity surfaces cheapest.
+points, not a plan-approval pause. **The one exception is a change a user can see**; see the mock-up
+gate below. If the plan reveals genuine ambiguity about intent, ask first: criteria are the place
+ambiguity surfaces cheapest.
+
+### Mock-up gate — a change a user can see waits for an approved mock-up (#1376)
+
+**The owner's rule: a user-visible change is not built until the owner has approved a clickable
+mock-up of it.** The trigger is what the change touches, not the issue's label: a feature, an
+enhancement and a bug fix that alters a screen all count. Classify the plan's files:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_mockup_gate.py" --paths <each file the plan names>
+```
+
+- **Exit 0**: no user-visible change, or the project declared `mockup-gate: off` in GUARDRAILS.md.
+  Proceed.
+- **Exit 1**: user-visible scope. If the issue already links an approved mock-up, record it and
+  proceed. Otherwise:
+  1. **Build a clickable mock-up**, with `/design-flow:canvas` or `/design-flow:variants` where the
+     project uses design-flow, or else a single HTML page. Use realistic example data and the
+     project's own tokens, at a phone width and a desktop width, with the empty and error states
+     the criteria name.
+  2. **Publish it, post its link on the issue, and STOP for the owner's approval.** This is a hold
+     like the one-way door's, not advice: approval is a human decision. Change requests mean
+     iterate and ask again.
+  3. **Record the approval** in `docs/product/mockups/<slug>.md` (committed on the branch once Phase 2
+     creates it), one line each:
+     `Mock-up:` (link or committed file), `Issue:`, `Approved-by:`, `Approval:` (the link to the
+     comment where the owner approved), `Widths:`, `States:`. Then proceed. The plan and the PR
+     cite the record.
+
+The same check runs again on the branch's real diff before merge (Phase 6), so a view the plan did
+not name cannot slip past it.
 
 For a feature whose shape the owner has to live with — a new billing model, a state machine, a
 tenancy change — offer `/rails-flow:explain plan` before Phase 2. It restates the plan in plain
@@ -166,6 +211,12 @@ as complete is worse than a stop, because it spends the reviewer's trust as well
 Run in order; loop fixes back through Phase 3 until every gate passes:
 
 1. `code-reviewer` on the branch diff → must end `VERDICT: CLEAN`
+1b. `spec-reviewer` with `docs/product/acceptance/<slug>.md`, the base, and its own file
+   `docs/evidence/reviews/prs/<branch-slug>/spec-reviewer-findings.jsonl` → must end `VERDICT: CLEAN`, with
+   `check_spec_review.py` exit 0 (#1370). It asks only whether the diff does what the criteria
+   *say*: criteria missing, partial or misread, and behaviour nobody asked for. Report it under its
+   own **Spec** heading beside `code-reviewer`'s **Standards**, and never merge or re-rank the two.
+   A change can pass one and fail the other, and a merged list lets one hide the other.
 2. `test-runner` → FULL suite, 0 failures
 3. `security-auditor` → only if auth, authorization, APIs, or data handling changed
 4. `design-auditor` → only if views/partials/Stimulus changed
@@ -228,7 +279,11 @@ gh pr create --base <base> --title "feat: <summary>" --body "<the PR Documentati
 - Otherwise: delegate to `pr-reviewer` with the PR number.
 - A self-written review comment is the OUTPUT of a review, not the review. BLOCKED →
   fix on the same branch, push, re-run the gate. Repeat until CLEAN.
-- On CLEAN, **classify the door first** (#1338):
+- On CLEAN, **check the mock-up gate on the real diff** (#1376):
+  `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_mockup_gate.py" --base <base>`. Exit 1 means the
+  diff changes what a user sees and no approved mock-up is recorded: stop, and run the Phase 1
+  mock-up gate. Exit 2 means it could not classify; stop and hand the merge to the user.
+- On CLEAN, **classify the door** (#1338):
   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/classify_door.py" --base <base>`. Exit 1 (ONE-WAY: a
   destructive migration, an auth or permission change, a removed route or API field, a new outside
   call) or exit 2 (could not classify) means stop and hand the merge to the user, quoting the
