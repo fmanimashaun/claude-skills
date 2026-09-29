@@ -20,19 +20,14 @@ GUARD = Guard(
         "scripts/classify_door.py",
     ),
     mutations=(
-        # #1435: CommonMark fences, as check_issue_ready.py reads them.
+        # #1461: fences come from check_issue_ready.fence_lines, the one reader.
         Mutation(
-            "only ``` opens a fence, so a depends-on inside ~~~ becomes an edge",
-            '        f = re.match(r"^[ \\t]*(`{3,}|~{3,})[ \\t]*(\\w*)", raw)',
-            '        f = re.match(r"^[ \\t]*(`{3,})[ \\t]*(\\w*)", raw)',
+            "the plan's fences are not read at all, so a sample depends-on becomes an edge",
+            "    state = check_issue_ready.fence_lines(text)",
+            "    state = [None] * len(text.splitlines())",
             "a depends-on inside a ~~~ fence is not an edge",
         ),
-        Mutation(
-            "any fence line closes, so a ``` inside a ```` fence ends it early",
-            "            elif f.group(1).startswith(run):",
-            "            else:",
-            "a ``` inside a ```` fence does not close it",
-        ),
+        # #1435: CommonMark fences, as check_issue_ready.py reads them.
         Mutation(
             "a cycle is no longer found",
             "            if state.get(w) == 1:\n                return stack[stack.index(w):] + [w]",
