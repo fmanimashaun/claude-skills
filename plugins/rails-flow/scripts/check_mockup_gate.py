@@ -60,7 +60,7 @@ RECORD_DIR = "docs/product/mockups/"
 RECORD_KEYS = ("Mock-up", "Issue", "Approved-by", "Approval", "Widths", "States")
 APPROVAL_URL = re.compile(r"^https://github\.com/[^/\s]+/[^/\s]+/(issues|pull)/\d+"
                           r"#(issuecomment-\d+|discussion_r\d+|pullrequestreview-\d+)$")
-MOCK_FILE = re.compile(r"\.(html?|png|jpe?g|webp|pdf)$", re.I)
+MOCK_FILE = re.compile(r"\.(html?|png|jpe?g|webp|pdf|svg)$", re.I)
 ISSUE_REF = re.compile(r"^(#\d+|https://github\.com/[^/\s]+/[^/\s]+/issues/\d+)\b")
 OPT_OUT = re.compile(r"^\s*(?:[-*]\s*)?`?mockup-gate:\s*off`?\s*$", re.M | re.I)
 
@@ -75,8 +75,30 @@ def declared_off(root: Path) -> bool:
     if not g.is_file():
         return False
     # A fenced example of the line documents the opt-out; it does not declare it (review of #1381).
-    text = re.sub(r"^\s*(```|~~~).*?^\s*\1\s*$", "", g.read_text(encoding="utf-8"), flags=re.M | re.S)
-    return bool(OPT_OUT.search(text))
+    # An UNTERMINATED fence runs to the end of the file (#1430) -- stricter than a renderer, which
+    # ends one at the close of its list item; list-scoped fences are #1461's shared scanner. The
+    # regex this replaces removed only closed fences, so an opt-out after a stray ``` still counted.
+    return bool(OPT_OUT.search(unfenced(g.read_text(encoding="utf-8"))))
+
+
+def unfenced(text: str) -> str:
+    """The lines outside fenced code blocks. A fence closes on the same character, at least as long."""
+    out, fence = [], ""
+    for line in text.splitlines():
+        # Any indentation: in GUARDRAILS.md a fence usually sits inside a list item (review of PR #1478).
+        # A BACKTICK opener may not contain another backtick (CommonMark), so "```x``` inline" is a
+        # code span, not a fence -- read as one it swallowed a real opt-out below it (final review).
+        m = re.match(r"^\s*(`{3,})(?=[^`]*$)|^\s*(~{3,})", line)
+        run = (m.group(1) or m.group(2)) if m else ""
+        if fence:
+            if run and run[0] == fence[0] and len(run) >= len(fence) and not line.strip()[len(run):].strip():
+                fence = ""
+            continue
+        if run:
+            fence = run
+            continue
+        out.append(line)
+    return "\n".join(out)
 
 
 def record_problems(root: Path, rel: str) -> list[str]:
@@ -93,9 +115,17 @@ def record_problems(root: Path, rel: str) -> list[str]:
     if mock.startswith("https://"):
         if not re.match(r"^https://[^/\s]+\.[^/\s]+", mock):
             out.append(f"{rel}: Mock-up {mock!r} is not a link to anything")
+    elif mock and (root / mock).resolve() == path.resolve():
+        # A record naming itself satisfied "a file under docs/product/mockups/" (#1430).
+        out.append(f"{rel}: Mock-up names this record itself; name the mock-up it records")
+    elif mock and (root / mock).resolve().suffix.lower() == ".md":
+        # ...and so did naming another record. A record is not a mock-up, whatever a symlink calls it
+        # -- the RESOLVED target is judged. Any other committed file under the folder is still a
+        # mock-up (.gif, .avif, .html.erb): an allow-list refused real ones (review of PR #1478).
+        out.append(f"{rel}: Mock-up {mock!r} is a Markdown record, not a mock-up file")
     elif mock and not ((root / mock).is_file() and (mock.startswith(RECORD_DIR) or MOCK_FILE.search(mock))):
         out.append(f"{rel}: Mock-up {mock!r} is neither an https link nor a mock-up file in the repo "
-                   f"(under {RECORD_DIR}, or an .html/.png/.jpg/.webp/.pdf)")
+                   f"(under {RECORD_DIR}, or an .html/.png/.jpg/.webp/.pdf/.svg)")
     issue = fields.get("Issue", "")
     if issue and not ISSUE_REF.match(issue):
         out.append(f"{rel}: Issue {issue!r} must name the issue this mock-up answers (#n, or its URL)")
@@ -207,6 +237,10 @@ def selftest() -> int:
         (root / "GUARDRAILS.md").write_text("x\n")
         code, msg = with_record(GOOD.replace("https://example.com/mockups/bell", "GUARDRAILS.md"))
         check_that("an arbitrary repo file is not a mock-up", code == 1 and any("mock-up file" in m for m in msg), msg)
+        (root / "notes.txt").write_text("x\n")
+        code, msg = with_record(GOOD.replace("https://example.com/mockups/bell", "notes.txt"))
+        check_that("an arbitrary NON-Markdown repo file outside the folder is not a mock-up",
+                   code == 1 and any("neither" in m for m in msg), msg)
         (root / "GUARDRAILS.md").unlink()
         code, msg = with_record(GOOD.replace("Issue: #12", "Issue: the bell one"))
         check_that("a record that names no issue is held", code == 1 and any("Issue" in m for m in msg), msg)
@@ -222,6 +256,47 @@ def selftest() -> int:
         (root / "GUARDRAILS.md").write_text("# Guardrails\n\nWe might set mockup-gate: off one day.\n")
         code, msg = run(root, view, None)
         check_that("CONTROL: prose mentioning the key is not a declaration", code == 1, msg)
+        # #1430: an opt-out inside an UNTERMINATED fence is still inside a fence.
+        (root / "GUARDRAILS.md").write_text("# Guardrails\n\nExample:\n\n```\n- mockup-gate: off\n")
+        code, msg = run(root, view, None)
+        check_that("#1430: an opt-out inside an unterminated fence is not a declaration", code == 1, msg)
+        (root / "GUARDRAILS.md").write_text("# Guardrails\n\n```\nexample\n```\n\n- mockup-gate: off\n")
+        code, msg = run(root, view, None)
+        check_that("#1430 CONTROL: an opt-out AFTER a closed fence still declares", code == 0, msg)
+        (root / "GUARDRAILS.md").unlink()
+        # #1430: a record may not name itself, or another record, as its mock-up.
+        code, msg = with_record(GOOD.replace("https://example.com/mockups/bell", "docs/product/mockups/r.md"))
+        check_that("#1430: a record naming itself is held", code == 1 and any("itself" in m for m in msg), msg)
+        code, msg = with_record(GOOD.replace("https://example.com/mockups/bell", "docs/product/mockups/bell.md"))
+        check_that("#1430: a record naming another record is held", code == 1 and any("Markdown record" in m for m in msg), msg)
+        (root / "docs/product/mockups/bell.svg").write_text("<svg/>")
+        code, msg = with_record(GOOD.replace("https://example.com/mockups/bell", "docs/product/mockups/bell.svg"))
+        check_that("#1430 CONTROL: a committed .svg mock-up passes", code == 0, msg)
+        (root / "design").mkdir(exist_ok=True)
+        (root / "design/bell.svg").write_text("<svg/>")
+        code, msg = with_record(GOOD.replace("https://example.com/mockups/bell", "design/bell.svg"))
+        check_that("#1430: an .svg mock-up OUTSIDE the records folder is a mock-up file", code == 0, msg)
+        # Review of PR #1478: an allow-list refused real mock-ups committed under the folder.
+        for name in ("bell.gif", "bell.avif", "bell.html.erb"):
+            (root / "docs/product/mockups" / name).write_text("x")
+            code, msg = with_record(GOOD.replace("https://example.com/mockups/bell", f"docs/product/mockups/{name}"))
+            check_that(f"PR #1478 review: a committed {name} under the folder is a mock-up", code == 0, msg)
+        # ...and a symlink is judged by its TARGET: o.html -> bell.md is a record, not a mock-up.
+        (root / "docs/product/mockups/o.html").symlink_to("bell.md")
+        code, msg = with_record(GOOD.replace("https://example.com/mockups/bell", "docs/product/mockups/o.html"))
+        check_that("PR #1478 review: a symlink onto a record is held", code == 1 and any("Markdown record" in m for m in msg), msg)
+        # An example opt-out in an INDENTED fence (inside a list item) is still an example.
+        (root / "GUARDRAILS.md").write_text("# G\n\n- Example:\n\n    ```\n    - mockup-gate: off\n    ```\n")
+        code, msg = run(root, view, None)
+        check_that("PR #1478 review: an opt-out in an indented fence is not a declaration", code == 1, msg)
+        # Final review: a line OPENING with an inline code span is not a fence.
+        (root / "GUARDRAILS.md").write_text("# G\n\n```x``` inline\n\n- mockup-gate: off\n")
+        code, msg = run(root, view, None)
+        check_that("PR #1478 final review: a code span at line start does not fence the opt-out", code == 0, msg)
+        (root / "GUARDRAILS.md").write_text("# G\n\n```sh\n- mockup-gate: off\n```\n")
+        code, msg = run(root, view, None)
+        check_that("PR #1478 final review CONTROL: an info-string fence still fences", code == 1, msg)
+        (root / "GUARDRAILS.md").unlink()
 
     # The git path main() takes: a new, untracked view must count (the #1341 blind spot). A FRESH
     # directory: the one above holds untracked records, which would rightly count as on the branch.
