@@ -67,8 +67,10 @@ def strip_heredocs(cmd: str) -> str:
         i += 1
         for m in HEREDOC.finditer(line):
             before = line[:m.start()]
-            if before.count("'") % 2 or before.count('"') % 2:
-                continue            # a quoted `<<X` is text, not a heredoc
+            if before.count("'") % 2:
+                continue            # inside single quotes `<<X` is text
+            if before.count('"') % 2 and "$(" not in before[before.rfind('"'):]:
+                continue            # inside double quotes too -- unless a `$(` opened since: `"$(cat <<'EOF'`
             tag, dash = m.group(3), m.group(1) == "-"
             start_of_swallow = i
             while i < len(lines) and (lines[i].lstrip("\t") if dash else lines[i]) != tag:
@@ -169,6 +171,7 @@ def _cd_in_force(prefix: list[str]) -> str | None:
 
 CREATE_TEXT = re.compile(r"(?:^|[\s`(;&|])(?:\S*/)?gh\s+issue\s+create\b")
 SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
+WRAPPERS = {"env", "sudo", "command", "builtin", "exec", "nohup", "timeout", "nice", "time", "xargs"}
 
 
 def hidden_create(cmd: str) -> str | None:
@@ -183,18 +186,32 @@ def hidden_create(cmd: str) -> str | None:
         body = strip_heredocs(cmd)
     except ValueError:
         return None                  # the caller already refuses an unparseable command
+    # Inside SINGLE quotes nothing is substituted, so a backtick or `$(` there is text -- a commit
+    # message quoting "`gh issue create`" is not a create. Double quotes do substitute, so they stay.
+    literal, q = [], ""
+    for ch in body:
+        if q == "'":
+            q = "" if ch == "'" else q
+            continue
+        if ch == "'" and q != '"':
+            q = "'"
+            continue
+        if ch == '"':
+            q = "" if q == '"' else '"'
+        literal.append(ch)
+    subst = "".join(literal)
     # Backticks PAIR: the text between the 1st and 2nd is a substitution, the 2nd and 3rd is not.
     # An unclosed one runs to the end of the command.
-    ticks = body.split("`")
+    ticks = subst.split("`")
     if any(CREATE_TEXT.search(" " + span) for span in ticks[1::2]):
         return "backticks"
     # `$( … )` to its OWN closing parenthesis, counted, so a create after it is not inside it.
-    for m in re.finditer(r"\$\(", body):
+    for m in re.finditer(r"\$\(", subst):
         depth, j = 1, m.end()
-        while j < len(body) and depth:
-            depth += {"(": 1, ")": -1}.get(body[j], 0)
+        while j < len(subst) and depth:
+            depth += {"(": 1, ")": -1}.get(subst[j], 0)
             j += 1
-        if CREATE_TEXT.search(" " + body[m.end():j - (0 if depth else 1)]):
+        if CREATE_TEXT.search(" " + subst[m.end():j - (0 if depth else 1)]):
             return "a `$( … )` substitution"
     try:
         lexer = shlex.shlex(body.replace("\n", " ; "), posix=True, punctuation_chars=";&|()")
@@ -206,6 +223,14 @@ def hidden_create(cmd: str) -> str | None:
     for tok in tokens + [";"]:
         if tok and set(tok) <= set(";&|()"):
             words = [w for w in seg if not ("=" in w and w.split("=", 1)[0].isidentifier())]
+            # Peel wrappers that run their arguments as a command: `env sh -c`, `sudo bash -c`,
+            # `timeout 5 sh -c`, `command eval`, … Their own flags (and timeout's duration) go too.
+            while words and os.path.basename(words[0]) in WRAPPERS:
+                wrapper = os.path.basename(words.pop(0))
+                while words and words[0].startswith("-"):
+                    words.pop(0)
+                if wrapper in ("timeout", "nice") and words and re.fullmatch(r"[\d.]+[smhd]?", words[0]):
+                    words.pop(0)
             head = os.path.basename(words[0]) if words else ""
             rest = " ".join(words[1:])
             # `-c` may be bundled with other short flags: `bash -lc '…'`.
@@ -621,6 +646,20 @@ def selftest() -> int:
         for name, cmd in (("echo of the text", 'echo "gh issue create"'), ("grep for the text", "grep -rn 'gh issue create' docs"),
                           ("a backtick BEFORE the create", f"x=`date` && {lab}"), ("$( ) BEFORE the create", f"echo $(date) && {lab}")):
             check(f"CONTROL: {name} is not a hidden create", verdict(cmd, bare)[0], verdict(cmd, bare)[1])
+        # Final review of #1454: text this repo writes daily must not read as a hidden create.
+        for name, cmd in (("a commit message heredoc inside $( )",
+                           "git commit -m \"$(cat <<'EOF'\nrefuse `gh issue create` here\nEOF\n)\""),
+                          ("a PR body heredoc inside $( )", "gh pr create --title T --body \"$(cat <<'EOF'\nsee gh issue create\nEOF\n)\""),
+                          ("single-quoted backticks", "git commit -m 'refuse `gh issue create`'")):
+            check(f"CONTROL: {name} is not a hidden create", verdict(cmd, bare)[0], verdict(cmd, bare)[1])
+        ok, why = verdict('echo "x `gh issue create -t X`"', bare)
+        check("backticks inside DOUBLE quotes still run, so they are still refused", not ok and "backticks" in why, why)
+        # ...and a wrapper does not hide a string that runs as a command.
+        for name, cmd in (("env", f"env sh -c '{lab}'"), ("sudo", f"sudo -E bash -c '{lab}'"),
+                          ("timeout", f"timeout 5 bash -c '{lab}'"), ("command eval", f"command eval '{lab}'"),
+                          ("nohup", f"nohup sh -c '{lab}'")):
+            ok, why = verdict(cmd, bare)
+            check(f"a create behind `{name}` is refused", not ok and "directly" in why, why)
         ok, why = verdict("/usr/bin/gh issue create -t X", bare)
         check("a path to gh is gh: its missing label is refused", not ok and "no --label" in why, why)
         check("CONTROL: ...and a labelled one passes", verdict("/usr/bin/gh issue create -t X --label a", bare)[0])

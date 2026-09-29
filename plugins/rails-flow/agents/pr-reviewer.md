@@ -89,6 +89,7 @@ trap 'git worktree remove --force "$rev"' EXIT
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_mockup_gate.py" --root "$rev" --base "origin/<base>"
 rc=$?
 echo "mock-up gate exit: $rc"
+exit "$rc"
 ```
 
 Read the gate's verdict from `rc`, captured before anything else runs: the `trap` removes the
