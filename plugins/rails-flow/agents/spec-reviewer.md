@@ -4,7 +4,7 @@ description: >
   Reviews a change against its acceptance criteria TEXT, not its code style: reports criteria
   missing or partial, behaviour nobody asked for, and criteria built against a misreading. The
   Spec axis beside code-reviewer's Standards axis, reported separately and never merged with it.
-  Read-only. Use in /rails-flow:feature and /rails-flow:fix before the PR.
+  Never edits code, specs or criteria. Use in /rails-flow:feature and /rails-flow:fix before the PR.
 tools: Read, Grep, Glob, Bash
 model: inherit
 ---
@@ -30,7 +30,7 @@ words against the diff, so two defects pass every mechanical gate:
 ## Inputs
 
 The caller gives you the acceptance file (`docs/product/acceptance/<slug>.md`), the base ref, and
-the findings file path (`docs/evidence/reviews/prs/<branch-slug>/findings.jsonl`). If there is no
+the findings file path (`docs/evidence/reviews/prs/<branch-slug>/spec-reviewer-findings.jsonl`). If there is no
 acceptance file, stop and say so. There is nothing to review against, and inventing criteria from
 the code would review the code against itself.
 
@@ -62,8 +62,10 @@ behaviour a user or another system can observe is.
 
 ## Record every finding before you write prose
 
-Append one JSONL record per finding to the findings file, in the shared shape (`findings.py`). Use
-`"pass": "spec-reviewer"`. Sign each record so the check below can resolve it:
+**Write this round's records to your own file**, `docs/evidence/reviews/prs/<branch-slug>/spec-reviewer-findings.jsonl`: one JSONL record per finding, in the shared
+shape (`findings.py`), with `"pass": "spec-reviewer"`. `<branch-slug>` is the branch name with each `/` replaced by `-` (`fix/invoice-total` → `fix-invoice-total`). Each round **replaces** the file, so a
+finding fixed since the last round does not block this one; the earlier round stays in git history,
+because the file is committed with each round's fix. Sign each record so the check below can resolve it:
 
 - a criterion finding is signed `<category>:AC-n`, e.g. `spec-misread:AC-2`;
 - an unasked-for finding is signed `spec-unasked:<short-name>`, and its `file` is the changed file
@@ -74,9 +76,9 @@ or what the system does; `P3` for an advisory note. **Create the file even when 
 since its absence is how the check knows the pass never ran. Then run:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/findings.py" validate docs/evidence/reviews/prs/<branch-slug>/findings.jsonl
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/findings.py" validate docs/evidence/reviews/prs/<branch-slug>/spec-reviewer-findings.jsonl
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_spec_review.py" --acceptance "docs/product/acceptance/<slug>.md" \
-  --findings docs/evidence/reviews/prs/<branch-slug>/findings.jsonl --base "<base>" --verdict "<CLEAN or BLOCKED>"
+  --findings docs/evidence/reviews/prs/<branch-slug>/spec-reviewer-findings.jsonl --base "<base>" --verdict "<CLEAN or BLOCKED>"
 ```
 
 The check refuses a finding that cites a criterion the file does not define, flags unasked-for

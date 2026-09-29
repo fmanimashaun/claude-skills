@@ -1,8 +1,8 @@
-"""Mutation guard: hook_issue_labels. Declared here, run by scripts/mutation_check.py (#1311).
+"""Mutation guard: hook_issue_labels. Declared here, run by scripts/mutation_check.py (#1311, #1400).
 
 The mutations that matter let an unlabelled or under-labelled issue through: no label accepted,
-a `when` group ignored, a prefix never matching, a broken declaration read as "allow", or a
-compound command whose create is never seen.
+a `when` group ignored, a prefix never matching, a broken declaration read as "allow", a create the
+parser never sees, or (#1400) a `cd` the create may not have followed being trusted anyway.
 """
 from mutation_types import Guard, Mutation  # noqa: F401
 
@@ -14,8 +14,8 @@ GUARD = Guard(
         # #1336: a heredoc body is tokenised again, so prose apostrophes refuse a labelled create.
         Mutation(
             "heredoc bodies are no longer stripped before tokenising",
-            "    cmd = strip_heredocs(cmd)\n",
-            "",
+            "        cmd = strip_heredocs(cmd)\n    except ValueError:",
+            "        cmd = cmd\n    except ValueError:",
             "a heredoc body with apostrophes does not break a labelled create",
         ),
         Mutation(
@@ -33,7 +33,7 @@ GUARD = Guard(
         Mutation(
             "a `when` group applies to every issue, so a feature is asked for a severity",
             '            if g.get("when") and not any(matches(l, g["when"]) for l in labels):\n                continue',
-            '            if False:\n                continue',
+            "            if False:\n                continue",
             "CONTROL: a feature is allowed",
         ),
         Mutation(
@@ -50,21 +50,156 @@ GUARD = Guard(
         ),
         Mutation(
             "an unreadable declaration allows the command",
-            '            return False, f"{CONFIG} is unreadable ({exc}); fix it so labels can be checked"',
-            '            return True, ""',
+            '        return None, f"{where} is unreadable ({exc}); fix it so labels can be checked"',
+            '        return None, ""',
             "an unreadable declaration refuses rather than allowing",
         ),
         Mutation(
-            "only the first segment of a compound command is read",
-            "                    out.append(cur[i + 3:])\n                    break\n            cur = []",
-            "                    out.append(cur[i + 3:])\n                    break\n            break",
-            "a create later in a compound command is checked",
-        ),
-        Mutation(
             "another repo's issue is held to this project's groups",
-            "        foreign = repo is not None and repo != mine",
+            "        foreign = repo is not None and norm_repo(repo) != mine",
             "        foreign = False",
             "another repo: one label is enough",
+        ),
+        # ---- #1400: the TARGET repository's declaration ------------------------------------------
+        Mutation(
+            "the cd target is used as-is, so a subdirectory has no declaration",
+            '    return (Path(top) if top else path.resolve()), ""',
+            '    return path.resolve(), ""',
+            "a cd into a SUBDIRECTORY finds the repo's toplevel declaration",
+        ),
+        # ---- #1400: another repo's rules only when the create CERTAINLY files there --------------
+        Mutation(
+            "the followed cd's repo is never used, so the original bug returns",
+            "                    target = found",
+            "                    target = root",
+            "cd into another repo: that repo's declaration applies, and passes",
+        ),
+        Mutation(
+            "a repo named with -R on the create is ignored when following a cd",
+            '        if cd is not None and repo is None and env_repo is None and not os.environ.get("GH_REPO"):',
+            '        if cd is not None and env_repo is None and not os.environ.get("GH_REPO"):',
+            "refused: a repo named with -R after the cd",
+        ),
+        Mutation(
+            "a GH_REPO prefix on the create is ignored when following a cd",
+            '        if cd is not None and repo is None and env_repo is None and not os.environ.get("GH_REPO"):',
+            '        if cd is not None and repo is None and not os.environ.get("GH_REPO"):',
+            "refused: GH_REPO on the create after the cd",
+        ),
+        Mutation(
+            "GH_REPO in the hook's environment is ignored when following a cd",
+            '        if cd is not None and repo is None and env_repo is None and not os.environ.get("GH_REPO"):',
+            '        if cd is not None and repo is None and env_repo is None:',
+            "GH_REPO in the environment keeps the session's rules",
+        ),
+        Mutation(
+            "a target with no remote is followed, though gh's destination is unknown",
+            "                if theirs and ours and ours.isdisjoint(theirs):",
+            "                if ours and ours.isdisjoint(theirs):",
+            "a target with no remote keeps the session's rules",
+        ),
+        Mutation(
+            "a session with no remote follows every cd",
+            "                if theirs and ours and ours.isdisjoint(theirs):",
+            "                if theirs and ours.isdisjoint(theirs):",
+            "a session with no remote keeps its own rules",
+        ),
+        Mutation(
+            "only the session's origin is compared, so its upstream is missed",
+            "                theirs, ours = remotes(found), remotes(root)",
+            "                theirs, ours = remotes(found), {r for r in [own_repo(root)] if r}",
+            "a session whose upstream is the target's repo keeps its own rules",
+        ),
+        Mutation(
+            "a target sharing the session's repo takes its own rules",
+            "                if theirs and ours and ours.isdisjoint(theirs):",
+            "                if theirs and ours:",
+            "a cd into a clone of the session's own repo keeps the session's rules",
+        ),
+        Mutation(
+            "a URL normalises to everything after the host, so an ssh port reads as a foreign 22/me/skills",
+            '    m = re.search(r"([^/:@\\s]+)/([^/:@\\s]+?)(?:\\.git)?/*$", s.strip().lower())',
+            '    m = re.search(r"github\\.com[/:](.+?)/([^/]+?)(?:\\.git)?/*$", s.strip().lower())',
+            "a clone whose origin uses an ssh port is the session's repo",
+        ),
+        Mutation(
+            "repo names are compared without lowercasing",
+            '    m = re.search(r"([^/:@\\s]+)/([^/:@\\s]+?)(?:\\.git)?/*$", s.strip().lower())',
+            '    m = re.search(r"([^/:@\\s]+)/([^/:@\\s]+?)(?:\\.git)?/*$", s.strip())',
+            "-R spelled `-R Me/Skills` is the session's repo",
+        ),
+        Mutation(
+            "only origin is read, so an upstream pointing at the session's repo is missed",
+            "    return {r for line in out.splitlines() if len(line.split()) >= 2\n            for r in [norm_repo(line.split()[1])] if r}",
+            "    return {r for r in [own_repo(root)] if r}",
+            "...and so does a fork origin with the session repo as upstream",
+        ),
+        Mutation(
+            "a -R glued to its value is not read",
+            "        elif a.startswith(\"-R\") and len(a) > 2:\n            repo = a[2:]",
+            "        elif False:\n            repo = a[2:]",
+            "CONTROL: a glued -R naming another repo needs one label, like the spaced form",
+        ),
+        Mutation(
+            "a quoted <<X starts a heredoc and hides the create",
+            "            if before.count(\"'\") % 2 or before.count('\"') % 2:\n                continue",
+            "            if False:\n                continue",
+            "a quoted <<X is text",
+        ),
+        Mutation(
+            "a backslash-newline becomes a space, so `cre\\\\<nl>ate` is not a create",
+            '    cmd = cmd.replace("\\\\\\n", "").replace("\\n", " ; ")',
+            '    cmd = cmd.replace("\\\\\\n", " ").replace("\\n", " ; ")',
+            "a backslash-newline joins",
+        ),
+        # ---- #1400: the ALLOWLIST -- each way a cd the create may not have followed is trusted -----
+        Mutation(
+            "a first word other than cd (pushd) is followed as a cd",
+            '    if len(prefix) != 3 or prefix[0] != "cd" or prefix[2] != "&&":',
+            '    if len(prefix) != 3 or prefix[2] != "&&":',
+            "refused: pushd",
+        ),
+        Mutation(
+            "an unterminated heredoc swallows the create after it",
+            '                    raise ValueError(f"heredoc <<{tag} is never closed")',
+            "                    pass",
+            "an unterminated heredoc refuses rather than swallowing the create",
+        ),
+        Mutation(
+            "every unterminated heredoc refuses, so a quoted <<EOF is a parse error again",
+            '                if re.search(r"\\bgh\\s+issue\\s+create\\b", "\\n".join(lines[start_of_swallow:])):',
+            "                if True:",
+            "CONTROL: arithmetic << is not a parse error",
+        ),
+        Mutation(
+            "a <<< herestring is read as a heredoc and swallows the create",
+            """HEREDOC = re.compile(r"(?<!<)<<(?!<)(-?)""",
+            """HEREDOC = re.compile(r"<<(-?)""",
+            "a <<< herestring is not a heredoc",
+        ),
+        Mutation(
+            "a command between the cd and the create is trusted",
+            '    if len(prefix) != 3 or prefix[0] != "cd" or prefix[2] != "&&":',
+            '    if len(prefix) < 3 or prefix[0] != "cd" or prefix[2] != "&&":',
+            "refused: a command between the cd and the create",
+        ),
+        Mutation(
+            "after a followed cd, a create behind env -C or command is trusted",
+            '                    if cd is not None and (i != 0 or set(env) - {"GH_REPO"}):',
+            '                    if cd is not None and (set(env) - {"GH_REPO"}):',
+            "refused: env -C redirecting the create",
+        ),
+        Mutation(
+            "after a followed cd, a GIT_DIR prefix on the create is trusted",
+            '                    if cd is not None and (i != 0 or set(env) - {"GH_REPO"}):',
+            "                    if cd is not None and (i != 0):",
+            "refused: GIT_DIR on the create itself",
+        ),
+        Mutation(
+            "a newline after && breaks the chain",
+            '        if tok == ";" and items and items[-1] in ("&&", "||", "|"):\n            continue',
+            "        if False:\n            continue",
+            "a newline after && continues the chain",
         ),
     ),
 )

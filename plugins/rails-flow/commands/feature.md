@@ -51,7 +51,14 @@ way round.
 
 ## Phase 1 — Plan (delegated exploration)
 
-**If a spec exists, plan from it** (`docs/product/specs/<slug>.md`, written by `/rails-flow:spec`,
+**If the issue is a slice** (its body opens `Slice S<n> of <spec>`, filed by `/rails-flow:slice`,
+#1369), **its `AC-n` lines are this unit's criteria**, copied verbatim into
+`docs/product/acceptance/<branch-slug>.md`. They are the criteria the owner approved for this slice
+alone. The spec then supplies only the `Seam:`, the Out of scope and the decisions, never more
+criteria; turning every story in the spec into criteria would build other slices' work on this
+branch and break the order `/slice` filed.
+
+**Otherwise, if a spec exists, plan from it** (`docs/product/specs/<slug>.md`, written by `/rails-flow:spec`,
 #1375). Its stories become the criteria, its Testing decisions' `Seam:` is where the specs go, and
 its Out of scope bounds the plan. Do not re-derive in the session what the spec already decided. If
 the feature needs decisions no spec records, and it is more than one slice, offer
@@ -67,7 +74,7 @@ schema impact. Then produce a short plan:
 
 ### Acceptance criteria — write them BEFORE any code
 
-Every unit gets criteria, recorded in `docs/product/acceptance/<branch-slug>.md` (the layout's home for WHAT we are\nbuilding; a pre-layout `docs/acceptance/` is still recognised by the gate, #910) — the slug is the
+Every unit gets criteria, recorded in `docs/product/acceptance/<branch-slug>.md` (the layout's home for WHAT we are building; a pre-layout `docs/acceptance/` is still recognised by the gate, #910) — the slug is the
 branch name after `feature/`, with any remaining `/` flattened to `-` (so `feature/team/foo`
 → `docs/product/acceptance/team-foo.md`). One `##` section per unit:
 
@@ -159,7 +166,8 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_mockup_gate.py" --paths <each file 
   2. **Publish it, post its link on the issue, and STOP for the owner's approval.** This is a hold
      like the one-way door's, not advice: approval is a human decision. Change requests mean
      iterate and ask again.
-  3. **Record the approval** in `docs/product/mockups/<slug>.md` on the branch, one line each:
+  3. **Record the approval** in `docs/product/mockups/<slug>.md` (committed on the branch once Phase 2
+     creates it), one line each:
      `Mock-up:` (link or committed file), `Issue:`, `Approved-by:`, `Approval:` (the link to the
      comment where the owner approved), `Widths:`, `States:`. Then proceed. The plan and the PR
      cite the record.
@@ -203,8 +211,8 @@ as complete is worse than a stop, because it spends the reviewer's trust as well
 Run in order; loop fixes back through Phase 3 until every gate passes:
 
 1. `code-reviewer` on the branch diff → must end `VERDICT: CLEAN`
-1b. `spec-reviewer` with `docs/product/acceptance/<slug>.md`, the base, and the day's
-   `docs/evidence/reviews/prs/<branch-slug>/findings.jsonl` → must end `VERDICT: CLEAN`, with
+1b. `spec-reviewer` with `docs/product/acceptance/<slug>.md`, the base, and its own file
+   `docs/evidence/reviews/prs/<branch-slug>/spec-reviewer-findings.jsonl` → must end `VERDICT: CLEAN`, with
    `check_spec_review.py` exit 0 (#1370). It asks only whether the diff does what the criteria
    *say*: criteria missing, partial or misread, and behaviour nobody asked for. Report it under its
    own **Spec** heading beside `code-reviewer`'s **Standards**, and never merge or re-rank the two.

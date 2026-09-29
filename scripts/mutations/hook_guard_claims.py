@@ -25,13 +25,37 @@ GUARD = Guard(
            # ci-verdict-hint.sh runs it; unstaged, every mutation here read as caught (#1173).
            "plugins/rails-flow/scripts/ci_verdict_hint.py"),
     mutations=(
+        Mutation(
+            "an empty exit 1 (the helper died at import) reads as a pass again",
+            "    elif [ \"$tpl_rc\" -eq 1 ] && [ -z \"$gaps\" ]; then",
+            "    elif false; then",
+            "a helper that fails at import says NOT checked, never silence",
+        ),
+        Mutation(
+            "quoted strings are kept, so -R in a title switches the check off",
+            "unquoted=\"$(printf '%s' \"$cmd\" | sed -E \"s/'[^']*'//g; s/\\\"[^\\\"]*\\\"//g\")\"",
+            "unquoted=\"$cmd\"",
+            "`-R` inside a quoted --title is text, so the body is still judged",
+        ),
+        Mutation(
+            "-R is read from the whole compound command again, so an unrelated grep -R skips the check",
+            "  pr_seg=\"$(printf '%s' \"$unquoted\" | grep -oE 'gh[[:space:]]+pr[[:space:]]+(create|edit)[^;&|]*' | head -1)\"",
+            "  pr_seg=\"$unquoted\"",
+            "an unrelated `grep -R` earlier in the chain does not switch the check off",
+        ),
         # #1389: the template check, removed from the hook -- the prose rule it replaced was
         # followed 0 times in 5 downstream PRs.
         Mutation(
             "the PR-template check never runs",
-            "    if [ -n \"$gaps\" ]; then",
-            "    if false; then",
+            "    elif [ \"$tpl_rc\" -eq 1 ]; then\n      echo \"BLOCKED by rails-flow claim guard: this PR body is missing",
+            "    elif false; then\n      echo \"BLOCKED by rails-flow claim guard: this PR body is missing",
             "a PR body missing a template section is blocked",
+        ),
+        Mutation(
+            "-R/--repo is no longer recognised, so another repository's PR is judged by this template",
+            '  if printf \'%s\' "$pr_seg" | grep -qE \'(^|[[:space:]])(-R|--repo)\' \\',
+            '  if false \\',
+            "-R targets another repo, so its template is not judged here",
         ),
         Mutation(
             "the template check is scoped to create only, so `gh pr edit` slips past it",

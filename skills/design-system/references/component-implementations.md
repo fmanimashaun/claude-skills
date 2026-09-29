@@ -333,7 +333,14 @@ same recipe + a trailing chevron.
 
 ### Checkbox / Radio / Switch
 
+**Inside a form, a checkbox is `f.input :accept, as: :boolean`, never this markup.** simple_form is
+mandatory in this stack, and its wrapper is what renders the anatomy below. The block is the anatomy
+reference the wrapper must produce: the control beside its label, at touch height. Outside any form
+(a standalone toggle, for instance) it is a design-system primitive, so the project declares it in
+`.rails-flow/raw-form-exemptions.json`, with a reason, for the `simple-form-only` gate.
+
 ```erb
+<%# simple-form-only: primitive -- the anatomy the simple_form wrapper renders; see above %>
 <%# composition: control beside label is the field's anatomy %>
 <%# checkbox / radio — wrap in a cluster so control + label align %>
 <label class="cluster min-h-touch" style="--space: var(--space-2xs)">
@@ -518,7 +525,17 @@ module Ui
   end
 end
 ```
+The Combobox is a primitive that IS its own control: simple_form has no combobox input to wrap, so
+the component builds the `<input role="combobox">` itself. A project using it declares that one line
+for the `simple-form-only` gate, and `match` keeps the exemption from covering anything else in the file:
+
+```json
+{"file": "app/components/ui/combobox_component.html.erb", "rule": "tag-builder-field",
+ "match": "tag.input", "reason": "design-system Combobox primitive: the component is the control"}
+```
+
 ```erb
+<%# simple-form-only: primitive -- the Combobox builds its own input; declare it (above) %>
 <%# composition: input above listbox IS the combobox %>
 <%# combobox_component.html.erb — role=combobox goes on the INPUT, never a wrapper div. %>
 <%# A wrapper with aria-owns is the superseded ARIA 1.1 model and no longer conforms. %>
@@ -1456,26 +1473,26 @@ Empty state — arranged. What goes wrong is not the Ruby: it is a `<button>` ne
 <%# One Ui::Disclosure per group: role=button + aria-expanded are APG's whole mandate, and %>
 <%# there are NO arrow keys on a disclosure. aria-controls is optional in APG and required %>
 <%# by us, because the panel is not adjacent to its trigger in a wide sidebar. %>
-<form method="get" class="stack" aria-label="Filter products">
+<%# simple_form, as everywhere (it is mandatory here). A symbol builds a GET form with no model, and %>
+<%# as: "" drops the `filter[...]` namespace so a facet posts as `color[]=red` and the URL stays %>
+<%# readable. The touch height of each row (2.5.8) belongs to the check_boxes wrapper, not here. %>
+<%= simple_form_for :filter, url: request.path, method: :get, as: "",
+      html: { class: "stack", "aria-label": "Filter products" } do |f| %>
   <% facets.each do |facet| %>
     <%= render Ui::DisclosureComponent.new(id: "facet-#{facet.slug}") do |d| %>
       <% d.with_trigger_content { facet.name } %>
       <% d.with_panel_content do %>
         <fieldset class="stack">
           <legend class="sr-only"><%= facet.name %></legend>
-          <% facet.options.each do |option| %>
-            <%# min-h-touch clears 2.5.8 outright rather than arguing about the Spacing exception. %>
-            <label class="cluster min-h-touch">
-              <%= check_box_tag "#{facet.slug}[]", option.value, option.selected? %>
-              <%= option.label %>
-            </label>
-          <% end %>
+          <%= f.input facet.slug, as: :check_boxes, label: false, item_wrapper_tag: :div,
+                collection: facet.options, label_method: :label, value_method: :value,
+                checked: facet.options.select(&:selected?).map(&:value) %>
         </fieldset>
       <% end %>
     <% end %>
   <% end %>
-  <%= submit_tag "Apply filters" %>
-</form>
+  <%= f.submit "Apply filters" %>
+<% end %>
 
 <%# The COUNT is the status message; the grid is not. Understanding 4.1.3 excludes the result %>
 <%# list by name, so role="status" here would announce every card on every filter change. %>
@@ -1729,26 +1746,35 @@ is a real `fieldset` of native radios.
 <%# Native radios: no roving tabindex to write, no aria-checked to keep in sync, and the group %>
 <%# posts with the form. The brand mark is non-text content, so it carries its own name -- and %>
 <%# "ending 4242" is visible text, because "Card" is not a name when there are four of them. %>
+<%# f.input as: :radio_buttons, never f.radio_button + f.label: simple_form is mandatory. A lambda %>
+<%# label_method returning safe_join keeps the rich label (brand mark, "ending 4242", expiry). %>
 <%= simple_form_for @billing, url: default_payment_method_path do |f| %>
   <fieldset class="stack divide-y divide-border">
     <legend class="text-step--1 text-muted-foreground">Default payment method</legend>
-    <% @methods.each do |m| %>
-      <div class="cluster justify-between py-2">
-        <%= f.radio_button :default_method_id, m.id, class: "min-h-touch" %>
-        <%= f.label "default_method_id_#{m.id}", class: "cluster" do %>
-          <span class="with-icon" role="img" aria-label="<%= m.brand %>"><%# brand mark %></span>
-          <span>ending <%= m.last4 %></span>
-          <span class="text-step--1 text-muted-foreground">Expires <%= m.expiry %></span>
-        <% end %>
-        <%# Names the card, not the row: four icon-only buttons otherwise announce identically. %>
-        <%= button_to "Remove", payment_method_path(m), method: :delete,
-              form: { data: { turbo_frame: "modal" } },
-              aria: { label: "Remove #{m.brand} ending #{m.last4}" } %>
-      </div>
-    <% end %>
+    <%= f.input :default_method_id, as: :radio_buttons, label: false, collection: @methods,
+          value_method: :id, item_wrapper_tag: :div,
+          label_method: ->(m) {
+            safe_join([content_tag(:span, "", class: "with-icon", role: "img", "aria-label": m.brand),
+                       content_tag(:span, "ending #{m.last4}"),
+                       content_tag(:span, "Expires #{m.expiry}", class: "text-step--1 text-muted-foreground")])
+          } %>
   </fieldset>
   <%= f.submit "Save" %>
 <% end %>
+
+<%# REMOVE sits OUTSIDE the form. button_to generates a form of its own, and a form inside a form %>
+<%# is non-conforming HTML (the parser drops the inner one), so a Remove nested in the radio group %>
+<%# above would submit the outer form instead. It names the card, not the row. %>
+<ul class="stack">
+  <% @methods.each do |m| %>
+    <li class="cluster justify-between">
+      <span>ending <%= m.last4 %></span>
+      <%= button_to "Remove", payment_method_path(m), method: :delete,
+            form: { data: { turbo_frame: "modal" } },
+            aria: { label: "Remove #{m.brand} ending #{m.last4}" } %>
+    </li>
+  <% end %>
+</ul>
 ```
 
 **A past-due notice that is already true at page load is ordinary content, not a live region.**

@@ -17,6 +17,25 @@ GUARD = Guard(
         "scripts/crawl_collector.js",
     ),
     mutations=(
+        # #1395 review: `landedOn` is a pathname, so the requested route is compared as one too.
+        Mutation(
+            "arrival demands the exact query, so a parameter the app adds reads as a redirect",
+            "    return not (Counter(ask) - Counter(got))   # every requested parameter survived; extras are the app's",
+            "    return not ask or ask == got",
+            "a parameter the app ADDS on arrival is still arrival",
+        ),
+        Mutation(
+            "a redirect that drops the query reads as arrival",
+            "    return not (Counter(ask) - Counter(got))   # every requested parameter survived; extras are the app's",
+            "    return True",
+            "a redirect that DROPS the query is still a redirect",
+        ),
+        Mutation(
+            "the route comparison stops normalising, so a trailing slash reads as a redirect",
+            "        if isinstance(landed, str) and landed.strip() and not same_page(route, landed):",
+            "        if isinstance(landed, str) and landed.strip() and landed != route:",
+            "a trailing slash is not a redirect",
+        ),
         # ---- the rules must keep firing --------------------------------------------------------
         Mutation(
             "clipped content stops being unreachable, so `overflow: hidden` is silent",
