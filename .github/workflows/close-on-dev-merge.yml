@@ -15,7 +15,8 @@ permissions:
 
 jobs:
   close:
-    if: github.event.pull_request.merged == true
+    # A fork PR's token is read-only, so it could close nothing; skip it rather than fail red.
+    if: github.event.pull_request.merged == true && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
       contents: read

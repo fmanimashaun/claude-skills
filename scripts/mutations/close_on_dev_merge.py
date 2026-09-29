@@ -30,9 +30,43 @@ GUARD = Guard(
         ),
         Mutation(
             "the shipped note reads every #n in the notes, not only the (#n) citations",
-            'return sorted({int(n) for n in re.findall(r"\\(#(\\d+)\\)", notes)})',
-            'return sorted({int(n) for n in re.findall(r"#(\\d+)", notes)})',
-            "shipped_issues: expected [1410, 1444]",
+            '    return sorted({int(n) for group in CITATION.findall(notes) for n in re.findall(r"#(\\d+)", group)})',
+            '    return sorted({int(n) for n in re.findall(r"#(\\d+)", notes)})',
+            'shipped_issues reads single, grouped and annotated citations',
+        ),
+        Mutation(
+            # review of PR #1488: every real run crashed
+            "the PR is read through a JSON field gh does not have (the first version's bug)",
+            '    data = json.loads(gh("pr", "view", str(pr), "-R", REPO, "--json", "body,state,baseRefName"))',
+            '    data = json.loads(gh("pr", "view", str(pr), "-R", REPO, "--json", "body,merged,baseRefName"))',
+            "close_for_pr runs against gh's real field set",
+        ),
+        Mutation(
+            'merged state is no longer required, so an open PR closes its issues',
+            '    if data.get("state") != "MERGED" or data.get("baseRefName") != "dev":',
+            '    if data.get("baseRefName") != "dev":',
+            'an unmerged PR closes nothing',
+        ),
+        Mutation(
+            # review of PR #1488
+            'a Fixes line naming a pull request closes that PR',
+            '            if is_pull_request(gh, n):',
+            '            if False:',
+            'a Fixes line naming a PULL REQUEST never touches it',
+        ),
+        Mutation(
+            # review of PR #1488
+            "one issue's failure aborts the loop, leaving the rest open",
+            '        except (RuntimeError, ValueError, KeyError) as exc:\n            errors += 1',
+            '        except ZeroDivisionError as exc:\n            errors += 1',
+            "one issue's failure still closes the rest",
+        ),
+        Mutation(
+            # review of PR #1488
+            'a grouped citation (#a, #b) is read as nothing',
+            'CITATION = re.compile(r"\\((#\\d+[^()]*)\\)")',
+            'CITATION = re.compile(r"\\((#\\d+)\\)")',
+            'shipped_issues reads single, grouped and annotated citations',
         ),
     ),
 )

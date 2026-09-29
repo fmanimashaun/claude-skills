@@ -43,7 +43,7 @@ holds the harness-neutral rules (measure before you assert; write the mechanism 
 10. Merge on green. A fix that lands after an arm and before its promotion is **folded** into the
     armed block, never left `Unreleased` and never re-armed → *Versioning*.
 11. To ship: **arm** (`chore/arm-vX.Y.Z` → `dev`: versions, headings, `python3 scripts/rebuild_generated.py`),
-    then **promote** (`dev` → `main`, `--merge`). Only the promotion publishes; issues closed at their dev merge.
+    then **promote** (`dev` → `main`, `--merge`, `Closes #n` backstop for `Refs`-only issues). Only it publishes.
 
 ## The maintenance flow (the `.claude/` commands)
 
