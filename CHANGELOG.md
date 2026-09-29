@@ -9,6 +9,13 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### 2026-09-28 (release v1.152.0)
 
+- **The `check_slices` mutation guard stages the files its imports now need — `plugins/rails-flow/scripts/mutations/check_slices.py`**.
+  `check_issue_mockup.py` began importing its approval rule from `check_mockup_gate.py`, which reads diffs through
+  `classify_door.py` (#1424). The guard did not stage either file, so its unmutated selftest failed in the tempdir and
+  all 12 mutations read as caught while testing nothing (INERT). CI could not see it, because the mutation gate times
+  out there (#1444). The full local run at 49ea846 found it: 1 of 1,492 mutations, in about 84 minutes. Now 12 of 12
+  are genuinely caught.
+
 - **Our own shipped ERB must pass the simple-form-only gate we ship — `scripts/check_shipped_erb_forms.py`,
   `scripts/mutations/check_shipped_erb_forms.py`, `scripts/maintainer_doctor.py`** (#1383). The pre-release review
   found 9 of our ERB blocks failing the gate: the gate had been measured on one downstream app and never on the text
