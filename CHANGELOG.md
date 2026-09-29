@@ -3555,6 +3555,14 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **The mock-up checks close four holes from #1424's re-review — `plugins/rails-flow/scripts/check_issue_mockup.py`, `plugins/rails-flow/scripts/check_mockup_gate.py`** (#1430).
+  - **An approval link is not a mock-up link.** A Mock-up section holding only the approving comment's URL read as linked AND approved; approval URLs are now stripped before the mock-up link is looked for, at filing (`verdict`) and at triage (`ready`).
+  - **A record path needs an extension.** `docs/product/mockups/TBD` counted as linked; the path must now end in an extension (any: `.gif` and `.avif` are mock-ups too). A mock-up posted as an issue comment still counts: two DISTINCT comment links mean one is the mock-up.
+  - **A record's `Mock-up:` may not be a record.** Any file under `docs/product/mockups/` was accepted, so a record could name itself or another record. Now a record naming itself, or any `.md` (judged by the symlink's resolved target), is refused; every other committed file under the folder still counts (`.gif`, `.avif`, `.html.erb`), and `.svg` joins the types accepted elsewhere.
+  - **An unterminated fence fences the rest of `GUARDRAILS.md`.** The regex removed only closed fences, so an opt-out after a stray ``` still turned the gate off; a line scanner now treats an unclosed fence as running to the end, as a renderer shows it, and a fence may be indented (it usually sits in a list item); it closes only on the same character, at least as long, with no info string. (The same class #1424 fixed in `lint_self_consistency.py`; a shared scanner is #1461.)
+  - Each has a selftest case with a control, and all six rejections fail against dev's code. The independent review of PR #1478 found two regressions in the first version (an indented fenced example turned the gate off; an allow-list refused `.gif`/`.avif`/`.html.erb` mock-ups); both are fixtures now. The final review found one more (a line opening with an inline code span, such as ```` ```x``` ````, was read as a fence and hid a real opt-out below it): a backtick fence may not contain another backtick, per CommonMark. A dotted FOLDER no longer satisfies the extension rule, and one comment reached as both `issues/` and `pull/` counts once. Mutation guards: `check_mockup_gate` 22/22, `check_issue_mockup` 15/15, `check_slices` 14/14.
+
+
 - **`simple-form-only` catches Rails 8's `rich_textarea` — `plugins/rails-flow/scripts/check_simple_form_only.py`,
   `plugins/rails-flow/scripts/mutations/check_simple_form_only.py`** (#1439). `RAW_FIELD_METHODS` listed only
   `rich_text_area`, so `f.rich_textarea :content` on a simple_form builder passed. Both spellings are now raw, and
