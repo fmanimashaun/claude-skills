@@ -33,5 +33,29 @@ GUARD = Guard(
             '',
             'the identical write in a NON-RAILS project is allowed',
         ),
+        Mutation(
+            '#1416: the directory is compared case-sensitively again, so DB/Migrate/ slips through on macOS',
+            '    parent = parent.lower()                  # #1416: a case-insensitive filesystem lands DB/Migrate here',
+            '    parent = parent',
+            'guard-migrate (#1416): a mixed-case DB/Migrate/ path is blocked',
+        ),
+        Mutation(
+            '#1416: the extension is compared case-sensitively again, so `.RB` slips through',
+            '    if not file_path.lower().endswith(".rb"):',
+            '    if not file_path.endswith(".rb"):',
+            'guard-migrate (#1416): a `.RB` extension is blocked',
+        ),
+        Mutation(
+            '#1416: the bare-PATH fallback stops folding case',
+            '  shopt -s nocasematch                     # bash 3.2 has no ${var,,}; this is its case-folding match',
+            '  :',
+            'guard-migrate (#1416): the bare-PATH fallback folds case too (bash 3.2 nocasematch)',
+        ),
+        Mutation(
+            '#1416: the deny message drops the boot line, leaving no way through when the app cannot boot',
+            'If the app does not boot, the generator fails too: fix the boot first, then generate.',
+            '',
+            '...and says a broken boot comes first, since the generator needs the app to boot (#1416)',
+        ),
     ),
 )

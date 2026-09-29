@@ -21,6 +21,13 @@
 # `db/migrate/`, and this guard does not read `database.yml` to find that path -- judged out of
 # scope. It only ever refuses the literal `db/migrate/` directory.
 #
+# THE SECOND KNOWN LIMIT: it guards the `Write` tool only (the maintainer decision on #1362). A shell
+# write -- `cat > db/migrate/x.rb`, `touch`, a `cp` -- goes through `Bash`, which this hook never sees.
+#
+# CASE (#1416): on a case-insensitive filesystem (macOS, Windows) a Write to `DB/Migrate/x.rb` lands
+# in `db/migrate/`, so the directory and the `.rb` extension are compared lower-cased. On a
+# case-sensitive one that also refuses a stray `DB/Migrate/`, which is no loss.
+#
 # FAILS CLOSED, SCOPED. Without python3, or when the JSON cannot be parsed at all, judge the raw
 # payload text the way guard-bash.sh does: block only if it contains a db/migrate/*.rb path AND
 # this project has bin/rails; otherwise allow. That is coarser than the parsed path (it cannot
@@ -32,7 +39,9 @@ DENY_MSG='Creating files under db/migrate/ directly is blocked in this project. 
 
   bin/rails generate migration AddPartNumberToProducts part_number:string
 
-It picks the timestamped filename and matching class name. Once the file exists you can edit it freely — only creating it from scratch is blocked. Run `bin/rails generate migration --help` for the column syntax it accepts.'
+It picks the timestamped filename and matching class name. Once the file exists you can edit it freely — only creating it from scratch is blocked. Run `bin/rails generate migration --help` for the column syntax it accepts.
+
+If the app does not boot, the generator fails too: fix the boot first, then generate.'
 
 input="$(cat)"
 
@@ -44,7 +53,11 @@ root_dir="${CLAUDE_PROJECT_DIR:-$PWD}"
 # would otherwise make the fail-closed fallback allow (grep "not found" is a non-match).
 _raw_migrate_path='db/migrate/[^/"]*\.rb'
 _raw_fallback() {
-  if [ -f "$root_dir/bin/rails" ] && [[ $input =~ $_raw_migrate_path ]]; then
+  local hit=1
+  shopt -s nocasematch                     # bash 3.2 has no ${var,,}; this is its case-folding match
+  [[ $input =~ $_raw_migrate_path ]] && hit=0
+  shopt -u nocasematch
+  if [ -f "$root_dir/bin/rails" ] && [ "$hit" -eq 0 ]; then
     echo "BLOCKED by rails-flow migration guard: $DENY_MSG" >&2
     exit 2
   fi
@@ -61,6 +74,7 @@ import json, os, sys
 # read that config is a decision for later, and this is the one function that would change.
 def is_migrate_dir(parent):
     parent = parent.replace(os.sep, "/")
+    parent = parent.lower()                  # #1416: a case-insensitive filesystem lands DB/Migrate here
     return parent == "db/migrate" or parent.endswith("/db/migrate")
 
 try:
@@ -76,7 +90,7 @@ try:
 
     if not os.path.isfile(os.path.join(root, "bin", "rails")):
         print("ALLOW"); sys.exit(0)
-    if not file_path.endswith(".rb"):
+    if not file_path.lower().endswith(".rb"):
         print("ALLOW"); sys.exit(0)
     if not is_migrate_dir(os.path.dirname(file_path)):
         print("ALLOW"); sys.exit(0)

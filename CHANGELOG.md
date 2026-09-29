@@ -3524,6 +3524,19 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **`guard-migrate` folds case, names its Bash limit, and says a broken boot comes first — `plugins/rails-flow/hooks/scripts/guard-migrate.sh`,
+  `plugins/rails-flow/scripts/check_hook_gates.py`** (#1416). From the independent review of #1380, whose verdict was CLEAN.
+  - **Case (reproduced on macOS).** A `Write` to `DB/Migrate/x.rb` lands in `db/migrate/` on a case-insensitive
+    filesystem, and the hook exited 0. The directory and the `.rb` extension are now compared lower-cased. The
+    no-python3 fallback folds case with `shopt -s nocasematch` (bash 3.2, macOS's `/bin/bash`, has no `${var,,}`).
+    Run under `/bin/bash` 3.2 with neither python3 nor grep: mixed-case exits 2, and a write elsewhere exits 0.
+  - **The Bash bypass is named as the second known limit** in the hook's header. `cat > db/migrate/x.rb` goes through
+    `Bash`, which a `Write` guard never sees; that scope was the maintainer's decision on #1362.
+  - **The deny message** now says that if the app does not boot, the generator fails too, so the boot is fixed first.
+  - Fixtures cover `DB/Migrate/`, `.RB`, the case-folding bare-PATH fallback, and the boot line (selftest 153/153). A
+    mixed-case OVERWRITE is deliberately not fixtured, because its answer depends on the filesystem and CI runs on
+    case-sensitive Linux. `scripts/mutations/hook_guard_migrate.py` catches 6/6, 4 of them new.
+
 - **`guard-bash` checks an issue's labels against the repository it is filed in, not the session's —
   `plugins/rails-flow/hooks/scripts/lib/issue_labels.py`, `scripts/mutations/hook_issue_labels.py`,
   `plugins/rails-flow/scripts/check_hook_gates.py`** (#1400).

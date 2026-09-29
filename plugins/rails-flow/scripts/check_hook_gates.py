@@ -171,8 +171,15 @@ def guard_migrate_fixtures() -> None:
     check("guard-migrate: creating a NEW migration by a RELATIVE path is blocked",
           code == 2, f"exit {code}: {out.strip()[:160]!r}")
     check("...and the message steers to the generator", "bin/rails generate migration" in out, out.strip()[:200])
+    check("...and says a broken boot comes first, since the generator needs the app to boot (#1416)",
+          "does not boot" in out, out.strip()[-200:])
     code, _ = write(lambda p: str(p / "db" / "migrate" / "20260927120000_add_thing.rb"))
     check("guard-migrate: creating a NEW migration by an ABSOLUTE path is blocked", code == 2, f"exit {code}")
+    # #1416. On a case-insensitive filesystem (macOS, Windows) this path LANDS in db/migrate/.
+    code, _ = write(lambda p: "DB/Migrate/20260927120000_add_thing.rb")
+    check("guard-migrate (#1416): a mixed-case DB/Migrate/ path is blocked", code == 2, f"exit {code}")
+    code, _ = write(lambda p: "db/migrate/20260927120000_add_thing.RB")
+    check("guard-migrate (#1416): a `.RB` extension is blocked", code == 2, f"exit {code}")
 
     # CONTROL, existence: the identical path, but the file already exists -- Write is an overwrite,
     # not a creation, and stays allowed.
@@ -243,6 +250,9 @@ def guard_migrate_fixtures() -> None:
 
     code, out = bare("db/migrate/20260927120000_add_thing.rb")
     check("guard-migrate: with NEITHER python3 NOR grep on PATH, a new migration is still blocked",
+          code == 2, f"exit {code}: {out.strip()[:160]!r}")
+    code, out = bare("DB/Migrate/20260927120000_add_thing.rb")
+    check("guard-migrate (#1416): the bare-PATH fallback folds case too (bash 3.2 nocasematch)",
           code == 2, f"exit {code}: {out.strip()[:160]!r}")
     code, _ = bare("app/models/x.rb")
     check("guard-migrate: CONTROL: ...and the same bare PATH still allows a write elsewhere",
