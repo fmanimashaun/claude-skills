@@ -17,22 +17,22 @@ GUARD = Guard(
         # A projectPath record applies everywhere, so the newest record wins for every project.
         Mutation(
             "a project-scoped record applies to every project",
-            "    if not owner:\n        return True\n    try:\n        root, here",
-            "    if True:\n        return True\n    try:\n        root, here",
+            "    if not owner:\n        return True\n    try:\n        # BOTH",
+            "    if True:\n        return True\n    try:\n        # BOTH",
             "the older project reads its own install",
         ),
         # Exact-match only: a session started in a subdirectory loses its project's record.
         Mutation(
             "a subdirectory no longer belongs to its project",
-            "    dirs = (here, *here.parents)",
-            "    dirs = (here,)",
+            "    dirs = tuple(d for here in sessions for d in (here, *here.parents))",
+            "    dirs = tuple(sessions)",
             "a subdirectory reads its project's install",
         ),
         # The worktree mapping is dropped: a linked worktree is its own "project" with no record.
         Mutation(
             "a linked worktree is not mapped to its main checkout",
-            'return gitdir.parent.parent.parent if gitdir.parent.name == "worktrees" else d',
-            "return d",
+            'return gitdir.parent.parent.parent if gitdir.parent.name == "worktrees" else project',
+            "return project",
             "a linked worktree reads its main checkout's install",
         ),
         # An unreadable file raises instead of falling back, and every caller crashes.
@@ -42,7 +42,19 @@ GUARD = Guard(
             "    except (OSError, KeyError, TypeError):\n        return None",
             "an unreadable record file falls back to the newest",
         ),
-        # No mutation for the case-folding branch (`os.path.samefile`): its fixture runs only on a
-        # volume that folds case, and CI's Linux runner does not, so the mutant would survive there.
+        # Only the main checkout compared: a record naming the worktree itself stops matching.
+        Mutation(
+            "only the main checkout is compared, not the session's own path",
+            "{project.resolve(), _main_checkout(project).resolve()}",
+            "{_main_checkout(project).resolve()}",
+            "a record naming the worktree itself applies in it",
+        ),
+        # The case-only branch dropped. Its fixture stubs `samefile`, so this runs on Linux too.
+        Mutation(
+            "a projectPath differing only in case no longer applies",
+            "        return root.exists() and any(str(d).lower() == str(root).lower() and os.path.samefile(root, d)",
+            "        return False and any(str(d).lower() == str(root).lower() and os.path.samefile(root, d)",
+            "a projectPath differing only in case still applies",
+        ),
     ),
 )

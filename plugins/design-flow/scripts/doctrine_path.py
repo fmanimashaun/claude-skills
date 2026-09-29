@@ -32,8 +32,8 @@ record with a `projectPath` applies to that project and its subdirectories, one 
 everywhere, and the newest `lastUpdated` among those that apply is the one loaded. It is restated
 here rather than imported because rails-flow is a different plugin and may not be installed.
 
-The project is `$CLAUDE_PROJECT_DIR`, else the working directory; a git worktree maps to its main
-checkout, which is the path the install was recorded against. NEWEST VERSION WINS survives only as
+The project is `$CLAUDE_PROJECT_DIR`, else the working directory; for a linked git worktree its main
+checkout is compared too, since the install may be recorded against either. NEWEST VERSION WINS survives only as
 the fallback when `installed_plugins.json` is unreadable or no record applies -- the behaviour
 before #1421, so a layout this cannot place resolves no worse than it did.
 
@@ -57,22 +57,30 @@ def _version_key(name: str) -> tuple:
 
 
 def _project() -> Path:
-    """The project this session runs in; a linked git worktree maps to its main checkout."""
-    here = Path(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
-    for d in (here, *here.parents):
+    """The path this session runs in: `$CLAUDE_PROJECT_DIR`, else the working directory."""
+    return Path(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
+
+
+def _main_checkout(project: Path) -> Path:
+    """`project`, or its main checkout when it lies inside a linked git worktree.
+
+    A worktree's `.git` is a FILE, `gitdir: <main>/.git/worktrees/<name>`. A submodule's names
+    `.git/modules/<name>` instead and is deliberately NOT mapped: it is its own project.
+    """
+    for d in (project, *project.parents):
         git = d / ".git"
         if git.is_dir():
-            return d
-        if git.is_file():                   # linked worktree: "gitdir: <main>/.git/worktrees/<name>"
+            return project
+        if git.is_file():
             try:
                 line = git.read_text(encoding="utf-8").strip()
             except OSError:
-                return d
+                return project
             gitdir = Path(line.partition("gitdir:")[2].strip())
             if not gitdir.is_absolute():
                 gitdir = d / gitdir
-            return gitdir.parent.parent.parent if gitdir.parent.name == "worktrees" else d
-    return here
+            return gitdir.parent.parent.parent if gitdir.parent.name == "worktrees" else project
+    return project
 
 
 def _applies(record: dict, project: Path) -> bool:
@@ -81,10 +89,13 @@ def _applies(record: dict, project: Path) -> bool:
     if not owner:
         return True
     try:
-        root, here = Path(owner).resolve(), project.resolve()
+        # BOTH the session's path and its main checkout: a record made inside a worktree names the
+        # worktree, one made from the main checkout names that, and either is this project.
+        root, sessions = Path(owner).resolve(), {project.resolve(), _main_checkout(project).resolve()}
     except OSError:
         return False
-    dirs = (here, *here.parents)             # a subdirectory still loads its project's plugins
+    # A subdirectory still loads its project's plugins.
+    dirs = tuple(d for here in sessions for d in (here, *here.parents))
     if root in dirs:
         return True
     # On a case-insensitive volume (APFS by default) a recorded `projectPath` may differ from the
@@ -218,11 +229,24 @@ def selftest() -> int:
             (wt / ".git").write_text(f"gitdir: {old / '.git' / 'worktrees' / 'wt'}\n")
             check(f"a linked worktree reads its main checkout's install (got {found_for(wt)})",
                   found_for(wt) == "1.63.0")
-            # Case alone differs: on a case-insensitive volume this is the same directory.
-            upper = root / "OLD-PROJECT"
-            if upper.exists():              # the volume folds case (APFS default); else skip
-                check(f"a projectPath differing only in case still applies (got {found_for(upper)})",
-                      found_for(upper) == "1.63.0")
+            # A record made from INSIDE the worktree names the worktree itself; mapping the session
+            # to its main checkout must not stop it matching (#1474's review of the same rule).
+            records = json.loads((plugins / "installed_plugins.json").read_text())
+            (plugins / "installed_plugins.json").write_text(json.dumps({"version": 2, "plugins": {
+                "rails-stack@claude-skills": [rec("1.63.0", wt, "2026-09-22T00:00:00Z")]}}))
+            check(f"a record naming the worktree itself applies in it (got {found_for(wt)})",
+                  found_for(wt) == "1.63.0")
+            (plugins / "installed_plugins.json").write_text(json.dumps(records))
+            # Case alone differs. `samefile` is replaced by a case-folding stand-in so this runs on
+            # CI's Linux runner too, which does not fold case, rather than only on APFS.
+            real_samefile = os.path.samefile
+            os.path.samefile = lambda a, b: str(a).lower() == str(b).lower()
+            try:
+                got_upper = found_for(root / "OLD-PROJECT")
+            finally:
+                os.path.samefile = real_samefile
+            check(f"a projectPath differing only in case still applies (got {got_upper})",
+                  got_upper == "1.63.0")
             other = root / "unrecorded"
             other.mkdir()
             check(f"a project with no record falls back to the newest (got {found_for(other)})",
