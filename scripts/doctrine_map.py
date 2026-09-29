@@ -108,7 +108,7 @@ class Claim:
 # repo-process doctrine below.
 #
 # WHY THIS IS A SECOND LIST. `DOCTRINE_SOURCES` requires every entry to carry at least one row, and
-# rightly: those eleven files were mapped deliberately. The shipped skills are ~46 files nobody has
+# rightly: those twelve files were mapped deliberately. The shipped skills are ~46 files nobody has
 # mapped yet, and declaring them there would fail the `doctrine map coverage` gate with 46 findings
 # on the first run -- red on day one, switched off in a week, which is the failure #800 spent a whole
 # issue removing. Bulk back-filling rows to make it green is worse still: this file already says
@@ -149,9 +149,33 @@ DOCTRINE_SOURCES = (
     "plugins/rails-flow/commands/handoff.md",
     "plugins/rails-flow/commands/fix.md",
     "plugins/design-flow/commands/generate.md",
+    "plugins/qa-flow/commands/certify.md",
 )
 
 CLAIMS: tuple[Claim, ...] = (
+    Claim(
+        claim="A qa-flow certification cannot unlock main without a passing first-boot operator "
+              "walkthrough and a forged-request authorization sweep, both committed at dev and named "
+              "for the release the stamp certifies.",
+        stated_in="plugins/qa-flow/commands/certify.md",
+        anchor="Both are MANDATORY: the stamp cannot be written without them",
+        kind=GUARANTEE,
+        enforced_by=("script:plugins/qa-flow/scripts/release_evidence.py",
+                     "hook:plugins/qa-flow/hooks/scripts/release-gate.sh",
+                     "mutation:release_evidence", "mutation:hook_release_gate"),
+        refs=(1428,),
+        note="A release passed every other certify layer and shipped a root who could not create "
+             "staff and three authorization holes. The gate reads the stamp and the evidence as "
+             "committed at dev and fails closed. KNOWN LIMIT, for one release: an old-shape stamp is "
+             "grandfathered when the commit that introduced it predates GRANDFATHER_BEFORE, so a "
+             "deliberately BACKDATED commit passes until GRANDFATHER_OLD_STAMPS is turned off at the "
+             "next arm. An agent's ordinary commit cannot carry an old committer date by accident. "
+             "SECOND KNOWN LIMIT: evidence already on main, or byte-identical to a record there, is "
+             "refused, but a lightly EDITED copy of last release's walkthrough (one line changed) is "
+             "not caught, and neither is an unedited copy of an OLDER release whose evidence is no "
+             "longer in main's tree (main's tree is read, not its history) -- the check stops an "
+             "unedited copy of LAST release's evidence, not a dishonest one.",
+    ),
     Claim(
         claim="A change a user can see is not built until the owner has approved a clickable "
               "mock-up of it, and the approval is recorded as a link to the owner's comment.",

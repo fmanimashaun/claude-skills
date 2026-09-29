@@ -11,6 +11,14 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 *Version number assigned at promotion.*
 
+- **`upstream.yml` pins its checkout by SHA and drops persisted credentials; a lint holds every workflow to both — `.github/workflows/upstream.yml`, `scripts/lint_self_consistency.py`, `scripts/mutations/lint_self_consistency.py`** (#1414). It pinned `actions/checkout@v7`, a tag, where every other workflow pins a SHA, and kept the token in `.git/config` for a job that never pushes with git. New rules `unpinned-workflow-action` and `checkout-persists-credentials` fire on origin/dev's `upstream.yml` at line 35 and on nothing after the fix. The checkout's step is read whole (a `with:` may precede `uses:`), a blank line before it no longer misplaces the scan (the independent review's blocker in PR #1482), and a quoted `'false'` counts: 13 selftest scenarios, 9 mutations.
+
+- **Five relative links in `docs/` that resolved to nothing are repaired, and a rule resolves every one from now on — `docs/brain/history/maintainer-history.md`, `docs/doctrine/architecture.md`, `docs/doctrine/harness-doctrine.md`, `docs/doctrine/issue-dependency-graph.md`, `scripts/lint_self_consistency.py`, `scripts/mutations/lint_self_consistency.py`** (#1415). The issue named two; a sweep found three more of the same shape — a repo-root path written inside a nested directory, which a renderer reads from the file's own directory. `broken-doc-pointer` resolves two pointer spellings and never a link target, which is why none was reported. New rule `broken-relative-link` covers `docs/**` (every path there is ours; shipped docs name paths in a user's project). It reads inline links (titled, `<angled>` or bare) and reference definitions, resolves a `/`-rooted target from the repo root, decodes `%`-escapes, and ignores what only quotes a link (``` and ~~~ fences of any length, inline code, HTML comments): 16 selftest scenarios, 14 mutations, and on the pre-fix tree it reports exactly the five. Two more broken links outside `docs/` are filed as #1480 and #1481.
+
+- **`Agents-And-Gates.md` no longer stamps a gate count, in the total or per plugin — `scripts/build_wiki.py`, `docs/wiki/Agents-And-Gates.md`, `scripts/mutations/build_wiki.py`** (#1404, [maintainer decision](https://github.com/fmanimashaun/claude-skills/issues/1404#issuecomment-5896594402)). Two open PRs that each added a gate made each other's committed page stale with no textual conflict (three times on PRs #1382 and #1401). One row per gate stays; it conflicts only when two PRs touch the same gate, and `maintainer_doctor.py` prints the live total. The selftest refuses a stamped count and a plugin row wider than its header, and a new mutation guard puts each count back, as a heading and as a bare cell (3/3 caught).
+
+- **The coverage generator carries the Bottom navigation clause d6e4383 added to the committed row — `scripts/build_coverage.py`, `docs/evidence/coverage.html`, `scripts/build_coverage_selftest.py`, `scripts/mutations/build_coverage.py`** (#1408). `build_coverage.py --check` failed whenever `design-corpora/` was present, because the generator was the stale side. The selftest now checks, with no corpora, that every `USE` value appears verbatim in the committed `coverage.md`; it fails on origin/dev and a mutation restoring the stale row is caught. `skills/design-system/references/coverage.md` is unchanged byte for byte; doctrine is unaffected.
+
 - **`SLOW_GATES["mutation coverage"]` is set from the runner's own measurement: 1800 s — `scripts/maintainer_doctor.py`** (#1444). The first green dev push run printed `jobs=4, 604s` for 1602 mutations across 145 guards. The 5400 s placeholder from PR #1457 was 9x that, so a hung gate would take 90 minutes to surface; 1800 s is 3x.
 
 - **The skill-gap search tells "no hit" from "did not run", and names a version shipped with two skills trees — `.claude/agents/issue-triager.md`, `scripts/skill_version_tag.py`, `scripts/mutations/skill_version_tag.py`** (#1427 items 1, 5, 6). The triager's block exited 0 on both warning branches while a real no-hit exited 1; the warning branches now end `(exit 2)`, the prose names the three codes (0 hit, 1 no hit, 2 did not run), and an unreadable repo (`skill_version_tag` exit 2) gets its own message instead of "search origin/dev". Run verbatim in bash, zsh and sh. `skill_version_tag.py` now warns on stderr, naming one tag per distinct later `skills` tree carrying the same version, and the triager re-runs the search at each. Measured over every tag: 42 of 111 rails-stack versions ship in more than one tag, and one, 1.42.2, holds two trees: v1.75.0's, and one shared by v1.76.0, v1.77.0 and v1.79.0 (the warning names v1.76.0). The tag on stdout is unchanged. Its exit-2 branch (outside a repository) now has a fixture; 9/9 mutations are caught.
@@ -24,6 +32,11 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 - **The `rebuild_generated` mutation guard stages the tenancy-cop builder #1403 registered — `scripts/mutations/rebuild_generated.py`** (dev push run 36547806703, the first on which mutation coverage ran rather than timing out, in PR #1457). `scripts/rebuild_generated.py` registers `derive_tenancy_cop.py` with output `plugins/rails-flow/scaffold/`; the guard staged neither, so its unmutated selftest failed in the tempdir ("is registered here and does not exist") and the guard was INERT: all its mutations read as caught. Both are now in `needs`; 3/3 caught, and dev's version reports INERT on the same command. The only failure of 1602 on that run.
 
 - **The mutation gate fits CI again, and a timeout on the run that must prove it is a FAIL — `scripts/mutation_check.py`, `scripts/maintainer_doctor.py`, `.github/workflows/gates.yml`** (#1444). Every dev push run since the suite passed 900 s reported `mutation coverage` as a timeout-skip and went green, so the promotion's CI evidence did not exist. `mutation_check.py` now runs every baseline, then every mutation of every live guard, in one pool (`--jobs`, default the CPU count): the full 1514 mutations across 141 guards measured 1456 s at `--jobs 10`, against ~84 min serial, all caught. `SLOW_GATES["mutation coverage"]` is 5400 s, and the ok line prints `jobs=N, Xs` so the next value comes from a measured runner. `--require-slow` (CI's non-PR runs, and `scripts/release_local.sh`) turns a slow-gate timeout into FAIL; an ordinary gate's timeout, and a laptop run, keep SKIP. `unstaged_sibling_imports` now follows imports transitively, including those made by `needs` files — the one-level scan is how `check_slices` went INERT in CI; its fixture fails against the old function.
+
+- **Guards that stage the hook harness declare `release_evidence.py` — `scripts/mutations/hook_release_gate.py` and nine
+  other `scripts/mutations/hook_*.py`** (#1428). `release-gate.sh` now runs it, so a staged mutant without it would fail
+  its unmutated baseline and every mutation would read as caught. `lint_self_consistency.py`'s
+  `harness-dependency-undeclared` rule found all ten.
 
 ### 2026-09-28 (release v1.152.0)
 
@@ -3719,6 +3732,15 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   - **Derived, not copied by hand.** The shipped cop is generated from rails-8's §7 by `scripts/derive_tenancy_cop.py`,
     for the cross-plugin reason `mandated_gems.json` has. The doctor gate `tenancy cop derived` compares both sides at
     `HEAD`, and there is a `rebuild_generated.py` entry. `scripts/mutations/derive_tenancy_cop.py` catches 2/2.
+
+- **The hook harness drives the certify layers through `release-gate.sh` — `plugins/rails-flow/scripts/check_hook_gates.py`**
+  (#1428). New fixtures: a schema-2 stamp whose commit carries its passing evidence permits. A HOLE, and a Blocked row
+  with no reason, each deny. A code change riding with the evidence is still denied, and so is a path that only starts
+  like the evidence directory, or merely contains it. A stamp naming evidence outside `qa/manual-tests/` is denied. A
+  non-ASCII evidence name is recognised. An old stamp is grandfathered with its warning, but gets no evidence
+  allowance. So is code renamed into the evidence folder, a file that only starts with the sweep's name, and a
+  committed HOLE whose fix is only staged. An uncommitted stamp is denied, and so is a promotion with only bash, or
+  with python3 and git but no grep or sed, on PATH. 146 → 167 checks.
 
 ### 1.55.0 (release v1.152.0) — 2026-09-28
 
@@ -11151,6 +11173,57 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 - **model-tiers: `sonnet` is Sonnet 5.5 on the Anthropic API from v2.1.284 — `plugins/qa-flow/reference/model-tiers.md`**
   (#1449). This is the same verified per-provider table as rails-flow's; the paragraph now also names Claude
   Platform on AWS (Sonnet 4.6), which it had omitted.
+
+- **Certification requires a first-boot operator walkthrough and a forged-request authorization sweep —
+  `plugins/qa-flow/scripts/release_evidence.py`, `plugins/qa-flow/scripts/mutations/release_evidence.py`,
+  `plugins/qa-flow/hooks/scripts/release-gate.sh`, `plugins/qa-flow/commands/certify.md`,
+  `plugins/qa-flow/agents/qa-reporter.md`, `plugins/qa-flow/README.md`, `plugins/qa-flow/scripts/read_certification.py`,
+  `plugins/qa-flow/scripts/mutations/read_certification.py`** (#1428). A downstream release passed load,
+  DAST, race tests and three browsers, then shipped a root admin who could not create staff, two ways to sign in as
+  root that skipped its second factor, and a role that could demote root. The day-one walkthrough's root row was
+  `Blocked` with no reason and never re-run, and authorization was tested by action, never by target. certify's new
+  Phase 3b makes both layers mandatory:
+  - **The first-boot walkthrough:** `pages.csv` and its screenshots. It fails on a Blocked or Not walked row with no
+    documented reason, a Fail naming no issue, no phone width or no desktop width, or a missing screenshot. It also
+    fails on a second-factor secret committed as TEXT (`otpauth://`, a labelled base32 key, a line of recovery
+    codes, in text files and PNG text chunks). It cannot see pixels, and says so.
+  - **The sweep:** `sweep.csv`. It fails on any HOLE or UI-ONLY row, a GUARDED row naming no guard, a location that
+    is not `file:line`, or no row targeting root.
+
+  The stamp is `"schema": 2` and names both evidence paths, which must sit under `qa/manual-tests/`, with no `..`,
+  and be committed. The **release gate re-judges them** (fail closed), and it lets the stamp's own commit carry that
+  evidence and nothing else. The independent review found that the first draft let a stamp naming `first_boot: "app"`
+  carry any code past the gate, and that `"schema": "2"` as a string was grandfathered with a HOLE sweep; both are
+  refused now. Its second round found three more ways through. A stamp commit that RENAMED code into the evidence
+  folder was permitted; the gate now diffs with `--no-renames`. `sweep.csv.rb` rode along; the sweep file now
+  matches exactly, and only the walkthrough directory matches by prefix. A committed HOLE passed when its fix was
+  only staged; the gate now judges the evidence as committed at dev (`stamp --rev`), extracted with `git archive`,
+  and never follows a symlink. Printed findings also redact any cell value that looks like a secret, so a finding
+  never quotes one (CodeQL had flagged the print; the label itself was never the leak). The third round found a newline
+  inside an evidence path smuggling a second path (`app`) into the gate's line-by-line allowance: control characters
+  are now refused. Its fold-ins: grandfathering is decided from git, by the COMMITTER date of the commit that
+  introduced the stamp at dev, before `GRANDFATHER_BEFORE` (coordinator's ruling, keeping the owner's "never blocks a
+  project mid-release"), so a new stamp that merely omits `schema` is refused. KNOWN LIMIT: a deliberately backdated
+  commit passes for this one release. Evidence is named for the stamp's `version`, and a renamed copy of another
+  release's is refused by git object id. The gate reads the stamp itself as committed at dev (`read_certification.py
+  --stamp`), so an uncommitted stamp no longer permits. With any of python3, git, sed, awk, tr, grep or head missing,
+  it falls back to bash builtins and denies a promotion (tested with a bash-only PATH). The guarantee and its known
+  limit are a `scripts/doctrine_map.py` row, stated in `certify.md`, which becomes a declared doctrine source. The
+  round-3 re-review found last release's evidence, renamed with `git mv` (or re-declared under the old version),
+  still passing, because the copy check only saw evidence still at dev: a record already on `main` (the last
+  published release), by path or by blob, is now refused. KNOWN LIMITS, stated in `certify.md` and the map: a lightly
+  edited copy is not caught, and nor is an unedited copy of an OLDER release whose evidence is no longer in main's tree. The builtins fallback no longer matches raw JSON: it normalises JSON whitespace escapes
+  and matches the words, so `git -C . push`, `git -c k=v push`, an escaped tab and a fully qualified
+  `refs/heads/main` are blocked too. By the owner's decision on #1428, an older
+  stamp is **grandfathered for one release**: it passes with a loud "re-run /qa-flow:certify" warning, and the next
+  release refuses it. The window is one constant, `GRANDFATHER_OLD_STAMPS`. It was checked against a real downstream
+  walkthrough (Retask `first-boot-v101`: 50 rows, 390 and 1280 wide), which passes. That run also exposed a false
+  positive in the recovery-code rule, which matched screenshot names; the rule now needs a digit in each half and a
+  letter somewhere, because the same file's request references (`REQ-2026-000002`) matched too. The detector also
+  reads keys printed in groups of four and codes listed one per line. It does not flag an unlabelled base32 run,
+  which is declined, because it would fire on IDs and hashes. Selftest 83 checks, one asserting no printed finding quotes the secret it found; guard 36 of 36; release-gate
+  guard 6 → 20, including a prefix-versus-contains match, the renamed-code and exact-file cases, and
+  `core.quotePath`, which denied a non-ASCII evidence name. Our own design, decided on the issue; no framework claim.
 
 ### 1.34.0 (release v1.152.0) — 2026-09-28
 

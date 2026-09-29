@@ -475,7 +475,7 @@ is an explicit registry living in the same file as the validators that check it,
 `maintainer_doctor.GATES` and `mutation_check.GUARDS` already use, because a registry and its checker
 in two files drift apart.
 
-Each row is `guarantee`, `advice`, or `gap`, using **[`docs/doctrine/harness-doctrine.md`](docs/doctrine/harness-doctrine.md)**'s
+Each row is `guarantee`, `advice`, or `gap`, using **[`docs/doctrine/harness-doctrine.md`](../../doctrine/harness-doctrine.md)**'s
 existing test (*"if a model ignores this, what happens?"*) rather than new vocabulary. The validators
 are all mechanical — so none is taste wearing a count (#476); the six below are the ones that name a
 defect class, and `validate()` also refuses an unknown kind and a duplicate claim:
@@ -758,5 +758,5 @@ running each with `python3` shadowed by a stub that exits 127:
   `python3` would take the fail-closed guarantee down with it.
 
 Which behaviour a new hook should have is not a matter of taste — classify it before writing it,
-using the guarantee-vs-advice test in **[`docs/doctrine/harness-doctrine.md`](docs/doctrine/harness-doctrine.md)**
+using the guarantee-vs-advice test in **[`docs/doctrine/harness-doctrine.md`](../../doctrine/harness-doctrine.md)**
 (*"if a model ignores this, what happens?"*). Advisory → fail open. Guarantee → fail closed, scoped.

@@ -20,6 +20,7 @@ GUARD = Guard(
            'plugins/rails-flow/scripts/ci_verdict_hint.py',
            'plugins/qa-flow/scripts/read_certification.py',
            'plugins/qa-flow/scripts/push_targets.py',  # release-gate.sh runs it (#1410)
+           'plugins/qa-flow/scripts/release_evidence.py',
            'plugins/rails-flow/scripts/self_consistency.py'),
     mutations=(
         # #1410 / #1470: the hook must hand the RAW command to the classifier, for ANY command that
@@ -57,15 +58,125 @@ GUARD = Guard(
         # #1337: the stamp's own commit invalidates it again, or any delta slips through.
         Mutation(
             "an ancestor stamp is never accepted, so committing the stamp denies its promotion",
-            '        ""|"qa/CERTIFICATION") : ;;',
-            '        "__never__") : ;;',
+            '        [ "$f" = "qa/CERTIFICATION" ] && continue',
+            '        [ "$f" = "__never__" ] && continue',
             "release-gate (#1337): the stamp committed on top of the tested sha still permits",
         ),
         Mutation(
             "any delta after an ancestor stamp is accepted",
-            '        ""|"qa/CERTIFICATION") : ;;',
-            '        *) : ;;',
+            '      if [ -n "$extra" ]; then',
+            '      if false; then',
             "release-gate (#1337): a code change after the tested sha is denied, naming the path",
+        ),
+        # #1428. The evidence check is skipped: a PASS stamp alone unlocks main again.
+        Mutation(
+            "the release-only layers are not checked, so a HOLE still promotes",
+            'if evidence="$(python3 "$ev" stamp --rev "$devsha" 2>"$evtmp")"; then',
+            'if evidence="$(python3 "$ev" stamp --rev "$devsha" 2>"$evtmp")" || true; then',
+            "release-gate (#1428): a HOLE in the sweep denies",
+        ),
+        # The allowance matches ANY path under the evidence's parent, so code rides along unchecked.
+        Mutation(
+            "every changed file counts as evidence",
+            '            (*/) case "$f" in ("$p"*) ok=1 ;; esac ;;',
+            '            (*/) ok=1 ;;',
+            "release-gate (#1428): a code change riding with the evidence is still denied",
+        ),
+        # The trailing slash is what stops first-boot-v1-other matching first-boot-v1.
+        Mutation(
+            "the evidence directory is matched without its trailing slash",
+            '            (*/) case "$f" in ("$p"*) ok=1 ;; esac ;;',
+            '            (*/) case "$f" in ("${p%/}"*) ok=1 ;; esac ;;',
+            "release-gate (#1428): a look-alike of the evidence path is not evidence",
+        ),
+        # ROUND 3 FOLD-IN 3: the degraded-PATH fallback must use builtins only.
+        Mutation(
+            "stdin is read with cat, which a bare PATH does not have",
+            "IFS= read -r -d '' input || true",
+            'input="$(cat 2>/dev/null)"',
+            "with ONLY bash on PATH, a push to main is still blocked",
+        ),
+        Mutation(
+            "the fallback no longer recognises a push to main",
+            '    if [[ $_in =~ ${_b}push${_e} ]] && [[ $_in =~ (^|[^[:alnum:]_/.-]|refs/heads/)(main|master)${_e} ]]; then',
+            "    if false; then",
+            "with ONLY bash on PATH, a push to main is still blocked",
+        ),
+        Mutation(
+            "the fallback fires only when python3 is missing, not grep or sed",
+            "for _t in python3 git sed awk tr grep head; do",
+            "for _t in python3; do",
+            "with python3 and git but NO grep or sed, a push to main is still blocked",
+        ),
+        Mutation(
+            "the fallback's word boundary is dropped, so maintenance reads as main",
+            '    if [[ $_in =~ ${_b}push${_e} ]] && [[ $_in =~ (^|[^[:alnum:]_/.-]|refs/heads/)(main|master)${_e} ]]; then',
+            "    if [[ $_in =~ push ]] && [[ $_in =~ (main|master) ]]; then",
+            "`git push origin maintenance` is allowed",
+        ),
+        Mutation(
+            "JSON whitespace escapes are not normalised, so an escaped tab hides the verb",
+            '    _in="${_in//"$_esc"/ }"',
+            "    :",
+            "'git\\tpush origin main' is still blocked",
+        ),
+        Mutation(
+            "a ref under a path counts as main in the fallback",
+            "[[ $_in =~ (^|[^[:alnum:]_/.-]|refs/heads/)(main|master)${_e} ]]",
+            "[[ $_in =~ (^|[^[:alnum:]_])(main|master)${_e} ]]",
+            "`git push origin feature/main` is allowed",
+        ),
+        Mutation(
+            "a fully qualified refs/heads/main is swallowed by the path-ref exclusion again",
+            "[[ $_in =~ (^|[^[:alnum:]_/.-]|refs/heads/)(main|master)${_e} ]]",
+            "[[ $_in =~ (^|[^[:alnum:]_/.-])(main|master)${_e} ]]",
+            "'git push origin refs/heads/main' is still blocked",
+        ),
+        # ROUND 3 FOLD-IN 4: the stamp is read as committed at dev.
+        Mutation(
+            "the stamp is read from the working tree again",
+            'if ! git show "${devsha}:qa/CERTIFICATION" >"$stamp_tmp" 2>/dev/null; then',
+            'if ! cp qa/CERTIFICATION "$stamp_tmp" 2>/dev/null; then',
+            "an UNCOMMITTED stamp is denied",
+        ),
+        # #1437 review: a contains-match survived every fixture. The allowance is a PREFIX.
+        Mutation(
+            "the evidence allowance matches the path anywhere, not as a prefix",
+            '            (*/) case "$f" in ("$p"*) ok=1 ;; esac ;;',
+            '            (*/) case "$f" in (*"$p"*) ok=1 ;; esac ;;',
+            "release-gate (#1428): a path merely containing the evidence path is not evidence",
+        ),
+        # #1437 review round 2: the sweep FILE matched as a prefix, so sweep.csv.rb rode along.
+        Mutation(
+            "the sweep file matches as a prefix",
+            '            (*) [ "$f" = "$p" ] && ok=1 ;;',
+            '            (*) case "$f" in ("$p"*) ok=1 ;; esac ;;',
+            "release-gate (#1428): a file that only starts with the sweep's name is not evidence",
+        ),
+        Mutation(
+            "rename detection is back, so code moved into the evidence folder is never judged",
+            '      if ! delta="$(git -c core.quotePath=false diff --no-renames --name-only "$full" "$devsha" 2>/dev/null)"; then',
+            '      if ! delta="$(git -c core.quotePath=false diff -M --name-only "$full" "$devsha" 2>/dev/null)"; then',
+            "release-gate (#1428): code renamed into the evidence folder is denied",
+        ),
+        Mutation(
+            "the evidence is judged in the working tree, not as committed at dev",
+            'if evidence="$(python3 "$ev" stamp --rev "$devsha" 2>"$evtmp")"; then',
+            'if evidence="$(python3 "$ev" stamp 2>"$evtmp")"; then',
+            "release-gate (#1428): a committed HOLE denies though the fix is only staged",
+        ),
+        Mutation(
+            "git quotes non-ASCII names again, so a legitimate evidence commit is denied",
+            '      if ! delta="$(git -c core.quotePath=false diff --no-renames --name-only "$full" "$devsha" 2>/dev/null)"; then',
+            '      if ! delta="$(git diff --no-renames --name-only "$full" "$devsha" 2>/dev/null)"; then',
+            "release-gate (#1428): a non-ASCII evidence file name is recognised as evidence",
+        ),
+        # The paths come from stdout; losing them denies the stamp's own evidence commit.
+        Mutation(
+            "the evidence paths are discarded, so the stamp's evidence commit is denied",
+            '$evidence\nEVIDENCE',
+            '\nEVIDENCE',
+            "release-gate (#1428): a schema-2 stamp whose commit carries its passing evidence permits",
         ),
         Mutation(
             "the ancestry check is skipped, so a stamp from another branch is accepted",
@@ -77,7 +188,7 @@ GUARD = Guard(
             "the dev sha is read with plain rev-parse again, so a missing origin/dev poisons it",
             'devsha="$(git rev-parse --verify -q origin/dev 2>/dev/null || git rev-parse --verify -q dev 2>/dev/null || true)"',
             'devsha="$(git rev-parse origin/dev 2>/dev/null || git rev-parse dev 2>/dev/null || true)"',
-            "release-gate (#1337): CONTROL: an uncommitted stamp for dev's tip permits",
+            "release-gate (#1337): the stamp committed on top of the tested sha still permits",
         ),
         Mutation(
             # WITHOUT the carve-out the gate denies every promotion of its own source repo. That is
