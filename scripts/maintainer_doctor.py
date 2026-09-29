@@ -319,6 +319,14 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
      ("python3", "scripts/derive_mandated_gems.py", "--check")),
     ("mandated gems derived selftest",
      ("python3", "scripts/derive_mandated_gems.py", "--selftest")),
+    # #1361. The tenancy cop rails-flow installs is DERIVED from rails-8's multi-tenancy.md §7 and
+    # committed beside its checker -- the same cross-plugin reason as the mandated gems above.
+    ("tenancy cop derived",
+     ("python3", "scripts/derive_tenancy_cop.py", "--check")),
+    ("tenancy cop derived selftest",
+     ("python3", "scripts/derive_tenancy_cop.py", "--selftest")),
+    ("rails-flow tenancy cop",
+     ("python3", "plugins/rails-flow/scripts/check_tenancy_cop.py", "--selftest")),
     # #762's neighbour. The curated-doc drift signal is ADVISORY -- it blocks nothing -- and that is
     # exactly why its silent-false-clean survived: nothing ran it. The selftest drives the real hook
     # under a working, absent, broken and shasum-only hasher.
@@ -414,6 +422,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("design-flow setup cross-check selftest", ("python3", "plugins/design-flow/scripts/setup_doctrine_crosscheck.py", "--selftest")),
     ("design-flow rendered conformance", ("python3", "plugins/design-flow/scripts/rendered_conformance.py", "--selftest")),
     ("rails-flow findings records", ("python3", "plugins/rails-flow/scripts/findings.py", "--selftest")),
+    # #1391. Tables are master-detail with no horizontal scroll: a scroller around a table, a fixed
+    # min-width, and a table with no details target. Driven against a real app on its first run.
+    ("design-flow table layout", ("python3", "plugins/design-flow/scripts/check_table_layout.py", "--selftest")),
     ("design-flow LLM-tell detector", ("python3", "plugins/design-flow/scripts/llm_tell_detector.py", "--selftest")),
     # #157 criterion 6, and NOT redundant with the selftest above: the selftest proves each rule
     # fires and stays silent on synthetic fixtures, while this runs the whole rule set against the

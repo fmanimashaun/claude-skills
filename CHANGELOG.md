@@ -3556,6 +3556,59 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   - **Tests.** 88 selftest checks run, 67 of them new, and 3 end-to-end hook fixtures. Mutations: 22 new, 31 of
     31 caught.
 
+- **`/rails-flow:setup-flow` installs the tenancy cop, and `tenancy-cop` asks RuboCop and the app whether it holds — `plugins/rails-flow/scripts/check_tenancy_cop.py`,
+  `plugins/rails-flow/scaffold/tenancy/scoped_lookup.rb`, `plugins/rails-flow/checks.json`,
+  `plugins/rails-flow/commands/setup-flow.md`** (#1361). Maintainer decision on [#1361](https://github.com/fmanimashaun/claude-skills/issues/1361#issuecomment-5857528252). setup-flow asks whether the app
+  is multi-tenant, records `.rails-flow/tenancy.json` (`{"multi_tenant": false}` means the check is not applicable and
+  setup-flow does not ask again), and copies the cop.
+  - **RuboCop, Ruby and the app are the authorities, never a copy of their rules.** Independent review BLOCKED three
+    times, then passed CLEAN in round 4, whose advisories are fixed here.
+    - The first draft re-derived RuboCop's config in Python. A department disable, `Enabled: pending`, or an
+      `Exclude` over the controllers each left the cop off while the check said clean.
+    - The second draft probed one stand-in path. A non-recursive `Include`, a nested `app/controllers/api/.rubocop.yml`,
+      or a nested `SafeAutoCorrect: true` left real controllers unchecked, or let `rubocop -a` rewrite them silently.
+    - The third probed synthetic source, so a controller's own file-wide `# rubocop:disable Tenancy/ScopedLookup`
+      (or `disable all`) was invisible, and the check said "on in every controller".
+  - **Now:**
+    - **Every real `app/controllers/**/*.rb` path is probed** with `rubocop --force-exclusion --autocorrect --stdin
+      <path>`. Each tenant-owned key must draw an offense there, and it must come back not corrected. A controller left
+      unchecked on purpose is declared in `unchecked_controllers` with a reason (the admin plane §7 excludes).
+    - **Each key's table comes from the app** (`Key.constantize.table_name` via `rails runner`), so `Invocie` is no
+      model and `Billing::Invoice` counts only for its own table.
+    - **Silenced lines come from RuboCop:** the real controllers are linted with and without
+      `--ignore-disable-comments`, and every silenced line must be §7's same-line
+      `# rubocop:disable Tenancy/ScopedLookup -- <reason>` (or `rubocop:todo`). File-wide and range disables are
+      refused, as are a same-line list containing `all` and a "reason" that is only `#`. The line's comments come
+      from Ruby's own parser (Prism), so directive text inside a string cannot fake a reason.
+    - **`unchecked_controllers` globs are matched by Ruby's own `File.fnmatch(FNM_PATHNAME | FNM_EXTGLOB)`**,
+      RuboCop's semantics, braces included. An excuse that matches nothing, or only excuses checked controllers,
+      is reported.
+    - **`db/structure.sql` is read** including partitioned, `UNLOGGED` and `IF NOT EXISTS` tables.
+    - **Output is capped** at ten paths.
+  - **It refuses:**
+    - a missing or edited cop;
+    - a controller where a key goes unflagged or would be autocorrected;
+    - an unknown key, a blank `TenantScope`, or an association that is not an identifier;
+    - a key that is no loadable model, or whose table lacks the tenant key;
+    - an unreached tenant-keyed table, or a foreign key no table carries;
+    - a RuboCop or app that will not start.
+  - **Tests:**
+    - 47 selftest assertions, whose directive and glob cases run real Prism and `File.fnmatch` on real files;
+      `plugins/rails-flow/scripts/mutations/check_tenancy_cop.py` catches 24/24, each by its named fixture.
+    - Driven on a real Rails 8.1.4 app with rubocop 1.91.0, using each scenario the reviews reproduced:
+      - non-recursive `Include`, a nested disable, and an undeclared `api/` `Exclude` each exit 1 and name the controller;
+      - a nested `SafeAutoCorrect: true` exits 1, and a real `rubocop -a` did rewrite that file;
+      - `Invocie` exits 1, and an undeclared admin plane exits 1;
+      - a file-wide disable and a range disable each exit 1 at their line, and the reasoned same-line disable
+        passes; a dead excuse exits 1;
+      - round 4's tricks, a fake reason inside a string, `disable all, Tenancy/ScopedLookup -- r` and `-- # x`,
+        each exit 1; a bare `a**` does not excuse `api/`; `{admin,ops}` does excuse `admin/`;
+      - the declared variants, and a cop configured only in an inherited file, exit 0.
+    - In every case the checker matched what RuboCop did to the real controller.
+  - **Derived, not copied by hand.** The shipped cop is generated from rails-8's §7 by `scripts/derive_tenancy_cop.py`,
+    for the cross-plugin reason `mandated_gems.json` has. The doctor gate `tenancy cop derived` compares both sides at
+    `HEAD`, and there is a `rebuild_generated.py` entry. `scripts/mutations/derive_tenancy_cop.py` catches 2/2.
+
 ### 1.55.0 (release v1.152.0) — 2026-09-28
 
 - **`/rails-flow:slice` breaks a spec, brief or issue into dependency-ordered vertical slices and files them —
@@ -13094,6 +13147,32 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+*Version number assigned at promotion.*
+
+- **A table that scrolls sideways, forces a width, or opens no details card is refused — `plugins/design-flow/scripts/check_table_layout.py`,
+  `plugins/design-flow/scripts/mutations/check_table_layout.py`, `plugins/design-flow/checks.json`,
+  `plugins/design-flow/commands/mobile.md`, `plugins/design-flow/README.md`, `scripts/maintainer_doctor.py`** (#1391).
+  Four rules, each a construct: a `<table>` nested inside an x-scroller, a fixed minimum width (a `min-w-*` class, an inline `min-width` including an interpolated one, or
+  `min_width:` on a table component's render call however it wraps), and a table whose directory has no row opening
+  a record into the modal frame (the directory, because an index's row link lives in its partial). A non-index table
+  declares `table-without-details: <why>`; mailer views are not judged. The fourth refuses a tab strip that scrolls:
+  `role="tablist"`, or a scroller in a file named for tabs, since apps build strips as link lists. **A scroller is
+  what the app defines**: Tailwind's overflow classes plus any `@utility` in the app's own CSS whose body scrolls on
+  x. Driven against the app behind the issue: 221 files, 25 findings — 23 `table-min-width` (every one of its 22
+  `min_width:` call sites plus the interpolated style inside its table component), 1 `table-scroll-wrapper` (that
+  component's own `scroll-x` wrapper, which every table there goes through) and 1 `tablist-scroll` (its settings
+  strip). Real runs caught four defects in the check itself — a single-line render match that found 3 of the 22,
+  two mailer layouts reported as missing a details card, the app's own `scroll-x` read as no scroller at all, and a
+  substring match that called `table_component` a tab strip — and each now has a fixture. Independent review then
+  found a fifth — a "New" button opening the modal satisfied `table-no-details` while every row still linked to a
+  show page — so a modal link that is a CRUD action (`new_*`/`edit_*`, `/new`, `/edit`, a delete method) no longer
+  counts; the same review added a tablist nested in a scroller and `min-w-*` on `th`/`td`/`col`. Re-review found our
+  own doctrine's delete-confirmation link (`crud-modal-pattern.md`, `delete_confirmation_invoice_path` into the
+  modal) still counting as a details target, so `delete_*` helpers and `/delete` joined the CRUD actions, with that
+  exact line as a fixture. Sixteen mutations, all caught. `/design-flow:mobile` step 5 now scaffolds designed summary cards.
+
 ### 1.44.2 (release v1.151.0) — 2026-09-26
 
 - **design-flow agents can load the design-system doctrine they cite — `plugins/design-flow/agents/ui-composer.md`,
@@ -15986,6 +16065,89 @@ boot/validation path — with a bullet each so the promotion could close them se
   (token/logo/icon/brand-pack enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
+
+### Unreleased
+
+*Version number assigned at promotion.*
+
+- **Tables are master-detail with no horizontal scroll, and no card touches the viewport — `skills/design-system/references/components.md`,
+  `skills/design-system/references/page-anatomies.md`, `skills/design-system/references/mobile-reference-implementation.md`,
+  `skills/design-system/references/component-implementations.md`, `skills/design-system/references/foundations-tokens.md`,
+  `skills/design-system/references/responsive.md`, `skills/design-system/references/mobile.md`,
+  `skills/design-system/references/layout-primitives.md`, `skills/design-system/references/components-commerce.md`,
+  `skills/design-system/SKILL.md`, `skills/rails-8/references/models.md`, `dist/design-system.skill`, `dist/rails-8.skill`**
+  (#1391). The skill told agents to wrap a table in `overflow-x-auto`, pin its identifier columns, link the id to a
+  show page and dump every column into a phone card; an app built exactly that and the owner rejected it. *Table
+  (CRUD)* is now the one home: no horizontal scroll at any width, a six-column budget, rows as summaries of at most
+  five fields whose name opens a new **Details card** (header, at a glance, sectioned fields, related, activity), and
+  designed summary cards below 768px. The Data table anatomy, mobile §5, `responsive.md`, `mobile.md` and `rails-8`
+  `models.md` now link to it rather than restate it. A new **Viewport inset** entry, the `--inset-edge` tokens and an
+  `inset-viewport` utility keep every card, modal, drawer and sheet at least 16px plus the safe area (24px at 768px)
+  from the edge, and `Ui::Modal`'s placements now float inside that inset rather than pinning to an edge. It stops
+  using `imposter`, whose `max-inline-size: 100%` resolves against the viewport (fixed) or the wrapper's padding box
+  (absolute) — doctrine-verifier CONFIRMED against CSS 2.1 §10.1 and CSS Positioned Layout 3 §containing block. *Tabs*
+  (the maintainer's scope addition on #1391) reverses "the tablist scrolls": at most four tabs in one row that
+  never wraps or scrolls, regrouped rather than overflowed, and a single labelled picker below 768px — and
+  `Ui::Tabs`'s implementation drops `overflow-x-auto` (and `cluster`, which wraps) and renders that picker, with
+  its contract with `tabs#select` written out. From independent review: the inset is the floor **plus** the safe
+  area, not the larger of the two; `shell` now carries that gutter; the Modal panel is `max-h-full` with a
+  scrolling body so a short viewport keeps its top inset; and a table row is made clickable by a `row-link`
+  Stimulus controller rather than a stretched overlay on a `<tr>`, which this kit has not verified; it ignores the
+  row's own controls (including `summary` and `[role=button]`) and the end of a text-selection drag. A Carousel's
+  thumbnail picker is out of the Tabs entry's scope (it picks a slide, it does not navigate) but no longer wraps.
+  The **Permissions matrix** is exempt from master-detail — its cells are switches toggled in place — splits into one
+  section per module on a phone, and keeps no horizontal scroll and the inset
+  ([maintainer decision](https://github.com/fmanimashaun/claude-skills/issues/1391#issuecomment-5862494188)). The one
+  external claim proposed for the rewrite, that screen readers do not reliably announce CSS `content:` labels, came
+  back **REFUTED** from doctrine-verifier (accname 1.2 §4.3.2 includes generated content; WCAG F87 is marked
+  obsolete), so it was dropped and only the rule "labels are real elements" remains. Our own design, no upstream:
+  maintainer decision recorded on #1391.
+
+- **A cop for the unscoped tenant query, and what it cannot see — `skills/rails-8/references/multi-tenancy.md`,
+  `skills/quality-pass/references/worked-example.md`, `dist/rails-8.skill`, `dist/quality-pass.skill`** (#1361). §7
+  said no tool enforced tenant scoping. It now ships `Tenancy/ScopedLookup`, a project-local cop that flags every Active
+  Record query on a tenant-owned model's constant in a controller, with its `.rubocop.yml` block and a 12-example spec.
+  The query list is Rails' own 113 `ActiveRecord::Querying::QUERYING_METHODS` plus `unscoped`, `find_by_sql` and
+  `count_by_sql`, and `&.` calls are checked too. The spec's first example fails the project's suite if Rails adds a
+  querying method. §7 says plainly what the cop cannot see: a variable or method returning the class, a dynamic
+  namespace, dynamic finders, models and jobs, and SQL sent to the connection.
+  - **Verified** by `doctrine-verifier` and by running it, on rubocop 1.91.0, rubocop-ast 1.50.0,
+    rubocop-rails-omakase 1.1.0 and activerecord 8.0.2 / 8.1.2:
+    - `QUERYING_METHODS` holds the same 113 in both Rails versions (`delegate(*QUERYING_METHODS, to: :all)`,
+      `querying.rb:24`), and the cop's list is an exact 116-method match to it plus the three additions.
+    - `unscoped` is `Scoping::Default`; `find_by_sql` and `count_by_sql` are `Querying`.
+    - Dynamic finders come from `DynamicMatchers#method_missing`, so they are named as a limit, not configured.
+    - `RESTRICT_ON_SEND` gates `on_csend` too (`commissioner.rb`, `RESTRICTED_CALLBACKS`).
+    - `require:` with a local path is the supported loader (*"there are no plans to remove it in the future"*,
+      [RuboCop: Plugins](https://docs.rubocop.org/rubocop/plugins.html)).
+    - `SafeAutoCorrect: false` means `-a` reports and `-A` rewrites.
+    - The inline `rubocop:disable … -- reason` form works.
+  - **Refuted, and shipped as the correction:** RuboCop does *not* warn about a local cop's unknown keys, and omakase
+    does *not* use `DisabledByDefault`.
+  - Independent review BLOCKED the first draft, which covered six methods. The widened list closes the
+    `Invoice.includes(:lines).find`, `first`, `exists?`, `find_each` and `&.` gaps it reproduced.
+  - The shared-shape counts in the quality-pass worked example move with the new scripts. One more copy does not
+    change the recorded decision not to extract.
+  - Where the cop lives is our own design, per the maintainer decision on [#1361](https://github.com/fmanimashaun/claude-skills/issues/1361#issuecomment-5857528252).
+
+- **Style §1 and §5 are advice: neither can be enforced as written, because of their exceptions — `skills/rails-8/references/style.md`,
+  `dist/rails-8.skill`** (#1363). The issue asked whether the two lint-shaped sections of the style doctrine could be
+  enforced by a cop. Neither can be enforced as written, because of its exceptions, and the doctrine now says so
+  with the measurement:
+  - **§5's "a project only has to flip `Enabled: true`" was wrong.** `Layout/IndentationConsistency` enforces only
+    consistency: it flags mixed indentation inside a visibility section and passes a uniformly unindented `private`
+    section. Three cops together do enforce §5's main shape exactly: `IndentationWidth` (which omakase disables),
+    `IndentationConsistency(indented_internal_methods)` and `EmptyLinesAroundAccessModifier(only_before)`. But they
+    flag the private-only module §5 names as its exception, and no option expresses that exception. So §5 is advice
+    by default, and §5 now names the three-cop setup, with its per-file carve-out, for a project that wants it.
+  - **§1:** no stock cop prefers expanded conditionals, `Style/GuardClause` has no `EnforcedStyle` to invert, and the
+    rule's exceptions are judgement.
+  - **Verified:** `doctrine-verifier` CONFIRMED all five claims by running each cop on the section's own shapes, on
+    rubocop 1.91.0, rubocop-ast 1.50.0 and rubocop-rails-omakase 1.1.0. An independent review then found the first
+    draft misread `only_before`. Flagging a blank line after `private` in an ordinary class is correct enforcement
+    of §5, not a failure. It reproduced the working three-cop combination, and this entry and §5 were corrected.
+  - Both sections become `advice` rows in `docs/architecture/doctrine-map.html` (`scripts/doctrine_map.py`), each
+    with its measured reason. The outcome is the one the issue proposed for "no", approved on [#1363](https://github.com/fmanimashaun/claude-skills/issues/1363).
 
 ### 1.69.0 (release v1.152.0) — 2026-09-28
 

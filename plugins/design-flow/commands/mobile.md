@@ -1,5 +1,5 @@
 ---
-description: Scaffold Hotwire Native parity (Phase 2) into a Rails 8 + Hotwire app — native-app detection + body flags, JSON path configuration, bridge components (button/menu/tab-bar), safe-area + min-h-touch wiring, and table->card-stack. Reuses the existing design system; the native shells stay in their own repos.
+description: Scaffold Hotwire Native parity (Phase 2) into a Rails 8 + Hotwire app — native-app detection + body flags, JSON path configuration, bridge components (button/menu/tab-bar), safe-area + min-h-touch wiring, and table->summary cards. Reuses the existing design system; the native shells stay in their own repos.
 argument-hint: "[surface: ios | android | both]"
 ---
 
@@ -36,8 +36,9 @@ both`; default `both`). Idempotent; marker-guarded; stage only files you author.
    enhancement** (the web control works without the shell). Plus the native tab-bar config.
 4. **Safe-area + touch** — apply `pt-safe`/`pb-safe`/… to fixed chrome and `min-h-touch` (44px)
    to every interactive control.
-5. **Table → card-stack** — convert dense tables to the `hidden md:table` + `md:hidden` card
-   list recipe (thumb-friendly; no horizontal scroll on phones).
+5. **Table → summary cards** — below 768px render each row as a designed summary card (name,
+   reference, status; 2–3 facts; one action and a chevron), per the design-system skill's
+   `mobile-reference-implementation.md` §5. No horizontal scroll at any width.
 
 ## Guardrails
 

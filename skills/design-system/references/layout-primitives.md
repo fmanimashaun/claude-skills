@@ -81,7 +81,9 @@ as components with slots + args that emit the custom properties.
   equal-width items between one row and a full stack **all at once** at a container-width
   threshold: children `flex-grow: 1; flex-basis: calc((var(--threshold) - 100%) * 999)`; add a
   quantity cap so more than `limit` items always stack. Use for feature columns / pricing tiers.
-- **Imposter** (`Layout::Imposter` / used by Modal/Tooltip) — center an element out of flow:
+- **Imposter** (`Layout::Imposter` / used by Tooltip) — center an element out of flow. A Modal does not
+  use it: its `100%` cap lets a wide panel reach the viewport edge, so a Modal centres inside its
+  `inset-viewport` wrapper instead (components.md → Viewport inset, #1391):
   `position: absolute` (or `fixed`), `inset: 50%`, `translate: -50% -50%`, `max-block/inline-size:
   100%`, `overflow: auto`. Pair with the dismissable-layer + focus-trap Stimulus mixins.
 - **Container** (`Layout::Container`, args `name`) — sets `container-type: inline-size`
