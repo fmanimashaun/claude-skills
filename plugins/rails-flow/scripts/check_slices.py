@@ -89,10 +89,17 @@ def parse(text: str) -> tuple[list[Slice], list[int]]:
     orphans: list[int] = []
     current: Slice | None = None
     fence: str | None = None     # the info string of the open fence, "" for a plain one
+    run = ""                     # the backtick or tilde run that opened it
     for no, raw in enumerate(text.splitlines(), start=1):
-        f = re.match(r"^[ \t]*```[ \t]*(\w*)", raw)
+        # CommonMark fences (#1435), read exactly as check_issue_ready.py reads a filed body: three or
+        # more backticks or tildes; only the SAME character, at least as long, closes. A shorter or
+        # other-character run inside is content -- a ```` fence can show a ``` block.
+        f = re.match(r"^[ \t]*(`{3,}|~{3,})[ \t]*(\w*)", raw)
         if f:
-            fence = None if fence is not None else f.group(1)
+            if fence is None:
+                fence, run = f.group(2), f.group(1)
+            elif f.group(1).startswith(run):
+                fence, run = None, ""
         m = SLICE_RE.match(raw) if fence is None else None
         if m:
             current = Slice(m.group(1), m.group(2), no)
@@ -349,6 +356,16 @@ def selftest() -> int:  # noqa: PLR0915 -- a fixture list; each firing case sits
                    parse(deps)[0][0].issues == ["#93"], parse(deps)[0][0].issues)
         check_that("CONTROL: a bare depends-on line is an edge",
                    parse("## S1 — First\n\ndepends-on: #93\n")[0][0].issues == ["#93"])
+        # #1435: CommonMark fences -- tildes, and a longer fence holding a shorter one.
+        tilde = "## S1 — First\n\n~~~\ndepends-on: S9\n~~~\n"
+        check_that("a depends-on inside a ~~~ fence is not an edge", parse(tilde)[0][0].slices == [],
+                   parse(tilde)[0][0].slices)
+        nested = "## S1 — First\n\n````\n```\ndepends-on: S9\n```\n````\n"
+        check_that("a ``` inside a ```` fence does not close it", parse(nested)[0][0].slices == [],
+                   parse(nested)[0][0].slices)
+        after = "## S1 — First\n\n~~~\nx\n~~~\ndepends-on: #93\n"
+        check_that("CONTROL: a depends-on after a closed ~~~ fence is an edge", parse(after)[0][0].issues == ["#93"],
+                   parse(after)[0][0].issues)
         # Order follows the edges, not the numbering.
         sl2, _ = check(plan(_slice(1, deps="depends-on: S3"), _slice(2), _slice(3)))
         check_that("a slice numbered first but blocked by a later one is filed after it",

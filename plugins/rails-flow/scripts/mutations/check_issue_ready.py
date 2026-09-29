@@ -7,6 +7,19 @@ GUARD = Guard(
     subject="scripts/check_issue_ready.py",
     selftest="scripts/check_issue_ready.py",
     mutations=(
+        # #1435: CommonMark fences, as check_slices.py reads them.
+        Mutation(
+            "only ``` fences are stripped, so a strict line inside ~~~ becomes an edge",
+            '_ANY_FENCE = re.compile(r"^[ \\t]*(`{3,}|~{3,})([^\\n]*)\\r?$\\n(.*?)^[ \\t]*\\1", re.M | re.S)',
+            '_ANY_FENCE = re.compile(r"^[ \\t]*(`{3})([^\\n]*)\\r?$\\n(.*?)^[ \\t]*\\1", re.M | re.S)',
+            "a strict line inside a ~~~ fence is a sample, not an edge",
+        ),
+        Mutation(
+            "the closing run need not match the opening one, so ``` closes a ```` fence",
+            '_ANY_FENCE = re.compile(r"^[ \\t]*(`{3,}|~{3,})([^\\n]*)\\r?$\\n(.*?)^[ \\t]*\\1", re.M | re.S)',
+            '_ANY_FENCE = re.compile(r"^[ \\t]*(`{3,}|~{3,})([^\\n]*)\\r?$\\n(.*?)^[ \\t]*(?:```|~~~)", re.M | re.S)',
+            "a ``` inside a ```` fence does not close it",
+        ),
         # #849 part 1: the computed queue. Each of these is a way the order stops being computed.
         Mutation(
             "priority stops ordering the queue",

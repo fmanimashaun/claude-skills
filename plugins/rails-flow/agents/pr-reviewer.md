@@ -79,11 +79,22 @@ reviews of #1387). A throwaway worktree gives the gate the PR's files, records a
 ```bash
 head="$(gh pr view <n> --json headRefOid -q .headRefOid)"
 git fetch -q origin "pull/<n>/head"
+if [ "$(git rev-parse FETCH_HEAD)" != "$head" ]; then
+  echo "the PR moved between the two reads (force-push?): re-run this block" >&2
+  exit 1
+fi
 rev="$(mktemp -d)"
 git worktree add -q --detach "$rev" "$head"
+trap 'git worktree remove --force "$rev"' EXIT
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_mockup_gate.py" --root "$rev" --base "origin/<base>"
-git worktree remove --force "$rev"
+rc=$?
+echo "mock-up gate exit: $rc"
 ```
+
+Read the gate's verdict from `rc`, captured before anything else runs: the `trap` removes the
+worktree even when the gate fails, and it runs after `rc` is set, so cleanup can no longer
+overwrite the exit status (#1435). The SHA check refuses a PR that was force-pushed between
+`gh pr view` and the fetch, which would otherwise gate a head nobody asked about.
 
 Exit 0 with "no
 user-visible change", or with the gate declared off, ends this section. Otherwise the PR is BLOCKED

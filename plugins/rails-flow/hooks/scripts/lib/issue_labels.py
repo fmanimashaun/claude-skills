@@ -106,6 +106,9 @@ def issue_creates(cmd: str) -> list[tuple[list[str], str | None, str | None]]:
     except ValueError:
         return [(["__unparseable__"], None, None)]
     cmd = cmd.replace("\\\n", "").replace("\n", " ; ")   # a backslash-newline JOINS: `cre\\<nl>ate`
+    # The followed cd shape is checked on the RAW text too (#1440): shlex drops quotes, so a quoted
+    # `'&&'` would otherwise read as the separator. The operand may itself be quoted.
+    raw_cd_shape = bool(re.match(r"""\s*cd\s+('[^']*'|"[^"]*"|[^\s'"&;|()]+)\s*&&""", cmd))
     try:
         lexer = shlex.shlex(cmd, posix=True, punctuation_chars=";&|()")
         lexer.whitespace_split = True
@@ -134,8 +137,9 @@ def issue_creates(cmd: str) -> list[tuple[list[str], str | None, str | None]]:
                 name, _, value = words.pop(0).partition("=")
                 env[name] = value
             for i in range(len(words) - 2):
-                if words[i] == "gh" and words[i + 1] == "issue" and words[i + 2] == "create":
-                    cd = _cd_in_force(items[:start])
+                # Any path to gh is gh (`/usr/bin/gh issue create`, #1423).
+                if os.path.basename(words[i]) == "gh" and words[i + 1] == "issue" and words[i + 2] == "create":
+                    cd = _cd_in_force(items[:start]) if raw_cd_shape else None
                     # After a followed cd, the create must BE the segment -- no `env -C`, no
                     # `command`, no GIT_DIR=: each sends the create somewhere the cd did not.
                     if cd is not None and (i != 0 or set(env) - {"GH_REPO"}):
@@ -154,11 +158,66 @@ def _cd_in_force(prefix: list[str]) -> str | None:
     Anything else is None: judged in the session's directory, which is what the hook did before
     #1400 and is the one answer that cannot leak (see `verdict`).
     """
-    if len(prefix) != 3 or prefix[0] != "cd" or prefix[2] != "&&":
+    # That the first word IS `cd`, with an unquoted `&&` after its operand, is checked on the raw text
+    # (`raw_cd_shape`), which sees quotes; here only the token shape of the prefix remains.
+    if len(prefix) != 3 or prefix[2] != "&&":
         return None
     # A `-`, `$VAR` or backtick operand names no directory the text can see, so target_root finds
     # nothing there and the session's rules apply -- no special case needed.
     return prefix[1]
+
+
+CREATE_TEXT = re.compile(r"(?:^|[\s`(;&|])(?:\S*/)?gh\s+issue\s+create\b")
+SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
+
+
+def hidden_create(cmd: str) -> str | None:
+    """A `gh issue create` the parser cannot label-check, named by its shape, or None (#1423).
+
+    Owner decision (#1423): refuse, and say "run it directly". A create inside a command STRING runs
+    as a create, but its labels are one quoted token here: `sh -c '…'`, `eval '…'`, backticks and
+    `$( … )`. A plain mention -- `echo "gh issue create"`, a grep for it -- is text, not a command,
+    and stays allowed: only a shell, `eval`, or a substitution EXECUTES the string.
+    """
+    try:
+        body = strip_heredocs(cmd)
+    except ValueError:
+        return None                  # the caller already refuses an unparseable command
+    # Backticks PAIR: the text between the 1st and 2nd is a substitution, the 2nd and 3rd is not.
+    # An unclosed one runs to the end of the command.
+    ticks = body.split("`")
+    if any(CREATE_TEXT.search(" " + span) for span in ticks[1::2]):
+        return "backticks"
+    # `$( … )` to its OWN closing parenthesis, counted, so a create after it is not inside it.
+    for m in re.finditer(r"\$\(", body):
+        depth, j = 1, m.end()
+        while j < len(body) and depth:
+            depth += {"(": 1, ")": -1}.get(body[j], 0)
+            j += 1
+        if CREATE_TEXT.search(" " + body[m.end():j - (0 if depth else 1)]):
+            return "a `$( … )` substitution"
+    try:
+        lexer = shlex.shlex(body.replace("\n", " ; "), posix=True, punctuation_chars=";&|()")
+        lexer.whitespace_split = True
+        tokens = list(lexer)
+    except ValueError:
+        return None
+    seg: list[str] = []
+    for tok in tokens + [";"]:
+        if tok and set(tok) <= set(";&|()"):
+            words = [w for w in seg if not ("=" in w and w.split("=", 1)[0].isidentifier())]
+            head = os.path.basename(words[0]) if words else ""
+            rest = " ".join(words[1:])
+            # `-c` may be bundled with other short flags: `bash -lc '…'`.
+            runs_string = any(w.startswith("-") and not w.startswith("--") and "c" in w for w in words[1:])
+            if head in SHELLS and runs_string and CREATE_TEXT.search(rest):
+                return f"`{head} -c`"
+            if head == "eval" and CREATE_TEXT.search(rest):
+                return "`eval`"
+            seg = []
+        else:
+            seg.append(tok)
+    return None
 
 
 def target_root(cd: str | None, root: Path) -> tuple[Path | None, str]:
@@ -250,6 +309,10 @@ def matches(label: str, pattern: str) -> bool:
 
 
 def verdict(cmd: str, root: Path) -> tuple[bool, str]:
+    shape = hidden_create(cmd)
+    if shape:
+        return False, (f"a `gh issue create` inside {shape} cannot be label-checked (its labels are one "
+                       "quoted string here). Run it directly, with its --label flags (#1423).")
     creates = issue_creates(cmd)
     if not creates:
         return True, ""
@@ -541,6 +604,27 @@ def selftest() -> int:
                             ("popd", f"popd; {full}"), ("grep cd", f"grep -rn cd docs; {full}")):
             check(f"CONTROL: `{name}` before a fully labelled create is allowed, as on dev",
                   verdict(shape, s)[0], verdict(shape, s)[1])
+        # ---- #1440: a QUOTED `&&` is an argument, not the separator ----------------------------
+        ok, why = verdict(f"cd {r} '&&' {rt}", s)
+        check("a quoted '&&' does not make the followed cd shape", not ok and "comp:*" in why, why)
+        check("CONTROL: a quoted cd OPERAND still makes it", verdict(f"cd '{r}' && {rt}", s)[0],
+              verdict(f"cd '{r}' && {rt}", s)[1])
+
+        # ---- #1423: a create the parser cannot label-check is refused, named -----------------------
+        # `bare` is undeclared, so ONE label passes a create it can see: a refusal here is the shape.
+        lab = "gh issue create -t X --label anything"
+        for shape, cmd in (("`sh -c`", f"sh -c '{lab}'"), ("`bash -c`", f'bash -lc "{lab}"'),
+                           ("`eval`", f"eval '{lab}'"), ("backticks", f"x=`{lab}`"),
+                           ("a `$( … )` substitution", f"y=$({lab})")):
+            ok, why = verdict(cmd, bare)
+            check(f"a create inside {shape} is refused and named", not ok and shape in why and "directly" in why, why)
+        for name, cmd in (("echo of the text", 'echo "gh issue create"'), ("grep for the text", "grep -rn 'gh issue create' docs"),
+                          ("a backtick BEFORE the create", f"x=`date` && {lab}"), ("$( ) BEFORE the create", f"echo $(date) && {lab}")):
+            check(f"CONTROL: {name} is not a hidden create", verdict(cmd, bare)[0], verdict(cmd, bare)[1])
+        ok, why = verdict("/usr/bin/gh issue create -t X", bare)
+        check("a path to gh is gh: its missing label is refused", not ok and "no --label" in why, why)
+        check("CONTROL: ...and a labelled one passes", verdict("/usr/bin/gh issue create -t X --label a", bare)[0])
+
         (r / CONFIG).write_text("{not json", encoding="utf-8")
         check("an unreadable declaration refuses rather than allowing",
               not verdict("gh issue create -t X --label feature", r)[0])
