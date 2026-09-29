@@ -874,8 +874,10 @@ def timeout_fixtures() -> None:
     # THE MECHANISM OF THE 30-MINUTE HANG: a stub the timeout did not kill keeps the output pipe open,
     # so reading the hook's output waits for the stub to exit on its own. Killing the whole group
     # returns at once; anything less waits out the 29s sleep.
+    # 3s, not 10: the group kill returns in ~0.2s, while anything that leaves a stub alive waits out
+    # the 5s bound on the read after the kill -- so this still tells the two apart.
     check("...and returns promptly, because nothing it started still holds the output pipe",
-          took < 10, f"took {took:.1f}s")
+          took < 3, f"took {took:.1f}s")
     left = _run(["pgrep", "-f", marker], capture_output=True, text=True).stdout.split()
     check("...and the timeout kills the hook's whole process group, leaving no orphaned stub",
           left == [], f"{len(left)} process(es) left: {left}")
@@ -889,6 +891,8 @@ def timeout_fixtures() -> None:
     os.environ["HOOK_GATES_TIMEOUT"] = "0.2"
     try:
         _run([sys.executable, "-c", "import time; time.sleep(3)"], capture_output=True, text=True)
+    except subprocess.TimeoutExpired:
+        pass                         # a crash here is the defect the check below names
     finally:
         if saved is None:
             os.environ.pop("HOOK_GATES_TIMEOUT", None)

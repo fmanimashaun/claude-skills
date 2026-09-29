@@ -46,7 +46,7 @@ GUARD = Guard(
             "a timeout kills only the direct child, orphaning the stubs it started",
             "                os.killpg(proc.pid, signal.SIGKILL)",
             "                proc.kill()",
-            "returns promptly, because nothing it started still holds the output pipe",
+            "leaving no orphaned stub",
         ),
     ),
 )
