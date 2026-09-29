@@ -212,6 +212,14 @@ def exact_power(cases: int, runs: int, weak: float, lift: float) -> dict[str, fl
     model of it. Feasible for the small designs where simulation noise matters most (6 x 3: 924
     multisets).
     """
+    if not (1 <= runs and 2 <= cases <= EXACT_MAX_CASES and 0.0 <= weak and 0.0 <= weak + lift <= 1.0):
+        # A pass rate outside [0, 1] gives negative "probabilities" that still sum to 1, and above
+        # EXACT_MAX_CASES the verdict is a Monte Carlo draw the enumeration would call 10^5 times
+        # per outcome (#1485 review).
+        raise CompareError(f"--exact-power needs 2 <= cases <= {EXACT_MAX_CASES}, runs >= 1 and "
+                           f"pass rates in [0, 1]; got cases={cases}, runs={runs}, "
+                           f"weak={weak}, weak+lift={weak + lift}")
+
     def pmf(p: float) -> list[float]:
         return [math.comb(runs, k) * p ** k * (1 - p) ** (runs - k) for k in range(runs + 1)]
     pa, pb = pmf(weak), pmf(weak + lift)
@@ -345,14 +353,20 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--selftest", action="store_true")
     parser.add_argument("--exact-power", nargs=2, type=int, metavar=("CASES", "RUNS"),
-                        help="print the exact verdict probabilities for a design (README power table)")
+                        help="print the exact chance of a b_better verdict for a design, at the README's "
+                             "model: weak-arm pass rate 0.4 and lifts of 0, +20 and +30 points "
+                             "(2 <= CASES <= 16)")
     args = parser.parse_args(argv[1:])
     if args.selftest:
         return selftest()
     if args.exact_power:
         cases, runs = args.exact_power
         for lift in (0.0, 0.2, 0.3):
-            got = exact_power(cases, runs, 0.4, lift)
+            try:
+                got = exact_power(cases, runs, 0.4, lift)
+            except CompareError as exc:
+                print(f"compare: {exc}", file=sys.stderr)
+                return 2
             print(f"{cases} cases x {runs} runs, +{round(lift * 100)}-point lift: "
                   f"b_better {got.get('b_better', 0.0):.2%}")
         return 0
@@ -463,11 +477,14 @@ def selftest() -> int:
     text = format_text(compare(many, "weak", "real", boot=MIN_BOOT))
     check("above 16 cases the verdict says Monte Carlo, not exact",
           "Monte Carlo" in text and "exact sign-flip" not in text, text.splitlines()[0])
+    sixteen = _runs({"weak": {f"c{i}": [False] * 3 for i in range(16)},
+                     "real": {f"c{i}": [True] * 3 for i in range(16)}})
+    text = format_text(compare(sixteen, "weak", "real", boot=MIN_BOOT))
+    check("CONTROL: at exactly 16 cases the verdict says exact", "exact sign-flip" in text,
+          text.splitlines()[0])
     few = _runs({"weak": {f"c{i}": [False] * 3 for i in range(7)},
                  "real": {f"c{i}": [True] * 3 for i in range(6)} | {"c6": [False] * 3}})
     text = format_text(compare(few, "weak", "real", boot=MIN_BOOT))
-    check("CONTROL: at 16 cases or fewer the verdict says exact", "exact sign-flip" in text,
-          text.splitlines()[0])
     check("the floor names the MOVING count (6 of 7 cases)", "with 6 moving case(s)" in text, text)
 
     # The README's power table, 6 cases x 3 runs, computed exactly (#1432): literal figures.
@@ -475,6 +492,12 @@ def selftest() -> int:
         got = exact_power(6, 3, 0.4, lift)
         check(f"exact power, 6 x 3 at +{round(lift * 100)}: b_better {want:.2%}",
               round(got.get("b_better", 0.0), 4) == want and abs(sum(got.values()) - 1) < 1e-9, got)
+    for bad in ((6, 3, 0.4, 0.7), (6, 0, 0.4, 0.3), (1, 3, 0.4, 0.3), (17, 3, 0.4, 0.3)):
+        try:
+            exact_power(*bad)
+            check(f"exact power refuses {bad}", False, "accepted")
+        except CompareError:
+            check(f"exact power refuses {bad}", True)
 
     # -- verdicts ---------------------------------------------------------------------------
     strong = _runs({"weak": {c: [False] * 3 for c in cases},
@@ -594,6 +617,8 @@ def selftest() -> int:
     r = compare(eight, "weak", "real", motivated=tuple(f"c{i}" for i in range(7)), boot=2000)
     check("insufficient independent evidence behind a full win is unverified",
           r.verdict == "unverified" and r.n_cases == 1, r)
+    r = compare(eight, "weak", "real", boot=2000)
+    check("CONTROL: the same eight cases, none motivated, are a win", r.verdict == "b_better", r.verdict)
     # NOT_DETECTABLE: six independent cases, one of them worse (p = 14/64); six motivated wins
     # added make the full set 11 up and 1 down, p = 26/4096.
     nd_table = {f"i{i}": ([False] * 3, [True] * 3) for i in range(5)}

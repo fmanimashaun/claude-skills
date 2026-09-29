@@ -180,5 +180,17 @@ GUARD = Guard(
             '            weight = 1',
             'exact power, 6 x 3 at +30',
         ),
+        Mutation(
+            '16 cases is called Monte Carlo (the boundary moves)',
+            '    test = "exact" if c.n_cases <= EXACT_MAX_CASES else',
+            '    test = "exact" if c.n_cases < EXACT_MAX_CASES else',
+            'CONTROL: at exactly 16 cases the verdict says exact',
+        ),
+        Mutation(
+            'exact power accepts a pass rate above 1',
+            '0.0 <= weak + lift <= 1.0):',
+            '0.0 <= weak + lift):',
+            'exact power refuses (6, 3, 0.4, 0.7)',
+        ),
     ),
 )
