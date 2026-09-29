@@ -171,8 +171,34 @@ def guard_migrate_fixtures() -> None:
     check("guard-migrate: creating a NEW migration by a RELATIVE path is blocked",
           code == 2, f"exit {code}: {out.strip()[:160]!r}")
     check("...and the message steers to the generator", "bin/rails generate migration" in out, out.strip()[:200])
+    check("...and says a broken boot comes first, since the generator needs the app to boot (#1416)",
+          "does not boot" in out, out.strip()[-200:])
     code, _ = write(lambda p: str(p / "db" / "migrate" / "20260927120000_add_thing.rb"))
     check("guard-migrate: creating a NEW migration by an ABSOLUTE path is blocked", code == 2, f"exit {code}")
+    # #1416. On a case-insensitive filesystem (macOS, Windows) this path LANDS in db/migrate/.
+    code, _ = write(lambda p: "DB/Migrate/20260927120000_add_thing.rb")
+    check("guard-migrate (#1416): a mixed-case DB/Migrate/ path is blocked", code == 2, f"exit {code}")
+    code, _ = write(lambda p: "db/migrate/20260927120000_add_thing.RB")
+    check("guard-migrate (#1416): a `.RB` extension is blocked", code == 2, f"exit {code}")
+    # The existence check uses the path AS GIVEN, so a mixed-case OVERWRITE is allowed on any
+    # filesystem when the file exists at that literal path (a later `exists(path.lower())` would deny
+    # this on case-sensitive CI).
+    code, _ = write(lambda p: "DB/Migrate/20260101000000_existing.rb",
+                    existing="DB/Migrate/20260101000000_existing.rb")
+    check("guard-migrate (#1416): CONTROL: overwriting a file that exists at the mixed-case path is allowed",
+          code == 0, f"exit {code}")
+
+    def via_symlink() -> int:
+        with tempfile.TemporaryDirectory() as td:
+            proj = Path(td) / "proj"
+            (proj / "db" / "migrate").mkdir(parents=True)
+            (proj / "bin").mkdir()
+            (proj / "bin" / "rails").write_text("#!/usr/bin/env ruby\n")
+            (proj / "db" / "mig").symlink_to("migrate")
+            payload = json.dumps({"tool_input": {"file_path": "db/mig/20260927120000_add_thing.rb"}, "cwd": str(proj)})
+            return run_hook("guard-migrate.sh", cwd=proj, stdin=payload, unset=("CLAUDE_PROJECT_DIR",))[0]
+    code = via_symlink()
+    check("guard-migrate (#1416): a Write through a symlink into db/migrate/ is blocked", code == 2, f"exit {code}")
 
     # CONTROL, existence: the identical path, but the file already exists -- Write is an overwrite,
     # not a creation, and stays allowed.
@@ -226,7 +252,7 @@ def guard_migrate_fixtures() -> None:
     # fallback once piped to grep, and "grep: command not found" is a non-match, so this exact shape
     # ALLOWED a new migration while claiming to fail closed. PATH is replaced, not prefixed, or the
     # host's python3 would answer and the fallback would never run.
-    def bare(file_path: str) -> tuple[int, str]:
+    def bare(file_path: str, bash: str | None = None) -> tuple[int, str]:
         with tempfile.TemporaryDirectory() as td:
             proj = Path(td) / "proj"
             (proj / "db" / "migrate").mkdir(parents=True)
@@ -235,7 +261,7 @@ def guard_migrate_fixtures() -> None:
             only = Path(td) / "only"
             only.mkdir()
             for tool in ("bash", "cat"):
-                (only / tool).symlink_to(shutil.which(tool))
+                (only / tool).symlink_to(bash if (tool == "bash" and bash) else shutil.which(tool))
             done = subprocess.run([str(only / "bash"), str(HOOKS / "guard-migrate.sh")], cwd=proj,
                                   input=json.dumps({"tool_input": {"file_path": file_path}}),
                                   env={"PATH": str(only)}, capture_output=True, text=True, timeout=60)
@@ -244,6 +270,19 @@ def guard_migrate_fixtures() -> None:
     code, out = bare("db/migrate/20260927120000_add_thing.rb")
     check("guard-migrate: with NEITHER python3 NOR grep on PATH, a new migration is still blocked",
           code == 2, f"exit {code}: {out.strip()[:160]!r}")
+    code, out = bare("DB/Migrate/20260927120000_add_thing.rb")
+    check("guard-migrate (#1416): the bare-PATH fallback folds case too (nocasematch)",
+          code == 2, f"exit {code}: {out.strip()[:160]!r}")
+    code, out = bare("db\\migrate\\20260927120000_add_thing.rb")
+    check("guard-migrate (#1416): the bare-PATH fallback accepts a Windows backslash separator",
+          code == 2, f"exit {code}: {out.strip()[:160]!r}")
+    # bash 3.2 (macOS /bin/bash) is the shell with no ${var,,}; prove the fold THERE when it is present.
+    legacy = Path("/bin/bash")
+    if legacy.is_file() and subprocess.run([str(legacy), "-c", "echo ${BASH_VERSINFO[0]}"],
+                                           capture_output=True, text=True).stdout.strip() == "3":
+        code, out = bare("DB/Migrate/20260927120000_add_thing.rb", bash=str(legacy))
+        check("guard-migrate (#1416): ...and under bash 3.2 itself (/bin/bash)", code == 2,
+              f"exit {code}: {out.strip()[:160]!r}")
     code, _ = bare("app/models/x.rb")
     check("guard-migrate: CONTROL: ...and the same bare PATH still allows a write elsewhere",
           code == 0, f"exit {code}")
