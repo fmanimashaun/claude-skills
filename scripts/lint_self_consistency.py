@@ -1842,8 +1842,32 @@ def check_doc_pointers() -> tuple[list[Finding], int]:
 
 
 
-_MD_LINK = re.compile(r"\[[^\]\n]*\]\(([^)\s]+)\)")
-_MD_FENCE = re.compile(r"^[ \t]*```.*?^[ \t]*```[ \t]*$", re.MULTILINE | re.DOTALL)
+# An inline link: `<target>` or a bare target, then an optional title. A reference definition
+# (`[r]: target`) is the other place a link target lives (independent review of #1482).
+_MD_LINK = re.compile(r"""\[[^\]\n]*\]\([ \t]*(?:<([^>\n]+)>|([^)\s]+))(?:[ \t]+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\)))?[ \t]*\)""")
+_MD_REFDEF = re.compile(r"^[ ]{0,3}\[[^\]\n]+\]:[ \t]*(?:<([^>\n]+)>|(\S+))", re.MULTILINE)
+_MD_FENCE_OPEN = re.compile(r"^[ \t]*(`{3,}|~{3,})")
+
+
+def _blank_markdown_code(body: str) -> str:
+    """Blank what only QUOTES a link -- fences (``` or ~~~, any length, closed by the same character
+    at least as long), HTML comments and inline code -- keeping every newline, so lines stay true."""
+    out, fence = [], None
+    for line in body.split("\n"):
+        if fence is None:
+            opened = _MD_FENCE_OPEN.match(line)
+            if opened:
+                fence = opened.group(1)
+                out.append("")
+                continue
+            out.append(line)
+        else:
+            if re.match(r"^[ \t]*" + re.escape(fence[0]) + "{" + str(len(fence)) + r",}[ \t]*$", line):
+                fence = None
+            out.append("")
+    prose = "\n".join(out)
+    prose = re.sub(r"<!--.*?-->", lambda m: re.sub(r"[^\n]", " ", m.group(0)), prose, flags=re.DOTALL)
+    return re.sub(r"(`+)[^\n]*?\1", lambda m: " " * len(m.group(0)), prose)
 
 
 def check_broken_relative_link() -> tuple[list[Finding], int]:
@@ -1856,27 +1880,31 @@ def check_broken_relative_link() -> tuple[list[Finding], int]:
     path that reads right from the repo root is exactly the one that is wrong.
 
     Scoped to `docs/**`: every file there is ours, so every relative link names a file of ours.
-    Shipped commands and skills are not, because their paths belong to a user's project. A target
+    Shipped commands and skills are not, because their paths belong to a user's project. Inline
+    links (titled, `<angled>` or bare) and reference definitions are read; a `/`-rooted target is
+    resolved from the repo root, as GitHub does, and a percent-encoded one is decoded. A target
     with no extension may name a wiki page (`[Loops](Loops)` -> `Loops.md`), which GitHub's wiki
-    resolves; fenced blocks, URLs and `#anchors` carry no path to check.
+    resolves. Fences, inline code and HTML comments only quote a link; URLs and `#anchors` carry
+    no path to check.
     """
+    from urllib.parse import unquote
     findings: list[Finding] = []
     examined = 0
     for path in sorted((ROOT / "docs").rglob("*.md")):
-        body = read(path)
-        # Blank a fence rather than delete it, so line numbers stay true.
-        prose = _MD_FENCE.sub(lambda m: "\n" * m.group(0).count("\n"), body)
-        for match in _MD_LINK.finditer(prose):
-            target = match.group(1).split("#", 1)[0]
-            if not target or target.startswith("<") or re.match(r"[A-Za-z][A-Za-z0-9+.-]*:", target):
+        prose = _blank_markdown_code(read(path))
+        matches = sorted(list(_MD_LINK.finditer(prose)) + list(_MD_REFDEF.finditer(prose)), key=lambda m: m.start())
+        for match in matches:
+            raw = match.group(1) or match.group(2)
+            target = unquote(raw.split("#", 1)[0])
+            if not target or re.match(r"[A-Za-z][A-Za-z0-9+.-]*:", target):
                 continue
             examined += 1
-            resolved = path.parent / target
+            resolved = ROOT / target.lstrip("/") if target.startswith("/") else path.parent / target
             if resolved.exists() or (not resolved.suffix and resolved.with_name(resolved.name + ".md").exists()):
                 continue
             findings.append(Finding(
                 "broken-relative-link", rel(path), prose[:match.start()].count("\n") + 1,
-                f"links to `{match.group(1)}`, which resolves to nothing from {rel(path.parent)}/ -- "
+                f"links to `{raw}`, which resolves to nothing from {rel(path.parent)}/ -- "
                 "a relative link is read from its own directory, not from the repo root",
             ))
     return findings, examined
@@ -2231,7 +2259,9 @@ _PINNED_REF = re.compile(r"^\s*ref:\s*[\"']?(v\d+\.\d+\.\d+)", re.M)
 _SLUG_PIN = re.compile(r"fmanimashaun/claude-skills@(v\d+\.\d+\.\d+)")
 
 
-_USES = re.compile(r"^(\s*)-?\s*uses:\s*([^\s#]+)", re.M)
+# `[ \t]`, never `\s`: `\s*` at a line start swallows a preceding blank line, which misplaced the
+# reported line and zeroed the step scan (independent review of #1482).
+_USES = re.compile(r"^([ \t]*)-?[ \t]*uses:[ \t]*([^\s#]+)", re.M)
 _SHA_PIN = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
 
 
@@ -2266,18 +2296,25 @@ def check_workflow_action_pins() -> tuple[list[Finding], int]:
                     f"different code after review; pin the 40-character SHA with the tag as a comment, "
                     f"like every other workflow here (`owner/action@<sha> # vX.Y.Z`)."))
             if ref.split("@", 1)[0] == "actions/checkout":
-                # The step's own lines: until the next step (a list item at the same or lower
-                # indent) or a line that dedents out of the step.
+                # The WHOLE step: from its `- ` line (this one, or the nearest above it at a lower
+                # indent, since `with:` may come before `uses:`) to the next list item at the dash's
+                # indent or less, or a line that dedents out of it.
                 indent = len(match.group(1))
-                step = []
-                for nxt in lines[line:]:
+                start = line - 1
+                if not lines[start].lstrip(" ").startswith("-"):
+                    while start > 0:
+                        start -= 1
+                        above = lines[start].lstrip(" ")
+                        if above.startswith("- ") and len(lines[start]) - len(above) < indent:
+                            break
+                dash = len(lines[start]) - len(lines[start].lstrip(" "))
+                step = [lines[start]]
+                for nxt in lines[start + 1:]:
                     stripped = nxt.lstrip(" ")
-                    if stripped.startswith("- ") and len(nxt) - len(stripped) <= indent:
-                        break
-                    if stripped and len(nxt) - len(stripped) < indent:
+                    if stripped and len(nxt) - len(stripped) <= dash:
                         break
                     step.append(nxt)
-                if not any(re.match(r"^\s*persist-credentials:\s*false\s*(#.*)?$", l) for l in step):
+                if not any(re.match(r"""^[\s-]*persist-credentials:\s*["']?false["']?\s*(#.*)?$""", l) for l in step):
                     findings.append(Finding(
                         "checkout-persists-credentials", rel, line,
                         "this checkout keeps its credentials (no `persist-credentials: false`), so the "
@@ -3775,6 +3812,28 @@ def selftest() -> int:
              files={"docs/wiki/Home.md": "[Loops](Loops)\n"})
     scenario("...silent inside a fenced block", rule=BRL, expect_finding=False,
              files={"docs/a.md": "```md\n[x](nowhere.md)\n```\n"})
+    # Every place a link target lives is read (independent review of #1482)...
+    scenario("...a titled link to a missing file", rule=BRL, expect_finding=True,
+             files={"docs/a.md": '[x](gone.md "title")\n'})
+    scenario("...an angle-bracket link to a missing file", rule=BRL, expect_finding=True,
+             files={"docs/a.md": "[x](<gone file.md>)\n"})
+    scenario("...a reference definition to a missing file", rule=BRL, expect_finding=True,
+             files={"docs/a.md": "[x][r]\n\n[r]: gone.md\n"})
+    scenario("...silent on titled, angled and reference links that resolve", rule=BRL, expect_finding=False,
+             files={"docs/b c.md": "x\n", "docs/a.md": '[x](b%20c.md "t") [y](<b c.md>)\n\n[r]: <b c.md>\n'})
+    # ...a `/`-rooted target resolves from the repo root, as GitHub does -- and must still exist.
+    scenario("...silent on a /-rooted link that resolves from the repo root", rule=BRL, expect_finding=False,
+             files={_DOC: "x\n", "docs/brain/a.md": "[x](/docs/doctrine/harness-doctrine.md)\n"})
+    scenario("...a /-rooted link to a missing file", rule=BRL, expect_finding=True,
+             files={"docs/brain/a.md": "[x](/docs/gone.md)\n"})
+    # ...and what only QUOTES a link is not one.
+    scenario("...silent inside a ~~~ fence and a four-backtick fence with an inner ```", rule=BRL, expect_finding=False,
+             files={"docs/a.md": "~~~\n[x](nowhere.md)\n~~~\n````md\n```\n[y](nowhere.md)\n```\n[z](nowhere.md)\n````\n"})
+    scenario("...silent in inline code and an HTML comment", rule=BRL, expect_finding=False,
+             files={"docs/a.md": "Write `[x](nowhere.md)` like so.\n<!-- [y](nowhere.md)\n-->\n"})
+    # CONTROL for the two above: the same link in prose after them still fires.
+    scenario("...a link after a closed fence and a closed comment still fires", rule=BRL, expect_finding=True,
+             files={"docs/a.md": "~~~\nx\n~~~\n<!-- c -->\n`code`\n[x](nowhere.md)\n"})
     # SCOPE: shipped docs name paths in a USER's project, so outside docs/ is not judged.
     scenario("...silent outside docs/", rule=BRL, expect_finding=False,
              files={"plugins/p/commands/c.md": "[x](memos/nowhere.md)\n"})
@@ -3804,6 +3863,27 @@ def selftest() -> int:
     scenario("...a later step's persist-credentials does not cover this checkout", rule=CPC, expect_finding=True,
              files={".github/workflows/x.yml": _WF % (_SHA, "") + "      - uses: actions/setup-node@" + _SHA +
                     "\n        with:\n          persist-credentials: false\n"})
+
+    # A blank line before the step is ordinary YAML; it must not misplace or zero the step scan.
+    scenario("...silent on a conforming checkout preceded by a blank line", rule=CPC, expect_finding=False,
+             files={".github/workflows/x.yml": "jobs:\n  check:\n    steps:\n\n" + (_WF % (_SHA, _NOCRED)).split("steps:\n", 1)[1]})
+    scenario("...silent on a quoted 'false'", rule=CPC, expect_finding=False,
+             files={".github/workflows/x.yml": _WF % (_SHA, "        with:\n          persist-credentials: 'false'\n")})
+    # `with:` may be written before `uses:` in the same step.
+    scenario("...silent on persist-credentials written above uses: in the same step", rule=CPC, expect_finding=False,
+             files={".github/workflows/x.yml": "jobs:\n  a:\n    steps:\n      - with:\n          persist-credentials: false\n"
+                                               "        uses: actions/checkout@" + _SHA + "\n      - run: echo hi\n"})
+    # ...but the PREVIOUS step's setting is not this one's -- a checkout whose `uses:` is not on the
+    # dash line, so the backward scan must stop at its own `- `.
+    _PREV = ("jobs:\n  a:\n    steps:\n      - uses: actions/checkout@" + _SHA +
+             "\n        with:\n          persist-credentials: false\n%s      - name: again\n        uses: actions/checkout@" + _SHA + "\n")
+    scenario("...a previous step's persist-credentials does not cover this checkout", rule=CPC, expect_finding=True,
+             files={".github/workflows/x.yml": _PREV % ""})
+    # THE REVIEW'S BLOCKER: `\s*` at a line start swallowed a blank line, so the match began on it and
+    # the step scan ran back into the previous step's setting.
+    scenario("...nor across a blank line before this checkout", rule=CPC, expect_finding=True,
+             files={".github/workflows/x.yml": "jobs:\n  a:\n    steps:\n      - uses: actions/checkout@" + _SHA +
+                    "\n        with:\n          persist-credentials: false\n\n      - uses: actions/checkout@" + _SHA + "\n"})
 
     # -- pinned-toolchain-ref / -slug --------------------------------------
     PTR, PTS = "pinned-toolchain-ref", "pinned-toolchain-slug"
