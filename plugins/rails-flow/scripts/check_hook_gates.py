@@ -723,15 +723,20 @@ def release_gate_fixtures() -> None:
         check("release-gate.sh present beside rails-flow", False, str(QA_HOOK))
         return
 
-    def run(cmd: str, marketplace: bool = False) -> int:
+    def run(cmd: str, marketplace: bool = False, plugin_root: Path | None = None) -> int:
         with tempfile.TemporaryDirectory() as td:
             _git_repo(Path(td))
+            # ON A FEATURE BRANCH (#1410). `git init` leaves HEAD on main, where a bare `git push`
+            # really IS a push to main -- so a parser handed the quote-stripped `git push origin `
+            # was still blocked, and the fixture could not tell it from one reading the real argument.
+            _run(["git", "checkout", "-q", "-b", "feature/work"], cwd=td, check=True,
+                           capture_output=True)
             if marketplace:
                 # What MAKES a tree a marketplace. No consumer project has one.
                 (Path(td) / ".claude-plugin").mkdir(parents=True, exist_ok=True)
                 (Path(td) / ".claude-plugin" / "marketplace.json").write_text(
                     '{"name": "x", "plugins": []}', encoding="utf-8")
-            env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env["CLAUDE_PLUGIN_ROOT"] = str(QA_HOOK.parents[2])
+            env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env["CLAUDE_PLUGIN_ROOT"] = str(plugin_root or QA_HOOK.parents[2])
             done = _run(["bash", str(QA_HOOK)], cwd=td, input=json.dumps({"tool_input": {"command": cmd}}),
                                   env=env, capture_output=True, text=True, timeout=60)
             return done.returncode
@@ -740,6 +745,53 @@ def release_gate_fixtures() -> None:
         check(f"release-gate: `{cmd}` targets main and is blocked without a certification", run(cmd) == 2, "exit 0")
     for cmd in ('git commit -m "push origin main"', 'echo "git push origin main"', "# git push origin main", "git push origin feature/x"):
         check(f"release-gate: `{cmd}` does not target main and passes", run(cmd) == 0, "exit 2")
+    # #1410: `main`/`master` INSIDE a branch name is not a destination. Both were refused
+    # downstream on one day, and both authors renamed the branch to get past the gate.
+    for cmd in ("git push -u origin fix/1010-one-main", "git push origin feature/main-menu",
+                "git push origin main-nav", "git push -u origin feat/983-pr2-master-detail"):
+        check(f"release-gate (#1410): `{cmd}` names main only inside a branch name, and passes",
+              run(cmd) == 0, "exit 2")
+    # ...and every real destination form is still a promotion -- including the QUOTED ones, which
+    # the old regex allowed because the normaliser strips quoted spans before it looked.
+    for cmd in ("git push origin HEAD:main", "git push origin dev:main", "git push origin refs/heads/main",
+                "git push --all origin", 'git push origin "main"', "git push origin 'HEAD:main'"):
+        check(f"release-gate (#1410): `{cmd}` targets main and is blocked without a certification",
+              run(cmd) == 2, "exit 0")
+    check("release-gate (#1410): a bare `git push` from a feature branch passes", run("git push") == 0, "exit 2")
+    # #1470 review: the five pushes to main the first parser ALLOWED. Each is blocked end to end.
+    for cmd in ("git push origin $(echo main)", "git push origin main>/dev/null",
+                "echo done#1; git push origin main", "git push origin HEAD:heads/main",
+                "git push origin {main,dev}", "git -C $(pwd) push origin main",
+                "git push -v$(true) origin main", "git push --receive-pack=$(echo x) origin main"):
+        check(f"release-gate (#1470): `{cmd}` reaches main and is blocked", run(cmd) == 2, "exit 0")
+    # 41's delta review of #1470: the hook only handed the parser segments that STARTED with
+    # `git push`, so a wrapper, a group, a continuation or a shell string hid the push entirely.
+    for cmd in ("timeout 60 git push origin main", "sudo -u bob git push origin main",
+                "command git push origin main", "git --no-pager push origin main",
+                "( git push origin main )", "{ git push origin main; }", "/usr/bin/git push origin main",
+                "git push origin \\\nmain", "bash -c 'git push origin main'", 'eval "git push origin main"',
+                "git -c alias.p=push p origin main", "echo main | xargs git push origin",
+                "timeout 60 gh pr merge 5", "bash -o pipefail -c 'git push origin main'",
+                "g''it push origin main", "gi\\t push origin main", '"g"it push origin main'):
+        check(f"release-gate (#1470): `{cmd!r}` reaches main (or cannot be judged) and is blocked",
+              run(cmd) == 2, "exit 0")
+    for cmd in ("bash -c 'git push origin fix/x'", "timeout 60 git push origin fix/x", "gh pr list"):
+        check(f"release-gate (#1470): CONTROL: `{cmd}` passes", run(cmd) == 0, "exit 2")
+    check("release-gate (#1470): the current-branch idiom on a feature branch passes",
+          run('git push -u origin "$(git branch --show-current)"') == 0, "exit 2")
+    # ...and the false refusal that review found: an apostrophe in a heredoc body is not a quote.
+    check("release-gate (#1470): a heredoc body with an apostrophe does not block a feature push",
+          run("cat > n.md <<'EOF'\nit's done\nEOF\ngit push -u origin fix/x") == 0, "exit 2")
+    # An unbalanced quote cannot be tokenised; "could not judge" must deny, never read as "no".
+    check("release-gate (#1410): an unparseable push is treated as a promotion",
+          run('git push origin "feature/x') == 2, "exit 0")
+    # FAIL CLOSED without the parser: the whole-word match over the RAW command still sees a quoted
+    # main (the pair's control is the feature push beside it, which must still pass).
+    with tempfile.TemporaryDirectory() as bare_root:
+        check("release-gate (#1410): parser missing -> a quoted `main` push is still blocked",
+              run('git push origin "main"', plugin_root=Path(bare_root)) == 2, "exit 0")
+        check("release-gate (#1410): parser missing -> CONTROL: a feature push still passes",
+              run("git push origin feature/x", plugin_root=Path(bare_root)) == 0, "exit 2")
 
     # THE DISCRIMINATING PAIR for the marketplace carve-out. The same command, the same absence of
     # a certification, and the ONLY difference is `.claude-plugin/marketplace.json`. Without the
@@ -765,6 +817,12 @@ def release_gate_fixtures() -> None:
         stamp = {"sha": tested, "date": "2026-09-26", "verdict": "PASS", "report": "qa/reports/r.md"}
         (repo / "qa" / "CERTIFICATION").write_text(json.dumps(stamp), encoding="utf-8")
         env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env["CLAUDE_PLUGIN_ROOT"] = str(QA_HOOK.parents[2])
+        # These are OLD-shape stamps (no schema), grandfathered only when their commit predates the
+        # #1428 cutoff -- so they are committed with an old committer date.
+        old_env = {**os.environ, "GIT_COMMITTER_DATE": "2026-09-01T00:00:00+00:00",
+                   "GIT_AUTHOR_DATE": "2026-09-01T00:00:00+00:00"}
+        sh_old = lambda *a: _run([*g, *a], cwd=repo, check=True, capture_output=True, text=True,
+                                           env=old_env).stdout.strip()
 
         def gate() -> tuple[int, str]:
             sh("branch", "-f", "dev", "HEAD")
@@ -773,8 +831,11 @@ def release_gate_fixtures() -> None:
             return done.returncode, done.stderr
 
         rc, err = gate()
-        check("release-gate (#1337): CONTROL: an uncommitted stamp for dev's tip permits", rc == 0, err)
-        sh("add", "qa/CERTIFICATION"); sh("commit", "-q", "-m", "stamp")
+        # #1437 review round 3: the stamp is read as COMMITTED at dev. An uncommitted one is not what
+        # main would receive, so it no longer permits -- the old "uncommitted control" inverts.
+        check("release-gate (#1428): an UNCOMMITTED stamp is denied -- main would not receive it",
+              rc == 2 and "committed at dev" in err, err)
+        sh("add", "qa/CERTIFICATION"); sh_old("commit", "-q", "-m", "stamp")
         rc, err = gate()
         check("release-gate (#1337): the stamp committed on top of the tested sha still permits", rc == 0, err)
         (repo / "app.rb").write_text("v2\n", encoding="utf-8")
@@ -787,9 +848,204 @@ def release_gate_fixtures() -> None:
         sh("add", "other.rb"); sh("commit", "-q", "-m", "side")
         stamp["sha"] = sh("rev-parse", "HEAD"); sh("checkout", "-q", "-")
         (repo / "qa" / "CERTIFICATION").write_text(json.dumps(stamp), encoding="utf-8")
+        sh("add", "qa/CERTIFICATION"); sh_old("commit", "-q", "-m", "a stamp for another branch")
         rc, err = gate()
         check("release-gate (#1337): a stamp for a sha that is not an ancestor of dev is denied",
               rc == 2 and "dev moved" in err, err)
+
+    # #1428. A schema-2 stamp must name a passing first-boot walkthrough and authorization sweep; its
+    # own commit may carry that evidence and nothing else. An old stamp passes, loudly, for one release.
+    fb_rows = ("Step,Width,Actor,URL,Action,Expected,Actual,Status,Notes,Screenshot,Also,Issue,Env\n"
+               "1.1,1280,root,/login,Sign in,In,In,Pass,,,,,empty db\n"
+               "1.2,390,root,/login,Sign in,In,In,Pass,,,,,empty db\n")
+    az_head = "action,location,actor_role,target_role,guard,verdict,evidence,issue\n"
+    az_good = az_head + "demote,app/models/user.rb:40,it,root,root? refusal,GUARDED,,\n"
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td)
+        _git_repo(repo)
+        sh = lambda *a: _run([*g, *a], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+        (repo / "app.rb").write_text("v1\n", encoding="utf-8")
+        sh("add", "app.rb"); sh("commit", "-q", "-m", "app")
+        # Work on a branch that is not `main`: main is the last PUBLISHED release, and evidence
+        # already there is last release's (#1437 round 3). main stays at the commit before any.
+        sh("checkout", "-q", "-b", "work")
+        tested = sh("rev-parse", "HEAD")
+        fb_dir, az_file = repo / "qa/manual-tests/first-boot-v1", repo / "qa/manual-tests/authz-v1/sweep.csv"
+        fb_dir.mkdir(parents=True); az_file.parent.mkdir(parents=True)
+        (fb_dir / "pages.csv").write_text(fb_rows, encoding="utf-8")
+        az_file.write_text(az_good, encoding="utf-8")
+        new_stamp = {"sha": tested, "date": "2026-09-28", "verdict": "PASS", "report": "qa/reports/r.md",
+                     "schema": 2, "version": "v1", "first_boot": "qa/manual-tests/first-boot-v1",
+                     "authz": "qa/manual-tests/authz-v1/sweep.csv"}
+        (repo / "qa" / "CERTIFICATION").write_text(json.dumps(new_stamp), encoding="utf-8")
+        env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env["CLAUDE_PLUGIN_ROOT"] = str(QA_HOOK.parents[2])
+
+        def gate2() -> tuple[int, str]:
+            sh("branch", "-f", "dev", "HEAD")
+            done = _run(["bash", str(QA_HOOK)], cwd=repo, env=env, capture_output=True, text=True, timeout=60,
+                                  input=json.dumps({"tool_input": {"command": "git push origin main"}}))
+            return done.returncode, done.stderr
+
+        sh("add", "qa"); sh("commit", "-q", "-m", "stamp + evidence")
+        rc, err = gate2()
+        check("release-gate (#1428): a schema-2 stamp whose commit carries its passing evidence permits",
+              rc == 0, err)
+        az_file.write_text(az_good + "demote,app/controllers/staff.rb:88,it,root,,HOLE,forged PATCH,#1\n",
+                           encoding="utf-8")
+        sh("commit", "-q", "-am", "sweep found a hole")
+        rc, err = gate2()
+        check("release-gate (#1428): a HOLE in the sweep denies, naming the layer",
+              rc == 2 and "#1428" in err and "HOLE" in err, err)
+        az_file.write_text(az_good, encoding="utf-8")
+        (fb_dir / "pages.csv").write_text(fb_rows + "2.1,1280,root,/users/new,Create,Created,,Blocked,,,,,x\n",
+                                          encoding="utf-8")
+        sh("commit", "-q", "-am", "blocked row")
+        rc, err = gate2()
+        check("release-gate (#1428): a Blocked row with no reason denies", rc == 2 and "Blocked" in err, err)
+        (fb_dir / "pages.csv").write_text(fb_rows, encoding="utf-8")
+        (repo / "app.rb").write_text("v2\n", encoding="utf-8")
+        sh("commit", "-q", "-am", "evidence fixed, and an untested code change")
+        rc, err = gate2()
+        check("release-gate (#1428): a code change riding with the evidence is still denied, naming it",
+              rc == 2 and "app.rb" in err, err)
+        (repo / "app.rb").write_text("v1\n", encoding="utf-8")
+        evil = repo / "qa/manual-tests/first-boot-v1-other/x.rb"
+        evil.parent.mkdir(parents=True); evil.write_text("x\n", encoding="utf-8")
+        sh("add", "qa"); sh("commit", "-q", "-am", "a path that only starts like the evidence dir")
+        rc, err = gate2()
+        check("release-gate (#1428): a look-alike of the evidence path is not evidence",
+              rc == 2 and "first-boot-v1-other" in err, err)
+        sh("rm", "-q", "-r", "qa/manual-tests/first-boot-v1-other"); sh("commit", "-q", "-m", "drop it")
+        # The allowance is a PREFIX match: the evidence path appearing inside another path is not it.
+        inner = repo / "vendor/qa/manual-tests/first-boot-v1/x.rb"
+        inner.parent.mkdir(parents=True); inner.write_text("x\n", encoding="utf-8")
+        sh("add", "vendor"); sh("commit", "-q", "-m", "evidence path embedded in another path")
+        rc, err = gate2()
+        check("release-gate (#1428): a path merely containing the evidence path is not evidence",
+              rc == 2 and "vendor/" in err, err)
+        sh("rm", "-q", "-r", "vendor"); sh("commit", "-q", "-m", "drop vendor")
+        # CONFINEMENT (#1437 review blocker): a stamp naming evidence outside qa/manual-tests/ would
+        # let the stamp's commit carry code. It is refused before any allowance is computed.
+        tip = sh("rev-parse", "HEAD")
+        (repo / "app").mkdir(exist_ok=True)
+        (repo / "app" / "pages.csv").write_text(fb_rows, encoding="utf-8")
+        (repo / "app" / "evil.rb").write_text("x\n", encoding="utf-8")
+        (repo / "qa" / "CERTIFICATION").write_text(json.dumps({**new_stamp, "sha": tip, "first_boot": "app"}),
+                                                   encoding="utf-8")
+        sh("add", "app", "qa"); sh("commit", "-q", "-m", "a stamp naming app/ as its evidence")
+        rc, err = gate2()
+        check("release-gate (#1428): a stamp naming evidence outside qa/manual-tests/ is denied",
+              rc == 2 and "evidence must be" in err, err)
+        sh("rm", "-q", "-r", "app")
+        # A non-ASCII evidence file name arrives unquoted and is recognised as evidence.
+        (repo / "qa" / "CERTIFICATION").write_text(json.dumps({**new_stamp, "sha": sh("rev-parse", "HEAD")}),
+                                                   encoding="utf-8")
+        sh("add", "qa"); sh("commit", "-q", "-m", "restore the stamp")
+        tip = sh("rev-parse", "HEAD")
+        (repo / "qa" / "CERTIFICATION").write_text(json.dumps({**new_stamp, "sha": tip}), encoding="utf-8")
+        (fb_dir / "écran-1.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+        sh("add", "qa"); sh("commit", "-q", "-m", "a non-ASCII screenshot name in the evidence")
+        rc, err = gate2()
+        check("release-gate (#1428): a non-ASCII evidence file name is recognised as evidence", rc == 0, err)
+        # #1437 review round 2. RENAME LAUNDERING: moving code into the evidence folder in the stamp's
+        # commit listed only the new path, so the code's removal from app/ was never judged.
+        (repo / "app.rb").write_text("v1\n", encoding="utf-8")
+        tip = sh("rev-parse", "HEAD")
+        (repo / "qa" / "CERTIFICATION").write_text(json.dumps({**new_stamp, "sha": tip}), encoding="utf-8")
+        sh("mv", "app.rb", "qa/manual-tests/first-boot-v1/app.rb")
+        sh("add", "qa"); sh("commit", "-q", "-m", "stamp commit that moves code into the evidence folder")
+        rc, err = gate2()
+        check("release-gate (#1428): code renamed into the evidence folder is denied, naming its old path",
+              rc == 2 and "app.rb" in err, err)
+        sh("mv", "qa/manual-tests/first-boot-v1/app.rb", "app.rb"); sh("commit", "-q", "-m", "move it back")
+        # The sweep is ONE file: a sibling that merely starts with its name is not evidence.
+        tip = sh("rev-parse", "HEAD")
+        (repo / "qa" / "CERTIFICATION").write_text(json.dumps({**new_stamp, "sha": tip}), encoding="utf-8")
+        (repo / "qa/manual-tests/authz-v1/sweep.csv.rb").write_text("x\n", encoding="utf-8")
+        sh("add", "qa"); sh("commit", "-q", "-m", "a file named after the sweep")
+        rc, err = gate2()
+        check("release-gate (#1428): a file that only starts with the sweep's name is not evidence",
+              rc == 2 and "sweep.csv.rb" in err, err)
+        sh("rm", "-q", "qa/manual-tests/authz-v1/sweep.csv.rb"); sh("commit", "-q", "-m", "drop it")
+        # The gate judges what dev COMMITTED: a HOLE committed on dev, fixed only in the index here.
+        tip = sh("rev-parse", "HEAD")
+        (repo / "qa" / "CERTIFICATION").write_text(json.dumps({**new_stamp, "sha": tip}), encoding="utf-8")
+        az_file.write_text(az_good + "demote,app/controllers/staff.rb:88,it,root,,HOLE,forged PATCH,#1\n",
+                           encoding="utf-8")
+        sh("add", "qa"); sh("commit", "-q", "-m", "the sweep, committed with a HOLE")
+        az_file.write_text(az_good, encoding="utf-8"); sh("add", "qa")
+        rc, err = gate2()
+        check("release-gate (#1428): a committed HOLE denies though the fix is only staged",
+              rc == 2 and "HOLE" in err, err)
+        sh("commit", "-q", "-m", "fix it for real")
+        # An old stamp names no evidence, so it gets no evidence allowance: certify the current tip.
+        old_stamp = {k: v for k, v in new_stamp.items() if k in ("date", "verdict", "report")}
+        old_stamp["sha"] = sh("rev-parse", "HEAD")
+        (repo / "qa" / "CERTIFICATION").write_text(json.dumps(old_stamp), encoding="utf-8")
+        _run([*g, "commit", "-q", "-am", "an old-style stamp"], cwd=repo, check=True, capture_output=True,
+                       env={**os.environ, "GIT_COMMITTER_DATE": "2026-09-01T00:00:00+00:00"})
+        rc, err = gate2()
+        check("release-gate (#1428): an old stamp is grandfathered -- it permits, and says re-certify",
+              rc == 0 and "re-run /qa-flow:certify" in err.lower(), err)
+        # ...and gets NO evidence allowance: evidence files changed after an OLD stamp's sha are just
+        # changes, because an old stamp names no evidence.
+        (fb_dir / "pages.csv").write_text(fb_rows + "9,1280,a,/,x,y,z,Pass,,,,,\n", encoding="utf-8")
+        sh("commit", "-q", "-am", "evidence edited after an old stamp")
+        rc, err = gate2()
+        check("release-gate (#1428): an old stamp gets no evidence allowance", rc == 2 and "pages.csv" in err, err)
+        # Round 3: a NEW stamp that merely omits `schema` (committed now) is not grandfathered.
+        (fb_dir / "pages.csv").write_text(fb_rows, encoding="utf-8")
+        (repo / "qa" / "CERTIFICATION").write_text(json.dumps({**old_stamp, "sha": sh("rev-parse", "HEAD"),
+                                                                "date": "now"}), encoding="utf-8")
+        sh("commit", "-q", "-am", "a new stamp without schema")
+        rc, err = gate2()
+        check("release-gate (#1428): a NEW stamp that omits schema is denied, not grandfathered",
+              rc == 2 and "schema" in err, err)
+        # Round 3 BLOCKER: a newline in an evidence path smuggled `app` into the line-by-line allowance.
+        tip = sh("rev-parse", "HEAD")
+        (repo / "app").mkdir(exist_ok=True)
+        (repo / "app" / "policy.rb").write_text("x\n", encoding="utf-8")
+        sh("add", "app"); sh("commit", "-q", "-m", "policy"); tip = sh("rev-parse", "HEAD")
+        (repo / "qa" / "CERTIFICATION").write_text(json.dumps(
+            {**new_stamp, "sha": tip, "first_boot": "qa/manual-tests/first-boot-v1\napp"}), encoding="utf-8")
+        sh("rm", "-q", "app/policy.rb"); sh("add", "qa"); sh("commit", "-q", "-m", "stamp + delete app/policy.rb")
+        rc, err = gate2()
+        check("release-gate (#1428): a newline in an evidence path launders nothing", rc == 2, err)
+
+    # Round 3: a DEGRADED PATH -- only bash. grep, sed, awk, tr, head, python3 and git are all gone;
+    # the builtins-only fallback must still deny a promotion. PATH replaced, not prefixed.
+    def bare_gate(cmd: str, tools: tuple[str, ...] = ("bash",)) -> tuple[int, str]:
+        with tempfile.TemporaryDirectory() as td:
+            only = Path(td) / "only"
+            only.mkdir()
+            for tool in tools:
+                (only / tool).symlink_to(shutil.which(tool))
+            done = _run([str(only / "bash"), str(QA_HOOK)], cwd=td,
+                                  input=json.dumps({"tool_input": {"command": cmd}}),
+                                  env={"PATH": str(only)}, capture_output=True, text=True, timeout=60)
+            return done.returncode, done.stdout + done.stderr
+
+    code, out = bare_gate("git push origin main")
+    check("release-gate: with ONLY bash on PATH, a push to main is still blocked", code == 2, f"exit {code}: {out[:160]!r}")
+    code, out = bare_gate("gh pr merge 12")
+    check("release-gate: with ONLY bash on PATH, gh pr merge is still blocked", code == 2, f"exit {code}: {out[:160]!r}")
+    # python3 and git PRESENT, the text tools missing: the fallback must still fire, because the
+    # normaliser and the detection run on sed, awk, tr and grep, and without them nothing matches.
+    code, out = bare_gate("git push origin main", tools=("bash", "python3", "git"))
+    check("release-gate: with python3 and git but NO grep or sed, a push to main is still blocked",
+          code == 2, f"exit {code}: {out[:160]!r}")
+    # Round 3 fold-in: the fallback matched raw JSON, so git's global options and a JSON-escaped tab
+    # slipped past it. Each is a real way to write a push to main.
+    for cmd in ("git -C . push origin main", "git -c k=v push origin main", "git\tpush origin main",
+                "git --git-dir=.git push origin HEAD:main", "git push origin refs/heads/main",
+                "git push origin HEAD:refs/heads/master"):
+        code, out = bare_gate(cmd)
+        check(f"release-gate: with ONLY bash on PATH, {cmd!r} is still blocked", code == 2,
+              f"exit {code}: {out[:160]!r}")
+    for cmd in ("git status", "git push origin maintenance", "git push origin feature/x",
+                "git push origin feature/main"):
+        code, out = bare_gate(cmd)
+        check(f"release-gate: CONTROL: with ONLY bash on PATH, `{cmd}` is allowed", code == 0, f"exit {code}: {out[:160]!r}")
 
 
 # ---- ci-verdict-hint.sh (#1173) -----------------------------------------------------------------

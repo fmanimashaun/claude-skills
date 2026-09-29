@@ -2,14 +2,14 @@
      Rebuild:  python3 scripts/build_wiki.py
      Drift:    python3 scripts/build_wiki.py --check  (runs in the gate sweep) -->
 # Agents and gates
-**30 shipped agents · 50 shipped commands · 150 gates · 4 tier tables**, plus 5 maintainer agents and 6 maintainer commands that are not installed.
+**30 shipped agents · 50 shipped commands · 4 tier tables**, plus 5 maintainer agents and 6 maintainer commands that are not installed.
 
-| plugin | version | agents | commands | tier rows | gates |
-|---|---|---|---|---|---|
-| `design-flow` | 1.44.2 | 5 | 12 | 5 | 21 |
-| `pipeline` | 1.4.0 | 2 | 8 | 2 | 4 |
-| `qa-flow` | 1.34.0 | 11 | 8 | 11 | 16 |
-| `rails-flow` | 1.55.0 | 12 | 22 | 12 | 32 |
+| plugin | version | agents | commands | tier rows |
+|---|---|---|---|---|
+| `design-flow` | 1.44.2 | 5 | 12 | 5 |
+| `pipeline` | 1.4.0 | 2 | 8 | 2 |
+| `qa-flow` | 1.34.0 | 11 | 8 | 11 |
+| `rails-flow` | 1.55.0 | 12 | 22 | 12 |
 
 ## Agents
 
@@ -200,7 +200,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | markdown shell lint | `repo` | `python3 scripts/lint_markdown_shell.py` | live check |
 | markdown shell selftest | `repo` | `python3 scripts/lint_markdown_shell.py --selftest` | selftest |
 | mutation check | `repo` | `python3 scripts/mutation_check.py --selftest` | selftest |
-| mutation coverage | `repo` | `python3 scripts/mutation_check.py` | live check · 5400s budget |
+| mutation coverage | `repo` | `python3 scripts/mutation_check.py` | live check · 1800s budget |
 | packaging determinism | `repo` | `python3 scripts/package_core.py --selftest` | selftest |
 | page pacing | `repo` | `python3 scripts/check_page_pacing.py` | live check |
 | page pacing selftest | `repo` | `python3 scripts/check_page_pacing.py --selftest` | selftest |
