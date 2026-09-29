@@ -301,9 +301,10 @@ the `--inset-edge` / `--inset-edge-md` structural tokens, added to the safe area
 against it, and the `inset-viewport` utility
 ([foundations-tokens.md](foundations-tokens.md) §3b and the utilities block).
 - **Overlays** put `inset-viewport` on the fixed wrapper, so the panel floats inside it with all four
-  corners rounded; a bottom placement's foot sits 16px plus the safe area above the screen's edge, and
-  at maximum height it stops 16px short of the top. The one exception is an edge-anchored drawer or
-  sheet, which may touch **only the edge it slides in from** ([Modal / Dialog](#modal--dialog)).
+  corners rounded and at maximum height stops 16px short of the top. **The one exception** is an
+  edge-anchored drawer or sheet: it may touch **only the edge it slides in from** — a bottom sheet the
+  bottom edge, keeping the margin at its top, left and right — and it declares that
+  ([Modal / Dialog](#modal--dialog)).
 - **Page content** gets it from the shell: `shell`'s inline padding is `--viewport-inset` plus the safe
   area, so a card in the page is inset by construction and never adds its own margin.
 
@@ -357,10 +358,12 @@ against it, and the `inset-viewport` utility
   ([maintainer decision on #1419](https://github.com/fmanimashaun/claude-skills/issues/1419#issuecomment-5886265345)). A right drawer touches the right edge and keeps the margin
   at its top, bottom and left; a left drawer is the mirror; a bottom sheet touches the bottom and keeps
   it at top, left and right. A centred card keeps the margin on every side. Each such placement
-  **declares it, for that placement only**, in a comment on or above the placement's own line —
-  `# modal-fit: edge-pinned right -- slides in from the right` beside the `right:` entry — so the
-  right drawer's declaration can never cover the bottom sheet or the centred card.
-  `check_modal_fit.py` reads it from comments only, never from a string.
+  **declares it, for that placement only**: ONE marker, in the comment on the placement's own line or
+  in the whole-line comment directly above it — `# modal-fit: edge-pinned right -- slides in from the
+  right` above the `right:` entry. A line holding two placements cannot be declared, and a comment with
+  two markers declares nothing, so the right drawer's declaration can never cover the bottom sheet or
+  the centred card. `check_modal_fit.py` reads Ruby `#` and ERB `<%# %>` comments only; an HTML
+  comment or a string never declares.
 - **`placement:`** picks centre or an edge: `:center` (default) · `:left` · `:right` · `:bottom`. An
   **overlay drawer is this component with `placement: :right`** — one dialog implementation, one focus
   trap, one `Esc`. A *persistent* sidebar is not a dialog and must not come through here.

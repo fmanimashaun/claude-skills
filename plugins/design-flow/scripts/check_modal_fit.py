@@ -83,11 +83,17 @@ VH_CALC_DECL = re.compile(r"max-height\s*:\s*calc\(\s*100[sdl]?vh\s*" + _GAP)
 # A FIXED width can outgrow any wrapper, inset or not: `w-[80rem]` inside `inset-viewport` overflows.
 FIXED_WIDTH = re.compile(r"(?<![\w-])w-\[\d+(?:\.\d+)?(?:rem|px|em)\]|(?<![\w-])width\s*:\s*\d+(?:\.\d+)?(?:rem|px|em)\b")
 CAPPED = re.compile(r"(?<![\w-])max-w-(?:full|\[calc\(100)")
+# A fixed MIN width beats any max-width, so no cap rescues it (#1451 review, round 2).
+MIN_FIXED = re.compile(r"(?<![\w-])min-w-\[\d+(?:\.\d+)?(?:rem|px|em)\]|min-width\s*:\s*\d+(?:\.\d+)?(?:rem|px|em)\b")
+# An inline max-height overrides any class; unless it is the viewport minus a gap, it unbinds the panel.
+STYLE_MAX_H = re.compile(r"""style\s*=\s*["'][^"']*?max-height\s*:\s*([^;"']+)""")
+VARIANT = re.compile(r"^(?:[\w-]+:)+!?|^!")
 UTILITY = re.compile(r"@utility\s+([\w-]+)\s*\{([^{}]*)\}", re.S)
 CSS_COMMENT = re.compile(r"/\*.*?\*/", re.S)
 # EDGE-ANCHORED PANELS (maintainer decision on #1419): a drawer or sheet may touch ONLY the edge it slides
 # in from, declared per placement, in a comment on or directly above that placement's own line.
-EDGES = {"inset-y-0": {"top", "bottom"}, "inset-x-0": {"left", "right"},
+# `start-0`/`end-0` are the logical edges, read as left/right (LTR); variant prefixes (`md:`) are stripped.
+EDGES = {"inset-y-0": {"top", "bottom"}, "inset-x-0": {"left", "right"}, "start-0": {"left"}, "end-0": {"right"},
          "top-0": {"top"}, "bottom-0": {"bottom"}, "left-0": {"left"}, "right-0": {"right"}}
 QUOTED = re.compile(r"""(["'])((?:(?!\1).)*)\1""")
 # The reason is on the SAME line: `\s` would cross the newline and read the next line as a reason.
@@ -140,29 +146,52 @@ def _comment_of(line: str) -> str:
     return ""
 
 
+def _placements(line: str) -> list[tuple[str, set[str]]]:
+    """(text, tokens) per placement on a line: each quoted string holding `fixed` starts one, and edge
+    tokens in the strings after it on the same line join it -- so `["fixed", "right-0"]` is one placement."""
+    out: list[tuple[str, set[str]]] = []
+    for q in QUOTED.finditer(line):
+        tokens = {VARIANT.sub("", t) for t in q.group(2).split()}
+        if "fixed" in tokens:
+            out.append((q.group(2).strip(), tokens))
+        elif out:
+            out[-1] = (out[-1][0] + " " + q.group(2).strip(), out[-1][1] | tokens)
+    return out
+
+
 def pinned_edges(rel: str, raw: str) -> list[str]:
-    """Findings for every `fixed` panel class string here that touches an edge it has not declared."""
+    """Findings for every `fixed` panel here that touches an edge it has not validly declared.
+
+    A declaration is valid only when it is the ONE marker in the comment on the placement's own line, or
+    in the whole-line comment directly above it, and that line holds ONE placement. Anything else -- two
+    markers, or one comment spanning two placements -- declares nothing, because the maintainer's
+    decision allows a drawer or sheet exactly one edge (#1451 review, round 2). HTML comments never count."""
     out = []
-    raw_lines = raw.split("\n")
+    raw_lines = [re.sub(r"<!--.*?-->", "", ln) for ln in raw.split("\n")]
     for n, line in enumerate(strip_comments(raw).split("\n")):
-        for q in QUOTED.finditer(line):
-            tokens = set(q.group(2).split())
-            if "fixed" not in tokens:
-                continue                      # `inset-0` (wrapper, backdrop) is in no EDGES entry
+        placements = _placements(line)
+        here = _comment_of(raw_lines[n]) if n < len(raw_lines) else ""
+        above = raw_lines[n - 1] if n > 0 else ""
+        above_comment = _comment_of(above) if (above.lstrip().startswith("#") or above.lstrip().startswith("<%#")) else ""
+        markers = [m.group(1) for m in DECLARE.finditer(here + "\n" + above_comment)]
+        valid = markers[0] if len(markers) == 1 and len(placements) == 1 else None
+        for text, tokens in placements:
             touched = set().union(*(EDGES[t] for t in tokens if t in EDGES)) if tokens & EDGES.keys() else set()
             if not touched:
+                continue                      # `inset-0` (wrapper, backdrop) is in no EDGES entry
+            bad = sorted(touched - ({valid} if valid else set()))
+            if not bad:
                 continue
-            here = _comment_of(raw_lines[n]) if n < len(raw_lines) else ""
-            above = raw_lines[n - 1] if n > 0 else ""
-            above_comment = _comment_of(above) if (above.lstrip().startswith("#") or above.lstrip().startswith("<%#")) else ""
-            declared = {m.group(1) for m in DECLARE.finditer(here + "\n" + above_comment)}
-            bad = sorted(touched - declared)
-            if bad:
-                out.append(
-                    f"{rel}:{n + 1}: modal-touches-edge — `{q.group(2).strip()}` touches the "
-                    f"{', '.join(bad)} edge{'s' if len(bad) > 1 else ''}. A card keeps the inset on every "
-                    f"side; a drawer or sheet may touch ONLY the edge it slides in from, declared on its own "
-                    f"placement: `# modal-fit: edge-pinned <edge> -- why` (components.md → Modal / Dialog).")
+            why = ""
+            if len(markers) > 1:
+                why = f" This line carries {len(markers)} edge-pinned markers; ONE edge per placement."
+            elif markers and len(placements) > 1:
+                why = f" One declaration cannot cover the {len(placements)} placements on this line."
+            out.append(
+                f"{rel}:{n + 1}: modal-touches-edge — `{text}` touches the "
+                f"{', '.join(bad)} edge{'s' if len(bad) > 1 else ''}.{why} A card keeps the inset on every "
+                f"side; a drawer or sheet may touch ONLY the edge it slides in from, declared on its own "
+                f"placement: `# modal-fit: edge-pinned <edge> -- why` (components.md → Modal / Dialog).")
     return out
 
 
@@ -178,10 +207,13 @@ def check_component(rel: str, source: str, sibling: str = "", vh_utilities: froz
     line = _line(source, m.start())
     findings: list[str] = []
     inset = bool(INSET.search(both))
-    overflowing = bool(FIXED_WIDTH.search(both)) and not CAPPED.search(both)
+    overflowing = (bool(FIXED_WIDTH.search(both)) and not CAPPED.search(both)) or bool(MIN_FIXED.search(both))
     fits_x = (inset or bool(WIDTH_GUTTER.search(both)) or bool(WIDTH_GUTTER_STYLE.search(both))) and not overflowing
     fits_y = ((inset and bool(MAX_H.search(both))) or bool(VH_CALC_CLASS.search(both))
               or bool(VH_CALC_DECL.search(both)) or _has_class(both, set(vh_utilities)))
+    inline_h = [v.strip() for v in STYLE_MAX_H.findall(both)]
+    if any(not VH_CALC_DECL.search(f"max-height: {v}") for v in inline_h):
+        fits_y = False                        # an inline max-height outranks every class
     missing = [what for what, ok in (("a width bounded by the viewport", fits_x),
                                      ("a height bounded by the viewport", fits_y)) if not ok]
     if missing:
@@ -291,6 +323,32 @@ def _selftest() -> int:
     expect("an ERB marker with no reason does not borrow the ERB comment above it",
            "modal-touches-edge" in rules('<%# a note about the sheet %>\n'
                                          '<div class="fixed right-0 top-6 bottom-6" role="dialog"> <%# modal-fit: edge-pinned right -- %>\n</div>'))
+    # ROUND 2: one marker, one placement, one edge.
+    expect("two markers in one comment declare nothing",
+           rules(GOOD_ERB, GOOD_RB + 'X = {\n    # modal-fit: edge-pinned right -- a; modal-fit: edge-pinned top -- b\n'
+                 '    right: "fixed right-0 top-6 bottom-6",\n}\n') == ["modal-touches-edge"])
+    expect("markers on the line AND above it declare nothing",
+           rules(GOOD_ERB, GOOD_RB + "X = {\n" + DECL_R + '    right: "fixed right-0 top-0 bottom-6", # modal-fit: edge-pinned top -- b\n}\n')
+           == ["modal-touches-edge"])
+    expect("one trailing comment cannot cover two placements on one line",
+           rules(GOOD_ERB, GOOD_RB + 'X = { left: "fixed left-0 top-6 bottom-6", right: "fixed right-0 top-6 bottom-6" } '
+                 '# modal-fit: edge-pinned right -- one of them\n') == ["modal-touches-edge", "modal-touches-edge"])
+    expect("an HTML comment never declares, even one holding a `#`",
+           "modal-touches-edge" in rules('<div class="fixed right-0 top-6 bottom-6" role="dialog">'
+                                         ' <!-- # modal-fit: edge-pinned right -- no --></div>'))
+    expect("a variant-prefixed edge still counts",
+           rules(GOOD_ERB, GOOD_RB + 'X = { right: "fixed md:right-0 top-6 bottom-6" }\n') == ["modal-touches-edge"])
+    expect("a logical end-0 edge is an edge: undeclared, it is a finding",
+           rules(GOOD_ERB, GOOD_RB + 'X = { right: "fixed end-0 top-6 bottom-6" }\n') == ["modal-touches-edge"])
+    expect("...and declared as right, it passes",
+           rules(GOOD_ERB, GOOD_RB + "X = {\n" + DECL_R + '    right: "fixed end-0 top-6 bottom-6",\n}\n') == [])
+    expect("edges split across strings on one line still count",
+           rules(GOOD_ERB, GOOD_RB + 'X = { right: ["fixed", "right-0 top-0"].join(" ") }\n') == ["modal-touches-edge"])
+    expect("an inline max-height: 100vh overrides max-h-full",
+           rules(GOOD_ERB.replace('class="<%= panel %>"', 'class="<%= panel %>" style="max-height: 100vh"'), GOOD_RB)
+           == ["modal-exceeds-viewport"])
+    expect("a fixed min-width overflows even with max-w-full",
+           rules(GOOD_ERB.replace("<%= panel %>", "min-w-[80rem] max-w-full max-h-full"), "") == ["modal-exceeds-viewport"])
     expect("class order does not matter: `inset-y-0 fixed` is still pinned",
            rules(GOOD_ERB, GOOD_RB + 'X = { right: "inset-y-0 right-0 fixed" }\n') == ["modal-touches-edge"])
     expect("the pinned finding points at the .rb line that pins, not the template",

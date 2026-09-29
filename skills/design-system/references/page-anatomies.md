@@ -494,7 +494,7 @@ result**.
 | **New** | no matching record | the row as it will be created |
 | **Changed** | matches an existing record, and at least one field differs | per field, **current → incoming**, the changed fields highlighted, and a per-row **Update / Skip** choice |
 | **Identical** | matches an existing record with nothing to change | **a count line**, collapsed — *"41 rows are identical"* — with a **Show them** expander |
-| **Unchangeable** | matches a record import may not change (e.g. merged) | the reason; no choice offered |
+| **Unchangeable** | matches a record import may not change (e.g. merged) | no Update / Skip choice |
 
 - **The default is Skip.** Nothing about an existing record changes unless the person chooses it,
   row by row or in bulk.
