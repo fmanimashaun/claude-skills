@@ -331,6 +331,19 @@ GUARD = Guard(
             '                if prev_op == "|" and _names_create(prev_text):',
             "refused as a pipe into `bash`",
         ),
+        # #1489: a script fed to a shell by redirect.
+        Mutation(
+            "a redirected script is not read, so bash < file escapes",
+            "                if script is not None and _names_create(script):",
+            "                if False:",
+            "a spaced redirect feeding a script with a create to a shell is refused",
+        ),
+        Mutation(
+            "only a spaced `<` is read, so bash <file escapes",
+            '        if w.startswith("<") and not w.startswith(("<<", "<(")) and len(w) > 1:',
+            "        if False:",
+            "a glued redirect feeding a script with a create to a shell is refused",
+        ),
         # ---- #1400: the ALLOWLIST -- each way a cd the create may not have followed is trusted -----
         Mutation(
             "an unterminated heredoc swallows the create after it",

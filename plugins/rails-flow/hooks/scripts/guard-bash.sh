@@ -80,7 +80,10 @@ fi
 # Quotes, backslashes and newlines are dropped for this TRIGGER only (#1462): `gh issue "create"`,
 # `gh issue \<newline>create` and `gh --repo o/r issue create` must reach the helper, which parses
 # the raw command properly and tells a create from a mention.
-if printf '%s' "$cmd" | tr -d "\"'\\\\" | tr '\n' ' ' | grep -qE 'gh[[:space:]].*issue[[:space:]]+(create|new)'; then
+# A shell reading a script by redirect (`bash < file`, #1489) names no create in its text at all, so it
+# triggers the helper too; the helper reads the file and decides.
+if printf '%s' "$cmd" | tr -d "\"'\\\\" | tr '\n' ' ' | grep -qE 'gh[[:space:]].*issue[[:space:]]+(create|new)' \
+   || printf '%s' "$cmd" | grep -qE '(^|[[:space:];&|(])(sh|bash|zsh|dash|ksh)([[:space:]]+-[a-zA-Z]+)*[[:space:]]*<[^<(]'; then
   _root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
   _why="$(printf '%s' "$cmd" | python3 "$(dirname "${BASH_SOURCE[0]}")/lib/issue_labels.py" --root "$_root" 2>&1)"
   _rc=$?

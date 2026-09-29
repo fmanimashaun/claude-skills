@@ -272,6 +272,11 @@ def hidden_create(cmd: str) -> str | None:
                 here = next((k for k, w in enumerate(words) if w.startswith("<<<")), None)
                 if here is not None and _names_create(" ".join([words[here][3:]] + words[here + 1:])):
                     return f"a herestring fed to `{head}`"
+                # `bash < script` / `bash <script` (#1489): the create lives in the FILE, so read it.
+                # A file that cannot be read is allowed, as before -- this can only add refusals.
+                script = _redirected_script(words[1:])
+                if script is not None and _names_create(script):
+                    return f"a script fed to `{head}` by redirect"
             # A pipeline feeds its whole upstream: `echo … | cat | bash` runs what echo wrote.
             prev_text = (prev_text + " " + raw_seg) if prev_op in ("|", "|&") else raw_seg
             prev_op = tok
@@ -329,6 +334,34 @@ def _peel(words: list[str]) -> list[str]:
         if wrapper in ("timeout", "nice") and words and re.fullmatch(r"[\d.]+[smhd]?", words[0]):
             words.pop(0)
     return words
+
+
+def _redirected_script(args: list[str]) -> str | None:
+    """The contents of the file a shell reads as stdin (`< path` or `<path`), or None.
+
+    Only a real, readable file under 1 MB; a relative path is resolved where the command runs.
+    `<<` (heredoc) and `<<<` (herestring) are other forms, handled elsewhere; `<(` is a process
+    substitution, not a file. Unreadable means unknown, and unknown keeps dev's behaviour: allow.
+    """
+    target = None
+    for k, w in enumerate(args):
+        if w == "<" and k + 1 < len(args):
+            target = args[k + 1]
+            break
+        if w.startswith("<") and not w.startswith(("<<", "<(")) and len(w) > 1:
+            target = w[1:]
+            break
+    if not target or "$" in target or "`" in target:
+        return None
+    path = Path(os.path.expanduser(target))
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    try:
+        if not path.is_file() or path.stat().st_size > 1_000_000:
+            return None
+        return path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
 
 
 def _command_word(text: str) -> str:
@@ -778,6 +811,19 @@ def selftest() -> int:
                            ("a pipe into `bash`", "echo 'gh issue create -t X' |& bash")):
             ok, why = verdict(cmd, bare)
             check(f"{cmd.splitlines()[0][:34]!r}: refused as {shape}", not ok and shape in why, why)
+        # #1489: a script fed to a shell by redirect -- the create lives in the file.
+        script = Path(td) / "file-an-issue.sh"
+        script.write_text("#!/bin/sh\ngh issue create -t X\n", encoding="utf-8")
+        for name, form in (("a spaced redirect", f"bash < {script}"), ("a glued redirect", f"bash <{script}"),
+                           ("a redirect behind timeout", f"timeout 5 sh < {script}")):
+            ok, why = verdict(form, bare)
+            check(f"{name} feeding a script with a create to a shell is refused", not ok and "by redirect" in why, why)
+        harmless = Path(td) / "no-issue.sh"
+        harmless.write_text("#!/bin/sh\necho hi\n", encoding="utf-8")
+        check("CONTROL: a redirected script without a create is allowed", verdict(f"bash < {harmless}", bare)[0])
+        check("CONTROL: a redirect to a missing file is allowed, as before", verdict(f"bash < {td}/nope.sh", bare)[0])
+        check("CONTROL: cat reading the same file is not a shell running it",
+              verdict(f"cat < {script}", bare)[0])
         check("CONTROL: a multi-stage pipe ending in grep is not a hidden create",
               verdict("echo 'gh issue create' | cat | grep create", bare)[0])
         # ---- #1467: an UNQUOTED heredoc's substitutions really run ----------------------------------

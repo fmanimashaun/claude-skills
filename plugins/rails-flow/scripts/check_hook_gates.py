@@ -525,6 +525,17 @@ def guard_bash_fixtures() -> None:
         rc, err = labelled(form)
         check(f"guard-bash (#1462): `{form[:30]}` with no label is refused through the real hook",
               rc == 2 and "no --label" in err, err)
+    # #1489: `bash < file` names no create in its text; the trigger must still reach the helper.
+    with tempfile.TemporaryDirectory() as sd:
+        script = Path(sd) / "file.sh"
+        script.write_text("#!/bin/sh\ngh issue create -t X\n", encoding="utf-8")
+        rc, err = labelled(f"bash < {script}")
+        check("guard-bash (#1489): a script with a create fed to bash by redirect is refused through the real hook",
+              rc == 2 and "by redirect" in err, err)
+        plain = Path(sd) / "plain.sh"
+        plain.write_text("#!/bin/sh\necho hi\n", encoding="utf-8")
+        check("guard-bash (#1489): CONTROL: a harmless redirected script is allowed through the real hook",
+              labelled(f"bash < {plain}")[0] == 0)
     check("guard-bash (#1423): CONTROL: an echo of the text is allowed through the real hook",
           labelled('echo "gh issue create"')[0] == 0)
     rc, err = labelled("gh issue create -t X --label feature", drop_helper=True)

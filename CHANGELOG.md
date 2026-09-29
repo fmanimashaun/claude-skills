@@ -3566,6 +3566,19 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **`guard-bash` label-checks a create inside a script fed to a shell by redirect —
+  `plugins/rails-flow/hooks/scripts/guard-bash.sh`, `plugins/rails-flow/hooks/scripts/lib/issue_labels.py`,
+  `scripts/mutations/hook_issue_labels.py`, `scripts/mutations/hook_guard_bash.py`,
+  `plugins/rails-flow/scripts/check_hook_gates.py`** (#1489).
+  - `bash < file` names no create in its text, so neither the hook's trigger nor the helper saw it. The trigger now
+    fires on a shell reading a redirect.
+  - The helper reads the file (spaced `< f` or glued `<f`, behind any wrapper, real files under 1 MB) and refuses by
+    name when it names a create, applying #1423's owner-decided rule.
+  - A file that cannot be read is allowed, as before. `cat < file` is not a shell running it, and `bash script.sh`,
+    a script passed as an argument, is out of scope.
+  - 5 selftest cases and 2 end-to-end hook fixtures; 3 new mutations (`hook_issue_labels` 61 of 61, `hook_guard_bash`
+    13 of 13).
+
 - **`guard-bash` label-checks `gh issue new`, `gh --repo … issue create`, and creates fed to a shell —
   `plugins/rails-flow/hooks/scripts/guard-bash.sh`, `plugins/rails-flow/hooks/scripts/lib/issue_labels.py`,
   `scripts/mutations/hook_issue_labels.py`, `scripts/mutations/hook_guard_bash.py`,
