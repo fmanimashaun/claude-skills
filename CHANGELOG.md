@@ -16126,6 +16126,25 @@ boot/validation path — with a bullet each so the promotion could close them se
     change the recorded decision not to extract.
   - Where the cop lives is our own design, per the maintainer decision on [#1361](https://github.com/fmanimashaun/claude-skills/issues/1361#issuecomment-5857528252).
 
+- **Style §1 and §5 are advice: neither can be enforced as written, because of their exceptions — `skills/rails-8/references/style.md`,
+  `dist/rails-8.skill`** (#1363). The issue asked whether the two lint-shaped sections of the style doctrine could be
+  enforced by a cop. Neither can be enforced as written, because of its exceptions, and the doctrine now says so
+  with the measurement:
+  - **§5's "a project only has to flip `Enabled: true`" was wrong.** `Layout/IndentationConsistency` enforces only
+    consistency: it flags mixed indentation inside a visibility section and passes a uniformly unindented `private`
+    section. Three cops together do enforce §5's main shape exactly: `IndentationWidth` (which omakase disables),
+    `IndentationConsistency(indented_internal_methods)` and `EmptyLinesAroundAccessModifier(only_before)`. But they
+    flag the private-only module §5 names as its exception, and no option expresses that exception. So §5 is advice
+    by default, and §5 now names the three-cop setup, with its per-file carve-out, for a project that wants it.
+  - **§1:** no stock cop prefers expanded conditionals, `Style/GuardClause` has no `EnforcedStyle` to invert, and the
+    rule's exceptions are judgement.
+  - **Verified:** `doctrine-verifier` CONFIRMED all five claims by running each cop on the section's own shapes, on
+    rubocop 1.91.0, rubocop-ast 1.50.0 and rubocop-rails-omakase 1.1.0. An independent review then found the first
+    draft misread `only_before`. Flagging a blank line after `private` in an ordinary class is correct enforcement
+    of §5, not a failure. It reproduced the working three-cop combination, and this entry and §5 were corrected.
+  - Both sections become `advice` rows in `docs/architecture/doctrine-map.html` (`scripts/doctrine_map.py`), each
+    with its measured reason. The outcome is the one the issue proposed for "no", approved on [#1363](https://github.com/fmanimashaun/claude-skills/issues/1363).
+
 ### 1.69.0 (release v1.152.0) — 2026-09-28
 
 - **The design-system's own filter panel and billing radio group now use simple_form — `skills/design-system/references/component-implementations.md`,
