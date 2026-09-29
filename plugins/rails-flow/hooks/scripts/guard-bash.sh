@@ -77,7 +77,10 @@ fi
 # Called whenever the text names a create ANYWHERE (#1423): a create in `sh -c`, `eval`, backticks
 # or behind `/usr/bin/gh` never starts a normalised segment, so a segment match alone never saw it.
 # The helper tells a command from a mention (`echo "gh issue create"` stays allowed).
-if printf '%s' "$cmd" | grep -qE 'gh[[:space:]]+issue[[:space:]]+create'; then
+# Quotes, backslashes and newlines are dropped for this TRIGGER only (#1462): `gh issue "create"`,
+# `gh issue \<newline>create` and `gh --repo o/r issue create` must reach the helper, which parses
+# the raw command properly and tells a create from a mention.
+if printf '%s' "$cmd" | tr -d "\"'\\\\" | tr '\n' ' ' | grep -qE 'gh[[:space:]].*issue[[:space:]]+(create|new)'; then
   _root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
   _why="$(printf '%s' "$cmd" | python3 "$(dirname "${BASH_SOURCE[0]}")/lib/issue_labels.py" --root "$_root" 2>&1)"
   _rc=$?
