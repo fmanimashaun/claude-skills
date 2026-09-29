@@ -11,6 +11,8 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 *Version number assigned at promotion.*
 
+- **The skill-gap search tells "no hit" from "did not run", and names a version shipped with two skills trees — `.claude/agents/issue-triager.md`, `scripts/skill_version_tag.py`, `scripts/mutations/skill_version_tag.py`** (#1427 items 1, 5, 6). The triager's block exited 0 on both warning branches while a real no-hit exited 1; the warning branches now end `(exit 2)`, the prose names the three codes (0 hit, 1 no hit, 2 did not run), and an unreadable repo (`skill_version_tag` exit 2) gets its own message instead of "search origin/dev". Run verbatim in bash, zsh and sh. `skill_version_tag.py` now warns on stderr, naming one tag per distinct later `skills` tree carrying the same version, and the triager re-runs the search at each. Measured over every tag: 42 of 111 rails-stack versions ship in more than one tag, and one, 1.42.2, holds two trees: v1.75.0's, and one shared by v1.76.0, v1.77.0 and v1.79.0 (the warning names v1.76.0). The tag on stdout is unchanged. Its exit-2 branch (outside a repository) now has a fixture; 9/9 mutations are caught.
+
 - **The shipped-ERB check reads indented fences, and a primitive marker excuses only what it names — `scripts/check_shipped_erb_forms.py`,
   `scripts/mutations/check_shipped_erb_forms.py`** (#1443). A fence may be indented, and closes at a fence of the
   same indent; five blocks had been skipped (all clean today). The marker is now
@@ -3537,6 +3539,19 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 ## rails-flow (agentic flow plugin)
 
 ### Unreleased
+
+- **toolchain_version: a linked worktree, and a recorded path differing only in case, are the same project — `plugins/rails-flow/scripts/toolchain_version.py`,
+  `plugins/rails-flow/scripts/toolchain_version_selftest.py`, `plugins/rails-flow/scripts/mutations/toolchain_version.py`** (#1427 items 2, 3, 4).
+  `applies_to` now matches a record against the session's path AND, for a linked git worktree (its `.git` is a file
+  naming `<main>/.git/worktrees/<name>`), its main checkout. A worktree usually sits outside the project root, so it read
+  as "installed only for other projects"; a record naming the worktree itself still matches, and `<wt>/app` maps to
+  `<main>/app`, so a project recorded below its repository root matches too. A submodule's `.git/modules` and a bare
+  clone's worktree are deliberately not mapped, and a non-string `projectPath` is skipped instead of raising. On a case-insensitive volume, a `projectPath` differing only in case now matches via
+  `os.path.samefile`, restricted to case-only differences so it cannot mask the symlink fixture. The trailing-slash fixture now puts the slash in the
+  RECORD, where it really arrives; the old one could not fail. Item 4 is our own design, with no upstream: a worktree
+  of the project is the project, the rule PR #1473 (#1421) also applies to design-flow. The decision is recorded on #1427.
+  The case fixture stubs `samefile`, so it runs on CI's Linux runner too; 14/14 mutations are caught, including the
+  session path replaced by its main checkout (#1474 review) and the case branch dropped.
 
 - **`simple-form-only` judges only real attributes, and stops at the tag it is in — `plugins/rails-flow/scripts/check_simple_form_only.py`,
   `plugins/rails-flow/scripts/mutations/check_simple_form_only.py`** (#1443). A name set through ERB
