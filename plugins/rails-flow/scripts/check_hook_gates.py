@@ -457,6 +457,15 @@ def guard_bash_fixtures() -> None:
         check("guard-bash (#1400): ...and that repo's rules still refuse", rc == 2 and "severity:s1" in err, err)
         rc, err = cross("gh issue create -t X --label enhancement --body-file b.md")
         check("guard-bash (#1400): CONTROL: without the cd, the session's own rules apply", rc == 2 and "comp:*" in err, err)
+    # #1423: the hook must CALL the helper for a create that never starts a segment.
+    rc, err = labelled("sh -c 'gh issue create -t X --label feature'")
+    check("guard-bash (#1423): a create inside `sh -c` is refused through the real hook",
+          rc == 2 and "sh -c" in err and "directly" in err, err)
+    rc, err = labelled("/usr/bin/gh issue create -t X --body-file b.md")
+    check("guard-bash (#1423): `/usr/bin/gh issue create` with no label is refused through the real hook",
+          rc == 2 and "no --label" in err, err)
+    check("guard-bash (#1423): CONTROL: an echo of the text is allowed through the real hook",
+          labelled('echo "gh issue create"')[0] == 0)
     rc, err = labelled("gh issue create -t X --label feature", drop_helper=True)
     check("guard-bash (#1311): FAIL CLOSED: with the helper missing, a labelled create is refused, not let through",
           rc == 2 and "could not run" in err, err)
@@ -537,8 +546,9 @@ def guard_claims_fixtures() -> None:
           run("gh pr create --base dev --body-file BODY", "## What changed\nx\n", template=TPL) == 2, "exit 0")
     # Second pre-release review: a crash is said out loud, and -R is read from the gh segment only.
     rc, out = run("gh pr create --base dev --body-file BODYDIR", None, template=TPL, with_output=True)
-    check("guard-claims: a body the helper cannot judge (a directory) says NOT checked, never silence",
-          rc == 0 and "NOT checked" in out, f"exit {rc}: {out[-120:]}")
+    # FAIL CLOSED (owner decision on #1435): a checker that cannot judge has not checked anything.
+    check("guard-claims: a body the helper cannot judge (a directory) is BLOCKED, never let through",
+          rc == 2 and "crashed" in out, f"exit {rc}: {out[-120:]}")
     check("guard-claims: an unrelated `grep -R` earlier in the chain does not switch the check off",
           run("grep -R TODO . >/dev/null; gh pr create --base dev --body-file BODY", "## What changed\nx\n",
               template=TPL) == 2, "exit 0")
@@ -560,8 +570,15 @@ def guard_claims_fixtures() -> None:
             broke = subprocess.run(["bash", str(copy / "guard-claims.sh")], cwd=td, env=env, text=True,
                                    capture_output=True, timeout=60,
                                    input=json.dumps({"tool_input": {"command": f"gh pr create --base dev --body-file {td}/body.md"}}))
-    check("guard-claims: a helper that fails at import says NOT checked, never silence",
-          "NOT checked" in broke.stdout + broke.stderr, f"exit {broke.returncode}: {(broke.stdout + broke.stderr)[-120:]}")
+    check("guard-claims: a helper that fails at import is BLOCKED, never let through",
+          broke.returncode == 2 and "died before judging" in broke.stdout + broke.stderr,
+          f"exit {broke.returncode}: {(broke.stdout + broke.stderr)[-120:]}")
+    check("guard-claims: `-R` in a double-quoted title with an apostrophe is still text (#1435)",
+          run("gh pr create --title \"it's the -R fix\" --base dev --body-file BODY", "## What changed\nx\n",
+              template=TPL) == 2, "exit 0")
+    check("guard-claims: ...and an escaped quote inside the title does not end it early",
+          run("gh pr create --title \"say \\\"hi -R\\\" now\" --base dev --body-file BODY", "## What changed\nx\n",
+              template=TPL) == 2, "exit 0")
     check("guard-claims: `-R` inside a quoted --title is text, so the body is still judged",
           run("gh pr create --title 'fix grep -R bug' --base dev --body-file BODY", "## What changed\nx\n",
               template=TPL) == 2, "exit 0")

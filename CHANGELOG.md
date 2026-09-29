@@ -3552,6 +3552,42 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   deadline (the old regex misses it; a mutation restores it). Run before and after against an export of the
   app behind #1391 at its `origin/dev` (`f0f84e1a`, with its `Gemfile.lock`, so the gate applies): the same 4
   findings, two of them the pre-existing `collection_*` false positive filed as #1458. 26/26 mutations caught.
+- **`guard-bash` refuses a `gh issue create` it cannot label-check, and names the shape —
+  `plugins/rails-flow/hooks/scripts/guard-bash.sh`, `plugins/rails-flow/hooks/scripts/lib/issue_labels.py`,
+  `scripts/mutations/hook_issue_labels.py`, `scripts/mutations/hook_guard_bash.py`,
+  `plugins/rails-flow/scripts/check_hook_gates.py`** (#1423). A create inside `sh -c`/`bash -c` (including a bundled
+  `-lc`), `eval`, backticks or `$( … )` ran as a create, but its labels were one quoted string, so it was never
+  checked. Behind `/usr/bin/gh` it was never seen at all. Now the hook calls the helper whenever the text names a
+  create anywhere. The helper refuses the string forms with "run it directly" and label-checks any path to gh. A
+  plain mention (`echo "gh issue create"`, a grep) stays allowed. Backticks are paired and `$( … )` is
+  depth-counted, so a substitution BEFORE a create is not mistaken for one around it. A command wrapper (`env`,
+  `sudo`, `timeout`, `nohup`, `command`, …) does not hide a string that runs. Single-quoted text and heredoc
+  bodies, including one opened inside `"$(cat <<'EOF'`, are literal, so a commit message or PR body quoting
+  `gh issue create` is not refused. The final review caught that false positive before merge. Owner decision
+  recorded on #1423. 20 selftest cases, 3 end-to-end hook fixtures; 15 new mutations (14 on `hook_issue_labels`, 1
+  on `hook_guard_bash`). Follow-ups: #1462 (`gh issue new`, a create fed to a shell on stdin).
+
+- **The followed `cd` shape needs an unquoted `&&` — `plugins/rails-flow/hooks/scripts/lib/issue_labels.py`,
+  `scripts/mutations/hook_issue_labels.py`** (#1440). shlex drops quotes, so `cd /x '&&' gh issue create …` read as
+  the followed shape. The raw text is now checked: `cd <operand>` then an unquoted `&&`, with the operand itself
+  allowed to be quoted. That made the tokenised first-word check redundant, and it is removed. 2 selftest cases;
+  1 new mutation (40 of 40 caught on `hook_issue_labels`).
+
+- **`guard-claims` fails closed on a helper failure, and five review follow-ups —
+  `plugins/rails-flow/hooks/scripts/guard-claims.sh`, `plugins/rails-flow/agents/pr-reviewer.md`,
+  `plugins/rails-flow/commands/feature.md`, `plugins/rails-flow/scripts/check_slices.py`,
+  `plugins/rails-flow/scripts/check_issue_ready.py`, `scripts/mutations/hook_guard_claims.py`** (#1435).
+  - A PR-template helper that is missing, crashes, or dies at import now BLOCKS instead of saying "NOT checked".
+    That is the owner's decision recorded on #1435, and `RAILS_FLOW_CLAIMS_OK=1` stays the audited escape.
+  - Quotes are stripped by one left-to-right scan, so `"it's -R"` and an escaped `\"` read as the shell reads them.
+  - `pr-reviewer`'s mock-up step captures the gate's `rc` before cleanup and exits with it, removes the worktree
+    with a `trap`, and refuses a head that moved between `gh pr view` and the fetch. Run verbatim against #1406,
+    plus a mismatched-head control.
+  - `feature.md` names both slice openings.
+  - `check_slices.py` and `check_issue_ready.py` read CommonMark fences the same way: backticks or tildes, three
+    or more, closed only by the same run. Two shapes where they still differ are filed as #1461.
+  - Mutations: 3 new on `hook_guard_claims` (11 of 11), 2 each on `check_slices` (14) and `check_issue_ready` (13).
+
 - **model-tiers: `sonnet` is Sonnet 5.5 on the Anthropic API from Claude Code v2.1.284 — `plugins/rails-flow/reference/model-tiers.md`,
   `plugins/rails-flow/scripts/check_handoff.py`** (#1449). Verified against code.claude.com `model-config`, re-read
   2026-09-29. Only the Anthropic API row moved: Claude Platform on AWS is still Sonnet 4.6, and Amazon Bedrock,
