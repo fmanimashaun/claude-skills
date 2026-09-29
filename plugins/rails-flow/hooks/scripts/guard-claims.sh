@@ -72,22 +72,49 @@ if printf '%s' "$cmd" | grep -qE '\bgh[[:space:]]+pr[[:space:]]+(create|edit)\b'
   # an `-R` inside a heredoc body, must not switch the check off (second pre-release review).
   # Quoted strings are removed first, so `-R` or a `|` inside `--title '…'` is text, not a flag or a
   # pipe (third pre-release review). GH_REPO, set on the command or inherited, targets another repo too.
-  unquoted="$(printf '%s' "$cmd" | sed -E "s/'[^']*'//g; s/\"[^\"]*\"//g")"
+  # One left-to-right scan, so `"it's"`, an escaped `\"` and a quote inside the other kind are read as
+  # the shell reads them (#1435). A sed pair stripped '…' first and mis-paired `"it's -R"`. No python3
+  # here means an empty result, and the helper check below then BLOCKS for the same missing python3.
+  unquoted="$(printf '%s' "$cmd" | python3 -c '
+import sys
+s, out, q, i = sys.stdin.read(), [], "", 0
+while i < len(s):
+    c = s[i]
+    if not q:
+        if c in "\x27\"":
+            q = c
+        else:
+            out.append(c)
+    elif q == "\"" and c == "\\":
+        i += 1
+    elif c == q:
+        q = ""
+    i += 1
+sys.stdout.write("".join(out))
+' 2>/dev/null)"
   pr_seg="$(printf '%s' "$unquoted" | grep -oE 'gh[[:space:]]+pr[[:space:]]+(create|edit)[^;&|]*' | head -1)"
   if printf '%s' "$pr_seg" | grep -qE '(^|[[:space:]])(-R|--repo)' \
      || printf '%s' "$unquoted" | grep -qE '(^|[[:space:];&|])GH_REPO=' || [ -n "${GH_REPO:-}" ]; then
     echo "rails-flow: PR-template sections NOT checked (-R/--repo/GH_REPO targets another repository's template)." >&2
   elif [ ! -f "$tpl_lib" ] || ! command -v python3 >/dev/null 2>&1; then
-    echo "rails-flow: PR-template sections NOT checked (lib/pr_template.py or python3 unavailable)." >&2
+    # FAIL CLOSED (owner decision on #1435): this is a gate, and a gate whose checker is missing has
+    # not checked anything. The audited escape stays.
+    echo "BLOCKED by rails-flow claim guard: the PR-template check cannot run (lib/pr_template.py or python3 unavailable)." >&2
+    echo "Fix the install, or ship deliberately unchecked: RAILS_FLOW_CLAIMS_OK=1 (audited)." >&2
+    exit 2
   else
     gaps="$(python3 "$tpl_lib" "$root" "$body" 2>/dev/null)"; tpl_rc=$?
     # pr_template.py exits 1 ONLY with the missing sections listed; any failure to judge is exit 3.
     if [ "$tpl_rc" -ne 0 ] && [ "$tpl_rc" -ne 1 ]; then
-      echo "rails-flow: PR-template sections NOT checked (pr_template.py exited $tpl_rc); check the body by hand." >&2
+      echo "BLOCKED by rails-flow claim guard: the PR-template check crashed (pr_template.py exited $tpl_rc), so the body was not judged." >&2
+      echo "Fix it, or ship deliberately unchecked: RAILS_FLOW_CLAIMS_OK=1 (audited)." >&2
+      exit 2
     elif [ "$tpl_rc" -eq 1 ] && [ -z "$gaps" ]; then
       # Exit 1 with nothing listed is not a verdict: the helper died before main() (an ImportError, a
-      # SyntaxError from a broken edit, a python3 too old for it). Say so; never read it as a pass.
-      echo "rails-flow: PR-template sections NOT checked (pr_template.py exited 1 with no sections listed)." >&2
+      # SyntaxError from a broken edit, a python3 too old for it). FAIL CLOSED (#1435).
+      echo "BLOCKED by rails-flow claim guard: the PR-template check died before judging (exit 1, no sections listed)." >&2
+      echo "Fix it, or ship deliberately unchecked: RAILS_FLOW_CLAIMS_OK=1 (audited)." >&2
+      exit 2
     elif [ "$tpl_rc" -eq 1 ]; then
       echo "BLOCKED by rails-flow claim guard: this PR body is missing section(s) the repo's PR template requires:" >&2
       printf '%s\n' "$gaps" | sed 's/^/  ## /' >&2

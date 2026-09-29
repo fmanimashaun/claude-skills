@@ -243,11 +243,18 @@ def _elapsed(run: dict, now: datetime) -> float:
 def elapsed_line(records: list[dict], now: datetime) -> str:
     """`elapsed 340s / 7200s` -- the pacing signal a proceeding `check` ends with (#1364).
 
-    Anthropic's *Prompting Claude Opus 5.5* guide ("Time signals for multiagent harnesses"): a
-    model told elapsed time against its budget, in seconds, paces itself to finish inside it.
-    Without it the model heard about time only once the budget was already spent. Built from the
-    same `_elapsed` and the same `budget_minutes` the budget breaker reads, so the line and the
-    STOP cannot disagree about how much is spent. Advisory: the hard stop stays `budget`.
+    Source, verified against the live page by doctrine-verifier on 2026-09-29 (#1417): Anthropic's
+    *Prompting Claude Opus 5.5* guide, "Time signals for multiagent harnesses",
+    https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5#time-signals-for-multi-agent-harnesses
+    -- "have your harness add a short line at the end of each message it sends back to the model
+    giving the elapsed time against that budget, in seconds"; "The model paces its work to finish
+    inside the budget"; "The budget is advisory ... if you need a hard stop, keep your own timeout."
+
+    OURS, not the guide's: before #1364 the model heard about time only once the budget was spent;
+    the line ends every proceeding `check` (the guide says every message); and one `budget_minutes`
+    is both the advisory number and the hard stop, where the guide sets the advisory budget
+    "somewhat above the time you actually want spent". The line is built from the same `_elapsed`
+    and `budget_minutes` the budget breaker reads, so it and the STOP cannot disagree.
     """
     run = _run_record(records)
     spent = _elapsed(run, now)

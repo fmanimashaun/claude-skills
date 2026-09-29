@@ -23,6 +23,7 @@ GUARD = Guard(
         "scripts/package_core.py",
         "scripts/build_maintainer_skills.py",
         "scripts/derive_mandated_gems.py",
+        "scripts/derive_tenancy_cop.py",          # registered in BUILDERS by #1403
         "scripts/extract_release_notes.py",
         "docs/evidence/coverage.html",
         "docs/wiki/",
@@ -30,6 +31,7 @@ GUARD = Guard(
         "dist/",
         ".claude/skills/",
         "plugins/rails-flow/mandated_gems.json",
+        "plugins/rails-flow/scaffold/",           # derive_tenancy_cop.py's declared output
     ),
     mutations=(
         Mutation(

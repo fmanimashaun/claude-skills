@@ -340,7 +340,7 @@ reference the wrapper must produce: the control beside its label, at touch heigh
 `.rails-flow/raw-form-exemptions.json`, with a reason, for the `simple-form-only` gate.
 
 ```erb
-<%# simple-form-only: primitive -- the anatomy the simple_form wrapper renders; see above %>
+<%# simple-form-only: primitive check_box_tag -- the anatomy the simple_form wrapper renders; see above %>
 <%# composition: control beside label is the field's anatomy %>
 <%# checkbox / radio — wrap in a cluster so control + label align %>
 <label class="cluster min-h-touch" style="--space: var(--space-2xs)">
@@ -416,7 +416,11 @@ end
         <button type="button" data-action="modal#close" aria-label="Close"
                 class="with-icon min-h-touch rounded-md focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring/30"><span class="sr-only">Close</span><%= close_icon %></button>
       </div>
-      <div class="min-h-0 overflow-y-auto"><%= content %></div>
+      <%# Vertical only (#1419). `overflow-x-hidden` is explicit: with `overflow-y-auto` alone, x would  %>
+      <%# compute to auto and could scroll; hidden clips and offers the user no sideways scroll, while   %>
+      <%# `clip` also forbids script scrolling (CSS Overflow 3, overflow properties). `min-w-0`/`min-h-0` %>
+      <%# let this flex item shrink below its content (CSS Flexbox 1, 4.5 automatic minimum size).       %>
+      <div class="min-h-0 min-w-0 overflow-y-auto overflow-x-hidden"><%= content %></div>
       <% if actions? %><div class="cluster" style="--justify: flex-end"><%= actions %></div><% end %>
     </div>
   </div>
@@ -535,7 +539,7 @@ for the `simple-form-only` gate, and `match` keeps the exemption from covering a
 ```
 
 ```erb
-<%# simple-form-only: primitive -- the Combobox builds its own input; declare it (above) %>
+<%# simple-form-only: primitive tag.input -- the Combobox builds its own input; declare it (above) %>
 <%# composition: input above listbox IS the combobox %>
 <%# combobox_component.html.erb — role=combobox goes on the INPUT, never a wrapper div. %>
 <%# A wrapper with aria-owns is the superseded ARIA 1.1 model and no longer conforms. %>
@@ -819,7 +823,7 @@ landmark noise outweighs the structure.
 ## Tabs — `app/components/ui/tabs_component.rb`
 
 ```erb
-<%# simple-form-only: primitive -- the picker below 768px is the Tabs control, not a submitted field %>
+<%# simple-form-only: primitive <select -- the picker below 768px is the Tabs control, not a submitted field %>
 <%# composition: tabs sit in a row; that is what a tablist is %>
 <%# tabs_controller uses list-navigation. `aria-selected` IS the state — the attribute APG already %>
 <%# requires — so nothing toggles a second data-state beside it. Four things here are required by  %>

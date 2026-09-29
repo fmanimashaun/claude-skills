@@ -52,6 +52,12 @@ registry for the version you run, not from a provider's model list — they are 
 `claude-sonnet-5` is in 2.0.0's registry and **not** in 1.x's; an app still on 1.x must use
 `claude-sonnet-4-6`.
 
+**Claude Sonnet 5.5 (`claude-sonnet-5-5`, released 2026-09-28) is the current Sonnet, and Sonnet 5
+is legacy.** It stays available, with retirement not sooner than 2027-06-30. But **no ruby_llm
+release has `claude-sonnet-5-5` in its registry yet**: 2.0.0 (2026-09-18) predates the model, and
+setting `default_model` to it raises. Keep `claude-sonnet-5` until a ruby_llm release lists the
+new ID; that release is the moment to switch.
+
 ## 2. Core chat API
 
 ```ruby
@@ -67,8 +73,8 @@ chat.ask("Now compress it to 5 items")
 chat.ask("Describe this", with: "report.pdf")   # attachments: images/PDFs/audio
 ```
 
-Leave sampling alone on the default model: Claude Sonnet 5 returns **400** for a non-default
-`temperature`, `top_p` or `top_k`, and ruby_llm 2.0 sends `with_temperature` through unchecked —
+Leave sampling alone on the default model: Claude Sonnet 5 **and Sonnet 5.5** return **400** for a
+non-default `temperature`, `top_p` or `top_k`, and ruby_llm 2.0 sends `with_temperature` through unchecked —
 so a `with_temperature` chained onto the default model above fails every request.
 
 One API, any provider — switching models is a string change, which is the

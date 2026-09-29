@@ -21,6 +21,13 @@ GUARD = Guard(
            # mutation reads as caught -- the harness reported this guard INERT until it was added (#1173).
            'plugins/rails-flow/scripts/ci_verdict_hint.py'),   # the harness drives release-gate.sh too (#906)
     mutations=(
+        # #1423: the label helper must run for a create that never starts a normalised segment.
+        Mutation(
+            "the label helper runs only for a create at a segment start, so sh -c and /usr/bin/gh escape",
+            "if printf '%s' \"$cmd\" | grep -qE 'gh[[:space:]]+issue[[:space:]]+create'; then",
+            "if hit '^gh[[:space:]]+issue[[:space:]]+create\\b'; then",
+            "a create inside `sh -c` is refused through the real hook",
+        ),
         # #1342: each discarding form goes unblocked again, or its safe twin gets caught with it.
         Mutation(
             "git clean -f is allowed",

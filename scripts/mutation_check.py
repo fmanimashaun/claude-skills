@@ -40,10 +40,12 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import os
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from mutation_types import Guard, Mutation  # noqa: F401 -- re-exported: mutation_check_selftest and doctrine_map use mc.Guard / mc.Mutation
@@ -164,20 +166,28 @@ def unstaged_sibling_imports(guard: Guard, base: Path) -> list[str]:
     stems = {Path(r).stem for r in staged} | {Path(n).stem for n in guard.needs}
     need_dirs = [n for n in guard.needs if (base / n).is_dir()]
     out: list[str] = []
-    for relative in sorted(staged):
+    # Transitive, and seeded from `needs` files too (#1444): check_slices staged
+    # check_mockup_gate as a need, which imported classify_door, and a one-level scan of the
+    # staged trio never read the file that held the import -- the guard went INERT in CI.
+    pending = sorted(staged | {n for n in guard.needs if (base / n).is_file()})
+    seen: set[Path] = set()
+    while pending:
+        relative = pending.pop(0)
         source = base / relative
-        if not source.is_file() or source.suffix != ".py":
+        if source in seen or not source.is_file() or source.suffix != ".py":
             continue
-        for name in sorted(sibling_imports(source) - stems):
+        seen.add(source)
+        for name in sorted(sibling_imports(source)):
             sibling = source.parent / f"{name}.py"
             if not sibling.is_file():
                 continue              # stdlib or third-party; not this harness's business
             # A `needs` DIRECTORY covers anything beneath it, at any depth -- `plugins/qa-flow`
             # stages `plugins/qa-flow/scripts/evidence_app_tie.py`. Testing `base/d/<name>.py`
             # instead reported a guard that was already correct, on this rule's first run.
-            if any(sibling.is_relative_to(base / d) for d in need_dirs):
-                continue
-            out.append(f"{relative} imports `{name}`, which is in neither deps nor needs")
+            covered = name in stems or any(sibling.is_relative_to(base / d) for d in need_dirs)
+            if not covered:
+                out.append(f"{relative} imports `{name}`, which is in neither deps nor needs")
+            pending.append(str(sibling.relative_to(base)))
     return out
 
 
@@ -261,16 +271,45 @@ def run_baseline(guard: Guard) -> list[str]:
     return []
 
 
+def run_mutation(guard: Guard, mutation: Mutation) -> list[str]:
+    """One mutation, in its own tempdir. Independent of every other mutation, so the suite can run
+    them in parallel (#1444). `run_guard` and `main` both come through here: one implementation."""
+    workdir = Path(tempfile.mkdtemp(prefix=f"mutcheck-{guard.name}-"))
+    try:
+        entry = apply_mutation(guard, mutation, workdir)
+        argv = [sys.executable, str(entry)]
+        if guard.selftest == guard.subject:
+            argv.append("--selftest")   # the selftest is a flag on the module itself
+        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True, timeout=300)
+        output = result.stdout + result.stderr
+        if result.returncode == 0:
+            return [f"{guard.name}: SURVIVED — {mutation.name}. The selftest passed with this "
+                    "broken, so nothing guards it."]
+        if mutation.expects and mutation.expects.lower() not in output.lower():
+            return [f"{guard.name}: caught {mutation.name!r} but not by the expected fixture "
+                    f"(no mention of {mutation.expects!r}) — a coincidental catch would hide that "
+                    "fixture going quiet"]
+        return []
+    except subprocess.TimeoutExpired:
+        return [f"{guard.name}: {mutation.name} timed out"]
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+
+
+def live_mutations(guards: list[Guard], baselines: list[list[str]]) -> list[tuple[Guard, Mutation]]:
+    """The mutations `main`'s pool still runs: every one of every guard whose baseline passed.
+
+    A baseline with findings ends its guard unscored -- the same rule `run_guard` applies serially.
+    """
+    return [(g, m) for g, b in zip(guards, baselines) if not b for m in g.mutations]
+
+
 def run_guard(guard: Guard) -> list[str]:
     """Failures for one guard. Empty list = every mutation was caught by the right fixture.
 
-    Serial, deliberately. Wall time is one subprocess per declared mutation and the list only
-    grows -- 236 of them crossed `maintainer_doctor`'s 180s per-gate budget while #129 was being
-    written. The fix is `SLOW_GATES` over there, which states the cost honestly, rather than a
-    thread pool here: every mutation does run in its own temp directory against its own
-    subprocess, so parallelising is safe and is the obvious next step, but it measured at only
-    ~7% on a machine that was running other agents' sweeps at the same time. An unmeasurable
-    speedup is not worth adding concurrency to the checker every other gate is judged by.
+    Serial within the guard; `main` parallelises ACROSS mutations instead (#1444), which is
+    safe because every mutation runs in its own temp directory against its own subprocess. This
+    serial form is what the selftest drives, and it must stay equivalent to `main`'s pool.
     """
     # The baseline runs the UNMUTATED selftest first. Without it a guard whose staged copy is
     # missing a dependency fails for that reason alone, and every mutation then reads as "caught"
@@ -287,31 +326,7 @@ def run_guard(guard: Guard) -> list[str]:
     if problems:
         return problems
     for mutation in guard.mutations:
-        workdir = Path(tempfile.mkdtemp(prefix=f"mutcheck-{guard.name}-"))
-        try:
-            entry = apply_mutation(guard, mutation, workdir)
-            argv = [sys.executable, str(entry)]
-            if guard.selftest == guard.subject:
-                argv.append("--selftest")   # the selftest is a flag on the module itself
-            result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True, timeout=300)
-            output = result.stdout + result.stderr
-
-            if result.returncode == 0:
-                problems.append(
-                    f"{guard.name}: SURVIVED — {mutation.name}. The selftest passed with this "
-                    "broken, so nothing guards it."
-                )
-                continue
-            if mutation.expects and mutation.expects.lower() not in output.lower():
-                problems.append(
-                    f"{guard.name}: caught {mutation.name!r} but not by the expected fixture "
-                    f"(no mention of {mutation.expects!r}) — a coincidental catch would hide that "
-                    "fixture going quiet"
-                )
-        except subprocess.TimeoutExpired:
-            problems.append(f"{guard.name}: {mutation.name} timed out")
-        finally:
-            shutil.rmtree(workdir, ignore_errors=True)
+        problems.extend(run_mutation(guard, mutation))
     return problems
 
 
@@ -319,7 +334,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Prove each selftest fails when the thing it guards breaks."
     )
-    parser.add_argument("--guard", help="run one guard by name")
+    parser.add_argument("--guard", action="append", help="run one guard by name (repeatable)")
+    parser.add_argument("--jobs", type=int, default=0,
+                        help="mutations run in parallel (default: the CPU count). Every baseline and "
+                             "every mutation stages its own tempdir, so they are independent (#1444).")
     parser.add_argument("--selftest", action="store_true",
                         help="prove this checker itself detects a survivor and a stale anchor")
     args = parser.parse_args(argv)
@@ -329,15 +347,32 @@ def main(argv: list[str] | None = None) -> int:
 
         return st.run()
 
-    guards = [g for g in GUARDS if not args.guard or g.name == args.guard]
-    if args.guard and not guards:
-        print(f"no guard named {args.guard!r}; known: {[g.name for g in GUARDS]}", file=sys.stderr)
+    wanted = set(args.guard or [])
+    guards = [g for g in GUARDS if not wanted or g.name in wanted]
+    unknown = wanted - {g.name for g in guards}
+    if unknown:
+        print(f"no guard named {sorted(unknown)!r}; known: {[g.name for g in GUARDS]}", file=sys.stderr)
         return 2
+    # TWO PHASES, ONE POOL (#1444). The suite outgrew CI's 900 s allowance, and every dev push run
+    # reported the gate as a skip. Parallel across guards alone measured 1.6x on 8 guards, capped by
+    # the largest, and lint_self_consistency alone has 137 mutations. So every baseline runs first
+    # (an INERT baseline still ends its guard, unscored), then every remaining mutation of every
+    # guard runs in the same pool. Output is printed in declaration order, so it reads as a serial run.
+    from concurrent.futures import ThreadPoolExecutor
+    jobs = max(1, args.jobs or os.cpu_count() or 1)
+    started = time.monotonic()
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
+        baselines = list(pool.map(run_baseline, guards))
+        live = live_mutations(guards, baselines)
+        outcomes = list(pool.map(lambda gm: run_mutation(*gm), live))
+    by_guard: dict[str, list[str]] = {g.name: list(b) for g, b in zip(guards, baselines)}
+    for (g, _m), found in zip(live, outcomes):
+        by_guard[g.name].extend(found)
     problems: list[str] = []
     total = 0
     for guard in guards:
         total += len(guard.mutations)
-        found = run_guard(guard)
+        found = by_guard[guard.name]
         status = "ok" if not found else "FAIL"
         print(f"  [{status:4}] {guard.name}: {len(guard.mutations)} mutation(s)")
         problems.extend(found)
@@ -347,7 +382,8 @@ def main(argv: list[str] | None = None) -> int:
         for problem in problems:
             print(f"  - {problem}", file=sys.stderr)
         return 1
-    print(f"\nmutation check: {total} mutation(s) across {len(guards)} guard(s), all caught")
+    print(f"\nmutation check: {total} mutation(s) across {len(guards)} guard(s), all caught "
+          f"(jobs={jobs}, {time.monotonic() - started:.0f}s)")
     return 0
 
 

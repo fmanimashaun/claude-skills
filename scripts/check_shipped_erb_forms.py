@@ -11,10 +11,18 @@ checkbox exactly as the design-system shows would go red with no exemption on fi
 measured against one downstream app and never against the text agents copy from us. This check runs
 the SAME `scan()` (imported, never a second copy) over every ```erb block under skills/ and plugins/.
 
-THE ONE EXCEPTION IS DECLARED IN THE BLOCK. A design-system primitive that implements a control (the
-Checkbox, the Combobox) is the one place a raw element is built; its block carries the ERB comment
-`<%# simple-form-only: primitive %>`, and its prose tells the project to declare the matching row in
-`.rails-flow/raw-form-exemptions.json`. Every other hit is a finding: fix the doctrine, not the gate.
+THE ONE EXCEPTION IS DECLARED IN THE BLOCK, AND NAMES WHAT IT EXCUSES (#1443). A design-system
+primitive that implements a control (the Checkbox, the Combobox, the Tabs picker) is the one place a raw
+element is built; its block carries `<%# simple-form-only: primitive <construct> -- why %>`, where
+`<construct>` is the raw construct the scanner reports (`check_box_tag`, `tag.input`, `<select`), and its
+prose tells the project to declare the matching row in `.rails-flow/raw-form-exemptions.json`. The
+marker excuses ONLY that construct: any other raw construct in the same block is still a finding, and
+a marker that names nothing excuses nothing. It used to excuse the whole block, so a later, unrelated
+raw field in the Checkbox block would have passed unseen. Every other hit is a finding: fix the
+doctrine, not the gate.
+
+EVERY FENCE, INDENTED OR NOT. A fence may be indented (inside a list item); its closing fence carries
+the same indent. Only column-0 fences were read before #1443, which skipped five blocks.
 """
 from __future__ import annotations
 
@@ -27,8 +35,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "plugins/rails-flow/scripts"))
 from check_simple_form_only import scan  # noqa: E402 -- the project gate's own scanner
 
-BLOCK = re.compile(r"^```erb[^\n]*\n(.*?)^```", re.S | re.M)
-PRIMITIVE = "simple-form-only: primitive"
+BLOCK = re.compile(r"^([ \t]*)```erb[^\n]*\n(.*?)^\1```", re.S | re.M)
+# EVERY marker in a block counts, and each must name a construct AND give a reason (#1455 review).
+PRIMITIVE = re.compile(r"<%#\s*simple-form-only:\s*primitive\b(.*?)%>", re.S)
+VALID_MARKER = re.compile(r"^[ \t]*(\S+)[ \t]+--[ \t]*\w")
 
 
 def findings(files: list[Path], root: Path) -> list[str]:
@@ -36,10 +46,22 @@ def findings(files: list[Path], root: Path) -> list[str]:
     for f in files:
         text = f.read_text(encoding="utf-8", errors="replace")
         for m in BLOCK.finditer(text):
-            if PRIMITIVE in m.group(1):
-                continue
+            body = m.group(2)
             start = text.count("\n", 0, m.start()) + 1
-            for rule, line, what in scan(str(f), m.group(1)):
+            named: set[str] = set()
+            for marker in PRIMITIVE.finditer(body):
+                valid = VALID_MARKER.match(marker.group(1))
+                if valid and not valid.group(1).startswith("--"):
+                    named.add(valid.group(1).lower())
+                else:
+                    out.append(f"{f.relative_to(root)}:{start + body.count(chr(10), 0, marker.start()) + 1} — "
+                               f"primitive-marker-invalid: a marker must name one construct and give a reason "
+                               f"(`primitive <construct> -- why`), so this one excuses nothing")
+            for rule, line, what in scan(str(f), body):
+                # EQUALITY, never a prefix (#1455 review): `primitive <` would excuse every `<select`,
+                # `<textarea`, `<input` and `<form`, and `primitive t` both tag.input and text_field_tag.
+                if what.strip().lower() in named:
+                    continue
                 out.append(f"{f.relative_to(root)}:{start + line} — {rule}: `{what[:50]}` in a shipped ERB block")
     return out
 
@@ -65,13 +87,39 @@ def selftest() -> int:
         f = run("Filter:\n\n```erb\n<form method=\"get\">\n</form>\n```\n")
         check_that("a raw <form> in a shipped ERB block is a finding", any("raw-form" in x for x in f), f)
         check_that("...with the doc's own line number", any("SKILL.md:4" in x for x in f), f)
-        f = run("```erb\n<%# simple-form-only: primitive %>\n<%= check_box_tag :a %>\n```\n")
-        check_that("CONTROL: a block declared a primitive is excused", f == [], f)
+        f = run("```erb\n<%# simple-form-only: primitive check_box_tag -- why %>\n<%= check_box_tag :a %>\n```\n")
+        check_that("CONTROL: the construct a primitive marker names is excused", f == [], f)
+        f = run("```erb\n<%# simple-form-only: primitive check_box_tag -- why %>\n<%= check_box_tag :a %>\n<select name=\"x\"></select>\n```\n")
+        check_that("the marker excuses only what it names: a later raw <select> is a finding",
+                   len(f) == 1 and "<select" in f[0], f)
+        f = run("```erb\n<%# simple-form-only: primitive -- why %>\n<%= check_box_tag :a %>\n```\n")
+        check_that("a marker that names nothing excuses nothing",
+                   any("primitive-marker-invalid" in x for x in f) and any("check_box_tag" in x for x in f), f)
+        f = run("```erb\n<%# simple-form-only: primitive < -- why %>\n<select name=\"a\"></select>\n<textarea></textarea>\n```\n")
+        check_that("`primitive <` is not a prefix that excuses every raw tag",
+                   sum("raw-field" in x for x in f) == 2, f)
+        f = run("```erb\n<%# simple-form-only: primitive t -- why %>\n<%= tag.input :a %>\n<%= text_field_tag :b %>\n```\n")
+        check_that("`primitive t` excuses neither tag.input nor text_field_tag", len(f) == 2, f)
+        f = run("```erb\n<%# simple-form-only: primitive check_box_tag %>\n<%= check_box_tag :a %>\n```\n")
+        check_that("a marker with no reason excuses nothing",
+                   any("primitive-marker-invalid" in x for x in f) and any("check_box_tag" in x for x in f), f)
+        f = run("```erb\n<%# simple-form-only: primitive check_box_tag -- one %>\n<%= check_box_tag :a %>\n"
+                "<%# simple-form-only: primitive tag.input -- two %>\n<%= tag.input :b %>\n```\n")
+        check_that("every marker in a block counts, not only the first", f == [], f)
+        f = run("- item:\n\n  ```erb\n  <form method=\"get\">\n  </form>\n  ```\n")
+        check_that("an INDENTED fence is read", any("raw-form" in x for x in f), f)
+        check_that("...with the doc's own line number", any("SKILL.md:4" in x for x in f), f)
+        f = run("  ```erb\n  <%= simple_form_for @u do |f| %><%= f.input :a %><% end %>\n  ```\n\n```erb\n<form></form>\n```\n")
+        check_that("an indented fence closes at its own indent, not a later column-0 fence",
+                   len(f) == 1 and "SKILL.md:6" in f[0], f)
+        f = run("  ```erb\n  <%= simple_form_for @u do |f| %><% end %>\n```\n  <form></form>\n  ```\n")
+        check_that("a fence line at ANOTHER indent does not close an indented block",
+                   any("raw-form" in x for x in f), f)
         f = run("```erb\n<%= simple_form_for @u do |f| %><%= f.input :a %><% end %>\n```\n")
         check_that("CONTROL: a simple_form block is clean", f == [], f)
         f = run("```ruby\ncheck_box_tag :a\n```\n")
         check_that("CONTROL: a non-ERB fence is not read", f == [], f)
-        f = run("```erb\n<%# simple-form-only: primitive %>\n```\n\n```erb\n<%= check_box_tag :b %>\n```\n")
+        f = run("```erb\n<%# simple-form-only: primitive check_box_tag -- why %>\n```\n\n```erb\n<%= check_box_tag :b %>\n```\n")
         check_that("the marker excuses its own block only", len(f) == 1, f)
 
     for x in fails:

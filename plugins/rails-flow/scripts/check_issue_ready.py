@@ -45,8 +45,11 @@ import subprocess
 import sys
 
 KEYS = ("depends-on", "blocks")
-_DEPS_FENCE = re.compile(r"^[ \t]*```[ \t]*deps[ \t]*\r?$\n(.*?)^[ \t]*```", re.M | re.S)
-_ANY_FENCE = re.compile(r"^[ \t]*```([^\n]*)\r?$\n(.*?)^[ \t]*```", re.M | re.S)
+# CommonMark fences (#1435): three or more backticks OR tildes, closed by the same run (a longer run
+# of the same character also closes). check_slices.py reads fences the same way, so a `depends-on:`
+# that one calls a sample the other never calls an edge.
+_DEPS_FENCE = re.compile(r"^[ \t]*(`{3,}|~{3,})[ \t]*deps[ \t]*\r?$\n(.*?)^[ \t]*\1", re.M | re.S)
+_ANY_FENCE = re.compile(r"^[ \t]*(`{3,}|~{3,})([^\n]*)\r?$\n(.*?)^[ \t]*\1", re.M | re.S)
 _STRICT = re.compile(r"^[ \t]*(depends-on|blocks)[ \t]*:[ \t]*(#\d+(?:[ \t]*,[ \t]*#\d+)*)[ \t]*$", re.M)
 _REF = re.compile(r"#(\d+)")
 
@@ -84,7 +87,7 @@ def parse_edges(body: str) -> dict[str, set[int]]:
     """
     edges: dict[str, set[int]] = {k: set() for k in KEYS}
     body = body or ""
-    fences = _DEPS_FENCE.findall(body)
+    fences = [inner for _run, inner in _DEPS_FENCE.findall(body)]
     if fences:
         text = "\n".join(fences)
     else:
@@ -252,6 +255,13 @@ def selftest() -> int:
     check("a bare strict line is an edge", e["depends-on"] == {7}, f"{e}")
     e = parse_edges("This depends on #7 being done first, honestly.\n")
     check("prose saying 'depends on' is NOT an edge -- the syntax is strict", e["depends-on"] == set(), f"{e}")
+    # #1435: CommonMark fences, read exactly as check_slices.py reads the plan.
+    e = parse_edges("~~~\ndepends-on: #9\n~~~\n")
+    check("a strict line inside a ~~~ fence is a sample, not an edge", e["depends-on"] == set(), f"{e}")
+    e = parse_edges("````\n```\ndepends-on: #9\n```\n````\n")
+    check("a ``` inside a ```` fence does not close it", e["depends-on"] == set(), f"{e}")
+    e = parse_edges("~~~deps\ndepends-on: #93\n~~~\n")
+    check("CONTROL: a ~~~deps fence is an edge", e["depends-on"] == {93}, f"{e}")
     e = parse_edges("Use the syntax below:\n\n```md\ndepends-on: #99\n```\n\ndepends-on: #3\n")
     check("a fenced SAMPLE of the syntax is not an edge; the bare line beside it is",
           e["depends-on"] == {3}, f"{e}")
