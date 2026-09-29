@@ -79,7 +79,12 @@ def _main_checkout(project: Path) -> Path:
             gitdir = Path(line.partition("gitdir:")[2].strip())
             if not gitdir.is_absolute():
                 gitdir = d / gitdir
-            return gitdir.parent.parent.parent if gitdir.parent.name == "worktrees" else project
+            # `<main>/.git/worktrees/<n>` only: a bare clone's `repo.git/worktrees/<n>` has no
+            # checkout to map to. Keep the path below the worktree root, so a project recorded
+            # below the repository root (`<main>/app`) still matches from `<wt>/app`.
+            if gitdir.parent.name == "worktrees" and gitdir.parent.parent.name == ".git":
+                return gitdir.parent.parent.parent / project.relative_to(d)
+            return project
     return project
 
 
@@ -92,7 +97,7 @@ def _applies(record: dict, project: Path) -> bool:
         # BOTH the session's path and its main checkout: a record made inside a worktree names the
         # worktree, one made from the main checkout names that, and either is this project.
         root, sessions = Path(owner).resolve(), {project.resolve(), _main_checkout(project).resolve()}
-    except OSError:
+    except (OSError, TypeError):         # a projectPath that is not a path string
         return False
     # A subdirectory still loads its project's plugins.
     dirs = tuple(d for here in sessions for d in (here, *here.parents))
@@ -121,10 +126,13 @@ def project_install(base: Path, project: Path) -> Path | None:
         return None
     if not isinstance(records, list):
         return None
-    mine = [r for r in records if isinstance(r, dict) and r.get("installPath") and _applies(r, project)]
+    # A record whose install lacks the skill is skipped, so the glob fallback still gets its turn:
+    # the caller resolves no worse than before #1421 (#1473 review).
+    mine = [r for r in records if isinstance(r, dict) and isinstance(r.get("installPath"), str)
+            and (Path(r["installPath"]) / SKILL_REL).is_dir() and _applies(r, project)]
     if not mine:
         return None
-    return Path(max(mine, key=lambda r: r.get("lastUpdated") or "")["installPath"])
+    return Path(max(mine, key=lambda r: str(r.get("lastUpdated") or ""))["installPath"])
 
 
 def candidates(script: Path) -> list[Path]:
@@ -254,6 +262,70 @@ def selftest() -> int:
             (plugins / "installed_plugins.json").write_text("{not json")
             check(f"an unreadable record file falls back to the newest (got {found_for(old)})",
                   found_for(old) == "1.69.0")
+        finally:
+            if saved is None:
+                os.environ.pop("CLAUDE_PROJECT_DIR", None)
+            else:
+                os.environ["CLAUDE_PROJECT_DIR"] = saved
+
+    # The shapes #1473's review broke it with: a project below its repository root, the same from
+    # a worktree, a record whose install lacks the skill, malformed fields, a bare clone.
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td).resolve()
+        plugins = root / "plugins"
+        cache = plugins / "cache" / "claude-skills"
+        scripts = cache / "design-flow" / "1.42.1" / "scripts"
+        scripts.mkdir(parents=True)
+        for ver in ("1.63.0", "1.69.0"):
+            (cache / "rails-stack" / ver / SKILL_REL).mkdir(parents=True)
+        (cache / "rails-stack" / "1.70.0").mkdir()          # an install with NO design-system
+        repo = root / "repo"
+        (repo / ".git").mkdir(parents=True)
+        (repo / "app" / "models").mkdir(parents=True)
+        wt = root / "repo-wt"
+        (wt / "app").mkdir(parents=True)
+        (wt / ".git").write_text(f"gitdir: {repo / '.git' / 'worktrees' / 'wt'}\n")
+        bare_wt = root / "bare-wt"
+        bare_wt.mkdir()
+        (bare_wt / ".git").write_text(f"gitdir: {root / 'repo.git' / 'worktrees' / 'b'}\n")
+
+        def write(records):
+            (plugins / "installed_plugins.json").write_text(json.dumps(
+                {"version": 2, "plugins": {"rails-stack@claude-skills": records}}))
+
+        def at(ver, proj, when="2026-09-22T00:00:00Z"):
+            return {"version": ver, "projectPath": str(proj), "lastUpdated": when,
+                    "installPath": str(cache / "rails-stack" / ver)}
+
+        saved = os.environ.get("CLAUDE_PROJECT_DIR")
+        try:
+            def found_for(project):
+                os.environ["CLAUDE_PROJECT_DIR"] = str(project)
+                got = find(scripts / "x.py")
+                return got.parent.parent.name if got else None
+            write([at("1.63.0", repo / "app"), at("1.69.0", root / "other", "2026-09-29T00:00:00Z")])
+            check(f"a project below its repository root reads its own install "
+                  f"(got {found_for(repo / 'app')})", found_for(repo / "app") == "1.63.0")
+            check(f"...and so does the same subdirectory of a worktree (got {found_for(wt / 'app')})",
+                  found_for(wt / "app") == "1.63.0")
+            write([at("1.70.0", repo), at("1.63.0", root / "other")])
+            check(f"an install without the skill falls back to the glob (got {found_for(repo)})",
+                  found_for(repo) == "1.69.0")
+            bad = [{"projectPath": 7, "installPath": ["x"], "lastUpdated": 3},
+                   dict(at("1.69.0", repo), projectPath=7, lastUpdated=3),   # reaches _applies
+                   dict(at("1.63.0", repo), lastUpdated=None), "not a record"]
+            write(bad)
+            try:
+                got = found_for(repo)
+                check(f"malformed fields are skipped, not raised (got {got})", got == "1.63.0")
+            except Exception as exc:  # noqa: BLE001 -- the assertion IS that nothing escapes
+                check(f"malformed fields are skipped, not raised ({type(exc).__name__}: {exc})", False)
+            write({"not": "a list"})
+            check(f"records that are not a list fall back (got {found_for(repo)})",
+                  found_for(repo) == "1.69.0")
+            write([at("1.63.0", root)])
+            check("a bare clone's worktree is not mapped to the directory holding repo.git",
+                  _main_checkout(bare_wt) == bare_wt)
         finally:
             if saved is None:
                 os.environ.pop("CLAUDE_PROJECT_DIR", None)

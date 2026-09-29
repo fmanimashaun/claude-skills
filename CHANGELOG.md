@@ -13219,13 +13219,16 @@ boot/validation path — with a bullet each so the promotion could close them se
   `candidates()` took the highest cached version, so on a machine with fidara-ledger on rails-stack 1.63.0 and
   Retask-platform on 1.69.0, fidara-ledger's design-flow read Retask's doctrine. It now picks the `rails-stack` record
   in `installed_plugins.json` that applies to the project (`$CLAUDE_PROJECT_DIR`, else the working directory). For a
-  linked git worktree, both the worktree and its main checkout are compared, so a record naming either one applies.
+  linked git worktree, both the worktree and the same subdirectory of its main checkout are compared, so a record
+  naming either one applies, including a project recorded below its repository root. A bare clone's worktree is not
+  mapped. A record whose install lacks `skills/design-system`, or with malformed fields, is skipped rather than
+  winning or raising.
   On a case-insensitive volume, a `projectPath` differing only in case still matches, via `os.path.samefile`. It uses
   #1407's rule restated here, since design-flow cannot import rails-flow.
   The newest-version glob stays only as the fallback when the file is unreadable or no record applies. Measured
-  against the real cache: fidara-ledger now resolves 1.63.0, Retask-platform 1.69.0. Eight new selftest fixtures (the
-  case one stubs `samefile`, so it runs on CI's Linux runner too); the new guard's seven mutations, including a
-  restored machine-wide pick, are all caught. Our own tool, so no verifier gate.
+  against the real cache: fidara-ledger now resolves 1.63.0, Retask-platform 1.69.0. Fourteen new selftest assertions (the
+  case one stubs `samefile`, so it runs on CI's Linux runner too); the new guard's eleven mutations, including a
+  restored machine-wide pick, are all caught. The review's pre-existing `llm_tell_detector` baseline timeout is #1475. Our own tool, so no verifier gate.
 
 - **A pager with its summary first, and a modal that can outgrow or touch the viewport, are refused — `plugins/design-flow/scripts/check_modal_fit.py`,
   `plugins/design-flow/scripts/check_table_layout.py`, `plugins/design-flow/scripts/mutations/check_modal_fit.py`,
