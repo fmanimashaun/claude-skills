@@ -180,5 +180,11 @@ GUARD = Guard(
             "    if False:",
             "classify 'git merge dev'",
         ),
+        Mutation(
+            "shell options that take a value are no longer stepped over, so -o pipefail hides -c",
+            "                    if seg[i] in SHELL_OPTS_WITH_VALUE:\n                        i += 2",
+            "                    if False:\n                        i += 2",
+            "\"bash -o pipefail -c 'git push origin main'\": expected TARGETS main",
+        ),
     ),
 )

@@ -710,7 +710,8 @@ def release_gate_fixtures() -> None:
                 "( git push origin main )", "{ git push origin main; }", "/usr/bin/git push origin main",
                 "git push origin \\\nmain", "bash -c 'git push origin main'", 'eval "git push origin main"',
                 "git -c alias.p=push p origin main", "echo main | xargs git push origin",
-                "timeout 60 gh pr merge 5"):
+                "timeout 60 gh pr merge 5", "bash -o pipefail -c 'git push origin main'",
+                "g''it push origin main", "gi\\t push origin main", '"g"it push origin main'):
         check(f"release-gate (#1470): `{cmd!r}` reaches main (or cannot be judged) and is blocked",
               run(cmd) == 2, "exit 0")
     for cmd in ("bash -c 'git push origin fix/x'", "timeout 60 git push origin fix/x", "gh pr list"):

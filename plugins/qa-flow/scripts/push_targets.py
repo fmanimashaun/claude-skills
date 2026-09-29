@@ -28,10 +28,16 @@ A parser can only answer "no" about text it actually modelled. So:
   * `git` (by basename: `/usr/bin/git`, `git.exe`, `\\git`) is found anywhere in a segment, so
     `sudo -u x`, `timeout 60`, `command`, `( )`, `{ }`, `if ... then` cannot hide a push -- and the
     HOOK hands over any command that mentions git or gh at all, not only one starting `git push`;
-  * `sh|bash|zsh -c '<string>'` and `eval ...` are parsed as commands in their own right;
+  * `sh|bash|zsh [options] -c '<string>'` and `eval ...` are parsed as commands in their own right;
   * a backslash-newline is a line continuation; an inline `git -c alias.x=...` and `xargs ... git
     push` are could-not-judge;
   * "no" is exit 10, not 1, so an uncaught exception (exit 1) can never read as "no".
+
+KNOWN LIMITS -- the threat model is an agent's HONEST mistake, not deliberate obfuscation (the
+coordinator's ruling on #1470). These are not read, and pass: `bash -c $'...'` (ANSI-C quoting of
+the whole string), `eval "$(...)"`, a verb or command produced at run time (`$(echo git) push`,
+`$g push`), here-strings and anything piped into a shell (`... | bash`), shells outside
+sh/bash/zsh/dash/ksh (`fish -c`), and aliases defined in git CONFIG rather than inline with `-c`.
 
 What counts as a destination, per `git help push`:
   * a refspec `<src>:<dst>` names `<dst>` (a leading `+` only forces); `:<dst>` deletes `<dst>`;
@@ -234,6 +240,9 @@ def push_args(seg: list[str]) -> tuple[list[str], str | None] | None:
 
 
 SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
+# Shell options that take a VALUE, so the `-c` scan must step over both words (41's delta review:
+# `bash -o pipefail -c 'git push origin main'` stopped at `-o` and passed).
+SHELL_OPTS_WITH_VALUE = {"-o", "+o", "-O", "+O", "--rcfile", "--init-file"}
 MAX_DEPTH = 4
 
 
@@ -247,8 +256,11 @@ def all_segments(cmd: str, depth: int = 0):
         for k, word in enumerate(seg):
             if is_command(word, SHELLS):
                 i = k + 1
-                while i < len(seg) and seg[i].startswith("-"):
-                    if not seg[i].startswith("--") and "c" in seg[i][1:]:
+                while i < len(seg) and seg[i][:1] in ("-", "+"):
+                    if seg[i] in SHELL_OPTS_WITH_VALUE:
+                        i += 2
+                        continue
+                    if seg[i][:1] == "-" and not seg[i].startswith("--") and "c" in seg[i][1:]:
                         if i + 1 >= len(seg):
                             raise Unjudgeable("`-c` with no command string")
                         yield from all_segments(seg[i + 1], depth + 1)
@@ -488,6 +500,10 @@ def selftest() -> int:
         ('sh -lc "cd x && git push origin main"', on_feature, True),
         ('eval "git push origin main"', on_feature, True),
         ("bash -c 'git push origin fix/x'", on_feature, False),
+        ("bash -o pipefail -c 'git push origin main'", on_feature, True),
+        ("bash -e -x -o errexit +O extglob --login -c 'git push origin main'", on_feature, True),
+        ("bash --rcfile x.rc -lc 'git push origin main'", on_feature, True),
+        ("bash -o pipefail -c 'git push origin fix/x'", on_feature, False),
         ("git -c alias.p=push p origin main", on_feature, True),
         ("echo main | xargs git push origin", on_feature, True),
         ("git push origin fix/x \\\n  --force-with-lease", on_feature, False),

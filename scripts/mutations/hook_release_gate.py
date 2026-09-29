@@ -43,6 +43,12 @@ GUARD = Guard(
             "`'timeout 60 git push origin main'` reaches main",
         ),
         Mutation(
+            "the pre-check reads the raw text again, so g''it and gi\\t skip the classifier",
+            '_probe="$(printf \'%s\' "$cmd" | tr -d "\'\\"\\\\\\\\")"',
+            '_probe="$cmd"',
+            "`\"g''it push origin main\"` reaches main",
+        ),
+        Mutation(
             "the fallback reads the normalised segment, losing a quoted main",
             """    && printf '%s' "$cmd" | grep -qE '\\b(main|master)\\b' && targets_main=1""",
             """    && printf '%s' "$seg" | grep -qE '\\b(main|master)\\b' && targets_main=1""",

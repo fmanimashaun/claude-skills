@@ -42,8 +42,14 @@ targets_main=0
 # prints one line per finding: PUSH_MAIN <dst>, GIT_MERGE, PR_MERGE <selector>. Exit 0 = read;
 # anything else = could not judge (an unreadable refspec, a substitution, a crash), which is treated
 # as a promotion -- CLOSED. It runs only when the raw command mentions git or gh at all.
+# KNOWN LIMITS (the threat model is an honest mistake, not obfuscation -- coordinator's ruling on
+# #1470; listed in push_targets.py): `bash -c $'...'`, `eval "$(...)"`, a run-time verb (`$(echo git)
+# push`, `$g push`), here-strings, `... | bash`, `fish -c`, and aliases defined in git config.
 _pt="${CLAUDE_PLUGIN_ROOT:-}/scripts/push_targets.py"
-case "$cmd" in
+# Quotes and backslashes are dropped before the pre-check: `g''it`, `gi\t` and `"g"it` are all git
+# to the shell, and a literal `*git*` test sent them past the classifier (41's delta review).
+_probe="$(printf '%s' "$cmd" | tr -d "'\"\\\\")"
+case "$_probe" in
   *git*|*gh*) _mentions=1 ;;
   *) _mentions=0 ;;
 esac
