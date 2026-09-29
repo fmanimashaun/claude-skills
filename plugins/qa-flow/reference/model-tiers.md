@@ -67,4 +67,6 @@ grades it":
 
 A different field. It *"Overrides the session effort level"* and its available levels
 *"depend on the model"* — which levels each model accepts is unpublished, so a shipped default would
-be a guess that silently degrades on some models. Left to the session.
+be a guess that silently degrades on some models. Left to the session — which in Claude Code is
+`medium` on Opus 5.5 and Sonnet 5.5 unless the user chose otherwise, with thinking that cannot be
+turned off on either (re-read 2026-09-29, #1449).
