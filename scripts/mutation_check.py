@@ -241,13 +241,18 @@ def apply_mutation(guard: Guard, mutation: Mutation, workdir: Path) -> Path:
 # mutations "timed out" on one run and all 12 were caught on the next. A mutant runs the same
 # selftest as its baseline and usually stops sooner, so its limit scales with what the baseline
 # actually took on THIS machine, now. The baseline itself runs once per guard and must finish.
-BASELINE_TIMEOUT = 1800
+#
+# BOTH CAPS STAY WELL UNDER THE GATE'S TOTAL (`SLOW_GATES["mutation coverage"]`, maintainer_doctor.py):
+# a hung guard must be reported HERE, by name, before the doctor kills the whole gate with a message
+# that names no guard (review of PR #1491). maintainer_doctor_selftest asserts the relation.
+BASELINE_TIMEOUT = 600
 MUTATION_FLOOR = 300.0
 MUTATION_SCALE = 3.0
+MUTATION_CAP = 900.0
 
 
 def mutation_timeout(baseline_seconds: float) -> float:
-    return max(MUTATION_FLOOR, MUTATION_SCALE * baseline_seconds)
+    return min(MUTATION_CAP, max(MUTATION_FLOOR, MUTATION_SCALE * baseline_seconds))
 
 
 def mutation_limits(guards: list[Guard], timed: list[tuple[list[str], float]]) -> dict[str, float]:
@@ -273,12 +278,12 @@ def run_baseline_timed(guard: Guard) -> tuple[list[str], float]:
     selftest run against N.
     """
     workdir = Path(tempfile.mkdtemp(prefix=f"mutbase-{guard.name}-"))
-    started = time.monotonic()
     try:
         entry = stage(guard, workdir)
         argv = [sys.executable, str(entry)]
         if guard.selftest == guard.subject:
             argv.append("--selftest")
+        started = time.monotonic()                # after staging: the limit is the selftest's time
         result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True, timeout=BASELINE_TIMEOUT)
         elapsed = time.monotonic() - started
         if result.returncode != 0:
@@ -317,7 +322,7 @@ def run_mutation(guard: Guard, mutation: Mutation, timeout: float = MUTATION_FLO
         return []
     except subprocess.TimeoutExpired:
         return [f"{guard.name}: {mutation.name} timed out after {timeout:.0f}s "
-                f"(max of {MUTATION_FLOOR:.0f}s and {MUTATION_SCALE:g}x its baseline)"]
+                f"({MUTATION_SCALE:g}x its baseline, within {MUTATION_FLOOR:.0f}-{MUTATION_CAP:.0f}s)"]
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
 

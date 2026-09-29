@@ -142,12 +142,34 @@ def run() -> int:
             FAILURES.append(f"#1486 CONTROL: with no scaling, the fixed floor must time the mutant out, got {problems}")
     finally:
         mc.REPO, mc.MUTATION_FLOOR, mc.MUTATION_SCALE = saved
+    # ...and THE PATH CI RUNS: main()'s pool, driven end to end on the same slow guard (review of
+    # PR #1491: the pool's call could drop the limit with the fixture above still green).
+    saved = (mc.REPO, mc.MUTATION_FLOOR, mc.MUTATION_SCALE, mc.GUARDS)
+    mc.REPO, mc.MUTATION_FLOOR, mc.GUARDS = root, 0.4, [guard]
+    try:
+        import contextlib, io
+        _tick()
+        mc.MUTATION_SCALE = 3.0
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            rc = mc.main(["--jobs", "2"])
+        if rc != 0:
+            FAILURES.append(f"#1486: main()'s pool must give a slow guard's mutant its scaled limit, exit {rc}")
+        _tick()
+        mc.MUTATION_SCALE = 0.0
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            rc = mc.main(["--jobs", "2"])
+        if rc == 0 or "timed out after" not in err.getvalue():
+            FAILURES.append(f"#1486 CONTROL: main()'s pool with no scaling must time the mutant out, exit {rc}")
+    finally:
+        mc.REPO, mc.MUTATION_FLOOR, mc.MUTATION_SCALE, mc.GUARDS = saved
     _tick()
     quick = mc.Guard(name="quick", subject="s.py", selftest="t.py", mutations=())
     heavy = mc.Guard(name="heavy", subject="s.py", selftest="t.py", mutations=())
-    limits = mc.mutation_limits([quick, heavy], [([], 10.0), ([], 200.0)])
-    if limits != {"quick": 300.0, "heavy": 600.0}:
-        FAILURES.append(f"#1486: main's pool must give each guard max(floor, 3x baseline), got {limits}")
+    stuck = mc.Guard(name="stuck", subject="s.py", selftest="t.py", mutations=())
+    limits = mc.mutation_limits([quick, heavy, stuck], [([], 10.0), ([], 200.0), ([], 1000.0)])
+    if limits != {"quick": 300.0, "heavy": 600.0, "stuck": mc.MUTATION_CAP}:
+        FAILURES.append(f"#1486: main's pool must give each guard max(floor, 3x baseline), capped, got {limits}")
 
     # ---- 2. a SURVIVOR must be reported ------------------------------------------------
     # This mutation changes the subject in a way neither fixture observes, so the selftest still
