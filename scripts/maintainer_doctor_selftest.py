@@ -630,8 +630,10 @@ def run() -> int:
     sys.path.insert(0, str(md.REPO / "scripts"))
     import mutation_check as mc
     _tick()
-    total = md.SLOW_GATES["mutation coverage"]
-    if not (mc.BASELINE_TIMEOUT + mc.MUTATION_CAP < total):
+    # `.get`, never `[...]`: a mutation renames this key to prove the no-such-gate check below
+    # fires, and a KeyError here crashed the selftest before that check ran (dispatch 36629992150).
+    total = md.SLOW_GATES.get("mutation coverage")
+    if total is not None and not (mc.BASELINE_TIMEOUT + mc.MUTATION_CAP < total):
         FAILURES.append(f"mutation_check's baseline cap ({mc.BASELINE_TIMEOUT}s) plus its per-mutation cap "
                         f"({mc.MUTATION_CAP:.0f}s) must stay under the gate's total ({total}s), or a hung "
                         f"guard is killed by the doctor unnamed")
