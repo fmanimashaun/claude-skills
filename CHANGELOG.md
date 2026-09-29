@@ -3543,9 +3543,12 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   `<input>` is no longer "closed" by the next tag's `>` and excused by its `readonly`, found by the new fixture one
   step past the review's report — but reads quoted values whole, so `value="a<b"` no longer cuts a tag short of a
   later `name=` (a regression the independent review of #1455 caught); an `<input>` with no `>` at all is judged on
-  its own line, not the rest of the file. Run before and after against an export of the
+  its own line, not the rest of the file. The quoted-value rewrite first shipped a backtracking regex (CodeQL `py/redos`, HIGH): its
+  lazy ERB body could span `%><%`, so the match time grew ×4 per two repetitions. The ERB body now cannot contain
+  `%>`, so there is one way to match, and a selftest runs a 50,000-repetition input in a subprocess with a 2s
+  deadline (the old regex misses it; a mutation restores it). Run before and after against an export of the
   app behind #1391 at its `origin/dev` (`f0f84e1a`, with its `Gemfile.lock`, so the gate applies): the same 4
-  findings, two of them the pre-existing `collection_*` false positive filed as #1458. 25/25 mutations caught.
+  findings, two of them the pre-existing `collection_*` false positive filed as #1458. 26/26 mutations caught.
 
 - **`guard-bash` checks an issue's labels against the repository it is filed in, not the session's —
   `plugins/rails-flow/hooks/scripts/lib/issue_labels.py`, `scripts/mutations/hook_issue_labels.py`,

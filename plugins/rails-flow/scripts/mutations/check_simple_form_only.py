@@ -123,14 +123,14 @@ GUARD = Guard(
         ),
         Mutation(
             "the tag is cut at an ERB %>, so a readonly after an ERB value is missed",
-            'WHOLE_TAG = re.compile(r"<input\\b(?:<%.*?%>|\\"[^\\"]*\\"|\'[^\']*\'|[^<>\\"\'])*>", re.I | re.S)',
+            'WHOLE_TAG = re.compile(r"<input\\b(?:<%(?:[^%]|%(?!>))*%>|\\"[^\\"]*\\"|\'[^\']*\'|[^<>\\"\'])*>", re.I | re.S)',
             'WHOLE_TAG = re.compile(r"<input\\b[^>]*>", re.I | re.S)',
             "CONTROL: an ERB value inside the tag does not hide its readonly",
         ),
         # #1443: the tag stops at a bare `<`, and an unclosed tag is judged on its own line.
         Mutation(
             "the tag runs on into the NEXT tag again",
-            'WHOLE_TAG = re.compile(r"<input\\b(?:<%.*?%>|\\"[^\\"]*\\"|\'[^\']*\'|[^<>\\"\'])*>", re.I | re.S)',
+            'WHOLE_TAG = re.compile(r"<input\\b(?:<%(?:[^%]|%(?!>))*%>|\\"[^\\"]*\\"|\'[^\']*\'|[^<>\\"\'])*>", re.I | re.S)',
             'WHOLE_TAG = re.compile(r"<input\\b(?:<%.*?%>|\\"[^\\"]*\\"|\'[^\']*\'|[^>\\"\'])*>", re.I | re.S)',
             "an <input> is not closed by the NEXT tag's `>`",
         ),
@@ -145,6 +145,13 @@ GUARD = Guard(
             """|(?<![\\w-])[:\\"\']?name[\\"\']?\\s*=>)\", re.I)""",
             """)\", re.I)""",
             'a "name" => hash rocket makes a readonly input a posting field',
+        ),
+        # CodeQL py/redos: an ERB body that can span `%><%` backtracks exponentially.
+        Mutation(
+            "the ERB body is lazy again, so a run of `%><%` backtracks exponentially",
+            "<%(?:[^%]|%(?!>))*%>",
+            "<%.*?%>",
+            "WHOLE_TAG matches a pathological run of `%><%` in linear time (no ReDoS)",
         ),
         Mutation(
             "an unclosed tag falls back to the rest of the file again",
