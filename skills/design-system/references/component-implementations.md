@@ -1479,7 +1479,8 @@ Empty state — arranged. What goes wrong is not the Ruby: it is a `<button>` ne
 <%# by us, because the panel is not adjacent to its trigger in a wide sidebar. %>
 <%# simple_form, as everywhere (it is mandatory here). A symbol builds a GET form with no model, and %>
 <%# as: "" drops the `filter[...]` namespace so a facet posts as `color[]=red` and the URL stays %>
-<%# readable. The touch height of each row (2.5.8) belongs to the check_boxes wrapper, not here. %>
+<%# readable. Each row's touch height (2.5.8) is `item_wrapper_class: "min-h-touch"`: simple_form's %>
+<%# per-input option for the element wrapping EACH item (read in lib/simple_form/tags.rb, 5.x). %>
 <%= simple_form_for :filter, url: request.path, method: :get, as: "",
       html: { class: "stack", "aria-label": "Filter products" } do |f| %>
   <% facets.each do |facet| %>
@@ -1489,6 +1490,7 @@ Empty state — arranged. What goes wrong is not the Ruby: it is a `<button>` ne
         <fieldset class="stack">
           <legend class="sr-only"><%= facet.name %></legend>
           <%= f.input facet.slug, as: :check_boxes, label: false, item_wrapper_tag: :div,
+                item_wrapper_class: "min-h-touch",
                 collection: facet.options, label_method: :label, value_method: :value,
                 checked: facet.options.select(&:selected?).map(&:value) %>
         </fieldset>
@@ -1756,7 +1758,7 @@ is a real `fieldset` of native radios.
   <fieldset class="stack divide-y divide-border">
     <legend class="text-step--1 text-muted-foreground">Default payment method</legend>
     <%= f.input :default_method_id, as: :radio_buttons, label: false, collection: @methods,
-          value_method: :id, item_wrapper_tag: :div,
+          value_method: :id, item_wrapper_tag: :div, item_wrapper_class: "min-h-touch",
           label_method: ->(m) {
             safe_join([content_tag(:span, "", class: "with-icon", role: "img", "aria-label": m.brand),
                        content_tag(:span, "ending #{m.last4}"),
@@ -1772,7 +1774,11 @@ is a real `fieldset` of native radios.
 <ul class="stack">
   <% @methods.each do |m| %>
     <li class="cluster justify-between">
-      <span>ending <%= m.last4 %></span>
+      <%# The brand mark is shown here too, so a sighted reader gets what the Remove label says. %>
+      <span class="cluster gap-1">
+        <span class="with-icon" role="img" aria-label="<%= m.brand %>"></span>
+        <span>ending <%= m.last4 %></span>
+      </span>
       <%= button_to "Remove", payment_method_path(m), method: :delete,
             form: { data: { turbo_frame: "modal" } },
             aria: { label: "Remove #{m.brand} ending #{m.last4}" } %>

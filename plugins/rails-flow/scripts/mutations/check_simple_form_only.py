@@ -121,6 +121,13 @@ GUARD = Guard(
             "        if False:\n            raise TypeError(",
             "`\"exemptions\": null` is unusable, not a crash",
         ),
+        # #1439: Rails 8's builder method is rich_textarea; only the old alias was listed.
+        Mutation(
+            "rich_textarea (Rails 8's name) is no longer a raw builder call",
+            '"radio_button|collection_radio_buttons|label|fields_for|rich_textarea|rich_text_area")',
+            '"radio_button|collection_radio_buttons|label|fields_for|rich_text_area")',
+            "f.rich_textarea on a simple_form builder is refused",
+        ),
         Mutation(
             "the tag is cut at an ERB %>, so a readonly after an ERB value is missed",
             'WHOLE_TAG = re.compile(r"<input\\b(?:<%.*?%>|[^>])*>", re.I | re.S)',

@@ -151,7 +151,10 @@ end
 ```
 
 ```erb
-<%= form.rich_textarea :content %>       <%# permit :content as a plain scalar in expect %>
+<%# simple_form, as every form here. `as: :rich_text_area` is the ONLY name simple_form maps (5.0.2+),  %>
+<%# and it is required: a has_rich_text attribute has no column, so simple_form cannot infer the type. %>
+<%# It renders through the builder's rich_text_area, which Rails 8 keeps as an alias of rich_textarea. %>
+<%= f.input :content, as: :rich_text_area %>   <%# permit :content as a plain scalar in expect %>
 <%= @article.content %>                  <%# renders sanitized HTML + attachments %>
 <%= @article.content.to_plain_text %>
 ```

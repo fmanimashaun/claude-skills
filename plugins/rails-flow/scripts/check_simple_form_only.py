@@ -54,7 +54,7 @@ RAW_FIELD_METHODS = ("text_field|email_field|password_field|number_field|telepho
                      "month_field|week_field|color_field|range_field|file_field|text_area|textarea|"
                      "select|collection_select|grouped_collection_select|time_zone_select|date_select|"
                      "datetime_select|time_select|check_box|checkbox|collection_check_boxes|"
-                     "radio_button|collection_radio_buttons|label|fields_for|rich_text_area")
+                     "radio_button|collection_radio_buttons|label|fields_for|rich_textarea|rich_text_area")
 RULES = (
     ("form-with", re.compile(r"(?<![\w.])(form_with|form_for)\b")),
     ("form-tag", re.compile(r"(?<![\w.])form_tag\b")),
@@ -185,6 +185,13 @@ def selftest() -> int:
         check_that(f"a planted {rule} is refused", rule in rules(src), rules(src))
     check_that("a raw <select> is refused", "raw-field" in rules("<select name='a'></select>"))
     check_that("a raw <textarea> is refused", "raw-field" in rules("<textarea></textarea>"))
+    # #1439: Rails 8's name is rich_textarea (8.0+); rich_text_area is its kept alias. Both are raw.
+    check_that("f.rich_textarea on a simple_form builder is refused",
+               "raw-builder-call" in rules("<%= simple_form_for @a do |f| %><%= f.rich_textarea :content %><% end %>"))
+    check_that("f.rich_text_area (the alias) on a simple_form builder is refused",
+               "raw-builder-call" in rules("<%= simple_form_for @a do |f| %><%= f.rich_text_area :content %><% end %>"))
+    check_that("CONTROL: simple_form's own rich-text input is not a raw call",
+               rules("<%= simple_form_for @a do |f| %><%= f.input :content, as: :rich_text_area %><% end %>") == [])
     check_that("f.label on a simple_form builder is refused",
                "raw-builder-call" in rules("<%= simple_form_for @u do |f| %><%= f.label :name %><% end %>"))
 
