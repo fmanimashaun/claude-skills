@@ -24,14 +24,26 @@ to answer it differently, and #617 proved they had already drifted apart in styl
 `plugin-boundaries` allows this: all three callers are inside design-flow, so this is an intra-plugin
 import like `brand_pack_lint`, not a reach across a boundary.
 
-NEWEST VERSION WINS when several are cached, for the reason `toolchain_version.py` records: two
-versions of a bundle coexist, and taking whichever the filesystem yields first reports the stale one.
+THIS PROJECT'S INSTALL WINS, not the newest in the cache (#1421). Several projects on one machine
+run different `rails-stack` versions -- measured: 1.63.0 for fidara-ledger, 1.69.0 for
+Retask-platform, both project-scoped in `installed_plugins.json` -- so the newest cached version is
+some OTHER project's doctrine. The record rule is the one `toolchain_version.py` uses (#1407): a
+record with a `projectPath` applies to that project and its subdirectories, one without applies
+everywhere, and the newest `lastUpdated` among those that apply is the one loaded. It is restated
+here rather than imported because rails-flow is a different plugin and may not be installed.
+
+The project is `$CLAUDE_PROJECT_DIR`, else the working directory; a git worktree maps to its main
+checkout, which is the path the install was recorded against. NEWEST VERSION WINS survives only as
+the fallback when `installed_plugins.json` is unreadable or no record applies -- the behaviour
+before #1421, so a layout this cannot place resolves no worse than it did.
 
 Stdlib only, no network.
 """
 
 from __future__ import annotations
 
+import json
+import os
 import re
 from pathlib import Path
 
@@ -44,13 +56,77 @@ def _version_key(name: str) -> tuple:
     return tuple(int(p) for p in parts) if parts else (0,)
 
 
+def _project() -> Path:
+    """The project this session runs in; a linked git worktree maps to its main checkout."""
+    here = Path(os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
+    for d in (here, *here.parents):
+        git = d / ".git"
+        if git.is_dir():
+            return d
+        if git.is_file():                   # linked worktree: "gitdir: <main>/.git/worktrees/<name>"
+            try:
+                line = git.read_text(encoding="utf-8").strip()
+            except OSError:
+                return d
+            gitdir = Path(line.partition("gitdir:")[2].strip())
+            if not gitdir.is_absolute():
+                gitdir = d / gitdir
+            return gitdir.parent.parent.parent if gitdir.parent.name == "worktrees" else d
+    return here
+
+
+def _applies(record: dict, project: Path) -> bool:
+    """`toolchain_version.applies_to`'s rule (#1407), restated: design-flow cannot import rails-flow."""
+    owner = (record or {}).get("projectPath")
+    if not owner:
+        return True
+    try:
+        root, here = Path(owner).resolve(), project.resolve()
+    except OSError:
+        return False
+    dirs = (here, *here.parents)             # a subdirectory still loads its project's plugins
+    if root in dirs:
+        return True
+    # On a case-insensitive volume (APFS by default) a recorded `projectPath` may differ from the
+    # working directory in case alone; `samefile` asks the filesystem instead of comparing strings.
+    try:
+        return root.exists() and any(str(d).lower() == str(root).lower() and os.path.samefile(root, d)
+                                       for d in dirs)
+    except OSError:
+        return False
+
+
+def project_install(base: Path, project: Path) -> Path | None:
+    """This project's `rails-stack` installPath from `installed_plugins.json`, or None.
+
+    `base` is the marketplace's cache directory (`<plugins>/cache/<marketplace>`), so the record
+    file is two levels up and the key is `rails-stack@<marketplace>`. None means "cannot tell",
+    and the caller falls back to the glob.
+    """
+    try:
+        data = json.loads((base.parent.parent / "installed_plugins.json").read_text(encoding="utf-8"))
+        records = data["plugins"][f"rails-stack@{base.name}"]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    if not isinstance(records, list):
+        return None
+    mine = [r for r in records if isinstance(r, dict) and r.get("installPath") and _applies(r, project)]
+    if not mine:
+        return None
+    return Path(max(mine, key=lambda r: r.get("lastUpdated") or "")["installPath"])
+
+
 def candidates(script: Path) -> list[Path]:
-    """Every place the skill can live, in the order to try. Clone first, then installs, newest down.
+    """Every place the skill can live, in the order to try: the clone, then THIS project's install
+    (#1421), then every cached version, newest down, as the fallback.
 
     `base` is the marketplace root in BOTH layouts, which is what makes one function able to serve
     them: they diverge only by the `<bundle>/<version>/` segments the cache adds.
     """
     base = Path(script).resolve().parent.parent.parent.parent
+    mine = project_install(base, _project())
+    if mine is not None:
+        return [base / SKILL_REL, mine / SKILL_REL]
     installed = sorted(
         (p for p in base.glob(str(Path("*") / "*" / SKILL_REL)) if p.is_dir()),
         key=lambda p: _version_key(p.parent.parent.name), reverse=True)
@@ -102,6 +178,63 @@ def selftest() -> int:
               candidates(scripts / "x.py")[0] == (cache / SKILL_REL).resolve())
         check("every root is named for an error message",
               describe(scripts / "x.py").count("- ") >= 2)
+
+    # THIS PROJECT'S INSTALL, not the newest (#1421). Two projects, two versions, one cache: each
+    # project must read its own, and fidara-ledger's older 1.63.0 must not lose to 1.69.0.
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td).resolve()
+        plugins = root / "plugins"
+        cache = plugins / "cache" / "claude-skills"
+        scripts = cache / "design-flow" / "1.42.1" / "scripts"
+        scripts.mkdir(parents=True)
+        for ver in ("1.63.0", "1.69.0"):
+            (cache / "rails-stack" / ver / SKILL_REL).mkdir(parents=True)
+        old, new = root / "old-project", root / "new-project"
+        (old / "app").mkdir(parents=True)
+        new.mkdir()
+        # No `.git` here: the project root is then the working directory itself, so the
+        # subdirectory fixture below reaches the projectPath rule instead of the git walk.
+        rec = lambda ver, proj, when: {"scope": "project", "version": ver, "projectPath": str(proj),
+                                       "installPath": str(cache / "rails-stack" / ver),
+                                       "lastUpdated": when}
+        (plugins / "installed_plugins.json").write_text(json.dumps({"version": 2, "plugins": {
+            "rails-stack@claude-skills": [rec("1.63.0", old, "2026-09-22T00:00:00Z"),
+                                          rec("1.69.0", new, "2026-09-29T00:00:00Z")]}}))
+        saved = os.environ.get("CLAUDE_PROJECT_DIR")
+        try:
+            def found_for(project):
+                os.environ["CLAUDE_PROJECT_DIR"] = str(project)
+                got = find(scripts / "x.py")
+                return got.parent.parent.name if got else None
+            check(f"the older project reads its own install (got {found_for(old)})",
+                  found_for(old) == "1.63.0")
+            check(f"the newer project reads its own install (got {found_for(new)})",
+                  found_for(new) == "1.69.0")
+            check(f"a subdirectory reads its project's install (got {found_for(old / 'app')})",
+                  found_for(old / "app") == "1.63.0")
+            # A linked worktree lives elsewhere; its `.git` FILE names the main checkout.
+            wt = root / "old-project-wt"
+            wt.mkdir()
+            (wt / ".git").write_text(f"gitdir: {old / '.git' / 'worktrees' / 'wt'}\n")
+            check(f"a linked worktree reads its main checkout's install (got {found_for(wt)})",
+                  found_for(wt) == "1.63.0")
+            # Case alone differs: on a case-insensitive volume this is the same directory.
+            upper = root / "OLD-PROJECT"
+            if upper.exists():              # the volume folds case (APFS default); else skip
+                check(f"a projectPath differing only in case still applies (got {found_for(upper)})",
+                      found_for(upper) == "1.63.0")
+            other = root / "unrecorded"
+            other.mkdir()
+            check(f"a project with no record falls back to the newest (got {found_for(other)})",
+                  found_for(other) == "1.69.0")
+            (plugins / "installed_plugins.json").write_text("{not json")
+            check(f"an unreadable record file falls back to the newest (got {found_for(old)})",
+                  found_for(old) == "1.69.0")
+        finally:
+            if saved is None:
+                os.environ.pop("CLAUDE_PROJECT_DIR", None)
+            else:
+                os.environ["CLAUDE_PROJECT_DIR"] = saved
 
     # THE CLONE LAYOUT still resolves — the regression this fix must not cause.
     with tempfile.TemporaryDirectory() as td:

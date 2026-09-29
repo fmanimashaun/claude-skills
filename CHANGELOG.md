@@ -13214,6 +13214,18 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 *Version number assigned at promotion.*
 
+- **design-flow reads the `design-system` doctrine of THIS project's `rails-stack` install, not the newest in the cache —
+  `plugins/design-flow/scripts/doctrine_path.py`, `plugins/design-flow/scripts/mutations/doctrine_path.py`** (#1421).
+  `candidates()` took the highest cached version, so on a machine with fidara-ledger on rails-stack 1.63.0 and
+  Retask-platform on 1.69.0, fidara-ledger's design-flow read Retask's doctrine. It now picks the `rails-stack` record
+  in `installed_plugins.json` that applies to the project (`$CLAUDE_PROJECT_DIR`, else the working directory; a linked
+  git worktree maps to its main checkout, and on a case-insensitive volume a `projectPath` differing only in case still
+  matches, via `os.path.samefile`), using #1407's rule restated here, since design-flow cannot import rails-flow.
+  The newest-version glob stays only as the fallback when the file is unreadable or no record applies. Measured
+  against the real cache: fidara-ledger now resolves 1.63.0, Retask-platform 1.69.0. Seven new selftest fixtures (the
+  case one runs only where the volume folds case); the new guard's five mutations, including a restored machine-wide
+  pick, are all caught. Our own tool, so no verifier gate.
+
 - **A pager with its summary first, and a modal that can outgrow or touch the viewport, are refused — `plugins/design-flow/scripts/check_modal_fit.py`,
   `plugins/design-flow/scripts/check_table_layout.py`, `plugins/design-flow/scripts/mutations/check_modal_fit.py`,
   `plugins/design-flow/scripts/mutations/check_table_layout.py`, `plugins/design-flow/checks.json`, `scripts/maintainer_doctor.py`**
