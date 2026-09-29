@@ -39,13 +39,22 @@ import re
 import sys
 
 ERB_COMMENT = re.compile(r"<%#.*?%>", re.S)
-HTML_COMMENT = re.compile(r"<!--.*?-->", re.S)
+# AS THE HTML SPEC PARSES IT (CodeQL py/bad-tag-filter on #1451): a comment starts at `<!--` and ends at the
+# first `-->` OR `--!>`; `<!-->` and `<!--->` are complete (abrupt) empty comments; one never closed runs to
+# the end of input. `-->`-only missed `--!>`, so a browser-closed comment stayed "live" to a gate and text
+# after it was over-stripped up to some later `-->`.
+HTML_COMMENT = re.compile(r"<!--(?:-?>|[\s\S]*?(?:--!?>|\Z))")
 RUBY_LINE_COMMENT = re.compile(r"^([ \t]*)#.*$", re.M)
 
 
 def _blank(match: re.Match[str]) -> str:
     """Same newlines, no text -- so `file:line` in every caller's finding stays true."""
     return "\n" * match.group(0).count("\n")
+
+
+def blank_html_comments(source: str) -> str:
+    """Only the HTML comments blanked, newlines kept -- for a caller that reads ERB or Ruby comments itself."""
+    return HTML_COMMENT.sub(_blank, source)
 
 
 def strip_comments(source: str) -> str:
@@ -72,6 +81,15 @@ def _selftest() -> int:
 
     out = strip_comments('<!-- never a raw <button> here -->\n<p>hi</p>\n')
     expect("an HTML comment's text is gone", "button" not in out)
+    # THE SPEC'S OTHER ENDINGS (CodeQL py/bad-tag-filter).
+    out = strip_comments('<!-- a <button> --!><p class="live">x</p> <!-- b -->')
+    expect("`--!>` ends a comment", "button" not in out)
+    expect("...and the markup after it is live, not swallowed up to a later `-->`", 'class="live"' in out)
+    out = strip_comments('<p>a</p><!-- never closed <button>\n<select>')
+    expect("an unterminated comment runs to the end of input", "button" not in out and "select" not in out)
+    expect("...and the markup before it survives", "<p>a</p>" in out)
+    out = strip_comments('<!--><p class="after">x</p><!---><i class="also"></i>')
+    expect("`<!-->` and `<!--->` are complete empty comments", 'class="after"' in out and 'class="also"' in out)
 
     out = strip_comments('  # use `class: "stack"` on the caller\n  attr_reader :x\n')
     expect("a Ruby whole-line comment's text is gone", "stack" not in out)

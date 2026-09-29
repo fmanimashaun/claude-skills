@@ -103,6 +103,50 @@ GUARD = Guard(
             '        if False and (w := fixed_min_width(m.group(3))):',
             "min-w-* on a header cell is caught",
         ),
+        # #1419: rows per page, then the summary, bottom-left.
+        Mutation(
+            "a pager with the summary first stops being a finding",
+            "    if per and summary and summary.start() < per.start():",
+            "    if False:",
+            "a pager with the summary before rows-per-page is caught",
+        ),
+        Mutation(
+            "a pager with no rows-per-page control is judged anyway",
+            "    if per and summary and summary.start() < per.start():",
+            "    if summary and (not per or summary.start() < per.start()):",
+            "a pager with no rows-per-page control is not judged",
+        ),
+        Mutation(
+            "any file with Showing before a select is judged as a pager",
+            "    if not (pager_file or PAGER_NAV.search(source)):\n        return None",
+            "    pass",
+            "a non-pager file with Showing before a select is silent",
+        ),
+        # #1451 review: comment stripping, and the pager shapes a real app writes.
+        Mutation(
+            "COMMENTS ARE NO LONGER STRIPPED, so a described anti-pattern counts as committed",
+            "    source = strip_comments(raw)\n",
+            "    source = raw\n",
+            "a scroller named only in a comment is silent",
+        ),
+        Mutation(
+            "a tag.nav helper's Pagination label is no longer seen",
+            r"""|aria:\s*\{[^}]*\blabel:\s*["']Pagination["']""",
+            "",
+            "a tag.nav helper's Pagination label marks a pager",
+        ),
+        Mutation(
+            "an i18n summary is no longer seen",
+            """|\\bt\\(\\s*[\\"'][\\w.]*(?:showing|summary)[\\"']")""",
+            """")""",
+            "an i18n summary before rows-per-page is caught",
+        ),
+        Mutation(
+            "Pagy's _pagy_nav is no longer a pager file",
+            "(?:pagination|pager|pagy)",
+            "(?:pagination|pager)",
+            "Pagy's _pagy_nav partial is a pager file",
+        ),
         Mutation(
             "mailer views are judged again, and email layout tables fail",
             "        if MAILER.search(p.relative_to(root).as_posix()):\n            continue\n",
