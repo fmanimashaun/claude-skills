@@ -28,6 +28,7 @@ import argparse
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -44,6 +45,46 @@ def check(label: str, ok: bool, detail: str = "") -> None:
     CHECKS += 1
     if not ok:
         FAILURES.append(f"{label}: {detail}" if detail else label)
+
+
+# #1469: every hook fixture runs through here. A subprocess that outruns its timeout used to raise
+# TimeoutExpired and CRASH this script, so the fixtures after it never printed. Under the mutation
+# harness's parallel load that read as "caught, but not by the expected fixture" on one run in a few:
+# a flake with nothing wrong in the code. Now a timeout is exit 124 with a TIMEOUT line, the fixture
+# that ran it fails by name, and every later fixture still runs. HOOK_GATES_TIMEOUT overrides the
+# bound (the selftest sets it tiny to prove the no-crash path).
+def _run(*args, **kw):
+    # The override is exact (the no-crash proof sets it tiny); otherwise a fixture's own bound is
+    # raised to a 180s floor, since 60s was what a loaded machine outran. Read per call, not at import.
+    override = os.environ.get("HOOK_GATES_TIMEOUT")
+    limit = float(override) if override else max(float(kw.pop("timeout", 0) or 0), 180.0)
+    kw.pop("timeout", None)
+    # Its OWN process group, so a timeout kills the hook AND the stubs it started. subprocess.run
+    # kills only the direct child; measured 2026-09-29, 43 stub processes were left orphaned and
+    # stuck (macOS held their exec at _dyld_start), piling up across runs.
+    want_check = kw.pop("check", False)
+    data = kw.pop("input", None)
+    if kw.pop("capture_output", False):
+        kw["stdout"], kw["stderr"] = subprocess.PIPE, subprocess.PIPE
+    if data is not None:
+        kw["stdin"] = subprocess.PIPE
+    with subprocess.Popen(*args, start_new_session=True, **kw) as proc:
+        try:
+            out, err = proc.communicate(data, timeout=limit)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+            proc.communicate()
+            note = f"TIMEOUT after {limit}s: {proc.args}"
+            empty = "" if kw.get("text") else b""
+            return subprocess.CompletedProcess(proc.args, 124, stdout=empty,
+                                               stderr=note if kw.get("text") else note.encode())
+        done = subprocess.CompletedProcess(proc.args, proc.returncode, stdout=out, stderr=err)
+        if want_check:
+            done.check_returncode()
+        return done
 
 
 def _stub(dirpath: Path, name: str, body: str) -> None:
@@ -67,7 +108,7 @@ def _git_repo(root: Path) -> None:
     for cmd in (["git", "init", "-q"],
                 ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q",
                  "--allow-empty", "-m", "init"]):
-        subprocess.run(cmd, cwd=root, check=True, capture_output=True)
+        _run(cmd, cwd=root, check=True, capture_output=True)
 
 
 def run_hook(name: str, *, cwd: Path, stdin: str, path_prefix: list[Path] = (),
@@ -80,7 +121,7 @@ def run_hook(name: str, *, cwd: Path, stdin: str, path_prefix: list[Path] = (),
         env["PATH"] = os.pathsep.join(str(p) for p in path_prefix) + os.pathsep + env["PATH"]
     if env_extra:
         env.update(env_extra)
-    done = subprocess.run(["bash", str(HOOKS / name)], cwd=cwd, input=stdin, env=env,
+    done = _run(["bash", str(HOOKS / name)], cwd=cwd, input=stdin, env=env,
                           capture_output=True, text=True, timeout=60)
     return done.returncode, done.stdout + done.stderr
 
@@ -262,7 +303,7 @@ def guard_migrate_fixtures() -> None:
             only.mkdir()
             for tool in ("bash", "cat"):
                 (only / tool).symlink_to(bash if (tool == "bash" and bash) else shutil.which(tool))
-            done = subprocess.run([str(only / "bash"), str(HOOKS / "guard-migrate.sh")], cwd=proj,
+            done = _run([str(only / "bash"), str(HOOKS / "guard-migrate.sh")], cwd=proj,
                                   input=json.dumps({"tool_input": {"file_path": file_path}}),
                                   env={"PATH": str(only)}, capture_output=True, text=True, timeout=60)
             return done.returncode, done.stdout + done.stderr
@@ -278,7 +319,7 @@ def guard_migrate_fixtures() -> None:
           code == 2, f"exit {code}: {out.strip()[:160]!r}")
     # bash 3.2 (macOS /bin/bash) is the shell with no ${var,,}; prove the fold THERE when it is present.
     legacy = Path("/bin/bash")
-    if legacy.is_file() and subprocess.run([str(legacy), "-c", "echo ${BASH_VERSINFO[0]}"],
+    if legacy.is_file() and _run([str(legacy), "-c", "echo ${BASH_VERSINFO[0]}"],
                                            capture_output=True, text=True).stdout.strip() == "3":
         code, out = bare("DB/Migrate/20260927120000_add_thing.rb", bash=str(legacy))
         check("guard-migrate (#1416): ...and under bash 3.2 itself (/bin/bash)", code == 2,
@@ -398,8 +439,8 @@ def guard_bash_fixtures() -> None:
     with tempfile.TemporaryDirectory() as td:
         stage = Path(td) / "hooks"; shutil.copytree(HOOKS, stage); shutil.rmtree(stage / "lib")
         payload = lambda c: json.dumps({"tool_input": {"command": c}})
-        r1 = subprocess.run(["bash", str(stage / "guard-bash.sh")], input=payload("git add -A"), capture_output=True, text=True, cwd=td)
-        r2 = subprocess.run(["bash", str(stage / "guard-bash.sh")], input=payload("git -C repo add -A"), capture_output=True, text=True, cwd=td)
+        r1 = _run(["bash", str(stage / "guard-bash.sh")], input=payload("git add -A"), capture_output=True, text=True, cwd=td)
+        r2 = _run(["bash", str(stage / "guard-bash.sh")], input=payload("git -C repo add -A"), capture_output=True, text=True, cwd=td)
         check("guard-bash (#906): with lib/ missing the hook falls back to the raw text and still blocks `git add -A`", r1.returncode == 2)
         check("guard-bash (#906): ...and the fallback is honestly the OLD behaviour (git -C slips through), which is why the lib ships in the plugin", r2.returncode == 0)
 
@@ -415,7 +456,7 @@ def guard_bash_fixtures() -> None:
             if drop_helper:
                 stage = Path(td) / "hooks"; shutil.copytree(HOOKS, stage); (stage / "lib" / "issue_labels.py").unlink()
                 hook = stage / "guard-bash.sh"
-            r = subprocess.run(["bash", str(hook)], input=json.dumps({"tool_input": {"command": cmd}}),
+            r = _run(["bash", str(hook)], input=json.dumps({"tool_input": {"command": cmd}}),
                                capture_output=True, text=True, cwd=td)
             return r.returncode, r.stderr
     rc, err = labelled("gh issue create -t X --body-file b.md")
@@ -443,12 +484,12 @@ def guard_bash_fixtures() -> None:
             (repo / ".rails-flow").mkdir(parents=True)
             (repo / ".rails-flow" / "issue-labels.json").write_text(json.dumps(decl), encoding="utf-8")
         # The target is CERTAINLY another repo only when both sides have remotes and share none.
-        subprocess.run(["git", "init", "-q", str(session)], check=True)
-        subprocess.run(["git", "-C", str(session), "remote", "add", "origin", "https://github.com/me/session.git"], check=True)
-        subprocess.run(["git", "init", "-q", str(other)], check=True)
-        subprocess.run(["git", "-C", str(other), "remote", "add", "origin", "https://github.com/other/repo.git"], check=True)
+        _run(["git", "init", "-q", str(session)], check=True)
+        _run(["git", "-C", str(session), "remote", "add", "origin", "https://github.com/me/session.git"], check=True)
+        _run(["git", "init", "-q", str(other)], check=True)
+        _run(["git", "-C", str(other), "remote", "add", "origin", "https://github.com/other/repo.git"], check=True)
         def cross(cmd: str) -> tuple[int, str]:
-            r = subprocess.run(["bash", str(HOOKS / "guard-bash.sh")], input=json.dumps({"tool_input": {"command": cmd}}),
+            r = _run(["bash", str(HOOKS / "guard-bash.sh")], input=json.dumps({"tool_input": {"command": cmd}}),
                                capture_output=True, text=True, cwd=session)
             return r.returncode, r.stderr
         rc, err = cross(f"cd {other} && gh issue create -t X --label enhancement --body-file b.md")
@@ -464,6 +505,12 @@ def guard_bash_fixtures() -> None:
     rc, err = labelled("/usr/bin/gh issue create -t X --body-file b.md")
     check("guard-bash (#1423): `/usr/bin/gh issue create` with no label is refused through the real hook",
           rc == 2 and "no --label" in err, err)
+    # #1462: the trigger must reach the helper for forms a plain `gh issue create` grep misses.
+    for form in ('gh issue "create" -t X --body-file b.md', "gh --repo o/r issue create -t X --body-file b.md",
+                 "gh issue new -t X --body-file b.md"):
+        rc, err = labelled(form)
+        check(f"guard-bash (#1462): `{form[:30]}` with no label is refused through the real hook",
+              rc == 2 and "no --label" in err, err)
     check("guard-bash (#1423): CONTROL: an echo of the text is allowed through the real hook",
           labelled('echo "gh issue create"')[0] == 0)
     rc, err = labelled("gh issue create -t X --label feature", drop_helper=True)
@@ -567,7 +614,7 @@ def guard_claims_fixtures() -> None:
             (Path(td) / "body.md").write_text("## What changed\nx\n", encoding="utf-8")
             env = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])}
             env.pop("GH_REPO", None)
-            broke = subprocess.run(["bash", str(copy / "guard-claims.sh")], cwd=td, env=env, text=True,
+            broke = _run(["bash", str(copy / "guard-claims.sh")], cwd=td, env=env, text=True,
                                    capture_output=True, timeout=60,
                                    input=json.dumps({"tool_input": {"command": f"gh pr create --base dev --body-file {td}/body.md"}}))
     check("guard-claims: a helper that fails at import is BLOCKED, never let through",
@@ -620,10 +667,10 @@ def guard_claims_fixtures() -> None:
             target = root / touch
             target.parent.mkdir(parents=True, exist_ok=True)
             for args in (["init", "-q", "-b", "main"],):
-                subprocess.run(["git", *args], cwd=root, capture_output=True)
+                _run(["git", *args], cwd=root, capture_output=True)
             target.write_text("x\n", encoding="utf-8")
-            subprocess.run(["git", "add", "-A"], cwd=root, capture_output=True)
-            subprocess.run(["git", "-c", "user.email=f@e", "-c", "user.name=f",
+            _run(["git", "add", "-A"], cwd=root, capture_output=True)
+            _run(["git", "-c", "user.email=f@e", "-c", "user.name=f",
                             "commit", "-qm", "base"], cwd=root, capture_output=True)
             target.write_text("changed\n", encoding="utf-8")
             return run_hook("guard-claims.sh", cwd=root,
@@ -671,7 +718,7 @@ def release_gate_fixtures() -> None:
                 (Path(td) / ".claude-plugin" / "marketplace.json").write_text(
                     '{"name": "x", "plugins": []}', encoding="utf-8")
             env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env["CLAUDE_PLUGIN_ROOT"] = str(QA_HOOK.parents[2])
-            done = subprocess.run(["bash", str(QA_HOOK)], cwd=td, input=json.dumps({"tool_input": {"command": cmd}}),
+            done = _run(["bash", str(QA_HOOK)], cwd=td, input=json.dumps({"tool_input": {"command": cmd}}),
                                   env=env, capture_output=True, text=True, timeout=60)
             return done.returncode
 
@@ -696,7 +743,7 @@ def release_gate_fixtures() -> None:
     with tempfile.TemporaryDirectory() as td:
         repo = Path(td)
         _git_repo(repo)
-        sh = lambda *a: subprocess.run([*g, *a], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+        sh = lambda *a: _run([*g, *a], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
         (repo / "app.rb").write_text("v1\n", encoding="utf-8")
         sh("add", "app.rb"); sh("commit", "-q", "-m", "app")
         tested = sh("rev-parse", "HEAD")
@@ -707,7 +754,7 @@ def release_gate_fixtures() -> None:
 
         def gate() -> tuple[int, str]:
             sh("branch", "-f", "dev", "HEAD")
-            done = subprocess.run(["bash", str(QA_HOOK)], cwd=repo, env=env, capture_output=True, text=True, timeout=60,
+            done = _run(["bash", str(QA_HOOK)], cwd=repo, env=env, capture_output=True, text=True, timeout=60,
                                   input=json.dumps({"tool_input": {"command": "git push origin main"}}))
             return done.returncode, done.stderr
 
@@ -770,7 +817,7 @@ def ci_verdict_hint_fixtures() -> None:
         bare = proj / "bare-bin"
         bare.mkdir()
         (bare / "bash").symlink_to(shutil.which("bash"))
-        done = subprocess.run([str(bare / "bash"), str(HOOKS / "ci-verdict-hint.sh")], cwd=proj,
+        done = _run([str(bare / "bash"), str(HOOKS / "ci-verdict-hint.sh")], cwd=proj,
                               input=failed, capture_output=True, text=True, timeout=60,
                               env={"PATH": str(bare), "CLAUDE_PLUGIN_ROOT": root, "HOME": td})
         check("ci-verdict-hint: with no python3 on PATH it exits 0 and says nothing",
@@ -783,10 +830,53 @@ def ci_verdict_hint_fixtures() -> None:
               code == 0 and out.strip() == "", f"exit {code}: {out.strip()[:120]!r}")
 
 
+def timeout_fixtures() -> None:
+    """#1469: a subprocess that times out fails ITS fixture by name; the suite never crashes.
+
+    Cheap on purpose -- this file is the selftest of every hook guard, so a costly proof would make
+    the very flake it fixes worse. The wrapper is driven directly on a sleep that outruns a 0.2s
+    bound, and the file is checked to route every subprocess call through it.
+    """
+    saved = os.environ.get("HOOK_GATES_TIMEOUT")
+    os.environ["HOOK_GATES_TIMEOUT"] = "0.2"
+    marker = f"sleep 29.{os.getpid() % 1000:03d}"   # unique, so no other process can be counted
+    import time
+    began = time.monotonic()
+    try:
+        r = _run(["bash", "-c", f"{marker} & {marker}; wait"], capture_output=True, text=True)
+    except subprocess.TimeoutExpired:
+        r = None
+    finally:
+        if saved is None:
+            os.environ.pop("HOOK_GATES_TIMEOUT", None)
+        else:
+            os.environ["HOOK_GATES_TIMEOUT"] = saved
+    took = time.monotonic() - began
+    check("a timed-out hook fixture fails by name and the suite still finishes (no crash)",
+          r is not None and r.returncode == 124 and "TIMEOUT after" in r.stderr, f"{r}")
+    # THE MECHANISM OF THE 30-MINUTE HANG: a stub the timeout did not kill keeps the output pipe open,
+    # so reading the hook's output waits for the stub to exit on its own. Killing the whole group
+    # returns at once; anything less waits out the 29s sleep.
+    check("...and returns promptly, because nothing it started still holds the output pipe",
+          took < 10, f"took {took:.1f}s")
+    left = subprocess.run(["pgrep", "-f", marker], capture_output=True, text=True).stdout.split()
+    check("...and the timeout kills the hook's whole process group, leaving no orphaned stub",
+          left == [], f"{len(left)} process(es) left: {left}")
+    for pid in left:
+        try:
+            os.kill(int(pid), 9)
+        except (ProcessLookupError, ValueError):
+            pass
+    src = Path(__file__).read_text(encoding="utf-8")
+    raw = src.count("subprocess" + ".run(")
+    check("every fixture subprocess goes through the no-crash wrapper", raw == 1,
+          f"{raw} direct subprocess.run call(s); only the one inside _run may remain")
+
+
 def selftest() -> int:
     for fn in (stop_gate_fixtures, guard_lane_fixtures, guard_migrate_fixtures, lint_ruby_fixtures,
                self_consistency_fixtures, guard_bash_fixtures, guard_claims_fixtures,
-               release_gate_fixtures, ci_verdict_hint_fixtures):
+               release_gate_fixtures, ci_verdict_hint_fixtures, timeout_fixtures):
         fn()
     if FAILURES:
         print(f"check_hook_gates selftest: {len(FAILURES)} of {CHECKS} checks FAILED", file=sys.stderr)

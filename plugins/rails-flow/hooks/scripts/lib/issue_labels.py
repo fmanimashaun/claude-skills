@@ -43,10 +43,10 @@ from pathlib import Path
 CONFIG = Path(".rails-flow/issue-labels.json")
 
 
-HEREDOC = re.compile(r"(?<!<)<<(?!<)(-?)[ \t]*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\2")  # not <<< (a herestring)
+HEREDOC = re.compile(r"(?<!<)<<(?!<)(-?)[ \t]*(\\?)(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\3")  # not <<< (a herestring)
 
 
-def strip_heredocs(cmd: str) -> str:
+def strip_heredocs(cmd: str, bodies: list | None = None) -> str:
     """Drop every heredoc BODY, keeping the line that opens it (#1336).
 
     Our own doctrine says to write issue bodies with a quoted heredoc and `--body-file`, never through
@@ -58,6 +58,11 @@ def strip_heredocs(cmd: str) -> str:
     would swallow hold a `gh issue create`, because a create nobody sees is a create let through.
     Otherwise it is a quoted mention or arithmetic, and is left alone. `<<<` is a herestring, not a
     heredoc: it has no body to strip.
+
+    `bodies`, when given, collects `(opener line, delimiter quoted?, body)` for every heredoc, so
+    `hidden_create` can judge the two kinds that really RUN: a body fed to a shell, and an unquoted
+    body's substitutions (#1462, #1467). A quoted delimiter (`<<'EOF'`, `<<"EOF"`, `<<\\EOF`) makes the
+    body literal; an unquoted one substitutes `$(…)` and backticks.
     """
     lines = cmd.split("\n")
     out, i = [], 0
@@ -71,7 +76,8 @@ def strip_heredocs(cmd: str) -> str:
                 continue            # inside single quotes `<<X` is text
             if before.count('"') % 2 and "$(" not in before[before.rfind('"'):]:
                 continue            # inside double quotes too -- unless a `$(` opened since: `"$(cat <<'EOF'`
-            tag, dash = m.group(3), m.group(1) == "-"
+            tag, dash = m.group(4), m.group(1) == "-"
+            quoted = bool(m.group(2) or m.group(3))
             start_of_swallow = i
             while i < len(lines) and (lines[i].lstrip("\t") if dash else lines[i]) != tag:
                 i += 1
@@ -82,6 +88,8 @@ def strip_heredocs(cmd: str) -> str:
                 if re.search(r"\bgh\s+issue\s+create\b", "\n".join(lines[start_of_swallow:])):
                     raise ValueError(f"heredoc <<{tag} is never closed")
                 break
+            if bodies is not None:
+                bodies.append((line, quoted, "\n".join(lines[start_of_swallow:i])))
             i += 1  # the closing tag line
     return "\n".join(out)
 
@@ -138,15 +146,18 @@ def issue_creates(cmd: str) -> list[tuple[list[str], str | None, str | None]]:
             while words and "=" in words[0] and words[0].split("=", 1)[0].isidentifier():
                 name, _, value = words.pop(0).partition("=")
                 env[name] = value
-            for i in range(len(words) - 2):
-                # Any path to gh is gh (`/usr/bin/gh issue create`, #1423).
-                if os.path.basename(words[i]) == "gh" and words[i + 1] == "issue" and words[i + 2] == "create":
+            for i in range(len(words)):
+                # Any path to gh is gh (`/usr/bin/gh issue create`, #1423); `new` is gh's alias for
+                # `create`, and gh takes global flags before the subcommand (`gh --repo o/r issue
+                # create`, #1462). A repo named there is carried into the create's own arguments.
+                after, lead = gh_issue_create_at(words, i)
+                if after is not None:
                     cd = _cd_in_force(items[:start]) if raw_cd_shape else None
                     # After a followed cd, the create must BE the segment -- no `env -C`, no
                     # `command`, no GIT_DIR=: each sends the create somewhere the cd did not.
                     if cd is not None and (i != 0 or set(env) - {"GH_REPO"}):
                         cd = None
-                    out.append((words[i + 3:], cd, env.get("GH_REPO")))
+                    out.append((lead + words[after:], cd, env.get("GH_REPO")))
                     break
             seg, start = [], k + 1
         else:
@@ -169,7 +180,14 @@ def _cd_in_force(prefix: list[str]) -> str | None:
     return prefix[1]
 
 
-CREATE_TEXT = re.compile(r"(?:^|[\s`(;&|])(?:\S*/)?gh\s+issue\s+create\b")
+# `gh [global flags] issue create|new`, quote characters removed first (see `_names_create`).
+CREATE_TEXT = re.compile(r"(?:^|[\s`(;&|])(?:\S*/)?gh(?:\s+-\S+(?:\s+[^-\s]\S*)?)*\s+issue\s+(?:create|new)\b")
+
+
+def _names_create(text: str) -> bool:
+    """Does TEXT, once run, name a create? Quotes are removed first, because a shell joins
+    `gh issue "create"` into the same words (#1462); a backslash-newline joins lines."""
+    return bool(CREATE_TEXT.search(" " + text.replace("\\\n", "").replace('"', "").replace("'", "")))
 SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
 WRAPPERS = {"env", "sudo", "command", "builtin", "exec", "nohup", "timeout", "nice", "time", "xargs"}
 
@@ -182,16 +200,33 @@ def hidden_create(cmd: str) -> str | None:
     `$( … )`. A plain mention -- `echo "gh issue create"`, a grep for it -- is text, not a command,
     and stays allowed: only a shell, `eval`, or a substitution EXECUTES the string.
     """
+    heredocs: list = []
     try:
-        body = strip_heredocs(cmd)
+        body = strip_heredocs(cmd, heredocs)
     except ValueError:
         return None                  # the caller already refuses an unparseable command
+    # HEREDOC BODIES THAT RUN (#1462, #1467). A body fed to a shell is a script; an UNQUOTED body
+    # substitutes `$(…)` and backticks. A quoted-delimiter body fed to `cat` is text.
+    for opener, quoted, text in heredocs:
+        feeder = _command_word(opener[:opener.find("<<")])
+        if (feeder in SHELLS or feeder == "eval") and _names_create(text):
+            return f"a heredoc fed to `{feeder}`"
+        if not quoted:
+            found = _substituted_create(text)
+            if found:
+                return f"{found} in an unquoted heredoc"
     # Inside SINGLE quotes nothing is substituted, so a backtick or `$(` there is text -- a commit
     # message quoting "`gh issue create`" is not a create. Double quotes do substitute, so they stay.
-    literal, q = [], ""
-    for ch in body:
+    # A backslash-escaped character (`\\``) is literal outside single quotes too (#1468).
+    literal, q, i = [], "", 0
+    while i < len(body):
+        ch = body[i]
+        i += 1
         if q == "'":
             q = "" if ch == "'" else q
+            continue
+        if ch == "\\":
+            i += 1                   # the escaped character is literal: never a substitution
             continue
         if ch == "'" and q != '"':
             q = "'"
@@ -200,19 +235,9 @@ def hidden_create(cmd: str) -> str | None:
             q = "" if q == '"' else '"'
         literal.append(ch)
     subst = "".join(literal)
-    # Backticks PAIR: the text between the 1st and 2nd is a substitution, the 2nd and 3rd is not.
-    # An unclosed one runs to the end of the command.
-    ticks = subst.split("`")
-    if any(CREATE_TEXT.search(" " + span) for span in ticks[1::2]):
-        return "backticks"
-    # `$( … )` to its OWN closing parenthesis, counted, so a create after it is not inside it.
-    for m in re.finditer(r"\$\(", subst):
-        depth, j = 1, m.end()
-        while j < len(subst) and depth:
-            depth += {"(": 1, ")": -1}.get(subst[j], 0)
-            j += 1
-        if CREATE_TEXT.search(" " + subst[m.end():j - (0 if depth else 1)]):
-            return "a `$( … )` substitution"
+    found = _substituted_create(subst)
+    if found:
+        return found
     try:
         lexer = shlex.shlex(body.replace("\n", " ; "), posix=True, punctuation_chars=";&|()")
         lexer.whitespace_split = True
@@ -220,8 +245,10 @@ def hidden_create(cmd: str) -> str | None:
     except ValueError:
         return None
     seg: list[str] = []
+    prev_text, prev_op = "", ""      # the segment before, and the operator that ended it
     for tok in tokens + [";"]:
         if tok and set(tok) <= set(";&|()"):
+            raw_seg = " ".join(seg)
             words = [w for w in seg if not ("=" in w and w.split("=", 1)[0].isidentifier())]
             # Peel wrappers that run their arguments as a command: `env sh -c`, `sudo bash -c`,
             # `timeout 5 sh -c`, `command eval`, … Their own flags (and timeout's duration) go too.
@@ -235,14 +262,69 @@ def hidden_create(cmd: str) -> str | None:
             rest = " ".join(words[1:])
             # `-c` may be bundled with other short flags: `bash -lc '…'`.
             runs_string = any(w.startswith("-") and not w.startswith("--") and "c" in w for w in words[1:])
-            if head in SHELLS and runs_string and CREATE_TEXT.search(rest):
+            if head in SHELLS and runs_string and _names_create(rest):
                 return f"`{head} -c`"
-            if head == "eval" and CREATE_TEXT.search(rest):
+            if head == "eval" and _names_create(rest):
                 return "`eval`"
+            # A shell reading its SCRIPT from stdin (#1462): a pipe into it, or a herestring.
+            if head in SHELLS and not runs_string:
+                if prev_op == "|" and _names_create(prev_text):
+                    return f"a pipe into `{head}`"
+                if "<<<" in words and _names_create(" ".join(words[words.index("<<<") + 1:])):
+                    return f"a herestring fed to `{head}`"
+            prev_text, prev_op = raw_seg, tok
             seg = []
         else:
             seg.append(tok)
     return None
+
+
+def gh_issue_create_at(words: list[str], i: int) -> tuple[int | None, list[str]]:
+    """If `words[i:]` is `gh [global flags] issue create|new …`: (index after `create`, the global
+    `-R/--repo` flag to carry into the create's arguments). Else (None, [])."""
+    if i >= len(words) or os.path.basename(words[i]) != "gh":
+        return None, []
+    j, lead = i + 1, []
+    while j < len(words) and words[j].startswith("-"):
+        flag = words[j]
+        if flag in ("-R", "--repo") and j + 1 < len(words):
+            lead, j = [flag, words[j + 1]], j + 2
+            continue
+        if flag.startswith("--repo=") or (flag.startswith("-R") and len(flag) > 2):
+            lead = [flag]
+        j += 1
+    if j + 1 < len(words) and words[j] == "issue" and words[j + 1] in ("create", "new"):
+        return j + 2, lead
+    return None, []
+
+
+def _substituted_create(text: str) -> str | None:
+    """A create inside a backtick or `$( … )` substitution in TEXT, named, or None."""
+    # Backticks PAIR: the text between the 1st and 2nd is a substitution, the 2nd and 3rd is not.
+    # An unclosed one runs to the end of the command.
+    ticks = text.split("`")
+    if any(_names_create(span) for span in ticks[1::2]):
+        return "backticks"
+    # `$( … )` to its OWN closing parenthesis, counted, so a create after it is not inside it.
+    for m in re.finditer(r"\$\(", text):
+        depth, j = 1, m.end()
+        while j < len(text) and depth:
+            depth += {"(": 1, ")": -1}.get(text[j], 0)
+            j += 1
+        if _names_create(text[m.end():j - (0 if depth else 1)]):
+            return "a `$( … )` substitution"
+    return None
+
+
+def _command_word(text: str) -> str:
+    """The command word of the LAST segment of TEXT, with assignments and wrappers peeled."""
+    part = re.split(r"[;&|(]", text)[-1]
+    words = [w for w in part.split() if not ("=" in w and w.split("=", 1)[0].isidentifier())]
+    while words and os.path.basename(words[0]) in WRAPPERS:
+        words.pop(0)
+        while words and words[0].startswith("-"):
+            words.pop(0)
+    return os.path.basename(words[0]) if words else ""
 
 
 def target_root(cd: str | None, root: Path) -> tuple[Path | None, str]:
@@ -660,6 +742,38 @@ def selftest() -> int:
                           ("nohup", f"nohup sh -c '{lab}'")):
             ok, why = verdict(cmd, bare)
             check(f"a create behind `{name}` is refused", not ok and "directly" in why, why)
+        # ---- #1462: more forms that reach gh, each seen or refused -------------------------------
+        for name, cmd in (("gh issue new (an alias)", "gh issue new -t X"),
+                          ("gh --repo o/r issue create (a global flag first)", "gh --repo o/r issue create -t X"),
+                          ("a create split across a backslash-newline", "gh issue \\\ncreate -t X")):
+            ok, why = verdict(cmd, bare)
+            check(f"{name}: its missing label is refused", not ok and "no --label" in why, why)
+        check("CONTROL: a labelled gh issue new passes", verdict("gh issue new -t X --label a", bare)[0])
+        for shape, cmd in (("a pipe into `bash`", "echo 'gh issue create -t X' | bash"),
+                           ("a herestring fed to `bash`", "bash <<< 'gh issue create -t X'"),
+                           ("a heredoc fed to `bash`", "bash <<'EOF'\ngh issue create -t X\nEOF"),
+                           ("`bash -c`", "bash -c 'gh issue \"create\" -t X'")):
+            ok, why = verdict(cmd, bare)
+            check(f"a create in {shape} is refused and named", not ok and shape in why and "directly" in why, why)
+        check("CONTROL: a pipe into something that is not a shell is not a hidden create",
+              verdict("echo 'gh issue create' | grep create", bare)[0])
+        check("CONTROL: a quoted heredoc fed to cat is text, even naming $(gh issue create)",
+              verdict("cat <<'EOF' > b.md\nrun $(gh issue create) later\nEOF\n" + lab, bare)[0])
+        # ---- #1467: an UNQUOTED heredoc's substitutions really run ----------------------------------
+        ok, why = verdict('x="$(cat <<EOF\n$(gh issue create -t X)\nEOF\n)"', bare)
+        check("a $( ) create inside an unquoted heredoc is refused", not ok and "unquoted heredoc" in why, why)
+        ok, why = verdict("cat <<EOF > b.md\n`gh issue create -t X`\nEOF", bare)
+        check("a backtick create inside an unquoted heredoc is refused", not ok and "unquoted heredoc" in why, why)
+        check("CONTROL: prose naming the command in an unquoted heredoc is text",
+              verdict("cat <<EOF > b.md\nplease run gh issue create by hand\nEOF\n" + lab, bare)[0])
+        check("CONTROL: a \\EOF delimiter is quoted, so its body is literal",
+              verdict("cat <<\\EOF > b.md\n$(gh issue create -t X)\nEOF\n" + lab, bare)[0])
+        # ---- #1468: an escaped backtick is literal ---------------------------------------------------
+        check("CONTROL: an escaped backtick inside double quotes is text",
+              verdict('echo "use \\`gh issue create\\`"', bare)[0], verdict('echo "use \\`gh issue create\\`"', bare)[1])
+        ok, why = verdict('echo "use `gh issue create -t X`"', bare)
+        check("...while an unescaped one inside double quotes still runs, and is refused", not ok and "backticks" in why, why)
+
         ok, why = verdict("/usr/bin/gh issue create -t X", bare)
         check("a path to gh is gh: its missing label is refused", not ok and "no --label" in why, why)
         check("CONTROL: ...and a labelled one passes", verdict("/usr/bin/gh issue create -t X --label a", bare)[0])

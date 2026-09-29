@@ -162,37 +162,37 @@ GUARD = Guard(
         # ---- #1423: a create the parser cannot check is refused (owner decision) ---------------
         Mutation(
             "a path to gh is not gh, so /usr/bin/gh issue create goes unchecked",
-            '                if os.path.basename(words[i]) == "gh" and words[i + 1] == "issue" and words[i + 2] == "create":',
-            '                if words[i] == "gh" and words[i + 1] == "issue" and words[i + 2] == "create":',
+            '    if i >= len(words) or os.path.basename(words[i]) != "gh":',
+            '    if i >= len(words) or words[i] != "gh":',
             "a path to gh is gh",
         ),
         Mutation(
             "a create in backticks is not refused",
-            '    if any(CREATE_TEXT.search(" " + span) for span in ticks[1::2]):',
+            '    if any(_names_create(span) for span in ticks[1::2]):',
             "    if False:",
             "a create inside backticks is refused",
         ),
         Mutation(
             "backticks are not paired, so a create after a closed one reads as inside it",
-            '    if any(CREATE_TEXT.search(" " + span) for span in ticks[1::2]):',
-            '    if any(CREATE_TEXT.search(" " + span) for span in ticks[1:]):',
+            '    if any(_names_create(span) for span in ticks[1::2]):',
+            '    if any(_names_create(span) for span in ticks[1:]):',
             "CONTROL: a backtick BEFORE the create is not a hidden create",
         ),
         Mutation(
             "a $( ) substitution runs to the end, so a create after it reads as inside it",
-            '        if CREATE_TEXT.search(" " + subst[m.end():j - (0 if depth else 1)]):',
-            '        if CREATE_TEXT.search(" " + subst[m.end():]):',
+            '        if _names_create(text[m.end():j - (0 if depth else 1)]):',
+            '        if _names_create(text[m.end():]):',
             "CONTROL: $( ) BEFORE the create is not a hidden create",
         ),
         Mutation(
             "a create in $( ) is not refused",
-            '        if CREATE_TEXT.search(" " + subst[m.end():j - (0 if depth else 1)]):',
+            '        if _names_create(text[m.end():j - (0 if depth else 1)]):',
             "        if False:",
             "a create inside a `$( … )` substitution is refused",
         ),
         Mutation(
             "sh -c strings are not refused",
-            "            if head in SHELLS and runs_string and CREATE_TEXT.search(rest):",
+            "            if head in SHELLS and runs_string and _names_create(rest):",
             "            if False:",
             "a create inside `sh -c` is refused",
         ),
@@ -204,7 +204,7 @@ GUARD = Guard(
         ),
         Mutation(
             "eval strings are not refused",
-            "            if head == \"eval\" and CREATE_TEXT.search(rest):",
+            "            if head == \"eval\" and _names_create(rest):",
             "            if False:",
             "a create inside `eval` is refused",
         ),
@@ -244,6 +244,61 @@ GUARD = Guard(
             '                if wrapper in ("timeout", "nice") and words and re.fullmatch(r"[\\d.]+[smhd]?", words[0]):',
             "                if False:",
             "a create behind `timeout` is refused",
+        ),
+        # ---- #1462 / #1467 / #1468 (group C2) ---------------------------------------------------
+        Mutation(
+            "gh issue new is not a create",
+            '    if j + 1 < len(words) and words[j] == "issue" and words[j + 1] in ("create", "new"):',
+            '    if j + 1 < len(words) and words[j] == "issue" and words[j + 1] == "create":',
+            "gh issue new (an alias): its missing label is refused",
+        ),
+        Mutation(
+            "gh's global flags are not skipped, so gh --repo o/r issue create is not seen",
+            "    while j < len(words) and words[j].startswith(\"-\"):",
+            "    while False:",
+            "gh --repo o/r issue create (a global flag first): its missing label is refused",
+        ),
+        Mutation(
+            "quotes are not removed before matching, so bash -c 'gh issue \"create\"' escapes",
+            "    return bool(CREATE_TEXT.search(\" \" + text.replace(\"\\\\\\n\", \"\").replace('\"', \"\").replace(\"'\", \"\")))",
+            "    return bool(CREATE_TEXT.search(\" \" + text))",
+            "a create in `bash -c` is refused and named",
+        ),
+        Mutation(
+            "a heredoc fed to a shell is not refused",
+            '        if (feeder in SHELLS or feeder == "eval") and _names_create(text):',
+            "        if False:",
+            "a create in a heredoc fed to `bash` is refused and named",
+        ),
+        Mutation(
+            "an unquoted heredoc's substitutions are not scanned",
+            "        if not quoted:\n            found = _substituted_create(text)",
+            "        if False:\n            found = _substituted_create(text)",
+            "a $( ) create inside an unquoted heredoc is refused",
+        ),
+        Mutation(
+            "a \\EOF delimiter reads as unquoted, so its literal body is scanned",
+            "            quoted = bool(m.group(2) or m.group(3))",
+            "            quoted = bool(m.group(3))",
+            "CONTROL: a \\EOF delimiter is quoted, so its body is literal",
+        ),
+        Mutation(
+            "a pipe into a shell is not refused",
+            '                if prev_op == "|" and _names_create(prev_text):',
+            "                if False:",
+            "a create in a pipe into `bash` is refused and named",
+        ),
+        Mutation(
+            "a herestring fed to a shell is not refused",
+            '                if "<<<" in words and _names_create(" ".join(words[words.index("<<<") + 1:])):',
+            "                if False:",
+            "a create in a herestring fed to `bash` is refused and named",
+        ),
+        Mutation(
+            "a backslash escape is not honoured, so an escaped backtick reads as a substitution",
+            '        if ch == "\\\\":\n            i += 1                   # the escaped character is literal: never a substitution\n            continue\n',
+            "",
+            "CONTROL: an escaped backtick inside double quotes is text",
         ),
         # ---- #1400: the ALLOWLIST -- each way a cd the create may not have followed is trusted -----
         Mutation(

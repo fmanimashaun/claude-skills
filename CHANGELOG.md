@@ -3530,6 +3530,43 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **`guard-bash` label-checks `gh issue new`, `gh --repo … issue create`, and creates fed to a shell —
+  `plugins/rails-flow/hooks/scripts/guard-bash.sh`, `plugins/rails-flow/hooks/scripts/lib/issue_labels.py`,
+  `scripts/mutations/hook_issue_labels.py`, `scripts/mutations/hook_guard_bash.py`,
+  `plugins/rails-flow/scripts/check_hook_gates.py`** (#1462). This applies #1423's owner-decided rule to more forms.
+  - `gh issue new` (gh's alias) and a create behind gh's global flags are seen and label-checked, with a repo named
+    there carried into the create.
+  - A create fed to a shell is refused by name: through a pipe, a herestring, or a heredoc.
+  - A quoted subcommand (`gh issue "create"`) and a backslash-newline split no longer hide one.
+  - The hook's trigger ignores quotes and line joins, so it reaches the helper for all of these.
+
+- **An unquoted heredoc's substitutions are checked — `plugins/rails-flow/hooks/scripts/lib/issue_labels.py`** (#1467).
+  `cat <<EOF … $(gh issue create) … EOF` substitutes, so its body is now scanned for backtick and `$( )` creates.
+  A quoted delimiter (`<<'EOF'`, `<<"EOF"`, `<<\EOF`) keeps the body literal, and prose in an unquoted body
+  stays text.
+
+- **An escaped backtick is literal — `plugins/rails-flow/hooks/scripts/lib/issue_labels.py`** (#1468).
+  `echo "use \`gh issue create\`"` is no longer refused. An unescaped backtick inside double quotes still runs,
+  so it is still refused. Declined, with the reason recorded on #1468: allowing `cd /x '&&' gh issue create`. It
+  fails safe, and allowing it would need proof that gh never runs.
+
+- **`check_slices.py` and `check_issue_ready.py` share one CommonMark fence reader —
+  `plugins/rails-flow/scripts/check_issue_ready.py`, `plugins/rails-flow/scripts/check_slices.py`** (#1461).
+  `fence_lines()` is the one reader. An unclosed fence runs to the end, and `deps extra` is a `deps` fence, so the
+  two scripts can no longer disagree on whether a `depends-on:` is an edge.
+
+- **The hook suite cannot crash on a slow subprocess, and leaves no orphans — `plugins/rails-flow/scripts/check_hook_gates.py`,
+  `scripts/mutations/check_hook_gates_harness.py`** (#1469).
+  - **The flake, measured.** At dev's head the unmutated suite crashed on an uncaught `TimeoutExpired`. That was 3
+    of 3 runs on 2026-09-29, and it read as "caught by the wrong fixture" or INERT.
+  - **The trigger was the machine.** macOS held new script execs at `_dyld_start` (43 of 44 stubs stuck), and a
+    stub the timeout left alive kept the output pipe open, so the read waited on it.
+  - **The fix.** Every fixture subprocess runs in its own process group. A timeout (180s floor) kills the whole
+    group and fails that fixture by name, and later fixtures still run.
+  - **Proven.** A unique-marker control shows 0 processes left against 2 for plain `subprocess.run`, and the timeout
+    returns promptly. A new guard, `check_hook_gates_harness`, mutates the harness itself. The mutation harness's
+    own 300s limit is #1444's.
+
 - **`guard-bash` refuses a `gh issue create` it cannot label-check, and names the shape —
   `plugins/rails-flow/hooks/scripts/guard-bash.sh`, `plugins/rails-flow/hooks/scripts/lib/issue_labels.py`,
   `scripts/mutations/hook_issue_labels.py`, `scripts/mutations/hook_guard_bash.py`,

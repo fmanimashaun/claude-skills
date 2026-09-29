@@ -21,10 +21,16 @@ GUARD = Guard(
            # mutation reads as caught -- the harness reported this guard INERT until it was added (#1173).
            'plugins/rails-flow/scripts/ci_verdict_hint.py'),   # the harness drives release-gate.sh too (#906)
     mutations=(
+        Mutation(
+            "the trigger keeps quotes, so gh issue \"create\" never reaches the helper",
+            "if printf '%s' \"$cmd\" | tr -d \"\\\"'\\\\\\\\\" | tr '\\n' ' ' | grep -qE 'gh[[:space:]].*issue[[:space:]]+(create|new)'; then",
+            "if printf '%s' \"$cmd\" | tr '\\n' ' ' | grep -qE 'gh[[:space:]].*issue[[:space:]]+(create|new)'; then",
+            "guard-bash (#1462): `gh issue \"create\" -t X --body-` with no label is refused",
+        ),
         # #1423: the label helper must run for a create that never starts a normalised segment.
         Mutation(
             "the label helper runs only for a create at a segment start, so sh -c and /usr/bin/gh escape",
-            "if printf '%s' \"$cmd\" | grep -qE 'gh[[:space:]]+issue[[:space:]]+create'; then",
+            "if printf '%s' \"$cmd\" | tr -d \"\\\"'\\\\\\\\\" | tr '\\n' ' ' | grep -qE 'gh[[:space:]].*issue[[:space:]]+(create|new)'; then",
             "if hit '^gh[[:space:]]+issue[[:space:]]+create\\b'; then",
             "a create inside `sh -c` is refused through the real hook",
         ),
