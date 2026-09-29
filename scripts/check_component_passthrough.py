@@ -57,7 +57,35 @@ SOURCES = (
     "skills/design-system/references/reference-implementation.md",
 )
 
-CLASS = re.compile(r"^(?P<indent>\s*)class (?P<name>\w+) < ViewComponent::Base\s*$", re.M)
+CLASS = re.compile(r"^(?P<indent>[ \t]*)class (?P<name>\w+) < ViewComponent::Base[ \t]*$", re.M)
+
+
+# A Ruby class/module OPENER: `class Name`, `class << self`, `module Name`. Not `class: "..."` (a
+# keyword argument) or `class="..."` (ERB), both common in component bodies.
+NESTED = re.compile(r"^([ \t]*)(?:class[ \t]+(?:[A-Z]|<<)|module[ \t]+[A-Z])(?!.*\bend\s*$)")
+
+
+def own_lines(body: list[str]) -> list[str]:
+    """The class body WITHOUT its nested `class` / `module` bodies (#1434).
+
+    A component with a nested helper class declared above its own initializer had the NESTED
+    class's `def initialize(` judged, because the scan took the first one in the body. Retask's
+    `Ui::DetailsCardComponent` (a nested `Section`) read as "a fixed keyword list" while its own
+    initializer took `**attrs`, and the downstream workaround was to reorder a correct file. A
+    nested body ends at the `end` at its own indent, the same rule the component body uses.
+    """
+    out, skip_indent = [], None
+    for line in body:
+        if skip_indent is not None:
+            if line.strip() == "end" and len(line) - len(line.lstrip()) == skip_indent:
+                skip_indent = None
+            continue
+        m = NESTED.match(line)
+        if m:
+            skip_indent = len(m.group(1))
+            continue
+        out.append(line)
+    return out
 
 
 def initializer_of(body: str) -> str | None:
@@ -100,7 +128,7 @@ def classes_in(source: str) -> list[tuple[str, str | None, bool]]:
             if line.strip() == "end" and (len(line) - len(line.lstrip())) == indent:
                 break
             body.append(line)
-        blob = "\n".join(body)
+        blob = "\n".join(own_lines(body))
         # Stored if the splat name is bound to an ivar anywhere in the class -- `@attrs = attrs`,
         # a multiple assignment ending in `attrs`, or an endless `= @attrs = attrs`.
         stored = bool(re.search(r"@attrs\b\s*=|=\s*[^=\n]*\battrs\b", blob))
@@ -168,6 +196,30 @@ def _selftest() -> int:
     DROPS = ("```ruby\nmodule Ui\n  class DropsComponent < ViewComponent::Base\n"
              "    def initialize(variant: :primary, **attrs)\n      @variant = variant\n"
              "    end\n  end\nend\n```\n")
+
+    # #1434: a nested class declared above the component's own initializer is not the component.
+    NESTED = ("```ruby\nmodule Ui\n  class CardComponent < ViewComponent::Base\n"
+              "    class Section\n      def initialize(title:)\n        @title = title\n      end\n    end\n\n"
+              "    def initialize(**attrs)\n      @attrs = attrs\n    end\n  end\nend\n```\n")
+    NESTED_FIXED = ("```ruby\nmodule Ui\n  class FixedCardComponent < ViewComponent::Base\n"
+                    "    class Section\n      def initialize(**attrs)\n        @attrs = attrs\n      end\n    end\n\n"
+                    "    def initialize(title:)\n      @title = title\n    end\n  end\nend\n```\n")
+    TAGGED = ("```ruby\nmodule Ui\n  class TaggedComponent < ViewComponent::Base\n"
+              "    def call\n      tag.div(\n        class: \"row\"\n      )\n    end\n\n"
+              "    def initialize(**attrs)\n      @attrs = attrs\n    end\n\n"
+              "    class ItemComponent < ViewComponent::Base\n"
+              "      def initialize(**attrs)\n        @attrs = attrs\n      end\n    end\n  end\nend\n```\n")
+    got = dict((n, (sig, st)) for n, sig, st in classes_in(TAGGED))
+    expect("a `class:` keyword line is not a nested class, and a nested component after a blank "
+           "line keeps its own initializer",
+           set(got) == {"TaggedComponent", "ItemComponent"}
+           and all("**" in (sig or "") and st for sig, st in got.values()))
+    got = classes_in(NESTED)
+    expect("a nested class's initializer declared first is not the component's (#1434)",
+           len(got) == 1 and "**" in (got[0][1] or "") and got[0][2])
+    got = classes_in(NESTED_FIXED)
+    expect("CONTROL: the component's own fixed list is seen beside a nested splat, and its splat "
+           "storage is not borrowed", len(got) == 1 and "**" not in (got[0][1] or "") and not got[0][2])
 
     expect("a component with **attrs is accepted",
            [n for n, _, _ in classes_in(GOOD)] == ["GoodComponent"]

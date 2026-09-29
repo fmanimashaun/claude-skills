@@ -58,5 +58,30 @@ GUARD = Guard(
         '            source = path.read_text(encoding="utf-8", errors="replace")',
         'a comment warning against a raw `<button>` is not a raw `<button>`',
     ),
+        # #1434: the first `def initialize(` in the body, a nested class's included, is judged again.
+        Mutation(
+            "nested class bodies are read as the component's own",
+            '            blob = "\\n".join(own_lines(body))',
+            '            blob = "\\n".join(body)',
+            "a nested class's initializer declared first is not the component's",
+        ),
+        Mutation(
+            "a nested body never ends, so the component's own initializer after it vanishes",
+            '            if line.strip() == "end" and len(line) - len(line.lstrip()) == skip_indent:\n                skip_indent = None',
+            '            if line.strip() == "end" and len(line) - len(line.lstrip()) == skip_indent:\n                pass',
+            "a nested class's initializer declared first is not the component's",
+        ),
+        Mutation(
+            'any line starting `class` or `module` opens a nested body, `class:` included',
+            'NESTED = re.compile(r"^([ \\t]*)(?:class[ \\t]+(?:[A-Z]|<<)|module[ \\t]+[A-Z])(?!.*\\bend\\s*$)")',
+            'NESTED = re.compile(r"^([ \\t]*)(?:class|module)\\b(?!.*\\bend\\s*$)")',
+            'a `class:` keyword line is not a nested class',
+        ),
+        Mutation(
+            'the class regex spans blank lines above the class again',
+            'COMPONENT_CLASS = re.compile(r"^[ \\t]*class (\\w+Component) < ViewComponent::Base[ \\t]*$", re.M)',
+            'COMPONENT_CLASS = re.compile(r"^\\s*class (\\w+Component) < ViewComponent::Base[ \\t]*$", re.M)',
+            'a nested COMPONENT after a blank line',
+        ),
     ),
 )

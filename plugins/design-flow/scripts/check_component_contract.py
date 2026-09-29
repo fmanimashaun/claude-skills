@@ -75,7 +75,35 @@ import content_floors
 from source_text import strip_comments
 
 RAW_BUTTON = re.compile(r"<button\b", re.I)
-COMPONENT_CLASS = re.compile(r"^\s*class (\w+Component) < ViewComponent::Base\s*$", re.M)
+COMPONENT_CLASS = re.compile(r"^[ \t]*class (\w+Component) < ViewComponent::Base[ \t]*$", re.M)
+
+
+# A Ruby class/module OPENER: `class Name`, `class << self`, `module Name`. Not `class: "..."` (a
+# keyword argument) or `class="..."` (ERB), both common in component bodies.
+NESTED = re.compile(r"^([ \t]*)(?:class[ \t]+(?:[A-Z]|<<)|module[ \t]+[A-Z])(?!.*\bend\s*$)")
+
+
+def own_lines(body: list[str]) -> list[str]:
+    """The class body WITHOUT its nested `class` / `module` bodies (#1434).
+
+    A component with a nested helper class declared above its own initializer had the NESTED
+    class's `def initialize(` judged, because the scan took the first one in the body. Retask's
+    `Ui::DetailsCardComponent` (a nested `Section`) read as "a fixed keyword list" while its own
+    initializer took `**attrs`, and the downstream workaround was to reorder a correct file. A
+    nested body ends at the `end` at its own indent, the same rule the component body uses.
+    """
+    out, skip_indent = [], None
+    for line in body:
+        if skip_indent is not None:
+            if line.strip() == "end" and len(line) - len(line.lstrip()) == skip_indent:
+                skip_indent = None
+            continue
+        m = NESTED.match(line)
+        if m:
+            skip_indent = len(m.group(1))
+            continue
+        out.append(line)
+    return out
 
 
 def initializer_of(body: str) -> str | None:
@@ -141,7 +169,7 @@ def components_dropping_attributes(root: Path) -> list[str]:
                 if line.strip() == "end" and (len(line) - len(line.lstrip())) == indent:
                     break
                 body.append(line)
-            blob = "\n".join(body)
+            blob = "\n".join(own_lines(body))
             sig = initializer_of(blob)
             rel = path.relative_to(root)
             if sig is None:
@@ -264,6 +292,44 @@ def _selftest() -> int:
                not any("NamedSplatComponent" in f for f in findings))
         expect("CONTROL: the same splat left unstored is reported",
                any("NamedDropComponent" in f and "never stores" in f for f in findings))
+
+        # #1434: a NESTED class declared above the component's own initializer. Its fixed keyword
+        # list is not the component's; the component's own `**attrs`, stored, is what counts.
+        (root / "app/components/ui/details_card_component.rb").write_text(
+            "module Ui\n  class DetailsCardComponent < ViewComponent::Base\n"
+            "    class Section\n      def initialize(title:)\n        @title = title\n      end\n    end\n\n"
+            "    def initialize(**attrs)\n      @attrs = attrs\n    end\n  end\nend\n", encoding="utf-8")
+        # CONTROL: the component's OWN fixed list is still reported, with a nested class present.
+        (root / "app/components/ui/fixed_card_component.rb").write_text(
+            "module Ui\n  class FixedCardComponent < ViewComponent::Base\n"
+            "    class Section\n      def initialize(**opts)\n        @opts = opts\n      end\n    end\n\n"
+            "    def initialize(title:)\n      @title = title\n    end\n  end\nend\n", encoding="utf-8")
+        # A nested class STORING the splat does not make the component store its own.
+        (root / "app/components/ui/nested_store_component.rb").write_text(
+            "module Ui\n  class NestedStoreComponent < ViewComponent::Base\n"
+            "    def initialize(**attrs)\n      @variant = :x\n    end\n\n"
+            "    class Helper\n      def initialize(**attrs)\n        @attrs = attrs\n      end\n    end\n"
+            "  end\nend\n", encoding="utf-8")
+        # A `class:` keyword argument on its own line is not a nested class, and a blank line
+        # above a nested component does not make the regex swallow it into the body.
+        (root / "app/components/ui/tagged_component.rb").write_text(
+            "module Ui\n  class TaggedComponent < ViewComponent::Base\n"
+            "    def call\n      tag.div(\n        class: \"row\"\n      )\n    end\n\n"
+            "    def initialize(**attrs)\n      @attrs = attrs\n    end\n\n"
+            "    class ItemComponent < ViewComponent::Base\n"
+            "      def initialize(**attrs)\n        @attrs = attrs\n      end\n    end\n  end\nend\n",
+            encoding="utf-8")
+        findings, _, _ = run(root)
+        expect("a nested class's initializer declared first is not the component's (#1434)",
+               not any("DetailsCardComponent" in f for f in findings))
+        expect("CONTROL: the component's own fixed list is reported beside a nested class",
+               any("FixedCardComponent" in f and "fixed keyword list" in f for f in findings))
+        expect("a `class:` keyword line is not a nested class",
+               not any("TaggedComponent" in f for f in findings))
+        expect("a nested COMPONENT after a blank line is judged on its own initializer",
+               not any("ItemComponent" in f for f in findings))
+        expect("a nested class storing the splat does not store the component's",
+               any("NestedStoreComponent" in f and "never stores" in f for f in findings))
 
         # A tree with no views and no components cannot be judged -- and must not read as clean.
 
