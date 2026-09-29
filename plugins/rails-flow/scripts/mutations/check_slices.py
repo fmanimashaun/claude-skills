@@ -13,6 +13,11 @@ GUARD = Guard(
         "scripts/check_criteria.py",
         "scripts/check_issue_mockup.py",
         "scripts/check_issue_ready.py",
+        # check_issue_mockup imports its approval rule from check_mockup_gate, which reads the diff
+        # through classify_door (#1424). Unstaged, the unmutated selftest failed in the tempdir and
+        # every mutation read as caught: INERT, found only by the full local run at 49ea846.
+        "scripts/check_mockup_gate.py",
+        "scripts/classify_door.py",
     ),
     mutations=(
         Mutation(
