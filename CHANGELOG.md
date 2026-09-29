@@ -6830,6 +6830,10 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   the same value. Wiring it would have given one value two sources with no stated precedence, so the key is removed. The
   template now says to pass the destination to the command. `self_consistency.py --all` now reports no findings
   (37 files, 8 env keys). This is our own design: the issue body offers "wire it, or remove the line".
+  - **If your `.kamal/deploy.env` sets `DEPLOY_DESTINATION`,** it was never read. Pass the destination as the
+    command argument instead. A non-default destination is still incomplete, because the deploy step does not pass
+    `-d <destination>` to Kamal. That is tracked in #1465, and the template now says so rather than implying the
+    argument alone is enough.
 
 ### 1.4.0 (release v1.152.0) — 2026-09-28
 
