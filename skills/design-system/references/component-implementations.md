@@ -819,6 +819,7 @@ landmark noise outweighs the structure.
 ## Tabs — `app/components/ui/tabs_component.rb`
 
 ```erb
+<%# simple-form-only: primitive -- the picker below 768px is the Tabs control, not a submitted field %>
 <%# composition: tabs sit in a row; that is what a tablist is %>
 <%# tabs_controller uses list-navigation. `aria-selected` IS the state — the attribute APG already %>
 <%# requires — so nothing toggles a second data-state beside it. Four things here are required by  %>
@@ -856,6 +857,9 @@ landmark noise outweighs the structure.
 </div>
 ```
 
+- **The picker makes `Ui::Tabs` a primitive under `simple-form-only`:** its raw `<select>` switches a
+  panel and submits nothing, so the project declares the component in
+  `.rails-flow/raw-form-exemptions.json`, with a reason, exactly as for the Checkbox.
 - **The picker's contract with `tabs#select`** (#1391). One action serves both renderings. From a tab
   click it takes the index of `event.currentTarget` among `tabTargets`; from the picker's `change` it
   takes `pickerTarget.selectedIndex`. Either way it does the same four things: sets `aria-selected`
