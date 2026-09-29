@@ -208,7 +208,10 @@ instructions help"):
   report p = 0), so its false-win rate cannot exceed 5%.
 - **Fewer than 6 cases that moved can never win.** A case whose delta is 0 flips to
   itself, so with k moving cases the smallest possible p is 2/2ᵏ: 0.0625 at five,
-  0.031 at six. Below six the verdict is *underpowered*, not "not detectable".
+  0.031 at six. Below six the verdict is *underpowered*, not "not detectable" — with
+  one exception: when **no** case moved (every case ties, as in the A/A check), the
+  verdict is *not detectable* with p = 1, because a result of exactly zero is itself
+  the answer the A/A check needs.
 - A percentile-bootstrap CI on the mean delta is printed as **description only**.
 - **Every case that got worse is listed**, even when the mean improves.
 - **Files are pooled only when `model`, `marketplace_version`, `tools` and
@@ -220,12 +223,14 @@ it called two same-sign cases a win and, at 6 cases × 3 runs under the null, na
 winner 12% of the time against a nominal 5%. The exact test replaced it.
 
 **The default design can barely see anything.** Measured through `compare.py` itself
-(300 simulations per row, so each figure is good to about ±3 points; weak-arm pass
-rate 0.4, the same lift on every case):
+(weak-arm pass rate 0.4, the same lift on every case). The first row is **exact**:
+6 cases × 3 runs has few enough outcomes to enumerate, and
+`python3 evals/compare.py --exact-power 6 3` weighs every one and judges it with the
+script's own verdict. The other rows are 300 simulations each, good to about ±3 points:
 
 | design | false wins, no effect | +20-point lift | +30-point lift |
 | --- | --- | --- | --- |
-| 6 cases × 3 runs (the suite today) | under 1% | about 4% | about 10% |
+| 6 cases × 3 runs (the suite today), exact | 0.15% | 2.6% | 7.4% |
 | 6 cases × 10 runs | | | about 44% |
 | 12 cases × 3 runs | | | about 56% |
 | 20 cases × 3 runs | | about 50% | about 88% |
