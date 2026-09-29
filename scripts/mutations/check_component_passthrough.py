@@ -7,7 +7,10 @@ GUARD = Guard(
     selftest="scripts/check_component_passthrough.py",   # --selftest lives in the module itself
     # The selftest pins its own_lines() equal to the shipped design-flow copy (#1487 review), so the
     # staged tree must carry that file or the baseline fails and every mutation reads as caught.
-    needs=("plugins/design-flow/scripts/check_component_contract.py",),
+    # ...and that file's own sibling imports, or the staged import dies (mutation_check --selftest).
+    needs=("plugins/design-flow/scripts/check_component_contract.py",
+           "plugins/design-flow/scripts/source_text.py",
+           "plugins/design-flow/scripts/content_floors.py"),
     mutations=(
         Mutation(
             # THE HALF THAT WAS MISSING WHEN THIS CHECK WAS FIRST WRITTEN, and the reason it has
