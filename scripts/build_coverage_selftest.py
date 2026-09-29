@@ -718,7 +718,8 @@ def run() -> int:
     _committed = (Path(bc.__file__).resolve().parents[1] / "skills" / "design-system" / "references"
                   / "coverage.md").read_text(encoding="utf-8")
     for _name, _use in bc.USE.items():
-        if _use not in _committed:
+        # A whole CELL, not a substring: a clause lost at either end of the row must fail too.
+        if f"| {_use} |" not in _committed:
             FAILURES.append(f"USE entry {_name!r} is not in the committed coverage.md -- the generator and "
                             "the shipped row disagree; fix the generator, then regenerate with the corpora")
 

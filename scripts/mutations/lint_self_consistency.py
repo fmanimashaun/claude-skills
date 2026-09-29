@@ -362,6 +362,18 @@ GUARD = Guard(
             '...a link after a closed fence and a closed comment still fires',
         ),
         Mutation(
+            'a footnote definition is read as a link',
+            '_MD_REFDEF = re.compile(r"^[ ]{0,3}\\[(?!\\^)[^\\]\\n]+\\]:[ \\t]*(?:<([^>\\n]+)>|(\\S+))", re.MULTILINE)',
+            '_MD_REFDEF = re.compile(r"^[ ]{0,3}\\[[^\\]\\n]+\\]:[ \\t]*(?:<([^>\\n]+)>|(\\S+))", re.MULTILINE)',
+            '...silent on a footnote definition',
+        ),
+        Mutation(
+            'a four-space indent opens a fence',
+            '_MD_FENCE_OPEN = re.compile(r"^[ ]{0,3}(`{3,}|~{3,})")',
+            '_MD_FENCE_OPEN = re.compile(r"^[ \\t]*(`{3,}|~{3,})")',
+            '...a four-space-indented ``` is not a fence that swallows the rest',
+        ),
+        Mutation(
             'inline code is scanned as prose',
             '    return re.sub(r"(`+)[^\\n]*?\\1", lambda m: " " * len(m.group(0)), prose)',
             '    return prose',
@@ -388,21 +400,33 @@ GUARD = Guard(
         ),
         Mutation(
             'a checkout that keeps its credentials stops being reported',
-            '                if not any(re.match(r"""^[\\s-]*persist-credentials:\\s*["\']?false["\']?\\s*(#.*)?$""", l) for l in step):',
+            '                if not any(re.match(r"""^[\\s-]*persist-credentials:\\s*(["\']?)false\\1\\s*(#.*)?$""", l) for l in step):',
             '                if False:',
             'a checkout that keeps its credentials',
         ),
         Mutation(
             "a quoted 'false' is not accepted",
-            '                if not any(re.match(r"""^[\\s-]*persist-credentials:\\s*["\']?false["\']?\\s*(#.*)?$""", l) for l in step):',
+            '                if not any(re.match(r"""^[\\s-]*persist-credentials:\\s*(["\']?)false\\1\\s*(#.*)?$""", l) for l in step):',
             '                if not any(re.match(r"""^[\\s-]*persist-credentials:\\s*false\\s*(#.*)?$""", l) for l in step):',
             "...silent on a quoted 'false'",
         ),
         Mutation(
+            'mismatched quotes pass as false',
+            '                if not any(re.match(r"""^[\\s-]*persist-credentials:\\s*(["\']?)false\\1\\s*(#.*)?$""", l) for l in step):',
+            '                if not any(re.match(r"""^[\\s-]*persist-credentials:\\s*["\']?false["\']?\\s*(#.*)?$""", l) for l in step):',
+            '...mismatched quotes are not a false',
+        ),
+        Mutation(
             "a later step's persist-credentials counts for this checkout",
-            '                    if stripped and len(nxt) - len(stripped) <= dash:\n                        break',
+            '                    if stripped and not stripped.startswith("#") and len(nxt) - len(stripped) <= dash:\n                        break',
             '                    if False:\n                        break',
             "...a later step's persist-credentials does not cover this checkout",
+        ),
+        Mutation(
+            "a comment at the dash's indent ends the step",
+            '                    if stripped and not stripped.startswith("#") and len(nxt) - len(stripped) <= dash:\n                        break',
+            '                    if stripped and len(nxt) - len(stripped) <= dash:\n                        break',
+            "...silent past a comment at the dash's indent inside the step",
         ),
         Mutation(
             'the step scan starts at uses: and misses a with: written above it',
