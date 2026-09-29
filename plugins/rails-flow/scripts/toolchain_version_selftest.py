@@ -236,12 +236,23 @@ def run() -> int:
         (wt / ".git").write_text(f"gitdir: {pa / '.git' / 'worktrees' / 'wt'}\n", encoding="utf-8")
         got_wt, _ = tv.resolve_installed(two, project=wt / "app")
         check("per-project: a linked worktree of A is A", got_wt.plugins.get("rails-stack"), "1.41.0")
-        # #1427: case alone differs. Only where the volume folds case (APFS default; not CI's Linux).
-        upper = tmp / "PROJ-A"
-        if upper.exists():
-            got_up, _ = tv.resolve_installed(two, project=upper)
-            check("per-project: a path differing only in case is the same project",
-                  got_up.plugins.get("rails-stack"), "1.41.0")
+        # ...and a record made from INSIDE the worktree names the worktree itself (#1474 review):
+        # mapping the session to the main checkout must not stop that record matching.
+        in_wt = fake_home(tmp / "g3", marketplace_version="1.73.0", plugins={
+            "rails-stack@claude-skills": [rec("1.41.0", "2026-08-01T00:00:00Z", str(wt))]})
+        got_iw, _ = tv.resolve_installed(in_wt, project=wt / "app")
+        check("per-project: a record naming the worktree itself applies in it",
+              got_iw.plugins.get("rails-stack"), "1.41.0")
+        # #1427: case alone differs. `samefile` is replaced by a case-folding stand-in so this runs
+        # on CI's Linux runner too, which does not fold case, rather than only on APFS.
+        real_samefile = tv.os.path.samefile
+        tv.os.path.samefile = lambda a, b: str(a).lower() == str(b).lower()
+        try:
+            got_up, _ = tv.resolve_installed(two, project=tmp / "PROJ-A")
+        finally:
+            tv.os.path.samefile = real_samefile
+        check("per-project: a path differing only in case is the same project",
+              got_up.plugins.get("rails-stack"), "1.41.0")
         # A sibling whose name merely starts with the project's is NOT inside it.
         sibling = tmp / "proj-a-other"
         sibling.mkdir()

@@ -64,7 +64,7 @@ def first_tag(repo: Path, plugin: str, version: str) -> str | None:
 
 
 def differing_trees(repo: Path, tags: list[str], tree: str = "skills") -> list[str]:
-    """The tags after the first whose `tree` differs from the first's.
+    """One tag per distinct `tree` after the first tag's -- the first tag that carries it.
 
     One rails-stack version is usually one skills tree, but not always: measured over every tag,
     42 of 111 rails-stack versions ship in more than one tag, and 1.42.2's four tags hold two
@@ -78,8 +78,14 @@ def differing_trees(repo: Path, tags: list[str], tree: str = "skills") -> list[s
         return got.stdout.strip() if got.returncode == 0 else ""
     if len(tags) < 2:
         return []
-    base = tree_id(tags[0])
-    return [t for t in tags[1:] if tree_id(t) != base]
+    seen = {tree_id(tags[0])}
+    named = []
+    for tag in tags[1:]:
+        tid = tree_id(tag)
+        if tid not in seen:             # 1.42.2: v1.76.0, v1.77.0 and v1.79.0 share ONE tree
+            seen.add(tid)
+            named.append(tag)
+    return named
 
 
 def main(argv: list[str]) -> int:
@@ -183,9 +189,13 @@ def selftest() -> int:
         (repo / "skills" / "rule.md").write_text("changed without a version bump", encoding="utf-8")
         _git(repo, "add", "skills")
         commit_tag("v1.3.1", stack("1.63.0"))
+        (repo / "README").write_text("same skills tree as v1.3.1", encoding="utf-8")
+        commit_tag("v1.3.2", None)                        # manifest unchanged: still 1.63.0
         rc, out, err = run_main("rails-stack", "1.63.0")
         check("main(): a later tag with a different skills tree is named on stderr",
               (rc, out) == (0, "v1.2.0") and "v1.3.1" in err and "v1.3.0" not in err, (rc, out, err))
+        check("main(): one tag per distinct tree, so v1.3.2 (v1.3.1's tree) is not named",
+              "v1.3.2" not in err, err)
         rc, out, err = run_main("rails-stack", "1.68.0")
         check("main(): tags that agree on the skills tree warn about nothing",
               (rc, out, err) == (0, "v1.9.0", ""), (rc, out, err))

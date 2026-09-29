@@ -46,20 +46,20 @@ GUARD = Guard(
         # #1411 review S2/S3: the path comparison was untested; string equality passed 40/40.
         Mutation(
             "project paths compare as strings, so a symlinked or trailing-slash path misses",
-            "        root, here = Path(owner).resolve(), main_checkout(project).resolve()",
-            "        root, here = Path(owner), main_checkout(project)",
+            "        root, sessions = Path(owner).resolve(), {project.resolve(), main_checkout(project).resolve()}",
+            "        root, sessions = Path(owner), {project, main_checkout(project)}",
             "per-project: symlinked path is the same project",
         ),
         Mutation(
             "a subdirectory of the project is treated as another project",
-            "    dirs = (here, *here.parents)",
-            "    dirs = (here,)",
+            "    dirs = tuple(d for here in sessions for d in (here, *here.parents))",
+            "    dirs = tuple(sessions)",
             "per-project: a subdirectory is the same project",
         ),
         Mutation(
             "a same-prefix sibling counts as inside the project",
             "    if root in dirs:\n        return True",
-            "    if str(here).startswith(str(root)):\n        return True",
+            "    if any(str(d).startswith(str(root)) for d in dirs):\n        return True",
             "per-project: a same-prefix sibling is another project",
         ),
         # #1427: a linked worktree outside the root is its own "project" again, with no record.
@@ -69,7 +69,20 @@ GUARD = Guard(
             "return project",
             "per-project: a linked worktree of A is A",
         ),
-        # No mutation for the case-folding `samefile` branch: its fixture runs only on a volume that
-        # folds case, and CI's Linux runner does not, so the mutant would survive there.
+        # #1474 review: the session path REPLACED by its main checkout, so a record naming the
+        # worktree itself stops matching and drive.md's gate stops with "other projects".
+        Mutation(
+            "only the main checkout is compared, not the session's own path",
+            "{project.resolve(), main_checkout(project).resolve()}",
+            "{main_checkout(project).resolve()}",
+            "per-project: a record naming the worktree itself applies in it",
+        ),
+        # The case-only branch dropped. Its fixture stubs `samefile`, so this runs on Linux too.
+        Mutation(
+            "a projectPath differing only in case no longer applies",
+            "        return root.exists() and any(str(d).lower() == str(root).lower() and os.path.samefile(root, d)",
+            "        return False and any(str(d).lower() == str(root).lower() and os.path.samefile(root, d)",
+            "per-project: a path differing only in case is the same project",
+        ),
     ),
 )

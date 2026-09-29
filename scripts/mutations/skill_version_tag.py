@@ -49,6 +49,13 @@ GUARD = Guard(
             "    if True:\n        return []",
             "a later tag with a different skills tree is named on stderr",
         ),
+        # #1474 review: every later tag of a tree is named, so 1.42.2 lists three tags for one tree.
+        Mutation(
+            "a later tag sharing an already-named tree is named again",
+            "            seen.add(tid)\n",
+            "            pass\n",
+            "one tag per distinct tree",
+        ),
         # A missing tree echoed by rev-parse compares as different: every multi-tag version warns.
         Mutation(
             "rev-parse without --verify echoes an unresolvable tree, so absent trees differ",

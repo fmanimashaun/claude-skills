@@ -110,13 +110,16 @@ def applies_to(record: dict, project: Path | None) -> bool:
     if not owner:
         return True
     try:
-        root, here = Path(owner).resolve(), main_checkout(project).resolve()
+        # BOTH the session's path and, for a linked worktree, its main checkout (#1427): a record
+        # made from inside the worktree names the worktree, one made from the main checkout names
+        # that, and either is this project.
+        root, sessions = Path(owner).resolve(), {project.resolve(), main_checkout(project).resolve()}
     except OSError:
         return False
     # A session run from a subdirectory still loads the project's plugins (drive.md runs the gate
     # from wherever the session is). `resolve()` also folds a trailing slash and a symlinked
     # path (/tmp vs /private/tmp on macOS) into one form.
-    dirs = (here, *here.parents)
+    dirs = tuple(d for here in sessions for d in (here, *here.parents))
     if root in dirs:
         return True
     # On a case-insensitive volume (APFS by default) a recorded `projectPath` can differ from the
@@ -133,6 +136,8 @@ def main_checkout(project: Path) -> Path:
 
     A worktree is usually OUTSIDE the project root (`../repo-wt/x`), so no `projectPath` contains
     it, yet it is the same project. Its `.git` is a FILE, `gitdir: <main>/.git/worktrees/<name>`.
+    A submodule's `.git` file names `.git/modules/<name>` instead and is deliberately NOT mapped:
+    a submodule, or a worktree of one, is its own project.
     """
     for d in (project, *project.parents):
         git = d / ".git"
