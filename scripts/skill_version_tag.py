@@ -12,6 +12,7 @@ Usage:
   python3 scripts/skill_version_tag.py --selftest
 
 Exit: 0 printed a tag · 1 no release carries that version · 2 cannot read the repo.
+A warning on stderr names any later tag carrying the same version with a different skills tree.
 """
 from __future__ import annotations
 
@@ -43,16 +44,42 @@ def carries(manifest_text: str, plugin: str, version: str) -> bool:
         for p in plugins)
 
 
-def first_tag(repo: Path, plugin: str, version: str) -> str | None:
+def tags_carrying(repo: Path, plugin: str, version: str) -> list[str]:
+    """Every release tag carrying `plugin` at `version`, oldest first (version sort)."""
     tags = _git(repo, "tag", "--list", "v*", "--sort=v:refname")
     if tags.returncode != 0:
         raise OSError(tags.stderr.strip() or "git tag failed")
+    found = []
     for tag in tags.stdout.split():
         shown = _git(repo, "show", f"{tag}:{MANIFEST}")
         # Early tags predate the manifest; that is "not carried", not an error.
         if shown.returncode == 0 and carries(shown.stdout, plugin, version):
-            return tag
-    return None
+            found.append(tag)
+    return found
+
+
+def first_tag(repo: Path, plugin: str, version: str) -> str | None:
+    found = tags_carrying(repo, plugin, version)
+    return found[0] if found else None
+
+
+def differing_trees(repo: Path, tags: list[str], tree: str = "skills") -> list[str]:
+    """The tags after the first whose `tree` differs from the first's.
+
+    One rails-stack version is usually one skills tree, but not always: measured over every tag,
+    42 of 111 rails-stack versions ship in more than one tag, and 1.42.2's four tags hold two
+    different skills trees -- the skills changed without a version bump (#1427). A reporter on
+    such a version may have had either tree, so the triager must search each.
+    """
+    def tree_id(tag: str) -> str:
+        # `--verify -q`: a plain rev-parse ECHOES an argument it cannot resolve, so two tags that
+        # both lack the tree would compare as different.
+        got = _git(repo, "rev-parse", "--verify", "-q", f"{tag}:{tree}")
+        return got.stdout.strip() if got.returncode == 0 else ""
+    if len(tags) < 2:
+        return []
+    base = tree_id(tags[0])
+    return [t for t in tags[1:] if tree_id(t) != base]
 
 
 def main(argv: list[str]) -> int:
@@ -62,14 +89,18 @@ def main(argv: list[str]) -> int:
         print(__doc__, file=sys.stderr)
         return 2
     try:
-        tag = first_tag(Path.cwd(), argv[1], argv[2])
+        tags = tags_carrying(Path.cwd(), argv[1], argv[2])
+        other = differing_trees(Path.cwd(), tags)
     except OSError as exc:
         print(f"skill_version_tag: {exc}", file=sys.stderr)
         return 2
-    if tag is None:
+    if not tags:
         print(f"no release tag carries {argv[1]} {argv[2]}", file=sys.stderr)
         return 1
-    print(tag)
+    if other:
+        print(f"warning: {argv[1]} {argv[2]} ships a different skills tree in {' '.join(other)} "
+              f"than in {tags[0]}; search each", file=sys.stderr)
+    print(tags[0])
     return 0
 
 
@@ -144,6 +175,39 @@ def selftest() -> int:
               (rc, out) == (1, "") and "9.9.9" in err, (rc, out, err))
         check("a tag with no manifest is skipped, not fatal",
               first_tag(repo, "rails-stack", "1.63.0") is not None)
+
+        # One version, two skills trees (#1427: measured for rails-stack 1.42.2). v1.2.0 and
+        # v1.3.0 both carry 1.63.0 with no skills tree at all, so they agree; a v1.3.1 that adds
+        # one differs, and the warning names it without moving the tag off stdout.
+        (repo / "skills").mkdir()
+        (repo / "skills" / "rule.md").write_text("changed without a version bump", encoding="utf-8")
+        _git(repo, "add", "skills")
+        commit_tag("v1.3.1", stack("1.63.0"))
+        rc, out, err = run_main("rails-stack", "1.63.0")
+        check("main(): a later tag with a different skills tree is named on stderr",
+              (rc, out) == (0, "v1.2.0") and "v1.3.1" in err and "v1.3.0" not in err, (rc, out, err))
+        rc, out, err = run_main("rails-stack", "1.68.0")
+        check("main(): tags that agree on the skills tree warn about nothing",
+              (rc, out, err) == (0, "v1.9.0", ""), (rc, out, err))
+
+    # Exit 2 is "cannot read the repo", never "no release": outside any repository `git tag` fails.
+    with tempfile.TemporaryDirectory() as bare:
+        out, err = io.StringIO(), io.StringIO()
+        here = Path.cwd()
+        env_before = os.environ.get("GIT_CEILING_DIRECTORIES")
+        try:
+            os.chdir(bare)
+            os.environ["GIT_CEILING_DIRECTORIES"] = str(Path(bare).resolve().parent)
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                rc = main(["skill_version_tag.py", "rails-stack", "1.63.0"])
+        finally:
+            os.chdir(here)
+            if env_before is None:
+                os.environ.pop("GIT_CEILING_DIRECTORIES", None)
+            else:
+                os.environ["GIT_CEILING_DIRECTORIES"] = env_before
+        check("main(): outside a repository exits 2, not 1", (rc, out.getvalue()) == (2, ""),
+              (rc, out.getvalue(), err.getvalue()))
 
     print(f"skill_version_tag selftest: {checks} check(s)")
     if failures:

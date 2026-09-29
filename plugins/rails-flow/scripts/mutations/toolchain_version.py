@@ -46,21 +46,30 @@ GUARD = Guard(
         # #1411 review S2/S3: the path comparison was untested; string equality passed 40/40.
         Mutation(
             "project paths compare as strings, so a symlinked or trailing-slash path misses",
-            "        root, here = Path(owner).resolve(), project.resolve()",
-            "        root, here = Path(owner), project",
+            "        root, here = Path(owner).resolve(), main_checkout(project).resolve()",
+            "        root, here = Path(owner), main_checkout(project)",
             "per-project: symlinked path is the same project",
         ),
         Mutation(
             "a subdirectory of the project is treated as another project",
-            "    return here == root or root in here.parents",
-            "    return here == root",
+            "    dirs = (here, *here.parents)",
+            "    dirs = (here,)",
             "per-project: a subdirectory is the same project",
         ),
         Mutation(
             "a same-prefix sibling counts as inside the project",
-            "    return here == root or root in here.parents",
-            "    return str(here).startswith(str(root))",
+            "    if root in dirs:\n        return True",
+            "    if str(here).startswith(str(root)):\n        return True",
             "per-project: a same-prefix sibling is another project",
         ),
+        # #1427: a linked worktree outside the root is its own "project" again, with no record.
+        Mutation(
+            "a linked worktree is not mapped to its main checkout",
+            'return gitdir.parent.parent.parent if gitdir.parent.name == "worktrees" else project',
+            "return project",
+            "per-project: a linked worktree of A is A",
+        ),
+        # No mutation for the case-folding `samefile` branch: its fixture runs only on a volume that
+        # folds case, and CI's Linux runner does not, so the mutant would survive there.
     ),
 )

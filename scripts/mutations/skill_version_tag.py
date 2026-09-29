@@ -24,15 +24,15 @@ GUARD = Guard(
         ),
         Mutation(
             "the last carrying tag is returned instead of the first",
-            "        if shown.returncode == 0 and carries(shown.stdout, plugin, version):\n            return tag",
-            "        if shown.returncode == 0 and carries(shown.stdout, plugin, version):\n            found = tag",
+            "    return found[0] if found else None",
+            "    return found[-1] if found else None",
             "first tag carrying a version",
         ),
         # #1411 review: the triager reads stdout; a tag printed anywhere else reads as "no release".
         Mutation(
             "the tag is printed to stderr, so the triager's $(...) captures nothing",
-            "    print(tag)\n    return 0",
-            "    print(tag, file=sys.stderr)\n    return 0",
+            "    print(tags[0])\n    return 0",
+            "    print(tags[0], file=sys.stderr)\n    return 0",
             "main(): the tag is printed on stdout",
         ),
         Mutation(
@@ -40,6 +40,28 @@ GUARD = Guard(
             'p.get("version") == version\n',
             'str(p.get("version", "")).startswith(version)\n',
             "a near-miss version is not a match",
+        ),
+        # #1427: one version, two skills trees. Without the warning the triager searches one tree
+        # and reads a rule the reporter's tag may not have had as present or absent.
+        Mutation(
+            "a version shipped with differing skills trees is reported silently",
+            "    if len(tags) < 2:\n        return []",
+            "    if True:\n        return []",
+            "a later tag with a different skills tree is named on stderr",
+        ),
+        # A missing tree echoed by rev-parse compares as different: every multi-tag version warns.
+        Mutation(
+            "rev-parse without --verify echoes an unresolvable tree, so absent trees differ",
+            '        return got.stdout.strip() if got.returncode == 0 else ""',
+            "        return got.stdout.strip() or tag",
+            "tags that agree on the skills tree warn about nothing",
+        ),
+        # #1427 item 6: an unreadable repo must not read as "no release carries it".
+        Mutation(
+            "cannot-read-the-repo exits 1, which the triager reads as a real no-release",
+            '        print(f"skill_version_tag: {exc}", file=sys.stderr)\n        return 2',
+            '        print(f"skill_version_tag: {exc}", file=sys.stderr)\n        return 1',
+            "outside a repository exits 2, not 1",
         ),
     ),
 )

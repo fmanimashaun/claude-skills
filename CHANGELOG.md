@@ -9,6 +9,8 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **The skill-gap search tells "no hit" from "did not run", and names a version shipped with two skills trees — `.claude/agents/issue-triager.md`, `scripts/skill_version_tag.py`, `scripts/mutations/skill_version_tag.py`** (#1427 items 1, 5, 6). The triager's block exited 0 on both warning branches while a real no-hit exited 1; the warning branches now end `(exit 2)`, and the prose names the three codes (0 hit, 1 no hit, 2 did not run). `skill_version_tag.py` now warns on stderr, naming every later tag that carries the same version with a different `skills` tree. Measured over every tag: 42 of 111 rails-stack versions ship in more than one tag, and one, 1.42.2 (v1.75.0 vs v1.76.0, v1.77.0, v1.79.0), holds two trees. The tag on stdout is unchanged. Its exit-2 branch (outside a repository) now has a fixture; the three new mutations, plus the two re-anchored ones, are caught (8/8).
+
 - **The `rebuild_generated` mutation guard stages the tenancy-cop builder #1403 registered — `scripts/mutations/rebuild_generated.py`** (dev push run 36547806703, the first on which mutation coverage ran rather than timing out, in PR #1457). `scripts/rebuild_generated.py` registers `derive_tenancy_cop.py` with output `plugins/rails-flow/scaffold/`; the guard staged neither, so its unmutated selftest failed in the tempdir ("is registered here and does not exist") and the guard was INERT: all its mutations read as caught. Both are now in `needs`; 3/3 caught, and dev's version reports INERT on the same command. The only failure of 1602 on that run.
 
 - **The mutation gate fits CI again, and a timeout on the run that must prove it is a FAIL — `scripts/mutation_check.py`, `scripts/maintainer_doctor.py`, `.github/workflows/gates.yml`** (#1444). Every dev push run since the suite passed 900 s reported `mutation coverage` as a timeout-skip and went green, so the promotion's CI evidence did not exist. `mutation_check.py` now runs every baseline, then every mutation of every live guard, in one pool (`--jobs`, default the CPU count): the full 1514 mutations across 141 guards measured 1456 s at `--jobs 10`, against ~84 min serial, all caught. `SLOW_GATES["mutation coverage"]` is 5400 s, and the ok line prints `jobs=N, Xs` so the next value comes from a measured runner. `--require-slow` (CI's non-PR runs, and `scripts/release_local.sh`) turns a slow-gate timeout into FAIL; an ordinary gate's timeout, and a laptop run, keep SKIP. `unstaged_sibling_imports` now follows imports transitively, including those made by `needs` files — the one-level scan is how `check_slices` went INERT in CI; its fixture fails against the old function.
@@ -3529,6 +3531,16 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 ## rails-flow (agentic flow plugin)
 
 ### Unreleased
+
+- **toolchain_version: a linked worktree, and a recorded path differing only in case, are the same project — `plugins/rails-flow/scripts/toolchain_version.py`,
+  `plugins/rails-flow/scripts/toolchain_version_selftest.py`, `plugins/rails-flow/scripts/mutations/toolchain_version.py`** (#1427 items 2, 3, 4).
+  `applies_to` now maps a linked git worktree (its `.git` is a file naming `<main>/.git/worktrees/<name>`) to its main
+  checkout. A worktree usually sits outside the project root, so it read as "installed only for other projects". On a
+  case-insensitive volume, a `projectPath` differing only in case now matches via `os.path.samefile`, restricted to
+  case-only differences so it cannot mask the symlink fixture. The trailing-slash fixture now puts the slash in the
+  RECORD, where it really arrives; the old one could not fail. Item 4 is our own design, with no upstream: a worktree
+  of the project is the project, the same rule as design-flow's #1421 resolver. The decision is recorded on #1427. Mutations are 9/9 caught; the case branch has
+  no mutation because CI's Linux runner does not fold case.
 
 - **model-tiers: `sonnet` is Sonnet 5.5 on the Anthropic API from Claude Code v2.1.284 — `plugins/rails-flow/reference/model-tiers.md`,
   `plugins/rails-flow/scripts/check_handoff.py`** (#1449). Verified against code.claude.com `model-config`, re-read

@@ -222,6 +222,26 @@ def run() -> int:
                             ("a subdirectory", sub)):
             got, _ = tv.resolve_installed(two, project=path)
             check(f"per-project: {label} is the same project", got.plugins.get("rails-stack"), "1.41.0")
+        # #1427: the slash where it really arrives, in the RECORD. `Path(str(p) + "/")` above
+        # cannot fail -- pathlib already dropped the slash -- so a string comparison of the
+        # recorded projectPath would pass it and fail this.
+        slashed = fake_home(tmp / "g2", marketplace_version="1.73.0", plugins={
+            "rails-stack@claude-skills": [rec("1.41.0", "2026-08-01T00:00:00Z", str(pa) + "/")]})
+        got_sl, _ = tv.resolve_installed(slashed, project=pa)
+        check("per-project: a trailing slash in the recorded projectPath is the same project",
+              got_sl.plugins.get("rails-stack"), "1.41.0")
+        # #1427: a linked worktree lives OUTSIDE the project root; its `.git` file names the main one.
+        wt = tmp / "proj-a-wt"
+        (wt / "app").mkdir(parents=True)
+        (wt / ".git").write_text(f"gitdir: {pa / '.git' / 'worktrees' / 'wt'}\n", encoding="utf-8")
+        got_wt, _ = tv.resolve_installed(two, project=wt / "app")
+        check("per-project: a linked worktree of A is A", got_wt.plugins.get("rails-stack"), "1.41.0")
+        # #1427: case alone differs. Only where the volume folds case (APFS default; not CI's Linux).
+        upper = tmp / "PROJ-A"
+        if upper.exists():
+            got_up, _ = tv.resolve_installed(two, project=upper)
+            check("per-project: a path differing only in case is the same project",
+                  got_up.plugins.get("rails-stack"), "1.41.0")
         # A sibling whose name merely starts with the project's is NOT inside it.
         sibling = tmp / "proj-a-other"
         sibling.mkdir()
