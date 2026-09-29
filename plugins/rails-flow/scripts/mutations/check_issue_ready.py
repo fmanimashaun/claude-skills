@@ -7,19 +7,26 @@ GUARD = Guard(
     subject="scripts/check_issue_ready.py",
     selftest="scripts/check_issue_ready.py",
     mutations=(
-        # #1435: CommonMark fences, as check_slices.py reads them.
+        # #1461: the one CommonMark fence reader.
         Mutation(
-            "only ``` fences are stripped, so a strict line inside ~~~ becomes an edge",
-            '_ANY_FENCE = re.compile(r"^[ \\t]*(`{3,}|~{3,})([^\\n]*)\\r?$\\n(.*?)^[ \\t]*\\1", re.M | re.S)',
-            '_ANY_FENCE = re.compile(r"^[ \\t]*(`{3})([^\\n]*)\\r?$\\n(.*?)^[ \\t]*\\1", re.M | re.S)',
+            "only ``` opens a fence, so a strict line inside ~~~ becomes an edge",
+            '_FENCE_OPEN = re.compile(r"^[ \\t]*(`{3,}|~{3,})[ \\t]*(\\S*)")',
+            '_FENCE_OPEN = re.compile(r"^[ \\t]*(`{3,})[ \\t]*(\\S*)")',
             "a strict line inside a ~~~ fence is a sample, not an edge",
         ),
         Mutation(
-            "the closing run need not match the opening one, so ``` closes a ```` fence",
-            '_ANY_FENCE = re.compile(r"^[ \\t]*(`{3,}|~{3,})([^\\n]*)\\r?$\\n(.*?)^[ \\t]*\\1", re.M | re.S)',
-            '_ANY_FENCE = re.compile(r"^[ \\t]*(`{3,}|~{3,})([^\\n]*)\\r?$\\n(.*?)^[ \\t]*(?:```|~~~)", re.M | re.S)',
+            "any fence line closes, so a ``` inside a ```` fence ends it early",
+            "        elif info is not None and m and m.group(1).startswith(run) and not m.group(2):",
+            "        elif info is not None and m:",
             "a ``` inside a ```` fence does not close it",
         ),
+        Mutation(
+            "the whole info string is the fence's kind, so ```deps extra is not a deps fence",
+            "            info, run = m.group(2).lower(), m.group(1)",
+            "            info, run = raw.strip()[len(m.group(1)):].strip().lower(), m.group(1)",
+            "a fence whose info string STARTS with deps is a deps fence",
+        ),
+        # #1435: CommonMark fences, as check_slices.py reads them.
         # #849 part 1: the computed queue. Each of these is a way the order stops being computed.
         Mutation(
             "priority stops ordering the queue",
@@ -66,7 +73,7 @@ GUARD = Guard(
         ),
         Mutation(
             "other fences stop being stripped, so a Ruby `depends_on:` in a code sample reads as an edge",
-            '        text = _ANY_FENCE.sub("", body)  # strip every other fence -- `depends_on: :account` lives there',
+            '        text = "\\n".join(line for line, s in zip(lines, state) if s is None)',
             "        text = body",
             "a fenced SAMPLE of the syntax is not an edge",
         ),
