@@ -32,11 +32,20 @@ GUARD = Guard(
             "{t['commands']} shipped commands · {t['gates']} gates · {t['tierTables']} tier tables**",
             "no gate count is stamped",
         ),
+        # The HEADER, not a cell: restoring the column means restoring its heading, and a mutation
+        # that injected the detector's own literal into a data row only proved the regex matches
+        # itself (independent review of #1482).
         Mutation(
             "the per-plugin gates column comes back",
-            "{p['tierRows'] or '—'} |\\n\")",
-            "{p['tierRows'] or '—'} | {p['gates'] or '—'} | gates |\\n\")",
+            '"| plugin | version | agents | commands | tier rows |\\n|---|---|---|---|---|\\n"',
+            '"| plugin | version | agents | commands | tier rows | gates |\\n|---|---|---|---|---|---|\\n"',
             "no gate count is stamped",
+        ),
+        Mutation(
+            "a per-plugin gates cell comes back without its heading",
+            "{p['tierRows'] or '—'} |\\n\")",
+            "{p['tierRows'] or '—'} | {p['gates'] or '—'} |\\n\")",
+            "every plugin row has the header's column count",
         ),
     ),
 )

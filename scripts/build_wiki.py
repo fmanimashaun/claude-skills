@@ -479,6 +479,10 @@ def selftest() -> int:
     # carries no gate count; the plugin table is there, and has no gates column.
     check("no gate count is stamped, in the total or per plugin (#1404)",
           "| plugin | version |" in aag and not re.search(r"\b\d+ gates\b|\| gates \|", aag))
+    # A data cell restored without its heading is the same count back, in a column with no name.
+    _ptable = aag.split("| plugin | version |", 1)[1].split("\n\n", 1)[0].split("\n")
+    check("every plugin row has the header's column count",
+          len(_ptable) > 2 and all(r.count("|") == ("| plugin | version |" + _ptable[0]).count("|") for r in _ptable[2:]))
     check("maintainer-only agents are marked as not installed", "(maintainer-only, not installed)" in aag)
 
     for name in GENERATED:
