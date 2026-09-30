@@ -204,14 +204,15 @@ def tiers_doc(rows: str) -> Path:
     return path
 
 
-def agents_dir(agents: dict[str, str | None]) -> Path:
+def agents_dir(agents: dict[str, str | None], advisor: bool = True) -> Path:
     root = Path(tempfile.mkdtemp(prefix="railsflow-agents-")) / "agents"
     root.mkdir(parents=True)
     for name, model in agents.items():
         model_line = f"model: {model}\n" if model is not None else ""
+        body = "Body.\n" + (f"\n{ch.ADVISOR_MARKER} Consult it only when stuck.\n" if advisor else "")
         (root / f"{name}.md").write_text(
             f"---\nname: {name}\ndescription: >\n  Does a thing.\ntools: Read\n{model_line}---\n\n"
-            "Body.\n",
+            + body,
             encoding="utf-8",
         )
     return root
@@ -600,6 +601,15 @@ def run() -> int:  # noqa: PLR0915 -- a flat list of fixtures reads better than 
     reviewer.write_text(reviewer.read_text().replace("model: inherit\n", "model: inherit\neffort: medium\n"))
     expect_tiers_findings("an agent pinning effort is refused", tiers_doc(ok_rows), pinned,
                           contains="pins `effort: medium`")
+    # #1505: a mechanical agent carries its own advisor instruction -- the docs' only control. A
+    # judgement agent needs none (the advisor "fits long, multi-step tasks"), and that is the control.
+    expect_tiers_findings("a mechanical agent with no advisor instruction is refused", tiers_doc(ok_rows),
+                          agents_dir({"code-reviewer": "inherit", "test-runner": "haiku"}, advisor=False),
+                          contains="carries no `**The advisor.**` instruction")
+    judged = agents_dir({"code-reviewer": "inherit", "test-runner": "haiku"})
+    rv = judged / "code-reviewer.md"
+    rv.write_text(rv.read_text().replace(f"\n{ch.ADVISOR_MARKER} Consult it only when stuck.\n", ""))
+    expect_tiers_clean("...and a judgement agent without one is clean", tiers_doc(ok_rows), judged)
 
     _tick()
     try:

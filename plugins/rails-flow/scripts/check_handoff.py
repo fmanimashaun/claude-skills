@@ -200,6 +200,12 @@ TIER_MODELS: dict[str, str] = {"judgement": "inherit", "mechanical": "haiku"}
 # stranger's money on our authority -- or is silently dropped by their availableModels allowlist.
 EXPENSIVE_ALIASES = frozenset({"opus", "fable", "best", "opusplan", "opus[1m]", "sonnet[1m]"})
 EMPTY_PROOF = frozenset({"", "-", "--", "—", "–", "n/a", "na", "none", "tbd", "todo"})
+# A mechanical agent's output is proven outside itself, so an advisor's full-transcript read buys cost,
+# not correctness. The docs name the control: "There is no setting to cap or force advisor calls; if
+# you want Claude to consult more or less often during a task, say so in your instructions"
+# (https://code.claude.com/docs/en/advisor). No frontmatter field exists, so the agent's own prompt
+# carries it, under this marker (#1505).
+ADVISOR_MARKER = "**The advisor.**"
 FRONTMATTER_FIELD_RE = re.compile(r"^(?P<key>[a-z][\w-]*)\s*:\s*(?P<value>.*?)\s*$")
 
 
@@ -807,6 +813,12 @@ def check_tiers(rows: list[TierRow], agents: dict[str, tuple[Path, str | None]] 
                 f"{path}: agent `{name}` pins `model: {model}` while the tier table (line "
                 f"{row.line}) says `{row.model}` -- doctrine and frontmatter disagree, so one of "
                 "them is lying to whoever reads it next."
+            )
+        if row.tier == "mechanical" and ADVISOR_MARKER not in path.read_text(encoding="utf-8"):
+            findings.append(
+                f"{path}: mechanical agent `{name}` carries no `{ADVISOR_MARKER}` instruction -- it "
+                "inherits the session's advisor, and each call rereads its whole transcript at the "
+                "advisor's rates. The docs' only control is the agent's instructions (model-tiers.md, #1505)."
             )
     for row in rows:
         if row.agent not in agents:
