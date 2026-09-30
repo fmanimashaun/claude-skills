@@ -14,8 +14,8 @@ GUARD = Guard(
         # #1336: a heredoc body is tokenised again, so prose apostrophes refuse a labelled create.
         Mutation(
             "heredoc bodies are no longer stripped before tokenising",
-            "        cmd = strip_heredocs(cmd)\n    except ValueError:",
-            "        cmd = cmd\n    except ValueError:",
+            "        cmd = _ansi_c(strip_heredocs(cmd))\n    except ValueError:",
+            "        cmd = _ansi_c(cmd)\n    except ValueError:",
             "a heredoc body with apostrophes does not break a labelled create",
         ),
         Mutation(
@@ -330,6 +330,86 @@ GUARD = Guard(
             '                if prev_op in ("|", "|&") and _names_create(prev_text):',
             '                if prev_op == "|" and _names_create(prev_text):',
             "refused as a pipe into `bash`",
+        ),
+        # #1489: a script fed to a shell by redirect.
+        Mutation(
+            "a redirected script is not read, so bash < file escapes",
+            "                if script is not None and _names_create(script):",
+            "                if False:",
+            "a spaced redirect feeding a script with a create to a shell is refused",
+        ),
+        # #1489 review: each fix below has a fixture that must notice it going.
+        Mutation(
+            "stdin is read as the script even when a script operand is given",
+            "        return has_s                 # an operand: the script is that file, unless -s",
+            "        return True",
+            "stdin is data for a script operand, allowed",
+        ),
+        Mutation(
+            "`-s` is ignored, so bash -s arg1 < file escapes",
+            "                has_s = True",
+            "                pass",
+            "'bash -s arg1 < ': stdin is the script",
+        ),
+        Mutation(
+            "`0<` is not read as a redirect, so bash 0< file escapes",
+            '        if w.startswith("0<"):',
+            "        if False:",
+            "bash 0< ",
+        ),
+        Mutation(
+            "a glued `sh<f` stays one word, so its shell is never seen",
+            "                if os.path.basename(pre) in SHELLS:",
+            "                if False:",
+            "'sh<': refused as a script fed by redirect",
+        ),
+        Mutation(
+            "a literal cd no longer moves the directory, so a relative script is read from the session's",
+            "                    here_dir = here_dir / os.path.expanduser(arg)",
+            "                    pass",
+            "a relative script is read from the cd target",
+        ),
+        Mutation(
+            "a cd inside ( ) is followed, so a script is read from a directory the shell never entered",
+            '                if here_dir is None or depth or head != "cd" or not arg or arg == "-" or "$" in arg or "`" in arg:',
+            '                if here_dir is None or head != "cd" or not arg or arg == "-" or "$" in arg or "`" in arg:',
+            "a cd inside ( ) does not outlive it",
+        ),
+        Mutation(
+            "a cd to a run-time path is followed as if literal, so the directory stays the last known one",
+            '                if here_dir is None or depth or head != "cd" or not arg or arg == "-" or "$" in arg or "`" in arg:',
+            '                if here_dir is None or depth or head != "cd" or not arg or arg == "-":',
+            "after a cd it cannot resolve",
+        ),
+        Mutation(
+            "ANSI-C quoting is not decoded, so valid bash is refused as unparseable",
+            "        cmd = _ansi_c(strip_heredocs(cmd))",
+            "        cmd = strip_heredocs(cmd)",
+            "before a harmless redirected script is allowed",
+        ),
+        Mutation(
+            "every unparseable command is refused, even one naming no create",
+            "    if _names_create(cmd) or SHELL_REDIRECT.search(cmd):",
+            "    if True:",
+            "an unparseable command naming no create and no redirect is allowed",
+        ),
+        Mutation(
+            "`$HOME` is not expanded, so bash < $HOME/x.sh escapes",
+            '        target = re.sub(r"^\\$(HOME|\\{HOME\\})(?=/|$)", lambda _: os.path.expanduser("~"), target)',
+            "        pass",
+            "$HOME expands and the script is read",
+        ),
+        Mutation(
+            "a large script is skipped instead of read, so a create at its top escapes",
+            "            return fh.read(1_000_000).decode(\"utf-8\", errors=\"replace\")",
+            "            return None if path.stat().st_size > 1_000_000 else fh.read().decode(\"utf-8\", errors=\"replace\")",
+            "a script over 1 MB with a create in its first 1 MB is refused",
+        ),
+        Mutation(
+            "only a spaced `<` is read, so bash <file escapes",
+            '        if w.startswith("<") and not w.startswith(("<<", "<(")) and len(w) > 1:',
+            "        if False:",
+            "a glued redirect feeding a script with a create to a shell is refused",
         ),
         # ---- #1400: the ALLOWLIST -- each way a cd the create may not have followed is trusted -----
         Mutation(
