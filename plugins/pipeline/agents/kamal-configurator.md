@@ -17,6 +17,17 @@ route each value to its correct Rails-native destination.
 
 ## The routing model (the heart of this agent)
 
+First resolve the destination (#1465), once, and use its answers for every step below. A destination
+is one decision with several consequences; naming only the secrets file half-applies it:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/kamal_destination.py" plan [destination]       # files + commands
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/kamal_destination.py" rails-env [destination]  # after deploy.yml exists
+```
+
+`rails-env` asks Kamal's own loader for the MERGED config's `RAILS_ENV` and prints the credentials files
+Rails will read for it. Exit `2` is a stop: never guess an environment.
+
 Read `.kamal/deploy.env`, classify each key, write it where Rails convention says it belongs:
 
 1. **App runtime secrets** (API keys, third-party tokens, anything the running app
@@ -28,7 +39,7 @@ Read `.kamal/deploy.env`, classify each key, write it where Rails convention say
    # bin/write_credentials.rb — run with the project's ruby; keys/values from ENV
    require "active_support"; require "active_support/encrypted_configuration"
    require "yaml"
-   env = "production"
+   env = ENV.fetch("CREDENTIALS_ENV")   # the `rails_env` that kamal_destination.py rails-env printed
    cfg = ActiveSupport::EncryptedConfiguration.new(
      config_path: "config/credentials/#{env}.yml.enc",
      key_path:    "config/credentials/#{env}.key",
@@ -44,13 +55,17 @@ Read `.kamal/deploy.env`, classify each key, write it where Rails convention say
    write blind (a bad editor path silently saves nothing).
 
 2. **Deploy-time secrets** (`KAMAL_REGISTRY_PASSWORD`, `RAILS_MASTER_KEY`, DB
-   password) → gitignored `.kamal/secrets` (or `.kamal/secrets.<destination>`), as
-   `NAME=$NAME` pairs, referenced by NAME in `deploy.yml`. These are deploy
-   infrastructure, not app config.
+   password) → gitignored, at the plan's `secrets_write` (`.kamal/secrets`, or
+   `.kamal/secrets.<destination>`), as `NAME=$NAME` pairs, referenced by NAME in `deploy.yml`.
+   These are deploy infrastructure, not app config. With a destination, `.kamal/secrets` is
+   never read: shared values go in `.kamal/secrets-common`. `RAILS_MASTER_KEY` is the key of
+   the credentials file `rails-env` names.
 
 3. **Deploy facts, non-secret** (host IP, domain, registry user, image) → written
    directly into `config/deploy.yml` (`servers`, `proxy.host`, `registry.username`,
-   `image`) and `pipeline.yml`.
+   `image`) and `pipeline.yml`. With a destination, what differs (the hosts, `env.clear`
+   including `RAILS_ENV`) goes in the plan's `overlay`, `config/deploy.<destination>.yml`,
+   which Kamal deep-merges over `config/deploy.yml` and refuses `-d` without.
 
 Missing required key in `.kamal/deploy.env` → STOP, name it, point at `.kamal/deploy.env.example`. Never invent
 a value, never prompt, never deploy half-configured.
@@ -69,7 +84,8 @@ a value, never prompt, never deploy half-configured.
 
 ## Deploy & self-troubleshoot
 
-First deploy → `kamal setup`; subsequent → `kamal deploy`. Both need explicit user
+First deploy → the plan's `setup`; subsequent → its `deploy`. Each carries `-d <destination>`
+when there is one; without it Kamal reads the base config and `.kamal/secrets`. Both need explicit user
 approval (confirm host + domain back first) and inherit the rails-flow deploy guard
 (`RAILS_FLOW_ALLOW_DEPLOY=1`). On failure, troubleshoot autonomously against `.kamal/deploy.env`
 and Kamal output: auth failures → check `KAMAL_REGISTRY_PASSWORD` scope; boot

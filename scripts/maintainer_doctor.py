@@ -388,6 +388,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("pipeline hook install", ("python3", "plugins/pipeline/scripts/install_git_hooks_selftest.py")),
     # #1341. The deploy safety pass is BLOCKING; its "no secret in a committed file" step is this script.
     ("pipeline committed-secret scan", ("python3", "plugins/pipeline/scripts/scan_committed_secrets.py", "--selftest")),
+    # #1465. A Kamal destination is carried through whole: `-d` on every command, the destination's
+    # secrets file and overlay, and the credentials environment read from the MERGED config.
+    ("pipeline kamal destination", ("python3", "plugins/pipeline/scripts/kamal_destination.py", "--selftest")),
     # #1338. The auto-merge into dev stops for a human on a one-way door; this is the classifier.
     ("rails-flow one-way door classifier", ("python3", "plugins/rails-flow/scripts/classify_door.py", "--selftest")),
     ("rails-flow PR-template sections", ("python3", "plugins/rails-flow/hooks/scripts/lib/pr_template.py", "--selftest")),

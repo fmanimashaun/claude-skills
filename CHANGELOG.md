@@ -7013,6 +7013,28 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **`/pipeline:deploy-cloud <destination>` carries the destination through whole: `-d` on every Kamal command, the
+  destination's secrets file and overlay, and credentials for the merged config's `RAILS_ENV` —
+  `plugins/pipeline/scripts/kamal_destination.py`** (#1465).
+  The destination chose only the secrets filename: `.kamal/secrets.<dest>` was written, then `kamal setup`/`kamal deploy`
+  ran with no `-d`, so Kamal read `.kamal/secrets` and the base `config/deploy.yml` and the staging file sat unused;
+  the credentials step hard-coded `env = "production"`.
+  - **Verified, not assumed.** `doctrine-verifier` CONFIRMED each claim against **Kamal 2.12.0** (the installed gem,
+    byte-identical to `basecamp/kamal` tag `v2.12.0`) and **Rails 8.1.4**, and by running Kamal offline:
+    - `lib/kamal/configuration.rb` L29/L34/L50: `-d <dest>` loads `config/deploy.<dest>.yml` after `config/deploy.yml`
+      with `deep_merge!` (the destination wins, hashes merge, arrays are replaced); a missing file raises (L45).
+    - `lib/kamal/secrets.rb` L43–45: the files read are `.kamal/secrets-common`, then `.kamal/secrets` or
+      `.kamal/secrets.<dest>`; the `kamal init` template: "This .kamal/secrets file is used only when no destination
+      is selected."
+    - `-d` sets no `RAILS_ENV` (none in `kamal/lib`); `railties` `application/configuration.rb` L643–650 picks
+      `config/credentials/<RAILS_ENV>.yml.enc` and, falling back **separately**, `config/credentials/<RAILS_ENV>.key`.
+  - **`kamal_destination.py plan [dest]`** names every consequence in one place (`setup`/`deploy`/`config`/`secrets print`
+    with `-d`, `secrets_write`, `overlay`, and `.kamal/secrets` as unread under a destination); **`rails-env [dest]`**
+    asks Kamal's own loader (`Kamal::Configuration.create_from`, 2.12.0) for the merged `RAILS_ENV` and exits `2`
+    rather than guess one, so credentials are never encrypted for an environment the app will not run.
+  - The command and `kamal-configurator` use both. The `--selftest` pins the call sites, exercises the real loader when
+    Kamal is installed, and runs as the `pipeline kamal destination` gate; its guard carries 9 mutations, each caught.
+
 - **`breaker.py`'s Anthropic citation is verified and linked, and it separates what is ours from the guide — `plugins/pipeline/scripts/breaker.py`** (#1417).
   The `elapsed Xs / Ys` line cited *Prompting Claude Opus 5.5*, "Time signals for multiagent harnesses", and no check
   against the source was recorded. `doctrine-verifier` CONFIRMED it against the live page on 2026-09-29
