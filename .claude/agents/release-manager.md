@@ -121,8 +121,9 @@ A claim that cannot be checked as written is a **finding**, not a pass: delete i
 checkable. Fix the body before opening the PR; do not open it and amend after.
 
 **Get a second opinion where you can.** `claim-verifier` is `model: inherit` by deliberate decision
-(pinning a shipped agent spends a stranger's money, and a value outside their allowlist is skipped
-anyway — see `plugins/rails-flow/reference/model-tiers.md`). That makes a genuine second opinion the
+(pinning a shipped agent spends a stranger's money, and where their allowlist blocks the value it is not
+honoured anyway: a family alias runs on the newest permitted version on the Anthropic API and Claude
+Platform on AWS, anything else on the inherited model — see `plugins/rails-flow/reference/model-tiers.md`). That makes a genuine second opinion the
 **caller's** act: invoke it with a per-invocation model, or set `CLAUDE_CODE_SUBAGENT_MODEL`. It is
 required to state which model it ran as, so its report says plainly whether the review was actually
 independent or just a slower version of the author.

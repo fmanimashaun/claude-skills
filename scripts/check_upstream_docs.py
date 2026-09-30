@@ -48,8 +48,11 @@ NOT_DOCTRINE = ("CHANGELOG.md", "docs/brain/history/", str(REGISTRY), "scripts/c
 # The surfaces our plugins build on. An entry naming none of them is not ours to review.
 SURFACES = re.compile(
     r"\b(hooks?|PreToolUse|PostToolUse|SessionStart|Stop hook|subagents?|agents?|frontmatter|plugins?|"
-    r"marketplaces?|skills?|settings|CLAUDE\.md|AGENTS\.md|slash commands?|effort|advisor|MCP|"
-    r"permissions?|CLAUDE_[A-Z_]+|worktrees?)\b", re.I)
+    r"marketplaces?|skills?|settings?|CLAUDE\.md|AGENTS\.md|slash commands?|effort|advisor|MCP|"
+    r"permissions?|CLAUDE_[A-Z_]+|worktrees?|availableModels\w*|deniedModels)\b", re.I)
+# `settings?`, not `settings`: "Added `deniedModels` managed setting" (2.1.283) named no plural and was
+# never listed, though model-tiers.md reasons from `availableModels` (#1502 review). The model
+# allowlist keys are named outright for the same reason.
 
 Fetch = Callable[[str], str]
 
@@ -216,6 +219,14 @@ def selftest() -> int:
     check("entries after the cursor that name our surfaces are listed",
           got == [("2.1.252", "Fixed a hook payload field"), ("2.1.251", "Subagent model order changed")], str(got))
     check("CONTROL: nothing after the newest version is listed", unreviewed(log, "2.1.252") == [])
+    # #1502: a SINGULAR "setting" is a surface too, and the model allowlist keys are named outright.
+    single = ("## 2.1.283\n\n- Added `deniedModels` managed setting to block specific models\n"
+              "- Added a new setting for colours\n- `deniedModels` now also blocks aliases\n- Improved terminal colours\n")
+    check("a singular 'setting' entry and a model-allowlist key are listed",
+          [t for _, t in unreviewed(single, "2.1.282")] == ["Added `deniedModels` managed setting to block specific models",
+                                                              "Added a new setting for colours",
+                                                              "`deniedModels` now also blocks aliases"],
+          str(unreviewed(single, "2.1.282")))
     check("versions compare numerically, not as text", unreviewed("## 2.1.100\n\n- hooks\n", "2.1.99") != [])
 
     with tempfile.TemporaryDirectory() as td:
