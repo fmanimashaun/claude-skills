@@ -11275,33 +11275,43 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
   `tsc --noEmit`); `strict` does not include `noUncheckedIndexedAccess` and its `noImplicitAny` flags only an inferred `any`
   (typescriptlang.org/tsconfig). Not claimed, because INCONCLUSIVE: tsc's exit code, and which forms
   `@typescript-eslint/no-explicit-any` covers — the gate detects the forms itself. Also CONFIRMED: the nine members of
-  `strict`'s family, each of which can be switched back off (typescriptlang.org/tsconfig#strict), array and package
+  `strict`'s family, each of which can be switched back off (typescriptlang.org/tsconfig#strict; the list is
+  TypeScript 5.6+, since the 5.6 release notes introduce `strictBuiltinIteratorReturn` as "a new `--strict`-mode
+  flag"), array and package
   `extends`, later entries winning (#extends), and `npm --prefix <dir> run` running `<dir>`'s script with its
   `node_modules/.bin` on PATH (docs.npmjs.com config#prefix, npm-run-script). `npx --prefix qa tsc` was INCONCLUSIVE, so
   the doctrine prescribes `npm --prefix qa run typecheck` only. New qa-flow gate `ts-strict`, three rules:
   - `ts-not-strict` reads the options the compiler sees: merged through relative, package and array `extends`, with a
     strict-family flag set `false` refused, and an `extends` it cannot follow reported as exactly that.
-  - `ts-no-typecheck` requires a CI line running `tsc -p` on a tsconfig under `qa/`. The path resolves from the root, a
-    `cd <dir> &&` or the step's `working-directory:`; the line may also run an `npm|pnpm|yarn [--prefix] run` script
-    that does. A tsc on the app, or a package script CI never runs, is not a step.
+  - `ts-no-typecheck` reads CI per STEP and requires one that runs `tsc -p` on a tsconfig under `qa/`, or an
+    `npm|pnpm|yarn [--prefix] run` script that does, and that can fail. The path resolves from the step's
+    `working-directory:` (anywhere in the step), the job's or workflow's `defaults.run.working-directory`, and any
+    `cd` before it. Not a step: a tsc on the app, a package script CI never runs, a step or job with
+    `continue-on-error: true` or `if: false`, a swallowed verdict (`|| true`, `; exit 0`, a later `exit 0`), an echoed
+    tsc, a `#` comment.
   - `ts-explicit-any` matches the `any` token in any type position (`Record<string, any>` included) in
     `.ts`/`.tsx`/`.mts`/`.cts`, on text a character scanner has blanked of comments, strings, template text and regex
-    literals. It excludes members (`expect.any`) and object keys.
+    literals. It excludes members (`expect.any`), `@any`/`#any`, and object keys (an `any:` after `{ , ; (` or at a
+    line start, so `x ? any : y` is still caught); the allow marker counts only inside a comment. `extends` cycles
+    are reported and shared parents are read once; a BOM is accepted.
 
   It exits 3 where `qa/` has no TypeScript. The independent review of PR #1503 (BLOCKED, 3 blocking and 7 suggestions,
   committed as `docs/evidence/reviews/prs/fix-1447-ts-e2e-strict/pr-reviewer-findings.jsonl`) found three blocking gaps:
   the typecheck rule accepted any tsc line; the position list missed `Record<string, any>`; and the JSONC strip ate
   `"@fixtures/*"`. R4–R9 are folded in. R10 (`Fixes` into dev) is declined under the owner's 2026-09-29 close-on-dev-merge
-  decision.
+  decision. Its delta review (BLOCKED, 2 blocking and 10 suggestions, appended to the same file) found that the
+  line-at-a-time reading accepted a step that enforces nothing (B1) and missed a `working-directory:` after `run:` (B2).
+  The per-step reader fixes both. S1–S10 are all taken; the parts of S3 left over (`{ any }`, `let any`) are in KNOWN
+  LIMITS.
 
-  Driven on an export of the app behind the issue: Retask `origin/dev` `8f60e96d`, level with it, 54 files.
+  Driven on an export of the app behind the issue: Retask `origin/dev` `803510cc`, level with it, 54 files.
   - strict ✓; the suite typecheck ✓ at `.github/workflows/ci.yml:133`;
   - **15 explicit `any`** in real code, **12** of them `fixtures<Record<string, any>>()`, which the pre-review gate
     could not see;
   - the regex-literal rule was added because that run's `path.replace(/\//g, "-")` inside a template put the scanner
     out of phase and produced a false finding on prose.
 
-  Selftest 57 assertions; mutations 35/35, each caught by its intended fixture.
+  Selftest 88 assertions; mutations 55/55, each caught by its intended fixture.
 
 - **The release gate decides a push's destination the way git does — `plugins/qa-flow/hooks/scripts/release-gate.sh`, `plugins/qa-flow/scripts/push_targets.py`** (#1410). It matched `\b(main|master)\b` anywhere in a push segment, and `\b` breaks at `-` and `/`, so `git push -u origin fix/1010-one-main` and `feat/983-pr2-master-detail` were refused as promotions twice in one day downstream; both authors renamed the branch. **The same regex also let promotions through:** it read the normalised segment, whose quoted spans are stripped, so `git push origin "main"` and `'HEAD:main'` were ALLOWED. `push_targets.py` reads the raw command with `shlex` and resolves destinations from refspecs (`src:dst`, `+`, `:dst`, `refs/heads/`), `--all`/`--branches`/`--mirror`, and `@{push}` for a bare push (so a branch tracking `origin/main` is caught). Could-not-judge (an unbalanced quote, an unresolvable HEAD, anything the shell would expand in a refspec: `$`, backticks, braces, globs, a leading `~`) is treated as main, and "no" is exit 10 so a parser crash (exit 1) denies; a missing parser falls back to a whole-word match over the RAW command. The independent review of PR #1470 found five pushes to main the first parser allowed (`$(echo main)`, `main>/dev/null`, a mid-word `#` taken as a comment, `HEAD:heads/main`, `{main,dev}`) and a heredoc apostrophe that denied a feature push: comments and heredoc bodies are now removed by bash's rule before `shlex`, redirections are split off, `heads/` is qualified, `git` is found anywhere in a segment (`sudo -u x`, `timeout 60`), and a bare push resolves after a prior `cd`. The final review found one more: an unquoted `$(` inside an OPTION word (`git -C $(pwd) push origin main`, `-v$(true)`) made shlex split at `(` and hid the refspecs; every command substitution (`$(…)`, backticks, `<(…)`) is now collapsed to one word first, and any in a push's arguments is could-not-judge, since an unquoted one word-splits (`-v$(echo ' main')` is a push to main). `"$(git branch --show-current)"` and `$(git rev-parse --abbrev-ref HEAD)` read as `HEAD`. `--repo=<r>` no longer shifts the positionals (`git help push`: a positional repository wins). 41's delta review found the hook still handed the parser only segments that STARTED with `git push`, so `timeout 60 git push origin main`, `sudo -u x`, `( … )`, `{ …; }`, `bash -c '…'` and `eval` never reached it — while this entry already claimed sudo/timeout were caught. The hook now asks `push_targets.py --classify` about any command mentioning git or gh (PUSH_MAIN / GIT_MERGE / PR_MERGE <selector>); `git` is matched by basename anywhere in a segment; `sh -c` strings and `eval` are parsed recursively; a backslash-newline is a continuation; an inline `-c alias.` and `xargs … git push` are could-not-judge; `gh pr merge` resolves the PR it names (number, URL or branch) rather than the current branch's, and `--repo` elsewhere is could-not-judge. Known limits, by the coordinator's ruling that the gate guards against an honest mistake, not deliberate obfuscation (documented in the hook and in `push_targets.py`): `bash -c $'…'`, `eval "$(…)"`, a verb produced at run time (`$(echo git) push`, `$g push`), here-strings, `… | bash`, `fish -c`, and aliases defined in git config. A quoted or escaped spelling of git (`g''it`, `gi\t`) is still handed to the classifier, and shell options before `-c` (`bash -o pipefail -c`) are stepped over. Known new over-block: a refspec from a variable or any other substitution (`"$BRANCH"`, `fix/x-$(date +%s)`) is denied, because it cannot be read. `check_hook_gates.py` drives both directions end to end and fails 8 of the new cases against the old hook; mutation guards `push_targets` (29) and `hook_release_gate` (11) cover each clause.
 
