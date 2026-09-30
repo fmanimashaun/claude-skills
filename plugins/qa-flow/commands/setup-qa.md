@@ -183,8 +183,9 @@ Per `web_e2e` (scaffold ONE):
   (setup + chromium/firefox/webkit, `baseURL` from `QA_BASE_URL`, retries=1, trace/screenshot on
   fail), `qa/e2e/` (`auth.setup.ts` → storageState, `fixtures/`, a `@smoke` spec), and
   `qa/e2e/tsconfig.json` with `"strict": true` and `"noUncheckedIndexedAccess": true` plus a
-  `typecheck` script (`tsc --noEmit -p e2e/tsconfig.json`) the project's CI runs — Playwright does
-  not type-check, so without that step `strict` checks nothing (#1447; `agents/e2e-tester.md`).
+  `typecheck` script (`tsc --noEmit -p e2e/tsconfig.json`), and a CI step running it —
+  `npm --prefix qa run typecheck`. Playwright does not type-check, so without that step `strict`
+  checks nothing, and the `ts-strict` gate refuses a script CI never runs (#1447; `agents/e2e-tester.md`).
 - **cypress-cucumber** — `qa/package.json` (cypress, `@badeball/cypress-cucumber-preprocessor`,
   `@testing-library/cypress`), `qa/cypress.config.js`, `qa/e2e/features/*.feature` (+ `step_definitions/`),
   `cy.session()` auth, `@smoke`/`@regression` tags.
