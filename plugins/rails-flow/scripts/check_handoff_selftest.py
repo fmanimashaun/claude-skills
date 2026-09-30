@@ -610,6 +610,21 @@ def run() -> int:  # noqa: PLR0915 -- a flat list of fixtures reads better than 
     rv = judged / "code-reviewer.md"
     rv.write_text(rv.read_text().replace(f"\n{ch.ADVISOR_MARKER} Consult it only when stuck.\n", ""))
     expect_tiers_clean("...and a judgement agent without one is clean", tiers_doc(ok_rows), judged)
+    # ...and the marker counts only as a BODY instruction that says "only when" (review of PR #1507).
+    for label, edit in (
+        # Body marker removed FIRST, then one placed in the frontmatter -- the other order removes both.
+        ("only in the frontmatter", lambda t: t.replace(f"\n{ch.ADVISOR_MARKER} Consult it only when stuck.\n", "")
+                                             .replace("tools: Read\n", f"tools: Read\n{ch.ADVISOR_MARKER} Consult it only when stuck.\n")),
+        ("only in a quote", lambda t: t.replace(f"\n{ch.ADVISOR_MARKER} Consult", f"\n> {ch.ADVISOR_MARKER} Consult")),
+        ("only in a fenced example", lambda t: t.replace(f"\n{ch.ADVISOR_MARKER} Consult it only when stuck.\n",
+                                                        f"\n```\n{ch.ADVISOR_MARKER} Consult it only when stuck.\n```\n")),
+        ("telling it to consult freely", lambda t: t.replace("Consult it only when stuck.", "Consult it often.")),
+    ):
+        bad = agents_dir({"code-reviewer": "inherit", "test-runner": "haiku"})
+        tr = bad / "test-runner.md"
+        tr.write_text(edit(tr.read_text()))
+        expect_tiers_findings(f"...an advisor marker {label} does not count", tiers_doc(ok_rows), bad,
+                              contains="carries no `**The advisor.**` instruction")
 
     _tick()
     try:

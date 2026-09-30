@@ -185,8 +185,10 @@ transcript anew, with no reuse between calls"*. Measured on 2026-09-30 by
 (peak request context per run; indicative, not a population, and several agents have 1–4 runs;
 `docs/evidence/advisor/subagent-context-2026-09-30.md`): shipped agents' medians run from 11k tokens
 (`test-runner`) to 222k (`design-porter`), and the six Haiku agents' from 11k to 83k (`a11y-auditor`).
-So a Haiku-tier agent consulting an Opus advisor can pay Opus rates on tens of thousands of uncached
-tokens per call, which is the saving the Haiku tier exists for.
+So a Haiku-tier agent consulting an Opus advisor pays Opus rates on tens of thousands of uncached
+tokens per call, which spends part of the saving the Haiku tier exists for: the docs put a Haiku main
+with an Opus advisor at *"higher cost than Haiku alone but lower than switching the main model to
+Sonnet or Opus"* ([cc-advisor]).
 
 **The policy follows the docs' own guidance** (maintainer decision on #1505). The docs say *"The advisor
 fits long, multi-step tasks where most turns are routine but plan quality determines the outcome"*,

@@ -209,6 +209,23 @@ EMPTY_PROOF = frozenset({"", "-", "--", "—", "–", "n/a", "na", "none", "tbd"
 # (https://code.claude.com/docs/en/advisor). No frontmatter field exists, so the agent's own prompt
 # carries it, under this marker (#1505).
 ADVISOR_MARKER = "**The advisor.**"
+
+
+def _has_advisor_instruction(path: Path) -> bool:
+    """A BODY line that opens with the marker and says "only when" -- not the frontmatter, not a
+    quote, not a fenced example, and not a paragraph that tells the agent to consult it freely
+    (independent review of PR #1507)."""
+    text = path.read_text(encoding="utf-8")
+    if text.startswith("---\n") and "\n---\n" in text[4:]:
+        text = text[4:].split("\n---\n", 1)[1]
+    fenced = False
+    for line in text.splitlines():
+        if line.lstrip().startswith(("```", "~~~")):
+            fenced = not fenced
+            continue
+        if not fenced and line.startswith(ADVISOR_MARKER) and "only when" in line:
+            return True
+    return False
 FRONTMATTER_FIELD_RE = re.compile(r"^(?P<key>[a-z][\w-]*)\s*:\s*(?P<value>.*?)\s*$")
 
 
@@ -819,7 +836,7 @@ def check_tiers(rows: list[TierRow], agents: dict[str, tuple[Path, str | None]] 
                 f"{row.line}) says `{row.model}` -- doctrine and frontmatter disagree, so one of "
                 "them is lying to whoever reads it next."
             )
-        if row.tier == "mechanical" and ADVISOR_MARKER not in path.read_text(encoding="utf-8"):
+        if row.tier == "mechanical" and not _has_advisor_instruction(path):
             findings.append(
                 f"{path}: mechanical agent `{name}` carries no `{ADVISOR_MARKER}` instruction -- it "
                 "inherits the session's advisor, and each call rereads its whole transcript at the "
