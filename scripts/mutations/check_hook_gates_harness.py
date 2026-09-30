@@ -58,16 +58,9 @@ GUARD = Guard(
         Mutation(
             # #1497
             "--only accepts an unknown group, so a guard's selection can silently run nothing",
-            '    if not groups or any(g not in GROUPS for g in groups):',
-            '    if not groups:',
+            '    if any(g not in GROUPS for g in groups) or len(set(groups)) != len(groups):',
+            '    if len(set(groups)) != len(groups):',
             "--only 'nope' is refused",
-        ),
-        Mutation(
-            # #1497
-            '--only accepts an empty selection',
-            '    if not groups or any(g not in GROUPS for g in groups):',
-            '    if any(g not in GROUPS for g in groups):',
-            "--only '' is refused",
         ),
         Mutation(
             # #1497
@@ -75,6 +68,27 @@ GUARD = Guard(
             '    for name in (groups or list(table)):',
             '    for name in list(table):',
             '--only runs exactly the groups it names',
+        ),
+        Mutation(
+            # review of PR #1506
+            '--only accepts a group named twice',
+            '    if any(g not in GROUPS for g in groups) or len(set(groups)) != len(groups):',
+            '    if any(g not in GROUPS for g in groups):',
+            "--only 'timeout,timeout' is refused",
+        ),
+        Mutation(
+            # review of PR #1506
+            "a bare run executes no group, so the doctor's hook gates pass on nothing",
+            '    for name in (groups or list(table)):',
+            '    for name in (groups or []):',
+            'a bare run (no --only) runs every group',
+        ),
+        Mutation(
+            # review of PR #1506
+            'main() stops refusing a bad --only',
+            '                  f"known: {\', \'.join(GROUPS)}", file=sys.stderr)\n            return 2',
+            '                  f"known: {\', \'.join(GROUPS)}", file=sys.stderr)',
+            'main() exits 2 for --only nope',
         ),
     ),
 )

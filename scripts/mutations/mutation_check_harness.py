@@ -127,5 +127,12 @@ GUARD = Guard(
             '        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True,\n                                timeout=BASELINE_TIMEOUT)',
             "a non-UTF-8 byte in a BASELINE's output raised before the INERT report printed",
         ),
+        Mutation(
+            # review of PR #1506
+            "a mutant drops its guard's selftest_args",
+            '        argv.extend(guard.selftest_args)\n        # `errors="replace"`: a non-UTF-8 byte must not raise before the report can print (#1493).',
+            '        # `errors="replace"`: a non-UTF-8 byte must not raise before the report can print (#1493).',
+            "#1497: a guard's selftest_args must reach its baseline and mutants",
+        ),
     ),
 )

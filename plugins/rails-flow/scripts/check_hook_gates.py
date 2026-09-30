@@ -1207,10 +1207,15 @@ GROUPS = {
 def parse_only(value: str) -> list[str] | None:
     """The groups `--only` names, or None when it must be REFUSED: an unknown or empty group would
     run nothing and pass -- a mutant "surviving" because its fixtures were never selected."""
-    groups = [g for g in value.split(",") if g]
-    if not groups or any(g not in GROUPS for g in groups):
+    groups = value.split(",")
+    # Every name known, none empty (so no trailing comma), none repeated: a selection runs exactly
+    # what it names, once (review of PR #1506).
+    if any(g not in GROUPS for g in groups) or len(set(groups)) != len(groups):
         return None
     return groups
+
+
+_NESTED = False
 
 
 def run_groups(groups: list[str] | None, table: dict) -> None:
@@ -1221,7 +1226,7 @@ def run_groups(groups: list[str] | None, table: dict) -> None:
 def selftest(groups: list[str] | None = None) -> int:
     # --only REFUSES what it cannot run (#1497), checked on every run whatever the selection: a
     # silently empty selection is how a mutant would "survive" with no fixture ever consulted.
-    for bad in ("nope", "", ",", "release_gate,nope"):
+    for bad in ("nope", "", ",", "release_gate,nope", "release_gate,", " release_gate", "timeout,timeout"):
         check(f"--only {bad!r} is refused (exit 2), never an empty pass", parse_only(bad) is None,
               repr(parse_only(bad)))
     check("CONTROL: --only release_gate,guard_bash is accepted",
@@ -1231,6 +1236,27 @@ def selftest(groups: list[str] | None = None) -> int:
     fakes = {name: (lambda n=name: ran.append(n)) for name in GROUPS}
     run_groups(["timeout", "stop_gate"], fakes)
     check("--only runs exactly the groups it names, in order", ran == ["timeout", "stop_gate"], repr(ran))
+    # ...and a BARE run -- the doctor's `hook gates` gate -- runs every group. A break here would let
+    # that gate pass having run no hook fixture at all (review of PR #1506).
+    ran.clear()
+    run_groups(None, fakes)
+    check("a bare run (no --only) runs every group", ran == list(GROUPS), repr(ran))
+    # The REAL exit code, not only the parser's verdict: main() must return 2 for a bad selection.
+    # Only at the outermost level: were the refusal broken, main() would call selftest() again,
+    # and this check would recurse instead of failing by name.
+    global _NESTED
+    if not _NESTED:
+        import contextlib, io
+        _NESTED = True
+        try:
+            with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+                try:
+                    rc = main(["--only", "nope"])
+                except Exception as exc:          # noqa: BLE001 -- a crash fails THIS check, by name
+                    rc = f"raised {exc!r}"
+        finally:
+            _NESTED = False
+        check("main() exits 2 for --only nope", rc == 2, f"exit {rc}")
     run_groups(groups, GROUPS)
     if FAILURES:
         print(f"check_hook_gates selftest: {len(FAILURES)} of {CHECKS} checks FAILED", file=sys.stderr)
