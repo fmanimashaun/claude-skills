@@ -1,6 +1,6 @@
 {
-  "changelog_reviewed": "2.1.282",
-  "reviewed_on": "2026-09-25",
+  "changelog_reviewed": "2.1.285",
+  "reviewed_on": "2026-09-30",
   "quotes": [
     {"id": "subagent-model-order", "url": "https://code.claude.com/docs/en/sub-agents",
      "quote": "1. The per-invocation `model` parameter 2. The subagent definition's `model` frontmatter, where `inherit` selects the main conversation's model",

@@ -197,7 +197,10 @@ TIERS_BEGIN_RE = re.compile(r"<!--\s*([a-z0-9-]+):tiers:begin\s*-->")
 TIERS_END_RE = re.compile(r"<!--\s*([a-z0-9-]+):tiers:end\s*-->")
 TIER_MODELS: dict[str, str] = {"judgement": "inherit", "mechanical": "haiku"}
 # Aliases that select a MORE expensive model than the session already chose. Shipping one spends a
-# stranger's money on our authority -- or is silently dropped by their availableModels allowlist.
+# stranger's money on our authority. Where their availableModels allowlist blocks it, a family alias
+# (`opus`, `sonnet`, `haiku`, `fable`) runs on the newest version of that family the allowlist permits,
+# on the Anthropic API and Claude Platform on AWS; any other blocked value, any other provider, or a
+# family with no permitted version runs on the inherited model (sub-agents; model-config).
 EXPENSIVE_ALIASES = frozenset({"opus", "fable", "best", "opusplan", "opus[1m]", "sonnet[1m]"})
 EMPTY_PROOF = frozenset({"", "-", "--", "—", "–", "n/a", "na", "none", "tbd", "todo"})
 # A mechanical agent's output is proven outside itself, so an advisor's full-transcript read buys cost,
@@ -503,9 +506,10 @@ def _executor_tier(section: Section, findings: list[str]) -> str | None:
     for bad in EXPENSIVE_ALIASES & models:
         findings.append(
             f"executor (line {section.start}): `{bad}` selects a more expensive model than the "
-            "session already chose. Where the org's availableModels blocks it, Claude Code runs the "
-            "newest version of that family the allowlist permits, so the pin spends someone else's "
-            "money on our authority either way. Use `inherit`."
+            "session already chose, spending someone else's money on our authority. Where the org's "
+            "availableModels blocks it, a family alias (`opus`, `sonnet`, `haiku`, `fable`) runs on the "
+            "newest version the allowlist permits on the Anthropic API and Claude Platform on AWS, and "
+            "anything else on the inherited model. Use `inherit`."
         )
     return tier
 
@@ -760,9 +764,10 @@ def check_tiers(rows: list[TierRow], agents: dict[str, tuple[Path, str | None]] 
         if row.model in EXPENSIVE_ALIASES:
             findings.append(
                 f"tier table line {row.line}: `{row.agent}` pins `{row.model}`, which selects a "
-                "more expensive model than the user's session chose. When their availableModels blocks "
-                "the alias, Claude Code substitutes the newest version of that family they permit, so "
-                "it spends their money on our authority either way."
+                "more expensive model than the user's session chose, spending their money on our "
+                "authority. When their availableModels blocks it, a family alias (`opus`, `sonnet`, "
+                "`haiku`, `fable`) runs on the newest version they permit on the Anthropic API and Claude "
+                "Platform on AWS, and anything else on the inherited model."
             )
         elif row.model.startswith("claude-"):
             findings.append(
