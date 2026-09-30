@@ -119,8 +119,8 @@ GUARD = Guard(
         Mutation(
             # #1430
             'an unterminated fence no longer runs to the end of the file, so its opt-out counts',
-            '        if run:\n            fence, fence_col = run, _columns(line)[0]\n            out.append("")          # the block ends any open paragraph (outside_indented_code)\n            continue',
-            '        if run and False:\n            fence, fence_col = run, _columns(line)[0]\n            out.append("")          # the block ends any open paragraph (outside_indented_code)\n            continue',
+            '        if run:\n            fence, fence_col = run, _columns(line)[0]\n            out.append(" " * fence_col + BLOCK_MARK)   # a block here ends the paragraph, and any item to its right\n            continue',
+            '        if run and False:\n            fence, fence_col = run, _columns(line)[0]\n            out.append(" " * fence_col + BLOCK_MARK)   # a block here ends the paragraph, and any item to its right\n            continue',
             'an opt-out inside an unterminated fence is not a declaration',
         ),
         Mutation(
@@ -209,8 +209,8 @@ GUARD = Guard(
         ),
         Mutation(
             'a fenced block no longer ends the paragraph before it',
-            '            out.append("")          # the block ends any open paragraph (outside_indented_code)\n',
-            '',
+            '            fence, fence_col = run, _columns(line)[0]\n            out.append(" " * fence_col + BLOCK_MARK)   # a block here ends the paragraph, and any item to its right\n',
+            '            fence, fence_col = run, _columns(line)[0]\n',
             '#1490: an indented line after a fenced block is code',
         ),
         Mutation(
@@ -285,6 +285,19 @@ GUARD = Guard(
             '            opens_code = not blank_item and after - width >= 5',
             '            opens_code = False',
             '#1490: an item opening with 5+ columns',
+        ),
+        # #1496 round 2: a dropped block keeps its column.
+        Mutation(
+            'a dropped block no longer closes the items to its right',
+            '            while items and col < items[-1][0]:\n                items.pop()        # a fenced or HTML block starts here: items to its right are closed',
+            '            pass',
+            '#1490: a column-0 fence after a list closes it',
+        ),
+        Mutation(
+            'a dropped HTML block loses its column',
+            '            out.append(" " * _columns(line)[0] + BLOCK_MARK)',
+            '            out.append("")',
+            '#1490: a column-0 HTML comment after a list closes it',
         ),
     ),
 )

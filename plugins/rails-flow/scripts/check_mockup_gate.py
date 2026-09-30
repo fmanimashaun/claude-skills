@@ -86,6 +86,10 @@ def declared_off(root: Path) -> bool:
 
 
 
+# What `unfenced` leaves where it dropped a block: the block's own column, then this mark. The scanner
+# closes every list item the block sits left of -- a bare blank line left the list open, so an indented
+# example after a column-0 fence read as a nested item (#1496 review round 2).
+BLOCK_MARK = "\x00"
 HTML_COMMENT = re.compile(r" {0,3}<!--")
 HTML_RAW = re.compile(r" {0,3}<(pre|script|style|textarea)(?:[ \t>]|$)", re.I)
 HTML_TAG_LINE = re.compile(r" {0,3}</?[A-Za-z][A-Za-z0-9-]*(?:[ \t][^<>]*)?/?>[ \t]*$")
@@ -121,14 +125,14 @@ def unfenced(text: str) -> str:
             continue
         if run:
             fence, fence_col = run, _columns(line)[0]
-            out.append("")          # the block ends any open paragraph (outside_indented_code)
+            out.append(" " * fence_col + BLOCK_MARK)   # a block here ends the paragraph, and any item to its right
             continue
         raw = HTML_RAW.match(line)
         if HTML_COMMENT.match(line) or raw or HTML_BLOCK.match(line) or (not in_para and HTML_TAG_LINE.match(line)):
             end = "-->" if HTML_COMMENT.match(line) else (f"</{raw.group(1).lower()}>" if raw else "")
             if not (end and end in line.lower()[4:]):
                 html_end = end
-            out.append("")
+            out.append(" " * _columns(line)[0] + BLOCK_MARK)
             in_para = False
             continue
         in_para = bool(line.strip())
@@ -180,6 +184,11 @@ def outside_indented_code(text: str) -> str:
             prev = "blank"
             continue
         col, i = _columns(line)
+        if line[i:] == BLOCK_MARK:
+            while items and col < items[-1][0]:
+                items.pop()        # a fenced or HTML block starts here: items to its right are closed
+            prev = "blank"
+            continue
         marker = LIST_MARKER.match(line, i)
         # A block can start here only within 3 columns of the container the line would land in.
         land = max((c for c, _ in items if c <= col), default=0)
@@ -430,6 +439,15 @@ def selftest() -> int:
             ("an item opening with 5+ columns opens with code, so the next line is code too",
              f"-     five\n      {O}\n", False),
             ("CONTROL: `1)` opens an item whose content column is 3", f"1) Gates:\n\n    - {O}\n", True),
+            # Round 2 of #1496's review: a block at column 0 after a list closes the list.
+            ("a column-0 fence after a list closes it; the indented example after is code",
+             f"- Keep specs green\n\n```bash\nbin/ci\n```\n\n    - {O}\n", False),
+            ("a column-0 HTML comment after a list closes it",
+             f"- Keep specs green\n\n<!-- opt-out example -->\n\n    - {O}\n", False),
+            ("a column-0 <details> block after a list closes it",
+             f"- Keep specs green\n\n<details>\nx\n</details>\n\n    - {O}\n", False),
+            ("CONTROL: a fence INSIDE the item keeps the item open for a nested item",
+             f"- Gates:\n\n  ```bash\n  bin/ci\n  ```\n\n    - {O}\n", True),
         ):
             (root / "GUARDRAILS.md").write_text(f"# Guardrails\n\n{text}", encoding="utf-8")
             code, msg = run(root, view, None)

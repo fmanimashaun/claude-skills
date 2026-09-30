@@ -3585,7 +3585,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     - an item opening with 5+ columns opens with code.
   - `unfenced()` now:
     - drops HTML comments and HTML blocks, including a lone tag line that doesn't interrupt a paragraph;
-    - leaves a blank line where each block was;
+    - leaves a mark at each dropped block's column, so a block at column 0 closes the list before it (round 2 of the review: a fence or `<details>` after a list, then an indented example, still declared);
     - closes a fence only on a closer no more indented than its opener.
   - `OPT_OUT` indents by space and tab only, and a `+` item now declares.
   - **Measured**, a differential fuzz of 50,000 random `GUARDRAILS.md` variants against markdown-it-py 4.2.0 (commonmark preset), seed 1:
@@ -3595,7 +3595,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     What still fails open mixes tabs into nested items, or nests an HTML block or quote inside a list item: container-aware HTML and quotes are not modelled.
   - **Checks:**
     - every shape PR #1479's and #1496's reviews measured is a fixture run through `run()`, each with a control, and the opt-out `/rails-flow:setup-flow` scaffolds is read from `setup-flow.md` and must still declare;
-    - the guard catches 44/44; `check_slices` 13/13, `check_issue_mockup` 18/18.
+    - the guard catches 46/46; `check_slices` 13/13, `check_issue_mockup` 18/18.
 
 - **Mock-up checks, the #1430 remainder after PR #1478 — `plugins/rails-flow/scripts/check_issue_mockup.py`, `plugins/rails-flow/scripts/check_mockup_gate.py`, `plugins/rails-flow/scripts/mutations/check_issue_mockup.py`, `plugins/rails-flow/scripts/mutations/check_mockup_gate.py`** (#1430, from PR #1479's independent reviews; each gap measured against merged dev before editing).
   - `check_issue_mockup.py`: a mock-up path in backticks or as a markdown link target (`[bell](docs/product/mockups/bell.md)`) now counts as linked; before, it read as "neither". Outside `docs/product/mockups/`, a mock-up file's extension must END its name (`foo.pdf.TBD` names nothing), and `.html.erb`, `.gif` and `.avif` count there too. A sentence's full stop may still follow.
