@@ -130,6 +130,59 @@ def run() -> int:
     finally:
         mc.REPO = original_repo
 
+    # ---- 1b. a mutant's limit SCALES with its guard's baseline (#1486) -----------------
+    # The same slow guard, twice. With the limit derived from the ~1 s baseline, the mutant has
+    # time to fail and is caught; with the scale zeroed, the fixed floor is shorter than the run,
+    # and it times out -- which is what 10 of 12 hook_guard_bash mutations did under load.
+    guard, root = _fixture_guard((
+        mc.Mutation("odd numbers reported even", "n % 2 == 0", "True", "fixture-odd"),
+    ))
+    slow = root / "scripts" / "subject_selftest.py"
+    slow.write_text("import time\ntime.sleep(1.0)\n" + slow.read_text(encoding="utf-8"), encoding="utf-8")
+    saved = (mc.REPO, mc.MUTATION_FLOOR, mc.MUTATION_SCALE)
+    mc.REPO, mc.MUTATION_FLOOR = root, 0.4
+    try:
+        _tick()
+        mc.MUTATION_SCALE = 3.0
+        problems = mc.run_guard(guard)
+        if problems:
+            FAILURES.append(f"#1486: a slow guard's mutant must get a limit scaled from its baseline, got {problems}")
+        _tick()
+        mc.MUTATION_SCALE = 0.0
+        problems = mc.run_guard(guard)
+        if not any("timed out after" in p for p in problems):
+            FAILURES.append(f"#1486 CONTROL: with no scaling, the fixed floor must time the mutant out, got {problems}")
+    finally:
+        mc.REPO, mc.MUTATION_FLOOR, mc.MUTATION_SCALE = saved
+    # ...and THE PATH CI RUNS: main()'s pool, driven end to end on the same slow guard (review of
+    # PR #1491: the pool's call could drop the limit with the fixture above still green).
+    saved = (mc.REPO, mc.MUTATION_FLOOR, mc.MUTATION_SCALE, mc.GUARDS)
+    mc.REPO, mc.MUTATION_FLOOR, mc.GUARDS = root, 0.4, [guard]
+    try:
+        import contextlib, io
+        _tick()
+        mc.MUTATION_SCALE = 3.0
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            rc = mc.main(["--jobs", "2"])
+        if rc != 0:
+            FAILURES.append(f"#1486: main()'s pool must give a slow guard's mutant its scaled limit, exit {rc}")
+        _tick()
+        mc.MUTATION_SCALE = 0.0
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            rc = mc.main(["--jobs", "2"])
+        if rc == 0 or "timed out after" not in err.getvalue():
+            FAILURES.append(f"#1486 CONTROL: main()'s pool with no scaling must time the mutant out, exit {rc}")
+    finally:
+        mc.REPO, mc.MUTATION_FLOOR, mc.MUTATION_SCALE, mc.GUARDS = saved
+    _tick()
+    quick = mc.Guard(name="quick", subject="s.py", selftest="t.py", mutations=())
+    heavy = mc.Guard(name="heavy", subject="s.py", selftest="t.py", mutations=())
+    stuck = mc.Guard(name="stuck", subject="s.py", selftest="t.py", mutations=())
+    limits = mc.mutation_limits([quick, heavy, stuck], [([], 10.0), ([], 200.0), ([], 1000.0)])
+    if limits != {"quick": 300.0, "heavy": 600.0, "stuck": mc.MUTATION_CAP}:
+        FAILURES.append(f"#1486: main's pool must give each guard max(floor, 3x baseline), capped, got {limits}")
+
     # ---- 2. a SURVIVOR must be reported ------------------------------------------------
     # This mutation changes the subject in a way neither fixture observes, so the selftest still
     # passes. That is exactly the vacuous-fixture situation, and it must not read as success.

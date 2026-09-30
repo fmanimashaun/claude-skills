@@ -78,5 +78,40 @@ GUARD = Guard(
             "    pending = sorted(staged)",
             "a need no staged file imports must still be scanned",
         ),
+        Mutation(
+            # #1486
+            'the per-mutation limit is fixed again, ignoring the baseline',
+            '    return min(MUTATION_CAP, max(MUTATION_FLOOR, MUTATION_SCALE * baseline_seconds))',
+            '    return MUTATION_FLOOR',
+            "#1486: a slow guard's mutant must get a limit scaled from its baseline",
+        ),
+        Mutation(
+            # #1486
+            "main's pool gives every guard the floor",
+            '    return {g.name: mutation_timeout(secs) for g, (_, secs) in zip(guards, timed)}',
+            '    return {g.name: MUTATION_FLOOR for g in guards}',
+            "#1486: main's pool must give each guard max(floor, 3x baseline)",
+        ),
+        Mutation(
+            # #1486
+            'run_guard ignores the limit it derived',
+            '        problems.extend(run_mutation(guard, mutation, limit))',
+            '        problems.extend(run_mutation(guard, mutation))',
+            '#1486 CONTROL: with no scaling, the fixed floor must time the mutant out',
+        ),
+        Mutation(
+            # review of PR #1491
+            "main's pool drops the derived limit (the path CI runs)",
+            '        outcomes = list(pool.map(lambda gm: run_mutation(gm[0], gm[1], limits[gm[0].name]), live))',
+            '        outcomes = list(pool.map(lambda gm: run_mutation(gm[0], gm[1]), live))',
+            "#1486 CONTROL: main()'s pool with no scaling must time the mutant out",
+        ),
+        Mutation(
+            # review of PR #1491
+            'the per-mutation cap is dropped, so one mutant can outlast the whole gate',
+            '    return min(MUTATION_CAP, max(MUTATION_FLOOR, MUTATION_SCALE * baseline_seconds))',
+            '    return max(MUTATION_FLOOR, MUTATION_SCALE * baseline_seconds)',
+            "#1486: main's pool must give each guard max(floor, 3x baseline)",
+        ),
     ),
 )
