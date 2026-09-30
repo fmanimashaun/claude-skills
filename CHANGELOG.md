@@ -3572,6 +3572,26 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **The hook normaliser sees what a shell runs from inside a string, a wrapper or a group —
+  `plugins/rails-flow/hooks/scripts/lib/normalize_cmd.sh`, `plugins/qa-flow/hooks/scripts/lib/normalize_cmd.sh`,
+  `plugins/rails-flow/scripts/check_hook_gates.py`, `scripts/mutations/hook_normalize_cmd.py`** (#1472).
+  - Every `guard-bash` rule (`git add -A`, force-push, `--no-verify`, `reset --hard`, …) matched only a segment
+    STARTING with the verb, after quoted spans were stripped. So `bash -c 'git add -A'`, `eval "…"`,
+    `echo "$(git add -A)"`, `command git …`, `sudo -u x git …`, `( git … )`, `if …; then git …`, `\git`,
+    `/usr/bin/git`, `git.exe`, `git --no-pager …` and `git -c alias.p=push p …` were all invisible.
+  - A quote- and heredoc-aware lexer (`_inner_strings`) now prints each string a shell WILL run: the `-c`
+    argument of sh/bash/zsh/dash/ksh, `eval`'s arguments, `$( )`, backticks and `<( )`. Each is normalised as a
+    command of its own, recursively, to depth 3. A quote that only mentions a command stays invisible, as #906
+    requires.
+  - A token-based peel steps over wrappers and their options, grouping words, git's spellings, git's global
+    options (arity measured against git 2.50.1) and inline aliases.
+  - The lib is byte-identical in both plugins (`hook-lib-drift`). qa-flow's release gate already classified
+    these forms with `push_targets.py` since #1470; its no-parser fallback now gets them too.
+  - Known limits, listed in the file header: run-time strings, a script fed by heredoc or pipe, a quoted alias
+    value, `env -S`, `find -exec`.
+  - 32 `guard-bash` blocks with 16 controls, and 4 release-gate fallback cases; `hook_normalize_cmd` catches 15 of
+    15 mutations (12 new).
+
 - **Mock-up checks, the #1430 remainder after PR #1478 — `plugins/rails-flow/scripts/check_issue_mockup.py`, `plugins/rails-flow/scripts/check_mockup_gate.py`, `plugins/rails-flow/scripts/mutations/check_issue_mockup.py`, `plugins/rails-flow/scripts/mutations/check_mockup_gate.py`** (#1430, from PR #1479's independent reviews; each gap measured against merged dev before editing).
   - `check_issue_mockup.py`: a mock-up path in backticks or as a markdown link target (`[bell](docs/product/mockups/bell.md)`) now counts as linked; before, it read as "neither". Outside `docs/product/mockups/`, a mock-up file's extension must END its name (`foo.pdf.TBD` names nothing), and `.html.erb`, `.gif` and `.avif` count there too. A sentence's full stop may still follow.
   - `check_mockup_gate.py`: a record naming itself is compared by `samefile` as well as `resolve()`, so a hard link to the record under another name is held.
