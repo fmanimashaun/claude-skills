@@ -542,6 +542,16 @@ def guard_bash_fixtures() -> None:
             rc, err = labelled(form)
             check(f"guard-bash (#1489 review): `{form.split(sd)[0]}` with a create is refused through the real hook",
                   rc == 2 and "by redirect" in err, err)
+        check("guard-bash (#1489 review): CONTROL: `bash other.sh < file` hands the file to a script as data, allowed",
+              labelled(f"bash other.sh < {script}")[0] == 0)
+        check("guard-bash (#1489 review): CONTROL: `$'…'` before a harmless redirected script is allowed",
+              labelled(f"echo $'it\\'s'; bash < {plain}")[0] == 0)
+    # A relative script is read from the cd target (#1489 review, through the real hook).
+    with tempfile.TemporaryDirectory() as sd:
+        (Path(sd) / "only.sh").write_text("gh issue create -t X\n", encoding="utf-8")
+        rc, err = labelled(f"cd {sd} && bash < only.sh")
+        check("guard-bash (#1489 review): `cd <dir> && bash < only.sh` reads the cd target's script and is refused",
+              rc == 2 and "by redirect" in err, err)
     check("guard-bash (#1423): CONTROL: an echo of the text is allowed through the real hook",
           labelled('echo "gh issue create"')[0] == 0)
     rc, err = labelled("gh issue create -t X --label feature", drop_helper=True)

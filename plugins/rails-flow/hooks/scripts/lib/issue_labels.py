@@ -329,7 +329,7 @@ def hidden_create(cmd: str) -> str | None:
                     return f"a herestring fed to `{head}`"
                 # `bash < script` / `bash <script` (#1489): the create lives in the FILE, so read it.
                 # A file that cannot be read is allowed, as before -- this can only add refusals.
-                script = _redirected_script(words[1:], here_dir)
+                script = _redirected_script(words[1:], here_dir) if _stdin_is_script(words[1:]) else None
                 if script is not None and _names_create(script):
                     return f"a script fed to `{head}` by redirect"
             # A pipeline feeds its whole upstream: `echo … | cat | bash` runs what echo wrote.
@@ -390,6 +390,31 @@ def _peel(words: list[str]) -> list[str]:
         if wrapper in ("timeout", "nice") and words and re.fullmatch(r"[\d.]+[smhd]?", words[0]):
             words.pop(0)
     return words
+
+
+def _stdin_is_script(args: list[str]) -> bool:
+    """Does a shell run its STDIN as the script? Only with no operand, or with `-s` (#1489 review):
+    `bash script.sh < notes.md` runs script.sh and hands it notes.md as data."""
+    k, has_s, ended = 0, False, False
+    while k < len(args):
+        w = args[k]
+        k += 1
+        if w in ("<", "0<", ">", ">>", "2>", "&>") or re.fullmatch(r"\d*[<>]&?", w):
+            k += 1                   # a redirect's target is not an operand
+            continue
+        if re.match(r"\d*[<>]", w):
+            continue                 # `<f`, `0<f`, `>log`, `2>&1`
+        if w == "--" and not ended:
+            ended = True             # after `--`, even `-x` is an operand
+            continue
+        if w[:1] in ("-", "+") and len(w) > 1 and not ended:
+            if w in ("-o", "+o", "-O", "+O", "--rcfile", "--init-file"):
+                k += 1
+            elif not w.startswith("--") and "s" in w[1:]:
+                has_s = True
+            continue
+        return has_s                 # an operand: the script is that file, unless -s
+    return True
 
 
 def _redirected_script(args: list[str], cwd: Path | None) -> str | None:
@@ -938,6 +963,12 @@ def selftest() -> int:
                 os.environ.pop("HOME", None)
             else:
                 os.environ["HOME"] = home
+        # A shell with a script OPERAND runs that file; the redirected file is only its data.
+        for form in (f"bash other.sh < {script}", f"bash < {script} other.sh", f"sh -e other.sh < {script}"):
+            check(f"CONTROL: {form.split(str(td))[0]!r}: stdin is data for a script operand, allowed", verdict(form, bare)[0])
+        for form in (f"bash -s < {script}", f"bash -s arg1 < {script}", f"bash -o errexit < {script}", f"bash -- < {script}"):
+            ok, why = verdict(form, bare)
+            check(f"{form.split(str(td))[0]!r}: stdin is the script, refused by redirect", not ok and "by redirect" in why, why)
         big = Path(td) / "big.sh"
         big.write_text("gh issue create -t X\n" + "#" * 1_100_000 + "\n", encoding="utf-8")
         ok, why = verdict(f"bash < {big}", bare)

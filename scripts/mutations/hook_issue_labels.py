@@ -340,6 +340,18 @@ GUARD = Guard(
         ),
         # #1489 review: each fix below has a fixture that must notice it going.
         Mutation(
+            "stdin is read as the script even when a script operand is given",
+            "        return has_s                 # an operand: the script is that file, unless -s",
+            "        return True",
+            "stdin is data for a script operand, allowed",
+        ),
+        Mutation(
+            "`-s` is ignored, so bash -s arg1 < file escapes",
+            "                has_s = True",
+            "                pass",
+            "'bash -s arg1 < ': stdin is the script",
+        ),
+        Mutation(
             "`0<` is not read as a redirect, so bash 0< file escapes",
             '        if w.startswith("0<"):',
             "        if False:",
