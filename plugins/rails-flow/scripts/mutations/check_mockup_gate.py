@@ -68,7 +68,7 @@ GUARD = Guard(
         # Its control: prose that mentions the key is not a declaration.
         Mutation(
             "any mention of the key reads as an opt-out",
-            r'OPT_OUT = re.compile(r"^\s*(?:[-*]\s*)?`?mockup-gate:\s*off`?\s*$", re.M | re.I)',
+            'OPT_OUT = re.compile(r"^[ \\t]*(?:[-*+][ \\t]*)?`?mockup-gate:[ \\t]*off`?[ \\t]*$", re.M | re.I)',
             r'OPT_OUT = re.compile(r"mockup-gate:\s*off", re.M | re.I)',
             "CONTROL: prose mentioning the key is not a declaration",
         ),
@@ -111,15 +111,15 @@ GUARD = Guard(
         ),
         Mutation(
             "a fenced example of the opt-out line turns the gate off",
-            '    return bool(OPT_OUT.search(unfenced(g.read_text(encoding="utf-8"))))',
-            '    return bool(OPT_OUT.search(g.read_text(encoding="utf-8")))',
+            '    return bool(OPT_OUT.search(outside_indented_code(unfenced(g.read_text(encoding="utf-8")))))',
+            '    return bool(OPT_OUT.search(outside_indented_code(g.read_text(encoding="utf-8"))))',
             "a fenced example of the opt-out line is not a declaration",
         ),
         Mutation(
             # #1430
             'an unterminated fence no longer runs to the end of the file, so its opt-out counts',
-            '        if run:\n            fence = run\n            continue',
-            '        if run and False:\n            fence = run\n            continue',
+            '        if run:\n            fence = run\n            out.append("")          # the block ends any open paragraph (outside_indented_code)\n            continue',
+            '        if run and False:\n            fence = run\n            out.append("")          # the block ends any open paragraph (outside_indented_code)\n            continue',
             'an opt-out inside an unterminated fence is not a declaration',
         ),
         Mutation(
@@ -156,6 +156,73 @@ GUARD = Guard(
             '                   or ((root / mock).exists() and (root / mock).samefile(path))):',
             '                   or False):',
             'a record naming itself by another name is held',
+        ),
+        # #1490: the CommonMark indented-code scanner, one rule per mutation.
+        Mutation(
+            'the gate no longer drops indented code blocks',
+            '    return bool(OPT_OUT.search(outside_indented_code(unfenced(g.read_text(encoding="utf-8")))))',
+            '    return bool(OPT_OUT.search(unfenced(g.read_text(encoding="utf-8"))))',
+            '#1490: an indented code block after a blank line is an example',
+        ),
+        Mutation(
+            'a tab counts one column',
+            '        col = col + 1 if line[i] == " " else col + 4 - col % 4',
+            '        col = col + 1',
+            '#1490: a tab indents to column 4',
+        ),
+        Mutation(
+            'a tab counts four columns wherever it sits',
+            '        col = col + 1 if line[i] == " " else col + 4 - col % 4',
+            '        col = col + 1 if line[i] == " " else col + 4',
+            '#1490: CONTROL: two spaces then a tab inside an item',
+        ),
+        Mutation(
+            'an indented line may interrupt a paragraph',
+            '            if prev == "para":\n                kept.append(line)  # an indented code block cannot interrupt a paragraph',
+            '            if False:\n                kept.append(line)  # an indented code block cannot interrupt a paragraph',
+            '#1490: CONTROL: 4 spaces directly under a paragraph continue it',
+        ),
+        Mutation(
+            "a list item's content column is ignored (code measured from column 0)",
+            '        base = items[-1] if items else 0',
+            '        base = 0',
+            '#1490: CONTROL: a nested item after a blank line',
+        ),
+        Mutation(
+            'a lazy or continuation line closes the list item',
+            '        if items and col < items[-1] and prev == "para" and not marker:',
+            '        if False:',
+            '#1490: CONTROL: a lazy line keeps the item open',
+        ),
+        Mutation(
+            'an ordered marker is not a list item',
+            'LIST_MARKER = re.compile(r"(?:[-*+]|\\d{1,9}[.)])(?=[ \\t]|$)")',
+            'LIST_MARKER = re.compile(r"[-*+](?=[ \\t]|$)")',
+            '#1490: CONTROL: `1.` opens an item',
+        ),
+        Mutation(
+            'a heading opens a paragraph',
+            '        if NOT_PARAGRAPH.match(line, i):\n            prev = "blank"',
+            '        if NOT_PARAGRAPH.match(line, i):\n            prev = "para"',
+            '#1490: an indented line after a heading is code',
+        ),
+        Mutation(
+            'a fenced block no longer ends the paragraph before it',
+            '            out.append("")          # the block ends any open paragraph (outside_indented_code)\n',
+            '',
+            '#1490: an indented line after a fenced block is code',
+        ),
+        Mutation(
+            'a non-breaking space indents the opt-out again',
+            'OPT_OUT = re.compile(r"^[ \\t]*(?:[-*+][ \\t]*)?`?mockup-gate:[ \\t]*off`?[ \\t]*$", re.M | re.I)',
+            'OPT_OUT = re.compile(r"^\\s*(?:[-*+][ \\t]*)?`?mockup-gate:[ \\t]*off`?[ \\t]*$", re.M | re.I)',
+            '#1490: a non-breaking space is not indentation',
+        ),
+        Mutation(
+            'a `+` bullet does not declare',
+            'OPT_OUT = re.compile(r"^[ \\t]*(?:[-*+][ \\t]*)?`?mockup-gate:[ \\t]*off`?[ \\t]*$", re.M | re.I)',
+            'OPT_OUT = re.compile(r"^[ \\t]*(?:[-*][ \\t]*)?`?mockup-gate:[ \\t]*off`?[ \\t]*$", re.M | re.I)',
+            '#1490: CONTROL: a `+` bullet declares',
         ),
     ),
 )

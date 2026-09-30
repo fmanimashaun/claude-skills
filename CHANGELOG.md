@@ -3572,6 +3572,16 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **The mock-up gate reads an opt-out in an INDENTED code block as an example, by CommonMark's block rules — `plugins/rails-flow/scripts/check_mockup_gate.py`, `plugins/rails-flow/scripts/mutations/check_mockup_gate.py`** (#1490). A `GUARDRAILS.md` example written as a 4-space code block turned the gate off. New `outside_indented_code()` drops indented code blocks before `OPT_OUT` is read. The rules are CommonMark 0.31.2's, verified by doctrine-verifier against `spec.txt` at tag 0.31.2 (CONFIRMED, 8 of 8):
+  - indented code cannot interrupt a paragraph (§4.4, Ex 113);
+  - tabs advance to absolute 4-column stops (§2.2, Ex 1–11);
+  - a list item's content column is marker indent + marker width + 1–4 columns (§5.2, Ex 270–288);
+  - a nested marker sits 0–3 columns past it (Ex 294), and code inside an item needs 4 more after a blank line (Ex 270);
+  - only space and tab indent (§2.1), so a non-breaking space does not;
+  - a heading or thematic break is no paragraph.
+
+  Also, a `+` bullet now declares. Every shape PR #1479's review measured is a fixture (tab, space + tab, a continuation line, six spaces in an item, `1.`, a heading, a fence, NBSP), each with a control and run through `run()`. The guard catches 34/34 (11 new); `check_slices` 13/13 and `check_issue_mockup` 18/18. Downstream, `declared_off` gives the same answer at dev and head for Retask-platform and fidara-ledger.
+
 - **Mock-up checks, the #1430 remainder after PR #1478 — `plugins/rails-flow/scripts/check_issue_mockup.py`, `plugins/rails-flow/scripts/check_mockup_gate.py`, `plugins/rails-flow/scripts/mutations/check_issue_mockup.py`, `plugins/rails-flow/scripts/mutations/check_mockup_gate.py`** (#1430, from PR #1479's independent reviews; each gap measured against merged dev before editing).
   - `check_issue_mockup.py`: a mock-up path in backticks or as a markdown link target (`[bell](docs/product/mockups/bell.md)`) now counts as linked; before, it read as "neither". Outside `docs/product/mockups/`, a mock-up file's extension must END its name (`foo.pdf.TBD` names nothing), and `.html.erb`, `.gif` and `.avif` count there too. A sentence's full stop may still follow.
   - `check_mockup_gate.py`: a record naming itself is compared by `samefile` as well as `resolve()`, so a hard link to the record under another name is held.

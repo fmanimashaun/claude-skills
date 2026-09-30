@@ -63,7 +63,9 @@ APPROVAL_URL = re.compile(r"^https://github\.com/[^/\s]+/[^/\s]+/(issues|pull)/\
                           r"#(issuecomment-\d+|discussion_r\d+|pullrequestreview-\d+)$")
 MOCK_FILE = re.compile(r"\.(html?|png|jpe?g|webp|pdf|svg)$", re.I)
 ISSUE_REF = re.compile(r"^(#\d+|https://github\.com/[^/\s]+/[^/\s]+/issues/\d+)\b")
-OPT_OUT = re.compile(r"^\s*(?:[-*]\s*)?`?mockup-gate:\s*off`?\s*$", re.M | re.I)
+# Space and tab only: CommonMark counts no other character as indentation (spec 0.31.2 §2.1), so a
+# line opening with a non-breaking space is paragraph text, not an indented declaration (#1490).
+OPT_OUT = re.compile(r"^[ \t]*(?:[-*+][ \t]*)?`?mockup-gate:[ \t]*off`?[ \t]*$", re.M | re.I)
 
 
 def ui_paths(paths: list[str]) -> list[str]:
@@ -79,7 +81,8 @@ def declared_off(root: Path) -> bool:
     # An UNTERMINATED fence runs to the end of the file (#1430) -- stricter than a renderer, which
     # ends one at the close of its list item; list-scoped fences are not modelled here. The
     # regex this replaces removed only closed fences, so an opt-out after a stray ``` still counted.
-    return bool(OPT_OUT.search(unfenced(g.read_text(encoding="utf-8"))))
+    # ...and an INDENTED code block is an example too (#1490).
+    return bool(OPT_OUT.search(outside_indented_code(unfenced(g.read_text(encoding="utf-8")))))
 
 
 
@@ -98,9 +101,76 @@ def unfenced(text: str) -> str:
             continue
         if run:
             fence = run
+            out.append("")          # the block ends any open paragraph (outside_indented_code)
             continue
         out.append(line)
     return "\n".join(out)
+
+
+LIST_MARKER = re.compile(r"(?:[-*+]|\d{1,9}[.)])(?=[ \t]|$)")
+# A heading or thematic break is a block of its own, not a paragraph: an indented line after it is code.
+NOT_PARAGRAPH = re.compile(r"#{1,6}(?:[ \t]|$)|(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$")
+
+
+def _columns(line: str, start: int = 0, col: int = 0) -> tuple[int, int]:
+    """(column reached, index reached) after the spaces and tabs from `start`. A tab advances to the
+    next multiple of 4, counted from the line's start (CommonMark 0.31.2 §2.2, Ex 1-11)."""
+    i = start
+    while i < len(line) and line[i] in " \t":
+        col = col + 1 if line[i] == " " else col + 4 - col % 4
+        i += 1
+    return col, i
+
+
+def outside_indented_code(text: str) -> str:
+    """`text` without its INDENTED code blocks (#1490), by CommonMark 0.31.2's block rules:
+
+    - a line indented 4+ columns past its container is code (§4.4), but NOT when it would interrupt
+      a paragraph (Ex 113) -- then it is the paragraph's continuation;
+    - a list item's content column is its marker's indentation + marker width + 1-4 following
+      columns, or +1 when 5+ follow or the item is blank (§5.2 rules 1-3, Ex 270-288);
+    - a nested marker sits 0-3 columns past that content column (Ex 294), so under `- Gates:`
+      four spaces is a nested item and six, after a blank line, is code (Ex 270);
+    - a line indented less than an open item's content column ends the item, unless it lazily
+      continues that item's paragraph (Ex 290).
+    Only space and tab indent (§2.1). The fenced blocks are gone already (`unfenced`).
+    """
+    kept: list[str] = []
+    items: list[int] = []          # content columns of the open list items, outermost first
+    prev = "blank"                 # the kind of the last non-removed line: blank | para | code
+    for line in text.split("\n"):
+        if not line.strip(" \t"):
+            kept.append(line)
+            prev = "blank"
+            continue
+        col, i = _columns(line)
+        marker = LIST_MARKER.match(line, i)
+        if items and col < items[-1] and prev == "para" and not marker:
+            kept.append(line)      # lazy continuation of the open paragraph: text, not code
+            continue
+        while items and col < items[-1]:
+            items.pop()
+        base = items[-1] if items else 0
+        if col - base >= 4:
+            if prev == "para":
+                kept.append(line)  # an indented code block cannot interrupt a paragraph
+            else:
+                prev = "code"      # an example: dropped
+            continue
+        if NOT_PARAGRAPH.match(line, i):
+            prev = "blank"
+            kept.append(line)
+            continue
+        if marker:
+            width = col + (marker.end() - i)
+            after, j = _columns(line, marker.end(), width)
+            blank_item = j >= len(line)
+            items.append(width + 1 if blank_item or after - width >= 5 else after)
+            prev = "blank" if blank_item else "para"
+        else:
+            prev = "para"
+        kept.append(line)
+    return "\n".join(kept)
 
 
 def record_problems(root: Path, rel: str) -> list[str]:
@@ -264,6 +334,35 @@ def selftest() -> int:
         (root / "GUARDRAILS.md").write_text("# Guardrails\n\nExample:\n\n```\n- mockup-gate: off\n")
         code, msg = run(root, view, None)
         check_that("#1430: an opt-out inside an unterminated fence is not a declaration", code == 1, msg)
+        # #1490: an INDENTED code block is an example too, by CommonMark 0.31.2's rules (verified by
+        # doctrine-verifier against spec.txt at tag 0.31.2). Each shape is run through run(), the
+        # entry point, so a scanner the gate does not call cannot pass these. (declared, expected).
+        O = "mockup-gate: off"
+        for label, text, declared in (
+            ("an indented code block after a blank line is an example (§4.4)", f"Example:\n\n    - {O}\n", False),
+            ("a tab indents to column 4 (§2.2)", f"Example:\n\n\t- {O}\n", False),
+            ("a space then a tab is 4 columns, not 5 (§2.2)", f"Example:\n\n \t- {O}\n", False),
+            ("CONTROL: 4 spaces directly under a paragraph continue it (Ex 113)", f"Example:\n    {O}\n", True),
+            ("CONTROL: 4 spaces under `- Gates:` is a nested item (Ex 294)", f"- Gates:\n    - {O}\n", True),
+            ("CONTROL: a nested item after a continuation line stays in the list", f"- Gates:\n  more text\n    - {O}\n", True),
+            ("six spaces after a blank line inside an item is code (Ex 270)", f"- Gates:\n\n      {O}\n", False),
+            ("CONTROL: an ordered item's content column is 3", f"1. Gates:\n   - {O}\n", True),
+            ("CONTROL: a `+` bullet declares", f"+ {O}\n", True),
+            ("an indented line after a heading is code (a heading is no paragraph)", f"# Gates\n    - {O}\n", False),
+            ("an indented line after a fenced block is code", f"Text\n```\nx\n```\n    - {O}\n", False),
+            ("a list ends at a top-level paragraph, and code after it is code", f"- a\n\nPara\n\n    - {O}\n", False),
+            ("a non-breaking space is not indentation (§2.1)", f"Example:\n\n    - {O}\n", False),
+            ("CONTROL: three spaces before a top-level marker is still an item (Ex 286)", f"   - {O}\n", True),
+            # Discriminating shapes: each is decided by one rule, after a blank line where the paragraph
+            # exemption cannot rescue a wrong column.
+            ("CONTROL: two spaces then a tab inside an item reach column 4, item text (§2.2)", f"- Gates:\n\n  \t{O}\n", True),
+            ("CONTROL: a nested item after a blank line sits at the item's content column", f"- Gates:\n\n    - {O}\n", True),
+            ("CONTROL: a lazy line keeps the item open for a nested item below it (Ex 290)", f"- Gates\nlazy text\n\n    - {O}\n", True),
+            ("CONTROL: `1.` opens an item whose content column is 3", f"1. Gates:\n\n    - {O}\n", True),
+        ):
+            (root / "GUARDRAILS.md").write_text(f"# Guardrails\n\n{text}", encoding="utf-8")
+            code, msg = run(root, view, None)
+            check_that(f"#1490: {label}", (code == 0) == declared, (code, msg))
         (root / "GUARDRAILS.md").write_text("# Guardrails\n\n```\nexample\n```\n\n- mockup-gate: off\n")
         code, msg = run(root, view, None)
         check_that("#1430 CONTROL: an opt-out AFTER a closed fence still declares", code == 0, msg)
