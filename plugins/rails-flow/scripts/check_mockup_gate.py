@@ -86,9 +86,24 @@ def declared_off(root: Path) -> bool:
 
 
 
+HTML_COMMENT = re.compile(r" {0,3}<!--")
+HTML_RAW = re.compile(r" {0,3}<(pre|script|style|textarea)(?:[ \t>]|$)", re.I)
+HTML_TAG_LINE = re.compile(r" {0,3}</?[A-Za-z][A-Za-z0-9-]*(?:[ \t][^<>]*)?/?>[ \t]*$")
+HTML_BLOCK = re.compile(r" {0,3}</?(?:address|article|aside|blockquote|body|details|dialog|dd|div|dl|dt|"
+                        r"fieldset|figcaption|figure|footer|form|h[1-6]|header|hr|li|main|nav|ol|p|section|"
+                        r"summary|table|tbody|td|tfoot|th|thead|tr|ul)(?:[ \t/>]|$)", re.I)
+
+
 def unfenced(text: str) -> str:
-    """The lines outside fenced code blocks. A fence closes on the same character, at least as long."""
-    out, fence = [], ""
+    """The lines outside fenced code blocks and HTML blocks, each block left as one blank line.
+
+    A fence closes on the same character, at least as long, and -- conservatively -- no more indented
+    than it opened: CommonMark closes only within 3 columns of the container, and a closer indented
+    further is content, so closing on it let the opt-out after it count (#1496 review, R5). An HTML
+    comment hides its lines, and an HTML block's lines are markup, not a declaration (R6).
+    """
+    out, fence, fence_col, html_end = [], "", 0, None
+    in_para = False                # a lone-tag HTML block (type 7) cannot interrupt a paragraph
     for line in text.splitlines():
         # Any indentation: in GUARDRAILS.md a fence usually sits inside a list item (review of PR #1478).
         # A BACKTICK opener may not contain another backtick (CommonMark), so "```x``` inline" is a
@@ -96,13 +111,27 @@ def unfenced(text: str) -> str:
         m = re.match(r"^\s*(`{3,})(?=[^`]*$)|^\s*(~{3,})", line)
         run = (m.group(1) or m.group(2)) if m else ""
         if fence:
-            if run and run[0] == fence[0] and len(run) >= len(fence) and not line.strip()[len(run):].strip():
+            if (run and run[0] == fence[0] and len(run) >= len(fence) and not line.strip()[len(run):].strip()
+                    and _columns(line)[0] <= fence_col):
                 fence = ""
             continue
+        if html_end is not None:
+            if (html_end == "" and not line.strip()) or (html_end and html_end in line.lower()):
+                html_end = None
+            continue
         if run:
-            fence = run
+            fence, fence_col = run, _columns(line)[0]
             out.append("")          # the block ends any open paragraph (outside_indented_code)
             continue
+        raw = HTML_RAW.match(line)
+        if HTML_COMMENT.match(line) or raw or HTML_BLOCK.match(line) or (not in_para and HTML_TAG_LINE.match(line)):
+            end = "-->" if HTML_COMMENT.match(line) else (f"</{raw.group(1).lower()}>" if raw else "")
+            if not (end and end in line.lower()[4:]):
+                html_end = end
+            out.append("")
+            in_para = False
+            continue
+        in_para = bool(line.strip())
         out.append(line)
     return "\n".join(out)
 
@@ -110,6 +139,7 @@ def unfenced(text: str) -> str:
 LIST_MARKER = re.compile(r"(?:[-*+]|\d{1,9}[.)])(?=[ \t]|$)")
 # A heading or thematic break is a block of its own, not a paragraph: an indented line after it is code.
 NOT_PARAGRAPH = re.compile(r"#{1,6}(?:[ \t]|$)|(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$")
+SETEXT = re.compile(r"(?:=+|-+)[ \t]*$")
 
 
 def _columns(line: str, start: int = 0, col: int = 0) -> tuple[int, int]:
@@ -128,45 +158,67 @@ def outside_indented_code(text: str) -> str:
     - a line indented 4+ columns past its container is code (§4.4), but NOT when it would interrupt
       a paragraph (Ex 113) -- then it is the paragraph's continuation;
     - a list item's content column is its marker's indentation + marker width + 1-4 following
-      columns, or +1 when 5+ follow or the item is blank (§5.2 rules 1-3, Ex 270-288);
+      columns, or +1 when 5+ follow or the item is blank (§5.2 rules 1-3, Ex 270-288); an item that
+      starts blank and meets a blank line is empty and closes (§5.2);
     - a nested marker sits 0-3 columns past that content column (Ex 294), so under `- Gates:`
       four spaces is a nested item and six, after a blank line, is code (Ex 270);
     - a line indented less than an open item's content column ends the item, unless it lazily
-      continues that item's paragraph (Ex 290).
-    Only space and tab indent (§2.1). The fenced blocks are gone already (`unfenced`).
+      continues that item's paragraph (Ex 290) -- and only paragraph TEXT continues lazily: a
+      heading, break or quote there ends the list (#1496 review, R1);
+    - headings (ATX, and setext underlines `===` / `---` after a paragraph), breaks and an empty
+      quote are not paragraphs (R2, R4).
+    Only space and tab indent (§2.1). Fenced and HTML blocks are gone already (`unfenced`).
     """
     kept: list[str] = []
-    items: list[int] = []          # content columns of the open list items, outermost first
+    items: list[list] = []         # [content column, still empty] per open list item, outermost first
     prev = "blank"                 # the kind of the last non-removed line: blank | para | code
     for line in text.split("\n"):
         if not line.strip(" \t"):
+            if items and items[-1][1]:
+                items.pop()        # a blank-started item meeting a blank line is empty (§5.2)
             kept.append(line)
             prev = "blank"
             continue
         col, i = _columns(line)
         marker = LIST_MARKER.match(line, i)
-        if items and col < items[-1] and prev == "para" and not marker:
+        # A block can start here only within 3 columns of the container the line would land in.
+        land = max((c for c, _ in items if c <= col), default=0)
+        own_block = col - land <= 3 and (NOT_PARAGRAPH.match(line, i) or line.startswith(">", i))
+        if items and col < items[-1][0] and prev == "para" and not marker and not own_block:
             kept.append(line)      # lazy continuation of the open paragraph: text, not code
             continue
-        while items and col < items[-1]:
+        while items and col < items[-1][0]:
             items.pop()
-        base = items[-1] if items else 0
+        if items:
+            items[-1][1] = False
+        base = items[-1][0] if items else 0
         if col - base >= 4:
             if prev == "para":
                 kept.append(line)  # an indented code block cannot interrupt a paragraph
             else:
                 prev = "code"      # an example: dropped
             continue
+        if prev == "para" and SETEXT.match(line, i):
+            prev = "blank"         # a setext underline: the paragraph above was a heading
+            kept.append(line)
+            continue
         if NOT_PARAGRAPH.match(line, i):
             prev = "blank"
+            kept.append(line)
+            continue
+        if line.startswith(">", i):
+            prev = "para" if line[i + 1:].strip(" \t") else "blank"
             kept.append(line)
             continue
         if marker:
             width = col + (marker.end() - i)
             after, j = _columns(line, marker.end(), width)
             blank_item = j >= len(line)
-            items.append(width + 1 if blank_item or after - width >= 5 else after)
-            prev = "blank" if blank_item else "para"
+            items.append([width + 1 if blank_item or after - width >= 5 else after, blank_item])
+            starts_block = not blank_item and (NOT_PARAGRAPH.match(line, j) or line.startswith(">", j))
+            # 5+ columns after the marker: the item's content OPENS with an indented code block (§5.2 rule 2)
+            opens_code = not blank_item and after - width >= 5
+            prev = "code" if opens_code else ("blank" if blank_item or starts_block else "para")
         else:
             prev = "para"
         kept.append(line)
@@ -359,10 +411,39 @@ def selftest() -> int:
             ("CONTROL: a nested item after a blank line sits at the item's content column", f"- Gates:\n\n    - {O}\n", True),
             ("CONTROL: a lazy line keeps the item open for a nested item below it (Ex 290)", f"- Gates\nlazy text\n\n    - {O}\n", True),
             ("CONTROL: `1.` opens an item whose content column is 3", f"1. Gates:\n\n    - {O}\n", True),
+            # PR #1496's review, measured against markdown-it-py (commonmark) over 200k variants:
+            ("R1: a heading under an item's text ends the list; the code after it is code",
+             f"- Keep specs green\n## Opting out\n\n    - {O}\n", False),
+            ("R2: a setext `===` underline makes the paragraph a heading; the line after is code",
+             f"Opting out\n==========\n    - {O}\n", False),
+            ("R2: a setext `-` underline is a heading, not an empty item", f"Text\n-\n    - {O}\n", False),
+            ("R3: an item that starts blank and meets a blank line is empty and closes",
+             f"-\n\n    - {O}\n", False),
+            ("R4: a heading as an item's content is no paragraph", f"- # H\n      {O}\n", False),
+            ("R5: a closing fence indented further than it opened does not close it",
+             f"```\nx\n     ```\n- {O}\n", False),
+            ("R6: an opt-out inside an HTML comment is hidden", f"<!--\n- {O}\n-->\n", False),
+            ("R6: an opt-out inside an HTML block is markup", f"<div>\n- {O}\n</div>\n", False),
+            ("R6: a lone tag line opens an HTML block to the blank line", f"</pre>\n- {O}\n", False),
+            ("CONTROL: after an HTML block and a blank line the opt-out counts", f"<div>\nx\n</div>\n\n- {O}\n", True),
+            ("an empty quote is no paragraph; the indented line after it is code", f">\n    - {O}\n", False),
+            ("an item opening with 5+ columns opens with code, so the next line is code too",
+             f"-     five\n      {O}\n", False),
+            ("CONTROL: `1)` opens an item whose content column is 3", f"1) Gates:\n\n    - {O}\n", True),
         ):
             (root / "GUARDRAILS.md").write_text(f"# Guardrails\n\n{text}", encoding="utf-8")
             code, msg = run(root, view, None)
             check_that(f"#1490: {label}", (code == 0) == declared, (code, msg))
+        # R8: the line `/rails-flow:setup-flow` scaffolds must still declare -- read from the shipped
+        # command itself, not retyped, so a doc edit that breaks it fails here.
+        setup = Path(__file__).resolve().parents[1] / "commands" / "setup-flow.md"
+        if setup.is_file():
+            block = re.search(r"```markdown\n(- mockup-gate: off\n)```", setup.read_text(encoding="utf-8"))
+            check_that("the scaffolded opt-out block is present in setup-flow.md", bool(block), setup)
+            if block:
+                (root / "GUARDRAILS.md").write_text("# Guardrails\n\n" + block.group(1), encoding="utf-8")
+                code, msg = run(root, view, None)
+                check_that("CONTROL: the opt-out setup-flow scaffolds still declares", code == 0, (code, msg))
         (root / "GUARDRAILS.md").write_text("# Guardrails\n\n```\nexample\n```\n\n- mockup-gate: off\n")
         code, msg = run(root, view, None)
         check_that("#1430 CONTROL: an opt-out AFTER a closed fence still declares", code == 0, msg)

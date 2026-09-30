@@ -8,7 +8,8 @@ GUARD = Guard(
     name="check_mockup_gate",
     subject="scripts/check_mockup_gate.py",
     selftest="scripts/check_mockup_gate.py",   # --selftest lives in the module itself
-    needs=("scripts/classify_door.py",),
+    # The selftest also reads the scaffolded opt-out from setup-flow.md (#1496 review R8).
+    needs=("scripts/classify_door.py", "commands/setup-flow.md"),
     mutations=(
         Mutation(
             "a UI change with no record passes",
@@ -118,8 +119,8 @@ GUARD = Guard(
         Mutation(
             # #1430
             'an unterminated fence no longer runs to the end of the file, so its opt-out counts',
-            '        if run:\n            fence = run\n            out.append("")          # the block ends any open paragraph (outside_indented_code)\n            continue',
-            '        if run and False:\n            fence = run\n            out.append("")          # the block ends any open paragraph (outside_indented_code)\n            continue',
+            '        if run:\n            fence, fence_col = run, _columns(line)[0]\n            out.append("")          # the block ends any open paragraph (outside_indented_code)\n            continue',
+            '        if run and False:\n            fence, fence_col = run, _columns(line)[0]\n            out.append("")          # the block ends any open paragraph (outside_indented_code)\n            continue',
             'an opt-out inside an unterminated fence is not a declaration',
         ),
         Mutation(
@@ -184,13 +185,13 @@ GUARD = Guard(
         ),
         Mutation(
             "a list item's content column is ignored (code measured from column 0)",
-            '        base = items[-1] if items else 0',
+            '        base = items[-1][0] if items else 0',
             '        base = 0',
             '#1490: CONTROL: a nested item after a blank line',
         ),
         Mutation(
             'a lazy or continuation line closes the list item',
-            '        if items and col < items[-1] and prev == "para" and not marker:',
+            '        if items and col < items[-1][0] and prev == "para" and not marker and not own_block:',
             '        if False:',
             '#1490: CONTROL: a lazy line keeps the item open',
         ),
@@ -223,6 +224,67 @@ GUARD = Guard(
             'OPT_OUT = re.compile(r"^[ \\t]*(?:[-*+][ \\t]*)?`?mockup-gate:[ \\t]*off`?[ \\t]*$", re.M | re.I)',
             'OPT_OUT = re.compile(r"^[ \\t]*(?:[-*][ \\t]*)?`?mockup-gate:[ \\t]*off`?[ \\t]*$", re.M | re.I)',
             '#1490: CONTROL: a `+` bullet declares',
+        ),
+        # #1496 review: one mutation per rule the differential fuzz found missing.
+        Mutation(
+            'a heading or quote may continue a paragraph lazily',
+            '        own_block = col - land <= 3 and (NOT_PARAGRAPH.match(line, i) or line.startswith(">", i))',
+            '        own_block = False',
+            "#1490: R1: a heading under an item's text ends the list",
+        ),
+        Mutation(
+            'a setext underline is not a heading',
+            '        if prev == "para" and SETEXT.match(line, i):',
+            '        if False:',
+            '#1490: R2: a setext `===` underline',
+        ),
+        Mutation(
+            'a blank-started item survives a blank line',
+            '            if items and items[-1][1]:\n                items.pop()',
+            '            if False:\n                items.pop()',
+            '#1490: R3: an item that starts blank',
+        ),
+        Mutation(
+            "a heading as an item's content is a paragraph",
+            '            starts_block = not blank_item and (NOT_PARAGRAPH.match(line, j) or line.startswith(">", j))',
+            '            starts_block = False',
+            "#1490: R4: a heading as an item's content",
+        ),
+        Mutation(
+            'a closing fence closes at any indentation',
+            '                    and _columns(line)[0] <= fence_col):',
+            '                    ):',
+            '#1490: R5: a closing fence indented further',
+        ),
+        Mutation(
+            'an HTML comment no longer hides its lines',
+            '        if HTML_COMMENT.match(line) or raw or HTML_BLOCK.match(line) or (not in_para and HTML_TAG_LINE.match(line)):',
+            '        if raw or HTML_BLOCK.match(line) or (not in_para and HTML_TAG_LINE.match(line)):',
+            '#1490: R6: an opt-out inside an HTML comment',
+        ),
+        Mutation(
+            'a lone tag line opens no HTML block',
+            ' or (not in_para and HTML_TAG_LINE.match(line)):',
+            ':',
+            '#1490: R6: a lone tag line opens',
+        ),
+        Mutation(
+            'an HTML block never ends',
+            '            if (html_end == "" and not line.strip()) or (html_end and html_end in line.lower()):',
+            '            if False:',
+            '#1490: CONTROL: after an HTML block and a blank line',
+        ),
+        Mutation(
+            'an empty quote is a paragraph',
+            '            prev = "para" if line[i + 1:].strip(" \\t") else "blank"',
+            '            prev = "para"',
+            '#1490: an empty quote is no paragraph',
+        ),
+        Mutation(
+            'an item opening with 5+ columns opens with a paragraph',
+            '            opens_code = not blank_item and after - width >= 5',
+            '            opens_code = False',
+            '#1490: an item opening with 5+ columns',
         ),
     ),
 )
