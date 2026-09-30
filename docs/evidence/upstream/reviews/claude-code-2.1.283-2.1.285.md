@@ -1,16 +1,17 @@
 # Claude Code upstream review: 2.1.283 to 2.1.285
 
-_Reviewed 2026-09-30 for #1433 · CLI 2.1.284 · 132 entries from `python3 scripts/check_upstream_docs.py` · no `[quote-gone]` rows._
+_Reviewed 2026-09-30 for #1433 · CLI 2.1.284 · no `[quote-gone]` rows._
 
-Every entry is listed. "No surface we build on" means it touches nothing we ship or say: no shipped file
-names the surface. A **Checked** entry touches one, and says what was measured. No doctrine changed, so no
-`doctrine-verifier` verdict applies. The one capability worth adopting is filed as #1500.
+**Scope, stated exactly.** Upstream lists 330 entries in this range (94 + 100 + 136). This review read the **140** that `scripts/check_upstream_docs.py`'s surface filter lists (`SURFACES`, widened in this PR to the singular `setting` and the model-allowlist keys after the independent review found two `availableModels` entries it had missed). The other 190 name no surface the filter knows and were not read one by one; moving the cursor past them is the filter's claim, not this review's.
+
+Dispositions: 121 touch no surface we build on (no shipped file names it), 18 are **Checked** (each says what was measured), 1 is a feature candidate (#1500). One check found doctrine drift: two stale sentences about `availableModels`, corrected in this PR on a `doctrine-verifier` REFUTED verdict.
 
 | version | entry | disposition |
 |---|---|---|
 | 2.1.285 | Added `CLAUDE_CODE_DISABLE_WEB_FETCH` environment variable to turn off the WebFetch tool | No surface we build on. |
 | 2.1.285 | Added `claude plugin configure <plugin>` to show a plugin's options and which are unset, or save new values read from stdin with `--values-stdin` | No surface we build on. |
 | 2.1.285 | Added `<server>.<key>=<value>` to `claude plugin install --config`, so a bundled `.mcpb` MCP server's own settings can be set at install time and it starts without visiting `/plugin` → Configure | No surface we build on. |
+| 2.1.285 | Added `allowedProviders` managed setting to limit which API providers a machine may use (Anthropic API, a custom endpoint, Bedrock, Mantle, Vertex AI, Foundry, Claude Platform on AWS, or a Cloud gateway) | No surface we build on. |
 | 2.1.285 | Added `CLAUDE_CODE_NONSTREAMING_TIMEOUT_RETRIES` environment variable to cap re-sends of a non-streaming fallback request that timed out | No surface we build on. |
 | 2.1.285 | Fixed `claude -p` with `CLAUDE_CODE_FORK_SUBAGENT=1`: a subagent's own Agent call now runs in the foreground, so the subagent gets the child's result | No surface we build on. |
 | 2.1.285 | Fixed plugin and marketplace installs and updates over SSH ignoring the ssh program set in `GIT_SSH` or in your git config's `core.sshCommand` | No surface we build on. |
@@ -22,6 +23,7 @@ names the surface. A **Checked** entry touches one, and says what was measured. 
 | 2.1.285 | Fixed `claude -p --permission-prompt-tool`: a background subagent's permission request now goes to the prompt tool instead of being auto-denied | No surface we build on. |
 | 2.1.285 | Fixed `claude mcp list` and `claude mcp get`, and the not-found error of `claude mcp remove`, `login` and `logout`, printing line breaks and terminal escape sequences from MCP server names and values | No surface we build on. |
 | 2.1.285 | Fixed fork subagents not keeping the session's plan mode or `dontAsk` mode: a fork now runs under its parent's permission mode and cannot exit plan mode | No surface we build on. |
+| 2.1.285 | Fixed `claude remote-control --help` saying `--[no-]chrome` defaults to the machine's `/chrome` setting; spawned sessions keep Claude in Chrome off unless `--chrome` is passed | No surface we build on. |
 | 2.1.285 | Fixed background subagents in auto mode prompting a second, redundant reply after each report | No surface we build on. |
 | 2.1.285 | Fixed installing a plugin with `claude plugin install` or `/plugin` putting it into an installed plugin's cache or data folder when their ids differ only in `.`, `-`, `@` or (macOS, Windows) capitals; the install is now refused | **Checked.** Our five plugin names differ by more than `.`, `-`, `@` or case. |
 | 2.1.285 | Fixed hooks and SDK permission callbacks seeing a missing or outdated plan on ExitPlanMode when the plan was written in the same response | No surface we build on. |
@@ -68,6 +70,7 @@ names the surface. A **Checked** entry touches one, and says what was measured. 
 | 2.1.285 | [Claude Tag] Fixed the Default model setting in admin settings and a channel's Configure page offering models your organization can't use, which made saves or new sessions fail | No surface we build on. |
 | 2.1.284 | Added `effortSlider:decreaseEffort`, `increaseEffort` and `toggleUltracode` keybinding actions, so the `/effort` slider's arrow and Tab keys can be rebound in `keybindings.json` | No surface we build on. |
 | 2.1.284 | Added `/mcp reconnect all` in the interactive terminal to retry every MCP server that failed to connect or needs authentication at once | No surface we build on. |
+| 2.1.284 | Added Claude apps gateway startup warnings when a managed policy's `availableModels` is empty, or leaves out the model Claude Code starts on without setting `model` or `enforceAvailableModels` | **Checked.** A startup warning for an empty or incomplete `availableModels`; our doctrine states nothing about gateway startup, and fact 4's subagent behaviour is unaffected (see the `deniedModels` row). |
 | 2.1.284 | Fixed Agent SDK sessions crashing when a user message contains an image with a malformed `source`, and failing on every later turn after a malformed document block; a malformed image is now replaced with an explanatory note | No surface we build on. |
 | 2.1.284 | Fixed MCP tool calls in a resumed session failing with "No such tool available" while their server was still connecting; the call now waits up to 10 seconds for the server | No surface we build on. |
 | 2.1.284 | Fixed `claude mcp add` reporting success when managed settings restrict MCP servers to plugins; it now refuses and says what to do, instead of saving a server that never loads | No surface we build on. |
@@ -80,6 +83,7 @@ names the surface. A **Checked** entry touches one, and says what was measured. 
 | 2.1.284 | Fixed a failed first `claude plugin install` leaving the plugin enabled and recorded when a dependency's version range could not be met | No surface we build on. |
 | 2.1.284 | Fixed the debug log dropping a failed hook's stderr when the hook also wrote to stdout, and logging nothing for a failed hook with no output; failed hooks now also log their status code | No surface we build on. |
 | 2.1.284 | Fixed `{"decision":"block"}` returned by Elicitation and ElicitationResult hooks being ignored; it now declines the MCP elicitation, as exit code 2 does | No surface we build on. |
+| 2.1.284 | Fixed typing a message during an automatic usage-limit wait taking the wait out of the "Continue automatically at usage limit" setting's control when that turn hit the limit again | No surface we build on. |
 | 2.1.284 | Fixed the Explore subagent switching to Opus on the Claude API when the session runs a model ID Claude Code doesn't recognize, such as a custom model behind a proxy; Explore now inherits that model | **Checked.** `plugins/rails-flow/reference/model-tiers.md` quotes the Explore inherit-and-cap sentences; both are still verbatim on `sub-agents` (fetched 2026-09-30). The fix concerns unrecognised model IDs, which our doctrine does not cover. |
 | 2.1.284 | Fixed `/ultrareview` failing to upload the working tree when started from a git worktree that the Claude desktop app created on macOS or Linux | No surface we build on. |
 | 2.1.284 | Improved Workflow tool sandbox hardening for errors thrown by async script hooks | No surface we build on. |
@@ -91,6 +95,7 @@ names the surface. A **Checked** entry touches one, and says what was measured. 
 | 2.1.284 | Changed Ultracode into its own toggle in `/effort` (Tab, or `/effort ultracode [on\\|off]`): it no longer forces xhigh effort and stays on at any effort level | No surface we build on. |
 | 2.1.284 | Changed the non-interactive first turn to still wait up to 2s for connecting MCP servers named by `--allowedTools` or an `mcp_tool` hook, even when `CLAUDE_CODE_MCP_STARTUP_WAIT_MS` is `0` | No surface we build on. |
 | 2.1.284 | Changed `/artifacts` to show its filter tabs beside the title with one-word labels (All, Mine, Shared), using the same tab bar as `/config` and `/plugin` | No surface we build on. |
+| 2.1.284 | [VSCode] Added an optional time above each prompt and response, with a date line where the day changes (Claude Code: Show Message Timestamps setting, off by default) | No surface we build on. |
 | 2.1.284 | [VSCode] Added plugin load errors and notes to the Manage plugins rows, with a popup to disable, uninstall or copy the error | No surface we build on. |
 | 2.1.284 | [VSCode] Added an Ultracode on/off switch under the Effort slider, replacing the slider's Ultracode stop; the model pill shows "· Ultracode" at any effort level | No surface we build on. |
 | 2.1.284 | [VSCode] Fixed Focus view sections you expanded closing on their own while a sub-agent is working or when the section's first step is trimmed from view | No surface we build on. |
@@ -103,8 +108,10 @@ names the surface. A **Checked** entry touches one, and says what was measured. 
 | 2.1.284 | [Claude Tag] Improved "Notify members now" in admin settings: one press reaches every workspace your organization claimed in an Enterprise Grid, and more members in large workspaces | No surface we build on. |
 | 2.1.284 | [Claude Tag] Improved a channel's access lists in admin settings to show the connectors, repositories and plugins an auto-join pattern attaches, and where each comes from | No surface we build on. |
 | 2.1.283 | Added `x-claude-code-prompt-id` to the gateway hint headers so LLM gateways can group the requests that serve one user prompt; opt in with `CLAUDE_CODE_GATEWAY_HINT_HEADERS=1` | No surface we build on. |
+| 2.1.283 | Added `availableModelsMatch` managed setting: with `"exact"`, an `availableModels` entry allows only the model version it names, so new releases stay blocked until listed | **Checked.** `doctrine-verifier` (2026-09-30): fact 4 of `plugins/rails-flow/reference/model-tiers.md` still matches `sub-agents` (CONFIRMED); `model-config` says a model `deniedModels` names or an `"exact"` list omits "is treated as a blocked selection everywhere the allowlist applies", but no page says how alias substitution picks under either key, so INCONCLUSIVE and fact 4 is unchanged. The same review REFUTED two stale sentences (`claim-verifier.md` "skipped", `check_handoff.py` "silently dropped"), corrected in this PR. |
+| 2.1.283 | Added `deniedModels` managed setting to block specific models, even when `availableModels` allows them | **Checked.** `doctrine-verifier` (2026-09-30): fact 4 of `plugins/rails-flow/reference/model-tiers.md` still matches `sub-agents` (CONFIRMED); `model-config` says a model `deniedModels` names or an `"exact"` list omits "is treated as a blocked selection everywhere the allowlist applies", but no page says how alias substitution picks under either key, so INCONCLUSIVE and fact 4 is unchanged. The same review REFUTED two stale sentences (`claim-verifier.md` "skipped", `check_handoff.py` "silently dropped"), corrected in this PR. |
 | 2.1.283 | Added MCP tool, WebFetch and WebSearch outputs to the `tool.output` OpenTelemetry span event when `OTEL_LOG_TOOL_CONTENT=1` | No surface we build on. |
-| 2.1.283 | Added `/doctor prompt-audit` (also `/checkup prompt-audit`) to audit your CLAUDE.md files, skills, agents and commands for prompting patterns written for older models | **Feature candidate** → #1500. |
+| 2.1.283 | Added `/doctor prompt-audit` (also `/checkup prompt-audit`) to audit your CLAUDE.md files, skills, agents and commands for prompting patterns written for older models | **Feature candidate** → #1500 (not measured). |
 | 2.1.283 | Added `path` to `--plugin-dir` load-failure entries in the stream-json `system/init` `plugin_errors`, naming the directory that did not load | No surface we build on. |
 | 2.1.283 | Fixed MCP progress notifications being discarded once a long-running tool call moved to the background; the background task now shows the latest progress | No surface we build on. |
 | 2.1.283 | Fixed stdio MCP servers being left running when the session ended while they were still starting | No surface we build on. |
@@ -139,4 +146,5 @@ names the surface. A **Checked** entry touches one, and says what was measured. 
 | 2.1.283 | Reverted the 2.1.282 reservation of the `claude-ai` name: skills, commands, workflows and MCP servers' skills and prompts so named load again, and `Skill(claude-ai:*)` rules are ordinary prefix rules | **Checked.** Nothing we ship is named `claude-ai`. |
 | 2.1.283 | [VSCode] Fixed the permission mode indicator showing Default while the session kept running in auto or bypass mode after an automatic switch out of it failed; the switch is now retried until it lands | No surface we build on. |
 | 2.1.283 | [VSCode] Fixed the footer's agents pill drawing its icon off-center, with the status dot against the edge, in narrow panels | No surface we build on. |
+| 2.1.283 | [Claude Tag] Added a "Channels Claude can search" admin setting that limits Claude's Slack search to public channels it has been added to, set per organization, workspace or channel | No surface we build on. |
 | 2.1.283 | [Claude Tag] Fixed a channel's configure page listing no connectors or plugins when the channel gets its access bundle through an attach rule; rule-attached bundles are now shown | No surface we build on. |

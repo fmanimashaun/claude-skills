@@ -197,7 +197,8 @@ TIERS_BEGIN_RE = re.compile(r"<!--\s*([a-z0-9-]+):tiers:begin\s*-->")
 TIERS_END_RE = re.compile(r"<!--\s*([a-z0-9-]+):tiers:end\s*-->")
 TIER_MODELS: dict[str, str] = {"judgement": "inherit", "mechanical": "haiku"}
 # Aliases that select a MORE expensive model than the session already chose. Shipping one spends a
-# stranger's money on our authority -- or is silently dropped by their availableModels allowlist.
+# stranger's money on our authority -- or, where their availableModels allowlist blocks it, is
+# substituted with the newest version of that family it permits, with an interactive warning.
 EXPENSIVE_ALIASES = frozenset({"opus", "fable", "best", "opusplan", "opus[1m]", "sonnet[1m]"})
 EMPTY_PROOF = frozenset({"", "-", "--", "—", "–", "n/a", "na", "none", "tbd", "todo"})
 FRONTMATTER_FIELD_RE = re.compile(r"^(?P<key>[a-z][\w-]*)\s*:\s*(?P<value>.*?)\s*$")
