@@ -3574,6 +3574,31 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **The mock-up gate reads an opt-out in an INDENTED code block, an HTML block or a comment as an example, by CommonMark's block rules — `plugins/rails-flow/scripts/check_mockup_gate.py`, `plugins/rails-flow/scripts/mutations/check_mockup_gate.py`** (#1490). A `GUARDRAILS.md` example written as a 4-space code block, or inside `<!-- -->`, turned the gate off.
+  - New `outside_indented_code()` drops indented code blocks before `OPT_OUT` is read. The rules are CommonMark 0.31.2's, verified by doctrine-verifier against `spec.txt` at tag 0.31.2 (CONFIRMED, 8 of 8):
+    - indented code cannot interrupt a paragraph (§4.4, Ex 113);
+    - tabs advance to absolute 4-column stops (§2.2, Ex 1–11);
+    - a list item's content column is marker indent + marker width + 1–4 columns (§5.2, Ex 270–288);
+    - a nested marker sits 0–3 columns past it (Ex 294), and code inside an item needs 4 more after a blank line (Ex 270);
+    - only space and tab indent (§2.1), so a non-breaking space does not.
+  - Also modelled, from PR #1496's review:
+    - ATX and setext headings, thematic breaks and empty quotes are not paragraphs, and none continues a list lazily;
+    - an item that starts blank closes at a blank line;
+    - an item opening with 5+ columns opens with code.
+  - `unfenced()` now:
+    - drops HTML comments and HTML blocks, including a lone tag line that doesn't interrupt a paragraph;
+    - leaves a mark at each dropped block's column, so a block at column 0 closes the list before it (round 2 of the review: a fence or `<details>` after a list, then an indented example, still declared);
+    - closes a fence only on a closer no more indented than its opener.
+  - `OPT_OUT` indents by space and tab only, and a `+` item now declares.
+  - **Measured**, a differential fuzz of 50,000 random `GUARDRAILS.md` variants against markdown-it-py 4.2.0 (commonmark preset), seed 1:
+    - fails open 172 times, against dev's 16,097;
+    - the fail-closed cases are 2,911 opt-outs inside HTML blocks (deliberate) and 1,095 fence openers indented 4+ (unchanged since #1478, which reads fences at any indentation for list items), plus 47 others.
+
+    What still fails open mixes tabs into nested items, or nests an HTML block or quote inside a list item: container-aware HTML and quotes are not modelled.
+  - **Checks:**
+    - every shape PR #1479's and #1496's reviews measured is a fixture run through `run()`, each with a control, and the opt-out `/rails-flow:setup-flow` scaffolds is read from `setup-flow.md` and must still declare;
+    - the guard catches 46/46; `check_slices` 13/13, `check_issue_mockup` 18/18.
+
 - **`guard-bash` label-checks a create inside a script fed to a shell by redirect —
   `plugins/rails-flow/hooks/scripts/guard-bash.sh`, `plugins/rails-flow/hooks/scripts/lib/issue_labels.py`,
   `scripts/mutations/hook_issue_labels.py`, `scripts/mutations/hook_guard_bash.py`,
