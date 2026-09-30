@@ -435,7 +435,12 @@ POSITIVES_1472 = ["bash -c 'git add -A'", 'sh -c "git push --force origin main"'
                   '( git add -A )', '(git add -A)', 'if true; then git add -A; fi', '\\git add -A', '/usr/bin/git add -A',
                   'git.exe add -A', 'git --no-pager add -A', 'git --attr-source HEAD add -A',
                   'git -c alias.p=push p --force origin main', "bash >log -c 'git add -A'",
-                  "echo x; bash -c 'git add -A'", 'true && eval "git add -A"']
+                  "echo x; bash -c 'git add -A'", 'true && eval "git add -A"',
+                  # #1498 review: a trigger spelled with quotes or a backslash is still eval / bash.
+                  "e'v'al \"git add -A\"", "e''val 'git add -A'", 'ev\\al "git add -A"',
+                  "ba's'h -c 'git add -A'", "bas\\h -c 'git add -A'", '"ba""s"h -c \'git add -A\'',
+                  # ...and a heredoc inside $( ) that never closes cannot hide the command after it.
+                  "echo \"$(cat <<EOF\n1) x\n)\"\nbash -c 'git add -A'"]
 # ...and each one's twin: the same shape doing something allowed, or a string that only MENTIONS it.
 NEGATIVES_1472 = ["bash -c 'git add app/x.rb'", "bash -c 'git push origin feature/x'", 'eval "git status"',
                   'echo "$(git branch --show-current)"', 'command -v git', 'time git status', 'git --no-pager log -1',

@@ -82,6 +82,18 @@ GUARD = Guard(
             'e t --body "$(cat <<\\\'EOF\\\'\\n1) don\\\'t run `g\'',
         ),
         Mutation(
+            "the pre-check reads the raw text, so a quoted `e'v'al` skips the lexer",
+            '  case "$_probe" in',
+            '  case "$raw" in',
+            "`'e\\'v\\'al \"git add -A\"'` runs the command and is blocked",
+        ),
+        Mutation(
+            "an unclosed heredoc in $( ) swallows the rest of the text",
+            "        if (!found) i = start",
+            "",
+            "1) x\\n)\"\\nbash -c",
+        ),
+        Mutation(
             "a wrapper such as `command` is not peeled",
             '    if (w == "command" || w == "builtin" || w == "nohup" || w == "time") { i = skipopts(t, n, i + 1, ""); continue }',
             "",

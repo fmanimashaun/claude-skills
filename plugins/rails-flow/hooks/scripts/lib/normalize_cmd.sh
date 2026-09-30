@@ -34,7 +34,9 @@
 # KNOWN LIMITS (the threat model is an honest mistake, not obfuscation — the coordinator's ruling on
 # #1470): a run-time string (`bash -c "$cmd"`, `eval "$(…)"`'s output), a script fed to a shell by
 # heredoc, here-string or pipe (`bash <<EOF`, `… | bash`), an alias whose value was quoted
-# (`-c alias.p='push -f'`) or defined in git config, `env -S`, and `find -exec`.
+# (`-c alias.p='push -f'`) or defined in git config, `env -S`, and `find -exec`. And bash 3.2 (also macOS
+# /bin/sh) ends a `$( )` at the first `)` inside a heredoc body, so a backtick after it RUNS there; this
+# lexer follows zsh and bash 4+, which read the body as text (accepted on #1498; dev never saw it either).
 # bash 3.2 / BSD sed / POSIX awk only.
 _unquote_delims() { sed -E "s/<<(-?)[[:space:]]*[\"']([A-Za-z0-9_][A-Za-z0-9_-]*)[\"']/<<\1\2/g"; }
 _strip_quotes()   { sed -E "s/'[^']*'//g; s/\"[^\"]*\"//g"; }
@@ -153,7 +155,7 @@ _inner_strings() {
   # i is just past "$(" (or "<("); returns the index of the matching ")". Nothing inside is emitted
   # here: the body is emitted whole by the caller and lexed again on its own. A heredoc BODY inside
   # is skipped, so a `)` in it -- `1) do not run ...` in a PR body -- cannot end the substitution.
-  function subst_end(s, i,    n, c, depth, j, hn, hd, ht, d, e, line, k) {
+  function subst_end(s, i,    n, c, depth, j, hn, hd, ht, d, e, line, k, start, found) {
     n = length(s); depth = 1; SKIP++; hn = 0
     while (i <= n) {
       c = substr(s, i, 1)
@@ -172,15 +174,18 @@ _inner_strings() {
         hd[hn] = d; continue
       }
       if (c == "\n" && hn) {
-        i++
-        for (k = 1; k <= hn; k++) {
+        i++; start = i; found = 1
+        for (k = 1; k <= hn && found; k++) {
+          found = 0
           while (i <= n) {
             e = index(substr(s, i), "\n"); if (e == 0) e = n - i + 2
             line = substr(s, i, e - 1); i += e
             if (ht[k]) sub(/^\t+/, "", line)
-            if (line == hd[k]) break
+            if (line == hd[k]) { found = 1; break }
           }
         }
+        # A heredoc that never closes would hide everything after it: lex that text as before instead.
+        if (!found) i = start
         hn = 0; continue
       }
       if (c == "\047") { j = index(substr(s, i + 1), "\047"); if (j == 0) break; i += j + 1; continue }
@@ -290,7 +295,13 @@ normalize_segments() {
   printf '%s' "$raw" | _normalize_one
   [ "${_NC_DEPTH:-0}" -ge 3 ] && return 0
   # Cost: the lexer walks the text a character at a time, so skip it when nothing it looks for is there.
-  case "$raw" in
+  # Judged on the text with quotes and backslashes removed, because the lexer dequotes words before it
+  # matches them: `e'v'al`, `bas\h -c` and `"ba""s"h -c` are eval and bash (#1498 review; the class
+  # release-gate's _probe and guard-bash's trigger each fixed once already). A BUILTIN, never `tr`,
+  # so a missing binary cannot empty the probe.
+  local _q="'" _dq='"' _bs='\' _probe
+  _probe="${raw//[$_q$_dq$_bs$_bs]/}"
+  case "$_probe" in
     *'$('*|*'`'*|*'<('*|*eval*|*sh*) ;;
     *) return 0 ;;
   esac
