@@ -1164,11 +1164,47 @@ def timeout_fixtures() -> None:
           f"{raw} direct subprocess.run call(s); every one must go through _run")
 
 
-def selftest() -> int:
-    for fn in (stop_gate_fixtures, guard_lane_fixtures, guard_migrate_fixtures, lint_ruby_fixtures,
-               self_consistency_fixtures, guard_bash_fixtures, guard_claims_fixtures,
-               release_gate_fixtures, ci_verdict_hint_fixtures, timeout_fixtures):
-        fn()
+# One fixture group per hook. `--only` runs a subset (#1497): twelve mutation guards use this file
+# as their selftest, each mutating ONE hook, and every mutant re-ran all ten groups -- about 70% of
+# the mutation-coverage budget. A guard now names the groups that drive its hook; the doctor's
+# `hook gates` gate and the harness's own guard still run every group.
+GROUPS = {
+    "stop_gate": stop_gate_fixtures, "guard_lane": guard_lane_fixtures,
+    "guard_migrate": guard_migrate_fixtures, "lint_ruby": lint_ruby_fixtures,
+    "self_consistency": self_consistency_fixtures, "guard_bash": guard_bash_fixtures,
+    "guard_claims": guard_claims_fixtures, "release_gate": release_gate_fixtures,
+    "ci_verdict_hint": ci_verdict_hint_fixtures, "timeout": timeout_fixtures,
+}
+
+
+def parse_only(value: str) -> list[str] | None:
+    """The groups `--only` names, or None when it must be REFUSED: an unknown or empty group would
+    run nothing and pass -- a mutant "surviving" because its fixtures were never selected."""
+    groups = [g for g in value.split(",") if g]
+    if not groups or any(g not in GROUPS for g in groups):
+        return None
+    return groups
+
+
+def run_groups(groups: list[str] | None, table: dict) -> None:
+    for name in (groups or list(table)):
+        table[name]()
+
+
+def selftest(groups: list[str] | None = None) -> int:
+    # --only REFUSES what it cannot run (#1497), checked on every run whatever the selection: a
+    # silently empty selection is how a mutant would "survive" with no fixture ever consulted.
+    for bad in ("nope", "", ",", "release_gate,nope"):
+        check(f"--only {bad!r} is refused (exit 2), never an empty pass", parse_only(bad) is None,
+              repr(parse_only(bad)))
+    check("CONTROL: --only release_gate,guard_bash is accepted",
+          parse_only("release_gate,guard_bash") == ["release_gate", "guard_bash"], repr(parse_only("release_gate,guard_bash")))
+    # ...and a selection runs exactly what it names, proved on stand-ins so the proof costs nothing.
+    ran: list[str] = []
+    fakes = {name: (lambda n=name: ran.append(n)) for name in GROUPS}
+    run_groups(["timeout", "stop_gate"], fakes)
+    check("--only runs exactly the groups it names, in order", ran == ["timeout", "stop_gate"], repr(ran))
+    run_groups(groups, GROUPS)
     if FAILURES:
         print(f"check_hook_gates selftest: {len(FAILURES)} of {CHECKS} checks FAILED", file=sys.stderr)
         for f in FAILURES:
@@ -1181,11 +1217,20 @@ def selftest() -> int:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--selftest", action="store_true", help="drive every hook under its stub environments")
-    ap.parse_args(argv)
+    ap.add_argument("--only", metavar="GROUP[,GROUP]",
+                    help=f"run only these fixture groups: {', '.join(GROUPS)} (#1497)")
+    args = ap.parse_args(argv)
+    groups = None
+    if args.only is not None:
+        groups = parse_only(args.only)
+        if groups is None:
+            print(f"check_hook_gates: --only needs known groups, got {args.only!r}; "
+                  f"known: {', '.join(GROUPS)}", file=sys.stderr)
+            return 2
     # `--selftest` is accepted for symmetry with every other check here, and bare invocation does
     # the same thing: the mutation harness runs a separate selftest file with no arguments, and a
     # script that printed usage there would be INERT -- every mutation "caught" by an exit 2.
-    return selftest()
+    return selftest(groups)
 
 
 if __name__ == "__main__":

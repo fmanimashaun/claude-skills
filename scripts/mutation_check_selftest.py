@@ -22,6 +22,7 @@ Stdlib only.
 from __future__ import annotations
 
 import ast
+import dataclasses
 import shutil
 import sys
 import tempfile
@@ -170,6 +171,29 @@ def run() -> int:
     limits = mc.mutation_limits([quick, heavy, stuck], [([], 10.0), ([], 200.0), ([], 1000.0)])
     if limits != {"quick": 300.0, "heavy": 600.0, "stuck": mc.MUTATION_CAP}:
         FAILURES.append(f"#1486: main's pool must give each guard max(floor, 3x baseline), capped, got {limits}")
+
+    # ---- 1c. selftest_args reach the baseline AND every mutant (#1497) ------------------
+    # A selftest that refuses to run without its argument: with the argument declared, the guard
+    # scores normally; without it, the baseline fails and the guard reads INERT.
+    guard, root = _fixture_guard((
+        mc.Mutation("odd numbers reported even", "n % 2 == 0", "True", "fixture-odd"),
+    ))
+    needy = root / "scripts" / "subject_selftest.py"
+    needy.write_text("import sys\nif '--flag' not in sys.argv:\n    sys.exit(3)\n"
+                     + needy.read_text(encoding="utf-8"), encoding="utf-8")
+    mc.REPO = root
+    try:
+        _tick()
+        with_args = dataclasses.replace(guard, selftest_args=("--flag",))
+        problems = mc.run_guard(with_args)
+        if problems:
+            FAILURES.append(f"#1497: a guard's selftest_args must reach its baseline and mutants, got {problems}")
+        _tick()
+        problems = mc.run_guard(guard)
+        if not any("INERT" in p for p in problems):
+            FAILURES.append(f"#1497 CONTROL: without its argument the same selftest must read INERT, got {problems}")
+    finally:
+        mc.REPO = original_repo
 
     # ---- 2. a SURVIVOR must be reported ------------------------------------------------
     # This mutation changes the subject in a way neither fixture observes, so the selftest still

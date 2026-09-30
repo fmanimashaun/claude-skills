@@ -7,6 +7,9 @@ GUARD = Guard(
     name="hook_normalize_cmd",
     subject="plugins/rails-flow/hooks/scripts/lib/normalize_cmd.sh",
     selftest="plugins/rails-flow/scripts/check_hook_gates.py",
+    # Only the fixture groups that drive this subject (#1497): the whole harness per
+    # mutant was ~70% of the mutation-coverage budget.
+    selftest_args=("--only", "guard_bash,release_gate"),
     needs=("plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362
            "plugins/rails-flow/hooks/scripts", "plugins/qa-flow/hooks/scripts", "plugins/qa-flow/scripts",
            'plugins/rails-flow/scripts/check_criteria.py',

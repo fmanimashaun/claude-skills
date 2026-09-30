@@ -77,8 +77,8 @@ GUARD = Guard(
         Mutation(
             # review of PR #1491
             "main's pool drops the derived limit (the path CI runs)",
-            '        outcomes = list(pool.map(lambda gm: run_mutation(gm[0], gm[1], limits[gm[0].name]), live))',
-            '        outcomes = list(pool.map(lambda gm: run_mutation(gm[0], gm[1]), live))',
+            '        outcomes = list(pool.map(lambda gm: timed_run(run_mutation, gm[0], gm[1], limits[gm[0].name]), live))',
+            '        outcomes = list(pool.map(lambda gm: timed_run(run_mutation, gm[0], gm[1]), live))',
             "#1486 CONTROL: main()'s pool with no scaling must time the mutant out",
         ),
         Mutation(
@@ -87,6 +87,13 @@ GUARD = Guard(
             '    return min(MUTATION_CAP, max(MUTATION_FLOOR, MUTATION_SCALE * baseline_seconds))',
             '    return max(MUTATION_FLOOR, MUTATION_SCALE * baseline_seconds)',
             "#1486: main's pool must give each guard max(floor, 3x baseline)",
+        ),
+        Mutation(
+            # #1497
+            "the baseline drops a guard's selftest_args",
+            '        argv.extend(guard.selftest_args)\n        started',
+            '        started',
+            "#1497: a guard's selftest_args must reach its baseline and mutants",
         ),
     ),
 )

@@ -7,6 +7,9 @@ GUARD = Guard(
     name='hook_lint_ruby',
     subject='plugins/rails-flow/hooks/scripts/lint-ruby.sh',
     selftest='plugins/rails-flow/scripts/check_hook_gates.py',
+    # Only the fixture groups that drive this subject (#1497): the whole harness per
+    # mutant was ~70% of the mutation-coverage budget.
+    selftest_args=("--only", "lint_ruby"),
     # The harness resolves every hook from the selftest's own location, so the whole
     # directory is staged -- one hook's fixtures may exercise another's shape.
     needs=("plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362
