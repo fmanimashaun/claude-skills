@@ -191,12 +191,12 @@ def run() -> int:
         mc.Mutation("odd numbers reported even", "n % 2 == 0", "True", "fixture-odd"),
     ))
     needy = root / "scripts" / "subject_selftest.py"
-    needy.write_text("import sys\nif '--flag' not in sys.argv:\n    sys.exit(3)\n"
+    needy.write_text("import sys\nif '--arg-1497' not in sys.argv:\n    sys.exit(3)\n"
                      + needy.read_text(encoding="utf-8"), encoding="utf-8")
     mc.REPO = root
     try:
         _tick()
-        with_args = dataclasses.replace(guard, selftest_args=("--flag",))
+        with_args = dataclasses.replace(guard, selftest_args=("--arg-1497",))
         problems = mc.run_guard(with_args)
         if problems:
             FAILURES.append(f"#1497: a guard's selftest_args must reach its baseline and mutants, got {problems}")
