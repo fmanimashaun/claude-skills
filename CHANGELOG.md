@@ -3574,6 +3574,25 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **`guard-bash` label-checks a create inside a script fed to a shell by redirect —
+  `plugins/rails-flow/hooks/scripts/guard-bash.sh`, `plugins/rails-flow/hooks/scripts/lib/issue_labels.py`,
+  `scripts/mutations/hook_issue_labels.py`, `scripts/mutations/hook_guard_bash.py`,
+  `plugins/rails-flow/scripts/check_hook_gates.py`** (#1489).
+  - `bash < file` names no create in its text, so neither the hook's trigger nor the helper saw it. The trigger now
+    fires on a shell reading a redirect.
+  - The trigger is coarse on purpose: `/bin/bash < f`, `bash --norc < f`, `bash -o errexit < f`, `sh<f` and
+    `bash 0< f` all reach the helper, which parses the command and decides.
+  - The helper reads the file (`< f`, `<f` or `0< f`, behind any wrapper; `$HOME` expanded; the first 1 MB) and
+    refuses by name when it names a create, applying #1423's owner-decided rule.
+  - A relative script resolves from the directory the command has `cd`'d to. A `cd` it cannot resolve (`cd $X`,
+    `cd -`, `pushd`, or one inside `( )`) makes the file unknown.
+  - An unknown or unreadable file is allowed, as before. `cat < file` is not a shell running it, and `bash
+    script.sh`, a script passed as an argument, is out of scope.
+  - `$'…'` quoting is decoded before parsing. A command the parser still cannot read is refused only when it names a
+    create or a shell redirect: valid bash that merely widened the trigger is not refused.
+  - 24 selftest cases and 7 end-to-end hook fixtures; 13 new mutations (`hook_issue_labels` 70 of 70,
+    `hook_guard_bash` 14 of 14).
+
 - **Mock-up checks, the #1430 remainder after PR #1478 — `plugins/rails-flow/scripts/check_issue_mockup.py`, `plugins/rails-flow/scripts/check_mockup_gate.py`, `plugins/rails-flow/scripts/mutations/check_issue_mockup.py`, `plugins/rails-flow/scripts/mutations/check_mockup_gate.py`** (#1430, from PR #1479's independent reviews; each gap measured against merged dev before editing).
   - `check_issue_mockup.py`: a mock-up path in backticks or as a markdown link target (`[bell](docs/product/mockups/bell.md)`) now counts as linked; before, it read as "neither". Outside `docs/product/mockups/`, a mock-up file's extension must END its name (`foo.pdf.TBD` names nothing), and `.html.erb`, `.gif` and `.avif` count there too. A sentence's full stop may still follow.
   - `check_mockup_gate.py`: a record naming itself is compared by `samefile` as well as `resolve()`, so a hard link to the record under another name is held.
