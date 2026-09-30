@@ -10,6 +10,19 @@ GUARD = Guard(
     subject="scripts/check_upstream_docs.py",
     selftest="scripts/check_upstream_docs.py",   # --selftest lives in the module itself
     mutations=(
+        # #1502 review: the filter missed a singular `setting` and the model-allowlist keys.
+        Mutation(
+            "a singular 'setting' is no surface",
+            '    r"marketplaces?|skills?|settings?|CLAUDE\\.md|AGENTS\\.md|slash commands?|effort|advisor|MCP|"',
+            '    r"marketplaces?|skills?|settings|CLAUDE\\.md|AGENTS\\.md|slash commands?|effort|advisor|MCP|"',
+            "a singular 'setting' entry and a model-allowlist key are listed",
+        ),
+        Mutation(
+            'the model-allowlist keys are no surface',
+            '    r"permissions?|CLAUDE_[A-Z_]+|worktrees?|availableModels\\w*|deniedModels)\\b", re.I)',
+            '    r"permissions?|CLAUDE_[A-Z_]+|worktrees?)\\b", re.I)',
+            "a singular 'setting' entry and a model-allowlist key are listed",
+        ),
         Mutation(
             "a quote the page no longer says passes",
             '        if normalise(row["quote"]) not in pages[url]:',
