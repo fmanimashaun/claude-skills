@@ -27,6 +27,19 @@ GUARD = Guard(
         "agents",
     ),
     mutations=(
+        # #1505: a mechanical agent carries its own advisor instruction; a judgement agent needs none.
+        Mutation(
+            'a mechanical agent without an advisor instruction passes',
+            '        if row.tier == "mechanical" and ADVISOR_MARKER not in path.read_text(encoding="utf-8"):',
+            '        if False:',
+            'a mechanical agent with no advisor instruction is refused',
+        ),
+        Mutation(
+            'every agent must carry the advisor instruction, judgement too',
+            '        if row.tier == "mechanical" and ADVISOR_MARKER not in path.read_text(encoding="utf-8"):',
+            '        if ADVISOR_MARKER not in path.read_text(encoding="utf-8"):',
+            '...and a judgement agent without one is clean',
+        ),
         # #1326: effort is inherited like model; a shipped pin goes unrefused again.
         Mutation(
             "an agent's effort: pin is never read",
