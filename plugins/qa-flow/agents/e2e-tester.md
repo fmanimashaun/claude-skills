@@ -102,6 +102,17 @@ have surfaced, and **all of which are now specs**, which is the point.
   `storageState`; `qa/playwright.config.ts` retries=1, trace+screenshot on failure,
   `baseURL` from `QA_BASE_URL`, chromium on verify / all three on certify. Run:
   `npx playwright test --grep "<tags>"`.
+  **The suite is strict TypeScript, and something checks it** (#1447, the owner's rule: "strict
+  typescript with no any type"). Playwright does not type-check — *"Playwright does not check the
+  types and will run tests even if there are non-critical TypeScript compilation errors"*
+  ([playwright.dev](https://playwright.dev/docs/test-typescript)) — so the suite's `tsconfig.json`
+  sets `"strict": true` **and** CI runs `npx tsc --noEmit -p qa/e2e/tsconfig.json`; without that
+  step, `strict` is enforced by nothing. `strict` does not include `noUncheckedIndexedAccess`; set it
+  too. And `strict` cannot refuse an **explicit** `any` — its `noImplicitAny` flags only an `any` the
+  compiler would have inferred — so write none: `catch (err: unknown)` and narrow, never
+  `catch (err: any)` or `as any`. If a line truly needs one, say why on it:
+  `// ts-strict: allow-any -- <why>`. The qa-flow gate `ts-strict` (`scripts/check_ts_strict.py`)
+  refuses a non-strict tsconfig, a missing `tsc` step, and an undeclared explicit `any`.
 - **cypress-cucumber** (JS): Gherkin `.feature` files (titles come straight from
   `qa/test-cases.csv`) + step defs; `@testing-library/cypress` `findByRole` (or `data-cy`);
   auth via `cy.session()`; tags via `@badeball/cypress-cucumber-preprocessor`. Run:
