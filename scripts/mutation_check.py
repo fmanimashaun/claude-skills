@@ -285,7 +285,10 @@ def run_baseline_timed(guard: Guard) -> tuple[list[str], float]:
             argv.append("--selftest")
         argv.extend(guard.selftest_args)
         started = time.monotonic()                # after staging: the limit is the selftest's time
-        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True, timeout=BASELINE_TIMEOUT)
+        # `errors="replace"` here too (#1493 applied it to mutants only): a non-UTF-8 byte in a
+        # BASELINE's output raised before the INERT report could print.
+        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True, errors="replace",
+                                timeout=BASELINE_TIMEOUT)
         elapsed = time.monotonic() - started
         if result.returncode != 0:
             return [
@@ -312,15 +315,21 @@ def run_mutation(guard: Guard, mutation: Mutation, timeout: float = MUTATION_FLO
         if guard.selftest == guard.subject:
             argv.append("--selftest")   # the selftest is a flag on the module itself
         argv.extend(guard.selftest_args)
-        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True, timeout=timeout)
+        # `errors="replace"`: a non-UTF-8 byte must not raise before the report can print (#1493).
+        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True, errors="replace",
+                                timeout=timeout)
         output = result.stdout + result.stderr
         if result.returncode == 0:
             return [f"{guard.name}: SURVIVED — {mutation.name}. The selftest passed with this "
                     "broken, so nothing guards it."]
         if mutation.expects and mutation.expects.lower() not in output.lower():
+            # The mutant's own last lines, as the INERT report prints: a wrong-fixture catch seen
+            # only on CI was undiagnosable without them, because CI keeps nothing else (#1493). The
+            # last 12 lines, each cut to 300 characters, so one huge line cannot flood the log.
             return [f"{guard.name}: caught {mutation.name!r} but not by the expected fixture "
-                    f"(no mention of {mutation.expects!r}) — a coincidental catch would hide that "
-                    "fixture going quiet"]
+                    f"(no mention of {mutation.expects!r}, exit {result.returncode}) — a coincidental "
+                    "catch would hide that fixture going quiet\n"
+                    + "\n".join(f"      {line[:300]}" for line in output.strip().splitlines()[-12:])]
         return []
     except subprocess.TimeoutExpired:
         return [f"{guard.name}: {mutation.name} timed out after {timeout:.0f}s "
