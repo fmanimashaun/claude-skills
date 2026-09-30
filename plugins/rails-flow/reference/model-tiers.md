@@ -180,11 +180,13 @@ call the advisor but cannot act as one"*. No frontmatter field controls it per a
 page does not mention the advisor at all (checked 2026-09-30, #1505).
 
 **Its cost is the agent's transcript, and ours are not short.** *"Each advisor call processes the full
-transcript anew, with no reuse between calls"*. Measured on 2026-09-30 from 581 stored subagent
-transcripts on one maintainer machine (peak request context per run; indicative, not a population):
-`design-porter` median 222k tokens, `e2e-tester` 110k, `rails-developer` 103k, `a11y-auditor` 83k,
-`pr-reviewer` 83k, `doc-updater` 56k. So a Haiku-tier agent consulting an Opus advisor pays Opus rates
-on tens of thousands of uncached tokens per call, which is the saving the Haiku tier exists for.
+transcript anew, with no reuse between calls"*. Measured on 2026-09-30 by
+`scripts/measure_subagent_context.py --shipped-only` over 578 stored runs on one maintainer machine
+(peak request context per run; indicative, not a population, and several agents have 1–4 runs;
+`docs/evidence/advisor/subagent-context-2026-09-30.md`): shipped agents' medians run from 11k tokens
+(`test-runner`) to 222k (`design-porter`), and the six Haiku agents' from 11k to 83k (`a11y-auditor`).
+So a Haiku-tier agent consulting an Opus advisor can pay Opus rates on tens of thousands of uncached
+tokens per call, which is the saving the Haiku tier exists for.
 
 **The policy follows the docs' own guidance** (maintainer decision on #1505). The docs say *"The advisor
 fits long, multi-step tasks where most turns are routine but plan quality determines the outcome"*,

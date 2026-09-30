@@ -68,7 +68,7 @@ grades it":
 *"Subagents inherit the configured advisor and apply the same pairing check against their own
 model"*, and a Haiku main model can call one (https://code.claude.com/docs/en/advisor). Each call
 *"processes the full transcript anew, with no reuse between calls"*, and ours are long: `a11y-auditor`
-peaked at a median of 83k tokens across 9 stored runs (measured 2026-09-30, #1505). The docs name the
+peaked at a median of 83k tokens across 9 stored runs, `perf-tester` 52k over 3 and `qa-reporter` 21k over 3 (measured 2026-09-30 on one machine, #1505). The docs name the
 only control: *"if you want Claude to consult more or less often during a task, say so in your
 instructions"*. So `a11y-auditor`, `perf-tester` and `qa-reporter` each carry a `**The advisor.**`
 paragraph: consult it only when the same error has come back twice or the next step is unclear,
