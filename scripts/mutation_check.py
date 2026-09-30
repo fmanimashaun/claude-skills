@@ -236,7 +236,35 @@ def apply_mutation(guard: Guard, mutation: Mutation, workdir: Path) -> Path:
     return entry
 
 
+# PER-MUTATION LIMITS COME FROM THE GUARD'S OWN BASELINE (#1486). A fixed 300 s bound was shorter than
+# the hook suite takes under load (60 s idle, 367 s at load ~149), so 10 of 12 `hook_guard_bash`
+# mutations "timed out" on one run and all 12 were caught on the next. A mutant runs the same
+# selftest as its baseline and usually stops sooner, so its limit scales with what the baseline
+# actually took on THIS machine, now. The baseline itself runs once per guard and must finish.
+#
+# BOTH CAPS STAY WELL UNDER THE GATE'S TOTAL (`SLOW_GATES["mutation coverage"]`, maintainer_doctor.py):
+# a hung guard must be reported HERE, by name, before the doctor kills the whole gate with a message
+# that names no guard (review of PR #1491). maintainer_doctor_selftest asserts the relation.
+BASELINE_TIMEOUT = 600
+MUTATION_FLOOR = 300.0
+MUTATION_SCALE = 3.0
+MUTATION_CAP = 900.0
+
+
+def mutation_timeout(baseline_seconds: float) -> float:
+    return min(MUTATION_CAP, max(MUTATION_FLOOR, MUTATION_SCALE * baseline_seconds))
+
+
+def mutation_limits(guards: list[Guard], timed: list[tuple[list[str], float]]) -> dict[str, float]:
+    """`main`'s pool: each guard's per-mutation limit, from its own timed baseline."""
+    return {g.name: mutation_timeout(secs) for g, (_, secs) in zip(guards, timed)}
+
+
 def run_baseline(guard: Guard) -> list[str]:
+    return run_baseline_timed(guard)[0]
+
+
+def run_baseline_timed(guard: Guard) -> tuple[list[str], float]:
     """The control: the UNMUTATED selftest must PASS in the same staged tempdir.
 
     Without this, `run_guard`'s "returncode != 0 means caught" reads a guard that cannot pass at
@@ -255,7 +283,9 @@ def run_baseline(guard: Guard) -> list[str]:
         argv = [sys.executable, str(entry)]
         if guard.selftest == guard.subject:
             argv.append("--selftest")
-        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True, timeout=300)
+        started = time.monotonic()                # after staging: the limit is the selftest's time
+        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True, timeout=BASELINE_TIMEOUT)
+        elapsed = time.monotonic() - started
         if result.returncode != 0:
             return [
                 f"{guard.name}: INERT — the UNMUTATED selftest already fails in the staged "
@@ -263,15 +293,15 @@ def run_baseline(guard: Guard) -> list[str]:
                 "or not it breaks anything. Add what it reads to the guard's `needs`.\n"
                 + "\n".join(f"      {line}" for line in
                             (result.stdout + result.stderr).strip().splitlines()[-6:])
-            ]
+            ], elapsed
     except subprocess.TimeoutExpired:
-        return [f"{guard.name}: the unmutated baseline timed out"]
+        return [f"{guard.name}: the unmutated baseline timed out after {BASELINE_TIMEOUT}s"], BASELINE_TIMEOUT
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
-    return []
+    return [], elapsed
 
 
-def run_mutation(guard: Guard, mutation: Mutation) -> list[str]:
+def run_mutation(guard: Guard, mutation: Mutation, timeout: float = MUTATION_FLOOR) -> list[str]:
     """One mutation, in its own tempdir. Independent of every other mutation, so the suite can run
     them in parallel (#1444). `run_guard` and `main` both come through here: one implementation."""
     workdir = Path(tempfile.mkdtemp(prefix=f"mutcheck-{guard.name}-"))
@@ -280,7 +310,7 @@ def run_mutation(guard: Guard, mutation: Mutation) -> list[str]:
         argv = [sys.executable, str(entry)]
         if guard.selftest == guard.subject:
             argv.append("--selftest")   # the selftest is a flag on the module itself
-        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True, timeout=300)
+        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True, timeout=timeout)
         output = result.stdout + result.stderr
         if result.returncode == 0:
             return [f"{guard.name}: SURVIVED — {mutation.name}. The selftest passed with this "
@@ -291,7 +321,8 @@ def run_mutation(guard: Guard, mutation: Mutation) -> list[str]:
                     "fixture going quiet"]
         return []
     except subprocess.TimeoutExpired:
-        return [f"{guard.name}: {mutation.name} timed out"]
+        return [f"{guard.name}: {mutation.name} timed out after {timeout:.0f}s "
+                f"({MUTATION_SCALE:g}x its baseline, within {MUTATION_FLOOR:.0f}-{MUTATION_CAP:.0f}s)"]
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
 
@@ -314,7 +345,7 @@ def run_guard(guard: Guard) -> list[str]:
     # The baseline runs the UNMUTATED selftest first. Without it a guard whose staged copy is
     # missing a dependency fails for that reason alone, and every mutation then reads as "caught"
     # by the breakage rather than by a fixture -- which is exactly what `build_coverage` was doing.
-    problems: list[str] = run_baseline(guard)
+    problems, baseline_seconds = run_baseline_timed(guard)
     # AN INERT BASELINE ENDS THE GUARD. Running the mutations anyway is not merely wasted time: it
     # appends one "caught, but not by the expected fixture" line PER MUTATION, so a single cause is
     # reported as N+1 findings with the real one first and the noise last. That is what made this
@@ -325,8 +356,9 @@ def run_guard(guard: Guard) -> list[str]:
     # "caught" whether or not it breaks anything, so the verdicts are meaningless by construction.
     if problems:
         return problems
+    limit = mutation_timeout(baseline_seconds)
     for mutation in guard.mutations:
-        problems.extend(run_mutation(guard, mutation))
+        problems.extend(run_mutation(guard, mutation, limit))
     return problems
 
 
@@ -362,9 +394,11 @@ def main(argv: list[str] | None = None) -> int:
     jobs = max(1, args.jobs or os.cpu_count() or 1)
     started = time.monotonic()
     with ThreadPoolExecutor(max_workers=jobs) as pool:
-        baselines = list(pool.map(run_baseline, guards))
+        timed = list(pool.map(run_baseline_timed, guards))
+        baselines = [problems for problems, _ in timed]
+        limits = mutation_limits(guards, timed)
         live = live_mutations(guards, baselines)
-        outcomes = list(pool.map(lambda gm: run_mutation(*gm), live))
+        outcomes = list(pool.map(lambda gm: run_mutation(gm[0], gm[1], limits[gm[0].name]), live))
     by_guard: dict[str, list[str]] = {g.name: list(b) for g, b in zip(guards, baselines)}
     for (g, _m), found in zip(live, outcomes):
         by_guard[g.name].extend(found)

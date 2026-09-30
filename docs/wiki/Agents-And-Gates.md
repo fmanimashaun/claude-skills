@@ -162,6 +162,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | changelog coverage selftest | `repo` | `python3 scripts/check_changelog_coverage.py --selftest` | selftest |
 | checks.json paths | `repo` | `python3 scripts/check_manifest_paths.py` | live check |
 | checks.json paths selftest | `repo` | `python3 scripts/check_manifest_paths.py --selftest` | selftest |
+| close-on-dev-merge selftest | `repo` | `python3 scripts/close_on_dev_merge.py --selftest` | selftest |
 | component passthrough | `repo` | `python3 scripts/check_component_passthrough.py` | live check |
 | component passthrough selftest | `repo` | `python3 scripts/check_component_passthrough.py --selftest` | selftest |
 | component shapes reconciled | `repo` | `python3 scripts/check_component_shapes.py` | live check |

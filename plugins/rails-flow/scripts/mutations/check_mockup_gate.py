@@ -125,7 +125,7 @@ GUARD = Guard(
         Mutation(
             # #1430
             'a record may name itself as its mock-up again',
-            '    elif mock and (root / mock).resolve() == path.resolve():',
+            '    elif mock and ((root / mock).resolve() == path.resolve()\n                   or ((root / mock).exists() and (root / mock).samefile(path))):',
             '    elif False:',
             'a record naming itself is held',
         ),
@@ -149,6 +149,13 @@ GUARD = Guard(
             '        m = re.match(r"^\\s*(`{3,})(?=[^`]*$)|^\\s*(~{3,})", line)',
             '        m = re.match(r"^\\s*(`{3,})|^\\s*(~{3,})", line)',
             'a code span at line start does not fence the opt-out',
+        ),
+        # #1479 (after #1478): the remainder #1478 did not cover.
+        Mutation(
+            'a hard link to the record is not the record',
+            '                   or ((root / mock).exists() and (root / mock).samefile(path))):',
+            '                   or False):',
+            'a record naming itself by another name is held',
         ),
     ),
 )

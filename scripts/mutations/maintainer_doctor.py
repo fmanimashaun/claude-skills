@@ -175,5 +175,12 @@ GUARD = Guard(
             "elif code == 124 and self.require_slow:",
             "NON-slow gate that times out is still SKIP",
         ),
+        Mutation(
+            # #1486 / review of PR #1491
+            "the gate's total drops below mutation_check's own caps, so a hung guard is killed unnamed",
+            '    "mutation coverage": 1800,',
+            '    "mutation coverage": 1200,',
+            "must stay under the gate's total",
+        ),
     ),
 )

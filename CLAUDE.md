@@ -39,11 +39,11 @@ holds the harness-neutral rules (measure before you assert; write the mechanism 
 7. CHANGELOG bullet under the component's **`### Unreleased`**, naming a path in backticks → *Versioning*.
 8. Run the sweep locally — `python3 scripts/maintainer_doctor.py --gates-only --fast` (~45 s) — and
    review your own diff against `skills/code-review/SKILL.md` → *Verify our own claims*.
-9. PR **into `dev`** with `Refs #n` (never `Closes`), **no version bump** → *Git flow*.
+9. PR **into `dev`**, a line `Fixes #n` per issue it completes (`Refs #n` if partial), **no version bump** → *Git flow*.
 10. Merge on green. A fix that lands after an arm and before its promotion is **folded** into the
     armed block, never left `Unreleased` and never re-armed → *Versioning*.
 11. To ship: **arm** (`chore/arm-vX.Y.Z` → `dev`: versions, headings, `python3 scripts/rebuild_generated.py`),
-    then **promote** (`dev` → `main`, `--merge`, `Closes #n` per issue). Only the promotion publishes.
+    then **promote** (`dev` → `main`, `--merge`, `Closes #n` backstop for `Refs`-only issues). Only it publishes.
 
 ## The maintenance flow (the `.claude/` commands)
 
@@ -57,8 +57,8 @@ queue — agent `issue-triager`), `/maintainer-work` (issue → verify → fix �
 **Group related issues on one branch** when all four hold: same `comp:*` label; one coherent mechanism
 (same files or code path); same change type under the gate (all need a verifier verdict, or none —
 **this one is not a judgement call**); still reviewable and bisectable in one sitting. **Traceability is
-never pooled**: one `Refs #n` per issue in the PR, one CHANGELOG bullet per issue, one `Closes #n` per
-issue on the promotion. (History: *Grouping related issues on one branch*, decision #206.)
+never pooled**: one `Fixes #n` (or `Refs #n`) line per issue in the PR, one CHANGELOG bullet per issue,
+never one line for the group. (History: *Grouping related issues on one branch*, decision #206.)
 
 ## The non-negotiable gate
 
@@ -86,16 +86,16 @@ externally verifiable claim, read for omissions, decide a no-upstream claim as o
 ## Git flow (strict)
 
 - **`main` is the default branch and the install surface**; `dev` is the integration branch.
-- Branch **off `dev`**; PR **into `dev`**; **no version bump; no `Closes #n`** — nothing on `dev` has
-  reached a user. The promotion carries every `Closes`.
+- Branch **off `dev`**; PR **into `dev`**; **no version bump**. On merge, `close-on-dev-merge.yml` closes each
+  `Fixes #n` issue with label `fixed-on-dev` (not installable yet); `release.yml` names the version later.
 - **Never `git add -A`.** Stage what you authored; `git status` first.
 - **Never commit to `main` directly.** A merge unions; a direct commit is invisible to every later
   `dev`-based change. The pre-flight asserts there are none.
 - Judge `dev` against `main` with `git diff dev main`, which is **empty** after a promotion. Ignore the
   ahead/behind counter, and never merge `main` back into `dev` to tidy it.
-- **Never write a closing keyword next to a real issue number** in a commit or PR body, not even in
-  backticks or when quoting a mistake — GitHub parses it anyway. An issue that ships incrementally
-  (an EPIC, a checklist) gets `Refs`, never `Closes`, until its last increment.
+- **`Fixes #n` alone on its line closes #n at the dev merge**; mid-sentence or quoted it is prose and closes
+  nothing. An issue that ships incrementally (an EPIC, a checklist) gets `Refs` until its last increment.
+  Keep closing keywords out of COMMIT messages: those fire again when the commit reaches `main`.
 
 ### Merge a promotion with `--merge`. A squash breaks the NEXT one.
 

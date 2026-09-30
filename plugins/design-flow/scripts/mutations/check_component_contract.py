@@ -58,5 +58,67 @@ GUARD = Guard(
         '            source = path.read_text(encoding="utf-8", errors="replace")',
         'a comment warning against a raw `<button>` is not a raw `<button>`',
     ),
+        # #1434: the first `def initialize(` in the body, a nested class's included, is judged again.
+        Mutation(
+            "nested class bodies are read as the component's own",
+            '            blob = "\\n".join(own_lines(body))',
+            '            blob = "\\n".join(body)',
+            "a nested class's initializer declared first is not the component's",
+        ),
+        Mutation(
+            "a nested body never ends, so the component's own initializer after it vanishes",
+            '            if _code(line).strip() == closer and len(line) - len(line.lstrip()) == skip_indent:\n                skip_indent = None',
+            '            if _code(line).strip() == closer and len(line) - len(line.lstrip()) == skip_indent:\n                pass',
+            "a nested class's initializer declared first is not the component's",
+        ),
+        Mutation(
+            'any line starting `class` or `module` opens a nested body, `class:` included',
+            'NESTED = re.compile(r"^([ \\t]*)(?:class[ \\t]+(?:[A-Z]|<<)|module[ \\t]+[A-Z]"\n                    r"|(?:[A-Z]\\w*[ \\t]*=[ \\t]*)?(?:Struct\\.new|Data\\.define|Class\\.new)\\b.*(?:\\bdo\\b|\\{)[ \\t]*(?:\\|[^|]*\\|)?[ \\t]*$)")',
+            'NESTED = re.compile(r"^([ \\t]*)(?:class|module)\\b")',
+            'a `class:` keyword line is not a nested class',
+        ),
+        Mutation(
+            'the class regex spans blank lines above the class again',
+            'COMPONENT_CLASS = re.compile(r"^[ \\t]*class (\\w+Component) < ViewComponent::Base[ \\t]*$", re.M)',
+            'COMPONENT_CLASS = re.compile(r"^\\s*class (\\w+Component) < ViewComponent::Base[ \\t]*$", re.M)',
+            'a nested COMPONENT after a blank line',
+        ),
+        # #1487 review: trailing comments, heredocs and block-defined classes.
+        Mutation(
+            "a trailing comment hides a one-liner's `end`",
+            '        if m and not ONE_LINER.search(_code(line)):',
+            '        if m and not ONE_LINER.search(line):',
+            'a one-line nested class with a trailing comment opens no body',
+        ),
+        Mutation(
+            '`end # Section` no longer closes a nested body',
+            '            if _code(line).strip() == closer and len(line) - len(line.lstrip()) == skip_indent:',
+            '            if line.strip() == closer and len(line) - len(line.lstrip()) == skip_indent:',
+            'a nested body closed by `end # Section` ends there',
+        ),
+        Mutation(
+            "a heredoc's lines are read as code",
+            '        if h:\n            heredoc = h.group(2)\n        out.append(line)',
+            '        out.append(line)',
+            'a heredoc line starting `class` opens nothing',
+        ),
+        Mutation(
+            'a Struct.new / Data.define / Class.new block is not a nested body',
+            '                    r"|(?:[A-Z]\\w*[ \\t]*=[ \\t]*)?(?:Struct\\.new|Data\\.define|Class\\.new)\\b.*(?:\\bdo\\b|\\{)[ \\t]*(?:\\|[^|]*\\|)?[ \\t]*$)")',
+            '                    r")")',
+            'a Struct.new block above the initializer is not the component',
+        ),
+        Mutation(
+            'an opener is judged with its trailing comment again',
+            '        m = NESTED.match(_code(line))',
+            '        m = NESTED.match(line)',
+            "a `do` inside an opener's trailing comment opens nothing",
+        ),
+        Mutation(
+            'a brace block closes only on `end`, so it swallows the component',
+            '            closer = "}" if',
+            '            closer = "end" if False and',
+            'a Struct.new brace block above the initializer is not the component',
+        ),
     ),
 )
