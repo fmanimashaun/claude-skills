@@ -13,6 +13,31 @@ GUARD = Guard(
     selftest="scripts/mutation_check_selftest.py",
     deps=("scripts/mutation_types.py",),
     mutations=(
+        # The wrong-fixture report's tail (#1493): present, 12 lines, 300 characters wide, decoded.
+        Mutation(
+            "a wrong-fixture report drops the mutant's output",
+            '                    + "\\n".join(f"      {line[:300]}" for line in output.strip().splitlines()[-12:])]',
+            '                    + ""]',
+            "a wrong-fixture report does not carry the mutant's exit and output",
+        ),
+        Mutation(
+            'the tail is no longer bounded to 12 lines',
+            '                    + "\\n".join(f"      {line[:300]}" for line in output.strip().splitlines()[-12:])]',
+            '                    + "\\n".join(f"      {line[:300]}" for line in output.strip().splitlines()[-1200:])]',
+            'a wrong-fixture report does not carry exactly the last 12 lines of output',
+        ),
+        Mutation(
+            "the tail's lines are no longer cut to 300 characters",
+            '                    + "\\n".join(f"      {line[:300]}" for line in output.strip().splitlines()[-12:])]',
+            '                    + "\\n".join(f"      {line}" for line in output.strip().splitlines()[-12:])]',
+            'a wrong-fixture report does not cut each output line to 300 characters',
+        ),
+        Mutation(
+            'a non-UTF-8 byte raises before the report prints',
+            '        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True, errors="replace",',
+            '        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True,',
+            "a non-UTF-8 byte in a mutant's output raised before the report printed",
+        ),
         Mutation(
             # #1129: the import-completeness invariant. Adding an import to a shipped module orphans
             # every neighbouring guard that stages it without the new dependency -- the mutant dies
