@@ -625,6 +625,18 @@ def run() -> int:
     # which `mutation coverage` starts reporting a TIMEOUT as a failure and the sweep tells a
     # maintainer to fix a checker that was working.
     _tick()
+    # #1486 / review of PR #1491: a hung guard must be reported by the harness, naming it, before
+    # the doctor's gate-wide timeout kills the run with a message that names no guard.
+    sys.path.insert(0, str(md.REPO / "scripts"))
+    import mutation_check as mc
+    _tick()
+    # `.get`, never `[...]`: a mutation renames this key to prove the no-such-gate check below
+    # fires, and a KeyError here crashed the selftest before that check ran (dispatch 36629992150).
+    total = md.SLOW_GATES.get("mutation coverage")
+    if total is not None and not (mc.BASELINE_TIMEOUT + mc.MUTATION_CAP < total):
+        FAILURES.append(f"mutation_check's baseline cap ({mc.BASELINE_TIMEOUT}s) plus its per-mutation cap "
+                        f"({mc.MUTATION_CAP:.0f}s) must stay under the gate's total ({total}s), or a hung "
+                        f"guard is killed by the doctor unnamed")
     unknown = sorted(set(md.SLOW_GATES) - {name for name, _ in md.GATES})
     if unknown:
         FAILURES.append(

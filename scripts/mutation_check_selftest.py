@@ -67,12 +67,24 @@ print("ok")
 '''
 
 
-def _fixture_guard(mutations: tuple[mc.Mutation, ...]) -> tuple[mc.Guard, Path]:
+# The same selftest, noisier on failure: 20 numbered lines, one non-UTF-8 byte and one 2,000-character
+# line before the verdict, so the report's tail bound, width bound and decoding are each observable.
+NOISY_SELFTEST = SELFTEST.replace(
+    'if failures:\n',
+    'if failures:\n'
+    '    for i in range(1, 21):\n'
+    '        print(f"noise-{i:02d}", file=sys.stderr)\n'
+    '    sys.stderr.flush(); sys.stderr.buffer.write(b"bad-byte-\\xff\\n"); sys.stderr.buffer.flush()\n'
+    '    print("wide-" + "w" * 2000, file=sys.stderr)\n', 1)
+assert NOISY_SELFTEST != SELFTEST
+
+
+def _fixture_guard(mutations: tuple[mc.Mutation, ...], selftest: str = SELFTEST) -> tuple[mc.Guard, Path]:
     """A real Guard pointing at a throwaway subject/selftest pair inside a temp 'repo'."""
     root = Path(tempfile.mkdtemp(prefix="mutcheck-selftest-"))
     (root / "scripts").mkdir()
     (root / "scripts" / "subject_under_test.py").write_text(SUBJECT, encoding="utf-8")
-    (root / "scripts" / "subject_selftest.py").write_text(SELFTEST, encoding="utf-8")
+    (root / "scripts" / "subject_selftest.py").write_text(selftest, encoding="utf-8")
     guard = mc.Guard(
         name="fixture",
         subject="scripts/subject_under_test.py",
@@ -117,6 +129,59 @@ def run() -> int:
             FAILURES.append(f"a genuine break was not accepted as caught: {problems}")
     finally:
         mc.REPO = original_repo
+
+    # ---- 1b. a mutant's limit SCALES with its guard's baseline (#1486) -----------------
+    # The same slow guard, twice. With the limit derived from the ~1 s baseline, the mutant has
+    # time to fail and is caught; with the scale zeroed, the fixed floor is shorter than the run,
+    # and it times out -- which is what 10 of 12 hook_guard_bash mutations did under load.
+    guard, root = _fixture_guard((
+        mc.Mutation("odd numbers reported even", "n % 2 == 0", "True", "fixture-odd"),
+    ))
+    slow = root / "scripts" / "subject_selftest.py"
+    slow.write_text("import time\ntime.sleep(1.0)\n" + slow.read_text(encoding="utf-8"), encoding="utf-8")
+    saved = (mc.REPO, mc.MUTATION_FLOOR, mc.MUTATION_SCALE)
+    mc.REPO, mc.MUTATION_FLOOR = root, 0.4
+    try:
+        _tick()
+        mc.MUTATION_SCALE = 3.0
+        problems = mc.run_guard(guard)
+        if problems:
+            FAILURES.append(f"#1486: a slow guard's mutant must get a limit scaled from its baseline, got {problems}")
+        _tick()
+        mc.MUTATION_SCALE = 0.0
+        problems = mc.run_guard(guard)
+        if not any("timed out after" in p for p in problems):
+            FAILURES.append(f"#1486 CONTROL: with no scaling, the fixed floor must time the mutant out, got {problems}")
+    finally:
+        mc.REPO, mc.MUTATION_FLOOR, mc.MUTATION_SCALE = saved
+    # ...and THE PATH CI RUNS: main()'s pool, driven end to end on the same slow guard (review of
+    # PR #1491: the pool's call could drop the limit with the fixture above still green).
+    saved = (mc.REPO, mc.MUTATION_FLOOR, mc.MUTATION_SCALE, mc.GUARDS)
+    mc.REPO, mc.MUTATION_FLOOR, mc.GUARDS = root, 0.4, [guard]
+    try:
+        import contextlib, io
+        _tick()
+        mc.MUTATION_SCALE = 3.0
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            rc = mc.main(["--jobs", "2"])
+        if rc != 0:
+            FAILURES.append(f"#1486: main()'s pool must give a slow guard's mutant its scaled limit, exit {rc}")
+        _tick()
+        mc.MUTATION_SCALE = 0.0
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            rc = mc.main(["--jobs", "2"])
+        if rc == 0 or "timed out after" not in err.getvalue():
+            FAILURES.append(f"#1486 CONTROL: main()'s pool with no scaling must time the mutant out, exit {rc}")
+    finally:
+        mc.REPO, mc.MUTATION_FLOOR, mc.MUTATION_SCALE, mc.GUARDS = saved
+    _tick()
+    quick = mc.Guard(name="quick", subject="s.py", selftest="t.py", mutations=())
+    heavy = mc.Guard(name="heavy", subject="s.py", selftest="t.py", mutations=())
+    stuck = mc.Guard(name="stuck", subject="s.py", selftest="t.py", mutations=())
+    limits = mc.mutation_limits([quick, heavy, stuck], [([], 10.0), ([], 200.0), ([], 1000.0)])
+    if limits != {"quick": 300.0, "heavy": 600.0, "stuck": mc.MUTATION_CAP}:
+        FAILURES.append(f"#1486: main's pool must give each guard max(floor, 3x baseline), capped, got {limits}")
 
     # ---- 2. a SURVIVOR must be reported ------------------------------------------------
     # This mutation changes the subject in a way neither fixture observes, so the selftest still
@@ -190,6 +255,36 @@ def run() -> int:
                 "a catch by the WRONG fixture was accepted — that hides the intended fixture "
                 f"going quiet; got {problems}"
             )
+    finally:
+        mc.REPO = original_repo
+
+    # ...and the report carries the mutant's own output, or a catch seen only on CI cannot be
+    # diagnosed (#1493: two CI-only wrong-fixture catches, no output kept). A NOISY mutant, so each
+    # bound is observable: the last 12 lines exactly, the first line gone, every line <= 300 chars,
+    # and a non-UTF-8 byte decoded rather than raised.
+    guard, root = _fixture_guard((
+        mc.Mutation("even numbers reported odd", "n % 2 == 0", "False", "fixture-odd"),
+    ), selftest=NOISY_SELFTEST)
+    mc.REPO = root
+    try:
+        _tick()
+        try:
+            problems = mc.run_guard(guard)
+        except UnicodeDecodeError as exc:
+            problems = []
+            FAILURES.append(f"a non-UTF-8 byte in a mutant's output raised before the report printed: {exc}")
+        report = next((p for p in problems if "not by the expected fixture" in p), "")
+        tail = [l for l in report.split("\n")[1:] if l.startswith("      ")]
+        if not (report and "exit 1" in report and tail):
+            FAILURES.append(f"a wrong-fixture report does not carry the mutant's exit and output; got {problems}")
+        _tick()
+        if len(tail) != 12 or "noise-01" in report or "fixture-odd" not in report:
+            FAILURES.append(f"a wrong-fixture report does not carry exactly the last 12 lines of output; "
+                            f"got {len(tail)} line(s), first={tail[:1]}")
+        _tick()
+        if any(len(l) > 306 for l in tail):
+            FAILURES.append("a wrong-fixture report does not cut each output line to 300 characters; "
+                            f"widest {max(len(l) for l in tail)}")
     finally:
         mc.REPO = original_repo
 
