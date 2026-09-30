@@ -13,8 +13,9 @@ citations. The three facts that decide it, verified against
    conversation's model"*. So pinning `sonnet` on a reviewer means a user who deliberately started an
    Opus session gets a **Sonnet** reviewer. We spent their upgrade for them, downwards.
 3. Pinning *up* spends the user's money: since v2.1.222 a blocked family alias such as `opus` runs on
-   *"the newest version of that family the allowlist permits"*, and only other blocked values fall back
-   to the inherited model (re-read 2026-09-25, #1329). And an alias is a per-provider lookup that
+   *"the newest version of that family the allowlist permits"* on the Anthropic API and Claude Platform
+   on AWS, and other blocked values, other providers, or a family with no permitted version fall back to
+   the inherited model (re-read 2026-09-25 and 2026-09-30, #1329, #1433). And an alias is a per-provider lookup that
    *"update[s] over time"* — `sonnet` is **Sonnet 5.5** on the Anthropic API (from v2.1.284; Sonnet 5
    before, re-read 2026-09-29, #1449), **Sonnet 4.6** on Claude Platform on AWS, **Sonnet 4.5** on Amazon
    Bedrock and Google Cloud's Agent Platform, **Sonnet 4.5** on Microsoft Foundry (where `opus` is
