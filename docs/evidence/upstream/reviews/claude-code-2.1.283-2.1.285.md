@@ -1,0 +1,142 @@
+# Claude Code upstream review: 2.1.283 to 2.1.285
+
+_Reviewed 2026-09-30 for #1433 · CLI 2.1.284 · 132 entries from `python3 scripts/check_upstream_docs.py` · no `[quote-gone]` rows._
+
+Every entry is listed. "No surface we build on" means it touches nothing we ship or say: no shipped file
+names the surface. A **Checked** entry touches one, and says what was measured. No doctrine changed, so no
+`doctrine-verifier` verdict applies. The one capability worth adopting is filed as #1500.
+
+| version | entry | disposition |
+|---|---|---|
+| 2.1.285 | Added `CLAUDE_CODE_DISABLE_WEB_FETCH` environment variable to turn off the WebFetch tool | No surface we build on. |
+| 2.1.285 | Added `claude plugin configure <plugin>` to show a plugin's options and which are unset, or save new values read from stdin with `--values-stdin` | No surface we build on. |
+| 2.1.285 | Added `<server>.<key>=<value>` to `claude plugin install --config`, so a bundled `.mcpb` MCP server's own settings can be set at install time and it starts without visiting `/plugin` → Configure | No surface we build on. |
+| 2.1.285 | Added `CLAUDE_CODE_NONSTREAMING_TIMEOUT_RETRIES` environment variable to cap re-sends of a non-streaming fallback request that timed out | No surface we build on. |
+| 2.1.285 | Fixed `claude -p` with `CLAUDE_CODE_FORK_SUBAGENT=1`: a subagent's own Agent call now runs in the foreground, so the subagent gets the child's result | No surface we build on. |
+| 2.1.285 | Fixed plugin and marketplace installs and updates over SSH ignoring the ssh program set in `GIT_SSH` or in your git config's `core.sshCommand` | No surface we build on. |
+| 2.1.285 | Fixed Claude Code refusing to start when the OS denies reading the managed settings file; it now warns and starts without that file's policies. Other read errors and unparseable files stop every session | No surface we build on. |
+| 2.1.285 | Fixed `claude plugin disable` and `enable` with a full `name@marketplace` id changing a settings entry in another letter case instead of the installed plugin's own | No surface we build on. |
+| 2.1.285 | Fixed switching models mid-session with a `set_model` request (such as the Agent SDK's `setModel`) leaving the new model on the built-in output-token limit and auto-compact window until restart | No surface we build on. |
+| 2.1.285 | Fixed SSH passphrase and new-host prompts from worktree and `/teleport` fetches taking over the terminal; these fetches now fail fast instead of asking | No surface we build on. |
+| 2.1.285 | Fixed switching off an MCP server added mid-session in SDK and `-p` sessions leaving its tools available | No surface we build on. |
+| 2.1.285 | Fixed `claude -p --permission-prompt-tool`: a background subagent's permission request now goes to the prompt tool instead of being auto-denied | No surface we build on. |
+| 2.1.285 | Fixed `claude mcp list` and `claude mcp get`, and the not-found error of `claude mcp remove`, `login` and `logout`, printing line breaks and terminal escape sequences from MCP server names and values | No surface we build on. |
+| 2.1.285 | Fixed fork subagents not keeping the session's plan mode or `dontAsk` mode: a fork now runs under its parent's permission mode and cannot exit plan mode | No surface we build on. |
+| 2.1.285 | Fixed background subagents in auto mode prompting a second, redundant reply after each report | No surface we build on. |
+| 2.1.285 | Fixed installing a plugin with `claude plugin install` or `/plugin` putting it into an installed plugin's cache or data folder when their ids differ only in `.`, `-`, `@` or (macOS, Windows) capitals; the install is now refused | **Checked.** Our five plugin names differ by more than `.`, `-`, `@` or case. |
+| 2.1.285 | Fixed hooks and SDK permission callbacks seeing a missing or outdated plan on ExitPlanMode when the plan was written in the same response | No surface we build on. |
+| 2.1.285 | Fixed a failed `agent()`, `parallel()` or `pipeline()` call that a workflow script awaits later, or not at all, being treated as an unhandled promise rejection, which could end a background session | No surface we build on. |
+| 2.1.285 | Fixed synchronous hooks hanging Claude Code while a background process the hook started (for example `some-daemon &`) kept its output open; the hook now finishes shortly after its own process exits | **Checked.** No shipped hook starts a background process (the two `nohup` hits are the command parser in `issue_labels.py`). |
+| 2.1.285 | Fixed auto mode skipping its classifier for Artifact tool asset uploads and reads of someone else's artifact when you had approved that artifact earlier in another permission mode | No surface we build on. |
+| 2.1.285 | Fixed a misleading "core.worktree is set" error from `/ultrareview` when the project folder briefly could not be read | No surface we build on. |
+| 2.1.285 | Fixed `/ultrareview` on macOS and Linux failing to upload the working tree from a git worktree whose per-worktree config sets `core.longpaths` | No surface we build on. |
+| 2.1.285 | Fixed the PowerShell tool's permission check skipping deny and ask rules, and caching that failure for later checks, when its command parser failed to start (for example when the machine was out of memory) | No surface we build on. |
+| 2.1.285 | Fixed a cancelled shell command or hook still starting, and running to its end, when the cancel arrived while it was being set up | No surface we build on. |
+| 2.1.285 | Fixed plugins silently skipping a bundled `.mcpb` MCP server that still needs configuration: `/plugin`, the install message and `claude plugin install` now say so and point to Configure | No surface we build on. |
+| 2.1.285 | Fixed `CLAUDE_CODE_RESUME_INTERRUPTED_TURN` re-running a turn that had ended at `--max-turns` | No surface we build on. |
+| 2.1.285 | Windows: Fixed `/ultrareview` uploading a linked worktree of a repository rooted at your home folder in some cases | No surface we build on. |
+| 2.1.285 | Fixed a reply sent from `claude agents` to a background session waiting on a permission prompt sometimes approving the pending command | No surface we build on. |
+| 2.1.285 | Fixed `claude mcp list` leaving out WebSocket (`ws`) MCP servers; each is now listed with its URL and health status | No surface we build on. |
+| 2.1.285 | Fixed `claude mcp get` showing no Type, Command, Args, or Environment for stdio servers whose config entry omits the `type` field | No surface we build on. |
+| 2.1.285 | Fixed `.claude/settings.local.json` allow rules being held back outside a git repository when git's trace2 output is configured | No surface we build on. |
+| 2.1.285 | Improved plugin marketplace errors to name why a git address is refused instead of citing enterprise policy | No surface we build on. |
+| 2.1.285 | Improved validation of git URLs for plugins, marketplaces and the current repository's remote | No surface we build on. |
+| 2.1.285 | Improved subagents in auto mode: a subagent's run now ends as soon as it hands its report back to its caller, instead of taking extra turns that reach no one | No surface we build on. |
+| 2.1.285 | Improved per-turn performance when many permission deny rules and MCP tools are configured | No surface we build on. |
+| 2.1.285 | Improved Bedrock, Vertex and Mantle start-up model checks to send the same User-Agent, x-app and session ID headers as regular requests | No surface we build on. |
+| 2.1.285 | Changed MCP tools so a tool that sets its own `_meta['anthropic/alwaysLoad']` to false stays deferred when its `--mcp-config`, Agent SDK or plugin server is set to `alwaysLoad` | No surface we build on. |
+| 2.1.285 | Changed Code Review's pull request reviews and `/ultrareview` to run when `disableWorkflows` is on, unless the machine running the review has it set by its own administrator (MDM or the managed-settings file) | No surface we build on. |
+| 2.1.285 | Changed the one-time offer to make auto mode your default permission mode to also show on third-party providers and with telemetry off, when your user settings default to another mode | No surface we build on. |
+| 2.1.285 | Changed `claude -p` and Python Agent SDK sessions on third-party providers or with telemetry off to start in auto mode when no permission mode is configured, like interactive sessions; `--permission-mode` still overrides it | **Checked.** No doctrine names the default permission mode; `evals/run.py` sets `--permission-mode acceptEdits` explicitly. |
+| 2.1.285 | Changed the MCP server name `widgets` to be reserved in cloud sessions and on self-hosted runners: your own server under it, or a close spelling such as `widgets_`, no longer loads, so rename it | **Checked.** We ship no MCP server; `widgets` appears only as fixture data. |
+| 2.1.285 | Windows: Changed project and local settings `env` to no longer set `ALLUSERSPROFILE`, `SystemDrive`, or the `CommonProgramFiles` variables; set them in user or managed settings instead | No surface we build on. |
+| 2.1.285 | Changed `claude mcp get` to hide the command, arguments, and environment values of stdio MCP servers provided by plugins; variable names are still shown | No surface we build on. |
+| 2.1.285 | Changed sandbox settings so project settings cannot widen or turn off an admin-required sandbox, replace the proxy behind a managed deny list, extend a strict allowlist, or reopen managed read-denies | No surface we build on. |
+| 2.1.285 | [VSCode] Added a plugin options form to Manage plugins: installing a plugin that has options asks for the unset ones, and a gear on its row changes them later | No surface we build on. |
+| 2.1.285 | [VSCode] Fixed pressing Enter after typing a slash command running an unrelated menu item picked by fuzzy match, or doing nothing | No surface we build on. |
+| 2.1.285 | [VSCode] Fixed an open agent transcript losing the agent's newer messages during a long session | No surface we build on. |
+| 2.1.285 | [VSCode] Fixed restored tabs re-running an interrupted turn when VS Code was started with `CLAUDE_CODE_RESUME_INTERRUPTED_TURN` set, even with Continue After Reload off | No surface we build on. |
+| 2.1.285 | [VSCode] Fixed a hook's reason for blocking or stopping a prompt disappearing after a window reload | No surface we build on. |
+| 2.1.285 | [VSCode] Fixed the agent map labeling a sub-agent with the session's model instead of the model it actually ran on (e.g. under `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` or an agent's own `model`) | No surface we build on. |
+| 2.1.285 | [VSCode] Fixed uninstalling a plugin from the Manage plugins dialog, which removed the wrong installation or failed for a plugin installed for the project | No surface we build on. |
+| 2.1.285 | [VSCode] Fixed the conversation disappearing from a session when many agents run | No surface we build on. |
+| 2.1.285 | [VSCode] Fixed the editor tab keeping an old name after a session was renamed with /rename, by a SessionStart hook, or on claude.ai | No surface we build on. |
+| 2.1.285 | [VSCode] Fixed the agent map's transcript view leaving out messages sent to a running agent | No surface we build on. |
+| 2.1.285 | [VSCode] Improved the Manage plugins dialog: a failed plugin action now opens a popup that explains it and, where there is one, offers the fix | No surface we build on. |
+| 2.1.285 | [VSCode] Changed the Manage plugins dialog to ask before removing a marketplace or turning off a plugin that your project's shared `.claude/settings.json` turns on | No surface we build on. |
+| 2.1.285 | [Cloud sessions] Changed `MCP_DISCOVERY_CACHE=1`, when set in your cloud environment's variables rather than a settings file, to reuse your connectors' tool lists after a session restart; other MCP servers are no longer cached and connect at startup | No surface we build on. |
+| 2.1.285 | [Claude Tag] Fixed the Default model setting in admin settings and a channel's Configure page offering models your organization can't use, which made saves or new sessions fail | No surface we build on. |
+| 2.1.284 | Added `effortSlider:decreaseEffort`, `increaseEffort` and `toggleUltracode` keybinding actions, so the `/effort` slider's arrow and Tab keys can be rebound in `keybindings.json` | No surface we build on. |
+| 2.1.284 | Added `/mcp reconnect all` in the interactive terminal to retry every MCP server that failed to connect or needs authentication at once | No surface we build on. |
+| 2.1.284 | Fixed Agent SDK sessions crashing when a user message contains an image with a malformed `source`, and failing on every later turn after a malformed document block; a malformed image is now replaced with an explanatory note | No surface we build on. |
+| 2.1.284 | Fixed MCP tool calls in a resumed session failing with "No such tool available" while their server was still connecting; the call now waits up to 10 seconds for the server | No surface we build on. |
+| 2.1.284 | Fixed `claude mcp add` reporting success when managed settings restrict MCP servers to plugins; it now refuses and says what to do, instead of saving a server that never loads | No surface we build on. |
+| 2.1.284 | Fixed the `/plugin` configure screen: boolean options are now a true/false choice instead of free text, number options refuse invalid input, and ←/→ change an options field instead of switching tabs | No surface we build on. |
+| 2.1.284 | Fixed Bash tool failing on Windows with many plugins enabled: plugin `bin/` directories that don't exist are no longer added to PATH, and inherited entries aren't added twice | No surface we build on. |
+| 2.1.284 | Fixed `sparsePaths` plugin marketplaces cloning empty and replacing a working local copy on older git (before 2.39), which failed every refresh with "marketplace.json file is no longer present" | No surface we build on. |
+| 2.1.284 | Fixed tab bars in dialogs such as `/config` and `/plugin` breaking the title and tab labels mid-word in a narrow terminal; a tab that doesn't fit now moves to the next line whole | No surface we build on. |
+| 2.1.284 | Fixed a rebound agent panel close key (`footer:close`) typing "x" instead of itself on the row of the agent you're viewing | No surface we build on. |
+| 2.1.284 | Fixed plugins from marketplaces, claude.ai and npm pre-approving their own tools via `allowed-tools` under managed `allowManagedPermissionRulesOnly`; only plugins from an official Anthropic source or a source that managed settings vouch for keep that pre-approval | **Checked.** No shipped command or skill uses `allowed-tools`. |
+| 2.1.284 | Fixed a failed first `claude plugin install` leaving the plugin enabled and recorded when a dependency's version range could not be met | No surface we build on. |
+| 2.1.284 | Fixed the debug log dropping a failed hook's stderr when the hook also wrote to stdout, and logging nothing for a failed hook with no output; failed hooks now also log their status code | No surface we build on. |
+| 2.1.284 | Fixed `{"decision":"block"}` returned by Elicitation and ElicitationResult hooks being ignored; it now declines the MCP elicitation, as exit code 2 does | No surface we build on. |
+| 2.1.284 | Fixed the Explore subagent switching to Opus on the Claude API when the session runs a model ID Claude Code doesn't recognize, such as a custom model behind a proxy; Explore now inherits that model | **Checked.** `plugins/rails-flow/reference/model-tiers.md` quotes the Explore inherit-and-cap sentences; both are still verbatim on `sub-agents` (fetched 2026-09-30). The fix concerns unrecognised model IDs, which our doctrine does not cover. |
+| 2.1.284 | Fixed `/ultrareview` failing to upload the working tree when started from a git worktree that the Claude desktop app created on macOS or Linux | No surface we build on. |
+| 2.1.284 | Improved Workflow tool sandbox hardening for errors thrown by async script hooks | No surface we build on. |
+| 2.1.284 | Improved startup time and memory use by building only the parts of the settings schema that your settings files actually use | No surface we build on. |
+| 2.1.284 | Improved lists such as `/tasks`, `/copy` and `/hooks`: the details after each name now line up in one column when they fit, and otherwise sit at the right edge | No surface we build on. |
+| 2.1.284 | Improved `claude plugin marketplace add` to say when it replaces a marketplace already added under the same name from a different source, and how to undo it | No surface we build on. |
+| 2.1.284 | Improved the startup refusal when managed settings require a sign-in (`forceLoginMethod` or `forceLoginOrgUUID`) and an API key, token or `apiKeyHelper` is configured: it now names the credential in use, where it is set, and how to remove it | No surface we build on. |
+| 2.1.284 | Changed interactive terminal and VS Code sessions to start in auto mode when no permission mode is configured, on every plan and provider; `permissions.defaultMode` still overrides it | **Checked.** No doctrine names the default permission mode; `evals/run.py` sets `--permission-mode acceptEdits` explicitly. |
+| 2.1.284 | Changed Ultracode into its own toggle in `/effort` (Tab, or `/effort ultracode [on\\|off]`): it no longer forces xhigh effort and stays on at any effort level | No surface we build on. |
+| 2.1.284 | Changed the non-interactive first turn to still wait up to 2s for connecting MCP servers named by `--allowedTools` or an `mcp_tool` hook, even when `CLAUDE_CODE_MCP_STARTUP_WAIT_MS` is `0` | No surface we build on. |
+| 2.1.284 | Changed `/artifacts` to show its filter tabs beside the title with one-word labels (All, Mine, Shared), using the same tab bar as `/config` and `/plugin` | No surface we build on. |
+| 2.1.284 | [VSCode] Added plugin load errors and notes to the Manage plugins rows, with a popup to disable, uninstall or copy the error | No surface we build on. |
+| 2.1.284 | [VSCode] Added an Ultracode on/off switch under the Effort slider, replacing the slider's Ultracode stop; the model pill shows "· Ultracode" at any effort level | No surface we build on. |
+| 2.1.284 | [VSCode] Fixed Focus view sections you expanded closing on their own while a sub-agent is working or when the section's first step is trimmed from view | No surface we build on. |
+| 2.1.284 | [VSCode] Fixed a message from another agent with no recorded sender showing as raw XML in the chat | No surface we build on. |
+| 2.1.284 | [VSCode] Fixed messages from other agents, sessions or channels disappearing after a reload | No surface we build on. |
+| 2.1.284 | [VSCode] Fixed a user's own `/mcp`, `/config` or `/settings` command being shadowed by the extension's dialog | No surface we build on. |
+| 2.1.284 | [VSCode] Fixed Escape stopping every background agent when no turn was running | No surface we build on. |
+| 2.1.284 | [VSCode] Fixed plugin install links replacing a marketplace you already have that uses the same name | No surface we build on. |
+| 2.1.284 | [VSCode] Changed `CLAUDE_CONFIG_DIR` in the `claudeCode.environmentVariables` setting to apply only when it is an absolute path, and passed it to terminals that continue the chat | No surface we build on. |
+| 2.1.284 | [Claude Tag] Improved "Notify members now" in admin settings: one press reaches every workspace your organization claimed in an Enterprise Grid, and more members in large workspaces | No surface we build on. |
+| 2.1.284 | [Claude Tag] Improved a channel's access lists in admin settings to show the connectors, repositories and plugins an auto-join pattern attaches, and where each comes from | No surface we build on. |
+| 2.1.283 | Added `x-claude-code-prompt-id` to the gateway hint headers so LLM gateways can group the requests that serve one user prompt; opt in with `CLAUDE_CODE_GATEWAY_HINT_HEADERS=1` | No surface we build on. |
+| 2.1.283 | Added MCP tool, WebFetch and WebSearch outputs to the `tool.output` OpenTelemetry span event when `OTEL_LOG_TOOL_CONTENT=1` | No surface we build on. |
+| 2.1.283 | Added `/doctor prompt-audit` (also `/checkup prompt-audit`) to audit your CLAUDE.md files, skills, agents and commands for prompting patterns written for older models | **Feature candidate** → #1500. |
+| 2.1.283 | Added `path` to `--plugin-dir` load-failure entries in the stream-json `system/init` `plugin_errors`, naming the directory that did not load | No surface we build on. |
+| 2.1.283 | Fixed MCP progress notifications being discarded once a long-running tool call moved to the background; the background task now shows the latest progress | No surface we build on. |
+| 2.1.283 | Fixed stdio MCP servers being left running when the session ended while they were still starting | No surface we build on. |
+| 2.1.283 | Fixed a brief HTTP 404 from a stateless remote MCP server (for example a proxy mid-redeploy) leaving that server unusable for the rest of the session while still shown as connected | No surface we build on. |
+| 2.1.283 | Fixed MCP sign-in for a server with no valid URL failing with an opaque SDK error; `/mcp` no longer offers Authenticate for such servers | No surface we build on. |
+| 2.1.283 | Fixed dynamic workflows started during a model fallback running every agent on the fallback model instead of retrying the configured model | No surface we build on. |
+| 2.1.283 | Fixed `claude plugin validate` saying Claude Code accepts a plugin or marketplace name it cannot install; such names in `marketplace.json` now fail validation | **Checked.** `claude plugin validate .claude-plugin/marketplace.json --strict` on CLI 2.1.284: passed (2026-09-30). |
+| 2.1.283 | Fixed `claude plugin validate` passing plugins whose `outputStyles`, `themes`, `monitors`, or `lspServers` paths are missing or point outside the plugin directory | No surface we build on. |
+| 2.1.283 | Fixed `claude plugin details` showing 0 MCP servers for plugins that declare their servers in `plugin.json` | No surface we build on. |
+| 2.1.283 | Fixed `claude plugin marketplace remove` not saying which installed plugins it uninstalled with the marketplace; it now lists them | No surface we build on. |
+| 2.1.283 | Fixed `claude plugin uninstall` removing the other of two installed plugins whose ids differ only in case, with its options and secrets, when the one named had no `enabledPlugins` entry at that scope | No surface we build on. |
+| 2.1.283 | Fixed plugins that declare no version being silently restored at their source's newest commit, not the installed one, when their cached files were missing | **Checked.** All four `plugin.json` files and the `rails-stack` entry declare a version. |
+| 2.1.283 | Fixed user-installed plugins and marketplaces failing to load with "cache-miss" after the home or config directory was moved, for example in bind-mounted devcontainers | No surface we build on. |
+| 2.1.283 | Fixed `installed_plugins.json` showing no plugins when it holds a record under an invalid plugin id; such a file loads again | **Checked.** `plugins/design-flow/scripts/doctrine_path.py` already falls back when the file is unreadable or has no applicable record. |
+| 2.1.283 | Fixed `installed_plugins.json` being rewritten, losing records, when it holds a record this version cannot read; `claude plugin` commands now name the record and say how to recover | **Checked.** As above: `doctrine_path.py` only reads the file. |
+| 2.1.283 | Fixed permission dialogs in screen-reader mode reading quoted commands and paths as if they were the dialog's own text | No surface we build on. |
+| 2.1.283 | Fixed `/context` not counting MCP server instructions: they now appear as their own row and count toward the total | No surface we build on. |
+| 2.1.283 | Fixed `claude mcp add`, `add-json`, and `remove` reporting success when the user or local config file could not be written, for example inside a sandbox | No surface we build on. |
+| 2.1.283 | Fixed worktree checkouts failing certificate verification (for example on Git LFS downloads) when the CA certificate is passed to git as `GIT_CONFIG_COUNT` environment pairs | No surface we build on. |
+| 2.1.283 | Fixed managed `sandbox` settings being ignored entirely when one nested value was invalid; the invalid value now fails closed and the rest of the block still applies | No surface we build on. |
+| 2.1.283 | Improved the `/mcp` tool list: it shows more tools at once, scrolls with the page keys and mouse, and marks tools your organization blocked with a warning icon | No surface we build on. |
+| 2.1.283 | Improved MCP tool results: images returned by MCP tools are now also saved to a file, so Bash, Read and other tools can open them | No surface we build on. |
+| 2.1.283 | Improved lists in `/help`, `/hooks`, `/copy`, `/chrome`, `/memory`, `/ide`, `/release-notes`, `/rewind`, `/diff`, `/remote-env`, `/plugin` and other pickers with page keys, mouse wheel and clicks | No surface we build on. |
+| 2.1.283 | Improved lists beside a search box, such as `/skills` and `/artifacts`, to draw their pointer dim while the search box has the keys, so only one pointer is highlighted | No surface we build on. |
+| 2.1.283 | Improved the browser page shown after signing in to an MCP server: centered layout, dark mode, and new artwork | No surface we build on. |
+| 2.1.283 | Improved the Skill tool's reply when a skill belongs to a plugin that failed to load, so Claude tells you the plugin could not be loaded instead of calling the skill uninstalled | No surface we build on. |
+| 2.1.283 | Improved recovery from an `installed_plugins.json` that cannot be read at all: its contents are kept in a file beside it before it is rebuilt, and `claude plugin list` names that file | **Checked.** As above. |
+| 2.1.283 | Changed interactive sessions on third-party providers or with telemetry off to start in auto mode when no permission mode is configured; `permissions.defaultMode` still overrides it | **Checked.** No doctrine names the default permission mode; `evals/run.py` sets `--permission-mode acceptEdits` explicitly. |
+| 2.1.283 | Changed `Skill(anthropic-skills:<name>)` deny rules to also block that skill when Claude Desktop delivers it as a plugin, and `Skill(skill:<name>)` denies to match the skill's alias and display name | No surface we build on. |
+| 2.1.283 | Changed `claude plugin eval` to require git 2.31 or later when git is installed; a run on an older git is refused with a message naming the version | **Checked.** `evals/` only names `claude plugin eval` as the future runner; it states no git version. |
+| 2.1.283 | Self-hosted runner: Changed lifecycle hooks' git to skip a repository's Git LFS `pre-push` hook, ignore a writable system `core.hooksPath`, and not sign commits without `--configure-git` | No surface we build on. |
+| 2.1.283 | Reverted the 2.1.282 reservation of the `claude-ai` name: skills, commands, workflows and MCP servers' skills and prompts so named load again, and `Skill(claude-ai:*)` rules are ordinary prefix rules | **Checked.** Nothing we ship is named `claude-ai`. |
+| 2.1.283 | [VSCode] Fixed the permission mode indicator showing Default while the session kept running in auto or bypass mode after an automatic switch out of it failed; the switch is now retried until it lands | No surface we build on. |
+| 2.1.283 | [VSCode] Fixed the footer's agents pill drawing its icon off-center, with the status dot against the edge, in narrow panels | No surface we build on. |
+| 2.1.283 | [Claude Tag] Fixed a channel's configure page listing no connectors or plugins when the channel gets its access bundle through an attach rule; rule-attached bundles are now shown | No surface we build on. |
