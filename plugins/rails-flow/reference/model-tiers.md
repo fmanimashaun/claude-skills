@@ -181,7 +181,7 @@ page does not mention the advisor at all (checked 2026-09-30, #1505).
 
 **Its cost is the agent's transcript, and ours are not short.** *"Each advisor call processes the full
 transcript anew, with no reuse between calls"*. Measured on 2026-09-30 by
-`scripts/measure_subagent_context.py --shipped-only` over 578 stored runs on one maintainer machine
+`scripts/measure_subagent_context.py` over 578 stored runs on one maintainer machine
 (peak request context per run; indicative, not a population, and several agents have 1–4 runs;
 `docs/evidence/advisor/subagent-context-2026-09-30.md`): shipped agents' medians run from 11k tokens
 (`test-runner`) to 222k (`design-porter`), and the six Haiku agents' from 11k to 83k (`a11y-auditor`).

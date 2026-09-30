@@ -1,4 +1,4 @@
-_Measured 2026-09-30 by `python3 scripts/measure_subagent_context.py --shipped-only` on one maintainer machine. Indicative, not a population: several agents have 1–4 runs._
+_Measured 2026-09-30 by `python3 scripts/measure_subagent_context.py` on one maintainer machine: aggregates only, shipped agents only. Indicative, not a population: several agents have 1–4 runs._
 
 578 stored run(s) with usage; 332 shown
 
@@ -10,8 +10,8 @@ _Measured 2026-09-30 by `python3 scripts/measure_subagent_context.py --shipped-o
 | qa-flow:e2e-tester | 10 | 110,202 | 211,115 |
 | rails-flow:rails-developer | 31 | 103,086 | 299,738 |
 | qa-flow:exploratory-tester | 7 | 94,952 | 120,272 |
+| rails-flow:pr-reviewer | 129 | 83,313 | 223,218 |
 | qa-flow:a11y-auditor | 9 | 83,274 | 109,285 |
-| rails-flow:pr-reviewer | 129 | 83,098 | 223,218 |
 | rails-flow:skill-curator | 10 | 83,095 | 253,555 |
 | design-flow:ui-composer | 10 | 78,819 | 184,131 |
 | design-flow:brand-guardian | 1 | 75,631 | 75,631 |

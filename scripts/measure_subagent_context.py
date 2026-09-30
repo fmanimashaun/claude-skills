@@ -8,8 +8,13 @@ costs is the subagent's context size. `model-tiers.md` states that size; this ma
 It reads `~/.claude/projects/*/*/subagents/*.jsonl` with its `.meta.json` (`agentType`) and takes, per
 run, the PEAK request context: input + cache-read + cache-creation tokens. It needs the user's own
 transcripts, so it cannot run in CI and is not a gate -- a maintainer diagnostic, like the corpora.
+With no transcripts it exits 3, NOT APPLICABLE, which is not a pass.
 
-    python3 scripts/measure_subagent_context.py [--root DIR] [--shipped-only]
+It prints aggregates only (agent name, run count, token median and max) and only for agents THIS
+repository ships: a transcript's text, paths, session ids, and any other project's agent names never
+reach the output.
+
+    python3 scripts/measure_subagent_context.py [--root DIR]
     python3 scripts/measure_subagent_context.py --selftest
 """
 from __future__ import annotations
@@ -61,8 +66,8 @@ def shipped_agents() -> set[str]:
     return {f"{p.parent.parent.name}:{p.stem}" for p in (REPO / "plugins").glob("*/agents/*.md")}
 
 
-def report(runs: dict[str, list[int]], only: set[str] | None) -> str:
-    rows = sorted(((a, v) for a, v in runs.items() if only is None or a in only),
+def report(runs: dict[str, list[int]], only: set[str]) -> str:
+    rows = sorted(((a, v) for a, v in runs.items() if a in only),
                   key=lambda av: -statistics.median(av[1]))
     lines = [f"{sum(len(v) for v in runs.values())} stored run(s) with usage; "
              f"{sum(len(v) for _, v in rows)} shown", "",
@@ -95,29 +100,39 @@ def selftest() -> int:
             failures.append(f"peak context summed per request and maximised per run: {runs}")
         if "Explore" in runs:
             failures.append("a run with no usage is not a measurement")
-        out = report(runs, {"rails-flow:test-runner"})
+        (sub / "agent-d.meta.json").write_text(json.dumps({"agentType": "someproject:private-agent"}))
+        (sub / "agent-d.jsonl").write_text(json.dumps({"message": {"usage": {"input_tokens": 7}}}) + "\n")
+        out = report(measure(root), {"rails-flow:test-runner"})
         if "| rails-flow:test-runner | 2 | 150 | 250 |" not in out:
             failures.append(f"median and max are reported per agent: {out}")
+        # Only what we ship reaches the output: another project's agent name must not.
+        if "someproject" in out or "private-agent" in out:
+            failures.append(f"an agent this repository does not ship reached the output: {out}")
+    # No transcripts is NOT APPLICABLE (3), never a pass, and prints nothing to stdout.
+    with tempfile.TemporaryDirectory() as empty:
+        if main(["--root", empty]) != 3 or main(["--root", str(Path(empty) / "absent")]) != 3:
+            failures.append("no transcripts must exit 3 (not applicable), not 0")
     if "rails-flow:test-runner" not in shipped_agents():
         failures.append("shipped agents are named <plugin>:<file stem>")
     for f in failures:
         print(f"FAIL {f}", file=sys.stderr)
-    print(f"measure_subagent_context selftest: {4 - len(failures)} of 4 passed")
+    print(f"measure_subagent_context selftest: {6 - len(failures)} of 6 passed")
     return 1 if failures else 0
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--root", type=Path, default=Path.home() / ".claude" / "projects")
-    ap.add_argument("--shipped-only", action="store_true", help="only agents this repository ships")
     ap.add_argument("--selftest", action="store_true")
     args = ap.parse_args(argv)
     if args.selftest:
         return selftest()
-    if not args.root.is_dir():
-        print(f"no transcripts under {args.root} -- nothing measured, which is not a result", file=sys.stderr)
-        return 2
-    print(report(measure(args.root), shipped_agents() if args.shipped_only else None))
+    runs = measure(args.root) if args.root.is_dir() else {}
+    if not runs:
+        print("NOT APPLICABLE: no stored subagent transcripts here (CI has none) -- nothing was "
+              "measured, which is not a pass", file=sys.stderr)
+        return 3
+    print(report(runs, shipped_agents()))
     return 0
 
 

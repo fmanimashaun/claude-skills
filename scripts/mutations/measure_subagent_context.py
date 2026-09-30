@@ -14,6 +14,18 @@ GUARD = Guard(
     needs=("plugins/",),
     mutations=(
         Mutation(
+            'an agent we do not ship reaches the output',
+            '    rows = sorted(((a, v) for a, v in runs.items() if a in only),',
+            '    rows = sorted(((a, v) for a, v in runs.items()),',
+            'an agent this repository does not ship reached the output',
+        ),
+        Mutation(
+            'no transcripts reads as a pass',
+            '        return 3',
+            '        return 0',
+            'no transcripts must exit 3',
+        ),
+        Mutation(
             "the last request's context is taken instead of the peak",
             '            peak = max(peak, sum(int(usage.get(k) or 0) for k in',
             '            peak = (sum(int(usage.get(k) or 0) for k in',
