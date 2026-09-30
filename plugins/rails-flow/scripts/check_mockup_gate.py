@@ -351,7 +351,7 @@ def selftest() -> int:
             ("an indented line after a heading is code (a heading is no paragraph)", f"# Gates\n    - {O}\n", False),
             ("an indented line after a fenced block is code", f"Text\n```\nx\n```\n    - {O}\n", False),
             ("a list ends at a top-level paragraph, and code after it is code", f"- a\n\nPara\n\n    - {O}\n", False),
-            ("a non-breaking space is not indentation (§2.1)", f"Example:\n\n    - {O}\n", False),
+            ("a non-breaking space is not indentation (§2.1)", f"Example:\n\n\u00a0\u00a0\u00a0\u00a0- {O}\n", False),
             ("CONTROL: three spaces before a top-level marker is still an item (Ex 286)", f"   - {O}\n", True),
             # Discriminating shapes: each is decided by one rule, after a blank line where the paragraph
             # exemption cannot rescue a wrong column.
