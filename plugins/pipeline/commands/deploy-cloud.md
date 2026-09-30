@@ -47,7 +47,8 @@ then deploys.
      (generate via `kamal init` if absent, else patch, never clobber). With a destination,
      the hosts and anything else that differs go in the plan's `overlay`,
      `config/deploy.<dest>.yml`: Kamal refuses `-d` without it.
-   - `RAILS_ENV` and non-secret toggles → deploy.yml `env.clear`.
+   - `RAILS_ENV` and non-secret toggles → deploy.yml `env.clear` (the overlay's `env.clear`
+     when the destination's value differs).
 2. **Safety pass (BLOCKING)**: `.kamal/deploy.env`, `.kamal/secrets*`, `*.key` gitignored AND
    dockerignored; `scan_committed_secrets.py` exits 0 (no secret value in any file git would
    commit, including an untracked deploy.yml; `git diff` cannot prove this, #1341);
