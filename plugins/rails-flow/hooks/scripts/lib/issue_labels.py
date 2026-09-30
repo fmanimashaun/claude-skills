@@ -112,9 +112,9 @@ def issue_creates(cmd: str) -> list[tuple[list[str], str | None, str | None]]:
     anything through that was refused before; `verdict` adds the remaining certainty checks.
     """
     try:
-        cmd = strip_heredocs(cmd)
+        cmd = _ansi_c(strip_heredocs(cmd))
     except ValueError:
-        return [(["__unparseable__"], None, None)]
+        return _unparseable(cmd)
     cmd = cmd.replace("\\\n", "").replace("\n", " ; ")   # a backslash-newline JOINS: `cre\\<nl>ate`
     # The followed cd shape is checked on the RAW text too (#1440): shlex drops quotes, so a quoted
     # `'&&'` would otherwise read as the separator. The operand may itself be quoted.
@@ -124,7 +124,7 @@ def issue_creates(cmd: str) -> list[tuple[list[str], str | None, str | None]]:
         lexer.whitespace_split = True
         tokens = list(lexer)
     except ValueError:
-        return [(["__unparseable__"], None, None)]
+        return _unparseable(cmd)
     # shlex glues adjacent punctuation (`);`, `&&(`). A glued run is read as a word, which can only
     # keep the exact cd shape from matching -- and then the session's rules apply. It never hides a
     # create: `gh issue create` is found anywhere in its segment.
@@ -189,6 +189,46 @@ def _names_create(text: str) -> bool:
     `gh issue "create"` into the same words (#1462); a backslash-newline joins lines."""
     return bool(CREATE_TEXT.search(" " + text.replace("\\\n", "").replace('"', "").replace("'", "")))
 SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
+# A shell reading a redirect, as guard-bash.sh's trigger spells it (#1489): `/bin/bash < f`,
+# `bash --norc < f`, `sh<f`, `bash 0< f`. Coarse on purpose; the parser decides.
+SHELL_REDIRECT = re.compile(r"(?:^|[\s;&|(/])(?:sh|bash|zsh|dash|ksh)(?:\s[^;&|]*)?<(?:[^<(]|$)")
+
+
+def _unparseable(cmd: str) -> list:
+    """An unparseable command is refused only when it could be hiding a create: it names one, or a
+    shell reads a redirect. Anything else is valid bash this parser merely cannot read (#1489 review:
+    `echo $'it\\'s'; bash < h.sh` was refused), and was allowed before the trigger widened."""
+    if _names_create(cmd) or SHELL_REDIRECT.search(cmd):
+        return [(["__unparseable__"], None, None)]
+    return []
+
+
+def _ansi_c(cmd: str) -> str:
+    """`$'…'` (ANSI-C quoting) rewritten as the single-quoted string it means, so shlex can read it.
+    Only outside quotes: inside `'…'` or `"…"` a `$'` is literal text."""
+    out, q, i = [], "", 0
+    while i < len(cmd):
+        ch = cmd[i]
+        if q == "'":
+            q = "" if ch == "'" else q
+        elif ch == "\\" and q != "'":
+            out.append(cmd[i:i + 2]); i += 2
+            continue
+        elif ch == '"':
+            q = "" if q == '"' else '"'
+        elif ch == "'" and not q:
+            q = "'"
+        elif not q and cmd.startswith("$'", i):
+            j, val = i + 2, []
+            while j < len(cmd) and cmd[j] != "'":
+                if cmd[j] == "\\" and j + 1 < len(cmd):
+                    val.append({"n": "\n", "t": "\t"}.get(cmd[j + 1], cmd[j + 1])); j += 2
+                    continue
+                val.append(cmd[j]); j += 1
+            out.append(shlex.quote("".join(val))); i = j + 1
+            continue
+        out.append(ch); i += 1
+    return "".join(out)
 WRAPPERS = {"env", "sudo", "command", "builtin", "exec", "nohup", "timeout", "nice", "time", "xargs"}
 
 
@@ -202,7 +242,7 @@ def hidden_create(cmd: str) -> str | None:
     """
     heredocs: list = []
     try:
-        body = strip_heredocs(cmd, heredocs)
+        body = _ansi_c(strip_heredocs(cmd, heredocs))
     except ValueError:
         return None                  # the caller already refuses an unparseable command
     # HEREDOC BODIES THAT RUN (#1462, #1467). A body fed to a shell is a script; an UNQUOTED body
@@ -252,12 +292,27 @@ def hidden_create(cmd: str) -> str | None:
         return None
     seg: list[str] = []
     prev_text, prev_op = "", ""      # the pipeline so far (every `|`-joined segment), and the last operator
+    # Where a relative `bash < script` resolves (#1489 review): the session's directory, moved by each
+    # literal top-level `cd`. Any other cd (`cd -`, `cd $X`, bare, `pushd`/`popd`, or one inside
+    # `( )`, which does not outlive its subshell) makes it unknown, and an unknown file is allowed.
+    here_dir: Path | None = Path.cwd()
+    depth = 0
     for tok in tokens + [";"]:
         if tok and set(tok) <= set(";&|()"):
             raw_seg = " ".join(seg)
             words = [w for w in seg if not ("=" in w and w.split("=", 1)[0].isidentifier())]
             words = _peel(words)       # `env sh -c`, `sudo bash -c`, `timeout 5 sh -c`, `command eval`
+            if words and "<" in words[0]:
+                pre, _, post = words[0].partition("<")      # `sh<f` is `sh` reading `<f`
+                if os.path.basename(pre) in SHELLS:
+                    words = [pre, "<" + post] + words[1:]
             head = os.path.basename(words[0]) if words else ""
+            if head in ("cd", "pushd", "popd"):
+                arg = words[1] if len(words) == 2 else None
+                if here_dir is None or depth or head != "cd" or not arg or arg == "-" or "$" in arg or "`" in arg:
+                    here_dir = None
+                else:
+                    here_dir = here_dir / os.path.expanduser(arg)
             rest = " ".join(words[1:])
             # `-c` may be bundled with other short flags: `bash -lc '…'`.
             runs_string = any(w.startswith("-") and not w.startswith("--") and "c" in w for w in words[1:])
@@ -272,9 +327,15 @@ def hidden_create(cmd: str) -> str | None:
                 here = next((k for k, w in enumerate(words) if w.startswith("<<<")), None)
                 if here is not None and _names_create(" ".join([words[here][3:]] + words[here + 1:])):
                     return f"a herestring fed to `{head}`"
+                # `bash < script` / `bash <script` (#1489): the create lives in the FILE, so read it.
+                # A file that cannot be read is allowed, as before -- this can only add refusals.
+                script = _redirected_script(words[1:], here_dir) if _stdin_is_script(words[1:]) else None
+                if script is not None and _names_create(script):
+                    return f"a script fed to `{head}` by redirect"
             # A pipeline feeds its whole upstream: `echo … | cat | bash` runs what echo wrote.
             prev_text = (prev_text + " " + raw_seg) if prev_op in ("|", "|&") else raw_seg
             prev_op = tok
+            depth = max(0, depth + tok.count("(") - tok.count(")"))
             seg = []
         else:
             seg.append(tok)
@@ -329,6 +390,67 @@ def _peel(words: list[str]) -> list[str]:
         if wrapper in ("timeout", "nice") and words and re.fullmatch(r"[\d.]+[smhd]?", words[0]):
             words.pop(0)
     return words
+
+
+def _stdin_is_script(args: list[str]) -> bool:
+    """Does a shell run its STDIN as the script? Only with no operand, or with `-s` (#1489 review):
+    `bash script.sh < notes.md` runs script.sh and hands it notes.md as data."""
+    k, has_s, ended = 0, False, False
+    while k < len(args):
+        w = args[k]
+        k += 1
+        if w in ("<", "0<", ">", ">>", "2>", "&>") or re.fullmatch(r"\d*[<>]&?", w):
+            k += 1                   # a redirect's target is not an operand
+            continue
+        if re.match(r"\d*[<>]", w):
+            continue                 # `<f`, `0<f`, `>log`, `2>&1`
+        if w == "--" and not ended:
+            ended = True             # after `--`, even `-x` is an operand
+            continue
+        if w[:1] in ("-", "+") and len(w) > 1 and not ended:
+            if w in ("-o", "+o", "-O", "+O", "--rcfile", "--init-file"):
+                k += 1
+            elif not w.startswith("--") and "s" in w[1:]:
+                has_s = True
+            continue
+        return has_s                 # an operand: the script is that file, unless -s
+    return True
+
+
+def _redirected_script(args: list[str], cwd: Path | None) -> str | None:
+    """The contents of the file a shell reads as stdin (`< path`, `<path`, `0< path`), or None.
+
+    Only a real, readable file, of which the first 1 MB is read; a relative path resolves from CWD,
+    the directory the command has moved to, and is unknown when that is (None). `$HOME` expands.
+    `<<` (heredoc) and `<<<` (herestring) are other forms, handled elsewhere; `<(` is a process
+    substitution, not a file. Unreadable means unknown, and unknown keeps dev's behaviour: allow.
+    """
+    target = None
+    for k, w in enumerate(args):
+        if w.startswith("0<"):
+            w = w[1:]
+        if w == "<" and k + 1 < len(args):
+            target = args[k + 1]
+            break
+        if w.startswith("<") and not w.startswith(("<<", "<(")) and len(w) > 1:
+            target = w[1:]
+            break
+    if target:
+        target = re.sub(r"^\$(HOME|\{HOME\})(?=/|$)", lambda _: os.path.expanduser("~"), target)
+    if not target or "$" in target or "`" in target:
+        return None
+    path = Path(os.path.expanduser(target))
+    if not path.is_absolute():
+        if cwd is None:
+            return None
+        path = cwd / path
+    try:
+        if not path.is_file():
+            return None
+        with path.open("rb") as fh:
+            return fh.read(1_000_000).decode("utf-8", errors="replace")
+    except OSError:
+        return None
 
 
 def _command_word(text: str) -> str:
@@ -778,6 +900,79 @@ def selftest() -> int:
                            ("a pipe into `bash`", "echo 'gh issue create -t X' |& bash")):
             ok, why = verdict(cmd, bare)
             check(f"{cmd.splitlines()[0][:34]!r}: refused as {shape}", not ok and shape in why, why)
+        # #1489: a script fed to a shell by redirect -- the create lives in the file.
+        script = Path(td) / "file-an-issue.sh"
+        script.write_text("#!/bin/sh\ngh issue create -t X\n", encoding="utf-8")
+        for name, form in (("a spaced redirect", f"bash < {script}"), ("a glued redirect", f"bash <{script}"),
+                           ("a redirect behind timeout", f"timeout 5 sh < {script}")):
+            ok, why = verdict(form, bare)
+            check(f"{name} feeding a script with a create to a shell is refused", not ok and "by redirect" in why, why)
+        harmless = Path(td) / "no-issue.sh"
+        harmless.write_text("#!/bin/sh\necho hi\n", encoding="utf-8")
+        check("CONTROL: a redirected script without a create is allowed", verdict(f"bash < {harmless}", bare)[0])
+        check("CONTROL: a redirect to a missing file is allowed, as before", verdict(f"bash < {td}/nope.sh", bare)[0])
+        check("CONTROL: cat reading the same file is not a shell running it",
+              verdict(f"cat < {script}", bare)[0])
+        # #1489 review: the shell spellings and redirect forms the first version missed.
+        for form in (f"/bin/bash < {script}", f"bash --norc < {script}", f"bash -o errexit < {script}",
+                     f"sh<{script}", f"bash 0< {script}", f"bash 0<{script}"):
+            ok, why = verdict(form, bare)
+            check(f"{form.split(str(td))[0]!r}: refused as a script fed by redirect", not ok and "by redirect" in why, why)
+        # A relative script resolves from the directory the command has cd'd to, not the session's.
+        sub = Path(td) / "sub"
+        sub.mkdir()
+        (sub / "only.sh").write_text("gh issue create -t X\n", encoding="utf-8")
+        (sub / "c2.sh").write_text("echo hi\n", encoding="utf-8")
+        (Path(td) / "c2.sh").write_text("gh issue create -t X\n", encoding="utf-8")
+        # A directory literally named `$X`: following `cd $X` as if literal would find a create here.
+        (sub / "$X").mkdir()
+        (sub / "$X" / "only.sh").write_text("gh issue create -t X\n", encoding="utf-8")
+        ok, why = verdict(f"cd {sub} && bash < only.sh", bare)
+        check("a relative script is read from the cd target", not ok and "by redirect" in why, why)
+        was = os.getcwd()
+        try:
+            os.chdir(td)
+            check("CONTROL: the cd target's harmless script is judged, not the session directory's",
+                  verdict("cd sub && bash < c2.sh", bare)[0])
+            check("CONTROL: after a cd it cannot resolve, a relative script is unknown and allowed",
+                  verdict("cd sub && cd $X && bash < only.sh", bare)[0])
+            check("CONTROL: a cd inside ( ) does not outlive it, so the directory is unknown and allowed",
+                  verdict("(cd sub) && bash < only.sh", bare)[0])
+            ok, why = verdict("bash < c2.sh", bare)
+            check("with no cd, a relative script is read from the session directory", not ok and "by redirect" in why, why)
+        finally:
+            os.chdir(was)
+        # ANSI-C quoting is valid bash: it must parse, not be refused as unparseable.
+        check("CONTROL: `echo $'it\\'s'` before a harmless redirected script is allowed",
+              verdict(f"echo $'it\\'s'; bash < {harmless}", bare)[0], verdict(f"echo $'it\\'s'; bash < {harmless}", bare)[1])
+        ok, why = verdict(f"echo $'it\\'s'; bash < {script}", bare)
+        check("`echo $'it\\'s'` before a script with a create: still refused by redirect", not ok and "by redirect" in why, why)
+        check("CONTROL: an unparseable command naming no create and no redirect is allowed",
+              verdict('echo "unbalanced', bare)[0])
+        ok, why = verdict(f'bash < {harmless}; echo "unbalanced', bare)
+        check("an unparseable command with a shell redirect is refused as unparseable", not ok and "parsed" in why, why)
+        # $HOME expands, and a large script's first 1 MB is read rather than the file being skipped.
+        home = os.environ.get("HOME")
+        try:
+            os.environ["HOME"] = td
+            for form in ("bash < $HOME/file-an-issue.sh", "bash < ${HOME}/file-an-issue.sh"):
+                ok, why = verdict(form, bare)
+                check(f"{form!r}: $HOME expands and the script is read", not ok and "by redirect" in why, why)
+        finally:
+            if home is None:
+                os.environ.pop("HOME", None)
+            else:
+                os.environ["HOME"] = home
+        # A shell with a script OPERAND runs that file; the redirected file is only its data.
+        for form in (f"bash other.sh < {script}", f"bash < {script} other.sh", f"sh -e other.sh < {script}"):
+            check(f"CONTROL: {form.split(str(td))[0]!r}: stdin is data for a script operand, allowed", verdict(form, bare)[0])
+        for form in (f"bash -s < {script}", f"bash -s arg1 < {script}", f"bash -o errexit < {script}", f"bash -- < {script}"):
+            ok, why = verdict(form, bare)
+            check(f"{form.split(str(td))[0]!r}: stdin is the script, refused by redirect", not ok and "by redirect" in why, why)
+        big = Path(td) / "big.sh"
+        big.write_text("gh issue create -t X\n" + "#" * 1_100_000 + "\n", encoding="utf-8")
+        ok, why = verdict(f"bash < {big}", bare)
+        check("a script over 1 MB with a create in its first 1 MB is refused", not ok and "by redirect" in why, why)
         check("CONTROL: a multi-stage pipe ending in grep is not a hidden create",
               verdict("echo 'gh issue create' | cat | grep create", bare)[0])
         # ---- #1467: an UNQUOTED heredoc's substitutions really run ----------------------------------
