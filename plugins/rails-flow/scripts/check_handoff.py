@@ -503,8 +503,7 @@ def _executor_tier(section: Section, findings: list[str]) -> str | None:
             "session already chose, spending someone else's money on our authority. Where the org's "
             "availableModels blocks it, a family alias (`opus`, `sonnet`, `haiku`, `fable`) runs on the "
             "newest version the allowlist permits on the Anthropic API and Claude Platform on AWS, and "
-            "anything else on the inherited model -- a pin that cannot buy a second opinion either way. "
-            "Use `inherit`."
+            "anything else on the inherited model. Use `inherit`."
         )
     return tier
 
