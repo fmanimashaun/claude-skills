@@ -434,7 +434,8 @@ POSITIVES_1472 = ["bash -c 'git add -A'", 'sh -c "git push --force origin main"'
                   'sudo -u deploy git add -A', 'timeout 60 git add -A', 'echo x | xargs git add -A', '{ git add -A; }',
                   '( git add -A )', '(git add -A)', 'if true; then git add -A; fi', '\\git add -A', '/usr/bin/git add -A',
                   'git.exe add -A', 'git --no-pager add -A', 'git --attr-source HEAD add -A',
-                  'git -c alias.p=push p --force origin main', "bash >log -c 'git add -A'"]
+                  'git -c alias.p=push p --force origin main', "bash >log -c 'git add -A'",
+                  "echo x; bash -c 'git add -A'", 'true && eval "git add -A"']
 # ...and each one's twin: the same shape doing something allowed, or a string that only MENTIONS it.
 NEGATIVES_1472 = ["bash -c 'git add app/x.rb'", "bash -c 'git push origin feature/x'", 'eval "git status"',
                   'echo "$(git branch --show-current)"', 'command -v git', 'time git status', 'git --no-pager log -1',
