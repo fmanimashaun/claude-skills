@@ -76,6 +76,12 @@ GUARD = Guard(
             "CONTROL: `\"cat <<'X' > s.sh\\nbash -c 'git add -A'\\nX\\ngit status\"` passes",
         ),
         Mutation(
+            "a heredoc body inside $( ) is scanned, so a `)` in it ends the substitution early",
+            '      if (c == "\\n" && hn) {',
+            '      if (0) {',
+            'e t --body "$(cat <<\\\'EOF\\\'\\n1) don\\\'t run `g\'',
+        ),
+        Mutation(
             "a wrapper such as `command` is not peeled",
             '    if (w == "command" || w == "builtin" || w == "nohup" || w == "time") { i = skipopts(t, n, i + 1, ""); continue }',
             "",

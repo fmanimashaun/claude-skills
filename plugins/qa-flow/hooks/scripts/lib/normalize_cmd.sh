@@ -151,12 +151,38 @@ _inner_strings() {
     DQV = v; return n + 1
   }
   # i is just past "$(" (or "<("); returns the index of the matching ")". Nothing inside is emitted
-  # here: the body is emitted whole by the caller and lexed again on its own.
-  function subst_end(s, i,    n, c, depth, j) {
-    n = length(s); depth = 1; SKIP++
+  # here: the body is emitted whole by the caller and lexed again on its own. A heredoc BODY inside
+  # is skipped, so a `)` in it -- `1) do not run ...` in a PR body -- cannot end the substitution.
+  function subst_end(s, i,    n, c, depth, j, hn, hd, ht, d, e, line, k) {
+    n = length(s); depth = 1; SKIP++; hn = 0
     while (i <= n) {
       c = substr(s, i, 1)
       if (c == "\\") { i += 2; continue }
+      if (c == "<" && substr(s, i, 2) == "<<" && substr(s, i + 2, 1) != "<") {
+        i += 2; hn++; ht[hn] = 0
+        if (substr(s, i, 1) == "-") { ht[hn] = 1; i++ }
+        while (substr(s, i, 1) == " " || substr(s, i, 1) == "\t") i++
+        d = ""
+        while (i <= n) {
+          c = substr(s, i, 1)
+          if (c == " " || c == "\t" || c == "\n" || c == ";" || c == "&" || c == "|" || c == "(" || c == ")" || c == "<" || c == ">") break
+          if (c != "\047" && c != "\"" && c != "\\") d = d c
+          i++
+        }
+        hd[hn] = d; continue
+      }
+      if (c == "\n" && hn) {
+        i++
+        for (k = 1; k <= hn; k++) {
+          while (i <= n) {
+            e = index(substr(s, i), "\n"); if (e == 0) e = n - i + 2
+            line = substr(s, i, e - 1); i += e
+            if (ht[k]) sub(/^\t+/, "", line)
+            if (line == hd[k]) break
+          }
+        }
+        hn = 0; continue
+      }
       if (c == "\047") { j = index(substr(s, i + 1), "\047"); if (j == 0) break; i += j + 1; continue }
       if (c == "\"") { i = dquote(s, i + 1); continue }
       if (c == "`") { i = bt_end(s, i + 1) + 1; continue }
@@ -263,6 +289,11 @@ normalize_segments() {
   IFS= read -r -d '' raw || true
   printf '%s' "$raw" | _normalize_one
   [ "${_NC_DEPTH:-0}" -ge 3 ] && return 0
+  # Cost: the lexer walks the text a character at a time, so skip it when nothing it looks for is there.
+  case "$raw" in
+    *'$('*|*'`'*|*'<('*|*eval*|*sh*) ;;
+    *) return 0 ;;
+  esac
   printf '%s' "$raw" | _inner_strings | {
     _NC_DEPTH=$(( ${_NC_DEPTH:-0} + 1 ))
     while IFS= read -r _nc_line; do

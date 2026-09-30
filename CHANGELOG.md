@@ -3589,8 +3589,10 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     these forms with `push_targets.py` since #1470; its no-parser fallback now gets them too.
   - Known limits, listed in the file header: run-time strings, a script fed by heredoc or pipe, a quoted alias
     value, `env -S`, `find -exec`.
-  - 32 `guard-bash` blocks with 16 controls, and 4 release-gate fallback cases; `hook_normalize_cmd` catches 15 of
-    15 mutations (12 new).
+  - A heredoc body inside `$( )` is skipped, so a `)` in a numbered list in a PR body cannot end the substitution.
+    The lexer runs only when the command contains something it looks for.
+  - 32 `guard-bash` blocks with 19 controls, and 4 release-gate fallback cases; `hook_normalize_cmd` catches 16 of
+    16 mutations (13 new).
 
 - **Mock-up checks, the #1430 remainder after PR #1478 — `plugins/rails-flow/scripts/check_issue_mockup.py`, `plugins/rails-flow/scripts/check_mockup_gate.py`, `plugins/rails-flow/scripts/mutations/check_issue_mockup.py`, `plugins/rails-flow/scripts/mutations/check_mockup_gate.py`** (#1430, from PR #1479's independent reviews; each gap measured against merged dev before editing).
   - `check_issue_mockup.py`: a mock-up path in backticks or as a markdown link target (`[bell](docs/product/mockups/bell.md)`) now counts as linked; before, it read as "neither". Outside `docs/product/mockups/`, a mock-up file's extension must END its name (`foo.pdf.TBD` names nothing), and `.html.erb`, `.gif` and `.avif` count there too. A sentence's full stop may still follow.

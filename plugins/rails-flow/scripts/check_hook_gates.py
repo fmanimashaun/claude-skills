@@ -443,7 +443,11 @@ NEGATIVES_1472 = ["bash -c 'git add app/x.rb'", "bash -c 'git push origin featur
                   'echo "bash -c \'git add -A\'"', 'git commit -m "never bash -c \'git add -A\'"',
                   "echo 'eval \"git add -A\"'", "bash script.sh -c 'git add -A'",
                   "cat <<'X' > s.sh\nbash -c 'git add -A'\nX\ngit status",
-                  "git commit -m \"$(cat <<'EOF'\nwhy: never git add -A\nEOF\n)\""]
+                  "git commit -m \"$(cat <<'EOF'\nwhy: never git add -A\nEOF\n)\"",
+                  # #1472 review: a `)` inside a heredoc inside $( ) must not end the substitution early.
+                  "gh pr create --title t --body \"$(cat <<'EOF'\n1) don't run `git add -A`\nEOF\n)\"",
+                  "git commit -m \"$(cat <<'EOF'\na) first\nb) never `git push --force`\nEOF\n)\"",
+                  "echo \"$(cat <<'EOF'\nAdds :) emoji then `git add -A`\nEOF\n)\""]
 
 
 def guard_bash_fixtures() -> None:
