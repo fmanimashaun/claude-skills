@@ -8,7 +8,8 @@ facts, verified against [the sub-agents docs](https://code.claude.com/docs/en/su
 *"Defaults to `inherit`"*; frontmatter resolves **above** *"the main conversation's model"*, so a
 `sonnet` pin hands an Opus session a Sonnet agent; and pinning up spends the user's money even when their org
 blocks it, because a blocked `opus` runs on *"the newest version of that family the allowlist permits"*
-(since v2.1.222, #1329).
+(since v2.1.222, #1329) — on the Anthropic API and Claude Platform on AWS, when the allowlist permits a
+version of the family; otherwise it runs on the inherited model.
 
 <!-- pipeline:tiers:begin -->
 | Agent | Tier | `model:` | What proves its output |

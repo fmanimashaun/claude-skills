@@ -82,8 +82,10 @@ you on a different one, say plainly:
 > rather than a second opinion.
 
 **You are deliberately not pinned to a model**, and that is a decision rather than an oversight.
-Pinning a shipped agent to an expensive alias spends a stranger's money on our authority, and an alias
-outside their `availableModels` is skipped anyway — see `reference/model-tiers.md`. Getting a genuine
+Pinning a shipped agent to an expensive alias spends a stranger's money on our authority, and where their
+`availableModels` blocks it the pin is not honoured anyway: a family alias runs on the newest version the
+allowlist permits (on the Anthropic API and Claude Platform on AWS), anything else on the inherited model
+— see `reference/model-tiers.md`. Getting a genuine
 second opinion is therefore the **caller's** act: run this agent with a per-invocation model, or set
 `CLAUDE_CODE_SUBAGENT_MODEL`. Saying so is the honest alternative to pretending the pin is free.
 
