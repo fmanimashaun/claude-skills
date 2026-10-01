@@ -130,8 +130,8 @@ GUARD = Guard(
         # #1439: Rails 8's builder method is rich_textarea; only the old alias was listed.
         Mutation(
             "rich_textarea (Rails 8's name) is no longer a raw builder call",
-            '"radio_button|collection_radio_buttons|label|fields_for|rich_textarea|rich_text_area")',
-            '"radio_button|collection_radio_buttons|label|fields_for|rich_text_area")',
+            '"radio_button|label|fields_for|rich_textarea|rich_text_area")',
+            '"radio_button|label|fields_for|rich_text_area")',
             "f.rich_textarea on a simple_form builder is refused",
         ),
         Mutation(
@@ -183,6 +183,13 @@ GUARD = Guard(
             'NAMED = re.compile(r"(?:(?<=\\s)name\\s*=(?!>)|(?<![\\w-])name:|(?<![\\w-])[:\\"\']?name[\\"\']?\\s*=>)", re.I)',
             'NAMED = re.compile(r"\\bname\\s*=", re.I)',
             "a name set through ERB makes a readonly input a posting field",
+        ),
+        # #1458/#1460
+        Mutation(
+            "simple_form's collection helpers are raw calls again",
+            '                     "datetime_select|time_select|check_box|checkbox|"\n',
+            '                     "datetime_select|time_select|check_box|checkbox|collection_check_boxes|collection_radio_buttons|"\n',
+            'CONTROL: f.collection_check_boxes on a simple_form builder is simple_form API',
         ),
     ),
 )

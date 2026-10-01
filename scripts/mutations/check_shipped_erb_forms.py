@@ -19,26 +19,26 @@ GUARD = Guard(
         # #1443 / #1455 review: the marker excuses exactly what it NAMES, and only with a reason.
         Mutation(
             "the primitive marker excuses its whole block again",
-            "                if what.strip().lower() in named:",
-            "                if named:",
+            '                if named.get(key, 0) > 0:\n                    named[key] -= 1\n',
+            '                if named:\n',
             "the marker excuses only what it names: a later raw <select> is a finding",
         ),
         Mutation(
             "a named primitive construct is refused like any other",
-            "                if what.strip().lower() in named:\n                    continue\n",
-            "",
+            '                if named.get(key, 0) > 0:\n                    named[key] -= 1\n                    continue\n',
+            '',
             "CONTROL: the construct a primitive marker names is excused",
         ),
         Mutation(
             "the marker matches as a PREFIX again, so `primitive <` excuses every raw tag",
-            "                if what.strip().lower() in named:",
-            "                if any(what.strip().lower().startswith(n) for n in named):",
+            '                if named.get(key, 0) > 0:\n                    named[key] -= 1\n',
+            '                if any(key.startswith(n) for n in named):\n',
             "`primitive <` is not a prefix that excuses every raw tag",
         ),
         Mutation(
             "an invalid marker is silently accepted",
-            "                    out.append(f\"{f.relative_to(root)}:{start + body.count(chr(10), 0, marker.start()) + 1} — \"",
-            "                    pass; (f\"{f.relative_to(root)}:{start + body.count(chr(10), 0, marker.start()) + 1} — \"",
+            '                    out.append(f"{where} — primitive-marker-invalid: a marker must name one construct and give a "',
+            '                    pass; (f"{where} — primitive-marker-invalid: a marker must name one construct and give a "',
             "a marker that names nothing excuses nothing",
         ),
         Mutation(
@@ -56,14 +56,14 @@ GUARD = Guard(
         # #1443: every fence, indented or not.
         Mutation(
             "indented fences are skipped again",
-            'BLOCK = re.compile(r"^([ \\t]*)```erb[^\\n]*\\n(.*?)^\\1```", re.S | re.M)',
-            'BLOCK = re.compile(r"^()```erb[^\\n]*\\n(.*?)^\\1```", re.S | re.M)',
+            'BLOCK = re.compile(r"^([ \\t]*)(`{3,}|~{3,})erb[^\\n]*\\n(.*?)^\\1\\2[`~]*[ \\t]*$", re.S | re.M)',
+            'BLOCK = re.compile(r"^()(`{3,}|~{3,})erb[^\\n]*\\n(.*?)^\\1\\2[`~]*[ \\t]*$", re.S | re.M)',
             "an INDENTED fence is read",
         ),
         Mutation(
             "an indented fence closes at any later fence",
-            'BLOCK = re.compile(r"^([ \\t]*)```erb[^\\n]*\\n(.*?)^\\1```", re.S | re.M)',
-            'BLOCK = re.compile(r"^([ \\t]*)```erb[^\\n]*\\n(.*?)^[ \\t]*```", re.S | re.M)',
+            'BLOCK = re.compile(r"^([ \\t]*)(`{3,}|~{3,})erb[^\\n]*\\n(.*?)^\\1\\2[`~]*[ \\t]*$", re.S | re.M)',
+            'BLOCK = re.compile(r"^([ \\t]*)(`{3,}|~{3,})erb[^\\n]*\\n(.*?)^[ \\t]*\\2[`~]*[ \\t]*$", re.S | re.M)',
             "a fence line at ANOTHER indent does not close an indented block",
         ),
         Mutation(
@@ -71,6 +71,37 @@ GUARD = Guard(
             "                out.append(f\"{f.relative_to(root)}:{start + line}",
             "                out.append(f\"{f.relative_to(root)}:{line}",
             "...with the doc's own line number",
+        ),
+        # #1458/#1460
+        Mutation(
+            'a marker may excuse a form builder',
+            '                elif valid.group(1).lower() in FORM_BUILDERS:',
+            '                elif False:',
+            '#1460: a marker naming form_with is invalid',
+        ),
+        Mutation(
+            'one marker excuses every instance',
+            '                    named[key] -= 1\n',
+            '',
+            '#1460: one marker excuses ONE instance',
+        ),
+        Mutation(
+            '~~~erb blocks are not read',
+            'BLOCK = re.compile(r"^([ \\t]*)(`{3,}|~{3,})erb[^\\n]*\\n(.*?)^\\1\\2[`~]*[ \\t]*$", re.S | re.M)',
+            'BLOCK = re.compile(r"^([ \\t]*)(`{3,})erb[^\\n]*\\n(.*?)^\\1\\2[`~]*[ \\t]*$", re.S | re.M)',
+            '#1460: a ~~~erb block is read',
+        ),
+        Mutation(
+            'only three-backtick fences are read',
+            'BLOCK = re.compile(r"^([ \\t]*)(`{3,}|~{3,})erb[^\\n]*\\n(.*?)^\\1\\2[`~]*[ \\t]*$", re.S | re.M)',
+            'BLOCK = re.compile(r"^([ \\t]*)(```|~{3,})erb[^\\n]*\\n(.*?)^\\1\\2[`~]*[ \\t]*$", re.S | re.M)',
+            '#1460: a four-backtick erb block is read',
+        ),
+        Mutation(
+            'any fence line closes a block',
+            'BLOCK = re.compile(r"^([ \\t]*)(`{3,}|~{3,})erb[^\\n]*\\n(.*?)^\\1\\2[`~]*[ \\t]*$", re.S | re.M)',
+            'BLOCK = re.compile(r"^([ \\t]*)(`{3,}|~{3,})erb[^\\n]*\\n(.*?)^\\1(?:`{3,}|~{3,})[ \\t]*$", re.S | re.M)',
+            '#1460: a ~~~ line does not close a backtick block',
         ),
     ),
 )

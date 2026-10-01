@@ -35,7 +35,11 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "plugins/rails-flow/scripts"))
 from check_simple_form_only import scan  # noqa: E402 -- the project gate's own scanner
 
-BLOCK = re.compile(r"^([ \t]*)```erb[^\n]*\n(.*?)^\1```", re.S | re.M)
+# A ```erb block, or ~~~erb, or a longer fence: closed by the SAME character, at least as long (#1460).
+BLOCK = re.compile(r"^([ \t]*)(`{3,}|~{3,})erb[^\n]*\n(.*?)^\1\2[`~]*[ \t]*$", re.S | re.M)
+# A primitive builds ONE raw control. It must never excuse a form builder: that is what the mandate
+# refuses, and every form-* rule reports one of these (#1460).
+FORM_BUILDERS = {"form_with", "form_for", "form_tag"}
 # EVERY marker in a block counts, and each must name a construct AND give a reason (#1455 review).
 PRIMITIVE = re.compile(r"<%#\s*simple-form-only:\s*primitive\b(.*?)%>", re.S)
 VALID_MARKER = re.compile(r"^[ \t]*(\S+)[ \t]+--[ \t]*\w")
@@ -46,21 +50,28 @@ def findings(files: list[Path], root: Path) -> list[str]:
     for f in files:
         text = f.read_text(encoding="utf-8", errors="replace")
         for m in BLOCK.finditer(text):
-            body = m.group(2)
+            body = m.group(3)
             start = text.count("\n", 0, m.start()) + 1
-            named: set[str] = set()
+            # ONE excused instance per marker (#1460): a second `check_box_tag` added to the Checkbox
+            # block later needs its own marker, and its reason, or it is reported.
+            named: dict[str, int] = {}
             for marker in PRIMITIVE.finditer(body):
                 valid = VALID_MARKER.match(marker.group(1))
-                if valid and not valid.group(1).startswith("--"):
-                    named.add(valid.group(1).lower())
+                where = f"{f.relative_to(root)}:{start + body.count(chr(10), 0, marker.start()) + 1}"
+                if not valid or valid.group(1).startswith("--"):
+                    out.append(f"{where} — primitive-marker-invalid: a marker must name one construct and give a "
+                               f"reason (`primitive <construct> -- why`), so this one excuses nothing")
+                elif valid.group(1).lower() in FORM_BUILDERS:
+                    out.append(f"{where} — primitive-marker-invalid: `{valid.group(1)}` is a form builder, the thing "
+                               f"simple-form-only refuses; a primitive builds one control, never a form")
                 else:
-                    out.append(f"{f.relative_to(root)}:{start + body.count(chr(10), 0, marker.start()) + 1} — "
-                               f"primitive-marker-invalid: a marker must name one construct and give a reason "
-                               f"(`primitive <construct> -- why`), so this one excuses nothing")
+                    named[valid.group(1).lower()] = named.get(valid.group(1).lower(), 0) + 1
             for rule, line, what in scan(str(f), body):
                 # EQUALITY, never a prefix (#1455 review): `primitive <` would excuse every `<select`,
                 # `<textarea`, `<input` and `<form`, and `primitive t` both tag.input and text_field_tag.
-                if what.strip().lower() in named:
+                key = what.strip().lower()
+                if named.get(key, 0) > 0:
+                    named[key] -= 1
                     continue
                 out.append(f"{f.relative_to(root)}:{start + line} — {rule}: `{what[:50]}` in a shipped ERB block")
     return out
@@ -89,6 +100,27 @@ def selftest() -> int:
         check_that("...with the doc's own line number", any("SKILL.md:4" in x for x in f), f)
         f = run("```erb\n<%# simple-form-only: primitive check_box_tag -- why %>\n<%= check_box_tag :a %>\n```\n")
         check_that("CONTROL: the construct a primitive marker names is excused", f == [], f)
+        # #1460: a marker never excuses a form builder, and each marker excuses ONE instance.
+        for builder in ("form_with", "form_for", "form_tag"):
+            src = {"form_with": "<%= form_with model: @u do |f| %><% end %>", "form_for": "<%= form_for @u do |f| %><% end %>",
+                   "form_tag": "<%= form_tag \"/x\" do %><% end %>"}[builder]
+            f = run(f"```erb\n<%# simple-form-only: primitive {builder} -- a primitive form %>\n{src}\n```\n")
+            check_that(f"#1460: a marker naming {builder} is invalid and excuses nothing",
+                       any("primitive-marker-invalid" in x and builder in x for x in f)
+                       and any(x.split(" — ")[1].startswith("form-") for x in f if " — " in x and "primitive-marker" not in x), f)
+        f = run("```erb\n<%# simple-form-only: primitive check_box_tag -- why %>\n<%= check_box_tag :a %>\n<%= check_box_tag :b %>\n```\n")
+        check_that("#1460: one marker excuses ONE instance, so a second check_box_tag is reported",
+                   len(f) == 1 and "check_box_tag" in f[0], f)
+        f = run("```erb\n<%# simple-form-only: primitive check_box_tag -- why %>\n<%# simple-form-only: primitive check_box_tag -- the second one %>\n<%= check_box_tag :a %>\n<%= check_box_tag :b %>\n```\n")
+        check_that("#1460 CONTROL: two markers excuse two instances", f == [], f)
+        # #1460 (latent): ~~~erb and longer fences are read too, and only the same fence closes one.
+        f = run("~~~erb\n<form method=\"get\"></form>\n~~~\n")
+        check_that("#1460: a ~~~erb block is read", any("raw-form" in x for x in f), f)
+        f = run("````erb\n<form method=\"get\"></form>\n````\n")
+        check_that("#1460: a four-backtick erb block is read", any("raw-form" in x for x in f), f)
+        f = run("```erb\n<%= check_box_tag :a %>\n~~~\n<form method=\"get\"></form>\n```\n")
+        check_that("#1460: a ~~~ line does not close a backtick block, so the form after it is read",
+                   any("raw-form" in x for x in f), f)
         f = run("```erb\n<%# simple-form-only: primitive check_box_tag -- why %>\n<%= check_box_tag :a %>\n<select name=\"x\"></select>\n```\n")
         check_that("the marker excuses only what it names: a later raw <select> is a finding",
                    len(f) == 1 and "<select" in f[0], f)
