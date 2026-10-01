@@ -3580,6 +3580,32 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **The hook normaliser sees what a shell runs from inside a string, a wrapper or a group —
+  `plugins/rails-flow/hooks/scripts/lib/normalize_cmd.sh`, `plugins/qa-flow/hooks/scripts/lib/normalize_cmd.sh`,
+  `plugins/rails-flow/scripts/check_hook_gates.py`, `scripts/mutations/hook_normalize_cmd.py`** (#1472).
+  - Every `guard-bash` rule (`git add -A`, force-push, `--no-verify`, `reset --hard`, …) matched only a segment
+    STARTING with the verb, after quoted spans were stripped. So `bash -c 'git add -A'`, `eval "…"`,
+    `echo "$(git add -A)"`, `command git …`, `sudo -u x git …`, `( git … )`, `if …; then git …`, `\git`,
+    `/usr/bin/git`, `git.exe`, `git --no-pager …` and `git -c alias.p=push p …` were all invisible.
+  - A quote- and heredoc-aware lexer (`_inner_strings`) now prints each string a shell WILL run: the `-c`
+    argument of sh/bash/zsh/dash/ksh, `eval`'s arguments, `$( )`, backticks and `<( )`. Each is normalised as a
+    command of its own, recursively, to depth 3. A quote that only mentions a command stays invisible, as #906
+    requires.
+  - A token-based peel steps over wrappers and their options, grouping words, git's spellings, git's global
+    options (arity measured against git 2.50.1) and inline aliases.
+  - The lib is byte-identical in both plugins (`hook-lib-drift`). qa-flow's release gate already classified
+    these forms with `push_targets.py` since #1470; its no-parser fallback now gets them too.
+  - Known limits, listed in the file header: run-time strings, a script fed by heredoc or pipe, a quoted alias
+    value, `env -S`, `find -exec`. Also bash 3.2 (macOS `/bin/sh` too): it ends a `$( )` at the first `)` in a
+    heredoc body, so a backtick after that runs there. This lexer follows zsh and bash 4+. That was accepted on
+    #1498, and dev never saw it either.
+  - A heredoc body inside `$( )` is skipped, so a `)` in a numbered list in a PR body cannot end the substitution.
+    A heredoc that never closes is lexed as ordinary text, so it cannot hide the commands after it.
+  - The lexer is skipped when the command, with its quotes and backslashes removed (by a bash builtin), holds no
+    `$(`, backtick, `<(`, `eval` or shell name. So `e'v'al` and `bas\h -c` still reach it.
+  - 39 `guard-bash` blocks with 19 controls, and 4 release-gate fallback cases; `hook_normalize_cmd` catches 18 of
+    18 mutations (15 new).
+
 - **The mock-up gate reads an opt-out in an INDENTED code block, an HTML block or a comment as an example, by CommonMark's block rules — `plugins/rails-flow/scripts/check_mockup_gate.py`, `plugins/rails-flow/scripts/mutations/check_mockup_gate.py`** (#1490). A `GUARDRAILS.md` example written as a 4-space code block, or inside `<!-- -->`, turned the gate off.
   - New `outside_indented_code()` drops indented code blocks before `OPT_OUT` is read. The rules are CommonMark 0.31.2's, verified by doctrine-verifier against `spec.txt` at tag 0.31.2 (CONFIRMED, 8 of 8):
     - indented code cannot interrupt a paragraph (§4.4, Ex 113);
@@ -11299,6 +11325,10 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 ## qa-flow (independent QA plugin)
 
 ### Unreleased
+
+- **`plugins/qa-flow/hooks/scripts/lib/normalize_cmd.sh` gets the #1472 normaliser** (#1472). It is byte-identical to
+  rails-flow's copy (`hook-lib-drift`); see the rails-flow bullet. `release-gate.sh` already classified these forms
+  with `push_targets.py` (#1470). Only its no-parser fallback changes.
 
 - **A TypeScript e2e suite is strict, type-checked, and free of explicit `any` — `plugins/qa-flow/scripts/check_ts_strict.py`,
   `plugins/qa-flow/scripts/mutations/check_ts_strict.py`, `plugins/qa-flow/checks.json`, `plugins/qa-flow/agents/e2e-tester.md`,
