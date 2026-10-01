@@ -27,6 +27,43 @@ GUARD = Guard(
         "agents",
     ),
     mutations=(
+        # #1505 (and the PR #1507 review): a BODY instruction that says "only when"; judgement agents need none.
+        Mutation(
+            'a mechanical agent without an advisor instruction passes',
+            '        if row.tier == "mechanical" and not _has_advisor_instruction(path):',
+            '        if False:',
+            'a mechanical agent with no advisor instruction is refused',
+        ),
+        Mutation(
+            'every agent must carry the advisor instruction, judgement too',
+            '        if row.tier == "mechanical" and not _has_advisor_instruction(path):',
+            '        if not _has_advisor_instruction(path):',
+            '...and a judgement agent without one is clean',
+        ),
+        Mutation(
+            'the frontmatter counts as the body',
+            '    if text.startswith("---\\n") and "\\n---\\n" in text[4:]:',
+            '    if False and text.startswith("---\\n") and "\\n---\\n" in text[4:]:',
+            '...an advisor marker only in the frontmatter does not count',
+        ),
+        Mutation(
+            'a quoted marker counts',
+            '        if not fenced and line.startswith(ADVISOR_MARKER) and "only when" in line:',
+            '        if not fenced and ADVISOR_MARKER in line and "only when" in line:',
+            '...an advisor marker only in a quote does not count',
+        ),
+        Mutation(
+            'a fenced example counts',
+            '            fenced = not fenced',
+            '            fenced = False',
+            '...an advisor marker only in a fenced example does not count',
+        ),
+        Mutation(
+            "any advisor paragraph counts, even 'consult often'",
+            '        if not fenced and line.startswith(ADVISOR_MARKER) and "only when" in line:',
+            '        if not fenced and line.startswith(ADVISOR_MARKER):',
+            '...an advisor marker telling it to consult freely does not count',
+        ),
         # #1326: effort is inherited like model; a shipped pin goes unrefused again.
         Mutation(
             "an agent's effort: pin is never read",

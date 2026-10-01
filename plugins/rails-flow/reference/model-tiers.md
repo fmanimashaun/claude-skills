@@ -172,18 +172,41 @@ to `medium` in Claude Code, where the API's default is `high`. Its thinking cann
 2026-09-29, #1449). A project that wants one
 agent at another level overrides it in `.claude/agents/`, as below.
 
-### The advisor rides along, and that is the user's call
+### The advisor: judgement agents use it, mechanical agents consult it only when stuck
 
 *"Subagents inherit the configured advisor and apply the same pairing check against their own
-model"* ([cc-advisor]), and Haiku 4.5 accepts a Fable, Opus or Sonnet advisor. So with `/advisor`
-on, our mechanical agents can consult it too, and *"Each advisor call processes the full transcript
-anew"*. There is no per-agent opt-out and *"no setting to cap or force advisor calls"*.
+model"* ([cc-advisor]), and a Haiku 4.5 main model accepts a Fable, Opus or Sonnet advisor: *"Haiku can
+call the advisor but cannot act as one"*. No frontmatter field controls it per agent; the sub-agents
+page does not mention the advisor at all (checked 2026-09-30, #1505).
 
-We do **not** tell agents to avoid it. Choosing an advisor is a session decision like choosing a
-model, and an instruction baked into a shipped prompt would be another hidden cap on it. The cost is
-also small where we could reach it: a subagent's transcript is short, and the long transcripts belong
-to the user's own session. The controls are the user's: `/advisor off`, or
-`CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1` to remove the tool.
+**Its cost is the agent's transcript, and ours are not short.** *"Each advisor call processes the full
+transcript anew, with no reuse between calls"*. Measured on 2026-09-30 by
+`scripts/measure_subagent_context.py` over 578 stored runs on one maintainer machine
+(peak request context per run; indicative, not a population, and several agents have 1–4 runs;
+`docs/evidence/advisor/subagent-context-2026-09-30.md`): shipped agents' medians run from 11k tokens
+(`test-runner`) to 222k (`design-porter`), and the six Haiku agents' from 11k to 83k (`a11y-auditor`).
+So a Haiku-tier agent consulting an Opus advisor pays Opus rates on tens of thousands of uncached
+tokens per call, which spends part of the saving the Haiku tier exists for: the docs put a Haiku main
+with an Opus advisor at *"higher cost than Haiku alone but lower than switching the main model to
+Sonnet or Opus"* ([cc-advisor]).
+
+**The policy follows the docs' own guidance** (maintainer decision on #1505). The docs say *"The advisor
+fits long, multi-step tasks where most turns are routine but plan quality determines the outcome"*,
+that *"It adds less value on short tasks where there is little to plan"*, and that *"There is no
+setting to cap or force advisor calls; if you want Claude to consult more or less often during a
+task, say so in your instructions"* ([cc-advisor]). So:
+
+- **Judgement agents** (`inherit`) get no advisor instruction. Their work is the fit the docs describe.
+- **Mechanical agents** (`haiku`) carry a `**The advisor.**` paragraph in their own prompt: consult it
+  only when the same error has come back twice or the next step is unclear. Their output is proven
+  outside them, so plan quality does not decide the outcome. `check_handoff.py` refuses a mechanical
+  agent without that paragraph, in every plugin's tier gate.
+
+The session's owner still decides whether there is an advisor at all: `/advisor off`, or
+`CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1` to remove the tool. It is also absent on some setups: *"the advisor
+is a server-executed tool. It is not available on Amazon Bedrock, Claude Platform on AWS, Google
+Cloud's Agent Platform, or Microsoft Foundry"*, and *"In a session where a variable that turns flag
+fetching off is set, such as `DISABLE_TELEMETRY`, the advisor stays off"* ([cc-advisor]).
 
 ## Overriding this in a project (both mechanisms are documented)
 

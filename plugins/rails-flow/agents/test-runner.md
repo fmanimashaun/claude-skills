@@ -7,6 +7,8 @@ tools: Read, Grep, Glob, Bash
 model: haiku
 ---
 
+**The advisor.** If the session has an advisor configured, consult it only when the same error has come back twice or you cannot tell what to run next. Your output is proven outside you, by `bundle exec rspec`'s exit status, so plan quality does not decide the outcome, and each consultation rereads this whole transcript at the advisor's rates. See `reference/model-tiers.md`.
+
 You run and interpret RSpec for this project.
 
 Strategy:
