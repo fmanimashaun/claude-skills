@@ -16,6 +16,13 @@ GUARD = Guard(
         "evals",
     ),
     mutations=(
+        # #1459: a gate that times out takes its whole process group with it.
+        Mutation(
+            'a gate runs as a plain subprocess, so a timeout orphans what it started',
+            '            p = proc_group.run(\n                args, cwd=cwd or REPO, text=True, timeout=timeout, env=hermetic_git.env(),\n            )',
+            '            p = subprocess.run(\n                args, cwd=cwd or REPO, text=True, timeout=timeout, env=hermetic_git.env(), capture_output=True,\n            )',
+            '#1459: a timed-out gate',
+        ),
         # #1510: every gate subprocess runs with git auto-maintenance off.
         Mutation(
             "a gate runs with git's own auto-maintenance",

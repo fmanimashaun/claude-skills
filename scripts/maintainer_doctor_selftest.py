@@ -801,7 +801,7 @@ def run() -> int:
 
         _tick()
         started = _time.monotonic()
-        rc, out = md.Doctor().run(sys.executable, "-c", gate, timeout=2)
+        rc, out = md.Doctor().run(sys.executable, "-c", gate, timeout=1)
         took = _time.monotonic() - started
         grandchild = int(pidfile.read_text())
         if rc != 124 or "gate-1459 started its grandchild" not in out or took > 20:
@@ -813,11 +813,19 @@ def run() -> int:
             FAILURES.append("#1459: a timed-out gate left its grandchild running -- the process group was not killed")
         _tick()
         try:
-            subprocess.run([sys.executable, "-c", gate], capture_output=True, timeout=2)
+            # No pipes: a captured plain run waits for the grandchild to release them (120 s per run,
+            # measured on this guard), and the control only needs to show the grandchild survives.
+            subprocess.run([sys.executable, "-c", gate], stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, timeout=1)
         except subprocess.TimeoutExpired:
             pass
         control = int(pidfile.read_text())
-        if alive(control):
+        try:                      # one look: alive is the expected answer, so there is nothing to wait for
+            os.kill(control, 0)
+            control_alive = True
+        except ProcessLookupError:
+            control_alive = False
+        if control_alive:
             os.kill(control, _signal.SIGKILL)
         else:
             FAILURES.append("#1459 CONTROL: a plain subprocess.run timeout should leave the grandchild "

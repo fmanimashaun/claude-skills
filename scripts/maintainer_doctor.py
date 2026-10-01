@@ -659,7 +659,10 @@ class Doctor:
             # SKIP rather than a FAIL -- a check that was killed did not run, and did not fail.
             # What it printed before the kill comes with it: for `mutation coverage`, the guards
             # that finished (#1459).
-            partial = ((exc.output or "") + (exc.stderr or "")).strip().splitlines()[-12:]
+            # bytes or str: subprocess's own TimeoutExpired carries bytes even in text mode.
+            def text(value) -> str:
+                return value.decode(errors="replace") if isinstance(value, bytes) else (value or "")
+            partial = (text(exc.output) + text(exc.stderr)).strip().splitlines()[-12:]
             tail = "".join(f"\n      {line[:300]}" for line in partial) or " -- it printed nothing before the kill"
             return 124, f"{' '.join(args)}: timed out after {timeout}s{tail}"
 
