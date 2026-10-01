@@ -47,16 +47,33 @@ fi
 # template and would read a relative body from the session directory. `lib/command_cwd.py` follows the
 # command's own `cd`s; exit 3 means a `cd` it cannot resolve, so the template is NOT checked rather
 # than checked against the wrong repository, and a relative body is not read from the wrong place.
+# It starts from the payload's `cwd` (the session's working directory), not this process's.
 cwd_lib="$(dirname "$0")/lib/command_cwd.py"
-cmd_cwd="$(printf '%s' "$cmd" | python3 "$cwd_lib" 2>/dev/null)"; cwd_rc=$?
+start="$(printf '%s' "$input" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("cwd",""))' 2>/dev/null)"
+cmd_cwd="$(printf '%s' "$cmd" | python3 "$cwd_lib" "$start" 2>/dev/null)"; cwd_rc=$?
+# A resolver that is missing or crashed has resolved nothing, and the session directory is not a safe
+# default: FAIL CLOSED, here, before a relative body path fails OPEN below (as #1435 ruled for
+# pr_template.py). Only with python3 itself absent are the older paths left to decide.
+if [ "$cwd_rc" -ne 0 ] && [ "$cwd_rc" -ne 3 ] && command -v python3 >/dev/null 2>&1; then
+  echo "BLOCKED by rails-flow claim guard: the command's directory could not be resolved (lib/command_cwd.py missing or exited $cwd_rc), so the body was not judged." >&2
+  echo "Fix it, or ship deliberately unchecked: RAILS_FLOW_CLAIMS_OK=1 (audited)." >&2
+  exit 2
+fi
+# The repository the command runs in: the PR template and the skills/** change-type check read it.
+if [ "$cwd_rc" -eq 0 ] && [ -n "$cmd_cwd" ]; then
+  root="$(git -C "$cmd_cwd" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$cmd_cwd")"
+else
+  root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+fi
 
 body=""
 if printf '%s' "$cmd" | grep -qE '\-\-body-file\b'; then
-  body="$(printf '%s' "$cmd" | sed -nE 's/.*--body-file[[:space:]]+"?([^"[:space:]]+)"?.*/\1/p' | head -1)"
+  # A separator (`;`, `&`, `|`, `)`) ends the path: `--body-file b.md; fi` names b.md (#1509 review).
+  body="$(printf '%s' "$cmd" | sed -nE 's/.*--body-file[[:space:]]+"?([^";&|)[:space:]]+)"?.*/\1/p' | head -1)"
 fi
 if [ -n "$body" ] && [ "${body#/}" = "$body" ]; then
-  # Exit 3 only: the body's directory is unknown, so it is not read from the wrong one. Any other
-  # failure (no python3, a crash) leaves it alone, and the template check below FAILS CLOSED on it.
+  # Exit 3: the body's directory is unknown, so it is not read from the wrong one. (A crash has
+  # already BLOCKED above; with no python3 the path is left alone and the template check FAILS CLOSED.)
   if [ "$cwd_rc" -eq 0 ] && [ -n "$cmd_cwd" ]; then body="$cmd_cwd/$body"; elif [ "$cwd_rc" -eq 3 ]; then body=""; fi
 fi
 # No readable body file (inline --body, a heredoc, a path we cannot resolve): say so and allow.
@@ -75,7 +92,6 @@ fi
 # out; a section that does not apply stays and says N/A. PR bodies only: an issue comment has no template. Dormant with no template.
 if printf '%s' "$cmd" | grep -qE '\bgh[[:space:]]+pr[[:space:]]+(create|edit)\b'; then
   tpl_lib="$(dirname "$0")/lib/pr_template.py"
-  root="$(git -C "${cmd_cwd:-.}" rev-parse --show-toplevel 2>/dev/null || printf '%s' "${cmd_cwd:-$(pwd)}")"
   # Exit status, not stdout alone: 0 is clean, 1 names the missing sections, and anything else (a
   # crash, a missing helper or python3) is said out loud. Reading only stdout let a crash pass
   # silently through a fail-closed hook (pre-release review of #1398).
@@ -109,19 +125,15 @@ sys.stdout.write("".join(out))
   if printf '%s' "$pr_seg" | grep -qE '(^|[[:space:]])(-R|--repo)' \
      || printf '%s' "$unquoted" | grep -qE '(^|[[:space:];&|])GH_REPO=' || [ -n "${GH_REPO:-}" ]; then
     echo "rails-flow: PR-template sections NOT checked (-R/--repo/GH_REPO targets another repository's template)." >&2
-  elif [ ! -f "$tpl_lib" ] || [ ! -f "$cwd_lib" ] || ! command -v python3 >/dev/null 2>&1; then
+  elif [ ! -f "$tpl_lib" ] || ! command -v python3 >/dev/null 2>&1; then
     # FAIL CLOSED (owner decision on #1435): this is a gate, and a gate whose checker is missing has
     # not checked anything. The audited escape stays.
-    echo "BLOCKED by rails-flow claim guard: the PR-template check cannot run (lib/pr_template.py, lib/command_cwd.py or python3 unavailable)." >&2
+    echo "BLOCKED by rails-flow claim guard: the PR-template check cannot run (lib/pr_template.py or python3 unavailable)." >&2
     echo "Fix the install, or ship deliberately unchecked: RAILS_FLOW_CLAIMS_OK=1 (audited)." >&2
     exit 2
   elif [ "$cwd_rc" -eq 3 ]; then
     # A `cd` this hook cannot follow: the template it would judge against is unknown. Say so (#1509).
     echo "rails-flow: PR-template sections NOT checked (a cd before gh could not be resolved, so the target repository is unknown)." >&2
-  elif [ "$cwd_rc" -ne 0 ] || [ -z "$cmd_cwd" ]; then
-    echo "BLOCKED by rails-flow claim guard: resolving the command's directory crashed (command_cwd.py exited $cwd_rc), so the body was not judged." >&2
-    echo "Fix it, or ship deliberately unchecked: RAILS_FLOW_CLAIMS_OK=1 (audited)." >&2
-    exit 2
   else
     gaps="$(python3 "$tpl_lib" "$root" "$body" 2>/dev/null)"; tpl_rc=$?
     # pr_template.py exits 1 ONLY with the missing sections listed; any failure to judge is exit 3.
@@ -163,8 +175,13 @@ fi
 # Scoped to a PR that touches `skills/**`, because that is where the rule bites: skills are doctrine
 # other people's agents follow verbatim, and a framework claim carried through unverified is the
 # defect the whole gate exists for.
-if git diff --name-only HEAD 2>/dev/null | grep -q '^skills/' || \
-   git diff --name-only --cached HEAD 2>/dev/null | grep -q '^skills/'; then
+# Read in the repository the command RUNS in, not the session's (#1509 review): a session with a staged
+# skills/ file was blocking a `cd <other repo> && gh pr create` that touches nothing there. With the
+# directory unresolved (exit 3) the target is unknown, so this check says NOT checked rather than guess.
+if [ "$cwd_rc" -eq 3 ]; then
+  echo "rails-flow: change-type declaration NOT checked (a cd before gh could not be resolved)." >&2
+elif git -C "$root" diff --name-only HEAD 2>/dev/null | grep -q '^skills/' || \
+   git -C "$root" diff --name-only --cached HEAD 2>/dev/null | grep -q '^skills/'; then
   if ! grep -qiE 'framework claim|architecture decision|change type|our own (design|doctrine|architecture)' "$body"; then
     echo "BLOCKED by rails-flow claim guard: this PR touches skills/** and names no CHANGE TYPE." >&2
     echo "" >&2

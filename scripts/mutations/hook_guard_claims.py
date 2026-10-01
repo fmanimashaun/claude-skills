@@ -107,7 +107,7 @@ GUARD = Guard(
         # #1509: the template is the one where the COMMAND runs, not where the hook runs.
         Mutation(
             "the template root ignores the command's cd again (the #1509 defect, restored)",
-            '''  root="$(git -C "${cmd_cwd:-.}" rev-parse --show-toplevel 2>/dev/null || printf '%s' "${cmd_cwd:-$(pwd)}")"''',
+            '''  root="$(git -C "$cmd_cwd" rev-parse --show-toplevel 2>/dev/null || printf '%s' "$cmd_cwd")"''',
             '''  root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"''',
             "a `cd <other repo>` is judged against that repo's template",
         ),
@@ -124,18 +124,36 @@ GUARD = Guard(
             "a relative --body-file is read from the cd target",
         ),
         Mutation(
-            "a missing directory resolver no longer blocks",
-            '  elif [ ! -f "$tpl_lib" ] || [ ! -f "$cwd_lib" ] || ! command -v python3 >/dev/null 2>&1; then',
-            '  elif [ ! -f "$tpl_lib" ] || ! command -v python3 >/dev/null 2>&1; then',
+            "a missing or crashed resolver no longer blocks, so a relative body fails open (R1516-3)",
+            'if [ "$cwd_rc" -ne 0 ] && [ "$cwd_rc" -ne 3 ] && command -v python3 >/dev/null 2>&1; then',
+            'if false; then',
             "a missing command_cwd.py is BLOCKED",
         ),
         Mutation(
-            "a crashing directory resolver warns and lets the command through",
-            '''    echo "BLOCKED by rails-flow claim guard: resolving the command's directory crashed (command_cwd.py exited $cwd_rc), so the body was not judged." >&2
-    echo "Fix it, or ship deliberately unchecked: RAILS_FLOW_CLAIMS_OK=1 (audited)." >&2
-    exit 2''',
-            '''    echo "BLOCKED by rails-flow claim guard: resolving the command's directory crashed (command_cwd.py exited $cwd_rc), so the body was not judged." >&2''',
+            "a crashed resolver warns and lets the command through",
+            '''  echo "BLOCKED by rails-flow claim guard: the command's directory could not be resolved (lib/command_cwd.py missing or exited $cwd_rc), so the body was not judged." >&2
+  echo "Fix it, or ship deliberately unchecked: RAILS_FLOW_CLAIMS_OK=1 (audited)." >&2
+  exit 2''',
+            '''  echo "BLOCKED by rails-flow claim guard: the command's directory could not be resolved (lib/command_cwd.py missing or exited $cwd_rc), so the body was not judged." >&2''',
             "a crashing command_cwd.py is BLOCKED",
+        ),
+        Mutation(
+            "the skills/** change-type check reads the session repo's diff again (R1516-4)",
+            '''elif git -C "$root" diff --name-only HEAD 2>/dev/null | grep -q '^skills/' || \\''',
+            '''elif git diff --name-only HEAD 2>/dev/null | grep -q '^skills/' || \\''',
+            "the skills/** change-type check reads the cd target's diff",
+        ),
+        Mutation(
+            "the --body-file path keeps a trailing `;` again (R1516-6)",
+            '''[^";&|)[:space:]]+''',
+            '''[^"[:space:]]+''',
+            "`--body-file b.md; fi` reads b.md",
+        ),
+        Mutation(
+            "the payload's cwd is not handed to the resolver (R1516-7)",
+            '''python3 "$cwd_lib" "$start" 2>/dev/null''',
+            '''python3 "$cwd_lib" 2>/dev/null''',
+            "the command starts in the payload's cwd",
         ),
     ),
 )

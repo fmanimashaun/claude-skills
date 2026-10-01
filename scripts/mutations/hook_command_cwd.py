@@ -24,9 +24,51 @@ GUARD = Guard(
            "plugins/rails-flow/scripts/ci_verdict_hint.py"),
     mutations=(
         Mutation(
-            "a brace group's cd is not followed (`{` read as the command)",
+            "a cd in a while/until condition is not followed (R1516-1)",
+            'KEYWORDS = {"{", "}", "!", "if", "then", "elif", "else", "fi", "do", "done", "while", "until", "time"}',
             'KEYWORDS = {"{", "}", "!", "if", "then", "elif", "else", "fi", "do", "done", "time"}',
-            'KEYWORDS = {"!", "if", "then", "elif", "else", "fi", "do", "done", "time"}',
+            "a cd in a while condition is followed",
+        ),
+        Mutation(
+            "builtin/command before cd is read as the command (R1516-1)",
+            'WRAPPERS = {"builtin", "command"}',
+            'WRAPPERS: set = set()',
+            "builtin cd is followed",
+        ),
+        Mutation(
+            "the walk stops at an earlier command that merely mentions gh pr create (R1516-2)",
+            "        if _is_gh(w):",
+            '        if w[0] == "echo" or _is_gh(w):',
+            "a quoted `gh pr create` earlier in the chain is followed",
+        ),
+        Mutation(
+            "a redirection's target counts as a cd argument (R1516-5)",
+            "                    redirect = True\n",
+            "                    redirect = False\n",
+            "a cd with its stderr redirected is followed",
+        ),
+        Mutation(
+            "a case pattern's ) is read as a subshell's close (R1516-5)",
+            '                elif cases and cases[-1][2] == "pattern" and op == ")":',
+            "                elif False:",
+            "a cd and gh in the same case branch is followed",
+        ),
+        Mutation(
+            "after esac, a branch's cd is forgotten and the session template judged",
+            "            after_case_unknown = True       # which branch ran is unknown after esac",
+            "            pass",
+            "a gh after a case whose branch moved the directory is NOT checked",
+        ),
+        Mutation(
+            "the resolver ignores the payload's cwd and starts in its own (R1516-7)",
+            "    start = sys.argv[1] if len(sys.argv) > 1 and os.path.isdir(sys.argv[1]) else os.getcwd()",
+            "    start = os.getcwd()",
+            "the command starts in the payload's cwd",
+        ),
+        Mutation(
+            "a brace group's cd is not followed (`{` read as the command)",
+            'KEYWORDS = {"{", "}", "!", "if", "then", "elif", "else", "fi", "do", "done", "while", "until", "time"}',
+            'KEYWORDS = {"!", "if", "then", "elif", "else", "fi", "do", "done", "while", "until", "time"}',
             "a cd inside a brace group runs in this shell",
         ),
         Mutation(
@@ -43,8 +85,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a cd joined by || counts as having run",
-            'APPLIES = {"&&", ";"}',
-            'APPLIES = {"&&", ";", "||"}',
+            'APPLIES = {"&&", ";", ";;", ";&", ";;&"}',
+            'APPLIES = {"&&", ";", ";;", ";&", ";;&", "||"}',
             "(a cd joined by ||)",
         ),
         Mutation(
@@ -67,8 +109,8 @@ GUARD = Guard(
         ),
         Mutation(
             "the cd is ignored: the hook's own directory is always returned",
-            "    return here\n",
-            "    return start\n",
+            "            raise Found(here)\n",
+            "            raise Found(start)\n",
             "a `cd <other repo>` is judged against that repo's template",
         ),
     ),

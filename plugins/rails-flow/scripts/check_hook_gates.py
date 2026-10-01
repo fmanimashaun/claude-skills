@@ -695,22 +695,28 @@ def guard_claims_fixtures() -> None:
           f"exit {broke.returncode}: {(broke.stdout + broke.stderr)[-120:]}")
     # #1509: the directory resolver is a checker too. Missing or crashing, it has resolved nothing,
     # and the session directory is not a safe default: FAIL CLOSED, as #1435 ruled for pr_template.
-    for label, mangle, needle in (
-            ("missing", lambda f: f.unlink(), "cannot run"),
-            ("crashing", lambda f: f.write_text("raise SystemExit(7)\n", encoding="utf-8"), "directory crashed")):
+    # The review's shape (#1516): a cd plus a RELATIVE body that exists only in the cd target. An absolute
+    # body with no cd reached the template branch's own block; this one used to fail OPEN at "could not
+    # read a --body-file" before any block ran.
+    for label, mangle in (
+            ("missing", lambda f: f.rename(f.with_name("command_cwd_renamed.py"))),
+            ("crashing", lambda f: f.write_text("import sys\nsys.exit(1)\n", encoding="utf-8"))):
         with tempfile.TemporaryDirectory() as hd:
             copy = Path(hd) / "scripts"
             shutil.copytree(HOOKS, copy)
             mangle(copy / "lib" / "command_cwd.py")
             with tempfile.TemporaryDirectory() as td:
-                (Path(td) / ".github").mkdir()
-                (Path(td) / ".github" / "pull_request_template.md").write_text(TPL, encoding="utf-8")
-                (Path(td) / "body.md").write_text(FULL, encoding="utf-8")
+                a, b = Path(td) / "a", Path(td) / "b"
+                for d in (a, b):
+                    (d / ".github").mkdir(parents=True)
+                    (d / ".github" / "pull_request_template.md").write_text(TPL, encoding="utf-8")
+                (b / "onlyb.md").write_text(FULL, encoding="utf-8")
                 env = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])}
                 env.pop("GH_REPO", None)
-                broke = _run(["bash", str(copy / "guard-claims.sh")], cwd=td, env=env, text=True,
+                broke = _run(["bash", str(copy / "guard-claims.sh")], cwd=a, env=env, text=True,
                              capture_output=True, timeout=60,
-                             input=json.dumps({"tool_input": {"command": f"gh pr create --base dev --body-file {td}/body.md"}}))
+                             input=json.dumps({"tool_input": {"command": f"cd {b} && gh pr create --base dev --body-file onlyb.md"}}))
+        needle = "could not be resolved"
         check(f"guard-claims: a {label} command_cwd.py is BLOCKED, never the session's template (#1509)",
               broke.returncode == 2 and needle in broke.stdout + broke.stderr,
               f"exit {broke.returncode}: {(broke.stdout + broke.stderr)[-120:]}")
@@ -737,7 +743,7 @@ def guard_claims_fixtures() -> None:
     TPL_B = "## Summary\n\n## Risk\n"
     FITS_B = "## Summary\nTidy the README.\n## Risk\nNone, copy only.\n"
 
-    def run_in(cmd: str, body: str, *, body_in: str = "a", with_output: bool = False):
+    def run_in(cmd: str, body: str, *, body_in: str = "a", with_output: bool = False, payload_cwd: str = ""):
         with tempfile.TemporaryDirectory() as td:
             a, b = Path(td) / "a", Path(td) / "b"
             for d, tpl in ((a, TPL), (b, TPL_B)):
@@ -749,7 +755,10 @@ def guard_claims_fixtures() -> None:
             where = a if body_in == "a" else b
             (where / "body.md").write_text(body, encoding="utf-8")
             cmd = cmd.replace("B_DIR", str(b)).replace("BODY", str(where / "body.md"))
-            done = run_hook("guard-claims.sh", cwd=a, stdin=json.dumps({"tool_input": {"command": cmd}}),
+            payload = {"tool_input": {"command": cmd}}
+            if payload_cwd:
+                payload["cwd"] = str({"a": a, "b": b}[payload_cwd])
+            done = run_hook("guard-claims.sh", cwd=a, stdin=json.dumps(payload),
                             env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])})
             return done if with_output else done[0]
 
@@ -775,6 +784,29 @@ def guard_claims_fixtures() -> None:
           run_in("cd B_DIR && gh issue comment 5 --body-file body.md", NUMERIC, body_in="b") == 2, "exit 0")
     check("guard-claims: a cd inside a brace group runs in this shell, so it is followed",
           run_in("{ cd B_DIR; } && gh pr create --base dev --body-file BODY", FULL) == 2, "exit 0")
+    # #1516 review: each of these was judged against A's template, silently. FULL fits A and not B,
+    # so exit 2 here means B's template was read.
+    for label, cmd in (
+            ("a cd in a while condition", "while cd B_DIR; do gh pr create --body-file BODY ; break; done"),
+            ("a cd in an until condition", "until cd B_DIR; do :; done; gh pr create --body-file BODY"),
+            ("builtin cd", "builtin cd B_DIR && gh pr create --body-file BODY"),
+            ("command cd", "command cd B_DIR && gh pr create --body-file BODY"),
+            ("a quoted `gh pr create` earlier in the chain", "echo 'gh pr create' && cd B_DIR && gh pr create --body-file BODY"),
+            ("a cd with its stderr redirected", "cd B_DIR 2>/dev/null && gh pr create --body-file BODY"),
+            ("a cd with its stdout redirected", "cd B_DIR >/dev/null && gh pr create --body-file BODY"),
+            ("a cd and gh in the same case branch", "case x in x) cd B_DIR && gh pr create --body-file BODY;; esac")):
+        check(f"guard-claims: {label} is followed to the cd target's template (#1516)",
+              run_in(cmd, FULL) == 2, "exit 0: judged against the session repo")
+    rc, out = run_in("case x in x) cd B_DIR;; esac; gh pr create --body-file BODY", FITS_B, with_output=True)
+    check("guard-claims: a gh after a case whose branch moved the directory is NOT checked (which branch ran is unknown)",
+          rc == 0 and "a cd before gh could not be resolved" in out, f"exit {rc}: {out[-120:]}")
+    check("guard-claims: `--body-file b.md; fi` reads b.md, not `b.md;` (#1516)",
+          run_in("if cd B_DIR; then gh pr create --body-file body.md; fi", FULL, body_in="b") == 2
+          and run_in("if cd B_DIR; then gh pr create --body-file body.md; fi", FITS_B, body_in="b") == 0,
+          "the body was not read")
+    check("guard-claims: the command starts in the payload's cwd, not the hook's own directory",
+          run_in("gh pr create --body-file BODY", FULL, payload_cwd="b") == 2
+          and run_in("gh pr create --body-file BODY", FITS_B, payload_cwd="b") == 0, "judged against A")
     for label, cmd in (("a cd to a variable", "cd $NOWHERE && gh pr create --body-file BODY"),
                        ("a negated cd", "! cd B_DIR && gh pr create --body-file BODY"),
                        ("a cd to a missing directory", "cd B_DIR/missing && gh pr create --body-file BODY"),
@@ -838,6 +870,31 @@ def guard_claims_fixtures() -> None:
     # SCOPE: a PR touching no skill is not subject to the rule, whatever its body says.
     check("guard-claims: a PR touching no skill needs no change type",
           run_in_repo(CREATE, "Tidy the wording.\n", "scripts/x.py") == 0, "exit 2")
+    # #1516 review: the change-type check ran `git diff` in the SESSION's repo. A session with a modified
+    # skills/ file blocked `cd <other repo> && gh pr create` for a PR that touches nothing there.
+    def run_skills_cd(cmd: str) -> int:
+        with tempfile.TemporaryDirectory() as td:
+            a, b = Path(td) / "a", Path(td) / "b"
+            for d in (a, b):
+                d.mkdir()
+                _run(["git", "init", "-q", "-b", "main"], cwd=d, capture_output=True)
+                (d / "README.md").write_text("x\n", encoding="utf-8")
+            (a / "skills").mkdir()
+            (a / "skills" / "x.md").write_text("x\n", encoding="utf-8")
+            for d in (a, b):
+                _run(["git", "add", "-A"], cwd=d, capture_output=True)
+                _run(["git", "-c", "user.email=f@e", "-c", "user.name=f", "commit", "-qm", "base"],
+                     cwd=d, capture_output=True)
+            (a / "skills" / "x.md").write_text("changed\n", encoding="utf-8")
+            (b / "body.md").write_text("Tidy the wording.\n", encoding="utf-8")
+            return run_hook("guard-claims.sh", cwd=a, stdin=json.dumps({"tool_input": {
+                "command": cmd.replace("B_DIR", str(b))}}),
+                env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])})[0]
+
+    check("guard-claims: the skills/** change-type check reads the cd target's diff, not the session's (#1516)",
+          run_skills_cd("cd B_DIR && gh pr create --base dev --body-file body.md") == 0, "exit 2")
+    check("guard-claims: ...and without the cd the session's skills/ change is still held to it (control)",
+          run_skills_cd("gh pr create --base dev --body-file B_DIR/body.md") == 2, "exit 0")
 
     # FAILS OPEN when it cannot read the body. This guard's job is to make the check happen where
     # it can, never to block opening a PR because a path could not be resolved.
