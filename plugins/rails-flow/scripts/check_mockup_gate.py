@@ -96,26 +96,36 @@ def declares_off(text: str) -> bool:
 # #1490). Two line-based passes here before #1501 kept failing open on containers -- a fence or quote
 # inside a list item, a list closed by a column-0 block -- so this is the block algorithm itself.
 
+# commonmark.js's own definitions (lib/blocks.js, 0.31.2), matched exactly. Python's str.strip() and
+# Unicode \d / \s differ from them (#1512 review B1-B3):
+#   blank       -- only spaces and tabs (the parser's findNextNonspace, and spec §4.9): NBSP, \f and
+#                  \v are NOT blank -- a form-feed line opens a paragraph in commonmark.js;
+#   ordered     -- ASCII digits only (JavaScript \d);
+#   JS_WS       -- JavaScript \s, used by the HTML block patterns.
+BLANK_CHARS = " \t"
+JS_WS = "[\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]"
+REFDEF = re.compile(r"\[(?:[^\]\\]|\\.)+\]:[ \t]*\S")
+
 TAG_NAMES = ("address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|"
              "dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h1|h2|h3|h4|h5|h6|"
              "head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|"
              "p|param|search|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul")
 HTML_START = [
     # Type 1 ends at ANY of the four closing tags; it need not match its opener (verifier, §4.6).
-    (re.compile(r"<(?:pre|script|style|textarea)(?:[ \t>]|$)", re.I), re.compile(r"</(?:pre|script|style|textarea)>", re.I)),
+    (re.compile(r"<(?:pre|script|style|textarea)(?:" + JS_WS + r"|>|$)", re.I), re.compile(r"</(?:pre|script|style|textarea)>", re.I)),
     (re.compile(r"<!--"), re.compile(r"-->")),
     (re.compile(r"<\?"), re.compile(r"\?>")),
     (re.compile(r"<![A-Za-z]"), re.compile(r">")),
     (re.compile(r"<!\[CDATA\["), re.compile(r"\]\]>")),
-    (re.compile(r"</?(?:" + TAG_NAMES + r")(?:[ \t>]|/>|$)", re.I), None),
+    (re.compile(r"</?(?:" + TAG_NAMES + r")(?:" + JS_WS + r"|/?>|$)", re.I), None),
 ]
 ATTR = r"(?:[ \t]+[A-Za-z_:][A-Za-z0-9_.:-]*(?:[ \t]*=[ \t]*(?:[^ \t\"'=<>`]+|'[^']*'|\"[^\"]*\"))?)"
-HTML7 = re.compile(r"(?:<[A-Za-z][A-Za-z0-9-]*" + ATTR + r"*[ \t]*/?>|</[A-Za-z][A-Za-z0-9-]*[ \t]*>)[ \t]*$")
+HTML7 = re.compile(r"(?:<[A-Za-z][A-Za-z0-9-]*" + ATTR + r"*[ \t]*/?>|</[A-Za-z][A-Za-z0-9-]*[ \t]*>)" + JS_WS + r"*$")
 FENCE = re.compile(r"(`{3,})(?!.*`)|(~{3,})")
 THEMATIC = re.compile(r"(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$")
 ATX = re.compile(r"#{1,6}(?:[ \t]|$)")
 SETEXT = re.compile(r"(?:=+|-+)[ \t]*$")
-MARKER = re.compile(r"([-+*]|(\d{1,9})[.)])(?=[ \t]|$)")
+MARKER = re.compile(r"([-+*]|([0-9]{1,9})[.)])(?=[ \t]|$)")
 
 
 def _indent(s, pos):
@@ -150,14 +160,25 @@ def block_classes(text: str) -> list[str]:
     out = []
     stack = []            # open containers, outermost first: "quote" or Item
     leaf = None           # None | "para" | ("fence", char, length, indent) | "icode" | ("html", end_re or None)
+    refs_only = False     # the open paragraph holds only link reference definitions (no setext heading)
     for raw in text.split("\n"):
         s = raw.expandtabs(4)
         pos, matched = 0, 0
-        blank = not s.strip()
+        last = len(s.rstrip(BLANK_CHARS)) - 1   # the line is blank from any position past `last`
+        # nxt[k]: the first non-space index at or after k. One pass per line, so each container's
+        # indentation check is O(1) -- rescanning the spaces per container was cubic in nesting depth
+        # (#1512 review S2: 2,000 levels took minutes).
+        nxt = [len(s)] * (len(s) + 1)
+        for k in range(len(s) - 1, -1, -1):
+            nxt[k] = k if s[k] != " " else nxt[k + 1]
+
+        def ind(at, nxt=nxt):
+            j = nxt[at] if at <= len(s) else at
+            return j - at, j
         # 1. continuation markers of the open containers
         for c in stack:
             if c == "quote":
-                n, j = _indent(s, pos)
+                n, j = ind(pos)
                 if n <= 3 and j < len(s) and s[j] == ">":
                     pos = j + 1
                     if pos < len(s) and s[pos] == " ":
@@ -165,23 +186,23 @@ def block_classes(text: str) -> list[str]:
                     matched += 1
                     continue
                 break
-            if not s[pos:].strip():           # blank AFTER the markers matched so far (`  >` included)
+            if pos > last:                    # blank AFTER the markers matched so far (`  >` included)
                 if c.blank_start and not c.has_content:
                     break                     # an item may begin with at most one blank line
                 matched += 1
                 continue
-            n, j = _indent(s, pos)
+            n, j = ind(pos)
             if n >= c.width:
                 pos += c.width
                 matched += 1
                 continue
             break
-        rest_blank = not s[pos:].strip()
+        rest_blank = pos > last
         all_matched = matched == len(stack)
         # 2. an open fence or HTML block continues only inside ALL its containers
         if isinstance(leaf, tuple) and leaf[0] == "fence":
             if all_matched:
-                n, j = _indent(s, pos)
+                n, j = ind(pos)
                 m = re.match(r"(`{3,}|~{3,})[ \t]*$", s[j:]) if n <= 3 else None
                 if m and m.group(1)[0] == leaf[1] and len(m.group(1)) >= leaf[2]:
                     leaf = None
@@ -220,7 +241,7 @@ def block_classes(text: str) -> list[str]:
         # 4. new block starts
         cls = "text"
         while True:
-            n, j = _indent(s, pos)
+            n, j = ind(pos)
             if n >= 4:
                 if leaf == "para":
                     cls = "text"
@@ -229,43 +250,45 @@ def block_classes(text: str) -> list[str]:
                 break
             if leaf == "icode":
                 leaf = None
-            body = s[j:]
-            if body.startswith(">"):
+            # Patterns match AT j, never on a slice: slicing per nested marker was quadratic in line length.
+            if s.startswith(">", j):
                 stack.append("quote")
                 pos = j + 1
                 if pos < len(s) and s[pos] == " ":
                     pos += 1
                 leaf = None if leaf != "para" else leaf
-                if not s[pos:].strip():
+                if pos > last:
                     leaf, cls = None, "text"
                     break
                 if leaf == "para":
                     leaf = None
                 continue
-            f = FENCE.match(body)
+            f = FENCE.match(s, j)
             if f:
                 run = f.group(1) or f.group(2)
                 leaf, cls = ("fence", run[0], len(run), n), "code"
                 break
-            h = _html_start(body, leaf == "para")
+            h = _html_start(s, j, leaf == "para")
             if h is not False:
                 leaf, cls = ("html", h), "html"
-                if h is not None and h.search(body[1:]):
+                if h is not None and h.search(s, j + 1):
                     leaf = None
                 break
-            if leaf == "para" and SETEXT.match(body):
+            if leaf == "para" and SETEXT.match(s, j) and not refs_only:
                 leaf, cls = None, "text"
                 break
-            if THEMATIC.match(body):
+            # A break ends in its own character, so test the line's last character first: matching the
+            # pattern at every nested marker of a long line scanned it to the end each time.
+            if last >= 0 and s[last] in "*-_" and THEMATIC.match(s, j):
                 leaf, cls = None, "text"
                 break
-            m = MARKER.match(body)
+            m = MARKER.match(s, j)
             if m:
-                after = j + m.end()
+                after = m.end()
                 k = after
                 while k < len(s) and s[k] == " ":
                     k += 1
-                empty = k >= len(s)
+                empty = k > last
                 spaces = k - after
                 if leaf == "para" and (empty or (m.group(2) is not None and int(m.group(2)) != 1)):
                     pass                      # cannot interrupt a paragraph: falls through to text
@@ -278,21 +301,22 @@ def block_classes(text: str) -> list[str]:
                         cls = "text"
                         break
                     continue
-            if ATX.match(body):
+            if ATX.match(s, j):
                 leaf, cls = None, "text"
                 break
+            refs_only = bool(REFDEF.match(s, j)) if leaf != "para" else refs_only and bool(REFDEF.match(s, j))
             leaf, cls = "para", "text"
             break
         out.append(cls)
     return out
 
 
-def _html_start(body, in_para):
-    """The end pattern of the HTML block `body` opens (None for blank-line-ended), or False."""
+def _html_start(s, at, in_para):
+    """The end pattern of the HTML block opening at `s[at:]` (None for blank-line-ended), or False."""
     for start, end in HTML_START:
-        if start.match(body):
+        if start.match(s, at):
             return end
-    if not in_para and HTML7.match(body):
+    if not in_para and HTML7.match(s, at):
         return None
     return False
 
@@ -307,20 +331,18 @@ def _lazy(s, pos, unmatched):
     n, _ = _indent(s, pos)
     if n >= 4:
         return True
-    return not _starts_block(s, pos, interrupting=True)
+    return not _starts_block(s, pos)
 
 
-def _starts_block(s, pos, interrupting):
-    """Whether the line from `pos`, read as CONTENT of the unmatched container, would open a block
-    rather than continue a paragraph. Indentation is ignored: laziness is about the content, so
-    `    >` under a `10.` item is a quote start, not paragraph text."""
+def _starts_block(s, pos):
+    """Whether the line, from `pos` (under 4 columns of indentation: `_lazy` decides the rest),
+    would open a block rather than continue a paragraph."""
     _, j = _indent(s, pos)
-    body = s[j:]
-    if body.startswith(">") or FENCE.match(body) or ATX.match(body) or THEMATIC.match(body):
+    if s.startswith(">", j) or FENCE.match(s, j) or ATX.match(s, j) or THEMATIC.match(s, j):
         return True
-    if _html_start(body, True) is not False:
+    if _html_start(s, j, True) is not False:
         return True
-    return bool(MARKER.match(body))
+    return bool(MARKER.match(s, j))
 
 
 def record_problems(root: Path, rel: str) -> list[str]:
@@ -551,7 +573,6 @@ def selftest() -> int:
              f"> - item\n>\n>     - {O}\n", False),
             ("#1501: a `10.` item's content column is 4; a tab-indented line under it is item text",
              f"10. Gates:\n\n\t- {O}\n", True),
-            ("#1501: a lone closing tag opens an HTML block (as commonmark.js renders it)", f"</pre>\n- {O}\n", False),
             ("#1501: a type-1 block ends at ANY of the four closing tags (§4.6)", f"<pre>\nx\n</script>\n\n- {O}\n", True),
             ("#1501: `2.` cannot interrupt a paragraph, so no item opens and the code after is code (§5.2)",
              f"Text\n2. Gates:\n\n    - {O}\n", False),
@@ -570,6 +591,17 @@ def selftest() -> int:
             ("#1501: a quote line holding only `>` and spaces is blank in the quote",
              f"> quote\n\t >\n>\n      `{O}`\n", False),
             ("#1501: a fence indented one space still opens", f" ```\n- {O}\n", False),
+            # PR #1512's review: where Python's notion of blank, digit or space is not commonmark.js's.
+            ("#1512 B1: a no-break-space line is not blank, so the HTML block runs on", f"<div>\n\u00a0\n- {O}\n", False),
+            ("#1512 B1 CONTROL: a no-break-space line does not end a paragraph", f"Example:\n\u00a0\n    - {O}\n", True),
+            ("#1512: a form-feed line is not blank: it opens a paragraph, so the indented line continues it",
+             f"\f\n    - {O}\n", True),
+            ("#1512 B2: an Arabic-Indic digit opens no list item", f"\u0661. Gates:\n\n    - {O}\n", False),
+            ("#1512 B3: a lone tag followed by a no-break space opens an HTML block", f"<img src=\"x.png\">\u00a0\n- {O}\n", False),
+            ("#1512 B4: quote continuation keeps the quote's paragraph open for a lazy line",
+             f"> x\n>     y\n    - {O}\n", True),
+            ("#1512 S1: a paragraph of only reference definitions takes no setext underline",
+             f"[a]: /u\n===\n    - {O}\n", True),
             ("CONTROL: a fence INSIDE the item keeps the item open for a nested item",
              f"- Gates:\n\n  ```bash\n  bin/ci\n  ```\n\n    - {O}\n", True),
         ):

@@ -166,8 +166,13 @@ GUARD = Guard(
             '        s = raw.replace("\\t", " ")',
             '#1490: a tab indents to column 4',
         ),
-        # No mutation for quote continuation: re-opening a quote on each `>` line yields the same line
-        # classes, so no input can tell the mutant apart (differential fuzz, 60k inputs) -- equivalent.
+        # Quote continuation was first recorded as an equivalent mutant; PR #1512's review disproved it.
+        Mutation(
+            'a quote marker no longer continues a quote',
+            '                if n <= 3 and j < len(s) and s[j] == ">":',
+            '                if False:',
+            "#1512 B4: quote continuation keeps the quote's paragraph open",
+        ),
         Mutation(
             'a blank-started item survives a second blank line',
             '                if c.blank_start and not c.has_content:\n                    break',
@@ -230,7 +235,7 @@ GUARD = Guard(
         ),
         Mutation(
             'a fence never opens',
-            '            f = FENCE.match(body)',
+            '            f = FENCE.match(s, j)',
             '            f = None',
             '#1501: a fence indented one space still opens',
         ),
@@ -242,8 +247,8 @@ GUARD = Guard(
         ),
         Mutation(
             'a lone tag interrupts a paragraph',
-            '    if not in_para and HTML7.match(body):',
-            '    if HTML7.match(body):',
+            '    if not in_para and HTML7.match(s, at):',
+            '    if HTML7.match(s, at):',
             '#1501: a lone tag cannot interrupt a paragraph',
         ),
         Mutation(
@@ -254,14 +259,14 @@ GUARD = Guard(
         ),
         Mutation(
             'a setext underline is a paragraph line',
-            '            if leaf == "para" and SETEXT.match(body):',
+            '            if leaf == "para" and SETEXT.match(s, j) and not refs_only:',
             '            if False:',
             '#1490: R2: a setext `===` underline',
         ),
         Mutation(
             'a thematic break is a paragraph',
-            '            if THEMATIC.match(body):\n                leaf, cls = None, "text"',
-            '            if False:\n                leaf, cls = None, "text"',
+            '            if last >= 0 and s[last] in "*-_" and THEMATIC.match(s, j):',
+            '            if False:',
             '#1501: an indented line after a thematic break is code',
         ),
         Mutation(
@@ -278,7 +283,7 @@ GUARD = Guard(
         ),
         Mutation(
             'an ATX heading is a paragraph',
-            '            if ATX.match(body):\n                leaf, cls = None, "text"',
+            '            if ATX.match(s, j):\n                leaf, cls = None, "text"',
             '            if False:\n                leaf, cls = None, "text"',
             '#1490: an indented line after a heading is code',
         ),
@@ -287,6 +292,31 @@ GUARD = Guard(
             '        blank = rest_blank',
             '        blank = not s.strip()',
             '#1501: a quote line holding only `>` and spaces',
+        ),
+        # #1512 review: commonmark.js's blank, digit and whitespace sets.
+        Mutation(
+            "blankness uses Python's strip() again",
+            '        last = len(s.rstrip(BLANK_CHARS)) - 1',
+            '        last = len(s.rstrip()) - 1',
+            '#1512 B1: a no-break-space line is not blank',
+        ),
+        Mutation(
+            'an ordered marker accepts any Unicode digit',
+            'MARKER = re.compile(r"([-+*]|([0-9]{1,9})[.)])(?=[ \\t]|$)")',
+            'MARKER = re.compile(r"([-+*]|(\\d{1,9})[.)])(?=[ \\t]|$)")',
+            '#1512 B2: an Arabic-Indic digit opens no list item',
+        ),
+        Mutation(
+            'a lone tag may be followed only by space and tab',
+            'HTML7 = re.compile(r"(?:<[A-Za-z][A-Za-z0-9-]*" + ATTR + r"*[ \\t]*/?>|</[A-Za-z][A-Za-z0-9-]*[ \\t]*>)" + JS_WS + r"*$")',
+            'HTML7 = re.compile(r"(?:<[A-Za-z][A-Za-z0-9-]*" + ATTR + r"*[ \\t]*/?>|</[A-Za-z][A-Za-z0-9-]*[ \\t]*>)[ \\t]*$")',
+            '#1512 B3: a lone tag followed by a no-break space',
+        ),
+        Mutation(
+            'a reference-definition paragraph takes a setext underline',
+            '            if leaf == "para" and SETEXT.match(s, j) and not refs_only:',
+            '            if leaf == "para" and SETEXT.match(s, j):',
+            '#1512 S1: a paragraph of only reference definitions',
         ),
     ),
 )
