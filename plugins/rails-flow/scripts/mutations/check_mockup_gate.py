@@ -318,5 +318,11 @@ GUARD = Guard(
             '            if leaf == "para" and SETEXT.match(s, j):',
             '#1512 S1: a paragraph of only reference definitions',
         ),
+        Mutation(
+            'a lazy line keeps a definitions-only paragraph definitions-only',
+            '            refs_only = refs_only and bool(REFDEF.match(s, ind(pos)[1]))\n            out.append("text")',
+            '            out.append("text")',
+            '#1512 R1: a lazy line ends a definitions-only paragraph',
+        ),
     ),
 )

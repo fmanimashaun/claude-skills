@@ -223,6 +223,9 @@ def block_classes(text: str) -> list[str]:
             leaf = None
         # 3. lazy paragraph continuation: unmatched containers stay open for paragraph text only
         if not all_matched and leaf == "para" and not rest_blank and _lazy(s, pos, stack[matched:]):
+            # A lazy line is paragraph content too: unless it is itself a reference definition, the
+            # paragraph is no longer only definitions and can take a setext underline (#1512 review R1).
+            refs_only = refs_only and bool(REFDEF.match(s, ind(pos)[1]))
             out.append("text")
             continue
         if not all_matched:
@@ -600,6 +603,8 @@ def selftest() -> int:
             ("#1512 B3: a lone tag followed by a no-break space opens an HTML block", f"<img src=\"x.png\">\u00a0\n- {O}\n", False),
             ("#1512 B4: quote continuation keeps the quote's paragraph open for a lazy line",
              f"> x\n>     y\n    - {O}\n", True),
+            ("#1512 R1: a lazy line ends a definitions-only paragraph, so a setext underline applies",
+             f">[f]:\"\nl\n>-\n    - {O}\n", False),
             ("#1512 S1: a paragraph of only reference definitions takes no setext underline",
              f"[a]: /u\n===\n    - {O}\n", True),
             ("CONTROL: a fence INSIDE the item keeps the item open for a nested item",
