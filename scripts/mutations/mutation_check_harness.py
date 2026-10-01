@@ -34,8 +34,8 @@ GUARD = Guard(
         ),
         Mutation(
             'a non-UTF-8 byte raises before the report prints',
-            '        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True, errors="replace",',
-            '        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True,',
+            '        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True, errors="replace",\n                                timeout=timeout)',
+            '        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True,\n                                timeout=timeout)',
             "a non-UTF-8 byte in a mutant's output raised before the report printed",
         ),
         Mutation(
@@ -102,8 +102,8 @@ GUARD = Guard(
         Mutation(
             # review of PR #1491
             "main's pool drops the derived limit (the path CI runs)",
-            '        outcomes = list(pool.map(lambda gm: run_mutation(gm[0], gm[1], limits[gm[0].name]), live))',
-            '        outcomes = list(pool.map(lambda gm: run_mutation(gm[0], gm[1]), live))',
+            '        outcomes = list(pool.map(lambda gm: timed_run(run_mutation, gm[0], gm[1], limits[gm[0].name]), live))',
+            '        outcomes = list(pool.map(lambda gm: timed_run(run_mutation, gm[0], gm[1]), live))',
             "#1486 CONTROL: main()'s pool with no scaling must time the mutant out",
         ),
         Mutation(
@@ -112,6 +112,27 @@ GUARD = Guard(
             '    return min(MUTATION_CAP, max(MUTATION_FLOOR, MUTATION_SCALE * baseline_seconds))',
             '    return max(MUTATION_FLOOR, MUTATION_SCALE * baseline_seconds)',
             "#1486: main's pool must give each guard max(floor, 3x baseline)",
+        ),
+        Mutation(
+            # #1497
+            "the baseline drops a guard's selftest_args",
+            '        argv.extend(guard.selftest_args)\n        started',
+            '        started',
+            "#1497: a guard's selftest_args must reach its baseline and mutants",
+        ),
+        Mutation(
+            # #1493, baseline half
+            "a non-UTF-8 byte in a BASELINE's output raises before the INERT report prints",
+            '        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True, errors="replace",\n                                timeout=BASELINE_TIMEOUT)',
+            '        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True,\n                                timeout=BASELINE_TIMEOUT)',
+            "a non-UTF-8 byte in a BASELINE's output raised before the INERT report printed",
+        ),
+        Mutation(
+            # review of PR #1506
+            "a mutant drops its guard's selftest_args",
+            '        argv.extend(guard.selftest_args)\n        # `errors="replace"`: a non-UTF-8 byte must not raise before the report can print (#1493).',
+            '        # `errors="replace"`: a non-UTF-8 byte must not raise before the report can print (#1493).',
+            "#1497: a guard's selftest_args must reach its baseline and mutants",
         ),
     ),
 )

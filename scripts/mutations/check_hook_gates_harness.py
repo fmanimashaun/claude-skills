@@ -10,6 +10,9 @@ GUARD = Guard(
     name="check_hook_gates_harness",
     subject="plugins/rails-flow/scripts/check_hook_gates.py",
     selftest="plugins/rails-flow/scripts/check_hook_gates.py",
+    # Its mutations target --only/run_groups (checked at the start of EVERY run) and the timeout
+    # handling (the `timeout` group). The doctor's `hook gates` gate still runs every group (#1497).
+    selftest_args=("--only", "timeout"),
     # The same staging as hook_guard_bash: the suite drives every plugin's hooks. A literal, because
     # lint_self_consistency's harness-dependency-undeclared rule reads it statically -- and that rule is
     # what keeps this copy honest when a hook gains a script (it caught exactly that on #1477).
@@ -51,6 +54,41 @@ GUARD = Guard(
             "                os.killpg(proc.pid, signal.SIGKILL)",
             "                proc.kill()",
             "leaving no orphaned stub",
+        ),
+        Mutation(
+            # #1497
+            "--only accepts an unknown group, so a guard's selection can silently run nothing",
+            '    if any(g not in GROUPS for g in groups) or len(set(groups)) != len(groups):',
+            '    if len(set(groups)) != len(groups):',
+            "--only 'nope' is refused",
+        ),
+        Mutation(
+            # #1497
+            '--only runs every group whatever it names',
+            '    for name in (groups or list(table)):',
+            '    for name in list(table):',
+            '--only runs exactly the groups it names',
+        ),
+        Mutation(
+            # review of PR #1506
+            '--only accepts a group named twice',
+            '    if any(g not in GROUPS for g in groups) or len(set(groups)) != len(groups):',
+            '    if any(g not in GROUPS for g in groups):',
+            "--only 'timeout,timeout' is refused",
+        ),
+        Mutation(
+            # review of PR #1506
+            "a bare run executes no group, so the doctor's hook gates pass on nothing",
+            '    for name in (groups or list(table)):',
+            '    for name in (groups or []):',
+            'a bare run (no --only) runs every group',
+        ),
+        Mutation(
+            # review of PR #1506
+            'main() stops refusing a bad --only',
+            '                  f"known: {\', \'.join(GROUPS)}", file=sys.stderr)\n            return 2',
+            '                  f"known: {\', \'.join(GROUPS)}", file=sys.stderr)',
+            'main() exits 2 for --only nope',
         ),
     ),
 )

@@ -283,8 +283,12 @@ def run_baseline_timed(guard: Guard) -> tuple[list[str], float]:
         argv = [sys.executable, str(entry)]
         if guard.selftest == guard.subject:
             argv.append("--selftest")
+        argv.extend(guard.selftest_args)
         started = time.monotonic()                # after staging: the limit is the selftest's time
-        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True, timeout=BASELINE_TIMEOUT)
+        # `errors="replace"` here too (#1493 applied it to mutants only): a non-UTF-8 byte in a
+        # BASELINE's output raised before the INERT report could print.
+        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True, errors="replace",
+                                timeout=BASELINE_TIMEOUT)
         elapsed = time.monotonic() - started
         if result.returncode != 0:
             return [
@@ -310,6 +314,7 @@ def run_mutation(guard: Guard, mutation: Mutation, timeout: float = MUTATION_FLO
         argv = [sys.executable, str(entry)]
         if guard.selftest == guard.subject:
             argv.append("--selftest")   # the selftest is a flag on the module itself
+        argv.extend(guard.selftest_args)
         # `errors="replace"`: a non-UTF-8 byte must not raise before the report can print (#1493).
         result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True, errors="replace",
                                 timeout=timeout)
@@ -331,6 +336,12 @@ def run_mutation(guard: Guard, mutation: Mutation, timeout: float = MUTATION_FLO
                 f"({MUTATION_SCALE:g}x its baseline, within {MUTATION_FLOOR:.0f}-{MUTATION_CAP:.0f}s)"]
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
+
+
+def timed_run(fn, *args):
+    """`fn(*args)` and the wall seconds it took, for the per-guard cost line (#1497)."""
+    started = time.monotonic()
+    return fn(*args), time.monotonic() - started
 
 
 def live_mutations(guards: list[Guard], baselines: list[list[str]]) -> list[tuple[Guard, Mutation]]:
@@ -404,17 +415,21 @@ def main(argv: list[str] | None = None) -> int:
         baselines = [problems for problems, _ in timed]
         limits = mutation_limits(guards, timed)
         live = live_mutations(guards, baselines)
-        outcomes = list(pool.map(lambda gm: run_mutation(gm[0], gm[1], limits[gm[0].name]), live))
+        outcomes = list(pool.map(lambda gm: timed_run(run_mutation, gm[0], gm[1], limits[gm[0].name]), live))
     by_guard: dict[str, list[str]] = {g.name: list(b) for g, b in zip(guards, baselines)}
-    for (g, _m), found in zip(live, outcomes):
+    # Seconds each guard cost: its baseline plus every mutant run (#1497). The CI log printed only
+    # the gate total, so where the budget went could not be read from it.
+    cost: dict[str, float] = {g.name: secs for g, (_, secs) in zip(guards, timed)}
+    for (g, _m), (found, secs) in zip(live, outcomes):
         by_guard[g.name].extend(found)
+        cost[g.name] += secs
     problems: list[str] = []
     total = 0
     for guard in guards:
         total += len(guard.mutations)
         found = by_guard[guard.name]
         status = "ok" if not found else "FAIL"
-        print(f"  [{status:4}] {guard.name}: {len(guard.mutations)} mutation(s)")
+        print(f"  [{status:4}] {guard.name}: {len(guard.mutations)} mutation(s), {cost[guard.name]:.0f}s")
         problems.extend(found)
 
     if problems:
@@ -424,6 +439,9 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     print(f"\nmutation check: {total} mutation(s) across {len(guards)} guard(s), all caught "
           f"(jobs={jobs}, {time.monotonic() - started:.0f}s)")
+    heaviest = sorted(cost.items(), key=lambda kv: kv[1], reverse=True)[:5]
+    print("heaviest guards (seconds of work, all jobs): "
+          + ", ".join(f"{name} {secs:.0f}s" for name, secs in heaviest))
     return 0
 
 
