@@ -16,6 +16,7 @@ GUARD = Guard(
     # without them the baseline fails and every mutation passes for free.
     needs=(
         "scripts/maintainer_doctor.py",
+        "scripts/hermetic_git.py",                # imported by the doctor (#1510)
         "scripts/build_coverage.py",
         "scripts/build_coverage_artifact.py",
         "scripts/build_wiki.py",

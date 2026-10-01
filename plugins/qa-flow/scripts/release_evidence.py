@@ -833,8 +833,12 @@ def selftest() -> int:
         subprocess.run([*g, "add", "qa/manual-tests"], check=True)
         subprocess.run([*g, "commit", "-q", "-m", "evidence"], check=True)
         # #1493, the root cause: a fixture commit starts no detached background git.
+        # Only FIXTURE_GIT may supply the settings: a runner that already disables maintenance through
+        # GIT_CONFIG_* (ours does, #1510) would otherwise satisfy this check with the fixture's own
+        # settings removed -- and a downstream project runs this selftest without our runner.
+        bare_env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_CONFIG_")}
         traced = subprocess.run([*g, "commit", "-q", "--allow-empty", "-m", "trace"], capture_output=True,
-                                text=True, env={**os.environ, "GIT_TRACE": "1"})
+                                text=True, env={**bare_env, "GIT_TRACE": "1"})
         # CONTROL: with auto-maintenance ON the same commit does run it, so the check above is not vacuous
         # on this git. It runs in the FOREGROUND (`autoDetach=false`): a detached control would be the very
         # #1493 race, hidden by the cleanup (review of PR #1511). `maintenance.auto=true` on the command
@@ -842,7 +846,7 @@ def selftest() -> int:
         bare = ["git", "-C", str(proj), "-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgSign=false",
                 "-c", "maintenance.auto=true", "-c", "maintenance.autoDetach=false", "-c", "gc.autoDetach=false"]
         control = subprocess.run([*bare, "commit", "-q", "--allow-empty", "-m", "control"], capture_output=True,
-                                 text=True, env={**os.environ, "GIT_TRACE": "1"})
+                                 text=True, env={**bare_env, "GIT_TRACE": "1"})
         check("cleanup CONTROL: with auto-maintenance on, a commit runs it -- in the foreground, never detached",
               ("maintenance run --auto" in control.stderr or "gc --auto" in control.stderr)
               and " --detach" not in control.stderr,
