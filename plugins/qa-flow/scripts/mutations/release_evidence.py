@@ -13,6 +13,12 @@ GUARD = Guard(
     mutations=(
         # #1493: a fixture commit's detached `git maintenance` raced the temp-dir cleanup.
         Mutation(
+            'the control detaches its maintenance run -- the race, reintroduced (review of PR #1511)',
+            '                "-c", "maintenance.auto=true", "-c", "maintenance.autoDetach=false", "-c", "gc.autoDetach=false"]',
+            '                "-c", "maintenance.auto=true"]',
+            'cleanup CONTROL: with auto-maintenance on, a commit runs it -- in the foreground, never detached',
+        ),
+        Mutation(
             "the fixture's git starts background maintenance again -- the #1493 root cause",
             'FIXTURE_GIT = ("-c", "user.email=t@t", "-c", "user.name=t", "-c", "maintenance.auto=false", "-c", "gc.auto=0",',
             'FIXTURE_GIT = ("-c", "user.email=t@t", "-c", "user.name=t",',

@@ -67,6 +67,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import errno
 from datetime import datetime
 import csv
 import io
@@ -655,7 +656,6 @@ def selftest() -> int:
     # #1493: cleanup cannot crash the verdict. The CI traceback was `os.rmdir` raising "Directory not
     # empty" inside TemporaryDirectory.cleanup, a writer racing the removal; that exact failure is made
     # deterministic here by refusing the probe directory's own rmdir, and only it.
-    import errno
     real_rmdir = os.rmdir
     probe = ""
 
@@ -835,20 +835,23 @@ def selftest() -> int:
         # #1493, the root cause: a fixture commit starts no detached background git.
         traced = subprocess.run([*g, "commit", "-q", "--allow-empty", "-m", "trace"], capture_output=True,
                                 text=True, env={**os.environ, "GIT_TRACE": "1"})
-        # CONTROL: the same commit WITHOUT the two settings does start it, so the check above is not
-        # vacuous on this git (it is the shape that broke CI).
-        bare = ["git", "-C", str(proj), "-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgSign=false"]
+        # CONTROL: with auto-maintenance ON the same commit does run it, so the check above is not vacuous
+        # on this git. It runs in the FOREGROUND (`autoDetach=false`): a detached control would be the very
+        # #1493 race, hidden by the cleanup (review of PR #1511). `maintenance.auto=true` on the command
+        # line, so a maintainer's global config cannot turn the control red.
+        bare = ["git", "-C", str(proj), "-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgSign=false",
+                "-c", "maintenance.auto=true", "-c", "maintenance.autoDetach=false", "-c", "gc.autoDetach=false"]
         control = subprocess.run([*bare, "commit", "-q", "--allow-empty", "-m", "control"], capture_output=True,
                                  text=True, env={**os.environ, "GIT_TRACE": "1"})
-        check("cleanup CONTROL: without them a fixture commit does start background maintenance",
-              "maintenance run --auto" in control.stderr or "gc --auto" in control.stderr,
+        check("cleanup CONTROL: with auto-maintenance on, a commit runs it -- in the foreground, never detached",
+              ("maintenance run --auto" in control.stderr or "gc --auto" in control.stderr)
+              and " --detach" not in control.stderr,
               [l for l in control.stderr.splitlines() if "run_command" in l][:3])
         check("cleanup: a fixture commit starts no background maintenance or gc",
               traced.returncode == 0 and "maintenance run" not in traced.stderr and "gc --auto" not in traced.stderr,
               [l for l in traced.stderr.splitlines() if "maintenance" in l or "gc" in l][:3])
 
         def commit(msg: str, when: str | None = None) -> None:
-            import os
             env = dict(os.environ)
             if when:
                 env["GIT_COMMITTER_DATE"] = env["GIT_AUTHOR_DATE"] = when
@@ -864,7 +867,6 @@ def selftest() -> int:
             out, err = io.StringIO(), io.StringIO()
             here = Path.cwd()
             try:
-                import os
                 os.chdir(proj)
                 with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
                     rc = main(["stamp", *argv])
@@ -1056,8 +1058,7 @@ def selftest() -> int:
               any("already in the last published release" in f for f in f_old), f_old)
         # 3. KNOWN LIMIT, pinned: a lightly edited copy (one line added) is NOT caught. It is stated in
         # certify.md and the doctrine map; this fixture keeps the statement true.
-        import shutil as _sh
-        _sh.copytree(proj / "qa/manual-tests/first-boot-v5", proj / "qa/manual-tests/first-boot-v6")
+        shutil.copytree(proj / "qa/manual-tests/first-boot-v5", proj / "qa/manual-tests/first-boot-v6")
         (proj / "qa/manual-tests/first-boot-v6/pages.csv").write_text(
             (proj / "qa/manual-tests/first-boot-v6/pages.csv").read_text(encoding="utf-8") + "\n", encoding="utf-8")
         (proj / "qa/manual-tests/authz-v6").mkdir()
