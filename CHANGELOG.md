@@ -7097,6 +7097,39 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 - **The tier doctrine states the blocked-alias substitution's provider scope — `plugins/pipeline/reference/model-tiers.md`** (#1433). Scoped to the source (https://code.claude.com/docs/en/sub-agents and https://code.claude.com/docs/en/model-config, fetched 2026-09-30): the newest-permitted-version substitution applies on the Anthropic API and Claude Platform on AWS when the allowlist permits a version of the family; otherwise the subagent runs on the inherited model. Boundary v2.1.222. The policy is unchanged.
 
+- **`/pipeline:deploy-cloud <destination>` carries the destination through whole: `-d` on every Kamal command, the
+  destination's secrets file and overlay, and credentials for the `RAILS_ENV` Kamal resolves for every role —
+  `plugins/pipeline/scripts/kamal_destination.py`** (#1465).
+  The destination chose only the secrets filename: `.kamal/secrets.<dest>` was written, then `kamal setup`/`kamal deploy`
+  ran with no `-d`, so Kamal read `.kamal/secrets` and the base `config/deploy.yml` and the staging file sat unused;
+  the credentials step hard-coded `env = "production"`.
+  - **Verified, not assumed.** `doctrine-verifier` CONFIRMED each claim against **Kamal 2.12.0** (the installed gem,
+    byte-identical to `basecamp/kamal` tag `v2.12.0`) and **Rails 8.1.4**, and by running Kamal offline:
+    - `lib/kamal/configuration.rb` L29/L34/L50: `-d <dest>` loads `config/deploy.<dest>.yml` after `config/deploy.yml`
+      with `deep_merge!` (the destination wins, hashes merge, arrays are replaced); a missing file raises (L45).
+    - `lib/kamal/secrets.rb` L43–45: the files read are `.kamal/secrets-common`, then `.kamal/secrets` or
+      `.kamal/secrets.<dest>`; the `kamal init` template: "This .kamal/secrets file is used only when no destination
+      is selected."
+    - `-d` sets no `RAILS_ENV` (none in `kamal/lib`); each role's container env is `Role#env(host)`
+      (`lib/kamal/configuration/role.rb` L93–96: the top-level `env`, then the role's, then host tags), and an `env:` with
+      no `clear:`, `secret:` or `tags:` key is all clear (`configuration/env.rb` L8). `railties` `application/configuration.rb`
+      L643–650 picks `config/credentials/<RAILS_ENV>.yml.enc` and, falling back **separately**,
+      `config/credentials/<RAILS_ENV>.key`.
+    - A non-production `RAILS_ENV` needs `config/environments/<env>.rb` (railties `engine.rb` L564–568 loads it only
+      if present) and a `database.yml` entry (activerecord `database_configurations.rb` L214–216, L304–308: only
+      `primary` falls back to `DATABASE_URL`); both prose files now say so.
+  - **`kamal_destination.py plan [dest]`** names file paths and commands only: `setup`/`deploy` with `-d`, the
+    destination's `env_file` and `overlay`. It hands out no command that prints resolved values (`kamal secrets print`
+    puts every `KEY=value`, `lib/kamal/cli/secrets.rb` L32–36). **`rails-env [dest]`** asks Kamal's own loader
+    (`Kamal::Configuration.create_from`, 2.12.0) for every role's resolved `RAILS_ENV` on every host and exits `2`
+    rather than guess: when no role sets it, and when roles disagree (two values, or set beside unset), so credentials
+    are never encrypted for an environment the app will not run.
+  - The command and `kamal-configurator` use both, write `RAILS_MASTER_KEY` from `write_key`, and seed a new
+    per-environment credentials file from the shared one it hides. The `--selftest` pins the call sites and runs the
+    real loader (a role override, the flat form, disagreeing roles); with no kamal gem it exits `3`, which the doctor
+    reports as a skip, not a pass, and `gates.yml` installs kamal 2.12.0 so CI runs them. It is the
+    `pipeline kamal destination` gate; its guard carries 13 mutations, each caught.
+
 - **`breaker.py`'s Anthropic citation is verified and linked, and it separates what is ours from the guide — `plugins/pipeline/scripts/breaker.py`** (#1417).
   The `elapsed Xs / Ys` line cited *Prompting Claude Opus 5.5*, "Time signals for multiagent harnesses", and no check
   against the source was recorded. `doctrine-verifier` CONFIRMED it against the live page on 2026-09-29
