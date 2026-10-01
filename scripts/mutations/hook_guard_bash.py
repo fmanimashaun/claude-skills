@@ -26,8 +26,8 @@ GUARD = Guard(
         # #1489: `bash < file` names no create, so the trigger must fire on the redirect itself.
         Mutation(
             "the trigger ignores a shell reading a redirect, so bash < file never reaches the helper",
-            "   || printf '%s' \"$cmd\" | grep -qE '(^|[[:space:];&|(/])(sh|bash|zsh|dash|ksh)([[:space:]]([^;&|]|[<>]&|&>)*)?<([^<(]|$)'; then",
-            "   ; then",
+            "   || printf '%s' \"$cmd\" | grep -qE '(^|[[:space:];&|(/])(sh|bash|zsh|dash|ksh)([[:space:]<>&]([^;&|]|[<>]&|&>)*)?<([^<(]|$)' \\",
+            "   || false \\",
             "a script with a create fed to bash by redirect is refused through the real hook",
         ),
         Mutation(
@@ -38,14 +38,26 @@ GUARD = Guard(
         ),
         Mutation(
             "the redirect trigger stops at a redirect's &, so bash 2>&1 < f never reaches the helper (#1495)",
-            "   || printf '%s' \"$cmd\" | grep -qE '(^|[[:space:];&|(/])(sh|bash|zsh|dash|ksh)([[:space:]]([^;&|]|[<>]&|&>)*)?<([^<(]|$)'; then",
-            "   || printf '%s' \"$cmd\" | grep -qE '(^|[[:space:];&|(/])(sh|bash|zsh|dash|ksh)([[:space:]][^;&|]*)?<([^<(]|$)'; then",
+            "   || printf '%s' \"$cmd\" | grep -qE '(^|[[:space:];&|(/])(sh|bash|zsh|dash|ksh)([[:space:]<>&]([^;&|]|[<>]&|&>)*)?<([^<(]|$)' \\",
+            "   || printf '%s' \"$cmd\" | grep -qE '(^|[[:space:];&|(/])(sh|bash|zsh|dash|ksh)([[:space:]<>&][^;&|]*)?<([^<(]|$)' \\",
             "the & of a fd duplication is not a separator",
         ),
         Mutation(
+            "the trigger ignores an escaped $'…', so gh issue $'\\x63reate' never reaches the helper (#1513)",
+            "   || printf '%s' \"$cmd\" | grep -q \"\\\\$'[^']*\\\\\\\\\"; then",
+            "   : || printf '%s' \"$cmd\" | false && grep -q \"\\\\$'[^']*\\\\\\\\\"; then",
+            "x63reate'` reaches the helper",
+        ),
+        Mutation(
+            "the trigger needs a space after the shell, so bash&>log<f never reaches the helper (#1513)",
+            "   || printf '%s' \"$cmd\" | grep -qE '(^|[[:space:];&|(/])(sh|bash|zsh|dash|ksh)([[:space:]<>&]([^;&|]|[<>]&|&>)*)?<([^<(]|$)' \\",
+            "   || printf '%s' \"$cmd\" | grep -qE '(^|[[:space:];&|(/])(sh|bash|zsh|dash|ksh)([[:space:]]([^;&|]|[<>]&|&>)*)?<([^<(]|$)' \\",
+            "the trigger sees a redirect glued to the shell",
+        ),
+        Mutation(
             "the redirect trigger is the first version's, so /bin/bash, --norc, sh<f and 0< never reach the helper",
-            "   || printf '%s' \"$cmd\" | grep -qE '(^|[[:space:];&|(/])(sh|bash|zsh|dash|ksh)([[:space:]]([^;&|]|[<>]&|&>)*)?<([^<(]|$)'; then",
-            "   || printf '%s' \"$cmd\" | grep -qE '(^|[[:space:];&|(])(sh|bash|zsh|dash|ksh)([[:space:]]+-[a-zA-Z]+)*[[:space:]]*<[^<(]'; then",
+            "   || printf '%s' \"$cmd\" | grep -qE '(^|[[:space:];&|(/])(sh|bash|zsh|dash|ksh)([[:space:]<>&]([^;&|]|[<>]&|&>)*)?<([^<(]|$)' \\",
+            "   || printf '%s' \"$cmd\" | grep -qE '(^|[[:space:];&|(])(sh|bash|zsh|dash|ksh)([[:space:]]+-[a-zA-Z]+)*[[:space:]]*<[^<(]' \\",
             "guard-bash (#1489 review):",
         ),
         Mutation(

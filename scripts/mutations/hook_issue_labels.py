@@ -358,12 +358,6 @@ GUARD = Guard(
             "bash 0< ",
         ),
         Mutation(
-            "a glued `sh<f` stays one word, so its shell is never seen",
-            "                if os.path.basename(pre) in SHELLS:",
-            "                if False:",
-            "'sh<': refused as a script fed by redirect",
-        ),
-        Mutation(
             "a literal cd no longer moves the directory, so a relative script is read from the session's",
             "                    here_dir = here_dir / os.path.expanduser(arg)",
             "                    pass",
@@ -382,6 +376,49 @@ GUARD = Guard(
             "after a cd it cannot resolve",
         ),
         # ---- #1495: the five #1489 edge cases --------------------------------------------------------
+        # ---- #1513 review: the fail-opens the first #1495 version left -----------------------------
+        Mutation(
+            "a cd's own redirect counts as an argument, so `cd sub &>/dev/null` is unknown",
+            "                cd_words = _drop_redirects(words)",
+            "                cd_words = words",
+            "a cd's own redirect is not an argument",
+        ),
+        Mutation(
+            "a backgrounded or piped cd is followed, though it runs in a subshell",
+            "            in_subshell = tok.rstrip(\"()\") in (\"&\", \"|\", \"|&\") or prev_op in (\"|\", \"|&\")",
+            "            in_subshell = False",
+            "a backgrounded cd runs in a subshell",
+        ),
+        Mutation(
+            "only a bundle ENDING in o takes a value, so `-ox pipefail` reads pipefail as the script",
+            "                k += w.count(\"o\") + w.count(\"O\")   # each o/O takes a word: `-eo x`, `-ox x`, `-oO a b` (#1513)",
+            "                k += 1 if w[-1] in \"oO\" else 0",
+            "an o inside a bundle takes a value",
+        ),
+        Mutation(
+            "a redirect glued to the shell is not cut out, so `bash>/dev/null<f` has no shell",
+            "                words = _split_redirects(words)",
+            "                pass",
+            "a redirect glued to the shell is cut out",
+        ),
+        Mutation(
+            "`>&word` is not folded, so `bash >&log < f` splits at its &",
+            "    text = re.sub(r\"(\\d*>)&(?=[^\\s\\d-])\", r\"\\1\", text)      # `>&log` is `>log` (#1513 review)",
+            "    pass",
+            ">&word is a redirect",
+        ),
+        Mutation(
+            "a relative script after an unfollowable cd is allowed again (fails open)",
+            "            return _UNKNOWN_DIR",
+            "            return None",
+            "after a cd it cannot resolve",
+        ),
+        Mutation(
+            "\\cX is not decoded",
+            "        return chr(ord(text[j + 1].upper()) ^ 0x40), j + 2",
+            "        return text[j + 1], j + 2",
+            "decodes $'\\cA'",
+        ),
         Mutation(
             "a cd to a missing directory is followed, so the session's script is never read",
             "                elif (here_dir / os.path.expanduser(arg)).is_dir():",
@@ -390,8 +427,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a bundled -o is a plain flag, so `-eo pipefail` reads pipefail as the script",
-            '            if w in ("--rcfile", "--init-file") or re.fullmatch(r"[-+][A-Za-z]*[oO]", w):',
-            '            if w in ("-o", "+o", "-O", "+O", "--rcfile", "--init-file"):',
+            "            elif re.fullmatch(r\"[-+][A-Za-z]+\", w):",
+            "            elif False:",
             "a bundled -o takes a value",
         ),
         Mutation(

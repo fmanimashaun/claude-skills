@@ -3587,14 +3587,25 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   - A `cd` to a directory that does not exist fails and changes nothing, so `cd nope; bash < bad.sh` reads the
     session's `bad.sh`. A `cd` inside `( )` holds until the `)`, so `(cd sub && bash < only.sh)` reads `sub/only.sh`.
     Known over-refusal: in `cd nope && bash < bad.sh` bash never runs, but the command is still refused.
-  - The trigger drops `$` with the quotes, so `gh issue $'create'` reaches the helper.
+    A `cd` in the background or a pipeline (`cd sub &`, `cd sub | …`) runs in a subshell and is not followed. A
+    `cd`'s own redirect (`cd sub &>/dev/null`) is not an argument. **A relative script after a `cd` this hook
+    cannot follow (`cd $X`, `cd -`, `pushd`) is now refused**, with "give the script an absolute path". Before, it
+    was allowed as unknown. That is the #1513 review's call, applying #1423's owner rule (refuse what cannot be
+    label-checked).
+  - The trigger drops `$` with the quotes, so `gh issue $'create'` reaches the helper. It also fires on any `$'…'`
+    holding an escape, which can spell `create`, `issue` or `gh` (`gh issue $'\x63reate'`, `$'\x67h' issue create`).
   - `$'…'` decodes bash's full escape set (`\xHH`, `\NNN`, `\uHHHH`, `\UHHHHHHHH`, `\cX`, `\e`, …), so
     `-l $'\x66eature'` is the label `feature`.
-  - A short-option bundle ending in `o`/`O` takes a value: `bash -eo pipefail < f` and `-euxo pipefail`.
-  - `2>&1`, `<&0` and `&>log` are kept as one redirect instead of splitting at `&`. That applies to the helper's
-    tokens and to the trigger.
-  - 14 real-hook cases (8 refusals, 6 controls) and 10 helper selftest cases. 8 new mutations (6 `hook_issue_labels`, 2 `hook_guard_bash`), and 4
-    existing ones re-pointed at the changed lines.
+  - In a short-option bundle, each `o`/`O` takes a value, wherever it sits: `-eo pipefail`, `-ox pipefail`,
+    `-Oe extglob`.
+  - `2>&1`, `<&0`, `>&log` and `&>log` are kept as one redirect instead of splitting at `&`. A redirect glued to
+    the shell or to `<` (`bash>/dev/null<f`, `bash 2>&1<f`) is cut out. That applies to the helper and to the
+    trigger.
+  - 31 real-hook cases (21 refusals, 10 controls) and 29 helper selftest cases, including every `_ansi_escape`
+    branch. 17 new mutations (13 `hook_issue_labels`, 4 `hook_guard_bash`). 7 existing ones were re-pointed, and
+    1 was dropped as a duplicate of the new redirect-split mutation.
+  - Filed from the #1513 review, as gaps on dev too: #1515 (script operands, `source`, `cat f | bash`, indirect
+    `gh`, `gh api` POSTs).
 
 - **The hook normaliser sees what a shell runs from inside a string, a wrapper or a group —
   `plugins/rails-flow/hooks/scripts/lib/normalize_cmd.sh`, `plugins/qa-flow/hooks/scripts/lib/normalize_cmd.sh`,
