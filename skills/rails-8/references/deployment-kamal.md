@@ -129,9 +129,13 @@ you rarely run `db:migrate` by hand.
 
 ## 3. Secrets — `.kamal/secrets` and `credentials:fetch` (8.1)
 
-`.kamal/secrets` is a dotenv-style file (committed; values are *references*,
-not secrets) that resolves the names listed under `env.secret` and
-`registry.password`:
+`.kamal/secrets` is a dotenv-style file that resolves the names listed under
+`env.secret` and `registry.password`. It is safe to commit **only while every
+value is a reference** (`$VAR`, `$(cmd)`) — the `kamal init` template says "DO
+NOT ENTER RAW CREDENTIALS HERE! This file needs to be safe for git." A file
+holding a literal secret must be gitignored. With destinations (§8)
+`.kamal/secrets` is not read at all: use `.kamal/secrets-common` plus
+`.kamal/secrets.<dest>`.
 
 ```bash
 # .kamal/secrets
@@ -259,17 +263,24 @@ IMMEDIATE transactions, sensible timeouts — no manual config):
 
 ## 8. Multiple destinations (staging/production)
 
-`config/deploy.yml` is the shared base; `config/deploy.staging.yml` overlays
-it. Deploy with `kamal deploy -d staging`. Secrets can also be split as
-`.kamal/secrets.staging` (falls back to `.kamal/secrets-common`). Typical
-overlay: different `servers:`, `proxy.host`, and a smaller `env`.
+`config/deploy.yml` is the shared base; `kamal <cmd> -d staging` deep-merges
+`config/deploy.staging.yml` over it: the destination wins, hashes merge, arrays
+are replaced (a staging `servers:` list replaces the base list, it does not add
+to it). Secrets are read from `.kamal/secrets-common` then
+`.kamal/secrets.staging`, merged with the destination file winning, and
+`.kamal/secrets` is **not read**. Nothing falls back: without `-d`, Kamal reads
+`.kamal/secrets-common` then `.kamal/secrets`, and a `.kamal/secrets.<dest>`
+file is silently unused. `-d` does not set `RAILS_ENV`; set it in the
+destination's `env.clear` if it should differ. Typical overlay: different
+`servers:`, `proxy.host`, and a smaller `env`.
 
 ## 9. Production checklist
 
 Before first deploy and after significant changes:
 
-- `RAILS_MASTER_KEY` present in `.kamal/secrets`; `config/master.key` **not**
-  committed; credentials contain all app secrets.
+- `RAILS_MASTER_KEY` present in the secrets file Kamal reads (`.kamal/secrets`,
+  or `.kamal/secrets-common` / `.kamal/secrets.<dest>` with `-d`);
+  `config/master.key` **not** committed; credentials contain all app secrets.
 - `registry:` block present and decided — `server: localhost:5555` (local, no
   credentials) or a remote server **with** username/password and
   `KAMAL_REGISTRY_PASSWORD` resolvable. There is no third option: an absent

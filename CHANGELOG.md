@@ -16589,6 +16589,23 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ### Unreleased
 
+- **deployment-kamal: `.kamal/secrets` is committable only while it holds references, and nothing falls back —
+  `skills/rails-8/references/deployment-kamal.md`, `dist/rails-8.skill`** (#1499). doctrine-verifier **REFUTED** the
+  old §3 ("committed", unqualified) and §8 ("`.kamal/secrets.staging` falls back to `.kamal/secrets-common`"), and
+  **CONFIRMED** the replacement against **Kamal 2.12.0** (the installed gem; `lib/kamal/secrets.rb` byte-identical to
+  tag `v2.12.0`), with the mechanism unchanged back to tag `v2.9.0`:
+  - The `kamal init` template (`lib/kamal/cli/templates/secrets` L1–3): "DO NOT ENTER RAW CREDENTIALS HERE! This file
+    needs to be safe for git." kamal-deploy.org/docs/configuration/environment-variables/: a file storing secrets
+    directly must not be checked in. So §3 now says: commit it only while every value is a reference.
+  - `lib/kamal/secrets.rb` L38–45: the files read are `.kamal/secrets-common`, then `.kamal/secrets.<dest>` with `-d`
+    or `.kamal/secrets` without, merged in that order (the later file wins). So with `-d`, `.kamal/secrets` is not
+    read; without it, a `.kamal/secrets.<dest>` is silently unused.
+  - `lib/kamal/configuration.rb` L28–34/L50: `config/deploy.<dest>.yml` is `deep_merge!`d over `config/deploy.yml`.
+    Measured on ActiveSupport 8.1.4: nested hashes merge and arrays are replaced (`servers: ["a"]` → `["b"]`).
+  - `-d` sets no `RAILS_ENV` (none in `kamal-2.12.0/lib`; it sets only `KAMAL_DESTINATION`, `configuration.rb` L21).
+  The §9 checklist now names the secrets file Kamal actually reads. Consistent with pipeline's `kamal-configurator`
+  (#1465), which writes deploy secrets gitignored and `.kamal/secrets-common` for shared values.
+
 - **ai-llm.md names Claude Sonnet 5.5, and says why the default stays `claude-sonnet-5` — `skills/rails-8/references/ai-llm.md`,
   `dist/rails-8.skill`** (#1449). doctrine-verifier **CONFIRMED**:
   - `claude-sonnet-5-5` is the current Sonnet (released 2026-09-28), and Sonnet 5 is legacy (retirement not sooner
