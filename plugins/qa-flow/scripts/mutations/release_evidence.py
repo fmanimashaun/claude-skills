@@ -11,6 +11,19 @@ GUARD = Guard(
     subject="scripts/release_evidence.py",
     selftest="scripts/release_evidence.py",
     mutations=(
+        # #1493: a fixture commit's detached `git maintenance` raced the temp-dir cleanup.
+        Mutation(
+            "the fixture's git starts background maintenance again -- the #1493 root cause",
+            'FIXTURE_GIT = ("-c", "user.email=t@t", "-c", "user.name=t", "-c", "maintenance.auto=false", "-c", "gc.auto=0",',
+            'FIXTURE_GIT = ("-c", "user.email=t@t", "-c", "user.name=t",',
+            'cleanup: a fixture commit starts no background maintenance or gc',
+        ),
+        Mutation(
+            'a cleanup error crashes the selftest again',
+            '    return tempfile.TemporaryDirectory(ignore_cleanup_errors=True)',
+            '    return tempfile.TemporaryDirectory(ignore_cleanup_errors=False)',
+            'cleanup: a directory still being written at cleanup does not crash the selftest',
+        ),
         # ROUND 3 (second pass) BLOCKER: last release's evidence, renamed, passed because the copy
         # check only saw evidence still at dev. main is the last published release.
         Mutation(
