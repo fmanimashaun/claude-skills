@@ -711,6 +711,9 @@ def guard_claims_fixtures() -> None:
             for d, tpl in ((a, TPL), (b, TPL_B)):
                 (d / ".github").mkdir(parents=True)
                 (d / ".github" / "pull_request_template.md").write_text(tpl, encoding="utf-8")
+            # A directory literally named `$NOWHERE`: a `cd $NOWHERE` read literally would find it, so
+            # only the refusal of `$` keeps that fixture red, not the missing-directory check.
+            (a / "$NOWHERE").mkdir()
             where = a if body_in == "a" else b
             (where / "body.md").write_text(body, encoding="utf-8")
             cmd = cmd.replace("B_DIR", str(b)).replace("BODY", str(where / "body.md"))

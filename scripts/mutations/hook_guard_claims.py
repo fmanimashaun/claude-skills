@@ -101,5 +101,38 @@ GUARD = Guard(
             'if [ "${RAILS_FLOW_CLAIMS_OK:-0}" = "unreachable" ]; then',
             "guard-claims: RAILS_FLOW_CLAIMS_OK=1 overrides, and says so",
         ),
+        # #1509: the template is the one where the COMMAND runs, not where the hook runs.
+        Mutation(
+            "the template root ignores the command's cd again (the #1509 defect, restored)",
+            '''  root="$(git -C "${cmd_cwd:-.}" rev-parse --show-toplevel 2>/dev/null || printf '%s' "${cmd_cwd:-$(pwd)}")"''',
+            '''  root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"''',
+            "a `cd <other repo>` is judged against that repo's template",
+        ),
+        Mutation(
+            "an unresolvable cd falls through to the session repo's template",
+            '  elif [ "$cwd_rc" -eq 3 ]; then',
+            '  elif false; then',
+            "an unresolvable cd target is NOT checked",
+        ),
+        Mutation(
+            "a relative --body-file is read from the session directory, not the cd target",
+            'then body="$cmd_cwd/$body"; elif',
+            'then :; elif',
+            "a relative --body-file is read from the cd target",
+        ),
+        Mutation(
+            "a missing directory resolver no longer blocks",
+            '  elif [ ! -f "$tpl_lib" ] || [ ! -f "$cwd_lib" ] || ! command -v python3 >/dev/null 2>&1; then',
+            '  elif [ ! -f "$tpl_lib" ] || ! command -v python3 >/dev/null 2>&1; then',
+            "a missing command_cwd.py is BLOCKED",
+        ),
+        Mutation(
+            "a crashing directory resolver warns and lets the command through",
+            '''    echo "BLOCKED by rails-flow claim guard: resolving the command's directory crashed (command_cwd.py exited $cwd_rc), so the body was not judged." >&2
+    echo "Fix it, or ship deliberately unchecked: RAILS_FLOW_CLAIMS_OK=1 (audited)." >&2
+    exit 2''',
+            '''    echo "BLOCKED by rails-flow claim guard: resolving the command's directory crashed (command_cwd.py exited $cwd_rc), so the body was not judged." >&2''',
+            "a crashing command_cwd.py is BLOCKED",
+        ),
     ),
 )
