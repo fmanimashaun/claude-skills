@@ -49,16 +49,12 @@ import sys
 import tempfile
 from pathlib import Path
 
-# NOT here: collection_check_boxes and collection_radio_buttons. simple_form's FormBuilder defines both
-# itself (lib/simple_form/form_builder.rb:397 and :451, v5.4.1; README "Extra helpers"), rendering its
-# own SimpleForm::Tags::Collection* -- they are simple_form API, not raw Rails calls (#1458, verified
-# by doctrine-verifier). On a form_with builder they are still caught: the form-with rule refuses it.
 RAW_FIELD_METHODS = ("text_field|email_field|password_field|number_field|telephone_field|phone_field|"
                      "url_field|search_field|date_field|datetime_field|datetime_local_field|time_field|"
                      "month_field|week_field|color_field|range_field|file_field|text_area|textarea|"
                      "select|collection_select|grouped_collection_select|time_zone_select|date_select|"
-                     "datetime_select|time_select|check_box|checkbox|"
-                     "radio_button|label|fields_for|rich_textarea|rich_text_area")
+                     "datetime_select|time_select|check_box|checkbox|collection_check_boxes|"
+                     "radio_button|collection_radio_buttons|label|fields_for|rich_textarea|rich_text_area")
 RULES = (
     ("form-with", re.compile(r"(?<![\w.])(form_with|form_for)\b")),
     ("form-tag", re.compile(r"(?<![\w.])form_tag\b")),
@@ -246,16 +242,6 @@ def selftest() -> int:
                "raw-builder-call" in rules("<%= simple_form_for @a do |f| %><%= f.rich_text_area :content %><% end %>"))
     check_that("CONTROL: simple_form's own rich-text input is not a raw call",
                rules("<%= simple_form_for @a do |f| %><%= f.input :content, as: :rich_text_area %><% end %>") == [])
-    # #1458: simple_form's own collection helpers are its API, not raw calls -- each with a control.
-    for helper in ("collection_check_boxes", "collection_radio_buttons"):
-        check_that(f"CONTROL: f.{helper} on a simple_form builder is simple_form API, not a raw call",
-                   rules(f"<%= simple_form_for @a do |f| %><%= f.{helper} :tag_ids, Tag.all, :id, :name %><% end %>") == [],
-                   rules(f"<%= simple_form_for @a do |f| %><%= f.{helper} :tag_ids, Tag.all, :id, :name %><% end %>"))
-        check_that(f"...while the Rails {helper} on a form_with builder is still refused (form-with)",
-                   "form-with" in rules(f"<%= form_with model: @a do |f| %><%= f.{helper} :tag_ids, Tag.all, :id, :name %><% end %>"))
-    check_that("CONTROL: the near names stay raw -- f.check_box and f.radio_button on a simple_form builder",
-               rules("<%= simple_form_for @a do |f| %><%= f.check_box :x %><%= f.radio_button :y, 1 %><% end %>")
-               .count("raw-builder-call") == 2)
     check_that("f.label on a simple_form builder is refused",
                "raw-builder-call" in rules("<%= simple_form_for @u do |f| %><%= f.label :name %><% end %>"))
 

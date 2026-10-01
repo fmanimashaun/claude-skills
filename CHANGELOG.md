@@ -11,11 +11,11 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 *Version number assigned at promotion.*
 
-- **A primitive marker never excuses a form builder, and excuses one instance — `scripts/check_shipped_erb_forms.py`, `scripts/mutations/check_shipped_erb_forms.py`** (#1460).
-  - `<%# simple-form-only: primitive form_with -- … %>` (or `form_for`, `form_tag`) is now `primitive-marker-invalid` and excuses nothing.
-  - Each marker excuses ONE instance of its construct, so a second `check_box_tag` added to a primitive's block needs its own marker and reason.
-  - The block reader now sees `~~~erb` and longer fences, closed only by the same fence. That gap was latent; no shipped doc uses those fences yet.
-  - Our own gate code, no upstream claim. The shipped corpus still passes, with the same 133 ERB blocks read across 154 docs as on dev. The guard catches 15/15, five of them new.
+- **A primitive marker never excuses a form, excuses one instance, and is reported when unused — `scripts/check_shipped_erb_forms.py`, `scripts/mutations/check_shipped_erb_forms.py`** (#1460).
+  - A `<%# simple-form-only: primitive … %>` marker naming any form construct a form rule reports (`form_with`, `form_for`, `form_tag`, `<form`, `tag.form`) is `primitive-marker-invalid` and excuses nothing. `<form` and `tag.form` were added on the independent review of PR #1521.
+  - Each marker excuses ONE instance, so a second `check_box_tag` added to a primitive's block needs its own marker and reason. A marker that excuses nothing is `primitive-marker-unused`, like an unused exemption.
+  - The block reader now sees `~~~erb`, longer fences, and `ERB` / `html+erb` info strings. A block closes only on a run of its own fence character, so a mixed `` ```~~~ `` line closes nothing. That gap was latent: no shipped doc uses those fences yet.
+  - Our own gate code, with no upstream claim. The shipped corpus still passes: the same 133 ERB blocks as on dev, with identical bodies, in the 24 of 154 docs that carry ERB. The guard catches 19/19.
 
 - **The gate and mutation runners start no detached git maintenance, once for every temp-repo selftest — `scripts/hermetic_git.py`, `scripts/mutation_check.py`, `scripts/maintainer_doctor.py`, `scripts/mutation_check_selftest.py`, `scripts/maintainer_doctor_selftest.py`, `scripts/mutations/hermetic_git.py`, `scripts/mutations/mutation_check_harness.py`, `scripts/mutations/maintainer_doctor.py`, `scripts/mutations/rebuild_generated.py`, `scripts/mutations/audit_assertion_reachability.py`** (#1510). #1493's cause (a fixture `git commit` detaches `git maintenance run --auto`, which races the temp-dir cleanup) was fixed in `release_evidence` alone by PR #1511; 20 other selftests commit in temp repos the same way (measured 2026-10-01). `hermetic_git.env()` appends `maintenance.auto=false` and `gc.auto=0` through `GIT_CONFIG_COUNT`/`KEY_n`/`VALUE_n`, after any pairs the caller set; `mutation_check` passes it to every baseline and mutant and the doctor's `run()` to every gate. Proofs drive the entry points: a fixture guard whose selftest refuses to go on if a traced commit starts maintenance passes through `run_guard` (control: without the env it reads INERT), and a `Doctor.run` subprocess must see both keys. Each proof first strips an inherited `GIT_CONFIG_*`, or a run nested under a mutation guard passes with the call site removed (the first draft of both did). The count is read by git's rules: empty means none, ASCII digits are a count, and a value git rejects (`-1`, `abc`, ` 2 `) leaves the environment untouched rather than half-repairing it (review of PR #1514). The doctor's two direct subprocesses (changelog coverage, `check-ignore`) pass the env too. Guards: `hermetic_git` 4/4, `mutation_check_harness` 19/19, `maintainer_doctor` 24/24.
 
@@ -3589,12 +3589,6 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 ## rails-flow (agentic flow plugin)
 
 ### Unreleased
-
-- **simple-form-only no longer reports simple_form's own collection helpers as raw calls — `plugins/rails-flow/scripts/check_simple_form_only.py`, `plugins/rails-flow/scripts/mutations/check_simple_form_only.py`** (#1458). `f.collection_check_boxes` and `f.collection_radio_buttons` on a `simple_form_for` builder were `raw-builder-call` findings. simple_form defines both itself: `lib/simple_form/form_builder.rb:397` and `:451` in v5.4.1, rendering its own `SimpleForm::Tags::Collection*`, and documented under "Extra helpers". doctrine-verifier CONFIRMED this against v5.4.1. Both are removed from `RAW_FIELD_METHODS`.
-  - The `form_with` versions are still refused by the `form-with` rule, with a fixture each.
-  - `f.check_box` and `f.radio_button` stay raw, with a control.
-  - Downstream, on Retask's 182 templates, exactly the two false positives in `admin/actions/new.html.erb` disappear; the other findings are unchanged.
-  - The guard catches 29/29, including a mutation that restores both helpers.
 
 - **The mock-up gate reads `GUARDRAILS.md` with CommonMark's own block algorithm, so containers no longer fool it — `plugins/rails-flow/scripts/check_mockup_gate.py`, `plugins/rails-flow/scripts/mutations/check_mockup_gate.py`** (#1501). The two line passes from #1490 (`unfenced()`, `outside_indented_code()`) are replaced by `block_classes()`. It is phase 1 of the spec's block parsing: open block quotes and list items are matched per line, then lazy continuation, then new block starts. An opt-out declares only as text outside every code and HTML block.
   - **Rules:** CommonMark 0.31.2, verified by doctrine-verifier against `spec.txt` at tag 0.31.2. Rules 1–3 and 5–9 CONFIRMED; rule 4 (HTML blocks) partly REFUTED and corrected:

@@ -56,14 +56,14 @@ GUARD = Guard(
         # #1443: every fence, indented or not.
         Mutation(
             "indented fences are skipped again",
-            'BLOCK = re.compile(r"^([ \\t]*)(`{3,}|~{3,})erb[^\\n]*\\n(.*?)^\\1\\2[`~]*[ \\t]*$", re.S | re.M)',
-            'BLOCK = re.compile(r"^()(`{3,}|~{3,})erb[^\\n]*\\n(.*?)^\\1\\2[`~]*[ \\t]*$", re.S | re.M)',
+            'BLOCK = re.compile(r"^([ \\t]*)(?:(`{3,})(?:html\\+)?erb\\b[^\\n]*\\n(.*?)^\\1\\2`*"\n                   r"|(~{3,})(?:html\\+)?erb\\b[^\\n]*\\n(.*?)^\\1\\4~*)[ \\t]*$", re.S | re.M | re.I)',
+            'BLOCK = re.compile(r"^()(?:(`{3,})(?:html\\+)?erb\\b[^\\n]*\\n(.*?)^\\1\\2`*"\n                   r"|(~{3,})(?:html\\+)?erb\\b[^\\n]*\\n(.*?)^\\1\\4~*)[ \\t]*$", re.S | re.M | re.I)',
             "an INDENTED fence is read",
         ),
         Mutation(
             "an indented fence closes at any later fence",
-            'BLOCK = re.compile(r"^([ \\t]*)(`{3,}|~{3,})erb[^\\n]*\\n(.*?)^\\1\\2[`~]*[ \\t]*$", re.S | re.M)',
-            'BLOCK = re.compile(r"^([ \\t]*)(`{3,}|~{3,})erb[^\\n]*\\n(.*?)^[ \\t]*\\2[`~]*[ \\t]*$", re.S | re.M)',
+            'BLOCK = re.compile(r"^([ \\t]*)(?:(`{3,})(?:html\\+)?erb\\b[^\\n]*\\n(.*?)^\\1\\2`*"\n                   r"|(~{3,})(?:html\\+)?erb\\b[^\\n]*\\n(.*?)^\\1\\4~*)[ \\t]*$", re.S | re.M | re.I)',
+            'BLOCK = re.compile(r"^([ \\t]*)(?:(`{3,})(?:html\\+)?erb\\b[^\\n]*\\n(.*?)^[ \\t]*\\2`*"\n                   r"|(~{3,})(?:html\\+)?erb\\b[^\\n]*\\n(.*?)^\\1\\4~*)[ \\t]*$", re.S | re.M | re.I)',
             "a fence line at ANOTHER indent does not close an indented block",
         ),
         Mutation(
@@ -87,21 +87,46 @@ GUARD = Guard(
         ),
         Mutation(
             '~~~erb blocks are not read',
-            'BLOCK = re.compile(r"^([ \\t]*)(`{3,}|~{3,})erb[^\\n]*\\n(.*?)^\\1\\2[`~]*[ \\t]*$", re.S | re.M)',
-            'BLOCK = re.compile(r"^([ \\t]*)(`{3,})erb[^\\n]*\\n(.*?)^\\1\\2[`~]*[ \\t]*$", re.S | re.M)',
+            'BLOCK = re.compile(r"^([ \\t]*)(?:(`{3,})(?:html\\+)?erb\\b[^\\n]*\\n(.*?)^\\1\\2`*"\n                   r"|(~{3,})(?:html\\+)?erb\\b[^\\n]*\\n(.*?)^\\1\\4~*)[ \\t]*$", re.S | re.M | re.I)',
+            'BLOCK = re.compile(r"^([ \\t]*)(?:(`{3,})(?:html\\+)?erb\\b[^\\n]*\\n(.*?)^\\1\\2`*"\n                   r"|(~{3,})NEVER(.*?)^\\1\\4~*)[ \\t]*$", re.S | re.M | re.I)',
             '#1460: a ~~~erb block is read',
         ),
         Mutation(
             'only three-backtick fences are read',
-            'BLOCK = re.compile(r"^([ \\t]*)(`{3,}|~{3,})erb[^\\n]*\\n(.*?)^\\1\\2[`~]*[ \\t]*$", re.S | re.M)',
-            'BLOCK = re.compile(r"^([ \\t]*)(```|~{3,})erb[^\\n]*\\n(.*?)^\\1\\2[`~]*[ \\t]*$", re.S | re.M)',
+            'BLOCK = re.compile(r"^([ \\t]*)(?:(`{3,})(?:html\\+)?erb\\b[^\\n]*\\n(.*?)^\\1\\2`*"\n                   r"|(~{3,})(?:html\\+)?erb\\b[^\\n]*\\n(.*?)^\\1\\4~*)[ \\t]*$", re.S | re.M | re.I)',
+            'BLOCK = re.compile(r"^([ \\t]*)(?:(```)(?:html\\+)?erb\\b[^\\n]*\\n(.*?)^\\1\\2`*"\n                   r"|(~{3,})(?:html\\+)?erb\\b[^\\n]*\\n(.*?)^\\1\\4~*)[ \\t]*$", re.S | re.M | re.I)',
             '#1460: a four-backtick erb block is read',
         ),
         Mutation(
             'any fence line closes a block',
-            'BLOCK = re.compile(r"^([ \\t]*)(`{3,}|~{3,})erb[^\\n]*\\n(.*?)^\\1\\2[`~]*[ \\t]*$", re.S | re.M)',
-            'BLOCK = re.compile(r"^([ \\t]*)(`{3,}|~{3,})erb[^\\n]*\\n(.*?)^\\1(?:`{3,}|~{3,})[ \\t]*$", re.S | re.M)',
-            '#1460: a ~~~ line does not close a backtick block',
+            'BLOCK = re.compile(r"^([ \\t]*)(?:(`{3,})(?:html\\+)?erb\\b[^\\n]*\\n(.*?)^\\1\\2`*"\n                   r"|(~{3,})(?:html\\+)?erb\\b[^\\n]*\\n(.*?)^\\1\\4~*)[ \\t]*$", re.S | re.M | re.I)',
+            'BLOCK = re.compile(r"^([ \\t]*)(?:(`{3,})(?:html\\+)?erb\\b[^\\n]*\\n(.*?)^\\1\\2[`~]*"\n                   r"|(~{3,})(?:html\\+)?erb\\b[^\\n]*\\n(.*?)^\\1\\4~*)[ \\t]*$", re.S | re.M | re.I)',
+            '#1521 R2: a mixed ```~~~ line does not close a backtick block',
+        ),
+        # #1521 review
+        Mutation(
+            'a marker may excuse a raw <form>',
+            'FORM_BUILDERS = {"form_with", "form_for", "form_tag", "<form", "tag.form"}',
+            'FORM_BUILDERS = {"form_with", "form_for", "form_tag", "tag.form"}',
+            '#1521 R1: a marker naming <form is invalid',
+        ),
+        Mutation(
+            'a marker may excuse tag.form',
+            'FORM_BUILDERS = {"form_with", "form_for", "form_tag", "<form", "tag.form"}',
+            'FORM_BUILDERS = {"form_with", "form_for", "form_tag", "<form"}',
+            '#1521 R1: a marker naming tag.form is invalid',
+        ),
+        Mutation(
+            'a spare marker stays silent',
+            '                if spare > 0:',
+            '                if False:',
+            '#1521 R3: a marker that excuses nothing is reported',
+        ),
+        Mutation(
+            'only lowercase erb fences are read',
+            'BLOCK = re.compile(r"^([ \\t]*)(?:(`{3,})(?:html\\+)?erb\\b[^\\n]*\\n(.*?)^\\1\\2`*"\n                   r"|(~{3,})(?:html\\+)?erb\\b[^\\n]*\\n(.*?)^\\1\\4~*)[ \\t]*$", re.S | re.M | re.I)',
+            'BLOCK = re.compile(r"^([ \\t]*)(?:(`{3,})(?:html\\+)?erb\\b[^\\n]*\\n(.*?)^\\1\\2`*"\n                   r"|(~{3,})(?:html\\+)?erb\\b[^\\n]*\\n(.*?)^\\1\\4~*)[ \\t]*$", re.S | re.M)',
+            '#1521 R6: a ```ERB block is read',
         ),
     ),
 )
