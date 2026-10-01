@@ -16635,6 +16635,32 @@ boot/validation path — with a bullet each so the promotion could close them se
   actually reads (the independent review of PR #1517 found the second). Consistent with pipeline's `kamal-configurator`
   (#1465), which writes deploy secrets gitignored and `.kamal/secrets-common` for shared values.
 
+- **Action Text names Lexxy beside Trix, with the version boundary — `skills/rails-8/references/mail-storage-richtext.md`
+  §3** (#1438). The doctrine said "Rich text (Trix editor)" and nothing else. 37signals shipped Lexxy 1.0 on
+  2026-09-28, and the post's switch (`config.action_text.editor = :lexxy`) is Rails 8.2's, which has not been released.
+  - **Verified 2026-10-01 by `doctrine-verifier` (8 CONFIRMED, 2 REFUTED, 1 INCONCLUSIVE), re-checked by hand:**
+    - No `v8.2*` tag in rails/rails; main is `8.2.0.alpha`; the latest release is 8.1.4. `config.action_text.editor`
+      and `ActionText::Editor` exist on main only (rails/rails#51238, merged 2025-12-05), and nothing in actiontext or
+      railties 8.1.4 reads that option. Both of the issue's 8.1 claims are REFUTED for this skill's target.
+    - `lexxy` 1.0.0 (rubygems, 2026-09-28) depends on `railties >= 8.0.2` (`lexxy.gemspec` L23 at v1.0.0). On 8.0 and
+      8.1 the gem aliases `FormBuilder#rich_text_area` to its own editor (`lib/lexxy.rb` L25–27), gated by
+      `config.lexxy.override_action_text_defaults`, which defaults to true (`lib/lexxy/engine.rb` L25, L34).
+      simple_form 5.4.1 calls `@builder.rich_text_area` (`rich_text_area_input.rb` L10), so the skill's
+      `f.input :content, as: :rich_text_area` renders Lexxy unchanged.
+    - The install lines (importmap pins, jsbundling packages, `import`, `stylesheet_link_tag "lexxy"`) are from
+      Lexxy's `home/docs/index.md` and `css-setup.md` at v1.0.0. That doc's Gemfile line, `~> 0.9.21`, cannot resolve
+      1.0, so the skill pins `~> 1.0`.
+    - "Lexxy does not yet work under enforced Trusted Types": `home/docs/configuration.md` at v1.0.0.
+    - INCONCLUSIVE, so not claimed: whether `actiontext.css` becomes unnecessary. The skill says only what the
+      selectors show. Rails 8.1.4's template styles `trix-editor`, `trix-toolbar` and `.trix-content`, and the
+      default content layout still renders `.trix-content`.
+    - Trix-content compatibility is stated as the vendor's claim, untested by Rails or this skill.
+  - The skill now says Rails 8.1 has no editor setting. It gives the `lexxy` install for importmap and jsbundling, the
+    sanitizer widening (Action Text's allowlist, plus `"var"` in Loofah's global `ALLOWED_CSS_FUNCTIONS`, which reaches
+    every `sanitize` call and runs with the opt-out too: `lib/lexxy/engine.rb` L52–60), the `.lexxy-content` override, the Trusted Types limit and the opt-out. It does
+    not describe 8.2 behaviour beyond naming the boundary.
+  - Out of scope: #1441, a Playwright driver for system specs, which is a separate measurement.
+
 - **ai-llm.md names Claude Sonnet 5.5, and says why the default stays `claude-sonnet-5` — `skills/rails-8/references/ai-llm.md`,
   `dist/rails-8.skill`** (#1449). doctrine-verifier **CONFIRMED**:
   - `claude-sonnet-5-5` is the current Sonnet (released 2026-09-28), and Sonnet 5 is legacy (retirement not sooner
