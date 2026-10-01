@@ -3580,6 +3580,20 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **The mock-up gate reads `GUARDRAILS.md` with CommonMark's own block algorithm, so containers no longer fool it — `plugins/rails-flow/scripts/check_mockup_gate.py`, `plugins/rails-flow/scripts/mutations/check_mockup_gate.py`** (#1501). The two line passes from #1490 (`unfenced()`, `outside_indented_code()`) are replaced by `block_classes()`. It is phase 1 of the spec's block parsing: open block quotes and list items are matched per line, then lazy continuation, then new block starts. An opt-out declares only as text outside every code and HTML block.
+  - **Rules:** CommonMark 0.31.2, verified by doctrine-verifier against `spec.txt` at tag 0.31.2. Rules 1–3 and 5–9 CONFIRMED; rule 4 (HTML blocks) partly REFUTED and corrected:
+    - fences open and close within 3 columns of their container, and end with it (§4.5, Ex 125–147);
+    - HTML block types 1–7, a type-1 block ending at any of its four closing tags, and type 7 not interrupting a paragraph (§4.6);
+    - quote markers (§5.1);
+    - a list's interrupt-a-paragraph limits (§5.2, Ex 285–305);
+    - setext underlines are never lazy (Ex 93, 101).
+  - **Behaviour:** where the spec text and the reference implementation differ, the gate follows commonmark.js 0.31.2. A lone `</pre>` line opens an HTML block there. An unterminated fence now ends with its container, as rendered (Ex 128), instead of running to end of file; a top-level one still does.
+  - **Measured** with a differential fuzz against commonmark.js 0.31.2, the reference parser. markdown-it-py was dropped as the oracle: it deviates from the reference on lazy lines, e.g. ` 10. item\n    >`.
+    - The gate agrees with the reference on every line class over 350,000 random `GUARDRAILS.md` variants, including a wide generator with up to 9 lines, several opt-out lines and every HTML block type.
+    - dev disagrees with the reference 3,786 times per 50,000 on the wide generator: 2,297 fail open and 1,489 fail closed.
+  - **Fixtures:** 54 expectations, each run through `run()` and each checked against commonmark.js. They cover #1501's container shapes, plus five found by mutation-driven fuzzing, each the shortest input where one broken rule changes the verdict.
+  - **Guards:** 23 old mutations of the removed passes are replaced by 23 over the scanner. One quote-continuation mutation is recorded as equivalent: re-opening a quote on each `>` line gives the same classes, and no input distinguishes it. The guard catches 44/44; `check_slices` 13/13, `check_issue_mockup` 18/18.
+
 - **The mock-up gate reads an opt-out in an INDENTED code block, an HTML block or a comment as an example, by CommonMark's block rules — `plugins/rails-flow/scripts/check_mockup_gate.py`, `plugins/rails-flow/scripts/mutations/check_mockup_gate.py`** (#1490). A `GUARDRAILS.md` example written as a 4-space code block, or inside `<!-- -->`, turned the gate off.
   - New `outside_indented_code()` drops indented code blocks before `OPT_OUT` is read. The rules are CommonMark 0.31.2's, verified by doctrine-verifier against `spec.txt` at tag 0.31.2 (CONFIRMED, 8 of 8):
     - indented code cannot interrupt a paragraph (§4.4, Ex 113);
