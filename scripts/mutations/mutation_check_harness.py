@@ -11,8 +11,21 @@ GUARD = Guard(
     name="mutation_check_harness",
     subject="scripts/mutation_check.py",
     selftest="scripts/mutation_check_selftest.py",
-    deps=("scripts/mutation_types.py",),
+    deps=("scripts/mutation_types.py", "scripts/hermetic_git.py"),
     mutations=(
+        # #1510: baselines and mutants run with git auto-maintenance off.
+        Mutation(
+            "a BASELINE runs with git's own auto-maintenance",
+            '                                env=hermetic_git.env(),  # no detached git maintenance (#1510)\n                                timeout=BASELINE_TIMEOUT)',
+            '                                timeout=BASELINE_TIMEOUT)',
+            '#1510: the baseline and the mutant must run with git maintenance off',
+        ),
+        Mutation(
+            "a MUTANT runs with git's own auto-maintenance",
+            '                                env=hermetic_git.env(),  # no detached git maintenance (#1510)\n                                timeout=timeout)',
+            '                                timeout=timeout)',
+            '#1510: the baseline and the mutant must run with git maintenance off',
+        ),
         # The wrong-fixture report's tail (#1493): present, 12 lines, 300 characters wide, decoded.
         Mutation(
             "a wrong-fixture report drops the mutant's output",
@@ -34,8 +47,8 @@ GUARD = Guard(
         ),
         Mutation(
             'a non-UTF-8 byte raises before the report prints',
-            '        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True, errors="replace",\n                                timeout=timeout)',
-            '        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True,\n                                timeout=timeout)',
+            '        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True, errors="replace",\n                                env=hermetic_git.env(),  # no detached git maintenance (#1510)\n                                timeout=timeout)',
+            '        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True,\n                                env=hermetic_git.env(),  # no detached git maintenance (#1510)\n                                timeout=timeout)',
             "a non-UTF-8 byte in a mutant's output raised before the report printed",
         ),
         Mutation(
@@ -123,8 +136,8 @@ GUARD = Guard(
         Mutation(
             # #1493, baseline half
             "a non-UTF-8 byte in a BASELINE's output raises before the INERT report prints",
-            '        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True, errors="replace",\n                                timeout=BASELINE_TIMEOUT)',
-            '        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True,\n                                timeout=BASELINE_TIMEOUT)',
+            '        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True, errors="replace",\n                                env=hermetic_git.env(),  # no detached git maintenance (#1510)\n                                timeout=BASELINE_TIMEOUT)',
+            '        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True,\n                                env=hermetic_git.env(),  # no detached git maintenance (#1510)\n                                timeout=BASELINE_TIMEOUT)',
             "a non-UTF-8 byte in a BASELINE's output raised before the INERT report printed",
         ),
         Mutation(

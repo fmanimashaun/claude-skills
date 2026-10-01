@@ -11,6 +11,8 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 *Version number assigned at promotion.*
 
+- **The gate and mutation runners start no detached git maintenance, once for every temp-repo selftest — `scripts/hermetic_git.py`, `scripts/mutation_check.py`, `scripts/maintainer_doctor.py`, `scripts/mutation_check_selftest.py`, `scripts/maintainer_doctor_selftest.py`, `scripts/mutations/hermetic_git.py`, `scripts/mutations/mutation_check_harness.py`, `scripts/mutations/maintainer_doctor.py`, `scripts/mutations/rebuild_generated.py`, `scripts/mutations/audit_assertion_reachability.py`** (#1510). #1493's cause (a fixture `git commit` detaches `git maintenance run --auto`, which races the temp-dir cleanup) was fixed in `release_evidence` alone by PR #1511; 20 other selftests commit in temp repos the same way (measured 2026-10-01). `hermetic_git.env()` appends `maintenance.auto=false` and `gc.auto=0` through `GIT_CONFIG_COUNT`/`KEY_n`/`VALUE_n`, after any pairs the caller set; `mutation_check` passes it to every baseline and mutant and the doctor's `run()` to every gate. Proofs drive the entry points: a fixture guard whose selftest refuses to go on if a traced commit starts maintenance passes through `run_guard` (control: without the env it reads INERT), and a `Doctor.run` subprocess must see both keys. Each proof first strips an inherited `GIT_CONFIG_*`, or a run nested under a mutation guard passes with the call site removed (the first draft of both did). The count is read by git's rules: empty means none, ASCII digits are a count, and a value git rejects (`-1`, `abc`, ` 2 `) leaves the environment untouched rather than half-repairing it (review of PR #1514). The doctor's two direct subprocesses (changelog coverage, `check-ignore`) pass the env too. Guards: `hermetic_git` 4/4, `mutation_check_harness` 19/19, `maintainer_doctor` 24/24.
+
 - **The hook guards run only the fixture groups that drive their hook — `plugins/rails-flow/scripts/check_hook_gates.py`, `scripts/mutation_check.py`, `scripts/mutation_types.py`** (#1497). Mutation coverage had reached 807–1117 s of its 1800 s budget. Measured per guard, about 70% of the cost was twelve guards using `check_hook_gates.py` as their selftest, where every mutant re-ran all ten hooks' fixtures (70–105 s) to test ONE hook. `check_hook_gates.py --only <group>[,<group>]` runs a subset, and a `Guard` gains `selftest_args`, passed to the baseline and every mutant; each hook guard names its hook's group, and the doctor's `hook gates` gate still runs every group. An unknown or empty `--only` is refused (exit 2), never an empty pass, and a selection runs exactly what it names; both are checked on every run. Measured on the same machine at jobs=4: the twelve harness guards took **1719 s before and 468 s after (3.7×)**, and every mutation is still caught by its NAMED fixture under the subsets (80 at the measured head; 82 after dev's #1489 added two to `hook_guard_bash`, all caught, independent review of PR #1506). A bare run, the doctor's `hook gates` gate, is checked to run every group, and `main()`'s exit 2 is asserted directly. The heaviest guard left is `hook_release_gate` (1122 s of work across its 28 mutations), the next target if the budget tightens. The baseline now decodes a non-UTF-8 byte as the mutant run already did (#1493's fix covered mutants only), with its own fixture and mutation. The mutation run now prints each guard's seconds and the five heaviest guards, so the next measurement comes from the CI log rather than a local reconstruction.
 
 - **`release-manager` no longer says a value outside the allowlist is skipped — `.claude/agents/release-manager.md`** (#1433). The same REFUTED sentence as `claim-verifier.md`, found by the delta review of PR #1502; corrected to the scoped substitution, citing https://code.claude.com/docs/en/sub-agents and https://code.claude.com/docs/en/model-config ("On the Anthropic API and Claude Platform on AWS, a model family alias, `opus`, `sonnet`, `haiku`, or `fable`…"), fetched 2026-09-30, boundary v2.1.222.
@@ -3581,6 +3583,21 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 ## rails-flow (agentic flow plugin)
 
 ### Unreleased
+
+- **The mock-up gate reads `GUARDRAILS.md` with CommonMark's own block algorithm, so containers no longer fool it — `plugins/rails-flow/scripts/check_mockup_gate.py`, `plugins/rails-flow/scripts/mutations/check_mockup_gate.py`** (#1501). The two line passes from #1490 (`unfenced()`, `outside_indented_code()`) are replaced by `block_classes()`. It is phase 1 of the spec's block parsing: open block quotes and list items are matched per line, then lazy continuation, then new block starts. An opt-out declares only as text outside every code and HTML block.
+  - **Rules:** CommonMark 0.31.2, verified by doctrine-verifier against `spec.txt` at tag 0.31.2. Rules 1–3 and 5–9 CONFIRMED; rule 4 (HTML blocks) partly REFUTED and corrected:
+    - fences open and close within 3 columns of their container, and end with it (§4.5, Ex 125–147);
+    - HTML block types 1–7, a type-1 block ending at any of its four closing tags, and type 7 not interrupting a paragraph (§4.6);
+    - quote markers (§5.1);
+    - a list's interrupt-a-paragraph limits (§5.2, Ex 285–305);
+    - setext underlines are never lazy (Ex 93, 101).
+  - **Behaviour:** where the spec text and the reference implementation differ, the gate follows commonmark.js 0.31.2. A lone `</pre>` line opens an HTML block there. Blank, digit and whitespace are commonmark.js's own definitions, not Python's (#1512 review): a line is blank only if it holds spaces and tabs, so a non-breaking space or a form feed is not blank; an ordered marker takes ASCII digits only; the HTML patterns accept JavaScript `\s`. HTML block types 2–5 end at a literal string (`-->`, `?>`, `>`, `]]>`), matched as a substring: this is CommonMark's grammar, not an HTML sanitiser, so `--!>` does not end a comment (CodeQL `py/bad-tag-filter` raised it on the regex form). A paragraph made only of link reference definitions takes no setext underline, until a lazy line adds other content. An unterminated fence now ends with its container, as rendered (Ex 128), instead of running to end of file; a top-level one still does.
+  - **Measured** with a differential fuzz against commonmark.js 0.31.2, the reference parser. markdown-it-py was dropped as the oracle: it deviates from the reference on lazy lines, e.g. ` 10. item\n    >`.
+    - The gate agrees with the reference on every line class over 600,000 random `GUARDRAILS.md` variants, including a wide generator with up to 9 lines, several opt-out lines, every HTML block type, and non-breaking spaces, U+3000, form feeds and non-ASCII digits. The independent review's own generator agreed on long documents and on CR/CRLF files.
+    - Speed, measured: indentation lookups are O(1) per line and patterns match at an offset instead of on a slice, so cost is linear in input. 2,000-deep nesting takes 0.6 s (commonmark.js: 16 s), 10,000 markers on one line 0.02 s, and a 100,000-line file 0.7 s.
+    - dev disagrees with the reference 3,786 times per 50,000 on the wide generator: 2,297 fail open and 1,489 fail closed.
+  - **Fixtures:** 63 distinct expectations, each run through `run()` and each checked against commonmark.js. They cover #1501's container shapes, plus five found by mutation-driven fuzzing, each the shortest input where one broken rule changes the verdict.
+  - **Guards:** 23 old mutations of the removed passes are replaced by 28 over the scanner. One of them, quote continuation, was first recorded as an equivalent mutant; PR #1512's review disproved that with `> x\n>     y\n    - …`, which is now its fixture. The guard catches 52/52; `check_slices` 13/13, `check_issue_mockup` 18/18.
 
 - **The hook normaliser sees what a shell runs from inside a string, a wrapper or a group —
   `plugins/rails-flow/hooks/scripts/lib/normalize_cmd.sh`, `plugins/qa-flow/hooks/scripts/lib/normalize_cmd.sh`,
@@ -11361,6 +11378,8 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ### Unreleased
 
+- **The `release_evidence` fixture's trace check is supplied only by the fixture's own settings — `plugins/qa-flow/scripts/release_evidence.py`** (#1510). Once the runners disable maintenance through `GIT_CONFIG_*`, the check passed with `FIXTURE_GIT`'s settings removed, and that mutation survived both full runs of PR #1514. The traced commit and its control now strip an inherited `GIT_CONFIG_*`, since a downstream project runs this selftest without our runner. Guard 42/42.
+
 - **`plugins/qa-flow/hooks/scripts/lib/normalize_cmd.sh` gets the #1472 normaliser** (#1472). It is byte-identical to
   rails-flow's copy (`hook-lib-drift`); see the rails-flow bullet. `release-gate.sh` already classified these forms
   with `push_targets.py` (#1470). Only its no-parser fallback changes.
@@ -16588,6 +16607,27 @@ boot/validation path — with a bullet each so the promotion could close them se
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
 ### Unreleased
+
+- **deployment-kamal: `.kamal/secrets` is committable only while it holds references, and nothing falls back —
+  `skills/rails-8/references/deployment-kamal.md`, `skills/rails-8/references/project-setup.md`, `dist/rails-8.skill`**
+  (#1499). doctrine-verifier **REFUTED** the
+  old §3 ("committed", unqualified) and §8 ("`.kamal/secrets.staging` falls back to `.kamal/secrets-common`"), and
+  **CONFIRMED** the replacement against **Kamal 2.12.0** (the installed gem; `lib/kamal/secrets.rb` byte-identical to
+  tag `v2.12.0`), with the mechanism unchanged back to tag `v2.9.0`:
+  - The `kamal init` template (`lib/kamal/cli/templates/secrets` L1–3): "DO NOT ENTER RAW CREDENTIALS HERE! This file
+    needs to be safe for git." kamal-deploy.org/docs/configuration/environment-variables/: a file storing secrets
+    directly must not be checked in. So §3 now says: commit it only while every value is a reference.
+  - `lib/kamal/secrets.rb` L38–45: the files read are `.kamal/secrets-common`, then `.kamal/secrets.<dest>` with `-d`
+    or `.kamal/secrets` without, merged in that order (the later file wins). So with `-d`, `.kamal/secrets` is not
+    read; without it, a `.kamal/secrets.<dest>` is silently unused.
+  - `lib/kamal/configuration.rb` L28–34/L50: `config/deploy.<dest>.yml` is `deep_merge!`d over `config/deploy.yml`.
+    Measured on ActiveSupport 8.1.4: nested hashes merge and arrays are replaced (`servers: ["a"]` → `["b"]`).
+  - `-d` sets no `RAILS_ENV` (none in `kamal-2.12.0/lib`; it sets only `KAMAL_DESTINATION`, `configuration.rb` L21).
+  - `lib/kamal/configuration.rb` L272–273 (2.12.0): `secrets_path` is `raw_config.secrets_path || ".kamal/secrets"`,
+    so the filenames are defaults; a top-level `secrets_path:` moves them, `-common`/`.<dest>` included.
+  The §9 checklist and `project-setup.md`'s "Kamal wires this from `.kamal/secrets`" now name the secrets file Kamal
+  actually reads (the independent review of PR #1517 found the second). Consistent with pipeline's `kamal-configurator`
+  (#1465), which writes deploy secrets gitignored and `.kamal/secrets-common` for shared values.
 
 - **Action Text names Lexxy beside Trix, with the version boundary — `skills/rails-8/references/mail-storage-richtext.md`
   §3** (#1438). The doctrine said "Rich text (Trix editor)" and nothing else. 37signals shipped Lexxy 1.0 on

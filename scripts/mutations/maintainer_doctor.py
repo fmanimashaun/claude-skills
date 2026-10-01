@@ -16,6 +16,13 @@ GUARD = Guard(
         "evals",
     ),
     mutations=(
+        # #1510: every gate subprocess runs with git auto-maintenance off.
+        Mutation(
+            "a gate runs with git's own auto-maintenance",
+            '                env=hermetic_git.env(),\n',
+            '',
+            "#1510: a gate's git must see maintenance.auto=false",
+        ),
         # #1097. A gate that was KILLED did not run. Reporting it as FAIL is the one verdict it
         # cannot mean, and on `mutation coverage` that verdict means "a guard stopped guarding".
         Mutation(
