@@ -66,7 +66,7 @@ def findings(files: list[Path], root: Path) -> list[str]:
                     out.append(f"{where} — primitive-marker-invalid: a marker must name one construct and give a "
                                f"reason (`primitive <construct> -- why`), so this one excuses nothing")
                 elif valid.group(1).lower() in FORM_BUILDERS:
-                    out.append(f"{where} — primitive-marker-invalid: `{valid.group(1)}` is a form builder, the thing "
+                    out.append(f"{where} — primitive-marker-invalid: `{valid.group(1)}` builds a form, the thing "
                                f"simple-form-only refuses; a primitive builds one control, never a form")
                 else:
                     named[valid.group(1).lower()] = named.get(valid.group(1).lower(), 0) + 1
