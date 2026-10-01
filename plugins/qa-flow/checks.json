@@ -145,6 +145,20 @@
       ]
     },
     {
+      "id": "ts-strict",
+      "why": "A TypeScript e2e suite must be strict, type-checked, and free of explicit any (#1447, the owner's expectation). Playwright does not type-check -- 'Playwright does not check the types and will run tests even if there are non-critical TypeScript compilation errors' (playwright.dev/docs/test-typescript) -- so a strict tsconfig is enforced by nothing unless CI runs `tsc --noEmit -p <suite>`; and strict's noImplicitAny flags only an inferred any, never an explicit `as any`. Measured on the app behind the issue: strict tsconfig, a tsc step in CI, and 3 explicit any in real code. Not applicable (exit 3) where qa/ has no TypeScript.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_ts_strict.py"
+      ],
+      "applies_when": [
+        "qa"
+      ],
+      "requires": [
+        "python3"
+      ]
+    },
+    {
       "id": "link-audit",
       "why": "A link to a route nobody listed is never crawled, and a 404 sub-resource is not a failed request.",
       "command": [

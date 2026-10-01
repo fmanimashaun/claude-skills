@@ -11300,6 +11300,56 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ### Unreleased
 
+- **A TypeScript e2e suite is strict, type-checked, and free of explicit `any` — `plugins/qa-flow/scripts/check_ts_strict.py`,
+  `plugins/qa-flow/scripts/mutations/check_ts_strict.py`, `plugins/qa-flow/checks.json`, `plugins/qa-flow/agents/e2e-tester.md`,
+  `plugins/qa-flow/commands/setup-qa.md`, `scripts/maintainer_doctor.py`** (#1447). The owner's rule: "strict typescript with
+  no any type ... where typescript is applicable". e2e-tester and setup-qa now prescribe `"strict": true` plus
+  `noUncheckedIndexedAccess`, a CI step `npm --prefix qa run typecheck` running the scaffolded `tsc --noEmit -p
+  e2e/tsconfig.json` script (and `typescript` in the scaffolded deps),
+  and no explicit `any` (`catch (err: unknown)` and narrow; a declared `// ts-strict: allow-any -- <why>` for the rare
+  exception). doctrine-verifier CONFIRMED, 2026-09-30: *"Playwright does not check the types and will run tests even if
+  there are non-critical TypeScript compilation errors"* (playwright.dev/docs/test-typescript, which recommends
+  `tsc --noEmit`); `strict` does not include `noUncheckedIndexedAccess` and its `noImplicitAny` flags only an inferred `any`
+  (typescriptlang.org/tsconfig). Not claimed, because INCONCLUSIVE: tsc's exit code, and which forms
+  `@typescript-eslint/no-explicit-any` covers — the gate detects the forms itself. Also CONFIRMED: the nine members of
+  `strict`'s family, each of which can be switched back off (typescriptlang.org/tsconfig#strict; the list is
+  TypeScript 5.6+, since the 5.6 release notes introduce `strictBuiltinIteratorReturn` as "a new `--strict`-mode
+  flag"), array and package
+  `extends`, later entries winning (#extends), and `npm --prefix <dir> run` running `<dir>`'s script with its
+  `node_modules/.bin` on PATH (docs.npmjs.com config#prefix, npm-run-script). `npx --prefix qa tsc` was INCONCLUSIVE, so
+  the doctrine prescribes `npm --prefix qa run typecheck` only. New qa-flow gate `ts-strict`, three rules:
+  - `ts-not-strict` reads the options the compiler sees: merged through relative, package and array `extends`, with a
+    strict-family flag set `false` refused, and an `extends` it cannot follow reported as exactly that.
+  - `ts-no-typecheck` reads CI per STEP and requires one that runs `tsc -p` on a tsconfig under `qa/`, or an
+    `npm|pnpm|yarn [--prefix] run` script that does, and that can fail. The path resolves from the step's
+    `working-directory:` (anywhere in the step), the job's or workflow's `defaults.run.working-directory`, and any
+    `cd` before it. Not a step: a tsc on the app, a package script CI never runs, a step or job with
+    `continue-on-error: true` or `if: false`, a swallowed verdict (`|| true`, `; exit 0`, a later `exit 0`), an echoed
+    tsc, a `#` comment.
+  - `ts-explicit-any` matches the `any` token in any type position (`Record<string, any>` included) in
+    `.ts`/`.tsx`/`.mts`/`.cts`, on text a character scanner has blanked of comments, strings, template text and regex
+    literals. It excludes members (`expect.any`), `@any`/`#any`, and object keys (an `any:` after `{ , ; (` or at a
+    line start, so `x ? any : y` is still caught); the allow marker counts only inside a comment. `extends` cycles
+    are reported and shared parents are read once; a BOM is accepted.
+
+  It exits 3 where `qa/` has no TypeScript. The independent review of PR #1503 (BLOCKED, 3 blocking and 7 suggestions,
+  committed as `docs/evidence/reviews/prs/fix-1447-ts-e2e-strict/pr-reviewer-findings.jsonl`) found three blocking gaps:
+  the typecheck rule accepted any tsc line; the position list missed `Record<string, any>`; and the JSONC strip ate
+  `"@fixtures/*"`. R4–R9 are folded in. R10 (`Fixes` into dev) is declined under the owner's 2026-09-29 close-on-dev-merge
+  decision. Its delta review (BLOCKED, 2 blocking and 10 suggestions, appended to the same file) found that the
+  line-at-a-time reading accepted a step that enforces nothing (B1) and missed a `working-directory:` after `run:` (B2).
+  The per-step reader fixes both. S1–S10 are all taken; the parts of S3 left over (`{ any }`, `let any`) are in KNOWN
+  LIMITS.
+
+  Driven on an export of the app behind the issue: Retask `origin/dev` `803510cc`, level with it, 54 files.
+  - strict ✓; the suite typecheck ✓ at `.github/workflows/ci.yml:133`;
+  - **15 explicit `any`** in real code, **12** of them `fixtures<Record<string, any>>()`, which the pre-review gate
+    could not see;
+  - the regex-literal rule was added because that run's `path.replace(/\//g, "-")` inside a template put the scanner
+    out of phase and produced a false finding on prose.
+
+  Selftest 88 assertions; mutations 55/55, each caught by its intended fixture.
+
 - **Fact 3 of the tier doctrine states the blocked-alias substitution's provider scope — `plugins/qa-flow/reference/model-tiers.md`** (#1433). Scoped to the source (https://code.claude.com/docs/en/sub-agents and https://code.claude.com/docs/en/model-config, fetched 2026-09-30): the newest-permitted-version substitution applies on the Anthropic API and Claude Platform on AWS when the allowlist permits a version of the family; otherwise the subagent runs on the inherited model. Boundary v2.1.222. The policy is unchanged.
 
 - **`a11y-auditor`, `perf-tester` and `qa-reporter` consult the advisor only when stuck — `plugins/qa-flow/agents/a11y-auditor.md`, `plugins/qa-flow/agents/perf-tester.md`, `plugins/qa-flow/agents/qa-reporter.md`, `plugins/qa-flow/reference/model-tiers.md`** (#1505, [maintainer decision](https://github.com/fmanimashaun/claude-skills/issues/1505#issuecomment-5904162213): follow the Claude Code docs). `a11y-auditor` peaked at a median of 83k tokens over 9 stored runs (`perf-tester` 52k, `qa-reporter` 21k; `docs/evidence/advisor/subagent-context-2026-09-30.md`), and each advisor call rereads it all. The docs name the only control: *"There is no setting to cap or force advisor calls; if you want Claude to consult more or less often during a task, say so in your instructions"*, and *"The advisor fits long, multi-step tasks where most turns are routine but plan quality determines the outcome"* (https://code.claude.com/docs/en/advisor, `doctrine-verifier` CONFIRMED 2026-09-30; no per-subagent control exists on the advisor or sub-agents page). The tier gate refuses a cheap agent without the paragraph.
