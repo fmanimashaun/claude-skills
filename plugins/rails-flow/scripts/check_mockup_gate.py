@@ -113,10 +113,13 @@ TAG_NAMES = ("address|article|aside|base|basefont|blockquote|body|caption|center
 HTML_START = [
     # Type 1 ends at ANY of the four closing tags; it need not match its opener (verifier, §4.6).
     (re.compile(r"<(?:pre|script|style|textarea)(?:" + JS_WS + r"|>|$)", re.I), re.compile(r"</(?:pre|script|style|textarea)>", re.I)),
-    (re.compile(r"<!--"), re.compile(r"-->")),
-    (re.compile(r"<\?"), re.compile(r"\?>")),
-    (re.compile(r"<![A-Za-z]"), re.compile(r">")),
-    (re.compile(r"<!\[CDATA\["), re.compile(r"\]\]>")),
+    # Types 2-5 end at a LITERAL string (§4.6; commonmark.js reHtmlBlockClose), so they are matched as
+    # substrings, not regexes. This is CommonMark's block grammar, not an HTML sanitiser: `--!>` does
+    # not end a type-2 block in the spec or the reference, and ending there would close it early.
+    (re.compile(r"<!--"), "-->"),
+    (re.compile(r"<\?"), "?>"),
+    (re.compile(r"<![A-Za-z]"), ">"),
+    (re.compile(r"<!\[CDATA\["), "]]>"),
     (re.compile(r"</?(?:" + TAG_NAMES + r")(?:" + JS_WS + r"|/?>|$)", re.I), None),
 ]
 ATTR = r"(?:[ \t]+[A-Za-z_:][A-Za-z0-9_.:-]*(?:[ \t]*=[ \t]*(?:[^ \t\"'=<>`]+|'[^']*'|\"[^\"]*\"))?)"
@@ -216,7 +219,7 @@ def block_classes(text: str) -> list[str]:
                     leaf = None
                     out.append("text")
                     continue
-                if end is not None and end.search(s[pos:]):
+                if end is not None and _ends(end, s, pos):
                     leaf = None
                 out.append("html")
                 continue
@@ -274,7 +277,7 @@ def block_classes(text: str) -> list[str]:
             h = _html_start(s, j, leaf == "para")
             if h is not False:
                 leaf, cls = ("html", h), "html"
-                if h is not None and h.search(s, j + 1):
+                if h is not None and _ends(h, s, j + 1):
                     leaf = None
                 break
             if leaf == "para" and SETEXT.match(s, j) and not refs_only:
@@ -312,6 +315,12 @@ def block_classes(text: str) -> list[str]:
             break
         out.append(cls)
     return out
+
+
+def _ends(end, s, at):
+    """Whether an HTML block's end condition -- a pattern (type 1) or a literal (types 2-5) -- is met
+    in `s` from `at`."""
+    return s.find(end, at) >= 0 if isinstance(end, str) else end.search(s, at) is not None
 
 
 def _html_start(s, at, in_para):
@@ -595,6 +604,8 @@ def selftest() -> int:
              f"> quote\n\t >\n>\n      `{O}`\n", False),
             ("#1501: a fence indented one space still opens", f" ```\n- {O}\n", False),
             # PR #1512's review: where Python's notion of blank, digit or space is not commonmark.js's.
+            ("#1512 CONTROL: a comment that closes on its own line ends there", f"<!-- note -->\n- {O}\n", True),
+            ("#1512 CONTROL: a comment ends at `-->` on a later line", f"<!--\nnote\n-->\n- {O}\n", True),
             ("#1512 B1: a no-break-space line is not blank, so the HTML block runs on", f"<div>\n\u00a0\n- {O}\n", False),
             ("#1512 B1 CONTROL: a no-break-space line does not end a paragraph", f"Example:\n\u00a0\n    - {O}\n", True),
             ("#1512: a form-feed line is not blank: it opens a paragraph, so the indented line continues it",

@@ -324,5 +324,17 @@ GUARD = Guard(
             '            out.append("text")',
             '#1512 R1: a lazy line ends a definitions-only paragraph',
         ),
+        Mutation(
+            'an HTML comment never ends',
+            '    (re.compile(r"<!--"), "-->"),',
+            '    (re.compile(r"<!--"), "never-ends"),',
+            '#1512 CONTROL: a comment ends at `-->` on a later line',
+        ),
+        Mutation(
+            'an end condition is never met on the start line',
+            '                if h is not None and _ends(h, s, j + 1):',
+            '                if False:',
+            '#1512 CONTROL: a comment that closes on its own line ends there',
+        ),
     ),
 )
