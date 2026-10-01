@@ -760,7 +760,7 @@ def run() -> int:
             "the findings print AFTER the remedy -- what is wrong comes before how to re-run it")
 
     # #1510: every gate subprocess -- and every selftest a gate runs -- starts no detached git
-    # maintenance. Through Doctor.run, the one place gates are launched, not the helper alone.
+    # maintenance. Through Doctor.run, which launches the gates, not the helper alone.
     _tick()
     # Strip an inherited hermetic env first (a mutation guard's runner sets it), so only run() can supply it.
     inherited = {k: os.environ.pop(k) for k in list(os.environ) if k.startswith("GIT_CONFIG_")}

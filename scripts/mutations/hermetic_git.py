@@ -14,9 +14,21 @@ GUARD = Guard(
     mutations=(
         Mutation(
             "a caller's GIT_CONFIG pairs are overwritten",
-            '        start = int(out.get("GIT_CONFIG_COUNT", "0") or 0)',
-            '        start = 0',
+            '    start = int(count) if count else 0',
+            '    start = 0',
             "#1510: hermetic_git.env must append after a caller's GIT_CONFIG pairs",
+        ),
+        Mutation(
+            'a negative count is accepted, so our keys land at KEY_-1 where git drops them',
+            '    if count and not (count.isascii() and count.isdigit()):',
+            '    if count and not count.lstrip("-").isdigit():',
+            '#1510: a count git rejects',
+        ),
+        Mutation(
+            "Python's int() rules: ' 2 ' and '٣' read as counts",
+            '    if count and not (count.isascii() and count.isdigit()):',
+            '    if count and not (count.strip().isdigit()):',
+            '#1510: a count git rejects',
         ),
         Mutation(
             'auto-maintenance is left on',

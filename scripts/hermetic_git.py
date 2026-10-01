@@ -17,12 +17,16 @@ SETTINGS: tuple[tuple[str, str], ...] = (("maintenance.auto", "false"), ("gc.aut
 
 def env(base: Mapping[str, str] | None = None) -> dict[str, str]:
     """`base` (default: this process's environment) with SETTINGS appended to any GIT_CONFIG_* pairs
-    already there -- appended, never renumbered, so a caller's own pairs keep their meaning."""
+    already there -- appended, never renumbered, so a caller's own pairs keep their meaning. A count git
+    would reject is left untouched."""
     out = dict(os.environ if base is None else base)
-    try:
-        start = int(out.get("GIT_CONFIG_COUNT", "0") or 0)
-    except ValueError:
-        start = 0
+    count = out.get("GIT_CONFIG_COUNT", "")
+    # git's rules, not Python's int(): empty means none, ASCII digits are a count, and anything else
+    # (`-1`, `abc`, ` 2 `) git itself rejects -- so leave such an environment exactly as it is rather
+    # than half-repair it into one that silently drops our keys or every git call fails (PR #1514 review).
+    if count and not (count.isascii() and count.isdigit()):
+        return out
+    start = int(count) if count else 0
     for i, (key, value) in enumerate(SETTINGS, start):
         out[f"GIT_CONFIG_KEY_{i}"] = key
         out[f"GIT_CONFIG_VALUE_{i}"] = value

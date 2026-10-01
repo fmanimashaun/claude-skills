@@ -215,6 +215,16 @@ def run() -> int:
     if (mine.get("GIT_CONFIG_KEY_0"), mine.get("GIT_CONFIG_COUNT"), mine.get("GIT_CONFIG_KEY_1"),
             mine.get("GIT_CONFIG_KEY_2")) != ("core.x", "3", "maintenance.auto", "gc.auto"):
         FAILURES.append(f"#1510: hermetic_git.env must append after a caller's GIT_CONFIG pairs, got {mine}")
+    # ...an empty count is none, and a count git rejects is left exactly as it was.
+    _tick()
+    if mc.hermetic_git.env({"GIT_CONFIG_COUNT": ""}).get("GIT_CONFIG_KEY_0") != "maintenance.auto":
+        FAILURES.append("#1510: an empty GIT_CONFIG_COUNT is no pairs, so ours start at 0")
+    for bogus in ("-1", "abc", " 2 ", "٣"):
+        _tick()
+        given = {"GIT_CONFIG_COUNT": bogus, "GIT_CONFIG_KEY_0": "core.x", "GIT_CONFIG_VALUE_0": "y"}
+        if mc.hermetic_git.env(given) != given:
+            FAILURES.append(f"#1510: a count git rejects ({bogus!r}) must be left untouched, "
+                            f"got {mc.hermetic_git.env(given)}")
     # A selftest that commits in a temp repo under GIT_TRACE and refuses to go on if git started
     # `maintenance run --auto` or `gc --auto` -- the #1493 race. Through run_guard, so it proves
     # the CALLER passes the env to both the baseline and the mutant, not only that the helper builds it.
