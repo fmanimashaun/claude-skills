@@ -28,27 +28,34 @@ then deploys.
    python3 "${CLAUDE_PLUGIN_ROOT}/scripts/kamal_destination.py" plan $ARGUMENTS
    ```
 
-   Use its `secrets_write`, `overlay`, `setup` and `deploy` values everywhere below. With a
+   Use its `env_file`, `overlay`, `setup` and `deploy` values everywhere below. With a
    destination, Kamal reads `config/deploy.<dest>.yml` over `config/deploy.yml` and
    `.kamal/secrets-common` then `.kamal/secrets.<dest>`, and **never `.kamal/secrets`**; without
    `-d` it reads none of the destination's files. Exit `2` (not a destination name) is a stop.
 
 1. **Route** each `.kamal/deploy.env` key to its destination:
    - `CRED__*` → Rails encrypted credentials for the environment the app will RUN in: the
-     merged config's `RAILS_ENV`, from
+     `RAILS_ENV` Kamal resolves for every role (top-level `env`, then the role's, then host tags), from
      `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/kamal_destination.py" rails-env $ARGUMENTS`
-     (never the destination's name, never an assumed `production`; exit `2` is a stop).
-     Non-interactive `ActiveSupport::EncryptedConfiguration` write + read-back verify;
-     generate `secret_key_base` if blank.
+     (never the destination's name, never an assumed `production`; exit `2` is a stop, including
+     when the roles do not agree). Non-interactive `ActiveSupport::EncryptedConfiguration` write to
+     its `write_content` / `write_key` pair + read-back verify; generate `secret_key_base` if blank.
+     A NEW `write_content` hides the shared `config/credentials.yml.enc` from Rails, so seed it from
+     the `content` file first (kamal-configurator shows how) or its keys vanish.
    - `KAMAL_REGISTRY_PASSWORD` / `RAILS_MASTER_KEY` / `POSTGRES_PASSWORD` → the plan's
-     `secrets_write` (`.kamal/secrets`, or `.kamal/secrets.<dest>`), referenced by NAME in
-     deploy.yml. `RAILS_MASTER_KEY` is the key of the credentials file `rails-env` names.
+     `env_file` (`.kamal/secrets`, or `.kamal/secrets.<dest>`), referenced by NAME in
+     deploy.yml. `RAILS_MASTER_KEY` is the contents of `rails-env`'s `write_key`, the key of the
+     pair just written; not its `key`, which is what the app reads today and differs on a fresh app.
    - `REGISTRY_USER` / `IMAGE` / `WEB_HOST` / `APP_HOST` → `config/deploy.yml`
      (generate via `kamal init` if absent, else patch, never clobber). With a destination,
      the hosts and anything else that differs go in the plan's `overlay`,
      `config/deploy.<dest>.yml`: Kamal refuses `-d` without it.
    - `RAILS_ENV` and non-secret toggles → deploy.yml `env.clear` (the overlay's `env.clear`
-     when the destination's value differs).
+     when the destination's value differs). A `RAILS_ENV` other than `production` needs the app
+     to have `config/environments/<env>.rb` (Rails loads it only if present, so a missing one boots
+     silently without those settings) and a `database.yml` entry for it (without one, only the
+     `primary` database falls back to `DATABASE_URL`; Rails 8.1.4 railties `engine.rb` L564–568,
+     activerecord `database_configurations.rb` L214–216, L304–308). Missing either → STOP, name it.
 2. **Safety pass (BLOCKING)**: `.kamal/deploy.env`, `.kamal/secrets*`, `*.key` gitignored AND
    dockerignored; `scan_committed_secrets.py` exits 0 (no secret value in any file git would
    commit, including an untracked deploy.yml; `git diff` cannot prove this, #1341);
