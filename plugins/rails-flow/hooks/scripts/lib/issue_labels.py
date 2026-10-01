@@ -988,8 +988,24 @@ def selftest() -> int:
                   verdict("(cd sub) && bash < only.sh", bare)[0])
             ok, why = verdict("bash < c2.sh", bare)
             check("with no cd, a relative script is read from the session directory", not ok and "by redirect" in why, why)
+            # #1495: the five #1489 edge cases. c2.sh here has a create; sub/c2.sh is harmless.
+            for cmd, why_ in (("cd nope; bash < c2.sh", "a cd to a missing directory fails and changes nothing"),
+                              ("(cd sub) && bash < c2.sh", "the subshell's cd does not outlive it"),
+                              ("(cd sub && bash < only.sh)", "a cd inside ( ) holds until the )"),
+                              ("bash -eo pipefail < c2.sh", "a bundled -o takes a value"),
+                              ("bash 2>&1 < c2.sh", "the & of a fd duplication is not a separator"),
+                              ("bash &>log < c2.sh", "&> is a redirect, not a background &")):
+                ok, why = verdict(cmd, bare)
+                check(f"#1495 `{cmd}` is refused: {why_}", not ok and "by redirect" in why, why)
+            check("#1495 CONTROL: a script operand after -eo VALUE reads stdin as data",
+                  verdict("bash -eo pipefail sub/c2.sh < c2.sh", bare)[0])
         finally:
             os.chdir(was)
+        # #1495: a label spelled with bash's escapes is that label.
+        for spelled in ("$'\\x66eature'", "$'\\146eature'", "$'\\u0066eature'"):
+            check(f"#1495 CONTROL: `-l {spelled}` is the label `feature`",
+                  verdict(f"gh issue create -t X -l {spelled} --body-file b.md", r)[0],
+                  verdict(f"gh issue create -t X -l {spelled} --body-file b.md", r)[1])
         # ANSI-C quoting is valid bash: it must parse, not be refused as unparseable.
         check("CONTROL: `echo $'it\\'s'` before a harmless redirected script is allowed",
               verdict(f"echo $'it\\'s'; bash < {harmless}", bare)[0], verdict(f"echo $'it\\'s'; bash < {harmless}", bare)[1])

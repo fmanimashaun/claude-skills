@@ -3593,7 +3593,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   - A short-option bundle ending in `o`/`O` takes a value: `bash -eo pipefail < f` and `-euxo pipefail`.
   - `2>&1`, `<&0` and `&>log` are kept as one redirect instead of splitting at `&`. That applies to the helper's
     tokens and to the trigger.
-  - 14 real-hook cases (8 refusals, 6 controls). 8 new mutations (6 `hook_issue_labels`, 2 `hook_guard_bash`), and 4
+  - 14 real-hook cases (8 refusals, 6 controls) and 10 helper selftest cases. 8 new mutations (6 `hook_issue_labels`, 2 `hook_guard_bash`), and 4
     existing ones re-pointed at the changed lines.
 
 - **The hook normaliser sees what a shell runs from inside a string, a wrapper or a group —
