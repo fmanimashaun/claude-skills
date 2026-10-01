@@ -64,6 +64,19 @@ grades it":
   specs is the judgement, and a suite that asserts the wrong thing passes.
 - **`case-author`** derives cases from a PRD. Nothing checks that a derived case is the *right* case.
 
+## The advisor: our three cheap agents consult it only when stuck
+
+*"Subagents inherit the configured advisor and apply the same pairing check against their own
+model"*, and a Haiku main model can call one (https://code.claude.com/docs/en/advisor). Each call
+*"processes the full transcript anew, with no reuse between calls"*, and ours are long: `a11y-auditor`
+peaked at a median of 83k tokens across 9 stored runs, `perf-tester` 52k over 3 and `qa-reporter` 21k over 3 (measured 2026-09-30 on one machine by `scripts/measure_subagent_context.py`, recorded in the marketplace repository's `docs/evidence/advisor/subagent-context-2026-09-30.md`, #1505). The docs name the
+only control: *"if you want Claude to consult more or less often during a task, say so in your
+instructions"*. So `a11y-auditor`, `perf-tester` and `qa-reporter` each carry a `**The advisor.**`
+paragraph: consult it only when the same error has come back twice or the next step is unclear,
+because axe, k6 and the evidence manifest prove their output, not their plan. The judgement agents
+get no such paragraph: *"The advisor fits long, multi-step tasks where most turns are routine but
+plan quality determines the outcome"*. The tier gate refuses a cheap agent without it.
+
 ## `effort` is deliberately unset
 
 A different field. It *"Overrides the session effort level"* and its available levels

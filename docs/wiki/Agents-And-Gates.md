@@ -39,7 +39,7 @@
 | `a11y-auditor` | mechanical · haiku | Read, Grep, Glob, Write, Bash, Skill | `/qa-flow:certify`, `/qa-flow:crawl`, `/qa-flow:verify` | `@axe-core/playwright` returns the violation list; `validate_evidence.py` rejects an a11y row without a rule id and a screenshot |
 | `api-contract-tester` | judgement · inherit | Read, Grep, Glob, Bash | `/qa-flow:certify`, `/qa-flow:verify` | — |
 | `case-author` | judgement · inherit | Read, Grep, Glob, Edit, Write, Bash | `/qa-flow:cases`, `/qa-flow:setup-qa` | — |
-| `e2e-tester` | judgement · inherit | Read, Grep, Glob, Write, Edit, Bash | `/qa-flow:certify`, `/qa-flow:verify`, `/qa-flow:walkthrough` | — |
+| `e2e-tester` | judgement · inherit | Read, Grep, Glob, Write, Edit, Bash | `/qa-flow:certify`, `/qa-flow:setup-qa`, `/qa-flow:verify`, `/qa-flow:walkthrough` | — |
 | `exploratory-tester` | judgement · inherit | Read, Grep, Glob, Write, Bash | `/qa-flow:certify`, `/qa-flow:verify` | — |
 | `functional-tester` | judgement · inherit | — | `/qa-flow:functional`, `/qa-flow:setup-qa`, `/qa-flow:walkthrough` | — |
 | `journey-walker` | judgement · inherit | Read, Grep, Glob, Write, Bash | `/qa-flow:walkthrough` | — |
@@ -120,6 +120,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | qa-flow route crawl | `qa-flow` | `python3 plugins/qa-flow/scripts/crawl_report.py --selftest` | selftest |
 | qa-flow text resize | `qa-flow` | `python3 plugins/qa-flow/scripts/text_resize.py --selftest` | selftest |
 | qa-flow theme parity | `qa-flow` | `python3 plugins/qa-flow/scripts/theme_parity.py --selftest` | selftest |
+| qa-flow ts strict | `qa-flow` | `python3 plugins/qa-flow/scripts/check_ts_strict.py --selftest` | selftest |
 | qa-flow visual baselines | `qa-flow` | `python3 plugins/qa-flow/scripts/visual_baseline.py --selftest` | selftest |
 | qa-flow walkthrough plan | `qa-flow` | `python3 plugins/qa-flow/scripts/walkthrough_plan.py --selftest` | selftest |
 | acceptance criteria | `rails-flow` | `python3 plugins/rails-flow/scripts/check_criteria.py --selftest` | selftest |
