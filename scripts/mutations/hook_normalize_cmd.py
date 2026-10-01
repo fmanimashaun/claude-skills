@@ -44,8 +44,8 @@ GUARD = Guard(
         # ---- #1472: what the shell runs from inside a string, a wrapper or a group ------------------
         Mutation(
             "the strings a shell runs are never normalised, so `bash -c 'git add -A'` is invisible again",
-            "  printf '%s' \"$raw\" | _inner_strings | {",
-            "  : | {",
+            "    next=\"$(printf '%s' \"$level\" | _inner_strings | _join_strings)\"",
+            "    next=\"\"",
             "`\"bash -c 'git add -A'\"` runs the command and is blocked",
         ),
         Mutation(
@@ -68,8 +68,8 @@ GUARD = Guard(
         ),
         Mutation(
             "one level of nesting only, so `bash -c \"eval '...'\"` hides the inner command",
-            '  [ "${_NC_DEPTH:-0}" -ge 3 ] && return 0',
-            '  [ "${_NC_DEPTH:-0}" -ge 1 ] && return 0',
+            "  while [ \"$d\" -lt 3 ]; do",
+            "  while [ \"$d\" -lt 1 ]; do",
             "eval \\'git add -A\\'\"'` runs the command and is blocked",
         ),
         Mutation(
@@ -86,8 +86,8 @@ GUARD = Guard(
         ),
         Mutation(
             "the pre-check reads the raw text, so a quoted `e'v'al` skips the lexer",
-            '  case "$_probe" in',
-            '  case "$raw" in',
+            "    p = S; gsub(/[\\047\"\\\\]/, \"\", p)",
+            "    p = S",
             "`'e\\'v\\'al \"git add -A\"'` runs the command and is blocked",
         ),
         Mutation(
@@ -95,6 +95,25 @@ GUARD = Guard(
             "        if (!found) i = start",
             "",
             "1) x\\n)\"\\nbash -c",
+        ),
+        # ---- #1504: one pipeline per depth, and a linear pre-check ----------------------------------
+        Mutation(
+            "a batch boundary does not reset heredoc state, so an unclosed heredoc in one string swallows the next (#1504)",
+            "    $0 == \"\\002\" { inh=0; next }      # a batch boundary (#1504): one string ends, its heredoc with it",
+            "    $0 == \"\\002\" { next }",
+            "an unclosed heredoc in one string does not swallow the next",
+        ),
+        Mutation(
+            "a batch is lexed as one text, so an unbalanced quote in one string hides the next (#1504)",
+            "    np = split(S, P, \"\\n\\002\\n\")",
+            "    np = 1; P[1] = S",
+            "an unbalanced quote in one string does not stop the next being lexed",
+        ),
+        Mutation(
+            "the bash `${var//[set]/}` pre-check is back, so a PR body costs seconds (#1504)",
+            "    next=\"$(printf '%s' \"$level\" | _inner_strings | _join_strings)\"",
+            "    _q=\"'\" _dq='\"' _bs='\\\\'; _p=\"${level//[$_q$_dq$_bs$_bs]/}\"; next=\"$(printf '%s' \"$level\" | _inner_strings | _join_strings)\"",
+            "PR body is judged in under 10 s",
         ),
         Mutation(
             "a wrapper such as `command` is not peeled",

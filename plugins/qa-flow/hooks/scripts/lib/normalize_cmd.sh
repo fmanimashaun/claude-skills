@@ -43,6 +43,7 @@ _strip_quotes()   { sed -E "s/'[^']*'//g; s/\"[^\"]*\"//g"; }
 _strip_comments() { sed -E "s/^[[:space:]]*#.*\$//; s/([[:space:]])#.*\$/\1/"; }
 _strip_heredocs() {
   awk '
+    $0 == "\002" { inh=0; next }      # a batch boundary (#1504): one string ends, its heredoc with it
     inh { t=$0; if (dash) sub(/^\t+/,"",t); if (t==delim) inh=0; next }
     {
       if (match($0, /<<-?[ \t]*[A-Za-z0-9_][A-Za-z0-9_-]*/)) {
@@ -230,8 +231,10 @@ _inner_strings() {
     split("", WORDS); NW = 0; REDIR = 0
   }
   { S = S (NR > 1 ? "\n" : "") $0 }
-  END {
-    s = S; n = length(s); i = 1; W = ""; HAS = 0; NW = 0; HDN = 0; SKIP = 0
+  # One piece of a batch (#1504): every string the previous depth emitted is lexed on its own.
+  function lex(s,    n, i, c, d, j, k, e, line) {
+    n = length(s); i = 1; W = ""; HAS = 0; NW = 0; HDN = 0; SKIP = 0; REDIR = 0; HD = 0
+    split("", WORDS)
     while (i <= n) {
       c = substr(s, i, 1)
       if (c == "\\") { d = substr(s, i + 1, 1); if (d != "\n" && d != "") { W = W d; HAS = 1 } i += 2; continue }
@@ -278,8 +281,22 @@ _inner_strings() {
     }
     endcmd()
   }
+  END {
+    # Cost: the lexer walks the text a character at a time, so skip it when nothing it looks for is
+    # there. Judged with quotes and backslashes removed, because the lexer dequotes words before it
+    # matches them (`e'v'al`, `bas\h -c`; #1498 review). gsub, not bash `${var//[set]/}`: the latter
+    # is superlinear on bash 3.2 and made an 8 KB PR body cost 32 s in guard-bash (#1504).
+    p = S; gsub(/[\047"\\]/, "", p)
+    if (p !~ /\$\(|`|<\(|eval|sh/) exit
+    np = split(S, P, "\n\002\n")
+    for (pi = 1; pi <= np; pi++) lex(P[pi])
+  }
   '
 }
+
+# One string per line from _inner_strings ( \001 = its own newlines) -> the strings, joined by a line
+# holding only \002, which _strip_heredocs and the lexer both treat as a hard reset.
+_join_strings() { awk 'NR > 1 { print "\002" } { gsub(/\001/, "\n"); print }'; }
 
 _normalize_one() {
   _unquote_delims | _strip_quotes | _strip_comments | _strip_heredocs \
@@ -289,26 +306,17 @@ _normalize_one() {
 
 # normalize_segments: stdin = the raw command; stdout = one invoked segment per line, verb first.
 # The raw text is read with a BUILTIN, never `cat`: a missing binary must not empty the command.
+# #1504: the strings each depth emits are normalised in ONE pipeline (joined by _join_strings), not one
+# pipeline per string -- 50 `$(…)` cost 50 pipelines before. Depth 3, as before.
 normalize_segments() {
-  local raw=""
+  local raw="" level next d=0
   IFS= read -r -d '' raw || true
   printf '%s' "$raw" | _normalize_one
-  [ "${_NC_DEPTH:-0}" -ge 3 ] && return 0
-  # Cost: the lexer walks the text a character at a time, so skip it when nothing it looks for is there.
-  # Judged on the text with quotes and backslashes removed, because the lexer dequotes words before it
-  # matches them: `e'v'al`, `bas\h -c` and `"ba""s"h -c` are eval and bash (#1498 review; the class
-  # release-gate's _probe and guard-bash's trigger each fixed once already). A BUILTIN, never `tr`,
-  # so a missing binary cannot empty the probe.
-  local _q="'" _dq='"' _bs='\' _probe
-  _probe="${raw//[$_q$_dq$_bs$_bs]/}"
-  case "$_probe" in
-    *'$('*|*'`'*|*'<('*|*eval*|*sh*) ;;
-    *) return 0 ;;
-  esac
-  printf '%s' "$raw" | _inner_strings | {
-    _NC_DEPTH=$(( ${_NC_DEPTH:-0} + 1 ))
-    while IFS= read -r _nc_line; do
-      printf '%s' "$_nc_line" | tr '\001' '\n' | normalize_segments
-    done
-  }
+  level="$raw"
+  while [ "$d" -lt 3 ]; do
+    next="$(printf '%s' "$level" | _inner_strings | _join_strings)"
+    [ -n "$next" ] || return 0
+    printf '%s\n' "$next" | _normalize_one
+    level="$next"; d=$((d + 1))
+  done
 }

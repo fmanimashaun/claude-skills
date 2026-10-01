@@ -3582,6 +3582,23 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **The hook normaliser is linear again, and batches its inner-string pass — `plugins/rails-flow/hooks/scripts/lib/normalize_cmd.sh`,
+  `plugins/qa-flow/hooks/scripts/lib/normalize_cmd.sh`, `plugins/rails-flow/scripts/check_hook_gates.py`,
+  `scripts/mutations/hook_normalize_cmd.py`** (#1504).
+  - **A regression on dev, fixed:** #1498's dequoted pre-check used bash's `${var//[set]/}`, which is superlinear
+    on bash 3.2. Through the real `guard-bash.sh`, a `gh pr create --body "$(cat <<'EOF' …)"` cost 0.66 s at
+    2 KB, 4.2 s at 4 KB and 32 s at 8 KB. The pre-check now runs inside `_inner_strings`' awk with `gsub`.
+  - **Batching:** each depth's strings are normalised in ONE pipeline. They are joined by a `\002` line that
+    `_strip_heredocs` resets at and the lexer splits on. Before, it was one pipeline per string.
+  - **Measured on this machine** (median of 3, before then after):
+    - 50 `$(date)`: 0.96 s, now 0.09 s.
+    - 20 `bash -c`: 0.55 s, now 0.09 s.
+    - A 100 KB PR body: over 120 s (capped), now 0.28 s.
+    - `git status`: 0.09 s, now 0.07 s.
+  - 3 must-block fixtures pin the batch-only risks: an unclosed heredoc or an unbalanced quote in one string
+    must not hide the next, and neither may a long batch. A cost check refuses an 8 KB PR body that takes
+    10 s or more. `hook_normalize_cmd` catches 21 of 21 mutations (3 new, 3 re-pointed) in 203 s.
+
 - **The hook normaliser sees what a shell runs from inside a string, a wrapper or a group —
   `plugins/rails-flow/hooks/scripts/lib/normalize_cmd.sh`, `plugins/qa-flow/hooks/scripts/lib/normalize_cmd.sh`,
   `plugins/rails-flow/scripts/check_hook_gates.py`, `scripts/mutations/hook_normalize_cmd.py`** (#1472).
@@ -11360,6 +11377,9 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 ## qa-flow (independent QA plugin)
 
 ### Unreleased
+
+- **`plugins/qa-flow/hooks/scripts/lib/normalize_cmd.sh` gets the #1504 normaliser** (#1504). It is byte-identical to
+  rails-flow's copy (`hook-lib-drift`); see the rails-flow bullet. Only `release-gate.sh`'s no-parser fallback uses it.
 
 - **`plugins/qa-flow/hooks/scripts/lib/normalize_cmd.sh` gets the #1472 normaliser** (#1472). It is byte-identical to
   rails-flow's copy (`hook-lib-drift`); see the rails-flow bullet. `release-gate.sh` already classified these forms

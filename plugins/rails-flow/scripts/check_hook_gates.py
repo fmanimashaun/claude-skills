@@ -32,6 +32,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 HOOKS = Path(__file__).resolve().parents[1] / "hooks" / "scripts"
@@ -481,6 +482,20 @@ def guard_bash_fixtures() -> None:
         check(f"guard-bash (#1472): `{cmd!r}` runs the command and is blocked", run(cmd) == 2, "exit 0")
     for cmd in NEGATIVES_1472:
         check(f"guard-bash (#1472): CONTROL: `{cmd[:60]!r}` passes", run(cmd) == 0, "exit 2")
+    # #1504: a depth's strings are normalised as ONE batch, so each must still be judged on its own.
+    for cmd, why in (("bash -c 'cat <<EOF'; bash -c 'git add -A'", "an unclosed heredoc in one string does not swallow the next"),
+                     ("bash -c \"echo it's\"; bash -c \"eval 'git add -A'\"", "an unbalanced quote in one string does not stop the next being lexed"),
+                     (" ".join(["echo $(date)"] * 30) + "; bash -c 'git add -A'", "the 31st string of a batch is still seen")):
+        check(f"guard-bash (#1504): {why}", run(cmd) == 2, "exit 0")
+    # #1504: COST. The #1498 pre-check used bash's `${var//[set]/}`, superlinear on bash 3.2: an 8 KB PR body
+    # took 32 s in guard-bash on dev. The bound is generous on purpose; it catches the class, not noise.
+    body = "\n".join(f"{i}) line with `code` and (parens)" for i in range(240))
+    pr = f"gh pr create --title t --body \"$(cat <<'EOF'\n{body}\nEOF\n)\""
+    t0 = time.monotonic()
+    rc = run(pr)
+    took = time.monotonic() - t0
+    check(f"guard-bash (#1504): an {len(pr) // 1024} KB PR body is judged in under 10 s, and passes",
+          rc == 0 and took < 10, f"exit {rc}, {took:.1f}s")
     # FAIL CLOSED without the lib: a staged copy of the hook with lib/ removed must still block the raw text.
     with tempfile.TemporaryDirectory() as td:
         stage = Path(td) / "hooks"; shutil.copytree(HOOKS, stage); shutil.rmtree(stage / "lib")
