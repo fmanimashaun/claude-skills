@@ -43,6 +43,9 @@ class Guard:
     # `expects` check correctly refused to count as a caught mutation.
     needs: tuple[str, ...] = ()
     mutations: tuple[Mutation, ...] = field(default_factory=tuple)
+    # Arguments for the selftest, passed to the baseline AND every mutant (#1497): a guard over a
+    # multi-hook harness runs only the fixture groups that drive its own subject.
+    selftest_args: tuple[str, ...] = ()
     # The directory every path above is relative to, as a repo-relative string.
     #
     # `.` for a guard under `scripts/mutations/`, whose subject is a maintainer-only script or

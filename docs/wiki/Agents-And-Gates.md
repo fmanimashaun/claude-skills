@@ -105,6 +105,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | pipeline apm advisory | `pipeline` | `python3 plugins/pipeline/scripts/apm_advisory.py --selftest` | selftest |
 | pipeline committed-secret scan | `pipeline` | `python3 plugins/pipeline/scripts/scan_committed_secrets.py --selftest` | selftest |
 | pipeline hook install | `pipeline` | `python3 plugins/pipeline/scripts/install_git_hooks_selftest.py` | live check |
+| pipeline kamal destination | `pipeline` | `python3 plugins/pipeline/scripts/kamal_destination.py --selftest` | selftest |
 | pipeline stop conditions | `pipeline` | `python3 plugins/pipeline/scripts/breaker.py --selftest` | selftest |
 | qa-flow blast radius | `qa-flow` | `python3 plugins/qa-flow/scripts/blast_radius.py --selftest` | selftest |
 | qa-flow boot classifier | `qa-flow` | `python3 plugins/qa-flow/scripts/classify_boot_failure.py --selftest` | selftest |

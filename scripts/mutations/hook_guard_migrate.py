@@ -5,6 +5,9 @@ GUARD = Guard(
     name='hook_guard_migrate',
     subject='plugins/rails-flow/hooks/scripts/guard-migrate.sh',
     selftest='plugins/rails-flow/scripts/check_hook_gates.py',
+    # Only the fixture groups that drive this subject (#1497): the whole harness per
+    # mutant was ~70% of the mutation-coverage budget.
+    selftest_args=("--only", "guard_migrate"),
     # The harness resolves every hook from the selftest's own location, so the whole
     # directory is staged -- one hook's fixtures may exercise another's shape.
     needs=('plugins/rails-flow/hooks/scripts', 'plugins/rails-flow/hooks/hooks.json',
