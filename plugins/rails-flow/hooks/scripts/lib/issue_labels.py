@@ -203,6 +203,48 @@ def _unparseable(cmd: str) -> list:
     return []
 
 
+# bash's `$'…'` escapes (#1495): `$'\x62ug'` is `bug`, so a label written that way is the label.
+_ANSI_SIMPLE = {"a": "\a", "b": "\b", "e": "\x1b", "E": "\x1b", "f": "\f", "n": "\n", "r": "\r",
+                "t": "\t", "v": "\v", "\\": "\\", "'": "'", '"': '"', "?": "?"}
+
+
+def _ansi_escape(text: str, j: int) -> tuple[str, int]:
+    r"""The character a `$'…'` escape starting at TEXT[j] (just past the backslash) means, and the
+    index after it: the simple letters, `\NNN` octal, `\xHH`, `\uHHHH`, `\UHHHHHHHH`, `\cX`."""
+    c = text[j]
+    if c in _ANSI_SIMPLE:
+        return _ANSI_SIMPLE[c], j + 1
+    for lead, digits, width, base in (("x", "0123456789abcdefABCDEF", 2, 16),
+                                      ("u", "0123456789abcdefABCDEF", 4, 16),
+                                      ("U", "0123456789abcdefABCDEF", 8, 16)):
+        if c == lead:
+            k = j + 1
+            while k < len(text) and k - j - 1 < width and text[k] in digits:
+                k += 1
+            if k == j + 1:
+                return "\\" + c, j + 1          # no digits: bash keeps it literally
+            try:
+                return chr(int(text[j + 1:k], base)), k
+            except (ValueError, OverflowError):
+                return "", k
+    if c in "01234567":
+        k = j
+        while k < len(text) and k - j < 3 and text[k] in "01234567":
+            k += 1
+        return chr(int(text[j:k], 8) & 0xFF), k
+    if c == "c" and j + 1 < len(text):
+        return chr(ord(text[j + 1].upper()) ^ 0x40), j + 2
+    return "\\" + c, j + 1                       # unknown: bash keeps the backslash
+
+
+def _fold_fd_redirects(text: str) -> str:
+    r"""`2>&1`, `<&0`, `>&-` and `&>log` written so shlex does not split them at `&` (#1495): split,
+    `bash 2>&1 < f` became `bash 2>`, `&`, `1 < f`, and the shell lost its redirect. The `&` of a
+    duplication becomes `@`; `&>` / `&>>` (stdout and stderr) become `>` / `>>`."""
+    text = re.sub(r"(\d*[<>])&(\d+|-)", r"\1@\2", text)
+    return re.sub(r"(?<![&|<>])&(>>?)", r"\1", text)
+
+
 def _ansi_c(cmd: str) -> str:
     """`$'…'` (ANSI-C quoting) rewritten as the single-quoted string it means, so shlex can read it.
     Only outside quotes: inside `'…'` or `"…"` a `$'` is literal text."""
@@ -222,7 +264,8 @@ def _ansi_c(cmd: str) -> str:
             j, val = i + 2, []
             while j < len(cmd) and cmd[j] != "'":
                 if cmd[j] == "\\" and j + 1 < len(cmd):
-                    val.append({"n": "\n", "t": "\t"}.get(cmd[j + 1], cmd[j + 1])); j += 2
+                    ch_, j = _ansi_escape(cmd, j + 1)
+                    val.append(ch_)
                     continue
                 val.append(cmd[j]); j += 1
             out.append(shlex.quote("".join(val))); i = j + 1
@@ -285,18 +328,19 @@ def hidden_create(cmd: str) -> str | None:
     if found:
         return found
     try:
-        lexer = shlex.shlex(body.replace("\n", " ; "), posix=True, punctuation_chars=";&|()")
+        lexer = shlex.shlex(_fold_fd_redirects(body).replace("\n", " ; "), posix=True, punctuation_chars=";&|()")
         lexer.whitespace_split = True
         tokens = list(lexer)
     except ValueError:
         return None
     seg: list[str] = []
     prev_text, prev_op = "", ""      # the pipeline so far (every `|`-joined segment), and the last operator
-    # Where a relative `bash < script` resolves (#1489 review): the session's directory, moved by each
-    # literal top-level `cd`. Any other cd (`cd -`, `cd $X`, bare, `pushd`/`popd`, or one inside
-    # `( )`, which does not outlive its subshell) makes it unknown, and an unknown file is allowed.
+    # Where a relative `bash < script` resolves (#1489 review, #1495): the session's directory, moved by
+    # each literal `cd` to a directory that EXISTS -- a cd to a missing one fails and changes nothing,
+    # and `;` runs the next command anyway. `( )` is a subshell: a cd inside it holds until the `)`.
+    # Any other cd (`cd -`, `cd $X`, bare, `pushd`/`popd`) makes it unknown, and an unknown file is allowed.
     here_dir: Path | None = Path.cwd()
-    depth = 0
+    dir_stack: list[Path | None] = []
     for tok in tokens + [";"]:
         if tok and set(tok) <= set(";&|()"):
             raw_seg = " ".join(seg)
@@ -309,9 +353,9 @@ def hidden_create(cmd: str) -> str | None:
             head = os.path.basename(words[0]) if words else ""
             if head in ("cd", "pushd", "popd"):
                 arg = words[1] if len(words) == 2 else None
-                if here_dir is None or depth or head != "cd" or not arg or arg == "-" or "$" in arg or "`" in arg:
+                if here_dir is None or head != "cd" or not arg or arg == "-" or "$" in arg or "`" in arg:
                     here_dir = None
-                else:
+                elif (here_dir / os.path.expanduser(arg)).is_dir():
                     here_dir = here_dir / os.path.expanduser(arg)
             rest = " ".join(words[1:])
             # `-c` may be bundled with other short flags: `bash -lc '…'`.
@@ -335,7 +379,11 @@ def hidden_create(cmd: str) -> str | None:
             # A pipeline feeds its whole upstream: `echo … | cat | bash` runs what echo wrote.
             prev_text = (prev_text + " " + raw_seg) if prev_op in ("|", "|&") else raw_seg
             prev_op = tok
-            depth = max(0, depth + tok.count("(") - tok.count(")"))
+            for ch in tok:
+                if ch == "(":
+                    dir_stack.append(here_dir)
+                elif ch == ")" and dir_stack:
+                    here_dir = dir_stack.pop()
             seg = []
         else:
             seg.append(tok)
@@ -408,10 +456,10 @@ def _stdin_is_script(args: list[str]) -> bool:
             ended = True             # after `--`, even `-x` is an operand
             continue
         if w[:1] in ("-", "+") and len(w) > 1 and not ended:
-            if w in ("-o", "+o", "-O", "+O", "--rcfile", "--init-file"):
-                k += 1
-            elif not w.startswith("--") and "s" in w[1:]:
+            if not w.startswith("--") and "s" in w[1:]:
                 has_s = True
+            if w in ("--rcfile", "--init-file") or re.fullmatch(r"[-+][A-Za-z]*[oO]", w):
+                k += 1               # `-o pipefail`, and bundled: `-eo pipefail`, `-euxo pipefail`
             continue
         return has_s                 # an operand: the script is that file, unless -s
     return True
@@ -936,7 +984,7 @@ def selftest() -> int:
                   verdict("cd sub && bash < c2.sh", bare)[0])
             check("CONTROL: after a cd it cannot resolve, a relative script is unknown and allowed",
                   verdict("cd sub && cd $X && bash < only.sh", bare)[0])
-            check("CONTROL: a cd inside ( ) does not outlive it, so the directory is unknown and allowed",
+            check("CONTROL: a cd inside ( ) does not outlive it, so only.sh is looked for where it is not, and allowed",
                   verdict("(cd sub) && bash < only.sh", bare)[0])
             ok, why = verdict("bash < c2.sh", bare)
             check("with no cd, a relative script is read from the session directory", not ok and "by redirect" in why, why)

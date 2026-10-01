@@ -3580,6 +3580,22 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **`guard-bash`'s label check closes five #1489 edge cases — `plugins/rails-flow/hooks/scripts/lib/issue_labels.py`,
+  `plugins/rails-flow/hooks/scripts/guard-bash.sh`, `plugins/rails-flow/scripts/check_hook_gates.py`,
+  `scripts/mutations/hook_issue_labels.py`, `scripts/mutations/hook_guard_bash.py`** (#1495). On dev, six shapes were
+  allowed that should be refused, and two valid labels were refused. Each was measured through the real hook.
+  - A `cd` to a directory that does not exist fails and changes nothing, so `cd nope; bash < bad.sh` reads the
+    session's `bad.sh`. A `cd` inside `( )` holds until the `)`, so `(cd sub && bash < only.sh)` reads `sub/only.sh`.
+    Known over-refusal: in `cd nope && bash < bad.sh` bash never runs, but the command is still refused.
+  - The trigger drops `$` with the quotes, so `gh issue $'create'` reaches the helper.
+  - `$'…'` decodes bash's full escape set (`\xHH`, `\NNN`, `\uHHHH`, `\UHHHHHHHH`, `\cX`, `\e`, …), so
+    `-l $'\x66eature'` is the label `feature`.
+  - A short-option bundle ending in `o`/`O` takes a value: `bash -eo pipefail < f` and `-euxo pipefail`.
+  - `2>&1`, `<&0` and `&>log` are kept as one redirect instead of splitting at `&`. That applies to the helper's
+    tokens and to the trigger.
+  - 14 real-hook cases (8 refusals, 6 controls). 8 new mutations (6 `hook_issue_labels`, 2 `hook_guard_bash`), and 4
+    existing ones re-pointed at the changed lines.
+
 - **The hook normaliser sees what a shell runs from inside a string, a wrapper or a group —
   `plugins/rails-flow/hooks/scripts/lib/normalize_cmd.sh`, `plugins/qa-flow/hooks/scripts/lib/normalize_cmd.sh`,
   `plugins/rails-flow/scripts/check_hook_gates.py`, `scripts/mutations/hook_normalize_cmd.py`** (#1472).
