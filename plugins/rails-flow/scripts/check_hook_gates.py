@@ -425,6 +425,34 @@ POSITIVES_906 = ['FOO=1 git add -A', 'sudo git add .', 'git status && git add -A
 NEGATIVES_1342 = ['git clean -n', 'git clean -fdn', 'git checkout feature/x', 'git checkout -b new',
                   'git restore -- app/x.rb', 'git restore --staged .', 'git restore --source origin/dev --staged --worktree -- docs/a.md',
                   'git branch -d feature/x', 'git stash push -m wip', 'git stash list', "grep 'git stash drop' notes.md"]
+# #1472: a command the shell RUNS from inside a string, a wrapper or a group, or git spelled another
+# way. The normaliser never classified any of these, so every guard-bash rule was blind to them.
+POSITIVES_1472 = ["bash -c 'git add -A'", 'sh -c "git push --force origin main"', "bash -lc 'git reset --hard'",
+                  "bash -o pipefail -c 'git add -A'", "zsh -c -- 'git add -A'", 'eval "git add -A"', "eval 'git add' '-A'",
+                  "bash -c \"eval 'git add -A'\"", 'echo "$(git add -A)"', 'echo `git add -A`', 'diff <(git add -A) x',
+                  'command git add -A', 'exec git add -A', 'time git add -A', 'nice -n 5 git add -A', 'env -i git add -A',
+                  'sudo -u deploy git add -A', 'timeout 60 git add -A', 'echo x | xargs git add -A', '{ git add -A; }',
+                  '( git add -A )', '(git add -A)', 'if true; then git add -A; fi', '\\git add -A', '/usr/bin/git add -A',
+                  'git.exe add -A', 'git --no-pager add -A', 'git --attr-source HEAD add -A',
+                  'git -c alias.p=push p --force origin main', "bash >log -c 'git add -A'",
+                  "echo x; bash -c 'git add -A'", 'true && eval "git add -A"',
+                  # #1498 review: a trigger spelled with quotes or a backslash is still eval / bash.
+                  "e'v'al \"git add -A\"", "e''val 'git add -A'", 'ev\\al "git add -A"',
+                  "ba's'h -c 'git add -A'", "bas\\h -c 'git add -A'", '"ba""s"h -c \'git add -A\'',
+                  # ...and a heredoc inside $( ) that never closes cannot hide the command after it.
+                  "echo \"$(cat <<EOF\n1) x\n)\"\nbash -c 'git add -A'"]
+# ...and each one's twin: the same shape doing something allowed, or a string that only MENTIONS it.
+NEGATIVES_1472 = ["bash -c 'git add app/x.rb'", "bash -c 'git push origin feature/x'", 'eval "git status"',
+                  'echo "$(git branch --show-current)"', 'command -v git', 'time git status', 'git --no-pager log -1',
+                  'git --attr-source HEAD status', 'git -c alias.p=push p origin feature/x', 'sudo -u deploy git status',
+                  'echo "bash -c \'git add -A\'"', 'git commit -m "never bash -c \'git add -A\'"',
+                  "echo 'eval \"git add -A\"'", "bash script.sh -c 'git add -A'",
+                  "cat <<'X' > s.sh\nbash -c 'git add -A'\nX\ngit status",
+                  "git commit -m \"$(cat <<'EOF'\nwhy: never git add -A\nEOF\n)\"",
+                  # #1472 review: a `)` inside a heredoc inside $( ) must not end the substitution early.
+                  "gh pr create --title t --body \"$(cat <<'EOF'\n1) don't run `git add -A`\nEOF\n)\"",
+                  "git commit -m \"$(cat <<'EOF'\na) first\nb) never `git push --force`\nEOF\n)\"",
+                  "echo \"$(cat <<'EOF'\nAdds :) emoji then `git add -A`\nEOF\n)\""]
 
 
 def guard_bash_fixtures() -> None:
@@ -449,6 +477,10 @@ def guard_bash_fixtures() -> None:
         check(f"guard-bash (#906): `{cmd}` is blocked", run(cmd) == 2, "exit 0")
     for cmd in NEGATIVES_1342:
         check(f"guard-bash (#1342): safe twin `{cmd[:60]}` stays allowed", run(cmd) == 0, "exit 2")
+    for cmd in POSITIVES_1472:
+        check(f"guard-bash (#1472): `{cmd!r}` runs the command and is blocked", run(cmd) == 2, "exit 0")
+    for cmd in NEGATIVES_1472:
+        check(f"guard-bash (#1472): CONTROL: `{cmd[:60]!r}` passes", run(cmd) == 0, "exit 2")
     # FAIL CLOSED without the lib: a staged copy of the hook with lib/ removed must still block the raw text.
     with tempfile.TemporaryDirectory() as td:
         stage = Path(td) / "hooks"; shutil.copytree(HOOKS, stage); shutil.rmtree(stage / "lib")
@@ -888,6 +920,12 @@ def release_gate_fixtures() -> None:
               run('git push origin "main"', plugin_root=Path(bare_root)) == 2, "exit 0")
         check("release-gate (#1410): parser missing -> CONTROL: a feature push still passes",
               run("git push origin feature/x", plugin_root=Path(bare_root)) == 0, "exit 2")
+        # #1472: without the parser the shared normaliser decides, and it now sees inside a shell string.
+        for cmd in ("bash -c 'git push origin main'", 'eval "git push origin main"', "command git push origin main"):
+            check(f"release-gate (#1472): parser missing -> `{cmd}` is blocked",
+                  run(cmd, plugin_root=Path(bare_root)) == 2, "exit 0")
+        check("release-gate (#1472): parser missing -> CONTROL: `bash -c 'git push origin feature/x'` passes",
+              run("bash -c 'git push origin feature/x'", plugin_root=Path(bare_root)) == 0, "exit 2")
 
     # THE DISCRIMINATING PAIR for the marketplace carve-out. The same command, the same absence of
     # a certification, and the ONLY difference is `.claude-plugin/marketplace.json`. Without the
@@ -1260,11 +1298,73 @@ def timeout_fixtures() -> None:
           f"{raw} direct subprocess.run call(s); every one must go through _run")
 
 
-def selftest() -> int:
-    for fn in (stop_gate_fixtures, guard_lane_fixtures, guard_migrate_fixtures, lint_ruby_fixtures,
-               self_consistency_fixtures, guard_bash_fixtures, guard_claims_fixtures,
-               release_gate_fixtures, ci_verdict_hint_fixtures, timeout_fixtures):
-        fn()
+# One fixture group per hook. `--only` runs a subset (#1497): twelve mutation guards use this file
+# as their selftest, each mutating ONE hook, and every mutant re-ran all ten groups -- about 70% of
+# the mutation-coverage budget. A guard now names the groups that drive its hook; the doctor's
+# `hook gates` gate and the harness's own guard still run every group.
+GROUPS = {
+    "stop_gate": stop_gate_fixtures, "guard_lane": guard_lane_fixtures,
+    "guard_migrate": guard_migrate_fixtures, "lint_ruby": lint_ruby_fixtures,
+    "self_consistency": self_consistency_fixtures, "guard_bash": guard_bash_fixtures,
+    "guard_claims": guard_claims_fixtures, "release_gate": release_gate_fixtures,
+    "ci_verdict_hint": ci_verdict_hint_fixtures, "timeout": timeout_fixtures,
+}
+
+
+def parse_only(value: str) -> list[str] | None:
+    """The groups `--only` names, or None when it must be REFUSED: an unknown or empty group would
+    run nothing and pass -- a mutant "surviving" because its fixtures were never selected."""
+    groups = value.split(",")
+    # Every name known, none empty (so no trailing comma), none repeated: a selection runs exactly
+    # what it names, once (review of PR #1506).
+    if any(g not in GROUPS for g in groups) or len(set(groups)) != len(groups):
+        return None
+    return groups
+
+
+_NESTED = False
+
+
+def run_groups(groups: list[str] | None, table: dict) -> None:
+    for name in (groups or list(table)):
+        table[name]()
+
+
+def selftest(groups: list[str] | None = None) -> int:
+    # --only REFUSES what it cannot run (#1497), checked on every run whatever the selection: a
+    # silently empty selection is how a mutant would "survive" with no fixture ever consulted.
+    for bad in ("nope", "", ",", "release_gate,nope", "release_gate,", " release_gate", "timeout,timeout"):
+        check(f"--only {bad!r} is refused (exit 2), never an empty pass", parse_only(bad) is None,
+              repr(parse_only(bad)))
+    check("CONTROL: --only release_gate,guard_bash is accepted",
+          parse_only("release_gate,guard_bash") == ["release_gate", "guard_bash"], repr(parse_only("release_gate,guard_bash")))
+    # ...and a selection runs exactly what it names, proved on stand-ins so the proof costs nothing.
+    ran: list[str] = []
+    fakes = {name: (lambda n=name: ran.append(n)) for name in GROUPS}
+    run_groups(["timeout", "stop_gate"], fakes)
+    check("--only runs exactly the groups it names, in order", ran == ["timeout", "stop_gate"], repr(ran))
+    # ...and a BARE run -- the doctor's `hook gates` gate -- runs every group. A break here would let
+    # that gate pass having run no hook fixture at all (review of PR #1506).
+    ran.clear()
+    run_groups(None, fakes)
+    check("a bare run (no --only) runs every group", ran == list(GROUPS), repr(ran))
+    # The REAL exit code, not only the parser's verdict: main() must return 2 for a bad selection.
+    # Only at the outermost level: were the refusal broken, main() would call selftest() again,
+    # and this check would recurse instead of failing by name.
+    global _NESTED
+    if not _NESTED:
+        import contextlib, io
+        _NESTED = True
+        try:
+            with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+                try:
+                    rc = main(["--only", "nope"])
+                except Exception as exc:          # noqa: BLE001 -- a crash fails THIS check, by name
+                    rc = f"raised {exc!r}"
+        finally:
+            _NESTED = False
+        check("main() exits 2 for --only nope", rc == 2, f"exit {rc}")
+    run_groups(groups, GROUPS)
     if FAILURES:
         print(f"check_hook_gates selftest: {len(FAILURES)} of {CHECKS} checks FAILED", file=sys.stderr)
         for f in FAILURES:
@@ -1277,11 +1377,20 @@ def selftest() -> int:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--selftest", action="store_true", help="drive every hook under its stub environments")
-    ap.parse_args(argv)
+    ap.add_argument("--only", metavar="GROUP[,GROUP]",
+                    help=f"run only these fixture groups: {', '.join(GROUPS)} (#1497)")
+    args = ap.parse_args(argv)
+    groups = None
+    if args.only is not None:
+        groups = parse_only(args.only)
+        if groups is None:
+            print(f"check_hook_gates: --only needs known groups, got {args.only!r}; "
+                  f"known: {', '.join(GROUPS)}", file=sys.stderr)
+            return 2
     # `--selftest` is accepted for symmetry with every other check here, and bare invocation does
     # the same thing: the mutation harness runs a separate selftest file with no arguments, and a
     # script that printed usage there would be INERT -- every mutation "caught" by an exit 2.
-    return selftest()
+    return selftest(groups)
 
 
 if __name__ == "__main__":

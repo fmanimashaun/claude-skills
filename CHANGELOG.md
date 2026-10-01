@@ -11,6 +11,8 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 *Version number assigned at promotion.*
 
+- **The hook guards run only the fixture groups that drive their hook — `plugins/rails-flow/scripts/check_hook_gates.py`, `scripts/mutation_check.py`, `scripts/mutation_types.py`** (#1497). Mutation coverage had reached 807–1117 s of its 1800 s budget. Measured per guard, about 70% of the cost was twelve guards using `check_hook_gates.py` as their selftest, where every mutant re-ran all ten hooks' fixtures (70–105 s) to test ONE hook. `check_hook_gates.py --only <group>[,<group>]` runs a subset, and a `Guard` gains `selftest_args`, passed to the baseline and every mutant; each hook guard names its hook's group, and the doctor's `hook gates` gate still runs every group. An unknown or empty `--only` is refused (exit 2), never an empty pass, and a selection runs exactly what it names; both are checked on every run. Measured on the same machine at jobs=4: the twelve harness guards took **1719 s before and 468 s after (3.7×)**, and every mutation is still caught by its NAMED fixture under the subsets (80 at the measured head; 82 after dev's #1489 added two to `hook_guard_bash`, all caught, independent review of PR #1506). A bare run, the doctor's `hook gates` gate, is checked to run every group, and `main()`'s exit 2 is asserted directly. The heaviest guard left is `hook_release_gate` (1122 s of work across its 28 mutations), the next target if the budget tightens. The baseline now decodes a non-UTF-8 byte as the mutant run already did (#1493's fix covered mutants only), with its own fixture and mutation. The mutation run now prints each guard's seconds and the five heaviest guards, so the next measurement comes from the CI log rather than a local reconstruction.
+
 - **`release-manager` no longer says a value outside the allowlist is skipped — `.claude/agents/release-manager.md`** (#1433). The same REFUTED sentence as `claim-verifier.md`, found by the delta review of PR #1502; corrected to the scoped substitution, citing https://code.claude.com/docs/en/sub-agents and https://code.claude.com/docs/en/model-config ("On the Anthropic API and Claude Platform on AWS, a model family alias, `opus`, `sonnet`, `haiku`, or `fable`…"), fetched 2026-09-30, boundary v2.1.222.
 
 - **The Claude Code upstream cursor moves to 2.1.285, and the surface filter matches a singular `setting` — `docs/evidence/upstream/claude-code.json`, `docs/evidence/upstream/reviews/claude-code-2.1.283-2.1.285.md`, `scripts/check_upstream_docs.py`, `scripts/mutations/check_upstream_docs.py`** (#1433). The review read all 140 entries the surface filter lists, out of 330 upstream entries in 2.1.283 to 2.1.285; the other 190 name no surface the filter knows and were not read one by one. Of the 140, 121 touch no surface we ship, 18 were checked, and 1 is a feature candidate, `/doctor prompt-audit` (#1500). `SURFACES` matched only the plural `settings`, so the 2.1.283 `availableModelsMatch` and `deniedModels` managed-setting entries were never listed, though `model-tiers.md` reasons from `availableModels` (independent review of PR #1502). It now matches `settings?` and names the model-allowlist keys. A fixture lists both shapes, and two mutations that restore the old filter are caught (10/10). `check_upstream_docs.py` exits 0 with 24 quotes present.
@@ -3580,6 +3582,32 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **The hook normaliser sees what a shell runs from inside a string, a wrapper or a group —
+  `plugins/rails-flow/hooks/scripts/lib/normalize_cmd.sh`, `plugins/qa-flow/hooks/scripts/lib/normalize_cmd.sh`,
+  `plugins/rails-flow/scripts/check_hook_gates.py`, `scripts/mutations/hook_normalize_cmd.py`** (#1472).
+  - Every `guard-bash` rule (`git add -A`, force-push, `--no-verify`, `reset --hard`, …) matched only a segment
+    STARTING with the verb, after quoted spans were stripped. So `bash -c 'git add -A'`, `eval "…"`,
+    `echo "$(git add -A)"`, `command git …`, `sudo -u x git …`, `( git … )`, `if …; then git …`, `\git`,
+    `/usr/bin/git`, `git.exe`, `git --no-pager …` and `git -c alias.p=push p …` were all invisible.
+  - A quote- and heredoc-aware lexer (`_inner_strings`) now prints each string a shell WILL run: the `-c`
+    argument of sh/bash/zsh/dash/ksh, `eval`'s arguments, `$( )`, backticks and `<( )`. Each is normalised as a
+    command of its own, recursively, to depth 3. A quote that only mentions a command stays invisible, as #906
+    requires.
+  - A token-based peel steps over wrappers and their options, grouping words, git's spellings, git's global
+    options (arity measured against git 2.50.1) and inline aliases.
+  - The lib is byte-identical in both plugins (`hook-lib-drift`). qa-flow's release gate already classified
+    these forms with `push_targets.py` since #1470; its no-parser fallback now gets them too.
+  - Known limits, listed in the file header: run-time strings, a script fed by heredoc or pipe, a quoted alias
+    value, `env -S`, `find -exec`. Also bash 3.2 (macOS `/bin/sh` too): it ends a `$( )` at the first `)` in a
+    heredoc body, so a backtick after that runs there. This lexer follows zsh and bash 4+. That was accepted on
+    #1498, and dev never saw it either.
+  - A heredoc body inside `$( )` is skipped, so a `)` in a numbered list in a PR body cannot end the substitution.
+    A heredoc that never closes is lexed as ordinary text, so it cannot hide the commands after it.
+  - The lexer is skipped when the command, with its quotes and backslashes removed (by a bash builtin), holds no
+    `$(`, backtick, `<(`, `eval` or shell name. So `e'v'al` and `bas\h -c` still reach it.
+  - 39 `guard-bash` blocks with 19 controls, and 4 release-gate fallback cases; `hook_normalize_cmd` catches 18 of
+    18 mutations (15 new).
+
 - **`guard-claims` judges a PR body against the template of the repository the command runs in, not the session's —
   `plugins/rails-flow/hooks/scripts/guard-claims.sh`, new `plugins/rails-flow/hooks/scripts/lib/command_cwd.py`** (#1509).
   The hook ran `git rev-parse --show-toplevel` in its own working directory, which is the session's. So
@@ -7089,6 +7117,39 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 ### Unreleased
 
 - **The tier doctrine states the blocked-alias substitution's provider scope — `plugins/pipeline/reference/model-tiers.md`** (#1433). Scoped to the source (https://code.claude.com/docs/en/sub-agents and https://code.claude.com/docs/en/model-config, fetched 2026-09-30): the newest-permitted-version substitution applies on the Anthropic API and Claude Platform on AWS when the allowlist permits a version of the family; otherwise the subagent runs on the inherited model. Boundary v2.1.222. The policy is unchanged.
+
+- **`/pipeline:deploy-cloud <destination>` carries the destination through whole: `-d` on every Kamal command, the
+  destination's secrets file and overlay, and credentials for the `RAILS_ENV` Kamal resolves for every role —
+  `plugins/pipeline/scripts/kamal_destination.py`** (#1465).
+  The destination chose only the secrets filename: `.kamal/secrets.<dest>` was written, then `kamal setup`/`kamal deploy`
+  ran with no `-d`, so Kamal read `.kamal/secrets` and the base `config/deploy.yml` and the staging file sat unused;
+  the credentials step hard-coded `env = "production"`.
+  - **Verified, not assumed.** `doctrine-verifier` CONFIRMED each claim against **Kamal 2.12.0** (the installed gem,
+    byte-identical to `basecamp/kamal` tag `v2.12.0`) and **Rails 8.1.4**, and by running Kamal offline:
+    - `lib/kamal/configuration.rb` L29/L34/L50: `-d <dest>` loads `config/deploy.<dest>.yml` after `config/deploy.yml`
+      with `deep_merge!` (the destination wins, hashes merge, arrays are replaced); a missing file raises (L45).
+    - `lib/kamal/secrets.rb` L43–45: the files read are `.kamal/secrets-common`, then `.kamal/secrets` or
+      `.kamal/secrets.<dest>`; the `kamal init` template: "This .kamal/secrets file is used only when no destination
+      is selected."
+    - `-d` sets no `RAILS_ENV` (none in `kamal/lib`); each role's container env is `Role#env(host)`
+      (`lib/kamal/configuration/role.rb` L93–96: the top-level `env`, then the role's, then host tags), and an `env:` with
+      no `clear:`, `secret:` or `tags:` key is all clear (`configuration/env.rb` L8). `railties` `application/configuration.rb`
+      L643–650 picks `config/credentials/<RAILS_ENV>.yml.enc` and, falling back **separately**,
+      `config/credentials/<RAILS_ENV>.key`.
+    - A non-production `RAILS_ENV` needs `config/environments/<env>.rb` (railties `engine.rb` L564–568 loads it only
+      if present) and a `database.yml` entry (activerecord `database_configurations.rb` L214–216, L304–308: only
+      `primary` falls back to `DATABASE_URL`); both prose files now say so.
+  - **`kamal_destination.py plan [dest]`** names file paths and commands only: `setup`/`deploy` with `-d`, the
+    destination's `env_file` and `overlay`. It hands out no command that prints resolved values (`kamal secrets print`
+    puts every `KEY=value`, `lib/kamal/cli/secrets.rb` L32–36). **`rails-env [dest]`** asks Kamal's own loader
+    (`Kamal::Configuration.create_from`, 2.12.0) for every role's resolved `RAILS_ENV` on every host and exits `2`
+    rather than guess: when no role sets it, and when roles disagree (two values, or set beside unset), so credentials
+    are never encrypted for an environment the app will not run.
+  - The command and `kamal-configurator` use both, write `RAILS_MASTER_KEY` from `write_key`, and seed a new
+    per-environment credentials file from the shared one it hides. The `--selftest` pins the call sites and runs the
+    real loader (a role override, the flat form, disagreeing roles); with no kamal gem it exits `3`, which the doctor
+    reports as a skip, not a pass, and `gates.yml` installs kamal 2.12.0 so CI runs them. It is the
+    `pipeline kamal destination` gate; its guard carries 13 mutations, each caught.
 
 - **`breaker.py`'s Anthropic citation is verified and linked, and it separates what is ours from the guide — `plugins/pipeline/scripts/breaker.py`** (#1417).
   The `elapsed Xs / Ys` line cited *Prompting Claude Opus 5.5*, "Time signals for multiagent harnesses", and no check
@@ -11318,6 +11379,10 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 ## qa-flow (independent QA plugin)
 
 ### Unreleased
+
+- **`plugins/qa-flow/hooks/scripts/lib/normalize_cmd.sh` gets the #1472 normaliser** (#1472). It is byte-identical to
+  rails-flow's copy (`hook-lib-drift`); see the rails-flow bullet. `release-gate.sh` already classified these forms
+  with `push_targets.py` (#1470). Only its no-parser fallback changes.
 
 - **A TypeScript e2e suite is strict, type-checked, and free of explicit `any` — `plugins/qa-flow/scripts/check_ts_strict.py`,
   `plugins/qa-flow/scripts/mutations/check_ts_strict.py`, `plugins/qa-flow/checks.json`, `plugins/qa-flow/agents/e2e-tester.md`,
