@@ -24,6 +24,18 @@ GUARD = Guard(
            "plugins/rails-flow/scripts/ci_verdict_hint.py"),
     mutations=(
         Mutation(
+            "a brace group's cd is not followed (`{` read as the command)",
+            'KEYWORDS = {"{", "}", "!", "if", "then", "elif", "else", "fi", "do", "done", "time"}',
+            'KEYWORDS = {"!", "if", "then", "elif", "else", "fi", "do", "done", "time"}',
+            "a cd inside a brace group runs in this shell",
+        ),
+        Mutation(
+            "a negated cd is followed as if it ran",
+            '            if w[0] == "!":\n                raise Unresolved("a negated command before gh")\n',
+            '',
+            "(a negated cd)",
+        ),
+        Mutation(
             "a cd inside a subshell outlives it",
             "                here = stack.pop() if stack else here",
             "                stack.pop() if stack else None",

@@ -771,7 +771,10 @@ def guard_claims_fixtures() -> None:
     check("guard-claims: a heredoc body before the cd does not stop it being followed",
           run_in("cat > /dev/null <<'EOF'\nit's a body\nEOF\ncd B_DIR && gh pr create --body-file BODY", FULL) == 2,
           "exit 0")
+    check("guard-claims: a cd inside a brace group runs in this shell, so it is followed",
+          run_in("{ cd B_DIR; } && gh pr create --base dev --body-file BODY", FULL) == 2, "exit 0")
     for label, cmd in (("a cd to a variable", "cd $NOWHERE && gh pr create --body-file BODY"),
+                       ("a negated cd", "! cd B_DIR && gh pr create --body-file BODY"),
                        ("a cd to a missing directory", "cd B_DIR/missing && gh pr create --body-file BODY"),
                        ("a cd joined by ||", "cd B_DIR || gh pr create --body-file BODY")):
         rc, out = run_in(cmd, FITS_B, with_output=True)

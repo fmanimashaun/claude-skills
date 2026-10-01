@@ -26,6 +26,7 @@ GH = re.compile(r"\bgh\s+(pr\s+(create|edit)|issue\s+comment)\b")
 ASSIGN = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*=")
 APPLIES = {"&&", ";"}            # a cd followed by these has run before the next command
 OPS = re.compile(r"&&|\|\||;;|[;&|()]")
+KEYWORDS = {"{", "}", "!", "if", "then", "elif", "else", "fi", "do", "done", "time"}
 
 
 class Unresolved(Exception):
@@ -89,7 +90,12 @@ def resolve(cmd: str, start: str, home: str) -> str:
         nonlocal here, words
         w = list(words)
         words = []
-        while w and ASSIGN.match(w[0]):
+        # A brace group `{ cd x; }` and a compound's keywords run in THIS shell, so a cd inside them
+        # moves it: peel them like an assignment. `!` inverts the cd's status, so what runs next
+        # depends on whether it FAILED: refuse it.
+        while w and (ASSIGN.match(w[0]) or w[0] in KEYWORDS):
+            if w[0] == "!":
+                raise Unresolved("a negated command before gh")
             w.pop(0)
         if not w:
             return
