@@ -60,6 +60,21 @@ TWO MORE WHOLE-FILE RULES (#990), each from a release that published less than i
     it runs on the promotion PR (gates.yml, base `main`), in release.yml before publishing, and in
     release_local.sh -- never on `dev`, where Unreleased is the normal state between promotions.
 
+ONE LIVE SECTION PER COMPONENT (#1520). The file holds two `## ` sections for `Repository hygiene` and
+two for `rails-stack`; one of each is history, the other is where new notes go. PR #1518 put a
+`### Unreleased` under the DEAD rails-stack section and `--check --all-tags` stayed clean: every rule
+above reads headings, and none asks which section a heading sits in. So `--check` now refuses
+  * two sections for one component unless all but one are listed in `ARCHIVED`;
+  * an `### Unreleased` in an archived section;
+  * an `### Unreleased` in a live section whose newest release is not the component's CURRENT version
+    (`marketplace.json` for rails-stack and the metadata, each plugin's `plugin.json` otherwise) --
+    the section a release would actually be cut from;
+  * an `ARCHIVED` entry that matches no section, which is how a release added to an archived section
+    shows up: its newest tag no longer matches the one it was frozen at.
+The archive is a list HERE, not a marker in the CHANGELOG, because the CHANGELOG cannot take one
+without changing what past releases extract: a block runs to the next `### `, so a line written
+between sections joins the block above it (v1.92.1's notes already end with `## Repository hygiene`).
+
 Exit codes:  0 = ok · 1 = --check found a problem · 2 = not this repo · 3 = ran, could not check everything
 
 Stdlib only.
@@ -243,6 +258,104 @@ def _check_order(text: str) -> list[str]:
     return findings
 
 
+# Sections kept as history (#1520): (the `## ` heading, the newest `(release vX)` tag it holds -- None
+# for a section that never published one). A section matches only while BOTH hold, so a release added
+# to an archived section unmatches it, and the duplicate rule then fires.
+ARCHIVED: tuple[tuple[str, str | None], ...] = (
+    ("## Repository hygiene", "v1.92.0"),
+    ("## skill-maintainer (marketplace maintenance plugin)", None),
+    ("## rails-stack (rails-8 + hotwire + fidara-design skills)", "v1.131.1"),
+    ("## Repository / marketplace", "v1.85.4"),
+)
+# Sections versioned by the marketplace itself: their headings carry a date, not a component version,
+# so the newest release is compared as a TAG with `v` + metadata.version.
+METADATA_SECTIONS = ("Repository hygiene",)
+COMPONENT_VERSION = re.compile(r"^### (\d+\.\d+\.\d+)\b")
+TAG_IN_HEADING = re.compile(r"\(release (v\d+\.\d+\.\d+)\)")
+
+
+def _component(heading: str) -> str:
+    """`## rails-stack (skills plugin: …)` -> `rails-stack`; a heading with no parenthesis is its own name."""
+    return heading[3:].split(" (")[0].strip()
+
+
+def _sections(text: str) -> list[dict]:
+    """Each `## ` section: heading, line, component, its newest release heading and every Unreleased line."""
+    out: list[dict] = []
+    for lineno, line in enumerate(text.split("\n"), 1):
+        if SECTION.match(line):
+            out.append({"heading": line.rstrip(), "line": lineno, "component": _component(line.rstrip()),
+                        "newest": None, "unreleased": []})
+        elif out and UNRELEASED.match(line):
+            out[-1]["unreleased"].append(lineno)
+        elif out and out[-1]["newest"] is None and HEADING.match(line) and TAG_IN_HEADING.search(line):
+            out[-1]["newest"] = line.rstrip()           # newest-first, so the first one is the newest
+    return out
+
+
+def component_versions(root: Path = REPO) -> dict[str, str]:
+    """What each component's newest release heading must name: a component version, or for the
+    marketplace-versioned sections, the tag."""
+    data = json.loads((root / MANIFEST).read_text(encoding="utf-8"))
+    versions = {name: "v" + data["metadata"]["version"] for name in METADATA_SECTIONS}
+    for plugin in data.get("plugins", []):
+        own = root / "plugins" / plugin["name"] / ".claude-plugin" / "plugin.json"
+        version = plugin.get("version") or (json.loads(own.read_text(encoding="utf-8")).get("version")
+                                            if own.is_file() else None)
+        if version:
+            versions[plugin["name"]] = version
+    return versions
+
+
+def _check_sections(text: str, versions: dict[str, str], archived=ARCHIVED) -> list[str]:
+    """One live section per component, and Unreleased only in it (#1520)."""
+    findings: list[str] = []
+    sections = _sections(text)
+    matched: set[tuple[str, str | None]] = set()
+    live: dict[str, list[dict]] = {}
+    for sec in sections:
+        newest_tag = TAG_IN_HEADING.search(sec["newest"]).group(1) if sec["newest"] else None
+        entry = (sec["heading"], newest_tag)
+        if entry in archived:
+            matched.add(entry)
+            for lineno in sec["unreleased"]:
+                findings.append(
+                    f"{CHANGELOG}:{lineno}: `### Unreleased` under {sec['heading']!r} (line {sec['line']}), an ARCHIVED "
+                    f"section -- notes there are never armed or published. Move them to the live "
+                    f"`{sec['component']}` section (the #1518 defect)")
+            continue
+        live.setdefault(sec["component"], []).append(sec)
+    for entry in archived:
+        if entry not in matched:
+            findings.append(
+                f"{CHANGELOG}: ARCHIVED lists {entry[0]!r} frozen at {entry[1] or 'no release'}, and no section "
+                f"matches -- a release was added to an archived section, or the heading changed. An archived "
+                f"section takes no new notes; update ARCHIVED only for a deliberate change")
+    for component, secs in live.items():
+        if len(secs) > 1:
+            lines = ", ".join(str(s["line"]) for s in secs)
+            findings.append(
+                f"{CHANGELOG}: {len(secs)} live sections for `{component}` (lines {lines}) -- a note can land in "
+                f"the one no release reads. Keep one; list the others in ARCHIVED with the tag they stop at")
+        for sec in secs:
+            if not sec["unreleased"] or sec["newest"] is None:
+                continue        # nothing pending, or a component with no release yet
+            current = versions.get(component)
+            m = COMPONENT_VERSION.match(sec["newest"])
+            # A component's heading leads with its version; a marketplace section's with a date, so its tag counts.
+            newest = m.group(1) if m else TAG_IN_HEADING.search(sec["newest"]).group(1)
+            if current is None:
+                findings.append(
+                    f"{CHANGELOG}:{sec['unreleased'][0]}: `### Unreleased` under {sec['heading']!r}, but no component "
+                    f"named `{component}` is versioned in {MANIFEST} or plugins/*/.claude-plugin/plugin.json, so "
+                    f"no release reads this section")
+            elif newest != current:
+                findings.append(
+                    f"{CHANGELOG}:{sec['unreleased'][0]}: `### Unreleased` under {sec['heading']!r}, whose newest release "
+                    f"is {newest} while `{component}` is at {current} -- this is not the section a release is cut from")
+    return findings
+
+
 def _check_no_unreleased(text: str) -> list[str]:
     """A promotion must carry no `### Unreleased` heading (CLAUDE.md, Versioning)."""
     return [
@@ -366,6 +479,63 @@ def _selftest() -> int:
     check("promotion: prose mentioning Unreleased is not a heading",
           _check_no_unreleased("## s\n\n- notes go under `### Unreleased` until the arm\n") == [])
 
+    # ONE LIVE SECTION PER COMPONENT (#1520). The shape #1518 shipped: an Unreleased block under the
+    # DEAD rails-stack section, which every rule above passed.
+    dup = """# CHANGELOG
+
+## rails-stack (old name)
+
+### 2026-09-17 (release v1.131.1)
+
+- history
+
+## qa-flow
+
+### 1.34.0 (release v1.152.0) — d
+
+- q
+
+## rails-stack (new name)
+
+### 1.69.0 (release v1.152.0) — d
+
+- live
+"""
+    vers = {"rails-stack": "1.69.0", "qa-flow": "1.34.0"}
+    arch = (("## rails-stack (old name)", "v1.131.1"),)
+    check("sections: an archived duplicate and a live section are clean", _check_sections(dup, vers, arch) == [])
+    pr1518 = dup.replace("## rails-stack (old name)\n\n", "## rails-stack (old name)\n\n### Unreleased\n\n- lost\n\n")
+    found = _check_sections(pr1518, vers, arch)
+    check("sections: Unreleased under the ARCHIVED section is a finding (the #1518 shape)",
+          len(found) == 1 and "ARCHIVED section" in found[0] and ":5:" in found[0])
+    check("sections: ...which every rule before #1520 passed",
+          _check(pr1518, "v1.152.0") == [] and _check_all_tags(pr1518, {"v1.131.1", "v1.152.0"}) == []
+          and _check_order(pr1518) == [])
+    check("sections: Unreleased under the LIVE section is clean",
+          _check_sections(dup.replace("## rails-stack (new name)\n\n", "## rails-stack (new name)\n\n### Unreleased\n\n- x\n\n"),
+                          vers, arch) == [])
+    found = _check_sections(dup, vers, ())
+    check("sections: two live sections for one component are a finding",
+          len(found) == 1 and "2 live sections for `rails-stack`" in found[0])
+    moved = dup.replace("### 2026-09-17 (release v1.131.1)", "### 2026-09-30 (release v1.153.0)\n\n- new\n\n"
+                        "### 2026-09-17 (release v1.131.1)")
+    found = _check_sections(moved, vers, arch)
+    check("sections: a release added to an archived section unmatches it, and both rules say so",
+          any("no section matches" in f for f in found) and any("2 live sections" in f for f in found))
+    stale = dup.replace("## qa-flow\n\n", "## qa-flow\n\n### Unreleased\n\n- x\n\n")
+    found = _check_sections(stale, {**vers, "qa-flow": "1.35.0"}, arch)
+    check("sections: Unreleased in a section whose newest release is not the current version is a finding",
+          len(found) == 1 and "1.34.0" in found[0] and "1.35.0" in found[0])
+    found = _check_sections(stale, {"rails-stack": "1.69.0"}, arch)
+    check("sections: Unreleased under a component nothing versions is a finding",
+          len(found) == 1 and "no component named `qa-flow`" in found[0])
+    repo_sec = "## Repository hygiene\n\n### Unreleased\n\n- r\n\n### 2026-09-28 (release v1.152.0)\n\n- r\n"
+    check("sections: a marketplace-versioned section compares its TAG with the metadata version",
+          _check_sections(repo_sec, {"Repository hygiene": "v1.152.0"}, ()) == []
+          and len(_check_sections(repo_sec, {"Repository hygiene": "v1.153.0"}, ())) == 1)
+    check("sections: a component with no release yet may hold Unreleased",
+          _check_sections("## new-plugin\n\n### Unreleased\n\n- x\n", {}, ()) == [])
+
     # The preserved anchor: prose mentioning the tag must NOT start a grab.
     prose = """# CHANGELOG
 
@@ -442,6 +612,15 @@ def _selftest() -> int:
     check("the committed CHANGELOG's headings are in order in every section", _check_order(text) == [])
     _, rn = render(text, tag)
     check("the real release has at least one block", rn >= 1)
+    check("the committed CHANGELOG has one live section per component, Unreleased only there",
+          _check_sections(text, component_versions()) == [])
+    stale_head = "## rails-stack (rails-8 + hotwire + fidara-design skills)\n\n"
+    real_1518 = text.replace(stale_head, stale_head + "### Unreleased\n\n- a note no release reads\n\n", 1)
+    import inspect
+    check("--check runs the section rule (a rule main() never calls protects nothing)",
+          "findings += _check_sections(text, component_versions())" in inspect.getsource(main))
+    check("the real #1518 shape -- Unreleased under the stale rails-stack section -- is refused",
+          stale_head in text and any("ARCHIVED section" in f for f in _check_sections(real_1518, component_versions())))
 
     # And the call sites must actually USE this script -- the gate half lives in
     # lint_self_consistency, but assert the wiring here too so a stale call site fails fast.
@@ -481,6 +660,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if a.check:
         findings = _check(text, tag)
+        findings += _check_sections(text, component_versions())
         tags_unseen = False
         if a.all_tags:
             tags = existing_tags()

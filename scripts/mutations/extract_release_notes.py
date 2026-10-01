@@ -12,7 +12,10 @@ GUARD = Guard(
     name="extract_release_notes",
     subject="scripts/extract_release_notes.py",
     selftest="scripts/extract_release_notes.py",
-    needs=(".claude-plugin", ".github", "CHANGELOG.md", "scripts/release_local.sh"),
+    needs=(".claude-plugin", ".github", "CHANGELOG.md", "scripts/release_local.sh",
+           # #1520: component_versions() reads each plugin's own version.
+           "plugins/rails-flow/.claude-plugin/plugin.json", "plugins/qa-flow/.claude-plugin/plugin.json",
+           "plugins/pipeline/.claude-plugin/plugin.json", "plugins/design-flow/.claude-plugin/plugin.json"),
     mutations=(
         Mutation(
             "the tag being armed loses its exemption, so every arm reports its own release as a ghost",
@@ -102,5 +105,28 @@ GUARD = Guard(
             '        for lineno, line in enumerate(text.split("\\n"), 1) if False',
             "promotion: an Unreleased heading is a finding",
         ),
+
+        # #1520. #1518 put an Unreleased block under the DEAD rails-stack section and --check stayed clean.
+        Mutation("an Unreleased block under an archived section passes again (#1518)",
+                 '            for lineno in sec["unreleased"]:', "            for lineno in []:",
+                 "Unreleased under the ARCHIVED section is a finding"),
+        Mutation("two live sections for one component pass",
+                 "        if len(secs) > 1:", "        if False:",
+                 "two live sections for one component are a finding"),
+        Mutation("an ARCHIVED entry matching no section passes, so a release added to it goes unseen",
+                 "        if entry not in matched:", "        if False:",
+                 "a release added to an archived section unmatches it"),
+        Mutation("Unreleased in a section that is not at the current version passes",
+                 "            elif newest != current:", "            elif False:",
+                 "whose newest release is not the current version"),
+        Mutation("Unreleased under a component nothing versions passes",
+                 "            if current is None:", "            if False and current is None:",
+                 "a component nothing versions"),
+        Mutation("the OLDEST release heading is taken as a section's newest, so no archive entry matches",
+                 '        elif out and out[-1]["newest"] is None and HEADING.match(line)', "        elif out and HEADING.match(line)",
+                 "one live section per component"),
+        Mutation("--check stops running the section rule",
+                 "        findings += _check_sections(text, component_versions())\n", "",
+                 "--check runs the section rule"),
     ),
 )

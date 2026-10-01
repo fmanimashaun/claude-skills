@@ -11,6 +11,26 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 *Version number assigned at promotion.*
 
+- **`--check` refuses a note filed under a dead CHANGELOG section — `scripts/extract_release_notes.py`,
+  `scripts/mutations/extract_release_notes.py`** (#1520). `CHANGELOG.md` holds two `## ` sections for `Repository hygiene`
+  and two for `rails-stack`. PR #1518 put a `### Unreleased` under the stale rails-stack section, and `--check --all-tags`
+  printed clean: every rule read headings, and none asked which section a heading sits in. `--check` now refuses:
+  - two live sections for one component, unless all but one are in the script's `ARCHIVED` list, each entry pinned to
+    the newest tag that section holds;
+  - an `### Unreleased` in an archived section;
+  - an `### Unreleased` in a live section whose newest release isn't the component's current version
+    (`marketplace.json`, or the plugin's `plugin.json`);
+  - an `ARCHIVED` entry no section matches, which is how a release added to an archived section shows up.
+
+  The four history sections are archived in the script, not marked in the file. A block runs to the next `### `, so a
+  marker written between sections would join the block above it and change a past extraction: measured, v1.92.1's
+  notes already end with `## Repository hygiene`. Proven on the real file:
+  - the #1518 shape passes `origin/dev`'s checker (exit 0) and fails this one (exit 1);
+  - all 202 past `(release vX.Y.Z)` extractions are byte-identical under both scripts;
+  - no existing CHANGELOG line changes; this bullet is the only addition.
+
+  Selftest 58; mutations 20/20, 7 of them new.
+
 - **The gate and mutation runners start no detached git maintenance, once for every temp-repo selftest — `scripts/hermetic_git.py`, `scripts/mutation_check.py`, `scripts/maintainer_doctor.py`, `scripts/mutation_check_selftest.py`, `scripts/maintainer_doctor_selftest.py`, `scripts/mutations/hermetic_git.py`, `scripts/mutations/mutation_check_harness.py`, `scripts/mutations/maintainer_doctor.py`, `scripts/mutations/rebuild_generated.py`, `scripts/mutations/audit_assertion_reachability.py`** (#1510). #1493's cause (a fixture `git commit` detaches `git maintenance run --auto`, which races the temp-dir cleanup) was fixed in `release_evidence` alone by PR #1511; 20 other selftests commit in temp repos the same way (measured 2026-10-01). `hermetic_git.env()` appends `maintenance.auto=false` and `gc.auto=0` through `GIT_CONFIG_COUNT`/`KEY_n`/`VALUE_n`, after any pairs the caller set; `mutation_check` passes it to every baseline and mutant and the doctor's `run()` to every gate. Proofs drive the entry points: a fixture guard whose selftest refuses to go on if a traced commit starts maintenance passes through `run_guard` (control: without the env it reads INERT), and a `Doctor.run` subprocess must see both keys. Each proof first strips an inherited `GIT_CONFIG_*`, or a run nested under a mutation guard passes with the call site removed (the first draft of both did). The count is read by git's rules: empty means none, ASCII digits are a count, and a value git rejects (`-1`, `abc`, ` 2 `) leaves the environment untouched rather than half-repairing it (review of PR #1514). The doctor's two direct subprocesses (changelog coverage, `check-ignore`) pass the env too. Guards: `hermetic_git` 4/4, `mutation_check_harness` 19/19, `maintainer_doctor` 24/24.
 
 - **The hook guards run only the fixture groups that drive their hook — `plugins/rails-flow/scripts/check_hook_gates.py`, `scripts/mutation_check.py`, `scripts/mutation_types.py`** (#1497). Mutation coverage had reached 807–1117 s of its 1800 s budget. Measured per guard, about 70% of the cost was twelve guards using `check_hook_gates.py` as their selftest, where every mutant re-ran all ten hooks' fixtures (70–105 s) to test ONE hook. `check_hook_gates.py --only <group>[,<group>]` runs a subset, and a `Guard` gains `selftest_args`, passed to the baseline and every mutant; each hook guard names its hook's group, and the doctor's `hook gates` gate still runs every group. An unknown or empty `--only` is refused (exit 2), never an empty pass, and a selection runs exactly what it names; both are checked on every run. Measured on the same machine at jobs=4: the twelve harness guards took **1719 s before and 468 s after (3.7×)**, and every mutation is still caught by its NAMED fixture under the subsets (80 at the measured head; 82 after dev's #1489 added two to `hook_guard_bash`, all caught, independent review of PR #1506). A bare run, the doctor's `hook gates` gate, is checked to run every group, and `main()`'s exit 2 is asserted directly. The heaviest guard left is `hook_release_gate` (1122 s of work across its 28 mutations), the next target if the budget tightens. The baseline now decodes a non-UTF-8 byte as the mutant run already did (#1493's fix covered mutants only), with its own fixture and mutation. The mutation run now prints each guard's seconds and the five heaviest guards, so the next measurement comes from the CI log rather than a local reconstruction.
