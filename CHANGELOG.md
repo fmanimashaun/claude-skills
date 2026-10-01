@@ -3582,6 +3582,21 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **The mock-up gate reads `GUARDRAILS.md` with CommonMark's own block algorithm, so containers no longer fool it — `plugins/rails-flow/scripts/check_mockup_gate.py`, `plugins/rails-flow/scripts/mutations/check_mockup_gate.py`** (#1501). The two line passes from #1490 (`unfenced()`, `outside_indented_code()`) are replaced by `block_classes()`. It is phase 1 of the spec's block parsing: open block quotes and list items are matched per line, then lazy continuation, then new block starts. An opt-out declares only as text outside every code and HTML block.
+  - **Rules:** CommonMark 0.31.2, verified by doctrine-verifier against `spec.txt` at tag 0.31.2. Rules 1–3 and 5–9 CONFIRMED; rule 4 (HTML blocks) partly REFUTED and corrected:
+    - fences open and close within 3 columns of their container, and end with it (§4.5, Ex 125–147);
+    - HTML block types 1–7, a type-1 block ending at any of its four closing tags, and type 7 not interrupting a paragraph (§4.6);
+    - quote markers (§5.1);
+    - a list's interrupt-a-paragraph limits (§5.2, Ex 285–305);
+    - setext underlines are never lazy (Ex 93, 101).
+  - **Behaviour:** where the spec text and the reference implementation differ, the gate follows commonmark.js 0.31.2. A lone `</pre>` line opens an HTML block there. Blank, digit and whitespace are commonmark.js's own definitions, not Python's (#1512 review): a line is blank only if it holds spaces and tabs, so a non-breaking space or a form feed is not blank; an ordered marker takes ASCII digits only; the HTML patterns accept JavaScript `\s`. HTML block types 2–5 end at a literal string (`-->`, `?>`, `>`, `]]>`), matched as a substring: this is CommonMark's grammar, not an HTML sanitiser, so `--!>` does not end a comment (CodeQL `py/bad-tag-filter` raised it on the regex form). A paragraph made only of link reference definitions takes no setext underline, until a lazy line adds other content. An unterminated fence now ends with its container, as rendered (Ex 128), instead of running to end of file; a top-level one still does.
+  - **Measured** with a differential fuzz against commonmark.js 0.31.2, the reference parser. markdown-it-py was dropped as the oracle: it deviates from the reference on lazy lines, e.g. ` 10. item\n    >`.
+    - The gate agrees with the reference on every line class over 600,000 random `GUARDRAILS.md` variants, including a wide generator with up to 9 lines, several opt-out lines, every HTML block type, and non-breaking spaces, U+3000, form feeds and non-ASCII digits. The independent review's own generator agreed on long documents and on CR/CRLF files.
+    - Speed, measured: indentation lookups are O(1) per line and patterns match at an offset instead of on a slice, so cost is linear in input. 2,000-deep nesting takes 0.6 s (commonmark.js: 16 s), 10,000 markers on one line 0.02 s, and a 100,000-line file 0.7 s.
+    - dev disagrees with the reference 3,786 times per 50,000 on the wide generator: 2,297 fail open and 1,489 fail closed.
+  - **Fixtures:** 63 distinct expectations, each run through `run()` and each checked against commonmark.js. They cover #1501's container shapes, plus five found by mutation-driven fuzzing, each the shortest input where one broken rule changes the verdict.
+  - **Guards:** 23 old mutations of the removed passes are replaced by 28 over the scanner. One of them, quote continuation, was first recorded as an equivalent mutant; PR #1512's review disproved that with `> x\n>     y\n    - …`, which is now its fixture. The guard catches 52/52; `check_slices` 13/13, `check_issue_mockup` 18/18.
+
 - **The hook normaliser sees what a shell runs from inside a string, a wrapper or a group —
   `plugins/rails-flow/hooks/scripts/lib/normalize_cmd.sh`, `plugins/qa-flow/hooks/scripts/lib/normalize_cmd.sh`,
   `plugins/rails-flow/scripts/check_hook_gates.py`, `scripts/mutations/hook_normalize_cmd.py`** (#1472).
