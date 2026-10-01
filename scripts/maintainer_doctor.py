@@ -411,6 +411,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #993: the walk refuses to start without personas, sign-in recipes and journey documents.
     ("qa-flow walkthrough plan", ("python3", "plugins/qa-flow/scripts/walkthrough_plan.py", "--selftest")),
     ("qa-flow evidence manifest", ("python3", "plugins/qa-flow/scripts/evidence_manifest.py", "--selftest")),
+    # #1447. A TypeScript e2e suite is strict, type-checked in CI, and has no explicit `any`.
+    ("qa-flow ts strict", ("python3", "plugins/qa-flow/scripts/check_ts_strict.py", "--selftest")),
     ("qa-flow route crawl", ("python3", "plugins/qa-flow/scripts/crawl_report.py", "--selftest")),
     ("qa-flow theme parity", ("python3", "plugins/qa-flow/scripts/theme_parity.py", "--selftest")),
     # #953. What a page hides INSIDE the viewport, which every boundary assertion passes on.

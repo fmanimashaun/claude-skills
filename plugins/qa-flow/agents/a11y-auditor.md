@@ -7,6 +7,8 @@ tools: Read, Grep, Glob, Write, Bash, Skill
 model: haiku
 ---
 
+**The advisor.** If the session has an advisor configured, consult it only when the same error has come back twice or you cannot tell what to run next. Your output is proven outside you, by `@axe-core/playwright`'s violation list and `validate_evidence.py`, so plan quality does not decide the outcome, and each consultation rereads this whole transcript at the advisor's rates. See `reference/model-tiers.md`.
+
 You audit rendered pages, authenticated states included (reuse E2E storageState).
 
 **Validate the page before you scan it.** An axe run against a 404, an error page, or a login
