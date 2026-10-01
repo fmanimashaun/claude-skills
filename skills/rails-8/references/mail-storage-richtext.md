@@ -202,8 +202,10 @@ import "lexxy"
 - **Existing content.** Lexxy emits Action Text's canonical markup, and its docs and the 1.0 post state that
   Trix-authored content and attachments keep working. That is the vendor's statement; neither Rails nor this
   skill tests it, so open a few real records before switching a production app.
-- **Rendering.** Lexxy widens Action Text's sanitizer allowlist (tables, `video`, `audio`, and attributes such as
-  `style`). That changes every rich-text render, not only the editor, so review it against your content policy.
+- **Sanitizing, app-wide.** Lexxy widens Action Text's sanitizer allowlist (tables, `video`, `audio`, and attributes
+  such as `style`), which changes every rich-text render, not only the editor. It also appends `"var"` to Loofah's
+  global `ALLOWED_CSS_FUNCTIONS`, which reaches every `sanitize` call in the app. Both run unconditionally at boot,
+  with the opt-out below too (`lib/lexxy/engine.rb` L52–60, v1.0.0). Review them against your content policy.
   Rendered content keeps Rails' default wrapper, `<div class="trix-content">`
   (`app/views/layouts/action_text/contents/_content.html.erb`), so actiontext.css still styles it. Override that
   file with `<div class="lexxy-content">` to give it Lexxy's styles.
