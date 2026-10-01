@@ -661,6 +661,27 @@ def guard_claims_fixtures() -> None:
     check("guard-claims: a helper that fails at import is BLOCKED, never let through",
           broke.returncode == 2 and "died before judging" in broke.stdout + broke.stderr,
           f"exit {broke.returncode}: {(broke.stdout + broke.stderr)[-120:]}")
+    # #1509: the directory resolver is a checker too. Missing or crashing, it has resolved nothing,
+    # and the session directory is not a safe default: FAIL CLOSED, as #1435 ruled for pr_template.
+    for label, mangle, needle in (
+            ("missing", lambda f: f.unlink(), "cannot run"),
+            ("crashing", lambda f: f.write_text("raise SystemExit(7)\n", encoding="utf-8"), "directory crashed")):
+        with tempfile.TemporaryDirectory() as hd:
+            copy = Path(hd) / "scripts"
+            shutil.copytree(HOOKS, copy)
+            mangle(copy / "lib" / "command_cwd.py")
+            with tempfile.TemporaryDirectory() as td:
+                (Path(td) / ".github").mkdir()
+                (Path(td) / ".github" / "pull_request_template.md").write_text(TPL, encoding="utf-8")
+                (Path(td) / "body.md").write_text(FULL, encoding="utf-8")
+                env = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])}
+                env.pop("GH_REPO", None)
+                broke = _run(["bash", str(copy / "guard-claims.sh")], cwd=td, env=env, text=True,
+                             capture_output=True, timeout=60,
+                             input=json.dumps({"tool_input": {"command": f"gh pr create --base dev --body-file {td}/body.md"}}))
+        check(f"guard-claims: a {label} command_cwd.py is BLOCKED, never the session's template (#1509)",
+              broke.returncode == 2 and needle in broke.stdout + broke.stderr,
+              f"exit {broke.returncode}: {(broke.stdout + broke.stderr)[-120:]}")
     check("guard-claims: `-R` in a double-quoted title with an apostrophe is still text (#1435)",
           run("gh pr create --title \"it's the -R fix\" --base dev --body-file BODY", "## What changed\nx\n",
               template=TPL) == 2, "exit 0")
@@ -676,6 +697,51 @@ def guard_claims_fixtures() -> None:
     check("guard-claims: a | inside a quoted title does not hide a later -R",
           run("gh pr create --title 'a|b' -R o/r --body-file BODY", "## What changed\nx\n", template=TPL) == 0,
           "exit 2")
+
+    # ---- the COMMAND's directory, not the session's (#1509) ----
+    # A hook runs in the session's directory. A session rooted in repo A ran `cd <repo B> && gh pr
+    # create` and was BLOCKED for missing A's sections, while B's template went unchecked. Each body
+    # below satisfies exactly one of the two templates, so a verdict names the template it read.
+    TPL_B = "## Summary\n\n## Risk\n"
+    FITS_B = "## Summary\nTidy the README.\n## Risk\nNone, copy only.\n"
+
+    def run_in(cmd: str, body: str, *, body_in: str = "a", with_output: bool = False):
+        with tempfile.TemporaryDirectory() as td:
+            a, b = Path(td) / "a", Path(td) / "b"
+            for d, tpl in ((a, TPL), (b, TPL_B)):
+                (d / ".github").mkdir(parents=True)
+                (d / ".github" / "pull_request_template.md").write_text(tpl, encoding="utf-8")
+            where = a if body_in == "a" else b
+            (where / "body.md").write_text(body, encoding="utf-8")
+            cmd = cmd.replace("B_DIR", str(b)).replace("BODY", str(where / "body.md"))
+            done = run_hook("guard-claims.sh", cwd=a, stdin=json.dumps({"tool_input": {"command": cmd}}),
+                            env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])})
+            return done if with_output else done[0]
+
+    check("guard-claims: a `cd <other repo>` is judged against that repo's template (#1509)",
+          run_in("cd B_DIR && gh pr create --base dev --body-file BODY", FULL) == 2, "exit 0")
+    check("guard-claims: ...and a body fitting the cd target's template passes there",
+          run_in("cd B_DIR && gh pr create --base dev --body-file BODY", FITS_B) == 0, "exit 2")
+    check("guard-claims: no cd is the session repo's template (control)",
+          run_in("gh pr create --base dev --body-file BODY", FITS_B) == 2, "exit 0")
+    rc, out = run_in("cd B_DIR && gh pr create -R o/r --base dev --body-file BODY", FULL, with_output=True)
+    check("guard-claims: -R after a cd is still another repository, NOT checked (control)",
+          rc == 0 and "NOT checked (-R" in out, f"exit {rc}: {out[-120:]}")
+    check("guard-claims: a cd inside a subshell does not outlive it",
+          run_in("(cd B_DIR) && gh pr create --base dev --body-file BODY", FITS_B) == 2, "exit 0")
+    check("guard-claims: a relative --body-file is read from the cd target",
+          run_in("cd B_DIR && gh pr create --base dev --body-file body.md", FITS_B, body_in="b") == 0
+          and run_in("cd B_DIR && gh pr create --base dev --body-file body.md", FULL, body_in="b") == 2,
+          "the relative body was not read from B")
+    check("guard-claims: a heredoc body before the cd does not stop it being followed",
+          run_in("cat > /dev/null <<'EOF'\nit's a body\nEOF\ncd B_DIR && gh pr create --body-file BODY", FULL) == 2,
+          "exit 0")
+    for label, cmd in (("a cd to a variable", "cd $NOWHERE && gh pr create --body-file BODY"),
+                       ("a cd to a missing directory", "cd B_DIR/missing && gh pr create --body-file BODY"),
+                       ("a cd joined by ||", "cd B_DIR || gh pr create --body-file BODY")):
+        rc, out = run_in(cmd, FITS_B, with_output=True)
+        check(f"guard-claims: an unresolvable cd target is NOT checked, never the session's template ({label})",
+              rc == 0 and "a cd before gh could not be resolved" in out, f"exit {rc}: {out[-120:]}")
     check("guard-claims: an issue comment is not held to the PR template",
           run("gh issue comment 5 --body-file BODY", "Tidy the README.\n", template=TPL) == 0, "exit 2")
     # OUT OF SCOPE, AND THE BODY MUST CARRY A CLAIM. A first draft passed a claim-FREE body here,

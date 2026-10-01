@@ -42,9 +42,22 @@ if [ "${RAILS_FLOW_CLAIMS_OK:-0}" = "1" ]; then
   exit 0
 fi
 
+# WHERE THE COMMAND RUNS (#1509). This hook runs in the SESSION's directory, and the command may not:
+# `cd ~/projects/other && gh pr create --body-file body.md` was judged against the session repo's
+# template and would read a relative body from the session directory. `lib/command_cwd.py` follows the
+# command's own `cd`s; exit 3 means a `cd` it cannot resolve, so the template is NOT checked rather
+# than checked against the wrong repository, and a relative body is not read from the wrong place.
+cwd_lib="$(dirname "$0")/lib/command_cwd.py"
+cmd_cwd="$(printf '%s' "$cmd" | python3 "$cwd_lib" 2>/dev/null)"; cwd_rc=$?
+
 body=""
 if printf '%s' "$cmd" | grep -qE '\-\-body-file\b'; then
   body="$(printf '%s' "$cmd" | sed -nE 's/.*--body-file[[:space:]]+"?([^"[:space:]]+)"?.*/\1/p' | head -1)"
+fi
+if [ -n "$body" ] && [ "${body#/}" = "$body" ]; then
+  # Exit 3 only: the body's directory is unknown, so it is not read from the wrong one. Any other
+  # failure (no python3, a crash) leaves it alone, and the template check below FAILS CLOSED on it.
+  if [ "$cwd_rc" -eq 0 ] && [ -n "$cmd_cwd" ]; then body="$cmd_cwd/$body"; elif [ "$cwd_rc" -eq 3 ]; then body=""; fi
 fi
 # No readable body file (inline --body, a heredoc, a path we cannot resolve): say so and allow.
 # FAILING OPEN HERE IS DELIBERATE -- this guard's job is to make the check happen when it can, not
@@ -62,7 +75,7 @@ fi
 # out; a section that does not apply stays and says N/A. PR bodies only: an issue comment has no template. Dormant with no template.
 if printf '%s' "$cmd" | grep -qE '\bgh[[:space:]]+pr[[:space:]]+(create|edit)\b'; then
   tpl_lib="$(dirname "$0")/lib/pr_template.py"
-  root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+  root="$(git -C "${cmd_cwd:-.}" rev-parse --show-toplevel 2>/dev/null || printf '%s' "${cmd_cwd:-$(pwd)}")"
   # Exit status, not stdout alone: 0 is clean, 1 names the missing sections, and anything else (a
   # crash, a missing helper or python3) is said out loud. Reading only stdout let a crash pass
   # silently through a fail-closed hook (pre-release review of #1398).
@@ -96,11 +109,18 @@ sys.stdout.write("".join(out))
   if printf '%s' "$pr_seg" | grep -qE '(^|[[:space:]])(-R|--repo)' \
      || printf '%s' "$unquoted" | grep -qE '(^|[[:space:];&|])GH_REPO=' || [ -n "${GH_REPO:-}" ]; then
     echo "rails-flow: PR-template sections NOT checked (-R/--repo/GH_REPO targets another repository's template)." >&2
-  elif [ ! -f "$tpl_lib" ] || ! command -v python3 >/dev/null 2>&1; then
+  elif [ ! -f "$tpl_lib" ] || [ ! -f "$cwd_lib" ] || ! command -v python3 >/dev/null 2>&1; then
     # FAIL CLOSED (owner decision on #1435): this is a gate, and a gate whose checker is missing has
     # not checked anything. The audited escape stays.
-    echo "BLOCKED by rails-flow claim guard: the PR-template check cannot run (lib/pr_template.py or python3 unavailable)." >&2
+    echo "BLOCKED by rails-flow claim guard: the PR-template check cannot run (lib/pr_template.py, lib/command_cwd.py or python3 unavailable)." >&2
     echo "Fix the install, or ship deliberately unchecked: RAILS_FLOW_CLAIMS_OK=1 (audited)." >&2
+    exit 2
+  elif [ "$cwd_rc" -eq 3 ]; then
+    # A `cd` this hook cannot follow: the template it would judge against is unknown. Say so (#1509).
+    echo "rails-flow: PR-template sections NOT checked (a cd before gh could not be resolved, so the target repository is unknown)." >&2
+  elif [ "$cwd_rc" -ne 0 ] || [ -z "$cmd_cwd" ]; then
+    echo "BLOCKED by rails-flow claim guard: resolving the command's directory crashed (command_cwd.py exited $cwd_rc), so the body was not judged." >&2
+    echo "Fix it, or ship deliberately unchecked: RAILS_FLOW_CLAIMS_OK=1 (audited)." >&2
     exit 2
   else
     gaps="$(python3 "$tpl_lib" "$root" "$body" 2>/dev/null)"; tpl_rc=$?
