@@ -136,6 +136,8 @@ NOT ENTER RAW CREDENTIALS HERE! This file needs to be safe for git." A file
 holding a literal secret must be gitignored. With destinations (§8)
 `.kamal/secrets` is not read at all: use `.kamal/secrets-common` plus
 `.kamal/secrets.<dest>`.
+These names are defaults: a top-level `secrets_path:` in `config/deploy.yml`
+moves the base path, and the `-common` and `.<dest>` files follow it.
 
 ```bash
 # .kamal/secrets

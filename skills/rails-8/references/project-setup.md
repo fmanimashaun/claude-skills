@@ -163,8 +163,10 @@ Rails.application.credentials.secret_key_base
 Rails.application.credentials.dig(:aws, :access_key_id)
 ```
 
-Production needs the key via `RAILS_MASTER_KEY` (Kamal wires this from
-`.kamal/secrets`). Use ENV directly only for infrastructure-level values
+Production needs the key via `RAILS_MASTER_KEY` (Kamal wires this from the
+secrets file it reads: `.kamal/secrets`, or `.kamal/secrets-common` /
+`.kamal/secrets.<dest>` with `-d` — see deployment-kamal.md §3/§8). Use ENV
+directly only for infrastructure-level values
 (`DATABASE_URL`, concurrency knobs), not application secrets.
 
 ## 5. Databases and `database.yml`
