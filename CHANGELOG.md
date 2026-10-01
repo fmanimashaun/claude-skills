@@ -3625,7 +3625,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     then not read at all.
   - A missing or crashing `command_cwd.py` BLOCKS, as #1435 ruled for `pr_template.py`; `-R`/`GH_REPO` still say NOT
     checked.
-  - `check_hook_gates.py` gains 14 checks. Run against dev's hook, the 11 that exercise the change fail and the 3
+  - `check_hook_gates.py` gains 15 checks. Run against dev's hook, the 12 that exercise the change fail and the 3
     controls (no `cd`; `-R`; a subshell `cd`) pass. `hook_guard_claims` gains 5 mutations, and the new
     `hook_command_cwd` guard carries 8, each caught.
 
