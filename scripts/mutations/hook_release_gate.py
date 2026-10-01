@@ -5,6 +5,9 @@ GUARD = Guard(
     name="hook_release_gate",
     subject="plugins/qa-flow/hooks/scripts/release-gate.sh",
     selftest="plugins/rails-flow/scripts/check_hook_gates.py",
+    # Only the fixture groups that drive this subject (#1497): the whole harness per
+    # mutant was ~70% of the mutation-coverage budget.
+    selftest_args=("--only", "release_gate"),
     # The harness resolves every hook from the selftest's own location, and drives release-gate.sh
     # alongside rails-flow's (#906), so the whole hook tree plus qa-flow's scripts must be staged.
     # DECLARED, not assumed: an undeclared read makes the unmutated baseline die in the tempdir and
