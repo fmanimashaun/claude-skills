@@ -776,6 +776,53 @@ def run() -> int:
     if rc != 0 or out.split()[-2:] != ["false", "0"]:
         FAILURES.append(f"#1510: a gate's git must see maintenance.auto=false and gc.auto=0, got rc={rc} {out!r}")
 
+    # #1459: a gate that times out takes its WHOLE process group with it. The gate starts a grandchild
+    # that would outlive a plain kill, prints a line, then hangs; Doctor.run must come back as a
+    # timeout (124, read as SKIP -- never a pass) carrying that line, and the grandchild must be gone.
+    # CONTROL: a plain subprocess.run with the same timeout leaves it running.
+    import signal as _signal
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        pidfile = Path(td) / "grandchild.pid"
+        gate = ("import subprocess, sys, time\n"
+                "g = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'])\n"
+                f"open({str(pidfile)!r}, 'w').write(str(g.pid))\n"
+                "print('gate-1459 started its grandchild', flush=True)\n"
+                "time.sleep(120)\n")
+
+        def alive(pid: int) -> bool:
+            for _ in range(20):           # a killed process can take a moment to be reaped
+                try:
+                    os.kill(pid, 0)
+                except ProcessLookupError:
+                    return False
+                _time.sleep(0.1)
+            return True
+
+        _tick()
+        started = _time.monotonic()
+        rc, out = md.Doctor().run(sys.executable, "-c", gate, timeout=2)
+        took = _time.monotonic() - started
+        grandchild = int(pidfile.read_text())
+        if rc != 124 or "gate-1459 started its grandchild" not in out or took > 20:
+            FAILURES.append(f"#1459: a timed-out gate must return 124 promptly with what it printed, "
+                            f"got rc={rc} after {took:.0f}s: {out!r}")
+        _tick()
+        if alive(grandchild):
+            os.kill(grandchild, _signal.SIGKILL)
+            FAILURES.append("#1459: a timed-out gate left its grandchild running -- the process group was not killed")
+        _tick()
+        try:
+            subprocess.run([sys.executable, "-c", gate], capture_output=True, timeout=2)
+        except subprocess.TimeoutExpired:
+            pass
+        control = int(pidfile.read_text())
+        if alive(control):
+            os.kill(control, _signal.SIGKILL)
+        else:
+            FAILURES.append("#1459 CONTROL: a plain subprocess.run timeout should leave the grandchild "
+                            "running, or the check above proves nothing")
+
     if FAILURES:
         print(f"SELFTEST FAILED -- {len(FAILURES)} of {CHECKS} checks:", file=sys.stderr)
         for f in FAILURES:

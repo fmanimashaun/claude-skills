@@ -19,8 +19,8 @@ GUARD = Guard(
         # #1510: every gate subprocess runs with git auto-maintenance off.
         Mutation(
             "a gate runs with git's own auto-maintenance",
-            '                env=hermetic_git.env(),\n',
-            '',
+            '                args, cwd=cwd or REPO, text=True, timeout=timeout, env=hermetic_git.env(),',
+            '                args, cwd=cwd or REPO, text=True, timeout=timeout,',
             "#1510: a gate's git must see maintenance.auto=false",
         ),
         # #1097. A gate that was KILLED did not run. Reporting it as FAIL is the one verdict it
@@ -43,7 +43,7 @@ GUARD = Guard(
             # The reason has to name the allowance, or a reader cannot tell whether to raise the
             # budget or fix the gate -- which is the decision the skip exists to hand them.
             "the skip stops naming the allowance that was exceeded",
-            '            return 124, f"{\' \'.join(args)}: timed out after {timeout}s"',
+            '            return 124, f"{\' \'.join(args)}: timed out after {timeout}s{tail}"',
             '            return 124, "timed out"',
             "the timeout skip must name the allowance it exceeded",
         ),

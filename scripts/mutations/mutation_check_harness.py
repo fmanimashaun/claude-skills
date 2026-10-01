@@ -11,8 +11,21 @@ GUARD = Guard(
     name="mutation_check_harness",
     subject="scripts/mutation_check.py",
     selftest="scripts/mutation_check_selftest.py",
-    deps=("scripts/mutation_types.py", "scripts/hermetic_git.py"),
+    deps=("scripts/mutation_types.py", "scripts/hermetic_git.py", "scripts/proc_group.py"),
     mutations=(
+        # #1459: progress per guard as it finishes, and a timeout says what it knows.
+        Mutation(
+            'the per-guard progress line waits for the whole pool again',
+            '            print(f"  [done] {name}: {sum(1 for g, _ in live if g.name == name)} mutation(s), "',
+            '            (lambda *a, **k: None)(f"  [done] {name}: {sum(1 for g, _ in live if g.name == name)} mutation(s), "',
+            "#1459: a guard's progress line prints once",
+        ),
+        Mutation(
+            "a timed-out mutant's report drops its tail",
+            '                f"{MUTATION_FLOOR:.0f}-{MUTATION_CAP:.0f}s){_tail(exc)}"]',
+            '                f"{MUTATION_FLOOR:.0f}-{MUTATION_CAP:.0f}s)"]',
+            '#1459: a timed-out mutant must report guard, mutation, elapsed and its tail',
+        ),
         # #1510: baselines and mutants run with git auto-maintenance off.
         Mutation(
             "a BASELINE runs with git's own auto-maintenance",
@@ -47,8 +60,8 @@ GUARD = Guard(
         ),
         Mutation(
             'a non-UTF-8 byte raises before the report prints',
-            '        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True, errors="replace",\n                                env=hermetic_git.env(),  # no detached git maintenance (#1510)\n                                timeout=timeout)',
-            '        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True,\n                                env=hermetic_git.env(),  # no detached git maintenance (#1510)\n                                timeout=timeout)',
+            '        result = proc_group.run(argv, cwd=workdir, text=True, errors="replace",\n                                env=hermetic_git.env(),  # no detached git maintenance (#1510)\n                                timeout=timeout)',
+            '        result = proc_group.run(argv, cwd=workdir, text=True,\n                                env=hermetic_git.env(),  # no detached git maintenance (#1510)\n                                timeout=timeout)',
             "a non-UTF-8 byte in a mutant's output raised before the report printed",
         ),
         Mutation(
@@ -115,8 +128,8 @@ GUARD = Guard(
         Mutation(
             # review of PR #1491
             "main's pool drops the derived limit (the path CI runs)",
-            '        outcomes = list(pool.map(lambda gm: timed_run(run_mutation, gm[0], gm[1], limits[gm[0].name]), live))',
-            '        outcomes = list(pool.map(lambda gm: timed_run(run_mutation, gm[0], gm[1]), live))',
+            '    futures = {pool.submit(timed_run, run_mutation, g, m, limits[g.name]): i for i, (g, m) in enumerate(live)}',
+            '    futures = {pool.submit(timed_run, run_mutation, g, m): i for i, (g, m) in enumerate(live)}',
             "#1486 CONTROL: main()'s pool with no scaling must time the mutant out",
         ),
         Mutation(
@@ -136,8 +149,8 @@ GUARD = Guard(
         Mutation(
             # #1493, baseline half
             "a non-UTF-8 byte in a BASELINE's output raises before the INERT report prints",
-            '        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True, errors="replace",\n                                env=hermetic_git.env(),  # no detached git maintenance (#1510)\n                                timeout=BASELINE_TIMEOUT)',
-            '        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True,\n                                env=hermetic_git.env(),  # no detached git maintenance (#1510)\n                                timeout=BASELINE_TIMEOUT)',
+            '        result = proc_group.run(argv, cwd=workdir, text=True, errors="replace",\n                                env=hermetic_git.env(),  # no detached git maintenance (#1510)\n                                timeout=BASELINE_TIMEOUT)',
+            '        result = proc_group.run(argv, cwd=workdir, text=True,\n                                env=hermetic_git.env(),  # no detached git maintenance (#1510)\n                                timeout=BASELINE_TIMEOUT)',
             "a non-UTF-8 byte in a BASELINE's output raised before the INERT report printed",
         ),
         Mutation(

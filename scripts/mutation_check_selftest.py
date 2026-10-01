@@ -267,6 +267,71 @@ def run() -> int:
         os.environ.update(inherited)
         mc.REPO = original_repo
 
+    # ---- 1e. a mutant that times out takes its whole process group, and says what it knows (#1459)
+    # The mutated selftest starts a grandchild that would outlive a plain kill, prints a line, then
+    # hangs. run_mutation must report a timeout naming the guard, the mutation and the elapsed time,
+    # with that line as its tail, and leave nothing running.
+    import signal as _signal
+    import time as _time
+    guard, root = _fixture_guard((
+        mc.Mutation("the mutant hangs", "n % 2 == 0", "n % 2 == 0 or __import__('time').sleep(0)", "fixture-odd"),
+    ))
+    pidfile = root / "grandchild.pid"
+    hang = root / "scripts" / "subject_selftest.py"
+    hang.write_text("import subprocess, sys, time\n"
+                    "g = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'])\n"
+                    f"open({str(pidfile)!r}, 'w').write(str(g.pid))\n"
+                    "print('mutant-1459 started its grandchild', flush=True)\n"
+                    "time.sleep(120)\n", encoding="utf-8")
+    mc.REPO = root
+    try:
+        _tick()
+        t0 = _time.monotonic()
+        problems = mc.run_mutation(guard, guard.mutations[0], timeout=2)
+        took = _time.monotonic() - t0
+        report = " | ".join(problems)
+        if not ("fixture: the mutant hangs timed out after" in report and "mutant-1459 started its grandchild" in report
+                and "limit 2s" in report and took < 20):
+            FAILURES.append(f"#1459: a timed-out mutant must report guard, mutation, elapsed and its tail, "
+                            f"promptly; got {problems!r} after {took:.0f}s")
+        _tick()
+        grandchild = int(pidfile.read_text()) if pidfile.exists() else None
+        gone = grandchild is not None
+        for _ in range(20):
+            try:
+                os.kill(grandchild, 0)
+            except (ProcessLookupError, TypeError):
+                break
+            _time.sleep(0.1)
+        else:
+            gone = False
+            os.kill(grandchild, _signal.SIGKILL)
+        if not gone:
+            FAILURES.append("#1459: a timed-out mutant left its grandchild running -- its process group was not killed")
+    finally:
+        mc.REPO = original_repo
+
+    # ...and each guard's line prints the moment its last mutation finishes, once, not after the pool.
+    import contextlib as _contextlib
+    import io as _io
+    from concurrent.futures import ThreadPoolExecutor as _Pool
+    guard, root = _fixture_guard((
+        mc.Mutation("odd numbers reported even", "n % 2 == 0", "True", "fixture-odd"),
+        mc.Mutation("even numbers reported odd", "n % 2 == 0", "False", "fixture-even"),
+    ))
+    mc.REPO = root
+    try:
+        _tick()
+        buf = _io.StringIO()
+        with _contextlib.redirect_stdout(buf), _Pool(max_workers=2) as pool:
+            outcomes = mc.run_live(pool, [(guard, m) for m in guard.mutations], {guard.name: 60.0})
+        lines = [l for l in buf.getvalue().splitlines() if l.strip().startswith("[done] fixture:")]
+        if lines != ["  [done] fixture: 2 mutation(s), 0 problem(s)"] or len(outcomes) != 2:
+            FAILURES.append(f"#1459: a guard's progress line prints once when its last mutation ends, "
+                            f"got {buf.getvalue()!r} / {len(outcomes)} outcome(s)")
+    finally:
+        mc.REPO = original_repo
+
     # ---- 2. a SURVIVOR must be reported ------------------------------------------------
     # This mutation changes the subject in a way neither fixture observes, so the selftest still
     # passes. That is exactly the vacuous-fixture situation, and it must not read as success.

@@ -52,6 +52,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import hermetic_git  # noqa: E402 -- gates start no detached git (#1510)
+import proc_group  # noqa: E402 -- a timed-out gate's whole process group is killed (#1459)
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -645,17 +646,22 @@ class Doctor:
         try:
             # Every gate, and every selftest it runs, starts no detached git maintenance (#1510). The
             # two subprocesses the doctor launches directly (changelog coverage, check-ignore) pass it too.
-            p = subprocess.run(
-                args, cwd=cwd or REPO, capture_output=True, text=True, timeout=timeout,
-                env=hermetic_git.env(),
+            # Its own process group: a timeout kills the gate AND everything it started -- for
+            # `mutation coverage`, its whole pool of selftests -- not just the direct child (#1459).
+            p = proc_group.run(
+                args, cwd=cwd or REPO, text=True, timeout=timeout, env=hermetic_git.env(),
             )
             return p.returncode, (p.stdout + p.stderr).strip()
         except FileNotFoundError:
             return 127, f"{args[0]}: not found"
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as exc:
             # 124 is the conventional shell code for a timeout, and the gate loop reads it as a
             # SKIP rather than a FAIL -- a check that was killed did not run, and did not fail.
-            return 124, f"{' '.join(args)}: timed out after {timeout}s"
+            # What it printed before the kill comes with it: for `mutation coverage`, the guards
+            # that finished (#1459).
+            partial = ((exc.output or "") + (exc.stderr or "")).strip().splitlines()[-12:]
+            tail = "".join(f"\n      {line[:300]}" for line in partial) or " -- it printed nothing before the kill"
+            return 124, f"{' '.join(args)}: timed out after {timeout}s{tail}"
 
     def git(self, *args: str) -> tuple[int, str]:
         return self.run("git", *args)
@@ -851,8 +857,8 @@ class Doctor:
         if not script.is_file():
             self.add(SKIP, "changelog coverage", f"{script.name} is missing")
             return
-        proc = subprocess.run([sys.executable, str(script)], cwd=REPO, capture_output=True, text=True,
-                              timeout=DEFAULT_TIMEOUT, env=hermetic_git.env())  # no detached git (#1510)
+        proc = proc_group.run([sys.executable, str(script)], cwd=REPO, text=True,
+                              timeout=DEFAULT_TIMEOUT, env=hermetic_git.env())  # #1510, #1459
         if proc.returncode == 0:
             self.add(PASS, "every changed component has a CHANGELOG entry")
             return
@@ -1057,9 +1063,9 @@ class Doctor:
         ignored", so a broken invocation cannot be mistaken for a verdict.
         """
         try:
-            p = subprocess.run(
+            p = proc_group.run(
                 ["git", "check-ignore", "--", candidate],
-                cwd=probe, capture_output=True, text=True, timeout=60,
+                cwd=probe, text=True, timeout=60,
                 env=hermetic_git.env({**os.environ, "GIT_CONFIG_GLOBAL": os.devnull,
                                       "GIT_CONFIG_SYSTEM": os.devnull}),
             )
