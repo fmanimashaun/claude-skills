@@ -48,6 +48,7 @@ import tempfile
 import time
 from pathlib import Path
 
+import hermetic_git  # noqa: E402 -- the runner's subprocesses start no detached git (#1510)
 from mutation_types import Guard, Mutation  # noqa: F401 -- re-exported: mutation_check_selftest and doctrine_map use mc.Guard / mc.Mutation
 
 REPO = Path(__file__).resolve().parents[1]
@@ -288,6 +289,7 @@ def run_baseline_timed(guard: Guard) -> tuple[list[str], float]:
         # `errors="replace"` here too (#1493 applied it to mutants only): a non-UTF-8 byte in a
         # BASELINE's output raised before the INERT report could print.
         result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True, errors="replace",
+                                env=hermetic_git.env(),  # no detached git maintenance (#1510)
                                 timeout=BASELINE_TIMEOUT)
         elapsed = time.monotonic() - started
         if result.returncode != 0:
@@ -317,6 +319,7 @@ def run_mutation(guard: Guard, mutation: Mutation, timeout: float = MUTATION_FLO
         argv.extend(guard.selftest_args)
         # `errors="replace"`: a non-UTF-8 byte must not raise before the report can print (#1493).
         result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True, errors="replace",
+                                env=hermetic_git.env(),  # no detached git maintenance (#1510)
                                 timeout=timeout)
         output = result.stdout + result.stderr
         if result.returncode == 0:

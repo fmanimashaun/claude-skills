@@ -50,6 +50,9 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import hermetic_git  # noqa: E402 -- gates start no detached git (#1510)
+
 REPO = Path(__file__).resolve().parents[1]
 
 # The one historical direct-to-main commit, documented in CLAUDE.md. It converged (the same
@@ -640,8 +643,10 @@ class Doctor:
     def run(self, *args: str, cwd: Path | None = None,
             timeout: int = DEFAULT_TIMEOUT) -> tuple[int, str]:
         try:
+            # Every gate, and every selftest it runs, starts no detached git maintenance (#1510).
             p = subprocess.run(
-                args, cwd=cwd or REPO, capture_output=True, text=True, timeout=timeout
+                args, cwd=cwd or REPO, capture_output=True, text=True, timeout=timeout,
+                env=hermetic_git.env(),
             )
             return p.returncode, (p.stdout + p.stderr).strip()
         except FileNotFoundError:

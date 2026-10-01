@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -757,6 +758,23 @@ def run() -> int:
             out.index("the actual problem") > out.index("python3 scripts/x.py"):
         FAILURES.append(
             "the findings print AFTER the remedy -- what is wrong comes before how to re-run it")
+
+    # #1510: every gate subprocess -- and every selftest a gate runs -- starts no detached git
+    # maintenance. Through Doctor.run, the one place gates are launched, not the helper alone.
+    _tick()
+    # Strip an inherited hermetic env first (a mutation guard's runner sets it), so only run() can supply it.
+    inherited = {k: os.environ.pop(k) for k in list(os.environ) if k.startswith("GIT_CONFIG_")}
+    try:
+        rc, out = md.Doctor().run(sys.executable, "-c",
+                              "import os, subprocess\n"
+                              "print(subprocess.run(['git', 'config', '--get', 'maintenance.auto'],\n"
+                              "                     capture_output=True, text=True).stdout.strip(),\n"
+                              "      subprocess.run(['git', 'config', '--get', 'gc.auto'],\n"
+                              "                     capture_output=True, text=True).stdout.strip())")
+    finally:
+        os.environ.update(inherited)
+    if rc != 0 or out.split()[-2:] != ["false", "0"]:
+        FAILURES.append(f"#1510: a gate's git must see maintenance.auto=false and gc.auto=0, got rc={rc} {out!r}")
 
     if FAILURES:
         print(f"SELFTEST FAILED -- {len(FAILURES)} of {CHECKS} checks:", file=sys.stderr)
