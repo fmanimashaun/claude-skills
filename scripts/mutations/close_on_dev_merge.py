@@ -64,15 +64,22 @@ GUARD = Guard(
         Mutation(
             # review of PR #1488
             'a grouped citation (#a, #b) is read as nothing',
-            'CITATION = re.compile(r"\\((#\\d+(?:\\s*,\\s*#\\d+)*)")',
+            'CITATION = re.compile(r"\\((#\\d+(?:\\s*[,/]\\s*#\\d+)*)")',
             'CITATION = re.compile(r"\\((#\\d+)")',
             'shipped_issues reads single, grouped and annotated citations',
         ),
         Mutation(
             # v1.153.0 missed #1404 this way
             'a citation whose annotation holds a markdown link is missed again',
-            'CITATION = re.compile(r"\\((#\\d+(?:\\s*,\\s*#\\d+)*)")',
+            'CITATION = re.compile(r"\\((#\\d+(?:\\s*[,/]\\s*#\\d+)*)")',
             'CITATION = re.compile(r"\\((#\\d+[^()]*)\\)")',
+            'shipped_issues reads single, grouped and annotated citations',
+        ),
+        Mutation(
+            # independent review of PR #1533
+            'a slash pair (#a/#b) loses its second number again',
+            'CITATION = re.compile(r"\\((#\\d+(?:\\s*[,/]\\s*#\\d+)*)")',
+            'CITATION = re.compile(r"\\((#\\d+(?:\\s*,\\s*#\\d+)*)")',
             'shipped_issues reads single, grouped and annotated citations',
         ),
     ),

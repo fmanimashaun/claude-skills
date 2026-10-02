@@ -45,7 +45,7 @@ FIXES = re.compile(r"^\s*(?:[-*]\s+)?Fixes\s+#(\d+)\s*$", re.M | re.I)
 # Only the run of `#n` that OPENS the group is read, so an annotation may hold anything, including a
 # markdown link whose own parentheses ended the old `[^()]*` match early: v1.153.0 cited
 # `(#1404, [maintainer decision](https://…))`, and #1404 never got its shipped note.
-CITATION = re.compile(r"\((#\d+(?:\s*,\s*#\d+)*)")
+CITATION = re.compile(r"\((#\d+(?:\s*[,/]\s*#\d+)*)")
 
 Gh = Callable[..., str]
 
@@ -195,10 +195,10 @@ def selftest() -> int:
     notes = ("- **x** (#1410). See also (in PR #1470) and #99.\n- y (#1444) (#1410)\n"
              "- z (#1461, #1462)\n- w (#1483, the owner's decision)\n"
              "- v (#1404, [maintainer decision](https://github.com/o/r/issues/1404#issuecomment-1))\n"
-             "- u (#1500, #1501, see [the log](https://x.test/a(b)))")
+             "- u (#1500, #1501, see [the log](https://x.test/a(b)))\n- t (#621/#624)")
     got = shipped_issues(notes)
     check("shipped_issues reads single, grouped and annotated citations, not cross-references",
-          got == [1404, 1410, 1444, 1461, 1462, 1483, 1500, 1501], got)
+          got == [621, 624, 1404, 1410, 1444, 1461, 1462, 1483, 1500, 1501], got)
 
     # THE ENTRY POINTS, against a stub that refuses unknown JSON fields the way real gh does.
     merged = {"body": "Fixes #20\nFixes #21\nFixes #30\nRefs #22\nFixes #23", "state": "MERGED",
@@ -236,7 +236,9 @@ def selftest() -> int:
 
     shipped = {1410: {"state": "CLOSED", "labels": [LABEL]}, 1444: {"state": "CLOSED", "labels": []},
                1461: {"state": "CLOSED", "labels": [LABEL]}, 1462: {"state": "CLOSED", "labels": [LABEL]},
-               1483: {"state": "CLOSED", "labels": [LABEL]}}
+               1483: {"state": "CLOSED", "labels": [LABEL]},
+               # Cited by the notes too, never labelled: present so the stub answers instead of warning.
+               **{n: {"state": "CLOSED", "labels": []} for n in (621, 624, 1404, 1500, 1501)}}
     stub = StubGh({}, shipped, fail={1461})
     rc = attempt(mark_shipped, "v9.9.9", notes, dry_run=False, gh=stub)
     touched = sorted({c[2] for c in stub.calls})

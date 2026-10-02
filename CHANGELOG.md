@@ -9,7 +9,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
-- **The release's shipped note reads a citation whose annotation holds a markdown link — `scripts/close_on_dev_merge.py`**. v1.153.0 cited `(#1404, [maintainer decision](https://…))`; the citation pattern `\((#\d+[^()]*)\)` stopped at the link's own `(`, so #1404 kept its `fixed-on-dev` label and got no shipped note (marked by hand). Only the run of `#n` that opens a citation is read now, so an annotation may hold anything. A selftest case with a link annotation fails on the old pattern; the guard gains a mutation restoring it (10/10 caught). Found on v1.153.0's own release run.
+- **The release's shipped note reads a citation whose annotation holds a markdown link — `scripts/close_on_dev_merge.py`**. v1.153.0 cited `(#1404, [maintainer decision](https://…))`; the citation pattern `\((#\d+[^()]*)\)` stopped at the link's own `(`, so #1404 kept its `fixed-on-dev` label and got no shipped note (marked by hand). Only the run of `#n` that opens a citation is read now, comma- or slash-separated (`(#621/#624)`), so an annotation may hold anything. A selftest case with a link annotation fails on the old pattern; the guard gains a mutation restoring it (10/10 caught). Found on v1.153.0's own release run.
 
 ### 2026-10-02 (release v1.153.0)
 
