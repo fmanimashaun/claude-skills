@@ -18,9 +18,13 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   - two live sections for one component, unless all but one are in the script's `ARCHIVED` list, each entry pinned to
     the newest tag that section holds;
   - an `### Unreleased` in an archived section;
-  - an `### Unreleased` in a live section whose newest release isn't the component's current version
-    (`marketplace.json`, or the plugin's `plugin.json`);
+  - an `### Unreleased` in a live plugin section whose newest release isn't the plugin's current version
+    (`marketplace.json`, or the plugin's `plugin.json`). The marketplace-versioned `Repository hygiene` is not
+    compared: `metadata.version` bumps on every promotion, and 39 of the 77 since v1.92.0 wrote no Repository block,
+    so that section lags by design (the independent review of PR #1522 found this);
   - an `ARCHIVED` entry no section matches, which is how a release added to an archived section shows up.
+  - a plugin whose current version cannot be found: a missing `plugin.json` is a named finding, and an unreadable
+    manifest or `plugin.json`, or no `metadata.version`, exits 3 ("could not check"), not with a traceback.
 
   The four history sections are archived in the script, not marked in the file. A block runs to the next `### `, so a
   marker written between sections would join the block above it and change a past extraction: measured, v1.92.1's
@@ -29,7 +33,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   - all 202 past `(release vX.Y.Z)` extractions are byte-identical under both scripts;
   - no existing CHANGELOG line changes; this bullet is the only addition.
 
-  Selftest 58; mutations 20/20, 7 of them new.
+  Selftest 66; mutations 26/26, 13 of them new. Review findings: `docs/evidence/reviews/prs/fix-1520-changelog-duplicate-sections/`.
 
 - **The gate and mutation runners start no detached git maintenance, once for every temp-repo selftest — `scripts/hermetic_git.py`, `scripts/mutation_check.py`, `scripts/maintainer_doctor.py`, `scripts/mutation_check_selftest.py`, `scripts/maintainer_doctor_selftest.py`, `scripts/mutations/hermetic_git.py`, `scripts/mutations/mutation_check_harness.py`, `scripts/mutations/maintainer_doctor.py`, `scripts/mutations/rebuild_generated.py`, `scripts/mutations/audit_assertion_reachability.py`** (#1510). #1493's cause (a fixture `git commit` detaches `git maintenance run --auto`, which races the temp-dir cleanup) was fixed in `release_evidence` alone by PR #1511; 20 other selftests commit in temp repos the same way (measured 2026-10-01). `hermetic_git.env()` appends `maintenance.auto=false` and `gc.auto=0` through `GIT_CONFIG_COUNT`/`KEY_n`/`VALUE_n`, after any pairs the caller set; `mutation_check` passes it to every baseline and mutant and the doctor's `run()` to every gate. Proofs drive the entry points: a fixture guard whose selftest refuses to go on if a traced commit starts maintenance passes through `run_guard` (control: without the env it reads INERT), and a `Doctor.run` subprocess must see both keys. Each proof first strips an inherited `GIT_CONFIG_*`, or a run nested under a mutation guard passes with the call site removed (the first draft of both did). The count is read by git's rules: empty means none, ASCII digits are a count, and a value git rejects (`-1`, `abc`, ` 2 `) leaves the environment untouched rather than half-repairing it (review of PR #1514). The doctor's two direct subprocesses (changelog coverage, `check-ignore`) pass the env too. Guards: `hermetic_git` 4/4, `mutation_check_harness` 19/19, `maintainer_doctor` 24/24.
 

@@ -267,8 +267,10 @@ ARCHIVED: tuple[tuple[str, str | None], ...] = (
     ("## rails-stack (rails-8 + hotwire + fidara-design skills)", "v1.131.1"),
     ("## Repository / marketplace", "v1.85.4"),
 )
-# Sections versioned by the marketplace itself: their headings carry a date, not a component version,
-# so the newest release is compared as a TAG with `v` + metadata.version.
+# Sections versioned by the marketplace itself. Their newest release is NOT compared with anything:
+# metadata.version bumps on every promotion, and most promotions write no Repository block (39 of the
+# 77 since v1.92.0 wrote none), so the section legitimately lags it. The duplicate and archive rules
+# still hold them.
 METADATA_SECTIONS = ("Repository hygiene",)
 COMPONENT_VERSION = re.compile(r"^### (\d+\.\d+\.\d+)\b")
 TAG_IN_HEADING = re.compile(r"\(release (v\d+\.\d+\.\d+)\)")
@@ -293,18 +295,40 @@ def _sections(text: str) -> list[dict]:
     return out
 
 
-def component_versions(root: Path = REPO) -> dict[str, str]:
-    """What each component's newest release heading must name: a component version, or for the
-    marketplace-versioned sections, the tag."""
-    data = json.loads((root / MANIFEST).read_text(encoding="utf-8"))
-    versions = {name: "v" + data["metadata"]["version"] for name in METADATA_SECTIONS}
+class VersionLookupError(Exception):
+    """A manifest or plugin.json that cannot be read, so no component's current version is known."""
+
+
+def _read_json(path: Path) -> dict:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        raise VersionLookupError(f"{path}: {e}") from e
+
+
+def component_versions(root: Path = REPO) -> tuple[dict[str, str], list[str]]:
+    """(each plugin's current version, problems). A plugin's version is in the manifest, or in its
+    own plugin.json; a plugin with neither is a PROBLEM, named, rather than a component silently
+    missing from the map. An unreadable file raises VersionLookupError: a check that cannot read
+    the versions has checked nothing."""
+    data = _read_json(root / MANIFEST)
+    if not isinstance(data.get("metadata"), dict) or not data["metadata"].get("version"):
+        raise VersionLookupError(f"{root / MANIFEST}: no metadata.version")
+    versions: dict[str, str] = {}
+    problems: list[str] = []
     for plugin in data.get("plugins", []):
         own = root / "plugins" / plugin["name"] / ".claude-plugin" / "plugin.json"
-        version = plugin.get("version") or (json.loads(own.read_text(encoding="utf-8")).get("version")
-                                            if own.is_file() else None)
+        version = plugin.get("version")
+        if not version and not own.is_file():
+            problems.append(f"{own.relative_to(root)} is missing and {MANIFEST} gives `{plugin['name']}` no "
+                            f"version, so its current version is unknown")
+            continue
+        version = version or _read_json(own).get("version")
         if version:
             versions[plugin["name"]] = version
-    return versions
+        else:
+            problems.append(f"{own.relative_to(root)} has no `version`, so `{plugin['name']}`'s current version is unknown")
+    return versions, problems
 
 
 def _check_sections(text: str, versions: dict[str, str], archived=ARCHIVED) -> list[str]:
@@ -340,9 +364,10 @@ def _check_sections(text: str, versions: dict[str, str], archived=ARCHIVED) -> l
         for sec in secs:
             if not sec["unreleased"] or sec["newest"] is None:
                 continue        # nothing pending, or a component with no release yet
+            if component in METADATA_SECTIONS:
+                continue        # it may lag metadata.version by design; see METADATA_SECTIONS
             current = versions.get(component)
             m = COMPONENT_VERSION.match(sec["newest"])
-            # A component's heading leads with its version; a marketplace section's with a date, so its tag counts.
             newest = m.group(1) if m else TAG_IN_HEADING.search(sec["newest"]).group(1)
             if current is None:
                 findings.append(
@@ -529,10 +554,13 @@ def _selftest() -> int:
     found = _check_sections(stale, {"rails-stack": "1.69.0"}, arch)
     check("sections: Unreleased under a component nothing versions is a finding",
           len(found) == 1 and "no component named `qa-flow`" in found[0])
+    # A promotion with no Repository block moves metadata.version past this section's newest tag; the
+    # next Repository note must still be accepted (the review of PR #1522: 39 of 77 releases did this).
     repo_sec = "## Repository hygiene\n\n### Unreleased\n\n- r\n\n### 2026-09-28 (release v1.152.0)\n\n- r\n"
-    check("sections: a marketplace-versioned section compares its TAG with the metadata version",
-          _check_sections(repo_sec, {"Repository hygiene": "v1.152.0"}, ()) == []
-          and len(_check_sections(repo_sec, {"Repository hygiene": "v1.153.0"}, ())) == 1)
+    check("sections: a marketplace-versioned section may lag metadata.version, and is not compared",
+          _check_sections(repo_sec, {}, ()) == [])
+    check("sections: ...but two live Repository sections are still a finding",
+          len(_check_sections(repo_sec + "\n" + repo_sec, {}, ())) == 1)
     check("sections: a component with no release yet may hold Unreleased",
           _check_sections("## new-plugin\n\n### Unreleased\n\n- x\n", {}, ()) == [])
 
@@ -603,6 +631,46 @@ def _selftest() -> int:
     check("a prefix tag does not match the longer one",
           n == 1 and "the exact tag" in notes and "merely starts with ours" not in notes)
 
+    # THE VERSION LOOKUP, independent of the real files (#1520 review, S1/S2).
+    import tempfile
+    def lookup(manifest: object, plugin_json: dict | None = None, raw: str | None = None):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / ".claude-plugin").mkdir()
+            (root / MANIFEST).write_text(manifest if isinstance(manifest, str) else json.dumps(manifest))
+            if plugin_json is not None or raw is not None:
+                own = root / "plugins/p/.claude-plugin"
+                own.mkdir(parents=True)
+                (own / "plugin.json").write_text(raw if raw is not None else json.dumps(plugin_json))
+            try:
+                return component_versions(root)
+            except VersionLookupError as e:
+                return e
+    base = {"metadata": {"version": "1.152.0"}, "plugins": [{"name": "p"}, {"name": "s", "version": "1.69.0"}]}
+    got = lookup(base, {"version": "2.3.4"})
+    check("versions: a plugin's own plugin.json is read, and a manifest version is used as given",
+          got == ({"p": "2.3.4", "s": "1.69.0"}, []))
+    got = lookup(base)
+    check("versions: a missing plugin.json is NAMED, not a component silently absent",
+          isinstance(got, tuple) and got[0] == {"s": "1.69.0"} and len(got[1]) == 1
+          and "plugins/p/.claude-plugin/plugin.json is missing" in got[1][0])
+    got = lookup(base, {"name": "p"})
+    check("versions: a plugin.json with no version is named", isinstance(got, tuple) and "has no `version`" in got[1][0])
+    check("versions: an unreadable plugin.json raises, not passes",
+          isinstance(lookup(base, raw="{ not json"), VersionLookupError))
+    check("versions: a manifest with no metadata.version raises",
+          isinstance(lookup({"plugins": []}), VersionLookupError))
+    check("versions: an unreadable manifest raises", isinstance(lookup("{ not json"), VersionLookupError))
+    real_lookup = component_versions
+    def broken(root: Path = REPO):
+        raise VersionLookupError("simulated")
+    g["component_versions"] = broken
+    try:
+        code = main(["--check"])
+    finally:
+        g["component_versions"] = real_lookup
+    check("versions: --check exits 3 (could not check), not a traceback or a pass, when the lookup fails", code == 3)
+
     # Against the REAL repo: a selftest that only ever sees fixtures is the bug maintainer_doctor
     # was written about.
     text = (REPO / CHANGELOG).read_text(encoding="utf-8")
@@ -613,14 +681,14 @@ def _selftest() -> int:
     _, rn = render(text, tag)
     check("the real release has at least one block", rn >= 1)
     check("the committed CHANGELOG has one live section per component, Unreleased only there",
-          _check_sections(text, component_versions()) == [])
+          _check_sections(text, component_versions()[0]) == [])
     stale_head = "## rails-stack (rails-8 + hotwire + fidara-design skills)\n\n"
     real_1518 = text.replace(stale_head, stale_head + "### Unreleased\n\n- a note no release reads\n\n", 1)
     import inspect
     check("--check runs the section rule (a rule main() never calls protects nothing)",
-          "findings += _check_sections(text, component_versions())" in inspect.getsource(main))
+          "findings += problems + _check_sections(text, versions)" in inspect.getsource(main))
     check("the real #1518 shape -- Unreleased under the stale rails-stack section -- is refused",
-          stale_head in text and any("ARCHIVED section" in f for f in _check_sections(real_1518, component_versions())))
+          stale_head in text and any("ARCHIVED section" in f for f in _check_sections(real_1518, component_versions()[0])))
 
     # And the call sites must actually USE this script -- the gate half lives in
     # lint_self_consistency, but assert the wiring here too so a stale call site fails fast.
@@ -660,7 +728,13 @@ def main(argv: list[str] | None = None) -> int:
 
     if a.check:
         findings = _check(text, tag)
-        findings += _check_sections(text, component_versions())
+        try:
+            versions, problems = component_versions()
+        except VersionLookupError as e:
+            print(f"could not check: {e} -- no component's current version is known, so the section rule "
+                  f"did not run (exit 3, not a pass)", file=sys.stderr)
+            return 3
+        findings += problems + _check_sections(text, versions)
         tags_unseen = False
         if a.all_tags:
             tags = existing_tags()
