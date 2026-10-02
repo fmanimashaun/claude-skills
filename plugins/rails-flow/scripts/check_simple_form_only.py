@@ -151,10 +151,11 @@ WRAPPER_SPELLING = {"collection_check_boxes": "as: :check_boxes", "collection_ra
 
 def remedy(rule: str, what: str) -> str:
     """The compliant spelling for a finding, when there is one to name."""
-    method = what.rsplit(".", 1)[-1]
+    builder, _, method = what.rpartition(".")
     if rule == "raw-builder-call" and method in WRAPPER_SPELLING:
-        return (f" -- write `f.input :attr, {WRAPPER_SPELLING[method]}, collection: …` so the wrapper "
-                f"renders its label, error and hint")
+        # The builder variable the template uses (`f`, `form`, …), so the advice is copyable as written.
+        return (f" — write `{builder or 'f'}.input :attr, {WRAPPER_SPELLING[method]}, collection: …` so the "
+                f"wrapper renders its label, error and hint")
     return ""
 
 
@@ -314,6 +315,13 @@ def selftest() -> int:
                    code == 1 and any("f.collection_check_boxes" in m and "f.input :attr, as: :check_boxes" in m for m in msg), text)
         check_that("#1458: f.collection_radio_buttons names `as: :radio_buttons`",
                    any("f.collection_radio_buttons" in m and "f.input :attr, as: :radio_buttons" in m for m in msg), text)
+        (root / "app/views/a/edit.html.erb").write_text(
+            "<%= simple_form_for @a do |form| %>\n<%= form.collection_check_boxes :tag_ids, Tag.all, :id, :name %>\n<% end %>\n")
+        code, msg = check(root)
+        check_that("#1458: the remedy uses the template's own builder variable (`form`, not `f`)",
+                   any("edit.html.erb" in m and "`form.input :attr, as: :check_boxes" in m for m in msg), "\n".join(msg))
+        (root / "app/views/a/edit.html.erb").unlink()
+        code, msg = check(root)
         check_that("#1458 CONTROL: another raw builder call gets no collection remedy",
                    any("f.text_field" in m and "f.input :attr, as:" not in m for m in msg), text)
 
