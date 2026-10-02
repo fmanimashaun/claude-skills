@@ -44,7 +44,7 @@ GUARD = Guard(
         # ---- #1472: what the shell runs from inside a string, a wrapper or a group ------------------
         Mutation(
             "the strings a shell runs are never normalised, so `bash -c 'git add -A'` is invisible again",
-            "    next=\"$(printf '%s' \"$level\" | _inner_strings | _join_strings)\"",
+            "    next=\"$(printf '%s' \"$level\" | _inner_strings \"$(( d > 0 ))\" | _join_strings)\"",
             "    next=\"\"",
             "`\"bash -c 'git add -A'\"` runs the command and is blocked",
         ),
@@ -105,15 +105,27 @@ GUARD = Guard(
         ),
         Mutation(
             "a batch is lexed as one text, so an unbalanced quote in one string hides the next (#1504)",
-            "    np = split(S, P, \"\\n\\002\\n\")",
+            "    if (batch) np = split(S, P, \"\\n\\002\\n\"); else { np = 1; P[1] = S }",
             "    np = 1; P[1] = S",
             "an unbalanced quote in one string does not stop the next being lexed",
         ),
         Mutation(
             "the bash `${var//[set]/}` pre-check is back, so a PR body costs seconds (#1504)",
-            "    next=\"$(printf '%s' \"$level\" | _inner_strings | _join_strings)\"",
-            "    _q=\"'\" _dq='\"' _bs='\\\\'; _p=\"${level//[$_q$_dq$_bs$_bs]/}\"; next=\"$(printf '%s' \"$level\" | _inner_strings | _join_strings)\"",
+            "    next=\"$(printf '%s' \"$level\" | _inner_strings \"$(( d > 0 ))\" | _join_strings)\"",
+            "    _q=\"'\" _dq='\"' _bs='\\\\'; _p=\"${level//[$_q$_dq$_bs$_bs]/}\"; next=\"$(printf '%s' \"$level\" | _inner_strings \"$(( d > 0 ))\" | _join_strings)\"",
             "PR body is judged in under 10 s",
+        ),
+        Mutation(
+            "the raw command is split at a \\002 line too, so a control byte hides what follows (#1519 review)",
+            "    if (batch) np = split(S, P, \"\\n\\002\\n\"); else { np = 1; P[1] = S }",
+            "    np = split(S, P, \"\\n\\002\\n\")",
+            "a raw \\002 line does not split the command",
+        ),
+        Mutation(
+            "a string's own \\002 is kept, so it fakes a boundary in the next depth's batch (#1519 review)",
+            "_join_strings() { awk 'NR > 1 { print \"\\002\" } { gsub(/\\002/, \"\"); gsub(/\\001/, \"\\n\"); print }'; }",
+            "_join_strings() { awk 'NR > 1 { print \"\\002\" } { gsub(/\\001/, \"\\n\"); print }'; }",
+            "a \\002 line inside a string does not split the batch",
         ),
         Mutation(
             "a wrapper such as `command` is not peeled",

@@ -485,7 +485,11 @@ def guard_bash_fixtures() -> None:
     # #1504: a depth's strings are normalised as ONE batch, so each must still be judged on its own.
     for cmd, why in (("bash -c 'cat <<EOF'; bash -c 'git add -A'", "an unclosed heredoc in one string does not swallow the next"),
                      ("bash -c \"echo it's\"; bash -c \"eval 'git add -A'\"", "an unbalanced quote in one string does not stop the next being lexed"),
-                     (" ".join(["echo $(date)"] * 30) + "; bash -c 'git add -A'", "the 31st string of a batch is still seen")):
+                     (" ".join(["echo $(date)"] * 30) + "; bash -c 'git add -A'", "the 31st string of a batch is still seen"),
+                     # #1519 review: a \002 line is a batch boundary only in a batch, never in the raw command...
+                     ("bash -c 'x\n\x02\ny'; bash -c 'git add -A'", "a raw \\002 line does not split the command"),
+                     # ...and a string carrying one cannot fake a boundary inside the next depth's batch.
+                     ("bash -c \"bash -c 'x\n\x02\ny'; bash -c 'git add -A'\"", "a \\002 line inside a string does not split the batch")):
         check(f"guard-bash (#1504): {why}", run(cmd) == 2, "exit 0")
     # #1504: COST. The #1498 pre-check used bash's `${var//[set]/}`, superlinear on bash 3.2: an 8 KB PR body
     # took 32 s in guard-bash on dev. The bound is generous on purpose; it catches the class, not noise.

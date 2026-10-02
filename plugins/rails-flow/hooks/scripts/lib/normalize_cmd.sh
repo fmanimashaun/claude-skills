@@ -129,7 +129,7 @@ _peel() {
 
 # Step 5. One string per line, its own newlines carried as \001 so a multi-line string survives.
 _inner_strings() {
-  awk "$_NC_AWK_LIB"'
+  awk -v batch="${1:-0}" "$_NC_AWK_LIB"'
   function emit(v) { if (SKIP) return; gsub(/\n/, "\001", v); print v }
   function bt_end(s, i,    n, c) {
     n = length(s)
@@ -288,7 +288,9 @@ _inner_strings() {
     # is superlinear on bash 3.2 and made an 8 KB PR body cost 32 s in guard-bash (#1504).
     p = S; gsub(/[\047"\\]/, "", p)
     if (p !~ /\$\(|`|<\(|eval|sh/) exit
-    np = split(S, P, "\n\002\n")
+    # Only a BATCH (depth > 0) is split: a raw command holding a \002 line must not be cut mid-string
+    # (#1519 review). _join_strings removes \002 from every string, so content never fakes a boundary.
+    if (batch) np = split(S, P, "\n\002\n"); else { np = 1; P[1] = S }
     for (pi = 1; pi <= np; pi++) lex(P[pi])
   }
   '
@@ -296,7 +298,7 @@ _inner_strings() {
 
 # One string per line from _inner_strings ( \001 = its own newlines) -> the strings, joined by a line
 # holding only \002, which _strip_heredocs and the lexer both treat as a hard reset.
-_join_strings() { awk 'NR > 1 { print "\002" } { gsub(/\001/, "\n"); print }'; }
+_join_strings() { awk 'NR > 1 { print "\002" } { gsub(/\002/, ""); gsub(/\001/, "\n"); print }'; }
 
 _normalize_one() {
   _unquote_delims | _strip_quotes | _strip_comments | _strip_heredocs \
@@ -314,7 +316,7 @@ normalize_segments() {
   printf '%s' "$raw" | _normalize_one
   level="$raw"
   while [ "$d" -lt 3 ]; do
-    next="$(printf '%s' "$level" | _inner_strings | _join_strings)"
+    next="$(printf '%s' "$level" | _inner_strings "$(( d > 0 ))" | _join_strings)"
     [ -n "$next" ] || return 0
     printf '%s\n' "$next" | _normalize_one
     level="$next"; d=$((d + 1))

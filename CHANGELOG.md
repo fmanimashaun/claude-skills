@@ -3597,7 +3597,11 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     - `git status`: 0.09 s, now 0.07 s.
   - 3 must-block fixtures pin the batch-only risks: an unclosed heredoc or an unbalanced quote in one string
     must not hide the next, and neither may a long batch. A cost check refuses an 8 KB PR body that takes
-    10 s or more. `hook_normalize_cmd` catches 21 of 21 mutations (3 new, 3 re-pointed) in 203 s.
+    10 s or more.
+  - A `\002` line splits only a batch, never the raw command, and `_join_strings` strips `\002` from every string,
+    so a control byte cannot fake a boundary (#1519 review). There are 2 must-block fixtures for it.
+  - `hook_normalize_cmd` catches 23 of 23 mutations: 5 new and 5 re-pointed. The run time depends on the machine
+    and its load, so no figure is given here.
 
 - **The hook normaliser sees what a shell runs from inside a string, a wrapper or a group —
   `plugins/rails-flow/hooks/scripts/lib/normalize_cmd.sh`, `plugins/qa-flow/hooks/scripts/lib/normalize_cmd.sh`,
