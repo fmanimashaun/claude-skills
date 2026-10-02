@@ -3588,11 +3588,14 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
-- **guard-bash fails closed when its normaliser cannot read the command — `plugins/rails-flow/hooks/scripts/guard-bash.sh`, `plugins/rails-flow/hooks/scripts/lib/normalize_cmd.sh`** (#1526, from PR #1519's review). Three inputs made the normalised text empty, so every rule passed and `git add -A` was allowed, against CLAUDE.md's "blocked either way":
-  - **no `awk` on PATH**: the normaliser printed nothing. The hook now checks for `awk sed tr grep`, and an empty result for a non-empty command falls back to the raw text;
-  - **a heredoc left open inside `$( )`**: bash ends it at the line closing the `$( )` and runs what follows; the normaliser kept it open to the end. It now ends there too, which can only show the rules more text;
-  - **an invalid UTF-8 byte**: the JSON parse failed and the raw payload's quotes hid the command. It is decoded with `surrogateescape`, and the normaliser runs under `LC_ALL=C` (macOS awk aborts on an invalid byte in a UTF-8 locale).
-  Each is a fixture through the real hook with a control; all four blocking fixtures fail on dev. Mutations: `hook_guard_bash` +2, `hook_normalize_cmd` +1, 35/35 caught.
+- **guard-bash fails closed when its normaliser cannot read the command — `plugins/rails-flow/hooks/scripts/guard-bash.sh`, `plugins/rails-flow/hooks/scripts/lib/normalize_cmd.sh`** (#1526, from PR #1519's review). Inputs that left the hook unable to read the command let every rule pass, so `git add -A` was allowed, against CLAUDE.md's "blocked either way":
+  - **no `awk`, `sed`, `tr` or `grep` on PATH**: the normaliser printed nothing. Each tool is now checked with its own `command -v`, because `command -v awk sed tr grep` succeeds when ANY of them is found;
+  - **no `python3`, or a payload that would not parse** (including a lone surrogate): the hook had only the raw JSON;
+  - **a heredoc left open inside `$( )` or backticks**: bash ends it where the substitution closes and runs what follows, while the normaliser kept it open to the end. It now ends there too, which can only show the rules more text;
+  - **an invalid UTF-8 byte**: decoded with `surrogateescape`, and the normaliser runs under `LC_ALL=C` (macOS awk aborts on an invalid byte in a UTF-8 locale).
+  When the command cannot be normalised (a missing tool, a failed parse, the normaliser exiting non-zero), the hook goes into **degraded mode** and matches every rule UNANCHORED against the raw text, using bash's `=~` when there is no grep. Falling back to the raw text was not enough on its own: every rule is anchored `^git`, so neither the JSON payload nor `cd x && git add -A` ever matched (PR #1529 review). A comment-only command still normalises to nothing and passes (#906). Its exit status, not an empty result, decides.
+  - **Known limit:** in degraded mode a quoted mention such as `echo "never git add -A"` is refused. That is the right side to err on when the command could not be read, and it never happens on a machine with the normal tools.
+  - **Tests:** each input is a fixture through the real hook with a control; all ten blocking fixtures fail on dev. Mutations: `hook_guard_bash` 20/20 and `hook_normalize_cmd` 20/20 caught.
 
 ### 1.56.0 (release v1.153.0) — 2026-10-02
 
@@ -11390,7 +11393,7 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ### Unreleased
 
-- **`plugins/qa-flow/hooks/scripts/lib/normalize_cmd.sh` ends a heredoc opened inside `$( )` where bash does** (#1526). The shared normaliser, kept byte-identical to rails-flow's (`hook-lib-drift`); see the rails-flow entry.
+- **`plugins/qa-flow/hooks/scripts/lib/normalize_cmd.sh` ends a heredoc opened inside `$( )` or backticks where bash does** (#1526). The shared normaliser, kept byte-identical to rails-flow's (`hook-lib-drift`); see the rails-flow entry.
 
 ### 1.35.0 (release v1.153.0) — 2026-10-02
 

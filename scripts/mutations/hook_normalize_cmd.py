@@ -139,5 +139,12 @@ GUARD = Guard(
             '      if (0) { inh=0; print; next }',
             'a heredoc left open inside $( ) does not hide',
         ),
+        Mutation(
+            # #1529 review
+            'a heredoc left open inside backticks swallows the rest of the text',
+            '      if (inbt && index($0, "`")) { inh=0; print; next }',
+            '',
+            'BACKTICK',
+        ),
     ),
 )

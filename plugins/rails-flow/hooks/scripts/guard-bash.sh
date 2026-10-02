@@ -10,7 +10,7 @@ input="$(cat)"
 parsed=1
 cmd="$(printf '%s' "$input" | python3 -c 'import json,sys
 d=json.loads(sys.stdin.buffer.read().decode("utf-8","surrogateescape"))
-sys.stdout.buffer.write(str(d.get("tool_input",{}).get("command","")).encode("utf-8","surrogateescape"))' 2>/dev/null)" || { parsed=0; cmd="$input"; }
+sys.stdout.buffer.write(str(d.get("tool_input",{}).get("command","")).encode("utf-8","replace"))' 2>/dev/null)" || { parsed=0; cmd="$input"; }
 
 deny() { echo "BLOCKED by rails-flow guardrails: $1" >&2; exit 2; }
 
@@ -23,16 +23,35 @@ deny() { echo "BLOCKED by rails-flow guardrails: $1" >&2; exit 2; }
 _lib="$(dirname "${BASH_SOURCE[0]}")/lib/normalize_cmd.sh"
 #
 # #1526: the lib needs awk, sed, tr and grep. Without awk it printed NOTHING, so every rule passed. A
-# missing tool, an unparsed payload, or an empty result for a non-empty command all fall back to the
-# raw text. `LC_ALL=C`: macOS awk under a UTF-8 locale aborts on an invalid byte and loses the text.
-if [ "$parsed" = 1 ] && [ -f "$_lib" ] && command -v awk sed tr grep >/dev/null 2>&1 \
+# missing tool, an unparsed payload, or a normaliser that exited non-zero puts the hook in
+# DEGRADED mode. One `command -v` per tool: `command -v awk sed` succeeds when ANY of them is found.
+# `LC_ALL=C`: macOS awk under a UTF-8 locale aborts on an invalid byte and loses the text.
+degraded=0
+if [ "$parsed" = 1 ] && [ -f "$_lib" ] && command -v awk >/dev/null 2>&1 \
+   && command -v sed >/dev/null 2>&1 && command -v tr >/dev/null 2>&1 && command -v grep >/dev/null 2>&1 \
    && . "$_lib" 2>/dev/null && type normalize_segments >/dev/null 2>&1; then
-  seg="$(printf '%s' "$cmd" | LC_ALL=C normalize_segments)"
-  case "$cmd" in *[![:space:]]*) [ -n "$seg" ] || seg="$cmd" ;; esac
+  # The normaliser's EXIT STATUS decides, not an empty result: a comment-only command normalises to
+  # nothing legitimately and is a mention (#906), while an awk that aborted fails the pipeline.
+  seg="$(set -o pipefail; printf '%s' "$cmd" | LC_ALL=C normalize_segments)" || { seg="$cmd"; degraded=1; }
 else
-  seg="$cmd"
+  seg="$cmd"; degraded=1
 fi
-hit() { printf '%s\n' "$seg" | grep -qE "$1"; }
+# DEGRADED MEANS UNANCHORED (#1529 review). Every rule is anchored `^git`, and the raw text is the
+# JSON payload or a compound command (`cd x && git add -A`), so an anchored rule never matched it and
+# "fall back to the raw text" passed everything. In degraded mode a rule matches ANYWHERE: that refuses
+# a quoted mention too, which is the right side to err on when the command could not be read. With no
+# grep at all, bash's own `=~` matches (`\b` dropped, which only widens the match).
+have_grep=0; command -v grep >/dev/null 2>&1 && have_grep=1
+hit() {
+  local re="$1"
+  [ "$degraded" = 1 ] && re="${re#^}"
+  if [ "$have_grep" = 1 ]; then
+    printf '%s\n' "$seg" | grep -qE "$re"
+  else
+    re="${re//\\b/}"
+    [[ $seg =~ $re ]]
+  fi
+}
 
 # A rails/rake task segment that names db:reset (not the word inside a quoted string or a grep).
 if hit '^(bin/)?(rails|rake)([[:space:]]+[^[:space:]]+)*[[:space:]]+db:reset\b'; then

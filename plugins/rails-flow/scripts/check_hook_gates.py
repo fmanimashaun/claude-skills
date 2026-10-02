@@ -628,6 +628,50 @@ def guard_bash_fixtures() -> None:
           raw(b'{"tool_input":{"command":"git add -A \xff"}}', lang="en_US.UTF-8") == 2, "exit 0")
     check("guard-bash (#1526): CONTROL: an invalid UTF-8 byte after `git status` passes",
           raw(b'{"tool_input":{"command":"git status \xff"}}', lang="en_US.UTF-8") == 0, "exit 2")
+    check("guard-bash (#1529 review): CONTROL: an invalid byte beside a QUOTED mention still parses and passes",
+          raw(b'{"tool_input":{"command":"echo \\"never git add -A\\" \xff"}}', lang="en_US.UTF-8") == 0,
+          "exit 2: the payload was not decoded, so the hook fell to degraded mode")
+
+    # #1529 review: the fallback was the RAW text, and every rule is anchored `^git` -- so a compound
+    # command, a missing python3 (the raw JSON) or a lone surrogate still passed. Degraded mode now
+    # matches unanchored; with no grep, bash's `=~` matches.
+    def bindir(tools: tuple[str, ...], python: bool) -> str:
+        bd = tempfile.mkdtemp()
+        for tool in tools:
+            real = next((f"{d}/{tool}" for d in ("/usr/bin", "/bin") if os.path.exists(f"{d}/{tool}")), None)
+            if real:
+                os.symlink(real, Path(bd) / tool)
+        if python:
+            os.symlink(sys.executable, Path(bd) / "python3")
+        return bd
+    base = ("bash", "git", "dirname", "cat", "env", "head")
+    no_awk = bindir(base + ("grep",), python=True)
+    no_python = bindir(base + ("grep", "sed", "tr", "awk"), python=False)
+    no_grep = bindir(base + ("sed", "tr", "awk"), python=True)
+    try:
+        check("guard-bash (#1529 review): with no awk, a COMPOUND `cd x && git add -A` is blocked",
+              raw(payload("cd x && git add -A"), no_awk) == 2, "exit 0: the anchored rules missed the raw text")
+        check("guard-bash (#1529 review): CONTROL: with no awk, `cd x && git status` passes",
+              raw(payload("cd x && git status"), no_awk) == 0, "exit 2")
+        check("guard-bash (#1529 review): with no python3, `git add -A` is blocked (the raw JSON is matched)",
+              raw(payload("git add -A"), no_python) == 2, "exit 0")
+        check("guard-bash (#1529 review): CONTROL: with no python3, `git status` passes",
+              raw(payload("git status"), no_python) == 0, "exit 2")
+        check("guard-bash (#1529 review): with no grep, `git add -A` is blocked",
+              raw(payload("git add -A"), no_grep) == 2, "exit 0: hit() failed on every rule")
+        check("guard-bash (#1529 review): with no grep, a force-push to dev is blocked",
+              raw(payload("git push --force origin dev"), no_grep) == 2, "exit 0")
+        check("guard-bash (#1529 review): CONTROL: with no grep, `git status` passes",
+              raw(payload("git status"), no_grep) == 0, "exit 2")
+    finally:
+        for bd in (no_awk, no_python, no_grep):
+            shutil.rmtree(bd, ignore_errors=True)
+    check("guard-bash (#1529 review): a lone surrogate does not hide `git add -A`",
+          raw(b'{"tool_input":{"command":"git add -A \\ud800"}}') == 2, "exit 0")
+    check("guard-bash (#1529 review): a heredoc left open inside BACKTICKS does not hide what follows",
+          run("x=`cat <<EOF\nfoo\n`\ngit add -A") == 2, "exit 0")
+    check("guard-bash (#1529 review): CONTROL: the backtick shape followed by `git status` passes",
+          run("x=`cat <<EOF\nfoo\n`\ngit status") == 0, "exit 2")
 
 
 # ---- guard-claims.sh (#1106) --------------------------------------------------------------------
