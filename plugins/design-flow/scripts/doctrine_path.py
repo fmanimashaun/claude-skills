@@ -143,6 +143,12 @@ def candidates(script: Path) -> list[Path]:
     them: they diverge only by the `<bundle>/<version>/` segments the cache adds.
     """
     base = Path(script).resolve().parent.parent.parent.parent
+    # ONLY IN A PLUGIN CACHE (#1475). Anywhere else `base` is whatever sits four levels up: for a copy
+    # staged under the system temp directory that is the temp root's parent, and the glob walked
+    # every other process's tempdir. Measured: 194k entries, 21 s, and `find()` returned ANOTHER
+    # process's `skills/design-system`. The clone needs no glob; its root is `base / SKILL_REL`.
+    if base.parent.name != "cache":
+        return [base / SKILL_REL]
     mine = project_install(base, _project())
     if mine is not None:
         return [base / SKILL_REL, mine / SKILL_REL]
@@ -179,6 +185,18 @@ def selftest() -> int:
         checks += 1
         if not cond:
             failures.append(label)
+
+    # #1475: A COPY STAGED OUTSIDE ANY CACHE, the way mutation_check stages a guard under the system
+    # temp directory. Four levels up is the temp root's parent, and a sibling tempdir holding a skill
+    # must NOT be found: the glob walked 194k entries and returned another process's copy.
+    with tempfile.TemporaryDirectory() as td:
+        staged = Path(td) / "root" / "T" / "mutcheck-x" / "scripts"
+        staged.mkdir(parents=True)
+        (Path(td) / "root" / "T" / "stranger" / SKILL_REL).mkdir(parents=True)
+        check("a copy staged outside a plugin cache does not find a sibling tempdir's skill",
+              find(staged / "x.py") is None)
+        check("...and tries only its own clone root",
+              candidates(staged / "x.py") == [(Path(td) / "root" / SKILL_REL).resolve()])
 
     # THE INSTALLED LAYOUT — the one no fixture exercised until #617, which is why a bug that broke
     # every user could sit behind a green suite. Built as a real tree, because the defect was in how
