@@ -84,6 +84,40 @@ we cannot reproduce is not one a ratchet can hold). What we can do is make the c
 check in `project_gates` holds the committed settings to it. **It adds nothing to any session** — it
 runs on demand and in CI — so the check that guards the budget does not spend it.
 
+## The live window: a mod that shows the fill and nudges once (#1547)
+
+Everything above bounds what we *inject*. Nothing watched how full the window actually was, so a long
+session kept paying for context it no longer needed. `hooks/context-nudge.js` does two things, and only
+these:
+
+1. **Shows the fill.** After each turn, `session.measure` hands the mod `context.percent`; it pins
+   `context NN%` under the prompt with `$.ui.status`, which is one line per plugin and does not touch the
+   user's own `statusLine` setting.
+2. **Nudges once per climb.** When the person submits a prompt and the fill is at or past the threshold, it
+   adds ONE context line only Claude reads (about 230 characters, asserted at most 400): finish the step,
+   offer `/rails-flow:handoff`, tell the user to `/clear` or `/compact`. It adds nothing again until the fill
+   has fallen below the threshold or lost its reading (a `/clear` or a compaction). It never rides on a
+   peer session's message or a plugin's own prompt.
+
+**What is verified, and where.** `claude plugin validate` accepts the module. The documented facts it rests
+on were put to `doctrine-verifier` on #1547: `modules` takes one path (mods reference), a prompt hook can add
+context "only Claude reads" (`prompt.submit`, mods events), mods need Claude Code 2.1.287 or later (mods
+overview). `percent` is `tokens` over `window` as a whole percentage, "the status line's `used_percentage`",
+where `tokens` is uncached, cache-written and cache-read input together, and it is absent until the first
+response of a window and after a compaction. That sentence comes from the engine's own types for 2.1.287, not
+the website docs, which leave `percent` undefined.
+
+**What is not.**
+- **The threshold is a starting value.** Default 70, whole percent, overridden by
+  `RAILS_FLOW_CONTEXT_NUDGE_PCT` (1 to 99). Nothing has been measured about where a handoff stops being
+  cheap; do not read 70 as a finding.
+- **CI does not run the mod's tests.** `claude plugin test plugins/rails-flow` needs the `claude` CLI, which
+  the gate runners do not have (`check_hook_commands.py` says so for the same reason). The tests pass locally,
+  and each of eight mutations of the module fails one of them; the ninth, dropping the explicit
+  `percent === null` check, survives because `null < 70` is already true in JavaScript, so it changes nothing.
+- **One module per `hooks.json`.** `hooks.json` names `register.js`, which registers every mod rails-flow
+  ships. Add a mod there with one import and one call. A second path in `modules` is not accepted.
+
 ## What this does not cover
 
 Whether the content is *worth* its bytes is a review question, not a gate. The check answers only
