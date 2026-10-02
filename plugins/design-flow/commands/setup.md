@@ -62,8 +62,8 @@ python3 "$CANDIDATES" --snap "#RRGGBB" --out brands/<pack> # client HAS a brand 
 ```
 
 - **No usable palette** — walk the decision path in
-  `skills/design-system/references/brand.md` (in rails-stack) (*Starting a pack when the
-  client has no palette*). It is an ordered path: logo colour → does the product recede → hue
+  `skills/design-system/references/brand.md`, section *Starting a pack when the
+  client has no palette*, in rails-stack. It is an ordered path: logo colour → does the product recede → hue
   family → formality. Ask for the client's sector and their logo colour; do not paste the whole
   catalogue and ask them to browse. Every candidate is already measured against WCAG 1.4.3 in
   both modes.
