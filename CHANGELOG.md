@@ -7,6 +7,10 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **A shipped plugin's or skill's link may not leave what ships with it — `scripts/lint_self_consistency.py`** (#1480). New rule `link-leaves-package`: each plugin and each skill installs alone, so a relative link that climbs out of `plugins/<name>/` or `skills/<name>/` names a path an install does not have, even when it resolves in this clone. `broken-relative-link` covers only `docs/**`, which is why these were not reported mechanically. On dev it found 6; all are fixed in this change. Selftest scenarios both ways; the guard gains a mutation.
+
 ### 2026-10-02 (release v1.153.0)
 
 - **A primitive marker never excuses a form, excuses one instance, and is reported when unused — `scripts/check_shipped_erb_forms.py`, `scripts/mutations/check_shipped_erb_forms.py`** (#1460).
@@ -3585,6 +3589,10 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   questions → Discussions) + `.github/labels.yml` taxonomy.
 
 ## rails-flow (agentic flow plugin)
+
+### Unreleased
+
+- **`/rails-flow:brief` links the harness doctrine where a user can read it — `plugins/rails-flow/commands/brief.md`** (#1480, found by its new rule). It linked `docs/doctrine/harness-doctrine.md` relatively, a maintainer document no install carries; it is now the GitHub URL.
 
 ### 1.56.0 (release v1.153.0) — 2026-10-02
 
@@ -13645,6 +13653,10 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **`setup`, `critique` and `design-critic` name the design-system references in prose instead of linking out of the plugin — `plugins/design-flow/commands/setup.md`, `plugins/design-flow/commands/critique.md`, `plugins/design-flow/agents/design-critic.md`** (#1480). Two `../../skills/...` links were broken even in the clone; two `../../../skills/...` links resolved only here, never in an install.
+
 ### 1.45.0 (release v1.153.0) — 2026-10-02
 
 - **The tier doctrine states the blocked-alias substitution's provider scope — `plugins/design-flow/reference/model-tiers.md`** (#1433). Scoped to the source (https://code.claude.com/docs/en/sub-agents and https://code.claude.com/docs/en/model-config, fetched 2026-09-30): the newest-permitted-version substitution applies on the Anthropic API and Claude Platform on AWS when the allowlist permits a version of the family; otherwise the subagent runs on the inherited model. Boundary v2.1.222. The policy is unchanged.
@@ -16607,6 +16619,10 @@ boot/validation path — with a bullet each so the promotion could close them se
   (token/logo/icon/brand-pack enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
+
+### Unreleased
+
+- **The design-system skill names hotwire's production reference in prose — `skills/design-system/references/interaction-stimulus.md`, `dist/design-system.skill`** (#1480, found by its new rule). Each skill ships as its own `.skill`, so the `../../hotwire/...` link broke once uploaded. A link change only; no doctrine claim changes.
 
 ### 1.70.0 (release v1.153.0) — 2026-10-02
 
