@@ -3,38 +3,36 @@
 
 Usage: command_cwd.py [START]. stdin is the raw Bash tool command. START is the directory the command
 starts in: the hook payload's `cwd`, or this process's cwd when it is absent. stdout is an absolute
-directory. Exit 0 when it is known; exit 3 when a `cd` before the `gh` cannot be resolved here, so the
-caller says "NOT checked" instead of judging against the wrong repository.
+directory. Exit 0 when it is known; exit 3 when it cannot be told, so the caller says "NOT checked"
+instead of judging against the wrong repository (the maintainer's decision on #1509: allow, loudly).
 
 WHY. A hook runs in the SESSION's directory, not the command's. `cd ~/projects/other && gh pr create
 --body-file body.md` was checked against the session repository's PR template, and a relative body
-path would be read from the session directory too. The command's own `cd`s decide where `gh` runs,
-so they are followed up to the first real `gh pr create|edit` / `gh issue comment` COMMAND: a word in
-command position, never a phrase inside a quoted string (`echo 'gh pr create'`).
+path would be read from the session directory too.
 
-The command is read as the shell reads it, in one left-to-right pass first: a `#` starts a comment
-only at the start of a word and outside quotes (`issue#12` is one word), a `<<END` opens a heredoc only
-outside quotes, and an fd number counts only when it touches its `<`/`>` (`cd 5 >x` goes to `5`).
+AN ALLOWLIST, NOT A SHELL (#1516, round 3). Three review rounds each found new shell shapes that a
+partial interpreter followed wrongly (an `if` body, `false && cd`, `eval`, `env -C`, an arithmetic `<<`).
+So exactly one grammar is followed, and anything else is "cannot tell":
 
-Followed:
-- a `cd` joined by `&&`, `;` or a newline;
-- inside `{ …; }`, `if`, `while` or `until` (the same shell);
-- behind `builtin` or `command`, or with redirections (`cd x 2>/dev/null`);
-- inside a `case` branch, for a `gh` in that same branch;
-- to a `gh` behind `env`, `command -p`, `exec`, `nohup`, `nice`, `timeout` or `time`, or named by path.
+    [cd-segment SEP]... gh-segment           SEP is `&&`, `;` or a newline
+    cd-segment = cd [-P|-L] PATH [REDIR]...  PATH is one plain or quoted word; REDIR is `>`, `>>` or `>&`
+                                             (an fd number touching it, `2>`, included) and its target
+    gh-segment = [VAR=x]... [WRAPPER]... gh (pr create | pr edit | issue comment) ...
 
-A `cd` inside `( … )` does not outlive the subshell.
+WRAPPER is `env` (assignments only, no option), `command [-p]`, `exec`, `nohup`, `nice [-n N]`,
+`timeout [OPTS] DURATION` or `time [-p]`; `gh` may be named by its path. Comments are dropped first:
+a `#` that starts a word outside quotes, to the end of its line.
 
-Unresolvable, so exit 3, never a guess:
-- `cd -`; a target with `$` or a backquote; `~user`; a directory that does not exist;
-- `pushd`/`popd`; a negated command (`! cd x`);
-- a `cd` joined by `|`, `||` or `&` (it may not have run);
-- a `gh` after a `case` whose branch moved the directory (which branch ran is unknown);
-- a function definition before the `gh` (whether its body ran is unknown);
-- a `cd` behind a wrapper that runs it as a program (`env cd x`), or `env -C`;
-- no `gh pr create|edit` / `gh issue comment` COMMAND found (`sudo gh`, `bash -c "…"`) while the text has
-  a `cd` anywhere: the directory it runs in is unknown, so it is never the starting one by default;
-- a command the lexer cannot read.
+When nothing before the gh segment can change the directory (no `cd`, `pushd`, `popd` or `eval` word
+anywhere in it, and no `source`/`.` in command position), the gh segment may follow any command
+(`git push && gh …`), and the answer is START, as it was before #1509.
+
+Everything else is exit 3: a cd target with `$`, a backquote or `~user`, `-`, a missing directory, a
+relative path while CDPATH is set; a bare `cd` or one with two arguments; `if`/`while`/`until`/`for`/
+`case`, subshells, brace groups, functions, `eval`, `source`, `pushd`/`popd`, `!`, `||`, `|`, `&`, any
+other command before gh once a directory change is in sight; a redirect on a cd other than `>`, `>>`,
+`>&`; a gh not found as a command word of the grammar (`sudo gh`, `bash -c "…"`, `env -C dir gh`, any
+`env` option); and an unbalanced quote before the gh.
 """
 from __future__ import annotations
 
@@ -44,18 +42,13 @@ import shlex
 import sys
 
 ASSIGN = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*=")
-APPLIES = {"&&", ";", ";;", ";&", ";;&"}  # a cd followed by these has run before the next command
-# One operator at a time out of a punctuation run. Anything with < or > is a redirection.
 OPS = re.compile(r"&&|\|\||;;&|;;|;&|<<<|&>>|&>|>>|>&|<&|<<|<>|>\||[;&|()<>]")
-KEYWORDS = {"{", "}", "!", "if", "then", "elif", "else", "fi", "do", "done", "while", "until", "time"}
-WRAPPERS = {"builtin", "command"}
-# Run their operand as a PROGRAM, in this directory: the gh behind them runs here, a cd behind them is not
-# the builtin. Each maps an option to the number of words it takes (its own included).
-EXTERNAL = {"env": {"-i": 1, "-": 1, "--ignore-environment": 1, "-0": 1, "-v": 1, "-u": 2, "--unset": 2},
-            "exec": {"-c": 1, "-l": 1, "-a": 2}, "nohup": {}, "nice": {"-n": 2},
-            "timeout": {"-s": 2, "--signal": 2, "-k": 2, "--kill-after": 2, "-v": 1, "--verbose": 1,
-                        "--foreground": 1, "--preserve-status": 1}}
-CD_ANYWHERE = re.compile(r"(^|[\s;&|(\"'`])(cd|pushd|popd)(\s|$|[;&|)\"'`])")
+SEPS = {"&&", ";"}
+CD_REDIRECTS = {">", ">>", ">&"}
+# cd/pushd/popd/eval as a word anywhere: a token, or inside a quoted string (`eval "cd x"`).
+DIR_WORD = re.compile(r"(^|[\s;&|(){}\"'`])(cd|pushd|popd|eval)($|[\s;&|(){}\"'`])")
+# `source x` / `. x` read a file that may cd; as an argument (`git add .`) they are only words.
+KEYWORDS = {"if", "then", "elif", "else", "do", "while", "until", "!", "{", "time"}
 META = set(" \t\n;&|()<>")
 
 
@@ -63,40 +56,13 @@ class Unresolved(Exception):
     pass
 
 
-class Found(Exception):
-    def __init__(self, here: str):
-        self.here = here
-
-
-def _delimiter(s: str, i: int) -> tuple[str, int]:
-    """A heredoc delimiter word at s[i:], its quotes removed (`'EOF'`, `"EOF"`, `\\EOF`), and its end."""
-    out = []
-    while i < len(s) and s[i] not in META:
-        if s[i] in "'\"":
-            j = s.find(s[i], i + 1)
-            j = len(s) if j < 0 else j
-            out.append(s[i + 1:j])
-            i = j + 1
-        elif s[i] == "\\" and i + 1 < len(s):
-            out.append(s[i + 1])
-            i += 2
-        else:
-            out.append(s[i])
-            i += 1
-    return "".join(out), i
-
-
 def prepare(cmd: str) -> str:
-    """One left-to-right pass, as the shell reads it, outside quotes only (#1516 re-review):
-    - drop a comment: `#` at the start of a word, to the end of its line. shlex's own comment handling
-      ends the WHOLE command at the first `#`, mid-word too, after the newlines are joined;
-    - drop heredoc BODIES, keeping the opener's line: a body is data, and an apostrophe in it (`it's`)
-      is not a quote the lexer should try to close. As normalize_cmd.sh does (#906). A quoted `"<<END"`
-      opens nothing;
-    - drop an fd number that touches its `<`/`>` (`2>`), so `cd 5 >x` keeps 5 as its argument."""
+    """One left-to-right pass, as the shell reads it, outside quotes only: drop a comment (`#` at the
+    start of a word, to the end of its line), and an fd number that touches its `<`/`>` (`2>`), so
+    `cd 5 >x` keeps 5 as its argument. A backslash-escaped character never ends a word (`B\\ #x`)."""
     out: list[str] = []
-    pending: list[tuple[str, bool]] = []    # heredocs opened on this line: (delimiter, strip tabs)
     q, i, n = "", 0, len(cmd)
+    escaped = False                         # the previous character was escaped by a backslash
     while i < n:
         c = cmd[i]
         if q:                               # inside quotes: copy; only `"` honours a backslash
@@ -108,10 +74,12 @@ def prepare(cmd: str) -> str:
                 q = ""
             i += 1
             continue
-        word_start = i == 0 or cmd[i - 1] in META
+        word_start = i == 0 or (cmd[i - 1] in META and not escaped)
+        escaped = False
         if c == "\\" and i + 1 < n:
             out.append(cmd[i:i + 2])
             i += 2
+            escaped = True
         elif c in "'\"":
             q = c
             out.append(c)
@@ -120,31 +88,7 @@ def prepare(cmd: str) -> str:
             j = cmd.find("\n", i)
             i = n if j < 0 else j            # keep the newline: it still ends the command
         elif c.isdigit() and word_start and re.match(r"\d+[<>]", cmd[i:]):
-            i = re.match(r"\d+", cmd[i:]).end() + i
-        elif cmd.startswith("<<<", i):
-            out.append("<<<")
-            i += 3
-        elif cmd.startswith("<<", i):
-            j = i + 2
-            dash = j < n and cmd[j] == "-"
-            j += dash
-            while j < n and cmd[j] in " \t":
-                j += 1
-            word, end = _delimiter(cmd, j)
-            if word:
-                pending.append((word, dash))
-            out.append(cmd[i:end] if word else "<<")
-            i = end if word else i + 2
-        elif c == "\n" and pending:
-            out.append(c)
-            i += 1
-            for delim, dash in pending:     # each body in turn, up to its own delimiter line
-                while i < n:
-                    j = cmd.find("\n", i)
-                    line, i = (cmd[i:], n) if j < 0 else (cmd[i:j], j + 1)
-                    if (line.lstrip("\t") if dash else line) == delim:
-                        break
-            pending = []
+            i += re.match(r"\d+", cmd[i:]).end()
         else:
             out.append(c)
             i += 1
@@ -152,163 +96,114 @@ def prepare(cmd: str) -> str:
 
 
 def _target(args: list[str], here: str, home: str) -> str:
-    args = [a for a in args if a not in ("-L", "-P", "--")]
-    if not args:
-        return home
-    if len(args) > 1:
-        raise Unresolved("cd with more than one argument")
+    if args and args[0] in ("-P", "-L"):
+        args = args[1:]
+    if len(args) != 1:
+        raise Unresolved("cd takes exactly one path here")
     a = args[0]
-    if a == "-" or "$" in a or "`" in a:
+    if a.startswith("-") or "$" in a or "`" in a:
         raise Unresolved(f"cd {a}")
     if a == "~" or a.startswith("~/"):
         a = home + a[1:]
     elif a.startswith("~"):
         raise Unresolved(f"cd {a}")
+    if os.environ.get("CDPATH") and not a.startswith(("/", "./", "../")) and a not in (".", ".."):
+        raise Unresolved(f"cd {a} with CDPATH set")
     path = os.path.normpath(os.path.join(here, a))
     if not os.path.isdir(path):
         raise Unresolved(f"cd {a}: no such directory")
     return path
 
 
-def _is_gh(w: list[str]) -> bool:
+def _gh_segment(words: list[str]) -> bool:
+    """True when `words` is a gh segment of the grammar. An `env` option (`-C dir`, `-iC`) is not peeled,
+    so the gh behind it is no command word of the grammar, and the command is "cannot tell"."""
+    w = list(words)
+    while w and ASSIGN.match(w[0]):
+        w.pop(0)
+    while w:
+        h = w[0]
+        if h == "env":
+            w.pop(0)
+            while w and ASSIGN.match(w[0]):
+                w.pop(0)
+        elif h == "command":
+            w.pop(0)
+            if w and w[0] == "-p":
+                w.pop(0)
+        elif h in ("exec", "nohup"):
+            w.pop(0)
+        elif h == "nice":
+            w.pop(0)
+            if w and w[0] == "-n":
+                del w[:2]
+        elif h == "timeout":
+            w.pop(0)
+            while w and w[0].startswith("-"):
+                del w[:2 if w[0] in ("-s", "-k", "--signal", "--kill-after") else 1]
+            w = w[1:]                       # the duration
+        elif h == "time":
+            w.pop(0)
+            if w and w[0] == "-p":
+                w.pop(0)
+        else:
+            break
     return len(w) >= 3 and os.path.basename(w[0]) == "gh" and (
         (w[1] == "pr" and w[2] in ("create", "edit")) or (w[1] == "issue" and w[2] == "comment"))
 
 
+def _moves(seg: list[str]) -> bool:
+    for k, w in enumerate(seg):
+        if DIR_WORD.search(w):
+            return True
+        if w in ("source", ".") and (k == 0 or seg[k - 1] in KEYWORDS or ASSIGN.match(seg[k - 1])):
+            return True
+    return False
+
+
+def _judge(done: list[tuple[list[str], bool, str]], start: str, home: str) -> str:
+    if not any(_moves(seg) for seg, _, _ in done):
+        return start                        # nothing before gh can move the directory
+    here = start
+    for seg, clean, sep in done:
+        if sep not in SEPS or not clean:
+            raise Unresolved(f"a segment joined by {sep!r}, or redirected, before gh")
+        if not seg:
+            continue                        # a blank line, a leading `;`
+        if seg[0] != "cd":
+            raise Unresolved(f"`{seg[0]}` before gh, with a directory change in sight")
+        here = _target(seg[1:], here, home)
+    return here
+
+
 def resolve(cmd: str, start: str, home: str) -> str:
-    cmd = prepare(cmd)
-    lex = shlex.shlex(cmd.replace("\n", " ; "), posix=True, punctuation_chars=";&|()<>")
+    lex = shlex.shlex(prepare(cmd).replace("\n", " ; "), posix=True, punctuation_chars=";&|()<>")
     lex.whitespace_split = True
     lex.commenters = ""                     # prepare() has dropped the real comments
+    # The segments before gh: (words, only allowed cd redirects inside it, the separator after it).
+    done: list[tuple[list[str], bool, str]] = []
+    words: list[str] = []
+    clean, redirect = True, False
     try:
-        tokens = list(lex)
-    except ValueError as e:                 # an unbalanced quote outside any heredoc
-        if CD_ANYWHERE.search(cmd):
-            raise Unresolved(f"the command could not be lexed: {e}") from e
-        return start                        # no directory change anywhere: the starting directory
-
-    here, stack, words = start, [], []
-    # A case: (the directory before the case, the directory at the start of this branch, mode).
-    cases: list[list] = []
-    after_case_unknown = False
-    redirect = False
-
-    def finish(sep: str | None) -> None:
-        nonlocal here, words
-        w = list(words)
-        words = []
-        # Assignments, a brace group's and a compound's keywords, and `builtin`/`command` all leave
-        # the command running in THIS shell, so peel them. `!` inverts the status: refuse it.
-        # `env`, `exec`, `nohup`, `nice` and `timeout` run their operand as a program in this directory:
-        # peel them too, so the gh behind them is found and the cds before it count (#1516 re-review).
-        external = False
-        while w:
-            if ASSIGN.match(w[0]) or w[0] in KEYWORDS:
-                if w[0] == "!":
-                    raise Unresolved("a negated command before gh")
-                if w.pop(0) == "time" and w and w[0] == "-p":
-                    w.pop(0)
-            elif w[0] in WRAPPERS:
-                if w.pop(0) == "command":
-                    while w and w[0] in ("-p", "--"):
-                        w.pop(0)
-                    if w and w[0].startswith("-"):
-                        return              # `command -v x` describes x and runs nothing
-            elif w[0] in EXTERNAL:
-                opts, external = EXTERNAL[w.pop(0)], True
-                while w and w[0].startswith("-") and w[0] != "--":
-                    if w[0] in ("-C", "--chdir") or w[0].startswith("--chdir="):
-                        raise Unresolved("env -C changes the directory")
-                    take = opts.get(w[0], 1)
-                    if not opts and w[0] != "-":
-                        break               # nohup takes no options: this is its operand
-                    del w[:take]
-                if w and w[0] == "--":
-                    w.pop(0)
-                if opts is EXTERNAL["timeout"] and w:
-                    w.pop(0)                # the duration
-            else:
-                break
-        if not w:
-            return
-        if w[0] == "function":
-            raise Unresolved("a function definition before gh")
-        if _is_gh(w):
-            if after_case_unknown:
-                raise Unresolved("gh after a case whose branch changed directory")
-            raise Found(here)
-        if w[0] in ("pushd", "popd"):
-            raise Unresolved(w[0])
-        if w[0] == "cd":
-            if external:
-                raise Unresolved("a cd run as a program, behind a wrapper")
-            if sep is None:
-                return                      # a trailing cd: no gh follows it
-            if sep not in APPLIES:
-                raise Unresolved(f"cd joined by {sep!r}, so it may not apply")
-            here = _target(w[1:], here, home)
-
-    def end_branch() -> None:
-        nonlocal here, after_case_unknown
-        c = cases[-1]
-        if here != c[1]:
-            after_case_unknown = True       # which branch ran is unknown after esac
-        here = c[1]
-        c[2] = "pattern"
-
-    try:
-        for t in tokens:
-            punct = bool(t) and set(t) <= set(";&|()<>")
-            if not punct:
-                if redirect:                # the redirection's target, not an argument
-                    redirect = False
-                    continue
-                if cases and cases[-1][2] == "header":
-                    if t == "in":
-                        cases[-1][2] = "pattern"
-                    continue
-                if cases and cases[-1][2] == "pattern":
-                    if t == "esac":
-                        cases.pop()         # end_branch already restored the directory
-                    continue                # a pattern word
-                if cases and cases[-1][2] == "body" and t == "esac" and not words:
-                    end_branch()
-                    cases.pop()
-                    continue
-                if not words and t == "case":
-                    cases.append([here, here, "header"])
-                    continue
-                words.append(t)
+        for t in lex:                       # lazily: a quote left open AFTER the gh segment is never read
+            if t and set(t) <= set(";&|()<>"):
+                for op in OPS.findall(t):
+                    if "<" in op or ">" in op:
+                        clean = clean and op in CD_REDIRECTS
+                        redirect = True
+                    else:
+                        done.append((words, clean, op))
+                        words, clean, redirect = [], True, False
                 continue
-            for op in OPS.findall(t):
-                if "<" in op or ">" in op:
-                    redirect = True         # prepare() has dropped a `2>`'s fd number
-                elif cases and cases[-1][2] == "pattern" and op == ")":
-                    cases[-1][1] = here     # a pattern ends; its branch starts here
-                    cases[-1][2] = "body"
-                elif cases and cases[-1][2] == "pattern" and op == "(":
-                    continue                # the optional leading ( of a pattern
-                elif cases and cases[-1][2] == "body" and op in (";;", ";&", ";;&"):
-                    finish(op)
-                    end_branch()
-                elif op == "(":
-                    # `f() …` defines a function; `$(`, `x=(` do not. Whether a body ran is unknown.
-                    if words and not words[-1].endswith(("$", "=")):
-                        raise Unresolved("a function definition before gh")
-                    stack.append(here)
-                elif op == ")":
-                    finish(";")             # the subshell's last command ran inside it
-                    here = stack.pop() if stack else here
-                else:
-                    finish(op)
-        finish(None)
-    except Found as f:
-        return f.here
-    # No gh COMMAND was found (`sudo gh`, `bash -c "cd x && gh …"`), yet the hook saw the phrase. With a cd
-    # anywhere, where it runs is unknown: never the starting directory by default (#1516 re-review).
-    if CD_ANYWHERE.search(cmd):
-        raise Unresolved("no gh pr create|edit / issue comment command was found, and the command has a cd")
-    return start
+            if redirect:                    # the redirection's target, not an argument
+                redirect = False
+                continue
+            words.append(t)
+            if _gh_segment(words):
+                return _judge(done, start, home)
+    except ValueError as e:                 # an unbalanced quote before any gh segment
+        raise Unresolved(f"the command could not be lexed: {e}") from e
+    raise Unresolved("no gh pr create|edit / issue comment command word was found")
 
 
 def main() -> int:

@@ -45,8 +45,9 @@ fi
 # WHERE THE COMMAND RUNS (#1509). This hook runs in the SESSION's directory, and the command may not:
 # `cd ~/projects/other && gh pr create --body-file body.md` was judged against the session repo's
 # template and would read a relative body from the session directory. `lib/command_cwd.py` follows the
-# command's own `cd`s; exit 3 means a `cd` it cannot resolve, so the template is NOT checked rather
-# than checked against the wrong repository, and a relative body is not read from the wrong place.
+# command's own `cd`s, in one simple grammar only (an allowlist); exit 3 means it cannot tell, so the
+# template is NOT checked rather than checked against the wrong repository, and a relative body is not read
+# from the wrong place. Allowed, loudly: the maintainer's decision on #1509.
 # It starts from the payload's `cwd` (the session's working directory), not this process's.
 cwd_lib="$(dirname "$0")/lib/command_cwd.py"
 start="$(printf '%s' "$input" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("cwd",""))' 2>/dev/null)"
@@ -74,7 +75,13 @@ fi
 if [ -n "$body" ] && [ "${body#/}" = "$body" ]; then
   # Exit 3: the body's directory is unknown, so it is not read from the wrong one. (A crash has
   # already BLOCKED above; with no python3 the path is left alone and the template check FAILS CLOSED.)
-  if [ "$cwd_rc" -eq 0 ] && [ -n "$cmd_cwd" ]; then body="$cmd_cwd/$body"; elif [ "$cwd_rc" -eq 3 ]; then body=""; fi
+  if [ "$cwd_rc" -eq 0 ] && [ -n "$cmd_cwd" ]; then
+    body="$cmd_cwd/$body"
+  elif [ "$cwd_rc" -eq 3 ]; then
+    # Said here, because the fail-open below would otherwise be the only message (#1516 review, S-a).
+    echo "rails-flow: the body, the PR template and the change type NOT checked (the directory gh runs in could not be resolved, so the relative --body-file cannot be located)." >&2
+    body=""
+  fi
 fi
 # No readable body file (inline --body, a heredoc, a path we cannot resolve): say so and allow.
 # FAILING OPEN HERE IS DELIBERATE -- this guard's job is to make the check happen when it can, not
@@ -132,8 +139,8 @@ sys.stdout.write("".join(out))
     echo "Fix the install, or ship deliberately unchecked: RAILS_FLOW_CLAIMS_OK=1 (audited)." >&2
     exit 2
   elif [ "$cwd_rc" -eq 3 ]; then
-    # A `cd` this hook cannot follow: the template it would judge against is unknown. Say so (#1509).
-    echo "rails-flow: PR-template sections NOT checked (a cd before gh could not be resolved, so the target repository is unknown)." >&2
+    # The directory gh runs in is unknown, so the template it would judge against is too. Say so (#1509).
+    echo "rails-flow: PR-template sections NOT checked (the directory gh runs in could not be resolved, so the target repository is unknown)." >&2
   else
     gaps="$(python3 "$tpl_lib" "$root" "$body" 2>/dev/null)"; tpl_rc=$?
     # pr_template.py exits 1 ONLY with the missing sections listed; any failure to judge is exit 3.
@@ -179,7 +186,7 @@ fi
 # skills/ file was blocking a `cd <other repo> && gh pr create` that touches nothing there. With the
 # directory unresolved (exit 3) the target is unknown, so this check says NOT checked rather than guess.
 if [ "$cwd_rc" -eq 3 ]; then
-  echo "rails-flow: change-type declaration NOT checked (a cd before gh could not be resolved)." >&2
+  echo "rails-flow: change-type declaration NOT checked (the directory gh runs in could not be resolved)." >&2
 elif git -C "$root" diff --name-only HEAD 2>/dev/null | grep -q '^skills/' || \
    git -C "$root" diff --name-only --cached HEAD 2>/dev/null | grep -q '^skills/'; then
   if ! grep -qiE 'framework claim|architecture decision|change type|our own (design|doctrine|architecture)' "$body"; then

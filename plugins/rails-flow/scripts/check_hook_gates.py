@@ -743,7 +743,8 @@ def guard_claims_fixtures() -> None:
     TPL_B = "## Summary\n\n## Risk\n"
     FITS_B = "## Summary\nTidy the README.\n## Risk\nNone, copy only.\n"
 
-    def run_in(cmd: str, body: str, *, body_in: str = "a", with_output: bool = False, payload_cwd: str = ""):
+    def run_in(cmd: str, body: str, *, body_in: str = "a", with_output: bool = False, payload_cwd: str = "",
+               env_extra: dict[str, str] | None = None):
         with tempfile.TemporaryDirectory() as td:
             a, b = Path(td) / "a", Path(td) / "b"
             # `a/5` carries B's template, so `cd 5 >/dev/null` read as a bare `cd` (HOME, set to A) is visible.
@@ -753,14 +754,20 @@ def guard_claims_fixtures() -> None:
             # A directory literally named `$NOWHERE`: a `cd $NOWHERE` read literally would find it, so
             # only the refusal of `$` keeps that fixture red, not the missing-directory check.
             (a / "$NOWHERE").mkdir()
+            (a / "sub").mkdir()             # `cd sub` resolves here, so only CDPATH can make it unknown
+            (a / "~nobody").mkdir()         # likewise, only the refusal of `~user` keeps that fixture red
+            for odd in ("x#y", "x #y"):     # a `#` that is not a comment: B's template one level down
+                (b / odd / ".github").mkdir(parents=True)
+                (b / odd / ".github" / "pull_request_template.md").write_text(TPL_B, encoding="utf-8")
             where = a if body_in == "a" else b
             (where / "body.md").write_text(body, encoding="utf-8")
             cmd = cmd.replace("B_DIR", str(b)).replace("BODY", str(where / "body.md"))
             payload = {"tool_input": {"command": cmd}}
+            extra = {k: v.replace("B_DIR", str(b)) for k, v in (env_extra or {}).items()}
             if payload_cwd:
                 payload["cwd"] = str({"a": a, "b": b}[payload_cwd])
             done = run_hook("guard-claims.sh", cwd=a, stdin=json.dumps(payload),
-                            env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1]), "HOME": str(a)})
+                            env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1]), "HOME": str(a), **extra})
             return done if with_output else done[0]
 
     check("guard-claims: a `cd <other repo>` is judged against that repo's template (#1509)",
@@ -772,90 +779,128 @@ def guard_claims_fixtures() -> None:
     rc, out = run_in("cd B_DIR && gh pr create -R o/r --base dev --body-file BODY", FULL, with_output=True)
     check("guard-claims: -R after a cd is still another repository, NOT checked (control)",
           rc == 0 and "NOT checked (-R" in out, f"exit {rc}: {out[-120:]}")
-    check("guard-claims: a cd inside a subshell does not outlive it",
-          run_in("(cd B_DIR) && gh pr create --base dev --body-file BODY", FITS_B) == 2, "exit 0")
     check("guard-claims: a relative --body-file is read from the cd target",
           run_in("cd B_DIR && gh pr create --base dev --body-file body.md", FITS_B, body_in="b") == 0
           and run_in("cd B_DIR && gh pr create --base dev --body-file body.md", FULL, body_in="b") == 2,
           "the relative body was not read from B")
-    check("guard-claims: a heredoc body before the cd does not stop it being followed",
-          run_in("cat > /dev/null <<'EOF'\nit's a body\nEOF\ncd B_DIR && gh pr create --body-file BODY", FULL) == 2,
-          "exit 0")
     check("guard-claims: an issue comment's relative body is read from the cd target too, and its claims checked",
           run_in("cd B_DIR && gh issue comment 5 --body-file body.md", NUMERIC, body_in="b") == 2, "exit 0")
-    check("guard-claims: a cd inside a brace group runs in this shell, so it is followed",
-          run_in("{ cd B_DIR; } && gh pr create --base dev --body-file BODY", FULL) == 2, "exit 0")
-    # #1516 review: each of these was judged against A's template, silently. FULL fits A and not B,
-    # so exit 2 here means B's template was read.
+    check("guard-claims: `--body-file b.md; echo done` reads b.md, not `b.md;` (#1516)",
+          run_in("cd B_DIR && gh pr create --body-file body.md; echo done", FULL, body_in="b") == 2
+          and run_in("cd B_DIR && gh pr create --body-file body.md; echo done", FITS_B, body_in="b") == 0,
+          "the body was not read")
+    check("guard-claims: the command starts in the payload's cwd, not the hook's own directory",
+          run_in("gh pr create --body-file BODY", FULL, payload_cwd="b") == 2
+          and run_in("gh pr create --body-file BODY", FITS_B, payload_cwd="b") == 0, "judged against A")
+    # THE ALLOWLIST (#1516, round 3). A cd is followed only in the simple grammar: top-level segments joined
+    # by `&&`, `;` or a newline, before the gh segment, each `cd [-P|-L] <one path>` with an optional `>`/`2>`
+    # redirect; the gh segment may carry a known wrapper. FULL fits A and not B, so exit 2 means B was read.
     for label, cmd in (
-            ("a cd in a while condition", "while cd B_DIR; do gh pr create --body-file BODY ; break; done"),
-            ("a cd in an until condition", "until cd B_DIR; do :; done; gh pr create --body-file BODY"),
-            ("builtin cd", "builtin cd B_DIR && gh pr create --body-file BODY"),
-            ("command cd", "command cd B_DIR && gh pr create --body-file BODY"),
-            ("a quoted `gh pr create` earlier in the chain", "echo 'gh pr create' && cd B_DIR && gh pr create --body-file BODY"),
+            ("`cd B;`", "cd B_DIR; gh pr create --body-file BODY"),
+            ("a newline after the cd", "cd B_DIR\ngh pr create --body-file BODY"),
+            ("a quoted path", 'cd "B_DIR" && gh pr create --body-file BODY'),
+            ("`cd -P`", "cd -P B_DIR && gh pr create --body-file BODY"),
+            ("two cds in a row", "cd B_DIR/.. && cd b && gh pr create --body-file BODY"),
             ("a cd with its stderr redirected", "cd B_DIR 2>/dev/null && gh pr create --body-file BODY"),
             ("a cd with its stdout redirected", "cd B_DIR >/dev/null && gh pr create --body-file BODY"),
-            ("a cd and gh in the same case branch", "case x in x) cd B_DIR && gh pr create --body-file BODY;; esac")):
-        check(f"guard-claims: {label} is followed to the cd target's template (#1516)",
-              run_in(cmd, FULL) == 2, "exit 0: judged against the session repo")
-    # #1516 re-review at 3cfe348: each of these ran gh in B and was judged against A, silently.
-    # Blocker 1, a wrapper before gh (a regression from e16c6b5); blocker 2, a `#` that bash does not read
-    # as a comment, or a comment line that shlex let swallow the rest; blocker 3, a QUOTED `<<END`.
-    for label, cmd in (
+            ("`cd 5 >/dev/null` (5 is the directory, not an fd)", "cd 5 >/dev/null && gh pr create --body-file BODY"),
+            ("a leading comment line", "# open the PR\ncd B_DIR && gh pr create --body-file BODY"),
+            ("a leading comment with an apostrophe", "# don't open this from A\ncd B_DIR && gh pr create --body-file BODY"),
+            ("a comment after the cd", "cd B_DIR # go to B\ngh pr create --body-file BODY"),
+            ("a `#` inside a word", "cd B_DIR/x#y && gh pr create --body-file BODY"),
+            ("a `#` inside a quoted path", 'cd "B_DIR/x #y" && gh pr create --body-file BODY'),
+            ("an escaped space before `#` (S-b)", "cd B_DIR/x\\ #y && gh pr create --body-file BODY"),
+            ("a `~/` path", "cd ~/../b && gh pr create --body-file BODY"),
+            ("a redirect before the cd", ">/dev/null cd B_DIR && gh pr create --body-file BODY"),
             ("`env gh`", "cd B_DIR && env gh pr create --body-file BODY"),
             ("`env VAR=1 gh`", "cd B_DIR && env GH_PAGER=cat gh pr create --body-file BODY"),
+            ("`VAR=1 gh`", "cd B_DIR && GH_PAGER=cat gh pr create --body-file BODY"),
             ("`command -p gh`", "cd B_DIR && command -p gh pr create --body-file BODY"),
             ("an absolute path to gh", "cd B_DIR && /opt/homebrew/bin/gh pr create --body-file BODY"),
             ("`timeout 60 gh`", "cd B_DIR && timeout 60 gh pr create --body-file BODY"),
             ("`timeout -k 5 60 gh`", "cd B_DIR && timeout -k 5 60 gh pr create --body-file BODY"),
             ("`nohup gh`", "cd B_DIR && nohup gh pr create --body-file BODY"),
+            ("`nice -n 5 gh`", "cd B_DIR && nice -n 5 gh pr create --body-file BODY"),
             ("`exec gh`", "cd B_DIR && exec gh pr create --body-file BODY"),
-            ("a leading comment line", "# open the PR\ncd B_DIR && gh pr create --body-file BODY"),
-            ("a leading comment with an apostrophe", "# don't open this from A\ncd B_DIR && gh pr create --body-file BODY"),
-            ("a comment after the cd", "cd B_DIR # go to B\ngh pr create --body-file BODY"),
-            ("a comment after a later command", "cd B_DIR && git log --oneline -1 # sanity\ngh pr create --body-file BODY"),
-            ("`issue#12`, which is one word, not a comment", "cd B_DIR && echo see issue#12 && gh pr create --body-file BODY"),
-            ("a quoted `#` (control)", "cd B_DIR && echo 'a # b' && gh pr create --body-file BODY"),
-            ("a double-quoted `<<END`", 'echo "<<END"\ncd B_DIR && gh pr create --body-file BODY'),
-            ("a single-quoted `<<END`", "echo '<<END'\ncd B_DIR && gh pr create --body-file BODY"),
-            ("a `<<END` inside a quoted string", 'echo "x <<END y"\ncd B_DIR && gh pr create --body-file BODY'),
-            ("`cd 5 >/dev/null` (5 is the directory, not an fd)", "cd 5 >/dev/null && gh pr create --body-file BODY")):
-        check(f"guard-claims: {label} is followed to the cd target's template (#1516 re-review)",
-              run_in(cmd, FULL) == 2, "exit 0: judged against the session repo")
+            ("`time -p gh`", "cd B_DIR && time -p gh pr create --body-file BODY")):
+        rc, out = run_in(cmd, FULL, with_output=True)
+        # B's own missing section, not just exit 2: a crashing resolver also exits 2, by blocking.
+        check(f"guard-claims: {label} is followed to the cd target's template (#1516 allowlist)",
+              rc == 2 and "## Risk" in out, f"exit {rc}: {out[-140:]}")
     check("guard-claims: `cd B && env gh` with a body fitting B passes there (control)",
           run_in("cd B_DIR && env gh pr create --body-file BODY", FITS_B) == 0, "exit 2")
-    check("guard-claims: a real heredoc after a quoted `<<END` still hides its body (control)",
-          run_in("echo \"<<END\"\ncat >/dev/null <<'EOF'\nit's\nEOF\ncd B_DIR && gh pr create --body-file BODY", FULL) == 2,
-          "exit 0")
-    # A gh this resolver cannot find as a command word, after a cd, or a function body's cd: where gh runs
-    # is unknown, so NOT checked, never the session repo's template and never the cd target's.
-    for label, cmd in (("gh inside `bash -c`", 'bash -c "cd B_DIR && gh pr create --body-file BODY"'),
-                       ("gh behind `sudo` after a cd", "cd B_DIR && sudo gh pr create --body-file BODY"),
-                       ("a cd run as a program (`env cd`)", "env cd B_DIR && gh pr create --body-file BODY"),
-                       ("a function body's cd", "f() { cd B_DIR; }; gh pr create --body-file BODY"),
-                       ("a `function` keyword body's cd", "function f { cd B_DIR; }; gh pr create --body-file BODY")):
-        rc, out = run_in(cmd, FITS_B, with_output=True)
-        check(f"guard-claims: {label} is NOT checked, never a guessed template (#1516 re-review)",
-              rc == 0 and "a cd before gh could not be resolved" in out, f"exit {rc}: {out[-120:]}")
-    check("guard-claims: `sudo gh` with no cd anywhere is still judged in the starting repo (control)",
-          run_in("sudo gh pr create --body-file BODY", FITS_B) == 2, "exit 0")
-    rc, out = run_in("case x in x) cd B_DIR;; esac; gh pr create --body-file BODY", FITS_B, with_output=True)
-    check("guard-claims: a gh after a case whose branch moved the directory is NOT checked (which branch ran is unknown)",
-          rc == 0 and "a cd before gh could not be resolved" in out, f"exit {rc}: {out[-120:]}")
-    check("guard-claims: `--body-file b.md; fi` reads b.md, not `b.md;` (#1516)",
-          run_in("if cd B_DIR; then gh pr create --body-file body.md; fi", FULL, body_in="b") == 2
-          and run_in("if cd B_DIR; then gh pr create --body-file body.md; fi", FITS_B, body_in="b") == 0,
-          "the body was not read")
-    check("guard-claims: the command starts in the payload's cwd, not the hook's own directory",
-          run_in("gh pr create --body-file BODY", FULL, payload_cwd="b") == 2
-          and run_in("gh pr create --body-file BODY", FITS_B, payload_cwd="b") == 0, "judged against A")
-    for label, cmd in (("a cd to a variable", "cd $NOWHERE && gh pr create --body-file BODY"),
-                       ("a negated cd", "! cd B_DIR && gh pr create --body-file BODY"),
-                       ("a cd to a missing directory", "cd B_DIR/missing && gh pr create --body-file BODY"),
-                       ("a cd joined by ||", "cd B_DIR || gh pr create --body-file BODY")):
-        rc, out = run_in(cmd, FITS_B, with_output=True)
-        check(f"guard-claims: an unresolvable cd target is NOT checked, never the session's template ({label})",
-              rc == 0 and "a cd before gh could not be resolved" in out, f"exit {rc}: {out[-120:]}")
+    check("guard-claims: with no cd, a command before gh leaves it in the starting repo (control)",
+          run_in("git push -u origin x && gh pr create --body-file BODY", FITS_B) == 2, "exit 0")
+    # CANNOT TELL: anything else, so ALLOW WITH A LOUD NOTICE (the maintainer's decision on #1509). NEITHER
+    # fits no template, so a judgement against either repository exits 2; only the notice path exits 0.
+    NEITHER = "Tidy the README.\n"
+    NOTICE = "NOT checked (the directory gh runs in could not be resolved"
+    for label, cmd in (
+            # round 3: N1-N5, each judged against the wrong repository at 600614d
+            ("N1 `env -C/dir`", "env -CB_DIR gh pr create --body-file BODY"),
+            ("N1 `env -iC dir`", "env -iC B_DIR gh pr create --body-file BODY"),
+            ("N1 `env -C dir`", "env -C B_DIR gh pr create --body-file BODY"),
+            ("N1 `env --chdir=dir`", "env --chdir=B_DIR gh pr create --body-file BODY"),
+            ("N1 `env -i` (any env option)", "cd B_DIR && env -i gh pr create --body-file BODY"),
+            ("N2 `eval \"cd B\"`", 'eval "cd B_DIR" && gh pr create --body-file BODY'),
+            ("N2 `eval cd B;`", "eval cd B_DIR; gh pr create --body-file BODY"),
+            ("N2 `eval \"$VAR\"`, with no cd in sight", 'eval "$GO" && gh pr create --body-file BODY'),
+            ("N3 a cd in an if/else", "if true; then cd B_DIR; else cd .; fi; gh pr create --body-file BODY"),
+            ("N3 a cd in an if that did not run", "if false; then cd B_DIR; fi; gh pr create --body-file BODY"),
+            ("N3 a cd in a while body", "while false; do cd B_DIR; done; gh pr create --body-file BODY"),
+            ("N3 a cd in a while condition", "while cd B_DIR; do gh pr create --body-file BODY ; break; done"),
+            ("N3 a cd in an until condition", "until cd B_DIR; do :; done; gh pr create --body-file BODY"),
+            ("N3 a cd in a for body", "for x in 1; do cd B_DIR; done; gh pr create --body-file BODY"),
+            ("N4 `false && cd B; gh`", "false && cd B_DIR; gh pr create --body-file BODY"),
+            ("N4 `true || cd B; gh`", "true || cd B_DIR; gh pr create --body-file BODY"),
+            ("N5 `$((1<<2))` before the cd", "echo $((1<<2))\ncd B_DIR && gh pr create --body-file BODY"),
+            ("N5 `(( n = 1 << 2 ))` before the cd", "(( n = 1 << 2 ))\ncd B_DIR && gh pr create --body-file BODY"),
+            # everything else outside the grammar
+            ("a cd inside a subshell", "(cd B_DIR) && gh pr create --body-file BODY"),
+            ("a cd inside a brace group", "{ cd B_DIR; } && gh pr create --body-file BODY"),
+            ("a cd in a case branch", "case x in x) cd B_DIR && gh pr create --body-file BODY;; esac"),
+            ("a gh after a case", "case x in x) cd B_DIR;; esac; gh pr create --body-file BODY"),
+            ("`builtin cd`", "builtin cd B_DIR && gh pr create --body-file BODY"),
+            ("`command cd`", "command cd B_DIR && gh pr create --body-file BODY"),
+            ("an assignment before the cd", "X=1 cd B_DIR && gh pr create --body-file BODY"),
+            ("another command between the cd and gh", "cd B_DIR && git log --oneline -1 # sanity\ngh pr create --body-file BODY"),
+            ("an echo before the cd", "echo 'gh pr create' && cd B_DIR && gh pr create --body-file BODY"),
+            ("a heredoc before the cd", "cat > /dev/null <<'EOF'\nit's a body\nEOF\ncd B_DIR && gh pr create --body-file BODY"),
+            ("a function body's cd", "f() { cd B_DIR; }; gh pr create --body-file BODY"),
+            ("a `function` keyword body's cd", "function f { cd B_DIR; }; gh pr create --body-file BODY"),
+            ("gh inside `bash -c`", 'bash -c "cd B_DIR && gh pr create --body-file BODY"'),
+            ("gh behind `sudo` after a cd", "cd B_DIR && sudo gh pr create --body-file BODY"),
+            ("gh behind `sudo` with no cd", "sudo gh pr create --body-file BODY"),
+            ("gh in an if with no cd", "if true; then gh pr create --body-file BODY; fi"),
+            ("a cd run as a program (`env cd`)", "env cd B_DIR && gh pr create --body-file BODY"),
+            ("`source` before gh", "source /dev/null && gh pr create --body-file BODY"),
+            ("`. file` in an if", "if true; then . /dev/null; fi; gh pr create --body-file BODY"),
+            ("`X=1 . file`", "X=1 . /dev/null && gh pr create --body-file BODY"),
+            ("a cd with an input redirect", "cd B_DIR </dev/null && gh pr create --body-file BODY"),
+            ("a cd to ~user", "cd ~nobody && gh pr create --body-file BODY"),
+            ("`pushd`", "pushd B_DIR && gh pr create --body-file BODY"),
+            ("a bare `cd`", "cd && gh pr create --body-file BODY"),
+            ("`cd -`", "cd - && gh pr create --body-file BODY"),
+            ("a cd with two arguments", "cd B_DIR x && gh pr create --body-file BODY"),
+            ("a cd to a variable", "cd $NOWHERE && gh pr create --body-file BODY"),
+            ("a negated cd", "! cd B_DIR && gh pr create --body-file BODY"),
+            ("a cd to a missing directory", "cd B_DIR/missing && gh pr create --body-file BODY"),
+            ("a cd joined by ||", "cd B_DIR || gh pr create --body-file BODY"),
+            ("a cd joined by |", "cd B_DIR | gh pr create --body-file BODY"),
+            ("a cd joined by &", "cd B_DIR & gh pr create --body-file BODY"),
+            ("an unbalanced quote before the cd", "echo it's\ncd B_DIR && gh pr create --body-file BODY")):
+        rc, out = run_in(cmd, NEITHER, with_output=True)
+        check(f"guard-claims: {label} is NOT checked, with the notice, never a guessed template (#1516 allowlist)",
+              rc == 0 and NOTICE in out, f"exit {rc}: {out[-140:]}")
+    rc, out = run_in("cd sub && gh pr create --body-file BODY", NEITHER, with_output=True,
+                     env_extra={"CDPATH": "B_DIR"})
+    check("guard-claims: a relative cd with CDPATH set is NOT checked, with the notice (#1516 allowlist)",
+          rc == 0 and NOTICE in out, f"exit {rc}: {out[-140:]}")
+    # S-a: a RELATIVE body with an unresolved directory cannot be located. The message still says the template
+    # and the change type were NOT checked, and why.
+    rc, out = run_in("if true; then cd B_DIR; fi; gh pr create --body-file body.md", NEITHER, body_in="b", with_output=True)
+    check("guard-claims: an unlocatable relative body still says NOT checked, and why (#1516 S-a)",
+          rc == 0 and NOTICE in out and "template" in out, f"exit {rc}: {out[-140:]}")
     check("guard-claims: an issue comment is not held to the PR template",
           run("gh issue comment 5 --body-file BODY", "Tidy the README.\n", template=TPL) == 0, "exit 2")
     # OUT OF SCOPE, AND THE BODY MUST CARRY A CLAIM. A first draft passed a claim-FREE body here,

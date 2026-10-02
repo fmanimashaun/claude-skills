@@ -113,14 +113,14 @@ GUARD = Guard(
         ),
         Mutation(
             "an unresolvable cd falls through to the session repo's template",
-            '  elif [ "$cwd_rc" -eq 3 ]; then',
-            '  elif false; then',
-            "an unresolvable cd target is NOT checked",
+            '  elif [ "$cwd_rc" -eq 3 ]; then\n    # The directory gh runs in is unknown',
+            '  elif false; then\n    # The directory gh runs in is unknown',
+            'a cd to a variable is NOT checked, with the notice',
         ),
         Mutation(
             "a relative --body-file is read from the session directory, not the cd target",
-            'then body="$cmd_cwd/$body"; elif',
-            'then :; elif',
+            '    body="$cmd_cwd/$body"\n',
+            '    :\n',
             "a relative --body-file is read from the cd target",
         ),
         Mutation(
@@ -147,13 +147,20 @@ GUARD = Guard(
             "the --body-file path keeps a trailing `;` again (R1516-6)",
             '''[^";&|)[:space:]]+''',
             '''[^"[:space:]]+''',
-            "`--body-file b.md; fi` reads b.md",
+            '`--body-file b.md; echo done` reads b.md',
         ),
         Mutation(
             "the payload's cwd is not handed to the resolver (R1516-7)",
             '''python3 "$cwd_lib" "$start" 2>/dev/null''',
             '''python3 "$cwd_lib" 2>/dev/null''',
             "the command starts in the payload's cwd",
+        ),
+        Mutation(
+            # Round 3, S-a.
+            'a relative body whose directory is unknown fails open without saying NOT checked (#1516 S-a)',
+            '    echo "rails-flow: the body, the PR template and the change type NOT checked (the directory gh runs in could not be resolved, so the relative --body-file cannot be located)." >&2\n',
+            '',
+            'an unlocatable relative body still says NOT checked, and why',
         ),
     ),
 )
