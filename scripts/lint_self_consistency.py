@@ -1957,6 +1957,44 @@ def check_broken_relative_link() -> tuple[list[Finding], int]:
     return findings, examined
 
 
+def check_link_leaves_package() -> tuple[list[Finding], int]:
+    """A shipped plugin's or skill's relative link must stay inside what ships with it.
+
+    #1480. Each plugin and each skill installs ALONE, so a link that climbs out of it -- to a sibling
+    plugin, or from design-flow into rails-stack's `skills/design-system/` -- names a path that does
+    not exist in an install, even when it resolves in this clone. Four did, in design-flow; two were
+    broken even here (`../../skills/...` from `commands/`). Name the other package's file in prose
+    (`` `skills/design-system/references/brand.md` ``, in rails-stack) instead.
+
+    A package is `plugins/<name>/` or `skills/<name>/`. Fences, inline code and comments only quote a
+    link; URLs and `#anchors` carry no path.
+    """
+    from urllib.parse import unquote
+    findings: list[Finding] = []
+    examined = 0
+    for base in ("plugins", "skills"):
+        for package in sorted(p for p in (ROOT / base).glob("*") if p.is_dir()):
+            root = package.resolve()
+            for path in sorted(package.rglob("*.md")):
+                prose = _blank_markdown_code(read(path))
+                links = [*_MD_LINK.finditer(prose), *_MD_REFDEF.finditer(prose)]
+                for match in sorted(links, key=lambda m: m.start()):
+                    raw = match.group(1) or match.group(2)
+                    target = unquote(raw.partition("#")[0])
+                    if not target or target.startswith("/") or re.match(r"[A-Za-z][A-Za-z0-9+.-]*:", target):
+                        continue
+                    examined += 1
+                    resolved = (path.parent / target).resolve()
+                    if resolved == root or root in resolved.parents:
+                        continue
+                    findings.append(Finding(
+                        "link-leaves-package", rel(path), prose[:match.start()].count("\n") + 1,
+                        f"links to `{raw}`, which leaves {rel(package)}/ -- each plugin and skill installs "
+                        "alone, so name the other package's file in prose instead of linking to it",
+                    ))
+    return findings, examined
+
+
 # ---------------------------------------------------------------------------
 # Rule: ci-gate-without-test-step
 # ---------------------------------------------------------------------------
@@ -3499,6 +3537,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     markers, markers_examined = check_conflict_markers()
     pointers, pointers_examined = check_doc_pointers()
     rel_links, rel_links_examined = check_broken_relative_link()
+    leaving, leaving_examined = check_link_leaves_package()
     uninstallable, plugins_installable = check_uninstallable_plugins()
     plugin_root, yaml_blocks = check_plugin_root_in_ci()
     mkt_ver, mkt_ver_examined = check_marketplace_version_duplicate()
@@ -3552,6 +3591,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "files_scanned_for_conflict_markers": markers_examined,
         "doc_pointers_examined": pointers_examined,
         "docs_relative_links_examined": rel_links_examined,
+        "package_relative_links_examined": leaving_examined,
         "plugins_checked_for_install_lines": plugins_installable,
         "yaml_blocks_scanned": yaml_blocks,
         "skill_docs_scanned_for_v4_outline": outlines_examined,
@@ -3590,7 +3630,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         **call_coverage,
     }
     return (dead + unenforced + undocumented + undoc_cmds + growth + hook_lib + bare + misdesc + unbounded + author_me + components + call_sites + invisible
-            + markers + pointers + rel_links + outlines + uninstallable + plugin_root + mkt_ver + coercions + topologies + schema + unwired
+            + markers + pointers + rel_links + leaving + outlines + uninstallable + plugin_root + mkt_ver + coercions + topologies + schema + unwired
             + ci_gates + cl_ignore + controllers + labels + comp_labels + orphans + keyfilter
             + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
             + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref + action_pins
@@ -3847,6 +3887,23 @@ def selftest() -> int:
                  "rails-flow (agentic flow plugin)",
                  "- **Eleven agents ran for every job.** (#656) Now there is a pack size.",
                  heading="### 1.23.0 — 2026-08-20 (release v1.92.0)")})
+
+    # -- link-leaves-package (#1480) -----------------------------------------
+    LLP = "link-leaves-package"
+    scenario("a design-flow command linking into rails-stack's skills/ leaves its package", rule=LLP, expect_finding=True,
+             files={"plugins/design-flow/commands/setup.md": "See [b](../../../skills/design-system/references/brand.md).\n",
+                    "skills/design-system/references/brand.md": "x\n"})
+    scenario("...even when it resolves to nothing", rule=LLP, expect_finding=True,
+             files={"plugins/design-flow/commands/setup.md": "See [b](../../skills/design-system/references/brand.md).\n"})
+    scenario("...a skill linking to a sibling skill", rule=LLP, expect_finding=True,
+             files={"skills/a/SKILL.md": "[x](../b/SKILL.md)\n", "skills/b/SKILL.md": "x\n"})
+    scenario("...silent on a link inside the same package, a prose path, a URL and an anchor", rule=LLP,
+             expect_finding=False,
+             files={"plugins/design-flow/commands/setup.md":
+                    "[r](../reference/x.md) `skills/design-system/references/brand.md` [u](https://x.test) [t](#top)\n",
+                    "plugins/design-flow/reference/x.md": "x\n"})
+    scenario("...silent inside a fenced block", rule=LLP, expect_finding=False,
+             files={"plugins/p/a.md": "```md\n[x](../../out.md)\n```\n"})
 
     # -- broken-relative-link (#1415) -----------------------------------------
     BRL = "broken-relative-link"

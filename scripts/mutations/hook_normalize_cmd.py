@@ -132,5 +132,33 @@ GUARD = Guard(
             "",
             "`\"echo x; bash -c 'git add -A'\"` runs the command and is blocked",
         ),
+        Mutation(
+            # #1526
+            'a heredoc opened inside $( ) runs to the end again, hiding what follows the $( )',
+            '      if (insub && $0 ~ /^[ \\t]*\\)/) { inh=0; pending=delim; pdash=dash; print; next }',
+            '      if (0) { inh=0; pending=delim; pdash=dash; print; next }',
+            'a heredoc left open inside $( ) does not hide',
+        ),
+        Mutation(
+            # #1529 review
+            'a heredoc left open inside backticks swallows the rest of the text',
+            '      if (inbt && index($0, "`")) { inh=0; pending=delim; pdash=dash; print; next }',
+            '',
+            'BACKTICK',
+        ),
+        Mutation(
+            # #1529 round 2
+            'a pending delimiter no longer suppresses new heredocs, so a phantom heredoc hides the command',
+            '    pending != "" {\n',
+            '    0 {\n',
+            'phantom',
+        ),
+        Mutation(
+            # #1529 round 2
+            "the normaliser's status is discarded again, so a failing awk reads as a clean result",
+            '  printf \'%s\' "$raw" | _normalize_one || return 1',
+            '  printf \'%s\' "$raw" | _normalize_one',
+            'with an awk that exits 2',
+        ),
     ),
 )
