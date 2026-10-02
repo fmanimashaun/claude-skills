@@ -1181,5 +1181,12 @@ GUARD = Guard(
         r'`\.?/?([A-Za-z0-9_-]+',
         "a bullet naming only a dot-directory path is placeable",
     ),
+        Mutation(
+            # #1480
+            'a link climbing out of its plugin or skill is accepted again',
+            '                    if resolved == root or root in resolved.parents:\n                        continue',
+            '                    if True:\n                        continue',
+            "a design-flow command linking into rails-stack's skills/ leaves its package",
+        ),
     ),
 )
