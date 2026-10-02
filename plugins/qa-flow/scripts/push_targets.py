@@ -79,9 +79,31 @@ CURRENT_BRANCH_IDIOMS = {"git branch --show-current", "git rev-parse --abbrev-re
 
 def _subst_end(cmd: str, i: int) -> int:
     """Index just past the `)` closing the substitution whose `(` is at `i`, quote-aware."""
+    return _subst_scan(cmd, i)[0]
+
+
+def _subst_scan(cmd: str, i: int) -> tuple[int, list[tuple[str, bool]]]:
+    """`_subst_end`, plus the heredoc delimiters opened inside the substitution and not yet seen when
+    its `)` was reached. The substitution ends at the first `)` even inside a heredoc body, the way
+    bash 3.2 and zsh end it; bash 4+ would read the body as text and close at a later `)`. The real
+    delimiter is still owed after an early end, and `strip_comments_and_heredocs` must keep it pending
+    so that a body line naming `cat <<END` opens nothing (#1542, mirroring `_strip_heredocs`, #1529)."""
     depth, quote, n = 0, "", len(cmd)
+    owed: list[tuple[str, bool]] = []
     while i < n:
         c = cmd[i]
+        if not quote and c == "<" and cmd.startswith("<<", i) and not cmd.startswith("<<<", i) \
+                and (i == 0 or cmd[i - 1] != "<"):
+            m = HEREDOC.match(cmd, i)
+            if m:
+                owed.append((m.group(3), m.group(1) == "-"))
+                i = m.end(); continue
+        if not quote and c == "\n" and owed:
+            end = cmd.find("\n", i + 1)
+            line = cmd[i + 1:] if end == -1 else cmd[i + 1:end]
+            delim, tabs = owed[0]
+            if (line.lstrip("\t") if tabs else line) == delim:
+                owed.pop(0)                      # the body closed inside the substitution, as bash 4+ reads it
         if quote:
             if c == "\\" and quote == '"':
                 i += 2; continue
@@ -96,7 +118,7 @@ def _subst_end(cmd: str, i: int) -> int:
         elif c == ")":
             depth -= 1
             if depth == 0:
-                return i + 1
+                return i + 1, owed
         i += 1
     raise Unjudgeable("an unterminated command substitution")
 
@@ -113,10 +135,17 @@ def strip_comments_and_heredocs(cmd: str) -> str:
     out: list[str] = []
     i, n, quote = 0, len(cmd), ""
     pending: list[tuple[str, bool]] = []          # heredoc delimiters awaiting the next newline
+    # Delimiters owed by a heredoc that a `$( )` ended early (#1542). The lines stay VISIBLE, since bash
+    # 3.2 and zsh run them, and no new heredoc opens until the delimiter has been seen.
+    owed: list[tuple[str, bool]] = []
     while i < n:
         c = cmd[i]
         if quote == '"' and (cmd.startswith("$(", i) or c == "`"):
-            end = _subst_end(cmd, i + 1) if c == "$" else cmd.find("`", i + 1) + 1
+            if c == "$":
+                end, carried = _subst_scan(cmd, i + 1)
+                owed.extend(carried)
+            else:
+                end = cmd.find("`", i + 1) + 1
             if end <= 0:
                 raise Unjudgeable("an unterminated backtick substitution")
             out.append(_placeholder(cmd[i + 2:end - 1] if c == "$" else cmd[i + 1:end - 1]))
@@ -140,7 +169,8 @@ def strip_comments_and_heredocs(cmd: str) -> str:
         if c in "$<>" and cmd.startswith("(", i + 1) and (i == 0 or cmd[i - 1] != "<"):
             # `$(...)`, `<(...)`, `>(...)`: ONE word, or shlex splits at `(` and the refspecs after
             # it land in another "segment" nobody reads -- `git -C $(pwd) push origin main` passed.
-            end = _subst_end(cmd, i + 1)
+            end, carried = _subst_scan(cmd, i + 1)
+            owed.extend(carried)
             out.append(_placeholder(cmd[i + 2:end - 1]) if c == "$" else SUBST)
             i = end
             continue
@@ -157,11 +187,17 @@ def strip_comments_and_heredocs(cmd: str) -> str:
             while i < n and cmd[i] != "\n":
                 i += 1
             continue
-        if c == "<" and cmd.startswith("<<", i) and not cmd.startswith("<<<", i):
+        if c == "<" and cmd.startswith("<<", i) and not cmd.startswith("<<<", i) and not owed:
             m = HEREDOC.match(cmd, i)
             if m:
                 pending.append((m.group(3), m.group(1) == "-"))
                 out.append(" "); i = m.end(); continue
+        if c == "\n" and owed:
+            end = cmd.find("\n", i + 1)
+            line = cmd[i + 1:] if end == -1 else cmd[i + 1:end]
+            delim, tabs = owed[0]
+            if (line.lstrip("\t") if tabs else line) == delim:
+                owed.pop(0)
         if c == "\n" and pending:
             out.append("\n"); i += 1
             for delim, tabs in pending:
@@ -425,6 +461,17 @@ def selftest() -> int:
         # (#1470 review) a heredoc body with an apostrophe is not an unbalanced quote
         ("cat > note.md <<'EOF'\nit's done, push main later\nEOF\ngit push -u origin fix/x", on_feature, False),
         ("cat <<-EOF\n\tdon't\n\tEOF\ngit push origin fix/x", on_feature, False),
+        # (#1542) a heredoc that a `$( )` ended early still owes its delimiter, and no new heredoc opens
+        # until it is seen: a body line naming `cat <<END` must not swallow the push after the `)`.
+        ("x=$(cat <<EOF\n)\ncat <<END\nEOF\n)\ngit push origin main", on_feature, True),
+        ("x=$(cat <<EOF\n)\nEOF\n)\ngit push origin main", on_feature, True),          # the control: no `cat <<END`
+        ("x=$(cat <<EOF\n)\ncat <<END\nEOF\n)\ngit push origin fix/x", on_feature, False),
+        ("x=$(cat <<-EOF\n)\ncat <<END\n\tEOF\n)\ngit push origin main", on_feature, True),
+        # ...and once the delimiter is seen, a REAL heredoc opens again and its body is a mention
+        ("x=$(cat <<EOF\n)\nEOF\n)\ncat <<END\ngit push origin main\nEND\ngit push origin fix/x", on_feature, False),
+        ("x=$(cat <<-EOF\n)\n\tEOF\n)\ncat <<END\ngit push origin main\nEND\ngit push origin fix/x", on_feature, False),
+        # ...and a heredoc that CLOSED inside the substitution owes nothing
+        ("x=$(cat <<EOF\nhi\nEOF\n)\ncat <<END\ngit push origin main\nEND\ngit push origin fix/x", on_feature, False),
         # the real promotions
         ("git push origin main", on_feature, True),
         ("git push origin HEAD:main", on_feature, True),
