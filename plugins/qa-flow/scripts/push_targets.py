@@ -38,6 +38,9 @@ coordinator's ruling on #1470). These are not read, and pass: `bash -c $'...'` (
 the whole string), `eval "$(...)"`, a verb or command produced at run time (`$(echo git) push`,
 `$g push`), here-strings and anything piped into a shell (`... | bash`), shells outside
 sh/bash/zsh/dash/ksh (`fish -c`), and aliases defined in git CONFIG rather than inline with `-c`.
+Also not read yet (#1553): a substitution in the body of a heredoc whose delimiter is UNQUOTED, which
+the shell runs -- `cat <<EOF` / `$(git push origin main)` / `EOF`. A QUOTED delimiter makes the body
+text, and is read as text.
 
 What counts as a destination, per `git help push`:
   * a refspec `<src>:<dst>` names `<dst>` (a leading `+` only forces); `:<dst>` deletes `<dst>`;

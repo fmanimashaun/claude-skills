@@ -70,7 +70,9 @@ targets_main=0
 # KNOWN LIMITS (the threat model is an honest mistake, not obfuscation -- coordinator's ruling on
 # #1470; listed in push_targets.py): `bash -c $'...'`, `eval "$(...)"` (the output of a substitution
 # that is then executed), a run-time verb (`$(echo git) push`, `$g push`), here-strings, `... | bash`,
-# `fish -c`, and aliases defined in git config.
+# `fish -c`, and aliases defined in git config. Also not read yet (#1553): a substitution in the body of
+# a heredoc whose delimiter is UNQUOTED, which the shell runs (`cat <<EOF` / `$(git push origin main)` /
+# `EOF`); with a QUOTED delimiter the body is text, and is read as text.
 _pt="${CLAUDE_PLUGIN_ROOT:-}/scripts/push_targets.py"
 # Quotes and backslashes are dropped before the pre-check: `g''it`, `gi\t` and `"g"it` are all git
 # to the shell, and a literal `*git*` test sent them past the classifier (41's delta review).
