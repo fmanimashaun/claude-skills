@@ -17,35 +17,47 @@ async function git($, args) {
   }
 }
 
+// Counts refreshes as they start, so a slow one that finishes late cannot overwrite a newer answer.
+let latest = 0
+
 // Read branch, worktree and dirty count, then ask Claude Code to draw the band again.
+// `--no-optional-locks` keeps `git status` from rewriting .git/index while the user's own git runs.
 async function refresh($) {
+  const mine = ++latest
   const top = await git($, ['rev-parse', '--show-toplevel'])
-  if (top === null) {
-    info = null
-  } else {
+  let next = null
+  if (top !== null) {
     const branch = (await git($, ['branch', '--show-current'])) || 'detached HEAD'
-    const status = (await git($, ['status', '--porcelain'])) ?? ''
-    const lane = (await $.env.get('RAILS_FLOW_LANE')) || ''
-    info = {
+    const status = (await git($, ['--no-optional-locks', 'status', '--porcelain'])) ?? ''
+    let lane = ''
+    try {
+      lane = (await $.env.get('RAILS_FLOW_LANE')) || ''
+    } catch {
+      // Keep the band without a lane rather than losing it
+    }
+    next = {
       branch,
       worktree: top.split('/').pop(),
       lane,
       dirty: status === '' ? 0 : status.split('\n').length,
     }
   }
+  if (mine !== latest) return
+  info = next
   $.ui.invalidate('ui.render')
 }
 
 export function register(on) {
-  // Runs before your first prompt, and again after a reload
+  // Runs before your first prompt, and again after a reload. The git calls go on a zero-delay timer,
+  // the documented way to run work after an event, so the first prompt never waits on them.
   on('session.start', async ($, e, next) => {
-    await refresh($)
+    $.clock.after(0, () => refresh($))
     return next(e)
   })
 
   // Runs when a turn ends, which is when the branch or the dirty count has most likely changed
   on('turn.complete', async ($, e, next) => {
-    await refresh($)
+    $.clock.after(0, () => refresh($))
     return next(e)
   })
 

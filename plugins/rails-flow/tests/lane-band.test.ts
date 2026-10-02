@@ -1,4 +1,4 @@
-import { expect, test } from 'claude-code/testing'
+import { expect, mock, test } from 'claude-code/testing'
 
 // What Claude Code passes to a ui.render hook for the band, apart from the app
 const BAND = {
@@ -17,21 +17,24 @@ function stubGit(on, answers: Record<string, string | null>) {
   })
 }
 
-async function completeTurn($) {
+// The band refreshes on a zero-delay timer, so the test advances the mock clock after the turn.
+async function completeTurn($, clock) {
   await $.turn.complete({ turnId: 't', answer: '', durationMs: 1, isAborted: false, usage: null })
+  await clock.advance(0)
 }
 
 test('the band shows branch, worktree, lane and dirty count', async ($, on) => {
+  const clock = mock.clock(on)
   stubGit(on, {
     'rev-parse --show-toplevel': '/work/lane-band-1537',
     'branch --show-current': 'feature/1537-lane-band',
-    'status --porcelain': ' M a.rb\n?? b.rb',
+    '--no-optional-locks status --porcelain': ' M a.rb\n?? b.rb',
   })
   on('env.get', () => ({ value: 'app/models' }))
   on('turn.complete', () => ({ text: '' }))
   on('ui.render', () => ({ type: 'Text', props: {}, children: ['drawn by Claude Code'] }))
 
-  await completeTurn($)
+  await completeTurn($, clock)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(
     await ui.find({ type: 'Text', text: 'feature/1537-lane-band · lane-band-1537 · lane app/models · 2 uncommitted' }),
@@ -39,27 +42,29 @@ test('the band shows branch, worktree, lane and dirty count', async ($, on) => {
 })
 
 test('a clean tree with no lane says clean and omits the lane', async ($, on) => {
+  const clock = mock.clock(on)
   stubGit(on, {
     'rev-parse --show-toplevel': '/work/repo',
     'branch --show-current': 'dev',
-    'status --porcelain': '',
+    '--no-optional-locks status --porcelain': '',
   })
   on('env.get', () => ({ value: undefined }))
   on('turn.complete', () => ({ text: '' }))
   on('ui.render', () => ({ type: 'Text', props: {}, children: ['drawn by Claude Code'] }))
 
-  await completeTurn($)
+  await completeTurn($, clock)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await ui.find({ type: 'Text', text: 'dev · repo · clean' })).toBeDefined()
 })
 
 test('outside a git repository the band draws nothing of its own', async ($, on) => {
+  const clock = mock.clock(on)
   stubGit(on, {})
   on('env.get', () => ({ value: undefined }))
   on('turn.complete', () => ({ text: '' }))
   on('ui.render', () => ({ type: 'Text', props: {}, children: ['drawn by Claude Code'] }))
 
-  await completeTurn($)
+  await completeTurn($, clock)
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await ui.find({ type: 'Text', text: /·/ })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: 'drawn by Claude Code' })).toBeDefined()
@@ -74,8 +79,14 @@ test('the turn still completes unchanged and git is only read', async ($, on) =>
   on('env.get', () => ({ value: undefined }))
   on('turn.complete', () => ({ text: 'unchanged' }))
 
+  const clock = mock.clock(on)
   const result = await $.turn.complete({ turnId: 't', answer: '', durationMs: 1, isAborted: false, usage: null })
+  // The hook returned before any git ran: the refresh waits on the zero-delay timer
+  expect(argvs).toEqual([])
   expect(result).toEqual({ text: 'unchanged' })
+  await clock.advance(0)
+  // The status call carries the flag; without this the loop below could pass on an empty list
+  expect(argvs).toContain('git --no-optional-locks status --porcelain')
   // Only these read-only git verbs may ever be run by the mod
-  for (const a of argvs) expect(a).toMatch(/^git (rev-parse --show-toplevel|branch --show-current|status --porcelain)$/)
+  for (const a of argvs) expect(a).toMatch(/^git (rev-parse --show-toplevel|branch --show-current|--no-optional-locks status --porcelain)$/)
 })

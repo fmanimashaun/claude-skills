@@ -129,6 +129,8 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | design-flow tiers | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --agents plugins/design-flow/agents --tiers plugins/design-flow/reference/model-tiers.md` | live check |
 | hook gates | `rails-flow` | `python3 plugins/rails-flow/scripts/check_hook_gates.py --selftest` | selftest |
 | issue readiness | `rails-flow` | `python3 plugins/rails-flow/scripts/check_issue_ready.py --selftest` | selftest |
+| lane band | `rails-flow` | `python3 plugins/rails-flow/scripts/check_lane_band.py` | live check |
+| lane band selftest | `rails-flow` | `python3 plugins/rails-flow/scripts/check_lane_band.py --selftest` | selftest |
 | pipeline tiers | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --agents plugins/pipeline/agents --tiers plugins/pipeline/reference/model-tiers.md` | live check |
 | project gates | `rails-flow` | `python3 plugins/rails-flow/scripts/project_gates.py --selftest` | selftest |
 | qa-flow tiers | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --agents plugins/qa-flow/agents --tiers plugins/qa-flow/reference/model-tiers.md` | live check |
