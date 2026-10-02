@@ -2,7 +2,9 @@
 # PreToolUse[Bash] guardrails — mechanical enforcement of GUARDRAILS.md.
 # Exit 2 blocks the command; stderr is shown to Claude with the reason.
 set -uo pipefail
-input="$(cat)"
+# The `read` BUILTIN, never `cat`: with no `cat` on PATH, `$(cat)` read nothing and every rule passed
+# (#1529 review). Stops at a NUL, which JSON cannot contain.
+input=""; IFS= read -r -d '' input || true
 
 # #1526: decoded with `surrogateescape`, so an invalid UTF-8 byte cannot make the parse fail. A failed
 # parse left the raw JSON as `cmd`, where the command sits inside double quotes the normaliser strips:
@@ -22,17 +24,15 @@ deny() { echo "BLOCKED by rails-flow guardrails: $1" >&2; exit 2; }
 # quiet because a file is missing is the one failure this hook must not have.
 _lib="$(dirname "${BASH_SOURCE[0]}")/lib/normalize_cmd.sh"
 #
-# #1526: the lib needs awk, sed, tr and grep. Without awk it printed NOTHING, so every rule passed. A
-# missing tool, an unparsed payload, or a normaliser that exited non-zero puts the hook in
-# DEGRADED mode. One `command -v` per tool: `command -v awk sed` succeeds when ANY of them is found.
-# `LC_ALL=C`: macOS awk under a UTF-8 locale aborts on an invalid byte and loses the text.
+# #1526: the lib needs awk, sed, tr and grep. Without awk it printed NOTHING, so every rule passed. An
+# unparsed payload, a missing lib, or a normaliser that EXITED NON-ZERO puts the hook in DEGRADED mode.
+# The exit status, not an empty result, decides: a comment-only command normalises to nothing and is a
+# mention (#906). A missing tool needs no check of its own -- the shell's 127 fails the pipeline under
+# `pipefail` and the lib returns it (#1529 review) -- and a `command -v` per tool changed no outcome,
+# which the mutation guard measured. `LC_ALL=C`: macOS awk aborts on an invalid byte in a UTF-8 locale.
 degraded=0
-if [ "$parsed" = 1 ] && [ -f "$_lib" ] && command -v awk >/dev/null 2>&1 \
-   && command -v sed >/dev/null 2>&1 && command -v tr >/dev/null 2>&1 && command -v grep >/dev/null 2>&1 \
-   && . "$_lib" 2>/dev/null && type normalize_segments >/dev/null 2>&1; then
-  # The normaliser's EXIT STATUS decides, not an empty result: a comment-only command normalises to
-  # nothing legitimately and is a mention (#906), while an awk that aborted fails the pipeline.
-  seg="$(set -o pipefail; printf '%s' "$cmd" | LC_ALL=C normalize_segments)" || { seg="$cmd"; degraded=1; }
+if [ "$parsed" = 1 ] && [ -f "$_lib" ] && . "$_lib" 2>/dev/null && type normalize_segments >/dev/null 2>&1; then
+  seg="$(printf '%s' "$cmd" | LC_ALL=C normalize_segments)" || { seg="$cmd"; degraded=1; }
 else
   seg="$cmd"; degraded=1
 fi
@@ -52,13 +52,17 @@ hit() {
     [[ $seg =~ $re ]]
   fi
 }
+# An EXEMPTION (`--force-with-lease`, clean's `-n`, restore's `--staged`) never applies in degraded
+# mode: unanchored, its `.*` reaches another segment, so `git clean -fd && echo -n` was exempt (#1529
+# review). Refusing a real dry run there is the price of a command that could not be read.
+exempt() { [ "$degraded" = 1 ] && return 1; hit "$1"; }
 
 # A rails/rake task segment that names db:reset (not the word inside a quoted string or a grep).
 if hit '^(bin/)?(rails|rake)([[:space:]]+[^[:space:]]+)*[[:space:]]+db:reset\b'; then
   deny "db:reset is prohibited (seeds break test isolation). Use: db:drop db:create db:schema:load."
 fi
 
-if hit '^git[[:space:]]+push\b.*(--force\b|[[:space:]]-f\b)' && ! hit '^git[[:space:]]+push\b.*--force-with-lease'; then
+if hit '^git[[:space:]]+push\b.*(--force\b|[[:space:]]-f\b)' && ! exempt '^git[[:space:]]+push\b.*--force-with-lease'; then
   deny "force-push is prohibited. Use --force-with-lease on your own feature branch only, never on main/dev/staging."
 fi
 if hit '^git[[:space:]]+push\b.*--force-with-lease' && hit '^git[[:space:]]+push\b.*\b(main|master|dev|staging)\b'; then
@@ -84,7 +88,7 @@ fi
 # `clean -n` (dry run), `branch -d` (refuses an unmerged branch), `checkout <branch>`,
 # `restore --staged` (unstage only) and `restore -- <explicit path>` (one named file, on purpose).
 if hit '^git[[:space:]]+clean\b.*([[:space:]]-[a-zA-Z]*f|[[:space:]]--force\b)' \
-   && ! hit '^git[[:space:]]+clean\b.*([[:space:]]-[a-zA-Z]*n|[[:space:]]--dry-run\b)'; then
+   && ! exempt '^git[[:space:]]+clean\b.*([[:space:]]-[a-zA-Z]*n|[[:space:]]--dry-run\b)'; then
   deny "git clean -f deletes untracked files with no undo. Run 'git clean -n' first and show the user what it would remove; delete named paths with approval."
 fi
 if hit '^git[[:space:]]+checkout\b.*[[:space:]]--([[:space:]]|$)' \
@@ -92,7 +96,7 @@ if hit '^git[[:space:]]+checkout\b.*[[:space:]]--([[:space:]]|$)' \
   deny "git checkout -- <path> / git checkout . overwrites uncommitted edits with no undo. To keep them: git stash push -m <why> -- <path>. To discard ONE file you own: git restore -- <that path>."
 fi
 if hit '^git[[:space:]]+restore\b.*[[:space:]](\./?|:/|\*)($|[[:space:]])' \
-   && ! hit '^git[[:space:]]+restore\b.*--staged\b' ; then
+   && ! exempt '^git[[:space:]]+restore\b.*--staged\b' ; then
   deny "git restore . discards every uncommitted edit in the tree. Name the one file you mean: git restore -- <path>."
 fi
 if hit '^git[[:space:]]+branch\b.*[[:space:]](-[a-zA-Z]*D\b|--delete[[:space:]]+--force\b|--force[[:space:]]+--delete\b)'; then

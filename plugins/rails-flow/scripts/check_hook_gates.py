@@ -673,6 +673,53 @@ def guard_bash_fixtures() -> None:
     check("guard-bash (#1529 review): CONTROL: the backtick shape followed by `git status` passes",
           run("x=`cat <<EOF\nfoo\n`\ngit status") == 0, "exit 2")
 
+    # #1529 round-2 review. B1: after a heredoc ended early at the `)`, a body line naming `cat <<END`
+    # opened a heredoc that never closed and hid what bash runs next -- a regression on dev's exit 2.
+    check("guard-bash (#1529 r2): a PR body naming `cat <<END` after an early heredoc end hides nothing",
+          run("gh pr view 1 --json body -q \"$(cat <<'EOF'\n) note\nuse `cat <<END` here\nEOF\n)\"\ngit add -A") == 2,
+          "exit 0: a phantom heredoc swallowed the command")
+    check("guard-bash (#1529 r2): the minimal phantom-heredoc shape is blocked",
+          run("x=$(cat <<EOF\n)\ncat <<END\nEOF\n)\ngit add -A") == 2, "exit 0")
+    # B2: an awk that FAILS (not a missing one) read as a clean empty result.
+    fake = tempfile.mkdtemp()
+    for tool in ("bash", "git", "dirname", "cat", "env", "head", "sed", "tr", "grep"):
+        real = next((f"{d}/{tool}" for d in ("/usr/bin", "/bin") if os.path.exists(f"{d}/{tool}")), None)
+        if real:
+            os.symlink(real, Path(fake) / tool)
+    os.symlink(sys.executable, Path(fake) / "python3")
+    (Path(fake) / "awk").write_text("#!/bin/sh\nexit 2\n", encoding="utf-8")
+    (Path(fake) / "awk").chmod(0o755)
+    no_cat = bindir(base + ("grep", "sed", "tr", "awk"), python=True)
+    os.unlink(Path(no_cat) / "cat")
+    no_awk = bindir(base + ("grep",), python=True)
+    # No sed: the FIRST stage fails while the last (awk) succeeds on empty input, so only `pipefail`
+    # carries the failure (#1529 round 3).
+    no_sed = bindir(base + ("grep", "tr", "awk"), python=True)
+    try:
+        check("guard-bash (#1529 r3): with no sed, `git add -A` is blocked",
+              raw(payload("git add -A"), no_sed) == 2, "exit 0: an early stage failed and the last one's 0 won")
+        check("guard-bash (#1529 r3): CONTROL: with no sed, `git status` passes",
+              raw(payload("git status"), no_sed) == 0, "exit 2")
+        check("guard-bash (#1529 r2): with an awk that exits 2, `git add -A` is blocked",
+              raw(payload("git add -A"), fake) == 2, "exit 0: the normaliser's status was discarded")
+        check("guard-bash (#1529 r2): CONTROL: with an awk that exits 2, `git status` passes",
+              raw(payload("git status"), fake) == 0, "exit 2")
+        # B3: unanchored, an exemption's `.*` reached another segment.
+        for cmd in ("git clean -fd && echo -n done", "git push --force origin feat; echo --force-with-lease",
+                    "git restore . && echo --staged"):
+            check(f"guard-bash (#1529 r2): with no awk, `{cmd}` is not exempted by another segment",
+                  raw(payload(cmd), no_awk) == 2, "exit 0")
+        # Suggestion 1: `$(cat)` read nothing without cat.
+        check("guard-bash (#1529 r2): with no cat, `git add -A` is blocked",
+              raw(payload("git add -A"), no_cat) == 2, "exit 0: stdin was never read")
+        check("guard-bash (#1529 r2): CONTROL: with no cat, `git status` passes",
+              raw(payload("git status"), no_cat) == 0, "exit 2")
+    finally:
+        for bd in (fake, no_cat, no_awk, no_sed):
+            shutil.rmtree(bd, ignore_errors=True)
+    check("guard-bash (#1529 r2): CONTROL: with the full PATH, `git clean -n -fd` is still a dry run",
+          run("git clean -n -fd") == 0, "exit 2")
+
 
 # ---- guard-claims.sh (#1106) --------------------------------------------------------------------
 # `claim-verifier` exists, works, covers "any number: counts, ratios, versions, timings", and is
