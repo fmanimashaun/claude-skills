@@ -67,11 +67,14 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import errno
 from datetime import datetime
 import csv
 import io
 import json
+import os
 import re
+import shutil
 import struct
 import subprocess
 import sys
@@ -621,6 +624,22 @@ AUTHZ_GOOD = [
 ]
 
 
+# The fixture repo's git, made hermetic. A fixture `git commit` otherwise starts `git maintenance run
+# --auto --quiet --detach` (GIT_TRACE shows it), a background process that can still be writing into the
+# repo when the temp directory is removed -- `rmtree` then raises "Directory not empty" from cleanup, the
+# selftest dies before printing its verdict, and mutation coverage reads a correct mutant as caught by the
+# wrong fixture (#1493). Signing is off too, so a maintainer's own git config never reaches the fixture.
+FIXTURE_GIT = ("-c", "user.email=t@t", "-c", "user.name=t", "-c", "maintenance.auto=false", "-c", "gc.auto=0",
+               "-c", "commit.gpgSign=false", "-c", "tag.gpgSign=false")
+
+
+def _fixture_tempdir() -> tempfile.TemporaryDirectory:
+    """The selftest's scratch directory. Cleanup errors are ignored -- for CLEANUP only: every verdict has
+    been decided and recorded by then, so a straggling writer leaves debris in the temp dir, never a crash
+    that swallows the result (#1493)."""
+    return tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+
+
 def selftest() -> int:
     failures: list[str] = []
     checks = 0
@@ -634,7 +653,33 @@ def selftest() -> int:
     def fb(rows, shots=None, name="w"):
         return check_first_boot(_walk(tmp / name, rows, shots))
 
-    with tempfile.TemporaryDirectory() as td:
+    # #1493: cleanup cannot crash the verdict. The CI traceback was `os.rmdir` raising "Directory not
+    # empty" inside TemporaryDirectory.cleanup, a writer racing the removal; that exact failure is made
+    # deterministic here by refusing the probe directory's own rmdir, and only it.
+    real_rmdir = os.rmdir
+    probe = ""
+
+    def busy_rmdir(path, *args, **kwargs):
+        if probe and os.path.basename(os.fspath(path)) == probe:
+            raise OSError(errno.ENOTEMPTY, "Directory not empty", os.fspath(path))
+        return real_rmdir(path, *args, **kwargs)
+
+    os.rmdir = busy_rmdir
+    try:
+        crashed = None
+        try:
+            with _fixture_tempdir() as probe_dir:
+                probe = Path(probe_dir).name
+                (Path(probe_dir) / "written-late").write_text("x", encoding="utf-8")
+        except OSError as exc:
+            crashed = exc
+    finally:
+        os.rmdir = real_rmdir
+        if probe:
+            shutil.rmtree(Path(tempfile.gettempdir()) / probe, ignore_errors=True)
+    check("cleanup: a directory still being written at cleanup does not crash the selftest", crashed is None, crashed)
+
+    with _fixture_tempdir() as td:
         tmp = Path(td)
 
         # -- first-boot: the clean control, then one planted defect per rule --------------
@@ -782,14 +827,35 @@ def selftest() -> int:
         sweep = proj / f"qa/manual-tests/authz-{V}/sweep.csv"
         sweep.write_text(AUTHZ_HEADER + "\n".join(AUTHZ_GOOD) + "\n", encoding="utf-8")
         stamp = proj / "qa/CERTIFICATION"
-        g = ["git", "-C", str(proj), "-c", "user.email=t@t", "-c", "user.name=t"]
+        g = ["git", "-C", str(proj), *FIXTURE_GIT]
         # The work branch is dev; main is created below, only where a fixture needs a PUBLISHED release.
         subprocess.run(["git", "init", "-q", "-b", "dev", str(proj)], check=True)
         subprocess.run([*g, "add", "qa/manual-tests"], check=True)
         subprocess.run([*g, "commit", "-q", "-m", "evidence"], check=True)
+        # #1493, the root cause: a fixture commit starts no detached background git.
+        # Only FIXTURE_GIT may supply the settings: a runner that already disables maintenance through
+        # GIT_CONFIG_* (ours does, #1510) would otherwise satisfy this check with the fixture's own
+        # settings removed -- and a downstream project runs this selftest without our runner.
+        bare_env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_CONFIG_")}
+        traced = subprocess.run([*g, "commit", "-q", "--allow-empty", "-m", "trace"], capture_output=True,
+                                text=True, env={**bare_env, "GIT_TRACE": "1"})
+        # CONTROL: with auto-maintenance ON the same commit does run it, so the check above is not vacuous
+        # on this git. It runs in the FOREGROUND (`autoDetach=false`): a detached control would be the very
+        # #1493 race, hidden by the cleanup (review of PR #1511). `maintenance.auto=true` on the command
+        # line, so a maintainer's global config cannot turn the control red.
+        bare = ["git", "-C", str(proj), "-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgSign=false",
+                "-c", "maintenance.auto=true", "-c", "maintenance.autoDetach=false", "-c", "gc.autoDetach=false"]
+        control = subprocess.run([*bare, "commit", "-q", "--allow-empty", "-m", "control"], capture_output=True,
+                                 text=True, env={**bare_env, "GIT_TRACE": "1"})
+        check("cleanup CONTROL: with auto-maintenance on, a commit runs it -- in the foreground, never detached",
+              ("maintenance run --auto" in control.stderr or "gc --auto" in control.stderr)
+              and " --detach" not in control.stderr,
+              [l for l in control.stderr.splitlines() if "run_command" in l][:3])
+        check("cleanup: a fixture commit starts no background maintenance or gc",
+              traced.returncode == 0 and "maintenance run" not in traced.stderr and "gc --auto" not in traced.stderr,
+              [l for l in traced.stderr.splitlines() if "maintenance" in l or "gc" in l][:3])
 
         def commit(msg: str, when: str | None = None) -> None:
-            import os
             env = dict(os.environ)
             if when:
                 env["GIT_COMMITTER_DATE"] = env["GIT_AUTHOR_DATE"] = when
@@ -805,7 +871,6 @@ def selftest() -> int:
             out, err = io.StringIO(), io.StringIO()
             here = Path.cwd()
             try:
-                import os
                 os.chdir(proj)
                 with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
                     rc = main(["stamp", *argv])
@@ -883,7 +948,6 @@ def selftest() -> int:
         put({**base, **ev, "version": "../x"})
         f_bv, _, _ = check_stamp(stamp, proj, rev="HEAD")
         check("stamp: a version that is not a plain release name is refused", any("version" in f for f in f_bv), f_bv)
-        import shutil
         shutil.copytree(proj / f"qa/manual-tests/first-boot-{V}", proj / "qa/manual-tests/first-boot-v2")
         (proj / "qa/manual-tests/authz-v2").mkdir()
         (proj / "qa/manual-tests/authz-v2/sweep.csv").write_text(
@@ -998,8 +1062,7 @@ def selftest() -> int:
               any("already in the last published release" in f for f in f_old), f_old)
         # 3. KNOWN LIMIT, pinned: a lightly edited copy (one line added) is NOT caught. It is stated in
         # certify.md and the doctrine map; this fixture keeps the statement true.
-        import shutil as _sh
-        _sh.copytree(proj / "qa/manual-tests/first-boot-v5", proj / "qa/manual-tests/first-boot-v6")
+        shutil.copytree(proj / "qa/manual-tests/first-boot-v5", proj / "qa/manual-tests/first-boot-v6")
         (proj / "qa/manual-tests/first-boot-v6/pages.csv").write_text(
             (proj / "qa/manual-tests/first-boot-v6/pages.csv").read_text(encoding="utf-8") + "\n", encoding="utf-8")
         (proj / "qa/manual-tests/authz-v6").mkdir()

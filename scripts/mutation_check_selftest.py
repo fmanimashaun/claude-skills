@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import ast
 import dataclasses
+import os
 import shutil
 import sys
 import tempfile
@@ -207,6 +208,65 @@ def run() -> int:
     finally:
         mc.REPO = original_repo
 
+    # ---- 1d. baselines and mutants start no detached git maintenance (#1510) ----------------
+    # The helper APPENDS to a caller's own pairs, never renumbers them over.
+    _tick()
+    mine = mc.hermetic_git.env({"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.x", "GIT_CONFIG_VALUE_0": "y"})
+    if (mine.get("GIT_CONFIG_KEY_0"), mine.get("GIT_CONFIG_COUNT"), mine.get("GIT_CONFIG_KEY_1"),
+            mine.get("GIT_CONFIG_KEY_2")) != ("core.x", "3", "maintenance.auto", "gc.auto"):
+        FAILURES.append(f"#1510: hermetic_git.env must append after a caller's GIT_CONFIG pairs, got {mine}")
+    # ...an empty count is none, and a count git rejects is left exactly as it was.
+    _tick()
+    if mc.hermetic_git.env({"GIT_CONFIG_COUNT": ""}).get("GIT_CONFIG_KEY_0") != "maintenance.auto":
+        FAILURES.append("#1510: an empty GIT_CONFIG_COUNT is no pairs, so ours start at 0")
+    for bogus in ("-1", "abc", " 2 ", "٣"):
+        _tick()
+        given = {"GIT_CONFIG_COUNT": bogus, "GIT_CONFIG_KEY_0": "core.x", "GIT_CONFIG_VALUE_0": "y"}
+        if mc.hermetic_git.env(given) != given:
+            FAILURES.append(f"#1510: a count git rejects ({bogus!r}) must be left untouched, "
+                            f"got {mc.hermetic_git.env(given)}")
+    # A selftest that commits in a temp repo under GIT_TRACE and refuses to go on if git started
+    # `maintenance run --auto` or `gc --auto` -- the #1493 race. Through run_guard, so it proves
+    # the CALLER passes the env to both the baseline and the mutant, not only that the helper builds it.
+    probe = (
+        "import os, subprocess, sys, tempfile\n"
+        "with tempfile.TemporaryDirectory() as d:\n"
+        "    subprocess.run(['git', 'init', '-q', d], check=True)\n"
+        "    t = subprocess.run(['git', '-C', d, '-c', 'user.email=t@t', '-c', 'user.name=t', '-c',\n"
+        "                        'commit.gpgSign=false', 'commit', '-q', '--allow-empty', '-m', 'm'],\n"
+        "                       capture_output=True, text=True, env={**os.environ, 'GIT_TRACE': '1'})\n"
+        "    if 'maintenance run' in t.stderr or 'gc --auto' in t.stderr:\n"
+        "        print('background git maintenance started'); sys.exit(4)\n"
+    )
+    guard, root = _fixture_guard((
+        mc.Mutation("odd numbers reported even", "n % 2 == 0", "True", "fixture-odd"),
+    ))
+    traced = root / "scripts" / "subject_selftest.py"
+    traced.write_text(probe + traced.read_text(encoding="utf-8"), encoding="utf-8")
+    mc.REPO = root
+    real_env = mc.hermetic_git.env
+    # The ambient env must not already be hermetic -- under a mutation guard it is, inherited from the
+    # outer runner -- or a call site that drops `env=` still passes. Only the call site may supply it.
+    inherited = {k: os.environ.pop(k) for k in list(os.environ) if k.startswith("GIT_CONFIG_")}
+    try:
+        _tick()
+        problems = mc.run_guard(guard)
+        if problems:
+            FAILURES.append(f"#1510: the baseline and the mutant must run with git maintenance off, got {problems}")
+        _tick()
+        # No env, really: drop GIT_CONFIG_* too, or a run nested inside a hermetic runner (the
+        # mutation guard for this very file) inherits the settings and the control proves nothing.
+        mc.hermetic_git.env = lambda base=None: {k: v for k, v in (os.environ if base is None else base).items()
+                                                 if not k.startswith("GIT_CONFIG_")}
+        problems = mc.run_guard(guard)
+        if not any("INERT" in p for p in problems):
+            FAILURES.append(f"#1510 CONTROL: without the env this git does start maintenance, so the same "
+                            f"selftest must read INERT, got {problems}")
+    finally:
+        mc.hermetic_git.env = real_env
+        os.environ.update(inherited)
+        mc.REPO = original_repo
+
     # ---- 2. a SURVIVOR must be reported ------------------------------------------------
     # This mutation changes the subject in a way neither fixture observes, so the selftest still
     # passes. That is exactly the vacuous-fixture situation, and it must not read as success.
@@ -318,7 +378,10 @@ def run() -> int:
         if not (report and "exit 1" in report and tail):
             FAILURES.append(f"a wrong-fixture report does not carry the mutant's exit and output; got {problems}")
         _tick()
-        if len(tail) != 12 or "noise-01" in report or "fixture-odd" not in report:
+        tail_text = "\n".join(tail)
+        # The clause on the TAIL, not the report: the header names the expected fixture
+        # ('no mention of fixture-odd'), so a test of the whole report for it could never fail (#1532).
+        if len(tail) != 12 or "noise-01" in tail_text or "noise-20" not in tail_text:
             FAILURES.append(f"a wrong-fixture report does not carry exactly the last 12 lines of output; "
                             f"got {len(tail)} line(s), first={tail[:1]}")
         _tick()
@@ -326,6 +389,61 @@ def run() -> int:
             FAILURES.append("a wrong-fixture report does not cut each output line to 300 characters; "
                             f"widest {max(len(l) for l in tail)}")
     finally:
+        mc.REPO = original_repo
+
+    # ---- #1530-#1532: the three diagnostics a CI-only failure depends on ------------------------
+    # (1) the tail is ONE interleaved stream. 13 stderr lines, then a label on stdout: the old
+    # `stdout + stderr` put the label first and cut it, so the line naming what fired was the one
+    # missing. (2) the INERT report is as width-bound as the wrong-fixture tail. (3) a TIMEOUT keeps
+    # what the child printed before the limit, for the baseline and the mutant alike.
+    labelled = SELFTEST.replace(
+        '    sys.exit(1)\n',
+        '    for i in range(13):\n        print(f"noise-{i:02d}", file=sys.stderr, flush=True)\n'
+        '    print("label-on-stdout", flush=True)\n    sys.exit(1)\n', 1)
+    assert labelled != SELFTEST
+    guard, root = _fixture_guard((
+        mc.Mutation("even numbers reported odd", "n % 2 == 0", "False", "fixture-odd"),
+    ), selftest=labelled)
+    mc.REPO = root
+    try:
+        _tick()
+        report = next((p for p in mc.run_guard(guard) if "not by the expected fixture" in p), "")
+        tail = [l.strip() for l in report.split("\n")[1:] if l.startswith("      ")]
+        if not tail or tail[-1] != "label-on-stdout":
+            FAILURES.append("a wrong-fixture tail hides a label printed to stdout behind 12+ stderr lines "
+                            f"(stdout and stderr are not one interleaved stream); tail ends {tail[-2:]}")
+    finally:
+        mc.REPO = original_repo
+
+    wide = 'import sys\nprint("w" * 5000)\nsys.exit(1)\n'
+    guard, root = _fixture_guard((mc.Mutation("unused", "n % 2 == 0", "True", "fixture-odd"),), selftest=wide)
+    mc.REPO = root
+    try:
+        _tick()
+        inert = next((p for p in mc.run_guard(guard) if "INERT" in p), "")
+        rows = inert.split("\n")[1:]
+        if not rows or any(len(r) > 306 for r in rows):
+            FAILURES.append("the INERT report does not cut each output line to 300 characters; "
+                            f"widest {max((len(r) for r in rows), default=0)}")
+    finally:
+        mc.REPO = original_repo
+
+    sleeper = 'import time\nprint("timeout-label", flush=True)\ntime.sleep(60)\n'
+    guard, root = _fixture_guard((mc.Mutation("unused", "n % 2 == 0", "True", "fixture-odd"),), selftest=sleeper)
+    mc.REPO = root
+    original_baseline_timeout = mc.BASELINE_TIMEOUT
+    try:
+        _tick()
+        timed_out = mc.run_mutation(guard, guard.mutations[0], timeout=2)
+        if not any("timed out" in p and "timeout-label" in p for p in timed_out):
+            FAILURES.append(f"a MUTANT's timeout report drops what it printed before the limit; got {timed_out}")
+        _tick()
+        mc.BASELINE_TIMEOUT = 2
+        timed_out = mc.run_baseline(guard)
+        if not any("timed out" in p and "timeout-label" in p for p in timed_out):
+            FAILURES.append(f"a BASELINE's timeout report drops what it printed before the limit; got {timed_out}")
+    finally:
+        mc.BASELINE_TIMEOUT = original_baseline_timeout
         mc.REPO = original_repo
 
     # ---- 5. every real guard's anchors still match exactly once ------------------------
