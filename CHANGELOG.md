@@ -3661,11 +3661,12 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     decision recorded on #1509 (https://github.com/fmanimashaun/claude-skills/issues/1509): refusing would teach
     `RAILS_FLOW_CLAIMS_OK=1`, and the session repository's template would be the wrong one. CLAUDE.md's Platform
     paragraph now scopes the gate to a repository it can resolve.
-  - `check_hook_gates.py` goes from 375 checks on dev to 469. Run against dev's `guard-claims.sh`, 89 of the 94 new
-    ones fail; the 5 that pass are controls (no `cd`; `git push && gh` with no `cd`; `-R` after a `cd`; the
-    session's own `skills/` diff without a `cd`) and the cd-target `skills/` check, which dev's hook passes only
-    because it cannot read the relative body. `hook_guard_claims` goes from 11 mutations to 20, and the new
-    `hook_command_cwd` guard carries 38, each caught by its expected fixture.
+  - `check_hook_gates.py` goes from 375 checks on dev to 480. Run against dev's `guard-claims.sh`, 98 of the 105 new
+    ones fail; the 7 that pass are controls (no `cd`; `git push && gh` with no `cd`; allowlisted commands and an
+    assignment before `gh`; a logical `cd link/..`; `-R` after a `cd`; the session's own `skills/` diff without a
+    `cd`) and the cd-target `skills/` check, which dev's hook passes only because it cannot read the relative body.
+    `hook_guard_claims` goes from 11 mutations to 20, and the new `hook_command_cwd` guard carries 35, each caught
+    by its expected fixture.
 
 ### 1.56.0 (release v1.153.0) — 2026-10-02
 
