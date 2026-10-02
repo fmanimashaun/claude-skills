@@ -18,12 +18,15 @@ GUARD = Guard(
         "skills/parallel-session-lane/SKILL.md",
         "skills/code-review/SKILL.md",
         ".claude/skills/parallel-session-lane/SKILL.md",
+        # #1481: the references are mirrored too, so the builder reads both sides of them.
+        "skills/parallel-session-lane/references",
+        ".claude/skills/parallel-session-lane/references",
     ),
     mutations=(
         Mutation(
             "an unregistered copy of a shipped skill is accepted, so one rule gets two homes",
-            '        if (ROOT / "skills" / derived.parent.name / "SKILL.md").exists():',
-            "        if False:",
+            '            if relative not in registered:\n                strays.append(relative)',
+            '            pass',
             "unregistered copy",
         ),
         Mutation(
@@ -55,6 +58,34 @@ GUARD = Guard(
             '    return text[:end] + "\\n" + BANNER.format(source=source.as_posix()) + text[end:]',
             "    return BANNER.format(source=source.as_posix()) + text",
             "does not open with the frontmatter block",
+        ),
+        Mutation(
+            # #1481
+            'a reference the mirrored SKILL.md links is no longer mirrored',
+            '    Path("skills/parallel-session-lane/references/session-identity.md"):\n        Path(".claude/skills/parallel-session-lane/references/session-identity.md"),\n',
+            '',
+            'which no MIRRORED entry copies',
+        ),
+        Mutation(
+            # #1481
+            'a mirrored reference loses its banner',
+            '        return BANNER.format(source=source.as_posix()) + "\\n" + text',
+            '        return text',
+            'a mirrored reference must open with the banner',
+        ),
+        Mutation(
+            # #1536 review
+            'stray detection reads only SKILL.md again, so a hand-copied reference passes',
+            '        for derived in sorted(f for f in skill_dir.rglob("*") if f.is_file()):',
+            '        for derived in sorted(f for f in skill_dir.glob("SKILL.md") if f.is_file()):',
+            'unregistered reference beside a mirror',
+        ),
+        Mutation(
+            # #1536 review
+            '--check skips the mirrored references, so an edited reference ships unnoticed',
+            '    for source, derived in MIRRORED.items():\n        want = render(source)',
+            '    for source, derived in ((s, d) for s, d in MIRRORED.items() if s.name == "SKILL.md"):\n        want = render(source)',
+            'edited committed',
         ),
     ),
 )
