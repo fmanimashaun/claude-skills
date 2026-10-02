@@ -106,6 +106,50 @@ GUARD = Guard(
             '            if line == delim:\n                owed.pop(0)\n        if c == "\\n" and pending:',
             "'x=$(cat <<-EOF\\n)\\n\\tEOF\\n)\\ncat <<END\\ngit push origin main\\nEND\\ngit push origin fix/x': expected does not target main",
         ),
+        # #1550: what a substitution runs is a command in its own right.
+        Mutation(
+            "substitution bodies are never read, so a push inside one passes",
+            "    for body in bodies:\n        yield from all_segments(body, depth + 1)",
+            "    for body in []:\n        yield from all_segments(body, depth + 1)",
+            "'x=$(git push origin main)': expected TARGETS main",
+        ),
+        Mutation(
+            "a double-quoted substitution's body is not collected",
+            "            if bodies is not None:\n                bodies.append(body)",
+            "            if False:\n                bodies.append(body)",
+            "'echo \"$(git push origin main)\"': expected TARGETS main",
+        ),
+        Mutation(
+            "a backtick substitution's body is not collected",
+            "            if bodies is not None:\n                bodies.append(cmd[i + 1:end - 1])",
+            "            if False:\n                bodies.append(cmd[i + 1:end - 1])",
+            "'x=`git push origin main`': expected TARGETS main",
+        ),
+        Mutation(
+            "an unquoted $( ), <( ) or >( ) body is not collected",
+            "            if bodies is not None:\n                bodies.append(cmd[i + 2:end - 1])",
+            "            if False:\n                bodies.append(cmd[i + 2:end - 1])",
+            "'diff <(git push origin main) /dev/null': expected TARGETS main",
+        ),
+        Mutation(
+            "a substitution body is read BEFORE the outer command, so its cd leaks into the outer push",
+            "    for seg in segments(tokens(cmd, bodies)):\n        yield seg",
+            "    _toks = tokens(cmd, bodies)\n    for body in bodies:\n        yield from all_segments(body, depth + 1)\n    for seg in segments(_toks):\n        yield seg",
+            "'x=$(cd other); git push': expected does not target main",
+        ),
+        # #1551: a quote in a heredoc body inside a substitution is text.
+        Mutation(
+            "a quote in a heredoc body opens a quote again, so one apostrophe is an unterminated substitution",
+            "        elif c in \"'\\\"\" and not in_body:",
+            "        elif c in \"'\\\"\":",
+            "'git commit -m \"$(cat <<\\'EOF\\'\\nit\\'s done\\nEOF\\n)\"\\ngit push origin fix/x': expected does not target main",
+        ),
+        Mutation(
+            "the body state is never set, so quotes open inside every body",
+            "            in_body = bool(owed)",
+            "            in_body = False",
+            "'x=$(cat <<EOF\\nsay \"hi\\nEOF\\n)\\ngit push origin fix/x': expected does not target main",
+        ),
         Mutation(
             "heredoc bodies are tokenised again, so an apostrophe denies a feature push",
             "            if m:\n                pending.append",
