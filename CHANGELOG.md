@@ -3599,6 +3599,27 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 - **simple-form-only keeps refusing `f.collection_check_boxes` / `f.collection_radio_buttons`, and now says what to write instead — `plugins/rails-flow/scripts/check_simple_form_only.py`, `plugins/rails-flow/scripts/mutations/check_simple_form_only.py`** (#1458). Maintainer decision: [keep refused](https://github.com/fmanimashaun/claude-skills/issues/1458#issuecomment-5938116850). Both are simple_form's own methods (v5.4.1 `form_builder.rb:397`/`:451`). Called directly, though, they render items with no label, error or hint, which breaks the wrapper rule ("author fields with `f.input`", `skills/design-system/references/component-implementations.md` §191–236), the same reason `f.label` is refused. The finding now names the wrapper spelling, using the template's own builder variable: `f.input :attr, as: :check_boxes` / `as: :radio_buttons, collection: …` (`form.input` for a `|form|` builder). A fixture through `check()` asserts the wording, with a control that other raw calls get no such remedy; the guard catches 32/32. Downstream, Retask's two findings in `admin/actions/new.html.erb` now name their fix.
 
+- **`guard-claims` judges a PR body against the template of the repository the command runs in, not the session's —
+  `plugins/rails-flow/hooks/scripts/guard-claims.sh`, new `plugins/rails-flow/hooks/scripts/lib/command_cwd.py`** (#1509).
+  The hook ran `git rev-parse --show-toplevel` in its own working directory, which is the session's. So
+  `cd ~/projects/other && gh pr create --body-file …` from a session in another repository was BLOCKED for missing
+  that repository's sections, and the target's own template was never read; a relative `--body-file` was read from
+  the session directory too.
+  - `command_cwd.py` follows the command's own `cd`s before the `gh`: joined by `&&`, `;` or a newline they move the
+    directory; one inside `( … )` does not outlive it, and one inside a brace group `{ …; }` or an `if` does, since
+    those run in the same shell. Heredoc bodies are dropped first, as `normalize_cmd.sh` does, so an apostrophe in
+    a body is not read as a quote.
+  - A `cd` it cannot follow exits `3`, and the hook says the template is **NOT checked** rather than judge against the
+    wrong one: `cd -`, `$` or a backquote in the target, `~user`, a missing directory, `pushd`/`popd`, a negated
+    command (`! cd x`), and a `cd` joined by `|`, `||` or `&`. Run on bash 3.2: a piped `cd` and a subshell `cd` do
+    not persist, a brace group's does, and `cd x || gh` runs `gh` only where the `cd` failed. A relative body is
+    then not read at all.
+  - A missing or crashing `command_cwd.py` BLOCKS, as #1435 ruled for `pr_template.py`; `-R`/`GH_REPO` still say NOT
+    checked.
+  - `check_hook_gates.py` gains 15 checks. Run against dev's hook, the 12 that exercise the change fail and the 3
+    controls (no `cd`; `-R`; a subshell `cd`) pass. `hook_guard_claims` gains 5 mutations, and the new
+    `hook_command_cwd` guard carries 8, each caught.
+
 ### 1.56.0 (release v1.153.0) — 2026-10-02
 
 - **The mock-up gate reads `GUARDRAILS.md` with CommonMark's own block algorithm, so containers no longer fool it — `plugins/rails-flow/scripts/check_mockup_gate.py`, `plugins/rails-flow/scripts/mutations/check_mockup_gate.py`** (#1501). The two line passes from #1490 (`unfenced()`, `outside_indented_code()`) are replaced by `block_classes()`. It is phase 1 of the spec's block parsing: open block quotes and list items are matched per line, then lazy continuation, then new block starts. An opt-out declares only as text outside every code and HTML block.
@@ -3641,27 +3662,6 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     `$(`, backtick, `<(`, `eval` or shell name. So `e'v'al` and `bas\h -c` still reach it.
   - 39 `guard-bash` blocks with 19 controls, and 4 release-gate fallback cases; `hook_normalize_cmd` catches 18 of
     18 mutations (15 new).
-
-- **`guard-claims` judges a PR body against the template of the repository the command runs in, not the session's —
-  `plugins/rails-flow/hooks/scripts/guard-claims.sh`, new `plugins/rails-flow/hooks/scripts/lib/command_cwd.py`** (#1509).
-  The hook ran `git rev-parse --show-toplevel` in its own working directory, which is the session's. So
-  `cd ~/projects/other && gh pr create --body-file …` from a session in another repository was BLOCKED for missing
-  that repository's sections, and the target's own template was never read; a relative `--body-file` was read from
-  the session directory too.
-  - `command_cwd.py` follows the command's own `cd`s before the `gh`: joined by `&&`, `;` or a newline they move the
-    directory; one inside `( … )` does not outlive it, and one inside a brace group `{ …; }` or an `if` does, since
-    those run in the same shell. Heredoc bodies are dropped first, as `normalize_cmd.sh` does, so an apostrophe in
-    a body is not read as a quote.
-  - A `cd` it cannot follow exits `3`, and the hook says the template is **NOT checked** rather than judge against the
-    wrong one: `cd -`, `$` or a backquote in the target, `~user`, a missing directory, `pushd`/`popd`, a negated
-    command (`! cd x`), and a `cd` joined by `|`, `||` or `&`. Run on bash 3.2: a piped `cd` and a subshell `cd` do
-    not persist, a brace group's does, and `cd x || gh` runs `gh` only where the `cd` failed. A relative body is
-    then not read at all.
-  - A missing or crashing `command_cwd.py` BLOCKS, as #1435 ruled for `pr_template.py`; `-R`/`GH_REPO` still say NOT
-    checked.
-  - `check_hook_gates.py` gains 15 checks. Run against dev's hook, the 12 that exercise the change fail and the 3
-    controls (no `cd`; `-R`; a subshell `cd`) pass. `hook_guard_claims` gains 5 mutations, and the new
-    `hook_command_cwd` guard carries 8, each caught.
 
 - **The mock-up gate reads an opt-out in an INDENTED code block, an HTML block or a comment as an example, by CommonMark's block rules — `plugins/rails-flow/scripts/check_mockup_gate.py`, `plugins/rails-flow/scripts/mutations/check_mockup_gate.py`** (#1490). A `GUARDRAILS.md` example written as a 4-space code block, or inside `<!-- -->`, turned the gate off.
   - New `outside_indented_code()` drops indented code blocks before `OPT_OUT` is read. The rules are CommonMark 0.31.2's, verified by doctrine-verifier against `spec.txt` at tag 0.31.2 (CONFIRMED, 8 of 8):
