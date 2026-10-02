@@ -63,11 +63,16 @@ targets_main=0
 # main`, `sudo -u x git ...`, `( git push ... )`, `bash -c '...'` and `eval` all passed it. The
 # classifier finds git and gh anywhere in a segment, recurses into `sh -c` strings and `eval`, and
 # prints one line per finding: PUSH_MAIN <dst>, GIT_MERGE, PR_MERGE <selector>. Exit 0 = read;
-# anything else = could not judge (an unreadable refspec, a substitution, a crash), which is treated
-# as a promotion -- CLOSED. It runs only when the raw command mentions git or gh at all.
+# anything else = could not judge (an unreadable refspec, such as one a substitution builds, or a
+# crash), which is treated as a promotion -- CLOSED. What a `$( )`, `<( )`, `>( )` or backtick
+# substitution RUNS is read as a command in its own right (#1550), so a push inside one is classified
+# like any other. It runs only when the raw command mentions git or gh at all.
 # KNOWN LIMITS (the threat model is an honest mistake, not obfuscation -- coordinator's ruling on
-# #1470; listed in push_targets.py): `bash -c $'...'`, `eval "$(...)"`, a run-time verb (`$(echo git)
-# push`, `$g push`), here-strings, `... | bash`, `fish -c`, and aliases defined in git config.
+# #1470; listed in push_targets.py): `bash -c $'...'`, `eval "$(...)"` (the output of a substitution
+# that is then executed), a run-time verb (`$(echo git) push`, `$g push`), here-strings, `... | bash`,
+# `fish -c`, and aliases defined in git config. Also not read yet (#1553): a substitution in the body of
+# a heredoc whose delimiter is UNQUOTED, which the shell runs (`cat <<EOF` / `$(git push origin main)` /
+# `EOF`); with a QUOTED delimiter the body is text, and is read as text.
 _pt="${CLAUDE_PLUGIN_ROOT:-}/scripts/push_targets.py"
 # Quotes and backslashes are dropped before the pre-check: `g''it`, `gi\t` and `"g"it` are all git
 # to the shell, and a literal `*git*` test sent them past the classifier (41's delta review).
