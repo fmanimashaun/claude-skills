@@ -29,6 +29,10 @@ so line numbers hold and a comment explaining a past fix is not a finding):
                      read from `simple_form_for … do |f|`, never assumed. `f.input`,
                      `f.input_field`, `f.association`, `f.button`, `f.submit`, `f.hidden_field`,
                      `f.error` and `f.simple_fields_for` are simple_form's own.
+                     `f.collection_check_boxes` and `f.collection_radio_buttons` are simple_form's
+                     too, but stay refused: called directly they render items with no label,
+                     error or hint. The finding names the wrapper spelling, `f.input :x, as:
+                     :check_boxes` / `as: :radio_buttons` (maintainer decision on #1458).
 
 DECLARED EXCEPTIONS. A deliberate one, such as a one-time-code input that must carry a boolean
 attribute, is declared in `.rails-flow/raw-form-exemptions.json`:
@@ -140,6 +144,21 @@ def load_exemptions(root: Path) -> list[dict]:
     return rows
 
 
+# The spelling that renders the same collection THROUGH simple_form's wrapper (label, error, hint).
+# Maintainer decision on #1458: the direct helpers stay refused, and the finding says what to write.
+WRAPPER_SPELLING = {"collection_check_boxes": "as: :check_boxes", "collection_radio_buttons": "as: :radio_buttons"}
+
+
+def remedy(rule: str, what: str) -> str:
+    """The compliant spelling for a finding, when there is one to name."""
+    builder, _, method = what.rpartition(".")
+    if rule == "raw-builder-call" and method in WRAPPER_SPELLING:
+        # The builder variable the template uses (`f`, `form`, …), so the advice is copyable as written.
+        return (f" — write `{builder or 'f'}.input :attr, {WRAPPER_SPELLING[method]}, collection: …` so the "
+                f"wrapper renders its label, error and hint")
+    return ""
+
+
 def check(root: Path) -> tuple[int, list[str]]:
     lock = root / "Gemfile.lock"
     if not lock.is_file() or not re.search(r"^\s+simple_form\b", lock.read_text(encoding="utf-8"), re.M):
@@ -162,7 +181,7 @@ def check(root: Path) -> tuple[int, list[str]]:
             for i in match:
                 used[i] = True
             if not match:
-                findings.append(f"{rel}:{line} — {rule}: `{what}` where simple_form is mandated")
+                findings.append(f"{rel}:{line} — {rule}: `{what}` where simple_form is mandated{remedy(rule, what)}")
     for i, e in enumerate(exemptions):
         if not used[i]:
             findings.append(f"{EXEMPTIONS}: the exemption for {e['file']} ({e['rule']}) matches nothing "
@@ -280,6 +299,31 @@ def selftest() -> int:
     # Indexed defensively: a crash here would hide every fixture below it from the mutation harness.
     lines = [ln for _, ln, _ in scan("x.html.erb", "<%# one\ntwo %>\n\n<%= form_tag '/s' do %><% end %>")]
     check_that("a finding's line survives a blanked multi-line comment", lines == [4], lines)
+
+    # #1458, maintainer decision KEEP REFUSED: the collection helpers stay a finding, and the finding
+    # names the wrapper spelling. Through check(), the entry point, so the message is what users read.
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "Gemfile.lock").write_text("GEM\n  specs:\n    simple_form (5.4.1)\n")
+        (root / "app/views/a").mkdir(parents=True)
+        (root / "app/views/a/new.html.erb").write_text(
+            "<%= simple_form_for @a do |f| %>\n<%= f.collection_check_boxes :tag_ids, Tag.all, :id, :name %>\n"
+            "<%= f.collection_radio_buttons :kind, KINDS, :first, :last %>\n<%= f.text_field :name %>\n<% end %>\n")
+        code, msg = check(root)
+        text = "\n".join(msg)
+        check_that("#1458: f.collection_check_boxes is still refused, and the finding names `as: :check_boxes`",
+                   code == 1 and any("f.collection_check_boxes" in m and "f.input :attr, as: :check_boxes" in m for m in msg), text)
+        check_that("#1458: f.collection_radio_buttons names `as: :radio_buttons`",
+                   any("f.collection_radio_buttons" in m and "f.input :attr, as: :radio_buttons" in m for m in msg), text)
+        (root / "app/views/a/edit.html.erb").write_text(
+            "<%= simple_form_for @a do |form| %>\n<%= form.collection_check_boxes :tag_ids, Tag.all, :id, :name %>\n<% end %>\n")
+        code, msg = check(root)
+        check_that("#1458: the remedy uses the template's own builder variable (`form`, not `f`)",
+                   any("edit.html.erb" in m and "`form.input :attr, as: :check_boxes" in m for m in msg), "\n".join(msg))
+        (root / "app/views/a/edit.html.erb").unlink()
+        code, msg = check(root)
+        check_that("#1458 CONTROL: another raw builder call gets no collection remedy",
+                   any("f.text_field" in m and "f.input :attr, as:" not in m for m in msg), text)
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
