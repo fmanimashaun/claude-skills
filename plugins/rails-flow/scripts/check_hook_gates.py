@@ -1481,6 +1481,24 @@ def release_gate_fixtures() -> None:
     check("release-gate (#1542): CONTROL: the same shape pushing a feature branch is allowed",
           run(early + "git push origin feature/w") == 0, "exit 2")
 
+    # #1550: the shell RUNS a substitution, so a push inside one is a push. `--classify` never read the
+    # body, and the hook's own comment ("a substitution ... is treated as a promotion") was not true of it.
+    for cmd in ("x=$(git push origin main)", 'echo "$(git push origin main)"', "x=`git push origin main`"):
+        check(f"release-gate (#1550): {cmd!r} is blocked", run(cmd) == 2, "exit 0: the body was never read")
+    check("release-gate (#1550): CONTROL: a harmless substitution beside a feature-branch push is allowed",
+          run("x=$(git rev-parse HEAD)\ngit push origin feature/w") == 0, "exit 2")
+    check("release-gate (#1550): CONTROL: a commit message heredoc in $( ) naming a push is allowed",
+          run("git commit -m \"$(cat <<'EOF'\nnever git push origin main\nEOF\n)\"") == 0, "exit 2")
+
+    # #1553: an UNQUOTED heredoc delimiter makes the shell expand `$( )` in the body, so the push runs;
+    # a QUOTED one makes the body text.
+    check("release-gate (#1553): a push in a substitution in an UNQUOTED heredoc body is blocked",
+          run("cat <<EOF\n$(git push origin main)\nEOF") == 2, "exit 0: the heredoc body was stripped unread")
+    check("release-gate (#1553): CONTROL: the same body under a QUOTED delimiter is text and allowed",
+          run("cat <<'EOF'\n$(git push origin main)\nEOF") == 0, "exit 2")
+    check("release-gate (#1553): CONTROL: a harmless substitution in an unquoted body, then a feature push, is allowed",
+          run("cat <<EOF\n$(git rev-parse HEAD)\nEOF\ngit push origin feature/w") == 0, "exit 2")
+
 
 # ---- ci-verdict-hint.sh (#1173) -----------------------------------------------------------------
 # An ADVISORY, so every fixture asserts exit 0 -- a hint that could fail the tool call would be a gate

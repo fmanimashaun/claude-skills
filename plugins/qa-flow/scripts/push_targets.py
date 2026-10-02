@@ -65,6 +65,20 @@ GIT_OPTS_WITH_VALUE = {"-C", "-c", "--git-dir", "--work-tree", "--namespace"}
 EVERY_BRANCH = {"--all", "--branches", "--mirror"}
 EXPANDS = set("$`{}*?[")
 HEREDOC = re.compile(r"<<(-?)[ \t]*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\2")
+HEREDOC_BACKSLASH = re.compile(r"<<(-?)[ \t]*\\([A-Za-z_][A-Za-z0-9_]*)")      # <<\EOF: quoted, like <<'EOF'
+
+
+def _heredoc_at(cmd: str, i: int) -> tuple[str, bool, bool, int] | None:
+    """The heredoc operator at `i`: (delimiter, tabs stripped, body EXPANDS, end index), or None.
+    A body expands `$( )` and backticks only when the delimiter is UNQUOTED; `<<'EOF'`, `<<"EOF"` and
+    `<<\\EOF` all make it text (#1553)."""
+    m = HEREDOC.match(cmd, i)
+    if m:
+        return m.group(3), m.group(1) == "-", m.group(2) == "", m.end()
+    m = HEREDOC_BACKSLASH.match(cmd, i)
+    if m:
+        return m.group(2), m.group(1) == "-", False, m.end()
+    return None
 
 TARGETS, NO, UNJUDGEABLE = 0, 10, 3
 
@@ -87,23 +101,28 @@ def _subst_scan(cmd: str, i: int) -> tuple[int, list[tuple[str, bool]]]:
     its `)` was reached. The substitution ends at the first `)` even inside a heredoc body, the way
     bash 3.2 and zsh end it; bash 4+ would read the body as text and close at a later `)`. The real
     delimiter is still owed after an early end, and `strip_comments_and_heredocs` must keep it pending
-    so that a body line naming `cat <<END` opens nothing (#1542, mirroring `_strip_heredocs`, #1529)."""
+    so that a body line naming `cat <<END` opens nothing (#1542, mirroring `_strip_heredocs`, #1529).
+
+    Inside a heredoc body a quote character is text, so `it's` does not open a quote that never closes
+    (#1551); parentheses still count, because the substitution ends at the first `)` there."""
     depth, quote, n = 0, "", len(cmd)
     owed: list[tuple[str, bool]] = []
+    in_body = False                              # past the operator's own line, before the delimiter's
     while i < n:
         c = cmd[i]
         if not quote and c == "<" and cmd.startswith("<<", i) and not cmd.startswith("<<<", i) \
                 and (i == 0 or cmd[i - 1] != "<"):
-            m = HEREDOC.match(cmd, i)
-            if m:
-                owed.append((m.group(3), m.group(1) == "-"))
-                i = m.end(); continue
+            op = _heredoc_at(cmd, i)
+            if op:
+                owed.append((op[0], op[1]))
+                i = op[3]; continue
         if not quote and c == "\n" and owed:
             end = cmd.find("\n", i + 1)
             line = cmd[i + 1:] if end == -1 else cmd[i + 1:end]
             delim, tabs = owed[0]
             if (line.lstrip("\t") if tabs else line) == delim:
                 owed.pop(0)                      # the body closed inside the substitution, as bash 4+ reads it
+            in_body = bool(owed)
         if quote:
             if c == "\\" and quote == '"':
                 i += 2; continue
@@ -111,7 +130,7 @@ def _subst_scan(cmd: str, i: int) -> tuple[int, list[tuple[str, bool]]]:
                 quote = ""
         elif c == "\\":
             i += 2; continue
-        elif c in "'\"":
+        elif c in "'\"" and not in_body:
             quote = c
         elif c == "(":
             depth += 1
@@ -123,18 +142,46 @@ def _subst_scan(cmd: str, i: int) -> tuple[int, list[tuple[str, bool]]]:
     raise Unjudgeable("an unterminated command substitution")
 
 
+def _heredoc_substitutions(text: str, out: list[str]) -> None:
+    """Append the `$( )` and backtick bodies in the text of an UNQUOTED heredoc: the shell expands
+    them there, so `cat <<EOF` / `$(git push origin main)` / `EOF` pushes (#1553). A backslash
+    escapes the character after it, so `\\$(...)` is text."""
+    i, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        if c == "\\":
+            i += 2; continue
+        if c == "$" and text.startswith("(", i + 1):
+            end, _ = _subst_scan(text, i + 1)
+            out.append(text[i + 2:end - 1])
+            i = end; continue
+        if c == "`":
+            j = i + 1
+            while j < n and text[j] != "`":
+                j += 2 if text[j] == "\\" else 1
+            if j >= n:
+                raise Unjudgeable("an unterminated backtick substitution")
+            out.append(text[i + 1:j])
+            i = j + 1; continue
+        i += 1
+
+
 def _placeholder(body: str) -> str:
     # `"$(git branch --show-current)"` is how agents spell "this branch": read it as HEAD, which
     # resolves to the branch it names, instead of refusing every such push (#1470 round 2).
     return "HEAD" if " ".join(body.split()) in CURRENT_BRANCH_IDIOMS else SUBST
 
 
-def strip_comments_and_heredocs(cmd: str) -> str:
+def strip_comments_and_heredocs(cmd: str, bodies: list[str] | None = None) -> str:
     """Bash's rules, not shlex's: `#` opens a comment only at the start of a word, outside quotes;
-    a heredoc's body runs from the next newline to its delimiter line."""
+    a heredoc's body runs from the next newline to its delimiter line.
+
+    Each `$( )`, `<( )`, `>( )` and backtick body is replaced by a placeholder word; when `bodies` is
+    given, the text of every one is appended to it, so the caller can read what the shell will run
+    there (#1550). Only the placeholder reaches the tokenizer."""
     out: list[str] = []
     i, n, quote = 0, len(cmd), ""
-    pending: list[tuple[str, bool]] = []          # heredoc delimiters awaiting the next newline
+    pending: list[tuple[str, bool, bool]] = []    # heredoc delimiters awaiting the next newline
     # Delimiters owed by a heredoc that a `$( )` ended early (#1542). The lines stay VISIBLE, since bash
     # 3.2 and zsh run them, and no new heredoc opens until the delimiter has been seen.
     owed: list[tuple[str, bool]] = []
@@ -148,7 +195,10 @@ def strip_comments_and_heredocs(cmd: str) -> str:
                 end = cmd.find("`", i + 1) + 1
             if end <= 0:
                 raise Unjudgeable("an unterminated backtick substitution")
-            out.append(_placeholder(cmd[i + 2:end - 1] if c == "$" else cmd[i + 1:end - 1]))
+            body = cmd[i + 2:end - 1] if c == "$" else cmd[i + 1:end - 1]
+            if bodies is not None:
+                bodies.append(body)
+            out.append(_placeholder(body))
             i = end
             continue
         if quote:
@@ -171,6 +221,8 @@ def strip_comments_and_heredocs(cmd: str) -> str:
             # it land in another "segment" nobody reads -- `git -C $(pwd) push origin main` passed.
             end, carried = _subst_scan(cmd, i + 1)
             owed.extend(carried)
+            if bodies is not None:
+                bodies.append(cmd[i + 2:end - 1])
             out.append(_placeholder(cmd[i + 2:end - 1]) if c == "$" else SUBST)
             i = end
             continue
@@ -178,6 +230,8 @@ def strip_comments_and_heredocs(cmd: str) -> str:
             end = cmd.find("`", i + 1) + 1
             if end <= 0:
                 raise Unjudgeable("an unterminated backtick substitution")
+            if bodies is not None:
+                bodies.append(cmd[i + 1:end - 1])
             out.append(_placeholder(cmd[i + 1:end - 1]))
             i = end
             continue
@@ -188,10 +242,10 @@ def strip_comments_and_heredocs(cmd: str) -> str:
                 i += 1
             continue
         if c == "<" and cmd.startswith("<<", i) and not cmd.startswith("<<<", i) and not owed:
-            m = HEREDOC.match(cmd, i)
-            if m:
-                pending.append((m.group(3), m.group(1) == "-"))
-                out.append(" "); i = m.end(); continue
+            op = _heredoc_at(cmd, i)
+            if op:
+                pending.append((op[0], op[1], op[2]))
+                out.append(" "); i = op[3]; continue
         if c == "\n" and owed:
             end = cmd.find("\n", i + 1)
             line = cmd[i + 1:] if end == -1 else cmd[i + 1:end]
@@ -200,13 +254,17 @@ def strip_comments_and_heredocs(cmd: str) -> str:
                 owed.pop(0)
         if c == "\n" and pending:
             out.append("\n"); i += 1
-            for delim, tabs in pending:
+            for delim, tabs, expands in pending:
+                text: list[str] = []
                 while i < n:
                     end = cmd.find("\n", i)
                     line = cmd[i:] if end == -1 else cmd[i:end]
                     i = n if end == -1 else end + 1
                     if (line.lstrip("\t") if tabs else line) == delim:
                         break
+                    text.append(line)
+                if expands and bodies is not None:
+                    _heredoc_substitutions("\n".join(text), bodies)   # the shell runs these (#1553)
             pending = []
             continue
         out.append(c)
@@ -214,8 +272,8 @@ def strip_comments_and_heredocs(cmd: str) -> str:
     return "".join(out)               # an unterminated quote is left for shlex to refuse
 
 
-def tokens(cmd: str) -> list[str]:
-    lex = shlex.shlex(strip_comments_and_heredocs(cmd), posix=True, punctuation_chars=";&|()<>\n")
+def tokens(cmd: str, bodies: list[str] | None = None) -> list[str]:
+    lex = shlex.shlex(strip_comments_and_heredocs(cmd, bodies), posix=True, punctuation_chars=";&|()<>\n")
     lex.whitespace = " \t\r"          # a newline separates commands; it is not mere whitespace
     lex.whitespace_split = True
     lex.commenters = ""               # removed above, by bash's rule
@@ -287,7 +345,8 @@ def all_segments(cmd: str, depth: int = 0):
     parsed as commands in their own right (41's delta review of #1470)."""
     if depth > MAX_DEPTH:
         raise Unjudgeable("shell strings nested too deeply to read")
-    for seg in segments(tokens(cmd)):
+    bodies: list[str] = []
+    for seg in segments(tokens(cmd, bodies)):
         yield seg
         for k, word in enumerate(seg):
             if is_command(word, SHELLS):
@@ -305,6 +364,11 @@ def all_segments(cmd: str, depth: int = 0):
             elif word == "eval":
                 yield from all_segments(" ".join(seg[k + 1:]), depth + 1)
                 break
+    # What a substitution runs is a command in its own right (#1550): `x=$(git push origin main)` pushes.
+    # After the outer segments, so a `cd` inside a substitution (a subshell) cannot move where the
+    # outer command's bare `git push` resolves.
+    for body in bodies:
+        yield from all_segments(body, depth + 1)
 
 
 def branch_of(dst: str) -> str:
@@ -559,6 +623,38 @@ def selftest() -> int:
         ("git push origin HEAD", fake("main"), True),
         ("git push", fake("topic", "main"), True),
         # a bare push resolves where it RUNS: `cd` into a clone that is on main
+        # (#1550) what a substitution runs is a command: a push inside one is a push
+        ("x=$(git push origin main)", on_feature, True),
+        ('echo "$(git push origin main)"', on_feature, True),
+        ("x=`git push origin main`", on_feature, True),
+        ("diff <(git push origin main) /dev/null", on_feature, True),
+        ("x=$(echo $(git push origin main))", on_feature, True),
+        ("x=$(git push origin fix/x)", on_feature, False),
+        ("x=$(git rev-parse HEAD); git push origin fix/x", on_feature, False),
+        ("git push origin $(git branch --show-current)", on_feature, False),
+        ("x=$(echo 'git push origin main')", on_feature, False),                 # a string that names a push is not one
+        ("git commit -m \"$(cat <<'EOF'\nit's done, git push origin main later\nEOF\n)\"", on_feature, False),
+        # (#1551) a quote character in a heredoc body inside `$( )` is text, even an odd one
+        ("git commit -m \"$(cat <<'EOF'\nit's done\nEOF\n)\"\ngit push origin fix/x", on_feature, False),
+        ("git commit -m \"$(cat <<'EOF'\nit's done\nEOF\n)\"\ngit push origin main", on_feature, True),
+        ("x=$(cat <<EOF\nsay \"hi\nEOF\n)\ngit push origin fix/x", on_feature, False),   # an odd double quote
+        ("x=$(cat <<EOF\nsay \"hi\nEOF\n)\ngit push origin main", on_feature, True),
+        # (#1553) an UNQUOTED heredoc delimiter makes the shell expand `$( )` and backticks in the body;
+        # a QUOTED one (<<'EOF', <<"EOF", <<\EOF) makes the body text
+        ('cat <<EOF\n$(git push origin main)\nEOF', on_feature, True),
+        ('cat <<EOF\n`git push origin main`\nEOF', on_feature, True),
+        ('cat <<-EOF\n\t$(git push origin main)\n\tEOF', on_feature, True),
+        ('x=$(cat <<EOF\n$(git push origin main)\nEOF\n)', on_feature, True),
+        ("cat <<'EOF'\n$(git push origin main)\nEOF", on_feature, False),
+        ('cat <<"EOF"\n$(git push origin main)\nEOF', on_feature, False),
+        ('cat <<\\EOF\n$(git push origin main)\nEOF', on_feature, False),
+        ('cat <<\\EOF\ngit push origin main\nEOF', on_feature, False),
+        ('cat <<EOF\n\\$(git push origin main)\nEOF', on_feature, False),
+        ('cat <<EOF\n$(git rev-parse HEAD)\nEOF\ngit push origin fix/x', on_feature, False),
+        ('cat <<EOF\ngit push origin main\nEOF', on_feature, False),
+        ('git commit -m "$(cat <<EOF\nit\'s done, git push origin main later\nEOF\n)"', on_feature, False),
+        # ...and a `cd` inside a substitution is a subshell: it must not move the outer bare push
+        ("x=$(cd other); git push", fake("topic", by_dir={"other": "main"}), False),
         ("cd other && git push", fake("topic", by_dir={"other": "main"}), True),
         ("cd other\ngit push", fake("topic", by_dir={"other": "main"}), True),
         ("git -C other push", fake("topic", by_dir={"other": "main"}), True),
