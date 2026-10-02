@@ -61,8 +61,11 @@ def check_static(js: str) -> list[str]:
         verbs = tuple(re.findall(r"""['"]([^'"]+)['"]""", args))
         if verbs not in ALLOWED_GIT:
             findings.append(f"runs git with {list(verbs)}, which is not one of the three reviewed read-only calls")
-    if re.search(r"\bawait\s+refresh\(", js):
-        findings.append("awaits refresh() inside a hook, which delays the first prompt; schedule it with $.clock.after")
+    # `tick` is the timer callback and is the one place that awaits `refresh`; anywhere else an await
+    # of either one sits in a hook and delays the first prompt or the end of a turn.
+    outside_tick = re.sub(r"async function tick\(\$\) \{.*?\n\}", "", js, flags=re.S)
+    if re.search(r"\bawait\s+(refresh|tick)\(", outside_tick):
+        findings.append("awaits refresh() or tick() inside a hook, which delays the first prompt; schedule it with $.clock.after")
     return findings
 
 
@@ -115,6 +118,7 @@ def selftest() -> int:
         "const b = await git($, ['branch', '--show-current'])\n"
         "const c = await git($, ['--no-optional-locks', 'status', '--porcelain'])\n"
         "$.process.run($.env.get('X'))\n$.ui.invalidate('ui.render')\n$.ui.resolve(e)\n$.clock.after(0, f)\n"
+        "async function tick($) {\n  try {\n    await refresh($)\n  } catch {}\n}\n"
     )
     expect("the reviewed shape is clean", check_static(clean_js), "")
     expect("a write call is refused", check_static(clean_js + "$.fs.write('a','b')\n"), "$.fs.write")
@@ -123,6 +127,7 @@ def selftest() -> int:
     expect("status without the flag is refused",
            check_static(clean_js.replace("'--no-optional-locks', ", "")), "'status', '--porcelain'")
     expect("an awaited refresh in a hook is refused", check_static(clean_js + "await refresh($)\n"), "awaits refresh")
+    expect("an awaited tick in a hook is refused", check_static(clean_js + "await tick($)\n"), "awaits refresh")
 
     if failures:
         print("selftest FAILED:\n  - " + "\n  - ".join(failures))

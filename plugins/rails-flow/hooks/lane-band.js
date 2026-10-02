@@ -47,17 +47,27 @@ async function refresh($) {
   $.ui.invalidate('ui.render')
 }
 
+// The timer callback. A throw here (a failed redraw request, say) is caught here, so the band never
+// depends on how the host treats a callback that throws.
+async function tick($) {
+  try {
+    await refresh($)
+  } catch {
+    // Keep whatever the band last showed
+  }
+}
+
 export function register(on) {
   // Runs before your first prompt, and again after a reload. The git calls go on a zero-delay timer,
   // the documented way to run work after an event, so the first prompt never waits on them.
   on('session.start', async ($, e, next) => {
-    $.clock.after(0, () => refresh($))
+    $.clock.after(0, () => tick($))
     return next(e)
   })
 
   // Runs when a turn ends, which is when the branch or the dirty count has most likely changed
   on('turn.complete', async ($, e, next) => {
-    $.clock.after(0, () => refresh($))
+    $.clock.after(0, () => tick($))
     return next(e)
   })
 

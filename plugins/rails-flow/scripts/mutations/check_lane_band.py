@@ -22,13 +22,13 @@ GUARD = Guard(
         ),
         Mutation(
             "session.start awaits the git calls again, so the first prompt waits on them",
-            "on('session.start', async ($, e, next) => {\n    $.clock.after(0, () => refresh($))",
+            "on('session.start', async ($, e, next) => {\n    $.clock.after(0, () => tick($))",
             "on('session.start', async ($, e, next) => {\n    await refresh($)",
             "session.start runs no git before its timer",
         ),
         Mutation(
             "turn.complete awaits the git calls again, so every turn end waits on them",
-            "on('turn.complete', async ($, e, next) => {\n    $.clock.after(0, () => refresh($))",
+            "on('turn.complete', async ($, e, next) => {\n    $.clock.after(0, () => tick($))",
             "on('turn.complete', async ($, e, next) => {\n    await refresh($)",
             "turn.complete runs no git before its timer",
         ),
@@ -43,6 +43,12 @@ GUARD = Guard(
             "  if (mine !== latest) return\n",
             "",
             "late, older refresh",
+        ),
+        Mutation(
+            "the timer callback stops catching, so a throwing redraw request reaches the host",
+            "  try {\n    await refresh($)\n  } catch {\n    // Keep whatever the band last showed\n  }",
+            "  await refresh($)",
+            "throwing redraw request",
         ),
         Mutation(
             "the lane segment is dropped from the band line",

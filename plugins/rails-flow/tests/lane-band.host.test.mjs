@@ -27,7 +27,7 @@ function check(name, ok, detail = '') {
 }
 
 // A fake host. `git` maps "arg arg ..." to stdout (null = exit 1, 'THROW' = reject); `lane` is the env value.
-function host({ git = {}, lane, runDelay = {} } = {}) {
+function host({ git = {}, lane, runDelay = {}, invalidateThrows = false } = {}) {
   const handlers = []
   const argvs = []
   const timers = []
@@ -47,7 +47,7 @@ function host({ git = {}, lane, runDelay = {} } = {}) {
       },
     },
     env: { get: async () => (note('env.get'), lane) },
-    ui: { invalidate: () => note('ui.invalidate'), resolve: () => (note('ui.resolve'), { Box: el('Box'), Text: el('Text') }) },
+    ui: { invalidate: () => { note('ui.invalidate'); if (invalidateThrows) throw new Error('redraw refused') }, resolve: () => (note('ui.resolve'), { Box: el('Box'), Text: el('Text') }) },
     clock: { after: (ms, fn) => (note('clock.after'), timers.push({ ms, fn })) },
   }
   // Any other namespace or method is a call the module is not documented to make: record it.
@@ -139,6 +139,20 @@ for (const [name, git] of [
   const theirs = { type: 'engine', ref: 2 }
   const tree = await h.find('ui.render').fn(h.$, {}, async () => theirs)
   check(`${name}: the band draws nothing of its own`, tree === theirs)
+}
+
+// 5b. a redraw request that throws is caught inside the timer callback, so the host never sees it
+{
+  const h = host({ git: REPO, invalidateThrows: true })
+  register(h.on)
+  await h.find('turn.complete').fn(h.$, {}, async (e) => e)
+  let escaped = null
+  try {
+    await h.runTimers()
+  } catch (error) {
+    escaped = error
+  }
+  check('a throwing redraw request does not escape the timer callback', escaped === null, String(escaped))
 }
 
 // 6. detached HEAD
