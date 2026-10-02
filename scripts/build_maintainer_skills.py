@@ -37,6 +37,11 @@ ROOT = Path(__file__).resolve().parent.parent
 # source -> derived. One entry today; the list is the mechanism, not the special case.
 MIRRORED = {
     Path("skills/parallel-session-lane/SKILL.md"): Path(".claude/skills/parallel-session-lane/SKILL.md"),
+    # #1481: the mirrored SKILL.md links these, so a mirror without them links to nothing.
+    Path("skills/parallel-session-lane/references/reading-a-list.md"):
+        Path(".claude/skills/parallel-session-lane/references/reading-a-list.md"),
+    Path("skills/parallel-session-lane/references/session-identity.md"):
+        Path(".claude/skills/parallel-session-lane/references/session-identity.md"),
 }
 
 BANNER = (
@@ -55,6 +60,9 @@ def render(source: Path) -> str:
     first — the skill silently stopped being a skill.
     """
     text = (ROOT / source).read_text(encoding="utf-8")
+    if source.name != "SKILL.md":
+        # A reference has no frontmatter to protect, so its banner simply goes on top (#1481).
+        return BANNER.format(source=source.as_posix()) + "\n" + text
     if not text.startswith("---\n"):
         raise SystemExit(f"{source} does not open with a frontmatter block")
     if "\n---\n" not in text[4:]:
@@ -241,11 +249,35 @@ def selftest() -> int:
 
     failures.extend(head_read_arm())
 
+    # #1481: every relative link in a mirrored SKILL.md must land on a file that is mirrored too.
+    # The mirror linked `references/reading-a-list.md` and `references/session-identity.md`, which
+    # were never copied.
+    import re
+    derived_paths = {d.as_posix() for d in MIRRORED.values()}
+    for src, derived in MIRRORED.items():
+        if src.name != "SKILL.md":
+            continue
+        for target in re.findall(r"\]\(([^)#\s]+\.md)(?:#[^)]*)?\)", render(src)):
+            if target.startswith(("http", "/")):
+                continue
+            landed = (derived.parent / target).as_posix()
+            if landed not in derived_paths:
+                failures.append(f"{derived} links {target}, which no MIRRORED entry copies")
+    reference = next((s for s in MIRRORED if s.name != "SKILL.md"), None)
+    if reference is not None and not render(reference).startswith("<!-- GENERATED from"):
+        failures.append("a mirrored reference must open with the banner")
+
     real_blob = globals()["committed_blob"]
 
+    # Each mirrored path's clean blob is ITS OWN render (#1481: with references mirrored, one shared
+    # blob for every path made the clean control fail on the references).
+    clean = {derived.as_posix(): render(src) for src, derived in MIRRORED.items()}
+
     def check_against(blob: str | None) -> int:
-        """Run --check with HEAD pretending to hold `blob` for every mirrored path."""
-        globals()["committed_blob"] = lambda relative: blob
+        """Run --check with HEAD holding each path's clean render -- except the SKILL.md, which
+        holds `blob` (the arm under test)."""
+        skill = MIRRORED[source].as_posix()
+        globals()["committed_blob"] = lambda relative: blob if relative == skill else clean.get(relative)
         try:
             return build(check=True)
         finally:

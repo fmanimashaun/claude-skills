@@ -7,6 +7,10 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **The maintainer mirror of `parallel-session-lane` carries the references its SKILL.md links — `scripts/build_maintainer_skills.py`, `.claude/skills/parallel-session-lane/references/`** (#1481). The mirror copied only `SKILL.md`, so its four links to `references/reading-a-list.md` and `references/session-identity.md` resolved to nothing. Both references are now in `MIRRORED` (a reference gets its banner on top, having no frontmatter to protect), and the drift gate covers them. The selftest now checks that every relative link in a mirrored SKILL.md lands on a mirrored file; mutations removing a mirrored reference or its banner are caught (7/7). The `SKILL.md` diff the issue saw is the generated banner, by design.
+
 ### 2026-10-02 (release v1.153.0)
 
 - **A primitive marker never excuses a form, excuses one instance, and is reported when unused — `scripts/check_shipped_erb_forms.py`, `scripts/mutations/check_shipped_erb_forms.py`** (#1460).

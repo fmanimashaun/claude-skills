@@ -18,6 +18,9 @@ GUARD = Guard(
         "skills/parallel-session-lane/SKILL.md",
         "skills/code-review/SKILL.md",
         ".claude/skills/parallel-session-lane/SKILL.md",
+        # #1481: the references are mirrored too, so the builder reads both sides of them.
+        "skills/parallel-session-lane/references",
+        ".claude/skills/parallel-session-lane/references",
     ),
     mutations=(
         Mutation(
@@ -55,6 +58,20 @@ GUARD = Guard(
             '    return text[:end] + "\\n" + BANNER.format(source=source.as_posix()) + text[end:]',
             "    return BANNER.format(source=source.as_posix()) + text",
             "does not open with the frontmatter block",
+        ),
+        Mutation(
+            # #1481
+            'a reference the mirrored SKILL.md links is no longer mirrored',
+            '    Path("skills/parallel-session-lane/references/session-identity.md"):\n        Path(".claude/skills/parallel-session-lane/references/session-identity.md"),\n',
+            '',
+            'which no MIRRORED entry copies',
+        ),
+        Mutation(
+            # #1481
+            'a mirrored reference loses its banner',
+            '        return BANNER.format(source=source.as_posix()) + "\\n" + text',
+            '        return text',
+            'a mirrored reference must open with the banner',
         ),
     ),
 )
