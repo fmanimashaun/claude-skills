@@ -48,7 +48,7 @@ function host({ git = {}, lane, runDelay = {}, invalidateThrows = false } = {}) 
     },
     env: { get: async () => (note('env.get'), lane) },
     ui: { invalidate: () => { note('ui.invalidate'); if (invalidateThrows) throw new Error('redraw refused') }, resolve: () => (note('ui.resolve'), { Box: el('Box'), Text: el('Text') }) },
-    clock: { after: (ms, fn) => (note('clock.after'), timers.push({ ms, fn })) },
+    clock: { every: (ms, fn) => (note('clock.every'), timers.push({ ms, fn })) },
   }
   // Any other namespace or method is a call the module is not documented to make: record it.
   const guarded = new Proxy($, { get: (t, k) => (k in t ? t[k] : (note(`UNEXPECTED ${String(k)}`), undefined)) })
@@ -69,23 +69,23 @@ const REPO = {
 }
 const textOf = (tree) => JSON.stringify(tree)
 
-// 1. registration: exactly these three hooks, ui.render narrowed to the band
+// 1. registration: exactly these two hooks, ui.render narrowed to the band
 {
   const h = host()
   register(h.on)
-  check('registers session.start, turn.complete, ui.render only',
-    h.handlers.map((x) => x.event).sort().join() === 'session.start,turn.complete,ui.render', h.handlers.map((x) => x.event).join())
+  check('registers session.start and ui.render only',
+    h.handlers.map((x) => x.event).sort().join() === 'session.start,ui.render', h.handlers.map((x) => x.event).join())
   check('ui.render is limited to AbovePrompt', h.find('ui.render')?.matcher?.component === 'AbovePrompt')
 }
 
-// 2. session.start returns next(e) at once and runs no git until the timer fires
+// 2. session.start returns next(e) at once, starts the repeating timer, and runs no git until it fires
 {
   const h = host({ git: REPO, lane: 'app/models' })
   register(h.on)
   const out = await h.find('session.start').fn(h.$, { cwd: '/x' }, async (e) => PASSTHROUGH(e))
   check('session.start passes the event on unchanged', out?.passed?.cwd === '/x')
   check('session.start runs no git before its timer', h.argvs.length === 0, h.argvs.join(' | '))
-  check('session.start schedules the refresh on a zero-delay timer', h.timers.length === 1 && h.timers[0].ms === 0)
+  check('session.start starts one 2000 ms repeating timer', h.timers.length === 1 && h.timers[0].ms === 2000, JSON.stringify(h.timers.map((t) => t.ms)))
   await h.runTimers()
   check('the refresh runs exactly the three read-only git calls',
     h.argvs.join(' | ') === 'git rev-parse --show-toplevel | git branch --show-current | git --no-optional-locks status --porcelain',
@@ -96,14 +96,8 @@ const textOf = (tree) => JSON.stringify(tree)
   check('the refresh asks for a redraw', h.used.has('ui.invalidate'))
 }
 
-// 3. turn.complete behaves the same way
-{
-  const h = host({ git: REPO })
-  register(h.on)
-  const out = await h.find('turn.complete').fn(h.$, { turnId: 't' }, async (e) => PASSTHROUGH(e))
-  check('turn.complete passes the event on unchanged', out?.passed?.turnId === 't')
-  check('turn.complete runs no git before its timer', h.argvs.length === 0)
-}
+// 3. there is no turn.complete hook: the timer is the only trigger, so nothing runs at a turn's end
+check('no turn.complete hook is registered', (() => { const h = host(); register(h.on); return !h.find('turn.complete') })())
 
 // 4. the band's text, and that other mods' drawing is kept
 {
@@ -145,7 +139,7 @@ for (const [name, git] of [
 {
   const h = host({ git: REPO, invalidateThrows: true })
   register(h.on)
-  await h.find('turn.complete').fn(h.$, {}, async (e) => e)
+  await h.find('session.start').fn(h.$, {}, async (e) => e)
   let escaped = null
   try {
     await h.runTimers()
@@ -165,45 +159,25 @@ for (const [name, git] of [
   check('a detached HEAD is named', s.includes('detached HEAD'), s)
 }
 
-// 7. a slow refresh that finishes after a newer one must not overwrite it
+// 7. a tick that arrives while a refresh is still running is skipped, and ticking resumes afterwards
 {
-  // Same module instance, two overlapping refreshes: the one that started last wins.
-  const state = { branch: 'old-branch', delay: null }
-  const handlers = []
-  const timers = []
   let release
-  const gate = new Promise((r) => (release = r))
-  const el = (type) => (props) => ({ type, props, children: props.children })
-  const $ = {
-    process: {
-      run: async (argv) => {
-        const key = argv.slice(1).join(' ')
-        if (key === 'branch --show-current') {
-          const seen = state.branch
-          if (state.delay) await state.delay
-          return { exitCode: 0, stdout: seen, stderr: '' }
-        }
-        return { exitCode: 0, stdout: key.includes('status') ? '' : '/work/r', stderr: '' }
-      },
-    },
-    env: { get: async () => undefined },
-    ui: { invalidate() {}, resolve: () => ({ Box: el('Box'), Text: el('Text') }) },
-    clock: { after: (ms, fn) => timers.push(fn) },
-  }
-  register((event, a, b) => handlers.push({ event, fn: b ?? a }))
-  const fire = () => handlers.find((x) => x.event === 'turn.complete').fn($, {}, async (e) => e)
-  state.delay = gate // the first refresh reads 'old-branch' and then waits
-  await fire()
-  const slowRun = timers.shift()()
+  const slow = new Promise((r) => (release = r))
+  const h = host({ git: REPO, runDelay: { 'rev-parse --show-toplevel': slow } })
+  register(h.on)
+  await h.find('session.start').fn(h.$, {}, async (e) => e)
+  const tick = h.timers[0].fn
+  const first = tick() // stuck on the delayed rev-parse
   await new Promise((r) => setTimeout(r, 0))
-  state.branch = 'new-branch'
-  state.delay = null
-  await fire()
-  await timers.shift()() // the newer refresh finishes first
+  const second = tick() // arrives while the first is running; not awaited, so a missing guard cannot hang the test
+  await new Promise((r) => setTimeout(r, 0))
+  check('an overlapping tick starts no second refresh', h.argvs.length === 1, h.argvs.join(' | '))
   release()
-  await slowRun // the older refresh finishes last and must not win
-  const s = JSON.stringify(await handlers.find((x) => x.event === 'ui.render').fn($, {}, async () => null))
-  check('a late, older refresh does not overwrite a newer one', s.includes('new-branch') && !s.includes('old-branch'), s)
+  await first
+  await second
+  h.argvs.length = 0
+  await tick()
+  check('ticking resumes once the slow refresh ends', h.argvs.length === 3, h.argvs.join(' | '))
 }
 
 fs.rmSync(path.dirname(copy), { recursive: true, force: true })

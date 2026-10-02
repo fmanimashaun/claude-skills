@@ -30,7 +30,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 # Every mods API method the module may call. Anything else is a call nobody reviewed.
-ALLOWED_CALLS = {"process.run", "env.get", "ui.invalidate", "ui.resolve", "clock.after"}
+ALLOWED_CALLS = {"process.run", "env.get", "ui.invalidate", "ui.resolve", "clock.every"}
 # `git(`-helper argument lists the module may pass: the three read-only reads, nothing else.
 ALLOWED_GIT = {
     ("rev-parse", "--show-toplevel"),
@@ -65,7 +65,7 @@ def check_static(js: str) -> list[str]:
     # of either one sits in a hook and delays the first prompt or the end of a turn.
     outside_tick = re.sub(r"async function tick\(\$\) \{.*?\n\}", "", js, flags=re.S)
     if re.search(r"\bawait\s+(refresh|tick)\(", outside_tick):
-        findings.append("awaits refresh() or tick() inside a hook, which delays the first prompt; schedule it with $.clock.after")
+        findings.append("awaits refresh() or tick() inside a hook, which delays the first prompt; start it from $.clock.every")
     return findings
 
 
@@ -117,7 +117,7 @@ def selftest() -> int:
         "const a = await git($, ['rev-parse', '--show-toplevel'])\n"
         "const b = await git($, ['branch', '--show-current'])\n"
         "const c = await git($, ['--no-optional-locks', 'status', '--porcelain'])\n"
-        "$.process.run($.env.get('X'))\n$.ui.invalidate('ui.render')\n$.ui.resolve(e)\n$.clock.after(0, f)\n"
+        "$.process.run($.env.get('X'))\n$.ui.invalidate('ui.render')\n$.ui.resolve(e)\n$.clock.every(2000, f)\n"
         "async function tick($) {\n  try {\n    await refresh($)\n  } catch {}\n}\n"
     )
     expect("the reviewed shape is clean", check_static(clean_js), "")
