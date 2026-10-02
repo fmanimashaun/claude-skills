@@ -2,9 +2,17 @@
 # PreToolUse[Bash] guardrails — mechanical enforcement of GUARDRAILS.md.
 # Exit 2 blocks the command; stderr is shown to Claude with the reason.
 set -uo pipefail
-input="$(cat)"
+# The `read` BUILTIN, never `cat`: with no `cat` on PATH, `$(cat)` read nothing and every rule passed
+# (#1529 review). Stops at a NUL, which JSON cannot contain.
+input=""; IFS= read -r -d '' input || true
 
-cmd="$(printf '%s' "$input" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("tool_input",{}).get("command",""))' 2>/dev/null || printf '%s' "$input")"
+# #1526: decoded with `surrogateescape`, so an invalid UTF-8 byte cannot make the parse fail. A failed
+# parse left the raw JSON as `cmd`, where the command sits inside double quotes the normaliser strips:
+# `git add -A \xff` was allowed.
+parsed=1
+cmd="$(printf '%s' "$input" | python3 -c 'import json,sys
+d=json.loads(sys.stdin.buffer.read().decode("utf-8","surrogateescape"))
+sys.stdout.buffer.write(str(d.get("tool_input",{}).get("command","")).encode("utf-8","replace"))' 2>/dev/null)" || { parsed=0; cmd="$input"; }
 
 deny() { echo "BLOCKED by rails-flow guardrails: $1" >&2; exit 2; }
 
@@ -15,19 +23,55 @@ deny() { echo "BLOCKED by rails-flow guardrails: $1" >&2; exit 2; }
 # FAIL CLOSED: if the lib cannot be sourced, match the raw text as before — a guard that goes
 # quiet because a file is missing is the one failure this hook must not have.
 _lib="$(dirname "${BASH_SOURCE[0]}")/lib/normalize_cmd.sh"
-if [ -f "$_lib" ] && . "$_lib" 2>/dev/null && type normalize_segments >/dev/null 2>&1; then
-  seg="$(printf '%s' "$cmd" | normalize_segments)"
+#
+# #1526: the lib needs awk, sed, tr and grep. Without awk it printed NOTHING, so every rule passed. An
+# unparsed payload, a missing lib, or a normaliser that EXITED NON-ZERO puts the hook in DEGRADED mode.
+# The exit status, not an empty result, decides: a comment-only command normalises to nothing and is a
+# mention (#906). A missing tool needs no check of its own -- the shell's 127 fails the pipeline under
+# `pipefail` and the lib returns it (#1529 review) -- and a `command -v` per tool changed no outcome,
+# which the mutation guard measured. `LC_ALL=C`: macOS awk aborts on an invalid byte in a UTF-8 locale.
+degraded=0
+if [ "$parsed" = 1 ] && [ -f "$_lib" ] && . "$_lib" 2>/dev/null && type normalize_segments >/dev/null 2>&1; then
+  seg="$(printf '%s' "$cmd" | LC_ALL=C normalize_segments)" || { seg="$cmd"; degraded=1; }
 else
-  seg="$cmd"
+  seg="$cmd"; degraded=1
 fi
-hit() { printf '%s\n' "$seg" | grep -qE "$1"; }
+# DEGRADED MEANS UNANCHORED (#1529 review). Every rule is anchored `^git`, and the raw text is the
+# JSON payload or a compound command (`cd x && git add -A`), so an anchored rule never matched it and
+# "fall back to the raw text" passed everything. In degraded mode a rule matches ANYWHERE: that refuses
+# a quoted mention too, which is the right side to err on when the command could not be read. With no
+# grep at all, bash's own `=~` matches (`\b` dropped, which only widens the match).
+have_grep=0; command -v grep >/dev/null 2>&1 && have_grep=1
+hit() {
+  local re="$1"
+  [ "$degraded" = 1 ] && re="${re#^}"
+  if [ "$have_grep" = 1 ]; then
+    printf '%s\n' "$seg" | grep -qE "$re"
+  else
+    # LINE BY LINE, as grep matches: one `=~` over the whole text let `^` see only the first segment,
+    # so `cd x && git add -A` passed with no grep (#1529 round-3 review).
+    re="${re//\\b/}"
+    # Split IN MEMORY, never through a heredoc: a heredoc needs a temp file, and with no writable temp
+    # dir it failed and `hit()` passed everything (#1529 round-4 review).
+    local rest="$seg"$'\n' line
+    while [ -n "$rest" ]; do
+      line="${rest%%$'\n'*}"; rest="${rest#*$'\n'}"
+      [[ $line =~ $re ]] && return 0
+    done
+    return 1
+  fi
+}
+# An EXEMPTION (`--force-with-lease`, clean's `-n`, restore's `--staged`) never applies in degraded
+# mode: unanchored, its `.*` reaches another segment, so `git clean -fd && echo -n` was exempt (#1529
+# review). Refusing a real dry run there is the price of a command that could not be read.
+exempt() { [ "$degraded" = 1 ] && return 1; hit "$1"; }
 
 # A rails/rake task segment that names db:reset (not the word inside a quoted string or a grep).
 if hit '^(bin/)?(rails|rake)([[:space:]]+[^[:space:]]+)*[[:space:]]+db:reset\b'; then
   deny "db:reset is prohibited (seeds break test isolation). Use: db:drop db:create db:schema:load."
 fi
 
-if hit '^git[[:space:]]+push\b.*(--force\b|[[:space:]]-f\b)' && ! hit '^git[[:space:]]+push\b.*--force-with-lease'; then
+if hit '^git[[:space:]]+push\b.*(--force\b|[[:space:]]-f\b)' && ! exempt '^git[[:space:]]+push\b.*--force-with-lease'; then
   deny "force-push is prohibited. Use --force-with-lease on your own feature branch only, never on main/dev/staging."
 fi
 if hit '^git[[:space:]]+push\b.*--force-with-lease' && hit '^git[[:space:]]+push\b.*\b(main|master|dev|staging)\b'; then
@@ -53,7 +97,7 @@ fi
 # `clean -n` (dry run), `branch -d` (refuses an unmerged branch), `checkout <branch>`,
 # `restore --staged` (unstage only) and `restore -- <explicit path>` (one named file, on purpose).
 if hit '^git[[:space:]]+clean\b.*([[:space:]]-[a-zA-Z]*f|[[:space:]]--force\b)' \
-   && ! hit '^git[[:space:]]+clean\b.*([[:space:]]-[a-zA-Z]*n|[[:space:]]--dry-run\b)'; then
+   && ! exempt '^git[[:space:]]+clean\b.*([[:space:]]-[a-zA-Z]*n|[[:space:]]--dry-run\b)'; then
   deny "git clean -f deletes untracked files with no undo. Run 'git clean -n' first and show the user what it would remove; delete named paths with approval."
 fi
 if hit '^git[[:space:]]+checkout\b.*[[:space:]]--([[:space:]]|$)' \
@@ -61,7 +105,7 @@ if hit '^git[[:space:]]+checkout\b.*[[:space:]]--([[:space:]]|$)' \
   deny "git checkout -- <path> / git checkout . overwrites uncommitted edits with no undo. To keep them: git stash push -m <why> -- <path>. To discard ONE file you own: git restore -- <that path>."
 fi
 if hit '^git[[:space:]]+restore\b.*[[:space:]](\./?|:/|\*)($|[[:space:]])' \
-   && ! hit '^git[[:space:]]+restore\b.*--staged\b' ; then
+   && ! exempt '^git[[:space:]]+restore\b.*--staged\b' ; then
   deny "git restore . discards every uncommitted edit in the tree. Name the one file you mean: git restore -- <path>."
 fi
 if hit '^git[[:space:]]+branch\b.*[[:space:]](-[a-zA-Z]*D\b|--delete[[:space:]]+--force\b|--force[[:space:]]+--delete\b)'; then

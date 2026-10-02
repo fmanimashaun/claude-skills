@@ -590,6 +590,146 @@ def guard_bash_fixtures() -> None:
     check("guard-bash (#1311): FAIL CLOSED: with the helper missing, a labelled create is refused, not let through",
           rc == 2 and "could not run" in err, err)
 
+    # #1526 -- THREE WAYS THE NORMALISED TEXT CAME OUT EMPTY, AND EVERY RULE PASSED. Each is driven
+    # through the real hook, with a control on the same input that must still pass.
+    def raw(stdin: bytes, path: str | None = None, lang: str = "C") -> int:
+        env = {"HOME": os.environ.get("HOME", "/tmp"), "LANG": lang, "LC_ALL": lang,
+               "PATH": path if path is not None else os.environ["PATH"]}
+        with tempfile.TemporaryDirectory() as td:
+            return _run(["/bin/bash", str(HOOKS / "guard-bash.sh")], cwd=td, input=stdin, env=env,
+                        capture_output=True, timeout=60).returncode
+
+    def payload(cmd: str) -> bytes:
+        return json.dumps({"tool_input": {"command": cmd}}).encode()
+
+    # 1. NO awk ON PATH: the normaliser printed nothing. Absolute binaries, so an alias or a shell
+    # function for one of them cannot stand in (zsh here aliases grep).
+    with tempfile.TemporaryDirectory() as bd:
+        for tool in ("bash", "git", "sed", "tr", "grep", "dirname", "cat", "env", "head"):
+            real = next((f"{d}/{tool}" for d in ("/usr/bin", "/bin") if os.path.exists(f"{d}/{tool}")), None)
+            if real:
+                os.symlink(real, Path(bd) / tool)
+        os.symlink(sys.executable, Path(bd) / "python3")
+        check("guard-bash (#1526): with no awk on PATH, `git add -A` is still blocked",
+              raw(payload("git add -A"), bd) == 2, "exit 0: the normaliser printed nothing and every rule passed")
+        check("guard-bash (#1526): with no awk on PATH, a force-push to dev is still blocked",
+              raw(payload("git push --force origin dev"), bd) == 2, "exit 0")
+        check("guard-bash (#1526): CONTROL: with no awk on PATH, `git status` still passes",
+              raw(payload("git status"), bd) == 0, "exit 2")
+    # 2. AN UNCLOSED HEREDOC INSIDE `$( )`: bash ends it at the line closing the `$( )`.
+    check("guard-bash (#1526): a heredoc left open inside $( ) does not hide the `git add -A` after it",
+          run("x=$(cat <<EOF\nfoo\n)\ngit add -A") == 2, "exit 0")
+    check("guard-bash (#1526): CONTROL: the same shape followed by `git status` passes",
+          run("x=$(cat <<EOF\nfoo\n)\ngit status") == 0, "exit 2")
+    check("guard-bash (#1526): CONTROL: `git add -A` INSIDE a closed heredoc in $( ) is a mention and passes",
+          run("x=$(cat <<EOF\ngit add -A\nEOF\n)") == 0, "exit 2")
+    # 3. AN INVALID UTF-8 BYTE: the parse failed, and the raw JSON's quotes hid the command.
+    check("guard-bash (#1526): an invalid UTF-8 byte does not hide `git add -A`",
+          raw(b'{"tool_input":{"command":"git add -A \xff"}}', lang="en_US.UTF-8") == 2, "exit 0")
+    check("guard-bash (#1526): CONTROL: an invalid UTF-8 byte after `git status` passes",
+          raw(b'{"tool_input":{"command":"git status \xff"}}', lang="en_US.UTF-8") == 0, "exit 2")
+    check("guard-bash (#1529 review): CONTROL: an invalid byte beside a QUOTED mention still parses and passes",
+          raw(b'{"tool_input":{"command":"echo \\"never git add -A\\" \xff"}}', lang="en_US.UTF-8") == 0,
+          "exit 2: the payload was not decoded, so the hook fell to degraded mode")
+
+    # #1529 review: the fallback was the RAW text, and every rule is anchored `^git` -- so a compound
+    # command, a missing python3 (the raw JSON) or a lone surrogate still passed. Degraded mode now
+    # matches unanchored; with no grep, bash's `=~` matches.
+    def bindir(tools: tuple[str, ...], python: bool) -> str:
+        bd = tempfile.mkdtemp()
+        for tool in tools:
+            real = next((f"{d}/{tool}" for d in ("/usr/bin", "/bin") if os.path.exists(f"{d}/{tool}")), None)
+            if real:
+                os.symlink(real, Path(bd) / tool)
+        if python:
+            os.symlink(sys.executable, Path(bd) / "python3")
+        return bd
+    base = ("bash", "git", "dirname", "cat", "env", "head")
+    no_awk = bindir(base + ("grep",), python=True)
+    no_python = bindir(base + ("grep", "sed", "tr", "awk"), python=False)
+    no_grep = bindir(base + ("sed", "tr", "awk"), python=True)
+    try:
+        check("guard-bash (#1529 review): with no awk, a COMPOUND `cd x && git add -A` is blocked",
+              raw(payload("cd x && git add -A"), no_awk) == 2, "exit 0: the anchored rules missed the raw text")
+        check("guard-bash (#1529 review): CONTROL: with no awk, `cd x && git status` passes",
+              raw(payload("cd x && git status"), no_awk) == 0, "exit 2")
+        check("guard-bash (#1529 review): with no python3, `git add -A` is blocked (the raw JSON is matched)",
+              raw(payload("git add -A"), no_python) == 2, "exit 0")
+        check("guard-bash (#1529 review): CONTROL: with no python3, `git status` passes",
+              raw(payload("git status"), no_python) == 0, "exit 2")
+        check("guard-bash (#1529 review): with no grep, `git add -A` is blocked",
+              raw(payload("git add -A"), no_grep) == 2, "exit 0: hit() failed on every rule")
+        check("guard-bash (#1529 review): with no grep, a force-push to dev is blocked",
+              raw(payload("git push --force origin dev"), no_grep) == 2, "exit 0")
+        check("guard-bash (#1529 review): CONTROL: with no grep, `git status` passes",
+              raw(payload("git status"), no_grep) == 0, "exit 2")
+        # #1529 round 3: with no grep the lib still normalises, so the hook is NOT degraded -- and one
+        # `=~` over the multi-line text let `^` see only the first segment.
+        for cmd in ("cd x && git add -A", "echo hi; git add -A", "x=$(git add -A)",
+                    "cd x; git push --force origin main", "cd x && git clean -fd"):
+            check(f"guard-bash (#1529 r3): with no grep, a LATER segment `{cmd}` is blocked",
+                  raw(payload(cmd), no_grep) == 2, "exit 0: `^` matched only the first line")
+        check("guard-bash (#1529 r3): CONTROL: with no grep, `cd x && git status` passes",
+              raw(payload("cd x && git status"), no_grep) == 0, "exit 2")
+        check("guard-bash (#1529 r3): CONTROL: with no grep, a dry-run `cd x && git clean -n -fd` passes",
+              raw(payload("cd x && git clean -n -fd"), no_grep) == 0, "exit 2")
+    finally:
+        for bd in (no_awk, no_python, no_grep):
+            shutil.rmtree(bd, ignore_errors=True)
+    check("guard-bash (#1529 review): a lone surrogate does not hide `git add -A`",
+          raw(b'{"tool_input":{"command":"git add -A \\ud800"}}') == 2, "exit 0")
+    check("guard-bash (#1529 review): a heredoc left open inside BACKTICKS does not hide what follows",
+          run("x=`cat <<EOF\nfoo\n`\ngit add -A") == 2, "exit 0")
+    check("guard-bash (#1529 review): CONTROL: the backtick shape followed by `git status` passes",
+          run("x=`cat <<EOF\nfoo\n`\ngit status") == 0, "exit 2")
+
+    # #1529 round-2 review. B1: after a heredoc ended early at the `)`, a body line naming `cat <<END`
+    # opened a heredoc that never closed and hid what bash runs next -- a regression on dev's exit 2.
+    check("guard-bash (#1529 r2): a PR body naming `cat <<END` after an early heredoc end hides nothing",
+          run("gh pr view 1 --json body -q \"$(cat <<'EOF'\n) note\nuse `cat <<END` here\nEOF\n)\"\ngit add -A") == 2,
+          "exit 0: a phantom heredoc swallowed the command")
+    check("guard-bash (#1529 r2): the minimal phantom-heredoc shape is blocked",
+          run("x=$(cat <<EOF\n)\ncat <<END\nEOF\n)\ngit add -A") == 2, "exit 0")
+    # B2: an awk that FAILS (not a missing one) read as a clean empty result.
+    fake = tempfile.mkdtemp()
+    for tool in ("bash", "git", "dirname", "cat", "env", "head", "sed", "tr", "grep"):
+        real = next((f"{d}/{tool}" for d in ("/usr/bin", "/bin") if os.path.exists(f"{d}/{tool}")), None)
+        if real:
+            os.symlink(real, Path(fake) / tool)
+    os.symlink(sys.executable, Path(fake) / "python3")
+    (Path(fake) / "awk").write_text("#!/bin/sh\nexit 2\n", encoding="utf-8")
+    (Path(fake) / "awk").chmod(0o755)
+    no_cat = bindir(base + ("grep", "sed", "tr", "awk"), python=True)
+    os.unlink(Path(no_cat) / "cat")
+    no_awk = bindir(base + ("grep",), python=True)
+    # No sed: the FIRST stage fails while the last (awk) succeeds on empty input, so only `pipefail`
+    # carries the failure (#1529 round 3).
+    no_sed = bindir(base + ("grep", "tr", "awk"), python=True)
+    try:
+        check("guard-bash (#1529 r3): with no sed, `git add -A` is blocked",
+              raw(payload("git add -A"), no_sed) == 2, "exit 0: an early stage failed and the last one's 0 won")
+        check("guard-bash (#1529 r3): CONTROL: with no sed, `git status` passes",
+              raw(payload("git status"), no_sed) == 0, "exit 2")
+        check("guard-bash (#1529 r2): with an awk that exits 2, `git add -A` is blocked",
+              raw(payload("git add -A"), fake) == 2, "exit 0: the normaliser's status was discarded")
+        check("guard-bash (#1529 r2): CONTROL: with an awk that exits 2, `git status` passes",
+              raw(payload("git status"), fake) == 0, "exit 2")
+        # B3: unanchored, an exemption's `.*` reached another segment.
+        for cmd in ("git clean -fd && echo -n done", "git push --force origin feat; echo --force-with-lease",
+                    "git restore . && echo --staged"):
+            check(f"guard-bash (#1529 r2): with no awk, `{cmd}` is not exempted by another segment",
+                  raw(payload(cmd), no_awk) == 2, "exit 0")
+        # Suggestion 1: `$(cat)` read nothing without cat.
+        check("guard-bash (#1529 r2): with no cat, `git add -A` is blocked",
+              raw(payload("git add -A"), no_cat) == 2, "exit 0: stdin was never read")
+        check("guard-bash (#1529 r2): CONTROL: with no cat, `git status` passes",
+              raw(payload("git status"), no_cat) == 0, "exit 2")
+    finally:
+        for bd in (fake, no_cat, no_awk, no_sed):
+            shutil.rmtree(bd, ignore_errors=True)
+    check("guard-bash (#1529 r2): CONTROL: with the full PATH, `git clean -n -fd` is still a dry run",
+          run("git clean -n -fd") == 0, "exit 2")
+
 
 # ---- guard-claims.sh (#1106) --------------------------------------------------------------------
 # `claim-verifier` exists, works, covers "any number: counts, ratios, versions, timings", and is
@@ -1329,6 +1469,17 @@ def release_gate_fixtures() -> None:
                 "git push origin feature/main"):
         code, out = bare_gate(cmd)
         check(f"release-gate: CONTROL: with ONLY bash on PATH, `{cmd}` is allowed", code == 0, f"exit {code}: {out[:160]!r}")
+
+    # #1542: a heredoc a `$( )` ended early still owes its delimiter, and no new heredoc opens until it
+    # is seen. Otherwise a body line naming `cat <<END` opened a heredoc that never closed, and
+    # `git push origin main` after the `)` read as heredoc text: the gate allowed a push it must refuse.
+    early = "x=$(cat <<EOF\n)\ncat <<END\nEOF\n)\n"
+    check("release-gate (#1542): a push to main after an early-ended heredoc and a `cat <<END` is blocked",
+          run(early + "git push origin main") == 2, "exit 0: the gate read the push as heredoc text")
+    check("release-gate (#1542): CONTROL: without the `cat <<END` line the same push is blocked",
+          run("x=$(cat <<EOF\n)\nEOF\n)\ngit push origin main") == 2, "exit 0")
+    check("release-gate (#1542): CONTROL: the same shape pushing a feature branch is allowed",
+          run(early + "git push origin feature/w") == 0, "exit 2")
 
 
 # ---- ci-verdict-hint.sh (#1173) -----------------------------------------------------------------

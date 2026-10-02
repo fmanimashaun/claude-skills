@@ -75,6 +75,37 @@ GUARD = Guard(
             '    for prefix in ("refs/",):',
             "'git push origin HEAD:heads/main': expected TARGETS main",
         ),
+        # #1542: a heredoc a `$( )` ended early still owes its delimiter.
+        Mutation(
+            "the delimiter owed after an early end is dropped, so `cat <<END` swallows the push",
+            "                return i + 1, owed",
+            "                return i + 1, []",
+            "'x=$(cat <<EOF\\n)\\ncat <<END\\nEOF\\n)\\ngit push origin main': expected TARGETS main",
+        ),
+        Mutation(
+            "a new heredoc opens while the delimiter is still owed",
+            ' and not cmd.startswith("<<<", i) and not owed:',
+            ' and not cmd.startswith("<<<", i):',
+            "'x=$(cat <<EOF\\n)\\ncat <<END\\nEOF\\n)\\ngit push origin main': expected TARGETS main",
+        ),
+        Mutation(
+            "the owed delimiter is never recognised, so heredocs stay shut for the rest of the command",
+            "                owed.pop(0)\n        if c == \"\\n\" and pending:",
+            "                pass\n        if c == \"\\n\" and pending:",
+            "git push origin main\\nEND\\ngit push origin fix/x': expected does not target main",
+        ),
+        Mutation(
+            "a heredoc that closed inside the substitution is still owed",
+            "                owed.pop(0)                      # the body closed inside the substitution",
+            "                pass                             # the body closed inside the substitution",
+            "'x=$(cat <<EOF\\nhi\\nEOF\\n)\\ncat <<END\\ngit push origin main\\nEND\\ngit push origin fix/x': expected does not target main",
+        ),
+        Mutation(
+            "a tab-indented delimiter of a `<<-` heredoc is not recognised once owed",
+            '            if (line.lstrip("\\t") if tabs else line) == delim:\n                owed.pop(0)\n        if c == "\\n" and pending:',
+            '            if line == delim:\n                owed.pop(0)\n        if c == "\\n" and pending:',
+            "'x=$(cat <<-EOF\\n)\\n\\tEOF\\n)\\ncat <<END\\ngit push origin main\\nEND\\ngit push origin fix/x': expected does not target main",
+        ),
         Mutation(
             "heredoc bodies are tokenised again, so an apostrophe denies a feature push",
             "            if m:\n                pending.append",

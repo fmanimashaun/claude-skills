@@ -11,8 +11,15 @@ GUARD = Guard(
     name="mutation_check_harness",
     subject="scripts/mutation_check.py",
     selftest="scripts/mutation_check_selftest.py",
-    deps=("scripts/mutation_types.py", "scripts/hermetic_git.py"),
+    deps=("scripts/mutation_types.py", "scripts/hermetic_git.py", "scripts/proc_group.py"),
     mutations=(
+        # #1459: progress per guard as it finishes, and a timeout says what it knows.
+        Mutation(
+            'the per-guard progress line waits for the whole pool again',
+            '            print(f"  [done] {name}: {sum(1 for g, _ in live if g.name == name)} mutation(s), "',
+            '            (lambda *a, **k: None)(f"  [done] {name}: {sum(1 for g, _ in live if g.name == name)} mutation(s), "',
+            "#1459: a guard's progress line prints once",
+        ),
         # #1510: baselines and mutants run with git auto-maintenance off.
         Mutation(
             "a BASELINE runs with git's own auto-maintenance",
@@ -115,8 +122,8 @@ GUARD = Guard(
         Mutation(
             # review of PR #1491
             "main's pool drops the derived limit (the path CI runs)",
-            '        outcomes = list(pool.map(lambda gm: timed_run(run_mutation, gm[0], gm[1], limits[gm[0].name]), live))',
-            '        outcomes = list(pool.map(lambda gm: timed_run(run_mutation, gm[0], gm[1]), live))',
+            '    futures = {pool.submit(timed_run, run_mutation, g, m, limits[g.name]): i for i, (g, m) in enumerate(live)}',
+            '    futures = {pool.submit(timed_run, run_mutation, g, m): i for i, (g, m) in enumerate(live)}',
             "#1486 CONTROL: main()'s pool with no scaling must time the mutant out",
         ),
         Mutation(
@@ -145,7 +152,7 @@ GUARD = Guard(
             # of stderr after a label printed to stdout, and the label fell off the tail.
             "the mutant's stdout and stderr are concatenated, not interleaved",
             'cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,\n                                text=True, errors="replace",\n                                env=hermetic_git.env(),  # no detached git maintenance (#1510)\n                                timeout=timeout)\n        output = result.stdout',
-            'cwd=workdir, capture_output=True,\n                                text=True, errors="replace",\n                                env=hermetic_git.env(),  # no detached git maintenance (#1510)\n                                timeout=timeout)\n        output = result.stdout + result.stderr',
+            'cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.PIPE,\n                                text=True, errors="replace",\n                                env=hermetic_git.env(),  # no detached git maintenance (#1510)\n                                timeout=timeout)\n        output = result.stdout + result.stderr',
             "a wrong-fixture tail hides a label printed to stdout behind 12+ stderr lines",
         ),
         Mutation(
@@ -174,6 +181,13 @@ GUARD = Guard(
             '        argv.extend(guard.selftest_args)\n        # `errors="replace"`: a non-UTF-8 byte must not raise before the report can print (#1493).',
             '        # `errors="replace"`: a non-UTF-8 byte must not raise before the report can print (#1493).',
             "#1497: a guard's selftest_args must reach its baseline and mutants",
+        ),
+        Mutation(
+            # review of #1525, blocker 2: the pool joined at the slowest running mutant
+            "Ctrl-C under main's pool leaves its baselines and mutants running",
+            '    with proc_group.pool(jobs) as pool:',
+            '    with __import__("concurrent.futures").futures.ThreadPoolExecutor(max_workers=jobs) as pool:',
+            "#1459: Ctrl-C under mutation_check's pool left work running",
         ),
     ),
 )
