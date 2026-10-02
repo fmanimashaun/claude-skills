@@ -150,9 +150,40 @@ GUARD = Guard(
             "            in_body = False",
             "'x=$(cat <<EOF\\nsay \"hi\\nEOF\\n)\\ngit push origin fix/x': expected does not target main",
         ),
+        # #1553: an unquoted heredoc delimiter makes the shell expand substitutions in the body.
+        Mutation(
+            "an unquoted heredoc's substitutions are never read",
+            '                if expands and bodies is not None:',
+            '                if False and bodies is not None:',
+            "'cat <<EOF\\n$(git push origin main)\\nEOF': expected TARGETS main",
+        ),
+        Mutation(
+            'a quoted delimiter is treated as unquoted, so a body that is text is read as commands',
+            '        return m.group(3), m.group(1) == "-", m.group(2) == "", m.end()',
+            '        return m.group(3), m.group(1) == "-", True, m.end()',
+            '"cat <<\'EOF\'\\n$(git push origin main)\\nEOF": expected does not target main',
+        ),
+        Mutation(
+            '<<\\EOF is not recognised as a heredoc',
+            '    m = HEREDOC_BACKSLASH.match(cmd, i)\n    if m:',
+            '    m = None\n    if m:',
+            "'cat <<\\\\EOF\\ngit push origin main\\nEOF': expected does not target main",
+        ),
+        Mutation(
+            'a backslash-escaped substitution in an unquoted body is read',
+            '        if c == "\\\\":\n            i += 2; continue\n        if c == "$" and text.startswith',
+            '        if False:\n            i += 2; continue\n        if c == "$" and text.startswith',
+            "'cat <<EOF\\n\\\\$(git push origin main)\\nEOF': expected does not target main",
+        ),
+        Mutation(
+            'backticks in an unquoted body are not read',
+            '        if c == "`":\n            j = i + 1',
+            '        if False:\n            j = i + 1',
+            "'cat <<EOF\\n`git push origin main`\\nEOF': expected TARGETS main",
+        ),
         Mutation(
             "heredoc bodies are tokenised again, so an apostrophe denies a feature push",
-            "            if m:\n                pending.append",
+            "            if op:\n                pending.append",
             "            if False:\n                pending.append",
             "it's done, push main later",
         ),
