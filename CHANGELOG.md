@@ -3627,32 +3627,35 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   `cd ~/projects/other && gh pr create --body-file …` from a session in another repository was BLOCKED for missing
   that repository's sections, and the target's own template was never read; a relative `--body-file` was read from
   the session directory too.
-  - `command_cwd.py` reads the command as the shell does, in one pass outside quotes: a `#` starts a comment only at
-    the start of a word (`issue#12` is one word, and a comment line no longer swallows every line after it), a
-    `<<END` opens a heredoc only unquoted, and a heredoc body is dropped, as `normalize_cmd.sh` does, so an apostrophe
-    in it is not read as a quote. It then follows the `cd`s up to the first `gh pr create|edit` / `gh issue comment`
-    COMMAND, a word in command position, never a phrase in a quoted string. A `cd` joined by `&&`, `;` or a newline
-    moves the directory; so does one inside `{ …; }`, `if`, `while`, `until` or a `case` branch (for a `gh` in that
-    branch), behind `builtin` or `command`, or carrying a redirection (`cd x 2>/dev/null`; in `cd 5 >x`, 5 is the
-    target, since an fd number must touch its `>`). One inside `( … )` does not outlive the subshell. The `gh` is
-    found behind `env`, `command -p`, `exec`, `nohup`, `nice`, `timeout` or `time`, or by its path.
+  - `command_cwd.py` is an **allowlist, not a shell** (#1516, round 3). Three review rounds each found shell shapes a
+    partial interpreter followed wrongly (an `if` body, `false && cd`, `eval`, `env -C`, an arithmetic `<<`), so it
+    follows a `cd` in one grammar only: top-level segments joined by `&&`, `;` or a newline, before the `gh`
+    segment, each `cd [-P|-L] <one plain or quoted path>` with optional `>`, `>>` or `>&` redirects (`2>` included;
+    in `cd 5 >x`, 5 is the path, since an fd number must touch its `>`). The `gh` segment may carry `VAR=x`, `env`
+    with no option, `command -p`, `exec`, `nohup`, `nice -n N`, `timeout [opts] N` or `time -p`, or name `gh` by its
+    path. A comment is dropped first, only where `#` starts a word outside quotes (`x#y` and `B\ #x` are words).
+  - With no `cd`, `pushd`, `popd` or `eval` before the `gh`, and no `source`/`.` in command position, the `gh` may
+    follow any command (`git push && gh …`) and is judged in the starting directory, as before #1509.
+  - **Anything else is "cannot tell"**: exit `3`, and the hook says the template and the change type are **NOT
+    checked**, rather than judge against a guessed repository. That covers `if`/`while`/`until`/`for`/`case`,
+    subshells, brace groups, functions, `eval`, `source`, `pushd`/`popd`, `!`, `||`, `|`, `&`, `builtin cd`,
+    `X=1 cd`, any other command before the `gh` once a directory change is in sight, an input redirect on a `cd`,
+    `env` with any option (`env -C dir`, `-iC`), a `gh` that is no command word of the grammar (`sudo gh`,
+    `bash -c "…"`), an unbalanced quote before the `gh`, and a target with `$`, a backquote, `~user` or `-`, a bare
+    `cd` or one with two arguments, a missing directory, or a relative path while `CDPATH` is set. With a relative
+    `--body-file`, the hook says the same before its "could not read" fail-open.
   - The command starts in the payload's `cwd`, not the hook process's directory, and the `skills/**` change-type
-    check reads `git diff` in the repository the command runs in.
-  - A `cd` it cannot follow exits `3`, and the hook says the template and the change type are **NOT checked**
-    rather than judge against the wrong repository: `cd -`, `$` or a backquote in the target, `~user`, a missing
-    directory, `pushd`/`popd`, a negated command (`! cd x`), a `cd` joined by `|`, `||` or `&`, a `gh` after a `case`
-    whose branch moved the directory, a function definition before the `gh`, a `cd` behind `env`/`exec`/`timeout`
-    (a program, not the builtin), and a `gh` not found as a command word (`sudo gh`, `bash -c "…"`) while the text
-    has a `cd`. Run on bash 3.2: a piped `cd` and a subshell `cd` do not persist, a brace group's does, and
-    `cd x || gh` runs `gh` only where the `cd` failed. A relative body is then not read at all.
-  - A missing or crashing `command_cwd.py` BLOCKS before a relative body can fail open, as #1435 ruled for
-    `pr_template.py`; `-R`/`GH_REPO` still say NOT checked.
-  - `check_hook_gates.py` goes from 326 checks on dev to 380. Run against dev's `guard-claims.sh`, 48 of the 54 new
-    ones fail; the 6 that pass are controls (no `cd`; `-R` after a `cd`; a subshell `cd`; `sudo gh` with no `cd`; the
+    check reads `git diff` in the repository the command runs in. A missing or crashing `command_cwd.py` BLOCKS
+    before a relative body can fail open, as #1435 ruled for `pr_template.py`; `-R`/`GH_REPO` still say NOT checked.
+  - **When it cannot tell the repository**, it allows the command with that loud notice. That is the maintainer's
+    decision recorded on #1509 (https://github.com/fmanimashaun/claude-skills/issues/1509): refusing would teach
+    `RAILS_FLOW_CLAIMS_OK=1`, and the session repository's template would be the wrong one. CLAUDE.md's Platform
+    paragraph now scopes the gate to a repository it can resolve.
+  - `check_hook_gates.py` goes from 367 checks on dev to 461. Run against dev's `guard-claims.sh`, 89 of the 94 new
+    ones fail; the 5 that pass are controls (no `cd`; `git push && gh` with no `cd`; `-R` after a `cd`; the
     session's own `skills/` diff without a `cd`) and the cd-target `skills/` check, which dev's hook passes only
-    because it cannot read the relative body. `hook_guard_claims` goes from 11 mutations to 19, and the new
-    `hook_command_cwd` guard carries 28, each caught by its expected fixture.
-  - **When it cannot tell the repository** (`sudo gh`, `bash -c` after a `cd`, a function that changes directory), it allows the command with a loud NOT-checked notice. That is the maintainer's decision recorded on #1509 (https://github.com/fmanimashaun/claude-skills/issues/1509): refusing would teach `RAILS_FLOW_CLAIMS_OK=1`, and the session repository's template would be the wrong one. CLAUDE.md's Platform paragraph now scopes the gate to a repository it can resolve.
+    because it cannot read the relative body. `hook_guard_claims` goes from 11 mutations to 20, and the new
+    `hook_command_cwd` guard carries 38, each caught by its expected fixture.
 
 ### 1.56.0 (release v1.153.0) — 2026-10-02
 
