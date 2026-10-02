@@ -1080,9 +1080,15 @@ GUARD = Guard(
         ),
         Mutation(
             "a separator counts on its own, so a setext heading is refused",
-            "        if rows:\n            rows += [n for n, line in enumerate(lines, 1) if _CONFLICT_SEPARATOR.match(line)]",
-            "        if True:\n            rows += [n for n, line in enumerate(lines, 1) if _CONFLICT_SEPARATOR.match(line)]",
+            "_CONFLICT_SEPARATOR.match(line)] if edges else []",
+            "_CONFLICT_SEPARATOR.match(line)]",
             "a setext heading underline of seven characters",
+        ),
+        Mutation(
+            "the finding points at the first marker line, an earlier setext underline included",
+            "(edges or separators)[0],",
+            "min(edges + separators),",
+            "a heading underline before a real block",
         ),
         Mutation(
             "only markdown is read",

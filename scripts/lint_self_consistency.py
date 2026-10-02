@@ -1795,7 +1795,8 @@ def check_conflict_markers() -> tuple[list[Finding], int]:
     the PR's gate run passed a CHANGELOG with a live conflict block in `### Unreleased` (#1543):
     nothing read for the markers, and `release.yml` would have extracted them into published notes.
     Every file is read, not a suffix list, and a binary one (a NUL in the first 8000 bytes, git's
-    test) is skipped -- the same two choices `package_core.py` makes.
+    test) is skipped -- the same two choices `package_core.py` makes. It walks the working tree, so
+    an untracked file is read too; a marker in a scratch file fails the sweep, which is harmless.
     """
     findings: list[Finding] = []
     examined = 0
@@ -1805,14 +1806,14 @@ def check_conflict_markers() -> tuple[list[Finding], int]:
                 continue
         examined += 1
         lines = read(path).splitlines()
-        rows = [n for n, line in enumerate(lines, 1) if _CONFLICT_EDGE.match(line)]
-        if rows:
-            rows += [n for n, line in enumerate(lines, 1) if _CONFLICT_SEPARATOR.match(line)]
-            rows.sort()
-        if rows:
+        edges = [n for n, line in enumerate(lines, 1) if _CONFLICT_EDGE.match(line)]
+        separators = [n for n, line in enumerate(lines, 1) if _CONFLICT_SEPARATOR.match(line)] if edges else []
+        if edges or separators:
             findings.append(Finding(
-                "conflict-marker", rel(path), rows[0],
-                f"{len(rows)} unresolved merge-conflict marker line(s), first here -- a PR's gate run "
+                # An edge marker, not the first `=======`: a setext underline can come before a real block.
+                "conflict-marker", rel(path), (edges or separators)[0],
+                f"{len(edges) + len(separators)} unresolved merge-conflict marker line(s), the first "
+                "edge marker here -- a PR's gate run "
                 "passed a CHANGELOG carrying a live block (#1543), and `release.yml` would have "
                 "extracted it into the published notes. Resolve the conflict; do not commit the markers",
             ))
@@ -3610,7 +3611,8 @@ def selftest() -> int:
     failures: list[str] = []
     checks = 0
 
-    def scenario(label: str, files: dict[str, str], *, rule: str, expect_finding: bool, only=None) -> None:
+    def scenario(label: str, files: dict[str, str], *, rule: str, expect_finding: bool, only=None,
+                 line: int | None = None) -> None:
         # `only`: one rule's check, instead of every rule over the fixture tree. `run()` is ~0.2s a
         # scenario, and this module is its own mutation guard's selftest -- run once per mutation.
         nonlocal checks
@@ -3627,6 +3629,8 @@ def selftest() -> int:
         finally:
             ROOT = previous
         got = [f for f in findings if f.rule == rule]
+        if line is not None and got and got[0].line != line:
+            failures.append(f"{rule} / {label}: expected the finding on line {line}, got {got[0].line}")
         if bool(got) != expect_finding:
             want = "a finding" if expect_finding else "silence"
             detail = "; ".join(str(f) for f in got) or "(none)"
@@ -5373,6 +5377,10 @@ def selftest() -> int:
     # A seven-character title's setext underline is exactly the separator. Alone it is a heading.
     scenario("a setext heading underline of seven characters", rule=CM, only=check_conflict_markers,
              expect_finding=False, files={"docs/x.md": "Heading\n=======\n\nbody\n"})
+    # The finding points at the opening marker, not at an earlier setext underline.
+    scenario("a heading underline before a real block", rule=CM, only=check_conflict_markers,
+             expect_finding=True, line=4,
+             files={"docs/x.md": "Heading\n=======\n\n" + BLOCK})
     scenario("a heredoc operator", rule=CM, only=check_conflict_markers, expect_finding=False,
              files={"scripts/x.sh": "cat <<EOF\nbody\nEOF\ncat <<<\"here string\"\n"})
     scenario("an eight-character run is not a marker", rule=CM, only=check_conflict_markers, expect_finding=False,
