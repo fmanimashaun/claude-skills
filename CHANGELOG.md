@@ -13658,6 +13658,10 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
+### Unreleased
+
+- **design-flow's doctrine resolver globs installed versions only inside a plugin cache — `plugins/design-flow/scripts/doctrine_path.py`** (#1475). `candidates()` globbed `*/*/skills/design-system` four levels above the script. For a copy that `mutation_check.py` stages under the system temp directory, that level is the temp root's parent. Measured here: the glob walked 194k entries, took 21 s, found 10,639 matches, and `find()` returned ANOTHER process's tempdir copy. That made `llm_tell_detector`'s baseline time out (#1475's report: 3 of 3). The glob now runs only when the base's parent is `cache`, the installed layout it exists for; anywhere else only the clone root is tried. Staged selftest: 15.7 s → 0.07 s. A fixture with a sibling tempdir holding the skill fails on dev, and the `doctrine_path` guard gains a mutation dropping the check (12/12 caught). Our own resolver code, with no upstream claim.
+
 ### 1.45.0 (release v1.153.0) — 2026-10-02
 
 - **The tier doctrine states the blocked-alias substitution's provider scope — `plugins/design-flow/reference/model-tiers.md`** (#1433). Scoped to the source (https://code.claude.com/docs/en/sub-agents and https://code.claude.com/docs/en/model-config, fetched 2026-09-30): the newest-permitted-version substitution applies on the Anthropic API and Claude Platform on AWS when the allowlist permits a version of the family; otherwise the subagent runs on the inherited model. Boundary v2.1.222. The policy is unchanged.

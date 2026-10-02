@@ -84,5 +84,12 @@ GUARD = Guard(
             "    except OSError:",
             "malformed fields are skipped",
         ),
+        Mutation(
+            # #1475
+            'the cache-layout check is dropped, so a staged copy globs the whole temp root again',
+            '    if base.parent.name != "cache":\n        return [base / SKILL_REL]\n',
+            '',
+            'does not find a sibling tempdir',
+        ),
     ),
 )
