@@ -41,9 +41,18 @@
 _unquote_delims() { sed -E "s/<<(-?)[[:space:]]*[\"']([A-Za-z0-9_][A-Za-z0-9_-]*)[\"']/<<\1\2/g"; }
 _strip_quotes()   { sed -E "s/'[^']*'//g; s/\"[^\"]*\"//g"; }
 _strip_comments() { sed -E "s/^[[:space:]]*#.*\$//; s/([[:space:]])#.*\$/\1/"; }
+# #1526: a heredoc opened INSIDE an unclosed `$( )` ends where bash ends it, at the line that closes the
+# `$( )`, and that line is then read as commands. Kept open to the end, it hid
+# `x=$(cat <<EOF` / `foo` / `)` / `git add -A`, which bash 3.2 runs. Ending it early only shows the rules
+# MORE text, so an error here can only block, never allow.
 _strip_heredocs() {
   awk '
-    inh { t=$0; if (dash) sub(/^\t+/,"",t); if (t==delim) inh=0; next }
+    inh {
+      t=$0; if (dash) sub(/^\t+/,"",t)
+      if (t==delim) { inh=0; next }
+      if (insub && $0 ~ /^[ \t]*\)/) { inh=0; print; next }
+      next
+    }
     {
       if (match($0, /<<-?[ \t]*[A-Za-z0-9_][A-Za-z0-9_-]*/)) {
         before=(RSTART>1)?substr($0,RSTART-1,1):""
@@ -51,6 +60,8 @@ _strip_heredocs() {
           op=substr($0,RSTART,RLENGTH); dash=(op ~ /^<<-/)?1:0
           d=op; sub(/^<<-?[ \t]*/,"",d)
           delim=d; inh=1
+          head=substr($0,1,RSTART-1); opens=gsub(/\$\(/,"",head); h2=substr($0,1,RSTART-1); closes=gsub(/\)/,"",h2)
+          insub=(opens>closes)?1:0
         }
       }
       print

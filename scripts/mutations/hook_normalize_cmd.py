@@ -132,5 +132,12 @@ GUARD = Guard(
             "",
             "`\"echo x; bash -c 'git add -A'\"` runs the command and is blocked",
         ),
+        Mutation(
+            # #1526
+            'a heredoc opened inside $( ) runs to the end again, hiding what follows the $( )',
+            '      if (insub && $0 ~ /^[ \\t]*\\)/) { inh=0; print; next }',
+            '      if (0) { inh=0; print; next }',
+            'a heredoc left open inside $( ) does not hide',
+        ),
     ),
 )

@@ -590,6 +590,45 @@ def guard_bash_fixtures() -> None:
     check("guard-bash (#1311): FAIL CLOSED: with the helper missing, a labelled create is refused, not let through",
           rc == 2 and "could not run" in err, err)
 
+    # #1526 -- THREE WAYS THE NORMALISED TEXT CAME OUT EMPTY, AND EVERY RULE PASSED. Each is driven
+    # through the real hook, with a control on the same input that must still pass.
+    def raw(stdin: bytes, path: str | None = None, lang: str = "C") -> int:
+        env = {"HOME": os.environ.get("HOME", "/tmp"), "LANG": lang, "LC_ALL": lang,
+               "PATH": path if path is not None else os.environ["PATH"]}
+        with tempfile.TemporaryDirectory() as td:
+            return _run(["/bin/bash", str(HOOKS / "guard-bash.sh")], cwd=td, input=stdin, env=env,
+                        capture_output=True, timeout=60).returncode
+
+    def payload(cmd: str) -> bytes:
+        return json.dumps({"tool_input": {"command": cmd}}).encode()
+
+    # 1. NO awk ON PATH: the normaliser printed nothing. Absolute binaries, so an alias or a shell
+    # function for one of them cannot stand in (zsh here aliases grep).
+    with tempfile.TemporaryDirectory() as bd:
+        for tool in ("bash", "git", "sed", "tr", "grep", "dirname", "cat", "env", "head"):
+            real = next((f"{d}/{tool}" for d in ("/usr/bin", "/bin") if os.path.exists(f"{d}/{tool}")), None)
+            if real:
+                os.symlink(real, Path(bd) / tool)
+        os.symlink(sys.executable, Path(bd) / "python3")
+        check("guard-bash (#1526): with no awk on PATH, `git add -A` is still blocked",
+              raw(payload("git add -A"), bd) == 2, "exit 0: the normaliser printed nothing and every rule passed")
+        check("guard-bash (#1526): with no awk on PATH, a force-push to dev is still blocked",
+              raw(payload("git push --force origin dev"), bd) == 2, "exit 0")
+        check("guard-bash (#1526): CONTROL: with no awk on PATH, `git status` still passes",
+              raw(payload("git status"), bd) == 0, "exit 2")
+    # 2. AN UNCLOSED HEREDOC INSIDE `$( )`: bash ends it at the line closing the `$( )`.
+    check("guard-bash (#1526): a heredoc left open inside $( ) does not hide the `git add -A` after it",
+          run("x=$(cat <<EOF\nfoo\n)\ngit add -A") == 2, "exit 0")
+    check("guard-bash (#1526): CONTROL: the same shape followed by `git status` passes",
+          run("x=$(cat <<EOF\nfoo\n)\ngit status") == 0, "exit 2")
+    check("guard-bash (#1526): CONTROL: `git add -A` INSIDE a closed heredoc in $( ) is a mention and passes",
+          run("x=$(cat <<EOF\ngit add -A\nEOF\n)") == 0, "exit 2")
+    # 3. AN INVALID UTF-8 BYTE: the parse failed, and the raw JSON's quotes hid the command.
+    check("guard-bash (#1526): an invalid UTF-8 byte does not hide `git add -A`",
+          raw(b'{"tool_input":{"command":"git add -A \xff"}}', lang="en_US.UTF-8") == 2, "exit 0")
+    check("guard-bash (#1526): CONTROL: an invalid UTF-8 byte after `git status` passes",
+          raw(b'{"tool_input":{"command":"git status \xff"}}', lang="en_US.UTF-8") == 0, "exit 2")
+
 
 # ---- guard-claims.sh (#1106) --------------------------------------------------------------------
 # `claim-verifier` exists, works, covers "any number: counts, ratios, versions, timings", and is

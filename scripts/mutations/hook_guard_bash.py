@@ -104,7 +104,7 @@ GUARD = Guard(
         # #906. The normaliser is what separates "mentions the rule" from "stages everything".
         Mutation(
             "the normaliser is bypassed and the raw text is matched, so a prefixed `FOO=1 git add -A` fails OPEN",
-            '  seg="$(printf \'%s\' "$cmd" | normalize_segments)"',
+            '  seg="$(printf \'%s\' "$cmd" | LC_ALL=C normalize_segments)"',
             '  seg="$cmd"',
             "`FOO=1 git add -A` is blocked",
         ),
@@ -113,6 +113,20 @@ GUARD = Guard(
             'else\n  seg="$cmd"\nfi',
             'else\n  seg=""\nfi',
             "falls back to the raw text and still blocks",
+        ),
+        Mutation(
+            # #1526: the two halves cover each other, so one mutation removes both
+            'the awk-less fallback is removed (no tool check, no empty-result fallback), so no awk fails open',
+            'if [ "$parsed" = 1 ] && [ -f "$_lib" ] && command -v awk sed tr grep >/dev/null 2>&1 \\\n   && . "$_lib" 2>/dev/null && type normalize_segments >/dev/null 2>&1; then\n  seg="$(printf \'%s\' "$cmd" | LC_ALL=C normalize_segments)"\n  case "$cmd" in *[![:space:]]*) [ -n "$seg" ] || seg="$cmd" ;; esac\n',
+            'if [ "$parsed" = 1 ] && [ -f "$_lib" ] \\\n   && . "$_lib" 2>/dev/null && type normalize_segments >/dev/null 2>&1; then\n  seg="$(printf \'%s\' "$cmd" | LC_ALL=C normalize_segments)"\n',
+            'with no awk on PATH, `git add -A` is still blocked',
+        ),
+        Mutation(
+            # #1526
+            'the payload is decoded strictly again, so an invalid UTF-8 byte hides the command',
+            'd=json.loads(sys.stdin.buffer.read().decode("utf-8","surrogateescape"))',
+            'd=json.loads(sys.stdin.buffer.read().decode("utf-8"))',
+            'an invalid UTF-8 byte does not hide `git add -A`',
         ),
     ),
 )

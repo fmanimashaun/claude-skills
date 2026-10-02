@@ -4,7 +4,13 @@
 set -uo pipefail
 input="$(cat)"
 
-cmd="$(printf '%s' "$input" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("tool_input",{}).get("command",""))' 2>/dev/null || printf '%s' "$input")"
+# #1526: decoded with `surrogateescape`, so an invalid UTF-8 byte cannot make the parse fail. A failed
+# parse left the raw JSON as `cmd`, where the command sits inside double quotes the normaliser strips:
+# `git add -A \xff` was allowed.
+parsed=1
+cmd="$(printf '%s' "$input" | python3 -c 'import json,sys
+d=json.loads(sys.stdin.buffer.read().decode("utf-8","surrogateescape"))
+sys.stdout.buffer.write(str(d.get("tool_input",{}).get("command","")).encode("utf-8","surrogateescape"))' 2>/dev/null)" || { parsed=0; cmd="$input"; }
 
 deny() { echo "BLOCKED by rails-flow guardrails: $1" >&2; exit 2; }
 
@@ -15,8 +21,14 @@ deny() { echo "BLOCKED by rails-flow guardrails: $1" >&2; exit 2; }
 # FAIL CLOSED: if the lib cannot be sourced, match the raw text as before — a guard that goes
 # quiet because a file is missing is the one failure this hook must not have.
 _lib="$(dirname "${BASH_SOURCE[0]}")/lib/normalize_cmd.sh"
-if [ -f "$_lib" ] && . "$_lib" 2>/dev/null && type normalize_segments >/dev/null 2>&1; then
-  seg="$(printf '%s' "$cmd" | normalize_segments)"
+#
+# #1526: the lib needs awk, sed, tr and grep. Without awk it printed NOTHING, so every rule passed. A
+# missing tool, an unparsed payload, or an empty result for a non-empty command all fall back to the
+# raw text. `LC_ALL=C`: macOS awk under a UTF-8 locale aborts on an invalid byte and loses the text.
+if [ "$parsed" = 1 ] && [ -f "$_lib" ] && command -v awk sed tr grep >/dev/null 2>&1 \
+   && . "$_lib" 2>/dev/null && type normalize_segments >/dev/null 2>&1; then
+  seg="$(printf '%s' "$cmd" | LC_ALL=C normalize_segments)"
+  case "$cmd" in *[![:space:]]*) [ -n "$seg" ] || seg="$cmd" ;; esac
 else
   seg="$cmd"
 fi

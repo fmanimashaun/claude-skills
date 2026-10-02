@@ -3586,6 +3586,14 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **guard-bash fails closed when its normaliser cannot read the command — `plugins/rails-flow/hooks/scripts/guard-bash.sh`, `plugins/rails-flow/hooks/scripts/lib/normalize_cmd.sh`** (#1526, from PR #1519's review). Three inputs made the normalised text empty, so every rule passed and `git add -A` was allowed, against CLAUDE.md's "blocked either way":
+  - **no `awk` on PATH**: the normaliser printed nothing. The hook now checks for `awk sed tr grep`, and an empty result for a non-empty command falls back to the raw text;
+  - **a heredoc left open inside `$( )`**: bash ends it at the line closing the `$( )` and runs what follows; the normaliser kept it open to the end. It now ends there too, which can only show the rules more text;
+  - **an invalid UTF-8 byte**: the JSON parse failed and the raw payload's quotes hid the command. It is decoded with `surrogateescape`, and the normaliser runs under `LC_ALL=C` (macOS awk aborts on an invalid byte in a UTF-8 locale).
+  Each is a fixture through the real hook with a control; all four blocking fixtures fail on dev. Mutations: `hook_guard_bash` +2, `hook_normalize_cmd` +1, 35/35 caught.
+
 ### 1.56.0 (release v1.153.0) — 2026-10-02
 
 - **The mock-up gate reads `GUARDRAILS.md` with CommonMark's own block algorithm, so containers no longer fool it — `plugins/rails-flow/scripts/check_mockup_gate.py`, `plugins/rails-flow/scripts/mutations/check_mockup_gate.py`** (#1501). The two line passes from #1490 (`unfenced()`, `outside_indented_code()`) are replaced by `block_classes()`. It is phase 1 of the spec's block parsing: open block quotes and list items are matched per line, then lazy continuation, then new block starts. An opt-out declares only as text outside every code and HTML block.
@@ -11379,6 +11387,10 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
     where a guard turned out to have **no reachable failure path** until a fixture was added for it.
 
 ## qa-flow (independent QA plugin)
+
+### Unreleased
+
+- **`plugins/qa-flow/hooks/scripts/lib/normalize_cmd.sh` ends a heredoc opened inside `$( )` where bash does** (#1526). The shared normaliser, kept byte-identical to rails-flow's (`hook-lib-drift`); see the rails-flow entry.
 
 ### 1.35.0 (release v1.153.0) — 2026-10-02
 
