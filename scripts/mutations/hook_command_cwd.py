@@ -37,7 +37,7 @@ GUARD = Guard(
         ),
         Mutation(
             'every cd is ignored: the starting directory is always returned',
-            '    if not any(_moves(seg) for seg, _, _ in done):',
+            '    if all(_safe(seg) for seg, _, _ in done):',
             '    if True:',
             "`cd B;` is followed to the cd target's template",
         ),
@@ -46,36 +46,6 @@ GUARD = Guard(
             '        if not seg:\n            continue',
             '        if False:\n            continue',
             "a leading comment line is followed to the cd target's template",
-        ),
-        Mutation(
-            'eval is not a directory change',
-            '(cd|pushd|popd|eval)',
-            '(cd|pushd|popd)',
-            'N2 `eval "$VAR"`, with no cd in sight is NOT checked, with the notice',
-        ),
-        Mutation(
-            'pushd is not a directory change',
-            '(cd|pushd|popd|eval)',
-            '(cd|popd|eval)',
-            '`pushd` is NOT checked, with the notice',
-        ),
-        Mutation(
-            '`source`/`.` are not directory changes',
-            '        if w in ("source", ".") and',
-            '        if False and',
-            '`source` before gh is NOT checked, with the notice',
-        ),
-        Mutation(
-            '`. file` after a keyword is not a directory change',
-            ' or seg[k - 1] in KEYWORDS or ASSIGN',
-            ' or ASSIGN',
-            '`. file` in an if is NOT checked, with the notice',
-        ),
-        Mutation(
-            '`X=1 . file` is not a directory change',
-            ' or ASSIGN.match(seg[k - 1]))',
-            ')',
-            '`X=1 . file` is NOT checked, with the notice',
         ),
         Mutation(
             'an input redirect on a cd is allowed',
@@ -174,12 +144,6 @@ GUARD = Guard(
             'a cd with two arguments is NOT checked, with the notice',
         ),
         Mutation(
-            '`cd -P` is not peeled',
-            '    if args and args[0] in ("-P", "-L"):',
-            '    if False:',
-            "`cd -P` is followed to the cd target's template",
-        ),
-        Mutation(
             '`~/` is not expanded',
             '    if a == "~" or a.startswith("~/"):\n        a = home + a[1:]\n    elif a.startswith("~"):',
             '    if a.startswith("~"):',
@@ -250,6 +214,26 @@ GUARD = Guard(
             'os.path.basename(w[0]) == "gh" and (',
             'w[0] == "gh" and (',
             "an absolute path to gh is followed to the cd target's template",
+        ),
+        Mutation(
+            # Round 4: the shortcut is an allowlist.
+            'the no-cd shortcut takes any command word (round 4, B2)',
+            '    return not w or w[0] in SAFE',
+            '    return True',
+            'B2 zsh `chdir` is NOT checked, with the notice',
+        ),
+        Mutation(
+            'an assignment before a SAFE command defeats the shortcut',
+            '    while w and ASSIGN.match(w[0]):\n        w.pop(0)\n    return not w',
+            '    return not w',
+            'known-safe commands and an assignment before gh is judged in the starting repo',
+        ),
+        Mutation(
+            # Round 4.
+            '`cd -P` is peeled and resolved logically again (round 4, B1)',
+            'def _target(args: list[str], here: str, home: str) -> str:\n    if len(args) != 1:',
+            'def _target(args: list[str], here: str, home: str) -> str:\n    if args and args[0] in ("-P", "-L"):\n        args = args[1:]\n    if len(args) != 1:',
+            'B1 `cd -P link/..` is NOT checked, with the notice',
         ),
     ),
 )

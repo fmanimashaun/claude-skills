@@ -15,7 +15,7 @@ partial interpreter followed wrongly (an `if` body, `false && cd`, `eval`, `env 
 So exactly one grammar is followed, and anything else is "cannot tell":
 
     [cd-segment SEP]... gh-segment           SEP is `&&`, `;` or a newline
-    cd-segment = cd [-P|-L] PATH [REDIR]...  PATH is one plain or quoted word; REDIR is `>`, `>>` or `>&`
+    cd-segment = cd PATH [REDIR]...          PATH is one plain or quoted word; REDIR is `>`, `>>` or `>&`
                                              (an fd number touching it, `2>`, included) and its target
     gh-segment = [VAR=x]... [WRAPPER]... gh (pr create | pr edit | issue comment) ...
 
@@ -23,12 +23,20 @@ WRAPPER is `env` (assignments only, no option), `command [-p]`, `exec`, `nohup`,
 `timeout [OPTS] DURATION` or `time [-p]`; `gh` may be named by its path. Comments are dropped first:
 a `#` that starts a word outside quotes, to the end of its line.
 
-When nothing before the gh segment can change the directory (no `cd`, `pushd`, `popd` or `eval` word
-anywhere in it, and no `source`/`.` in command position), the gh segment may follow any command
-(`git push && gh …`), and the answer is START, as it was before #1509.
+`cd -P` / `cd -L` are out: `-P` resolves symlinks physically (`cd -P link/..` is the link target's parent),
+and a logical `..` is all this resolver does.
 
-Everything else is exit 3: a cd target with `$`, a backquote or `~user`, `-`, a missing directory, a
-relative path while CDPATH is set; a bare `cd` or one with two arguments; `if`/`while`/`until`/`for`/
+When EVERY segment before the gh segment starts (after `VAR=x` assignments) with a literal command word
+from SAFE, the gh segment may follow them joined by anything (`git push && gh …`), and the answer is
+START, as it was before #1509. SAFE is an allowlist too (#1516, round 4): a denylist of the words that
+move a directory missed zsh's `chdir`, `builtin source`, `command .`, `$x` and `$'cd'`.
+
+KNOWN LIMITS, invisible in the command text: a shell function or alias from the user's rc that cds
+(zoxide's `z`, autojump's `j`) or that shadows a SAFE word, and CDPATH or zsh's CHASE_LINKS / AUTO_CD set
+in the command's shell but not in this hook's environment (CDPATH is read from this process's).
+
+Everything else is exit 3: a cd target with `$`, a backquote or `~user`, `-` or any option, a missing
+directory, a relative path while CDPATH is set; a bare `cd` or one with two arguments; `if`/`while`/`until`/`for`/
 `case`, subshells, brace groups, functions, `eval`, `source`, `pushd`/`popd`, `!`, `||`, `|`, `&`, any
 other command before gh once a directory change is in sight; a redirect on a cd other than `>`, `>>`,
 `>&`; a gh not found as a command word of the grammar (`sudo gh`, `bash -c "…"`, `env -C dir gh`, any
@@ -45,10 +53,10 @@ ASSIGN = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*=")
 OPS = re.compile(r"&&|\|\||;;&|;;|;&|<<<|&>>|&>|>>|>&|<&|<<|<>|>\||[;&|()<>]")
 SEPS = {"&&", ";"}
 CD_REDIRECTS = {">", ">>", ">&"}
-# cd/pushd/popd/eval as a word anywhere: a token, or inside a quoted string (`eval "cd x"`).
-DIR_WORD = re.compile(r"(^|[\s;&|(){}\"'`])(cd|pushd|popd|eval)($|[\s;&|(){}\"'`])")
-# `source x` / `. x` read a file that may cd; as an argument (`git add .`) they are only words.
-KEYWORDS = {"if", "then", "elif", "else", "do", "while", "until", "!", "{", "time"}
+# External programs, which cannot change this shell's directory, and builtins that do not. Chosen for
+# what precedes a `gh pr create` in practice; a word not here before gh means "cannot tell".
+SAFE = {"git", "gh", "echo", "printf", "test", "[", "true", "false", ":", "cat", "ls", "grep", "head",
+        "tail", "wc", "sleep", "date", "pwd", "mkdir", "touch", "jq", "sed"}
 META = set(" \t\n;&|()<>")
 
 
@@ -96,8 +104,6 @@ def prepare(cmd: str) -> str:
 
 
 def _target(args: list[str], here: str, home: str) -> str:
-    if args and args[0] in ("-P", "-L"):
-        args = args[1:]
     if len(args) != 1:
         raise Unresolved("cd takes exactly one path here")
     a = args[0]
@@ -152,17 +158,16 @@ def _gh_segment(words: list[str]) -> bool:
         (w[1] == "pr" and w[2] in ("create", "edit")) or (w[1] == "issue" and w[2] == "comment"))
 
 
-def _moves(seg: list[str]) -> bool:
-    for k, w in enumerate(seg):
-        if DIR_WORD.search(w):
-            return True
-        if w in ("source", ".") and (k == 0 or seg[k - 1] in KEYWORDS or ASSIGN.match(seg[k - 1])):
-            return True
-    return False
+def _safe(seg: list[str]) -> bool:
+    """A segment that cannot move this shell's directory: empty, assignments only, or a SAFE command."""
+    w = list(seg)
+    while w and ASSIGN.match(w[0]):
+        w.pop(0)
+    return not w or w[0] in SAFE
 
 
 def _judge(done: list[tuple[list[str], bool, str]], start: str, home: str) -> str:
-    if not any(_moves(seg) for seg, _, _ in done):
+    if all(_safe(seg) for seg, _, _ in done):
         return start                        # nothing before gh can move the directory
     here = start
     for seg, clean, sep in done:

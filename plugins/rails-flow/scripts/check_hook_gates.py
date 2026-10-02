@@ -896,6 +896,8 @@ def guard_claims_fixtures() -> None:
             (a / "$NOWHERE").mkdir()
             (a / "sub").mkdir()             # `cd sub` resolves here, so only CDPATH can make it unknown
             (a / "~nobody").mkdir()         # likewise, only the refusal of `~user` keeps that fixture red
+            (b / "sub").mkdir()             # A/linkSub -> B/sub: `cd -P linkSub/..` is B, a logical one A
+            (a / "linkSub").symlink_to(b / "sub")
             for odd in ("x#y", "x #y"):     # a `#` that is not a comment: B's template one level down
                 (b / odd / ".github").mkdir(parents=True)
                 (b / odd / ".github" / "pull_request_template.md").write_text(TPL_B, encoding="utf-8")
@@ -939,7 +941,6 @@ def guard_claims_fixtures() -> None:
             ("`cd B;`", "cd B_DIR; gh pr create --body-file BODY"),
             ("a newline after the cd", "cd B_DIR\ngh pr create --body-file BODY"),
             ("a quoted path", 'cd "B_DIR" && gh pr create --body-file BODY'),
-            ("`cd -P`", "cd -P B_DIR && gh pr create --body-file BODY"),
             ("two cds in a row", "cd B_DIR/.. && cd b && gh pr create --body-file BODY"),
             ("a cd with its stderr redirected", "cd B_DIR 2>/dev/null && gh pr create --body-file BODY"),
             ("a cd with its stdout redirected", "cd B_DIR >/dev/null && gh pr create --body-file BODY"),
@@ -971,12 +972,29 @@ def guard_claims_fixtures() -> None:
           run_in("cd B_DIR && env gh pr create --body-file BODY", FITS_B) == 0, "exit 2")
     check("guard-claims: with no cd, a command before gh leaves it in the starting repo (control)",
           run_in("git push -u origin x && gh pr create --body-file BODY", FITS_B) == 2, "exit 0")
+    for label, cmd in (("known-safe commands and an assignment before gh", "X=1 git status && echo ok | head -1; gh pr create --body-file BODY"),
+                       ("a logical `cd link/..`, as bash resolves it", "cd linkSub/.. && gh pr create --body-file BODY")):
+        rc, out = run_in(cmd, "Tidy the README.\n", with_output=True)
+        check(f"guard-claims: {label} is judged in the starting repo (control, #1516 round 4)",
+              rc == 2 and "## What changed" in out, f"exit {rc}: {out[-140:]}")
     # CANNOT TELL: anything else, so ALLOW WITH A LOUD NOTICE (the maintainer's decision on #1509). NEITHER
     # fits no template, so a judgement against either repository exits 2; only the notice path exits 0.
     NEITHER = "Tidy the README.\n"
     NOTICE = "NOT checked (the directory gh runs in could not be resolved"
     for label, cmd in (
             # round 3: N1-N5, each judged against the wrong repository at 600614d
+            # round 4: B1, `-P` resolves physically, so it is out of the grammar; B2, the no-cd shortcut is an
+            # allowlist of command words too, so a builtin it does not know (zsh `chdir`) cannot slip past
+            ("B1 `cd -P`", "cd -P B_DIR && gh pr create --body-file BODY"),
+            ("B1 `cd -P link/..`", "cd -P linkSub/.. && gh pr create --body-file BODY"),
+            ("B1 `cd -P link && cd ..`", "cd -P linkSub && cd .. && gh pr create --body-file BODY"),
+            ("B1 `cd -L`", "cd -L B_DIR && gh pr create --body-file BODY"),
+            ("B2 zsh `chdir`", "chdir B_DIR; gh pr create --body-file BODY"),
+            ("B2 `builtin source`", "builtin source /dev/null && gh pr create --body-file BODY"),
+            ("B2 `command .`", "command . /dev/null && gh pr create --body-file BODY"),
+            ("B2 a command word from a variable", "x=cd; $x B_DIR; gh pr create --body-file BODY"),
+            ("B2 an ANSI-quoted `$'cd'`", "$'cd' B_DIR; gh pr create --body-file BODY"),
+            ("B2 an unknown command (an alias or function may cd)", "proj && gh pr create --body-file BODY"),
             ("N1 `env -C/dir`", "env -CB_DIR gh pr create --body-file BODY"),
             ("N1 `env -iC dir`", "env -iC B_DIR gh pr create --body-file BODY"),
             ("N1 `env -C dir`", "env -C B_DIR gh pr create --body-file BODY"),

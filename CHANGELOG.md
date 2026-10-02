@@ -3630,18 +3630,28 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   - `command_cwd.py` is an **allowlist, not a shell** (#1516, round 3). Three review rounds each found shell shapes a
     partial interpreter followed wrongly (an `if` body, `false && cd`, `eval`, `env -C`, an arithmetic `<<`), so it
     follows a `cd` in one grammar only: top-level segments joined by `&&`, `;` or a newline, before the `gh`
-    segment, each `cd [-P|-L] <one plain or quoted path>` with optional `>`, `>>` or `>&` redirects (`2>` included;
+    segment, each `cd <one plain or quoted path>` with optional `>`, `>>` or `>&` redirects (`2>` included;
     in `cd 5 >x`, 5 is the path, since an fd number must touch its `>`). The `gh` segment may carry `VAR=x`, `env`
     with no option, `command -p`, `exec`, `nohup`, `nice -n N`, `timeout [opts] N` or `time -p`, or name `gh` by its
     path. A comment is dropped first, only where `#` starts a word outside quotes (`x#y` and `B\ #x` are words).
-  - With no `cd`, `pushd`, `popd` or `eval` before the `gh`, and no `source`/`.` in command position, the `gh` may
-    follow any command (`git push && gh …`) and is judged in the starting directory, as before #1509.
+  - `cd -P` and `cd -L` are out of the grammar: `-P` resolves symlinks physically (`cd -P link/..` is the link
+    target's parent), and this resolver only does a logical `..`.
+  - When every segment before the `gh` starts, after `VAR=x` assignments, with a literal command word from a short
+    allowlist (`git`, `gh`, `echo`, `printf`, `test`, `[`, `true`, `false`, `:`, `cat`, `ls`, `grep`, `head`,
+    `tail`, `wc`, `sleep`, `date`, `pwd`, `mkdir`, `touch`, `jq`, `sed`), the `gh` may follow them joined by
+    anything (`git push && gh …`) and is judged in the starting directory, as before #1509. A denylist of
+    directory-changing words missed zsh's `chdir`, `builtin source`, `command .`, `$x` and `$'cd'` (round 4).
+  - Known limits, invisible in the command text: a function or alias from the user's shell rc that changes
+    directory (zoxide's `z`, autojump's `j`) or shadows an allowlisted word, and `CDPATH` or zsh's
+    `CHASE_LINKS`/`AUTO_CD` set in the command's shell but not in the hook's environment, which is where `CDPATH`
+    is read.
   - **Anything else is "cannot tell"**: exit `3`, and the hook says the template and the change type are **NOT
     checked**, rather than judge against a guessed repository. That covers `if`/`while`/`until`/`for`/`case`,
     subshells, brace groups, functions, `eval`, `source`, `pushd`/`popd`, `!`, `||`, `|`, `&`, `builtin cd`,
-    `X=1 cd`, any other command before the `gh` once a directory change is in sight, an input redirect on a `cd`,
+    `X=1 cd`, any command word before the `gh` that is neither a plain `cd` nor allowlisted, an input redirect on a `cd`,
     `env` with any option (`env -C dir`, `-iC`), a `gh` that is no command word of the grammar (`sudo gh`,
-    `bash -c "…"`), an unbalanced quote before the `gh`, and a target with `$`, a backquote, `~user` or `-`, a bare
+    `bash -c "…"`), an unbalanced quote before the `gh`, and a target with `$`, a backquote, `~user`, `-` or any
+    option, a bare
     `cd` or one with two arguments, a missing directory, or a relative path while `CDPATH` is set. With a relative
     `--body-file`, the hook says the same before its "could not read" fail-open.
   - The command starts in the payload's `cwd`, not the hook process's directory, and the `skills/**` change-type
