@@ -77,161 +77,284 @@ def declared_off(root: Path) -> bool:
     g = root / "GUARDRAILS.md"
     if not g.is_file():
         return False
-    # A fenced example of the line documents the opt-out; it does not declare it (review of #1381).
-    # An UNTERMINATED fence runs to the end of the file (#1430) -- stricter than a renderer, which
-    # ends one at the close of its list item; list-scoped fences are not modelled here. The
-    # regex this replaces removed only closed fences, so an opt-out after a stray ``` still counted.
-    # ...and an INDENTED code block is an example too (#1490).
-    return bool(OPT_OUT.search(outside_indented_code(unfenced(g.read_text(encoding="utf-8")))))
+    # The line declares only as paragraph text: inside a fenced or indented code block, an HTML block
+    # or a comment it is an example (#1381, #1430, #1490, #1501). An unterminated fence runs to the
+    # end of its container, as CommonMark renders it (§4.5 Ex 128).
+    return declares_off(g.read_text(encoding="utf-8"))
+
+
+def declares_off(text: str) -> bool:
+    """Whether `text` holds the opt-out line as text, outside every code and HTML block."""
+    return any(OPT_OUT.match(line) and cls == "text"
+               for line, cls in zip(text.split("\n"), block_classes(text)))
 
 
 
-# What `unfenced` leaves where it dropped a block: the block's own column, then this mark. The scanner
-# closes every list item the block sits left of -- a bare blank line left the list open, so an indented
-# example after a column-0 fence read as a nested item (#1496 review round 2).
-BLOCK_MARK = "\x00"
-HTML_COMMENT = re.compile(r" {0,3}<!--")
-HTML_RAW = re.compile(r" {0,3}<(pre|script|style|textarea)(?:[ \t>]|$)", re.I)
-HTML_TAG_LINE = re.compile(r" {0,3}</?[A-Za-z][A-Za-z0-9-]*(?:[ \t][^<>]*)?/?>[ \t]*$")
-HTML_BLOCK = re.compile(r" {0,3}</?(?:address|article|aside|blockquote|body|details|dialog|dd|div|dl|dt|"
-                        r"fieldset|figcaption|figure|footer|form|h[1-6]|header|hr|li|main|nav|ol|p|section|"
-                        r"summary|table|tbody|td|tfoot|th|thead|tr|ul)(?:[ \t/>]|$)", re.I)
+# --------------------------------------------------------------------------- block structure (#1501)
+# GUARDRAILS.md lines are judged by the block they sit in. An opt-out in a fenced or indented code
+# block, or in an HTML block or comment, is an example or markup, not a declaration (#1381, #1430,
+# #1490). Two line-based passes here before #1501 kept failing open on containers -- a fence or quote
+# inside a list item, a list closed by a column-0 block -- so this is the block algorithm itself.
 
+# commonmark.js's own definitions (lib/blocks.js, 0.31.2), matched exactly. Python's str.strip() and
+# Unicode \d / \s differ from them (#1512 review B1-B3):
+#   blank       -- only spaces and tabs (the parser's findNextNonspace, and spec §4.9): NBSP, \f and
+#                  \v are NOT blank -- a form-feed line opens a paragraph in commonmark.js;
+#   ordered     -- ASCII digits only (JavaScript \d);
+#   JS_WS       -- JavaScript \s, used by the HTML block patterns.
+BLANK_CHARS = " \t"
+JS_WS = "[\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]"
+REFDEF = re.compile(r"\[(?:[^\]\\]|\\.)+\]:[ \t]*\S")
 
-def unfenced(text: str) -> str:
-    """The lines outside fenced code blocks and HTML blocks, each block left as one blank line.
-
-    A fence closes on the same character, at least as long, and -- conservatively -- no more indented
-    than it opened: CommonMark closes only within 3 columns of the container, and a closer indented
-    further is content, so closing on it let the opt-out after it count (#1496 review, R5). An HTML
-    comment hides its lines, and an HTML block's lines are markup, not a declaration (R6).
-    """
-    out, fence, fence_col, html_end = [], "", 0, None
-    in_para = False                # a lone-tag HTML block (type 7) cannot interrupt a paragraph
-    for line in text.splitlines():
-        # Any indentation: in GUARDRAILS.md a fence usually sits inside a list item (review of PR #1478).
-        # A BACKTICK opener may not contain another backtick (CommonMark), so "```x``` inline" is a
-        # code span, not a fence -- read as one it swallowed a real opt-out below it (final review).
-        m = re.match(r"^\s*(`{3,})(?=[^`]*$)|^\s*(~{3,})", line)
-        run = (m.group(1) or m.group(2)) if m else ""
-        if fence:
-            if (run and run[0] == fence[0] and len(run) >= len(fence) and not line.strip()[len(run):].strip()
-                    and _columns(line)[0] <= fence_col):
-                fence = ""
-            continue
-        if html_end is not None:
-            if (html_end == "" and not line.strip()) or (html_end and html_end in line.lower()):
-                html_end = None
-            continue
-        if run:
-            fence, fence_col = run, _columns(line)[0]
-            out.append(" " * fence_col + BLOCK_MARK)   # a block here ends the paragraph, and any item to its right
-            continue
-        raw = HTML_RAW.match(line)
-        if HTML_COMMENT.match(line) or raw or HTML_BLOCK.match(line) or (not in_para and HTML_TAG_LINE.match(line)):
-            end = "-->" if HTML_COMMENT.match(line) else (f"</{raw.group(1).lower()}>" if raw else "")
-            if not (end and end in line.lower()[4:]):
-                html_end = end
-            out.append(" " * _columns(line)[0] + BLOCK_MARK)
-            in_para = False
-            continue
-        in_para = bool(line.strip())
-        out.append(line)
-    return "\n".join(out)
-
-
-LIST_MARKER = re.compile(r"(?:[-*+]|\d{1,9}[.)])(?=[ \t]|$)")
-# A heading or thematic break is a block of its own, not a paragraph: an indented line after it is code.
-NOT_PARAGRAPH = re.compile(r"#{1,6}(?:[ \t]|$)|(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$")
+TAG_NAMES = ("address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|"
+             "dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h1|h2|h3|h4|h5|h6|"
+             "head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|"
+             "p|param|search|section|summary|table|tbody|td|tfoot|th|thead|title|tr|track|ul")
+HTML_START = [
+    # Type 1 ends at ANY of the four closing tags; it need not match its opener (verifier, §4.6).
+    (re.compile(r"<(?:pre|script|style|textarea)(?:" + JS_WS + r"|>|$)", re.I), re.compile(r"</(?:pre|script|style|textarea)>", re.I)),
+    # Types 2-5 end at a LITERAL string (§4.6; commonmark.js reHtmlBlockClose), so they are matched as
+    # substrings, not regexes. This is CommonMark's block grammar, not an HTML sanitiser: `--!>` does
+    # not end a type-2 block in the spec or the reference, and ending there would close it early.
+    (re.compile(r"<!--"), "-->"),
+    (re.compile(r"<\?"), "?>"),
+    (re.compile(r"<![A-Za-z]"), ">"),
+    (re.compile(r"<!\[CDATA\["), "]]>"),
+    (re.compile(r"</?(?:" + TAG_NAMES + r")(?:" + JS_WS + r"|/?>|$)", re.I), None),
+]
+ATTR = r"(?:[ \t]+[A-Za-z_:][A-Za-z0-9_.:-]*(?:[ \t]*=[ \t]*(?:[^ \t\"'=<>`]+|'[^']*'|\"[^\"]*\"))?)"
+HTML7 = re.compile(r"(?:<[A-Za-z][A-Za-z0-9-]*" + ATTR + r"*[ \t]*/?>|</[A-Za-z][A-Za-z0-9-]*[ \t]*>)" + JS_WS + r"*$")
+FENCE = re.compile(r"(`{3,})(?!.*`)|(~{3,})")
+THEMATIC = re.compile(r"(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$")
+ATX = re.compile(r"#{1,6}(?:[ \t]|$)")
 SETEXT = re.compile(r"(?:=+|-+)[ \t]*$")
+MARKER = re.compile(r"([-+*]|([0-9]{1,9})[.)])(?=[ \t]|$)")
 
 
-def _columns(line: str, start: int = 0, col: int = 0) -> tuple[int, int]:
-    """(column reached, index reached) after the spaces and tabs from `start`. A tab advances to the
-    next multiple of 4, counted from the line's start (CommonMark 0.31.2 §2.2, Ex 1-11)."""
-    i = start
-    while i < len(line) and line[i] in " \t":
-        col = col + 1 if line[i] == " " else col + 4 - col % 4
-        i += 1
-    return col, i
+def _indent(s, pos):
+    """(spaces of indentation from pos, index of first non-space). `s` has its tabs expanded."""
+    j = pos
+    while j < len(s) and s[j] == " ":
+        j += 1
+    return j - pos, j
 
 
-def outside_indented_code(text: str) -> str:
-    """`text` without its INDENTED code blocks (#1490), by CommonMark 0.31.2's block rules:
+class Item:
+    def __init__(self, width, blank_start):
+        self.width, self.blank_start, self.has_content = width, blank_start, not blank_start
 
-    - a line indented 4+ columns past its container is code (§4.4), but NOT when it would interrupt
-      a paragraph (Ex 113) -- then it is the paragraph's continuation;
-    - a list item's content column is its marker's indentation + marker width + 1-4 following
-      columns, or +1 when 5+ follow or the item is blank (§5.2 rules 1-3, Ex 270-288); an item that
-      starts blank and meets a blank line is empty and closes (§5.2);
-    - a nested marker sits 0-3 columns past that content column (Ex 294), so under `- Gates:`
-      four spaces is a nested item and six, after a blank line, is code (Ex 270);
-    - a line indented less than an open item's content column ends the item, unless it lazily
-      continues that item's paragraph (Ex 290) -- and only paragraph TEXT continues lazily: a
-      heading, break or quote there ends the list (#1496 review, R1);
-    - headings (ATX, and setext underlines `===` / `---` after a paragraph), breaks and an empty
-      quote are not paragraphs (R2, R4).
-    Only space and tab indent (§2.1). Fenced and HTML blocks are gone already (`unfenced`).
+
+def block_classes(text: str) -> list[str]:
+    """One class per line of `text`: "code" (fenced or indented), "html", or "text" (#1501).
+
+    Phase 1 of CommonMark 0.31.2's block parsing (the spec's appendix "A parsing strategy", and
+    commonmark.js 0.31.2, which a differential fuzz of 350,000 GUARDRAILS.md variants matched line for
+    line). Open containers are block quotes and list items; each line first matches their continuation
+    markers, then is a lazy paragraph continuation or opens new blocks. Rules (doctrine-verifier,
+    CONFIRMED against spec.txt at tag 0.31.2): fences open and close within 3 columns of the
+    container, close on the same character at least as long with only spaces after, and end with
+    their container (§4.5, Ex 125-147); HTML blocks of types 1-7 and their end conditions, type 7 not
+    interrupting a paragraph (§4.6); a quote marker after 0-3 spaces with one optional space (§5.1);
+    list items' content columns, at most one starting blank line, and the interrupt-a-paragraph limits
+    (§5.2, Ex 270-305); setext underlines are never lazy (Ex 93, 101); indented code never interrupts
+    a paragraph (Ex 113); tabs count to absolute 4-column stops for structure (§2.2), and only space
+    and tab indent (§2.1). Inline content is never parsed.
     """
-    kept: list[str] = []
-    items: list[list] = []         # [content column, still empty] per open list item, outermost first
-    prev = "blank"                 # the kind of the last non-removed line: blank | para | code
-    for line in text.split("\n"):
-        if not line.strip(" \t"):
-            if items and items[-1][1]:
-                items.pop()        # a blank-started item meeting a blank line is empty (§5.2)
-            kept.append(line)
-            prev = "blank"
+    out = []
+    stack = []            # open containers, outermost first: "quote" or Item
+    leaf = None           # None | "para" | ("fence", char, length, indent) | "icode" | ("html", end_re or None)
+    refs_only = False     # the open paragraph holds only link reference definitions (no setext heading)
+    for raw in text.split("\n"):
+        s = raw.expandtabs(4)
+        pos, matched = 0, 0
+        last = len(s.rstrip(BLANK_CHARS)) - 1   # the line is blank from any position past `last`
+        # nxt[k]: the first non-space index at or after k. One pass per line, so each container's
+        # indentation check is O(1) -- rescanning the spaces per container was cubic in nesting depth
+        # (#1512 review S2: 2,000 levels took minutes).
+        nxt = [len(s)] * (len(s) + 1)
+        for k in range(len(s) - 1, -1, -1):
+            nxt[k] = k if s[k] != " " else nxt[k + 1]
+
+        def ind(at, nxt=nxt):
+            j = nxt[at] if at <= len(s) else at
+            return j - at, j
+        # 1. continuation markers of the open containers
+        for c in stack:
+            if c == "quote":
+                n, j = ind(pos)
+                if n <= 3 and j < len(s) and s[j] == ">":
+                    pos = j + 1
+                    if pos < len(s) and s[pos] == " ":
+                        pos += 1
+                    matched += 1
+                    continue
+                break
+            if pos > last:                    # blank AFTER the markers matched so far (`  >` included)
+                if c.blank_start and not c.has_content:
+                    break                     # an item may begin with at most one blank line
+                matched += 1
+                continue
+            n, j = ind(pos)
+            if n >= c.width:
+                pos += c.width
+                matched += 1
+                continue
+            break
+        rest_blank = pos > last
+        all_matched = matched == len(stack)
+        # 2. an open fence or HTML block continues only inside ALL its containers
+        if isinstance(leaf, tuple) and leaf[0] == "fence":
+            if all_matched:
+                n, j = ind(pos)
+                m = re.match(r"(`{3,}|~{3,})[ \t]*$", s[j:]) if n <= 3 else None
+                if m and m.group(1)[0] == leaf[1] and len(m.group(1)) >= leaf[2]:
+                    leaf = None
+                out.append("code")
+                continue
+            leaf = None                       # the container closed: the fence ends with it
+        if isinstance(leaf, tuple) and leaf[0] == "html":
+            if all_matched:
+                end = leaf[1]
+                if end is None and rest_blank:
+                    leaf = None
+                    out.append("text")
+                    continue
+                if end is not None and _ends(end, s, pos):
+                    leaf = None
+                out.append("html")
+                continue
+            leaf = None
+        # 3. lazy paragraph continuation: unmatched containers stay open for paragraph text only
+        if not all_matched and leaf == "para" and not rest_blank and _lazy(s, pos, stack[matched:]):
+            # A lazy line is paragraph content too: unless it is itself a reference definition, the
+            # paragraph is no longer only definitions and can take a setext underline (#1512 review R1).
+            refs_only = refs_only and bool(REFDEF.match(s, ind(pos)[1]))
+            out.append("text")
             continue
-        col, i = _columns(line)
-        if line[i:] == BLOCK_MARK:
-            while items and col < items[-1][0]:
-                items.pop()        # a fenced or HTML block starts here: items to its right are closed
-            prev = "blank"
+        if not all_matched:
+            del stack[matched:]
+            if leaf == "para" or leaf == "icode":
+                leaf = None
+        blank = rest_blank
+        for c in stack:
+            if isinstance(c, Item) and not blank:
+                c.has_content = True
+        if blank:
+            if leaf in ("para", None):
+                leaf = None
+            out.append("text")
             continue
-        marker = LIST_MARKER.match(line, i)
-        # A block can start here only within 3 columns of the container the line would land in.
-        land = max((c for c, _ in items if c <= col), default=0)
-        own_block = col - land <= 3 and (NOT_PARAGRAPH.match(line, i) or line.startswith(">", i))
-        if items and col < items[-1][0] and prev == "para" and not marker and not own_block:
-            kept.append(line)      # lazy continuation of the open paragraph: text, not code
-            continue
-        while items and col < items[-1][0]:
-            items.pop()
-        if items:
-            items[-1][1] = False
-        base = items[-1][0] if items else 0
-        if col - base >= 4:
-            if prev == "para":
-                kept.append(line)  # an indented code block cannot interrupt a paragraph
-            else:
-                prev = "code"      # an example: dropped
-            continue
-        if prev == "para" and SETEXT.match(line, i):
-            prev = "blank"         # a setext underline: the paragraph above was a heading
-            kept.append(line)
-            continue
-        if NOT_PARAGRAPH.match(line, i):
-            prev = "blank"
-            kept.append(line)
-            continue
-        if line.startswith(">", i):
-            prev = "para" if line[i + 1:].strip(" \t") else "blank"
-            kept.append(line)
-            continue
-        if marker:
-            width = col + (marker.end() - i)
-            after, j = _columns(line, marker.end(), width)
-            blank_item = j >= len(line)
-            items.append([width + 1 if blank_item or after - width >= 5 else after, blank_item])
-            starts_block = not blank_item and (NOT_PARAGRAPH.match(line, j) or line.startswith(">", j))
-            # 5+ columns after the marker: the item's content OPENS with an indented code block (§5.2 rule 2)
-            opens_code = not blank_item and after - width >= 5
-            prev = "code" if opens_code else ("blank" if blank_item or starts_block else "para")
-        else:
-            prev = "para"
-        kept.append(line)
-    return "\n".join(kept)
+        # 4. new block starts
+        cls = "text"
+        while True:
+            n, j = ind(pos)
+            if n >= 4:
+                if leaf == "para":
+                    cls = "text"
+                else:
+                    leaf, cls = "icode", "code"
+                break
+            if leaf == "icode":
+                leaf = None
+            # Patterns match AT j, never on a slice: slicing per nested marker was quadratic in line length.
+            if s.startswith(">", j):
+                stack.append("quote")
+                pos = j + 1
+                if pos < len(s) and s[pos] == " ":
+                    pos += 1
+                leaf = None if leaf != "para" else leaf
+                if pos > last:
+                    leaf, cls = None, "text"
+                    break
+                if leaf == "para":
+                    leaf = None
+                continue
+            f = FENCE.match(s, j)
+            if f:
+                run = f.group(1) or f.group(2)
+                leaf, cls = ("fence", run[0], len(run), n), "code"
+                break
+            h = _html_start(s, j, leaf == "para")
+            if h is not False:
+                leaf, cls = ("html", h), "html"
+                if h is not None and _ends(h, s, j + 1):
+                    leaf = None
+                break
+            if leaf == "para" and SETEXT.match(s, j) and not refs_only:
+                leaf, cls = None, "text"
+                break
+            # A break ends in its own character, so test the line's last character first: matching the
+            # pattern at every nested marker of a long line scanned it to the end each time.
+            if last >= 0 and s[last] in "*-_" and THEMATIC.match(s, j):
+                leaf, cls = None, "text"
+                break
+            m = MARKER.match(s, j)
+            if m:
+                after = m.end()
+                k = after
+                while k < len(s) and s[k] == " ":
+                    k += 1
+                empty = k > last
+                spaces = k - after
+                if leaf == "para" and (empty or (m.group(2) is not None and int(m.group(2)) != 1)):
+                    pass                      # cannot interrupt a paragraph: falls through to text
+                else:
+                    width = (after - pos) + (1 if empty or spaces >= 5 else spaces)
+                    stack.append(Item(width, empty))
+                    pos += width
+                    leaf = None
+                    if empty:
+                        cls = "text"
+                        break
+                    continue
+            if ATX.match(s, j):
+                leaf, cls = None, "text"
+                break
+            refs_only = bool(REFDEF.match(s, j)) if leaf != "para" else refs_only and bool(REFDEF.match(s, j))
+            leaf, cls = "para", "text"
+            break
+        out.append(cls)
+    return out
+
+
+def _ends(end, s, at):
+    """Whether an HTML block's end condition -- a pattern (type 1) or a literal (types 2-5) -- is met
+    in `s` from `at`."""
+    return s.find(end, at) >= 0 if isinstance(end, str) else end.search(s, at) is not None
+
+
+def _html_start(s, at, in_para):
+    """The end pattern of the HTML block opening at `s[at:]` (None for blank-line-ended), or False."""
+    for start, end in HTML_START:
+        if start.match(s, at):
+            return end
+    if not in_para and HTML7.match(s, at):
+        return None
+    return False
+
+
+def _lazy(s, pos, unmatched):
+    """Whether the line lazily continues the open paragraph, as the reference algorithm decides it.
+
+    Block starts are tried from the last MATCHED container's position (commonmark.js): four or more
+    columns past it, no block can open and the line is paragraph text (spec 0.31.2 Ex 312: `    - e`
+    under `   - d` is lazy); otherwise it is lazy only if it would open no block there.
+    """
+    n, _ = _indent(s, pos)
+    if n >= 4:
+        return True
+    return not _starts_block(s, pos)
+
+
+def _starts_block(s, pos):
+    """Whether the line, from `pos` (under 4 columns of indentation: `_lazy` decides the rest),
+    would open a block rather than continue a paragraph."""
+    _, j = _indent(s, pos)
+    if s.startswith(">", j) or FENCE.match(s, j) or ATX.match(s, j) or THEMATIC.match(s, j):
+        return True
+    if _html_start(s, j, True) is not False:
+        return True
+    return bool(MARKER.match(s, j))
 
 
 def record_problems(root: Path, rel: str) -> list[str]:
@@ -446,6 +569,55 @@ def selftest() -> int:
              f"- Keep specs green\n\n<!-- opt-out example -->\n\n    - {O}\n", False),
             ("a column-0 <details> block after a list closes it",
              f"- Keep specs green\n\n<details>\nx\n</details>\n\n    - {O}\n", False),
+            # #1501: the container shapes the two line passes could not see (each checked against
+            # commonmark.js 0.31.2). Indented under a `10.` item, a tab is still four columns.
+            ("#1501: a fence opener indented 4+ is indented code, so the text after it is text",
+             f"    ```\n    x\n\n- {O}\n", True),
+            ("#1501: an unclosed fence inside an item ends with the item", f"- a\n  ```\n  x\n\n- {O}\n", True),
+            ("#1501: a fence inside an item that closes at column 0 still closes it",
+             f"- a\n  ```\n  x\n```\n\n    - {O}\n", False),
+            ("#1501: an HTML block nested in an item hides its lines", f"- a\n\n  <div>\n  - {O}\n  </div>\n", False),
+            ("#1501: a quote nested in an item: an opt-out in its paragraph is text, not code",
+             f"- a\n  > - {O}\n", False),
+            ("#1501 CONTROL: a lazy `    - e` under `   - d` is paragraph text (Ex 312)",
+             f"   - item\n    - {O}\n", True),
+            ("#1501: an empty quote line is blank inside the quote; the indented line after is code",
+             f"> - item\n>\n>     - {O}\n", False),
+            ("#1501: a `10.` item's content column is 4; a tab-indented line under it is item text",
+             f"10. Gates:\n\n\t- {O}\n", True),
+            ("#1501: a type-1 block ends at ANY of the four closing tags (§4.6)", f"<pre>\nx\n</script>\n\n- {O}\n", True),
+            ("#1501: `2.` cannot interrupt a paragraph, so no item opens and the code after is code (§5.2)",
+             f"Text\n2. Gates:\n\n    - {O}\n", False),
+            ("#1501: a lone tag cannot interrupt a paragraph, so the item after it is text (§4.6 type 7)",
+             f"Text\n<custom-el>\n- {O}\n", True),
+            ("#1501: an indented line after a thematic break is code", f"***\n    - {O}\n", False),
+            # Found by mutation-driven differential fuzz against commonmark.js 0.31.2 (#1501): each
+            # is the shortest input where one broken rule changes the verdict.
+            ("#1501: a ~~~ line does not close a backtick fence", f"```\n~~~\n- {O}\n```\n", False),
+            ("#1501 CONTROL: a fence ends with its item, so a later sibling item declares",
+             f"- a\n  ```\n  x\n- b\n- {O}\n", True),
+            ("#1501 CONTROL: a fence in a quote ends when a blank line closes the quote",
+             f"> ```\n> x\n\n- {O}\n", True),
+            ("#1501: a quote holding a list, then an indented <pre>, opens an HTML block",
+             f"\t <pre>\n> - item\n  <pre>\n- {O}\n", False),
+            ("#1501: a quote line holding only `>` and spaces is blank in the quote",
+             f"> quote\n\t >\n>\n      `{O}`\n", False),
+            ("#1501: a fence indented one space still opens", f" ```\n- {O}\n", False),
+            # PR #1512's review: where Python's notion of blank, digit or space is not commonmark.js's.
+            ("#1512 CONTROL: a comment that closes on its own line ends there", f"<!-- note -->\n- {O}\n", True),
+            ("#1512 CONTROL: a comment ends at `-->` on a later line", f"<!--\nnote\n-->\n- {O}\n", True),
+            ("#1512 B1: a no-break-space line is not blank, so the HTML block runs on", f"<div>\n\u00a0\n- {O}\n", False),
+            ("#1512 B1 CONTROL: a no-break-space line does not end a paragraph", f"Example:\n\u00a0\n    - {O}\n", True),
+            ("#1512: a form-feed line is not blank: it opens a paragraph, so the indented line continues it",
+             f"\f\n    - {O}\n", True),
+            ("#1512 B2: an Arabic-Indic digit opens no list item", f"\u0661. Gates:\n\n    - {O}\n", False),
+            ("#1512 B3: a lone tag followed by a no-break space opens an HTML block", f"<img src=\"x.png\">\u00a0\n- {O}\n", False),
+            ("#1512 B4: quote continuation keeps the quote's paragraph open for a lazy line",
+             f"> x\n>     y\n    - {O}\n", True),
+            ("#1512 R1: a lazy line ends a definitions-only paragraph, so a setext underline applies",
+             f">[f]:\"\nl\n>-\n    - {O}\n", False),
+            ("#1512 S1: a paragraph of only reference definitions takes no setext underline",
+             f"[a]: /u\n===\n    - {O}\n", True),
             ("CONTROL: a fence INSIDE the item keeps the item open for a nested item",
              f"- Gates:\n\n  ```bash\n  bin/ci\n  ```\n\n    - {O}\n", True),
         ):
