@@ -9,11 +9,9 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
-<<<<<<< HEAD
-- **A shipped plugin's or skill's link may not leave what ships with it — `scripts/lint_self_consistency.py`** (#1480). New rule `link-leaves-package`: each plugin and each skill installs alone, so a relative link that climbs out of `plugins/<name>/` or `skills/<name>/` names a path an install does not have, even when it resolves in this clone. `broken-relative-link` covers only `docs/**`, which is why these were not reported mechanically. On dev it found 6; all are fixed in this change. Selftest scenarios both ways; the guard gains a mutation.
-=======
 (Maintainer-only; the version is assigned at promotion.)
->>>>>>> origin/dev
+
+- **A shipped plugin's or skill's link may not leave what ships with it — `scripts/lint_self_consistency.py`** (#1480). New rule `link-leaves-package`: each plugin and each skill installs alone, so a relative link that climbs out of `plugins/<name>/` or `skills/<name>/` names a path an install does not have, even when it resolves in this clone. `broken-relative-link` covers only `docs/**`, which is why these were not reported mechanically. On dev it found 6; all are fixed in this change. Selftest scenarios both ways; the guard gains a mutation.
 
 - **The release's shipped note reads a citation whose annotation holds a markdown link — `scripts/close_on_dev_merge.py`**. v1.153.0 cited `(#1404, [maintainer decision](https://…))`; the citation pattern `\((#\d+[^()]*)\)` stopped at the link's own `(`, so #1404 kept its `fixed-on-dev` label and got no shipped note (marked by hand). Only the run of `#n` that opens a citation is read now, comma- or slash-separated (`(#621/#624)`), so an annotation may hold anything. A selftest case with a link annotation fails on the old pattern; the guard gains a mutation restoring it (10/10 caught). Found on v1.153.0's own release run.
 - **A timed-out baseline or mutant keeps what it printed — `scripts/mutation_check.py`, `scripts/mutation_check_selftest.py`, `scripts/mutations/mutation_check_harness.py`** (#1530). Both `TimeoutExpired` branches returned only "timed out after Ns" and dropped the child's output, so a CI-only timeout was as undiagnosable as the wrong-fixture catch #1493 fixed. Both now carry the last 12 lines (each cut to 300 characters) through the new shared `tail_block`, which also accepts the bytes or `None` that `TimeoutExpired.stdout` holds. A fixture that prints a label and then sleeps drives both branches; one harness mutation per branch. Measured: `subprocess.run(..., capture_output=True, timeout=1)` on a child that printed then slept leaves `b'diag-line\n'` in `TimeoutExpired.stdout`. Our own design; no framework claim.
