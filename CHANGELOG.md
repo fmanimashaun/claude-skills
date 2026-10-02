@@ -9,6 +9,8 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **CLAUDE.md points at `BUILDERS` for the committed generated surfaces instead of counting them — `CLAUDE.md`** (#1538). It said "Two committed, generated surfaces" while `scripts/rebuild_generated.py`'s `BUILDERS` lists seven, so a reader trusting the count would skip regenerating a mirror or `dist/`. The line now names the table as the one list. It is a rewording at the file's `max-lines` ceiling (262 lines before and after). Our own documentation, with no upstream claim.
+
 - **The release's shipped note reads a citation whose annotation holds a markdown link — `scripts/close_on_dev_merge.py`**. v1.153.0 cited `(#1404, [maintainer decision](https://…))`; the citation pattern `\((#\d+[^()]*)\)` stopped at the link's own `(`, so #1404 kept its `fixed-on-dev` label and got no shipped note (marked by hand). Only the run of `#n` that opens a citation is read now, comma- or slash-separated (`(#621/#624)`), so an annotation may hold anything. A selftest case with a link annotation fails on the old pattern; the guard gains a mutation restoring it (10/10 caught). Found on v1.153.0's own release run.
 
 ### 2026-10-02 (release v1.153.0)
