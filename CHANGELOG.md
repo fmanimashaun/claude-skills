@@ -7,9 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
-
-*Version number assigned at promotion.*
+### 2026-10-02 (release v1.153.0)
 
 - **A primitive marker never excuses a form, excuses one instance, and is reported when unused — `scripts/check_shipped_erb_forms.py`, `scripts/mutations/check_shipped_erb_forms.py`** (#1460).
   - A `<%# simple-form-only: primitive … %>` marker naming any form construct a form rule reports (`form_with`, `form_for`, `form_tag`, `<form`, `tag.form`) is `primitive-marker-invalid` and excuses nothing. `<form` and `tag.form` were added on the independent review of PR #1521.
@@ -3588,7 +3586,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.56.0 (release v1.153.0) — 2026-10-02
 
 - **The mock-up gate reads `GUARDRAILS.md` with CommonMark's own block algorithm, so containers no longer fool it — `plugins/rails-flow/scripts/check_mockup_gate.py`, `plugins/rails-flow/scripts/mutations/check_mockup_gate.py`** (#1501). The two line passes from #1490 (`unfenced()`, `outside_indented_code()`) are replaced by `block_classes()`. It is phase 1 of the spec's block parsing: open block quotes and list items are matched per line, then lazy continuation, then new block starts. An opt-out declares only as text outside every code and HTML block.
   - **Rules:** CommonMark 0.31.2, verified by doctrine-verifier against `spec.txt` at tag 0.31.2. Rules 1–3 and 5–9 CONFIRMED; rule 4 (HTML blocks) partly REFUTED and corrected:
@@ -7118,7 +7116,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## pipeline (lifecycle orchestrator)
 
-### Unreleased
+### 1.4.1 (release v1.153.0) — 2026-10-02
 
 - **The tier doctrine states the blocked-alias substitution's provider scope — `plugins/pipeline/reference/model-tiers.md`** (#1433). Scoped to the source (https://code.claude.com/docs/en/sub-agents and https://code.claude.com/docs/en/model-config, fetched 2026-09-30): the newest-permitted-version substitution applies on the Anthropic API and Claude Platform on AWS when the allowlist permits a version of the family; otherwise the subagent runs on the inherited model. Boundary v2.1.222. The policy is unchanged.
 
@@ -11382,7 +11380,7 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 1.35.0 (release v1.153.0) — 2026-10-02
 
 - **The `release_evidence` fixture's trace check is supplied only by the fixture's own settings — `plugins/qa-flow/scripts/release_evidence.py`** (#1510). Once the runners disable maintenance through `GIT_CONFIG_*`, the check passed with `FIXTURE_GIT`'s settings removed, and that mutation survived both full runs of PR #1514. The traced commit and its control now strip an inherited `GIT_CONFIG_*`, since a downstream project runs this selftest without our runner. Guard 42/42.
 
@@ -13647,9 +13645,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
-
-*Version number assigned at promotion.*
+### 1.45.0 (release v1.153.0) — 2026-10-02
 
 - **The tier doctrine states the blocked-alias substitution's provider scope — `plugins/design-flow/reference/model-tiers.md`** (#1433). Scoped to the source (https://code.claude.com/docs/en/sub-agents and https://code.claude.com/docs/en/model-config, fetched 2026-09-30): the newest-permitted-version substitution applies on the Anthropic API and Claude Platform on AWS when the allowlist permits a version of the family; otherwise the subagent runs on the inherited model. Boundary v2.1.222. The policy is unchanged.
 
@@ -16612,7 +16608,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
-### Unreleased
+### 1.70.0 (release v1.153.0) — 2026-10-02
 
 - **deployment-kamal: `.kamal/secrets` is committable only while it holds references, and nothing falls back —
   `skills/rails-8/references/deployment-kamal.md`, `skills/rails-8/references/project-setup.md`, `dist/rails-8.skill`**
