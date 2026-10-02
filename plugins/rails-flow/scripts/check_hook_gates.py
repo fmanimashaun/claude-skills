@@ -1252,6 +1252,17 @@ def release_gate_fixtures() -> None:
         code, out = bare_gate(cmd)
         check(f"release-gate: CONTROL: with ONLY bash on PATH, `{cmd}` is allowed", code == 0, f"exit {code}: {out[:160]!r}")
 
+    # #1542: a heredoc a `$( )` ended early still owes its delimiter, and no new heredoc opens until it
+    # is seen. Otherwise a body line naming `cat <<END` opened a heredoc that never closed, and
+    # `git push origin main` after the `)` read as heredoc text: the gate allowed a push it must refuse.
+    early = "x=$(cat <<EOF\n)\ncat <<END\nEOF\n)\n"
+    check("release-gate (#1542): a push to main after an early-ended heredoc and a `cat <<END` is blocked",
+          run(early + "git push origin main") == 2, "exit 0: the gate read the push as heredoc text")
+    check("release-gate (#1542): CONTROL: without the `cat <<END` line the same push is blocked",
+          run("x=$(cat <<EOF\n)\nEOF\n)\ngit push origin main") == 2, "exit 0")
+    check("release-gate (#1542): CONTROL: the same shape pushing a feature branch is allowed",
+          run(early + "git push origin feature/w") == 0, "exit 2")
+
 
 # ---- ci-verdict-hint.sh (#1173) -----------------------------------------------------------------
 # An ADVISORY, so every fixture asserts exit 0 -- a hint that could fail the tool call would be a gate
