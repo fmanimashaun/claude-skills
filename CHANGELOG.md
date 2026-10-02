@@ -3638,6 +3638,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     `hook_command_cwd` guard carries 28, each caught by its expected fixture.
 
 ### 1.56.0 (release v1.153.0) — 2026-10-02
+  - **When it cannot tell the repository** (`sudo gh`, `bash -c` after a `cd`, a function that changes directory), it allows the command with a loud NOT-checked notice. That is the maintainer's decision recorded on #1509 (https://github.com/fmanimashaun/claude-skills/issues/1509): refusing would teach `RAILS_FLOW_CLAIMS_OK=1`, and the session repository's template would be the wrong one. CLAUDE.md's Platform paragraph now scopes the gate to a repository it can resolve.
 
 - **The mock-up gate reads `GUARDRAILS.md` with CommonMark's own block algorithm, so containers no longer fool it — `plugins/rails-flow/scripts/check_mockup_gate.py`, `plugins/rails-flow/scripts/mutations/check_mockup_gate.py`** (#1501). The two line passes from #1490 (`unfenced()`, `outside_indented_code()`) are replaced by `block_classes()`. It is phase 1 of the spec's block parsing: open block quotes and list items are matched per line, then lazy continuation, then new block starts. An opt-out declares only as text outside every code and HTML block.
   - **Rules:** CommonMark 0.31.2, verified by doctrine-verifier against `spec.txt` at tag 0.31.2. Rules 1–3 and 5–9 CONFIRMED; rule 4 (HTML blocks) partly REFUTED and corrected:
