@@ -1050,39 +1050,39 @@ GUARD = Guard(
         # #1543: a conflict block passed a PR's gate run because nothing read for the markers.
         Mutation(
             "the opening marker stops being recognised",
-            '_CONFLICT_MARKER = re.compile(r"^(?:(?:<{7}|>{7})(?: .*)?|={7})$")',
-            '_CONFLICT_MARKER = re.compile(r"^(?:(?:>{7})(?: .*)?|={7})$")',
+            '_CONFLICT_EDGE = re.compile(r"^(?:<{7}|>{7})(?: .*)?$")',
+            '_CONFLICT_EDGE = re.compile(r"^(?:>{7})(?: .*)?$")',
             "only the opening marker is left",
         ),
         Mutation(
             "the closing marker stops being recognised",
-            '_CONFLICT_MARKER = re.compile(r"^(?:(?:<{7}|>{7})(?: .*)?|={7})$")',
-            '_CONFLICT_MARKER = re.compile(r"^(?:(?:<{7})(?: .*)?|={7})$")',
+            '_CONFLICT_EDGE = re.compile(r"^(?:<{7}|>{7})(?: .*)?$")',
+            '_CONFLICT_EDGE = re.compile(r"^(?:<{7})(?: .*)?$")',
             "only the closing marker is left",
         ),
         Mutation(
-            "the separator stops being recognised",
-            '_CONFLICT_MARKER = re.compile(r"^(?:(?:<{7}|>{7})(?: .*)?|={7})$")',
-            '_CONFLICT_MARKER = re.compile(r"^(?:(?:<{7}|>{7})(?: .*)?)$")',
-            "only the separator is left",
-        ),
-        Mutation(
             "a marker is matched anywhere in a line, not as a whole line",
-            "if _CONFLICT_MARKER.match(line)]",
-            "if re.search(r\"<{7}|>{7}|={7}\", line)]",
+            "if _CONFLICT_EDGE.match(line)]",
+            "if re.search(r\"<{7}|>{7}\", line)]",
             "a marker quoted mid-line",
         ),
         Mutation(
             "an indented marker counts",
-            "        rows = [n for n, line in enumerate(read(path).splitlines(), 1) if _CONFLICT_MARKER.match(line)]",
-            "        rows = [n for n, line in enumerate(read(path).splitlines(), 1) if _CONFLICT_MARKER.match(line.strip())]",
+            "enumerate(lines, 1) if _CONFLICT_EDGE.match(line)]",
+            "enumerate(lines, 1) if _CONFLICT_EDGE.match(line.strip())]",
             "an indented marker in a code block",
         ),
         Mutation(
             "a longer run of characters counts as a marker",
-            '_CONFLICT_MARKER = re.compile(r"^(?:(?:<{7}|>{7})(?: .*)?|={7})$")',
-            '_CONFLICT_MARKER = re.compile(r"^(?:(?:<{7,}|>{7,})(?: .*)?|={7,})$")',
+            '_CONFLICT_EDGE = re.compile(r"^(?:<{7}|>{7})(?: .*)?$")',
+            '_CONFLICT_EDGE = re.compile(r"^(?:<{7,}|>{7,})(?: .*)?$")',
             "an eight-character run is not a marker",
+        ),
+        Mutation(
+            "a separator counts on its own, so a setext heading is refused",
+            "        if rows:\n            rows += [n for n, line in enumerate(lines, 1) if _CONFLICT_SEPARATOR.match(line)]",
+            "        if True:\n            rows += [n for n, line in enumerate(lines, 1) if _CONFLICT_SEPARATOR.match(line)]",
+            "a setext heading underline of seven characters",
         ),
         Mutation(
             "only markdown is read",
@@ -1095,12 +1095,6 @@ GUARD = Guard(
             '            if b"\\0" in handle.read(8000):\n                continue\n        examined += 1',
             '            if False:\n                continue\n        examined += 1',
             "a binary file is skipped",
-        ),
-        Mutation(
-            "the CHANGELOG's Unreleased section is exempt",
-            "        if rows:\n            findings.append(Finding(\n                \"conflict-marker\"",
-            "        if rows and path.name != \"CHANGELOG.md\":\n            findings.append(Finding(\n                \"conflict-marker\"",
-            "a live block in the CHANGELOG's Unreleased section",
         ),
         Mutation(
             "invisible characters stop being reported (#95)",

@@ -1777,12 +1777,15 @@ def check_invisible_characters() -> tuple[list[Finding], int]:
 # Rule: conflict-marker (#1543)
 # ---------------------------------------------------------------------------
 
-# A line that is ONLY a marker, as git writes it: seven `<` or `>` then an optional label, or seven
-# `=` and nothing else. Whole lines, not substrings: this repo quotes markers in prose, in mutation
-# anchors and in heredoc fixtures, and none of those starts a line (measured on origin/dev: no
-# tracked file has a matching line). An indented marker, a mid-line quote, `<<EOF` and an
-# eight-character run all stay quiet.
-_CONFLICT_MARKER = re.compile(r"^(?:(?:<{7}|>{7})(?: .*)?|={7})$")
+# A line that is ONLY a marker, as git writes it: seven `<` or `>` then an optional label. Whole
+# lines, not substrings: this repo quotes markers in prose, in mutation anchors and in heredoc
+# fixtures, and none of those starts a line (measured on origin/dev: no tracked file has a matching
+# line). An indented marker, a mid-line quote, `<<EOF` and an eight-character run all stay quiet.
+_CONFLICT_EDGE = re.compile(r"^(?:<{7}|>{7})(?: .*)?$")
+# The separator is seven `=` and nothing else, which is ALSO a legal Markdown setext heading
+# underline for a seven-character title. So it counts only in a file that has an opening or closing
+# marker too; on its own it is a heading.
+_CONFLICT_SEPARATOR = re.compile(r"^={7}$")
 
 
 def check_conflict_markers() -> tuple[list[Finding], int]:
@@ -1801,7 +1804,11 @@ def check_conflict_markers() -> tuple[list[Finding], int]:
             if b"\0" in handle.read(8000):
                 continue
         examined += 1
-        rows = [n for n, line in enumerate(read(path).splitlines(), 1) if _CONFLICT_MARKER.match(line)]
+        lines = read(path).splitlines()
+        rows = [n for n, line in enumerate(lines, 1) if _CONFLICT_EDGE.match(line)]
+        if rows:
+            rows += [n for n, line in enumerate(lines, 1) if _CONFLICT_SEPARATOR.match(line)]
+            rows.sort()
         if rows:
             findings.append(Finding(
                 "conflict-marker", rel(path), rows[0],
@@ -5350,8 +5357,9 @@ def selftest() -> int:
              files={"docs/x.md": "<<<<<<< HEAD\ntext\n"})
     scenario("only the closing marker is left", rule=CM, only=check_conflict_markers, expect_finding=True,
              files={"docs/x.md": "text\n>>>>>>> origin/dev\n"})
-    scenario("only the separator is left", rule=CM, only=check_conflict_markers, expect_finding=True,
-             files={"docs/x.md": "text\n=======\nmore\n"})
+    # A half-resolved file keeps its separator beside one edge marker, and that still counts.
+    scenario("an opening marker and a separator, no closing marker", rule=CM, only=check_conflict_markers,
+             expect_finding=True, files={"docs/x.md": "<<<<<<< HEAD\ntext\n=======\nmore\n"})
     # Not an allowlist of suffixes: a YAML workflow and an extensionless file are read too.
     scenario("a workflow file", rule=CM, only=check_conflict_markers, expect_finding=True, files={".github/workflows/x.yml": BLOCK})
     scenario("a file with no extension", rule=CM, only=check_conflict_markers, expect_finding=True, files={"scripts/runit": BLOCK})
@@ -5362,6 +5370,9 @@ def selftest() -> int:
              files={"docs/x.md": "Git writes:\n\n    <<<<<<< HEAD\n    =======\n    >>>>>>> origin/dev\n"})
     scenario("a marker inside a Python string", rule=CM, only=check_conflict_markers, expect_finding=False,
              files={"scripts/x.py": 'ANCHOR = "<<<<<<< HEAD\\n=======\\n>>>>>>> origin/dev"\n'})
+    # A seven-character title's setext underline is exactly the separator. Alone it is a heading.
+    scenario("a setext heading underline of seven characters", rule=CM, only=check_conflict_markers,
+             expect_finding=False, files={"docs/x.md": "Heading\n=======\n\nbody\n"})
     scenario("a heredoc operator", rule=CM, only=check_conflict_markers, expect_finding=False,
              files={"scripts/x.sh": "cat <<EOF\nbody\nEOF\ncat <<<\"here string\"\n"})
     scenario("an eight-character run is not a marker", rule=CM, only=check_conflict_markers, expect_finding=False,
