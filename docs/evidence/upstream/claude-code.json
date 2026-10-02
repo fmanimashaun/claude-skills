@@ -91,6 +91,27 @@
      "used_by": ["plugins/rails-flow/reference/model-tiers.md"]},
     {"id": "settings-precedence", "url": "https://code.claude.com/docs/en/settings",
      "quote": "When the same key appears in more than one place, Claude Code uses the value from the highest level that sets it.",
-     "used_by": ["plugins/rails-flow/scripts/check_memory_systems.py"]}
+     "used_by": ["plugins/rails-flow/scripts/check_memory_systems.py"]},
+    {"id": "mods-ui-status-render", "url": "https://code.claude.com/docs/en/plugins/mods/api",
+     "quote": "One line under the prompt that stays until you change it. It starts with ⚠ and the mod's name",
+     "used_by": ["plugins/rails-flow/hooks/context-nudge.mjs", "plugins/rails-flow/reference/context-budget.md"]},
+    {"id": "mods-register-once-per-matcher", "url": "https://code.claude.com/docs/en/plugins/mods/events",
+     "quote": "Register each event once per matcher.",
+     "used_by": ["plugins/rails-flow/hooks/register.js", "plugins/rails-flow/tests/register.unit.mjs"]},
+    {"id": "mods-hooks-run-drawing-narrower", "url": "https://code.claude.com/docs/en/plugins/mods/overview",
+     "quote": "A mod's hooks run in every kind of session that loads the plugin. Drawing is narrower: only the terminal and the Desktop app show a mod's panes, bands, and replaced rows.",
+     "used_by": ["plugins/rails-flow/reference/context-budget.md", "plugins/rails-flow/hooks/context-nudge.mjs"]},
+    {"id": "mods-vscode-chat-panel-draws-nothing", "url": "https://code.claude.com/docs/en/plugins/mods/overview",
+     "quote": "The VS Code extension's chat panel | Yes | No |",
+     "used_by": ["plugins/rails-flow/reference/context-budget.md"]},
+    {"id": "mods-version-floor", "url": "https://code.claude.com/docs/en/plugins/mods/overview",
+     "quote": "Mods require Claude Code v2.1.287 or later",
+     "used_by": ["plugins/rails-flow/hooks/context-nudge.mjs", "plugins/rails-flow/reference/context-budget.md"]},
+    {"id": "mods-no-dollar-across-files", "url": "https://code.claude.com/docs/en/plugins/mods/create",
+     "quote": "Passing $ to a method, a function defined inside the hook, or a function you import from another of your files fails validation.",
+     "used_by": ["plugins/rails-flow/hooks/context-nudge.mjs"]},
+    {"id": "mods-session-measure-cadence", "url": "https://code.claude.com/docs/en/plugins/mods/reference",
+     "quote": "After each turn, and when a plan limit's percent used changes",
+     "used_by": ["plugins/rails-flow/hooks/context-nudge.mjs"]}
   ]
 }
