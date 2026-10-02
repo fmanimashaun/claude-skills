@@ -1773,6 +1773,45 @@ def check_invisible_characters() -> tuple[list[Finding], int]:
     return findings, examined
 
 
+# ---------------------------------------------------------------------------
+# Rule: conflict-marker (#1543)
+# ---------------------------------------------------------------------------
+
+# A line that is ONLY a marker, as git writes it: seven `<` or `>` then an optional label, or seven
+# `=` and nothing else. Whole lines, not substrings: this repo quotes markers in prose, in mutation
+# anchors and in heredoc fixtures, and none of those starts a line (measured on origin/dev: no
+# tracked file has a matching line). An indented marker, a mid-line quote, `<<EOF` and an
+# eight-character run all stay quiet.
+_CONFLICT_MARKER = re.compile(r"^(?:(?:<{7}|>{7})(?: .*)?|={7})$")
+
+
+def check_conflict_markers() -> tuple[list[Finding], int]:
+    """No unresolved merge-conflict marker in any file we keep.
+
+    A resolution script refused its hunk, a `;` in the command chain committed and pushed anyway, and
+    the PR's gate run passed a CHANGELOG with a live conflict block in `### Unreleased` (#1543):
+    nothing read for the markers, and `release.yml` would have extracted them into published notes.
+    Every file is read, not a suffix list, and a binary one (a NUL in the first 8000 bytes, git's
+    test) is skipped -- the same two choices `package_core.py` makes.
+    """
+    findings: list[Finding] = []
+    examined = 0
+    for path in walk(""):
+        with path.open("rb") as handle:
+            if b"\0" in handle.read(8000):
+                continue
+        examined += 1
+        rows = [n for n, line in enumerate(read(path).splitlines(), 1) if _CONFLICT_MARKER.match(line)]
+        if rows:
+            findings.append(Finding(
+                "conflict-marker", rel(path), rows[0],
+                f"{len(rows)} unresolved merge-conflict marker line(s), first here -- a PR's gate run "
+                "passed a CHANGELOG carrying a live block (#1543), and `release.yml` would have "
+                "extracted it into the published notes. Resolve the conflict; do not commit the markers",
+            ))
+    return findings, examined
+
+
 # A pointer to one of OUR files, in one of the two forms that are unambiguously ours:
 #   `${CLAUDE_PLUGIN_ROOT}/reference/x.md`  -- resolved against the OWNING plugin's directory
 #   `skills/rails-8/references/style.md`    -- resolved against the repo root
@@ -3449,6 +3488,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     components, components_examined = check_component_call_sites()
     call_sites, call_coverage = check_doctrine_call_sites()
     invisible, invisible_examined = check_invisible_characters()
+    markers, markers_examined = check_conflict_markers()
     pointers, pointers_examined = check_doc_pointers()
     rel_links, rel_links_examined = check_broken_relative_link()
     uninstallable, plugins_installable = check_uninstallable_plugins()
@@ -3501,6 +3541,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "author_me_filters_examined": author_me_examined,
         "documented_components": components_examined,
         "shipped_files_scanned_for_invisibles": invisible_examined,
+        "files_scanned_for_conflict_markers": markers_examined,
         "doc_pointers_examined": pointers_examined,
         "docs_relative_links_examined": rel_links_examined,
         "plugins_checked_for_install_lines": plugins_installable,
@@ -3541,7 +3582,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         **call_coverage,
     }
     return (dead + unenforced + undocumented + undoc_cmds + growth + hook_lib + bare + misdesc + unbounded + author_me + components + call_sites + invisible
-            + pointers + rel_links + outlines + uninstallable + plugin_root + mkt_ver + coercions + topologies + schema + unwired
+            + markers + pointers + rel_links + outlines + uninstallable + plugin_root + mkt_ver + coercions + topologies + schema + unwired
             + ci_gates + cl_ignore + controllers + labels + comp_labels + orphans + keyfilter
             + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
             + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref + action_pins
@@ -3562,7 +3603,9 @@ def selftest() -> int:
     failures: list[str] = []
     checks = 0
 
-    def scenario(label: str, files: dict[str, str], *, rule: str, expect_finding: bool) -> None:
+    def scenario(label: str, files: dict[str, str], *, rule: str, expect_finding: bool, only=None) -> None:
+        # `only`: one rule's check, instead of every rule over the fixture tree. `run()` is ~0.2s a
+        # scenario, and this module is its own mutation guard's selftest -- run once per mutation.
         nonlocal checks
         global ROOT
         checks += 1
@@ -3573,7 +3616,7 @@ def selftest() -> int:
             target.write_text(content, encoding="utf-8")
         previous, ROOT = ROOT, root
         try:
-            findings, _ = run()
+            findings, _ = only() if only else run()
         finally:
             ROOT = previous
         got = [f for f in findings if f.rule == rule]
@@ -5292,6 +5335,41 @@ def selftest() -> int:
              files={"skills/x/references/t.md": "    @variant, @size = variant.to_sym, size.to_sym\n"})
     scenario("outside shipped docs is out of scope", rule=UC, expect_finding=False,
              files={"docs/x.md": "    @px = SIZE[size.to_sym] || size.to_i\n"})
+
+    # ---- conflict-marker (#1543) -------------------------------------------------
+    CM = "conflict-marker"
+    BLOCK = "<<<<<<< HEAD\n- ours\n=======\n- theirs\n>>>>>>> origin/dev\n"
+    # THE REAL SHAPE: fd3ad02 on fix/1480 carried this block in the Repository `### Unreleased`, and
+    # the PR's `--gates-only --fast` run passed it.
+    scenario("a live block in the CHANGELOG's Unreleased section", rule=CM, only=check_conflict_markers, expect_finding=True,
+             files={"CHANGELOG.md": "# Changelog\n\n## Repository hygiene\n\n### Unreleased\n\n" + BLOCK
+                    + "\n### 2026-10-02 (release v1.153.0)\n"})
+    scenario("a CRLF file", rule=CM, only=check_conflict_markers, expect_finding=True, files={"docs/x.md": BLOCK.replace("\n", "\r\n")})
+    # Each of the three markers alone, as a half-resolved file leaves them.
+    scenario("only the opening marker is left", rule=CM, only=check_conflict_markers, expect_finding=True,
+             files={"docs/x.md": "<<<<<<< HEAD\ntext\n"})
+    scenario("only the closing marker is left", rule=CM, only=check_conflict_markers, expect_finding=True,
+             files={"docs/x.md": "text\n>>>>>>> origin/dev\n"})
+    scenario("only the separator is left", rule=CM, only=check_conflict_markers, expect_finding=True,
+             files={"docs/x.md": "text\n=======\nmore\n"})
+    # Not an allowlist of suffixes: a YAML workflow and an extensionless file are read too.
+    scenario("a workflow file", rule=CM, only=check_conflict_markers, expect_finding=True, files={".github/workflows/x.yml": BLOCK})
+    scenario("a file with no extension", rule=CM, only=check_conflict_markers, expect_finding=True, files={"scripts/runit": BLOCK})
+    # NEAR MISSES: every way this repo legitimately quotes a marker.
+    scenario("a marker quoted mid-line", rule=CM, only=check_conflict_markers, expect_finding=False,
+             files={"docs/x.md": "Resolve a `<<<<<<< HEAD` block by hand, then delete `=======`.\n"})
+    scenario("an indented marker in a code block", rule=CM, only=check_conflict_markers, expect_finding=False,
+             files={"docs/x.md": "Git writes:\n\n    <<<<<<< HEAD\n    =======\n    >>>>>>> origin/dev\n"})
+    scenario("a marker inside a Python string", rule=CM, only=check_conflict_markers, expect_finding=False,
+             files={"scripts/x.py": 'ANCHOR = "<<<<<<< HEAD\\n=======\\n>>>>>>> origin/dev"\n'})
+    scenario("a heredoc operator", rule=CM, only=check_conflict_markers, expect_finding=False,
+             files={"scripts/x.sh": "cat <<EOF\nbody\nEOF\ncat <<<\"here string\"\n"})
+    scenario("an eight-character run is not a marker", rule=CM, only=check_conflict_markers, expect_finding=False,
+             files={"docs/x.md": "<<<<<<<<\n========\n>>>>>>>>\n"})
+    scenario("a binary file is skipped", rule=CM, only=check_conflict_markers, expect_finding=False,
+             files={"docs/blob.bin": "\x00\x01" + BLOCK})
+    scenario("a skipped directory is not read", rule=CM, only=check_conflict_markers, expect_finding=False,
+             files={"design-corpora/x.md": BLOCK})
 
     # ---- invisible-character -----------------------------------------------------
     IC = "invisible-character"

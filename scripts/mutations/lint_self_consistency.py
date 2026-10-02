@@ -1047,6 +1047,61 @@ GUARD = Guard(
             "            if True:\n                continue",
             "command points at a skill doc that was renamed away",
         ),
+        # #1543: a conflict block passed a PR's gate run because nothing read for the markers.
+        Mutation(
+            "the opening marker stops being recognised",
+            '_CONFLICT_MARKER = re.compile(r"^(?:(?:<{7}|>{7})(?: .*)?|={7})$")',
+            '_CONFLICT_MARKER = re.compile(r"^(?:(?:>{7})(?: .*)?|={7})$")',
+            "only the opening marker is left",
+        ),
+        Mutation(
+            "the closing marker stops being recognised",
+            '_CONFLICT_MARKER = re.compile(r"^(?:(?:<{7}|>{7})(?: .*)?|={7})$")',
+            '_CONFLICT_MARKER = re.compile(r"^(?:(?:<{7})(?: .*)?|={7})$")',
+            "only the closing marker is left",
+        ),
+        Mutation(
+            "the separator stops being recognised",
+            '_CONFLICT_MARKER = re.compile(r"^(?:(?:<{7}|>{7})(?: .*)?|={7})$")',
+            '_CONFLICT_MARKER = re.compile(r"^(?:(?:<{7}|>{7})(?: .*)?)$")',
+            "only the separator is left",
+        ),
+        Mutation(
+            "a marker is matched anywhere in a line, not as a whole line",
+            "if _CONFLICT_MARKER.match(line)]",
+            "if re.search(r\"<{7}|>{7}|={7}\", line)]",
+            "a marker quoted mid-line",
+        ),
+        Mutation(
+            "an indented marker counts",
+            "        rows = [n for n, line in enumerate(read(path).splitlines(), 1) if _CONFLICT_MARKER.match(line)]",
+            "        rows = [n for n, line in enumerate(read(path).splitlines(), 1) if _CONFLICT_MARKER.match(line.strip())]",
+            "an indented marker in a code block",
+        ),
+        Mutation(
+            "a longer run of characters counts as a marker",
+            '_CONFLICT_MARKER = re.compile(r"^(?:(?:<{7}|>{7})(?: .*)?|={7})$")',
+            '_CONFLICT_MARKER = re.compile(r"^(?:(?:<{7,}|>{7,})(?: .*)?|={7,})$")',
+            "an eight-character run is not a marker",
+        ),
+        Mutation(
+            "only markdown is read",
+            '    for path in walk(""):\n        with path.open("rb") as handle:',
+            '    for path in walk(".md"):\n        with path.open("rb") as handle:',
+            "a workflow file",
+        ),
+        Mutation(
+            "binary files are read as text",
+            '            if b"\\0" in handle.read(8000):\n                continue\n        examined += 1',
+            '            if False:\n                continue\n        examined += 1',
+            "a binary file is skipped",
+        ),
+        Mutation(
+            "the CHANGELOG's Unreleased section is exempt",
+            "        if rows:\n            findings.append(Finding(\n                \"conflict-marker\"",
+            "        if rows and path.name != \"CHANGELOG.md\":\n            findings.append(Finding(\n                \"conflict-marker\"",
+            "a live block in the CHANGELOG's Unreleased section",
+        ),
         Mutation(
             "invisible characters stop being reported (#95)",
             "                if index == -1:\n                    continue",
