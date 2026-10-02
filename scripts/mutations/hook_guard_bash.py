@@ -166,7 +166,7 @@ GUARD = Guard(
         Mutation(
             # #1529 round 3
             'with no grep, `=~` matches the whole text at once, so `^` sees only the first segment',
-            '    while IFS= read -r line; do\n      [[ $line =~ $re ]] && return 0\n    done <<HIT_EOF\n$seg\nHIT_EOF\n    return 1',
+            '    local rest="$seg"$\'\\n\' line\n    while [ -n "$rest" ]; do\n      line="${rest%%$\'\\n\'*}"; rest="${rest#*$\'\\n\'}"\n      [[ $line =~ $re ]] && return 0\n    done\n    return 1',
             '    [[ $seg =~ $re ]]',
             'with no grep, a LATER segment',
         ),

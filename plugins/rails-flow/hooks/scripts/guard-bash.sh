@@ -51,12 +51,13 @@ hit() {
     # LINE BY LINE, as grep matches: one `=~` over the whole text let `^` see only the first segment,
     # so `cd x && git add -A` passed with no grep (#1529 round-3 review).
     re="${re//\\b/}"
-    local line
-    while IFS= read -r line; do
+    # Split IN MEMORY, never through a heredoc: a heredoc needs a temp file, and with no writable temp
+    # dir it failed and `hit()` passed everything (#1529 round-4 review).
+    local rest="$seg"$'\n' line
+    while [ -n "$rest" ]; do
+      line="${rest%%$'\n'*}"; rest="${rest#*$'\n'}"
       [[ $line =~ $re ]] && return 0
-    done <<HIT_EOF
-$seg
-HIT_EOF
+    done
     return 1
   fi
 }
