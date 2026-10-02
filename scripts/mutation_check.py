@@ -466,10 +466,13 @@ def main(argv: list[str] | None = None) -> int:
     # the largest, and lint_self_consistency alone has 137 mutations. So every baseline runs first
     # (an INERT baseline still ends its guard, unscored), then every remaining mutation of every
     # guard runs in the same pool. Output is printed in declaration order, so it reads as a serial run.
-    from concurrent.futures import ThreadPoolExecutor
+    #
+    # `proc_group.pool`, not a bare ThreadPoolExecutor: each baseline and mutant runs in a session of
+    # its own, so Ctrl-C reaches only this process, and a bare pool's join waited for the slowest
+    # running mutant while every one of them kept going (review of #1525: 24 s, survivors).
     jobs = max(1, args.jobs or os.cpu_count() or 1)
     started = time.monotonic()
-    with ThreadPoolExecutor(max_workers=jobs) as pool:
+    with proc_group.pool(jobs) as pool:
         timed = list(pool.map(run_baseline_timed, guards))
         baselines = [problems for problems, _ in timed]
         limits = mutation_limits(guards, timed)

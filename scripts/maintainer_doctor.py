@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -1156,7 +1157,11 @@ class Doctor:
             if code == 0:
                 # A slow gate's own summary line (mutation_check prints jobs and elapsed) is the
                 # measurement SLOW_GATES is set from; on a runner this is the only place it exists.
-                last = out.strip().splitlines()[-1] if name in SLOW_GATES and out.strip() else ""
+                # The line carrying `(jobs=N, Xs)`, not the last one: since #1497 a `heaviest guards`
+                # line follows it, and the ok line lost the figure the note above says to read.
+                lines = out.strip().splitlines() if name in SLOW_GATES else []
+                last = next((ln for ln in reversed(lines) if re.search(r"\(jobs=\d+, \d+s\)", ln)),
+                            lines[-1] if lines else "")
                 self.add(PASS, f"gate: {name}", last)
             elif code == 124 and self.require_slow and name in SLOW_GATES:
                 # #1444. Every dev push run reported `mutation coverage` as a timeout-skip and the

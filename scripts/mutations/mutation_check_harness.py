@@ -182,5 +182,12 @@ GUARD = Guard(
             '        # `errors="replace"`: a non-UTF-8 byte must not raise before the report can print (#1493).',
             "#1497: a guard's selftest_args must reach its baseline and mutants",
         ),
+        Mutation(
+            # review of #1525, blocker 2: the pool joined at the slowest running mutant
+            "Ctrl-C under main's pool leaves its baselines and mutants running",
+            '    with proc_group.pool(jobs) as pool:',
+            '    with __import__("concurrent.futures").futures.ThreadPoolExecutor(max_workers=jobs) as pool:',
+            "#1459: Ctrl-C under mutation_check's pool left work running",
+        ),
     ),
 )

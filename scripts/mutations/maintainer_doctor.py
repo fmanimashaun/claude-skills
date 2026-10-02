@@ -196,5 +196,12 @@ GUARD = Guard(
             '    "mutation coverage": 1200,',
             "must stay under the gate's total",
         ),
+        Mutation(
+            # review of #1525, suggestion 5: the last line became `heaviest guards`
+            "a slow gate's ok line keeps the last line, not its measurement",
+            '                last = next((ln for ln in reversed(lines) if re.search(r"\\(jobs=\\d+, \\d+s\\)", ln)),\n                            lines[-1] if lines else "")',
+            '                last = lines[-1] if lines else ""',
+            "a slow gate's ok line must carry its `(jobs=N, Xs)` measurement",
+        ),
     ),
 )
