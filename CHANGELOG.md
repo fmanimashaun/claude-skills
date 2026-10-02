@@ -7,6 +7,10 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **The release's shipped note reads a citation whose annotation holds a markdown link — `scripts/close_on_dev_merge.py`**. v1.153.0 cited `(#1404, [maintainer decision](https://…))`; the citation pattern `\((#\d+[^()]*)\)` stopped at the link's own `(`, so #1404 kept its `fixed-on-dev` label and got no shipped note (marked by hand). Only the run of `#n` that opens a citation is read now, so an annotation may hold anything. A selftest case with a link annotation fails on the old pattern; the guard gains a mutation restoring it (10/10 caught). Found on v1.153.0's own release run.
+
 ### 2026-10-02 (release v1.153.0)
 
 - **A primitive marker never excuses a form, excuses one instance, and is reported when unused — `scripts/check_shipped_erb_forms.py`, `scripts/mutations/check_shipped_erb_forms.py`** (#1460).

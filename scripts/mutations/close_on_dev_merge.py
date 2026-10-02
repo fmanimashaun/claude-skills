@@ -30,7 +30,7 @@ GUARD = Guard(
         ),
         Mutation(
             "the shipped note reads every #n in the notes, not only the (#n) citations",
-            '    return sorted({int(n) for group in CITATION.findall(notes) for n in re.findall(r"#(\\d+)", group)})',
+            '    return sorted({int(n) for run in CITATION.findall(notes) for n in re.findall(r"#(\\d+)", run)})',
             '    return sorted({int(n) for n in re.findall(r"#(\\d+)", notes)})',
             'shipped_issues reads single, grouped and annotated citations',
         ),
@@ -64,8 +64,15 @@ GUARD = Guard(
         Mutation(
             # review of PR #1488
             'a grouped citation (#a, #b) is read as nothing',
+            'CITATION = re.compile(r"\\((#\\d+(?:\\s*,\\s*#\\d+)*)")',
+            'CITATION = re.compile(r"\\((#\\d+)")',
+            'shipped_issues reads single, grouped and annotated citations',
+        ),
+        Mutation(
+            # v1.153.0 missed #1404 this way
+            'a citation whose annotation holds a markdown link is missed again',
+            'CITATION = re.compile(r"\\((#\\d+(?:\\s*,\\s*#\\d+)*)")',
             'CITATION = re.compile(r"\\((#\\d+[^()]*)\\)")',
-            'CITATION = re.compile(r"\\((#\\d+)\\)")',
             'shipped_issues reads single, grouped and annotated citations',
         ),
     ),

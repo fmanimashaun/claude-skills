@@ -42,7 +42,10 @@ LABEL_TEXT = "Fixed on dev, not yet released: ships in the next dev -> main prom
 FIXES = re.compile(r"^\s*(?:[-*]\s+)?Fixes\s+#(\d+)\s*$", re.M | re.I)
 # A CHANGELOG citation: a parenthesised group that STARTS with `#n` -- `(#1410)`, `(#1461, #1462)`,
 # `(#1483, the owner's decision)`. "(in PR #1470)" is a cross-reference and does not start with `#`.
-CITATION = re.compile(r"\((#\d+[^()]*)\)")
+# Only the run of `#n` that OPENS the group is read, so an annotation may hold anything, including a
+# markdown link whose own parentheses ended the old `[^()]*` match early: v1.153.0 cited
+# `(#1404, [maintainer decision](https://…))`, and #1404 never got its shipped note.
+CITATION = re.compile(r"\((#\d+(?:\s*,\s*#\d+)*)")
 
 Gh = Callable[..., str]
 
@@ -66,7 +69,7 @@ def fixed_issues(body: str) -> list[int]:
 
 def shipped_issues(notes: str) -> list[int]:
     """Every `#n` inside a citation group of the release notes."""
-    return sorted({int(n) for group in CITATION.findall(notes) for n in re.findall(r"#(\d+)", group)})
+    return sorted({int(n) for run in CITATION.findall(notes) for n in re.findall(r"#(\d+)", run)})
 
 
 def is_pull_request(gh: Gh, n: int) -> bool:
@@ -190,10 +193,12 @@ def selftest() -> int:
         got = fixed_issues(body)
         check(f"fixed_issues({body!r})", got == want, f"expected {want}, got {got}")
     notes = ("- **x** (#1410). See also (in PR #1470) and #99.\n- y (#1444) (#1410)\n"
-             "- z (#1461, #1462)\n- w (#1483, the owner's decision)")
+             "- z (#1461, #1462)\n- w (#1483, the owner's decision)\n"
+             "- v (#1404, [maintainer decision](https://github.com/o/r/issues/1404#issuecomment-1))\n"
+             "- u (#1500, #1501, see [the log](https://x.test/a(b)))")
     got = shipped_issues(notes)
     check("shipped_issues reads single, grouped and annotated citations, not cross-references",
-          got == [1410, 1444, 1461, 1462, 1483], got)
+          got == [1404, 1410, 1444, 1461, 1462, 1483, 1500, 1501], got)
 
     # THE ENTRY POINTS, against a stub that refuses unknown JSON fields the way real gh does.
     merged = {"body": "Fixes #20\nFixes #21\nFixes #30\nRefs #22\nFixes #23", "state": "MERGED",
