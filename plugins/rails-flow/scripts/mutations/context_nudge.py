@@ -31,7 +31,13 @@ GUARD = Guard(
             "any prompt origin takes the line, so a peer's message uses it up",
             "  return origin === undefined || origin.kind === 'composer' || origin.kind === 'bridge'",
             "  return true",
-            "a peer session's message never takes the line",
+            "never takes the line, and does not use it up",
+        ),
+        Mutation(
+            "an SDK turn (claude -p) counts as the person, so the line is spent where nobody can /clear",
+            " || origin.kind === 'bridge'",
+            " || origin.kind === 'bridge' || origin.kind === 'sdk'",
+            'a prompt from "sdk" never takes the line',
         ),
         Mutation(
             "a Remote Control prompt stops counting as the person",

@@ -33,8 +33,13 @@ async function threshold($) {
   return Number.isInteger(n) && n >= 1 && n <= 99 ? n : DEFAULT_THRESHOLD
 }
 
-// Only a prompt the person typed carries the line: a peer session's message or a plugin's own prompt
-// would take it, and the person would never be told.
+// Only a prompt from a person at an interactive surface carries the line: `composer` (Enter at the prompt),
+// `bridge` (Remote Control from a phone or the web), or no origin at all, which the engine defines as the
+// user's own. Every other kind is refused on purpose, so the line is not used up on a message the person
+// never reads: a peer session, a scheduled task, a background notification, another plugin, a channel
+// relay. `sdk` is refused too: `claude -p` and the Agent SDK have nobody to run /clear, so asking Claude to
+// tell the user to would only waste the line (mod hooks do run there; the docs say so). The kinds are a
+// closed set in the engine's types for 2.1.287; docs/evidence/audits/2026-10-02-mods-api-2.1.287.md.
 function isTheirs(origin) {
   return origin === undefined || origin.kind === 'composer' || origin.kind === 'bridge'
 }

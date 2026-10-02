@@ -2,7 +2,7 @@
 //
 // WHY THIS EXISTS BESIDE context-nudge.test.ts: `claude plugin test` needs the `claude` CLI, which the gate
 // runners do not have, so those tests can only run on a maintainer's machine. This file runs in CI
-// (scripts/maintainer_doctor.py gate "context-nudge unit") and under the mutation guard
+// (scripts/maintainer_doctor.py gate "mod unit tests") and under the mutation guard
 // plugins/rails-flow/scripts/mutations/context_nudge.py, so the module's own logic is able to fail there.
 // It drives the hooks the module registers with a hand-built `$` and a `next` that echoes its argument.
 // It does NOT exercise the real engine: that the engine calls these hooks, with these event shapes, is
@@ -116,14 +116,33 @@ for (const bad of ['lots', '150', '0', '-5', '']) {
   })
 }
 
-await check("a peer session's message never takes the line, and does not use it up", async () => {
-  const h = await harness(undefined)
-  await h.measure(90)
-  const peer = await h.submit('from a peer', { kind: 'background' })
-  assert.deepEqual(peer.context ?? [], [])
-  const theirs = await h.submit('typed', { kind: 'composer' })
-  assert.equal(theirs.context.length, 1)
-})
+// Every origin kind in the engine's closed set (PromptOrigin, 2.1.287) except the two that are a person at
+// an interactive surface. Each is refused on purpose and must not use the line up for the person's next prompt.
+const NOT_A_PERSON = [
+  { kind: 'sdk' },
+  { kind: 'task-notification' },
+  { kind: 'scheduled-trigger' },
+  { kind: 'peer' },
+  { kind: 'peer-send-message' },
+  { kind: 'projects-relay' },
+  { kind: 'channel', server: 'slack' },
+  { kind: 'coordinator' },
+  { kind: 'observer' },
+  { kind: 'observer-activity' },
+  { kind: 'auto-continuation' },
+  { kind: 'unclassified' },
+  { kind: 'slack-ping' },
+  { kind: 'plugin', name: 'some-plugin' },
+]
+for (const origin of NOT_A_PERSON) {
+  await check(`a prompt from "${origin.kind}" never takes the line, and does not use it up`, async () => {
+    const h = await harness(undefined)
+    await h.measure(90)
+    assert.deepEqual((await h.submit('not typed by a person', origin)).context ?? [], [])
+    const theirs = await h.submit('typed', { kind: 'composer' })
+    assert.equal(theirs.context.length, 1)
+  })
+}
 
 await check('a Remote Control prompt counts as the person', async () => {
   const h = await harness(undefined)

@@ -100,13 +100,15 @@ test('a bad threshold value falls back to the default', async ($, on) => {
   expect(below.context ?? []).toEqual([])
 })
 
-test("a peer session's message or a plugin's own prompt never takes the line, and does not use it up", async ($, on) => {
+test("a peer session's message or an SDK turn never takes the line, and does not use it up", async ($, on) => {
   core(on)
   noEnv(on)
   recordStatus(on)
   await $.session.measure(measure(90))
-  const peer = await $.prompt.submit({ text: 'from a peer', origin: { kind: 'background' } })
+  const peer = await $.prompt.submit({ text: 'from a peer', origin: { kind: 'peer' } })
   expect(peer.context ?? []).toEqual([])
+  const sdk = await $.prompt.submit({ text: 'from claude -p', origin: { kind: 'sdk' } })
+  expect(sdk.context ?? []).toEqual([])
   const theirs = await $.prompt.submit({ text: 'typed', origin: { kind: 'composer' } })
   expect(theirs.context).toHaveLength(1)
 })
