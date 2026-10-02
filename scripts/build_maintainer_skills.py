@@ -128,15 +128,19 @@ def unregistered_mirrors() -> list[str]:
     The rule is not "nothing unregistered": `.claude/skills/plugin-boundaries/` is maintainer-only,
     has no counterpart under `skills/`, and is correct. A derived directory is illegal only when a
     SHIPPED skill of the same name exists and the registry does not govern it.
+
+    EVERY FILE, not only `SKILL.md` (#1536 review): a reference copied by hand, a directory holding
+    only references, or a reference left behind when its entry left MIRRORED all passed `--check`.
     """
     registered = {derived.as_posix() for derived in MIRRORED.values()}
     strays = []
-    for derived in sorted((ROOT / ".claude" / "skills").glob("*/SKILL.md")):
-        relative = derived.relative_to(ROOT).as_posix()
-        if relative in registered:
+    for skill_dir in sorted(p for p in (ROOT / ".claude" / "skills").glob("*") if p.is_dir()):
+        if not (ROOT / "skills" / skill_dir.name / "SKILL.md").exists():
             continue
-        if (ROOT / "skills" / derived.parent.name / "SKILL.md").exists():
-            strays.append(relative)
+        for derived in sorted(f for f in skill_dir.rglob("*") if f.is_file()):
+            relative = derived.relative_to(ROOT).as_posix()
+            if relative not in registered:
+                strays.append(relative)
     return strays
 
 
@@ -273,11 +277,11 @@ def selftest() -> int:
     # blob for every path made the clean control fail on the references).
     clean = {derived.as_posix(): render(src) for src, derived in MIRRORED.items()}
 
-    def check_against(blob: str | None) -> int:
-        """Run --check with HEAD holding each path's clean render -- except the SKILL.md, which
-        holds `blob` (the arm under test)."""
-        skill = MIRRORED[source].as_posix()
-        globals()["committed_blob"] = lambda relative: blob if relative == skill else clean.get(relative)
+    def check_against(blob: str | None, path: Path | None = None) -> int:
+        """Run --check with HEAD holding each path's clean render -- except `path` (the SKILL.md
+        by default), which holds `blob` (the arm under test)."""
+        target = (path or MIRRORED[source]).as_posix()
+        globals()["committed_blob"] = lambda relative: blob if relative == target else clean.get(relative)
         try:
             return build(check=True)
         finally:
@@ -295,6 +299,24 @@ def selftest() -> int:
     # the state the working-tree read called clean, and it is the one CI fails on.
     if check_against(None) == 0:
         failures.append("--check passed with the mirror rebuilt on disk but never staged")
+
+    # The reference arms (#1536 review): a mirrored REFERENCE drifted, or never staged.
+    if reference is not None:
+        ref_derived = MIRRORED[reference]
+        if check_against(render(reference) + "\ndrifted\n", ref_derived) == 0:
+            failures.append(f"--check passed against an edited committed {ref_derived}")
+        if check_against(None, ref_derived) == 0:
+            failures.append(f"--check passed with {ref_derived} never committed")
+
+        # A stray REFERENCE beside a registered mirror: copied by hand, or left behind when its
+        # entry left MIRRORED.
+        stray_ref = ROOT / ref_derived.parent / "selftest-stray-reference.md"
+        try:
+            stray_ref.write_text("stray\n", encoding="utf-8")
+            if check_against(rendered) == 0:
+                failures.append("--check passed with an unregistered reference beside a mirror")
+        finally:
+            stray_ref.unlink(missing_ok=True)
 
     # The stray arm: a copy of a shipped skill that no MIRRORED entry governs, HEAD clean.
     shipped = sorted(
@@ -323,8 +345,8 @@ def selftest() -> int:
     if not failures:
         print(
             "selftest: ok — the read really is of HEAD (index and working copy both refused); a "
-            "clean committed copy passes; an edited one, an unstaged one and an unregistered copy "
-            "of a shipped skill each fail"
+            "clean committed copy passes; an edited one, an unstaged one, the same two for a "
+            "reference, and an unregistered copy of a shipped skill or reference each fail"
         )
     return 1 if failures else 0
 
