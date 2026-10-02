@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -237,6 +238,7 @@ def timeout_fixtures() -> None:
         scripts = work / "scripts"
         scripts.mkdir(parents=True, exist_ok=True)
         (scripts / "_slow.py").write_text("import time\ntime.sleep(30)\n", encoding="utf-8")
+        (scripts / "_hangs.py").write_text("import time\ntime.sleep(30)\n", encoding="utf-8")
         (scripts / "_fails.py").write_text(
             "import sys\nprint('a guard survived')\nsys.exit(1)\n", encoding="utf-8")
         md.GATES = (("selftest slow", ("python3", "scripts/_slow.py")),
@@ -265,6 +267,23 @@ def timeout_fixtures() -> None:
         _tick()
         if any(x.status == md.FAIL and "slow" in x.name for x in d.results):
             FAILURES.append("a timed-out gate still counts as a failure in the summary")
+        # #1444: the SAME timeout under --require-slow is FAIL. A push run that could not run the
+        # slow gate must not read green. Its control is the default doctor above, which still skips.
+        strict = md.Doctor(require_slow=True)
+        strict.check_gates()
+        expect("under --require-slow, a slow gate that times out is FAIL", strict, "selftest slow", md.FAIL)
+        expect("...and a real failure is still FAIL there", strict, "selftest fails", md.FAIL)
+        # ...but ONLY a SLOW_GATES gate: an ordinary gate that hangs is still a skip under the flag,
+        # or `and name in SLOW_GATES` could be dropped with nothing noticing (#1457 review).
+        saved_timeout = md.DEFAULT_TIMEOUT
+        md.GATES, md.DEFAULT_TIMEOUT = (("selftest hangs", ("python3", "scripts/_hangs.py")),), 1
+        try:
+            hang = md.Doctor(require_slow=True)
+            hang.check_gates()
+        finally:
+            md.DEFAULT_TIMEOUT = saved_timeout
+        expect("under --require-slow, a NON-slow gate that times out is still SKIP", hang,
+               "selftest hangs", md.SKIP)
     finally:
         md.GATES, md.SLOW_GATES, md.REPO = saved_gates, saved_slow, real
 
@@ -607,6 +626,18 @@ def run() -> int:
     # which `mutation coverage` starts reporting a TIMEOUT as a failure and the sweep tells a
     # maintainer to fix a checker that was working.
     _tick()
+    # #1486 / review of PR #1491: a hung guard must be reported by the harness, naming it, before
+    # the doctor's gate-wide timeout kills the run with a message that names no guard.
+    sys.path.insert(0, str(md.REPO / "scripts"))
+    import mutation_check as mc
+    _tick()
+    # `.get`, never `[...]`: a mutation renames this key to prove the no-such-gate check below
+    # fires, and a KeyError here crashed the selftest before that check ran (dispatch 36629992150).
+    total = md.SLOW_GATES.get("mutation coverage")
+    if total is not None and not (mc.BASELINE_TIMEOUT + mc.MUTATION_CAP < total):
+        FAILURES.append(f"mutation_check's baseline cap ({mc.BASELINE_TIMEOUT}s) plus its per-mutation cap "
+                        f"({mc.MUTATION_CAP:.0f}s) must stay under the gate's total ({total}s), or a hung "
+                        f"guard is killed by the doctor unnamed")
     unknown = sorted(set(md.SLOW_GATES) - {name for name, _ in md.GATES})
     if unknown:
         FAILURES.append(
@@ -727,6 +758,23 @@ def run() -> int:
             out.index("the actual problem") > out.index("python3 scripts/x.py"):
         FAILURES.append(
             "the findings print AFTER the remedy -- what is wrong comes before how to re-run it")
+
+    # #1510: every gate subprocess -- and every selftest a gate runs -- starts no detached git
+    # maintenance. Through Doctor.run, which launches the gates, not the helper alone.
+    _tick()
+    # Strip an inherited hermetic env first (a mutation guard's runner sets it), so only run() can supply it.
+    inherited = {k: os.environ.pop(k) for k in list(os.environ) if k.startswith("GIT_CONFIG_")}
+    try:
+        rc, out = md.Doctor().run(sys.executable, "-c",
+                              "import os, subprocess\n"
+                              "print(subprocess.run(['git', 'config', '--get', 'maintenance.auto'],\n"
+                              "                     capture_output=True, text=True).stdout.strip(),\n"
+                              "      subprocess.run(['git', 'config', '--get', 'gc.auto'],\n"
+                              "                     capture_output=True, text=True).stdout.strip())")
+    finally:
+        os.environ.update(inherited)
+    if rc != 0 or out.split()[-2:] != ["false", "0"]:
+        FAILURES.append(f"#1510: a gate's git must see maintenance.auto=false and gc.auto=0, got rc={rc} {out!r}")
 
     if FAILURES:
         print(f"SELFTEST FAILED -- {len(FAILURES)} of {CHECKS} checks:", file=sys.stderr)

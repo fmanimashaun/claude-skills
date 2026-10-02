@@ -22,6 +22,8 @@ Stdlib only.
 from __future__ import annotations
 
 import ast
+import dataclasses
+import os
 import shutil
 import sys
 import tempfile
@@ -67,12 +69,24 @@ print("ok")
 '''
 
 
-def _fixture_guard(mutations: tuple[mc.Mutation, ...]) -> tuple[mc.Guard, Path]:
+# The same selftest, noisier on failure: 20 numbered lines, one non-UTF-8 byte and one 2,000-character
+# line before the verdict, so the report's tail bound, width bound and decoding are each observable.
+NOISY_SELFTEST = SELFTEST.replace(
+    'if failures:\n',
+    'if failures:\n'
+    '    for i in range(1, 21):\n'
+    '        print(f"noise-{i:02d}", file=sys.stderr)\n'
+    '    sys.stderr.flush(); sys.stderr.buffer.write(b"bad-byte-\\xff\\n"); sys.stderr.buffer.flush()\n'
+    '    print("wide-" + "w" * 2000, file=sys.stderr)\n', 1)
+assert NOISY_SELFTEST != SELFTEST
+
+
+def _fixture_guard(mutations: tuple[mc.Mutation, ...], selftest: str = SELFTEST) -> tuple[mc.Guard, Path]:
     """A real Guard pointing at a throwaway subject/selftest pair inside a temp 'repo'."""
     root = Path(tempfile.mkdtemp(prefix="mutcheck-selftest-"))
     (root / "scripts").mkdir()
     (root / "scripts" / "subject_under_test.py").write_text(SUBJECT, encoding="utf-8")
-    (root / "scripts" / "subject_selftest.py").write_text(SELFTEST, encoding="utf-8")
+    (root / "scripts" / "subject_selftest.py").write_text(selftest, encoding="utf-8")
     guard = mc.Guard(
         name="fixture",
         subject="scripts/subject_under_test.py",
@@ -116,6 +130,141 @@ def run() -> int:
         if problems:
             FAILURES.append(f"a genuine break was not accepted as caught: {problems}")
     finally:
+        mc.REPO = original_repo
+
+    # ---- 1b. a mutant's limit SCALES with its guard's baseline (#1486) -----------------
+    # The same slow guard, twice. With the limit derived from the ~1 s baseline, the mutant has
+    # time to fail and is caught; with the scale zeroed, the fixed floor is shorter than the run,
+    # and it times out -- which is what 10 of 12 hook_guard_bash mutations did under load.
+    guard, root = _fixture_guard((
+        mc.Mutation("odd numbers reported even", "n % 2 == 0", "True", "fixture-odd"),
+    ))
+    slow = root / "scripts" / "subject_selftest.py"
+    slow.write_text("import time\ntime.sleep(1.0)\n" + slow.read_text(encoding="utf-8"), encoding="utf-8")
+    saved = (mc.REPO, mc.MUTATION_FLOOR, mc.MUTATION_SCALE)
+    mc.REPO, mc.MUTATION_FLOOR = root, 0.4
+    try:
+        _tick()
+        mc.MUTATION_SCALE = 3.0
+        problems = mc.run_guard(guard)
+        if problems:
+            FAILURES.append(f"#1486: a slow guard's mutant must get a limit scaled from its baseline, got {problems}")
+        _tick()
+        mc.MUTATION_SCALE = 0.0
+        problems = mc.run_guard(guard)
+        if not any("timed out after" in p for p in problems):
+            FAILURES.append(f"#1486 CONTROL: with no scaling, the fixed floor must time the mutant out, got {problems}")
+    finally:
+        mc.REPO, mc.MUTATION_FLOOR, mc.MUTATION_SCALE = saved
+    # ...and THE PATH CI RUNS: main()'s pool, driven end to end on the same slow guard (review of
+    # PR #1491: the pool's call could drop the limit with the fixture above still green).
+    saved = (mc.REPO, mc.MUTATION_FLOOR, mc.MUTATION_SCALE, mc.GUARDS)
+    mc.REPO, mc.MUTATION_FLOOR, mc.GUARDS = root, 0.4, [guard]
+    try:
+        import contextlib, io
+        _tick()
+        mc.MUTATION_SCALE = 3.0
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            rc = mc.main(["--jobs", "2"])
+        if rc != 0:
+            FAILURES.append(f"#1486: main()'s pool must give a slow guard's mutant its scaled limit, exit {rc}")
+        _tick()
+        mc.MUTATION_SCALE = 0.0
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            rc = mc.main(["--jobs", "2"])
+        if rc == 0 or "timed out after" not in err.getvalue():
+            FAILURES.append(f"#1486 CONTROL: main()'s pool with no scaling must time the mutant out, exit {rc}")
+    finally:
+        mc.REPO, mc.MUTATION_FLOOR, mc.MUTATION_SCALE, mc.GUARDS = saved
+    _tick()
+    quick = mc.Guard(name="quick", subject="s.py", selftest="t.py", mutations=())
+    heavy = mc.Guard(name="heavy", subject="s.py", selftest="t.py", mutations=())
+    stuck = mc.Guard(name="stuck", subject="s.py", selftest="t.py", mutations=())
+    limits = mc.mutation_limits([quick, heavy, stuck], [([], 10.0), ([], 200.0), ([], 1000.0)])
+    if limits != {"quick": 300.0, "heavy": 600.0, "stuck": mc.MUTATION_CAP}:
+        FAILURES.append(f"#1486: main's pool must give each guard max(floor, 3x baseline), capped, got {limits}")
+
+    # ---- 1c. selftest_args reach the baseline AND every mutant (#1497) ------------------
+    # A selftest that refuses to run without its argument: with the argument declared, the guard
+    # scores normally; without it, the baseline fails and the guard reads INERT.
+    guard, root = _fixture_guard((
+        mc.Mutation("odd numbers reported even", "n % 2 == 0", "True", "fixture-odd"),
+    ))
+    needy = root / "scripts" / "subject_selftest.py"
+    needy.write_text("import sys\nif '--arg-1497' not in sys.argv:\n    sys.exit(3)\n"
+                     + needy.read_text(encoding="utf-8"), encoding="utf-8")
+    mc.REPO = root
+    try:
+        _tick()
+        with_args = dataclasses.replace(guard, selftest_args=("--arg-1497",))
+        problems = mc.run_guard(with_args)
+        if problems:
+            FAILURES.append(f"#1497: a guard's selftest_args must reach its baseline and mutants, got {problems}")
+        _tick()
+        problems = mc.run_guard(guard)
+        if not any("INERT" in p for p in problems):
+            FAILURES.append(f"#1497 CONTROL: without its argument the same selftest must read INERT, got {problems}")
+    finally:
+        mc.REPO = original_repo
+
+    # ---- 1d. baselines and mutants start no detached git maintenance (#1510) ----------------
+    # The helper APPENDS to a caller's own pairs, never renumbers them over.
+    _tick()
+    mine = mc.hermetic_git.env({"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.x", "GIT_CONFIG_VALUE_0": "y"})
+    if (mine.get("GIT_CONFIG_KEY_0"), mine.get("GIT_CONFIG_COUNT"), mine.get("GIT_CONFIG_KEY_1"),
+            mine.get("GIT_CONFIG_KEY_2")) != ("core.x", "3", "maintenance.auto", "gc.auto"):
+        FAILURES.append(f"#1510: hermetic_git.env must append after a caller's GIT_CONFIG pairs, got {mine}")
+    # ...an empty count is none, and a count git rejects is left exactly as it was.
+    _tick()
+    if mc.hermetic_git.env({"GIT_CONFIG_COUNT": ""}).get("GIT_CONFIG_KEY_0") != "maintenance.auto":
+        FAILURES.append("#1510: an empty GIT_CONFIG_COUNT is no pairs, so ours start at 0")
+    for bogus in ("-1", "abc", " 2 ", "٣"):
+        _tick()
+        given = {"GIT_CONFIG_COUNT": bogus, "GIT_CONFIG_KEY_0": "core.x", "GIT_CONFIG_VALUE_0": "y"}
+        if mc.hermetic_git.env(given) != given:
+            FAILURES.append(f"#1510: a count git rejects ({bogus!r}) must be left untouched, "
+                            f"got {mc.hermetic_git.env(given)}")
+    # A selftest that commits in a temp repo under GIT_TRACE and refuses to go on if git started
+    # `maintenance run --auto` or `gc --auto` -- the #1493 race. Through run_guard, so it proves
+    # the CALLER passes the env to both the baseline and the mutant, not only that the helper builds it.
+    probe = (
+        "import os, subprocess, sys, tempfile\n"
+        "with tempfile.TemporaryDirectory() as d:\n"
+        "    subprocess.run(['git', 'init', '-q', d], check=True)\n"
+        "    t = subprocess.run(['git', '-C', d, '-c', 'user.email=t@t', '-c', 'user.name=t', '-c',\n"
+        "                        'commit.gpgSign=false', 'commit', '-q', '--allow-empty', '-m', 'm'],\n"
+        "                       capture_output=True, text=True, env={**os.environ, 'GIT_TRACE': '1'})\n"
+        "    if 'maintenance run' in t.stderr or 'gc --auto' in t.stderr:\n"
+        "        print('background git maintenance started'); sys.exit(4)\n"
+    )
+    guard, root = _fixture_guard((
+        mc.Mutation("odd numbers reported even", "n % 2 == 0", "True", "fixture-odd"),
+    ))
+    traced = root / "scripts" / "subject_selftest.py"
+    traced.write_text(probe + traced.read_text(encoding="utf-8"), encoding="utf-8")
+    mc.REPO = root
+    real_env = mc.hermetic_git.env
+    # The ambient env must not already be hermetic -- under a mutation guard it is, inherited from the
+    # outer runner -- or a call site that drops `env=` still passes. Only the call site may supply it.
+    inherited = {k: os.environ.pop(k) for k in list(os.environ) if k.startswith("GIT_CONFIG_")}
+    try:
+        _tick()
+        problems = mc.run_guard(guard)
+        if problems:
+            FAILURES.append(f"#1510: the baseline and the mutant must run with git maintenance off, got {problems}")
+        _tick()
+        # No env, really: drop GIT_CONFIG_* too, or a run nested inside a hermetic runner (the
+        # mutation guard for this very file) inherits the settings and the control proves nothing.
+        mc.hermetic_git.env = lambda base=None: {k: v for k, v in (os.environ if base is None else base).items()
+                                                 if not k.startswith("GIT_CONFIG_")}
+        problems = mc.run_guard(guard)
+        if not any("INERT" in p for p in problems):
+            FAILURES.append(f"#1510 CONTROL: without the env this git does start maintenance, so the same "
+                            f"selftest must read INERT, got {problems}")
+    finally:
+        mc.hermetic_git.env = real_env
+        os.environ.update(inherited)
         mc.REPO = original_repo
 
     # ---- 2. a SURVIVOR must be reported ------------------------------------------------
@@ -190,6 +339,52 @@ def run() -> int:
                 "a catch by the WRONG fixture was accepted — that hides the intended fixture "
                 f"going quiet; got {problems}"
             )
+    finally:
+        mc.REPO = original_repo
+
+    # ...and a BASELINE that fails with a non-UTF-8 byte in its output is reported INERT, never a
+    # crash: #1493 decoded mutant output only, and the baseline has the same pipe.
+    broken = 'import sys\nsys.stderr.flush(); sys.stderr.buffer.write(b"bad-\\xff\\n"); sys.stderr.buffer.flush()\nsys.exit(1)\n'
+    guard, root = _fixture_guard((mc.Mutation("unused", "n % 2 == 0", "True", "fixture-odd"),), selftest=broken)
+    mc.REPO = root
+    try:
+        _tick()
+        try:
+            problems = mc.run_guard(guard)
+            if not any("INERT" in p for p in problems):
+                FAILURES.append(f"a baseline failing with a non-UTF-8 byte must read INERT, got {problems}")
+        except UnicodeDecodeError as exc:
+            FAILURES.append(f"a non-UTF-8 byte in a BASELINE's output raised before the INERT report printed: {exc}")
+    finally:
+        mc.REPO = original_repo
+
+    # ...and the report carries the mutant's own output, or a catch seen only on CI cannot be
+    # diagnosed (#1493: two CI-only wrong-fixture catches, no output kept). A NOISY mutant, so each
+    # bound is observable: the last 12 lines exactly, the first line gone, every line <= 300 chars,
+    # and a non-UTF-8 byte decoded rather than raised.
+    guard, root = _fixture_guard((
+        mc.Mutation("even numbers reported odd", "n % 2 == 0", "False", "fixture-odd"),
+    ), selftest=NOISY_SELFTEST)
+    mc.REPO = root
+    try:
+        _tick()
+        try:
+            problems = mc.run_guard(guard)
+        except UnicodeDecodeError as exc:
+            problems = []
+            FAILURES.append(f"a non-UTF-8 byte in a mutant's output raised before the report printed: {exc}")
+        report = next((p for p in problems if "not by the expected fixture" in p), "")
+        tail = [l for l in report.split("\n")[1:] if l.startswith("      ")]
+        if not (report and "exit 1" in report and tail):
+            FAILURES.append(f"a wrong-fixture report does not carry the mutant's exit and output; got {problems}")
+        _tick()
+        if len(tail) != 12 or "noise-01" in report or "fixture-odd" not in report:
+            FAILURES.append(f"a wrong-fixture report does not carry exactly the last 12 lines of output; "
+                            f"got {len(tail)} line(s), first={tail[:1]}")
+        _tick()
+        if any(len(l) > 306 for l in tail):
+            FAILURES.append("a wrong-fixture report does not cut each output line to 300 characters; "
+                            f"widest {max(len(l) for l in tail)}")
     finally:
         mc.REPO = original_repo
 
@@ -308,6 +503,17 @@ def run() -> int:
                     "fail if the rule broke. A guard-level mutation count cannot see this."
                 )
 
+    # ---- main's pool schedule (#1444): an INERT baseline ends its guard, unscored ------------
+    _tick()
+    inert = mc.Guard(name="inert", subject="s.py", selftest="t.py",
+                     mutations=(mc.Mutation("i1", "a", "b", ""),))
+    alive = mc.Guard(name="alive", subject="s.py", selftest="t.py",
+                     mutations=(mc.Mutation("a1", "a", "b", ""), mc.Mutation("a2", "c", "d", "")))
+    scheduled = [(g.name, m.name) for g, m in mc.live_mutations([inert, alive], [["INERT"], []])]
+    if scheduled != [("alive", "a1"), ("alive", "a2")]:
+        FAILURES.append(f"pool schedule: an INERT baseline must end its guard, and a passing one "
+                        f"must run every mutation -- scheduled {scheduled}")
+
     # ---- the import-completeness rule, on a FIXTURE rather than on this repo ----------------
     # The loop above reads the real repo through `original_repo`, which inside a staged tempdir is
     # the tempdir -- so it iterates zero guards and every assertion about it passes vacuously. That
@@ -344,6 +550,37 @@ def run() -> int:
                             mutations=())
         if mc.unstaged_sibling_imports(declared, fixture_base):
             FAILURES.append("import-completeness: a DECLARED dependency must clear the finding")
+        _tick()
+        # TRANSITIVE, through a `needs` FILE (#1444): check_slices -> check_mockup_gate (a need)
+        # -> classify_door went INERT in CI because a one-level scan never read the need.
+        (fixture_base / "scripts/follower.py").write_text("import grandchild\n", encoding="utf-8")
+        (fixture_base / "scripts/grandchild.py").write_text("Z = 3\n", encoding="utf-8")
+        via_need = mc.Guard(name="fixture", subject="scripts/leader.py",
+                            selftest="scripts/leader.py", needs=("scripts/follower.py",),
+                            mutations=())
+        if not any("grandchild" in p for p in mc.unstaged_sibling_imports(via_need, fixture_base)):
+            FAILURES.append("import-completeness: an import made BY a staged need must be reported")
+        _tick()
+        # A need NO staged file imports (run by path, as a subprocess) is still read: only the
+        # `needs` seed reaches it, since no import edge leads there.
+        (fixture_base / "scripts/runner.py").write_text("import solo\n", encoding="utf-8")
+        (fixture_base / "scripts/solo.py").write_text("W = 4\n", encoding="utf-8")
+        by_path = mc.Guard(name="fixture", subject="scripts/leader.py", selftest="scripts/leader.py",
+                           deps=("scripts/follower.py", "scripts/grandchild.py"),
+                           needs=("scripts/runner.py",), mutations=())
+        if not any("solo" in p for p in mc.unstaged_sibling_imports(by_path, fixture_base)):
+            FAILURES.append("import-completeness: a need no staged file imports must still be scanned")
+        _tick()
+        # TRANSITIVE proper: nothing declared, so follower is reported -- and so is what IT
+        # imports, in the same run, instead of one missing file per round of fixing.
+        if not any("grandchild" in p for p in mc.unstaged_sibling_imports(bare, fixture_base)):
+            FAILURES.append("import-completeness: an unstaged import's own imports must be reported too")
+        _tick()
+        # ...and its control: staging the grandchild too clears it.
+        both = mc.Guard(name="fixture", subject="scripts/leader.py", selftest="scripts/leader.py",
+                        needs=("scripts/follower.py", "scripts/grandchild.py"), mutations=())
+        if mc.unstaged_sibling_imports(both, fixture_base):
+            FAILURES.append("import-completeness: a staged grandchild must clear the finding")
     finally:
         shutil.rmtree(fixture_base, ignore_errors=True)
 

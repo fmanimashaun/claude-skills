@@ -179,9 +179,13 @@ core**:
   Markdown + CSV report.
 
 Per `web_e2e` (scaffold ONE):
-- **playwright** — `qa/package.json` (@playwright/test, @axe-core/playwright), `qa/playwright.config.ts`
+- **playwright** — `qa/package.json` (@playwright/test, @axe-core/playwright, typescript — the typecheck needs `tsc`), `qa/playwright.config.ts`
   (setup + chromium/firefox/webkit, `baseURL` from `QA_BASE_URL`, retries=1, trace/screenshot on
-  fail), `qa/e2e/` (`auth.setup.ts` → storageState, `fixtures/`, a `@smoke` spec).
+  fail), `qa/e2e/` (`auth.setup.ts` → storageState, `fixtures/`, a `@smoke` spec), and
+  `qa/e2e/tsconfig.json` with `"strict": true` and `"noUncheckedIndexedAccess": true` plus a
+  `typecheck` script (`tsc --noEmit -p e2e/tsconfig.json`), and a CI step running it —
+  `npm --prefix qa run typecheck`. Playwright does not type-check, so without that step `strict`
+  checks nothing, and the `ts-strict` gate refuses a script CI never runs (#1447; `agents/e2e-tester.md`).
 - **cypress-cucumber** — `qa/package.json` (cypress, `@badeball/cypress-cucumber-preprocessor`,
   `@testing-library/cypress`), `qa/cypress.config.js`, `qa/e2e/features/*.feature` (+ `step_definitions/`),
   `cy.session()` auth, `@smoke`/`@regression` tags.

@@ -138,7 +138,8 @@ Rendering:
 
 ## 3. Action Text
 
-Rich text (Trix editor) stored in dedicated tables, attachable-aware.
+Rich text stored in dedicated tables, attachable-aware. On Rails 8.1 the built-in editor is **Trix**;
+**Lexxy** is an opt-in gem that replaces it (see *Lexxy* below).
 
 ```bash
 bin/rails action_text:install && bin/rails db:migrate   # requires image_processing for embeds
@@ -151,7 +152,10 @@ end
 ```
 
 ```erb
-<%= form.rich_textarea :content %>       <%# permit :content as a plain scalar in expect %>
+<%# simple_form, as every form here. `as: :rich_text_area` is the ONLY name simple_form maps (5.0.2+),  %>
+<%# and it is required: a has_rich_text attribute has no column, so simple_form cannot infer the type. %>
+<%# It renders through the builder's rich_text_area, which Rails 8 keeps as an alias of rich_textarea. %>
+<%= f.input :content, as: :rich_text_area %>   <%# permit :content as a plain scalar in expect %>
 <%= @article.content %>                  <%# renders sanitized HTML + attachments %>
 <%= @article.content.to_plain_text %>
 ```
@@ -161,6 +165,56 @@ Style via `app/assets/stylesheets/actiontext.css`. Custom attachables
 (mention a user in rich text) implement `ActionText::Attachable` and render
 via their `to_attachable_partial_path`. Avoid raw HTML injection into rich
 text; content is sanitized on render.
+
+### Lexxy (the Lexical-based editor), on Rails 8.1
+
+Verified 2026-10-01 against `lexxy` 1.0.0 (2026-09-28) and Rails 8.1.4 (#1438). Rails 8.1 has **no editor
+setting**: `config.action_text.editor` and `ActionText::Editor` exist only on Rails `main` (8.2.0.alpha,
+rails/rails#51238), and no 8.2 has been released. Do not set that option on 8.1: nothing in 8.1.4 reads it.
+
+On 8.0 and 8.1, the `lexxy` gem (`railties >= 8.0.2`) takes over Action Text's form helpers itself. Once it
+is installed, `form.rich_text_area`, and therefore the `f.input :content, as: :rich_text_area` above, renders
+a Lexxy editor instead of Trix. No form changes.
+
+```ruby
+# Gemfile. Pin 1.0: Lexxy's own install doc still shows "~> 0.9.21", which cannot resolve 1.0.
+gem "lexxy", "~> 1.0"
+```
+
+```ruby
+# config/importmap.rb (importmap apps)
+pin "lexxy", to: "lexxy.js"
+pin "@rails/activestorage", to: "activestorage.esm.js"   # attachments need it
+```
+
+```javascript
+// app/javascript/application.js. In a jsbundling app, run `yarn add @37signals/lexxy @rails/activestorage`
+// and import "@37signals/lexxy" instead.
+import "lexxy"
+```
+
+```erb
+<%# app/views/layouts/application.html.erb: Lexxy's own stylesheet. actiontext.css styles trix-editor and %>
+<%# trix-toolbar, which never match Lexxy's <lexxy-editor>; it still styles rendered .trix-content. %>
+<%= stylesheet_link_tag "lexxy" %>
+```
+
+- **Existing content.** Lexxy emits Action Text's canonical markup, and its docs and the 1.0 post state that
+  Trix-authored content and attachments keep working. That is the vendor's statement; neither Rails nor this
+  skill tests it, so open a few real records before switching a production app.
+- **Sanitizing, app-wide.** Lexxy widens Action Text's sanitizer allowlist (tables, `video`, `audio`, and attributes
+  such as `style`), which changes every rich-text render, not only the editor. It also appends `"var"` to Loofah's
+  global `ALLOWED_CSS_FUNCTIONS`, which reaches every `sanitize` call in the app. Both run unconditionally at boot,
+  with the opt-out below too (`lib/lexxy/engine.rb` L52–60, v1.0.0). Review them against your content policy.
+  Rendered content keeps Rails' default wrapper, `<div class="trix-content">`
+  (`app/views/layouts/action_text/contents/_content.html.erb`), so actiontext.css still styles it. Override that
+  file with `<div class="lexxy-content">` to give it Lexxy's styles.
+- **Custom attachables** keep rendering through their `to_attachable_partial_path` partials.
+- **Not under enforced Trusted Types.** Lexxy's configuration doc: "Lexxy does not yet work under enforced
+  Trusted Types". An app whose CSP sends `require-trusted-types-for 'script'` stays on Trix.
+- **Opting out of the takeover** while keeping the gem: set `config.lexxy.override_action_text_defaults = false`
+  in `config/application.rb`. Lexxy's prefixed helpers (`form.lexxy_rich_text_area`) are then explicit, and
+  simple_form's `as: :rich_text_area` renders Trix again.
 
 ## 4. Action Mailbox (brief)
 

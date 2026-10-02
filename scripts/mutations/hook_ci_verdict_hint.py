@@ -7,6 +7,8 @@ GUARD = Guard(
     name="hook_ci_verdict_hint",
     subject="plugins/rails-flow/hooks/scripts/ci-verdict-hint.sh",
     selftest="plugins/rails-flow/scripts/check_hook_gates.py",
+    # Only the fixture groups that drive this subject (#1497): the whole harness per mutant was ~70% of the budget.
+    selftest_args=("--only", "ci_verdict_hint"),
     # check_hook_gates drives every hook in both plugins from its own location, so the whole set is
     # staged, plus each script a hook shells out to -- one missing and every mutation reads as caught.
     needs=("plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362
@@ -15,6 +17,8 @@ GUARD = Guard(
            "plugins/rails-flow/scripts/check_criteria.py",
            "plugins/rails-flow/scripts/check_handoff.py",
            "plugins/qa-flow/scripts/read_certification.py",
+           "plugins/qa-flow/scripts/push_targets.py",  # release-gate.sh runs it (#1410)
+           "plugins/qa-flow/scripts/release_evidence.py",
            "plugins/rails-flow/scripts/self_consistency.py",
            "plugins/rails-flow/scripts/extract_claims.py",
            "plugins/rails-flow/scripts/ci_verdict_hint.py"),

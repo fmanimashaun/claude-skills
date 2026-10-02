@@ -11,8 +11,46 @@ GUARD = Guard(
     name="mutation_check_harness",
     subject="scripts/mutation_check.py",
     selftest="scripts/mutation_check_selftest.py",
-    deps=("scripts/mutation_types.py",),
+    deps=("scripts/mutation_types.py", "scripts/hermetic_git.py"),
     mutations=(
+        # #1510: baselines and mutants run with git auto-maintenance off.
+        Mutation(
+            "a BASELINE runs with git's own auto-maintenance",
+            '                                env=hermetic_git.env(),  # no detached git maintenance (#1510)\n                                timeout=BASELINE_TIMEOUT)',
+            '                                timeout=BASELINE_TIMEOUT)',
+            '#1510: the baseline and the mutant must run with git maintenance off',
+        ),
+        Mutation(
+            "a MUTANT runs with git's own auto-maintenance",
+            '                                env=hermetic_git.env(),  # no detached git maintenance (#1510)\n                                timeout=timeout)',
+            '                                timeout=timeout)',
+            '#1510: the baseline and the mutant must run with git maintenance off',
+        ),
+        # The wrong-fixture report's tail (#1493): present, 12 lines, 300 characters wide, decoded.
+        Mutation(
+            "a wrong-fixture report drops the mutant's output",
+            '                    + "\\n".join(f"      {line[:300]}" for line in output.strip().splitlines()[-12:])]',
+            '                    + ""]',
+            "a wrong-fixture report does not carry the mutant's exit and output",
+        ),
+        Mutation(
+            'the tail is no longer bounded to 12 lines',
+            '                    + "\\n".join(f"      {line[:300]}" for line in output.strip().splitlines()[-12:])]',
+            '                    + "\\n".join(f"      {line[:300]}" for line in output.strip().splitlines()[-1200:])]',
+            'a wrong-fixture report does not carry exactly the last 12 lines of output',
+        ),
+        Mutation(
+            "the tail's lines are no longer cut to 300 characters",
+            '                    + "\\n".join(f"      {line[:300]}" for line in output.strip().splitlines()[-12:])]',
+            '                    + "\\n".join(f"      {line}" for line in output.strip().splitlines()[-12:])]',
+            'a wrong-fixture report does not cut each output line to 300 characters',
+        ),
+        Mutation(
+            'a non-UTF-8 byte raises before the report prints',
+            '        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True, errors="replace",\n                                env=hermetic_git.env(),  # no detached git maintenance (#1510)\n                                timeout=timeout)',
+            '        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True,\n                                env=hermetic_git.env(),  # no detached git maintenance (#1510)\n                                timeout=timeout)',
+            "a non-UTF-8 byte in a mutant's output raised before the report printed",
+        ),
         Mutation(
             # #1129: the import-completeness invariant. Adding an import to a shipped module orphans
             # every neighbouring guard that stages it without the new dependency -- the mutant dies
@@ -31,6 +69,83 @@ GUARD = Guard(
             "    scan(tree.body)",
             "    scan([n for n in ast.walk(tree)])",
             "",
+        ),
+        Mutation(
+            # #1444: main's pool must keep run_guard's rule -- an INERT baseline scores nothing.
+            "the pool runs mutations of a guard whose baseline failed",
+            "zip(guards, baselines) if not b for m",
+            "zip(guards, baselines) for m",
+            "an INERT baseline must end its guard",
+        ),
+        Mutation(
+            # #1444: the transitive scan. check_slices went INERT through an import made by a need.
+            "the import scan stops at one level again",
+            "            pending.append(str(sibling.relative_to(base)))",
+            "            pass",
+            "an unstaged import's own imports must be reported too",
+        ),
+        Mutation(
+            # #1444: THE check_slices case -- a need's own imports went unread.
+            "needs files are no longer scanned for imports",
+            "    pending = sorted(staged | {n for n in guard.needs if (base / n).is_file()})",
+            "    pending = sorted(staged)",
+            "a need no staged file imports must still be scanned",
+        ),
+        Mutation(
+            # #1486
+            'the per-mutation limit is fixed again, ignoring the baseline',
+            '    return min(MUTATION_CAP, max(MUTATION_FLOOR, MUTATION_SCALE * baseline_seconds))',
+            '    return MUTATION_FLOOR',
+            "#1486: a slow guard's mutant must get a limit scaled from its baseline",
+        ),
+        Mutation(
+            # #1486
+            "main's pool gives every guard the floor",
+            '    return {g.name: mutation_timeout(secs) for g, (_, secs) in zip(guards, timed)}',
+            '    return {g.name: MUTATION_FLOOR for g in guards}',
+            "#1486: main's pool must give each guard max(floor, 3x baseline)",
+        ),
+        Mutation(
+            # #1486
+            'run_guard ignores the limit it derived',
+            '        problems.extend(run_mutation(guard, mutation, limit))',
+            '        problems.extend(run_mutation(guard, mutation))',
+            '#1486 CONTROL: with no scaling, the fixed floor must time the mutant out',
+        ),
+        Mutation(
+            # review of PR #1491
+            "main's pool drops the derived limit (the path CI runs)",
+            '        outcomes = list(pool.map(lambda gm: timed_run(run_mutation, gm[0], gm[1], limits[gm[0].name]), live))',
+            '        outcomes = list(pool.map(lambda gm: timed_run(run_mutation, gm[0], gm[1]), live))',
+            "#1486 CONTROL: main()'s pool with no scaling must time the mutant out",
+        ),
+        Mutation(
+            # review of PR #1491
+            'the per-mutation cap is dropped, so one mutant can outlast the whole gate',
+            '    return min(MUTATION_CAP, max(MUTATION_FLOOR, MUTATION_SCALE * baseline_seconds))',
+            '    return max(MUTATION_FLOOR, MUTATION_SCALE * baseline_seconds)',
+            "#1486: main's pool must give each guard max(floor, 3x baseline)",
+        ),
+        Mutation(
+            # #1497
+            "the baseline drops a guard's selftest_args",
+            '        argv.extend(guard.selftest_args)\n        started',
+            '        started',
+            "#1497: a guard's selftest_args must reach its baseline and mutants",
+        ),
+        Mutation(
+            # #1493, baseline half
+            "a non-UTF-8 byte in a BASELINE's output raises before the INERT report prints",
+            '        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True, errors="replace",\n                                env=hermetic_git.env(),  # no detached git maintenance (#1510)\n                                timeout=BASELINE_TIMEOUT)',
+            '        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True,\n                                env=hermetic_git.env(),  # no detached git maintenance (#1510)\n                                timeout=BASELINE_TIMEOUT)',
+            "a non-UTF-8 byte in a BASELINE's output raised before the INERT report printed",
+        ),
+        Mutation(
+            # review of PR #1506
+            "a mutant drops its guard's selftest_args",
+            '        argv.extend(guard.selftest_args)\n        # `errors="replace"`: a non-UTF-8 byte must not raise before the report can print (#1493).',
+            '        # `errors="replace"`: a non-UTF-8 byte must not raise before the report can print (#1493).',
+            "#1497: a guard's selftest_args must reach its baseline and mutants",
         ),
     ),
 )

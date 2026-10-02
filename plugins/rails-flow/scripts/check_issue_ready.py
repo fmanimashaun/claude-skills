@@ -45,8 +45,32 @@ import subprocess
 import sys
 
 KEYS = ("depends-on", "blocks")
-_DEPS_FENCE = re.compile(r"^[ \t]*```[ \t]*deps[ \t]*\r?$\n(.*?)^[ \t]*```", re.M | re.S)
-_ANY_FENCE = re.compile(r"^[ \t]*```([^\n]*)\r?$\n(.*?)^[ \t]*```", re.M | re.S)
+_FENCE_OPEN = re.compile(r"^[ \t]*(`{3,}|~{3,})[ \t]*(\S*)")
+
+
+def fence_lines(text: str) -> list[str | None]:
+    """For each line of TEXT: None outside a fence, else the open fence's info WORD ("" for none).
+
+    ONE reader of CommonMark fences, used by this file and by check_slices.py (#1461), so a
+    `depends-on:` that one calls a sample the other never calls an edge. Three or more backticks or
+    tildes open; only the SAME character, at least as long, closes. An UNCLOSED fence runs to the
+    end of the document, as CommonMark says. The info word is the first word only: ```` ```deps extra ````
+    is a `deps` fence. The opening and closing lines themselves count as inside.
+    """
+    out: list[str | None] = []
+    info: str | None = None
+    run = ""
+    for raw in text.splitlines():
+        m = _FENCE_OPEN.match(raw)
+        if info is None and m:
+            info, run = m.group(2).lower(), m.group(1)
+            out.append(info)
+        elif info is not None and m and m.group(1).startswith(run) and not m.group(2):
+            out.append(info)
+            info, run = None, ""
+        else:
+            out.append(info)
+    return out
 _STRICT = re.compile(r"^[ \t]*(depends-on|blocks)[ \t]*:[ \t]*(#\d+(?:[ \t]*,[ \t]*#\d+)*)[ \t]*$", re.M)
 _REF = re.compile(r"#(\d+)")
 
@@ -84,11 +108,14 @@ def parse_edges(body: str) -> dict[str, set[int]]:
     """
     edges: dict[str, set[int]] = {k: set() for k in KEYS}
     body = body or ""
-    fences = _DEPS_FENCE.findall(body)
-    if fences:
-        text = "\n".join(fences)
+    lines = body.splitlines()
+    state = fence_lines(body)
+    deps = [line for line, s in zip(lines, state) if s == "deps"]
+    if deps:
+        text = "\n".join(deps)
     else:
-        text = _ANY_FENCE.sub("", body)  # strip every other fence -- `depends_on: :account` lives there
+        # strip every other fence -- `depends_on: :account` lives there
+        text = "\n".join(line for line, s in zip(lines, state) if s is None)
     for key, refs in _STRICT.findall(text):
         edges[key].update(int(n) for n in _REF.findall(refs))
     return edges
@@ -252,6 +279,18 @@ def selftest() -> int:
     check("a bare strict line is an edge", e["depends-on"] == {7}, f"{e}")
     e = parse_edges("This depends on #7 being done first, honestly.\n")
     check("prose saying 'depends on' is NOT an edge -- the syntax is strict", e["depends-on"] == set(), f"{e}")
+    # #1435: CommonMark fences, read exactly as check_slices.py reads the plan.
+    e = parse_edges("~~~\ndepends-on: #9\n~~~\n")
+    check("a strict line inside a ~~~ fence is a sample, not an edge", e["depends-on"] == set(), f"{e}")
+    e = parse_edges("````\n```\ndepends-on: #9\n```\n````\n")
+    check("a ``` inside a ```` fence does not close it", e["depends-on"] == set(), f"{e}")
+    e = parse_edges("~~~deps\ndepends-on: #93\n~~~\n")
+    check("CONTROL: a ~~~deps fence is an edge", e["depends-on"] == {93}, f"{e}")
+    # #1461: the two shapes the readers used to disagree on, now one reader.
+    e = parse_edges("```\ndepends-on: #9\n")
+    check("an UNCLOSED fence runs to the end, so the line inside it is a sample", e["depends-on"] == set(), f"{e}")
+    e = parse_edges("```deps extra\ndepends-on: #93\n```\n")
+    check("a fence whose info string STARTS with deps is a deps fence", e["depends-on"] == {93}, f"{e}")
     e = parse_edges("Use the syntax below:\n\n```md\ndepends-on: #99\n```\n\ndepends-on: #3\n")
     check("a fenced SAMPLE of the syntax is not an edge; the bare line beside it is",
           e["depends-on"] == {3}, f"{e}")

@@ -60,6 +60,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import check_criteria  # noqa: E402 -- the criteria reader and rules, not a second copy
+import check_issue_ready  # noqa: E402 -- the one CommonMark fence reader (#1461)
 import check_issue_mockup  # noqa: E402 -- the Mock-up declaration reader (#1376)
 
 SLICE_RE = re.compile(r"^##\s+(S\d+)\s*[—–:-]\s*(\S.*?)\s*$")
@@ -88,11 +89,10 @@ def parse(text: str) -> tuple[list[Slice], list[int]]:
     slices: list[Slice] = []
     orphans: list[int] = []
     current: Slice | None = None
-    fence: str | None = None     # the info string of the open fence, "" for a plain one
+    # Fences are read by check_issue_ready.fence_lines, the one reader both files use (#1461).
+    state = check_issue_ready.fence_lines(text)
     for no, raw in enumerate(text.splitlines(), start=1):
-        f = re.match(r"^[ \t]*```[ \t]*(\w*)", raw)
-        if f:
-            fence = None if fence is not None else f.group(1)
+        fence = state[no - 1]
         m = SLICE_RE.match(raw) if fence is None else None
         if m:
             current = Slice(m.group(1), m.group(2), no)
@@ -349,6 +349,26 @@ def selftest() -> int:  # noqa: PLR0915 -- a fixture list; each firing case sits
                    parse(deps)[0][0].issues == ["#93"], parse(deps)[0][0].issues)
         check_that("CONTROL: a bare depends-on line is an edge",
                    parse("## S1 — First\n\ndepends-on: #93\n")[0][0].issues == ["#93"])
+        # #1435: CommonMark fences -- tildes, and a longer fence holding a shorter one.
+        tilde = "## S1 — First\n\n~~~\ndepends-on: S9\n~~~\n"
+        check_that("a depends-on inside a ~~~ fence is not an edge", parse(tilde)[0][0].slices == [],
+                   parse(tilde)[0][0].slices)
+        nested = "## S1 — First\n\n````\n```\ndepends-on: S9\n```\n````\n"
+        check_that("a ``` inside a ```` fence does not close it", parse(nested)[0][0].slices == [],
+                   parse(nested)[0][0].slices)
+        # #1461: read by the same reader as check_issue_ready, so both agree on these two shapes.
+        unclosed = "## S1 — First\n\n```\ndepends-on: S9\n"
+        check_that("an UNCLOSED fence runs to the end, so the line inside it is a sample",
+                   parse(unclosed)[0][0].slices == [], parse(unclosed)[0][0].slices)
+        extra = "## S1 — First\n\n```deps extra\ndepends-on: #93\n```\n"
+        check_that("a fence whose info string STARTS with deps is a deps fence",
+                   parse(extra)[0][0].issues == ["#93"], parse(extra)[0][0].issues)
+        body = "```\ndepends-on: #9\n"
+        check_that("...and both readers agree, on the unclosed fence",
+                   (parse("## S1 — First\n\n" + body)[0][0].issues == []) == (check_issue_ready.parse_edges(body)["depends-on"] == set()))
+        after = "## S1 — First\n\n~~~\nx\n~~~\ndepends-on: #93\n"
+        check_that("CONTROL: a depends-on after a closed ~~~ fence is an edge", parse(after)[0][0].issues == ["#93"],
+                   parse(after)[0][0].issues)
         # Order follows the edges, not the numbering.
         sl2, _ = check(plan(_slice(1, deps="depends-on: S3"), _slice(2), _slice(3)))
         check_that("a slice numbered first but blocked by a later one is filed after it",
@@ -394,7 +414,6 @@ def selftest() -> int:  # noqa: PLR0915 -- a fixture list; each firing case sits
         body = issue_body(sl, "S3", {"S1": 101, "S2": 102}, "docs/product/specs/sign-in.md")
         check_that("a filed slice's edges are rewritten to issue numbers",
                    "depends-on: #101, #102, #93" in body, body)
-        import check_issue_ready
         check_that("...in exactly the syntax check_issue_ready.py parses",
                    check_issue_ready.parse_edges(body).get("depends-on") == {101, 102, 93},
                    check_issue_ready.parse_edges(body))

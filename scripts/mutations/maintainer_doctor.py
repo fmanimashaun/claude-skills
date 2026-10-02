@@ -16,6 +16,13 @@ GUARD = Guard(
         "evals",
     ),
     mutations=(
+        # #1510: every gate subprocess runs with git auto-maintenance off.
+        Mutation(
+            "a gate runs with git's own auto-maintenance",
+            '                env=hermetic_git.env(),\n',
+            '',
+            "#1510: a gate's git must see maintenance.auto=false",
+        ),
         # #1097. A gate that was KILLED did not run. Reporting it as FAIL is the one verdict it
         # cannot mean, and on `mutation coverage` that verdict means "a guard stopped guarding".
         Mutation(
@@ -152,21 +159,35 @@ GUARD = Guard(
         # nobody thinks of -- an "allowance" that is really a tightening.
         Mutation(
             "the slow-gate allowance is keyed on a gate that does not exist",
-            '    "mutation coverage": 900,',
+            '    "mutation coverage": 1800,',
             '    "mutatoin coverage": 900,',
             "SLOW_GATES names no such gate",
         ),
         Mutation(
             "the slow-gate allowance widens to a gate that reads the tree once",
-            '    "mutation coverage": 900,',
+            '    "mutation coverage": 1800,',
             '    "mutation coverage": 900,\n    "packaging determinism": 900,',
             "SLOW_GATES is",
         ),
         Mutation(
             "a SLOW_GATES entry silently tightens a gate instead of loosening it",
-            '    "mutation coverage": 900,',
+            '    "mutation coverage": 1800,',
             '    "mutation coverage": 30,',
             "silently TIGHTENS a gate",
+        ),
+        Mutation(
+            # #1444: --require-slow must FAIL only a SLOW_GATES timeout; any other hang stays a skip.
+            "--require-slow fails every timed-out gate, not just the slow ones",
+            "elif code == 124 and self.require_slow and name in SLOW_GATES:",
+            "elif code == 124 and self.require_slow:",
+            "NON-slow gate that times out is still SKIP",
+        ),
+        Mutation(
+            # #1486 / review of PR #1491
+            "the gate's total drops below mutation_check's own caps, so a hung guard is killed unnamed",
+            '    "mutation coverage": 1800,',
+            '    "mutation coverage": 1200,',
+            "must stay under the gate's total",
         ),
     ),
 )

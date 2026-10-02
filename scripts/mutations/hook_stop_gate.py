@@ -8,6 +8,9 @@ GUARD = Guard(
     name='hook_stop_gate',
     subject='plugins/rails-flow/hooks/scripts/stop-gate.sh',
     selftest='plugins/rails-flow/scripts/check_hook_gates.py',
+    # Only the fixture groups that drive this subject (#1497): the whole harness per
+    # mutant was ~70% of the mutation-coverage budget.
+    selftest_args=("--only", "stop_gate"),
     # The harness resolves every hook from the selftest's own location, so the whole
     # directory is staged -- one hook's fixtures may exercise another's shape.
     needs=("plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362
@@ -17,6 +20,8 @@ GUARD = Guard(
            'plugins/rails-flow/scripts/check_criteria.py',
            'plugins/rails-flow/scripts/check_handoff.py',
            'plugins/qa-flow/scripts/read_certification.py',
+           'plugins/qa-flow/scripts/push_targets.py',  # release-gate.sh runs it (#1410)
+           'plugins/qa-flow/scripts/release_evidence.py',
            'plugins/rails-flow/scripts/self_consistency.py',
            'plugins/rails-flow/scripts/extract_claims.py',
            # ci-verdict-hint.sh runs ci_verdict_hint.py; unstaged, its fixtures fail and every

@@ -11,11 +11,16 @@ GUARD = Guard(
     name='hook_guard_migrate_matcher',
     subject='plugins/rails-flow/hooks/hooks.json',
     selftest='plugins/rails-flow/scripts/check_hook_gates.py',
+    # Only the fixture groups that drive this subject (#1497): the whole harness per
+    # mutant was ~70% of the mutation-coverage budget.
+    selftest_args=("--only", "guard_migrate"),
     needs=('plugins/rails-flow/hooks/scripts',
            'plugins/qa-flow/hooks/scripts', 'plugins/qa-flow/scripts',
            'plugins/rails-flow/scripts/check_criteria.py',
            'plugins/rails-flow/scripts/check_handoff.py',
            'plugins/qa-flow/scripts/read_certification.py',
+           'plugins/qa-flow/scripts/push_targets.py',  # release-gate.sh runs it (#1410)
+           'plugins/qa-flow/scripts/release_evidence.py',
            'plugins/rails-flow/scripts/self_consistency.py',
            'plugins/rails-flow/scripts/extract_claims.py',
            'plugins/rails-flow/scripts/ci_verdict_hint.py'),

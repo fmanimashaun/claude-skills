@@ -13,9 +13,11 @@ citations. The three facts that decide it, verified against
    conversation's model"*. So pinning `sonnet` on a reviewer means a user who deliberately started an
    Opus session gets a **Sonnet** reviewer. We spent their upgrade for them, downwards.
 3. Pinning *up* spends the user's money: since v2.1.222 a blocked family alias such as `opus` runs on
-   *"the newest version of that family the allowlist permits"*, and only other blocked values fall back
-   to the inherited model (re-read 2026-09-25, #1329). And an alias is a per-provider lookup that
-   *"update[s] over time"* — `sonnet` is Sonnet 5 on the Anthropic API, **Sonnet 4.5** on Amazon
+   *"the newest version of that family the allowlist permits"* on the Anthropic API and Claude Platform
+   on AWS, and other blocked values, other providers, or a family with no permitted version fall back to
+   the inherited model (re-read 2026-09-25 and 2026-09-30, #1329, #1433). And an alias is a per-provider lookup that
+   *"update[s] over time"* — `sonnet` is **Sonnet 5.5** on the Anthropic API (from v2.1.284; Sonnet 5
+   before, re-read 2026-09-29, #1449), **Sonnet 4.6** on Claude Platform on AWS, **Sonnet 4.5** on Amazon
    Bedrock and Google Cloud's Agent Platform, **Sonnet 4.5** on Microsoft Foundry (where `opus` is
    **Opus 4.6** while it is Opus 5.5 everywhere else, re-read 2026-09-25, #1326). A shipped plugin cannot know what its own
    frontmatter selects.
@@ -62,8 +64,23 @@ grades it":
   specs is the judgement, and a suite that asserts the wrong thing passes.
 - **`case-author`** derives cases from a PRD. Nothing checks that a derived case is the *right* case.
 
+## The advisor: our three cheap agents consult it only when stuck
+
+*"Subagents inherit the configured advisor and apply the same pairing check against their own
+model"*, and a Haiku main model can call one (https://code.claude.com/docs/en/advisor). Each call
+*"processes the full transcript anew, with no reuse between calls"*, and ours are long: `a11y-auditor`
+peaked at a median of 83k tokens across 9 stored runs, `perf-tester` 52k over 3 and `qa-reporter` 21k over 3 (measured 2026-09-30 on one machine by `scripts/measure_subagent_context.py`, recorded in the marketplace repository's `docs/evidence/advisor/subagent-context-2026-09-30.md`, #1505). The docs name the
+only control: *"if you want Claude to consult more or less often during a task, say so in your
+instructions"*. So `a11y-auditor`, `perf-tester` and `qa-reporter` each carry a `**The advisor.**`
+paragraph: consult it only when the same error has come back twice or the next step is unclear,
+because axe, k6 and the evidence manifest prove their output, not their plan. The judgement agents
+get no such paragraph: *"The advisor fits long, multi-step tasks where most turns are routine but
+plan quality determines the outcome"*. The tier gate refuses a cheap agent without it.
+
 ## `effort` is deliberately unset
 
 A different field. It *"Overrides the session effort level"* and its available levels
 *"depend on the model"* — which levels each model accepts is unpublished, so a shipped default would
-be a guess that silently degrades on some models. Left to the session.
+be a guess that silently degrades on some models. Left to the session — which in Claude Code is
+`medium` on Opus 5.5 and Sonnet 5.5 unless the user chose otherwise, with thinking that cannot be
+turned off on either (re-read 2026-09-29, #1449).

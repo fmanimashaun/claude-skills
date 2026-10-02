@@ -108,7 +108,7 @@ class Claim:
 # repo-process doctrine below.
 #
 # WHY THIS IS A SECOND LIST. `DOCTRINE_SOURCES` requires every entry to carry at least one row, and
-# rightly: those eleven files were mapped deliberately. The shipped skills are ~46 files nobody has
+# rightly: those twelve files were mapped deliberately. The shipped skills are ~46 files nobody has
 # mapped yet, and declaring them there would fail the `doctrine map coverage` gate with 46 findings
 # on the first run -- red on day one, switched off in a week, which is the failure #800 spent a whole
 # issue removing. Bulk back-filling rows to make it green is worse still: this file already says
@@ -149,9 +149,33 @@ DOCTRINE_SOURCES = (
     "plugins/rails-flow/commands/handoff.md",
     "plugins/rails-flow/commands/fix.md",
     "plugins/design-flow/commands/generate.md",
+    "plugins/qa-flow/commands/certify.md",
 )
 
 CLAIMS: tuple[Claim, ...] = (
+    Claim(
+        claim="A qa-flow certification cannot unlock main without a passing first-boot operator "
+              "walkthrough and a forged-request authorization sweep, both committed at dev and named "
+              "for the release the stamp certifies.",
+        stated_in="plugins/qa-flow/commands/certify.md",
+        anchor="Both are MANDATORY: the stamp cannot be written without them",
+        kind=GUARANTEE,
+        enforced_by=("script:plugins/qa-flow/scripts/release_evidence.py",
+                     "hook:plugins/qa-flow/hooks/scripts/release-gate.sh",
+                     "mutation:release_evidence", "mutation:hook_release_gate"),
+        refs=(1428,),
+        note="A release passed every other certify layer and shipped a root who could not create "
+             "staff and three authorization holes. The gate reads the stamp and the evidence as "
+             "committed at dev and fails closed. KNOWN LIMIT, for one release: an old-shape stamp is "
+             "grandfathered when the commit that introduced it predates GRANDFATHER_BEFORE, so a "
+             "deliberately BACKDATED commit passes until GRANDFATHER_OLD_STAMPS is turned off at the "
+             "next arm. An agent's ordinary commit cannot carry an old committer date by accident. "
+             "SECOND KNOWN LIMIT: evidence already on main, or byte-identical to a record there, is "
+             "refused, but a lightly EDITED copy of last release's walkthrough (one line changed) is "
+             "not caught, and neither is an unedited copy of an OLDER release whose evidence is no "
+             "longer in main's tree (main's tree is read, not its history) -- the check stops an "
+             "unedited copy of LAST release's evidence, not a dishonest one.",
+    ),
     Claim(
         claim="A change a user can see is not built until the owner has approved a clickable "
               "mock-up of it, and the approval is recorded as a link to the owner's comment.",
@@ -166,9 +190,34 @@ CLAIMS: tuple[Claim, ...] = (
              "approval LINK exists, never that the comment says yes; that is the reviewer's click.",
     ),
     # ---- the SHIPPED doctrine (#798) ------------------------------------------------------
-    # Five claims that already have gates to cite. Deliberately not more: a row nobody derived is
-    # the green artifact this file exists to replace, and `SHIPPED_FLOOR` tracks the rest as
-    # unmapped rather than pretending they are covered.
+    # Claims that already have gates to cite, plus the ADVICE rows #1363 recorded with the measured
+    # reason nothing enforces them. Deliberately not more: a row nobody derived is the green
+    # artifact this file exists to replace, and `SHIPPED_FLOOR` tracks the rest as unmapped rather
+    # than pretending they are covered.
+    Claim(
+        claim="Prefer expanded conditionals over guard clauses when writing new code (style.md §1).",
+        stated_in="skills/rails-8/references/style.md",
+        anchor="No cop can enforce it the other way round, either.",
+        kind=ADVICE,
+        note="#1363, verified on rubocop 1.91.0: no stock cop prefers expanded conditionals, and "
+             "Style/GuardClause has no EnforcedStyle to invert. The rule's two exceptions (a return "
+             "at the start; a non-trivial body) are judgement, and it says to leave working code alone. "
+             "A cop would contradict the section it enforced.",
+        refs=(1363,),
+    ),
+    Claim(
+        claim="Indent under visibility modifiers, with no blank line after them; a private-only "
+              "module is the exception (style.md §5).",
+        stated_in="skills/rails-8/references/style.md",
+        anchor="It cannot simply be switched on",
+        kind=ADVICE,
+        note="#1363, verified on rubocop 1.91.0 / rubocop-rails-omakase 1.1.0: IndentationWidth + "
+             "IndentationConsistency(indented_internal_methods) + EmptyLinesAroundAccessModifier"
+             "(only_before) enforce the main shape exactly, but flag the private-only-module exception "
+             "twice, and no option expresses that exception. Advice by default; a project may adopt "
+             "the three with a per-file carve-out for private-only modules.",
+        refs=(1363,),
+    ),
     Claim(
         claim="The prescribed testing stack is not a menu — a project missing simplecov, webmock "
               "or vcr is incomplete, not merely different.",

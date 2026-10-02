@@ -58,8 +58,9 @@ EXTERNAL CLAIMS THIS ENCODES, AND THEIR SOURCES (verified 2026-07-31)
       inherited model. Before v2.1.222 an alias fell back too (re-read 2026-09-25, #1329).  (same page)
     * `model` IS honoured for plugin agents -- only "`hooks`, `mcpServers`, or `permissionMode`" are
       ignored there.  (same page)
-    * An alias is a per-provider lookup that moves: `sonnet` is Sonnet 5 on the Anthropic API but
-      Sonnet 4.5 on Amazon Bedrock and Microsoft Foundry, and "Aliases point to the recommended
+    * An alias is a per-provider lookup that moves: `sonnet` is Sonnet 5.5 on the Anthropic API
+      (from v2.1.284; Sonnet 5 before, #1449), Sonnet 4.6 on Claude Platform on AWS, and Sonnet 4.5 on
+      Amazon Bedrock, Google Cloud and Microsoft Foundry, and "Aliases point to the recommended
       version for your provider and update over time".  https://code.claude.com/docs/en/model-config
     * `maxTurns` is "Maximum number of agentic turns before the subagent stops" -- a turn bound, not
       an attempt bound, so it complements the attempt cap.  (sub-agents page)
@@ -196,9 +197,35 @@ TIERS_BEGIN_RE = re.compile(r"<!--\s*([a-z0-9-]+):tiers:begin\s*-->")
 TIERS_END_RE = re.compile(r"<!--\s*([a-z0-9-]+):tiers:end\s*-->")
 TIER_MODELS: dict[str, str] = {"judgement": "inherit", "mechanical": "haiku"}
 # Aliases that select a MORE expensive model than the session already chose. Shipping one spends a
-# stranger's money on our authority -- or is silently dropped by their availableModels allowlist.
+# stranger's money on our authority. Where their availableModels allowlist blocks it, a family alias
+# (`opus`, `sonnet`, `haiku`, `fable`) runs on the newest version of that family the allowlist permits,
+# on the Anthropic API and Claude Platform on AWS; any other blocked value, any other provider, or a
+# family with no permitted version runs on the inherited model (sub-agents; model-config).
 EXPENSIVE_ALIASES = frozenset({"opus", "fable", "best", "opusplan", "opus[1m]", "sonnet[1m]"})
 EMPTY_PROOF = frozenset({"", "-", "--", "—", "–", "n/a", "na", "none", "tbd", "todo"})
+# A mechanical agent's output is proven outside itself, so an advisor's full-transcript read buys cost,
+# not correctness. The docs name the control: "There is no setting to cap or force advisor calls; if
+# you want Claude to consult more or less often during a task, say so in your instructions"
+# (https://code.claude.com/docs/en/advisor). No frontmatter field exists, so the agent's own prompt
+# carries it, under this marker (#1505).
+ADVISOR_MARKER = "**The advisor.**"
+
+
+def _has_advisor_instruction(path: Path) -> bool:
+    """A BODY line that opens with the marker and says "only when" -- not the frontmatter, not a
+    quote, not a fenced example, and not a paragraph that tells the agent to consult it freely
+    (independent review of PR #1507)."""
+    text = path.read_text(encoding="utf-8")
+    if text.startswith("---\n") and "\n---\n" in text[4:]:
+        text = text[4:].split("\n---\n", 1)[1]
+    fenced = False
+    for line in text.splitlines():
+        if line.lstrip().startswith(("```", "~~~")):
+            fenced = not fenced
+            continue
+        if not fenced and line.startswith(ADVISOR_MARKER) and "only when" in line:
+            return True
+    return False
 FRONTMATTER_FIELD_RE = re.compile(r"^(?P<key>[a-z][\w-]*)\s*:\s*(?P<value>.*?)\s*$")
 
 
@@ -496,9 +523,10 @@ def _executor_tier(section: Section, findings: list[str]) -> str | None:
     for bad in EXPENSIVE_ALIASES & models:
         findings.append(
             f"executor (line {section.start}): `{bad}` selects a more expensive model than the "
-            "session already chose. Where the org's availableModels blocks it, Claude Code runs the "
-            "newest version of that family the allowlist permits, so the pin spends someone else's "
-            "money on our authority either way. Use `inherit`."
+            "session already chose, spending someone else's money on our authority. Where the org's "
+            "availableModels blocks it, a family alias (`opus`, `sonnet`, `haiku`, `fable`) runs on the "
+            "newest version the allowlist permits on the Anthropic API and Claude Platform on AWS, and "
+            "anything else on the inherited model. Use `inherit`."
         )
     return tier
 
@@ -753,9 +781,10 @@ def check_tiers(rows: list[TierRow], agents: dict[str, tuple[Path, str | None]] 
         if row.model in EXPENSIVE_ALIASES:
             findings.append(
                 f"tier table line {row.line}: `{row.agent}` pins `{row.model}`, which selects a "
-                "more expensive model than the user's session chose. When their availableModels blocks "
-                "the alias, Claude Code substitutes the newest version of that family they permit, so "
-                "it spends their money on our authority either way."
+                "more expensive model than the user's session chose, spending their money on our "
+                "authority. When their availableModels blocks it, a family alias (`opus`, `sonnet`, "
+                "`haiku`, `fable`) runs on the newest version they permit on the Anthropic API and Claude "
+                "Platform on AWS, and anything else on the inherited model."
             )
         elif row.model.startswith("claude-"):
             findings.append(
@@ -806,6 +835,12 @@ def check_tiers(rows: list[TierRow], agents: dict[str, tuple[Path, str | None]] 
                 f"{path}: agent `{name}` pins `model: {model}` while the tier table (line "
                 f"{row.line}) says `{row.model}` -- doctrine and frontmatter disagree, so one of "
                 "them is lying to whoever reads it next."
+            )
+        if row.tier == "mechanical" and not _has_advisor_instruction(path):
+            findings.append(
+                f"{path}: mechanical agent `{name}` carries no `{ADVISOR_MARKER}` instruction -- it "
+                "inherits the session's advisor, and each call rereads its whole transcript at the "
+                "advisor's rates. The docs' only control is the agent's instructions (model-tiers.md, #1505)."
             )
     for row in rows:
         if row.agent not in agents:

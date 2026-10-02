@@ -8,6 +8,14 @@ GUARD = Guard(
     subject="scripts/read_certification.py",
     selftest="scripts/read_certification.py",
     mutations=(
+        # #1437: the release gate passes the stamp as committed at dev; ignoring --stamp reads the
+        # working-tree file again.
+        Mutation(
+            "--stamp is ignored",
+            "    state, value = inspect(field, a.stamp)",
+            "    state, value = inspect(field)",
+            "--stamp reads the given file, not qa/CERTIFICATION",
+        ),
         Mutation(
             "a non-JSON stamp is reported as a failed verdict again, which is the wrong problem",
             "    except ValueError:\n        return NOT_JSON, \"\"",

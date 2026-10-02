@@ -56,6 +56,16 @@ jobs:
             echo "$bin: $("$bin" --version)"
           done
 
+      # `kamal_destination.py --selftest` asks Kamal's own loader how a destination merges and what
+      # RAILS_ENV each role resolves (#1465). Without the gem those fixtures report exit 3 (INCOMPLETE),
+      # which the doctor maps to SKIP, and its mutation guard's baseline reads INERT. Pinned to the
+      # version the fixtures were verified against; the require FAILS the step rather than skip.
+      - name: Kamal for the deploy-destination fixtures
+        run: |
+          set -euo pipefail
+          gem install --user-install --no-document kamal -v 2.12.0
+          ruby -e 'require "kamal"; puts "kamal: #{Kamal::VERSION}"'
+
       # The gate sweep WITHOUT the machine diagnostics. Those ask about a maintainer's clone --
       # current branch, stale local `main` ref, `gh` auth, the licensed corpora -- none of which is
       # meaningful on a runner, and failing on them would teach people to ignore a red build.
@@ -66,7 +76,7 @@ jobs:
       # sweep's 475 s) and REPORTS the skip. A push to dev -- the merge commit no PR tested -- and the
       # promotion (release.yml calls this workflow) run everything, so nothing reaches main without it (#866).
       - name: Gate sweep
-        run: python3 scripts/maintainer_doctor.py --gates-only ${{ github.event_name == 'pull_request' && '--fast' || '' }}
+        run: python3 scripts/maintainer_doctor.py --gates-only ${{ github.event_name == 'pull_request' && '--fast' || '--require-slow' }}
 
       # The PROMOTION pre-flight (#990): a pull request whose base is `main` is the one merge that
       # publishes, so it is the one place `### Unreleased` must not survive. The v1.127.0 promotion

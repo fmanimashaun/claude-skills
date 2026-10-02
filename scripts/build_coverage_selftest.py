@@ -710,6 +710,19 @@ def run() -> int:
     if "HR" not in fb:
         FAILURES.append("`HR` missing from the Flowbite catalogue — it is their separator")
 
+    # #1408. A row's "where to use" text lives twice: the generator's `USE` table and the committed
+    # coverage.md. `--check` compares them only when design-corpora/ is present, so a doctrine edit
+    # that hand-updates the committed row and not the generator went unseen for five days. This
+    # half needs no corpora: every `USE` value must appear verbatim in the committed file.
+    _tick()
+    _committed = (Path(bc.__file__).resolve().parents[1] / "skills" / "design-system" / "references"
+                  / "coverage.md").read_text(encoding="utf-8")
+    for _name, _use in bc.USE.items():
+        # A whole CELL, not a substring: a clause lost at either end of the row must fail too.
+        if f"| {_use} |" not in _committed:
+            FAILURES.append(f"USE entry {_name!r} is not in the committed coverage.md -- the generator and "
+                            "the shipped row disagree; fix the generator, then regenerate with the corpora")
+
     if FAILURES:
         print(f"SELFTEST FAILED -- {len(FAILURES)} of {CHECKS} checks:", file=sys.stderr)
         for failure in FAILURES:

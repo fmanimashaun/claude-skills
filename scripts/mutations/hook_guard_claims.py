@@ -11,6 +11,9 @@ GUARD = Guard(
     name="hook_guard_claims",
     subject="plugins/rails-flow/hooks/scripts/guard-claims.sh",
     selftest="plugins/rails-flow/scripts/check_hook_gates.py",
+    # Only the fixture groups that drive this subject (#1497): the whole harness per
+    # mutant was ~70% of the mutation-coverage budget.
+    selftest_args=("--only", "guard_claims"),
     # The harness resolves every hook from the selftest's own location, so the whole directory is
     # staged; `extract_claims.py` is what this hook shells out to, and without it every mutation
     # reads as caught against an unrun check (#1109).
@@ -20,21 +23,42 @@ GUARD = Guard(
            "plugins/rails-flow/scripts/check_criteria.py",
            "plugins/rails-flow/scripts/check_handoff.py",
            "plugins/qa-flow/scripts/read_certification.py",
+           "plugins/qa-flow/scripts/push_targets.py",  # release-gate.sh runs it (#1410)
+           "plugins/qa-flow/scripts/release_evidence.py",
            "plugins/rails-flow/scripts/self_consistency.py",
            "plugins/rails-flow/scripts/extract_claims.py",
            # ci-verdict-hint.sh runs it; unstaged, every mutation here read as caught (#1173).
            "plugins/rails-flow/scripts/ci_verdict_hint.py"),
     mutations=(
+        # #1435: the checker failing is a BLOCK, not a warning (owner decision).
+        Mutation(
+            "a crashed PR-template helper warns and lets the command through again",
+            '      echo "Fix it, or ship deliberately unchecked: RAILS_FLOW_CLAIMS_OK=1 (audited)." >&2\n      exit 2\n    elif [ "$tpl_rc" -eq 1 ] && [ -z "$gaps" ]; then',
+            '      echo "Fix it, or ship deliberately unchecked: RAILS_FLOW_CLAIMS_OK=1 (audited)." >&2\n    elif [ "$tpl_rc" -eq 1 ] && [ -z "$gaps" ]; then',
+            "a body the helper cannot judge (a directory) is BLOCKED",
+        ),
+        Mutation(
+            "a helper that died at import warns and lets the command through again",
+            '      echo "BLOCKED by rails-flow claim guard: the PR-template check died before judging (exit 1, no sections listed)." >&2\n      echo "Fix it, or ship deliberately unchecked: RAILS_FLOW_CLAIMS_OK=1 (audited)." >&2\n      exit 2',
+            '      echo "BLOCKED by rails-flow claim guard: the PR-template check died before judging (exit 1, no sections listed)." >&2\n      echo "Fix it, or ship deliberately unchecked: RAILS_FLOW_CLAIMS_OK=1 (audited)." >&2',
+            "a helper that fails at import is BLOCKED",
+        ),
+        Mutation(
+            "the quote scanner stops honouring an escaped quote inside a double-quoted string",
+            '    elif q == "\\"" and c == "\\\\":\n        i += 1',
+            '    elif False:\n        i += 1',
+            "an escaped quote inside the title does not end it early",
+        ),
         Mutation(
             "an empty exit 1 (the helper died at import) reads as a pass again",
             "    elif [ \"$tpl_rc\" -eq 1 ] && [ -z \"$gaps\" ]; then",
             "    elif false; then",
-            "a helper that fails at import says NOT checked, never silence",
+            "a helper that fails at import is BLOCKED",
         ),
         Mutation(
             "quoted strings are kept, so -R in a title switches the check off",
-            "unquoted=\"$(printf '%s' \"$cmd\" | sed -E \"s/'[^']*'//g; s/\\\"[^\\\"]*\\\"//g\")\"",
-            "unquoted=\"$cmd\"",
+            "  unquoted=\"$(printf '%s' \"$cmd\" | python3 -c '",
+            "  unquoted=\"$(printf '%s' \"$cmd\"; true || python3 -c '",
             "`-R` inside a quoted --title is text, so the body is still judged",
         ),
         Mutation(

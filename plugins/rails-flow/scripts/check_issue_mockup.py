@@ -41,8 +41,14 @@ INLINE = re.compile(r"^\s*(?:[-*]\s*)?\**mock-?up\**\s*:\s*(.+)$", re.I | re.M)
 NEXT_HEADING = re.compile(r"^\s{0,3}#{1,6}\s", re.M)
 # A link to something: an https URL with a host, a committed record under docs/product/mockups/, or a
 # mock-up file. NOT any word ending in `.md` -- "TBD, see notes.md" read as linked (review of #1387).
-LINK = re.compile(r"https://[^/\s]+\.[^\s]+|(?:^|\s)docs/product/mockups/\S+"
-                  r"|(?:^|\s)[\w./-]+\.(?:html?|png|jpe?g|webp|pdf)\b", re.I)
+# A record path must end in an extension -- any: `docs/product/mockups/TBD` is a placeholder (#1430),
+# but `.gif` and `.avif` are mock-ups (review of PR #1478).
+# A path in backticks or as a markdown link target counts too, and a mock-up file's extension must END
+# its name outside docs/product/mockups/ (`foo.pdf.TBD` names no such file), and `.html.erb`, `.gif`
+# and `.avif` are mock-ups there too (#1479, after #1478).
+LINK = re.compile(r"https://[^/\s]+\.[^\s]+"
+                  r"|(?:^|[\s(`\[])docs/product/mockups/(?:[^\s/`\]]+/)*[^\s/`\]]+\.[A-Za-z0-9]+(?=[\s),.;`\]]|$)"
+                  r"|(?:^|[\s(`\[])[\w./-]+\.(?:html?|png|jpe?g|gif|avif|webp|pdf|svg)(?:\.erb)?(?![\w/-]|\.\w)", re.I)
 NO_CHANGE = re.compile(r"\bno visible change\b", re.I)
 
 
@@ -57,6 +63,20 @@ def answer(body: str) -> str | None:
     return m.group(1).strip() if m else None
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from check_mockup_gate import APPROVAL_URL  # noqa: E402 -- one approval rule, never a second
+APPROVAL = re.compile(APPROVAL_URL.pattern.strip("^$"))
+
+
+def mockup_link(text: str) -> bool:
+    """A link to the MOCK-UP, not to the comment approving it: a section holding only the approval
+    URL read as linked and approved (#1430)."""
+    # A mock-up can itself live in an issue comment, whose URL has the approval's shape: two DISTINCT
+    # comments -- by comment id, since issues/12#issuecomment-99 and pull/12#issuecomment-99 are the
+    # same comment -- mean one of them is the mock-up (review of PR #1478).
+    return bool(LINK.search(APPROVAL.sub(" ", text))) or len({m.group(0).rsplit('#', 1)[-1] for m in APPROVAL.finditer(text)}) >= 2
+
+
 def verdict(body: str) -> tuple[bool, str]:
     text = answer(body)
     if text is None:
@@ -65,14 +85,9 @@ def verdict(body: str) -> tuple[bool, str]:
         return False, "the Mock-up section is empty"
     if NO_CHANGE.search(text):
         return True, "declared: no visible change"
-    if LINK.search(text):
+    if mockup_link(text):
         return True, "declared: mock-up linked"
     return False, f"the Mock-up section neither links a mock-up nor says \"no visible change\": {text[:60]!r}"
-
-
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from check_mockup_gate import APPROVAL_URL  # noqa: E402 -- one approval rule, never a second
-APPROVAL = re.compile(APPROVAL_URL.pattern.strip("^$"))
 
 
 def ready(body: str) -> tuple[bool, str]:
@@ -134,6 +149,37 @@ def selftest() -> int:
     ok, why = ready(form.format("No visible change: the job only retries."))
     check_that("CONTROL: no visible change is ready with no approval", ok, why)
 
+    # #1430: an approval link is not a mock-up link, and a record path needs an extension.
+    ONLY_APPROVAL = "approved https://github.com/acme/app/issues/12#issuecomment-99"
+    ok, why = ready(form.format(ONLY_APPROVAL))
+    check_that("#1430: a section holding ONLY the approval link is not ready", not ok, why)
+    ok, why = verdict(form.format(ONLY_APPROVAL))
+    check_that("#1430: ...nor even linked, at filing", not ok and "neither" in why, why)
+    ok, why = verdict(form.format("docs/product/mockups/TBD"))
+    check_that("#1430: docs/product/mockups/TBD is a placeholder, not a link", not ok, why)
+    ok, why = verdict(form.format("docs/product/mockups/bell.md"))
+    check_that("#1430 CONTROL: a committed .md record path is linked", ok, why)
+    ok, why = verdict(form.format("docs/product/mockups/bell.svg"))
+    check_that("#1430 CONTROL: an .svg mock-up is linked", ok, why)
+    ok, why = verdict(form.format("docs/product/mockups/bell.gif"))
+    check_that("PR #1478 review: a .gif mock-up is linked (any extension)", ok, why)
+    TWO = ("mock-up: https://github.com/acme/app/issues/12#issuecomment-50 — approved "
+           "https://github.com/acme/app/issues/12#issuecomment-99")
+    ok, why = ready(form.format(TWO))
+    check_that("PR #1478 review: a mock-up posted as a comment, plus its approval, is ready", ok, why)
+    ok, why = verdict(form.format("docs/product/mockups/v1.0/TBD"))
+    check_that("PR #1478 final review: a dotted FOLDER does not make a placeholder a link", not ok, why)
+    ok, why = verdict(form.format("docs/product/mockups/v1.0/bell.png"))
+    check_that("PR #1478 final review CONTROL: a file in a dotted folder is linked", ok, why)
+    ALIAS = ("https://github.com/acme/app/issues/12#issuecomment-99 and "
+             "https://github.com/acme/app/pull/12#issuecomment-99")
+    ok, why = verdict(form.format(ALIAS))
+    check_that("PR #1478 final review: one comment reached two ways is not a mock-up plus approval", not ok, why)
+    SAME = ("https://github.com/acme/app/issues/12#issuecomment-99 and again "
+            "https://github.com/acme/app/issues/12#issuecomment-99")
+    ok, why = verdict(form.format(SAME))
+    check_that("PR #1478 review: the SAME approval link twice is still not a mock-up", not ok, why)
+
     ok, why = verdict("### What\n\nA bell.\n")
     check_that("an issue with no Mock-up section is missing", not ok and "no Mock-up section" in why, why)
     ok, why = verdict(form.format("_No response_"))
@@ -148,6 +194,22 @@ def selftest() -> int:
     # And prose that mentions mock-ups is not the section.
     ok, why = verdict("We should make a mock-up for this someday.\n")
     check_that("prose that mentions a mock-up is not a section", not ok and "no Mock-up section" in why, why)
+
+    # #1479: paths in backticks or as link targets are linked; a mock-up extension must end the name.
+    for label, text in (("a record path in backticks", "`docs/product/mockups/bell.md`"),
+                        ("a markdown link target", "[bell](docs/product/mockups/bell.md)"),
+                        ("a backticked mock-up file", "`design/bell.svg`")):
+        ok, why = verdict(form.format(text))
+        check_that(f"CONTROL: {label} is linked", ok, why)
+    ok, why = verdict(form.format("see foo.pdf.TBD"))
+    check_that("foo.pdf.TBD names no mock-up file", not ok, why)
+    for label, text in (("a view template mock-up", "app/views/bell.html.erb"),
+                        ("a .gif outside the folder", "design/bell.gif"),
+                        ("an .avif outside the folder", "design/bell.avif")):
+        ok, why = verdict(form.format(text))
+        check_that(f"CONTROL: {label} is linked (#1479 review)", ok, why)
+    ok, why = verdict(form.format("see foo.pdf."))
+    check_that("CONTROL: a mock-up file ending a sentence is linked", ok, why)
 
     for f in failures:
         print(f"selftest FAIL: {f}")

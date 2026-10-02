@@ -20,6 +20,14 @@ GUARD = Guard(
         "scripts/classify_door.py",
     ),
     mutations=(
+        # #1461: fences come from check_issue_ready.fence_lines, the one reader.
+        Mutation(
+            "the plan's fences are not read at all, so a sample depends-on becomes an edge",
+            "    state = check_issue_ready.fence_lines(text)",
+            "    state = [None] * len(text.splitlines())",
+            "a depends-on inside a ~~~ fence is not an edge",
+        ),
+        # #1435: CommonMark fences, as check_issue_ready.py reads them.
         Mutation(
             "a cycle is no longer found",
             "            if state.get(w) == 1:\n                return stack[stack.index(w):] + [w]",

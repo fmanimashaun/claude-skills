@@ -54,7 +54,7 @@ RAW_FIELD_METHODS = ("text_field|email_field|password_field|number_field|telepho
                      "month_field|week_field|color_field|range_field|file_field|text_area|textarea|"
                      "select|collection_select|grouped_collection_select|time_zone_select|date_select|"
                      "datetime_select|time_select|check_box|checkbox|collection_check_boxes|"
-                     "radio_button|collection_radio_buttons|label|fields_for|rich_text_area")
+                     "radio_button|collection_radio_buttons|label|fields_for|rich_textarea|rich_text_area")
 RULES = (
     ("form-with", re.compile(r"(?<![\w.])(form_with|form_for)\b")),
     ("form-tag", re.compile(r"(?<![\w.])form_tag\b")),
@@ -63,7 +63,7 @@ RULES = (
     ("field-tag-helper", re.compile(
         r"(?<![\w.])(text_field|select|check_box|radio_button|text_area|number_field|email_field|"
         r"password_field|date_field|datetime_field|time_field|file_field|search_field|telephone_field|"
-        r"url_field|month_field|week_field|color_field|range_field)_tag\b")),
+        r"url_field|month_field|week_field|color_field|range_field|rich_textarea|rich_text_area)_tag\b")),
     ("tag-builder-field", re.compile(r"\btag\.(input|select|textarea|form)\b")),
 )
 # The block variable of a simple_form builder. The call may span lines (`simple_form_for @u,\n  url: x
@@ -71,9 +71,20 @@ RULES = (
 BUILDER = re.compile(r"\bsimple_(?:form_for|fields_for)\b[^%]*?\bdo\s*\|\s*(\w+)", re.S)
 # A read-only input with no `name` is a DISPLAY (a copyable API key or invite URL), not a form field:
 # nothing posts it, and simple_form has nothing to wrap (pre-release review: our own clipboard doctrine).
-DISPLAY_INPUT = re.compile(r"\breadonly\b", re.I)
-NAMED = re.compile(r"\bname\s*=", re.I)
-WHOLE_TAG = re.compile(r"<input\b(?:<%.*?%>|[^>])*>", re.I | re.S)
+# ANCHORED TO A REAL ATTRIBUTE (#1443). `\breadonly\b` matched `data-readonly` and `placeholder="readonly"`,
+# and `\bname\s*=` matched `data-name=` and missed a name set through ERB (`tag.attributes(name: "x")`),
+# so an input that POSTS could be skipped as a display. An attribute follows whitespace; an ERB
+# keyword follows neither a word character nor a hyphen.
+DISPLAY_INPUT = re.compile(r"(?:(?<=\s)readonly(?=[\s=/>]|$)|(?<![\w-])readonly:\s*true\b)", re.I)
+NAMED = re.compile(r"(?:(?<=\s)name\s*=(?!>)|(?<![\w-])name:|(?<![\w-])[:\"']?name[\"']?\s*=>)", re.I)
+# A bare `<` cannot occur inside a tag outside ERB or a quoted value, so the match stops there (#1443):
+# `[^>]` alone ran on into the NEXT tag and let its `readonly` excuse this input. Quoted values are read
+# whole, because `value="a<b"` is legal and stopping at its `<` cut the tag before a later `name=`.
+# NO BACKTRACKING (CodeQL py/redos on #1455). `<%.*?%>` could itself span `%><%` into the next ERB tag, so
+# an input of many `%><%` split into ERB spans in exponentially many ways (measured: x4 per two repetitions).
+# The ERB body is now `[^%]` or a `%` not closing the tag, so it cannot contain `%>` and ends in exactly one
+# place; the other alternatives start on disjoint characters. One way to match, so linear time.
+WHOLE_TAG = re.compile(r"<input\b(?:<%(?:[^%]|%(?!>))*%>|\"[^\"]*\"|'[^']*'|[^<>\"'])*>", re.I | re.S)
 EXEMPTIONS = ".rails-flow/raw-form-exemptions.json"
 
 
@@ -99,7 +110,10 @@ def scan(rel: str, text: str) -> list[tuple[str, int, str]]:
                 # The tag ends at the first `>` that is not inside an ERB `<% … %>`, so
                 # `value="<%= @url %>"` does not cut it short before `readonly`.
                 end = WHOLE_TAG.match(text, m.start())
-                tag = end.group(0) if end else text[m.start():]
+                # An `<input` with no closing `>` falls back to the rest of its LINE, never the rest
+                # of the file, where an unrelated later `readonly` could excuse it (#1443).
+                eol = text.find("\n", m.start())
+                tag = end.group(0) if end else text[m.start(): eol if eol != -1 else len(text)]
                 if DISPLAY_INPUT.search(tag) and not NAMED.search(tag):
                     continue
             hits.append((rule, at(m.start()), m.group(0).strip()))
@@ -184,7 +198,50 @@ def selftest() -> int:
     for rule, src in planted.items():
         check_that(f"a planted {rule} is refused", rule in rules(src), rules(src))
     check_that("a raw <select> is refused", "raw-field" in rules("<select name='a'></select>"))
+    # #1443: the display exemption is judged on real attributes only.
+    check_that("CONTROL: a readonly display input is still excused",
+               "raw-field" not in rules('<input value="x" readonly>'))
+    check_that("a name set through ERB makes a readonly input a posting field",
+               "raw-field" in rules('<input <%= tag.attributes(name: "x") %> readonly>'))
+    check_that("data-readonly is not readonly", "raw-field" in rules('<input data-readonly value="x">'))
+    check_that("placeholder=\"readonly\" is not readonly", "raw-field" in rules('<input placeholder="readonly" value="x">'))
+    check_that("data-name is not a name, so a readonly display with it is still excused",
+               "raw-field" not in rules('<input data-name="x" readonly>'))
+    check_that("an <input> is not closed by the NEXT tag's `>`, so that tag's readonly cannot excuse it",
+               "raw-field" in rules('<input value="a"\n<p readonly>later</p>'))
+    check_that("an <input> with no `>` anywhere is judged on its own line only",
+               "raw-field" in rules('<input value="a"\nreadonly'))
+    check_that("a `<` inside a quoted value does not end the tag before a later name=",
+               "raw-field" in rules('<input value="a<b" readonly\n       name="q">'))
+    check_that("CONTROL: a quoted `<` in a readonly display input is still excused",
+               "raw-field" not in rules('<input value="a<b" readonly>'))
+    check_that('a "name" => hash rocket makes a readonly input a posting field',
+               "raw-field" in rules('<input readonly <%= tag.attributes("name" => "q") %>>'))
+    check_that("a :name => hash rocket makes a readonly input a posting field",
+               "raw-field" in rules('<input readonly <%= tag.attributes(:name => "q") %>>'))
+    # LINEAR TIME. Run in a SUBPROCESS with a timeout: CPython's regex engine cannot be interrupted from
+    # inside the process, so a backtracking pattern would hang the selftest instead of failing it.
+    import subprocess, sys as _sys
+    probe = ("import importlib.util, sys; spec = importlib.util.spec_from_file_location('m', sys.argv[1]); "
+             "m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); "
+             "m.WHOLE_TAG.match('<input <%' + '%><%' * 50000); m.WHOLE_TAG.match('<input ' + '%><%' * 50000)")
+    try:
+        subprocess.run([_sys.executable, "-c", probe, str(Path(__file__).resolve())], timeout=2, check=True,
+                       capture_output=True)
+        linear = True
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError):
+        linear = False
+    check_that("WHOLE_TAG matches a pathological run of `%><%` in linear time (no ReDoS)", linear)
+    check_that("CONTROL: ERB inside the tag still does not end it early",
+               "raw-field" not in rules('<input value="<%= @url %>" readonly>'))
     check_that("a raw <textarea> is refused", "raw-field" in rules("<textarea></textarea>"))
+    # #1439: Rails 8's name is rich_textarea (8.0+); rich_text_area is its kept alias. Both are raw.
+    check_that("f.rich_textarea on a simple_form builder is refused",
+               "raw-builder-call" in rules("<%= simple_form_for @a do |f| %><%= f.rich_textarea :content %><% end %>"))
+    check_that("f.rich_text_area (the alias) on a simple_form builder is refused",
+               "raw-builder-call" in rules("<%= simple_form_for @a do |f| %><%= f.rich_text_area :content %><% end %>"))
+    check_that("CONTROL: simple_form's own rich-text input is not a raw call",
+               rules("<%= simple_form_for @a do |f| %><%= f.input :content, as: :rich_text_area %><% end %>") == [])
     check_that("f.label on a simple_form builder is refused",
                "raw-builder-call" in rules("<%= simple_form_for @u do |f| %><%= f.label :name %><% end %>"))
 
@@ -204,6 +261,10 @@ def selftest() -> int:
                "raw-builder-call" in rules("<%= simple_form_for @u,\n      url: users_path do |f| %><%= f.text_field :a %><% end %>"))
     check_that("CONTROL: a hidden input is not a raw field",
                rules('<input type="hidden" name="t" value="1">') == [])
+    # Rails 8's Action Text tag helper and its kept alias (#1456 review): both render a raw editor field.
+    check_that("rich_textarea_tag is a raw field helper", "field-tag-helper" in rules('<%= rich_textarea_tag :body %>'))
+    check_that("rich_text_area_tag (the alias) is a raw field helper",
+               "field-tag-helper" in rules('<%= rich_text_area_tag :body %>'))
     check_that("CONTROL: hidden_field_tag carries state and is allowed",
                rules('<%= hidden_field_tag :sort, @sort %>') == [])
     check_that("CONTROL: button_to is a single-action button, not a form in markup",

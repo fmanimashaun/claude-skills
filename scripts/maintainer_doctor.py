@@ -50,6 +50,9 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import hermetic_git  # noqa: E402 -- gates start no detached git (#1510)
+
 REPO = Path(__file__).resolve().parents[1]
 
 # The one historical direct-to-main commit, documented in CLAUDE.md. It converged (the same
@@ -319,6 +322,14 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
      ("python3", "scripts/derive_mandated_gems.py", "--check")),
     ("mandated gems derived selftest",
      ("python3", "scripts/derive_mandated_gems.py", "--selftest")),
+    # #1361. The tenancy cop rails-flow installs is DERIVED from rails-8's multi-tenancy.md §7 and
+    # committed beside its checker -- the same cross-plugin reason as the mandated gems above.
+    ("tenancy cop derived",
+     ("python3", "scripts/derive_tenancy_cop.py", "--check")),
+    ("tenancy cop derived selftest",
+     ("python3", "scripts/derive_tenancy_cop.py", "--selftest")),
+    ("rails-flow tenancy cop",
+     ("python3", "plugins/rails-flow/scripts/check_tenancy_cop.py", "--selftest")),
     # #762's neighbour. The curated-doc drift signal is ADVISORY -- it blocks nothing -- and that is
     # exactly why its silent-false-clean survived: nothing ran it. The selftest drives the real hook
     # under a working, absent, broken and shasum-only hasher.
@@ -380,6 +391,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("pipeline hook install", ("python3", "plugins/pipeline/scripts/install_git_hooks_selftest.py")),
     # #1341. The deploy safety pass is BLOCKING; its "no secret in a committed file" step is this script.
     ("pipeline committed-secret scan", ("python3", "plugins/pipeline/scripts/scan_committed_secrets.py", "--selftest")),
+    # #1465. A Kamal destination is carried through whole: `-d` on every command, the destination's
+    # secrets file and overlay, and the credentials environment read from the MERGED config.
+    ("pipeline kamal destination", ("python3", "plugins/pipeline/scripts/kamal_destination.py", "--selftest")),
     # #1338. The auto-merge into dev stops for a human on a one-way door; this is the classifier.
     ("rails-flow one-way door classifier", ("python3", "plugins/rails-flow/scripts/classify_door.py", "--selftest")),
     ("rails-flow PR-template sections", ("python3", "plugins/rails-flow/hooks/scripts/lib/pr_template.py", "--selftest")),
@@ -400,6 +414,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #993: the walk refuses to start without personas, sign-in recipes and journey documents.
     ("qa-flow walkthrough plan", ("python3", "plugins/qa-flow/scripts/walkthrough_plan.py", "--selftest")),
     ("qa-flow evidence manifest", ("python3", "plugins/qa-flow/scripts/evidence_manifest.py", "--selftest")),
+    # #1447. A TypeScript e2e suite is strict, type-checked in CI, and has no explicit `any`.
+    ("qa-flow ts strict", ("python3", "plugins/qa-flow/scripts/check_ts_strict.py", "--selftest")),
     ("qa-flow route crawl", ("python3", "plugins/qa-flow/scripts/crawl_report.py", "--selftest")),
     ("qa-flow theme parity", ("python3", "plugins/qa-flow/scripts/theme_parity.py", "--selftest")),
     # #953. What a page hides INSIDE the viewport, which every boundary assertion passes on.
@@ -414,6 +430,11 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("design-flow setup cross-check selftest", ("python3", "plugins/design-flow/scripts/setup_doctrine_crosscheck.py", "--selftest")),
     ("design-flow rendered conformance", ("python3", "plugins/design-flow/scripts/rendered_conformance.py", "--selftest")),
     ("rails-flow findings records", ("python3", "plugins/rails-flow/scripts/findings.py", "--selftest")),
+    # #1391. Tables are master-detail with no horizontal scroll: a scroller around a table, a fixed
+    # min-width, and a table with no details target. Driven against a real app on its first run.
+    ("design-flow table layout", ("python3", "plugins/design-flow/scripts/check_table_layout.py", "--selftest")),
+    # #1419. No modal card larger than the viewport or flush with its edge, judged per component.
+    ("design-flow modal fit", ("python3", "plugins/design-flow/scripts/check_modal_fit.py", "--selftest")),
     ("design-flow LLM-tell detector", ("python3", "plugins/design-flow/scripts/llm_tell_detector.py", "--selftest")),
     # #157 criterion 6, and NOT redundant with the selftest above: the selftest proves each rule
     # fires and stays silent on synthetic fixtures, while this runs the whole rule set against the
@@ -500,6 +521,7 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # time -- the discriminator is an un-promoted release block, not the absence of Unreleased.
     ("arm window", ("python3", "scripts/check_arm_window.py")),
     ("arm window selftest", ("python3", "scripts/check_arm_window.py", "--selftest")),
+    ("close-on-dev-merge selftest", ("python3", "scripts/close_on_dev_merge.py", "--selftest")),
     ("vendored alone", ("python3", "scripts/check_vendored_alone.py")),
     ("vendored alone selftest", ("python3", "scripts/check_vendored_alone.py", "--selftest")),
 )
@@ -546,7 +568,10 @@ DEFAULT_TIMEOUT = 180
 # Keyed by gate NAME, exactly as CORPORA_GATES is, and the selftest asserts the names are real —
 # a rename would otherwise silently drop the allowance and the gate would start failing on time.
 SLOW_GATES: dict[str, int] = {
-    "mutation coverage": 900,
+    # #1444, MEASURED on the runner: 1602 mutations / 145 guards took 604 s at jobs=4 (dev push run
+    # after PR #1471, 2026-09-29). 1800 s is 3x that: room for the suite to grow, while a hung gate
+    # still surfaces in 30 min rather than 90. Re-set it from the `jobs=N, Xs` on this gate's ok line.
+    "mutation coverage": 1800,
 }
 
 
@@ -608,6 +633,9 @@ RULESET_ARGS: tuple[str, ...] = ()
 @dataclass
 class Doctor:
     fix: bool = False
+    # A push to dev and the promotion must PROVE the slow gates, not report them unknown (#1444).
+    # Set by --require-slow, which only CI's non-PR runs pass: there, a SLOW_GATES timeout is FAIL.
+    require_slow: bool = False
     results: list[Result] = field(default_factory=list)
     fixed: list[str] = field(default_factory=list)
 
@@ -615,8 +643,11 @@ class Doctor:
     def run(self, *args: str, cwd: Path | None = None,
             timeout: int = DEFAULT_TIMEOUT) -> tuple[int, str]:
         try:
+            # Every gate, and every selftest it runs, starts no detached git maintenance (#1510). The
+            # two subprocesses the doctor launches directly (changelog coverage, check-ignore) pass it too.
             p = subprocess.run(
-                args, cwd=cwd or REPO, capture_output=True, text=True, timeout=timeout
+                args, cwd=cwd or REPO, capture_output=True, text=True, timeout=timeout,
+                env=hermetic_git.env(),
             )
             return p.returncode, (p.stdout + p.stderr).strip()
         except FileNotFoundError:
@@ -820,8 +851,8 @@ class Doctor:
         if not script.is_file():
             self.add(SKIP, "changelog coverage", f"{script.name} is missing")
             return
-        proc = subprocess.run([sys.executable, str(script)], cwd=REPO,
-                              capture_output=True, text=True, timeout=DEFAULT_TIMEOUT)
+        proc = subprocess.run([sys.executable, str(script)], cwd=REPO, capture_output=True, text=True,
+                              timeout=DEFAULT_TIMEOUT, env=hermetic_git.env())  # no detached git (#1510)
         if proc.returncode == 0:
             self.add(PASS, "every changed component has a CHANGELOG entry")
             return
@@ -1029,8 +1060,8 @@ class Doctor:
             p = subprocess.run(
                 ["git", "check-ignore", "--", candidate],
                 cwd=probe, capture_output=True, text=True, timeout=60,
-                env={**os.environ, "GIT_CONFIG_GLOBAL": os.devnull,
-                     "GIT_CONFIG_SYSTEM": os.devnull},
+                env=hermetic_git.env({**os.environ, "GIT_CONFIG_GLOBAL": os.devnull,
+                                      "GIT_CONFIG_SYSTEM": os.devnull}),
             )
         except (FileNotFoundError, subprocess.TimeoutExpired):
             return None
@@ -1114,7 +1145,22 @@ class Doctor:
                 continue
             code, out = self.run(*cmd, timeout=SLOW_GATES.get(name, DEFAULT_TIMEOUT))
             if code == 0:
-                self.add(PASS, f"gate: {name}")
+                # A slow gate's own summary line (mutation_check prints jobs and elapsed) is the
+                # measurement SLOW_GATES is set from; on a runner this is the only place it exists.
+                last = out.strip().splitlines()[-1] if name in SLOW_GATES and out.strip() else ""
+                self.add(PASS, f"gate: {name}", last)
+            elif code == 124 and self.require_slow and name in SLOW_GATES:
+                # #1444. Every dev push run reported `mutation coverage` as a timeout-skip and the
+                # job still went green, so the promotion's evidence silently disappeared for a day.
+                # A skip stays the right verdict on a laptop; on the run whose purpose is to prove
+                # this gate, not running it IS the failure.
+                self.add(
+                    FAIL, f"gate: {name}",
+                    f"{out.strip() or 'timed out'} — this run requires the slow gates to COMPLETE "
+                    f"(--require-slow), and it did not. Raise SLOW_GATES['{name}'] from a measured "
+                    f"run, or make the gate faster; never drop the flag to get green",
+                    " ".join(cmd),
+                )
             elif code == 124:
                 # A TIMEOUT IS NOT A FAILURE, and it is not a pass either -- it is the third
                 # verdict this doctor already has. The check was killed; nothing is known about
@@ -1248,6 +1294,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--gates", action="store_true", help="also run the full gate sweep (slower)")
     p.add_argument("--gates-only", action="store_true",
                    help="run ONLY the gate sweep, skipping machine diagnostics (for CI)")
+    p.add_argument("--require-slow", action="store_true",
+                   help="a slow gate that times out is FAIL, not skip: for CI's push and promotion runs (#1444)")
     p.add_argument("--fast", action="store_true",
                    help="with --gates-only: skip the gates in PR_SKIPPED_GATES (reported as SKIP with the reason); "
                         "for pull requests -- dev pushes and the promotion run everything")
@@ -1260,7 +1308,7 @@ def main(argv: list[str] | None = None) -> int:
 
         return st.run()
 
-    return Doctor(fix=args.fix).diagnose(gates=args.gates or args.gates_only,
+    return Doctor(fix=args.fix, require_slow=args.require_slow).diagnose(gates=args.gates or args.gates_only,
                                          gates_only=args.gates_only, fast=args.fast)
 
 

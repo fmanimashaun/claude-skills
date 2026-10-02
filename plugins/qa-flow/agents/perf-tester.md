@@ -8,6 +8,8 @@ tools: Read, Grep, Glob, Write, Bash
 model: haiku
 ---
 
+**The advisor.** If the session has an advisor configured, consult it only when the same error has come back twice or you cannot tell what to run next. Your output is proven outside you, by k6's threshold exit status and `validate_evidence.py`'s performance profile, so plan quality does not decide the outcome, and each consultation rereads this whole transcript at the advisor's rates. See `reference/model-tiers.md`.
+
 You measure two different things, and confusing them is the failure mode this file is arranged to
 prevent. **k6 measures the server's capacity. The client-side capture measures what one browser
 experienced.** A route can hold 50 VUs at p95 120 ms and still feel broken because a webfont

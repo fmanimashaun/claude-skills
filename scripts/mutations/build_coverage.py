@@ -12,6 +12,20 @@ GUARD = Guard(
     # quietly missing. `run_baseline` is what now proves this is sufficient.
     needs=("skills/design-system/references",),
     mutations=(
+        # A clause lost at the END of a row: a substring test passed it (re-review of #1482).
+        Mutation(
+            "the generator's USE row loses its trailing clause",
+            '    "QR code": "wherever a code must be scanned — checkout, tickets, device pairing",',
+            '    "QR code": "wherever a code must be scanned — checkout, tickets",',
+            "USE entry 'QR code' is not in the committed coverage.md",
+        ),
+        # #1408, exactly: the generator's row loses the clause the committed row carries.
+        Mutation(
+            "the generator's USE row drifts from the committed coverage.md (#1408)",
+            '                          "\\"More\\" item inside the bar -- responsive.md §4"),',
+            '                          "item inside the bar -- responsive.md §4"),',
+            "USE entry 'Bottom navigation' is not in the committed coverage.md",
+        ),
         Mutation(
             "the totality guard stops naming unclassified corpus entries",
             "def verify_totality(",

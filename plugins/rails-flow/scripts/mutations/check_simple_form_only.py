@@ -122,10 +122,67 @@ GUARD = Guard(
             "`\"exemptions\": null` is unusable, not a crash",
         ),
         Mutation(
+            "rich_textarea_tag / rich_text_area_tag are no longer raw field helpers",
+            '        r"url_field|month_field|week_field|color_field|range_field|rich_textarea|rich_text_area)_tag\\b")),',
+            '        r"url_field|month_field|week_field|color_field|range_field)_tag\\b")),',
+            "rich_textarea_tag is a raw field helper",
+        ),
+        # #1439: Rails 8's builder method is rich_textarea; only the old alias was listed.
+        Mutation(
+            "rich_textarea (Rails 8's name) is no longer a raw builder call",
+            '"radio_button|collection_radio_buttons|label|fields_for|rich_textarea|rich_text_area")',
+            '"radio_button|collection_radio_buttons|label|fields_for|rich_text_area")',
+            "f.rich_textarea on a simple_form builder is refused",
+        ),
+        Mutation(
             "the tag is cut at an ERB %>, so a readonly after an ERB value is missed",
-            'WHOLE_TAG = re.compile(r"<input\\b(?:<%.*?%>|[^>])*>", re.I | re.S)',
+            'WHOLE_TAG = re.compile(r"<input\\b(?:<%(?:[^%]|%(?!>))*%>|\\"[^\\"]*\\"|\'[^\']*\'|[^<>\\"\'])*>", re.I | re.S)',
             'WHOLE_TAG = re.compile(r"<input\\b[^>]*>", re.I | re.S)',
             "CONTROL: an ERB value inside the tag does not hide its readonly",
+        ),
+        # #1443: the tag stops at a bare `<`, and an unclosed tag is judged on its own line.
+        Mutation(
+            "the tag runs on into the NEXT tag again",
+            'WHOLE_TAG = re.compile(r"<input\\b(?:<%(?:[^%]|%(?!>))*%>|\\"[^\\"]*\\"|\'[^\']*\'|[^<>\\"\'])*>", re.I | re.S)',
+            'WHOLE_TAG = re.compile(r"<input\\b(?:<%.*?%>|\\"[^\\"]*\\"|\'[^\']*\'|[^>\\"\'])*>", re.I | re.S)',
+            "an <input> is not closed by the NEXT tag's `>`",
+        ),
+        Mutation(
+            "a quoted value is not read whole, so its `<` ends the tag again",
+            """|\\"[^\\"]*\\"|\'[^\']*\'|[^<>\\"\'])*>\", re.I | re.S)""",
+            """|[^<>])*>\", re.I | re.S)""",
+            "a `<` inside a quoted value does not end the tag before a later name=",
+        ),
+        Mutation(
+            "a hash-rocket name no longer counts as named",
+            """|(?<![\\w-])[:\\"\']?name[\\"\']?\\s*=>)\", re.I)""",
+            """)\", re.I)""",
+            'a "name" => hash rocket makes a readonly input a posting field',
+        ),
+        # CodeQL py/redos: an ERB body that can span `%><%` backtracks exponentially.
+        Mutation(
+            "the ERB body is lazy again, so a run of `%><%` backtracks exponentially",
+            "<%(?:[^%]|%(?!>))*%>",
+            "<%.*?%>",
+            "WHOLE_TAG matches a pathological run of `%><%` in linear time (no ReDoS)",
+        ),
+        Mutation(
+            "an unclosed tag falls back to the rest of the file again",
+            "                tag = end.group(0) if end else text[m.start(): eol if eol != -1 else len(text)]",
+            "                tag = end.group(0) if end else text[m.start():]",
+            "an <input> with no `>` anywhere is judged on its own line only",
+        ),
+        Mutation(
+            "readonly matches inside other attribute names and values again",
+            'DISPLAY_INPUT = re.compile(r"(?:(?<=\\s)readonly(?=[\\s=/>]|$)|(?<![\\w-])readonly:\\s*true\\b)", re.I)',
+            'DISPLAY_INPUT = re.compile(r"\\breadonly\\b", re.I)',
+            "data-readonly is not readonly",
+        ),
+        Mutation(
+            "a name set through ERB is no longer seen",
+            'NAMED = re.compile(r"(?:(?<=\\s)name\\s*=(?!>)|(?<![\\w-])name:|(?<![\\w-])[:\\"\']?name[\\"\']?\\s*=>)", re.I)',
+            'NAMED = re.compile(r"\\bname\\s*=", re.I)',
+            "a name set through ERB makes a readonly input a posting field",
         ),
     ),
 )
