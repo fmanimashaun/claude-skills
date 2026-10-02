@@ -443,7 +443,10 @@ def run() -> int:
         if not (report and "exit 1" in report and tail):
             FAILURES.append(f"a wrong-fixture report does not carry the mutant's exit and output; got {problems}")
         _tick()
-        if len(tail) != 12 or "noise-01" in report or "fixture-odd" not in report:
+        tail_text = "\n".join(tail)
+        # The clause on the TAIL, not the report: the header names the expected fixture
+        # ('no mention of fixture-odd'), so a test of the whole report for it could never fail (#1532).
+        if len(tail) != 12 or "noise-01" in tail_text or "noise-20" not in tail_text:
             FAILURES.append(f"a wrong-fixture report does not carry exactly the last 12 lines of output; "
                             f"got {len(tail)} line(s), first={tail[:1]}")
         _tick()
@@ -451,6 +454,61 @@ def run() -> int:
             FAILURES.append("a wrong-fixture report does not cut each output line to 300 characters; "
                             f"widest {max(len(l) for l in tail)}")
     finally:
+        mc.REPO = original_repo
+
+    # ---- #1530-#1532: the three diagnostics a CI-only failure depends on ------------------------
+    # (1) the tail is ONE interleaved stream. 13 stderr lines, then a label on stdout: the old
+    # `stdout + stderr` put the label first and cut it, so the line naming what fired was the one
+    # missing. (2) the INERT report is as width-bound as the wrong-fixture tail. (3) a TIMEOUT keeps
+    # what the child printed before the limit, for the baseline and the mutant alike.
+    labelled = SELFTEST.replace(
+        '    sys.exit(1)\n',
+        '    for i in range(13):\n        print(f"noise-{i:02d}", file=sys.stderr, flush=True)\n'
+        '    print("label-on-stdout", flush=True)\n    sys.exit(1)\n', 1)
+    assert labelled != SELFTEST
+    guard, root = _fixture_guard((
+        mc.Mutation("even numbers reported odd", "n % 2 == 0", "False", "fixture-odd"),
+    ), selftest=labelled)
+    mc.REPO = root
+    try:
+        _tick()
+        report = next((p for p in mc.run_guard(guard) if "not by the expected fixture" in p), "")
+        tail = [l.strip() for l in report.split("\n")[1:] if l.startswith("      ")]
+        if not tail or tail[-1] != "label-on-stdout":
+            FAILURES.append("a wrong-fixture tail hides a label printed to stdout behind 12+ stderr lines "
+                            f"(stdout and stderr are not one interleaved stream); tail ends {tail[-2:]}")
+    finally:
+        mc.REPO = original_repo
+
+    wide = 'import sys\nprint("w" * 5000)\nsys.exit(1)\n'
+    guard, root = _fixture_guard((mc.Mutation("unused", "n % 2 == 0", "True", "fixture-odd"),), selftest=wide)
+    mc.REPO = root
+    try:
+        _tick()
+        inert = next((p for p in mc.run_guard(guard) if "INERT" in p), "")
+        rows = inert.split("\n")[1:]
+        if not rows or any(len(r) > 306 for r in rows):
+            FAILURES.append("the INERT report does not cut each output line to 300 characters; "
+                            f"widest {max((len(r) for r in rows), default=0)}")
+    finally:
+        mc.REPO = original_repo
+
+    sleeper = 'import time\nprint("timeout-label", flush=True)\ntime.sleep(60)\n'
+    guard, root = _fixture_guard((mc.Mutation("unused", "n % 2 == 0", "True", "fixture-odd"),), selftest=sleeper)
+    mc.REPO = root
+    original_baseline_timeout = mc.BASELINE_TIMEOUT
+    try:
+        _tick()
+        timed_out = mc.run_mutation(guard, guard.mutations[0], timeout=2)
+        if not any("timed out" in p and "timeout-label" in p for p in timed_out):
+            FAILURES.append(f"a MUTANT's timeout report drops what it printed before the limit; got {timed_out}")
+        _tick()
+        mc.BASELINE_TIMEOUT = 2
+        timed_out = mc.run_baseline(guard)
+        if not any("timed out" in p and "timeout-label" in p for p in timed_out):
+            FAILURES.append(f"a BASELINE's timeout report drops what it printed before the limit; got {timed_out}")
+    finally:
+        mc.BASELINE_TIMEOUT = original_baseline_timeout
         mc.REPO = original_repo
 
     # ---- 5. every real guard's anchors still match exactly once ------------------------
