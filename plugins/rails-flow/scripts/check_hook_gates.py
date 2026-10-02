@@ -663,6 +663,16 @@ def guard_bash_fixtures() -> None:
               raw(payload("git push --force origin dev"), no_grep) == 2, "exit 0")
         check("guard-bash (#1529 review): CONTROL: with no grep, `git status` passes",
               raw(payload("git status"), no_grep) == 0, "exit 2")
+        # #1529 round 3: with no grep the lib still normalises, so the hook is NOT degraded -- and one
+        # `=~` over the multi-line text let `^` see only the first segment.
+        for cmd in ("cd x && git add -A", "echo hi; git add -A", "x=$(git add -A)",
+                    "cd x; git push --force origin main", "cd x && git clean -fd"):
+            check(f"guard-bash (#1529 r3): with no grep, a LATER segment `{cmd}` is blocked",
+                  raw(payload(cmd), no_grep) == 2, "exit 0: `^` matched only the first line")
+        check("guard-bash (#1529 r3): CONTROL: with no grep, `cd x && git status` passes",
+              raw(payload("cd x && git status"), no_grep) == 0, "exit 2")
+        check("guard-bash (#1529 r3): CONTROL: with no grep, a dry-run `cd x && git clean -n -fd` passes",
+              raw(payload("cd x && git clean -n -fd"), no_grep) == 0, "exit 2")
     finally:
         for bd in (no_awk, no_python, no_grep):
             shutil.rmtree(bd, ignore_errors=True)

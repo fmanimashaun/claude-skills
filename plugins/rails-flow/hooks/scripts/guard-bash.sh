@@ -48,8 +48,16 @@ hit() {
   if [ "$have_grep" = 1 ]; then
     printf '%s\n' "$seg" | grep -qE "$re"
   else
+    # LINE BY LINE, as grep matches: one `=~` over the whole text let `^` see only the first segment,
+    # so `cd x && git add -A` passed with no grep (#1529 round-3 review).
     re="${re//\\b/}"
-    [[ $seg =~ $re ]]
+    local line
+    while IFS= read -r line; do
+      [[ $line =~ $re ]] && return 0
+    done <<HIT_EOF
+$seg
+HIT_EOF
+    return 1
   fi
 }
 # An EXEMPTION (`--force-with-lease`, clean's `-n`, restore's `--staged`) never applies in degraded

@@ -131,8 +131,8 @@ GUARD = Guard(
         Mutation(
             # #1529 review
             'with no grep, hit() matches nothing, so every rule passes',
-            '    re="${re//\\\\b/}"\n    [[ $seg =~ $re ]]',
-            '    false',
+            '      [[ $line =~ $re ]] && return 0',
+            '      false',
             'with no grep, `git add -A` is blocked',
         ),
         Mutation(
@@ -162,6 +162,13 @@ GUARD = Guard(
             'set -uo pipefail\n',
             'set -u\n',
             'with no sed, `git add -A` is blocked',
+        ),
+        Mutation(
+            # #1529 round 3
+            'with no grep, `=~` matches the whole text at once, so `^` sees only the first segment',
+            '    while IFS= read -r line; do\n      [[ $line =~ $re ]] && return 0\n    done <<HIT_EOF\n$seg\nHIT_EOF\n    return 1',
+            '    [[ $seg =~ $re ]]',
+            'with no grep, a LATER segment',
         ),
     ),
 )
