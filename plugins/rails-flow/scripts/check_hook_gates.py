@@ -746,7 +746,8 @@ def guard_claims_fixtures() -> None:
     def run_in(cmd: str, body: str, *, body_in: str = "a", with_output: bool = False, payload_cwd: str = ""):
         with tempfile.TemporaryDirectory() as td:
             a, b = Path(td) / "a", Path(td) / "b"
-            for d, tpl in ((a, TPL), (b, TPL_B)):
+            # `a/5` carries B's template, so `cd 5 >/dev/null` read as a bare `cd` (HOME, set to A) is visible.
+            for d, tpl in ((a, TPL), (b, TPL_B), (a / "5", TPL_B)):
                 (d / ".github").mkdir(parents=True)
                 (d / ".github" / "pull_request_template.md").write_text(tpl, encoding="utf-8")
             # A directory literally named `$NOWHERE`: a `cd $NOWHERE` read literally would find it, so
@@ -759,7 +760,7 @@ def guard_claims_fixtures() -> None:
             if payload_cwd:
                 payload["cwd"] = str({"a": a, "b": b}[payload_cwd])
             done = run_hook("guard-claims.sh", cwd=a, stdin=json.dumps(payload),
-                            env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])})
+                            env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1]), "HOME": str(a)})
             return done if with_output else done[0]
 
     check("guard-claims: a `cd <other repo>` is judged against that repo's template (#1509)",
@@ -797,6 +798,47 @@ def guard_claims_fixtures() -> None:
             ("a cd and gh in the same case branch", "case x in x) cd B_DIR && gh pr create --body-file BODY;; esac")):
         check(f"guard-claims: {label} is followed to the cd target's template (#1516)",
               run_in(cmd, FULL) == 2, "exit 0: judged against the session repo")
+    # #1516 re-review at 3cfe348: each of these ran gh in B and was judged against A, silently.
+    # Blocker 1, a wrapper before gh (a regression from e16c6b5); blocker 2, a `#` that bash does not read
+    # as a comment, or a comment line that shlex let swallow the rest; blocker 3, a QUOTED `<<END`.
+    for label, cmd in (
+            ("`env gh`", "cd B_DIR && env gh pr create --body-file BODY"),
+            ("`env VAR=1 gh`", "cd B_DIR && env GH_PAGER=cat gh pr create --body-file BODY"),
+            ("`command -p gh`", "cd B_DIR && command -p gh pr create --body-file BODY"),
+            ("an absolute path to gh", "cd B_DIR && /opt/homebrew/bin/gh pr create --body-file BODY"),
+            ("`timeout 60 gh`", "cd B_DIR && timeout 60 gh pr create --body-file BODY"),
+            ("`timeout -k 5 60 gh`", "cd B_DIR && timeout -k 5 60 gh pr create --body-file BODY"),
+            ("`nohup gh`", "cd B_DIR && nohup gh pr create --body-file BODY"),
+            ("`exec gh`", "cd B_DIR && exec gh pr create --body-file BODY"),
+            ("a leading comment line", "# open the PR\ncd B_DIR && gh pr create --body-file BODY"),
+            ("a leading comment with an apostrophe", "# don't open this from A\ncd B_DIR && gh pr create --body-file BODY"),
+            ("a comment after the cd", "cd B_DIR # go to B\ngh pr create --body-file BODY"),
+            ("a comment after a later command", "cd B_DIR && git log --oneline -1 # sanity\ngh pr create --body-file BODY"),
+            ("`issue#12`, which is one word, not a comment", "cd B_DIR && echo see issue#12 && gh pr create --body-file BODY"),
+            ("a quoted `#` (control)", "cd B_DIR && echo 'a # b' && gh pr create --body-file BODY"),
+            ("a double-quoted `<<END`", 'echo "<<END"\ncd B_DIR && gh pr create --body-file BODY'),
+            ("a single-quoted `<<END`", "echo '<<END'\ncd B_DIR && gh pr create --body-file BODY"),
+            ("a `<<END` inside a quoted string", 'echo "x <<END y"\ncd B_DIR && gh pr create --body-file BODY'),
+            ("`cd 5 >/dev/null` (5 is the directory, not an fd)", "cd 5 >/dev/null && gh pr create --body-file BODY")):
+        check(f"guard-claims: {label} is followed to the cd target's template (#1516 re-review)",
+              run_in(cmd, FULL) == 2, "exit 0: judged against the session repo")
+    check("guard-claims: `cd B && env gh` with a body fitting B passes there (control)",
+          run_in("cd B_DIR && env gh pr create --body-file BODY", FITS_B) == 0, "exit 2")
+    check("guard-claims: a real heredoc after a quoted `<<END` still hides its body (control)",
+          run_in("echo \"<<END\"\ncat >/dev/null <<'EOF'\nit's\nEOF\ncd B_DIR && gh pr create --body-file BODY", FULL) == 2,
+          "exit 0")
+    # A gh this resolver cannot find as a command word, after a cd, or a function body's cd: where gh runs
+    # is unknown, so NOT checked, never the session repo's template and never the cd target's.
+    for label, cmd in (("gh inside `bash -c`", 'bash -c "cd B_DIR && gh pr create --body-file BODY"'),
+                       ("gh behind `sudo` after a cd", "cd B_DIR && sudo gh pr create --body-file BODY"),
+                       ("a cd run as a program (`env cd`)", "env cd B_DIR && gh pr create --body-file BODY"),
+                       ("a function body's cd", "f() { cd B_DIR; }; gh pr create --body-file BODY"),
+                       ("a `function` keyword body's cd", "function f { cd B_DIR; }; gh pr create --body-file BODY")):
+        rc, out = run_in(cmd, FITS_B, with_output=True)
+        check(f"guard-claims: {label} is NOT checked, never a guessed template (#1516 re-review)",
+              rc == 0 and "a cd before gh could not be resolved" in out, f"exit {rc}: {out[-120:]}")
+    check("guard-claims: `sudo gh` with no cd anywhere is still judged in the starting repo (control)",
+          run_in("sudo gh pr create --body-file BODY", FITS_B) == 2, "exit 0")
     rc, out = run_in("case x in x) cd B_DIR;; esac; gh pr create --body-file BODY", FITS_B, with_output=True)
     check("guard-claims: a gh after a case whose branch moved the directory is NOT checked (which branch ran is unknown)",
           rc == 0 and "a cd before gh could not be resolved" in out, f"exit {rc}: {out[-120:]}")
