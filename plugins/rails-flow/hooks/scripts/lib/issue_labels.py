@@ -203,6 +203,72 @@ def _unparseable(cmd: str) -> list:
     return []
 
 
+# bash's `$'…'` escapes (#1495): `$'\x62ug'` is `bug`, so a label written that way is the label.
+_ANSI_SIMPLE = {"a": "\a", "b": "\b", "e": "\x1b", "E": "\x1b", "f": "\f", "n": "\n", "r": "\r",
+                "t": "\t", "v": "\v", "\\": "\\", "'": "'", '"': '"', "?": "?"}
+
+
+def _ansi_escape(text: str, j: int) -> tuple[str, int]:
+    r"""The character a `$'…'` escape starting at TEXT[j] (just past the backslash) means, and the
+    index after it: the simple letters, `\NNN` octal, `\xHH`, `\uHHHH`, `\UHHHHHHHH`, `\cX`."""
+    c = text[j]
+    if c in _ANSI_SIMPLE:
+        return _ANSI_SIMPLE[c], j + 1
+    for lead, digits, width, base in (("x", "0123456789abcdefABCDEF", 2, 16),
+                                      ("u", "0123456789abcdefABCDEF", 4, 16),
+                                      ("U", "0123456789abcdefABCDEF", 8, 16)):
+        if c == lead:
+            k = j + 1
+            while k < len(text) and k - j - 1 < width and text[k] in digits:
+                k += 1
+            if k == j + 1:
+                return "\\" + c, j + 1          # no digits: bash keeps it literally
+            try:
+                return chr(int(text[j + 1:k], base)), k
+            except (ValueError, OverflowError):
+                return "", k
+    if c in "01234567":
+        k = j
+        while k < len(text) and k - j < 3 and text[k] in "01234567":
+            k += 1
+        return chr(int(text[j:k], 8) & 0xFF), k
+    if c == "c" and j + 1 < len(text):
+        return chr(ord(text[j + 1].upper()) ^ 0x40), j + 2
+    return "\\" + c, j + 1                       # unknown: bash keeps the backslash
+
+
+def _fold_fd_redirects(text: str) -> str:
+    r"""`2>&1`, `<&0`, `>&-` and `&>log` written so shlex does not split them at `&` (#1495): split,
+    `bash 2>&1 < f` became `bash 2>`, `&`, `1 < f`, and the shell lost its redirect. The `&` of a
+    duplication becomes `@`; `&>` / `&>>` (stdout and stderr) become `>` / `>>`."""
+    text = re.sub(r"(\d*[<>])&(\d+|-)", r"\1@\2", text)
+    text = re.sub(r"(\d*>)&(?=[^\s\d-])", r"\1", text)      # `>&log` is `>log` (#1513 review)
+    return re.sub(r"(?<![&|<>])&(>>?)", r"\1", text)
+
+
+# A word cut at its redirect operators, so `bash>/dev/null<bad.sh` is `bash`, `>/dev/null`, `<bad.sh`.
+_REDIR_PIECES = re.compile(r"\d*(?:<<<|<<|>>|<>|[<>])@?[^<>\s]*|[^<>\s]+")
+
+
+def _split_redirects(words: list[str]) -> list[str]:
+    return [piece for w in words for piece in (_REDIR_PIECES.findall(w) or [w])]
+
+
+# Redirect words and their separate targets, which are not arguments: `cd sub &>/dev/null` is `cd sub`.
+def _drop_redirects(words: list[str]) -> list[str]:
+    out, k = [], 0
+    while k < len(words):
+        w = words[k]
+        if re.fullmatch(r"\d*(?:>>|<>|[<>])@?", w):
+            k += 2               # the operator alone: its target is the next word
+            continue
+        if re.fullmatch(r"\d*(?:>>|<>|[<>])@?\S+", w):
+            k += 1
+            continue
+        out.append(w); k += 1
+    return out
+
+
 def _ansi_c(cmd: str) -> str:
     """`$'…'` (ANSI-C quoting) rewritten as the single-quoted string it means, so shlex can read it.
     Only outside quotes: inside `'…'` or `"…"` a `$'` is literal text."""
@@ -222,7 +288,8 @@ def _ansi_c(cmd: str) -> str:
             j, val = i + 2, []
             while j < len(cmd) and cmd[j] != "'":
                 if cmd[j] == "\\" and j + 1 < len(cmd):
-                    val.append({"n": "\n", "t": "\t"}.get(cmd[j + 1], cmd[j + 1])); j += 2
+                    ch_, j = _ansi_escape(cmd, j + 1)
+                    val.append(ch_)
                     continue
                 val.append(cmd[j]); j += 1
             out.append(shlex.quote("".join(val))); i = j + 1
@@ -285,33 +352,38 @@ def hidden_create(cmd: str) -> str | None:
     if found:
         return found
     try:
-        lexer = shlex.shlex(body.replace("\n", " ; "), posix=True, punctuation_chars=";&|()")
+        lexer = shlex.shlex(_fold_fd_redirects(body).replace("\n", " ; "), posix=True, punctuation_chars=";&|()")
         lexer.whitespace_split = True
         tokens = list(lexer)
     except ValueError:
         return None
     seg: list[str] = []
     prev_text, prev_op = "", ""      # the pipeline so far (every `|`-joined segment), and the last operator
-    # Where a relative `bash < script` resolves (#1489 review): the session's directory, moved by each
-    # literal top-level `cd`. Any other cd (`cd -`, `cd $X`, bare, `pushd`/`popd`, or one inside
-    # `( )`, which does not outlive its subshell) makes it unknown, and an unknown file is allowed.
+    # Where a relative `bash < script` resolves (#1489 review, #1495): the session's directory, moved by
+    # each literal `cd` to a directory that EXISTS -- a cd to a missing one fails and changes nothing,
+    # and `;` runs the next command anyway. `( )` is a subshell: a cd inside it holds until the `)`.
+    # Any other cd (`cd -`, `cd $X`, bare, `pushd`/`popd`) makes it unknown, and an unknown file is allowed.
     here_dir: Path | None = Path.cwd()
-    depth = 0
+    dir_stack: list[Path | None] = []
     for tok in tokens + [";"]:
         if tok and set(tok) <= set(";&|()"):
             raw_seg = " ".join(seg)
             words = [w for w in seg if not ("=" in w and w.split("=", 1)[0].isidentifier())]
             words = _peel(words)       # `env sh -c`, `sudo bash -c`, `timeout 5 sh -c`, `command eval`
-            if words and "<" in words[0]:
-                pre, _, post = words[0].partition("<")      # `sh<f` is `sh` reading `<f`
-                if os.path.basename(pre) in SHELLS:
-                    words = [pre, "<" + post] + words[1:]
+            # A redirect glued to the shell or to its operands (`sh<f`, `bash 2>&1<f`, `bash>/dev/null<f`,
+            # #1513 review) is cut out so the shell and its stdin are seen.
+            if words and os.path.basename(_split_redirects(words[:1])[0]) in SHELLS:
+                words = _split_redirects(words)
             head = os.path.basename(words[0]) if words else ""
-            if head in ("cd", "pushd", "popd"):
-                arg = words[1] if len(words) == 2 else None
-                if here_dir is None or depth or head != "cd" or not arg or arg == "-" or "$" in arg or "`" in arg:
+            # A cd in the background (`cd sub &`) or in a pipeline (`cd sub | …`, `… | cd sub`) runs in a
+            # subshell and never moves this shell (#1513 review), so it is not followed.
+            in_subshell = tok.rstrip("()") in ("&", "|", "|&") or prev_op in ("|", "|&")
+            if head in ("cd", "pushd", "popd") and not in_subshell:
+                cd_words = _drop_redirects(words)
+                arg = cd_words[1] if len(cd_words) == 2 else None
+                if here_dir is None or head != "cd" or not arg or arg == "-" or "$" in arg or "`" in arg:
                     here_dir = None
-                else:
+                elif (here_dir / os.path.expanduser(arg)).is_dir():
                     here_dir = here_dir / os.path.expanduser(arg)
             rest = " ".join(words[1:])
             # `-c` may be bundled with other short flags: `bash -lc '…'`.
@@ -328,14 +400,22 @@ def hidden_create(cmd: str) -> str | None:
                 if here is not None and _names_create(" ".join([words[here][3:]] + words[here + 1:])):
                     return f"a herestring fed to `{head}`"
                 # `bash < script` / `bash <script` (#1489): the create lives in the FILE, so read it.
-                # A file that cannot be read is allowed, as before -- this can only add refusals.
+                # A file that cannot be read is allowed, as before. But a RELATIVE script after a cd this
+                # parser cannot follow is refused (#1513 review, owner rule #1423): it may be anywhere.
                 script = _redirected_script(words[1:], here_dir) if _stdin_is_script(words[1:]) else None
+                if script is _UNKNOWN_DIR:
+                    return (f"a script fed to `{head}` by redirect after a cd this hook cannot follow; "
+                            "give the script an absolute path")
                 if script is not None and _names_create(script):
                     return f"a script fed to `{head}` by redirect"
             # A pipeline feeds its whole upstream: `echo … | cat | bash` runs what echo wrote.
             prev_text = (prev_text + " " + raw_seg) if prev_op in ("|", "|&") else raw_seg
             prev_op = tok
-            depth = max(0, depth + tok.count("(") - tok.count(")"))
+            for ch in tok:
+                if ch == "(":
+                    dir_stack.append(here_dir)
+                elif ch == ")" and dir_stack:
+                    here_dir = dir_stack.pop()
             seg = []
         else:
             seg.append(tok)
@@ -408,13 +488,18 @@ def _stdin_is_script(args: list[str]) -> bool:
             ended = True             # after `--`, even `-x` is an operand
             continue
         if w[:1] in ("-", "+") and len(w) > 1 and not ended:
-            if w in ("-o", "+o", "-O", "+O", "--rcfile", "--init-file"):
-                k += 1
-            elif not w.startswith("--") and "s" in w[1:]:
+            if not w.startswith("--") and "s" in w[1:]:
                 has_s = True
+            if w in ("--rcfile", "--init-file"):
+                k += 1
+            elif re.fullmatch(r"[-+][A-Za-z]+", w):
+                k += w.count("o") + w.count("O")   # each o/O takes a word: `-eo x`, `-ox x`, `-oO a b` (#1513)
             continue
         return has_s                 # an operand: the script is that file, unless -s
     return True
+
+
+_UNKNOWN_DIR = "\0unknown-dir"     # a relative script after a cd that cannot be followed
 
 
 def _redirected_script(args: list[str], cwd: Path | None) -> str | None:
@@ -442,7 +527,7 @@ def _redirected_script(args: list[str], cwd: Path | None) -> str | None:
     path = Path(os.path.expanduser(target))
     if not path.is_absolute():
         if cwd is None:
-            return None
+            return _UNKNOWN_DIR
         path = cwd / path
     try:
         if not path.is_file():
@@ -934,14 +1019,53 @@ def selftest() -> int:
             os.chdir(td)
             check("CONTROL: the cd target's harmless script is judged, not the session directory's",
                   verdict("cd sub && bash < c2.sh", bare)[0])
-            check("CONTROL: after a cd it cannot resolve, a relative script is unknown and allowed",
-                  verdict("cd sub && cd $X && bash < only.sh", bare)[0])
-            check("CONTROL: a cd inside ( ) does not outlive it, so the directory is unknown and allowed",
+            ok, why = verdict("cd sub && cd $X && bash < only.sh", bare)
+            check("after a cd it cannot resolve, a relative script is refused as unfollowable (#1513)",
+                  not ok and "cannot follow" in why, why)
+            check("CONTROL: a cd inside ( ) does not outlive it, so only.sh is looked for where it is not, and allowed",
                   verdict("(cd sub) && bash < only.sh", bare)[0])
             ok, why = verdict("bash < c2.sh", bare)
             check("with no cd, a relative script is read from the session directory", not ok and "by redirect" in why, why)
+            # #1495: the five #1489 edge cases. c2.sh here has a create; sub/c2.sh is harmless.
+            for cmd, why_ in (("cd nope; bash < c2.sh", "a cd to a missing directory fails and changes nothing"),
+                              ("(cd sub) && bash < c2.sh", "the subshell's cd does not outlive it"),
+                              ("(cd sub && bash < only.sh)", "a cd inside ( ) holds until the )"),
+                              ("bash -eo pipefail < c2.sh", "a bundled -o takes a value"),
+                              ("bash 2>&1 < c2.sh", "the & of a fd duplication is not a separator"),
+                              ("bash &>log < c2.sh", "&> is a redirect, not a background &")):
+                ok, why = verdict(cmd, bare)
+                check(f"#1495 `{cmd}` is refused: {why_}", not ok and "by redirect" in why and "cannot follow" not in why, why)
+            check("#1495 CONTROL: a script operand after -eo VALUE reads stdin as data",
+                  verdict("bash -eo pipefail sub/c2.sh < c2.sh", bare)[0])
+            # #1513 review: the same five classes, shapes the first #1495 version still let through.
+            for cmd, why_ in (("cd sub &>/dev/null; bash < only.sh", "a cd's own redirect is not an argument"),
+                              ("cd sub > /dev/null; bash < only.sh", "a cd's spaced redirect is not an argument"),
+                              ("bash -ox pipefail < c2.sh", "an o inside a bundle takes a value"),
+                              ("bash -Oe extglob < c2.sh", "an O inside a bundle takes a value"),
+                              ("bash 2>&1<c2.sh", "a redirect glued to < is cut out"),
+                              ("bash>/dev/null<c2.sh", "a redirect glued to the shell is cut out"),
+                              ("bash >&log < c2.sh", ">&word is a redirect"),
+                              ("cd sub & bash < c2.sh", "a backgrounded cd runs in a subshell"),
+                              ("cd sub | bash < c2.sh", "a piped cd runs in a subshell")):
+                ok, why = verdict(cmd, bare)
+                # the file itself was read: not the fail-closed "cannot follow" refusal, which would also pass
+                check(f"#1513 `{cmd}` is refused: {why_}", not ok and "by redirect" in why and "cannot follow" not in why, why)
+            check("#1513 CONTROL: a cd's redirect does not stop it being followed to a harmless script",
+                  verdict("cd sub &>/dev/null; bash < c2.sh", bare)[0])
+            check("#1513 CONTROL: `bash -ox pipefail sub/c2.sh < c2.sh` runs the operand, stdin is data",
+                  verdict("bash -ox pipefail sub/c2.sh < c2.sh", bare)[0])
         finally:
             os.chdir(was)
+        # #1513 review (R6): every _ansi_escape branch, checked on the decoded value.
+        for raw, want in (("$'\\cA'", "\x01"), ("$'\\U00000066'", "f"), ("$'\\e'", "\x1b"), ("$'\\a\\b\\f\\v\\r'", "\a\b\f\v\r"),
+                          ("$'\\x6'", "\x06"), ("$'\\q'", "\\q"), ("$'\\x'", "\\x"), ("$'it\\'s'", "it's")):
+            got = shlex.split(_ansi_c(raw))
+            check(f"#1513 _ansi_c decodes {raw} as {want!r}", got == [want], repr(got))
+        # #1495: a label spelled with bash's escapes is that label.
+        for spelled in ("$'\\x66eature'", "$'\\146eature'", "$'\\u0066eature'"):
+            check(f"#1495 CONTROL: `-l {spelled}` is the label `feature`",
+                  verdict(f"gh issue create -t X -l {spelled} --body-file b.md", r)[0],
+                  verdict(f"gh issue create -t X -l {spelled} --body-file b.md", r)[1])
         # ANSI-C quoting is valid bash: it must parse, not be refused as unparseable.
         check("CONTROL: `echo $'it\\'s'` before a harmless redirected script is allowed",
               verdict(f"echo $'it\\'s'; bash < {harmless}", bare)[0], verdict(f"echo $'it\\'s'; bash < {harmless}", bare)[1])

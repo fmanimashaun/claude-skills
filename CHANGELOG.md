@@ -11,6 +11,8 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 (Maintainer-only; the version is assigned at promotion.)
 
+- **A process-group fixture reads its gate's pid record whole, and only once it exists — `scripts/pid_record.py`, `scripts/pid_record_selftest.py`, `scripts/mutations/pid_record.py`, `scripts/maintainer_doctor_selftest.py`, `scripts/mutation_check_selftest.py`, `scripts/maintainer_doctor.py`** (#1556). Full gates run 37041063728 failed on `int(pidfile.read_text())` in the #1459 control: the gate wrote its grandchild's pid with `open(path, 'w').write(...)`, which truncates first, and the control's one-second `subprocess.run` timeout could land between the truncate and the content (`int('')`), or before the gate wrote at all (a stale pid from the first run, read as "the control proves nothing"). Reproduced by looping the control 1000 times at 300 in parallel: 296 failures (1 the CI traceback, 295 no record); after, 0 in 1000. The record is now written atomically (`pid_record.write`: temporary sibling, then `os.replace`) after the line is printed and read with a bounded wait (`pid_record.wait`); the control waits for the record and then kills the direct child, as `subprocess.run`'s timeout does, instead of racing a timeout; and a timed-out gate (and mutation_check's 1e mutant) is retried with a longer timeout only while it never started. The same non-atomic write is gone from mutation_check's escapee fixture. New gate `pid record selftest` injects the delay between open and content deterministically; its guard carries 3 mutations. Our own tooling; no upstream claim.
+
 - **A shipped plugin's or skill's link may not leave what ships with it — `scripts/lint_self_consistency.py`** (#1480). New rule `link-leaves-package`: each plugin and each skill installs alone, so a relative link that climbs out of `plugins/<name>/` or `skills/<name>/` names a path an install does not have, even when it resolves in this clone. `broken-relative-link` covers only `docs/**`, which is why these were not reported mechanically. On dev it found 6; all are fixed in this change. Selftest scenarios both ways; the guard gains a mutation.
 
 - **The release's shipped note reads a citation whose annotation holds a markdown link — `scripts/close_on_dev_merge.py`**. v1.153.0 cited `(#1404, [maintainer decision](https://…))`; the citation pattern `\((#\d+[^()]*)\)` stopped at the link's own `(`, so #1404 kept its `fixed-on-dev` label and got no shipped note (marked by hand). Only the run of `#n` that opens a citation is read now, comma- or slash-separated (`(#621/#624)`), so an annotation may hold anything. A selftest case with a link annotation fails on the old pattern; the guard gains a mutation restoring it (10/10 caught). Found on v1.153.0's own release run.
@@ -25,7 +27,33 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 - **The maintainer mirror of `parallel-session-lane` carries the references its SKILL.md links — `scripts/build_maintainer_skills.py`, `.claude/skills/parallel-session-lane/references/`** (#1481). The mirror copied only `SKILL.md`, so its four links to `references/reading-a-list.md` and `references/session-identity.md` resolved to nothing. Both references are now in `MIRRORED` (a reference gets its banner on top, having no frontmatter to protect), and the drift gate covers them. The selftest now checks that every relative link in a mirrored SKILL.md lands on a mirrored file; mutations removing a mirrored reference or its banner are caught (7/7). The `SKILL.md` diff the issue saw is the generated banner, by design. Review follow-up (PR #1536): the stray check now reads EVERY file under a shipped skill's `.claude/skills/` directory, not only `SKILL.md`, so a hand-copied reference, a references-only directory or a reference orphaned from `MIRRORED` fails `--check`; the selftest gains reference drift, reference-unstaged and stray-reference arms, and the guard 9/9 caught.
 
+- **The Phase 0 graph check reads a tracker larger than its first page, instead of refusing every run — `scripts/issue_graph.py`, `scripts/mutations/issue_graph.py`** (#1573). The default bound was 500, a full page is an error by design (#211), and the tracker passed 500: measured on the live tracker, 543 issues, `origin/dev` answered "gh returned 500 issues for --limit 500: the page is full" to every `--ready`, and the commands that run it were told to go out of order or work around it. The refusal is right and stays; the bound was the bug. A full page now retries with a doubled bound up to a cap of 16000, and only a page still full at the cap is refused; the first bound is 1000, so the usual run is still one call. A tracker exactly the size of a bound reads as full and grows once more, which is the cost of never guessing. The bounds are a list computed up front and cut at 32 steps. A first version hung on `--limit 0`, found in review: doubling 0 or a negative number never reaches the cap. A bound below 1 is now refused by the ladder and at argument parsing (exit 2 with a sentence naming the minimum, as `origin/dev` did), tested under a timeout so a regression fails instead of hanging the selftest; measured, the previous head was killed after 8 s on `--limit 0` and this branch exits 2. The truncation selftest now fakes `gh` honestly, returning at most `--limit` issues and recording the bounds asked, because a fake that ignored `--limit` would read a retried page as short and prove nothing: a tracker over the cap is refused, one exactly the cap is refused, one past the first page is read in full by one retry, one exactly the first bound is read in full, a short page is one call. Guard mutations for the refusal removed, a short page never recognised, no growth, a full page taken as complete, the caller's bound ignored, a bound below 1 no longer refused by the ladder, and `--limit` accepting zero again, each caught by its intended fixture. Our own design; no framework claim.
+
 ### 2026-10-02 (release v1.153.0)
+
+- **`--check` refuses a note filed under a dead CHANGELOG section — `scripts/extract_release_notes.py`,
+  `scripts/mutations/extract_release_notes.py`** (#1520). `CHANGELOG.md` holds two `## ` sections for `Repository hygiene`
+  and two for `rails-stack`. PR #1518 put a `### Unreleased` under the stale rails-stack section, and `--check --all-tags`
+  printed clean: every rule read headings, and none asked which section a heading sits in. `--check` now refuses:
+  - two live sections for one component, unless all but one are in the script's `ARCHIVED` list, each entry pinned to
+    the newest tag that section holds;
+  - an `### Unreleased` in an archived section;
+  - an `### Unreleased` in a live plugin section whose newest release isn't the plugin's current version
+    (`marketplace.json`, or the plugin's `plugin.json`). The marketplace-versioned `Repository hygiene` is not
+    compared: `metadata.version` bumps on every promotion, and 39 of the 77 since v1.92.0 wrote no Repository block,
+    so that section lags by design (the independent review of PR #1522 found this);
+  - an `ARCHIVED` entry no section matches, which is how a release added to an archived section shows up.
+  - a plugin whose current version cannot be found: a missing `plugin.json` is a named finding, and an unreadable
+    manifest or `plugin.json`, or no `metadata.version`, exits 3 ("could not check"), not with a traceback.
+
+  The four history sections are archived in the script, not marked in the file. A block runs to the next `### `, so a
+  marker written between sections would join the block above it and change a past extraction: measured, v1.92.1's
+  notes already end with `## Repository hygiene`. Proven on the real file:
+  - the #1518 shape passes `origin/dev`'s checker (exit 0) and fails this one (exit 1);
+  - all 202 past `(release vX.Y.Z)` extractions are byte-identical under both scripts;
+  - no existing CHANGELOG line changes; this bullet is the only addition.
+
+  Selftest 66; mutations 26/26, 13 of them new. Review findings: `docs/evidence/reviews/prs/fix-1520-changelog-duplicate-sections/`.
 
 - **A primitive marker never excuses a form, excuses one instance, and is reported when unused — `scripts/check_shipped_erb_forms.py`, `scripts/mutations/check_shipped_erb_forms.py`** (#1460).
   - A `<%# simple-form-only: primitive … %>` marker naming any form construct a form rule reports (`form_with`, `form_for`, `form_tag`, `<form`, `tag.form`) is `primitive-marker-invalid` and excuses nothing. `<form` and `tag.form` were added on the independent review of PR #1521.
@@ -3606,6 +3634,32 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **`guard-bash`'s label check closes five #1489 edge cases — `plugins/rails-flow/hooks/scripts/lib/issue_labels.py`,
+  `plugins/rails-flow/hooks/scripts/guard-bash.sh`, `plugins/rails-flow/scripts/check_hook_gates.py`,
+  `scripts/mutations/hook_issue_labels.py`, `scripts/mutations/hook_guard_bash.py`** (#1495). On dev, six shapes were
+  allowed that should be refused, and two valid labels were refused. Each was measured through the real hook.
+  - A `cd` to a directory that does not exist fails and changes nothing, so `cd nope; bash < bad.sh` reads the
+    session's `bad.sh`. A `cd` inside `( )` holds until the `)`, so `(cd sub && bash < only.sh)` reads `sub/only.sh`.
+    Known over-refusal: in `cd nope && bash < bad.sh` bash never runs, but the command is still refused.
+    A `cd` in the background or a pipeline (`cd sub &`, `cd sub | …`) runs in a subshell and is not followed. A
+    `cd`'s own redirect (`cd sub &>/dev/null`) is not an argument. **A relative script after a `cd` this hook
+    cannot follow (`cd $X`, `cd -`, `pushd`) is now refused**, with "give the script an absolute path". Before, it
+    was allowed as unknown. That is the #1513 review's call, applying #1423's owner rule (refuse what cannot be
+    label-checked).
+  - The trigger drops `$` with the quotes, so `gh issue $'create'` reaches the helper. It also fires on any `$'…'`
+    holding an escape, which can spell `create`, `issue` or `gh` (`gh issue $'\x63reate'`, `$'\x67h' issue create`).
+  - `$'…'` decodes bash's full escape set (`\xHH`, `\NNN`, `\uHHHH`, `\UHHHHHHHH`, `\cX`, `\e`, …), so
+    `-l $'\x66eature'` is the label `feature`.
+  - In a short-option bundle, each `o`/`O` takes a value, wherever it sits: `-eo pipefail`, `-ox pipefail`,
+    `-Oe extglob`.
+  - `2>&1`, `<&0`, `>&log` and `&>log` are kept as one redirect instead of splitting at `&`. A redirect glued to
+    the shell or to `<` (`bash>/dev/null<f`, `bash 2>&1<f`) is cut out. That applies to the helper and to the
+    trigger.
+  - 31 real-hook cases (21 refusals, 10 controls) and 29 helper selftest cases, including every `_ansi_escape`
+    branch. 17 new mutations (13 `hook_issue_labels`, 4 `hook_guard_bash`). 7 existing ones were re-pointed, and
+    1 was dropped as a duplicate of the new redirect-split mutation.
+  - Filed from the #1513 review, as gaps on dev too: #1515 (script operands, `source`, `cat f | bash`, indirect
+    `gh`, `gh api` POSTs).
 - **guard-bash fails closed when its normaliser cannot read the command — `plugins/rails-flow/hooks/scripts/guard-bash.sh`, `plugins/rails-flow/hooks/scripts/lib/normalize_cmd.sh`** (#1526, from PR #1519's review). Inputs that left the hook unable to read the command let every rule pass, so `git add -A` was allowed, against CLAUDE.md's "blocked either way":
   - **a missing or failing tool**: no `awk` made the normaliser print nothing. `normalize_segments` now RETURNS its pipeline's status (it was discarded, so even an awk exiting 2 read as clean), and the hook runs it under `pipefail`;
   - **no `python3`, or a payload that would not parse** (including a lone surrogate): the hook had only the raw JSON;
@@ -16737,6 +16791,8 @@ boot/validation path — with a bullet each so the promotion could close them se
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
 ### Unreleased
+
+- **The hotwire description is 829 characters, not 1,192, and keeps every trigger the body serves — `skills/hotwire/SKILL.md`, `dist/hotwire.skill`, `docs/wiki/Skills-Reference.md`** (#1558). **Kind of change: our own wording, no upstream claim, no Hotwire behaviour sentence changes.** Maintainer decision: [apply the revised description](https://github.com/fmanimashaun/claude-skills/issues/1558#issuecomment-5969355417). Descriptions ride in every session's skill listing, so the saving is paid on every turn. A full read of `SKILL.md` and all four references, with each trigger phrase mapped to the file and line that serves it (findings on #1558), set three rules for the rewrite: keep "morphing hazards" as a symptom phrase (`production.md` §2.4 is the skill's strongest content; the earlier 640-character draft would have lost it), add failed-request/offline states (`turbo.md` §8b and `production.md` §6, which the old description never triggered), and drop "typing indicators" (the body has no how-to for it: `production.md:553` and `:590` name it only as a channel in a list) and the named non-Rails backends (the body has one paragraph for them, `SKILL.md:96-99`, and no non-Rails example). "unread badges" is dropped too; its coverage is thin (`production.md:85`, `:553`, `:622`). Two triggers the review's draft had dropped are kept, because the body serves them and they cost almost nothing: "@hotwired packages" and "partial page updates". The parsed YAML `description` was compared against the intended text and `check_frontmatter.py` and `check_skill_routing.py` pass; `dist/hotwire.skill` is a clean `package_core.py` build. `parallel-session-lane` is deliberately unchanged (decision on #1558: leave it at 500 lines).
 
 - **Six hotwire corrections the `doctrine-verifier` verdicts back — `skills/hotwire/SKILL.md`, `skills/hotwire/references/turbo.md`, `skills/hotwire/references/production.md`, `skills/hotwire/references/stimulus.md`, `dist/hotwire.skill`** (#1558). **Kind of change: framework claims, so each edit rests on a recorded verdict**, checked 2026-10-03 against upstream source at the tag the skill pins; verdicts and citations are on [#1558](https://github.com/fmanimashaun/claude-skills/issues/1558#issuecomment-5966270508), and the maintainer's decision to review before rewriting is [here](https://github.com/fmanimashaun/claude-skills/issues/1558#issuecomment-5966218818). Only the sentences a verdict corrected changed; no description or structure change is made here.
   - **REFUTED, fixed:** `turbo.md` said "`<html>` elements marked `data-turbo-permanent`". Drive's selector is `[id][data-turbo-permanent]` inside the body snapshot (Turbo 8.0.23 `src/core/snapshot.js:32-35, 56-60`), so it now says "Elements marked".
