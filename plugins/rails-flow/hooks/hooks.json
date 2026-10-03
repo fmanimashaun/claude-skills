@@ -1,5 +1,7 @@
 {
-  "modules": ["./register.js"],
+  "modules": [
+    "./register.js"
+  ],
   "hooks": {
     "PreToolUse": [
       {
@@ -13,6 +15,11 @@
           {
             "type": "command",
             "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/guard-claims.sh\"",
+            "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/guard-worktree.sh\"",
             "timeout": 15
           }
         ]

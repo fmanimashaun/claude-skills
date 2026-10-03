@@ -563,6 +563,45 @@ CLAIMS: tuple[Claim, ...] = (
              "at merge.",
     ),
 
+    Claim(
+        claim="A session that holds an unmerged recorded lane, or that adds a worktree for a branch or "
+              "issue which already has an unmerged one, is refused `git worktree add`.",
+        stated_in="skills/parallel-session-lane/SKILL.md",
+        anchor="**What makes it true: the rails-flow `guard-worktree` hook.**",
+        kind=GUARANTEE,
+        enforced_by=("hook:plugins/rails-flow/hooks/scripts/guard-worktree.sh", "gate:hook gates",
+                     "gate:rails-flow worktree guard helper", "mutation:hook_guard_worktree",
+                     "mutation:hook_worktree_guard", "mutation:hook_session_start_pointer"),
+        refs=(1581,),
+        note="Fails closed, scoped to `git worktree add`. The duplicate rule reads `git worktree list` "
+             "alone and needs no record or session identity; the one-issue rule reads the coordinator's "
+             "lane record. The measured failure it prevents: a restart creating a duplicate of the "
+             "worktree it had just left, orphaning the first one with its uncommitted edits.",
+    ),
+    Claim(
+        claim="The worktree guard protects against accident, not impersonation: a session's identity is "
+              "the session id it sends.",
+        stated_in="skills/parallel-session-lane/SKILL.md",
+        anchor="**Its limit, stated: it protects against accident, not impersonation.**",
+        kind=ADVICE,
+        refs=(1581,),
+        note="A stated limit, not a guarantee, and nothing enforces it away: anything that can send the "
+             "coordinator's session id can write the lane record, and a session nobody recorded passes the "
+             "one-issue rule. Deliberately so: the guard exists to stop a resumed or over-eager session "
+             "creating a second worktree, and a stronger identity would need a host mechanism this repo "
+             "does not have.",
+    ),
+    Claim(
+        claim="A session removes its worktree when its PR merges or its review finishes.",
+        stated_in="skills/parallel-session-lane/SKILL.md",
+        anchor="3. **Clean up when done.**",
+        kind=ADVICE,
+        refs=(1581,),
+        note="Advice with an advisory behind it: the session-start hook lists merged, clean worktrees for "
+             "removal, but nothing removes them, and `--force` is refused by doctrine because a session "
+             "destroyed a finished fix that way.",
+    ),
+
     # ---- what the marketplace ships ---------------------------------------------------------
     Claim(
         claim="Every plugin in `marketplace.json` is documented, and every entry carries more than a "

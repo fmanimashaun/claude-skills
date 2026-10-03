@@ -16,7 +16,9 @@ GUARD = Guard(
     # The same staging as hook_guard_bash: the suite drives every plugin's hooks. A literal, because
     # lint_self_consistency's harness-dependency-undeclared rule reads it statically -- and that rule is
     # what keeps this copy honest when a hook gains a script (it caught exactly that on #1477).
-    needs=("plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362
+    needs=(
+           'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py',  # session-start.sh runs both (#1581: the harness drives it)
+           "plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362
            'plugins/rails-flow/hooks/scripts', 'plugins/qa-flow/hooks/scripts', 'plugins/qa-flow/scripts',
            # guard-claims.sh runs extract_claims.py; without it the harness's two claim
            # fixtures fail in the staged tempdir and every mutation reads as caught (#1109).

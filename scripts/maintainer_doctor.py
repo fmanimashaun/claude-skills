@@ -404,6 +404,7 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("rails-flow PR-template sections", ("python3", "plugins/rails-flow/hooks/scripts/lib/pr_template.py", "--selftest")),
     # #1581. The per-repo coordination record a worktree guard reads; only the coordinator writes it.
     ("rails-flow coordination record", ("python3", "plugins/rails-flow/hooks/scripts/lib/coordination.py", "--selftest")),
+    ("rails-flow worktree guard helper", ("python3", "plugins/rails-flow/hooks/scripts/lib/worktree_guard.py", "--selftest")),
     ("rails-flow technical spec", ("python3", "plugins/rails-flow/scripts/check_spec.py", "--selftest")),
     ("rails-flow simple-form-only gate", ("python3", "plugins/rails-flow/scripts/check_simple_form_only.py", "--selftest")),
     ("shipped ERB passes simple-form-only", ("python3", "scripts/check_shipped_erb_forms.py")),

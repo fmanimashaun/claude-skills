@@ -31,6 +31,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import time
 import tempfile
 from pathlib import Path
 
@@ -1459,12 +1460,199 @@ def timeout_fixtures() -> None:
 # as their selftest, each mutating ONE hook, and every mutant re-ran all ten groups -- about 70% of
 # the mutation-coverage budget. A guard now names the groups that drive its hook; the doctor's
 # `hook gates` gate and the harness's own guard still run every group.
+# ---- guard-worktree.sh (#1581) -------------------------------------------------------------------
+def guard_worktree_fixtures() -> None:
+    coord = HOOKS / "lib" / "coordination.py"
+
+    def git(cwd, *a):
+        return _run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *a], cwd=cwd, check=True,
+                    capture_output=True, text=True)
+
+    def new_repo(td) -> Path:
+        repo = Path(td) / "repo"
+        repo.mkdir()
+        git(repo, "init", "-q", "-b", "main")
+        git(repo, "commit", "-q", "--allow-empty", "-m", "init")
+        git(repo, "branch", "dev")          # the integration branch
+        return repo
+
+    def add_wt(repo: Path, name: str, branch: str, *, unmerged: bool = True) -> Path:
+        path = repo.parent / name
+        git(repo, "worktree", "add", "-q", "-b", branch, str(path), "dev")
+        if unmerged:
+            git(path, "commit", "-q", "--allow-empty", "-m", "wip")
+        return path.resolve()
+
+    def lane(repo: Path, owner: str, path: Path, branch: str) -> None:
+        """The COORDINATOR records the lane: hooks only read the record."""
+        for args in (["claim"], ["assign", "--path", str(path), "--branch", branch, "--owner", owner]):
+            _run([sys.executable, str(coord), args[0], "--session-id", "COORD", *args[1:], "--cwd", str(repo)],
+                 capture_output=True)
+
+    def payload(repo: Path, cmd: str, sid: str | None) -> str:
+        d = {"tool_name": "Bash", "hook_event_name": "PreToolUse", "tool_input": {"command": cmd}, "cwd": str(repo)}
+        if sid is not None:
+            d["session_id"] = sid
+        return json.dumps(d)
+
+    def guard(repo: Path, cmd: str, sid: str | None = "SESS-A", **kw) -> tuple[int, str]:
+        return run_hook("guard-worktree.sh", cwd=repo, stdin=payload(repo, cmd, sid), unset=("CLAUDE_PROJECT_DIR",), **kw)
+
+    def denied(label: str, res: tuple[int, str], *needles: str) -> None:
+        code, out = res
+        check(label, code == 2 and "BLOCKED by rails-flow worktree guard" in out, f"exit {code}: {out.strip()[:200]!r}")
+        for n in needles:
+            check(f"...and the message names {n!r}", n in out, out.strip()[:300])
+
+    def allowed(label: str, res: tuple[int, str]) -> None:
+        check(label, res[0] == 0, f"exit {res[0]}: {res[1].strip()[:200]!r}")
+
+    # 4. A fresh session that owns nothing, in a repository with no coordination record.
+    with tempfile.TemporaryDirectory() as td:
+        repo = new_repo(td)
+        allowed("guard-worktree: a session that owns nothing may add a worktree", guard(repo, "git worktree add ../fresh -b feature/fresh dev"))
+
+    # 1. This session owns an unmerged worktree: a second one is DENIED.
+    with tempfile.TemporaryDirectory() as td:
+        repo = new_repo(td)
+        wt = add_wt(repo, "a", "feature/a")
+        lane(repo, "SESS-A", wt, "feature/a")
+        denied("guard-worktree: a session that owns an UNMERGED worktree may not add another",
+               guard(repo, "git worktree add ../b -b feature/b dev"), str(wt), "feature/a", "hand the new task back")
+        denied("guard-worktree: ...also through `cd x && git worktree add`", guard(repo, f"cd {td} && git worktree add ../b -b feature/b dev"))
+        denied("guard-worktree: ...also through `git -C repo worktree add`", guard(repo, f"git -C {repo} worktree add ../b -b feature/b dev"))
+        denied("guard-worktree: ...also after an env prefix", guard(repo, "FOO=1 git worktree add ../b -b feature/b dev"))
+        allowed("guard-worktree: ANOTHER session, owning nothing, is not held back by it", guard(repo, "git worktree add ../b -b feature/b dev", "SESS-B"))
+        allowed("guard-worktree: a payload with no session_id cannot be matched to an owner, so rule 1 does not fire",
+                guard(repo, "git worktree add ../b -b feature/b dev", None))
+        # Scope: only `git worktree add` is judged.
+        for cmd in ("git status", "git worktree list", f"git worktree remove {wt}", 'echo "git worktree add ../x"',
+                    "grep -c 'worktree add' notes.md"):
+            allowed(f"guard-worktree: NOT a worktree add, left alone: {cmd[:40]}", guard(repo, cmd))
+        # 3 (the other half). The lane's branch merges: the session may add one again.
+        git(repo, "branch", "-f", "dev", "feature/a")
+        allowed("guard-worktree: after the owned worktree's branch MERGES, a new worktree is allowed",
+                guard(repo, "git worktree add ../b -b feature/b dev"))
+
+    # A lane whose worktree has been removed is finished, not in progress.
+    with tempfile.TemporaryDirectory() as td:
+        repo = new_repo(td)
+        wt = add_wt(repo, "a", "feature/a")
+        lane(repo, "SESS-A", wt, "feature/a")
+        git(repo, "worktree", "remove", "--force", str(wt))
+        allowed("guard-worktree: a lane whose worktree no longer exists does not block", guard(repo, "git worktree add ../b -b feature/b dev"))
+
+    # 3. A DUPLICATE worktree for the same branch, or the same issue, is denied -- no record needed.
+    with tempfile.TemporaryDirectory() as td:
+        repo = new_repo(td)
+        wt = add_wt(repo, "issue-77", "feature/issue-77-x")
+        denied("guard-worktree: a second worktree for the SAME branch is denied (a resume creating a duplicate)",
+               guard(repo, "git worktree add ../dup feature/issue-77-x"), str(wt), "feature/issue-77-x")
+        denied("guard-worktree: ...even with --force", guard(repo, "git worktree add -f ../dup feature/issue-77-x"))
+        denied("guard-worktree: a second worktree for the same ISSUE under another branch name is denied",
+               guard(repo, "git worktree add ../again -b fix/77-again dev"), str(wt))
+        denied("guard-worktree: ...and by the new worktree's DIRECTORY name", guard(repo, "git worktree add ../issue-77-redo -b scratch dev"))
+        allowed("guard-worktree: a DIFFERENT issue is allowed beside it (two live worktrees for different work stay silent)",
+                guard(repo, "git worktree add ../other -b fix/78-other dev"))
+        add_wt(repo, "issue-10", "feature/issue-10-y")
+        allowed("guard-worktree: a date in a branch name is not an issue number (its month must not match issue 10)",
+                guard(repo, "git worktree add ../d -b chore/2026-10-02-x dev"))
+        git(repo, "branch", "-f", "dev", "feature/issue-77-x")
+        allowed("guard-worktree: once the same-issue worktree is MERGED, a new one for it is allowed (finished)",
+                guard(repo, "git worktree add ../again -b fix/77-again dev"))
+
+    # The exact-branch rule on its own: a branch with NO issue number, so the same-issue rule cannot be what refuses.
+    with tempfile.TemporaryDirectory() as td:
+        repo = new_repo(td)
+        wt = add_wt(repo, "lane-band", "feature/lane-band")
+        denied("guard-worktree: a second worktree for a branch with no issue number is denied by the branch alone",
+               guard(repo, "git worktree add ../dup feature/lane-band"), str(wt), "feature/lane-band")
+        denied("guard-worktree: ...also with --force", guard(repo, "git worktree add -f ../dup feature/lane-band"))
+        allowed("guard-worktree: a different branch with no issue number is allowed beside it",
+                guard(repo, "git worktree add ../other -b feature/other dev"))
+
+    # A record that cannot be read fails CLOSED, with the way out.
+    with tempfile.TemporaryDirectory() as td:
+        repo = new_repo(td)
+        (repo / ".git" / "coordination.json").write_text("{not json")
+        denied("guard-worktree: an unreadable coordination record fails closed", guard(repo, "git worktree add ../b -b feature/b dev"),
+               "unreadable")
+
+    # DEGRADED. No python3: the hook cannot judge, so it refuses a worktree add and leaves everything else alone.
+    with tempfile.TemporaryDirectory() as td:
+        repo = new_repo(td)
+        bindir = Path(td) / "bin"
+        bindir.mkdir()
+        for tool in ("bash", "git"):
+            (bindir / tool).symlink_to(shutil.which(tool))
+        bare = {"PATH": str(bindir)}
+        denied("guard-worktree: with no python3 a worktree add is refused, not waved through",
+               guard(repo, "git worktree add ../b -b feature/b dev", env_extra=bare), "python3")
+        allowed("guard-worktree: ...and with no python3 an ordinary command is untouched", guard(repo, "git status", env_extra=bare))
+
+    # A helper that crashes must fail CLOSED: any exit but 0 or 2 would let the command run.
+    with tempfile.TemporaryDirectory() as td:
+        repo = new_repo(td)
+        stage = Path(td) / "stage"
+        shutil.copytree(HOOKS, stage)
+        (stage / "lib" / "worktree_guard.py").write_text("import sys\nsys.exit(7)\n")
+        env = dict(os.environ)
+        env.pop("CLAUDE_PROJECT_DIR", None)
+        done = _run(["bash", str(stage / "guard-worktree.sh")], cwd=repo, input=payload(repo, "git worktree add ../b -b b dev", "S"),
+                    env=env, capture_output=True, text=True, timeout=60)
+        check("guard-worktree: a crashing helper fails CLOSED (exit 2, says so)",
+              done.returncode == 2 and "failed" in done.stderr, f"exit {done.returncode}: {done.stderr.strip()[:200]!r}")
+
+    # DORMANT outside a git repository: there are no worktrees to protect.
+    with tempfile.TemporaryDirectory() as td:
+        allowed("guard-worktree: outside a git repository the guard is dormant", guard(Path(td), "git worktree add ../x -b y"))
+
+    # ---- the SessionStart resume pointer: advisory, fail open, SILENT when there is nothing to say ----
+    def start(repo: Path, sid: str | None = "SESS-A", **env) -> tuple[int, str]:
+        stdin = json.dumps({"session_id": sid, "hook_event_name": "SessionStart"}) if sid is not None else "not json"
+        return run_hook("session-start.sh", cwd=repo, stdin=stdin, unset=("CLAUDE_PROJECT_DIR",),
+                        env_extra=dict({"RAILS_FLOW_ZOMBIE_WARN": "100000"}, **env))
+
+    with tempfile.TemporaryDirectory() as td:
+        repo = new_repo(td)
+        code, base = start(repo)
+        check("resume pointer: with nothing recorded the hook says nothing about worktrees",
+              code == 0 and "resume in place" not in base and "finished worktree" not in base and "zombie" not in base, base[:200])
+        wt = add_wt(repo, "a", "feature/a")
+        lane(repo, "SESS-A", wt, "feature/a")
+        code, out = start(repo)
+        check("resume pointer: the session that holds a lane is told where to resume",
+              code == 0 and "resume in place" in out and str(wt) in out and "feature/a" in out
+              and "finished worktree" not in out, out[-300:])
+        check("resume pointer: ANOTHER session is not pointed at it", "resume in place" not in start(repo, "SESS-B")[1])
+        check("resume pointer: a payload with no usable session_id is not pointed at anything (fails open, exit 0)",
+              start(repo, None)[0] == 0 and "resume in place" not in start(repo, None)[1])
+        done_wt = add_wt(repo, "done", "feature/done", unmerged=False)
+        out = start(repo)[1]
+        check("resume pointer: a merged, clean worktree is listed as finished, with how to remove it",
+              "finished worktree" in out and str(done_wt) in out and "git worktree remove" in out, out[-300:])
+        (done_wt / "scratch.txt").write_text("uncommitted\n")
+        check("resume pointer: a merged worktree with uncommitted work is NOT listed as finished",
+              str(done_wt) not in start(repo)[1])
+        # Zombies: a real one, parented to this process, then reaped.
+        child = subprocess.Popen(["sh", "-c", "exit 0"])
+        time.sleep(0.5)
+        try:
+            out = start(repo, RAILS_FLOW_ZOMBIE_WARN="1")[1]
+            check("resume pointer: a zombie count at the threshold is reported, naming a parent",
+                  "zombie process" in out and "pid" in out, out[-300:])
+            check("resume pointer: below the threshold the zombie warning is silent", "zombie" not in start(repo)[1])
+        finally:
+            child.wait()
+
+
 GROUPS = {
     "stop_gate": stop_gate_fixtures, "guard_lane": guard_lane_fixtures,
     "guard_migrate": guard_migrate_fixtures, "lint_ruby": lint_ruby_fixtures,
     "self_consistency": self_consistency_fixtures, "guard_bash": guard_bash_fixtures,
     "guard_claims": guard_claims_fixtures, "release_gate": release_gate_fixtures,
     "ci_verdict_hint": ci_verdict_hint_fixtures, "timeout": timeout_fixtures,
+    "guard_worktree": guard_worktree_fixtures,
 }
 
 
