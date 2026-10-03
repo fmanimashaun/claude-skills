@@ -514,6 +514,11 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("agent output contract", ("python3", "scripts/check_agent_output_contract.py")),
     ("agent output contract selftest",
      ("python3", "scripts/check_agent_output_contract.py", "--selftest")),
+    # #1563. A catalogue of what reviewers blocked on is only a defence while each class still names
+    # a fixture that exists on dev. A refactor deletes a fixture silently; this refuses the pointer.
+    ("blocked catalogue", ("python3", "scripts/check_blocked_catalogue.py")),
+    ("blocked catalogue selftest",
+     ("python3", "scripts/check_blocked_catalogue.py", "--selftest")),
     # #1096. A rebase across a promotion applies CLEANLY and files unshipped bullets under the
     # release heading the arm just renamed. A loss is absolute; an addition is ratcheted, because
     # 16 blocks already carry post-tag bullets from before anyone was watching.
