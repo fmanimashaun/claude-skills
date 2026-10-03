@@ -39,6 +39,12 @@ GUARD = Guard(
             "lane-band.js: its hook",
         ),
         Mutation(
+            "register.js throws while registering, which the test must report by file name",
+            "  contextNudge(on, options)\n  laneBand(on, options)\n",
+            "  throw new Error('boom')\n",
+            "register.js: register() threw",
+        ),
+        Mutation(
             "no mod is registered at all",
             "  contextNudge(on, options)\n  laneBand(on, options)\n",
             "  void contextNudge\n  void laneBand\n",

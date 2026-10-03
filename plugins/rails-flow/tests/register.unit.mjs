@@ -23,6 +23,32 @@ const HOOKS = fileURLToPath(new URL('../hooks/', import.meta.url))
 const problems = []
 let fresh = 0
 
+// The options object handed to every register(on, options) below. register.js forwards whatever it is given
+// to each mod, so calling register.js and each mod alone with the SAME object keeps the comparison fair, and a
+// mod that reads `options` finds one instead of crashing on undefined.
+const OPTIONS = {}
+
+// What has been registered so far, kept up here with the report because the report must exist BEFORE the first
+// await below: a mod whose import never settles ends the process with exit code 13 right there, and a handler
+// registered at the bottom of the file would never have been registered at all.
+const seen = new Set()
+let mods = 0
+let loading = '' // the file being imported right now, named if the import never finishes
+
+process.on('exit', (code) => {
+  if (loading !== '') problems.push(`${loading}: its import never finished (an await that never settles), so nothing after it was checked`)
+  if (problems.length === 0 && code === 0) {
+    console.log(`register unit: ${seen.size} hooks from ${mods} mods, each event and matcher once, every mod registered`)
+    return
+  }
+  // `code` is the status the process was ABOUT to exit with: 0 when only a check failed (this handler then makes
+  // it 1), 13 when an await never settled. It is named only when it is not 0, so the line never says "0" of a failure.
+  const ended = code === 0 ? '' : `; the process had already ended with exit code ${code}`
+  console.error(`register unit FAILED -- ${problems.length} problem(s)${ended}:`)
+  for (const p of problems) console.error(`  - ${p}`)
+  process.exitCode = 1
+})
+
 // What a register(on, options) function registers: one entry per hook, keyed `event` or `event {matcher}`.
 function record(fn) {
   const keys = []
@@ -42,9 +68,14 @@ if (JSON.stringify(hooksJson.modules) !== '["./register.js"]') {
   problems.push(`hooks.json "modules" is ${JSON.stringify(hooksJson.modules)}, not ["./register.js"]: it takes one path, and register.js is the module that registers every mod`)
 }
 
-// 1. register.js: every hook is a function, none is registered twice, and there is at least one.
-const viaRegister = record((on) => register(on))
-const seen = new Set()
+// 1. register.js: every hook is a function, none is registered twice, and there is at least one. A throw is
+// reported with the file's name, not left as a raw stack trace.
+let viaRegister = []
+try {
+  viaRegister = record((on) => register(on, OPTIONS))
+} catch (err) {
+  problems.push(`register.js: register() threw: ${String(err.message).split('\n')[0]}`)
+}
 for (const { key, isFunction } of viaRegister) {
   if (!isFunction) problems.push(`${key}: the last argument is not a function`)
   if (seen.has(key)) problems.push(`${key}: registered twice`)
@@ -56,31 +87,28 @@ if (viaRegister.length === 0) problems.push('register.js registered no hook at a
 // `register` function. Each is imported with a ?fresh=N query: a mod keeps its state in module variables
 // (context-nudge.mjs: percent, nudged; lane-band.js: info, busy), so a shared import would leak it.
 const files = readdirSync(HOOKS).filter((f) => /\.(mjs|js)$/.test(f) && f !== 'register.js').sort()
-let mods = 0
 for (const file of files) {
   let mod
   try {
+    loading = file
     mod = await import(`../hooks/${file}?fresh=${++fresh}`)
+    loading = ''
   } catch (err) {
+    loading = ''
     problems.push(`${file}: could not be imported (${String(err.message).split('\n')[0]})`)
     continue
   }
   if (typeof mod.register !== 'function') continue // a helper module, not a mod
   mods += 1
-  for (const { key } of record((on) => mod.register(on))) {
+  let own = []
+  try {
+    own = record((on) => mod.register(on, OPTIONS))
+  } catch (err) {
+    problems.push(`${file}: register() threw: ${String(err.message).split('\n')[0]}`)
+    continue
+  }
+  for (const { key } of own) {
     if (!seen.has(key)) problems.push(`${file}: its hook "${key}" is not registered by register.js, so the mod never runs`)
   }
 }
 if (mods === 0) problems.push('no mod was found in hooks/, so nothing was checked')
-
-// Report from an 'exit' handler: a check that never settles ends the process (exit code 13, an unsettled
-// top-level await) before any line below would run, and the problems would vanish.
-process.on('exit', (code) => {
-  if (problems.length === 0 && code === 0) {
-    console.log(`register unit: ${seen.size} hooks from ${mods} mods, each event and matcher once, every mod registered`)
-    return
-  }
-  console.error(`register unit FAILED -- ${problems.length} problem(s), exit code ${code}:`)
-  for (const p of problems) console.error(`  - ${p}`)
-  process.exitCode = 1
-})
