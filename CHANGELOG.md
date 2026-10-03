@@ -3606,6 +3606,8 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **`guard-bash.sh` allowed `git add -A` and a force-push to dev when the command carried more than ~64KB of text — `plugins/rails-flow/hooks/scripts/guard-bash.sh`, `plugins/rails-flow/scripts/check_hook_gates.py`** (Refs #1568). `hit()` and the issue-create trigger piped `printf` into `grep -q` under `set -o pipefail`; `grep -q` exits at the first match, `printf` takes SIGPIPE once the text outgrows the pipe buffer, and the 141 was read as "no match". Measured on `origin/dev` 914338e: `git add -A` plus 10k lines of `echo` exited 0 (1k lines exited 2). Both pipelines now run with pipefail off in a subshell, so only grep's own status decides. Three fixtures (add -A, force-push to dev, and a `git status` control, each followed by 10k lines); reverting the fix turns the first two red and leaves the control green. Four further fail-opens found by the same adversarial pass are filed, not fixed here. Our own design; no framework claim.
+
 - **guard-bash fails closed when its normaliser cannot read the command — `plugins/rails-flow/hooks/scripts/guard-bash.sh`, `plugins/rails-flow/hooks/scripts/lib/normalize_cmd.sh`** (#1526, from PR #1519's review). Inputs that left the hook unable to read the command let every rule pass, so `git add -A` was allowed, against CLAUDE.md's "blocked either way":
   - **a missing or failing tool**: no `awk` made the normaliser print nothing. `normalize_segments` now RETURNS its pipeline's status (it was discarded, so even an awk exiting 2 read as clean), and the hook runs it under `pipefail`;
   - **no `python3`, or a payload that would not parse** (including a lone surrogate): the hook had only the raw JSON;

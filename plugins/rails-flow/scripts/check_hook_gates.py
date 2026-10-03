@@ -616,6 +616,16 @@ def guard_bash_fixtures() -> None:
               raw(payload("git push --force origin dev"), bd) == 2, "exit 0")
         check("guard-bash (#1526): CONTROL: with no awk on PATH, `git status` still passes",
               raw(payload("git status"), bd) == 0, "exit 2")
+    # 1b. A LONG COMMAND: `grep -q` quits at the first match, `printf` takes SIGPIPE once the text outgrows
+    # the pipe buffer, and `set -o pipefail` read that 141 as "no match". `git add -A` plus 10k lines of echo
+    # was allowed (attacker corpus b2/b3/b4/b14). 10k lines of `echo line N` is ~130KB, past a 64KB pipe.
+    long_tail = "".join(f"echo line {i}\n" for i in range(10000))
+    check("guard-bash: `git add -A` followed by 10k lines is still blocked (pipefail + SIGPIPE)",
+          raw(payload("git add -A\n" + long_tail)) == 2, "exit 0: grep -q's early exit was read as no match")
+    check("guard-bash: a force-push to dev followed by 10k lines is still blocked",
+          raw(payload("git push --force origin dev\n" + long_tail)) == 2, "exit 0")
+    check("guard-bash: CONTROL: `git status` followed by 10k lines still passes",
+          raw(payload("git status\n" + long_tail)) == 0, "exit 2")
     # 2. AN UNCLOSED HEREDOC INSIDE `$( )`: bash ends it at the line closing the `$( )`.
     check("guard-bash (#1526): a heredoc left open inside $( ) does not hide the `git add -A` after it",
           run("x=$(cat <<EOF\nfoo\n)\ngit add -A") == 2, "exit 0")
