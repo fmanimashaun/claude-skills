@@ -102,8 +102,8 @@ TEXT: dict[str, tuple[str, str]] = {
     "unknown.source": ("This source cannot be read: {why}.", "description"),
     "unknown.gh": ("The gh command failed or is missing", "label"),
     "unknown.budget": ("The time budget ended before this source ran", "label"),
-    "unknown.config_lines": ("No release line is declared. Add release_lines to .claude/board.config.json.", "instruction"),
-    "unknown.workflow": ("No full-run workflow is declared. Set full_run_workflow in .claude/board.config.json.", "instruction"),
+    "unknown.config_lines": ("The config declares no release line. Add release_lines to .claude/board.config.json.", "instruction"),
+    "unknown.workflow": ("The config declares no full-run workflow. Set full_run_workflow in .claude/board.config.json.", "instruction"),
     "unknown.record": ("The coordination record cannot be read: {why}.", "description"),
     "unknown.no_record": ("This repository has no coordination record.", "description"),
     "unavailable.repo": ("Repo unavailable: {why}.", "description"),
@@ -465,6 +465,13 @@ def collect_machine(env: Env, cfg: dict) -> dict:
 # ---- coordination record ---------------------------------------------------------------------------
 def read_record(env: Env, root: Path) -> tuple[str, "dict | str"]:
     """('ok', record) | ('none', '') | ('unreadable', reason). A corrupt file is never an empty record."""
+    try:
+        return _read_record(env, root)
+    except Exception as e:                       # noqa: BLE001 -- reported as unreadable, never as 'no record'
+        return "unreadable", type(e).__name__
+
+
+def _read_record(env: Env, root: Path) -> tuple[str, "dict | str"]:
     rc, out = env.sh(["git", "rev-parse", "--git-common-dir"], root)
     if rc != 0 or not out.strip():
         return "unreadable", "git rev-parse failed"
@@ -532,6 +539,13 @@ def events_of(record: dict) -> list[dict]:
 
 
 def collect_merged_today(env: Env, repo: Repo) -> "list[dict] | None":
+    try:
+        return _merged_today(env, repo)
+    except Exception:                            # noqa: BLE001 -- None means UNKNOWN, rendered as such
+        return None
+
+
+def _merged_today(env: Env, repo: Repo) -> "list[dict] | None":
     today = env.now.strftime("%Y-%m-%d")
     rc, out = repo.gh(env, ["pr", "list", "--state", "merged", "--search", f"merged:>={today}", "--limit",
                             str(MERGED_LIMIT), "--json", "number,title,mergedAt"])
