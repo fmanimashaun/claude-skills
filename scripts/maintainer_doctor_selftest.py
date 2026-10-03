@@ -937,4 +937,11 @@ def run() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(run())
+    # CONTAINED (#1582): this selftest starts process trees on purpose, some built to leak, under
+    # every mutant too. Nothing it starts may outlive it -- the 2026-10-03 leak exhausted the
+    # user's process limit. Not optional: a missing helper must fail here, not run uncontained.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "plugins" / "rails-flow" / "scripts"))
+    from process_containment import contained
+    with contained():
+        _rc = run()
+    sys.exit(_rc)
