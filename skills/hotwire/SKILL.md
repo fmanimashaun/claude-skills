@@ -59,8 +59,11 @@ attribute.
 ## Non-negotiable ground rules
 
 - **Server responses drive everything.** After a failed form submit, respond
-  `422 Unprocessable Content` (`:unprocessable_content` on Rails 8.1 / Rack 3.1+; the older
-  `:unprocessable_entity` still means 422 but warns); after a successful mutation, redirect with
+  `422 Unprocessable Content` (on the Rack releases checked, 2.2.8 and 3.0.9, `:unprocessable_content`
+  raises `ArgumentError`; Rails 7.1.0 and 8.0.0 leave the symbol to Rack, so there it needs Rack 3.1+;
+  Rails 8.1.0 accepts either symbol on any Rack; Rails 7.0.8 allows only Rack 2. The older
+  `:unprocessable_entity` returned 422 on every Rack checked, 2.2.8, 3.0.9 and 3.1.0–3.1.8, and
+  printed a deprecation warning only on 3.1.0–3.1.2); after a successful mutation, redirect with
   `303 See Other`. Turbo silently misbehaves without these statuses.
 - **IDs are the contract.** Frames match on `id`; stream actions target `id`
   (or CSS with `targets`). Generate them consistently (`dom_id(record)` in
