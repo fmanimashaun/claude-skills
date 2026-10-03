@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -917,6 +918,17 @@ def guard_claims_fixtures() -> None:
 QA_HOOK = HOOKS.parents[2] / "qa-flow" / "hooks" / "scripts" / "release-gate.sh"
 
 
+def _pin(cmd: str, head: str) -> str:
+    """`cmd` with the head a PR merge into main acts on pinned (#1571). A merge that does not pin it is denied before it
+    is judged, so a fixture that is about WHICH repository, or WHETHER the head is certified, must carry the pin.
+    Commands that are not a PR merge come back unchanged."""
+    if re.search(r"\bgh\s+pr\b.*\bmerge\b", cmd):         # flags may sit between `pr` and `merge`
+        return f"{cmd} --match-head-commit {head}"
+    if re.search(r"pulls/\d+/merge", cmd):
+        return re.sub(r"(pulls/\d+/merge)", rf"\1 -f sha={head}", cmd, count=1)
+    return cmd
+
+
 def release_gate_fixtures() -> None:
     if not QA_HOOK.is_file():
         check("release-gate.sh present beside rails-flow", False, str(QA_HOOK))
@@ -1366,8 +1378,8 @@ def release_gate_effects_fixtures() -> None:
         (Path(td) / "bin").mkdir()
         (Path(td) / "bin" / "gh").write_text(FAKE_GH, encoding="utf-8")
         (Path(td) / "bin" / "gh").chmod(0o755)
-        (Path(td) / "q.graphql").write_text('mutation { mergePullRequest(input:{pullRequestId:"PR_kw1"}) { clientMutationId } }', encoding="utf-8")
-        (Path(td) / "q.json").write_text(json.dumps({"query": 'mutation { mergePullRequest(input:{pullRequestId:"PR_kw1"}) { clientMutationId } }'}), encoding="utf-8")
+        (Path(td) / "q.graphql").write_text('mutation { mergePullRequest(input:{pullRequestId:"PR_kw1", expectedHeadOid:"%s"}) { clientMutationId } }' % hot, encoding="utf-8")
+        (Path(td) / "q.json").write_text(json.dumps({"query": 'mutation { mergePullRequest(input:{pullRequestId:"PR_kw1", expectedHeadOid:"%s"}) { clientMutationId } }' % hot}), encoding="utf-8")
 
         (Path(td) / "draft.json").write_text('{"draft": false}', encoding="utf-8")
 
@@ -1382,6 +1394,15 @@ def release_gate_effects_fixtures() -> None:
 
         hotfix_pr = {"FAKE_PRVIEW": f"main {hot}"}
         promo_pr = {"FAKE_PRVIEW": f"main {stamped}"}
+
+        def pinned(cmd: str, head: str) -> str:
+            """The same command with the head it merges PINNED (#1571). A merge into main that does not pin it is denied
+            before it is judged, so the fixtures that prove the CERTIFICATION decision must carry the pin."""
+            if "graphql" in cmd:
+                return cmd.replace('pullRequestId:"PR_kw1"}', f'pullRequestId:"PR_kw1", expectedHeadOid:"{head}"}}')
+            if "/merge" in cmd:
+                return cmd.replace("/merge", f"/merge -f sha={head}", 1)
+            return f"{cmd} --match-head-commit {head}"
         # (1) A merge through the API, by every spelling, of a PR into main whose head is NOT certified.
         for label, cmd in (
             ("REST PUT, placeholders", "gh api -X PUT repos/{owner}/{repo}/pulls/7/merge -f merge_method=merge"),
@@ -1400,16 +1421,63 @@ def release_gate_effects_fixtures() -> None:
             ("GraphQL -F query=@file", f"gh api graphql -F query=@{td}/q.graphql"),
             ("GraphQL --input file", f"gh api graphql --input {td}/q.json"),
         ):
-            rc, err = run(cmd, **hotfix_pr, FAKE_NODE=f"main {hot}")
+            rc, err = run(pinned(cmd, hot), **hotfix_pr, FAKE_NODE=f"main {hot}")
             check(f"release-gate (#1569): {label} merging an uncertified PR head into main is blocked, naming the PR head",
                   rc == 2 and "PR head" in err, f"rc={rc} {err[:200]!r}")
         # The hotfix model: the SAME merge is permitted when the PR head IS the certified commit.
         for cmd in ("gh api -X PUT repos/o/r/pulls/7/merge", "gh pr merge 7"):
-            rc, err = run(cmd, **promo_pr)
+            rc, err = run(pinned(cmd, stamped), **promo_pr)
             check(f"release-gate (#1569): `{cmd}` of a PR whose head carries a PASS stamp is permitted", rc == 0, f"rc={rc} {err[:200]!r}")
-        rc, err = run("gh api -X PUT repos/o/r/pulls/7/merge", FAKE_PRVIEW=f"main {hot}")
+        rc, err = run(pinned("gh api -X PUT repos/o/r/pulls/7/merge", hot), FAKE_PRVIEW=f"main {hot}")
         check("release-gate (#1569): a hotfix head is judged by ITS stamp, not dev's (dev is certified, the head is not)",
               rc == 2 and hot[:12] in err, f"rc={rc} {err[:200]!r}")
+        # (#1571) THE HEAD IS PINNED. The gate reads the PR's head, then GitHub merges whatever the head is a moment
+        # later; a commit pushed in between would ride on the certification. So a merge into main must pin the head
+        # the gate judged (`--match-head-commit`, `sha=`, `expectedHeadOid`), and the denial prints the command to run.
+        rest = "gh api -X PUT repos/o/r/pulls/7/merge"
+        gql = "gh api graphql -f query='mutation { mergePullRequest(input:{pullRequestId:\"PR_kw1\"}) { clientMutationId } }'"
+        for label, cmd, want in (
+            ("`gh pr merge`", "gh pr merge 7", f"gh pr merge 7 --match-head-commit {stamped}"),
+            ("`gh pr merge` with other flags", "gh pr merge 7 --squash --delete-branch", f"--match-head-commit {stamped}"),
+            ("a REST merge", rest, f"-f sha={stamped}"),
+            ("a GraphQL merge", gql, f'expectedHeadOid: "{stamped}"'),
+        ):
+            rc, err = run(cmd, **promo_pr, FAKE_NODE=f"main {stamped}")
+            check(f"release-gate (#1571): {label} into main without a pin is blocked",
+                  rc == 2 and "without pinning the head" in err, f"rc={rc} {err[:200]!r}")
+            check(f"release-gate (#1571): {label} without a pin: the denial prints the exact command, with the full head",
+                  want in err, err[:300])
+        for label, cmd in (
+            ("a full pin", f"gh pr merge 7 --match-head-commit {stamped}"),
+            ("the `=` spelling", f"gh pr merge 7 --match-head-commit={stamped}"),
+            ("an unambiguous prefix of 12 digits", f"gh pr merge 7 --match-head-commit {stamped[:12]}"),
+            ("a prefix of exactly 7 digits", f"gh pr merge 7 --match-head-commit {stamped[:7]}"),
+            ("an uppercase pin", f"gh pr merge 7 --match-head-commit {stamped.upper()}"),
+            ("a pin among other flags", f"gh pr merge 7 --squash --match-head-commit {stamped} --delete-branch"),
+            ("a REST `sha=`", f"{rest} -f sha={stamped}"),
+            ("a GraphQL expectedHeadOid", gql.replace('"PR_kw1"}', f'"PR_kw1", expectedHeadOid:"{stamped}"}}')),
+        ):
+            rc, err = run(cmd, **promo_pr, FAKE_NODE=f"main {stamped}")
+            check(f"release-gate (#1571): CONTROL: {label} pins the judged head and is permitted", rc == 0, f"rc={rc} {err[:200]!r}")
+        other = hot if hot != stamped else "0" * 40
+        for label, cmd in (
+            ("a pin for a DIFFERENT commit", f"gh pr merge 7 --match-head-commit {other}"),
+            ("a pin shorter than 7 digits", f"gh pr merge 7 --match-head-commit {stamped[:6]}"),
+            ("a pin that is not hexadecimal", f"gh pr merge 7 --match-head-commit {stamped[:8].replace(stamped[0], 'z')}"),
+            ("a pin built by the shell", "gh pr merge 7 --match-head-commit $HEAD_SHA"),
+            ("an empty pin", "gh pr merge 7 --match-head-commit ''"),
+            ("a REST `sha=` for a different commit", f"{rest} -f sha={other}"),
+            ("a REST `sha=` built by the shell", f"{rest} -f sha=$S"),
+            ("a GraphQL expectedHeadOid for a different commit", gql.replace('"PR_kw1"}', f'"PR_kw1", expectedHeadOid:"{other}"}}')),
+        ):
+            rc, err = run(cmd, **promo_pr, FAKE_NODE=f"main {stamped}")
+            check(f"release-gate (#1571): {label} does not pin the judged head, so it is blocked",
+                  rc == 2 and "without pinning the head" in err, f"rc={rc} {err[:200]!r}")
+        rc, err = run("gh pr merge 7", FAKE_PRVIEW=f"dev {stamped}")
+        check("release-gate (#1571): CONTROL: a PR into dev is not a promotion, so it needs no pin", rc == 0, f"rc={rc} {err[:200]!r}")
+        rc, err = run("gh pr merge 7", **hotfix_pr, QA_ALLOW_MAIN="1")
+        check("release-gate (#1571): CONTROL: the audited QA_ALLOW_MAIN override still lets an unpinned, uncertified merge through",
+              rc == 0 and "QA_ALLOW_MAIN=1 override" in err, f"rc={rc} {err[:200]!r}")
         # Unresolved or unreadable is "could not judge", and that denies.
         for label, cmd, env in (
             ("an unresolvable PR", "gh api -X PUT repos/o/r/pulls/7/merge", {"FAKE_PRVIEW": ""}),
@@ -1722,7 +1790,7 @@ def release_gate_repos_fixtures() -> None:
             ("another git remote", "git push upstream dev:main", {}),
             ("a remote given as a URL", "git push git@github.com:other/fork.git dev:main", {}),
         ):
-            rc, err = run(cmd, **env)
+            rc, err = run(_pin(cmd, stamped), **env)
             check(f"release-gate (#1569): {label} acts on ANOTHER repository, whose stamp cannot be read, and is blocked",
                   rc == 2 and "other/fork" in err, f"rc={rc} {err[:240]!r}")
         # ... and permitted when that repository's own stamp is read through the API and certifies the commit.
@@ -1734,19 +1802,19 @@ def release_gate_repos_fixtures() -> None:
             ("a release into another repository", "gh release create v1 -R other/fork --target main", {}),
             ("another git remote", "git push upstream dev:main", {}),
         ):
-            rc, err = run(cmd, **{**ok_api, **env})
+            rc, err = run(_pin(cmd, stamped), **{**ok_api, **env})
             check(f"release-gate (#1569): {label} is permitted by the OTHER repository's own PASS stamp, read through the API",
                   rc == 0 and "other/fork" in err, f"rc={rc} {err[:240]!r}")
-        rc, err = run("gh pr merge 7 -R other/fork", **{**ok_api, **ok_pr, "FAKE_COMPARE": "ahead\napp.rb", "FAKE_STAMP_REF": hot}, )
+        rc, err = run(_pin("gh pr merge 7 -R other/fork", stamped), **{**ok_api, **ok_pr, "FAKE_COMPARE": "ahead\napp.rb", "FAKE_STAMP_REF": hot}, )
         check("release-gate (#1569): another repository's stamp for an OLDER commit must cover only the stamp itself",
               rc == 2, f"rc={rc} {err[:240]!r}")
         # (2) NOT over-blocked: -R / GH_REPO / a path naming THIS checkout's own repository is judged here.
         for cmd in ("gh pr merge 7 -R o/r", "gh pr merge 7 -R O/R", "GH_REPO=o/r gh pr merge 7", "gh api -X PUT repos/o/r/pulls/7/merge",
                     "git push origin dev:main", "git push origin HEAD:main"):
-            rc, err = run(cmd, **ok_pr)
+            rc, err = run(_pin(cmd, stamped), **ok_pr)
             check(f"release-gate (#1569): CONTROL: `{cmd}` names this checkout's own repository and is judged here (certified: passes)",
                   rc == 0, f"rc={rc} {err[:240]!r}")
-        rc, err = run("gh pr merge 7 -R o/r", FAKE_PRVIEW=f"main {hot}")
+        rc, err = run(_pin("gh pr merge 7 -R o/r", hot), FAKE_PRVIEW=f"main {hot}")
         check("release-gate (#1569): CONTROL: ... and an uncertified head is still blocked", rc == 2 and "PR head" in err, f"rc={rc} {err[:240]!r}")
         # Unreadable repositories and remotes deny.
         for label, cmd in (

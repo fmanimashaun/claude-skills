@@ -179,11 +179,41 @@ add_commit() {
 # note_pr <ctx repo>: act on base/head/_PRR. The certification must be for the commit the PR merges, so
 # a PR whose base or head cannot be resolved is DENIED (#1569): judging it at dev's tip would certify a
 # commit the merge may not contain. A PR into any other branch is not a promotion.
+# split_match <payload>: a classifier payload may end in ` MATCH:<value>` (#1571), the commit the command pins as
+# the head it expects. Sets _PMG (1 when it pins one), _PM (the value; `-` when the command's own text could not
+# name it) and _SPLIT_REST (the payload without it).
+split_match() {
+  case "$1" in
+    *MATCH:*) _PMG=1; _PM="${1##*MATCH:}"; _SPLIT_REST="${1%%MATCH:*}"; _SPLIT_REST="${_SPLIT_REST% }" ;;
+    *) _PMG=0; _PM=""; _SPLIT_REST="$1" ;;
+  esac
+}
+# pin_head <head>: a merge into main must pin the head THIS gate judged (#1571). The gate reads the head, then
+# GitHub merges whatever the head is a moment later: a commit pushed to the PR in between would ride on the
+# certification. `--match-head-commit` (or `sha=` / `expectedHeadOid`) makes GitHub refuse unless the head is still
+# the commit that was judged. A short value counts only as a prefix of the judged head, at least 7 hex digits (git's
+# own abbreviation floor), compared without regard to case. The denial prints the exact command to run.
+pin_head() {
+  local h="$1" m fix
+  m="$(printf '%s' "$_PM" | tr 'A-F' 'a-f')"
+  if [ "$_PMG" = 1 ] && [ "${#m}" -ge 7 ]; then
+    case "$m" in *[!0-9a-f]*) ;; *) case "$h" in "$m"*) return 0 ;; esac ;; esac
+  fi
+  case "${_PINKIND:-cli}" in
+    api) fix="Add -f sha=${h} to the gh api call." ;;
+    gql) fix="Set expectedHeadOid: \"${h}\" in the mutation's input." ;;
+    *)   fix="Run it as: gh pr merge ${_PINSEL:+${_PINSEL} }--match-head-commit ${h}   (keep your other flags)." ;;
+  esac
+  # Recorded, not denied here: the marketplace's own repo and the audited QA_ALLOW_MAIN override are decided AFTER
+  # classification, and either must still be able to let this merge through. The denial is made where the stamp is
+  # judged, once both have been read.
+  [ -n "${pin_fail:-}" ] || pin_fail="this merges a pull request into ${base} without pinning the head the gate judged (${h:0:12}), so a commit pushed to the PR between this check and the merge would ride on that certification. ${fix}"
+}
 note_pr() {
   case "$base" in
     main|master)
       targets_main=1
-      if [ -n "$head" ]; then ctx_repo "${_PRR:--}"; add_ship "$head" "${_R:--}" "the PR head"; else unresolved_pr=1; fi ;;
+      if [ -n "$head" ]; then ctx_repo "${_PRR:--}"; add_ship "$head" "${_R:--}" "the PR head"; pin_head "$head"; else unresolved_pr=1; fi ;;
     "") targets_main=1; unresolved_pr=1 ;;
   esac
 }
@@ -247,10 +277,12 @@ if [ "$_mentions" = 1 ] && [ -f "$_pt" ]; then
         PR_MERGE*)
           # The PR the command NAMES (number, URL or branch); bare = the current branch's PR.
           _sel="${_line#PR_MERGE}"; _sel="${_sel# }"
+          split_match "$_sel"; _sel="$_SPLIT_REST"; _PINKIND=cli; _PINSEL="$_sel"
           resolve_pr "$_sel" "$_crepo"; note_pr ;;
         "API_PR_MERGE "*)
           # #1569: `gh api -X PUT .../pulls/N/merge`; `-` = a number the command does not spell out.
           _n="${_line#API_PR_MERGE }"
+          split_match "$_n"; _n="$_SPLIT_REST"; _PINKIND=api; _PINSEL=""
           if [ "$_n" = "-" ]; then base=""; head=""; else resolve_pr "$_n" "$_crepo"; fi
           note_pr ;;
         "API_MERGE "*|"API_REF "*)
@@ -260,7 +292,8 @@ if [ "$_mentions" = 1 ] && [ -f "$_pt" ]; then
           if [ "$_v" = "-" ]; then unresolved_pr=1; else add_commit "$_v" "$_crepo" branch "the commit being merged or pushed"; fi ;;
         "GQL_PR "*)
           # #1569: GraphQL mergePullRequest names a node id; ask GitHub which PR, base and head it is.
-          _id="${_line#GQL_PR }"; base=""; head=""; _PRR=""
+          _id="${_line#GQL_PR }"; split_match "$_id"; _id="$_SPLIT_REST"; _PINKIND=gql; _PINSEL=""
+          base=""; head=""; _PRR=""
           if [ "$_id" != "-" ]; then
             _out="$(gh api graphql -F id="$_id" -f query='query($id:ID!){node(id:$id){... on PullRequest{baseRefName headRefOid baseRepository{nameWithOwner}}}}' -q '.data.node.baseRefName + " " + .data.node.headRefOid + " " + .data.node.baseRepository.nameWithOwner' 2>/dev/null || true)"
             base="${_out%% *}"; _out="${_out#* }"; head="${_out%% *}"; _PRR="$(printf '%s' "${_out#* }" | tr 'A-Z' 'a-z')"
@@ -358,6 +391,10 @@ fi
 # inline `QA_ALLOW_MAIN=1 gh ...`, `env QA_ALLOW_MAIN=1 ...` or `export QA_ALLOW_MAIN=1; ...` runs AFTER
 # this hook, in a shell that is not the hook's, so none of them is read here (#1569).
 [ "${QA_ALLOW_MAIN:-0}" = "1" ] && { echo "qa-flow: QA_ALLOW_MAIN=1 override — promotion allowed without a fresh stamp (audited)." >&2; exit 0; }
+
+# (#1571) A merge into main that does not pin the head the gate judged (see pin_head). Denied only now, after the
+# marketplace exemption and the override above had their say.
+[ -z "${pin_fail:-}" ] || deny "$pin_fail"
 
 # The STAMP is read as COMMITTED, never from this checkout's working tree: main receives what is
 # committed, so an uncommitted or locally edited stamp certifies nothing that will ship (#1437 review,

@@ -578,6 +578,21 @@ def pr_merge_selector(rest: list[str]) -> str:
     return sel
 
 
+def pr_merge_match(rest: list[str]) -> str | None:
+    """The commit a `gh pr merge` pins with `--match-head-commit`, or None when it pins nothing (#1571). A value the
+    shell builds is `-` (unknown). The hook compares it with the head it resolved: GitHub merges only if the head
+    still is that commit, which closes the gap between the gate's read and the merge."""
+    i = 0
+    while i < len(rest):
+        a = rest[i]
+        if a == "--match-head-commit":
+            return _token(rest[i + 1]) if i + 1 < len(rest) else "-"
+        if a.startswith("--match-head-commit="):
+            return _token(a.split("=", 1)[1])
+        i += 2 if a in GH_MERGE_OPTS_WITH_VALUE else 1
+    return None
+
+
 # #1569. The gate asked "does this command say `git push`/`gh pr merge` to main?" -- a question about
 # SPELLING. A merge through GitHub's REST or GraphQL API, and publishing a release, have the same
 # EFFECT with different spellings, and a promotion went through all of them. So `gh api` and
@@ -758,7 +773,8 @@ def _graphql_effects(call: ApiCall) -> list[str]:
         raise Unjudgeable("a GraphQL document built by the shell cannot be read")
     out = []
     if "mergePullRequest" in text:
-        out.append(f"GQL_PR {_graphql_id(text, call, 'pullRequestId')}")
+        pin = f" MATCH:{_token(_graphql_id(text, call, 'expectedHeadOid'))}" if "expectedHeadOid" in text else ""
+        out.append(f"GQL_PR {_graphql_id(text, call, 'pullRequestId')}{pin}")
     if "updateRef" in text:
         out.append(f"GQL_REF {_graphql_id(text, call, 'refId')} {_token(_graphql_id(text, call, 'oid'))}")
     if "createRef" in text:
@@ -794,7 +810,12 @@ def gh_api_effects(rest: list[str]) -> tuple[list[str], str]:
     m = re.fullmatch(r"(?:repos/([^/]+)/([^/]+)/)?pulls/([^/]+)/merge", path)
     if m:                                       # any write to it: a PUT merges, and so may a verb gh adds later
         n = m.group(3)
-        return [f"API_PR_MERGE {'-' if _expanded(n) or not n.isdigit() else n}"], repo
+        sha = call.value("sha")
+        if sha is None and call.input:
+            data = call.json_input()
+            sha = data.get("sha") if isinstance(data, dict) else None
+        pin = "" if sha is None else f" MATCH:{_token(str(sha))}"
+        return [f"API_PR_MERGE {'-' if _expanded(n) or not n.isdigit() else n}{pin}"], repo
     # A write whose route is built by the shell: unreadable if the expansion could BE the resource
     # (`repos/o/r/$X`, `$URL`), or if the readable part already names one that matters.
     if _expanded(path):
@@ -1337,7 +1358,9 @@ def gh_effects_for(seg, j, cwd, env_repo):
     if names and (_expanded(names[0]) or EXPANDS & set(names[0]) or (len(names) > 1 and (_expanded(names[1]) or EXPANDS & set(names[1])))):
         raise Unjudgeable("the gh subcommand is built by the shell")
     if names == ["pr", "merge"]:
-        return [(f"PR_MERGE {pr_merge_selector(rest)}".rstrip(), repo or env_repo or "-", d)]
+        pin = pr_merge_match(rest)
+        line = f"PR_MERGE {pr_merge_selector(rest)}" + ("" if pin is None else f" MATCH:{pin}")
+        return [(line.rstrip(), repo or env_repo or "-", d)]
     if names[:1] == ["api"]:
         lines, prepo = gh_api_effects(rest)
         return [(ln, prepo if prepo != "-" else (env_repo or "-"), d) for ln in lines]
@@ -1701,6 +1724,16 @@ def selftest() -> int:
         ("gh api -X PATCH repos/o/r/releases/9 -f name=x", []),
         ("gh api -X PATCH repos/o/r/releases/9 -F draft=true", []),
         # (#1571) what earlier segments of ONE command did to the branch the hook read before it ran
+        # (#1571) the head a merge into main pins, in each of its three spellings
+        ("gh pr merge 5 --match-head-commit abc1234", ["PR_MERGE 5 MATCH:abc1234"]),
+        ("gh pr merge 5 --match-head-commit=ABC1234 --squash", ["PR_MERGE 5 MATCH:ABC1234"]),
+        ("gh pr merge --match-head-commit abc1234 7", ["PR_MERGE 7 MATCH:abc1234"]),
+        ("gh pr merge 5 --match-head-commit $H", ["PR_MERGE 5 MATCH:-"]),
+        ("gh pr merge 5 --squash", ["PR_MERGE 5"]),
+        ("gh api -X PUT repos/o/r/pulls/5/merge -f sha=abc1234 -f merge_method=merge", ["API_PR_MERGE 5 MATCH:abc1234"]),
+        ("gh api -X PUT repos/o/r/pulls/5/merge -f sha=$H", ["API_PR_MERGE 5 MATCH:-"]),
+        ("gh api graphql -f query='mutation{mergePullRequest(input:{pullRequestId:\"PR_kwDOA\",expectedHeadOid:\"abc1234\"}){clientMutationId}}'", ["GQL_PR PR_kwDOA MATCH:abc1234"]),
+        ("gh api graphql -f query='mutation{mergePullRequest(input:{pullRequestId:\"PR_kwDOA\"}){clientMutationId}}'", ["GQL_PR PR_kwDOA"]),
         ("git switch main && git merge hotfix", ["GIT_MERGE_MAIN hotfix"]),
         ("git checkout main && git merge hotfix", ["GIT_MERGE hotfix", "GIT_MERGE_MAIN hotfix"]),   # `checkout main` may restore a PATH named main
         ("git checkout -q main; git merge hotfix", ["GIT_MERGE hotfix", "GIT_MERGE_MAIN hotfix"]),   # `checkout main` may restore a PATH named main

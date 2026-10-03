@@ -36,8 +36,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a PR into main is judged at dev's tip again, so a hotfix rides dev's certification",
-            'if [ -n "$head" ]; then ctx_repo "${_PRR:--}"; add_ship "$head" "${_R:--}" "the PR head"; else unresolved_pr=1; fi ;;\n    "")',
-            'if [ -n "$head" ]; then needs_dev=1; else unresolved_pr=1; fi ;;\n    "")',
+            'if [ -n "$head" ]; then ctx_repo "${_PRR:--}"; add_ship "$head" "${_R:--}" "the PR head"; pin_head "$head"; else unresolved_pr=1; fi ;;\n    "")',
+            'if [ -n "$head" ]; then needs_dev=1; pin_head "$head"; else unresolved_pr=1; fi ;;\n    "")',
             "a hotfix head is judged by ITS stamp, not dev's",
         ),
         Mutation(
@@ -154,6 +154,73 @@ GUARD = Guard(
             '[ "${QA_ALLOW_MAIN:-0}" = "1" ] && { echo "qa-flow: QA_ALLOW_MAIN=1 override',
             '{ [ "${QA_ALLOW_MAIN:-0}" = "1" ] || printf \'%s\' "$cmd" | grep -q \'QA_ALLOW_MAIN=1\'; } && { echo "qa-flow: QA_ALLOW_MAIN=1 override',
             "release-gate (#1571): QA_ALLOW_MAIN typed into the command as an inline assignment does not authorise it",
+        ),
+        # (#1571) a merge into main must PIN the head the gate judged
+        Mutation(
+            'an unpinned merge into main is no longer refused, so a head pushed after the check rides on the certification',
+            '  [ -n "${pin_fail:-}" ] || pin_fail="this merges a pull request',
+            '  : pin_fail="this merges a pull request',
+            'release-gate (#1571): `gh pr merge` into main without a pin is blocked',
+        ),
+        Mutation(
+            'a pin shorter than 7 digits is accepted as a prefix',
+            '  if [ "$_PMG" = 1 ] && [ "${#m}" -ge 7 ]; then',
+            '  if [ "$_PMG" = 1 ] && [ "${#m}" -ge 1 ]; then',
+            'release-gate (#1571): a pin shorter than 7 digits does not pin the judged head, so it is blocked',
+        ),
+        Mutation(
+            'a pin for a DIFFERENT commit is accepted',
+            '*) case "$h" in "$m"*) return 0 ;; esac ;; esac',
+            '*) case "$h" in *) return 0 ;; esac ;; esac',
+            'release-gate (#1571): a pin for a DIFFERENT commit does not pin the judged head, so it is blocked',
+        ),
+        Mutation(
+            'the pin is compared case-sensitively, so an uppercase copy of the head is refused',
+            '  m="$(printf \'%s\' "$_PM" | tr \'A-F\' \'a-f\')"',
+            '  m="$_PM"',
+            'release-gate (#1571): CONTROL: an uppercase pin pins the judged head and is permitted',
+        ),
+        Mutation(
+            'a pin that is not hexadecimal is accepted',
+            '    case "$m" in *[!0-9a-f]*) ;; *) case',
+            '    case "$m" in *[!0-9a-f]*) return 0 ;; *) case',
+            'release-gate (#1571): a pin that is not hexadecimal does not pin the judged head, so it is blocked',
+        ),
+        Mutation(
+            'the denial for gh pr merge prints a shortened head, not the exact command to run',
+            '--match-head-commit ${h}   (keep your other flags).',
+            '--match-head-commit ${h:0:7}   (keep your other flags).',
+            'release-gate (#1571): `gh pr merge` without a pin: the denial prints the exact command, with the full head',
+        ),
+        Mutation(
+            'the denial for a REST merge prints a shortened head',
+            'fix="Add -f sha=${h} to the gh api call."',
+            'fix="Add -f sha=${h:0:7} to the gh api call."',
+            'release-gate (#1571): a REST merge without a pin: the denial prints the exact command, with the full head',
+        ),
+        Mutation(
+            'the denial for a GraphQL merge prints a shortened head',
+            'fix="Set expectedHeadOid: \\"${h}\\" in the mutation\'s input."',
+            'fix="Set expectedHeadOid: \\"${h:0:7}\\" in the mutation\'s input."',
+            'release-gate (#1571): a GraphQL merge without a pin: the denial prints the exact command, with the full head',
+        ),
+        Mutation(
+            "the pin on a gh pr merge is not read from the classifier's line",
+            'split_match "$_sel"; _sel="$_SPLIT_REST"; _PINKIND=cli;',
+            '_PMG=0; _PM=""; _PINKIND=cli;',
+            'release-gate (#1571): CONTROL: a full pin pins the judged head and is permitted',
+        ),
+        Mutation(
+            "the pin on a REST merge is not read from the classifier's line",
+            'split_match "$_n"; _n="$_SPLIT_REST"; _PINKIND=api;',
+            '_PMG=0; _PM=""; _PINKIND=api;',
+            'release-gate (#1571): CONTROL: a REST `sha=` pins the judged head and is permitted',
+        ),
+        Mutation(
+            "the pin on a GraphQL merge is not read from the classifier's line",
+            'split_match "$_id"; _id="$_SPLIT_REST"; _PINKIND=gql;',
+            '_PMG=0; _PM=""; _PINKIND=gql;',
+            'release-gate (#1571): CONTROL: a GraphQL expectedHeadOid pins the judged head and is permitted',
         ),
     ),
 )

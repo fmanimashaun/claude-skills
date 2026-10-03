@@ -457,5 +457,42 @@ GUARD = Guard(
             '            return {positional[0]}, True, True\n        if len(positional) == 1:',
             "classify 'git switch topic && git push origin dev:main'",
         ),
+        # (#1571) the pin, in each of its three spellings
+        Mutation(
+            'a gh pr merge pin is no longer read',
+            '        pin = pr_merge_match(rest)\n        line =',
+            '        pin = None\n        line =',
+            "classify 'gh pr merge 5 --match-head-commit abc1234'",
+        ),
+        Mutation(
+            'the `--match-head-commit=<sha>` spelling is not read',
+            '        if a.startswith("--match-head-commit="):',
+            '        if False:',
+            "classify 'gh pr merge 5 --match-head-commit=ABC1234 --squash'",
+        ),
+        Mutation(
+            'a pin built by the shell is carried as its text instead of as unknown',
+            '            return _token(rest[i + 1]) if i + 1 < len(rest) else "-"',
+            '            return rest[i + 1] if i + 1 < len(rest) else "-"',
+            "classify 'gh pr merge 5 --match-head-commit $H'",
+        ),
+        Mutation(
+            'a REST `sha=` is no longer read',
+            '        pin = "" if sha is None else f" MATCH:{_token(str(sha))}"',
+            '        pin = ""',
+            "classify 'gh api -X PUT repos/o/r/pulls/5/merge -f sha=abc1234 -f merge_method=merge'",
+        ),
+        Mutation(
+            'a REST `sha=` built by the shell is carried as its text instead of as unknown',
+            '        pin = "" if sha is None else f" MATCH:{_token(str(sha))}"',
+            '        pin = "" if sha is None else f" MATCH:{sha}"',
+            "classify 'gh api -X PUT repos/o/r/pulls/5/merge -f sha=$H'",
+        ),
+        Mutation(
+            'a GraphQL expectedHeadOid is no longer read',
+            'if "expectedHeadOid" in text else ""',
+            'if False else ""',
+            "expected ['GQL_PR PR_kwDOA MATCH:abc1234']",
+        ),
     ),
 )
