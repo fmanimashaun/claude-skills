@@ -202,5 +202,26 @@ GUARD = Guard(
             '                last = lines[-1] if lines else ""',
             "a slow gate's ok line must carry its `(jobs=N, Xs)` measurement",
         ),
+        Mutation(
+            # #1588
+            'the detector never runs, so a fixture commit in the real repo goes unnoticed (#1588)',
+            '        finally:\n            self.check_repo_untouched(tips_before)',
+            '        finally:\n            pass',
+            'a gate that plants a FOREIGN commit mid-sweep turns the sweep red',
+        ),
+        Mutation(
+            # #1588
+            'the detector treats every author as the configured user, so an escaped fixture commit passes (#1588)',
+            '        foreign = [ln for ln in added if not me or ln.split()[1] != me]',
+            '        foreign = []',
+            'a gate that plants a FOREIGN commit mid-sweep turns the sweep red',
+        ),
+        Mutation(
+            # #1588
+            "the detector flags every new commit, so another session's own work turns the sweep red (#1588)",
+            '        foreign = [ln for ln in added if not me or ln.split()[1] != me]',
+            '        foreign = added',
+            "a commit by the configured user (another session's work) is not flagged",
+        ),
     ),
 )
