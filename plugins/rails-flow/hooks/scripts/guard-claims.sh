@@ -66,6 +66,7 @@ if [ "$cwd_rc" -eq 0 ] && [ -n "$cmd_cwd" ]; then
 else
   root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 fi
+session_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 
 body=""
 if printf '%s' "$cmd" | grep -qE '\-\-body-file\b'; then
@@ -185,14 +186,24 @@ fi
 # Read in the repository the command RUNS in, not the session's (#1509 review): a session with a staged
 # skills/ file was blocking a `cd <other repo> && gh pr create` that touches nothing there. With the
 # directory unresolved (exit 3) the target is unknown, so this check says NOT checked rather than guess.
+# NO CODE RUNS FROM THE TARGET (#1516, push security reviews). `$root` can come from the command's own `cd`, and
+# this hook runs BEFORE the person is asked about the command, so a denial cannot undo what it ran. A repository's
+# own config can name a program that `git diff` executes: `core.fsmonitor` on any diff, and a `filter.<name>.clean`
+# on a diff that hashes a changed working-tree file. Turning off one key was not enough (the first fix left the
+# clean filter running) and the next key would be the next finding. So: the session's own repository is read as it
+# always was; any OTHER repository is read through the staged diff only, which hashes no file, with fsmonitor off
+# (measured: `diff --cached` runs fsmonitor but no clean filter) and no index refresh written.
+skills_in_diff() {
+  if [ "$root" = "$session_root" ]; then
+    git -C "$root" diff --name-only HEAD 2>/dev/null | grep -q '^skills/' || \
+      git -C "$root" diff --name-only --cached HEAD 2>/dev/null | grep -q '^skills/'
+  else
+    GIT_OPTIONAL_LOCKS=0 git -c core.fsmonitor=false -C "$root" diff --no-ext-diff --name-only --cached HEAD 2>/dev/null | grep -q '^skills/'
+  fi
+}
 if [ "$cwd_rc" -eq 3 ]; then
   echo "rails-flow: change-type declaration NOT checked (the directory gh runs in could not be resolved)." >&2
-# NO CODE RUNS FROM THE TARGET (#1516, push security review): `$root` comes from the command's own `cd`, and
-# this hook runs BEFORE the person is asked about the command. A repository's `core.fsmonitor` names a program
-# `git diff` executes, so reading the target's diff ran the target's code and a denial could not stop it.
-# `-c core.fsmonitor=false` is a command-line setting, which outranks the repository's own config.
-elif git -c core.fsmonitor=false -C "$root" diff --no-ext-diff --name-only HEAD 2>/dev/null | grep -q '^skills/' || \
-   git -c core.fsmonitor=false -C "$root" diff --no-ext-diff --name-only --cached HEAD 2>/dev/null | grep -q '^skills/'; then
+elif skills_in_diff; then
   if ! grep -qiE 'framework claim|architecture decision|change type|our own (design|doctrine|architecture)' "$body"; then
     echo "BLOCKED by rails-flow claim guard: this PR touches skills/** and names no CHANGE TYPE." >&2
     echo "" >&2

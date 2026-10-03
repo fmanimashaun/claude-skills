@@ -1257,6 +1257,9 @@ def guard_claims_fixtures() -> None:
                 _run(["git", "-c", "user.email=f@e", "-c", "user.name=f", "commit", "-qm", "base"],
                      cwd=d, capture_output=True)
             (a / "skills" / "x.md").write_text("changed\n", encoding="utf-8")
+            # STAGED, because another repository is read through its staged diff only (no code from the target,
+            # #1516): an unstaged change would let a hook that read the wrong repository look right.
+            _run(["git", "add", "skills/x.md"], cwd=a, capture_output=True)
             (b / "body.md").write_text("Tidy the wording.\n", encoding="utf-8")
             return run_hook("guard-claims.sh", cwd=a, stdin=json.dumps({"tool_input": {
                 "command": cmd.replace("B_DIR", str(b))}}),
@@ -1267,42 +1270,51 @@ def guard_claims_fixtures() -> None:
     check("guard-claims: ...and without the cd the session's skills/ change is still held to it (control)",
           run_skills_cd("gh pr create --base dev --body-file B_DIR/body.md") == 2, "exit 0")
 
-    # NO CODE RUNS BEFORE PERMISSION (#1516, push security review). The hook reads `git diff` in the directory
+    # NO CODE RUNS BEFORE PERMISSION (#1516, push security reviews). The hook reads `git diff` in the directory
     # the command `cd`s into, and a hook runs BEFORE the person is asked about the command. A repository's own
-    # `core.fsmonitor` names a program that `git diff` executes, so a `cd` into such a repository ran it, and
-    # denying the command could not stop it. The marker file is what the program writes; it must not exist.
-    def run_fsmon_cd(cmd: str, b_touches_skills: bool = False) -> tuple[int, bool]:
+    # config can name a program that `git diff` executes: `core.fsmonitor` on any diff, and a `filter.<name>.clean`
+    # on a diff that hashes a changed working-tree file. Disabling one key was not enough (the first fix left the
+    # clean filter running), so the hook reads a repository other than the session's with only the staged diff, which
+    # hashes nothing. The marker file is what the program writes; it must not exist afterwards.
+    def run_exec_cd(cmd: str, vector: str, stage_skills: bool = False) -> tuple[int, bool]:
         with tempfile.TemporaryDirectory() as td:
             a, b = Path(td) / "a", Path(td) / "b"
-            marker, script = Path(td) / "FSMONITOR_RAN", Path(td) / "fsmonitor.sh"
-            script.write_text(f"#!/bin/sh\necho ran >> '{marker}'\n", encoding="utf-8")
+            marker, script = Path(td) / "PROGRAM_RAN", Path(td) / "program.sh"
+            script.write_text(f"#!/bin/sh\necho ran >> '{marker}'\n" + ("cat\n" if vector == "filter" else ""),
+                              encoding="utf-8")
             script.chmod(0o755)
             for d in (a, b):
                 d.mkdir()
                 _run(["git", "init", "-q", "-b", "main"], cwd=d, capture_output=True)
                 (d / "README.md").write_text("x\n", encoding="utf-8")
-            if b_touches_skills:
-                (b / "skills").mkdir()
-                (b / "skills" / "x.md").write_text("x\n", encoding="utf-8")
+            (b / ".gitattributes").write_text("*.md filter=evil\n", encoding="utf-8")
+            (b / "skills").mkdir()
+            (b / "skills" / "x.md").write_text("x\n", encoding="utf-8")
             for d in (a, b):
                 _run(["git", "add", "-A"], cwd=d, capture_output=True)
                 _run(["git", "-c", "user.email=f@e", "-c", "user.name=f", "commit", "-qm", "base"],
                      cwd=d, capture_output=True)
-            (b / "README.md").write_text("changed\n", encoding="utf-8")        # work for `git diff` to refresh
-            if b_touches_skills:
+            (b / "README.md").write_text("changed\n", encoding="utf-8")        # a working-tree change to hash
+            if stage_skills:
                 (b / "skills" / "x.md").write_text("changed\n", encoding="utf-8")
+                _run(["git", "add", "skills/x.md"], cwd=b, capture_output=True)
             (b / "body.md").write_text("Tidy the wording.\n", encoding="utf-8")
-            _run(["git", "config", "core.fsmonitor", str(script)], cwd=b, capture_output=True)
+            key = "core.fsmonitor" if vector == "fsmonitor" else "filter.evil.clean"
+            _run(["git", "config", key, str(script)], cwd=b, capture_output=True)
             rc = run_hook("guard-claims.sh", cwd=a, stdin=json.dumps({"tool_input": {
                 "command": cmd.replace("B_DIR", str(b))}}),
                 env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])})[0]
             return rc, marker.exists()
 
-    rc, ran = run_fsmon_cd("cd B_DIR && gh pr create --base dev --body-file body.md")
+    CD_B = "cd B_DIR && gh pr create --base dev --body-file body.md"
+    rc, ran = run_exec_cd(CD_B, "fsmonitor")
     check("guard-claims: a cd into a repository whose core.fsmonitor names a program does not run it "
           "(no code before permission, #1516)", not ran, f"exit {rc}: the repository's own program ran in the hook")
-    rc, ran = run_fsmon_cd("cd B_DIR && gh pr create --base dev --body-file body.md", b_touches_skills=True)
-    check("guard-claims: ...and the cd target's skills/ change is still read without it (control)",
+    rc, ran = run_exec_cd(CD_B, "filter")
+    check("guard-claims: a cd into a repository whose filter.<name>.clean names a program does not run it "
+          "(no code before permission, #1516)", not ran, f"exit {rc}: the repository's own program ran in the hook")
+    rc, ran = run_exec_cd(CD_B, "filter", stage_skills=True)
+    check("guard-claims: ...and the cd target's STAGED skills/ change is still read without running anything (control)",
           rc == 2 and not ran, f"exit {rc}, program ran: {ran}")
 
     # FAILS OPEN when it cannot read the body. This guard's job is to make the check happen where

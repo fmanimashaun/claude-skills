@@ -30,21 +30,28 @@ GUARD = Guard(
            # ci-verdict-hint.sh runs it; unstaged, every mutation here read as caught (#1173).
            "plugins/rails-flow/scripts/ci_verdict_hint.py"),
     mutations=(
-        # #1516, push security review: NO CODE RUNS BEFORE PERMISSION. The hook reads `git diff` in the
-        # directory the command `cd`s into, and a repository's own `core.fsmonitor` names a program that
-        # `git diff` executes. Both calls execute it (measured: the second runs whenever the first finds
-        # nothing), so each is its own mutation.
+        # #1516, push security reviews: NO CODE RUNS BEFORE PERMISSION. The hook reads a diff in the directory the
+        # command `cd`s into, before the person is asked, and a repository's own config can name a program that
+        # `git diff` executes (`core.fsmonitor` on any diff, a `filter.<name>.clean` on a diff that hashes a
+        # changed working-tree file). Another repository is read through its staged diff only; each mutation
+        # undoes one half of that.
         Mutation(
-            "the working-tree diff in the cd target runs that repository's fsmonitor program again",
-            'git -c core.fsmonitor=false -C "$root" diff --no-ext-diff --name-only HEAD 2>/dev/null',
-            'git -C "$root" diff --no-ext-diff --name-only HEAD 2>/dev/null',
+            "a repository other than the session's is read through the working-tree diff again, hashing its files",
+            'GIT_OPTIONAL_LOCKS=0 git -c core.fsmonitor=false -C "$root" diff --no-ext-diff --name-only --cached HEAD 2>/dev/null',
+            'GIT_OPTIONAL_LOCKS=0 git -c core.fsmonitor=false -C "$root" diff --no-ext-diff --name-only HEAD 2>/dev/null',
+            "filter.<name>.clean names a program does not run it",
+        ),
+        Mutation(
+            "the cd target's staged diff runs that repository's fsmonitor program again",
+            'GIT_OPTIONAL_LOCKS=0 git -c core.fsmonitor=false -C "$root" diff --no-ext-diff --name-only --cached HEAD 2>/dev/null',
+            'GIT_OPTIONAL_LOCKS=0 git -C "$root" diff --no-ext-diff --name-only --cached HEAD 2>/dev/null',
             "core.fsmonitor names a program does not run it",
         ),
         Mutation(
-            "the staged diff in the cd target runs that repository's fsmonitor program again",
-            'git -c core.fsmonitor=false -C "$root" diff --no-ext-diff --name-only --cached HEAD 2>/dev/null',
-            'git -C "$root" diff --no-ext-diff --name-only --cached HEAD 2>/dev/null',
-            "core.fsmonitor names a program does not run it",
+            "every repository is trusted like the session's own, so the target's working tree is hashed",
+            'if [ "$root" = "$session_root" ]; then',
+            'if true; then',
+            "filter.<name>.clean names a program does not run it",
         ),
         # #1435: the checker failing is a BLOCK, not a warning (owner decision).
         Mutation(
@@ -155,8 +162,8 @@ GUARD = Guard(
         ),
         Mutation(
             "the skills/** change-type check reads the session repo's diff again (R1516-4)",
-            '''elif git -c core.fsmonitor=false -C "$root" diff --no-ext-diff --name-only HEAD 2>/dev/null | grep -q '^skills/' || \\''',
-            '''elif git -c core.fsmonitor=false diff --no-ext-diff --name-only HEAD 2>/dev/null | grep -q '^skills/' || \\''',
+            '''GIT_OPTIONAL_LOCKS=0 git -c core.fsmonitor=false -C "$root" diff --no-ext-diff --name-only --cached HEAD 2>/dev/null''',
+            '''GIT_OPTIONAL_LOCKS=0 git -c core.fsmonitor=false diff --no-ext-diff --name-only --cached HEAD 2>/dev/null''',
             "the skills/** change-type check reads the cd target's diff",
         ),
         Mutation(
