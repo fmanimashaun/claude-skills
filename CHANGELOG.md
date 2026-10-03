@@ -3636,6 +3636,12 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **A per-repo coordination record says which session holds which worktree lane, and only the coordinator writes it — `plugins/rails-flow/hooks/scripts/lib/coordination.py`, `scripts/mutations/hook_coordination.py`, `scripts/maintainer_doctor.py`** (#1581, slice 1; slice 2 adds the worktree guard hook and the doctrine). Our own design; no framework claim. The owner decided the shape on #1585 and #1581: [one writer, the coordinator](https://github.com/fmanimashaun/claude-skills/issues/1585), so no lock is needed, and one record per repository.
+  - The record is `$(git rev-parse --git-common-dir)/coordination.json`, so every worktree of a clone sees the same file and a sibling repository keeps its own. Rows are keyed by the absolute worktree path, never by session name, because names rotate at every restart; `session_id` and `name` are attributes rewritten on each assign. It carries a `workspace` block (the coordinator plus sibling repositories `[{name, path, remote}]`), and every write puts back the keys it does not know, so #1585 adds fields without a migration.
+  - `claim`, `assign`, `close` and `workspace` refuse a caller whose session id is not `coordinator.session_id` (exit 2, naming the holder), except a `claim` when no coordinator is recorded; a lone session claims the role for itself. A corrupt record is exit 3, never an empty one. The file is replaced whole (a temp file in the same directory, then rename).
+  - 30 selftest checks, including a linked worktree resolving the same file as the main checkout and two repositories keeping separate records. 15 mutations in the new `hook_coordination` guard, each caught by the fixture it names.
+  - Not claimed: `session_id` is read from the hook payload (confirmed in the Claude Code hooks documentation), but whether it survives a resume is **not documented**. The 20 transcripts on this machine are consistent with it surviving; that is an inference, not a guarantee, so the guard in slice 2 is built so its duplicate-branch rule does not need it.
+
 - **`guard-bash`'s label check closes five #1489 edge cases — `plugins/rails-flow/hooks/scripts/lib/issue_labels.py`,
   `plugins/rails-flow/hooks/scripts/guard-bash.sh`, `plugins/rails-flow/scripts/check_hook_gates.py`,
   `scripts/mutations/hook_issue_labels.py`, `scripts/mutations/hook_guard_bash.py`** (#1495). On dev, six shapes were

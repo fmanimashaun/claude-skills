@@ -18,8 +18,9 @@ a field needs no migration.
 
     python3 coordination.py lanes   --session-id ID [--cwd DIR]
     python3 coordination.py claim   --session-id ID [--name N] [--cwd DIR]
-    python3 coordination.py assign  --session-id ID --path P --branch B [--issue N] [--owner ID] [--cwd DIR]
+    python3 coordination.py assign  --session-id ID --path P --branch B [--issue N] [--owner ID] [--name N] [--cwd DIR]
     python3 coordination.py close   --session-id ID --path P [--cwd DIR]
+    python3 coordination.py workspace --session-id ID --coordinator-name N [--sibling NAME PATH REMOTE]... [--cwd DIR]
     python3 coordination.py --selftest
 
 Exit: 0 done, 2 refused (the message names the coordinator), 3 could not read the record.
@@ -127,7 +128,8 @@ def claim(record: dict, caller: str, name: str | None) -> str | None:
     return None
 
 
-def assign(record: dict, caller: str, path: str, branch: str, issue: int | None, owner: str | None) -> str | None:
+def assign(record: dict, caller: str, path: str, branch: str, issue: int | None, owner: str | None,
+           name: str | None = None) -> str | None:
     err = _refuse_unless_coordinator(record, caller, claiming=False)
     if err:
         return err
@@ -136,6 +138,8 @@ def assign(record: dict, caller: str, path: str, branch: str, issue: int | None,
     row.update({"session_id": owner or caller, "branch": branch, "state": "working", "updated": _now()})
     if issue is not None:
         row["issue"] = issue
+    if name:
+        row["name"] = name       # an attribute: a renamed session updates ITS row, never adds a second
     record["sessions"][path] = row
     return None
 
@@ -151,16 +155,33 @@ def close(record: dict, caller: str, path: str) -> str | None:
     return None
 
 
+def set_workspace(record: dict, caller: str, coordinator_name: str, siblings: list[dict]) -> str | None:
+    """The `workspace` block: the coordinator's identity plus the sibling repositories it coordinates
+    ([{name, path, remote}]). It is only a pointer: a guard reads ITS OWN repository's record."""
+    err = _refuse_unless_coordinator(record, caller, claiming=False)
+    if err:
+        return err
+    block = record.get("workspace")
+    block = block if isinstance(block, dict) else {}
+    block["coordinator"] = {"session_id": caller, "name": coordinator_name}
+    block["repos"] = siblings
+    record["workspace"] = block
+    return None
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--selftest", action="store_true")
     sub = ap.add_subparsers(dest="cmd")
-    for name in ("lanes", "claim", "assign", "close"):
+    for name in ("lanes", "claim", "assign", "close", "workspace"):
         p = sub.add_parser(name)
         p.add_argument("--session-id", required=True)
         p.add_argument("--cwd", default=".")
-        if name == "claim":
+        if name in ("claim", "assign"):
             p.add_argument("--name")
+        if name == "workspace":
+            p.add_argument("--coordinator-name", required=True)
+            p.add_argument("--sibling", nargs=3, action="append", metavar=("NAME", "PATH", "REMOTE"), default=[])
         if name in ("assign", "close"):
             p.add_argument("--path", required=True)
         if name == "assign":
@@ -189,7 +210,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "claim":
         err = claim(record, args.session_id, args.name)
     elif args.cmd == "assign":
-        err = assign(record, args.session_id, os.path.abspath(args.path), args.branch, args.issue, args.owner)
+        err = assign(record, args.session_id, os.path.abspath(args.path), args.branch, args.issue, args.owner, args.name)
+    elif args.cmd == "workspace":
+        err = set_workspace(record, args.session_id, args.coordinator_name,
+                            [{"name": n, "path": pth, "remote": r} for n, pth, r in args.sibling])
     else:
         err = close(record, args.session_id, os.path.abspath(args.path))
     if err:
@@ -201,8 +225,10 @@ def main(argv: list[str] | None = None) -> int:
 
 def selftest() -> int:
     failures: list[str] = []
+    ran = [0]
 
     def check(label: str, ok: bool, detail: str = "") -> None:
+        ran[0] += 1
         if not ok:
             failures.append(f"{label}: {detail}" if detail else label)
 
@@ -212,6 +238,15 @@ def selftest() -> int:
         subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
         rp = record_path(repo)
         check("the record lives in the common git dir", rp is not None and rp.parent.name == ".git", str(rp))
+        # Every worktree of a clone must see the SAME record, or a lane assigned from one is invisible
+        # from another. A plain clone cannot tell --git-dir from --git-common-dir; a linked worktree can.
+        subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "i"],
+                       cwd=repo, check=True, capture_output=True)
+        linked = Path(td) / "linked"
+        subprocess.run(["git", "worktree", "add", "-q", "-b", "side", str(linked)], cwd=repo, check=True,
+                       capture_output=True)
+        check("a linked worktree resolves the SAME record file as the main checkout",
+              record_path(linked) == rp, f"{record_path(linked)} vs {rp}")
         rec = load(rp)
         check("no file reads as an empty record, not an error", rec["sessions"] == {} and rec["coordinator"] is None)
 
@@ -268,13 +303,55 @@ def selftest() -> int:
                               capture_output=True, text=True)
         check("the CLI exits 3 on a corrupt record", done.returncode == 3, str(done.returncode))
 
+        # A restart gives the session a new NAME. The row is keyed by the worktree path, so the same row is
+        # rewritten and no second one appears.
+        rec2 = {"version": VERSION, "coordinator": None, "sessions": {}}
+        claim(rec2, "S1", "solo")
+        assign(rec2, "S1", "/w/a", "feature/a", 7, None, "claude-skills-old")
+        assign(rec2, "S1", "/w/a", "feature/a", 7, None, "claude-skills-new")
+        check("a restart with a new name rewrites the SAME row", list(rec2["sessions"]) == ["/w/a"]
+              and rec2["sessions"]["/w/a"]["name"] == "claude-skills-new", str(rec2["sessions"]))
+        assign(rec2, "S1", "/w/b", "feature/b", 8, "S2", "claude-skills-new")
+        check("two worktrees never share a row (the same name on two paths is two rows)",
+              sorted(rec2["sessions"]) == ["/w/a", "/w/b"])
+
+        # The workspace block: written only by the coordinator, and a write keeps what it does not know.
+        rec2["workspace"] = {"note": "keep me"}
+        check("a non-coordinator cannot set the workspace block",
+              bool(set_workspace(rec2, "S2", "x", [])) and rec2["workspace"] == {"note": "keep me"})
+        sib = [{"name": "retask", "path": "/r", "remote": "git@x:r.git"}]
+        check("the coordinator sets the workspace block", set_workspace(rec2, "S1", "solo", sib) is None
+              and rec2["workspace"]["repos"] == sib and rec2["workspace"]["coordinator"]["name"] == "solo")
+        check("...and a workspace write keeps its other keys", rec2["workspace"].get("note") == "keep me")
+
+        # Each repository keeps its OWN record: a sibling clone has a different common git dir.
+        other = Path(td) / "other"
+        other.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=other, check=True)
+        rp.unlink()     # the corrupt file from the check above
+        subprocess.run([sys.executable, __file__, "claim", "--session-id", "S1", "--name", "solo", "--cwd", str(repo)])
+        subprocess.run([sys.executable, __file__, "assign", "--session-id", "S1", "--path", "/w/a", "--branch",
+                        "feature/a", "--cwd", str(repo)])
+        other_rp = record_path(other)
+        check("two repositories have two different record files", other_rp != record_path(repo), str(other_rp))
+        check("a lane recorded in one repository is invisible in the other",
+              lanes_for(load(record_path(repo)), "S1") != [] and not other_rp.exists())
+        out = subprocess.run([sys.executable, __file__, "lanes", "--session-id", "S1", "--cwd", str(other)],
+                             capture_output=True, text=True)
+        check("`lanes` in the other repository lists nothing for that session", out.returncode == 0 and out.stdout == "",
+              repr(out.stdout))
+        again = subprocess.run([sys.executable, __file__, "claim", "--session-id", "S2", "--cwd", str(repo)],
+                               capture_output=True, text=True)
+        check("the CLI refuses a second claim with exit 2, naming the holder",
+              again.returncode == 2 and "solo" in again.stderr, f"{again.returncode} {again.stderr!r}")
+
         outside = Path(td) / "not-a-repo"
         outside.mkdir()
         check("outside a git repository there is no record", record_path(outside) is None)
 
     for f in failures:
         print(f"FAIL: {f}", file=sys.stderr)
-    print(f"coordination selftest: {len(failures)} failure(s)")
+    print(f"coordination selftest: {ran[0]} checks, {len(failures)} failure(s)")
     return 1 if failures else 0
 
 
