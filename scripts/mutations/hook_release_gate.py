@@ -36,8 +36,8 @@ GUARD = Guard(
         ),
         Mutation(
             "an unjudgeable command is allowed instead of treated as a promotion",
-            "  else\n    targets_main=1\n  fi\nelif",
-            "  else\n    :\n  fi\nelif",
+            "  else\n    targets_main=1; needs_dev=1\n",
+            "  else\n    :\n",
             "release-gate (#1410): an unparseable push is treated as a promotion",
         ),
         Mutation(
@@ -54,8 +54,8 @@ GUARD = Guard(
         ),
         Mutation(
             "the fallback reads the normalised segment, losing a quoted main",
-            """    && printf '%s' "$cmd" | grep -qE '\\b(main|master)\\b' && targets_main=1""",
-            """    && printf '%s' "$seg" | grep -qE '\\b(main|master)\\b' && targets_main=1""",
+            """    && printf '%s' "$cmd" | grep -qE '\\b(main|master)\\b' && { targets_main=1; needs_dev=1; }""",
+            """    && printf '%s' "$seg" | grep -qE '\\b(main|master)\\b' && { targets_main=1; needs_dev=1; }""",
             "release-gate (#1410): parser missing -> a quoted `main` push is still blocked",
         ),
         # #1337: the stamp's own commit invalidates it again, or any delta slips through.
@@ -74,8 +74,8 @@ GUARD = Guard(
         # #1428. The evidence check is skipped: a PASS stamp alone unlocks main again.
         Mutation(
             "the release-only layers are not checked, so a HOLE still promotes",
-            'if evidence="$(python3 "$ev" stamp --rev "$devsha" 2>"$evtmp")"; then',
-            'if evidence="$(python3 "$ev" stamp --rev "$devsha" 2>"$evtmp")" || true; then',
+            'if evidence="$(python3 "$ev" stamp --rev "$at" 2>"$evtmp")"; then',
+            'if evidence="$(python3 "$ev" stamp --rev "$at" 2>"$evtmp")" || true; then',
             "release-gate (#1428): a HOLE in the sweep denies",
         ),
         # The allowance matches ANY path under the evidence's parent, so code rides along unchecked.
@@ -138,7 +138,7 @@ GUARD = Guard(
         # ROUND 3 FOLD-IN 4: the stamp is read as committed at dev.
         Mutation(
             "the stamp is read from the working tree again",
-            'if ! git show "${devsha}:qa/CERTIFICATION" >"$stamp_tmp" 2>/dev/null; then',
+            'if ! git show "${at}:qa/CERTIFICATION" >"$stamp_tmp" 2>/dev/null; then',
             'if ! cp qa/CERTIFICATION "$stamp_tmp" 2>/dev/null; then',
             "an UNCOMMITTED stamp is denied",
         ),
@@ -158,20 +158,20 @@ GUARD = Guard(
         ),
         Mutation(
             "rename detection is back, so code moved into the evidence folder is never judged",
-            '      if ! delta="$(git -c core.quotePath=false diff --no-renames --name-only "$full" "$devsha" 2>/dev/null)"; then',
-            '      if ! delta="$(git -c core.quotePath=false diff -M --name-only "$full" "$devsha" 2>/dev/null)"; then',
+            '      if ! delta="$(git -c core.quotePath=false diff --no-renames --name-only "$full" "$tgt" 2>/dev/null)"; then',
+            '      if ! delta="$(git -c core.quotePath=false diff -M --name-only "$full" "$tgt" 2>/dev/null)"; then',
             "release-gate (#1428): code renamed into the evidence folder is denied",
         ),
         Mutation(
             "the evidence is judged in the working tree, not as committed at dev",
-            'if evidence="$(python3 "$ev" stamp --rev "$devsha" 2>"$evtmp")"; then',
+            'if evidence="$(python3 "$ev" stamp --rev "$at" 2>"$evtmp")"; then',
             'if evidence="$(python3 "$ev" stamp 2>"$evtmp")"; then',
             "release-gate (#1428): a committed HOLE denies though the fix is only staged",
         ),
         Mutation(
             "git quotes non-ASCII names again, so a legitimate evidence commit is denied",
-            '      if ! delta="$(git -c core.quotePath=false diff --no-renames --name-only "$full" "$devsha" 2>/dev/null)"; then',
-            '      if ! delta="$(git diff --no-renames --name-only "$full" "$devsha" 2>/dev/null)"; then',
+            '      if ! delta="$(git -c core.quotePath=false diff --no-renames --name-only "$full" "$tgt" 2>/dev/null)"; then',
+            '      if ! delta="$(git diff --no-renames --name-only "$full" "$tgt" 2>/dev/null)"; then',
             "release-gate (#1428): a non-ASCII evidence file name is recognised as evidence",
         ),
         # The paths come from stdout; losing them denies the stamp's own evidence commit.
@@ -183,7 +183,7 @@ GUARD = Guard(
         ),
         Mutation(
             "the ancestry check is skipped, so a stamp from another branch is accepted",
-            '      if [ -z "$full" ] || ! git merge-base --is-ancestor "$full" "$devsha" 2>/dev/null; then',
+            '      if [ -z "$full" ] || ! git merge-base --is-ancestor "$full" "$tgt" 2>/dev/null; then',
             '      if [ -z "$full" ]; then',
             "release-gate (#1337): a stamp for a sha that is not an ancestor of dev is denied",
         ),
@@ -191,15 +191,15 @@ GUARD = Guard(
             "the dev sha is read with plain rev-parse again, so a missing origin/dev poisons it",
             'devsha="$(git rev-parse --verify -q origin/dev 2>/dev/null || git rev-parse --verify -q dev 2>/dev/null || true)"',
             'devsha="$(git rev-parse origin/dev 2>/dev/null || git rev-parse dev 2>/dev/null || true)"',
-            "release-gate (#1337): the stamp committed on top of the tested sha still permits",
+            "release-gate (#1337): without the classifier, dev's tip is read and a missing origin/dev does not poison it",
         ),
         Mutation(
             # WITHOUT the carve-out the gate denies every promotion of its own source repo. That is
             # a gate wrong about correct code: the maintainer overrides it every release or turns
             # it off, and then it protects nobody. It blocked v1.134.0 before this landed.
             "the marketplace carve-out is removed, so the gate blocks its own repo",
-            'if [ -f ".claude-plugin/marketplace.json" ]; then',
-            "if false; then",
+            'if [ -f ".claude-plugin/marketplace.json" ] && [ -z "$_foreign" ] \\\n   && [ "$(repo_of_url "$(git config --get remote.origin.url 2>/dev/null || true)")" = "$MARKETPLACE_REPO" ]; then',
+            'if false; then',
             "the marketplace's OWN repo is not a consumer",
         ),
         Mutation(
@@ -208,8 +208,8 @@ GUARD = Guard(
             # Keyed on marketplace.json rather than "has no qa/ directory" precisely because the
             # latter is the ordinary state of an app that never ran /qa-flow:setup-qa.
             "the carve-out fires for every repo, so nothing is ever gated",
-            'if [ -f ".claude-plugin/marketplace.json" ]; then',
-            "if true; then",
+            'if [ -f ".claude-plugin/marketplace.json" ] && [ -z "$_foreign" ] \\\n   && [ "$(repo_of_url "$(git config --get remote.origin.url 2>/dev/null || true)")" = "$MARKETPLACE_REPO" ]; then',
+            'if true; then',
             "an ordinary repo with no certification is STILL blocked",
         ),
     ),
