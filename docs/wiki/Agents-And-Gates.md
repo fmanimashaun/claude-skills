@@ -136,6 +136,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | rails-flow PR-template sections | `rails-flow` | `python3 plugins/rails-flow/hooks/scripts/lib/pr_template.py --selftest` | selftest |
 | rails-flow ci runs tests | `rails-flow` | `python3 plugins/rails-flow/scripts/check_ci_runs_tests.py --selftest` | selftest |
 | rails-flow claim extraction | `rails-flow` | `python3 plugins/rails-flow/scripts/extract_claims.py --selftest` | selftest |
+| rails-flow coordination record | `rails-flow` | `python3 plugins/rails-flow/hooks/scripts/lib/coordination.py --selftest` | selftest |
 | rails-flow coverage ratchets | `rails-flow` | `python3 plugins/rails-flow/scripts/check_coverage_ratchet.py --selftest` | selftest |
 | rails-flow escalation loop | `rails-flow` | `python3 plugins/rails-flow/scripts/escalation.py --selftest` | selftest |
 | rails-flow findings records | `rails-flow` | `python3 plugins/rails-flow/scripts/findings.py --selftest` | selftest |
