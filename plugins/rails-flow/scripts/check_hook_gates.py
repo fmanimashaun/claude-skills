@@ -1317,6 +1317,38 @@ def guard_claims_fixtures() -> None:
     check("guard-claims: ...and the cd target's STAGED skills/ change is still read without running anything (control)",
           rc == 2 and not ran, f"exit {rc}, program ran: {ran}")
 
+    # A LARGE DIFF MUST NOT FAIL OPEN (#1516, push security review; the SIGPIPE class of #1579). `git diff --name-only |
+    # grep -q` under `set -o pipefail` loses the match when the name list outgrows the pipe buffer: `grep -q` leaves at
+    # the first hit, `git` dies of SIGPIPE, the pipeline reports failure and the gate reads "no skills/ change". 2500
+    # staged files with long names are about 170 KiB, well past the 64 KiB buffer.
+    def run_big_skills_diff(cmd: str, big_repo: str) -> int:
+        with tempfile.TemporaryDirectory() as td:
+            a, b = Path(td) / "a", Path(td) / "b"
+            for d in (a, b):
+                d.mkdir()
+                _run(["git", "init", "-q", "-b", "main"], cwd=d, capture_output=True)
+                (d / "README.md").write_text("x\n", encoding="utf-8")
+                _run(["git", "add", "-A"], cwd=d, capture_output=True)
+                _run(["git", "-c", "user.email=f@e", "-c", "user.name=f", "commit", "-qm", "base"],
+                     cwd=d, capture_output=True)
+            big = a if big_repo == "session" else b
+            (big / "skills").mkdir()
+            for i in range(2500):
+                (big / "skills" / f"s{i:04d}-a-fairly-long-file-name-so-the-name-list-outgrows-a-pipe-buffer.md").write_text(
+                    "x\n", encoding="utf-8")
+            _run(["git", "add", "-A"], cwd=big, capture_output=True)
+            (b / "body.md").write_text("Tidy the wording.\n", encoding="utf-8")
+            return run_hook("guard-claims.sh", cwd=a, stdin=json.dumps({"tool_input": {
+                "command": cmd.replace("B_DIR", str(b))}}),
+                env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])})[0]
+
+    check("guard-claims: a large staged skills/ list in the session's repository is still held to the change-type rule "
+          "(no SIGPIPE fail-open, #1516)",
+          run_big_skills_diff("gh pr create --base dev --body-file B_DIR/body.md", "session") == 2, "exit 0")
+    check("guard-claims: a large staged skills/ list in the cd target is still held to the change-type rule "
+          "(no SIGPIPE fail-open, #1516)",
+          run_big_skills_diff("cd B_DIR && gh pr create --base dev --body-file body.md", "target") == 2, "exit 0")
+
     # FAILS OPEN when it cannot read the body. This guard's job is to make the check happen where
     # it can, never to block opening a PR because a path could not be resolved.
     check("guard-claims: an unreadable body file fails OPEN rather than blocking",

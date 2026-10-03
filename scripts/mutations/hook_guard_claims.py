@@ -53,6 +53,15 @@ GUARD = Guard(
             'if true; then',
             "filter.<name>.clean names a program does not run it",
         ),
+        # #1516, push security review (the class of #1579): `git diff --name-only | grep -q` under `set -o pipefail` reads
+        # "no skills/ change" once the name list outgrows the pipe buffer, because `grep -q` leaves at the first hit and
+        # the writer dies of SIGPIPE. The names are matched with a shell pattern instead; this puts the pipe back.
+        Mutation(
+            "the diff's name list is matched through a pipe again, so a large diff reads as no skills/ change",
+            """  case $'\\n'"$names" in *$'\\n'skills/*) return 0 ;; esac""",
+            """  printf '%s\\n' "$names" | grep -q '^skills/' && return 0""",
+            "no SIGPIPE fail-open",
+        ),
         # #1435: the checker failing is a BLOCK, not a warning (owner decision).
         Mutation(
             "a crashed PR-template helper warns and lets the command through again",
