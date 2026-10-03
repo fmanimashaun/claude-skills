@@ -1871,6 +1871,7 @@ def release_gate_effects_fixtures() -> None:
 # different argument (the PR number, the ref a merge or ref write carries, the tag a release resolves to),
 # and a command spelled so that shlex and bash read it differently.
 FAKE_GH2 = """#!/bin/sh
+[ -z "${FAKE_LOG:-}" ] || printf '%s\\n' "$*" >> "$FAKE_LOG"
 ep=""; for a in "$@"; do case "$a" in repos/*) ep="$a"; break ;; esac; done
 case "$1 $2" in
   "pr view")
@@ -1903,6 +1904,120 @@ case "$ep" in
 esac
 exit 1
 """
+
+
+def release_gate_refs_fixtures() -> None:
+    """#1600: a ref taken from the GATED COMMAND'S TEXT must never reach git as an option. The release gate is a
+    PreToolUse hook, so it runs before the permission prompt: `git fetch origin --upload-pack=<program>` RUNS the
+    program when origin is a local path or ssh. Each site that hands such a value to git or gh is driven with a
+    marker file, over a local-path origin: no marker may appear, and the command is denied."""
+    if not QA_HOOK.is_file():
+        check("release-gate (#1600): release-gate.sh present beside rails-flow", False, str(QA_HOOK))
+        return
+    g = ["git", "-c", "user.email=t@t", "-c", "user.name=t"]
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td) / "repo"
+        _git_repo(repo)
+        sh = lambda *a, **kw: _run([*g, *a], cwd=repo, check=True, capture_output=True, text=True, **kw).stdout.strip()
+        old = {**os.environ, "GIT_COMMITTER_DATE": "2026-09-01T00:00:00+00:00", "GIT_AUTHOR_DATE": "2026-09-01T00:00:00+00:00"}
+        bare = Path(td) / "origin.git"
+        _run(["git", "init", "-q", "--bare", str(bare)], check=True, capture_output=True)
+        # origin names o/r, and is a LOCAL PATH underneath: the transport that runs --upload-pack.
+        sh("remote", "add", "origin", "https://github.com/o/r.git")
+        sh("config", f"url.{bare}.insteadOf", "https://github.com/o/r.git")
+        (repo / "app.rb").write_text("v1\n", encoding="utf-8")
+        sh("add", "app.rb"); sh("commit", "-q", "-m", "app")
+        tested = sh("rev-parse", "HEAD")
+        (repo / "qa").mkdir()
+        (repo / "qa" / "CERTIFICATION").write_text(json.dumps(
+            {"sha": tested, "date": "2026-09-26", "verdict": "PASS", "report": "qa/reports/r.md"}), encoding="utf-8")
+        sh("add", "qa/CERTIFICATION"); sh("commit", "-q", "-m", "stamp", env=old)
+        stamped = sh("rev-parse", "HEAD")
+        sh("branch", "-f", "dev", stamped)
+        sh("branch", "fix/x-y", stamped)
+        sh("checkout", "-q", "-b", "feature/work")
+        sh("push", "-q", "origin", "dev:dev")
+        (Path(td) / "bin").mkdir()
+        (Path(td) / "bin" / "gh").write_text(FAKE_GH2, encoding="utf-8")
+        (Path(td) / "bin" / "gh").chmod(0o755)
+        marker = Path(td) / "MARKER"
+        # --upload-pack=<program>: git runs the program through the shell with the remote's path. No space in the value,
+        # so the classifier reads it as one token and the hook reaches the git call (a payload with spaces is refused earlier).
+        prog = Path(td) / "prog.sh"
+        prog.write_text(f"#!/bin/sh\ntouch {marker}\n", encoding="utf-8")
+        prog.chmod(0o755)
+        evil = f"--upload-pack={prog}"
+
+        def run(cmd: str, **extra) -> tuple[int, str]:
+            marker.unlink(missing_ok=True)
+            env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env.pop("GH_REPO", None)
+            env["CLAUDE_PLUGIN_ROOT"] = str(QA_HOOK.parents[2])
+            env["PATH"] = str(Path(td) / "bin") + os.pathsep + env["PATH"]
+            env.update(extra)
+            done = _run(["bash", str(QA_HOOK)], cwd=repo, input=json.dumps({"tool_input": {"command": cmd}}),
+                        env=env, capture_output=True, text=True, timeout=60)
+            return done.returncode, done.stderr
+
+        # The proof that the marker is observable: the same program, handed to git the way the hook would have.
+        marker.unlink(missing_ok=True)
+        _run(["git", "fetch", "-q", "origin", evil], cwd=repo, capture_output=True)
+        check("release-gate (#1600): the probe works -- an unguarded `git fetch origin <--upload-pack=...>` DOES run the program",
+              marker.exists(), "no marker: this fixture could not tell a fix from a hole")
+        # Every site where a ref from the command's own text reaches git or gh.
+        for label, cmd, extra in (
+            ("a REST merge's `head`", f"gh api repos/o/r/merges -f base=main -f head='{evil}'", {}),
+            ("a ref write's `sha`", f"gh api -X PATCH repos/o/r/git/refs/heads/main -f sha='{evil}'", {}),
+            ("a new ref's `sha`", f"gh api repos/o/r/git/refs -f ref=refs/heads/main -f sha='{evil}'", {}),
+            ("a release's --target", f"gh release create v9 --target '{evil}'", {}),
+            ("a commit the PR view reports", "gh pr merge 7", {"FAKE_PRVIEW": f"main {evil}"}),
+        ):
+            rc, err = run(cmd, **extra)
+            check(f"release-gate (#1600): {label} that starts with `--` runs no program, and is denied",
+                  not marker.exists() and rc == 2, f"marker={marker.exists()} rc={rc} {err[:200]!r}")
+        # The same, with the value an ordinary option rather than a program: gh must never read it as a selector.
+        log = Path(td) / "gh.log"
+        for label, cmd in (("a PR selector", "gh pr merge --web"),
+                           ("a PR selector after the end of options", "gh pr merge --admin -- --web")):
+            log.unlink(missing_ok=True)
+            rc, err = run(cmd, FAKE_PRVIEW=f"main {stamped}", FAKE_LOG=str(log))
+            asked = log.read_text().splitlines() if log.exists() else []
+            check(f"release-gate (#1600): {label} that starts with  is never handed to gh, and the command is denied",
+                  not any("--web" in line for line in asked) and rc == 2, f"rc={rc} gh calls={asked} {err[:160]!r}")
+        # A stamp is data from the repository being promoted: its `sha` is a commit id, never an option.
+        bad = Path(td) / "badstamp"
+        _git_repo(bad)
+        bsh = lambda *a, **kw: _run([*g, *a], cwd=bad, check=True, capture_output=True, text=True, **kw).stdout.strip()
+        _run(["git", "checkout", "-q", "-B", "main"], cwd=bad, check=True, capture_output=True)
+        (bad / "qa").mkdir()
+        (bad / "qa" / "CERTIFICATION").write_text(json.dumps(
+            {"sha": evil, "date": "2026-09-26", "verdict": "PASS", "report": "r.md"}), encoding="utf-8")
+        bsh("add", "qa"); bsh("commit", "-q", "-m", "stamp")
+        bsh("branch", "dev")
+        marker.unlink(missing_ok=True)
+        env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None)
+        env["CLAUDE_PLUGIN_ROOT"] = str(QA_HOOK.parents[2])
+        done = _run(["bash", str(QA_HOOK)], cwd=bad, input=json.dumps({"tool_input": {"command": "git push origin main"}}),
+                    env=env, capture_output=True, text=True, timeout=60)
+        check("release-gate (#1600): a stamp whose `sha` is an option is denied as not a commit id",
+              done.returncode == 2 and "not a commit id" in done.stderr and not marker.exists(), f"rc={done.returncode} {done.stderr[:240]!r}")
+        # ANOTHER repository's stamp is the same kind of data: its `sha` is a commit id, never a path of the API.
+        evil_stamp = Path(td) / "evil-stamp.json"
+        evil_stamp.write_text(json.dumps({"sha": "../../x?y", "date": "2026-10-01", "verdict": "PASS", "report": "r.md"}), encoding="utf-8")
+        rc, err = run(_pin("gh pr merge 7 -R other/fork", stamped), FAKE_PRVIEW=f"main {stamped}", FAKE_PRREPO="other/fork",
+                      FAKE_STAMP_REF=stamped, FAKE_STAMP_FILE=str(evil_stamp), FAKE_COMPARE="ahead")
+        check("release-gate (#1600): ANOTHER repository's stamp whose `sha` is a path is denied as not a commit id",
+              rc == 2 and "not a commit id" in err, f"rc={rc} {err[:240]!r}")
+        # A ref with a `:` is a REFSPEC: `git fetch origin dev:refs/heads/injected` writes a local branch, before the prompt.
+        rc, err = run("gh api repos/o/r/merges -f base=main -f head=dev:refs/heads/injected")
+        made = _run(["git", "rev-parse", "--verify", "-q", "refs/heads/injected"], cwd=repo, capture_output=True).returncode == 0
+        check("release-gate (#1600): a ref with a `:` (a refspec) is never fetched, so no local ref is written, and it is denied",
+              not made and rc == 2, f"ref written={made} rc={rc} {err[:200]!r}")
+        # CONTROLS: a dash INSIDE a name is a name, and a certified branch still promotes.
+        rc, err = run("gh api repos/o/r/merges -f base=main -f head=fix/x-y")
+        check("release-gate (#1600): CONTROL: a branch whose name has a dash inside is still read and judged (certified: passes)",
+              rc == 0, f"rc={rc} {err[:240]!r}")
+        rc, err = run("gh api repos/o/r/merges -f base=main -f head=dev")
+        check("release-gate (#1600): CONTROL: the certified dev still promotes", rc == 0, f"rc={rc} {err[:240]!r}")
 
 
 def release_gate_repos_fixtures() -> None:
@@ -2268,6 +2383,7 @@ GROUPS = {
     "self_consistency": self_consistency_fixtures, "guard_bash": guard_bash_fixtures,
     "guard_claims": guard_claims_fixtures, "release_gate": release_gate_fixtures,
     "release_gate_effects": release_gate_effects_fixtures, "release_gate_repos": release_gate_repos_fixtures,
+    "release_gate_refs": release_gate_refs_fixtures,
     "ci_verdict_hint": ci_verdict_hint_fixtures, "timeout": timeout_fixtures,
 }
 
