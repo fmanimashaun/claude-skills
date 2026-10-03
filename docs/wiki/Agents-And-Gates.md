@@ -127,7 +127,8 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | acceptance criteria | `rails-flow` | `python3 plugins/rails-flow/scripts/check_criteria.py --selftest` | selftest |
 | curated drift signal | `rails-flow` | `python3 plugins/rails-flow/scripts/check_drift_signal.py --selftest` | selftest |
 | design-flow tiers | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --agents plugins/design-flow/agents --tiers plugins/design-flow/reference/model-tiers.md` | live check |
-| hook gates | `rails-flow` | `python3 plugins/rails-flow/scripts/check_hook_gates.py --selftest` | selftest |
+| hook gates | `rails-flow` | `python3 plugins/rails-flow/scripts/check_hook_gates.py --selftest --part a` | selftest |
+| hook gates (release) | `rails-flow` | `python3 plugins/rails-flow/scripts/check_hook_gates.py --selftest --part b` | selftest |
 | issue readiness | `rails-flow` | `python3 plugins/rails-flow/scripts/check_issue_ready.py --selftest` | selftest |
 | mod unit tests | `rails-flow` | `python3 plugins/rails-flow/scripts/check_mods.py` | live check |
 | pipeline tiers | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --agents plugins/pipeline/agents --tiers plugins/pipeline/reference/model-tiers.md` | live check |

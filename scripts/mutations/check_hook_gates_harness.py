@@ -92,5 +92,17 @@ GUARD = Guard(
             '                  f"known: {\', \'.join(GROUPS)}", file=sys.stderr)',
             'main() exits 2 for --only nope',
         ),
+        Mutation(
+            "a fixture group is left out of every part, so the doctor would never run it",
+            '"b": ["release_gate", "release_gate_effects"],',
+            '"b": ["release_gate"],',
+            "every fixture group is in exactly one PART",
+        ),
+        Mutation(
+            "an unknown --part is accepted instead of refused",
+            "    return list(PARTS[value]) if value in PARTS else None",
+            "    return list(PARTS.get(value, PARTS['a']))",
+            "any other part is refused",
+        ),
     ),
 )

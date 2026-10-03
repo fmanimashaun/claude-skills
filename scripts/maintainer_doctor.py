@@ -343,7 +343,10 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # five defects sat in what they DID, none visible on a Mac. This drives every hook end to end
     # under stub environments -- a GNU-shaped `timeout`, a `bundle` that fails the way Bundler does,
     # a `mise` that owns the Ruby. The environment is the fixture.
-    ("hook gates", ("python3", "plugins/rails-flow/scripts/check_hook_gates.py", "--selftest")),
+    # #1581: ONE harness, TWO gates. The whole run takes 188 s alone, past a gate's 180 s, so it skipped on every sweep. The
+    # partition (PARTS in check_hook_gates.py) is checked there: every fixture group is in exactly one part.
+    ("hook gates", ("python3", "plugins/rails-flow/scripts/check_hook_gates.py", "--selftest", "--part", "a")),
+    ("hook gates (release)", ("python3", "plugins/rails-flow/scripts/check_hook_gates.py", "--selftest", "--part", "b")),
     # #849. "Take the head of the queue" downstream was a claim nothing checked; the marketplace has
     # issue_graph.py --ready for itself, and this is the shipped equivalent for a project's tracker.
     ("issue readiness", ("python3", "plugins/rails-flow/scripts/check_issue_ready.py", "--selftest")),
@@ -592,11 +595,6 @@ SLOW_GATES: dict[str, int] = {
     # in any guard that finished). 3600 s is 2.3x the dev measurement; re-set it from the `jobs=4, Xs`
     # the completed run on this branch prints.
     "mutation coverage": 3600,
-    # #1581, MEASURED: `check_hook_gates.py --selftest` alone, on an idle machine, runs 833 checks in 188 s (3:07.9 wall,
-    # load average 9), over the 180 s default, so on `dev` it would time out into a SKIP on every sweep and the hook
-    # fixtures would never gate anything. Every new hook group adds real git repositories to it. 600 s is 3.2x that;
-    # re-set it from the `real` of `time python3 plugins/rails-flow/scripts/check_hook_gates.py --selftest`.
-    "hook gates": 600,
 }
 
 

@@ -569,7 +569,7 @@ CLAIMS: tuple[Claim, ...] = (
         stated_in="skills/parallel-session-lane/SKILL.md",
         anchor="**What makes it true: the rails-flow `guard-worktree` hook.**",
         kind=GUARANTEE,
-        enforced_by=("hook:plugins/rails-flow/hooks/scripts/guard-worktree.sh", "gate:hook gates",
+        enforced_by=("hook:plugins/rails-flow/hooks/scripts/guard-worktree.sh", "gate:hook gates", "gate:hook gates (release)",
                      "gate:rails-flow worktree guard helper", "mutation:hook_guard_worktree",
                      "mutation:hook_worktree_guard", "mutation:hook_session_start_pointer"),
         refs=(1581,),

@@ -2584,6 +2584,24 @@ GROUPS = {
 }
 
 
+# The doctor runs this harness as TWO gates (`--part a`, `--part b`), because the whole run -- 833 checks -- takes 188 s
+# alone, past the doctor's 180 s limit for a gate, and a gate that cannot finish is a SKIP on every sweep (#1581).
+# MEASURED per group (seconds, wall, idle machine): release_gate 46.8, release_gate_effects 46.6, release_gate_repos 26.9,
+# guard_bash 22.2, guard_worktree 19.7, guard_claims 4.9, stop_gate 4.5, lint_ruby 3.3, the rest under 1. So part b is the two
+# release_gate groups (93 s) and part a is everything else (83 s). EVERY group must be in exactly one part: a group in none
+# would never run in the doctor, which is the vacuous gate this repository keeps finding; the selftest checks it below.
+PARTS = {
+    "a": ["stop_gate", "guard_lane", "guard_migrate", "lint_ruby", "self_consistency", "guard_bash", "guard_claims",
+          "release_gate_repos", "ci_verdict_hint", "timeout", "guard_worktree"],
+    "b": ["release_gate", "release_gate_effects"],
+}
+
+
+def parse_part(value: str) -> list[str] | None:
+    """The groups `--part` names, or None when it must be REFUSED: an unknown part would run nothing and pass."""
+    return list(PARTS[value]) if value in PARTS else None
+
+
 def parse_only(value: str) -> list[str] | None:
     """The groups `--only` names, or None when it must be REFUSED: an unknown or empty group would
     run nothing and pass -- a mutant "surviving" because its fixtures were never selected."""
@@ -2609,6 +2627,14 @@ def selftest(groups: list[str] | None = None) -> int:
     for bad in ("nope", "", ",", "release_gate,nope", "release_gate,", " release_gate", "timeout,timeout"):
         check(f"--only {bad!r} is refused (exit 2), never an empty pass", parse_only(bad) is None,
               repr(parse_only(bad)))
+    # The partition behind the doctor's two gates: complete, disjoint, and a bad name refused.
+    flat = [g for part in PARTS.values() for g in part]
+    check("every fixture group is in exactly one PART, so the doctor's two gates together run all of them",
+          sorted(flat) == sorted(GROUPS), f"in a part but not a group, or the reverse: {sorted(set(flat) ^ set(GROUPS))}; "
+          f"repeated: {sorted({g for g in flat if flat.count(g) > 1})}")
+    check("--part a and --part b name groups; any other part is refused, never an empty pass",
+          parse_part("a") == PARTS["a"] and parse_part("b") == PARTS["b"] and all(parse_part(x) is None for x in ("", "c", "ab", "A")),
+          repr([parse_part(x) for x in ("a", "b", "", "c")]))
     check("CONTROL: --only release_gate,guard_bash is accepted",
           parse_only("release_gate,guard_bash") == ["release_gate", "guard_bash"], repr(parse_only("release_gate,guard_bash")))
     # ...and a selection runs exactly what it names, proved on stand-ins so the proof costs nothing.
@@ -2652,8 +2678,17 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--selftest", action="store_true", help="drive every hook under its stub environments")
     ap.add_argument("--only", metavar="GROUP[,GROUP]",
                     help=f"run only these fixture groups: {', '.join(GROUPS)} (#1497)")
+    ap.add_argument("--part", metavar="a|b", help="run one half of the groups: the doctor runs both as two gates (#1581)")
     args = ap.parse_args(argv)
+    if args.part is not None and args.only is not None:
+        print("check_hook_gates: --part and --only are alternatives, not both", file=sys.stderr)
+        return 2
     groups = None
+    if args.part is not None:
+        groups = parse_part(args.part)
+        if groups is None:
+            print(f"check_hook_gates: --part needs one of {', '.join(PARTS)}, got {args.part!r}", file=sys.stderr)
+            return 2
     if args.only is not None:
         groups = parse_only(args.only)
         if groups is None:
