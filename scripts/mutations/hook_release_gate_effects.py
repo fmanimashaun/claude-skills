@@ -149,5 +149,11 @@ GUARD = Guard(
             '        GIT_PULL_MAIN_OFF)\n',
             'release-gate (#1571): a switch to main, then a pull is blocked',
         ),
+        Mutation(
+            "QA_ALLOW_MAIN typed into the command text authorises it, so any command can approve itself",
+            '[ "${QA_ALLOW_MAIN:-0}" = "1" ] && { echo "qa-flow: QA_ALLOW_MAIN=1 override',
+            '{ [ "${QA_ALLOW_MAIN:-0}" = "1" ] || printf \'%s\' "$cmd" | grep -q \'QA_ALLOW_MAIN=1\'; } && { echo "qa-flow: QA_ALLOW_MAIN=1 override',
+            "release-gate (#1571): QA_ALLOW_MAIN typed into the command as an inline assignment does not authorise it",
+        ),
     ),
 )

@@ -1481,6 +1481,18 @@ def release_gate_effects_fixtures() -> None:
         sh("branch", "-f", "main", hot)
         rc, err = run("gh release create v1.0.1 --target main", QA_ALLOW_MAIN="1")
         check("release-gate (#1569): QA_ALLOW_MAIN=1 is still the audited override for a release", rc == 0, f"rc={rc} {err[:200]!r}")
+        # (#1571) The override is the HOOK's environment, never the command's text: an inline assignment, `env`, an
+        # `export`, or a comment all run AFTER the hook (or never), so none can authorise the command that carries it.
+        for label, cmd in (
+            ("an inline assignment", "QA_ALLOW_MAIN=1 gh release create v1.0.1 --target main"),
+            ("`env`", "env QA_ALLOW_MAIN=1 gh release create v1.0.1 --target main"),
+            ("an `export`", "export QA_ALLOW_MAIN=1; gh release create v1.0.1 --target main"),
+            ("a trailing comment", "gh release create v1.0.1 --target main # QA_ALLOW_MAIN=1"),
+            ("a quoted string", "gh release create v1.0.1 --target main --notes 'QA_ALLOW_MAIN=1'"),
+        ):
+            rc, err = run(cmd)
+            check(f"release-gate (#1571): QA_ALLOW_MAIN typed into the command as {label} does not authorise it",
+                  rc == 2, f"rc={rc} {err[:200]!r}")
         (repo / ".claude-plugin").mkdir()
         (repo / ".claude-plugin" / "marketplace.json").write_text('{"name":"x","plugins":[]}', encoding="utf-8")
         # The file alone exempts nothing (any repo can add one): origin here is o/r, not the marketplace.
