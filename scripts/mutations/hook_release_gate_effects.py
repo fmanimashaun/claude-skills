@@ -130,5 +130,24 @@ GUARD = Guard(
             '            "") : ;;',
             "gh api PATCH releases/<id> GitHub cannot name",
         ),
+        # (#1571) the two lines the classifier emits when a command puts itself on main
+        Mutation(
+            'GIT_MERGE_MAIN is no longer a promotion, so `switch main && merge` reaches main uncertified',
+            '        GIT_MERGE_MAIN*)\n',
+            '        GIT_MERGE_MAIN_OFF*)\n',
+            'release-gate (#1571): a switch to main, then a merge is blocked',
+        ),
+        Mutation(
+            'a merge the command puts on main has its refs dropped instead of judged',
+            '          [ -n "$_refs" ] || _refs=\'@{upstream}\'\n          for _r in $_refs; do add_commit "$_r" "-" local "the commit being merged or pushed"; done ;;\n        GIT_MERGE*)',
+            '          [ -n "$_refs" ] || _refs=\'@{upstream}\'\n          for _r in $_refs; do : add_commit "$_r" "-" local "the commit being merged or pushed"; done ;;\n        GIT_MERGE*)',
+            'release-gate (#1571): a switch to main, then a merge is blocked',
+        ),
+        Mutation(
+            'GIT_PULL_MAIN is no longer a promotion, so `switch main && pull` reaches main unjudged',
+            '        GIT_PULL_MAIN)\n',
+            '        GIT_PULL_MAIN_OFF)\n',
+            'release-gate (#1571): a switch to main, then a pull is blocked',
+        ),
     ),
 )

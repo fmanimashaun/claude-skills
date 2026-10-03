@@ -1260,8 +1260,6 @@ class _Flow:
                 for other in self.branches:
                     if other != key:
                         self.branches[other] = self.branches[other] | branches
-                if key != "-":
-                    self.branches["-"] = self.branches.get("-", {HOOK_HEAD}) | branches
 
 
 def _literal_current(branch: str):
@@ -1277,10 +1275,8 @@ def git_effects(seg, j, cwd, current, flow=None):
     verb, args, workdir, _ = git_parse(seg, j)
     try:
         key = _dir_word(cwd, workdir)
-        if key in (".", "./"):
-            key = "-"
-        elif key != "-" and not os.path.isabs(key):
-            key = os.path.normpath(key)
+        if key != "-" and not os.path.isabs(key):
+            key = os.path.normpath(key)           # `.`, `./` and `sub/..` all name the hook's own directory
             key = "-" if key == "." else key
     except Unjudgeable:
         key = None
@@ -1704,6 +1700,27 @@ def selftest() -> int:
         ("gh api --method=PATCH repos/{owner}/{repo}/releases/9 -f draft=false", ["RELEASE_ID 9"]),
         ("gh api -X PATCH repos/o/r/releases/9 -f name=x", []),
         ("gh api -X PATCH repos/o/r/releases/9 -F draft=true", []),
+        # (#1571) what earlier segments of ONE command did to the branch the hook read before it ran
+        ("git switch main && git merge hotfix", ["GIT_MERGE_MAIN hotfix"]),
+        ("git checkout main && git merge hotfix", ["GIT_MERGE hotfix", "GIT_MERGE_MAIN hotfix"]),   # `checkout main` may restore a PATH named main
+        ("git checkout -q main; git merge hotfix", ["GIT_MERGE hotfix", "GIT_MERGE_MAIN hotfix"]),   # `checkout main` may restore a PATH named main
+        ("git switch -C main && git merge hotfix", ["GIT_MERGE_MAIN hotfix"]),
+        ("git -C . switch main && git merge hotfix", ["GIT_MERGE_MAIN hotfix"]),
+        ("git switch main && git pull", ["GIT_PULL_MAIN"]),
+        ("git switch topic && git merge hotfix", []),
+        ("git checkout -b topic && git merge hotfix", []),
+        ("git checkout --detach dev && git merge hotfix", []),
+        ("git switch main && git switch topic && git merge hotfix", []),
+        ("git checkout README.md && git merge hotfix", ["GIT_MERGE hotfix"]),
+        ("git checkout main README.md && git merge hotfix", ["GIT_MERGE hotfix"]),
+        ("git checkout -- README.md && git merge hotfix", ["GIT_MERGE hotfix"]),
+        ("git branch -M main && git merge hotfix", ["GIT_MERGE hotfix", "GIT_MERGE_MAIN hotfix"]),
+        ("git rebase dev main && git merge hotfix", ["GIT_MERGE hotfix", "GIT_MERGE_MAIN hotfix"]),
+        ("git switch topic && git -C /elsewhere switch main && git merge hotfix", ["GIT_MERGE_MAIN hotfix"]),
+        ("git status && git push origin dev:main", ["PUSH_REF dev"]),
+        ("git fetch origin && git push origin dev:main", ["PUSH_REF dev"]),
+        ("git switch topic && git push origin dev:main", ["PUSH_REF dev"]),
+        ("git commit --allow-empty -m x && git push origin feature/x", []),
     ]
     for cmd, want in ref_cases:
         try:
@@ -1712,7 +1729,12 @@ def selftest() -> int:
             got = [f"unjudgeable: {exc}"]
         if got != want:
             failures.append(f"classify {cmd!r}: expected {want}, got {got}")
-    for cmd in ("git merge $B", "git merge feat/{a,b}", "gh release edit --draft=false", "gh release edit v1 --draft=$D",
+    for cmd in ("git switch $B && git merge hotfix", "git checkout - && git merge hotfix",
+                "git switch main && git merge dev && git push origin main",
+                "git commit --allow-empty -m x && git push origin main",
+                "git fetch origin hotfix:main && git push origin main",
+                "git switch hotfix && git push origin HEAD:main",
+                "git merge $B", "git merge feat/{a,b}", "gh release edit --draft=false", "gh release edit v1 --draft=$D",
                 "gh release edit $T --draft=false",
                 "gh api -X PATCH repos/o/r/releases/$I -F draft=false", "gh api -X PATCH repos/o/r/releases/latest -F draft=false",
                 "gh api -X PATCH repos/o/r/releases/9 -F draft=$D"):
@@ -1721,7 +1743,7 @@ def selftest() -> int:
             failures.append(f"classify {cmd!r}: must be unjudgeable (the hook denies)")
         except Unjudgeable:
             pass
-    api_total += len(ref_cases) + 9
+    api_total += len(ref_cases) + 15
     # #1569 -- the parser differential. The same command, spelled the way bash reads it differently from
     # shlex: every transformation must give the SAME effects as the plain spelling, or be unjudgeable
     # (the hook denies). Never "no effect".
