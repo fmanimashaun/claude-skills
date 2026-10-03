@@ -534,6 +534,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("close-on-dev-merge selftest", ("python3", "scripts/close_on_dev_merge.py", "--selftest")),
     ("vendored alone", ("python3", "scripts/check_vendored_alone.py")),
     ("vendored alone selftest", ("python3", "scripts/check_vendored_alone.py", "--selftest")),
+    # #1556. How a process-group fixture learns its gate's pids: atomically, and waited for.
+    ("pid record selftest", ("python3", "scripts/pid_record_selftest.py")),
 )
 
 # Gates that cannot run without the licensed corpora, so their absence is a SKIP rather than a
