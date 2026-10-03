@@ -586,7 +586,12 @@ SLOW_GATES: dict[str, int] = {
     # #1444, MEASURED on the runner: 1602 mutations / 145 guards took 604 s at jobs=4 (dev push run
     # after PR #1471, 2026-09-29). 1800 s is 3x that: room for the suite to grow, while a hung gate
     # still surfaces in 30 min rather than 90. Re-set it from the `jobs=N, Xs` on this gate's ok line.
-    "mutation coverage": 1800,
+    # #1569, MEASURED: dev's push run 37136784689 took 1588 s for 2182 mutations / 162 guards at jobs=4,
+    # 88% of 1800 s before any new guard. The release-gate guards run a whole fixture group per mutation,
+    # and this branch's ~60 more of them timed the dispatched run out at 1800 s (37136560968, no survivor
+    # in any guard that finished). 3600 s is 2.3x the dev measurement; re-set it from the `jobs=4, Xs`
+    # the completed run on this branch prints.
+    "mutation coverage": 3600,
 }
 
 
