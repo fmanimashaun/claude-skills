@@ -38,7 +38,7 @@ if [ -n "$_missing" ]; then
   # #1569: a `gh api` write or a release publish, in the same coarse words-anywhere spirit.
   if [[ $_in =~ ${_b}gh${_e} ]]; then
     [[ $_in =~ ${_b}api${_e} ]] && [[ $_in =~ (merge|merges|refs|releases|mergePullRequest|updateRef|createRef) ]] && _looks_promotion=1
-    [[ $_in =~ ${_b}release${_e} ]] && [[ $_in =~ ${_b}create${_e} ]] && _looks_promotion=1
+    [[ $_in =~ ${_b}release${_e} ]] && [[ $_in =~ ${_b}(create|edit)${_e} ]] && _looks_promotion=1
   fi
   if [ "$_looks_promotion" = "1" ]; then
     [ "${QA_ALLOW_MAIN:-0}" = "1" ] && { echo "qa-flow:${_missing} missing but QA_ALLOW_MAIN=1 — allowed (audited)." >&2; exit 0; }
@@ -87,6 +87,7 @@ esac
 deny() { echo "BLOCKED by qa-flow release gate: $1" >&2; exit 2; }
 
 needs_dev=0      # judged at dev's tip: a push, a `git merge`, a PR whose head could not be resolved
+ship_commits=""  # #1569: the commit an explicit `<src>:main` push or a `git merge <ref>` on main puts there
 pr_heads=""      # the HEAD of every PR merged into main (#1569): each is judged by its own certification
 releases=""      # every `gh release create` / POST .../releases, one `RELEASE <tag> <target>` line each
 
@@ -98,6 +99,12 @@ resolve_pr() {
   else out="$(gh pr view --json baseRefName,headRefOid -q '.baseRefName + " " + .headRefOid' 2>/dev/null || true)"; fi
   base="${out%% *}"; head=""
   case "$out" in *" "*) head="${out#* }" ;; esac
+}
+# add_commit <ref>: queue the commit <ref> names, or mark the command unjudgeable.
+add_commit() {
+  local c
+  c="$(git rev-parse --verify -q "${1}^{commit}" 2>/dev/null || true)"
+  if [ -n "$c" ]; then ship_commits="${ship_commits}${c}"$'\n'; else unresolved_pr=1; fi
 }
 # note_pr: act on base/head. The certification must be for the commit the PR merges, so a PR whose
 # base or head cannot be resolved is DENIED here (#1569): judging it at dev's tip would certify a
@@ -117,8 +124,18 @@ if [ "$_mentions" = 1 ] && [ -f "$_pt" ]; then
     while IFS= read -r _line; do
       case "$_line" in
         "PUSH_MAIN "*) targets_main=1; needs_dev=1 ;;
-        GIT_MERGE)
-          git rev-parse --abbrev-ref HEAD 2>/dev/null | grep -qE '^(main|master)$' && { targets_main=1; needs_dev=1; } ;;
+        "PUSH_REF "*)
+          # #1569: `git push <remote> <src>:main` ships <src>, so <src> is what must be certified.
+          targets_main=1; add_commit "${_line#PUSH_REF }" ;;
+        GIT_MERGE*)
+          # #1569: `git merge <ref>` on main brings in <ref>'s commit (bare = the upstream; --continue =
+          # MERGE_HEAD). An unresolvable ref denies. Off main it is not a promotion.
+          if git rev-parse --abbrev-ref HEAD 2>/dev/null | grep -qE '^(main|master)$'; then
+            targets_main=1
+            _refs="${_line#GIT_MERGE}"; _refs="${_refs# }"
+            [ -n "$_refs" ] || _refs='@{upstream}'
+            for _r in $_refs; do add_commit "$_r"; done
+          fi ;;
         PR_MERGE*)
           # The PR the command NAMES (number, URL or branch); bare = the current branch's PR.
           _sel="${_line#PR_MERGE}"; _sel="${_sel# }"
@@ -146,6 +163,25 @@ if [ "$_mentions" = 1 ] && [ -f "$_pt" ]; then
           fi
           case "$_line" in GQL_PR*) note_pr ;; *) [ "$_id" = "-" ] && { targets_main=1; needs_dev=1; } ;; esac ;;
         "RELEASE "*) releases="${releases}${_line}"$'\n' ;;
+        "RELEASE_EDIT "*)
+          # #1569: `gh release edit <tag> --draft=false` publishes. A tag that is not a local ref is a
+          # draft's tag: ask GitHub which commit the release targets. Unknown denies.
+          _rest="${_line#RELEASE_EDIT }"; _tag="${_rest%% *}"; _tgt="${_rest#* }"
+          if [ "$_tgt" = "-" ] && ! git rev-parse --verify -q "refs/tags/${_tag}^{commit}" >/dev/null 2>&1; then
+            _tgt="$(gh release view "$_tag" --json targetCommitish -q .targetCommitish 2>/dev/null || true)"
+            if [ -z "$_tgt" ]; then unresolved_pr=1; targets_main=1; _tgt="-"; fi
+          fi
+          releases="${releases}RELEASE ${_tag} ${_tgt}"$'\n' ;;
+        "RELEASE_ID "*)
+          # #1569: `gh api PATCH .../releases/<id>` with draft false. The id names no tag; ask GitHub.
+          _rest="${_line#RELEASE_ID }"; _id="${_rest%% *}"; _r="${_rest#* }"
+          [ "$_r" = "-" ] && _r='{owner}/{repo}'
+          _out="$(gh api "repos/${_r}/releases/${_id}" -q '.tag_name + " " + .target_commitish' 2>/dev/null || true)"
+          case "$_out" in
+            "") unresolved_pr=1; targets_main=1 ;;
+            *) _tag="${_out%% *}"; _tgt="${_out#* }"; [ -n "$_tgt" ] || _tgt="-"
+               releases="${releases}RELEASE ${_tag:--} ${_tgt}"$'\n' ;;
+          esac ;;
       esac
     done <<EOF_FOUND
 $_found
@@ -170,8 +206,8 @@ elif [ "$_mentions" = 1 ]; then
     resolve_pr "$num" ""; note_pr
   fi
   # #1569: without the classifier a `gh api` write or a release cannot be read, so it is a promotion.
-  printf '%s\n' "$seg" | grep -qE '^[[:space:]]*gh[[:space:]]+(api|release[[:space:]]+create)\b' \
-    && printf '%s' "$cmd" | grep -qiE 'merge|refs|releases|release[[:space:]]+create|mutation' && { targets_main=1; needs_dev=1; }
+  printf '%s\n' "$seg" | grep -qE '^[[:space:]]*gh[[:space:]]+(api|release[[:space:]]+(create|edit))\b' \
+    && printf '%s' "$cmd" | grep -qiE 'merge|refs|releases|release[[:space:]]+(create|edit)|mutation' && { targets_main=1; needs_dev=1; }
 fi
 [ "$targets_main" -eq 1 ] || [ -n "$releases" ] || exit 0
 
@@ -305,6 +341,14 @@ while IFS= read -r _head; do
 done <<EOF_HEADS
 $pr_heads
 EOF_HEADS
+
+# (2b) #1569: the commit a `<src>:main` push or a `git merge <ref>` on main puts there.
+while IFS= read -r _c; do
+  [ -n "$_c" ] || continue
+  judge "$_c" "$_c" "the commit being merged or pushed" || deny "$JWHY"
+done <<EOF_SHIP
+$ship_commits
+EOF_SHIP
 
 # (3) #1569: publishing. In a consumer the release is the step that builds and ships the image, so it
 # needs a PASS stamp for the exact commit it publishes: --target / target_commitish, else the tag's

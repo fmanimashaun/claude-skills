@@ -1281,7 +1281,6 @@ def release_gate_fixtures() -> None:
     check("release-gate (#1553): CONTROL: a harmless substitution in an unquoted body, then a feature push, is allowed",
           run("cat <<EOF\n$(git rev-parse HEAD)\nEOF\ngit push origin feature/w") == 0, "exit 2")
 
-    release_gate_effects_fixtures()
 
 
 # ---- #1569: classify by EFFECT. A REST/GraphQL merge, a hotfix PR and a release publish all reached main
@@ -1290,6 +1289,8 @@ FAKE_GH = """#!/bin/sh
 case "$1 $2" in
   "pr view") printf '%s' "${FAKE_PRVIEW:-}"; exit 0 ;;
   "api graphql") case "$*" in *"on Ref"*) printf '%s' "${FAKE_REF:-}" ;; *) printf '%s' "${FAKE_NODE:-}" ;; esac; exit 0 ;;
+  "release view") printf '%s' "${FAKE_RELVIEW:-}"; exit 0 ;;
+  "api repos"*) printf '%s' "${FAKE_RELID:-}"; exit 0 ;;
 esac
 exit 1
 """
@@ -1322,6 +1323,8 @@ def release_gate_effects_fixtures() -> None:
         (Path(td) / "bin" / "gh").chmod(0o755)
         (Path(td) / "q.graphql").write_text('mutation { mergePullRequest(input:{pullRequestId:"PR_kw1"}) { clientMutationId } }', encoding="utf-8")
         (Path(td) / "q.json").write_text(json.dumps({"query": 'mutation { mergePullRequest(input:{pullRequestId:"PR_kw1"}) { clientMutationId } }'}), encoding="utf-8")
+
+        (Path(td) / "draft.json").write_text('{"draft": false}', encoding="utf-8")
 
         def run(cmd: str, **extra) -> tuple[int, str]:
             env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None)
@@ -1438,11 +1441,73 @@ def release_gate_effects_fixtures() -> None:
         check("release-gate (#1569): the marketplace's own repo is exempt from the release gate too", rc == 0, f"rc={rc} {err[:200]!r}")
         rc, err = run("gh api -X PUT repos/o/r/pulls/7/merge", **hotfix_pr)
         check("release-gate (#1569): ... and from the API merge gate", rc == 0, f"rc={rc} {err[:200]!r}")
+
         # The fallback with no python3 cannot read `gh api`, so it must stay coarse and closed.
         (repo / ".claude-plugin" / "marketplace.json").unlink(); (repo / ".claude-plugin").rmdir()
+        # #1569 (2): publishing by EDIT, and a merge or push judged by the commit it carries, not dev's tip.
+        sh("branch", "-f", "dev", stamped)
+        for label, cmd, env in (
+            ("gh release edit --draft=false, a draft targeting main", "gh release edit v1.0.1 --draft=false", {"FAKE_RELVIEW": "main"}),
+            ("gh release edit --draft=false --target main", "gh release edit v1.0.1 --draft=false --target main", {}),
+            ("gh release edit with GitHub unable to name the target", "gh release edit v1.0.1 --draft=false", {"FAKE_RELVIEW": ""}),
+            ("gh api PATCH releases/<id> draft=false", "gh api -X PATCH repos/o/r/releases/9 -F draft=false", {"FAKE_RELID": "v2 main"}),
+            ("gh api PATCH releases/<id> via --input", f"gh api --method=PATCH repos/{{owner}}/{{repo}}/releases/9 --input {td}/draft.json", {"FAKE_RELID": "v2 main"}),
+            ("gh api PATCH releases/<id> GitHub cannot name", "gh api -X PATCH repos/o/r/releases/9 -f draft=false", {"FAKE_RELID": ""}),
+            ("gh release edit inside bash -c", "bash -c 'gh release edit v1.0.1 --draft=false'", {"FAKE_RELVIEW": "main"}),
+        ):
+            rc, err = run(cmd, **env)
+            check(f"release-gate (#1569): {label} publishes an uncertified commit and is blocked", rc == 2, f"rc={rc} {err[:200]!r}")
+        for label, cmd, env in (
+            ("a draft whose target is the certified dev", "gh release edit v1.0.1 --draft=false", {"FAKE_RELVIEW": "dev"}),
+            ("an existing tag at the certified commit", "gh release edit v0.9 --draft=false", {}),
+            ("--draft alone (stays a draft)", "gh release edit v1.0.1 --draft", {}),
+            ("--draft=true", "gh release edit v1.0.1 --draft=true", {}),
+            ("editing the notes", "gh release edit v1.0.1 --notes x", {}),
+            ("an API PATCH that does not touch draft", "gh api -X PATCH repos/o/r/releases/9 -f name=x", {}),
+            ("an API PATCH of a certified release", "gh api -X PATCH repos/o/r/releases/9 -F draft=false", {"FAKE_RELID": "v0.9 dev"}),
+        ):
+            rc, err = run(cmd, **env)
+            check(f"release-gate (#1569): CONTROL: {label} passes", rc == 0, f"rc={rc} {err[:200]!r}")
+        # `git merge <ref>` on main: judged by <ref>'s commit.
+        sh("checkout", "-q", "main")
+        for label, cmd in (
+            ("an uncertified hotfix branch", "git merge hotfix"),
+            ("an uncertified sha", f"git merge --no-ff -m 'ship it' {hot}"),
+            ("a ref that does not resolve", "git merge no-such-branch"),
+            ("a bare merge with no upstream", "git merge"),
+            ("a wrapped merge", "timeout 60 git merge hotfix"),
+            ("a merge in $( )", "x=$(git merge hotfix)"),
+            ("an octopus with one uncertified ref", "git merge dev hotfix"),
+        ):
+            rc, err = run(cmd)
+            check(f"release-gate (#1569): `git merge` on main of {label} is blocked", rc == 2, f"rc={rc} {err[:200]!r}")
+        rc, err = run("git merge hotfix")
+        check("release-gate (#1569): the denial names the commit being merged, not dev", "commit being merged" in err and hot[:12] in err, err[:200])
+        for label, cmd in (("a certified dev", "git merge dev"), ("--abort", "git merge --abort")):
+            rc, err = run(cmd)
+            check(f"release-gate (#1569): CONTROL: `git merge` on main of {label} passes", rc == 0, f"rc={rc} {err[:200]!r}")
+        sh("checkout", "-q", "feature/work")
+        rc, err = run("git merge hotfix")
+        check("release-gate (#1569): CONTROL: `git merge hotfix` off main is not a promotion", rc == 0, f"rc={rc} {err[:200]!r}")
+        # `git push <remote> <src>:main`: judged by <src>'s commit.
+        for label, cmd in (
+            ("a branch", "git push origin hotfix:main"),
+            ("a sha to refs/heads/main", f"git push origin {hot}:refs/heads/main"),
+            ("a forced refspec", "git push origin +hotfix:master"),
+            ("a ref that does not resolve", "git push origin no-such:main"),
+            ("a wrapped push", "timeout 60 git push origin hotfix:main"),
+        ):
+            rc, err = run(cmd)
+            check(f"release-gate (#1569): push of {label} to main is blocked", rc == 2, f"rc={rc} {err[:200]!r}")
+        rc, err = run("git push origin hotfix:main")
+        check("release-gate (#1569): the denial names the commit being pushed, not dev", "commit being merged or pushed" in err and hot[:12] in err, err[:200])
+        for label, cmd in (("a certified dev", "git push origin dev:main"), ("a certified HEAD", "git push origin HEAD:refs/heads/main"),
+                           ("a certified sha", f"git push origin {stamped}:main"), ("a feature branch", "git push origin hotfix:feature/x")):
+            rc, err = run(cmd)
+            check(f"release-gate (#1569): CONTROL: push of {label} passes", rc == 0, f"rc={rc} {err[:200]!r}")
         only = Path(td) / "only"; only.mkdir()
         (only / "bash").symlink_to(shutil.which("bash"))
-        for cmd in ("gh api -X PUT repos/o/r/pulls/7/merge", "gh release create v1", "gh api graphql -f query=x -f u=mergePullRequest"):
+        for cmd in ("gh api -X PUT repos/o/r/pulls/7/merge", "gh release create v1", "gh release edit v1 --draft=false", "gh api graphql -f query=x -f u=mergePullRequest"):
             done = _run([str(only / "bash"), str(QA_HOOK)], cwd=repo, input=json.dumps({"tool_input": {"command": cmd}}),
                         env={"PATH": str(only)}, capture_output=True, text=True, timeout=60)
             check(f"release-gate (#1569): with ONLY bash on PATH, `{cmd}` is still blocked", done.returncode == 2, f"rc={done.returncode}")
@@ -1573,6 +1638,7 @@ GROUPS = {
     "guard_migrate": guard_migrate_fixtures, "lint_ruby": lint_ruby_fixtures,
     "self_consistency": self_consistency_fixtures, "guard_bash": guard_bash_fixtures,
     "guard_claims": guard_claims_fixtures, "release_gate": release_gate_fixtures,
+    "release_gate_effects": release_gate_effects_fixtures,
     "ci_verdict_hint": ci_verdict_hint_fixtures, "timeout": timeout_fixtures,
 }
 

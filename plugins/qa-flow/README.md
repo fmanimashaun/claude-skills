@@ -26,7 +26,7 @@ One line each, from the command's own description; the command file is the autho
 `release-gate.sh` blocks a promotion to `main` unless a PASS `qa/CERTIFICATION` certifies the commit that
 would ship. It classifies by effect, not spelling: `git push`/`git merge`/`gh pr merge`, a `gh api` call
 that merges a PR, creates a merge into main or writes a `main` ref (REST or GraphQL), and
-`gh release create` / `POST …/releases`. A PR is judged by its own HEAD (so a hotfix needs its own stamp);
+`gh release create` / `gh release edit --draft=false` / `POST …/releases` / `PATCH …/releases/<id>` with draft false; `git merge <ref>` on main and `git push <remote> <src>:main` are judged by the commit they carry. A PR is judged by its own HEAD (so a hotfix needs its own stamp);
 a release by the commit it publishes. A command it cannot read denies. `QA_ALLOW_MAIN=1` is the audited
 override; the marketplace repo itself is exempt.
 

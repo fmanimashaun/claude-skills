@@ -378,7 +378,8 @@ def branch_of(dst: str) -> str:
     return dst
 
 
-def destinations(args: list[str], current: Callable[[bool], str | None]) -> list[str]:
+def destinations(args: list[str], current: Callable[[bool], str | None],
+                 srcs: list[str | None] | None = None) -> list[str]:
     """Every branch this push writes. `current(push)` resolves the current branch (push=False) or
     its `@{push}` destination (push=True); None = unknown."""
     for word in args:
@@ -408,10 +409,14 @@ def destinations(args: list[str], current: Callable[[bool], str | None]) -> list
     # command-line argument takes precedence" (git help push): the first positional is still the
     # repository, so `--repo=origin main` pushes to a remote named main, not to branch main.
     refspecs = positional[1:]
+    # `srcs`, when given, runs parallel to the result: the SOURCE of an explicit `<src>:<dst>` (the
+    # commit that will land on main, #1569), else None (`main`, a bare push: judged at dev's tip).
     if not refspecs:
         dst = current(True) or current(False)
         if not dst:
             raise Unjudgeable("a push with no refspec, and the current branch could not be resolved")
+        if srcs is not None:
+            srcs.append(None)
         return [dst]
     out = []
     for spec in refspecs:
@@ -425,11 +430,18 @@ def destinations(args: list[str], current: Callable[[bool], str | None]) -> list
             if not target:
                 raise Unjudgeable("HEAD could not be resolved to a branch")
         out.append(branch_of(target))
+        if srcs is not None:
+            srcs.append(src if sep and src and dst else None)
     return out
 
 
 def targets(cmd: str, current: Callable[[bool, str | None], str | None]) -> list[str]:
-    hits = []
+    return [dst for dst, _ in targets_detail(cmd, current)]
+
+
+def targets_detail(cmd: str, current: Callable[[bool, str | None], str | None]) -> list[tuple[str, str | None]]:
+    """`targets`, each hit with the explicit source ref of its refspec (None when there is none)."""
+    hits: list[tuple[str, str | None]] = []
     cwd: str | None = None                    # a prior `cd <dir>` moves where a bare push resolves
     for seg in all_segments(cmd):
         if seg[0] == "cd" and len(seg) == 2:
@@ -441,9 +453,11 @@ def targets(cmd: str, current: Callable[[bool, str | None], str | None]) -> list
         args, workdir = parsed
         where = workdir if workdir and (cwd is None or os.path.isabs(workdir)) else (
             os.path.join(cwd, workdir) if workdir else cwd)
-        for dst in destinations(args, lambda push, d=where: current(push, d)):
+        srcs: list[str | None] = []
+        dsts = destinations(args, lambda push, d=where: current(push, d), srcs)
+        for dst, src in zip(dsts, srcs + [None] * len(dsts)):
             if dst in PROTECTED or dst.startswith(("every branch", "the matching")):
-                hits.append(dst)
+                hits.append((dst, src))
     return hits
 
 
@@ -677,6 +691,15 @@ def gh_api_effects(rest: list[str]) -> list[str]:
     if re.fullmatch(r"(?:repos/[^/]+/[^/]+/)?git/refs", path) and methods & {"PATCH", "POST", "PUT"}:
         ref = call.value("ref")
         return ["API_MAIN"] if ref is None or _expanded(ref) or branch_of(ref) in PROTECTED else []
+    m = re.fullmatch(r"(?:repos/([^/]+)/([^/]+)/)?releases/([^/]+)", path)
+    if m and methods & {"PATCH", "POST", "PUT"}:
+        draft = call.value("draft")
+        if draft is not None and _draft_off(draft):
+            rid = m.group(3)
+            if not rid.isdigit():
+                raise Unjudgeable(f"the release id {rid!r} could not be read")
+            return [f"RELEASE_ID {rid} {_repo_arg(m.group(1), m.group(2))}"]
+        return []
     if re.fullmatch(r"(?:repos/[^/]+/[^/]+/)?releases", path) and "POST" in methods:
         tag, target = call.value("tag_name"), call.value("target_commitish")
         return [_release_line(tag, target)]
@@ -712,6 +735,43 @@ def release_creates(rest: list[str]) -> list[str]:
     return [_release_line(tag, target)]
 
 
+def _draft_off(v: str) -> bool:
+    if _expanded(v):
+        raise Unjudgeable("the release draft flag is an expansion")
+    return v.lower() in ("false", "f", "0")
+
+
+def release_edits(rest: list[str]) -> list[str]:
+    """`gh release edit <tag> --draft=false` PUBLISHES a draft: gated like `create` (#1569). Other edits
+    publish nothing. `--draft` alone, or `--draft=true`, keeps it a draft."""
+    tag, target, off, i = None, None, False, 0
+    while i < len(rest):
+        a = rest[i]
+        if a in ("-R", "--repo") or a.startswith("--repo="):
+            raise Unjudgeable("gh release edit --repo names another repository")
+        if a.startswith("--draft="):
+            off = _draft_off(a.partition("=")[2]); i += 1; continue
+        if a.startswith("--target="):
+            target = a.partition("=")[2]; i += 1; continue
+        if a == "--target":
+            if i + 1 >= len(rest):
+                raise Unjudgeable("--target with no value")
+            target = rest[i + 1]; i += 2; continue
+        if a in RELEASE_OPTS_WITH_VALUE or a in ("--tag", "--verify-tag"):
+            i += 2 if a != "--verify-tag" else 1; continue
+        if a.startswith("-"):
+            i += 1; continue
+        if tag is None:
+            tag = a
+        i += 1
+    if not off:
+        return []
+    if tag is None:
+        raise Unjudgeable("gh release edit with no tag that could be read")
+    line = _release_line(tag, target)
+    return ["RELEASE_EDIT" + line[len("RELEASE"):]]
+
+
 def gh_effects(cmd: str) -> list[str]:
     out: list[str] = []
     for seg in all_segments(cmd):
@@ -722,14 +782,51 @@ def gh_effects(cmd: str) -> list[str]:
                 out += gh_api_effects(seg[j + 2:])
             elif seg[j + 1:j + 3] == ["release", "create"]:
                 out += release_creates(seg[j + 3:])
+            elif seg[j + 1:j + 3] == ["release", "edit"]:
+                out += release_edits(seg[j + 3:])
     return out
 
 
+MERGE_OPTS_WITH_VALUE = {"-m", "--message", "-F", "--file", "-s", "--strategy", "-X", "--strategy-option",
+                         "--into-name", "-S", "--cleanup"}
+
+
+def merge_refs(args: list[str]) -> list[str] | None:
+    """The commits a `git merge` brings in, as the refs it names: `[]` = none named (it merges the
+    upstream), `["MERGE_HEAD"]` for --continue, None for --abort/--quit (nothing is merged)."""
+    refs, i = [], 0
+    while i < len(args):
+        a = args[i]
+        if a in ("--abort", "--quit"):
+            return None
+        if a == "--continue":
+            return ["MERGE_HEAD"]
+        if a == "--":
+            refs += args[i + 1:]
+            break
+        if a in MERGE_OPTS_WITH_VALUE:
+            i += 2; continue
+        if a.startswith("-"):
+            i += 1; continue
+        refs.append(a); i += 1
+    for r in refs:
+        if SUBST in r or EXPANDS & set(r) or r.startswith("~"):
+            raise Unjudgeable(f"the merge ref {r!r} is expanded by the shell")
+    return refs
+
+
 def classify(cmd: str, current) -> list[str]:
-    """The hook's one question, answered from the RAW command: PUSH_MAIN, GIT_MERGE, PR_MERGE <sel>."""
-    lines = [f"PUSH_MAIN {d}" for d in sorted(set(targets(cmd, current)))]
-    if any(git_verb(seg, "merge") is not None for seg in all_segments(cmd)):
-        lines.append("GIT_MERGE")
+    """The hook's one question, answered from the RAW command: PUSH_MAIN <dst>, PUSH_REF <src>,
+    GIT_MERGE [<ref>...], PR_MERGE <sel>, and (below) the `gh api` / `gh release` effects."""
+    # `PUSH_REF <src>` (#1569): an explicit `<src>:main` is judged by the commit it pushes, not dev's tip.
+    lines = sorted({f"PUSH_REF {src}" if src else f"PUSH_MAIN {d}" for d, src in targets_detail(cmd, current)})
+    for seg in all_segments(cmd):
+        parsed = git_verb(seg, "merge")
+        if parsed is None:
+            continue
+        refs = merge_refs(parsed[0])
+        if refs is not None:
+            lines.append(("GIT_MERGE " + " ".join(refs)).rstrip())
     lines += [f"PR_MERGE {s}".rstrip() for s in pr_merge_selectors(cmd)]
     lines += gh_effects(cmd)
     return lines
@@ -931,7 +1028,7 @@ def selftest() -> int:
                       ("gh pr merge --merge https://github.com/o/r/pull/3", ["PR_MERGE https://github.com/o/r/pull/3"]),
                       ("timeout 60 gh pr merge 5", ["PR_MERGE 5"]),
                       ("bash -c 'gh pr merge 7 --merge'", ["PR_MERGE 7"]),
-                      ("git merge dev", ["GIT_MERGE"]), ("sudo git merge dev", ["GIT_MERGE"]),
+                      ("git merge dev", ["GIT_MERGE dev"]), ("sudo git merge dev", ["GIT_MERGE dev"]),
                       ('git commit -m "merge it" && gh pr list', []),
                       ("git push origin main", ["PUSH_MAIN main"])):
         try:
@@ -1025,6 +1122,46 @@ def selftest() -> int:
             except Unjudgeable:
                 pass
         api_total = len(api_cases) + len(unreadable)
+    # #1569: a merge or push of an explicit ref is judged by that ref's commit; publishing by EDIT is gated.
+    ref_cases = [
+        ("git merge dev", ["GIT_MERGE dev"]), ("git merge", ["GIT_MERGE"]), ("git merge --continue", ["GIT_MERGE MERGE_HEAD"]),
+        ("git merge --abort", []), ("git merge --quit", []),
+        ("git merge -m 'a b' --no-ff feat other", ["GIT_MERGE feat other"]),
+        ("git merge -s ours -X theirs feat", ["GIT_MERGE feat"]),
+        ("timeout 60 git merge feat", ["GIT_MERGE feat"]), ("x=$(git merge feat)", ["GIT_MERGE feat"]),
+        ("bash -c 'git merge feat'", ["GIT_MERGE feat"]),
+        ("git push origin dev:main", ["PUSH_REF dev"]), ("git push origin +hotfix:master", ["PUSH_REF hotfix"]),
+        ("git push origin HEAD:refs/heads/main", ["PUSH_REF HEAD"]),
+        ("git push origin abc123:refs/heads/main feat:feat", ["PUSH_REF abc123"]),
+        ("git push origin main", ["PUSH_MAIN main"]), ("git push origin :main", ["PUSH_MAIN main"]),
+        ("git push origin dev:feature/x", []),
+        ("gh release edit v1 --draft=false", ["RELEASE_EDIT v1 -"]),
+        ("gh release edit v1 --draft=false --target abc", ["RELEASE_EDIT v1 abc"]),
+        ("gh release edit v1 --draft=f -n x", ["RELEASE_EDIT v1 -"]),
+        ("gh release edit v1 --draft", []), ("gh release edit v1 --draft=true", []), ("gh release edit v1 -n x", []),
+        ("bash -c 'gh release edit v1 --draft=false'", ["RELEASE_EDIT v1 -"]),
+        ("gh api -X PATCH repos/o/r/releases/9 -F draft=false", ["RELEASE_ID 9 o/r"]),
+        ("gh api --method=PATCH repos/{owner}/{repo}/releases/9 -f draft=false", ["RELEASE_ID 9 -"]),
+        ("gh api -X PATCH repos/o/r/releases/9 -f name=x", []),
+        ("gh api -X PATCH repos/o/r/releases/9 -F draft=true", []),
+    ]
+    for cmd, want in ref_cases:
+        try:
+            got = classify(cmd, on_feature)
+        except Unjudgeable as exc:
+            got = [f"unjudgeable: {exc}"]
+        if got != want:
+            failures.append(f"classify {cmd!r}: expected {want}, got {got}")
+    for cmd in ("git merge $B", "git merge feat/{a,b}", "gh release edit --draft=false", "gh release edit v1 --draft=$D",
+                "gh release edit v1 --draft=false -R o/r", "gh release edit $T --draft=false",
+                "gh api -X PATCH repos/o/r/releases/$I -F draft=false", "gh api -X PATCH repos/o/r/releases/latest -F draft=false",
+                "gh api -X PATCH repos/o/r/releases/9 -F draft=$D"):
+        try:
+            classify(cmd, on_feature)
+            failures.append(f"classify {cmd!r}: must be unjudgeable (the hook denies)")
+        except Unjudgeable:
+            pass
+    api_total += len(ref_cases) + 9
     # "no" must not share an exit code with a crash: python's uncaught-exception exit is 1.
     if NO in (0, 1) or UNJUDGEABLE == NO:
         failures.append(f"exit codes: NO={NO} must differ from 0, 1 (a crash) and UNJUDGEABLE")

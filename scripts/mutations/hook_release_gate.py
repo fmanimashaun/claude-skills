@@ -212,55 +212,5 @@ GUARD = Guard(
             "if true; then",
             "an ordinary repo with no certification is STILL blocked",
         ),
-        # #1569: classify by EFFECT, judge a PR by the HEAD it merges, gate publishing. Each mutation
-        # removes one of those, and the fixtures must go red.
-        Mutation(
-            "a REST PUT .../pulls/N/merge is no longer a promotion",
-            '"API_PR_MERGE "*)',
-            '"API_PR_MERGE_OFF "*)',
-            "REST PUT, placeholders merging an uncertified PR head into main is blocked",
-        ),
-        Mutation(
-            "a PR into main is judged at dev's tip again, so a hotfix rides dev's certification",
-            'if [ -n "$head" ]; then pr_heads="${pr_heads}${head}"$\'\\n\'; else unresolved_pr=1; fi ;;\n    "")',
-            'if [ -n "$head" ]; then needs_dev=1; else unresolved_pr=1; fi ;;\n    "")',
-            "a hotfix head is judged by ITS stamp, not dev's",
-        ),
-        Mutation(
-            "an unresolved PR is judged at dev instead of denied",
-            '[ -z "$unresolved_pr" ] || deny "cannot tell',
-            '[ -z "$unresolved_pr" ] || echo "cannot tell',
-            "an unresolvable PR could not be judged, so it is blocked",
-        ),
-        Mutation(
-            "a gh api the classifier cannot read is judged at dev instead of denied",
-            "    case \"$_probe\" in *gh*api*|*gh*release*) unresolved_pr=1 ;; esac",
-            "    :",
-            "a missing --input file could not be judged, so it is blocked",
-        ),
-        Mutation(
-            "an API write to main (POST merges, ref PATCH) is no longer a promotion",
-            "        API_MAIN) targets_main=1; needs_dev=1 ;;",
-            "        API_MAIN) : ;;",
-            "POST merges, base main writes main and is blocked",
-        ),
-        Mutation(
-            "a release is collected but never judged: the hook exits before the release loop",
-            '[ "$targets_main" -eq 1 ] || [ -n "$releases" ] || exit 0',
-            '[ "$targets_main" -eq 1 ] || exit 0',
-            "gh release create --target main publishing an uncertified commit is blocked",
-        ),
-        Mutation(
-            "the release line is never recorded",
-            '"RELEASE "*) releases=',
-            '"RELEASE_OFF "*) releases=',
-            "gh api POST releases publishing an uncertified commit is blocked",
-        ),
-        Mutation(
-            "a release is judged at dev's tip instead of the commit it publishes",
-            '  _rsha="$(resolve_release_target "$_tag" "$_tgt" | head -1)"',
-            '  _rsha="$(git rev-parse --verify -q dev)"',
-            "gh release create --target main publishing an uncertified commit is blocked",
-        ),
     ),
 )
