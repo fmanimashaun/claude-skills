@@ -21,8 +21,8 @@ GUARD = Guard(
         ),
         Mutation(
             "the sweep freezes but never kills, so the tree is left STOPPED -- the incident itself",
-            "        _signal(pid, signal.SIGKILL)\n    deadline",
-            "        pass\n    deadline",
+            '        _signal(pid, signal.SIGKILL)\n    # REAP ONLY WHAT WE KILLED',
+            '        pass\n    # REAP ONLY WHAT WE KILLED',
             "under contained(), a leaking fixture leaves NOTHING behind",
         ),
         Mutation(
@@ -42,6 +42,20 @@ GUARD = Guard(
             "    return rc\n",
             "    return 0\n",
             "the CLI returns the command's own exit status",
+        ),
+        Mutation(
+            # #1589 F2
+            "the sweep reaps any child again, stealing a caller's other child's exit status (#1589 review F2)",
+            '                done, _ = os.waitpid(pid, os.WNOHANG)',
+            '                done, _ = os.waitpid(-1, os.WNOHANG)',
+            "the sweep leaves a caller's OTHER child alone",
+        ),
+        Mutation(
+            # #1589 F3
+            'the CLI ignores SIGTERM and SIGHUP again, so its teardown never runs (#1589 review F3)',
+            '    for sig in (signal.SIGTERM, signal.SIGHUP):\n        signal.signal(sig, _raise_on)\n',
+            '',
+            "a SIGTERM to the CLI still kills the command's tree",
         ),
     ),
 )

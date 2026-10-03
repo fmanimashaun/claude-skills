@@ -1834,6 +1834,13 @@ def check_uncontained_process_fixtures() -> tuple[list[Finding], int]:
     files named `*selftest*.py` that start processes (`Popen`, `os.fork`, a new session). Both the
     import AND a `with contained(` block are required: a comment that names the helper is not using
     it -- the leak's own cleanup matched a marker that was never there, and said nothing.
+
+    WHAT IT CHECKS IS PRESENCE, NOT ENCLOSURE (#1589 review L1). It does not prove the block wraps the
+    spawn: `with contained(): pass` followed by the spawn, or a block in a never-called function, both
+    pass. Lexical enclosure would refuse the normal shape -- `run()`'s spawns, under `with contained():`
+    in `__main__` -- so the rule asks for the deliberate act and the review checks the wrapping.
+    NOT SEEN (L2): a selftest that starts processes only through `subprocess.run` / `check_output` /
+    `os.system` (those wait for their child, so a leak needs a grandchild); measured, 3 such files.
     """
     findings: list[Finding] = []
     examined = 0
@@ -1849,7 +1856,8 @@ def check_uncontained_process_fixtures() -> tuple[list[Finding], int]:
         line = next(n for n, ln in enumerate(text.splitlines(), 1) if _SPAWNS.search(ln))
         findings.append(Finding(
             "uncontained-process-fixture", rel(path), line,
-            "this selftest starts processes but does not run inside `process_containment.contained()` -- "
+            "this selftest starts processes but does not import and use `process_containment.contained()` "
+            "(the rule checks both are present, not that the block encloses every spawn) -- "
             "a fixture built to leak (a red-first process bug) left 74 stopped orphans on 2026-10-03 and "
             "exhausted the user's process limit (#1582). Import it from "
             "`plugins/rails-flow/scripts/process_containment.py` and run the selftest under `with contained():`",
