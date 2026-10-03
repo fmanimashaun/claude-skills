@@ -77,8 +77,8 @@ GUARD = Guard(
         ),
         Mutation(
             "-R/--repo is no longer recognised, so another repository's PR is judged by this template",
-            '  if printf \'%s\' "$pr_seg" | grep -qE \'(^|[[:space:]])(-R|--repo)\' \\',
-            '  if false \\',
+            '  if printf \'%s\' "$pr_seg" | grep -qE \'(^|[[:space:]])(-R|--repo)\'; then',
+            '  if false; then',
             "-R targets another repo, so its template is not judged here",
         ),
         Mutation(

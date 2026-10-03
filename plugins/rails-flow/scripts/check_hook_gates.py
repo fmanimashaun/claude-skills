@@ -131,8 +131,8 @@ def run_hook(name: str, *, cwd: Path, stdin: str, path_prefix: list[Path] = (),
     for k in unset:
         env.pop(k, None)
     env.pop("RAILS_FLOW_LANE", None)
-    for k in ("GIT_DIR", "GIT_WORK_TREE"):  # set by a git hook, they would pick every fixture's repository
-        env.pop(k, None)
+    for k in [k for k in env if k.startswith(("GIT_", "GH_"))]:
+        env.pop(k, None)                    # a git hook's GIT_DIR, a CI's GH_*: each would route every fixture
     if path_prefix:
         env["PATH"] = os.pathsep.join(str(p) for p in path_prefix) + os.pathsep + env["PATH"]
     if env_extra:
@@ -828,7 +828,8 @@ def guard_claims_fixtures() -> None:
             (Path(td) / ".github" / "pull_request_template.md").write_text(TPL, encoding="utf-8")
             (Path(td) / "body.md").write_text("## What changed\nx\n", encoding="utf-8")
             env = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])}
-            env.pop("GH_REPO", None)
+            for k in [k for k in env if k.startswith(("GIT_", "GH_"))]:
+                env.pop(k, None)
             broke = _run(["bash", str(copy / "guard-claims.sh")], cwd=td, env=env, text=True,
                                    capture_output=True, timeout=60,
                                    input=json.dumps({"tool_input": {"command": f"gh pr create --base dev --body-file {td}/body.md"}}))
@@ -854,7 +855,8 @@ def guard_claims_fixtures() -> None:
                     (d / ".github" / "pull_request_template.md").write_text(TPL, encoding="utf-8")
                 (b / "onlyb.md").write_text(FULL, encoding="utf-8")
                 env = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])}
-                env.pop("GH_REPO", None)
+                for k in [k for k in env if k.startswith(("GIT_", "GH_"))]:
+                    env.pop(k, None)
                 broke = _run(["bash", str(copy / "guard-claims.sh")], cwd=a, env=env, text=True,
                              capture_output=True, timeout=60,
                              input=json.dumps({"tool_input": {"command": f"cd {b} && gh pr create --base dev --body-file onlyb.md"}}))
@@ -956,8 +958,8 @@ def guard_claims_fixtures() -> None:
             ("a `~/` path", "cd ~/../b && gh pr create --body-file BODY"),
             ("a redirect before the cd", ">/dev/null cd B_DIR && gh pr create --body-file BODY"),
             ("`env gh`", "cd B_DIR && env gh pr create --body-file BODY"),
-            ("`env VAR=1 gh`", "cd B_DIR && env GH_PAGER=cat gh pr create --body-file BODY"),
-            ("`VAR=1 gh`", "cd B_DIR && GH_PAGER=cat gh pr create --body-file BODY"),
+            ("`env VAR=1 gh`", "cd B_DIR && env PAGER=cat gh pr create --body-file BODY"),
+            ("`VAR=1 gh`", "cd B_DIR && PAGER=cat gh pr create --body-file BODY"),
             ("`command -p gh`", "cd B_DIR && command -p gh pr create --body-file BODY"),
             ("an absolute path to gh", "cd B_DIR && /opt/homebrew/bin/gh pr create --body-file BODY"),
             ("`timeout 60 gh`", "cd B_DIR && timeout 60 gh pr create --body-file BODY"),
@@ -1005,6 +1007,17 @@ def guard_claims_fixtures() -> None:
             ("R5 `GIT_DIR=…;` before gh", "GIT_DIR=B_DIR/.git; gh pr create --body-file BODY"),
             ("R5 `export GIT_DIR=…;` before gh", "export GIT_DIR=B_DIR/.git; gh pr create --body-file BODY"),
             ("R5 `export GIT_WORK_TREE=…;` before gh", "export GIT_WORK_TREE=B_DIR; gh pr create --body-file BODY"),
+            # round 6: any GIT_* / GH_* is the class, not a list; the reviewer's four, then two of the class
+            ("R6 `GIT_COMMON_DIR`", "GIT_COMMON_DIR=B_DIR/.git gh pr create --body-file BODY"),
+            ("R6 `GIT_CONFIG_GLOBAL`", "GIT_CONFIG_GLOBAL=B_DIR/gitconfig gh pr create --body-file BODY"),
+            ("R6 `GIT_CONFIG_COUNT/KEY_0/VALUE_0`",
+             "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=url.x.insteadOf GIT_CONFIG_VALUE_0=y gh pr create --body-file BODY"),
+            ("R6 `GIT_CONFIG_PARAMETERS`", "GIT_CONFIG_PARAMETERS=\"'remote.origin.url'='x'\" gh pr create --body-file BODY"),
+            ("R6 an arbitrary `GIT_FOO=1` (the class)", "GIT_FOO=1 gh pr create --body-file BODY"),
+            ("R6 `GH_HOST` (the class)", "GH_HOST=example.com gh pr create --body-file BODY"),
+            ("R6 `GH_REPO`, folded into the class", "cd B_DIR && GH_REPO=o/r gh pr create --body-file BODY"),
+            ("R6 `export GH_HOST=…;` before gh", "export GH_HOST=example.com; gh pr create --body-file BODY"),
+            ("R6 `GH_HOST=…;` before gh", "GH_HOST=example.com; gh pr create --body-file BODY"),
             ("N1 `env -C/dir`", "env -CB_DIR gh pr create --body-file BODY"),
             ("N1 `env -iC dir`", "env -iC B_DIR gh pr create --body-file BODY"),
             ("N1 `env -C dir`", "env -C B_DIR gh pr create --body-file BODY"),
@@ -1066,6 +1079,17 @@ def guard_claims_fixtures() -> None:
           rc == 0 and NOTICE in out, f"exit {rc}: {out[-140:]}")
     rc, out = run_in("GIT_PAGER=cat git status && X=1; gh pr create --body-file BODY", NEITHER, with_output=True)
     check("guard-claims: other assignments before gh keep the starting repo (control, #1516 round 5)",
+          rc == 2 and "## What changed" in out, f"exit {rc}: {out[-140:]}")
+    # round 6: a GIT_* on an earlier SAFE command is that command's own environment, so gh is judged normally;
+    # GH_HOST inherited is the class too; GIT_EDITOR, which the harness sets, is not.
+    rc, out = run_in("GIT_DIR=B_DIR/.git git status && gh pr create --body-file BODY", NEITHER, with_output=True)
+    check("guard-claims: a GIT_* on an earlier SAFE command does not reach gh (control, #1516 round 6)",
+          rc == 2 and "## What changed" in out, f"exit {rc}: {out[-140:]}")
+    rc, out = run_in("gh pr create --body-file BODY", NEITHER, with_output=True, env_extra={"GH_HOST": "example.com"})
+    check("guard-claims: GH_HOST inherited by the hook is NOT checked, with the notice (#1516 round 6)",
+          rc == 0 and NOTICE in out, f"exit {rc}: {out[-140:]}")
+    rc, out = run_in("gh pr create --body-file BODY", NEITHER, with_output=True, env_extra={"GIT_EDITOR": "true"})
+    check("guard-claims: an inherited GIT_EDITOR (the harness sets it) is still judged (control, #1516 round 6)",
           rc == 2 and "## What changed" in out, f"exit {rc}: {out[-140:]}")
     rc, out = run_in("cd sub && gh pr create --body-file BODY", NEITHER, with_output=True,
                      env_extra={"CDPATH": "B_DIR"})

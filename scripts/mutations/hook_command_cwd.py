@@ -238,27 +238,52 @@ GUARD = Guard(
         Mutation(
             # Round 5: GIT_DIR / GIT_WORK_TREE.
             'GIT_DIR on the gh command is ignored (round 5)',
-            '    if found and any(GIT_ENV.match(x) for x in words[:len(words) - len(w)]):',
+            '    if found and any(REPO_ENV.match(x) for x in words[:len(words) - len(w)]):',
             '    if False:',
             'R5 `GIT_DIR=B/.git gh` is NOT checked, with the notice',
         ),
         Mutation(
             'GIT_WORK_TREE is not a repository-picking variable (round 5)',
-            'GIT_ENV = re.compile(r"\\A(GIT_DIR|GIT_WORK_TREE)=")',
-            'GIT_ENV = re.compile(r"\\A(GIT_DIR)=")',
+            'REPO_ENV = re.compile(r"\\A(GIT|GH)_[A-Za-z0-9_]*=")',
+            'REPO_ENV = re.compile(r"\\A(GIT_DIR)=")',
             'R5 `GIT_WORK_TREE=B gh` is NOT checked, with the notice',
         ),
         Mutation(
             'a persisting GIT_DIR assignment before gh is safe (round 5)',
-            '        return not any(GIT_ENV.match(x) for x in seg)',
+            '        return not any(REPO_ENV.match(x) for x in seg)',
             '        return True',
             'R5 `GIT_DIR=…;` before gh is NOT checked, with the notice',
         ),
         Mutation(
             'an inherited GIT_DIR is ignored (round 5)',
-            '    if os.environ.get("GIT_DIR") or os.environ.get("GIT_WORK_TREE"):',
+            '    if any(k.startswith(("GIT_", "GH_")) and k not in INHERITED_EXEMPT for k in os.environ):',
             '    if False:',
             'GIT_DIR inherited by the hook is NOT checked',
+        ),
+        Mutation(
+            # Round 6: the GIT_* / GH_* class.
+            'the prefix test narrows to GIT_ only (round 6)',
+            'REPO_ENV = re.compile(r"\\A(GIT|GH)_[A-Za-z0-9_]*=")',
+            'REPO_ENV = re.compile(r"\\A(GIT)_[A-Za-z0-9_]*=")',
+            'R6 `GH_HOST` (the class) is NOT checked, with the notice',
+        ),
+        Mutation(
+            'the prefix test narrows back to a list (round 6)',
+            'REPO_ENV = re.compile(r"\\A(GIT|GH)_[A-Za-z0-9_]*=")',
+            'REPO_ENV = re.compile(r"\\A(GIT_DIR|GIT_WORK_TREE|GH_REPO|GH_HOST)=")',
+            'R6 an arbitrary `GIT_FOO=1` (the class) is NOT checked, with the notice',
+        ),
+        Mutation(
+            'the inherited test narrows to GIT_ only (round 6)',
+            '    if any(k.startswith(("GIT_", "GH_")) and k not in INHERITED_EXEMPT for k in os.environ):',
+            '    if any(k.startswith(("GIT_",)) and k not in INHERITED_EXEMPT for k in os.environ):',
+            'GH_HOST inherited by the hook is NOT checked',
+        ),
+        Mutation(
+            "the harness's GIT_EDITOR is not exempt (round 6)",
+            ' and k not in INHERITED_EXEMPT for k in os.environ):',
+            ' for k in os.environ):',
+            'an inherited GIT_EDITOR (the harness sets it) is still judged',
         ),
     ),
 )

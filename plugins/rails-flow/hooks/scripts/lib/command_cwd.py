@@ -35,9 +35,12 @@ KNOWN LIMITS, invisible in the command text: a shell function or alias from the 
 (zoxide's `z`, autojump's `j`) or that shadows a SAFE word, and CDPATH or zsh's CHASE_LINKS / AUTO_CD set
 in the command's shell but not in this hook's environment (CDPATH is read from this process's).
 
-GIT_DIR and GIT_WORK_TREE choose the repository gh targets whatever the directory (#1516, round 5): set
-on the gh segment, in an assignment-only segment before it, by `export`, or in this process's environment,
-they are "cannot tell", as `-R` and GH_REPO already are in the hook.
+ANY `GIT_*` or `GH_*` variable is "cannot tell" (#1516, rounds 5 and 6): GIT_DIR, GIT_WORK_TREE,
+GIT_COMMON_DIR, GIT_CONFIG_GLOBAL, GIT_CONFIG_COUNT/KEY_n/VALUE_n, GIT_CONFIG_PARAMETERS and GH_REPO each
+pick gh's repository whatever the directory. That holds on the gh segment, behind `env`, in an
+assignment-only segment before it, by `export`, and in this process's environment, except GIT_EDITOR,
+which the harness sets and which cannot change gh's target. A `GIT_X=… git push` on an earlier SAFE
+command is that command's own environment: it does not persist to gh, so it is judged normally.
 
 Everything else is exit 3 ("cannot tell"):
 - before the gh segment, once any segment is not SAFE: every segment that is not a plain `cd PATH` joined
@@ -49,7 +52,7 @@ Everything else is exit 3 ("cannot tell"):
   `>`, `>>`, `>&`;
 - a gh that is no command word of the grammar (`sudo gh`, `bash -c "…"`, `env -C dir gh`, any `env`
   option);
-- GIT_DIR / GIT_WORK_TREE, as above;
+- any GIT_* / GH_* variable, as above;
 - an unbalanced quote before the gh.
 """
 from __future__ import annotations
@@ -60,7 +63,13 @@ import shlex
 import sys
 
 ASSIGN = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*=")
-GIT_ENV = re.compile(r"\A(GIT_DIR|GIT_WORK_TREE)=")  # they pick gh's repository, not the directory
+# A CLASS, not a list (#1516, round 6): GIT_DIR, GIT_WORK_TREE, GIT_COMMON_DIR, GIT_CONFIG_GLOBAL (insteadOf),
+# GIT_CONFIG_COUNT/KEY_n/VALUE_n, GIT_CONFIG_PARAMETERS and GH_REPO each send gh to another repository, and
+# naming them one at a time left the next one open. Any GIT_* or GH_* variable is "cannot tell".
+REPO_ENV = re.compile(r"\A(GIT|GH)_[A-Za-z0-9_]*=")
+# Proven not to change gh's target, with real gh (`gh browse -n` names the same repository with and without it),
+# and set by the Claude Code harness itself: without the exemption every PR would go unchecked.
+INHERITED_EXEMPT = {"GIT_EDITOR"}
 OPS = re.compile(r"&&|\|\||;;&|;;|;&|<<<|&>>|&>|>>|>&|<&|<<|<>|>\||[;&|()<>]")
 SEPS = {"&&", ";"}
 CD_REDIRECTS = {">", ">>", ">&"}
@@ -167,8 +176,8 @@ def _gh_segment(words: list[str]) -> bool:
             break
     found = len(w) >= 3 and os.path.basename(w[0]) == "gh" and (
         (w[1] == "pr" and w[2] in ("create", "edit")) or (w[1] == "issue" and w[2] == "comment"))
-    if found and any(GIT_ENV.match(x) for x in words[:len(words) - len(w)]):
-        raise Unresolved("GIT_DIR / GIT_WORK_TREE on the gh command picks another repository")
+    if found and any(REPO_ENV.match(x) for x in words[:len(words) - len(w)]):
+        raise Unresolved("a GIT_* / GH_* variable on the gh command can pick another repository")
     return found
 
 
@@ -178,7 +187,7 @@ def _safe(seg: list[str]) -> bool:
     while w and ASSIGN.match(w[0]):
         w.pop(0)
     if not w:                               # assignments alone persist in this shell, and so reach gh
-        return not any(GIT_ENV.match(x) for x in seg)
+        return not any(REPO_ENV.match(x) for x in seg)
     return w[0] in SAFE
 
 
@@ -198,8 +207,8 @@ def _judge(done: list[tuple[list[str], bool, str]], start: str, home: str) -> st
 
 
 def resolve(cmd: str, start: str, home: str) -> str:
-    if os.environ.get("GIT_DIR") or os.environ.get("GIT_WORK_TREE"):
-        raise Unresolved("GIT_DIR / GIT_WORK_TREE in the environment picks gh's repository")
+    if any(k.startswith(("GIT_", "GH_")) and k not in INHERITED_EXEMPT for k in os.environ):
+        raise Unresolved("a GIT_* / GH_* variable in the environment can pick gh's repository")
     lex = shlex.shlex(prepare(cmd).replace("\n", " ; "), posix=True, punctuation_chars=";&|()<>")
     lex.whitespace_split = True
     lex.commenters = ""                     # prepare() has dropped the real comments

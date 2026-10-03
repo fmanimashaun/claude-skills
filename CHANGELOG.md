@@ -3670,9 +3670,14 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     decision recorded on #1509 (https://github.com/fmanimashaun/claude-skills/issues/1509): refusing would teach
     `RAILS_FLOW_CLAIMS_OK=1`, and the session repository's template would be the wrong one. CLAUDE.md's Platform
     paragraph now scopes the gate to a repository it can resolve.
-  - `GIT_DIR=` and `GIT_WORK_TREE=` pick the repository `gh` targets whatever the directory (round 5), so they are
-    "cannot tell" too, as `-R` and `GH_REPO` are: on the `gh` command (directly or through `env`), in an
-    assignment-only segment before it, by `export`, or inherited by the hook.
+  - **Any `GIT_*` or `GH_*` variable is "cannot tell"**, a class rather than a list (rounds 5 and 6): `GIT_DIR`,
+    `GIT_WORK_TREE`, `GIT_COMMON_DIR`, `GIT_CONFIG_GLOBAL` (via `insteadOf`), `GIT_CONFIG_COUNT/KEY_n/VALUE_n`,
+    `GIT_CONFIG_PARAMETERS` and `GH_REPO` each send `gh` to another repository whatever the directory. The rule
+    applies on the `gh` command (directly or through `env`), in an assignment-only segment before it, by `export`,
+    and in the hook's own inherited environment; `GH_REPO` is folded into it, leaving the hook's own check to
+    `-R`/`--repo`. Two exceptions, each shown harmless with gh 2.97.0 (`gh browse -n` names the same
+    repository): a `GIT_*=… git …` on an earlier allowlisted command, which is that command's own environment and
+    does not reach `gh`; and an inherited `GIT_EDITOR`, which the Claude Code harness sets.
   - `check_hook_gates.py` goes from 375 checks on dev to 489. Run against dev's `guard-claims.sh`, 106 of the 114
     new ones fail; the 8 that pass are controls (no `cd`; `git push && gh` with no `cd`; allowlisted commands and an
     assignment before `gh`; other assignments before `gh`; a logical `cd link/..`; `-R` after a `cd`; the session's

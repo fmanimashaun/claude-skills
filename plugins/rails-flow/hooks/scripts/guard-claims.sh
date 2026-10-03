@@ -107,7 +107,8 @@ if printf '%s' "$cmd" | grep -qE '\bgh[[:space:]]+pr[[:space:]]+(create|edit)\b'
   # Only the `gh pr create|edit` segment's own flags: an unrelated `grep -R` earlier in the chain, or
   # an `-R` inside a heredoc body, must not switch the check off (second pre-release review).
   # Quoted strings are removed first, so `-R` or a `|` inside `--title '…'` is text, not a flag or a
-  # pipe (third pre-release review). GH_REPO, set on the command or inherited, targets another repo too.
+  # pipe (third pre-release review). GH_REPO, and every other GIT_*/GH_* variable, is lib/command_cwd.py's
+  # class rule (#1516, round 6): set on the command or inherited, it gives the NOT-checked notice there.
   # One left-to-right scan, so `"it's"`, an escaped `\"` and a quote inside the other kind are read as
   # the shell reads them (#1435). A sed pair stripped '…' first and mis-paired `"it's -R"`. No python3
   # here means an empty result, and the helper check below then BLOCKS for the same missing python3.
@@ -129,9 +130,8 @@ while i < len(s):
 sys.stdout.write("".join(out))
 ' 2>/dev/null)"
   pr_seg="$(printf '%s' "$unquoted" | grep -oE 'gh[[:space:]]+pr[[:space:]]+(create|edit)[^;&|]*' | head -1)"
-  if printf '%s' "$pr_seg" | grep -qE '(^|[[:space:]])(-R|--repo)' \
-     || printf '%s' "$unquoted" | grep -qE '(^|[[:space:];&|])GH_REPO=' || [ -n "${GH_REPO:-}" ]; then
-    echo "rails-flow: PR-template sections NOT checked (-R/--repo/GH_REPO targets another repository's template)." >&2
+  if printf '%s' "$pr_seg" | grep -qE '(^|[[:space:]])(-R|--repo)'; then
+    echo "rails-flow: PR-template sections NOT checked (-R/--repo targets another repository's template)." >&2
   elif [ ! -f "$tpl_lib" ] || ! command -v python3 >/dev/null 2>&1; then
     # FAIL CLOSED (owner decision on #1435): this is a gate, and a gate whose checker is missing has
     # not checked anything. The audited escape stays.
