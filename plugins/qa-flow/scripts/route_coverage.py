@@ -147,6 +147,8 @@ class Route:
 
 def _area(controller: str, pattern: str) -> str:
     """Group for the report: the controller namespace, else the first path segment."""
+    if controller.startswith("redirect("):
+        return "redirect"          # every redirect in one group, not one per status code (#1546)
     if controller and "/" in controller:
         return controller.split("/")[0]
     if controller:
@@ -175,7 +177,13 @@ _RAILS_ROW = re.compile(
     r"^\s*(?P<prefix>[a-z0-9_]*)\s+"
     r"(?P<verb>GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)(?:\|[A-Z|]+)?\s+"
     r"(?P<pattern>/\S*)\s+"
-    r"(?P<controller>\S+)"
+    # A REDIRECT ROW (#1546). Rails prints a redirect endpoint's `inspect` in the controller column:
+    # `redirect(301)`, `redirect(301, /path)` (PathRedirect) or `redirect(301, k: v, k2: v2)`
+    # (OptionRedirect) -- actionpack routing/redirection.rb lines 70, 107, 146, identical in 8.0.2-8.1.4.
+    # The last two hold spaces, so `\S+` refused the row and the whole enumeration with it. Matched up
+    # to the FIRST `)`: a target that itself holds `)` leaves a tail the rest of the pattern rejects, so
+    # that row stays unparsed and is refused -- closed, never silently mis-read.
+    r"(?P<controller>redirect\([^)]*\)|\S+)"
     # The `defaults:` hash, when there is one. Captured as "ignore the rest of the line" rather than
     # parsed: nothing here needs its contents, and a partial parse of it would be a second claim.
     r"(?:\s+\{.*\})?\s*$"
