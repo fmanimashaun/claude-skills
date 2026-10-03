@@ -2544,9 +2544,16 @@ def guard_worktree_fixtures() -> None:
               code == 0 and "resume in place" in out and str(wt) in out and "feature/a" in out
               and "finished worktree" not in out, out[-300:])
         check("resume pointer: ANOTHER session is not pointed at it", "resume in place" not in start(repo, "SESS-B")[1])
+        # A stub `ps` that reports NO zombies, so the count is 0 whatever this machine is running: against the real `ps` an
+        # unclamped setting prints "3 zombie processes" when three happen to exist, and the fixture could not fail.
+        no_zombies = Path(td) / "no-zombies"
+        no_zombies.mkdir()
+        _stub(no_zombies, "ps", "exit 0")
         for bad in ("0", "-5"):
-            check(f"resume pointer: RAILS_FLOW_ZOMBIE_WARN={bad} is clamped, so it never prints a '0 zombie processes' line",
-                  "0 zombie processes" not in start(repo, RAILS_FLOW_ZOMBIE_WARN=bad)[1], start(repo, RAILS_FLOW_ZOMBIE_WARN=bad)[1][-200:])
+            out = run_hook("session-start.sh", cwd=repo, stdin=json.dumps({"session_id": "SESS-A"}), path_prefix=[no_zombies],
+                           env_extra={"RAILS_FLOW_ZOMBIE_WARN": bad}, unset=("CLAUDE_PROJECT_DIR",))[1]
+            check(f"resume pointer: RAILS_FLOW_ZOMBIE_WARN={bad} is clamped, so zero zombies prints no '0 zombie processes' line",
+                  "zombie" not in out and "resume in place" in out, out[-200:])
         # S4: the zombie scan must finish inside session-start's own 10 s hook timeout, even when `ps` hangs.
         slow_ps = Path(td) / "slow-ps"
         slow_ps.mkdir()
