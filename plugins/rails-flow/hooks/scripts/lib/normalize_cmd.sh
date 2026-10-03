@@ -49,6 +49,8 @@ _strip_comments() { sed -E "s/^[[:space:]]*#.*\$//; s/([[:space:]])#.*\$/\1/"; }
 # readings stay visible, and an error here can only block, never allow.
 _strip_heredocs() {
   awk '
+    # A batch boundary (#1504): one string ends, and every heredoc state of it ends with it.
+    $0 == "\002" { inh=0; pending=""; insub=0; inbt=0; next }
     inh {
       t=$0; if (dash) sub(/^\t+/,"",t)
       if (t==delim) { inh=0; next }
@@ -148,7 +150,7 @@ _peel() {
 
 # Step 5. One string per line, its own newlines carried as \001 so a multi-line string survives.
 _inner_strings() {
-  awk "$_NC_AWK_LIB"'
+  awk -v batch="${1:-0}" "$_NC_AWK_LIB"'
   function emit(v) { if (SKIP) return; gsub(/\n/, "\001", v); print v }
   function bt_end(s, i,    n, c) {
     n = length(s)
@@ -250,8 +252,10 @@ _inner_strings() {
     split("", WORDS); NW = 0; REDIR = 0
   }
   { S = S (NR > 1 ? "\n" : "") $0 }
-  END {
-    s = S; n = length(s); i = 1; W = ""; HAS = 0; NW = 0; HDN = 0; SKIP = 0
+  # One piece of a batch (#1504): every string the previous depth emitted is lexed on its own.
+  function lex(s,    n, i, c, d, j, k, e, line) {
+    n = length(s); i = 1; W = ""; HAS = 0; NW = 0; HDN = 0; SKIP = 0; REDIR = 0; HD = 0
+    split("", WORDS)
     while (i <= n) {
       c = substr(s, i, 1)
       if (c == "\\") { d = substr(s, i + 1, 1); if (d != "\n" && d != "") { W = W d; HAS = 1 } i += 2; continue }
@@ -298,8 +302,24 @@ _inner_strings() {
     }
     endcmd()
   }
+  END {
+    # Cost: the lexer walks the text a character at a time, so skip it when nothing it looks for is
+    # there. Judged with quotes and backslashes removed, because the lexer dequotes words before it
+    # matches them (`e'v'al`, `bas\h -c`; #1498 review). gsub, not a bash pattern substitution: that
+    # is superlinear on bash 3.2 and made an 8 KB PR body cost 32 s in guard-bash (#1504).
+    p = S; gsub(/[\047"\\]/, "", p)
+    if (p !~ /\$\(|`|<\(|eval|sh/) exit
+    # Only a BATCH (depth > 0) is split: a raw command holding a \002 line must not be cut mid-string
+    # (#1519 review). _join_strings removes \002 from every string, so content never fakes a boundary.
+    if (batch) np = split(S, P, "\n\002\n"); else { np = 1; P[1] = S }
+    for (pi = 1; pi <= np; pi++) lex(P[pi])
+  }
   '
 }
+
+# One string per line from _inner_strings ( \001 = its own newlines) -> the strings, joined by a line
+# holding only \002, which _strip_heredocs and the lexer both treat as a hard reset.
+_join_strings() { awk 'NR > 1 { print "\002" } { gsub(/\002/, ""); gsub(/\001/, "\n"); print }'; }
 
 _normalize_one() {
   _unquote_delims | _strip_quotes | _strip_comments | _strip_heredocs \
@@ -309,27 +329,18 @@ _normalize_one() {
 
 # normalize_segments: stdin = the raw command; stdout = one invoked segment per line, verb first.
 # The raw text is read with a BUILTIN, never `cat`: a missing binary must not empty the command.
+# #1504: the strings each depth emits are normalised in ONE pipeline (joined by _join_strings), not one
+# pipeline per string -- 50 `$(…)` cost 50 pipelines before. Depth 3, as before.
 normalize_segments() {
-  local raw=""
+  local raw="" level next d=0
   IFS= read -r -d '' raw || true
-  # Its status is RETURNED (#1529 review): discarded, an awk that failed read as a clean, empty result.
+  # Every status is RETURNED (#1529 review): discarded, an awk that failed read as a clean, empty result.
   printf '%s' "$raw" | _normalize_one || return 1
-  [ "${_NC_DEPTH:-0}" -ge 3 ] && return 0
-  # Cost: the lexer walks the text a character at a time, so skip it when nothing it looks for is there.
-  # Judged on the text with quotes and backslashes removed, because the lexer dequotes words before it
-  # matches them: `e'v'al`, `bas\h -c` and `"ba""s"h -c` are eval and bash (#1498 review; the class
-  # release-gate's _probe and guard-bash's trigger each fixed once already). A BUILTIN, never `tr`,
-  # so a missing binary cannot empty the probe.
-  local _q="'" _dq='"' _bs='\' _probe
-  _probe="${raw//[$_q$_dq$_bs$_bs]/}"
-  case "$_probe" in
-    *'$('*|*'`'*|*'<('*|*eval*|*sh*) ;;
-    *) return 0 ;;
-  esac
-  printf '%s' "$raw" | _inner_strings | {
-    _NC_DEPTH=$(( ${_NC_DEPTH:-0} + 1 ))
-    while IFS= read -r _nc_line; do
-      printf '%s' "$_nc_line" | tr '\001' '\n' | normalize_segments || exit 1
-    done
-  }
+  level="$raw"
+  while [ "$d" -lt 3 ]; do
+    next="$(printf '%s' "$level" | _inner_strings "$(( d > 0 ))" | _join_strings)" || return 1
+    [ -n "$next" ] || return 0
+    printf '%s\n' "$next" | _normalize_one || return 1
+    level="$next"; d=$((d + 1))
+  done
 }

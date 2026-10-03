@@ -3646,6 +3646,38 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ### Unreleased
 
+- **The hook normaliser is linear again, and batches its inner-string pass — `plugins/rails-flow/hooks/scripts/lib/normalize_cmd.sh`,
+  `plugins/qa-flow/hooks/scripts/lib/normalize_cmd.sh`, `plugins/rails-flow/scripts/check_hook_gates.py`,
+  `scripts/mutations/hook_normalize_cmd.py`** (#1504). Our own hook code; no framework claim.
+  - **A regression on dev, fixed:** #1498's dequoted pre-check used bash's `${var//[set]/}`, which is superlinear
+    on bash 3.2. The pre-check now runs inside `_inner_strings`' awk with `gsub`.
+  - **Batching:** each depth's strings are normalised in ONE pipeline, not one pipeline per string. They are
+    joined by a `\002` line, at which `_strip_heredocs` resets all its heredoc state (#1526's pending delimiter
+    included) and the lexer splits. Every pipeline's status is still returned (#1529).
+  - **Measured through the real `guard-bash.sh`, `origin/dev` at `42ed957` then this branch, one run each at a
+    1-minute load of 28–48:**
+    - an 8 KB markdown PR body: 96 s, now 0.16 s;
+    - a 400-line, 30 KB PR body: over 150 s (killed), now 0.26 s;
+    - a 400-line, 6 KB checklist body: 16 s, now 0.36 s.
+    The hook's timeout is 10 s, so on dev each of these was killed.
+  - **A ratchet that counts, not times:** `check_hook_gates.py` wraps `_normalize_one` and counts its pipelines.
+    30 `$(…)` strings cost 2 (31 on dev), 10 strings nested 3 deep cost 4 (31 on dev), and `git status` costs 1.
+    A rise fails, and a drop asks for the number to be lowered. The timed check now reads its bound from the
+    hook's own `timeout` in `hooks.json` instead of a literal 10.
+  - **The slow path is counted too.** On bash 5 (Linux CI) the pattern substitution is fast, so no timing there
+    can see it come back, and the full run on `0a41d33` reported that mutant SURVIVED. `check_hook_gates.py`
+    now reads every function the lib defines through `declare -f`, which drops comments, and ratchets bash
+    pattern substitutions (`${v//…}`, `/`, `%`, `#`) at the measured 0. The mutant is caught by this check.
+  - 3 must-block fixtures pin the batch-only risks: an unclosed heredoc or an unbalanced quote in one string
+    must not hide the next, and neither may a long batch.
+  - A `\002` line splits only a batch, never the raw command, and `_join_strings` strips `\002` from every string,
+    so a control byte cannot fake a boundary (#1519 review). There are 2 must-block fixtures for it.
+  - The timed PR-body check runs under `/bin/bash` when it exists (bash 3.2 on a Mac, the shell where the cost was
+    measured), as the guard-migrate check does, instead of whichever `bash` is first on PATH. A Homebrew bash 5
+    first on PATH used to run it without exercising the shell that matters (#1519 review).
+  - `hook_normalize_cmd`: 28 mutations, 6 of them new and 3 re-pointed at the batched code. One restores a
+    pipeline per string, and the pipeline ratchet catches it. The run time depends on the machine and its load, so no figure is given here.
+
 - **A per-repo coordination record says which session holds which worktree lane, and only the coordinator writes it — `plugins/rails-flow/hooks/scripts/lib/coordination.py`, `scripts/mutations/hook_coordination.py`, `scripts/maintainer_doctor.py`** (#1581, slice 1; slice 2 adds the worktree guard hook and the doctrine). Our own design; no framework claim. The owner decided the shape on #1585 and #1581: [one writer, the coordinator](https://github.com/fmanimashaun/claude-skills/issues/1585), and one record per repository.
   - The record is `$(git rev-parse --git-common-dir)/coordination.json`, so every worktree of a clone sees the same file and a sibling repository keeps its own. Rows are keyed by the absolute worktree path, never by session name, because names rotate at every restart; `session_id` and `name` are attributes rewritten on each assign. It carries a `workspace` block (the coordinator plus sibling repositories `[{name, path, remote}]`), and every write puts back the keys it does not know, so #1585 adds fields without a migration.
   - `claim`, `assign`, `close` and `workspace` refuse a caller whose session id is not `coordinator.session_id` (exit 2, naming the holder), except a `claim` when no coordinator is recorded; a lone session claims the role for itself. A corrupt record is exit 3, never an empty one. The file is replaced whole (a temp file in the same directory, then rename), and every read-modify-write holds an exclusive `fcntl.flock` on `coordination.lock` from read to rename, with a timeout that exits 3 (never a write without the lock). "One writer" is a role, not a process: the #1590 review measured six parallel claims on an empty record with more than one winner in 4 of 8 trials, and six parallel `assign` commands from one coordinator losing rows. A malformed record (`coordinator` not an object, `sessions` not an object) is exit 3, and a symlinked worktree path is keyed by its real path, so it is one row. `--session-id` is asserted by the caller: this protects against accident, not impersonation.
@@ -11504,6 +11536,9 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 ## qa-flow (independent QA plugin)
 
 ### Unreleased
+
+- **`plugins/qa-flow/hooks/scripts/lib/normalize_cmd.sh` gets the #1504 normaliser** (#1504). It is byte-identical to
+  rails-flow's copy (`hook-lib-drift`); see the rails-flow bullet. Only `release-gate.sh`'s no-parser fallback uses it.
 
 - **Route enumeration reads a Rails redirect row instead of refusing the whole file — `plugins/qa-flow/scripts/route_coverage.py`, `plugins/qa-flow/scripts/route_coverage_selftest.py`, `plugins/qa-flow/scripts/mutations/route_coverage.py`** (#1546, reported from Retask). Rails prints a redirect endpoint's `inspect` in the controller column: `redirect(301)`, `redirect(301, /path)` (PathRedirect) or `redirect(301, k: v, k2: v2)` (OptionRedirect). Source: actionpack `routing/redirection.rb` lines 70, 107 and 146, identical in 8.0.2, 8.0.5.1, 8.1.1–8.1.4 (read directly; earlier versions not read, so not claimed). The last two hold spaces, so `_RAILS_ROW`'s `\S+` refused them, `unparsed_rails_rows` flagged the row, and `enumerate --rails` refused the whole enumeration (exit 2). Retask's CI hit it on `redirect(301, /user-management)`. The controller column now matches `redirect(` up to the FIRST `)`; a target that itself holds `)` leaves a tail the pattern rejects, so that row stays refused (fail closed, never mis-read). Every redirect is grouped under one `redirect` area instead of one per status. Fixtures: the three forms plus a multi-option row parse; a `)`-in-target row is refused; a `controller#action` row is unchanged. Three of them fail on dev. Guard `route_coverage` 45/45 caught (+3). The verdict is on #1546 (comment of 2026-10-03).
 
