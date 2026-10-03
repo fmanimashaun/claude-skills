@@ -43,7 +43,8 @@ row's fixture names where the repository already defends it.
 
 ## Output
 
-One verdict line, then at most 10 findings. No narration of the search.
+One verdict line, then at most 10 findings. No narration of the search. The locations below are
+made up to show the shape; yours come from the code you ran.
 
 ```text
 BLOCKED  2 findings, 7 inputs run

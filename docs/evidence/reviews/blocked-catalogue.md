@@ -2,8 +2,8 @@
 
 Decision record for [#1563](https://github.com/fmanimashaun/claude-skills/issues/1563) (the pre-review
 gauntlet). Source: `gh pr view <n> --json comments` over 16 candidate hook, guard and mutation PRs,
-read 2026-10-03. **Reviewers write `BLOCKED` as PR comments; there are no GitHub review objects**, which
-is why `docs/evidence/reviews/prs/` has none. 14 PRs carry a real BLOCK. #1452 was CLEAN and #1479's
+read 2026-10-03. **Reviewers write `BLOCKED` as PR comments; none of the 9 PRs checked (1498, 1529, 1470, 1511,
+1525, 1491, 1519, 1513, 1516) has a GitHub review object**, which is why `docs/evidence/reviews/prs/` has none. 14 PRs carry a real BLOCK. #1452 was CLEAN and #1479's
 block is history from before its branch was reset.
 
 `python3 scripts/check_blocked_catalogue.py` re-checks this table: every row whose state is `merged`
