@@ -91,15 +91,21 @@ GUARD = Guard(
         ),
         Mutation(
             "a refused write exits 1 instead of 2",
-            "        print(err, file=sys.stderr)\n        return 2",
-            "        print(err, file=sys.stderr)\n        return 1",
+            "                print(err, file=sys.stderr)\n                return 2",
+            "                print(err, file=sys.stderr)\n                return 1",
             "the CLI refuses a non-coordinator write with exit 2",
         ),
         Mutation(
             "an unreadable record exits 1 instead of 3",
-            '        print(f"could not read the coordination record: {e}", file=sys.stderr)\n        return 3',
-            '        print(f"could not read the coordination record: {e}", file=sys.stderr)\n        return 1',
+            '            print(f"could not read the coordination record: {e}", file=sys.stderr)\n            return 3',
+            '            print(f"could not read the coordination record: {e}", file=sys.stderr)\n            return 1',
             "the CLI exits 3 on a corrupt record",
+        ),
+        Mutation(
+            "a write path exits 1 on an unreadable record",
+            '                print(f"could not read the coordination record: {e}", file=sys.stderr)\n                return 3',
+            '                print(f"could not read the coordination record: {e}", file=sys.stderr)\n                return 1',
+            "a malformed record",
         ),
         Mutation(
             "the CLI swaps a sibling's path and remote",
@@ -109,9 +115,33 @@ GUARD = Guard(
         ),
         Mutation(
             "the CLI close command does nothing",
-            '        err = close(record, args.session_id, os.path.abspath(args.path))\n',
-            '        err = None\n',
+            '                err = close(record, args.session_id, os.path.realpath(args.path))\n',
+            '                err = None\n',
             "the CLI closes a lane, so it leaves the session's open lanes",
+        ),
+        Mutation(
+            "the lock is never taken, so parallel commands race their read-modify-write",
+            "                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)\n                break",
+            "                break",
+            "six parallel claims on an empty record: exactly one wins",
+        ),
+        Mutation(
+            "a command that cannot get the lock proceeds without it",
+            '                    raise LockError(f"{lock}: could not lock within {LOCK_TIMEOUT:g}s")',
+            "                    break",
+            "a command that cannot get the lock exits 3",
+        ),
+        Mutation(
+            "a coordinator that is not an object is accepted, so the next command crashes",
+            '\n            or not (data.get("coordinator") is None or isinstance(data["coordinator"], dict))):',
+            "):",
+            "a malformed record",
+        ),
+        Mutation(
+            "a symlinked worktree path keeps its own row (abspath, not realpath)",
+            "                err = assign(record, args.session_id, os.path.realpath(args.path),",
+            "                err = assign(record, args.session_id, os.path.abspath(args.path),",
+            "a symlinked worktree path and its target are ONE row",
         ),
     ),
 )

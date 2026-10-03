@@ -8,9 +8,11 @@ attributes of a row.
 
 THE COORDINATOR IS THE ONLY WRITER (the owner's direction on #1585). Sessions' hooks only READ the
 record; the write commands refuse a caller whose session id is not `coordinator.session_id`, unless
-no coordinator is recorded and the caller is claiming the role. One writer means no lock, and the
-file is replaced whole (a temp file in the same directory, then rename), so a reader never sees half
-of it. A lone session is its own coordinator: it claims the role and records its own lane.
+no coordinator is recorded and the caller is claiming the role. The file is replaced whole (a
+temp file in the same directory, then rename), so a reader never sees half of it, and every read-modify-
+write holds an exclusive `fcntl.flock` from read to rename: "one writer" is a role, and one coordinator
+still runs commands in parallel (the #1590 review measured lost rows and several winning claims without it).
+A lock that cannot be had within the timeout is exit 3, never a write without it. A lone session is its own coordinator: it claims the role and records its own lane.
 
 UNKNOWN KEYS SURVIVE. The record carries a `workspace` block and per-row fields that other features
 add (#1585); every write loads the whole record and puts back what it does not understand, so adding
@@ -23,25 +25,63 @@ a field needs no migration.
     python3 coordination.py workspace --session-id ID --coordinator-name N [--sibling NAME PATH REMOTE]... [--cwd DIR]
     python3 coordination.py --selftest
 
-Exit: 0 done, 2 refused (the message names the coordinator), 3 could not read the record.
+The caller's identity is the `--session-id` it passes, so this protects against ACCIDENT (a session writing
+when it is not the coordinator), not against impersonation: anything that can pass the coordinator's id is
+accepted.
+
+Exit: 0 done, 2 refused (the message names the coordinator), 3 could not read or lock the record.
 """
 from __future__ import annotations
 
 import argparse
+import contextlib
+import fcntl
 import json
 import os
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 VERSION = 1
 NAME = "coordination.json"
+LOCK_NAME = "coordination.lock"
+# How long a command waits for another writer. Past it the command exits 3 ("could not lock"), never
+# proceeds unlocked: a record written without the lock is the lost update the lock exists to prevent.
+LOCK_TIMEOUT = float(os.environ.get("COORDINATION_LOCK_TIMEOUT") or 10)
 
 
 class RecordError(Exception):
     """The record exists but cannot be read: a corrupt file is NOT an empty one."""
+
+
+class LockError(Exception):
+    """Another writer held the lock past the timeout."""
+
+
+@contextlib.contextmanager
+def locked(record_file: Path):
+    """Hold an exclusive lock from READ to RENAME. "One writer" is a role, not a process: a coordinator
+    runs commands in parallel, and six sessions can claim an empty record at the same instant, so each
+    read-modify-write is serialised. `fcntl.flock` is the Python module, not the flock(1) binary that
+    macOS lacks. Closing the descriptor releases it, so a crashed writer cannot leave the record locked."""
+    lock = record_file.with_name(LOCK_NAME)
+    fd = os.open(lock, os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        deadline = time.monotonic() + LOCK_TIMEOUT
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    raise LockError(f"{lock}: could not lock within {LOCK_TIMEOUT:g}s")
+                time.sleep(0.02)
+        yield
+    finally:
+        os.close(fd)
 
 
 def common_dir(cwd: str | os.PathLike = ".") -> Path | None:
@@ -69,8 +109,9 @@ def load(path: Path) -> dict:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as e:
         raise RecordError(f"{path}: {e}") from e
-    if not isinstance(data, dict) or not isinstance(data.get("sessions", {}), dict):
-        raise RecordError(f"{path}: not a coordination record")
+    if (not isinstance(data, dict) or not isinstance(data.get("sessions", {}), dict)
+            or not (data.get("coordinator") is None or isinstance(data["coordinator"], dict))):
+        raise RecordError(f"{path}: not a coordination record (sessions must be an object, coordinator an object or null)")
     data.setdefault("version", VERSION)
     data.setdefault("coordinator", None)
     data.setdefault("sessions", {})
@@ -198,29 +239,45 @@ def main(argv: list[str] | None = None) -> int:
     if rp is None:
         print("not inside a git repository: no coordination record", file=sys.stderr)
         return 3
-    try:
-        record = load(rp)
-    except RecordError as e:
-        print(f"could not read the coordination record: {e}", file=sys.stderr)
-        return 3
-    if args.cmd == "lanes":
+    if args.cmd == "lanes":        # a read: the record is replaced whole, so no lock is needed to read it
+        try:
+            record = load(rp)
+        except RecordError as e:
+            print(f"could not read the coordination record: {e}", file=sys.stderr)
+            return 3
         for path, row in lanes_for(record, args.session_id):
             print(f"{path}\t{row.get('branch', '')}\t{row.get('issue', '')}")
         return 0
-    if args.cmd == "claim":
-        err = claim(record, args.session_id, args.name)
-    elif args.cmd == "assign":
-        err = assign(record, args.session_id, os.path.abspath(args.path), args.branch, args.issue, args.owner, args.name)
-    elif args.cmd == "workspace":
-        err = set_workspace(record, args.session_id, args.coordinator_name,
-                            [{"name": n, "path": pth, "remote": r} for n, pth, r in args.sibling])
-    else:
-        err = close(record, args.session_id, os.path.abspath(args.path))
-    if err:
-        print(err, file=sys.stderr)
-        return 2
-    save(rp, record)
-    return 0
+    try:
+        with locked(rp):
+            try:
+                record = load(rp)
+            except RecordError as e:
+                print(f"could not read the coordination record: {e}", file=sys.stderr)
+                return 3
+            if args.cmd == "claim":
+                err = claim(record, args.session_id, args.name)
+            elif args.cmd == "assign":
+                # realpath, not abspath: a symlinked path and its target are ONE worktree, and `git rev-parse
+                # --show-toplevel` (what the guard compares against) already resolves symlinks.
+                err = assign(record, args.session_id, os.path.realpath(args.path), args.branch, args.issue, args.owner,
+                             args.name)
+            elif args.cmd == "workspace":
+                err = set_workspace(record, args.session_id, args.coordinator_name,
+                                    [{"name": n, "path": pth, "remote": r} for n, pth, r in args.sibling])
+            else:
+                err = close(record, args.session_id, os.path.realpath(args.path))
+            if err:
+                print(err, file=sys.stderr)
+                return 2
+            hold = float(os.environ.get("COORDINATION_TEST_HOLD") or 0)
+            if hold:
+                time.sleep(hold)    # a TEST SEAM: widens the read-to-write window so the race fixtures are deterministic
+            save(rp, record)
+            return 0
+    except LockError as e:
+        print(f"could not write the coordination record: {e}", file=sys.stderr)
+        return 3
 
 
 def selftest() -> int:
@@ -355,6 +412,72 @@ def selftest() -> int:
                             capture_output=True, text=True)
         check("the CLI closes a lane, so it leaves the session's open lanes",
               cl.returncode == 0 and lanes_for(load(record_path(repo)), "S1") == [], f"{cl.returncode} {cl.stderr!r}")
+
+        # R1 (#1590 review): "one writer" does not mean one PROCESS. Parallel commands race a read-modify-write.
+        # The test seam holds each command between its read and its write, so the race is certain without a lock.
+        race = Path(td) / "race"
+        race.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=race, check=True)
+        slow = dict(os.environ, COORDINATION_TEST_HOLD="0.3")
+
+        def parallel(argvs: list[list[str]]) -> list[int]:
+            procs = [subprocess.Popen([sys.executable, __file__, *a], env=slow, stdout=subprocess.DEVNULL,
+                                      stderr=subprocess.DEVNULL) for a in argvs]
+            return [p.wait() for p in procs]
+
+        codes = parallel([["claim", "--session-id", f"C{i}", "--name", f"n{i}", "--cwd", str(race)] for i in range(6)])
+        check("six parallel claims on an empty record: exactly one wins and five are refused",
+              codes.count(0) == 1 and codes.count(2) == 5, str(codes))
+        won = load(record_path(race))["coordinator"]["session_id"] if codes.count(0) == 1 else None
+        check("...and the record names the session that was told it won", won == f"C{codes.index(0)}" if won else False,
+              f"{won} {codes}")
+        codes = parallel([["assign", "--session-id", won or "C0", "--path", f"/p/{i}", "--branch", f"b{i}",
+                           "--cwd", str(race)] for i in range(6)])
+        rows = load(record_path(race))["sessions"]
+        check("six parallel assigns by the coordinator: all six exit 0 and all six rows survive",
+              codes == [0] * 6 and len(rows) == 6, f"{codes} rows={len(rows)}")
+
+        # R2 (#1590 review): a record of the wrong shape is a RECORD error (exit 3), never a traceback.
+        for body in ('{"coordinator": "x", "sessions": {}}', '{"coordinator": [], "sessions": {}}',
+                     '{"coordinator": null, "sessions": []}', '[]'):
+            rp.write_text(body)
+            bad = subprocess.run([sys.executable, __file__, "claim", "--session-id", "S1", "--cwd", str(repo)],
+                                 capture_output=True, text=True)
+            check(f"a malformed record {body} exits 3, not a traceback", bad.returncode == 3 and "Traceback" not in bad.stderr,
+                  f"{bad.returncode} {bad.stderr[-120:]!r}")
+        rp.unlink()
+
+        # R3 (#1590 review): a symlinked path and its target are ONE worktree, so one row.
+        sym = Path(td) / "sym"
+        sym.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=sym, check=True)
+        real_wt, link_wt = Path(td) / "real-wt", Path(td) / "link-wt"
+        real_wt.mkdir()
+        link_wt.symlink_to(real_wt)
+        subprocess.run([sys.executable, __file__, "claim", "--session-id", "S1", "--cwd", str(sym)])
+        for given in (link_wt, real_wt):
+            subprocess.run([sys.executable, __file__, "assign", "--session-id", "S1", "--path", str(given),
+                            "--branch", "b", "--cwd", str(sym)])
+        srows = load(record_path(sym))["sessions"]
+        check("a symlinked worktree path and its target are ONE row, keyed by the real path",
+              list(srows) == [os.path.realpath(real_wt)], str(list(srows)))
+
+        # A command that cannot get the lock is exit 3 and writes nothing; it never proceeds unlocked.
+        srp = record_path(sym)
+        before = srp.read_bytes()
+        holder = subprocess.Popen([sys.executable, "-c", "import fcntl,os,sys,time\nfd=os.open(sys.argv[1],os.O_CREAT|os.O_RDWR)\n"
+                                   "fcntl.flock(fd,fcntl.LOCK_EX)\nprint('held',flush=True)\ntime.sleep(10)",
+                                   str(srp.with_name(LOCK_NAME))], stdout=subprocess.PIPE, text=True)
+        try:
+            holder.stdout.readline()
+            busy = subprocess.run([sys.executable, __file__, "claim", "--session-id", "S2", "--cwd", str(sym)],
+                                  env=dict(os.environ, COORDINATION_LOCK_TIMEOUT="0.3"), capture_output=True, text=True)
+        finally:
+            holder.kill()
+            holder.wait()
+        check("a command that cannot get the lock exits 3, says so, and writes nothing",
+              busy.returncode == 3 and "could not" in busy.stderr and srp.read_bytes() == before,
+              f"{busy.returncode} {busy.stderr!r}")
 
         outside = Path(td) / "not-a-repo"
         outside.mkdir()
