@@ -1047,6 +1047,61 @@ GUARD = Guard(
             "            if True:\n                continue",
             "command points at a skill doc that was renamed away",
         ),
+        # #1543: a conflict block passed a PR's gate run because nothing read for the markers.
+        Mutation(
+            "the opening marker stops being recognised",
+            '_CONFLICT_EDGE = re.compile(r"^(?:<{7}|>{7})(?: .*)?$")',
+            '_CONFLICT_EDGE = re.compile(r"^(?:>{7})(?: .*)?$")',
+            "only the opening marker is left",
+        ),
+        Mutation(
+            "the closing marker stops being recognised",
+            '_CONFLICT_EDGE = re.compile(r"^(?:<{7}|>{7})(?: .*)?$")',
+            '_CONFLICT_EDGE = re.compile(r"^(?:<{7})(?: .*)?$")',
+            "only the closing marker is left",
+        ),
+        Mutation(
+            "a marker is matched anywhere in a line, not as a whole line",
+            "if _CONFLICT_EDGE.match(line)]",
+            "if re.search(r\"<{7}|>{7}\", line)]",
+            "a marker quoted mid-line",
+        ),
+        Mutation(
+            "an indented marker counts",
+            "enumerate(lines, 1) if _CONFLICT_EDGE.match(line)]",
+            "enumerate(lines, 1) if _CONFLICT_EDGE.match(line.strip())]",
+            "an indented marker in a code block",
+        ),
+        Mutation(
+            "a longer run of characters counts as a marker",
+            '_CONFLICT_EDGE = re.compile(r"^(?:<{7}|>{7})(?: .*)?$")',
+            '_CONFLICT_EDGE = re.compile(r"^(?:<{7,}|>{7,})(?: .*)?$")',
+            "an eight-character run is not a marker",
+        ),
+        Mutation(
+            "a separator counts on its own, so a setext heading is refused",
+            "_CONFLICT_SEPARATOR.match(line)] if edges else []",
+            "_CONFLICT_SEPARATOR.match(line)]",
+            "a setext heading underline of seven characters",
+        ),
+        Mutation(
+            "the finding points at the first marker line, an earlier setext underline included",
+            "(edges or separators)[0],",
+            "min(edges + separators),",
+            "a heading underline before a real block",
+        ),
+        Mutation(
+            "only markdown is read",
+            '    for path in walk(""):\n        with path.open("rb") as handle:',
+            '    for path in walk(".md"):\n        with path.open("rb") as handle:',
+            "a workflow file",
+        ),
+        Mutation(
+            "binary files are read as text",
+            '            if b"\\0" in handle.read(8000):\n                continue\n        examined += 1',
+            '            if False:\n                continue\n        examined += 1',
+            "a binary file is skipped",
+        ),
         Mutation(
             "invisible characters stop being reported (#95)",
             "                if index == -1:\n                    continue",
@@ -1181,5 +1236,12 @@ GUARD = Guard(
         r'`\.?/?([A-Za-z0-9_-]+',
         "a bullet naming only a dot-directory path is placeable",
     ),
+        Mutation(
+            # #1480
+            'a link climbing out of its plugin or skill is accepted again',
+            '                    if resolved == root or root in resolved.parents:\n                        continue',
+            '                    if True:\n                        continue',
+            "a design-flow command linking into rails-stack's skills/ leaves its package",
+        ),
     ),
 )

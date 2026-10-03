@@ -48,6 +48,8 @@ import tempfile
 import time
 from pathlib import Path
 
+import proc_group  # noqa: E402 -- a timeout kills the whole process group (#1459)
+import hermetic_git  # noqa: E402 -- the runner's subprocesses start no detached git (#1510)
 from mutation_types import Guard, Mutation  # noqa: F401 -- re-exported: mutation_check_selftest and doctrine_map use mc.Guard / mc.Mutation
 
 REPO = Path(__file__).resolve().parents[1]
@@ -260,6 +262,23 @@ def mutation_limits(guards: list[Guard], timed: list[tuple[list[str], float]]) -
     return {g.name: mutation_timeout(secs) for g, (_, secs) in zip(guards, timed)}
 
 
+TAIL_WIDTH = 300
+
+
+def tail_block(output: str | bytes | None, lines: int) -> str:
+    """The last `lines` lines of a child's output as an indented report block, each cut to
+    `TAIL_WIDTH` characters so one huge line cannot flood a CI log (#1493, #1531).
+
+    Empty when the child printed nothing, so a report never ends in a bare newline. Accepts bytes
+    and None because `TimeoutExpired.stdout` is either, whatever `text=True` said (#1530); bytes
+    are decoded with `errors="replace"` for the reason the two `subprocess.run` calls below are.
+    """
+    if isinstance(output, bytes):
+        output = output.decode("utf-8", errors="replace")
+    rows = (output or "").strip().splitlines()[-lines:]
+    return "".join(f"\n      {row[:TAIL_WIDTH]}" for row in rows)
+
+
 def run_baseline(guard: Guard) -> list[str]:
     return run_baseline_timed(guard)[0]
 
@@ -287,28 +306,36 @@ def run_baseline_timed(guard: Guard) -> tuple[list[str], float]:
         started = time.monotonic()                # after staging: the limit is the selftest's time
         # `errors="replace"` here too (#1493 applied it to mutants only): a non-UTF-8 byte in a
         # BASELINE's output raised before the INERT report could print.
-        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True, errors="replace",
+        # stderr folded into stdout: one stream in the order it was written, so a tail of it is
+        # what a person watching would have seen (#1532). Its own process group (#1459).
+        result = proc_group.run(argv, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                text=True, errors="replace",
+                                env=hermetic_git.env(),  # no detached git maintenance (#1510)
                                 timeout=BASELINE_TIMEOUT)
         elapsed = time.monotonic() - started
         if result.returncode != 0:
             return [
                 f"{guard.name}: INERT — the UNMUTATED selftest already fails in the staged "
                 f"tempdir (exit {result.returncode}), so every mutation below is 'caught' whether "
-                "or not it breaks anything. Add what it reads to the guard's `needs`.\n"
-                + "\n".join(f"      {line}" for line in
-                            (result.stdout + result.stderr).strip().splitlines()[-6:])
+                "or not it breaks anything. Add what it reads to the guard's `needs`."
+                + tail_block(result.stdout, 6)
             ], elapsed
-    except subprocess.TimeoutExpired:
-        return [f"{guard.name}: the unmutated baseline timed out after {BASELINE_TIMEOUT}s"], BASELINE_TIMEOUT
+    except subprocess.TimeoutExpired as exc:
+        # The whole process group is killed (#1459), and what it printed before the limit is in
+        # hand; without it a CI-only timeout has no clue (#1530).
+        return [f"{guard.name}: the unmutated baseline timed out after {BASELINE_TIMEOUT}s"
+                + tail_block(exc.stdout, 12)], BASELINE_TIMEOUT
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
     return [], elapsed
+
 
 
 def run_mutation(guard: Guard, mutation: Mutation, timeout: float = MUTATION_FLOOR) -> list[str]:
     """One mutation, in its own tempdir. Independent of every other mutation, so the suite can run
     them in parallel (#1444). `run_guard` and `main` both come through here: one implementation."""
     workdir = Path(tempfile.mkdtemp(prefix=f"mutcheck-{guard.name}-"))
+    started = time.monotonic()
     try:
         entry = apply_mutation(guard, mutation, workdir)
         argv = [sys.executable, str(entry)]
@@ -316,9 +343,14 @@ def run_mutation(guard: Guard, mutation: Mutation, timeout: float = MUTATION_FLO
             argv.append("--selftest")   # the selftest is a flag on the module itself
         argv.extend(guard.selftest_args)
         # `errors="replace"`: a non-UTF-8 byte must not raise before the report can print (#1493).
-        result = subprocess.run(argv, cwd=workdir, capture_output=True, text=True, errors="replace",
+        # stderr folded into stdout, as in the baseline: `stdout + stderr` put the last 12 lines of
+        # stderr in front of a label printed to stdout, and 12+ stderr lines hid it (#1532).
+        started = time.monotonic()
+        result = proc_group.run(argv, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                text=True, errors="replace",
+                                env=hermetic_git.env(),  # no detached git maintenance (#1510)
                                 timeout=timeout)
-        output = result.stdout + result.stderr
+        output = result.stdout
         if result.returncode == 0:
             return [f"{guard.name}: SURVIVED — {mutation.name}. The selftest passed with this "
                     "broken, so nothing guards it."]
@@ -328,14 +360,41 @@ def run_mutation(guard: Guard, mutation: Mutation, timeout: float = MUTATION_FLO
             # last 12 lines, each cut to 300 characters, so one huge line cannot flood the log.
             return [f"{guard.name}: caught {mutation.name!r} but not by the expected fixture "
                     f"(no mention of {mutation.expects!r}, exit {result.returncode}) — a coincidental "
-                    "catch would hide that fixture going quiet\n"
-                    + "\n".join(f"      {line[:300]}" for line in output.strip().splitlines()[-12:])]
+                    "catch would hide that fixture going quiet"
+                    + tail_block(output, 12)]
         return []
-    except subprocess.TimeoutExpired:
-        return [f"{guard.name}: {mutation.name} timed out after {timeout:.0f}s "
-                f"({MUTATION_SCALE:g}x its baseline, within {MUTATION_FLOOR:.0f}-{MUTATION_CAP:.0f}s)"]
+    except subprocess.TimeoutExpired as exc:
+        # The whole process group is killed (#1459), so nothing it started is left running; the
+        # report carries the guard, the mutation, the elapsed time and the mutant's last lines (#1530).
+        return [f"{guard.name}: {mutation.name} timed out after {time.monotonic() - started:.0f}s "
+                f"(limit {timeout:.0f}s: {MUTATION_SCALE:g}x its baseline, within "
+                f"{MUTATION_FLOOR:.0f}-{MUTATION_CAP:.0f}s)"
+                + tail_block(exc.stdout, 12)]
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
+
+
+def run_live(pool, live: list[tuple[Guard, Mutation]], limits: dict[str, float]) -> list[tuple[list[str], float]]:
+    """Every live mutation through `pool`, outcomes in `live`'s order. Each guard's progress line is
+    printed the moment its LAST mutation finishes, so a run the doctor kills on a timeout still shows
+    how far it got -- since #1444 the per-guard lines waited for the whole pool (#1459)."""
+    from concurrent.futures import as_completed
+    remaining: dict[str, int] = {}
+    for guard, _ in live:
+        remaining[guard.name] = remaining.get(guard.name, 0) + 1
+    found_by: dict[str, int] = {name: 0 for name in remaining}
+    futures = {pool.submit(timed_run, run_mutation, g, m, limits[g.name]): i for i, (g, m) in enumerate(live)}
+    outcomes: list[tuple[list[str], float] | None] = [None] * len(live)
+    for future in as_completed(futures):
+        i = futures[future]
+        outcomes[i] = future.result()
+        name = live[i][0].name
+        found_by[name] += len(outcomes[i][0])
+        remaining[name] -= 1
+        if remaining[name] == 0:
+            print(f"  [done] {name}: {sum(1 for g, _ in live if g.name == name)} mutation(s), "
+                  f"{found_by[name]} problem(s)", flush=True)
+    return outcomes  # type: ignore[return-value]
 
 
 def timed_run(fn, *args):
@@ -407,15 +466,18 @@ def main(argv: list[str] | None = None) -> int:
     # the largest, and lint_self_consistency alone has 137 mutations. So every baseline runs first
     # (an INERT baseline still ends its guard, unscored), then every remaining mutation of every
     # guard runs in the same pool. Output is printed in declaration order, so it reads as a serial run.
-    from concurrent.futures import ThreadPoolExecutor
+    #
+    # `proc_group.pool`, not a bare ThreadPoolExecutor: each baseline and mutant runs in a session of
+    # its own, so Ctrl-C reaches only this process, and a bare pool's join waited for the slowest
+    # running mutant while every one of them kept going (review of #1525: 24 s, survivors).
     jobs = max(1, args.jobs or os.cpu_count() or 1)
     started = time.monotonic()
-    with ThreadPoolExecutor(max_workers=jobs) as pool:
+    with proc_group.pool(jobs) as pool:
         timed = list(pool.map(run_baseline_timed, guards))
         baselines = [problems for problems, _ in timed]
         limits = mutation_limits(guards, timed)
         live = live_mutations(guards, baselines)
-        outcomes = list(pool.map(lambda gm: timed_run(run_mutation, gm[0], gm[1], limits[gm[0].name]), live))
+        outcomes = run_live(pool, live, limits)
     by_guard: dict[str, list[str]] = {g.name: list(b) for g, b in zip(guards, baselines)}
     # Seconds each guard cost: its baseline plus every mutant run (#1497). The CI log printed only
     # the gate total, so where the budget went could not be read from it.

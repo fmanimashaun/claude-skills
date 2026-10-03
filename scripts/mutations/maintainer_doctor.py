@@ -16,6 +16,20 @@ GUARD = Guard(
         "evals",
     ),
     mutations=(
+        # #1459: a gate that times out takes its whole process group with it.
+        Mutation(
+            'a gate runs as a plain subprocess, so a timeout orphans what it started',
+            '            p = proc_group.run(\n                args, cwd=cwd or REPO, text=True, timeout=timeout, env=hermetic_git.env(),\n            )',
+            '            p = subprocess.run(\n                args, cwd=cwd or REPO, text=True, timeout=timeout, env=hermetic_git.env(), capture_output=True,\n            )',
+            '#1459: a timed-out gate',
+        ),
+        # #1510: every gate subprocess runs with git auto-maintenance off.
+        Mutation(
+            "a gate runs with git's own auto-maintenance",
+            '                args, cwd=cwd or REPO, text=True, timeout=timeout, env=hermetic_git.env(),',
+            '                args, cwd=cwd or REPO, text=True, timeout=timeout,',
+            "#1510: a gate's git must see maintenance.auto=false",
+        ),
         # #1097. A gate that was KILLED did not run. Reporting it as FAIL is the one verdict it
         # cannot mean, and on `mutation coverage` that verdict means "a guard stopped guarding".
         Mutation(
@@ -36,7 +50,7 @@ GUARD = Guard(
             # The reason has to name the allowance, or a reader cannot tell whether to raise the
             # budget or fix the gate -- which is the decision the skip exists to hand them.
             "the skip stops naming the allowance that was exceeded",
-            '            return 124, f"{\' \'.join(args)}: timed out after {timeout}s"',
+            '            return 124, f"{\' \'.join(args)}: timed out after {timeout}s{tail}"',
             '            return 124, "timed out"',
             "the timeout skip must name the allowance it exceeded",
         ),
@@ -181,6 +195,13 @@ GUARD = Guard(
             '    "mutation coverage": 1800,',
             '    "mutation coverage": 1200,',
             "must stay under the gate's total",
+        ),
+        Mutation(
+            # review of #1525, suggestion 5: the last line became `heaviest guards`
+            "a slow gate's ok line keeps the last line, not its measurement",
+            '                last = next((ln for ln in reversed(lines) if re.search(r"\\(jobs=\\d+, \\d+s\\)", ln)),\n                            lines[-1] if lines else "")',
+            '                last = lines[-1] if lines else ""',
+            "a slow gate's ok line must carry its `(jobs=N, Xs)` measurement",
         ),
     ),
 )

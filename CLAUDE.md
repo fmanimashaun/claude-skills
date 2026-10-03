@@ -226,8 +226,8 @@ local `main` ref; check out and pull `dev`), never rewrites history, and restore
 after the drift rebuild: a diagnostic never mutates the repo. A failing gate prints its **findings**,
 not a count (#820).
 
-Two committed, generated surfaces: `docs/evidence/coverage.html` (`scripts/build_coverage_artifact.py`) and
-the wiki's reference pages under `docs/wiki/` (`scripts/build_wiki.py`, which absorbed the inventory page, #892). **The rendered bytes must be a function of the DATA and nothing else.** No git
+Committed, generated surfaces are listed in `BUILDERS` in `scripts/rebuild_generated.py`, the one list. They include `docs/evidence/coverage.html`
+(`scripts/build_coverage_artifact.py`), `docs/wiki/` (`scripts/build_wiki.py`, #892), `dist/`, and the `.claude/skills/` mirrors. **The rendered bytes must be a function of the DATA and nothing else.** No git
 state, no corpora availability; the page stamps the release version only.
 **`--check` compares the blob at `HEAD`, never the file on disk**, so a page built and never
 `git add`ed fails honestly.

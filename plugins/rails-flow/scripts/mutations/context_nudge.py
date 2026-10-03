@@ -1,0 +1,91 @@
+"""Mutation guard: context_nudge. Declared here, run by scripts/mutation_check.py (#1547)."""
+from mutation_types import Guard, Mutation  # noqa: F401
+
+# #1547. The mod adds one line to the person's prompt, so each way it goes wrong costs tokens or hides the
+# advice: nagging every prompt, never nagging, riding on a peer's message, or moving the threshold.
+# The selftest is the Node unit test (a hand-built host), run through a Python wrapper so the shared runner
+# can stage it. The engine itself is not in the loop; `claude plugin test` is, locally only.
+#
+# One mutation is NOT listed because it is equivalent: dropping the explicit `percent === null` clause
+# from the prompt hook changes nothing, since `null < 70` is already true in JavaScript.
+GUARD = Guard(
+    name="context_nudge",
+    subject="hooks/context-nudge.mjs",
+    selftest="scripts/check_mods.py",
+    selftest_args=("context-nudge",),
+    needs=("tests/context-nudge.unit.mjs",),
+    mutations=(
+        Mutation(
+            "the once-per-climb flag is never set, so every prompt past the threshold is nagged",
+            "    nudged = true\n    return next({",
+            "    return next({",
+            "at the threshold one line is added, once",
+        ),
+        Mutation(
+            "a compaction or a drop never resets the flag, so the next climb is never told",
+            "    if (percent === null || percent < (await threshold($))) nudged = false\n",
+            "    // never reset\n",
+            "a compaction resets it",
+        ),
+        Mutation(
+            "any prompt origin takes the line, so a peer's message uses it up",
+            "  return origin === undefined || origin.kind === 'composer' || origin.kind === 'bridge'",
+            "  return true",
+            "never takes the line, and does not use it up",
+        ),
+        Mutation(
+            "an SDK turn (claude -p) counts as the person, so the line is spent where nobody can /clear",
+            " || origin.kind === 'bridge'",
+            " || origin.kind === 'bridge' || origin.kind === 'sdk'",
+            'a prompt from "sdk" never takes the line',
+        ),
+        Mutation(
+            "a Remote Control prompt stops counting as the person",
+            " || origin.kind === 'bridge'",
+            "",
+            "a Remote Control prompt counts as the person",
+        ),
+        Mutation(
+            "the default threshold drops to 60",
+            "const DEFAULT_THRESHOLD = 70",
+            "const DEFAULT_THRESHOLD = 60",
+            "below the threshold a prompt carries no added context",
+        ),
+        Mutation(
+            "the fill is never pinned under the prompt",
+            "    $.ui.status(percent === null ? undefined : `context ${percent}%`)\n",
+            "    // no status\n",
+            "the fill is pinned under the prompt",
+        ),
+        Mutation(
+            "the environment override is ignored",
+            "  return Number.isInteger(n) && n >= 1 && n <= 99 ? n : DEFAULT_THRESHOLD",
+            "  return DEFAULT_THRESHOLD",
+            "RAILS_FLOW_CONTEXT_NUDGE_PCT moves the threshold",
+        ),
+        Mutation(
+            "a threshold above 99 is accepted",
+            "n >= 1 && n <= 99 ?",
+            "n >= 1 ?",
+            'a threshold of "150" falls back to the default',
+        ),
+        Mutation(
+            "a threshold below 1 is accepted",
+            "n >= 1 && n <= 99 ?",
+            "n <= 99 ?",
+            'a threshold of "0" falls back to the default',
+        ),
+        Mutation(
+            "a value that is not a whole number is read as zero",
+            "  return Number.isInteger(n) && n >= 1 && n <= 99 ? n : DEFAULT_THRESHOLD",
+            "  return Number.isInteger(n) && n >= 1 && n <= 99 ? n : raw ? 0 : DEFAULT_THRESHOLD",
+            'a threshold of "lots" falls back to the default',
+        ),
+        Mutation(
+            "the line grows past 400 characters",
+            "'Say this once; do not repeat it.'",
+            "'Say this once; do not repeat it. ' + 'x'.repeat(400)",
+            "the line is short",
+        ),
+    ),
+)

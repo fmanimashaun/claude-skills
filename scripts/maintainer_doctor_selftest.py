@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -240,9 +241,14 @@ def timeout_fixtures() -> None:
         (scripts / "_hangs.py").write_text("import time\ntime.sleep(30)\n", encoding="utf-8")
         (scripts / "_fails.py").write_text(
             "import sys\nprint('a guard survived')\nsys.exit(1)\n", encoding="utf-8")
+        # mutation_check's two closing lines: the measurement, then the heaviest guards (#1497).
+        (scripts / "_slow_ok.py").write_text(
+            "print('mutation check: 9 mutation(s) across 2 guard(s), all caught (jobs=3, 7s)')\n"
+            "print('heaviest guards (seconds of work, all jobs): a 5s, b 2s')\n", encoding="utf-8")
         md.GATES = (("selftest slow", ("python3", "scripts/_slow.py")),
-                    ("selftest fails", ("python3", "scripts/_fails.py")))
-        md.SLOW_GATES = {"selftest slow": 1}
+                    ("selftest fails", ("python3", "scripts/_fails.py")),
+                    ("selftest slow ok", ("python3", "scripts/_slow_ok.py")))
+        md.SLOW_GATES = {"selftest slow": 1, "selftest slow ok": 60}
 
         d = md.Doctor()
         d.check_gates()
@@ -262,6 +268,13 @@ def timeout_fixtures() -> None:
         # satisfied by a doctor that reports everything as a skip -- which would hide the one
         # verdict that matters most on this gate.
         expect("a gate that RUNS and fails is still FAIL", d, "selftest fails", md.FAIL)
+        # Review of #1525: SLOW_GATES' note says to re-set the budget from `jobs=N, Xs` on this ok
+        # line, and the doctor kept the LAST line -- which became `heaviest guards`, without it.
+        ok = expect("a slow gate that passes is ok", d, "selftest slow ok", md.PASS)
+        _tick()
+        if ok is not None and "(jobs=3, 7s)" not in ok.detail:
+            FAILURES.append(f"a slow gate's ok line must carry its `(jobs=N, Xs)` measurement, which "
+                            f"SLOW_GATES is re-set from; got {ok.detail!r}")
         # ...and the summary must not tell anyone to fix a check that never ran.
         _tick()
         if any(x.status == md.FAIL and "slow" in x.name for x in d.results):
@@ -757,6 +770,151 @@ def run() -> int:
             out.index("the actual problem") > out.index("python3 scripts/x.py"):
         FAILURES.append(
             "the findings print AFTER the remedy -- what is wrong comes before how to re-run it")
+
+    # #1510: every gate subprocess -- and every selftest a gate runs -- starts no detached git
+    # maintenance. Through Doctor.run, which launches the gates, not the helper alone.
+    _tick()
+    # Strip an inherited hermetic env first (a mutation guard's runner sets it), so only run() can supply it.
+    inherited = {k: os.environ.pop(k) for k in list(os.environ) if k.startswith("GIT_CONFIG_")}
+    try:
+        rc, out = md.Doctor().run(sys.executable, "-c",
+                              "import os, subprocess\n"
+                              "print(subprocess.run(['git', 'config', '--get', 'maintenance.auto'],\n"
+                              "                     capture_output=True, text=True).stdout.strip(),\n"
+                              "      subprocess.run(['git', 'config', '--get', 'gc.auto'],\n"
+                              "                     capture_output=True, text=True).stdout.strip())")
+    finally:
+        os.environ.update(inherited)
+    if rc != 0 or out.split()[-2:] != ["false", "0"]:
+        FAILURES.append(f"#1510: a gate's git must see maintenance.auto=false and gc.auto=0, got rc={rc} {out!r}")
+
+    # #1459: a gate that times out takes its WHOLE process group with it. The gate starts a grandchild
+    # that would outlive a plain kill, prints a line, then hangs; Doctor.run must come back as a
+    # timeout (124, read as SKIP -- never a pass) carrying that line, and the grandchild must be gone.
+    # CONTROL: a plain subprocess.run with the same timeout leaves it running.
+    import signal as _signal
+    import time as _time
+    with tempfile.TemporaryDirectory() as td:
+        pidfile = Path(td) / "grandchild.pid"
+        gate = ("import subprocess, sys, time\n"
+                "g = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'])\n"
+                f"open({str(pidfile)!r}, 'w').write(str(g.pid))\n"
+                "print('gate-1459 started its grandchild', flush=True)\n"
+                "time.sleep(120)\n")
+
+        def alive(pid: int) -> bool:
+            for _ in range(20):           # a killed process can take a moment to be reaped
+                try:
+                    os.kill(pid, 0)
+                except ProcessLookupError:
+                    return False
+                _time.sleep(0.1)
+            return True
+
+        _tick()
+        started = _time.monotonic()
+        rc, out = md.Doctor().run(sys.executable, "-c", gate, timeout=1)
+        took = _time.monotonic() - started
+        grandchild = int(pidfile.read_text())
+        if rc != 124 or "gate-1459 started its grandchild" not in out or took > 20:
+            FAILURES.append(f"#1459: a timed-out gate must return 124 promptly with what it printed, "
+                            f"got rc={rc} after {took:.0f}s: {out!r}")
+        _tick()
+        if alive(grandchild):
+            os.kill(grandchild, _signal.SIGKILL)
+            FAILURES.append("#1459: a timed-out gate left its grandchild running -- the process group was not killed")
+        _tick()
+        try:
+            # No pipes: a captured plain run waits for the grandchild to release them (120 s per run,
+            # measured on this guard), and the control only needs to show the grandchild survives.
+            subprocess.run([sys.executable, "-c", gate], stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, timeout=1)
+        except subprocess.TimeoutExpired:
+            pass
+        control = int(pidfile.read_text())
+        try:                      # one look: alive is the expected answer, so there is nothing to wait for
+            os.kill(control, 0)
+            control_alive = True
+        except ProcessLookupError:
+            control_alive = False
+        if control_alive:
+            os.kill(control, _signal.SIGKILL)
+        else:
+            FAILURES.append("#1459 CONTROL: a plain subprocess.run timeout should leave the grandchild "
+                            "running, or the check above proves nothing")
+
+    # Review of #1525, end to end through the doctor. (1) A gate whose OWN children go through
+    # proc_group.run -- mutation coverage's pool -- each in a session the gate's group kill never
+    # reached; one also starts a grandchild in a session of its own, as check_hook_gates' hooks do.
+    # (2) Ctrl-C while a gate runs: the gate is in a session of its own and never sees the
+    # terminal's SIGINT, so the doctor must kill it on the way out (review: 2 survivors, 0 on dev).
+    scripts_dir = str(Path(md.__file__).resolve().parent)
+    inner = ("import os, subprocess, sys, time\n"
+             "g = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'], start_new_session=True)\n"
+             "open(sys.argv[1] + '.tmp', 'w').write(f'{os.getpid()} {g.pid}')\n"
+             "os.replace(sys.argv[1] + '.tmp', sys.argv[1])\n"
+             "time.sleep(120)\n")
+
+    def recorded(*files: Path) -> list[int]:
+        out: list[int] = []
+        for f in files:
+            deadline = _time.monotonic() + 30
+            while not f.exists() and _time.monotonic() < deadline:
+                _time.sleep(0.05)
+            if f.exists():
+                out.extend(int(p) for p in f.read_text().split())
+        return out
+
+    def survivors(pids: list[int]) -> list[int]:
+        left = [p for p in pids if alive(p)]
+        for p in left:
+            try:
+                os.kill(p, _signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        return left
+
+    with tempfile.TemporaryDirectory() as td:
+        nested = ("import sys\n"
+                  f"sys.path.insert(0, {scripts_dir!r})\n"
+                  "import proc_group\n"
+                  "from concurrent.futures import ThreadPoolExecutor\n"
+                  f"inner = {inner!r}\n"
+                  "def one(i):\n"
+                  f"    proc_group.run([sys.executable, '-c', inner, {td!r} + f'/m{{i}}.pids'], timeout=300)\n"
+                  "with ThreadPoolExecutor(2) as p:\n"
+                  "    list(p.map(one, range(2)))\n")
+        _tick()
+        rc, out = md.Doctor().run(sys.executable, "-c", nested, timeout=6)
+        pids = recorded(Path(td) / "m0.pids", Path(td) / "m1.pids")
+        left = survivors(pids)
+        if rc != 124 or len(pids) != 4 or left:
+            FAILURES.append(f"#1459: a timed-out gate left a nested child running (rc={rc}; recorded "
+                            f"{len(pids)} of 4 pids; survivors {left})")
+
+        pidfile = Path(td) / "sigint.pids"
+        driver = Path(td) / "driver.py"
+        driver.write_text("import sys\n"
+                          f"sys.path.insert(0, {scripts_dir!r})\n"
+                          "import maintainer_doctor as md\n"
+                          f"md.Doctor().run(sys.executable, '-c', {inner!r}, {str(pidfile)!r}, timeout=300)\n",
+                          encoding="utf-8")
+        _tick()
+        d = subprocess.Popen([sys.executable, str(driver)], start_new_session=True,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        pids = recorded(pidfile)
+        os.kill(d.pid, _signal.SIGINT)
+        try:
+            d.wait(timeout=20)
+            exited = True
+        except subprocess.TimeoutExpired:
+            exited = False
+            d.kill()
+            d.wait()
+        left = survivors(pids)
+        if not exited or len(pids) != 2 or left:
+            FAILURES.append(f"#1459: Ctrl-C during a gate left it running (doctor exited: {exited}; recorded "
+                            f"{len(pids)} of 2 pids; survivors {left})")
 
     if FAILURES:
         print(f"SELFTEST FAILED -- {len(FAILURES)} of {CHECKS} checks:", file=sys.stderr)

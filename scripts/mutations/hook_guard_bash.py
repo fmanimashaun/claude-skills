@@ -85,7 +85,7 @@ GUARD = Guard(
         ),
         Mutation(
             "a dry-run clean is refused along with the real one",
-            "   && ! hit '^git[[:space:]]+clean\\b.*([[:space:]]-[a-zA-Z]*n|[[:space:]]--dry-run\\b)'; then",
+            "   && ! exempt '^git[[:space:]]+clean\\b.*([[:space:]]-[a-zA-Z]*n|[[:space:]]--dry-run\\b)'; then",
             "   ; then",
             "safe twin `git clean -fdn` stays allowed",
         ),
@@ -103,7 +103,7 @@ GUARD = Guard(
         ),
         Mutation(
             "restore --staged (unstage only) is refused with the discarding form",
-            "   && ! hit '^git[[:space:]]+restore\\b.*--staged\\b' ; then",
+            "   && ! exempt '^git[[:space:]]+restore\\b.*--staged\\b' ; then",
             "   ; then",
             "safe twin `git restore --staged .` stays allowed",
         ),
@@ -128,15 +128,71 @@ GUARD = Guard(
         # #906. The normaliser is what separates "mentions the rule" from "stages everything".
         Mutation(
             "the normaliser is bypassed and the raw text is matched, so a prefixed `FOO=1 git add -A` fails OPEN",
-            '  seg="$(printf \'%s\' "$cmd" | normalize_segments)"',
+            '  seg="$(printf \'%s\' "$cmd" | LC_ALL=C normalize_segments)" || { seg="$cmd"; degraded=1; }',
             '  seg="$cmd"',
             "`FOO=1 git add -A` is blocked",
         ),
         Mutation(
             "the missing-lib fallback matches nothing instead of the raw text, so a lost file makes the guard fail OPEN",
-            'else\n  seg="$cmd"\nfi',
-            'else\n  seg=""\nfi',
+            'else\n  seg="$cmd"; degraded=1\nfi',
+            'else\n  seg=""; degraded=1\nfi',
             "falls back to the raw text and still blocks",
+        ),
+        Mutation(
+            # #1526
+            'the payload is decoded strictly again, so an invalid UTF-8 byte hides the command',
+            'd=json.loads(sys.stdin.buffer.read().decode("utf-8","surrogateescape"))',
+            'd=json.loads(sys.stdin.buffer.read().decode("utf-8"))',
+            'an invalid byte beside a QUOTED mention still parses and passes',
+        ),
+        Mutation(
+            # #1529 review
+            'degraded mode keeps the `^` anchor, so a compound command with no awk passes',
+            '  [ "$degraded" = 1 ] && re="${re#^}"',
+            '',
+            'with no awk, a COMPOUND `cd x && git add -A` is blocked',
+        ),
+        Mutation(
+            # #1529 review
+            'with no grep, hit() matches nothing, so every rule passes',
+            '      [[ $line =~ $re ]] && return 0',
+            '      false',
+            'with no grep, `git add -A` is blocked',
+        ),
+        Mutation(
+            # #1529 round 2
+            'an empty normalised result is treated as a failure again, so a comment-only command is refused',
+            ' || { seg="$cmd"; degraded=1; }',
+            '\n  case "$cmd" in *[![:space:]]*) [ -n "$seg" ] || { seg="$cmd"; degraded=1; } ;; esac',
+            '`# git add -A` only mentions the rule and passes',
+        ),
+        Mutation(
+            # #1529 round 2
+            "exemptions apply in degraded mode again, so another segment's `-n` exempts a real clean",
+            '[ "$degraded" = 1 ] && return 1; hit "$1"; }',
+            'hit "$1"; }',
+            'is not exempted by another segment',
+        ),
+        Mutation(
+            # #1529 round 2
+            'stdin is read with `cat` again, so no cat means an empty command',
+            'input=""; IFS= read -r -d \'\' input || true',
+            'input="$(cat)"',
+            'with no cat, `git add -A` is blocked',
+        ),
+        Mutation(
+            # #1529 round 3
+            'pipefail is dropped, so a failing EARLY stage (no sed) reads as a clean result',
+            'set -uo pipefail\n',
+            'set -u\n',
+            'with no sed, `git add -A` is blocked',
+        ),
+        Mutation(
+            # #1529 round 3
+            'with no grep, `=~` matches the whole text at once, so `^` sees only the first segment',
+            '    local rest="$seg"$\'\\n\' line\n    while [ -n "$rest" ]; do\n      line="${rest%%$\'\\n\'*}"; rest="${rest#*$\'\\n\'}"\n      [[ $line =~ $re ]] && return 0\n    done\n    return 1',
+            '    [[ $seg =~ $re ]]',
+            'with no grep, a LATER segment',
         ),
     ),
 )
