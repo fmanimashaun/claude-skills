@@ -45,8 +45,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a worktree counts as finished when it is merged OR clean",
-            "\"finished\": bool(merged and clean)})",
-            "\"finished\": bool(merged or clean)})",
+            "\"finished\": bool(merged is True and clean is True)})",
+            "\"finished\": bool(merged is True or clean is True)})",
             "a worktree is finished only when merged AND clean",
         ),
         Mutation(
@@ -162,6 +162,24 @@ GUARD = Guard(
             "    rc, head = env.sh([\"git\", \"rev-parse\", \"--short\", \"HEAD\"], root)",
             "    rc, head = env.sh([\"git\", \"fetch\", \"-q\", \"origin\"], root)",
             "the board runs only read verbs",
+        ),
+        Mutation(
+            "gh for a sibling repository runs in this repository's directory",
+            "        return env.sh(argv, self.root)",
+            "        return env.sh(argv, self.root if self.is_self else None)",
+            "a sibling with no parseable remote is read from its own directory",
+        ),
+        Mutation(
+            "a merge state git cannot answer is drawn as 'not merged'",
+            "        merged = True if mrc == 0 else False if mrc == 1 else None",
+            "        merged = mrc == 0",
+            "a merge state git cannot answer",
+        ),
+        Mutation(
+            "a call may wait past the time budget",
+            "        left = max(1.0, min(CALL_TIMEOUT, self.deadline - time.monotonic()))",
+            "        left = CALL_TIMEOUT",
+            "every call is given a timeout no longer than the time left",
         ),
     ),
 )

@@ -29,7 +29,8 @@ day the coordinator starts writing them.
 EXIT: 0 the files were written (panels may be unknown), 2 not inside a git repository, 3 could not
 write the files.
 
-TEXT. Every sentence this script writes comes from the `TEXT` table, in ASD-STE100 style: active
+TEXT. Every SENTENCE this script writes comes from the `TEXT` table (column names and one-word labels in
+the page are literals in the renderer), in ASD-STE100 style: active
 voice, one instruction per sentence, at most 20 words in an instruction and 25 in a description. The
 selftest lints the table (`ste_flags`): it flags, it does not rewrite. Names that come from data (a
 PR title, a branch) are not lint targets.
@@ -63,6 +64,7 @@ BOARD_HTML = "board.html"
 CONFIG = ".claude/board.config.json"
 COORD_FILE = "coordination.json"
 
+CALL_TIMEOUT = 20.0     # the longest one command may run, seconds
 PR_LIMIT = 100          # open pull requests read per repository
 PR_DETAIL_CAP = 30      # pull requests that get a per-PR review and run lookup
 ISSUE_LIMIT = 200       # open issues read for a count
@@ -198,7 +200,7 @@ def lint_text_table() -> list[str]:
 # --------------------------------------------------------------------------------------------------
 # The outside world, behind two injectable functions, so a fixture can hand it canned output.
 # --------------------------------------------------------------------------------------------------
-Runner = Callable[[list, "str | None"], "tuple[int, str]"]
+Runner = Callable[[list, "str | None", float], "tuple[int, str]"]
 Reader = Callable[[Path], "str | None"]
 
 
@@ -213,12 +215,13 @@ class Env:
         if time.monotonic() > self.deadline:
             return 124, ""
         self.calls += 1
-        return self.run(argv, str(cwd) if cwd else None)
+        left = max(1.0, min(CALL_TIMEOUT, self.deadline - time.monotonic()))   # never wait past the budget
+        return self.run(argv, str(cwd) if cwd else None, left)
 
 
-def real_run(argv: list, cwd: "str | None") -> tuple[int, str]:
+def real_run(argv: list, cwd: "str | None", timeout: float = 20.0) -> tuple[int, str]:
     try:
-        p = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, timeout=20, stdin=subprocess.DEVNULL)
+        p = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL)
     except subprocess.TimeoutExpired:
         return 124, ""
     except OSError:
@@ -292,8 +295,10 @@ class Repo:
         self.name, self.root, self.slug, self.is_self = name, root, slug, is_self
 
     def gh(self, env: Env, args: list) -> tuple[int, str]:
+        # In the repository's OWN directory, so a sibling with no parseable remote is still read as itself:
+        # gh with no --repo reads the repository of its working directory, and this one's would be wrong.
         argv = ["gh", *args] + (["--repo", self.slug] if self.slug else [])
-        return env.sh(argv, self.root if self.is_self else None)
+        return env.sh(argv, self.root)
 
 
 def collect_prs(env: Env, repo: Repo, cfg: dict, sessions: list[dict]) -> dict:
@@ -412,12 +417,13 @@ def collect_worktrees(env: Env, root: Path, integration: str) -> dict:
         path, head = r.get("worktree", ""), r.get("HEAD", "")
         if "bare" in r or not path:
             continue
-        merged = env.sh(["git", "merge-base", "--is-ancestor", head, f"origin/{integration}"], root)[0] == 0 if head else False
+        mrc = env.sh(["git", "merge-base", "--is-ancestor", head, f"origin/{integration}"], root)[0] if head else 1
+        merged = True if mrc == 0 else False if mrc == 1 else None     # 128 (no such ref) is UNKNOWN, not "not merged"
         src, status = env.sh(["git", "-C", path, "status", "--porcelain"], None)
         clean = (src == 0 and status.strip() == "")
         items.append({"path": path, "branch": r.get("branch", "(detached)").replace("refs/heads/", ""),
                       "head": head[:7], "merged": merged, "clean": clean if src == 0 else None,
-                      "finished": bool(merged and clean)})
+                      "finished": bool(merged is True and clean is True)})
     return panel("ok", "", items=items, count=len(items), finished=sum(1 for i in items if i["finished"]))
 
 
@@ -593,10 +599,7 @@ def collect(env: Env, root: Path) -> dict:
     cfg, cfg_err = load_config(env, root)
     rc, br = env.sh(["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"], root)
     integration = cfg.get("integration_branch") or (br.strip().split("/", 1)[-1] if rc == 0 and br.strip() else "main")
-    src, remote = env.sh(["git", "remote", "get-url", "origin"], root)
-    me = Repo(root.name, root, slug_of(remote) if src == 0 else None, True)
-    # NB: for the current repo gh infers the repository from the working directory, so no --repo flag.
-    me.slug = None
+    me = Repo(root.name, root, None, True)     # gh infers the current repository from its directory: no --repo
     status, rec = read_record(env, root)
     record = rec if status == "ok" else {}
     repos: list[Repo] = [me]

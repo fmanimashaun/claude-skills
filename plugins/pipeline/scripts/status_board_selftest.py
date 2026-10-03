@@ -69,10 +69,11 @@ class World:
         self.ans: dict = {}
         self.files: dict[str, "str | Exception"] = {}
         self.calls: list[list] = []
+        self.cwd_log: list[tuple] = []
+        self.timeouts: list[float] = []
         self.sibling_worlds: list["World"] = []
         r = str(self.root)
         self.on(["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"], "origin/dev\n", cwd=r)
-        self.on(["git", "remote", "get-url", "origin"], f"git@github.com:{slug or SELF_REPO}.git\n", cwd=r)
         self.on(["git", "rev-parse", "--git-common-dir"], ".git\n", cwd=r)
         self.on(["git", "rev-parse", "--short", "HEAD"], "abc1234\n", cwd=r)
         self.on(["git", "worktree", "list", "--porcelain"], f"worktree {r}\nHEAD {'1' * 40}\nbranch refs/heads/dev\n\n", cwd=r)
@@ -109,8 +110,10 @@ class World:
     def config(self, data: dict) -> None:
         self.files[str(self.root / sb.CONFIG)] = json.dumps(data)
 
-    def run(self, argv: list, cwd: "str | None") -> tuple[int, str]:
+    def run(self, argv: list, cwd: "str | None", timeout: float = 20.0) -> tuple[int, str]:
         self.calls.append(list(argv))
+        self.cwd_log.append((list(argv), cwd))
+        self.timeouts.append(timeout)
         for w in (self, *self.sibling_worlds):
             hit = w.ans.get((tuple(argv), cwd)) or w.ans.get((tuple(argv), None))
             if hit is not None:
@@ -242,7 +245,10 @@ def measured_panels(tmp: Path) -> None:
          f"worktree /w/done\nHEAD {'2' * 40}\nbranch refs/heads/fix/done\n\n"
          f"worktree /w/dirty\nHEAD {'3' * 40}\nbranch refs/heads/fix/dirty\n\n"
          f"worktree /w/live\nHEAD {'4' * 40}\nbranch refs/heads/fix/live\n\n"
+         f"worktree /w/unk\nHEAD {'5' * 40}\nbranch refs/heads/fix/unk\n\n"
          f"worktree /w/bare\nbare\n\n", cwd=r)
+    w.on(["git", "merge-base", "--is-ancestor", "5" * 40, "origin/dev"], "", rc=128, cwd=r)
+    w.on(["git", "-C", "/w/unk", "status", "--porcelain"], "")
     for h, merged in (("1", True), ("2", True), ("3", True), ("4", False)):
         w.on(["git", "merge-base", "--is-ancestor", h * 40, "origin/dev"], "", rc=0 if merged else 1, cwd=r)
     w.on(["git", "-C", r, "status", "--porcelain"], "")
@@ -268,7 +274,9 @@ def measured_panels(tmp: Path) -> None:
     check("a worktree is finished only when merged AND clean", wt["fix/done"]["finished"] is True
           and wt["fix/dirty"]["finished"] is False and wt["fix/dirty"]["merged"] is True
           and wt["fix/live"]["finished"] is False and wt["fix/live"]["merged"] is False, str(wt))
-    check("a bare worktree is not listed", len(wt) == 4 and b["panels"]["worktrees"]["finished"] == 2,
+    check("a merge state git cannot answer (exit 128) is UNKNOWN, never 'not merged', and not finished",
+          wt["fix/unk"]["merged"] is None and wt["fix/unk"]["finished"] is False, str(wt["fix/unk"]))
+    check("a bare worktree is not listed", len(wt) == 5 and b["panels"]["worktrees"]["finished"] == 2,
           str(len(wt)))
     m = {x["key"]: x for x in b["panels"]["limits"]["meters"]}
     check("processes are counted for this user only, against the per-user limit", m["processes"]["n"] == 6
@@ -276,7 +284,7 @@ def measured_panels(tmp: Path) -> None:
     check("zombies are counted for this user only", m["zombies"]["n"] == 2, str(m["zombies"]))
     check("a stopped process counts as an orphan only when its parent is init", m["stopped"]["n"] == 1,
           str(m["stopped"]))
-    check("worktrees and open issues are counted", m["worktrees"]["n"] == 4 and m["issues"]["n"] == 5)
+    check("worktrees and open issues are counted", m["worktrees"]["n"] == 5 and m["issues"]["n"] == 5)
     ev = items(b, "events")
     check("today lists recorded events and measured merges, in time order",
           [e["time"] for e in ev] == ["08:15", "09:30", "16:05"] and ev[0]["text"] == "#6 Early fix", str(ev))
@@ -332,16 +340,23 @@ def unknown_not_zero(tmp: Path) -> None:
     check("no record at all is a measured fact, not an error: ok, and it says so",
           b["panels"]["sessions"]["state"] == "ok" and "no coordination record" in b["panels"]["sessions"]["reason"])
 
+    w = w_with(tmp, "short")
+    w.board(budget=5.0)
+    check("every call is given a timeout no longer than the time left (budget 5 s)", w.timeouts and max(w.timeouts) <= 5.0
+          and min(w.timeouts) >= 1.0, f"{min(w.timeouts):.2f}..{max(w.timeouts):.2f}")
+    w = w_with(tmp, "long")
+    w.board()
+    check("with the default budget no call waits longer than 20 s", max(w.timeouts) == 20.0, str(max(w.timeouts)))
     w = w_with(tmp, "late")
     check("a spent time budget leaves every measured panel UNKNOWN", all(
         p["state"] == "unknown" for k, p in w.board(budget=-1)["panels"].items()
         if k in ("prs", "limits", "worktrees", "lines")))
 
     class Boom(World):
-        def run(self, argv, cwd):
+        def run(self, argv, cwd, timeout=20.0):
             if argv[:2] == ["gh", "pr"]:
                 raise RuntimeError("boom")
-            return super().run(argv, cwd)
+            return super().run(argv, cwd, timeout)
     w = Boom(tmp, "boom")
     try:
         b = w.board()
@@ -457,6 +472,22 @@ def workspace(tmp: Path) -> None:
     gh_b = [c for c in a.calls if c[:3] == ["gh", "pr", "list"] and "--repo" in c]
     check("a sibling repository is read with its own --repo, the current one without", len(gh_b) >= 1
           and all(c[-1] == "acme/sib" for c in gh_b))
+
+    # a sibling with no parseable remote: gh must run IN that sibling's directory, never in this one
+    c_ = World(tmp, "repoC")
+    a.sibling_worlds.append(c_)
+    c_.gh_set(["pr", "list", "--state", "open", "--limit", "100", "--json", PR_FIELDS], [pr(5, title="C five", url="https://github.com/acme/c/pull/5")])
+    c_.record({"version": 1, "coordinator": coord, "sessions": {}})
+    a.record({"version": 1, "coordinator": coord, "sessions": {"/w/a": rowA},
+              "workspace": {"repos": [{"name": "repoC", "path": str(c_.root), "remote": ""}]}})
+    board = a.board()
+    got = {i["n"]: i["repo"] for i in items(board, "prs")}
+    check("a sibling with no parseable remote is read from its own directory, and its pull requests are tagged with it",
+          got.get(5) == "repoC" and got.get(1) == "repoA", str(got))
+    own = [cwd for argv, cwd in a.cwd_log if argv[:3] == ["gh", "pr", "list"] and "open" in argv and "--repo" not in argv]
+    check("gh for every repository without --repo runs in that repository's directory",
+          set(own) == {str(a.root), str(c_.root)} and None not in own, str(sorted(map(str, set(own)))))
+    a.sibling_worlds.remove(c_)
 
     # a sibling whose path is missing: named, never zero, and the other repo still draws
     a.record({"version": 1, "coordinator": coord, "sessions": {"/w/a": rowA},
