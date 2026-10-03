@@ -187,8 +187,12 @@ fi
 # directory unresolved (exit 3) the target is unknown, so this check says NOT checked rather than guess.
 if [ "$cwd_rc" -eq 3 ]; then
   echo "rails-flow: change-type declaration NOT checked (the directory gh runs in could not be resolved)." >&2
-elif git -C "$root" diff --name-only HEAD 2>/dev/null | grep -q '^skills/' || \
-   git -C "$root" diff --name-only --cached HEAD 2>/dev/null | grep -q '^skills/'; then
+# NO CODE RUNS FROM THE TARGET (#1516, push security review): `$root` comes from the command's own `cd`, and
+# this hook runs BEFORE the person is asked about the command. A repository's `core.fsmonitor` names a program
+# `git diff` executes, so reading the target's diff ran the target's code and a denial could not stop it.
+# `-c core.fsmonitor=false` is a command-line setting, which outranks the repository's own config.
+elif git -c core.fsmonitor=false -C "$root" diff --no-ext-diff --name-only HEAD 2>/dev/null | grep -q '^skills/' || \
+   git -c core.fsmonitor=false -C "$root" diff --no-ext-diff --name-only --cached HEAD 2>/dev/null | grep -q '^skills/'; then
   if ! grep -qiE 'framework claim|architecture decision|change type|our own (design|doctrine|architecture)' "$body"; then
     echo "BLOCKED by rails-flow claim guard: this PR touches skills/** and names no CHANGE TYPE." >&2
     echo "" >&2

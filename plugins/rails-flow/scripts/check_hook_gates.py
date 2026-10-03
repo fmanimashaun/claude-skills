@@ -1257,6 +1257,44 @@ def guard_claims_fixtures() -> None:
     check("guard-claims: ...and without the cd the session's skills/ change is still held to it (control)",
           run_skills_cd("gh pr create --base dev --body-file B_DIR/body.md") == 2, "exit 0")
 
+    # NO CODE RUNS BEFORE PERMISSION (#1516, push security review). The hook reads `git diff` in the directory
+    # the command `cd`s into, and a hook runs BEFORE the person is asked about the command. A repository's own
+    # `core.fsmonitor` names a program that `git diff` executes, so a `cd` into such a repository ran it, and
+    # denying the command could not stop it. The marker file is what the program writes; it must not exist.
+    def run_fsmon_cd(cmd: str, b_touches_skills: bool = False) -> tuple[int, bool]:
+        with tempfile.TemporaryDirectory() as td:
+            a, b = Path(td) / "a", Path(td) / "b"
+            marker, script = Path(td) / "FSMONITOR_RAN", Path(td) / "fsmonitor.sh"
+            script.write_text(f"#!/bin/sh\necho ran >> '{marker}'\n", encoding="utf-8")
+            script.chmod(0o755)
+            for d in (a, b):
+                d.mkdir()
+                _run(["git", "init", "-q", "-b", "main"], cwd=d, capture_output=True)
+                (d / "README.md").write_text("x\n", encoding="utf-8")
+            if b_touches_skills:
+                (b / "skills").mkdir()
+                (b / "skills" / "x.md").write_text("x\n", encoding="utf-8")
+            for d in (a, b):
+                _run(["git", "add", "-A"], cwd=d, capture_output=True)
+                _run(["git", "-c", "user.email=f@e", "-c", "user.name=f", "commit", "-qm", "base"],
+                     cwd=d, capture_output=True)
+            (b / "README.md").write_text("changed\n", encoding="utf-8")        # work for `git diff` to refresh
+            if b_touches_skills:
+                (b / "skills" / "x.md").write_text("changed\n", encoding="utf-8")
+            (b / "body.md").write_text("Tidy the wording.\n", encoding="utf-8")
+            _run(["git", "config", "core.fsmonitor", str(script)], cwd=b, capture_output=True)
+            rc = run_hook("guard-claims.sh", cwd=a, stdin=json.dumps({"tool_input": {
+                "command": cmd.replace("B_DIR", str(b))}}),
+                env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])})[0]
+            return rc, marker.exists()
+
+    rc, ran = run_fsmon_cd("cd B_DIR && gh pr create --base dev --body-file body.md")
+    check("guard-claims: a cd into a repository whose core.fsmonitor names a program does not run it "
+          "(no code before permission, #1516)", not ran, f"exit {rc}: the repository's own program ran in the hook")
+    rc, ran = run_fsmon_cd("cd B_DIR && gh pr create --base dev --body-file body.md", b_touches_skills=True)
+    check("guard-claims: ...and the cd target's skills/ change is still read without it (control)",
+          rc == 2 and not ran, f"exit {rc}, program ran: {ran}")
+
     # FAILS OPEN when it cannot read the body. This guard's job is to make the check happen where
     # it can, never to block opening a PR because a path could not be resolved.
     check("guard-claims: an unreadable body file fails OPEN rather than blocking",

@@ -30,6 +30,22 @@ GUARD = Guard(
            # ci-verdict-hint.sh runs it; unstaged, every mutation here read as caught (#1173).
            "plugins/rails-flow/scripts/ci_verdict_hint.py"),
     mutations=(
+        # #1516, push security review: NO CODE RUNS BEFORE PERMISSION. The hook reads `git diff` in the
+        # directory the command `cd`s into, and a repository's own `core.fsmonitor` names a program that
+        # `git diff` executes. Both calls execute it (measured: the second runs whenever the first finds
+        # nothing), so each is its own mutation.
+        Mutation(
+            "the working-tree diff in the cd target runs that repository's fsmonitor program again",
+            'git -c core.fsmonitor=false -C "$root" diff --no-ext-diff --name-only HEAD 2>/dev/null',
+            'git -C "$root" diff --no-ext-diff --name-only HEAD 2>/dev/null',
+            "core.fsmonitor names a program does not run it",
+        ),
+        Mutation(
+            "the staged diff in the cd target runs that repository's fsmonitor program again",
+            'git -c core.fsmonitor=false -C "$root" diff --no-ext-diff --name-only --cached HEAD 2>/dev/null',
+            'git -C "$root" diff --no-ext-diff --name-only --cached HEAD 2>/dev/null',
+            "core.fsmonitor names a program does not run it",
+        ),
         # #1435: the checker failing is a BLOCK, not a warning (owner decision).
         Mutation(
             "a crashed PR-template helper warns and lets the command through again",
@@ -139,8 +155,8 @@ GUARD = Guard(
         ),
         Mutation(
             "the skills/** change-type check reads the session repo's diff again (R1516-4)",
-            '''elif git -C "$root" diff --name-only HEAD 2>/dev/null | grep -q '^skills/' || \\''',
-            '''elif git diff --name-only HEAD 2>/dev/null | grep -q '^skills/' || \\''',
+            '''elif git -c core.fsmonitor=false -C "$root" diff --no-ext-diff --name-only HEAD 2>/dev/null | grep -q '^skills/' || \\''',
+            '''elif git -c core.fsmonitor=false diff --no-ext-diff --name-only HEAD 2>/dev/null | grep -q '^skills/' || \\''',
             "the skills/** change-type check reads the cd target's diff",
         ),
         Mutation(
