@@ -50,7 +50,15 @@ NAME = "coordination.json"
 LOCK_NAME = "coordination.lock"
 # How long a command waits for another writer. Past it the command exits 3 ("could not lock"), never
 # proceeds unlocked: a record written without the lock is the lost update the lock exists to prevent.
-LOCK_TIMEOUT = float(os.environ.get("COORDINATION_LOCK_TIMEOUT") or 10)
+def _env_float(name: str, default: float) -> float:
+    """A tuning value from the environment; a junk one is ignored, never a traceback."""
+    try:
+        return float(os.environ.get(name) or default)
+    except ValueError:
+        return default
+
+
+LOCK_TIMEOUT = _env_float("COORDINATION_LOCK_TIMEOUT", 10)
 
 
 class RecordError(Exception):
@@ -68,7 +76,7 @@ def locked(record_file: Path):
     read-modify-write is serialised. `fcntl.flock` is the Python module, not the flock(1) binary that
     macOS lacks. Closing the descriptor releases it, so a crashed writer cannot leave the record locked."""
     lock = record_file.with_name(LOCK_NAME)
-    fd = os.open(lock, os.O_CREAT | os.O_RDWR, 0o644)
+    fd = os.open(lock, os.O_CREAT | os.O_RDWR, 0o600)    # owner-only (CodeQL py/overly-permissive-file, #1590)
     try:
         deadline = time.monotonic() + LOCK_TIMEOUT
         while True:
@@ -147,7 +155,7 @@ def _now() -> str:
 def _refuse_unless_coordinator(record: dict, caller: str, claiming: bool) -> str | None:
     """None when the write may go ahead, else the refusal (it names the holder)."""
     coord = record.get("coordinator")
-    if coord is None:
+    if not coord or not coord.get("session_id"):      # none recorded, or an object that names nobody
         return None if claiming else ("no coordinator is recorded, so there is nobody to write: run "
                                       "`coordination.py claim` first (a lone session is its own coordinator)")
     if coord.get("session_id") == caller:
@@ -270,7 +278,7 @@ def main(argv: list[str] | None = None) -> int:
             if err:
                 print(err, file=sys.stderr)
                 return 2
-            hold = float(os.environ.get("COORDINATION_TEST_HOLD") or 0)
+            hold = _env_float("COORDINATION_TEST_HOLD", 0)
             if hold:
                 time.sleep(hold)    # a TEST SEAM: widens the read-to-write window so the race fixtures are deterministic
             save(rp, record)
@@ -478,6 +486,35 @@ def selftest() -> int:
         check("a command that cannot get the lock exits 3, says so, and writes nothing",
               busy.returncode == 3 and "could not" in busy.stderr and srp.read_bytes() == before,
               f"{busy.returncode} {busy.stderr!r}")
+
+        # R4 (#1590 review, CodeQL py/overly-permissive-file): the lock file is not world-readable.
+        import stat
+        lockf = record_path(sym).with_name(LOCK_NAME)
+        check("the lock file is created owner-only (0600)", lockf.exists() and stat.S_IMODE(lockf.stat().st_mode) == 0o600,
+              oct(stat.S_IMODE(lockf.stat().st_mode)) if lockf.exists() else "no lock file")
+        check("the record file is owner-only too (0600)",
+              stat.S_IMODE(record_path(sym).stat().st_mode) == 0o600, oct(stat.S_IMODE(record_path(sym).stat().st_mode)))
+        # A junk tuning value is ignored, not a traceback, and does not break a read.
+        junk = Path(td) / "junk"
+        junk.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=junk, check=True)
+        for var in ("COORDINATION_LOCK_TIMEOUT", "COORDINATION_TEST_HOLD"):
+            done = subprocess.run([sys.executable, __file__, "claim", "--session-id", "J1", "--cwd", str(junk)],
+                                  env=dict(os.environ, **{var: "soon"}), capture_output=True, text=True)
+            check(f"a junk {var} is ignored: the claim succeeds with no traceback",
+                  done.returncode == 0 and "Traceback" not in done.stderr, f"{done.returncode} {done.stderr[-120:]!r}")
+            record_path(junk).unlink(missing_ok=True)
+        done = subprocess.run([sys.executable, __file__, "lanes", "--session-id", "J1", "--cwd", str(junk)],
+                              env=dict(os.environ, COORDINATION_LOCK_TIMEOUT="soon"), capture_output=True, text=True)
+        check("a junk COORDINATION_LOCK_TIMEOUT does not break a read", done.returncode == 0 and "Traceback" not in done.stderr,
+              f"{done.returncode} {done.stderr[-120:]!r}")
+        # An empty coordinator object names nobody, so it must not make the record unclaimable.
+        record_path(junk).write_text('{"coordinator": {}, "sessions": {}}')
+        done = subprocess.run([sys.executable, __file__, "claim", "--session-id", "J2", "--cwd", str(junk)],
+                              capture_output=True, text=True)
+        check("a coordinator object with no session_id counts as no coordinator, so a claim succeeds",
+              done.returncode == 0 and load(record_path(junk))["coordinator"]["session_id"] == "J2",
+              f"{done.returncode} {done.stderr!r}")
 
         outside = Path(td) / "not-a-repo"
         outside.mkdir()

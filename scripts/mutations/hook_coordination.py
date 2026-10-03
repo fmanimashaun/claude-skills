@@ -143,5 +143,23 @@ GUARD = Guard(
             "                err = assign(record, args.session_id, os.path.abspath(args.path),",
             "a symlinked worktree path and its target are ONE row",
         ),
+        Mutation(
+            "the lock file is created world-readable again (CodeQL py/overly-permissive-file)",
+            "os.O_CREAT | os.O_RDWR, 0o600)",
+            "os.O_CREAT | os.O_RDWR, 0o644)",
+            "the lock file is created owner-only",
+        ),
+        Mutation(
+            "a junk tuning value raises instead of being ignored",
+            "    except ValueError:\n        return default",
+            "    except ValueError:\n        raise",
+            "a junk COORDINATION_LOCK_TIMEOUT is ignored",
+        ),
+        Mutation(
+            "a coordinator object that names nobody makes the record unclaimable",
+            '    if not coord or not coord.get("session_id"):      # none recorded, or an object that names nobody',
+            "    if coord is None:",
+            "a coordinator object with no session_id counts as no coordinator",
+        ),
     ),
 )
