@@ -1,5 +1,5 @@
 {
-  "modules": ["./lane-band.js"],
+  "modules": ["./register.js"],
   "hooks": {
     "PreToolUse": [
       {

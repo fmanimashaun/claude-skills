@@ -1,17 +1,21 @@
-"""Mutation guard: the lane-band mod. Declared here, run by scripts/mutation_check.py (#866, #1109)."""
+"""Mutation guard: lane_band. Declared here, run by scripts/mutation_check.py (#1537)."""
 from mutation_types import Guard, Mutation  # noqa: F401
 
-# rails-flow #1537. The gate (scripts/check_lane_band.py) is the only thing in CI that exercises the
-# mod, because `claude plugin test` needs the `claude` binary. Each break below is one way the band
-# stops being what its CHANGELOG entry says: read-only, non-blocking, and correct about what it shows.
+# #1537. The band is READ-ONLY and must never make a prompt or a turn's end wait, so each break below is a
+# way it stops being that: a write or a lock-taking git call, an awaited refresh, an overlapping or throwing
+# tick, or a band that shows the wrong thing. The selftest is the Node unit test (a hand-built host), run
+# through the shared wrapper scripts/check_mods.py. The engine is not in the loop; `claude plugin test` is,
+# locally only. register.js's wiring is checked by the same unit test and by register.unit.mjs.
 GUARD = Guard(
-    name="check_lane_band",
+    name="lane_band",
     subject="hooks/lane-band.js",
-    selftest="scripts/check_lane_band.py",
-    # Read, not imported: the checker parses the hooks file and runs the host test against the subject.
+    selftest="scripts/check_mods.py",
+    selftest_args=("lane-band",),
+    # Read, not imported: the unit test checks that hooks.json names register.js and that it calls the mod.
     needs=(
+        "tests/lane-band.unit.mjs",
         "hooks/hooks.json",
-        "tests/lane-band.host.test.mjs",
+        "hooks/register.js",
     ),
     mutations=(
         Mutation(

@@ -271,6 +271,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("structural grid selftest", ("python3", "scripts/check_structural_grid.py", "--selftest")),
     ("packaging determinism", ("python3", "scripts/package_core.py", "--selftest")),
     ("rails-flow self-consistency", ("python3", "plugins/rails-flow/scripts/self_consistency.py", "--selftest")),
+    # The mods rails-flow ships, under plain Node with a hand-built host (#1547). `claude plugin test` is the
+    # engine-integration check and needs the `claude` CLI, which the gate runners do not have.
+    ("mod unit tests", ("python3", "plugins/rails-flow/scripts/check_mods.py")),
     ("acceptance criteria", ("python3", "plugins/rails-flow/scripts/check_criteria.py", "--selftest")),
     ("rails-flow guide", ("python3", "plugins/rails-flow/scripts/check_guide.py", "--selftest")),
     # Its last two checks reconcile the SHIPPED tier table against the SHIPPED agents, so this gate
@@ -526,11 +529,6 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("close-on-dev-merge selftest", ("python3", "scripts/close_on_dev_merge.py", "--selftest")),
     ("vendored alone", ("python3", "scripts/check_vendored_alone.py")),
     ("vendored alone selftest", ("python3", "scripts/check_vendored_alone.py", "--selftest")),
-    # #1537. The lane-band mod is the first mod we ship, and `claude plugin test` cannot run in CI
-    # (no `claude` binary), so nothing else exercised it. This asserts one module in hooks.json,
-    # only reviewed read-only mods API and git calls, and runs the fake-host test in plain Node.
-    ("lane band", ("python3", "plugins/rails-flow/scripts/check_lane_band.py")),
-    ("lane band selftest", ("python3", "plugins/rails-flow/scripts/check_lane_band.py", "--selftest")),
 )
 
 # Gates that cannot run without the licensed corpora, so their absence is a SKIP rather than a
