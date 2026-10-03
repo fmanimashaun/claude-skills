@@ -238,9 +238,9 @@ un-ignore them. (History: *The coverage matrix has a browsable page, and it is c
 
 ## First session in a clone
 
-Copy `.claude/settings.example.json` to `.claude/settings.local.json` (gitignored). Compound pipelines
-re-prompt on **one** unlisted binary; the example deliberately omits `rm`, `curl`, `wget`, `kill`,
-`chmod` and installers.
+Tracked `.claude/settings.json` holds a narrow allowlist every worktree gets; for more, copy
+`settings.example.json` to `.claude/settings.local.json` (gitignored). Compound pipelines re-prompt on
+**one** unlisted binary; the example omits `rm`, `curl`, `wget`, `kill`, `chmod` and installers.
 
 | file | tracked | who gets it | read by Claude |
 |---|---|---|---|
