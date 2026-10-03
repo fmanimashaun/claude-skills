@@ -1053,11 +1053,27 @@ def release_gate_fixtures() -> None:
         rc, err = gate()
         # #1437 review round 3: the stamp is read as COMMITTED at dev. An uncommitted one is not what
         # main would receive, so it no longer permits -- the old "uncommitted control" inverts.
+        # The FIRST stage's own words, which no later stage repeats: the evidence step that follows also denies an
+        # uncommitted stamp ("unusable: no qa/CERTIFICATION is committed at ... -- commit the stamp to dev first"),
+        # so a hook that read the stamp from the working tree was still denied here and the old assertion could not
+        # tell it from the real one (#1571, measured on both). Only stage 1 says to run /qa-flow:certify.
         check("release-gate (#1428): an UNCOMMITTED stamp is denied -- main would not receive it",
-              rc == 2 and "is committed at" in err, err)
+              rc == 2 and "no qa/CERTIFICATION is committed at" in err and "Run /qa-flow:certify against staging" in err, err)
         sh("add", "qa/CERTIFICATION"); sh_old("commit", "-q", "-m", "stamp")
         rc, err = gate()
         check("release-gate (#1337): the stamp committed on top of the tested sha still permits", rc == 0, err)
+        # #1571: dev's tip is read only when the classifier is unavailable (it names every commit itself), so that
+        # path needs its own fixture. A plugin copy WITHOUT push_targets.py forces the fallback, and this repo has
+        # no origin/dev: plain `git rev-parse origin/dev` echoes the literal ref and poisons the value (#1337).
+        import shutil
+        with tempfile.TemporaryDirectory() as fbtd:
+            fb_root = Path(fbtd) / "qa-flow"
+            shutil.copytree(QA_HOOK.parents[2], fb_root, ignore=shutil.ignore_patterns("push_targets.py", "__pycache__"))
+            done = _run(["bash", str(QA_HOOK)], cwd=repo, env={**env, "CLAUDE_PLUGIN_ROOT": str(fb_root)},
+                        capture_output=True, text=True, timeout=60,
+                        input=json.dumps({"tool_input": {"command": "git push origin main"}}))
+        check("release-gate (#1337): without the classifier, dev's tip is read and a missing origin/dev does not poison it",
+              done.returncode == 0, done.stderr)
         (repo / "app.rb").write_text("v2\n", encoding="utf-8")
         sh("commit", "-q", "-am", "untested change")
         rc, err = gate()

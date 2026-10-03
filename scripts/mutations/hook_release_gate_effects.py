@@ -36,7 +36,7 @@ GUARD = Guard(
         ),
         Mutation(
             "a PR into main is judged at dev's tip again, so a hotfix rides dev's certification",
-            'if [ -n "$head" ]; then pr_heads="${pr_heads}${head}"$\'\\n\'; else unresolved_pr=1; fi ;;\n    "")',
+            'if [ -n "$head" ]; then ctx_repo "${_PRR:--}"; add_ship "$head" "${_R:--}" "the PR head"; else unresolved_pr=1; fi ;;\n    "")',
             'if [ -n "$head" ]; then needs_dev=1; else unresolved_pr=1; fi ;;\n    "")',
             "a hotfix head is judged by ITS stamp, not dev's",
         ),
@@ -48,14 +48,14 @@ GUARD = Guard(
         ),
         Mutation(
             "a gh api the classifier cannot read is judged at dev instead of denied",
-            "    case \"$_probe\" in *gh*api*|*gh*release*) unresolved_pr=1 ;; esac",
-            "    :",
+            "    unresolved_pr=1\n  fi\nelif [ \"$_mentions\" = 1 ]; then",
+            "    :\n  fi\nelif [ \"$_mentions\" = 1 ]; then",
             "a missing --input file could not be judged, so it is blocked",
         ),
         Mutation(
             "an API write to main (POST merges, ref PATCH) is no longer a promotion",
-            "        API_MAIN) targets_main=1; needs_dev=1 ;;",
-            "        API_MAIN) : ;;",
+            'targets_main=1; _v="${_line#* }"',
+            '_v="${_line#* }"',
             "POST merges, base main writes main and is blocked",
         ),
         Mutation(
@@ -66,31 +66,31 @@ GUARD = Guard(
         ),
         Mutation(
             "the release line is never recorded",
-            '"RELEASE "*) releases=',
-            '"RELEASE_OFF "*) releases=',
+            '"RELEASE "*) ctx_repo',
+            '"RELEASE_OFF "*) ctx_repo',
             "gh api POST releases publishing an uncertified commit is blocked",
         ),
         Mutation(
             "a release is judged at dev's tip instead of the commit it publishes",
-            '  _rsha="$(resolve_release_target "$_tag" "$_tgt" | head -1)"',
-            '  _rsha="$(git rev-parse --verify -q dev)"',
+            'pass --target <sha>."\n  if [ -n "$_R" ]; then',
+            'pass --target <sha>."\n  _rsha="$(git rev-parse --verify -q dev)"\n  if [ -n "$_R" ]; then',
             "gh release create --target main publishing an uncertified commit is blocked",
         ),
         Mutation(
             "git merge on main is judged at dev's tip again, so an uncertified hotfix merges on dev's stamp",
-            '          targets_main=1; add_commit "${_line#PUSH_REF }" ;;',
-            '          targets_main=1; needs_dev=1 ;;',
+            'targets_main=1; add_commit "${_line#PUSH_REF }" "$_crepo" local "the commit being merged or pushed" ;;',
+            'targets_main=1; needs_dev=1 ;;',
             "push of a branch to main is blocked",
         ),
         Mutation(
             "a merge ref that does not resolve is allowed instead of denied",
-            'if [ -n "$c" ]; then ship_commits="${ship_commits}${c}"$\'\\n\'; else unresolved_pr=1; fi',
-            'if [ -n "$c" ]; then ship_commits="${ship_commits}${c}"$\'\\n\'; fi',
+            'if [ -n "$c" ]; then add_ship "$c" "${_R:--}" "$4"; else unresolved_pr=1; fi',
+            'if [ -n "$c" ]; then add_ship "$c" "${_R:--}" "$4"; fi',
             "a ref that does not resolve is blocked",
         ),
         Mutation(
             "the commits queued by a push or merge are never judged",
-            '  judge "$_c" "$_c" "the commit being merged or pushed" || deny "$JWHY"',
+            '  judge_in "$_c" "$_crp" "$_lab" || deny "$JWHY"',
             '  :',
             "`git merge` on main of an uncertified hotfix branch is blocked",
         ),
@@ -115,7 +115,7 @@ GUARD = Guard(
         Mutation(
             "a draft whose target GitHub cannot name is allowed",
             "            if [ -z \"$_tgt\" ]; then unresolved_pr=1; targets_main=1; _tgt=\"-\"; fi",
-            "            if [ -z \"$_tgt\" ]; then _tgt=\"-\"; fi",
+            "            if [ -z \"$_tgt\" ]; then _tgt=\"dev\"; fi",
             "gh release edit with GitHub unable to name the target",
         ),
         Mutation(

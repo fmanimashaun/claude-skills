@@ -10,8 +10,8 @@ GUARD = Guard(
     mutations=(
         Mutation(
             "the substring match comes back, so fix/1010-one-main is a promotion again",
-            "            if dst in PROTECTED or",
-            "            if any(p in dst for p in PROTECTED) or",
+            "        if dst in PROTECTED or",
+            "        if any(p in dst for p in PROTECTED) or",
             "'git push -u origin fix/1010-one-main': expected does not target main",
         ),
         Mutation(
@@ -133,8 +133,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a substitution body is read BEFORE the outer command, so its cd leaks into the outer push",
-            "    for seg in segments(tokens(cmd, bodies)):\n        yield seg",
-            "    _toks = tokens(cmd, bodies)\n    for body in bodies:\n        yield from all_segments(body, depth + 1)\n    for seg in segments(_toks):\n        yield seg",
+            '    toks = tokens(cmd, bodies)\n    if "()" in toks:',
+            '    toks = tokens(cmd, bodies)\n    for body in bodies:\n        yield from all_segments(body, depth + 1)\n    if "()" in toks:',
             "'x=$(cd other); git push': expected does not target main",
         ),
         # #1551: a quote in a heredoc body inside a substitution is text.
@@ -189,8 +189,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a prior cd is ignored, so a bare push is resolved in the wrong clone",
-            "            cwd = seg[1] if cwd is None",
-            "            cwd = None if cwd is None",
+            "            cwd = seg[1] if cwd is None or os.path.isabs",
+            "            cwd = None if cwd is None or os.path.isabs",
             "'cd other && git push': expected TARGETS main",
         ),
         Mutation(
@@ -264,8 +264,8 @@ GUARD = Guard(
         ),
         Mutation(
             "an inline alias is followed as its literal verb, so -c alias.p=push hides the push",
-            '                    raise Unjudgeable("a git alias defined inline can be any verb, push included")',
-            "                    pass",
+            'seg[i + 1].startswith("alias."):\n                    raise Unjudgeable("a git alias defined inline can be any verb, push included")',
+            'seg[i + 1].startswith("alias."):\n                    pass',
             "'git -c alias.p=push p origin main': expected TARGETS main",
         ),
         Mutation(
@@ -276,15 +276,15 @@ GUARD = Guard(
         ),
         Mutation(
             "gh pr merge ignores the PR it names and falls back to the current branch's",
-            "                sel = a\n                break",
-            "                break",
+            "        sel = a\n        break",
+            "        break",
             "classify 'gh pr merge 12'",
         ),
         Mutation(
             "git merge is no longer reported when a wrapper precedes it",
-            '    if any(git_verb(seg, "merge") is not None for seg in all_segments(cmd)):',
-            "    if False:",
-            "classify 'git merge dev'",
+            '    return [("git" if is_command(w, {"git"}) else "gh", i) for i, w in enumerate(seg)',
+            "    return []\n    return [(\"git\" if is_command(w, {\"git\"}) else \"gh\", i) for i, w in enumerate(seg)",
+            "classify 'sudo -u bob git merge dev'",
         ),
         Mutation(
             "shell options that take a value are no longer stepped over, so -o pipefail hides -c",
@@ -296,14 +296,14 @@ GUARD = Guard(
         # of that classification, and the selftest must go red.
         Mutation(
             "gh api / gh release are never classified, so every API merge and release passes",
-            "    lines += gh_effects(cmd)\n",
-            "    pass\n",
+            "                out += gh_effects_for(seg, j, cwd, env_repo)",
+            "                pass",
             "classify 'gh api -X PUT repos/{owner}/{repo}/pulls/1200/merge",
         ),
         Mutation(
             "a PUT to pulls/N/merge is no longer a PR merge",
-            '    if m and "PUT" in methods:',
-            "    if False:",
+            "    if m:                                       # any write to it",
+            "    if False:                                   # any write to it",
             "classify 'gh api --method=PUT repos/o/r/pulls/5/merge'",
         ),
         Mutation(
@@ -326,8 +326,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a PATCH of git/refs/heads/main is no longer main-ward",
-            '        return ["API_MAIN"] if _expanded(ref) or branch_of(ref) in PROTECTED else []\n    if re.fullmatch(r"(?:repos/[^/]+/[^/]+/)?git/refs", path)',
-            '        return ["API_MAIN"] if _expanded(ref) else []\n    if re.fullmatch(r"(?:repos/[^/]+/[^/]+/)?git/refs", path)',
+            "        if _expanded(ref) or branch_of(ref) in PROTECTED:",
+            "        if _expanded(ref):",
             "classify 'gh api -X PATCH repos/o/r/git/refs/heads/main -f sha=a'",
         ),
         Mutation(
@@ -338,9 +338,9 @@ GUARD = Guard(
         ),
         Mutation(
             "a GraphQL updateRef is no longer read",
-            "    for name in GRAPHQL_REF_WRITES:",
-            "    for name in ():",
-            "expected ['GQL_REF R1']",
+            '    if "updateRef" in text:',
+            "    if False:",
+            "expected ['GQL_REF R1 a']",
         ),
         Mutation(
             "a query file that cannot be read is answered as empty, so it reads as no merge",
@@ -356,13 +356,13 @@ GUARD = Guard(
         ),
         Mutation(
             "gh release create is no longer reported",
-            '            elif seg[j + 1:j + 3] == ["release", "create"]:',
-            "            elif False:",
+            '    if names == ["release", "create"]:',
+            "    if False:",
             "classify \"gh release create v1.0.1 --target main",
         ),
         Mutation(
             "POST .../releases is no longer a publish",
-            '    if re.fullmatch(r"(?:repos/[^/]+/[^/]+/)?releases", path) and "POST" in methods:',
+            '    if re.fullmatch(r"(?:repos/[^/]+/[^/]+/)?releases", path):',
             "    if False:",
             "classify 'gh api repos/o/r/releases -f tag_name=v1",
         ),

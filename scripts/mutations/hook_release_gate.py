@@ -191,15 +191,15 @@ GUARD = Guard(
             "the dev sha is read with plain rev-parse again, so a missing origin/dev poisons it",
             'devsha="$(git rev-parse --verify -q origin/dev 2>/dev/null || git rev-parse --verify -q dev 2>/dev/null || true)"',
             'devsha="$(git rev-parse origin/dev 2>/dev/null || git rev-parse dev 2>/dev/null || true)"',
-            "release-gate (#1337): the stamp committed on top of the tested sha still permits",
+            "release-gate (#1337): without the classifier, dev's tip is read and a missing origin/dev does not poison it",
         ),
         Mutation(
             # WITHOUT the carve-out the gate denies every promotion of its own source repo. That is
             # a gate wrong about correct code: the maintainer overrides it every release or turns
             # it off, and then it protects nobody. It blocked v1.134.0 before this landed.
             "the marketplace carve-out is removed, so the gate blocks its own repo",
-            'if [ -f ".claude-plugin/marketplace.json" ]; then',
-            "if false; then",
+            'if [ -f ".claude-plugin/marketplace.json" ] && [ -z "$_foreign" ] \\\n   && [ "$(repo_of_url "$(git config --get remote.origin.url 2>/dev/null || true)")" = "$MARKETPLACE_REPO" ]; then',
+            'if false; then',
             "the marketplace's OWN repo is not a consumer",
         ),
         Mutation(
@@ -208,8 +208,8 @@ GUARD = Guard(
             # Keyed on marketplace.json rather than "has no qa/ directory" precisely because the
             # latter is the ordinary state of an app that never ran /qa-flow:setup-qa.
             "the carve-out fires for every repo, so nothing is ever gated",
-            'if [ -f ".claude-plugin/marketplace.json" ]; then',
-            "if true; then",
+            'if [ -f ".claude-plugin/marketplace.json" ] && [ -z "$_foreign" ] \\\n   && [ "$(repo_of_url "$(git config --get remote.origin.url 2>/dev/null || true)")" = "$MARKETPLACE_REPO" ]; then',
+            'if true; then',
             "an ordinary repo with no certification is STILL blocked",
         ),
     ),
