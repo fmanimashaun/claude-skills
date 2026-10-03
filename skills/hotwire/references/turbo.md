@@ -26,7 +26,7 @@ What the server must do:
   PATCH/PUT/DELETE so the follow-up is a GET).
 - **Failed validation → re-render the form with `422 Unprocessable Content`** (`status:
   :unprocessable_content`; Rack 3.1 renamed it — `SKILL.md` says which Rails and Rack combinations
-  accept the new symbol; `:unprocessable_entity` still returns 422 and warns only on Rack 3.1.0–3.1.2).
+  accept the new symbol; `:unprocessable_entity` returned 422 on every Rack checked, through 3.1.8, and warned only on 3.1.0–3.1.2).
 - **Server errors → `500`** (Turbo shows the response). A `200` containing a
   form response without redirect is the classic "my form does nothing" bug.
 
