@@ -33,6 +33,30 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### 2026-10-02 (release v1.153.0)
 
+- **`--check` refuses a note filed under a dead CHANGELOG section — `scripts/extract_release_notes.py`,
+  `scripts/mutations/extract_release_notes.py`** (#1520). `CHANGELOG.md` holds two `## ` sections for `Repository hygiene`
+  and two for `rails-stack`. PR #1518 put a `### Unreleased` under the stale rails-stack section, and `--check --all-tags`
+  printed clean: every rule read headings, and none asked which section a heading sits in. `--check` now refuses:
+  - two live sections for one component, unless all but one are in the script's `ARCHIVED` list, each entry pinned to
+    the newest tag that section holds;
+  - an `### Unreleased` in an archived section;
+  - an `### Unreleased` in a live plugin section whose newest release isn't the plugin's current version
+    (`marketplace.json`, or the plugin's `plugin.json`). The marketplace-versioned `Repository hygiene` is not
+    compared: `metadata.version` bumps on every promotion, and 39 of the 77 since v1.92.0 wrote no Repository block,
+    so that section lags by design (the independent review of PR #1522 found this);
+  - an `ARCHIVED` entry no section matches, which is how a release added to an archived section shows up.
+  - a plugin whose current version cannot be found: a missing `plugin.json` is a named finding, and an unreadable
+    manifest or `plugin.json`, or no `metadata.version`, exits 3 ("could not check"), not with a traceback.
+
+  The four history sections are archived in the script, not marked in the file. A block runs to the next `### `, so a
+  marker written between sections would join the block above it and change a past extraction: measured, v1.92.1's
+  notes already end with `## Repository hygiene`. Proven on the real file:
+  - the #1518 shape passes `origin/dev`'s checker (exit 0) and fails this one (exit 1);
+  - all 202 past `(release vX.Y.Z)` extractions are byte-identical under both scripts;
+  - no existing CHANGELOG line changes; this bullet is the only addition.
+
+  Selftest 66; mutations 26/26, 13 of them new. Review findings: `docs/evidence/reviews/prs/fix-1520-changelog-duplicate-sections/`.
+
 - **A primitive marker never excuses a form, excuses one instance, and is reported when unused — `scripts/check_shipped_erb_forms.py`, `scripts/mutations/check_shipped_erb_forms.py`** (#1460).
   - A `<%# simple-form-only: primitive … %>` marker naming any form construct a form rule reports (`form_with`, `form_for`, `form_tag`, `<form`, `tag.form`) is `primitive-marker-invalid` and excuses nothing. `<form` and `tag.form` were added on the independent review of PR #1521.
   - Each marker excuses ONE instance, so a second `check_box_tag` added to a primitive's block needs its own marker and reason. A marker that excuses nothing is `primitive-marker-unused`, like an unused exemption.
