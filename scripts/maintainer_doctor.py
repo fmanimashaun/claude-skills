@@ -592,6 +592,11 @@ SLOW_GATES: dict[str, int] = {
     # in any guard that finished). 3600 s is 2.3x the dev measurement; re-set it from the `jobs=4, Xs`
     # the completed run on this branch prints.
     "mutation coverage": 3600,
+    # #1581, MEASURED: `check_hook_gates.py --selftest` alone, on an idle machine, runs 833 checks in 188 s (3:07.9 wall,
+    # load average 9), over the 180 s default, so on `dev` it would time out into a SKIP on every sweep and the hook
+    # fixtures would never gate anything. Every new hook group adds real git repositories to it. 600 s is 3.2x that;
+    # re-set it from the `real` of `time python3 plugins/rails-flow/scripts/check_hook_gates.py --selftest`.
+    "hook gates": 600,
 }
 
 
