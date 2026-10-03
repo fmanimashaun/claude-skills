@@ -125,16 +125,21 @@ def contained():
 # A BROKEN FIXTURE, the shape of the 2026-10-03 leak: it starts a child, that child starts a grandchild
 # in a NEW session, the child SIGSTOPs itself, and the fixture's root exits -- so the stopped child and
 # the grandchild are orphaned (parent pid 1) and nothing waits for them.
+# Its processes open /dev/null for stdio themselves: a leaked one must never hold the selftest's (or the
+# CLI's) pipe, or a broken sweep would HANG the run instead of failing it (the mutation harness saw that).
 _LEAKY = ("import os, signal, subprocess, sys, time\n"
+          "N = subprocess.DEVNULL\n"
           "c = subprocess.Popen([sys.executable, '-c', "
-          "'import os, signal, subprocess, sys, time; "
-          "subprocess.Popen([sys.executable, \"-c\", \"import time; time.sleep(120)\"], start_new_session=True); "
-          "time.sleep(0.3); os.kill(os.getpid(), signal.SIGSTOP); time.sleep(120)'])\n"
+          "'import os, signal, subprocess, sys, time; N = subprocess.DEVNULL; "
+          "subprocess.Popen([sys.executable, \"-c\", \"import time; time.sleep(120)\"], start_new_session=True, "
+          "stdin=N, stdout=N, stderr=N); "
+          "time.sleep(0.3); os.kill(os.getpid(), signal.SIGSTOP); time.sleep(120)'], stdin=N, stdout=N, stderr=N)\n"
           "time.sleep(1.0)\n")
 
 
 def selftest() -> int:
     failures: list[str] = []
+    tokens: list[str] = []
 
     def check(label: str, ok: bool, detail: str = "") -> None:
         if not ok:
@@ -142,6 +147,7 @@ def selftest() -> int:
 
     # 1. UNDER the helper: the broken fixture leaves nothing behind.
     with contained() as box:
+        tokens.append(box.token)
         subprocess.run([sys.executable, "-c", _LEAKY], check=False)
         time.sleep(0.5)
         inside = tagged(box.token)
@@ -153,6 +159,7 @@ def selftest() -> int:
 
     # 2. WITHOUT the helper: the same fixture leaks. Tagged by hand so this test can clean up after itself.
     token = uuid.uuid4().hex
+    tokens.append(token)
     subprocess.run([sys.executable, "-c", _LEAKY], env={**os.environ, TOKEN_VAR: token}, check=False)
     time.sleep(0.5)
     leaked = tagged(token)
@@ -168,6 +175,7 @@ def selftest() -> int:
     # 3. An exception in the code under test still sweeps.
     try:
         with contained() as box2:
+            tokens.append(box2.token)
             subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
             raise RuntimeError("the fixture itself broke")
     except RuntimeError:
@@ -179,10 +187,22 @@ def selftest() -> int:
     check("contained() restores the environment", TOKEN_VAR not in os.environ, "token left in os.environ")
 
     # 5. The CLI: returns the command's status and kills its leftovers.
-    cli = subprocess.run([sys.executable, __file__, "--", sys.executable, "-c", _LEAKY + "raise SystemExit(7)\n"],
+    # The CLI's token is its own, out of reach of the safety net below, so its leftover ends by itself
+    # after 5 s: long enough that the CLI must kill it, harmless if a mutant does not.
+    short = ("import subprocess, sys\nN = subprocess.DEVNULL\n"
+             "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(5)'], stdin=N, stdout=N, stderr=N)\n"
+             "raise SystemExit(7)\n")
+    cli = subprocess.run([sys.executable, __file__, "--", sys.executable, "-c", short],
                          capture_output=True, text=True, check=False)
     check("the CLI returns the command's own exit status", cli.returncode == 7, f"exit {cli.returncode}")
     check("the CLI reports the leftovers it killed", "killed" in cli.stderr, cli.stderr.strip()[:200])
+
+    # SAFETY NET, never through `sweep()`: under a mutant the sweep itself may be the broken part, and
+    # running this guard must not leak the very processes it exists to contain.
+    for leftover_token in tokens:
+        for pid in tagged(leftover_token):
+            _signal(pid, signal.SIGCONT)
+            _signal(pid, signal.SIGKILL)
 
     for f in failures:
         print(f"SELFTEST FAILED: {f}")
