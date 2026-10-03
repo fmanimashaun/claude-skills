@@ -545,16 +545,35 @@ def _run_gh(argv: list[str]) -> str:
     return result.stdout
 
 
+_MAX_BOUNDS = 32
+
+
 def _bounds(first: int, cap: int) -> list[int]:
     """The page bounds `fetch_issues` tries, in order: `first`, then doubling, ending at `cap`.
 
-    A list computed up front, not a loop that grows until it is satisfied: a loop that never ends
-    when the refusal below is mutated away would hang the guard instead of failing it.
+    A list computed up front, not a loop that grows until it is satisfied, and it cannot run forever:
+    a bound below 1 is refused (doubling 0 or a negative number never reaches `cap`, which is how the
+    first version of this hung on `--limit 0`), and the list is cut at `_MAX_BOUNDS` steps whatever
+    else is true, so a mutation that removes the refusal fails a check instead of hanging the guard.
     """
+    if first < 1:
+        raise ValueError(f"a page bound must be at least 1, got {first}")
     steps = [first]
-    while steps[-1] < cap:
+    while steps[-1] < cap and len(steps) < _MAX_BOUNDS:
         steps.append(min(steps[-1] * 2, cap))
     return steps
+
+
+def _positive_int(text: str) -> int:
+    """argparse type for --limit: a whole number of at least 1, refused with a sentence (exit 2)."""
+    try:
+        value = int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a whole number") from None
+    if value < 1:
+        raise argparse.ArgumentTypeError(
+            f"--limit must be at least 1, got {value}: a page bound of zero or less can never hold an issue")
+    return value
 
 
 def fetch_issues(limit: int = GH_LIMIT, runner=_run_gh, cap: int = GH_LIMIT_CAP) -> list[Issue]:
@@ -643,7 +662,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--from", dest="source", metavar="FILE",
                         help="read a `gh issue list --json ...` dump instead of calling gh ('-' for stdin)")
-    parser.add_argument("--limit", type=int, default=GH_LIMIT,
+    parser.add_argument("--limit", type=_positive_int, default=GH_LIMIT,
                         help=f"first page bound for the gh query (default {GH_LIMIT}); a full page retries with "
                              f"a doubled bound up to {GH_LIMIT_CAP}, and only a page still full there is refused")
     parser.add_argument("--ready", nargs="+", type=int, metavar="N",
@@ -1040,6 +1059,44 @@ def selftest() -> int:
             asked.append(bound)
             return json.dumps(everything[:bound])
         return run, asked
+
+    # A bound below 1 is refused, and a regression fails instead of hanging the selftest: each call runs in a
+    # daemon thread that is given a few seconds. (The first version of the ladder never ended on --limit 0.)
+    def within(seconds: float, fn):
+        outcome: list = []
+
+        def target() -> None:
+            try:
+                outcome.append(("returned", fn()))
+            except BaseException as exc:  # SystemExit from argparse included
+                outcome.append(("raised", exc))
+        import threading
+        worker = threading.Thread(target=target, daemon=True)
+        worker.start()
+        worker.join(seconds)
+        return outcome[0] if outcome else ("hung", None)
+
+    for bad in (0, -1):
+        checks += 1
+        kind, value = within(5, lambda bad=bad: _bounds(bad, 100))
+        if kind != "raised" or not isinstance(value, ValueError):
+            failures.append(f"a page bound of {bad} must be refused, not {kind}: _bounds({bad}, 100)")
+        checks += 1
+        run, _ = tracker_of(3)
+        kind, value = within(5, lambda bad=bad, run=run: fetch_issues(limit=bad, runner=run))
+        if kind != "raised" or not isinstance(value, ValueError):
+            failures.append(f"a page bound of {bad} must be refused, not {kind}: fetch_issues(limit={bad})")
+        checks += 1
+        err = io.StringIO()
+
+        def parse(bad=bad, err=err):
+            with contextlib.redirect_stderr(err):
+                return main(["--limit", str(bad)])
+        kind, value = within(5, parse)
+        if not (kind == "raised" and isinstance(value, SystemExit) and value.code == 2
+                and "at least 1" in err.getvalue()):
+            failures.append(f"--limit {bad} must exit 2 with a sentence naming the minimum, got {kind} "
+                            f"{getattr(value, 'code', value)!r}: {err.getvalue().strip()[:120]}")
 
     # A tracker larger than the cap is still refused: the page stays full at every bound.
     checks += 1

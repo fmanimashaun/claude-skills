@@ -27,7 +27,7 @@ GUARD = Guard(
         ),
         Mutation(
             "the bound never grows, so a tracker past the first page is refused again",
-            "    while steps[-1] < cap:",
+            "    while steps[-1] < cap and len(steps) < _MAX_BOUNDS:",
             "    while False:",
             "growth: a tracker larger than the first page",
         ),
@@ -36,6 +36,18 @@ GUARD = Guard(
             "        if len(payload) < bound:",
             "        if len(payload) <= bound:",
             "growth: a tracker exactly the size of the first bound",
+        ),
+        Mutation(
+            "a page bound below 1 is no longer refused by the ladder",
+            "    if first < 1:\n        raise ValueError(",
+            "    if False:\n        raise ValueError(",
+            "must be refused, not",
+        ),
+        Mutation(
+            "--limit accepts zero and negative numbers again",
+            '    parser.add_argument("--limit", type=_positive_int, default=GH_LIMIT,',
+            '    parser.add_argument("--limit", type=int, default=GH_LIMIT,',
+            "must exit 2 with a sentence naming the minimum",
         ),
         Mutation(
             "the first query ignores the caller's bound",
