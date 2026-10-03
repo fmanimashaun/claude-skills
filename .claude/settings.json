@@ -30,9 +30,7 @@
       "Bash(pg_isready)",
       "Bash(python3 scripts/lint_self_consistency.py)",
       "Bash(gh search *)",
-      "Bash(python3 scripts/maintainer_doctor.py --gates-only --fast)",
-      "mcp__playwright__browser_take_screenshot",
-      "mcp__chrome-devtools__take_screenshot"
+      "Bash(python3 scripts/maintainer_doctor.py --gates-only --fast)"
     ]
   }
 }
