@@ -3664,6 +3664,9 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     must not hide the next, and neither may a long batch.
   - A `\002` line splits only a batch, never the raw command, and `_join_strings` strips `\002` from every string,
     so a control byte cannot fake a boundary (#1519 review). There are 2 must-block fixtures for it.
+  - The timed PR-body check runs under `/bin/bash` when it exists (bash 3.2 on a Mac, the shell where the cost was
+    measured), as the guard-migrate check does, instead of whichever `bash` is first on PATH. A Homebrew bash 5
+    first on PATH used to run it without exercising the shell that matters (#1519 review).
   - `hook_normalize_cmd`: 28 mutations, 6 of them new and 3 re-pointed at the batched code. One restores a
     pipeline per string, and the pipeline ratchet catches it. The run time depends on the machine and its load, so no figure is given here.
 

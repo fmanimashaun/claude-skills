@@ -128,7 +128,8 @@ def _git_repo(root: Path) -> None:
 
 
 def run_hook(name: str, *, cwd: Path, stdin: str, path_prefix: list[Path] = (),
-             env_extra: dict[str, str] | None = None, unset: tuple[str, ...] = ()) -> tuple[int, str]:
+             env_extra: dict[str, str] | None = None, unset: tuple[str, ...] = (),
+             shell: str = "bash") -> tuple[int, str]:
     env = dict(os.environ)
     for k in unset:
         env.pop(k, None)
@@ -137,7 +138,7 @@ def run_hook(name: str, *, cwd: Path, stdin: str, path_prefix: list[Path] = (),
         env["PATH"] = os.pathsep.join(str(p) for p in path_prefix) + os.pathsep + env["PATH"]
     if env_extra:
         env.update(env_extra)
-    done = _run(["bash", str(HOOKS / name)], cwd=cwd, input=stdin, env=env,
+    done = _run([shell, str(HOOKS / name)], cwd=cwd, input=stdin, env=env,
                           capture_output=True, text=True, timeout=60)
     return done.returncode, done.stdout + done.stderr
 
@@ -487,9 +488,9 @@ def pattern_expansion_sites() -> list[str] | str:
 
 
 def guard_bash_fixtures() -> None:
-    def run(cmd: str) -> int:
+    def run(cmd: str, shell: str = "bash") -> int:
         with tempfile.TemporaryDirectory() as td:
-            return run_hook("guard-bash.sh", cwd=Path(td),
+            return run_hook("guard-bash.sh", cwd=Path(td), shell=shell,
                             stdin=json.dumps({"tool_input": {"command": cmd}}))[0]
 
     for cmd in ("git add -A", "git add .", "git add --all",
@@ -535,8 +536,12 @@ def guard_bash_fixtures() -> None:
     os.environ["HOOK_GATES_TIMEOUT"] = str(hook_timeout)
     _EXPECTING_TIMEOUT = True
     t0 = time.monotonic()
+    # PINNED to /bin/bash when it exists, as the guard-migrate check above does: that is bash 3.2 on a Mac,
+    # the shell where the cost was measured. `bash` first on PATH may be Homebrew's bash 5, where this
+    # timed check would pass without ever exercising the shell that matters (#1519 review, S-suggestion).
+    timed_shell = "/bin/bash" if Path("/bin/bash").is_file() else "bash"
     try:
-        rc = run(pr)
+        rc = run(pr, shell=timed_shell)
     finally:
         _EXPECTING_TIMEOUT = False
         if saved is None:
