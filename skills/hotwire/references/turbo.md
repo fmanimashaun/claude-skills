@@ -60,7 +60,7 @@ instant from cache).
   Control per page via
   `<meta name="turbo-cache-control" content="no-preview | no-cache">`.
   Clean up before snapshotting in a `turbo:before-cache` listener (close
-  dropdowns, reset forms). `<html>` elements marked `data-turbo-permanent`
+  dropdowns, reset forms). Elements marked `data-turbo-permanent`
   (with an `id`) persist across visits — players, chat widgets.
 - **Assets**: mark bundles
   `<link rel="stylesheet" href="..." data-turbo-track="reload">` — when the
@@ -95,7 +95,9 @@ does, and the difference is useful.** Drive's cross-visit persistence selects
 skip is a bare `hasAttribute("data-turbo-permanent")` check with **no `id`
 involved** — which is what makes it safe to *add the attribute at runtime*
 to shield a region only while it needs shielding (an edit in progress), and
-remove it after. Worked example in `references/production.md` §2.4.
+remove it after. (A node a morph is *adding* is different: `beforeNodeAdded`
+checks `node.id`, so a new incoming permanent node needs an `id` to be
+suppressed — Turbo 8.0.23 `src/core/morphing.js`.) Worked example in `references/production.md` §2.4.
 
 The payoff is **broadcasted refreshes**: instead of authoring per-change
 streams, the server broadcasts a tiny "reload yourself" signal and every
@@ -211,7 +213,8 @@ focus) and a wholesale swap would reset it.
 **`refresh` carries its own `method` and `scroll`** (Turbo ≥ 8.0.21):
 `<turbo-stream action="refresh" method="morph" scroll="preserve">`. They win
 over the page's `turbo-refresh-method` / `turbo-refresh-scroll` meta tags for
-that one refresh, so a broadcast can morph a page whose default is `replace`.
+that one refresh, so a broadcast can morph a page whose default is `replace`
+(this precedence has not been independently traced through Turbo's source).
 Omit them and the meta tags decide — and their default is `replace`, not
 morph, so `refresh` is only a morph when something says so.
 
