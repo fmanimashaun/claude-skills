@@ -22,7 +22,9 @@
 # the `session_id` it sends, and the lane record is written by the coordinator (coordination.py), so
 # a session nobody recorded passes the "one issue" rule (the duplicate rule still holds, and needs no
 # record). `git -C <another repo> worktree add` is judged against the repository of the payload's cwd.
-# A worktree made by a script or by hand outside the agent is out of reach.
+# A worktree made by a script or by hand outside the agent is out of reach, and so is one reached through a shell
+# variable, function or alias the normaliser cannot expand (`G=git; $G worktree add ...`). A command it surfaces but the
+# helper cannot parse is refused, not allowed: the two parsers can disagree, and the disagreement must fail closed.
 set -uo pipefail
 input=""; IFS= read -r -d '' input || true
 

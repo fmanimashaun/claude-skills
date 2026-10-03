@@ -1609,6 +1609,11 @@ def guard_worktree_fixtures() -> None:
         denied("guard-worktree: ...also through `cd x && git worktree add`", guard(repo, f"cd {td} && git worktree add ../b -b feature/b dev"))
         denied("guard-worktree: ...also through `git -C repo worktree add`", guard(repo, f"git -C {repo} worktree add ../b -b feature/b dev"))
         denied("guard-worktree: ...also after an env prefix", guard(repo, "FOO=1 git worktree add ../b -b feature/b dev"))
+        denied("guard-worktree: a worktree add INSIDE `bash -c '...'` is judged, and names the lane it collides with",
+               guard(repo, "bash -c 'git worktree add ../b -b feature/b dev'"), str(wt))
+        denied("guard-worktree: ...inside `eval \"...\"`", guard(repo, 'eval "git worktree add ../b -b feature/b dev"'), str(wt))
+        allowed("guard-worktree: ...and a session owning nothing may still run it inside `bash -c`",
+                guard(repo, "bash -c 'git worktree add ../b -b feature/b dev'", "SESS-B"))
         allowed("guard-worktree: ANOTHER session, owning nothing, is not held back by it", guard(repo, "git worktree add ../b -b feature/b dev", "SESS-B"))
         allowed("guard-worktree: a payload with no session_id cannot be matched to an owner, so rule 1 does not fire",
                 guard(repo, "git worktree add ../b -b feature/b dev", None))
@@ -1638,6 +1643,8 @@ def guard_worktree_fixtures() -> None:
         denied("guard-worktree: ...even with --force", guard(repo, "git worktree add -f ../dup feature/issue-77-x"))
         denied("guard-worktree: a second worktree for the same ISSUE under another branch name is denied",
                guard(repo, "git worktree add ../again -b fix/77-again dev"), str(wt))
+        denied("guard-worktree: an attached -b<branch> for the same ISSUE is read (fix/77-again)",
+               guard(repo, "git worktree add -bfix/77-again ../again"), str(wt))
         denied("guard-worktree: ...and by the new worktree's DIRECTORY name", guard(repo, "git worktree add ../issue-77-redo -b scratch dev"))
         allowed("guard-worktree: a DIFFERENT issue is allowed beside it (two live worktrees for different work stay silent)",
                 guard(repo, "git worktree add ../other -b fix/78-other dev"))
@@ -1657,6 +1664,23 @@ def guard_worktree_fixtures() -> None:
         denied("guard-worktree: ...also with --force", guard(repo, "git worktree add -f ../dup feature/lane-band"))
         allowed("guard-worktree: a different branch with no issue number is allowed beside it",
                 guard(repo, "git worktree add ../other -b feature/other dev"))
+        # PARSER DIFFERENTIAL (the push security review): the hook must read the command the way git does. These
+        # shapes made the helper see no branch at all, so the duplicate rule never fired.
+        denied("guard-worktree: an ATTACHED -B<branch> (git accepts it) is read: a forced duplicate of a checked-out branch",
+               guard(repo, "git worktree add -f -Bfeature/lane-band ../dup"), "feature/lane-band")
+        denied("guard-worktree: an attached -b<branch> bundled with a flag (-fb) is read too",
+               guard(repo, "git worktree add -fbfeature/lane-band ../dup"))
+        denied("guard-worktree: a redirect BEFORE the commit-ish does not hide the branch",
+               guard(repo, "git worktree add ../dup >/dev/null feature/lane-band"), "feature/lane-band")
+        denied("guard-worktree: ...nor a redirect with a separate target", guard(repo, "git worktree add ../dup > log feature/lane-band"))
+        denied("guard-worktree: ...nor a stderr redirect", guard(repo, "git worktree add ../dup 2>&1 feature/lane-band"))
+        denied("guard-worktree: a `--` before the operands is read", guard(repo, "git worktree add -- ../dup feature/lane-band"))
+        denied("guard-worktree: --reason <text> as two words does not swallow the branch",
+               guard(repo, "git worktree add --lock --reason wip ../dup feature/lane-band"))
+        denied("guard-worktree: --reason=<text> does not swallow the branch",
+               guard(repo, "git worktree add --lock --reason=wip ../dup feature/lane-band"))
+        allowed("guard-worktree: CONTROL: a redirect on a different, new branch is still allowed",
+                guard(repo, "git worktree add ../other -b feature/other dev >/dev/null 2>&1"))
 
     # A record that cannot be read fails CLOSED, with the way out.
     with tempfile.TemporaryDirectory() as td:

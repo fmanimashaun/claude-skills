@@ -101,8 +101,68 @@ def branch_sha(cwd, branch: str) -> str:
     return out.strip() if rc == 0 else ""
 
 
-def worktree_adds(command: str) -> list[dict] | None:
-    """Each `git ... worktree add ...` in the command as {path, branch, commitish}; None if unreadable."""
+# A redirection operator on its own (`>`, `2>`, `>>`, `&>`, `>&`, `<`): its TARGET is the next token.
+REDIRECT_ALONE = re.compile(r"^[0-9]*(?:[<>]{1,2}|&>>?|>&|<&)$")
+
+
+def parse_add_args(args: list[str]) -> tuple[str | None, list[str]]:
+    """(branch, positional operands) of `git worktree add`'s arguments, read the way git reads them.
+
+    Redirections are dropped first (`>/dev/null`, `2>&1`, `> log`): they are not operands, and one placed
+    before the commit-ish used to BECOME it, hiding the branch. Then git's own option grammar: `-b`/`-B` take
+    a value attached (`-Bname`), separate (`-B name`) or after other short flags (`-fb name`, `-fbname`);
+    `--reason` takes one (`--reason=x` or `--reason x`); `--` ends the options.
+    """
+    clean: list[str] = []
+    k = 0
+    while k < len(args):
+        a = args[k]
+        if a.isdigit() and k + 1 < len(args) and REDIRECT_ALONE.match(args[k + 1]):
+            k += 1                      # `2 >& 1` tokenises as 2, >&, 1: the 2 is the descriptor, not an operand
+            continue
+        if re.search(r"[<>]", a):
+            k += 2 if REDIRECT_ALONE.match(a) else 1     # an operator alone takes the NEXT token as its target
+            continue
+        clean.append(a)
+        k += 1
+    branch: str | None = None
+    positional: list[str] = []
+    j = 0
+    while j < len(clean):
+        a = clean[j]
+        if a == "--":
+            positional.extend(clean[j + 1:])
+            break
+        if a == "--reason":
+            j += 2
+            continue
+        if a.startswith("--") or a == "-":
+            if not a.startswith("--"):
+                positional.append(a)
+            j += 1
+            continue
+        if a.startswith("-"):
+            flags = a[1:]
+            for k, ch in enumerate(flags):
+                if ch in "bB":
+                    value = flags[k + 1:]
+                    if not value and j + 1 < len(clean):
+                        j += 1
+                        value = clean[j]
+                    branch = value or branch
+                    break
+            j += 1
+            continue
+        positional.append(a)
+        j += 1
+    return branch, positional
+
+
+def worktree_adds(command: str, _depth: int = 0) -> list[dict] | None:
+    """Each `git ... worktree add ...` in the command as {path, branch, commitish}; None if unreadable.
+
+    A command inside a string (`bash -c 'git worktree add ...'`, `eval "..."`) is one quoted token here; the shell
+    wrapper's normaliser surfaces it, so it is read again, two levels deep."""
     try:
         lex = shlex.shlex(command, posix=True, punctuation_chars=True)
         lex.whitespace_split = True
@@ -123,19 +183,13 @@ def worktree_adds(command: str) -> list[dict] | None:
                 if t in ops or set(t) <= set(";&|()"):
                     break
                 args.append(t)
-            branch, positional, j = None, [], 0
-            while j < len(args):
-                a = args[j]
-                if a in VALUE_OPTS and j + 1 < len(args):
-                    if a in ("-b", "-B"):
-                        branch = args[j + 1]
-                    j += 2
-                    continue
-                if not a.startswith("-") or a == "-":
-                    positional.append(a)
-                j += 1
+            branch, positional = parse_add_args(args)
             found.append({"path": positional[0] if positional else None, "branch": branch,
                           "commitish": positional[1] if len(positional) > 1 else None})
+    if _depth < 2:
+        for tok in tokens:
+            if " " in tok and "worktree" in tok and "add" in tok:
+                found.extend(worktree_adds(tok, _depth + 1) or [])
     return found
 
 
@@ -296,9 +350,28 @@ def selftest() -> int:
     adds = worktree_adds("cd /x && git -C repo worktree add -f ../b -b feat/b dev; echo done") or []
     check_("a worktree add is found after cd and git -C", len(adds) == 1 and adds[0]["path"] == "../b"
            and adds[0]["branch"] == "feat/b" and adds[0]["commitish"] == "dev", str(adds))
-    check_("a quoted mention is not a worktree add", worktree_adds('echo "git worktree add ../x"') == [])
+    # The helper cannot tell a quoted mention from `bash -c '...'`: both are one quoted token. Keeping a bare mention
+    # out is the SHELL WRAPPER's job (its normaliser strips quoted spans); the hook fixtures prove `echo "git worktree
+    # add"` never reaches here. So the helper reads it as an add, which is the safe side.
+    check_("a quoted string holding a worktree add is read as one (the wrapper decides what reaches it)",
+           len(worktree_adds('echo "git worktree add ../x"') or []) == 1)
     check_("an existing branch given as the commit-ish is read", (worktree_adds("git worktree add ../x feat/a") or [{}])[0].get("commitish") == "feat/a")
+    nested = worktree_adds("bash -c 'git worktree add ../n -b feat/n dev'") or []
+    check_("a worktree add inside bash -c is read", len(nested) == 1 and nested[0]["branch"] == "feat/n", str(nested))
+    check_("a worktree add inside eval is read", len(worktree_adds('eval "git worktree add ../n -b feat/n dev"') or []) == 1)
+    check_("a quoted mention with no git in front is still not an add", worktree_adds("echo 'worktree add ../x'") == [])
     check_("an unbalanced quote is unreadable, not empty", worktree_adds("git worktree add 'x") is None)
+    for cmd, want in (("git worktree add -f -Bfeat/a ../d", ("feat/a", ["../d"])),
+                      ("git worktree add -fbfeat/a ../d", ("feat/a", ["../d"])),
+                      ("git worktree add -fb feat/a ../d", ("feat/a", ["../d"])),
+                      ("git worktree add ../d >/dev/null feat/a", (None, ["../d", "feat/a"])),
+                      ("git worktree add ../d 2>&1 feat/a", (None, ["../d", "feat/a"])),
+                      ("git worktree add ../d -b n dev > log 2>&1", ("n", ["../d", "dev"])),
+                      ("git worktree add --reason=x --lock ../d feat/a", (None, ["../d", "feat/a"])),
+                      ("git worktree add --reason x ../d feat/a", (None, ["../d", "feat/a"])),
+                      ("git worktree add -- ../d feat/a", (None, ["../d", "feat/a"]))):
+        got = (worktree_adds(cmd) or [{}])[0]
+        check_(f"git's grammar: {cmd}", (got.get("branch"), [x for x in (got.get("path"), got.get("commitish")) if x]) == want, str(got))
     for f in failures:
         print(f"FAIL: {f}", file=sys.stderr)
     print(f"worktree_guard selftest: {ran[0]} checks, {len(failures)} failure(s)")

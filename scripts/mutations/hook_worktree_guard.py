@@ -138,5 +138,35 @@ GUARD = Guard(
             '["ps", "-o", "command=", "-p", str(ppid)]',
             "never prints a parent's command-line arguments",
         ),
+        Mutation(
+            "an attached -b/-B value is not read (git accepts -Bname and -fbname)",
+            '                if ch in "bB":',
+            '                if ch in "xX":',
+            "an ATTACHED -B<branch> (git accepts it) is read",
+        ),
+        Mutation(
+            "a redirect before the commit-ish becomes the commit-ish and hides the branch",
+            '        if re.search(r"[<>]", a):',
+            '        if False:',
+            "a redirect BEFORE the commit-ish does not hide the branch",
+        ),
+        Mutation(
+            "a descriptor prefix (the 2 of 2>&1) is taken for an operand",
+            '        if a.isdigit() and k + 1 < len(args) and REDIRECT_ALONE.match(args[k + 1]):',
+            '        if False:',
+            "nor a stderr redirect",
+        ),
+        Mutation(
+            "--reason <text> as two words leaves its text as an operand",
+            '        if a == "--reason":',
+            '        if a == "--reasonx":',
+            "--reason <text> as two words does not swallow the branch",
+        ),
+        Mutation(
+            "a worktree add inside a quoted string (bash -c, eval) is never read again",
+            '    if _depth < 2:',
+            '    if False:',
+            "a worktree add INSIDE `bash -c",
+        ),
     ),
 )
