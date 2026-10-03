@@ -277,7 +277,8 @@ def _proc_group_fixtures() -> None:
                  "if os.fork() == 0:\n"
                  "    os.setsid()\n"
                  "    if os.fork() == 0:\n"
-                 f"        open({str(escapee)!r}, 'w').write(str(os.getpid()))\n"
+                 f"        open({str(escapee)!r} + '.tmp', 'w').write(str(os.getpid()))\n"
+                 f"        os.replace({str(escapee)!r} + '.tmp', {str(escapee)!r})\n"
                  "        time.sleep(60)\n"
                  "    os._exit(0)\n"
                  "os.wait()\n"
@@ -329,6 +330,62 @@ def _proc_group_fixtures() -> None:
         if len(recorded) != 1 or left:
             FAILURES.append(f"#1459: a timed-out run left an orphan in its group running (recorded "
                             f"{len(recorded)} of 1 pid; survivors {left})")
+        # (5) #1548: an exception MID-WALK must not leave the tree SIGSTOPped. The first `ps` pass freezes
+        # the grandchild; the second raises, as a Ctrl-C or a failing `ps` would. Both must end up dead,
+        # not stopped, and the exception must still reach the caller.
+        midwalk = work / "midwalk.pids"
+        root = _sp.Popen([sys.executable, "-c", _SLEEPER_WITH_GRANDCHILD, str(midwalk)], start_new_session=True,
+                         stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+        tree = _pids(midwalk)
+        real_rows, calls = pg._ps_rows, [0]
+
+        def rows_then_raise():
+            calls[0] += 1
+            if calls[0] >= 2:
+                raise KeyboardInterrupt("injected mid-walk (#1548)")
+            return real_rows()
+        pg._ps_rows = rows_then_raise
+        reraised = False
+        try:
+            pg.kill_tree(root.pid)
+        except KeyboardInterrupt:
+            reraised = True
+        finally:
+            pg._ps_rows = real_rows
+        try:
+            root.wait(timeout=10)
+        except _sp.TimeoutExpired:
+            pass
+
+        def stat(pid: int) -> str:
+            return _sp.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()
+        _time.sleep(0.5)
+        stopped = [p for p in tree if stat(p).startswith("T")]
+        running = [p for p in tree if stat(p) and not stat(p).startswith(("T", "Z"))]
+        for p in tree:                    # never leave this fixture's own processes behind
+            try:
+                os.kill(p, _signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        if not reraised or stopped or running:
+            FAILURES.append(f"#1548: an exception mid-walk left the tree stopped or running (re-raised: {reraised}; "
+                            f"stopped {stopped}; running {running})")
+
+        # (6) #1548: a pool started after an interrupted one starts children again. `kill_all` sets
+        # `_closing` for the pool it interrupts; a later pool must not inherit it.
+        _tick()
+        pg.kill_all()
+        second = work / "second-pool"
+        try:
+            with pg.pool(1) as ex:
+                ex.submit(pg.run, [sys.executable, "-c", f"open({str(second)!r}, 'w')"], timeout=30).result()
+            started = second.exists()
+        except KeyboardInterrupt:
+            started = False
+        finally:
+            pg._closing.clear()
+        if not started:
+            FAILURES.append("#1548: a pool started after an interrupted one refused every child -- _closing never resets")
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
@@ -507,7 +564,9 @@ def run() -> int:
     # ---- 1e. a mutant that times out takes its whole process group, and says what it knows (#1459)
     # The mutated selftest starts a grandchild that would outlive a plain kill, prints a line, then
     # hangs. run_mutation must report a timeout naming the guard, the mutation and the elapsed time,
-    # with that line as its tail, and leave nothing running.
+    # with that line as its tail, and leave nothing running. #1556: the grandchild's pid is recorded
+    # atomically AFTER the line is printed, and the timeout is lengthened only while the mutant never
+    # got that far -- a mutant killed before it started is no verdict on the group kill.
     import signal as _signal
     import time as _time
     guard, root = _fixture_guard((
@@ -517,22 +576,30 @@ def run() -> int:
     hang = root / "scripts" / "subject_selftest.py"
     hang.write_text("import subprocess, sys, time\n"
                     "g = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'])\n"
-                    f"open({str(pidfile)!r}, 'w').write(str(g.pid))\n"
                     "print('mutant-1459 started its grandchild', flush=True)\n"
+                    f"open({str(pidfile)!r} + '.tmp', 'w').write(str(g.pid))\n"
+                    f"__import__('os').replace({str(pidfile)!r} + '.tmp', {str(pidfile)!r})\n"
                     "time.sleep(120)\n", encoding="utf-8")
     mc.REPO = root
     try:
         _tick()
-        t0 = _time.monotonic()
-        problems = mc.run_mutation(guard, guard.mutations[0], timeout=2)
-        took = _time.monotonic() - t0
+        for limit in (2, 4, 8):
+            t0 = _time.monotonic()
+            problems = mc.run_mutation(guard, guard.mutations[0], timeout=limit)
+            took = _time.monotonic() - t0
+            recorded = _pids(pidfile, wait=0)
+            if recorded:
+                break
         report = " | ".join(problems)
-        if not ("fixture: the mutant hangs timed out after" in report and "mutant-1459 started its grandchild" in report
-                and "limit 2s" in report and took < 20):
+        if not recorded:
+            FAILURES.append(f"#1459: the timed-out mutant never started its grandchild, even with {limit}s -- "
+                            f"the runner is too loaded to judge the group kill; got {problems!r}")
+        elif not ("fixture: the mutant hangs timed out after" in report and "mutant-1459 started its grandchild" in report
+                  and f"limit {limit}s" in report and took < limit + 18):
             FAILURES.append(f"#1459: a timed-out mutant must report guard, mutation, elapsed and its tail, "
                             f"promptly; got {problems!r} after {took:.0f}s")
         _tick()
-        grandchild = int(pidfile.read_text()) if pidfile.exists() else None
+        grandchild = recorded[0] if recorded else None
         gone = grandchild is not None
         for _ in range(20):
             try:

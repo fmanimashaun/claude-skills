@@ -507,6 +507,11 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("hook output budget", ("python3", "scripts/check_hook_output_budget.py")),
     ("hook output budget selftest",
      ("python3", "scripts/check_hook_output_budget.py", "--selftest")),
+    # #1575. A hook that spins blocks every Bash call, and a timeout that kills only the parent bash left
+    # its awk child computing for 51 minutes. The selftest proves the harness kills the WHOLE process
+    # group; the real-hook run (slow, load-sensitive) is a maintainer command, not a per-PR gate.
+    ("hook slow paths selftest",
+     ("python3", "scripts/hook_slow_paths.py", "--selftest")),
     # #1086. An agent's answer lands in the PARENT conversation and stays there for the rest of
     # the session -- a permanent tax, not a one-off cost like its own turns. 27 of 29 shipped
     # agents declared nothing about what they return. This checks the DECLARATION, not the
@@ -529,6 +534,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("close-on-dev-merge selftest", ("python3", "scripts/close_on_dev_merge.py", "--selftest")),
     ("vendored alone", ("python3", "scripts/check_vendored_alone.py")),
     ("vendored alone selftest", ("python3", "scripts/check_vendored_alone.py", "--selftest")),
+    # #1556. How a process-group fixture learns its gate's pids: atomically, and waited for.
+    ("pid record selftest", ("python3", "scripts/pid_record_selftest.py")),
 )
 
 # Gates that cannot run without the licensed corpora, so their absence is a SKIP rather than a

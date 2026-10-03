@@ -190,6 +190,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | hook commands survive a spaced path | `repo` | `python3 scripts/check_hook_commands.py` | live check |
 | hook output budget | `repo` | `python3 scripts/check_hook_output_budget.py` | live check |
 | hook output budget selftest | `repo` | `python3 scripts/check_hook_output_budget.py --selftest` | selftest |
+| hook slow paths selftest | `repo` | `python3 scripts/hook_slow_paths.py --selftest` | selftest |
 | inventory data selftest | `repo` | `python3 scripts/inventory_data.py --selftest` | selftest |
 | issue graph selftest | `repo` | `python3 scripts/issue_graph.py --selftest` | selftest |
 | maintainer doctor | `repo` | `python3 scripts/maintainer_doctor.py --selftest` | selftest |
@@ -208,6 +209,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | packaging determinism | `repo` | `python3 scripts/package_core.py --selftest` | selftest |
 | page pacing | `repo` | `python3 scripts/check_page_pacing.py` | live check |
 | page pacing selftest | `repo` | `python3 scripts/check_page_pacing.py --selftest` | selftest |
+| pid record selftest | `repo` | `python3 scripts/pid_record_selftest.py` | live check |
 | published blocks | `repo` | `python3 scripts/check_published_blocks.py` | live check |
 | published blocks selftest | `repo` | `python3 scripts/check_published_blocks.py --selftest` | selftest |
 | release notes complete | `repo` | `python3 scripts/extract_release_notes.py --check --all-tags` | live check |
