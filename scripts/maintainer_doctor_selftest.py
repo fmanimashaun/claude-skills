@@ -241,9 +241,14 @@ def timeout_fixtures() -> None:
         (scripts / "_hangs.py").write_text("import time\ntime.sleep(30)\n", encoding="utf-8")
         (scripts / "_fails.py").write_text(
             "import sys\nprint('a guard survived')\nsys.exit(1)\n", encoding="utf-8")
+        # mutation_check's two closing lines: the measurement, then the heaviest guards (#1497).
+        (scripts / "_slow_ok.py").write_text(
+            "print('mutation check: 9 mutation(s) across 2 guard(s), all caught (jobs=3, 7s)')\n"
+            "print('heaviest guards (seconds of work, all jobs): a 5s, b 2s')\n", encoding="utf-8")
         md.GATES = (("selftest slow", ("python3", "scripts/_slow.py")),
-                    ("selftest fails", ("python3", "scripts/_fails.py")))
-        md.SLOW_GATES = {"selftest slow": 1}
+                    ("selftest fails", ("python3", "scripts/_fails.py")),
+                    ("selftest slow ok", ("python3", "scripts/_slow_ok.py")))
+        md.SLOW_GATES = {"selftest slow": 1, "selftest slow ok": 60}
 
         d = md.Doctor()
         d.check_gates()
@@ -263,6 +268,13 @@ def timeout_fixtures() -> None:
         # satisfied by a doctor that reports everything as a skip -- which would hide the one
         # verdict that matters most on this gate.
         expect("a gate that RUNS and fails is still FAIL", d, "selftest fails", md.FAIL)
+        # Review of #1525: SLOW_GATES' note says to re-set the budget from `jobs=N, Xs` on this ok
+        # line, and the doctor kept the LAST line -- which became `heaviest guards`, without it.
+        ok = expect("a slow gate that passes is ok", d, "selftest slow ok", md.PASS)
+        _tick()
+        if ok is not None and "(jobs=3, 7s)" not in ok.detail:
+            FAILURES.append(f"a slow gate's ok line must carry its `(jobs=N, Xs)` measurement, which "
+                            f"SLOW_GATES is re-set from; got {ok.detail!r}")
         # ...and the summary must not tell anyone to fix a check that never ran.
         _tick()
         if any(x.status == md.FAIL and "slow" in x.name for x in d.results):
@@ -775,6 +787,145 @@ def run() -> int:
         os.environ.update(inherited)
     if rc != 0 or out.split()[-2:] != ["false", "0"]:
         FAILURES.append(f"#1510: a gate's git must see maintenance.auto=false and gc.auto=0, got rc={rc} {out!r}")
+
+    # #1459: a gate that times out takes its WHOLE process group with it. The gate starts a grandchild
+    # that would outlive a plain kill, prints a line, then hangs; Doctor.run must come back as a
+    # timeout (124, read as SKIP -- never a pass) carrying that line, and the grandchild must be gone.
+    # CONTROL: a plain kill of the direct child -- what subprocess.run does on a timeout -- leaves it running.
+    #
+    # #1556: the gate learns nothing by being killed before it has started, and on a loaded runner a
+    # one-second timeout can land before the gate has written its record -- or halfway through
+    # writing it, which read as `int('')` and turned a full mutation-coverage run red. So the record
+    # is written atomically (pid_record.write) AFTER the line is printed, the timed-out run is
+    # retried with a longer timeout only while the gate never got that far, and the control waits
+    # for the record before it kills, instead of racing a timeout.
+    import signal as _signal
+    import time as _time
+    import pid_record
+    with tempfile.TemporaryDirectory() as td:
+        def gate(record: Path) -> str:
+            return (pid_record.import_line(pid_record.HERE) +
+                    "import subprocess, sys, time\n"
+                    "g = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'])\n"
+                    "print('gate-1459 started its grandchild', flush=True)\n"
+                    f"pid_record.write({str(record)!r}, g.pid)\n"
+                    "time.sleep(120)\n")
+
+        def alive(pid: int) -> bool:
+            for _ in range(20):           # a killed process can take a moment to be reaped
+                try:
+                    os.kill(pid, 0)
+                except ProcessLookupError:
+                    return False
+                _time.sleep(0.1)
+            return True
+
+        _tick()
+        pidfile = Path(td) / "grandchild.pid"
+        for timeout in (1, 2, 4, 8):      # longer only while the gate never started: that is no verdict
+            started = _time.monotonic()
+            rc, out = md.Doctor().run(sys.executable, "-c", gate(pidfile), timeout=timeout)
+            took = _time.monotonic() - started
+            recorded_pids = pid_record.wait(pidfile, timeout=0)
+            if recorded_pids:
+                break
+        if not recorded_pids:
+            FAILURES.append(f"#1459: the timed-out gate never started its grandchild, even with {timeout}s "
+                            f"(rc={rc}) -- the runner is too loaded to judge the group kill: {out!r}")
+        elif rc != 124 or "gate-1459 started its grandchild" not in out or took > timeout + 19:
+            FAILURES.append(f"#1459: a timed-out gate must return 124 promptly with what it printed, "
+                            f"got rc={rc} after {took:.0f}s: {out!r}")
+        _tick()
+        if recorded_pids and alive(recorded_pids[0]):
+            os.kill(recorded_pids[0], _signal.SIGKILL)
+            FAILURES.append("#1459: a timed-out gate left its grandchild running -- the process group was not killed")
+        _tick()
+        # No pipes: the control only needs to show the grandchild survives a kill of its parent.
+        control_file = Path(td) / "control.pid"
+        plain = subprocess.Popen([sys.executable, "-c", gate(control_file)],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        control_pids = pid_record.wait(control_file, timeout=60)
+        plain.kill()                      # exactly what subprocess.run(timeout=...) does on expiry
+        plain.wait()
+        control_alive = False
+        if control_pids:
+            try:                  # one look: alive is the expected answer, so there is nothing to wait for
+                os.kill(control_pids[0], 0)
+                control_alive = True
+                os.kill(control_pids[0], _signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        if not control_pids:
+            FAILURES.append("#1459 CONTROL: the control gate wrote no record within 60s -- it never started")
+        elif not control_alive:
+            FAILURES.append("#1459 CONTROL: a plain kill of the gate should leave the grandchild "
+                            "running, or the check above proves nothing")
+
+    # Review of #1525, end to end through the doctor. (1) A gate whose OWN children go through
+    # proc_group.run -- mutation coverage's pool -- each in a session the gate's group kill never
+    # reached; one also starts a grandchild in a session of its own, as check_hook_gates' hooks do.
+    # (2) Ctrl-C while a gate runs: the gate is in a session of its own and never sees the
+    # terminal's SIGINT, so the doctor must kill it on the way out (review: 2 survivors, 0 on dev).
+    scripts_dir = str(Path(md.__file__).resolve().parent)
+    inner = (pid_record.import_line(pid_record.HERE) +
+             "import os, subprocess, sys, time\n"
+             "g = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'], start_new_session=True)\n"
+             "pid_record.write(sys.argv[1], os.getpid(), g.pid)\n"
+             "time.sleep(120)\n")
+
+    def recorded(*files: Path) -> list[int]:
+        return [pid for f in files for pid in pid_record.wait(f)]
+
+    def survivors(pids: list[int]) -> list[int]:
+        left = [p for p in pids if alive(p)]
+        for p in left:
+            try:
+                os.kill(p, _signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        return left
+
+    with tempfile.TemporaryDirectory() as td:
+        nested = ("import sys\n"
+                  f"sys.path.insert(0, {scripts_dir!r})\n"
+                  "import proc_group\n"
+                  "from concurrent.futures import ThreadPoolExecutor\n"
+                  f"inner = {inner!r}\n"
+                  "def one(i):\n"
+                  f"    proc_group.run([sys.executable, '-c', inner, {td!r} + f'/m{{i}}.pids'], timeout=300)\n"
+                  "with ThreadPoolExecutor(2) as p:\n"
+                  "    list(p.map(one, range(2)))\n")
+        _tick()
+        rc, out = md.Doctor().run(sys.executable, "-c", nested, timeout=6)
+        pids = recorded(Path(td) / "m0.pids", Path(td) / "m1.pids")
+        left = survivors(pids)
+        if rc != 124 or len(pids) != 4 or left:
+            FAILURES.append(f"#1459: a timed-out gate left a nested child running (rc={rc}; recorded "
+                            f"{len(pids)} of 4 pids; survivors {left})")
+
+        pidfile = Path(td) / "sigint.pids"
+        driver = Path(td) / "driver.py"
+        driver.write_text("import sys\n"
+                          f"sys.path.insert(0, {scripts_dir!r})\n"
+                          "import maintainer_doctor as md\n"
+                          f"md.Doctor().run(sys.executable, '-c', {inner!r}, {str(pidfile)!r}, timeout=300)\n",
+                          encoding="utf-8")
+        _tick()
+        d = subprocess.Popen([sys.executable, str(driver)], start_new_session=True,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        pids = recorded(pidfile)
+        os.kill(d.pid, _signal.SIGINT)
+        try:
+            d.wait(timeout=20)
+            exited = True
+        except subprocess.TimeoutExpired:
+            exited = False
+            d.kill()
+            d.wait()
+        left = survivors(pids)
+        if not exited or len(pids) != 2 or left:
+            FAILURES.append(f"#1459: Ctrl-C during a gate left it running (doctor exited: {exited}; recorded "
+                            f"{len(pids)} of 2 pids; survivors {left})")
 
     if FAILURES:
         print(f"SELFTEST FAILED -- {len(FAILURES)} of {CHECKS} checks:", file=sys.stderr)

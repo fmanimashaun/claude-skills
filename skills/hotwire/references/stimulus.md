@@ -50,7 +50,10 @@ JS.
   `config/importmap.rb` exists. Running it by hand in an importmap app
   *overwrites* `index.js` with those explicit registrations — the eager-load
   line is gone, auto-registration with it, and every controller you add after
-  that needs the task re-run. It is a downgrade, not a repair.
+  that needs the task re-run. It is a downgrade, not a repair. (This is the released
+  stimulus-rails 1.3.4. Unreleased `main`, since commit d247817 of 2025-02-27, appears to invert the
+  generator's skip condition, read from the code and not run: re-check it before relying on
+  "deliberately skips it" for a newer version.)
 - Inside a controller: `this.element`, `this.identifier`,
   `this.application`, `this.dispatch(...)` (§8).
 - **Two static registration hooks, both easy to miss.**

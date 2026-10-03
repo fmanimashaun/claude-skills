@@ -184,5 +184,30 @@ GUARD = Guard(
             'NAMED = re.compile(r"\\bname\\s*=", re.I)',
             "a name set through ERB makes a readonly input a posting field",
         ),
+        # #1458: the finding names the wrapper spelling (maintainer decision: keep refused).
+        Mutation(
+            'the collection finding no longer names the wrapper spelling',
+            '    if rule == "raw-builder-call" and method in WRAPPER_SPELLING:',
+            '    if False:',
+            '#1458: f.collection_check_boxes is still refused',
+        ),
+        Mutation(
+            'the two wrapper spellings are swapped',
+            'WRAPPER_SPELLING = {"collection_check_boxes": "as: :check_boxes", "collection_radio_buttons": "as: :radio_buttons"}',
+            'WRAPPER_SPELLING = {"collection_check_boxes": "as: :radio_buttons", "collection_radio_buttons": "as: :check_boxes"}',
+            '#1458: f.collection_check_boxes is still refused',
+        ),
+        Mutation(
+            'every raw builder call gets the collection remedy',
+            '    if rule == "raw-builder-call" and method in WRAPPER_SPELLING:\n        # The builder variable the template uses (`f`, `form`, …), so the advice is copyable as written.\n        return (f" — write `{builder or \'f\'}.input :attr, {WRAPPER_SPELLING[method]}, collection: …` so the "',
+            '    if rule == "raw-builder-call":\n        # The builder variable the template uses (`f`, `form`, …), so the advice is copyable as written.\n        return (f" — write `{builder or \'f\'}.input :attr, {WRAPPER_SPELLING.get(method, "as: :check_boxes")}, collection: …` so the "',
+            '#1458 CONTROL: another raw builder call gets no collection remedy',
+        ),
+        Mutation(
+            'the remedy hard-codes the f builder',
+            "{builder or 'f'}.input",
+            'f.input',
+            "#1458: the remedy uses the template's own builder variable",
+        ),
     ),
 )

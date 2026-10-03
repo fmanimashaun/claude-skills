@@ -116,8 +116,8 @@ and the reason is decisive:
 **Framework fact — verified, and it is the missing half of our rule: nothing in ActiveJob, Solid
 Queue, or turbo-rails guarantees the delivery order of two `_later` broadcasts to the same
 stream.** turbo-rails' broadcast jobs set no priority and no concurrency controls; Solid Queue's
-own README says of its concurrency primitive *"there's no guarantee about the order of execution"*
-and that retried jobs re-enter with no positional privilege. With `threads: 3` — the default — two
+own README says of its concurrency primitive *"there's no guarantee about the order of execution"*.
+With `threads: 3` — the default — two
 messages enqueued a millisecond apart can render and broadcast in either order. In a chat
 transcript that is a visible, user-reported bug.
 

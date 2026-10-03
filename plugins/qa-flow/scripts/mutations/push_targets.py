@@ -75,9 +75,115 @@ GUARD = Guard(
             '    for prefix in ("refs/",):',
             "'git push origin HEAD:heads/main': expected TARGETS main",
         ),
+        # #1542: a heredoc a `$( )` ended early still owes its delimiter.
+        Mutation(
+            "the delimiter owed after an early end is dropped, so `cat <<END` swallows the push",
+            "                return i + 1, owed",
+            "                return i + 1, []",
+            "'x=$(cat <<EOF\\n)\\ncat <<END\\nEOF\\n)\\ngit push origin main': expected TARGETS main",
+        ),
+        Mutation(
+            "a new heredoc opens while the delimiter is still owed",
+            ' and not cmd.startswith("<<<", i) and not owed:',
+            ' and not cmd.startswith("<<<", i):',
+            "'x=$(cat <<EOF\\n)\\ncat <<END\\nEOF\\n)\\ngit push origin main': expected TARGETS main",
+        ),
+        Mutation(
+            "the owed delimiter is never recognised, so heredocs stay shut for the rest of the command",
+            "                owed.pop(0)\n        if c == \"\\n\" and pending:",
+            "                pass\n        if c == \"\\n\" and pending:",
+            "git push origin main\\nEND\\ngit push origin fix/x': expected does not target main",
+        ),
+        Mutation(
+            "a heredoc that closed inside the substitution is still owed",
+            "                owed.pop(0)                      # the body closed inside the substitution",
+            "                pass                             # the body closed inside the substitution",
+            "'x=$(cat <<EOF\\nhi\\nEOF\\n)\\ncat <<END\\ngit push origin main\\nEND\\ngit push origin fix/x': expected does not target main",
+        ),
+        Mutation(
+            "a tab-indented delimiter of a `<<-` heredoc is not recognised once owed",
+            '            if (line.lstrip("\\t") if tabs else line) == delim:\n                owed.pop(0)\n        if c == "\\n" and pending:',
+            '            if line == delim:\n                owed.pop(0)\n        if c == "\\n" and pending:',
+            "'x=$(cat <<-EOF\\n)\\n\\tEOF\\n)\\ncat <<END\\ngit push origin main\\nEND\\ngit push origin fix/x': expected does not target main",
+        ),
+        # #1550: what a substitution runs is a command in its own right.
+        Mutation(
+            "substitution bodies are never read, so a push inside one passes",
+            "    for body in bodies:\n        yield from all_segments(body, depth + 1)",
+            "    for body in []:\n        yield from all_segments(body, depth + 1)",
+            "'x=$(git push origin main)': expected TARGETS main",
+        ),
+        Mutation(
+            "a double-quoted substitution's body is not collected",
+            "            if bodies is not None:\n                bodies.append(body)",
+            "            if False:\n                bodies.append(body)",
+            "'echo \"$(git push origin main)\"': expected TARGETS main",
+        ),
+        Mutation(
+            "a backtick substitution's body is not collected",
+            "            if bodies is not None:\n                bodies.append(cmd[i + 1:end - 1])",
+            "            if False:\n                bodies.append(cmd[i + 1:end - 1])",
+            "'x=`git push origin main`': expected TARGETS main",
+        ),
+        Mutation(
+            "an unquoted $( ), <( ) or >( ) body is not collected",
+            "            if bodies is not None:\n                bodies.append(cmd[i + 2:end - 1])",
+            "            if False:\n                bodies.append(cmd[i + 2:end - 1])",
+            "'diff <(git push origin main) /dev/null': expected TARGETS main",
+        ),
+        Mutation(
+            "a substitution body is read BEFORE the outer command, so its cd leaks into the outer push",
+            "    for seg in segments(tokens(cmd, bodies)):\n        yield seg",
+            "    _toks = tokens(cmd, bodies)\n    for body in bodies:\n        yield from all_segments(body, depth + 1)\n    for seg in segments(_toks):\n        yield seg",
+            "'x=$(cd other); git push': expected does not target main",
+        ),
+        # #1551: a quote in a heredoc body inside a substitution is text.
+        Mutation(
+            "a quote in a heredoc body opens a quote again, so one apostrophe is an unterminated substitution",
+            "        elif c in \"'\\\"\" and not in_body:",
+            "        elif c in \"'\\\"\":",
+            "'git commit -m \"$(cat <<\\'EOF\\'\\nit\\'s done\\nEOF\\n)\"\\ngit push origin fix/x': expected does not target main",
+        ),
+        Mutation(
+            "the body state is never set, so quotes open inside every body",
+            "            in_body = bool(owed)",
+            "            in_body = False",
+            "'x=$(cat <<EOF\\nsay \"hi\\nEOF\\n)\\ngit push origin fix/x': expected does not target main",
+        ),
+        # #1553: an unquoted heredoc delimiter makes the shell expand substitutions in the body.
+        Mutation(
+            "an unquoted heredoc's substitutions are never read",
+            '                if expands and bodies is not None:',
+            '                if False and bodies is not None:',
+            "'cat <<EOF\\n$(git push origin main)\\nEOF': expected TARGETS main",
+        ),
+        Mutation(
+            'a quoted delimiter is treated as unquoted, so a body that is text is read as commands',
+            '        return m.group(3), m.group(1) == "-", m.group(2) == "", m.end()',
+            '        return m.group(3), m.group(1) == "-", True, m.end()',
+            '"cat <<\'EOF\'\\n$(git push origin main)\\nEOF": expected does not target main',
+        ),
+        Mutation(
+            '<<\\EOF is not recognised as a heredoc',
+            '    m = HEREDOC_BACKSLASH.match(cmd, i)\n    if m:',
+            '    m = None\n    if m:',
+            "'cat <<\\\\EOF\\ngit push origin main\\nEOF': expected does not target main",
+        ),
+        Mutation(
+            'a backslash-escaped substitution in an unquoted body is read',
+            '        if c == "\\\\":\n            i += 2; continue\n        if c == "$" and text.startswith',
+            '        if False:\n            i += 2; continue\n        if c == "$" and text.startswith',
+            "'cat <<EOF\\n\\\\$(git push origin main)\\nEOF': expected does not target main",
+        ),
+        Mutation(
+            'backticks in an unquoted body are not read',
+            '        if c == "`":\n            j = i + 1',
+            '        if False:\n            j = i + 1',
+            "'cat <<EOF\\n`git push origin main`\\nEOF': expected TARGETS main",
+        ),
         Mutation(
             "heredoc bodies are tokenised again, so an apostrophe denies a feature push",
-            "            if m:\n                pending.append",
+            "            if op:\n                pending.append",
             "            if False:\n                pending.append",
             "it's done, push main later",
         ),
