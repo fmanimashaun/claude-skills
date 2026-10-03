@@ -41,6 +41,13 @@ pick gh's repository whatever the directory. That holds on the gh segment, behin
 assignment-only segment before it, by `export`, and in this process's environment, except GIT_EDITOR,
 which the harness sets and which cannot change gh's target. A `GIT_X=… git push` on an earlier SAFE
 command is that command's own environment: it does not persist to gh, so it is judged normally.
+HOME and XDG_CONFIG_HOME set BY THE COMMAND (gh segment, `env`, standalone, `export`) are the same: they
+move git's global config, whose `insteadOf` rewrites the remote (round 7). Inherited, they are judged.
+
+`git` and `gh` before the gh segment are SAFE only for listed subcommands: `git config`, `git remote
+set-url` and `gh repo set-default` rewrite what gh reads. A `git -c K=V` or `--config-env` is that git
+process's own and does not reach gh. A segment redirecting into a file (`echo … >> .git/config`) is not
+SAFE either; `/dev/null` and fds are.
 
 Everything else is exit 3 ("cannot tell"):
 - before the gh segment, once any segment is not SAFE: every segment that is not a plain `cd PATH` joined
@@ -66,7 +73,9 @@ ASSIGN = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*=")
 # A CLASS, not a list (#1516, round 6): GIT_DIR, GIT_WORK_TREE, GIT_COMMON_DIR, GIT_CONFIG_GLOBAL (insteadOf),
 # GIT_CONFIG_COUNT/KEY_n/VALUE_n, GIT_CONFIG_PARAMETERS and GH_REPO each send gh to another repository, and
 # naming them one at a time left the next one open. Any GIT_* or GH_* variable is "cannot tell".
-REPO_ENV = re.compile(r"\A(GIT|GH)_[A-Za-z0-9_]*=")
+# HOME and XDG_CONFIG_HOME SET BY THE COMMAND move git's global config, whose `insteadOf` can rewrite the remote
+# (#1516, round 7: `HOME=h gh …` reached B with real gh). Inherited, they are every session's own: not refused.
+REPO_ENV = re.compile(r"\A((GIT|GH)_[A-Za-z0-9_]*|HOME|XDG_CONFIG_HOME)=")
 # Proven not to change gh's target, with real gh (`gh browse -n` names the same repository with and without it),
 # and set by the Claude Code harness itself: without the exemption every PR would go unchecked.
 INHERITED_EXEMPT = {"GIT_EDITOR"}
@@ -76,7 +85,14 @@ CD_REDIRECTS = {">", ">>", ">&"}
 # External programs, which cannot change this shell's directory, and builtins that do not. Chosen for
 # what precedes a `gh pr create` in practice; a word not here before gh means "cannot tell".
 SAFE = {"git", "gh", "echo", "printf", "test", "[", "true", "false", ":", "cat", "ls", "grep", "head",
-        "tail", "wc", "sleep", "date", "pwd", "mkdir", "touch", "jq", "sed"}
+        "tail", "wc", "sleep", "date", "pwd", "mkdir", "touch", "jq"}
+# git and gh can REWRITE what gh reads (#1516, round 7, each shown with real gh): `git config [--global]
+# url.X.insteadOf Y`, `git remote set-url`, `gh repo set-default`. So only these subcommands are SAFE. A
+# `git -c K=V` / `--config-env=K=V` lives in that one git process and does not reach a later gh.
+GIT_SAFE_SUB = {"status", "log", "diff", "show", "add", "commit", "push", "fetch", "pull", "rev-parse",
+                "ls-files", "grep", "branch", "checkout", "switch", "stash", "tag", "restore", "describe"}
+GIT_OPTS = {"-c": 2, "-C": 2, "--no-pager": 1, "-P": 1}  # plus --config-env=… / --git-dir=… / --work-tree=…
+GH_SAFE_SUB = {"pr", "issue", "run", "auth", "api", "status", "search", "workflow"}
 META = set(" \t\n;&|()<>")
 
 
@@ -177,7 +193,7 @@ def _gh_segment(words: list[str]) -> bool:
     found = len(w) >= 3 and os.path.basename(w[0]) == "gh" and (
         (w[1] == "pr" and w[2] in ("create", "edit")) or (w[1] == "issue" and w[2] == "comment"))
     if found and any(REPO_ENV.match(x) for x in words[:len(words) - len(w)]):
-        raise Unresolved("a GIT_* / GH_* variable on the gh command can pick another repository")
+        raise Unresolved("a GIT_* / GH_* / HOME / XDG_CONFIG_HOME set on the gh command can pick another repository")
     return found
 
 
@@ -188,20 +204,33 @@ def _safe(seg: list[str]) -> bool:
         w.pop(0)
     if not w:                               # assignments alone persist in this shell, and so reach gh
         return not any(REPO_ENV.match(x) for x in seg)
+    if w[0] == "git":
+        a = w[1:]
+        while a and a[0].startswith("-"):
+            if a[0] in GIT_OPTS:
+                del a[:GIT_OPTS[a[0]]]
+            elif a[0].startswith(("--config-env=", "--git-dir=", "--work-tree=")):
+                a.pop(0)
+            else:
+                return False
+        return bool(a) and a[0] in GIT_SAFE_SUB
+    if w[0] == "gh":
+        return len(w) > 1 and w[1] in GH_SAFE_SUB
     return w[0] in SAFE
 
 
-def _judge(done: list[tuple[list[str], bool, str]], start: str, home: str) -> str:
-    if all(_safe(seg) for seg, _, _ in done):
+def _judge(done: list[tuple[list[str], bool, str, bool]], start: str, home: str) -> str:
+    # A segment that writes a file (`echo … >> .git/config`) can rewrite what gh reads: not SAFE.
+    if all(_safe(seg) and not writes for seg, _, _, writes in done):
         return start                        # nothing before gh can move the directory
     here = start
-    for seg, clean, sep in done:
+    for seg, clean, sep, _ in done:
         if sep not in SEPS or not clean:
             raise Unresolved(f"a segment joined by {sep!r}, or redirected, before gh")
         if not seg:
             continue                        # a blank line, a leading `;`
         if seg[0] != "cd":
-            raise Unresolved(f"`{seg[0]}` before gh, with a directory change in sight")
+            raise Unresolved(f"`{seg[0]}` before gh is neither a plain cd nor a SAFE command")
         here = _target(seg[1:], here, home)
     return here
 
@@ -212,10 +241,11 @@ def resolve(cmd: str, start: str, home: str) -> str:
     lex = shlex.shlex(prepare(cmd).replace("\n", " ; "), posix=True, punctuation_chars=";&|()<>")
     lex.whitespace_split = True
     lex.commenters = ""                     # prepare() has dropped the real comments
-    # The segments before gh: (words, only allowed cd redirects inside it, the separator after it).
-    done: list[tuple[list[str], bool, str]] = []
+    # The segments before gh: (words, only allowed cd redirects inside it, the separator after it, and
+    # whether it redirects into a file other than /dev/null or an fd).
+    done: list[tuple[list[str], bool, str, bool]] = []
     words: list[str] = []
-    clean, redirect = True, False
+    clean, redirect, writes = True, False, False
     try:
         for t in lex:                       # lazily: a quote left open AFTER the gh segment is never read
             if t and set(t) <= set(";&|()<>"):
@@ -224,11 +254,12 @@ def resolve(cmd: str, start: str, home: str) -> str:
                         clean = clean and op in CD_REDIRECTS
                         redirect = True
                     else:
-                        done.append((words, clean, op))
-                        words, clean, redirect = [], True, False
+                        done.append((words, clean, op, writes))
+                        words, clean, redirect, writes = [], True, False, False
                 continue
             if redirect:                    # the redirection's target, not an argument
                 redirect = False
+                writes = writes or not (t == "/dev/null" or t.isdigit() or t == "-")
                 continue
             words.append(t)
             if _gh_segment(words):

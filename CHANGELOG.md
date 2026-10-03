@@ -3678,6 +3678,13 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     `-R`/`--repo`. Two exceptions, each shown harmless with gh 2.97.0 (`gh browse -n` names the same
     repository): a `GIT_*=… git …` on an earlier allowlisted command, which is that command's own environment and
     does not reach `gh`; and an inherited `GIT_EDITOR`, which the Claude Code harness sets.
+  - **The config-redirecting family** (round 7), each probed with gh 2.97.0 (`gh browse -n`): `HOME` and
+    `XDG_CONFIG_HOME` SET BY THE COMMAND (on `gh`, behind `env`, standalone or by `export`) move git's global config,
+    whose `insteadOf` rewrites the remote, so they are "cannot tell"; inherited, they are judged normally. Before the
+    `gh`, `git` and `gh` are allowlisted only for listed subcommands, because `git config [--global] url.X.insteadOf`,
+    `git remote set-url` and `gh repo set-default` each sent `gh` to B. `git -c …` and `git --config-env=…` stay
+    judged normally: they live in that one git process. A segment that redirects into a file (`echo … >>
+    .git/config`) is not allowlisted, and `sed` left the allowlist (`sed -i`).
   - `check_hook_gates.py` goes from 375 checks on dev to 501. Run against dev's `guard-claims.sh`, 116 of the 126
     new ones fail; the 10 that pass are controls (no `cd`; `git push && gh` with no `cd`; allowlisted commands and an
     assignment before `gh`; other assignments before `gh`; a `GIT_*` on an earlier allowlisted command; an inherited

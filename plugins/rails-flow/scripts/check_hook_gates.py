@@ -1018,6 +1018,24 @@ def guard_claims_fixtures() -> None:
             ("R6 `GH_REPO`, folded into the class", "cd B_DIR && GH_REPO=o/r gh pr create --body-file BODY"),
             ("R6 `export GH_HOST=…;` before gh", "export GH_HOST=example.com; gh pr create --body-file BODY"),
             ("R6 `GH_HOST=…;` before gh", "GH_HOST=example.com; gh pr create --body-file BODY"),
+            # round 7: HOME / XDG_CONFIG_HOME set by the command move git's global config (insteadOf); the rest of
+            # the config-redirecting family, each shown with real gh 2.97.0 (`gh browse -n`)
+            ("R7 `HOME=… gh`", "HOME=B_DIR/h gh pr create --body-file BODY"),
+            ("R7 `XDG_CONFIG_HOME=… gh`", "XDG_CONFIG_HOME=B_DIR/x gh pr create --body-file BODY"),
+            ("R7 `env HOME=… gh`", "env HOME=B_DIR/h gh pr create --body-file BODY"),
+            ("R7 `HOME=…;` before gh", "HOME=B_DIR/h; gh pr create --body-file BODY"),
+            ("R7 `export HOME=…;` before gh", "export HOME=B_DIR/h; gh pr create --body-file BODY"),
+            ("R7 `export XDG_CONFIG_HOME=…;` before gh", "export XDG_CONFIG_HOME=B_DIR/x; gh pr create --body-file BODY"),
+            ("R7 `GIT_CONFIG_SYSTEM`", "GIT_CONFIG_SYSTEM=B_DIR/c gh pr create --body-file BODY"),
+            ("R7 `GIT_CONFIG_NOSYSTEM`", "GIT_CONFIG_NOSYSTEM=1 gh pr create --body-file BODY"),
+            ("R7 `GH_CONFIG_DIR`", "GH_CONFIG_DIR=B_DIR/g gh pr create --body-file BODY"),
+            ("R7 `git config --global …insteadOf` before gh", "git config --global url.b.insteadOf a && gh pr create --body-file BODY"),
+            ("R7 `git config …insteadOf` before gh", "git config url.b.insteadOf a; gh pr create --body-file BODY"),
+            ("R7 `git remote set-url` before gh", "git remote set-url origin b; gh pr create --body-file BODY"),
+            ("R7 `gh repo set-default` before gh", "gh repo set-default o/b && gh pr create --body-file BODY"),
+            ("R7 an unknown git option before gh", "git --exec-path=x status && gh pr create --body-file BODY"),
+            ("R7 a write into .git/config before gh", "echo x >> .git/config; gh pr create --body-file BODY"),
+            ("R7 `sed -i` on .git/config before gh", "sed -i.bak s/a/b/ .git/config; gh pr create --body-file BODY"),
             ("N1 `env -C/dir`", "env -CB_DIR gh pr create --body-file BODY"),
             ("N1 `env -iC dir`", "env -iC B_DIR gh pr create --body-file BODY"),
             ("N1 `env -C dir`", "env -C B_DIR gh pr create --body-file BODY"),
@@ -1088,6 +1106,16 @@ def guard_claims_fixtures() -> None:
     rc, out = run_in("gh pr create --body-file BODY", NEITHER, with_output=True, env_extra={"GH_HOST": "example.com"})
     check("guard-claims: GH_HOST inherited by the hook is NOT checked, with the notice (#1516 round 6)",
           rc == 0 and NOTICE in out, f"exit {rc}: {out[-140:]}")
+    # round 7: each of these is that process's own, so gh is judged normally (shown with real gh)
+    for label, cmd in (("an inherited HOME", "gh pr create --body-file BODY"),
+                       ("`git -c url…insteadOf=… status` before gh", "git -c url.b.insteadOf=a status && gh pr create --body-file BODY"),
+                       ("`git --config-env=…` before gh", "V=a git --config-env=url.b.insteadOf=V status && gh pr create --body-file BODY"),
+                       ("`HOME=… git status` before gh", "HOME=B_DIR/h git status && gh pr create --body-file BODY"),
+                       ("a redirect to /dev/null and an fd before gh", "git status >/dev/null 2>&1 && gh pr create --body-file BODY"),
+                       ("`gh pr view` before gh", "gh pr view 1 && gh pr create --body-file BODY")):
+        rc, out = run_in(cmd, NEITHER, with_output=True)
+        check(f"guard-claims: {label} is judged in the starting repo (control, #1516 round 7)",
+              rc == 2 and "## What changed" in out, f"exit {rc}: {out[-140:]}")
     rc, out = run_in("gh pr create --body-file BODY", NEITHER, with_output=True, env_extra={"GIT_EDITOR": "true"})
     check("guard-claims: an inherited GIT_EDITOR (the harness sets it) is still judged (control, #1516 round 6)",
           rc == 2 and "## What changed" in out, f"exit {rc}: {out[-140:]}")

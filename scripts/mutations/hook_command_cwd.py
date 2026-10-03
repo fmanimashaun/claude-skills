@@ -37,7 +37,7 @@ GUARD = Guard(
         ),
         Mutation(
             'every cd is ignored: the starting directory is always returned',
-            '    if all(_safe(seg) for seg, _, _ in done):',
+            '    if all(_safe(seg) and not writes for seg, _, _, writes in done):',
             '    if True:',
             "`cd B;` is followed to the cd target's template",
         ),
@@ -61,7 +61,7 @@ GUARD = Guard(
         ),
         Mutation(
             "a redirection's target counts as a cd argument",
-            "            if redirect:                    # the redirection's target, not an argument\n                redirect = False\n                continue\n",
+            '            if redirect:                    # the redirection\'s target, not an argument\n                redirect = False\n                writes = writes or not (t == "/dev/null" or t.isdigit() or t == "-")\n                continue\n',
             '',
             "a cd with its stdout redirected is followed to the cd target's template",
         ),
@@ -244,8 +244,8 @@ GUARD = Guard(
         ),
         Mutation(
             'GIT_WORK_TREE is not a repository-picking variable (round 5)',
-            'REPO_ENV = re.compile(r"\\A(GIT|GH)_[A-Za-z0-9_]*=")',
-            'REPO_ENV = re.compile(r"\\A(GIT_DIR)=")',
+            'REPO_ENV = re.compile(r"\\A((GIT|GH)_[A-Za-z0-9_]*|HOME|XDG_CONFIG_HOME)=")',
+            'REPO_ENV = re.compile(r"\\A(GIT_DIR|HOME|XDG_CONFIG_HOME)=")',
             'R5 `GIT_WORK_TREE=B gh` is NOT checked, with the notice',
         ),
         Mutation(
@@ -263,14 +263,14 @@ GUARD = Guard(
         Mutation(
             # Round 6: the GIT_* / GH_* class.
             'the prefix test narrows to GIT_ only (round 6)',
-            'REPO_ENV = re.compile(r"\\A(GIT|GH)_[A-Za-z0-9_]*=")',
-            'REPO_ENV = re.compile(r"\\A(GIT)_[A-Za-z0-9_]*=")',
+            'REPO_ENV = re.compile(r"\\A((GIT|GH)_[A-Za-z0-9_]*|HOME|XDG_CONFIG_HOME)=")',
+            'REPO_ENV = re.compile(r"\\A((GIT)_[A-Za-z0-9_]*|HOME|XDG_CONFIG_HOME)=")',
             'R6 `GH_HOST` (the class) is NOT checked, with the notice',
         ),
         Mutation(
             'the prefix test narrows back to a list (round 6)',
-            'REPO_ENV = re.compile(r"\\A(GIT|GH)_[A-Za-z0-9_]*=")',
-            'REPO_ENV = re.compile(r"\\A(GIT_DIR|GIT_WORK_TREE|GH_REPO|GH_HOST)=")',
+            'REPO_ENV = re.compile(r"\\A((GIT|GH)_[A-Za-z0-9_]*|HOME|XDG_CONFIG_HOME)=")',
+            'REPO_ENV = re.compile(r"\\A(GIT_DIR|GIT_WORK_TREE|GH_REPO|GH_HOST|HOME|XDG_CONFIG_HOME)=")',
             'R6 an arbitrary `GIT_FOO=1` (the class) is NOT checked, with the notice',
         ),
         Mutation(
@@ -284,6 +284,67 @@ GUARD = Guard(
             ' and k not in INHERITED_EXEMPT for k in os.environ):',
             ' for k in os.environ):',
             'an inherited GIT_EDITOR (the harness sets it) is still judged',
+        ),
+        Mutation(
+            # Round 7: the config-redirecting family.
+            'HOME set by the command is not refused (round 7)',
+            'REPO_ENV = re.compile(r"\\A((GIT|GH)_[A-Za-z0-9_]*|HOME|XDG_CONFIG_HOME)=")',
+            'REPO_ENV = re.compile(r"\\A((GIT|GH)_[A-Za-z0-9_]*|XDG_CONFIG_HOME)=")',
+            'R7 `HOME=… gh` is NOT checked, with the notice',
+        ),
+        Mutation(
+            'XDG_CONFIG_HOME set by the command is not refused (round 7)',
+            'REPO_ENV = re.compile(r"\\A((GIT|GH)_[A-Za-z0-9_]*|HOME|XDG_CONFIG_HOME)=")',
+            'REPO_ENV = re.compile(r"\\A((GIT|GH)_[A-Za-z0-9_]*|HOME)=")',
+            'R7 `XDG_CONFIG_HOME=… gh` is NOT checked, with the notice',
+        ),
+        Mutation(
+            'any git subcommand is SAFE (round 7)',
+            '        return bool(a) and a[0] in GIT_SAFE_SUB',
+            '        return True',
+            'R7 `git config --global …insteadOf` before gh is NOT checked, with the notice',
+        ),
+        Mutation(
+            'an unknown git option is skipped (round 7)',
+            '            else:\n                return False\n        return bool(a)',
+            '            else:\n                a.pop(0)\n        return bool(a)',
+            'R7 an unknown git option before gh is NOT checked, with the notice',
+        ),
+        Mutation(
+            '`git -c` takes no value (round 7)',
+            '                del a[:GIT_OPTS[a[0]]]',
+            '                a.pop(0)',
+            '`git -c url…insteadOf=… status` before gh is judged in the starting repo',
+        ),
+        Mutation(
+            '`--config-env=` is not a git option (round 7)',
+            '            elif a[0].startswith(("--config-env=", "--git-dir=", "--work-tree=")):',
+            '            elif a[0].startswith(("--git-dir=", "--work-tree=")):',
+            '`git --config-env=…` before gh is judged in the starting repo',
+        ),
+        Mutation(
+            'any gh subcommand is SAFE (round 7)',
+            '        return len(w) > 1 and w[1] in GH_SAFE_SUB',
+            '        return True',
+            'R7 `gh repo set-default` before gh is NOT checked, with the notice',
+        ),
+        Mutation(
+            'a segment writing a file is SAFE (round 7)',
+            '    if all(_safe(seg) and not writes for seg, _, _, writes in done):',
+            '    if all(_safe(seg) for seg, _, _, writes in done):',
+            'R7 a write into .git/config before gh is NOT checked, with the notice',
+        ),
+        Mutation(
+            'a redirect to /dev/null or an fd counts as a write (round 7)',
+            '                writes = writes or not (t == "/dev/null" or t.isdigit() or t == "-")',
+            '                writes = True',
+            'a redirect to /dev/null and an fd before gh is judged in the starting repo',
+        ),
+        Mutation(
+            'sed is SAFE again, so `sed -i` can rewrite .git/config (round 7)',
+            '"mkdir", "touch", "jq"}',
+            '"mkdir", "touch", "jq", "sed"}',
+            'R7 `sed -i` on .git/config before gh is NOT checked, with the notice',
         ),
     ),
 )
