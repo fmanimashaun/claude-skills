@@ -1243,5 +1243,26 @@ GUARD = Guard(
             '                    if True:\n                        continue',
             "a design-flow command linking into rails-stack's skills/ leaves its package",
         ),
+        Mutation(
+            # #1582
+            'uncontained-process-fixture accepts the import alone, so an unused helper passes',
+            '        if _CONTAIN_IMPORT.search(text) and _CONTAIN_WITH.search(text):',
+            '        if _CONTAIN_IMPORT.search(text):',
+            'uncontained-process-fixture / a selftest that imports the helper but never uses it',
+        ),
+        Mutation(
+            # #1582
+            'uncontained-process-fixture accepts any mention of contained(, so a comment passes',
+            '        if _CONTAIN_IMPORT.search(text) and _CONTAIN_WITH.search(text):',
+            '        if "contained(" in text:',
+            'uncontained-process-fixture / a selftest that only NAMES contained() in a comment',
+        ),
+        Mutation(
+            # #1582
+            'uncontained-process-fixture is not scoped to selftests, so every process-starting script is refused',
+            '        if "selftest" not in path.name:\n            continue\n        text = read(path)\n        if not _SPAWNS',
+            '        text = read(path)\n        if not _SPAWNS',
+            'uncontained-process-fixture / a non-selftest file that starts processes (out of scope)',
+        ),
     ),
 )
