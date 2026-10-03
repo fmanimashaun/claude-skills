@@ -9,6 +9,8 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **A harness that times `guard-bash.sh` per process group and kills the whole group on a deadline — `scripts/hook_slow_paths.py`, `scripts/mutations/hook_slow_paths.py`** (Refs #1575). A first attacker run killed only the parent `bash` and left its `awk` child computing; the orphans ran 51 minutes. Measured on `9a3d9dc`: 500 chained `echo hi;` inside `bash -c` cost 5.9 CPU-seconds and 1000 cost 40.6; 1000 lines of `echo $(true) N` cost 25.5. Each case runs in its own session and a deadline `killpg`s the group; the check is a ratchet both ways (an unmarked case over its CPU bound fails, and a case marked known-slow that got fast fails as a stale marker). The selftest forks a sleeper under a hung stub and asserts it is dead; four mutations, one per branch, each caught. Only the selftest is a doctor gate: the real run takes minutes and is load-sensitive, so a maintainer runs `python3 scripts/hook_slow_paths.py`. Our own design; no framework claim.
+
 (Maintainer-only; the version is assigned at promotion.)
 
 - **A shipped plugin's or skill's link may not leave what ships with it — `scripts/lint_self_consistency.py`** (#1480). New rule `link-leaves-package`: each plugin and each skill installs alone, so a relative link that climbs out of `plugins/<name>/` or `skills/<name>/` names a path an install does not have, even when it resolves in this clone. `broken-relative-link` covers only `docs/**`, which is why these were not reported mechanically. On dev it found 6; all are fixed in this change. Selftest scenarios both ways; the guard gains a mutation.
@@ -16674,6 +16676,8 @@ boot/validation path — with a bullet each so the promotion could close them se
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
 ### Unreleased
+
+- **The quality-pass worked example's count of `check(label, ok, detail)` harness copies is 42, not 41 — `skills/quality-pass/references/worked-example.md`** (Refs #1575). `scripts/hook_slow_paths.py` adds a selftest with that helper, and `scripts/check_shared_shapes.py` refused the stale number ("the table says 41, the repo has 42"). The number is re-measured, not the decision: the worked example's call not to extract is unchanged. Our own design; no framework claim.
 
 - **The design-system skill names hotwire's production reference in prose — `skills/design-system/references/interaction-stimulus.md`, `dist/design-system.skill`** (#1480, found by its new rule). Each skill ships as its own `.skill`, so the `../../hotwire/...` link broke once uploaded. A link change only; no doctrine claim changes.
 
