@@ -29,6 +29,8 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 - **The maintainer mirror of `parallel-session-lane` carries the references its SKILL.md links — `scripts/build_maintainer_skills.py`, `.claude/skills/parallel-session-lane/references/`** (#1481). The mirror copied only `SKILL.md`, so its four links to `references/reading-a-list.md` and `references/session-identity.md` resolved to nothing. Both references are now in `MIRRORED` (a reference gets its banner on top, having no frontmatter to protect), and the drift gate covers them. The selftest now checks that every relative link in a mirrored SKILL.md lands on a mirrored file; mutations removing a mirrored reference or its banner are caught (7/7). The `SKILL.md` diff the issue saw is the generated banner, by design. Review follow-up (PR #1536): the stray check now reads EVERY file under a shipped skill's `.claude/skills/` directory, not only `SKILL.md`, so a hand-copied reference, a references-only directory or a reference orphaned from `MIRRORED` fails `--check`; the selftest gains reference drift, reference-unstaged and stray-reference arms, and the guard 9/9 caught.
 
+- **The Phase 0 graph check reads a tracker larger than its first page, instead of refusing every run — `scripts/issue_graph.py`, `scripts/mutations/issue_graph.py`** (#1573). The default bound was 500, a full page is an error by design (#211), and the tracker passed 500: measured on the live tracker, 543 issues, `origin/dev` answered "gh returned 500 issues for --limit 500: the page is full" to every `--ready`, and the commands that run it were told to go out of order or work around it. The refusal is right and stays; the bound was the bug. A full page now retries with a doubled bound up to a cap of 16000, and only a page still full at the cap is refused; the first bound is 1000, so the usual run is still one call. A tracker exactly the size of a bound reads as full and grows once more, which is the cost of never guessing. The bounds are a list computed up front and cut at 32 steps. A first version hung on `--limit 0`, found in review: doubling 0 or a negative number never reaches the cap. A bound below 1 is now refused by the ladder and at argument parsing (exit 2 with a sentence naming the minimum, as `origin/dev` did), tested under a timeout so a regression fails instead of hanging the selftest; measured, the previous head was killed after 8 s on `--limit 0` and this branch exits 2. The truncation selftest now fakes `gh` honestly, returning at most `--limit` issues and recording the bounds asked, because a fake that ignored `--limit` would read a retried page as short and prove nothing: a tracker over the cap is refused, one exactly the cap is refused, one past the first page is read in full by one retry, one exactly the first bound is read in full, a short page is one call. Guard mutations for the refusal removed, a short page never recognised, no growth, a full page taken as complete, the caller's bound ignored, a bound below 1 no longer refused by the ladder, and `--limit` accepting zero again, each caught by its intended fixture. Our own design; no framework claim.
+
 ### 2026-10-02 (release v1.153.0)
 
 - **A primitive marker never excuses a form, excuses one instance, and is reported when unused — `scripts/check_shipped_erb_forms.py`, `scripts/mutations/check_shipped_erb_forms.py`** (#1460).
@@ -3612,6 +3614,32 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 - **`guard-bash.sh` allowed `git add -A` and a force-push to dev when the command carried more than ~64KB of text — `plugins/rails-flow/hooks/scripts/guard-bash.sh`, `plugins/rails-flow/scripts/check_hook_gates.py`** (Refs #1568). `hit()` and the issue-create trigger piped `printf` into `grep -q` under `set -o pipefail`; `grep -q` exits at the first match, `printf` takes SIGPIPE once the text outgrows the pipe buffer, and the 141 was read as "no match". Measured on `origin/dev` 914338e: `git add -A` plus 10k lines of `echo` exited 0 (1k lines exited 2). Both pipelines now run with pipefail off in a subshell, so only grep's own status decides. Three fixtures (add -A, force-push to dev, and a `git status` control, each followed by 10k lines); reverting the fix turns the first two red and leaves the control green. Four further fail-opens found by the same adversarial pass are filed, not fixed here. Our own design; no framework claim.
 
+- **`guard-bash`'s label check closes five #1489 edge cases — `plugins/rails-flow/hooks/scripts/lib/issue_labels.py`,
+  `plugins/rails-flow/hooks/scripts/guard-bash.sh`, `plugins/rails-flow/scripts/check_hook_gates.py`,
+  `scripts/mutations/hook_issue_labels.py`, `scripts/mutations/hook_guard_bash.py`** (#1495). On dev, six shapes were
+  allowed that should be refused, and two valid labels were refused. Each was measured through the real hook.
+  - A `cd` to a directory that does not exist fails and changes nothing, so `cd nope; bash < bad.sh` reads the
+    session's `bad.sh`. A `cd` inside `( )` holds until the `)`, so `(cd sub && bash < only.sh)` reads `sub/only.sh`.
+    Known over-refusal: in `cd nope && bash < bad.sh` bash never runs, but the command is still refused.
+    A `cd` in the background or a pipeline (`cd sub &`, `cd sub | …`) runs in a subshell and is not followed. A
+    `cd`'s own redirect (`cd sub &>/dev/null`) is not an argument. **A relative script after a `cd` this hook
+    cannot follow (`cd $X`, `cd -`, `pushd`) is now refused**, with "give the script an absolute path". Before, it
+    was allowed as unknown. That is the #1513 review's call, applying #1423's owner rule (refuse what cannot be
+    label-checked).
+  - The trigger drops `$` with the quotes, so `gh issue $'create'` reaches the helper. It also fires on any `$'…'`
+    holding an escape, which can spell `create`, `issue` or `gh` (`gh issue $'\x63reate'`, `$'\x67h' issue create`).
+  - `$'…'` decodes bash's full escape set (`\xHH`, `\NNN`, `\uHHHH`, `\UHHHHHHHH`, `\cX`, `\e`, …), so
+    `-l $'\x66eature'` is the label `feature`.
+  - In a short-option bundle, each `o`/`O` takes a value, wherever it sits: `-eo pipefail`, `-ox pipefail`,
+    `-Oe extglob`.
+  - `2>&1`, `<&0`, `>&log` and `&>log` are kept as one redirect instead of splitting at `&`. A redirect glued to
+    the shell or to `<` (`bash>/dev/null<f`, `bash 2>&1<f`) is cut out. That applies to the helper and to the
+    trigger.
+  - 31 real-hook cases (21 refusals, 10 controls) and 29 helper selftest cases, including every `_ansi_escape`
+    branch. 17 new mutations (13 `hook_issue_labels`, 4 `hook_guard_bash`). 7 existing ones were re-pointed, and
+    1 was dropped as a duplicate of the new redirect-split mutation.
+  - Filed from the #1513 review, as gaps on dev too: #1515 (script operands, `source`, `cat f | bash`, indirect
+    `gh`, `gh api` POSTs).
 - **guard-bash fails closed when its normaliser cannot read the command — `plugins/rails-flow/hooks/scripts/guard-bash.sh`, `plugins/rails-flow/hooks/scripts/lib/normalize_cmd.sh`** (#1526, from PR #1519's review). Inputs that left the hook unable to read the command let every rule pass, so `git add -A` was allowed, against CLAUDE.md's "blocked either way":
   - **a missing or failing tool**: no `awk` made the normaliser print nothing. `normalize_segments` now RETURNS its pipeline's status (it was discarded, so even an awk exiting 2 read as clean), and the hook runs it under `pipefail`;
   - **no `python3`, or a payload that would not parse** (including a lone surrogate): the hook had only the raw JSON;
