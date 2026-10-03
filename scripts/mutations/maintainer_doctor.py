@@ -204,9 +204,9 @@ GUARD = Guard(
         ),
         # #1581, review of #1596: a PART of the split hook harness with no gate never runs.
         Mutation(
-            "the release half of the hook gates is dropped from GATES, so the doctor never runs it",
-            '    ("hook gates (release)", ("python3", "plugins/rails-flow/scripts/check_hook_gates.py", "--selftest", "--part", "b")),\n',
-            '',
+            "the release gate runs part a again, so part b of the hook harness has no gate and the doctor never runs it",
+            '"--selftest", "--part", "b")),',
+            '"--selftest", "--part", "a")),',
             "has no gate in GATES",
         ),
     ),
