@@ -3766,8 +3766,15 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     session's own repository, a subdirectory or a symlink of it is still held in full. The cost: an UNSTAGED `skills/`
     change in another repository is no longer seen, which `gh pr create` would not publish anyway. Not done: the
     session's own repository is still read unsandboxed, as on dev.
-  - `check_hook_gates.py` goes from 409 checks on dev (`464ecef`) to 560, so 151 are new. Run against dev's
-    `guard-claims.sh`, 133 of the 151 fail, all of them in guard-claims; the 18 that pass are controls, listed by name
+  - **A large diff no longer reads as "no `skills/` change"** (a third push security review; the class of #1579).
+    `git diff --name-only | grep -q '^skills/'` under `set -o pipefail` loses the match once the name list outgrows the
+    pipe buffer: `grep -q` leaves at the first hit, `git` dies of SIGPIPE, the pipeline reports failure and the gate
+    lets a `skills/` PR through with no change type declared. Measured with 6000 staged files (363 KiB): 5 misses in 5
+    tries with `pipefail`, 5 hits in 5 without. `skills_in_diff` now collects the names first and matches them with a
+    shell `case`, so there is no pipe. The five other `printf … | grep -q` lines in `guard-claims.sh` read the command
+    text, not a diff, and stay with #1579.
+  - `check_hook_gates.py` goes from 409 checks on dev (`464ecef`) to 562, so 153 are new. Run against dev's
+    `guard-claims.sh`, 135 of the 153 fail, all of them in guard-claims; the 18 that pass are controls, listed by name
     from a run that logged every check: no `cd`; `git push && gh` with no `cd`; allowlisted commands and an assignment
     before `gh`; a logical `cd link/..`; `-R` after a `cd`; other assignments before `gh`; a `GIT_*` on an earlier
     allowlisted command; an inherited `GIT_EDITOR`; the session's own `skills/` diff without a `cd`; the cd-target
@@ -3775,7 +3782,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     (an inherited `HOME`; `git -c url…insteadOf=…` and `git --config-env=…` before `gh`; `HOME=… git status` before
     `gh`; a redirect to `/dev/null` and an fd before `gh`; `gh pr view` before `gh`); and the two "no code runs from the
     target" checks, which dev's hook passes only because it never ran `git` in the target. `hook_guard_claims` goes
-    from 11 mutations to 23 (all 23 caught by their expected fixture, run on this branch), and the new
+    from 11 mutations to 24 (all 24 caught by their expected fixture, run on this branch), and the new
     `hook_command_cwd` guard carries 53 (43 before round 7; all 53 were caught on the merged tree at `b6999b6`, and the
     full gate run covers both guards on the final head).
 
