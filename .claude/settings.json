@@ -14,5 +14,28 @@
   },
   "enabledPlugins": {
     "remember@claude-plugins-official": false
+  },
+  "permissions": {
+    "allow": [
+      "Bash(git fetch)",
+      "Bash(git fetch origin)",
+      "Bash(git fetch -q origin)",
+      "Bash(git fetch origin --tags)",
+      "Bash(git fetch -q origin --tags)",
+      "Bash(git merge-base *)",
+      "Bash(git merge-tree *)",
+      "Bash(git ls-tree *)",
+      "Bash(sysctl -n vm.loadavg)",
+      "Bash(bin/rails routes)",
+      "Bash(python3 scripts/lint_table_standard.py)",
+      "Bash(python3 scripts/lint_unpaginated_lists.py)",
+      "Bash(gh label list *)",
+      "Bash(pg_isready)",
+      "Bash(python3 scripts/lint_self_consistency.py)",
+      "Bash(gh search *)",
+      "Bash(python3 scripts/maintainer_doctor.py --gates-only --fast)",
+      "mcp__playwright__browser_take_screenshot",
+      "mcp__chrome-devtools__take_screenshot"
+    ]
   }
 }

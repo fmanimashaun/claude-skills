@@ -9,6 +9,8 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
+- **A shared, read-only permission allowlist for maintainer sessions — `.claude/settings.json`**. Nineteen exact or narrow rules for the commands sessions ran most (fetches, `git merge-base`/`merge-tree`/`ls-tree`, the load check, the repo's own lints and the `--fast` sweep, two screenshot tools). No rule can run arbitrary code: `git fetch *` and `git grep *` were dropped because `--upload-pack` and `-O` execute a program, and no interpreter, `gh api *` or task-runner wildcard is listed. Built with `/fewer-permission-prompts` from session transcripts. Our own design; no framework claim.
+
 - **A harness that times `guard-bash.sh` per process group and kills the whole group on a deadline — `scripts/hook_slow_paths.py`, `scripts/mutations/hook_slow_paths.py`** (Refs #1575). A first attacker run killed only the parent `bash` and left its `awk` child computing; the orphans ran 51 minutes. Measured on `9a3d9dc`: 500 chained `echo hi;` inside `bash -c` cost 5.9 CPU-seconds and 1000 cost 40.6; 1000 lines of `echo $(true) N` cost 25.5. Each case runs in its own session and a deadline `killpg`s the group; the check is a ratchet both ways (an unmarked case over its CPU bound fails, and a case marked known-slow that got fast fails as a stale marker). The selftest forks a sleeper under a hung stub and asserts it is dead; four mutations, one per branch, each caught. Only the selftest is a doctor gate: the real run takes minutes and is load-sensitive, so a maintainer runs `python3 scripts/hook_slow_paths.py`. Our own design; no framework claim.
 
 (Maintainer-only; the version is assigned at promotion.)
