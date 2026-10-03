@@ -422,7 +422,7 @@ def collect_worktrees(env: Env, root: Path, integration: str) -> dict:
 
 
 def collect_issue_count(env: Env, repo: Repo) -> dict:
-    rc, out = repo.gh(env, ["issue", "list", "--state", "open", "--limit", str(ISSUE_LIMIT), "--json", "number,labels"])
+    rc, out = repo.gh(env, ["issue", "list", "--state", "open", "--limit", str(ISSUE_LIMIT), "--json", "number,title,labels"])
     data = _json(out) if rc == 0 else None
     if not isinstance(data, list):
         return unknown(say("unknown.budget") if rc == 124 else say("unknown.gh"))
@@ -573,7 +573,7 @@ def collect_lines(env: Env, repo: Repo, cfg: dict, issues: dict) -> dict:
         skip = set(ln.get("exclude_labels") or [])
         blockers = [i for i in issues["items"] if not skip & {(lb or {}).get("name") for lb in i.get("labels") or []}]
         out.append({"name": str(ln["name"]), "blockers": len(blockers), "partial": bool(issues.get("partial")),
-                    "steps": [{"n": b.get("number"), "state": "blocked"} for b in blockers[:6]],
+                    "steps": [{"n": b.get("number"), "title": str(b.get("title") or ""), "state": "blocked"} for b in blockers[:6]],
                     "next": str(ln.get("next") or "")})
     return panel("ok", "", items=out)
 
@@ -741,7 +741,10 @@ body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.45 v
 .span-12 { grid-column: span 12; } .span-8 { grid-column: span 8; } .span-7 { grid-column: span 7; }
 .span-5 { grid-column: span 5; } .span-4 { grid-column: span 4; }
 @media (max-width: 1100px) { .span-8, .span-7, .span-5, .span-4 { grid-column: span 12; } }
-@media (max-width: 640px) { .body { grid-template-columns: 0 1fr 0; } .rows { visibility: hidden; } .grid { padding: 12px; gap: 14px; } }
+@media (max-width: 640px) { .body { grid-template-columns: 0 1fr 0; } .rows { visibility: hidden; } .grid { padding: 12px; gap: 14px; }
+  table { min-width: 0; } thead { display: none; } tbody tr { display: block; border-bottom: 1px solid var(--rule); padding: 4px 0; }
+  td { display: grid; grid-template-columns: 76px 1fr; gap: 0 8px; border-bottom: 0; padding: 3px 10px; }
+  td::before { content: attr(data-label); font: 11px var(--f-mono); color: var(--muted); } }
 .mono { font-family: var(--f-mono); font-size: .86em; font-variant-numeric: tabular-nums; }
 .muted { color: var(--muted); } .mark { white-space: nowrap; font-weight: 500; }
 .m-ok { color: var(--green); } .m-bad { color: var(--red); } .m-run { color: var(--blue); } .m-wait { color: var(--amber); } .m-idle { color: var(--muted); }
@@ -821,7 +824,7 @@ def render_lines(board: dict) -> str:
     return '<div class="lines">' + "".join(
         f'<div class="line"><div class="line-h"><b>{_e(l["name"])}</b>'
         f'<span class="cnt">{_e(_count(l["blockers"], l["partial"]))} blocking</span></div>'
-        f'<ul>{"".join(f"<li>{mark(s["state"])} #{_e(str(s["n"]))}</li>" for s in l["steps"])}</ul>'
+        f'<ul>{"".join(f"<li>{mark(s['state'])} #{_e(str(s['n']))} {_e(s.get('title', ''))}</li>" for s in l["steps"])}</ul>'
         + (f'<div class="nx">{_e(l["next"])}</div>' if l["next"] else "") + "</div>" for l in p["items"]) + "</div>"
 
 
@@ -834,12 +837,12 @@ def render_prs(board: dict) -> str:
     if not p["items"]:
         return f'<div class="pb"><div class="empty">{_e(say("empty.prs"))}</div>{miss}</div>'
     rows = "".join(
-        "<tr><td class=\"mono\">"
+        "<tr><td class=\"mono\" data-label=\"PR\">"
         + (f'<a href="{_e(i["url"], quote=True)}">#{_e(str(i["n"]))}</a>' if i["url"].startswith("https://") else f"#{_e(str(i['n']))}")
-        + f'<span class="sub">{_e(i["repo"])}</span></td><td>{_e(i["title"])}</td><td class="mono">{_e(i["author"])}</td>'
-        f'<td>{mark(i["review"]["state"])}'
+        + f'<span class="sub">{_e(i["repo"])}</span></td><td data-label="Title">{_e(i["title"])}</td><td class="mono" data-label="Author">{_e(i["author"])}</td>'
+        f'<td data-label="Review">{mark(i["review"]["state"])}'
         + (f'<span class="sub">{_e(i["review"]["head"])}</span>' if i["review"].get("head") else "")
-        + f'</td><td>{mark(i["run"]["state"])}<span class="sub">{_e(i["head"])}</span></td><td>{_e(i["next"])}</td></tr>'
+        + f'</td><td data-label="Full run">{mark(i["run"]["state"])}<span class="sub">{_e(i["head"])}</span></td><td data-label="Next">{_e(i["next"])}</td></tr>'
         for i in p["items"])
     return ('<div class="pb tbl"><table><thead><tr><th>PR</th><th>Title</th><th>Author</th><th>Review</th>'
             f'<th>Full run</th><th>Next</th></tr></thead><tbody>{rows}</tbody></table>{miss}</div>')

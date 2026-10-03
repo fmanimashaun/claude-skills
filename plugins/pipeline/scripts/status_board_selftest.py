@@ -79,7 +79,7 @@ class World:
         self.on(["git", "merge-base", "--is-ancestor", "1" * 40, "origin/dev"], "", cwd=r)
         self.on(["git", "-C", r, "status", "--porcelain"], "")
         self.gh_set(["pr", "list", "--state", "open", "--limit", "100", "--json", PR_FIELDS], [])
-        self.gh_set(["issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels"], [])
+        self.gh_set(["issue", "list", "--state", "open", "--limit", "200", "--json", "number,title,labels"], [])
         self.gh_set(["pr", "list", "--state", "merged", "--search", "merged:>=2026-10-03", "--limit", "50",
                      "--json", "number,title,mergedAt"], [])
 
@@ -232,10 +232,10 @@ def measured_panels(tmp: Path) -> None:
     w = w_with(tmp, "panels")
     w.config({"release_lines": [{"name": "v1.2.0", "exclude_labels": ["post-launch", "v1.3.0"], "next": "Close the blockers."},
                                 {"name": "v1.3.0", "exclude_labels": []}]})
-    w.gh_set(["issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels"],
-             [{"number": 1, "labels": [{"name": "bug"}]}, {"number": 2, "labels": [{"name": "post-launch"}]},
-              {"number": 3, "labels": [{"name": "v1.3.0"}]}, {"number": 4, "labels": []},
-              {"number": 5, "labels": [{"name": "bug"}, {"name": "post-launch"}]}])
+    w.gh_set(["issue", "list", "--state", "open", "--limit", "200", "--json", "number,title,labels"],
+             [{"number": 1, "title": "Issue one", "labels": [{"name": "bug"}]}, {"number": 2, "title": "Issue two", "labels": [{"name": "post-launch"}]},
+              {"number": 3, "title": "Issue three", "labels": [{"name": "v1.3.0"}]}, {"number": 4, "title": "Issue four", "labels": []},
+              {"number": 5, "title": "Issue five", "labels": [{"name": "bug"}, {"name": "post-launch"}]}])
     r = str(w.root)
     w.on(["git", "worktree", "list", "--porcelain"],
          f"worktree {r}\nHEAD {'1' * 40}\nbranch refs/heads/dev\n\n"
@@ -261,6 +261,9 @@ def measured_panels(tmp: Path) -> None:
     check("a release line counts open issues without its excluded labels", ln["v1.2.0"]["blockers"] == 2
           and [s["n"] for s in ln["v1.2.0"]["steps"]] == [1, 4], str(ln["v1.2.0"]))
     check("a line with no excluded label counts every open issue", ln["v1.3.0"]["blockers"] == 5)
+    check("a release line step names its issue by number and title, in the record and on the page",
+          ln["v1.2.0"]["steps"][0]["title"] == "Issue one" and "#1 Issue one" in sb.render_html(b)
+          and "#2 Issue two" not in sb.render_html(b).split("v1.3.0")[0], str(ln["v1.2.0"]["steps"][:1]))
     wt = {i["branch"]: i for i in items(b, "worktrees")}
     check("a worktree is finished only when merged AND clean", wt["fix/done"]["finished"] is True
           and wt["fix/dirty"]["finished"] is False and wt["fix/dirty"]["merged"] is True
@@ -353,7 +356,7 @@ def unknown_not_zero(tmp: Path) -> None:
 def bounded_counts(tmp: Path) -> None:
     w = w_with(tmp, "many")
     w.gh_set(["pr", "list", "--state", "open", "--limit", "100", "--json", PR_FIELDS], [pr(n) for n in range(1, 101)])
-    w.gh_set(["issue", "list", "--state", "open", "--limit", "200", "--json", "number,labels"],
+    w.gh_set(["issue", "list", "--state", "open", "--limit", "200", "--json", "number,title,labels"],
              [{"number": n, "labels": []} for n in range(200)])
     w.config({"release_lines": [{"name": "r"}]})
     b = w.board()
@@ -412,7 +415,7 @@ def coordination(tmp: Path) -> None:
     w.record({"version": 1, "coordinator": coord, "sessions": {"/w/c": {**crow, "updated": "2026-10-03T17:55Z"}, "/w/a": row}})
     sess = items(w.board(), "sessions")
     check("session rows are keyed by worktree path: one row per path, each with its repo",
-          [s["path"] for s in sess] == ["/w/a", "/w/c"] and {s["repo"] for s in sess} == {"single"} or True)
+          [s["path"] for s in sess] == ["/w/a", "/w/c"] and {s["repo"] for s in sess} == {"single"}, str(sess))
     check("the same name on two paths is two rows", len({s["path"] for s in sess}) == 2)
     row2 = {**row, "name": None}
     w.record({"version": 1, "coordinator": None, "sessions": {"/w/a": row2}})
@@ -562,9 +565,14 @@ def the_page(tmp: Path) -> None:
     check("the body has an explicit background", re.search(r"body \{[^}]*background: var\(--paper\)", page) is not None)
     check("phone width: a 16px gutter, a narrow breakpoint, and tables scroll inside their own box",
           "padding-inline: 16px" in page and "@media (max-width: 640px)" in page and ".tbl { overflow-x: auto; }" in page)
-    check("a hard-coded colour appears only in the theme blocks",
-          len(re.findall(r"#[0-9a-fA-F]{6}\b", re.sub(r":root[^{]*\{[^}]*\}", "", page.split("</style>")[0].replace("@media (prefers-color-scheme: dark) {", "")))) == 0
-          or True)
+    labels = re.findall(r'<td[^>]*data-label="([^"]+)"', page)
+    check("on a phone each table cell carries its column name, and the header row is hidden",
+          labels[:6] == ["PR", "Title", "Author", "Review", "Full run", "Next"] and "thead { display: none; }" in page
+          and "attr(data-label)" in page, str(labels[:6]))
+    css = re.sub(r'@media \(prefers-color-scheme: dark\) \{ :root:not\(\[data-theme="light"\]\) \{[^}]*\} \}', "", sb.CSS)
+    css = re.sub(r":root[^{]*\{[^}]*\}", "", css)
+    check("a hard-coded colour appears only in the theme blocks (everything else uses a token)",
+          re.findall(r"#[0-9a-fA-F]{3,8}\b", css) == [] and "var(--ink)" in css, str(re.findall(r"#[0-9a-fA-F]{3,8}\b", css)[:5]))
     check("the drawing sheet has its zone frame: zones 1 to 8 top and bottom, rows A to D left and right",
           page.count('<div class="zones') == 2 and all(f"<span>{i}</span>" in page for i in range(1, 9))
           and page.count('<div class="rows') == 2)
@@ -572,7 +580,7 @@ def the_page(tmp: Path) -> None:
         check(f"panel {letter} is drawn with its heading", f'<span class="tab">{letter}</span><h2 id="h-{letter}">{head_}</h2>' in page)
     check("the title block carries title, repositories, mode, updated, commit and sheet",
           all(x in page for x in ("Title", "Repositories", "Mode", "Updated", "Commit", "Sheet", "1 of 1", "abc1234", "2026-10-03T18:00Z")))
-    check("a status is a glyph AND a word, never a color alone", "✓ Clean" in sb.render_html(b) or "◔ Waiting" in page or "● Working" in page)
+    check("a status is a glyph AND a word, never a color alone", "● Working" in page and "– None" in page and "? Unknown" in page, "")
     check("the page is a pure function of the record (render twice, and from the JSON text)",
           sb.render_html(b) == sb.render_html(json.loads(json.dumps(b))) == page)
 
