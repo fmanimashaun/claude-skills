@@ -44,6 +44,11 @@ MIRRORED = {
         Path(".claude/skills/parallel-session-lane/references/session-identity.md"),
     Path("skills/parallel-session-lane/references/process-hygiene.md"):
         Path(".claude/skills/parallel-session-lane/references/process-hygiene.md"),
+    # #1581: SKILL.md §1 and §1a link these.
+    Path("skills/parallel-session-lane/references/isolated-resources.md"):
+        Path(".claude/skills/parallel-session-lane/references/isolated-resources.md"),
+    Path("skills/parallel-session-lane/references/one-issue-at-a-time.md"):
+        Path(".claude/skills/parallel-session-lane/references/one-issue-at-a-time.md"),
 }
 
 BANNER = (
