@@ -402,7 +402,7 @@ def check_words(seg: list[str]) -> None:
     `g$x push` and `{gh,x} api` run gh; shlex sees a word that is no command and the effect is missed.
     `$IFS` splits a word into several, so `gh${IFS}api` is `gh api`. Either one is Unjudgeable."""
     for w in seg:
-        if re.search(r"\$\{?IFS\b", w):
+        if re.search(r"\$\{?IFS", w):
             raise Unjudgeable("$IFS splits a word at run time, so the command cannot be read")
     for w in seg:
         if re.fullmatch(r"[A-Za-z_]\w*=.*", w) or w in WRAPPERS or w.startswith("-") or re.fullmatch(r"\d+[smhd]?", w):
@@ -421,8 +421,13 @@ def all_segments(cmd: str, depth: int = 0):
     if depth > MAX_DEPTH:
         raise Unjudgeable("shell strings nested too deeply to read")
     bodies: list[str] = []
-    for seg in segments(tokens(cmd, bodies)):
+    toks = tokens(cmd, bodies)
+    if "()" in toks:
+        raise Unjudgeable("a function definition: what its name runs later is not read")
+    for seg in segments(toks):
         check_words(seg)
+        if seg[0] in ("alias", "function", "coproc"):
+            raise Unjudgeable(f"`{seg[0]}` defines a name that can run any command later")
         yield seg
         for k, word in enumerate(seg):
             if is_command(word, SHELLS):
@@ -522,7 +527,10 @@ def _push_hits(seg: list[str], cwd, current) -> list[tuple[str, str | None, str 
     parsed = push_args(seg)
     if parsed is None:
         return []
-    args, workdir = parsed
+    return _push_hits_args(parsed[0], parsed[1], cwd, current)
+
+
+def _push_hits_args(args: list[str], workdir: str | None, cwd, current) -> list[tuple[str, str | None, str | None, str | None]]:
     if cwd is UNKNOWN_DIR and not (workdir and os.path.isabs(workdir)):
         raise Unjudgeable("a cd that could not be followed, before a git push")
     where = workdir if workdir and (cwd is None or os.path.isabs(workdir)) else (
@@ -757,6 +765,13 @@ def _graphql_effects(call: ApiCall) -> list[str]:
         name = _graphql_id(text, call, "name")
         if name == "-" or branch_of(name) in PROTECTED:
             out.append(f"API_REF {_token(_graphql_id(text, call, 'oid'))}")
+    if re.search(r"\bmutation\b", text):
+        # Every field with arguments in a mutation document must be one this file models or one known not
+        # to merge or publish; `mergeBranch`, `createDeployment`, `updateBranchProtectionRule` ... are not.
+        calls = set(re.findall(r"\b([A-Za-z_]\w*)\s*\(", re.sub(r'"(?:[^"\\]|\\.)*"', '""', text)))
+        unknown = calls - {"mergePullRequest", "updateRef", "createRef"} - SAFE_GQL - GQL_READ - {"mutation", "query"}
+        if unknown:
+            raise Unjudgeable(f"a GraphQL mutation this gate cannot place ({', '.join(sorted(unknown))})")
     return out
 
 
@@ -777,32 +792,31 @@ def gh_api_effects(rest: list[str]) -> tuple[list[str], str]:
     rm = re.match(r"repos/([^/]+)/([^/]+)/", path)
     repo = _repo_arg(rm.group(1), rm.group(2)) if rm else "-"
     m = re.fullmatch(r"(?:repos/([^/]+)/([^/]+)/)?pulls/([^/]+)/merge", path)
-    if m and "PUT" in methods:
+    if m:                                       # any write to it: a PUT merges, and so may a verb gh adds later
         n = m.group(3)
         return [f"API_PR_MERGE {'-' if _expanded(n) or not n.isdigit() else n}"], repo
     # A write whose route is built by the shell: unreadable if the expansion could BE the resource
     # (`repos/o/r/$X`, `$URL`), or if the readable part already names one that matters.
-    if _expanded(path) and (re.search(r"merge|refs|releases", path)
-                            or any(_expanded(part) for part in path.split("/")[:4])):
+    if _expanded(path):
         raise Unjudgeable("a gh api write whose path is built by the shell")
-    if re.fullmatch(r"(?:repos/[^/]+/[^/]+/)?merges", path) and "POST" in methods:
+    if re.fullmatch(r"(?:repos/[^/]+/[^/]+/)?merges", path):
         base = call.value("base")
         if base is None or _expanded(base) or branch_of(base) in PROTECTED:
             return [f"API_MERGE {_token(call.value('head'))}"], repo
         return [], repo
     m = re.fullmatch(r"(?:repos/[^/]+/[^/]+/)?git/refs/(.+)", path)
-    if m and methods & {"PATCH", "POST", "PUT"}:
+    if m:
         ref = m.group(1)
         if _expanded(ref) or branch_of(ref) in PROTECTED:
             return [f"API_REF {_token(call.value('sha'))}"], repo
         return [], repo
-    if re.fullmatch(r"(?:repos/[^/]+/[^/]+/)?git/refs", path) and methods & {"PATCH", "POST", "PUT"}:
+    if re.fullmatch(r"(?:repos/[^/]+/[^/]+/)?git/refs", path):
         ref = call.value("ref")
         if ref is None or _expanded(ref) or branch_of(ref) in PROTECTED:
             return [f"API_REF {_token(call.value('sha'))}"], repo
         return [], repo
     m = re.fullmatch(r"(?:repos/([^/]+)/([^/]+)/)?releases/([^/]+)", path)
-    if m and methods & {"PATCH", "POST", "PUT"}:
+    if m:
         draft = call.value("draft")
         if draft is not None and _draft_off(draft):
             rid = m.group(3)
@@ -810,10 +824,15 @@ def gh_api_effects(rest: list[str]) -> tuple[list[str], str]:
                 raise Unjudgeable(f"the release id {rid!r} could not be read")
             return [f"RELEASE_ID {rid}"], repo
         return [], repo
-    if re.fullmatch(r"(?:repos/[^/]+/[^/]+/)?releases", path) and "POST" in methods:
+    if re.fullmatch(r"(?:repos/[^/]+/[^/]+/)?releases", path):
         tag, target = call.value("tag_name"), call.value("target_commitish")
         return [_release_line(tag, target)], repo
-    return [], repo
+    # A write nothing above models. Only a short list of routes is known not to merge or publish; every
+    # other write is Unjudgeable (#1569): `repos/<o>/<r>/dispatches`, `deployments`, `pulls/N/update-branch`,
+    # `merge-upstream`, `transfer` and whatever GitHub adds next cannot be listed in advance.
+    if SAFE_API_WRITE.fullmatch(path):
+        return [], repo
+    raise Unjudgeable(f"a gh api {'/'.join(sorted(methods))} to {path!r}, which is not a route known not to merge or publish")
 
 
 def _release_line(tag: str | None, target: str | None) -> str:
@@ -978,35 +997,210 @@ def merge_refs(args: list[str]) -> list[str] | None:
     return refs
 
 
+# --- FAIL CLOSED BY CONSTRUCTION (#1569) -------------------------------------------------------------
+# Enumerating the spellings of a merge is how each review found one more. So every `gh` and `git` the
+# command runs gets a verdict from a POSITIVE list: either a verb that cannot merge into main or publish a
+# release (listed below), or one of the effects this file models. Anything else -- an unknown verb, a git
+# alias, an unknown global option, a verb or subcommand built by the shell -- is Unjudgeable, which the
+# hook denies. In a repository the gate applies to, that over-blocks a safe command nobody listed. The
+# alternative is letting an unlisted spelling through, and that is the one that cost a production deploy.
+GIT_SAFE = {
+    "status", "log", "diff", "show", "fetch", "add", "rm", "mv", "commit", "restore", "stash", "rev-parse",
+    "rev-list", "ls-files", "ls-remote", "ls-tree", "describe", "blame", "grep", "shortlog", "show-ref",
+    "for-each-ref", "cat-file", "branch", "tag", "checkout", "switch", "reflog", "clean", "worktree",
+    "diff-tree", "diff-files", "diff-index", "apply", "format-patch", "archive", "bisect", "help", "version",
+    "init", "clone", "reset", "revert", "cherry-pick", "rebase", "am", "gc", "prune", "count-objects",
+    "fsck", "whatchanged", "range-diff", "name-rev", "merge-base", "check-ignore", "check-attr",
+    "check-ref-format", "var", "verify-commit", "verify-tag", "sparse-checkout", "notes", "hash-object",
+    "write-tree", "read-tree", "commit-tree", "mktree", "mktag", "unpack-file", "stripspace", "interpret-trailers",
+    "maintenance", "remote", "config", "submodule", "bundle", "difftool", "citool", "gui", "gitk", "last-modified",
+}
+GIT_FLAGS = {"--no-pager", "-p", "--paginate", "-P", "--bare", "--no-replace-objects", "--literal-pathspecs",
+             "--glob-pathspecs", "--noglob-pathspecs", "--icase-pathspecs", "--no-optional-locks",
+             "--no-lazy-fetch", "--version", "--help", "-h", "--html-path", "--man-path", "--info-path", "--exec-path"}
+BENIGN_CONFIG = re.compile(r"^(user\.|core\.(quotepath|pager|editor|autocrlf|filemode|ignorecase|precomposeunicode|"
+                           r"longpaths|abbrev|whitespace|fsmonitor)$|color\.|advice\.|gc\.auto$|safe\.directory$|"
+                           r"init\.defaultbranch$|commit\.gpgsign$|diff\.|log\.)", re.I)
+GIT_ENV_REDIRECT = re.compile(r"^GIT_(DIR|WORK_TREE|CONFIG\w*|SSH\w*|ALTERNATE\w*|OBJECT_DIRECTORY|INDEX_FILE|NAMESPACE)=")
+INERT = {"echo", "printf", "which", "type", "man", "ls", "cat", "grep", "rg", "head", "tail", "wc", "cut", "tr",
+         "sort", "uniq", "test", "[", "[[", "true", "false", ":", "export", "set", "unset", "read", "mkdir", "rm",
+         "cp", "mv", "touch", "chmod", "ln", "tee", "basename", "dirname", "readlink", "realpath", "date", "sleep",
+         "exit", "return", "diff", "cmp", "jq", "popd", "cd", "pushd"}
+GH_GROUPS_ANY = {"issue", "auth", "config", "status", "browse", "search", "label", "gist", "extension", "alias",
+                 "completion", "help", "version", "cache", "variable", "secret", "ssh-key", "gpg-key", "project",
+                 "attestation", "agent-task", "licenses", "preview"}
+GH_GROUPS_SOME = {
+    "pr": {"view", "list", "create", "checks", "diff", "status", "checkout", "comment", "edit", "review", "close",
+           "reopen", "ready", "lock", "unlock"},
+    "repo": {"view", "list", "clone", "fork", "gitignore", "license"},
+    "run": {"list", "view", "watch", "download", "cancel", "delete"},
+    "workflow": {"list", "view"},
+    "release": {"list", "view", "download", "upload", "delete-asset"},
+    "ruleset": {"list", "view", "check"},
+    "org": {"list"},
+}
+SAFE_API_WRITE = re.compile(
+    r"(?:repos/[^/]+/[^/]+/)?(?:issues(?:/\d+(?:/(?:comments|labels|assignees|reactions))?)?|issues/comments/\d+(?:/reactions)?|"
+    r"pulls(?:/\d+(?:/(?:comments|reviews|requested_reviewers|reviews/\d+/(?:events|comments)))?)?|"
+    r"pulls/comments/\d+(?:/reactions)?|statuses/[^/]+|check-runs(?:/\d+)?|git/(?:blobs|trees|commits|tags)|labels(?:/[^/]+)?)")
+SAFE_GQL = {"addComment", "addPullRequestReview", "addPullRequestReviewComment", "addPullRequestReviewThread",
+            "addReaction", "removeReaction", "addLabelsToLabelable", "removeLabelsFromLabelable", "createIssue",
+            "updateIssue", "closeIssue", "reopenIssue", "createPullRequest", "updatePullRequest", "closePullRequest",
+            "reopenPullRequest", "markPullRequestReadyForReview", "convertPullRequestToDraft", "requestReviews",
+            "resolveReviewThread", "unresolveReviewThread", "minimizeComment", "updateIssueComment",
+            "deleteIssueComment", "submitPullRequestReview", "addAssigneesToAssignable", "createLabel",
+            "updateLabel", "addStar", "removeStar", "createDiscussion", "addDiscussionComment"}
+GQL_READ = {"repository", "node", "nodes", "user", "organization", "viewer", "search", "issue", "pullRequest", "labels",
+            "comments", "assignees", "reviews", "commits", "files", "timelineItems", "reviewThreads", "reactions",
+            "commit", "ref", "refs", "object", "milestone", "projectV2", "discussion", "issues", "pullRequests"}
+
+
+def command_indexes(seg: list[str]) -> list[tuple[str, int]]:
+    """Every `(tool, index)` in `seg` that may RUN gh or git. The command word is the first word that is
+    no assignment, wrapper (`sudo`, `timeout`, `env`, `command`, `xargs` ...) or option. If that word is
+    gh or git, that is the invocation. If it is a command known to treat its words as data (`echo`,
+    `which`, `grep`), nothing runs. If it is anything else (`find -exec`, `parallel`, `watch`, a wrapper
+    this file does not know), EVERY bare gh/git word may be the command it runs (#1569)."""
+    head = None
+    for i, w in enumerate(seg):
+        if re.fullmatch(r"[A-Za-z_]\w*=.*", w) or w in WRAPPERS or w.startswith("-") or re.fullmatch(r"\d+[smhd]?", w):
+            continue
+        head = i
+        break
+    if head is None:
+        return []
+    base = seg[head].rsplit("/", 1)[-1]
+    if is_command(seg[head], {"git"}):
+        return [("git", head)]
+    if is_command(seg[head], {"gh"}):
+        return [("gh", head)]
+    if base in INERT:
+        return []
+    return [("git" if is_command(w, {"git"}) else "gh", i) for i, w in enumerate(seg)
+            if is_command(w, {"git"}) or is_command(w, {"gh"})]
+
+
+def git_parse(seg: list[str], j: int):
+    """`(verb, args, workdir, redirected)` for the `git` at seg[j]. Only global options this file knows are
+    stepped over; an unknown one, an inline alias, a `-c` that is not harmless (`url.<x>.insteadOf`
+    redirects a push), or a verb built by the shell is Unjudgeable."""
+    i, workdir, redirected = j + 1, None, False
+    while i < len(seg) and seg[i].startswith("-"):
+        a = seg[i]
+        if a in ("-C", "-c"):
+            if i + 1 >= len(seg):
+                raise Unjudgeable(f"git {a} with no value")
+            v = seg[i + 1]
+            if a == "-c":
+                if v.startswith("alias."):
+                    raise Unjudgeable("a git alias defined inline can be any verb, push included")
+                if not BENIGN_CONFIG.match(v.partition("=")[0]):
+                    raise Unjudgeable(f"git -c {v.partition('=')[0]} can redirect or rewrite what the command does")
+            else:
+                workdir = v if workdir is None or os.path.isabs(v) else os.path.join(workdir, v)
+            i += 2; continue
+        if a.startswith(("--git-dir", "--work-tree", "--namespace", "--super-prefix")):
+            redirected = True
+            i += 1 if "=" in a else 2; continue
+        if a.startswith(("--exec-path", "--attr-source", "--config-env")) or a in GIT_FLAGS:
+            i += 1; continue
+        raise Unjudgeable(f"the git option {a!r} is not one this gate reads")
+    if i >= len(seg):
+        return None, [], workdir, redirected
+    verb = seg[i]
+    if _expanded(verb) or EXPANDS & set(verb) or SUBST in verb:
+        raise Unjudgeable("the git verb is built by the shell")
+    return verb, seg[i + 1:], workdir, redirected
+
+
+def _git_read_only(verb: str, args: list[str]) -> bool:
+    """`git remote` and `git config` can repoint where a later push goes: only their read forms are safe."""
+    if verb == "remote":
+        sub = next((a for a in args if not a.startswith("-")), "")
+        return sub in ("", "show", "get-url", "add")       # `add` cannot repoint an existing remote
+    if verb == "config":
+        if any(a in ("--get", "--get-all", "--get-regexp", "--list", "-l", "--get-urlmatch", "get", "list") for a in args):
+            return True
+        keys = [a for a in args if not a.startswith("-")]
+        return bool(keys) and BENIGN_CONFIG.match(keys[0]) is not None
+    if verb == "submodule":
+        sub = next((a for a in args if not a.startswith("-")), "")
+        return sub in ("", "status", "summary", "init", "update", "absorbgitdirs")
+    return True
+
+
+def git_effects(seg, j, cwd, current):
+    """`[(line, repo, dir)]` for one `git` invocation, or Unjudgeable when it is neither a modelled effect
+    nor a verb on the safe list."""
+    verb, args, workdir, redirected = git_parse(seg, j)
+    if verb is None:
+        if any(a not in ("--version", "--help", "-h", "--html-path", "--man-path", "--info-path", "--exec-path") for a in seg[j + 1:]):
+            raise Unjudgeable("git with options and no verb")
+        return []
+    envs = [w for w in seg[:j] if GIT_ENV_REDIRECT.match(w)]
+    if verb == "push" or verb == "merge" or verb == "pull":
+        if redirected or envs:
+            raise Unjudgeable("GIT_DIR, --git-dir, --work-tree or GIT_CONFIG redirects which repository this acts on")
+        if any(w == "xargs" for w in seg[:j]):
+            raise Unjudgeable("xargs appends its stdin to the command, so its refspecs are unknown")
+    out = []
+    if verb == "push":
+        for dst, src, remote, where in _push_hits_args(args, workdir, cwd, current):
+            out.append((f"PUSH_REF {src}" if src else f"PUSH_MAIN {dst}", f"remote:{remote}" if remote else "-",
+                        _dir_word(None, where)))
+        return out
+    if verb == "merge":
+        refs = merge_refs(args)
+        if refs is not None:
+            out.append((("GIT_MERGE " + " ".join(refs)).rstrip(), "-", _dir_word(cwd, workdir)))
+        return out
+    if verb == "pull":
+        # fetch + merge: on main it brings the upstream's commits into main, and they are not fetched yet.
+        out.append(("GIT_PULL", "-", _dir_word(cwd, workdir)))
+        return out
+    if verb in GIT_SAFE and _git_read_only(verb, args):
+        return []
+    raise Unjudgeable(f"git {verb!r} is not on the list of commands that cannot merge into main or publish")
+
+
+def gh_effects_for(seg, j, cwd, env_repo):
+    """`[(line, repo, dir)]` for one `gh` invocation, or Unjudgeable when it is neither a modelled effect
+    nor on the safe list."""
+    names, rest, repo = gh_parts(seg, j)
+    d = _dir_word(cwd)
+    if names and (_expanded(names[0]) or EXPANDS & set(names[0]) or (len(names) > 1 and (_expanded(names[1]) or EXPANDS & set(names[1])))):
+        raise Unjudgeable("the gh subcommand is built by the shell")
+    if names == ["pr", "merge"]:
+        return [(f"PR_MERGE {pr_merge_selector(rest)}".rstrip(), repo or env_repo or "-", d)]
+    if names[:1] == ["api"]:
+        lines, prepo = gh_api_effects(rest)
+        return [(ln, prepo if prepo != "-" else (env_repo or "-"), d) for ln in lines]
+    if names == ["release", "create"]:
+        return [(ln, repo or env_repo or "-", d) for ln in release_creates(rest)]
+    if names == ["release", "edit"]:
+        return [(ln, repo or env_repo or "-", d) for ln in release_edits(rest)]
+    if not names:
+        if any(a not in ("--version", "--help", "-h") for a in rest):
+            raise Unjudgeable("gh with options and no subcommand")
+        return []
+    if names[0] in GH_GROUPS_ANY:
+        return []
+    if names[0] in GH_GROUPS_SOME and len(names) > 1 and names[1] in GH_GROUPS_SOME[names[0]]:
+        return []
+    raise Unjudgeable(f"gh {' '.join(names)!r} is not on the list of commands that cannot merge into main or publish a release")
+
+
 def effects(cmd: str, current) -> list[tuple[str, str, str]]:
     """`(line, repo, dir)` for everything in `cmd` that merges into main or publishes. `repo` is the
     repository the command acts on when it says so (`-R`, GH_REPO, a `repos/o/r/` path, a git remote as
     `remote:<name>`), else `-`; `dir` is where it runs after a `cd` or `git -C`, else `-`."""
     out: list[tuple[str, str, str]] = []
     for seg, cwd, env_repo in ctx_segments(cmd):
-        # `PUSH_REF <src>` (#1569): an explicit `<src>:main` is judged by the commit it pushes, not dev's tip.
-        for dst, src, remote, where in _push_hits(seg, cwd, current):
-            out.append((f"PUSH_REF {src}" if src else f"PUSH_MAIN {dst}", f"remote:{remote}" if remote else "-",
-                        _dir_word(None, where)))
-        parsed = git_verb(seg, "merge")
-        if parsed is not None:
-            refs = merge_refs(parsed[0])
-            if refs is not None:
-                out.append((("GIT_MERGE " + " ".join(refs)).rstrip(), "-", _dir_word(cwd, parsed[1])))
-        for j, word in enumerate(seg):
-            if not is_command(word, {"gh"}):
-                continue
-            names, rest, repo = gh_parts(seg, j)
-            d = _dir_word(cwd)
-            if names == ["pr", "merge"]:
-                out.append((f"PR_MERGE {pr_merge_selector(rest)}".rstrip(), repo or env_repo or "-", d))
-            elif names[:1] == ["api"]:
-                lines, prepo = gh_api_effects(rest)
-                out += [(ln, prepo if prepo != "-" else (env_repo or "-"), d) for ln in lines]
-            elif names == ["release", "create"]:
-                out += [(ln, repo or env_repo or "-", d) for ln in release_creates(rest)]
-            elif names == ["release", "edit"]:
-                out += [(ln, repo or env_repo or "-", d) for ln in release_edits(rest)]
+        for tool, j in command_indexes(seg):
+            if tool == "git":
+                out += git_effects(seg, j, cwd, current)
+            else:
+                out += gh_effects_for(seg, j, cwd, env_repo)
     return out
 
 
@@ -1357,6 +1551,171 @@ def selftest() -> int:
         except Unjudgeable:
             pass
     api_total += len(ref_cases) + 9
+    # #1569 -- the parser differential. The same command, spelled the way bash reads it differently from
+    # shlex: every transformation must give the SAME effects as the plain spelling, or be unjudgeable
+    # (the hook denies). Never "no effect".
+    fuzz_bases = [
+        ("gh api -X PUT repos/o/r/pulls/7/merge", ["API_PR_MERGE 7"]),
+        ("gh api repos/o/r/merges -f base=main -f head=hot", ["API_MERGE hot"]),
+        ("gh api -X PATCH repos/o/r/git/refs/heads/main -f sha=abc", ["API_REF abc"]),
+        ("gh api repos/o/r/releases -f tag_name=v1", ["RELEASE v1 -"]),
+        ("gh release create v1 --target main", ["RELEASE v1 main"]),
+        ("gh release edit v1 --draft=false", ["RELEASE_EDIT v1 -"]),
+        ("gh pr merge 7 --merge", ["PR_MERGE 7"]),
+        ("git merge hotfix", ["GIT_MERGE hotfix"]),
+        ("git push origin hot:main", ["PUSH_REF hot"]),
+    ]
+
+    def words(c):
+        return c.split(" ")
+
+    def ansi(w, fmt):
+        return "$'" + "".join(fmt(ord(ch)) for ch in w) + "'"
+
+    transforms = {
+        "single-quoted words": lambda c: " ".join("'" + w + "'" for w in words(c)),
+        "double-quoted words": lambda c: " ".join('"' + w + '"' for w in words(c)),
+        "empty quotes inside a word": lambda c: " ".join(w[:1] + "''" + w[1:] for w in words(c)),
+        "backslash inside a word": lambda c: " ".join(w[:1] + "\\" + w[1:] if w[:1].isalpha() else w for w in words(c)),
+        "ANSI-C hex words": lambda c: " ".join(ansi(w, lambda o: "\\x%02x" % o) for w in words(c)),
+        "ANSI-C octal words": lambda c: " ".join(ansi(w, lambda o: "\\%03o" % o) for w in words(c)),
+        "ANSI-C command word only": lambda c: ansi(words(c)[0], lambda o: "\\x%02x" % o) + " " + " ".join(words(c)[1:]),
+        "ANSI-C mid-word": lambda c: " ".join(w[:1] + "$'" + w[1:] + "'" if w[:1].isalpha() else w for w in words(c)),
+        "locale $\"..\"": lambda c: " ".join('$"' + w + '"' for w in words(c)),
+        "line continuations": lambda c: " \\\n".join(words(c)),
+        "trailing comment": lambda c: c + " # push main",
+        "$IFS for spaces": lambda c: "${IFS}".join(words(c)),
+        "bare $IFS": lambda c: "$IFS".join(words(c)),
+        "brace-built command word": lambda c: c.replace("gh", "g{h,}", 1).replace("git", "gi{t,}", 1),
+        "variable command word": lambda c: "$cmd " + " ".join(words(c)[1:]),
+        "env prefix": lambda c: "A=1 " + c, "env wrapper": lambda c: "env A=1 " + c,
+        "command wrapper": lambda c: "command " + c, "timeout wrapper": lambda c: "timeout 5 " + c,
+        "subshell": lambda c: "( " + c + " )", "group": lambda c: "{ " + c + "; }",
+        "substitution": lambda c: "x=$(" + c + ")", "backticks": lambda c: "x=`" + c + "`",
+        "bash -c": lambda c: "bash -c '" + c + "'", "eval": lambda c: "eval " + c,
+        "second line": lambda c: "true\n" + c, "after &&": lambda c: "true && " + c, "backgrounded": lambda c: c + " &",
+    }
+    must_be_unjudgeable = {"$IFS for spaces", "bare $IFS", "brace-built command word", "variable command word"}
+    fuzz_total = 0
+    for base, want in fuzz_bases:
+        for name, tf in transforms.items():
+            fuzz_total += 1
+            cmd = tf(base)
+            try:
+                got = cls(cmd, on_feature)
+            except Unjudgeable:
+                continue
+            if name in must_be_unjudgeable or got != want:
+                failures.append(f"fuzz [{name}] {cmd!r}: expected {want} or unjudgeable, got {got}")
+    # Context: which repository, which directory, which remote (#1569).
+    ctx_cases = [
+        ("gh pr merge 7 -R o/r", ["CTX o/r -", "PR_MERGE 7"]),
+        ("gh pr merge -R=o/r 7", None), ("gh pr merge --repo o/r 7", ["CTX o/r -", "PR_MERGE 7"]),
+        ("gh pr -R o/r merge 7", ["CTX o/r -", "PR_MERGE 7"]), ("gh -R o/r pr merge 7", ["CTX o/r -", "PR_MERGE 7"]),
+        ("gh pr merge 7 -Ro/r", ["CTX o/r -", "PR_MERGE 7"]),
+        ("GH_REPO=o/r gh pr merge 7", ["CTX o/r -", "PR_MERGE 7"]), ("env GH_REPO=o/r gh pr merge 7", ["CTX o/r -", "PR_MERGE 7"]),
+        ("export GH_REPO=a/b; gh release create v1", ["CTX a/b -", "RELEASE v1 -"]),
+        ("GH_REPO=a/b; gh release create v1", ["CTX a/b -", "RELEASE v1 -"]),
+        ("gh release create v1 -R x/y --target main", ["CTX x/y -", "RELEASE v1 main"]),
+        ("gh release edit v1 --draft=false -R x/y", ["CTX x/y -", "RELEASE_EDIT v1 -"]),
+        ("gh api -X PUT repos/x/y/pulls/3/merge", ["CTX x/y -", "API_PR_MERGE 3"]),
+        ("GH_REPO=a/b gh api -X PUT repos/{owner}/{repo}/pulls/3/merge", ["CTX a/b -", "API_PR_MERGE 3"]),
+        ("gh api -X PUT repos/{owner}/{repo}/pulls/3/merge", ["CTX - -", "API_PR_MERGE 3"]),
+        ("git push upstream hot:main", ["CTX remote:upstream -", "PUSH_REF hot"]),
+        ("git push origin main", ["CTX remote:origin -", "PUSH_MAIN main"]),
+        ("git push git@github.com:x/y.git hot:main", ["CTX remote:git@github.com:x/y.git -", "PUSH_REF hot"]),
+        ("cd sub && git merge dev", ["CTX - sub", "GIT_MERGE dev"]),
+        ("cd /a/b; cd ../c; gh pr merge 7", ["CTX - /a/b/../c", "PR_MERGE 7"]),
+        ("git -C ../x merge dev", ["CTX - ../x", "GIT_MERGE dev"]),
+        ("git -C /abs push origin hot:main", ["CTX remote:origin /abs", "PUSH_REF hot"]),
+        ("git merge dev", ["CTX - -", "GIT_MERGE dev"]),
+        ("gh api repos/o/r/merges -f base=main -f head=dev", ["CTX o/r -", "API_MERGE dev"]),
+        ("gh api -iXPUT repos/o/r/pulls/7/merge", ["CTX o/r -", "API_PR_MERGE 7"]),
+        ("gh api -siXPUT repos/o/r/pulls/7/merge", ["CTX o/r -", "API_PR_MERGE 7"]),
+        ("gh api -i -XPUT repos/o/r/pulls/7/merge", ["CTX o/r -", "API_PR_MERGE 7"]),
+        ("gh api -ifsha=abc -X PATCH repos/o/r/git/refs/heads/main", ["CTX o/r -", "API_REF abc"]),
+        ("gh api repos/o/r/merges -ffbase=main", None),
+    ]
+    ctx_total = 0
+    for cmd, want in ctx_cases:
+        if want is None:
+            continue
+        ctx_total += 1
+        try:
+            got = classify(cmd, on_feature)
+        except Unjudgeable as exc:
+            got = [f"unjudgeable: {exc}"]
+        if got != want:
+            failures.append(f"classify (context) {cmd!r}: expected {want}, got {got}")
+    for cmd in ("cd; gh pr merge 7", "cd - && git merge dev", "cd $D && git merge dev", "GH_REPO=$R gh pr merge 7",
+                "GH_REPO=https://github.com/o/r gh pr merge 7", "gh pr merge 7 -R github.example.com/o/r",
+                "gh api --hostname ghe.example.com -X PUT repos/o/r/pulls/7/merge", "gh api -X PATCH",
+                "git push $REMOTE hot:main"):
+        ctx_total += 1
+        try:
+            classify(cmd, on_feature)
+            failures.append(f"classify {cmd!r}: must be unjudgeable (the hook denies)")
+        except Unjudgeable:
+            pass
+    api_total += fuzz_total + ctx_total
+    # #1569: fail closed BY CONSTRUCTION. A gh or git the gate does not recognise is not "no effect".
+    safe_cases = [
+        "git status", "git log --oneline -5", "git diff HEAD~1 -- app.rb", "git fetch origin", "git add -A", "git commit -m 'x y'",
+        "git checkout -b feature/x", "git push -u origin feature/x", "git branch -D old", "git -c user.name=x -c user.email=y commit -m z",
+        "git -C /tmp/x status", "git config --get remote.origin.url", "git config user.email a@b", "git remote -v",
+        "git remote add up https://github.com/o/r", "git stash pop", "git rebase dev", "git reset --hard HEAD~1",
+        "git cherry-pick abc123", "git rev-parse HEAD", "git --no-pager log", "git --version", "git",
+        "gh pr view 7", "gh pr list --state open", "gh pr create --title t --body b", "gh pr checks 7", "gh pr checkout 7",
+        "gh issue create -t x", "gh issue list", "gh run list", "gh run view 5 --log", "gh workflow list", "gh release list",
+        "gh release view v1", "gh repo view", "gh auth status", "gh --version", "gh",
+        "gh api repos/o/r/pulls/7", "gh api -X GET repos/o/r/issues", "gh api -X POST repos/o/r/issues/1/comments -f body=hi",
+        "gh api -X PATCH repos/o/r/pulls/7 -f title=x", "gh api graphql -f query='query{viewer{login}}'",
+        "gh api graphql -f query='mutation{addComment(input:{subjectId:\"x\",body:\"y\"}){clientMutationId}}'",
+        "echo git push origin main", "which gh", "grep -r git .", "type -a git", "ls git", "python3 x.py git", "make gh",
+        "cd /tmp && git status",
+    ]
+    for cmd in safe_cases:
+        api_total += 1
+        try:
+            got = cls(cmd, on_feature)
+        except Unjudgeable as exc:
+            got = f"unjudgeable: {exc}"
+        if got != []:
+            failures.append(f"safe shape {cmd!r}: must be allowed with no effect, got {got}")
+    unlisted = [
+        "git ci -m x", "git -c core.sshCommand=x push origin feature/x", "git -c url.x.insteadOf=y push origin feature/x",
+        "git --weird-option status", "git $V push origin feature/x", "git remote set-url origin https://github.com/x/y",
+        "git remote remove origin", "git config remote.origin.url https://github.com/x/y", "git config url.x.insteadOf y",
+        "git send-pack origin main", "git update-ref refs/heads/main abc", "git symbolic-ref HEAD refs/heads/x",
+        "git filter-branch -f", "git fast-import", "git svn dcommit", "git http-push x",
+        "gh workflow run release.yml", "gh pr update-branch 7", "gh repo sync", "gh repo delete x --yes", "gh release delete v1",
+        "gh foo", "gh $x", "gh pr $verb 7", "gh api -X POST repos/o/r/dispatches -f event_type=x",
+        "gh api -X POST repos/o/r/deployments -f ref=main", "gh api -X PUT repos/o/r/pulls/7/update-branch",
+        "gh api -X POST repos/o/r/merge-upstream -f branch=main", "gh api -X POST repos/o/r/transfer",
+        "gh api graphql -f query='mutation{mergeBranch(input:{}){x}}'",
+        "gh api graphql -f query='mutation{createDeployment(input:{}){x}}'",
+        "foo() { gh pr merge 7; }; foo", "alias gm='git merge'", "function f { git merge x; }",
+        "git merge $((1+1))", "git push origin $((1+1))",
+    ]
+    for cmd in unlisted:
+        api_total += 1
+        try:
+            got = cls(cmd, on_feature)
+            failures.append(f"unlisted shape {cmd!r}: must be unjudgeable (the hook denies), got {got}")
+        except Unjudgeable:
+            pass
+    # A bare gh or git word under an unknown command may BE the command it runs.
+    for cmd, want in (("find . -name x -exec git push origin main ;", ["PUSH_MAIN main"]),
+                      ("parallel git merge ::: a b", ["GIT_MERGE ::: a b"]), ("watch -n 5 gh pr merge 7", ["PR_MERGE 7"]),
+                      ("sudo -u bob git merge dev", ["GIT_MERGE dev"]), ("git pull", ["GIT_PULL"]),
+                      ("echo gh pr merge 7", []), ("grep git push", [])):
+        api_total += 1
+        try:
+            got = cls(cmd, on_feature)
+        except Unjudgeable as exc:
+            got = [f"unjudgeable: {exc}"]
+        if got != want:
+            failures.append(f"classify {cmd!r}: expected {want}, got {got}")
     # "no" must not share an exit code with a crash: python's uncaught-exception exit is 1.
     if NO in (0, 1) or UNJUDGEABLE == NO:
         failures.append(f"exit codes: NO={NO} must differ from 0, 1 (a crash) and UNJUDGEABLE")

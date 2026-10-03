@@ -96,6 +96,7 @@ releases=""      # every release the command publishes: "<tag> <target> <repo ct
 unresolved_pr="" # set when the commit, PR, ref, release or repository a command acts on cannot be resolved:
                  # decided at the end, once the override and the marketplace exemption have had their say
 _crepo="-"; _cdir="-"; _dir_seen=""
+_foreign=""      # set when any effect acts on a repository other than this checkout's
 
 # --- WHICH REPOSITORY (#1569). The stamp is read from the repository the command ACTS on. `gh -R`,
 # GH_REPO, a `repos/<o>/<r>/` path and a git remote other than origin each make a command act on
@@ -139,7 +140,7 @@ ctx_repo() {
   esac
   printf '%s\n' "$r" | grep -qE '^[a-z0-9_.-]+/[a-z0-9_.-]+$' || { unresolved_pr=1; return 0; }
   [ "$r" = "$L" ] && return 0
-  _R="$r"
+  _R="$r"; _foreign=1
 }
 # resolve_pr <selector|""> <ctx repo> -> base, head, _PRR ("" when gh could not say). Resolved the way
 # the command resolves it: the same selector, the same -R/GH_REPO, the same directory.
@@ -201,11 +202,25 @@ if [ "$_mentions" = 1 ] && [ -f "$_pt" ]; then
             unresolved_pr=1
           fi ;;
         "PUSH_MAIN "*)
-          # No explicit source: `main` on this repo's remote is what a push of main ships, judged at dev's tip
-          # (the old behaviour). To ANOTHER repository the commit pushed is the local branch itself.
+          # No explicit source: `git push origin main` ships the LOCAL branch main, so that commit is what
+          # must be certified -- not dev's tip (#1569: a cherry-pick onto main rode dev's stamp). `--all`,
+          # `--mirror` and `:` push every local branch, main included: judge each of main/master that
+          # exists, and deny when neither does.
           targets_main=1
-          ctx_repo "$_crepo"
-          if [ -z "$_R" ]; then needs_dev=1; else add_commit "${_line#PUSH_MAIN }" "$_crepo" local "the commit being merged or pushed"; fi ;;
+          _d="${_line#PUSH_MAIN }"
+          case "$_d" in
+            main|master) add_commit "refs/heads/${_d}" "$_crepo" local "the commit being merged or pushed" ;;
+            *) _n=0
+               for _b in main master; do
+                 if git rev-parse --verify -q "refs/heads/${_b}^{commit}" >/dev/null 2>&1; then
+                   add_commit "refs/heads/${_b}" "$_crepo" local "the commit being merged or pushed"; _n=1
+                 fi
+               done
+               [ "$_n" = 1 ] || unresolved_pr=1 ;;
+          esac ;;
+        GIT_PULL)
+          # `git pull` on main merges commits that are not fetched yet, so no commit can be named: deny.
+          if git rev-parse --abbrev-ref HEAD 2>/dev/null | grep -qE '^(main|master)$'; then targets_main=1; unresolved_pr=1; fi ;;
         "PUSH_REF "*)
           # #1569: `git push <remote> <src>:main` ships <src>, so <src> is what must be certified.
           targets_main=1; add_commit "${_line#PUSH_REF }" "$_crepo" local "the commit being merged or pushed" ;;
@@ -252,7 +267,7 @@ if [ "$_mentions" = 1 ] && [ -f "$_pt" ]; then
               else add_commit "$_oid" "$(printf '%s' "${_out#* }" | tr 'A-Z' 'a-z')" branch "the commit being merged or pushed"; fi ;;
             "") targets_main=1; unresolved_pr=1 ;;
           esac ;;
-        "RELEASE "*) releases="${releases}${_line#RELEASE } ${_crepo}"$'\n' ;;
+        "RELEASE "*) ctx_repo "$_crepo"; releases="${releases}${_line#RELEASE } ${_crepo}"$'\n' ;;
         "RELEASE_EDIT "*)
           # #1569: `gh release edit <tag> --draft=false` publishes. The tag a draft will get does not exist
           # yet, so the target is the one the release records: ask GitHub (the same -R, the same directory).
@@ -284,7 +299,7 @@ EOF_FOUND
     # #1569: a command the classifier could not read (a body file that is missing or on stdin, a path
     # or command word built by the shell, an ANSI-C string it cannot decode) may merge ANY commit in ANY
     # repository, so dev's stamp proves nothing about it: deny, rather than judge it at dev's tip.
-    case "$_probe" in *gh*|*'$'*|*'`'*|*'{'*) unresolved_pr=1 ;; esac
+    unresolved_pr=1
   fi
 elif [ "$_mentions" = 1 ]; then
   # The classifier is missing: the pre-#1410 detection, with the whole-word match over the RAW
@@ -317,11 +332,20 @@ fi
 # app which has simply never run `/qa-flow:setup-qa`, and exempting it would let every such app
 # promote unchecked. That distinction is the whole safety of this block, and the harness carries
 # both cases -- a marketplace tree that must PASS and a bare repo that must still be BLOCKED.
-if [ -f ".claude-plugin/marketplace.json" ]; then
+# The discriminator is the repository's REAL identity, not a file the command or an earlier command can
+# create: `.claude-plugin/marketplace.json` is what makes a tree a marketplace, but any repo can add one, so
+# it exempts only a checkout whose `origin` is the marketplace's own repository (#1569). A command that also
+# acts on ANOTHER repository (`-R`, GH_REPO, a remote) is never exempt: the exemption describes this checkout.
+MARKETPLACE_REPO="fmanimashaun/claude-skills"
+if [ -f ".claude-plugin/marketplace.json" ] && [ -z "$_foreign" ] \
+   && [ "$(repo_of_url "$(git config --get remote.origin.url 2>/dev/null || true)")" = "$MARKETPLACE_REPO" ]; then
   echo "qa-flow: this is the marketplace repo itself, which ships qa-flow rather than consuming it — release gate not applicable." >&2
   exit 0
 fi
 
+# The override is read from THIS PROCESS's environment only. The command's own text cannot set it: an
+# inline `QA_ALLOW_MAIN=1 gh ...`, `env QA_ALLOW_MAIN=1 ...` or `export QA_ALLOW_MAIN=1; ...` runs AFTER
+# this hook, in a shell that is not the hook's, so none of them is read here (#1569).
 [ "${QA_ALLOW_MAIN:-0}" = "1" ] && { echo "qa-flow: QA_ALLOW_MAIN=1 override — promotion allowed without a fresh stamp (audited)." >&2; exit 0; }
 
 # The STAMP is read as COMMITTED, never from this checkout's working tree: main receives what is
@@ -543,7 +567,11 @@ while read -r _tag _tgt _rrp; do
     continue
   fi
   _first=""; _ok=0
-  for _at in "$_rsha" refs/remotes/origin/main refs/remotes/origin/dev refs/heads/main refs/heads/dev; do
+  # The stamp is read at the commit itself or at the REMOTE's main/dev. A local branch of the same name
+  # is whatever the last command left there, so it counts only when there is no remote at all.
+  _ats="$_rsha refs/remotes/origin/main refs/remotes/origin/dev"
+  git remote get-url origin >/dev/null 2>&1 || _ats="$_ats refs/heads/main refs/heads/dev"
+  for _at in $_ats; do
     _atsha="$(git rev-parse --verify -q "${_at}^{commit}" 2>/dev/null || true)"
     [ -n "$_atsha" ] || continue
     if judge "$_rsha" "$_atsha" "the release target" 2>/dev/null; then _ok=1; break; fi

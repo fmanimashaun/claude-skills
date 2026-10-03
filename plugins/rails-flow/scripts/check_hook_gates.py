@@ -922,7 +922,8 @@ def release_gate_fixtures() -> None:
         check("release-gate.sh present beside rails-flow", False, str(QA_HOOK))
         return
 
-    def run(cmd: str, marketplace: bool = False, plugin_root: Path | None = None) -> int:
+    def run(cmd: str, marketplace: bool = False, plugin_root: Path | None = None,
+            origin: str | None = "https://github.com/fmanimashaun/claude-skills.git") -> int:
         with tempfile.TemporaryDirectory() as td:
             _git_repo(Path(td))
             # ON A FEATURE BRANCH (#1410). `git init` leaves HEAD on main, where a bare `git push`
@@ -935,6 +936,9 @@ def release_gate_fixtures() -> None:
                 (Path(td) / ".claude-plugin").mkdir(parents=True, exist_ok=True)
                 (Path(td) / ".claude-plugin" / "marketplace.json").write_text(
                     '{"name": "x", "plugins": []}', encoding="utf-8")
+                if origin:
+                    # The exemption is keyed on the repository's identity, not on the file alone (#1569).
+                    _run(["git", "remote", "add", "origin", origin], cwd=td, check=True, capture_output=True)
             env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env["CLAUDE_PLUGIN_ROOT"] = str(plugin_root or QA_HOOK.parents[2])
             done = _run(["bash", str(QA_HOOK)], cwd=td, input=json.dumps({"tool_input": {"command": cmd}}),
                                   env=env, capture_output=True, text=True, timeout=60)
@@ -1007,6 +1011,13 @@ def release_gate_fixtures() -> None:
           run("git push origin main", marketplace=True) == 0, "exit 2")
     check("release-gate: an ordinary repo with no certification is STILL blocked",
           run("git push origin main") == 2, "exit 0")
+    # #1569: the file alone proves nothing -- any repo can add one. The exemption needs the marketplace's identity.
+    for label, origin in (("no origin at all", None), ("another repository's origin", "https://github.com/acme/app.git"),
+                          ("a look-alike name", "https://github.com/acme/claude-skills.git"),
+                          ("a look-alike owner", "https://github.com/fmanimashaun-evil/claude-skills.git"),
+                          ("a path that merely contains the name", "/home/x/fmanimashaun/claude-skills")):
+        check(f"release-gate (#1569): a marketplace.json in a repo with {label} is NOT the marketplace, and stays blocked",
+              run("git push origin main", marketplace=True, origin=origin) == 2, "exit 0")
 
     # #1337. The stamp is bound to the tested dev sha; committing it to dev by PR moves dev. The gate
     # accepts an ANCESTOR of dev only when the delta since is the stamp itself.
@@ -1031,6 +1042,10 @@ def release_gate_fixtures() -> None:
 
         def gate() -> tuple[int, str]:
             sh("branch", "-f", "dev", "HEAD")
+            # `git push origin main` ships the LOCAL main (#1569), so the fixture promotes dev by making main it.
+            sh("update-ref", "refs/heads/main", "HEAD")
+            # The last PUBLISHED release is origin/main (release_evidence reads it before main): the root commit.
+            sh("update-ref", "refs/remotes/origin/main", sh("rev-list", "--max-parents=0", "HEAD").split()[0])
             done = _run(["bash", str(QA_HOOK)], cwd=repo, env=env, capture_output=True, text=True, timeout=60,
                                   input=json.dumps({"tool_input": {"command": "git push origin main"}}))
             return done.returncode, done.stderr
@@ -1039,7 +1054,7 @@ def release_gate_fixtures() -> None:
         # #1437 review round 3: the stamp is read as COMMITTED at dev. An uncommitted one is not what
         # main would receive, so it no longer permits -- the old "uncommitted control" inverts.
         check("release-gate (#1428): an UNCOMMITTED stamp is denied -- main would not receive it",
-              rc == 2 and "committed at dev" in err, err)
+              rc == 2 and "is committed at" in err, err)
         sh("add", "qa/CERTIFICATION"); sh_old("commit", "-q", "-m", "stamp")
         rc, err = gate()
         check("release-gate (#1337): the stamp committed on top of the tested sha still permits", rc == 0, err)
@@ -1056,7 +1071,7 @@ def release_gate_fixtures() -> None:
         sh("add", "qa/CERTIFICATION"); sh_old("commit", "-q", "-m", "a stamp for another branch")
         rc, err = gate()
         check("release-gate (#1337): a stamp for a sha that is not an ancestor of dev is denied",
-              rc == 2 and "dev moved" in err, err)
+              rc == 2 and " moved" in err, err)
 
     # #1428. A schema-2 stamp must name a passing first-boot walkthrough and authorization sweep; its
     # own commit may carry that evidence and nothing else. An old stamp passes, loudly, for one release.
@@ -1087,6 +1102,10 @@ def release_gate_fixtures() -> None:
 
         def gate2() -> tuple[int, str]:
             sh("branch", "-f", "dev", "HEAD")
+            # `git push origin main` ships the LOCAL main (#1569), so the fixture promotes dev by making main it.
+            sh("update-ref", "refs/heads/main", "HEAD")
+            # The last PUBLISHED release is origin/main (release_evidence reads it before main): the root commit.
+            sh("update-ref", "refs/remotes/origin/main", sh("rev-list", "--max-parents=0", "HEAD").split()[0])
             done = _run(["bash", str(QA_HOOK)], cwd=repo, env=env, capture_output=True, text=True, timeout=60,
                                   input=json.dumps({"tool_input": {"command": "git push origin main"}}))
             return done.returncode, done.stderr
@@ -1448,10 +1467,17 @@ def release_gate_effects_fixtures() -> None:
         check("release-gate (#1569): QA_ALLOW_MAIN=1 is still the audited override for a release", rc == 0, f"rc={rc} {err[:200]!r}")
         (repo / ".claude-plugin").mkdir()
         (repo / ".claude-plugin" / "marketplace.json").write_text('{"name":"x","plugins":[]}', encoding="utf-8")
+        # The file alone exempts nothing (any repo can add one): origin here is o/r, not the marketplace.
         rc, err = run("gh release create v1.0.1 --target main")
-        check("release-gate (#1569): the marketplace's own repo is exempt from the release gate too", rc == 0, f"rc={rc} {err[:200]!r}")
-        rc, err = run("gh api -X PUT repos/o/r/pulls/7/merge", **hotfix_pr)
+        check("release-gate (#1569): a marketplace.json in a repo that is NOT the marketplace does not exempt a release", rc == 2, f"rc={rc} {err[:200]!r}")
+        sh("remote", "set-url", "origin", "https://github.com/fmanimashaun/claude-skills.git")
+        rc, err = run("gh release create v1.0.1 --target main")
+        check("release-gate (#1569): the marketplace's own repo (by its origin) is exempt from the release gate too", rc == 0, f"rc={rc} {err[:200]!r}")
+        rc, err = run("gh api -X PUT repos/fmanimashaun/claude-skills/pulls/7/merge", **hotfix_pr, FAKE_PRREPO="fmanimashaun/claude-skills")
         check("release-gate (#1569): ... and from the API merge gate", rc == 0, f"rc={rc} {err[:200]!r}")
+        rc, err = run("gh pr merge 7 -R other/fork", **hotfix_pr, FAKE_PRREPO="other/fork")
+        check("release-gate (#1569): ... but never for a command that acts on ANOTHER repository", rc == 2, f"rc={rc} {err[:200]!r}")
+        sh("remote", "set-url", "origin", "https://github.com/o/r.git")
 
         # The fallback with no python3 cannot read `gh api`, so it must stay coarse and closed.
         (repo / ".claude-plugin" / "marketplace.json").unlink(); (repo / ".claude-plugin").rmdir()
@@ -1523,6 +1549,283 @@ def release_gate_effects_fixtures() -> None:
                         env={"PATH": str(only)}, capture_output=True, text=True, timeout=60)
             check(f"release-gate (#1569): with ONLY bash on PATH, `{cmd}` is still blocked", done.returncode == 2, f"rc={done.returncode}")
 
+
+
+# ---- #1569, second half: the command and the gate must agree on WHAT is acted on and WHERE. A different
+# repository (-R, GH_REPO, a repos/<o>/<r> path, another remote), a different directory (cd, git -C), a
+# different argument (the PR number, the ref a merge or ref write carries, the tag a release resolves to),
+# and a command spelled so that shlex and bash read it differently.
+FAKE_GH2 = """#!/bin/sh
+ep=""; for a in "$@"; do case "$a" in repos/*) ep="$a"; break ;; esac; done
+case "$1 $2" in
+  "pr view")
+    sel="$3"; case "$sel" in -*) sel="" ;; esac
+    v=""
+    if [ -n "$sel" ]; then
+      key="$(printf '%s' "$sel" | tr -c 'A-Za-z0-9' _)"
+      eval "v=\\${FAKE_PRVIEW_$key:-}"
+    fi
+    [ -n "$v" ] || v="${FAKE_PRVIEW:-}"
+    [ -z "$v" ] || printf '%s https://github.com/%s/pull/7' "$v" "${FAKE_PRREPO:-o/r}"
+    exit 0 ;;
+  "api graphql")
+    case "$*" in
+      *"on Ref"*) [ -z "${FAKE_REF:-}" ] || printf '%s %s' "$FAKE_REF" "${FAKE_PRREPO:-o/r}" ;;
+      *) [ -z "${FAKE_NODE:-}" ] || printf '%s %s' "$FAKE_NODE" "${FAKE_PRREPO:-o/r}" ;;
+    esac; exit 0 ;;
+  "release view") printf '%s' "${FAKE_RELVIEW:-}"; exit 0 ;;
+esac
+case "$ep" in
+  repos/*/contents/*)
+    ref="${ep##*ref=}"
+    [ -n "${FAKE_STAMP_REF:-}" ] && [ "$ref" = "$FAKE_STAMP_REF" ] && [ -f "${FAKE_STAMP_FILE:-/nonexistent}" ] && { cat "$FAKE_STAMP_FILE"; exit 0; }
+    exit 1 ;;
+  repos/*/compare/*) [ -n "${FAKE_COMPARE:-}" ] || exit 1; printf '%s\\n' "$FAKE_COMPARE"; exit 0 ;;
+  repos/*/commits/*) [ -n "${FAKE_COMMIT:-}" ] || exit 1; printf '%s' "$FAKE_COMMIT"; exit 0 ;;
+  repos/*/git/matching-refs/*) printf '%s' "${FAKE_TAGS:-}"; exit 0 ;;
+  repos/*/releases/*) printf '%s' "${FAKE_RELID:-}"; exit 0 ;;
+  repos/*) printf 'main'; exit 0 ;;
+esac
+exit 1
+"""
+
+
+def release_gate_repos_fixtures() -> None:
+    g = ["git", "-c", "user.email=t@t", "-c", "user.name=t"]
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td) / "repo"
+        _git_repo(repo)
+        sh = lambda *a, **kw: _run([*g, *a], cwd=repo, check=True, capture_output=True, text=True, **kw).stdout.strip()
+        old = {**os.environ, "GIT_COMMITTER_DATE": "2026-09-01T00:00:00+00:00", "GIT_AUTHOR_DATE": "2026-09-01T00:00:00+00:00"}
+        bare = Path(td) / "origin.git"
+        _run(["git", "init", "-q", "--bare", str(bare)], check=True, capture_output=True)
+        sh("remote", "add", "origin", "https://github.com/o/r.git")
+        sh("config", f"url.{bare}.insteadOf", "https://github.com/o/r.git")
+        sh("remote", "add", "upstream", "https://github.com/other/fork.git")
+        (repo / "app.rb").write_text("v1\n", encoding="utf-8")
+        sh("add", "app.rb"); sh("commit", "-q", "-m", "app")
+        tested = sh("rev-parse", "HEAD")
+        (repo / "qa").mkdir()
+        stamp = {"sha": tested, "date": "2026-09-26", "verdict": "PASS", "report": "qa/reports/r.md"}
+        (repo / "qa" / "CERTIFICATION").write_text(json.dumps(stamp), encoding="utf-8")
+        sh("add", "qa/CERTIFICATION"); sh("commit", "-q", "-m", "stamp", env=old)
+        stamped = sh("rev-parse", "HEAD")
+        sh("branch", "-f", "dev", stamped)
+        sh("checkout", "-q", "-b", "hotfix")
+        (repo / "app.rb").write_text("hotfix\n", encoding="utf-8")
+        sh("commit", "-q", "-am", "hotfix, never certified")
+        hot = sh("rev-parse", "HEAD")
+        sh("checkout", "-q", "-b", "feature/work", stamped)
+        sh("branch", "-f", "main", hot)
+        sh("tag", "v0.9", stamped); sh("tag", "v0.8", hot)
+        sh("push", "-q", "origin", "v0.9", "v0.8")
+        # another checkout, on main, whose dev has no stamp at all
+        sub = Path(td) / "sub"
+        _git_repo(sub)
+        _run([*g, "checkout", "-q", "-B", "main"], cwd=sub, check=True, capture_output=True)
+        _run([*g, "branch", "dev"], cwd=sub, check=True, capture_output=True)
+        (Path(td) / "bin").mkdir()
+        (Path(td) / "bin" / "gh").write_text(FAKE_GH2, encoding="utf-8")
+        (Path(td) / "bin" / "gh").chmod(0o755)
+        foreign_stamp = Path(td) / "foreign-stamp.json"
+        foreign_stamp.write_text(json.dumps({"sha": stamped, "date": "2026-10-01", "verdict": "PASS", "report": "r.md"}), encoding="utf-8")
+
+        def run(cmd: str, **extra) -> tuple[int, str]:
+            env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env.pop("GH_REPO", None)
+            env["CLAUDE_PLUGIN_ROOT"] = str(QA_HOOK.parents[2])
+            env["PATH"] = str(Path(td) / "bin") + os.pathsep + env["PATH"]
+            env.update(extra)
+            done = _run(["bash", str(QA_HOOK)], cwd=repo, input=json.dumps({"tool_input": {"command": cmd}}),
+                        env=env, capture_output=True, text=True, timeout=60)
+            return done.returncode, done.stderr
+
+        ok_pr = {"FAKE_PRVIEW": f"main {stamped}"}
+        # (1) THE SAME COMMAND, a different repository. This checkout is o/r and holds a PASS stamp at the PR's
+        # head, so judging it here would permit; the command acts on other/fork, whose stamp must be read there.
+        for label, cmd, env in (
+            ("gh pr merge -R", "gh pr merge 7 -R other/fork", {**ok_pr, "FAKE_PRREPO": "other/fork"}),
+            ("gh pr merge --repo=", "gh pr merge 7 --repo=other/fork", {**ok_pr, "FAKE_PRREPO": "other/fork"}),
+            ("gh pr -R before the subcommand", "gh pr -R other/fork merge 7", {**ok_pr, "FAKE_PRREPO": "other/fork"}),
+            ("GH_REPO in the command", "GH_REPO=other/fork gh pr merge 7", {**ok_pr, "FAKE_PRREPO": "other/fork"}),
+            ("GH_REPO exported earlier", "export GH_REPO=other/fork; gh pr merge 7", {**ok_pr, "FAKE_PRREPO": "other/fork"}),
+            ("GH_REPO in the hook's environment", "gh pr merge 7", {**ok_pr, "GH_REPO": "other/fork", "FAKE_PRREPO": "other/fork"}),
+            ("a PR whose URL is another repository", "gh pr merge 7", {**ok_pr, "FAKE_PRREPO": "other/fork"}),
+            ("a repos/<owner>/<repo> path", "gh api -X PUT repos/other/fork/pulls/7/merge", {**ok_pr, "FAKE_PRREPO": "other/fork"}),
+            ("a REST merge into another repository", "gh api repos/other/fork/merges -f base=main -f head=dev", {"FAKE_COMMIT": stamped}),
+            ("a ref write in another repository", f"gh api -X PATCH repos/other/fork/git/refs/heads/main -f sha={stamped}", {"FAKE_COMMIT": stamped}),
+            ("gh release create -R", "gh release create v1 -R other/fork --target main", {"FAKE_COMMIT": stamped}),
+            ("a draft published with -R", "gh release edit v1 --draft=false -R other/fork", {"FAKE_RELVIEW": "main", "FAKE_COMMIT": stamped}),
+            ("another git remote", "git push upstream dev:main", {}),
+            ("a remote given as a URL", "git push git@github.com:other/fork.git dev:main", {}),
+        ):
+            rc, err = run(cmd, **env)
+            check(f"release-gate (#1569): {label} acts on ANOTHER repository, whose stamp cannot be read, and is blocked",
+                  rc == 2 and "other/fork" in err, f"rc={rc} {err[:240]!r}")
+        # ... and permitted when that repository's own stamp is read through the API and certifies the commit.
+        ok_api = {"FAKE_STAMP_REF": stamped, "FAKE_STAMP_FILE": str(foreign_stamp), "FAKE_COMMIT": stamped, "FAKE_PRREPO": "other/fork"}
+        for label, cmd, env in (
+            ("gh pr merge -R", "gh pr merge 7 -R other/fork", ok_pr),
+            ("GH_REPO", "GH_REPO=other/fork gh pr merge 7", ok_pr),
+            ("a repos/<owner>/<repo> merge path", "gh api -X PUT repos/other/fork/pulls/7/merge", ok_pr),
+            ("a release into another repository", "gh release create v1 -R other/fork --target main", {}),
+            ("another git remote", "git push upstream dev:main", {}),
+        ):
+            rc, err = run(cmd, **{**ok_api, **env})
+            check(f"release-gate (#1569): {label} is permitted by the OTHER repository's own PASS stamp, read through the API",
+                  rc == 0 and "other/fork" in err, f"rc={rc} {err[:240]!r}")
+        rc, err = run("gh pr merge 7 -R other/fork", **{**ok_api, **ok_pr, "FAKE_COMPARE": "ahead\napp.rb", "FAKE_STAMP_REF": hot}, )
+        check("release-gate (#1569): another repository's stamp for an OLDER commit must cover only the stamp itself",
+              rc == 2, f"rc={rc} {err[:240]!r}")
+        # (2) NOT over-blocked: -R / GH_REPO / a path naming THIS checkout's own repository is judged here.
+        for cmd in ("gh pr merge 7 -R o/r", "gh pr merge 7 -R O/R", "GH_REPO=o/r gh pr merge 7", "gh api -X PUT repos/o/r/pulls/7/merge",
+                    "git push origin dev:main", "git push origin HEAD:main"):
+            rc, err = run(cmd, **ok_pr)
+            check(f"release-gate (#1569): CONTROL: `{cmd}` names this checkout's own repository and is judged here (certified: passes)",
+                  rc == 0, f"rc={rc} {err[:240]!r}")
+        rc, err = run("gh pr merge 7 -R o/r", FAKE_PRVIEW=f"main {hot}")
+        check("release-gate (#1569): CONTROL: ... and an uncertified head is still blocked", rc == 2 and "PR head" in err, f"rc={rc} {err[:240]!r}")
+        # Unreadable repositories and remotes deny.
+        for label, cmd in (
+            ("a host-qualified repository", "gh pr merge 7 -R ghe.example.com/o/r"),
+            ("a repository from a variable", "gh pr merge 7 -R $R"),
+            ("GH_REPO from a variable", "GH_REPO=$R gh pr merge 7"),
+            ("GH_REPO as a URL", "GH_REPO=https://github.com/o/r gh pr merge 7"),
+            ("--hostname", "gh api --hostname ghe.example.com -X PUT repos/o/r/pulls/7/merge"),
+            ("a remote that does not exist", "git push nowhere dev:main"),
+            ("a remote that is a path", "git push ../elsewhere dev:main"),
+            ("a remote from a variable", "git push $REMOTE dev:main"),
+        ):
+            rc, err = run(cmd, **ok_pr)
+            check(f"release-gate (#1569): {label} cannot be paired with a stamp and is blocked", rc == 2, f"rc={rc} {err[:240]!r}")
+        # (3) A different DIRECTORY: the stamp is read where the command runs.
+        for label, cmd in (
+            ("cd into another checkout", f"cd {sub} && git merge dev"),
+            ("git -C into another checkout", f"git -C {sub} merge dev"),
+            ("a cd that cannot be followed", "cd $SOMEWHERE && git merge dev"),
+            ("two different directories", f"cd {sub} && git merge dev; cd .. && git merge dev"),
+        ):
+            rc, err = run(cmd)
+            check(f"release-gate (#1569): {label} is judged in THAT directory (no stamp there) and blocked", rc == 2, f"rc={rc} {err[:240]!r}")
+        rc, err = run(f"cd {sub} && git status")
+        check("release-gate (#1569): CONTROL: a cd with no merge or push passes", rc == 0, f"rc={rc} {err[:240]!r}")
+        rc, err = run("git merge dev")
+        check("release-gate (#1569): CONTROL: `git merge dev` off main in this checkout is not a promotion", rc == 0, f"rc={rc} {err[:240]!r}")
+        # (4) The ARGUMENT the command acts on, not another one in the command line.
+        rc, err = run("gh pr merge -b 8 7", FAKE_PRVIEW_7=f"main {hot}", FAKE_PRVIEW_8=f"dev {stamped}")
+        check("release-gate (#1569): `gh pr merge -b 8 7` merges PR 7 (not the 8 that is the body) and is judged on PR 7's head",
+              rc == 2 and hot[:12] in err, f"rc={rc} {err[:240]!r}")
+        rc, err = run("gh pr merge 7 --match-head-commit 8", FAKE_PRVIEW_7=f"main {hot}", FAKE_PRVIEW_8=f"dev {stamped}")
+        check("release-gate (#1569): `--match-head-commit 8` is not the PR: PR 7 is judged", rc == 2 and hot[:12] in err, f"rc={rc} {err[:240]!r}")
+        for label, cmd, ok in (
+            ("a REST merge's `head` (dev is certified, the head is not)", "gh api repos/o/r/merges -f base=main -f head=hotfix", False),
+            ("a REST merge of the certified dev", "gh api repos/o/r/merges -f base=main -f head=dev", True),
+            ("a ref write's `sha` (dev is certified, the sha is not)", f"gh api -X PATCH repos/o/r/git/refs/heads/main -f sha={hot}", False),
+            ("a ref write of the certified sha", f"gh api -X PATCH repos/o/r/git/refs/heads/main -f sha={stamped}", True),
+            ("a new main ref at an uncertified sha", f"gh api repos/o/r/git/refs -f ref=refs/heads/main -f sha={hot}", False),
+            ("a REST merge with no head at all", "gh api repos/o/r/merges -f base=main", False),
+            ("a ref write with no sha at all", "gh api -X PATCH repos/o/r/git/refs/heads/main", False),
+            ("a GraphQL updateRef's oid", "gh api graphql -f query='mutation { updateRef(input:{refId:\"R1\", oid:\"%s\"}) { clientMutationId } }'" % hot, False),
+            ("a GraphQL updateRef of the certified oid", "gh api graphql -f query='mutation { updateRef(input:{refId:\"R1\", oid:\"%s\"}) { clientMutationId } }'" % stamped, True),
+            ("a GraphQL createRef's oid", "gh api graphql -f query='mutation { createRef(input:{name:\"refs/heads/main\", oid:\"%s\"}) { clientMutationId } }'" % hot, False),
+        ):
+            rc, err = run(cmd, FAKE_REF="main")
+            check(f"release-gate (#1569): {label} is judged by the commit it writes", (rc == 0) == ok and (ok or rc == 2), f"rc={rc} {err[:240]!r}")
+        # (5) A release is resolved the way GitHub resolves it: a tag that exists on the REMOTE wins over --target.
+        for label, cmd, ok in (
+            ("an existing remote tag at the certified commit, --target the uncertified main", "gh release create v0.9 --target main", True),
+            ("an existing remote tag at an UNcertified commit, --target the certified dev", "gh release create v0.8 --target dev", False),
+            ("an existing remote tag, no target", "gh release create v0.8", False),
+            ("a new tag with --target main (uncertified)", "gh release create v2.0 --target main", False),
+            ("a new tag with --target dev (certified)", "gh release create v2.0 --target dev", True),
+        ):
+            rc, err = run(cmd)
+            check(f"release-gate (#1569): {label} is judged by the commit GitHub will use", (rc == 0) == ok and (ok or rc == 2), f"rc={rc} {err[:240]!r}")
+        rc, err = run("gh release edit v0.8 --draft=false", FAKE_RELVIEW="dev")
+        check("release-gate (#1569): a draft whose tag already exists remotely is judged by the TAG, not its recorded target",
+              rc == 2 and hot[:12] in err, f"rc={rc} {err[:240]!r}")
+        # (6) The command the SHELL runs is the command that was classified.
+        for label, cmd in (
+            ("ANSI-C command word", "$'gh' api -X PUT repos/o/r/pulls/7/merge"),
+            ("ANSI-C hex command word", "$'\\x67\\x68' pr merge 7"),
+            ("ANSI-C method", "gh api -X $'PUT' repos/o/r/pulls/7/merge"),
+            ("ANSI-C in the middle of a word (no `gh` left in the text)", "g$'h' release create v2.0 --target main"),
+            ("locale string", 'gh $"api" -X PUT repos/o/r/pulls/7/merge'),
+            ("a variable command word", "$g release create v2.0 --target main"),
+            ("a brace-built command word", "g{h,} release create v2.0 --target main"),
+            ("$IFS for the spaces", "gh${IFS}release${IFS}create${IFS}v2.0${IFS}--target${IFS}main"),
+            ("a short-flag cluster hiding the method", "gh api -iXPUT repos/o/r/pulls/7/merge"),
+            ("a line continuation", "gh api -X PUT \\\n repos/o/r/pulls/7/merge"),
+        ):
+            rc, err = run(cmd, FAKE_PRVIEW=f"main {hot}")
+            check(f"release-gate (#1569): {label} is read the way the shell reads it (blocked)", rc == 2, f"rc={rc} {err[:240]!r}")
+        for cmd in ("echo $HOME", "git commit -m $'a\\nb'", "ls $(pwd)", "x=1; echo $x", "echo {a,b}"):
+            rc, err = run(cmd)
+            check(f"release-gate (#1569): CONTROL: `{cmd}` has an expansion but no effect, and passes", rc == 0, f"rc={rc} {err[:240]!r}")
+
+        # (7) FAIL CLOSED BY CONSTRUCTION: a gh or git nobody listed is not "no effect". Over-blocking a safe
+        # command in a gated repository is the price; letting an unlisted spelling merge is what it prevents.
+        for label, cmd in (
+            ("an unknown git verb (an alias)", "git ci -m x"),
+            ("a git -c that can redirect a push", "git -c url.https://x/.insteadOf=https://github.com/o/ push origin feature/x"),
+            ("an unknown git global option", "git --weird status"),
+            ("a git verb from a variable", "git $V push origin feature/x"),
+            ("git remote set-url", "git remote set-url origin https://github.com/x/y"),
+            ("a plumbing push", "git send-pack origin main"),
+            ("gh workflow run", "gh workflow run release.yml"),
+            ("gh pr update-branch", "gh pr update-branch 7"),
+            ("an unknown gh subcommand", "gh foo bar"),
+            ("a gh subcommand from a variable", "gh $x pr merge 7"),
+            ("a gh api write to dispatches", "gh api -X POST repos/o/r/dispatches -f event_type=release"),
+            ("a gh api update-branch", "gh api -X PUT repos/o/r/pulls/7/update-branch"),
+            ("a GraphQL mutation nobody listed", "gh api graphql -f query='mutation { mergeBranch(input:{}) { x } }'"),
+            ("a function defined before use", "foo() { gh pr merge 7; }; foo"),
+            ("an alias defined before use", "alias gm='git merge'; gm hotfix"),
+            ("find -exec", "find . -name x -exec gh pr update-branch 7 ;"),
+            ("git pull on main", "git pull"),
+        ):
+            sh("checkout", "-q", "main") if label == "git pull on main" else None
+            rc, err = run(cmd, FAKE_PRVIEW=f"main {stamped}")
+            if label == "git pull on main":
+                sh("checkout", "-q", "feature/work")
+            check(f"release-gate (#1569): {label} cannot be shown to be harmless, and is blocked", rc == 2, f"rc={rc} {err[:240]!r}")
+        for cmd in ("git status", "git log --oneline -3", "git fetch origin", "git add -A", "git commit -m 'x y'", "git push -u origin feature/x",
+                    "git checkout -b feature/y", "git -c user.name=x -c user.email=y commit -m z", "git config --get remote.origin.url",
+                    "git remote -v", "gh pr view 7", "gh pr list", "gh pr create -t x -b y", "gh pr checks 7", "gh issue create -t x",
+                    "gh run list", "gh release list", "gh api repos/o/r/pulls/7", "gh api -X POST repos/o/r/issues/1/comments -f body=hi",
+                    "echo gh pr merge 7", "which gh", "grep -r git .", "python3 x.py git"):
+            rc, err = run(cmd)
+            check(f"release-gate (#1569): CONTROL: the listed-safe `{cmd}` passes", rc == 0, f"rc={rc} {err[:240]!r}")
+        rc, err = run("gh workflow run release.yml", QA_ALLOW_MAIN="1")
+        check("release-gate (#1569): ... and the audited override (the HOOK's environment) still allows an unlisted command", rc == 0, f"rc={rc} {err[:240]!r}")
+        # (8) AUTHORIZATION: the override comes from the hook's own environment, never from the command text.
+        for cmd in ("QA_ALLOW_MAIN=1 gh release create v2.0 --target main", "env QA_ALLOW_MAIN=1 gh pr merge 7",
+                    "export QA_ALLOW_MAIN=1; git push origin hotfix:main", "QA_ALLOW_MAIN=1 git push origin hotfix:main",
+                    "bash -c 'QA_ALLOW_MAIN=1 gh pr merge 7'", "QA_ALLOW_MAIN=1; gh pr merge 7"):
+            rc, err = run(cmd, FAKE_PRVIEW=f"main {hot}")
+            check(f"release-gate (#1569): `{cmd}` does not set the override (it is not the hook's environment): blocked", rc == 2, f"rc={rc} {err[:240]!r}")
+        for cmd in ("gh release create v2.0 --target main", "git push origin hotfix:main"):
+            rc, err = run(cmd, QA_ALLOW_MAIN="1")
+            check(f"release-gate (#1569): `{cmd}` with QA_ALLOW_MAIN=1 in the HOOK's environment is allowed (audited)", rc == 0, f"rc={rc} {err[:240]!r}")
+        # The marketplace exemption needs the marketplace's identity, even after a cd into a directory that has the file.
+        spoof = Path(td) / "spoof"
+        _git_repo(spoof)
+        _run([*g, "checkout", "-q", "-B", "main"], cwd=spoof, check=True, capture_output=True)
+        (spoof / ".claude-plugin").mkdir()
+        (spoof / ".claude-plugin" / "marketplace.json").write_text('{"name":"x","plugins":[]}', encoding="utf-8")
+        _run([*g, "remote", "add", "origin", "https://github.com/acme/app.git"], cwd=spoof, check=True, capture_output=True)
+        _run([*g, "branch", "dev"], cwd=spoof, check=True, capture_output=True)
+        rc, err = run(f"cd {spoof} && git merge dev")
+        check("release-gate (#1569): a directory with a marketplace.json but another repository's origin is not exempt", rc == 2, f"rc={rc} {err[:240]!r}")
+        # (9) `git push origin main` ships the LOCAL main: dev's stamp must not stand in for it.
+        rc, err = run("git push origin main")
+        check("release-gate (#1569): `git push origin main` is judged by the LOCAL main (uncertified), though dev is certified",
+              rc == 2 and hot[:12] in err, f"rc={rc} {err[:240]!r}")
+        rc, err = run("git push --all origin")
+        check("release-gate (#1569): `git push --all` judges main too", rc == 2 and hot[:12] in err, f"rc={rc} {err[:240]!r}")
+        sh("branch", "-f", "main", stamped)
+        rc, err = run("git push origin main")
+        check("release-gate (#1569): CONTROL: ... and permitted once local main IS the certified commit", rc == 0, f"rc={rc} {err[:240]!r}")
+        sh("branch", "-f", "main", hot)
 
 # ---- ci-verdict-hint.sh (#1173) -----------------------------------------------------------------
 # An ADVISORY, so every fixture asserts exit 0 -- a hint that could fail the tool call would be a gate
@@ -1649,7 +1952,7 @@ GROUPS = {
     "guard_migrate": guard_migrate_fixtures, "lint_ruby": lint_ruby_fixtures,
     "self_consistency": self_consistency_fixtures, "guard_bash": guard_bash_fixtures,
     "guard_claims": guard_claims_fixtures, "release_gate": release_gate_fixtures,
-    "release_gate_effects": release_gate_effects_fixtures,
+    "release_gate_effects": release_gate_effects_fixtures, "release_gate_repos": release_gate_repos_fixtures,
     "ci_verdict_hint": ci_verdict_hint_fixtures, "timeout": timeout_fixtures,
 }
 
