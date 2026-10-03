@@ -198,7 +198,7 @@ GUARD = Guard(
             # a gate wrong about correct code: the maintainer overrides it every release or turns
             # it off, and then it protects nobody. It blocked v1.134.0 before this landed.
             "the marketplace carve-out is removed, so the gate blocks its own repo",
-            'if [ -f ".claude-plugin/marketplace.json" ] && [ -z "$_foreign" ] \\\n   && [ "$(repo_of_url "$(git config --get remote.origin.url 2>/dev/null || true)")" = "$MARKETPLACE_REPO" ]; then',
+            'if [ -f ".claude-plugin/marketplace.json" ] && [ -z "$_foreign" ] && only_marketplace_targets; then',
             'if false; then',
             "the marketplace's OWN repo is not a consumer",
         ),
@@ -208,9 +208,44 @@ GUARD = Guard(
             # Keyed on marketplace.json rather than "has no qa/ directory" precisely because the
             # latter is the ordinary state of an app that never ran /qa-flow:setup-qa.
             "the carve-out fires for every repo, so nothing is ever gated",
-            'if [ -f ".claude-plugin/marketplace.json" ] && [ -z "$_foreign" ] \\\n   && [ "$(repo_of_url "$(git config --get remote.origin.url 2>/dev/null || true)")" = "$MARKETPLACE_REPO" ]; then',
+            'if [ -f ".claude-plugin/marketplace.json" ] && [ -z "$_foreign" ] && only_marketplace_targets; then',
             'if true; then',
             "an ordinary repo with no certification is STILL blocked",
+        ),
+        Mutation(
+            # The exemption describes where a command GOES, and `remote.origin.pushurl` is where a push goes.
+            "the exemption reads only each remote's fetch url, not its push url",
+            'for mode in "" "--push"; do',
+            'for mode in ""; do',
+            "a pushurl that points elsewhere",
+        ),
+        Mutation(
+            # A second remote is where `gh` may resolve its default repository, and where a bare `git push <name>` goes.
+            "the exemption reads origin only, so another remote is ignored",
+            '$(git remote 2>/dev/null)\nEOF',
+            'origin\nEOF',
+            "a second remote that is another repository",
+        ),
+        Mutation(
+            # `remote.*.gh-resolved` is gh's own record of its default repository.
+            "a gh-resolved repository that names another repository is ignored",
+            'case "$v" in ""|base|other) ;; *) [ "$(printf \'%s\' "$v" | tr \'A-Z\' \'a-z\')" = "$MARKETPLACE_REPO" ] || return 1 ;; esac',
+            'case "$v" in *) ;; esac',
+            "gh's default repo named as another repository",
+        ),
+        Mutation(
+            # GH_REPO from the hook's own environment makes every gh command act on that repository.
+            "a GH_REPO naming another repository does not withdraw the exemption",
+            '[ -z "${GH_REPO:-}" ] || [ "$(printf \'%s\' "$GH_REPO" | tr \'A-Z\' \'a-z\')" = "$MARKETPLACE_REPO" ] || return 1',
+            'true',
+            "a GH_REPO that names another repository",
+        ),
+        Mutation(
+            # `get-url` applies insteadOf and pushInsteadOf; the raw config value does not.
+            "the exemption reads the raw configured url, not the one git resolves",
+            'u="$(git remote get-url $mode --all "$r" 2>/dev/null)"',
+            'u="$(git config --get-all "remote.$r.url" 2>/dev/null)"',
+            "a pushInsteadOf that rewrites the push target",
         ),
     ),
 )

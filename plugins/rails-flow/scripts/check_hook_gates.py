@@ -992,7 +992,8 @@ def release_gate_fixtures() -> None:
         return
 
     def run(cmd: str, marketplace: bool = False, plugin_root: Path | None = None,
-            origin: str | None = "https://github.com/fmanimashaun/claude-skills.git") -> int:
+            origin: str | None = "https://github.com/fmanimashaun/claude-skills.git",
+            git_config: tuple[tuple[str, ...], ...] = (), extra_env: dict[str, str] | None = None) -> int:
         with tempfile.TemporaryDirectory() as td:
             _git_repo(Path(td))
             # ON A FEATURE BRANCH (#1410). `git init` leaves HEAD on main, where a bare `git push`
@@ -1008,7 +1009,10 @@ def release_gate_fixtures() -> None:
                 if origin:
                     # The exemption is keyed on the repository's identity, not on the file alone (#1569).
                     _run(["git", "remote", "add", "origin", origin], cwd=td, check=True, capture_output=True)
-            env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env["CLAUDE_PLUGIN_ROOT"] = str(plugin_root or QA_HOOK.parents[2])
+            for args in git_config:
+                _run(["git", *args], cwd=td, check=True, capture_output=True)
+            env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env.pop("GH_REPO", None)
+            env["CLAUDE_PLUGIN_ROOT"] = str(plugin_root or QA_HOOK.parents[2]); env.update(extra_env or {})
             done = _run(["bash", str(QA_HOOK)], cwd=td, input=json.dumps({"tool_input": {"command": cmd}}),
                                   env=env, capture_output=True, text=True, timeout=60)
             return done.returncode
@@ -1087,6 +1091,42 @@ def release_gate_fixtures() -> None:
                           ("a path that merely contains the name", "/home/x/fmanimashaun/claude-skills")):
         check(f"release-gate (#1569): a marketplace.json in a repo with {label} is NOT the marketplace, and stays blocked",
               run("git push origin main", marketplace=True, origin=origin) == 2, "exit 0")
+    # #1571 review: the exemption described the CONFIGURED origin url, but a push, merge or release goes to the
+    # EFFECTIVE target. Each of these leaves `remote.origin.url` naming the marketplace while the command acts on
+    # the consumer's repository (acme/app here), and each was exempt.
+    mk = "https://github.com/fmanimashaun/"
+    acme = "https://github.com/acme/"
+    for label, cfg, env in (
+            ("a pushurl that points elsewhere", (("config", "remote.origin.pushurl", acme + "app.git"),), None),
+            ("a second pushurl that points elsewhere",
+             (("config", "remote.origin.pushurl", mk + "claude-skills.git"),
+              ("config", "--add", "remote.origin.pushurl", acme + "app.git")), None),
+            ("a pushInsteadOf that rewrites the push target",
+             (("config", f"url.{acme}.pushInsteadOf", mk),), None),
+            ("an insteadOf that rewrites the remote",
+             (("config", f"url.{acme}.insteadOf", mk),), None),
+            ("a second remote that is another repository",
+             (("remote", "add", "fork", acme + "app.git"),), None),
+            ("gh's default repo resolved to another remote",
+             (("remote", "add", "fork", acme + "app.git"), ("config", "remote.fork.gh-resolved", "base")), None),
+            ("gh's default repo named as another repository",
+             (("config", "remote.origin.gh-resolved", "acme/app"),), None),
+            ("a GH_REPO that names another repository", (), {"GH_REPO": "acme/app"})):
+        for cmd in ("git push origin main", "gh release create v9 --target main"):
+            check(f"release-gate (#1571 review): a marketplace tree with {label} is NOT exempt for `{cmd}`",
+                  run(cmd, marketplace=True, git_config=cfg, extra_env=env) == 2, "exit 0")
+    # The pairs: the same configuration shapes that name the marketplace itself, or only change the transport,
+    # keep the exemption, so a broken-open and a broken-shut resolver are told apart.
+    for label, cfg, env in (
+            ("a pushurl that names the marketplace", (("config", "remote.origin.pushurl", mk + "claude-skills.git"),), None),
+            ("a pushInsteadOf that only changes the transport",
+             (("config", "url.git@github.com:fmanimashaun/.pushInsteadOf", mk),), None),
+            ("a second remote that is the marketplace too", (("remote", "add", "fork", mk + "claude-skills.git"),), None),
+            ("a gh default that names the marketplace",
+             (("config", "remote.origin.gh-resolved", "fmanimashaun/claude-skills"),), None),
+            ("GH_REPO naming the marketplace", (), {"GH_REPO": "fmanimashaun/claude-skills"})):
+        check(f"release-gate (#1571 review): CONTROL: a marketplace tree with {label} stays exempt",
+              run("git push origin main", marketplace=True, git_config=cfg, extra_env=env) == 0, "exit 2")
 
     # #1337. The stamp is bound to the tested dev sha; committing it to dev by PR moves dev. The gate
     # accepts an ANCESTOR of dev only when the delta since is the stamp itself.

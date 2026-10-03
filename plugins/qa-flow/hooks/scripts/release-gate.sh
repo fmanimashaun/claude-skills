@@ -381,8 +381,38 @@ fi
 # it exempts only a checkout whose `origin` is the marketplace's own repository (#1569). A command that also
 # acts on ANOTHER repository (`-R`, GH_REPO, a remote) is never exempt: the exemption describes this checkout.
 MARKETPLACE_REPO="fmanimashaun/claude-skills"
-if [ -f ".claude-plugin/marketplace.json" ] && [ -z "$_foreign" ] \
-   && [ "$(repo_of_url "$(git config --get remote.origin.url 2>/dev/null || true)")" = "$MARKETPLACE_REPO" ]; then
+# (#1571 review) The CONFIGURED origin url is not where a command goes: `remote.origin.pushurl`, `url.X.pushInsteadOf`
+# and `url.X.insteadOf` each send a push, merge or release to another repository while `remote.origin.url` still
+# names the marketplace, and gh acts on its resolved default repository (`remote.*.gh-resolved`, GH_REPO), not on
+# origin. So the exemption holds only when EVERY target the command could reach is the marketplace: every remote's
+# fetch and push url as git resolves them (`git remote get-url [--push] --all`), every gh-resolved repository, and
+# GH_REPO. One that is another repository, or that cannot be read (an empty or unrecognisable value never equals the
+# marketplace), withdraws it: fail closed, never "probably origin".
+only_marketplace_targets() {
+  local r u v mode
+  [ "$(repo_of_url "$(git config --get remote.origin.url 2>/dev/null || true)")" = "$MARKETPLACE_REPO" ] || return 1
+  while IFS= read -r r; do
+    [ -n "$r" ] || continue
+    for mode in "" "--push"; do
+      u="$(git remote get-url $mode --all "$r" 2>/dev/null)"
+      while IFS= read -r v; do
+        [ "$(repo_of_url "$v")" = "$MARKETPLACE_REPO" ] || return 1
+      done <<EOF
+$u
+EOF
+    done
+  done <<EOF
+$(git remote 2>/dev/null)
+EOF
+  while IFS= read -r v; do
+    case "$v" in ""|base|other) ;; *) [ "$(printf '%s' "$v" | tr 'A-Z' 'a-z')" = "$MARKETPLACE_REPO" ] || return 1 ;; esac
+  done <<EOF
+$(git config --get-regexp '^remote\..*\.gh-resolved$' 2>/dev/null | awk '{print $2}')
+EOF
+  [ -z "${GH_REPO:-}" ] || [ "$(printf '%s' "$GH_REPO" | tr 'A-Z' 'a-z')" = "$MARKETPLACE_REPO" ] || return 1
+  return 0
+}
+if [ -f ".claude-plugin/marketplace.json" ] && [ -z "$_foreign" ] && only_marketplace_targets; then
   echo "qa-flow: this is the marketplace repo itself, which ships qa-flow rather than consuming it — release gate not applicable." >&2
   exit 0
 fi
