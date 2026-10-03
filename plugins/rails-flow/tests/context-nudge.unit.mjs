@@ -14,7 +14,22 @@ import assert from 'node:assert/strict'
 
 const failures = []
 let checks = 0
+let inFlight = '' // the check running right now, named if it never settles
 let fresh = 0
+
+// Report from an 'exit' handler registered BEFORE the first await (so it exists when a check never settles): a check that never settles ends the process (exit
+// code 13, an unsettled top-level await) before any line below would run, and the failures would vanish.
+process.on('exit', (code) => {
+  if (inFlight !== '') failures.push(`${inFlight}: never settled (an await that never resolves), so nothing after it ran`)
+  if (failures.length === 0 && code === 0) {
+    console.log(`context-nudge unit: ${checks} checks passed`)
+    return
+  }
+  const ended = code === 0 ? '' : `; the process had already ended with exit code ${code}`
+  console.error(`context-nudge unit FAILED -- ${failures.length} failed, ${checks} started${ended}:`)
+  for (const f of failures) console.error(`  - ${f}`)
+  process.exitCode = 1
+})
 
 // A new copy of the module each time: it keeps its state in module variables, as a mod does.
 async function harness(env) {
@@ -45,11 +60,13 @@ async function harness(env) {
 
 async function check(label, fn) {
   checks += 1
+  inFlight = label
   try {
     await fn()
   } catch (err) {
     failures.push(`${label}: ${String(err.message).split('\n')[0]}`)
   }
+  inFlight = ''
 }
 
 await check('the fill is pinned under the prompt, and cleared when the window has no reading', async () => {
@@ -149,16 +166,4 @@ await check('a Remote Control prompt counts as the person', async () => {
   await h.measure(90)
   const r = await h.submit('from a phone', { kind: 'bridge' })
   assert.equal(r.context.length, 1)
-})
-
-// Report from an 'exit' handler, not at the bottom: a check that never settles ends the process (exit
-// code 13, an unsettled top-level await) before any line below would run, and the failures would vanish.
-process.on('exit', (code) => {
-  if (failures.length === 0 && code === 0) {
-    console.log(`context-nudge unit: ${checks} checks passed`)
-    return
-  }
-  console.error(`context-nudge unit FAILED -- ${failures.length} failed, ${checks} started, exit code ${code}:`)
-  for (const f of failures) console.error(`  - ${f}`)
-  process.exitCode = 1
 })
