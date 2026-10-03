@@ -132,5 +132,11 @@ GUARD = Guard(
             'parts[0].startswith("X")',
             'a zombie count at the threshold is reported',
         ),
+        Mutation(
+            'the zombie advisory prints a parent\'s whole command line, credentials included',
+            '["ps", "-o", "comm=", "-p", str(ppid)]',
+            '["ps", "-o", "command=", "-p", str(ppid)]',
+            "never prints a parent's command-line arguments",
+        ),
     ),
 )

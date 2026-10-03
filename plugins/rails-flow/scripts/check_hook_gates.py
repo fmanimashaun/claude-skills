@@ -1731,6 +1731,21 @@ def guard_worktree_fixtures() -> None:
             check("resume pointer: below the threshold the zombie warning is silent", "zombie" not in start(repo)[1])
         finally:
             child.wait()
+        # A parent's command line can hold a credential: the advisory names the executable, never its arguments.
+        # A short command line on purpose: `ps` shows argv, and the advisory used to cut it at 60 characters, so a
+        # long interpreter path (Python re-executes through Python.app on macOS) would hide the secret and make
+        # this fixture pass whatever the code does. perl forks a child that exits unreaped: a real zombie.
+        check("resume pointer: the zombie fixture's parent can be started (perl)", shutil.which("perl") is not None, "perl not found")
+        parent = subprocess.Popen(["perl", "-e", "sleep 8 if fork;", "SECRET-TOKEN-xyz"])
+        time.sleep(1.0)
+        try:
+            out = start(repo, RAILS_FLOW_ZOMBIE_WARN="1", RAILS_FLOW_ZOMBIE_TOP="100")[1]
+            check("resume pointer: the zombie advisory lists a busy parent by pid", f"pid {parent.pid}" in out, out[-300:])
+            check("resume pointer: ...and never prints a parent's command-line arguments (they can hold a credential)",
+                  "SECRET-TOKEN" not in out, out[-300:])
+        finally:
+            parent.kill()
+            parent.wait()
 
 
 GROUPS = {

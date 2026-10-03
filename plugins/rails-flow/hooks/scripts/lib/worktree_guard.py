@@ -203,12 +203,19 @@ def zombies() -> tuple[int, list[tuple[int, str, int]]]:
         parts = line.split(None, 2)
         if len(parts) == 3 and parts[0].startswith("Z") and parts[1].isdigit():
             by_parent[int(parts[1])] = by_parent.get(int(parts[1]), 0) + 1
-    top = sorted(by_parent.items(), key=lambda kv: -kv[1])[:3]
+    try:
+        shown = max(1, int(os.environ.get("RAILS_FLOW_ZOMBIE_TOP") or 3))
+    except ValueError:
+        shown = 3
+    top = sorted(by_parent.items(), key=lambda kv: -kv[1])[:shown]
     names = []
     for ppid, n in top:
         try:
-            comm = subprocess.run(["ps", "-o", "command=", "-p", str(ppid)], capture_output=True, text=True,
-                                  timeout=5).stdout.strip()[:60]
+            # The EXECUTABLE NAME only (`comm`, not `command`): a command line can carry a credential
+            # (`mysql -pSECRET`, `node server.js --token=...`), and this prints into the model's context,
+            # again after every compaction.
+            comm = os.path.basename(subprocess.run(["ps", "-o", "comm=", "-p", str(ppid)], capture_output=True,
+                                                   text=True, timeout=5).stdout.strip())[:40]
         except (OSError, subprocess.TimeoutExpired):
             comm = "?"
         names.append((ppid, comm or "?", n))
