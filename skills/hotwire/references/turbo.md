@@ -25,7 +25,8 @@ What the server must do:
 - **Successful form submission → redirect** (`303 See Other` for
   PATCH/PUT/DELETE so the follow-up is a GET).
 - **Failed validation → re-render the form with `422 Unprocessable Content`** (`status:
-  :unprocessable_content`; Rack 3.1 renamed it, and `:unprocessable_entity` now warns).
+  :unprocessable_content`; Rack 3.1 renamed it — `SKILL.md` says which Rails and Rack combinations
+  accept the new symbol; `:unprocessable_entity` still returns 422 and warns only on Rack 3.1.0–3.1.2).
 - **Server errors → `500`** (Turbo shows the response). A `200` containing a
   form response without redirect is the classic "my form does nothing" bug.
 
@@ -95,9 +96,12 @@ does, and the difference is useful.** Drive's cross-visit persistence selects
 skip is a bare `hasAttribute("data-turbo-permanent")` check with **no `id`
 involved** — which is what makes it safe to *add the attribute at runtime*
 to shield a region only while it needs shielding (an edit in progress), and
-remove it after. (A node a morph is *adding* is different: `beforeNodeAdded`
-checks `node.id`, so a new incoming permanent node needs an `id` to be
-suppressed — Turbo 8.0.23 `src/core/morphing.js`.) Worked example in `references/production.md` §2.4.
+remove it after. (A node a morph is *adding* is different: `beforeNodeAdded` skips it
+only when it has an `id` **and** an element with that same `id` is already in
+the page — `!(node.id && node.hasAttribute("data-turbo-permanent") &&
+document.getElementById(node.id))` — so a new permanent node with no `id`, or
+with an `id` nothing on the page carries, is added. Turbo 8.0.23
+`src/core/morphing.js:62`.) Worked example in `references/production.md` §2.4.
 
 The payoff is **broadcasted refreshes**: instead of authoring per-change
 streams, the server broadcasts a tiny "reload yourself" signal and every
