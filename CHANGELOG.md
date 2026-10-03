@@ -3753,16 +3753,31 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     `git remote set-url` and `gh repo set-default` each sent `gh` to B. `git -c …` and `git --config-env=…` stay
     judged normally: they live in that one git process. A segment that redirects into a file (`echo … >>
     .git/config`) is not allowlisted, and `sed` left the allowlist (`sed -i`).
-  - `check_hook_gates.py` goes from 406 checks on dev (`79a16dc`) to 554, so 148 are new. Run against dev's
-    `guard-claims.sh`, 132 of the 148 fail, all of them in guard-claims; the 16 that pass are controls, listed by name
+  - **No code runs from a `cd` target** (two push security reviews, round 8). The hook runs BEFORE the person is asked
+    about the command, and the `skills/**` change-type check read `git diff` in the directory the command `cd`s into.
+    A repository's own config can name a program that `git diff` executes, so a `cd` into such a repository ran it and
+    a denial could not undo it. Measured with a marker file: `core.fsmonitor` ran on any diff, and a
+    `filter.<name>.clean` ran on a diff that hashes a changed working-tree file (the first fix, `-c core.fsmonitor=false`,
+    left the second running). Turning off keys one at a time is the wrong shape, so a repository other than the
+    session's is now read through `git diff --cached` only, which hashes no file, with fsmonitor off, `--no-ext-diff`
+    and no index write; the session's own repository is read as on dev. Tested against the six config keys that run a
+    program during a plain `git diff HEAD` (`core.fsmonitor`, `filter.<n>.clean`, `filter.<n>.process`,
+    `diff.<n>.textconv`, `diff.<n>.command`, `diff.external`): none runs in the cd-target path, and a `cd` into the
+    session's own repository, a subdirectory or a symlink of it is still held in full. The cost: an UNSTAGED `skills/`
+    change in another repository is no longer seen, which `gh pr create` would not publish anyway. Not done: the
+    session's own repository is still read unsandboxed, as on dev.
+  - `check_hook_gates.py` goes from 409 checks on dev (`464ecef`) to 560, so 151 are new. Run against dev's
+    `guard-claims.sh`, 133 of the 151 fail, all of them in guard-claims; the 18 that pass are controls, listed by name
     from a run that logged every check: no `cd`; `git push && gh` with no `cd`; allowlisted commands and an assignment
     before `gh`; a logical `cd link/..`; `-R` after a `cd`; other assignments before `gh`; a `GIT_*` on an earlier
     allowlisted command; an inherited `GIT_EDITOR`; the session's own `skills/` diff without a `cd`; the cd-target
-    `skills/` check, which dev's hook passes only because it cannot read the relative body; and the six round-7
-    controls (an inherited `HOME`; `git -c url…insteadOf=…` and `git --config-env=…` before `gh`; `HOME=… git status`
-    before `gh`; a redirect to `/dev/null` and an fd before `gh`; `gh pr view` before `gh`). `hook_guard_claims` goes
-    from 11 mutations to 20, and the new `hook_command_cwd` guard carries 53 (43 before round 7); all 73 are caught by
-    their expected fixture, run on the merged head.
+    `skills/` check, which dev's hook passes only because it cannot read the relative body; the six round-7 controls
+    (an inherited `HOME`; `git -c url…insteadOf=…` and `git --config-env=…` before `gh`; `HOME=… git status` before
+    `gh`; a redirect to `/dev/null` and an fd before `gh`; `gh pr view` before `gh`); and the two "no code runs from the
+    target" checks, which dev's hook passes only because it never ran `git` in the target. `hook_guard_claims` goes
+    from 11 mutations to 23 (all 23 caught by their expected fixture, run on this branch), and the new
+    `hook_command_cwd` guard carries 53 (43 before round 7; all 53 were caught on the merged tree at `b6999b6`, and the
+    full gate run covers both guards on the final head).
 
 - **A mod shows the context window's fill and nudges once, so a long session stops paying for context it no longer needs — `plugins/rails-flow/hooks/context-nudge.mjs`, `plugins/rails-flow/hooks/register.js`, `plugins/rails-flow/hooks/hooks.json`, `plugins/rails-flow/scripts/check_mods.py`, `plugins/rails-flow/reference/context-budget.md`** (#1547, the owner's decision on the issue: a mod in rails-flow, not a statusLine script). `session.measure` pushes `context.percent` after each turn; the mod pins `context NN%` under the prompt (rendered `⚠ rails-flow: context NN%`; in the VS Code chat panel a mod's hooks run but what it draws does not appear, so expect the nudge and probably not the line there) and, on the person's next prompt at or past the threshold, adds ONE line only Claude reads (about 230 characters) asking it to offer `/rails-flow:handoff` and a `/clear` or `/compact`, once per climb, only on a prompt from a person at an interactive surface (`composer`, `bridge` or no origin; the other fourteen origin kinds, `sdk` included, are refused on purpose). A plugin cannot ship `statusLine` (its manifest drops the key), and `hooks.json` takes one module path with at most one hook per event and matcher, so `register.js` is the one module and registers every mod. **Verified** (four `doctrine-verifier` passes on #1547; the cited excerpts are committed at `docs/evidence/audits/2026-10-02-mods-api-2.1.287.md`, taken from 2.1.287 and not re-checked on 2.1.288; seven rows in `docs/evidence/upstream/claude-code.json` put the five mods pages it rests on under the weekly upstream re-read): `percent` is `tokens` over `window`, the status line's `used_percentage`, on the engine's own types for 2.1.287 (the website docs do not define it); the one-registration rule; the version floor. "No usage field reaches a hook" and how `$.ui.status` relates to a configured `statusLine` are left INCONCLUSIVE, so neither is claimed. **CI runs** a Node unit test of the mod's logic against a hand-built host (26 checks) and one that `register.js` registers each event and matcher once (doctor gate "mod unit tests"), under two mutation guards, `context_nudge` and `mods_register`, each caught by its intended check. **CI cannot run** `claude plugin validate` and `claude plugin test` (8 tests), which need the `claude` CLI; they run locally, and the fake host is written from the types so it can agree with the mod and disagree with the engine. The threshold (default 70, `RAILS_FLOW_CONTEXT_NUDGE_PCT`) is a starting value, not a measurement. Needs Claude Code 2.1.287 or later. Our own design plus an external claim, the latter verified.
 
