@@ -26,6 +26,14 @@ GUARD = Guard(
            # mutation reads as caught -- the harness reported this guard INERT until it was added (#1173).
            'plugins/rails-flow/scripts/ci_verdict_hint.py'),   # the harness drives release-gate.sh too (#906)
     mutations=(
+        # #1570: grep -q quits at the first match, printf takes SIGPIPE once the text outgrows the pipe
+        # buffer, and pipefail read that 141 as "no match". `git add -A` plus 10k lines was allowed.
+        Mutation(
+            "hit() runs under pipefail again, so a long command that matches is read as no match",
+            '( set +o pipefail; printf \'%s\\n\' "$seg" | grep -qE "$re" )',
+            'printf \'%s\\n\' "$seg" | grep -qE "$re"',
+            "followed by 10k lines is still blocked",
+        ),
         # #1489: `bash < file` names no create, so the trigger must fire on the redirect itself.
         Mutation(
             "the trigger ignores a shell reading a redirect, so bash < file never reaches the helper",
