@@ -84,6 +84,66 @@ we cannot reproduce is not one a ratchet can hold). What we can do is make the c
 check in `project_gates` holds the committed settings to it. **It adds nothing to any session** — it
 runs on demand and in CI — so the check that guards the budget does not spend it.
 
+## The live window: a mod that shows the fill and nudges once (#1547)
+
+Everything above bounds what we *inject*. Nothing watched how full the window actually was, so a long
+session kept paying for context it no longer needed. `hooks/context-nudge.mjs` does two things, and only
+these:
+
+1. **Shows the fill.** After each turn, `session.measure` hands the mod `context.percent`; it pins
+   `context NN%` under the prompt with `$.ui.status`, one line per plugin, which Claude Code renders as
+   `⚠ rails-flow: context NN%` (the docs' own style for a routine value, not a severity). Neither source says
+   how that line relates to a configured `statusLine`, so nothing here claims it leaves one alone. **In the VS
+   Code extension's chat panel a mod's hooks run but what it draws does not appear**, so the line is probably
+   not visible there (an inference: the docs table does not name `$.ui.status`); the nudge does not depend on
+   drawing.
+2. **Nudges once per climb.** When the person submits a prompt and the fill is at or past the threshold, it
+   adds ONE context line only Claude reads (about 230 characters, asserted at most 400): finish the step,
+   offer `/rails-flow:handoff`, tell the user to `/clear` or `/compact`. It adds nothing again until the fill
+   has fallen below the threshold or lost its reading (a `/clear` or a compaction). It is added only to a
+   prompt from a person at an interactive surface: `composer`, `bridge` or no origin. The other fourteen of
+   the engine's sixteen origin kinds are refused on purpose, `sdk` included, because `claude -p` has nobody to
+   run `/clear`.
+
+**What is verified, and where.** Verdicts are on #1547 (four `doctrine-verifier` passes) and the cited
+excerpts are committed at `docs/evidence/audits/2026-10-02-mods-api-2.1.287.md`, with the declaration's
+checksum, so no citation depends on a temporary path. That file was taken from 2.1.287 and has not been
+re-checked against 2.1.288, which the CLI has since moved to; `claude plugin validate` and `claude plugin test`
+pass on 2.1.288.
+- `percent` is `tokens` over `window` as a whole percentage, "the status line's `used_percentage`", where
+  `tokens` is uncached, cache-written and cache-read input together; both are absent until the first response
+  of a live window and after a compaction. **The source is the engine's own type declaration for 2.1.287**
+  (`claude-code.d.ts`, written by Claude Code and shipped with its plugin-authoring skill). The website docs
+  list the field and do not define it, so a later release can change the formula without the docs saying so.
+- `session.measure` fires after each turn and when the fill moved. A prompt hook can add context "only Claude
+  reads". Mods need Claude Code 2.1.287 or later. A plugin manifest drops `statusLine`, which is why this is a
+  mod and not a status line script.
+- Two hooks on the same event with no matcher fail to load, so `hooks/register.js` (the one module
+  `hooks.json` names) must register each event and matcher once. This mod uses `session.measure` and
+  `prompt.submit`; the lane band uses `session.start`, `turn.complete` and `ui.render` on `AbovePrompt`.
+  A module may not pass `$` to a function imported from another of its files, and this mod imports nothing.
+- "No usage field reaches a hook" stayed INCONCLUSIVE, so the claim here is only that the docs document none.
+
+**What CI checks, and what it cannot.**
+- *CI runs* `plugins/rails-flow/scripts/check_mods.py` (doctor gate "mod unit tests"): `tests/*.unit.mjs` drive
+  the mod's hooks under plain Node with a hand-built host, and `register.unit.mjs` checks that `register.js`
+  registers each event and matcher once. The mutation guards `context_nudge` (12 mutations) and
+  `mods_register` (2) run in the mutation coverage sweep, so these checks are known to be able to fail.
+- *CI cannot run* `claude plugin validate` or `claude plugin test`, which need the `claude` CLI; the gate
+  runners do not have it (`check_hook_commands.py` says the same). They check that the engine accepts the
+  module and calls these hooks with these event shapes, and they run on a maintainer's machine: 8 tests in
+  `tests/context-nudge.test.ts`. Nothing in CI would notice the engine changing an event's shape.
+- The unit test's fake host is written from the types, so it can agree with the mod and disagree with the engine.
+  That gap is the reason the local run stays in the review checklist.
+
+**What is not known.**
+- **The threshold is a starting value.** Default 70, whole percent, overridden by
+  `RAILS_FLOW_CONTEXT_NUDGE_PCT` (1 to 99). Nothing has measured where a handoff stops being cheap; do not
+  read 70 as a finding.
+- The mod's own variables reset on a hot reload, so a reload can repeat the nudge once. Development only.
+- One clause of the prompt hook, the explicit `percent === null`, is redundant because `null < 70` is already
+  true in JavaScript. Removing it changes nothing, so no test can catch it, and it is left out of the guard.
+
 ## What this does not cover
 
 Whether the content is *worth* its bytes is a review question, not a gate. The check answers only
