@@ -3,7 +3,9 @@ from mutation_types import Guard, Mutation  # noqa: F401
 
 # #1547. hooks.json names ONE module, hooks/register.js, and Claude Code refuses two hooks on the same event
 # with no matcher. Calling a mod twice, or none, are the two ways this file goes wrong while every mod's own
-# test still passes. Each mod is staged beside it because register.js imports it.
+# test still passes. Each mod is staged beside it because register.js imports it. A third way (#1557): a mod's
+# call is dropped, which no mod's own test can see, so tests/register.unit.mjs finds every mod by its export
+# and fails when one of them is not registered.
 GUARD = Guard(
     name="mods_register",
     subject="hooks/register.js",
@@ -22,6 +24,19 @@ GUARD = Guard(
             "  laneBand(on, options)\n",
             "  laneBand(on, options)\n  laneBand(on, options)\n",
             "registered twice",
+        ),
+        # #1557: a mod dropped from register.js leaves every mod's own test green and the mod dead.
+        Mutation(
+            "the context-nudge call is dropped, so that mod is never registered",
+            "  contextNudge(on, options)\n  laneBand(on, options)\n",
+            "  laneBand(on, options)\n",
+            "context-nudge.mjs: its hook",
+        ),
+        Mutation(
+            "the lane band call is dropped, so that mod is never registered",
+            "  contextNudge(on, options)\n  laneBand(on, options)\n",
+            "  contextNudge(on, options)\n",
+            "lane-band.js: its hook",
         ),
         Mutation(
             "no mod is registered at all",
