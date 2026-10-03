@@ -1139,7 +1139,10 @@ class Doctor:
 
     def _ref_tips(self) -> list[str] | None:
         """Every ref tip and HEAD of the repository, or None if git cannot say."""
-        code, out = self.run("git", "-C", str(REPO), "for-each-ref", "--format=%(objectname)")
+        # LOCAL refs only (#1594 review D1): branches, the stash and HEAD. A `git fetch` during a sweep moves
+        # remote-tracking refs, and the commits it brings are other people's -- not a fixture escaping.
+        code, out = self.run("git", "-C", str(REPO), "for-each-ref", "--format=%(objectname)",
+                             "refs/heads", "refs/stash")
         code2, head = self.run("git", "-C", str(REPO), "rev-parse", "HEAD")
         if code != 0 or code2 != 0:
             return None
@@ -1158,7 +1161,11 @@ class Doctor:
             return
         code, me = self.run("git", "-C", str(REPO), "config", "user.email")
         me = me.strip() if code == 0 else ""
-        code, out = self.run("git", "-C", str(REPO), "rev-list", "--format=%H %ae %s", *after, "--not", *before)
+        # `--remotes` on the NOT side: a commit any remote-tracking ref reaches came from a remote (a `fetch`,
+        # or a `pull` into a local branch), so it is not one a fixture made here. An escaped fixture commit is
+        # on no remote, and stays in the list.
+        code, out = self.run("git", "-C", str(REPO), "rev-list", "--format=%H %ae %s", *after, "--not", *before,
+                             "--remotes")
         if code != 0:
             self.add(SKIP, name, "git could not compare the refs", out.strip()[:200])
             return

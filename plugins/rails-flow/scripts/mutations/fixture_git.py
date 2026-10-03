@@ -18,8 +18,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a repo whose init failed is searched past instead of refused",
-            "    if not (path / \".git\").exists():\n        raise NotATempRepo(",
-            "    if False:\n        raise NotATempRepo(",
+            '    if not dot.exists():\n        raise NotATempRepo(',
+            '    if False:\n        raise NotATempRepo(',
             "a commit in a repo whose init failed is REFUSED",
         ),
         Mutation(
@@ -39,6 +39,20 @@ GUARD = Guard(
             '    out["GIT_CONFIG_COUNT"] = str(start + len(SETTINGS))\n',
             "",
             "fixture git runs with maintenance.auto=false",
+        ),
+        Mutation(
+            # #1594 S1
+            'a .git gitlink or symlink pointing at another repo is followed (#1594 review S1)',
+            '    if target != path and path not in target.parents:\n        raise NotATempRepo(',
+            '    if False:\n        raise NotATempRepo(',
+            'a .git gitlink file pointing at another repo is refused',
+        ),
+        Mutation(
+            # #1594 S2
+            'an explicit --git-dir/--work-tree in the arguments overrides the binding (#1594 review S2)',
+            '        if a in ("--git-dir", "--work-tree") or a.startswith(("--git-dir=", "--work-tree=")):',
+            '        if False:',
+            'an explicit --git-dir in the arguments is refused',
         ),
     ),
 )

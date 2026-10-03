@@ -223,5 +223,12 @@ GUARD = Guard(
             '        foreign = added',
             "a commit by the configured user (another session's work) is not flagged",
         ),
+        Mutation(
+            # #1594 D1
+            'fetched commits are not excluded, so a git fetch during a sweep is a false alarm (#1594 review D1)',
+            '        code, out = self.run("git", "-C", str(REPO), "rev-list", "--format=%H %ae %s", *after, "--not", *before,\n                             "--remotes")',
+            '        code, out = self.run("git", "-C", str(REPO), "rev-list", "--format=%H %ae %s", *after, "--not", *before)',
+            "a fetch and pull of other authors' commits during the sweep is not flagged",
+        ),
     ),
 )

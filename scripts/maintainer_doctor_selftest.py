@@ -239,6 +239,21 @@ def repo_untouched_fixtures() -> None:
             _tick()
             if want == md.FAIL and r is not None and "fx@fixture" not in r.detail:
                 FAILURES.append(f"#1588: the finding must name the escaped commit's author: {r.detail!r}")
+        # #1594 review D1: a FETCH (and a pull into a local branch) during the sweep brings commits by other
+        # authors from the remote. They are not a fixture escaping, so the detector must not flag them.
+        other = work.parent / "other"
+        _git(work.parent, "clone", "-q", str(work.parent / "remote.git"), str(other))
+        _git(other, "-c", "user.email=someone@else", "-c", "user.name=s", "commit", "-q", "--allow-empty", "-m", "theirs")
+        _git(other, "push", "-q", "origin", "HEAD")
+        (scripts / "_fetch.py").write_text(
+            "import subprocess\n"
+            "subprocess.run(['git', 'fetch', '-q', 'origin'], check=True)\n"
+            "subprocess.run(['git', 'merge', '-q', '--ff-only', '@{u}'], check=True)\n", encoding="utf-8")
+        md.GATES = (("selftest fetches", ("python3", "scripts/_fetch.py")),)
+        d = md.Doctor()
+        d.check_gates()
+        expect("CONTROL: a fetch and pull of other authors' commits during the sweep is not flagged (#1594 D1)", d,
+               "the sweep committed nothing into the real repository", md.PASS)
         md.GATES = (("selftest quiet", ("python3", "scripts/_quiet.py")),)
         d = md.Doctor()
         d.check_gates()

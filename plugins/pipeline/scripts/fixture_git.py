@@ -95,9 +95,26 @@ def init(repo: str | os.PathLike, *extra: str) -> Path:
 def run(repo: str | os.PathLike, *args: str, check: bool = True, **kw) -> subprocess.CompletedProcess:
     """`git <args>` in `repo` and nowhere else. A repo whose init failed is refused, not searched past."""
     path = _inside_temp(repo)
-    if not (path / ".git").exists():
+    dot = path / ".git"
+    if not dot.exists():
         raise NotATempRepo(f"{path} has no .git -- its init failed; refusing rather than letting git find "
                            "another repository (#1588)")
+    # A `.git` that POINTS elsewhere (#1594 review S1): git follows a gitlink file (`gitdir: <path>`) and a
+    # symlink even when GIT_DIR names them. The git directory must resolve INSIDE this repo -- stricter than
+    # "inside the temp root", which a sibling temp repo (or a stand-in for the real one) also satisfies.
+    # Known limit, fails closed: a `git worktree add` checkout, whose .git file points at its main repo.
+    target = dot.resolve()
+    if dot.is_file():
+        line = dot.read_text(encoding="utf-8", errors="replace").strip()
+        target = Path(line.partition("gitdir:")[2].strip() or line)
+        target = (path / target).resolve() if not target.is_absolute() else target.resolve()
+    if target != path and path not in target.parents:
+        raise NotATempRepo(f"{path}/.git resolves to {target}, outside this repo -- a gitlink or symlink "
+                           "would send the fixture's git elsewhere (#1588)")
+    # An explicit --git-dir / --work-tree overrides the GIT_DIR binding (#1594 review S2): refused.
+    for a in args:
+        if a in ("--git-dir", "--work-tree") or a.startswith(("--git-dir=", "--work-tree=")):
+            raise NotATempRepo(f"{a!r} in a fixture's git arguments would override the temp-repo binding (#1588)")
     kw.setdefault("capture_output", True)
     kw.setdefault("text", True)
     return subprocess.run(["git", *IDENTITY, *args], env=env(path, kw.pop("env", None)), cwd=path,
@@ -166,6 +183,32 @@ def selftest() -> int:
         run(good, "-C", str(real), "commit", "-q", "--allow-empty", "-m", "stray", check=False)
         check("a stray -C in the arguments cannot commit into another repo", commits(real) == before,
               f"real repo went from {before} to {commits(real)} commits")
+        # 4c. #1594 review S1: a `.git` that points OUTSIDE the temp root -- a gitlink file, or a symlink.
+        for kind in ("gitlink file", "symlink"):
+            evil = work / f"evil-{kind.replace(' ', '-')}"
+            evil.mkdir()
+            if kind == "gitlink file":
+                (evil / ".git").write_text(f"gitdir: {real / '.git'}\n", encoding="utf-8")
+            else:
+                (evil / ".git").symlink_to(real / ".git")
+            raised3 = None
+            try:
+                run(evil, "commit", "-q", "--allow-empty", "-m", "m")
+            except Exception as e:
+                raised3 = e
+            check(f"a .git {kind} pointing at another repo is refused", isinstance(raised3, NotATempRepo),
+                  f"got {type(raised3).__name__ if raised3 else 'no refusal'}")
+            check(f"...and the {kind} commit did not reach it", commits(real) == before, f"now {commits(real)}")
+        # 4d. #1594 review S2: an explicit --git-dir / --work-tree in the arguments is refused.
+        for flag in (["--git-dir", str(real / ".git")], [f"--git-dir={real / '.git'}"], [f"--work-tree={real}"]):
+            raised4 = None
+            try:
+                run(good, *flag, "commit", "-q", "--allow-empty", "-m", "m")
+            except Exception as e:
+                raised4 = e
+            check(f"an explicit {flag[0].split('=')[0]} in the arguments is refused", isinstance(raised4, NotATempRepo),
+                  f"got {type(raised4).__name__ if raised4 else 'no refusal'}")
+        check("...and none of them reached the other repo", commits(real) == before, f"now {commits(real)}")
         # 5. #1577: the background-maintenance settings reach git.
         # From a CLEAN base: the mutation harness already exports these settings (scripts/hermetic_git.py),
         # and a check that reads them from the inherited environment passes whatever this module does.
