@@ -42,6 +42,8 @@ MIRRORED = {
         Path(".claude/skills/parallel-session-lane/references/reading-a-list.md"),
     Path("skills/parallel-session-lane/references/session-identity.md"):
         Path(".claude/skills/parallel-session-lane/references/session-identity.md"),
+    Path("skills/parallel-session-lane/references/process-hygiene.md"):
+        Path(".claude/skills/parallel-session-lane/references/process-hygiene.md"),
 }
 
 BANNER = (

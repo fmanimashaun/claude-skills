@@ -13,8 +13,7 @@ GUARD = Guard(
         # missing path only after fixing the first is the point of `run_baseline`: an inert
         # guard hides every downstream problem behind the first one.
         "plugins",
-        "evals",
-    ),
+        "evals", "plugins/rails-flow/scripts/process_containment.py"),
     mutations=(
         # #1459: a gate that times out takes its whole process group with it.
         Mutation(
