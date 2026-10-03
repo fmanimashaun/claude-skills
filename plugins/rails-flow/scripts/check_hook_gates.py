@@ -131,6 +131,8 @@ def run_hook(name: str, *, cwd: Path, stdin: str, path_prefix: list[Path] = (),
     for k in unset:
         env.pop(k, None)
     env.pop("RAILS_FLOW_LANE", None)
+    for k in ("GIT_DIR", "GIT_WORK_TREE"):  # set by a git hook, they would pick every fixture's repository
+        env.pop(k, None)
     if path_prefix:
         env["PATH"] = os.pathsep.join(str(p) for p in path_prefix) + os.pathsep + env["PATH"]
     if env_extra:
@@ -995,6 +997,14 @@ def guard_claims_fixtures() -> None:
             ("B2 a command word from a variable", "x=cd; $x B_DIR; gh pr create --body-file BODY"),
             ("B2 an ANSI-quoted `$'cd'`", "$'cd' B_DIR; gh pr create --body-file BODY"),
             ("B2 an unknown command (an alias or function may cd)", "proj && gh pr create --body-file BODY"),
+            # round 5: GIT_DIR / GIT_WORK_TREE pick gh's repository whatever the directory
+            ("R5 `GIT_DIR=B/.git gh`", "GIT_DIR=B_DIR/.git gh pr create --body-file BODY"),
+            ("R5 `cd B && GIT_DIR=A/.git gh`", "cd B_DIR && GIT_DIR=../a/.git gh pr create --body-file BODY"),
+            ("R5 `GIT_WORK_TREE=B gh`", "GIT_WORK_TREE=B_DIR gh pr create --body-file BODY"),
+            ("R5 `env GIT_DIR=… gh`", "env GIT_DIR=B_DIR/.git gh pr create --body-file BODY"),
+            ("R5 `GIT_DIR=…;` before gh", "GIT_DIR=B_DIR/.git; gh pr create --body-file BODY"),
+            ("R5 `export GIT_DIR=…;` before gh", "export GIT_DIR=B_DIR/.git; gh pr create --body-file BODY"),
+            ("R5 `export GIT_WORK_TREE=…;` before gh", "export GIT_WORK_TREE=B_DIR; gh pr create --body-file BODY"),
             ("N1 `env -C/dir`", "env -CB_DIR gh pr create --body-file BODY"),
             ("N1 `env -iC dir`", "env -iC B_DIR gh pr create --body-file BODY"),
             ("N1 `env -C dir`", "env -C B_DIR gh pr create --body-file BODY"),
@@ -1050,6 +1060,13 @@ def guard_claims_fixtures() -> None:
         rc, out = run_in(cmd, NEITHER, with_output=True)
         check(f"guard-claims: {label} is NOT checked, with the notice, never a guessed template (#1516 allowlist)",
               rc == 0 and NOTICE in out, f"exit {rc}: {out[-140:]}")
+    rc, out = run_in("gh pr create --body-file BODY", NEITHER, with_output=True,
+                     env_extra={"GIT_DIR": "B_DIR/.git"})
+    check("guard-claims: GIT_DIR inherited by the hook is NOT checked, with the notice (#1516 round 5)",
+          rc == 0 and NOTICE in out, f"exit {rc}: {out[-140:]}")
+    rc, out = run_in("GIT_PAGER=cat git status && X=1; gh pr create --body-file BODY", NEITHER, with_output=True)
+    check("guard-claims: other assignments before gh keep the starting repo (control, #1516 round 5)",
+          rc == 2 and "## What changed" in out, f"exit {rc}: {out[-140:]}")
     rc, out = run_in("cd sub && gh pr create --body-file BODY", NEITHER, with_output=True,
                      env_extra={"CDPATH": "B_DIR"})
     check("guard-claims: a relative cd with CDPATH set is NOT checked, with the notice (#1516 allowlist)",

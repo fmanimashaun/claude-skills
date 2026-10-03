@@ -35,12 +35,22 @@ KNOWN LIMITS, invisible in the command text: a shell function or alias from the 
 (zoxide's `z`, autojump's `j`) or that shadows a SAFE word, and CDPATH or zsh's CHASE_LINKS / AUTO_CD set
 in the command's shell but not in this hook's environment (CDPATH is read from this process's).
 
-Everything else is exit 3: a cd target with `$`, a backquote or `~user`, `-` or any option, a missing
-directory, a relative path while CDPATH is set; a bare `cd` or one with two arguments; `if`/`while`/`until`/`for`/
-`case`, subshells, brace groups, functions, `eval`, `source`, `pushd`/`popd`, `!`, `||`, `|`, `&`, any
-other command before gh once a directory change is in sight; a redirect on a cd other than `>`, `>>`,
-`>&`; a gh not found as a command word of the grammar (`sudo gh`, `bash -c "…"`, `env -C dir gh`, any
-`env` option); and an unbalanced quote before the gh.
+GIT_DIR and GIT_WORK_TREE choose the repository gh targets whatever the directory (#1516, round 5): set
+on the gh segment, in an assignment-only segment before it, by `export`, or in this process's environment,
+they are "cannot tell", as `-R` and GH_REPO already are in the hook.
+
+Everything else is exit 3 ("cannot tell"):
+- before the gh segment, once any segment is not SAFE: every segment that is not a plain `cd PATH` joined
+  by `&&` or `;` (so `if`/`while`/`until`/`for`/`case`, subshells, brace groups, functions, `eval`,
+  `source`, `.`, `pushd`/`popd`, `chdir`, `builtin`, `export`, `!`, `$x`, and any word not in SAFE), and a
+  cd joined by `||`, `|` or `&`;
+- a cd target with `$`, a backquote or `~user`; `-` or any option (`-P`, `-L`); a missing directory; a
+  relative path while CDPATH is set; a bare `cd` or one with two arguments; a redirect on a cd other than
+  `>`, `>>`, `>&`;
+- a gh that is no command word of the grammar (`sudo gh`, `bash -c "…"`, `env -C dir gh`, any `env`
+  option);
+- GIT_DIR / GIT_WORK_TREE, as above;
+- an unbalanced quote before the gh.
 """
 from __future__ import annotations
 
@@ -50,6 +60,7 @@ import shlex
 import sys
 
 ASSIGN = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*=")
+GIT_ENV = re.compile(r"\A(GIT_DIR|GIT_WORK_TREE)=")  # they pick gh's repository, not the directory
 OPS = re.compile(r"&&|\|\||;;&|;;|;&|<<<|&>>|&>|>>|>&|<&|<<|<>|>\||[;&|()<>]")
 SEPS = {"&&", ";"}
 CD_REDIRECTS = {">", ">>", ">&"}
@@ -154,8 +165,11 @@ def _gh_segment(words: list[str]) -> bool:
                 w.pop(0)
         else:
             break
-    return len(w) >= 3 and os.path.basename(w[0]) == "gh" and (
+    found = len(w) >= 3 and os.path.basename(w[0]) == "gh" and (
         (w[1] == "pr" and w[2] in ("create", "edit")) or (w[1] == "issue" and w[2] == "comment"))
+    if found and any(GIT_ENV.match(x) for x in words[:len(words) - len(w)]):
+        raise Unresolved("GIT_DIR / GIT_WORK_TREE on the gh command picks another repository")
+    return found
 
 
 def _safe(seg: list[str]) -> bool:
@@ -163,7 +177,9 @@ def _safe(seg: list[str]) -> bool:
     w = list(seg)
     while w and ASSIGN.match(w[0]):
         w.pop(0)
-    return not w or w[0] in SAFE
+    if not w:                               # assignments alone persist in this shell, and so reach gh
+        return not any(GIT_ENV.match(x) for x in seg)
+    return w[0] in SAFE
 
 
 def _judge(done: list[tuple[list[str], bool, str]], start: str, home: str) -> str:
@@ -182,6 +198,8 @@ def _judge(done: list[tuple[list[str], bool, str]], start: str, home: str) -> st
 
 
 def resolve(cmd: str, start: str, home: str) -> str:
+    if os.environ.get("GIT_DIR") or os.environ.get("GIT_WORK_TREE"):
+        raise Unresolved("GIT_DIR / GIT_WORK_TREE in the environment picks gh's repository")
     lex = shlex.shlex(prepare(cmd).replace("\n", " ; "), posix=True, punctuation_chars=";&|()<>")
     lex.whitespace_split = True
     lex.commenters = ""                     # prepare() has dropped the real comments

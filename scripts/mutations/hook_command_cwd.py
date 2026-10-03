@@ -218,14 +218,14 @@ GUARD = Guard(
         Mutation(
             # Round 4: the shortcut is an allowlist.
             'the no-cd shortcut takes any command word (round 4, B2)',
-            '    return not w or w[0] in SAFE',
+            '    return w[0] in SAFE',
             '    return True',
             'B2 zsh `chdir` is NOT checked, with the notice',
         ),
         Mutation(
             'an assignment before a SAFE command defeats the shortcut',
-            '    while w and ASSIGN.match(w[0]):\n        w.pop(0)\n    return not w',
-            '    return not w',
+            '    w = list(seg)\n    while w and ASSIGN.match(w[0]):\n        w.pop(0)\n    if not w:',
+            '    w = list(seg)\n    if not w:',
             'known-safe commands and an assignment before gh is judged in the starting repo',
         ),
         Mutation(
@@ -234,6 +234,31 @@ GUARD = Guard(
             'def _target(args: list[str], here: str, home: str) -> str:\n    if len(args) != 1:',
             'def _target(args: list[str], here: str, home: str) -> str:\n    if args and args[0] in ("-P", "-L"):\n        args = args[1:]\n    if len(args) != 1:',
             'B1 `cd -P link/..` is NOT checked, with the notice',
+        ),
+        Mutation(
+            # Round 5: GIT_DIR / GIT_WORK_TREE.
+            'GIT_DIR on the gh command is ignored (round 5)',
+            '    if found and any(GIT_ENV.match(x) for x in words[:len(words) - len(w)]):',
+            '    if False:',
+            'R5 `GIT_DIR=B/.git gh` is NOT checked, with the notice',
+        ),
+        Mutation(
+            'GIT_WORK_TREE is not a repository-picking variable (round 5)',
+            'GIT_ENV = re.compile(r"\\A(GIT_DIR|GIT_WORK_TREE)=")',
+            'GIT_ENV = re.compile(r"\\A(GIT_DIR)=")',
+            'R5 `GIT_WORK_TREE=B gh` is NOT checked, with the notice',
+        ),
+        Mutation(
+            'a persisting GIT_DIR assignment before gh is safe (round 5)',
+            '        return not any(GIT_ENV.match(x) for x in seg)',
+            '        return True',
+            'R5 `GIT_DIR=…;` before gh is NOT checked, with the notice',
+        ),
+        Mutation(
+            'an inherited GIT_DIR is ignored (round 5)',
+            '    if os.environ.get("GIT_DIR") or os.environ.get("GIT_WORK_TREE"):',
+            '    if False:',
+            'GIT_DIR inherited by the hook is NOT checked',
         ),
     ),
 )
