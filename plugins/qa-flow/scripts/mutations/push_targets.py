@@ -292,5 +292,79 @@ GUARD = Guard(
             "                    if False:\n                        i += 2",
             "\"bash -o pipefail -c 'git push origin main'\": expected TARGETS main",
         ),
+        # #1569: `gh api` and `gh release create` are classified by EFFECT. Each mutation removes one piece
+        # of that classification, and the selftest must go red.
+        Mutation(
+            "gh api / gh release are never classified, so every API merge and release passes",
+            "    lines += gh_effects(cmd)\n",
+            "    pass\n",
+            "classify 'gh api -X PUT repos/{owner}/{repo}/pulls/1200/merge",
+        ),
+        Mutation(
+            "a PUT to pulls/N/merge is no longer a PR merge",
+            '    if m and "PUT" in methods:',
+            "    if False:",
+            "classify 'gh api --method=PUT repos/o/r/pulls/5/merge'",
+        ),
+        Mutation(
+            "--method=PUT (the `=` form) is read as a flag with no value",
+            '            if a.startswith("--") and "=" in a:',
+            "            if False:",
+            "classify 'gh api --method=PUT repos/o/r/pulls/5/merge'",
+        ),
+        Mutation(
+            "a body means GET again, so a POST merge with -f fields reads as a read",
+            '            out = {"POST" if (self.fields or self.input) else "GET"}',
+            '            out = {"GET"}',
+            "classify 'gh api repos/o/r/merges -f base=main -f head=dev'",
+        ),
+        Mutation(
+            "POST merges with base main is no longer main-ward",
+            "        if base is None or _expanded(base) or branch_of(base) in PROTECTED:",
+            "        if base is None or _expanded(base):",
+            "classify 'gh api repos/o/r/merges -f base=main -f head=dev'",
+        ),
+        Mutation(
+            "a PATCH of git/refs/heads/main is no longer main-ward",
+            '        return ["API_MAIN"] if _expanded(ref) or branch_of(ref) in PROTECTED else []\n    if re.fullmatch(r"(?:repos/[^/]+/[^/]+/)?git/refs", path)',
+            '        return ["API_MAIN"] if _expanded(ref) else []\n    if re.fullmatch(r"(?:repos/[^/]+/[^/]+/)?git/refs", path)',
+            "classify 'gh api -X PATCH repos/o/r/git/refs/heads/main -f sha=a'",
+        ),
+        Mutation(
+            "a GraphQL mergePullRequest is no longer read",
+            '    if "mergePullRequest" in text:',
+            "    if False:",
+            "classify 'gh api graphql -F query=@",
+        ),
+        Mutation(
+            "a GraphQL updateRef is no longer read",
+            "    for name in GRAPHQL_REF_WRITES:",
+            "    for name in ():",
+            "expected ['GQL_REF R1']",
+        ),
+        Mutation(
+            "a query file that cannot be read is answered as empty, so it reads as no merge",
+            '        raise Unjudgeable(f"gh api reads {path!r}, which cannot be read ({exc.__class__.__name__})") from exc',
+            '        return ""',
+            "must be unjudgeable or main-ward",
+        ),
+        Mutation(
+            "a GraphQL document built by the shell is read as plain text",
+            '    if SUBST in text or "`" in text:',
+            "    if False:",
+            "must be unjudgeable or main-ward",
+        ),
+        Mutation(
+            "gh release create is no longer reported",
+            '            elif seg[j + 1:j + 3] == ["release", "create"]:',
+            "            elif False:",
+            "classify \"gh release create v1.0.1 --target main",
+        ),
+        Mutation(
+            "POST .../releases is no longer a publish",
+            '    if re.fullmatch(r"(?:repos/[^/]+/[^/]+/)?releases", path) and "POST" in methods:',
+            "    if False:",
+            "classify 'gh api repos/o/r/releases -f tag_name=v1",
+        ),
     ),
 )

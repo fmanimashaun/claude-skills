@@ -36,8 +36,8 @@ GUARD = Guard(
         ),
         Mutation(
             "an unjudgeable command is allowed instead of treated as a promotion",
-            "  else\n    targets_main=1\n  fi\nelif",
-            "  else\n    :\n  fi\nelif",
+            "  else\n    targets_main=1; needs_dev=1\n",
+            "  else\n    :\n",
             "release-gate (#1410): an unparseable push is treated as a promotion",
         ),
         Mutation(
@@ -54,8 +54,8 @@ GUARD = Guard(
         ),
         Mutation(
             "the fallback reads the normalised segment, losing a quoted main",
-            """    && printf '%s' "$cmd" | grep -qE '\\b(main|master)\\b' && targets_main=1""",
-            """    && printf '%s' "$seg" | grep -qE '\\b(main|master)\\b' && targets_main=1""",
+            """    && printf '%s' "$cmd" | grep -qE '\\b(main|master)\\b' && { targets_main=1; needs_dev=1; }""",
+            """    && printf '%s' "$seg" | grep -qE '\\b(main|master)\\b' && { targets_main=1; needs_dev=1; }""",
             "release-gate (#1410): parser missing -> a quoted `main` push is still blocked",
         ),
         # #1337: the stamp's own commit invalidates it again, or any delta slips through.
@@ -74,8 +74,8 @@ GUARD = Guard(
         # #1428. The evidence check is skipped: a PASS stamp alone unlocks main again.
         Mutation(
             "the release-only layers are not checked, so a HOLE still promotes",
-            'if evidence="$(python3 "$ev" stamp --rev "$devsha" 2>"$evtmp")"; then',
-            'if evidence="$(python3 "$ev" stamp --rev "$devsha" 2>"$evtmp")" || true; then',
+            'if evidence="$(python3 "$ev" stamp --rev "$at" 2>"$evtmp")"; then',
+            'if evidence="$(python3 "$ev" stamp --rev "$at" 2>"$evtmp")" || true; then',
             "release-gate (#1428): a HOLE in the sweep denies",
         ),
         # The allowance matches ANY path under the evidence's parent, so code rides along unchecked.
@@ -138,7 +138,7 @@ GUARD = Guard(
         # ROUND 3 FOLD-IN 4: the stamp is read as committed at dev.
         Mutation(
             "the stamp is read from the working tree again",
-            'if ! git show "${devsha}:qa/CERTIFICATION" >"$stamp_tmp" 2>/dev/null; then',
+            'if ! git show "${at}:qa/CERTIFICATION" >"$stamp_tmp" 2>/dev/null; then',
             'if ! cp qa/CERTIFICATION "$stamp_tmp" 2>/dev/null; then',
             "an UNCOMMITTED stamp is denied",
         ),
@@ -158,20 +158,20 @@ GUARD = Guard(
         ),
         Mutation(
             "rename detection is back, so code moved into the evidence folder is never judged",
-            '      if ! delta="$(git -c core.quotePath=false diff --no-renames --name-only "$full" "$devsha" 2>/dev/null)"; then',
-            '      if ! delta="$(git -c core.quotePath=false diff -M --name-only "$full" "$devsha" 2>/dev/null)"; then',
+            '      if ! delta="$(git -c core.quotePath=false diff --no-renames --name-only "$full" "$tgt" 2>/dev/null)"; then',
+            '      if ! delta="$(git -c core.quotePath=false diff -M --name-only "$full" "$tgt" 2>/dev/null)"; then',
             "release-gate (#1428): code renamed into the evidence folder is denied",
         ),
         Mutation(
             "the evidence is judged in the working tree, not as committed at dev",
-            'if evidence="$(python3 "$ev" stamp --rev "$devsha" 2>"$evtmp")"; then',
+            'if evidence="$(python3 "$ev" stamp --rev "$at" 2>"$evtmp")"; then',
             'if evidence="$(python3 "$ev" stamp 2>"$evtmp")"; then',
             "release-gate (#1428): a committed HOLE denies though the fix is only staged",
         ),
         Mutation(
             "git quotes non-ASCII names again, so a legitimate evidence commit is denied",
-            '      if ! delta="$(git -c core.quotePath=false diff --no-renames --name-only "$full" "$devsha" 2>/dev/null)"; then',
-            '      if ! delta="$(git diff --no-renames --name-only "$full" "$devsha" 2>/dev/null)"; then',
+            '      if ! delta="$(git -c core.quotePath=false diff --no-renames --name-only "$full" "$tgt" 2>/dev/null)"; then',
+            '      if ! delta="$(git diff --no-renames --name-only "$full" "$tgt" 2>/dev/null)"; then',
             "release-gate (#1428): a non-ASCII evidence file name is recognised as evidence",
         ),
         # The paths come from stdout; losing them denies the stamp's own evidence commit.
@@ -183,7 +183,7 @@ GUARD = Guard(
         ),
         Mutation(
             "the ancestry check is skipped, so a stamp from another branch is accepted",
-            '      if [ -z "$full" ] || ! git merge-base --is-ancestor "$full" "$devsha" 2>/dev/null; then',
+            '      if [ -z "$full" ] || ! git merge-base --is-ancestor "$full" "$tgt" 2>/dev/null; then',
             '      if [ -z "$full" ]; then',
             "release-gate (#1337): a stamp for a sha that is not an ancestor of dev is denied",
         ),
@@ -211,6 +211,56 @@ GUARD = Guard(
             'if [ -f ".claude-plugin/marketplace.json" ]; then',
             "if true; then",
             "an ordinary repo with no certification is STILL blocked",
+        ),
+        # #1569: classify by EFFECT, judge a PR by the HEAD it merges, gate publishing. Each mutation
+        # removes one of those, and the fixtures must go red.
+        Mutation(
+            "a REST PUT .../pulls/N/merge is no longer a promotion",
+            '"API_PR_MERGE "*)',
+            '"API_PR_MERGE_OFF "*)',
+            "REST PUT, placeholders merging an uncertified PR head into main is blocked",
+        ),
+        Mutation(
+            "a PR into main is judged at dev's tip again, so a hotfix rides dev's certification",
+            'if [ -n "$head" ]; then pr_heads="${pr_heads}${head}"$\'\\n\'; else unresolved_pr=1; fi ;;\n    "")',
+            'if [ -n "$head" ]; then needs_dev=1; else unresolved_pr=1; fi ;;\n    "")',
+            "a hotfix head is judged by ITS stamp, not dev's",
+        ),
+        Mutation(
+            "an unresolved PR is judged at dev instead of denied",
+            '[ -z "$unresolved_pr" ] || deny "cannot tell',
+            '[ -z "$unresolved_pr" ] || echo "cannot tell',
+            "an unresolvable PR could not be judged, so it is blocked",
+        ),
+        Mutation(
+            "a gh api the classifier cannot read is judged at dev instead of denied",
+            "    case \"$_probe\" in *gh*api*|*gh*release*) unresolved_pr=1 ;; esac",
+            "    :",
+            "a missing --input file could not be judged, so it is blocked",
+        ),
+        Mutation(
+            "an API write to main (POST merges, ref PATCH) is no longer a promotion",
+            "        API_MAIN) targets_main=1; needs_dev=1 ;;",
+            "        API_MAIN) : ;;",
+            "POST merges, base main writes main and is blocked",
+        ),
+        Mutation(
+            "a release is collected but never judged: the hook exits before the release loop",
+            '[ "$targets_main" -eq 1 ] || [ -n "$releases" ] || exit 0',
+            '[ "$targets_main" -eq 1 ] || exit 0',
+            "gh release create --target main publishing an uncertified commit is blocked",
+        ),
+        Mutation(
+            "the release line is never recorded",
+            '"RELEASE "*) releases=',
+            '"RELEASE_OFF "*) releases=',
+            "gh api POST releases publishing an uncertified commit is blocked",
+        ),
+        Mutation(
+            "a release is judged at dev's tip instead of the commit it publishes",
+            '  _rsha="$(resolve_release_target "$_tag" "$_tgt" | head -1)"',
+            '  _rsha="$(git rev-parse --verify -q dev)"',
+            "gh release create --target main publishing an uncertified commit is blocked",
         ),
     ),
 )

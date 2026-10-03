@@ -1281,6 +1281,172 @@ def release_gate_fixtures() -> None:
     check("release-gate (#1553): CONTROL: a harmless substitution in an unquoted body, then a feature push, is allowed",
           run("cat <<EOF\n$(git rev-parse HEAD)\nEOF\ngit push origin feature/w") == 0, "exit 2")
 
+    release_gate_effects_fixtures()
+
+
+# ---- #1569: classify by EFFECT. A REST/GraphQL merge, a hotfix PR and a release publish all reached main
+# past a gate that only read `git push` / `gh pr merge`. Driven through the real hook with a fake `gh`.
+FAKE_GH = """#!/bin/sh
+case "$1 $2" in
+  "pr view") printf '%s' "${FAKE_PRVIEW:-}"; exit 0 ;;
+  "api graphql") case "$*" in *"on Ref"*) printf '%s' "${FAKE_REF:-}" ;; *) printf '%s' "${FAKE_NODE:-}" ;; esac; exit 0 ;;
+esac
+exit 1
+"""
+
+
+def release_gate_effects_fixtures() -> None:
+    g = ["git", "-c", "user.email=t@t", "-c", "user.name=t"]
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td) / "repo"
+        _git_repo(repo)
+        sh = lambda *a, **kw: _run([*g, *a], cwd=repo, check=True, capture_output=True, text=True, **kw).stdout.strip()
+        old = {**os.environ, "GIT_COMMITTER_DATE": "2026-09-01T00:00:00+00:00", "GIT_AUTHOR_DATE": "2026-09-01T00:00:00+00:00"}
+        (repo / "app.rb").write_text("v1\n", encoding="utf-8")
+        sh("add", "app.rb"); sh("commit", "-q", "-m", "app")
+        tested = sh("rev-parse", "HEAD")
+        (repo / "qa").mkdir()
+        (repo / "qa" / "CERTIFICATION").write_text(json.dumps(
+            {"sha": tested, "date": "2026-09-26", "verdict": "PASS", "report": "qa/reports/r.md"}), encoding="utf-8")
+        sh("add", "qa/CERTIFICATION"); sh("commit", "-q", "-m", "stamp", env=old)
+        stamped = sh("rev-parse", "HEAD")                 # the certified tip of dev
+        sh("branch", "-f", "dev", stamped)
+        sh("checkout", "-q", "-b", "hotfix")
+        (repo / "app.rb").write_text("hotfix\n", encoding="utf-8")
+        sh("commit", "-q", "-am", "hotfix, never certified")
+        hot = sh("rev-parse", "HEAD")
+        sh("checkout", "-q", "-b", "feature/work", stamped)
+        sh("branch", "-f", "main", hot)                   # main is at an UNcertified commit
+        (Path(td) / "bin").mkdir()
+        (Path(td) / "bin" / "gh").write_text(FAKE_GH, encoding="utf-8")
+        (Path(td) / "bin" / "gh").chmod(0o755)
+        (Path(td) / "q.graphql").write_text('mutation { mergePullRequest(input:{pullRequestId:"PR_kw1"}) { clientMutationId } }', encoding="utf-8")
+        (Path(td) / "q.json").write_text(json.dumps({"query": 'mutation { mergePullRequest(input:{pullRequestId:"PR_kw1"}) { clientMutationId } }'}), encoding="utf-8")
+
+        def run(cmd: str, **extra) -> tuple[int, str]:
+            env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None)
+            env["CLAUDE_PLUGIN_ROOT"] = str(QA_HOOK.parents[2])
+            env["PATH"] = str(Path(td) / "bin") + os.pathsep + env["PATH"]
+            env.update(extra)
+            done = _run(["bash", str(QA_HOOK)], cwd=repo, input=json.dumps({"tool_input": {"command": cmd}}),
+                        env=env, capture_output=True, text=True, timeout=60)
+            return done.returncode, done.stderr
+
+        hotfix_pr = {"FAKE_PRVIEW": f"main {hot}"}
+        promo_pr = {"FAKE_PRVIEW": f"main {stamped}"}
+        # (1) A merge through the API, by every spelling, of a PR into main whose head is NOT certified.
+        for label, cmd in (
+            ("REST PUT, placeholders", "gh api -X PUT repos/{owner}/{repo}/pulls/7/merge -f merge_method=merge"),
+            ("REST PUT, literal repo", "gh api -X PUT repos/o/r/pulls/7/merge"),
+            ("--method=PUT", "gh api --method=PUT repos/o/r/pulls/7/merge"),
+            ("--method PUT after the path", "gh api repos/o/r/pulls/7/merge --method PUT"),
+            ("-XPUT attached", "gh api -XPUT repos/o/r/pulls/7/merge"),
+            ("sh -c", "bash -c 'gh api -X PUT repos/o/r/pulls/7/merge'"),
+            ("eval", 'eval "gh api -X PUT repos/o/r/pulls/7/merge"'),
+            ("env prefix", "GH_TOKEN=x gh api -X PUT repos/o/r/pulls/7/merge"),
+            ("$( )", "x=$(gh api -X PUT repos/o/r/pulls/7/merge)"),
+            ("backticks", "x=`gh api -X PUT repos/o/r/pulls/7/merge`"),
+            ("unquoted heredoc body", "cat <<EOF\n$(gh api -X PUT repos/o/r/pulls/7/merge)\nEOF"),
+            ("gh pr merge of a hotfix", "gh pr merge 7 --merge"),
+            ("GraphQL -f query", "gh api graphql -f query='mutation { mergePullRequest(input:{pullRequestId:\"PR_kw1\"}) { clientMutationId } }'"),
+            ("GraphQL -F query=@file", f"gh api graphql -F query=@{td}/q.graphql"),
+            ("GraphQL --input file", f"gh api graphql --input {td}/q.json"),
+        ):
+            rc, err = run(cmd, **hotfix_pr, FAKE_NODE=f"main {hot}")
+            check(f"release-gate (#1569): {label} merging an uncertified PR head into main is blocked, naming the PR head",
+                  rc == 2 and "PR head" in err, f"rc={rc} {err[:200]!r}")
+        # The hotfix model: the SAME merge is permitted when the PR head IS the certified commit.
+        for cmd in ("gh api -X PUT repos/o/r/pulls/7/merge", "gh pr merge 7"):
+            rc, err = run(cmd, **promo_pr)
+            check(f"release-gate (#1569): `{cmd}` of a PR whose head carries a PASS stamp is permitted", rc == 0, f"rc={rc} {err[:200]!r}")
+        rc, err = run("gh api -X PUT repos/o/r/pulls/7/merge", FAKE_PRVIEW=f"main {hot}")
+        check("release-gate (#1569): a hotfix head is judged by ITS stamp, not dev's (dev is certified, the head is not)",
+              rc == 2 and hot[:12] in err, f"rc={rc} {err[:200]!r}")
+        # Unresolved or unreadable is "could not judge", and that denies.
+        for label, cmd, env in (
+            ("an unresolvable PR", "gh api -X PUT repos/o/r/pulls/7/merge", {"FAKE_PRVIEW": ""}),
+            ("a PR number from a variable", "gh api -X PUT repos/o/r/pulls/$N/merge", {}),
+            ("a missing --input file", f"gh api graphql --input {td}/nope.json", {}),
+            ("a missing -F query file", f"gh api graphql -F query=@{td}/nope.graphql", {}),
+            ("--input from stdin", "gh api graphql --input -", {}),
+            ("-F query=@- from stdin", "gh api graphql -F query=@-", {}),
+            ("a GraphQL node GitHub cannot name", "gh api graphql -f query='mutation { mergePullRequest(input:{pullRequestId:\"PR_zz\"}) { clientMutationId } }'", {"FAKE_NODE": ""}),
+        ):
+            rc, err = run(cmd, **env)
+            check(f"release-gate (#1569): {label} could not be judged, so it is blocked", rc == 2, f"rc={rc} {err[:200]!r}")
+        # Writes to main that are not a PR merge name no PR head, so they are judged at dev's tip: with dev
+        # certified they are the ordinary promotion (permitted), with dev uncertified they are blocked.
+        rc, err = run("gh api repos/o/r/merges -f base=main -f head=dev", FAKE_REF="main")
+        check("release-gate (#1569): CONTROL: a merge into main of a CERTIFIED dev is the ordinary promotion and passes",
+              rc == 0, f"rc={rc} {err[:200]!r}")
+        sh("branch", "-f", "dev", hot)
+        for label, cmd in (
+            ("POST merges, base main", "gh api repos/o/r/merges -f base=main -f head=dev"),
+            ("POST merges, base via -F", "gh api -X POST repos/o/r/merges -F base=master -F head=dev"),
+            ("PATCH git/refs/heads/main", "gh api -X PATCH repos/o/r/git/refs/heads/main -f sha=abc"),
+            ("POST git/refs of refs/heads/main", "gh api repos/o/r/git/refs -f ref=refs/heads/main -f sha=abc"),
+            ("method given by --method=PATCH", "gh api --method=PATCH repos/{owner}/{repo}/git/refs/heads/master -f sha=abc -F force=true"),
+            ("GraphQL updateRef naming main", "gh api graphql -f query='mutation { updateRef(input:{refId:\"R1\", oid:\"abc\"}) { clientMutationId } }'"),
+        ):
+            rc, err = run(cmd, FAKE_REF="main")
+            check(f"release-gate (#1569): {label} writes main and is blocked", rc == 2, f"rc={rc} {err[:200]!r}")
+        sh("branch", "-f", "dev", stamped)
+        # Controls: none of these may be over-blocked.
+        for cmd, env in (
+            ("gh api repos/o/r/pulls/7", {}),
+            ("gh api -X GET repos/o/r/pulls/7/merge", {}),
+            ("gh api repos/o/r/merges -f base=dev -f head=x", {}),
+            ("gh api -X PATCH repos/o/r/git/refs/heads/dev -f sha=abc", {}),
+            ("gh api repos/o/r/git/refs -f ref=refs/heads/feature/main-menu -f sha=abc", {}),
+            ("gh api -X POST repos/o/r/issues/1/comments -f body=hello", {}),
+            ("gh api graphql -f query='query($o:String!){repository(owner:$o,name:\"r\"){id}}' -f o=x", {}),
+            ("gh api -X PUT repos/o/r/pulls/7/merge", {"FAKE_PRVIEW": f"dev {hot}"}),
+            ("gh pr merge 7", {"FAKE_PRVIEW": f"dev {hot}"}),
+            ("gh api graphql -f query='mutation { updateRef(input:{refId:\"R1\", oid:\"abc\"}) { clientMutationId } }'", {"FAKE_REF": "dev"}),
+            ("gh release list", {}),
+        ):
+            rc, err = run(cmd, **env)
+            check(f"release-gate (#1569): CONTROL: `{cmd[:70]}` is not a promotion and passes", rc == 0, f"rc={rc} {err[:200]!r}")
+        # (2) Publishing a release needs a PASS stamp for the commit it publishes.
+        for label, cmd in (
+            ("gh release create --target main", "gh release create v1.0.1 --target main --notes x"),
+            ("--target=main", "gh release create v1.0.1 --target=main"),
+            ("no target: the default branch's tip", "gh release create v1.0.1 --generate-notes"),
+            ("a draft", "gh release create v1.0.1 --draft"),
+            ("--target a sha", f"gh release create v1.0.1 --target {hot}"),
+            ("gh api POST releases", "gh api repos/o/r/releases -f tag_name=v1.0.1 -f target_commitish=main"),
+            ("gh api -X POST releases, no target", "gh api -X POST repos/{owner}/{repo}/releases -f tag_name=v1.0.1"),
+            ("inside bash -c", "bash -c 'gh release create v1.0.1'"),
+        ):
+            rc, err = run(cmd)
+            check(f"release-gate (#1569): {label} publishing an uncertified commit is blocked, naming the stamp",
+                  rc == 2 and "qa/CERTIFICATION" in err, f"rc={rc} {err[:200]!r}")
+        rc, err = run("gh release create v1.0.1 --target dev")
+        check("release-gate (#1569): --target dev publishes the certified tip and is permitted", rc == 0, f"rc={rc} {err[:200]!r}")
+        sh("tag", "v0.9", stamped)
+        rc, err = run("gh release create v0.9")
+        check("release-gate (#1569): an existing tag is judged by ITS commit, not main's tip", rc == 0, f"rc={rc} {err[:200]!r}")
+        sh("branch", "-f", "main", stamped)
+        rc, err = run("gh release create v1.0.1")
+        check("release-gate (#1569): a new tag publishes the default branch tip, which is now certified", rc == 0, f"rc={rc} {err[:200]!r}")
+        sh("branch", "-f", "main", hot)
+        rc, err = run("gh release create v1.0.1 --target main", QA_ALLOW_MAIN="1")
+        check("release-gate (#1569): QA_ALLOW_MAIN=1 is still the audited override for a release", rc == 0, f"rc={rc} {err[:200]!r}")
+        (repo / ".claude-plugin").mkdir()
+        (repo / ".claude-plugin" / "marketplace.json").write_text('{"name":"x","plugins":[]}', encoding="utf-8")
+        rc, err = run("gh release create v1.0.1 --target main")
+        check("release-gate (#1569): the marketplace's own repo is exempt from the release gate too", rc == 0, f"rc={rc} {err[:200]!r}")
+        rc, err = run("gh api -X PUT repos/o/r/pulls/7/merge", **hotfix_pr)
+        check("release-gate (#1569): ... and from the API merge gate", rc == 0, f"rc={rc} {err[:200]!r}")
+        # The fallback with no python3 cannot read `gh api`, so it must stay coarse and closed.
+        (repo / ".claude-plugin" / "marketplace.json").unlink(); (repo / ".claude-plugin").rmdir()
+        only = Path(td) / "only"; only.mkdir()
+        (only / "bash").symlink_to(shutil.which("bash"))
+        for cmd in ("gh api -X PUT repos/o/r/pulls/7/merge", "gh release create v1", "gh api graphql -f query=x -f u=mergePullRequest"):
+            done = _run([str(only / "bash"), str(QA_HOOK)], cwd=repo, input=json.dumps({"tool_input": {"command": cmd}}),
+                        env={"PATH": str(only)}, capture_output=True, text=True, timeout=60)
+            check(f"release-gate (#1569): with ONLY bash on PATH, `{cmd}` is still blocked", done.returncode == 2, f"rc={done.returncode}")
+
 
 # ---- ci-verdict-hint.sh (#1173) -----------------------------------------------------------------
 # An ADVISORY, so every fixture asserts exit 0 -- a hint that could fail the tool call would be a gate

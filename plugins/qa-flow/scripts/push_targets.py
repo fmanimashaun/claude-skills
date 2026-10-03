@@ -477,12 +477,261 @@ def pr_merge_selectors(cmd: str) -> list[str]:
     return out
 
 
+# #1569. The gate asked "does this command say `git push`/`gh pr merge` to main?" -- a question about
+# SPELLING. A merge through GitHub's REST or GraphQL API, and publishing a release, have the same
+# EFFECT with different spellings, and a promotion went through all of them. So `gh api` and
+# `gh release create` are classified by what they DO. As everywhere in this file: only text the parser
+# actually modelled may answer "no"; a file it cannot read, a stdin it cannot see, or a variable it
+# cannot expand is Unjudgeable, which the hook denies.
+API_OPTS_WITH_VALUE = {"-X", "--method", "-f", "--raw-field", "-F", "--field", "-H", "--header", "--input",
+                       "-q", "--jq", "-t", "--template", "--hostname", "--cache", "-p", "--preview"}
+API_SHORT_ATTACHED = ("-X", "-f", "-F", "-H", "-q", "-t", "-p")
+RELEASE_OPTS_WITH_VALUE = {"-t", "--title", "-n", "--notes", "-F", "--notes-file", "--target",
+                           "--discussion-category", "--notes-start-tag", "-R", "--repo"}
+GRAPHQL_REF_WRITES = ("updateRef", "createRef")
+MAIN_WORD = re.compile(r"(?<![\w/.\-])(?:refs/heads/)?(main|master)(?![\w/.\-])")
+NODE_ID = re.compile(r"^[A-Za-z0-9_=\-]+$")
+PLACEHOLDER = re.compile(r"^(\{[a-z_]+\}|:[a-z_]+)$")
+
+
+def _expanded(s: str) -> bool:
+    return SUBST in s or "$" in s or "`" in s
+
+
+def _read_file(path: str) -> str:
+    if path == "-":
+        raise Unjudgeable("gh api reads its body from stdin, which cannot be seen")
+    if _expanded(path):
+        raise Unjudgeable(f"the body file {path!r} is named by an expansion")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return fh.read()
+    except (OSError, UnicodeError) as exc:
+        raise Unjudgeable(f"gh api reads {path!r}, which cannot be read ({exc.__class__.__name__})") from exc
+
+
+class ApiCall:
+    """What `gh api ...` will send: methods it may use, the endpoint, and the body fields."""
+
+    def __init__(self, rest: list[str]):
+        self.method: str | None = None
+        self.endpoint: str | None = None
+        self.fields: list[tuple[str, str, bool]] = []      # (key, value, may-read-a-file)
+        self.input: str | None = None
+        i = 0
+        while i < len(rest):
+            a, val = rest[i], None
+            if a.startswith("--") and "=" in a:
+                a, _, val = a.partition("=")
+                i += 1
+            elif a in API_OPTS_WITH_VALUE:
+                if i + 1 >= len(rest):
+                    raise Unjudgeable(f"gh api {a} with no value")
+                val = rest[i + 1]
+                i += 2
+            elif not a.startswith("--") and a[:2] in API_SHORT_ATTACHED and len(a) > 2:
+                a, val = a[:2], a[2:]
+                i += 1
+            elif a.startswith("-"):
+                i += 1; continue
+            else:
+                self.endpoint = self.endpoint if self.endpoint is not None else a
+                i += 1; continue
+            if a in ("-X", "--method"):
+                self.method = val.upper()
+            elif a in ("-f", "--raw-field", "-F", "--field"):
+                key, _, v = val.partition("=")
+                self.fields.append((key, v, a in ("-F", "--field")))
+            elif a == "--input":
+                self.input = val
+        if self.endpoint is None:
+            raise Unjudgeable("gh api with no endpoint that could be read")
+
+    def methods(self) -> set[str]:
+        """Every method this call may use. An explicit one wins; gh otherwise sends POST when it has a
+        body and GET when it has not. A field NAMED method / _method is a method override some proxies
+        honour, so it is added to the set rather than trusted to be inert."""
+        if self.method is not None:
+            if _expanded(self.method):
+                raise Unjudgeable("the gh api method is an expansion")
+            out = {self.method}
+        else:
+            out = {"POST" if (self.fields or self.input) else "GET"}
+        for key, v, _ in self.fields:
+            if key.lower() in ("method", "_method") and v:
+                out.add(v.upper())
+        return out
+
+    def value(self, key: str) -> str | None:
+        found = None
+        for k, v, readable in self.fields:
+            if k == key:
+                found = _read_file(v[1:]) if readable and v.startswith("@") else v
+        if found is None and self.input is not None:
+            data = self.json_input()
+            if isinstance(data, dict) and key in data:
+                found = str(data[key])
+        return found
+
+    def json_input(self):
+        import json
+        try:
+            return json.loads(_read_file(self.input or "-"))
+        except ValueError:
+            return None
+
+    def haystack(self) -> str:
+        """Everything the call sends, as one text: the query, every field (files read), the --input file."""
+        parts = []
+        for _, v, readable in self.fields:
+            parts.append(_read_file(v[1:]) if readable and v.startswith("@") else v)
+        if self.input is not None:
+            raw = _read_file(self.input)
+            parts.append(raw)
+            data = self.json_input()
+            # The JSON file escapes its quotes (`\"PR_kw1\"`); the decoded query is what GraphQL reads.
+            if isinstance(data, dict) and isinstance(data.get("query"), str):
+                parts.append(data["query"])
+        return "\n".join(parts)
+
+    def path(self) -> str:
+        from urllib.parse import unquote, urlsplit
+        ep = unquote(self.endpoint or "")
+        if "://" in ep:
+            ep = urlsplit(ep).path
+        return ep.split("?", 1)[0].strip("/")
+
+
+def _repo_arg(owner: str | None, repo: str | None) -> str:
+    if not owner or PLACEHOLDER.match(owner) or not repo or PLACEHOLDER.match(repo):
+        return "-"
+    if _expanded(owner + repo):
+        raise Unjudgeable("the repository is named by an expansion")
+    return f"{owner}/{repo}"
+
+
+def _graphql_id(text: str, call: ApiCall, arg: str) -> str:
+    """The node id a mutation names (`pullRequestId`, `refId`): literal, or a variable the call supplies."""
+    m = re.search(arg + r'\s*:\s*"([^"]+)"', text)
+    if m:
+        return m.group(1)
+    m = re.search(arg + r"\s*:\s*\$(\w+)", text)
+    if m:
+        v = call.value(m.group(1))
+        if v is None:
+            data = call.json_input() if call.input else None
+            if isinstance(data, dict) and isinstance(data.get("variables"), dict):
+                v = data["variables"].get(m.group(1))
+        if v and NODE_ID.match(str(v)):
+            return str(v)
+    return "-"
+
+
+def _graphql_effects(call: ApiCall) -> list[str]:
+    text = call.haystack()
+    # `$` is GraphQL's own variable syntax (`query($id: ID!)`), so only a real shell substitution (or a
+    # backtick) means the document is built at run time. Reading it as an expansion would deny every
+    # parameterised read.
+    if SUBST in text or "`" in text:
+        raise Unjudgeable("a GraphQL document built by the shell cannot be read")
+    out = []
+    if "mergePullRequest" in text:
+        out.append(f"GQL_PR {_graphql_id(text, call, 'pullRequestId')}")
+    for name in GRAPHQL_REF_WRITES:
+        if name in text:
+            if MAIN_WORD.search(text):
+                out.append("API_MAIN")
+            elif name == "updateRef":
+                out.append(f"GQL_REF {_graphql_id(text, call, 'refId')}")
+    return out
+
+
+def gh_api_effects(rest: list[str]) -> list[str]:
+    """Classification lines for one `gh api <rest>`: API_PR_MERGE <n> <repo>, API_MAIN, GQL_PR <id>,
+    GQL_REF <id>, RELEASE <tag> <target>. `-` means unknown, which the hook resolves or denies."""
+    call = ApiCall(rest)
+    path = call.path()
+    methods = call.methods()
+    if path == "graphql":
+        return _graphql_effects(call) if methods - {"GET", "HEAD"} else []
+    if methods <= {"GET", "HEAD", "OPTIONS"}:
+        return []
+    m = re.fullmatch(r"(?:repos/([^/]+)/([^/]+)/)?pulls/([^/]+)/merge", path)
+    if m and "PUT" in methods:
+        n = m.group(3)
+        return [f"API_PR_MERGE {'-' if _expanded(n) or not n.isdigit() else n} {_repo_arg(m.group(1), m.group(2))}"]
+    # A write whose route is built by the shell: unreadable if the expansion could BE the resource
+    # (`repos/o/r/$X`, `$URL`), or if the readable part already names one that matters.
+    if _expanded(path) and (re.search(r"merge|refs|releases", path)
+                            or any(_expanded(part) for part in path.split("/")[:4])):
+        raise Unjudgeable("a gh api write whose path is built by the shell")
+    if re.fullmatch(r"(?:repos/[^/]+/[^/]+/)?merges", path) and "POST" in methods:
+        base = call.value("base")
+        if base is None or _expanded(base) or branch_of(base) in PROTECTED:
+            return ["API_MAIN"]
+        return []
+    m = re.fullmatch(r"(?:repos/[^/]+/[^/]+/)?git/refs/(.+)", path)
+    if m and methods & {"PATCH", "POST", "PUT"}:
+        ref = m.group(1)
+        return ["API_MAIN"] if _expanded(ref) or branch_of(ref) in PROTECTED else []
+    if re.fullmatch(r"(?:repos/[^/]+/[^/]+/)?git/refs", path) and methods & {"PATCH", "POST", "PUT"}:
+        ref = call.value("ref")
+        return ["API_MAIN"] if ref is None or _expanded(ref) or branch_of(ref) in PROTECTED else []
+    if re.fullmatch(r"(?:repos/[^/]+/[^/]+/)?releases", path) and "POST" in methods:
+        tag, target = call.value("tag_name"), call.value("target_commitish")
+        return [_release_line(tag, target)]
+    return []
+
+
+def _release_line(tag: str | None, target: str | None) -> str:
+    for v in (tag, target):
+        if v and (_expanded(v) or EXPANDS & set(v) or " " in v):
+            raise Unjudgeable(f"the release tag/target {v!r} is expanded by the shell")
+    return f"RELEASE {tag or '-'} {target or '-'}"
+
+
+def release_creates(rest: list[str]) -> list[str]:
+    tag, target, i = None, None, 0
+    while i < len(rest):
+        a = rest[i]
+        if a in ("-R", "--repo") or a.startswith("--repo="):
+            raise Unjudgeable("gh release create --repo names another repository")
+        if a.startswith("--target="):
+            target = a.partition("=")[2]; i += 1; continue
+        if a == "--target":
+            if i + 1 >= len(rest):
+                raise Unjudgeable("--target with no value")
+            target = rest[i + 1]; i += 2; continue
+        if a in RELEASE_OPTS_WITH_VALUE:
+            i += 2; continue
+        if a.startswith("-"):
+            i += 1; continue
+        if tag is None:
+            tag = a
+        i += 1
+    return [_release_line(tag, target)]
+
+
+def gh_effects(cmd: str) -> list[str]:
+    out: list[str] = []
+    for seg in all_segments(cmd):
+        for j, word in enumerate(seg):
+            if not is_command(word, {"gh"}):
+                continue
+            if seg[j + 1:j + 2] == ["api"]:
+                out += gh_api_effects(seg[j + 2:])
+            elif seg[j + 1:j + 3] == ["release", "create"]:
+                out += release_creates(seg[j + 3:])
+    return out
+
+
 def classify(cmd: str, current) -> list[str]:
     """The hook's one question, answered from the RAW command: PUSH_MAIN, GIT_MERGE, PR_MERGE <sel>."""
     lines = [f"PUSH_MAIN {d}" for d in sorted(set(targets(cmd, current)))]
     if any(git_verb(seg, "merge") is not None for seg in all_segments(cmd)):
         lines.append("GIT_MERGE")
     lines += [f"PR_MERGE {s}".rstrip() for s in pr_merge_selectors(cmd)]
+    lines += gh_effects(cmd)
     return lines
 
 
@@ -697,10 +946,89 @@ def selftest() -> int:
             failures.append(f"classify {cmd!r}: must be unjudgeable (the hook denies)")
         except Unjudgeable:
             pass
+    # #1569: `gh api` and `gh release create`, classified by EFFECT.
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        qfile, jfile = os.path.join(td, "q.graphql"), os.path.join(td, "q.json")
+        mut = 'mutation { mergePullRequest(input:{pullRequestId:"PR_kw1"}) { clientMutationId } }'
+        with open(qfile, "w", encoding="utf-8") as fh:
+            fh.write(mut)
+        with open(jfile, "w", encoding="utf-8") as fh:
+            fh.write('{"query": ' + __import__("json").dumps(mut) + "}")
+        api_cases = [
+            ("gh api -X PUT repos/{owner}/{repo}/pulls/1200/merge -f merge_method=merge", ["API_PR_MERGE 1200 -"]),
+            ("gh api --method=PUT repos/o/r/pulls/5/merge", ["API_PR_MERGE 5 o/r"]),
+            ("gh api repos/o/r/pulls/5/merge --method PUT", ["API_PR_MERGE 5 o/r"]),
+            ("gh api -XPUT /repos/o/r/pulls/5/merge", ["API_PR_MERGE 5 o/r"]),
+            ("gh api -X PUT https://api.github.com/repos/o/r/pulls/5/merge", ["API_PR_MERGE 5 o/r"]),
+            ("gh api -X PUT repos/o/r/pulls/5/merge -f method=GET", ["API_PR_MERGE 5 o/r"]),
+            ("gh api repos/o/r/pulls/5/merge -f _method=PUT -f x=1", ["API_PR_MERGE 5 o/r"]),
+            ("GH_TOKEN=x gh api -X PUT repos/o/r/pulls/5/merge", ["API_PR_MERGE 5 o/r"]),
+            ("bash -c 'gh api -X PUT repos/o/r/pulls/5/merge'", ["API_PR_MERGE 5 o/r"]),
+            ('eval "gh api -X PUT repos/o/r/pulls/5/merge"', ["API_PR_MERGE 5 o/r"]),
+            ("x=$(gh api -X PUT repos/o/r/pulls/5/merge)", ["API_PR_MERGE 5 o/r"]),
+            ("x=`gh api -X PUT repos/o/r/pulls/5/merge`", ["API_PR_MERGE 5 o/r"]),
+            ("cat <<EOF\n$(gh api -X PUT repos/o/r/pulls/5/merge)\nEOF", ["API_PR_MERGE 5 o/r"]),
+            ("cat <<'EOF'\ngh api -X PUT repos/o/r/pulls/5/merge\nEOF", []),
+            ("gh api repos/o/r/merges -f base=main -f head=dev", ["API_MAIN"]),
+            ("gh api repos/o/r/merges -f base=dev -f head=x", []),
+            ("gh api -X PATCH repos/o/r/git/refs/heads/main -f sha=a", ["API_MAIN"]),
+            ("gh api -X PATCH repos/o/r/git/refs/heads/dev -f sha=a", []),
+            ("gh api repos/o/r/git/refs -f ref=refs/heads/master -f sha=a", ["API_MAIN"]),
+            ("gh api repos/o/r/git/refs -f ref=refs/heads/feature/main -f sha=a", []),
+            ("gh api -X PATCH repos/o/r/git/refs/heads%2Fmain -f sha=a", ["API_MAIN"]),
+            ("gh api -f query='mutation { mergePullRequest(input:{pullRequestId:\"PR_kw1\"}) { x } }' graphql", ["GQL_PR PR_kw1"]),
+            ("gh api graphql -f query='mutation($id:ID!){ mergePullRequest(input:{pullRequestId:$id}) { x } }' -f id=PR_v", ["GQL_PR PR_v"]),
+            (f"gh api graphql -F query=@{qfile}", ["GQL_PR PR_kw1"]),
+            (f"gh api graphql --input {jfile}", ["GQL_PR PR_kw1"]),
+            ("gh api graphql -f query='mutation { updateRef(input:{refId:\"R1\", oid:\"a\"}) { x } }'", ["GQL_REF R1"]),
+            ("gh api graphql -f query='mutation { updateRef(input:{refId:\"R1\"}) { x } }' -f name=refs/heads/main", ["API_MAIN"]),
+            ("gh api graphql -f query='mutation { createRef(input:{name:\"refs/heads/main\"}) { x } }'", ["API_MAIN"]),
+            ("gh api graphql -f query='query($o:String!){ repository(owner:$o) { id } }' -f o=x", []),
+            ("gh api repos/o/r/pulls/5", []),
+            ("gh api -X GET repos/o/r/pulls/5/merge", []),
+            ("gh api repos/o/r/pulls/5/merge", []),
+            ("gh api -X POST repos/o/r/issues/1/comments -f body=hi", []),
+            ("gh api repos/o/r/releases", []),
+            ("gh api repos/o/r/releases -f tag_name=v1 -f target_commitish=main", ["RELEASE v1 main"]),
+            ("gh api -X POST repos/{owner}/{repo}/releases -f tag_name=v1", ["RELEASE v1 -"]),
+            ("gh release create v1.0.1 --target main --notes 'a b'", ["RELEASE v1.0.1 main"]),
+            ("gh release create v1.0.1 --target=abc123 -t Title dist/x.skill", ["RELEASE v1.0.1 abc123"]),
+            ("gh release create v1.0.1", ["RELEASE v1.0.1 -"]),
+            ("timeout 60 gh release create v1 --draft", ["RELEASE v1 -"]),
+            ("gh release list", []),
+            ("gh release view v1", []),
+        ]
+        for cmd, want in api_cases:
+            try:
+                got = classify(cmd.replace("\\n", "\n"), on_feature)
+            except Unjudgeable as exc:
+                got = [f"unjudgeable: {exc}"]
+            if got != want:
+                failures.append(f"classify {cmd!r}: expected {want}, got {got}")
+        # Could not judge -> the hook denies. A file it cannot read is never "no merge".
+        unreadable = [
+            f"gh api graphql --input {td}/missing.json", f"gh api graphql -F query=@{td}/missing.graphql",
+            f"gh api graphql --input={td}/missing.json", f"gh api graphql -F query=@{td}",
+            "gh api graphql --input -", "gh api graphql -F query=@-",
+            "gh api -X PUT repos/o/r/pulls/$N/merge -f x=1 --input", "gh api -X $M repos/o/r/pulls/5/merge",
+            "gh api -X PATCH repos/o/r/git/refs/heads/$B", "gh api graphql -f query=\"$(cat q)\"",
+            "gh api -X POST repos/o/r/$X -f a=b", "gh release create $TAG", "gh release create v1 --target $T",
+            "gh release create v1 -R o/r", "gh api",
+        ]
+        for cmd in unreadable:
+            try:
+                got = classify(cmd, on_feature)
+                if cmd in ("gh api -X PATCH repos/o/r/git/refs/heads/$B",) and got == ["API_MAIN"]:
+                    continue                  # answered closed: an unknown ref IS treated as main
+                failures.append(f"classify {cmd!r}: must be unjudgeable or main-ward, got {got}")
+            except Unjudgeable:
+                pass
+        api_total = len(api_cases) + len(unreadable)
     # "no" must not share an exit code with a crash: python's uncaught-exception exit is 1.
     if NO in (0, 1) or UNJUDGEABLE == NO:
         failures.append(f"exit codes: NO={NO} must differ from 0, 1 (a crash) and UNJUDGEABLE")
-    total = len(cases) + 5 + 12
+    total = len(cases) + 5 + 12 + api_total
     if failures:
         print(f"push_targets selftest FAILED -- {len(failures)} of {total}:", file=sys.stderr)
         for f in failures:
