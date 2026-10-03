@@ -356,5 +356,26 @@ GUARD = Guard(
         "    return []\n",
         "actions: a declared route naming no inventory route is listed",
     ),
+        Mutation(
+            # #1546
+            'the redirect alternative is dropped, so a redirect row with a target is refused again',
+            'r"(?P<controller>redirect\\([^)]*\\)|\\S+)"',
+            'r"(?P<controller>\\S+)"',
+            'every redirect form parses',
+        ),
+        Mutation(
+            # #1546
+            'the redirect match is widened past the first `)`, so a target holding `)` is silently mis-parsed',
+            'r"(?P<controller>redirect\\([^)]*\\)|\\S+)"',
+            'r"(?P<controller>redirect\\(.*\\)|\\S+)"',
+            'a redirect whose target holds `)` is refused',
+        ),
+        Mutation(
+            # #1546
+            'redirects are grouped per status and target instead of under one `redirect` area',
+            '    if controller.startswith("redirect("):\n        return "redirect"',
+            '    if False:\n        return "redirect"',
+            'under the one `redirect` area',
+        ),
     ),
 )
