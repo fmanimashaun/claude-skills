@@ -2382,6 +2382,10 @@ def guard_worktree_fixtures() -> None:
         denied("guard-worktree: ...also with --force", guard(repo, "git worktree add -f ../dup feature/lane-band"))
         allowed("guard-worktree: a different branch with no issue number is allowed beside it",
                 guard(repo, "git worktree add ../other -b feature/other dev"))
+        # S1 (ae's review of 526470f): a backslash-newline is a continuation, and the shell joins the lines.
+        denied("guard-worktree: a backslash-newline continuation is joined: the operands on the next line are read",
+               guard(repo, "git worktree add \\\n../dup feature/lane-band"), "feature/lane-band")
+        denied("guard-worktree: ...also between an option and its value", guard(repo, "git worktree add -f -B \\\nfeature/lane-band ../dup"))
         # PARSER DIFFERENTIAL (the push security review): the hook must read the command the way git does. These
         # shapes made the helper see no branch at all, so the duplicate rule never fired.
         denied("guard-worktree: an ATTACHED -B<branch> (git accepts it) is read: a forced duplicate of a checked-out branch",
@@ -2429,6 +2433,11 @@ def guard_worktree_fixtures() -> None:
         for cmd in ('echo "git worktree add ../x -b y"', "echo 'git worktree add ../x'", "grep -n 'worktree add' README.md",
                     "printf '%s\\n' \"git worktree add ../x\" > notes.txt"):
             allowed(f"guard-worktree: a mention is not a command, even while a lane is held: {cmd[:44]}", guard(repo, cmd))
+        # S2: a heredoc BODY that mentions the command is data for the command it feeds, unless that command is a shell.
+        for cmd in ("cat <<'EOF' > notes.txt\ngit worktree add ../x -b y dev\nEOF", "cat > f <<EOF\ngit worktree add ../x\nEOF"):
+            allowed(f"guard-worktree: a heredoc body that merely mentions it is not a command: {cmd[:30]!r}", guard(repo, cmd))
+        for cmd in ("bash <<'EOF'\ngit worktree add ../x -b y dev\nEOF", "sh <<EOF\ngit worktree add ../x -b y dev\nEOF"):
+            denied(f"guard-worktree: CONTROL: a heredoc fed to a SHELL is still read as commands: {cmd[:14]!r}", guard(repo, cmd), str(wt))
         denied("guard-worktree: CONTROL: the same words as a real command ARE refused while a lane is held",
                guard(repo, "'git' worktree add ../x -b y dev"), str(wt))
 
@@ -2535,6 +2544,19 @@ def guard_worktree_fixtures() -> None:
               code == 0 and "resume in place" in out and str(wt) in out and "feature/a" in out
               and "finished worktree" not in out, out[-300:])
         check("resume pointer: ANOTHER session is not pointed at it", "resume in place" not in start(repo, "SESS-B")[1])
+        for bad in ("0", "-5"):
+            check(f"resume pointer: RAILS_FLOW_ZOMBIE_WARN={bad} is clamped, so it never prints a '0 zombie processes' line",
+                  "0 zombie processes" not in start(repo, RAILS_FLOW_ZOMBIE_WARN=bad)[1], start(repo, RAILS_FLOW_ZOMBIE_WARN=bad)[1][-200:])
+        # S4: the zombie scan must finish inside session-start's own 10 s hook timeout, even when `ps` hangs.
+        slow_ps = Path(td) / "slow-ps"
+        slow_ps.mkdir()
+        _stub(slow_ps, "ps", f"exec {shutil.which('sleep')} 20")
+        t0 = time.monotonic()
+        res = run_hook("session-start.sh", cwd=repo, stdin=json.dumps({"session_id": "SESS-A"}), path_prefix=[slow_ps],
+                       unset=("CLAUDE_PROJECT_DIR",))
+        check("resume pointer: a hanging `ps` is cut off well inside the hook's 10 s timeout", time.monotonic() - t0 < 8,
+              f"{time.monotonic() - t0:.1f}s")
+        check("resume pointer: ...and the lane pointer still prints when `ps` hangs", "resume in place" in res[1], res[1][-200:])
         check("resume pointer: a junk RAILS_FLOW_ZOMBIE_WARN falls back to the default and the pointer still prints",
               "resume in place" in start(repo, RAILS_FLOW_ZOMBIE_WARN="abc")[1], start(repo, RAILS_FLOW_ZOMBIE_WARN="abc")[1][-200:])
         check("resume pointer: a payload with no usable session_id is not pointed at anything (fails open, exit 0)",

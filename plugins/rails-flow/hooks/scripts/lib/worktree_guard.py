@@ -73,9 +73,13 @@ _STARTED = time.monotonic()
 UNAVAILABLE = 127
 
 
+def _remaining() -> float:
+    return BUDGET - (time.monotonic() - _STARTED)
+
+
 def git(cwd, *args: str) -> tuple[int, str]:
     """(exit code, stdout). 127 means git did not answer: missing, out of budget, or too slow."""
-    remaining = BUDGET - (time.monotonic() - _STARTED)
+    remaining = _remaining()
     if remaining <= 0:
         return UNAVAILABLE, ""
     try:
@@ -194,11 +198,44 @@ def parse_add_args(args: list[str]) -> tuple[str | None, list[str]]:
     return branch, positional
 
 
+HEREDOC = re.compile(r"<<(-?)\s*(['\"]?)([A-Za-z0-9_]+)\2")
+SHELL_WORD = re.compile(r"(?:^|[\s;&|(/])(?:ba|z|da|k|a)?sh(?:\s|$)")
+
+
+def strip_heredocs(command: str) -> str:
+    """Drop the BODY of a heredoc fed to a command that is not a shell: it is data (`cat <<'EOF' > notes`), and a
+    body that merely mentions `git worktree add` is not a command. A body fed to a SHELL (`bash <<EOF`) IS commands,
+    so it stays and is judged like any other."""
+    lines = command.split("\n")
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        out.append(line)
+        i += 1
+        m = HEREDOC.search(line)
+        if not m:
+            continue
+        delim, dash = m.group(3), m.group(1) == "-"
+        j = i
+        while j < len(lines) and (lines[j].lstrip("\t") if dash else lines[j]) != delim:
+            j += 1
+        if j >= len(lines):
+            continue                                   # no terminator: leave the text alone (fail toward judging it)
+        if SHELL_WORD.search(line[:m.start()]):
+            out.extend(lines[i:j + 1])                 # a shell reads it: keep the body AND the terminator
+        else:
+            out.append(lines[j])                       # data: drop the body, keep the terminator line
+        i = j + 1
+    return "\n".join(out)
+
+
 def worktree_adds(command: str, _depth: int = 0) -> list[dict] | None:
     """Each `git ... worktree add ...` in the command as {path, branch, commitish}; None if unreadable.
 
     A command inside a string (`bash -c 'git worktree add ...'`, `eval "..."`) is one quoted token here; the shell
     wrapper's normaliser surfaces it, so it is read again, two levels deep."""
+    command = strip_heredocs(command.replace("\\\n", ""))     # a backslash-newline is a continuation: the shell joins the lines
     try:
         lex = shlex.shlex(command, posix=True, punctuation_chars=True)
         lex.whitespace_split = True
@@ -309,8 +346,13 @@ def check(payload: dict, raw_only: bool = False) -> int:
 
 def zombies() -> tuple[int, list[tuple[int, str, int]]]:
     """(count of zombie processes, the busiest parents as (ppid, command, zombies))."""
+    # Inside the budget: session-start's own hook timeout is 10 s, and a `ps` that hangs must not outlast it.
+    left = _remaining()
+    if left <= 0:
+        return 0, []
     try:
-        out = subprocess.run(["ps", "-axo", "stat=,ppid=,comm="], capture_output=True, text=True, timeout=15).stdout
+        out = subprocess.run(["ps", "-axo", "stat=,ppid=,comm="], capture_output=True, text=True,
+                             timeout=min(3, left)).stdout
     except (OSError, subprocess.TimeoutExpired):
         return 0, []
     by_parent: dict[int, int] = {}
@@ -326,8 +368,8 @@ def zombies() -> tuple[int, list[tuple[int, str, int]]]:
             # The EXECUTABLE NAME only (`comm`, not `command`): a command line can carry a credential
             # (`mysql -pSECRET`, `node server.js --token=...`), and this prints into the model's context,
             # again after every compaction.
-            comm = os.path.basename(subprocess.run(["ps", "-o", "comm=", "-p", str(ppid)], capture_output=True,
-                                                   text=True, timeout=5).stdout.strip())[:40]
+            comm = os.path.basename(subprocess.run(["ps", "-o", "comm=", "-p", str(ppid)], capture_output=True, text=True,
+                                                   timeout=max(0.5, min(2, _remaining()))).stdout.strip())[:40]
         except (OSError, subprocess.TimeoutExpired):
             comm = "?"
         names.append((ppid, comm or "?", n))
@@ -336,6 +378,8 @@ def zombies() -> tuple[int, list[tuple[int, str, int]]]:
 
 def resume(session_id: str, cwd: str) -> int:
     """The SessionStart pointer. Silent when there is nothing to say: this prints again after every compaction."""
+    global BUDGET
+    BUDGET = min(BUDGET, 6)           # this runs inside session-start's 10 s hook timeout; leave room for the rest of it
     if git(cwd, "rev-parse", "--is-inside-work-tree")[0] != 0:
         return 0
     lines: list[str] = []
@@ -358,7 +402,7 @@ def resume(session_id: str, cwd: str) -> int:
         lines.append(f"- {len(finished)} finished worktree(s) (merged, clean): {shown}{' ...' if len(finished) > 3 else ''}. "
                      f"Remove each with `git worktree remove <path>` (never --force).")
     count, top = zombies()
-    if count >= _env_int("RAILS_FLOW_ZOMBIE_WARN", ZOMBIE_WARN):
+    if count >= max(1, _env_int("RAILS_FLOW_ZOMBIE_WARN", ZOMBIE_WARN)):
         parents = "; ".join(f"pid {p} `{c}` ({n})" for p, c, n in top)
         lines.append(f"- {count} zombie processes on this machine; busiest parents: {parents}. Every fork() fails at the "
                      f"per-user limit: see parallel-session-lane process-hygiene.")
@@ -422,6 +466,10 @@ def selftest() -> int:
     check_("a worktree add inside bash -c is read", len(nested) == 1 and nested[0]["branch"] == "feat/n", str(nested))
     check_("a worktree add inside eval is read", len(worktree_adds('eval "git worktree add ../n -b feat/n dev"') or []) == 1)
     check_("a quoted mention with no git in front is still not an add", worktree_adds("echo 'worktree add ../x'") == [])
+    check_("a backslash-newline continuation is joined", (worktree_adds("git worktree add -B \\\nfeat/a ../d") or [{}])[0].get("branch") == "feat/a")
+    check_("a heredoc body fed to cat is data, not a command", worktree_adds("cat <<'EOF' > f\ngit worktree add ../x\nEOF") == [])
+    check_("a heredoc body fed to a shell is read as commands", len(worktree_adds("bash <<'EOF'\ngit worktree add ../x\nEOF") or []) == 1)
+    check_("an unterminated heredoc is left in (judged, not skipped)", len(worktree_adds("cat <<EOF\ngit worktree add ../x") or []) == 1)
     check_("an unbalanced quote is unreadable, not empty", worktree_adds("git worktree add 'x") is None)
     for cmd, want in (("git worktree add -f -Bfeat/a ../d", ("feat/a", ["../d"])),
                       ("git worktree add -fbfeat/a ../d", ("feat/a", ["../d"])),

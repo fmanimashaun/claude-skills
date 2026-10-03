@@ -202,5 +202,12 @@ GUARD = Guard(
             '                last = lines[-1] if lines else ""',
             "a slow gate's ok line must carry its `(jobs=N, Xs)` measurement",
         ),
+        # #1581, review of #1596: a PART of the split hook harness with no gate never runs.
+        Mutation(
+            "the release half of the hook gates is dropped from GATES, so the doctor never runs it",
+            '    ("hook gates (release)", ("python3", "plugins/rails-flow/scripts/check_hook_gates.py", "--selftest", "--part", "b")),\n',
+            '',
+            "has no gate in GATES",
+        ),
     ),
 )

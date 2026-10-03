@@ -222,5 +222,35 @@ GUARD = Guard(
             "        if False:\n            return deny(",
             "could not locate the coordination record",
         ),
+        Mutation(
+            "a backslash-newline continuation is not joined, so the operands on the next line are lost",
+            '    command = strip_heredocs(command.replace("\\\n", ""))',
+            '    command = strip_heredocs(command)',
+            "also between an option and its value",
+        ),
+        Mutation(
+            "a heredoc body fed to a non-shell command is still read as commands",
+            "        else:\n            out.append(lines[j])                       # data: drop the body, keep the terminator line",
+            "        else:\n            out.extend(lines[i:j + 1])",
+            "a heredoc body that merely mentions it is not a command",
+        ),
+        Mutation(
+            "a heredoc fed to a shell is dropped, so a worktree add inside bash <<EOF is never judged",
+            "        if SHELL_WORD.search(line[:m.start()]):",
+            "        if False:",
+            "a heredoc fed to a SHELL is still read as commands",
+        ),
+        Mutation(
+            "a zero or negative RAILS_FLOW_ZOMBIE_WARN is not clamped",
+            '    if count >= max(1, _env_int("RAILS_FLOW_ZOMBIE_WARN", ZOMBIE_WARN)):',
+            '    if count >= _env_int("RAILS_FLOW_ZOMBIE_WARN", ZOMBIE_WARN):',
+            "is clamped",
+        ),
+        Mutation(
+            "the zombie scan's ps gets a fixed long timeout, longer than the hook's own",
+            "timeout=min(3, left)).stdout",
+            "timeout=15).stdout",
+            "a hanging `ps` is cut off",
+        ),
     ),
 )
