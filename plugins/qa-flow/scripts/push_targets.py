@@ -1129,7 +1129,168 @@ def _git_read_only(verb: str, args: list[str]) -> bool:
     return True
 
 
-def git_effects(seg, j, cwd, current):
+# --- WHAT EARLIER SEGMENTS OF ONE COMMAND DID TO THE STATE THE HOOK READS (#1571) -----------------------
+# The hook resolves HEAD and refs BEFORE the command runs. A command that moves them first and then merges
+# or pushes is judged from a state that no longer holds: `git switch main && git merge hotfix` was read as
+# "a merge off main" and allowed. So the classifier follows the branch and the refs through the segments.
+HOOK_HEAD = ""            # "the branch the hook saw": what HEAD was before this command ran
+UNKNOWN_BRANCH = "?"      # a branch change that could not be followed
+MAIN_BRANCHES = ("main", "master")
+CHECKOUT_FLAGS = {"-q", "--quiet", "-f", "--force", "-m", "--merge", "--guess", "--no-guess", "--progress",
+                  "--no-progress", "--recurse-submodules", "--no-recurse-submodules", "--discard-changes",
+                  "--ignore-other-worktrees", "--overwrite-ignore", "--no-overwrite-ignore", "--overlay",
+                  "--no-overlay", "-t", "--track", "--no-track", "-l"}
+REF_MOVING_VERBS = {"commit", "reset", "cherry-pick", "am", "revert", "update-ref", "symbolic-ref", "merge",
+                    "pull", "replace"}
+BRANCH_WRITE_FLAGS = {"-f", "--force", "-d", "-D", "--delete", "-m", "-M", "--move", "-c", "-C", "--copy",
+                      "-u", "--set-upstream-to", "--unset-upstream", "--edit-description"}
+
+
+def _opaque(word: str) -> bool:
+    return _expanded(word) or bool(EXPANDS & set(word)) or SUBST in word
+
+
+def branch_change(verb: str, args: list[str]):
+    """`(branches HEAD may be on afterwards, or None if the branch is unchanged; HEAD moved; a ref moved)` for
+    `git switch`, `git checkout`, `git rebase` and `git branch -m`. `HOOK_HEAD` stands for "as the hook saw
+    it": `git checkout x` may switch to a branch x OR restore a path x, and cannot be told apart without the
+    repository, so it keeps both possibilities. A flag or a word the model does not know is UNKNOWN."""
+    unknown = ({UNKNOWN_BRANCH}, True, True)
+    positional: list[str] = []
+    if verb in ("switch", "checkout"):
+        make = ("-c", "--create") if verb == "switch" else ("-b", "--orphan")
+        reset = ("-C", "--force-create") if verb == "switch" else ("-B",)
+        new, forced, detach, i = None, False, False, 0
+        while i < len(args):
+            a = args[i]
+            if a == "--":
+                # `checkout [<tree-ish>] -- <paths>` restores files and leaves HEAD alone
+                return (None, False, False) if new is None and not detach else unknown
+            if a in make or a in reset:
+                if i + 1 >= len(args):
+                    return unknown
+                new, forced = args[i + 1], a in reset
+                i += 2; continue
+            if a in ("-d", "--detach"):
+                detach = True; i += 1; continue
+            if a.startswith("-"):
+                if a in CHECKOUT_FLAGS:
+                    i += 1; continue
+                return unknown
+            positional.append(a); i += 1
+        if new is not None:
+            return ({UNKNOWN_BRANCH} if _opaque(new) else {new}), True, forced
+        if detach:
+            return {"(detached)"}, True, False
+        if verb == "switch":
+            if len(positional) != 1 or _opaque(positional[0]):
+                return unknown
+            return {positional[0]}, True, False
+        if len(positional) == 1:
+            return ({UNKNOWN_BRANCH} if _opaque(positional[0]) else {HOOK_HEAD, positional[0]}), True, False
+        return None, False, False
+    if verb == "rebase":
+        positional = [a for a in args if not a.startswith("-")]
+        if any(_opaque(a) for a in positional):
+            return unknown
+        return ({HOOK_HEAD, positional[-1]} if len(positional) >= 2 else None), True, True
+    if verb == "branch":
+        positional = [a for a in args if not a.startswith("-")]
+        writes = bool(positional) or any(a in BRANCH_WRITE_FLAGS for a in args)
+        if any(_opaque(a) for a in positional):
+            return unknown if writes else (None, False, False)
+        renames = any(a in ("-m", "-M", "--move", "-c", "-C", "--copy") for a in args)
+        return ({HOOK_HEAD, positional[-1]} if renames and positional else None), False, writes
+    return None, False, False
+
+
+class _Flow:
+    """The repository state as earlier segments of ONE command left it, per directory.
+
+    Fail closed on spelling: two paths cannot be told to name the same repository (`-C .`, `-C ./x`, an
+    absolute path), so a branch change in one directory is also applied to the hook's own directory and
+    to every directory not yet seen. `tainted` is every branch any segment may have switched to."""
+
+    def __init__(self) -> None:
+        self.branches: dict[str, set[str]] = {}
+        self.tainted: set[str] = set()
+        self.unknown_dir = False
+        self.refs_moved = False
+        self.head_moved = False
+
+    def possible(self, key: str | None) -> set[str]:
+        return self.branches.get(key, {HOOK_HEAD} | self.tainted) if key is not None else {HOOK_HEAD} | self.tainted
+
+    def promotion_kinds(self, key: str | None, base: str) -> list[str]:
+        """The effect lines a merge or pull emits: `base` when HEAD may still be what the hook saw (the hook
+        checks it), `base_MAIN` when it may be main by the command's own doing. UNKNOWN denies."""
+        poss = self.possible(key)
+        if UNKNOWN_BRANCH in poss or self.unknown_dir:
+            raise Unjudgeable("a merge or pull after a branch change that could not be followed")
+        kinds = [base] if HOOK_HEAD in poss else []
+        if any(b in MAIN_BRANCHES for b in poss if b):
+            kinds.append(base + "_MAIN")
+        return kinds
+
+    def check_push(self, src: str | None) -> None:
+        """A push to main ships a ref the hook has already read. If an earlier segment moved a ref (or, for a
+        HEAD-relative source, HEAD), what it ships is not what the hook read."""
+        head_relative = bool(src) and (src in ("HEAD", "@") or src.startswith(("HEAD~", "HEAD^", "@~", "@^")))
+        if self.refs_moved or (head_relative and self.head_moved):
+            raise Unjudgeable("a push to main after a command that moves refs or HEAD: the commit it ships "
+                              "is not the one the hook can read; run them as separate commands")
+
+    def after(self, verb: str, args: list[str], key: str | None) -> None:
+        """Fold one `git` segment into the state."""
+        branches, head_moved, refs_moved = branch_change(verb, args)
+        if verb in REF_MOVING_VERBS:
+            head_moved = refs_moved = True
+        elif verb == "fetch" and (any(":" in a for a in args) or "-u" in args or "--update-head-ok" in args):
+            refs_moved = True
+        elif verb == "tag" and (any(not a.startswith("-") for a in args) or any(a in ("-f", "-d", "--delete", "--force") for a in args)):
+            refs_moved = True
+        self.head_moved = self.head_moved or head_moved
+        self.refs_moved = self.refs_moved or refs_moved
+        if branches is not None:
+            self.tainted |= branches
+            if key is None:
+                self.unknown_dir = True
+            else:
+                self.branches[key] = branches
+                for other in self.branches:
+                    if other != key:
+                        self.branches[other] = self.branches[other] | branches
+                if key != "-":
+                    self.branches["-"] = self.branches.get("-", {HOOK_HEAD}) | branches
+
+
+def _literal_current(branch: str):
+    """A `current(push, dir)` that answers as if HEAD were on `branch`: no upstream, so a bare push falls
+    back to the branch's own name."""
+    return lambda push, d=None: None if push else branch
+
+
+def git_effects(seg, j, cwd, current, flow=None):
+    """`[(line, repo, dir)]` for one `git` invocation, or Unjudgeable when it is neither a modelled effect
+    nor a verb on the safe list. `flow` carries what earlier segments of the same command did to HEAD and refs."""
+    flow = flow if flow is not None else _Flow()
+    verb, args, workdir, _ = git_parse(seg, j)
+    try:
+        key = _dir_word(cwd, workdir)
+        if key in (".", "./"):
+            key = "-"
+        elif key != "-" and not os.path.isabs(key):
+            key = os.path.normpath(key)
+            key = "-" if key == "." else key
+    except Unjudgeable:
+        key = None
+    out = _git_effects_core(seg, j, cwd, current, flow, key)
+    if verb:
+        flow.after(verb, args, key)
+    return out
+
+
+def _git_effects_core(seg, j, cwd, current, flow, key):
     """`[(line, repo, dir)]` for one `git` invocation, or Unjudgeable when it is neither a modelled effect
     nor a verb on the safe list."""
     verb, args, workdir, redirected = git_parse(seg, j)
@@ -1145,18 +1306,27 @@ def git_effects(seg, j, cwd, current):
             raise Unjudgeable("xargs appends its stdin to the command, so its refspecs are unknown")
     out = []
     if verb == "push":
-        for dst, src, remote, where in _push_hits_args(args, workdir, cwd, current):
-            out.append((f"PUSH_REF {src}" if src else f"PUSH_MAIN {dst}", f"remote:{remote}" if remote else "-",
-                        _dir_word(None, where)))
+        for possible in sorted(flow.possible(key)):
+            if possible == UNKNOWN_BRANCH or flow.unknown_dir:
+                raise Unjudgeable("a push after a branch change that could not be followed")
+            cur = current if possible == HOOK_HEAD else _literal_current(possible)
+            for dst, src, remote, where in _push_hits_args(args, workdir, cwd, cur):
+                flow.check_push(src)
+                row = (f"PUSH_REF {src}" if src else f"PUSH_MAIN {dst}", f"remote:{remote}" if remote else "-",
+                       _dir_word(None, where))
+                if row not in out:
+                    out.append(row)
         return out
     if verb == "merge":
         refs = merge_refs(args)
         if refs is not None:
-            out.append((("GIT_MERGE " + " ".join(refs)).rstrip(), "-", _dir_word(cwd, workdir)))
+            for kind in flow.promotion_kinds(key, "GIT_MERGE"):
+                out.append(((kind + " " + " ".join(refs)).rstrip(), "-", _dir_word(cwd, workdir)))
         return out
     if verb == "pull":
         # fetch + merge: on main it brings the upstream's commits into main, and they are not fetched yet.
-        out.append(("GIT_PULL", "-", _dir_word(cwd, workdir)))
+        for kind in flow.promotion_kinds(key, "GIT_PULL"):
+            out.append((kind, "-", _dir_word(cwd, workdir)))
         return out
     if verb in GIT_SAFE and _git_read_only(verb, args):
         return []
@@ -1195,10 +1365,11 @@ def effects(cmd: str, current) -> list[tuple[str, str, str]]:
     repository the command acts on when it says so (`-R`, GH_REPO, a `repos/o/r/` path, a git remote as
     `remote:<name>`), else `-`; `dir` is where it runs after a `cd` or `git -C`, else `-`."""
     out: list[tuple[str, str, str]] = []
+    flow = _Flow()
     for seg, cwd, env_repo in ctx_segments(cmd):
         for tool, j in command_indexes(seg):
             if tool == "git":
-                out += git_effects(seg, j, cwd, current)
+                out += git_effects(seg, j, cwd, current, flow)
             else:
                 out += gh_effects_for(seg, j, cwd, env_repo)
     return out

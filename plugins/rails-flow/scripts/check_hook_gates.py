@@ -1526,6 +1526,42 @@ def release_gate_effects_fixtures() -> None:
         sh("checkout", "-q", "feature/work")
         rc, err = run("git merge hotfix")
         check("release-gate (#1569): CONTROL: `git merge hotfix` off main is not a promotion", rc == 0, f"rc={rc} {err[:200]!r}")
+        # (#1571) The hook reads HEAD and the refs BEFORE the command runs, so a command that moves them first and
+        # merges, pulls or pushes after was judged from a state that no longer held. From feature/work:
+        for label, cmd in (
+            ("a switch to main, then a merge", "git switch main && git merge hotfix"),
+            ("a checkout of main, then a merge", "git checkout main && git merge hotfix"),
+            ("a quiet checkout of main and a `;`", "git checkout -q main; git merge hotfix"),
+            ("a switch -C main, then a merge", "git switch -C main && git merge hotfix"),
+            ("a checkout -B main, then a merge", "git checkout -B main && git merge hotfix"),
+            ("a switch spelled `git -C .`, then a merge", "git -C . switch main && git merge hotfix"),
+            ("a switch spelled `git -C ./`, then a merge", "git -C ./ switch main && git merge hotfix"),
+            ("a switch in a directory that may be this one, then a merge", "git -C /nonexistent switch main && git merge hotfix"),
+            ("a switch to main, then a pull", "git switch main && git pull"),
+            ("a switch to a branch named by a variable", 'git switch "$B" && git merge hotfix'),
+            ("`checkout -`, which names no branch", "git checkout - && git merge hotfix"),
+            ("a branch rename onto main, then a merge", "git branch -M main && git merge hotfix"),
+            ("a rebase onto main's branch, then a merge", "git rebase dev main && git merge hotfix"),
+            ("a switch to main, a merge of CERTIFIED dev, then a push of main", "git switch main && git merge dev && git push origin main"),
+            ("a commit, then a push of main", "git commit --allow-empty -m x && git push origin main"),
+            ("a switch to hotfix, then a push of HEAD to main", "git switch hotfix && git push origin HEAD:main"),
+            ("a fetch of a refspec onto main, then a push of main", "git fetch origin hotfix:main && git push origin main"),
+        ):
+            rc, err = run(cmd)
+            check(f"release-gate (#1571): {label} is blocked", rc == 2, f"rc={rc} {err[:200]!r}")
+        for label, cmd in (
+            ("a switch to another branch, then a merge", "git switch topic && git merge hotfix"),
+            ("a new branch, then a merge", "git checkout -b topic2 && git merge hotfix"),
+            ("a detached checkout, then a merge", "git checkout --detach dev && git merge hotfix"),
+            ("a checkout that may be a path, from a branch that is not main", "git checkout README.md && git merge hotfix"),
+            ("`checkout -- path`, which leaves HEAD alone", "git checkout -- README.md && git merge hotfix"),
+            ("a switch to main and a merge of CERTIFIED dev", "git switch main && git merge dev"),
+            ("a commit on a feature branch, then a push of a feature branch", "git commit --allow-empty -m x && git push origin feature/x"),
+            ("a branch listing, then a merge off main", "git branch --list && git merge hotfix"),
+            ("a status, then a push of a feature branch", "git status && git push origin feature/work"),
+        ):
+            rc, err = run(cmd)
+            check(f"release-gate (#1571): CONTROL: {label} passes", rc == 0, f"rc={rc} {err[:200]!r}")
         # `git push <remote> <src>:main`: judged by <src>'s commit.
         for label, cmd in (
             ("a branch", "git push origin hotfix:main"),

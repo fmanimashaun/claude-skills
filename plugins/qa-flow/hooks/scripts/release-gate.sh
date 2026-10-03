@@ -67,7 +67,7 @@ targets_main=0
 # the normaliser answers only for a segment that STARTS with the verb, so `timeout 60 git push origin
 # main`, `sudo -u x git ...`, `( git push ... )`, `bash -c '...'` and `eval` all passed it. The
 # classifier finds git and gh anywhere in a segment, recurses into `sh -c` strings and `eval`, and
-# prints one line per finding: PUSH_MAIN <dst>, GIT_MERGE, PR_MERGE <selector>. Exit 0 = read;
+# prints one line per finding: PUSH_MAIN <dst>, GIT_MERGE (GIT_MERGE_MAIN, GIT_PULL_MAIN: on main by the command's own doing), PR_MERGE <selector>. Exit 0 = read;
 # anything else = could not judge (an unreadable refspec, such as one a substitution builds, or a
 # crash), which is treated as a promotion -- CLOSED. What a `$( )`, `<( )`, `>( )` or backtick
 # substitution RUNS is read as a command in its own right (#1550), so a push inside one is classified
@@ -218,12 +218,23 @@ if [ "$_mentions" = 1 ] && [ -f "$_pt" ]; then
                done
                [ "$_n" = 1 ] || unresolved_pr=1 ;;
           esac ;;
+        GIT_PULL_MAIN)
+          # (#1571) The same, on main by the COMMAND'S OWN doing: `git switch main && git pull`. The hook's HEAD
+          # is read before the command runs, so the classifier says it outright.
+          targets_main=1; unresolved_pr=1 ;;
         GIT_PULL)
           # `git pull` on main merges commits that are not fetched yet, so no commit can be named: deny.
           if git rev-parse --abbrev-ref HEAD 2>/dev/null | grep -qE '^(main|master)$'; then targets_main=1; unresolved_pr=1; fi ;;
         "PUSH_REF "*)
           # #1569: `git push <remote> <src>:main` ships <src>, so <src> is what must be certified.
           targets_main=1; add_commit "${_line#PUSH_REF }" "$_crepo" local "the commit being merged or pushed" ;;
+        GIT_MERGE_MAIN*)
+          # (#1571) `git switch main && git merge <ref>`: on main by the command's own doing, whatever HEAD was
+          # when the hook read it. Judged exactly like a merge on main.
+          targets_main=1
+          _refs="${_line#GIT_MERGE_MAIN}"; _refs="${_refs# }"
+          [ -n "$_refs" ] || _refs='@{upstream}'
+          for _r in $_refs; do add_commit "$_r" "-" local "the commit being merged or pushed"; done ;;
         GIT_MERGE*)
           # #1569: `git merge <ref>` on main brings in <ref>'s commit (bare = the upstream; --continue =
           # MERGE_HEAD). An unresolvable ref denies. Off main it is not a promotion.
