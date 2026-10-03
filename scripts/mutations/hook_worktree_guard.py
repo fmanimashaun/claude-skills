@@ -116,13 +116,13 @@ GUARD = Guard(
         ),
         Mutation(
             'the zombie warning always fires',
-            '    if count >= _env_int("RAILS_FLOW_ZOMBIE_WARN", ZOMBIE_WARN):',
+            '    if count >= max(1, _env_int("RAILS_FLOW_ZOMBIE_WARN", ZOMBIE_WARN)):',
             '    if True:',
             'below the threshold the zombie warning is silent',
         ),
         Mutation(
             'the zombie warning never fires',
-            '    if count >= _env_int("RAILS_FLOW_ZOMBIE_WARN", ZOMBIE_WARN):',
+            '    if count >= max(1, _env_int("RAILS_FLOW_ZOMBIE_WARN", ZOMBIE_WARN)):',
             '    if False:',
             'a zombie count at the threshold is reported',
         ),
@@ -224,7 +224,7 @@ GUARD = Guard(
         ),
         Mutation(
             "a backslash-newline continuation is not joined, so the operands on the next line are lost",
-            '    command = strip_heredocs(command.replace("\\\n", ""))',
+            r'    command = strip_heredocs(command.replace("\\\n", ""))',
             '    command = strip_heredocs(command)',
             "also between an option and its value",
         ),
