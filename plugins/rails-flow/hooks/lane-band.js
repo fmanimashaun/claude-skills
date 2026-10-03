@@ -2,7 +2,9 @@
 // Shows the branch, the worktree directory, the assigned lane (RAILS_FLOW_LANE) and the number of
 // uncommitted files, refreshed every two seconds. It blocks nothing and rewrites nothing: every hook
 // returns next(e) unchanged.
-// Draws in the terminal and the Desktop Code tab only; the VS Code chat panel draws nothing.
+// Verified in the terminal only. `AbovePrompt` is also raised on the Desktop Code tab, but this band's
+// data comes from `$.process`, which Claude Code's type declarations mark "CLI only", and it has not been
+// run on Desktop. The VS Code chat panel draws nothing.
 // Tested with Claude Code 2.1.287 (`claude plugin validate` and `claude plugin test`); mods need that version or later.
 
 // What the band shows. Reset to null when the working directory is not a git repository.
