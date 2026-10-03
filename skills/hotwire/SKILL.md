@@ -1,23 +1,18 @@
 ---
 name: hotwire
 description: >-
-  Deep reference for the Hotwire stack from the official handbooks — Turbo
-  (Drive, Frames, Streams, morphing page refreshes), Stimulus (controllers,
-  actions, targets, values, outlets), and Hotwire Native (wrap a web app into
-  iOS and Android apps with bridge components and path configuration). Use
-  this skill whenever the user works with Turbo or Stimulus in any backend
-  (Rails, Laravel, Django, Phoenix, plain HTML), mentions turbo-rails,
-  stimulus-rails, @hotwired packages, turbo_frame_tag, turbo_stream,
-  broadcasts, data-controller/data-action/data-*-target attributes, morphing,
-  "SPA-like without a SPA", partial page updates, live updates over
-  WebSockets — or wants a mobile app from their web app: Hotwire Native,
-  Turbo Native, Strada, bridge components, path configuration, WKWebView/
-  webview wrapper apps, or "turn my Rails app into an iOS/Android app". Also
-  covers production Hotwire patterns extracted from shipped 37signals apps:
-  real-time chat-scale broadcasting, optimistic UI, presence, typing
-  indicators, unread badges, catching up after a dropped WebSocket, morphing
-  hazards, and drag-and-drop without a JS framework. Pair with the rails-8
-  skill for Rails integration specifics.
+  Hotwire reference: Turbo (Drive, Frames, Streams, morphing page refreshes,
+  broadcasts), Stimulus (controllers, actions, targets, values, outlets) and
+  Hotwire Native (iOS/Android shells, bridge components, path configuration).
+  Use when the user works with Turbo or Stimulus in any backend, mentions
+  turbo-rails, stimulus-rails, @hotwired packages, turbo_frame_tag,
+  turbo_stream, data-controller/data-action, "SPA-like without a SPA", partial
+  page updates, live WebSocket updates, or wants an iOS/Android app from a web
+  app (Turbo Native, Strada, WKWebView). Also use for production patterns:
+  chat-scale broadcasting, optimistic UI, presence, catch-up after a dropped
+  WebSocket, morph hazards (dialogs closing, edits lost), failed-request/offline
+  states, drag-and-drop without a JS framework. Pair with rails-8 for Rails
+  specifics.
 ---
 
 # Hotwire: Turbo, Stimulus & Hotwire Native
