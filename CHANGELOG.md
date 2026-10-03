@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-10-03 (release v1.154.0)
 
 - **The mutation-coverage budget is 3600 s, set from a measurement — `scripts/maintainer_doctor.py`, `docs/wiki/Agents-And-Gates.md`** (#1569). dev's push run 37136784689 took 1588 s for 2182 mutations at `jobs=4`, 88% of the 1800 s budget, and the release-gate guards run a whole fixture group per mutation, so #1571's guards timed the dispatched run out at 1800 s (run 37136560968; no survivor in any guard that finished, and `--require-slow` correctly counted the incomplete run as a failure). The flag is untouched. 3600 s is 2.3x the dev measurement; it is re-set from the `jobs=4, Xs` line of the completed run on that branch. Our own design; no framework claim.
 
@@ -19,7 +19,6 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 - **A harness that times `guard-bash.sh` per process group and kills the whole group on a deadline — `scripts/hook_slow_paths.py`, `scripts/mutations/hook_slow_paths.py`** (Refs #1575). A first attacker run killed only the parent `bash` and left its `awk` child computing; the orphans ran 51 minutes. Measured on `9a3d9dc`: 500 chained `echo hi;` inside `bash -c` cost 5.9 CPU-seconds and 1000 cost 40.6; 1000 lines of `echo $(true) N` cost 25.5. Each case runs in its own session and a deadline `killpg`s the group; the check is a ratchet both ways (an unmarked case over its CPU bound fails, and a case marked known-slow that got fast fails as a stale marker). The selftest forks a sleeper under a hung stub and asserts it is dead; four mutations, one per branch, each caught. Only the selftest is a doctor gate: the real run takes minutes and is load-sensitive, so a maintainer runs `python3 scripts/hook_slow_paths.py`. Our own design; no framework claim.
 
-(Maintainer-only; the version is assigned at promotion.)
 
 - **A release block ends at the next `## ` section heading, not only at the next `### ` one — `scripts/extract_release_notes.py`, `scripts/mutations/extract_release_notes.py`** (#1523). `blocks_for` ran a block to the next `### ` heading, so the `## ` heading that opens the next component's section, and any prose under it, joined the oldest block of the section above and was extracted into that release's notes. Measured against the pre-fix rule over every tag cut before the fix (204 tags): exactly one past tag's extraction changes, `v1.92.1`, whose notes ended with `## Repository hygiene`; the selftest prints the list and pins it. A published release is never re-published (`release.yml` is a no-op for a tag that has one), so no release body changes: only what this script would extract today. `check_published_blocks.py` (its own mirror, bullet identities only) still reports 203 blocks and 0 findings. Selftest 80 checks; five new mutations in the guard (31 in all, all caught), each by its own fixture. Our own parser; no framework claim.
 
@@ -3648,7 +3647,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.57.0 (release v1.154.0) — 2026-10-03
 
 - **The hook normaliser is linear again, and batches its inner-string pass — `plugins/rails-flow/hooks/scripts/lib/normalize_cmd.sh`,
   `plugins/qa-flow/hooks/scripts/lib/normalize_cmd.sh`, `plugins/rails-flow/scripts/check_hook_gates.py`,
@@ -11539,7 +11538,7 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 1.36.0 (release v1.154.0) — 2026-10-03
 
 - **`plugins/qa-flow/hooks/scripts/lib/normalize_cmd.sh` gets the #1504 normaliser** (#1504). It is byte-identical to
   rails-flow's copy (`hook-lib-drift`); see the rails-flow bullet. Only `release-gate.sh`'s no-parser fallback uses it.
@@ -13826,7 +13825,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.45.1 (release v1.154.0) — 2026-10-03
 
 - **`setup`, `critique` and `design-critic` name the design-system references in prose instead of linking out of the plugin — `plugins/design-flow/commands/setup.md`, `plugins/design-flow/commands/critique.md`, `plugins/design-flow/agents/design-critic.md`** (#1480). Two `../../skills/...` links were broken even in the clone; two `../../../skills/...` links resolved only here, never in an install.
 
@@ -16795,7 +16794,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
-### Unreleased
+### 1.71.0 (release v1.154.0) — 2026-10-03
 
 - **`parallel-session-lane`: the processes you start are yours to end — `skills/parallel-session-lane/references/process-hygiene.md`, `skills/parallel-session-lane/SKILL.md`** (#1582 slice A). §10's "do not clean up what you did not create" gains its other half as a reference (SKILL.md stays at 500 lines): run a reproduction of a process bug once and contained, never in a loop; count leftovers afterwards; a watcher loop reaps what it starts and stops on its own condition; ownership comes from what you can prove you started. The 2026-10-03 incident and the two measurements (`RLIMIT_NPROC` is per user; the environment survives re-parenting) are in the file. Also `skills/quality-pass/references/worked-example.md`: the `check(label, ok, detail)` harness count goes 42→43 (reach 22→23), because the helper's selftest is a new copy; `check_shared_shapes.py` only refuses a number that disagrees with the repo. Our own doctrine, no framework claim. Decision: the owner's decision on #1582 (https://github.com/fmanimashaun/claude-skills/issues/1582).
 
