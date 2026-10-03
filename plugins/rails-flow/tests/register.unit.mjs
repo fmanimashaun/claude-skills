@@ -1,6 +1,8 @@
-// hooks.json names ONE module (hooks/register.js) and it registers every mod rails-flow ships. Two things
-// can go wrong there while every mod's own test stays green, and this checks both (#1547, #1557):
+// hooks.json names ONE module (hooks/register.js) and it registers every mod rails-flow ships. Three things
+// can go wrong there while every mod's own test stays green, and this checks all three (#1547, #1557):
 //
+//   0. hooks.json stops naming exactly ./register.js: a second path, or a mod named directly, bypasses the
+//      aggregator below.
 //   1. A hook registered twice. Claude Code refuses two hooks on the same event with no matcher, and two on
 //      one event and the same matcher, so register.js, with every mod it calls, must register each
 //      (event, matcher) at most once.
@@ -13,7 +15,7 @@
 //
 // Run: node plugins/rails-flow/tests/register.unit.mjs
 
-import { readdirSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { register } from '../hooks/register.js'
 
@@ -30,6 +32,14 @@ function record(fn) {
     keys.push({ key: `${event} ${matcher}`.trim(), isFunction: typeof hook === 'function' })
   })
   return keys
+}
+
+// 0. hooks.json names exactly ./register.js. Claude Code takes ONE module path there, and everything below
+// assumes it is register.js: a second path, or a mod named directly, would bypass the aggregator and put
+// two modules on the same events. (tests/lane-band.unit.mjs asserts the same from the lane band's side.)
+const hooksJson = JSON.parse(readFileSync(new URL('../hooks/hooks.json', import.meta.url), 'utf8'))
+if (JSON.stringify(hooksJson.modules) !== '["./register.js"]') {
+  problems.push(`hooks.json "modules" is ${JSON.stringify(hooksJson.modules)}, not ["./register.js"]: it takes one path, and register.js is the module that registers every mod`)
 }
 
 // 1. register.js: every hook is a function, none is registered twice, and there is at least one.
