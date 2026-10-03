@@ -113,7 +113,7 @@ GUARD = Guard(
             "the bash `${var//[set]/}` pre-check is back, so a PR body costs seconds (#1504)",
             "    next=\"$(printf '%s' \"$level\" | _inner_strings \"$(( d > 0 ))\" | _join_strings)\"",
             "    _q=\"'\" _dq='\"' _bs='\\\\'; _p=\"${level//[$_q$_dq$_bs$_bs]/}\"; next=\"$(printf '%s' \"$level\" | _inner_strings \"$(( d > 0 ))\" | _join_strings)\"",
-            "PR body is judged inside the hook's",
+            "0 bash pattern substitutions over the command",
         ),
         Mutation(
             # #1504 takeover: the ratchet that COUNTS pipelines, so load cannot hide the regression

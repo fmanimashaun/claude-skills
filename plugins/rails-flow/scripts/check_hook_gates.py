@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -473,6 +474,18 @@ def normaliser_pipelines(cmd: str) -> int | str:
         return len(count.read_text())
 
 
+def pattern_expansion_sites() -> list[str] | str:
+    """#1504: every bash pattern-substitution expansion (`${name//…}`, `${name/…}`, `${name%…}`, `${name#…}`)
+    in the functions `lib/normalize_cmd.sh` defines, read from `declare -f` so comments do not count."""
+    script = ('before=$(declare -F); . "$1" || exit 3\n'
+              'for f in $(declare -F | while read -r _ _ n; do case "$before" in (*" $n"*) ;; (*) echo "$n" ;; esac; done); do\n'
+              '  declare -f "$f"\ndone\n')
+    r = _run(["bash", "-c", script, "scan", str(HOOKS / "lib" / "normalize_cmd.sh")], capture_output=True, text=True)
+    if r.returncode != 0 or "normalize_segments" not in r.stdout:
+        return f"scan failed: exit {r.returncode}, {r.stderr.strip()[:200]}"
+    return re.findall(r"\$\{[A-Za-z_][A-Za-z0-9_]*(?:/|%|#)[^}]*\}", r.stdout)
+
+
 def guard_bash_fixtures() -> None:
     def run(cmd: str) -> int:
         with tempfile.TemporaryDirectory() as td:
@@ -533,6 +546,14 @@ def guard_bash_fixtures() -> None:
     took = time.monotonic() - t0
     check(f"guard-bash (#1504): an {len(pr) // 1024} KB PR body is judged inside the hook's {hook_timeout} s timeout, and passes",
           rc == 0 and took < hook_timeout, "killed at the timeout (exit 124)" if rc == 124 else f"exit {rc}, {took:.1f}s")
+    # #1504: THE SLOW PATH, counted, not timed. bash 3.2's pattern substitution (`${v//[set]/}`, and its `/`,
+    # `%`, `#` kin) is superlinear: on an 8 KB body it cost 32-96 s here. On bash 5 (Linux CI) the same
+    # expansion is fast, so the timed check above cannot see it come back there; only the construct can.
+    # Counted in the functions as BASH PARSED them (`declare -f`: comments gone, so prose cannot trip it).
+    # A RATCHET at the measured 0: the normaliser does its text work in awk and sed, never in bash.
+    sites = pattern_expansion_sites()
+    check("guard-bash (#1504): the normaliser's functions run 0 bash pattern substitutions over the command (ratchet)",
+          sites == [], f"{len(sites)} site(s): {sites[:3]}")
     # #1504: THE BATCHING, counted, not timed, so load cannot make it flaky. Each depth's strings go through
     # ONE `_normalize_one` pipeline; per string, as before, 30 strings cost 31 pipelines. A RATCHET at the
     # measured counts: a rise is the regression; a drop means the code got cheaper, so lower the number here.

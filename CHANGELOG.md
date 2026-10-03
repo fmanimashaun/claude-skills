@@ -3624,6 +3624,10 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     30 `$(…)` strings cost 2 (31 on dev), 10 strings nested 3 deep cost 4 (31 on dev), and `git status` costs 1.
     A rise fails, and a drop asks for the number to be lowered. The timed check now reads its bound from the
     hook's own `timeout` in `hooks.json` instead of a literal 10.
+  - **The slow path is counted too.** On bash 5 (Linux CI) the pattern substitution is fast, so no timing there
+    can see it come back, and the full run on `0a41d33` reported that mutant SURVIVED. `check_hook_gates.py`
+    now reads every function the lib defines through `declare -f`, which drops comments, and ratchets bash
+    pattern substitutions (`${v//…}`, `/`, `%`, `#`) at the measured 0. The mutant is caught by this check.
   - 3 must-block fixtures pin the batch-only risks: an unclosed heredoc or an unbalanced quote in one string
     must not hide the next, and neither may a long batch.
   - A `\002` line splits only a batch, never the raw command, and `_join_strings` strips `\002` from every string,

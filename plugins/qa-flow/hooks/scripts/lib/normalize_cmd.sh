@@ -305,7 +305,7 @@ _inner_strings() {
   END {
     # Cost: the lexer walks the text a character at a time, so skip it when nothing it looks for is
     # there. Judged with quotes and backslashes removed, because the lexer dequotes words before it
-    # matches them (`e'v'al`, `bas\h -c`; #1498 review). gsub, not bash `${var//[set]/}`: the latter
+    # matches them (`e'v'al`, `bas\h -c`; #1498 review). gsub, not a bash pattern substitution: that
     # is superlinear on bash 3.2 and made an 8 KB PR body cost 32 s in guard-bash (#1504).
     p = S; gsub(/[\047"\\]/, "", p)
     if (p !~ /\$\(|`|<\(|eval|sh/) exit
