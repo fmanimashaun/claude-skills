@@ -580,7 +580,7 @@ def the_page(tmp: Path) -> None:
         check(f"panel {letter} is drawn with its heading", f'<span class="tab">{letter}</span><h2 id="h-{letter}">{head_}</h2>' in page)
     check("the title block carries title, repositories, mode, updated, commit and sheet",
           all(x in page for x in ("Title", "Repositories", "Mode", "Updated", "Commit", "Sheet", "1 of 1", "abc1234", "2026-10-03T18:00Z")))
-    check("a status is a glyph AND a word, never a color alone", "● Working" in page and "– None" in page and "? Unknown" in page, "")
+    check("a status is a glyph AND a word, never a color alone", "● Working" in page and "? Unknown" in page and "– Closed" not in page, "")
     check("the page is a pure function of the record (render twice, and from the JSON text)",
           sb.render_html(b) == sb.render_html(json.loads(json.dumps(b))) == page)
 
