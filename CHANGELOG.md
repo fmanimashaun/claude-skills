@@ -3816,7 +3816,8 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
     tries with `pipefail`, 5 hits in 5 without. `skills_in_diff` now collects the names first and matches them with a
     shell `case`, so there is no pipe. The five other `printf … | grep -q` lines in `guard-claims.sh` read the command
     text, not a diff, and stay with #1579.
-  - `check_hook_gates.py` goes from 409 checks on dev (`464ecef`) to 562, so 153 are new. Run against dev's
+  - On the branch at `e6296b4`, which carries dev as of `464ecef`, `check_hook_gates.py` goes from 409 checks to 562,
+    so 153 are new (dev's later merges add checks of their own and are not counted). Run against dev's
     `guard-claims.sh`, 135 of the 153 fail, all of them in guard-claims; the 18 that pass are controls, listed by name
     from a run that logged every check: no `cd`; `git push && gh` with no `cd`; allowlisted commands and an assignment
     before `gh`; a logical `cd link/..`; `-R` after a `cd`; other assignments before `gh`; a `GIT_*` on an earlier
