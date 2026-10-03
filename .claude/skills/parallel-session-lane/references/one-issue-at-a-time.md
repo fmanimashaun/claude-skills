@@ -41,5 +41,6 @@ rules are advice, and only you keep them.
 rule (a), and anything that can send the coordinator's id can write the record. The issue number is read
 only from a branch or directory written `issue-N`, `N-slug` or `.../N-slug`; a branch with none gets the
 exact-branch check alone. A worktree made by hand outside the agent, by `git -C <another repository>`, or through
-a shell variable, function or alias is out of reach. A `git worktree add` the hook can find but not parse is
-refused, never allowed.
+a shell variable, function or alias is out of reach. A `$VAR` or `$(...)` in the BRANCH cannot be
+judged without running it, and a pipe to `sh`, `find -exec`, an alias and a heredoc are out of reach: the guard
+targets accidents. A `git worktree add` the hook can find but not parse is refused, never allowed.

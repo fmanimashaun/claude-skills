@@ -41,11 +41,21 @@ import coordination  # noqa: E402
 INTEGRATION = ("origin/dev", "dev", "origin/main", "main", "origin/master", "master")
 PREFIX = "BLOCKED by rails-flow worktree guard:"
 ZOMBIE_WARN = 50
-# `issue-77`, `issue_77`, `feat/77-x`, `77-x`: a number written as an issue, after a separator.
-ISSUE = re.compile(r"(?:^|[/_-])(?:issue[-_]?)?(\d{2,6})(?=[-_/]|$)")
+# The DOCUMENTED forms only: `issue-77` / `issue_77` (after a separator or at the start), and `77-slug` / `.../77-slug`
+# (a number that STARTS a path segment). `slug-20` is not issue 20 (ae's review of #1596: `node-20` and `ubuntu-20`).
+ISSUE_WORD = re.compile(r"(?:^|[/_-])issue[-_]?(\d{2,6})(?=[-_/]|$)")
+ISSUE_SEGMENT = re.compile(r"(?:^|/)(\d{2,6})(?=[-_/]|$)")
 VALUE_OPTS = {"-b", "-B", "--reason"}
 # A date (2026-10-02, 2026-10) in a name: its month and day are not issue numbers.
 DATE = re.compile(r"(?:19|20)\d{2}[-_]\d{2}(?:[-_]\d{2})?")
+
+
+def _env_int(name: str, default: int) -> int:
+    """A tuning value from the environment; a junk one is the default, never a traceback."""
+    try:
+        return int(os.environ.get(name) or default)
+    except ValueError:
+        return default
 
 
 def git(cwd, *args: str) -> tuple[int, str]:
@@ -59,10 +69,11 @@ def git(cwd, *args: str) -> tuple[int, str]:
 def issue_key(name: str | None) -> int | None:
     """The issue number a branch or directory name carries, or None. A year is not an issue."""
     name = DATE.sub("", name or "")
-    for m in ISSUE.finditer(name):
-        n = int(m.group(1))
-        if not 1900 <= n <= 2100:
-            return n
+    for pattern in (ISSUE_WORD, ISSUE_SEGMENT):
+        for m in pattern.finditer(name):
+            n = int(m.group(1))
+            if not 1900 <= n <= 2100:
+                return n
     return None
 
 
@@ -187,8 +198,11 @@ def worktree_adds(command: str, _depth: int = 0) -> list[dict] | None:
             found.append({"path": positional[0] if positional else None, "branch": branch,
                           "commitish": positional[1] if len(positional) > 1 else None})
     if _depth < 2:
-        for tok in tokens:
-            if " " in tok and "worktree" in tok and "add" in tok:
+        for idx, tok in enumerate(tokens):
+            prev = tokens[idx - 1] if idx else ""
+            # Only the string a shell WILL run: the argument of `-c` (also `-lc`, `-ic`) or of `eval`. A quoted word
+            # elsewhere (`echo "git worktree add"`) is a mention, and reading it as a command would refuse it.
+            if (prev == "eval" or re.fullmatch(r"-[A-Za-z]*c", prev)) and "worktree" in tok and "add" in tok:
                 found.extend(worktree_adds(tok, _depth + 1) or [])
     return found
 
@@ -198,15 +212,27 @@ def deny(msg: str) -> int:
     return 2
 
 
-def check(payload: dict) -> int:
+# A command that moves somewhere else before it adds: where the worktree really goes cannot be known from the cwd.
+MOVES = re.compile(r"(?:^|[\s;&|(])(?:cd|pushd)\s|\s-C\s|--git-dir|--work-tree")
+
+
+def check(payload: dict, raw_only: bool = False) -> int:
+    """`raw_only`: the wrapper's normaliser saw no worktree add, but the command looks like one once quotes are
+    dropped. Then finding none here is a MENTION and passes; when the normaliser DID see one, finding none is a
+    parser disagreement, and that is refused."""
     command = str((payload.get("tool_input") or {}).get("command", ""))
     cwd = payload.get("cwd") or os.getcwd()
     sid = payload.get("session_id")
     adds = worktree_adds(command)
     if not adds:
+        if raw_only:
+            return 0
         return deny("could not read the `git worktree add` in this command, so it cannot be judged. Write it as a plain "
                     "`git worktree add <path> [-b <branch>] [<commit>]` on its own line.")
     if git(cwd, "rev-parse", "--is-inside-work-tree")[0] != 0:
+        if MOVES.search(command):
+            return deny("this `git worktree add` follows a `cd` or `-C`, and the session's directory is not inside a git "
+                        "repository, so which repository it targets cannot be judged. Run it from inside the repository.")
         return 0                                  # dormant outside a git repository
     existing = worktrees(cwd)
     integ = integration_ref(cwd)
@@ -257,10 +283,7 @@ def zombies() -> tuple[int, list[tuple[int, str, int]]]:
         parts = line.split(None, 2)
         if len(parts) == 3 and parts[0].startswith("Z") and parts[1].isdigit():
             by_parent[int(parts[1])] = by_parent.get(int(parts[1]), 0) + 1
-    try:
-        shown = max(1, int(os.environ.get("RAILS_FLOW_ZOMBIE_TOP") or 3))
-    except ValueError:
-        shown = 3
+    shown = max(1, _env_int("RAILS_FLOW_ZOMBIE_TOP", 3))
     top = sorted(by_parent.items(), key=lambda kv: -kv[1])[:shown]
     names = []
     for ppid, n in top:
@@ -300,7 +323,7 @@ def resume(session_id: str, cwd: str) -> int:
         lines.append(f"- {len(finished)} finished worktree(s) (merged, clean): {shown}{' ...' if len(finished) > 3 else ''}. "
                      f"Remove each with `git worktree remove <path>` (never --force).")
     count, top = zombies()
-    if count >= int(os.environ.get("RAILS_FLOW_ZOMBIE_WARN") or ZOMBIE_WARN):
+    if count >= _env_int("RAILS_FLOW_ZOMBIE_WARN", ZOMBIE_WARN):
         parents = "; ".join(f"pid {p} `{c}` ({n})" for p, c, n in top)
         lines.append(f"- {count} zombie processes on this machine; busiest parents: {parents}. Every fork() fails at the "
                      f"per-user limit: see parallel-session-lane process-hygiene.")
@@ -313,7 +336,8 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--selftest", action="store_true")
     sub = ap.add_subparsers(dest="cmd")
-    sub.add_parser("check")
+    c = sub.add_parser("check")
+    c.add_argument("--raw", action="store_true", help="the wrapper matched only after dropping quotes")
     r = sub.add_parser("resume")
     r.add_argument("--session-id", default="")
     r.add_argument("--cwd", default=".")
@@ -325,7 +349,7 @@ def main(argv: list[str] | None = None) -> int:
             payload = json.loads(sys.stdin.buffer.read().decode("utf-8", "surrogateescape"))
         except json.JSONDecodeError:
             return deny("the hook payload could not be read, so a `git worktree add` cannot be judged.")
-        return check(payload if isinstance(payload, dict) else {})
+        return check(payload if isinstance(payload, dict) else {}, raw_only=args.raw)
     if args.cmd == "resume":
         return resume(args.session_id, args.cwd)
     ap.print_usage(sys.stderr)
@@ -350,11 +374,12 @@ def selftest() -> int:
     adds = worktree_adds("cd /x && git -C repo worktree add -f ../b -b feat/b dev; echo done") or []
     check_("a worktree add is found after cd and git -C", len(adds) == 1 and adds[0]["path"] == "../b"
            and adds[0]["branch"] == "feat/b" and adds[0]["commitish"] == "dev", str(adds))
-    # The helper cannot tell a quoted mention from `bash -c '...'`: both are one quoted token. Keeping a bare mention
-    # out is the SHELL WRAPPER's job (its normaliser strips quoted spans); the hook fixtures prove `echo "git worktree
-    # add"` never reaches here. So the helper reads it as an add, which is the safe side.
-    check_("a quoted string holding a worktree add is read as one (the wrapper decides what reaches it)",
-           len(worktree_adds('echo "git worktree add ../x"') or []) == 1)
+    check_("a quoted MENTION is not an add (only the argument of -c or eval is read as a command)",
+           worktree_adds('echo "git worktree add ../x"') == [])
+    check_("a bash -lc string is read", len(worktree_adds("bash -lc 'git worktree add ../x -b y dev'") or []) == 1)
+    check_("quoted words are dequoted", len(worktree_adds("'git' worktree \"add\" ../x") or []) == 1)
+    check_("slug-20 is not issue 20", issue_key("chore/ubuntu-20") is None and issue_key("pr-20-review") is None)
+    check_("20-slug and issue-20 are", issue_key("fix/20-again") == 20 and issue_key("feature/issue-20-x") == 20)
     check_("an existing branch given as the commit-ish is read", (worktree_adds("git worktree add ../x feat/a") or [{}])[0].get("commitish") == "feat/a")
     nested = worktree_adds("bash -c 'git worktree add ../n -b feat/n dev'") or []
     check_("a worktree add inside bash -c is read", len(nested) == 1 and nested[0]["branch"] == "feat/n", str(nested))

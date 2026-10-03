@@ -168,5 +168,35 @@ GUARD = Guard(
             '    if False:',
             "a worktree add INSIDE `bash -c",
         ),
+        Mutation(
+            "a number is read as an issue after any separator, so slug-20 is issue 20",
+            'ISSUE_SEGMENT = re.compile(r"(?:^|/)(\\d{2,6})(?=[-_/]|$)")',
+            'ISSUE_SEGMENT = re.compile(r"(?:^|[/_-])(\\d{2,6})(?=[-_/]|$)")',
+            "`-b chore/ubuntu-20` is NOT issue 20",
+        ),
+        Mutation(
+            "a mention that only matched with its quotes dropped is refused as unreadable",
+            "        if raw_only:\n            return 0",
+            "        if False:\n            return 0",
+            "a mention is not a command, even while a lane is held",
+        ),
+        Mutation(
+            "a command that moves into a repository from outside one is allowed",
+            "        if MOVES.search(command):",
+            "        if False:",
+            "`cd <repo> && git worktree add` from a cwd outside any repository",
+        ),
+        Mutation(
+            "a junk integer setting raises instead of using its default",
+            "        return int(os.environ.get(name) or default)\n    except ValueError:\n        return default",
+            "        return int(os.environ.get(name) or default)\n    except ValueError:\n        raise",
+            "a junk RAILS_FLOW_ZOMBIE_WARN falls back to the default",
+        ),
+        Mutation(
+            "every quoted string holding the words is read as a command, mentions included",
+            '            if (prev == "eval" or re.fullmatch(r"-[A-Za-z]*c", prev)) and "worktree" in tok and "add" in tok:',
+            '            if "worktree" in tok and "add" in tok:',
+            "a mention is not a command, even while a lane is held",
+        ),
     ),
 )

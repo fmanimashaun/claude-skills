@@ -54,5 +54,17 @@ GUARD = Guard(
             '  2) exit 0 ;;',
             'a session that owns an UNMERGED worktree may not add another',
         ),
+        Mutation(
+            "quoted words are never matched, so 'git' worktree add never reaches the helper",
+            "then hit=1; raw=1; fi",
+            "then true; fi",
+            "a quoted or escaped word does not hide the command",
+        ),
+        Mutation(
+            "a raw-only match is judged as an ordinary one, so a mention is refused as unreadable",
+            '[ "$raw" = 1 ] && flag="--raw"',
+            '[ "$raw" = 1 ] && flag=""',
+            "a mention is not a command, even while a lane is held",
+        ),
     ),
 )

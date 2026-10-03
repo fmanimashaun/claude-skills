@@ -1682,6 +1682,51 @@ def guard_worktree_fixtures() -> None:
         allowed("guard-worktree: CONTROL: a redirect on a different, new branch is still allowed",
                 guard(repo, "git worktree add ../other -b feature/other dev >/dev/null 2>&1"))
 
+    # F1 (ae's review of #1596): an issue number is read only from the documented forms. `slug-20` is not issue 20.
+    with tempfile.TemporaryDirectory() as td:
+        repo = new_repo(td)
+        add_wt(repo, "node-20", "chore/node-20")
+        allowed("guard-worktree: `-b chore/ubuntu-20` is NOT issue 20 beside `chore/node-20`",
+                guard(repo, "git worktree add ../u -b chore/ubuntu-20 dev"))
+        allowed("guard-worktree: a directory `pr-20-review` is NOT issue 20", guard(repo, "git worktree add ../pr-20-review -b scratch dev"))
+        wt20 = add_wt(repo, "issue-21", "feature/issue-21-x")
+        denied("guard-worktree: CONTROL: `issue-21` as a branch segment IS issue 21", guard(repo, "git worktree add ../a -b feature/issue-21-again dev"))
+        denied("guard-worktree: CONTROL: `N-slug` (21-again) IS issue 21", guard(repo, "git worktree add ../b -b fix/21-again dev"))
+
+    # Quoted words (ae's review): the shell's normaliser strips quoted spans, so these never reached the helper.
+    with tempfile.TemporaryDirectory() as td:
+        repo = new_repo(td)
+        wt = add_wt(repo, "lane-band", "feature/lane-band")
+        for cmd in ("'git' worktree add ../dup feature/lane-band", "git 'worktree' add ../dup feature/lane-band",
+                    'git worktree "add" ../dup feature/lane-band', "\\git worktree add ../dup feature/lane-band"):
+            denied(f"guard-worktree: a quoted or escaped word does not hide the command: {cmd}", guard(repo, cmd), "feature/lane-band")
+        for cmd in ('echo "git worktree add ../x"', "echo 'git worktree add ../x -b y'", "printf '%s' \"git worktree add\" > notes.txt"):
+            allowed(f"guard-worktree: ...and a plain MENTION is still left alone: {cmd[:44]}", guard(repo, cmd))
+
+    # A MENTION must pass even when this session HOLDS a lane: were it read as a command, rule 1 would refuse it.
+    with tempfile.TemporaryDirectory() as td:
+        repo = new_repo(td)
+        wt = add_wt(repo, "a", "feature/a")
+        lane(repo, "SESS-A", wt, "feature/a")
+        for cmd in ('echo "git worktree add ../x -b y"', "echo 'git worktree add ../x'", "grep -n 'worktree add' README.md",
+                    "printf '%s\\n' \"git worktree add ../x\" > notes.txt"):
+            allowed(f"guard-worktree: a mention is not a command, even while a lane is held: {cmd[:44]}", guard(repo, cmd))
+        denied("guard-worktree: CONTROL: the same words as a real command ARE refused while a lane is held",
+               guard(repo, "'git' worktree add ../x -b y dev"), str(wt))
+
+    # The fail-open (the push's security review): a payload cwd outside any repository made the guard dormant even
+    # when the command itself changes directory into one.
+    with tempfile.TemporaryDirectory() as td:
+        repo = new_repo(td)
+        add_wt(repo, "lane-band", "feature/lane-band")
+        outside = Path(td) / "elsewhere"
+        outside.mkdir()
+        denied("guard-worktree: `cd <repo> && git worktree add` from a cwd outside any repository cannot be judged, so it is refused",
+               guard(outside, f"cd {repo} && git worktree add ../dup feature/lane-band"), "cannot be judged")
+        denied("guard-worktree: ...and `git -C <repo> worktree add` likewise", guard(outside, f"git -C {repo} worktree add ../dup feature/lane-band"))
+        allowed("guard-worktree: CONTROL: a plain worktree add from outside any repository is still dormant",
+                guard(outside, "git worktree add ../x -b y"))
+
     # A record that cannot be read fails CLOSED, with the way out.
     with tempfile.TemporaryDirectory() as td:
         repo = new_repo(td)
@@ -1736,6 +1781,8 @@ def guard_worktree_fixtures() -> None:
               code == 0 and "resume in place" in out and str(wt) in out and "feature/a" in out
               and "finished worktree" not in out, out[-300:])
         check("resume pointer: ANOTHER session is not pointed at it", "resume in place" not in start(repo, "SESS-B")[1])
+        check("resume pointer: a junk RAILS_FLOW_ZOMBIE_WARN falls back to the default and the pointer still prints",
+              "resume in place" in start(repo, RAILS_FLOW_ZOMBIE_WARN="abc")[1], start(repo, RAILS_FLOW_ZOMBIE_WARN="abc")[1][-200:])
         check("resume pointer: a payload with no usable session_id is not pointed at anything (fails open, exit 0)",
               start(repo, None)[0] == 0 and "resume in place" not in start(repo, None)[1])
         done_wt = add_wt(repo, "done", "feature/done", unmerged=False)

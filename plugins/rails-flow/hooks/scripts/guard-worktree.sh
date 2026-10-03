@@ -23,8 +23,12 @@
 # a session nobody recorded passes the "one issue" rule (the duplicate rule still holds, and needs no
 # record). `git -C <another repo> worktree add` is judged against the repository of the payload's cwd.
 # A worktree made by a script or by hand outside the agent is out of reach, and so is one reached through a shell
-# variable, function or alias the normaliser cannot expand (`G=git; $G worktree add ...`). A command it surfaces but the
-# helper cannot parse is refused, not allowed: the two parsers can disagree, and the disagreement must fail closed.
+# variable, function or alias the normaliser cannot expand (`G=git; $G worktree add ...`). A `$VAR` or `$(...)` in the BRANCH
+# cannot be judged without running it, so the duplicate check does not see it. Also out of reach: a pipe to `sh`, `find -exec`,
+# an alias and a heredoc. A command the normaliser surfaces but the helper cannot parse is refused, not allowed: the two
+# parsers can disagree, and the disagreement must fail closed. `cd <repo> && git worktree add` from a cwd outside any
+# repository is refused for the same reason (which repository it targets cannot be judged); from a cwd INSIDE one it is
+# judged against that cwd's repository, like `git -C`.
 set -uo pipefail
 input=""; IFS= read -r -d '' input || true
 
@@ -53,6 +57,15 @@ while [ -n "$rest" ]; do
   line="${rest%%$'\n'*}"; rest="${rest#*$'\n'}"
   if [[ $line =~ $re ]]; then hit=1; break; fi
 done
+# QUOTED WORDS (ae's review of #1596). The normaliser strips quoted spans, so `'git' worktree add`, `git 'worktree' add` and
+# `git worktree "add"` normalise to something else and never matched. Test the raw text with its quotes and backslashes dropped
+# too: a match there that the normaliser did not make goes to the helper as RAW, which reads the real tokens and lets a plain
+# mention (`echo "git worktree add"`) through.
+raw=0
+if [ "$hit" = 0 ] && [ "$parsed" = 1 ]; then
+  plain="${cmd//[\'\"\\]/}"
+  if [[ $plain =~ (^|[^[:alnum:]_])git[[:space:]]([^\;\&\|]*[[:space:]])?worktree[[:space:]]+add([[:space:]]|$) ]]; then hit=1; raw=1; fi
+fi
 [ "$hit" = 1 ] || exit 0
 
 deny() { echo "BLOCKED by rails-flow worktree guard: $1" >&2; exit 2; }
@@ -60,7 +73,8 @@ command -v python3 >/dev/null 2>&1 \
   || deny "python3 is not available, so this \`git worktree add\` cannot be judged. Install python3, or create the worktree yourself outside the agent."
 [ -f "$_py" ] || deny "the guard's helper is missing ($_py), so this \`git worktree add\` cannot be judged. Reinstall the rails-flow plugin."
 
-out="$(printf '%s' "$input" | python3 "$_py" check 2>&1)"; rc=$?
+flag=""; [ "$raw" = 1 ] && flag="--raw"
+out="$(printf '%s' "$input" | python3 "$_py" check $flag 2>&1)"; rc=$?
 case "$rc" in
   0) exit 0 ;;
   2) printf '%s\n' "$out" >&2; exit 2 ;;
