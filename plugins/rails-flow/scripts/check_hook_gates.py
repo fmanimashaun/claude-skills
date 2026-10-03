@@ -1648,9 +1648,11 @@ def guard_worktree_fixtures() -> None:
         denied("guard-worktree: ...and by the new worktree's DIRECTORY name", guard(repo, "git worktree add ../issue-77-redo -b scratch dev"))
         allowed("guard-worktree: a DIFFERENT issue is allowed beside it (two live worktrees for different work stay silent)",
                 guard(repo, "git worktree add ../other -b fix/78-other dev"))
-        add_wt(repo, "issue-10", "feature/issue-10-y")
-        allowed("guard-worktree: a date in a branch name is not an issue number (its month must not match issue 10)",
+        add_wt(repo, "issue-2026", "feature/issue-2026-y")
+        allowed("guard-worktree: a DATE in a branch name is not issue 2026 (its year must not match a real issue 2026)",
                 guard(repo, "git worktree add ../d -b chore/2026-10-02-x dev"))
+        denied("guard-worktree: ...but a year-sized number written as an issue IS one (this repository will pass #1900)",
+               guard(repo, "git worktree add ../e -b fix/2026-again dev"))
         git(repo, "branch", "-f", "dev", "feature/issue-77-x")
         allowed("guard-worktree: once the same-issue worktree is MERGED, a new one for it is allowed (finished)",
                 guard(repo, "git worktree add ../again -b fix/77-again dev"))
@@ -1740,14 +1742,16 @@ def guard_worktree_fixtures() -> None:
             for tool in ("bash", "python3"):
                 (b / tool).symlink_to(shutil.which(tool))
             if git_body is not None:
-                _stub(b, "git", git_body.replace("REAL_GIT", real_git))
+                _stub(b, "git", git_body.replace("REAL_GIT", real_git).replace("REAL_SLEEP", shutil.which("sleep")))
             return {"PATH": str(b)}
 
         no_git = stage_bin("no-git", None)
         denied("guard-worktree: with git missing a worktree add cannot be judged, so it is refused (not read as 'no repository')",
                guard(repo, "git worktree add ../dup feature/lane-band", env_extra=no_git), "cannot be judged")
         allowed("guard-worktree: ...and with git missing an ordinary command is untouched", guard(repo, "ls", env_extra=no_git))
-        slow = stage_bin("slow-git", "exec sleep 20")
+        # The ABSOLUTE sleep: this PATH holds only bash and python3, so a bare `sleep` is "not found" and fails at once, which made
+        # this fixture pass for the wrong reason (found when a mutation giving git a 60 s timeout survived it).
+        slow = stage_bin("slow-git", "exec REAL_SLEEP 20")
         t0 = time.monotonic()
         res = guard(repo, "git worktree add ../dup feature/lane-band", env_extra=dict(slow, WORKTREE_GUARD_BUDGET="1"))
         denied("guard-worktree: a git that hangs is cut off and the command is refused (the hook's own timeout would let it run)",

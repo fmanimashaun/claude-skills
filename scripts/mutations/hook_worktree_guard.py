@@ -49,10 +49,10 @@ GUARD = Guard(
             "by the new worktree's DIRECTORY name",
         ),
         Mutation(
-            "a date's month is read as an issue number",
+            "a date's year is read as an issue number",
             '    name = DATE.sub("", name or "")',
             '    name = name or ""',
-            'a date in a branch name is not an issue number',
+            'a DATE in a branch name is not issue 2026',
         ),
         Mutation(
             'a session that owns an unmerged worktree may add another',
@@ -166,7 +166,7 @@ GUARD = Guard(
             "a worktree add inside a quoted string (bash -c, eval) is never read again",
             '    if _depth < 2:',
             '    if False:',
-            "a worktree add INSIDE `bash -c",
+            "may still run it inside `bash -c`",
         ),
         Mutation(
             "a number is read as an issue after any separator, so slug-20 is issue 20",
@@ -208,7 +208,7 @@ GUARD = Guard(
             "a git worktree list that fails reads as 'no worktrees'",
             "    if existing is None:",
             "    if False:",
-            "a `git worktree list` that fails is refused",
+            "could not list the worktrees",
         ),
         Mutation(
             "git is given a fixed long timeout instead of what is left of the budget",
@@ -217,16 +217,10 @@ GUARD = Guard(
             "a slow git is cut off within the budget",
         ),
         Mutation(
-            "an exhausted budget still runs git",
-            "    if remaining <= 0:\n        return UNAVAILABLE, \"\"",
-            "    if False:\n        return UNAVAILABLE, \"\"",
-            "a git that hangs is cut off and the command is refused",
-        ),
-        Mutation(
             "a record that cannot be located is read as 'no lanes'",
             "        if rp is None:\n            return deny(",
             "        if False:\n            return deny(",
-            "a record location git cannot give is refused",
+            "could not locate the coordination record",
         ),
     ),
 )

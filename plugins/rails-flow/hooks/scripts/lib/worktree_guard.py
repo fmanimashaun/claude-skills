@@ -86,13 +86,16 @@ def git(cwd, *args: str) -> tuple[int, str]:
 
 
 def issue_key(name: str | None) -> int | None:
-    """The issue number a branch or directory name carries, or None. A year is not an issue."""
+    """The issue number a branch or directory name carries, or None.
+
+    A DATE (`2026-10-02`) is removed first, so its year is not read as issue 2026. A bare number is otherwise an
+    issue whatever its size: this repository is past #1500 and will pass #1900, so a year-sized range cannot be
+    excluded without ignoring real issues."""
     name = DATE.sub("", name or "")
     for pattern in (ISSUE_WORD, ISSUE_SEGMENT):
-        for m in pattern.finditer(name):
-            n = int(m.group(1))
-            if not 1900 <= n <= 2100:
-                return n
+        m = pattern.search(name)
+        if m:
+            return int(m.group(1))
     return None
 
 
@@ -400,7 +403,9 @@ def selftest() -> int:
     check_("issue-N", issue_key("feature/issue-1581-worktree") == 1581)
     check_("N-slug", issue_key("fix/1495-label-check-edges") == 1495)
     check_("a directory name", issue_key("issue-77") == 77)
-    check_("a year is not an issue", issue_key("chore/2026-10-02-x") is None)
+    check_("a date is not an issue", issue_key("chore/2026-10-02-x") is None and issue_key("chore/2026-10-x") is None)
+    check_("a year-sized number IS an issue when it is written as one", issue_key("fix/2026-again") == 2026
+           and issue_key("feature/issue-1999-x") == 1999)
     check_("a version is not an issue", issue_key("chore/arm-v1.153.0") is None)
     check_("no number, no key", issue_key("feature/lane-band") is None)
     adds = worktree_adds("cd /x && git -C repo worktree add -f ../b -b feat/b dev; echo done") or []
