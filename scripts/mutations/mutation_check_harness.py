@@ -11,7 +11,7 @@ GUARD = Guard(
     name="mutation_check_harness",
     subject="scripts/mutation_check.py",
     selftest="scripts/mutation_check_selftest.py",
-    deps=("scripts/mutation_types.py", "scripts/hermetic_git.py", "scripts/proc_group.py"),
+    deps=("scripts/mutation_types.py", "scripts/hermetic_git.py", "scripts/proc_group.py", "plugins/rails-flow/scripts/process_containment.py",),
     mutations=(
         # #1459: progress per guard as it finishes, and a timeout says what it knows.
         Mutation(
