@@ -343,10 +343,16 @@ def unknown_not_zero(tmp: Path) -> None:
                 raise RuntimeError("boom")
             return super().run(argv, cwd)
     w = Boom(tmp, "boom")
-    b = w.board()
-    check("a collector that raises becomes an UNKNOWN panel that names the error, and the run continues",
-          b["panels"]["prs"]["state"] == "unknown" and "RuntimeError" in b["panels"]["prs"]["reason"]
-          and b["panels"]["worktrees"]["state"] == "ok", str(b["panels"]["prs"]))
+    try:
+        b = w.board()
+    except Exception as e:                   # a collector that lets the error escape is the defect under test
+        b = None
+        check("a collector that raises becomes an UNKNOWN panel that names the error, and the run continues",
+              False, f"the error escaped: {e!r}")
+    if b is not None:
+        check("a collector that raises becomes an UNKNOWN panel that names the error, and the run continues",
+              b["panels"]["prs"]["state"] == "unknown" and "RuntimeError" in b["panels"]["prs"]["reason"]
+              and b["panels"]["worktrees"]["state"] == "ok", str(b["panels"]["prs"]))
     w = w_with(tmp, "badcfg")
     w.files[str(w.root / sb.CONFIG)] = "{nope"
     check("a broken config is reported and the defaults still draw", w.board()["config_error"] != "")
