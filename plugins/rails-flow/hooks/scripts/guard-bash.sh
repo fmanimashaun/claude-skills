@@ -46,7 +46,10 @@ hit() {
   local re="$1"
   [ "$degraded" = 1 ] && re="${re#^}"
   if [ "$have_grep" = 1 ]; then
-    printf '%s\n' "$seg" | grep -qE "$re"
+    # pipefail OFF inside the subshell: `grep -q` quits at the first match, `printf` takes SIGPIPE once the
+    # text outgrows the pipe buffer, and pipefail reported that 141 as "no match" -- `git add -A` plus
+    # 10k lines of echo was allowed. Only grep's own status may decide.
+    ( set +o pipefail; printf '%s\n' "$seg" | grep -qE "$re" )
   else
     # LINE BY LINE, as grep matches: one `=~` over the whole text let `^` see only the first segment,
     # so `cd x && git add -A` passed with no grep (#1529 round-3 review).
@@ -130,9 +133,9 @@ fi
 # redirect's `&` is not a separator, #1495; glued: `bash>/dev/null<f`, #1513). And any `$'…'` holding an escape,
 # which can spell `create`, `issue` or `gh` (#1513) -- because over-triggering costs one
 # parse, and under-triggering skips the check.
-if printf '%s' "$cmd" | tr -d "\"'\\\\\$" | tr '\n' ' ' | grep -qE 'gh[[:space:]].*issue[[:space:]]+(create|new)' \
-   || printf '%s' "$cmd" | grep -qE '(^|[[:space:];&|(/])(sh|bash|zsh|dash|ksh)([[:space:]<>&]([^;&|]|[<>]&|&>)*)?<([^<(]|$)' \
-   || printf '%s' "$cmd" | grep -q "\\$'[^']*\\\\"; then
+if ( set +o pipefail; printf '%s' "$cmd" | tr -d "\"'\\\\\$" | tr '\n' ' ' | grep -qE 'gh[[:space:]].*issue[[:space:]]+(create|new)' ) \
+   || ( set +o pipefail; printf '%s' "$cmd" | grep -qE '(^|[[:space:];&|(/])(sh|bash|zsh|dash|ksh)([[:space:]<>&]([^;&|]|[<>]&|&>)*)?<([^<(]|$)' ) \
+   || ( set +o pipefail; printf '%s' "$cmd" | grep -q "\\$'[^']*\\\\" ); then
   _root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
   _why="$(printf '%s' "$cmd" | python3 "$(dirname "${BASH_SOURCE[0]}")/lib/issue_labels.py" --root "$_root" 2>&1)"
   _rc=$?

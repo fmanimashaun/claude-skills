@@ -330,6 +330,62 @@ def _proc_group_fixtures() -> None:
         if len(recorded) != 1 or left:
             FAILURES.append(f"#1459: a timed-out run left an orphan in its group running (recorded "
                             f"{len(recorded)} of 1 pid; survivors {left})")
+        # (5) #1548: an exception MID-WALK must not leave the tree SIGSTOPped. The first `ps` pass freezes
+        # the grandchild; the second raises, as a Ctrl-C or a failing `ps` would. Both must end up dead,
+        # not stopped, and the exception must still reach the caller.
+        midwalk = work / "midwalk.pids"
+        root = _sp.Popen([sys.executable, "-c", _SLEEPER_WITH_GRANDCHILD, str(midwalk)], start_new_session=True,
+                         stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+        tree = _pids(midwalk)
+        real_rows, calls = pg._ps_rows, [0]
+
+        def rows_then_raise():
+            calls[0] += 1
+            if calls[0] >= 2:
+                raise KeyboardInterrupt("injected mid-walk (#1548)")
+            return real_rows()
+        pg._ps_rows = rows_then_raise
+        reraised = False
+        try:
+            pg.kill_tree(root.pid)
+        except KeyboardInterrupt:
+            reraised = True
+        finally:
+            pg._ps_rows = real_rows
+        try:
+            root.wait(timeout=10)
+        except _sp.TimeoutExpired:
+            pass
+
+        def stat(pid: int) -> str:
+            return _sp.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()
+        _time.sleep(0.5)
+        stopped = [p for p in tree if stat(p).startswith("T")]
+        running = [p for p in tree if stat(p) and not stat(p).startswith(("T", "Z"))]
+        for p in tree:                    # never leave this fixture's own processes behind
+            try:
+                os.kill(p, _signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        if not reraised or stopped or running:
+            FAILURES.append(f"#1548: an exception mid-walk left the tree stopped or running (re-raised: {reraised}; "
+                            f"stopped {stopped}; running {running})")
+
+        # (6) #1548: a pool started after an interrupted one starts children again. `kill_all` sets
+        # `_closing` for the pool it interrupts; a later pool must not inherit it.
+        _tick()
+        pg.kill_all()
+        second = work / "second-pool"
+        try:
+            with pg.pool(1) as ex:
+                ex.submit(pg.run, [sys.executable, "-c", f"open({str(second)!r}, 'w')"], timeout=30).result()
+            started = second.exists()
+        except KeyboardInterrupt:
+            started = False
+        finally:
+            pg._closing.clear()
+        if not started:
+            FAILURES.append("#1548: a pool started after an interrupted one refused every child -- _closing never resets")
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
