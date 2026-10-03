@@ -47,8 +47,8 @@ GUARD = Guard(
         ),
         Mutation(
             "only the first block for a tag is grabbed -- the original bug, restored",
-            "            if needle in line:",
-            "            if needle in line and not out:",
+            "            if is_heading and needle in line:",
+            "            if is_heading and needle in line and not out:",
             "second component's notes present — the bug",
         ),
         Mutation(

@@ -781,7 +781,8 @@ Intro prose under the next section.
     # it changes only what this script would extract today.
     past_boundary = (1, 153, 0)        # the newest tag cut before the fix; later tags are not part of the measurement
     all_tags = sorted(set(TAG_IN_HEADING.findall(text)), key=_version_key)
-    past = [t for t in all_tags if _version_key(t) <= past_boundary]
+    # Parsed here rather than via _version_key, so a broken key fails the ORDER fixture, not this one.
+    past = [t for t in all_tags if tuple(int(n) for n in t.lstrip('v').split('.')) <= past_boundary]
     changed = [t for t in past if blocks_for(text, t) != blocks_for(text, t, sections_end_blocks=False)]
     print(f"#1523: past tags whose extraction the fix changed: {len(changed)} of {len(past)}: {changed}")
     check("exactly one past tag's extraction changed, v1.92.1, and nothing else (#1523)", changed == ["v1.92.1"])
