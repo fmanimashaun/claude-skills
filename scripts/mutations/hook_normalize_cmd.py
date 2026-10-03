@@ -99,7 +99,7 @@ GUARD = Guard(
         # ---- #1504: one pipeline per depth, and a linear pre-check ----------------------------------
         Mutation(
             "a batch boundary does not reset heredoc state, so an unclosed heredoc in one string swallows the next (#1504)",
-            "    $0 == \"\\002\" { inh=0; next }      # a batch boundary (#1504): one string ends, its heredoc with it",
+            "    $0 == \"\\002\" { inh=0; pending=\"\"; insub=0; inbt=0; next }",
             "    $0 == \"\\002\" { next }",
             "an unclosed heredoc in one string does not swallow the next",
         ),
@@ -113,7 +113,14 @@ GUARD = Guard(
             "the bash `${var//[set]/}` pre-check is back, so a PR body costs seconds (#1504)",
             "    next=\"$(printf '%s' \"$level\" | _inner_strings \"$(( d > 0 ))\" | _join_strings)\"",
             "    _q=\"'\" _dq='\"' _bs='\\\\'; _p=\"${level//[$_q$_dq$_bs$_bs]/}\"; next=\"$(printf '%s' \"$level\" | _inner_strings \"$(( d > 0 ))\" | _join_strings)\"",
-            "PR body is judged in under 10 s",
+            "PR body is judged inside the hook's",
+        ),
+        Mutation(
+            # #1504 takeover: the ratchet that COUNTS pipelines, so load cannot hide the regression
+            "each depth's strings get a pipeline apiece again, so 30 `$(…)` cost 30 pipelines, not 1 (#1504)",
+            "    printf '%s\\n' \"$next\" | _normalize_one || return 1",
+            "    printf '%s\\n' \"$next\" | while IFS= read -r _s; do printf '%s\\n' \"$_s\" | _normalize_one; done || return 1",
+            "30 `$(…)` strings at one depth cost 2",
         ),
         Mutation(
             "the raw command is split at a \\002 line too, so a control byte hides what follows (#1519 review)",
@@ -162,6 +169,40 @@ GUARD = Guard(
             '      if (c == ";" || c == "&" || c == "|" || c == "(" || c == ")") { endcmd(); i++; continue }',
             "",
             "`\"echo x; bash -c 'git add -A'\"` runs the command and is blocked",
+        ),
+        Mutation(
+            # #1526
+            'a heredoc opened inside $( ) runs to the end again, hiding what follows the $( )',
+            '      if (insub && $0 ~ /^[ \\t]*\\)/) { inh=0; pending=delim; pdash=dash; print; next }',
+            '      if (0) { inh=0; pending=delim; pdash=dash; print; next }',
+            'a heredoc left open inside $( ) does not hide',
+        ),
+        Mutation(
+            # #1529 review
+            'a heredoc left open inside backticks swallows the rest of the text',
+            '      if (inbt && index($0, "`")) { inh=0; pending=delim; pdash=dash; print; next }',
+            '',
+            'BACKTICK',
+        ),
+        Mutation(
+            # #1529 round 2
+            'a pending delimiter no longer suppresses new heredocs, so a phantom heredoc hides the command',
+            '    pending != "" {\n',
+            '    0 {\n',
+            'phantom',
+        ),
+        Mutation(
+            # #1529 round 2
+            "the normaliser's status is discarded again, so a failing awk reads as a clean result",
+            # #1504 takeover: EVERY status in normalize_segments, since the batched loop returns its own
+            # pipelines' status too, and with only the first discarded the loop still caught a failing awk.
+            '  printf \'%s\' "$raw" | _normalize_one || return 1\n  level="$raw"\n  while [ "$d" -lt 3 ]; do\n'
+            '    next="$(printf \'%s\' "$level" | _inner_strings "$(( d > 0 ))" | _join_strings)" || return 1\n'
+            '    [ -n "$next" ] || return 0\n    printf \'%s\\n\' "$next" | _normalize_one || return 1\n',
+            '  printf \'%s\' "$raw" | _normalize_one\n  level="$raw"\n  while [ "$d" -lt 3 ]; do\n'
+            '    next="$(printf \'%s\' "$level" | _inner_strings "$(( d > 0 ))" | _join_strings)"\n'
+            '    [ -n "$next" ] || return 0\n    printf \'%s\\n\' "$next" | _normalize_one\n',
+            'with an awk that exits 2',
         ),
     ),
 )

@@ -96,6 +96,243 @@ def _fixture_guard(mutations: tuple[mc.Mutation, ...], selftest: str = SELFTEST)
     return guard, root
 
 
+# ---- review of #1525: what a group kill alone could not reach --------------------------------------
+# Every child script below records the pids it started in a file, so the fixture can see what
+# survived; each one is SIGKILLed at the end whatever the verdict, so a failing run leaks nothing.
+_SLEEPER_WITH_GRANDCHILD = (
+    "import os, subprocess, sys, time\n"
+    "g = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'], start_new_session=True)\n"
+    "open(sys.argv[1] + '.tmp', 'w').write(f'{os.getpid()} {g.pid}')\n"
+    "os.replace(sys.argv[1] + '.tmp', sys.argv[1])\n"
+    "time.sleep(120)\n"
+)
+
+
+def _pids(*files: Path, wait: float = 30.0) -> list[int]:
+    """The pids recorded in `files`, waiting up to `wait` seconds for each to appear."""
+    import time as _time
+    found: list[int] = []
+    for f in files:
+        deadline = _time.monotonic() + wait
+        while not f.exists() and _time.monotonic() < deadline:
+            _time.sleep(0.05)
+        if f.exists():
+            found.extend(int(p) for p in f.read_text().split())
+    return found
+
+
+def _survivors(pids: list[int]) -> list[int]:
+    """Which of `pids` are still running two seconds on (a killed process takes a moment to be reaped).
+    Every survivor is SIGKILLed before returning."""
+    import signal as _signal
+    import time as _time
+    deadline = _time.monotonic() + 2.0
+    alive = list(pids)
+    while alive and _time.monotonic() < deadline:
+        still = []
+        for pid in alive:
+            try:
+                os.kill(pid, 0)
+                still.append(pid)
+            except ProcessLookupError:
+                pass
+        alive = still
+        if alive:
+            _time.sleep(0.05)
+    for pid in alive:
+        try:
+            os.kill(pid, _signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    return alive
+
+
+def _proc_group_fixtures() -> None:
+    import signal as _signal
+    import subprocess as _sp
+    import time as _time
+    scripts = Path(mc.__file__).resolve().parent     # the staged copy under a mutant, not the repo's
+    pg = mc.proc_group
+    work = Path(tempfile.mkdtemp(prefix="procgroup-selftest-"))
+    try:
+        # (1) TWO LEVELS. A gate whose own children go through proc_group.run, from a thread pool, and
+        # one of those starts a grandchild in a session of ITS own -- mutation_check under the doctor,
+        # and check_hook_gates' hooks under a mutant. Each inner session is a group the outer killpg
+        # never reached: both mutants were alive after the gate's timeout.
+        outer = work / "outer.py"
+        outer.write_text(
+            "import sys\n"
+            f"sys.path.insert(0, {str(scripts)!r})\n"
+            "import proc_group\n"
+            "from concurrent.futures import ThreadPoolExecutor\n"
+            f"inner = {_SLEEPER_WITH_GRANDCHILD!r}\n"
+            "def one(i):\n"
+            f"    proc_group.run([sys.executable, '-c', inner, {str(work)!r} + f'/inner{{i}}.pids'], timeout=300)\n"
+            "with ThreadPoolExecutor(2) as p:\n"
+            "    list(p.map(one, range(2)))\n", encoding="utf-8")
+        _tick()
+        timed_out = False
+        try:
+            pg.run([sys.executable, str(outer)], timeout=4)
+        except _sp.TimeoutExpired:
+            timed_out = True
+        recorded = _pids(work / "inner0.pids", work / "inner1.pids", wait=0)
+        left = _survivors(recorded)
+        if not timed_out or len(recorded) != 4 or left:
+            FAILURES.append(f"#1459: a timed-out run left a nested child running -- its inner sessions were not "
+                            f"killed (timed out: {timed_out}; recorded {len(recorded)} of 4 pids; survivors {left})")
+
+        # (2) Ctrl-C. A child in a session of its own never sees the terminal's SIGINT, so run() must
+        # kill it on the way out: the review measured 2 survivors on the PR head, 0 on dev.
+        pids = work / "sigint.pids"
+        driver = work / "sigint_driver.py"
+        driver.write_text(
+            "import sys\n"
+            f"sys.path.insert(0, {str(scripts)!r})\n"
+            "import proc_group\n"
+            f"proc_group.run([sys.executable, '-c', {_SLEEPER_WITH_GRANDCHILD!r}, {str(pids)!r}], timeout=300)\n",
+            encoding="utf-8")
+        _tick()
+        d = _sp.Popen([sys.executable, str(driver)], start_new_session=True,
+                      stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+        recorded = _pids(pids)
+        os.kill(d.pid, _signal.SIGINT)
+        try:
+            d.wait(timeout=20)
+            exited = True
+        except _sp.TimeoutExpired:
+            exited = False
+            d.kill()
+            d.wait()
+        left = _survivors(recorded)
+        if not exited or len(recorded) != 2 or left:
+            FAILURES.append(f"#1459: Ctrl-C left a run's child running (exited: {exited}; recorded "
+                            f"{len(recorded)} of 2 pids; survivors {left})")
+
+        # (3) Ctrl-C under mutation_check's POOL. Its workers never see the interrupt: the join waited
+        # for the running mutant (24 s in the review) while it, and everything it started, kept going.
+        # One worker and two guards: the second must never start.
+        drv = work / "pool_driver.py"
+        hang = work / "hang_selftest.py"
+        hang.write_text(_SLEEPER_WITH_GRANDCHILD.replace("sys.argv[1]", repr(str(work) + "/pool-") + " + str(os.getpid())"),
+                        encoding="utf-8")
+        drv.write_text(
+            "import dataclasses, sys\n"
+            f"sys.path.insert(0, {str(scripts)!r})\n"
+            "import mutation_check as mc, mutation_check_selftest as st\n"
+            "guard, root = st._fixture_guard((mc.Mutation('unused', 'n % 2 == 0', 'True', 'fixture-odd'),),\n"
+            f"                                selftest=open({str(hang)!r}).read())\n"
+            "mc.REPO = root\n"
+            "mc.GUARDS = (guard, dataclasses.replace(guard, name='fixture-two'))\n"
+            "mc.main(['--jobs', '1'])\n", encoding="utf-8")
+        _tick()
+        d = _sp.Popen([sys.executable, str(drv)], start_new_session=True,
+                      stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+        deadline = _time.monotonic() + 30
+        while not any(f.name.startswith("pool-") and not f.name.endswith(".tmp") for f in work.iterdir()) \
+                and _time.monotonic() < deadline:
+            _time.sleep(0.05)
+        os.kill(d.pid, _signal.SIGINT)
+        started = _time.monotonic()
+        try:
+            d.wait(timeout=20)
+            exited = True
+        except _sp.TimeoutExpired:
+            exited = False
+            d.kill()
+            d.wait()
+        took = _time.monotonic() - started
+        _time.sleep(1)                  # long enough for a wrongly started second baseline to record itself
+        files = [f for f in work.iterdir() if f.name.startswith("pool-") and not f.name.endswith(".tmp")]
+        recorded = _pids(*files, wait=0)
+        left = _survivors(recorded)
+        if not exited or len(files) != 1 or left:
+            FAILURES.append(f"#1459: Ctrl-C under mutation_check's pool left work running (exited: {exited} "
+                            f"after {took:.0f}s; {len(files)} of 1 baselines started; survivors {left})")
+
+        # (4) ...and once interrupted, nothing new starts: a worker between two tasks would otherwise
+        # launch a fresh mutant after the kill, and the join would wait out its whole limit.
+        marker = work / "started-after-interrupt"
+        _tick()
+        # getattr: a proc_group without the mechanism must fail the ASSERTION below, not raise here.
+        getattr(pg, "kill_all", lambda: None)()   # nothing of this process is live here, so this kills nothing
+        try:
+            pg.run([sys.executable, "-c", f"open({str(marker)!r}, 'w')"], timeout=30)
+            refused = False
+        except KeyboardInterrupt:
+            refused = True
+        finally:
+            if hasattr(pg, "_closing"):
+                pg._closing.clear()
+        if not refused or marker.exists():
+            FAILURES.append("#1459: after an interrupt a new child still started -- the pool's join would "
+                            "wait out its whole limit")
+
+        # (5) AN ESCAPEE: a double fork leaves a process that is nobody's descendant and leads its own
+        # group, still holding the pipe. The wait for it is bounded, and what the child printed before
+        # the kill still comes back (the review found it reported as "printed nothing").
+        escapee = work / "escapee.pid"
+        child = ("import os, sys, time\n"
+                 "print('child-1459 up', flush=True)\n"
+                 "if os.fork() == 0:\n"
+                 "    os.setsid()\n"
+                 "    if os.fork() == 0:\n"
+                 f"        open({str(escapee)!r}, 'w').write(str(os.getpid()))\n"
+                 "        time.sleep(60)\n"
+                 "    os._exit(0)\n"
+                 "os.wait()\n"
+                 "time.sleep(120)\n")
+        _tick()
+        started = _time.monotonic()
+        output, raised = None, False
+        saved_wait = getattr(pg, "ESCAPEE_WAIT", None)
+        pg.ESCAPEE_WAIT = 1             # the bound is the claim, not its size: keep the selftest quick
+        try:
+            pg.run([sys.executable, "-c", child], timeout=2, text=True)
+        except _sp.TimeoutExpired as exc:
+            output, raised = exc.output, True
+        finally:
+            pg.ESCAPEE_WAIT = saved_wait
+        took = _time.monotonic() - started
+        _survivors(_pids(escapee, wait=5))
+        if not raised or took > 2 + 1 + 10:
+            FAILURES.append(f"#1459: an escapee holding the pipe must cost at most ESCAPEE_WAIT, not a hang "
+                            f"(took {took:.0f}s, timed out: {raised})")
+        _tick()
+        text = output.decode(errors="replace") if isinstance(output, bytes) else (output or "")
+        if "child-1459 up" not in text:
+            FAILURES.append(f"#1459: an escapee's timeout dropped what the child printed before the kill; got {output!r}")
+
+        # (6) AN ORPHAN STILL IN THE GROUP: a double fork WITHOUT setsid leaves a process whose parent
+        # is gone, so no walk by parent pid finds it -- only the kill of the child's own group does,
+        # and that group is the child's only because it starts a session of its own.
+        orphan = work / "orphan.pid"
+        child = ("import os, sys, time\n"
+                 "if os.fork() == 0:\n"
+                 "    if os.fork() == 0:\n"
+                 "        null = os.open(os.devnull, os.O_WRONLY)\n"
+                 "        os.dup2(null, 1)\n"
+                 "        os.dup2(null, 2)\n"
+                 f"        open({str(orphan)!r} + '.tmp', 'w').write(str(os.getpid()))\n"
+                 f"        os.replace({str(orphan)!r} + '.tmp', {str(orphan)!r})\n"
+                 "        time.sleep(60)\n"
+                 "    os._exit(0)\n"
+                 "os.wait()\n"
+                 "time.sleep(120)\n")
+        _tick()
+        try:
+            pg.run([sys.executable, "-c", child], timeout=2)
+        except _sp.TimeoutExpired:
+            pass
+        recorded = _pids(orphan, wait=0)
+        left = _survivors(recorded)
+        if len(recorded) != 1 or left:
+            FAILURES.append(f"#1459: a timed-out run left an orphan in its group running (recorded "
+                            f"{len(recorded)} of 1 pid; survivors {left})")
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
 def run() -> int:
     original_repo = mc.REPO
 
@@ -267,6 +504,74 @@ def run() -> int:
         os.environ.update(inherited)
         mc.REPO = original_repo
 
+    # ---- 1e. a mutant that times out takes its whole process group, and says what it knows (#1459)
+    # The mutated selftest starts a grandchild that would outlive a plain kill, prints a line, then
+    # hangs. run_mutation must report a timeout naming the guard, the mutation and the elapsed time,
+    # with that line as its tail, and leave nothing running.
+    import signal as _signal
+    import time as _time
+    guard, root = _fixture_guard((
+        mc.Mutation("the mutant hangs", "n % 2 == 0", "n % 2 == 0 or __import__('time').sleep(0)", "fixture-odd"),
+    ))
+    pidfile = root / "grandchild.pid"
+    hang = root / "scripts" / "subject_selftest.py"
+    hang.write_text("import subprocess, sys, time\n"
+                    "g = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'])\n"
+                    f"open({str(pidfile)!r}, 'w').write(str(g.pid))\n"
+                    "print('mutant-1459 started its grandchild', flush=True)\n"
+                    "time.sleep(120)\n", encoding="utf-8")
+    mc.REPO = root
+    try:
+        _tick()
+        t0 = _time.monotonic()
+        problems = mc.run_mutation(guard, guard.mutations[0], timeout=2)
+        took = _time.monotonic() - t0
+        report = " | ".join(problems)
+        if not ("fixture: the mutant hangs timed out after" in report and "mutant-1459 started its grandchild" in report
+                and "limit 2s" in report and took < 20):
+            FAILURES.append(f"#1459: a timed-out mutant must report guard, mutation, elapsed and its tail, "
+                            f"promptly; got {problems!r} after {took:.0f}s")
+        _tick()
+        grandchild = int(pidfile.read_text()) if pidfile.exists() else None
+        gone = grandchild is not None
+        for _ in range(20):
+            try:
+                os.kill(grandchild, 0)
+            except (ProcessLookupError, TypeError):
+                break
+            _time.sleep(0.1)
+        else:
+            gone = False
+            os.kill(grandchild, _signal.SIGKILL)
+        if not gone:
+            FAILURES.append("#1459: a timed-out mutant left its grandchild running -- its process group was not killed")
+    finally:
+        mc.REPO = original_repo
+
+    # ...and each guard's line prints the moment its last mutation finishes, once, not after the pool.
+    import contextlib as _contextlib
+    import io as _io
+    from concurrent.futures import ThreadPoolExecutor as _Pool
+    guard, root = _fixture_guard((
+        mc.Mutation("odd numbers reported even", "n % 2 == 0", "True", "fixture-odd"),
+        mc.Mutation("even numbers reported odd", "n % 2 == 0", "False", "fixture-even"),
+    ))
+    mc.REPO = root
+    try:
+        _tick()
+        buf = _io.StringIO()
+        with _contextlib.redirect_stdout(buf), _Pool(max_workers=2) as pool:
+            outcomes = mc.run_live(pool, [(guard, m) for m in guard.mutations], {guard.name: 60.0})
+        lines = [l for l in buf.getvalue().splitlines() if l.strip().startswith("[done] fixture:")]
+        if lines != ["  [done] fixture: 2 mutation(s), 0 problem(s)"] or len(outcomes) != 2:
+            FAILURES.append(f"#1459: a guard's progress line prints once when its last mutation ends, "
+                            f"got {buf.getvalue()!r} / {len(outcomes)} outcome(s)")
+    finally:
+        mc.REPO = original_repo
+
+    # ---- 1f. NESTED runners, Ctrl-C, and an escapee (review of #1525) ---------------------------
+    _proc_group_fixtures()
+
     # ---- 2. a SURVIVOR must be reported ------------------------------------------------
     # This mutation changes the subject in a way neither fixture observes, so the selftest still
     # passes. That is exactly the vacuous-fixture situation, and it must not read as success.
@@ -378,7 +683,10 @@ def run() -> int:
         if not (report and "exit 1" in report and tail):
             FAILURES.append(f"a wrong-fixture report does not carry the mutant's exit and output; got {problems}")
         _tick()
-        if len(tail) != 12 or "noise-01" in report or "fixture-odd" not in report:
+        tail_text = "\n".join(tail)
+        # The clause on the TAIL, not the report: the header names the expected fixture
+        # ('no mention of fixture-odd'), so a test of the whole report for it could never fail (#1532).
+        if len(tail) != 12 or "noise-01" in tail_text or "noise-20" not in tail_text:
             FAILURES.append(f"a wrong-fixture report does not carry exactly the last 12 lines of output; "
                             f"got {len(tail)} line(s), first={tail[:1]}")
         _tick()
@@ -386,6 +694,61 @@ def run() -> int:
             FAILURES.append("a wrong-fixture report does not cut each output line to 300 characters; "
                             f"widest {max(len(l) for l in tail)}")
     finally:
+        mc.REPO = original_repo
+
+    # ---- #1530-#1532: the three diagnostics a CI-only failure depends on ------------------------
+    # (1) the tail is ONE interleaved stream. 13 stderr lines, then a label on stdout: the old
+    # `stdout + stderr` put the label first and cut it, so the line naming what fired was the one
+    # missing. (2) the INERT report is as width-bound as the wrong-fixture tail. (3) a TIMEOUT keeps
+    # what the child printed before the limit, for the baseline and the mutant alike.
+    labelled = SELFTEST.replace(
+        '    sys.exit(1)\n',
+        '    for i in range(13):\n        print(f"noise-{i:02d}", file=sys.stderr, flush=True)\n'
+        '    print("label-on-stdout", flush=True)\n    sys.exit(1)\n', 1)
+    assert labelled != SELFTEST
+    guard, root = _fixture_guard((
+        mc.Mutation("even numbers reported odd", "n % 2 == 0", "False", "fixture-odd"),
+    ), selftest=labelled)
+    mc.REPO = root
+    try:
+        _tick()
+        report = next((p for p in mc.run_guard(guard) if "not by the expected fixture" in p), "")
+        tail = [l.strip() for l in report.split("\n")[1:] if l.startswith("      ")]
+        if not tail or tail[-1] != "label-on-stdout":
+            FAILURES.append("a wrong-fixture tail hides a label printed to stdout behind 12+ stderr lines "
+                            f"(stdout and stderr are not one interleaved stream); tail ends {tail[-2:]}")
+    finally:
+        mc.REPO = original_repo
+
+    wide = 'import sys\nprint("w" * 5000)\nsys.exit(1)\n'
+    guard, root = _fixture_guard((mc.Mutation("unused", "n % 2 == 0", "True", "fixture-odd"),), selftest=wide)
+    mc.REPO = root
+    try:
+        _tick()
+        inert = next((p for p in mc.run_guard(guard) if "INERT" in p), "")
+        rows = inert.split("\n")[1:]
+        if not rows or any(len(r) > 306 for r in rows):
+            FAILURES.append("the INERT report does not cut each output line to 300 characters; "
+                            f"widest {max((len(r) for r in rows), default=0)}")
+    finally:
+        mc.REPO = original_repo
+
+    sleeper = 'import time\nprint("timeout-label", flush=True)\ntime.sleep(60)\n'
+    guard, root = _fixture_guard((mc.Mutation("unused", "n % 2 == 0", "True", "fixture-odd"),), selftest=sleeper)
+    mc.REPO = root
+    original_baseline_timeout = mc.BASELINE_TIMEOUT
+    try:
+        _tick()
+        timed_out = mc.run_mutation(guard, guard.mutations[0], timeout=2)
+        if not any("timed out" in p and "timeout-label" in p for p in timed_out):
+            FAILURES.append(f"a MUTANT's timeout report drops what it printed before the limit; got {timed_out}")
+        _tick()
+        mc.BASELINE_TIMEOUT = 2
+        timed_out = mc.run_baseline(guard)
+        if not any("timed out" in p and "timeout-label" in p for p in timed_out):
+            FAILURES.append(f"a BASELINE's timeout report drops what it printed before the limit; got {timed_out}")
+    finally:
+        mc.BASELINE_TIMEOUT = original_baseline_timeout
         mc.REPO = original_repo
 
     # ---- 5. every real guard's anchors still match exactly once ------------------------

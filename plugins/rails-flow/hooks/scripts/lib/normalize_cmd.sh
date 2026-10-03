@@ -41,10 +41,28 @@
 _unquote_delims() { sed -E "s/<<(-?)[[:space:]]*[\"']([A-Za-z0-9_][A-Za-z0-9_-]*)[\"']/<<\1\2/g"; }
 _strip_quotes()   { sed -E "s/'[^']*'//g; s/\"[^\"]*\"//g"; }
 _strip_comments() { sed -E "s/^[[:space:]]*#.*\$//; s/([[:space:]])#.*\$/\1/"; }
+# #1526: a heredoc opened INSIDE an unclosed `$( )` (or backticks) ends where bash ends it, at the line that closes the
+# `$( )`, and that line is then read as commands. Kept open to the end, it hid
+# `x=$(cat <<EOF` / `foo` / `)` / `git add -A`, which bash 3.2 runs. After an early end the real delimiter
+# is still PENDING, and no new heredoc opens until it is seen: otherwise a body line naming `cat <<END`
+# opened a heredoc that never closed and hid the command after the substitution (#1529 review). So both
+# readings stay visible, and an error here can only block, never allow.
 _strip_heredocs() {
   awk '
-    $0 == "\002" { inh=0; next }      # a batch boundary (#1504): one string ends, its heredoc with it
-    inh { t=$0; if (dash) sub(/^\t+/,"",t); if (t==delim) inh=0; next }
+    # A batch boundary (#1504): one string ends, and every heredoc state of it ends with it.
+    $0 == "\002" { inh=0; pending=""; insub=0; inbt=0; next }
+    inh {
+      t=$0; if (dash) sub(/^\t+/,"",t)
+      if (t==delim) { inh=0; next }
+      if (insub && $0 ~ /^[ \t]*\)/) { inh=0; pending=delim; pdash=dash; print; next }
+      if (inbt && index($0, "`")) { inh=0; pending=delim; pdash=dash; print; next }
+      next
+    }
+    pending != "" {
+      t=$0; if (pdash) sub(/^\t+/,"",t)
+      if (t==pending) pending=""
+      print; next
+    }
     {
       if (match($0, /<<-?[ \t]*[A-Za-z0-9_][A-Za-z0-9_-]*/)) {
         before=(RSTART>1)?substr($0,RSTART-1,1):""
@@ -52,6 +70,9 @@ _strip_heredocs() {
           op=substr($0,RSTART,RLENGTH); dash=(op ~ /^<<-/)?1:0
           d=op; sub(/^<<-?[ \t]*/,"",d)
           delim=d; inh=1
+          head=substr($0,1,RSTART-1); opens=gsub(/\$\(/,"",head); h2=substr($0,1,RSTART-1); closes=gsub(/\)/,"",h2)
+          insub=(opens>closes)?1:0
+          h3=substr($0,1,RSTART-1); ticks=gsub(/`/,"",h3); inbt=(ticks%2==1)?1:0
         }
       }
       print
@@ -313,12 +334,13 @@ _normalize_one() {
 normalize_segments() {
   local raw="" level next d=0
   IFS= read -r -d '' raw || true
-  printf '%s' "$raw" | _normalize_one
+  # Every status is RETURNED (#1529 review): discarded, an awk that failed read as a clean, empty result.
+  printf '%s' "$raw" | _normalize_one || return 1
   level="$raw"
   while [ "$d" -lt 3 ]; do
-    next="$(printf '%s' "$level" | _inner_strings "$(( d > 0 ))" | _join_strings)"
+    next="$(printf '%s' "$level" | _inner_strings "$(( d > 0 ))" | _join_strings)" || return 1
     [ -n "$next" ] || return 0
-    printf '%s\n' "$next" | _normalize_one
+    printf '%s\n' "$next" | _normalize_one || return 1
     level="$next"; d=$((d + 1))
   done
 }

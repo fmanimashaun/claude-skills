@@ -483,7 +483,7 @@ nobody has specified yet:
   has a fact and the *client* decides what it means, it is raw Action Cable JSON. Campfire's six
   channels are all on the second side — unread ids, read receipts, typing, presence, heartbeat —
   and none carries HTML. Full derivation, and the measurement behind it, in
-  [hotwire's production.md](../../hotwire/references/production.md).
+  hotwire's `references/production.md` (the `hotwire` skill).
   - This entry used to read "allowed only for genuinely bespoke real-time… document why Streams
     didn't fit", which is the same rule at a vaguer precision. Superseded rather than duplicated:
     two statements of one rule at different sharpness is how a reader ends up citing the weaker.
