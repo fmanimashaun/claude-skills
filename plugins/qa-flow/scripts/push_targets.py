@@ -51,6 +51,7 @@ What counts as a destination, per `git help push`:
 """
 from __future__ import annotations
 
+import fnmatch
 import os
 import re
 import shlex
@@ -172,6 +173,51 @@ def _placeholder(body: str) -> str:
     return "HEAD" if " ".join(body.split()) in CURRENT_BRANCH_IDIOMS else SUBST
 
 
+ANSI_SIMPLE = {"a": "\a", "b": "\b", "e": "\x1b", "E": "\x1b", "f": "\f", "n": "\n", "r": "\r", "t": "\t",
+               "v": "\v", "\\": "\\", "'": "'", '"': '"', "?": "?"}
+
+
+def ansi_c_end(cmd: str, i: int) -> tuple[str, int]:
+    """Decode the ANSI-C string whose `$'` is at `i`: `(text bash produces, index past the closing ')`.
+    `$'gh'`, `$'\\x67h'` and `$'PUT'` are the words gh, gh and PUT to bash; shlex read each as `$gh` etc.,
+    a word that is no command, so the effect was missed (#1569). A NUL, or a string never closed, cannot
+    be decoded with certainty: Unjudgeable."""
+    j, n, out = i + 2, len(cmd), []
+    while j < n:
+        c = cmd[j]
+        if c == "'":
+            return "".join(out), j + 1
+        if c != "\\" or j + 1 >= n:
+            out.append(c); j += 1; continue
+        d = cmd[j + 1]
+        if d in ANSI_SIMPLE:
+            out.append(ANSI_SIMPLE[d]); j += 2
+        elif d in "01234567":
+            k = j + 1
+            while k < n and k < j + 4 and cmd[k] in "01234567":
+                k += 1
+            code = int(cmd[j + 1:k], 8) & 0xFF
+            if code == 0:
+                raise Unjudgeable("a NUL in an ANSI-C string ends the word in bash")
+            out.append(chr(code)); j = k
+        elif d in "xuU":
+            width = {"x": 2, "u": 4, "U": 8}[d]
+            k = j + 2
+            while k < n and k < j + 2 + width and cmd[k] in "0123456789abcdefABCDEF":
+                k += 1
+            if k == j + 2:
+                out.append("\\" + d); j += 2; continue          # `\x` with no digits stays text
+            code = int(cmd[j + 2:k], 16)
+            if code == 0:
+                raise Unjudgeable("a NUL in an ANSI-C string ends the word in bash")
+            out.append(chr(code)); j = k
+        elif d == "c" and j + 2 < n:
+            out.append(chr(ord(cmd[j + 2]) & 0x1F)); j += 3
+        else:
+            out.append("\\" + d); j += 2
+    raise Unjudgeable("an unterminated ANSI-C $'...' string")
+
+
 def strip_comments_and_heredocs(cmd: str, bodies: list[str] | None = None) -> str:
     """Bash's rules, not shlex's: `#` opens a comment only at the start of a word, outside quotes;
     a heredoc's body runs from the next newline to its delimiter line.
@@ -235,6 +281,12 @@ def strip_comments_and_heredocs(cmd: str, bodies: list[str] | None = None) -> st
             out.append(_placeholder(cmd[i + 1:end - 1]))
             i = end
             continue
+        if c == "$" and cmd.startswith("'", i + 1):
+            text, i = ansi_c_end(cmd, i)
+            out.append("'" + text.replace("'", "'\"'\"'") + "'")       # the decoded word, single-quoted
+            continue
+        if c == "$" and cmd.startswith('"', i + 1):
+            i += 1; continue                    # `$"..."` is a plain double-quoted string to bash here
         if c in "'\"":
             quote = c; out.append(c); i += 1; continue
         if c == "#" and (i == 0 or cmd[i - 1] in " \t\n;&|()<>"):
@@ -340,6 +392,29 @@ SHELL_OPTS_WITH_VALUE = {"-o", "+o", "-O", "+O", "--rcfile", "--init-file"}
 MAX_DEPTH = 4
 
 
+WRAPPERS = {"sudo", "doas", "env", "command", "exec", "nohup", "time", "timeout", "nice", "builtin", "stdbuf",
+            "setsid", "ionice", "xargs", "watch", "then", "do", "else", "if", "while", "until", "!", "{", "eval"}
+EXPANSION = re.compile(r"\$\{[^}]*\}|\$[A-Za-z_@*#?0-9]\w*|\$__SUBST__|\{[^{}]*(?:,|\.\.)[^{}]*\}")
+
+
+def check_words(seg: list[str]) -> None:
+    """Words whose value only the shell knows, where they could BE the command (#1569). `$g push`,
+    `g$x push` and `{gh,x} api` run gh; shlex sees a word that is no command and the effect is missed.
+    `$IFS` splits a word into several, so `gh${IFS}api` is `gh api`. Either one is Unjudgeable."""
+    for w in seg:
+        if re.search(r"\$\{?IFS\b", w):
+            raise Unjudgeable("$IFS splits a word at run time, so the command cannot be read")
+    for w in seg:
+        if re.fullmatch(r"[A-Za-z_]\w*=.*", w) or w in WRAPPERS or w.startswith("-") or re.fullmatch(r"\d+[smhd]?", w):
+            continue
+        last = w.rsplit("/", 1)[-1]
+        if EXPANSION.search(last) or SUBST in last or (set(last) & set("*?[") and not os.path.exists(w)):
+            pat = EXPANSION.sub("*", last.replace(SUBST, "*"))
+            if any(fnmatch.fnmatchcase(name, pat) for name in ("gh", "git", "gh.exe", "git.exe")):
+                raise Unjudgeable(f"the command word {w!r} is built by the shell and could be git or gh")
+        break
+
+
 def all_segments(cmd: str, depth: int = 0):
     """Every command segment, INCLUDING those inside `sh -c '<string>'`, `bash -lc`, and `eval ...`,
     parsed as commands in their own right (41's delta review of #1470)."""
@@ -347,6 +422,7 @@ def all_segments(cmd: str, depth: int = 0):
         raise Unjudgeable("shell strings nested too deeply to read")
     bodies: list[str] = []
     for seg in segments(tokens(cmd, bodies)):
+        check_words(seg)
         yield seg
         for k, word in enumerate(seg):
             if is_command(word, SHELLS):
@@ -379,7 +455,7 @@ def branch_of(dst: str) -> str:
 
 
 def destinations(args: list[str], current: Callable[[bool], str | None],
-                 srcs: list[str | None] | None = None) -> list[str]:
+                 srcs: list[str | None] | None = None, remote_out: list[str] | None = None) -> list[str]:
     """Every branch this push writes. `current(push)` resolves the current branch (push=False) or
     its `@{push}` destination (push=True); None = unknown."""
     for word in args:
@@ -409,6 +485,8 @@ def destinations(args: list[str], current: Callable[[bool], str | None],
     # command-line argument takes precedence" (git help push): the first positional is still the
     # repository, so `--repo=origin main` pushes to a remote named main, not to branch main.
     refspecs = positional[1:]
+    if remote_out is not None and positional:
+        remote_out.append(positional[0])        # the remote the push goes to (#1569)
     # `srcs`, when given, runs parallel to the result: the SOURCE of an explicit `<src>:<dst>` (the
     # commit that will land on main, #1569), else None (`main`, a bare push: judged at dev's tip).
     if not refspecs:
@@ -439,6 +517,26 @@ def targets(cmd: str, current: Callable[[bool, str | None], str | None]) -> list
     return [dst for dst, _ in targets_detail(cmd, current)]
 
 
+def _push_hits(seg: list[str], cwd, current) -> list[tuple[str, str | None, str | None, str | None]]:
+    """`(dst, src, remote, workdir)` for each protected destination of a `git push` in `seg`."""
+    parsed = push_args(seg)
+    if parsed is None:
+        return []
+    args, workdir = parsed
+    if cwd is UNKNOWN_DIR and not (workdir and os.path.isabs(workdir)):
+        raise Unjudgeable("a cd that could not be followed, before a git push")
+    where = workdir if workdir and (cwd is None or os.path.isabs(workdir)) else (
+        os.path.join(cwd, workdir) if workdir else cwd)
+    srcs: list[str | None] = []
+    remote: list[str] = []
+    dsts = destinations(args, lambda push, d=where: current(push, d), srcs, remote)
+    hits = []
+    for dst, src in zip(dsts, srcs + [None] * len(dsts)):
+        if dst in PROTECTED or dst.startswith(("every branch", "the matching")):
+            hits.append((dst, src, remote[0] if remote else None, where))
+    return hits
+
+
 def targets_detail(cmd: str, current: Callable[[bool, str | None], str | None]) -> list[tuple[str, str | None]]:
     """`targets`, each hit with the explicit source ref of its refspec (None when there is none)."""
     hits: list[tuple[str, str | None]] = []
@@ -447,17 +545,7 @@ def targets_detail(cmd: str, current: Callable[[bool, str | None], str | None]) 
         if seg[0] == "cd" and len(seg) == 2:
             cwd = seg[1] if cwd is None or os.path.isabs(seg[1]) else os.path.join(cwd, seg[1])
             continue
-        parsed = push_args(seg)
-        if parsed is None:
-            continue
-        args, workdir = parsed
-        where = workdir if workdir and (cwd is None or os.path.isabs(workdir)) else (
-            os.path.join(cwd, workdir) if workdir else cwd)
-        srcs: list[str | None] = []
-        dsts = destinations(args, lambda push, d=where: current(push, d), srcs)
-        for dst, src in zip(dsts, srcs + [None] * len(dsts)):
-            if dst in PROTECTED or dst.startswith(("every branch", "the matching")):
-                hits.append((dst, src))
+        hits += [(d, src) for d, src, _, _ in _push_hits(seg, cwd, current)]
     return hits
 
 
@@ -465,30 +553,21 @@ GH_MERGE_OPTS_WITH_VALUE = {"-b", "--body", "-F", "--body-file", "-t", "--subjec
                             "-A", "--author-email", "--match-head-commit"}
 
 
-def pr_merge_selectors(cmd: str) -> list[str]:
-    """For every `gh pr merge`, the PR it names (number, URL or branch), or "" for the current
-    branch's PR. `-R/--repo` names another repository, whose base this repo cannot judge."""
-    out = []
-    for seg in all_segments(cmd):
-        for j, word in enumerate(seg):
-            if not (is_command(word, {"gh"}) and seg[j + 1:j + 3] == ["pr", "merge"]):
-                continue
-            rest, sel, i = seg[j + 3:], "", 0
-            while i < len(rest):
-                a = rest[i]
-                if a in ("-R", "--repo") or a.startswith("--repo="):
-                    raise Unjudgeable("gh pr merge --repo names another repository")
-                if a in GH_MERGE_OPTS_WITH_VALUE:
-                    i += 2; continue
-                if a.startswith("-"):
-                    i += 1; continue
-                sel = a
-                break
-            if SUBST in sel or EXPANDS & set(sel):
-                raise Unjudgeable(f"the PR {sel!r} is expanded by the shell")
-            out.append(sel)
-            break
-    return out
+def pr_merge_selector(rest: list[str]) -> str:
+    """The PR a `gh pr merge` names (number, URL or branch), or "" for the current branch's PR. `rest`
+    is what follows `gh pr merge` with -R/--repo already taken out (`gh_parts`)."""
+    sel, i = "", 0
+    while i < len(rest):
+        a = rest[i]
+        if a in GH_MERGE_OPTS_WITH_VALUE:
+            i += 2; continue
+        if a.startswith("-"):
+            i += 1; continue
+        sel = a
+        break
+    if SUBST in sel or EXPANDS & set(sel):
+        raise Unjudgeable(f"the PR {sel!r} is expanded by the shell")
+    return sel
 
 
 # #1569. The gate asked "does this command say `git push`/`gh pr merge` to main?" -- a question about
@@ -499,7 +578,7 @@ def pr_merge_selectors(cmd: str) -> list[str]:
 # cannot expand is Unjudgeable, which the hook denies.
 API_OPTS_WITH_VALUE = {"-X", "--method", "-f", "--raw-field", "-F", "--field", "-H", "--header", "--input",
                        "-q", "--jq", "-t", "--template", "--hostname", "--cache", "-p", "--preview"}
-API_SHORT_ATTACHED = ("-X", "-f", "-F", "-H", "-q", "-t", "-p")
+API_SHORT_ATTACHED_CHARS = "XfFHqtp"
 RELEASE_OPTS_WITH_VALUE = {"-t", "--title", "-n", "--notes", "-F", "--notes-file", "--target",
                            "--discussion-category", "--notes-start-tag", "-R", "--repo"}
 GRAPHQL_REF_WRITES = ("updateRef", "createRef")
@@ -532,6 +611,7 @@ class ApiCall:
         self.endpoint: str | None = None
         self.fields: list[tuple[str, str, bool]] = []      # (key, value, may-read-a-file)
         self.input: str | None = None
+        self.hostname: str | None = None
         i = 0
         while i < len(rest):
             a, val = rest[i], None
@@ -543,8 +623,20 @@ class ApiCall:
                     raise Unjudgeable(f"gh api {a} with no value")
                 val = rest[i + 1]
                 i += 2
-            elif not a.startswith("--") and a[:2] in API_SHORT_ATTACHED and len(a) > 2:
-                a, val = a[:2], a[2:]
+            elif a.startswith("-") and not a.startswith("--") and len(a) > 2:
+                # A cluster of short flags (pflag): `-iXPUT` is -i -X PUT. Walk it to the first flag that
+                # takes a value; the rest of the word, or the next word, is that value. Reading `-iXPUT`
+                # as one unknown bool dropped the method and the call read as a GET (#1569).
+                k = 1
+                while k < len(a) and a[k] not in API_SHORT_ATTACHED_CHARS:
+                    k += 1
+                if k >= len(a):
+                    i += 1; continue
+                a, val = "-" + a[k], a[k + 1:]
+                if val == "":
+                    if i + 1 >= len(rest):
+                        raise Unjudgeable(f"gh api {a} with no value")
+                    val = rest[i + 1]; i += 1
                 i += 1
             elif a.startswith("-"):
                 i += 1; continue
@@ -558,6 +650,8 @@ class ApiCall:
                 self.fields.append((key, v, a in ("-F", "--field")))
             elif a == "--input":
                 self.input = val
+            elif a == "--hostname":
+                self.hostname = val
         if self.endpoint is None:
             raise Unjudgeable("gh api with no endpoint that could be read")
 
@@ -625,7 +719,8 @@ def _repo_arg(owner: str | None, repo: str | None) -> str:
 
 
 def _graphql_id(text: str, call: ApiCall, arg: str) -> str:
-    """The node id a mutation names (`pullRequestId`, `refId`): literal, or a variable the call supplies."""
+    """What a mutation passes as `arg` (`pullRequestId`, `refId`, `oid`, `name`): a literal, or a variable
+    the call supplies. `-` when it cannot be read, which the hook resolves or denies."""
     m = re.search(arg + r'\s*:\s*"([^"]+)"', text)
     if m:
         return m.group(1)
@@ -636,9 +731,14 @@ def _graphql_id(text: str, call: ApiCall, arg: str) -> str:
             data = call.json_input() if call.input else None
             if isinstance(data, dict) and isinstance(data.get("variables"), dict):
                 v = data["variables"].get(m.group(1))
-        if v and NODE_ID.match(str(v)):
+        if v and NODE_ID.match(str(v).replace("/", "")):
             return str(v)
     return "-"
+
+
+def _token(v: str | None) -> str:
+    """A value the hook can carry on a line: one word with no expansion in it, else `-` (unknown)."""
+    return v if v and not _expanded(v) and not (EXPANDS & set(v)) and not re.search(r"\s", v) else "-"
 
 
 def _graphql_effects(call: ApiCall) -> list[str]:
@@ -651,29 +751,35 @@ def _graphql_effects(call: ApiCall) -> list[str]:
     out = []
     if "mergePullRequest" in text:
         out.append(f"GQL_PR {_graphql_id(text, call, 'pullRequestId')}")
-    for name in GRAPHQL_REF_WRITES:
-        if name in text:
-            if MAIN_WORD.search(text):
-                out.append("API_MAIN")
-            elif name == "updateRef":
-                out.append(f"GQL_REF {_graphql_id(text, call, 'refId')}")
+    if "updateRef" in text:
+        out.append(f"GQL_REF {_graphql_id(text, call, 'refId')} {_token(_graphql_id(text, call, 'oid'))}")
+    if "createRef" in text:
+        name = _graphql_id(text, call, "name")
+        if name == "-" or branch_of(name) in PROTECTED:
+            out.append(f"API_REF {_token(_graphql_id(text, call, 'oid'))}")
     return out
 
 
-def gh_api_effects(rest: list[str]) -> list[str]:
-    """Classification lines for one `gh api <rest>`: API_PR_MERGE <n> <repo>, API_MAIN, GQL_PR <id>,
-    GQL_REF <id>, RELEASE <tag> <target>. `-` means unknown, which the hook resolves or denies."""
+def gh_api_effects(rest: list[str]) -> tuple[list[str], str]:
+    """`(lines, repo)` for one `gh api <rest>`: API_PR_MERGE <n>, API_MERGE <head>, API_REF <sha>,
+    GQL_PR <id>, GQL_REF <id> <oid>, RELEASE <tag> <target>, RELEASE_ID <id>; `repo` is the one a literal
+    `repos/<o>/<r>/` path names, else `-`. `-` in a line means unknown, which the hook denies (#1569:
+    a ref write or a merge is judged by the commit it WRITES -- `sha`, `head`, `oid` -- not by dev)."""
     call = ApiCall(rest)
+    if call.hostname:
+        raise Unjudgeable("gh api --hostname names another GitHub host")
     path = call.path()
     methods = call.methods()
     if path == "graphql":
-        return _graphql_effects(call) if methods - {"GET", "HEAD"} else []
+        return (_graphql_effects(call) if methods - {"GET", "HEAD"} else []), "-"
     if methods <= {"GET", "HEAD", "OPTIONS"}:
-        return []
+        return [], "-"
+    rm = re.match(r"repos/([^/]+)/([^/]+)/", path)
+    repo = _repo_arg(rm.group(1), rm.group(2)) if rm else "-"
     m = re.fullmatch(r"(?:repos/([^/]+)/([^/]+)/)?pulls/([^/]+)/merge", path)
     if m and "PUT" in methods:
         n = m.group(3)
-        return [f"API_PR_MERGE {'-' if _expanded(n) or not n.isdigit() else n} {_repo_arg(m.group(1), m.group(2))}"]
+        return [f"API_PR_MERGE {'-' if _expanded(n) or not n.isdigit() else n}"], repo
     # A write whose route is built by the shell: unreadable if the expansion could BE the resource
     # (`repos/o/r/$X`, `$URL`), or if the readable part already names one that matters.
     if _expanded(path) and (re.search(r"merge|refs|releases", path)
@@ -682,15 +788,19 @@ def gh_api_effects(rest: list[str]) -> list[str]:
     if re.fullmatch(r"(?:repos/[^/]+/[^/]+/)?merges", path) and "POST" in methods:
         base = call.value("base")
         if base is None or _expanded(base) or branch_of(base) in PROTECTED:
-            return ["API_MAIN"]
-        return []
+            return [f"API_MERGE {_token(call.value('head'))}"], repo
+        return [], repo
     m = re.fullmatch(r"(?:repos/[^/]+/[^/]+/)?git/refs/(.+)", path)
     if m and methods & {"PATCH", "POST", "PUT"}:
         ref = m.group(1)
-        return ["API_MAIN"] if _expanded(ref) or branch_of(ref) in PROTECTED else []
+        if _expanded(ref) or branch_of(ref) in PROTECTED:
+            return [f"API_REF {_token(call.value('sha'))}"], repo
+        return [], repo
     if re.fullmatch(r"(?:repos/[^/]+/[^/]+/)?git/refs", path) and methods & {"PATCH", "POST", "PUT"}:
         ref = call.value("ref")
-        return ["API_MAIN"] if ref is None or _expanded(ref) or branch_of(ref) in PROTECTED else []
+        if ref is None or _expanded(ref) or branch_of(ref) in PROTECTED:
+            return [f"API_REF {_token(call.value('sha'))}"], repo
+        return [], repo
     m = re.fullmatch(r"(?:repos/([^/]+)/([^/]+)/)?releases/([^/]+)", path)
     if m and methods & {"PATCH", "POST", "PUT"}:
         draft = call.value("draft")
@@ -698,12 +808,12 @@ def gh_api_effects(rest: list[str]) -> list[str]:
             rid = m.group(3)
             if not rid.isdigit():
                 raise Unjudgeable(f"the release id {rid!r} could not be read")
-            return [f"RELEASE_ID {rid} {_repo_arg(m.group(1), m.group(2))}"]
-        return []
+            return [f"RELEASE_ID {rid}"], repo
+        return [], repo
     if re.fullmatch(r"(?:repos/[^/]+/[^/]+/)?releases", path) and "POST" in methods:
         tag, target = call.value("tag_name"), call.value("target_commitish")
-        return [_release_line(tag, target)]
-    return []
+        return [_release_line(tag, target)], repo
+    return [], repo
 
 
 def _release_line(tag: str | None, target: str | None) -> str:
@@ -717,8 +827,6 @@ def release_creates(rest: list[str]) -> list[str]:
     tag, target, i = None, None, 0
     while i < len(rest):
         a = rest[i]
-        if a in ("-R", "--repo") or a.startswith("--repo="):
-            raise Unjudgeable("gh release create --repo names another repository")
         if a.startswith("--target="):
             target = a.partition("=")[2]; i += 1; continue
         if a == "--target":
@@ -747,8 +855,6 @@ def release_edits(rest: list[str]) -> list[str]:
     tag, target, off, i = None, None, False, 0
     while i < len(rest):
         a = rest[i]
-        if a in ("-R", "--repo") or a.startswith("--repo="):
-            raise Unjudgeable("gh release edit --repo names another repository")
         if a.startswith("--draft="):
             off = _draft_off(a.partition("=")[2]); i += 1; continue
         if a.startswith("--target="):
@@ -772,19 +878,76 @@ def release_edits(rest: list[str]) -> list[str]:
     return ["RELEASE_EDIT" + line[len("RELEASE"):]]
 
 
-def gh_effects(cmd: str) -> list[str]:
-    out: list[str] = []
+REPO_NAME = re.compile(r"^[A-Za-z0-9_.\-]+/[A-Za-z0-9_.\-]+$")
+
+
+def _named_repo(v: str) -> str:
+    """`OWNER/REPO` as a gh flag or GH_REPO names it. A host-qualified name, a URL or an expansion is
+    a repository this gate cannot pair with a stamp: Unjudgeable."""
+    if _expanded(v) or EXPANDS & set(v) or not REPO_NAME.match(v):
+        raise Unjudgeable(f"the repository {v!r} could not be read as OWNER/REPO")
+    return v
+
+
+def gh_parts(seg: list[str], j: int) -> tuple[list[str], list[str], str | None]:
+    """For the `gh` at seg[j]: `(names, rest, repo)`. `names` is the subcommand path (`pr merge`,
+    `release create`, or just `api`), `rest` every other word in order, `repo` what -R/--repo names.
+    cobra accepts a flag before the subcommand (`gh pr -R o/r merge 7`), so the names are the first
+    non-flag words, not the words next to `gh` (#1569)."""
+    args, names, rest, repo, i = seg[j + 1:], [], [], None, 0
+    while i < len(args):
+        a = args[i]
+        if a in ("-R", "--repo"):
+            if i + 1 >= len(args):
+                raise Unjudgeable("gh -R with no value")
+            repo = _named_repo(args[i + 1]); i += 2; continue
+        if a.startswith("--repo="):
+            repo = _named_repo(a.partition("=")[2]); i += 1; continue
+        if a.startswith("-R") and not a.startswith("--") and len(a) > 2:
+            repo = _named_repo(a[2:]); i += 1; continue
+        if not a.startswith("-") and len(names) < (1 if names[:1] == ["api"] else 2):
+            names.append(a); i += 1; continue
+        rest.append(a); i += 1
+    return names, rest, repo
+
+
+UNKNOWN_DIR = object()
+
+
+def ctx_segments(cmd: str):
+    """Every segment with the context it runs in: `(seg, cwd, gh_repo)`. `cwd` follows a prior `cd`
+    (None = where the hook runs; UNKNOWN_DIR when a `cd` could not be followed); `gh_repo` is GH_REPO as
+    the segment sees it -- an assignment prefix, `env GH_REPO=`, or an earlier `export GH_REPO=` (#1569:
+    each makes gh act on a repository other than the one whose stamp the hook reads)."""
+    cwd, env_repo = None, None
     for seg in all_segments(cmd):
-        for j, word in enumerate(seg):
-            if not is_command(word, {"gh"}):
-                continue
-            if seg[j + 1:j + 2] == ["api"]:
-                out += gh_api_effects(seg[j + 2:])
-            elif seg[j + 1:j + 3] == ["release", "create"]:
-                out += release_creates(seg[j + 3:])
-            elif seg[j + 1:j + 3] == ["release", "edit"]:
-                out += release_edits(seg[j + 3:])
-    return out
+        seg_repo = env_repo
+        for w in seg:
+            if w.startswith("GH_REPO="):
+                v = w.partition("=")[2]
+                seg_repo = _named_repo(v) if v else None
+                if seg[0] in ("export",) or all(re.fullmatch(r"[A-Za-z_]\w*=.*", x) for x in seg):
+                    env_repo = seg_repo
+        if seg[0] in ("cd", "pushd"):
+            if len(seg) == 2 and seg[1] != "-" and not _expanded(seg[1]):
+                cwd = seg[1] if cwd is None or cwd is UNKNOWN_DIR or os.path.isabs(seg[1]) else os.path.join(cwd, seg[1])
+            else:
+                cwd = UNKNOWN_DIR
+            continue
+        yield seg, cwd, seg_repo
+
+
+def _dir_word(cwd, workdir: str | None = None) -> str:
+    """The directory an effect runs in, as one word for the hook (`-` = where the hook runs)."""
+    if cwd is UNKNOWN_DIR:
+        raise Unjudgeable("a cd that could not be followed, before a command that merges or publishes")
+    d = workdir if workdir and (cwd is None or os.path.isabs(workdir)) else (
+        os.path.join(cwd, workdir) if workdir and cwd else (workdir or cwd))
+    if not d:
+        return "-"
+    if re.search(r"\s", d) or _expanded(d) or EXPANDS & set(d):
+        raise Unjudgeable(f"the directory {d!r} could not be carried to the hook")
+    return d
 
 
 MERGE_OPTS_WITH_VALUE = {"-m", "--message", "-F", "--file", "-s", "--strategy", "-X", "--strategy-option",
@@ -815,20 +978,49 @@ def merge_refs(args: list[str]) -> list[str] | None:
     return refs
 
 
-def classify(cmd: str, current) -> list[str]:
-    """The hook's one question, answered from the RAW command: PUSH_MAIN <dst>, PUSH_REF <src>,
-    GIT_MERGE [<ref>...], PR_MERGE <sel>, and (below) the `gh api` / `gh release` effects."""
-    # `PUSH_REF <src>` (#1569): an explicit `<src>:main` is judged by the commit it pushes, not dev's tip.
-    lines = sorted({f"PUSH_REF {src}" if src else f"PUSH_MAIN {d}" for d, src in targets_detail(cmd, current)})
-    for seg in all_segments(cmd):
+def effects(cmd: str, current) -> list[tuple[str, str, str]]:
+    """`(line, repo, dir)` for everything in `cmd` that merges into main or publishes. `repo` is the
+    repository the command acts on when it says so (`-R`, GH_REPO, a `repos/o/r/` path, a git remote as
+    `remote:<name>`), else `-`; `dir` is where it runs after a `cd` or `git -C`, else `-`."""
+    out: list[tuple[str, str, str]] = []
+    for seg, cwd, env_repo in ctx_segments(cmd):
+        # `PUSH_REF <src>` (#1569): an explicit `<src>:main` is judged by the commit it pushes, not dev's tip.
+        for dst, src, remote, where in _push_hits(seg, cwd, current):
+            out.append((f"PUSH_REF {src}" if src else f"PUSH_MAIN {dst}", f"remote:{remote}" if remote else "-",
+                        _dir_word(None, where)))
         parsed = git_verb(seg, "merge")
-        if parsed is None:
-            continue
-        refs = merge_refs(parsed[0])
-        if refs is not None:
-            lines.append(("GIT_MERGE " + " ".join(refs)).rstrip())
-    lines += [f"PR_MERGE {s}".rstrip() for s in pr_merge_selectors(cmd)]
-    lines += gh_effects(cmd)
+        if parsed is not None:
+            refs = merge_refs(parsed[0])
+            if refs is not None:
+                out.append((("GIT_MERGE " + " ".join(refs)).rstrip(), "-", _dir_word(cwd, parsed[1])))
+        for j, word in enumerate(seg):
+            if not is_command(word, {"gh"}):
+                continue
+            names, rest, repo = gh_parts(seg, j)
+            d = _dir_word(cwd)
+            if names == ["pr", "merge"]:
+                out.append((f"PR_MERGE {pr_merge_selector(rest)}".rstrip(), repo or env_repo or "-", d))
+            elif names[:1] == ["api"]:
+                lines, prepo = gh_api_effects(rest)
+                out += [(ln, prepo if prepo != "-" else (env_repo or "-"), d) for ln in lines]
+            elif names == ["release", "create"]:
+                out += [(ln, repo or env_repo or "-", d) for ln in release_creates(rest)]
+            elif names == ["release", "edit"]:
+                out += [(ln, repo or env_repo or "-", d) for ln in release_edits(rest)]
+    return out
+
+
+def classify(cmd: str, current) -> list[str]:
+    """The hook's one question, answered from the RAW command: one `CTX <repo> <dir>` line, then the
+    effect it applies to: PUSH_MAIN <dst>, PUSH_REF <src>, GIT_MERGE [<ref>...], PR_MERGE <sel>, and
+    the `gh api` / `gh release` effects (API_PR_MERGE, API_MERGE, API_REF, GQL_PR, GQL_REF, RELEASE,
+    RELEASE_EDIT, RELEASE_ID)."""
+    lines: list[str] = []
+    seen: set[tuple[str, str, str]] = set()
+    for eff in effects(cmd, current):
+        if eff not in seen:
+            seen.add(eff)
+            lines += [f"CTX {eff[1]} {eff[2]}", eff[0]]
     return lines
 
 
@@ -846,6 +1038,9 @@ def git_current(push: bool, workdir: str | None) -> str | None:
 
 def selftest() -> int:
     failures: list[str] = []
+
+    def cls(cmd, cur):
+        return [ln for ln in classify(cmd, cur) if not ln.startswith("CTX ")]
 
     def fake(branch: str | None, upstream: str | None = None, by_dir: dict | None = None):
         def cur(push: bool, d: str | None = None) -> str | None:
@@ -1032,14 +1227,14 @@ def selftest() -> int:
                       ('git commit -m "merge it" && gh pr list', []),
                       ("git push origin main", ["PUSH_MAIN main"])):
         try:
-            got = classify(cmd, on_feature)
+            got = cls(cmd, on_feature)
         except Unjudgeable as exc:
             got = [f"unjudgeable: {exc}"]
         if got != want:
             failures.append(f"classify {cmd!r}: expected {want}, got {got}")
-    for cmd in ("gh pr merge -R o/r 5", "gh pr merge $N"):
+    for cmd in ("gh pr merge -R $R 5", "gh pr merge $N"):
         try:
-            classify(cmd, on_feature)
+            cls(cmd, on_feature)
             failures.append(f"classify {cmd!r}: must be unjudgeable (the hook denies)")
         except Unjudgeable:
             pass
@@ -1053,34 +1248,34 @@ def selftest() -> int:
         with open(jfile, "w", encoding="utf-8") as fh:
             fh.write('{"query": ' + __import__("json").dumps(mut) + "}")
         api_cases = [
-            ("gh api -X PUT repos/{owner}/{repo}/pulls/1200/merge -f merge_method=merge", ["API_PR_MERGE 1200 -"]),
-            ("gh api --method=PUT repos/o/r/pulls/5/merge", ["API_PR_MERGE 5 o/r"]),
-            ("gh api repos/o/r/pulls/5/merge --method PUT", ["API_PR_MERGE 5 o/r"]),
-            ("gh api -XPUT /repos/o/r/pulls/5/merge", ["API_PR_MERGE 5 o/r"]),
-            ("gh api -X PUT https://api.github.com/repos/o/r/pulls/5/merge", ["API_PR_MERGE 5 o/r"]),
-            ("gh api -X PUT repos/o/r/pulls/5/merge -f method=GET", ["API_PR_MERGE 5 o/r"]),
-            ("gh api repos/o/r/pulls/5/merge -f _method=PUT -f x=1", ["API_PR_MERGE 5 o/r"]),
-            ("GH_TOKEN=x gh api -X PUT repos/o/r/pulls/5/merge", ["API_PR_MERGE 5 o/r"]),
-            ("bash -c 'gh api -X PUT repos/o/r/pulls/5/merge'", ["API_PR_MERGE 5 o/r"]),
-            ('eval "gh api -X PUT repos/o/r/pulls/5/merge"', ["API_PR_MERGE 5 o/r"]),
-            ("x=$(gh api -X PUT repos/o/r/pulls/5/merge)", ["API_PR_MERGE 5 o/r"]),
-            ("x=`gh api -X PUT repos/o/r/pulls/5/merge`", ["API_PR_MERGE 5 o/r"]),
-            ("cat <<EOF\n$(gh api -X PUT repos/o/r/pulls/5/merge)\nEOF", ["API_PR_MERGE 5 o/r"]),
+            ("gh api -X PUT repos/{owner}/{repo}/pulls/1200/merge -f merge_method=merge", ["API_PR_MERGE 1200"]),
+            ("gh api --method=PUT repos/o/r/pulls/5/merge", ["API_PR_MERGE 5"]),
+            ("gh api repos/o/r/pulls/5/merge --method PUT", ["API_PR_MERGE 5"]),
+            ("gh api -XPUT /repos/o/r/pulls/5/merge", ["API_PR_MERGE 5"]),
+            ("gh api -X PUT https://api.github.com/repos/o/r/pulls/5/merge", ["API_PR_MERGE 5"]),
+            ("gh api -X PUT repos/o/r/pulls/5/merge -f method=GET", ["API_PR_MERGE 5"]),
+            ("gh api repos/o/r/pulls/5/merge -f _method=PUT -f x=1", ["API_PR_MERGE 5"]),
+            ("GH_TOKEN=x gh api -X PUT repos/o/r/pulls/5/merge", ["API_PR_MERGE 5"]),
+            ("bash -c 'gh api -X PUT repos/o/r/pulls/5/merge'", ["API_PR_MERGE 5"]),
+            ('eval "gh api -X PUT repos/o/r/pulls/5/merge"', ["API_PR_MERGE 5"]),
+            ("x=$(gh api -X PUT repos/o/r/pulls/5/merge)", ["API_PR_MERGE 5"]),
+            ("x=`gh api -X PUT repos/o/r/pulls/5/merge`", ["API_PR_MERGE 5"]),
+            ("cat <<EOF\n$(gh api -X PUT repos/o/r/pulls/5/merge)\nEOF", ["API_PR_MERGE 5"]),
             ("cat <<'EOF'\ngh api -X PUT repos/o/r/pulls/5/merge\nEOF", []),
-            ("gh api repos/o/r/merges -f base=main -f head=dev", ["API_MAIN"]),
+            ("gh api repos/o/r/merges -f base=main -f head=dev", ["API_MERGE dev"]),
             ("gh api repos/o/r/merges -f base=dev -f head=x", []),
-            ("gh api -X PATCH repos/o/r/git/refs/heads/main -f sha=a", ["API_MAIN"]),
+            ("gh api -X PATCH repos/o/r/git/refs/heads/main -f sha=a", ["API_REF a"]),
             ("gh api -X PATCH repos/o/r/git/refs/heads/dev -f sha=a", []),
-            ("gh api repos/o/r/git/refs -f ref=refs/heads/master -f sha=a", ["API_MAIN"]),
+            ("gh api repos/o/r/git/refs -f ref=refs/heads/master -f sha=a", ["API_REF a"]),
             ("gh api repos/o/r/git/refs -f ref=refs/heads/feature/main -f sha=a", []),
-            ("gh api -X PATCH repos/o/r/git/refs/heads%2Fmain -f sha=a", ["API_MAIN"]),
+            ("gh api -X PATCH repos/o/r/git/refs/heads%2Fmain -f sha=a", ["API_REF a"]),
             ("gh api -f query='mutation { mergePullRequest(input:{pullRequestId:\"PR_kw1\"}) { x } }' graphql", ["GQL_PR PR_kw1"]),
             ("gh api graphql -f query='mutation($id:ID!){ mergePullRequest(input:{pullRequestId:$id}) { x } }' -f id=PR_v", ["GQL_PR PR_v"]),
             (f"gh api graphql -F query=@{qfile}", ["GQL_PR PR_kw1"]),
             (f"gh api graphql --input {jfile}", ["GQL_PR PR_kw1"]),
-            ("gh api graphql -f query='mutation { updateRef(input:{refId:\"R1\", oid:\"a\"}) { x } }'", ["GQL_REF R1"]),
-            ("gh api graphql -f query='mutation { updateRef(input:{refId:\"R1\"}) { x } }' -f name=refs/heads/main", ["API_MAIN"]),
-            ("gh api graphql -f query='mutation { createRef(input:{name:\"refs/heads/main\"}) { x } }'", ["API_MAIN"]),
+            ("gh api graphql -f query='mutation { updateRef(input:{refId:\"R1\", oid:\"a\"}) { x } }'", ["GQL_REF R1 a"]),
+            ("gh api graphql -f query='mutation { updateRef(input:{refId:\"R1\"}) { x } }' -f name=refs/heads/main", ["GQL_REF R1 -"]),
+            ("gh api graphql -f query='mutation { createRef(input:{name:\"refs/heads/main\", oid:\"c1\"}) { x } }'", ["API_REF c1"]),
             ("gh api graphql -f query='query($o:String!){ repository(owner:$o) { id } }' -f o=x", []),
             ("gh api repos/o/r/pulls/5", []),
             ("gh api -X GET repos/o/r/pulls/5/merge", []),
@@ -1098,7 +1293,7 @@ def selftest() -> int:
         ]
         for cmd, want in api_cases:
             try:
-                got = classify(cmd.replace("\\n", "\n"), on_feature)
+                got = cls(cmd.replace("\\n", "\n"), on_feature)
             except Unjudgeable as exc:
                 got = [f"unjudgeable: {exc}"]
             if got != want:
@@ -1111,11 +1306,11 @@ def selftest() -> int:
             "gh api -X PUT repos/o/r/pulls/$N/merge -f x=1 --input", "gh api -X $M repos/o/r/pulls/5/merge",
             "gh api -X PATCH repos/o/r/git/refs/heads/$B", "gh api graphql -f query=\"$(cat q)\"",
             "gh api -X POST repos/o/r/$X -f a=b", "gh release create $TAG", "gh release create v1 --target $T",
-            "gh release create v1 -R o/r", "gh api",
+            "gh api",
         ]
         for cmd in unreadable:
             try:
-                got = classify(cmd, on_feature)
+                got = cls(cmd, on_feature)
                 if cmd in ("gh api -X PATCH repos/o/r/git/refs/heads/$B",) and got == ["API_MAIN"]:
                     continue                  # answered closed: an unknown ref IS treated as main
                 failures.append(f"classify {cmd!r}: must be unjudgeable or main-ward, got {got}")
@@ -1140,24 +1335,24 @@ def selftest() -> int:
         ("gh release edit v1 --draft=f -n x", ["RELEASE_EDIT v1 -"]),
         ("gh release edit v1 --draft", []), ("gh release edit v1 --draft=true", []), ("gh release edit v1 -n x", []),
         ("bash -c 'gh release edit v1 --draft=false'", ["RELEASE_EDIT v1 -"]),
-        ("gh api -X PATCH repos/o/r/releases/9 -F draft=false", ["RELEASE_ID 9 o/r"]),
-        ("gh api --method=PATCH repos/{owner}/{repo}/releases/9 -f draft=false", ["RELEASE_ID 9 -"]),
+        ("gh api -X PATCH repos/o/r/releases/9 -F draft=false", ["RELEASE_ID 9"]),
+        ("gh api --method=PATCH repos/{owner}/{repo}/releases/9 -f draft=false", ["RELEASE_ID 9"]),
         ("gh api -X PATCH repos/o/r/releases/9 -f name=x", []),
         ("gh api -X PATCH repos/o/r/releases/9 -F draft=true", []),
     ]
     for cmd, want in ref_cases:
         try:
-            got = classify(cmd, on_feature)
+            got = cls(cmd, on_feature)
         except Unjudgeable as exc:
             got = [f"unjudgeable: {exc}"]
         if got != want:
             failures.append(f"classify {cmd!r}: expected {want}, got {got}")
     for cmd in ("git merge $B", "git merge feat/{a,b}", "gh release edit --draft=false", "gh release edit v1 --draft=$D",
-                "gh release edit v1 --draft=false -R o/r", "gh release edit $T --draft=false",
+                "gh release edit $T --draft=false",
                 "gh api -X PATCH repos/o/r/releases/$I -F draft=false", "gh api -X PATCH repos/o/r/releases/latest -F draft=false",
                 "gh api -X PATCH repos/o/r/releases/9 -F draft=$D"):
         try:
-            classify(cmd, on_feature)
+            cls(cmd, on_feature)
             failures.append(f"classify {cmd!r}: must be unjudgeable (the hook denies)")
         except Unjudgeable:
             pass

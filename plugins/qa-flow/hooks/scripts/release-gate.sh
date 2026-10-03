@@ -80,42 +80,109 @@ _pt="${CLAUDE_PLUGIN_ROOT:-}/scripts/push_targets.py"
 # Quotes and backslashes are dropped before the pre-check: `g''it`, `gi\t` and `"g"it` are all git
 # to the shell, and a literal `*git*` test sent them past the classifier (41's delta review).
 _probe="$(printf '%s' "$cmd" | tr -d "'\"\\\\")"
+# #1569: AND any command with a shell expansion in it. `g$'h' api`, `$'\x67h'`, `g{h,}` and `$g` all run gh
+# without the letters g-h-t-h next to each other, so the probe above never saw them. The classifier
+# finds nothing in a command that has no effect and denies one whose command word it cannot read.
 case "$_probe" in
   *git*|*gh*) _mentions=1 ;;
+  *'$'*|*'{'*|*'`'*) _mentions=1 ;;
   *) _mentions=0 ;;
 esac
 deny() { echo "BLOCKED by qa-flow release gate: $1" >&2; exit 2; }
 
-needs_dev=0      # judged at dev's tip: a push, a `git merge`, a PR whose head could not be resolved
-ship_commits=""  # #1569: the commit an explicit `<src>:main` push or a `git merge <ref>` on main puts there
-pr_heads=""      # the HEAD of every PR merged into main (#1569): each is judged by its own certification
-releases=""      # every `gh release create` / POST .../releases, one `RELEASE <tag> <target>` line each
+needs_dev=0      # judged at dev's tip: a push of `main` to this repo's own remote, with no explicit source
+ship=""          # one line per commit the command puts on main: "<sha><TAB><repo or -><TAB><label>" (#1569)
+releases=""      # every release the command publishes: "<tag> <target> <repo ctx>"; `-` = not given
+unresolved_pr="" # set when the commit, PR, ref, release or repository a command acts on cannot be resolved:
+                 # decided at the end, once the override and the marketplace exemption have had their say
+_crepo="-"; _cdir="-"; _dir_seen=""
 
-# resolve_pr <selector|""> <owner/repo|""> -> base, head ("" when gh could not say)
+# --- WHICH REPOSITORY (#1569). The stamp is read from the repository the command ACTS on. `gh -R`,
+# GH_REPO, a `repos/<o>/<r>/` path and a git remote other than origin each make a command act on
+# a repository other than this checkout's, and reading THIS checkout's stamp for it certified the
+# wrong thing. repo_of_url: owner/repo (lower case) of a GitHub remote URL, "" for anything else.
+repo_of_url() {
+  local u="$1" r
+  case "$u" in ""|.*|/*|~*) return 0 ;; esac
+  r="$(printf '%s' "$u" | sed -E 's#^(ssh://)?([^@/]+@)?github\.com[:/]+##; s#^https?://([^@/]+@)?github\.com/##; s#^git://github\.com/##; s#\.git/?$##; s#/+$##')"
+  printf '%s\n' "$r" | grep -E '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' | tr 'A-Z' 'a-z'
+}
+# ctx_repo <ctx field>: sets _R. "" = THIS checkout's repository; else the owner/repo the command acts on.
+# `-` falls back to GH_REPO from the hook's environment. An unreadable repository marks the command
+# unjudgeable.
+ctx_repo() {
+  local f="$1" n u r L orig
+  _R=""
+  # The CONFIGURED url (not the rewritten one `get-url` prints): `insteadOf` is a transport detail.
+  orig="$(git config --get remote.origin.url 2>/dev/null || true)"
+  L="$(repo_of_url "$orig")"
+  case "$f" in
+    remote:*)
+      n="${f#remote:}"
+      case "$n" in
+        *://*|*@*:*) u="$n" ;;
+        .|..|/*|./*|../*|~*) unresolved_pr=1; return 0 ;;
+        *) u="$(git config --get "remote.${n}.url" 2>/dev/null || true)" ;;
+      esac
+      if [ -z "$u" ]; then
+        # No such remote. `origin` unconfigured is the old behaviour (judged here); any other name is unknown.
+        [ "$n" = "origin" ] || unresolved_pr=1
+        return 0
+      fi
+      [ "$u" = "$orig" ] && return 0
+      r="$(repo_of_url "$u")"
+      [ -n "$r" ] || { unresolved_pr=1; return 0; } ;;
+    -) f="${GH_REPO:-}"
+       [ -n "$f" ] || return 0
+       r="$(printf '%s' "$f" | tr 'A-Z' 'a-z')" ;;
+    *) r="$(printf '%s' "$f" | tr 'A-Z' 'a-z')" ;;
+  esac
+  printf '%s\n' "$r" | grep -qE '^[a-z0-9_.-]+/[a-z0-9_.-]+$' || { unresolved_pr=1; return 0; }
+  [ "$r" = "$L" ] && return 0
+  _R="$r"
+}
+# resolve_pr <selector|""> <ctx repo> -> base, head, _PRR ("" when gh could not say). Resolved the way
+# the command resolves it: the same selector, the same -R/GH_REPO, the same directory.
 resolve_pr() {
-  local out=""
-  if [ -n "$1" ] && [ -n "$2" ]; then out="$(gh pr view "$1" -R "$2" --json baseRefName,headRefOid -q '.baseRefName + " " + .headRefOid' 2>/dev/null || true)"
-  elif [ -n "$1" ]; then out="$(gh pr view "$1" --json baseRefName,headRefOid -q '.baseRefName + " " + .headRefOid' 2>/dev/null || true)"
-  else out="$(gh pr view --json baseRefName,headRefOid -q '.baseRefName + " " + .headRefOid' 2>/dev/null || true)"; fi
-  base="${out%% *}"; head=""
-  case "$out" in *" "*) head="${out#* }" ;; esac
+  local out="" repo="" a
+  ctx_repo "$2"
+  [ -z "$_R" ] || repo="$_R"
+  a=(pr view); [ -z "$1" ] || a+=("$1"); [ -z "$repo" ] || a+=(-R "$repo")
+  out="$(gh "${a[@]}" --json baseRefName,headRefOid,url -q '.baseRefName + " " + .headRefOid + " " + .url' 2>/dev/null || true)"
+  base="${out%% *}"; head=""; _PRR=""
+  case "$out" in *" "*) out="${out#* }"; head="${out%% *}"
+                 _PRR="$(printf '%s' "${out#* }" | sed -E 's#^https?://[^/]+/##; s#/pull/.*##' | tr 'A-Z' 'a-z')" ;; esac
 }
-# add_commit <ref>: queue the commit <ref> names, or mark the command unjudgeable.
+# add_ship <sha> <repo or -> <label>
+add_ship() { ship="${ship}${1}"$'\t'"${2:--}"$'\t'"${3}"$'\n'; }
+# add_commit <ref> <ctx repo> <local|branch> <label>: queue the commit <ref> names, or mark the command
+# unjudgeable. `local`: a ref of THIS checkout (what `git push <src>:main` and `git merge <ref>` carry).
+# `branch`: a ref of the repository the command acts on (a REST merge's `head`, a ref write's `sha`).
 add_commit() {
-  local c
-  c="$(git rev-parse --verify -q "${1}^{commit}" 2>/dev/null || true)"
-  if [ -n "$c" ]; then ship_commits="${ship_commits}${c}"$'\n'; else unresolved_pr=1; fi
+  local c="" ref="$1"
+  ctx_repo "$2"
+  case "$3" in
+    local) c="$(git rev-parse --verify -q "${ref}^{commit}" 2>/dev/null || true)" ;;
+    *)
+      if [ -z "$_R" ]; then
+        c="$(git rev-parse --verify -q "refs/remotes/origin/${ref}^{commit}" 2>/dev/null || git rev-parse --verify -q "${ref}^{commit}" 2>/dev/null || true)"
+        if [ -z "$c" ]; then
+          git fetch -q origin "$ref" 2>/dev/null && c="$(git rev-parse --verify -q 'FETCH_HEAD^{commit}' 2>/dev/null || true)"
+        fi
+      else
+        c="$(gh api "repos/${_R}/commits/${ref}" -q .sha 2>/dev/null || true)"
+      fi ;;
+  esac
+  if [ -n "$c" ]; then add_ship "$c" "${_R:--}" "$4"; else unresolved_pr=1; fi
 }
-# note_pr: act on base/head. The certification must be for the commit the PR merges, so a PR whose
-# base or head cannot be resolved is DENIED here (#1569): judging it at dev's tip would certify a
+# note_pr <ctx repo>: act on base/head/_PRR. The certification must be for the commit the PR merges, so
+# a PR whose base or head cannot be resolved is DENIED (#1569): judging it at dev's tip would certify a
 # commit the merge may not contain. A PR into any other branch is not a promotion.
-# (Decided at the end, once the override and the marketplace exemption have had their say.)
-unresolved_pr=""
 note_pr() {
   case "$base" in
     main|master)
       targets_main=1
-      if [ -n "$head" ]; then pr_heads="${pr_heads}${head}"$'\n'; else unresolved_pr=1; fi ;;
+      if [ -n "$head" ]; then ctx_repo "${_PRR:--}"; add_ship "$head" "${_R:--}" "the PR head"; else unresolved_pr=1; fi ;;
     "") targets_main=1; unresolved_pr=1 ;;
   esac
 }
@@ -123,10 +190,25 @@ if [ "$_mentions" = 1 ] && [ -f "$_pt" ]; then
   if _found="$(printf '%s' "$cmd" | python3 "$_pt" --classify 2>/dev/null)"; then
     while IFS= read -r _line; do
       case "$_line" in
-        "PUSH_MAIN "*) targets_main=1; needs_dev=1 ;;
+        "CTX "*)
+          # Where the NEXT effect runs and which repository it acts on. A `cd` or `git -C` moves where
+          # this hook must read the stamp; two different places cannot be judged by one checkout.
+          _rest="${_line#CTX }"; _crepo="${_rest%% *}"; _cdir="${_rest#* }"
+          if [ -z "$_dir_seen" ]; then
+            _dir_seen="$_cdir"
+            if [ "$_cdir" != "-" ]; then cd "$_cdir" 2>/dev/null || unresolved_pr=1; fi
+          elif [ "$_dir_seen" != "$_cdir" ]; then
+            unresolved_pr=1
+          fi ;;
+        "PUSH_MAIN "*)
+          # No explicit source: `main` on this repo's remote is what a push of main ships, judged at dev's tip
+          # (the old behaviour). To ANOTHER repository the commit pushed is the local branch itself.
+          targets_main=1
+          ctx_repo "$_crepo"
+          if [ -z "$_R" ]; then needs_dev=1; else add_commit "${_line#PUSH_MAIN }" "$_crepo" local "the commit being merged or pushed"; fi ;;
         "PUSH_REF "*)
           # #1569: `git push <remote> <src>:main` ships <src>, so <src> is what must be certified.
-          targets_main=1; add_commit "${_line#PUSH_REF }" ;;
+          targets_main=1; add_commit "${_line#PUSH_REF }" "$_crepo" local "the commit being merged or pushed" ;;
         GIT_MERGE*)
           # #1569: `git merge <ref>` on main brings in <ref>'s commit (bare = the upstream; --continue =
           # MERGE_HEAD). An unresolvable ref denies. Off main it is not a promotion.
@@ -134,53 +216,64 @@ if [ "$_mentions" = 1 ] && [ -f "$_pt" ]; then
             targets_main=1
             _refs="${_line#GIT_MERGE}"; _refs="${_refs# }"
             [ -n "$_refs" ] || _refs='@{upstream}'
-            for _r in $_refs; do add_commit "$_r"; done
+            for _r in $_refs; do add_commit "$_r" "-" local "the commit being merged or pushed"; done
           fi ;;
         PR_MERGE*)
           # The PR the command NAMES (number, URL or branch); bare = the current branch's PR.
           _sel="${_line#PR_MERGE}"; _sel="${_sel# }"
-          resolve_pr "$_sel" ""; note_pr ;;
+          resolve_pr "$_sel" "$_crepo"; note_pr ;;
         "API_PR_MERGE "*)
-          # #1569: `gh api -X PUT .../pulls/N/merge`. `<n> <owner/repo>`, `-` = unknown (placeholder).
-          _rest="${_line#API_PR_MERGE }"; _n="${_rest%% *}"; _r="${_rest#* }"
-          [ "$_n" = "-" ] && _n=""; [ "$_r" = "-" ] && _r=""
-          if [ -z "$_n" ]; then base=""; head=""; else resolve_pr "$_n" "$_r"; fi
+          # #1569: `gh api -X PUT .../pulls/N/merge`; `-` = a number the command does not spell out.
+          _n="${_line#API_PR_MERGE }"
+          if [ "$_n" = "-" ]; then base=""; head=""; else resolve_pr "$_n" "$_crepo"; fi
           note_pr ;;
-        API_MAIN) targets_main=1; needs_dev=1 ;;        # a REST merge/ref write whose base or ref is main
-        "GQL_PR "*|"GQL_REF "*)
-          # #1569: GraphQL mergePullRequest / updateRef name a node id; ask GitHub what it is.
-          _id="${_line#* }"; base=""; head=""
+        "API_MERGE "*|"API_REF "*)
+          # #1569: a REST merge into main, or a write of main's ref: judged by the commit it WRITES (`head`,
+          # `sha`, `oid`), not by dev's tip. Unknown denies.
+          targets_main=1; _v="${_line#* }"
+          if [ "$_v" = "-" ]; then unresolved_pr=1; else add_commit "$_v" "$_crepo" branch "the commit being merged or pushed"; fi ;;
+        "GQL_PR "*)
+          # #1569: GraphQL mergePullRequest names a node id; ask GitHub which PR, base and head it is.
+          _id="${_line#GQL_PR }"; base=""; head=""; _PRR=""
           if [ "$_id" != "-" ]; then
-            case "$_line" in
-              GQL_PR*)
-                _out="$(gh api graphql -F id="$_id" -f query='query($id:ID!){node(id:$id){... on PullRequest{baseRefName headRefOid}}}' -q '.data.node.baseRefName + " " + .data.node.headRefOid' 2>/dev/null || true)"
-                base="${_out%% *}"; case "$_out" in *" "*) head="${_out#* }" ;; esac ;;
-              *)
-                base="$(gh api graphql -F id="$_id" -f query='query($id:ID!){node(id:$id){... on Ref{name}}}' -q '.data.node.name' 2>/dev/null || true)"
-                case "$base" in main|master) targets_main=1; needs_dev=1 ;; "") targets_main=1; needs_dev=1 ;; esac
-                base="other" ;;
-            esac
+            _out="$(gh api graphql -F id="$_id" -f query='query($id:ID!){node(id:$id){... on PullRequest{baseRefName headRefOid baseRepository{nameWithOwner}}}}' -q '.data.node.baseRefName + " " + .data.node.headRefOid + " " + .data.node.baseRepository.nameWithOwner' 2>/dev/null || true)"
+            base="${_out%% *}"; _out="${_out#* }"; head="${_out%% *}"; _PRR="$(printf '%s' "${_out#* }" | tr 'A-Z' 'a-z')"
           fi
-          case "$_line" in GQL_PR*) note_pr ;; *) [ "$_id" = "-" ] && { targets_main=1; needs_dev=1; } ;; esac ;;
-        "RELEASE "*) releases="${releases}${_line}"$'\n' ;;
+          note_pr ;;
+        "GQL_REF "*)
+          # #1569: GraphQL updateRef names a ref node id and the commit it moves it to (`oid`).
+          _rest="${_line#GQL_REF }"; _id="${_rest%% *}"; _oid="${_rest#* }"
+          _out=""
+          [ "$_id" = "-" ] || _out="$(gh api graphql -F id="$_id" -f query='query($id:ID!){node(id:$id){... on Ref{name repository{nameWithOwner}}}}' -q '.data.node.name + " " + .data.node.repository.nameWithOwner' 2>/dev/null || true)"
+          case "${_out%% *}" in
+            main|master)
+              targets_main=1
+              if [ "$_oid" = "-" ]; then unresolved_pr=1
+              else add_commit "$_oid" "$(printf '%s' "${_out#* }" | tr 'A-Z' 'a-z')" branch "the commit being merged or pushed"; fi ;;
+            "") targets_main=1; unresolved_pr=1 ;;
+          esac ;;
+        "RELEASE "*) releases="${releases}${_line#RELEASE } ${_crepo}"$'\n' ;;
         "RELEASE_EDIT "*)
-          # #1569: `gh release edit <tag> --draft=false` publishes. A tag that is not a local ref is a
-          # draft's tag: ask GitHub which commit the release targets. Unknown denies.
+          # #1569: `gh release edit <tag> --draft=false` publishes. The tag a draft will get does not exist
+          # yet, so the target is the one the release records: ask GitHub (the same -R, the same directory).
           _rest="${_line#RELEASE_EDIT }"; _tag="${_rest%% *}"; _tgt="${_rest#* }"
-          if [ "$_tgt" = "-" ] && ! git rev-parse --verify -q "refs/tags/${_tag}^{commit}" >/dev/null 2>&1; then
-            _tgt="$(gh release view "$_tag" --json targetCommitish -q .targetCommitish 2>/dev/null || true)"
+          if [ "$_tgt" = "-" ]; then
+            ctx_repo "$_crepo"
+            _a=(release view "$_tag"); [ -z "$_R" ] || _a+=(-R "$_R")
+            _tgt="$(gh "${_a[@]}" --json targetCommitish -q .targetCommitish 2>/dev/null || true)"
             if [ -z "$_tgt" ]; then unresolved_pr=1; targets_main=1; _tgt="-"; fi
           fi
-          releases="${releases}RELEASE ${_tag} ${_tgt}"$'\n' ;;
+          releases="${releases}${_tag} ${_tgt} ${_crepo}"$'\n' ;;
         "RELEASE_ID "*)
           # #1569: `gh api PATCH .../releases/<id>` with draft false. The id names no tag; ask GitHub.
-          _rest="${_line#RELEASE_ID }"; _id="${_rest%% *}"; _r="${_rest#* }"
-          [ "$_r" = "-" ] && _r='{owner}/{repo}'
-          _out="$(gh api "repos/${_r}/releases/${_id}" -q '.tag_name + " " + .target_commitish' 2>/dev/null || true)"
+          _id="${_line#RELEASE_ID }"
+          ctx_repo "$_crepo"
+          _rp="$_R"; [ -n "$_rp" ] || _rp='{owner}/{repo}'
+          _out="$(gh api "repos/${_rp}/releases/${_id}" -q '.tag_name + " " + .target_commitish' 2>/dev/null || true)"
           case "$_out" in
             "") unresolved_pr=1; targets_main=1 ;;
             *) _tag="${_out%% *}"; _tgt="${_out#* }"; [ -n "$_tgt" ] || _tgt="-"
-               releases="${releases}RELEASE ${_tag:--} ${_tgt}"$'\n' ;;
+               releases="${releases}${_tag:--} ${_tgt} ${_crepo}"$'\n' ;;
           esac ;;
       esac
     done <<EOF_FOUND
@@ -188,10 +281,10 @@ $_found
 EOF_FOUND
   else
     targets_main=1; needs_dev=1
-    # #1569: a `gh api` / `gh release` the classifier could not read (a body file that is missing or
-    # on stdin, a path built by the shell) may merge ANY commit, so dev's stamp proves nothing about
-    # it: deny, rather than judge it at dev's tip.
-    case "$_probe" in *gh*api*|*gh*release*) unresolved_pr=1 ;; esac
+    # #1569: a command the classifier could not read (a body file that is missing or on stdin, a path
+    # or command word built by the shell, an ANSI-C string it cannot decode) may merge ANY commit in ANY
+    # repository, so dev's stamp proves nothing about it: deny, rather than judge it at dev's tip.
+    case "$_probe" in *gh*|*'$'*|*'`'*|*'{'*) unresolved_pr=1 ;; esac
   fi
 elif [ "$_mentions" = 1 ]; then
   # The classifier is missing: the pre-#1410 detection, with the whole-word match over the RAW
@@ -203,7 +296,7 @@ elif [ "$_mentions" = 1 ]; then
     && git rev-parse --abbrev-ref HEAD 2>/dev/null | grep -qE '^(main|master)$' && { targets_main=1; needs_dev=1; }
   if printf '%s\n' "$seg" | grep -qE '^[[:space:]]*gh[[:space:]]+pr[[:space:]]+merge\b'; then
     num="$(printf '%s' "$seg" | grep -oE '(^|[[:space:]])[0-9]+([[:space:]]|$)' | tr -d ' ' | head -1)"
-    resolve_pr "$num" ""; note_pr
+    resolve_pr "$num" "-"; note_pr
   fi
   # #1569: without the classifier a `gh api` write or a release cannot be read, so it is a promotion.
   printf '%s\n' "$seg" | grep -qE '^[[:space:]]*gh[[:space:]]+(api|release[[:space:]]+(create|edit))\b' \
@@ -318,7 +411,52 @@ EVIDENCE
   return 0
 }
 
-# (1) dev's tip: a push to main, a `git merge` on main, or a merge whose PR could not be resolved.
+# judge_remote <sha> <owner/repo> <what>: the stamp of a repository this checkout is NOT, read through the
+# API at that sha (#1569). It needs the stamp at the sha to be PASS and to certify it exactly, or to sit
+# on top of the tested sha with nothing else changed (the stamp's own commit). The release-only layers
+# (#1428) are NOT re-judged here -- their evidence files are not in this checkout -- and the stamp's
+# own words say so on stderr.
+judge_remote() {
+  local sha="$1" repo="$2" what="$3" verdict csha why cmp status files
+  if ! gh api -H 'Accept: application/vnd.github.raw+json' "repos/${repo}/contents/qa/CERTIFICATION?ref=${sha}" >"$stamp_tmp" 2>/dev/null; then
+    JWHY="this command acts on ${repo}, not on this checkout's repository, and its qa/CERTIFICATION could not be read at ${what} (${sha:0:12}) through the GitHub API. Run it from a checkout of ${repo} that holds a PASS stamp, or set QA_ALLOW_MAIN=1."
+    return 1
+  fi
+  verdict="$(python3 "$reader" --stamp "$stamp_tmp" --field verdict 2>/dev/null || true)"
+  csha="$(python3 "$reader" --stamp "$stamp_tmp" --field sha 2>/dev/null || true)"
+  if [ -z "$verdict" ]; then
+    why="$(python3 "$reader" --stamp "$stamp_tmp" --field verdict --explain 2>/dev/null || true)"
+    JWHY="${repo}: ${why:-certification verdict could not be read. Re-certify.}"; return 1
+  elif [ "$verdict" != "PASS" ]; then
+    JWHY="${repo}: certification verdict is ${verdict}, not PASS. Fix the defects and re-certify."; return 1
+  fi
+  [ -n "$csha" ] || { JWHY="${repo}: certification has no sha — the stamp is invalid. Re-run /qa-flow:certify."; return 1; }
+  case "$sha" in
+    "$csha"*) : ;;
+    *)
+      if ! cmp="$(gh api "repos/${repo}/compare/${csha}...${sha}" --jq '.status, (.files[].filename)' 2>/dev/null)"; then
+        JWHY="${repo}: certification is for sha ${csha:0:12}, and ${what} (${sha:0:12}) could not be compared with it through the GitHub API. Re-certify."; return 1
+      fi
+      status="$(printf '%s\n' "$cmp" | head -1)"
+      files="$(printf '%s\n' "$cmp" | sed 1d | grep -vx 'qa/CERTIFICATION' | head -3 | tr '\n' ' ' || true)"
+      case "$status" in ahead|identical) : ;; *)
+        JWHY="${repo}: certification is for sha ${csha:0:12}, which is not an ancestor of ${what} (${sha:0:12}). ${what} moved — re-certify before promoting."; return 1 ;;
+      esac
+      if [ -n "$files" ]; then
+        JWHY="${repo}: certification is for sha ${csha:0:12}; ${what} (${sha:0:12}) has changed more than the stamp since: ${files}. Re-certify before promoting."; return 1
+      fi ;;
+  esac
+  echo "qa-flow: ${repo}: certification valid for ${csha:0:12} — ${what} ${sha:0:12} permitted (the release-only layers are not re-judged for a repository other than this checkout's)." >&2
+  return 0
+}
+# judge_in <sha> <repo or -> <what>
+judge_in() { if [ "$2" = "-" ]; then judge "$1" "$1" "$3"; else judge_remote "$1" "$2" "$3"; fi; }
+
+# (0) A command whose commit, PR, ref, release or repository could not be resolved cannot be matched to a
+# stamp: deny (#1569). Decided here, after the override and the marketplace exemption.
+[ -z "$unresolved_pr" ] || deny "cannot tell which commit or repository this command merges or publishes (a PR, ref, release or repository could not be resolved, a query or body file could not be read, or the command could not be parsed), so no certification can be matched to it. Name the PR by number, give a readable file, authenticate gh, and retry."
+
+# (1) dev's tip: a push of `main` to this repo's own remote with no explicit source.
 if [ "$needs_dev" = 1 ]; then
   # `--verify -q` prints NOTHING for a missing ref; plain `rev-parse origin/dev` echoes the literal
   # "origin/dev" before failing (found by the #1337 fixtures).
@@ -327,50 +465,83 @@ if [ "$needs_dev" = 1 ]; then
   judge "$devsha" "$devsha" dev || deny "$JWHY"
 fi
 
-[ -z "$unresolved_pr" ] || deny "cannot tell which commit this command merges or publishes (the PR or ref could not be resolved, or a query/body file could not be read), so no certification can be matched to it. Name the PR by number, give a readable file, authenticate gh, and retry."
-
-# (2) #1569: a PR merged into main is judged by the HEAD it merges -- dev's tip for a promotion, the
-# hotfix branch's own commit for a hotfix. Judging a hotfix by dev's stamp certified the wrong tree.
-while IFS= read -r _head; do
-  [ -n "$_head" ] || continue
-  if ! git cat-file -e "${_head}^{commit}" 2>/dev/null; then
-    git fetch -q origin "$_head" 2>/dev/null || true
-    git cat-file -e "${_head}^{commit}" 2>/dev/null || deny "the PR head ${_head:0:12} is not in this clone and could not be fetched, so its certification cannot be read. Fetch it and retry."
-  fi
-  judge "$_head" "$_head" "the PR head" || deny "$JWHY"
-done <<EOF_HEADS
-$pr_heads
-EOF_HEADS
-
-# (2b) #1569: the commit a `<src>:main` push or a `git merge <ref>` on main puts there.
-while IFS= read -r _c; do
+# (2) #1569: every commit the command puts on main -- a PR's HEAD (a hotfix by its own stamp, not dev's), the
+# commit a `<src>:main` push or a `git merge <ref>` carries, the `head` of a REST merge, the `sha` of a ref
+# write -- judged in the repository it goes to.
+while IFS=$'\t' read -r _c _crp _lab; do
   [ -n "$_c" ] || continue
-  judge "$_c" "$_c" "the commit being merged or pushed" || deny "$JWHY"
+  if [ "$_crp" = "-" ] && ! git cat-file -e "${_c}^{commit}" 2>/dev/null; then
+    git fetch -q origin "$_c" 2>/dev/null || true
+    git cat-file -e "${_c}^{commit}" 2>/dev/null || deny "${_lab} ${_c:0:12} is not in this clone and could not be fetched, so its certification cannot be read. Fetch it and retry."
+  fi
+  judge_in "$_c" "$_crp" "$_lab" || deny "$JWHY"
 done <<EOF_SHIP
-$ship_commits
+$ship
 EOF_SHIP
 
 # (3) #1569: publishing. In a consumer the release is the step that builds and ships the image, so it
-# needs a PASS stamp for the exact commit it publishes: --target / target_commitish, else the tag's
-# commit when the tag exists, else the default branch's tip.
-resolve_release_target() {
-  local tag="$1" tgt="$2" r
-  if [ -n "$tgt" ]; then
-    git rev-parse --verify -q "refs/remotes/origin/${tgt}^{commit}" 2>/dev/null \
-      || git rev-parse --verify -q "${tgt}^{commit}" 2>/dev/null; return
-  fi
-  if [ -n "$tag" ] && git rev-parse --verify -q "refs/tags/${tag}^{commit}" 2>/dev/null; then return 0; fi
+# needs a PASS stamp for the exact commit it publishes, resolved the way GitHub resolves it: a tag that
+# ALREADY EXISTS on the remote wins and `--target` is ignored; else `--target`; else the default branch.
+# (A tag only in this clone is not the remote's; gh refuses to publish it without a target.)
+default_tip() {
+  local r
+  r="$(git symbolic-ref -q refs/remotes/origin/HEAD 2>/dev/null || true)"
+  [ -z "$r" ] || { git rev-parse --verify -q "${r}^{commit}" 2>/dev/null && return 0; }
   for r in refs/remotes/origin/main refs/remotes/origin/master refs/heads/main refs/heads/master; do
     git rev-parse --verify -q "${r}^{commit}" 2>/dev/null && return 0
   done
   return 1
 }
-while IFS= read -r _rel; do
-  [ -n "$_rel" ] || continue
-  _rest="${_rel#RELEASE }"; _tag="${_rest%% *}"; _tgt="${_rest#* }"
+# resolve_release <tag> <target> (with _R set by ctx_repo): sets _rsha. Returns 1 when it cannot say.
+resolve_release() {
+  local tag="$1" tgt="$2" o t
+  _rsha=""
+  if [ -z "$_R" ]; then
+    if [ -n "$tag" ] && git remote get-url origin >/dev/null 2>&1; then
+      o="$(git ls-remote origin "refs/tags/${tag}" "refs/tags/${tag}^{}" 2>/dev/null)" || return 1
+      if [ -n "$o" ]; then
+        t="$(printf '%s\n' "$o" | awk '$2 ~ /\^\{\}$/ {p=$1} $2 !~ /\^\{\}$/ {d=$1} END {print (p != "" ? p : d)}')"
+        _rsha="$(git rev-parse --verify -q "${t}^{commit}" 2>/dev/null || true)"
+        if [ -z "$_rsha" ]; then
+          git fetch -q origin "$t" 2>/dev/null || true
+          _rsha="$(git rev-parse --verify -q "${t}^{commit}" 2>/dev/null || true)"
+        fi
+        [ -n "$_rsha" ]; return
+      fi
+    fi
+    if [ -n "$tgt" ]; then
+      _rsha="$(git rev-parse --verify -q "refs/remotes/origin/${tgt}^{commit}" 2>/dev/null || git rev-parse --verify -q "${tgt}^{commit}" 2>/dev/null || true)"
+    elif [ -n "$tag" ] && git rev-parse --verify -q "refs/tags/${tag}^{commit}" >/dev/null 2>&1; then
+      _rsha="$(git rev-parse --verify -q "refs/tags/${tag}^{commit}")"
+    else
+      _rsha="$(default_tip 2>/dev/null | head -1)"
+    fi
+  else
+    if [ -n "$tag" ]; then
+      o="$(gh api "repos/${_R}/git/matching-refs/tags/${tag}" --jq '.[].ref' 2>/dev/null)" || return 1
+      if printf '%s\n' "$o" | grep -qx "refs/tags/${tag}"; then
+        _rsha="$(gh api "repos/${_R}/commits/${tag}" --jq .sha 2>/dev/null || true)"; [ -n "$_rsha" ]; return
+      fi
+    fi
+    if [ -n "$tgt" ]; then
+      _rsha="$(gh api "repos/${_R}/commits/${tgt}" --jq .sha 2>/dev/null || true)"
+    else
+      t="$(gh api "repos/${_R}" --jq .default_branch 2>/dev/null || true)"
+      [ -z "$t" ] || _rsha="$(gh api "repos/${_R}/commits/${t}" --jq .sha 2>/dev/null || true)"
+    fi
+  fi
+  [ -n "$_rsha" ]
+}
+while read -r _tag _tgt _rrp; do
+  [ -n "$_tag" ] || continue
   [ "$_tag" = "-" ] && _tag=""; [ "$_tgt" = "-" ] && _tgt=""
-  _rsha="$(resolve_release_target "$_tag" "$_tgt" | head -1)"
-  [ -n "$_rsha" ] || deny "cannot resolve the commit release ${_tag:-<no tag>} would publish (target '${_tgt:-none}'). Fetch it, or pass --target <sha>."
+  ctx_repo "${_rrp:--}"
+  [ -z "$unresolved_pr" ] || deny "the repository this release is created in could not be resolved, so no certification can be matched to it."
+  resolve_release "$_tag" "$_tgt" || deny "cannot resolve the commit release ${_tag:-<no tag>} would publish (target '${_tgt:-none}'${_R:+, repository $_R}). Fetch it, or pass --target <sha>."
+  if [ -n "$_R" ]; then
+    judge_remote "$_rsha" "$_R" "the release target" || deny "no PASS qa/CERTIFICATION covers the commit this release publishes (${_rsha:0:12}${_tag:+, tag $_tag}): ${JWHY}"
+    continue
+  fi
   _first=""; _ok=0
   for _at in "$_rsha" refs/remotes/origin/main refs/remotes/origin/dev refs/heads/main refs/heads/dev; do
     _atsha="$(git rev-parse --verify -q "${_at}^{commit}" 2>/dev/null || true)"

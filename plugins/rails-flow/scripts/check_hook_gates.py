@@ -1287,8 +1287,11 @@ def release_gate_fixtures() -> None:
 # past a gate that only read `git push` / `gh pr merge`. Driven through the real hook with a fake `gh`.
 FAKE_GH = """#!/bin/sh
 case "$1 $2" in
-  "pr view") printf '%s' "${FAKE_PRVIEW:-}"; exit 0 ;;
-  "api graphql") case "$*" in *"on Ref"*) printf '%s' "${FAKE_REF:-}" ;; *) printf '%s' "${FAKE_NODE:-}" ;; esac; exit 0 ;;
+  "pr view") [ -z "${FAKE_PRVIEW:-}" ] || printf '%s https://github.com/%s/pull/7' "$FAKE_PRVIEW" "${FAKE_PRREPO:-o/r}"; exit 0 ;;
+  "api graphql") case "$*" in
+      *"on Ref"*) [ -z "${FAKE_REF:-}" ] || printf '%s %s' "$FAKE_REF" "${FAKE_PRREPO:-o/r}" ;;
+      *) [ -z "${FAKE_NODE:-}" ] || printf '%s %s' "$FAKE_NODE" "${FAKE_PRREPO:-o/r}" ;;
+    esac; exit 0 ;;
   "release view") printf '%s' "${FAKE_RELVIEW:-}"; exit 0 ;;
   "api repos"*) printf '%s' "${FAKE_RELID:-}"; exit 0 ;;
 esac
@@ -1303,6 +1306,13 @@ def release_gate_effects_fixtures() -> None:
         _git_repo(repo)
         sh = lambda *a, **kw: _run([*g, *a], cwd=repo, check=True, capture_output=True, text=True, **kw).stdout.strip()
         old = {**os.environ, "GIT_COMMITTER_DATE": "2026-09-01T00:00:00+00:00", "GIT_AUTHOR_DATE": "2026-09-01T00:00:00+00:00"}
+        # THIS checkout is github.com/o/r (so `repos/o/r/...` and `-R o/r` name it, and nothing else does),
+        # and the remote's refs live in a local bare repo behind insteadOf, so `git ls-remote origin`
+        # (the tag check) answers without a network.
+        bare = Path(td) / "origin.git"
+        _run(["git", "init", "-q", "--bare", str(bare)], check=True, capture_output=True)
+        sh("remote", "add", "origin", "https://github.com/o/r.git")
+        sh("config", f"url.{bare}.insteadOf", "https://github.com/o/r.git")
         (repo / "app.rb").write_text("v1\n", encoding="utf-8")
         sh("add", "app.rb"); sh("commit", "-q", "-m", "app")
         tested = sh("rev-parse", "HEAD")
@@ -1427,6 +1437,7 @@ def release_gate_effects_fixtures() -> None:
         rc, err = run("gh release create v1.0.1 --target dev")
         check("release-gate (#1569): --target dev publishes the certified tip and is permitted", rc == 0, f"rc={rc} {err[:200]!r}")
         sh("tag", "v0.9", stamped)
+        sh("push", "-q", "origin", "v0.9")                # the tag exists ON THE REMOTE: GitHub ignores --target for it
         rc, err = run("gh release create v0.9")
         check("release-gate (#1569): an existing tag is judged by ITS commit, not main's tip", rc == 0, f"rc={rc} {err[:200]!r}")
         sh("branch", "-f", "main", stamped)
@@ -1459,7 +1470,7 @@ def release_gate_effects_fixtures() -> None:
             check(f"release-gate (#1569): {label} publishes an uncertified commit and is blocked", rc == 2, f"rc={rc} {err[:200]!r}")
         for label, cmd, env in (
             ("a draft whose target is the certified dev", "gh release edit v1.0.1 --draft=false", {"FAKE_RELVIEW": "dev"}),
-            ("an existing tag at the certified commit", "gh release edit v0.9 --draft=false", {}),
+            ("an existing remote tag at the certified commit (the draft's recorded target is ignored)", "gh release edit v0.9 --draft=false", {"FAKE_RELVIEW": "main"}),
             ("--draft alone (stays a draft)", "gh release edit v1.0.1 --draft", {}),
             ("--draft=true", "gh release edit v1.0.1 --draft=true", {}),
             ("editing the notes", "gh release edit v1.0.1 --notes x", {}),
