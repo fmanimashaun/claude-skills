@@ -116,13 +116,13 @@ GUARD = Guard(
         ),
         Mutation(
             'the zombie warning always fires',
-            '    if count >= int(os.environ.get("RAILS_FLOW_ZOMBIE_WARN") or ZOMBIE_WARN):',
+            '    if count >= _env_int("RAILS_FLOW_ZOMBIE_WARN", ZOMBIE_WARN):',
             '    if True:',
             'below the threshold the zombie warning is silent',
         ),
         Mutation(
             'the zombie warning never fires',
-            '    if count >= int(os.environ.get("RAILS_FLOW_ZOMBIE_WARN") or ZOMBIE_WARN):',
+            '    if count >= _env_int("RAILS_FLOW_ZOMBIE_WARN", ZOMBIE_WARN):',
             '    if False:',
             'a zombie count at the threshold is reported',
         ),
@@ -197,6 +197,36 @@ GUARD = Guard(
             '            if (prev == "eval" or re.fullmatch(r"-[A-Za-z]*c", prev)) and "worktree" in tok and "add" in tok:',
             '            if "worktree" in tok and "add" in tok:',
             "a mention is not a command, even while a lane is held",
+        ),
+        Mutation(
+            "a git that did not answer reads as 'not a repository', so the guard goes dormant",
+            "    if inside == UNAVAILABLE:",
+            "    if False:",
+            "with git missing a worktree add cannot be judged",
+        ),
+        Mutation(
+            "a git worktree list that fails reads as 'no worktrees'",
+            "    if existing is None:",
+            "    if False:",
+            "a `git worktree list` that fails is refused",
+        ),
+        Mutation(
+            "git is given a fixed long timeout instead of what is left of the budget",
+            "timeout=min(5, remaining))",
+            "timeout=60)",
+            "a slow git is cut off within the budget",
+        ),
+        Mutation(
+            "an exhausted budget still runs git",
+            "    if remaining <= 0:\n        return UNAVAILABLE, \"\"",
+            "    if False:\n        return UNAVAILABLE, \"\"",
+            "a git that hangs is cut off and the command is refused",
+        ),
+        Mutation(
+            "a record that cannot be located is read as 'no lanes'",
+            "        if rp is None:\n            return deny(",
+            "        if False:\n            return deny(",
+            "a record location git cannot give is refused",
         ),
     ),
 )

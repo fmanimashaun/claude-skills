@@ -1727,6 +1727,40 @@ def guard_worktree_fixtures() -> None:
         allowed("guard-worktree: CONTROL: a plain worktree add from outside any repository is still dormant",
                 guard(outside, "git worktree add ../x -b y"))
 
+    # FAIL-OPEN PATHS (the push's security review): every way git itself can misbehave must be a refusal, never a pass.
+    # A git that is missing, hangs, or cannot list worktrees used to read as "not a repository" or "no worktrees".
+    with tempfile.TemporaryDirectory() as td:
+        repo = new_repo(td)
+        add_wt(repo, "lane-band", "feature/lane-band")
+        real_git = shutil.which("git")
+
+        def stage_bin(name: str, git_body: str | None) -> dict[str, str]:
+            b = Path(td) / name
+            b.mkdir()
+            for tool in ("bash", "python3"):
+                (b / tool).symlink_to(shutil.which(tool))
+            if git_body is not None:
+                _stub(b, "git", git_body.replace("REAL_GIT", real_git))
+            return {"PATH": str(b)}
+
+        no_git = stage_bin("no-git", None)
+        denied("guard-worktree: with git missing a worktree add cannot be judged, so it is refused (not read as 'no repository')",
+               guard(repo, "git worktree add ../dup feature/lane-band", env_extra=no_git), "cannot be judged")
+        allowed("guard-worktree: ...and with git missing an ordinary command is untouched", guard(repo, "ls", env_extra=no_git))
+        slow = stage_bin("slow-git", "exec sleep 20")
+        t0 = time.monotonic()
+        res = guard(repo, "git worktree add ../dup feature/lane-band", env_extra=dict(slow, WORKTREE_GUARD_BUDGET="1"))
+        denied("guard-worktree: a git that hangs is cut off and the command is refused (the hook's own timeout would let it run)",
+               res, "timed out")
+        check("guard-worktree: ...and a slow git is cut off within the budget, not after it", time.monotonic() - t0 < 8,
+              f"{time.monotonic() - t0:.1f}s")
+        no_list = stage_bin("no-list", 'case "$*" in *"worktree list"*) echo "fatal: simulated" >&2; exit 1;; esac\nexec REAL_GIT "$@"')
+        no_common = stage_bin("no-common", 'case "$*" in *"git-common-dir"*) echo "fatal: simulated" >&2; exit 1;; esac\nexec REAL_GIT "$@"')
+        denied("guard-worktree: a record location git cannot give is refused, not read as 'this session holds no lane'",
+               guard(repo, "git worktree add ../x -b y dev", env_extra=no_common), "could not locate the coordination record")
+        denied("guard-worktree: a `git worktree list` that fails is refused, not read as 'no worktrees'",
+               guard(repo, "git worktree add ../dup feature/lane-band", env_extra=no_list), "could not list the worktrees")
+
     # A record that cannot be read fails CLOSED, with the way out.
     with tempfile.TemporaryDirectory() as td:
         repo = new_repo(td)

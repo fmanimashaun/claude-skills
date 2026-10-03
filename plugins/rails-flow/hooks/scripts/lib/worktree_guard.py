@@ -33,6 +33,7 @@ import re
 import shlex
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -58,11 +59,29 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
-def git(cwd, *args: str) -> tuple[int, str]:
+def _env_float(name: str, default: float) -> float:
     try:
-        done = subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True, timeout=30)
+        return float(os.environ.get(name) or default)
+    except ValueError:
+        return default
+
+
+# The hook's own timeout is 15 s and a hook that times out is a NON-blocking error: the command RUNS. So this process must
+# answer, with a refusal if need be, before that. Every git call spends from one budget (WORKTREE_GUARD_BUDGET, seconds).
+BUDGET = _env_float("WORKTREE_GUARD_BUDGET", 10)
+_STARTED = time.monotonic()
+UNAVAILABLE = 127
+
+
+def git(cwd, *args: str) -> tuple[int, str]:
+    """(exit code, stdout). 127 means git did not answer: missing, out of budget, or too slow."""
+    remaining = BUDGET - (time.monotonic() - _STARTED)
+    if remaining <= 0:
+        return UNAVAILABLE, ""
+    try:
+        done = subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True, timeout=min(5, remaining))
     except (OSError, subprocess.TimeoutExpired):
-        return 127, ""
+        return UNAVAILABLE, ""
     return done.returncode, done.stdout
 
 
@@ -81,10 +100,13 @@ def keys(*names: str | None) -> set[int]:
     return {k for k in (issue_key(n) for n in names) if k is not None}
 
 
-def worktrees(cwd) -> list[dict]:
+def worktrees(cwd) -> list[dict] | None:
+    """The worktrees, or None when git could not list them: an empty list would read as "none exist"."""
     rc, out = git(cwd, "worktree", "list", "--porcelain")
+    if rc != 0:
+        return None
     rows: list[dict] = []
-    for block in out.strip().split("\n\n") if rc == 0 else []:
+    for block in out.strip().split("\n\n"):
         row: dict = {}
         for line in block.splitlines():
             k, _, v = line.partition(" ")
@@ -229,12 +251,19 @@ def check(payload: dict, raw_only: bool = False) -> int:
             return 0
         return deny("could not read the `git worktree add` in this command, so it cannot be judged. Write it as a plain "
                     "`git worktree add <path> [-b <branch>] [<commit>]` on its own line.")
-    if git(cwd, "rev-parse", "--is-inside-work-tree")[0] != 0:
+    inside = git(cwd, "rev-parse", "--is-inside-work-tree")[0]
+    if inside == UNAVAILABLE:
+        return deny("git did not answer in time, or is not installed, so this `git worktree add` cannot be judged: it timed out "
+                    "or could not run. Retry, or create the worktree yourself outside the agent.")
+    if inside != 0:
         if MOVES.search(command):
             return deny("this `git worktree add` follows a `cd` or `-C`, and the session's directory is not inside a git "
                         "repository, so which repository it targets cannot be judged. Run it from inside the repository.")
         return 0                                  # dormant outside a git repository
     existing = worktrees(cwd)
+    if existing is None:
+        return deny("could not list the worktrees (`git worktree list` failed or timed out), so a duplicate cannot be ruled out "
+                    "and this `git worktree add` cannot be judged.")
     integ = integration_ref(cwd)
     for add in adds:
         path = os.path.realpath(os.path.join(cwd, add["path"])) if add["path"] else None
@@ -254,8 +283,11 @@ def check(payload: dict, raw_only: bool = False) -> int:
                             f"orphans the first one.")
     if sid:
         rp = coordination.record_path(cwd)
+        if rp is None:
+            return deny("could not locate the coordination record (`git rev-parse --git-common-dir` failed or timed out), so "
+                        "this session's lanes cannot be read and this `git worktree add` cannot be judged.")
         try:
-            record = coordination.load(rp) if rp else None
+            record = coordination.load(rp)
         except coordination.RecordError as e:
             return deny(f"the coordination record is unreadable ({e}). Fix or delete {rp}, then retry; a lane that "
                         f"cannot be read cannot be judged.")
@@ -304,7 +336,7 @@ def resume(session_id: str, cwd: str) -> int:
     if git(cwd, "rev-parse", "--is-inside-work-tree")[0] != 0:
         return 0
     lines: list[str] = []
-    existing = worktrees(cwd)
+    existing = worktrees(cwd) or []
     integ = integration_ref(cwd)
     by_path = {w["path"]: w for w in existing}
     rp = coordination.record_path(cwd)
