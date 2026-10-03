@@ -493,8 +493,12 @@ def guard_bash_fixtures() -> None:
     # #1311: an issue filed from the shell is labelled against the project's declared groups, or refused.
     groups = {"groups": [{"one_of": ["bug", "feature", "enhancement"]},
                          {"when": "bug", "one_of": ["severity:s1", "severity:s2"]}]}
-    def labelled(cmd: str, *, declare: bool = True, drop_helper: bool = False) -> tuple[int, str]:
+    def labelled(cmd: str, *, declare: bool = True, drop_helper: bool = False,
+                 files: dict[str, str] | None = None) -> tuple[int, str]:
         with tempfile.TemporaryDirectory() as td:
+            for rel, text in (files or {}).items():     # relative scripts the command reads (#1495)
+                (Path(td) / rel).parent.mkdir(parents=True, exist_ok=True)
+                (Path(td) / rel).write_text(text, encoding="utf-8")
             if declare:
                 (Path(td) / ".rails-flow").mkdir()
                 (Path(td) / ".rails-flow" / "issue-labels.json").write_text(json.dumps(groups), encoding="utf-8")
@@ -584,6 +588,49 @@ def guard_bash_fixtures() -> None:
         rc, err = labelled(f"cd {sd} && bash < only.sh")
         check("guard-bash (#1489 review): `cd <dir> && bash < only.sh` reads the cd target's script and is refused",
               rc == 2 and "by redirect" in err, err)
+    # #1495: the five #1489 edge cases, each through the real hook, with a control.
+    create, harmless = "gh issue create -t X --body y\n", "echo hi\n"
+    tree = {"bad.sh": create, "sub/only.sh": create, "ok.sh": harmless}
+    for cmd, why in (("cd nope; bash < bad.sh", "a cd to a missing directory fails and changes nothing"),
+                     ("(cd sub && bash < only.sh)", "a cd inside ( ) holds until the )"),
+                     ("cd sub; bash < only.sh", "a cd joined by ; that succeeds is followed"),
+                     ("bash -eo pipefail < bad.sh", "a bundled -o takes a value"),
+                     ("bash -euxo pipefail < bad.sh", "a longer bundle ending in o takes a value"),
+                     ("bash 2>&1 < bad.sh", "the & of a fd duplication is not a separator"),
+                     ("bash &>log < bad.sh", "&> is a redirect, not a background &")):
+        rc, err = labelled(cmd, files=tree)
+        check(f"guard-bash (#1495): `{cmd}` is refused ({why})", rc == 2 and "by redirect" in err and "cannot follow" not in err, err)
+    for cmd, why in (("(cd sub) && bash < only.sh", "the subshell's cd does not outlive it; only.sh is not here"),
+                     ("bash -eo pipefail ok.sh < bad.sh", "a script operand after -eo VALUE reads stdin as data"),
+                     ("bash 2>&1 < ok.sh", "a harmless script behind 2>&1")):
+        check(f"guard-bash (#1495): CONTROL: `{cmd}` is allowed ({why})", labelled(cmd, files=tree)[0] == 0)
+    # #1513 review: shapes the first #1495 version still let through, each through the real hook.
+    tree2 = {**tree, "sub/ok.sh": harmless}
+    for cmd, why in (("cd sub &>/dev/null; bash < only.sh", "a cd's own redirect is not an argument"),
+                     ("bash -ox pipefail < bad.sh", "an o inside a bundle takes a value"),
+                     ("bash 2>&1<bad.sh", "a redirect glued to < is cut out"),
+                     ("bash>/dev/null<bad.sh", "a redirect glued to the shell is cut out"),
+                     ("bash&>log<bad.sh", "the trigger sees a redirect glued to the shell"),
+                     ("bash >&log < bad.sh", ">&word is a redirect"),
+                     ("cd sub & bash < bad.sh", "a backgrounded cd runs in a subshell"),
+                     ("cd sub | bash < bad.sh", "a piped cd runs in a subshell")):
+        rc, err = labelled(cmd, files=tree2)
+        check(f"guard-bash (#1513): `{cmd}` is refused ({why})", rc == 2 and "by redirect" in err and "cannot follow" not in err, err)
+    rc, err = labelled("cd $X && bash < ok.sh", files=tree2)
+    check("guard-bash (#1513): a relative script after a cd the hook cannot follow is refused, not guessed",
+          rc == 2 and "cannot follow" in err, err)
+    for spelled in ("gh issue $'\\x63reate'", "gh issue $'\\143reate'", "gh $'\\x69ssue' create", "$'\\x67h' issue create"):
+        rc, err = labelled(f"{spelled} -t X --body y")
+        check(f"guard-bash (#1513): `{spelled}` reaches the helper and an unlabelled create is refused",
+              rc == 2 and "no --label" in err, err)
+    for cmd in ("cd sub &>/dev/null; bash < ok.sh", "bash>/dev/null<ok.sh", "cd sub & bash < ok.sh", "echo $'a\\tb'"):
+        check(f"guard-bash (#1513): CONTROL: `{cmd}` is allowed", labelled(cmd, files=tree2)[0] == 0)
+    rc, err = labelled("gh issue $'create' -t X --body y")
+    check("guard-bash (#1495): `gh issue $'create'` reaches the helper and an unlabelled create is refused",
+          rc == 2 and "no --label" in err, err)
+    for spelled in ("$'\\x66eature'", "$'\\146eature'", "$'\\u0066eature'"):
+        check(f"guard-bash (#1495): CONTROL: `-l {spelled}` is the label `feature`, and is allowed",
+              labelled(f"gh issue create -t X --body y -l {spelled}")[0] == 0)
     check("guard-bash (#1423): CONTROL: an echo of the text is allowed through the real hook",
           labelled('echo "gh issue create"')[0] == 0)
     rc, err = labelled("gh issue create -t X --label feature", drop_helper=True)
