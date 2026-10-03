@@ -436,6 +436,30 @@ reader="${CLAUDE_PLUGIN_ROOT:-}/scripts/read_certification.py"
 ev="${CLAUDE_PLUGIN_ROOT:-}/scripts/release_evidence.py"
 JWHY=""
 
+# extra_files <evidence paths>: reads changed paths on stdin and prints those that are neither the stamp nor
+# evidence the stamp names. ONE definition for this checkout and for another repository (#1591): the delta
+# since the certified commit may be the stamp and the evidence it names, and nothing else.
+extra_files() {
+  local evidence="$1" f p ok
+  while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    [ "$f" = "qa/CERTIFICATION" ] && continue
+    ok=0
+    while IFS= read -r p; do
+      [ -n "$p" ] || continue
+      # A directory (trailing "/") matches as a prefix; the sweep is ONE file and matches exactly.
+      # The leading "(" matters: inside $( ) a bare `pattern)` closes the substitution.
+      case "$p" in
+        (*/) case "$f" in ("$p"*) ok=1 ;; esac ;;
+        (*) [ "$f" = "$p" ] && ok=1 ;;
+      esac
+    done <<EVIDENCE
+$evidence
+EVIDENCE
+    [ "$ok" = 1 ] || printf '%s\n' "$f"
+  done
+}
+
 # judge <commit being shipped> <commit whose tree holds the stamp> <what to call the commit>
 # Returns 0 when a PASS stamp certifies <commit> (exactly, or through the stamp's own commit and the
 # evidence it names), 1 with JWHY set otherwise. One judgement for all three subjects (#1569): dev's
@@ -487,23 +511,7 @@ judge() {
       fi
       # The stamp's own commit may also carry the evidence it names (#1428): recorded AFTER the tested
       # sha, so requiring it before would be circular.
-      extra="$(printf '%s\n' "$delta" | while IFS= read -r f; do
-        [ -z "$f" ] && continue
-        [ "$f" = "qa/CERTIFICATION" ] && continue
-        ok=0
-        while IFS= read -r p; do
-          [ -n "$p" ] || continue
-          # A directory (trailing "/") matches as a prefix; the sweep is ONE file and matches exactly.
-          # The leading "(" matters: inside $( ) a bare `pattern)` closes the substitution.
-          case "$p" in
-            (*/) case "$f" in ("$p"*) ok=1 ;; esac ;;
-            (*) [ "$f" = "$p" ] && ok=1 ;;
-          esac
-        done <<EVIDENCE
-$evidence
-EVIDENCE
-        [ "$ok" = 1 ] || printf '%s\n' "$f"
-      done)"
+      extra="$(printf '%s\n' "$delta" | extra_files "$evidence")"
       if [ -n "$extra" ]; then
         JWHY="certification is for sha ${csha:0:12}; ${what} (${tgt:0:12}) has changed more than the stamp since: $(printf '%s' "$extra" | head -3 | tr '\n' ' '). Re-certify before promoting."; return 1
       fi
@@ -515,11 +523,12 @@ EVIDENCE
 
 # judge_remote <sha> <owner/repo> <what>: the stamp of a repository this checkout is NOT, read through the
 # API at that sha (#1569). It needs the stamp at the sha to be PASS and to certify it exactly, or to sit
-# on top of the tested sha with nothing else changed (the stamp's own commit). The release-only layers
-# (#1428) are NOT re-judged here -- their evidence files are not in this checkout -- and the stamp's
-# own words say so on stderr.
+# on top of the tested sha with nothing else changed but the stamp and the evidence it names. The release-only
+# layers (#1428) are judged exactly as for this checkout, from the evidence committed in THAT repository:
+# remote_evidence.py fetches the commit into a scratch repository and runs release_evidence.py there (#1591),
+# inside its own time budget, because a hook that outlives its timeout does not deny.
 judge_remote() {
-  local sha="$1" repo="$2" what="$3" verdict csha why cmp status files
+  local sha="$1" repo="$2" what="$3" verdict csha why cmp status files evidence
   if ! gh api -H 'Accept: application/vnd.github.raw+json' "repos/${repo}/contents/qa/CERTIFICATION?ref=${sha}" >"$stamp_tmp" 2>/dev/null; then
     JWHY="this command acts on ${repo}, not on this checkout's repository, and its qa/CERTIFICATION could not be read at ${what} (${sha:0:12}) through the GitHub API. Run it from a checkout of ${repo} that holds a PASS stamp, or set QA_ALLOW_MAIN=1."
     return 1
@@ -533,6 +542,13 @@ judge_remote() {
     JWHY="${repo}: certification verdict is ${verdict}, not PASS. Fix the defects and re-certify."; return 1
   fi
   [ -n "$csha" ] || { JWHY="${repo}: certification has no sha — the stamp is invalid. Re-run /qa-flow:certify."; return 1; }
+  # (#1591) The release-only layers (#1428), as for this checkout. Fail-closed: any error denies.
+  if evidence="$(python3 "${CLAUDE_PLUGIN_ROOT:-}/scripts/remote_evidence.py" --repo "$repo" --sha "$sha" 2>"$evtmp")"; then
+    grep '^WARNING' "$evtmp" | sed "s|^WARNING |qa-flow: ${repo}: |" >&2
+  else
+    why="$(grep -E '^(FAIL|unusable)' "$evtmp" 2>/dev/null | head -3 | tr '\n' ' ')"
+    JWHY="${repo}: the release-only layers do not pass (#1428): ${why:-remote_evidence.py could not run.} Fix them and re-certify."; return 1
+  fi
   case "$sha" in
     "$csha"*) : ;;
     *)
@@ -540,7 +556,7 @@ judge_remote() {
         JWHY="${repo}: certification is for sha ${csha:0:12}, and ${what} (${sha:0:12}) could not be compared with it through the GitHub API. Re-certify."; return 1
       fi
       status="$(printf '%s\n' "$cmp" | head -1)"
-      files="$(printf '%s\n' "$cmp" | sed 1d | grep -vx 'qa/CERTIFICATION' | head -3 | tr '\n' ' ' || true)"
+      files="$(printf '%s\n' "$cmp" | sed 1d | extra_files "$evidence" | head -3 | tr '\n' ' ')"
       case "$status" in ahead|identical) : ;; *)
         JWHY="${repo}: certification is for sha ${csha:0:12}, which is not an ancestor of ${what} (${sha:0:12}). ${what} moved — re-certify before promoting."; return 1 ;;
       esac
@@ -548,7 +564,7 @@ judge_remote() {
         JWHY="${repo}: certification is for sha ${csha:0:12}; ${what} (${sha:0:12}) has changed more than the stamp since: ${files}. Re-certify before promoting."; return 1
       fi ;;
   esac
-  echo "qa-flow: ${repo}: certification valid for ${csha:0:12} — ${what} ${sha:0:12} permitted (the release-only layers are not re-judged for a repository other than this checkout's)." >&2
+  echo "qa-flow: ${repo}: certification valid for ${csha:0:12} — ${what} ${sha:0:12} permitted." >&2
   return 0
 }
 # judge_in <sha> <repo or -> <what>

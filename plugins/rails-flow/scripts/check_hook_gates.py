@@ -1914,6 +1914,11 @@ def release_gate_repos_fixtures() -> None:
         old = {**os.environ, "GIT_COMMITTER_DATE": "2026-09-01T00:00:00+00:00", "GIT_AUTHOR_DATE": "2026-09-01T00:00:00+00:00"}
         bare = Path(td) / "origin.git"
         _run(["git", "init", "-q", "--bare", str(bare)], check=True, capture_output=True)
+        # other/fork, as the hook fetches it (#1591): a local bare repository standing in for github.com.
+        forkbare = Path(td) / "fork.git"
+        _run(["git", "init", "-q", "--bare", str(forkbare)], check=True, capture_output=True)
+        for k, v in (("uploadpack.allowFilter", "true"), ("uploadpack.allowAnySHA1InWant", "true")):
+            _run(["git", "config", k, v], cwd=forkbare, check=True, capture_output=True)
         sh("remote", "add", "origin", "https://github.com/o/r.git")
         sh("config", f"url.{bare}.insteadOf", "https://github.com/o/r.git")
         sh("remote", "add", "upstream", "https://github.com/other/fork.git")
@@ -1934,6 +1939,7 @@ def release_gate_repos_fixtures() -> None:
         sh("branch", "-f", "main", hot)
         sh("tag", "v0.9", stamped); sh("tag", "v0.8", hot)
         sh("push", "-q", "origin", "v0.9", "v0.8")
+        sh("push", "-q", str(forkbare), f"{stamped}:refs/heads/dev", f"{hot}:refs/heads/hot")
         # another checkout, on main, whose dev has no stamp at all
         sub = Path(td) / "sub"
         _git_repo(sub)
@@ -1949,6 +1955,11 @@ def release_gate_repos_fixtures() -> None:
             env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env.pop("GH_REPO", None)
             env["CLAUDE_PLUGIN_ROOT"] = str(QA_HOOK.parents[2])
             env["PATH"] = str(Path(td) / "bin") + os.pathsep + env["PATH"]
+            # No test reaches github.com: every https://github.com/ url is a path that does not exist, except
+            # other/fork, which is the local bare repository the hook may fetch evidence from (#1591).
+            env.update({"GIT_CONFIG_COUNT": "2",
+                        "GIT_CONFIG_KEY_0": "url./nonexistent-qa-flow-remote/.insteadOf", "GIT_CONFIG_VALUE_0": "https://github.com/",
+                        "GIT_CONFIG_KEY_1": f"url.{forkbare}.insteadOf", "GIT_CONFIG_VALUE_1": "https://github.com/other/fork.git"})
             env.update(extra)
             done = _run(["bash", str(QA_HOOK)], cwd=repo, input=json.dumps({"tool_input": {"command": cmd}}),
                         env=env, capture_output=True, text=True, timeout=60)
@@ -2145,6 +2156,90 @@ def release_gate_repos_fixtures() -> None:
 # ---- ci-verdict-hint.sh (#1173) -----------------------------------------------------------------
 # An ADVISORY, so every fixture asserts exit 0 -- a hint that could fail the tool call would be a gate
 # nobody asked for. What varies is whether it SPEAKS, and on which event.
+
+        # (10) #1591: a repository other than this checkout's is held to the SAME standard as this one. The
+        # stamp is not enough: a schema-2 stamp must name a passing first-boot walkthrough and authorization
+        # sweep (#1428), judged from the evidence AS COMMITTED in that repository, and the commit may carry
+        # that evidence beyond the stamp itself. The foreign repository's objects are fetched from a local
+        # bare repository, so nothing here touches the network.
+        fw = Path(td) / "fw"
+        _git_repo(fw)
+        fsh = lambda *a, **kw: _run([*g, *a], cwd=fw, check=True, capture_output=True, text=True, **kw).stdout.strip()
+        fb_rows = ("Step,Width,Actor,URL,Action,Expected,Actual,Status,Notes,Screenshot,Also,Issue,Env\n"
+                   "1.1,1280,root,/login,Sign in,In,In,Pass,,,,,empty db\n"
+                   "1.2,390,root,/login,Sign in,In,In,Pass,,,,,empty db\n")
+        az_head = "action,location,actor_role,target_role,guard,verdict,evidence,issue\n"
+        az_good = az_head + "demote,app/models/user.rb:40,it,root,root? refusal,GUARDED,,\n"
+        az_hole = az_good + "demote,app/controllers/staff.rb:88,it,root,,HOLE,forged PATCH,#1\n"
+        (fw / "app.rb").write_text("v1\n", encoding="utf-8")
+        fsh("add", "app.rb"); fsh("commit", "-q", "-m", "app", env=old)
+        tested_f = fsh("rev-parse", "HEAD")
+        fsh("push", "-q", str(forkbare), f"{tested_f}:refs/heads/main")      # the last PUBLISHED release
+        ev_files = ["qa/manual-tests/first-boot-v1/pages.csv", "qa/manual-tests/authz-v1/sweep.csv"]
+
+        def scenario(name: str, stamp: dict, authz: str, versions: tuple = ("v1",)) -> tuple:
+            fsh("checkout", "-q", "-B", name, tested_f)
+            for v in versions:
+                (fw / f"qa/manual-tests/first-boot-{v}").mkdir(parents=True, exist_ok=True)
+                (fw / f"qa/manual-tests/authz-{v}").mkdir(parents=True, exist_ok=True)
+                (fw / f"qa/manual-tests/first-boot-{v}/pages.csv").write_text(fb_rows, encoding="utf-8")
+                (fw / f"qa/manual-tests/authz-{v}/sweep.csv").write_text(authz, encoding="utf-8")
+            (fw / "qa").mkdir(exist_ok=True)
+            (fw / "qa" / "CERTIFICATION").write_text(json.dumps(stamp), encoding="utf-8")
+            fsh("add", "qa"); fsh("commit", "-q", "-m", name)
+            fsh("push", "-q", "-f", str(forkbare), f"HEAD:refs/heads/{name}")
+            return fsh("rev-parse", "HEAD"), stamp
+
+        base_stamp = {"sha": tested_f, "date": "2026-10-01", "verdict": "PASS", "report": "r.md"}
+        s2 = {**base_stamp, "schema": 2, "version": "v1", "first_boot": "qa/manual-tests/first-boot-v1",
+              "authz": "qa/manual-tests/authz-v1/sweep.csv"}
+
+        def foreign(sha: str, stamp: dict, delta: list, cmd: str = "gh pr merge 7 -R other/fork",
+                    repo_name: str = "other/fork", status: str = "ahead") -> tuple:
+            f = Path(td) / f"stamp-{sha[:10]}.json"
+            f.write_text(json.dumps(stamp), encoding="utf-8")
+            return run(_pin(cmd, sha), FAKE_PRVIEW=f"main {sha}", FAKE_PRREPO=repo_name, FAKE_COMMIT=sha, FAKE_STAMP_REF=sha,
+                       FAKE_STAMP_FILE=str(f), FAKE_COMPARE=status + "\n" + "\n".join(["qa/CERTIFICATION", *delta]))
+
+        sha_bare, st = scenario("bare", base_stamp, az_good, ())
+        rc, err = foreign(sha_bare, st, [])
+        check("release-gate (#1591): ANOTHER repository's bare PASS stamp, committed after the #1428 cutoff, is denied (no schema)",
+              rc == 2 and "schema" in err, f"rc={rc} {err[:300]!r}")
+        sha_good, st = scenario("good", s2, az_good)
+        rc, err = foreign(sha_good, st, ev_files)
+        check("release-gate (#1591): ANOTHER repository's schema-2 stamp, whose commit carries its passing evidence, is permitted",
+              rc == 0 and "other/fork" in err, f"rc={rc} {err[:300]!r}")
+        rc, err = foreign(sha_good, st, [*ev_files, "app.rb"])
+        check("release-gate (#1591): ... and a code change riding with that evidence is denied, naming it",
+              rc == 2 and "app.rb" in err, f"rc={rc} {err[:300]!r}")
+        rc, err = foreign(sha_good, st, [], cmd="gh release create v1 -R other/fork --target main")
+        check("release-gate (#1591): ... and a release of that commit is permitted too", rc == 0, f"rc={rc} {err[:300]!r}")
+        sha_hole, st = scenario("hole", s2, az_hole)
+        rc, err = foreign(sha_hole, st, ev_files)
+        check("release-gate (#1591): ANOTHER repository's committed HOLE in the sweep is denied, naming the layer",
+              rc == 2 and "#1428" in err and "HOLE" in err, f"rc={rc} {err[:300]!r}")
+        rc, err = foreign(sha_hole, st, ev_files, cmd="gh release create v1 -R other/fork --target main")
+        check("release-gate (#1591): ... and a release of that commit is denied too", rc == 2 and "HOLE" in err, f"rc={rc} {err[:300]!r}")
+        sha_twin, st = scenario("twin", s2, az_good, ("v0", "v1"))
+        rc, err = foreign(sha_twin, st, ev_files + ["qa/manual-tests/first-boot-v0/pages.csv", "qa/manual-tests/authz-v0/sweep.csv"])
+        check("release-gate (#1591): ANOTHER repository's evidence copied from another release is denied (byte-identical)",
+              rc == 2 and "byte-identical" in err, f"rc={rc} {err[:300]!r}")
+        sha_out, st = scenario("outside", {**s2, "first_boot": "app"}, az_good)
+        rc, err = foreign(sha_out, st, ev_files)
+        check("release-gate (#1591): ANOTHER repository's stamp naming evidence outside qa/manual-tests/ is denied",
+              rc == 2 and "qa/manual-tests/" in err, f"rc={rc} {err[:300]!r}")
+        rc, err = foreign(sha_good, {**s2, "verdict": "FAIL"}, ev_files)
+        check("release-gate (#1591): ANOTHER repository's stamp whose verdict is not PASS is denied", rc == 2 and "not PASS" in err,
+              f"rc={rc} {err[:300]!r}")
+        for status in ("diverged", "behind"):
+            rc, err = foreign(sha_good, s2, ev_files, status=status)
+            check(f"release-gate (#1591): ANOTHER repository's certified commit that is {status} of the judged one is denied (not an ancestor)",
+                  rc == 2 and "not an ancestor" in err, f"rc={rc} {err[:300]!r}")
+        rc, err = foreign(sha_good, s2, ev_files, cmd="gh pr merge 7 -R gone/repo", repo_name="gone/repo")
+        check("release-gate (#1591): a repository whose objects cannot be fetched is denied, naming the layer and the repository",
+              rc == 2 and "#1428" in err and "gone/repo" in err, f"rc={rc} {err[:300]!r}")
+
+
 def ci_verdict_hint_fixtures() -> None:
     # The PLUGIN root, two levels above hooks/scripts -- `HOOKS.parent` is hooks/, and pointing there
     # made every fixture silent for the wrong reason until the positive one said so.
