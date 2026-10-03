@@ -2,7 +2,7 @@
      Rebuild:  python3 scripts/build_wiki.py
      Drift:    python3 scripts/build_wiki.py --check  (runs in the gate sweep) -->
 # Agents and gates
-**30 shipped agents · 50 shipped commands · 4 tier tables**, plus 5 maintainer agents and 6 maintainer commands that are not installed.
+**30 shipped agents · 50 shipped commands · 4 tier tables**, plus 7 maintainer agents and 7 maintainer commands that are not installed.
 
 | plugin | version | agents | commands | tier rows |
 |---|---|---|---|---|
@@ -71,8 +71,10 @@
 |---|---|---|---|---|
 | `doctrine-verifier` | sonnet | Read, Grep, Glob, Bash, WebFetch, WebSearch | `/maintainer-audit`, `/maintainer-onboard`, `/maintainer-setup-intake`, `/maintainer-upstream`, `/maintainer-work` | — |
 | `issue-triager` | sonnet | Read, Grep, Glob, Bash | `/maintainer-triage` | — |
+| `mutation-verifier` | haiku | Read, Grep, Glob, Bash | `/gauntlet` | — |
 | `plugin-doctor` | sonnet | Read, Grep, Glob, Edit, Write, Bash | `/maintainer-work` | — |
 | `release-manager` | sonnet | Read, Grep, Glob, Edit, Bash | `/maintainer-work` | — |
+| `shell-adversary` | sonnet | Read, Grep, Glob, Bash | `/gauntlet` | — |
 | `skill-doctor` | sonnet | Read, Grep, Glob, Edit, Write, Bash | `/maintainer-work` | — |
 
 ## Gates
@@ -162,6 +164,8 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | arm window | `repo` | `python3 scripts/check_arm_window.py` | live check |
 | arm window selftest | `repo` | `python3 scripts/check_arm_window.py --selftest` | selftest |
 | assertion reachability selftest | `repo` | `python3 scripts/audit_assertion_reachability.py --selftest` | selftest |
+| blocked catalogue | `repo` | `python3 scripts/check_blocked_catalogue.py` | live check |
+| blocked catalogue selftest | `repo` | `python3 scripts/check_blocked_catalogue.py --selftest` | selftest |
 | changelog coverage selftest | `repo` | `python3 scripts/check_changelog_coverage.py --selftest` | selftest |
 | checks.json paths | `repo` | `python3 scripts/check_manifest_paths.py` | live check |
 | checks.json paths selftest | `repo` | `python3 scripts/check_manifest_paths.py --selftest` | selftest |
