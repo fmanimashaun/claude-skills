@@ -101,5 +101,17 @@ GUARD = Guard(
             '        print(f"could not read the coordination record: {e}", file=sys.stderr)\n        return 1',
             "the CLI exits 3 on a corrupt record",
         ),
+        Mutation(
+            "the CLI swaps a sibling's path and remote",
+            '[{"name": n, "path": pth, "remote": r} for n, pth, r in args.sibling]',
+            '[{"name": n, "path": r, "remote": pth} for n, pth, r in args.sibling]',
+            "the CLI records the workspace siblings as {name, path, remote}",
+        ),
+        Mutation(
+            "the CLI close command does nothing",
+            '        err = close(record, args.session_id, os.path.abspath(args.path))\n',
+            '        err = None\n',
+            "the CLI closes a lane, so it leaves the session's open lanes",
+        ),
     ),
 )

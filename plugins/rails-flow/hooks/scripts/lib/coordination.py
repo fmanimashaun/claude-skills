@@ -345,6 +345,17 @@ def selftest() -> int:
         check("the CLI refuses a second claim with exit 2, naming the holder",
               again.returncode == 2 and "solo" in again.stderr, f"{again.returncode} {again.stderr!r}")
 
+        # The CLI paths themselves, not only the functions behind them.
+        ws = subprocess.run([sys.executable, __file__, "workspace", "--session-id", "S1", "--coordinator-name", "solo",
+                             "--sibling", "retask", "/r", "git@x:r.git", "--cwd", str(repo)], capture_output=True, text=True)
+        check("the CLI records the workspace siblings as {name, path, remote}", ws.returncode == 0 and
+              load(record_path(repo)).get("workspace", {}).get("repos") == [{"name": "retask", "path": "/r", "remote": "git@x:r.git"}],
+              f"{ws.returncode} {ws.stderr!r}")
+        cl = subprocess.run([sys.executable, __file__, "close", "--session-id", "S1", "--path", "/w/a", "--cwd", str(repo)],
+                            capture_output=True, text=True)
+        check("the CLI closes a lane, so it leaves the session's open lanes",
+              cl.returncode == 0 and lanes_for(load(record_path(repo)), "S1") == [], f"{cl.returncode} {cl.stderr!r}")
+
         outside = Path(td) / "not-a-repo"
         outside.mkdir()
         check("outside a git repository there is no record", record_path(outside) is None)
