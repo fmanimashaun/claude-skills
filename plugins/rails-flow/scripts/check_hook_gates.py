@@ -131,6 +131,8 @@ def run_hook(name: str, *, cwd: Path, stdin: str, path_prefix: list[Path] = (),
     for k in unset:
         env.pop(k, None)
     env.pop("RAILS_FLOW_LANE", None)
+    for k in [k for k in env if k.startswith(("GIT_", "GH_"))]:
+        env.pop(k, None)                    # a git hook's GIT_DIR, a CI's GH_*: each would route every fixture
     if path_prefix:
         env["PATH"] = os.pathsep.join(str(p) for p in path_prefix) + os.pathsep + env["PATH"]
     if env_extra:
@@ -883,13 +885,42 @@ def guard_claims_fixtures() -> None:
             (Path(td) / ".github" / "pull_request_template.md").write_text(TPL, encoding="utf-8")
             (Path(td) / "body.md").write_text("## What changed\nx\n", encoding="utf-8")
             env = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])}
-            env.pop("GH_REPO", None)
+            for k in [k for k in env if k.startswith(("GIT_", "GH_"))]:
+                env.pop(k, None)
             broke = _run(["bash", str(copy / "guard-claims.sh")], cwd=td, env=env, text=True,
                                    capture_output=True, timeout=60,
                                    input=json.dumps({"tool_input": {"command": f"gh pr create --base dev --body-file {td}/body.md"}}))
     check("guard-claims: a helper that fails at import is BLOCKED, never let through",
           broke.returncode == 2 and "died before judging" in broke.stdout + broke.stderr,
           f"exit {broke.returncode}: {(broke.stdout + broke.stderr)[-120:]}")
+    # #1509: the directory resolver is a checker too. Missing or crashing, it has resolved nothing,
+    # and the session directory is not a safe default: FAIL CLOSED, as #1435 ruled for pr_template.
+    # The review's shape (#1516): a cd plus a RELATIVE body that exists only in the cd target. An absolute
+    # body with no cd reached the template branch's own block; this one used to fail OPEN at "could not
+    # read a --body-file" before any block ran.
+    for label, mangle in (
+            ("missing", lambda f: f.rename(f.with_name("command_cwd_renamed.py"))),
+            ("crashing", lambda f: f.write_text("import sys\nsys.exit(1)\n", encoding="utf-8"))):
+        with tempfile.TemporaryDirectory() as hd:
+            copy = Path(hd) / "scripts"
+            shutil.copytree(HOOKS, copy)
+            mangle(copy / "lib" / "command_cwd.py")
+            with tempfile.TemporaryDirectory() as td:
+                a, b = Path(td) / "a", Path(td) / "b"
+                for d in (a, b):
+                    (d / ".github").mkdir(parents=True)
+                    (d / ".github" / "pull_request_template.md").write_text(TPL, encoding="utf-8")
+                (b / "onlyb.md").write_text(FULL, encoding="utf-8")
+                env = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])}
+                for k in [k for k in env if k.startswith(("GIT_", "GH_"))]:
+                    env.pop(k, None)
+                broke = _run(["bash", str(copy / "guard-claims.sh")], cwd=a, env=env, text=True,
+                             capture_output=True, timeout=60,
+                             input=json.dumps({"tool_input": {"command": f"cd {b} && gh pr create --base dev --body-file onlyb.md"}}))
+        needle = "could not be resolved"
+        check(f"guard-claims: a {label} command_cwd.py is BLOCKED, never the session's template (#1509)",
+              broke.returncode == 2 and needle in broke.stdout + broke.stderr,
+              f"exit {broke.returncode}: {(broke.stdout + broke.stderr)[-120:]}")
     check("guard-claims: `-R` in a double-quoted title with an apostrophe is still text (#1435)",
           run("gh pr create --title \"it's the -R fix\" --base dev --body-file BODY", "## What changed\nx\n",
               template=TPL) == 2, "exit 0")
@@ -905,6 +936,255 @@ def guard_claims_fixtures() -> None:
     check("guard-claims: a | inside a quoted title does not hide a later -R",
           run("gh pr create --title 'a|b' -R o/r --body-file BODY", "## What changed\nx\n", template=TPL) == 0,
           "exit 2")
+
+    # ---- the COMMAND's directory, not the session's (#1509) ----
+    # A hook runs in the session's directory. A session rooted in repo A ran `cd <repo B> && gh pr
+    # create` and was BLOCKED for missing A's sections, while B's template went unchecked. Each body
+    # below satisfies exactly one of the two templates, so a verdict names the template it read.
+    TPL_B = "## Summary\n\n## Risk\n"
+    FITS_B = "## Summary\nTidy the README.\n## Risk\nNone, copy only.\n"
+
+    def run_in(cmd: str, body: str, *, body_in: str = "a", with_output: bool = False, payload_cwd: str = "",
+               env_extra: dict[str, str] | None = None):
+        with tempfile.TemporaryDirectory() as td:
+            a, b = Path(td) / "a", Path(td) / "b"
+            # `a/5` carries B's template, so `cd 5 >/dev/null` read as a bare `cd` (HOME, set to A) is visible.
+            for d, tpl in ((a, TPL), (b, TPL_B), (a / "5", TPL_B)):
+                (d / ".github").mkdir(parents=True)
+                (d / ".github" / "pull_request_template.md").write_text(tpl, encoding="utf-8")
+            # A directory literally named `$NOWHERE`: a `cd $NOWHERE` read literally would find it, so
+            # only the refusal of `$` keeps that fixture red, not the missing-directory check.
+            (a / "$NOWHERE").mkdir()
+            (a / "sub").mkdir()             # `cd sub` resolves here, so only CDPATH can make it unknown
+            (a / "~nobody").mkdir()         # likewise, only the refusal of `~user` keeps that fixture red
+            (b / "sub").mkdir()             # A/linkSub -> B/sub: `cd -P linkSub/..` is B, a logical one A
+            (a / "linkSub").symlink_to(b / "sub")
+            for odd in ("x#y", "x #y"):     # a `#` that is not a comment: B's template one level down
+                (b / odd / ".github").mkdir(parents=True)
+                (b / odd / ".github" / "pull_request_template.md").write_text(TPL_B, encoding="utf-8")
+            where = a if body_in == "a" else b
+            (where / "body.md").write_text(body, encoding="utf-8")
+            cmd = cmd.replace("B_DIR", str(b)).replace("BODY", str(where / "body.md"))
+            payload = {"tool_input": {"command": cmd}}
+            extra = {k: v.replace("B_DIR", str(b)) for k, v in (env_extra or {}).items()}
+            if payload_cwd:
+                payload["cwd"] = str({"a": a, "b": b}[payload_cwd])
+            done = run_hook("guard-claims.sh", cwd=a, stdin=json.dumps(payload),
+                            env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1]), "HOME": str(a), **extra})
+            return done if with_output else done[0]
+
+    check("guard-claims: a `cd <other repo>` is judged against that repo's template (#1509)",
+          run_in("cd B_DIR && gh pr create --base dev --body-file BODY", FULL) == 2, "exit 0")
+    check("guard-claims: ...and a body fitting the cd target's template passes there",
+          run_in("cd B_DIR && gh pr create --base dev --body-file BODY", FITS_B) == 0, "exit 2")
+    check("guard-claims: no cd is the session repo's template (control)",
+          run_in("gh pr create --base dev --body-file BODY", FITS_B) == 2, "exit 0")
+    rc, out = run_in("cd B_DIR && gh pr create -R o/r --base dev --body-file BODY", FULL, with_output=True)
+    check("guard-claims: -R after a cd is still another repository, NOT checked (control)",
+          rc == 0 and "NOT checked (-R" in out, f"exit {rc}: {out[-120:]}")
+    check("guard-claims: a relative --body-file is read from the cd target",
+          run_in("cd B_DIR && gh pr create --base dev --body-file body.md", FITS_B, body_in="b") == 0
+          and run_in("cd B_DIR && gh pr create --base dev --body-file body.md", FULL, body_in="b") == 2,
+          "the relative body was not read from B")
+    check("guard-claims: an issue comment's relative body is read from the cd target too, and its claims checked",
+          run_in("cd B_DIR && gh issue comment 5 --body-file body.md", NUMERIC, body_in="b") == 2, "exit 0")
+    check("guard-claims: `--body-file b.md; echo done` reads b.md, not `b.md;` (#1516)",
+          run_in("cd B_DIR && gh pr create --body-file body.md; echo done", FULL, body_in="b") == 2
+          and run_in("cd B_DIR && gh pr create --body-file body.md; echo done", FITS_B, body_in="b") == 0,
+          "the body was not read")
+    check("guard-claims: the command starts in the payload's cwd, not the hook's own directory",
+          run_in("gh pr create --body-file BODY", FULL, payload_cwd="b") == 2
+          and run_in("gh pr create --body-file BODY", FITS_B, payload_cwd="b") == 0, "judged against A")
+    # THE ALLOWLIST (#1516, round 3). A cd is followed only in the simple grammar: top-level segments joined
+    # by `&&`, `;` or a newline, before the gh segment, each `cd [-P|-L] <one path>` with an optional `>`/`2>`
+    # redirect; the gh segment may carry a known wrapper. FULL fits A and not B, so exit 2 means B was read.
+    for label, cmd in (
+            ("`cd B;`", "cd B_DIR; gh pr create --body-file BODY"),
+            ("a newline after the cd", "cd B_DIR\ngh pr create --body-file BODY"),
+            ("a quoted path", 'cd "B_DIR" && gh pr create --body-file BODY'),
+            ("two cds in a row", "cd B_DIR/.. && cd b && gh pr create --body-file BODY"),
+            ("a cd with its stderr redirected", "cd B_DIR 2>/dev/null && gh pr create --body-file BODY"),
+            ("a cd with its stdout redirected", "cd B_DIR >/dev/null && gh pr create --body-file BODY"),
+            ("`cd 5 >/dev/null` (5 is the directory, not an fd)", "cd 5 >/dev/null && gh pr create --body-file BODY"),
+            ("a leading comment line", "# open the PR\ncd B_DIR && gh pr create --body-file BODY"),
+            ("a leading comment with an apostrophe", "# don't open this from A\ncd B_DIR && gh pr create --body-file BODY"),
+            ("a comment after the cd", "cd B_DIR # go to B\ngh pr create --body-file BODY"),
+            ("a `#` inside a word", "cd B_DIR/x#y && gh pr create --body-file BODY"),
+            ("a `#` inside a quoted path", 'cd "B_DIR/x #y" && gh pr create --body-file BODY'),
+            ("an escaped space before `#` (S-b)", "cd B_DIR/x\\ #y && gh pr create --body-file BODY"),
+            ("a `~/` path", "cd ~/../b && gh pr create --body-file BODY"),
+            ("a redirect before the cd", ">/dev/null cd B_DIR && gh pr create --body-file BODY"),
+            ("`env gh`", "cd B_DIR && env gh pr create --body-file BODY"),
+            ("`env VAR=1 gh`", "cd B_DIR && env PAGER=cat gh pr create --body-file BODY"),
+            ("`VAR=1 gh`", "cd B_DIR && PAGER=cat gh pr create --body-file BODY"),
+            ("`command -p gh`", "cd B_DIR && command -p gh pr create --body-file BODY"),
+            ("an absolute path to gh", "cd B_DIR && /opt/homebrew/bin/gh pr create --body-file BODY"),
+            ("`timeout 60 gh`", "cd B_DIR && timeout 60 gh pr create --body-file BODY"),
+            ("`timeout -k 5 60 gh`", "cd B_DIR && timeout -k 5 60 gh pr create --body-file BODY"),
+            ("`nohup gh`", "cd B_DIR && nohup gh pr create --body-file BODY"),
+            ("`nice -n 5 gh`", "cd B_DIR && nice -n 5 gh pr create --body-file BODY"),
+            ("`exec gh`", "cd B_DIR && exec gh pr create --body-file BODY"),
+            ("`time -p gh`", "cd B_DIR && time -p gh pr create --body-file BODY")):
+        rc, out = run_in(cmd, FULL, with_output=True)
+        # B's own missing section, not just exit 2: a crashing resolver also exits 2, by blocking.
+        check(f"guard-claims: {label} is followed to the cd target's template (#1516 allowlist)",
+              rc == 2 and "## Risk" in out, f"exit {rc}: {out[-140:]}")
+    check("guard-claims: `cd B && env gh` with a body fitting B passes there (control)",
+          run_in("cd B_DIR && env gh pr create --body-file BODY", FITS_B) == 0, "exit 2")
+    check("guard-claims: with no cd, a command before gh leaves it in the starting repo (control)",
+          run_in("git push -u origin x && gh pr create --body-file BODY", FITS_B) == 2, "exit 0")
+    for label, cmd in (("known-safe commands and an assignment before gh", "X=1 git status && echo ok | head -1; gh pr create --body-file BODY"),
+                       ("a logical `cd link/..`, as bash resolves it", "cd linkSub/.. && gh pr create --body-file BODY")):
+        rc, out = run_in(cmd, "Tidy the README.\n", with_output=True)
+        check(f"guard-claims: {label} is judged in the starting repo (control, #1516 round 4)",
+              rc == 2 and "## What changed" in out, f"exit {rc}: {out[-140:]}")
+    # CANNOT TELL: anything else, so ALLOW WITH A LOUD NOTICE (the maintainer's decision on #1509). NEITHER
+    # fits no template, so a judgement against either repository exits 2; only the notice path exits 0.
+    NEITHER = "Tidy the README.\n"
+    NOTICE = "NOT checked (the directory gh runs in could not be resolved"
+    for label, cmd in (
+            # round 3: N1-N5, each judged against the wrong repository at 600614d
+            # round 4: B1, `-P` resolves physically, so it is out of the grammar; B2, the no-cd shortcut is an
+            # allowlist of command words too, so a builtin it does not know (zsh `chdir`) cannot slip past
+            ("B1 `cd -P`", "cd -P B_DIR && gh pr create --body-file BODY"),
+            ("B1 `cd -P link/..`", "cd -P linkSub/.. && gh pr create --body-file BODY"),
+            ("B1 `cd -P link && cd ..`", "cd -P linkSub && cd .. && gh pr create --body-file BODY"),
+            ("B1 `cd -L`", "cd -L B_DIR && gh pr create --body-file BODY"),
+            ("B2 zsh `chdir`", "chdir B_DIR; gh pr create --body-file BODY"),
+            ("B2 `builtin source`", "builtin source /dev/null && gh pr create --body-file BODY"),
+            ("B2 `command .`", "command . /dev/null && gh pr create --body-file BODY"),
+            ("B2 a command word from a variable", "x=cd; $x B_DIR; gh pr create --body-file BODY"),
+            ("B2 an ANSI-quoted `$'cd'`", "$'cd' B_DIR; gh pr create --body-file BODY"),
+            ("B2 an unknown command (an alias or function may cd)", "proj && gh pr create --body-file BODY"),
+            # round 5: GIT_DIR / GIT_WORK_TREE pick gh's repository whatever the directory
+            ("R5 `GIT_DIR=B/.git gh`", "GIT_DIR=B_DIR/.git gh pr create --body-file BODY"),
+            ("R5 `cd B && GIT_DIR=A/.git gh`", "cd B_DIR && GIT_DIR=../a/.git gh pr create --body-file BODY"),
+            ("R5 `GIT_WORK_TREE=B gh`", "GIT_WORK_TREE=B_DIR gh pr create --body-file BODY"),
+            ("R5 `env GIT_DIR=… gh`", "env GIT_DIR=B_DIR/.git gh pr create --body-file BODY"),
+            ("R5 `GIT_DIR=…;` before gh", "GIT_DIR=B_DIR/.git; gh pr create --body-file BODY"),
+            ("R5 `export GIT_DIR=…;` before gh", "export GIT_DIR=B_DIR/.git; gh pr create --body-file BODY"),
+            ("R5 `export GIT_WORK_TREE=…;` before gh", "export GIT_WORK_TREE=B_DIR; gh pr create --body-file BODY"),
+            # round 6: any GIT_* / GH_* is the class, not a list; the reviewer's four, then two of the class
+            ("R6 `GIT_COMMON_DIR`", "GIT_COMMON_DIR=B_DIR/.git gh pr create --body-file BODY"),
+            ("R6 `GIT_CONFIG_GLOBAL`", "GIT_CONFIG_GLOBAL=B_DIR/gitconfig gh pr create --body-file BODY"),
+            ("R6 `GIT_CONFIG_COUNT/KEY_0/VALUE_0`",
+             "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=url.x.insteadOf GIT_CONFIG_VALUE_0=y gh pr create --body-file BODY"),
+            ("R6 `GIT_CONFIG_PARAMETERS`", "GIT_CONFIG_PARAMETERS=\"'remote.origin.url'='x'\" gh pr create --body-file BODY"),
+            ("R6 an arbitrary `GIT_FOO=1` (the class)", "GIT_FOO=1 gh pr create --body-file BODY"),
+            ("R6 `GH_HOST` (the class)", "GH_HOST=example.com gh pr create --body-file BODY"),
+            ("R6 `GH_REPO`, folded into the class", "cd B_DIR && GH_REPO=o/r gh pr create --body-file BODY"),
+            ("R6 `export GH_HOST=…;` before gh", "export GH_HOST=example.com; gh pr create --body-file BODY"),
+            ("R6 `GH_HOST=…;` before gh", "GH_HOST=example.com; gh pr create --body-file BODY"),
+            # round 7: HOME / XDG_CONFIG_HOME set by the command move git's global config (insteadOf); the rest of
+            # the config-redirecting family, each shown with real gh 2.97.0 (`gh browse -n`)
+            ("R7 `HOME=… gh`", "HOME=B_DIR/h gh pr create --body-file BODY"),
+            ("R7 `XDG_CONFIG_HOME=… gh`", "XDG_CONFIG_HOME=B_DIR/x gh pr create --body-file BODY"),
+            ("R7 `env HOME=… gh`", "env HOME=B_DIR/h gh pr create --body-file BODY"),
+            ("R7 `HOME=…;` before gh", "HOME=B_DIR/h; gh pr create --body-file BODY"),
+            ("R7 `export HOME=…;` before gh", "export HOME=B_DIR/h; gh pr create --body-file BODY"),
+            ("R7 `export XDG_CONFIG_HOME=…;` before gh", "export XDG_CONFIG_HOME=B_DIR/x; gh pr create --body-file BODY"),
+            ("R7 `GIT_CONFIG_SYSTEM`", "GIT_CONFIG_SYSTEM=B_DIR/c gh pr create --body-file BODY"),
+            ("R7 `GIT_CONFIG_NOSYSTEM`", "GIT_CONFIG_NOSYSTEM=1 gh pr create --body-file BODY"),
+            ("R7 `GH_CONFIG_DIR`", "GH_CONFIG_DIR=B_DIR/g gh pr create --body-file BODY"),
+            ("R7 `git config --global …insteadOf` before gh", "git config --global url.b.insteadOf a && gh pr create --body-file BODY"),
+            ("R7 `git config …insteadOf` before gh", "git config url.b.insteadOf a; gh pr create --body-file BODY"),
+            ("R7 `git remote set-url` before gh", "git remote set-url origin b; gh pr create --body-file BODY"),
+            ("R7 `gh repo set-default` before gh", "gh repo set-default o/b && gh pr create --body-file BODY"),
+            ("R7 an unknown git option before gh", "git --exec-path=x status && gh pr create --body-file BODY"),
+            ("R7 a write into .git/config before gh", "echo x >> .git/config; gh pr create --body-file BODY"),
+            ("R7 `sed -i` on .git/config before gh", "sed -i.bak s/a/b/ .git/config; gh pr create --body-file BODY"),
+            ("N1 `env -C/dir`", "env -CB_DIR gh pr create --body-file BODY"),
+            ("N1 `env -iC dir`", "env -iC B_DIR gh pr create --body-file BODY"),
+            ("N1 `env -C dir`", "env -C B_DIR gh pr create --body-file BODY"),
+            ("N1 `env --chdir=dir`", "env --chdir=B_DIR gh pr create --body-file BODY"),
+            ("N1 `env -i` (any env option)", "cd B_DIR && env -i gh pr create --body-file BODY"),
+            ("N2 `eval \"cd B\"`", 'eval "cd B_DIR" && gh pr create --body-file BODY'),
+            ("N2 `eval cd B;`", "eval cd B_DIR; gh pr create --body-file BODY"),
+            ("N2 `eval \"$VAR\"`, with no cd in sight", 'eval "$GO" && gh pr create --body-file BODY'),
+            ("N3 a cd in an if/else", "if true; then cd B_DIR; else cd .; fi; gh pr create --body-file BODY"),
+            ("N3 a cd in an if that did not run", "if false; then cd B_DIR; fi; gh pr create --body-file BODY"),
+            ("N3 a cd in a while body", "while false; do cd B_DIR; done; gh pr create --body-file BODY"),
+            ("N3 a cd in a while condition", "while cd B_DIR; do gh pr create --body-file BODY ; break; done"),
+            ("N3 a cd in an until condition", "until cd B_DIR; do :; done; gh pr create --body-file BODY"),
+            ("N3 a cd in a for body", "for x in 1; do cd B_DIR; done; gh pr create --body-file BODY"),
+            ("N4 `false && cd B; gh`", "false && cd B_DIR; gh pr create --body-file BODY"),
+            ("N4 `true || cd B; gh`", "true || cd B_DIR; gh pr create --body-file BODY"),
+            ("N5 `$((1<<2))` before the cd", "echo $((1<<2))\ncd B_DIR && gh pr create --body-file BODY"),
+            ("N5 `(( n = 1 << 2 ))` before the cd", "(( n = 1 << 2 ))\ncd B_DIR && gh pr create --body-file BODY"),
+            # everything else outside the grammar
+            ("a cd inside a subshell", "(cd B_DIR) && gh pr create --body-file BODY"),
+            ("a cd inside a brace group", "{ cd B_DIR; } && gh pr create --body-file BODY"),
+            ("a cd in a case branch", "case x in x) cd B_DIR && gh pr create --body-file BODY;; esac"),
+            ("a gh after a case", "case x in x) cd B_DIR;; esac; gh pr create --body-file BODY"),
+            ("`builtin cd`", "builtin cd B_DIR && gh pr create --body-file BODY"),
+            ("`command cd`", "command cd B_DIR && gh pr create --body-file BODY"),
+            ("an assignment before the cd", "X=1 cd B_DIR && gh pr create --body-file BODY"),
+            ("another command between the cd and gh", "cd B_DIR && git log --oneline -1 # sanity\ngh pr create --body-file BODY"),
+            ("an echo before the cd", "echo 'gh pr create' && cd B_DIR && gh pr create --body-file BODY"),
+            ("a heredoc before the cd", "cat > /dev/null <<'EOF'\nit's a body\nEOF\ncd B_DIR && gh pr create --body-file BODY"),
+            ("a function body's cd", "f() { cd B_DIR; }; gh pr create --body-file BODY"),
+            ("a `function` keyword body's cd", "function f { cd B_DIR; }; gh pr create --body-file BODY"),
+            ("gh inside `bash -c`", 'bash -c "cd B_DIR && gh pr create --body-file BODY"'),
+            ("gh behind `sudo` after a cd", "cd B_DIR && sudo gh pr create --body-file BODY"),
+            ("gh behind `sudo` with no cd", "sudo gh pr create --body-file BODY"),
+            ("gh in an if with no cd", "if true; then gh pr create --body-file BODY; fi"),
+            ("a cd run as a program (`env cd`)", "env cd B_DIR && gh pr create --body-file BODY"),
+            ("`source` before gh", "source /dev/null && gh pr create --body-file BODY"),
+            ("`. file` in an if", "if true; then . /dev/null; fi; gh pr create --body-file BODY"),
+            ("`X=1 . file`", "X=1 . /dev/null && gh pr create --body-file BODY"),
+            ("a cd with an input redirect", "cd B_DIR </dev/null && gh pr create --body-file BODY"),
+            ("a cd to ~user", "cd ~nobody && gh pr create --body-file BODY"),
+            ("`pushd`", "pushd B_DIR && gh pr create --body-file BODY"),
+            ("a bare `cd`", "cd && gh pr create --body-file BODY"),
+            ("`cd -`", "cd - && gh pr create --body-file BODY"),
+            ("a cd with two arguments", "cd B_DIR x && gh pr create --body-file BODY"),
+            ("a cd to a variable", "cd $NOWHERE && gh pr create --body-file BODY"),
+            ("a negated cd", "! cd B_DIR && gh pr create --body-file BODY"),
+            ("a cd to a missing directory", "cd B_DIR/missing && gh pr create --body-file BODY"),
+            ("a cd joined by ||", "cd B_DIR || gh pr create --body-file BODY"),
+            ("a cd joined by |", "cd B_DIR | gh pr create --body-file BODY"),
+            ("a cd joined by &", "cd B_DIR & gh pr create --body-file BODY"),
+            ("an unbalanced quote before the cd", "echo it's\ncd B_DIR && gh pr create --body-file BODY")):
+        rc, out = run_in(cmd, NEITHER, with_output=True)
+        check(f"guard-claims: {label} is NOT checked, with the notice, never a guessed template (#1516 allowlist)",
+              rc == 0 and NOTICE in out, f"exit {rc}: {out[-140:]}")
+    rc, out = run_in("gh pr create --body-file BODY", NEITHER, with_output=True,
+                     env_extra={"GIT_DIR": "B_DIR/.git"})
+    check("guard-claims: GIT_DIR inherited by the hook is NOT checked, with the notice (#1516 round 5)",
+          rc == 0 and NOTICE in out, f"exit {rc}: {out[-140:]}")
+    rc, out = run_in("GIT_PAGER=cat git status && X=1; gh pr create --body-file BODY", NEITHER, with_output=True)
+    check("guard-claims: other assignments before gh keep the starting repo (control, #1516 round 5)",
+          rc == 2 and "## What changed" in out, f"exit {rc}: {out[-140:]}")
+    # round 6: a GIT_* on an earlier SAFE command is that command's own environment, so gh is judged normally;
+    # GH_HOST inherited is the class too; GIT_EDITOR, which the harness sets, is not.
+    rc, out = run_in("GIT_DIR=B_DIR/.git git status && gh pr create --body-file BODY", NEITHER, with_output=True)
+    check("guard-claims: a GIT_* on an earlier SAFE command does not reach gh (control, #1516 round 6)",
+          rc == 2 and "## What changed" in out, f"exit {rc}: {out[-140:]}")
+    rc, out = run_in("gh pr create --body-file BODY", NEITHER, with_output=True, env_extra={"GH_HOST": "example.com"})
+    check("guard-claims: GH_HOST inherited by the hook is NOT checked, with the notice (#1516 round 6)",
+          rc == 0 and NOTICE in out, f"exit {rc}: {out[-140:]}")
+    # round 7: each of these is that process's own, so gh is judged normally (shown with real gh)
+    for label, cmd in (("an inherited HOME", "gh pr create --body-file BODY"),
+                       ("`git -c url…insteadOf=… status` before gh", "git -c url.b.insteadOf=a status && gh pr create --body-file BODY"),
+                       ("`git --config-env=…` before gh", "V=a git --config-env=url.b.insteadOf=V status && gh pr create --body-file BODY"),
+                       ("`HOME=… git status` before gh", "HOME=B_DIR/h git status && gh pr create --body-file BODY"),
+                       ("a redirect to /dev/null and an fd before gh", "git status >/dev/null 2>&1 && gh pr create --body-file BODY"),
+                       ("`gh pr view` before gh", "gh pr view 1 && gh pr create --body-file BODY")):
+        rc, out = run_in(cmd, NEITHER, with_output=True)
+        check(f"guard-claims: {label} is judged in the starting repo (control, #1516 round 7)",
+              rc == 2 and "## What changed" in out, f"exit {rc}: {out[-140:]}")
+    rc, out = run_in("gh pr create --body-file BODY", NEITHER, with_output=True, env_extra={"GIT_EDITOR": "true"})
+    check("guard-claims: an inherited GIT_EDITOR (the harness sets it) is still judged (control, #1516 round 6)",
+          rc == 2 and "## What changed" in out, f"exit {rc}: {out[-140:]}")
+    rc, out = run_in("cd sub && gh pr create --body-file BODY", NEITHER, with_output=True,
+                     env_extra={"CDPATH": "B_DIR"})
+    check("guard-claims: a relative cd with CDPATH set is NOT checked, with the notice (#1516 allowlist)",
+          rc == 0 and NOTICE in out, f"exit {rc}: {out[-140:]}")
+    # S-a: a RELATIVE body with an unresolved directory cannot be located. The message still says the template
+    # and the change type were NOT checked, and why.
+    rc, out = run_in("if true; then cd B_DIR; fi; gh pr create --body-file body.md", NEITHER, body_in="b", with_output=True)
+    check("guard-claims: an unlocatable relative body still says NOT checked, and why (#1516 S-a)",
+          rc == 0 and NOTICE in out and "template" in out, f"exit {rc}: {out[-140:]}")
     check("guard-claims: an issue comment is not held to the PR template",
           run("gh issue comment 5 --body-file BODY", "Tidy the README.\n", template=TPL) == 0, "exit 2")
     # OUT OF SCOPE, AND THE BODY MUST CARRY A CLAIM. A first draft passed a claim-FREE body here,
@@ -961,6 +1241,81 @@ def guard_claims_fixtures() -> None:
     # SCOPE: a PR touching no skill is not subject to the rule, whatever its body says.
     check("guard-claims: a PR touching no skill needs no change type",
           run_in_repo(CREATE, "Tidy the wording.\n", "scripts/x.py") == 0, "exit 2")
+    # #1516 review: the change-type check ran `git diff` in the SESSION's repo. A session with a modified
+    # skills/ file blocked `cd <other repo> && gh pr create` for a PR that touches nothing there.
+    def run_skills_cd(cmd: str) -> int:
+        with tempfile.TemporaryDirectory() as td:
+            a, b = Path(td) / "a", Path(td) / "b"
+            for d in (a, b):
+                d.mkdir()
+                _run(["git", "init", "-q", "-b", "main"], cwd=d, capture_output=True)
+                (d / "README.md").write_text("x\n", encoding="utf-8")
+            (a / "skills").mkdir()
+            (a / "skills" / "x.md").write_text("x\n", encoding="utf-8")
+            for d in (a, b):
+                _run(["git", "add", "-A"], cwd=d, capture_output=True)
+                _run(["git", "-c", "user.email=f@e", "-c", "user.name=f", "commit", "-qm", "base"],
+                     cwd=d, capture_output=True)
+            (a / "skills" / "x.md").write_text("changed\n", encoding="utf-8")
+            # STAGED, because another repository is read through its staged diff only (no code from the target,
+            # #1516): an unstaged change would let a hook that read the wrong repository look right.
+            _run(["git", "add", "skills/x.md"], cwd=a, capture_output=True)
+            (b / "body.md").write_text("Tidy the wording.\n", encoding="utf-8")
+            return run_hook("guard-claims.sh", cwd=a, stdin=json.dumps({"tool_input": {
+                "command": cmd.replace("B_DIR", str(b))}}),
+                env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])})[0]
+
+    check("guard-claims: the skills/** change-type check reads the cd target's diff, not the session's (#1516)",
+          run_skills_cd("cd B_DIR && gh pr create --base dev --body-file body.md") == 0, "exit 2")
+    check("guard-claims: ...and without the cd the session's skills/ change is still held to it (control)",
+          run_skills_cd("gh pr create --base dev --body-file B_DIR/body.md") == 2, "exit 0")
+
+    # NO CODE RUNS BEFORE PERMISSION (#1516, push security reviews). The hook reads `git diff` in the directory
+    # the command `cd`s into, and a hook runs BEFORE the person is asked about the command. A repository's own
+    # config can name a program that `git diff` executes: `core.fsmonitor` on any diff, and a `filter.<name>.clean`
+    # on a diff that hashes a changed working-tree file. Disabling one key was not enough (the first fix left the
+    # clean filter running), so the hook reads a repository other than the session's with only the staged diff, which
+    # hashes nothing. The marker file is what the program writes; it must not exist afterwards.
+    def run_exec_cd(cmd: str, vector: str, stage_skills: bool = False) -> tuple[int, bool]:
+        with tempfile.TemporaryDirectory() as td:
+            a, b = Path(td) / "a", Path(td) / "b"
+            marker, script = Path(td) / "PROGRAM_RAN", Path(td) / "program.sh"
+            script.write_text(f"#!/bin/sh\necho ran >> '{marker}'\n" + ("cat\n" if vector == "filter" else ""),
+                              encoding="utf-8")
+            script.chmod(0o755)
+            for d in (a, b):
+                d.mkdir()
+                _run(["git", "init", "-q", "-b", "main"], cwd=d, capture_output=True)
+                (d / "README.md").write_text("x\n", encoding="utf-8")
+            (b / ".gitattributes").write_text("*.md filter=evil\n", encoding="utf-8")
+            (b / "skills").mkdir()
+            (b / "skills" / "x.md").write_text("x\n", encoding="utf-8")
+            for d in (a, b):
+                _run(["git", "add", "-A"], cwd=d, capture_output=True)
+                _run(["git", "-c", "user.email=f@e", "-c", "user.name=f", "commit", "-qm", "base"],
+                     cwd=d, capture_output=True)
+            (b / "README.md").write_text("changed\n", encoding="utf-8")        # a working-tree change to hash
+            if stage_skills:
+                (b / "skills" / "x.md").write_text("changed\n", encoding="utf-8")
+                _run(["git", "add", "skills/x.md"], cwd=b, capture_output=True)
+            (b / "body.md").write_text("Tidy the wording.\n", encoding="utf-8")
+            key = "core.fsmonitor" if vector == "fsmonitor" else "filter.evil.clean"
+            _run(["git", "config", key, str(script)], cwd=b, capture_output=True)
+            rc = run_hook("guard-claims.sh", cwd=a, stdin=json.dumps({"tool_input": {
+                "command": cmd.replace("B_DIR", str(b))}}),
+                env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])})[0]
+            return rc, marker.exists()
+
+    CD_B = "cd B_DIR && gh pr create --base dev --body-file body.md"
+    rc, ran = run_exec_cd(CD_B, "fsmonitor")
+    check("guard-claims: a cd into a repository whose core.fsmonitor names a program does not run it "
+          "(no code before permission, #1516)", not ran, f"exit {rc}: the repository's own program ran in the hook")
+    rc, ran = run_exec_cd(CD_B, "filter")
+    check("guard-claims: a cd into a repository whose filter.<name>.clean names a program does not run it "
+          "(no code before permission, #1516)", not ran, f"exit {rc}: the repository's own program ran in the hook")
+    rc, ran = run_exec_cd(CD_B, "filter", stage_skills=True)
+    check("guard-claims: ...and the cd target's STAGED skills/ change is still read without running anything (control)",
+          rc == 2 and not ran, f"exit {rc}, program ran: {ran}")
 
     # FAILS OPEN when it cannot read the body. This guard's job is to make the check happen where
     # it can, never to block opening a PR because a path could not be resolved.
