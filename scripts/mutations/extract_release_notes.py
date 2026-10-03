@@ -149,5 +149,27 @@ GUARD = Guard(
         Mutation("a failed lookup no longer exits 3",
                  "            return 3\n        findings += problems", "            versions, problems = {}, []\n        findings += problems",
                  "--check exits 3 (could not check)"),
+
+        # #1523. A block ends at the next `## ` section heading, not only at the next `### `.
+        Mutation("a section heading stops ending a block, so it leaks into the notes above it again",
+                 "        if is_heading or (sections_end_blocks and SECTION.match(line)):",
+                 "        if is_heading or (False and SECTION.match(line)):",
+                 "a section heading after a block's last line is not in that block's notes"),
+        Mutation("the section pattern loses its space, so `##notaheading` prose ends a block",
+                 'SECTION = re.compile(r"^## ")', 'SECTION = re.compile(r"^##")',
+                 "stay in the block"),
+        Mutation("the section pattern matches any `#`, so a comment inside a fenced block ends the block",
+                 'SECTION = re.compile(r"^## ")', 'SECTION = re.compile(r"^#")',
+                 "stay in the block"),
+
+        # #1520 review, S1 remnant: the DEFAULT-tag path (the doctor gate and gates.yml run it).
+        Mutation("current_tag reads metadata.version with a bare subscript again, a KeyError traceback",
+                 '    return "v" + _manifest(root)["metadata"]["version"]',
+                 '    return "v" + json.loads((root / MANIFEST).read_text(encoding="utf-8"))["metadata"]["version"]',
+                 "current_tag: a manifest with no metadata.version raises VersionLookupError"),
+        Mutation("a failed default-tag lookup exits 1 instead of 3",
+                 '        print(f"could not determine the release tag: {e} (exit 3, not a pass)", file=sys.stderr)\n        return 3',
+                 '        print(f"could not determine the release tag: {e} (exit 3, not a pass)", file=sys.stderr)\n        return 1',
+                 "the default-tag lookup failing exits 3"),
     ),
 )
