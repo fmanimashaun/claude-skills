@@ -71,5 +71,19 @@ GUARD = Guard(
             '        out, err = None, None',
             "#1459: an escapee's timeout dropped what the child printed",
         ),
+        Mutation(
+            # #1548
+            'an exception mid-walk skips the kill, leaving the tree SIGSTOPped',
+            '    finally:\n        _kill_frozen(groups, frozen, own)',
+            '    except BaseException:\n        raise\n    _kill_frozen(groups, frozen, own)',
+            '#1548: an exception mid-walk left the tree stopped or running',
+        ),
+        Mutation(
+            # #1548
+            "a new pool inherits the last pool's _closing, so it starts nothing",
+            '    _closing.clear()\n    executor = ThreadPoolExecutor(max_workers=max_workers)',
+            '    executor = ThreadPoolExecutor(max_workers=max_workers)',
+            '#1548: a pool started after an interrupted one refused every child',
+        ),
     ),
 )
