@@ -35,7 +35,7 @@ background process) and PR CI skips the full mutation sweep, so a survivor is ot
 One verdict line, then at most 10 findings: the guard, what survived or what is missing, and the
 command that shows it.
 
-```
+```text
 BLOCKED  1 finding, 3 guards run
   1. check_foo: mutation "drops the length test" SURVIVED  python3 scripts/mutation_check.py --guard check_foo
 ```

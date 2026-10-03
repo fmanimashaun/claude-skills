@@ -52,6 +52,7 @@ is #1565, which measures it first.
 
 Each is a commit a reviewer tested with the defect present, and the commit that fixed it. Diff sizes
 measured with `git diff --shortstat <pre-fix> <fix>`.
+What the agents did on these is in `gauntlet-replay.md`: 2 of 3 caught.
 
 | PR | pre-fix | fix | diff | reproducer |
 |---|---|---|---|---|

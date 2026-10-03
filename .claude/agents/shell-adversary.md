@@ -32,13 +32,20 @@ row's fixture names where the repository already defends it.
    Use the degraded environment too: a PATH with only `bash` and `cat`.
 4. A BLOCK is a command the code should refuse or flag that it allows, or a legitimate command it
    refuses. Report the exact command, the exit status, and the line that decided it.
-5. Do not report a class as clean because the diff did not touch it. Report only what you ran.
+5. **Attack every delimiter the diff introduces or changes.** A control byte, a heredoc terminator,
+   a `;` `&` or newline split, a sentinel line. Put that exact byte inside a quoted string, inside a
+   heredoc body, between two commands, and at the start and end of the input. A separator honoured on
+   the raw text instead of on lexed tokens is the batch-split class: `bash -c 'x<LF><STX><LF>y'; bash
+   -c 'git add -A'` is the shape, with the byte INSIDE the quotes. Testing the byte alone, outside a
+   string, tests a different thing and says nothing about this.
+6. Run each catalogue input in the form the catalogue gives it before running your own paraphrase.
+7. Do not report a class as clean because the diff did not touch it. Report only what you ran.
 
 ## Output
 
 One verdict line, then at most 10 findings. No narration of the search.
 
-```
+```text
 BLOCKED  2 findings, 7 inputs run
   1. e'v'al "git add -A"  -> exit 0 (want 2)   hooks/scripts/guard-bash.sh:88  dequoting happens after the case
   2. no python3 on PATH   -> exit 0 (want 2)   hooks/scripts/guard-bash.sh:61  fallback needs grep
