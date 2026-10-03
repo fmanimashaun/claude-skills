@@ -51,6 +51,12 @@ from pathlib import Path
 from typing import Callable
 
 SCHEMA = 1
+# The record's field names this module READS. `coordination.py` WRITES the first set today; the second
+# set is read here before any writer exists (PR 2 of #1585 adds them), so a reader tolerates their
+# absence. The selftest checks both sets against coordination.py, so neither can drift unseen.
+RECORD_KEYS_WRITTEN = ("coordinator", "sessions", "workspace", "session_id", "name", "since", "branch", "issue",
+                       "state", "updated", "repos", "path", "remote")
+RECORD_KEYS_PLANNED = ("pr", "asks", "events")
 STATE_DIR = ".claude/state"
 BOARD_JSON = "board.json"
 BOARD_HTML = "board.html"
@@ -603,18 +609,23 @@ def collect(env: Env, root: Path) -> dict:
     mode = "orchestrated" if coord or len(open_sessions) > 1 else "single"
 
     prs_items: list[dict] = []
-    prs_state, prs_reason, partial = "ok", "", False
+    prs_reasons: list[str] = []
+    partial = False
+    pr_unavailable = list(unavailable)
     for r in repos:
         p = guarded("pull requests", lambda r=r: collect_prs(env, r, cfg, sessions))
         if p["state"] == "ok":
             prs_items += p["items"]
             partial = partial or bool(p.get("partial"))
         else:
-            prs_state, prs_reason = "unknown", p["reason"]
-    for u in unavailable:
-        prs_state, prs_reason = "unknown", say("unavailable.repo", why=f"{u['repo']}, {u['why']}")
-    prs = panel(prs_state, prs_reason, items=prs_items, count=len(prs_items), partial=partial) if prs_state == "ok" \
-        else unknown(prs_reason, items=prs_items)
+            prs_reasons.append(p["reason"])
+            pr_unavailable.append({"repo": r.name, "why": p["reason"]})
+    # A repo that cannot be read is NAMED, and the repos that can be read still show: one missing
+    # sibling must not blank the whole sheet, and must never read as "no pull request".
+    if prs_reasons and len(prs_reasons) == len(repos):
+        prs = unknown(prs_reasons[0], items=[], unavailable=pr_unavailable)
+    else:
+        prs = panel("ok", "", items=prs_items, count=len(prs_items), partial=partial, unavailable=pr_unavailable)
 
     worktrees = guarded("worktrees", lambda: collect_worktrees(env, root, integration))
     issues = guarded("issues", lambda: collect_issue_count(env, me))
@@ -802,10 +813,12 @@ def render_lines(board: dict) -> str:
 
 def render_prs(board: dict) -> str:
     p = board["panels"]["prs"]
+    miss = "".join(f'<div class="unknown">{_e(say("unavailable.repo", why=f"{u["repo"]}, {u["why"]}"))}</div>'
+                   for u in p.get("unavailable") or [])
     if p["state"] != "ok":
-        return f'<div class="pb">{_unknown_html(p["reason"])}</div>'
+        return f'<div class="pb">{_unknown_html(p["reason"])}{miss}</div>'
     if not p["items"]:
-        return f'<div class="pb"><div class="empty">{_e(say("empty.prs"))}</div></div>'
+        return f'<div class="pb"><div class="empty">{_e(say("empty.prs"))}</div>{miss}</div>'
     rows = "".join(
         "<tr><td class=\"mono\">"
         + (f'<a href="{_e(i["url"], quote=True)}">#{_e(str(i["n"]))}</a>' if i["url"].startswith("https://") else f"#{_e(str(i['n']))}")
@@ -815,7 +828,7 @@ def render_prs(board: dict) -> str:
         + f'</td><td>{mark(i["run"]["state"])}<span class="sub">{_e(i["head"])}</span></td><td>{_e(i["next"])}</td></tr>'
         for i in p["items"])
     return ('<div class="pb tbl"><table><thead><tr><th>PR</th><th>Title</th><th>Author</th><th>Review</th>'
-            f'<th>Full run</th><th>Next</th></tr></thead><tbody>{rows}</tbody></table></div>')
+            f'<th>Full run</th><th>Next</th></tr></thead><tbody>{rows}</tbody></table>{miss}</div>')
 
 
 def render_sessions(board: dict) -> str:
