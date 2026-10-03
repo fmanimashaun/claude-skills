@@ -27,12 +27,14 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
 import sys
 import time
 import tempfile
+import time
 from pathlib import Path
 
 HOOKS = Path(__file__).resolve().parents[1] / "hooks" / "scripts"
@@ -54,7 +56,7 @@ def check(label: str, ok: bool, detail: str = "") -> None:
 # a flake with nothing wrong in the code. Now a timeout is exit 124 with a TIMEOUT line, the fixture
 # that ran it fails by name, and every later fixture still runs. HOOK_GATES_TIMEOUT overrides the
 # bound (the selftest sets it tiny to prove the no-crash path).
-_EXPECTING_TIMEOUT = False      # set only by timeout_fixtures, which times out on purpose
+_EXPECTING_TIMEOUT = False      # set by timeout_fixtures, which times out on purpose, and the #1504 cost check
 
 
 def _run(*args, **kw):
@@ -127,7 +129,8 @@ def _git_repo(root: Path) -> None:
 
 
 def run_hook(name: str, *, cwd: Path, stdin: str, path_prefix: list[Path] = (),
-             env_extra: dict[str, str] | None = None, unset: tuple[str, ...] = ()) -> tuple[int, str]:
+             env_extra: dict[str, str] | None = None, unset: tuple[str, ...] = (),
+             shell: str = "bash") -> tuple[int, str]:
     env = dict(os.environ)
     for k in unset:
         env.pop(k, None)
@@ -136,7 +139,7 @@ def run_hook(name: str, *, cwd: Path, stdin: str, path_prefix: list[Path] = (),
         env["PATH"] = os.pathsep.join(str(p) for p in path_prefix) + os.pathsep + env["PATH"]
     if env_extra:
         env.update(env_extra)
-    done = _run(["bash", str(HOOKS / name)], cwd=cwd, input=stdin, env=env,
+    done = _run([shell, str(HOOKS / name)], cwd=cwd, input=stdin, env=env,
                           capture_output=True, text=True, timeout=60)
     return done.returncode, done.stdout + done.stderr
 
@@ -456,10 +459,39 @@ NEGATIVES_1472 = ["bash -c 'git add app/x.rb'", "bash -c 'git push origin featur
                   "echo \"$(cat <<'EOF'\nAdds :) emoji then `git add -A`\nEOF\n)\""]
 
 
+def normaliser_pipelines(cmd: str) -> int | str:
+    """#1504: how many `_normalize_one` pipelines `normalize_segments` runs for `cmd`. The lib is sourced
+    and `_normalize_one` wrapped to append one byte to a file per call: a file, because each depth's
+    pipeline (and, per string, each recursion) runs in a subshell a shell variable would not survive."""
+    with tempfile.TemporaryDirectory() as td:
+        count = Path(td) / "count"; count.write_text("")
+        script = ('. "$1"\n'
+                  'eval "_nc_counted_$(declare -f _normalize_one)"\n'
+                  '_normalize_one() { printf x >> "$NC_COUNT"; _nc_counted__normalize_one; }\n'
+                  'printf \'%s\' "$CMD" | normalize_segments >/dev/null\n')
+        r = _run(["bash", "-c", script, "count", str(HOOKS / "lib" / "normalize_cmd.sh")], capture_output=True,
+                 text=True, env={**os.environ, "NC_COUNT": str(count), "CMD": cmd})
+        if r.returncode != 0:
+            return f"exit {r.returncode}: {r.stderr.strip()[:200]}"
+        return len(count.read_text())
+
+
+def pattern_expansion_sites() -> list[str] | str:
+    """#1504: every bash pattern-substitution expansion (`${name//…}`, `${name/…}`, `${name%…}`, `${name#…}`)
+    in the functions `lib/normalize_cmd.sh` defines, read from `declare -f` so comments do not count."""
+    script = ('before=$(declare -F); . "$1" || exit 3\n'
+              'for f in $(declare -F | while read -r _ _ n; do case "$before" in (*" $n"*) ;; (*) echo "$n" ;; esac; done); do\n'
+              '  declare -f "$f"\ndone\n')
+    r = _run(["bash", "-c", script, "scan", str(HOOKS / "lib" / "normalize_cmd.sh")], capture_output=True, text=True)
+    if r.returncode != 0 or "normalize_segments" not in r.stdout:
+        return f"scan failed: exit {r.returncode}, {r.stderr.strip()[:200]}"
+    return re.findall(r"\$\{[A-Za-z_][A-Za-z0-9_]*(?:/|%|#)[^}]*\}", r.stdout)
+
+
 def guard_bash_fixtures() -> None:
-    def run(cmd: str) -> int:
+    def run(cmd: str, shell: str = "bash") -> int:
         with tempfile.TemporaryDirectory() as td:
-            return run_hook("guard-bash.sh", cwd=Path(td),
+            return run_hook("guard-bash.sh", cwd=Path(td), shell=shell,
                             stdin=json.dumps({"tool_input": {"command": cmd}}))[0]
 
     for cmd in ("git add -A", "git add .", "git add --all",
@@ -482,6 +514,61 @@ def guard_bash_fixtures() -> None:
         check(f"guard-bash (#1472): `{cmd!r}` runs the command and is blocked", run(cmd) == 2, "exit 0")
     for cmd in NEGATIVES_1472:
         check(f"guard-bash (#1472): CONTROL: `{cmd[:60]!r}` passes", run(cmd) == 0, "exit 2")
+    # #1504: a depth's strings are normalised as ONE batch, so each must still be judged on its own.
+    for cmd, why in (("bash -c 'cat <<EOF'; bash -c 'git add -A'", "an unclosed heredoc in one string does not swallow the next"),
+                     ("bash -c \"echo it's\"; bash -c \"eval 'git add -A'\"", "an unbalanced quote in one string does not stop the next being lexed"),
+                     (" ".join(["echo $(date)"] * 30) + "; bash -c 'git add -A'", "the 31st string of a batch is still seen"),
+                     # #1519 review: a \002 line is a batch boundary only in a batch, never in the raw command...
+                     ("bash -c 'x\n\x02\ny'; bash -c 'git add -A'", "a raw \\002 line does not split the command"),
+                     # ...and a string carrying one cannot fake a boundary inside the next depth's batch.
+                     ("bash -c \"bash -c 'x\n\x02\ny'; bash -c 'git add -A'\"", "a \\002 line inside a string does not split the batch")):
+        check(f"guard-bash (#1504): {why}", run(cmd) == 2, "exit 0")
+    # #1504: COST. The #1498 pre-check used bash's `${var//[set]/}`, superlinear on bash 3.2: an 8 KB PR body
+    # took 32-96 s in guard-bash on dev. The bound is the hook's OWN declared timeout, read from hooks.json,
+    # not a number of ours: past it Claude Code kills the hook. Measured after the fix: 0.16 s.
+    hook_timeout = next(h["timeout"] for e in json.loads((HOOKS.parent / "hooks.json").read_text())["hooks"]["PreToolUse"]
+                        for h in e["hooks"] if "guard-bash.sh" in h["command"])
+    body = "\n".join(f"{i}) line with `code` and (parens)" for i in range(240))
+    pr = f"gh pr create --title t --body \"$(cat <<'EOF'\n{body}\nEOF\n)\""
+    # KILLED at that timeout, as Claude Code kills it: unbounded, the superlinear mutant ran for minutes
+    # under the mutation harness's load and outran the harness's own limit instead of failing here.
+    global _EXPECTING_TIMEOUT
+    saved = os.environ.get("HOOK_GATES_TIMEOUT")
+    os.environ["HOOK_GATES_TIMEOUT"] = str(hook_timeout)
+    _EXPECTING_TIMEOUT = True
+    t0 = time.monotonic()
+    # PINNED to /bin/bash when it exists, as the guard-migrate check above does: that is bash 3.2 on a Mac,
+    # the shell where the cost was measured. `bash` first on PATH may be Homebrew's bash 5, where this
+    # timed check would pass without ever exercising the shell that matters (#1519 review, S-suggestion).
+    timed_shell = "/bin/bash" if Path("/bin/bash").is_file() else "bash"
+    try:
+        rc = run(pr, shell=timed_shell)
+    finally:
+        _EXPECTING_TIMEOUT = False
+        if saved is None:
+            os.environ.pop("HOOK_GATES_TIMEOUT", None)
+        else:
+            os.environ["HOOK_GATES_TIMEOUT"] = saved
+    took = time.monotonic() - t0
+    check(f"guard-bash (#1504): an {len(pr) // 1024} KB PR body is judged inside the hook's {hook_timeout} s timeout, and passes",
+          rc == 0 and took < hook_timeout, "killed at the timeout (exit 124)" if rc == 124 else f"exit {rc}, {took:.1f}s")
+    # #1504: THE SLOW PATH, counted, not timed. bash 3.2's pattern substitution (`${v//[set]/}`, and its `/`,
+    # `%`, `#` kin) is superlinear: on an 8 KB body it cost 32-96 s here. On bash 5 (Linux CI) the same
+    # expansion is fast, so the timed check above cannot see it come back there; only the construct can.
+    # Counted in the functions as BASH PARSED them (`declare -f`: comments gone, so prose cannot trip it).
+    # A RATCHET at the measured 0: the normaliser does its text work in awk and sed, never in bash.
+    sites = pattern_expansion_sites()
+    check("guard-bash (#1504): the normaliser's functions run 0 bash pattern substitutions over the command (ratchet)",
+          sites == [], f"{len(sites)} site(s): {sites[:3]}")
+    # #1504: THE BATCHING, counted, not timed, so load cannot make it flaky. Each depth's strings go through
+    # ONE `_normalize_one` pipeline; per string, as before, 30 strings cost 31 pipelines. A RATCHET at the
+    # measured counts: a rise is the regression; a drop means the code got cheaper, so lower the number here.
+    for cmd, want, what in ((" ".join(["echo $(date)"] * 30), 2, "30 `$(…)` strings at one depth"),
+                            ("; ".join(["bash -c \"bash -c 'eval x'\""] * 10), 4, "10 strings nested 3 deep"),
+                            ("git status", 1, "CONTROL: a command with no strings")):
+        got = normaliser_pipelines(cmd)
+        check(f"guard-bash (#1504): {what} cost {want} normaliser pipeline(s), one per depth (ratchet)",
+              got == want, f"{got} pipelines" + (": lower the ratchet" if isinstance(got, int) and got < want else ""))
     # FAIL CLOSED without the lib: a staged copy of the hook with lib/ removed must still block the raw text.
     with tempfile.TemporaryDirectory() as td:
         stage = Path(td) / "hooks"; shutil.copytree(HOOKS, stage); shutil.rmtree(stage / "lib")
