@@ -127,8 +127,8 @@ pass on 2.1.288.
 **What CI checks, and what it cannot.**
 - *CI runs* `plugins/rails-flow/scripts/check_mods.py` (doctor gate "mod unit tests"): `tests/*.unit.mjs` drive
   the mod's hooks under plain Node with a hand-built host, and `register.unit.mjs` checks that `register.js`
-  registers each event and matcher once. The mutation guards `context_nudge` (12 mutations) and
-  `mods_register` (2) run in the mutation coverage sweep, so these checks are known to be able to fail.
+  registers each event and matcher once. The mutation guards `context_nudge`, `mods_register` and
+  `hooks_json_modules` run in the mutation coverage sweep, so these checks are known to be able to fail.
 - *CI cannot run* `claude plugin validate` or `claude plugin test`, which need the `claude` CLI; the gate
   runners do not have it (`check_hook_commands.py` says the same). They check that the engine accepts the
   module and calls these hooks with these event shapes, and they run on a maintainer's machine: 8 tests in
