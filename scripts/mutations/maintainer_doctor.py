@@ -166,19 +166,19 @@ GUARD = Guard(
         # nobody thinks of -- an "allowance" that is really a tightening.
         Mutation(
             "the slow-gate allowance is keyed on a gate that does not exist",
-            '    "mutation coverage": 1800,',
+            '    "mutation coverage": 3600,',
             '    "mutatoin coverage": 900,',
             "SLOW_GATES names no such gate",
         ),
         Mutation(
             "the slow-gate allowance widens to a gate that reads the tree once",
-            '    "mutation coverage": 1800,',
+            '    "mutation coverage": 3600,',
             '    "mutation coverage": 900,\n    "packaging determinism": 900,',
             "SLOW_GATES is",
         ),
         Mutation(
             "a SLOW_GATES entry silently tightens a gate instead of loosening it",
-            '    "mutation coverage": 1800,',
+            '    "mutation coverage": 3600,',
             '    "mutation coverage": 30,',
             "silently TIGHTENS a gate",
         ),
@@ -192,7 +192,7 @@ GUARD = Guard(
         Mutation(
             # #1486 / review of PR #1491
             "the gate's total drops below mutation_check's own caps, so a hung guard is killed unnamed",
-            '    "mutation coverage": 1800,',
+            '    "mutation coverage": 3600,',
             '    "mutation coverage": 1200,',
             "must stay under the gate's total",
         ),
