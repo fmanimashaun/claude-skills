@@ -12,7 +12,7 @@ GUARD = Guard(
     name="proc_group",
     subject="scripts/proc_group.py",
     selftest="scripts/mutation_check_selftest.py",
-    deps=("scripts/mutation_check.py", "scripts/mutation_types.py", "scripts/hermetic_git.py"),
+    deps=("scripts/mutation_check.py", "scripts/mutation_types.py", "scripts/hermetic_git.py", "plugins/rails-flow/scripts/process_containment.py",),
     mutations=(
         Mutation(
             'the child shares our process group',

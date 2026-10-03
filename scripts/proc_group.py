@@ -102,7 +102,13 @@ def kill_tree(root: int) -> None:
 
 
 def _kill_frozen(groups: set[int], frozen: set[int], own: int) -> None:
-    """SIGKILL every group a frozen process leads (never our own) and every frozen process."""
+    """SIGKILL every group a frozen process leads (never our own) and every frozen process.
+
+    PID REUSE IS NOT GUARDED, deliberately (#1548 item 2). A pid in `frozen` was SIGSTOPped by us a
+    moment ago, so it cannot exit and be reaped before this SIGKILL unless something else SIGCONTs it
+    first, and its parent is in the same tree, frozen too. Re-checking parentage here would add a
+    second `ps` and a second race for a window that, in practice, does not open.
+    """
     for pgid in groups - {own}:
         _signal(pgid, signal.SIGKILL, group=True)
     for pid in frozen:
@@ -126,7 +132,9 @@ def pool(max_workers: int):
     cancelled before the pool is joined, so the join returns in seconds, not at the slowest mutant."""
     from concurrent.futures import ThreadPoolExecutor
     # A NEW pool starts open (#1548): `kill_all` sets `_closing` for the pool it interrupts, and nothing
-    # cleared it, so every later pool in the same process refused all of its children.
+    # cleared it, so every later pool in the same process refused all of its children. `_closing` is
+    # process-wide, so this assumes pools run ONE AT A TIME (the only caller, mutation_check, does):
+    # a second pool opened while another is mid-interrupt would re-open the first.
     _closing.clear()
     executor = ThreadPoolExecutor(max_workers=max_workers)
     try:

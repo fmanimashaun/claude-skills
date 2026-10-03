@@ -10,7 +10,7 @@ GUARD = Guard(
     name="hermetic_git",
     subject="scripts/hermetic_git.py",
     selftest="scripts/mutation_check_selftest.py",
-    deps=("scripts/mutation_check.py", "scripts/mutation_types.py", "scripts/proc_group.py"),
+    deps=("scripts/mutation_check.py", "scripts/mutation_types.py", "scripts/proc_group.py", "plugins/rails-flow/scripts/process_containment.py",),
     mutations=(
         Mutation(
             "a caller's GIT_CONFIG pairs are overwritten",
