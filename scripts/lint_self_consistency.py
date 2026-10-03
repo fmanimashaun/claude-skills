@@ -1820,6 +1820,51 @@ def check_conflict_markers() -> tuple[list[Finding], int]:
     return findings, examined
 
 
+# A selftest that starts processes, and the two halves of using the containment helper (#1582).
+_SPAWNS = re.compile(r"\b(?:subprocess|_sp)\.Popen\(|\bos\.fork\(|start_new_session\s*=\s*True")
+_CONTAIN_IMPORT = re.compile(r"^\s*from\s+process_containment\s+import\s+[^#\n]*\bcontained\b", re.M)
+_CONTAIN_WITH = re.compile(r"^\s*with\s+contained\(", re.M)
+
+
+def check_uncontained_process_fixtures() -> tuple[list[Finding], int]:
+    """A selftest that starts processes runs inside `process_containment.contained()` (#1582).
+
+    A red-first reproduction of a process bug leaks by design. On 2026-10-03 one ran 74 times with no
+    containment, left 74 stopped, orphaned trees, and every `fork()` on the machine failed. Scoped to
+    files named `*selftest*.py` that start processes (`Popen`, `os.fork`, a new session). Both the
+    import AND a `with contained(` block are required: a comment that names the helper is not using
+    it -- the leak's own cleanup matched a marker that was never there, and said nothing.
+
+    WHAT IT CHECKS IS PRESENCE, NOT ENCLOSURE (#1589 review L1). It does not prove the block wraps the
+    spawn: `with contained(): pass` followed by the spawn, or a block in a never-called function, both
+    pass. Lexical enclosure would refuse the normal shape -- `run()`'s spawns, under `with contained():`
+    in `__main__` -- so the rule asks for the deliberate act and the review checks the wrapping.
+    NOT SEEN (L2): a selftest that starts processes only through `subprocess.run` / `check_output` /
+    `os.system` (those wait for their child, so a leak needs a grandchild); measured, 3 such files.
+    """
+    findings: list[Finding] = []
+    examined = 0
+    for path in walk(".py"):
+        if "selftest" not in path.name:
+            continue
+        text = read(path)
+        if not _SPAWNS.search(text):
+            continue
+        examined += 1
+        if _CONTAIN_IMPORT.search(text) and _CONTAIN_WITH.search(text):
+            continue
+        line = next(n for n, ln in enumerate(text.splitlines(), 1) if _SPAWNS.search(ln))
+        findings.append(Finding(
+            "uncontained-process-fixture", rel(path), line,
+            "this selftest starts processes but does not import and use `process_containment.contained()` "
+            "(the rule checks both are present, not that the block encloses every spawn) -- "
+            "a fixture built to leak (a red-first process bug) left 74 stopped orphans on 2026-10-03 and "
+            "exhausted the user's process limit (#1582). Import it from "
+            "`plugins/rails-flow/scripts/process_containment.py` and run the selftest under `with contained():`",
+        ))
+    return findings, examined
+
+
 # A pointer to one of OUR files, in one of the two forms that are unambiguously ours:
 #   `${CLAUDE_PLUGIN_ROOT}/reference/x.md`  -- resolved against the OWNING plugin's directory
 #   `skills/rails-8/references/style.md`    -- resolved against the repo root
@@ -3535,6 +3580,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     call_sites, call_coverage = check_doctrine_call_sites()
     invisible, invisible_examined = check_invisible_characters()
     markers, markers_examined = check_conflict_markers()
+    uncontained, uncontained_examined = check_uncontained_process_fixtures()
     pointers, pointers_examined = check_doc_pointers()
     rel_links, rel_links_examined = check_broken_relative_link()
     leaving, leaving_examined = check_link_leaves_package()
@@ -3589,6 +3635,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "documented_components": components_examined,
         "shipped_files_scanned_for_invisibles": invisible_examined,
         "files_scanned_for_conflict_markers": markers_examined,
+        "process_spawning_selftests_examined": uncontained_examined,
         "doc_pointers_examined": pointers_examined,
         "docs_relative_links_examined": rel_links_examined,
         "package_relative_links_examined": leaving_examined,
@@ -3630,7 +3677,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         **call_coverage,
     }
     return (dead + unenforced + undocumented + undoc_cmds + growth + hook_lib + bare + misdesc + unbounded + author_me + components + call_sites + invisible
-            + markers + pointers + rel_links + leaving + outlines + uninstallable + plugin_root + mkt_ver + coercions + topologies + schema + unwired
+            + markers + uncontained + pointers + rel_links + leaving + outlines + uninstallable + plugin_root + mkt_ver + coercions + topologies + schema + unwired
             + ci_gates + cl_ignore + controllers + labels + comp_labels + orphans + keyfilter
             + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
             + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref + action_pins
@@ -5403,6 +5450,26 @@ def selftest() -> int:
              files={"skills/x/references/t.md": "    @variant, @size = variant.to_sym, size.to_sym\n"})
     scenario("outside shipped docs is out of scope", rule=UC, expect_finding=False,
              files={"docs/x.md": "    @px = SIZE[size.to_sym] || size.to_i\n"})
+
+    # ---- uncontained-process-fixture (#1582) ---------------------------------------
+    UP = "uncontained-process-fixture"
+    SPAWN = "import subprocess, sys\nsubprocess.Popen([sys.executable, '-c', 'pass'])\n"
+    CONTAINED = ("from process_containment import contained\n" + "def run():\n    " + SPAWN.replace("\n", "\n    ")
+                 + "\nwith contained():\n    run()\n")
+    scenario("a selftest that starts processes with no containment", rule=UP, only=check_uncontained_process_fixtures,
+             expect_finding=True, files={"scripts/x_selftest.py": SPAWN})
+    scenario("a selftest that forks with no containment", rule=UP, only=check_uncontained_process_fixtures,
+             expect_finding=True, files={"plugins/rails-flow/scripts/y_selftest.py": "import os\nif os.fork() == 0:\n    os._exit(0)\n"})
+    scenario("a selftest that only NAMES contained() in a comment", rule=UP, only=check_uncontained_process_fixtures,
+             expect_finding=True, files={"scripts/x_selftest.py": "# runs under contained() -- not really\n" + SPAWN})
+    scenario("a selftest that imports the helper but never uses it", rule=UP, only=check_uncontained_process_fixtures,
+             expect_finding=True, files={"scripts/x_selftest.py": "from process_containment import contained\n" + SPAWN})
+    scenario("a contained selftest", rule=UP, only=check_uncontained_process_fixtures,
+             expect_finding=False, files={"scripts/x_selftest.py": CONTAINED})
+    scenario("a selftest that starts no processes", rule=UP, only=check_uncontained_process_fixtures,
+             expect_finding=False, files={"scripts/x_selftest.py": "print('no processes')\n"})
+    scenario("a non-selftest file that starts processes (out of scope)", rule=UP, only=check_uncontained_process_fixtures,
+             expect_finding=False, files={"scripts/runner.py": SPAWN})
 
     # ---- conflict-marker (#1543) -------------------------------------------------
     CM = "conflict-marker"
