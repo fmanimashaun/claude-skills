@@ -129,8 +129,8 @@ class World:
                 return v
         return None
 
-    def env(self, budget: float = 40.0) -> "sb.Env":
-        return sb.Env(self.run, self.read, NOW, budget)
+    def env(self, budget: float = 40.0, clock=None) -> "sb.Env":
+        return sb.Env(self.run, self.read, NOW, budget, clock) if clock else sb.Env(self.run, self.read, NOW, budget)
 
     def board(self, budget: float = 40.0) -> dict:
         return sb.collect(self.env(budget), self.root)
@@ -148,12 +148,38 @@ def by_n(board: dict) -> dict:
     return {i["n"]: i for i in items(board, "prs")}
 
 
+def fstring_quote_reuse(source: str) -> list:
+    """Line numbers where an f-string's replacement field holds a string quoted with the f-string's OWN
+    quote. Python 3.12 allows it and every older Python refuses the file (the stock macOS python3 is 3.9),
+    and CI runs 3.12, so nothing else sees it. On Python before 3.12 the tokenizer cannot see inside an
+    f-string, but there such a file does not compile at all, so there is nothing to find."""
+    import io
+    import tokenize
+    if not hasattr(tokenize, "FSTRING_START"):
+        return []
+    stack: list = []                         # (quote character, is triple) per open f-string
+    bad: list = []
+    for tok in tokenize.generate_tokens(io.StringIO(source).readline):
+        if tok.type == tokenize.FSTRING_START:
+            q = tok.string.lstrip("fFrRbBuU")
+            if stack and not stack[-1][1] and stack[-1][0] == q[0]:
+                bad.append(tok.start[0])
+            stack.append((q[0], len(q) == 3))
+        elif tok.type == tokenize.FSTRING_END:
+            stack.pop()
+        elif tok.type == tokenize.STRING and stack and not stack[-1][1]:
+            if tok.string.lstrip("rRbBuUfF")[0] == stack[-1][0]:
+                bad.append(tok.start[0])
+    return sorted(set(bad))
+
+
 def run() -> int:
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td).resolve()
         pull_requests(tmp)
         measured_panels(tmp)
         unknown_not_zero(tmp)
+        review_59(tmp)
         bounded_counts(tmp)
         coordination(tmp)
         workspace(tmp)
@@ -162,6 +188,7 @@ def run() -> int:
         the_page(tmp)
         the_command(tmp)
         read_only(tmp)
+        portable()
     for f in FAILURES:
         print(f"FAIL: {f}", file=sys.stderr)
     print(f"status_board selftest: {CHECKS[0]} checks, {len(FAILURES)} failure(s)")
@@ -371,6 +398,123 @@ def unknown_not_zero(tmp: Path) -> None:
     w = w_with(tmp, "badcfg")
     w.files[str(w.root / sb.CONFIG)] = "{nope"
     check("a broken config is reported and the defaults still draw", w.board()["config_error"] != "")
+
+
+# ---- the findings of the independent review of #1595 (59) ---------------------------------------------
+def review_59(tmp: Path) -> None:
+    # 1. An unreadable record: asks and events are UNKNOWN too, not "nothing is waiting" / "no events".
+    w = w_with(tmp, "r59a")
+    w.record("{ not json")
+    b = w.board()
+    page = sb.render_html(b)
+    check("an unreadable record makes the ASKS panel UNKNOWN, with the record's reason",
+          b["panels"]["asks"]["state"] == "unknown" and "coordination record" in b["panels"]["asks"]["reason"],
+          str(b["panels"]["asks"]))
+    check("...and the page does not say 'Nothing is waiting on you.'", "Nothing is waiting on you." not in page)
+    ev = b["panels"]["events"]
+    check("an unreadable record makes TODAY partial, never a plain empty timeline",
+          ev.get("partial") is True and "coordination record" in ev.get("note", "") and "No event is recorded today." not in page,
+          str(ev))
+    check("the summary does not count the asks panel as measured", sum(1 for p in b["panels"].values() if p["state"] == "ok")
+          == sum(1 for k, p in b["panels"].items() if p["state"] == "ok" and k != "asks"))
+    w.record({"version": 1, "coordinator": None, "sessions": {}, "events": [{"time": "09:00", "text": "Recorded event."}]})
+    b = w.board()
+    check("near miss: a readable record with no asks says nothing is waiting, and Today is not partial",
+          b["panels"]["asks"]["state"] == "ok" and not b["panels"]["events"].get("partial")
+          and "Nothing is waiting on you." in sb.render_html(b))
+    w = w_with(tmp, "r59b")
+    b = w.board()
+    check("no record at all: asks is ok and empty, and the page says why there are none",
+          b["panels"]["asks"]["state"] == "ok" and "no coordination record" in sb.render_html(b))
+
+    # 2. An empty HEAD is unknown, not "not merged"
+    w = w_with(tmp, "r59c")
+    r = str(w.root)
+    w.on(["git", "worktree", "list", "--porcelain"], f"worktree {r}\nHEAD {'1' * 40}\nbranch refs/heads/dev\n\nworktree /w/nohead\nbranch refs/heads/x\n\n", cwd=r)
+    w.on(["git", "-C", "/w/nohead", "status", "--porcelain"], "")
+    wt = {i["branch"]: i for i in items(w.board(), "worktrees")}
+    check("a worktree row with no HEAD reads merged UNKNOWN, never 'not merged'", wt["x"]["merged"] is None and wt["x"]["finished"] is False,
+          str(wt["x"]))
+
+    # 3. An empty head cannot make a review look current
+    w = w_with(tmp, "r59d")
+    p = pr(40)
+    p["headRefOid"] = ""
+    w.gh_set(["pr", "list", "--state", "open", "--limit", "100", "--json", PR_FIELDS], [p])
+    w.gh_set(["pr", "view", "40", "--json", "comments"], {"comments": [review("abc1234", "CLEAN")]})
+    check("a pull request with no head commit has an UNKNOWN review, not a current one",
+          by_n(w.board())[40]["review"]["state"] == "unknown", str(by_n(w.board())[40]["review"]))
+
+    # 4. A run list that hit its window cannot say "not dispatched"
+    w = w_with(tmp, "r59e")
+    w.config({"full_run_workflow": "gates.yml"})
+    w.gh_set(["pr", "list", "--state", "open", "--limit", "100", "--json", PR_FIELDS], [pr(41), pr(42)])
+    for n in (41, 42):
+        w.gh_set(["pr", "view", str(n), "--json", "comments"], {"comments": [review(head(n)[:7], "CLEAN")]})
+    other = lambda k: [{"databaseId": i, "status": "completed", "conclusion": "success", "event": "pull_request"} for i in range(k)]
+    w.gh_set(["run", "list", "--workflow", "gates.yml", "--commit", head(41), "--limit", "20", "--json", RUN_FIELDS], other(20))
+    w.gh_set(["run", "list", "--workflow", "gates.yml", "--commit", head(42), "--limit", "20", "--json", RUN_FIELDS], other(19))
+    t = by_n(w.board())
+    check("20 runs of other events (the whole window) is UNKNOWN: a dispatched run may lie beyond it",
+          t[41]["run"]["state"] == "unknown" and t[41]["run"].get("partial") is True, str(t[41]["run"]))
+    check("near miss: 19 runs of other events (the window not full) is 'not dispatched'", t[42]["run"]["state"] == "not dispatched",
+          str(t[42]["run"]))
+
+    # 5. "Merge." only when GitHub says the pull request can merge
+    w = w_with(tmp, "r59f")
+    w.config({"full_run_workflow": "gates.yml"})
+    states = {50: "CLEAN", 51: "HAS_HOOKS", 52: "BLOCKED", 53: "UNKNOWN", 54: "BEHIND", 55: "UNSTABLE", 56: ""}
+    w.gh_set(["pr", "list", "--state", "open", "--limit", "100", "--json", PR_FIELDS], [pr(n, merge=m) for n, m in states.items()])
+    for n in states:
+        w.gh_set(["pr", "view", str(n), "--json", "comments"], {"comments": [review(head(n)[:7], "CLEAN")]})
+        w.gh_set(["run", "list", "--workflow", "gates.yml", "--commit", head(n), "--limit", "20", "--json", RUN_FIELDS],
+                 [{"databaseId": n, "status": "completed", "conclusion": "success", "event": "workflow_dispatch"}])
+    t = by_n(w.board())
+    check("CLEAN and HAS_HOOKS with a clean review and a green run say 'Merge.'", t[50]["next"] == "Merge." and t[51]["next"] == "Merge.")
+    for n in (52, 53, 54, 55, 56):
+        check(f"merge state {states[n] or '(empty)'} with a clean review and a green run does NOT say 'Merge.'",
+              t[n]["next"] != "Merge." and t[n]["next"] in {v for v, _ in sb.TEXT.values()}, t[n]["next"])
+    check("BLOCKED names what to look for", "Find" in t[52]["next"], t[52]["next"])
+
+    # 6. Today marks itself partial at its limit
+    w = w_with(tmp, "r59g")
+    day = lambda k: [{"number": i, "title": f"m{i}", "mergedAt": "2026-10-03T10:00:00Z"} for i in range(k)]
+    argv = ["pr", "list", "--state", "merged", "--search", "merged:>=2026-10-03", "--limit", "50", "--json", "number,title,mergedAt"]
+    w.gh_set(argv, day(50))
+    b = w.board()
+    check("a merged-today list that hit its limit marks Today partial, in the record and on the page",
+          b["panels"]["events"].get("partial") is True and "50 or more" not in "" and "minimum" in sb.render_html(b), str(b["panels"]["events"].get("note")))
+    w.gh_set(argv, day(49))
+    check("near miss: 49 merged today is exact", not w.board()["panels"]["events"].get("partial"))
+
+    # 7. The time floor: the last call cannot overrun the budget
+    class Clock:
+        t = 0.0
+        def __call__(self): return self.t
+    clk = Clock()
+    seen: list[float] = []
+    def slow(argv, cwd, timeout=20.0):
+        seen.append(timeout)
+        clk.t += 4.5                       # each call "takes" 4.5 s of a 5 s budget
+        return 1, ""
+    env = sb.Env(slow, lambda p: None, NOW, 5.0, clk)
+    first = env.sh(["x"])
+    second = env.sh(["y"])
+    third = env.sh(["z"])
+    check("a call is given exactly the time left, never a 1 s floor (0.5 s left -> a 0.5 s timeout)",
+          len(seen) == 2 and seen[0] == 5.0 and abs(seen[1] - 0.5) < 1e-9, str(seen))
+    check("once the budget is spent a call does not run at all (124)", third == (124, "") and len(seen) == 2, str((third, seen)))
+    del first, second
+
+    # 8. A relative sibling path resolves against --root, not the process directory
+    a = w_with(tmp, "r59h")
+    sib = World(tmp, "r59h-sib")
+    a.sibling_worlds.append(sib)
+    sib.record({"version": 1, "coordinator": None, "sessions": {"/s/x": {"session_id": "Z", "name": "z", "branch": "b", "state": "working"}}})
+    a.record({"version": 1, "coordinator": None, "sessions": {}, "workspace": {"repos": [{"name": "sib", "path": "../r59h-sib", "remote": ""}]}})
+    b = a.board()
+    check("a relative sibling path resolves against the repository root", not b["panels"]["sessions"]["unavailable"]
+          and [s["repo"] for s in items(b, "sessions")] == ["sib"], str(b["panels"]["sessions"]))
 
 
 # ---- counts are bounded ------------------------------------------------------------------------------
@@ -668,6 +812,20 @@ def the_command(tmp: Path) -> None:
           len(done.stdout.splitlines()[0].split()) < 30)
     check("the file mode is owner-only", oct((state / "board.json").stat().st_mode & 0o777) == "0o600")
     del html_before
+
+
+# ---- shipped scripts must parse on the stock python3 (3.9) ---------------------------------------------
+def portable() -> None:
+    here = Path(__file__).resolve().parent
+    check("the lint sees an f-string that reuses its own quote",
+          fstring_quote_reuse('x = f"{d["k"]}"\n') != [] or not hasattr(__import__("tokenize"), "FSTRING_START"))
+    check("near miss: an f-string with a different inner quote is fine",
+          fstring_quote_reuse("x = f\"{d['k']}\"\n") == [] and fstring_quote_reuse("x = f'{d[\"k\"]}'\n") == [])
+    check("near miss: a triple-quoted f-string may hold a single-quoted string",
+          fstring_quote_reuse('x = f"""{d["k"]}"""\n') == [])
+    for name in ("status_board.py", "status_board_selftest.py"):
+        found = fstring_quote_reuse((here / name).read_text(encoding="utf-8"))
+        check(f"no f-string in {name} reuses its own quote (that file would not parse on Python 3.9)", found == [], str(found))
 
 
 # ---- read-only ---------------------------------------------------------------------------------------

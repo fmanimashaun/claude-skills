@@ -64,6 +64,7 @@ BOARD_HTML = "board.html"
 CONFIG = ".claude/board.config.json"
 COORD_FILE = "coordination.json"
 
+RUN_LIMIT = 20          # runs read per head, to find the dispatched one
 CALL_TIMEOUT = 20.0     # the longest one command may run, seconds
 PR_LIMIT = 100          # open pull requests read per repository
 PR_DETAIL_CAP = 30      # pull requests that get a per-PR review and run lookup
@@ -122,6 +123,10 @@ TEXT: dict[str, tuple[str, str]] = {
     "next.run_red": ("Fix the full run.", "instruction"),
     "next.run_unknown": ("Check the full run.", "instruction"),
     "next.merge": ("Merge.", "instruction"),
+    "next.behind": ("Update the branch.", "instruction"),
+    "next.merge_blocked": ("Find the missing check or review.", "instruction"),
+    "next.unstable": ("Fix the failing check.", "instruction"),
+    "next.merge_unknown": ("Check the merge state.", "instruction"),
     # limits
     "limit.processes": ("Processes of this user", "label"),
     "limit.zombies": ("Zombie processes", "label"),
@@ -205,18 +210,20 @@ Reader = Callable[[Path], "str | None"]
 
 
 class Env:
-    def __init__(self, run: Runner, read: Reader, now: dt.datetime, budget: float = 40.0):
-        self.run, self.read, self.now = run, read, now
-        self.deadline = time.monotonic() + budget
+    def __init__(self, run: Runner, read: Reader, now: dt.datetime, budget: float = 40.0,
+                 clock: Callable[[], float] = time.monotonic):
+        self.run, self.read, self.now, self.clock = run, read, now, clock
+        self.deadline = clock() + budget
         self.calls = 0
 
     def sh(self, argv: list, cwd: "str | Path | None" = None) -> tuple[int, str]:
         """Run one command; (124, "") when the time budget is spent, (127, "") when it cannot start."""
-        if time.monotonic() > self.deadline:
+        left = self.deadline - self.clock()
+        if left <= 0:
             return 124, ""
         self.calls += 1
-        left = max(1.0, min(CALL_TIMEOUT, self.deadline - time.monotonic()))   # never wait past the budget
-        return self.run(argv, str(cwd) if cwd else None, left)
+        # Exactly the time left (capped), with no floor: a floor lets the last call overrun the budget.
+        return self.run(argv, str(cwd) if cwd else None, min(CALL_TIMEOUT, left))
 
 
 def real_run(argv: list, cwd: "str | None", timeout: float = 20.0) -> tuple[int, str]:
@@ -332,6 +339,8 @@ def collect_prs(env: Env, repo: Repo, cfg: dict, sessions: list[dict]) -> dict:
 
 
 def review_of(env: Env, repo: Repo, cfg: dict, n: object, head: str) -> dict:
+    if not head:
+        return {"state": "unknown"}          # no head commit: no verdict can be compared with it
     rc, out = repo.gh(env, ["pr", "view", str(n), "--json", "comments"])
     data = _json(out) if rc == 0 else None
     if not isinstance(data, dict):
@@ -357,7 +366,7 @@ def run_of(env: Env, repo: Repo, cfg: dict, head: str) -> dict:
     wf = cfg.get("full_run_workflow")
     if not wf:
         return {"state": "unknown"}
-    rc, out = repo.gh(env, ["run", "list", "--workflow", str(wf), "--commit", head, "--limit", "20",
+    rc, out = repo.gh(env, ["run", "list", "--workflow", str(wf), "--commit", head, "--limit", str(RUN_LIMIT),
                             "--json", "databaseId,status,conclusion,event"])
     data = _json(out) if rc == 0 else None
     if not isinstance(data, list):
@@ -365,7 +374,8 @@ def run_of(env: Env, repo: Repo, cfg: dict, head: str) -> dict:
     ev = cfg.get("full_run_event")
     runs = [r for r in data if not ev or r.get("event") == ev]
     if not runs:
-        return {"state": "not dispatched"}
+        # A full window of other events says nothing about a dispatched run beyond it.
+        return {"state": "unknown", "partial": True} if len(data) >= RUN_LIMIT else {"state": "not dispatched"}
     r = runs[0]                              # gh lists newest first
     if r.get("status") != "completed":
         return {"state": "running", "id": r.get("databaseId")}
@@ -395,7 +405,10 @@ def next_action(item: dict) -> str:
     if run == "running":
         return say("next.run_wait")
     if run == "green":
-        return say("next.merge")
+        ms = item["merge_state"]
+        if ms in ("CLEAN", "HAS_HOOKS"):
+            return say("next.merge")
+        return say({"BEHIND": "next.behind", "BLOCKED": "next.merge_blocked", "UNSTABLE": "next.unstable"}.get(ms, "next.merge_unknown"))
     return say("next.run_unknown")
 
 
@@ -417,7 +430,7 @@ def collect_worktrees(env: Env, root: Path, integration: str) -> dict:
         path, head = r.get("worktree", ""), r.get("HEAD", "")
         if "bare" in r or not path:
             continue
-        mrc = env.sh(["git", "merge-base", "--is-ancestor", head, f"origin/{integration}"], root)[0] if head else 1
+        mrc = env.sh(["git", "merge-base", "--is-ancestor", head, f"origin/{integration}"], root)[0] if head else None
         merged = True if mrc == 0 else False if mrc == 1 else None     # 128 (no such ref) is UNKNOWN, not "not merged"
         src, status = env.sh(["git", "-C", path, "status", "--porcelain"], None)
         clean = (src == 0 and status.strip() == "")
@@ -544,14 +557,15 @@ def events_of(record: dict) -> list[dict]:
             for e in record.get("events") or [] if isinstance(e, dict)]
 
 
-def collect_merged_today(env: Env, repo: Repo) -> "list[dict] | None":
+def collect_merged_today(env: Env, repo: Repo) -> "tuple[list[dict], bool] | None":
+    """(events, reached_the_limit), or None when the list cannot be read."""
     try:
         return _merged_today(env, repo)
     except Exception:                            # noqa: BLE001 -- None means UNKNOWN, rendered as such
         return None
 
 
-def _merged_today(env: Env, repo: Repo) -> "list[dict] | None":
+def _merged_today(env: Env, repo: Repo) -> "tuple[list[dict], bool] | None":
     today = env.now.strftime("%Y-%m-%d")
     rc, out = repo.gh(env, ["pr", "list", "--state", "merged", "--search", f"merged:>={today}", "--limit",
                             str(MERGED_LIMIT), "--json", "number,title,mergedAt"])
@@ -563,7 +577,7 @@ def _merged_today(env: Env, repo: Repo) -> "list[dict] | None":
         t = str(p.get("mergedAt") or "")
         ev.append({"time": t[11:16] if len(t) >= 16 else "", "text": f"#{p.get('number')} {p.get('title')}",
                    "repo": repo.name, "source": "merged"})
-    return sorted(ev, key=lambda e: e["time"])
+    return sorted(ev, key=lambda e: e["time"]), len(data) >= MERGED_LIMIT
 
 
 def collect_lines(env: Env, repo: Repo, cfg: dict, issues: dict) -> dict:
@@ -610,6 +624,8 @@ def collect(env: Env, root: Path) -> dict:
         if not isinstance(sib, dict) or not sib.get("name"):
             continue
         sroot = Path(str(sib.get("path") or ""))
+        if sib.get("path") and not sroot.is_absolute():
+            sroot = (root / sroot).resolve()         # relative to the repository, never to the process directory
         if not sib.get("path") or not sroot.is_dir():
             unavailable.append({"repo": sib["name"], "why": "its path is missing"})
             continue
@@ -662,12 +678,14 @@ def collect(env: Env, root: Path) -> dict:
 
     merged: list[dict] = []
     merged_unknown = False
+    merged_partial = False
     for r in repos:
         m = collect_merged_today(env, r)
         if m is None:
             merged_unknown = True
         else:
-            merged += m
+            merged += m[0]
+            merged_partial = merged_partial or m[1]
     events = sorted(events_of(record) + merged, key=lambda e: e["time"]) if status == "ok" or status == "none" else merged
 
     if status == "unreadable":
@@ -677,6 +695,15 @@ def collect(env: Env, root: Path) -> dict:
     else:
         sess_panel = panel("ok", "", items=sessions, unavailable=unavailable)
     asks = asks_of(env, record, cfg)
+    if status == "unreadable":
+        asks_panel = unknown(say("unknown.record", why=str(rec)), items=[], drafted_stale=0)
+    else:
+        asks_panel = panel("ok", say("unknown.no_record") if status == "none" else "", **asks)
+    events_panel = panel("ok" if not merged_unknown else "unknown", say("unknown.gh") if merged_unknown else "", items=events)
+    if events_panel["state"] == "ok" and status == "unreadable":
+        events_panel.update(partial=True, note=say("unknown.record", why=str(rec)))      # recorded events cannot be read
+    elif events_panel["state"] == "ok" and merged_partial:
+        events_panel.update(partial=True, note=say("partial.note", n=MERGED_LIMIT))
 
     ste = [f"{k}: {f}" for k, v in (cfg.get("notes") or {}).items() if isinstance(v, str) for f in ste_flags(v, "description")]
     rc, head = env.sh(["git", "rev-parse", "--short", "HEAD"], root)
@@ -690,13 +717,13 @@ def collect(env: Env, root: Path) -> dict:
         "workspace": {"repos": [r.name for r in repos], "unavailable": unavailable} if ws else None,
         "config_error": cfg_err,
         "panels": {
-            "asks": panel("ok", "", **asks),
+            "asks": asks_panel,
             "lines": lines,
             "prs": prs,
             "sessions": sess_panel,
             "limits": limits,
             "worktrees": worktrees,
-            "events": panel("ok" if not merged_unknown else "unknown", say("unknown.gh") if merged_unknown else "", items=events),
+            "events": events_panel,
         },
         "notes": {k: v for k, v in (cfg.get("notes") or {}).items() if isinstance(v, str)},
         "ste_warnings": ste,
@@ -808,8 +835,19 @@ def _count(n: int, partial: bool) -> str:
     return say("partial.count", n=n) if partial else str(n)
 
 
+def _gone(u: dict) -> str:
+    """'Repo unavailable: <repo>, <why>.' for one unreadable repository."""
+    return say("unavailable.repo", why=u["repo"] + ", " + u["why"])
+
+
+def _step_li(s: dict) -> str:
+    return "<li>" + mark(s["state"]) + " #" + _e(str(s["n"])) + " " + _e(s.get("title", "")) + "</li>"
+
+
 def render_asks(board: dict, audience: str) -> str:
     a = board["panels"]["asks"]
+    if a["state"] != "ok":
+        return _unknown_html(a["reason"])
     body = "".join(
         f'<div class="ask"><b>{_e(i["title"])}</b><div>{_e(i["detail"])}</div>'
         + (f'<span class="ref">{_e(i["ref"])}</span>' if i["ref"] else "")
@@ -817,6 +855,8 @@ def render_asks(board: dict, audience: str) -> str:
         + "</div>" for i in a["items"]) or f'<div class="empty">{_e(say("empty.asks"))}</div>'
     if audience == "coordinator" and a.get("drafted_stale"):
         body += f'<div class="ask muted">{_e(say("coord.drafted_stale", n=a["drafted_stale"], hours=DEFAULTS["drafted_hours"]))}</div>'
+    if a.get("reason") and not a["items"]:
+        body += f'<div class="muted">{_e(a["reason"])}</div>'
     return body
 
 
@@ -827,13 +867,13 @@ def render_lines(board: dict) -> str:
     return '<div class="lines">' + "".join(
         f'<div class="line"><div class="line-h"><b>{_e(l["name"])}</b>'
         f'<span class="cnt">{_e(_count(l["blockers"], l["partial"]))} blocking</span></div>'
-        f'<ul>{"".join(f"<li>{mark(s['state'])} #{_e(str(s['n']))} {_e(s.get('title', ''))}</li>" for s in l["steps"])}</ul>'
+        "<ul>" + "".join(_step_li(s) for s in l["steps"]) + "</ul>"
         + (f'<div class="nx">{_e(l["next"])}</div>' if l["next"] else "") + "</div>" for l in p["items"]) + "</div>"
 
 
 def render_prs(board: dict) -> str:
     p = board["panels"]["prs"]
-    miss = "".join(f'<div class="unknown">{_e(say("unavailable.repo", why=f"{u["repo"]}, {u["why"]}"))}</div>'
+    miss = "".join(f'<div class="unknown">{_e(_gone(u))}</div>'
                    for u in p.get("unavailable") or [])
     if p["state"] != "ok":
         return f'<div class="pb">{_unknown_html(p["reason"])}{miss}</div>'
@@ -865,7 +905,7 @@ def render_sessions(board: dict) -> str:
     else:
         out = f'<div class="empty">{_e(p["reason"] or say("empty.sessions"))}</div>'
     for u in p.get("unavailable") or []:
-        out += f'<div class="unknown">{_e(say("unavailable.repo", why=f"{u["repo"]}, {u["why"]}"))}</div>'
+        out += f'<div class="unknown">{_e(_gone(u))}</div>'
     return out
 
 
@@ -892,9 +932,10 @@ def render_events(board: dict) -> str:
     p = board["panels"]["events"]
     if p["state"] != "ok":
         return _unknown_html(p["reason"])
+    note = f'<div class="unknown">{_e(p["note"])}</div>' if p.get("partial") and p.get("note") else ""
     if not p["items"]:
-        return f'<div class="empty">{_e(say("empty.events"))}</div>'
-    return '<div class="tl">' + "".join(
+        return (note or f'<div class="empty">{_e(say("empty.events"))}</div>')
+    return note + '<div class="tl">' + "".join(
         f'<div class="ev"><span>{_e(e["time"])}</span><span class="dot"></span><span class="x">{_e(e["text"])}</span></div>'
         for e in p["items"]) + "</div>"
 

@@ -9,10 +9,11 @@ record (#1581) and owns its format. `plugins/pipeline/scripts/status_board.py` R
 cannot import rails-flow's module (each plugin resolves its own `${CLAUDE_PLUGIN_ROOT}`), so the reader
 repeats the field names, and a repeated name is a claim that nothing makes true. This check does:
 
-  * every name the reader lists as WRITTEN (`RECORD_KEYS_WRITTEN`) appears as a quoted key in
-    `coordination.py`, so a rename on the write side fails here, not on a user's board;
+  * every name the reader lists as WRITTEN (`RECORD_KEYS_WRITTEN`) is a key `coordination.py` ASSIGNS
+    (a dict-literal key, an `x["k"] = ...` store, or a `setdefault`), found with `ast`, so a rename on
+    the write side fails here even when a `.get("k")` read elsewhere kept the old spelling;
   * every name the reader lists as PLANNED (`RECORD_KEYS_PLANNED`: read before any writer exists) is
-    ABSENT from `coordination.py`. The day a writer adds one, this check fails and says to move it to
+    NOT assigned by `coordination.py`. The day a writer adds one, this check fails and says to move it to
     WRITTEN: the list cannot go stale in either direction;
   * every listed name is actually read by the reader as a quoted key, so the list is not a dead
     declaration.
@@ -22,6 +23,7 @@ missing or wrong-typed value by showing UNKNOWN (`status_board_selftest.py` prov
 """
 from __future__ import annotations
 
+import ast
 import importlib.util
 import re
 import sys
@@ -34,7 +36,30 @@ WRITER = "plugins/rails-flow/hooks/scripts/lib/coordination.py"
 
 
 def quoted(text: str, key: str) -> bool:
+    """The key appears as a quoted string anywhere. Right for the READER (any read of it counts)."""
     return re.search(r'["\']' + re.escape(key) + r'["\']', text) is not None
+
+
+def _const(node: "ast.AST | None") -> "str | None":
+    return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else None
+
+
+def write_keys(source: str) -> set:
+    """The record keys the WRITER assigns: dict-literal keys (which cover `row.update({...})` and
+    `{"version": ...}`), `x["k"] = ...` stores, and `.setdefault("k", ...)`. A `.get("k")` read does not
+    count, so renaming the write site alone cannot hide behind a read that kept the old spelling."""
+    found: set = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Dict):
+            found |= {k for k in map(_const, node.keys) if k}
+        elif isinstance(node, ast.Subscript) and isinstance(node.ctx, ast.Store):
+            idx = node.slice.value if isinstance(node.slice, ast.Index) else node.slice      # 3.8 wraps the index
+            if _const(idx):
+                found.add(_const(idx))
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "setdefault" and node.args:
+            if _const(node.args[0]):
+                found.add(_const(node.args[0]))
+    return found
 
 
 def keys_of(reader_path: Path) -> tuple[tuple[str, ...], tuple[str, ...]]:
@@ -49,12 +74,13 @@ def check(reader: Path, writer: Path) -> list[str]:
     written, planned = keys_of(reader)
     w_text, r_text = writer.read_text(encoding="utf-8"), reader.read_text(encoding="utf-8")
     out = []
+    written_by_writer = write_keys(w_text)
     for k in written:
-        if not quoted(w_text, k):
-            out.append(f"`{k}` is listed as WRITTEN in {READER} but {WRITER} no longer writes it: "
+        if k not in written_by_writer:
+            out.append(f"`{k}` is listed as WRITTEN in {READER} but {WRITER} no longer assigns it as a key: "
                        "the writer renamed it, or the reader's list is wrong")
     for k in planned:
-        if quoted(w_text, k):
+        if k in written_by_writer:
             out.append(f"`{k}` is listed as PLANNED in {READER} but {WRITER} now writes it: "
                        "move it from RECORD_KEYS_PLANNED to RECORD_KEYS_WRITTEN")
     # The reader's own use: a listed name that the reader never reads is a dead declaration. The
@@ -91,12 +117,21 @@ def selftest() -> int:
         d = Path(td)
         reader = ('RECORD_KEYS_WRITTEN = ("session_id", "branch")\nRECORD_KEYS_PLANNED = ("asks",)\n'
                   'def f(r):\n    return r.get("session_id"), r.get("branch"), r.get("asks")\n')
-        writer = 'row = {"session_id": 1, "branch": 2}\n'
+        writer = 'row = {"session_id": 1, "branch": 2}\nprint(row.get("branch"))\n'
         (d / "r.py").write_text(reader)
         (d / "w.py").write_text(writer)
         expect("a reader and writer in step are silent", check(d / "r.py", d / "w.py"), "")
         (d / "w.py").write_text('row = {"session_id": 1, "branch_name": 2}\n')
         expect("a rename on the write side is drift", check(d / "r.py", d / "w.py"), "`branch` is listed as WRITTEN")
+        # the case a quoted-anywhere check passes: the write site renamed, a READ kept the old spelling
+        (d / "w.py").write_text('row = {"session_id": 1, "branch_name": 2}\nprint(row.get("branch"))\n')
+        expect("a write-site-only rename passes a stale read: still drift", check(d / "r.py", d / "w.py"), "`branch` is listed as WRITTEN")
+        (d / "w.py").write_text('row = {}\nrow["session_id"] = 1\nrow["branch"] = 2\n')
+        expect("a key assigned with a subscript store counts as written", check(d / "r.py", d / "w.py"), "")
+        (d / "w.py").write_text('row = {"session_id": 1}\nrow.setdefault("branch", 2)\n')
+        expect("a key written with setdefault counts as written", check(d / "r.py", d / "w.py"), "")
+        (d / "w.py").write_text('row = {"session_id": 1, "branch": 2}\nprint(row.get("asks"))\n')
+        expect("near miss: a planned name that is only READ by the writer is not drift", check(d / "r.py", d / "w.py"), "")
         (d / "w.py").write_text('row = {"session_id": 1, "branch": 2, "asks": []}\n')
         expect("a planned name that the writer now writes is drift", check(d / "r.py", d / "w.py"), "move it from")
         (d / "w.py").write_text(writer)

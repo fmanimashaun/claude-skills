@@ -17,13 +17,13 @@ GUARD = Guard(
     mutations=(
         Mutation(
             "a rename on the write side is no longer drift",
-            "    for k in written:\n        if not quoted(w_text, k):",
+            "    for k in written:\n        if k not in written_by_writer:",
             "    for k in written:\n        if False:",
             "a rename on the write side is drift",
         ),
         Mutation(
             "a planned name that the writer now writes is no longer drift",
-            "    for k in planned:\n        if quoted(w_text, k):",
+            "    for k in planned:\n        if k in written_by_writer:",
             "    for k in planned:\n        if False:",
             "a planned name that the writer now writes is drift",
         ),
@@ -40,10 +40,22 @@ GUARD = Guard(
             "an empty list is refused",
         ),
         Mutation(
-            "a key name found inside a longer word counts as the key",
-            "    return re.search(r'[\"\\']' + re.escape(key) + r'[\"\\']', text) is not None",
-            "    return re.search(re.escape(key), text) is not None",
-            "a rename on the write side is drift",
+            "a key name read anywhere in the writer counts as written (the write-site-only rename passes)",
+            "    written_by_writer = write_keys(w_text)",
+            "    written_by_writer = {k for k in (*written, *planned) if quoted(w_text, k)}",
+            "a write-site-only rename passes a stale read",
+        ),
+        Mutation(
+            "a subscript store no longer counts as a write",
+            "        elif isinstance(node, ast.Subscript) and isinstance(node.ctx, ast.Store):",
+            "        elif False:",
+            "a key assigned with a subscript store counts as written",
+        ),
+        Mutation(
+            "a setdefault no longer counts as a write",
+            "        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == \"setdefault\" and node.args:",
+            "        elif False:",
+            "a key written with setdefault counts as written",
         ),
         Mutation(
             "drift exits 0",
