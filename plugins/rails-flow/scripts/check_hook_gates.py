@@ -2933,6 +2933,51 @@ def deadline_fixtures() -> None:
             rc, took, err, left = hung(QA_HOOK, cmd)
             check(f"deadline (#1575): CONTROL: release-gate ALLOWS {what} on a timeout", rc == 0 and not left,
                   f"exit {rc}: {err[:120]!r}")
+        # THE DIFFERENTIAL (#1602 review of the timeout path). The coarse detector decides on a timeout, and for the
+        # missing-tool path too: it is ONE function. 486 promotion-shaped commands from this file's own fixtures were run
+        # through the full path and through a timeout; every shape below was DENIED by the full path and ALLOWED by the
+        # coarse one. It is driven through the missing-tool path (PATH holds only bash), which reaches the same function
+        # and answers at once, with two end-to-end timeout checks to show the timeout path really calls it.
+        with tempfile.TemporaryDirectory() as bd:
+            os.symlink("/bin/bash", Path(bd) / "bash")
+
+            def coarse(cmd: str) -> int:
+                return _run(["/bin/bash", str(QA_HOOK)], cwd=bd, input=json.dumps({"tool_input": {"command": cmd}}),
+                            env={"PATH": bd, "HOME": os.environ.get("HOME", "/tmp")}, capture_output=True, text=True,
+                            timeout=60).returncode
+            for what, cmds in (
+                ("the `heads/` shorthand for refs/heads/main", ("git push origin HEAD:heads/main", "git push origin HEAD:heads/master",
+                                                                "git push -f origin HEAD:heads/main", "git push origin heads/main:heads/main",
+                                                                "git push origin :heads/main", "git push origin 'HEAD:heads/main'",
+                                                                'git push origin "HEAD:heads/main"', "git push origin feature/work:heads/main")),
+                ("a push of every branch (--all, --mirror)", ("git push --all", "git push origin --all", "git push --mirror", "git push --mirror origin")),
+                ("a wildcard refspec, which pushes every branch", ("git push origin refs/heads/*:refs/heads/*",
+                                                                   "git push origin +refs/heads/*:refs/heads/*", "git push origin '*:*'")),
+                ("update-branch", ("gh pr update-branch", "gh pr update-branch 7 --rebase", "gh api -X PUT repos/o/r/pulls/7/update-branch")),
+                ("a workflow run", ("gh workflow run release.yml", "gh workflow run gates.yml --ref x")),
+                ("a repository dispatch", ("gh api -X POST repos/o/r/dispatches -f event_type=release",
+                                           "gh api repos/o/r/actions/workflows/r.yml/dispatches -X POST -f ref=main")),
+                ("a GraphQL body it cannot read (--input, -F query=@file)", ("gh api graphql --input q.json", "gh api graphql --input -",
+                                                                              "gh api graphql -F query=@q.graphql", "gh api graphql --field query=@-",
+                                                                              "gh api graphql -Fquery=@q")),
+                ("a push whose verb or remote is disguised but whose destination is still named",
+                 ("git -c alias.p=push p origin HEAD:main", "git -c url.b.insteadOf=a push origin main")),
+            ):
+                for cmd in cmds:
+                    check(f"deadline (#1575): the coarse detector refuses {what}: `{cmd}`", coarse(cmd) == 2, "exit 0: allowed")
+            # THE CONTROLS: refusing everything would pass every example above. `-f query=@x` is a LITERAL string in gh (only
+            # `-F` reads a file) and the full path allows it too; `--tags` pushes no branch; a branch NAMED heads/... or
+            # feature/main-menu is not main.
+            for cmd in ("git push origin feature/x", "git push origin HEAD:heads/feature/x", "git push origin HEAD:heads/feature/main-menu",
+                        "git push origin heads/feature/x", "git push --tags origin", "git status", "git commit -m tidy",
+                        "gh workflow list", "gh workflow view release.yml", "gh run list", "gh pr view 7", "gh pr list",
+                        "gh api repos/o/r/pulls", "gh api graphql -f query='{ viewer { login } }'",
+                        "gh api graphql -f query=@q.graphql", "gh api graphql --raw-field query=@-", "git push -u origin fix/1010-one-main"):
+                check(f"deadline (#1575): CONTROL: the coarse detector allows `{cmd}`", coarse(cmd) == 0, "exit 2: refused")
+        for cmd in ("git push origin HEAD:heads/main", "git push --all"):
+            rc, took, err, left = hung(QA_HOOK, cmd)
+            check(f"deadline (#1575): a TIMEOUT refuses `{cmd}` through that same detector",
+                  rc == 2 and "looks like a promotion" in err and not left, f"exit {rc}: {err[:120]!r}")
         rc, took, err, left = hung(QA_HOOK, "ls -la")
         check("deadline (#1575): release-gate ALLOWS a command that does not look like a promotion when it times out "
               "(blocking every slow command would be the failure)", rc == 0 and not left, f"exit {rc}: {err[:120]!r}")

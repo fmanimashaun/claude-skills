@@ -20,8 +20,16 @@ _coarse_looks_promotion() {
   _b='(^|[^[:alnum:]_])'; _e='([^[:alnum:]_]|$)'
   _looks_promotion=0
   if [[ $_in =~ ${_b}git${_e} ]]; then
-    if [[ $_in =~ ${_b}push${_e} ]] && [[ $_in =~ (^|[^[:alnum:]_/.-]|refs/heads/)(main|master)${_e} ]]; then
+    # `heads/main` is git's own shorthand for `refs/heads/main` (`HEAD:heads/main`), so it is main too (#1602 review of
+    # the timeout path: the full path denied it, this one allowed it).
+    if [[ $_in =~ ${_b}push${_e} ]] && [[ $_in =~ (^|[^[:alnum:]_/.-]|refs/heads/|[^[:alnum:]_/.-]heads/)(main|master)${_e} ]]; then
       _looks_promotion=1
+    fi
+    # A push of EVERY branch, main among them: `--all`, `--mirror`, or a wildcard refspec (`refs/heads/*:refs/heads/*`,
+    # `'*:*'`). The full path classifies all three as PUSH_MAIN; none names main in words. `--tags` is not on this list.
+    if [[ $_in =~ ${_b}push${_e} ]]; then
+      [[ $_in =~ (^|[^[:alnum:]_-])--(all|mirror)${_e} ]] && _looks_promotion=1
+      [[ $_in =~ [*] ]] && _looks_promotion=1
     fi
     [[ $_in =~ ${_b}merge${_e} ]] && _looks_promotion=1
   fi
@@ -30,6 +38,18 @@ _coarse_looks_promotion() {
   if [[ $_in =~ ${_b}gh${_e} ]]; then
     [[ $_in =~ ${_b}api${_e} ]] && [[ $_in =~ (merge|merges|refs|releases|mergePullRequest|updateRef|createRef) ]] && _looks_promotion=1
     [[ $_in =~ ${_b}release${_e} ]] && [[ $_in =~ ${_b}(create|edit)${_e} ]] && _looks_promotion=1
+    # The full path refuses these as "could not judge: not a command known not to merge into main or publish" (the
+    # classifier's own words), and each can reach a release or a branch: update-branch, a workflow run, a repository
+    # dispatch. A timeout asks the same question by the words.
+    [[ $_in =~ update-branch ]] && _looks_promotion=1
+    [[ $_in =~ ${_b}workflow${_e} ]] && [[ $_in =~ ${_b}run${_e} ]] && _looks_promotion=1
+    [[ $_in =~ ${_b}api${_e} ]] && [[ $_in =~ dispatches ]] && _looks_promotion=1
+    # A GraphQL body the gate cannot read: `--input` (a file or stdin) or `-F`/`--field` with `=@file`. A lower-case
+    # `-f query=@x` is a LITERAL string in gh, not a file read, and is not on this list (the full path allows it too).
+    if [[ $_in =~ ${_b}api${_e} ]] && [[ $_in =~ ${_b}graphql${_e} ]]; then
+      [[ $_in =~ (^|[^[:alnum:]_-])--input${_e} ]] && _looks_promotion=1
+      [[ $_in =~ (^|[^[:alnum:]_-])(-F|--field)[[:space:]=]*[^[:space:]=]+=@ ]] && _looks_promotion=1
+    fi
   fi
   # #1575 (#1602 review F1): ANY GraphQL mutation. The full path denies one by shape; this path cannot parse, so it
   # denies by the word, whatever the mutation is called or how the flag is spelled (-f, -F, --raw-field). A list of

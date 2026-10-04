@@ -51,5 +51,75 @@ GUARD = Guard(
             ':',
             'refuses `gh api graphql -f` enablePullRequestAutoMerge when it cannot finish reading it',
         ),
+        # #1602 review of the timeout path: shapes the FULL path denies and the coarse detector allowed (a 486-command differential).
+        Mutation(
+            'the `heads/` shorthand stops being main, so `HEAD:heads/main` is allowed on a timeout',
+            '(^|[^[:alnum:]_/.-]|refs/heads/|[^[:alnum:]_/.-]heads/)(main|master)${_e}',
+            '(^|[^[:alnum:]_/.-]|refs/heads/)(main|master)${_e}',
+            'refuses the `heads/` shorthand for refs/heads/main',
+        ),
+        # #1602 review of the timeout path: shapes the FULL path denies and the coarse detector allowed (a 486-command differential).
+        Mutation(
+            '--all and --mirror stop being promotions',
+            '[[ $_in =~ (^|[^[:alnum:]_-])--(all|mirror)${_e} ]] && _looks_promotion=1',
+            ':',
+            'refuses a push of every branch (--all, --mirror)',
+        ),
+        # #1602 review of the timeout path: shapes the FULL path denies and the coarse detector allowed (a 486-command differential).
+        Mutation(
+            'a wildcard refspec stops being a promotion',
+            '[[ $_in =~ [*] ]] && _looks_promotion=1',
+            ':',
+            'refuses a wildcard refspec, which pushes every branch',
+        ),
+        # #1602 review of the timeout path: shapes the FULL path denies and the coarse detector allowed (a 486-command differential).
+        Mutation(
+            'update-branch stops being a promotion',
+            '[[ $_in =~ update-branch ]] && _looks_promotion=1',
+            ':',
+            'refuses update-branch',
+        ),
+        # #1602 review of the timeout path: shapes the FULL path denies and the coarse detector allowed (a 486-command differential).
+        Mutation(
+            'a workflow run stops being a promotion',
+            '[[ $_in =~ ${_b}workflow${_e} ]] && [[ $_in =~ ${_b}run${_e} ]] && _looks_promotion=1',
+            ':',
+            'refuses a workflow run',
+        ),
+        # #1602 review of the timeout path: shapes the FULL path denies and the coarse detector allowed (a 486-command differential).
+        Mutation(
+            'a repository dispatch stops being a promotion',
+            '[[ $_in =~ ${_b}api${_e} ]] && [[ $_in =~ dispatches ]] && _looks_promotion=1',
+            ':',
+            'refuses a repository dispatch',
+        ),
+        # #1602 review of the timeout path: shapes the FULL path denies and the coarse detector allowed (a 486-command differential).
+        Mutation(
+            'a GraphQL --input body stops being a promotion',
+            '[[ $_in =~ (^|[^[:alnum:]_-])--input${_e} ]] && _looks_promotion=1',
+            ':',
+            '`gh api graphql --input q.json`',
+        ),
+        # #1602 review of the timeout path: shapes the FULL path denies and the coarse detector allowed (a 486-command differential).
+        Mutation(
+            'a GraphQL -F query=@file body stops being a promotion',
+            '[[ $_in =~ (^|[^[:alnum:]_-])(-F|--field)[[:space:]=]*[^[:space:]=]+=@ ]] && _looks_promotion=1',
+            ':',
+            '`gh api graphql -F query=@q.graphql`',
+        ),
+        # THE OTHER DIRECTION: refusing too much would pass every refusal example above, so a control must be able to fail.
+        Mutation(
+            'a lower-case -f query=@x, a LITERAL string in gh, is counted as a file read',
+            '[[ $_in =~ (^|[^[:alnum:]_-])(-F|--field)[[:space:]=]*[^[:space:]=]+=@ ]] && _looks_promotion=1',
+            '[[ $_in =~ (^|[^[:alnum:]_-])(-f|-F|--field|--raw-field)[[:space:]=]*[^[:space:]=]+=@ ]] && _looks_promotion=1',
+            'CONTROL: the coarse detector allows `gh api graphql -f query=@q.graphql`',
+        ),
+        # THE OTHER DIRECTION: refusing too much would pass every refusal example above, so a control must be able to fail.
+        Mutation(
+            '--tags is counted as a push of every branch',
+            '[[ $_in =~ (^|[^[:alnum:]_-])--(all|mirror)${_e} ]] && _looks_promotion=1',
+            '[[ $_in =~ (^|[^[:alnum:]_-])--(all|mirror|tags)${_e} ]] && _looks_promotion=1',
+            'CONTROL: the coarse detector allows `git push --tags origin`',
+        ),
     ),
 )
