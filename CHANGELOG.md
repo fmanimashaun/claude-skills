@@ -3746,6 +3746,95 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 - **simple-form-only keeps refusing `f.collection_check_boxes` / `f.collection_radio_buttons`, and now says what to write instead — `plugins/rails-flow/scripts/check_simple_form_only.py`, `plugins/rails-flow/scripts/mutations/check_simple_form_only.py`** (#1458). Maintainer decision: [keep refused](https://github.com/fmanimashaun/claude-skills/issues/1458#issuecomment-5938116850). Both are simple_form's own methods (v5.4.1 `form_builder.rb:397`/`:451`). Called directly, though, they render items with no label, error or hint, which breaks the wrapper rule ("author fields with `f.input`", `skills/design-system/references/component-implementations.md` §191–236), the same reason `f.label` is refused. The finding now names the wrapper spelling, using the template's own builder variable: `f.input :attr, as: :check_boxes` / `as: :radio_buttons, collection: …` (`form.input` for a `|form|` builder). A fixture through `check()` asserts the wording, with a control that other raw calls get no such remedy; the guard catches 32/32. Downstream, Retask's two findings in `admin/actions/new.html.erb` now name their fix.
 
+- **`guard-claims` judges a PR body against the template of the repository the command runs in, not the session's —
+  `plugins/rails-flow/hooks/scripts/guard-claims.sh`, new `plugins/rails-flow/hooks/scripts/lib/command_cwd.py`** (#1509).
+  The hook ran `git rev-parse --show-toplevel` in its own working directory, which is the session's. So
+  `cd ~/projects/other && gh pr create --body-file …` from a session in another repository was BLOCKED for missing
+  that repository's sections, and the target's own template was never read; a relative `--body-file` was read from
+  the session directory too.
+  - `command_cwd.py` is an **allowlist, not a shell** (#1516, round 3). Three review rounds each found shell shapes a
+    partial interpreter followed wrongly (an `if` body, `false && cd`, `eval`, `env -C`, an arithmetic `<<`), so it
+    follows a `cd` in one grammar only: top-level segments joined by `&&`, `;` or a newline, before the `gh`
+    segment, each `cd <one plain or quoted path>` with optional `>`, `>>` or `>&` redirects (`2>` included;
+    in `cd 5 >x`, 5 is the path, since an fd number must touch its `>`). The `gh` segment may carry `VAR=x`, `env`
+    with no option, `command -p`, `exec`, `nohup`, `nice -n N`, `timeout [opts] N` or `time -p`, or name `gh` by its
+    path. A comment is dropped first, only where `#` starts a word outside quotes (`x#y` and `B\ #x` are words).
+  - `cd -P` and `cd -L` are out of the grammar: `-P` resolves symlinks physically (`cd -P link/..` is the link
+    target's parent), and this resolver only does a logical `..`.
+  - When every segment before the `gh` starts, after `VAR=x` assignments, with a literal command word from a short
+    allowlist (`git`, `gh`, `echo`, `printf`, `test`, `[`, `true`, `false`, `:`, `cat`, `ls`, `grep`, `head`,
+    `tail`, `wc`, `sleep`, `date`, `pwd`, `mkdir`, `touch`, `jq`, `sed`), the `gh` may follow them joined by
+    anything (`git push && gh …`) and is judged in the starting directory, as before #1509. A denylist of
+    directory-changing words missed zsh's `chdir`, `builtin source`, `command .`, `$x` and `$'cd'` (round 4).
+  - Known limits, invisible in the command text: a function or alias from the user's shell rc that changes
+    directory (zoxide's `z`, autojump's `j`) or shadows an allowlisted word, and `CDPATH` or zsh's
+    `CHASE_LINKS`/`AUTO_CD` set in the command's shell but not in the hook's environment, which is where `CDPATH`
+    is read.
+  - **Anything else is "cannot tell"**: exit `3`, and the hook says the template and the change type are **NOT
+    checked**, rather than judge against a guessed repository. That covers `if`/`while`/`until`/`for`/`case`,
+    subshells, brace groups, functions, `eval`, `source`, `pushd`/`popd`, `!`, `||`, `|`, `&`, `builtin cd`,
+    `X=1 cd`, any command word before the `gh` that is neither a plain `cd` nor allowlisted, an input redirect on a `cd`,
+    `env` with any option (`env -C dir`, `-iC`), a `gh` that is no command word of the grammar (`sudo gh`,
+    `bash -c "…"`), an unbalanced quote before the `gh`, and a target with `$`, a backquote, `~user`, `-` or any
+    option, a bare
+    `cd` or one with two arguments, a missing directory, or a relative path while `CDPATH` is set. With a relative
+    `--body-file`, the hook says the same before its "could not read" fail-open.
+  - The command starts in the payload's `cwd`, not the hook process's directory, and the `skills/**` change-type
+    check reads `git diff` in the repository the command runs in. A missing or crashing `command_cwd.py` BLOCKS
+    before a relative body can fail open, as #1435 ruled for `pr_template.py`; `-R`/`GH_REPO` still say NOT checked.
+  - **When it cannot tell the repository**, it allows the command with that loud notice. That is the maintainer's
+    decision recorded on #1509 (https://github.com/fmanimashaun/claude-skills/issues/1509): refusing would teach
+    `RAILS_FLOW_CLAIMS_OK=1`, and the session repository's template would be the wrong one. CLAUDE.md's Platform
+    paragraph now scopes the gate to a repository it can resolve.
+  - **Any `GIT_*` or `GH_*` variable is "cannot tell"**, a class rather than a list (rounds 5 and 6): `GIT_DIR`,
+    `GIT_WORK_TREE`, `GIT_COMMON_DIR`, `GIT_CONFIG_GLOBAL` (via `insteadOf`), `GIT_CONFIG_COUNT/KEY_n/VALUE_n`,
+    `GIT_CONFIG_PARAMETERS` and `GH_REPO` each send `gh` to another repository whatever the directory. The rule
+    applies on the `gh` command (directly or through `env`), in an assignment-only segment before it, by `export`,
+    and in the hook's own inherited environment; `GH_REPO` is folded into it, leaving the hook's own check to
+    `-R`/`--repo`. Two exceptions, each shown harmless with gh 2.97.0 (`gh browse -n` names the same
+    repository): a `GIT_*=… git …` on an earlier allowlisted command, which is that command's own environment and
+    does not reach `gh`; and an inherited `GIT_EDITOR`, which the Claude Code harness sets.
+  - **The config-redirecting family** (round 7), each probed with gh 2.97.0 (`gh browse -n`): `HOME` and
+    `XDG_CONFIG_HOME` SET BY THE COMMAND (on `gh`, behind `env`, standalone or by `export`) move git's global config,
+    whose `insteadOf` rewrites the remote, so they are "cannot tell"; inherited, they are judged normally. Before the
+    `gh`, `git` and `gh` are allowlisted only for listed subcommands, because `git config [--global] url.X.insteadOf`,
+    `git remote set-url` and `gh repo set-default` each sent `gh` to B. `git -c …` and `git --config-env=…` stay
+    judged normally: they live in that one git process. A segment that redirects into a file (`echo … >>
+    .git/config`) is not allowlisted, and `sed` left the allowlist (`sed -i`).
+  - **No code runs from a `cd` target** (two push security reviews, round 8). The hook runs BEFORE the person is asked
+    about the command, and the `skills/**` change-type check read `git diff` in the directory the command `cd`s into.
+    A repository's own config can name a program that `git diff` executes, so a `cd` into such a repository ran it and
+    a denial could not undo it. Measured with a marker file: `core.fsmonitor` ran on any diff, and a
+    `filter.<name>.clean` ran on a diff that hashes a changed working-tree file (the first fix, `-c core.fsmonitor=false`,
+    left the second running). Turning off keys one at a time is the wrong shape, so a repository other than the
+    session's is now read through `git diff --cached` only, which hashes no file, with fsmonitor off, `--no-ext-diff`
+    and no index write; the session's own repository is read as on dev. Tested against the six config keys that run a
+    program during a plain `git diff HEAD` (`core.fsmonitor`, `filter.<n>.clean`, `filter.<n>.process`,
+    `diff.<n>.textconv`, `diff.<n>.command`, `diff.external`): none runs in the cd-target path, and a `cd` into the
+    session's own repository, a subdirectory or a symlink of it is still held in full. The cost: an UNSTAGED `skills/`
+    change in another repository is no longer seen, which `gh pr create` would not publish anyway. Not done: the
+    session's own repository is still read unsandboxed, as on dev.
+  - **A large diff no longer reads as "no `skills/` change"** (a third push security review; the class of #1579).
+    `git diff --name-only | grep -q '^skills/'` under `set -o pipefail` loses the match once the name list outgrows the
+    pipe buffer: `grep -q` leaves at the first hit, `git` dies of SIGPIPE, the pipeline reports failure and the gate
+    lets a `skills/` PR through with no change type declared. Measured with 6000 staged files (363 KiB): 5 misses in 5
+    tries with `pipefail`, 5 hits in 5 without. `skills_in_diff` now collects the names first and matches them with a
+    shell `case`, so there is no pipe. The five other `printf … | grep -q` lines in `guard-claims.sh` read the command
+    text, not a diff, and stay with #1579.
+  - On the branch at `e6296b4`, which carries dev as of `464ecef`, `check_hook_gates.py` goes from 409 checks to 562,
+    so 153 are new (dev's later merges add checks of their own and are not counted). Run against dev's
+    `guard-claims.sh`, 135 of the 153 fail, all of them in guard-claims; the 18 that pass are controls, listed by name
+    from a run that logged every check: no `cd`; `git push && gh` with no `cd`; allowlisted commands and an assignment
+    before `gh`; a logical `cd link/..`; `-R` after a `cd`; other assignments before `gh`; a `GIT_*` on an earlier
+    allowlisted command; an inherited `GIT_EDITOR`; the session's own `skills/` diff without a `cd`; the cd-target
+    `skills/` check, which dev's hook passes only because it cannot read the relative body; the six round-7 controls
+    (an inherited `HOME`; `git -c url…insteadOf=…` and `git --config-env=…` before `gh`; `HOME=… git status` before
+    `gh`; a redirect to `/dev/null` and an fd before `gh`; `gh pr view` before `gh`); and the two "no code runs from the
+    target" checks, which dev's hook passes only because it never ran `git` in the target. `hook_guard_claims` goes
+    from 11 mutations to 24 (all 24 caught by their expected fixture, run on this branch), and the new
+    `hook_command_cwd` guard carries 53 (43 before round 7; all 53 were caught on the merged tree at `b6999b6`, and the
+    full gate run covers both guards on the final head).
+
 - **A mod shows the context window's fill and nudges once, so a long session stops paying for context it no longer needs — `plugins/rails-flow/hooks/context-nudge.mjs`, `plugins/rails-flow/hooks/register.js`, `plugins/rails-flow/hooks/hooks.json`, `plugins/rails-flow/scripts/check_mods.py`, `plugins/rails-flow/reference/context-budget.md`** (#1547, the owner's decision on the issue: a mod in rails-flow, not a statusLine script). `session.measure` pushes `context.percent` after each turn; the mod pins `context NN%` under the prompt (rendered `⚠ rails-flow: context NN%`; in the VS Code chat panel a mod's hooks run but what it draws does not appear, so expect the nudge and probably not the line there) and, on the person's next prompt at or past the threshold, adds ONE line only Claude reads (about 230 characters) asking it to offer `/rails-flow:handoff` and a `/clear` or `/compact`, once per climb, only on a prompt from a person at an interactive surface (`composer`, `bridge` or no origin; the other fourteen origin kinds, `sdk` included, are refused on purpose). A plugin cannot ship `statusLine` (its manifest drops the key), and `hooks.json` takes one module path with at most one hook per event and matcher, so `register.js` is the one module and registers every mod. **Verified** (four `doctrine-verifier` passes on #1547; the cited excerpts are committed at `docs/evidence/audits/2026-10-02-mods-api-2.1.287.md`, taken from 2.1.287 and not re-checked on 2.1.288; seven rows in `docs/evidence/upstream/claude-code.json` put the five mods pages it rests on under the weekly upstream re-read): `percent` is `tokens` over `window`, the status line's `used_percentage`, on the engine's own types for 2.1.287 (the website docs do not define it); the one-registration rule; the version floor. "No usage field reaches a hook" and how `$.ui.status` relates to a configured `statusLine` are left INCONCLUSIVE, so neither is claimed. **CI runs** a Node unit test of the mod's logic against a hand-built host (26 checks) and one that `register.js` registers each event and matcher once (doctor gate "mod unit tests"), under two mutation guards, `context_nudge` and `mods_register`, each caught by its intended check. **CI cannot run** `claude plugin validate` and `claude plugin test` (8 tests), which need the `claude` CLI; they run locally, and the fake host is written from the types so it can agree with the mod and disagree with the engine. The threshold (default 70, `RAILS_FLOW_CONTEXT_NUDGE_PCT`) is a starting value, not a measurement. Needs Claude Code 2.1.287 or later. Our own design plus an external claim, the latter verified.
 
 - **A mod dropped from `register.js` now fails CI, instead of silently dying — `plugins/rails-flow/tests/register.unit.mjs`, `plugins/rails-flow/scripts/mutations/mods_register.py`** (#1557). `hooks.json` names one module, `hooks/register.js`, which registers every mod with one import and one call. Deleting a mod's call left every check green: each mod's own unit test imports its module directly, and `register.unit.mjs` only checked that nothing is registered twice and that something is registered, so with two mods one call could go and the other's hooks still satisfied both. The test now finds every mod in `hooks/` by what it exports (a file other than `register.js` with a `register` function), not by name, so a new mod needs no change there; runs each alone with a recording `on`, importing it with a `?fresh=N` query because a mod keeps state in module variables; and fails when a hook it registers is not also registered by `register.js`. Two mutations in `mods_register.py`, one per call (`contextNudge` alone, `laneBand` alone), each caught by its own message. Planting an unwired mod in `hooks/` fails the test, measured, and removing it passes it again. The test also asserts that `hooks.json` names exactly `./register.js`, which was asserted only inside the lane band's own test and mutated by nothing; a new guard, `plugins/rails-flow/scripts/mutations/hooks_json_modules.py`, mutates `hooks.json` itself (a second path, a mod named directly, the entry removed), each caught. Adding that read made the `mods_register` guard INERT until `hooks/hooks.json` was added to its staged files, which the guard framework reported. The scan passes every mod and `register.js` the same options object, so a mod that reads `options` no longer crashes it, and a `register()` that throws is reported with the file's name instead of a stack trace. The failure report is registered before the first `await`, in both this test and `tests/context-nudge.unit.mjs`: registered at the bottom of the file, as it first was, it never existed when an `await` never settled, so a hang printed nothing. A hang now exits non-zero and names the file or check that did not finish, and the header says `exit code` only when the status is not 0. Our own design; no framework claim.
