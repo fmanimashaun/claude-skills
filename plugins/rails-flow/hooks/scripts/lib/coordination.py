@@ -23,6 +23,7 @@ a field needs no migration.
     python3 coordination.py assign  --session-id ID --path P --branch B [--issue N] [--owner ID] [--name N] [--cwd DIR]
     python3 coordination.py close   --session-id ID --path P [--cwd DIR]
     python3 coordination.py workspace --session-id ID --coordinator-name N [--sibling NAME PATH REMOTE]... [--cwd DIR]
+    python3 coordination.py pointer [--session-id ID | --stdin] [--cwd DIR]   # SessionStart: one line, or nothing
     python3 coordination.py --selftest
 
 The caller's identity is the `--session-id` it passes, so this protects against ACCIDENT (a session writing
@@ -204,6 +205,21 @@ def close(record: dict, caller: str, path: str) -> str | None:
     return None
 
 
+def pointer_line(record: dict, session_id: str, worktree: str) -> str:
+    """The one line a session sees at SessionStart, or "". Silent unless a coordinator is recorded AND this session
+    holds no open lane: a session that already has a lane, a repository nobody coordinates, and a payload with no
+    session id all print nothing, so the hook adds no bytes to the many sessions it does not concern. The session
+    cannot write the record (only the coordinator does), so the line tells it to ASK: send the coordinator its
+    current name and this worktree, and the coordinator runs `checkin`."""
+    coord = record.get("coordinator")
+    if not session_id or not isinstance(coord, dict) or not coord.get("session_id"):
+        return ""
+    if lanes_for(record, session_id):
+        return ""
+    holder = coord.get("name") or "the coordinator"
+    return f"- coordination: {holder} coordinates this repository. Tell it your current name and this worktree ({worktree})."
+
+
 def set_workspace(record: dict, caller: str, coordinator_name: str, siblings: list[dict]) -> str | None:
     """The `workspace` block: the coordinator's identity plus the sibling repositories it coordinates
     ([{name, path, remote}]). It is only a pointer: a guard reads ITS OWN repository's record."""
@@ -222,6 +238,10 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--selftest", action="store_true")
     sub = ap.add_subparsers(dest="cmd")
+    pp = sub.add_parser("pointer")
+    pp.add_argument("--session-id", default="")
+    pp.add_argument("--stdin", action="store_true", help="read the session id from the hook payload on stdin")
+    pp.add_argument("--cwd", default=".")
     for name in ("lanes", "claim", "assign", "close", "workspace"):
         p = sub.add_parser(name)
         p.add_argument("--session-id", required=True)
@@ -243,6 +263,21 @@ def main(argv: list[str] | None = None) -> int:
     if not args.cmd:
         ap.print_usage(sys.stderr)
         return 3
+    if args.cmd == "pointer":      # an ADVISORY: every failure is silence and exit 0, never a blocked session start
+        try:
+            sid = args.session_id
+            if args.stdin and not sid:
+                payload = json.loads(sys.stdin.read() or "{}")
+                sid = str(payload.get("session_id") or "") if isinstance(payload, dict) else ""
+            rp = record_path(args.cwd)
+            top = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=args.cwd, capture_output=True, text=True, timeout=5)
+            if rp is not None and top.returncode == 0:
+                line = pointer_line(load(rp), sid, os.path.realpath(top.stdout.strip()))
+                if line:
+                    print(line)
+        except Exception:      # noqa: BLE001 -- fail open
+            pass
+        return 0
     rp = record_path(args.cwd)
     if rp is None:
         print("not inside a git repository: no coordination record", file=sys.stderr)
@@ -515,6 +550,51 @@ def selftest() -> int:
         check("a coordinator object with no session_id counts as no coordinator, so a claim succeeds",
               done.returncode == 0 and load(record_path(junk))["coordinator"]["session_id"] == "J2",
               f"{done.returncode} {done.stderr!r}")
+
+        # #1585 part 2b: the SessionStart pointer. One line, and only when it concerns the session.
+        pr = {"version": VERSION, "coordinator": None, "sessions": {}}
+        check("no coordinator recorded: the pointer is silent", pointer_line(pr, "S1", "/w/a") == "")
+        claim(pr, "C1", "claude-skills-5a")
+        line = pointer_line(pr, "S1", "/w/a")
+        check("a coordinator is recorded and this session holds no lane: ONE line naming the coordinator and the worktree",
+              line.count("\n") == 0 and "claude-skills-5a" in line and "/w/a" in line and "current name" in line, line)
+        assign(pr, "C1", "/w/a", "feature/a", 1, "S1")
+        check("this session holds an open lane: silent", pointer_line(pr, "S1", "/w/a") == "")
+        check("a different session still gets the line", pointer_line(pr, "S2", "/w/b") != "")
+        close(pr, "C1", "/w/a")
+        check("a CLOSED lane is no lane: the line returns", pointer_line(pr, "S1", "/w/a") != "")
+        check("no session id in the payload: silent", pointer_line(pr, "", "/w/a") == "")
+        pr["coordinator"] = {"session_id": "", "name": "ghost"}
+        check("a coordinator object that names nobody is no coordinator: silent", pointer_line(pr, "S1", "/w/a") == "")
+        pr["coordinator"] = "not-a-dict"
+        check("a coordinator of the wrong type is silent, not a traceback", pointer_line(pr, "S1", "/w/a") == "")
+
+        # Through the CLI in a real process, as the hook runs it: payload on stdin, exit 0 whatever happens.
+        pcli = Path(td) / "pcli"
+        pcli.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=pcli, check=True)
+        subprocess.run([sys.executable, __file__, "claim", "--session-id", "C1", "--name", "boss", "--cwd", str(pcli)], check=True)
+
+        def run_pointer(payload: str, cwd: Path) -> "subprocess.CompletedProcess":
+            return subprocess.run([sys.executable, __file__, "pointer", "--stdin", "--cwd", str(cwd)], input=payload,
+                                  capture_output=True, text=True)
+        got = run_pointer('{"session_id": "S7"}', pcli)
+        check("the hook path prints the line for a session with no lane, and exits 0",
+              got.returncode == 0 and "boss" in got.stdout and os.path.realpath(str(pcli)) in got.stdout, f"{got.returncode} {got.stdout!r}")
+        subprocess.run([sys.executable, __file__, "assign", "--session-id", "C1", "--path", str(pcli), "--branch", "b",
+                        "--owner", "S7", "--cwd", str(pcli)], check=True)
+        got = run_pointer('{"session_id": "S7"}', pcli)
+        check("...and prints nothing once the coordinator has recorded that session's lane", got.returncode == 0 and got.stdout == "", repr(got.stdout))
+        for label, payload, where in (("a payload that is not JSON", "{not json", pcli), ("an empty payload", "", pcli),
+                                      ("a payload with no session_id", "{}", pcli), ("a payload that is a list", "[1]", pcli),
+                                      ("a directory that is no repository", '{"session_id": "S7"}', Path(td))):
+            got = run_pointer(payload, where)
+            check(f"{label}: silent, exit 0, no traceback", got.returncode == 0 and got.stdout == "" and "Traceback" not in got.stderr,
+                  f"{got.returncode} {got.stdout!r} {got.stderr[-80:]!r}")
+        record_path(pcli).write_text("{corrupt")
+        got = run_pointer('{"session_id": "S8"}', pcli)
+        check("a corrupt record: silent, exit 0 (an advisory never blocks a session start)",
+              got.returncode == 0 and got.stdout == "" and "Traceback" not in got.stderr, f"{got.returncode} {got.stderr[-80:]!r}")
 
         outside = Path(td) / "not-a-repo"
         outside.mkdir()
