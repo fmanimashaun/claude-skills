@@ -27,11 +27,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 HOOKS = Path(__file__).resolve().parents[1] / "hooks" / "scripts"
@@ -39,12 +41,53 @@ HOOKS = Path(__file__).resolve().parents[1] / "hooks" / "scripts"
 FAILURES: list[str] = []
 CHECKS = 0
 
+# `--match SUBSTR` runs only the fixtures whose check label contains SUBSTR (#1599). The mutation harness runs
+# every mutant of a guard through this file, and each mutant is meant to be caught by ONE fixture, named by the
+# mutation's `expects`; re-running all 199 checks of a group (about 116 s) to see one of them fail was most of
+# the mutation-coverage budget. Fixtures do not name themselves before they run, so it is two passes over a
+# group: a SURVEY with every subprocess stubbed (it only records the check labels), then a RUN in which the
+# code before a wanted check executes for real and the code before every other check is stubbed. A fixture
+# whose result steers which checks follow it would make the two passes disagree; that raises, it never guesses.
+_MATCH_MODE: str | None = None      # None, "survey" or "run"
+_SURVEYED: list[str] = []           # the labels, in the order the survey saw them
+_WANTED: set[int] = set()           # positions in `_SURVEYED` whose label matched
+_INDEX = 0                          # the position the next check() call has in the run pass
+_SKIP = False                       # True while the code before an unwanted check runs
+
+
+class MatchSequenceError(Exception):
+    """The run pass reached a different check than the survey did, so `--match` cannot be trusted here."""
+
+
+def skipping() -> bool:
+    return _MATCH_MODE == "survey" or (_MATCH_MODE == "run" and _SKIP)
+
 
 def check(label: str, ok: bool, detail: str = "") -> None:
-    global CHECKS
+    global CHECKS, _INDEX, _SKIP
+    if _MATCH_MODE == "survey":
+        _SURVEYED.append(label)
+        return
+    if _MATCH_MODE == "run":
+        if _INDEX >= len(_SURVEYED) or _SURVEYED[_INDEX] != label:
+            raise MatchSequenceError(
+                f"check #{_INDEX} is {label!r} in the run pass but "
+                f"{_SURVEYED[_INDEX] if _INDEX < len(_SURVEYED) else 'absent'!r} in the survey")
+        live = _INDEX in _WANTED
+        _INDEX += 1
+        _SKIP = _INDEX not in _WANTED        # the code before the NEXT check runs for real only if it is wanted
+        if not live:
+            return
     CHECKS += 1
     if not ok:
         FAILURES.append(f"{label}: {detail}" if detail else label)
+
+
+def record_failure(note: str) -> None:
+    """A failure that is not one of a group's numbered checks (a timeout), so it never shifts `--match`'s count."""
+    global CHECKS
+    CHECKS += 1
+    FAILURES.append(note)
 
 
 # #1469: every hook fixture runs through here. A subprocess that outruns its timeout used to raise
@@ -53,10 +96,14 @@ def check(label: str, ok: bool, detail: str = "") -> None:
 # a flake with nothing wrong in the code. Now a timeout is exit 124 with a TIMEOUT line, the fixture
 # that ran it fails by name, and every later fixture still runs. HOOK_GATES_TIMEOUT overrides the
 # bound (the selftest sets it tiny to prove the no-crash path).
-_EXPECTING_TIMEOUT = False      # set only by timeout_fixtures, which times out on purpose
+_EXPECTING_TIMEOUT = False      # set by timeout_fixtures, which times out on purpose, and the #1504 cost check
 
 
 def _run(*args, **kw):
+    if skipping():          # `--match`: this is the code before an unwanted check, or the survey (#1599)
+        text = kw.get("text") or kw.get("universal_newlines")
+        empty = "" if text else b""
+        return subprocess.CompletedProcess(args[0] if args else kw.get("args"), 0, stdout=empty, stderr=empty)
     # The override is exact (the no-crash proof sets it tiny); otherwise a fixture's own bound is
     # raised to a 180s floor, since 60s was what a loaded machine outran. Read per call, not at import.
     override = os.environ.get("HOOK_GATES_TIMEOUT")
@@ -91,7 +138,7 @@ def _run(*args, **kw):
             # A timeout is ALWAYS a recorded failure -- a setup step (`git init`, check=True) that
             # times out must not pass silently -- unless timeout_fixtures asked for one on purpose.
             if not _EXPECTING_TIMEOUT:
-                check(note, False)
+                record_failure(note)
             empty = "" if kw.get("text") else b""
             return subprocess.CompletedProcess(proc.args, 124, stdout=empty,
                                                stderr=note if kw.get("text") else note.encode())
@@ -126,16 +173,19 @@ def _git_repo(root: Path) -> None:
 
 
 def run_hook(name: str, *, cwd: Path, stdin: str, path_prefix: list[Path] = (),
-             env_extra: dict[str, str] | None = None, unset: tuple[str, ...] = ()) -> tuple[int, str]:
+             env_extra: dict[str, str] | None = None, unset: tuple[str, ...] = (),
+             shell: str = "bash") -> tuple[int, str]:
     env = dict(os.environ)
     for k in unset:
         env.pop(k, None)
     env.pop("RAILS_FLOW_LANE", None)
+    for k in [k for k in env if k.startswith(("GIT_", "GH_"))]:
+        env.pop(k, None)                    # a git hook's GIT_DIR, a CI's GH_*: each would route every fixture
     if path_prefix:
         env["PATH"] = os.pathsep.join(str(p) for p in path_prefix) + os.pathsep + env["PATH"]
     if env_extra:
         env.update(env_extra)
-    done = _run(["bash", str(HOOKS / name)], cwd=cwd, input=stdin, env=env,
+    done = _run([shell, str(HOOKS / name)], cwd=cwd, input=stdin, env=env,
                           capture_output=True, text=True, timeout=60)
     return done.returncode, done.stdout + done.stderr
 
@@ -455,10 +505,39 @@ NEGATIVES_1472 = ["bash -c 'git add app/x.rb'", "bash -c 'git push origin featur
                   "echo \"$(cat <<'EOF'\nAdds :) emoji then `git add -A`\nEOF\n)\""]
 
 
+def normaliser_pipelines(cmd: str) -> int | str:
+    """#1504: how many `_normalize_one` pipelines `normalize_segments` runs for `cmd`. The lib is sourced
+    and `_normalize_one` wrapped to append one byte to a file per call: a file, because each depth's
+    pipeline (and, per string, each recursion) runs in a subshell a shell variable would not survive."""
+    with tempfile.TemporaryDirectory() as td:
+        count = Path(td) / "count"; count.write_text("")
+        script = ('. "$1"\n'
+                  'eval "_nc_counted_$(declare -f _normalize_one)"\n'
+                  '_normalize_one() { printf x >> "$NC_COUNT"; _nc_counted__normalize_one; }\n'
+                  'printf \'%s\' "$CMD" | normalize_segments >/dev/null\n')
+        r = _run(["bash", "-c", script, "count", str(HOOKS / "lib" / "normalize_cmd.sh")], capture_output=True,
+                 text=True, env={**os.environ, "NC_COUNT": str(count), "CMD": cmd})
+        if r.returncode != 0:
+            return f"exit {r.returncode}: {r.stderr.strip()[:200]}"
+        return len(count.read_text())
+
+
+def pattern_expansion_sites() -> list[str] | str:
+    """#1504: every bash pattern-substitution expansion (`${name//…}`, `${name/…}`, `${name%…}`, `${name#…}`)
+    in the functions `lib/normalize_cmd.sh` defines, read from `declare -f` so comments do not count."""
+    script = ('before=$(declare -F); . "$1" || exit 3\n'
+              'for f in $(declare -F | while read -r _ _ n; do case "$before" in (*" $n"*) ;; (*) echo "$n" ;; esac; done); do\n'
+              '  declare -f "$f"\ndone\n')
+    r = _run(["bash", "-c", script, "scan", str(HOOKS / "lib" / "normalize_cmd.sh")], capture_output=True, text=True)
+    if r.returncode != 0 or "normalize_segments" not in r.stdout:
+        return f"scan failed: exit {r.returncode}, {r.stderr.strip()[:200]}"
+    return re.findall(r"\$\{[A-Za-z_][A-Za-z0-9_]*(?:/|%|#)[^}]*\}", r.stdout)
+
+
 def guard_bash_fixtures() -> None:
-    def run(cmd: str) -> int:
+    def run(cmd: str, shell: str = "bash") -> int:
         with tempfile.TemporaryDirectory() as td:
-            return run_hook("guard-bash.sh", cwd=Path(td),
+            return run_hook("guard-bash.sh", cwd=Path(td), shell=shell,
                             stdin=json.dumps({"tool_input": {"command": cmd}}))[0]
 
     for cmd in ("git add -A", "git add .", "git add --all",
@@ -481,6 +560,61 @@ def guard_bash_fixtures() -> None:
         check(f"guard-bash (#1472): `{cmd!r}` runs the command and is blocked", run(cmd) == 2, "exit 0")
     for cmd in NEGATIVES_1472:
         check(f"guard-bash (#1472): CONTROL: `{cmd[:60]!r}` passes", run(cmd) == 0, "exit 2")
+    # #1504: a depth's strings are normalised as ONE batch, so each must still be judged on its own.
+    for cmd, why in (("bash -c 'cat <<EOF'; bash -c 'git add -A'", "an unclosed heredoc in one string does not swallow the next"),
+                     ("bash -c \"echo it's\"; bash -c \"eval 'git add -A'\"", "an unbalanced quote in one string does not stop the next being lexed"),
+                     (" ".join(["echo $(date)"] * 30) + "; bash -c 'git add -A'", "the 31st string of a batch is still seen"),
+                     # #1519 review: a \002 line is a batch boundary only in a batch, never in the raw command...
+                     ("bash -c 'x\n\x02\ny'; bash -c 'git add -A'", "a raw \\002 line does not split the command"),
+                     # ...and a string carrying one cannot fake a boundary inside the next depth's batch.
+                     ("bash -c \"bash -c 'x\n\x02\ny'; bash -c 'git add -A'\"", "a \\002 line inside a string does not split the batch")):
+        check(f"guard-bash (#1504): {why}", run(cmd) == 2, "exit 0")
+    # #1504: COST. The #1498 pre-check used bash's `${var//[set]/}`, superlinear on bash 3.2: an 8 KB PR body
+    # took 32-96 s in guard-bash on dev. The bound is the hook's OWN declared timeout, read from hooks.json,
+    # not a number of ours: past it Claude Code kills the hook. Measured after the fix: 0.16 s.
+    hook_timeout = next(h["timeout"] for e in json.loads((HOOKS.parent / "hooks.json").read_text())["hooks"]["PreToolUse"]
+                        for h in e["hooks"] if "guard-bash.sh" in h["command"])
+    body = "\n".join(f"{i}) line with `code` and (parens)" for i in range(240))
+    pr = f"gh pr create --title t --body \"$(cat <<'EOF'\n{body}\nEOF\n)\""
+    # KILLED at that timeout, as Claude Code kills it: unbounded, the superlinear mutant ran for minutes
+    # under the mutation harness's load and outran the harness's own limit instead of failing here.
+    global _EXPECTING_TIMEOUT
+    saved = os.environ.get("HOOK_GATES_TIMEOUT")
+    os.environ["HOOK_GATES_TIMEOUT"] = str(hook_timeout)
+    _EXPECTING_TIMEOUT = True
+    t0 = time.monotonic()
+    # PINNED to /bin/bash when it exists, as the guard-migrate check above does: that is bash 3.2 on a Mac,
+    # the shell where the cost was measured. `bash` first on PATH may be Homebrew's bash 5, where this
+    # timed check would pass without ever exercising the shell that matters (#1519 review, S-suggestion).
+    timed_shell = "/bin/bash" if Path("/bin/bash").is_file() else "bash"
+    try:
+        rc = run(pr, shell=timed_shell)
+    finally:
+        _EXPECTING_TIMEOUT = False
+        if saved is None:
+            os.environ.pop("HOOK_GATES_TIMEOUT", None)
+        else:
+            os.environ["HOOK_GATES_TIMEOUT"] = saved
+    took = time.monotonic() - t0
+    check(f"guard-bash (#1504): an {len(pr) // 1024} KB PR body is judged inside the hook's {hook_timeout} s timeout, and passes",
+          rc == 0 and took < hook_timeout, "killed at the timeout (exit 124)" if rc == 124 else f"exit {rc}, {took:.1f}s")
+    # #1504: THE SLOW PATH, counted, not timed. bash 3.2's pattern substitution (`${v//[set]/}`, and its `/`,
+    # `%`, `#` kin) is superlinear: on an 8 KB body it cost 32-96 s here. On bash 5 (Linux CI) the same
+    # expansion is fast, so the timed check above cannot see it come back there; only the construct can.
+    # Counted in the functions as BASH PARSED them (`declare -f`: comments gone, so prose cannot trip it).
+    # A RATCHET at the measured 0: the normaliser does its text work in awk and sed, never in bash.
+    sites = pattern_expansion_sites()
+    check("guard-bash (#1504): the normaliser's functions run 0 bash pattern substitutions over the command (ratchet)",
+          sites == [], f"{len(sites)} site(s): {sites[:3]}")
+    # #1504: THE BATCHING, counted, not timed, so load cannot make it flaky. Each depth's strings go through
+    # ONE `_normalize_one` pipeline; per string, as before, 30 strings cost 31 pipelines. A RATCHET at the
+    # measured counts: a rise is the regression; a drop means the code got cheaper, so lower the number here.
+    for cmd, want, what in ((" ".join(["echo $(date)"] * 30), 2, "30 `$(…)` strings at one depth"),
+                            ("; ".join(["bash -c \"bash -c 'eval x'\""] * 10), 4, "10 strings nested 3 deep"),
+                            ("git status", 1, "CONTROL: a command with no strings")):
+        got = normaliser_pipelines(cmd)
+        check(f"guard-bash (#1504): {what} cost {want} normaliser pipeline(s), one per depth (ratchet)",
+              got == want, f"{got} pipelines" + (": lower the ratchet" if isinstance(got, int) and got < want else ""))
     # FAIL CLOSED without the lib: a staged copy of the hook with lib/ removed must still block the raw text.
     with tempfile.TemporaryDirectory() as td:
         stage = Path(td) / "hooks"; shutil.copytree(HOOKS, stage); shutil.rmtree(stage / "lib")
@@ -493,8 +627,12 @@ def guard_bash_fixtures() -> None:
     # #1311: an issue filed from the shell is labelled against the project's declared groups, or refused.
     groups = {"groups": [{"one_of": ["bug", "feature", "enhancement"]},
                          {"when": "bug", "one_of": ["severity:s1", "severity:s2"]}]}
-    def labelled(cmd: str, *, declare: bool = True, drop_helper: bool = False) -> tuple[int, str]:
+    def labelled(cmd: str, *, declare: bool = True, drop_helper: bool = False,
+                 files: dict[str, str] | None = None) -> tuple[int, str]:
         with tempfile.TemporaryDirectory() as td:
+            for rel, text in (files or {}).items():     # relative scripts the command reads (#1495)
+                (Path(td) / rel).parent.mkdir(parents=True, exist_ok=True)
+                (Path(td) / rel).write_text(text, encoding="utf-8")
             if declare:
                 (Path(td) / ".rails-flow").mkdir()
                 (Path(td) / ".rails-flow" / "issue-labels.json").write_text(json.dumps(groups), encoding="utf-8")
@@ -584,6 +722,49 @@ def guard_bash_fixtures() -> None:
         rc, err = labelled(f"cd {sd} && bash < only.sh")
         check("guard-bash (#1489 review): `cd <dir> && bash < only.sh` reads the cd target's script and is refused",
               rc == 2 and "by redirect" in err, err)
+    # #1495: the five #1489 edge cases, each through the real hook, with a control.
+    create, harmless = "gh issue create -t X --body y\n", "echo hi\n"
+    tree = {"bad.sh": create, "sub/only.sh": create, "ok.sh": harmless}
+    for cmd, why in (("cd nope; bash < bad.sh", "a cd to a missing directory fails and changes nothing"),
+                     ("(cd sub && bash < only.sh)", "a cd inside ( ) holds until the )"),
+                     ("cd sub; bash < only.sh", "a cd joined by ; that succeeds is followed"),
+                     ("bash -eo pipefail < bad.sh", "a bundled -o takes a value"),
+                     ("bash -euxo pipefail < bad.sh", "a longer bundle ending in o takes a value"),
+                     ("bash 2>&1 < bad.sh", "the & of a fd duplication is not a separator"),
+                     ("bash &>log < bad.sh", "&> is a redirect, not a background &")):
+        rc, err = labelled(cmd, files=tree)
+        check(f"guard-bash (#1495): `{cmd}` is refused ({why})", rc == 2 and "by redirect" in err and "cannot follow" not in err, err)
+    for cmd, why in (("(cd sub) && bash < only.sh", "the subshell's cd does not outlive it; only.sh is not here"),
+                     ("bash -eo pipefail ok.sh < bad.sh", "a script operand after -eo VALUE reads stdin as data"),
+                     ("bash 2>&1 < ok.sh", "a harmless script behind 2>&1")):
+        check(f"guard-bash (#1495): CONTROL: `{cmd}` is allowed ({why})", labelled(cmd, files=tree)[0] == 0)
+    # #1513 review: shapes the first #1495 version still let through, each through the real hook.
+    tree2 = {**tree, "sub/ok.sh": harmless}
+    for cmd, why in (("cd sub &>/dev/null; bash < only.sh", "a cd's own redirect is not an argument"),
+                     ("bash -ox pipefail < bad.sh", "an o inside a bundle takes a value"),
+                     ("bash 2>&1<bad.sh", "a redirect glued to < is cut out"),
+                     ("bash>/dev/null<bad.sh", "a redirect glued to the shell is cut out"),
+                     ("bash&>log<bad.sh", "the trigger sees a redirect glued to the shell"),
+                     ("bash >&log < bad.sh", ">&word is a redirect"),
+                     ("cd sub & bash < bad.sh", "a backgrounded cd runs in a subshell"),
+                     ("cd sub | bash < bad.sh", "a piped cd runs in a subshell")):
+        rc, err = labelled(cmd, files=tree2)
+        check(f"guard-bash (#1513): `{cmd}` is refused ({why})", rc == 2 and "by redirect" in err and "cannot follow" not in err, err)
+    rc, err = labelled("cd $X && bash < ok.sh", files=tree2)
+    check("guard-bash (#1513): a relative script after a cd the hook cannot follow is refused, not guessed",
+          rc == 2 and "cannot follow" in err, err)
+    for spelled in ("gh issue $'\\x63reate'", "gh issue $'\\143reate'", "gh $'\\x69ssue' create", "$'\\x67h' issue create"):
+        rc, err = labelled(f"{spelled} -t X --body y")
+        check(f"guard-bash (#1513): `{spelled}` reaches the helper and an unlabelled create is refused",
+              rc == 2 and "no --label" in err, err)
+    for cmd in ("cd sub &>/dev/null; bash < ok.sh", "bash>/dev/null<ok.sh", "cd sub & bash < ok.sh", "echo $'a\\tb'"):
+        check(f"guard-bash (#1513): CONTROL: `{cmd}` is allowed", labelled(cmd, files=tree2)[0] == 0)
+    rc, err = labelled("gh issue $'create' -t X --body y")
+    check("guard-bash (#1495): `gh issue $'create'` reaches the helper and an unlabelled create is refused",
+          rc == 2 and "no --label" in err, err)
+    for spelled in ("$'\\x66eature'", "$'\\146eature'", "$'\\u0066eature'"):
+        check(f"guard-bash (#1495): CONTROL: `-l {spelled}` is the label `feature`, and is allowed",
+              labelled(f"gh issue create -t X --body y -l {spelled}")[0] == 0)
     check("guard-bash (#1423): CONTROL: an echo of the text is allowed through the real hook",
           labelled('echo "gh issue create"')[0] == 0)
     rc, err = labelled("gh issue create -t X --label feature", drop_helper=True)
@@ -616,6 +797,16 @@ def guard_bash_fixtures() -> None:
               raw(payload("git push --force origin dev"), bd) == 2, "exit 0")
         check("guard-bash (#1526): CONTROL: with no awk on PATH, `git status` still passes",
               raw(payload("git status"), bd) == 0, "exit 2")
+    # 1b. A LONG COMMAND: `grep -q` quits at the first match, `printf` takes SIGPIPE once the text outgrows
+    # the pipe buffer, and `set -o pipefail` read that 141 as "no match". `git add -A` plus 10k lines of echo
+    # was allowed (attacker corpus b2/b3/b4/b14). 10k lines of `echo line N` is ~130KB, past a 64KB pipe.
+    long_tail = "".join(f"echo line {i}\n" for i in range(10000))
+    check("guard-bash: `git add -A` followed by 10k lines is still blocked (pipefail + SIGPIPE)",
+          raw(payload("git add -A\n" + long_tail)) == 2, "exit 0: grep -q's early exit was read as no match")
+    check("guard-bash: a force-push to dev followed by 10k lines is still blocked",
+          raw(payload("git push --force origin dev\n" + long_tail)) == 2, "exit 0")
+    check("guard-bash: CONTROL: `git status` followed by 10k lines still passes",
+          raw(payload("git status\n" + long_tail)) == 0, "exit 2")
     # 2. AN UNCLOSED HEREDOC INSIDE `$( )`: bash ends it at the line closing the `$( )`.
     check("guard-bash (#1526): a heredoc left open inside $( ) does not hide the `git add -A` after it",
           run("x=$(cat <<EOF\nfoo\n)\ngit add -A") == 2, "exit 0")
@@ -826,13 +1017,42 @@ def guard_claims_fixtures() -> None:
             (Path(td) / ".github" / "pull_request_template.md").write_text(TPL, encoding="utf-8")
             (Path(td) / "body.md").write_text("## What changed\nx\n", encoding="utf-8")
             env = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])}
-            env.pop("GH_REPO", None)
+            for k in [k for k in env if k.startswith(("GIT_", "GH_"))]:
+                env.pop(k, None)
             broke = _run(["bash", str(copy / "guard-claims.sh")], cwd=td, env=env, text=True,
                                    capture_output=True, timeout=60,
                                    input=json.dumps({"tool_input": {"command": f"gh pr create --base dev --body-file {td}/body.md"}}))
     check("guard-claims: a helper that fails at import is BLOCKED, never let through",
           broke.returncode == 2 and "died before judging" in broke.stdout + broke.stderr,
           f"exit {broke.returncode}: {(broke.stdout + broke.stderr)[-120:]}")
+    # #1509: the directory resolver is a checker too. Missing or crashing, it has resolved nothing,
+    # and the session directory is not a safe default: FAIL CLOSED, as #1435 ruled for pr_template.
+    # The review's shape (#1516): a cd plus a RELATIVE body that exists only in the cd target. An absolute
+    # body with no cd reached the template branch's own block; this one used to fail OPEN at "could not
+    # read a --body-file" before any block ran.
+    for label, mangle in (
+            ("missing", lambda f: f.rename(f.with_name("command_cwd_renamed.py"))),
+            ("crashing", lambda f: f.write_text("import sys\nsys.exit(1)\n", encoding="utf-8"))):
+        with tempfile.TemporaryDirectory() as hd:
+            copy = Path(hd) / "scripts"
+            shutil.copytree(HOOKS, copy)
+            mangle(copy / "lib" / "command_cwd.py")
+            with tempfile.TemporaryDirectory() as td:
+                a, b = Path(td) / "a", Path(td) / "b"
+                for d in (a, b):
+                    (d / ".github").mkdir(parents=True)
+                    (d / ".github" / "pull_request_template.md").write_text(TPL, encoding="utf-8")
+                (b / "onlyb.md").write_text(FULL, encoding="utf-8")
+                env = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])}
+                for k in [k for k in env if k.startswith(("GIT_", "GH_"))]:
+                    env.pop(k, None)
+                broke = _run(["bash", str(copy / "guard-claims.sh")], cwd=a, env=env, text=True,
+                             capture_output=True, timeout=60,
+                             input=json.dumps({"tool_input": {"command": f"cd {b} && gh pr create --base dev --body-file onlyb.md"}}))
+        needle = "could not be resolved"
+        check(f"guard-claims: a {label} command_cwd.py is BLOCKED, never the session's template (#1509)",
+              broke.returncode == 2 and needle in broke.stdout + broke.stderr,
+              f"exit {broke.returncode}: {(broke.stdout + broke.stderr)[-120:]}")
     check("guard-claims: `-R` in a double-quoted title with an apostrophe is still text (#1435)",
           run("gh pr create --title \"it's the -R fix\" --base dev --body-file BODY", "## What changed\nx\n",
               template=TPL) == 2, "exit 0")
@@ -848,6 +1068,255 @@ def guard_claims_fixtures() -> None:
     check("guard-claims: a | inside a quoted title does not hide a later -R",
           run("gh pr create --title 'a|b' -R o/r --body-file BODY", "## What changed\nx\n", template=TPL) == 0,
           "exit 2")
+
+    # ---- the COMMAND's directory, not the session's (#1509) ----
+    # A hook runs in the session's directory. A session rooted in repo A ran `cd <repo B> && gh pr
+    # create` and was BLOCKED for missing A's sections, while B's template went unchecked. Each body
+    # below satisfies exactly one of the two templates, so a verdict names the template it read.
+    TPL_B = "## Summary\n\n## Risk\n"
+    FITS_B = "## Summary\nTidy the README.\n## Risk\nNone, copy only.\n"
+
+    def run_in(cmd: str, body: str, *, body_in: str = "a", with_output: bool = False, payload_cwd: str = "",
+               env_extra: dict[str, str] | None = None):
+        with tempfile.TemporaryDirectory() as td:
+            a, b = Path(td) / "a", Path(td) / "b"
+            # `a/5` carries B's template, so `cd 5 >/dev/null` read as a bare `cd` (HOME, set to A) is visible.
+            for d, tpl in ((a, TPL), (b, TPL_B), (a / "5", TPL_B)):
+                (d / ".github").mkdir(parents=True)
+                (d / ".github" / "pull_request_template.md").write_text(tpl, encoding="utf-8")
+            # A directory literally named `$NOWHERE`: a `cd $NOWHERE` read literally would find it, so
+            # only the refusal of `$` keeps that fixture red, not the missing-directory check.
+            (a / "$NOWHERE").mkdir()
+            (a / "sub").mkdir()             # `cd sub` resolves here, so only CDPATH can make it unknown
+            (a / "~nobody").mkdir()         # likewise, only the refusal of `~user` keeps that fixture red
+            (b / "sub").mkdir()             # A/linkSub -> B/sub: `cd -P linkSub/..` is B, a logical one A
+            (a / "linkSub").symlink_to(b / "sub")
+            for odd in ("x#y", "x #y"):     # a `#` that is not a comment: B's template one level down
+                (b / odd / ".github").mkdir(parents=True)
+                (b / odd / ".github" / "pull_request_template.md").write_text(TPL_B, encoding="utf-8")
+            where = a if body_in == "a" else b
+            (where / "body.md").write_text(body, encoding="utf-8")
+            cmd = cmd.replace("B_DIR", str(b)).replace("BODY", str(where / "body.md"))
+            payload = {"tool_input": {"command": cmd}}
+            extra = {k: v.replace("B_DIR", str(b)) for k, v in (env_extra or {}).items()}
+            if payload_cwd:
+                payload["cwd"] = str({"a": a, "b": b}[payload_cwd])
+            done = run_hook("guard-claims.sh", cwd=a, stdin=json.dumps(payload),
+                            env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1]), "HOME": str(a), **extra})
+            return done if with_output else done[0]
+
+    check("guard-claims: a `cd <other repo>` is judged against that repo's template (#1509)",
+          run_in("cd B_DIR && gh pr create --base dev --body-file BODY", FULL) == 2, "exit 0")
+    check("guard-claims: ...and a body fitting the cd target's template passes there",
+          run_in("cd B_DIR && gh pr create --base dev --body-file BODY", FITS_B) == 0, "exit 2")
+    check("guard-claims: no cd is the session repo's template (control)",
+          run_in("gh pr create --base dev --body-file BODY", FITS_B) == 2, "exit 0")
+    rc, out = run_in("cd B_DIR && gh pr create -R o/r --base dev --body-file BODY", FULL, with_output=True)
+    check("guard-claims: -R after a cd is still another repository, NOT checked (control)",
+          rc == 0 and "NOT checked (-R" in out, f"exit {rc}: {out[-120:]}")
+    check("guard-claims: a relative --body-file is read from the cd target",
+          run_in("cd B_DIR && gh pr create --base dev --body-file body.md", FITS_B, body_in="b") == 0
+          and run_in("cd B_DIR && gh pr create --base dev --body-file body.md", FULL, body_in="b") == 2,
+          "the relative body was not read from B")
+    check("guard-claims: an issue comment's relative body is read from the cd target too, and its claims checked",
+          run_in("cd B_DIR && gh issue comment 5 --body-file body.md", NUMERIC, body_in="b") == 2, "exit 0")
+    check("guard-claims: `--body-file b.md; echo done` reads b.md, not `b.md;` (#1516)",
+          run_in("cd B_DIR && gh pr create --body-file body.md; echo done", FULL, body_in="b") == 2
+          and run_in("cd B_DIR && gh pr create --body-file body.md; echo done", FITS_B, body_in="b") == 0,
+          "the body was not read")
+    check("guard-claims: the command starts in the payload's cwd, not the hook's own directory",
+          run_in("gh pr create --body-file BODY", FULL, payload_cwd="b") == 2
+          and run_in("gh pr create --body-file BODY", FITS_B, payload_cwd="b") == 0, "judged against A")
+    # THE ALLOWLIST (#1516, round 3). A cd is followed only in the simple grammar: top-level segments joined
+    # by `&&`, `;` or a newline, before the gh segment, each `cd [-P|-L] <one path>` with an optional `>`/`2>`
+    # redirect; the gh segment may carry a known wrapper. FULL fits A and not B, so exit 2 means B was read.
+    for label, cmd in (
+            ("`cd B;`", "cd B_DIR; gh pr create --body-file BODY"),
+            ("a newline after the cd", "cd B_DIR\ngh pr create --body-file BODY"),
+            ("a quoted path", 'cd "B_DIR" && gh pr create --body-file BODY'),
+            ("two cds in a row", "cd B_DIR/.. && cd b && gh pr create --body-file BODY"),
+            ("a cd with its stderr redirected", "cd B_DIR 2>/dev/null && gh pr create --body-file BODY"),
+            ("a cd with its stdout redirected", "cd B_DIR >/dev/null && gh pr create --body-file BODY"),
+            ("`cd 5 >/dev/null` (5 is the directory, not an fd)", "cd 5 >/dev/null && gh pr create --body-file BODY"),
+            ("a leading comment line", "# open the PR\ncd B_DIR && gh pr create --body-file BODY"),
+            ("a leading comment with an apostrophe", "# don't open this from A\ncd B_DIR && gh pr create --body-file BODY"),
+            ("a comment after the cd", "cd B_DIR # go to B\ngh pr create --body-file BODY"),
+            ("a `#` inside a word", "cd B_DIR/x#y && gh pr create --body-file BODY"),
+            ("a `#` inside a quoted path", 'cd "B_DIR/x #y" && gh pr create --body-file BODY'),
+            ("an escaped space before `#` (S-b)", "cd B_DIR/x\\ #y && gh pr create --body-file BODY"),
+            ("a `~/` path", "cd ~/../b && gh pr create --body-file BODY"),
+            ("a redirect before the cd", ">/dev/null cd B_DIR && gh pr create --body-file BODY"),
+            ("`env gh`", "cd B_DIR && env gh pr create --body-file BODY"),
+            ("`env VAR=1 gh`", "cd B_DIR && env PAGER=cat gh pr create --body-file BODY"),
+            ("`VAR=1 gh`", "cd B_DIR && PAGER=cat gh pr create --body-file BODY"),
+            ("`command -p gh`", "cd B_DIR && command -p gh pr create --body-file BODY"),
+            ("an absolute path to gh", "cd B_DIR && /opt/homebrew/bin/gh pr create --body-file BODY"),
+            ("`timeout 60 gh`", "cd B_DIR && timeout 60 gh pr create --body-file BODY"),
+            ("`timeout -k 5 60 gh`", "cd B_DIR && timeout -k 5 60 gh pr create --body-file BODY"),
+            ("`nohup gh`", "cd B_DIR && nohup gh pr create --body-file BODY"),
+            ("`nice -n 5 gh`", "cd B_DIR && nice -n 5 gh pr create --body-file BODY"),
+            ("`exec gh`", "cd B_DIR && exec gh pr create --body-file BODY"),
+            ("`time -p gh`", "cd B_DIR && time -p gh pr create --body-file BODY")):
+        rc, out = run_in(cmd, FULL, with_output=True)
+        # B's own missing section, not just exit 2: a crashing resolver also exits 2, by blocking.
+        check(f"guard-claims: {label} is followed to the cd target's template (#1516 allowlist)",
+              rc == 2 and "## Risk" in out, f"exit {rc}: {out[-140:]}")
+    check("guard-claims: `cd B && env gh` with a body fitting B passes there (control)",
+          run_in("cd B_DIR && env gh pr create --body-file BODY", FITS_B) == 0, "exit 2")
+    check("guard-claims: with no cd, a command before gh leaves it in the starting repo (control)",
+          run_in("git push -u origin x && gh pr create --body-file BODY", FITS_B) == 2, "exit 0")
+    for label, cmd in (("known-safe commands and an assignment before gh", "X=1 git status && echo ok | head -1; gh pr create --body-file BODY"),
+                       ("a logical `cd link/..`, as bash resolves it", "cd linkSub/.. && gh pr create --body-file BODY")):
+        rc, out = run_in(cmd, "Tidy the README.\n", with_output=True)
+        check(f"guard-claims: {label} is judged in the starting repo (control, #1516 round 4)",
+              rc == 2 and "## What changed" in out, f"exit {rc}: {out[-140:]}")
+    # CANNOT TELL: anything else, so ALLOW WITH A LOUD NOTICE (the maintainer's decision on #1509). NEITHER
+    # fits no template, so a judgement against either repository exits 2; only the notice path exits 0.
+    NEITHER = "Tidy the README.\n"
+    NOTICE = "NOT checked (the directory gh runs in could not be resolved"
+    for label, cmd in (
+            # round 3: N1-N5, each judged against the wrong repository at 600614d
+            # round 4: B1, `-P` resolves physically, so it is out of the grammar; B2, the no-cd shortcut is an
+            # allowlist of command words too, so a builtin it does not know (zsh `chdir`) cannot slip past
+            ("B1 `cd -P`", "cd -P B_DIR && gh pr create --body-file BODY"),
+            ("B1 `cd -P link/..`", "cd -P linkSub/.. && gh pr create --body-file BODY"),
+            ("B1 `cd -P link && cd ..`", "cd -P linkSub && cd .. && gh pr create --body-file BODY"),
+            ("B1 `cd -L`", "cd -L B_DIR && gh pr create --body-file BODY"),
+            ("B2 zsh `chdir`", "chdir B_DIR; gh pr create --body-file BODY"),
+            ("B2 `builtin source`", "builtin source /dev/null && gh pr create --body-file BODY"),
+            ("B2 `command .`", "command . /dev/null && gh pr create --body-file BODY"),
+            ("B2 a command word from a variable", "x=cd; $x B_DIR; gh pr create --body-file BODY"),
+            ("B2 an ANSI-quoted `$'cd'`", "$'cd' B_DIR; gh pr create --body-file BODY"),
+            ("B2 an unknown command (an alias or function may cd)", "proj && gh pr create --body-file BODY"),
+            # round 5: GIT_DIR / GIT_WORK_TREE pick gh's repository whatever the directory
+            ("R5 `GIT_DIR=B/.git gh`", "GIT_DIR=B_DIR/.git gh pr create --body-file BODY"),
+            ("R5 `cd B && GIT_DIR=A/.git gh`", "cd B_DIR && GIT_DIR=../a/.git gh pr create --body-file BODY"),
+            ("R5 `GIT_WORK_TREE=B gh`", "GIT_WORK_TREE=B_DIR gh pr create --body-file BODY"),
+            ("R5 `env GIT_DIR=… gh`", "env GIT_DIR=B_DIR/.git gh pr create --body-file BODY"),
+            ("R5 `GIT_DIR=…;` before gh", "GIT_DIR=B_DIR/.git; gh pr create --body-file BODY"),
+            ("R5 `export GIT_DIR=…;` before gh", "export GIT_DIR=B_DIR/.git; gh pr create --body-file BODY"),
+            ("R5 `export GIT_WORK_TREE=…;` before gh", "export GIT_WORK_TREE=B_DIR; gh pr create --body-file BODY"),
+            # round 6: any GIT_* / GH_* is the class, not a list; the reviewer's four, then two of the class
+            ("R6 `GIT_COMMON_DIR`", "GIT_COMMON_DIR=B_DIR/.git gh pr create --body-file BODY"),
+            ("R6 `GIT_CONFIG_GLOBAL`", "GIT_CONFIG_GLOBAL=B_DIR/gitconfig gh pr create --body-file BODY"),
+            ("R6 `GIT_CONFIG_COUNT/KEY_0/VALUE_0`",
+             "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=url.x.insteadOf GIT_CONFIG_VALUE_0=y gh pr create --body-file BODY"),
+            ("R6 `GIT_CONFIG_PARAMETERS`", "GIT_CONFIG_PARAMETERS=\"'remote.origin.url'='x'\" gh pr create --body-file BODY"),
+            ("R6 an arbitrary `GIT_FOO=1` (the class)", "GIT_FOO=1 gh pr create --body-file BODY"),
+            ("R6 `GH_HOST` (the class)", "GH_HOST=example.com gh pr create --body-file BODY"),
+            ("R6 `GH_REPO`, folded into the class", "cd B_DIR && GH_REPO=o/r gh pr create --body-file BODY"),
+            ("R6 `export GH_HOST=…;` before gh", "export GH_HOST=example.com; gh pr create --body-file BODY"),
+            ("R6 `GH_HOST=…;` before gh", "GH_HOST=example.com; gh pr create --body-file BODY"),
+            # round 7: HOME / XDG_CONFIG_HOME set by the command move git's global config (insteadOf); the rest of
+            # the config-redirecting family, each shown with real gh 2.97.0 (`gh browse -n`)
+            ("R7 `HOME=… gh`", "HOME=B_DIR/h gh pr create --body-file BODY"),
+            ("R7 `XDG_CONFIG_HOME=… gh`", "XDG_CONFIG_HOME=B_DIR/x gh pr create --body-file BODY"),
+            ("R7 `env HOME=… gh`", "env HOME=B_DIR/h gh pr create --body-file BODY"),
+            ("R7 `HOME=…;` before gh", "HOME=B_DIR/h; gh pr create --body-file BODY"),
+            ("R7 `export HOME=…;` before gh", "export HOME=B_DIR/h; gh pr create --body-file BODY"),
+            ("R7 `export XDG_CONFIG_HOME=…;` before gh", "export XDG_CONFIG_HOME=B_DIR/x; gh pr create --body-file BODY"),
+            ("R7 `GIT_CONFIG_SYSTEM`", "GIT_CONFIG_SYSTEM=B_DIR/c gh pr create --body-file BODY"),
+            ("R7 `GIT_CONFIG_NOSYSTEM`", "GIT_CONFIG_NOSYSTEM=1 gh pr create --body-file BODY"),
+            ("R7 `GH_CONFIG_DIR`", "GH_CONFIG_DIR=B_DIR/g gh pr create --body-file BODY"),
+            ("R7 `git config --global …insteadOf` before gh", "git config --global url.b.insteadOf a && gh pr create --body-file BODY"),
+            ("R7 `git config …insteadOf` before gh", "git config url.b.insteadOf a; gh pr create --body-file BODY"),
+            ("R7 `git remote set-url` before gh", "git remote set-url origin b; gh pr create --body-file BODY"),
+            ("R7 `gh repo set-default` before gh", "gh repo set-default o/b && gh pr create --body-file BODY"),
+            ("R7 an unknown git option before gh", "git --exec-path=x status && gh pr create --body-file BODY"),
+            ("R7 a write into .git/config before gh", "echo x >> .git/config; gh pr create --body-file BODY"),
+            ("R7 `sed -i` on .git/config before gh", "sed -i.bak s/a/b/ .git/config; gh pr create --body-file BODY"),
+            ("N1 `env -C/dir`", "env -CB_DIR gh pr create --body-file BODY"),
+            ("N1 `env -iC dir`", "env -iC B_DIR gh pr create --body-file BODY"),
+            ("N1 `env -C dir`", "env -C B_DIR gh pr create --body-file BODY"),
+            ("N1 `env --chdir=dir`", "env --chdir=B_DIR gh pr create --body-file BODY"),
+            ("N1 `env -i` (any env option)", "cd B_DIR && env -i gh pr create --body-file BODY"),
+            ("N2 `eval \"cd B\"`", 'eval "cd B_DIR" && gh pr create --body-file BODY'),
+            ("N2 `eval cd B;`", "eval cd B_DIR; gh pr create --body-file BODY"),
+            ("N2 `eval \"$VAR\"`, with no cd in sight", 'eval "$GO" && gh pr create --body-file BODY'),
+            ("N3 a cd in an if/else", "if true; then cd B_DIR; else cd .; fi; gh pr create --body-file BODY"),
+            ("N3 a cd in an if that did not run", "if false; then cd B_DIR; fi; gh pr create --body-file BODY"),
+            ("N3 a cd in a while body", "while false; do cd B_DIR; done; gh pr create --body-file BODY"),
+            ("N3 a cd in a while condition", "while cd B_DIR; do gh pr create --body-file BODY ; break; done"),
+            ("N3 a cd in an until condition", "until cd B_DIR; do :; done; gh pr create --body-file BODY"),
+            ("N3 a cd in a for body", "for x in 1; do cd B_DIR; done; gh pr create --body-file BODY"),
+            ("N4 `false && cd B; gh`", "false && cd B_DIR; gh pr create --body-file BODY"),
+            ("N4 `true || cd B; gh`", "true || cd B_DIR; gh pr create --body-file BODY"),
+            ("N5 `$((1<<2))` before the cd", "echo $((1<<2))\ncd B_DIR && gh pr create --body-file BODY"),
+            ("N5 `(( n = 1 << 2 ))` before the cd", "(( n = 1 << 2 ))\ncd B_DIR && gh pr create --body-file BODY"),
+            # everything else outside the grammar
+            ("a cd inside a subshell", "(cd B_DIR) && gh pr create --body-file BODY"),
+            ("a cd inside a brace group", "{ cd B_DIR; } && gh pr create --body-file BODY"),
+            ("a cd in a case branch", "case x in x) cd B_DIR && gh pr create --body-file BODY;; esac"),
+            ("a gh after a case", "case x in x) cd B_DIR;; esac; gh pr create --body-file BODY"),
+            ("`builtin cd`", "builtin cd B_DIR && gh pr create --body-file BODY"),
+            ("`command cd`", "command cd B_DIR && gh pr create --body-file BODY"),
+            ("an assignment before the cd", "X=1 cd B_DIR && gh pr create --body-file BODY"),
+            ("another command between the cd and gh", "cd B_DIR && git log --oneline -1 # sanity\ngh pr create --body-file BODY"),
+            ("an echo before the cd", "echo 'gh pr create' && cd B_DIR && gh pr create --body-file BODY"),
+            ("a heredoc before the cd", "cat > /dev/null <<'EOF'\nit's a body\nEOF\ncd B_DIR && gh pr create --body-file BODY"),
+            ("a function body's cd", "f() { cd B_DIR; }; gh pr create --body-file BODY"),
+            ("a `function` keyword body's cd", "function f { cd B_DIR; }; gh pr create --body-file BODY"),
+            ("gh inside `bash -c`", 'bash -c "cd B_DIR && gh pr create --body-file BODY"'),
+            ("gh behind `sudo` after a cd", "cd B_DIR && sudo gh pr create --body-file BODY"),
+            ("gh behind `sudo` with no cd", "sudo gh pr create --body-file BODY"),
+            ("gh in an if with no cd", "if true; then gh pr create --body-file BODY; fi"),
+            ("a cd run as a program (`env cd`)", "env cd B_DIR && gh pr create --body-file BODY"),
+            ("`source` before gh", "source /dev/null && gh pr create --body-file BODY"),
+            ("`. file` in an if", "if true; then . /dev/null; fi; gh pr create --body-file BODY"),
+            ("`X=1 . file`", "X=1 . /dev/null && gh pr create --body-file BODY"),
+            ("a cd with an input redirect", "cd B_DIR </dev/null && gh pr create --body-file BODY"),
+            ("a cd to ~user", "cd ~nobody && gh pr create --body-file BODY"),
+            ("`pushd`", "pushd B_DIR && gh pr create --body-file BODY"),
+            ("a bare `cd`", "cd && gh pr create --body-file BODY"),
+            ("`cd -`", "cd - && gh pr create --body-file BODY"),
+            ("a cd with two arguments", "cd B_DIR x && gh pr create --body-file BODY"),
+            ("a cd to a variable", "cd $NOWHERE && gh pr create --body-file BODY"),
+            ("a negated cd", "! cd B_DIR && gh pr create --body-file BODY"),
+            ("a cd to a missing directory", "cd B_DIR/missing && gh pr create --body-file BODY"),
+            ("a cd joined by ||", "cd B_DIR || gh pr create --body-file BODY"),
+            ("a cd joined by |", "cd B_DIR | gh pr create --body-file BODY"),
+            ("a cd joined by &", "cd B_DIR & gh pr create --body-file BODY"),
+            ("an unbalanced quote before the cd", "echo it's\ncd B_DIR && gh pr create --body-file BODY")):
+        rc, out = run_in(cmd, NEITHER, with_output=True)
+        check(f"guard-claims: {label} is NOT checked, with the notice, never a guessed template (#1516 allowlist)",
+              rc == 0 and NOTICE in out, f"exit {rc}: {out[-140:]}")
+    rc, out = run_in("gh pr create --body-file BODY", NEITHER, with_output=True,
+                     env_extra={"GIT_DIR": "B_DIR/.git"})
+    check("guard-claims: GIT_DIR inherited by the hook is NOT checked, with the notice (#1516 round 5)",
+          rc == 0 and NOTICE in out, f"exit {rc}: {out[-140:]}")
+    rc, out = run_in("GIT_PAGER=cat git status && X=1; gh pr create --body-file BODY", NEITHER, with_output=True)
+    check("guard-claims: other assignments before gh keep the starting repo (control, #1516 round 5)",
+          rc == 2 and "## What changed" in out, f"exit {rc}: {out[-140:]}")
+    # round 6: a GIT_* on an earlier SAFE command is that command's own environment, so gh is judged normally;
+    # GH_HOST inherited is the class too; GIT_EDITOR, which the harness sets, is not.
+    rc, out = run_in("GIT_DIR=B_DIR/.git git status && gh pr create --body-file BODY", NEITHER, with_output=True)
+    check("guard-claims: a GIT_* on an earlier SAFE command does not reach gh (control, #1516 round 6)",
+          rc == 2 and "## What changed" in out, f"exit {rc}: {out[-140:]}")
+    rc, out = run_in("gh pr create --body-file BODY", NEITHER, with_output=True, env_extra={"GH_HOST": "example.com"})
+    check("guard-claims: GH_HOST inherited by the hook is NOT checked, with the notice (#1516 round 6)",
+          rc == 0 and NOTICE in out, f"exit {rc}: {out[-140:]}")
+    # round 7: each of these is that process's own, so gh is judged normally (shown with real gh)
+    for label, cmd in (("an inherited HOME", "gh pr create --body-file BODY"),
+                       ("`git -c url…insteadOf=… status` before gh", "git -c url.b.insteadOf=a status && gh pr create --body-file BODY"),
+                       ("`git --config-env=…` before gh", "V=a git --config-env=url.b.insteadOf=V status && gh pr create --body-file BODY"),
+                       ("`HOME=… git status` before gh", "HOME=B_DIR/h git status && gh pr create --body-file BODY"),
+                       ("a redirect to /dev/null and an fd before gh", "git status >/dev/null 2>&1 && gh pr create --body-file BODY"),
+                       ("`gh pr view` before gh", "gh pr view 1 && gh pr create --body-file BODY")):
+        rc, out = run_in(cmd, NEITHER, with_output=True)
+        check(f"guard-claims: {label} is judged in the starting repo (control, #1516 round 7)",
+              rc == 2 and "## What changed" in out, f"exit {rc}: {out[-140:]}")
+    rc, out = run_in("gh pr create --body-file BODY", NEITHER, with_output=True, env_extra={"GIT_EDITOR": "true"})
+    check("guard-claims: an inherited GIT_EDITOR (the harness sets it) is still judged (control, #1516 round 6)",
+          rc == 2 and "## What changed" in out, f"exit {rc}: {out[-140:]}")
+    rc, out = run_in("cd sub && gh pr create --body-file BODY", NEITHER, with_output=True,
+                     env_extra={"CDPATH": "B_DIR"})
+    check("guard-claims: a relative cd with CDPATH set is NOT checked, with the notice (#1516 allowlist)",
+          rc == 0 and NOTICE in out, f"exit {rc}: {out[-140:]}")
+    # S-a: a RELATIVE body with an unresolved directory cannot be located. The message still says the template
+    # and the change type were NOT checked, and why.
+    rc, out = run_in("if true; then cd B_DIR; fi; gh pr create --body-file body.md", NEITHER, body_in="b", with_output=True)
+    check("guard-claims: an unlocatable relative body still says NOT checked, and why (#1516 S-a)",
+          rc == 0 and NOTICE in out and "template" in out, f"exit {rc}: {out[-140:]}")
     check("guard-claims: an issue comment is not held to the PR template",
           run("gh issue comment 5 --body-file BODY", "Tidy the README.\n", template=TPL) == 0, "exit 2")
     # OUT OF SCOPE, AND THE BODY MUST CARRY A CLAIM. A first draft passed a claim-FREE body here,
@@ -904,6 +1373,113 @@ def guard_claims_fixtures() -> None:
     # SCOPE: a PR touching no skill is not subject to the rule, whatever its body says.
     check("guard-claims: a PR touching no skill needs no change type",
           run_in_repo(CREATE, "Tidy the wording.\n", "scripts/x.py") == 0, "exit 2")
+    # #1516 review: the change-type check ran `git diff` in the SESSION's repo. A session with a modified
+    # skills/ file blocked `cd <other repo> && gh pr create` for a PR that touches nothing there.
+    def run_skills_cd(cmd: str) -> int:
+        with tempfile.TemporaryDirectory() as td:
+            a, b = Path(td) / "a", Path(td) / "b"
+            for d in (a, b):
+                d.mkdir()
+                _run(["git", "init", "-q", "-b", "main"], cwd=d, capture_output=True)
+                (d / "README.md").write_text("x\n", encoding="utf-8")
+            (a / "skills").mkdir()
+            (a / "skills" / "x.md").write_text("x\n", encoding="utf-8")
+            for d in (a, b):
+                _run(["git", "add", "-A"], cwd=d, capture_output=True)
+                _run(["git", "-c", "user.email=f@e", "-c", "user.name=f", "commit", "-qm", "base"],
+                     cwd=d, capture_output=True)
+            (a / "skills" / "x.md").write_text("changed\n", encoding="utf-8")
+            # STAGED, because another repository is read through its staged diff only (no code from the target,
+            # #1516): an unstaged change would let a hook that read the wrong repository look right.
+            _run(["git", "add", "skills/x.md"], cwd=a, capture_output=True)
+            (b / "body.md").write_text("Tidy the wording.\n", encoding="utf-8")
+            return run_hook("guard-claims.sh", cwd=a, stdin=json.dumps({"tool_input": {
+                "command": cmd.replace("B_DIR", str(b))}}),
+                env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])})[0]
+
+    check("guard-claims: the skills/** change-type check reads the cd target's diff, not the session's (#1516)",
+          run_skills_cd("cd B_DIR && gh pr create --base dev --body-file body.md") == 0, "exit 2")
+    check("guard-claims: ...and without the cd the session's skills/ change is still held to it (control)",
+          run_skills_cd("gh pr create --base dev --body-file B_DIR/body.md") == 2, "exit 0")
+
+    # NO CODE RUNS BEFORE PERMISSION (#1516, push security reviews). The hook reads `git diff` in the directory
+    # the command `cd`s into, and a hook runs BEFORE the person is asked about the command. A repository's own
+    # config can name a program that `git diff` executes: `core.fsmonitor` on any diff, and a `filter.<name>.clean`
+    # on a diff that hashes a changed working-tree file. Disabling one key was not enough (the first fix left the
+    # clean filter running), so the hook reads a repository other than the session's with only the staged diff, which
+    # hashes nothing. The marker file is what the program writes; it must not exist afterwards.
+    def run_exec_cd(cmd: str, vector: str, stage_skills: bool = False) -> tuple[int, bool]:
+        with tempfile.TemporaryDirectory() as td:
+            a, b = Path(td) / "a", Path(td) / "b"
+            marker, script = Path(td) / "PROGRAM_RAN", Path(td) / "program.sh"
+            script.write_text(f"#!/bin/sh\necho ran >> '{marker}'\n" + ("cat\n" if vector == "filter" else ""),
+                              encoding="utf-8")
+            script.chmod(0o755)
+            for d in (a, b):
+                d.mkdir()
+                _run(["git", "init", "-q", "-b", "main"], cwd=d, capture_output=True)
+                (d / "README.md").write_text("x\n", encoding="utf-8")
+            (b / ".gitattributes").write_text("*.md filter=evil\n", encoding="utf-8")
+            (b / "skills").mkdir()
+            (b / "skills" / "x.md").write_text("x\n", encoding="utf-8")
+            for d in (a, b):
+                _run(["git", "add", "-A"], cwd=d, capture_output=True)
+                _run(["git", "-c", "user.email=f@e", "-c", "user.name=f", "commit", "-qm", "base"],
+                     cwd=d, capture_output=True)
+            (b / "README.md").write_text("changed\n", encoding="utf-8")        # a working-tree change to hash
+            if stage_skills:
+                (b / "skills" / "x.md").write_text("changed\n", encoding="utf-8")
+                _run(["git", "add", "skills/x.md"], cwd=b, capture_output=True)
+            (b / "body.md").write_text("Tidy the wording.\n", encoding="utf-8")
+            key = "core.fsmonitor" if vector == "fsmonitor" else "filter.evil.clean"
+            _run(["git", "config", key, str(script)], cwd=b, capture_output=True)
+            rc = run_hook("guard-claims.sh", cwd=a, stdin=json.dumps({"tool_input": {
+                "command": cmd.replace("B_DIR", str(b))}}),
+                env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])})[0]
+            return rc, marker.exists()
+
+    CD_B = "cd B_DIR && gh pr create --base dev --body-file body.md"
+    rc, ran = run_exec_cd(CD_B, "fsmonitor")
+    check("guard-claims: a cd into a repository whose core.fsmonitor names a program does not run it "
+          "(no code before permission, #1516)", not ran, f"exit {rc}: the repository's own program ran in the hook")
+    rc, ran = run_exec_cd(CD_B, "filter")
+    check("guard-claims: a cd into a repository whose filter.<name>.clean names a program does not run it "
+          "(no code before permission, #1516)", not ran, f"exit {rc}: the repository's own program ran in the hook")
+    rc, ran = run_exec_cd(CD_B, "filter", stage_skills=True)
+    check("guard-claims: ...and the cd target's STAGED skills/ change is still read without running anything (control)",
+          rc == 2 and not ran, f"exit {rc}, program ran: {ran}")
+
+    # A LARGE DIFF MUST NOT FAIL OPEN (#1516, push security review; the SIGPIPE class of #1579). `git diff --name-only |
+    # grep -q` under `set -o pipefail` loses the match when the name list outgrows the pipe buffer: `grep -q` leaves at
+    # the first hit, `git` dies of SIGPIPE, the pipeline reports failure and the gate reads "no skills/ change". 2500
+    # staged files with long names are about 170 KiB, well past the 64 KiB buffer.
+    def run_big_skills_diff(cmd: str, big_repo: str) -> int:
+        with tempfile.TemporaryDirectory() as td:
+            a, b = Path(td) / "a", Path(td) / "b"
+            for d in (a, b):
+                d.mkdir()
+                _run(["git", "init", "-q", "-b", "main"], cwd=d, capture_output=True)
+                (d / "README.md").write_text("x\n", encoding="utf-8")
+                _run(["git", "add", "-A"], cwd=d, capture_output=True)
+                _run(["git", "-c", "user.email=f@e", "-c", "user.name=f", "commit", "-qm", "base"],
+                     cwd=d, capture_output=True)
+            big = a if big_repo == "session" else b
+            (big / "skills").mkdir()
+            for i in range(2500):
+                (big / "skills" / f"s{i:04d}-a-fairly-long-file-name-so-the-name-list-outgrows-a-pipe-buffer.md").write_text(
+                    "x\n", encoding="utf-8")
+            _run(["git", "add", "-A"], cwd=big, capture_output=True)
+            (b / "body.md").write_text("Tidy the wording.\n", encoding="utf-8")
+            return run_hook("guard-claims.sh", cwd=a, stdin=json.dumps({"tool_input": {
+                "command": cmd.replace("B_DIR", str(b))}}),
+                env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])})[0]
+
+    check("guard-claims: a large staged skills/ list in the session's repository is still held to the change-type rule "
+          "(no SIGPIPE fail-open, #1516)",
+          run_big_skills_diff("gh pr create --base dev --body-file B_DIR/body.md", "session") == 2, "exit 0")
+    check("guard-claims: a large staged skills/ list in the cd target is still held to the change-type rule "
+          "(no SIGPIPE fail-open, #1516)",
+          run_big_skills_diff("cd B_DIR && gh pr create --base dev --body-file body.md", "target") == 2, "exit 0")
 
     # FAILS OPEN when it cannot read the body. This guard's job is to make the check happen where
     # it can, never to block opening a PR because a path could not be resolved.
@@ -917,12 +1493,25 @@ def guard_claims_fixtures() -> None:
 QA_HOOK = HOOKS.parents[2] / "qa-flow" / "hooks" / "scripts" / "release-gate.sh"
 
 
+def _pin(cmd: str, head: str) -> str:
+    """`cmd` with the head a PR merge into main acts on pinned (#1571). A merge that does not pin it is denied before it
+    is judged, so a fixture that is about WHICH repository, or WHETHER the head is certified, must carry the pin.
+    Commands that are not a PR merge come back unchanged."""
+    if re.search(r"\bgh\s+pr\b.*\bmerge\b", cmd):         # flags may sit between `pr` and `merge`
+        return f"{cmd} --match-head-commit {head}"
+    if re.search(r"pulls/\d+/merge", cmd):
+        return re.sub(r"(pulls/\d+/merge)", rf"\1 -f sha={head}", cmd, count=1)
+    return cmd
+
+
 def release_gate_fixtures() -> None:
     if not QA_HOOK.is_file():
         check("release-gate.sh present beside rails-flow", False, str(QA_HOOK))
         return
 
-    def run(cmd: str, marketplace: bool = False, plugin_root: Path | None = None) -> int:
+    def run(cmd: str, marketplace: bool = False, plugin_root: Path | None = None,
+            origin: str | None = "https://github.com/fmanimashaun/claude-skills.git",
+            git_config: tuple[tuple[str, ...], ...] = (), extra_env: dict[str, str] | None = None) -> int:
         with tempfile.TemporaryDirectory() as td:
             _git_repo(Path(td))
             # ON A FEATURE BRANCH (#1410). `git init` leaves HEAD on main, where a bare `git push`
@@ -935,7 +1524,13 @@ def release_gate_fixtures() -> None:
                 (Path(td) / ".claude-plugin").mkdir(parents=True, exist_ok=True)
                 (Path(td) / ".claude-plugin" / "marketplace.json").write_text(
                     '{"name": "x", "plugins": []}', encoding="utf-8")
-            env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env["CLAUDE_PLUGIN_ROOT"] = str(plugin_root or QA_HOOK.parents[2])
+                if origin:
+                    # The exemption is keyed on the repository's identity, not on the file alone (#1569).
+                    _run(["git", "remote", "add", "origin", origin], cwd=td, check=True, capture_output=True)
+            for args in git_config:
+                _run(["git", *args], cwd=td, check=True, capture_output=True)
+            env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env.pop("GH_REPO", None)
+            env["CLAUDE_PLUGIN_ROOT"] = str(plugin_root or QA_HOOK.parents[2]); env.update(extra_env or {})
             done = _run(["bash", str(QA_HOOK)], cwd=td, input=json.dumps({"tool_input": {"command": cmd}}),
                                   env=env, capture_output=True, text=True, timeout=60)
             return done.returncode
@@ -1007,6 +1602,49 @@ def release_gate_fixtures() -> None:
           run("git push origin main", marketplace=True) == 0, "exit 2")
     check("release-gate: an ordinary repo with no certification is STILL blocked",
           run("git push origin main") == 2, "exit 0")
+    # #1569: the file alone proves nothing -- any repo can add one. The exemption needs the marketplace's identity.
+    for label, origin in (("no origin at all", None), ("another repository's origin", "https://github.com/acme/app.git"),
+                          ("a look-alike name", "https://github.com/acme/claude-skills.git"),
+                          ("a look-alike owner", "https://github.com/fmanimashaun-evil/claude-skills.git"),
+                          ("a path that merely contains the name", "/home/x/fmanimashaun/claude-skills")):
+        check(f"release-gate (#1569): a marketplace.json in a repo with {label} is NOT the marketplace, and stays blocked",
+              run("git push origin main", marketplace=True, origin=origin) == 2, "exit 0")
+    # #1571 review: the exemption described the CONFIGURED origin url, but a push, merge or release goes to the
+    # EFFECTIVE target. Each of these leaves `remote.origin.url` naming the marketplace while the command acts on
+    # the consumer's repository (acme/app here), and each was exempt.
+    mk = "https://github.com/fmanimashaun/"
+    acme = "https://github.com/acme/"
+    for label, cfg, env in (
+            ("a pushurl that points elsewhere", (("config", "remote.origin.pushurl", acme + "app.git"),), None),
+            ("a second pushurl that points elsewhere",
+             (("config", "remote.origin.pushurl", mk + "claude-skills.git"),
+              ("config", "--add", "remote.origin.pushurl", acme + "app.git")), None),
+            ("a pushInsteadOf that rewrites the push target",
+             (("config", f"url.{acme}.pushInsteadOf", mk),), None),
+            ("an insteadOf that rewrites the remote",
+             (("config", f"url.{acme}.insteadOf", mk),), None),
+            ("a second remote that is another repository",
+             (("remote", "add", "fork", acme + "app.git"),), None),
+            ("gh's default repo resolved to another remote",
+             (("remote", "add", "fork", acme + "app.git"), ("config", "remote.fork.gh-resolved", "base")), None),
+            ("gh's default repo named as another repository",
+             (("config", "remote.origin.gh-resolved", "acme/app"),), None),
+            ("a GH_REPO that names another repository", (), {"GH_REPO": "acme/app"})):
+        for cmd in ("git push origin main", "gh release create v9 --target main"):
+            check(f"release-gate (#1571 review): a marketplace tree with {label} is NOT exempt for `{cmd}`",
+                  run(cmd, marketplace=True, git_config=cfg, extra_env=env) == 2, "exit 0")
+    # The pairs: the same configuration shapes that name the marketplace itself, or only change the transport,
+    # keep the exemption, so a broken-open and a broken-shut resolver are told apart.
+    for label, cfg, env in (
+            ("a pushurl that names the marketplace", (("config", "remote.origin.pushurl", mk + "claude-skills.git"),), None),
+            ("a pushInsteadOf that only changes the transport",
+             (("config", "url.git@github.com:fmanimashaun/.pushInsteadOf", mk),), None),
+            ("a second remote that is the marketplace too", (("remote", "add", "fork", mk + "claude-skills.git"),), None),
+            ("a gh default that names the marketplace",
+             (("config", "remote.origin.gh-resolved", "fmanimashaun/claude-skills"),), None),
+            ("GH_REPO naming the marketplace", (), {"GH_REPO": "fmanimashaun/claude-skills"})):
+        check(f"release-gate (#1571 review): CONTROL: a marketplace tree with {label} stays exempt",
+              run("git push origin main", marketplace=True, git_config=cfg, extra_env=env) == 0, "exit 2")
 
     # #1337. The stamp is bound to the tested dev sha; committing it to dev by PR moves dev. The gate
     # accepts an ANCESTOR of dev only when the delta since is the stamp itself.
@@ -1031,6 +1669,10 @@ def release_gate_fixtures() -> None:
 
         def gate() -> tuple[int, str]:
             sh("branch", "-f", "dev", "HEAD")
+            # `git push origin main` ships the LOCAL main (#1569), so the fixture promotes dev by making main it.
+            sh("update-ref", "refs/heads/main", "HEAD")
+            # The last PUBLISHED release is origin/main (release_evidence reads it before main): the root commit.
+            sh("update-ref", "refs/remotes/origin/main", sh("rev-list", "--max-parents=0", "HEAD").split()[0])
             done = _run(["bash", str(QA_HOOK)], cwd=repo, env=env, capture_output=True, text=True, timeout=60,
                                   input=json.dumps({"tool_input": {"command": "git push origin main"}}))
             return done.returncode, done.stderr
@@ -1038,11 +1680,27 @@ def release_gate_fixtures() -> None:
         rc, err = gate()
         # #1437 review round 3: the stamp is read as COMMITTED at dev. An uncommitted one is not what
         # main would receive, so it no longer permits -- the old "uncommitted control" inverts.
+        # The FIRST stage's own words, which no later stage repeats: the evidence step that follows also denies an
+        # uncommitted stamp ("unusable: no qa/CERTIFICATION is committed at ... -- commit the stamp to dev first"),
+        # so a hook that read the stamp from the working tree was still denied here and the old assertion could not
+        # tell it from the real one (#1571, measured on both). Only stage 1 says to run /qa-flow:certify.
         check("release-gate (#1428): an UNCOMMITTED stamp is denied -- main would not receive it",
-              rc == 2 and "committed at dev" in err, err)
+              rc == 2 and "no qa/CERTIFICATION is committed at" in err and "Run /qa-flow:certify against staging" in err, err)
         sh("add", "qa/CERTIFICATION"); sh_old("commit", "-q", "-m", "stamp")
         rc, err = gate()
         check("release-gate (#1337): the stamp committed on top of the tested sha still permits", rc == 0, err)
+        # #1571: dev's tip is read only when the classifier is unavailable (it names every commit itself), so that
+        # path needs its own fixture. A plugin copy WITHOUT push_targets.py forces the fallback, and this repo has
+        # no origin/dev: plain `git rev-parse origin/dev` echoes the literal ref and poisons the value (#1337).
+        import shutil
+        with tempfile.TemporaryDirectory() as fbtd:
+            fb_root = Path(fbtd) / "qa-flow"
+            shutil.copytree(QA_HOOK.parents[2], fb_root, ignore=shutil.ignore_patterns("push_targets.py", "__pycache__"))
+            done = _run(["bash", str(QA_HOOK)], cwd=repo, env={**env, "CLAUDE_PLUGIN_ROOT": str(fb_root)},
+                        capture_output=True, text=True, timeout=60,
+                        input=json.dumps({"tool_input": {"command": "git push origin main"}}))
+        check("release-gate (#1337): without the classifier, dev's tip is read and a missing origin/dev does not poison it",
+              done.returncode == 0, done.stderr)
         (repo / "app.rb").write_text("v2\n", encoding="utf-8")
         sh("commit", "-q", "-am", "untested change")
         rc, err = gate()
@@ -1056,7 +1714,7 @@ def release_gate_fixtures() -> None:
         sh("add", "qa/CERTIFICATION"); sh_old("commit", "-q", "-m", "a stamp for another branch")
         rc, err = gate()
         check("release-gate (#1337): a stamp for a sha that is not an ancestor of dev is denied",
-              rc == 2 and "dev moved" in err, err)
+              rc == 2 and " moved" in err, err)
 
     # #1428. A schema-2 stamp must name a passing first-boot walkthrough and authorization sweep; its
     # own commit may carry that evidence and nothing else. An old stamp passes, loudly, for one release.
@@ -1087,6 +1745,10 @@ def release_gate_fixtures() -> None:
 
         def gate2() -> tuple[int, str]:
             sh("branch", "-f", "dev", "HEAD")
+            # `git push origin main` ships the LOCAL main (#1569), so the fixture promotes dev by making main it.
+            sh("update-ref", "refs/heads/main", "HEAD")
+            # The last PUBLISHED release is origin/main (release_evidence reads it before main): the root commit.
+            sh("update-ref", "refs/remotes/origin/main", sh("rev-list", "--max-parents=0", "HEAD").split()[0])
             done = _run(["bash", str(QA_HOOK)], cwd=repo, env=env, capture_output=True, text=True, timeout=60,
                                   input=json.dumps({"tool_input": {"command": "git push origin main"}}))
             return done.returncode, done.stderr
@@ -1282,6 +1944,799 @@ def release_gate_fixtures() -> None:
           run("cat <<EOF\n$(git rev-parse HEAD)\nEOF\ngit push origin feature/w") == 0, "exit 2")
 
 
+
+# ---- #1569: classify by EFFECT. A REST/GraphQL merge, a hotfix PR and a release publish all reached main
+# past a gate that only read `git push` / `gh pr merge`. Driven through the real hook with a fake `gh`.
+FAKE_GH = """#!/bin/sh
+case "$1 $2" in
+  "pr view") [ -z "${FAKE_PRVIEW:-}" ] || printf '%s https://github.com/%s/pull/7' "$FAKE_PRVIEW" "${FAKE_PRREPO:-o/r}"; exit 0 ;;
+  "api graphql") case "$*" in
+      *"on Ref"*) [ -z "${FAKE_REF:-}" ] || printf '%s %s' "$FAKE_REF" "${FAKE_PRREPO:-o/r}" ;;
+      *) [ -z "${FAKE_NODE:-}" ] || printf '%s %s' "$FAKE_NODE" "${FAKE_PRREPO:-o/r}" ;;
+    esac; exit 0 ;;
+  "release view") printf '%s' "${FAKE_RELVIEW:-}"; exit 0 ;;
+  "api repos"*) printf '%s' "${FAKE_RELID:-}"; exit 0 ;;
+esac
+exit 1
+"""
+
+
+def release_gate_effects_fixtures() -> None:
+    g = ["git", "-c", "user.email=t@t", "-c", "user.name=t"]
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td) / "repo"
+        _git_repo(repo)
+        sh = lambda *a, **kw: _run([*g, *a], cwd=repo, check=True, capture_output=True, text=True, **kw).stdout.strip()
+        old = {**os.environ, "GIT_COMMITTER_DATE": "2026-09-01T00:00:00+00:00", "GIT_AUTHOR_DATE": "2026-09-01T00:00:00+00:00"}
+        # THIS checkout is github.com/o/r (so `repos/o/r/...` and `-R o/r` name it, and nothing else does),
+        # and the remote's refs live in a local bare repo behind insteadOf, so `git ls-remote origin`
+        # (the tag check) answers without a network.
+        bare = Path(td) / "origin.git"
+        _run(["git", "init", "-q", "--bare", str(bare)], check=True, capture_output=True)
+        sh("remote", "add", "origin", "https://github.com/o/r.git")
+        sh("config", f"url.{bare}.insteadOf", "https://github.com/o/r.git")
+        (repo / "app.rb").write_text("v1\n", encoding="utf-8")
+        sh("add", "app.rb"); sh("commit", "-q", "-m", "app")
+        tested = sh("rev-parse", "HEAD")
+        (repo / "qa").mkdir()
+        (repo / "qa" / "CERTIFICATION").write_text(json.dumps(
+            {"sha": tested, "date": "2026-09-26", "verdict": "PASS", "report": "qa/reports/r.md"}), encoding="utf-8")
+        sh("add", "qa/CERTIFICATION"); sh("commit", "-q", "-m", "stamp", env=old)
+        stamped = sh("rev-parse", "HEAD")                 # the certified tip of dev
+        sh("branch", "-f", "dev", stamped)
+        sh("checkout", "-q", "-b", "hotfix")
+        (repo / "app.rb").write_text("hotfix\n", encoding="utf-8")
+        sh("commit", "-q", "-am", "hotfix, never certified")
+        hot = sh("rev-parse", "HEAD")
+        sh("checkout", "-q", "-b", "feature/work", stamped)
+        sh("branch", "-f", "main", hot)                   # main is at an UNcertified commit
+        (Path(td) / "bin").mkdir()
+        (Path(td) / "bin" / "gh").write_text(FAKE_GH, encoding="utf-8")
+        (Path(td) / "bin" / "gh").chmod(0o755)
+        (Path(td) / "q.graphql").write_text('mutation { mergePullRequest(input:{pullRequestId:"PR_kw1", expectedHeadOid:"%s"}) { clientMutationId } }' % hot, encoding="utf-8")
+        (Path(td) / "q.json").write_text(json.dumps({"query": 'mutation { mergePullRequest(input:{pullRequestId:"PR_kw1", expectedHeadOid:"%s"}) { clientMutationId } }' % hot}), encoding="utf-8")
+
+        (Path(td) / "draft.json").write_text('{"draft": false}', encoding="utf-8")
+
+        def run(cmd: str, **extra) -> tuple[int, str]:
+            env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None)
+            env["CLAUDE_PLUGIN_ROOT"] = str(QA_HOOK.parents[2])
+            env["PATH"] = str(Path(td) / "bin") + os.pathsep + env["PATH"]
+            env.update(extra)
+            done = _run(["bash", str(QA_HOOK)], cwd=repo, input=json.dumps({"tool_input": {"command": cmd}}),
+                        env=env, capture_output=True, text=True, timeout=60)
+            return done.returncode, done.stderr
+
+        hotfix_pr = {"FAKE_PRVIEW": f"main {hot}"}
+        promo_pr = {"FAKE_PRVIEW": f"main {stamped}"}
+
+        def pinned(cmd: str, head: str) -> str:
+            """The same command with the head it merges PINNED (#1571). A merge into main that does not pin it is denied
+            before it is judged, so the fixtures that prove the CERTIFICATION decision must carry the pin."""
+            if "graphql" in cmd:
+                return cmd.replace('pullRequestId:"PR_kw1"}', f'pullRequestId:"PR_kw1", expectedHeadOid:"{head}"}}')
+            if "/merge" in cmd:
+                return cmd.replace("/merge", f"/merge -f sha={head}", 1)
+            return f"{cmd} --match-head-commit {head}"
+        # (1) A merge through the API, by every spelling, of a PR into main whose head is NOT certified.
+        for label, cmd in (
+            ("REST PUT, placeholders", "gh api -X PUT repos/{owner}/{repo}/pulls/7/merge -f merge_method=merge"),
+            ("REST PUT, literal repo", "gh api -X PUT repos/o/r/pulls/7/merge"),
+            ("--method=PUT", "gh api --method=PUT repos/o/r/pulls/7/merge"),
+            ("--method PUT after the path", "gh api repos/o/r/pulls/7/merge --method PUT"),
+            ("-XPUT attached", "gh api -XPUT repos/o/r/pulls/7/merge"),
+            ("sh -c", "bash -c 'gh api -X PUT repos/o/r/pulls/7/merge'"),
+            ("eval", 'eval "gh api -X PUT repos/o/r/pulls/7/merge"'),
+            ("env prefix", "GH_TOKEN=x gh api -X PUT repos/o/r/pulls/7/merge"),
+            ("$( )", "x=$(gh api -X PUT repos/o/r/pulls/7/merge)"),
+            ("backticks", "x=`gh api -X PUT repos/o/r/pulls/7/merge`"),
+            ("unquoted heredoc body", "cat <<EOF\n$(gh api -X PUT repos/o/r/pulls/7/merge)\nEOF"),
+            ("gh pr merge of a hotfix", "gh pr merge 7 --merge"),
+            ("GraphQL -f query", "gh api graphql -f query='mutation { mergePullRequest(input:{pullRequestId:\"PR_kw1\"}) { clientMutationId } }'"),
+            ("GraphQL -F query=@file", f"gh api graphql -F query=@{td}/q.graphql"),
+            ("GraphQL --input file", f"gh api graphql --input {td}/q.json"),
+        ):
+            rc, err = run(pinned(cmd, hot), **hotfix_pr, FAKE_NODE=f"main {hot}")
+            check(f"release-gate (#1569): {label} merging an uncertified PR head into main is blocked, naming the PR head",
+                  rc == 2 and "PR head" in err, f"rc={rc} {err[:200]!r}")
+        # The hotfix model: the SAME merge is permitted when the PR head IS the certified commit.
+        for cmd in ("gh api -X PUT repos/o/r/pulls/7/merge", "gh pr merge 7"):
+            rc, err = run(pinned(cmd, stamped), **promo_pr)
+            check(f"release-gate (#1569): `{cmd}` of a PR whose head carries a PASS stamp is permitted", rc == 0, f"rc={rc} {err[:200]!r}")
+        rc, err = run(pinned("gh api -X PUT repos/o/r/pulls/7/merge", hot), FAKE_PRVIEW=f"main {hot}")
+        check("release-gate (#1569): a hotfix head is judged by ITS stamp, not dev's (dev is certified, the head is not)",
+              rc == 2 and hot[:12] in err, f"rc={rc} {err[:200]!r}")
+        # (#1571) THE HEAD IS PINNED. The gate reads the PR's head, then GitHub merges whatever the head is a moment
+        # later; a commit pushed in between would ride on the certification. So a merge into main must pin the head
+        # the gate judged (`--match-head-commit`, `sha=`, `expectedHeadOid`), and the denial prints the command to run.
+        rest = "gh api -X PUT repos/o/r/pulls/7/merge"
+        gql = "gh api graphql -f query='mutation { mergePullRequest(input:{pullRequestId:\"PR_kw1\"}) { clientMutationId } }'"
+        for label, cmd, want in (
+            ("`gh pr merge`", "gh pr merge 7", f"gh pr merge 7 --match-head-commit {stamped}"),
+            ("`gh pr merge` with other flags", "gh pr merge 7 --squash --delete-branch", f"--match-head-commit {stamped}"),
+            ("a REST merge", rest, f"-f sha={stamped}"),
+            ("a GraphQL merge", gql, f'expectedHeadOid: "{stamped}"'),
+        ):
+            rc, err = run(cmd, **promo_pr, FAKE_NODE=f"main {stamped}")
+            check(f"release-gate (#1571): {label} into main without a pin is blocked",
+                  rc == 2 and "without pinning the head" in err, f"rc={rc} {err[:200]!r}")
+            check(f"release-gate (#1571): {label} without a pin: the denial prints the exact command, with the full head",
+                  want in err, err[:300])
+        for label, cmd in (
+            ("a full pin", f"gh pr merge 7 --match-head-commit {stamped}"),
+            ("the `=` spelling", f"gh pr merge 7 --match-head-commit={stamped}"),
+            ("an unambiguous prefix of 12 digits", f"gh pr merge 7 --match-head-commit {stamped[:12]}"),
+            ("a prefix of exactly 7 digits", f"gh pr merge 7 --match-head-commit {stamped[:7]}"),
+            ("an uppercase pin", f"gh pr merge 7 --match-head-commit {stamped.upper()}"),
+            ("a pin among other flags", f"gh pr merge 7 --squash --match-head-commit {stamped} --delete-branch"),
+            ("a REST `sha=`", f"{rest} -f sha={stamped}"),
+            ("a GraphQL expectedHeadOid", gql.replace('"PR_kw1"}', f'"PR_kw1", expectedHeadOid:"{stamped}"}}')),
+        ):
+            rc, err = run(cmd, **promo_pr, FAKE_NODE=f"main {stamped}")
+            check(f"release-gate (#1571): CONTROL: {label} pins the judged head and is permitted", rc == 0, f"rc={rc} {err[:200]!r}")
+        other = hot if hot != stamped else "0" * 40
+        for label, cmd in (
+            ("a pin for a DIFFERENT commit", f"gh pr merge 7 --match-head-commit {other}"),
+            ("a pin shorter than 7 digits", f"gh pr merge 7 --match-head-commit {stamped[:6]}"),
+            ("a pin that is not hexadecimal", f"gh pr merge 7 --match-head-commit {stamped[:8].replace(stamped[0], 'z')}"),
+            ("a pin built by the shell", "gh pr merge 7 --match-head-commit $HEAD_SHA"),
+            ("an empty pin", "gh pr merge 7 --match-head-commit ''"),
+            ("a REST `sha=` for a different commit", f"{rest} -f sha={other}"),
+            ("a REST `sha=` built by the shell", f"{rest} -f sha=$S"),
+            ("a GraphQL expectedHeadOid for a different commit", gql.replace('"PR_kw1"}', f'"PR_kw1", expectedHeadOid:"{other}"}}')),
+        ):
+            rc, err = run(cmd, **promo_pr, FAKE_NODE=f"main {stamped}")
+            check(f"release-gate (#1571): {label} does not pin the judged head, so it is blocked",
+                  rc == 2 and "without pinning the head" in err, f"rc={rc} {err[:200]!r}")
+        rc, err = run("gh pr merge 7", FAKE_PRVIEW=f"dev {stamped}")
+        check("release-gate (#1571): CONTROL: a PR into dev is not a promotion, so it needs no pin", rc == 0, f"rc={rc} {err[:200]!r}")
+        rc, err = run("gh pr merge 7", **hotfix_pr, QA_ALLOW_MAIN="1")
+        check("release-gate (#1571): CONTROL: the audited QA_ALLOW_MAIN override still lets an unpinned, uncertified merge through",
+              rc == 0 and "QA_ALLOW_MAIN=1 override" in err, f"rc={rc} {err[:200]!r}")
+        # Unresolved or unreadable is "could not judge", and that denies.
+        for label, cmd, env in (
+            ("an unresolvable PR", "gh api -X PUT repos/o/r/pulls/7/merge", {"FAKE_PRVIEW": ""}),
+            ("a PR number from a variable", "gh api -X PUT repos/o/r/pulls/$N/merge", {}),
+            ("a missing --input file", f"gh api graphql --input {td}/nope.json", {}),
+            ("a missing -F query file", f"gh api graphql -F query=@{td}/nope.graphql", {}),
+            ("--input from stdin", "gh api graphql --input -", {}),
+            ("-F query=@- from stdin", "gh api graphql -F query=@-", {}),
+            ("a GraphQL node GitHub cannot name", "gh api graphql -f query='mutation { mergePullRequest(input:{pullRequestId:\"PR_zz\"}) { clientMutationId } }'", {"FAKE_NODE": ""}),
+        ):
+            rc, err = run(cmd, **env)
+            check(f"release-gate (#1569): {label} could not be judged, so it is blocked", rc == 2, f"rc={rc} {err[:200]!r}")
+        # Writes to main that are not a PR merge name no PR head, so they are judged at dev's tip: with dev
+        # certified they are the ordinary promotion (permitted), with dev uncertified they are blocked.
+        rc, err = run("gh api repos/o/r/merges -f base=main -f head=dev", FAKE_REF="main")
+        check("release-gate (#1569): CONTROL: a merge into main of a CERTIFIED dev is the ordinary promotion and passes",
+              rc == 0, f"rc={rc} {err[:200]!r}")
+        sh("branch", "-f", "dev", hot)
+        for label, cmd in (
+            ("POST merges, base main", "gh api repos/o/r/merges -f base=main -f head=dev"),
+            ("POST merges, base via -F", "gh api -X POST repos/o/r/merges -F base=master -F head=dev"),
+            ("PATCH git/refs/heads/main", "gh api -X PATCH repos/o/r/git/refs/heads/main -f sha=abc"),
+            ("POST git/refs of refs/heads/main", "gh api repos/o/r/git/refs -f ref=refs/heads/main -f sha=abc"),
+            ("method given by --method=PATCH", "gh api --method=PATCH repos/{owner}/{repo}/git/refs/heads/master -f sha=abc -F force=true"),
+            ("GraphQL updateRef naming main", "gh api graphql -f query='mutation { updateRef(input:{refId:\"R1\", oid:\"abc\"}) { clientMutationId } }'"),
+        ):
+            rc, err = run(cmd, FAKE_REF="main")
+            check(f"release-gate (#1569): {label} writes main and is blocked", rc == 2, f"rc={rc} {err[:200]!r}")
+        sh("branch", "-f", "dev", stamped)
+        # Controls: none of these may be over-blocked.
+        for cmd, env in (
+            ("gh api repos/o/r/pulls/7", {}),
+            ("gh api -X GET repos/o/r/pulls/7/merge", {}),
+            ("gh api repos/o/r/merges -f base=dev -f head=x", {}),
+            ("gh api -X PATCH repos/o/r/git/refs/heads/dev -f sha=abc", {}),
+            ("gh api repos/o/r/git/refs -f ref=refs/heads/feature/main-menu -f sha=abc", {}),
+            ("gh api -X POST repos/o/r/issues/1/comments -f body=hello", {}),
+            ("gh api graphql -f query='query($o:String!){repository(owner:$o,name:\"r\"){id}}' -f o=x", {}),
+            ("gh api -X PUT repos/o/r/pulls/7/merge", {"FAKE_PRVIEW": f"dev {hot}"}),
+            ("gh pr merge 7", {"FAKE_PRVIEW": f"dev {hot}"}),
+            ("gh api graphql -f query='mutation { updateRef(input:{refId:\"R1\", oid:\"abc\"}) { clientMutationId } }'", {"FAKE_REF": "dev"}),
+            ("gh release list", {}),
+        ):
+            rc, err = run(cmd, **env)
+            check(f"release-gate (#1569): CONTROL: `{cmd[:70]}` is not a promotion and passes", rc == 0, f"rc={rc} {err[:200]!r}")
+        # (2) Publishing a release needs a PASS stamp for the commit it publishes.
+        for label, cmd in (
+            ("gh release create --target main", "gh release create v1.0.1 --target main --notes x"),
+            ("--target=main", "gh release create v1.0.1 --target=main"),
+            ("no target: the default branch's tip", "gh release create v1.0.1 --generate-notes"),
+            ("a draft", "gh release create v1.0.1 --draft"),
+            ("--target a sha", f"gh release create v1.0.1 --target {hot}"),
+            ("gh api POST releases", "gh api repos/o/r/releases -f tag_name=v1.0.1 -f target_commitish=main"),
+            ("gh api -X POST releases, no target", "gh api -X POST repos/{owner}/{repo}/releases -f tag_name=v1.0.1"),
+            ("inside bash -c", "bash -c 'gh release create v1.0.1'"),
+        ):
+            rc, err = run(cmd)
+            check(f"release-gate (#1569): {label} publishing an uncertified commit is blocked, naming the stamp",
+                  rc == 2 and "qa/CERTIFICATION" in err, f"rc={rc} {err[:200]!r}")
+        rc, err = run("gh release create v1.0.1 --target dev")
+        check("release-gate (#1569): --target dev publishes the certified tip and is permitted", rc == 0, f"rc={rc} {err[:200]!r}")
+        sh("tag", "v0.9", stamped)
+        sh("push", "-q", "origin", "v0.9")                # the tag exists ON THE REMOTE: GitHub ignores --target for it
+        rc, err = run("gh release create v0.9")
+        check("release-gate (#1569): an existing tag is judged by ITS commit, not main's tip", rc == 0, f"rc={rc} {err[:200]!r}")
+        sh("branch", "-f", "main", stamped)
+        rc, err = run("gh release create v1.0.1")
+        check("release-gate (#1569): a new tag publishes the default branch tip, which is now certified", rc == 0, f"rc={rc} {err[:200]!r}")
+        sh("branch", "-f", "main", hot)
+        rc, err = run("gh release create v1.0.1 --target main", QA_ALLOW_MAIN="1")
+        check("release-gate (#1569): QA_ALLOW_MAIN=1 is still the audited override for a release", rc == 0, f"rc={rc} {err[:200]!r}")
+        # (#1571) The override is the HOOK's environment, never the command's text: an inline assignment, `env`, an
+        # `export`, or a comment all run AFTER the hook (or never), so none can authorise the command that carries it.
+        for label, cmd in (
+            ("an inline assignment", "QA_ALLOW_MAIN=1 gh release create v1.0.1 --target main"),
+            ("`env`", "env QA_ALLOW_MAIN=1 gh release create v1.0.1 --target main"),
+            ("an `export`", "export QA_ALLOW_MAIN=1; gh release create v1.0.1 --target main"),
+            ("a trailing comment", "gh release create v1.0.1 --target main # QA_ALLOW_MAIN=1"),
+            ("a quoted string", "gh release create v1.0.1 --target main --notes 'QA_ALLOW_MAIN=1'"),
+        ):
+            rc, err = run(cmd)
+            check(f"release-gate (#1571): QA_ALLOW_MAIN typed into the command as {label} does not authorise it",
+                  rc == 2, f"rc={rc} {err[:200]!r}")
+        (repo / ".claude-plugin").mkdir()
+        (repo / ".claude-plugin" / "marketplace.json").write_text('{"name":"x","plugins":[]}', encoding="utf-8")
+        # The file alone exempts nothing (any repo can add one): origin here is o/r, not the marketplace.
+        rc, err = run("gh release create v1.0.1 --target main")
+        check("release-gate (#1569): a marketplace.json in a repo that is NOT the marketplace does not exempt a release", rc == 2, f"rc={rc} {err[:200]!r}")
+        sh("remote", "set-url", "origin", "https://github.com/fmanimashaun/claude-skills.git")
+        rc, err = run("gh release create v1.0.1 --target main")
+        check("release-gate (#1569): the marketplace's own repo (by its origin) is exempt from the release gate too", rc == 0, f"rc={rc} {err[:200]!r}")
+        rc, err = run("gh api -X PUT repos/fmanimashaun/claude-skills/pulls/7/merge", **hotfix_pr, FAKE_PRREPO="fmanimashaun/claude-skills")
+        check("release-gate (#1569): ... and from the API merge gate", rc == 0, f"rc={rc} {err[:200]!r}")
+        rc, err = run("gh pr merge 7 -R other/fork", **hotfix_pr, FAKE_PRREPO="other/fork")
+        check("release-gate (#1569): ... but never for a command that acts on ANOTHER repository", rc == 2, f"rc={rc} {err[:200]!r}")
+        sh("remote", "set-url", "origin", "https://github.com/o/r.git")
+
+        # The fallback with no python3 cannot read `gh api`, so it must stay coarse and closed.
+        (repo / ".claude-plugin" / "marketplace.json").unlink(); (repo / ".claude-plugin").rmdir()
+        # #1569 (2): publishing by EDIT, and a merge or push judged by the commit it carries, not dev's tip.
+        sh("branch", "-f", "dev", stamped)
+        for label, cmd, env in (
+            ("gh release edit --draft=false, a draft targeting main", "gh release edit v1.0.1 --draft=false", {"FAKE_RELVIEW": "main"}),
+            ("gh release edit --draft=false --target main", "gh release edit v1.0.1 --draft=false --target main", {}),
+            ("gh release edit with GitHub unable to name the target", "gh release edit v1.0.1 --draft=false", {"FAKE_RELVIEW": ""}),
+            ("gh api PATCH releases/<id> draft=false", "gh api -X PATCH repos/o/r/releases/9 -F draft=false", {"FAKE_RELID": "v2 main"}),
+            ("gh api PATCH releases/<id> via --input", f"gh api --method=PATCH repos/{{owner}}/{{repo}}/releases/9 --input {td}/draft.json", {"FAKE_RELID": "v2 main"}),
+            ("gh api PATCH releases/<id> GitHub cannot name", "gh api -X PATCH repos/o/r/releases/9 -f draft=false", {"FAKE_RELID": ""}),
+            ("gh release edit inside bash -c", "bash -c 'gh release edit v1.0.1 --draft=false'", {"FAKE_RELVIEW": "main"}),
+        ):
+            rc, err = run(cmd, **env)
+            check(f"release-gate (#1569): {label} publishes an uncertified commit and is blocked", rc == 2, f"rc={rc} {err[:200]!r}")
+        for label, cmd, env in (
+            ("a draft whose target is the certified dev", "gh release edit v1.0.1 --draft=false", {"FAKE_RELVIEW": "dev"}),
+            ("an existing remote tag at the certified commit (the draft's recorded target is ignored)", "gh release edit v0.9 --draft=false", {"FAKE_RELVIEW": "main"}),
+            ("--draft alone (stays a draft)", "gh release edit v1.0.1 --draft", {}),
+            ("--draft=true", "gh release edit v1.0.1 --draft=true", {}),
+            ("editing the notes", "gh release edit v1.0.1 --notes x", {}),
+            ("an API PATCH that does not touch draft", "gh api -X PATCH repos/o/r/releases/9 -f name=x", {}),
+            ("an API PATCH of a certified release", "gh api -X PATCH repos/o/r/releases/9 -F draft=false", {"FAKE_RELID": "v0.9 dev"}),
+        ):
+            rc, err = run(cmd, **env)
+            check(f"release-gate (#1569): CONTROL: {label} passes", rc == 0, f"rc={rc} {err[:200]!r}")
+        # `git merge <ref>` on main: judged by <ref>'s commit.
+        sh("checkout", "-q", "main")
+        for label, cmd in (
+            ("an uncertified hotfix branch", "git merge hotfix"),
+            ("an uncertified sha", f"git merge --no-ff -m 'ship it' {hot}"),
+            ("a ref that does not resolve", "git merge no-such-branch"),
+            ("a bare merge with no upstream", "git merge"),
+            ("a wrapped merge", "timeout 60 git merge hotfix"),
+            ("a merge in $( )", "x=$(git merge hotfix)"),
+            ("an octopus with one uncertified ref", "git merge dev hotfix"),
+        ):
+            rc, err = run(cmd)
+            check(f"release-gate (#1569): `git merge` on main of {label} is blocked", rc == 2, f"rc={rc} {err[:200]!r}")
+        rc, err = run("git merge hotfix")
+        check("release-gate (#1569): the denial names the commit being merged, not dev", "commit being merged" in err and hot[:12] in err, err[:200])
+        for label, cmd in (("a certified dev", "git merge dev"), ("--abort", "git merge --abort")):
+            rc, err = run(cmd)
+            check(f"release-gate (#1569): CONTROL: `git merge` on main of {label} passes", rc == 0, f"rc={rc} {err[:200]!r}")
+        sh("checkout", "-q", "feature/work")
+        rc, err = run("git merge hotfix")
+        check("release-gate (#1569): CONTROL: `git merge hotfix` off main is not a promotion", rc == 0, f"rc={rc} {err[:200]!r}")
+        # (#1571) The hook reads HEAD and the refs BEFORE the command runs, so a command that moves them first and
+        # merges, pulls or pushes after was judged from a state that no longer held. From feature/work:
+        for label, cmd in (
+            ("a switch to main, then a merge", "git switch main && git merge hotfix"),
+            ("a checkout of main, then a merge", "git checkout main && git merge hotfix"),
+            ("a quiet checkout of main and a `;`", "git checkout -q main; git merge hotfix"),
+            ("a switch -C main, then a merge", "git switch -C main && git merge hotfix"),
+            ("a checkout -B main, then a merge", "git checkout -B main && git merge hotfix"),
+            ("a switch spelled `git -C .`, then a merge", "git -C . switch main && git merge hotfix"),
+            ("a switch spelled `git -C ./`, then a merge", "git -C ./ switch main && git merge hotfix"),
+            ("a switch in a directory that may be this one, then a merge", "git -C /nonexistent switch main && git merge hotfix"),
+            ("a switch to main, then a pull", "git switch main && git pull"),
+            ("a switch to a branch named by a variable", 'git switch "$B" && git merge hotfix'),
+            ("`checkout -`, which names no branch", "git checkout - && git merge hotfix"),
+            ("a branch rename onto main, then a merge", "git branch -M main && git merge hotfix"),
+            ("a rebase onto main's branch, then a merge", "git rebase dev main && git merge hotfix"),
+            ("a switch to main, a merge of CERTIFIED dev, then a push of main", "git switch main && git merge dev && git push origin main"),
+            ("a commit, then a push of main", "git commit --allow-empty -m x && git push origin main"),
+            ("a switch to hotfix, then a push of HEAD to main", "git switch hotfix && git push origin HEAD:main"),
+            ("a fetch of a refspec onto main, then a push of main", "git fetch origin hotfix:main && git push origin main"),
+        ):
+            rc, err = run(cmd)
+            check(f"release-gate (#1571): {label} is blocked", rc == 2, f"rc={rc} {err[:200]!r}")
+        for label, cmd in (
+            ("a switch to another branch, then a merge", "git switch topic && git merge hotfix"),
+            ("a new branch, then a merge", "git checkout -b topic2 && git merge hotfix"),
+            ("a detached checkout, then a merge", "git checkout --detach dev && git merge hotfix"),
+            ("a checkout that may be a path, from a branch that is not main", "git checkout README.md && git merge hotfix"),
+            ("`checkout -- path`, which leaves HEAD alone", "git checkout -- README.md && git merge hotfix"),
+            ("a switch to main and a merge of CERTIFIED dev", "git switch main && git merge dev"),
+            ("a commit on a feature branch, then a push of a feature branch", "git commit --allow-empty -m x && git push origin feature/x"),
+            ("a branch listing, then a merge off main", "git branch --list && git merge hotfix"),
+            ("a status, then a push of a feature branch", "git status && git push origin feature/work"),
+        ):
+            rc, err = run(cmd)
+            check(f"release-gate (#1571): CONTROL: {label} passes", rc == 0, f"rc={rc} {err[:200]!r}")
+        # `git push <remote> <src>:main`: judged by <src>'s commit.
+        for label, cmd in (
+            ("a branch", "git push origin hotfix:main"),
+            ("a sha to refs/heads/main", f"git push origin {hot}:refs/heads/main"),
+            ("a forced refspec", "git push origin +hotfix:master"),
+            ("a ref that does not resolve", "git push origin no-such:main"),
+            ("a wrapped push", "timeout 60 git push origin hotfix:main"),
+        ):
+            rc, err = run(cmd)
+            check(f"release-gate (#1569): push of {label} to main is blocked", rc == 2, f"rc={rc} {err[:200]!r}")
+        rc, err = run("git push origin hotfix:main")
+        check("release-gate (#1569): the denial names the commit being pushed, not dev", "commit being merged or pushed" in err and hot[:12] in err, err[:200])
+        for label, cmd in (("a certified dev", "git push origin dev:main"), ("a certified HEAD", "git push origin HEAD:refs/heads/main"),
+                           ("a certified sha", f"git push origin {stamped}:main"), ("a feature branch", "git push origin hotfix:feature/x")):
+            rc, err = run(cmd)
+            check(f"release-gate (#1569): CONTROL: push of {label} passes", rc == 0, f"rc={rc} {err[:200]!r}")
+        only = Path(td) / "only"; only.mkdir()
+        (only / "bash").symlink_to(shutil.which("bash"))
+        for cmd in ("gh api -X PUT repos/o/r/pulls/7/merge", "gh release create v1", "gh release edit v1 --draft=false", "gh api graphql -f query=x -f u=mergePullRequest"):
+            done = _run([str(only / "bash"), str(QA_HOOK)], cwd=repo, input=json.dumps({"tool_input": {"command": cmd}}),
+                        env={"PATH": str(only)}, capture_output=True, text=True, timeout=60)
+            check(f"release-gate (#1569): with ONLY bash on PATH, `{cmd}` is still blocked", done.returncode == 2, f"rc={done.returncode}")
+
+
+
+# ---- #1569, second half: the command and the gate must agree on WHAT is acted on and WHERE. A different
+# repository (-R, GH_REPO, a repos/<o>/<r> path, another remote), a different directory (cd, git -C), a
+# different argument (the PR number, the ref a merge or ref write carries, the tag a release resolves to),
+# and a command spelled so that shlex and bash read it differently.
+FAKE_GH2 = """#!/bin/sh
+[ -z "${FAKE_LOG:-}" ] || printf '%s\\n' "$*" >> "$FAKE_LOG"
+ep=""; for a in "$@"; do case "$a" in repos/*) ep="$a"; break ;; esac; done
+case "$1 $2" in
+  "pr view")
+    sel="$3"; case "$sel" in -*) sel="" ;; esac
+    v=""
+    if [ -n "$sel" ]; then
+      key="$(printf '%s' "$sel" | tr -c 'A-Za-z0-9' _)"
+      eval "v=\\${FAKE_PRVIEW_$key:-}"
+    fi
+    [ -n "$v" ] || v="${FAKE_PRVIEW:-}"
+    [ -z "$v" ] || printf '%s https://github.com/%s/pull/7' "$v" "${FAKE_PRREPO:-o/r}"
+    exit 0 ;;
+  "api graphql")
+    case "$*" in
+      *"on Ref"*) [ -z "${FAKE_REF:-}" ] || printf '%s %s' "$FAKE_REF" "${FAKE_PRREPO:-o/r}" ;;
+      *) [ -z "${FAKE_NODE:-}" ] || printf '%s %s' "$FAKE_NODE" "${FAKE_PRREPO:-o/r}" ;;
+    esac; exit 0 ;;
+  "release view") printf '%s' "${FAKE_RELVIEW:-}"; exit 0 ;;
+esac
+case "$ep" in
+  repos/*/contents/*)
+    ref="${ep##*ref=}"
+    [ -n "${FAKE_STAMP_REF:-}" ] && [ "$ref" = "$FAKE_STAMP_REF" ] && [ -f "${FAKE_STAMP_FILE:-/nonexistent}" ] && { cat "$FAKE_STAMP_FILE"; exit 0; }
+    exit 1 ;;
+  repos/*/compare/*) [ -n "${FAKE_COMPARE:-}" ] || exit 1; printf '%s\\n' "$FAKE_COMPARE"; exit 0 ;;
+  repos/*/commits/*) [ -n "${FAKE_COMMIT:-}" ] || exit 1; printf '%s' "$FAKE_COMMIT"; exit 0 ;;
+  repos/*/git/matching-refs/*) printf '%s' "${FAKE_TAGS:-}"; exit 0 ;;
+  repos/*/releases/*) printf '%s' "${FAKE_RELID:-}"; exit 0 ;;
+  repos/*) printf 'main'; exit 0 ;;
+esac
+exit 1
+"""
+
+
+def release_gate_refs_fixtures() -> None:
+    """#1600: a ref taken from the GATED COMMAND'S TEXT must never reach git as an option. The release gate is a
+    PreToolUse hook, so it runs before the permission prompt: `git fetch origin --upload-pack=<program>` RUNS the
+    program when origin is a local path or ssh. Each site that hands such a value to git or gh is driven with a
+    marker file, over a local-path origin: no marker may appear, and the command is denied."""
+    if not QA_HOOK.is_file():
+        check("release-gate (#1600): release-gate.sh present beside rails-flow", False, str(QA_HOOK))
+        return
+    g = ["git", "-c", "user.email=t@t", "-c", "user.name=t"]
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td) / "repo"
+        _git_repo(repo)
+        sh = lambda *a, **kw: _run([*g, *a], cwd=repo, check=True, capture_output=True, text=True, **kw).stdout.strip()
+        old = {**os.environ, "GIT_COMMITTER_DATE": "2026-09-01T00:00:00+00:00", "GIT_AUTHOR_DATE": "2026-09-01T00:00:00+00:00"}
+        bare = Path(td) / "origin.git"
+        _run(["git", "init", "-q", "--bare", str(bare)], check=True, capture_output=True)
+        # origin names o/r, and is a LOCAL PATH underneath: the transport that runs --upload-pack.
+        sh("remote", "add", "origin", "https://github.com/o/r.git")
+        sh("config", f"url.{bare}.insteadOf", "https://github.com/o/r.git")
+        (repo / "app.rb").write_text("v1\n", encoding="utf-8")
+        sh("add", "app.rb"); sh("commit", "-q", "-m", "app")
+        tested = sh("rev-parse", "HEAD")
+        (repo / "qa").mkdir()
+        (repo / "qa" / "CERTIFICATION").write_text(json.dumps(
+            {"sha": tested, "date": "2026-09-26", "verdict": "PASS", "report": "qa/reports/r.md"}), encoding="utf-8")
+        sh("add", "qa/CERTIFICATION"); sh("commit", "-q", "-m", "stamp", env=old)
+        stamped = sh("rev-parse", "HEAD")
+        sh("branch", "-f", "dev", stamped)
+        sh("branch", "fix/x-y", stamped)
+        sh("checkout", "-q", "-b", "feature/work")
+        sh("push", "-q", "origin", "dev:dev")
+        (Path(td) / "bin").mkdir()
+        (Path(td) / "bin" / "gh").write_text(FAKE_GH2, encoding="utf-8")
+        (Path(td) / "bin" / "gh").chmod(0o755)
+        marker = Path(td) / "MARKER"
+        # --upload-pack=<program>: git runs the program through the shell with the remote's path. No space in the value,
+        # so the classifier reads it as one token and the hook reaches the git call (a payload with spaces is refused earlier).
+        prog = Path(td) / "prog.sh"
+        prog.write_text(f"#!/bin/sh\ntouch {marker}\n", encoding="utf-8")
+        prog.chmod(0o755)
+        evil = f"--upload-pack={prog}"
+
+        def run(cmd: str, **extra) -> tuple[int, str]:
+            marker.unlink(missing_ok=True)
+            env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env.pop("GH_REPO", None)
+            env["CLAUDE_PLUGIN_ROOT"] = str(QA_HOOK.parents[2])
+            env["PATH"] = str(Path(td) / "bin") + os.pathsep + env["PATH"]
+            env.update(extra)
+            done = _run(["bash", str(QA_HOOK)], cwd=repo, input=json.dumps({"tool_input": {"command": cmd}}),
+                        env=env, capture_output=True, text=True, timeout=60)
+            return done.returncode, done.stderr
+
+        # The proof that the marker is observable: the same program, handed to git the way the hook would have.
+        marker.unlink(missing_ok=True)
+        _run(["git", "fetch", "-q", "origin", evil], cwd=repo, capture_output=True)
+        check("release-gate (#1600): the probe works -- an unguarded `git fetch origin <--upload-pack=...>` DOES run the program",
+              marker.exists(), "no marker: this fixture could not tell a fix from a hole")
+        # Every site where a ref from the command's own text reaches git or gh.
+        for label, cmd, extra in (
+            ("a REST merge's `head`", f"gh api repos/o/r/merges -f base=main -f head='{evil}'", {}),
+            ("a ref write's `sha`", f"gh api -X PATCH repos/o/r/git/refs/heads/main -f sha='{evil}'", {}),
+            ("a new ref's `sha`", f"gh api repos/o/r/git/refs -f ref=refs/heads/main -f sha='{evil}'", {}),
+            ("a release's --target", f"gh release create v9 --target '{evil}'", {}),
+            ("a commit the PR view reports", "gh pr merge 7", {"FAKE_PRVIEW": f"main {evil}"}),
+        ):
+            rc, err = run(cmd, **extra)
+            check(f"release-gate (#1600): {label} that starts with `--` runs no program, and is denied",
+                  not marker.exists() and rc == 2, f"marker={marker.exists()} rc={rc} {err[:200]!r}")
+        # The same, with the value an ordinary option rather than a program: gh must never read it as a selector.
+        log = Path(td) / "gh.log"
+        for label, cmd in (("a PR selector", "gh pr merge --web"),
+                           ("a PR selector after the end of options", "gh pr merge --admin -- --web")):
+            log.unlink(missing_ok=True)
+            rc, err = run(cmd, FAKE_PRVIEW=f"main {stamped}", FAKE_LOG=str(log))
+            asked = log.read_text().splitlines() if log.exists() else []
+            check(f"release-gate (#1600): {label} that starts with  is never handed to gh, and the command is denied",
+                  not any("--web" in line for line in asked) and rc == 2, f"rc={rc} gh calls={asked} {err[:160]!r}")
+        # A stamp is data from the repository being promoted: its `sha` is a commit id, never an option.
+        bad = Path(td) / "badstamp"
+        _git_repo(bad)
+        bsh = lambda *a, **kw: _run([*g, *a], cwd=bad, check=True, capture_output=True, text=True, **kw).stdout.strip()
+        _run(["git", "checkout", "-q", "-B", "main"], cwd=bad, check=True, capture_output=True)
+        (bad / "qa").mkdir()
+        (bad / "qa" / "CERTIFICATION").write_text(json.dumps(
+            {"sha": evil, "date": "2026-09-26", "verdict": "PASS", "report": "r.md"}), encoding="utf-8")
+        bsh("add", "qa"); bsh("commit", "-q", "-m", "stamp")
+        bsh("branch", "dev")
+        marker.unlink(missing_ok=True)
+        env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None)
+        env["CLAUDE_PLUGIN_ROOT"] = str(QA_HOOK.parents[2])
+        done = _run(["bash", str(QA_HOOK)], cwd=bad, input=json.dumps({"tool_input": {"command": "git push origin main"}}),
+                    env=env, capture_output=True, text=True, timeout=60)
+        check("release-gate (#1600): a stamp whose `sha` is an option is denied as not a commit id",
+              done.returncode == 2 and "not a commit id" in done.stderr and not marker.exists(), f"rc={done.returncode} {done.stderr[:240]!r}")
+        # ANOTHER repository's stamp is the same kind of data: its `sha` is a commit id, never a path of the API.
+        evil_stamp = Path(td) / "evil-stamp.json"
+        evil_stamp.write_text(json.dumps({"sha": "../../x?y", "date": "2026-10-01", "verdict": "PASS", "report": "r.md"}), encoding="utf-8")
+        rc, err = run(_pin("gh pr merge 7 -R other/fork", stamped), FAKE_PRVIEW=f"main {stamped}", FAKE_PRREPO="other/fork",
+                      FAKE_STAMP_REF=stamped, FAKE_STAMP_FILE=str(evil_stamp), FAKE_COMPARE="ahead")
+        check("release-gate (#1600): ANOTHER repository's stamp whose `sha` is a path is denied as not a commit id",
+              rc == 2 and "not a commit id" in err, f"rc={rc} {err[:240]!r}")
+        # A ref with a `:` is a REFSPEC: `git fetch origin dev:refs/heads/injected` writes a local branch, before the prompt.
+        rc, err = run("gh api repos/o/r/merges -f base=main -f head=dev:refs/heads/injected")
+        made = _run(["git", "rev-parse", "--verify", "-q", "refs/heads/injected"], cwd=repo, capture_output=True).returncode == 0
+        check("release-gate (#1600): a ref with a `:` (a refspec) is never fetched, so no local ref is written, and it is denied",
+              not made and rc == 2, f"ref written={made} rc={rc} {err[:200]!r}")
+        # CONTROLS: a dash INSIDE a name is a name, and a certified branch still promotes.
+        rc, err = run("gh api repos/o/r/merges -f base=main -f head=fix/x-y")
+        check("release-gate (#1600): CONTROL: a branch whose name has a dash inside is still read and judged (certified: passes)",
+              rc == 0, f"rc={rc} {err[:240]!r}")
+        rc, err = run("gh api repos/o/r/merges -f base=main -f head=dev")
+        check("release-gate (#1600): CONTROL: the certified dev still promotes", rc == 0, f"rc={rc} {err[:240]!r}")
+        # ANOTHER repository (`other/fork`) whose own PASS stamp certifies `stamped`, read through the API (the fake gh).
+        foreign_stamp = Path(td) / "foreign-stamp.json"
+        foreign_stamp.write_text(json.dumps({"sha": stamped, "date": "2026-10-01", "verdict": "PASS", "report": "r.md"}), encoding="utf-8")
+        ok_api = {"FAKE_STAMP_REF": stamped, "FAKE_STAMP_FILE": str(foreign_stamp), "FAKE_COMMIT": stamped, "FAKE_PRREPO": "other/fork"}
+        # (#1606) A ref, tag or target from the command's text becomes part of ANOTHER repository's API path
+        # (`repos/<r>/commits/<ref>`). The fake gh answers any commits/<anything> with the certified commit, as an endpoint
+        # reached through a fragment or a climb would answer something, so a value that is not a plain name must be refused
+        # BEFORE the call. `#` is a legal character in a ref name and starts a fragment in a URL: the gate would ask about
+        # `abc` while the command acts on `abc#frag`.
+        for label, cmd in (
+            ("a REST merge's head with a fragment", "gh api repos/other/fork/merges -f base=main -f head='abc#frag'"),
+            ("a REST merge's head that climbs", "gh api repos/other/fork/merges -f base=main -f head='x/../../../issues/1'"),
+            ("a REST merge's head with an escaped slash", "gh api repos/other/fork/merges -f base=main -f head=a%2fb"),
+            ("a ref write's sha that climbs", "gh api -X PATCH repos/other/fork/git/refs/heads/main -f sha='../../x'"),
+            ("a ref write's sha with a fragment", "gh api -X PATCH repos/other/fork/git/refs/heads/main -f sha='abc#frag'"),
+            ("a release's --target that climbs", "gh release create v1 -R other/fork --target ../../x"),
+            ("a release's --target with an escaped slash", "gh release create v1 -R other/fork --target a%2fb"),
+            ("a release's tag that climbs", "gh release create ../../x -R other/fork --target main"),
+            ("a release's tag with an escaped slash", "gh release create a%2fb -R other/fork --target main"),
+        ):
+            rc, err = run(cmd, **ok_api)
+            check(f"release-gate (#1606): {label} is not a plain name, is never put in another repository's API path, and is DENIED",
+                  rc == 2, f"rc={rc} {err[:240]!r}")
+        for label, cmd in (
+            ("a REST merge's head", "gh api repos/other/fork/merges -f base=main -f head=feature/x-y"),
+            ("a ref write's sha", f"gh api -X PATCH repos/other/fork/git/refs/heads/main -f sha={stamped}"),
+            ("a release's tag and target", "gh release create v1.2.3 -R other/fork --target release/2026-10"),
+        ):
+            rc, err = run(cmd, **ok_api)
+            check(f"release-gate (#1606): CONTROL: {label} that is a plain name is read and judged (certified: permitted)",
+                  rc == 0 and "other/fork" in err, f"rc={rc} {err[:240]!r}")
+        # (#1606) The third fetch takes the object id `git ls-remote origin refs/tags/<tag>` printed. It is an object id by
+        # construction of a well-behaved origin; an origin that prints anything else must not be handed to `git fetch`. A
+        # `git` that answers ls-remote with an option and logs every call stands in for that origin.
+        gitbin = Path(td) / "gitbin"
+        gitbin.mkdir(exist_ok=True)
+        gitlog = Path(td) / "git.log"
+        real_git = shutil.which("git")
+        (gitbin / "git").write_text(
+            f'#!/bin/sh\nprintf \'%s\\n\' "$*" >> "{gitlog}"\ncase "$1" in\n'
+            f'  ls-remote) printf \'%s\\trefs/tags/v9\\n\' "{evil}"; exit 0 ;;\nesac\nexec {real_git} "$@"\n', encoding="utf-8")
+        (gitbin / "git").chmod(0o755)
+        gitlog.unlink(missing_ok=True)
+        rc, err = run("gh release create v9 --target dev", PATH=f"{gitbin}{os.pathsep}{Path(td) / 'bin'}{os.pathsep}{os.environ['PATH']}")
+        calls = gitlog.read_text().splitlines() if gitlog.exists() else []
+        check("release-gate (#1606): an object id from `git ls-remote` that is an option is never handed to `git fetch`, and the release is DENIED",
+              not any(c.startswith("fetch") and "--upload-pack" in c for c in calls) and not marker.exists() and rc == 2,
+              f"rc={rc} marker={marker.exists()} fetch calls={[c for c in calls if c.startswith('fetch')]}")
+
+
+def release_gate_repos_fixtures() -> None:
+    g = ["git", "-c", "user.email=t@t", "-c", "user.name=t"]
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td) / "repo"
+        _git_repo(repo)
+        sh = lambda *a, **kw: _run([*g, *a], cwd=repo, check=True, capture_output=True, text=True, **kw).stdout.strip()
+        old = {**os.environ, "GIT_COMMITTER_DATE": "2026-09-01T00:00:00+00:00", "GIT_AUTHOR_DATE": "2026-09-01T00:00:00+00:00"}
+        bare = Path(td) / "origin.git"
+        _run(["git", "init", "-q", "--bare", str(bare)], check=True, capture_output=True)
+        sh("remote", "add", "origin", "https://github.com/o/r.git")
+        sh("config", f"url.{bare}.insteadOf", "https://github.com/o/r.git")
+        sh("remote", "add", "upstream", "https://github.com/other/fork.git")
+        (repo / "app.rb").write_text("v1\n", encoding="utf-8")
+        sh("add", "app.rb"); sh("commit", "-q", "-m", "app")
+        tested = sh("rev-parse", "HEAD")
+        (repo / "qa").mkdir()
+        stamp = {"sha": tested, "date": "2026-09-26", "verdict": "PASS", "report": "qa/reports/r.md"}
+        (repo / "qa" / "CERTIFICATION").write_text(json.dumps(stamp), encoding="utf-8")
+        sh("add", "qa/CERTIFICATION"); sh("commit", "-q", "-m", "stamp", env=old)
+        stamped = sh("rev-parse", "HEAD")
+        sh("branch", "-f", "dev", stamped)
+        sh("checkout", "-q", "-b", "hotfix")
+        (repo / "app.rb").write_text("hotfix\n", encoding="utf-8")
+        sh("commit", "-q", "-am", "hotfix, never certified")
+        hot = sh("rev-parse", "HEAD")
+        sh("checkout", "-q", "-b", "feature/work", stamped)
+        sh("branch", "-f", "main", hot)
+        sh("tag", "v0.9", stamped); sh("tag", "v0.8", hot)
+        sh("push", "-q", "origin", "v0.9", "v0.8")
+        # another checkout, on main, whose dev has no stamp at all
+        sub = Path(td) / "sub"
+        _git_repo(sub)
+        _run([*g, "checkout", "-q", "-B", "main"], cwd=sub, check=True, capture_output=True)
+        _run([*g, "branch", "dev"], cwd=sub, check=True, capture_output=True)
+        (Path(td) / "bin").mkdir()
+        (Path(td) / "bin" / "gh").write_text(FAKE_GH2, encoding="utf-8")
+        (Path(td) / "bin" / "gh").chmod(0o755)
+        foreign_stamp = Path(td) / "foreign-stamp.json"
+        foreign_stamp.write_text(json.dumps({"sha": stamped, "date": "2026-10-01", "verdict": "PASS", "report": "r.md"}), encoding="utf-8")
+
+        def run(cmd: str, **extra) -> tuple[int, str]:
+            env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env.pop("GH_REPO", None)
+            env["CLAUDE_PLUGIN_ROOT"] = str(QA_HOOK.parents[2])
+            env["PATH"] = str(Path(td) / "bin") + os.pathsep + env["PATH"]
+            env.update(extra)
+            done = _run(["bash", str(QA_HOOK)], cwd=repo, input=json.dumps({"tool_input": {"command": cmd}}),
+                        env=env, capture_output=True, text=True, timeout=60)
+            return done.returncode, done.stderr
+
+        ok_pr = {"FAKE_PRVIEW": f"main {stamped}"}
+        # (1) THE SAME COMMAND, a different repository. This checkout is o/r and holds a PASS stamp at the PR's
+        # head, so judging it here would permit; the command acts on other/fork, whose stamp must be read there.
+        for label, cmd, env in (
+            ("gh pr merge -R", "gh pr merge 7 -R other/fork", {**ok_pr, "FAKE_PRREPO": "other/fork"}),
+            ("gh pr merge --repo=", "gh pr merge 7 --repo=other/fork", {**ok_pr, "FAKE_PRREPO": "other/fork"}),
+            ("gh pr -R before the subcommand", "gh pr -R other/fork merge 7", {**ok_pr, "FAKE_PRREPO": "other/fork"}),
+            ("GH_REPO in the command", "GH_REPO=other/fork gh pr merge 7", {**ok_pr, "FAKE_PRREPO": "other/fork"}),
+            ("GH_REPO exported earlier", "export GH_REPO=other/fork; gh pr merge 7", {**ok_pr, "FAKE_PRREPO": "other/fork"}),
+            ("GH_REPO in the hook's environment", "gh pr merge 7", {**ok_pr, "GH_REPO": "other/fork", "FAKE_PRREPO": "other/fork"}),
+            ("a PR whose URL is another repository", "gh pr merge 7", {**ok_pr, "FAKE_PRREPO": "other/fork"}),
+            ("a repos/<owner>/<repo> path", "gh api -X PUT repos/other/fork/pulls/7/merge", {**ok_pr, "FAKE_PRREPO": "other/fork"}),
+            ("a REST merge into another repository", "gh api repos/other/fork/merges -f base=main -f head=dev", {"FAKE_COMMIT": stamped}),
+            ("a ref write in another repository", f"gh api -X PATCH repos/other/fork/git/refs/heads/main -f sha={stamped}", {"FAKE_COMMIT": stamped}),
+            ("gh release create -R", "gh release create v1 -R other/fork --target main", {"FAKE_COMMIT": stamped}),
+            ("a draft published with -R", "gh release edit v1 --draft=false -R other/fork", {"FAKE_RELVIEW": "main", "FAKE_COMMIT": stamped}),
+            ("another git remote", "git push upstream dev:main", {}),
+            ("a remote given as a URL", "git push git@github.com:other/fork.git dev:main", {}),
+        ):
+            rc, err = run(_pin(cmd, stamped), **env)
+            check(f"release-gate (#1569): {label} acts on ANOTHER repository, whose stamp cannot be read, and is blocked",
+                  rc == 2 and "other/fork" in err, f"rc={rc} {err[:240]!r}")
+        # ... and permitted when that repository's own stamp is read through the API and certifies the commit.
+        ok_api = {"FAKE_STAMP_REF": stamped, "FAKE_STAMP_FILE": str(foreign_stamp), "FAKE_COMMIT": stamped, "FAKE_PRREPO": "other/fork"}
+        for label, cmd, env in (
+            ("gh pr merge -R", "gh pr merge 7 -R other/fork", ok_pr),
+            ("GH_REPO", "GH_REPO=other/fork gh pr merge 7", ok_pr),
+            ("a repos/<owner>/<repo> merge path", "gh api -X PUT repos/other/fork/pulls/7/merge", ok_pr),
+            ("a release into another repository", "gh release create v1 -R other/fork --target main", {}),
+            ("another git remote", "git push upstream dev:main", {}),
+        ):
+            rc, err = run(_pin(cmd, stamped), **{**ok_api, **env})
+            check(f"release-gate (#1569): {label} is permitted by the OTHER repository's own PASS stamp, read through the API",
+                  rc == 0 and "other/fork" in err, f"rc={rc} {err[:240]!r}")
+        rc, err = run(_pin("gh pr merge 7 -R other/fork", stamped), **{**ok_api, **ok_pr, "FAKE_COMPARE": "ahead\napp.rb", "FAKE_STAMP_REF": hot}, )
+        check("release-gate (#1569): another repository's stamp for an OLDER commit must cover only the stamp itself",
+              rc == 2, f"rc={rc} {err[:240]!r}")
+        # (2) NOT over-blocked: -R / GH_REPO / a path naming THIS checkout's own repository is judged here.
+        for cmd in ("gh pr merge 7 -R o/r", "gh pr merge 7 -R O/R", "GH_REPO=o/r gh pr merge 7", "gh api -X PUT repos/o/r/pulls/7/merge",
+                    "git push origin dev:main", "git push origin HEAD:main"):
+            rc, err = run(_pin(cmd, stamped), **ok_pr)
+            check(f"release-gate (#1569): CONTROL: `{cmd}` names this checkout's own repository and is judged here (certified: passes)",
+                  rc == 0, f"rc={rc} {err[:240]!r}")
+        rc, err = run(_pin("gh pr merge 7 -R o/r", hot), FAKE_PRVIEW=f"main {hot}")
+        check("release-gate (#1569): CONTROL: ... and an uncertified head is still blocked", rc == 2 and "PR head" in err, f"rc={rc} {err[:240]!r}")
+        # Unreadable repositories and remotes deny.
+        for label, cmd in (
+            ("a host-qualified repository", "gh pr merge 7 -R ghe.example.com/o/r"),
+            ("a repository from a variable", "gh pr merge 7 -R $R"),
+            ("GH_REPO from a variable", "GH_REPO=$R gh pr merge 7"),
+            ("GH_REPO as a URL", "GH_REPO=https://github.com/o/r gh pr merge 7"),
+            ("--hostname", "gh api --hostname ghe.example.com -X PUT repos/o/r/pulls/7/merge"),
+            ("a remote that does not exist", "git push nowhere dev:main"),
+            ("a remote that is a path", "git push ../elsewhere dev:main"),
+            ("a remote from a variable", "git push $REMOTE dev:main"),
+        ):
+            rc, err = run(cmd, **ok_pr)
+            check(f"release-gate (#1569): {label} cannot be paired with a stamp and is blocked", rc == 2, f"rc={rc} {err[:240]!r}")
+        # (3) A different DIRECTORY: the stamp is read where the command runs.
+        for label, cmd in (
+            ("cd into another checkout", f"cd {sub} && git merge dev"),
+            ("git -C into another checkout", f"git -C {sub} merge dev"),
+            ("a cd that cannot be followed", "cd $SOMEWHERE && git merge dev"),
+            ("two different directories", f"cd {sub} && git merge dev; cd .. && git merge dev"),
+        ):
+            rc, err = run(cmd)
+            check(f"release-gate (#1569): {label} is judged in THAT directory (no stamp there) and blocked", rc == 2, f"rc={rc} {err[:240]!r}")
+        rc, err = run(f"cd {sub} && git status")
+        check("release-gate (#1569): CONTROL: a cd with no merge or push passes", rc == 0, f"rc={rc} {err[:240]!r}")
+        rc, err = run("git merge dev")
+        check("release-gate (#1569): CONTROL: `git merge dev` off main in this checkout is not a promotion", rc == 0, f"rc={rc} {err[:240]!r}")
+        # (4) The ARGUMENT the command acts on, not another one in the command line.
+        rc, err = run("gh pr merge -b 8 7", FAKE_PRVIEW_7=f"main {hot}", FAKE_PRVIEW_8=f"dev {stamped}")
+        check("release-gate (#1569): `gh pr merge -b 8 7` merges PR 7 (not the 8 that is the body) and is judged on PR 7's head",
+              rc == 2 and hot[:12] in err, f"rc={rc} {err[:240]!r}")
+        rc, err = run("gh pr merge 7 --match-head-commit 8", FAKE_PRVIEW_7=f"main {hot}", FAKE_PRVIEW_8=f"dev {stamped}")
+        check("release-gate (#1569): `--match-head-commit 8` is not the PR: PR 7 is judged", rc == 2 and hot[:12] in err, f"rc={rc} {err[:240]!r}")
+        for label, cmd, ok in (
+            ("a REST merge's `head` (dev is certified, the head is not)", "gh api repos/o/r/merges -f base=main -f head=hotfix", False),
+            ("a REST merge of the certified dev", "gh api repos/o/r/merges -f base=main -f head=dev", True),
+            ("a ref write's `sha` (dev is certified, the sha is not)", f"gh api -X PATCH repos/o/r/git/refs/heads/main -f sha={hot}", False),
+            ("a ref write of the certified sha", f"gh api -X PATCH repos/o/r/git/refs/heads/main -f sha={stamped}", True),
+            ("a new main ref at an uncertified sha", f"gh api repos/o/r/git/refs -f ref=refs/heads/main -f sha={hot}", False),
+            ("a REST merge with no head at all", "gh api repos/o/r/merges -f base=main", False),
+            ("a ref write with no sha at all", "gh api -X PATCH repos/o/r/git/refs/heads/main", False),
+            ("a GraphQL updateRef's oid", "gh api graphql -f query='mutation { updateRef(input:{refId:\"R1\", oid:\"%s\"}) { clientMutationId } }'" % hot, False),
+            ("a GraphQL updateRef of the certified oid", "gh api graphql -f query='mutation { updateRef(input:{refId:\"R1\", oid:\"%s\"}) { clientMutationId } }'" % stamped, True),
+            ("a GraphQL createRef's oid", "gh api graphql -f query='mutation { createRef(input:{name:\"refs/heads/main\", oid:\"%s\"}) { clientMutationId } }'" % hot, False),
+        ):
+            rc, err = run(cmd, FAKE_REF="main")
+            check(f"release-gate (#1569): {label} is judged by the commit it writes", (rc == 0) == ok and (ok or rc == 2), f"rc={rc} {err[:240]!r}")
+        # (5) A release is resolved the way GitHub resolves it: a tag that exists on the REMOTE wins over --target.
+        for label, cmd, ok in (
+            ("an existing remote tag at the certified commit, --target the uncertified main", "gh release create v0.9 --target main", True),
+            ("an existing remote tag at an UNcertified commit, --target the certified dev", "gh release create v0.8 --target dev", False),
+            ("an existing remote tag, no target", "gh release create v0.8", False),
+            ("a new tag with --target main (uncertified)", "gh release create v2.0 --target main", False),
+            ("a new tag with --target dev (certified)", "gh release create v2.0 --target dev", True),
+        ):
+            rc, err = run(cmd)
+            check(f"release-gate (#1569): {label} is judged by the commit GitHub will use", (rc == 0) == ok and (ok or rc == 2), f"rc={rc} {err[:240]!r}")
+        rc, err = run("gh release edit v0.8 --draft=false", FAKE_RELVIEW="dev")
+        check("release-gate (#1569): a draft whose tag already exists remotely is judged by the TAG, not its recorded target",
+              rc == 2 and hot[:12] in err, f"rc={rc} {err[:240]!r}")
+        # (6) The command the SHELL runs is the command that was classified.
+        for label, cmd in (
+            ("ANSI-C command word", "$'gh' api -X PUT repos/o/r/pulls/7/merge"),
+            ("ANSI-C hex command word", "$'\\x67\\x68' pr merge 7"),
+            ("ANSI-C method", "gh api -X $'PUT' repos/o/r/pulls/7/merge"),
+            ("ANSI-C in the middle of a word (no `gh` left in the text)", "g$'h' release create v2.0 --target main"),
+            ("locale string", 'gh $"api" -X PUT repos/o/r/pulls/7/merge'),
+            ("a variable command word", "$g release create v2.0 --target main"),
+            ("a brace-built command word", "g{h,} release create v2.0 --target main"),
+            ("$IFS for the spaces", "gh${IFS}release${IFS}create${IFS}v2.0${IFS}--target${IFS}main"),
+            ("a short-flag cluster hiding the method", "gh api -iXPUT repos/o/r/pulls/7/merge"),
+            ("a line continuation", "gh api -X PUT \\\n repos/o/r/pulls/7/merge"),
+        ):
+            rc, err = run(cmd, FAKE_PRVIEW=f"main {hot}")
+            check(f"release-gate (#1569): {label} is read the way the shell reads it (blocked)", rc == 2, f"rc={rc} {err[:240]!r}")
+        for cmd in ("echo $HOME", "git commit -m $'a\\nb'", "ls $(pwd)", "x=1; echo $x", "echo {a,b}"):
+            rc, err = run(cmd)
+            check(f"release-gate (#1569): CONTROL: `{cmd}` has an expansion but no effect, and passes", rc == 0, f"rc={rc} {err[:240]!r}")
+
+        # (7) FAIL CLOSED BY CONSTRUCTION: a gh or git nobody listed is not "no effect". Over-blocking a safe
+        # command in a gated repository is the price; letting an unlisted spelling merge is what it prevents.
+        for label, cmd in (
+            ("an unknown git verb (an alias)", "git ci -m x"),
+            ("a git -c that can redirect a push", "git -c url.https://x/.insteadOf=https://github.com/o/ push origin feature/x"),
+            ("an unknown git global option", "git --weird status"),
+            ("a git verb from a variable", "git $V push origin feature/x"),
+            ("git remote set-url", "git remote set-url origin https://github.com/x/y"),
+            ("a plumbing push", "git send-pack origin main"),
+            ("gh workflow run", "gh workflow run release.yml"),
+            ("gh pr update-branch", "gh pr update-branch 7"),
+            ("an unknown gh subcommand", "gh foo bar"),
+            ("a gh subcommand from a variable", "gh $x pr merge 7"),
+            ("a gh api write to dispatches", "gh api -X POST repos/o/r/dispatches -f event_type=release"),
+            ("a gh api update-branch", "gh api -X PUT repos/o/r/pulls/7/update-branch"),
+            ("a GraphQL mutation nobody listed", "gh api graphql -f query='mutation { mergeBranch(input:{}) { x } }'"),
+            ("a function defined before use", "foo() { gh pr merge 7; }; foo"),
+            ("an alias defined before use", "alias gm='git merge'; gm hotfix"),
+            ("find -exec", "find . -name x -exec gh pr update-branch 7 ;"),
+            ("git pull on main", "git pull"),
+        ):
+            sh("checkout", "-q", "main") if label == "git pull on main" else None
+            rc, err = run(cmd, FAKE_PRVIEW=f"main {stamped}")
+            if label == "git pull on main":
+                sh("checkout", "-q", "feature/work")
+            check(f"release-gate (#1569): {label} cannot be shown to be harmless, and is blocked", rc == 2, f"rc={rc} {err[:240]!r}")
+        for cmd in ("git status", "git log --oneline -3", "git fetch origin", "git add -A", "git commit -m 'x y'", "git push -u origin feature/x",
+                    "git checkout -b feature/y", "git -c user.name=x -c user.email=y commit -m z", "git config --get remote.origin.url",
+                    "git remote -v", "gh pr view 7", "gh pr list", "gh pr create -t x -b y", "gh pr checks 7", "gh issue create -t x",
+                    "gh run list", "gh release list", "gh api repos/o/r/pulls/7", "gh api -X POST repos/o/r/issues/1/comments -f body=hi",
+                    "echo gh pr merge 7", "which gh", "grep -r git .", "python3 x.py git"):
+            rc, err = run(cmd)
+            check(f"release-gate (#1569): CONTROL: the listed-safe `{cmd}` passes", rc == 0, f"rc={rc} {err[:240]!r}")
+        rc, err = run("gh workflow run release.yml", QA_ALLOW_MAIN="1")
+        check("release-gate (#1569): ... and the audited override (the HOOK's environment) still allows an unlisted command", rc == 0, f"rc={rc} {err[:240]!r}")
+        # (8) AUTHORIZATION: the override comes from the hook's own environment, never from the command text.
+        for cmd in ("QA_ALLOW_MAIN=1 gh release create v2.0 --target main", "env QA_ALLOW_MAIN=1 gh pr merge 7",
+                    "export QA_ALLOW_MAIN=1; git push origin hotfix:main", "QA_ALLOW_MAIN=1 git push origin hotfix:main",
+                    "bash -c 'QA_ALLOW_MAIN=1 gh pr merge 7'", "QA_ALLOW_MAIN=1; gh pr merge 7"):
+            rc, err = run(cmd, FAKE_PRVIEW=f"main {hot}")
+            check(f"release-gate (#1569): `{cmd}` does not set the override (it is not the hook's environment): blocked", rc == 2, f"rc={rc} {err[:240]!r}")
+        for cmd in ("gh release create v2.0 --target main", "git push origin hotfix:main"):
+            rc, err = run(cmd, QA_ALLOW_MAIN="1")
+            check(f"release-gate (#1569): `{cmd}` with QA_ALLOW_MAIN=1 in the HOOK's environment is allowed (audited)", rc == 0, f"rc={rc} {err[:240]!r}")
+        # The marketplace exemption needs the marketplace's identity, even after a cd into a directory that has the file.
+        spoof = Path(td) / "spoof"
+        _git_repo(spoof)
+        _run([*g, "checkout", "-q", "-B", "main"], cwd=spoof, check=True, capture_output=True)
+        (spoof / ".claude-plugin").mkdir()
+        (spoof / ".claude-plugin" / "marketplace.json").write_text('{"name":"x","plugins":[]}', encoding="utf-8")
+        _run([*g, "remote", "add", "origin", "https://github.com/acme/app.git"], cwd=spoof, check=True, capture_output=True)
+        _run([*g, "branch", "dev"], cwd=spoof, check=True, capture_output=True)
+        rc, err = run(f"cd {spoof} && git merge dev")
+        check("release-gate (#1569): a directory with a marketplace.json but another repository's origin is not exempt", rc == 2, f"rc={rc} {err[:240]!r}")
+        # (9) `git push origin main` ships the LOCAL main: dev's stamp must not stand in for it.
+        rc, err = run("git push origin main")
+        check("release-gate (#1569): `git push origin main` is judged by the LOCAL main (uncertified), though dev is certified",
+              rc == 2 and hot[:12] in err, f"rc={rc} {err[:240]!r}")
+        rc, err = run("git push --all origin")
+        check("release-gate (#1569): `git push --all` judges main too", rc == 2 and hot[:12] in err, f"rc={rc} {err[:240]!r}")
+        sh("branch", "-f", "main", stamped)
+        rc, err = run("git push origin main")
+        check("release-gate (#1569): CONTROL: ... and permitted once local main IS the certified commit", rc == 0, f"rc={rc} {err[:240]!r}")
+        sh("branch", "-f", "main", hot)
+
 # ---- ci-verdict-hint.sh (#1173) -----------------------------------------------------------------
 # An ADVISORY, so every fixture asserts exit 0 -- a hint that could fail the tool call would be a gate
 # nobody asked for. What varies is whether it SPEAKS, and on which event.
@@ -1407,6 +2862,8 @@ GROUPS = {
     "guard_migrate": guard_migrate_fixtures, "lint_ruby": lint_ruby_fixtures,
     "self_consistency": self_consistency_fixtures, "guard_bash": guard_bash_fixtures,
     "guard_claims": guard_claims_fixtures, "release_gate": release_gate_fixtures,
+    "release_gate_effects": release_gate_effects_fixtures, "release_gate_repos": release_gate_repos_fixtures,
+    "release_gate_refs": release_gate_refs_fixtures,
     "ci_verdict_hint": ci_verdict_hint_fixtures, "timeout": timeout_fixtures,
 }
 
@@ -1430,7 +2887,47 @@ def run_groups(groups: list[str] | None, table: dict) -> None:
         table[name]()
 
 
-def selftest(groups: list[str] | None = None) -> int:
+def groups_should_run(fail_fast: bool, failures: list[str], nested: bool = False) -> bool:
+    """Whether `selftest` runs the real hook groups after its meta-checks (#1599).
+
+    Not under `--fail-fast` once a meta-check has failed: the groups have nothing to add and cost minutes. A mutant of
+    the group machinery (`--only` ignored) used to run every group, over 300 s here, after its meta-check had already
+    caught it, and that read as a timeout. And never in a NESTED selftest, which exists only to prove that a bad
+    `--only` or `--match` is refused: were the refusal broken, the nested call fell through and ran the whole suite."""
+    return not nested and not (fail_fast and bool(failures))
+
+
+def run_matching(groups: list[str] | None, table: dict, match: str) -> int:
+    """`--match`: run only the checks whose label contains `match` (#1599); how many ran.
+
+    Two passes per group (see the note at `_MATCH_MODE`). Raises `MatchSequenceError` when the passes
+    disagree or a group cannot be surveyed under stubs, so a selection is never silently wrong."""
+    global _MATCH_MODE, _SURVEYED, _WANTED, _INDEX, _SKIP
+    ran = 0
+    try:
+        for name in (groups or list(table)):
+            _MATCH_MODE, _SURVEYED = "survey", []
+            try:
+                table[name]()
+            except Exception as exc:        # noqa: BLE001 -- any crash under stubs means "cannot survey"
+                raise MatchSequenceError(f"group {name!r} cannot be surveyed under stubs: {exc!r}") from exc
+            _WANTED = {i for i, label in enumerate(_SURVEYED) if match.lower() in label.lower()}
+            if not _WANTED:
+                continue
+            _MATCH_MODE, _INDEX, _SKIP = "run", 0, 0 not in _WANTED
+            table[name]()
+            if _INDEX != len(_SURVEYED):
+                raise MatchSequenceError(f"group {name!r} made {_INDEX} checks in the run pass and "
+                                         f"{len(_SURVEYED)} in the survey")
+            ran += len(_WANTED)
+    finally:
+        _MATCH_MODE, _SKIP = None, False
+    return ran
+
+
+def meta_checks() -> None:
+    """The checks about `--only` and `--match` themselves. Cheap, but not free (about 2.5 s), so a `--match` run
+    skips them: the baseline run of the same file has already shown them pass (#1599)."""
     # --only REFUSES what it cannot run (#1497), checked on every run whatever the selection: a
     # silently empty selection is how a mutant would "survive" with no fixture ever consulted.
     for bad in ("nope", "", ",", "release_gate,nope", "release_gate,", " release_gate", "timeout,timeout"):
@@ -1448,6 +2945,56 @@ def selftest(groups: list[str] | None = None) -> int:
     ran.clear()
     run_groups(None, fakes)
     check("a bare run (no --only) runs every group", ran == list(GROUPS), repr(ran))
+    # `--match` (#1599), proved on stand-in groups: a few process starts, no hook fixture.
+    global CHECKS
+    with tempfile.TemporaryDirectory() as td:
+        spawned = Path(td) / "spawned"
+
+        def mark(name: str) -> None:
+            _run(["sh", "-c", f"echo {name} >> '{spawned}'"])
+
+        def fake_group() -> None:
+            mark("A"); check("fixture A passes", True)
+            mark("B"); check("fixture B passes", True)
+            mark("C"); check("fixture C fails on purpose", False, "on purpose")
+
+        def steered_group() -> None:
+            answered = _run(["sh", "-c", "echo x"], capture_output=True, text=True).stdout
+            if answered:                      # '' in the survey, 'x' in a real run: the passes would disagree...
+                check("answered by the subprocess", True)
+            else:                             # ...on WHICH check comes first, with the same number of checks in both
+                check("silent subprocess", True)
+            check("last", True)
+
+        saved_checks, saved_failures = CHECKS, list(FAILURES)
+        got = run_matching(None, {"fake": fake_group}, "fixture B")
+        only_b = spawned.read_text().split() if spawned.exists() else []
+        counted, failed = CHECKS - saved_checks, len(FAILURES) - len(saved_failures)
+        check("--match runs only the fixture whose label matches, and none of the others' work",
+              got == 1 and only_b == ["B"] and counted == 1 and failed == 0, f"ran {got}, spawned {only_b}, counted {counted}")
+        spawned.unlink(missing_ok=True)
+        before_c, checks_before_c = len(FAILURES), CHECKS
+        run_matching(None, {"fake": fake_group}, "fails on purpose")
+        failed_c = len(FAILURES) - before_c
+        del FAILURES[before_c:]                 # the deliberate failure was the proof, not a finding; the first check's own verdict stays
+        CHECKS = checks_before_c
+        check("--match still FAILS when the check it selected fails", failed_c == 1, f"{failed_c} failure(s) recorded")
+        check("--match that selects nothing runs nothing and says so (0), never an empty pass",
+              run_matching(None, {"fake": fake_group}, "no label has this") == 0)
+        try:
+            run_matching(None, {"steered": steered_group}, "silent subprocess")
+            raised = False
+        except MatchSequenceError:
+            raised = True
+        check("--match raises when a fixture's result steers which checks follow, never guesses",
+              raised and _MATCH_MODE is None and not _SKIP, f"raised={raised}, mode={_MATCH_MODE}, skip={_SKIP}")
+    check("a nested selftest, which only proves a refusal, never runs the real groups",
+          groups_should_run(False, [], nested=True) is False)
+    check("--fail-fast skips the real groups once a meta-check has failed",
+          groups_should_run(True, ["a meta-check failed"]) is False)
+    check("CONTROL: --fail-fast runs the groups when nothing has failed", groups_should_run(True, []) is True)
+    check("CONTROL: with no --fail-fast the groups run even after a failure",
+          groups_should_run(False, ["a meta-check failed"]) is True)
     # The REAL exit code, not only the parser's verdict: main() must return 2 for a bad selection.
     # Only at the outermost level: were the refusal broken, main() would call selftest() again,
     # and this check would recurse instead of failing by name.
@@ -1464,7 +3011,37 @@ def selftest(groups: list[str] | None = None) -> int:
         finally:
             _NESTED = False
         check("main() exits 2 for --only nope", rc == 2, f"exit {rc}")
-    run_groups(groups, GROUPS)
+        # `--match` the same way (#1599): a selection that names no check, or a blank one, is refused, not passed.
+        _NESTED = True
+        try:
+            with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+                try:
+                    rc_none = main(["--only", "guard_lane", "--match", "no check has this label fragment"])
+                    rc_blank = main(["--only", "guard_lane", "--match", "   "])
+                except Exception as exc:          # noqa: BLE001 -- a crash fails THIS check, by name
+                    rc_none = rc_blank = f"raised {exc!r}"
+        finally:
+            _NESTED = False
+        check("main() exits 2 for --match that selects nothing", rc_none == 2, f"exit {rc_none}")
+        check("main() exits 2 for a blank --match", rc_blank == 2, f"exit {rc_blank}")
+
+
+def selftest(groups: list[str] | None = None, match: str | None = None, fail_fast: bool = False) -> int:
+    if match is None:
+        meta_checks()
+    if match is None:
+        if groups_should_run(fail_fast, FAILURES, nested=_NESTED):
+            run_groups(groups, GROUPS)
+    else:
+        try:
+            ran_matching = run_matching(groups, GROUPS, match)
+        except MatchSequenceError as exc:
+            print(f"check_hook_gates: --match {match!r} cannot be used here: {exc}", file=sys.stderr)
+            return 2
+        if ran_matching == 0:
+            print(f"check_hook_gates: --match {match!r} selected no check, which would be an empty pass",
+                  file=sys.stderr)
+            return 2
     if FAILURES:
         print(f"check_hook_gates selftest: {len(FAILURES)} of {CHECKS} checks FAILED", file=sys.stderr)
         for f in FAILURES:
@@ -1479,7 +3056,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--selftest", action="store_true", help="drive every hook under its stub environments")
     ap.add_argument("--only", metavar="GROUP[,GROUP]",
                     help=f"run only these fixture groups: {', '.join(GROUPS)} (#1497)")
+    ap.add_argument("--match", metavar="SUBSTR",
+                    help="run only the checks whose label contains SUBSTR, case-insensitively (#1599)")
+    ap.add_argument("--fail-fast", action="store_true",
+                    help="skip the real hook groups when the suite's own meta-checks have already failed (#1599)")
     args = ap.parse_args(argv)
+    if args.match is not None and not args.match.strip():
+        print("check_hook_gates: --match needs a non-empty label fragment", file=sys.stderr)
+        return 2
     groups = None
     if args.only is not None:
         groups = parse_only(args.only)
@@ -1490,7 +3074,7 @@ def main(argv: list[str] | None = None) -> int:
     # `--selftest` is accepted for symmetry with every other check here, and bare invocation does
     # the same thing: the mutation harness runs a separate selftest file with no arguments, and a
     # script that printed usage there would be INERT -- every mutation "caught" by an exit 2.
-    return selftest(groups)
+    return selftest(groups, args.match, args.fail_fast)
 
 
 if __name__ == "__main__":

@@ -31,6 +31,8 @@ WHAT IT CHECKS
                               plugin's README (as /p:c) never names — same defect, one level down
   hook-lib-drift              the two shipped copies of hooks/scripts/lib/normalize_cmd.sh differ, or
                               one is missing -- one normaliser is a claim only while they are identical
+  fixture-git-drift           the three shipped copies of scripts/fixture_git.py (rails-flow, qa-flow,
+                              pipeline) differ, or one is missing -- one fixture-git lock, three copies (#1588)
   claude-md-growth            CLAUDE.md past the ceiling recorded in its own marker (or no marker,
                               or its history file gone) — relocate incident paragraphs verbatim to
                               docs/brain/history/maintainer-history.md; claude_md_structure.py prints the diff
@@ -588,6 +590,36 @@ def check_hook_lib_drift() -> tuple[list[Finding], int]:
                                 f"differs from {a} -- one normaliser, two copies: a fix landed in one and not the other. "
                                 "Make them identical (cp) and re-run"))
     return findings, len(HOOK_LIB_COPIES)
+
+
+# Rule: fixture-git-drift (#1588)
+# Each plugin installs alone and cannot import another's code, so the helper that locks a fixture's git to
+# its own temp repo ships as one copy per plugin that runs fixture git. Maintainer `scripts/` import the
+# rails-flow copy. A fix to one copy that misses another reopens #1588 in that plugin.
+FIXTURE_GIT_COPIES = ("plugins/rails-flow/scripts/fixture_git.py",
+                      "plugins/qa-flow/scripts/fixture_git.py",
+                      "plugins/pipeline/scripts/fixture_git.py")
+
+
+def check_fixture_git_drift() -> tuple[list[Finding], int]:
+    """The fixture_git copies exist and are byte-identical to the rails-flow (canonical) one."""
+    findings: list[Finding] = []
+    texts = {}
+    for rel in FIXTURE_GIT_COPIES:
+        p = ROOT / rel
+        if not p.is_file():
+            findings.append(Finding("fixture-git-drift", rel, 0,
+                                    "missing -- this plugin's fixtures lose the lock that keeps their git out of the "
+                                    "real repo (#1588); copy it from plugins/rails-flow/scripts/fixture_git.py"))
+            continue
+        texts[rel] = p.read_bytes()
+    canonical = texts.get(FIXTURE_GIT_COPIES[0])
+    for rel in FIXTURE_GIT_COPIES[1:]:
+        if canonical is not None and rel in texts and texts[rel] != canonical:
+            findings.append(Finding("fixture-git-drift", rel, 0,
+                                    f"differs from {FIXTURE_GIT_COPIES[0]} -- one fixture-git lock, three copies: a fix "
+                                    "landed in one and not the others. Copy the canonical file over it (cp) and re-run"))
+    return findings, len(FIXTURE_GIT_COPIES)
 
 
 def check_claude_md_growth() -> tuple[list[Finding], int]:
@@ -1817,6 +1849,51 @@ def check_conflict_markers() -> tuple[list[Finding], int]:
                 "passed a CHANGELOG carrying a live block (#1543), and `release.yml` would have "
                 "extracted it into the published notes. Resolve the conflict; do not commit the markers",
             ))
+    return findings, examined
+
+
+# A selftest that starts processes, and the two halves of using the containment helper (#1582).
+_SPAWNS = re.compile(r"\b(?:subprocess|_sp)\.Popen\(|\bos\.fork\(|start_new_session\s*=\s*True")
+_CONTAIN_IMPORT = re.compile(r"^\s*from\s+process_containment\s+import\s+[^#\n]*\bcontained\b", re.M)
+_CONTAIN_WITH = re.compile(r"^\s*with\s+contained\(", re.M)
+
+
+def check_uncontained_process_fixtures() -> tuple[list[Finding], int]:
+    """A selftest that starts processes runs inside `process_containment.contained()` (#1582).
+
+    A red-first reproduction of a process bug leaks by design. On 2026-10-03 one ran 74 times with no
+    containment, left 74 stopped, orphaned trees, and every `fork()` on the machine failed. Scoped to
+    files named `*selftest*.py` that start processes (`Popen`, `os.fork`, a new session). Both the
+    import AND a `with contained(` block are required: a comment that names the helper is not using
+    it -- the leak's own cleanup matched a marker that was never there, and said nothing.
+
+    WHAT IT CHECKS IS PRESENCE, NOT ENCLOSURE (#1589 review L1). It does not prove the block wraps the
+    spawn: `with contained(): pass` followed by the spawn, or a block in a never-called function, both
+    pass. Lexical enclosure would refuse the normal shape -- `run()`'s spawns, under `with contained():`
+    in `__main__` -- so the rule asks for the deliberate act and the review checks the wrapping.
+    NOT SEEN (L2): a selftest that starts processes only through `subprocess.run` / `check_output` /
+    `os.system` (those wait for their child, so a leak needs a grandchild); measured, 3 such files.
+    """
+    findings: list[Finding] = []
+    examined = 0
+    for path in walk(".py"):
+        if "selftest" not in path.name:
+            continue
+        text = read(path)
+        if not _SPAWNS.search(text):
+            continue
+        examined += 1
+        if _CONTAIN_IMPORT.search(text) and _CONTAIN_WITH.search(text):
+            continue
+        line = next(n for n, ln in enumerate(text.splitlines(), 1) if _SPAWNS.search(ln))
+        findings.append(Finding(
+            "uncontained-process-fixture", rel(path), line,
+            "this selftest starts processes but does not import and use `process_containment.contained()` "
+            "(the rule checks both are present, not that the block encloses every spawn) -- "
+            "a fixture built to leak (a red-first process bug) left 74 stopped orphans on 2026-10-03 and "
+            "exhausted the user's process limit (#1582). Import it from "
+            "`plugins/rails-flow/scripts/process_containment.py` and run the selftest under `with contained():`",
+        ))
     return findings, examined
 
 
@@ -3527,6 +3604,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     undoc_cmds, commands_examined = check_undocumented_commands()
     growth, claude_md_lines = check_claude_md_growth()
     hook_lib, hook_lib_copies = check_hook_lib_drift()
+    fixture_git, fixture_git_copies = check_fixture_git_drift()
     bare, bare_examined = check_bare_plugin_entries()
     misdesc, agent_descs_examined = check_misdescribed_agents()
     unbounded, queries_examined = check_unbounded_issue_queries()
@@ -3535,6 +3613,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     call_sites, call_coverage = check_doctrine_call_sites()
     invisible, invisible_examined = check_invisible_characters()
     markers, markers_examined = check_conflict_markers()
+    uncontained, uncontained_examined = check_uncontained_process_fixtures()
     pointers, pointers_examined = check_doc_pointers()
     rel_links, rel_links_examined = check_broken_relative_link()
     leaving, leaving_examined = check_link_leaves_package()
@@ -3582,6 +3661,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "commands_checked_for_documentation": commands_examined,
         "claude_md_lines": claude_md_lines,
         "hook_lib_copies": hook_lib_copies,
+        "fixture_git_copies": fixture_git_copies,
         "plugin_entries_checked_for_metadata": bare_examined,
         "plugin_descriptions_reconciled_against_agents": agent_descs_examined,
         "gh_list_calls_examined": queries_examined,
@@ -3589,6 +3669,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "documented_components": components_examined,
         "shipped_files_scanned_for_invisibles": invisible_examined,
         "files_scanned_for_conflict_markers": markers_examined,
+        "process_spawning_selftests_examined": uncontained_examined,
         "doc_pointers_examined": pointers_examined,
         "docs_relative_links_examined": rel_links_examined,
         "package_relative_links_examined": leaving_examined,
@@ -3629,8 +3710,8 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "scaffolded_boolean_toggles": toggles_examined,
         **call_coverage,
     }
-    return (dead + unenforced + undocumented + undoc_cmds + growth + hook_lib + bare + misdesc + unbounded + author_me + components + call_sites + invisible
-            + markers + pointers + rel_links + leaving + outlines + uninstallable + plugin_root + mkt_ver + coercions + topologies + schema + unwired
+    return (dead + unenforced + undocumented + undoc_cmds + growth + hook_lib + fixture_git + bare + misdesc + unbounded + author_me + components + call_sites + invisible
+            + markers + uncontained + pointers + rel_links + leaving + outlines + uninstallable + plugin_root + mkt_ver + coercions + topologies + schema + unwired
             + ci_gates + cl_ignore + controllers + labels + comp_labels + orphans + keyfilter
             + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
             + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref + action_pins
@@ -4716,6 +4797,13 @@ def selftest() -> int:
              files={HOOK_LIB_COPIES[0]: LIB, HOOK_LIB_COPIES[1]: LIB + "\n"})
     scenario("a missing hook lib copy is a finding", rule="hook-lib-drift", expect_finding=True,
              files={HOOK_LIB_COPIES[0]: LIB})
+    FG = "def run(repo, *args):\n    pass\n"
+    scenario("identical fixture_git copies are silent", rule="fixture-git-drift", expect_finding=False,
+             files={c: FG for c in FIXTURE_GIT_COPIES})
+    scenario("a fixture_git copy that differs by one byte is a finding", rule="fixture-git-drift", expect_finding=True,
+             files={FIXTURE_GIT_COPIES[0]: FG, FIXTURE_GIT_COPIES[1]: FG, FIXTURE_GIT_COPIES[2]: FG + "\n"})
+    scenario("a missing fixture_git copy is a finding", rule="fixture-git-drift", expect_finding=True,
+             files={FIXTURE_GIT_COPIES[0]: FG, FIXTURE_GIT_COPIES[1]: FG})
     scenario(
         "the history file CLAUDE.md points at is missing", rule="claude-md-growth", expect_finding=True,
         files={"CLAUDE.md": "@AGENTS.md\n<!-- claude-md: max-lines 10 -->\nrule\n"},
@@ -5403,6 +5491,26 @@ def selftest() -> int:
              files={"skills/x/references/t.md": "    @variant, @size = variant.to_sym, size.to_sym\n"})
     scenario("outside shipped docs is out of scope", rule=UC, expect_finding=False,
              files={"docs/x.md": "    @px = SIZE[size.to_sym] || size.to_i\n"})
+
+    # ---- uncontained-process-fixture (#1582) ---------------------------------------
+    UP = "uncontained-process-fixture"
+    SPAWN = "import subprocess, sys\nsubprocess.Popen([sys.executable, '-c', 'pass'])\n"
+    CONTAINED = ("from process_containment import contained\n" + "def run():\n    " + SPAWN.replace("\n", "\n    ")
+                 + "\nwith contained():\n    run()\n")
+    scenario("a selftest that starts processes with no containment", rule=UP, only=check_uncontained_process_fixtures,
+             expect_finding=True, files={"scripts/x_selftest.py": SPAWN})
+    scenario("a selftest that forks with no containment", rule=UP, only=check_uncontained_process_fixtures,
+             expect_finding=True, files={"plugins/rails-flow/scripts/y_selftest.py": "import os\nif os.fork() == 0:\n    os._exit(0)\n"})
+    scenario("a selftest that only NAMES contained() in a comment", rule=UP, only=check_uncontained_process_fixtures,
+             expect_finding=True, files={"scripts/x_selftest.py": "# runs under contained() -- not really\n" + SPAWN})
+    scenario("a selftest that imports the helper but never uses it", rule=UP, only=check_uncontained_process_fixtures,
+             expect_finding=True, files={"scripts/x_selftest.py": "from process_containment import contained\n" + SPAWN})
+    scenario("a contained selftest", rule=UP, only=check_uncontained_process_fixtures,
+             expect_finding=False, files={"scripts/x_selftest.py": CONTAINED})
+    scenario("a selftest that starts no processes", rule=UP, only=check_uncontained_process_fixtures,
+             expect_finding=False, files={"scripts/x_selftest.py": "print('no processes')\n"})
+    scenario("a non-selftest file that starts processes (out of scope)", rule=UP, only=check_uncontained_process_fixtures,
+             expect_finding=False, files={"scripts/runner.py": SPAWN})
 
     # ---- conflict-marker (#1543) -------------------------------------------------
     CM = "conflict-marker"

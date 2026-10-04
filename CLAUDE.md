@@ -238,9 +238,9 @@ un-ignore them. (History: *The coverage matrix has a browsable page, and it is c
 
 ## First session in a clone
 
-Copy `.claude/settings.example.json` to `.claude/settings.local.json` (gitignored). Compound pipelines
-re-prompt on **one** unlisted binary; the example deliberately omits `rm`, `curl`, `wget`, `kill`,
-`chmod` and installers.
+Tracked `.claude/settings.json` holds a narrow allowlist every worktree gets; for more, copy
+`settings.example.json` to `.claude/settings.local.json` (gitignored). Compound pipelines re-prompt on
+**one** unlisted binary; the example omits `rm`, `curl`, `wget`, `kill`, `chmod` and installers.
 
 | file | tracked | who gets it | read by Claude |
 |---|---|---|---|
@@ -255,7 +255,7 @@ open.** Of the fifteen hook scripts, ten are advisory and fail open — an advis
 missing dependency gets disabled. Five **gates fail closed**, each scoped to what it guards:
 `plugins/rails-flow/hooks/scripts/guard-bash.sh` (falls back to the raw payload;
 `git add -A` is blocked either way.), `plugins/qa-flow/hooks/scripts/release-gate.sh` (only for commands targeting `main`),
-`plugins/rails-flow/hooks/scripts/guard-lane.sh` (only when a lane is assigned), `plugins/rails-flow/hooks/scripts/guard-claims.sh` (only `gh pr create/edit` carrying a body),
+`plugins/rails-flow/hooks/scripts/guard-lane.sh` (only when a lane is assigned), `plugins/rails-flow/hooks/scripts/guard-claims.sh` (only `gh pr create/edit` carrying a body, in a repo it can resolve),
 `plugins/rails-flow/hooks/scripts/guard-migrate.sh` (only a `Write` creating a new `db/migrate/` file). Classify a new hook
 with `docs/doctrine/harness-doctrine.md`'s test before writing it: advisory → fail open; guarantee → fail closed,
 scoped. Every hook is driven end to end by `plugins/rails-flow/scripts/check_hook_gates.py`, under the

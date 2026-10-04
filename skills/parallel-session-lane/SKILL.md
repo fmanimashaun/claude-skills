@@ -494,7 +494,7 @@ branches around it keep moving.
 
 Worktrees, branches, and stashes that look abandoned usually belong to a live session. An
 "idle" heuristic once deleted three worktrees that were in active use. If something looks
-stale, say so; do not remove it.
+stale, say so; do not remove it. The processes you DID start are the reverse: [contain and reap them](references/process-hygiene.md).
 
 **Stashes and `origin/*` are shared by every worktree**: a bare `git stash pop` can take a peer's entry, and
 `reset --soft origin/dev` can squash away their merged work ([both, and the safe forms](references/reading-a-list.md#the-stash-list-is-shared)).

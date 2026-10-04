@@ -72,27 +72,43 @@ def kill_tree(root: int) -> None:
     """
     own = os.getpgrp()
     frozen, groups = {root}, {root}
-    _signal(root, signal.SIGSTOP)
-    for _ in range(20):
-        rows = _ps_rows()
-        if rows is None:
-            break
-        children: dict[int, list[tuple[int, int]]] = {}
-        for pid, ppid, pgid in rows:
-            children.setdefault(ppid, []).append((pid, pgid))
-        found, stack = set(), list(frozen)
-        while stack:
-            for pid, pgid in children.get(stack.pop(), ()):
-                if pid not in found:
-                    found.add(pid)
-                    groups.add(pgid)
-                    stack.append(pid)
-        new = found - frozen
-        if not new:
-            break
-        for pid in new:
-            _signal(pid, signal.SIGSTOP)
-        frozen |= new
+    # THE KILL IS IN `finally` (#1548). Every process the walk finds is SIGSTOPped, so an exception
+    # between the freeze and the kill -- Ctrl-C, a `ps` that fails -- used to leave the whole tree
+    # stopped for good, still holding the caller's pipe. Freezing is only safe if killing is certain.
+    try:
+        _signal(root, signal.SIGSTOP)
+        for _ in range(20):
+            rows = _ps_rows()
+            if rows is None:
+                break
+            children: dict[int, list[tuple[int, int]]] = {}
+            for pid, ppid, pgid in rows:
+                children.setdefault(ppid, []).append((pid, pgid))
+            found, stack = set(), list(frozen)
+            while stack:
+                for pid, pgid in children.get(stack.pop(), ()):
+                    if pid not in found:
+                        found.add(pid)
+                        groups.add(pgid)
+                        stack.append(pid)
+            new = found - frozen
+            if not new:
+                break
+            for pid in new:
+                _signal(pid, signal.SIGSTOP)
+            frozen |= new
+    finally:
+        _kill_frozen(groups, frozen, own)
+
+
+def _kill_frozen(groups: set[int], frozen: set[int], own: int) -> None:
+    """SIGKILL every group a frozen process leads (never our own) and every frozen process.
+
+    PID REUSE IS NOT GUARDED, deliberately (#1548 item 2). A pid in `frozen` was SIGSTOPped by us a
+    moment ago, so it cannot exit and be reaped before this SIGKILL unless something else SIGCONTs it
+    first, and its parent is in the same tree, frozen too. Re-checking parentage here would add a
+    second `ps` and a second race for a window that, in practice, does not open.
+    """
     for pgid in groups - {own}:
         _signal(pgid, signal.SIGKILL, group=True)
     for pid in frozen:
@@ -115,6 +131,11 @@ def pool(max_workers: int):
     block -- Ctrl-C in the main thread above all -- every live child is killed and every queued task
     cancelled before the pool is joined, so the join returns in seconds, not at the slowest mutant."""
     from concurrent.futures import ThreadPoolExecutor
+    # A NEW pool starts open (#1548): `kill_all` sets `_closing` for the pool it interrupts, and nothing
+    # cleared it, so every later pool in the same process refused all of its children. `_closing` is
+    # process-wide, so this assumes pools run ONE AT A TIME (the only caller, mutation_check, does):
+    # a second pool opened while another is mid-interrupt would re-open the first.
+    _closing.clear()
     executor = ThreadPoolExecutor(max_workers=max_workers)
     try:
         yield executor

@@ -19,7 +19,7 @@ Playbook for building full-stack Ruby on Rails 8.1 applications "the Rails way" 
 
 ## `hotwire`
 
-Deep reference for the Hotwire stack from the official handbooks — Turbo (Drive, Frames, Streams, morphing page refreshes), Stimulus (controllers, actions, targets, values, outlets), and Hotwire Native (wrap a web app into iOS and Android apps with bridge components and path configuration).
+Hotwire reference: Turbo (Drive, Frames, Streams, morphing page refreshes, broadcasts), Stimulus (controllers, actions, targets, values, outlets) and Hotwire Native (iOS/Android shells, bridge components, path configuration).
 
 4 reference file(s): `native`, `production`, `stimulus`, `turbo`
 
@@ -52,5 +52,5 @@ How to build anything whose numbers come from somewhere else — read the genera
 
 Operating protocol for working as one of several agent sessions against the same repository at once — take your own worktree and test database, announce the FILE PATHS you are about to touch, query git for claimed decision numbers and migration timestamps rather than asking a peer, and copy the gitignored files a fresh worktree lacks before trusting any test result.
 
-2 reference file(s): `reading-a-list`, `session-identity`
+3 reference file(s): `process-hygiene`, `reading-a-list`, `session-identity`
 

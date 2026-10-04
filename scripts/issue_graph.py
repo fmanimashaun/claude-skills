@@ -76,7 +76,13 @@ from pathlib import Path
 # the unverified-negative class that told a maintainer "30 open issues" when there were 42
 # (#211). Bounding alone is not enough: a bound silently *reached* is the same lie with a
 # bigger number, so `fetch_issues` treats a full page as an error rather than a total.
-GH_LIMIT = 500
+#
+# The bound is where it STARTS, not where it stops (#1573): the tracker passed 500 issues and every
+# Phase 0 gate was refused for it. A full page now retries with a doubled bound, up to GH_LIMIT_CAP, and
+# only a page that is still full at the cap is refused. The first bound has headroom so the usual run is
+# one call.
+GH_LIMIT = 1000
+GH_LIMIT_CAP = 16000
 
 KEYS = ("depends-on", "blocks", "part-of")
 
@@ -539,24 +545,59 @@ def _run_gh(argv: list[str]) -> str:
     return result.stdout
 
 
-def fetch_issues(limit: int = GH_LIMIT, runner=_run_gh) -> list[Issue]:
+_MAX_BOUNDS = 32
+
+
+def _bounds(first: int, cap: int) -> list[int]:
+    """The page bounds `fetch_issues` tries, in order: `first`, then doubling, ending at `cap`.
+
+    A list computed up front, not a loop that grows until it is satisfied, and it cannot run forever:
+    a bound below 1 is refused (doubling 0 or a negative number never reaches `cap`, which is how the
+    first version of this hung on `--limit 0`), and the list is cut at `_MAX_BOUNDS` steps whatever
+    else is true, so a mutation that removes the refusal fails a check instead of hanging the guard.
+    """
+    if first < 1:
+        raise ValueError(f"a page bound must be at least 1, got {first}")
+    steps = [first]
+    while steps[-1] < cap and len(steps) < _MAX_BOUNDS:
+        steps.append(min(steps[-1] * 2, cap))
+    return steps
+
+
+def _positive_int(text: str) -> int:
+    """argparse type for --limit: a whole number of at least 1, refused with a sentence (exit 2)."""
+    try:
+        value = int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r} is not a whole number") from None
+    if value < 1:
+        raise argparse.ArgumentTypeError(
+            f"--limit must be at least 1, got {value}: a page bound of zero or less can never hold an issue")
+    return value
+
+
+def fetch_issues(limit: int = GH_LIMIT, runner=_run_gh, cap: int = GH_LIMIT_CAP) -> list[Issue]:
     """Every issue, open and closed — a dependency on a closed issue is still an edge.
 
-    A page that comes back FULL is treated as an error, not as the total. `--limit` bounds the
-    query but proves nothing about whether it truncated, and a truncated tracker silently
-    turns real edges into "references an issue that is not in the tracker" (#211).
+    A page that comes back FULL is not the total: `--limit` bounds the query but proves nothing about
+    whether it truncated, and a truncated tracker silently turns real edges into "references an issue
+    that is not in the tracker" (#211). So a full page retries with a larger bound (#1573), and a page
+    that is still full at `cap` is an error. A tracker exactly the size of a bound reads as full and
+    grows once more, which is the cost of never guessing.
     """
-    payload = json.loads(runner([
-        "gh", "issue", "list", "--state", "all", "--limit", str(limit),
-        "--json", "number,title,state,labels,body",
-    ]) or "[]")
-    if len(payload) >= limit:
-        raise RuntimeError(
-            f"gh returned {len(payload)} issues for --limit {limit}: the page is full, so this "
-            "is a truncated view being reported as the whole tracker — re-run with a larger "
-            "--limit"
-        )
-    return to_issues(payload)
+    payload: list = []
+    for bound in _bounds(limit, cap):
+        payload = json.loads(runner([
+            "gh", "issue", "list", "--state", "all", "--limit", str(bound),
+            "--json", "number,title,state,labels,body",
+        ]) or "[]")
+        if len(payload) < bound:
+            return to_issues(payload)
+    raise RuntimeError(
+        f"gh returned {len(payload)} issues for --limit {bound}: the page is still full at the "
+        "cap, so this is a truncated view being reported as the whole tracker — re-run with a "
+        "larger --limit"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -621,8 +662,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--from", dest="source", metavar="FILE",
                         help="read a `gh issue list --json ...` dump instead of calling gh ('-' for stdin)")
-    parser.add_argument("--limit", type=int, default=GH_LIMIT,
-                        help=f"page bound for the gh query (default {GH_LIMIT})")
+    parser.add_argument("--limit", type=_positive_int, default=GH_LIMIT,
+                        help=f"first page bound for the gh query (default {GH_LIMIT}); a full page retries with "
+                             f"a doubled bound up to {GH_LIMIT_CAP}, and only a page still full there is refused")
     parser.add_argument("--ready", nargs="+", type=int, metavar="N",
                         help="gate: exit non-zero unless every named issue can be started now, "
                              "as one branch (edges between them are satisfied by the branch)")
@@ -1004,16 +1046,113 @@ def selftest() -> int:
     # #211's whole story. Exercised with an injected runner because `gh` is not present on
     # every machine that runs this selftest, and a check skipped for want of a binary is the
     # skip-is-not-a-pass failure.
+    def tracker_of(total: int):
+        """A fake `gh issue list` over `total` issues that, like the real one, returns at most --limit of them
+        and records every bound it was asked for. A fake that ignored --limit would read a retried, larger
+        page as short and prove nothing about the retry."""
+        everything = [{"number": n, "title": "t", "state": "OPEN", "labels": [], "body": ""}
+                      for n in range(1, total + 1)]
+        asked: list[int] = []
+
+        def run(argv: list[str]) -> str:
+            bound = int(argv[argv.index("--limit") + 1])
+            asked.append(bound)
+            return json.dumps(everything[:bound])
+        return run, asked
+
+    # A bound below 1 is refused, and a regression fails instead of hanging the selftest: each call runs in a
+    # daemon thread that is given a few seconds. (The first version of the ladder never ended on --limit 0.)
+    def within(seconds: float, fn):
+        outcome: list = []
+
+        def target() -> None:
+            try:
+                outcome.append(("returned", fn()))
+            except BaseException as exc:  # SystemExit from argparse included
+                outcome.append(("raised", exc))
+        import threading
+        worker = threading.Thread(target=target, daemon=True)
+        worker.start()
+        worker.join(seconds)
+        return outcome[0] if outcome else ("hung", None)
+
+    for bad in (0, -1):
+        checks += 1
+        kind, value = within(5, lambda bad=bad: _bounds(bad, 100))
+        if kind != "raised" or not isinstance(value, ValueError):
+            failures.append(f"a page bound of {bad} must be refused, not {kind}: _bounds({bad}, 100)")
+        checks += 1
+        run, _ = tracker_of(3)
+        kind, value = within(5, lambda bad=bad, run=run: fetch_issues(limit=bad, runner=run))
+        if kind != "raised" or not isinstance(value, ValueError):
+            failures.append(f"a page bound of {bad} must be refused, not {kind}: fetch_issues(limit={bad})")
+        checks += 1
+        err = io.StringIO()
+
+        def parse(bad=bad, err=err):
+            with contextlib.redirect_stderr(err):
+                return main(["--limit", str(bad)])
+        kind, value = within(5, parse)
+        if not (kind == "raised" and isinstance(value, SystemExit) and value.code == 2
+                and "at least 1" in err.getvalue()):
+            failures.append(f"--limit {bad} must exit 2 with a sentence naming the minimum, got {kind} "
+                            f"{getattr(value, 'code', value)!r}: {err.getvalue().strip()[:120]}")
+
+    # A tracker larger than the cap is still refused: the page stays full at every bound.
     checks += 1
-    full_page = json.dumps([{"number": n, "title": "t", "state": "OPEN", "labels": [], "body": ""}
-                            for n in range(1, 6)])
+    run, _ = tracker_of(100)
     try:
-        fetch_issues(limit=5, runner=lambda argv: full_page)
+        fetch_issues(limit=5, cap=20, runner=run)
     except RuntimeError as exc:
         if "truncated" not in str(exc):
             failures.append(f"truncation guard: wrong message — {exc}")
     else:
-        failures.append("truncation guard: a full page was accepted as the whole tracker")
+        failures.append("truncation guard: a page still full at the cap was accepted as the whole tracker")
+
+    # ...and one exactly the size of the cap cannot be proved untruncated either.
+    checks += 1
+    run, _ = tracker_of(20)
+    try:
+        fetch_issues(limit=5, cap=20, runner=run)
+    except RuntimeError:
+        pass
+    else:
+        failures.append("truncation guard: a tracker the size of the cap was accepted though it reads as full")
+
+    # #1573: a tracker larger than the FIRST page is read in full, by retrying with a larger bound.
+    checks += 1
+    run, asked = tracker_of(9)
+    try:
+        got = fetch_issues(limit=5, cap=40, runner=run)
+    except RuntimeError as exc:
+        failures.append(f"growth: a tracker larger than the first page was refused, bounds {asked}: {exc}")
+    else:
+        if len(got) != 9 or asked != [5, 10]:
+            failures.append(f"growth: a tracker larger than the first page must be read in full by one retry; "
+                            f"got {len(got)} issues from bounds {asked}")
+
+    # A tracker exactly the size of a bound reads as full once, then grows.
+    checks += 1
+    run, asked = tracker_of(5)
+    try:
+        got = fetch_issues(limit=5, cap=40, runner=run)
+    except RuntimeError as exc:
+        failures.append(f"growth: a tracker exactly the size of the first bound was refused, bounds {asked}: {exc}")
+    else:
+        if len(got) != 5 or asked != [5, 10]:
+            failures.append(f"growth: a tracker exactly the size of the first bound must still be read in full; "
+                            f"got {len(got)} issues from bounds {asked}")
+
+    # A short first page is one call, and the default bound is the caller's, unchanged.
+    checks += 1
+    run, asked = tracker_of(3)
+    try:
+        got = fetch_issues(limit=5, cap=40, runner=run)
+    except RuntimeError as exc:
+        failures.append(f"a short page was refused, bounds {asked}: {exc}")
+    else:
+        if len(got) != 3 or asked != [5]:
+            failures.append(f"a short page must be read with one call at the caller's bound; got bounds {asked}")
 
     checks += 1
     short_page = json.dumps([{"number": 1, "title": "t", "state": "OPEN", "labels": [], "body": ""}])
@@ -1034,7 +1173,10 @@ def selftest() -> int:
         seen.append(argv)
         return "[]"
 
-    fetch_issues(limit=7, runner=capture)
+    try:
+        fetch_issues(limit=7, runner=capture)
+    except RuntimeError as exc:
+        failures.append(f"the gh query could not be read as a short page: {exc}")
     argv = seen[0] if seen else []
     if "--limit" not in argv or "7" not in argv:
         failures.append(f"the gh query is unbounded: {argv}")

@@ -277,7 +277,8 @@ def _proc_group_fixtures() -> None:
                  "if os.fork() == 0:\n"
                  "    os.setsid()\n"
                  "    if os.fork() == 0:\n"
-                 f"        open({str(escapee)!r}, 'w').write(str(os.getpid()))\n"
+                 f"        open({str(escapee)!r} + '.tmp', 'w').write(str(os.getpid()))\n"
+                 f"        os.replace({str(escapee)!r} + '.tmp', {str(escapee)!r})\n"
                  "        time.sleep(60)\n"
                  "    os._exit(0)\n"
                  "os.wait()\n"
@@ -329,6 +330,62 @@ def _proc_group_fixtures() -> None:
         if len(recorded) != 1 or left:
             FAILURES.append(f"#1459: a timed-out run left an orphan in its group running (recorded "
                             f"{len(recorded)} of 1 pid; survivors {left})")
+        # (5) #1548: an exception MID-WALK must not leave the tree SIGSTOPped. The first `ps` pass freezes
+        # the grandchild; the second raises, as a Ctrl-C or a failing `ps` would. Both must end up dead,
+        # not stopped, and the exception must still reach the caller.
+        midwalk = work / "midwalk.pids"
+        root = _sp.Popen([sys.executable, "-c", _SLEEPER_WITH_GRANDCHILD, str(midwalk)], start_new_session=True,
+                         stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+        tree = _pids(midwalk)
+        real_rows, calls = pg._ps_rows, [0]
+
+        def rows_then_raise():
+            calls[0] += 1
+            if calls[0] >= 2:
+                raise KeyboardInterrupt("injected mid-walk (#1548)")
+            return real_rows()
+        pg._ps_rows = rows_then_raise
+        reraised = False
+        try:
+            pg.kill_tree(root.pid)
+        except KeyboardInterrupt:
+            reraised = True
+        finally:
+            pg._ps_rows = real_rows
+        try:
+            root.wait(timeout=10)
+        except _sp.TimeoutExpired:
+            pass
+
+        def stat(pid: int) -> str:
+            return _sp.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()
+        _time.sleep(0.5)
+        stopped = [p for p in tree if stat(p).startswith("T")]
+        running = [p for p in tree if stat(p) and not stat(p).startswith(("T", "Z"))]
+        for p in tree:                    # never leave this fixture's own processes behind
+            try:
+                os.kill(p, _signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        if not reraised or stopped or running:
+            FAILURES.append(f"#1548: an exception mid-walk left the tree stopped or running (re-raised: {reraised}; "
+                            f"stopped {stopped}; running {running})")
+
+        # (6) #1548: a pool started after an interrupted one starts children again. `kill_all` sets
+        # `_closing` for the pool it interrupts; a later pool must not inherit it.
+        _tick()
+        pg.kill_all()
+        second = work / "second-pool"
+        try:
+            with pg.pool(1) as ex:
+                ex.submit(pg.run, [sys.executable, "-c", f"open({str(second)!r}, 'w')"], timeout=30).result()
+            started = second.exists()
+        except KeyboardInterrupt:
+            started = False
+        finally:
+            pg._closing.clear()
+        if not started:
+            FAILURES.append("#1548: a pool started after an interrupted one refused every child -- _closing never resets")
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
@@ -445,6 +502,191 @@ def run() -> int:
     finally:
         mc.REPO = original_repo
 
+    # ---- 1e. a mutant runs only the fixture its `expects` names, and only if that fixture passes alone (#1599) ----
+    # A guard that sets `narrow_with` gets `<flag> <expects>` on every mutant, and on a CONTROL run of the
+    # UNMUTATED code first: a fixture that cannot pass alone (it leans on state another fixture sets up)
+    # would otherwise "catch" every mutant by failing for that reason. The stand-in selftest honours the
+    # flag and logs each invocation, so what the baseline, the control and the mutant ran can be read.
+    narrow_src = (
+        "import sys\n"
+        "from pathlib import Path\n"
+        "sys.path.insert(0, str(Path(__file__).resolve().parent))\n"
+        "import subject_under_test as s\n"
+        "match = sys.argv[sys.argv.index('--match') + 1].lower() if '--match' in sys.argv else None\n"
+        "want = lambda label: match is None or match in label.lower()\n"
+        "if match is not None and 'REFUSE' in Path(s.__file__).read_text():\n"
+        "    print('selected no check for ' + match, file=sys.stderr); sys.exit(2)\n"
+        "ran, failures = [], []\n"
+        "if want('fixture-even'):\n"
+        "    ran.append('even')\n"
+        "    if s.is_even(4) is not True:\n"
+        "        failures.append('fixture-even: expected True for 4')\n"
+        "if want('fixture-odd'):\n"
+        "    ran.append('odd')\n"
+        "    if NEEDS_EVEN and 'even' not in ran:\n"
+        "        failures.append('fixture-odd: leans on the even fixture')\n"
+        "    if s.is_even(3) is not False:\n"
+        "        failures.append('fixture-odd: expected False for 3')\n"
+        "open(LOG, 'a').write(' '.join(sys.argv[1:]) + ' | ran ' + ','.join(ran) + '\\n')\n"
+        "if match is not None and not ran:\n"
+        "    print('selected no check', file=sys.stderr); sys.exit(2)\n"
+        "if failures:\n"
+        "    print('SELFTEST FAILED', file=sys.stderr)\n"
+        "    for f in failures: print('  - ' + f, file=sys.stderr)\n"
+        "    sys.exit(1)\n"
+        "print('ok')\n")
+
+    def narrow_guard(mutation: mc.Mutation, needs_even: bool = False, narrow_with: str = "--match"):
+        guard, root = _fixture_guard((mutation,))
+        log = root / "invocations.log"
+        (root / "scripts" / "subject_selftest.py").write_text(
+            narrow_src.replace("LOG", repr(str(log))).replace("NEEDS_EVEN", repr(needs_even)), encoding="utf-8")
+        return dataclasses.replace(guard, narrow_with=narrow_with), root, log
+
+    odd_break = mc.Mutation("odd numbers reported even", "n % 2 == 0", "True", "fixture-odd")
+    guard, root, log = narrow_guard(odd_break)
+    mc.REPO = root
+    try:
+        _tick()
+        problems = mc.run_guard(guard)
+        lines = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
+        narrowed = [l for l in lines if "--match fixture-odd" in l]
+        if problems or len(lines) != 3 or len(narrowed) != 2 or any("ran odd" not in l for l in narrowed):
+            FAILURES.append(f"#1599: a narrowing guard must run its baseline whole and its control and mutant on "
+                            f"the expected fixture only, got problems={problems} log={lines}")
+    finally:
+        mc.REPO = original_repo
+    # ...a guard that does not set it runs every mutant whole,
+    guard, root, log = narrow_guard(odd_break, narrow_with="")
+    mc.REPO = root
+    try:
+        _tick()
+        mc.run_guard(guard)
+        lines = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
+        if any("--match" in l for l in lines):
+            FAILURES.append(f"#1599 CONTROL: a guard with no narrow_with must not be narrowed, got {lines}")
+    finally:
+        mc.REPO = original_repo
+    # ...a mutation with no `expects`, or one that opts out, runs whole as well,
+    for label, mutation in (("no expects", dataclasses.replace(odd_break, expects="")),
+                            ("narrow=False", dataclasses.replace(odd_break, narrow=False))):
+        guard, root, log = narrow_guard(mutation)
+        mc.REPO = root
+        try:
+            _tick()
+            mc.run_guard(guard)
+            lines = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
+            if any("--match" in l for l in lines):
+                FAILURES.append(f"#1599: a mutation with {label} must run the whole selftest, got {lines}")
+        finally:
+            mc.REPO = original_repo
+    # THE CONTROL RUN: a fixture that cannot pass alone must not count a mutant as caught.
+    guard, root, log = narrow_guard(odd_break, needs_even=True)
+    mc.REPO = root
+    try:
+        _tick()
+        problems = mc.run_guard(guard)
+        if not any("cannot be narrowed" in x for x in problems):
+            FAILURES.append(f"#1599: a fixture that fails alone, unmutated, must be reported as unable to be "
+                            f"narrowed and never counted as catching its mutant, got {problems}")
+    finally:
+        mc.REPO = original_repo
+    # An `expects` that names no fixture selects nothing: loud, not an empty pass.
+    guard, root, log = narrow_guard(dataclasses.replace(odd_break, expects="no such fixture"))
+    mc.REPO = root
+    try:
+        _tick()
+        problems = mc.run_guard(guard)
+        if not any("cannot be narrowed" in x for x in problems):
+            FAILURES.append(f"#1599: an `expects` that selects no fixture must be reported, got {problems}")
+    finally:
+        mc.REPO = original_repo
+    # A mutant the SELECTED fixture does not notice still SURVIVES: narrowing cannot hide it.
+    guard, root, log = narrow_guard(mc.Mutation("only 4 is wrong", "n % 2 == 0", "n % 2 == 0 and n != 4", "fixture-odd"))
+    mc.REPO = root
+    try:
+        _tick()
+        problems = mc.run_guard(guard)
+        if not any("SURVIVED" in x for x in problems):
+            FAILURES.append(f"#1599: a mutant the narrowed fixture cannot see must be reported SURVIVED, got {problems}")
+    finally:
+        mc.REPO = original_repo
+    # A REFUSAL IS NOT A CATCH (review of #1603, F1). A mutant that makes the selection refuse exits 2 with a message
+    # that quotes the label `expects` names, so "non-zero and the label appears" counted it as caught. Only the
+    # selftest's own failure, exit 1, is a catch under narrowing.
+    guard, root, log = narrow_guard(mc.Mutation("the selection is refused", "n % 2 == 0", "n % 2 == 0  # REFUSE", "fixture-odd"))
+    mc.REPO = root
+    try:
+        _tick()
+        problems = mc.run_guard(guard)
+        if not any("refused or crashed" in x for x in problems):
+            FAILURES.append(f"#1599: a narrowed mutant that is REFUSED (exit 2) must be a problem, never a catch, got {problems}")
+    finally:
+        mc.REPO = original_repo
+
+    # ---- 1f. the cost ratchet: a new expensive guard fails until it is cheaper or the record is re-set (#1599) ----
+    # `mutation coverage` reached 3490 s of its 3600 s budget and nothing said which guard had grown. A guard over
+    # RATCHET_FLOOR seconds of work must be on record; one on record may not grow past RATCHET_GROWTH x its record
+    # plus RATCHET_SLACK; a record naming a guard that is gone is drift. Pure functions, so every rule has a case.
+    floor = mc.RATCHET_FLOOR
+    record = {"guards": {"heavy": 400.0, "medium": 100.0}}
+
+    def ratchet(cost: dict, base: dict | None) -> list[str]:
+        """`ratchet_problems`, with a raise reported as a problem: a mutant that breaks it by CRASHING would
+        otherwise die with a traceback that names no fixture, and read as caught by the wrong thing (#1599)."""
+        try:
+            return mc.ratchet_problems(cost, base)
+        except Exception as exc:        # noqa: BLE001 -- the check below fails by name
+            return [f"raised {exc!r}"]
+
+    cases = [
+        ("a NEW guard over the floor", {"heavy": 400.0, "medium": 100.0, "fresh": floor + 1}, record, "fresh"),
+        ("a recorded guard past growth and slack", {"heavy": 400.0 * mc.RATCHET_GROWTH + mc.RATCHET_SLACK + 1,
+                                                     "medium": 100.0}, record, "heavy"),
+        ("a record naming a guard that no longer exists", {"heavy": 400.0}, record, "medium"),
+    ]
+    for label, cost, base, names in cases:
+        _tick()
+        problems = ratchet(cost, base)
+        if not any(names in x for x in problems):
+            FAILURES.append(f"#1599: the ratchet must report {label} (naming {names!r}), got {problems}")
+    for label, cost, base in (
+            ("a new guard under the floor", {"heavy": 400.0, "medium": 100.0, "fresh": floor - 1}, record),
+            ("a recorded guard within growth and slack", {"heavy": 400.0 * mc.RATCHET_GROWTH + mc.RATCHET_SLACK,
+                                                           "medium": 100.0}, record),
+            ("a recorded guard that got cheaper, even under the floor", {"heavy": 400.0, "medium": floor - 5}, record)):
+        _tick()
+        problems = ratchet(cost, base)
+        if problems:
+            FAILURES.append(f"#1599 CONTROL: the ratchet must accept {label}, got {problems}")
+    _tick()
+    problems = ratchet({"heavy": 400.0}, None)
+    if not (len(problems) == 1 and "no cost record" in problems[0]):
+        FAILURES.append(f"#1599: with no record at all the ratchet must say so once, never pass, got {problems}")
+    # The record: only guards over the floor, deterministic bytes, and a round trip.
+    with tempfile.TemporaryDirectory() as td:
+        path = Path(td) / "cost.json"
+        mc.write_cost_baseline(path, {"heavy": 400.04, "light": floor - 1, "medium": 100.0}, jobs=4)
+        first = path.read_bytes()
+        mc.write_cost_baseline(path, {"medium": 100.0, "light": floor - 1, "heavy": 400.04}, jobs=4)
+        loaded = mc.load_cost_baseline(path)
+        _tick()
+        if first != path.read_bytes() or loaded is None or set(loaded["guards"]) != {"heavy", "medium"} \
+                or loaded["guards"]["heavy"] != 400.0:
+            FAILURES.append(f"#1599: the record must hold only guards over the floor, rounded, in a stable order, "
+                            f"got {loaded} / {first!r}")
+        _tick()
+        if mc.load_cost_baseline(Path(td) / "absent.json") is not None:
+            FAILURES.append("#1599: an absent record must load as None, not as an empty one")
+        path.write_text("{not json", encoding="utf-8")
+        _tick()
+        try:
+            mc.load_cost_baseline(path)
+        except ValueError:
+            pass
+        else:
+            FAILURES.append("#1599: a malformed record must raise, never read as empty (which would pass everything)")
+
     # ---- 1d. baselines and mutants start no detached git maintenance (#1510) ----------------
     # The helper APPENDS to a caller's own pairs, never renumbers them over.
     _tick()
@@ -462,6 +704,32 @@ def run() -> int:
         if mc.hermetic_git.env(given) != given:
             FAILURES.append(f"#1510: a count git rejects ({bogus!r}) must be left untouched, "
                             f"got {mc.hermetic_git.env(given)}")
+    # #1588: an inherited GIT_DIR (git exports it to hooks, `rebase --exec`, `bisect run`...) must not
+    # survive into a fixture's environment: under it, `git -C <tmp> commit` commits into $GIT_DIR.
+    _tick()
+    poisoned = mc.hermetic_git.env({"GIT_DIR": "/real/.git", "GIT_WORK_TREE": "/real", "GIT_INDEX_FILE": "/real/i",
+                                    "PATH": "/usr/bin"})
+    if any(k in poisoned for k in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE")) or poisoned.get("PATH") != "/usr/bin":
+        FAILURES.append(f"#1588: hermetic_git.env must drop the repository-locating variables and keep the rest, "
+                        f"got {sorted(poisoned)}")
+    # ...end to end: the #1493 probe's own commands, under an inherited GIT_DIR naming a stand-in repo.
+    import subprocess as _sp, tempfile as _tf
+    with _tf.TemporaryDirectory() as _w:
+        _real = Path(_w) / "real"
+        _sp.run(["git", "init", "-q", str(_real)], check=True, env=mc.hermetic_git.env())
+        _sp.run(["git", "-C", str(_real), "-c", "user.email=x@x", "-c", "user.name=x", "commit", "-q",
+                 "--allow-empty", "-m", "real"], check=True, env=mc.hermetic_git.env())
+        _env = mc.hermetic_git.env({**os.environ, "GIT_DIR": str(_real / ".git")})
+        _tmp = Path(_w) / "probe"
+        _sp.run(["git", "init", "-q", str(_tmp)], env=_env, capture_output=True)
+        _sp.run(["git", "-C", str(_tmp), "-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgSign=false",
+                 "commit", "-q", "--allow-empty", "-m", "m"], env=_env, capture_output=True)
+        _n = _sp.run(["git", "-C", str(_real), "rev-list", "--count", "HEAD"], capture_output=True, text=True,
+                     env=mc.hermetic_git.env()).stdout.strip()
+        _tick()
+        if _n != "1":
+            FAILURES.append(f"#1588: a fixture commit under an inherited GIT_DIR reached the repo it names "
+                            f"({_n} commits, want 1) -- the t@t/m commits on dev")
     # A selftest that commits in a temp repo under GIT_TRACE and refuses to go on if git started
     # `maintenance run --auto` or `gc --auto` -- the #1493 race. Through run_guard, so it proves
     # the CALLER passes the env to both the baseline and the mutant, not only that the helper builds it.
@@ -507,7 +775,9 @@ def run() -> int:
     # ---- 1e. a mutant that times out takes its whole process group, and says what it knows (#1459)
     # The mutated selftest starts a grandchild that would outlive a plain kill, prints a line, then
     # hangs. run_mutation must report a timeout naming the guard, the mutation and the elapsed time,
-    # with that line as its tail, and leave nothing running.
+    # with that line as its tail, and leave nothing running. #1556: the grandchild's pid is recorded
+    # atomically AFTER the line is printed, and the timeout is lengthened only while the mutant never
+    # got that far -- a mutant killed before it started is no verdict on the group kill.
     import signal as _signal
     import time as _time
     guard, root = _fixture_guard((
@@ -517,22 +787,30 @@ def run() -> int:
     hang = root / "scripts" / "subject_selftest.py"
     hang.write_text("import subprocess, sys, time\n"
                     "g = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'])\n"
-                    f"open({str(pidfile)!r}, 'w').write(str(g.pid))\n"
                     "print('mutant-1459 started its grandchild', flush=True)\n"
+                    f"open({str(pidfile)!r} + '.tmp', 'w').write(str(g.pid))\n"
+                    f"__import__('os').replace({str(pidfile)!r} + '.tmp', {str(pidfile)!r})\n"
                     "time.sleep(120)\n", encoding="utf-8")
     mc.REPO = root
     try:
         _tick()
-        t0 = _time.monotonic()
-        problems = mc.run_mutation(guard, guard.mutations[0], timeout=2)
-        took = _time.monotonic() - t0
+        for limit in (2, 4, 8):
+            t0 = _time.monotonic()
+            problems = mc.run_mutation(guard, guard.mutations[0], timeout=limit)
+            took = _time.monotonic() - t0
+            recorded = _pids(pidfile, wait=0)
+            if recorded:
+                break
         report = " | ".join(problems)
-        if not ("fixture: the mutant hangs timed out after" in report and "mutant-1459 started its grandchild" in report
-                and "limit 2s" in report and took < 20):
+        if not recorded:
+            FAILURES.append(f"#1459: the timed-out mutant never started its grandchild, even with {limit}s -- "
+                            f"the runner is too loaded to judge the group kill; got {problems!r}")
+        elif not ("fixture: the mutant hangs timed out after" in report and "mutant-1459 started its grandchild" in report
+                  and f"limit {limit}s" in report and took < limit + 18):
             FAILURES.append(f"#1459: a timed-out mutant must report guard, mutation, elapsed and its tail, "
                             f"promptly; got {problems!r} after {took:.0f}s")
         _tick()
-        grandchild = int(pidfile.read_text()) if pidfile.exists() else None
+        grandchild = recorded[0] if recorded else None
         gone = grandchild is not None
         for _ in range(20):
             try:
@@ -957,5 +1235,12 @@ def run() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(run())
+    # CONTAINED (#1582): this selftest starts process trees on purpose, some built to leak, under
+    # every mutant too. Nothing it starts may outlive it -- the 2026-10-03 leak exhausted the
+    # user's process limit. Not optional: a missing helper must fail here, not run uncontained.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "plugins" / "rails-flow" / "scripts"))
+    from process_containment import contained
+    with contained():
+        _rc = run()
+    sys.exit(_rc)
 

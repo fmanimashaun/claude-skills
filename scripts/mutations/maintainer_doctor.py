@@ -13,8 +13,7 @@ GUARD = Guard(
         # missing path only after fixing the first is the point of `run_baseline`: an inert
         # guard hides every downstream problem behind the first one.
         "plugins",
-        "evals",
-    ),
+        "evals", "plugins/rails-flow/scripts/process_containment.py"),
     mutations=(
         # #1459: a gate that times out takes its whole process group with it.
         Mutation(
@@ -166,19 +165,19 @@ GUARD = Guard(
         # nobody thinks of -- an "allowance" that is really a tightening.
         Mutation(
             "the slow-gate allowance is keyed on a gate that does not exist",
-            '    "mutation coverage": 1800,',
+            '    "mutation coverage": 5400,',
             '    "mutatoin coverage": 900,',
             "SLOW_GATES names no such gate",
         ),
         Mutation(
             "the slow-gate allowance widens to a gate that reads the tree once",
-            '    "mutation coverage": 1800,',
+            '    "mutation coverage": 5400,',
             '    "mutation coverage": 900,\n    "packaging determinism": 900,',
             "SLOW_GATES is",
         ),
         Mutation(
             "a SLOW_GATES entry silently tightens a gate instead of loosening it",
-            '    "mutation coverage": 1800,',
+            '    "mutation coverage": 5400,',
             '    "mutation coverage": 30,',
             "silently TIGHTENS a gate",
         ),
@@ -192,7 +191,7 @@ GUARD = Guard(
         Mutation(
             # #1486 / review of PR #1491
             "the gate's total drops below mutation_check's own caps, so a hung guard is killed unnamed",
-            '    "mutation coverage": 1800,',
+            '    "mutation coverage": 5400,',
             '    "mutation coverage": 1200,',
             "must stay under the gate's total",
         ),
@@ -202,6 +201,34 @@ GUARD = Guard(
             '                last = next((ln for ln in reversed(lines) if re.search(r"\\(jobs=\\d+, \\d+s\\)", ln)),\n                            lines[-1] if lines else "")',
             '                last = lines[-1] if lines else ""',
             "a slow gate's ok line must carry its `(jobs=N, Xs)` measurement",
+        ),
+        Mutation(
+            # #1588
+            'the detector never runs, so a fixture commit in the real repo goes unnoticed (#1588)',
+            '        finally:\n            self.check_repo_untouched(tips_before)',
+            '        finally:\n            pass',
+            'a gate that plants a FOREIGN commit mid-sweep turns the sweep red',
+        ),
+        Mutation(
+            # #1588
+            'the detector treats every author as the configured user, so an escaped fixture commit passes (#1588)',
+            '        foreign = [ln for ln in added if not me or ln.split()[1] != me]',
+            '        foreign = []',
+            'a gate that plants a FOREIGN commit mid-sweep turns the sweep red',
+        ),
+        Mutation(
+            # #1588
+            "the detector flags every new commit, so another session's own work turns the sweep red (#1588)",
+            '        foreign = [ln for ln in added if not me or ln.split()[1] != me]',
+            '        foreign = added',
+            "a commit by the configured user (another session's work) is not flagged",
+        ),
+        Mutation(
+            # #1594 D1
+            'fetched commits are not excluded, so a git fetch during a sweep is a false alarm (#1594 review D1)',
+            '        code, out = self.run("git", "-C", str(REPO), "rev-list", "--format=%H %ae %s", *after, "--not", *before,\n                             "--remotes")',
+            '        code, out = self.run("git", "-C", str(REPO), "rev-list", "--format=%H %ae %s", *after, "--not", *before)',
+            "a fetch and pull of other authors' commits during the sweep is not flagged",
         ),
     ),
 )

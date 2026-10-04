@@ -213,6 +213,66 @@ def ruleset_fixtures() -> None:
             md.RULESET_ARGS = saved
 
 
+def repo_untouched_fixtures() -> None:
+    """#1588: a gate that commits into the real repository turns the sweep red, by name.
+
+    The fixture repo's configured user is `t@t`, so here `t@t` plays the maintainer (whose own sessions
+    may commit during a sweep) and `fx@fixture` plays a fixture that escaped its temp repo."""
+    work = fixture()
+    saved_gates, real = md.GATES, md.REPO
+    try:
+        md.REPO = work
+        scripts = work / "scripts"
+        scripts.mkdir(parents=True, exist_ok=True)
+        plant = ("import subprocess, sys\n"
+                 "subprocess.run(['git', '-c', f'user.email={sys.argv[1]}', '-c', 'user.name=x', 'commit', '-q',"
+                 " '--allow-empty', '-m', 'm'], check=True)\n")
+        (scripts / "_plant.py").write_text(plant, encoding="utf-8")
+        (scripts / "_quiet.py").write_text("print('ok')\n", encoding="utf-8")
+        cases = (("a gate that plants a FOREIGN commit mid-sweep turns the sweep red", "fx@fixture", md.FAIL),
+                 ("CONTROL: a commit by the configured user (another session's work) is not flagged", "t@t", md.PASS))
+        for label, author, want in cases:
+            md.GATES = (("selftest plants", ("python3", "scripts/_plant.py", author)),)
+            d = md.Doctor()
+            d.check_gates()
+            r = expect(label, d, "the sweep committed nothing into the real repository", want)
+            _tick()
+            if want == md.FAIL and r is not None and "fx@fixture" not in r.detail:
+                FAILURES.append(f"#1588: the finding must name the escaped commit's author: {r.detail!r}")
+        # #1594 review D1: a FETCH (and a pull into a local branch) during the sweep brings commits by other
+        # authors from the remote. They are not a fixture escaping, so the detector must not flag them.
+        other = work.parent / "other"
+        # The planted commits above are local only; unpushed, they make `dev` diverge and `--ff-only` refuse.
+        _git(work, "push", "-q", "origin", "dev")
+        _git(work.parent, "clone", "-q", str(work.parent / "remote.git"), str(other))
+        # On `dev`, the branch `work` tracks: a push from the clone's default branch (`main`) left the
+        # pull a no-op, and the control passed without ever seeing a foreign commit (#1594 review). The
+        # log assertion below keeps it from going vacuous again.
+        _git(other, "checkout", "-q", "dev")
+        _git(other, "-c", "user.email=someone@else", "-c", "user.name=s", "commit", "-q", "--allow-empty", "-m", "theirs")
+        _git(other, "push", "-q", "origin", "dev")
+        (scripts / "_fetch.py").write_text(
+            "import subprocess\n"
+            "subprocess.run(['git', 'fetch', '-q', 'origin'], check=True)\n"
+            "subprocess.run(['git', 'merge', '-q', '--ff-only', '@{u}'], check=True)\n", encoding="utf-8")
+        md.GATES = (("selftest fetches", ("python3", "scripts/_fetch.py")),)
+        d = md.Doctor()
+        d.check_gates()
+        expect("CONTROL: a fetch and pull of other authors' commits during the sweep is not flagged (#1594 D1)", d,
+               "the sweep committed nothing into the real repository", md.PASS)
+        _tick()
+        pulled = _git(work, "log", "--format=%ae %s", "-1", "dev")
+        if pulled != "someone@else theirs":
+            FAILURES.append(f"#1594 D1 control is vacuous: the pull did not bring the foreign commit onto dev ({pulled!r})")
+        md.GATES = (("selftest quiet", ("python3", "scripts/_quiet.py")),)
+        d = md.Doctor()
+        d.check_gates()
+        expect("CONTROL: a sweep that commits nothing passes the detector", d,
+               "the sweep committed nothing into the real repository", md.PASS)
+    finally:
+        md.GATES, md.REPO = saved_gates, real
+
+
 def timeout_fixtures() -> None:
     """A gate that is KILLED did not run -- so it is a skip, and a real failure is still a FAIL.
 
@@ -302,6 +362,7 @@ def timeout_fixtures() -> None:
 
 def run() -> int:
     timeout_fixtures()
+    repo_untouched_fixtures()
     ruleset_fixtures()
     # ---- healthy machine: nothing may FAIL ---------------------------------------------
     d = diagnose(fixture(corpora=True))
@@ -791,16 +852,25 @@ def run() -> int:
     # #1459: a gate that times out takes its WHOLE process group with it. The gate starts a grandchild
     # that would outlive a plain kill, prints a line, then hangs; Doctor.run must come back as a
     # timeout (124, read as SKIP -- never a pass) carrying that line, and the grandchild must be gone.
-    # CONTROL: a plain subprocess.run with the same timeout leaves it running.
+    # CONTROL: a plain kill of the direct child -- what subprocess.run does on a timeout -- leaves it running.
+    #
+    # #1556: the gate learns nothing by being killed before it has started, and on a loaded runner a
+    # one-second timeout can land before the gate has written its record -- or halfway through
+    # writing it, which read as `int('')` and turned a full mutation-coverage run red. So the record
+    # is written atomically (pid_record.write) AFTER the line is printed, the timed-out run is
+    # retried with a longer timeout only while the gate never got that far, and the control waits
+    # for the record before it kills, instead of racing a timeout.
     import signal as _signal
     import time as _time
+    import pid_record
     with tempfile.TemporaryDirectory() as td:
-        pidfile = Path(td) / "grandchild.pid"
-        gate = ("import subprocess, sys, time\n"
-                "g = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'])\n"
-                f"open({str(pidfile)!r}, 'w').write(str(g.pid))\n"
-                "print('gate-1459 started its grandchild', flush=True)\n"
-                "time.sleep(120)\n")
+        def gate(record: Path) -> str:
+            return (pid_record.import_line(pid_record.HERE) +
+                    "import subprocess, sys, time\n"
+                    "g = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'])\n"
+                    "print('gate-1459 started its grandchild', flush=True)\n"
+                    f"pid_record.write({str(record)!r}, g.pid)\n"
+                    "time.sleep(120)\n")
 
         def alive(pid: int) -> bool:
             for _ in range(20):           # a killed process can take a moment to be reaped
@@ -812,35 +882,44 @@ def run() -> int:
             return True
 
         _tick()
-        started = _time.monotonic()
-        rc, out = md.Doctor().run(sys.executable, "-c", gate, timeout=1)
-        took = _time.monotonic() - started
-        grandchild = int(pidfile.read_text())
-        if rc != 124 or "gate-1459 started its grandchild" not in out or took > 20:
+        pidfile = Path(td) / "grandchild.pid"
+        for timeout in (1, 2, 4, 8):      # longer only while the gate never started: that is no verdict
+            started = _time.monotonic()
+            rc, out = md.Doctor().run(sys.executable, "-c", gate(pidfile), timeout=timeout)
+            took = _time.monotonic() - started
+            recorded_pids = pid_record.wait(pidfile, timeout=0)
+            if recorded_pids:
+                break
+        if not recorded_pids:
+            FAILURES.append(f"#1459: the timed-out gate never started its grandchild, even with {timeout}s "
+                            f"(rc={rc}) -- the runner is too loaded to judge the group kill: {out!r}")
+        elif rc != 124 or "gate-1459 started its grandchild" not in out or took > timeout + 19:
             FAILURES.append(f"#1459: a timed-out gate must return 124 promptly with what it printed, "
                             f"got rc={rc} after {took:.0f}s: {out!r}")
         _tick()
-        if alive(grandchild):
-            os.kill(grandchild, _signal.SIGKILL)
+        if recorded_pids and alive(recorded_pids[0]):
+            os.kill(recorded_pids[0], _signal.SIGKILL)
             FAILURES.append("#1459: a timed-out gate left its grandchild running -- the process group was not killed")
         _tick()
-        try:
-            # No pipes: a captured plain run waits for the grandchild to release them (120 s per run,
-            # measured on this guard), and the control only needs to show the grandchild survives.
-            subprocess.run([sys.executable, "-c", gate], stdout=subprocess.DEVNULL,
-                           stderr=subprocess.DEVNULL, timeout=1)
-        except subprocess.TimeoutExpired:
-            pass
-        control = int(pidfile.read_text())
-        try:                      # one look: alive is the expected answer, so there is nothing to wait for
-            os.kill(control, 0)
-            control_alive = True
-        except ProcessLookupError:
-            control_alive = False
-        if control_alive:
-            os.kill(control, _signal.SIGKILL)
-        else:
-            FAILURES.append("#1459 CONTROL: a plain subprocess.run timeout should leave the grandchild "
+        # No pipes: the control only needs to show the grandchild survives a kill of its parent.
+        control_file = Path(td) / "control.pid"
+        plain = subprocess.Popen([sys.executable, "-c", gate(control_file)],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        control_pids = pid_record.wait(control_file, timeout=60)
+        plain.kill()                      # exactly what subprocess.run(timeout=...) does on expiry
+        plain.wait()
+        control_alive = False
+        if control_pids:
+            try:                  # one look: alive is the expected answer, so there is nothing to wait for
+                os.kill(control_pids[0], 0)
+                control_alive = True
+                os.kill(control_pids[0], _signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        if not control_pids:
+            FAILURES.append("#1459 CONTROL: the control gate wrote no record within 60s -- it never started")
+        elif not control_alive:
+            FAILURES.append("#1459 CONTROL: a plain kill of the gate should leave the grandchild "
                             "running, or the check above proves nothing")
 
     # Review of #1525, end to end through the doctor. (1) A gate whose OWN children go through
@@ -849,21 +928,14 @@ def run() -> int:
     # (2) Ctrl-C while a gate runs: the gate is in a session of its own and never sees the
     # terminal's SIGINT, so the doctor must kill it on the way out (review: 2 survivors, 0 on dev).
     scripts_dir = str(Path(md.__file__).resolve().parent)
-    inner = ("import os, subprocess, sys, time\n"
+    inner = (pid_record.import_line(pid_record.HERE) +
+             "import os, subprocess, sys, time\n"
              "g = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'], start_new_session=True)\n"
-             "open(sys.argv[1] + '.tmp', 'w').write(f'{os.getpid()} {g.pid}')\n"
-             "os.replace(sys.argv[1] + '.tmp', sys.argv[1])\n"
+             "pid_record.write(sys.argv[1], os.getpid(), g.pid)\n"
              "time.sleep(120)\n")
 
     def recorded(*files: Path) -> list[int]:
-        out: list[int] = []
-        for f in files:
-            deadline = _time.monotonic() + 30
-            while not f.exists() and _time.monotonic() < deadline:
-                _time.sleep(0.05)
-            if f.exists():
-                out.extend(int(p) for p in f.read_text().split())
-        return out
+        return [pid for f in files for pid in pid_record.wait(f)]
 
     def survivors(pids: list[int]) -> list[int]:
         left = [p for p in pids if alive(p)]
@@ -926,4 +998,11 @@ def run() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(run())
+    # CONTAINED (#1582): this selftest starts process trees on purpose, some built to leak, under
+    # every mutant too. Nothing it starts may outlive it -- the 2026-10-03 leak exhausted the
+    # user's process limit. Not optional: a missing helper must fail here, not run uncontained.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "plugins" / "rails-flow" / "scripts"))
+    from process_containment import contained
+    with contained():
+        _rc = run()
+    sys.exit(_rc)
