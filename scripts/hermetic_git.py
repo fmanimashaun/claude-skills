@@ -13,13 +13,22 @@ import os
 from collections.abc import Mapping
 
 SETTINGS: tuple[tuple[str, str], ...] = (("maintenance.auto", "false"), ("gc.auto", "0"))
+# THE #1588 CAUSE. git exports GIT_DIR (and the rest of `git rev-parse --local-env-vars`) to every
+# hook it runs. A selftest run under a hook inherits it, and `git -C <tmp> commit` then commits into
+# $GIT_DIR -- the REAL repository -- while `git init <tmp>` "succeeds" by re-initialising it. Measured:
+# the mutation_check_selftest probe, verbatim, under an inherited GIT_DIR wrote `t <t@t>`/`m` into the
+# repo it named and left the temp dir with no .git. These are the repository-LOCATING variables of
+# that list (git 2.50); the config ones stay, because callers append their own GIT_CONFIG_* pairs.
+REPO_LOCATORS = ("GIT_DIR", "GIT_WORK_TREE", "GIT_IMPLICIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
+                "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR", "GIT_GRAFT_FILE", "GIT_SHALLOW_FILE",
+                "GIT_PREFIX", "GIT_NO_REPLACE_OBJECTS", "GIT_REPLACE_REF_BASE")
 
 
 def env(base: Mapping[str, str] | None = None) -> dict[str, str]:
     """`base` (default: this process's environment) with SETTINGS appended to any GIT_CONFIG_* pairs
     already there -- appended, never renumbered, so a caller's own pairs keep their meaning. A count git
     would reject is left untouched."""
-    out = dict(os.environ if base is None else base)
+    out = {k: v for k, v in (os.environ if base is None else base).items() if k not in REPO_LOCATORS}
     count = out.get("GIT_CONFIG_COUNT", "")
     # git's rules, not Python's int(): empty means none, ASCII digits are a count, and anything else
     # (`-1`, `abc`, ` 2 `) git itself rejects -- so leave such an environment exactly as it is rather
