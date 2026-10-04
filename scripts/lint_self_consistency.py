@@ -31,6 +31,8 @@ WHAT IT CHECKS
                               plugin's README (as /p:c) never names — same defect, one level down
   hook-lib-drift              the two shipped copies of hooks/scripts/lib/normalize_cmd.sh, or of lib/deadline.sh,
                               differ, or one is missing -- one normaliser is a claim only while they are identical
+  fixture-git-drift           the three shipped copies of scripts/fixture_git.py (rails-flow, qa-flow,
+                              pipeline) differ, or one is missing -- one fixture-git lock, three copies (#1588)
   claude-md-growth            CLAUDE.md past the ceiling recorded in its own marker (or no marker,
                               or its history file gone) — relocate incident paragraphs verbatim to
                               docs/brain/history/maintainer-history.md; claude_md_structure.py prints the diff
@@ -595,6 +597,36 @@ def check_hook_lib_drift() -> tuple[list[Finding], int]:
                                     f"differs from {a} -- one lib, two copies: a fix landed in one and not the other. "
                                     "Make them identical (cp) and re-run"))
     return findings, sum(len(pair) for pair in HOOK_LIB_PAIRS)
+
+
+# Rule: fixture-git-drift (#1588)
+# Each plugin installs alone and cannot import another's code, so the helper that locks a fixture's git to
+# its own temp repo ships as one copy per plugin that runs fixture git. Maintainer `scripts/` import the
+# rails-flow copy. A fix to one copy that misses another reopens #1588 in that plugin.
+FIXTURE_GIT_COPIES = ("plugins/rails-flow/scripts/fixture_git.py",
+                      "plugins/qa-flow/scripts/fixture_git.py",
+                      "plugins/pipeline/scripts/fixture_git.py")
+
+
+def check_fixture_git_drift() -> tuple[list[Finding], int]:
+    """The fixture_git copies exist and are byte-identical to the rails-flow (canonical) one."""
+    findings: list[Finding] = []
+    texts = {}
+    for rel in FIXTURE_GIT_COPIES:
+        p = ROOT / rel
+        if not p.is_file():
+            findings.append(Finding("fixture-git-drift", rel, 0,
+                                    "missing -- this plugin's fixtures lose the lock that keeps their git out of the "
+                                    "real repo (#1588); copy it from plugins/rails-flow/scripts/fixture_git.py"))
+            continue
+        texts[rel] = p.read_bytes()
+    canonical = texts.get(FIXTURE_GIT_COPIES[0])
+    for rel in FIXTURE_GIT_COPIES[1:]:
+        if canonical is not None and rel in texts and texts[rel] != canonical:
+            findings.append(Finding("fixture-git-drift", rel, 0,
+                                    f"differs from {FIXTURE_GIT_COPIES[0]} -- one fixture-git lock, three copies: a fix "
+                                    "landed in one and not the others. Copy the canonical file over it (cp) and re-run"))
+    return findings, len(FIXTURE_GIT_COPIES)
 
 
 def check_claude_md_growth() -> tuple[list[Finding], int]:
@@ -3579,6 +3611,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     undoc_cmds, commands_examined = check_undocumented_commands()
     growth, claude_md_lines = check_claude_md_growth()
     hook_lib, hook_lib_copies = check_hook_lib_drift()
+    fixture_git, fixture_git_copies = check_fixture_git_drift()
     bare, bare_examined = check_bare_plugin_entries()
     misdesc, agent_descs_examined = check_misdescribed_agents()
     unbounded, queries_examined = check_unbounded_issue_queries()
@@ -3635,6 +3668,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "commands_checked_for_documentation": commands_examined,
         "claude_md_lines": claude_md_lines,
         "hook_lib_copies": hook_lib_copies,
+        "fixture_git_copies": fixture_git_copies,
         "plugin_entries_checked_for_metadata": bare_examined,
         "plugin_descriptions_reconciled_against_agents": agent_descs_examined,
         "gh_list_calls_examined": queries_examined,
@@ -3683,7 +3717,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "scaffolded_boolean_toggles": toggles_examined,
         **call_coverage,
     }
-    return (dead + unenforced + undocumented + undoc_cmds + growth + hook_lib + bare + misdesc + unbounded + author_me + components + call_sites + invisible
+    return (dead + unenforced + undocumented + undoc_cmds + growth + hook_lib + fixture_git + bare + misdesc + unbounded + author_me + components + call_sites + invisible
             + markers + uncontained + pointers + rel_links + leaving + outlines + uninstallable + plugin_root + mkt_ver + coercions + topologies + schema + unwired
             + ci_gates + cl_ignore + controllers + labels + comp_labels + orphans + keyfilter
             + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
@@ -4778,6 +4812,13 @@ def selftest() -> int:
              files={HOOK_LIB_COPIES[0]: LIB, HOOK_LIB_COPIES[1]: LIB, DL[0]: LIB, DL[1]: LIB + "\n"})
     scenario("a missing deadline lib copy is a finding", rule="hook-lib-drift", expect_finding=True,
              files={HOOK_LIB_COPIES[0]: LIB, HOOK_LIB_COPIES[1]: LIB, DL[0]: LIB})
+    FG = "def run(repo, *args):\n    pass\n"
+    scenario("identical fixture_git copies are silent", rule="fixture-git-drift", expect_finding=False,
+             files={c: FG for c in FIXTURE_GIT_COPIES})
+    scenario("a fixture_git copy that differs by one byte is a finding", rule="fixture-git-drift", expect_finding=True,
+             files={FIXTURE_GIT_COPIES[0]: FG, FIXTURE_GIT_COPIES[1]: FG, FIXTURE_GIT_COPIES[2]: FG + "\n"})
+    scenario("a missing fixture_git copy is a finding", rule="fixture-git-drift", expect_finding=True,
+             files={FIXTURE_GIT_COPIES[0]: FG, FIXTURE_GIT_COPIES[1]: FG})
     scenario(
         "the history file CLAUDE.md points at is missing", rule="claude-md-growth", expect_finding=True,
         files={"CLAUDE.md": "@AGENTS.md\n<!-- claude-md: max-lines 10 -->\nrule\n"},

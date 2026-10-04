@@ -155,6 +155,12 @@ ctx_repo() {
   [ "$r" = "$L" ] && return 0
   _R="$r"; _foreign=1
 }
+# plain_ref <value>: a ref taken from the GATED COMMAND'S TEXT is a plain branch, tag or commit name before it reaches
+# `git fetch` (#1600). This hook runs BEFORE the permission prompt, so a value that starts with "-" would be read as an
+# OPTION: `git fetch origin --upload-pack=<program>` RUNS the program when origin is a local path or ssh. Also refused: a
+# `:` (a refspec would write a local ref) and `..`, a space or any other character a name does not have. The caller
+# fetches nothing, the ref stays unresolved, and the command is denied as one the hook cannot judge.
+plain_ref() { case "$1" in ""|-*|*[!A-Za-z0-9._/-]*|*..*) return 1 ;; esac; return 0; }
 # resolve_pr <selector|""> <ctx repo> -> base, head, _PRR ("" when gh could not say). Resolved the way
 # the command resolves it: the same selector, the same -R/GH_REPO, the same directory.
 resolve_pr() {
@@ -180,8 +186,8 @@ add_commit() {
     *)
       if [ -z "$_R" ]; then
         c="$(git rev-parse --verify -q "refs/remotes/origin/${ref}^{commit}" 2>/dev/null || git rev-parse --verify -q "${ref}^{commit}" 2>/dev/null || true)"
-        if [ -z "$c" ]; then
-          git fetch -q origin "$ref" 2>/dev/null && c="$(git rev-parse --verify -q 'FETCH_HEAD^{commit}' 2>/dev/null || true)"
+        if [ -z "$c" ] && plain_ref "$ref"; then
+          git fetch -q --end-of-options origin "$ref" 2>/dev/null && c="$(git rev-parse --verify -q 'FETCH_HEAD^{commit}' 2>/dev/null || true)"
         fi
       else
         c="$(gh api "repos/${_R}/commits/${ref}" -q .sha 2>/dev/null || true)"
@@ -473,6 +479,8 @@ judge() {
   fi
   # #2: the sha binding IS the gate -- empty/garbled sha must fail closed, not pass on PASS alone.
   if [ -z "$csha" ]; then JWHY="certification has no sha — the stamp is invalid. Re-run /qa-flow:certify."; return 1; fi
+  # (#1600) The stamp is data from the repository being promoted: its sha is a commit id, never an option or a path.
+  case "$csha" in *[!0-9a-fA-F]*) JWHY="certification sha is not a commit id (${csha:0:20}) — the stamp is invalid. Re-run /qa-flow:certify."; return 1 ;; esac
   # #1428. A PASS also claims the two release-only layers ran and passed (the first-boot walkthrough
   # and the forged-request sweep); judged from the evidence COMMITTED at the stamp (--rev), not the
   # working tree, where a staged fix could hide a committed HOLE. Fail-closed: any error denies.
@@ -546,6 +554,7 @@ judge_remote() {
     JWHY="${repo}: certification verdict is ${verdict}, not PASS. Fix the defects and re-certify."; return 1
   fi
   [ -n "$csha" ] || { JWHY="${repo}: certification has no sha — the stamp is invalid. Re-run /qa-flow:certify."; return 1; }
+  case "$csha" in *[!0-9a-fA-F]*) JWHY="${repo}: certification sha is not a commit id (${csha:0:20}) — the stamp is invalid. Re-run /qa-flow:certify."; return 1 ;; esac
   case "$sha" in
     "$csha"*) : ;;
     *)
@@ -586,7 +595,7 @@ fi
 while IFS=$'\t' read -r _c _crp _lab; do
   [ -n "$_c" ] || continue
   if [ "$_crp" = "-" ] && ! git cat-file -e "${_c}^{commit}" 2>/dev/null; then
-    git fetch -q origin "$_c" 2>/dev/null || true
+    git fetch -q --end-of-options origin "$_c" 2>/dev/null || true       # an object id by construction (#1600)
     git cat-file -e "${_c}^{commit}" 2>/dev/null || deny "${_lab} ${_c:0:12} is not in this clone and could not be fetched, so its certification cannot be read. Fetch it and retry."
   fi
   judge_in "$_c" "$_crp" "$_lab" || deny "$JWHY"
@@ -618,7 +627,7 @@ resolve_release() {
         t="$(printf '%s\n' "$o" | awk '$2 ~ /\^\{\}$/ {p=$1} $2 !~ /\^\{\}$/ {d=$1} END {print (p != "" ? p : d)}')"
         _rsha="$(git rev-parse --verify -q "${t}^{commit}" 2>/dev/null || true)"
         if [ -z "$_rsha" ]; then
-          git fetch -q origin "$t" 2>/dev/null || true
+          git fetch -q --end-of-options origin "$t" 2>/dev/null || true
           _rsha="$(git rev-parse --verify -q "${t}^{commit}" 2>/dev/null || true)"
         fi
         [ -n "$_rsha" ]; return
@@ -680,8 +689,11 @@ exit 0
 # main-ward promotion, so a timeout does too: the COARSE builtin detector above judges the raw payload; a command
 # that does not look like a promotion is allowed (blocking every slow command would be the failure here), and one that
 # does is denied, QA_ALLOW_MAIN=1 honoured and audited exactly as in the missing-tool path. The default is under the
-# hook's 15 s timeout (hooks.json) and RAILS_FLOW_HOOK_DEADLINE is clamped at 13. `gh pr view` is the one network
-# call, reached only for a PR merge, which is already a promotion shape, so a slow network denies safely.
+# hook's 15 s timeout (hooks.json) and RAILS_FLOW_HOOK_DEADLINE is clamped at 13. The gate's NETWORK calls (`gh pr view`,
+# and since #1601 `gh api .../commits/...`, `git fetch` of a ref the command names, and `git ls-remote` of a release tag) are
+# reached only after the classifier has read the command as one that puts a commit on main or publishes a release, which
+# are the shapes the coarse detector denies, so a slow network fails closed. It also means a legitimate promotion on a
+# slow network is refused with "retry it", which is the cost of a bounded hook.
 _dl="$(dirname "${BASH_SOURCE[0]}")/lib/deadline.sh"
 if [ -f "$_dl" ] && . "$_dl" 2>/dev/null && type deadline_run >/dev/null 2>&1; then
   deadline_seconds 10 13

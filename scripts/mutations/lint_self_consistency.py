@@ -1271,5 +1271,12 @@ GUARD = Guard(
             '        text = read(path)\n        if not _SPAWNS',
             'uncontained-process-fixture / a non-selftest file that starts processes (out of scope)',
         ),
+        Mutation(
+            # #1588
+            "fixture-git-drift never compares the copies, so a fix in one plugin's copy alone passes",
+            '        if canonical is not None and rel in texts and texts[rel] != canonical:',
+            '        if False:',
+            'fixture-git-drift / a fixture_git copy that differs by one byte is a finding',
+        ),
     ),
 )
