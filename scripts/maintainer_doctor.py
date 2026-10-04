@@ -594,7 +594,12 @@ SLOW_GATES: dict[str, int] = {
     # and this branch's ~60 more of them timed the dispatched run out at 1800 s (37136560968, no survivor
     # in any guard that finished). 3600 s is 2.3x the dev measurement; re-set it from the `jobs=4, Xs`
     # the completed run on this branch prints.
-    "mutation coverage": 3600,
+    # #1599, MEASURED: since #1516 merged, every full run is killed at 3600 s (dev push 37176643896; #1601's
+    # run 37177382837; #1594 and #1595 the same), whole jobs of about 3,860 to 3,900 s, with no survivor in any guard
+    # that finished. The real time is therefore at least 3600 s and not yet measured: the run that completes under
+    # this bound prints it, and 5400 s is 1.5x the 3600 s floor. #1599 cuts the guards that re-run a whole fixture group
+    # per mutant; re-set this from the `jobs=4, Xs` of a completed run, and lower it when #1599 lands.
+    "mutation coverage": 5400,
 }
 
 
