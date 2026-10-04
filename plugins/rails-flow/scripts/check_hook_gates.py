@@ -2284,7 +2284,7 @@ case "$ep" in
     ref="${ep##*ref=}"
     [ -n "${FAKE_STAMP_REF:-}" ] && [ "$ref" = "$FAKE_STAMP_REF" ] && [ -f "${FAKE_STAMP_FILE:-/nonexistent}" ] && { cat "$FAKE_STAMP_FILE"; exit 0; }
     exit 1 ;;
-  repos/*/compare/*) [ -z "${FAKE_SLEEP:-}" ] || sleep "$FAKE_SLEEP"; [ -n "${FAKE_COMPARE:-}" ] || exit 1; printf '%s\\n' "$FAKE_COMPARE"; exit 0 ;;
+  repos/*/compare/*) [ -z "${FAKE_SLEEP_COMPARE:-${FAKE_SLEEP:-}}" ] || sleep "${FAKE_SLEEP_COMPARE:-$FAKE_SLEEP}"; [ -n "${FAKE_COMPARE:-}" ] || exit 1; printf '%s\\n' "$FAKE_COMPARE"; exit 0 ;;
   repos/*/commits/*) [ -n "${FAKE_COMMIT:-}" ] || exit 1; printf '%s' "$FAKE_COMMIT"; exit 0 ;;
   repos/*/git/matching-refs/*) printf '%s' "${FAKE_TAGS:-}"; exit 0 ;;
   repos/*/releases/*) printf '%s' "${FAKE_RELID:-}"; exit 0 ;;
@@ -2757,6 +2757,12 @@ def release_gate_repos_fixtures() -> None:
         took = time.monotonic() - started
         check("release-gate (#1591): a gh that stalls is cut short and the command DENIED, inside the hook's timeout",
               rc == 2 and took < 15, f"rc={rc} took={took:.1f}s {err[:240]!r}")
+        # The compare call stalls alone (the stamp read is fast), so only ITS bound can stop it.
+        started = time.monotonic()
+        rc, err = foreign(sha_good, s2, ev_files, FAKE_SLEEP_COMPARE="30")
+        took = time.monotonic() - started
+        check("release-gate (#1591): a compare call that stalls on its own is cut short and the command DENIED, inside the hook's timeout",
+              rc == 2 and took < 15 and "could not be compared" in err, f"rc={rc} took={took:.1f}s {err[:240]!r}")
         # Two foreign ships in one command share ONE deadline: each API call takes 3 s, so the second ship starts with
         # no time left to judge the evidence and must deny (the first one, alone, is permitted).
         two = (f"gh pr merge 7 -R other/fork --match-head-commit {sha_good}; "
@@ -2766,12 +2772,14 @@ def release_gate_repos_fixtures() -> None:
               rc == 2 and "no time left" in err, f"rc={rc} {err[:240]!r}")
         # A ref, tag or target that becomes part of ANOTHER repository's API path is a plain name. The fake gh answers any
         # commits/<anything> with the certified commit, as an endpoint reached through `?` or `..` would answer something.
+        # (`..` climbs out of the path; `%2f` is a slash the API decodes. A `?` is not tried: the classifier already refuses it.)
         for label, cmd in (
-                ("a REST merge's head", "gh api repos/other/fork/merges -f base=main -f head='x?y'"),
                 ("a REST merge's head with ..", "gh api repos/other/fork/merges -f base=main -f head=../../x"),
-                ("a release's --target", "gh release create v1 -R other/fork --target 'x?y'"),
+                ("a REST merge's head with %2f", "gh api repos/other/fork/merges -f base=main -f head=a%2fb"),
                 ("a release's --target with ..", "gh release create v1 -R other/fork --target ../../x"),
-                ("a release's tag", "gh release create 'a?b' -R other/fork --target dev")):
+                ("a release's --target with %2f", "gh release create v1 -R other/fork --target a%2fb"),
+                ("a release's tag with ..", "gh release create ../../x -R other/fork --target dev"),
+                ("a release's tag with %2f", "gh release create a%2fb -R other/fork --target dev")):
             rc, err = foreign(sha_good, s2, ev_files, cmd=cmd)
             check(f"release-gate (#1591): {label} that is not a plain name is never put in another repository's API path, and is DENIED",
                   rc == 2, f"rc={rc} {err[:240]!r}")

@@ -121,7 +121,7 @@ GUARD = Guard(
             "the compare call is not bounded, so a stalled gh outlives the hook's timeout and the command goes through",
             'cmp="$(bounded 4 gh api "repos/${repo}/compare/',
             'cmp="$(gh api "repos/${repo}/compare/',
-            "a gh that stalls is cut short",
+            "a compare call that stalls on its own is cut short",
         ),
         Mutation(
             "the stamp read is not bounded either",
@@ -133,26 +133,26 @@ GUARD = Guard(
             "a hook with no time left still starts the evidence judge",
             '  if [ "$budget" -lt 3 ]; then',
             '  if false; then',
-            "a hook that has spent its time on the API",
+            "has spent its time on earlier API calls",
         ),
         # ---- a name that becomes part of ANOTHER repository's API path (#1591, the class of #1600) ---------------------
         Mutation(
             "a ref that is not a plain name is put in another repository's commits path",
             '        ! plain_ref "$ref" || c="$(gh api "repos/${_R}/commits/${ref}" -q .sha 2>/dev/null || true)"',
             '        c="$(gh api "repos/${_R}/commits/${ref}" -q .sha 2>/dev/null || true)"',
-            "REST merge's head that is not a plain name",
+            "a REST merge's head with",
         ),
         Mutation(
             "a release target or tag that is not a plain name is put in another repository's API path",
             '    [ -z "$tgt" ] || plain_ref "$tgt" || return 1\n',
             '',
-            "release's --target that is not a plain name",
+            "a release's --target with",
         ),
         Mutation(
             "a release tag that is not a plain name is put in another repository's API path",
             '    [ -z "$tag" ] || plain_ref "$tag" || return 1\n',
             '',
-            "release's tag that is not a plain name",
+            "a release's tag with",
         ),
     ),
 )
