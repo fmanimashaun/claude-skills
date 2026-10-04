@@ -280,13 +280,22 @@ def write_cost_baseline(path: Path, cost: dict[str, float], jobs: int) -> None:
     path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def ratchet_problems(cost: dict[str, float], baseline: dict | None) -> list[str]:
-    """What the cost ratchet refuses, as sentences; an empty list is within budget."""
+def record_problems(guard_names: set[str], baseline: dict | None) -> list[str]:
+    """What is wrong with the cost record itself, with no run needed: it is missing, or it names a guard that is gone.
+    The full ratchet and the cheap `--check-record` gate both read it here, so the two cannot disagree."""
     if baseline is None:
         return ["the cost ratchet has no cost record (docs/evidence/mutation-cost-baseline.json): run "
                 "`python3 scripts/mutation_check.py --rebaseline` from a measured full run and commit it"]
+    return [f"{name}: the cost record names a guard that no longer exists; re-set the record (--rebaseline)"
+            for name in sorted(set(baseline["guards"]) - guard_names)]
+
+
+def ratchet_problems(cost: dict[str, float], baseline: dict | None) -> list[str]:
+    """What the cost ratchet refuses, as sentences; an empty list is within budget."""
+    problems = record_problems(set(cost), baseline)
+    if baseline is None:
+        return problems
     recorded = baseline["guards"]
-    problems = []
     for name, secs in sorted(cost.items()):
         if name in recorded:
             limit = recorded[name] * RATCHET_GROWTH + RATCHET_SLACK
@@ -298,9 +307,6 @@ def ratchet_problems(cost: dict[str, float], baseline: dict | None) -> list[str]
             problems.append(f"{name}: a NEW guard costing {secs:.0f}s of work, over the {RATCHET_NEW:g}s new-guard limit "
                             "and not on record; make it cheaper (`narrow_with` runs each mutant on one fixture), or "
                             "record it with --rebaseline")
-    for name in sorted(set(recorded) - set(cost)):
-        problems.append(f"{name}: the cost record names a guard that no longer exists; re-set the record "
-                        "(--rebaseline)")
     return problems
 
 
@@ -569,9 +575,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ratchet", action="store_true",
                         help="also fail when a guard's cost has grown past the committed record, or a new guard is "
                              "over the floor (#1599); a full run only")
+    parser.add_argument("--check-record", action="store_true",
+                        help="check only that the committed cost record exists, parses, and names no guard that is gone; "
+                             "runs no guard, so a pull request can afford it (#1599)")
     parser.add_argument("--rebaseline", action="store_true",
                         help="after a full run, rewrite the committed cost record from it (#1599)")
     args = parser.parse_args(argv)
+    if args.check_record:
+        try:
+            found = record_problems({g.name for g in GUARDS}, load_cost_baseline())
+        except ValueError as exc:
+            found = [f"the cost record is unreadable: {exc}"]
+        for problem in found:
+            print(f"  - {problem}", file=sys.stderr)
+        if not found:
+            print(f"cost record: ok ({len(load_cost_baseline()['guards'])} guard(s) on record, none gone)")
+        return 1 if found else 0
     if (args.ratchet or args.rebaseline) and args.guard:
         print("--ratchet and --rebaseline compare a FULL run; --guard runs a part of one", file=sys.stderr)
         return 2

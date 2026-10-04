@@ -28,9 +28,28 @@ GUARD = Guard(
         ),
         Mutation(
             "a record that names a guard no longer in the tree is ignored",
-            "    for name in sorted(set(recorded) - set(cost)):",
-            "    for name in []:",
+            'sorted(set(baseline["guards"]) - guard_names)]',
+            "[]]",
             "the ratchet must report a record naming a guard that no longer exists",
+        ),
+        # #1599: `--check-record`, the gate a pull request can afford.
+        Mutation(
+            "--check-record always exits 0, so a missing or drifted record passes the pull-request gate",
+            "        return 1 if found else 0",
+            "        return 0",
+            "--check-record exits 1 for a record naming a guard that is gone",
+        ),
+        Mutation(
+            "--check-record reads an unreadable record as clean",
+            '            found = [f"the cost record is unreadable: {exc}"]\n        for problem in found:',
+            '            found = []\n        for problem in found:',
+            "--check-record exits 1 for an unreadable record",
+        ),
+        Mutation(
+            "the record check calls a guard missing from the record drift, so a new guard can never be added",
+            'for name in sorted(set(baseline["guards"]) - guard_names)]',
+            'for name in sorted(guard_names ^ set(baseline["guards"]))]',
+            "a record whose guards all exist is clean",
         ),
         Mutation(
             "no record at all passes the ratchet",

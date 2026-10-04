@@ -668,6 +668,49 @@ def run() -> int:
     problems = ratchet({"heavy": 400.0}, None)
     if not (len(problems) == 1 and "no cost record" in problems[0]):
         FAILURES.append(f"#1599: with no record at all the ratchet must say so once, never pass, got {problems}")
+    # The record alone, with no run (`--check-record`, the gate a pull request can afford): missing or naming a guard that
+    # is gone fails; a record that holds is clean. `ratchet_problems` reads the same function, so the two cannot disagree.
+    for label, base, guards, want in (
+            ("a missing record", None, {"heavy"}, "no cost record"),
+            ("a record naming a guard that is gone", record, {"heavy"}, "medium")):
+        _tick()
+        try:
+            found = mc.record_problems(guards, base)
+        except Exception as exc:        # noqa: BLE001 -- the check below fails by name
+            found = [f"raised {exc!r}"]
+        if not any(want in x for x in found):
+            FAILURES.append(f"#1599: the record check must report {label}, got {found}")
+    _tick()
+    if mc.record_problems({"heavy", "medium", "extra"}, record):
+        FAILURES.append("#1599 CONTROL: a record whose guards all exist is clean (a guard missing from it is not drift)")
+
+    def check_record_exit(loader) -> int:
+        """`main(["--check-record"])` with the record replaced by `loader`; output swallowed."""
+        import contextlib
+        import io
+        real_loader = mc.load_cost_baseline
+        mc.load_cost_baseline = loader
+        try:
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                return mc.main(["--check-record"])
+        except Exception:               # noqa: BLE001 -- a crash is not an exit code of 0 or 1
+            return -1
+        finally:
+            mc.load_cost_baseline = real_loader
+
+    def unreadable():
+        raise ValueError("not a record")
+
+    first_guard = mc.GUARDS[0].name
+    for label, loader, want in (
+            ("--check-record exits 1 for a record naming a guard that is gone", lambda: {"guards": {"ghost_guard": 99.0}}, 1),
+            ("--check-record exits 1 when there is no record", lambda: None, 1),
+            ("--check-record exits 1 for an unreadable record", unreadable, 1),
+            ("--check-record exits 0 for a record that holds", lambda: {"guards": {first_guard: 99.0}}, 0)):
+        _tick()
+        got = check_record_exit(loader)
+        if got != want:
+            FAILURES.append(f"#1599: {label}; got exit {got}")
     # The record: only guards over the floor, deterministic bytes, and a round trip.
     with tempfile.TemporaryDirectory() as td:
         path = Path(td) / "cost.json"
