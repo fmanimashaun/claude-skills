@@ -2768,8 +2768,13 @@ def deadline_fixtures() -> None:
             env["RAILS_FLOW_HOOK_DEADLINE"] = value
         script = f'. "{HOOKS / "lib" / "deadline.sh"}"; deadline_seconds {default} {top}; printf %s "$_deadline_s"'
         return _run(["/bin/bash", "-c", script], env=env, capture_output=True, text=True, timeout=30).stdout
+    # F2 (#1602 review): 19+ digits overflow bash's integer comparison, the clamp never ran, and the watchdog fired at once,
+    # so guard-bash denied EVERY command. Longer than 4 digits is above any ceiling; zero would fire at once too.
     for value, default, top, want in ((None, 6, 8, "6"), ("3", 6, 8, "3"), ("abc", 6, 8, "6"), ("0", 6, 8, "6"),
-                                      ("", 6, 8, "6"), ("99", 6, 8, "8"), ("-4", 6, 8, "6"), ("2.5", 6, 8, "6")):
+                                      ("", 6, 8, "6"), ("99", 6, 8, "8"), ("-4", 6, 8, "6"), ("2.5", 6, 8, "6"),
+                                      ("99999999999999999999", 6, 8, "8"), ("9223372036854775808", 6, 8, "8"),
+                                      ("12345", 6, 8, "8"), ("000000000000000000003", 6, 8, "8"),
+                                      ("00", 6, 8, "6"), ("0008", 6, 8, "8"), ("007", 6, 8, "7")):
         check(f"deadline (#1575): the knob {value!r} with default {default} and ceiling {top} gives {want}",
               knob(value, default, top) == want, f"got {knob(value, default, top)!r}")
     # 5b. THE DEFAULT SITS UNDER THE HOOK'S OWN TIMEOUT. Past that, Claude Code stops waiting and the deadline never
@@ -2784,6 +2789,13 @@ def deadline_fixtures() -> None:
         check(f"deadline (#1575): {name}'s default and ceiling sit below the hook's configured timeout ({timeout} s)",
               bool(m) and timeout is not None and int(m.group(1)) <= int(m.group(2)) < int(timeout),
               f"deadline_seconds {m.groups() if m else None} against a timeout of {timeout}")
+    # 5c. END TO END: an overflowing or zero knob must not make the hook deny an ordinary command.
+    for value in ("99999999999999999999", "00"):
+        with tempfile.TemporaryDirectory() as td:
+            r = _run(["/bin/bash", str(guard)], cwd=td, input=json.dumps({"tool_input": {"command": "git status"}}),
+                     env=dict(base_env, RAILS_FLOW_HOOK_DEADLINE=value), capture_output=True, text=True, timeout=60)
+        check(f"deadline (#1575): RAILS_FLOW_HOOK_DEADLINE={value} does not make guard-bash deny an ordinary command",
+              r.returncode == 0 and not r.stderr.strip(), f"exit {r.returncode}: {r.stderr[:120]!r}")
     # 6. qa-flow's release gate shares the normaliser and the lib; a timeout refuses a PROMOTION and nothing else.
     if QA_HOOK.is_file():
         for cmd in ("git push origin main", "gh pr merge 12 --merge"):
@@ -2792,6 +2804,20 @@ def deadline_fixtures() -> None:
                   rc == 2 and "looks like a promotion" in err, f"exit {rc}: {err[:160]!r}")
             check(f"deadline (#1575): ...in about the deadline, with no process left running",
                   took < 6 and not left, f"{took:.1f}s, still running: {left}")
+        # F1 (#1602 review): the normal path denies ANY GraphQL mutation by shape, so the timeout path denies by the word,
+        # whatever the mutation is called or how the flag is spelled. A list of names let three promotions through.
+        gql = "gh api graphql %s query='mutation { %s(input:{}) { clientMutationId } }'"
+        for flag, name in (("-f", "enablePullRequestAutoMerge"), ("-F", "enablePullRequestAutoMerge"),
+                           ("--raw-field", "enablePullRequestAutoMerge"), ("-F", "createCommitOnBranch"),
+                           ("--raw-field", "updatePullRequestBranch")):
+            rc, took, err, left = hung(QA_HOOK, gql % (flag, name))
+            check(f"deadline (#1575): release-gate refuses `gh api graphql {flag}` {name} when it cannot finish reading it",
+                  rc == 2 and "looks like a promotion" in err and not left, f"exit {rc}: {err[:120]!r}")
+        for what, cmd in (("a GraphQL query with no mutation", "gh api graphql -f query='{ viewer { login } }'"),
+                          ("a REST read", "gh api repos/o/r/issues")):
+            rc, took, err, left = hung(QA_HOOK, cmd)
+            check(f"deadline (#1575): CONTROL: release-gate ALLOWS {what} on a timeout", rc == 0 and not left,
+                  f"exit {rc}: {err[:120]!r}")
         rc, took, err, left = hung(QA_HOOK, "ls -la")
         check("deadline (#1575): release-gate ALLOWS a command that does not look like a promotion when it times out "
               "(blocking every slow command would be the failure)", rc == 0 and not left, f"exit {rc}: {err[:120]!r}")

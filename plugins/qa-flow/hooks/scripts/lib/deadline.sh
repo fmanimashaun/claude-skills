@@ -5,7 +5,8 @@
 # load reached 348. So the work runs in its OWN process group under a deadline, and the whole group is killed.
 #
 #   deadline_seconds <default> <max>     sets _deadline_s from RAILS_FLOW_HOOK_DEADLINE (an integer >= 1), else the
-#                                        default; never above <max>, which must stay under the hook's own timeout
+#                                        default; never above <max> (more than 4 digits IS <max>), which must stay
+#                                        under the hook's own timeout
 #   deadline_run <seconds> <fn> [args]   runs <fn> and returns its status; 137 when the deadline, or the death of
 #                                        this shell, killed the group. The caller decides what 137 MEANS.
 #
@@ -25,7 +26,13 @@
 
 deadline_seconds() {
   _deadline_s="${RAILS_FLOW_HOOK_DEADLINE:-$1}"
-  case "$_deadline_s" in ''|*[!0-9]*|0) _deadline_s="$1" ;; esac
+  case "$_deadline_s" in ''|*[!0-9]*) _deadline_s="$1" ;; esac
+  # CLAMP BY LENGTH BEFORE ANY ARITHMETIC: bash's `[ -gt ]` and `$(( ))` fail or wrap on 19+ digits (past 2^63), and
+  # a failed comparison left the value unclamped, so the watchdog's loop fell through at once and the hook denied
+  # EVERY command (#1602 review F2). Five digits is far above any ceiling, so it is the ceiling.
+  [ "${#_deadline_s}" -gt 4 ] && _deadline_s="$2"
+  _deadline_s=$((10#$_deadline_s))             # "0008" is 8, never octal; "00" is 0
+  [ "$_deadline_s" -lt 1 ] && _deadline_s="$1"  # zero would fire at once and deny everything
   [ "$_deadline_s" -gt "$2" ] && _deadline_s="$2"
   return 0
 }

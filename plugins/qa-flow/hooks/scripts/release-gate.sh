@@ -31,6 +31,10 @@ _coarse_looks_promotion() {
     [[ $_in =~ ${_b}api${_e} ]] && [[ $_in =~ (merge|merges|refs|releases|mergePullRequest|updateRef|createRef) ]] && _looks_promotion=1
     [[ $_in =~ ${_b}release${_e} ]] && [[ $_in =~ ${_b}(create|edit)${_e} ]] && _looks_promotion=1
   fi
+  # #1575 (#1602 review F1): ANY GraphQL mutation. The full path denies one by shape; this path cannot parse, so it
+  # denies by the word, whatever the mutation is called or how the flag is spelled (-f, -F, --raw-field). A list of
+  # mutation NAMES let enablePullRequestAutoMerge, createCommitOnBranch and updatePullRequestBranch through.
+  [[ $_in =~ ${_b}gh${_e} ]] && [[ $_in =~ ${_b}api${_e} ]] && [[ $_in =~ ${_b}graphql${_e} ]] && [[ $_in =~ mutation ]] && _looks_promotion=1
 }
 
 _missing=""

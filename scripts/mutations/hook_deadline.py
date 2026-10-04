@@ -54,9 +54,23 @@ GUARD = Guard(
         # Only an integer >= 1 is a deadline; anything else falls back to the default.
         Mutation(
             'a non-integer or zero value is accepted, so the knob can disable the deadline',
-            '\'\'|*[!0-9]*|0) _deadline_s="$1" ;;',
+            '\'\'|*[!0-9]*) _deadline_s="$1" ;;',
             '\'\') _deadline_s="$1" ;;',
             "the knob 'abc'",
+        ),
+        # #1602 review F2: 19+ digits overflow bash's integer comparison, the clamp never ran, and every command was denied.
+        Mutation(
+            'the length clamp is gone, so a value past 2^63 wraps negative and the deadline is not clamped',
+            '[ "${#_deadline_s}" -gt 4 ] && _deadline_s="$2"',
+            ':',
+            "the knob '9223372036854775808'",
+        ),
+        # A zero deadline reaches the watchdog's deadline immediately.
+        Mutation(
+            'a zero deadline is accepted, so it fires at once and denies every command',
+            '[ "$_deadline_s" -lt 1 ] && _deadline_s="$1"',
+            ':',
+            "the knob '00'",
         ),
     ),
 )

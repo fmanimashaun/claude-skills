@@ -44,5 +44,12 @@ GUARD = Guard(
             'deadline_seconds 20 30',
             "default and ceiling sit below the hook's configured timeout",
         ),
+        # #1602 review F1: a LIST of mutation names let three promotions through on a timeout.
+        Mutation(
+            'a timeout stops denying `gh api graphql` mutations by the word, so a promotion with a new name gets through',
+            '[[ $_in =~ ${_b}api${_e} ]] && [[ $_in =~ ${_b}graphql${_e} ]] && [[ $_in =~ mutation ]] && _looks_promotion=1',
+            ':',
+            'refuses `gh api graphql -f` enablePullRequestAutoMerge when it cannot finish reading it',
+        ),
     ),
 )
