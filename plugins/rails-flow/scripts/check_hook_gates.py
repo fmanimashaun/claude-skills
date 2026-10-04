@@ -2355,6 +2355,9 @@ def release_gate_refs_fixtures() -> None:
         old = {**os.environ, "GIT_COMMITTER_DATE": "2026-09-01T00:00:00+00:00", "GIT_AUTHOR_DATE": "2026-09-01T00:00:00+00:00"}
         bare = Path(td) / "origin.git"
         _run(["git", "init", "-q", "--bare", str(bare)], check=True, capture_output=True)
+        # The bare repository also stands in for other/fork, whose evidence the hook fetches (#1591): it holds `stamped` as dev.
+        for k, v in (("uploadpack.allowFilter", "true"), ("uploadpack.allowAnySHA1InWant", "true")):
+            _run(["git", "config", k, v], cwd=bare, check=True, capture_output=True)
         # origin names o/r, and is a LOCAL PATH underneath: the transport that runs --upload-pack.
         sh("remote", "add", "origin", "https://github.com/o/r.git")
         sh("config", f"url.{bare}.insteadOf", "https://github.com/o/r.git")
@@ -2386,6 +2389,11 @@ def release_gate_refs_fixtures() -> None:
             env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env.pop("GH_REPO", None)
             env["CLAUDE_PLUGIN_ROOT"] = str(QA_HOOK.parents[2])
             env["PATH"] = str(Path(td) / "bin") + os.pathsep + env["PATH"]
+            # No test reaches github.com: every https://github.com/ url is a path that does not exist, except other/fork, which is
+            # the local bare repository (#1591).
+            env.update({"GIT_CONFIG_COUNT": "2",
+                        "GIT_CONFIG_KEY_0": "url./nonexistent-qa-flow-remote/.insteadOf", "GIT_CONFIG_VALUE_0": "https://github.com/",
+                        "GIT_CONFIG_KEY_1": f"url.{bare}.insteadOf", "GIT_CONFIG_VALUE_1": "https://github.com/other/fork.git"})
             env.update(extra)
             done = _run(["bash", str(QA_HOOK)], cwd=repo, input=json.dumps({"tool_input": {"command": cmd}}),
                         env=env, capture_output=True, text=True, timeout=60)
