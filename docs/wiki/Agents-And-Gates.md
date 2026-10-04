@@ -206,7 +206,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | markdown shell lint | `repo` | `python3 scripts/lint_markdown_shell.py` | live check |
 | markdown shell selftest | `repo` | `python3 scripts/lint_markdown_shell.py --selftest` | selftest |
 | mutation check | `repo` | `python3 scripts/mutation_check.py --selftest` | selftest |
-| mutation coverage | `repo` | `python3 scripts/mutation_check.py` | live check · 1800s budget |
+| mutation coverage | `repo` | `python3 scripts/mutation_check.py` | live check · 3600s budget |
 | packaging determinism | `repo` | `python3 scripts/package_core.py --selftest` | selftest |
 | page pacing | `repo` | `python3 scripts/check_page_pacing.py` | live check |
 | page pacing selftest | `repo` | `python3 scripts/check_page_pacing.py --selftest` | selftest |
