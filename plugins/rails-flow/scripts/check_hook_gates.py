@@ -3074,7 +3074,11 @@ def deadline_fixtures() -> None:
                   "gh api repos/o/r/contents/f.txt -XPUT -f branch=main", "gh api repos/o/r/branches/main/rename -f new_name=x",
                   "gh api --method POST repos/o/r/issues -f title=x", "gh api repos/o/r/contents/f.txt --input body.json",
                   "gh api -X POST repos/o/r/actions/runs/1/rerun", "gh api repos/o/r/actions/runs/1/rerun-failed-jobs -X POST",
-                  "gh api repos/o/r/issues/1/comments -f body=x", "gh api repos/o/r/issues/1/comments -fbody=x", "gh api repos/o/r/issues -F title=x")),
+                  "gh api repos/o/r/issues/1/comments -f body=x", "gh api repos/o/r/issues/1/comments -fbody=x", "gh api repos/o/r/issues -F title=x",
+                  "gh api -X PUT repos/o/r/subscription", "gh api --method PATCH repos/o/r", "gh api -X 'DELETE' repos/o/r/subscription")),
+                ("a bare `gh api` on a merge, ref, release or dispatch endpoint: the word rules (#1602, #1606) still refuse what no method or field "
+                 "marks as a write, an over-block the full path does not share (it allows the read), accepted for the fallback",
+                 ("gh api repos/o/r/dispatches", "gh api repos/o/r/merges", "gh api repos/o/r/git/refs/heads/main", "gh api repos/o/r/releases")),
                 ("a `gh` verb that changes a repository or re-runs a workflow (S1, S2)",
                  ("gh repo sync o/r --branch main", "gh repo edit --default-branch main", "gh repo edit o/r --description x",
                   "gh run rerun 123", "gh run rerun 123 --failed", "gh workflow enable release.yml")),
@@ -3109,7 +3113,8 @@ def deadline_fixtures() -> None:
             # THE JSON WRAPPER IS NOT THE COMMAND: the payload holds braces, brackets, commas and quotes of its own, and a rule that looked at
             # `{` or `[` anywhere would refuse every command. A payload with extra keys and an array must still pass.
             wrapped = json.dumps({"tool_input": {"command": "git push origin feature/x", "description": "push the branch, then [wait]"},
-                                  "session_id": "s", "args": ["a", "b"]})
+                                  "session_id": "s", "args": ["a", "b"],
+                                  "meta": {"a": 1, "b": 2}})
             ok = _run(["/bin/bash", str(QA_HOOK)], cwd=bd, input=wrapped, env={"PATH": bd, "HOME": os.environ.get("HOME", "/tmp")},
                       capture_output=True, text=True, timeout=60).returncode
             check("deadline (#1575): CONTROL (#1607): a payload with extra keys, an array and braces of its own is not refused", ok == 0, f"exit {ok}")

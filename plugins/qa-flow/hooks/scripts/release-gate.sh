@@ -757,15 +757,17 @@ exit 0
 # awk children behind for hours. Past the deadline the whole process group is killed. This gate refuses only a
 # main-ward promotion, so a timeout does too: the COARSE builtin detector above judges the raw payload; a command
 # that does not look like a promotion is allowed (blocking every slow command would be the failure here), and one that
-# does is denied, QA_ALLOW_MAIN=1 honoured and audited exactly as in the missing-tool path. The default is under the
-# hook's 15 s timeout (hooks.json) and RAILS_FLOW_HOOK_DEADLINE is clamped at 13. The gate's NETWORK calls (`gh pr view`,
+# does is denied, QA_ALLOW_MAIN=1 honoured and audited exactly as in the missing-tool path. The default is 13 s, under the
+# hook's 15 s timeout (hooks.json), and RAILS_FLOW_HOOK_DEADLINE is clamped at 13. It was 10 until #1607: the foreign-repository judgment
+# (#1612) plans for up to about 12 s of its own and bounds each of its calls, so the deadline must sit ABOVE that budget, where it only
+# catches a call nobody bounded, and not cut a slow-but-bounded judgment off first with a less useful reason. The gate's NETWORK calls (`gh pr view`,
 # and since #1601 `gh api .../commits/...`, `git fetch` of a ref the command names, and `git ls-remote` of a release tag) are
 # reached only after the classifier has read the command as one that puts a commit on main or publishes a release, which
 # are the shapes the coarse detector denies, so a slow network fails closed. It also means a legitimate promotion on a
 # slow network is refused with "retry it", which is the cost of a bounded hook.
 _dl="$(dirname "${BASH_SOURCE[0]}")/lib/deadline.sh"
 if [ -f "$_dl" ] && . "$_dl" 2>/dev/null && type deadline_run >/dev/null 2>&1; then
-  deadline_seconds 10 13
+  deadline_seconds 13 13
   deadline_run "$_deadline_s" _gate_main; _rc=$?
   if [ "$_rc" -ge 128 ]; then
     _coarse_looks_promotion
