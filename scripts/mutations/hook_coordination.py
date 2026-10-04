@@ -37,8 +37,8 @@ GUARD = Guard(
         ),
         Mutation(
             "an assign replaces the whole row, dropping fields another feature added",
-            '    row = row if isinstance(row, dict) else {}\n    row.update({"session_id": owner or caller',
-            '    row = {}\n    row.update({"session_id": owner or caller',
+            '    row = row if isinstance(row, dict) else {}\n    row.update({"session_id": clean(owner or caller, "id")',
+            '    row = {}\n    row.update({"session_id": clean(owner or caller, "id")',
             "unknown row fields survive a write",
         ),
         Mutation(
@@ -61,8 +61,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a row is keyed by the session's name, so a rename adds a second row",
-            '        row["name"] = name       # an attribute: a renamed session updates ITS row, never adds a second\n    record["sessions"][path] = row',
-            '        row["name"] = name       # an attribute: a renamed session updates ITS row, never adds a second\n    record["sessions"][name or path] = row',
+            '        row["name"] = clean(name, "name")       # an attribute: a renamed session updates ITS row, never adds a second\n    record["sessions"][path] = row',
+            '        row["name"] = clean(name, "name")       # an attribute: a renamed session updates ITS row, never adds a second\n    record["sessions"][name or path] = row',
             "a restart with a new name rewrites the SAME row",
         ),
         Mutation(
@@ -169,8 +169,8 @@ GUARD = Guard(
         ),
         Mutation(
             'a check-in is accepted from any caller',
-            '    err = _refuse_unless_coordinator(record, caller, claiming=False)\n    if err:\n        return err\n    if not name.strip() or not owner.strip():',
-            '    if not name.strip() or not owner.strip():',
+            '    err = _refuse_unless_coordinator(record, caller, claiming=False)\n    if err:\n        return err\n    name, owner = clean(name, "name"), clean(owner, "id")',
+            '    name, owner = clean(name, "name"), clean(owner, "id")',
             'a non-coordinator check-in is refused',
         ),
         Mutation(
@@ -181,8 +181,8 @@ GUARD = Guard(
         ),
         Mutation(
             'a check-in with no name is recorded',
-            '    if not name.strip() or not owner.strip():',
-            '    if False:',
+            '    if not name or not owner:\n        return "refused: a check-in needs',
+            '    if False:\n        return "refused: a check-in needs',
             'a check-in with no name is refused',
         ),
         Mutation(
@@ -193,14 +193,14 @@ GUARD = Guard(
         ),
         Mutation(
             'an ask is accepted from any caller',
-            '    if err:\n        return None, err\n    if not title.strip():',
-            '    if False:\n        return None, err\n    if not title.strip():',
+            '    if err:\n        return None, err\n    title = clean(title, "title")',
+            '    if False:\n        return None, err\n    title = clean(title, "title")',
             'a non-coordinator ask is refused',
         ),
         Mutation(
             'an ask with no title is recorded',
-            '    if not title.strip():\n        return None,',
-            '    if False:\n        return None,',
+            '    if not title:\n        return None, "refused: a question needs a title"',
+            '    if False:\n        return None, "refused: a question needs a title"',
             'an ask with no title is refused',
         ),
         Mutation(
@@ -217,8 +217,8 @@ GUARD = Guard(
         ),
         Mutation(
             'an event is accepted from any caller',
-            '    err = _refuse_unless_coordinator(record, caller, claiming=False)\n    if err:\n        return err\n    if not text.strip():',
-            '    if not text.strip():',
+            '    err = _refuse_unless_coordinator(record, caller, claiming=False)\n    if err:\n        return err\n    text = clean(text, "text")',
+            '    text = clean(text, "text")',
             'a non-coordinator event is refused',
         ),
         Mutation(
@@ -226,6 +226,54 @@ GUARD = Guard(
             '    del record["events"][:-EVENT_CAP]',
             '    pass',
             'events are capped at EVENT_CAP',
+        ),
+        Mutation(
+            'control characters are not stripped from a field',
+            '    return _CONTROL.sub(" ", str(value if value is not None else "")).strip()[:FIELD_CAPS[kind]]',
+            '    return str(value if value is not None else "").strip()[:FIELD_CAPS[kind]]',
+            'control characters are stripped from a claimed name',
+        ),
+        Mutation(
+            'a field is not cut to its cap',
+            '    return _CONTROL.sub(" ", str(value if value is not None else "")).strip()[:FIELD_CAPS[kind]]',
+            '    return _CONTROL.sub(" ", str(value if value is not None else "")).strip()',
+            'field is cut to its cap of',
+        ),
+        Mutation(
+            'a field is cut one short of its cap',
+            '    return _CONTROL.sub(" ", str(value if value is not None else "")).strip()[:FIELD_CAPS[kind]]',
+            '    return _CONTROL.sub(" ", str(value if value is not None else "")).strip()[:FIELD_CAPS[kind] - 1]',
+            'exactly at its cap is kept whole',
+        ),
+        Mutation(
+            'the ask list grows without a bound',
+            '    if len(asks) >= ASK_CAP:',
+            '    if False:',
+            'the ask list is bounded',
+        ),
+        Mutation(
+            'an ask that is pending at the owner can be dropped to make room',
+            'a.get("state") == "answered"), None)',
+            'a.get("state") in ("answered", "asked")), None)',
+            'the oldest ANSWERED ask is dropped, never a pending one',
+        ),
+        Mutation(
+            'nan and inf are accepted as a tuning value',
+            '    return min(max(value, low), high) if math.isfinite(value) else default',
+            '    return min(max(value, low), high)',
+            'is ignored: the default is used',
+        ),
+        Mutation(
+            'a huge timeout is not clamped',
+            '    return min(max(value, low), high) if math.isfinite(value) else default',
+            '    return value if math.isfinite(value) else default',
+            'a huge finite timeout is clamped to 30 s',
+        ),
+        Mutation(
+            'an ask title is not cleaned before the empty check',
+            '    title = clean(title, "title")\n    if not title:',
+            '    title = str(title).strip()\n    if not title:',
+            'an ask whose title is only control characters is refused',
         ),
     ),
 )
