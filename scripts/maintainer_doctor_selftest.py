@@ -242,9 +242,15 @@ def repo_untouched_fixtures() -> None:
         # #1594 review D1: a FETCH (and a pull into a local branch) during the sweep brings commits by other
         # authors from the remote. They are not a fixture escaping, so the detector must not flag them.
         other = work.parent / "other"
+        # The planted commits above are local only; unpushed, they make `dev` diverge and `--ff-only` refuse.
+        _git(work, "push", "-q", "origin", "dev")
         _git(work.parent, "clone", "-q", str(work.parent / "remote.git"), str(other))
+        # On `dev`, the branch `work` tracks: a push from the clone's default branch (`main`) left the
+        # pull a no-op, and the control passed without ever seeing a foreign commit (#1594 review). The
+        # log assertion below keeps it from going vacuous again.
+        _git(other, "checkout", "-q", "dev")
         _git(other, "-c", "user.email=someone@else", "-c", "user.name=s", "commit", "-q", "--allow-empty", "-m", "theirs")
-        _git(other, "push", "-q", "origin", "HEAD")
+        _git(other, "push", "-q", "origin", "dev")
         (scripts / "_fetch.py").write_text(
             "import subprocess\n"
             "subprocess.run(['git', 'fetch', '-q', 'origin'], check=True)\n"
@@ -254,6 +260,10 @@ def repo_untouched_fixtures() -> None:
         d.check_gates()
         expect("CONTROL: a fetch and pull of other authors' commits during the sweep is not flagged (#1594 D1)", d,
                "the sweep committed nothing into the real repository", md.PASS)
+        _tick()
+        pulled = _git(work, "log", "--format=%ae %s", "-1", "dev")
+        if pulled != "someone@else theirs":
+            FAILURES.append(f"#1594 D1 control is vacuous: the pull did not bring the foreign commit onto dev ({pulled!r})")
         md.GATES = (("selftest quiet", ("python3", "scripts/_quiet.py")),)
         d = md.Doctor()
         d.check_gates()
