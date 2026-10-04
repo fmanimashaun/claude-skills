@@ -34,6 +34,7 @@ import subprocess
 import sys
 import time
 import tempfile
+import types
 import time
 from pathlib import Path
 
@@ -2651,7 +2652,9 @@ def timeout_fixtures() -> None:
 # the mutation-coverage budget. A guard now names the groups that drive its hook; the doctor's
 # `hook gates` gate and the harness's own guard still run every group.
 # ---- guard-worktree.sh (#1581) -------------------------------------------------------------------
-def guard_worktree_fixtures() -> None:
+def _worktree_kit() -> types.SimpleNamespace:
+    """The helpers every worktree fixture group shares (#1581): a throwaway repository with a `dev` integration branch,
+    worktrees, the coordinator recording a lane, and the hook run on a PreToolUse payload."""
     coord = HOOKS / "lib" / "coordination.py"
 
     def git(cwd, *a):
@@ -2697,6 +2700,14 @@ def guard_worktree_fixtures() -> None:
     def allowed(label: str, res: tuple[int, str]) -> None:
         check(label, res[0] == 0, f"exit {res[0]}: {res[1].strip()[:200]!r}")
 
+    return types.SimpleNamespace(coord=coord, git=git, new_repo=new_repo, add_wt=add_wt, lane=lane, payload=payload, guard=guard, denied=denied, allowed=allowed)
+
+
+def guard_worktree_fixtures() -> None:
+    """The RULES: one issue at a time, and no duplicate worktree for a branch or an issue (#1581)."""
+    k = _worktree_kit()
+    coord, git, new_repo, add_wt, lane, payload, guard, denied, allowed = (k.coord, k.git, k.new_repo, k.add_wt, k.lane, k.payload, k.guard, k.denied, k.allowed)
+    _ = (coord, git, new_repo, add_wt, lane, payload, guard, denied, allowed)     # a group uses some, not all
     # 4. A fresh session that owns nothing, in a repository with no coordination record.
     with tempfile.TemporaryDirectory() as td:
         repo = new_repo(td)
@@ -2802,6 +2813,24 @@ def guard_worktree_fixtures() -> None:
         denied("guard-worktree: CONTROL: `issue-21` as a branch segment IS issue 21", guard(repo, "git worktree add ../a -b feature/issue-21-again dev"))
         denied("guard-worktree: CONTROL: `N-slug` (21-again) IS issue 21", guard(repo, "git worktree add ../b -b fix/21-again dev"))
 
+    # A record that cannot be read fails CLOSED, with the way out.
+    with tempfile.TemporaryDirectory() as td:
+        repo = new_repo(td)
+        (repo / ".git" / "coordination.json").write_text("{not json")
+        denied("guard-worktree: an unreadable coordination record fails closed", guard(repo, "git worktree add ../b -b feature/b dev"),
+               "unreadable")
+
+    # DORMANT outside a git repository: there are no worktrees to protect.
+    with tempfile.TemporaryDirectory() as td:
+        allowed("guard-worktree: outside a git repository the guard is dormant", guard(Path(td), "git worktree add ../x -b y"))
+
+
+
+def guard_worktree_parse_fixtures() -> None:
+    """What the hook READS: quoted words, mentions that are not commands, heredoc bodies (#1581)."""
+    k = _worktree_kit()
+    coord, git, new_repo, add_wt, lane, payload, guard, denied, allowed = (k.coord, k.git, k.new_repo, k.add_wt, k.lane, k.payload, k.guard, k.denied, k.allowed)
+    _ = (coord, git, new_repo, add_wt, lane, payload, guard, denied, allowed)     # a group uses some, not all
     # Quoted words (ae's review): the shell's normaliser strips quoted spans, so these never reached the helper.
     with tempfile.TemporaryDirectory() as td:
         repo = new_repo(td)
@@ -2828,6 +2857,13 @@ def guard_worktree_fixtures() -> None:
         denied("guard-worktree: CONTROL: the same words as a real command ARE refused while a lane is held",
                guard(repo, "'git' worktree add ../x -b y dev"), str(wt))
 
+
+
+def guard_worktree_failopen_fixtures() -> None:
+    """Every way the hook or git can misbehave must be a refusal, never a pass (#1581)."""
+    k = _worktree_kit()
+    coord, git, new_repo, add_wt, lane, payload, guard, denied, allowed = (k.coord, k.git, k.new_repo, k.add_wt, k.lane, k.payload, k.guard, k.denied, k.allowed)
+    _ = (coord, git, new_repo, add_wt, lane, payload, guard, denied, allowed)     # a group uses some, not all
     # The fail-open (the push's security review): a payload cwd outside any repository made the guard dormant even
     # when the command itself changes directory into one.
     with tempfile.TemporaryDirectory() as td:
@@ -2877,13 +2913,6 @@ def guard_worktree_fixtures() -> None:
         denied("guard-worktree: a `git worktree list` that fails is refused, not read as 'no worktrees'",
                guard(repo, "git worktree add ../dup feature/lane-band", env_extra=no_list), "could not list the worktrees")
 
-    # A record that cannot be read fails CLOSED, with the way out.
-    with tempfile.TemporaryDirectory() as td:
-        repo = new_repo(td)
-        (repo / ".git" / "coordination.json").write_text("{not json")
-        denied("guard-worktree: an unreadable coordination record fails closed", guard(repo, "git worktree add ../b -b feature/b dev"),
-               "unreadable")
-
     # DEGRADED. No python3: the hook cannot judge, so it refuses a worktree add and leaves everything else alone.
     with tempfile.TemporaryDirectory() as td:
         repo = new_repo(td)
@@ -2909,10 +2938,13 @@ def guard_worktree_fixtures() -> None:
         check("guard-worktree: a crashing helper fails CLOSED (exit 2, says so)",
               done.returncode == 2 and "failed" in done.stderr, f"exit {done.returncode}: {done.stderr.strip()[:200]!r}")
 
-    # DORMANT outside a git repository: there are no worktrees to protect.
-    with tempfile.TemporaryDirectory() as td:
-        allowed("guard-worktree: outside a git repository the guard is dormant", guard(Path(td), "git worktree add ../x -b y"))
 
+
+def guard_worktree_pointer_fixtures() -> None:
+    """The SessionStart resume pointer: advisory, fail open, silent when there is nothing to say (#1581)."""
+    k = _worktree_kit()
+    coord, git, new_repo, add_wt, lane, payload, guard, denied, allowed = (k.coord, k.git, k.new_repo, k.add_wt, k.lane, k.payload, k.guard, k.denied, k.allowed)
+    _ = (coord, git, new_repo, add_wt, lane, payload, guard, denied, allowed)     # a group uses some, not all
     # ---- the SessionStart resume pointer: advisory, fail open, SILENT when there is nothing to say ----
     def start(repo: Path, sid: str | None = "SESS-A", **env) -> tuple[int, str]:
         stdin = json.dumps({"session_id": sid, "hook_event_name": "SessionStart"}) if sid is not None else "not json"
@@ -2989,6 +3021,8 @@ def guard_worktree_fixtures() -> None:
             parent.wait()
 
 
+
+
 GROUPS = {
     "stop_gate": stop_gate_fixtures, "guard_lane": guard_lane_fixtures,
     "guard_migrate": guard_migrate_fixtures, "lint_ruby": lint_ruby_fixtures,
@@ -2996,7 +3030,8 @@ GROUPS = {
     "guard_claims": guard_claims_fixtures, "release_gate": release_gate_fixtures,
     "release_gate_effects": release_gate_effects_fixtures, "release_gate_repos": release_gate_repos_fixtures,
     "ci_verdict_hint": ci_verdict_hint_fixtures, "timeout": timeout_fixtures,
-    "guard_worktree": guard_worktree_fixtures,
+    "guard_worktree": guard_worktree_fixtures, "guard_worktree_parse": guard_worktree_parse_fixtures,
+    "guard_worktree_failopen": guard_worktree_failopen_fixtures, "guard_worktree_pointer": guard_worktree_pointer_fixtures,
 }
 
 
@@ -3008,7 +3043,8 @@ GROUPS = {
 # would never run in the doctor, which is the vacuous gate this repository keeps finding; the selftest checks it below.
 PARTS = {
     "a": ["stop_gate", "guard_lane", "guard_migrate", "lint_ruby", "self_consistency", "guard_bash", "guard_claims",
-          "release_gate_repos", "ci_verdict_hint", "timeout", "guard_worktree"],
+          "release_gate_repos", "ci_verdict_hint", "timeout", "guard_worktree", "guard_worktree_parse",
+          "guard_worktree_failopen", "guard_worktree_pointer"],
     "b": ["release_gate", "release_gate_effects"],
 }
 

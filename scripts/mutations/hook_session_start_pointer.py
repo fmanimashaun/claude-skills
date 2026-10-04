@@ -1,6 +1,6 @@
 """Mutation guard: hook_session_start_pointer. Declared here, run by scripts/mutation_check.py (#1581).
 
-The SessionStart resume pointer: it must ask the helper, with this session's id (#1581).
+The pointer: the SessionStart resume pointer. Split out of one guard that re-ran ALL four worktree fixture groups per mutant: this one runs only `guard_worktree_pointer`.
 """
 from mutation_types import Guard, Mutation  # noqa: F401
 
@@ -8,7 +8,7 @@ GUARD = Guard(
     name="hook_session_start_pointer",
     subject="plugins/rails-flow/hooks/scripts/session-start.sh",
     selftest="plugins/rails-flow/scripts/check_hook_gates.py",
-    selftest_args=("--only", "guard_worktree"),
+    selftest_args=("--only", "guard_worktree_pointer"),
     needs=(
            'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py',  # session-start.sh runs both (#1581: the harness drives it)
            "plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362
