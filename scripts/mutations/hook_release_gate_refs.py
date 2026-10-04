@@ -52,5 +52,30 @@ GUARD = Guard(
             '  case "$csha" in "__never__") JWHY="${repo}: certification sha',
             "whose `sha` is a path is denied",
         ),
+        # ---- (#1606) the same untrusted text, spliced into ANOTHER repository's API path, and the third fetch --------
+        Mutation(
+            "a ref that is not a plain name is put in another repository's commits path",
+            '        ! plain_ref "$ref" || c="$(gh api "repos/${_R}/commits/${ref}" -q .sha 2>/dev/null || true)"',
+            '        c="$(gh api "repos/${_R}/commits/${ref}" -q .sha 2>/dev/null || true)"',
+            "a REST merge's head with a fragment",
+        ),
+        Mutation(
+            "a release target that is not a plain name is put in another repository's API path",
+            '    [ -z "$tgt" ] || plain_ref "$tgt" || return 1\n',
+            '',
+            "a release's --target that climbs",
+        ),
+        Mutation(
+            "a release tag that is not a plain name is put in another repository's API path",
+            '    [ -z "$tag" ] || plain_ref "$tag" || return 1\n',
+            '',
+            "a release's tag that climbs",
+        ),
+        Mutation(
+            "what `git ls-remote` printed is handed to `git fetch` whatever it is",
+            '        case "$t" in ""|*[!0-9a-fA-F]*) return 1 ;; esac\n',
+            '',
+            "an object id from `git ls-remote` that is an option",
+        ),
     ),
 )

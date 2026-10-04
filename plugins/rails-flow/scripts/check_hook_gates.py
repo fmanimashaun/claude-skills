@@ -2450,6 +2450,54 @@ def release_gate_refs_fixtures() -> None:
               rc == 0, f"rc={rc} {err[:240]!r}")
         rc, err = run("gh api repos/o/r/merges -f base=main -f head=dev")
         check("release-gate (#1600): CONTROL: the certified dev still promotes", rc == 0, f"rc={rc} {err[:240]!r}")
+        # ANOTHER repository (`other/fork`) whose own PASS stamp certifies `stamped`, read through the API (the fake gh).
+        foreign_stamp = Path(td) / "foreign-stamp.json"
+        foreign_stamp.write_text(json.dumps({"sha": stamped, "date": "2026-10-01", "verdict": "PASS", "report": "r.md"}), encoding="utf-8")
+        ok_api = {"FAKE_STAMP_REF": stamped, "FAKE_STAMP_FILE": str(foreign_stamp), "FAKE_COMMIT": stamped, "FAKE_PRREPO": "other/fork"}
+        # (#1606) A ref, tag or target from the command's text becomes part of ANOTHER repository's API path
+        # (`repos/<r>/commits/<ref>`). The fake gh answers any commits/<anything> with the certified commit, as an endpoint
+        # reached through a fragment or a climb would answer something, so a value that is not a plain name must be refused
+        # BEFORE the call. `#` is a legal character in a ref name and starts a fragment in a URL: the gate would ask about
+        # `abc` while the command acts on `abc#frag`.
+        for label, cmd in (
+            ("a REST merge's head with a fragment", "gh api repos/other/fork/merges -f base=main -f head='abc#frag'"),
+            ("a REST merge's head that climbs", "gh api repos/other/fork/merges -f base=main -f head='x/../../../issues/1'"),
+            ("a REST merge's head with an escaped slash", "gh api repos/other/fork/merges -f base=main -f head=a%2fb"),
+            ("a ref write's sha that climbs", "gh api -X PATCH repos/other/fork/git/refs/heads/main -f sha='../../x'"),
+            ("a ref write's sha with a fragment", "gh api -X PATCH repos/other/fork/git/refs/heads/main -f sha='abc#frag'"),
+            ("a release's --target that climbs", "gh release create v1 -R other/fork --target ../../x"),
+            ("a release's --target with an escaped slash", "gh release create v1 -R other/fork --target a%2fb"),
+            ("a release's tag that climbs", "gh release create ../../x -R other/fork --target main"),
+            ("a release's tag with an escaped slash", "gh release create a%2fb -R other/fork --target main"),
+        ):
+            rc, err = run(cmd, **ok_api)
+            check(f"release-gate (#1606): {label} is not a plain name, is never put in another repository's API path, and is DENIED",
+                  rc == 2, f"rc={rc} {err[:240]!r}")
+        for label, cmd in (
+            ("a REST merge's head", "gh api repos/other/fork/merges -f base=main -f head=feature/x-y"),
+            ("a ref write's sha", f"gh api -X PATCH repos/other/fork/git/refs/heads/main -f sha={stamped}"),
+            ("a release's tag and target", "gh release create v1.2.3 -R other/fork --target release/2026-10"),
+        ):
+            rc, err = run(cmd, **ok_api)
+            check(f"release-gate (#1606): CONTROL: {label} that is a plain name is read and judged (certified: permitted)",
+                  rc == 0 and "other/fork" in err, f"rc={rc} {err[:240]!r}")
+        # (#1606) The third fetch takes the object id `git ls-remote origin refs/tags/<tag>` printed. It is an object id by
+        # construction of a well-behaved origin; an origin that prints anything else must not be handed to `git fetch`. A
+        # `git` that answers ls-remote with an option and logs every call stands in for that origin.
+        gitbin = Path(td) / "gitbin"
+        gitbin.mkdir(exist_ok=True)
+        gitlog = Path(td) / "git.log"
+        real_git = shutil.which("git")
+        (gitbin / "git").write_text(
+            f'#!/bin/sh\nprintf \'%s\\n\' "$*" >> "{gitlog}"\ncase "$1" in\n'
+            f'  ls-remote) printf \'%s\\trefs/tags/v9\\n\' "{evil}"; exit 0 ;;\nesac\nexec {real_git} "$@"\n', encoding="utf-8")
+        (gitbin / "git").chmod(0o755)
+        gitlog.unlink(missing_ok=True)
+        rc, err = run("gh release create v9 --target dev", PATH=f"{gitbin}{os.pathsep}{Path(td) / 'bin'}{os.pathsep}{os.environ['PATH']}")
+        calls = gitlog.read_text().splitlines() if gitlog.exists() else []
+        check("release-gate (#1606): an object id from `git ls-remote` that is an option is never handed to `git fetch`, and the release is DENIED",
+              not any(c.startswith("fetch") and "--upload-pack" in c for c in calls) and not marker.exists() and rc == 2,
+              f"rc={rc} marker={marker.exists()} fetch calls={[c for c in calls if c.startswith('fetch')]}")
 
 
 def release_gate_repos_fixtures() -> None:

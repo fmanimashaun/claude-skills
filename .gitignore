@@ -34,6 +34,7 @@ __pycache__/
 # a trailing slash matches only a real directory, and the point of that lesson was a pattern
 # that was written, believed, and matched nothing.
 /.claude/worktrees
+/.claude/state/
 
 /design-corpora
 
