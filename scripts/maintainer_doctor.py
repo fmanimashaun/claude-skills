@@ -1232,7 +1232,10 @@ class Doctor:
                 lines = out.strip().splitlines() if name in SLOW_GATES else []
                 last = next((ln for ln in reversed(lines) if re.search(r"\(jobs=\d+, \d+s\)", ln)),
                             lines[-1] if lines else "")
-                self.add(PASS, f"gate: {name}", last)
+                # The cost lines too (#1599): the CI log is the only place the per-guard measurement exists.
+                cost_lines = tuple(ln.strip() for ln in lines
+                                   if ln.startswith(("heaviest guards", "total work", "work by guard")))
+                self.add(PASS, f"gate: {name}", last, findings=cost_lines)
             elif code == 124 and self.require_slow and name in SLOW_GATES:
                 # #1444. Every dev push run reported `mutation coverage` as a timeout-skip and the
                 # job still went green, so the promotion's evidence silently disappeared for a day.
