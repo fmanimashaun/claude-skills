@@ -61,9 +61,15 @@ GUARD = Guard(
         ),
         Mutation(
             "a row is keyed by the session's name, so a rename adds a second row",
-            '    record["sessions"][path] = row',
-            '    record["sessions"][name or path] = row',
+            '        row["name"] = name       # an attribute: a renamed session updates ITS row, never adds a second\n    record["sessions"][path] = row',
+            '        row["name"] = name       # an attribute: a renamed session updates ITS row, never adds a second\n    record["sessions"][name or path] = row',
             "a restart with a new name rewrites the SAME row",
+        ),
+        Mutation(
+            "a check-in looks its row up by the session's name, so a renamed session starts a fresh row",
+            '    row = record["sessions"].get(path)\n    row = row if isinstance(row, dict) else {"state": "waiting"}',
+            '    row = record["sessions"].get(name)\n    row = row if isinstance(row, dict) else {"state": "waiting"}',
+            "a check-in keeps what the lane already says",
         ),
         Mutation(
             "the record is read from --git-dir, so a linked worktree sees a different file",
