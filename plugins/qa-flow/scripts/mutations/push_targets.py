@@ -10,8 +10,8 @@ GUARD = Guard(
     mutations=(
         Mutation(
             "the substring match comes back, so fix/1010-one-main is a promotion again",
-            "            if dst in PROTECTED or",
-            "            if any(p in dst for p in PROTECTED) or",
+            "        if dst in PROTECTED or",
+            "        if any(p in dst for p in PROTECTED) or",
             "'git push -u origin fix/1010-one-main': expected does not target main",
         ),
         Mutation(
@@ -133,8 +133,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a substitution body is read BEFORE the outer command, so its cd leaks into the outer push",
-            "    for seg in segments(tokens(cmd, bodies)):\n        yield seg",
-            "    _toks = tokens(cmd, bodies)\n    for body in bodies:\n        yield from all_segments(body, depth + 1)\n    for seg in segments(_toks):\n        yield seg",
+            '    toks = tokens(cmd, bodies)\n    if "()" in toks:',
+            '    toks = tokens(cmd, bodies)\n    for body in bodies:\n        yield from all_segments(body, depth + 1)\n    if "()" in toks:',
             "'x=$(cd other); git push': expected does not target main",
         ),
         # #1551: a quote in a heredoc body inside a substitution is text.
@@ -189,8 +189,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a prior cd is ignored, so a bare push is resolved in the wrong clone",
-            "            cwd = seg[1] if cwd is None",
-            "            cwd = None if cwd is None",
+            "            cwd = seg[1] if cwd is None or os.path.isabs",
+            "            cwd = None if cwd is None or os.path.isabs",
             "'cd other && git push': expected TARGETS main",
         ),
         Mutation(
@@ -264,8 +264,8 @@ GUARD = Guard(
         ),
         Mutation(
             "an inline alias is followed as its literal verb, so -c alias.p=push hides the push",
-            '                    raise Unjudgeable("a git alias defined inline can be any verb, push included")',
-            "                    pass",
+            'seg[i + 1].startswith("alias."):\n                    raise Unjudgeable("a git alias defined inline can be any verb, push included")',
+            'seg[i + 1].startswith("alias."):\n                    pass',
             "'git -c alias.p=push p origin main': expected TARGETS main",
         ),
         Mutation(
@@ -276,21 +276,223 @@ GUARD = Guard(
         ),
         Mutation(
             "gh pr merge ignores the PR it names and falls back to the current branch's",
-            "                sel = a\n                break",
-            "                break",
+            "        sel = a\n        break",
+            "        break",
             "classify 'gh pr merge 12'",
         ),
         Mutation(
             "git merge is no longer reported when a wrapper precedes it",
-            '    if any(git_verb(seg, "merge") is not None for seg in all_segments(cmd)):',
-            "    if False:",
-            "classify 'git merge dev'",
+            '    return [("git" if is_command(w, {"git"}) else "gh", i) for i, w in enumerate(seg)',
+            "    return []\n    return [(\"git\" if is_command(w, {\"git\"}) else \"gh\", i) for i, w in enumerate(seg)",
+            "classify 'sudo -u bob git merge dev'",
         ),
         Mutation(
             "shell options that take a value are no longer stepped over, so -o pipefail hides -c",
             "                    if seg[i] in SHELL_OPTS_WITH_VALUE:\n                        i += 2",
             "                    if False:\n                        i += 2",
             "\"bash -o pipefail -c 'git push origin main'\": expected TARGETS main",
+        ),
+        # #1569: `gh api` and `gh release create` are classified by EFFECT. Each mutation removes one piece
+        # of that classification, and the selftest must go red.
+        Mutation(
+            "gh api / gh release are never classified, so every API merge and release passes",
+            "                out += gh_effects_for(seg, j, cwd, env_repo)",
+            "                pass",
+            "classify 'gh api -X PUT repos/{owner}/{repo}/pulls/1200/merge",
+        ),
+        Mutation(
+            "a PUT to pulls/N/merge is no longer a PR merge",
+            "    if m:                                       # any write to it",
+            "    if False:                                   # any write to it",
+            "classify 'gh api --method=PUT repos/o/r/pulls/5/merge'",
+        ),
+        Mutation(
+            "--method=PUT (the `=` form) is read as a flag with no value",
+            '            if a.startswith("--") and "=" in a:',
+            "            if False:",
+            "classify 'gh api --method=PUT repos/o/r/pulls/5/merge'",
+        ),
+        Mutation(
+            "a body means GET again, so a POST merge with -f fields reads as a read",
+            '            out = {"POST" if (self.fields or self.input) else "GET"}',
+            '            out = {"GET"}',
+            "classify 'gh api repos/o/r/merges -f base=main -f head=dev'",
+        ),
+        Mutation(
+            "POST merges with base main is no longer main-ward",
+            "        if base is None or _expanded(base) or branch_of(base) in PROTECTED:",
+            "        if base is None or _expanded(base):",
+            "classify 'gh api repos/o/r/merges -f base=main -f head=dev'",
+        ),
+        Mutation(
+            "a PATCH of git/refs/heads/main is no longer main-ward",
+            "        if _expanded(ref) or branch_of(ref) in PROTECTED:",
+            "        if _expanded(ref):",
+            "classify 'gh api -X PATCH repos/o/r/git/refs/heads/main -f sha=a'",
+        ),
+        Mutation(
+            "a GraphQL mergePullRequest is no longer read",
+            '    if "mergePullRequest" in text:',
+            "    if False:",
+            "classify 'gh api graphql -F query=@",
+        ),
+        Mutation(
+            "a GraphQL updateRef is no longer read",
+            '    if "updateRef" in text:',
+            "    if False:",
+            "expected ['GQL_REF R1 a']",
+        ),
+        Mutation(
+            "a query file that cannot be read is answered as empty, so it reads as no merge",
+            '        raise Unjudgeable(f"gh api reads {path!r}, which cannot be read ({exc.__class__.__name__})") from exc',
+            '        return ""',
+            "must be unjudgeable or main-ward",
+        ),
+        Mutation(
+            "a GraphQL document built by the shell is read as plain text",
+            '    if SUBST in text or "`" in text:',
+            "    if False:",
+            "must be unjudgeable or main-ward",
+        ),
+        Mutation(
+            "gh release create is no longer reported",
+            '    if names == ["release", "create"]:',
+            "    if False:",
+            "classify \"gh release create v1.0.1 --target main",
+        ),
+        Mutation(
+            "POST .../releases is no longer a publish",
+            '    if re.fullmatch(r"(?:repos/[^/]+/[^/]+/)?releases", path):',
+            "    if False:",
+            "classify 'gh api repos/o/r/releases -f tag_name=v1",
+        ),
+        # (#1571) what earlier segments of ONE command did to the branch and refs the hook read before it ran
+        Mutation(
+            'a switch to a branch is no longer followed, so `switch main && merge` reads as off main',
+            '            return {positional[0]}, True, False\n        if len(positional) == 1:',
+            '            return None, False, False\n        if len(positional) == 1:',
+            "classify 'git switch main && git merge hotfix'",
+        ),
+        Mutation(
+            'a checkout of a name is judged only as `unchanged`, so `checkout main && merge` reads as off main',
+            'else {HOOK_HEAD, positional[0]}), True, False',
+            'else {HOOK_HEAD}), True, False',
+            "classify 'git checkout main && git merge hotfix'",
+        ),
+        Mutation(
+            'a checkout that may restore a path is judged only as the branch it names',
+            'else {HOOK_HEAD, positional[0]}), True, False',
+            'else {positional[0]}), True, False',
+            "classify 'git checkout README.md && git merge hotfix'",
+        ),
+        Mutation(
+            '`checkout -- <paths>` is no longer recognised as leaving HEAD alone',
+            'return (None, False, False) if new is None and not detach else unknown',
+            'return unknown',
+            "classify 'git checkout -- README.md && git merge hotfix'",
+        ),
+        Mutation(
+            'a branch rename onto main is not followed',
+            '        return ({HOOK_HEAD, positional[-1]} if renames and positional else None), False, writes',
+            '        return None, False, writes',
+            "classify 'git branch -M main && git merge hotfix'",
+        ),
+        Mutation(
+            'a rebase that checks out main is not followed',
+            '        return ({HOOK_HEAD, positional[-1]} if len(positional) >= 2 else None), True, True',
+            '        return None, True, True',
+            "classify 'git rebase dev main && git merge hotfix'",
+        ),
+        Mutation(
+            'a branch change that cannot be followed no longer denies a later merge or pull',
+            '        if UNKNOWN_BRANCH in poss or self.unknown_dir:\n            raise Unjudgeable("a merge or pull after',
+            '        if False:\n            raise Unjudgeable("a merge or pull after',
+            "classify 'git switch $B && git merge hotfix': must be unjudgeable",
+        ),
+        Mutation(
+            "a pull on main by the command's own doing is not reported",
+            '        for kind in flow.promotion_kinds(key, "GIT_PULL"):',
+            '        for kind in []:',
+            "classify 'git switch main && git pull'",
+        ),
+        Mutation(
+            "`git -C .` is read as a different directory from the hook's own",
+            '            key = "-" if key == "." else key',
+            '            key = key',
+            "classify 'git -C . switch main && git merge hotfix'",
+        ),
+        Mutation(
+            'a branch change in one directory is not applied to the others seen so far',
+            '                for other in self.branches:\n                    if other != key:\n                        self.branches[other] = self.branches[other] | branches\n',
+            '',
+            "classify 'git switch topic && git -C /elsewhere switch main && git merge hotfix'",
+        ),
+        Mutation(
+            'a segment that moves refs no longer blocks a later push to main',
+            '        if verb in REF_MOVING_VERBS:\n            head_moved = refs_moved = True',
+            '        if False:\n            head_moved = refs_moved = True',
+            "classify 'git commit --allow-empty -m x && git push origin main': must be unjudgeable",
+        ),
+        Mutation(
+            'a fetch of a refspec no longer counts as moving a ref',
+            '        elif verb == "fetch" and (any(":" in a for a in args) or "-u" in args or "--update-head-ok" in args):',
+            '        elif False:',
+            "classify 'git fetch origin hotfix:main && git push origin main': must be unjudgeable",
+        ),
+        Mutation(
+            'a plain fetch counts as moving a ref, so an ordinary fetch-then-push is refused',
+            '        elif verb == "fetch" and (any(":" in a for a in args) or',
+            '        elif verb == "fetch" and (True or',
+            "classify 'git fetch origin && git push origin dev:main'",
+        ),
+        Mutation(
+            'a push of HEAD to main ignores that an earlier segment moved HEAD',
+            '        if self.refs_moved or (head_relative and self.head_moved):',
+            '        if self.refs_moved:',
+            "classify 'git switch hotfix && git push origin HEAD:main': must be unjudgeable",
+        ),
+        Mutation(
+            'a switch is counted as moving a ref, so a harmless switch-then-push of a named ref is refused',
+            '            return {positional[0]}, True, False\n        if len(positional) == 1:',
+            '            return {positional[0]}, True, True\n        if len(positional) == 1:',
+            "classify 'git switch topic && git push origin dev:main'",
+        ),
+        # (#1571) the pin, in each of its three spellings
+        Mutation(
+            'a gh pr merge pin is no longer read',
+            '        pin = pr_merge_match(rest)\n        line =',
+            '        pin = None\n        line =',
+            "classify 'gh pr merge 5 --match-head-commit abc1234'",
+        ),
+        Mutation(
+            'the `--match-head-commit=<sha>` spelling is not read',
+            '        if a.startswith("--match-head-commit="):',
+            '        if False:',
+            "classify 'gh pr merge 5 --match-head-commit=ABC1234 --squash'",
+        ),
+        Mutation(
+            'a pin built by the shell is carried as its text instead of as unknown',
+            '            return _token(rest[i + 1]) if i + 1 < len(rest) else "-"',
+            '            return rest[i + 1] if i + 1 < len(rest) else "-"',
+            "classify 'gh pr merge 5 --match-head-commit $H'",
+        ),
+        Mutation(
+            'a REST `sha=` is no longer read',
+            '        pin = "" if sha is None else f" MATCH:{_token(str(sha))}"',
+            '        pin = ""',
+            "classify 'gh api -X PUT repos/o/r/pulls/5/merge -f sha=abc1234 -f merge_method=merge'",
+        ),
+        Mutation(
+            'a REST `sha=` built by the shell is carried as its text instead of as unknown',
+            '        pin = "" if sha is None else f" MATCH:{_token(str(sha))}"',
+            '        pin = "" if sha is None else f" MATCH:{sha}"',
+            "classify 'gh api -X PUT repos/o/r/pulls/5/merge -f sha=$H'",
+        ),
+        Mutation(
+            'a GraphQL expectedHeadOid is no longer read',
+            'if "expectedHeadOid" in text else ""',
+            'if False else ""',
+            "expected ['GQL_PR PR_kwDOA MATCH:abc1234']",
         ),
     ),
 )
