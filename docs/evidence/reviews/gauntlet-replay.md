@@ -42,3 +42,13 @@ measured.
 - A model-run replay is one sample. It does not prove the next defect of the class is found. The
   permanent protection is the fixture each merged class already has (`check_blocked_catalogue.py`
   refuses one that disappears); the agents are a cheaper way to find the next one earlier.
+
+## Model, and what changed since (review of #1578, S2)
+
+- **Model: not recorded when the replay ran.** [Inferred] The agents pin `sonnet` (`shell-adversary`) and `haiku`
+  (`mutation-verifier`) in their frontmatter, which is what a run of the agent as written uses. `haiku` for
+  `mutation-verifier` is inside `model-tiers.md`'s mechanical tier (a deterministic harness result).
+- **`mutation-verifier`'s guard lookup was wrong when the 1511 replay ran.** It found a guard by file name, which
+  finds none for a hook script (review B2). Step 2 is now `python3 scripts/gauntlet_core.py guards`, which reads
+  the harness's registry, and the replay was not re-run: its one run was on a Python script, where the old lookup
+  worked.

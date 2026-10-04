@@ -27,7 +27,11 @@ row's fixture names where the repository already defends it.
    normalise or judge a shell command. If none do, return CLEAN with `nothing parses a command`.
 2. For each, find the entry point a hook or script is invoked by, and the existing fixture that
    drives it end to end (the catalogue's fixture column; `plugins/rails-flow/scripts/check_hook_gates.py`).
-3. **Run, do not reason.** Feed the real entry point each hostile input from the catalogue, plus two
+3. **Run the battery first:** `python3 scripts/gauntlet_core.py battery` (or `--hook <path>` for another
+   hook). It feeds the real PreToolUse payload to the hook with the catalogue's measured inputs and the
+   legitimate commands that must still pass; every `BLOCKED` line is a finding with its exit status. A hook
+   that fails it is BLOCKED whatever you find next, and a `CLEAN` there is only the floor.
+   **Then run, do not reason.** Feed the real entry point each hostile input from the catalogue, plus two
    you invent for what this diff changed, in a scratch directory under the session's scratchpad.
    Use the degraded environment too: a PATH with only `bash` and `cat`.
 4. A BLOCK is a command the code should refuse or flag that it allows, or a legitimate command it

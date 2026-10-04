@@ -18,10 +18,15 @@ background process) and PR CI skips the full mutation sweep, so a survivor is ot
 
 ## Method
 
-1. List changed scripts: `git diff --name-only origin/dev...HEAD`, keeping `scripts/*.py`,
-   `plugins/*/scripts/*.py` and hook scripts.
-2. Find each one's guard: `scripts/mutations/<name>.py` or `plugins/<plugin>/scripts/mutations/<name>.py`.
-   A changed script with **no** guard is a finding unless the diff adds one.
+1. List the changed scripts and their guards with one command, which does steps 1 and 2 the same way every time:
+   `python3 scripts/gauntlet_core.py guards` (base `origin/dev`; pass `--base <ref>` for another). It keeps
+   `scripts/*.py`, `plugins/*/scripts/*.py` and hook scripts, and finds each one's guard in the mutation
+   harness's own registry by the script it **declares as its subject**. A guard's name is not its script's
+   name (`guard-bash.sh` is guarded by `hook_guard_bash`), so do not look for `scripts/mutations/<name>.py`
+   yourself: that guesses the name and reports a false BLOCKED on a hook diff.
+2. Its `BLOCKED` lines are your findings: each is a changed script no guard covers, unless the diff adds
+   one (then re-run the command after reading the new guard). `NOTHING TO ATTACK` is not `CLEAN`: say so.
+   The `run:` lines are the guards to run in step 3.
 3. Run each guard that exists: `python3 scripts/mutation_check.py --guard <name> --jobs 2`. Run them
    one at a time and in the foreground; a loaded machine times a mutation out and that is not a
    survivor.

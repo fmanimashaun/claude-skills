@@ -16,8 +16,8 @@ sentences, not a defence.
 | class | PR | state | defect (the mechanism) | fixture |
 |---|---|---|---|---|
 | obfuscation-fail-open | 1498 | merged | A raw-text pre-check skips the lexer, but the lexer dequotes, so `e'v'al "git add -A"` passes | `plugins/rails-flow/scripts/check_hook_gates.py :: e'v'al` |
-| heredoc-quoting | 1498 | merged | A heredoc inside `$( )` containing `)` ends the substitution early and hides the next command | `plugins/rails-flow/scripts/check_hook_gates.py :: <<EOF` |
-| fallback-lacks-its-tools | 1529 | merged | The fail-closed fallback needed grep, awk or python3; with none on PATH it exits 0 | `plugins/rails-flow/scripts/check_hook_gates.py :: no_grep` |
+| heredoc-quoting | 1498 | merged | A heredoc inside `$( )` containing `)` ends the substitution early and hides the next command | `plugins/rails-flow/scripts/check_hook_gates.py :: Adds :) emoji then` |
+| fallback-lacks-its-tools | 1529 | merged | The fail-closed fallback needed grep, awk or python3; with none on PATH it exits 0 | `plugins/rails-flow/scripts/check_hook_gates.py :: hit() failed on every rule` |
 | push-parser-fail-open | 1470 | merged | The release-gate push parser allowed `$(echo main)`, `main>/dev/null`, `HEAD:heads/main`, `{main,dev}` | `plugins/qa-flow/scripts/push_targets.py :: git push origin $(echo main)` |
 | control-char-laundering | 1437 | merged | A newline in an evidence path smuggled a second path past a line-split gate | `plugins/rails-flow/scripts/check_hook_gates.py :: a newline in an evidence path launders nothing` |
 | fixture-background-race | 1511 | merged | A selftest control commit started a detached `git maintenance` in the fixture repo | `scripts/mutations/mutation_check_harness.py :: #1510: the baseline and the mutant must run with git maintenance off` |

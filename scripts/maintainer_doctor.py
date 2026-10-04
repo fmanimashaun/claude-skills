@@ -532,6 +532,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("blocked catalogue", ("python3", "scripts/check_blocked_catalogue.py")),
     ("blocked catalogue selftest",
      ("python3", "scripts/check_blocked_catalogue.py", "--selftest")),
+    # The deterministic floor of the /gauntlet agents (B2, B3 of the #1578 review): a known-bad fixture diff BLOCKS, a
+    # known-good one is CLEAN, and an agent whose instructions stop naming its command goes red.
+    ("gauntlet core selftest", ("python3", "scripts/gauntlet_core.py", "--selftest")),
     # #1096. A rebase across a promotion applies CLEANLY and files unshipped bullets under the
     # release heading the arm just renamed. A loss is absolute; an addition is ratcheted, because
     # 16 blocks already carry post-tag bullets from before anyone was watching.
