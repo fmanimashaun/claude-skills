@@ -14,6 +14,8 @@ GUARD = Guard(
     # Only the fixture groups that drive this subject (#1497): the whole harness per
     # mutant was ~70% of the mutation-coverage budget.
     selftest_args=("--only", "guard_claims"),
+    # Each mutant runs only the fixture its `expects` names (#1599), not the 199-check group (about 116 s a mutant).
+    narrow_with="--match",
     # The harness resolves every hook from the selftest's own location, so the whole directory is
     # staged; `extract_claims.py` is what this hook shells out to, and without it every mutation
     # reads as caught against an unrun check (#1109).
