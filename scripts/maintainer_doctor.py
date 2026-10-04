@@ -590,7 +590,12 @@ SLOW_GATES: dict[str, int] = {
     # and this branch's ~60 more of them timed the dispatched run out at 1800 s (37136560968, no survivor
     # in any guard that finished). 3600 s is 2.3x the dev measurement; re-set it from the `jobs=4, Xs`
     # the completed run on this branch prints.
-    "mutation coverage": 3600,
+    # #1599, MEASURED: since #1516 merged, every full run is killed at 3600 s (dev push 37176643896; #1601's
+    # run 37177382837; #1594 and #1595 the same), whole jobs of about 3,860 to 3,900 s, with no survivor in any guard
+    # that finished. The real time is therefore at least 3600 s and not yet measured: the run that completes under
+    # this bound prints it, and 5400 s is 1.5x the 3600 s floor. #1599 cuts the guards that re-run a whole fixture group
+    # per mutant; re-set this from the `jobs=4, Xs` of a completed run, and lower it when #1599 lands.
+    "mutation coverage": 5400,
 }
 
 
@@ -1142,7 +1147,55 @@ class Doctor:
                 if p not in snapshot:
                     p.unlink()
 
+    def _ref_tips(self) -> list[str] | None:
+        """Every ref tip and HEAD of the repository, or None if git cannot say."""
+        # LOCAL refs only (#1594 review D1): branches, the stash and HEAD. A `git fetch` during a sweep moves
+        # remote-tracking refs, and the commits it brings are other people's -- not a fixture escaping.
+        code, out = self.run("git", "-C", str(REPO), "for-each-ref", "--format=%(objectname)",
+                             "refs/heads", "refs/stash")
+        code2, head = self.run("git", "-C", str(REPO), "rev-parse", "HEAD")
+        if code != 0 or code2 != 0:
+            return None
+        return sorted(set(out.split()) | {head.strip()})
+
+    def check_repo_untouched(self, before: list[str] | None) -> None:
+        """THE DETECTOR (#1588). A gate must never commit into the real repository. On 2026-10-03 three
+        `t <t@t>` / `m` commits landed on dev from a selftest run under an inherited GIT_DIR. The strip in
+        hermetic_git closes that path; this catches the NEXT one, whatever its trigger: every commit the
+        sweep added to any ref, authored by anyone but the configured user. Other sessions commit as the
+        configured user, so their work on their own branches during the sweep is not flagged."""
+        name = "gate: the sweep committed nothing into the real repository"
+        after = self._ref_tips()
+        if before is None or after is None:
+            self.add(SKIP, name, "git could not list the refs before or after the sweep", "")
+            return
+        code, me = self.run("git", "-C", str(REPO), "config", "user.email")
+        me = me.strip() if code == 0 else ""
+        # `--remotes` on the NOT side: a commit any remote-tracking ref reaches came from a remote (a `fetch`,
+        # or a `pull` into a local branch), so it is not one a fixture made here. An escaped fixture commit is
+        # on no remote, and stays in the list.
+        code, out = self.run("git", "-C", str(REPO), "rev-list", "--format=%H %ae %s", *after, "--not", *before,
+                             "--remotes")
+        if code != 0:
+            self.add(SKIP, name, "git could not compare the refs", out.strip()[:200])
+            return
+        added = [ln for ln in out.splitlines() if ln and not ln.startswith("commit ")]
+        foreign = [ln for ln in added if not me or ln.split()[1] != me]
+        if foreign:
+            self.add(FAIL, name, f"{len(foreign)} commit(s) appeared during the sweep, not by {me or 'the configured user'}: "
+                     + "; ".join(foreign[:5]), "a gate's fixture escaped its temp repo (#1588) -- find it, and "
+                     "remove the commits with `git reset --keep` on the branch they landed on")
+        else:
+            self.add(PASS, name, f"{len(added)} commit(s) added during the sweep, all by {me or 'the configured user'}")
+
     def check_gates(self, fast: bool = False) -> None:
+        tips_before = self._ref_tips()
+        try:
+            self._check_gates(fast)
+        finally:
+            self.check_repo_untouched(tips_before)
+
+    def _check_gates(self, fast: bool = False) -> None:
         corpora_absent = any(not (REPO / CORPORA_DIR / c).exists() for c in CORPORA)
         for name, cmd in GATES:
             script = REPO / cmd[1]
@@ -1179,7 +1232,10 @@ class Doctor:
                 lines = out.strip().splitlines() if name in SLOW_GATES else []
                 last = next((ln for ln in reversed(lines) if re.search(r"\(jobs=\d+, \d+s\)", ln)),
                             lines[-1] if lines else "")
-                self.add(PASS, f"gate: {name}", last)
+                # The cost lines too (#1599): the CI log is the only place the per-guard measurement exists.
+                cost_lines = tuple(ln.strip() for ln in lines
+                                   if ln.startswith(("heaviest guards", "total work", "work by guard")))
+                self.add(PASS, f"gate: {name}", last, findings=cost_lines)
             elif code == 124 and self.require_slow and name in SLOW_GATES:
                 # #1444. Every dev push run reported `mutation coverage` as a timeout-skip and the
                 # job still went green, so the promotion's evidence silently disappeared for a day.

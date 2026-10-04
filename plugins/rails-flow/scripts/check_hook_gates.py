@@ -41,12 +41,53 @@ HOOKS = Path(__file__).resolve().parents[1] / "hooks" / "scripts"
 FAILURES: list[str] = []
 CHECKS = 0
 
+# `--match SUBSTR` runs only the fixtures whose check label contains SUBSTR (#1599). The mutation harness runs
+# every mutant of a guard through this file, and each mutant is meant to be caught by ONE fixture, named by the
+# mutation's `expects`; re-running all 199 checks of a group (about 116 s) to see one of them fail was most of
+# the mutation-coverage budget. Fixtures do not name themselves before they run, so it is two passes over a
+# group: a SURVEY with every subprocess stubbed (it only records the check labels), then a RUN in which the
+# code before a wanted check executes for real and the code before every other check is stubbed. A fixture
+# whose result steers which checks follow it would make the two passes disagree; that raises, it never guesses.
+_MATCH_MODE: str | None = None      # None, "survey" or "run"
+_SURVEYED: list[str] = []           # the labels, in the order the survey saw them
+_WANTED: set[int] = set()           # positions in `_SURVEYED` whose label matched
+_INDEX = 0                          # the position the next check() call has in the run pass
+_SKIP = False                       # True while the code before an unwanted check runs
+
+
+class MatchSequenceError(Exception):
+    """The run pass reached a different check than the survey did, so `--match` cannot be trusted here."""
+
+
+def skipping() -> bool:
+    return _MATCH_MODE == "survey" or (_MATCH_MODE == "run" and _SKIP)
+
 
 def check(label: str, ok: bool, detail: str = "") -> None:
-    global CHECKS
+    global CHECKS, _INDEX, _SKIP
+    if _MATCH_MODE == "survey":
+        _SURVEYED.append(label)
+        return
+    if _MATCH_MODE == "run":
+        if _INDEX >= len(_SURVEYED) or _SURVEYED[_INDEX] != label:
+            raise MatchSequenceError(
+                f"check #{_INDEX} is {label!r} in the run pass but "
+                f"{_SURVEYED[_INDEX] if _INDEX < len(_SURVEYED) else 'absent'!r} in the survey")
+        live = _INDEX in _WANTED
+        _INDEX += 1
+        _SKIP = _INDEX not in _WANTED        # the code before the NEXT check runs for real only if it is wanted
+        if not live:
+            return
     CHECKS += 1
     if not ok:
         FAILURES.append(f"{label}: {detail}" if detail else label)
+
+
+def record_failure(note: str) -> None:
+    """A failure that is not one of a group's numbered checks (a timeout), so it never shifts `--match`'s count."""
+    global CHECKS
+    CHECKS += 1
+    FAILURES.append(note)
 
 
 # #1469: every hook fixture runs through here. A subprocess that outruns its timeout used to raise
@@ -59,6 +100,10 @@ _EXPECTING_TIMEOUT = False      # set by timeout_fixtures, which times out on pu
 
 
 def _run(*args, **kw):
+    if skipping():          # `--match`: this is the code before an unwanted check, or the survey (#1599)
+        text = kw.get("text") or kw.get("universal_newlines")
+        empty = "" if text else b""
+        return subprocess.CompletedProcess(args[0] if args else kw.get("args"), 0, stdout=empty, stderr=empty)
     # The override is exact (the no-crash proof sets it tiny); otherwise a fixture's own bound is
     # raised to a 180s floor, since 60s was what a loaded machine outran. Read per call, not at import.
     override = os.environ.get("HOOK_GATES_TIMEOUT")
@@ -93,7 +138,7 @@ def _run(*args, **kw):
             # A timeout is ALWAYS a recorded failure -- a setup step (`git init`, check=True) that
             # times out must not pass silently -- unless timeout_fixtures asked for one on purpose.
             if not _EXPECTING_TIMEOUT:
-                check(note, False)
+                record_failure(note)
             empty = "" if kw.get("text") else b""
             return subprocess.CompletedProcess(proc.args, 124, stdout=empty,
                                                stderr=note if kw.get("text") else note.encode())
@@ -134,6 +179,8 @@ def run_hook(name: str, *, cwd: Path, stdin: str, path_prefix: list[Path] = (),
     for k in unset:
         env.pop(k, None)
     env.pop("RAILS_FLOW_LANE", None)
+    for k in [k for k in env if k.startswith(("GIT_", "GH_"))]:
+        env.pop(k, None)                    # a git hook's GIT_DIR, a CI's GH_*: each would route every fixture
     if path_prefix:
         env["PATH"] = os.pathsep.join(str(p) for p in path_prefix) + os.pathsep + env["PATH"]
     if env_extra:
@@ -970,13 +1017,42 @@ def guard_claims_fixtures() -> None:
             (Path(td) / ".github" / "pull_request_template.md").write_text(TPL, encoding="utf-8")
             (Path(td) / "body.md").write_text("## What changed\nx\n", encoding="utf-8")
             env = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])}
-            env.pop("GH_REPO", None)
+            for k in [k for k in env if k.startswith(("GIT_", "GH_"))]:
+                env.pop(k, None)
             broke = _run(["bash", str(copy / "guard-claims.sh")], cwd=td, env=env, text=True,
                                    capture_output=True, timeout=60,
                                    input=json.dumps({"tool_input": {"command": f"gh pr create --base dev --body-file {td}/body.md"}}))
     check("guard-claims: a helper that fails at import is BLOCKED, never let through",
           broke.returncode == 2 and "died before judging" in broke.stdout + broke.stderr,
           f"exit {broke.returncode}: {(broke.stdout + broke.stderr)[-120:]}")
+    # #1509: the directory resolver is a checker too. Missing or crashing, it has resolved nothing,
+    # and the session directory is not a safe default: FAIL CLOSED, as #1435 ruled for pr_template.
+    # The review's shape (#1516): a cd plus a RELATIVE body that exists only in the cd target. An absolute
+    # body with no cd reached the template branch's own block; this one used to fail OPEN at "could not
+    # read a --body-file" before any block ran.
+    for label, mangle in (
+            ("missing", lambda f: f.rename(f.with_name("command_cwd_renamed.py"))),
+            ("crashing", lambda f: f.write_text("import sys\nsys.exit(1)\n", encoding="utf-8"))):
+        with tempfile.TemporaryDirectory() as hd:
+            copy = Path(hd) / "scripts"
+            shutil.copytree(HOOKS, copy)
+            mangle(copy / "lib" / "command_cwd.py")
+            with tempfile.TemporaryDirectory() as td:
+                a, b = Path(td) / "a", Path(td) / "b"
+                for d in (a, b):
+                    (d / ".github").mkdir(parents=True)
+                    (d / ".github" / "pull_request_template.md").write_text(TPL, encoding="utf-8")
+                (b / "onlyb.md").write_text(FULL, encoding="utf-8")
+                env = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])}
+                for k in [k for k in env if k.startswith(("GIT_", "GH_"))]:
+                    env.pop(k, None)
+                broke = _run(["bash", str(copy / "guard-claims.sh")], cwd=a, env=env, text=True,
+                             capture_output=True, timeout=60,
+                             input=json.dumps({"tool_input": {"command": f"cd {b} && gh pr create --base dev --body-file onlyb.md"}}))
+        needle = "could not be resolved"
+        check(f"guard-claims: a {label} command_cwd.py is BLOCKED, never the session's template (#1509)",
+              broke.returncode == 2 and needle in broke.stdout + broke.stderr,
+              f"exit {broke.returncode}: {(broke.stdout + broke.stderr)[-120:]}")
     check("guard-claims: `-R` in a double-quoted title with an apostrophe is still text (#1435)",
           run("gh pr create --title \"it's the -R fix\" --base dev --body-file BODY", "## What changed\nx\n",
               template=TPL) == 2, "exit 0")
@@ -992,6 +1068,255 @@ def guard_claims_fixtures() -> None:
     check("guard-claims: a | inside a quoted title does not hide a later -R",
           run("gh pr create --title 'a|b' -R o/r --body-file BODY", "## What changed\nx\n", template=TPL) == 0,
           "exit 2")
+
+    # ---- the COMMAND's directory, not the session's (#1509) ----
+    # A hook runs in the session's directory. A session rooted in repo A ran `cd <repo B> && gh pr
+    # create` and was BLOCKED for missing A's sections, while B's template went unchecked. Each body
+    # below satisfies exactly one of the two templates, so a verdict names the template it read.
+    TPL_B = "## Summary\n\n## Risk\n"
+    FITS_B = "## Summary\nTidy the README.\n## Risk\nNone, copy only.\n"
+
+    def run_in(cmd: str, body: str, *, body_in: str = "a", with_output: bool = False, payload_cwd: str = "",
+               env_extra: dict[str, str] | None = None):
+        with tempfile.TemporaryDirectory() as td:
+            a, b = Path(td) / "a", Path(td) / "b"
+            # `a/5` carries B's template, so `cd 5 >/dev/null` read as a bare `cd` (HOME, set to A) is visible.
+            for d, tpl in ((a, TPL), (b, TPL_B), (a / "5", TPL_B)):
+                (d / ".github").mkdir(parents=True)
+                (d / ".github" / "pull_request_template.md").write_text(tpl, encoding="utf-8")
+            # A directory literally named `$NOWHERE`: a `cd $NOWHERE` read literally would find it, so
+            # only the refusal of `$` keeps that fixture red, not the missing-directory check.
+            (a / "$NOWHERE").mkdir()
+            (a / "sub").mkdir()             # `cd sub` resolves here, so only CDPATH can make it unknown
+            (a / "~nobody").mkdir()         # likewise, only the refusal of `~user` keeps that fixture red
+            (b / "sub").mkdir()             # A/linkSub -> B/sub: `cd -P linkSub/..` is B, a logical one A
+            (a / "linkSub").symlink_to(b / "sub")
+            for odd in ("x#y", "x #y"):     # a `#` that is not a comment: B's template one level down
+                (b / odd / ".github").mkdir(parents=True)
+                (b / odd / ".github" / "pull_request_template.md").write_text(TPL_B, encoding="utf-8")
+            where = a if body_in == "a" else b
+            (where / "body.md").write_text(body, encoding="utf-8")
+            cmd = cmd.replace("B_DIR", str(b)).replace("BODY", str(where / "body.md"))
+            payload = {"tool_input": {"command": cmd}}
+            extra = {k: v.replace("B_DIR", str(b)) for k, v in (env_extra or {}).items()}
+            if payload_cwd:
+                payload["cwd"] = str({"a": a, "b": b}[payload_cwd])
+            done = run_hook("guard-claims.sh", cwd=a, stdin=json.dumps(payload),
+                            env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1]), "HOME": str(a), **extra})
+            return done if with_output else done[0]
+
+    check("guard-claims: a `cd <other repo>` is judged against that repo's template (#1509)",
+          run_in("cd B_DIR && gh pr create --base dev --body-file BODY", FULL) == 2, "exit 0")
+    check("guard-claims: ...and a body fitting the cd target's template passes there",
+          run_in("cd B_DIR && gh pr create --base dev --body-file BODY", FITS_B) == 0, "exit 2")
+    check("guard-claims: no cd is the session repo's template (control)",
+          run_in("gh pr create --base dev --body-file BODY", FITS_B) == 2, "exit 0")
+    rc, out = run_in("cd B_DIR && gh pr create -R o/r --base dev --body-file BODY", FULL, with_output=True)
+    check("guard-claims: -R after a cd is still another repository, NOT checked (control)",
+          rc == 0 and "NOT checked (-R" in out, f"exit {rc}: {out[-120:]}")
+    check("guard-claims: a relative --body-file is read from the cd target",
+          run_in("cd B_DIR && gh pr create --base dev --body-file body.md", FITS_B, body_in="b") == 0
+          and run_in("cd B_DIR && gh pr create --base dev --body-file body.md", FULL, body_in="b") == 2,
+          "the relative body was not read from B")
+    check("guard-claims: an issue comment's relative body is read from the cd target too, and its claims checked",
+          run_in("cd B_DIR && gh issue comment 5 --body-file body.md", NUMERIC, body_in="b") == 2, "exit 0")
+    check("guard-claims: `--body-file b.md; echo done` reads b.md, not `b.md;` (#1516)",
+          run_in("cd B_DIR && gh pr create --body-file body.md; echo done", FULL, body_in="b") == 2
+          and run_in("cd B_DIR && gh pr create --body-file body.md; echo done", FITS_B, body_in="b") == 0,
+          "the body was not read")
+    check("guard-claims: the command starts in the payload's cwd, not the hook's own directory",
+          run_in("gh pr create --body-file BODY", FULL, payload_cwd="b") == 2
+          and run_in("gh pr create --body-file BODY", FITS_B, payload_cwd="b") == 0, "judged against A")
+    # THE ALLOWLIST (#1516, round 3). A cd is followed only in the simple grammar: top-level segments joined
+    # by `&&`, `;` or a newline, before the gh segment, each `cd [-P|-L] <one path>` with an optional `>`/`2>`
+    # redirect; the gh segment may carry a known wrapper. FULL fits A and not B, so exit 2 means B was read.
+    for label, cmd in (
+            ("`cd B;`", "cd B_DIR; gh pr create --body-file BODY"),
+            ("a newline after the cd", "cd B_DIR\ngh pr create --body-file BODY"),
+            ("a quoted path", 'cd "B_DIR" && gh pr create --body-file BODY'),
+            ("two cds in a row", "cd B_DIR/.. && cd b && gh pr create --body-file BODY"),
+            ("a cd with its stderr redirected", "cd B_DIR 2>/dev/null && gh pr create --body-file BODY"),
+            ("a cd with its stdout redirected", "cd B_DIR >/dev/null && gh pr create --body-file BODY"),
+            ("`cd 5 >/dev/null` (5 is the directory, not an fd)", "cd 5 >/dev/null && gh pr create --body-file BODY"),
+            ("a leading comment line", "# open the PR\ncd B_DIR && gh pr create --body-file BODY"),
+            ("a leading comment with an apostrophe", "# don't open this from A\ncd B_DIR && gh pr create --body-file BODY"),
+            ("a comment after the cd", "cd B_DIR # go to B\ngh pr create --body-file BODY"),
+            ("a `#` inside a word", "cd B_DIR/x#y && gh pr create --body-file BODY"),
+            ("a `#` inside a quoted path", 'cd "B_DIR/x #y" && gh pr create --body-file BODY'),
+            ("an escaped space before `#` (S-b)", "cd B_DIR/x\\ #y && gh pr create --body-file BODY"),
+            ("a `~/` path", "cd ~/../b && gh pr create --body-file BODY"),
+            ("a redirect before the cd", ">/dev/null cd B_DIR && gh pr create --body-file BODY"),
+            ("`env gh`", "cd B_DIR && env gh pr create --body-file BODY"),
+            ("`env VAR=1 gh`", "cd B_DIR && env PAGER=cat gh pr create --body-file BODY"),
+            ("`VAR=1 gh`", "cd B_DIR && PAGER=cat gh pr create --body-file BODY"),
+            ("`command -p gh`", "cd B_DIR && command -p gh pr create --body-file BODY"),
+            ("an absolute path to gh", "cd B_DIR && /opt/homebrew/bin/gh pr create --body-file BODY"),
+            ("`timeout 60 gh`", "cd B_DIR && timeout 60 gh pr create --body-file BODY"),
+            ("`timeout -k 5 60 gh`", "cd B_DIR && timeout -k 5 60 gh pr create --body-file BODY"),
+            ("`nohup gh`", "cd B_DIR && nohup gh pr create --body-file BODY"),
+            ("`nice -n 5 gh`", "cd B_DIR && nice -n 5 gh pr create --body-file BODY"),
+            ("`exec gh`", "cd B_DIR && exec gh pr create --body-file BODY"),
+            ("`time -p gh`", "cd B_DIR && time -p gh pr create --body-file BODY")):
+        rc, out = run_in(cmd, FULL, with_output=True)
+        # B's own missing section, not just exit 2: a crashing resolver also exits 2, by blocking.
+        check(f"guard-claims: {label} is followed to the cd target's template (#1516 allowlist)",
+              rc == 2 and "## Risk" in out, f"exit {rc}: {out[-140:]}")
+    check("guard-claims: `cd B && env gh` with a body fitting B passes there (control)",
+          run_in("cd B_DIR && env gh pr create --body-file BODY", FITS_B) == 0, "exit 2")
+    check("guard-claims: with no cd, a command before gh leaves it in the starting repo (control)",
+          run_in("git push -u origin x && gh pr create --body-file BODY", FITS_B) == 2, "exit 0")
+    for label, cmd in (("known-safe commands and an assignment before gh", "X=1 git status && echo ok | head -1; gh pr create --body-file BODY"),
+                       ("a logical `cd link/..`, as bash resolves it", "cd linkSub/.. && gh pr create --body-file BODY")):
+        rc, out = run_in(cmd, "Tidy the README.\n", with_output=True)
+        check(f"guard-claims: {label} is judged in the starting repo (control, #1516 round 4)",
+              rc == 2 and "## What changed" in out, f"exit {rc}: {out[-140:]}")
+    # CANNOT TELL: anything else, so ALLOW WITH A LOUD NOTICE (the maintainer's decision on #1509). NEITHER
+    # fits no template, so a judgement against either repository exits 2; only the notice path exits 0.
+    NEITHER = "Tidy the README.\n"
+    NOTICE = "NOT checked (the directory gh runs in could not be resolved"
+    for label, cmd in (
+            # round 3: N1-N5, each judged against the wrong repository at 600614d
+            # round 4: B1, `-P` resolves physically, so it is out of the grammar; B2, the no-cd shortcut is an
+            # allowlist of command words too, so a builtin it does not know (zsh `chdir`) cannot slip past
+            ("B1 `cd -P`", "cd -P B_DIR && gh pr create --body-file BODY"),
+            ("B1 `cd -P link/..`", "cd -P linkSub/.. && gh pr create --body-file BODY"),
+            ("B1 `cd -P link && cd ..`", "cd -P linkSub && cd .. && gh pr create --body-file BODY"),
+            ("B1 `cd -L`", "cd -L B_DIR && gh pr create --body-file BODY"),
+            ("B2 zsh `chdir`", "chdir B_DIR; gh pr create --body-file BODY"),
+            ("B2 `builtin source`", "builtin source /dev/null && gh pr create --body-file BODY"),
+            ("B2 `command .`", "command . /dev/null && gh pr create --body-file BODY"),
+            ("B2 a command word from a variable", "x=cd; $x B_DIR; gh pr create --body-file BODY"),
+            ("B2 an ANSI-quoted `$'cd'`", "$'cd' B_DIR; gh pr create --body-file BODY"),
+            ("B2 an unknown command (an alias or function may cd)", "proj && gh pr create --body-file BODY"),
+            # round 5: GIT_DIR / GIT_WORK_TREE pick gh's repository whatever the directory
+            ("R5 `GIT_DIR=B/.git gh`", "GIT_DIR=B_DIR/.git gh pr create --body-file BODY"),
+            ("R5 `cd B && GIT_DIR=A/.git gh`", "cd B_DIR && GIT_DIR=../a/.git gh pr create --body-file BODY"),
+            ("R5 `GIT_WORK_TREE=B gh`", "GIT_WORK_TREE=B_DIR gh pr create --body-file BODY"),
+            ("R5 `env GIT_DIR=… gh`", "env GIT_DIR=B_DIR/.git gh pr create --body-file BODY"),
+            ("R5 `GIT_DIR=…;` before gh", "GIT_DIR=B_DIR/.git; gh pr create --body-file BODY"),
+            ("R5 `export GIT_DIR=…;` before gh", "export GIT_DIR=B_DIR/.git; gh pr create --body-file BODY"),
+            ("R5 `export GIT_WORK_TREE=…;` before gh", "export GIT_WORK_TREE=B_DIR; gh pr create --body-file BODY"),
+            # round 6: any GIT_* / GH_* is the class, not a list; the reviewer's four, then two of the class
+            ("R6 `GIT_COMMON_DIR`", "GIT_COMMON_DIR=B_DIR/.git gh pr create --body-file BODY"),
+            ("R6 `GIT_CONFIG_GLOBAL`", "GIT_CONFIG_GLOBAL=B_DIR/gitconfig gh pr create --body-file BODY"),
+            ("R6 `GIT_CONFIG_COUNT/KEY_0/VALUE_0`",
+             "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=url.x.insteadOf GIT_CONFIG_VALUE_0=y gh pr create --body-file BODY"),
+            ("R6 `GIT_CONFIG_PARAMETERS`", "GIT_CONFIG_PARAMETERS=\"'remote.origin.url'='x'\" gh pr create --body-file BODY"),
+            ("R6 an arbitrary `GIT_FOO=1` (the class)", "GIT_FOO=1 gh pr create --body-file BODY"),
+            ("R6 `GH_HOST` (the class)", "GH_HOST=example.com gh pr create --body-file BODY"),
+            ("R6 `GH_REPO`, folded into the class", "cd B_DIR && GH_REPO=o/r gh pr create --body-file BODY"),
+            ("R6 `export GH_HOST=…;` before gh", "export GH_HOST=example.com; gh pr create --body-file BODY"),
+            ("R6 `GH_HOST=…;` before gh", "GH_HOST=example.com; gh pr create --body-file BODY"),
+            # round 7: HOME / XDG_CONFIG_HOME set by the command move git's global config (insteadOf); the rest of
+            # the config-redirecting family, each shown with real gh 2.97.0 (`gh browse -n`)
+            ("R7 `HOME=… gh`", "HOME=B_DIR/h gh pr create --body-file BODY"),
+            ("R7 `XDG_CONFIG_HOME=… gh`", "XDG_CONFIG_HOME=B_DIR/x gh pr create --body-file BODY"),
+            ("R7 `env HOME=… gh`", "env HOME=B_DIR/h gh pr create --body-file BODY"),
+            ("R7 `HOME=…;` before gh", "HOME=B_DIR/h; gh pr create --body-file BODY"),
+            ("R7 `export HOME=…;` before gh", "export HOME=B_DIR/h; gh pr create --body-file BODY"),
+            ("R7 `export XDG_CONFIG_HOME=…;` before gh", "export XDG_CONFIG_HOME=B_DIR/x; gh pr create --body-file BODY"),
+            ("R7 `GIT_CONFIG_SYSTEM`", "GIT_CONFIG_SYSTEM=B_DIR/c gh pr create --body-file BODY"),
+            ("R7 `GIT_CONFIG_NOSYSTEM`", "GIT_CONFIG_NOSYSTEM=1 gh pr create --body-file BODY"),
+            ("R7 `GH_CONFIG_DIR`", "GH_CONFIG_DIR=B_DIR/g gh pr create --body-file BODY"),
+            ("R7 `git config --global …insteadOf` before gh", "git config --global url.b.insteadOf a && gh pr create --body-file BODY"),
+            ("R7 `git config …insteadOf` before gh", "git config url.b.insteadOf a; gh pr create --body-file BODY"),
+            ("R7 `git remote set-url` before gh", "git remote set-url origin b; gh pr create --body-file BODY"),
+            ("R7 `gh repo set-default` before gh", "gh repo set-default o/b && gh pr create --body-file BODY"),
+            ("R7 an unknown git option before gh", "git --exec-path=x status && gh pr create --body-file BODY"),
+            ("R7 a write into .git/config before gh", "echo x >> .git/config; gh pr create --body-file BODY"),
+            ("R7 `sed -i` on .git/config before gh", "sed -i.bak s/a/b/ .git/config; gh pr create --body-file BODY"),
+            ("N1 `env -C/dir`", "env -CB_DIR gh pr create --body-file BODY"),
+            ("N1 `env -iC dir`", "env -iC B_DIR gh pr create --body-file BODY"),
+            ("N1 `env -C dir`", "env -C B_DIR gh pr create --body-file BODY"),
+            ("N1 `env --chdir=dir`", "env --chdir=B_DIR gh pr create --body-file BODY"),
+            ("N1 `env -i` (any env option)", "cd B_DIR && env -i gh pr create --body-file BODY"),
+            ("N2 `eval \"cd B\"`", 'eval "cd B_DIR" && gh pr create --body-file BODY'),
+            ("N2 `eval cd B;`", "eval cd B_DIR; gh pr create --body-file BODY"),
+            ("N2 `eval \"$VAR\"`, with no cd in sight", 'eval "$GO" && gh pr create --body-file BODY'),
+            ("N3 a cd in an if/else", "if true; then cd B_DIR; else cd .; fi; gh pr create --body-file BODY"),
+            ("N3 a cd in an if that did not run", "if false; then cd B_DIR; fi; gh pr create --body-file BODY"),
+            ("N3 a cd in a while body", "while false; do cd B_DIR; done; gh pr create --body-file BODY"),
+            ("N3 a cd in a while condition", "while cd B_DIR; do gh pr create --body-file BODY ; break; done"),
+            ("N3 a cd in an until condition", "until cd B_DIR; do :; done; gh pr create --body-file BODY"),
+            ("N3 a cd in a for body", "for x in 1; do cd B_DIR; done; gh pr create --body-file BODY"),
+            ("N4 `false && cd B; gh`", "false && cd B_DIR; gh pr create --body-file BODY"),
+            ("N4 `true || cd B; gh`", "true || cd B_DIR; gh pr create --body-file BODY"),
+            ("N5 `$((1<<2))` before the cd", "echo $((1<<2))\ncd B_DIR && gh pr create --body-file BODY"),
+            ("N5 `(( n = 1 << 2 ))` before the cd", "(( n = 1 << 2 ))\ncd B_DIR && gh pr create --body-file BODY"),
+            # everything else outside the grammar
+            ("a cd inside a subshell", "(cd B_DIR) && gh pr create --body-file BODY"),
+            ("a cd inside a brace group", "{ cd B_DIR; } && gh pr create --body-file BODY"),
+            ("a cd in a case branch", "case x in x) cd B_DIR && gh pr create --body-file BODY;; esac"),
+            ("a gh after a case", "case x in x) cd B_DIR;; esac; gh pr create --body-file BODY"),
+            ("`builtin cd`", "builtin cd B_DIR && gh pr create --body-file BODY"),
+            ("`command cd`", "command cd B_DIR && gh pr create --body-file BODY"),
+            ("an assignment before the cd", "X=1 cd B_DIR && gh pr create --body-file BODY"),
+            ("another command between the cd and gh", "cd B_DIR && git log --oneline -1 # sanity\ngh pr create --body-file BODY"),
+            ("an echo before the cd", "echo 'gh pr create' && cd B_DIR && gh pr create --body-file BODY"),
+            ("a heredoc before the cd", "cat > /dev/null <<'EOF'\nit's a body\nEOF\ncd B_DIR && gh pr create --body-file BODY"),
+            ("a function body's cd", "f() { cd B_DIR; }; gh pr create --body-file BODY"),
+            ("a `function` keyword body's cd", "function f { cd B_DIR; }; gh pr create --body-file BODY"),
+            ("gh inside `bash -c`", 'bash -c "cd B_DIR && gh pr create --body-file BODY"'),
+            ("gh behind `sudo` after a cd", "cd B_DIR && sudo gh pr create --body-file BODY"),
+            ("gh behind `sudo` with no cd", "sudo gh pr create --body-file BODY"),
+            ("gh in an if with no cd", "if true; then gh pr create --body-file BODY; fi"),
+            ("a cd run as a program (`env cd`)", "env cd B_DIR && gh pr create --body-file BODY"),
+            ("`source` before gh", "source /dev/null && gh pr create --body-file BODY"),
+            ("`. file` in an if", "if true; then . /dev/null; fi; gh pr create --body-file BODY"),
+            ("`X=1 . file`", "X=1 . /dev/null && gh pr create --body-file BODY"),
+            ("a cd with an input redirect", "cd B_DIR </dev/null && gh pr create --body-file BODY"),
+            ("a cd to ~user", "cd ~nobody && gh pr create --body-file BODY"),
+            ("`pushd`", "pushd B_DIR && gh pr create --body-file BODY"),
+            ("a bare `cd`", "cd && gh pr create --body-file BODY"),
+            ("`cd -`", "cd - && gh pr create --body-file BODY"),
+            ("a cd with two arguments", "cd B_DIR x && gh pr create --body-file BODY"),
+            ("a cd to a variable", "cd $NOWHERE && gh pr create --body-file BODY"),
+            ("a negated cd", "! cd B_DIR && gh pr create --body-file BODY"),
+            ("a cd to a missing directory", "cd B_DIR/missing && gh pr create --body-file BODY"),
+            ("a cd joined by ||", "cd B_DIR || gh pr create --body-file BODY"),
+            ("a cd joined by |", "cd B_DIR | gh pr create --body-file BODY"),
+            ("a cd joined by &", "cd B_DIR & gh pr create --body-file BODY"),
+            ("an unbalanced quote before the cd", "echo it's\ncd B_DIR && gh pr create --body-file BODY")):
+        rc, out = run_in(cmd, NEITHER, with_output=True)
+        check(f"guard-claims: {label} is NOT checked, with the notice, never a guessed template (#1516 allowlist)",
+              rc == 0 and NOTICE in out, f"exit {rc}: {out[-140:]}")
+    rc, out = run_in("gh pr create --body-file BODY", NEITHER, with_output=True,
+                     env_extra={"GIT_DIR": "B_DIR/.git"})
+    check("guard-claims: GIT_DIR inherited by the hook is NOT checked, with the notice (#1516 round 5)",
+          rc == 0 and NOTICE in out, f"exit {rc}: {out[-140:]}")
+    rc, out = run_in("GIT_PAGER=cat git status && X=1; gh pr create --body-file BODY", NEITHER, with_output=True)
+    check("guard-claims: other assignments before gh keep the starting repo (control, #1516 round 5)",
+          rc == 2 and "## What changed" in out, f"exit {rc}: {out[-140:]}")
+    # round 6: a GIT_* on an earlier SAFE command is that command's own environment, so gh is judged normally;
+    # GH_HOST inherited is the class too; GIT_EDITOR, which the harness sets, is not.
+    rc, out = run_in("GIT_DIR=B_DIR/.git git status && gh pr create --body-file BODY", NEITHER, with_output=True)
+    check("guard-claims: a GIT_* on an earlier SAFE command does not reach gh (control, #1516 round 6)",
+          rc == 2 and "## What changed" in out, f"exit {rc}: {out[-140:]}")
+    rc, out = run_in("gh pr create --body-file BODY", NEITHER, with_output=True, env_extra={"GH_HOST": "example.com"})
+    check("guard-claims: GH_HOST inherited by the hook is NOT checked, with the notice (#1516 round 6)",
+          rc == 0 and NOTICE in out, f"exit {rc}: {out[-140:]}")
+    # round 7: each of these is that process's own, so gh is judged normally (shown with real gh)
+    for label, cmd in (("an inherited HOME", "gh pr create --body-file BODY"),
+                       ("`git -c url…insteadOf=… status` before gh", "git -c url.b.insteadOf=a status && gh pr create --body-file BODY"),
+                       ("`git --config-env=…` before gh", "V=a git --config-env=url.b.insteadOf=V status && gh pr create --body-file BODY"),
+                       ("`HOME=… git status` before gh", "HOME=B_DIR/h git status && gh pr create --body-file BODY"),
+                       ("a redirect to /dev/null and an fd before gh", "git status >/dev/null 2>&1 && gh pr create --body-file BODY"),
+                       ("`gh pr view` before gh", "gh pr view 1 && gh pr create --body-file BODY")):
+        rc, out = run_in(cmd, NEITHER, with_output=True)
+        check(f"guard-claims: {label} is judged in the starting repo (control, #1516 round 7)",
+              rc == 2 and "## What changed" in out, f"exit {rc}: {out[-140:]}")
+    rc, out = run_in("gh pr create --body-file BODY", NEITHER, with_output=True, env_extra={"GIT_EDITOR": "true"})
+    check("guard-claims: an inherited GIT_EDITOR (the harness sets it) is still judged (control, #1516 round 6)",
+          rc == 2 and "## What changed" in out, f"exit {rc}: {out[-140:]}")
+    rc, out = run_in("cd sub && gh pr create --body-file BODY", NEITHER, with_output=True,
+                     env_extra={"CDPATH": "B_DIR"})
+    check("guard-claims: a relative cd with CDPATH set is NOT checked, with the notice (#1516 allowlist)",
+          rc == 0 and NOTICE in out, f"exit {rc}: {out[-140:]}")
+    # S-a: a RELATIVE body with an unresolved directory cannot be located. The message still says the template
+    # and the change type were NOT checked, and why.
+    rc, out = run_in("if true; then cd B_DIR; fi; gh pr create --body-file body.md", NEITHER, body_in="b", with_output=True)
+    check("guard-claims: an unlocatable relative body still says NOT checked, and why (#1516 S-a)",
+          rc == 0 and NOTICE in out and "template" in out, f"exit {rc}: {out[-140:]}")
     check("guard-claims: an issue comment is not held to the PR template",
           run("gh issue comment 5 --body-file BODY", "Tidy the README.\n", template=TPL) == 0, "exit 2")
     # OUT OF SCOPE, AND THE BODY MUST CARRY A CLAIM. A first draft passed a claim-FREE body here,
@@ -1048,6 +1373,113 @@ def guard_claims_fixtures() -> None:
     # SCOPE: a PR touching no skill is not subject to the rule, whatever its body says.
     check("guard-claims: a PR touching no skill needs no change type",
           run_in_repo(CREATE, "Tidy the wording.\n", "scripts/x.py") == 0, "exit 2")
+    # #1516 review: the change-type check ran `git diff` in the SESSION's repo. A session with a modified
+    # skills/ file blocked `cd <other repo> && gh pr create` for a PR that touches nothing there.
+    def run_skills_cd(cmd: str) -> int:
+        with tempfile.TemporaryDirectory() as td:
+            a, b = Path(td) / "a", Path(td) / "b"
+            for d in (a, b):
+                d.mkdir()
+                _run(["git", "init", "-q", "-b", "main"], cwd=d, capture_output=True)
+                (d / "README.md").write_text("x\n", encoding="utf-8")
+            (a / "skills").mkdir()
+            (a / "skills" / "x.md").write_text("x\n", encoding="utf-8")
+            for d in (a, b):
+                _run(["git", "add", "-A"], cwd=d, capture_output=True)
+                _run(["git", "-c", "user.email=f@e", "-c", "user.name=f", "commit", "-qm", "base"],
+                     cwd=d, capture_output=True)
+            (a / "skills" / "x.md").write_text("changed\n", encoding="utf-8")
+            # STAGED, because another repository is read through its staged diff only (no code from the target,
+            # #1516): an unstaged change would let a hook that read the wrong repository look right.
+            _run(["git", "add", "skills/x.md"], cwd=a, capture_output=True)
+            (b / "body.md").write_text("Tidy the wording.\n", encoding="utf-8")
+            return run_hook("guard-claims.sh", cwd=a, stdin=json.dumps({"tool_input": {
+                "command": cmd.replace("B_DIR", str(b))}}),
+                env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])})[0]
+
+    check("guard-claims: the skills/** change-type check reads the cd target's diff, not the session's (#1516)",
+          run_skills_cd("cd B_DIR && gh pr create --base dev --body-file body.md") == 0, "exit 2")
+    check("guard-claims: ...and without the cd the session's skills/ change is still held to it (control)",
+          run_skills_cd("gh pr create --base dev --body-file B_DIR/body.md") == 2, "exit 0")
+
+    # NO CODE RUNS BEFORE PERMISSION (#1516, push security reviews). The hook reads `git diff` in the directory
+    # the command `cd`s into, and a hook runs BEFORE the person is asked about the command. A repository's own
+    # config can name a program that `git diff` executes: `core.fsmonitor` on any diff, and a `filter.<name>.clean`
+    # on a diff that hashes a changed working-tree file. Disabling one key was not enough (the first fix left the
+    # clean filter running), so the hook reads a repository other than the session's with only the staged diff, which
+    # hashes nothing. The marker file is what the program writes; it must not exist afterwards.
+    def run_exec_cd(cmd: str, vector: str, stage_skills: bool = False) -> tuple[int, bool]:
+        with tempfile.TemporaryDirectory() as td:
+            a, b = Path(td) / "a", Path(td) / "b"
+            marker, script = Path(td) / "PROGRAM_RAN", Path(td) / "program.sh"
+            script.write_text(f"#!/bin/sh\necho ran >> '{marker}'\n" + ("cat\n" if vector == "filter" else ""),
+                              encoding="utf-8")
+            script.chmod(0o755)
+            for d in (a, b):
+                d.mkdir()
+                _run(["git", "init", "-q", "-b", "main"], cwd=d, capture_output=True)
+                (d / "README.md").write_text("x\n", encoding="utf-8")
+            (b / ".gitattributes").write_text("*.md filter=evil\n", encoding="utf-8")
+            (b / "skills").mkdir()
+            (b / "skills" / "x.md").write_text("x\n", encoding="utf-8")
+            for d in (a, b):
+                _run(["git", "add", "-A"], cwd=d, capture_output=True)
+                _run(["git", "-c", "user.email=f@e", "-c", "user.name=f", "commit", "-qm", "base"],
+                     cwd=d, capture_output=True)
+            (b / "README.md").write_text("changed\n", encoding="utf-8")        # a working-tree change to hash
+            if stage_skills:
+                (b / "skills" / "x.md").write_text("changed\n", encoding="utf-8")
+                _run(["git", "add", "skills/x.md"], cwd=b, capture_output=True)
+            (b / "body.md").write_text("Tidy the wording.\n", encoding="utf-8")
+            key = "core.fsmonitor" if vector == "fsmonitor" else "filter.evil.clean"
+            _run(["git", "config", key, str(script)], cwd=b, capture_output=True)
+            rc = run_hook("guard-claims.sh", cwd=a, stdin=json.dumps({"tool_input": {
+                "command": cmd.replace("B_DIR", str(b))}}),
+                env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])})[0]
+            return rc, marker.exists()
+
+    CD_B = "cd B_DIR && gh pr create --base dev --body-file body.md"
+    rc, ran = run_exec_cd(CD_B, "fsmonitor")
+    check("guard-claims: a cd into a repository whose core.fsmonitor names a program does not run it "
+          "(no code before permission, #1516)", not ran, f"exit {rc}: the repository's own program ran in the hook")
+    rc, ran = run_exec_cd(CD_B, "filter")
+    check("guard-claims: a cd into a repository whose filter.<name>.clean names a program does not run it "
+          "(no code before permission, #1516)", not ran, f"exit {rc}: the repository's own program ran in the hook")
+    rc, ran = run_exec_cd(CD_B, "filter", stage_skills=True)
+    check("guard-claims: ...and the cd target's STAGED skills/ change is still read without running anything (control)",
+          rc == 2 and not ran, f"exit {rc}, program ran: {ran}")
+
+    # A LARGE DIFF MUST NOT FAIL OPEN (#1516, push security review; the SIGPIPE class of #1579). `git diff --name-only |
+    # grep -q` under `set -o pipefail` loses the match when the name list outgrows the pipe buffer: `grep -q` leaves at
+    # the first hit, `git` dies of SIGPIPE, the pipeline reports failure and the gate reads "no skills/ change". 2500
+    # staged files with long names are about 170 KiB, well past the 64 KiB buffer.
+    def run_big_skills_diff(cmd: str, big_repo: str) -> int:
+        with tempfile.TemporaryDirectory() as td:
+            a, b = Path(td) / "a", Path(td) / "b"
+            for d in (a, b):
+                d.mkdir()
+                _run(["git", "init", "-q", "-b", "main"], cwd=d, capture_output=True)
+                (d / "README.md").write_text("x\n", encoding="utf-8")
+                _run(["git", "add", "-A"], cwd=d, capture_output=True)
+                _run(["git", "-c", "user.email=f@e", "-c", "user.name=f", "commit", "-qm", "base"],
+                     cwd=d, capture_output=True)
+            big = a if big_repo == "session" else b
+            (big / "skills").mkdir()
+            for i in range(2500):
+                (big / "skills" / f"s{i:04d}-a-fairly-long-file-name-so-the-name-list-outgrows-a-pipe-buffer.md").write_text(
+                    "x\n", encoding="utf-8")
+            _run(["git", "add", "-A"], cwd=big, capture_output=True)
+            (b / "body.md").write_text("Tidy the wording.\n", encoding="utf-8")
+            return run_hook("guard-claims.sh", cwd=a, stdin=json.dumps({"tool_input": {
+                "command": cmd.replace("B_DIR", str(b))}}),
+                env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])})[0]
+
+    check("guard-claims: a large staged skills/ list in the session's repository is still held to the change-type rule "
+          "(no SIGPIPE fail-open, #1516)",
+          run_big_skills_diff("gh pr create --base dev --body-file B_DIR/body.md", "session") == 2, "exit 0")
+    check("guard-claims: a large staged skills/ list in the cd target is still held to the change-type rule "
+          "(no SIGPIPE fail-open, #1516)",
+          run_big_skills_diff("cd B_DIR && gh pr create --base dev --body-file body.md", "target") == 2, "exit 0")
 
     # FAILS OPEN when it cannot read the body. This guard's job is to make the check happen where
     # it can, never to block opening a PR because a path could not be resolved.
@@ -1871,6 +2303,7 @@ def release_gate_effects_fixtures() -> None:
 # different argument (the PR number, the ref a merge or ref write carries, the tag a release resolves to),
 # and a command spelled so that shlex and bash read it differently.
 FAKE_GH2 = """#!/bin/sh
+[ -z "${FAKE_LOG:-}" ] || printf '%s\\n' "$*" >> "$FAKE_LOG"
 ep=""; for a in "$@"; do case "$a" in repos/*) ep="$a"; break ;; esac; done
 case "$1 $2" in
   "pr view")
@@ -1903,6 +2336,120 @@ case "$ep" in
 esac
 exit 1
 """
+
+
+def release_gate_refs_fixtures() -> None:
+    """#1600: a ref taken from the GATED COMMAND'S TEXT must never reach git as an option. The release gate is a
+    PreToolUse hook, so it runs before the permission prompt: `git fetch origin --upload-pack=<program>` RUNS the
+    program when origin is a local path or ssh. Each site that hands such a value to git or gh is driven with a
+    marker file, over a local-path origin: no marker may appear, and the command is denied."""
+    if not QA_HOOK.is_file():
+        check("release-gate (#1600): release-gate.sh present beside rails-flow", False, str(QA_HOOK))
+        return
+    g = ["git", "-c", "user.email=t@t", "-c", "user.name=t"]
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td) / "repo"
+        _git_repo(repo)
+        sh = lambda *a, **kw: _run([*g, *a], cwd=repo, check=True, capture_output=True, text=True, **kw).stdout.strip()
+        old = {**os.environ, "GIT_COMMITTER_DATE": "2026-09-01T00:00:00+00:00", "GIT_AUTHOR_DATE": "2026-09-01T00:00:00+00:00"}
+        bare = Path(td) / "origin.git"
+        _run(["git", "init", "-q", "--bare", str(bare)], check=True, capture_output=True)
+        # origin names o/r, and is a LOCAL PATH underneath: the transport that runs --upload-pack.
+        sh("remote", "add", "origin", "https://github.com/o/r.git")
+        sh("config", f"url.{bare}.insteadOf", "https://github.com/o/r.git")
+        (repo / "app.rb").write_text("v1\n", encoding="utf-8")
+        sh("add", "app.rb"); sh("commit", "-q", "-m", "app")
+        tested = sh("rev-parse", "HEAD")
+        (repo / "qa").mkdir()
+        (repo / "qa" / "CERTIFICATION").write_text(json.dumps(
+            {"sha": tested, "date": "2026-09-26", "verdict": "PASS", "report": "qa/reports/r.md"}), encoding="utf-8")
+        sh("add", "qa/CERTIFICATION"); sh("commit", "-q", "-m", "stamp", env=old)
+        stamped = sh("rev-parse", "HEAD")
+        sh("branch", "-f", "dev", stamped)
+        sh("branch", "fix/x-y", stamped)
+        sh("checkout", "-q", "-b", "feature/work")
+        sh("push", "-q", "origin", "dev:dev")
+        (Path(td) / "bin").mkdir()
+        (Path(td) / "bin" / "gh").write_text(FAKE_GH2, encoding="utf-8")
+        (Path(td) / "bin" / "gh").chmod(0o755)
+        marker = Path(td) / "MARKER"
+        # --upload-pack=<program>: git runs the program through the shell with the remote's path. No space in the value,
+        # so the classifier reads it as one token and the hook reaches the git call (a payload with spaces is refused earlier).
+        prog = Path(td) / "prog.sh"
+        prog.write_text(f"#!/bin/sh\ntouch {marker}\n", encoding="utf-8")
+        prog.chmod(0o755)
+        evil = f"--upload-pack={prog}"
+
+        def run(cmd: str, **extra) -> tuple[int, str]:
+            marker.unlink(missing_ok=True)
+            env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env.pop("GH_REPO", None)
+            env["CLAUDE_PLUGIN_ROOT"] = str(QA_HOOK.parents[2])
+            env["PATH"] = str(Path(td) / "bin") + os.pathsep + env["PATH"]
+            env.update(extra)
+            done = _run(["bash", str(QA_HOOK)], cwd=repo, input=json.dumps({"tool_input": {"command": cmd}}),
+                        env=env, capture_output=True, text=True, timeout=60)
+            return done.returncode, done.stderr
+
+        # The proof that the marker is observable: the same program, handed to git the way the hook would have.
+        marker.unlink(missing_ok=True)
+        _run(["git", "fetch", "-q", "origin", evil], cwd=repo, capture_output=True)
+        check("release-gate (#1600): the probe works -- an unguarded `git fetch origin <--upload-pack=...>` DOES run the program",
+              marker.exists(), "no marker: this fixture could not tell a fix from a hole")
+        # Every site where a ref from the command's own text reaches git or gh.
+        for label, cmd, extra in (
+            ("a REST merge's `head`", f"gh api repos/o/r/merges -f base=main -f head='{evil}'", {}),
+            ("a ref write's `sha`", f"gh api -X PATCH repos/o/r/git/refs/heads/main -f sha='{evil}'", {}),
+            ("a new ref's `sha`", f"gh api repos/o/r/git/refs -f ref=refs/heads/main -f sha='{evil}'", {}),
+            ("a release's --target", f"gh release create v9 --target '{evil}'", {}),
+            ("a commit the PR view reports", "gh pr merge 7", {"FAKE_PRVIEW": f"main {evil}"}),
+        ):
+            rc, err = run(cmd, **extra)
+            check(f"release-gate (#1600): {label} that starts with `--` runs no program, and is denied",
+                  not marker.exists() and rc == 2, f"marker={marker.exists()} rc={rc} {err[:200]!r}")
+        # The same, with the value an ordinary option rather than a program: gh must never read it as a selector.
+        log = Path(td) / "gh.log"
+        for label, cmd in (("a PR selector", "gh pr merge --web"),
+                           ("a PR selector after the end of options", "gh pr merge --admin -- --web")):
+            log.unlink(missing_ok=True)
+            rc, err = run(cmd, FAKE_PRVIEW=f"main {stamped}", FAKE_LOG=str(log))
+            asked = log.read_text().splitlines() if log.exists() else []
+            check(f"release-gate (#1600): {label} that starts with  is never handed to gh, and the command is denied",
+                  not any("--web" in line for line in asked) and rc == 2, f"rc={rc} gh calls={asked} {err[:160]!r}")
+        # A stamp is data from the repository being promoted: its `sha` is a commit id, never an option.
+        bad = Path(td) / "badstamp"
+        _git_repo(bad)
+        bsh = lambda *a, **kw: _run([*g, *a], cwd=bad, check=True, capture_output=True, text=True, **kw).stdout.strip()
+        _run(["git", "checkout", "-q", "-B", "main"], cwd=bad, check=True, capture_output=True)
+        (bad / "qa").mkdir()
+        (bad / "qa" / "CERTIFICATION").write_text(json.dumps(
+            {"sha": evil, "date": "2026-09-26", "verdict": "PASS", "report": "r.md"}), encoding="utf-8")
+        bsh("add", "qa"); bsh("commit", "-q", "-m", "stamp")
+        bsh("branch", "dev")
+        marker.unlink(missing_ok=True)
+        env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None)
+        env["CLAUDE_PLUGIN_ROOT"] = str(QA_HOOK.parents[2])
+        done = _run(["bash", str(QA_HOOK)], cwd=bad, input=json.dumps({"tool_input": {"command": "git push origin main"}}),
+                    env=env, capture_output=True, text=True, timeout=60)
+        check("release-gate (#1600): a stamp whose `sha` is an option is denied as not a commit id",
+              done.returncode == 2 and "not a commit id" in done.stderr and not marker.exists(), f"rc={done.returncode} {done.stderr[:240]!r}")
+        # ANOTHER repository's stamp is the same kind of data: its `sha` is a commit id, never a path of the API.
+        evil_stamp = Path(td) / "evil-stamp.json"
+        evil_stamp.write_text(json.dumps({"sha": "../../x?y", "date": "2026-10-01", "verdict": "PASS", "report": "r.md"}), encoding="utf-8")
+        rc, err = run(_pin("gh pr merge 7 -R other/fork", stamped), FAKE_PRVIEW=f"main {stamped}", FAKE_PRREPO="other/fork",
+                      FAKE_STAMP_REF=stamped, FAKE_STAMP_FILE=str(evil_stamp), FAKE_COMPARE="ahead")
+        check("release-gate (#1600): ANOTHER repository's stamp whose `sha` is a path is denied as not a commit id",
+              rc == 2 and "not a commit id" in err, f"rc={rc} {err[:240]!r}")
+        # A ref with a `:` is a REFSPEC: `git fetch origin dev:refs/heads/injected` writes a local branch, before the prompt.
+        rc, err = run("gh api repos/o/r/merges -f base=main -f head=dev:refs/heads/injected")
+        made = _run(["git", "rev-parse", "--verify", "-q", "refs/heads/injected"], cwd=repo, capture_output=True).returncode == 0
+        check("release-gate (#1600): a ref with a `:` (a refspec) is never fetched, so no local ref is written, and it is denied",
+              not made and rc == 2, f"ref written={made} rc={rc} {err[:200]!r}")
+        # CONTROLS: a dash INSIDE a name is a name, and a certified branch still promotes.
+        rc, err = run("gh api repos/o/r/merges -f base=main -f head=fix/x-y")
+        check("release-gate (#1600): CONTROL: a branch whose name has a dash inside is still read and judged (certified: passes)",
+              rc == 0, f"rc={rc} {err[:240]!r}")
+        rc, err = run("gh api repos/o/r/merges -f base=main -f head=dev")
+        check("release-gate (#1600): CONTROL: the certified dev still promotes", rc == 0, f"rc={rc} {err[:240]!r}")
 
 
 def release_gate_repos_fixtures() -> None:
@@ -2268,6 +2815,7 @@ GROUPS = {
     "self_consistency": self_consistency_fixtures, "guard_bash": guard_bash_fixtures,
     "guard_claims": guard_claims_fixtures, "release_gate": release_gate_fixtures,
     "release_gate_effects": release_gate_effects_fixtures, "release_gate_repos": release_gate_repos_fixtures,
+    "release_gate_refs": release_gate_refs_fixtures,
     "ci_verdict_hint": ci_verdict_hint_fixtures, "timeout": timeout_fixtures,
 }
 
@@ -2291,7 +2839,47 @@ def run_groups(groups: list[str] | None, table: dict) -> None:
         table[name]()
 
 
-def selftest(groups: list[str] | None = None) -> int:
+def groups_should_run(fail_fast: bool, failures: list[str], nested: bool = False) -> bool:
+    """Whether `selftest` runs the real hook groups after its meta-checks (#1599).
+
+    Not under `--fail-fast` once a meta-check has failed: the groups have nothing to add and cost minutes. A mutant of
+    the group machinery (`--only` ignored) used to run every group, over 300 s here, after its meta-check had already
+    caught it, and that read as a timeout. And never in a NESTED selftest, which exists only to prove that a bad
+    `--only` or `--match` is refused: were the refusal broken, the nested call fell through and ran the whole suite."""
+    return not nested and not (fail_fast and bool(failures))
+
+
+def run_matching(groups: list[str] | None, table: dict, match: str) -> int:
+    """`--match`: run only the checks whose label contains `match` (#1599); how many ran.
+
+    Two passes per group (see the note at `_MATCH_MODE`). Raises `MatchSequenceError` when the passes
+    disagree or a group cannot be surveyed under stubs, so a selection is never silently wrong."""
+    global _MATCH_MODE, _SURVEYED, _WANTED, _INDEX, _SKIP
+    ran = 0
+    try:
+        for name in (groups or list(table)):
+            _MATCH_MODE, _SURVEYED = "survey", []
+            try:
+                table[name]()
+            except Exception as exc:        # noqa: BLE001 -- any crash under stubs means "cannot survey"
+                raise MatchSequenceError(f"group {name!r} cannot be surveyed under stubs: {exc!r}") from exc
+            _WANTED = {i for i, label in enumerate(_SURVEYED) if match.lower() in label.lower()}
+            if not _WANTED:
+                continue
+            _MATCH_MODE, _INDEX, _SKIP = "run", 0, 0 not in _WANTED
+            table[name]()
+            if _INDEX != len(_SURVEYED):
+                raise MatchSequenceError(f"group {name!r} made {_INDEX} checks in the run pass and "
+                                         f"{len(_SURVEYED)} in the survey")
+            ran += len(_WANTED)
+    finally:
+        _MATCH_MODE, _SKIP = None, False
+    return ran
+
+
+def meta_checks() -> None:
+    """The checks about `--only` and `--match` themselves. Cheap, but not free (about 2.5 s), so a `--match` run
+    skips them: the baseline run of the same file has already shown them pass (#1599)."""
     # --only REFUSES what it cannot run (#1497), checked on every run whatever the selection: a
     # silently empty selection is how a mutant would "survive" with no fixture ever consulted.
     for bad in ("nope", "", ",", "release_gate,nope", "release_gate,", " release_gate", "timeout,timeout"):
@@ -2309,6 +2897,56 @@ def selftest(groups: list[str] | None = None) -> int:
     ran.clear()
     run_groups(None, fakes)
     check("a bare run (no --only) runs every group", ran == list(GROUPS), repr(ran))
+    # `--match` (#1599), proved on stand-in groups: a few process starts, no hook fixture.
+    global CHECKS
+    with tempfile.TemporaryDirectory() as td:
+        spawned = Path(td) / "spawned"
+
+        def mark(name: str) -> None:
+            _run(["sh", "-c", f"echo {name} >> '{spawned}'"])
+
+        def fake_group() -> None:
+            mark("A"); check("fixture A passes", True)
+            mark("B"); check("fixture B passes", True)
+            mark("C"); check("fixture C fails on purpose", False, "on purpose")
+
+        def steered_group() -> None:
+            answered = _run(["sh", "-c", "echo x"], capture_output=True, text=True).stdout
+            if answered:                      # '' in the survey, 'x' in a real run: the passes would disagree...
+                check("answered by the subprocess", True)
+            else:                             # ...on WHICH check comes first, with the same number of checks in both
+                check("silent subprocess", True)
+            check("last", True)
+
+        saved_checks, saved_failures = CHECKS, list(FAILURES)
+        got = run_matching(None, {"fake": fake_group}, "fixture B")
+        only_b = spawned.read_text().split() if spawned.exists() else []
+        counted, failed = CHECKS - saved_checks, len(FAILURES) - len(saved_failures)
+        check("--match runs only the fixture whose label matches, and none of the others' work",
+              got == 1 and only_b == ["B"] and counted == 1 and failed == 0, f"ran {got}, spawned {only_b}, counted {counted}")
+        spawned.unlink(missing_ok=True)
+        before_c, checks_before_c = len(FAILURES), CHECKS
+        run_matching(None, {"fake": fake_group}, "fails on purpose")
+        failed_c = len(FAILURES) - before_c
+        del FAILURES[before_c:]                 # the deliberate failure was the proof, not a finding; the first check's own verdict stays
+        CHECKS = checks_before_c
+        check("--match still FAILS when the check it selected fails", failed_c == 1, f"{failed_c} failure(s) recorded")
+        check("--match that selects nothing runs nothing and says so (0), never an empty pass",
+              run_matching(None, {"fake": fake_group}, "no label has this") == 0)
+        try:
+            run_matching(None, {"steered": steered_group}, "silent subprocess")
+            raised = False
+        except MatchSequenceError:
+            raised = True
+        check("--match raises when a fixture's result steers which checks follow, never guesses",
+              raised and _MATCH_MODE is None and not _SKIP, f"raised={raised}, mode={_MATCH_MODE}, skip={_SKIP}")
+    check("a nested selftest, which only proves a refusal, never runs the real groups",
+          groups_should_run(False, [], nested=True) is False)
+    check("--fail-fast skips the real groups once a meta-check has failed",
+          groups_should_run(True, ["a meta-check failed"]) is False)
+    check("CONTROL: --fail-fast runs the groups when nothing has failed", groups_should_run(True, []) is True)
+    check("CONTROL: with no --fail-fast the groups run even after a failure",
+          groups_should_run(False, ["a meta-check failed"]) is True)
     # The REAL exit code, not only the parser's verdict: main() must return 2 for a bad selection.
     # Only at the outermost level: were the refusal broken, main() would call selftest() again,
     # and this check would recurse instead of failing by name.
@@ -2325,7 +2963,37 @@ def selftest(groups: list[str] | None = None) -> int:
         finally:
             _NESTED = False
         check("main() exits 2 for --only nope", rc == 2, f"exit {rc}")
-    run_groups(groups, GROUPS)
+        # `--match` the same way (#1599): a selection that names no check, or a blank one, is refused, not passed.
+        _NESTED = True
+        try:
+            with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+                try:
+                    rc_none = main(["--only", "guard_lane", "--match", "no check has this label fragment"])
+                    rc_blank = main(["--only", "guard_lane", "--match", "   "])
+                except Exception as exc:          # noqa: BLE001 -- a crash fails THIS check, by name
+                    rc_none = rc_blank = f"raised {exc!r}"
+        finally:
+            _NESTED = False
+        check("main() exits 2 for --match that selects nothing", rc_none == 2, f"exit {rc_none}")
+        check("main() exits 2 for a blank --match", rc_blank == 2, f"exit {rc_blank}")
+
+
+def selftest(groups: list[str] | None = None, match: str | None = None, fail_fast: bool = False) -> int:
+    if match is None:
+        meta_checks()
+    if match is None:
+        if groups_should_run(fail_fast, FAILURES, nested=_NESTED):
+            run_groups(groups, GROUPS)
+    else:
+        try:
+            ran_matching = run_matching(groups, GROUPS, match)
+        except MatchSequenceError as exc:
+            print(f"check_hook_gates: --match {match!r} cannot be used here: {exc}", file=sys.stderr)
+            return 2
+        if ran_matching == 0:
+            print(f"check_hook_gates: --match {match!r} selected no check, which would be an empty pass",
+                  file=sys.stderr)
+            return 2
     if FAILURES:
         print(f"check_hook_gates selftest: {len(FAILURES)} of {CHECKS} checks FAILED", file=sys.stderr)
         for f in FAILURES:
@@ -2340,7 +3008,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--selftest", action="store_true", help="drive every hook under its stub environments")
     ap.add_argument("--only", metavar="GROUP[,GROUP]",
                     help=f"run only these fixture groups: {', '.join(GROUPS)} (#1497)")
+    ap.add_argument("--match", metavar="SUBSTR",
+                    help="run only the checks whose label contains SUBSTR, case-insensitively (#1599)")
+    ap.add_argument("--fail-fast", action="store_true",
+                    help="skip the real hook groups when the suite's own meta-checks have already failed (#1599)")
     args = ap.parse_args(argv)
+    if args.match is not None and not args.match.strip():
+        print("check_hook_gates: --match needs a non-empty label fragment", file=sys.stderr)
+        return 2
     groups = None
     if args.only is not None:
         groups = parse_only(args.only)
@@ -2351,7 +3026,7 @@ def main(argv: list[str] | None = None) -> int:
     # `--selftest` is accepted for symmetry with every other check here, and bare invocation does
     # the same thing: the mutation harness runs a separate selftest file with no arguments, and a
     # script that printed usage there would be INERT -- every mutation "caught" by an exit 2.
-    return selftest(groups)
+    return selftest(groups, args.match, args.fail_fast)
 
 
 if __name__ == "__main__":

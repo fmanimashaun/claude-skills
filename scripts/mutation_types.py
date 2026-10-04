@@ -28,6 +28,8 @@ class Mutation:
     # written as finding text and reported spurious "wrong fixture" results.) Empty string means
     # any failure counts, for mutations that break the module hard enough to raise.
     expects: str
+    # False runs this mutant against the guard's whole selftest even when the guard sets `narrow_with` (#1599).
+    narrow: bool = True
 
 
 @dataclass(frozen=True)
@@ -46,6 +48,11 @@ class Guard:
     # Arguments for the selftest, passed to the baseline AND every mutant (#1497): a guard over a
     # multi-hook harness runs only the fixture groups that drive its own subject.
     selftest_args: tuple[str, ...] = ()
+    # The selftest flag that selects ONE fixture by a fragment of its label, such as `--match` (#1599). When set, every
+    # mutant runs `<flag> <its expects>` instead of the whole selftest, after a CONTROL run of the UNMUTATED code with the
+    # same flag that must pass: a fixture that cannot pass alone would otherwise "catch" every mutant by failing for
+    # that reason. The baseline still runs the whole selftest, once. Empty means no narrowing.
+    narrow_with: str = ""
     # The directory every path above is relative to, as a repo-relative string.
     #
     # `.` for a guard under `scripts/mutations/`, whose subject is a maintainer-only script or
