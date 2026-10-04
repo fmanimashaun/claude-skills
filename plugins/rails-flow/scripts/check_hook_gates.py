@@ -1892,10 +1892,11 @@ case "$1 $2" in
 esac
 case "$ep" in
   repos/*/contents/*)
+    [ -z "${FAKE_SLEEP:-}" ] || sleep "$FAKE_SLEEP"
     ref="${ep##*ref=}"
     [ -n "${FAKE_STAMP_REF:-}" ] && [ "$ref" = "$FAKE_STAMP_REF" ] && [ -f "${FAKE_STAMP_FILE:-/nonexistent}" ] && { cat "$FAKE_STAMP_FILE"; exit 0; }
     exit 1 ;;
-  repos/*/compare/*) [ -n "${FAKE_COMPARE:-}" ] || exit 1; printf '%s\\n' "$FAKE_COMPARE"; exit 0 ;;
+  repos/*/compare/*) [ -z "${FAKE_SLEEP:-}" ] || sleep "$FAKE_SLEEP"; [ -n "${FAKE_COMPARE:-}" ] || exit 1; printf '%s\\n' "$FAKE_COMPARE"; exit 0 ;;
   repos/*/commits/*) [ -n "${FAKE_COMMIT:-}" ] || exit 1; printf '%s' "$FAKE_COMMIT"; exit 0 ;;
   repos/*/git/matching-refs/*) printf '%s' "${FAKE_TAGS:-}"; exit 0 ;;
   repos/*/releases/*) printf '%s' "${FAKE_RELID:-}"; exit 0 ;;
@@ -2195,11 +2196,11 @@ def release_gate_repos_fixtures() -> None:
               "authz": "qa/manual-tests/authz-v1/sweep.csv"}
 
         def foreign(sha: str, stamp: dict, delta: list, cmd: str = "gh pr merge 7 -R other/fork",
-                    repo_name: str = "other/fork", status: str = "ahead") -> tuple:
+                    repo_name: str = "other/fork", status: str = "ahead", **more) -> tuple:
             f = Path(td) / f"stamp-{sha[:10]}.json"
             f.write_text(json.dumps(stamp), encoding="utf-8")
             return run(_pin(cmd, sha), FAKE_PRVIEW=f"main {sha}", FAKE_PRREPO=repo_name, FAKE_COMMIT=sha, FAKE_STAMP_REF=sha,
-                       FAKE_STAMP_FILE=str(f), FAKE_COMPARE=status + "\n" + "\n".join(["qa/CERTIFICATION", *delta]))
+                       FAKE_STAMP_FILE=str(f), FAKE_COMPARE=status + "\n" + "\n".join(["qa/CERTIFICATION", *delta]), **more)
 
         sha_bare, st = scenario("bare", base_stamp, az_good, ())
         rc, err = foreign(sha_bare, st, [])
@@ -2235,6 +2236,32 @@ def release_gate_repos_fixtures() -> None:
             rc, err = foreign(sha_good, s2, ev_files, status=status)
             check(f"release-gate (#1591): ANOTHER repository's certified commit that is {status} of the judged one is denied (not an ancestor)",
                   rc == 2 and "not an ancestor" in err, f"rc={rc} {err[:300]!r}")
+        # THE HOOK'S OWN TIME. A PreToolUse hook that outlives its timeout (15 s) does not deny: the command goes through.
+        # A fetch that stalls past that must be stopped by the helper's budget, and a hook that has spent its time on the
+        # API must not start one. A `git` that sleeps on `fetch` (20 s, longer than the hook may take) stands in for a slow remote.
+        gitbin = Path(td) / "gitbin"
+        gitbin.mkdir()
+        real_git = shutil.which("git")
+        (gitbin / "git").write_text(f'#!/bin/sh\ncase " $* " in *" fetch "*) sleep 20 ;; esac\nexec {real_git} "$@"\n', encoding="utf-8")
+        (gitbin / "git").chmod(0o755)
+        started = time.monotonic()
+        rc, err = foreign(sha_good, s2, ev_files, PATH=f"{gitbin}{os.pathsep}{Path(td) / 'bin'}{os.pathsep}{os.environ['PATH']}")
+        took = time.monotonic() - started
+        check("release-gate (#1591): a fetch that stalls past the hook's own 15 s is stopped by the budget and DENIED, inside the timeout",
+              rc == 2 and "time budget" in err and took < 15, f"rc={rc} took={took:.1f}s {err[:240]!r}")
+        # A `gh api` that stalls is cut short by `bounded` (4 s) and read as a failure: denied, well inside the 15 s.
+        started = time.monotonic()
+        rc, err = foreign(sha_good, s2, ev_files, FAKE_SLEEP="30")
+        took = time.monotonic() - started
+        check("release-gate (#1591): a gh that stalls is cut short and the command DENIED, inside the hook's timeout",
+              rc == 2 and took < 15, f"rc={rc} took={took:.1f}s {err[:240]!r}")
+        # Two foreign ships in one command share ONE deadline: each API call takes 3 s, so the second ship starts with
+        # no time left to judge the evidence and must deny (the first one, alone, is permitted).
+        two = (f"gh pr merge 7 -R other/fork --match-head-commit {sha_good}; "
+               f"gh pr merge 8 -R other/fork --match-head-commit {sha_good}")
+        rc, err = foreign(sha_good, s2, ev_files, cmd=two, FAKE_SLEEP="3")
+        check("release-gate (#1591): a hook that has spent its time on earlier API calls does not start the evidence judge, and DENIES",
+              rc == 2 and "no time left" in err, f"rc={rc} {err[:240]!r}")
         rc, err = foreign(sha_good, s2, ev_files, cmd="gh pr merge 7 -R gone/repo", repo_name="gone/repo")
         check("release-gate (#1591): a repository whose objects cannot be fetched is denied, naming the layer and the repository",
               rc == 2 and "#1428" in err and "gone/repo" in err, f"rc={rc} {err[:300]!r}")

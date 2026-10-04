@@ -93,15 +93,15 @@ GUARD = Guard(
         ),
         Mutation(
             "any change after another repository's stamp is accepted",
-            '      if [ -n "$files" ]; then',
-            '      if false; then',
+            '  if [ -n "$files" ]; then',
+            '  if false; then',
             "a code change riding with that evidence is denied",
         ),
         # ---- the release-only layers of another repository (#1591) --------------------------------------------
         Mutation(
             "another repository's release-only layers are not enforced, so a HOLE still promotes",
-            '--repo "$repo" --sha "$sha" 2>"$evtmp")"; then',
-            '--repo "$repo" --sha "$sha" 2>"$evtmp")" || true; then',
+            '--repo "$repo" --sha "$sha" --budget "$budget" 2>"$evtmp")"; then',
+            '--repo "$repo" --sha "$sha" --budget "$budget" 2>"$evtmp")" || true; then',
             "committed HOLE in the sweep is denied",
         ),
         Mutation(
@@ -109,6 +109,31 @@ GUARD = Guard(
             "sed 1d | extra_files \"$evidence\" | head -3",
             "sed 1d | grep -vx 'qa/CERTIFICATION' | head -3",
             "whose commit carries its passing evidence, is permitted",
+        ),
+        # ---- the hook's own time (#1591): a hook that outlives its 15 s timeout does not deny -------------------------
+        Mutation(
+            "the evidence judge is given 600 s, so a stalled fetch outlives the hook's timeout and the command goes through",
+            '--sha "$sha" --budget "$budget" 2>"$evtmp")"; then',
+            '--sha "$sha" --budget 600 2>"$evtmp")"; then',
+            "a fetch that stalls past the hook's own 15 s",
+        ),
+        Mutation(
+            "the compare call is not bounded, so a stalled gh outlives the hook's timeout and the command goes through",
+            'cmp="$(bounded 4 gh api "repos/${repo}/compare/',
+            'cmp="$(gh api "repos/${repo}/compare/',
+            "a gh that stalls is cut short",
+        ),
+        Mutation(
+            "the stamp read is not bounded either",
+            "if ! bounded 4 gh api -H 'Accept: application/vnd.github.raw+json'",
+            "if ! gh api -H 'Accept: application/vnd.github.raw+json'",
+            "a gh that stalls is cut short",
+        ),
+        Mutation(
+            "a hook with no time left still starts the evidence judge",
+            '  if [ "$budget" -lt 3 ]; then',
+            '  if false; then',
+            "a hook that has spent its time on the API",
         ),
     ),
 )

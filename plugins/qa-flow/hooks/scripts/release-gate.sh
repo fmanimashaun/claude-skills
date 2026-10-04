@@ -521,6 +521,21 @@ judge() {
   return 0
 }
 
+# bounded <seconds> <command...>: run a command that talks to the network and stop it when the time is up (exit 124).
+# A PreToolUse hook that outlives its timeout (15 s) does not deny, it lets the command through, so a call that can
+# stall (`gh api`) must be cut short here and read as a failure, which every caller turns into a denial (#1591).
+bounded() {
+  python3 -c 'import subprocess, sys
+try:
+    done = subprocess.run(sys.argv[2:], capture_output=True, timeout=float(sys.argv[1]), stdin=subprocess.DEVNULL)
+except subprocess.TimeoutExpired:
+    sys.exit(124)
+except OSError:
+    sys.exit(127)
+sys.stdout.buffer.write(done.stdout)
+sys.stderr.buffer.write(done.stderr)
+sys.exit(done.returncode)' "$@"
+}
 # judge_remote <sha> <owner/repo> <what>: the stamp of a repository this checkout is NOT, read through the
 # API at that sha (#1569). It needs the stamp at the sha to be PASS and to certify it exactly, or to sit
 # on top of the tested sha with nothing else changed but the stamp and the evidence it names. The release-only
@@ -531,7 +546,7 @@ judge() {
 # than 8), and a command that has no time left is denied. Several ships in one command share that one deadline.
 judge_remote() {
   local sha="$1" repo="$2" what="$3" verdict csha why cmp status files evidence budget
-  if ! gh api -H 'Accept: application/vnd.github.raw+json' "repos/${repo}/contents/qa/CERTIFICATION?ref=${sha}" >"$stamp_tmp" 2>/dev/null; then
+  if ! bounded 4 gh api -H 'Accept: application/vnd.github.raw+json' "repos/${repo}/contents/qa/CERTIFICATION?ref=${sha}" >"$stamp_tmp" 2>/dev/null; then
     JWHY="this command acts on ${repo}, not on this checkout's repository, and its qa/CERTIFICATION could not be read at ${what} (${sha:0:12}) through the GitHub API. Run it from a checkout of ${repo} that holds a PASS stamp, or set QA_ALLOW_MAIN=1."
     return 1
   fi
@@ -549,7 +564,7 @@ judge_remote() {
   case "$sha" in
     "$csha"*) : ;;
     *)
-      if ! cmp="$(gh api "repos/${repo}/compare/${csha}...${sha}" --jq '.status, (.files[].filename)' 2>/dev/null)"; then
+      if ! cmp="$(bounded 4 gh api "repos/${repo}/compare/${csha}...${sha}" --jq '.status, (.files[].filename)' 2>/dev/null)"; then
         JWHY="${repo}: certification is for sha ${csha:0:12}, and ${what} (${sha:0:12}) could not be compared with it through the GitHub API. Re-certify."; return 1
       fi
       status="$(printf '%s\n' "$cmp" | head -1)"
