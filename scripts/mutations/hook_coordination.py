@@ -170,8 +170,8 @@ GUARD = Guard(
         ),
         Mutation(
             'a session that holds a lane is still told to check in',
-            '    if lanes_for(record, session_id):\n        return ""\n    holder',
-            '    holder',
+            '    if lanes_for(record, session_id):\n        return ""\n',
+            '',
             'this session holds an open lane: silent',
         ),
         Mutation(
@@ -248,20 +248,20 @@ GUARD = Guard(
         ),
         Mutation(
             'control characters are not stripped from a field',
-            '    return _CONTROL.sub(" ", str(value if value is not None else "")).strip()[:FIELD_CAPS[kind]]',
+            '    return _scrub(str(value if value is not None else "")).strip()[:FIELD_CAPS[kind]]',
             '    return str(value if value is not None else "").strip()[:FIELD_CAPS[kind]]',
             'control characters are stripped from a claimed name',
         ),
         Mutation(
             'a field is not cut to its cap',
-            '    return _CONTROL.sub(" ", str(value if value is not None else "")).strip()[:FIELD_CAPS[kind]]',
-            '    return _CONTROL.sub(" ", str(value if value is not None else "")).strip()',
+            '    return _scrub(str(value if value is not None else "")).strip()[:FIELD_CAPS[kind]]',
+            '    return _scrub(str(value if value is not None else "")).strip()',
             'field is cut to its cap of',
         ),
         Mutation(
             'a field is cut one short of its cap',
-            '    return _CONTROL.sub(" ", str(value if value is not None else "")).strip()[:FIELD_CAPS[kind]]',
-            '    return _CONTROL.sub(" ", str(value if value is not None else "")).strip()[:FIELD_CAPS[kind] - 1]',
+            '    return _scrub(str(value if value is not None else "")).strip()[:FIELD_CAPS[kind]]',
+            '    return _scrub(str(value if value is not None else "")).strip()[:FIELD_CAPS[kind] - 1]',
             'exactly at its cap is kept whole',
         ),
         Mutation(
@@ -293,6 +293,54 @@ GUARD = Guard(
             '    title = clean(title, "title")\n    if not title:',
             '    title = str(title).strip()\n    if not title:',
             'an ask whose title is only control characters is refused',
+        ),
+        Mutation(
+            'a session id may be any text, so a newline or a look-alike reaches the equality check',
+            '_TOKEN = re.compile(r"[A-Za-z0-9._:-]{1,100}\\Z")',
+            '_TOKEN = re.compile(r".*\\Z", re.S)',
+            '--session-id with a newline is refused at the CLI',
+        ),
+        Mutation(
+            'the pointer trusts any session id from the payload',
+            '            sid = sid if _TOKEN.match(sid) else ""         # a session id that is not a plain token is no session: silence\n',
+            '',
+            'the pointer treats a session id that is not a plain token as no session',
+        ),
+        Mutation(
+            'a path may hold control and invisible characters',
+            '    if not value or any(unicodedata.category(ch) in ("Cc", "Cf", "Zl", "Zp", "Co", "Cs") for ch in value):',
+            '    if not value:',
+            '--path with a newline is refused by assign',
+        ),
+        Mutation(
+            'invisible format characters (Cf) are no longer removed',
+            '        if cat in ("Cf", "Co", "Cs") and ch not in _KEEP:',
+            '        if cat in ("Co", "Cs") and ch not in _KEEP:',
+            'Cf code points except ZWNJ and ZWJ is removed',
+        ),
+        Mutation(
+            'ZWJ and ZWNJ are stripped too, breaking Persian text and emoji sequences',
+            '        if cat in ("Cf", "Co", "Cs") and ch not in _KEEP:',
+            '        if cat in ("Cf", "Co", "Cs") and True:',
+            'ZWNJ and ZWJ are KEPT',
+        ),
+        Mutation(
+            'each control character in a run becomes its own space',
+            '            if not after_control:',
+            '            if True:',
+            'controls around invisible characters still make ONE space',
+        ),
+        Mutation(
+            "the pointer prints the coordinator's name as bare text",
+            '    who = json.dumps(str(coord.get("name") or ""))',
+            '    who = str(coord.get("name") or "")',
+            "the coordinator's name is a LABELLED, JSON-QUOTED value",
+        ),
+        Mutation(
+            'the pointer prints the worktree path as bare text',
+            'worktree_path={json.dumps(worktree)}',
+            'worktree_path={worktree}',
+            'the worktree path is labelled and quoted',
         ),
     ),
 )
