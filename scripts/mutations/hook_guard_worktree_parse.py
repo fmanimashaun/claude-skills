@@ -9,6 +9,9 @@ GUARD = Guard(
     subject="plugins/rails-flow/hooks/scripts/guard-worktree.sh",
     selftest="plugins/rails-flow/scripts/check_hook_gates.py",
     selftest_args=("--only", "guard_worktree_parse"),
+    # Each mutant runs only the fixture its `expects` names (#1599); the ones marked `narrow=False` depend on state an
+    # earlier fixture builds, cannot run alone, and run the whole sub-group (#1581, surveyed one by one).
+    narrow_with="--match",
     needs=(
            'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py',  # session-start.sh runs both (#1581: the harness drives it)
            "plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362

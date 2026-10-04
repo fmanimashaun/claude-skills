@@ -9,6 +9,9 @@ GUARD = Guard(
     subject="plugins/rails-flow/hooks/scripts/lib/worktree_guard.py",
     selftest="plugins/rails-flow/scripts/check_hook_gates.py",
     selftest_args=("--only", "guard_worktree_failopen"),
+    # Each mutant runs only the fixture its `expects` names (#1599); the ones marked `narrow=False` depend on state an
+    # earlier fixture builds, cannot run alone, and run the whole sub-group (#1581, surveyed one by one).
+    narrow_with="--match",
     needs=(
            'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py',  # session-start.sh runs both (#1581: the harness drives it)
            "plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362
@@ -41,6 +44,7 @@ GUARD = Guard(
             '    if existing is None:',
             '    if False:',
             'could not list the worktrees',
+            narrow=False,
         ),
         Mutation(
             'git is given a fixed long timeout instead of what is left of the budget',
@@ -53,6 +57,7 @@ GUARD = Guard(
             '        if rp is None:\n            return deny(',
             '        if False:\n            return deny(',
             'could not locate the coordination record',
+            narrow=False,
         ),
     ),
 )

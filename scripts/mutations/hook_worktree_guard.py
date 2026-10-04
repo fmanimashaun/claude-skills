@@ -9,6 +9,9 @@ GUARD = Guard(
     subject="plugins/rails-flow/hooks/scripts/lib/worktree_guard.py",
     selftest="plugins/rails-flow/scripts/check_hook_gates.py",
     selftest_args=("--only", "guard_worktree"),
+    # Each mutant runs only the fixture its `expects` names (#1599); the ones marked `narrow=False` depend on state an
+    # earlier fixture builds, cannot run alone, and run the whole sub-group (#1581, surveyed one by one).
+    narrow_with="--match",
     needs=(
            'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py',  # session-start.sh runs both (#1581: the harness drives it)
            "plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362
@@ -35,24 +38,28 @@ GUARD = Guard(
             ')) and not merged(cwd, w["head"], integ)',
             ')) and False',
             'for the same ISSUE under another branch name is denied',
+            narrow=False,
         ),
         Mutation(
             'a merged worktree still blocks a new one for its issue',
             ')) and not merged(cwd, w["head"], integ)',
             '))',
             'once the same-issue worktree is MERGED',
+            narrow=False,
         ),
         Mutation(
             "the new worktree's directory name is not read for an issue",
             'new_keys = keys(branch, os.path.basename(path or ""))',
             'new_keys = keys(branch)',
             "by the new worktree's DIRECTORY name",
+            narrow=False,
         ),
         Mutation(
             "a date's year is read as an issue number",
             '    name = DATE.sub("", name or "")',
             '    name = name or ""',
             'a DATE in a branch name is not issue 2026',
+            narrow=False,
         ),
         Mutation(
             'a session that owns an unmerged worktree may add another',
@@ -65,6 +72,7 @@ GUARD = Guard(
             '            if not merged(cwd, sha, integ):\n                return deny(f"this session already owns',
             '            if True:\n                return deny(f"this session already owns',
             "after the owned worktree's branch MERGES",
+            narrow=False,
         ),
         Mutation(
             'a lane whose worktree is gone still blocks',
@@ -77,6 +85,7 @@ GUARD = Guard(
             '        for lane_path, row in coordination.lanes_for(record, sid) if record else []:',
             '        for lane_path, row in list(record["sessions"].items()) if record else []:',
             'ANOTHER session, owning nothing, is not held back',
+            narrow=False,
         ),
         Mutation(
             'an unreadable record lets the command run',
@@ -95,24 +104,28 @@ GUARD = Guard(
             '                if ch in "bB":',
             '                if ch in "xX":',
             'an ATTACHED -B<branch> (git accepts it) is read',
+            narrow=False,
         ),
         Mutation(
             'a redirect before the commit-ish becomes the commit-ish and hides the branch',
             '        if re.search(r"[<>]", a):',
             '        if False:',
             'a redirect BEFORE the commit-ish does not hide the branch',
+            narrow=False,
         ),
         Mutation(
             'a descriptor prefix (the 2 of 2>&1) is taken for an operand',
             '        if a.isdigit() and k + 1 < len(args) and REDIRECT_ALONE.match(args[k + 1]):',
             '        if False:',
             'nor a stderr redirect',
+            narrow=False,
         ),
         Mutation(
             '--reason <text> as two words leaves its text as an operand',
             '        if a == "--reason":',
             '        if a == "--reasonx":',
             '--reason <text> as two words does not swallow the branch',
+            narrow=False,
         ),
         Mutation(
             'a worktree add inside a quoted string (bash -c, eval) is never read again',
@@ -131,6 +144,7 @@ GUARD = Guard(
             '    command = strip_heredocs(command.replace("\\\\\\n", ""))',
             '    command = strip_heredocs(command)',
             'also between an option and its value',
+            narrow=False,
         ),
     ),
 )

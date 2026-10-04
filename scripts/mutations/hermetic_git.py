@@ -36,5 +36,12 @@ GUARD = Guard(
             'SETTINGS: tuple[tuple[str, str], ...] = (("core.quotePath", "true"), ("core.safecrlf", "false"))',
             '#1510: the baseline and the mutant must run with git maintenance off',
         ),
+        Mutation(
+            # #1588
+            'an inherited GIT_DIR survives hermetic_git.env, so a fixture commit lands in the real repo (#1588)',
+            '    out = {k: v for k, v in (os.environ if base is None else base).items() if k not in REPO_LOCATORS}',
+            '    out = dict(os.environ if base is None else base)',
+            '#1588: hermetic_git.env must drop the repository-locating variables',
+        ),
     ),
 )

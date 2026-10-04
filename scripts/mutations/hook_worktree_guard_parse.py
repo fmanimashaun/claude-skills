@@ -9,6 +9,9 @@ GUARD = Guard(
     subject="plugins/rails-flow/hooks/scripts/lib/worktree_guard.py",
     selftest="plugins/rails-flow/scripts/check_hook_gates.py",
     selftest_args=("--only", "guard_worktree_parse"),
+    # Each mutant runs only the fixture its `expects` names (#1599); the ones marked `narrow=False` depend on state an
+    # earlier fixture builds, cannot run alone, and run the whole sub-group (#1581, surveyed one by one).
+    narrow_with="--match",
     needs=(
            'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py',  # session-start.sh runs both (#1581: the harness drives it)
            "plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362
@@ -41,12 +44,14 @@ GUARD = Guard(
             '        else:\n            out.append(lines[j])                       # data: drop the body, keep the terminator line',
             '        else:\n            out.extend(lines[i:j + 1])',
             'a heredoc body that merely mentions it is not a command',
+            narrow=False,
         ),
         Mutation(
             'a heredoc fed to a shell is dropped, so a worktree add inside bash <<EOF is never judged',
             '        if SHELL_WORD.search(line[:m.start()]):',
             '        if False:',
             'a heredoc fed to a SHELL is still read as commands',
+            narrow=False,
         ),
     ),
 )

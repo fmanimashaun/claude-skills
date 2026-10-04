@@ -43,12 +43,53 @@ HOOKS = Path(__file__).resolve().parents[1] / "hooks" / "scripts"
 FAILURES: list[str] = []
 CHECKS = 0
 
+# `--match SUBSTR` runs only the fixtures whose check label contains SUBSTR (#1599). The mutation harness runs
+# every mutant of a guard through this file, and each mutant is meant to be caught by ONE fixture, named by the
+# mutation's `expects`; re-running all 199 checks of a group (about 116 s) to see one of them fail was most of
+# the mutation-coverage budget. Fixtures do not name themselves before they run, so it is two passes over a
+# group: a SURVEY with every subprocess stubbed (it only records the check labels), then a RUN in which the
+# code before a wanted check executes for real and the code before every other check is stubbed. A fixture
+# whose result steers which checks follow it would make the two passes disagree; that raises, it never guesses.
+_MATCH_MODE: str | None = None      # None, "survey" or "run"
+_SURVEYED: list[str] = []           # the labels, in the order the survey saw them
+_WANTED: set[int] = set()           # positions in `_SURVEYED` whose label matched
+_INDEX = 0                          # the position the next check() call has in the run pass
+_SKIP = False                       # True while the code before an unwanted check runs
+
+
+class MatchSequenceError(Exception):
+    """The run pass reached a different check than the survey did, so `--match` cannot be trusted here."""
+
+
+def skipping() -> bool:
+    return _MATCH_MODE == "survey" or (_MATCH_MODE == "run" and _SKIP)
+
 
 def check(label: str, ok: bool, detail: str = "") -> None:
-    global CHECKS
+    global CHECKS, _INDEX, _SKIP
+    if _MATCH_MODE == "survey":
+        _SURVEYED.append(label)
+        return
+    if _MATCH_MODE == "run":
+        if _INDEX >= len(_SURVEYED) or _SURVEYED[_INDEX] != label:
+            raise MatchSequenceError(
+                f"check #{_INDEX} is {label!r} in the run pass but "
+                f"{_SURVEYED[_INDEX] if _INDEX < len(_SURVEYED) else 'absent'!r} in the survey")
+        live = _INDEX in _WANTED
+        _INDEX += 1
+        _SKIP = _INDEX not in _WANTED        # the code before the NEXT check runs for real only if it is wanted
+        if not live:
+            return
     CHECKS += 1
     if not ok:
         FAILURES.append(f"{label}: {detail}" if detail else label)
+
+
+def record_failure(note: str) -> None:
+    """A failure that is not one of a group's numbered checks (a timeout), so it never shifts `--match`'s count."""
+    global CHECKS
+    CHECKS += 1
+    FAILURES.append(note)
 
 
 # #1469: every hook fixture runs through here. A subprocess that outruns its timeout used to raise
@@ -61,6 +102,10 @@ _EXPECTING_TIMEOUT = False      # set by timeout_fixtures, which times out on pu
 
 
 def _run(*args, **kw):
+    if skipping():          # `--match`: this is the code before an unwanted check, or the survey (#1599)
+        text = kw.get("text") or kw.get("universal_newlines")
+        empty = "" if text else b""
+        return subprocess.CompletedProcess(args[0] if args else kw.get("args"), 0, stdout=empty, stderr=empty)
     # The override is exact (the no-crash proof sets it tiny); otherwise a fixture's own bound is
     # raised to a 180s floor, since 60s was what a loaded machine outran. Read per call, not at import.
     override = os.environ.get("HOOK_GATES_TIMEOUT")
@@ -95,7 +140,7 @@ def _run(*args, **kw):
             # A timeout is ALWAYS a recorded failure -- a setup step (`git init`, check=True) that
             # times out must not pass silently -- unless timeout_fixtures asked for one on purpose.
             if not _EXPECTING_TIMEOUT:
-                check(note, False)
+                record_failure(note)
             empty = "" if kw.get("text") else b""
             return subprocess.CompletedProcess(proc.args, 124, stdout=empty,
                                                stderr=note if kw.get("text") else note.encode())
@@ -2260,6 +2305,7 @@ def release_gate_effects_fixtures() -> None:
 # different argument (the PR number, the ref a merge or ref write carries, the tag a release resolves to),
 # and a command spelled so that shlex and bash read it differently.
 FAKE_GH2 = """#!/bin/sh
+[ -z "${FAKE_LOG:-}" ] || printf '%s\\n' "$*" >> "$FAKE_LOG"
 ep=""; for a in "$@"; do case "$a" in repos/*) ep="$a"; break ;; esac; done
 case "$1 $2" in
   "pr view")
@@ -2292,6 +2338,120 @@ case "$ep" in
 esac
 exit 1
 """
+
+
+def release_gate_refs_fixtures() -> None:
+    """#1600: a ref taken from the GATED COMMAND'S TEXT must never reach git as an option. The release gate is a
+    PreToolUse hook, so it runs before the permission prompt: `git fetch origin --upload-pack=<program>` RUNS the
+    program when origin is a local path or ssh. Each site that hands such a value to git or gh is driven with a
+    marker file, over a local-path origin: no marker may appear, and the command is denied."""
+    if not QA_HOOK.is_file():
+        check("release-gate (#1600): release-gate.sh present beside rails-flow", False, str(QA_HOOK))
+        return
+    g = ["git", "-c", "user.email=t@t", "-c", "user.name=t"]
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td) / "repo"
+        _git_repo(repo)
+        sh = lambda *a, **kw: _run([*g, *a], cwd=repo, check=True, capture_output=True, text=True, **kw).stdout.strip()
+        old = {**os.environ, "GIT_COMMITTER_DATE": "2026-09-01T00:00:00+00:00", "GIT_AUTHOR_DATE": "2026-09-01T00:00:00+00:00"}
+        bare = Path(td) / "origin.git"
+        _run(["git", "init", "-q", "--bare", str(bare)], check=True, capture_output=True)
+        # origin names o/r, and is a LOCAL PATH underneath: the transport that runs --upload-pack.
+        sh("remote", "add", "origin", "https://github.com/o/r.git")
+        sh("config", f"url.{bare}.insteadOf", "https://github.com/o/r.git")
+        (repo / "app.rb").write_text("v1\n", encoding="utf-8")
+        sh("add", "app.rb"); sh("commit", "-q", "-m", "app")
+        tested = sh("rev-parse", "HEAD")
+        (repo / "qa").mkdir()
+        (repo / "qa" / "CERTIFICATION").write_text(json.dumps(
+            {"sha": tested, "date": "2026-09-26", "verdict": "PASS", "report": "qa/reports/r.md"}), encoding="utf-8")
+        sh("add", "qa/CERTIFICATION"); sh("commit", "-q", "-m", "stamp", env=old)
+        stamped = sh("rev-parse", "HEAD")
+        sh("branch", "-f", "dev", stamped)
+        sh("branch", "fix/x-y", stamped)
+        sh("checkout", "-q", "-b", "feature/work")
+        sh("push", "-q", "origin", "dev:dev")
+        (Path(td) / "bin").mkdir()
+        (Path(td) / "bin" / "gh").write_text(FAKE_GH2, encoding="utf-8")
+        (Path(td) / "bin" / "gh").chmod(0o755)
+        marker = Path(td) / "MARKER"
+        # --upload-pack=<program>: git runs the program through the shell with the remote's path. No space in the value,
+        # so the classifier reads it as one token and the hook reaches the git call (a payload with spaces is refused earlier).
+        prog = Path(td) / "prog.sh"
+        prog.write_text(f"#!/bin/sh\ntouch {marker}\n", encoding="utf-8")
+        prog.chmod(0o755)
+        evil = f"--upload-pack={prog}"
+
+        def run(cmd: str, **extra) -> tuple[int, str]:
+            marker.unlink(missing_ok=True)
+            env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env.pop("GH_REPO", None)
+            env["CLAUDE_PLUGIN_ROOT"] = str(QA_HOOK.parents[2])
+            env["PATH"] = str(Path(td) / "bin") + os.pathsep + env["PATH"]
+            env.update(extra)
+            done = _run(["bash", str(QA_HOOK)], cwd=repo, input=json.dumps({"tool_input": {"command": cmd}}),
+                        env=env, capture_output=True, text=True, timeout=60)
+            return done.returncode, done.stderr
+
+        # The proof that the marker is observable: the same program, handed to git the way the hook would have.
+        marker.unlink(missing_ok=True)
+        _run(["git", "fetch", "-q", "origin", evil], cwd=repo, capture_output=True)
+        check("release-gate (#1600): the probe works -- an unguarded `git fetch origin <--upload-pack=...>` DOES run the program",
+              marker.exists(), "no marker: this fixture could not tell a fix from a hole")
+        # Every site where a ref from the command's own text reaches git or gh.
+        for label, cmd, extra in (
+            ("a REST merge's `head`", f"gh api repos/o/r/merges -f base=main -f head='{evil}'", {}),
+            ("a ref write's `sha`", f"gh api -X PATCH repos/o/r/git/refs/heads/main -f sha='{evil}'", {}),
+            ("a new ref's `sha`", f"gh api repos/o/r/git/refs -f ref=refs/heads/main -f sha='{evil}'", {}),
+            ("a release's --target", f"gh release create v9 --target '{evil}'", {}),
+            ("a commit the PR view reports", "gh pr merge 7", {"FAKE_PRVIEW": f"main {evil}"}),
+        ):
+            rc, err = run(cmd, **extra)
+            check(f"release-gate (#1600): {label} that starts with `--` runs no program, and is denied",
+                  not marker.exists() and rc == 2, f"marker={marker.exists()} rc={rc} {err[:200]!r}")
+        # The same, with the value an ordinary option rather than a program: gh must never read it as a selector.
+        log = Path(td) / "gh.log"
+        for label, cmd in (("a PR selector", "gh pr merge --web"),
+                           ("a PR selector after the end of options", "gh pr merge --admin -- --web")):
+            log.unlink(missing_ok=True)
+            rc, err = run(cmd, FAKE_PRVIEW=f"main {stamped}", FAKE_LOG=str(log))
+            asked = log.read_text().splitlines() if log.exists() else []
+            check(f"release-gate (#1600): {label} that starts with  is never handed to gh, and the command is denied",
+                  not any("--web" in line for line in asked) and rc == 2, f"rc={rc} gh calls={asked} {err[:160]!r}")
+        # A stamp is data from the repository being promoted: its `sha` is a commit id, never an option.
+        bad = Path(td) / "badstamp"
+        _git_repo(bad)
+        bsh = lambda *a, **kw: _run([*g, *a], cwd=bad, check=True, capture_output=True, text=True, **kw).stdout.strip()
+        _run(["git", "checkout", "-q", "-B", "main"], cwd=bad, check=True, capture_output=True)
+        (bad / "qa").mkdir()
+        (bad / "qa" / "CERTIFICATION").write_text(json.dumps(
+            {"sha": evil, "date": "2026-09-26", "verdict": "PASS", "report": "r.md"}), encoding="utf-8")
+        bsh("add", "qa"); bsh("commit", "-q", "-m", "stamp")
+        bsh("branch", "dev")
+        marker.unlink(missing_ok=True)
+        env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None)
+        env["CLAUDE_PLUGIN_ROOT"] = str(QA_HOOK.parents[2])
+        done = _run(["bash", str(QA_HOOK)], cwd=bad, input=json.dumps({"tool_input": {"command": "git push origin main"}}),
+                    env=env, capture_output=True, text=True, timeout=60)
+        check("release-gate (#1600): a stamp whose `sha` is an option is denied as not a commit id",
+              done.returncode == 2 and "not a commit id" in done.stderr and not marker.exists(), f"rc={done.returncode} {done.stderr[:240]!r}")
+        # ANOTHER repository's stamp is the same kind of data: its `sha` is a commit id, never a path of the API.
+        evil_stamp = Path(td) / "evil-stamp.json"
+        evil_stamp.write_text(json.dumps({"sha": "../../x?y", "date": "2026-10-01", "verdict": "PASS", "report": "r.md"}), encoding="utf-8")
+        rc, err = run(_pin("gh pr merge 7 -R other/fork", stamped), FAKE_PRVIEW=f"main {stamped}", FAKE_PRREPO="other/fork",
+                      FAKE_STAMP_REF=stamped, FAKE_STAMP_FILE=str(evil_stamp), FAKE_COMPARE="ahead")
+        check("release-gate (#1600): ANOTHER repository's stamp whose `sha` is a path is denied as not a commit id",
+              rc == 2 and "not a commit id" in err, f"rc={rc} {err[:240]!r}")
+        # A ref with a `:` is a REFSPEC: `git fetch origin dev:refs/heads/injected` writes a local branch, before the prompt.
+        rc, err = run("gh api repos/o/r/merges -f base=main -f head=dev:refs/heads/injected")
+        made = _run(["git", "rev-parse", "--verify", "-q", "refs/heads/injected"], cwd=repo, capture_output=True).returncode == 0
+        check("release-gate (#1600): a ref with a `:` (a refspec) is never fetched, so no local ref is written, and it is denied",
+              not made and rc == 2, f"ref written={made} rc={rc} {err[:200]!r}")
+        # CONTROLS: a dash INSIDE a name is a name, and a certified branch still promotes.
+        rc, err = run("gh api repos/o/r/merges -f base=main -f head=fix/x-y")
+        check("release-gate (#1600): CONTROL: a branch whose name has a dash inside is still read and judged (certified: passes)",
+              rc == 0, f"rc={rc} {err[:240]!r}")
+        rc, err = run("gh api repos/o/r/merges -f base=main -f head=dev")
+        check("release-gate (#1600): CONTROL: the certified dev still promotes", rc == 0, f"rc={rc} {err[:240]!r}")
 
 
 def release_gate_repos_fixtures() -> None:
@@ -2695,7 +2855,8 @@ def _worktree_kit() -> types.SimpleNamespace:
         code, out = res
         check(label, code == 2 and "BLOCKED by rails-flow worktree guard" in out, f"exit {code}: {out.strip()[:200]!r}")
         for n in needles:
-            check(f"...and the message names {n!r}", n in out, out.strip()[:300])
+            # The temp directory differs per run, and `--match` compares the survey's labels with the run's.
+            check(f"...and the message names {re.sub(r'/\S*?/tmp\w{8}(?=/|$)', '<tmp>', n)!r}", n in out, out.strip()[:300])
 
     def allowed(label: str, res: tuple[int, str]) -> None:
         check(label, res[0] == 0, f"exit {res[0]}: {res[1].strip()[:200]!r}")
@@ -2816,7 +2977,9 @@ def guard_worktree_fixtures() -> None:
     # A record that cannot be read fails CLOSED, with the way out.
     with tempfile.TemporaryDirectory() as td:
         repo = new_repo(td)
-        (repo / ".git" / "coordination.json").write_text("{not json")
+        bad = repo / ".git" / "coordination.json"
+        bad.parent.mkdir(parents=True, exist_ok=True)   # a `--match` survey stubs `git init`, so .git is not there yet
+        bad.write_text("{not json")
         denied("guard-worktree: an unreadable coordination record fails closed", guard(repo, "git worktree add ../b -b feature/b dev"),
                "unreadable")
 
@@ -2900,10 +3063,13 @@ def guard_worktree_failopen_fixtures() -> None:
         # The ABSOLUTE sleep: this PATH holds only bash and python3, so a bare `sleep` is "not found" and fails at once, which made
         # this fixture pass for the wrong reason (found when a mutation giving git a 60 s timeout survived it).
         slow = stage_bin("slow-git", "exec REAL_SLEEP 20")
-        t0 = time.monotonic()
-        res = guard(repo, "git worktree add ../dup feature/lane-band", env_extra=dict(slow, WORKTREE_GUARD_BUDGET="1"))
+        slow_env = dict(slow, WORKTREE_GUARD_BUDGET="1")
         denied("guard-worktree: a git that hangs is cut off and the command is refused (the hook's own timeout would let it run)",
-               res, "timed out")
+               guard(repo, "git worktree add ../dup feature/lane-band", env_extra=slow_env), "timed out")
+        # TIMED IN ITS OWN CALL, so `--match` can run it alone: a clock started before the check above would be read after
+        # that check's code had been stubbed, and the check would pass on an elapsed time of zero (#1599, #1581).
+        t0 = time.monotonic()
+        guard(repo, "git worktree add ../dup feature/lane-band", env_extra=slow_env)
         check("guard-worktree: ...and a slow git is cut off within the budget, not after it", time.monotonic() - t0 < 8,
               f"{time.monotonic() - t0:.1f}s")
         no_list = stage_bin("no-list", 'case "$*" in *"worktree list"*) echo "fatal: simulated" >&2; exit 1;; esac\nexec REAL_GIT "$@"')
@@ -2991,6 +3157,7 @@ def guard_worktree_pointer_fixtures() -> None:
         out = start(repo)[1]
         check("resume pointer: a merged, clean worktree is listed as finished, with how to remove it",
               "finished worktree" in out and str(done_wt) in out and "git worktree remove" in out, out[-300:])
+        done_wt.mkdir(parents=True, exist_ok=True)   # a `--match` survey stubs `git worktree add`
         (done_wt / "scratch.txt").write_text("uncommitted\n")
         check("resume pointer: a merged worktree with uncommitted work is NOT listed as finished",
               str(done_wt) not in start(repo)[1])
@@ -3029,6 +3196,7 @@ GROUPS = {
     "self_consistency": self_consistency_fixtures, "guard_bash": guard_bash_fixtures,
     "guard_claims": guard_claims_fixtures, "release_gate": release_gate_fixtures,
     "release_gate_effects": release_gate_effects_fixtures, "release_gate_repos": release_gate_repos_fixtures,
+    "release_gate_refs": release_gate_refs_fixtures,
     "ci_verdict_hint": ci_verdict_hint_fixtures, "timeout": timeout_fixtures,
     "guard_worktree": guard_worktree_fixtures, "guard_worktree_parse": guard_worktree_parse_fixtures,
     "guard_worktree_failopen": guard_worktree_failopen_fixtures, "guard_worktree_pointer": guard_worktree_pointer_fixtures,
@@ -3038,12 +3206,13 @@ GROUPS = {
 # The doctor runs this harness as TWO gates (`--part a`, `--part b`), because the whole run -- 833 checks -- takes 188 s
 # alone, past the doctor's 180 s limit for a gate, and a gate that cannot finish is a SKIP on every sweep (#1581).
 # MEASURED per group (seconds, wall, idle machine): release_gate 46.8, release_gate_effects 46.6, release_gate_repos 26.9,
-# guard_bash 22.2, guard_worktree 19.7, guard_claims 4.9, stop_gate 4.5, lint_ruby 3.3, the rest under 1. So part b is the two
+# guard_bash 22.2, guard_worktree 19.7, guard_claims 4.9, stop_gate 4.5, lint_ruby 3.3, release_gate_refs about 7 (#1600, timed
+# under load), the rest under 1. So part b is the two
 # release_gate groups (93 s) and part a is everything else (83 s). EVERY group must be in exactly one part: a group in none
 # would never run in the doctor, which is the vacuous gate this repository keeps finding; the selftest checks it below.
 PARTS = {
     "a": ["stop_gate", "guard_lane", "guard_migrate", "lint_ruby", "self_consistency", "guard_bash", "guard_claims",
-          "release_gate_repos", "ci_verdict_hint", "timeout", "guard_worktree", "guard_worktree_parse",
+          "release_gate_repos", "release_gate_refs", "ci_verdict_hint", "timeout", "guard_worktree", "guard_worktree_parse",
           "guard_worktree_failopen", "guard_worktree_pointer"],
     "b": ["release_gate", "release_gate_effects"],
 }
@@ -3073,7 +3242,47 @@ def run_groups(groups: list[str] | None, table: dict) -> None:
         table[name]()
 
 
-def selftest(groups: list[str] | None = None) -> int:
+def groups_should_run(fail_fast: bool, failures: list[str], nested: bool = False) -> bool:
+    """Whether `selftest` runs the real hook groups after its meta-checks (#1599).
+
+    Not under `--fail-fast` once a meta-check has failed: the groups have nothing to add and cost minutes. A mutant of
+    the group machinery (`--only` ignored) used to run every group, over 300 s here, after its meta-check had already
+    caught it, and that read as a timeout. And never in a NESTED selftest, which exists only to prove that a bad
+    `--only` or `--match` is refused: were the refusal broken, the nested call fell through and ran the whole suite."""
+    return not nested and not (fail_fast and bool(failures))
+
+
+def run_matching(groups: list[str] | None, table: dict, match: str) -> int:
+    """`--match`: run only the checks whose label contains `match` (#1599); how many ran.
+
+    Two passes per group (see the note at `_MATCH_MODE`). Raises `MatchSequenceError` when the passes
+    disagree or a group cannot be surveyed under stubs, so a selection is never silently wrong."""
+    global _MATCH_MODE, _SURVEYED, _WANTED, _INDEX, _SKIP
+    ran = 0
+    try:
+        for name in (groups or list(table)):
+            _MATCH_MODE, _SURVEYED = "survey", []
+            try:
+                table[name]()
+            except Exception as exc:        # noqa: BLE001 -- any crash under stubs means "cannot survey"
+                raise MatchSequenceError(f"group {name!r} cannot be surveyed under stubs: {exc!r}") from exc
+            _WANTED = {i for i, label in enumerate(_SURVEYED) if match.lower() in label.lower()}
+            if not _WANTED:
+                continue
+            _MATCH_MODE, _INDEX, _SKIP = "run", 0, 0 not in _WANTED
+            table[name]()
+            if _INDEX != len(_SURVEYED):
+                raise MatchSequenceError(f"group {name!r} made {_INDEX} checks in the run pass and "
+                                         f"{len(_SURVEYED)} in the survey")
+            ran += len(_WANTED)
+    finally:
+        _MATCH_MODE, _SKIP = None, False
+    return ran
+
+
+def meta_checks() -> None:
+    """The checks about `--only` and `--match` themselves. Cheap, but not free (about 2.5 s), so a `--match` run
+    skips them: the baseline run of the same file has already shown them pass (#1599)."""
     # --only REFUSES what it cannot run (#1497), checked on every run whatever the selection: a
     # silently empty selection is how a mutant would "survive" with no fixture ever consulted.
     for bad in ("nope", "", ",", "release_gate,nope", "release_gate,", " release_gate", "timeout,timeout"):
@@ -3099,6 +3308,56 @@ def selftest(groups: list[str] | None = None) -> int:
     ran.clear()
     run_groups(None, fakes)
     check("a bare run (no --only) runs every group", ran == list(GROUPS), repr(ran))
+    # `--match` (#1599), proved on stand-in groups: a few process starts, no hook fixture.
+    global CHECKS
+    with tempfile.TemporaryDirectory() as td:
+        spawned = Path(td) / "spawned"
+
+        def mark(name: str) -> None:
+            _run(["sh", "-c", f"echo {name} >> '{spawned}'"])
+
+        def fake_group() -> None:
+            mark("A"); check("fixture A passes", True)
+            mark("B"); check("fixture B passes", True)
+            mark("C"); check("fixture C fails on purpose", False, "on purpose")
+
+        def steered_group() -> None:
+            answered = _run(["sh", "-c", "echo x"], capture_output=True, text=True).stdout
+            if answered:                      # '' in the survey, 'x' in a real run: the passes would disagree...
+                check("answered by the subprocess", True)
+            else:                             # ...on WHICH check comes first, with the same number of checks in both
+                check("silent subprocess", True)
+            check("last", True)
+
+        saved_checks, saved_failures = CHECKS, list(FAILURES)
+        got = run_matching(None, {"fake": fake_group}, "fixture B")
+        only_b = spawned.read_text().split() if spawned.exists() else []
+        counted, failed = CHECKS - saved_checks, len(FAILURES) - len(saved_failures)
+        check("--match runs only the fixture whose label matches, and none of the others' work",
+              got == 1 and only_b == ["B"] and counted == 1 and failed == 0, f"ran {got}, spawned {only_b}, counted {counted}")
+        spawned.unlink(missing_ok=True)
+        before_c, checks_before_c = len(FAILURES), CHECKS
+        run_matching(None, {"fake": fake_group}, "fails on purpose")
+        failed_c = len(FAILURES) - before_c
+        del FAILURES[before_c:]                 # the deliberate failure was the proof, not a finding; the first check's own verdict stays
+        CHECKS = checks_before_c
+        check("--match still FAILS when the check it selected fails", failed_c == 1, f"{failed_c} failure(s) recorded")
+        check("--match that selects nothing runs nothing and says so (0), never an empty pass",
+              run_matching(None, {"fake": fake_group}, "no label has this") == 0)
+        try:
+            run_matching(None, {"steered": steered_group}, "silent subprocess")
+            raised = False
+        except MatchSequenceError:
+            raised = True
+        check("--match raises when a fixture's result steers which checks follow, never guesses",
+              raised and _MATCH_MODE is None and not _SKIP, f"raised={raised}, mode={_MATCH_MODE}, skip={_SKIP}")
+    check("a nested selftest, which only proves a refusal, never runs the real groups",
+          groups_should_run(False, [], nested=True) is False)
+    check("--fail-fast skips the real groups once a meta-check has failed",
+          groups_should_run(True, ["a meta-check failed"]) is False)
+    check("CONTROL: --fail-fast runs the groups when nothing has failed", groups_should_run(True, []) is True)
+    check("CONTROL: with no --fail-fast the groups run even after a failure",
+          groups_should_run(False, ["a meta-check failed"]) is True)
     # The REAL exit code, not only the parser's verdict: main() must return 2 for a bad selection.
     # Only at the outermost level: were the refusal broken, main() would call selftest() again,
     # and this check would recurse instead of failing by name.
@@ -3115,7 +3374,37 @@ def selftest(groups: list[str] | None = None) -> int:
         finally:
             _NESTED = False
         check("main() exits 2 for --only nope", rc == 2, f"exit {rc}")
-    run_groups(groups, GROUPS)
+        # `--match` the same way (#1599): a selection that names no check, or a blank one, is refused, not passed.
+        _NESTED = True
+        try:
+            with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+                try:
+                    rc_none = main(["--only", "guard_lane", "--match", "no check has this label fragment"])
+                    rc_blank = main(["--only", "guard_lane", "--match", "   "])
+                except Exception as exc:          # noqa: BLE001 -- a crash fails THIS check, by name
+                    rc_none = rc_blank = f"raised {exc!r}"
+        finally:
+            _NESTED = False
+        check("main() exits 2 for --match that selects nothing", rc_none == 2, f"exit {rc_none}")
+        check("main() exits 2 for a blank --match", rc_blank == 2, f"exit {rc_blank}")
+
+
+def selftest(groups: list[str] | None = None, match: str | None = None, fail_fast: bool = False) -> int:
+    if match is None:
+        meta_checks()
+    if match is None:
+        if groups_should_run(fail_fast, FAILURES, nested=_NESTED):
+            run_groups(groups, GROUPS)
+    else:
+        try:
+            ran_matching = run_matching(groups, GROUPS, match)
+        except MatchSequenceError as exc:
+            print(f"check_hook_gates: --match {match!r} cannot be used here: {exc}", file=sys.stderr)
+            return 2
+        if ran_matching == 0:
+            print(f"check_hook_gates: --match {match!r} selected no check, which would be an empty pass",
+                  file=sys.stderr)
+            return 2
     if FAILURES:
         print(f"check_hook_gates selftest: {len(FAILURES)} of {CHECKS} checks FAILED", file=sys.stderr)
         for f in FAILURES:
@@ -3131,7 +3420,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--only", metavar="GROUP[,GROUP]",
                     help=f"run only these fixture groups: {', '.join(GROUPS)} (#1497)")
     ap.add_argument("--part", metavar="a|b", help="run one half of the groups: the doctor runs both as two gates (#1581)")
+    ap.add_argument("--match", metavar="SUBSTR",
+                    help="run only the checks whose label contains SUBSTR, case-insensitively (#1599)")
+    ap.add_argument("--fail-fast", action="store_true",
+                    help="skip the real hook groups when the suite's own meta-checks have already failed (#1599)")
     args = ap.parse_args(argv)
+    if args.match is not None and not args.match.strip():
+        print("check_hook_gates: --match needs a non-empty label fragment", file=sys.stderr)
+        return 2
     if args.part is not None and args.only is not None:
         print("check_hook_gates: --part and --only are alternatives, not both", file=sys.stderr)
         return 2
@@ -3150,7 +3446,7 @@ def main(argv: list[str] | None = None) -> int:
     # `--selftest` is accepted for symmetry with every other check here, and bare invocation does
     # the same thing: the mutation harness runs a separate selftest file with no arguments, and a
     # script that printed usage there would be INERT -- every mutation "caught" by an exit 2.
-    return selftest(groups)
+    return selftest(groups, args.match, args.fail_fast)
 
 
 if __name__ == "__main__":

@@ -10,6 +10,11 @@ GUARD = Guard(
     name="hook_command_cwd",
     subject="plugins/rails-flow/hooks/scripts/lib/command_cwd.py",
     selftest="plugins/rails-flow/scripts/check_hook_gates.py",
+    # Only guard-claims drives this subject (#1599): with no `--only`, every one of the 53 mutants re-ran all twelve
+    # fixture groups (8559 s of CPU in one run). And each mutant needs only the fixture its `expects` names, so
+    # `--match` narrows it to that one, after a control run of the unmutated code that must pass.
+    selftest_args=("--only", "guard_claims"),
+    narrow_with="--match",
     # The same staging as hook_guard_claims: the harness runs every hook from the whole directory.
     needs=(
            'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py',  # session-start.sh runs both (#1581: the harness drives it)

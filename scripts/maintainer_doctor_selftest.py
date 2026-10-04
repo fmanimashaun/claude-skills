@@ -213,6 +213,66 @@ def ruleset_fixtures() -> None:
             md.RULESET_ARGS = saved
 
 
+def repo_untouched_fixtures() -> None:
+    """#1588: a gate that commits into the real repository turns the sweep red, by name.
+
+    The fixture repo's configured user is `t@t`, so here `t@t` plays the maintainer (whose own sessions
+    may commit during a sweep) and `fx@fixture` plays a fixture that escaped its temp repo."""
+    work = fixture()
+    saved_gates, real = md.GATES, md.REPO
+    try:
+        md.REPO = work
+        scripts = work / "scripts"
+        scripts.mkdir(parents=True, exist_ok=True)
+        plant = ("import subprocess, sys\n"
+                 "subprocess.run(['git', '-c', f'user.email={sys.argv[1]}', '-c', 'user.name=x', 'commit', '-q',"
+                 " '--allow-empty', '-m', 'm'], check=True)\n")
+        (scripts / "_plant.py").write_text(plant, encoding="utf-8")
+        (scripts / "_quiet.py").write_text("print('ok')\n", encoding="utf-8")
+        cases = (("a gate that plants a FOREIGN commit mid-sweep turns the sweep red", "fx@fixture", md.FAIL),
+                 ("CONTROL: a commit by the configured user (another session's work) is not flagged", "t@t", md.PASS))
+        for label, author, want in cases:
+            md.GATES = (("selftest plants", ("python3", "scripts/_plant.py", author)),)
+            d = md.Doctor()
+            d.check_gates()
+            r = expect(label, d, "the sweep committed nothing into the real repository", want)
+            _tick()
+            if want == md.FAIL and r is not None and "fx@fixture" not in r.detail:
+                FAILURES.append(f"#1588: the finding must name the escaped commit's author: {r.detail!r}")
+        # #1594 review D1: a FETCH (and a pull into a local branch) during the sweep brings commits by other
+        # authors from the remote. They are not a fixture escaping, so the detector must not flag them.
+        other = work.parent / "other"
+        # The planted commits above are local only; unpushed, they make `dev` diverge and `--ff-only` refuse.
+        _git(work, "push", "-q", "origin", "dev")
+        _git(work.parent, "clone", "-q", str(work.parent / "remote.git"), str(other))
+        # On `dev`, the branch `work` tracks: a push from the clone's default branch (`main`) left the
+        # pull a no-op, and the control passed without ever seeing a foreign commit (#1594 review). The
+        # log assertion below keeps it from going vacuous again.
+        _git(other, "checkout", "-q", "dev")
+        _git(other, "-c", "user.email=someone@else", "-c", "user.name=s", "commit", "-q", "--allow-empty", "-m", "theirs")
+        _git(other, "push", "-q", "origin", "dev")
+        (scripts / "_fetch.py").write_text(
+            "import subprocess\n"
+            "subprocess.run(['git', 'fetch', '-q', 'origin'], check=True)\n"
+            "subprocess.run(['git', 'merge', '-q', '--ff-only', '@{u}'], check=True)\n", encoding="utf-8")
+        md.GATES = (("selftest fetches", ("python3", "scripts/_fetch.py")),)
+        d = md.Doctor()
+        d.check_gates()
+        expect("CONTROL: a fetch and pull of other authors' commits during the sweep is not flagged (#1594 D1)", d,
+               "the sweep committed nothing into the real repository", md.PASS)
+        _tick()
+        pulled = _git(work, "log", "--format=%ae %s", "-1", "dev")
+        if pulled != "someone@else theirs":
+            FAILURES.append(f"#1594 D1 control is vacuous: the pull did not bring the foreign commit onto dev ({pulled!r})")
+        md.GATES = (("selftest quiet", ("python3", "scripts/_quiet.py")),)
+        d = md.Doctor()
+        d.check_gates()
+        expect("CONTROL: a sweep that commits nothing passes the detector", d,
+               "the sweep committed nothing into the real repository", md.PASS)
+    finally:
+        md.GATES, md.REPO = saved_gates, real
+
+
 def timeout_fixtures() -> None:
     """A gate that is KILLED did not run -- so it is a skip, and a real failure is still a FAIL.
 
@@ -302,6 +362,7 @@ def timeout_fixtures() -> None:
 
 def run() -> int:
     timeout_fixtures()
+    repo_untouched_fixtures()
     ruleset_fixtures()
     # ---- healthy machine: nothing may FAIL ---------------------------------------------
     d = diagnose(fixture(corpora=True))
