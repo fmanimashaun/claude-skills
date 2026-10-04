@@ -22,12 +22,15 @@ THREE TABLES, THREE RULES.
   * "Advisory": a reason is required. An advisory row with no reason is a class that was dropped.
 
 Stdlib only, no network (so it cannot know a PR's state; it checks the catalogue is self-consistent).
-Exit 0 clean, 1 findings, 2 nothing examined.
+Exit 0 clean, 1 findings, 2 nothing examined OR a section missing/empty (a renamed heading must not shrink the
+check while the other two sections keep the row count above zero).
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import re
 import sys
 import tempfile
@@ -39,6 +42,7 @@ CATALOGUE = Path("docs/evidence/reviews/blocked-catalogue.md")
 FIXTURE_HEAD = "classes with a fixture on `dev`"
 OPEN_HEAD = "fix is on an open pr"
 ADVISORY_HEAD = "advisory:"
+SECTIONS = (("with a fixture on dev", FIXTURE_HEAD), ("fix is on an open PR", OPEN_HEAD), ("advisory", ADVISORY_HEAD))
 
 
 def tables(text: str) -> dict[str, list[list[str]]]:
@@ -66,6 +70,13 @@ def section(found: dict[str, list[list[str]]], key: str) -> list[list[str]]:
     return []
 
 
+def missing_sections(found: dict[str, list[list[str]]]) -> list[str]:
+    """The names of the required sections that are absent or hold no rows. A heading renamed in the catalogue makes
+    `section` return [] for it, and without this the other two sections keep the total above zero: the check reads
+    clean on the rows it never saw (measured: 15 rows examined became 7, exit 0)."""
+    return [name for name, key in SECTIONS if not section(found, key)]
+
+
 def check_fixture(root: Path, cell: str) -> str | None:
     """None when `path :: literal` resolves, else the reason it does not."""
     m = re.fullmatch(r"`([^`]+?) :: ([^`]+)`", cell)
@@ -80,11 +91,11 @@ def check_fixture(root: Path, cell: str) -> str | None:
     return None
 
 
-def examine(root: Path) -> tuple[list[str], int]:
-    """(findings, rows examined)."""
+def examine(root: Path) -> tuple[list[str], int, list[str]]:
+    """(findings, rows examined, required sections missing or empty)."""
     path = root / CATALOGUE
     if not path.is_file():
-        return [f"{CATALOGUE} does not exist"], 0
+        return [f"{CATALOGUE} does not exist"], 0, []
     found = tables(path.read_text(encoding="utf-8"))
     findings: list[str] = []
     examined = 0
@@ -112,13 +123,17 @@ def examine(root: Path) -> tuple[list[str], int]:
         if not reason:
             findings.append(f"{cls} (#{pr}): an advisory row must say why it has no fixture")
 
-    return findings, examined
+    return findings, examined, missing_sections(found)
 
 
 def run(root: Path) -> int:
-    findings, examined = examine(root)
+    findings, examined, missing = examine(root)
     if examined == 0:
         print("blocked catalogue: examined nothing (missing file or no table rows)", file=sys.stderr)
+        return 2
+    if missing:
+        print(f"blocked catalogue: section(s) missing or empty: {', '.join(missing)} -- a renamed heading drops its "
+              "rows from the check; restore the heading or the rows", file=sys.stderr)
         return 2
     for f in findings:
         print(f"FAIL {f}")
@@ -147,12 +162,20 @@ def _outcome(text: str, files: dict[str, str]) -> tuple[list[str], int]:
         return examine(root)
 
 
+def _missing(text: str) -> list[str]:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / CATALOGUE).parent.mkdir(parents=True)
+        (root / CATALOGUE).write_text(text, encoding="utf-8")
+        return examine(root)[2]
+
+
 def selftest() -> int:
     failures: list[str] = []
     good = {"f.py": "assert needle\n"}
 
     def expect(label: str, text: str, files: dict[str, str], want: str | None) -> None:
-        findings, _ = _outcome(text, files)
+        findings, _, _ = _outcome(text, files)
         hit = any(want in f for f in findings) if want else not findings
         if not hit:
             failures.append(f"{label}: wanted {want or 'no findings'}, got {findings}")
@@ -173,6 +196,28 @@ def selftest() -> int:
     # The near miss: an advisory row WITH a reason, and an open row WITH an owner, stay clean.
     expect("an advisory row with a reason is clean", _catalogue(adv_row="| c | 3 | merged | d | why |"),
            good, None)
+    # B1 (review of #1578): a renamed heading must be reported by NAME, one case per section, and the run must refuse (exit 2).
+    base = _catalogue()
+    for name, head in (("with a fixture on dev", "Classes with a fixture on `dev`"),
+                       ("fix is on an open PR", "Classes whose fix is on an open PR"),
+                       ("advisory", "Advisory: no fixture")):
+        renamed = base.replace(head, head.replace("fixture", "tests").replace("open", "pending").replace("Advisory", "Notes"))
+        if _missing(renamed) != [name]:
+            failures.append(f"a renamed heading must name its section ({name!r}): got {_missing(renamed)}")
+    header_only = base.replace("| a | 1 | merged | d | `f.py :: needle` |\n", "")
+    if _missing(header_only) != ["with a fixture on dev"]:
+        failures.append(f"a section with a header and no rows must be reported as empty: got {_missing(header_only)}")
+    if _missing(base) != []:
+        failures.append("CONTROL: a catalogue with all three sections is not missing any")
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / CATALOGUE).parent.mkdir(parents=True)
+        (root / CATALOGUE).write_text(base.replace("Advisory: no fixture", "Notes: none"), encoding="utf-8")
+        (root / "f.py").write_text("assert needle\n", encoding="utf-8")
+        with contextlib.redirect_stderr(io.StringIO()):
+            refused = run(root)
+        if refused != 2:
+            failures.append("a catalogue with a section missing must exit 2, not 0")
     if _outcome("## Notes\nno tables\n", {})[1] != 0:
         failures.append("a catalogue with no table rows must examine nothing")
     with tempfile.TemporaryDirectory() as tmp:

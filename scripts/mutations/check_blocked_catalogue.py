@@ -47,5 +47,19 @@ GUARD = Guard(
             "    if False:",
             "a missing catalogue must exit 2",
         ),
+        Mutation(
+            # B1 of the #1578 review: renaming one heading dropped 8 of 15 rows and the check still exited 0.
+            "a renamed section heading shrinks the check silently",
+            "    return [name for name, key in SECTIONS if not section(found, key)]",
+            "    return []",
+            "a renamed heading must name its section",
+        ),
+        Mutation(
+            # The run must REFUSE on a missing section, not only report it from `examine`.
+            "a missing section is found but the run still passes",
+            "    if missing:\n        print(f\"blocked catalogue: section(s)",
+            "    if False:\n        print(f\"blocked catalogue: section(s)",
+            "a catalogue with a section missing must exit 2",
+        ),
     ),
 )
