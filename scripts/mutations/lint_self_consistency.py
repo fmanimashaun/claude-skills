@@ -1134,9 +1134,16 @@ GUARD = Guard(
         ),
         Mutation(
             "hook lib copies that differ stop being a finding",
-            "    if len(texts) == len(HOOK_LIB_COPIES) and len(set(texts.values())) > 1:",
-            "    if False:",
+            "        if len(texts) == len(pair) and len(set(texts.values())) > 1:",
+            "        if False:",
             "hook lib copies that differ by one byte are a finding",
+        ),
+        # #1575: the second lib. Checking only the first pair would leave deadline.sh free to drift.
+        Mutation(
+            "only the first lib pair is compared, so deadline.sh copies can differ unnoticed",
+            "    for pair in HOOK_LIB_PAIRS:\n        texts = {}",
+            "    for pair in HOOK_LIB_PAIRS[:1]:\n        texts = {}",
+            "deadline lib copies that differ by one byte are a finding",
         ),
         # #1041, and the two below are a matched pair. The rule has to sit between two failures,
         # so one mutation each way is the only way to prove it is still between them.

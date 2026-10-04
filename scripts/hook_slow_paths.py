@@ -9,6 +9,9 @@ chained `echo hi;` segments inside `bash -c` cost 5.9 CPU-seconds and 1000 cost 
 Each case therefore runs in its OWN process group (`start_new_session`) and a deadline kills the whole
 group (`killpg`), awk included. A case is OVER when it hit the deadline or used more CPU than its bound.
 
+#1519 made the two shapes above linear (0.1-0.3 CPU s at N=2000, from 5.9 -> 40.6), so no case is marked known-slow today.
+#1575's deadline is the BACKSTOP for the next pathological input, and `check_hook_gates.py --only deadline` tests it.
+
 The check is a ratchet in both directions, like `check_hook_output_budget.py`:
   * a case NOT marked known-slow that is over its bound is a FAIL (a regression);
   * a case marked known-slow that is NOT over its bound is a FAIL too -- the defect is fixed, so the
@@ -81,8 +84,8 @@ def cases() -> list[Case]:
         Case("`git add -A` + 10k plain lines", "git add -A\n" + "".join(f"echo line {i}\n" for i in range(10000)), 2, 5.0),
         Case("`git status` + 10k plain lines (control)", "git status\n" + "".join(f"echo line {i}\n" for i in range(10000)), 0, 5.0),
         Case("10k-line heredoc inside $( ", "echo $(cat <<EOF\n" + "".join(f"line {i}\n" for i in range(10000)) + "EOF\n)\ngit add -A", 2, 5.0),
-        Case(f"{n} lines of `echo $(true) N`", "".join(f"echo $(true) {i}\n" for i in range(n)) + "git add -A", 2, 5.0, "#1575"),
-        Case(f"bash -c with {n} chained `echo hi;`", "bash -c '" + "echo hi; " * n + "git add -A'", 2, 5.0, "#1575"),
+        Case(f"{n} lines of `echo $(true) N`", "".join(f"echo $(true) {i}\n" for i in range(n)) + "git add -A", 2, 5.0),
+        Case(f"bash -c with {n} chained `echo hi;`", "bash -c '" + "echo hi; " * n + "git add -A'", 2, 5.0),
     ]
 
 

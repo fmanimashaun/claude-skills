@@ -6,6 +6,10 @@ set -uo pipefail
 # (#1529 review). Stops at a NUL, which JSON cannot contain.
 input=""; IFS= read -r -d '' input || true
 
+# #1575: EVERYTHING below runs in `_guard_main`, in its own process group, under a wall-clock deadline (lib/deadline.sh,
+# at the bottom of this file). The body is not re-indented, to keep the diff reviewable.
+_guard_main() {
+
 # #1526: decoded with `surrogateescape`, so an invalid UTF-8 byte cannot make the parse fail. A failed
 # parse left the raw JSON as `cmd`, where the command sits inside double quotes the normaliser strips:
 # `git add -A \xff` was allowed.
@@ -151,3 +155,22 @@ if hit '^kamal[[:space:]]+deploy\b' && [ "${RAILS_FLOW_ALLOW_DEPLOY:-0}" != "1" 
 fi
 
 exit 0
+}
+
+# THE DEADLINE (#1575). A hook that outlives its timeout blocks every Bash call and leaves awk children behind: one ran
+# 23 hours, the load reached 348. Past the deadline the whole process group is killed and the command is DENIED --
+# this is a fail-closed gate, so "took too long to read" refuses. The default is below the hook's own 10 s timeout
+# (hooks.json); RAILS_FLOW_HOOK_DEADLINE shortens it (tests) and is clamped at 8. With the lib missing the rules
+# still run and only the backstop is gone: lint_self_consistency's hook-lib-drift reports the missing copy.
+_dl="$(dirname "${BASH_SOURCE[0]}")/lib/deadline.sh"
+if [ -f "$_dl" ] && . "$_dl" 2>/dev/null && type deadline_run >/dev/null 2>&1; then
+  deadline_seconds 6 8
+  deadline_run "$_deadline_s" _guard_main; _rc=$?
+  if [ "$_rc" -ge 128 ]; then
+    echo "BLOCKED by rails-flow guardrails: this command took longer than ${_deadline_s}s to read, so it is refused rather than guessed at. Split it into smaller commands, or write the long text to a file first." >&2
+    exit 2
+  fi
+  exit "$_rc"
+fi
+_guard_main
+exit $?

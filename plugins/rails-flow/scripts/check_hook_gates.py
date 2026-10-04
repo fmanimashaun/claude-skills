@@ -1546,12 +1546,164 @@ def timeout_fixtures() -> None:
 # as their selftest, each mutating ONE hook, and every mutant re-ran all ten groups -- about 70% of
 # the mutation-coverage budget. A guard now names the groups that drive its hook; the doctor's
 # `hook gates` gate and the harness's own guard still run every group.
+# ---- the wall-clock deadline (#1575) ---------------------------------------------------------------
+# A hook that outlives its timeout blocks every Bash call, and Claude Code's timeout stops WAITING without
+# killing the hook's descendants: orphaned awk processes ran 51 minutes, one 23 hours, and the load hit 348.
+# `lib/deadline.sh` runs each hook's work in its own process group under a wall-clock deadline and kills the whole
+# group. The stub below is the incident: an `awk` that hangs and leaves a sleeper behind, every pid recorded.
+def deadline_fixtures() -> None:
+    guard = HOOKS / "guard-bash.sh"
+    base_env = {k: v for k, v in os.environ.items() if k not in ("QA_ALLOW_MAIN", "RAILS_FLOW_LANE", "RAILS_FLOW_HOOK_DEADLINE")}
+
+    def alive(pid: int) -> bool:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        return True
+
+    def survivors(pidfile: Path, within: float = 5.0) -> list[int]:
+        """Every sleeper the stub recorded that is STILL running after `within` seconds (killed, so none leaks)."""
+        pids = [int(x) for x in pidfile.read_text().split()] if pidfile.exists() else []
+        end = time.monotonic() + within
+        while time.monotonic() < end and any(alive(p) for p in pids):
+            time.sleep(0.1)
+        left = [p for p in pids if alive(p)]
+        for p in left:
+            try:
+                os.kill(p, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        return left
+
+    def stubs(td: str) -> tuple[str, Path]:
+        d = Path(td) / "stubs"
+        d.mkdir()
+        pidfile = Path(td) / "sleepers"
+        (d / "awk").write_text(f"#!/bin/bash\nsleep 300 &\necho $! >> {pidfile}\nwait\n")
+        (d / "awk").chmod(0o755)
+        return str(d), pidfile
+
+    def hung(hook: Path, cmd: str, extra: dict[str, str] | None = None, deadline: str = "1"):
+        """The hook with a HANGING awk: (exit, seconds, stderr, sleepers still alive afterwards)."""
+        with tempfile.TemporaryDirectory() as td:
+            d, pidfile = stubs(td)
+            env = dict(base_env, PATH=d + os.pathsep + base_env["PATH"], RAILS_FLOW_HOOK_DEADLINE=deadline, **(extra or {}))
+            t0 = time.monotonic()
+            r = _run(["/bin/bash", str(hook)], cwd=td, input=json.dumps({"tool_input": {"command": cmd}}), env=env,
+                     capture_output=True, text=True, timeout=60)
+            took = time.monotonic() - t0
+            return r.returncode, took, r.stderr, survivors(pidfile)
+
+    # 1. guard-bash: past the deadline the command is DENIED, in about the deadline, with the whole group dead.
+    rc, took, err, left = hung(guard, "git status")
+    check("deadline (#1575): guard-bash refuses a command its normaliser cannot read in time (fails CLOSED)",
+          rc == 2, f"exit {rc}: a hung awk was ALLOWED")
+    check("deadline (#1575): ...at the deadline, not at the stub's 300 s", took < 6, f"{took:.1f}s")
+    check("deadline (#1575): ...and no process the hook started outlives it (the whole group is killed)",
+          not left, f"still running: {left} -- a kill of the parent alone orphans them")
+    lines = [x for x in err.strip().splitlines() if x.strip()]
+    check("deadline (#1575): ...with ONE line on stderr, the verdict, and no job-control notice (Claude reads stderr)",
+          len(lines) == 1 and lines[0].startswith("BLOCKED by rails-flow guardrails: this command took longer than 1s"),
+          repr(err[:200]))
+    # 2. CONTROLS: the deadline must not be what denies an ordinary command, and a real rule still says its own reason.
+    with tempfile.TemporaryDirectory() as td:
+        t0 = time.monotonic()
+        ok = _run(["/bin/bash", str(guard)], cwd=td, input=json.dumps({"tool_input": {"command": "git status"}}), env=base_env,
+                  capture_output=True, text=True, timeout=60)
+        quick = time.monotonic() - t0
+        bad = _run(["/bin/bash", str(guard)], cwd=td, input=json.dumps({"tool_input": {"command": "git add -A"}}), env=base_env,
+                   capture_output=True, text=True, timeout=60)
+    check("deadline (#1575): CONTROL: an ordinary command still passes, silently, well inside the deadline",
+          ok.returncode == 0 and not ok.stderr.strip() and quick < 5, f"exit {ok.returncode} {quick:.1f}s {ok.stderr[:100]!r}")
+    check("deadline (#1575): CONTROL: a refused command still gives ITS reason, not the deadline's",
+          bad.returncode == 2 and "git add -A" in bad.stderr and "took longer" not in bad.stderr, bad.stderr[:160])
+    # 3. THE ORPHAN: Claude Code SIGKILLs the hook at its own timeout. The group must not run on for the deadline.
+    with tempfile.TemporaryDirectory() as td:
+        d, pidfile = stubs(td)
+        env = dict(base_env, PATH=d + os.pathsep + base_env["PATH"], RAILS_FLOW_HOOK_DEADLINE="8")
+        proc = subprocess.Popen(["/bin/bash", str(guard)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, cwd=td, env=env, start_new_session=True)
+        try:
+            proc.stdin.write(json.dumps({"tool_input": {"command": "git status"}}).encode())
+            proc.stdin.close()
+            for _ in range(100):                                  # until the stub has really started
+                if pidfile.exists() and pidfile.read_text().strip():
+                    break
+                time.sleep(0.1)
+            time.sleep(0.3)
+            proc.kill()
+            proc.wait()
+            t0 = time.monotonic()
+            left = survivors(pidfile, within=4.0)
+            gone = time.monotonic() - t0
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+    check("deadline (#1575): the group dies within a poll of its PARENT being SIGKILLed, not at the 8 s deadline",
+          not left and gone < 4, f"still running after {gone:.1f}s: {left}")
+    # 4. NO `sleep` ON PATH: a watchdog that cannot wait would reach the deadline at once and deny EVERYTHING.
+    with tempfile.TemporaryDirectory() as bd:
+        for tool in ("bash", "git", "sed", "tr", "grep", "dirname", "cat", "env", "head", "awk"):
+            real = next((f"{x}/{tool}" for x in ("/usr/bin", "/bin") if os.path.exists(f"{x}/{tool}")), None)
+            if real:
+                os.symlink(real, Path(bd) / tool)
+        os.symlink(sys.executable, Path(bd) / "python3")
+        def nosleep(cmd: str) -> int:
+            with tempfile.TemporaryDirectory() as td:
+                return _run(["/bin/bash", str(guard)], cwd=td, input=json.dumps({"tool_input": {"command": cmd}}),
+                            env=dict(base_env, PATH=bd, RAILS_FLOW_HOOK_DEADLINE="1"), capture_output=True, text=True,
+                            timeout=60).returncode
+        check("deadline (#1575): with no `sleep` on PATH an ordinary command still passes (no instant deadline)",
+              nosleep("git status") == 0, "denied: the watchdog could not sleep and fired at once")
+        check("deadline (#1575): ...and a refused command is still refused (the rules run, only the backstop is gone)",
+              nosleep("git add -A") == 2, "exit 0")
+    # 5. THE KNOB: RAILS_FLOW_HOOK_DEADLINE is an integer >= 1, never above the hook's timeout minus margin.
+    def knob(value: str | None, default: int, top: int) -> str:
+        env = dict(base_env)
+        if value is not None:
+            env["RAILS_FLOW_HOOK_DEADLINE"] = value
+        script = f'. "{HOOKS / "lib" / "deadline.sh"}"; deadline_seconds {default} {top}; printf %s "$_deadline_s"'
+        return _run(["/bin/bash", "-c", script], env=env, capture_output=True, text=True, timeout=30).stdout
+    for value, default, top, want in ((None, 6, 8, "6"), ("3", 6, 8, "3"), ("abc", 6, 8, "6"), ("0", 6, 8, "6"),
+                                      ("", 6, 8, "6"), ("99", 6, 8, "8"), ("-4", 6, 8, "6"), ("2.5", 6, 8, "6")):
+        check(f"deadline (#1575): the knob {value!r} with default {default} and ceiling {top} gives {want}",
+              knob(value, default, top) == want, f"got {knob(value, default, top)!r}")
+    # 5b. THE DEFAULT SITS UNDER THE HOOK'S OWN TIMEOUT. Past that, Claude Code stops waiting and the deadline never
+    # gets to deny; the numbers are read from the hook and from its hooks.json, not repeated here.
+    for hook, manifest, name in ((guard, HOOKS.parent / "hooks.json", "guard-bash.sh"),
+                                 (QA_HOOK, QA_HOOK.parents[1] / "hooks.json", "release-gate.sh")):
+        if not hook.is_file() or not manifest.is_file():
+            continue
+        m = re.search(r"deadline_seconds\s+(\d+)\s+(\d+)", hook.read_text())
+        timeout = next((h["timeout"] for e in json.loads(manifest.read_text())["hooks"]["PreToolUse"]
+                        for h in e["hooks"] if name in h["command"]), None)
+        check(f"deadline (#1575): {name}'s default and ceiling sit below the hook's configured timeout ({timeout} s)",
+              bool(m) and timeout is not None and int(m.group(1)) <= int(m.group(2)) < int(timeout),
+              f"deadline_seconds {m.groups() if m else None} against a timeout of {timeout}")
+    # 6. qa-flow's release gate shares the normaliser and the lib; a timeout refuses a PROMOTION and nothing else.
+    if QA_HOOK.is_file():
+        for cmd in ("git push origin main", "gh pr merge 12 --merge"):
+            rc, took, err, left = hung(QA_HOOK, cmd)
+            check(f"deadline (#1575): release-gate refuses `{cmd}` when it cannot finish reading it (fails CLOSED)",
+                  rc == 2 and "looks like a promotion" in err, f"exit {rc}: {err[:160]!r}")
+            check(f"deadline (#1575): ...in about the deadline, with no process left running",
+                  took < 6 and not left, f"{took:.1f}s, still running: {left}")
+        rc, took, err, left = hung(QA_HOOK, "ls -la")
+        check("deadline (#1575): release-gate ALLOWS a command that does not look like a promotion when it times out "
+              "(blocking every slow command would be the failure)", rc == 0 and not left, f"exit {rc}: {err[:120]!r}")
+        rc, took, err, left = hung(QA_HOOK, "git push origin main", {"QA_ALLOW_MAIN": "1"})
+        check("deadline (#1575): QA_ALLOW_MAIN=1 is honoured and audited on a timeout, as in the missing-tool path",
+              rc == 0 and "audited" in err, f"exit {rc}: {err[:160]!r}")
+
+
 GROUPS = {
     "stop_gate": stop_gate_fixtures, "guard_lane": guard_lane_fixtures,
     "guard_migrate": guard_migrate_fixtures, "lint_ruby": lint_ruby_fixtures,
     "self_consistency": self_consistency_fixtures, "guard_bash": guard_bash_fixtures,
     "guard_claims": guard_claims_fixtures, "release_gate": release_gate_fixtures,
     "ci_verdict_hint": ci_verdict_hint_fixtures, "timeout": timeout_fixtures,
+    "deadline": deadline_fixtures,
 }
 
 

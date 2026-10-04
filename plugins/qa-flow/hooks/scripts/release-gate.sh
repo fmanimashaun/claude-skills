@@ -9,19 +9,10 @@ IFS= read -r -d '' input || true
 # BLOCKING gate -> fail CLOSED when any is missing, but only for a command that looks like a
 # main-ward promotion. The fallback below uses bash builtins ONLY ([[ =~ ]], no grep): "grep:
 # command not found" reads as a non-match, which is exactly how a fallback fails open.
-_missing=""
-for _t in python3 git sed awk tr grep head; do
-  type -P "$_t" >/dev/null 2>&1 || _missing="$_missing $_t"
-done
-if [ -n "$_missing" ]; then
-  # Judged with builtins, and deliberately COARSER than the full detection below, because it cannot
-  # parse the JSON or run the normaliser: it must not be steerable by syntax it cannot see (#1437
-  # round 3). JSON whitespace escapes (\t, \n, \u0009, ...) become spaces first, so an escaped tab
-  # is whitespace. Then it looks for the WORDS, anywhere, with anything between them -- so git's
-  # global options (`git -C . push`, `git -c k=v push`) cannot hide the verb. It over-blocks in a
-  # degraded environment (a message that merely mentions `git push … main` is denied), which is the
-  # safe direction for a gate that cannot tell. A ref under a path (`feature/main`) is not `main` --
-  # except the fully qualified `refs/heads/main`, which is exactly main (#1437 round 4).
+# The COARSE promotion detector, builtins only (no grep, no python3): sets _looks_promotion from the raw payload.
+# Used when a tool is missing (below) AND when the deadline kills the real parse (#1575). Both cannot read the command,
+# so both ask the same question the same way and err on the same side.
+_coarse_looks_promotion() {
   _in="$input"
   for _esc in '\t' '\n' '\r' '\u0009' '\u000a' '\u000A' '\u000d' '\u000D' '\u0020'; do
     _in="${_in//"$_esc"/ }"
@@ -35,6 +26,22 @@ if [ -n "$_missing" ]; then
     [[ $_in =~ ${_b}merge${_e} ]] && _looks_promotion=1
   fi
   [[ $_in =~ ${_b}gh${_e} ]] && [[ $_in =~ ${_b}pr${_e} ]] && [[ $_in =~ ${_b}merge${_e} ]] && _looks_promotion=1
+}
+
+_missing=""
+for _t in python3 git sed awk tr grep head; do
+  type -P "$_t" >/dev/null 2>&1 || _missing="$_missing $_t"
+done
+if [ -n "$_missing" ]; then
+  # Judged with builtins, and deliberately COARSER than the full detection below, because it cannot
+  # parse the JSON or run the normaliser: it must not be steerable by syntax it cannot see (#1437
+  # round 3). JSON whitespace escapes (\t, \n, \u0009, ...) become spaces first, so an escaped tab
+  # is whitespace. Then it looks for the WORDS, anywhere, with anything between them -- so git's
+  # global options (`git -C . push`, `git -c k=v push`) cannot hide the verb. It over-blocks in a
+  # degraded environment (a message that merely mentions `git push … main` is denied), which is the
+  # safe direction for a gate that cannot tell. A ref under a path (`feature/main`) is not `main` --
+  # except the fully qualified `refs/heads/main`, which is exactly main (#1437 round 4).
+  _coarse_looks_promotion
   if [ "$_looks_promotion" = "1" ]; then
     [ "${QA_ALLOW_MAIN:-0}" = "1" ] && { echo "qa-flow:${_missing} missing but QA_ALLOW_MAIN=1 — allowed (audited)." >&2; exit 0; }
     echo "BLOCKED by qa-flow release gate: not found on PATH:${_missing} — cannot verify certification. Install them (python3 on Windows: run Claude Code in WSL/Git Bash), or set QA_ALLOW_MAIN=1 to override." >&2
@@ -42,6 +49,8 @@ if [ -n "$_missing" ]; then
   fi
   exit 0
 fi
+# #1575: from here to the final `exit 0` runs in `_gate_main`, in its own process group, under a deadline (the end of this file).
+_gate_main() {
 cmd="$(printf '%s' "$input" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("tool_input",{}).get("command",""))' 2>/dev/null || printf '%s' "$input")"
 
 # --- Normalize the command so promotion detection can't be fooled (must fail CLOSED) ---
@@ -255,3 +264,29 @@ else
 fi
 echo "qa-flow: certification valid for ${csha:0:12} — promotion permitted." >&2
 exit 0
+}
+
+# THE DEADLINE (#1575). qa-flow's gate sources the same normaliser as guard-bash, and a normaliser that spins left
+# awk children behind for hours. Past the deadline the whole process group is killed. This gate refuses only a
+# main-ward promotion, so a timeout does too: the COARSE builtin detector above judges the raw payload; a command
+# that does not look like a promotion is allowed (blocking every slow command would be the failure here), and one that
+# does is denied, QA_ALLOW_MAIN=1 honoured and audited exactly as in the missing-tool path. The default is under the
+# hook's 15 s timeout (hooks.json) and RAILS_FLOW_HOOK_DEADLINE is clamped at 13. `gh pr view` is the one network
+# call, reached only for a PR merge, which is already a promotion shape, so a slow network denies safely.
+_dl="$(dirname "${BASH_SOURCE[0]}")/lib/deadline.sh"
+if [ -f "$_dl" ] && . "$_dl" 2>/dev/null && type deadline_run >/dev/null 2>&1; then
+  deadline_seconds 10 13
+  deadline_run "$_deadline_s" _gate_main; _rc=$?
+  if [ "$_rc" -ge 128 ]; then
+    _coarse_looks_promotion
+    if [ "$_looks_promotion" = "1" ]; then
+      [ "${QA_ALLOW_MAIN:-0}" = "1" ] && { echo "qa-flow: the gate hit its ${_deadline_s}s deadline but QA_ALLOW_MAIN=1 — allowed (audited)." >&2; exit 0; }
+      echo "BLOCKED by qa-flow release gate: the gate took longer than ${_deadline_s}s, and this command looks like a promotion to main, so it is refused rather than guessed at. Retry it; if it keeps timing out, run /qa-flow:certify and check the repo and network." >&2
+      exit 2
+    fi
+    exit 0
+  fi
+  exit "$_rc"
+fi
+_gate_main
+exit $?
