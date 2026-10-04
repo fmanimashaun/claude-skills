@@ -24,6 +24,7 @@ GUARD = Guard(
            'plugins/qa-flow/scripts/read_certification.py',
            'plugins/qa-flow/scripts/push_targets.py',  # release-gate.sh runs it (#1410)
            'plugins/qa-flow/scripts/release_evidence.py',
+           'plugins/qa-flow/scripts/remote_evidence.py',   # the release gate runs it (#1591)
            'plugins/rails-flow/scripts/self_consistency.py'),
     mutations=(
         # #1569: classify by EFFECT, judge a PR by the HEAD it merges, gate publishing. Each mutation

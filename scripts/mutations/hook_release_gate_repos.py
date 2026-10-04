@@ -13,6 +13,9 @@ GUARD = Guard(
     selftest="plugins/rails-flow/scripts/check_hook_gates.py",
     # Only the group that drives this subject, as the two other release-gate guards do (#1497).
     selftest_args=("--only", "release_gate_repos"),
+    # Each mutant runs only the fixture its `expects` names (#1599), after a control run of the unmutated hook with the same
+    # flag: seventeen mutants of a 150-check group would otherwise cost seventeen whole groups.
+    narrow_with="--match",
     # The harness resolves every hook from the selftest's own location and drives release-gate.sh beside
     # rails-flow's, so the hook trees and qa-flow's scripts are staged. DECLARED, not assumed: an undeclared
     # read kills the unmutated baseline and every mutation then reads as "caught" by that error.

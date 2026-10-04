@@ -151,15 +151,18 @@ def selftest() -> int:
         done = subprocess.run([sys.executable, str(Path(__file__).resolve()), *argv], capture_output=True, text=True, timeout=120)
         return done.returncode, done.stderr
 
-    # Arguments are refused before anything is fetched.
-    for label, argv in (("no repository", ["--sha", "a" * 40]), ("no commit", ["--repo", "o/r"]),
-                        ("a short commit", ["--repo", "o/r", "--sha", "abc1234"]),
-                        ("an upper-case commit", ["--repo", "o/r", "--sha", "A" * 40]),
-                        ("a repository that is a URL", ["--repo", "https://github.com/o/r", "--sha", "a" * 40]),
-                        ("a repository with a space", ["--repo", "o/r x", "--sha", "a" * 40]),
-                        ("a repository that names an option", ["--repo=--upload-pack=x/y", "--sha", "a" * 40])):
+    # Arguments are refused before anything is fetched, and BY THEIR OWN MESSAGE: a value wrongly let through would end as
+    # "unusable" too (a failed network fetch), so only the validation message tells a refusal from an accident.
+    repo_msg, sha_msg = "--repo must be OWNER/REPO", "--sha must be a full 40-digit commit"
+    for label, argv, want in (("no repository", ["--sha", "a" * 40], repo_msg),
+                              ("no commit", ["--repo", "o/r"], sha_msg),
+                              ("a short commit", ["--repo", "o/r", "--sha", "abc1234"], sha_msg),
+                              ("an upper-case commit", ["--repo", "o/r", "--sha", "A" * 40], sha_msg),
+                              ("a repository that is a URL", ["--repo", "https://github.com/o/r", "--sha", "a" * 40], repo_msg),
+                              ("a repository with a space", ["--repo", "o/r x", "--sha", "a" * 40], repo_msg),
+                              ("a repository that names an option", ["--repo=--upload-pack=x/y", "--sha", "a" * 40], repo_msg)):
         rc, err = run(*argv)
-        check(f"{label} is unusable, not fetched", rc == EXIT_UNUSABLE and "unusable" in err, f"rc={rc} {err!r}")
+        check(f"{label} is unusable, not fetched", rc == EXIT_UNUSABLE and want in err, f"rc={rc} {err!r}")
 
     clock = Clock(10, now=iter([0.0, 3.0, 11.0]).__next__)
     check("a clock reports what is left", clock.left() == 7.0)
@@ -167,8 +170,8 @@ def selftest() -> int:
     try:
         git(Clock(-1), Path("."), "status")
         check("a step started with no time left is refused", False, "ran")
-    except Unusable:
-        check("a step started with no time left is refused", True)
+    except Unusable as exc:
+        check("a step started with no time left is refused", "ran out" in str(exc), str(exc))
 
     with tempfile.TemporaryDirectory() as td:
         d = Path(td)

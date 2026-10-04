@@ -63,6 +63,24 @@ def skipping() -> bool:
     return _MATCH_MODE == "survey" or (_MATCH_MODE == "run" and _SKIP)
 
 
+# A group whose fixtures build shared state as they go (repositories, commits, stamps) cannot have that setup stubbed with the
+# rest: the one wanted check would then run against nothing. `@real_setup` keeps every subprocess REAL under `--match`
+# except the hook itself, which is the cost the narrowing exists to avoid (#1592).
+_REAL_SETUP = False
+
+
+def real_setup(fn):
+    def wrapper(*a, **k):
+        global _REAL_SETUP
+        _REAL_SETUP = True
+        try:
+            return fn(*a, **k)
+        finally:
+            _REAL_SETUP = False
+    wrapper.__name__ = fn.__name__
+    return wrapper
+
+
 def check(label: str, ok: bool, detail: str = "") -> None:
     global CHECKS, _INDEX, _SKIP
     if _MATCH_MODE == "survey":
@@ -99,8 +117,14 @@ def record_failure(note: str) -> None:
 _EXPECTING_TIMEOUT = False      # set by timeout_fixtures, which times out on purpose, and the #1504 cost check
 
 
+def _is_hook_run(args) -> bool:
+    """The hook itself, as opposed to the git and gh the fixtures set up around it."""
+    argv = args[0] if args else []
+    return isinstance(argv, (list, tuple)) and any("release-gate.sh" in str(a) for a in argv)
+
+
 def _run(*args, **kw):
-    if skipping():          # `--match`: this is the code before an unwanted check, or the survey (#1599)
+    if skipping() and not (_REAL_SETUP and not _is_hook_run(args)):     # `--match`: the code before an unwanted check, or the survey (#1599)
         text = kw.get("text") or kw.get("universal_newlines")
         empty = "" if text else b""
         return subprocess.CompletedProcess(args[0] if args else kw.get("args"), 0, stdout=empty, stderr=empty)
@@ -2509,6 +2533,7 @@ def release_gate_refs_fixtures() -> None:
               f"rc={rc} marker={marker.exists()} fetch calls={[c for c in calls if c.startswith('fetch')]}")
 
 
+@real_setup
 def release_gate_repos_fixtures() -> None:
     g = ["git", "-c", "user.email=t@t", "-c", "user.name=t"]
     with tempfile.TemporaryDirectory() as td:

@@ -40,6 +40,13 @@ the command: after `git switch main`, a later `git merge`, `git pull` or push is
 `main` after a command that moves a ref or `HEAD` is refused (run them as separate commands). A branch change it
 cannot follow denies.
 
+**Another repository is held to the same standard.** A command that acts on a repository other than this checkout's (`-R`,
+`GH_REPO`, a `repos/<owner>/<repo>` path, another remote) is judged by that repository's own stamp, read through the API, and by
+its first-boot walkthrough and authorization sweep as committed there (`scripts/remote_evidence.py` fetches the commit into a
+scratch repository and runs the same check). A stamp with no `schema` committed after 2026-09-29 is refused until re-certified.
+The gate stops that work by itself inside the hook's 15 s timeout: a hook that times out lets the command through, so a command
+with no time left, or a stalled network call, is denied instead.
+
 ## Platform note
 
 This plugin's hooks are **bash + python3** scripts. On Windows, run Claude Code inside
