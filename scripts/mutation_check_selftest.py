@@ -704,6 +704,32 @@ def run() -> int:
         if mc.hermetic_git.env(given) != given:
             FAILURES.append(f"#1510: a count git rejects ({bogus!r}) must be left untouched, "
                             f"got {mc.hermetic_git.env(given)}")
+    # #1588: an inherited GIT_DIR (git exports it to hooks, `rebase --exec`, `bisect run`...) must not
+    # survive into a fixture's environment: under it, `git -C <tmp> commit` commits into $GIT_DIR.
+    _tick()
+    poisoned = mc.hermetic_git.env({"GIT_DIR": "/real/.git", "GIT_WORK_TREE": "/real", "GIT_INDEX_FILE": "/real/i",
+                                    "PATH": "/usr/bin"})
+    if any(k in poisoned for k in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE")) or poisoned.get("PATH") != "/usr/bin":
+        FAILURES.append(f"#1588: hermetic_git.env must drop the repository-locating variables and keep the rest, "
+                        f"got {sorted(poisoned)}")
+    # ...end to end: the #1493 probe's own commands, under an inherited GIT_DIR naming a stand-in repo.
+    import subprocess as _sp, tempfile as _tf
+    with _tf.TemporaryDirectory() as _w:
+        _real = Path(_w) / "real"
+        _sp.run(["git", "init", "-q", str(_real)], check=True, env=mc.hermetic_git.env())
+        _sp.run(["git", "-C", str(_real), "-c", "user.email=x@x", "-c", "user.name=x", "commit", "-q",
+                 "--allow-empty", "-m", "real"], check=True, env=mc.hermetic_git.env())
+        _env = mc.hermetic_git.env({**os.environ, "GIT_DIR": str(_real / ".git")})
+        _tmp = Path(_w) / "probe"
+        _sp.run(["git", "init", "-q", str(_tmp)], env=_env, capture_output=True)
+        _sp.run(["git", "-C", str(_tmp), "-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgSign=false",
+                 "commit", "-q", "--allow-empty", "-m", "m"], env=_env, capture_output=True)
+        _n = _sp.run(["git", "-C", str(_real), "rev-list", "--count", "HEAD"], capture_output=True, text=True,
+                     env=mc.hermetic_git.env()).stdout.strip()
+        _tick()
+        if _n != "1":
+            FAILURES.append(f"#1588: a fixture commit under an inherited GIT_DIR reached the repo it names "
+                            f"({_n} commits, want 1) -- the t@t/m commits on dev")
     # A selftest that commits in a temp repo under GIT_TRACE and refuses to go on if git started
     # `maintenance run --auto` or `gc --auto` -- the #1493 race. Through run_guard, so it proves
     # the CALLER passes the env to both the baseline and the mutant, not only that the helper builds it.
