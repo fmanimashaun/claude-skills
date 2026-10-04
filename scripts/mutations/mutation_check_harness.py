@@ -52,6 +52,12 @@ GUARD = Guard(
         ),
         # #1599: a mutant runs only the fixture its `expects` names, after a control run of the unmutated code.
         Mutation(
+            "a narrowed mutant that is refused (exit 2) counts as caught, because the refusal quotes its label",
+            "        if narrow and result.returncode != 1:",
+            "        if False:",
+            "#1599: a narrowed mutant that is REFUSED (exit 2) must be a problem",
+        ),
+        Mutation(
             "a narrowing guard's mutants run the whole selftest anyway",
             "            argv.extend(narrow)",
             "            pass",

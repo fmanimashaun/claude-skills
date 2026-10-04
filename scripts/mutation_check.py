@@ -461,6 +461,12 @@ def run_mutation(guard: Guard, mutation: Mutation, timeout: float = MUTATION_FLO
         if result.returncode == 0:
             return [f"{guard.name}: SURVIVED — {mutation.name}. The selftest passed with this "
                     "broken, so nothing guards it."]
+        if narrow and result.returncode != 1:
+            # A refusal (exit 2) quotes the very label `expects` names, so the label check below would score it as a
+            # catch; a crash is no catch either. Only the selftest's own failure, exit 1, is one (review of #1603, F1).
+            return [f"{guard.name}: {mutation.name!r} was refused or crashed under narrowing (exit "
+                    f"{result.returncode}), which is not a catch: only the selftest's own failure (exit 1) counts"
+                    + tail_block(output, 8)]
         if mutation.expects and mutation.expects.lower() not in output.lower():
             # The mutant's own last lines, as the INERT report prints: a wrong-fixture catch seen
             # only on CI was undiagnosable without them, because CI keeps nothing else (#1493). The

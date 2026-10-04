@@ -514,6 +514,8 @@ def run() -> int:
         "import subject_under_test as s\n"
         "match = sys.argv[sys.argv.index('--match') + 1].lower() if '--match' in sys.argv else None\n"
         "want = lambda label: match is None or match in label.lower()\n"
+        "if match is not None and 'REFUSE' in Path(s.__file__).read_text():\n"
+        "    print('selected no check for ' + match, file=sys.stderr); sys.exit(2)\n"
         "ran, failures = [], []\n"
         "if want('fixture-even'):\n"
         "    ran.append('even')\n"
@@ -607,6 +609,18 @@ def run() -> int:
         problems = mc.run_guard(guard)
         if not any("SURVIVED" in x for x in problems):
             FAILURES.append(f"#1599: a mutant the narrowed fixture cannot see must be reported SURVIVED, got {problems}")
+    finally:
+        mc.REPO = original_repo
+    # A REFUSAL IS NOT A CATCH (review of #1603, F1). A mutant that makes the selection refuse exits 2 with a message
+    # that quotes the label `expects` names, so "non-zero and the label appears" counted it as caught. Only the
+    # selftest's own failure, exit 1, is a catch under narrowing.
+    guard, root, log = narrow_guard(mc.Mutation("the selection is refused", "n % 2 == 0", "n % 2 == 0  # REFUSE", "fixture-odd"))
+    mc.REPO = root
+    try:
+        _tick()
+        problems = mc.run_guard(guard)
+        if not any("refused or crashed" in x for x in problems):
+            FAILURES.append(f"#1599: a narrowed mutant that is REFUSED (exit 2) must be a problem, never a catch, got {problems}")
     finally:
         mc.REPO = original_repo
 
