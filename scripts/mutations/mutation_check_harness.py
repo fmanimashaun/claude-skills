@@ -15,10 +15,10 @@ GUARD = Guard(
     mutations=(
         # #1599: the cost ratchet. Each mutation undoes one of its rules; the selftest's section 1f must notice.
         Mutation(
-            "a NEW guard over the floor is accepted, so a new expensive guard never has to be made cheaper",
-            "        elif secs > RATCHET_FLOOR:",
+            "a NEW guard over the new-guard limit is accepted, so a new expensive guard never has to be made cheaper",
+            "        elif secs > RATCHET_NEW:",
             "        elif False:",
-            "the ratchet must report a NEW guard over the floor",
+            "the ratchet must report a NEW guard over the new-guard limit",
         ),
         Mutation(
             "a recorded guard may grow without limit",

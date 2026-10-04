@@ -640,7 +640,8 @@ def run() -> int:
             return [f"raised {exc!r}"]
 
     cases = [
-        ("a NEW guard over the floor", {"heavy": 400.0, "medium": 100.0, "fresh": floor + 1}, record, "fresh"),
+        ("a NEW guard over the new-guard limit", {"heavy": 400.0, "medium": 100.0, "fresh": mc.RATCHET_NEW + 1},
+         record, "fresh"),
         ("a recorded guard past growth and slack", {"heavy": 400.0 * mc.RATCHET_GROWTH + mc.RATCHET_SLACK + 1,
                                                      "medium": 100.0}, record, "heavy"),
         ("a record naming a guard that no longer exists", {"heavy": 400.0}, record, "medium"),
@@ -652,6 +653,10 @@ def run() -> int:
             FAILURES.append(f"#1599: the ratchet must report {label} (naming {names!r}), got {problems}")
     for label, cost, base in (
             ("a new guard under the floor", {"heavy": 400.0, "medium": 100.0, "fresh": floor - 1}, record),
+            # THE REASON RATCHET_NEW EXISTS: a guard just under the record floor is not on record, and a slow runner
+            # can push it past the floor without anyone having made it more expensive.
+            ("a new guard between the record floor and the new-guard limit",
+             {"heavy": 400.0, "medium": 100.0, "fresh": mc.RATCHET_NEW - 1}, record),
             ("a recorded guard within growth and slack", {"heavy": 400.0 * mc.RATCHET_GROWTH + mc.RATCHET_SLACK,
                                                            "medium": 100.0}, record),
             ("a recorded guard that got cheaper, even under the floor", {"heavy": 400.0, "medium": floor - 5}, record)):
