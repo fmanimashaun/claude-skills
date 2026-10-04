@@ -2885,7 +2885,9 @@ def release_gate_repos_fixtures() -> None:
         (gitbin / "git").write_text(f'#!/bin/sh\ncase " $* " in *" fetch "*) sleep 20 ;; esac\nexec {real_git} "$@"\n', encoding="utf-8")
         (gitbin / "git").chmod(0o755)
         started = time.monotonic()
-        rc, err = foreign(sha_good, s2, ev_files, PATH=f"{gitbin}{os.pathsep}{Path(td) / 'bin'}{os.pathsep}{os.environ['PATH']}")
+        # (RAILS_FLOW_HOOK_DEADLINE=13, the gate's own largest deadline, so it is the helper's budget that speaks first, not #1602's.)
+        rc, err = foreign(sha_good, s2, ev_files, RAILS_FLOW_HOOK_DEADLINE="13",
+                          PATH=f"{gitbin}{os.pathsep}{Path(td) / 'bin'}{os.pathsep}{os.environ['PATH']}")
         took = time.monotonic() - started
         check("release-gate (#1591): a fetch that stalls past the hook's own 15 s is stopped by the budget and DENIED, inside the timeout",
               rc == 2 and "time budget" in err and took < 15, f"rc={rc} took={took:.1f}s {err[:240]!r}")
@@ -2901,11 +2903,11 @@ def release_gate_repos_fixtures() -> None:
         took = time.monotonic() - started
         check("release-gate (#1591): a compare call that stalls on its own is cut short and the command DENIED, inside the hook's timeout",
               rc == 2 and took < 15 and "could not be compared" in err, f"rc={rc} took={took:.1f}s {err[:240]!r}")
-        # Two foreign ships in one command share ONE deadline: each API call takes 3 s, so the second ship starts with
+        # Two foreign ships in one command share ONE deadline: each API call takes 2 s, so the second ship starts with
         # no time left to judge the evidence and must deny (the first one, alone, is permitted).
         two = (f"gh pr merge 7 -R other/fork --match-head-commit {sha_good}; "
                f"gh pr merge 8 -R other/fork --match-head-commit {sha_good}")
-        rc, err = foreign(sha_good, s2, ev_files, cmd=two, FAKE_SLEEP="3")
+        rc, err = foreign(sha_good, s2, ev_files, cmd=two, FAKE_SLEEP="2", RAILS_FLOW_HOOK_DEADLINE="13")
         check("release-gate (#1591): a hook that has spent its time on earlier API calls does not start the evidence judge, and DENIES",
               rc == 2 and "no time left" in err, f"rc={rc} {err[:240]!r}")
         rc, err = foreign(sha_good, s2, ev_files, cmd="gh pr merge 7 -R gone/repo", repo_name="gone/repo")

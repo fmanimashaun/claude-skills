@@ -586,8 +586,10 @@ sys.exit(done.returncode)' "$@"
 # layers (#1428) are judged exactly as for this checkout, from the evidence committed in THAT repository:
 # remote_evidence.py fetches the commit into a scratch repository and runs release_evidence.py there (#1591),
 # inside the time the hook has left, because a hook that outlives its timeout (15 s, hooks.json) does not deny: it
-# lets the command through. So the helper runs LAST, after the cheap API calls, with what is left of 12 s (never more
-# than 8), and a command that has no time left is denied. Several ships in one command share that one deadline.
+# lets the command through. The whole gate also runs under a deadline (#1575, `_deadline_s`, 10 s by default), past which
+# its process group is killed and a promotion refused. So the helper runs LAST, after the cheap API calls, with what is
+# left of that deadline minus 2 s (never more than 8), so ITS denial speaks first, and a command that has no time left is
+# denied. Several ships in one command share that one deadline.
 judge_remote() {
   local sha="$1" repo="$2" what="$3" verdict csha why cmp status files evidence budget
   if ! bounded 4 gh api -H 'Accept: application/vnd.github.raw+json' "repos/${repo}/contents/qa/CERTIFICATION?ref=${sha}" >"$stamp_tmp" 2>/dev/null; then
@@ -619,7 +621,7 @@ judge_remote() {
   esac
   # (#1591) The release-only layers (#1428), as for this checkout, judged LAST and inside the time the hook has left
   # (SECONDS counts from the hook's start). Fail-closed: any error, and no time, denies.
-  budget=$(( 12 - SECONDS )); [ "$budget" -le 8 ] || budget=8
+  budget=$(( ${_deadline_s:-12} - 2 - SECONDS )); [ "$budget" -le 8 ] || budget=8
   if [ "$budget" -lt 3 ]; then
     JWHY="${repo}: there is no time left in this hook to judge the release-only layers (#1428) of ${what} (${sha:0:12}): the command acts on too many commits or repositories at once. Split it."; return 1
   fi
