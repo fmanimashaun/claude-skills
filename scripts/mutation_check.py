@@ -240,14 +240,19 @@ def apply_mutation(guard: Guard, mutation: Mutation, workdir: Path) -> Path:
 
 
 # THE COST RATCHET (#1599). `mutation coverage` reached 3490 s of its 3600 s budget and the CI log could not say which
-# guard had grown: the doctor kept one summary line. A guard over RATCHET_FLOOR seconds of work (baseline plus every
-# mutant, summed over all jobs) must be on record in COST_BASELINE; a recorded one may cost RATCHET_GROWTH times its
+# guard had grown: the doctor kept one summary line. A guard over RATCHET_NEW seconds of work (baseline plus every
+# mutant, summed over all jobs) must be on record in COST_BASELINE, which holds every guard over RATCHET_FLOOR; a recorded one may cost RATCHET_GROWTH times its
 # record plus RATCHET_SLACK, which keeps a runner's speed from reading as growth; a record naming a guard that is gone
 # is drift. A new expensive guard therefore fails until it is made cheaper (`narrow_with`) or recorded from a measured
 # run with `--rebaseline`, a diff somebody reviews. Seconds depend on the runner, so the record is measured where the gate
 # runs (CI) and enforced only with `--ratchet`, which the doctor passes on the run whose job is to prove this gate.
 COST_BASELINE = REPO / "docs" / "evidence" / "mutation-cost-baseline.json"
 RATCHET_FLOOR = 60.0
+# A guard NOT on record fails only over RATCHET_NEW, twice the floor that decides what gets recorded. The record holds the
+# guards that cost over 60 s; one that cost 55 s when it was made is not in it, and a runner that is 1.5x slower on the day
+# reads it as 82 s without anyone having made it more expensive. Measured on the runner (run 37183258895): the CI's
+# runner speed moved the whole gate between 967 s and 1536 s for the same work.
+RATCHET_NEW = 120.0
 RATCHET_GROWTH = 1.5
 RATCHET_SLACK = 30.0
 
@@ -289,9 +294,9 @@ def ratchet_problems(cost: dict[str, float], baseline: dict | None) -> list[str]
                 problems.append(f"{name}: costs {secs:.0f}s of work, past {RATCHET_GROWTH:g}x its recorded "
                                 f"{recorded[name]:.0f}s plus {RATCHET_SLACK:g}s = {limit:.0f}s; make it cheaper, "
                                 "or re-set the record from a measured run (--rebaseline)")
-        elif secs > RATCHET_FLOOR:
-            problems.append(f"{name}: a NEW guard costing {secs:.0f}s of work, over the {RATCHET_FLOOR:g}s floor and "
-                            "not on record; make it cheaper (`narrow_with` runs each mutant on one fixture), or "
+        elif secs > RATCHET_NEW:
+            problems.append(f"{name}: a NEW guard costing {secs:.0f}s of work, over the {RATCHET_NEW:g}s new-guard limit "
+                            "and not on record; make it cheaper (`narrow_with` runs each mutant on one fixture), or "
                             "record it with --rebaseline")
     for name in sorted(set(recorded) - set(cost)):
         problems.append(f"{name}: the cost record names a guard that no longer exists; re-set the record "
