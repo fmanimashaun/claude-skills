@@ -29,8 +29,8 @@ WHAT IT CHECKS
                               what ships omits it
   undocumented-command        a plugins/<p>/commands/<c>.md that README.md (as `c`) or the
                               plugin's README (as /p:c) never names — same defect, one level down
-  hook-lib-drift              the two shipped copies of hooks/scripts/lib/normalize_cmd.sh differ, or
-                              one is missing -- one normaliser is a claim only while they are identical
+  hook-lib-drift              the two shipped copies of hooks/scripts/lib/normalize_cmd.sh, or of lib/deadline.sh,
+                              differ, or one is missing -- one normaliser is a claim only while they are identical
   fixture-git-drift           the three shipped copies of scripts/fixture_git.py (rails-flow, qa-flow,
                               pipeline) differ, or one is missing -- one fixture-git lock, three copies (#1588)
   claude-md-growth            CLAUDE.md past the ceiling recorded in its own marker (or no marker,
@@ -571,25 +571,32 @@ _CLAUDE_MD_MARKER = re.compile(r"<!--\s*claude-md:\s*max-lines\s+(\d+)\s*-->")
 # the other). A missing copy is a finding too: a hook whose lib is gone falls back to raw matching.
 HOOK_LIB_COPIES = ("plugins/rails-flow/hooks/scripts/lib/normalize_cmd.sh",
                    "plugins/qa-flow/hooks/scripts/lib/normalize_cmd.sh")
+# #1575: `lib/deadline.sh` is the second shared lib -- both hooks run their work under it, and a deadline that was
+# fixed in one plugin's copy and not the other leaves the other's hook able to spin for hours.
+HOOK_LIB_PAIRS = (HOOK_LIB_COPIES,
+                  ("plugins/rails-flow/hooks/scripts/lib/deadline.sh",
+                   "plugins/qa-flow/hooks/scripts/lib/deadline.sh"))
 
 
 def check_hook_lib_drift() -> tuple[list[Finding], int]:
-    """The hook lib copies exist and are byte-identical."""
+    """Each hook lib's copies exist and are byte-identical."""
     findings: list[Finding] = []
-    texts = {}
-    for rel in HOOK_LIB_COPIES:
-        p = ROOT / rel
-        if not p.is_file():
-            findings.append(Finding("hook-lib-drift", rel, 0,
-                                    "missing -- the hook beside it falls back to raw-text matching; copy it from the other plugin"))
-            continue
-        texts[rel] = p.read_bytes()
-    if len(texts) == len(HOOK_LIB_COPIES) and len(set(texts.values())) > 1:
-        a, b = HOOK_LIB_COPIES
-        findings.append(Finding("hook-lib-drift", b, 0,
-                                f"differs from {a} -- one normaliser, two copies: a fix landed in one and not the other. "
-                                "Make them identical (cp) and re-run"))
-    return findings, len(HOOK_LIB_COPIES)
+    for pair in HOOK_LIB_PAIRS:
+        texts = {}
+        for rel in pair:
+            p = ROOT / rel
+            if not p.is_file():
+                findings.append(Finding("hook-lib-drift", rel, 0,
+                                        "missing -- the hook beside it falls back to raw-text matching or runs with no "
+                                        "deadline; copy it from the other plugin"))
+                continue
+            texts[rel] = p.read_bytes()
+        if len(texts) == len(pair) and len(set(texts.values())) > 1:
+            a, b = pair
+            findings.append(Finding("hook-lib-drift", b, 0,
+                                    f"differs from {a} -- one lib, two copies: a fix landed in one and not the other. "
+                                    "Make them identical (cp) and re-run"))
+    return findings, sum(len(pair) for pair in HOOK_LIB_PAIRS)
 
 
 # Rule: fixture-git-drift (#1588)
@@ -4791,12 +4798,20 @@ def selftest() -> int:
         files={"CLAUDE.md": "@AGENTS.md\nrule\n", **_hist},
     )
     LIB = "#!/usr/bin/env bash\nnormalize_segments() { cat; }\n"
+    DL = HOOK_LIB_PAIRS[1]
+    DL_OK = {DL[0]: LIB, DL[1]: LIB}          # the deadline pair, identical, so each scenario below tests ONE thing
     scenario("identical hook lib copies are silent", rule="hook-lib-drift", expect_finding=False,
-             files={HOOK_LIB_COPIES[0]: LIB, HOOK_LIB_COPIES[1]: LIB})
+             files={HOOK_LIB_COPIES[0]: LIB, HOOK_LIB_COPIES[1]: LIB, **DL_OK})
     scenario("hook lib copies that differ by one byte are a finding", rule="hook-lib-drift", expect_finding=True,
-             files={HOOK_LIB_COPIES[0]: LIB, HOOK_LIB_COPIES[1]: LIB + "\n"})
+             files={HOOK_LIB_COPIES[0]: LIB, HOOK_LIB_COPIES[1]: LIB + "\n", **DL_OK})
     scenario("a missing hook lib copy is a finding", rule="hook-lib-drift", expect_finding=True,
-             files={HOOK_LIB_COPIES[0]: LIB})
+             files={HOOK_LIB_COPIES[0]: LIB, **DL_OK})
+    scenario("identical deadline lib copies are silent", rule="hook-lib-drift", expect_finding=False,
+             files={HOOK_LIB_COPIES[0]: LIB, HOOK_LIB_COPIES[1]: LIB, DL[0]: LIB, DL[1]: LIB})
+    scenario("deadline lib copies that differ by one byte are a finding", rule="hook-lib-drift", expect_finding=True,
+             files={HOOK_LIB_COPIES[0]: LIB, HOOK_LIB_COPIES[1]: LIB, DL[0]: LIB, DL[1]: LIB + "\n"})
+    scenario("a missing deadline lib copy is a finding", rule="hook-lib-drift", expect_finding=True,
+             files={HOOK_LIB_COPIES[0]: LIB, HOOK_LIB_COPIES[1]: LIB, DL[0]: LIB})
     FG = "def run(repo, *args):\n    pass\n"
     scenario("identical fixture_git copies are silent", rule="fixture-git-drift", expect_finding=False,
              files={c: FG for c in FIXTURE_GIT_COPIES})
