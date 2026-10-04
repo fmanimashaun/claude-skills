@@ -177,7 +177,8 @@ add_commit() {
           git fetch -q --end-of-options origin "$ref" 2>/dev/null && c="$(git rev-parse --verify -q 'FETCH_HEAD^{commit}' 2>/dev/null || true)"
         fi
       else
-        c="$(gh api "repos/${_R}/commits/${ref}" -q .sha 2>/dev/null || true)"
+        # Another repository: the ref becomes part of an API path, so it is a plain name (#1591, the class of #1600).
+        ! plain_ref "$ref" || c="$(gh api "repos/${_R}/commits/${ref}" -q .sha 2>/dev/null || true)"
       fi ;;
   esac
   if [ -n "$c" ]; then add_ship "$c" "${_R:--}" "$4"; else unresolved_pr=1; fi
@@ -669,6 +670,10 @@ resolve_release() {
       _rsha="$(default_tip 2>/dev/null | head -1)"
     fi
   else
+    # Another repository: a tag or target becomes part of an API path, so each is a plain name, else the commit
+    # cannot be named (#1591, the class of #1600). `x?y` or `../x` would otherwise read a different endpoint.
+    [ -z "$tag" ] || plain_ref "$tag" || return 1
+    [ -z "$tgt" ] || plain_ref "$tgt" || return 1
     if [ -n "$tag" ]; then
       o="$(gh api "repos/${_R}/git/matching-refs/tags/${tag}" --jq '.[].ref' 2>/dev/null)" || return 1
       if printf '%s\n' "$o" | grep -qx "refs/tags/${tag}"; then

@@ -2764,6 +2764,22 @@ def release_gate_repos_fixtures() -> None:
         rc, err = foreign(sha_good, s2, ev_files, cmd=two, FAKE_SLEEP="3")
         check("release-gate (#1591): a hook that has spent its time on earlier API calls does not start the evidence judge, and DENIES",
               rc == 2 and "no time left" in err, f"rc={rc} {err[:240]!r}")
+        # A ref, tag or target that becomes part of ANOTHER repository's API path is a plain name. The fake gh answers any
+        # commits/<anything> with the certified commit, as an endpoint reached through `?` or `..` would answer something.
+        for label, cmd in (
+                ("a REST merge's head", "gh api repos/other/fork/merges -f base=main -f head='x?y'"),
+                ("a REST merge's head with ..", "gh api repos/other/fork/merges -f base=main -f head=../../x"),
+                ("a release's --target", "gh release create v1 -R other/fork --target 'x?y'"),
+                ("a release's --target with ..", "gh release create v1 -R other/fork --target ../../x"),
+                ("a release's tag", "gh release create 'a?b' -R other/fork --target dev")):
+            rc, err = foreign(sha_good, s2, ev_files, cmd=cmd)
+            check(f"release-gate (#1591): {label} that is not a plain name is never put in another repository's API path, and is DENIED",
+                  rc == 2, f"rc={rc} {err[:240]!r}")
+        for label, cmd in (("a REST merge's head", "gh api repos/other/fork/merges -f base=main -f head=dev"),
+                           ("a release's --target", "gh release create v1 -R other/fork --target dev")):
+            rc, err = foreign(sha_good, s2, ev_files, cmd=cmd)
+            check(f"release-gate (#1591): CONTROL: {label} that is a plain name is read and judged (certified: permitted)",
+                  rc == 0, f"rc={rc} {err[:240]!r}")
         rc, err = foreign(sha_good, s2, ev_files, cmd="gh pr merge 7 -R gone/repo", repo_name="gone/repo")
         check("release-gate (#1591): a repository whose objects cannot be fetched is denied, naming the layer and the repository",
               rc == 2 and "#1428" in err and "gone/repo" in err, f"rc={rc} {err[:300]!r}")
