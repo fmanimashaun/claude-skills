@@ -616,6 +616,15 @@ def run() -> int:
     # plus RATCHET_SLACK; a record naming a guard that is gone is drift. Pure functions, so every rule has a case.
     floor = mc.RATCHET_FLOOR
     record = {"guards": {"heavy": 400.0, "medium": 100.0}}
+
+    def ratchet(cost: dict, base: dict | None) -> list[str]:
+        """`ratchet_problems`, with a raise reported as a problem: a mutant that breaks it by CRASHING would
+        otherwise die with a traceback that names no fixture, and read as caught by the wrong thing (#1599)."""
+        try:
+            return mc.ratchet_problems(cost, base)
+        except Exception as exc:        # noqa: BLE001 -- the check below fails by name
+            return [f"raised {exc!r}"]
+
     cases = [
         ("a NEW guard over the floor", {"heavy": 400.0, "medium": 100.0, "fresh": floor + 1}, record, "fresh"),
         ("a recorded guard past growth and slack", {"heavy": 400.0 * mc.RATCHET_GROWTH + mc.RATCHET_SLACK + 1,
@@ -624,7 +633,7 @@ def run() -> int:
     ]
     for label, cost, base, names in cases:
         _tick()
-        problems = mc.ratchet_problems(cost, base)
+        problems = ratchet(cost, base)
         if not any(names in x for x in problems):
             FAILURES.append(f"#1599: the ratchet must report {label} (naming {names!r}), got {problems}")
     for label, cost, base in (
@@ -633,11 +642,11 @@ def run() -> int:
                                                            "medium": 100.0}, record),
             ("a recorded guard that got cheaper, even under the floor", {"heavy": 400.0, "medium": floor - 5}, record)):
         _tick()
-        problems = mc.ratchet_problems(cost, base)
+        problems = ratchet(cost, base)
         if problems:
             FAILURES.append(f"#1599 CONTROL: the ratchet must accept {label}, got {problems}")
     _tick()
-    problems = mc.ratchet_problems({"heavy": 400.0}, None)
+    problems = ratchet({"heavy": 400.0}, None)
     if not (len(problems) == 1 and "no cost record" in problems[0]):
         FAILURES.append(f"#1599: with no record at all the ratchet must say so once, never pass, got {problems}")
     # The record: only guards over the floor, deterministic bytes, and a round trip.
