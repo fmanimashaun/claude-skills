@@ -38,8 +38,8 @@ GUARD = Guard(
         ),
         Mutation(
             "the evidence judge may run past the budget, so a slow judge outlives the hook",
-            "capture_output=True, text=True, timeout=left, stdin=subprocess.DEVNULL)\n        except subprocess.TimeoutExpired as exc:\n            raise Unusable(\"the evidence was not judged",
-            "capture_output=True, text=True, timeout=600, stdin=subprocess.DEVNULL)\n        except subprocess.TimeoutExpired as exc:\n            raise Unusable(\"the evidence was not judged",
+            "                             scratch, left)\n        except subprocess.TimeoutExpired as exc:\n            raise Unusable(\"the evidence was not judged",
+            "                             scratch, 600)\n        except subprocess.TimeoutExpired as exc:\n            raise Unusable(\"the evidence was not judged",
             "a judge that outlives the budget is unusable",
         ),
         Mutation(
@@ -53,6 +53,12 @@ GUARD = Guard(
             "        shutil.rmtree(scratch, ignore_errors=True)",
             "        pass",
             "no scratch repository is left behind",
+        ),
+        Mutation(
+            "a timeout kills only the step's own process, so git's remote helper and a credential helper run on",
+            "            os.killpg(proc.pid, signal.SIGKILL)",
+            "            proc.kill()",
+            "leaves no child running",
         ),
     ),
 )

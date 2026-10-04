@@ -35,6 +35,7 @@ import argparse
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -62,13 +63,33 @@ class Clock:
         return self.end - self.now()
 
 
+def run_group(argv: list, cwd: Path, timeout: float, env: dict | None = None) -> subprocess.CompletedProcess:
+    """`subprocess.run`, in its own session, so a timeout kills EVERY process the step started. `subprocess.run(timeout=)`
+    kills only the direct child: git forks `git-remote-https` and a credential helper, and those ran on after the helper had
+    given up (the straggler class of #1575). Raises `subprocess.TimeoutExpired` after killing the group."""
+    proc = subprocess.Popen(argv, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL,
+                            text=True, env=env, start_new_session=True)
+    try:
+        out, err = proc.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+        try:
+            proc.communicate(timeout=5)         # reap it; never wait on a pipe a leaver still holds
+        except subprocess.TimeoutExpired:
+            pass
+        raise
+    return subprocess.CompletedProcess(argv, proc.returncode, out, err)
+
+
 def git(clock: Clock, cwd: Path, *args: str, env: dict | None = None) -> subprocess.CompletedProcess:
     left = clock.left()
     if left <= 0:
         raise Unusable("the time budget ran out before the evidence could be read")
     try:
-        return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, timeout=left,
-                              stdin=subprocess.DEVNULL, env=env)
+        return run_group(["git", *args], cwd, left, env)
     except subprocess.TimeoutExpired as exc:
         raise Unusable("a git step did not finish within the time budget") from exc
     except OSError as exc:
@@ -106,8 +127,8 @@ def judge(clock: Clock, repo: str, sha: str, url: str | None = None, evidence_sc
         if left <= 0:
             raise Unusable("the time budget ran out before the evidence could be judged")
         try:
-            done = subprocess.run([sys.executable, str(evidence_script or HERE / "release_evidence.py"), "stamp", "--rev", sha],
-                                  cwd=scratch, capture_output=True, text=True, timeout=left, stdin=subprocess.DEVNULL)
+            done = run_group([sys.executable, str(evidence_script or HERE / "release_evidence.py"), "stamp", "--rev", sha],
+                             scratch, left)
         except subprocess.TimeoutExpired as exc:
             raise Unusable("the evidence was not judged within the time budget") from exc
         sys.stdout.write(done.stdout)
@@ -228,6 +249,45 @@ def selftest() -> int:
         rc, _, se = judged(sha, str(src), slow, budget=4)
         check("a judge that outlives the budget is unusable, and stops at the budget", rc == EXIT_UNUSABLE
               and "time budget" in se and time.monotonic() - started < 15, f"rc={rc} {se!r} {time.monotonic() - started:.1f}s")
+        # A timeout kills the whole process group, not only the step's own process: each stub forks a child that would outlive it.
+        def child_gone(pidfile: Path) -> tuple:
+            for _ in range(20):
+                if pidfile.exists() and pidfile.read_text().strip():
+                    break
+                time.sleep(0.1)
+            if not (pidfile.exists() and pidfile.read_text().strip()):
+                return False, "the stub never recorded its child"
+            pid = int(pidfile.read_text().strip())
+            for _ in range(30):
+                try:
+                    os.kill(pid, 0)
+                except ProcessLookupError:
+                    return True, ""
+                time.sleep(0.1)
+            os.kill(pid, signal.SIGKILL)            # do not leave it behind either way
+            return False, f"child {pid} is still running"
+
+        kid = d / "kid.pid"
+        slow_kid = d / "slow-kid.py"
+        slow_kid.write_text(f"import subprocess, time\nk = subprocess.Popen(['sleep', '30'])\nopen({str(kid)!r}, 'w').write(str(k.pid))\ntime.sleep(30)\n",
+                            encoding="utf-8")
+        rc, _, se = judged(sha, str(src), slow_kid, budget=4)
+        gone, why = child_gone(kid)
+        check("a judge that times out leaves no child running", rc == EXIT_UNUSABLE and gone, f"rc={rc} {why} {se!r}")
+        shim = d / "shimbin"
+        shim.mkdir()
+        fkid = d / "fetch-kid.pid"
+        real_git = shutil.which("git")
+        (shim / "git").write_text(f'#!/bin/sh\ncase " $* " in *" fetch "*) sleep 30 & echo $! > "{fkid}"; wait ;; esac\nexec {real_git} "$@"\n',
+                                  encoding="utf-8")
+        (shim / "git").chmod(0o755)
+        saved_path, os.environ["PATH"] = os.environ["PATH"], f"{shim}{os.pathsep}{os.environ['PATH']}"
+        try:
+            rc, _, se = judged(sha, str(src), fake, budget=3)
+        finally:
+            os.environ["PATH"] = saved_path
+        gone, why = child_gone(fkid)
+        check("a fetch that times out leaves no child running", rc == EXIT_UNUSABLE and gone, f"rc={rc} {why} {se!r}")
         leftovers = [p for p in d.glob("qa-remote-evidence.*")]
         check("no scratch repository is left behind", not leftovers, leftovers)
         tempfile.tempdir = saved_tmp

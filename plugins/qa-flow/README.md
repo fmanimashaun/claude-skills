@@ -44,8 +44,9 @@ cannot follow denies.
 `GH_REPO`, a `repos/<owner>/<repo>` path, another remote) is judged by that repository's own stamp, read through the API, and by
 its first-boot walkthrough and authorization sweep as committed there (`scripts/remote_evidence.py` fetches the commit into a
 scratch repository and runs the same check). A stamp with no `schema` committed after 2026-09-29 is refused until re-certified.
-The gate stops that work by itself inside the hook's 15 s timeout: a hook that times out lets the command through, so a command
-with no time left, or a stalled network call, is denied instead.
+The gate stops THAT work (the helper and the two API calls that read the stamp) by itself inside the hook's 15 s timeout: a
+hook that times out lets the command through, so a command with no time left, or a stalled call among those, is denied instead.
+The hook's other network calls are not bounded here; a deadline over the whole hook is a separate change (#1602).
 
 ## Platform note
 
