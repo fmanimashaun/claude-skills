@@ -74,7 +74,9 @@ DEFAULTS = {
     "title": "Status board",
     "full_run_workflow": None,          # no default: a run that is not configured is unknown, not "none"
     "full_run_event": "workflow_dispatch",
-    "review_pattern": r"Independent review at ([0-9a-f]{7,40})\W[^\n]{0,80}?\b(CLEAN|BLOCKED)\b",
+    "integration_branch": None,         # None: `integration_branch_of` finds it (dev when origin/dev exists)
+    "review_pattern": None,             # None: `verdict_of` reads the shapes in use. A regex here replaces it
+                                        # (group 1 = the commit, group 2 = CLEAN or BLOCKED)
     "stale_minutes": 60,
     "drafted_hours": 4,
     "zombie_warn": 50,
@@ -338,6 +340,28 @@ def collect_prs(env: Env, repo: Repo, cfg: dict, sessions: list[dict]) -> dict:
     return p
 
 
+_VERDICT_WORD = re.compile(r"\b(CLEAN|BLOCKED)\b")
+_VERDICT_SHA = re.compile(r"\b(?:at|of|head|commit)\s+([0-9a-f]{7,40})\b")
+
+
+def verdict_of(body: str) -> "tuple[str, str] | None":
+    """(commit, verdict) of one review comment, or None when the comment is not a verdict. A verdict is a comment
+    whose FIRST LINE says `review` or `re-check` (Review, Re-review, Delta review, Independent review) and holds CLEAN or
+    BLOCKED in capitals. A verdict worded only in prose ("one mechanical blocker remains") is not read: the board then
+    shows the review before it as stale, which asks for a re-review.
+    The verdict is the LAST such word on the line, because a delta review quotes the one before it ("since my CLEAN
+    at 0fdb8eb): CLEAN"). The commit is the first hex word after at, of, head or commit, so a run id is never read
+    as one. A verdict that names no commit gives "" for it: it is a verdict, and it cannot be compared with a head."""
+    first = next((ln for ln in str(body or "").splitlines() if ln.strip()), "")
+    if not re.search(r"\b(?:review|re-?check)\b", first, re.I):
+        return None
+    words = _VERDICT_WORD.findall(first)
+    if not words:
+        return None
+    m = _VERDICT_SHA.search(first)
+    return (m.group(1) if m else ""), words[-1]
+
+
 def review_of(env: Env, repo: Repo, cfg: dict, n: object, head: str) -> dict:
     if not head:
         return {"state": "unknown"}          # no head commit: no verdict can be compared with it
@@ -345,18 +369,26 @@ def review_of(env: Env, repo: Repo, cfg: dict, n: object, head: str) -> dict:
     data = _json(out) if rc == 0 else None
     if not isinstance(data, dict):
         return {"state": "unknown"}
+    custom = cfg.get("review_pattern")
     try:
-        pat = re.compile(str(cfg["review_pattern"]))
+        pat = re.compile(str(custom)) if custom else None
     except re.error:
         return {"state": "unknown"}
     found = None
     for c in data.get("comments") or []:
-        m = pat.search(str((c or {}).get("body") or ""))
-        if m:
-            found = m                       # the LAST matching comment decides
+        body = str((c or {}).get("body") or "")
+        if pat:
+            m = pat.search(body)
+            v = (m.group(1), m.group(2)) if m else None
+        else:
+            v = verdict_of(body)
+        if v:
+            found = v                       # the LAST matching comment decides
     if not found:
         return {"state": "none"}
-    sha, verdict = found.group(1), found.group(2).upper()
+    sha, verdict = found[0], found[1].upper()
+    if not sha:
+        return {"state": "unknown", "head": ""}        # a verdict that names no commit: not "none", not a match
     if not head.startswith(sha) and not sha.startswith(head[: len(sha)]):
         return {"state": "stale", "head": sha[:7], "verdict": verdict}
     return {"state": "clean" if verdict == "CLEAN" else "blocked", "head": sha[:7], "verdict": verdict}
@@ -609,10 +641,22 @@ def guarded(label: str, fn: Callable[[], dict]) -> dict:
         return unknown(say("unknown.source", why=f"{label}: {type(e).__name__}"))
 
 
+def integration_branch_of(env: Env, root: Path, cfg: dict) -> str:
+    """The branch a finished worktree's commits must reach. First that exists: the configured one; `dev` when
+    `origin/dev` exists (the git flow this marketplace ships: work merges to dev, and origin/HEAD is the install
+    surface, so it lags dev by every unreleased commit); the remote's default branch; `main`."""
+    named = cfg.get("integration_branch")
+    if isinstance(named, str) and named.strip():
+        return named.strip()
+    if env.sh(["git", "rev-parse", "--verify", "-q", "refs/remotes/origin/dev"], root)[0] == 0:
+        return "dev"
+    rc, br = env.sh(["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"], root)
+    return br.strip().split("/", 1)[-1] if rc == 0 and br.strip() else "main"
+
+
 def collect(env: Env, root: Path) -> dict:
     cfg, cfg_err = load_config(env, root)
-    rc, br = env.sh(["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"], root)
-    integration = cfg.get("integration_branch") or (br.strip().split("/", 1)[-1] if rc == 0 and br.strip() else "main")
+    integration = integration_branch_of(env, root, cfg)
     me = Repo(root.name, root, None, True)     # gh infers the current repository from its directory: no --repo
     status, rec = read_record(env, root)
     record = rec if status == "ok" else {}

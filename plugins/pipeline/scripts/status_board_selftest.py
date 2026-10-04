@@ -180,6 +180,8 @@ def run() -> int:
         measured_panels(tmp)
         unknown_not_zero(tmp)
         review_59(tmp)
+        integration_branch(tmp)
+        review_shapes(tmp)
         bounded_counts(tmp)
         coordination(tmp)
         workspace(tmp)
@@ -193,6 +195,90 @@ def run() -> int:
         print(f"FAIL: {f}", file=sys.stderr)
     print(f"status_board selftest: {CHECKS[0]} checks, {len(FAILURES)} failure(s)")
     return 1 if FAILURES else 0
+
+
+# ---- the integration branch, and the review shapes in use (#1595 review, F1 to F3) -------------------
+def integration_branch(tmp: Path) -> None:
+    """Finished means the head reached the integration branch. The default stub makes origin/HEAD and origin/dev
+    the same, which is why a repo whose origin/HEAD is main and whose work lands on dev was never tried."""
+    done = "2" * 40
+
+    def world(name: str, *, head_branch: str, has_dev: bool, config: "dict | None" = None, reaches: str = "dev") -> World:
+        w = w_with(tmp, name)
+        r = str(w.root)
+        w.on(["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"], f"origin/{head_branch}\n", cwd=r)
+        w.on(["git", "rev-parse", "--verify", "-q", "refs/remotes/origin/dev"], "", rc=0 if has_dev else 1, cwd=r)
+        w.on(["git", "worktree", "list", "--porcelain"],
+             f"worktree {r}\nHEAD {'1' * 40}\nbranch refs/heads/dev\n\nworktree /w/done\nHEAD {done}\nbranch refs/heads/fix/done\n\n", cwd=r)
+        for b in ("main", "dev", "release"):
+            w.on(["git", "merge-base", "--is-ancestor", done, f"origin/{b}"], "", rc=0 if b == reaches else 1, cwd=r)
+        w.on(["git", "-C", "/w/done", "status", "--porcelain"], "")
+        if config is not None:
+            w.config(config)
+        return w
+
+    def done_row(w: World) -> dict:
+        b = w.board()
+        return {i["branch"]: i for i in items(b, "worktrees")}["fix/done"], b
+
+    row, b = done_row(world("ib-dev", head_branch="main", has_dev=True))
+    check("origin/HEAD is main, origin/dev exists, and the work is on dev: the board uses dev and the worktree is finished",
+          b["repo"]["integration"] == "dev" and row["merged"] is True and row["finished"] is True,
+          f'{b["repo"]["integration"]} {row}')
+    row, b = done_row(world("ib-nodev", head_branch="main", has_dev=False, reaches="main"))
+    check("with no origin/dev the integration branch is the remote's default branch",
+          b["repo"]["integration"] == "main" and row["merged"] is True, str(b["repo"]))
+    row, b = done_row(world("ib-cfg", head_branch="main", has_dev=True, config={"integration_branch": "release"}, reaches="release"))
+    check("a configured integration_branch beats dev and origin/HEAD, and reaches the board (the key was dropped before)",
+          b["repo"]["integration"] == "release" and row["merged"] is True, str(b["repo"]))
+    row, b = done_row(world("ib-blank", head_branch="main", has_dev=True, config={"integration_branch": "  "}))
+    check("a blank integration_branch is no configuration", b["repo"]["integration"] == "dev", str(b["repo"]))
+    check("integration_branch is declared in DEFAULTS, so the config schema names it and load_config keeps it",
+          "integration_branch" in sb.DEFAULTS
+          and sb.load_config(world("ib-keep2", head_branch="main", has_dev=True, config={"integration_branch": "x"}).env(),
+                             tmp / "ib-keep2")[0].get("integration_branch") == "x")
+
+
+def review_shapes(tmp: Path) -> None:
+    """The default reads the shapes reviewers write. status_board_verdicts.json holds the first line of every verdict
+    comment on the last 40 pull requests (collected 2026-10-04), with the commit and verdict read BY EYE, so the
+    expected values are not the matcher's own output. The old default read 29 of the 57."""
+    data = json.loads((Path(__file__).with_name("status_board_verdicts.json")).read_text())
+    verdicts, others = data["verdicts"], data["not_verdicts"]
+    check("the fixture holds the 57 verdicts and 10 near-misses it was collected with", len(verdicts) == 57 and len(others) == 10,
+          f"{len(verdicts)} {len(others)}")
+    wrong = [(v["pr"], v["line"][:50], sb.verdict_of(v["line"])) for v in verdicts if sb.verdict_of(v["line"]) != (v["sha"], v["verdict"])]
+    check("every real verdict comment is read: its commit and CLEAN or BLOCKED", wrong == [], str(wrong[:3]))
+    read = [o for o in others if sb.verdict_of(o["line"]) is not None]
+    check("no real near-miss is read as a verdict (dispositions, handoffs, a prose-worded re-review)", read == [], str(read[:3]))
+    old = re.compile(r"Independent review at ([0-9a-f]{7,40})\W[^\n]{0,80}?\b(CLEAN|BLOCKED)\b")
+    missed = [v for v in verdicts if not old.search(v["line"])]
+    check("the fixture can see the defect: the old default misses 28 of the 57", len(missed) == 28, str(len(missed)))
+    for line, why in [("mergeStateStatus is CLEAN, merge it", "no word review"),
+                      ("Please review at abc1234 when you can", "no verdict word"),
+                      ("a CLEAN build at abc1234", "no word review"),
+                      ("", "an empty comment")]:
+        check(f"a near-miss is not a verdict ({why}): {line[:40]}", sb.verdict_of(line) is None, str(sb.verdict_of(line)))
+    check("a delta review that quotes the verdict before it is read by its own: 'since my CLEAN at 0fdb8eb): CLEAN'",
+          sb.verdict_of("## Delta review of #1602 at 01a8be43 (since my CLEAN at 0fdb8eb): BLOCKED") == ("01a8be43", "BLOCKED"))
+    check("a run id is never read as the commit", sb.verdict_of("## Review - CLEAN (run 37150723162, head fc28fcef)") == ("fc28fcef", "CLEAN"))
+
+    h = head(50)
+    w = w_with(tmp, "rv-shapes")
+    w.gh_set(["pr", "list", "--state", "open", "--limit", "100", "--json", PR_FIELDS], [pr(50), pr(51), pr(52)])
+    w.gh_set(["pr", "view", "50", "--json", "comments"], {"comments": [{"body": f"**Independent re-review at {h[:7]}: CLEAN**"}]})
+    w.gh_set(["pr", "view", "51", "--json", "comments"], {"comments": [{"body": "Independent review of #51: **CLEAN**. No blockers."}]})
+    w.gh_set(["pr", "view", "52", "--json", "comments"], {"comments": [{"body": f"## Review - CLEAN (head {head(52)[:7]})"}, {"body": f"Re-check at {'f' * 7}: still CLEAN."}]})
+    rv = {n: i["review"] for n, i in by_n(w.board()).items()}
+    check("a re-review is a verdict on the head", rv[50]["state"] == "clean", str(rv[50]))
+    check("a verdict that names no commit is UNKNOWN, never 'none' (which says 'Assign a review.')", rv[51]["state"] == "unknown", str(rv[51]))
+    check("the last verdict decides, and a re-check of an older commit makes the review stale", rv[52]["state"] == "stale", str(rv[52]))
+    w.config({"review_pattern": r"VERDICT at ([0-9a-f]{7,40}) (CLEAN|BLOCKED)"})
+    w.gh_set(["pr", "view", "50", "--json", "comments"], {"comments": [{"body": f"VERDICT at {h[:7]} BLOCKED"}]})
+    w.gh_set(["pr", "view", "51", "--json", "comments"], {"comments": [{"body": f"**Independent re-review at {head(51)[:7]}: CLEAN**"}]})
+    rv = {n: i["review"] for n, i in by_n(w.board()).items()}
+    check("a configured review_pattern (group 1 the commit, group 2 the verdict) is read in place of the built-in reader",
+          rv[50]["state"] == "blocked" and rv[51]["state"] == "none", f"{rv[50]} {rv[51]}")
 
 
 # ---- panel C: the pull requests ----------------------------------------------------------------------

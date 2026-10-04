@@ -12,6 +12,7 @@ GUARD = Guard(
     name="status_board",
     subject="scripts/status_board.py",
     selftest="scripts/status_board_selftest.py",
+    needs=("scripts/status_board_verdicts.json",),
     mutations=(
         Mutation(
             "a pull request list gh cannot read is drawn as an empty, measured list -- unknown becomes 0",
@@ -27,8 +28,8 @@ GUARD = Guard(
         ),
         Mutation(
             "the FIRST matching review comment decides, so a later CLEAN never replaces an old BLOCKED",
-            "            found = m                       # the LAST matching comment decides",
-            "            found = found or m",
+            "            found = v                       # the LAST matching comment decides",
+            "            found = found or v",
             "the LAST matching review comment decides",
         ),
         Mutation(
@@ -234,6 +235,48 @@ GUARD = Guard(
             "            sroot = (root / sroot).resolve()",
             "            sroot = sroot.resolve()",
             "a relative sibling path resolves against the repository root",
+        ),
+        Mutation(
+            "integration_branch is read but never declared, so a configured value is dropped",
+            '    "integration_branch": None,         # None: `integration_branch_of` finds it (dev when origin/dev exists)\n',
+            "",
+            "integration_branch is declared in DEFAULTS",
+        ),
+        Mutation(
+            "a repository whose origin/HEAD is main and whose work lands on dev is measured against main",
+            '    if env.sh(["git", "rev-parse", "--verify", "-q", "refs/remotes/origin/dev"], root)[0] == 0:',
+            "    if False:",
+            "origin/HEAD is main, origin/dev exists",
+        ),
+        Mutation(
+            "the first verdict word of a delta review decides, so a quoted CLEAN beats the real verdict",
+            "    return (m.group(1) if m else \"\"), words[-1]",
+            "    return (m.group(1) if m else \"\"), words[0]",
+            "since my CLEAN at 0fdb8eb",
+        ),
+        Mutation(
+            "any hex word is read as the reviewed commit, so a run id becomes one",
+            '_VERDICT_SHA = re.compile(r"\\b(?:at|of|head|commit)\\s+([0-9a-f]{7,40})\\b")',
+            '_VERDICT_SHA = re.compile(r"\\b([0-9a-f]{7,40})\\b")',
+            "a run id is never read as the commit",
+        ),
+        Mutation(
+            "a verdict that names no commit is drawn as no review",
+            '        return {"state": "unknown", "head": ""}        # a verdict that names no commit: not "none", not a match',
+            '        return {"state": "none"}',
+            "names no commit is UNKNOWN",
+        ),
+        Mutation(
+            "a re-check is no longer a verdict",
+            '(?:review|re-?check)',
+            '(?:review)',
+            "every real verdict comment is read",
+        ),
+        Mutation(
+            "the built-in reader is the old single-shape regex",
+            '    "review_pattern": None,             # None: `verdict_of` reads the shapes in use. A regex here replaces it',
+            '    "review_pattern": r"Independent review at ([0-9a-f]{7,40})\\W[^\\n]{0,80}?\\b(CLEAN|BLOCKED)\\b",  # replaces it',
+            "a re-review is a verdict on the head",
         ),
         Mutation(
             "an f-string reuses its own quote (a SyntaxError on the stock python3 3.9)",

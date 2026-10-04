@@ -27,10 +27,20 @@ E Limits · F Today. The title block names the coordinator when several sessions
 ## Configure (optional): `.claude/board.config.json`
 
 `full_run_workflow` (the workflow file whose dispatched run counts as the full run; without it every run
-reads `unknown`), `integration_branch`, `release_lines` (`[{name, exclude_labels, next}]`: the open issues
+reads `unknown`), `integration_branch` (the branch a finished worktree's head must reach; without it: `dev` when
+`origin/dev` exists, else the remote's default branch, else `main`), `review_pattern` (a regex that replaces the
+built-in verdict reader: group 1 the commit, group 2 CLEAN or BLOCKED), `release_lines` (`[{name, exclude_labels, next}]`: the open issues
 without those labels block that line), `stale_minutes`, `zombie_warn`, `worktree_warn`, `notes` (one
 sentence under a panel: `prs`, `sessions`, `asks`, `lines`, `limits`, `today`). The collector flags a note
 that breaks the text rules in `board.json` under `ste_warnings`. It never rewrites it.
+
+## How a review verdict is read
+
+A comment is a verdict when its first line says `review` or `re-check` and holds `CLEAN` or `BLOCKED` in
+capitals. The last such word on that line is the verdict. The commit is the first hex word after `at`, `of`,
+`head` or `commit`. The last verdict comment decides. A verdict without a commit reads `unknown`. A verdict
+worded only in prose ("one blocker remains") is not read; the board then shows the review before it as stale.
+`status_board_verdicts.json` pins this against the first lines of 57 real verdicts and 10 near-misses.
 
 ## Rules
 
