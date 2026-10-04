@@ -13,6 +13,74 @@ GUARD = Guard(
     selftest="scripts/mutation_check_selftest.py",
     deps=("scripts/mutation_types.py", "scripts/hermetic_git.py", "scripts/proc_group.py", "plugins/rails-flow/scripts/process_containment.py",),
     mutations=(
+        # #1599: the cost ratchet. Each mutation undoes one of its rules; the selftest's section 1f must notice.
+        Mutation(
+            "a NEW guard over the floor is accepted, so a new expensive guard never has to be made cheaper",
+            "        elif secs > RATCHET_FLOOR:",
+            "        elif False:",
+            "the ratchet must report a NEW guard over the floor",
+        ),
+        Mutation(
+            "a recorded guard may grow without limit",
+            "            if secs > limit:",
+            "            if False:",
+            "the ratchet must report a recorded guard past growth and slack",
+        ),
+        Mutation(
+            "a record that names a guard no longer in the tree is ignored",
+            "    for name in sorted(set(recorded) - set(cost)):",
+            "    for name in []:",
+            "the ratchet must report a record naming a guard that no longer exists",
+        ),
+        Mutation(
+            "no record at all passes the ratchet",
+            "    if baseline is None:\n        return [",
+            "    if False:\n        return [",
+            "with no record at all the ratchet must say so once",
+        ),
+        Mutation(
+            "the record keeps every guard, so it never shrinks or stays readable",
+            "if secs > RATCHET_FLOOR}",
+            "}",
+            "the record must hold only guards over the floor",
+        ),
+        Mutation(
+            "a malformed record reads as empty, which passes everything",
+            "        raise ValueError(f\"{path}: not valid JSON ({exc})\") from exc",
+            "        return None",
+            "a malformed record must raise",
+        ),
+        # #1599: a mutant runs only the fixture its `expects` names, after a control run of the unmutated code.
+        Mutation(
+            "a narrowed mutant that is refused (exit 2) counts as caught, because the refusal quotes its label",
+            "        if narrow and result.returncode != 1:",
+            "        if False:",
+            "#1599: a narrowed mutant that is REFUSED (exit 2) must be a problem",
+        ),
+        Mutation(
+            "a narrowing guard's mutants run the whole selftest anyway",
+            "            argv.extend(narrow)",
+            "            pass",
+            "#1599: a narrowing guard must run its baseline whole",
+        ),
+        Mutation(
+            "the unmutated control is skipped, so a fixture that fails alone counts as catching every mutant",
+            "            problems = narrow_control(guard, mutation, narrow, timeout)",
+            "            problems = []",
+            "#1599: a fixture that fails alone, unmutated, must be reported",
+        ),
+        Mutation(
+            "a mutation with no expects is narrowed to an empty fragment",
+            "    if guard.narrow_with and mutation.narrow and mutation.expects:",
+            "    if guard.narrow_with and mutation.narrow:",
+            "#1599: a mutation with no expects must run the whole selftest",
+        ),
+        Mutation(
+            "a mutation that opts out with narrow=False is narrowed anyway",
+            "    if guard.narrow_with and mutation.narrow and mutation.expects:",
+            "    if guard.narrow_with and mutation.expects:",
+            "#1599: a mutation with narrow=False must run the whole selftest",
+        ),
         # #1459: progress per guard as it finishes, and a timeout says what it knows.
         Mutation(
             'the per-guard progress line waits for the whole pool again',
@@ -178,8 +246,8 @@ GUARD = Guard(
         Mutation(
             # review of PR #1506
             "a mutant drops its guard's selftest_args",
-            '        argv.extend(guard.selftest_args)\n        # `errors="replace"`: a non-UTF-8 byte must not raise before the report can print (#1493).',
-            '        # `errors="replace"`: a non-UTF-8 byte must not raise before the report can print (#1493).',
+            '        argv.extend(guard.selftest_args)\n        narrow = narrowing(guard, mutation)',
+            '        narrow = narrowing(guard, mutation)',
             "#1497: a guard's selftest_args must reach its baseline and mutants",
         ),
         Mutation(
