@@ -150,7 +150,12 @@ Commands are namespaced by plugin: `/rails-flow:feature`, `/qa-flow:verify`.
 - `/pipeline:setup-cloud` — Prepare cloud deployment.
 
 
+**Ungrouped** — shipped but not yet placed in a group above
+
+- `/pipeline:board` — Measure the repository and write the status board, .claude/state/board.json and a static drawing-sheet page, board.html.
+
+
 
 ---
 
-**50 commands** across 4 plugins.
+**51 commands** across 4 plugins.
