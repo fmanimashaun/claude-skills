@@ -3065,6 +3065,25 @@ def deadline_fixtures() -> None:
                 ("a release publish whose tag or target is not a plain name (#1606)",
                  ("gh release create v1.0.0 --repo o/r --target ../x", "gh release create v1.0.0 --repo o/r --target 'a#b'",
                   "gh release create ../v1 --repo o/r --target main", "gh release create 'v%2f..%2f1' --repo o/r --target main")),
+                # #1607 (the #1602 delta review's residuals S1-S4). The coarse detector is an allow-by-default WORD LIST while the full
+                # path denies an unlisted `gh` write by default, so each word narrowed the gap and none closed it. These are RULES: any
+                # `gh api` that writes, a few CLI verbs that write, a main spelled so no word shows, and a GraphQL body built by substitution.
+                ("a `gh api` that WRITES, by method or by fields (S1, S2); the cost, accepted for a fallback that runs only when the gate overran its "
+                 "deadline, is that an ordinary `gh api ... -f body=x` is refused too",
+                 ("gh api repos/o/r/contents/f.txt -X PUT -f branch=main -f message=m -f content=Zg==", "gh api -X DELETE repos/o/r/contents/f.txt -f branch=main",
+                  "gh api repos/o/r/contents/f.txt -XPUT -f branch=main", "gh api repos/o/r/branches/main/rename -f new_name=x",
+                  "gh api --method POST repos/o/r/issues -f title=x", "gh api repos/o/r/contents/f.txt --input body.json",
+                  "gh api -X POST repos/o/r/actions/runs/1/rerun", "gh api repos/o/r/actions/runs/1/rerun-failed-jobs -X POST",
+                  "gh api repos/o/r/issues/1/comments -f body=x", "gh api repos/o/r/issues/1/comments -fbody=x", "gh api repos/o/r/issues -F title=x")),
+                ("a `gh` verb that changes a repository or re-runs a workflow (S1, S2)",
+                 ("gh repo sync o/r --branch main", "gh repo edit --default-branch main", "gh repo edit o/r --description x",
+                  "gh run rerun 123", "gh run rerun 123 --failed", "gh workflow enable release.yml")),
+                ("a `git push` whose destination is spelled so no word shows (S3): a variable, a glob, a brace expansion, an empty quote pair",
+                 ("git push origin HEAD:$B", "git push origin HEAD:${B}", "git push origin HEAD:refs/heads/mai?", "git push origin HEAD:ma[i]n",
+                  "git push origin HEAD:ma{in,}", "git push origin 'HEAD:ma''in'", 'git push origin "HEAD:ma""in"', "git push origin $(git rev-parse --abbrev-ref HEAD)",
+                  "git $V push origin feature/x", "git  $V push origin feature/x")),
+                ("a GraphQL body built by substitution (S4)",
+                 ('gh api graphql -f query="$(cat q.graphql)"', "gh api graphql -f query=`cat q.graphql`", "gh api graphql -f query=<(cat q.graphql)")),
                 ("a push whose verb or remote is disguised but whose destination is still named",
                  ("git -c alias.p=push p origin HEAD:main", "git -c url.b.insteadOf=a push origin main")),
             ):
@@ -3073,13 +3092,34 @@ def deadline_fixtures() -> None:
             # THE CONTROLS: refusing everything would pass every example above. `-f query=@x` is a LITERAL string in gh (only
             # `-F` reads a file) and the full path allows it too; `--tags` pushes no branch; a branch NAMED heads/... or
             # feature/main-menu is not main.
+            # #1607 controls: a RULE over-blocks more than a word does, so each rule has the ordinary command it must leave alone. A
+            # `-X GET` (or no method and no fields) is a read; `?` inside a URL query is not a glob; a plain quoted ref is not an empty pair.
+            for cmd in ("gh api repos/o/r/pulls", "gh api repos/o/r/issues/1/comments", "gh api -X GET repos/o/r/pulls -f per_page=100",
+                        "gh api --method GET repos/o/r/pulls -F per_page=100", "gh api repos/o/r/issues --jq '.[].number'", "gh run list",
+                        "gh run view 123", "gh repo view o/r", "gh repo clone o/r", "gh workflow view release.yml", "git push origin 'feat/x'",
+                        'git push origin "feat/x"', "git push https://x.test/r.git?z=1 feature/x", "git push origin feature/x:feature/y",
+                        "gh api graphql -f query='{ repository(owner:\"o\", name:\"r\") { id } }'"):
+                check(f"deadline (#1575): CONTROL (#1607): the coarse detector allows `{cmd}`", coarse(cmd) == 0, "exit 2: refused")
+            # #1607: the destination is what FOLLOWS `push` in the same simple command. A `$` in an earlier line, an env prefix, a commit
+            # message, or a loop that merely says "push" is not a destination (first version: 5 of 8 new refusals were this).
+            for cmd in ("cat <<EOF\n$(git rev-parse HEAD)\nEOF\ngit push origin feature/w", "x=$(git rev-parse HEAD) git push origin feature/w",
+                        "git commit -m \"$(cat <<'EOF'\nnever `git push --force`\nEOF\n)\"",
+                        "for k in \"force-push\" \"no-verify\"; do grep -c \"$k\" GUARDRAILS.md; done", "git status && git push origin feature/x"):
+                check(f"deadline (#1575): CONTROL (#1607): a `$` that does not follow `push` is not refused: `{cmd[:60]!r}`", coarse(cmd) == 0, "exit 2: refused")
+            # THE JSON WRAPPER IS NOT THE COMMAND: the payload holds braces, brackets, commas and quotes of its own, and a rule that looked at
+            # `{` or `[` anywhere would refuse every command. A payload with extra keys and an array must still pass.
+            wrapped = json.dumps({"tool_input": {"command": "git push origin feature/x", "description": "push the branch, then [wait]"},
+                                  "session_id": "s", "args": ["a", "b"]})
+            ok = _run(["/bin/bash", str(QA_HOOK)], cwd=bd, input=wrapped, env={"PATH": bd, "HOME": os.environ.get("HOME", "/tmp")},
+                      capture_output=True, text=True, timeout=60).returncode
+            check("deadline (#1575): CONTROL (#1607): a payload with extra keys, an array and braces of its own is not refused", ok == 0, f"exit {ok}")
             for cmd in ("git push origin feature/x", "git push origin HEAD:heads/feature/x", "git push origin HEAD:heads/feature/main-menu",
                         "git push origin heads/feature/x", "git push --tags origin", "git status", "git commit -m tidy",
                         "gh workflow list", "gh workflow view release.yml", "gh run list", "gh pr view 7", "gh pr list",
                         "gh api repos/o/r/pulls", "gh api graphql -f query='{ viewer { login } }'",
                         "gh api graphql -f query=@q.graphql", "gh api graphql --raw-field query=@-", "git push -u origin fix/1010-one-main"):
                 check(f"deadline (#1575): CONTROL: the coarse detector allows `{cmd}`", coarse(cmd) == 0, "exit 2: refused")
-        for cmd in ("git push origin HEAD:heads/main", "git push --all"):
+        for cmd in ("git push origin HEAD:heads/main", "git push --all", "gh run rerun 123", "git push origin HEAD:$B"):
             rc, took, err, left = hung(QA_HOOK, cmd)
             check(f"deadline (#1575): a TIMEOUT refuses `{cmd}` through that same detector",
                   rc == 2 and "looks like a promotion" in err and not left, f"exit {rc}: {err[:120]!r}")
