@@ -3203,18 +3203,22 @@ GROUPS = {
 }
 
 
-# The doctor runs this harness as TWO gates (`--part a`, `--part b`), because the whole run -- 833 checks -- takes 188 s
-# alone, past the doctor's 180 s limit for a gate, and a gate that cannot finish is a SKIP on every sweep (#1581).
-# MEASURED per group (seconds, wall, idle machine): release_gate 46.8, release_gate_effects 46.6, release_gate_repos 26.9,
-# guard_bash 22.2, guard_worktree 19.7, guard_claims 4.9, stop_gate 4.5, lint_ruby 3.3, release_gate_refs about 7 (#1600, timed
-# under load), the rest under 1. So part b is the two
-# release_gate groups (93 s) and part a is everything else (83 s). EVERY group must be in exactly one part: a group in none
+# The doctor runs this harness as THREE gates (`--part a`, `--part b`, `--part c`), because the whole run takes far longer than
+# the doctor's 180 s limit for a gate, and a gate that cannot finish is a SKIP on every sweep (#1581). It was two gates until
+# a measurement showed part a alone at 164 CPU-seconds and 244 s wall under load: dev's `guard_claims` had grown from 4.9 s to
+# 55.6 s since the first split, and the worktree groups came on top, so a skip would have been the normal result.
+# MEASURED per group (CPU seconds, user+sys, which a busy machine does not inflate the way wall time is): release_gate_effects
+# 60.7, guard_claims 55.6, release_gate 49.7, guard_bash 36.9, release_gate_repos 33.6, guard_worktree 11.1, guard_worktree_pointer
+# 6.1, release_gate_refs 4.1, guard_worktree_parse 3.4, guard_worktree_failopen 2.0, the rest under 1 each. So part a is
+# guard_claims + guard_bash + the small ones (about 96), part b the two release_gate groups (about 110), and part c the
+# repos and refs groups and the four worktree groups (about 60). EVERY group must be in exactly one part: a group in none
 # would never run in the doctor, which is the vacuous gate this repository keeps finding; the selftest checks it below.
 PARTS = {
     "a": ["stop_gate", "guard_lane", "guard_migrate", "lint_ruby", "self_consistency", "guard_bash", "guard_claims",
-          "release_gate_repos", "release_gate_refs", "ci_verdict_hint", "timeout", "guard_worktree", "guard_worktree_parse",
-          "guard_worktree_failopen", "guard_worktree_pointer"],
+          "ci_verdict_hint", "timeout"],
     "b": ["release_gate", "release_gate_effects"],
+    "c": ["release_gate_repos", "release_gate_refs", "guard_worktree", "guard_worktree_parse",
+          "guard_worktree_failopen", "guard_worktree_pointer"],
 }
 
 
@@ -3290,12 +3294,12 @@ def meta_checks() -> None:
               repr(parse_only(bad)))
     # The partition behind the doctor's two gates: complete, disjoint, and a bad name refused.
     flat = [g for part in PARTS.values() for g in part]
-    check("every fixture group is in exactly one PART, so the doctor's two gates together run all of them",
+    check("every fixture group is in exactly one PART, so the doctor's three gates together run all of them",
           sorted(flat) == sorted(GROUPS), f"in a part but not a group, or the reverse: {sorted(set(flat) ^ set(GROUPS))}; "
           f"repeated: {sorted({g for g in flat if flat.count(g) > 1})}")
-    check("--part a and --part b name groups; any other part is refused, never an empty pass",
-          parse_part("a") == PARTS["a"] and parse_part("b") == PARTS["b"] and all(parse_part(x) is None for x in ("", "c", "ab", "A")),
-          repr([parse_part(x) for x in ("a", "b", "", "c")]))
+    check("--part a, --part b and --part c name groups; any other part is refused, never an empty pass",
+          all(parse_part(k) == PARTS[k] for k in ("a", "b", "c")) and all(parse_part(x) is None for x in ("", "d", "ab", "A")),
+          repr([parse_part(x) for x in ("a", "b", "c", "", "d")]))
     check("CONTROL: --only release_gate,guard_bash is accepted",
           parse_only("release_gate,guard_bash") == ["release_gate", "guard_bash"], repr(parse_only("release_gate,guard_bash")))
     # ...and a selection runs exactly what it names, proved on stand-ins so the proof costs nothing.

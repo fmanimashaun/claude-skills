@@ -343,10 +343,12 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # five defects sat in what they DID, none visible on a Mac. This drives every hook end to end
     # under stub environments -- a GNU-shaped `timeout`, a `bundle` that fails the way Bundler does,
     # a `mise` that owns the Ruby. The environment is the fixture.
-    # #1581: ONE harness, TWO gates. The whole run takes 188 s alone, past a gate's 180 s, so it skipped on every sweep. The
-    # partition (PARTS in check_hook_gates.py) is checked there: every fixture group is in exactly one part.
+    # #1581: ONE harness, THREE gates. The whole run takes far longer than a gate's 180 s, so it skipped on every sweep; two halves
+    # were measured too close to it once dev's groups grew. The partition (PARTS in check_hook_gates.py) is checked there: every
+    # fixture group is in exactly one part.
     ("hook gates", ("python3", "plugins/rails-flow/scripts/check_hook_gates.py", "--selftest", "--part", "a")),
     ("hook gates (release)", ("python3", "plugins/rails-flow/scripts/check_hook_gates.py", "--selftest", "--part", "b")),
+    ("hook gates (worktree)", ("python3", "plugins/rails-flow/scripts/check_hook_gates.py", "--selftest", "--part", "c")),
     # #849. "Take the head of the queue" downstream was a claim nothing checked; the marketplace has
     # issue_graph.py --ready for itself, and this is the shipped equivalent for a project's tracker.
     ("issue readiness", ("python3", "plugins/rails-flow/scripts/check_issue_ready.py", "--selftest")),
