@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import json
 import os
 import shutil
 import subprocess
@@ -238,6 +239,66 @@ def apply_mutation(guard: Guard, mutation: Mutation, workdir: Path) -> Path:
     return entry
 
 
+# THE COST RATCHET (#1599). `mutation coverage` reached 3490 s of its 3600 s budget and the CI log could not say which
+# guard had grown: the doctor kept one summary line. A guard over RATCHET_FLOOR seconds of work (baseline plus every
+# mutant, summed over all jobs) must be on record in COST_BASELINE; a recorded one may cost RATCHET_GROWTH times its
+# record plus RATCHET_SLACK, which keeps a runner's speed from reading as growth; a record naming a guard that is gone
+# is drift. A new expensive guard therefore fails until it is made cheaper (`narrow_with`) or recorded from a measured
+# run with `--rebaseline`, a diff somebody reviews. Seconds depend on the runner, so the record is measured where the gate
+# runs (CI) and enforced only with `--ratchet`, which the doctor passes on the run whose job is to prove this gate.
+COST_BASELINE = REPO / "docs" / "evidence" / "mutation-cost-baseline.json"
+RATCHET_FLOOR = 60.0
+RATCHET_GROWTH = 1.5
+RATCHET_SLACK = 30.0
+
+
+def load_cost_baseline(path: Path = COST_BASELINE) -> dict | None:
+    """The record, or None when there is no file. A file that is not a record RAISES: read as empty it would pass."""
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError as exc:
+        raise ValueError(f"{path}: not valid JSON ({exc})") from exc
+    guards = data.get("guards") if isinstance(data, dict) else None
+    if not isinstance(guards, dict) or not all(isinstance(v, (int, float)) for v in guards.values()):
+        raise ValueError(f"{path}: needs a 'guards' object mapping a guard name to its seconds of work")
+    return data
+
+
+def write_cost_baseline(path: Path, cost: dict[str, float], jobs: int) -> None:
+    """Record every guard over the floor, rounded and in a stable order, so a re-baseline is a reviewable diff."""
+    heavy = {name: round(secs, 1) for name, secs in sorted(cost.items()) if secs > RATCHET_FLOOR}
+    record = {"note": "seconds of work per guard (baseline plus every mutant, summed over all jobs) from a measured "
+                      "full run; re-set with `python3 scripts/mutation_check.py --rebaseline` (#1599)",
+              "jobs": jobs, "floor": RATCHET_FLOOR, "guards": heavy}
+    path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def ratchet_problems(cost: dict[str, float], baseline: dict | None) -> list[str]:
+    """What the cost ratchet refuses, as sentences; an empty list is within budget."""
+    if baseline is None:
+        return ["the cost ratchet has no cost record (docs/evidence/mutation-cost-baseline.json): run "
+                "`python3 scripts/mutation_check.py --rebaseline` from a measured full run and commit it"]
+    recorded = baseline["guards"]
+    problems = []
+    for name, secs in sorted(cost.items()):
+        if name in recorded:
+            limit = recorded[name] * RATCHET_GROWTH + RATCHET_SLACK
+            if secs > limit:
+                problems.append(f"{name}: costs {secs:.0f}s of work, past {RATCHET_GROWTH:g}x its recorded "
+                                f"{recorded[name]:.0f}s plus {RATCHET_SLACK:g}s = {limit:.0f}s; make it cheaper, "
+                                "or re-set the record from a measured run (--rebaseline)")
+        elif secs > RATCHET_FLOOR:
+            problems.append(f"{name}: a NEW guard costing {secs:.0f}s of work, over the {RATCHET_FLOOR:g}s floor and "
+                            "not on record; make it cheaper (`narrow_with` runs each mutant on one fixture), or "
+                            "record it with --rebaseline")
+    for name in sorted(set(recorded) - set(cost)):
+        problems.append(f"{name}: the cost record names a guard that no longer exists; re-set the record "
+                        "(--rebaseline)")
+    return problems
+
+
 # PER-MUTATION LIMITS COME FROM THE GUARD'S OWN BASELINE (#1486). A fixed 300 s bound was shorter than
 # the hook suite takes under load (60 s idle, 367 s at load ~149), so 10 of 12 `hook_guard_bash`
 # mutations "timed out" on one run and all 12 were caught on the next. A mutant runs the same
@@ -331,6 +392,46 @@ def run_baseline_timed(guard: Guard) -> tuple[list[str], float]:
 
 
 
+def narrowing(guard: Guard, mutation: Mutation) -> tuple[str, ...]:
+    """`<flag> <expects>` when this mutant is to run only the fixture that must catch it (#1599), else `()`.
+
+    A mutant has to be caught by the fixture its `expects` names, so that fixture is the only one it needs; the
+    guards that adopt this went from about 116 s to about 4 s per mutant. A mutation without an `expects`, or one
+    that sets `narrow=False`, still runs the whole selftest."""
+    if guard.narrow_with and mutation.narrow and mutation.expects:
+        return (guard.narrow_with, mutation.expects)
+    return ()
+
+
+def narrow_control(guard: Guard, mutation: Mutation, narrow: tuple[str, ...], timeout: float) -> list[str]:
+    """The UNMUTATED selftest, run with the same narrowing, must PASS (#1599).
+
+    Without it a fixture that cannot pass on its own (it leans on state another fixture sets up) fails every
+    mutant for that reason and reads as a catch, and an `expects` that selects nothing would read as one too.
+    Problems, or an empty list."""
+    workdir = Path(tempfile.mkdtemp(prefix=f"mutctl-{guard.name}-"))
+    try:
+        entry = stage(guard, workdir)
+        argv = [sys.executable, str(entry)]
+        if guard.selftest == guard.subject:
+            argv.append("--selftest")
+        argv.extend(guard.selftest_args)
+        argv.extend(narrow)
+        result = proc_group.run(argv, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                text=True, errors="replace", env=hermetic_git.env(), timeout=timeout)
+        if result.returncode == 0:
+            return []
+        return [f"{guard.name}: {mutation.name!r} cannot be narrowed: the UNMUTATED selftest fails (exit "
+                f"{result.returncode}) when run only for {mutation.expects!r}. Either that fixture leans on state "
+                "another fixture sets up, or `expects` selects no check; fix the fixture or the label, or set "
+                "`narrow=False` on this mutation." + tail_block(result.stdout, 8)]
+    except subprocess.TimeoutExpired as exc:
+        return [f"{guard.name}: {mutation.name!r} cannot be narrowed: the unmutated control timed out after "
+                f"{timeout:.0f}s" + tail_block(exc.stdout, 8)]
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+
+
 def run_mutation(guard: Guard, mutation: Mutation, timeout: float = MUTATION_FLOOR) -> list[str]:
     """One mutation, in its own tempdir. Independent of every other mutation, so the suite can run
     them in parallel (#1444). `run_guard` and `main` both come through here: one implementation."""
@@ -342,6 +443,12 @@ def run_mutation(guard: Guard, mutation: Mutation, timeout: float = MUTATION_FLO
         if guard.selftest == guard.subject:
             argv.append("--selftest")   # the selftest is a flag on the module itself
         argv.extend(guard.selftest_args)
+        narrow = narrowing(guard, mutation)
+        if narrow:
+            problems = narrow_control(guard, mutation, narrow, timeout)
+            if problems:
+                return problems
+            argv.extend(narrow)
         # `errors="replace"`: a non-UTF-8 byte must not raise before the report can print (#1493).
         # stderr folded into stdout, as in the baseline: `stdout + stderr` put the last 12 lines of
         # stderr in front of a label printed to stdout, and 12+ stderr lines hid it (#1532).
@@ -448,7 +555,15 @@ def main(argv: list[str] | None = None) -> int:
                              "every mutation stages its own tempdir, so they are independent (#1444).")
     parser.add_argument("--selftest", action="store_true",
                         help="prove this checker itself detects a survivor and a stale anchor")
+    parser.add_argument("--ratchet", action="store_true",
+                        help="also fail when a guard's cost has grown past the committed record, or a new guard is "
+                             "over the floor (#1599); a full run only")
+    parser.add_argument("--rebaseline", action="store_true",
+                        help="after a full run, rewrite the committed cost record from it (#1599)")
     args = parser.parse_args(argv)
+    if (args.ratchet or args.rebaseline) and args.guard:
+        print("--ratchet and --rebaseline compare a FULL run; --guard runs a part of one", file=sys.stderr)
+        return 2
 
     if args.selftest:
         import mutation_check_selftest as st
@@ -494,6 +609,16 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  [{status:4}] {guard.name}: {len(guard.mutations)} mutation(s), {cost[guard.name]:.0f}s")
         problems.extend(found)
 
+    over_floor = sorted(((n, s) for n, s in cost.items() if s > RATCHET_FLOOR), key=lambda kv: -kv[1])
+    if args.rebaseline:
+        write_cost_baseline(COST_BASELINE, cost, jobs)
+        print(f"cost record rewritten: {COST_BASELINE.relative_to(REPO)} ({len(over_floor)} guard(s) over the "
+              f"{RATCHET_FLOOR:g}s floor)")
+    elif args.ratchet:
+        try:
+            problems.extend(ratchet_problems(cost, load_cost_baseline()))
+        except ValueError as exc:
+            problems.append(f"the cost record is unreadable: {exc}")
     if problems:
         print(f"\nMUTATION CHECK FAILED — {len(problems)} of {total}:", file=sys.stderr)
         for problem in problems:
@@ -504,6 +629,11 @@ def main(argv: list[str] | None = None) -> int:
     heaviest = sorted(cost.items(), key=lambda kv: kv[1], reverse=True)[:5]
     print("heaviest guards (seconds of work, all jobs): "
           + ", ".join(f"{name} {secs:.0f}s" for name, secs in heaviest))
+    # The table the cost record is made from, in the log of the run that measured it: before #1599 the CI log held
+    # only the two lines above, so no one could see which guard had grown.
+    print(f"total work: {sum(cost.values()):.0f}s across {len(guards)} guard(s)")
+    print(f"work by guard over the {RATCHET_FLOOR:g}s floor (seconds, all jobs): "
+          + (", ".join(f"{name} {secs:.0f}" for name, secs in over_floor) or "none"))
     return 0
 
 

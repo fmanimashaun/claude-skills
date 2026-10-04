@@ -41,12 +41,53 @@ HOOKS = Path(__file__).resolve().parents[1] / "hooks" / "scripts"
 FAILURES: list[str] = []
 CHECKS = 0
 
+# `--match SUBSTR` runs only the fixtures whose check label contains SUBSTR (#1599). The mutation harness runs
+# every mutant of a guard through this file, and each mutant is meant to be caught by ONE fixture, named by the
+# mutation's `expects`; re-running all 199 checks of a group (about 116 s) to see one of them fail was most of
+# the mutation-coverage budget. Fixtures do not name themselves before they run, so it is two passes over a
+# group: a SURVEY with every subprocess stubbed (it only records the check labels), then a RUN in which the
+# code before a wanted check executes for real and the code before every other check is stubbed. A fixture
+# whose result steers which checks follow it would make the two passes disagree; that raises, it never guesses.
+_MATCH_MODE: str | None = None      # None, "survey" or "run"
+_SURVEYED: list[str] = []           # the labels, in the order the survey saw them
+_WANTED: set[int] = set()           # positions in `_SURVEYED` whose label matched
+_INDEX = 0                          # the position the next check() call has in the run pass
+_SKIP = False                       # True while the code before an unwanted check runs
+
+
+class MatchSequenceError(Exception):
+    """The run pass reached a different check than the survey did, so `--match` cannot be trusted here."""
+
+
+def skipping() -> bool:
+    return _MATCH_MODE == "survey" or (_MATCH_MODE == "run" and _SKIP)
+
 
 def check(label: str, ok: bool, detail: str = "") -> None:
-    global CHECKS
+    global CHECKS, _INDEX, _SKIP
+    if _MATCH_MODE == "survey":
+        _SURVEYED.append(label)
+        return
+    if _MATCH_MODE == "run":
+        if _INDEX >= len(_SURVEYED) or _SURVEYED[_INDEX] != label:
+            raise MatchSequenceError(
+                f"check #{_INDEX} is {label!r} in the run pass but "
+                f"{_SURVEYED[_INDEX] if _INDEX < len(_SURVEYED) else 'absent'!r} in the survey")
+        live = _INDEX in _WANTED
+        _INDEX += 1
+        _SKIP = _INDEX not in _WANTED        # the code before the NEXT check runs for real only if it is wanted
+        if not live:
+            return
     CHECKS += 1
     if not ok:
         FAILURES.append(f"{label}: {detail}" if detail else label)
+
+
+def record_failure(note: str) -> None:
+    """A failure that is not one of a group's numbered checks (a timeout), so it never shifts `--match`'s count."""
+    global CHECKS
+    CHECKS += 1
+    FAILURES.append(note)
 
 
 # #1469: every hook fixture runs through here. A subprocess that outruns its timeout used to raise
@@ -59,6 +100,10 @@ _EXPECTING_TIMEOUT = False      # set by timeout_fixtures, which times out on pu
 
 
 def _run(*args, **kw):
+    if skipping():          # `--match`: this is the code before an unwanted check, or the survey (#1599)
+        text = kw.get("text") or kw.get("universal_newlines")
+        empty = "" if text else b""
+        return subprocess.CompletedProcess(args[0] if args else kw.get("args"), 0, stdout=empty, stderr=empty)
     # The override is exact (the no-crash proof sets it tiny); otherwise a fixture's own bound is
     # raised to a 180s floor, since 60s was what a loaded machine outran. Read per call, not at import.
     override = os.environ.get("HOOK_GATES_TIMEOUT")
@@ -93,7 +138,7 @@ def _run(*args, **kw):
             # A timeout is ALWAYS a recorded failure -- a setup step (`git init`, check=True) that
             # times out must not pass silently -- unless timeout_fixtures asked for one on purpose.
             if not _EXPECTING_TIMEOUT:
-                check(note, False)
+                record_failure(note)
             empty = "" if kw.get("text") else b""
             return subprocess.CompletedProcess(proc.args, 124, stdout=empty,
                                                stderr=note if kw.get("text") else note.encode())
@@ -2678,7 +2723,47 @@ def run_groups(groups: list[str] | None, table: dict) -> None:
         table[name]()
 
 
-def selftest(groups: list[str] | None = None) -> int:
+def groups_should_run(fail_fast: bool, failures: list[str], nested: bool = False) -> bool:
+    """Whether `selftest` runs the real hook groups after its meta-checks (#1599).
+
+    Not under `--fail-fast` once a meta-check has failed: the groups have nothing to add and cost minutes. A mutant of
+    the group machinery (`--only` ignored) used to run every group, over 300 s here, after its meta-check had already
+    caught it, and that read as a timeout. And never in a NESTED selftest, which exists only to prove that a bad
+    `--only` or `--match` is refused: were the refusal broken, the nested call fell through and ran the whole suite."""
+    return not nested and not (fail_fast and bool(failures))
+
+
+def run_matching(groups: list[str] | None, table: dict, match: str) -> int:
+    """`--match`: run only the checks whose label contains `match` (#1599); how many ran.
+
+    Two passes per group (see the note at `_MATCH_MODE`). Raises `MatchSequenceError` when the passes
+    disagree or a group cannot be surveyed under stubs, so a selection is never silently wrong."""
+    global _MATCH_MODE, _SURVEYED, _WANTED, _INDEX, _SKIP
+    ran = 0
+    try:
+        for name in (groups or list(table)):
+            _MATCH_MODE, _SURVEYED = "survey", []
+            try:
+                table[name]()
+            except Exception as exc:        # noqa: BLE001 -- any crash under stubs means "cannot survey"
+                raise MatchSequenceError(f"group {name!r} cannot be surveyed under stubs: {exc!r}") from exc
+            _WANTED = {i for i, label in enumerate(_SURVEYED) if match.lower() in label.lower()}
+            if not _WANTED:
+                continue
+            _MATCH_MODE, _INDEX, _SKIP = "run", 0, 0 not in _WANTED
+            table[name]()
+            if _INDEX != len(_SURVEYED):
+                raise MatchSequenceError(f"group {name!r} made {_INDEX} checks in the run pass and "
+                                         f"{len(_SURVEYED)} in the survey")
+            ran += len(_WANTED)
+    finally:
+        _MATCH_MODE, _SKIP = None, False
+    return ran
+
+
+def meta_checks() -> None:
+    """The checks about `--only` and `--match` themselves. Cheap, but not free (about 2.5 s), so a `--match` run
+    skips them: the baseline run of the same file has already shown them pass (#1599)."""
     # --only REFUSES what it cannot run (#1497), checked on every run whatever the selection: a
     # silently empty selection is how a mutant would "survive" with no fixture ever consulted.
     for bad in ("nope", "", ",", "release_gate,nope", "release_gate,", " release_gate", "timeout,timeout"):
@@ -2696,6 +2781,56 @@ def selftest(groups: list[str] | None = None) -> int:
     ran.clear()
     run_groups(None, fakes)
     check("a bare run (no --only) runs every group", ran == list(GROUPS), repr(ran))
+    # `--match` (#1599), proved on stand-in groups: a few process starts, no hook fixture.
+    global CHECKS
+    with tempfile.TemporaryDirectory() as td:
+        spawned = Path(td) / "spawned"
+
+        def mark(name: str) -> None:
+            _run(["sh", "-c", f"echo {name} >> '{spawned}'"])
+
+        def fake_group() -> None:
+            mark("A"); check("fixture A passes", True)
+            mark("B"); check("fixture B passes", True)
+            mark("C"); check("fixture C fails on purpose", False, "on purpose")
+
+        def steered_group() -> None:
+            answered = _run(["sh", "-c", "echo x"], capture_output=True, text=True).stdout
+            if answered:                      # '' in the survey, 'x' in a real run: the passes would disagree...
+                check("answered by the subprocess", True)
+            else:                             # ...on WHICH check comes first, with the same number of checks in both
+                check("silent subprocess", True)
+            check("last", True)
+
+        saved_checks, saved_failures = CHECKS, list(FAILURES)
+        got = run_matching(None, {"fake": fake_group}, "fixture B")
+        only_b = spawned.read_text().split() if spawned.exists() else []
+        counted, failed = CHECKS - saved_checks, len(FAILURES) - len(saved_failures)
+        check("--match runs only the fixture whose label matches, and none of the others' work",
+              got == 1 and only_b == ["B"] and counted == 1 and failed == 0, f"ran {got}, spawned {only_b}, counted {counted}")
+        spawned.unlink(missing_ok=True)
+        before_c, checks_before_c = len(FAILURES), CHECKS
+        run_matching(None, {"fake": fake_group}, "fails on purpose")
+        failed_c = len(FAILURES) - before_c
+        del FAILURES[before_c:]                 # the deliberate failure was the proof, not a finding; the first check's own verdict stays
+        CHECKS = checks_before_c
+        check("--match still FAILS when the check it selected fails", failed_c == 1, f"{failed_c} failure(s) recorded")
+        check("--match that selects nothing runs nothing and says so (0), never an empty pass",
+              run_matching(None, {"fake": fake_group}, "no label has this") == 0)
+        try:
+            run_matching(None, {"steered": steered_group}, "silent subprocess")
+            raised = False
+        except MatchSequenceError:
+            raised = True
+        check("--match raises when a fixture's result steers which checks follow, never guesses",
+              raised and _MATCH_MODE is None and not _SKIP, f"raised={raised}, mode={_MATCH_MODE}, skip={_SKIP}")
+    check("a nested selftest, which only proves a refusal, never runs the real groups",
+          groups_should_run(False, [], nested=True) is False)
+    check("--fail-fast skips the real groups once a meta-check has failed",
+          groups_should_run(True, ["a meta-check failed"]) is False)
+    check("CONTROL: --fail-fast runs the groups when nothing has failed", groups_should_run(True, []) is True)
+    check("CONTROL: with no --fail-fast the groups run even after a failure",
+          groups_should_run(False, ["a meta-check failed"]) is True)
     # The REAL exit code, not only the parser's verdict: main() must return 2 for a bad selection.
     # Only at the outermost level: were the refusal broken, main() would call selftest() again,
     # and this check would recurse instead of failing by name.
@@ -2712,7 +2847,37 @@ def selftest(groups: list[str] | None = None) -> int:
         finally:
             _NESTED = False
         check("main() exits 2 for --only nope", rc == 2, f"exit {rc}")
-    run_groups(groups, GROUPS)
+        # `--match` the same way (#1599): a selection that names no check, or a blank one, is refused, not passed.
+        _NESTED = True
+        try:
+            with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+                try:
+                    rc_none = main(["--only", "guard_lane", "--match", "no check has this label fragment"])
+                    rc_blank = main(["--only", "guard_lane", "--match", "   "])
+                except Exception as exc:          # noqa: BLE001 -- a crash fails THIS check, by name
+                    rc_none = rc_blank = f"raised {exc!r}"
+        finally:
+            _NESTED = False
+        check("main() exits 2 for --match that selects nothing", rc_none == 2, f"exit {rc_none}")
+        check("main() exits 2 for a blank --match", rc_blank == 2, f"exit {rc_blank}")
+
+
+def selftest(groups: list[str] | None = None, match: str | None = None, fail_fast: bool = False) -> int:
+    if match is None:
+        meta_checks()
+    if match is None:
+        if groups_should_run(fail_fast, FAILURES, nested=_NESTED):
+            run_groups(groups, GROUPS)
+    else:
+        try:
+            ran_matching = run_matching(groups, GROUPS, match)
+        except MatchSequenceError as exc:
+            print(f"check_hook_gates: --match {match!r} cannot be used here: {exc}", file=sys.stderr)
+            return 2
+        if ran_matching == 0:
+            print(f"check_hook_gates: --match {match!r} selected no check, which would be an empty pass",
+                  file=sys.stderr)
+            return 2
     if FAILURES:
         print(f"check_hook_gates selftest: {len(FAILURES)} of {CHECKS} checks FAILED", file=sys.stderr)
         for f in FAILURES:
@@ -2727,7 +2892,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--selftest", action="store_true", help="drive every hook under its stub environments")
     ap.add_argument("--only", metavar="GROUP[,GROUP]",
                     help=f"run only these fixture groups: {', '.join(GROUPS)} (#1497)")
+    ap.add_argument("--match", metavar="SUBSTR",
+                    help="run only the checks whose label contains SUBSTR, case-insensitively (#1599)")
+    ap.add_argument("--fail-fast", action="store_true",
+                    help="skip the real hook groups when the suite's own meta-checks have already failed (#1599)")
     args = ap.parse_args(argv)
+    if args.match is not None and not args.match.strip():
+        print("check_hook_gates: --match needs a non-empty label fragment", file=sys.stderr)
+        return 2
     groups = None
     if args.only is not None:
         groups = parse_only(args.only)
@@ -2738,7 +2910,7 @@ def main(argv: list[str] | None = None) -> int:
     # `--selftest` is accepted for symmetry with every other check here, and bare invocation does
     # the same thing: the mutation harness runs a separate selftest file with no arguments, and a
     # script that printed usage there would be INERT -- every mutation "caught" by an exit 2.
-    return selftest(groups)
+    return selftest(groups, args.match, args.fail_fast)
 
 
 if __name__ == "__main__":

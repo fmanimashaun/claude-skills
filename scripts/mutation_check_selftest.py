@@ -502,6 +502,168 @@ def run() -> int:
     finally:
         mc.REPO = original_repo
 
+    # ---- 1e. a mutant runs only the fixture its `expects` names, and only if that fixture passes alone (#1599) ----
+    # A guard that sets `narrow_with` gets `<flag> <expects>` on every mutant, and on a CONTROL run of the
+    # UNMUTATED code first: a fixture that cannot pass alone (it leans on state another fixture sets up)
+    # would otherwise "catch" every mutant by failing for that reason. The stand-in selftest honours the
+    # flag and logs each invocation, so what the baseline, the control and the mutant ran can be read.
+    narrow_src = (
+        "import sys\n"
+        "from pathlib import Path\n"
+        "sys.path.insert(0, str(Path(__file__).resolve().parent))\n"
+        "import subject_under_test as s\n"
+        "match = sys.argv[sys.argv.index('--match') + 1].lower() if '--match' in sys.argv else None\n"
+        "want = lambda label: match is None or match in label.lower()\n"
+        "ran, failures = [], []\n"
+        "if want('fixture-even'):\n"
+        "    ran.append('even')\n"
+        "    if s.is_even(4) is not True:\n"
+        "        failures.append('fixture-even: expected True for 4')\n"
+        "if want('fixture-odd'):\n"
+        "    ran.append('odd')\n"
+        "    if NEEDS_EVEN and 'even' not in ran:\n"
+        "        failures.append('fixture-odd: leans on the even fixture')\n"
+        "    if s.is_even(3) is not False:\n"
+        "        failures.append('fixture-odd: expected False for 3')\n"
+        "open(LOG, 'a').write(' '.join(sys.argv[1:]) + ' | ran ' + ','.join(ran) + '\\n')\n"
+        "if match is not None and not ran:\n"
+        "    print('selected no check', file=sys.stderr); sys.exit(2)\n"
+        "if failures:\n"
+        "    print('SELFTEST FAILED', file=sys.stderr)\n"
+        "    for f in failures: print('  - ' + f, file=sys.stderr)\n"
+        "    sys.exit(1)\n"
+        "print('ok')\n")
+
+    def narrow_guard(mutation: mc.Mutation, needs_even: bool = False, narrow_with: str = "--match"):
+        guard, root = _fixture_guard((mutation,))
+        log = root / "invocations.log"
+        (root / "scripts" / "subject_selftest.py").write_text(
+            narrow_src.replace("LOG", repr(str(log))).replace("NEEDS_EVEN", repr(needs_even)), encoding="utf-8")
+        return dataclasses.replace(guard, narrow_with=narrow_with), root, log
+
+    odd_break = mc.Mutation("odd numbers reported even", "n % 2 == 0", "True", "fixture-odd")
+    guard, root, log = narrow_guard(odd_break)
+    mc.REPO = root
+    try:
+        _tick()
+        problems = mc.run_guard(guard)
+        lines = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
+        narrowed = [l for l in lines if "--match fixture-odd" in l]
+        if problems or len(lines) != 3 or len(narrowed) != 2 or any("ran odd" not in l for l in narrowed):
+            FAILURES.append(f"#1599: a narrowing guard must run its baseline whole and its control and mutant on "
+                            f"the expected fixture only, got problems={problems} log={lines}")
+    finally:
+        mc.REPO = original_repo
+    # ...a guard that does not set it runs every mutant whole,
+    guard, root, log = narrow_guard(odd_break, narrow_with="")
+    mc.REPO = root
+    try:
+        _tick()
+        mc.run_guard(guard)
+        lines = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
+        if any("--match" in l for l in lines):
+            FAILURES.append(f"#1599 CONTROL: a guard with no narrow_with must not be narrowed, got {lines}")
+    finally:
+        mc.REPO = original_repo
+    # ...a mutation with no `expects`, or one that opts out, runs whole as well,
+    for label, mutation in (("no expects", dataclasses.replace(odd_break, expects="")),
+                            ("narrow=False", dataclasses.replace(odd_break, narrow=False))):
+        guard, root, log = narrow_guard(mutation)
+        mc.REPO = root
+        try:
+            _tick()
+            mc.run_guard(guard)
+            lines = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
+            if any("--match" in l for l in lines):
+                FAILURES.append(f"#1599: a mutation with {label} must run the whole selftest, got {lines}")
+        finally:
+            mc.REPO = original_repo
+    # THE CONTROL RUN: a fixture that cannot pass alone must not count a mutant as caught.
+    guard, root, log = narrow_guard(odd_break, needs_even=True)
+    mc.REPO = root
+    try:
+        _tick()
+        problems = mc.run_guard(guard)
+        if not any("cannot be narrowed" in x for x in problems):
+            FAILURES.append(f"#1599: a fixture that fails alone, unmutated, must be reported as unable to be "
+                            f"narrowed and never counted as catching its mutant, got {problems}")
+    finally:
+        mc.REPO = original_repo
+    # An `expects` that names no fixture selects nothing: loud, not an empty pass.
+    guard, root, log = narrow_guard(dataclasses.replace(odd_break, expects="no such fixture"))
+    mc.REPO = root
+    try:
+        _tick()
+        problems = mc.run_guard(guard)
+        if not any("cannot be narrowed" in x for x in problems):
+            FAILURES.append(f"#1599: an `expects` that selects no fixture must be reported, got {problems}")
+    finally:
+        mc.REPO = original_repo
+    # A mutant the SELECTED fixture does not notice still SURVIVES: narrowing cannot hide it.
+    guard, root, log = narrow_guard(mc.Mutation("only 4 is wrong", "n % 2 == 0", "n % 2 == 0 and n != 4", "fixture-odd"))
+    mc.REPO = root
+    try:
+        _tick()
+        problems = mc.run_guard(guard)
+        if not any("SURVIVED" in x for x in problems):
+            FAILURES.append(f"#1599: a mutant the narrowed fixture cannot see must be reported SURVIVED, got {problems}")
+    finally:
+        mc.REPO = original_repo
+
+    # ---- 1f. the cost ratchet: a new expensive guard fails until it is cheaper or the record is re-set (#1599) ----
+    # `mutation coverage` reached 3490 s of its 3600 s budget and nothing said which guard had grown. A guard over
+    # RATCHET_FLOOR seconds of work must be on record; one on record may not grow past RATCHET_GROWTH x its record
+    # plus RATCHET_SLACK; a record naming a guard that is gone is drift. Pure functions, so every rule has a case.
+    floor = mc.RATCHET_FLOOR
+    record = {"guards": {"heavy": 400.0, "medium": 100.0}}
+    cases = [
+        ("a NEW guard over the floor", {"heavy": 400.0, "medium": 100.0, "fresh": floor + 1}, record, "fresh"),
+        ("a recorded guard past growth and slack", {"heavy": 400.0 * mc.RATCHET_GROWTH + mc.RATCHET_SLACK + 1,
+                                                     "medium": 100.0}, record, "heavy"),
+        ("a record naming a guard that no longer exists", {"heavy": 400.0}, record, "medium"),
+    ]
+    for label, cost, base, names in cases:
+        _tick()
+        problems = mc.ratchet_problems(cost, base)
+        if not any(names in x for x in problems):
+            FAILURES.append(f"#1599: the ratchet must report {label} (naming {names!r}), got {problems}")
+    for label, cost, base in (
+            ("a new guard under the floor", {"heavy": 400.0, "medium": 100.0, "fresh": floor - 1}, record),
+            ("a recorded guard within growth and slack", {"heavy": 400.0 * mc.RATCHET_GROWTH + mc.RATCHET_SLACK,
+                                                           "medium": 100.0}, record),
+            ("a recorded guard that got cheaper, even under the floor", {"heavy": 400.0, "medium": floor - 5}, record)):
+        _tick()
+        problems = mc.ratchet_problems(cost, base)
+        if problems:
+            FAILURES.append(f"#1599 CONTROL: the ratchet must accept {label}, got {problems}")
+    _tick()
+    problems = mc.ratchet_problems({"heavy": 400.0}, None)
+    if not (len(problems) == 1 and "no cost record" in problems[0]):
+        FAILURES.append(f"#1599: with no record at all the ratchet must say so once, never pass, got {problems}")
+    # The record: only guards over the floor, deterministic bytes, and a round trip.
+    with tempfile.TemporaryDirectory() as td:
+        path = Path(td) / "cost.json"
+        mc.write_cost_baseline(path, {"heavy": 400.04, "light": floor - 1, "medium": 100.0}, jobs=4)
+        first = path.read_bytes()
+        mc.write_cost_baseline(path, {"medium": 100.0, "light": floor - 1, "heavy": 400.04}, jobs=4)
+        loaded = mc.load_cost_baseline(path)
+        _tick()
+        if first != path.read_bytes() or loaded is None or set(loaded["guards"]) != {"heavy", "medium"} \
+                or loaded["guards"]["heavy"] != 400.0:
+            FAILURES.append(f"#1599: the record must hold only guards over the floor, rounded, in a stable order, "
+                            f"got {loaded} / {first!r}")
+        _tick()
+        if mc.load_cost_baseline(Path(td) / "absent.json") is not None:
+            FAILURES.append("#1599: an absent record must load as None, not as an empty one")
+        path.write_text("{not json", encoding="utf-8")
+        _tick()
+        try:
+            mc.load_cost_baseline(path)
+        except ValueError:
+            pass
+        else:
+            FAILURES.append("#1599: a malformed record must raise, never read as empty (which would pass everything)")
+
     # ---- 1d. baselines and mutants start no detached git maintenance (#1510) ----------------
     # The helper APPENDS to a caller's own pairs, never renumbers them over.
     _tick()

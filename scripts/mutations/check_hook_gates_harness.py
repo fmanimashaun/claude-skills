@@ -12,7 +12,7 @@ GUARD = Guard(
     selftest="plugins/rails-flow/scripts/check_hook_gates.py",
     # Its mutations target --only/run_groups (checked at the start of EVERY run) and the timeout
     # handling (the `timeout` group). The doctor's `hook gates` gate still runs every group (#1497).
-    selftest_args=("--only", "timeout"),
+    selftest_args=("--only", "timeout", "--fail-fast"),
     # The same staging as hook_guard_bash: the suite drives every plugin's hooks. A literal, because
     # lint_self_consistency's harness-dependency-undeclared rule reads it statically -- and that rule is
     # what keeps this copy honest when a hook gains a script (it caught exactly that on #1477).
@@ -31,10 +31,53 @@ GUARD = Guard(
            # mutation reads as caught -- the harness reported this guard INERT until it was added (#1173).
            'plugins/rails-flow/scripts/ci_verdict_hint.py'),
     mutations=(
+        # #1599: `--match` runs only the fixtures a label names. Each mutation undoes one half of that.
+        Mutation(
+            "--match selects every check, so a narrowed mutant still runs the whole group",
+            "_WANTED = {i for i, label in enumerate(_SURVEYED) if match.lower() in label.lower()}",
+            "_WANTED = set(range(len(_SURVEYED)))",
+            "--match runs only the fixture whose label matches",
+        ),
+        Mutation(
+            "the code before an unwanted check still runs for real, so --match saves nothing",
+            "        _SKIP = _INDEX not in _WANTED",
+            "        _SKIP = False",
+            "--match runs only the fixture whose label matches",
+        ),
+        Mutation(
+            "the survey runs the fixtures for real instead of only listing them",
+            'return _MATCH_MODE == "survey" or (_MATCH_MODE == "run" and _SKIP)',
+            'return _MATCH_MODE == "run" and _SKIP',
+            "--match runs only the fixture whose label matches",
+        ),
+        Mutation(
+            "a run pass that disagrees with the survey is accepted, so --match can name the wrong check",
+            "if _INDEX >= len(_SURVEYED) or _SURVEYED[_INDEX] != label:",
+            "if False:",
+            "--match raises when a fixture's result steers which checks follow",
+        ),
+        Mutation(
+            "a nested selftest runs the real groups, so a broken --only refusal runs the whole suite inside the proof of it",
+            "    return not nested and not (fail_fast and bool(failures))",
+            "    return not (fail_fast and bool(failures))",
+            "a nested selftest, which only proves a refusal, never runs the real groups",
+        ),
+        Mutation(
+            "--fail-fast never skips the groups, so a mutant of the group machinery still runs the whole suite",
+            "    return not nested and not (fail_fast and bool(failures))",
+            "    return not nested",
+            "--fail-fast skips the real groups once a meta-check has failed",
+        ),
+        Mutation(
+            "a --match that selects nothing passes, so a mutant whose label is stale is never judged",
+            "        if ran_matching == 0:",
+            "        if False:",
+            "main() exits 2 for --match that selects nothing",
+        ),
         Mutation(
             "an unexpected timeout is not recorded, so a setup step that times out passes silently",
-            "            if not _EXPECTING_TIMEOUT:\n                check(note, False)",
-            "            if False:\n                check(note, False)",
+            "            if not _EXPECTING_TIMEOUT:\n                record_failure(note)",
+            "            if False:\n                record_failure(note)",
             "an UNEXPECTED timeout is recorded as a failure",
         ),
         Mutation(
@@ -65,8 +108,8 @@ GUARD = Guard(
         Mutation(
             # #1497
             '--only runs every group whatever it names',
-            '    for name in (groups or list(table)):',
-            '    for name in list(table):',
+            'def run_groups(groups: list[str] | None, table: dict) -> None:\n    for name in (groups or list(table)):',
+            'def run_groups(groups: list[str] | None, table: dict) -> None:\n    for name in list(table):',
             '--only runs exactly the groups it names',
         ),
         Mutation(
@@ -79,8 +122,8 @@ GUARD = Guard(
         Mutation(
             # review of PR #1506
             "a bare run executes no group, so the doctor's hook gates pass on nothing",
-            '    for name in (groups or list(table)):',
-            '    for name in (groups or []):',
+            'def run_groups(groups: list[str] | None, table: dict) -> None:\n    for name in (groups or list(table)):',
+            'def run_groups(groups: list[str] | None, table: dict) -> None:\n    for name in (groups or []):',
             'a bare run (no --only) runs every group',
         ),
         Mutation(
