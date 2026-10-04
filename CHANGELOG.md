@@ -7371,7 +7371,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## pipeline (lifecycle orchestrator)
 
-### Unreleased
+### 1.4.2 (release v1.154.0) — 2026-10-04
 
 - **`plugins/pipeline/scripts/fixture_git.py`: the fixture-git lock** (Refs #1588, Refs #1577). A byte-identical copy of rails-flow's (this plugin installs alone and cannot import it); `fixture-git-drift` keeps it identical. See the rails-flow entry.
 
