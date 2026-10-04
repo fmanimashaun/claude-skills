@@ -19,9 +19,11 @@ import io
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -190,6 +192,7 @@ def run() -> int:
         the_page(tmp)
         the_command(tmp)
         read_only(tmp)
+        refresh_hook(tmp)
         portable()
     for f in FAILURES:
         print(f"FAIL: {f}", file=sys.stderr)
@@ -912,6 +915,102 @@ def portable() -> None:
     for name in ("status_board.py", "status_board_selftest.py"):
         found = fstring_quote_reuse((here / name).read_text(encoding="utf-8"))
         check(f"no f-string in {name} reuses its own quote (that file would not parse on Python 3.9)", found == [], str(found))
+
+
+# ---- the Stop hook that refreshes the board (#1585 part 2b) -----------------------------------------------
+def refresh_hook(tmp: Path) -> None:
+    """board-refresh.sh in REAL processes, in a real git repository, with a stub `gh`: it is opt-in, throttled, bounded
+    and silent, and it never fails a stop."""
+    plugin = Path(__file__).resolve().parents[1]
+    hook = plugin / "hooks" / "scripts" / "board-refresh.sh"
+    repo = tmp / "hookrepo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    stub = tmp / "stubbin"
+    stub.mkdir()
+    (stub / "gh").write_text("#!/bin/sh\nexit 1\n")
+    (stub / "gh").chmod(0o755)
+    board = repo / ".claude" / "state" / "board.json"
+
+    def run_hook(extra: "dict | None" = None, cwd: Path = repo, path: "str | None" = None, plugin_root: "Path | None" = plugin,
+                 wait: float = 40.0) -> "tuple[int, str, str, float]":
+        env = dict(os.environ, PATH=path or f"{stub}:{os.environ['PATH']}")
+        env.pop("CLAUDE_PLUGIN_ROOT", None)
+        if plugin_root is not None:
+            env["CLAUDE_PLUGIN_ROOT"] = str(plugin_root)
+        env.update(extra or {})
+        t0 = time.monotonic()
+        try:
+            r = subprocess.run(["bash", str(hook)], cwd=cwd, env=env, capture_output=True, text=True, timeout=wait)
+        except subprocess.TimeoutExpired:
+            return -9, "", "timeout", time.monotonic() - t0
+        return r.returncode, r.stdout, r.stderr, time.monotonic() - t0
+
+    code, out, err, _ = run_hook()
+    check("with no board config and no earlier board, the hook writes nothing (opt-in)",
+          code == 0 and not (repo / ".claude").exists() and out == "" and err == "", f"{code} {out!r} {err!r}")
+    (repo / ".claude").mkdir(exist_ok=True)        # a hook that ran uninvited has made it: the check above already failed
+    (repo / ".claude" / "board.config.json").write_text(json.dumps({"title": "T"}))
+    code, out, err, _ = run_hook()
+    check("with a board config the hook writes the board, exits 0 and prints NOTHING (stdout and stderr empty)",
+          code == 0 and board.is_file() and out == "" and err == "", f"{code} {board.is_file()} {out!r} {err!r}")
+    marker = '{"marker": "fresh"}\n'
+    board.write_text(marker)
+    run_hook()
+    check("a board newer than the throttle is left alone", board.read_text() == marker, board.read_text()[:60])
+    old = time.time() - 600
+    os.utime(board, (old, old))
+    run_hook()
+    check("a board older than the throttle is measured again", board.read_text() != marker)
+    board.write_text(marker)
+    os.utime(board, (old, old))
+    run_hook({"BOARD_HOOK_FRESH_MIN": "soon"})
+    check("a junk BOARD_HOOK_FRESH_MIN falls back to 2 minutes, so a 10-minute-old board is refreshed", board.read_text() != marker)
+    board.write_text(marker)
+    os.utime(board, (old, old))
+    run_hook({"BOARD_HOOK_FRESH_MIN": "60"})
+    check("BOARD_HOOK_FRESH_MIN widens the throttle (a 10-minute-old board stays under 60; it was refreshed under the default 2)",
+          board.read_text() == marker)
+
+    os.utime(board, (old, old))
+    bare = tmp / "bare-path"
+    bare.mkdir()
+    for tool in ("bash", "git", "find", "dirname", "env"):
+        found = shutil.which(tool)
+        if found:
+            (bare / tool).symlink_to(found)
+    code, out, err, _ = run_hook(path=str(bare))
+    check("without python3 the hook exits 0 and writes nothing", code == 0 and board.read_text() == marker and out == "", f"{code} {out!r}")
+    code, out, err, _ = run_hook(plugin_root=None)
+    check("without CLAUDE_PLUGIN_ROOT the hook exits 0 and writes nothing", code == 0 and board.read_text() == marker and out == "")
+    plain = tmp / "plain-dir"
+    plain.mkdir()
+    code, out, err, _ = run_hook(cwd=plain)
+    check("outside a git repository the hook exits 0 and writes nothing", code == 0 and out == "" and not (plain / ".claude").exists())
+
+    broken = tmp / "broken-plugin"
+    (broken / "scripts").mkdir(parents=True)
+    (broken / "scripts" / "status_board.py").write_text("raise SystemExit(7)\n")
+    code, out, err, _ = run_hook(plugin_root=broken)
+    check("a collector that exits 7 never fails the stop: the hook exits 0 and prints nothing", code == 0 and out == "" and err == "", f"{code} {out!r} {err!r}")
+    (broken / "scripts" / "status_board.py").write_text("import sys\nprint('noise')\nsys.stderr.write('traceback')\nraise RuntimeError('x')\n")
+    code, out, err, _ = run_hook(plugin_root=broken)
+    check("a collector that raises and prints is silenced", code == 0 and out == "" and err == "", f"{code} {out!r} {err!r}")
+
+    slow = tmp / "slowbin"
+    slow.mkdir()
+    (slow / "gh").write_text("#!/bin/sh\nsleep 30\n")
+    (slow / "gh").chmod(0o755)
+    os.utime(board, (old, old))
+    code, out, err, took = run_hook({"BOARD_HOOK_BUDGET": "2"}, path=f"{slow}:{os.environ['PATH']}", wait=25)
+    check("a stalled gh is bounded by BOARD_HOOK_BUDGET: the hook returns inside the hook's 15 s timeout with exit 0",
+          code == 0 and took < 14.0, f"{code} {took:.1f}s")
+    reg = json.loads((plugin / "hooks" / "hooks.json").read_text())
+    stop = [h for g in reg["hooks"].get("Stop", []) for h in g["hooks"]]
+    check("hooks.json registers the refresh on Stop, under a 15 s timeout", len(stop) == 1 and "board-refresh.sh" in stop[0]["command"]
+          and stop[0]["timeout"] == 15, str(stop))
+    check("the hook script opts in, throttles and fails open by its text (no `exit 2`, no `set -e`)",
+          "exit 2" not in hook.read_text() and "set -e" not in hook.read_text().replace("set -uo", ""))
 
 
 # ---- read-only ---------------------------------------------------------------------------------------

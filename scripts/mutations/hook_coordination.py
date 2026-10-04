@@ -10,6 +10,7 @@ GUARD = Guard(
     name="hook_coordination",
     subject="plugins/rails-flow/hooks/scripts/lib/coordination.py",
     selftest="plugins/rails-flow/hooks/scripts/lib/coordination.py",
+    needs=("plugins/rails-flow/hooks/scripts/session-start.sh",),      # the selftest runs the real SessionStart hook
     mutations=(
         Mutation(
             "the coordinator check passes every caller, so a non-coordinator writes",
@@ -160,6 +161,24 @@ GUARD = Guard(
             '    if not coord or not coord.get("session_id"):      # none recorded, or an object that names nobody',
             "    if coord is None:",
             "a coordinator object with no session_id counts as no coordinator",
+        ),
+        Mutation(
+            'a session that holds a lane is still told to check in',
+            '    if lanes_for(record, session_id):\n        return ""\n    holder',
+            '    holder',
+            'this session holds an open lane: silent',
+        ),
+        Mutation(
+            'a coordinator object that names nobody makes the pointer speak',
+            '    if not session_id or not isinstance(coord, dict) or not coord.get("session_id"):',
+            '    if not session_id or not isinstance(coord, dict):',
+            'a coordinator object that names nobody is no coordinator: silent',
+        ),
+        Mutation(
+            "the pointer's failures are not swallowed, so a bad payload fails the session start",
+            '        except Exception:      # noqa: BLE001 -- fail open\n            pass\n        return 0',
+            '        except KeyError:      # noqa: BLE001\n            pass\n        return 0',
+            'a payload that is not JSON: silent, exit 0',
         ),
     ),
 )
