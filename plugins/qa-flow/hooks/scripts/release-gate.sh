@@ -177,7 +177,9 @@ add_commit() {
           git fetch -q --end-of-options origin "$ref" 2>/dev/null && c="$(git rev-parse --verify -q 'FETCH_HEAD^{commit}' 2>/dev/null || true)"
         fi
       else
-        # Another repository: the ref becomes part of an API path, so it is a plain name (#1591, the class of #1600).
+        # Another repository: the ref becomes part of an API path, so it is a plain name, as on the local path above.
+        # `#` is a legal character in a ref name and starts a fragment in a URL: the gate would ask about `abc` while the
+        # command acts on `abc#frag`. A ref that is not plain is left unresolved, and the command is denied (#1606).
         ! plain_ref "$ref" || c="$(gh api "repos/${_R}/commits/${ref}" -q .sha 2>/dev/null || true)"
       fi ;;
   esac
@@ -654,6 +656,8 @@ resolve_release() {
       o="$(git ls-remote origin "refs/tags/${tag}" "refs/tags/${tag}^{}" 2>/dev/null)" || return 1
       if [ -n "$o" ]; then
         t="$(printf '%s\n' "$o" | awk '$2 ~ /\^\{\}$/ {p=$1} $2 !~ /\^\{\}$/ {d=$1} END {print (p != "" ? p : d)}')"
+        # What `git ls-remote` printed goes to `git fetch` below: it must be an object id, whatever the origin says (#1606).
+        case "$t" in ""|*[!0-9a-fA-F]*) return 1 ;; esac
         _rsha="$(git rev-parse --verify -q "${t}^{commit}" 2>/dev/null || true)"
         if [ -z "$_rsha" ]; then
           git fetch -q --end-of-options origin "$t" 2>/dev/null || true
@@ -670,8 +674,8 @@ resolve_release() {
       _rsha="$(default_tip 2>/dev/null | head -1)"
     fi
   else
-    # Another repository: a tag or target becomes part of an API path, so each is a plain name, else the commit
-    # cannot be named (#1591, the class of #1600). `x?y` or `../x` would otherwise read a different endpoint.
+    # Another repository: a tag or target becomes part of an API path, so each is a plain name, else the commit cannot be
+    # named (#1606). This is the same splice as add_commit's, three more times.
     [ -z "$tag" ] || plain_ref "$tag" || return 1
     [ -z "$tgt" ] || plain_ref "$tgt" || return 1
     if [ -n "$tag" ]; then

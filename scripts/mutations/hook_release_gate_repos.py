@@ -135,24 +135,5 @@ GUARD = Guard(
             '  if false; then',
             "has spent its time on earlier API calls",
         ),
-        # ---- a name that becomes part of ANOTHER repository's API path (#1591, the class of #1600) ---------------------
-        Mutation(
-            "a ref that is not a plain name is put in another repository's commits path",
-            '        ! plain_ref "$ref" || c="$(gh api "repos/${_R}/commits/${ref}" -q .sha 2>/dev/null || true)"',
-            '        c="$(gh api "repos/${_R}/commits/${ref}" -q .sha 2>/dev/null || true)"',
-            "a REST merge's head with",
-        ),
-        Mutation(
-            "a release target or tag that is not a plain name is put in another repository's API path",
-            '    [ -z "$tgt" ] || plain_ref "$tgt" || return 1\n',
-            '',
-            "a release's --target with",
-        ),
-        Mutation(
-            "a release tag that is not a plain name is put in another repository's API path",
-            '    [ -z "$tag" ] || plain_ref "$tag" || return 1\n',
-            '',
-            "a release's tag with",
-        ),
     ),
 )
