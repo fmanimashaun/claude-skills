@@ -3053,6 +3053,18 @@ def deadline_fixtures() -> None:
                 ("a GraphQL body it cannot read (--input, -F query=@file)", ("gh api graphql --input q.json", "gh api graphql --input -",
                                                                               "gh api graphql -F query=@q.graphql", "gh api graphql --field query=@-",
                                                                               "gh api graphql -Fquery=@q")),
+                # #1606 / #1609: the explicit-repository shapes whose ref or tag climbs, carries a fragment or a %2f. The full path now
+                # refuses them as "not a plain name"; the TIMEOUT path has no ref to inspect, so it must refuse them by the words
+                # (a REST merge, a ref write, a release publish). Pinned here so a later edit to those rules cannot reopen them.
+                ("a REST merge or ref write whose head or sha is not a plain name (#1606)",
+                 ("gh api -X POST repos/o/r/merges -f base=main -f head='abc#frag'",
+                  "gh api -X POST repos/o/r/merges -f base=main -f head=x/../../../issues/1",
+                  "gh api -X POST repos/o/r/merges -f base=main -f head='a%2f..%2fb'",
+                  "gh api -X PATCH repos/o/r/git/refs/heads/main -f sha=../../x",
+                  "gh api -X PATCH repos/o/r/git/refs/heads/main -f sha='abc#frag'")),
+                ("a release publish whose tag or target is not a plain name (#1606)",
+                 ("gh release create v1.0.0 --repo o/r --target ../x", "gh release create v1.0.0 --repo o/r --target 'a#b'",
+                  "gh release create ../v1 --repo o/r --target main", "gh release create 'v%2f..%2f1' --repo o/r --target main")),
                 ("a push whose verb or remote is disguised but whose destination is still named",
                  ("git -c alias.p=push p origin HEAD:main", "git -c url.b.insteadOf=a push origin main")),
             ):

@@ -121,5 +121,19 @@ GUARD = Guard(
             '[[ $_in =~ (^|[^[:alnum:]_-])--(all|mirror|tags)${_e} ]] && _looks_promotion=1',
             'CONTROL: the coarse detector allows `git push --tags origin`',
         ),
+        # #1602 asked that the timeout path also refuse #1606's shapes; these are the two word rules that make it so.
+        Mutation(
+            'a `gh api` REST merge or ref write stops being a promotion on a timeout',
+            '[[ $_in =~ ${_b}api${_e} ]] && [[ $_in =~ (merge|merges|refs|releases|mergePullRequest|updateRef|createRef) ]] && _looks_promotion=1',
+            ':',
+            'refuses a REST merge or ref write whose head or sha is not a plain name (#1606)',
+        ),
+        # #1602 asked that the timeout path also refuse #1606's shapes; these are the two word rules that make it so.
+        Mutation(
+            'a `gh release create|edit` stops being a promotion on a timeout',
+            '[[ $_in =~ ${_b}release${_e} ]] && [[ $_in =~ ${_b}(create|edit)${_e} ]] && _looks_promotion=1',
+            ':',
+            'refuses a release publish whose tag or target is not a plain name (#1606)',
+        ),
     ),
 )
