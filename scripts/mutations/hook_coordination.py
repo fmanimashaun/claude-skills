@@ -185,8 +185,8 @@ GUARD = Guard(
             '        except Exception:      # noqa: BLE001 -- fail open\n            pass\n        return 0',
             '        except KeyError:      # noqa: BLE001\n            pass\n        return 0',
             'a payload that is not JSON: silent, exit 0',
-
-
+        ),
+        Mutation(
             'a check-in is accepted from any caller',
             '    err = _refuse_unless_coordinator(record, caller, claiming=False)\n    if err:\n        return err\n    name, owner = clean(name, "name"), clean(owner, "id")',
             '    name, owner = clean(name, "name"), clean(owner, "id")',
