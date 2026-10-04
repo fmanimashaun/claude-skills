@@ -18,7 +18,7 @@ same code, not a copy of it. Its output and exit code are passed through unchang
 (`FAIL` lines on stderr), 2 unusable.
 
 FAIL CLOSED, AND INSIDE THE HOOK'S TIME. A PreToolUse hook that outlives its timeout does not deny, so
-this stops by itself: every step gets what is left of `--budget` (default 20 s) and a step that cannot
+this stops by itself: every step gets what is left of `--budget` (default 8 s) and a step that cannot
 finish is exit 2 "unusable", which the gate turns into a denial. Anything it cannot fetch, resolve or run is
 exit 2 for the same reason; an error never reads as "the evidence is fine". A repository whose `main` cannot
 be listed is unusable too, and one that has no `main` is a repository with nothing published yet.
@@ -44,7 +44,7 @@ from pathlib import Path
 EXIT_OK, EXIT_FINDINGS, EXIT_UNUSABLE = 0, 1, 2
 REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 SHA = re.compile(r"^[0-9a-f]{40}$")
-DEFAULT_BUDGET = 20.0
+DEFAULT_BUDGET = 8.0      # the release gate (hook timeout 15 s) passes what it has left, never more than this
 HERE = Path(__file__).resolve().parent
 
 

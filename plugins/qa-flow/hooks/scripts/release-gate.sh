@@ -526,9 +526,11 @@ judge() {
 # on top of the tested sha with nothing else changed but the stamp and the evidence it names. The release-only
 # layers (#1428) are judged exactly as for this checkout, from the evidence committed in THAT repository:
 # remote_evidence.py fetches the commit into a scratch repository and runs release_evidence.py there (#1591),
-# inside its own time budget, because a hook that outlives its timeout does not deny.
+# inside the time the hook has left, because a hook that outlives its timeout (15 s, hooks.json) does not deny: it
+# lets the command through. So the helper runs LAST, after the cheap API calls, with what is left of 12 s (never more
+# than 8), and a command that has no time left is denied. Several ships in one command share that one deadline.
 judge_remote() {
-  local sha="$1" repo="$2" what="$3" verdict csha why cmp status files evidence
+  local sha="$1" repo="$2" what="$3" verdict csha why cmp status files evidence budget
   if ! gh api -H 'Accept: application/vnd.github.raw+json' "repos/${repo}/contents/qa/CERTIFICATION?ref=${sha}" >"$stamp_tmp" 2>/dev/null; then
     JWHY="this command acts on ${repo}, not on this checkout's repository, and its qa/CERTIFICATION could not be read at ${what} (${sha:0:12}) through the GitHub API. Run it from a checkout of ${repo} that holds a PASS stamp, or set QA_ALLOW_MAIN=1."
     return 1
@@ -542,13 +544,8 @@ judge_remote() {
     JWHY="${repo}: certification verdict is ${verdict}, not PASS. Fix the defects and re-certify."; return 1
   fi
   [ -n "$csha" ] || { JWHY="${repo}: certification has no sha — the stamp is invalid. Re-run /qa-flow:certify."; return 1; }
-  # (#1591) The release-only layers (#1428), as for this checkout. Fail-closed: any error denies.
-  if evidence="$(python3 "${CLAUDE_PLUGIN_ROOT:-}/scripts/remote_evidence.py" --repo "$repo" --sha "$sha" 2>"$evtmp")"; then
-    grep '^WARNING' "$evtmp" | sed "s|^WARNING |qa-flow: ${repo}: |" >&2
-  else
-    why="$(grep -E '^(FAIL|unusable)' "$evtmp" 2>/dev/null | head -3 | tr '\n' ' ')"
-    JWHY="${repo}: the release-only layers do not pass (#1428): ${why:-remote_evidence.py could not run.} Fix them and re-certify."; return 1
-  fi
+  # The cheap API call first: how the judged commit relates to the certified one.
+  cmp=""
   case "$sha" in
     "$csha"*) : ;;
     *)
@@ -556,14 +553,27 @@ judge_remote() {
         JWHY="${repo}: certification is for sha ${csha:0:12}, and ${what} (${sha:0:12}) could not be compared with it through the GitHub API. Re-certify."; return 1
       fi
       status="$(printf '%s\n' "$cmp" | head -1)"
-      files="$(printf '%s\n' "$cmp" | sed 1d | extra_files "$evidence" | head -3 | tr '\n' ' ')"
       case "$status" in ahead|identical) : ;; *)
         JWHY="${repo}: certification is for sha ${csha:0:12}, which is not an ancestor of ${what} (${sha:0:12}). ${what} moved — re-certify before promoting."; return 1 ;;
-      esac
-      if [ -n "$files" ]; then
-        JWHY="${repo}: certification is for sha ${csha:0:12}; ${what} (${sha:0:12}) has changed more than the stamp since: ${files}. Re-certify before promoting."; return 1
-      fi ;;
+      esac ;;
   esac
+  # (#1591) The release-only layers (#1428), as for this checkout, judged LAST and inside the time the hook has left
+  # (SECONDS counts from the hook's start). Fail-closed: any error, and no time, denies.
+  budget=$(( 12 - SECONDS )); [ "$budget" -le 8 ] || budget=8
+  if [ "$budget" -lt 3 ]; then
+    JWHY="${repo}: there is no time left in this hook to judge the release-only layers (#1428) of ${what} (${sha:0:12}): the command acts on too many commits or repositories at once. Split it."; return 1
+  fi
+  if evidence="$(python3 "${CLAUDE_PLUGIN_ROOT:-}/scripts/remote_evidence.py" --repo "$repo" --sha "$sha" --budget "$budget" 2>"$evtmp")"; then
+    grep '^WARNING' "$evtmp" | sed "s|^WARNING |qa-flow: ${repo}: |" >&2
+  else
+    why="$(grep -E '^(FAIL|unusable)' "$evtmp" 2>/dev/null | head -3 | tr '\n' ' ')"
+    JWHY="${repo}: the release-only layers do not pass (#1428): ${why:-remote_evidence.py could not run.} Fix them and re-certify."; return 1
+  fi
+  # What changed since the certified commit may be the stamp and the evidence it names, and nothing else.
+  files="$(printf '%s\n' "$cmp" | sed 1d | extra_files "$evidence" | head -3 | tr '\n' ' ')"
+  if [ -n "$files" ]; then
+    JWHY="${repo}: certification is for sha ${csha:0:12}; ${what} (${sha:0:12}) has changed more than the stamp since: ${files}. Re-certify before promoting."; return 1
+  fi
   echo "qa-flow: ${repo}: certification valid for ${csha:0:12} — ${what} ${sha:0:12} permitted." >&2
   return 0
 }
