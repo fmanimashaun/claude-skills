@@ -52,13 +52,13 @@ GUARD = Guard(
             "GH_REPO in the hook's environment is ignored",
             '    -) f="${GH_REPO:-}"',
             '    -) f=""',
-            "GH_REPO in the hook's environment",
+            "GH_REPO ALONE sends a release",
         ),
         Mutation(
             "a repository that is not owner/repo (a host-qualified one) is accepted",
             """  printf '%s\\n' "$r" | grep -qE '^[a-z0-9_.-]+/[a-z0-9_.-]+$' || { unresolved_pr=1; return 0; }""",
             "  :",
-            "a host-qualified repository",
+            "a host-qualified GH_REPO is refused as unresolved",
         ),
         Mutation(
             "a remote that does not exist is judged here, as if it were origin",

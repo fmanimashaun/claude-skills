@@ -2502,6 +2502,18 @@ def release_gate_repos_fixtures() -> None:
             rc, err = run(_pin(cmd, stamped), **{**ok_api, **env})
             check(f"release-gate (#1569): {label} is permitted by the OTHER repository's own PASS stamp, read through the API",
                   rc == 0 and "other/fork" in err, f"rc={rc} {err[:240]!r}")
+        # Each of these has ONE signal that the command acts on another repository, so ignoring that signal is visible.
+        # GH_REPO alone: no -R, no path, no PR URL. Judged here, `--target main` (the uncertified local main) is denied.
+        rc, err = run("gh release create v1 --target main", GH_REPO="other/fork", **ok_api)
+        check("release-gate (#1591): GH_REPO ALONE sends a release to the OTHER repository's stamp, which permits it",
+              rc == 0 and "other/fork" in err, f"rc={rc} {err[:240]!r}")
+        # A host-qualified repository is not owner/repo: refused as unresolved, even where the API would answer for any repository.
+        # (Not `-R` or a path in the command: the classifier refuses a host-qualified repository there before the hook sees it. The
+        # hook's own check is the one on GH_REPO in ITS environment, which the classifier never reads. The fake gh serves a stamp
+        # for ANY repository, so a repository accepted by mistake would be judged and permitted.)
+        rc, err = run("gh release create v1 --target main", GH_REPO="ghe.example.com/o/r", **ok_api)
+        check("release-gate (#1591): a host-qualified GH_REPO is refused as unresolved, though the API would serve it a stamp",
+              rc == 2 and "cannot tell" in err, f"rc={rc} {err[:240]!r}")
         rc, err = run(_pin("gh pr merge 7 -R other/fork", stamped), **{**ok_api, **ok_pr, "FAKE_COMPARE": "ahead\napp.rb", "FAKE_STAMP_REF": hot}, )
         check("release-gate (#1569): another repository's stamp for an OLDER commit must cover only the stamp itself",
               rc == 2, f"rc={rc} {err[:240]!r}")
