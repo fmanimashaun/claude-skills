@@ -39,15 +39,20 @@ _coarse_looks_promotion() {
       # Cost: `git push origin $BRANCH` is refused on a timeout ("retry it").
       _sq="'"
       _seg='push[^;&|]*'
+      _seg_cmd='push[^;&|"]*'   # ends at the first RAW double quote: inside the command a quote is `\"`, so a later key (`"description":"don't wait"`) is out
       _g_q='[[:alnum:]_/.-][?]([^[:alnum:]=&]|$)'
       _g_b='[[:alnum:]_/.-][{][^{}"[:space:]]*,[^{}"[:space:]]*[}]'
       _g_s='[[:alnum:]_/.-][[][^]"[:space:][]+[]]'
-      _g_e="(${_sq}${_sq}|"'\\"\\"'")"
+      # A QUOTE, A BACKSLASH OR A BACKTICK after `push`: a name split by any of them (`HEAD:"ma"in`, `ma\in`, `m'ain'`, an empty pair) is `main` to a
+      # shell and no word to a regex, and each new spelling needed a new rule (the #1607 review: 19 of 31 got through the empty-pair one). One class
+      # instead of a list of shapes. In the payload a command's own double quote is `\"`, so the backslash covers it, and the JSON's own raw quotes
+      # are not in the class. Cost: `git push origin 'feat/x'` and a commit message that mentions `git push` inside backticks are refused on a timeout.
+      _g_x="[\\\\${_sq}\`]"
       [[ $_in =~ ${_seg}[$] ]] && _looks_promotion=1
       [[ $_in =~ ${_seg}${_g_q} ]] && _looks_promotion=1
       [[ $_in =~ ${_seg}${_g_b} ]] && _looks_promotion=1
       [[ $_in =~ ${_seg}${_g_s} ]] && _looks_promotion=1
-      [[ $_in =~ ${_seg}${_g_e} ]] && _looks_promotion=1
+      [[ $_in =~ ${_seg_cmd}${_g_x} ]] && _looks_promotion=1
       [[ $_in =~ ${_b}git[[:space:]]+[$] ]] && _looks_promotion=1
     fi
     [[ $_in =~ ${_b}merge${_e} ]] && _looks_promotion=1
@@ -767,6 +772,8 @@ exit 0
 # slow network is refused with "retry it", which is the cost of a bounded hook.
 _dl="$(dirname "${BASH_SOURCE[0]}")/lib/deadline.sh"
 if [ -f "$_dl" ] && . "$_dl" 2>/dev/null && type deadline_run >/dev/null 2>&1; then
+  # The margin to the hook's 15 s timeout is about 1.85 s (measured at load 22 to 33: the deadline's denial arrives at 13.14 s). A timed-out hook
+  # lets the command through, and the load that makes a hook time out is the load that makes this loop's one-second sleep drift: do not raise it.
   deadline_seconds 13 13
   deadline_run "$_deadline_s" _gate_main; _rc=$?
   if [ "$_rc" -ge 128 ]; then

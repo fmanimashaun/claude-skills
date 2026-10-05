@@ -1,6 +1,9 @@
 """Mutation guard: hook_release_gate_deadline. The deadline block at the bottom of release-gate.sh. Run by scripts/mutation_check.py (#1575)."""
 from mutation_types import Guard, Mutation  # noqa: F401
 
+_BS, _BT = chr(92), chr(96)   # a backslash and a backtick, spelled so no escaping is read twice
+_GX = '      _g_x="[' + _BS * 4 + '${_sq}' + _BS + _BT + ']"'   # the line in release-gate.sh
+
 GUARD = Guard(
     name="hook_release_gate_deadline",
     subject="plugins/qa-flow/hooks/scripts/release-gate.sh",
@@ -198,12 +201,30 @@ GUARD = Guard(
             ':',
             '`git push origin HEAD:ma[i]n`',
         ),
-        # #1607: the #1602 delta review's residuals S1-S4 (the coarse detector was an allow-by-default word list).
+        # #1607 (B1 of the PR review): ONE character class after `push` replaces a list of quote spellings; each member of the class has a mutant.
         Mutation(
-            "an empty quote pair (`ma''in`) after `push` stops being a promotion",
-            '      [[ $_in =~ ${_seg}${_g_e} ]] && _looks_promotion=1',
-            ':',
-            "`git push origin 'HEAD:ma''in'`",
+            "a single quote after `push` stops being a promotion",
+            _GX,
+            '      _g_x="[' + _BS * 4 + _BS + _BT + ']"',
+            "`git push origin HEAD:m'a'in`",
+        ),
+        Mutation(
+            "a backslash after `push` stops being a promotion",
+            _GX,
+            '      _g_x="[${_sq}' + _BS + _BT + ']"',
+            "`git push origin HEAD:m" + _BS + "ain`",
+        ),
+        Mutation(
+            "a backtick after `push` stops being a promotion",
+            _GX,
+            '      _g_x="[' + _BS * 4 + '${_sq}]"',
+            "`git push origin HEAD:ma`:`in`",
+        ),
+        Mutation(
+            "the quote rule reads past the command into a later payload key",
+            '      [[ $_in =~ ${_seg_cmd}${_g_x} ]] && _looks_promotion=1',
+            '      [[ $_in =~ ${_seg}${_g_x} ]] && _looks_promotion=1',
+            "an apostrophe in a later payload key is not read as part of the push destination",
         ),
         # #1607: the #1602 delta review's residuals S1-S4 (the coarse detector was an allow-by-default word list).
         Mutation(

@@ -3082,10 +3082,19 @@ def deadline_fixtures() -> None:
                 ("a `gh` verb that changes a repository or re-runs a workflow (S1, S2)",
                  ("gh repo sync o/r --branch main", "gh repo edit --default-branch main", "gh repo edit o/r --description x",
                   "gh run rerun 123", "gh run rerun 123 --failed", "gh workflow enable release.yml")),
-                ("a `git push` whose destination is spelled so no word shows (S3): a variable, a glob, a brace expansion, an empty quote pair",
+                ("a `git push` whose destination is spelled so no word shows (S3): a variable, a glob, a brace expansion, or a name split by a quote, a backslash or a backtick",
                  ("git push origin HEAD:$B", "git push origin HEAD:${B}", "git push origin HEAD:refs/heads/mai?", "git push origin HEAD:ma[i]n",
                   "git push origin HEAD:ma{in,}", "git push origin 'HEAD:ma''in'", 'git push origin "HEAD:ma""in"', "git push origin $(git rev-parse --abbrev-ref HEAD)",
-                  "git $V push origin feature/x", "git  $V push origin feature/x")),
+                  "git $V push origin feature/x", "git  $V push origin feature/x",
+                  # the #1607 review's 19 of 31: every quote, backslash and backtick spelling of main, not just the empty pair
+                  'git push origin HEAD:"ma"in', 'git push origin HEAD:m"ain"', "git push origin HEAD:ma'in'", "git push origin HEAD:'m'ain",
+                  "git push origin HEAD:m'a'in", "git push origin HEAD:ma\\in", "git push origin HEAD:m\\ain", "git push origin HEAD:mai\\n",
+                  "git push origin ma\\in", "git push origin 'HEAD:m'ain", "git push origin HEAD:ma`:`in", 'git push origin HEAD:refs/heads/"ma"in',
+                  "git push origin HEAD:heads/ma'in'", 'git push origin "ma"in', 'git push origin "HEAD":ma\\in')),
+                ("an ORDINARY quoted ref, a multi-line command or a backticked commit message that says `git push` (the accepted cost of one character class "
+                 "instead of a list of spellings: a fallback that runs only after the gate overran its deadline, 'retry it')",
+                 ("git push origin 'feat/x'", 'git push origin "feat/x"', "git push origin feature/x\ngit commit -m 'it works'",
+                  "git commit -m \"$(cat <<'EOF'\nnever `git push --force`\nEOF\n)\"")),
                 ("a GraphQL body built by substitution (S4)",
                  ('gh api graphql -f query="$(cat q.graphql)"', "gh api graphql -f query=`cat q.graphql`", "gh api graphql -f query=<(cat q.graphql)")),
                 ("a push whose verb or remote is disguised but whose destination is still named",
@@ -3100,14 +3109,13 @@ def deadline_fixtures() -> None:
             # `-X GET` (or no method and no fields) is a read; `?` inside a URL query is not a glob; a plain quoted ref is not an empty pair.
             for cmd in ("gh api repos/o/r/pulls", "gh api repos/o/r/issues/1/comments", "gh api -X GET repos/o/r/pulls -f per_page=100",
                         "gh api --method GET repos/o/r/pulls -F per_page=100", "gh api repos/o/r/issues --jq '.[].number'", "gh run list",
-                        "gh run view 123", "gh repo view o/r", "gh repo clone o/r", "gh workflow view release.yml", "git push origin 'feat/x'",
-                        'git push origin "feat/x"', "git push https://x.test/r.git?z=1 feature/x", "git push origin feature/x:feature/y",
+                        "gh run view 123", "gh repo view o/r", "gh repo clone o/r", "gh workflow view release.yml",
+                        "git push https://x.test/r.git?z=1 feature/x", "git push origin feature/x:feature/y",
                         "gh api graphql -f query='{ repository(owner:\"o\", name:\"r\") { id } }'"):
                 check(f"deadline (#1575): CONTROL (#1607): the coarse detector allows `{cmd}`", coarse(cmd) == 0, "exit 2: refused")
             # #1607: the destination is what FOLLOWS `push` in the same simple command. A `$` in an earlier line, an env prefix, a commit
             # message, or a loop that merely says "push" is not a destination (first version: 5 of 8 new refusals were this).
             for cmd in ("cat <<EOF\n$(git rev-parse HEAD)\nEOF\ngit push origin feature/w", "x=$(git rev-parse HEAD) git push origin feature/w",
-                        "git commit -m \"$(cat <<'EOF'\nnever `git push --force`\nEOF\n)\"",
                         "for k in \"force-push\" \"no-verify\"; do grep -c \"$k\" GUARDRAILS.md; done", "git status && git push origin feature/x"):
                 check(f"deadline (#1575): CONTROL (#1607): a `$` that does not follow `push` is not refused: `{cmd[:60]!r}`", coarse(cmd) == 0, "exit 2: refused")
             # THE JSON WRAPPER IS NOT THE COMMAND: the payload holds braces, brackets, commas and quotes of its own, and a rule that looked at
@@ -3118,6 +3126,12 @@ def deadline_fixtures() -> None:
             ok = _run(["/bin/bash", str(QA_HOOK)], cwd=bd, input=wrapped, env={"PATH": bd, "HOME": os.environ.get("HOME", "/tmp")},
                       capture_output=True, text=True, timeout=60).returncode
             check("deadline (#1575): CONTROL (#1607): a payload with extra keys, an array and braces of its own is not refused", ok == 0, f"exit {ok}")
+            # The quote/backslash/backtick rule stops at the first RAW double quote, which ends the command in the payload; an apostrophe in a LATER key
+            # (a `description` that says "don't wait") is not part of the destination.
+            apos = json.dumps({"tool_input": {"command": "git push origin feature/x", "description": "send the branch, don't wait"}, "session_id": "s"})
+            ok = _run(["/bin/bash", str(QA_HOOK)], cwd=bd, input=apos, env={"PATH": bd, "HOME": os.environ.get("HOME", "/tmp")},
+                      capture_output=True, text=True, timeout=60).returncode
+            check("deadline (#1575): CONTROL (#1607): an apostrophe in a later payload key is not read as part of the push destination", ok == 0, f"exit {ok}")
             for cmd in ("git push origin feature/x", "git push origin HEAD:heads/feature/x", "git push origin HEAD:heads/feature/main-menu",
                         "git push origin heads/feature/x", "git push --tags origin", "git status", "git commit -m tidy",
                         "gh workflow list", "gh workflow view release.yml", "gh run list", "gh pr view 7", "gh pr list",
