@@ -24,6 +24,7 @@ GUARD = Guard(
            'plugins/qa-flow/scripts/read_certification.py',
            'plugins/qa-flow/scripts/push_targets.py',  # release-gate.sh runs it (#1410)
            'plugins/qa-flow/scripts/release_evidence.py',
+           'plugins/qa-flow/scripts/remote_evidence.py',   # the release gate runs it (#1591)
            'plugins/rails-flow/scripts/self_consistency.py'),
     mutations=(
         # #1410 / #1470: the hook must hand the RAW command to the classifier, for ANY command that
@@ -61,8 +62,8 @@ GUARD = Guard(
         # #1337: the stamp's own commit invalidates it again, or any delta slips through.
         Mutation(
             "an ancestor stamp is never accepted, so committing the stamp denies its promotion",
-            '        [ "$f" = "qa/CERTIFICATION" ] && continue',
-            '        [ "$f" = "__never__" ] && continue',
+            '    [ "$f" = "qa/CERTIFICATION" ] && continue',
+            '    [ "$f" = "__never__" ] && continue',
             "release-gate (#1337): the stamp committed on top of the tested sha still permits",
         ),
         Mutation(
@@ -81,15 +82,15 @@ GUARD = Guard(
         # The allowance matches ANY path under the evidence's parent, so code rides along unchecked.
         Mutation(
             "every changed file counts as evidence",
-            '            (*/) case "$f" in ("$p"*) ok=1 ;; esac ;;',
-            '            (*/) ok=1 ;;',
+            '      (*/) case "$f" in ("$p"*) ok=1 ;; esac ;;',
+            '      (*/) ok=1 ;;',
             "release-gate (#1428): a code change riding with the evidence is still denied",
         ),
         # The trailing slash is what stops first-boot-v1-other matching first-boot-v1.
         Mutation(
             "the evidence directory is matched without its trailing slash",
-            '            (*/) case "$f" in ("$p"*) ok=1 ;; esac ;;',
-            '            (*/) case "$f" in ("${p%/}"*) ok=1 ;; esac ;;',
+            '      (*/) case "$f" in ("$p"*) ok=1 ;; esac ;;',
+            '      (*/) case "$f" in ("${p%/}"*) ok=1 ;; esac ;;',
             "release-gate (#1428): a look-alike of the evidence path is not evidence",
         ),
         # ROUND 3 FOLD-IN 3: the degraded-PATH fallback must use builtins only.
@@ -145,15 +146,15 @@ GUARD = Guard(
         # #1437 review: a contains-match survived every fixture. The allowance is a PREFIX.
         Mutation(
             "the evidence allowance matches the path anywhere, not as a prefix",
-            '            (*/) case "$f" in ("$p"*) ok=1 ;; esac ;;',
-            '            (*/) case "$f" in (*"$p"*) ok=1 ;; esac ;;',
+            '      (*/) case "$f" in ("$p"*) ok=1 ;; esac ;;',
+            '      (*/) case "$f" in (*"$p"*) ok=1 ;; esac ;;',
             "release-gate (#1428): a path merely containing the evidence path is not evidence",
         ),
         # #1437 review round 2: the sweep FILE matched as a prefix, so sweep.csv.rb rode along.
         Mutation(
             "the sweep file matches as a prefix",
-            '            (*) [ "$f" = "$p" ] && ok=1 ;;',
-            '            (*) case "$f" in ("$p"*) ok=1 ;; esac ;;',
+            '      (*) [ "$f" = "$p" ] && ok=1 ;;',
+            '      (*) case "$f" in ("$p"*) ok=1 ;; esac ;;',
             "release-gate (#1428): a file that only starts with the sweep's name is not evidence",
         ),
         Mutation(
