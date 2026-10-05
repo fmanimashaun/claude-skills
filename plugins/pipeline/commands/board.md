@@ -34,6 +34,12 @@ without those labels block that line), `stale_minutes`, `zombie_warn`, `worktree
 sentence under a panel: `prs`, `sessions`, `asks`, `lines`, `limits`, `today`). The collector flags a note
 that breaks the text rules in `board.json` under `ste_warnings`. It never rewrites it.
 
+## The Stop hook (optional, opt-in)
+
+When `.claude/board.config.json` or an earlier `.claude/state/board.json` exists, `hooks/scripts/board-refresh.sh` runs the
+collector at every Stop, no more often than every 2 minutes (`BOARD_HOOK_FRESH_MIN`) and for at most 8 seconds
+(`BOARD_HOOK_BUDGET`). It prints nothing and never fails a stop. A project without either file gets nothing from it.
+
 ## How a review verdict is read
 
 A comment is a verdict when its first line says `review` or `re-check` and holds `CLEAN` or `BLOCKED` in
