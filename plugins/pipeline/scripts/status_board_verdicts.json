@@ -1,0 +1,446 @@
+{
+ "collected": "2026-10-04, `gh pr list --state all --limit 40 --json number,comments` on this repository; first line of each comment, cut at 170 characters",
+ "verdicts": [
+  {
+   "pr": 1604,
+   "line": "**Independent review at 0d3cd67: CLEAN.** A correct, reversible stopgap. Merge on its own dispatched run (37182842660 was `in_progress` when I read it), which is also the",
+   "sha": "0d3cd67",
+   "verdict": "CLEAN",
+   "old_default_reads_it": true
+  },
+  {
+   "pr": 1603,
+   "line": "**Delta review at 7dde86f (the commits since my F1 review): CLEAN for F1.** The refusal is no longer a catch, and the new fixture and mutation can fail. The head conflict",
+   "sha": "7dde86f",
+   "verdict": "CLEAN",
+   "old_default_reads_it": false
+  },
+  {
+   "pr": 1602,
+   "line": "**Independent review at 2a01e32: BLOCKED on F1.** The process-group kill, the guard-bash denial, the ceilings and the orphan watchdog all hold when I run them. But on a t",
+   "sha": "2a01e32",
+   "verdict": "BLOCKED",
+   "old_default_reads_it": true
+  },
+  {
+   "pr": 1602,
+   "line": "**Delta review at 0fdb8eb: CLEAN.** F1 and F2 are fixed and hold when I run them. One small residual (S1), not blocking. CI run 37180623353 was `in_progress` when I last ",
+   "sha": "0fdb8eb",
+   "verdict": "CLEAN",
+   "old_default_reads_it": false
+  },
+  {
+   "pr": 1602,
+   "line": "## Delta review of #1602 at 01a8be43 (since my CLEAN at 0fdb8eb): CLEAN, with 4 non-blocking residuals",
+   "sha": "01a8be43",
+   "verdict": "CLEAN",
+   "old_default_reads_it": false
+  },
+  {
+   "pr": 1601,
+   "line": "## Review \u2014 CLEAN (head fc28fcef, run 37150723162 green)",
+   "sha": "fc28fcef",
+   "verdict": "CLEAN",
+   "old_default_reads_it": false
+  },
+  {
+   "pr": 1601,
+   "line": "## Re-check after the dev merge \u2014 still CLEAN (head 327fd3b)",
+   "sha": "327fd3b",
+   "verdict": "CLEAN",
+   "old_default_reads_it": false
+  },
+  {
+   "pr": 1601,
+   "line": "Re-check at fdffdae: still CLEAN. It is a pure merge of dev d0ae6f6 (the #1604 budget raise): the tree `ff447ea` equals `git merge-tree` of its parents, and `release-gate",
+   "sha": "fdffdae",
+   "verdict": "CLEAN",
+   "old_default_reads_it": false
+  },
+  {
+   "pr": 1596,
+   "line": "**Independent review at bf4e150: BLOCKED on F1 only, and F1 is small.** Everything you asked to be proved holds when I run the real hook. F1 is a false positive that hard",
+   "sha": "bf4e150",
+   "verdict": "BLOCKED",
+   "old_default_reads_it": true
+  },
+  {
+   "pr": 1596,
+   "line": "**Re-review of the delta at 526470f: CLEAN for #1581 part 2.** F1 and every escape I listed are closed, and your four additions hold when I run them. I found five small t",
+   "sha": "526470f",
+   "verdict": "CLEAN",
+   "old_default_reads_it": false
+  },
+  {
+   "pr": 1595,
+   "line": "Independent review at f1f6c08 \u2014 BLOCKED on one reproduced defect; everything else is non-blocking.",
+   "sha": "f1f6c08",
+   "verdict": "BLOCKED",
+   "old_default_reads_it": true
+  },
+  {
+   "pr": 1595,
+   "line": "Independent review at 5a718ba \u2014 CLEAN. The full run 37148492039 was still in progress when I wrote this, so merge needs it green.",
+   "sha": "5a718ba",
+   "verdict": "CLEAN",
+   "old_default_reads_it": true
+  },
+  {
+   "pr": 1595,
+   "line": "## Independent review at 56ab183: BLOCKED (3 findings)",
+   "sha": "56ab183",
+   "verdict": "BLOCKED",
+   "old_default_reads_it": true
+  },
+  {
+   "pr": 1594,
+   "line": "**Independent review at bfd13b1: BLOCKED on D1 (the detector can cry wolf), with one conflict to merge and two hardening suggestions.** Your root cause and your fix both ",
+   "sha": "bfd13b1",
+   "verdict": "BLOCKED",
+   "old_default_reads_it": true
+  },
+  {
+   "pr": 1594,
+   "line": "**Re-review at 695cd27: BLOCKED on one thing, and it is the failed run's survivor.** D1, D2's code half and S1 are fixed and hold under my probes. The one surviving mutat",
+   "sha": "695cd27",
+   "verdict": "BLOCKED",
+   "old_default_reads_it": false
+  },
+  {
+   "pr": 1594,
+   "line": "**Delta review at a0ee0bb (be's fix 963ccc7 plus the dev merge): CLEAN.** The surviving mutant now goes red, by the fixture it names, and the new assertion catches the or",
+   "sha": "a0ee0bb",
+   "verdict": "CLEAN",
+   "old_default_reads_it": false
+  },
+  {
+   "pr": 1593,
+   "line": "**Independent review at a399674: CLEAN.** The change does what it says, and the claim behind it is right on the evidence that is public here.",
+   "sha": "a399674",
+   "verdict": "CLEAN",
+   "old_default_reads_it": true
+  },
+  {
+   "pr": 1590,
+   "line": "**Independent review at 0249fd5: BLOCKED on R1.** Your four claims hold when one command runs at a time, and I reproduced each. But the record loses writes when two comma",
+   "sha": "0249fd5",
+   "verdict": "BLOCKED",
+   "old_default_reads_it": true
+  },
+  {
+   "pr": 1590,
+   "line": "**Re-review at 1fbd681: CLEAN for slice 1.** R4 is fixed, the CodeQL check is green, and the small items hold. Merge on the full run (37140788782 was `in_progress` when I",
+   "sha": "1fbd681",
+   "verdict": "CLEAN",
+   "old_default_reads_it": false
+  },
+  {
+   "pr": 1589,
+   "line": "**Independent review at f3301c5: BLOCKED on F1, with F2 and F3 to fix or accept in the same change.** Two of the three things you asked about hold; the helper's own guard",
+   "sha": "f3301c5",
+   "verdict": "BLOCKED",
+   "old_default_reads_it": true
+  },
+  {
+   "pr": 1589,
+   "line": "**Re-review at dd46f82: CLEAN.** F1, F2 and F3 are fixed and each one holds under my own reproduction, not only the author's fixtures. One narrower gap (S1) is left, non-",
+   "sha": "dd46f82",
+   "verdict": "CLEAN",
+   "old_default_reads_it": false
+  },
+  {
+   "pr": 1587,
+   "line": "**Independent review at 2918171: BLOCKED, on small fixes.** The one thing you asked about holds: I found no wildcard here that runs a program. But three of the 19 rules n",
+   "sha": "2918171",
+   "verdict": "BLOCKED",
+   "old_default_reads_it": true
+  },
+  {
+   "pr": 1587,
+   "line": "**Re-review at a74662f: CLEAN**, to merge on a green full run (37140702329 was `in_progress` when I last read it).",
+   "sha": "a74662f",
+   "verdict": "CLEAN",
+   "old_default_reads_it": false
+  },
+  {
+   "pr": 1586,
+   "line": "**Independent review at 71eeec1: CLEAN.** Merge when the full run 37134994433 is green.",
+   "sha": "71eeec1",
+   "verdict": "CLEAN",
+   "old_default_reads_it": true
+  },
+  {
+   "pr": 1583,
+   "line": "**Independent review at cc24906: CLEAN, with one non-blocking finding (S1) that deserves a decision.** The fix reads the three redirect forms, refuses the `)`-in-target r",
+   "sha": "cc24906",
+   "verdict": "CLEAN",
+   "old_default_reads_it": true
+  },
+  {
+   "pr": 1580,
+   "line": "**Independent review at 8ee98fb: CLEAN.** The fix does what it says, I reproduced the bug on `dev` and its absence here with real processes, and the two new fixtures each",
+   "sha": "8ee98fb",
+   "verdict": "CLEAN",
+   "old_default_reads_it": true
+  },
+  {
+   "pr": 1578,
+   "line": "**Independent review at eb628cc6: BLOCKED.** Three things to fix or settle, one of them a gate the PR's own docstring says must not exist. The replay evidence and the cat",
+   "sha": "eb628cc6",
+   "verdict": "BLOCKED",
+   "old_default_reads_it": true
+  },
+  {
+   "pr": 1576,
+   "line": "## Independent review of 4da594b1dfbc9c8f3c0778705a5ddf98f64d6d5f \u2014 BLOCKED (1 finding)",
+   "sha": "4da594b1dfbc9c8f3c0778705a5ddf98f64d6d5f",
+   "verdict": "BLOCKED",
+   "old_default_reads_it": false
+  },
+  {
+   "pr": 1576,
+   "line": "**Independent delta review at aefc0d4: CLEAN.** It covers the blocker from the review of 4da594b: `--limit 0` or a negative `--limit` hung.",
+   "sha": "aefc0d4",
+   "verdict": "CLEAN",
+   "old_default_reads_it": false
+  },
+  {
+   "pr": 1574,
+   "line": "**Independent review at 2e9b04f: CLEAN**",
+   "sha": "2e9b04f",
+   "verdict": "CLEAN",
+   "old_default_reads_it": true
+  },
+  {
+   "pr": 1572,
+   "line": "**Independent review at e616869: CLEAN**",
+   "sha": "e616869",
+   "verdict": "CLEAN",
+   "old_default_reads_it": true
+  },
+  {
+   "pr": 1571,
+   "line": "**Independent review at a10f5a9: BLOCKED.** The marketplace exemption trusts origin's *configured* URL, and the real push or merge target can differ (three bypasses, each",
+   "sha": "a10f5a9",
+   "verdict": "BLOCKED",
+   "old_default_reads_it": true
+  },
+  {
+   "pr": 1571,
+   "line": "**Independent re-review at b186ee2: CLEAN.** Full run 37141581651 is green on this head, so per the new rule I did not re-run the suites; the time went into adversarial p",
+   "sha": "b186ee2",
+   "verdict": "CLEAN",
+   "old_default_reads_it": false
+  },
+  {
+   "pr": 1570,
+   "line": "**Independent review at b5eedf35: CLEAN on the diff. It does not merge as-is: `CHANGELOG.md` conflicts with `dev`, and `dev` has moved, so it needs a merge of `dev` and a",
+   "sha": "b5eedf35",
+   "verdict": "CLEAN",
+   "old_default_reads_it": true
+  },
+  {
+   "pr": 1562,
+   "line": "**Independent review at 464e912: CLEAN**",
+   "sha": "464e912",
+   "verdict": "CLEAN",
+   "old_default_reads_it": true
+  },
+  {
+   "pr": 1560,
+   "line": "**Independent review at 057e4c0: CLEAN**",
+   "sha": "057e4c0",
+   "verdict": "CLEAN",
+   "old_default_reads_it": true
+  },
+  {
+   "pr": 1560,
+   "line": "**Independent delta review at 9123ce3: CLEAN**",
+   "sha": "9123ce3",
+   "verdict": "CLEAN",
+   "old_default_reads_it": false
+  },
+  {
+   "pr": 1555,
+   "line": "**Independent review at f3ae95b: BLOCKED**",
+   "sha": "f3ae95b",
+   "verdict": "BLOCKED",
+   "old_default_reads_it": true
+  },
+  {
+   "pr": 1555,
+   "line": "**Independent re-review at f5f3d6c: CLEAN**",
+   "sha": "f5f3d6c",
+   "verdict": "CLEAN",
+   "old_default_reads_it": false
+  },
+  {
+   "pr": 1554,
+   "line": "**Independent review at 494dbb9: CLEAN**",
+   "sha": "494dbb9",
+   "verdict": "CLEAN",
+   "old_default_reads_it": true
+  },
+  {
+   "pr": 1552,
+   "line": "**Independent review at f700f36: CLEAN**",
+   "sha": "f700f36",
+   "verdict": "CLEAN",
+   "old_default_reads_it": true
+  },
+  {
+   "pr": 1549,
+   "line": "**Independent review at 62e73ca: CLEAN**",
+   "sha": "62e73ca",
+   "verdict": "CLEAN",
+   "old_default_reads_it": true
+  },
+  {
+   "pr": 1544,
+   "line": "**Independent review at bc1b654: CLEAN**",
+   "sha": "bc1b654",
+   "verdict": "CLEAN",
+   "old_default_reads_it": true
+  },
+  {
+   "pr": 1541,
+   "line": "**Independent review at 619e446: CLEAN**",
+   "sha": "619e446",
+   "verdict": "CLEAN",
+   "old_default_reads_it": true
+  },
+  {
+   "pr": 1540,
+   "line": "**Independent review at 07756eb: CLEAN**",
+   "sha": "07756eb",
+   "verdict": "CLEAN",
+   "old_default_reads_it": true
+  },
+  {
+   "pr": 1539,
+   "line": "**Independent review at 09f481e: BLOCKED**",
+   "sha": "09f481e",
+   "verdict": "BLOCKED",
+   "old_default_reads_it": true
+  },
+  {
+   "pr": 1539,
+   "line": "**Independent re-review at 6d2262f: BLOCKED**",
+   "sha": "6d2262f",
+   "verdict": "BLOCKED",
+   "old_default_reads_it": false
+  },
+  {
+   "pr": 1539,
+   "line": "**Independent delta review at 032261d: CLEAN**",
+   "sha": "032261d",
+   "verdict": "CLEAN",
+   "old_default_reads_it": false
+  },
+  {
+   "pr": 1536,
+   "line": "Independent review of #1536 at 3ac0759: **CLEAN**. I found no blockers.",
+   "sha": "3ac0759",
+   "verdict": "CLEAN",
+   "old_default_reads_it": false
+  },
+  {
+   "pr": 1534,
+   "line": "Independent review of #1534: **CLEAN**. I worked from a detached worktree of `origin/fix/1480-setup-cross-plugin-links` and did not open the author's worktree.",
+   "sha": "",
+   "verdict": "CLEAN",
+   "old_default_reads_it": false
+  },
+  {
+   "pr": 1533,
+   "line": "Independent review of #1533: **CLEAN**. I worked from a detached worktree of `origin/fix/shipped-note-link-citation` and did not open the author's worktree.",
+   "sha": "",
+   "verdict": "CLEAN",
+   "old_default_reads_it": false
+  },
+  {
+   "pr": 1529,
+   "line": "Independent review: **BLOCKED**",
+   "sha": "",
+   "verdict": "BLOCKED",
+   "old_default_reads_it": false
+  },
+  {
+   "pr": 1529,
+   "line": "**Independent re-review (round 2) at e99cce4: BLOCKED**",
+   "sha": "e99cce4",
+   "verdict": "BLOCKED",
+   "old_default_reads_it": false
+  },
+  {
+   "pr": 1529,
+   "line": "**Independent re-review (round 3) at 7c2fdb8: BLOCKED**",
+   "sha": "7c2fdb8",
+   "verdict": "BLOCKED",
+   "old_default_reads_it": false
+  },
+  {
+   "pr": 1529,
+   "line": "**Independent re-review (round 4) at 04b29e6: CLEAN**",
+   "sha": "04b29e6",
+   "verdict": "CLEAN",
+   "old_default_reads_it": false
+  },
+  {
+   "pr": 1525,
+   "line": "## Independent review of #1525 at cd0f9b6: BLOCKED",
+   "sha": "cd0f9b6",
+   "verdict": "BLOCKED",
+   "old_default_reads_it": false
+  },
+  {
+   "pr": 1525,
+   "line": "**Independent re-review at e255150: CLEAN**",
+   "sha": "e255150",
+   "verdict": "CLEAN",
+   "old_default_reads_it": false
+  }
+ ],
+ "not_verdicts": [
+  {
+   "pr": 1603,
+   "line": "**Review of commit 1 (head 9df03f6, draft): one fix needed before it is marked ready (F1). Everything else holds.** F1 is a way for a narrowed mutant to read as \"caught\" "
+  },
+  {
+   "pr": 1595,
+   "line": "**Fixes for the review of f1f6c08, at head 5a718ba. Full run: 37148492039 (dispatched, in progress).** Each finding has a disposition. Every fix is red-first: the fixture"
+  },
+  {
+   "pr": 1594,
+   "line": "**Review dispositions at 695cd27** (for https://github.com/fmanimashaun/claude-skills/pull/1594#issuecomment-5972491510). Full run 37154283603 is dispatched."
+  },
+  {
+   "pr": 1590,
+   "line": "**Re-review at fc54b5c: R1, R2 and R3 are fixed and hold under my own tests. One mechanical blocker remains (R4, CodeQL), plus two small suggestions and an answer on the "
+  },
+  {
+   "pr": 1589,
+   "line": "**Review dispositions at dd46f82** (for https://github.com/fmanimashaun/claude-skills/pull/1589#issuecomment-5971083980). Full run 37137793100 is dispatched."
+  },
+  {
+   "pr": 1571,
+   "line": "**HANDOFF for #1571 (lane held by the claude-skills session that took it over from the spend-limit cutoff).** Worktree `/Users/fmanimashaun/projects/claude-skills-wt/fix-"
+  },
+  {
+   "pr": 1536,
+   "line": "**Review dispositions at 2a0b7bc.** Full run: https://github.com/fmanimashaun/claude-skills/actions/runs/36976399179"
+  },
+  {
+   "pr": 1529,
+   "line": "**Round-1 review dispositions at e99cce4.** Full dispatched run: https://github.com/fmanimashaun/claude-skills/actions/runs/36975656627"
+  },
+  {
+   "pr": 1529,
+   "line": "**Round-2 review dispositions at 7c2fdb8.**"
+  },
+  {
+   "pr": 1525,
+   "line": "## Takeover of #1525: review findings addressed at e255150"
+  }
+ ]
+}

@@ -2450,6 +2450,54 @@ def release_gate_refs_fixtures() -> None:
               rc == 0, f"rc={rc} {err[:240]!r}")
         rc, err = run("gh api repos/o/r/merges -f base=main -f head=dev")
         check("release-gate (#1600): CONTROL: the certified dev still promotes", rc == 0, f"rc={rc} {err[:240]!r}")
+        # ANOTHER repository (`other/fork`) whose own PASS stamp certifies `stamped`, read through the API (the fake gh).
+        foreign_stamp = Path(td) / "foreign-stamp.json"
+        foreign_stamp.write_text(json.dumps({"sha": stamped, "date": "2026-10-01", "verdict": "PASS", "report": "r.md"}), encoding="utf-8")
+        ok_api = {"FAKE_STAMP_REF": stamped, "FAKE_STAMP_FILE": str(foreign_stamp), "FAKE_COMMIT": stamped, "FAKE_PRREPO": "other/fork"}
+        # (#1606) A ref, tag or target from the command's text becomes part of ANOTHER repository's API path
+        # (`repos/<r>/commits/<ref>`). The fake gh answers any commits/<anything> with the certified commit, as an endpoint
+        # reached through a fragment or a climb would answer something, so a value that is not a plain name must be refused
+        # BEFORE the call. `#` is a legal character in a ref name and starts a fragment in a URL: the gate would ask about
+        # `abc` while the command acts on `abc#frag`.
+        for label, cmd in (
+            ("a REST merge's head with a fragment", "gh api repos/other/fork/merges -f base=main -f head='abc#frag'"),
+            ("a REST merge's head that climbs", "gh api repos/other/fork/merges -f base=main -f head='x/../../../issues/1'"),
+            ("a REST merge's head with an escaped slash", "gh api repos/other/fork/merges -f base=main -f head=a%2fb"),
+            ("a ref write's sha that climbs", "gh api -X PATCH repos/other/fork/git/refs/heads/main -f sha='../../x'"),
+            ("a ref write's sha with a fragment", "gh api -X PATCH repos/other/fork/git/refs/heads/main -f sha='abc#frag'"),
+            ("a release's --target that climbs", "gh release create v1 -R other/fork --target ../../x"),
+            ("a release's --target with an escaped slash", "gh release create v1 -R other/fork --target a%2fb"),
+            ("a release's tag that climbs", "gh release create ../../x -R other/fork --target main"),
+            ("a release's tag with an escaped slash", "gh release create a%2fb -R other/fork --target main"),
+        ):
+            rc, err = run(cmd, **ok_api)
+            check(f"release-gate (#1606): {label} is not a plain name, is never put in another repository's API path, and is DENIED",
+                  rc == 2, f"rc={rc} {err[:240]!r}")
+        for label, cmd in (
+            ("a REST merge's head", "gh api repos/other/fork/merges -f base=main -f head=feature/x-y"),
+            ("a ref write's sha", f"gh api -X PATCH repos/other/fork/git/refs/heads/main -f sha={stamped}"),
+            ("a release's tag and target", "gh release create v1.2.3 -R other/fork --target release/2026-10"),
+        ):
+            rc, err = run(cmd, **ok_api)
+            check(f"release-gate (#1606): CONTROL: {label} that is a plain name is read and judged (certified: permitted)",
+                  rc == 0 and "other/fork" in err, f"rc={rc} {err[:240]!r}")
+        # (#1606) The third fetch takes the object id `git ls-remote origin refs/tags/<tag>` printed. It is an object id by
+        # construction of a well-behaved origin; an origin that prints anything else must not be handed to `git fetch`. A
+        # `git` that answers ls-remote with an option and logs every call stands in for that origin.
+        gitbin = Path(td) / "gitbin"
+        gitbin.mkdir(exist_ok=True)
+        gitlog = Path(td) / "git.log"
+        real_git = shutil.which("git")
+        (gitbin / "git").write_text(
+            f'#!/bin/sh\nprintf \'%s\\n\' "$*" >> "{gitlog}"\ncase "$1" in\n'
+            f'  ls-remote) printf \'%s\\trefs/tags/v9\\n\' "{evil}"; exit 0 ;;\nesac\nexec {real_git} "$@"\n', encoding="utf-8")
+        (gitbin / "git").chmod(0o755)
+        gitlog.unlink(missing_ok=True)
+        rc, err = run("gh release create v9 --target dev", PATH=f"{gitbin}{os.pathsep}{Path(td) / 'bin'}{os.pathsep}{os.environ['PATH']}")
+        calls = gitlog.read_text().splitlines() if gitlog.exists() else []
+        check("release-gate (#1606): an object id from `git ls-remote` that is an option is never handed to `git fetch`, and the release is DENIED",
+              not any(c.startswith("fetch") and "--upload-pack" in c for c in calls) and not marker.exists() and rc == 2,
+              f"rc={rc} marker={marker.exists()} fetch calls={[c for c in calls if c.startswith('fetch')]}")
 
 
 def release_gate_repos_fixtures() -> None:
@@ -2809,6 +2857,240 @@ def timeout_fixtures() -> None:
 # as their selftest, each mutating ONE hook, and every mutant re-ran all ten groups -- about 70% of
 # the mutation-coverage budget. A guard now names the groups that drive its hook; the doctor's
 # `hook gates` gate and the harness's own guard still run every group.
+# ---- the wall-clock deadline (#1575) ---------------------------------------------------------------
+# A hook that outlives its timeout blocks every Bash call, and Claude Code's timeout stops WAITING without
+# killing the hook's descendants: orphaned awk processes ran 51 minutes, one 23 hours, and the load hit 348.
+# `lib/deadline.sh` runs each hook's work in its own process group under a wall-clock deadline and kills the whole
+# group. The stub below is the incident: an `awk` that hangs and leaves a sleeper behind, every pid recorded.
+def deadline_fixtures() -> None:
+    guard = HOOKS / "guard-bash.sh"
+    base_env = {k: v for k, v in os.environ.items() if k not in ("QA_ALLOW_MAIN", "RAILS_FLOW_LANE", "RAILS_FLOW_HOOK_DEADLINE")}
+
+    def alive(pid: int) -> bool:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        return True
+
+    def survivors(pidfile: Path, within: float = 5.0) -> list[int]:
+        """Every sleeper the stub recorded that is STILL running after `within` seconds (killed, so none leaks)."""
+        pids = [int(x) for x in pidfile.read_text().split()] if pidfile.exists() else []
+        end = time.monotonic() + within
+        while time.monotonic() < end and any(alive(p) for p in pids):
+            time.sleep(0.1)
+        left = [p for p in pids if alive(p)]
+        for p in left:
+            try:
+                os.kill(p, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        return left
+
+    def stubs(td: str) -> tuple[str, Path]:
+        d = Path(td) / "stubs"
+        d.mkdir()
+        pidfile = Path(td) / "sleepers"
+        (d / "awk").write_text(f"#!/bin/bash\nsleep 300 &\necho $! >> {pidfile}\nwait\n")
+        (d / "awk").chmod(0o755)
+        return str(d), pidfile
+
+    def hung(hook: Path, cmd: str, extra: dict[str, str] | None = None, deadline: str = "1"):
+        """The hook with a HANGING awk: (exit, seconds, stderr, sleepers still alive afterwards)."""
+        with tempfile.TemporaryDirectory() as td:
+            d, pidfile = stubs(td)
+            env = dict(base_env, PATH=d + os.pathsep + base_env["PATH"], RAILS_FLOW_HOOK_DEADLINE=deadline, **(extra or {}))
+            t0 = time.monotonic()
+            r = _run(["/bin/bash", str(hook)], cwd=td, input=json.dumps({"tool_input": {"command": cmd}}), env=env,
+                     capture_output=True, text=True, timeout=60)
+            took = time.monotonic() - t0
+            return r.returncode, took, r.stderr, survivors(pidfile)
+
+    # 1. guard-bash: past the deadline the command is DENIED, in about the deadline, with the whole group dead.
+    rc, took, err, left = hung(guard, "git status")
+    check("deadline (#1575): guard-bash refuses a command its normaliser cannot read in time (fails CLOSED)",
+          rc == 2, f"exit {rc}: a hung awk was ALLOWED")
+    check("deadline (#1575): ...at the deadline, not at the stub's 300 s", took < 6, f"{took:.1f}s")
+    check("deadline (#1575): ...and no process the hook started outlives it (the whole group is killed)",
+          not left, f"still running: {left} -- a kill of the parent alone orphans them")
+    lines = [x for x in err.strip().splitlines() if x.strip()]
+    check("deadline (#1575): ...with ONE line on stderr, the verdict, and no job-control notice (Claude reads stderr)",
+          len(lines) == 1 and lines[0].startswith("BLOCKED by rails-flow guardrails: this command took longer than 1s"),
+          repr(err[:200]))
+    # 2. CONTROLS: the deadline must not be what denies an ordinary command, and a real rule still says its own reason.
+    with tempfile.TemporaryDirectory() as td:
+        t0 = time.monotonic()
+        ok = _run(["/bin/bash", str(guard)], cwd=td, input=json.dumps({"tool_input": {"command": "git status"}}), env=base_env,
+                  capture_output=True, text=True, timeout=60)
+        quick = time.monotonic() - t0
+        bad = _run(["/bin/bash", str(guard)], cwd=td, input=json.dumps({"tool_input": {"command": "git add -A"}}), env=base_env,
+                   capture_output=True, text=True, timeout=60)
+    check("deadline (#1575): CONTROL: an ordinary command still passes, silently, well inside the deadline",
+          ok.returncode == 0 and not ok.stderr.strip() and quick < 5, f"exit {ok.returncode} {quick:.1f}s {ok.stderr[:100]!r}")
+    check("deadline (#1575): CONTROL: a refused command still gives ITS reason, not the deadline's",
+          bad.returncode == 2 and "git add -A" in bad.stderr and "took longer" not in bad.stderr, bad.stderr[:160])
+    # 3. THE ORPHAN: Claude Code SIGKILLs the hook at its own timeout. The group must not run on for the deadline.
+    with tempfile.TemporaryDirectory() as td:
+        d, pidfile = stubs(td)
+        env = dict(base_env, PATH=d + os.pathsep + base_env["PATH"], RAILS_FLOW_HOOK_DEADLINE="8")
+        proc = subprocess.Popen(["/bin/bash", str(guard)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, cwd=td, env=env, start_new_session=True)
+        try:
+            proc.stdin.write(json.dumps({"tool_input": {"command": "git status"}}).encode())
+            proc.stdin.close()
+            for _ in range(100):                                  # until the stub has really started
+                if pidfile.exists() and pidfile.read_text().strip():
+                    break
+                time.sleep(0.1)
+            time.sleep(0.3)
+            proc.kill()
+            proc.wait()
+            t0 = time.monotonic()
+            left = survivors(pidfile, within=4.0)
+            gone = time.monotonic() - t0
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+    check("deadline (#1575): the group dies within a poll of its PARENT being SIGKILLed, not at the 8 s deadline",
+          not left and gone < 4, f"still running after {gone:.1f}s: {left}")
+    # 4. NO `sleep` ON PATH: a watchdog that cannot wait would reach the deadline at once and deny EVERYTHING.
+    with tempfile.TemporaryDirectory() as bd:
+        for tool in ("bash", "git", "sed", "tr", "grep", "dirname", "cat", "env", "head", "awk"):
+            real = next((f"{x}/{tool}" for x in ("/usr/bin", "/bin") if os.path.exists(f"{x}/{tool}")), None)
+            if real:
+                os.symlink(real, Path(bd) / tool)
+        os.symlink(sys.executable, Path(bd) / "python3")
+        def nosleep(cmd: str) -> int:
+            with tempfile.TemporaryDirectory() as td:
+                return _run(["/bin/bash", str(guard)], cwd=td, input=json.dumps({"tool_input": {"command": cmd}}),
+                            env=dict(base_env, PATH=bd, RAILS_FLOW_HOOK_DEADLINE="1"), capture_output=True, text=True,
+                            timeout=60).returncode
+        check("deadline (#1575): with no `sleep` on PATH an ordinary command still passes (no instant deadline)",
+              nosleep("git status") == 0, "denied: the watchdog could not sleep and fired at once")
+        check("deadline (#1575): ...and a refused command is still refused (the rules run, only the backstop is gone)",
+              nosleep("git add -A") == 2, "exit 0")
+    # 5. THE KNOB: RAILS_FLOW_HOOK_DEADLINE is an integer >= 1, never above the hook's timeout minus margin.
+    def knob(value: str | None, default: int, top: int) -> str:
+        env = dict(base_env)
+        if value is not None:
+            env["RAILS_FLOW_HOOK_DEADLINE"] = value
+        script = f'. "{HOOKS / "lib" / "deadline.sh"}"; deadline_seconds {default} {top}; printf %s "$_deadline_s"'
+        return _run(["/bin/bash", "-c", script], env=env, capture_output=True, text=True, timeout=30).stdout
+    # F2 (#1602 review): 19+ digits overflow bash's integer comparison, the clamp never ran, and the watchdog fired at once,
+    # so guard-bash denied EVERY command. Longer than 4 digits is above any ceiling; zero would fire at once too.
+    for value, default, top, want in ((None, 6, 8, "6"), ("3", 6, 8, "3"), ("abc", 6, 8, "6"), ("0", 6, 8, "6"),
+                                      ("", 6, 8, "6"), ("99", 6, 8, "8"), ("-4", 6, 8, "6"), ("2.5", 6, 8, "6"),
+                                      ("99999999999999999999", 6, 8, "8"), ("9223372036854775808", 6, 8, "8"),
+                                      ("12345", 6, 8, "8"), ("000000000000000000003", 6, 8, "8"),
+                                      ("00", 6, 8, "6"), ("0008", 6, 8, "8"), ("007", 6, 8, "7")):
+        check(f"deadline (#1575): the knob {value!r} with default {default} and ceiling {top} gives {want}",
+              knob(value, default, top) == want, f"got {knob(value, default, top)!r}")
+    # 5b. THE DEFAULT SITS UNDER THE HOOK'S OWN TIMEOUT. Past that, Claude Code stops waiting and the deadline never
+    # gets to deny; the numbers are read from the hook and from its hooks.json, not repeated here.
+    for hook, manifest, name in ((guard, HOOKS.parent / "hooks.json", "guard-bash.sh"),
+                                 (QA_HOOK, QA_HOOK.parents[1] / "hooks.json", "release-gate.sh")):
+        if not hook.is_file() or not manifest.is_file():
+            continue
+        m = re.search(r"deadline_seconds\s+(\d+)\s+(\d+)", hook.read_text())
+        timeout = next((h["timeout"] for e in json.loads(manifest.read_text())["hooks"]["PreToolUse"]
+                        for h in e["hooks"] if name in h["command"]), None)
+        check(f"deadline (#1575): {name}'s default and ceiling sit below the hook's configured timeout ({timeout} s)",
+              bool(m) and timeout is not None and int(m.group(1)) <= int(m.group(2)) < int(timeout),
+              f"deadline_seconds {m.groups() if m else None} against a timeout of {timeout}")
+    # 5c. END TO END: an overflowing or zero knob must not make the hook deny an ordinary command.
+    for value in ("99999999999999999999", "00"):
+        with tempfile.TemporaryDirectory() as td:
+            r = _run(["/bin/bash", str(guard)], cwd=td, input=json.dumps({"tool_input": {"command": "git status"}}),
+                     env=dict(base_env, RAILS_FLOW_HOOK_DEADLINE=value), capture_output=True, text=True, timeout=60)
+        check(f"deadline (#1575): RAILS_FLOW_HOOK_DEADLINE={value} does not make guard-bash deny an ordinary command",
+              r.returncode == 0 and not r.stderr.strip(), f"exit {r.returncode}: {r.stderr[:120]!r}")
+    # 6. qa-flow's release gate shares the normaliser and the lib; a timeout refuses a PROMOTION and nothing else.
+    if QA_HOOK.is_file():
+        for cmd in ("git push origin main", "gh pr merge 12 --merge"):
+            rc, took, err, left = hung(QA_HOOK, cmd)
+            check(f"deadline (#1575): release-gate refuses `{cmd}` when it cannot finish reading it (fails CLOSED)",
+                  rc == 2 and "looks like a promotion" in err, f"exit {rc}: {err[:160]!r}")
+            check(f"deadline (#1575): ...in about the deadline, with no process left running",
+                  took < 6 and not left, f"{took:.1f}s, still running: {left}")
+        # F1 (#1602 review): the normal path denies ANY GraphQL mutation by shape, so the timeout path denies by the word,
+        # whatever the mutation is called or how the flag is spelled. A list of names let three promotions through.
+        gql = "gh api graphql %s query='mutation { %s(input:{}) { clientMutationId } }'"
+        for flag, name in (("-f", "enablePullRequestAutoMerge"), ("-F", "enablePullRequestAutoMerge"),
+                           ("--raw-field", "enablePullRequestAutoMerge"), ("-F", "createCommitOnBranch"),
+                           ("--raw-field", "updatePullRequestBranch")):
+            rc, took, err, left = hung(QA_HOOK, gql % (flag, name))
+            check(f"deadline (#1575): release-gate refuses `gh api graphql {flag}` {name} when it cannot finish reading it",
+                  rc == 2 and "looks like a promotion" in err and not left, f"exit {rc}: {err[:120]!r}")
+        for what, cmd in (("a GraphQL query with no mutation", "gh api graphql -f query='{ viewer { login } }'"),
+                          ("a REST read", "gh api repos/o/r/issues")):
+            rc, took, err, left = hung(QA_HOOK, cmd)
+            check(f"deadline (#1575): CONTROL: release-gate ALLOWS {what} on a timeout", rc == 0 and not left,
+                  f"exit {rc}: {err[:120]!r}")
+        # THE DIFFERENTIAL (#1602 review of the timeout path). The coarse detector decides on a timeout, and for the
+        # missing-tool path too: it is ONE function. 486 promotion-shaped commands from this file's own fixtures were run
+        # through the full path and through a timeout; every shape below was DENIED by the full path and ALLOWED by the
+        # coarse one. It is driven through the missing-tool path (PATH holds only bash), which reaches the same function
+        # and answers at once, with two end-to-end timeout checks to show the timeout path really calls it.
+        with tempfile.TemporaryDirectory() as bd:
+            os.symlink("/bin/bash", Path(bd) / "bash")
+
+            def coarse(cmd: str) -> int:
+                return _run(["/bin/bash", str(QA_HOOK)], cwd=bd, input=json.dumps({"tool_input": {"command": cmd}}),
+                            env={"PATH": bd, "HOME": os.environ.get("HOME", "/tmp")}, capture_output=True, text=True,
+                            timeout=60).returncode
+            for what, cmds in (
+                ("the `heads/` shorthand for refs/heads/main", ("git push origin HEAD:heads/main", "git push origin HEAD:heads/master",
+                                                                "git push -f origin HEAD:heads/main", "git push origin heads/main:heads/main",
+                                                                "git push origin :heads/main", "git push origin 'HEAD:heads/main'",
+                                                                'git push origin "HEAD:heads/main"', "git push origin feature/work:heads/main")),
+                ("a push of every branch (--all, --mirror)", ("git push --all", "git push origin --all", "git push --mirror", "git push --mirror origin")),
+                ("a wildcard refspec, which pushes every branch", ("git push origin refs/heads/*:refs/heads/*",
+                                                                   "git push origin +refs/heads/*:refs/heads/*", "git push origin '*:*'")),
+                ("update-branch", ("gh pr update-branch", "gh pr update-branch 7 --rebase", "gh api -X PUT repos/o/r/pulls/7/update-branch")),
+                ("a workflow run", ("gh workflow run release.yml", "gh workflow run gates.yml --ref x")),
+                ("a repository dispatch", ("gh api -X POST repos/o/r/dispatches -f event_type=release",
+                                           "gh api repos/o/r/actions/workflows/r.yml/dispatches -X POST -f ref=main")),
+                ("a GraphQL body it cannot read (--input, -F query=@file)", ("gh api graphql --input q.json", "gh api graphql --input -",
+                                                                              "gh api graphql -F query=@q.graphql", "gh api graphql --field query=@-",
+                                                                              "gh api graphql -Fquery=@q")),
+                # #1606 / #1609: the explicit-repository shapes whose ref or tag climbs, carries a fragment or a %2f. The full path now
+                # refuses them as "not a plain name"; the TIMEOUT path has no ref to inspect, so it must refuse them by the words
+                # (a REST merge, a ref write, a release publish). Pinned here so a later edit to those rules cannot reopen them.
+                ("a REST merge or ref write whose head or sha is not a plain name (#1606)",
+                 ("gh api -X POST repos/o/r/merges -f base=main -f head='abc#frag'",
+                  "gh api -X POST repos/o/r/merges -f base=main -f head=x/../../../issues/1",
+                  "gh api -X POST repos/o/r/merges -f base=main -f head='a%2f..%2fb'",
+                  "gh api -X PATCH repos/o/r/git/refs/heads/main -f sha=../../x",
+                  "gh api -X PATCH repos/o/r/git/refs/heads/main -f sha='abc#frag'")),
+                ("a release publish whose tag or target is not a plain name (#1606)",
+                 ("gh release create v1.0.0 --repo o/r --target ../x", "gh release create v1.0.0 --repo o/r --target 'a#b'",
+                  "gh release create ../v1 --repo o/r --target main", "gh release create 'v%2f..%2f1' --repo o/r --target main")),
+                ("a push whose verb or remote is disguised but whose destination is still named",
+                 ("git -c alias.p=push p origin HEAD:main", "git -c url.b.insteadOf=a push origin main")),
+            ):
+                for cmd in cmds:
+                    check(f"deadline (#1575): the coarse detector refuses {what}: `{cmd}`", coarse(cmd) == 2, "exit 0: allowed")
+            # THE CONTROLS: refusing everything would pass every example above. `-f query=@x` is a LITERAL string in gh (only
+            # `-F` reads a file) and the full path allows it too; `--tags` pushes no branch; a branch NAMED heads/... or
+            # feature/main-menu is not main.
+            for cmd in ("git push origin feature/x", "git push origin HEAD:heads/feature/x", "git push origin HEAD:heads/feature/main-menu",
+                        "git push origin heads/feature/x", "git push --tags origin", "git status", "git commit -m tidy",
+                        "gh workflow list", "gh workflow view release.yml", "gh run list", "gh pr view 7", "gh pr list",
+                        "gh api repos/o/r/pulls", "gh api graphql -f query='{ viewer { login } }'",
+                        "gh api graphql -f query=@q.graphql", "gh api graphql --raw-field query=@-", "git push -u origin fix/1010-one-main"):
+                check(f"deadline (#1575): CONTROL: the coarse detector allows `{cmd}`", coarse(cmd) == 0, "exit 2: refused")
+        for cmd in ("git push origin HEAD:heads/main", "git push --all"):
+            rc, took, err, left = hung(QA_HOOK, cmd)
+            check(f"deadline (#1575): a TIMEOUT refuses `{cmd}` through that same detector",
+                  rc == 2 and "looks like a promotion" in err and not left, f"exit {rc}: {err[:120]!r}")
+        rc, took, err, left = hung(QA_HOOK, "ls -la")
+        check("deadline (#1575): release-gate ALLOWS a command that does not look like a promotion when it times out "
+              "(blocking every slow command would be the failure)", rc == 0 and not left, f"exit {rc}: {err[:120]!r}")
+        rc, took, err, left = hung(QA_HOOK, "git push origin main", {"QA_ALLOW_MAIN": "1"})
+        check("deadline (#1575): QA_ALLOW_MAIN=1 is honoured and audited on a timeout, as in the missing-tool path",
+              rc == 0 and "audited" in err, f"exit {rc}: {err[:160]!r}")
+
+
 GROUPS = {
     "stop_gate": stop_gate_fixtures, "guard_lane": guard_lane_fixtures,
     "guard_migrate": guard_migrate_fixtures, "lint_ruby": lint_ruby_fixtures,
@@ -2817,6 +3099,7 @@ GROUPS = {
     "release_gate_effects": release_gate_effects_fixtures, "release_gate_repos": release_gate_repos_fixtures,
     "release_gate_refs": release_gate_refs_fixtures,
     "ci_verdict_hint": ci_verdict_hint_fixtures, "timeout": timeout_fixtures,
+    "deadline": deadline_fixtures,
 }
 
 
