@@ -42,6 +42,7 @@ import datetime as dt
 import getpass
 import html
 import json
+import math
 import os
 import re
 import subprocess
@@ -57,8 +58,12 @@ SCHEMA = 1
 # reader tolerates the absence of any key. `check_coordination_readers.py` checks both sets against
 # coordination.py, so neither can drift unseen.
 RECORD_KEYS_WRITTEN = ("coordinator", "sessions", "workspace", "session_id", "name", "since", "branch", "issue",
-                       "state", "updated", "repos", "path", "remote", "pr", "asks", "events")
+                       "state", "updated", "repos", "path", "remote", "pr", "asks", "events", "board", "artifact_url")
 RECORD_KEYS_PLANNED = ()
+# The live board's address (part 3): only a claude.ai artifact link. coordination.py validates it when it writes; this reader
+# repeats the pattern (a plugin cannot import another's module) and checks it again before it prints or links a value, because a
+# hand-edited record is not trusted for having passed a writer.
+BOARD_URL = re.compile(r"https://claude\.ai/(?:code/)?artifact/[A-Za-z0-9_-]{1,100}\Z")
 STATE_DIR = ".claude/state"
 BOARD_JSON = "board.json"
 BOARD_HTML = "board.html"
@@ -148,6 +153,9 @@ TEXT: dict[str, tuple[str, str]] = {
     "tb.repos": ("Repositories", "label"),
     "tb.coordinator": ("Coordinator", "label"),
     "tb.updated": ("Updated", "label"),
+    "tb.live": ("Live board", "label"),
+    "tb.live_value": ("Open the published page", "label"),
+    "cli.live": ("The live board is at {url}. The coordinator publishes it.", "description"),
     "tb.commit": ("Commit", "label"),
     "tb.sheet": ("Sheet", "label"),
     "tb.sheet_value": ("1 of 1", "label"),
@@ -589,6 +597,13 @@ def asks_of(env: Env, record: dict, cfg: dict) -> dict:
     return {"items": shown, "drafted_stale": drafted_stale}
 
 
+def live_url_of(record: dict) -> "str | None":
+    """The recorded live-board address, or None when there is none or it is not a claude.ai artifact link."""
+    block = record.get("board")
+    url = block.get("artifact_url") if isinstance(block, dict) else None
+    return url if isinstance(url, str) and BOARD_URL.match(url) else None
+
+
 def events_of(record: dict) -> list[dict]:
     return [{"time": str(e.get("time") or ""), "text": str(e.get("text") or ""), "source": "record"}
             for e in record.get("events") or [] if isinstance(e, dict)]
@@ -784,6 +799,7 @@ def collect(env: Env, root: Path) -> dict:
         "repo": {"name": me.name, "commit": head.strip() if rc == 0 else None, "integration": integration},
         "mode": mode,
         "coordinator": coord,
+        "live": {"url": live_url_of(record)} if live_url_of(record) else None,
         "workspace": {"repos": [r.name for r in repos], "unavailable": unavailable} if ws else None,
         "config_error": cfg_err,
         "panels": {
@@ -1029,6 +1045,9 @@ def render_html(board: dict, audience: str = "owner") -> str:
     if orchestrated and coord:
         stale = f' ({_e(say("tb.stale"))})' if coord["stale"] else ""
         tb.append(f'<div><small>{_e(say("tb.coordinator"))}</small><b>{_e(coord["name"] or say("unknown.value"))}{stale}</b></div>')
+    if board.get("live") and BOARD_URL.match(str(board["live"].get("url") or "")):
+        tb.append(f'<div><small>{_e(say("tb.live"))}</small><b><a href="{_e(board["live"]["url"])}" rel="noopener noreferrer">'
+                  f'{_e(say("tb.live_value"))}</a></b></div>')
     tb += [f'<div><small>{_e(say("tb.updated"))}</small><b>{_e(board["generated"])}</b></div>',
            f'<div><small>{_e(say("tb.commit"))}</small><b>{_e(board["repo"]["commit"] or say("unknown.value"))}</b></div>',
            f'<div><small>{_e(say("tb.sheet"))}</small><b>{_e(say("tb.sheet_value"))}</b></div>']
@@ -1077,8 +1096,20 @@ def toplevel(env: Env, cwd: Path) -> "Path | None":
     return Path(out.strip()) if rc == 0 and out.strip() else None
 
 
+BUDGET_DEFAULT, BUDGET_MIN, BUDGET_MAX = 40.0, 1.0, 120.0
+
+
+def clamp_budget(value: object) -> float:
+    """The time budget, finite and held to [BUDGET_MIN, BUDGET_MAX] seconds: `nan` or `inf` would never run out (#1616 review)."""
+    try:
+        v = float(value)                                  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return BUDGET_DEFAULT
+    return min(max(v, BUDGET_MIN), BUDGET_MAX) if math.isfinite(v) else BUDGET_DEFAULT
+
+
 def cmd_collect(args: argparse.Namespace, env: "Env | None" = None) -> int:
-    env = env or Env(real_run, real_read, dt.datetime.now(dt.timezone.utc), float(args.budget_seconds))
+    env = env or Env(real_run, real_read, dt.datetime.now(dt.timezone.utc), clamp_budget(args.budget_seconds))
     root = toplevel(env, Path(args.root))
     if root is None:
         print("not inside a git repository: no board", file=sys.stderr)
@@ -1093,6 +1124,8 @@ def cmd_collect(args: argparse.Namespace, env: "Env | None" = None) -> int:
         return 3
     ok = sum(1 for p in board["panels"].values() if p["state"] == "ok")
     print(f"{say('cli.done', path=state / BOARD_HTML)} {ok} of {len(board['panels'])} panels measured.")
+    if board.get("live"):
+        print(say("cli.live", url=board["live"]["url"]))
     if env.sh(["git", "check-ignore", "-q", f"{STATE_DIR}/{BOARD_JSON}"], root)[0] != 0:
         print(say("cli.ignore"))
     return 0

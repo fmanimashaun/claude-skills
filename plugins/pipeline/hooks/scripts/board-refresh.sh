@@ -19,11 +19,18 @@ root="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
 board="$root/.claude/state/board.json"
 [ -f "$root/.claude/board.config.json" ] || [ -f "$board" ] || exit 0
 fresh="${BOARD_HOOK_FRESH_MIN:-2}"
-case "$fresh" in ''|*[!0-9]*) fresh=2 ;; esac
+case "$fresh" in ''|*[!0-9]*) fresh=2 ;; esac     # whole minutes only
+[ "${#fresh}" -gt 4 ] && fresh=1440                  # a value of five digits or more is a day, never an unbounded throttle
+[ "$fresh" -gt 1440 ] && fresh=1440
 if [ -f "$board" ] && [ -n "$(find "$board" -mmin "-$fresh" 2>/dev/null)" ]; then
   exit 0
 fi
+# WHOLE SECONDS, 1 TO 12. A decimal, `nan`, `inf`, a sign or text is not a number of seconds and falls back to 8; a longer one
+# is clamped, so no setting can hold a Stop past the hook's own 15 s timeout (#1616 review).
 budget="${BOARD_HOOK_BUDGET:-8}"
-case "$budget" in ''|*[!0-9.]*) budget=8 ;; esac
+case "$budget" in ''|*[!0-9]*) budget=8 ;; esac
+[ "${#budget}" -gt 3 ] && budget=12
+[ "$budget" -lt 1 ] && budget=1
+[ "$budget" -gt 12 ] && budget=12
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/status_board.py" collect --root "$root" --budget-seconds "$budget" >/dev/null 2>&1 || true
 exit 0
