@@ -32,6 +32,13 @@ GUARD = Guard(
             "[]]",
             "the ratchet must report a record naming a guard that no longer exists",
         ),
+        # #1599: the refusal says where to re-record, which is the rule that keeps a later PR's run from tripping on someone else's guard.
+        Mutation(
+            "the ratchet's refusal no longer says to re-record the baseline in this PR",
+            '("re-record docs/evidence/mutation-cost-baseline.json in this PR from this run\'s cost "',
+            '("re-set the record from a measured run "',
+            "must tell the author to re-record the baseline in this PR",
+        ),
         # #1599: `--check-record`, the gate a pull request can afford.
         Mutation(
             "--check-record always exits 0, so a missing or drifted record passes the pull-request gate",

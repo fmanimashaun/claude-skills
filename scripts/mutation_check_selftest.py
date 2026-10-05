@@ -651,6 +651,10 @@ def run() -> int:
         problems = ratchet(cost, base)
         if not any(names in x for x in problems):
             FAILURES.append(f"#1599: the ratchet must report {label} (naming {names!r}), got {problems}")
+        # AND SAY WHAT TO DO: a growth or a new guard is fixed by re-recording the file IN THIS PR (the coordinator's rule, 2026-10-05).
+        if names in ("fresh", "heavy") and not any("re-record docs/evidence/mutation-cost-baseline.json in this PR" in x
+                                                    for x in problems if names in x):
+            FAILURES.append(f"#1599: the ratchet's refusal for {label} must tell the author to re-record the baseline in this PR, got {problems}")
     for label, cost, base in (
             ("a new guard under the floor", {"heavy": 400.0, "medium": 100.0, "fresh": floor - 1}, record),
             # THE REASON RATCHET_NEW EXISTS: a guard just under the record floor is not on record, and a slow runner

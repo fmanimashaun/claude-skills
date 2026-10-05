@@ -255,6 +255,10 @@ RATCHET_FLOOR = 60.0
 RATCHET_NEW = 120.0
 RATCHET_GROWTH = 1.5
 RATCHET_SLACK = 30.0
+# WHAT A FAILING RUN TELLS THE AUTHOR TO DO. The rule is that whoever adds or grows a heavy guard re-records it in the SAME PR, so the
+# cost lands as a reviewed one-line diff and a later PR's dispatched run is never the one to trip on it (#1599).
+RECORD_INSTRUCTION = ("re-record docs/evidence/mutation-cost-baseline.json in this PR from this run's cost "
+                      "(`python3 scripts/mutation_check.py --rebaseline` writes it)")
 
 
 def load_cost_baseline(path: Path = COST_BASELINE) -> dict | None:
@@ -302,11 +306,11 @@ def ratchet_problems(cost: dict[str, float], baseline: dict | None) -> list[str]
             if secs > limit:
                 problems.append(f"{name}: costs {secs:.0f}s of work, past {RATCHET_GROWTH:g}x its recorded "
                                 f"{recorded[name]:.0f}s plus {RATCHET_SLACK:g}s = {limit:.0f}s; make it cheaper, "
-                                "or re-set the record from a measured run (--rebaseline)")
+                                f"or {RECORD_INSTRUCTION}")
         elif secs > RATCHET_NEW:
             problems.append(f"{name}: a NEW guard costing {secs:.0f}s of work, over the {RATCHET_NEW:g}s new-guard limit "
                             "and not on record; make it cheaper (`narrow_with` runs each mutant on one fixture), or "
-                            "record it with --rebaseline")
+                            f"{RECORD_INSTRUCTION}")
     return problems
 
 
