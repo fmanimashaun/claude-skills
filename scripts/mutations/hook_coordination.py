@@ -10,7 +10,7 @@ GUARD = Guard(
     name="hook_coordination",
     subject="plugins/rails-flow/hooks/scripts/lib/coordination.py",
     selftest="plugins/rails-flow/hooks/scripts/lib/coordination.py",
-    needs=("plugins/rails-flow/hooks/scripts/session-start.sh",),      # the selftest runs the real SessionStart hook
+    selftest_args=("--skip-hook-e2e",),      # this guard is for coordination.py: the real-hook checks belong to hook_session_start_pointer (#1611)
     mutations=(
         Mutation(
             "the coordinator check passes every caller, so a non-coordinator writes",

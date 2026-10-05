@@ -409,6 +409,7 @@ def set_workspace(record: dict, caller: str, coordinator_name: str, siblings: li
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--selftest", action="store_true")
+    ap.add_argument("--skip-hook-e2e", action="store_true", help="with --selftest: do not run the real session-start.sh checks")
     sub = ap.add_subparsers(dest="cmd")
     bp = sub.add_parser("board-url")
     bp.add_argument("--session-id", required=True, type=_session_token)
@@ -448,7 +449,7 @@ def main(argv: list[str] | None = None) -> int:
             p.add_argument("--owner", type=_session_token)
     args = ap.parse_args(argv)
     if args.selftest:
-        return selftest()
+        return selftest(skip_hook_e2e=args.skip_hook_e2e)
     if not args.cmd:
         ap.print_usage(sys.stderr)
         return 3
@@ -525,7 +526,7 @@ def main(argv: list[str] | None = None) -> int:
         return 3
 
 
-def selftest() -> int:
+def selftest(skip_hook_e2e: bool = False) -> int:
     failures: list[str] = []
     ran = [0]
 
@@ -798,55 +799,58 @@ def selftest() -> int:
         check("a corrupt record: silent, exit 0 (an advisory never blocks a session start)",
               got.returncode == 0 and got.stdout == "" and "Traceback" not in got.stderr, f"{got.returncode} {got.stderr[-80:]!r}")
 
-        # The real hook, end to end: session-start.sh in a repository, with the payload on stdin.
-        hook = Path(__file__).resolve().parents[1] / "session-start.sh"
-        e2e = Path(td) / "e2e"
-        e2e.mkdir()
-        subprocess.run(["git", "init", "-q"], cwd=e2e, check=True)
-        plugin_root = str(Path(__file__).resolve().parents[3])
+        # The real hook costs about 12 s of bash and python per run; the guard for coordination.py (not for the hook) skips it
+        # with --skip-hook-e2e (#1611 diagnosis), and the guard for session-start.sh runs it.
+        if not skip_hook_e2e:
+            # The real hook, end to end: session-start.sh in a repository, with the payload on stdin.
+            hook = Path(__file__).resolve().parents[1] / "session-start.sh"
+            e2e = Path(td) / "e2e"
+            e2e.mkdir()
+            subprocess.run(["git", "init", "-q"], cwd=e2e, check=True)
+            plugin_root = str(Path(__file__).resolve().parents[3])
 
-        def session_start(payload: "str | None", cwd: Path = e2e, wait: float = 20.0) -> "tuple[int, str, float]":
-            started = time.monotonic()
-            proc = subprocess.Popen(["bash", str(hook)], cwd=cwd, stdin=subprocess.PIPE if payload is not None else subprocess.DEVNULL,
-                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                                    env=dict(os.environ, CLAUDE_PLUGIN_ROOT=plugin_root))
+            def session_start(payload: "str | None", cwd: Path = e2e, wait: float = 20.0) -> "tuple[int, str, float]":
+                started = time.monotonic()
+                proc = subprocess.Popen(["bash", str(hook)], cwd=cwd, stdin=subprocess.PIPE if payload is not None else subprocess.DEVNULL,
+                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                        env=dict(os.environ, CLAUDE_PLUGIN_ROOT=plugin_root))
+                try:
+                    out, _ = proc.communicate(payload if payload else None, timeout=wait) if payload else proc.communicate(timeout=wait)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
+                    return -9, "", time.monotonic() - started
+                return proc.returncode, out, time.monotonic() - started
+            code, out, _ = session_start('{"session_id": "S7"}')
+            check("session-start.sh with no coordinator recorded prints no coordination line", code == 0 and "coordination:" not in out, f"{code} {out[-120:]!r}")
+            subprocess.run([sys.executable, __file__, "claim", "--session-id", "C1", "--name", "boss", "--cwd", str(e2e)], check=True)
+            code, out, _ = session_start('{"session_id": "S7"}')
+            lines = [ln for ln in out.splitlines() if ln.startswith("- coordination:")]
+            check("session-start.sh prints ONE coordination line when a coordinator is recorded and the session holds no lane",
+                  code == 0 and len(lines) == 1 and "boss" in lines[0] and os.path.realpath(str(e2e)) in lines[0], f"{code} {lines}")
+            subprocess.run([sys.executable, __file__, "assign", "--session-id", "C1", "--path", str(e2e), "--branch", "b",
+                            "--owner", "S7", "--cwd", str(e2e)], check=True)
+            code, out, _ = session_start('{"session_id": "S7"}')
+            check("...and none once the coordinator has recorded that session's lane", code == 0 and "coordination:" not in out, out[-120:])
+            code, out, _ = session_start("{not json")
+            check("a payload that is not JSON: the hook still succeeds and prints no line", code == 0 and "coordination:" not in out, f"{code}")
+            # A caller that leaves stdin OPEN and sends nothing (a harness, a hand run) must not hold the session start.
+            held = subprocess.Popen(["bash", str(hook)], cwd=e2e, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                    text=True, env=dict(os.environ, CLAUDE_PLUGIN_ROOT=plugin_root))
+            t0 = time.monotonic()
             try:
-                out, _ = proc.communicate(payload if payload else None, timeout=wait) if payload else proc.communicate(timeout=wait)
+                held.wait(timeout=15)           # NOT communicate(): that would close stdin, and the point is a stdin that stays open
+                waited = time.monotonic() - t0
+                check("an open stdin with no payload does not hold the hook for more than 6 s", waited < 6.0 and held.returncode == 0,
+                      f"{waited:.1f}s exit {held.returncode}")
             except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait()
-                return -9, "", time.monotonic() - started
-            return proc.returncode, out, time.monotonic() - started
-        code, out, _ = session_start('{"session_id": "S7"}')
-        check("session-start.sh with no coordinator recorded prints no coordination line", code == 0 and "coordination:" not in out, f"{code} {out[-120:]!r}")
-        subprocess.run([sys.executable, __file__, "claim", "--session-id", "C1", "--name", "boss", "--cwd", str(e2e)], check=True)
-        code, out, _ = session_start('{"session_id": "S7"}')
-        lines = [ln for ln in out.splitlines() if ln.startswith("- coordination:")]
-        check("session-start.sh prints ONE coordination line when a coordinator is recorded and the session holds no lane",
-              code == 0 and len(lines) == 1 and "boss" in lines[0] and os.path.realpath(str(e2e)) in lines[0], f"{code} {lines}")
-        subprocess.run([sys.executable, __file__, "assign", "--session-id", "C1", "--path", str(e2e), "--branch", "b",
-                        "--owner", "S7", "--cwd", str(e2e)], check=True)
-        code, out, _ = session_start('{"session_id": "S7"}')
-        check("...and none once the coordinator has recorded that session's lane", code == 0 and "coordination:" not in out, out[-120:])
-        code, out, _ = session_start("{not json")
-        check("a payload that is not JSON: the hook still succeeds and prints no line", code == 0 and "coordination:" not in out, f"{code}")
-        # A caller that leaves stdin OPEN and sends nothing (a harness, a hand run) must not hold the session start.
-        held = subprocess.Popen(["bash", str(hook)], cwd=e2e, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                text=True, env=dict(os.environ, CLAUDE_PLUGIN_ROOT=plugin_root))
-        t0 = time.monotonic()
-        try:
-            held.wait(timeout=15)           # NOT communicate(): that would close stdin, and the point is a stdin that stays open
-            waited = time.monotonic() - t0
-            check("an open stdin with no payload does not hold the hook for more than 6 s", waited < 6.0 and held.returncode == 0,
-                  f"{waited:.1f}s exit {held.returncode}")
-        except subprocess.TimeoutExpired:
-            held.kill()
-            held.wait()
-            check("an open stdin with no payload does not hold the hook for more than 6 s", False, "still running after 15 s")
-        finally:
-            for stream in (held.stdin, held.stdout, held.stderr):
-                if stream:
-                    stream.close()
+                held.kill()
+                held.wait()
+                check("an open stdin with no payload does not hold the hook for more than 6 s", False, "still running after 15 s")
+            finally:
+                for stream in (held.stdin, held.stdout, held.stderr):
+                    if stream:
+                        stream.close()
 
 
         # #1585 part 2: the writers the status board reads. Every one is the coordinator's alone.
