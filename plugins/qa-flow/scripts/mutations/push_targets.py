@@ -296,7 +296,7 @@ GUARD = Guard(
         # of that classification, and the selftest must go red.
         Mutation(
             "gh api / gh release are never classified, so every API merge and release passes",
-            "                out += gh_effects_for(seg, j, cwd, env_repo)",
+            "                out += gh_effects_for(seg, j, cwd, env_repo, known)",
             "                pass",
             "classify 'gh api -X PUT repos/{owner}/{repo}/pulls/1200/merge",
         ),
@@ -493,6 +493,75 @@ GUARD = Guard(
             'if "expectedHeadOid" in text else ""',
             'if False else ""',
             "expected ['GQL_PR PR_kwDOA MATCH:abc1234']",
+        ),
+        # #1617: a GraphQL document held in a shell variable. Each mutant removes one decision; each is caught by its own row.
+        Mutation(
+            "a variable the command bound once to a literal is no longer read as that literal",
+            """        if known:
+            self.fields""",
+            """        if False:
+            self.fields""",
+            r"""gh api graphql -f query="$Q"': expected ['GQL_PR PR_kw1']""",
+        ),
+        Mutation(
+            "a document with a variable it does not declare is allowed again",
+            r"""    if "${" in doc or any(n not in declared for n in re.findall(r"\$([A-Za-z_]\w*)", doc)) or re.search(r"\$[0-9@*#?!$-]", doc):""",
+            "    if False:",
+            r"""'gh api graphql -f query=$Q': must be unjudgeable or main-ward""",
+        ),
+        Mutation(
+            "a name bound twice (an if/else, a reassignment) is read as its first value",
+            "len(vs) == 1 and vs[0] is not None and n not in bare}",
+            "len(vs) >= 1 and vs[0] is not None and n not in bare}",
+            r"""Q=\'mutation{x}\'; gh api graphql -f query="$Q"': must be unjudgeable or main-ward""",
+        ),
+        Mutation(
+            "a name mentioned as a bare word (read, export, unset, for) is still read as a literal",
+            "len(vs) == 1 and vs[0] is not None and n not in bare}",
+            "len(vs) == 1 and vs[0] is not None}",
+            r"""export Q; gh api graphql -f query="$Q"': must be unjudgeable or main-ward""",
+        ),
+        Mutation(
+            "a prefix assignment is read by its own command's arguments",
+            "                out += gh_effects_for(seg, j, cwd, env_repo, known)",
+            "                out += gh_effects_for(seg, j, cwd, env_repo, {**known, **{k: v for k, v in lits.items() if any(w.startswith(k + '=') for w in seg)}})",
+            r"""Q=\'query{a}\' gh api graphql -f query="$Q"': must be unjudgeable or main-ward""",
+        ),
+        Mutation(
+            "a variable passed as ANOTHER field's value is read as part of the document",
+            '    doc = call.value("query") or ""',
+            "    doc = text",
+            r"""-f o="$OWNER"': expected []""",
+        ),
+        Mutation(
+            "a brace expansion in the document stops being refused",
+            """    if "${" in doc or any(""",
+            "    if any(",
+            r"""query="${Q}"': must be unjudgeable or main-ward""",
+        ),
+        Mutation(
+            "a special parameter ($1, $@) in the document stops being refused",
+            r""" or re.search(r"\$[0-9@*#?!$-]", doc):""",
+            ":",
+            r"""query="$1"': must be unjudgeable or main-ward""",
+        ),
+        Mutation(
+            "a binding in a subshell, behind && or ||, in an if or a pipeline is read as if it were unconditional",
+            "    if not _flat_list(cmd):",
+            "    if False:",
+            r"""( Q=\'query{a}\' ); gh api graphql -f query="$Q"': must be unjudgeable or main-ward""",
+        ),
+        Mutation(
+            "an assignment inside double quotes (${Q:=...}, $(...), a backtick) is invisible to the flat-list check",
+            r"""            if re.search(r"\$\{[A-Za-z_]\w*:?[=+?-]|\$\(|`", cmd[i:j]):""",
+            "            if False:",
+            r"""Q=\'\'; : "${Q:=mutation""",
+        ),
+        Mutation(
+            "declare, typeset, local and readonly are no longer refused, so `declare -n Q=R` aliases a name unseen",
+            r"""                         r"declare|typeset|local|readonly)(?=[\s;]|$)", flat)""",
+            r"""                         r"nameref)(?=[\s;]|$)", flat)""",
+            "classify 'declare -n Q=R;",
         ),
         # A here-string (`<<<`) is a word: its second `<` must not open a heredoc whose delimiter is the word after it.
         Mutation(

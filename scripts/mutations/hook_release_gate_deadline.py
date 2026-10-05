@@ -1,7 +1,8 @@
 """Mutation guard: hook_release_gate_deadline. The deadline block at the bottom of release-gate.sh. Run by scripts/mutation_check.py (#1575)."""
 from mutation_types import Guard, Mutation  # noqa: F401
 
-_BS, _BT = chr(92), chr(96)   # a backslash and a backtick, spelled so no escaping is read twice
+_BS, _BT = chr(92), chr(96)
+_PW = "      _pw='(^|[[:space:];&|(])[\"'\"'\"'" + _BS * 2 + "]*push'"   # the leading boundary line in release-gate.sh (quotes and backslashes may precede the word)   # a backslash and a backtick, spelled so no escaping is read twice
 _GX = '      _g_x="[' + _BS * 4 + '${_sq}' + _BS + _BT + ']"'   # the line in release-gate.sh
 
 GUARD = Guard(
@@ -79,20 +80,6 @@ GUARD = Guard(
         ),
         # #1602 review of the timeout path: shapes the FULL path denies and the coarse detector allowed (a 486-command differential).
         Mutation(
-            'update-branch stops being a promotion',
-            '[[ $_in =~ update-branch ]] && _looks_promotion=1',
-            ':',
-            'refuses update-branch',
-        ),
-        # #1602 review of the timeout path: shapes the FULL path denies and the coarse detector allowed (a 486-command differential).
-        Mutation(
-            'a workflow run stops being a promotion',
-            '[[ $_in =~ ${_b}workflow${_e} ]] && [[ $_in =~ ${_b}run${_e} ]] && _looks_promotion=1',
-            ':',
-            'refuses a workflow run',
-        ),
-        # #1602 review of the timeout path: shapes the FULL path denies and the coarse detector allowed (a 486-command differential).
-        Mutation(
             'a repository dispatch stops being a promotion',
             '[[ $_in =~ ${_b}api${_e} ]] && [[ $_in =~ dispatches ]] && _looks_promotion=1',
             ':',
@@ -135,13 +122,6 @@ GUARD = Guard(
         ),
         # #1602 asked that the timeout path also refuse #1606's shapes; these are the two word rules that make it so.
         Mutation(
-            'a `gh release create|edit` stops being a promotion on a timeout',
-            '[[ $_in =~ ${_b}release${_e} ]] && [[ $_in =~ ${_b}(create|edit)${_e} ]] && _looks_promotion=1',
-            ':',
-            'refuses a release publish whose tag or target is not a plain name (#1606)',
-        ),
-        # #1607: the #1602 delta review's residuals S1-S4 (the coarse detector was an allow-by-default word list).
-        Mutation(
             'a write method (PUT, POST, PATCH, DELETE) on a `gh api` stops being a promotion',
             '      if [[ $_in =~ $_m_wr ]]; then',
             '      if false; then',
@@ -153,27 +133,6 @@ GUARD = Guard(
             '      elif ! [[ $_in =~ $_m_get ]] && [[ $_in =~ $_m_fl ]]; then',
             '      elif false; then',
             '`gh api repos/o/r/issues/1/comments -f body=x`',
-        ),
-        # #1607: the #1602 delta review's residuals S1-S4 (the coarse detector was an allow-by-default word list).
-        Mutation(
-            '`gh repo sync|edit` stops being a promotion',
-            '    [[ $_in =~ ${_b}repo${_e} ]] && [[ $_in =~ ${_b}(sync|edit)${_e} ]] && _looks_promotion=1',
-            ':',
-            '`gh repo sync o/r --branch main`',
-        ),
-        # #1607: the #1602 delta review's residuals S1-S4 (the coarse detector was an allow-by-default word list).
-        Mutation(
-            '`rerun` (gh run rerun, .../rerun, .../rerun-failed-jobs) stops being a promotion',
-            '    [[ $_in =~ rerun ]] && _looks_promotion=1',
-            ':',
-            '`gh run rerun 123`',
-        ),
-        # #1607: the #1602 delta review's residuals S1-S4 (the coarse detector was an allow-by-default word list).
-        Mutation(
-            '`gh workflow enable` stops being a promotion',
-            '    [[ $_in =~ ${_b}workflow${_e} ]] && [[ $_in =~ ${_b}enable${_e} ]] && _looks_promotion=1',
-            ':',
-            '`gh workflow enable release.yml`',
         ),
         # #1607: the #1602 delta review's residuals S1-S4 (the coarse detector was an allow-by-default word list).
         Mutation(
@@ -259,7 +218,7 @@ GUARD = Guard(
         # THE OTHER DIRECTION: a RULE over-blocks more than a word does, so each rule has a control that must be able to fail.
         Mutation(
             'a `?` followed by a letter (a URL query) counts as a glob',
-            "      _g_q='[[:alnum:]_/.-][?]([^[:alnum:]=&]|$)'",
+            "      _g_q='[[:alnum:]_/.-][?][[:alnum:]_.%-]*([^[:alnum:]_.%=-]|$)'",
             "      _g_q='[[:alnum:]_/.-][?]'",
             '`git push https://x.test/r.git?z=1 feature/x`',
         ),
@@ -269,6 +228,73 @@ GUARD = Guard(
             '      _g_b=\'[[:alnum:]_/.-][{][^{}"[:space:]]*,[^{}"[:space:]]*[}]\'',
             "      _g_b='[{][^{}]*,[^{}]*[}]'",
             'a payload with extra keys, an array and braces of its own is not refused',
+        ),
+        # #1617: the CLI verbs are a RULE (a short READ-ONLY list), a git alias hides push, a `?` is a glob unless it opens `?key=`, and `push` is a word.
+        Mutation(
+            "a `gh` verb that is not on the read-only list stops being refused",
+            "          *) _looks_promotion=1 ;;",
+            "          *) ;;",
+            "`gh release delete v1`",
+        ),
+        Mutation(
+            "`gh pr view` drops off the read-only list, so an ordinary read is refused",
+            '"pr view"|"pr list"|',
+            '"pr list"|',
+            "allows `gh pr view 7`",
+        ),
+        Mutation(
+            "a repo flag before the verb is read as the verb",
+            "          -R|--repo|-C|-c|--hostname|--git-dir|--work-tree|--namespace) _j=$((_j + 2)); continue ;;",
+            "          -C|-c|--hostname|--git-dir|--work-tree|--namespace) _j=$((_j + 2)); continue ;;",
+            "allows `gh -R o/r pr view 7`",
+        ),
+        Mutation(
+            "a git alias that names main stops being a promotion",
+            '               *" main "*|*" master "*|',
+            '               *" mainx "*|*" master "*|',
+            "`git p origin main`",
+        ),
+        Mutation(
+            "`checkout` drops off the git verb list, so `git checkout main` is refused",
+            "status|log|diff|show|add|commit|checkout|switch|branch|fetch|pull|merge|rebase|stash|reset|restore|tag|remote|config|rev-parse|rev-list|\\",
+            "status|log|diff|show|add|commit|switch|branch|fetch|pull|merge|rebase|stash|reset|restore|tag|remote|config|rev-parse|rev-list|\\",
+            "allows `git checkout main`",
+        ),
+        Mutation(
+            "a `?` followed by a letter is read as a URL query again, so `ma?n` is allowed",
+            "      _g_q='[[:alnum:]_/.-][?][[:alnum:]_.%-]*([^[:alnum:]_.%=-]|$)'",
+            "      _g_q='[[:alnum:]_/.-][?]([^[:alnum:]=&]|$)'",
+            "`git push origin HEAD:ma?n`",
+        ),
+        Mutation(
+            "a word that merely ENDS in push (`feature/push fix`) starts a push again: the leading boundary is gone",
+            _PW,
+            "      _pw='push'",
+            'allows `git checkout -b "feature/push fix"`',
+        ),
+        Mutation(
+            "a word that merely STARTS with push (`pushed`) starts a push again: the trailing boundary is gone",
+            """      _seg_cmd="${_pw}"'([^[:alnum:]_./-][^;&|"]*)?'""",
+            """      _seg_cmd="${_pw}"'[^;&|"]*'""",
+            "allows `git push origin feature/x; git log --grep pushed \"x y\"`",
+        ),
+        Mutation(
+            "a verb the full path allows (`gh run cancel`) drops off the coarse list, so the two lists drift apart",
+            '"run watch"|"run download"|"run cancel"|"run delete"|',
+            '"run watch"|"run download"|"run delete"|',
+            "every `gh` verb the full path allows is allowed on a timeout",
+        ),
+        Mutation(
+            "`gh api` drops off the exempt groups, so every API read is refused as an unlisted verb",
+            "attestation|agent-task|licenses|preview|api) ;;",
+            "attestation|agent-task|licenses|preview) ;;",
+            "allows `gh api repos/o/r/pulls`",
+        ),
+        Mutation(
+            "a QUOTED or ESCAPED push (`git \"push\" ...`) stops being a push, so the verb hides behind the quotes",
+            _PW,
+            "      _pw='(^|[[:space:];&|(])push'",
+            'git "push" origin HEAD:ma?n',
         ),
     ),
 )
