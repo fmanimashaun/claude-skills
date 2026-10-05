@@ -297,8 +297,12 @@ resolve_pr() {
                  _PRR="$(printf '%s' "${out#* }" | sed -E 's#^https?://[^/]+/##; s#/pull/.*##' | tr 'A-Z' 'a-z')" ;; esac
   sane_pr_lookup
 }
+# A name GITHUB RETURNED is judged more loosely than a ref typed into a command (`plain_ref`): `release+2026`, `feature#7` and `user@team/topic`
+# are branches, and a PR into one is not a promotion, so refusing them as "unresolved" would block merges `dev` allowed. What is rejected is what an
+# error body contains (whitespace, braces, quotes, brackets) and what git forbids in a ref name (: ? * ^ ~ \).
+ref_name_returned() { case "$1" in ""|*[[:space:]]*|*\{*|*\}*|*\"*|*\[*|*\]*|*:*|*\?*|*\**|*\^*|*\~*|*\\*) return 1 ;; esac; return 0; }
 # What a PR lookup returned must LOOK like a base ref name; else it is no answer (base and head "" = unresolved, refused by note_pr).
-sane_pr_lookup() { plain_ref "$base" || { base=""; head=""; _PRR=""; }; }
+sane_pr_lookup() { ref_name_returned "$base" || { base=""; head=""; _PRR=""; }; }
 # add_ship <sha> <repo or -> <label>
 add_ship() { ship="${ship}${1}"$'\t'"${2:--}"$'\t'"${3}"$'\n'; }
 # add_commit <ref> <ctx repo> <local|branch> <label>: queue the commit <ref> names, or mark the command
@@ -453,7 +457,7 @@ if [ "$_mentions" = 1 ] && [ -f "$_pt" ]; then
           _rest="${_line#GQL_REF }"; _id="${_rest%% *}"; _oid="${_rest#* }"
           _out=""
           [ "$_id" = "-" ] || _out="$(gh_lookup api graphql -F id="$_id" -f query='query($id:ID!){node(id:$id){... on Ref{name repository{nameWithOwner}}}}' -q '.data.node.name + " " + .data.node.repository.nameWithOwner' || true)"
-          plain_ref "${_out%% *}" || _out=""   # #1626: a lookup that printed anything but a ref name first is no answer
+          ref_name_returned "${_out%% *}" || _out=""   # #1626: a lookup that printed anything but a ref name first is no answer
           case "${_out%% *}" in
             main|master)
               targets_main=1

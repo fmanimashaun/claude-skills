@@ -2179,6 +2179,13 @@ def release_gate_effects_fixtures() -> None:
         ):
             rc, err = run(cmd, **env)
             check(f"release-gate (#1569): {label} could not be judged, so it is blocked", rc == 2, f"rc={rc} {err[:200]!r}")
+        # (#1626) CONTROL: a base GitHub names that `plain_ref` (the rule for a ref typed into a command) would not accept is still a branch, and a PR
+        # into it is not a promotion. Treating every unusual name as "unresolved" would refuse merges into branches `dev` let through.
+        for odd in ("release+2026", "feature#7", "user@team/topic", "v1.0.x_hotfix"):
+            rc, err = run("gh pr merge 7", FAKE_PRVIEW=f"{odd} {hot}")
+            check(f"release-gate (#1626): CONTROL: a PR into the branch `{odd}` is not a promotion and is permitted", rc == 0, f"rc={rc} {err[:160]!r}")
+            rc, err = run(merge_pinned_odd := gql, FAKE_NODE=f"{odd} {hot}")
+            check(f"release-gate (#1626): CONTROL: a GraphQL merge into the branch `{odd}` is not a promotion and is permitted", rc == 0, f"rc={rc} {err[:160]!r}")
         # (#1626) A LOOKUP THAT ERRORS IS UNRESOLVED, NOT AN ANSWER. Real `gh` exits 1 and prints the raw error body to STDOUT; the lookups kept
         # whatever was printed (`|| true`), so `base` held the JSON, was neither `main` nor empty, and a GraphQL merge into main was allowed.
         merge_pinned = gql.replace('"PR_kw1"}', f'"PR_kw1", expectedHeadOid:"{stamped}"}}')

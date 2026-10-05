@@ -234,13 +234,13 @@ GUARD = Guard(
         ),
         Mutation(
             "a PR lookup whose base is not a ref name (the JSON error body) is read as a base",
-            'sane_pr_lookup() { plain_ref "$base" ||',
+            'sane_pr_lookup() { ref_name_returned "$base" ||',
             'sane_pr_lookup() { true ||',
             "a GraphQL mergePullRequest whose lookup prints something that is not a ref name (exit 0) is blocked",
         ),
         Mutation(
             "an updateRef lookup that prints something other than a ref name first is read as a ref",
-            '          plain_ref "${_out%% *}" || _out=""   # #1626',
+            '          ref_name_returned "${_out%% *}" || _out=""   # #1626',
             '          true   # #1626',
             "a GraphQL updateRef whose lookup prints something that is not a ref name (exit 0) is blocked",
         ),
