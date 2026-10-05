@@ -57,8 +57,8 @@ GUARD = Guard(
         # ---- (#1606) the same untrusted text, spliced into ANOTHER repository's API path, and the third fetch --------
         Mutation(
             "a ref that is not a plain name is put in another repository's commits path",
-            '        ! plain_ref "$ref" || c="$(gh api "repos/${_R}/commits/${ref}" -q .sha 2>/dev/null || true)"',
-            '        c="$(gh api "repos/${_R}/commits/${ref}" -q .sha 2>/dev/null || true)"',
+            '        ! plain_ref "$ref" || c="$(gh_lookup api "repos/${_R}/commits/${ref}" -q .sha || true)"',
+            '        c="$(gh_lookup api "repos/${_R}/commits/${ref}" -q .sha || true)"',
             "a REST merge's head with a fragment",
         ),
         Mutation(

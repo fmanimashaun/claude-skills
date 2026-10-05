@@ -225,5 +225,24 @@ GUARD = Guard(
             '_PMG=0; _PM=""; _PINKIND=gql;',
             'release-gate (#1571): CONTROL: a GraphQL expectedHeadOid pins the judged head and is permitted',
         ),
+        # #1626: a lookup that errors is unresolved, not an answer. Real `gh` exits 1 and prints the raw error body to STDOUT.
+        Mutation(
+            "a lookup that exits non-zero is read for what it printed, so a failed lookup still resolves",
+            '_o="$(gh "$@" 2>/dev/null)" || return 1;',
+            '_o="$(gh "$@" 2>/dev/null)" || true;',
+            "a GraphQL mergePullRequest whose lookup exits non-zero is blocked even though it printed an answer",
+        ),
+        Mutation(
+            "a PR lookup whose base is not a ref name (the JSON error body) is read as a base",
+            'sane_pr_lookup() { plain_ref "$base" ||',
+            'sane_pr_lookup() { true ||',
+            "a GraphQL mergePullRequest whose lookup prints something that is not a ref name (exit 0) is blocked",
+        ),
+        Mutation(
+            "an updateRef lookup that prints something other than a ref name first is read as a ref",
+            '          plain_ref "${_out%% *}" || _out=""   # #1626',
+            '          true   # #1626',
+            "a GraphQL updateRef whose lookup prints something that is not a ref name (exit 0) is blocked",
+        ),
     ),
 )

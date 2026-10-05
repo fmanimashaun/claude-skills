@@ -281,10 +281,9 @@ plain_ref() { case "$1" in ""|-*|*[!A-Za-z0-9._/-]*|*..*|/*|*//*|*/|.*|*/.*|*.lo
 # A LOOKUP THAT ERRORS IS UNRESOLVED, NOT AN ANSWER (#1626). Real `gh api graphql` exits 1 and prints the raw error body to STDOUT
 # (`{"data":{"node":null},"errors":[...]}`), so `2>/dev/null || true` kept the body, `base` became that JSON, was neither `main` nor empty,
 # and a GraphQL merge into main was allowed. `gh_lookup` prints what a read-only `gh` call printed ONLY when it exited 0, and nothing when it
-# did not; `gh_sha` additionally requires a hexadecimal object id. A caller then checks the SHAPE of what is left (a plain ref name, a sha), so a
+# did not. Where the answer decides WHICH BRANCH a command acts on, the caller then checks the SHAPE of what is left (a plain ref name), so a
 # body that arrives with exit 0 is no answer either. Unresolved is refused downstream.
 gh_lookup() { local _o; _o="$(gh "$@" 2>/dev/null)" || return 1; printf '%s' "$_o"; }
-gh_sha() { local _o; _o="$(gh_lookup "$@")" || return 1; case "$_o" in ""|*[!0-9a-fA-F]*) return 1 ;; esac; printf '%s' "$_o"; }
 # resolve_pr <selector|""> <ctx repo> -> base, head, _PRR ("" when gh could not say). Resolved the way
 # the command resolves it: the same selector, the same -R/GH_REPO, the same directory.
 resolve_pr() {
@@ -320,7 +319,7 @@ add_commit() {
         # Another repository: the ref becomes part of an API path, so it is a plain name, as on the local path above.
         # `#` is a legal character in a ref name and starts a fragment in a URL: the gate would ask about `abc` while the
         # command acts on `abc#frag`. A ref that is not plain is left unresolved, and the command is denied (#1606).
-        ! plain_ref "$ref" || c="$(gh_sha api "repos/${_R}/commits/${ref}" -q .sha || true)"
+        ! plain_ref "$ref" || c="$(gh_lookup api "repos/${_R}/commits/${ref}" -q .sha || true)"
       fi ;;
   esac
   if [ -n "$c" ]; then add_ship "$c" "${_R:--}" "$4"; else unresolved_pr=1; fi
@@ -471,7 +470,6 @@ if [ "$_mentions" = 1 ] && [ -f "$_pt" ]; then
             ctx_repo "$_crepo"
             _a=(release view "$_tag"); [ -z "$_R" ] || _a+=(-R "$_R")
             _tgt="$(gh_lookup "${_a[@]}" --json targetCommitish -q .targetCommitish || true)"
-            plain_ref "$_tgt" || _tgt=""   # #1626
             if [ -z "$_tgt" ]; then unresolved_pr=1; targets_main=1; _tgt="-"; fi
           fi
           releases="${releases}${_tag} ${_tgt} ${_crepo}"$'\n' ;;
@@ -830,15 +828,15 @@ resolve_release() {
     if [ -n "$tag" ]; then
       o="$(gh api "repos/${_R}/git/matching-refs/tags/${tag}" --jq '.[].ref' 2>/dev/null)" || return 1
       if printf '%s\n' "$o" | grep -qx "refs/tags/${tag}"; then
-        _rsha="$(gh_sha api "repos/${_R}/commits/${tag}" --jq .sha || true)"; [ -n "$_rsha" ]; return
+        _rsha="$(gh_lookup api "repos/${_R}/commits/${tag}" --jq .sha || true)"; [ -n "$_rsha" ]; return
       fi
     fi
     if [ -n "$tgt" ]; then
-      _rsha="$(gh_sha api "repos/${_R}/commits/${tgt}" --jq .sha || true)"
+      _rsha="$(gh_lookup api "repos/${_R}/commits/${tgt}" --jq .sha || true)"
     else
       t="$(gh_lookup api "repos/${_R}" --jq .default_branch || true)"
       plain_ref "$t" || t=""
-      [ -z "$t" ] || _rsha="$(gh_sha api "repos/${_R}/commits/${t}" --jq .sha || true)"
+      [ -z "$t" ] || _rsha="$(gh_lookup api "repos/${_R}/commits/${t}" --jq .sha || true)"
     fi
   fi
   [ -n "$_rsha" ]
