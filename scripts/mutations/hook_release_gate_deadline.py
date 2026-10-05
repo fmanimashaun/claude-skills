@@ -274,7 +274,7 @@ GUARD = Guard(
             "a word that merely STARTS with push (`pushed`) starts a push again: the trailing boundary is gone",
             """      _seg_cmd="${_pw}"'([^[:alnum:]_./-][^;&|"]*)?'""",
             """      _seg_cmd="${_pw}"'[^;&|"]*'""",
-            "allows `git log --grep pushed \"x y\"`",
+            "allows `git push origin feature/x; git log --grep pushed \"x y\"`",
         ),
         Mutation(
             "a verb the full path allows (`gh run cancel`) drops off the coarse list, so the two lists drift apart",

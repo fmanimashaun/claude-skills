@@ -3324,7 +3324,7 @@ def deadline_fixtures() -> None:
                         "gh pr view 7", "gh pr list", "gh pr checks 7", "gh release list", "gh release view v1", "gh -R o/r pr view 7", "gh pr view 7 --repo o/r",
                         "gh auth status", "gh search issues x", "gh pr create --fill", "gh issue comment 5 -b x", "gh run cancel 1", "gh release upload v1 f.zip", "gh secret delete X", "git p origin feature/x", "git checkout main", "git log main", "git diff main", "git fetch origin main",
                         "git branch main", 'git checkout -b "feature/push-fix"', 'git checkout -b "feature/push fix"', "git checkout -b feature/push-fix",
-                        'git log --grep pushed "x y"', "git commit -m 'push the fix'",
+                        'git log --grep pushed "x y"', 'git push origin feature/x; git log --grep pushed "x y"', "git commit -m 'push the fix'",
                         "git push https://x.test/r.git?z=1 feature/x", "git push origin feature/x:feature/y",
                         "gh api graphql -f query='{ repository(owner:\"o\", name:\"r\") { id } }'"):
                 check(f"deadline (#1575): CONTROL (#1607): the coarse detector allows `{cmd}`", coarse(cmd) == 0, "exit 2: refused")
