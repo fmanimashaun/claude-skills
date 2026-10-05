@@ -1941,6 +1941,9 @@ def release_gate_fixtures() -> None:
     # Round 3 fold-in: the fallback matched raw JSON, so git's global options and a JSON-escaped tab
     # slipped past it. Each is a real way to write a push to main.
     for cmd in ("git -C . push origin main", "git -c k=v push origin main", "git\tpush origin main",
+                # #1617: EVERY separator a JSON-escaped tab. The alias rule reads `git\tpush origin main` as an unknown verb beside `main`, so the
+                # first spelling is refused without the whitespace normalisation; this one is refused only because of it.
+                "git\tpush\torigin\tmain", "git\tpush\torigin\tHEAD:main",
                 "git --git-dir=.git push origin HEAD:main", "git push origin refs/heads/main",
                 "git push origin HEAD:refs/heads/master"):
         code, out = bare_gate(cmd)

@@ -124,7 +124,7 @@ GUARD = Guard(
             "JSON whitespace escapes are not normalised, so an escaped tab hides the verb",
             '    _in="${_in//"$_esc"/ }"',
             "    :",
-            "'git\\tpush origin main' is still blocked",
+            "'git\\tpush\\torigin\\tmain' is still blocked",
         ),
         Mutation(
             "a ref under a path counts as main in the fallback",

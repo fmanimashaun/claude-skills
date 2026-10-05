@@ -784,6 +784,7 @@ def _graphql_effects(call: ApiCall) -> list[str]:
     data = call.json_input() if call.input else None
     if isinstance(data, dict) and isinstance(data.get("query"), str):
         doc += "\n" + data["query"]
+    doc = doc.replace(SUBST, "")   # a command substitution is the rule above's (`$__SUBST__` would otherwise read as an undeclared variable and hide it)
     declared = set(re.findall(r"\$(\w+)\s*:", doc))
     if "${" in doc or any(n not in declared for n in re.findall(r"\$([A-Za-z_]\w*)", doc)) or re.search(r"\$[0-9@*#?!$-]", doc):
         raise Unjudgeable("a GraphQL document held in a shell variable cannot be read")
