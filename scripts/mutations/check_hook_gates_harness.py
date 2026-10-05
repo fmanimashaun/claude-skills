@@ -122,6 +122,13 @@ GUARD = Guard(
             "--only 'timeout,timeout' is refused",
         ),
         Mutation(
+            # #1596
+            "a label's temp path is not masked, so a group that surveys clean on a Mac is refused on the Linux runner",
+            '    return _TEMP_PATH.sub("<tmp>", label)',
+            '    return label',
+            "a label's temp path is masked",
+        ),
+        Mutation(
             # review of PR #1506
             "a bare run executes no group, so the doctor's hook gates pass on nothing",
             'def run_groups(groups: list[str] | None, table: dict) -> None:\n    for name in (groups or list(table)):',

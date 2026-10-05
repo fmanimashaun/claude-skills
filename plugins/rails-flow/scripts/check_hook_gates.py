@@ -61,6 +61,17 @@ class MatchSequenceError(Exception):
     """The run pass reached a different check than the survey did, so `--match` cannot be trusted here."""
 
 
+# A label that carries a temp path differs between the survey and the run, because each pass makes its own directory, so
+# `--match` would refuse the group. The path is MASKED for the comparison, including a name a label cut short (`cmd[:40]` in
+# a label ends mid-name when the directory is short, as `/tmp` is on a Linux runner and `/private/var/folders/...` is not on
+# a Mac: a group that surveyed clean on a laptop was refused in CI, #1596). Failures still print the label as written.
+_TEMP_PATH = re.compile(r"/\S*?/tmp\w+")
+
+
+def _stable(label: str) -> str:
+    return _TEMP_PATH.sub("<tmp>", label)
+
+
 def skipping() -> bool:
     return _MATCH_MODE == "survey" or (_MATCH_MODE == "run" and _SKIP)
 
@@ -68,10 +79,10 @@ def skipping() -> bool:
 def check(label: str, ok: bool, detail: str = "") -> None:
     global CHECKS, _INDEX, _SKIP
     if _MATCH_MODE == "survey":
-        _SURVEYED.append(label)
+        _SURVEYED.append(_stable(label))
         return
     if _MATCH_MODE == "run":
-        if _INDEX >= len(_SURVEYED) or _SURVEYED[_INDEX] != label:
+        if _INDEX >= len(_SURVEYED) or _SURVEYED[_INDEX] != _stable(label):
             raise MatchSequenceError(
                 f"check #{_INDEX} is {label!r} in the run pass but "
                 f"{_SURVEYED[_INDEX] if _INDEX < len(_SURVEYED) else 'absent'!r} in the survey")
@@ -3297,6 +3308,12 @@ def meta_checks() -> None:
     check("every fixture group is in exactly one PART, so the doctor's three gates together run all of them",
           sorted(flat) == sorted(GROUPS), f"in a part but not a group, or the reverse: {sorted(set(flat) ^ set(GROUPS))}; "
           f"repeated: {sorted({g for g in flat if flat.count(g) > 1})}")
+    check("a label's temp path is masked, including a name cut short, so --match compares the survey with the run (#1596)",
+          _stable("x: git worktree remove /tmp/tmpAbCd1234/a") == _stable("x: git worktree remove /tmp/tmpZyXw9876/a")
+          and _stable("x: git worktree remove /private/tmp/tmpp47g") == _stable("x: git worktree remove /private/tmp/tmp_1_y")
+          and _stable("no path in this label") == "no path in this label"
+          and _stable("a /tmp/tmpAbCd1234/x") != _stable("b /tmp/tmpAbCd1234/x"),
+          repr([_stable("x: git worktree remove /tmp/tmpAbCd1234/a"), _stable("x /private/tmp/tmpp47g")]))
     check("--part a, --part b and --part c name groups; any other part is refused, never an empty pass",
           all(parse_part(k) == PARTS[k] for k in ("a", "b", "c")) and all(parse_part(x) is None for x in ("", "d", "ab", "A")),
           repr([parse_part(x) for x in ("a", "b", "c", "", "d")]))
