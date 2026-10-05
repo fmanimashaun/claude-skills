@@ -13,6 +13,7 @@ GUARD = Guard(
     # earlier fixture builds, cannot run alone, and run the whole sub-group (#1581, surveyed one by one).
     narrow_with="--match",
     needs=(
+           'plugins/qa-flow/scripts/remote_evidence.py',  # #1581 merge: run by release-gate.sh
            'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py',  # session-start.sh runs both (#1581: the harness drives it)
            "plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362
            'plugins/rails-flow/hooks/scripts', 'plugins/qa-flow/hooks/scripts', 'plugins/qa-flow/scripts',

@@ -571,7 +571,7 @@ CLAIMS: tuple[Claim, ...] = (
         kind=GUARANTEE,
         enforced_by=("hook:plugins/rails-flow/hooks/scripts/guard-worktree.sh", "gate:hook gates", "gate:hook gates (release)", "gate:hook gates (worktree)",
                      "gate:rails-flow worktree guard helper", "mutation:hook_guard_worktree",
-                     "mutation:hook_worktree_guard", "mutation:hook_session_start_pointer"),
+                     "mutation:hook_worktree_guard", "mutation:hook_session_start_resume"),
         refs=(1581,),
         note="Fails closed, scoped to `git worktree add`. The duplicate rule reads `git worktree list` "
              "alone and needs no record or session identity; the one-issue rule reads the coordinator's "

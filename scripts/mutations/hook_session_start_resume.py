@@ -1,14 +1,14 @@
-"""Mutation guard: hook_guard_worktree_parse. Declared here, run by scripts/mutation_check.py (#1581).
+"""Mutation guard: hook_session_start_resume. Declared here, run by scripts/mutation_check.py (#1581).
 
-The wrapper: what the hook reads (quoted words, mentions, heredoc bodies). Split out of one guard that re-ran ALL four worktree fixture groups per mutant: this one runs only `guard_worktree_parse`.
+The RESUME pointer (the worktree a session was working in), not #1585's coordinator pointer, which has its own guard, `hook_session_start_pointer`. Split out of one guard that re-ran ALL four worktree fixture groups per mutant: this one runs only `guard_worktree_pointer`.
 """
 from mutation_types import Guard, Mutation  # noqa: F401
 
 GUARD = Guard(
-    name="hook_guard_worktree_parse",
-    subject="plugins/rails-flow/hooks/scripts/guard-worktree.sh",
+    name="hook_session_start_resume",
+    subject="plugins/rails-flow/hooks/scripts/session-start.sh",
     selftest="plugins/rails-flow/scripts/check_hook_gates.py",
-    selftest_args=("--only", "guard_worktree_parse"),
+    selftest_args=("--only", "guard_worktree_pointer"),
     # Each mutant runs only the fixture its `expects` names (#1599); the ones marked `narrow=False` depend on state an
     # earlier fixture builds, cannot run alone, and run the whole sub-group (#1581, surveyed one by one).
     narrow_with="--match",
@@ -29,16 +29,18 @@ GUARD = Guard(
            'plugins/rails-flow/scripts/ci_verdict_hint.py'),
     mutations=(
         Mutation(
-            "quoted words are never matched, so 'git' worktree add never reaches the helper",
-            'then hit=1; raw=1; fi',
-            'then true; fi',
-            'a quoted or escaped word does not hide the command',
+            'the resume pointer is never asked for',
+            '  python3 "${BASH_SOURCE[0]%/*}/lib/worktree_guard.py" resume --session-id "$_sid" 2>/dev/null',
+            '  true',
+            'the session that holds a lane is told where to resume',
+            narrow=False,
         ),
         Mutation(
-            'a raw-only match is judged as an ordinary one, so a mention is refused as unreadable',
-            '[ "$raw" = 1 ] && flag="--raw"',
-            '[ "$raw" = 1 ] && flag=""',
-            'a mention is not a command, even while a lane is held',
+            'the session id is dropped, so no session matches a lane',
+            '--session-id "$_sid"',
+            '--session-id ""',
+            'the session that holds a lane is told where to resume',
+            narrow=False,
         ),
     ),
 )
