@@ -131,7 +131,7 @@ _coarse_looks_promotion() {
       # main or master among its arguments (`origin main`, `HEAD:main`), is refused. A real verb that is not `push` is handled by its own rule.
       if [ "$_tool" = git ] && [ -n "$_v1" ]; then
         case $_v1 in
-          push|status|log|diff|show|add|commit|switch|branch|fetch|pull|merge|rebase|stash|reset|restore|tag|remote|config|rev-parse|rev-list|\
+          push|status|log|diff|show|add|commit|checkout|switch|branch|fetch|pull|merge|rebase|stash|reset|restore|tag|remote|config|rev-parse|rev-list|\
           ls-remote|ls-files|ls-tree|worktree|clean|blame|grep|cherry-pick|revert|describe|shortlog|bisect|apply|am|archive|bundle|cat-file|count-objects|\
           fsck|gc|help|init|clone|mv|rm|notes|reflog|show-ref|symbolic-ref|update-ref|var|version|whatchanged|diff-tree|name-rev|merge-base|for-each-ref|\
           submodule|sparse-checkout|maintenance|format-patch|range-diff|cherry|check-ignore|hash-object|write-tree|read-tree|commit-tree|prune|repack|rerere|\
