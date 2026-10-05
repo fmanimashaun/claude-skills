@@ -34,10 +34,10 @@ GUARD = Guard(
             "a listed name the reader never reads",
         ),
         Mutation(
-            "an empty list passes over nothing",
-            "    if not written or not planned:",
+            "an empty WRITTEN list passes over nothing",
+            "    if not written:",
             "    if False:",
-            "an empty list is refused",
+            "an empty WRITTEN list is refused",
         ),
         Mutation(
             "a key name read anywhere in the writer counts as written (the write-site-only rename passes)",

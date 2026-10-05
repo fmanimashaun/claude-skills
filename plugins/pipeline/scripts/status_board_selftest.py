@@ -76,6 +76,8 @@ class World:
         self.on(["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"], "origin/dev\n", cwd=r)
         self.on(["git", "rev-parse", "--git-common-dir"], ".git\n", cwd=r)
         self.on(["git", "rev-parse", "--short", "HEAD"], "abc1234\n", cwd=r)
+        if slug:                                 # a sibling's own origin names the repository it is
+            self.on(["git", "remote", "get-url", "origin"], f"git@github.com:{slug}.git\n", cwd=r)
         self.on(["git", "worktree", "list", "--porcelain"], f"worktree {r}\nHEAD {'1' * 40}\nbranch refs/heads/dev\n\n", cwd=r)
         self.on(["git", "merge-base", "--is-ancestor", "1" * 40, "origin/dev"], "", cwd=r)
         self.on(["git", "-C", r, "status", "--porcelain"], "")
@@ -530,6 +532,17 @@ def review_59(tmp: Path) -> None:
     w.gh_set(["pr", "view", "40", "--json", "comments"], {"comments": [review("abc1234", "CLEAN")]})
     check("a pull request with no head commit has an UNKNOWN review, not a current one",
           by_n(w.board())[40]["review"]["state"] == "unknown", str(by_n(w.board())[40]["review"]))
+    # ...and cannot make ANOTHER commit's run look like this pull request's: `gh run list --commit ""` ignores the
+    # empty filter and returns the newest runs, so the lookup must not be made at all (#1595 review, non-blocking)
+    w.config({"full_run_workflow": "gates.yml"})
+    w.gh_set(["run", "list", "--workflow", "gates.yml", "--commit", "", "--limit", "20", "--json", RUN_FIELDS],
+             [{"databaseId": 9, "status": "completed", "conclusion": "success", "event": "workflow_dispatch"}])
+    got = by_n(w.board())[40]
+    check("a pull request with no head commit has an UNKNOWN run, never the newest run of another commit",
+          got["run"]["state"] == "unknown", str(got["run"]))
+    check("...and no run lookup is made for an empty commit",
+          not any(c[:3] == ["gh", "run", "list"] and "" in c[c.index("--commit") + 1:c.index("--commit") + 2] for c in w.calls
+                  if "--commit" in c), str([c for c in w.calls if c[:3] == ["gh", "run", "list"]]))
 
     # 4. A run list that hit its window cannot say "not dispatched"
     w = w_with(tmp, "r59e")
@@ -741,7 +754,42 @@ def workspace(tmp: Path) -> None:
           not board["panels"]["sessions"]["unavailable"] and {s["repo"] for s in items(board, "sessions")} == {"repoA"})
     # a coordinator restart in either repo finds the sibling through the workspace block
     check("the workspace block alone leads to the sibling (nothing else names it)", "repoB" in board["workspace"]["repos"])
+    # the record's path and remote must agree with the directory's OWN origin (#1595 review, non-blocking)
+    b_.record({"version": 1, "coordinator": coord, "sessions": {"/w/b": rowB}})
+    lie = {"workspace": {"repos": [{"name": "repoB", "path": str(b_.root), "remote": "git@github.com:acme/other.git"}]}}
+    a.record({"version": 1, "coordinator": coord, "sessions": {"/w/a": rowA}, **lie})
+    a.cwd_log.clear()
+    board = a.board()
+    why = [u["why"] for u in board["panels"]["prs"]["unavailable"] if u["repo"] == "repoB"]
+    check("a sibling whose directory has a different origin than the record declares is left out and says so",
+          len(why) == 1 and "acme/sib" in why[0] and "acme/other" in why[0] and 2 not in by_n(board) and 1 in by_n(board), str(why))
+    check("...and none of its sessions is read as the repository's",
+          {s["repo"] for s in items(board, "sessions")} == {"repoA"}, str(items(board, "sessions")))
+    ran_there = [argv for argv, cwd in a.cwd_log if cwd == str(b_.root)]
+    check("nothing but the origin check runs in a sibling whose origin differs, and no gh call names it",
+          ran_there == [["git", "remote", "get-url", "origin"]]
+          and not any(argv[:2] == ["gh", "pr"] and "--repo" in argv for argv, _ in a.cwd_log), str(ran_there))
+    b_.on(["git", "remote", "get-url", "origin"], "", rc=128, cwd=str(b_.root))
+    a.record({"version": 1, "coordinator": coord, "sessions": {"/w/a": rowA}, "workspace": ws})
+    board = a.board()
+    why = [u["why"] for u in board["panels"]["prs"]["unavailable"] if u["repo"] == "repoB"]
+    check("a sibling whose origin cannot be read is unavailable, never trusted on the record's word",
+          len(why) == 1 and "cannot be read" in why[0] and 2 not in by_n(board), str(why))
+    b_.on(["git", "remote", "get-url", "origin"], "https://github.com/ACME/Sib.git\n", cwd=str(b_.root))
+    board = a.board()
+    check("the origin match ignores case and the https form (near miss: the same repository)", 2 in by_n(board), str(sorted(by_n(board))))
+    # a relative path with `..` is resolved against THIS repository and then held to the same origin rule
+    rel = os.path.relpath(b_.root, a.root)
+    a.record({"version": 1, "coordinator": coord, "sessions": {"/w/a": rowA},
+              "workspace": {"repos": [{"name": "repoB", "path": rel, "remote": "git@github.com:acme/sib.git"}]}})
+    check("a relative sibling path with .. that leads to the declared repository is read", 2 in by_n(a.board()), rel)
+    b_.on(["git", "remote", "get-url", "origin"], "git@github.com:acme/elsewhere.git\n", cwd=str(b_.root))
+    check("a relative sibling path with .. that leads to another repository is refused",
+          2 not in by_n(a.board()) and any(u["repo"] == "repoB" for u in a.board()["panels"]["prs"]["unavailable"]))
+    b_.on(["git", "remote", "get-url", "origin"], "git@github.com:acme/sib.git\n", cwd=str(b_.root))
+
     # a sibling whose gh fails: that repo is unavailable for pull requests, the other still shows
+    a.record({"version": 1, "coordinator": coord, "sessions": {"/w/a": rowA}, "workspace": ws})
     b_.record({"version": 1, "coordinator": coord, "sessions": {}})
     b_.gh_set(["pr", "list", "--state", "open", "--limit", "100", "--json", PR_FIELDS], "", rc=1)
     board = a.board()

@@ -89,8 +89,8 @@ def check(reader: Path, writer: Path) -> list[str]:
     for k in (*written, *planned):
         if not quoted(body, k):
             out.append(f"`{k}` is listed in {READER} but the reader never reads it as a key")
-    if not written or not planned:
-        out.append(f"{READER} lists no WRITTEN or no PLANNED names: the check would pass over nothing")
+    if not written:
+        out.append(f"{READER} lists no WRITTEN names: the check would pass over nothing")
     return out
 
 
@@ -139,7 +139,10 @@ def selftest() -> int:
         expect("a listed name the reader never reads is a dead declaration", check(d / "r.py", d / "w.py"),
                "never reads it")
         (d / "r.py").write_text('RECORD_KEYS_WRITTEN = ()\nRECORD_KEYS_PLANNED = ()\n')
-        expect("an empty list is refused, not passed over", check(d / "r.py", d / "w.py"), "would pass over nothing")
+        expect("an empty WRITTEN list is refused, not passed over", check(d / "r.py", d / "w.py"), "would pass over nothing")
+        (d / "r.py").write_text('RECORD_KEYS_WRITTEN = ("session_id", "branch")\nRECORD_KEYS_PLANNED = ()\n'
+                                'def f(r):\n    return r.get("session_id"), r.get("branch")\n')
+        expect("an EMPTY planned list is fine: every key has a writer", check(d / "r.py", d / "w.py"), "")
         # The exit codes, end to end through main(): a tree laid out like the repo.
         tree = d / "tree"
         for rel, text in ((READER, reader), (WRITER, writer)):
