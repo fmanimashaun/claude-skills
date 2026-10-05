@@ -284,5 +284,35 @@ GUARD = Guard(
             "f\"<ul>{\"\".join(_step_li(s) for s in l[\"steps\"])}</ul>\"",
             "no f-string in status_board.py reuses its own quote",
         ),
+        Mutation(
+            "a run lookup is made for a pull request with no head commit, and returns another commit's run",
+            '    if not wf or not head:',
+            '    if not wf:',
+            'a pull request with no head commit has an UNKNOWN run',
+        ),
+        Mutation(
+            'a sibling whose directory has another origin is read as the record declares',
+            '    if own.lower() != declared.lower():',
+            '    if False:',
+            'has a different origin than the record declares',
+        ),
+        Mutation(
+            "a sibling whose origin cannot be read is trusted on the record's word",
+            '    own = slug_of(out.strip()) if rc == 0 else None',
+            '    own = slug_of(out.strip()) if rc == 0 else declared',
+            'whose origin cannot be read is unavailable',
+        ),
+        Mutation(
+            'the origin match is case-sensitive',
+            '    if own.lower() != declared.lower():',
+            '    if own != declared:',
+            'ignores case and the https form',
+        ),
+        Mutation(
+            'a sibling that declares no remote is held to the origin rule',
+            '    if not declared:\n        return ""',
+            '    if False:\n        return ""',
+            'a sibling with no parseable remote is read from its own directory',
+        ),
     ),
 )
