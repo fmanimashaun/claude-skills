@@ -640,7 +640,8 @@ def run() -> int:
             return [f"raised {exc!r}"]
 
     cases = [
-        ("a NEW guard over the floor", {"heavy": 400.0, "medium": 100.0, "fresh": floor + 1}, record, "fresh"),
+        ("a NEW guard over the new-guard limit", {"heavy": 400.0, "medium": 100.0, "fresh": mc.RATCHET_NEW + 1},
+         record, "fresh"),
         ("a recorded guard past growth and slack", {"heavy": 400.0 * mc.RATCHET_GROWTH + mc.RATCHET_SLACK + 1,
                                                      "medium": 100.0}, record, "heavy"),
         ("a record naming a guard that no longer exists", {"heavy": 400.0}, record, "medium"),
@@ -650,8 +651,16 @@ def run() -> int:
         problems = ratchet(cost, base)
         if not any(names in x for x in problems):
             FAILURES.append(f"#1599: the ratchet must report {label} (naming {names!r}), got {problems}")
+        # AND SAY WHAT TO DO: a growth or a new guard is fixed by re-recording the file IN THIS PR (the coordinator's rule, 2026-10-05).
+        if names in ("fresh", "heavy") and not any("re-record docs/evidence/mutation-cost-baseline.json in this PR" in x
+                                                    for x in problems if names in x):
+            FAILURES.append(f"#1599: the ratchet's refusal for {label} must tell the author to re-record the baseline in this PR, got {problems}")
     for label, cost, base in (
             ("a new guard under the floor", {"heavy": 400.0, "medium": 100.0, "fresh": floor - 1}, record),
+            # THE REASON RATCHET_NEW EXISTS: a guard just under the record floor is not on record, and a slow runner
+            # can push it past the floor without anyone having made it more expensive.
+            ("a new guard between the record floor and the new-guard limit",
+             {"heavy": 400.0, "medium": 100.0, "fresh": mc.RATCHET_NEW - 1}, record),
             ("a recorded guard within growth and slack", {"heavy": 400.0 * mc.RATCHET_GROWTH + mc.RATCHET_SLACK,
                                                            "medium": 100.0}, record),
             ("a recorded guard that got cheaper, even under the floor", {"heavy": 400.0, "medium": floor - 5}, record)):
@@ -663,6 +672,54 @@ def run() -> int:
     problems = ratchet({"heavy": 400.0}, None)
     if not (len(problems) == 1 and "no cost record" in problems[0]):
         FAILURES.append(f"#1599: with no record at all the ratchet must say so once, never pass, got {problems}")
+    # The record alone, with no run (`--check-record`, the gate a pull request can afford): missing or naming a guard that
+    # is gone fails; a record that holds is clean. `ratchet_problems` reads the same function, so the two cannot disagree.
+    for label, base, guards, want in (
+            ("a missing record", None, {"heavy"}, "no cost record"),
+            ("a record naming a guard that is gone", record, {"heavy"}, "medium")):
+        _tick()
+        try:
+            found = mc.record_problems(guards, base)
+        except Exception as exc:        # noqa: BLE001 -- the check below fails by name
+            found = [f"raised {exc!r}"]
+        if not any(want in x for x in found):
+            FAILURES.append(f"#1599: the record check must report {label}, got {found}")
+    _tick()
+    if mc.record_problems({"heavy", "medium", "extra"}, record):
+        FAILURES.append("#1599 CONTROL: a record whose guards all exist is clean (a guard missing from it is not drift)")
+
+    class StandInGuard:
+        """The registry is replaced by one stand-in guard: the guards that run THIS selftest in a staged tempdir (hermetic_git,
+        proc_group, this harness) do not stage `scripts/mutations/`, so the real `mc.GUARDS` is empty there and indexing it
+        raised an IndexError that made three baselines inert (CI run 37223022427). The test needs a registry, not THE registry."""
+        name = "stand_in_guard"
+
+    def check_record_exit(loader) -> int:
+        """`main(["--check-record"])` with the record replaced by `loader` and the registry by one stand-in guard; output swallowed."""
+        import contextlib
+        import io
+        real_loader, real_guards = mc.load_cost_baseline, mc.GUARDS
+        mc.load_cost_baseline, mc.GUARDS = loader, (StandInGuard,)
+        try:
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                return mc.main(["--check-record"])
+        except Exception:               # noqa: BLE001 -- a crash is not an exit code of 0 or 1
+            return -1
+        finally:
+            mc.load_cost_baseline, mc.GUARDS = real_loader, real_guards
+
+    def unreadable():
+        raise ValueError("not a record")
+
+    for label, loader, want in (
+            ("--check-record exits 1 for a record naming a guard that is gone", lambda: {"guards": {"ghost_guard": 99.0}}, 1),
+            ("--check-record exits 1 when there is no record", lambda: None, 1),
+            ("--check-record exits 1 for an unreadable record", unreadable, 1),
+            ("--check-record exits 0 for a record that holds", lambda: {"guards": {StandInGuard.name: 99.0}}, 0)):
+        _tick()
+        got = check_record_exit(loader)
+        if got != want:
+            FAILURES.append(f"#1599: {label}; got exit {got}")
     # The record: only guards over the floor, deterministic bytes, and a round trip.
     with tempfile.TemporaryDirectory() as td:
         path = Path(td) / "cost.json"

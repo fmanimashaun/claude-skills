@@ -240,16 +240,29 @@ def apply_mutation(guard: Guard, mutation: Mutation, workdir: Path) -> Path:
 
 
 # THE COST RATCHET (#1599). `mutation coverage` reached 3490 s of its 3600 s budget and the CI log could not say which
-# guard had grown: the doctor kept one summary line. A guard over RATCHET_FLOOR seconds of work (baseline plus every
-# mutant, summed over all jobs) must be on record in COST_BASELINE; a recorded one may cost RATCHET_GROWTH times its
+# guard had grown: the doctor kept one summary line. A guard over RATCHET_NEW seconds of work (baseline plus every
+# mutant, summed over all jobs) must be on record in COST_BASELINE, which holds every guard over RATCHET_FLOOR; a recorded one may cost RATCHET_GROWTH times its
 # record plus RATCHET_SLACK, which keeps a runner's speed from reading as growth; a record naming a guard that is gone
 # is drift. A new expensive guard therefore fails until it is made cheaper (`narrow_with`) or recorded from a measured
 # run with `--rebaseline`, a diff somebody reviews. Seconds depend on the runner, so the record is measured where the gate
 # runs (CI) and enforced only with `--ratchet`, which the doctor passes on the run whose job is to prove this gate.
 COST_BASELINE = REPO / "docs" / "evidence" / "mutation-cost-baseline.json"
 RATCHET_FLOOR = 60.0
-RATCHET_GROWTH = 1.5
+# A guard NOT on record fails only over RATCHET_NEW, twice the floor that decides what gets recorded. The record holds the
+# guards that cost over 60 s; one that cost 55 s when it was made is not in it, and a runner that is 1.5x slower on the day
+# reads it as 82 s without anyone having made it more expensive. Measured on the runner (run 37183258895): the CI's
+# runner speed moved the whole gate between 967 s and 1536 s for the same work.
+RATCHET_NEW = 120.0
+# GROWTH IS TWICE THE RECORD, NOT 1.5x: a tolerance below the runner's own noise fails on a guard nobody touched. MEASURED: `hook_coordination`,
+# whose guard, subject and selftest are byte-identical between the two runs, cost 840 s in run 37273819948 and 1301 s in run 37279335358
+# (1.55x), the whole gate had moved 967 s to 1536 s (1.59x) before, and 1.5x tripped it. Twice the record plus the slack still refuses a
+# guard that has MORE than doubled.
+RATCHET_GROWTH = 2.0
 RATCHET_SLACK = 30.0
+# WHAT A FAILING RUN TELLS THE AUTHOR TO DO. The rule is that whoever adds or grows a heavy guard re-records it in the SAME PR, so the
+# cost lands as a reviewed one-line diff and a later PR's dispatched run is never the one to trip on it (#1599).
+RECORD_INSTRUCTION = ("re-record docs/evidence/mutation-cost-baseline.json in this PR from this run's cost "
+                      "(`python3 scripts/mutation_check.py --rebaseline` writes it)")
 
 
 def load_cost_baseline(path: Path = COST_BASELINE) -> dict | None:
@@ -275,27 +288,33 @@ def write_cost_baseline(path: Path, cost: dict[str, float], jobs: int) -> None:
     path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def ratchet_problems(cost: dict[str, float], baseline: dict | None) -> list[str]:
-    """What the cost ratchet refuses, as sentences; an empty list is within budget."""
+def record_problems(guard_names: set[str], baseline: dict | None) -> list[str]:
+    """What is wrong with the cost record itself, with no run needed: it is missing, or it names a guard that is gone.
+    The full ratchet and the cheap `--check-record` gate both read it here, so the two cannot disagree."""
     if baseline is None:
         return ["the cost ratchet has no cost record (docs/evidence/mutation-cost-baseline.json): run "
                 "`python3 scripts/mutation_check.py --rebaseline` from a measured full run and commit it"]
+    return [f"{name}: the cost record names a guard that no longer exists; re-set the record (--rebaseline)"
+            for name in sorted(set(baseline["guards"]) - guard_names)]
+
+
+def ratchet_problems(cost: dict[str, float], baseline: dict | None) -> list[str]:
+    """What the cost ratchet refuses, as sentences; an empty list is within budget."""
+    problems = record_problems(set(cost), baseline)
+    if baseline is None:
+        return problems
     recorded = baseline["guards"]
-    problems = []
     for name, secs in sorted(cost.items()):
         if name in recorded:
             limit = recorded[name] * RATCHET_GROWTH + RATCHET_SLACK
             if secs > limit:
                 problems.append(f"{name}: costs {secs:.0f}s of work, past {RATCHET_GROWTH:g}x its recorded "
                                 f"{recorded[name]:.0f}s plus {RATCHET_SLACK:g}s = {limit:.0f}s; make it cheaper, "
-                                "or re-set the record from a measured run (--rebaseline)")
-        elif secs > RATCHET_FLOOR:
-            problems.append(f"{name}: a NEW guard costing {secs:.0f}s of work, over the {RATCHET_FLOOR:g}s floor and "
-                            "not on record; make it cheaper (`narrow_with` runs each mutant on one fixture), or "
-                            "record it with --rebaseline")
-    for name in sorted(set(recorded) - set(cost)):
-        problems.append(f"{name}: the cost record names a guard that no longer exists; re-set the record "
-                        "(--rebaseline)")
+                                f"or {RECORD_INSTRUCTION}")
+        elif secs > RATCHET_NEW:
+            problems.append(f"{name}: a NEW guard costing {secs:.0f}s of work, over the {RATCHET_NEW:g}s new-guard limit "
+                            "and not on record; make it cheaper (`narrow_with` runs each mutant on one fixture), or "
+                            f"{RECORD_INSTRUCTION}")
     return problems
 
 
@@ -564,9 +583,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ratchet", action="store_true",
                         help="also fail when a guard's cost has grown past the committed record, or a new guard is "
                              "over the floor (#1599); a full run only")
+    parser.add_argument("--check-record", action="store_true",
+                        help="check only that the committed cost record exists, parses, and names no guard that is gone; "
+                             "runs no guard, so a pull request can afford it (#1599)")
     parser.add_argument("--rebaseline", action="store_true",
                         help="after a full run, rewrite the committed cost record from it (#1599)")
     args = parser.parse_args(argv)
+    if args.check_record:
+        try:
+            found = record_problems({g.name for g in GUARDS}, load_cost_baseline())
+        except ValueError as exc:
+            found = [f"the cost record is unreadable: {exc}"]
+        for problem in found:
+            print(f"  - {problem}", file=sys.stderr)
+        if not found:
+            print(f"cost record: ok ({len(load_cost_baseline()['guards'])} guard(s) on record, none gone)")
+        return 1 if found else 0
     if (args.ratchet or args.rebaseline) and args.guard:
         print("--ratchet and --rebaseline compare a FULL run; --guard runs a part of one", file=sys.stderr)
         return 2
