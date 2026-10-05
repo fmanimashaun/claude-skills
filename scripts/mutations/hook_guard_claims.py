@@ -27,6 +27,7 @@ GUARD = Guard(
            "plugins/qa-flow/scripts/read_certification.py",
            "plugins/qa-flow/scripts/push_targets.py",  # release-gate.sh runs it (#1410)
            "plugins/qa-flow/scripts/release_evidence.py",
+           "plugins/qa-flow/scripts/remote_evidence.py",   # the release gate runs it (#1591)
            "plugins/rails-flow/scripts/self_consistency.py",
            "plugins/rails-flow/scripts/extract_claims.py",
            # ci-verdict-hint.sh runs it; unstaged, every mutation here read as caught (#1173).
