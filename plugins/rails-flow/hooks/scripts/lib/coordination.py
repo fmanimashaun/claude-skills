@@ -1130,9 +1130,15 @@ def selftest(skip_hook_e2e: bool = False) -> int:
         outside.mkdir()
         check("outside a git repository there is no record", record_path(outside) is None)
 
+    # THE LINE THAT IS PRINTED, not only the function that builds it (review of #1624): `summary_line(1, 0, True)` passing proves the builder; a
+    # call site that handed it False would still print the bare count. So the line is built once here and checked before it goes out.
+    line = summary_line(ran[0], len(failures), skip_hook_e2e)
+    if skip_hook_e2e and SKIP_NOTICE not in line:
+        failures.append("the summary line printed under --skip-hook-e2e does not carry the notice of what was skipped")
+        line = summary_line(ran[0], len(failures), skip_hook_e2e)
     for f in failures:
         print(f"FAIL: {f}", file=sys.stderr)
-    print(summary_line(ran[0], len(failures), skip_hook_e2e))
+    print(line)
     return 1 if failures else 0
 
 
