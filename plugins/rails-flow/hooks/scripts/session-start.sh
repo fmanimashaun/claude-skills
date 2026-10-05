@@ -21,6 +21,15 @@ echo "- last commit: $last"
 if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/lib/coordination.py" ] && command -v python3 >/dev/null 2>&1; then
   printf '%s' "$_payload" | python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/lib/coordination.py" pointer --stdin 2>/dev/null || true
 fi
+# #1581. Resume in place (advisory, fail-open, SILENT when there is nothing to say): this session's recorded
+# worktree, worktrees that are finished and can be removed, and a zombie-process warning. This hook runs
+# again after every compaction, so an empty answer must cost nothing. The judgement lives in
+# lib/worktree_guard.py; here only the session_id is read, from the payload read ONCE above (stdin can be read a single time,
+# so a second read here would find it empty).
+if command -v python3 >/dev/null 2>&1; then
+  _sid="$(printf '%s' "$_payload" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("session_id",""))' 2>/dev/null)"
+  python3 "${BASH_SOURCE[0]%/*}/lib/worktree_guard.py" resume --session-id "$_sid" 2>/dev/null
+fi
 [ -f CLAUDE.md ] || echo "- NOTE: no CLAUDE.md — run /rails-flow:setup-flow to scaffold project conventions."
 [ -f GUARDRAILS.md ] || echo "- NOTE: no GUARDRAILS.md — run /rails-flow:setup-flow."
 if [ -f docs/brain/STATUS.md ]; then
