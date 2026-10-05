@@ -84,8 +84,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a new heredoc opens while the delimiter is still owed",
-            ' and not cmd.startswith("<<<", i) and not owed:',
-            ' and not cmd.startswith("<<<", i):',
+            ' and not cmd.startswith("<<<", i) and not owed and (i == 0 or cmd[i - 1] != "<"):',
+            ' and not cmd.startswith("<<<", i) and (i == 0 or cmd[i - 1] != "<"):',
             "'x=$(cat <<EOF\\n)\\ncat <<END\\nEOF\\n)\\ngit push origin main': expected TARGETS main",
         ),
         Mutation(
@@ -493,6 +493,19 @@ GUARD = Guard(
             'if "expectedHeadOid" in text else ""',
             'if False else ""',
             "expected ['GQL_PR PR_kwDOA MATCH:abc1234']",
+        ),
+        # A here-string (`<<<`) is a word: its second `<` must not open a heredoc whose delimiter is the word after it.
+        Mutation(
+            "a here-string's second `<` opens a heredoc, so the command after it is deleted with the body",
+            ' and not owed and (i == 0 or cmd[i - 1] != "<"):',
+            ' and not owed:',
+            "'cat <<< x\\ngit push origin main': expected TARGETS main",
+        ),
+        Mutation(
+            "inside a substitution a here-string owes a delimiter, so a later real heredoc never opens",
+            '        if not quote and c == "<" and cmd.startswith("<<", i) and not cmd.startswith("<<<", i) \\\n                and (i == 0 or cmd[i - 1] != "<"):',
+            '        if not quote and c == "<" and cmd.startswith("<<", i) and not cmd.startswith("<<<", i):',
+            "'y=$(cat <<< x)\\ncat <<EOF\\ngit push origin main\\nEOF\\ngit push origin fix/x': expected does not target main",
         ),
     ),
 )

@@ -1589,6 +1589,12 @@ def release_gate_fixtures() -> None:
         check(f"release-gate (#1410): `{cmd}` targets main and is blocked without a certification",
               run(cmd) == 2, "exit 0")
     check("release-gate (#1410): a bare `git push` from a feature branch passes", run("git push") == 0, "exit 2")
+    # A here-string (`<<<`) is a word. Its second `<` once opened a heredoc whose "delimiter" was the next word, and the
+    # command after it was deleted with the body: each of these was ALLOWED end to end.
+    for cmd in ("cat <<< x; git push origin main", "cat <<<x\ngit push origin main", "git push origin main <<< x",
+                "cat <<< x; gh pr merge 5", "cat <<< x\ngh api -X PUT repos/o/r/pulls/5/merge"):
+        check(f"release-gate: a here-string before it hides nothing: `{cmd!r}` is blocked", run(cmd) == 2, "exit 0")
+    check("release-gate: a here-string before a push to a branch still passes", run("cat <<< x; git push origin feature/x") == 0, "exit 2")
     # #1470 review: the five pushes to main the first parser ALLOWED. Each is blocked end to end.
     for cmd in ("git push origin $(echo main)", "git push origin main>/dev/null",
                 "echo done#1; git push origin main", "git push origin HEAD:heads/main",
