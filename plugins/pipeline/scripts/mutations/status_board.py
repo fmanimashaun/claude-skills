@@ -314,5 +314,35 @@ GUARD = Guard(
             '    if False:\n        return ""',
             'a sibling with no parseable remote is read from its own directory',
         ),
+        Mutation(
+            "nan and inf are accepted as the collector's budget",
+            '    return min(max(v, BUDGET_MIN), BUDGET_MAX) if math.isfinite(v) else BUDGET_DEFAULT',
+            '    return min(max(v, BUDGET_MIN), BUDGET_MAX)',
+            "the collector's own budget nan",
+        ),
+        Mutation(
+            'a huge budget is not clamped',
+            '    return min(max(v, BUDGET_MIN), BUDGET_MAX) if math.isfinite(v) else BUDGET_DEFAULT',
+            '    return v if math.isfinite(v) else BUDGET_DEFAULT',
+            "the collector's own budget 5000",
+        ),
+        Mutation(
+            'the board shows any recorded address as a link',
+            '    return url if isinstance(url, str) and BOARD_URL.match(url) else None',
+            '    return url if isinstance(url, str) else None',
+            'is not shown and not linked',
+        ),
+        Mutation(
+            'the renderer links without checking the address again',
+            '    if board.get("live") and BOARD_URL.match(str(board["live"].get("url") or "")):',
+            '    if board.get("live"):',
+            'render_html does not link a board.json address',
+        ),
+        Mutation(
+            'the board pattern accepts a look-alike host',
+            'BOARD_URL = re.compile(r"https://claude\\.ai/(?:code/)?artifact/[A-Za-z0-9_-]{1,100}\\Z")',
+            'BOARD_URL = re.compile(r"https://claude\\.ai.*/artifact/[A-Za-z0-9_-]{1,100}\\Z")',
+            'a look-alike host is not shown',
+        ),
     ),
 )

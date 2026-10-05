@@ -356,6 +356,22 @@ def timeout_fixtures() -> None:
             md.DEFAULT_TIMEOUT = saved_timeout
         expect("under --require-slow, a NON-slow gate that times out is still SKIP", hang,
                "selftest hangs", md.SKIP)
+        # #1599: `--ratchet` reaches `mutation coverage` ONLY under --require-slow, and no other gate. A stub fails when it
+        # is passed the flag, so each direction is read off a verdict: a ratchet on every local run reads a busy laptop as
+        # growth; one on no run enforces nothing; one on every gate hands an unknown flag to scripts that refuse it.
+        (scripts / "_ratchet_probe.py").write_text(
+            "import sys\nprint('ratcheted' if '--ratchet' in sys.argv else 'plain')\n"
+            "sys.exit(1 if '--ratchet' in sys.argv else 0)\n", encoding="utf-8")
+        md.GATES = (("mutation coverage", ("python3", "scripts/_ratchet_probe.py")),
+                    ("selftest other", ("python3", "scripts/_ratchet_probe.py")))
+        md.SLOW_GATES = {"mutation coverage": 60}
+        on, off = md.Doctor(require_slow=True), md.Doctor()
+        on.check_gates()
+        off.check_gates()
+        expect("under --require-slow, `mutation coverage` is run with --ratchet (the probe fails on it)", on,
+               "mutation coverage", md.FAIL)
+        expect("without --require-slow, `mutation coverage` is run without --ratchet", off, "mutation coverage", md.PASS)
+        expect("under --require-slow, no OTHER gate is handed --ratchet", on, "selftest other", md.PASS)
     finally:
         md.GATES, md.SLOW_GATES, md.REPO = saved_gates, saved_slow, real
 
@@ -691,6 +707,12 @@ def run() -> int:
     _tick()
     if md.PR_SKIPPED_GATES - gate_names:
         FAILURES.append(f"PR_SKIPPED_GATES names no such gate: {sorted(md.PR_SKIPPED_GATES - gate_names)}")
+    _tick()
+    if md.RATCHETED_GATES != {"mutation coverage"} or not (md.RATCHETED_GATES <= gate_names):
+        FAILURES.append(f"RATCHETED_GATES is {sorted(md.RATCHETED_GATES)}; expected exactly ['mutation coverage'], a real gate")
+    _tick()
+    if "mutation cost record" not in gate_names or "mutation cost record" in md.PR_SKIPPED_GATES:
+        FAILURES.append("the cheap `--check-record` gate must be a gate AND must run on pull requests (not in PR_SKIPPED_GATES)")
     _tick()
     d_fast = md.Doctor()
     d_fast.check_gates(fast=True) if False else None  # the full sweep is minutes; assert the SKIP shape on the record instead

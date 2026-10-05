@@ -494,6 +494,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # because it is the slowest (it re-runs every selftest once per declared mutation).
     ("mutation check", ("python3", "scripts/mutation_check.py", "--selftest")),
     ("mutation coverage", ("python3", "scripts/mutation_check.py")),
+    # #1599. The committed cost record exists, parses and names no guard that is gone. Runs no guard, so a pull
+    # request pays for it; the ratchet itself (`mutation coverage --ratchet`) runs only where the record was measured.
+    ("mutation cost record", ("python3", "scripts/mutation_check.py", "--check-record")),
     # #1040. The REPORT this tool produces is advisory and deliberately gates nothing -- an
     # unreached assertion is either vacuous or merely unguarded, and nothing here can tell those
     # apart. Its SELFTEST is a gate like any other, because a reachability auditor that silently
@@ -617,6 +620,16 @@ SLOW_GATES: dict[str, int] = {
     # per mutant; re-set this from the `jobs=4, Xs` of a completed run, and lower it when #1599 lands.
     "mutation coverage": 5400,
 }
+
+# The gates that also enforce a committed record, and so take `--ratchet` (#1599).
+RATCHETED_GATES = frozenset({"mutation coverage"})
+
+
+def slow_gate_command(name: str, cmd: tuple[str, ...], require_slow: bool) -> tuple[str, ...]:
+    """The command a gate runs. `mutation coverage` gets `--ratchet` only on the run whose job is to prove it
+    (`--require-slow`: CI's push and promotion runs). A seconds figure measured on a laptop under other sessions' load
+    or on a PR runner is not growth, and the record is measured on the runner (#1599)."""
+    return (*cmd, "--ratchet") if require_slow and name in RATCHETED_GATES else cmd
 
 
 # A failing gate's output exists NOWHERE else on a runner: the doctor is the only thing that
@@ -1243,7 +1256,8 @@ class Doctor:
                     " ".join(cmd),
                 )
                 continue
-            code, out = self.run(*cmd, timeout=SLOW_GATES.get(name, DEFAULT_TIMEOUT))
+            code, out = self.run(*slow_gate_command(name, cmd, self.require_slow),
+                                 timeout=SLOW_GATES.get(name, DEFAULT_TIMEOUT))
             if code == 0:
                 # A slow gate's own summary line (mutation_check prints jobs and elapsed) is the
                 # measurement SLOW_GATES is set from; on a runner this is the only place it exists.
