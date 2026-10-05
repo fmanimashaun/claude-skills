@@ -45,3 +45,10 @@ line, but the leaked roots' command lines ended with something else, so it match
 - **The environment survives re-parenting.** A grandchild started in a new session, whose parent then
   exited (its parent pid becomes 1), is still found by its inherited token, through `ps -E` on macOS or
   `/proc/<pid>/environ` on Linux.
+
+## The advisory that watches for it
+
+rails-flow's session-start hook counts zombie processes (`ps` state `Z`) and, at 50 or more
+(`RAILS_FLOW_ZOMBIE_WARN` to change it), prints the count and the busiest parents by command. It prints
+nothing below the threshold, because this hook runs again after every compaction. It is advice: it
+cannot stop the process that is leaking, and the leak is still fixed by rule 3 above.
