@@ -3291,7 +3291,7 @@ def deadline_fixtures() -> None:
                   "git push origin HEAD:heads/ma'in'", 'git push origin "ma"in', 'git push origin "HEAD":ma\\in')),
                 ("an ORDINARY quoted ref, a multi-line command or a backticked commit message that says `git push` (the accepted cost of one character class "
                  "instead of a list of spellings: a fallback that runs only after the gate overran its deadline, 'retry it')",
-                 ("git push origin 'feat/x'", 'git push origin "feat/x"', "git push origin feature/x\ngit commit -m 'it works'",
+                 ("git push origin 'feat/x'", 'git push origin "feat/x"', "git push origin feature/x\ngit commit -m 'it works'", "git commit -m 'push the fix'",
                   "git commit -m \"$(cat <<'EOF'\nnever `git push --force`\nEOF\n)\"")),
                 ("a GraphQL body built by substitution (S4)",
                  ('gh api graphql -f query="$(cat q.graphql)"', "gh api graphql -f query=`cat q.graphql`", "gh api graphql -f query=<(cat q.graphql)")),
@@ -3307,6 +3307,12 @@ def deadline_fixtures() -> None:
                 ("a git ALIAS that hides `push` (#1617, N4)",
                  ("git p origin main", "git -C . p origin HEAD:main", "git -c user.name=x ph origin master", "git p origin HEAD:refs/heads/main")),
                 # #1617 (N5): `?` is a glob unless it opens a URL query (`?key=`); `ma?n` is main.
+                # #1617 review: shell quote removal makes a QUOTED or ESCAPED verb a push; the word-boundary change had let 20 of these through.
+                ("a QUOTED or ESCAPED `push` (#1617 review): the verb is a push once the shell removes the quotes",
+                 ('git "push" origin HEAD:ma?n', "git 'push' origin HEAD:ma?n", 'git "push" origin HEAD:"ma"in', "git 'push' origin 'ma''in'",
+                  'git "push" origin HEAD:ma[i]n', 'git "push" origin HEAD:ma{in,}', 'git "push" origin HEAD:$B', "git \\push origin HEAD:ma\\in",
+                  'true; git "push" origin HEAD:ma?n', "(git 'push' origin HEAD:ma?n)", 'env FOO=1 git "push" origin HEAD:ma?n',
+                  "command git 'push' origin HEAD:ma?n", 'git -c x=y "push" origin HEAD:ma?n', '/usr/bin/git "push" origin HEAD:ma?n')),
                 ("a `?` glob in the destination that is not a URL query (#1617, N5)",
                  ("git push origin HEAD:ma?n", "git push origin HEAD:m?in", "git push origin HEAD:refs/heads/ma?n")),
             ):
@@ -3324,7 +3330,7 @@ def deadline_fixtures() -> None:
                         "gh pr view 7", "gh pr list", "gh pr checks 7", "gh release list", "gh release view v1", "gh -R o/r pr view 7", "gh pr view 7 --repo o/r",
                         "gh auth status", "gh search issues x", "gh pr create --fill", "gh issue comment 5 -b x", "gh run cancel 1", "gh release upload v1 f.zip", "gh secret delete X", "git p origin feature/x", "git checkout main", "git log main", "git diff main", "git fetch origin main",
                         "git branch main", 'git checkout -b "feature/push-fix"', 'git checkout -b "feature/push fix"', "git checkout -b feature/push-fix",
-                        'git log --grep pushed "x y"', 'git push origin feature/x; git log --grep pushed "x y"', "git commit -m 'push the fix'",
+                        'git log --grep pushed "x y"', 'git push origin feature/x; git log --grep pushed "x y"',
                         "git push https://x.test/r.git?z=1 feature/x", "git push origin feature/x:feature/y",
                         "gh api graphql -f query='{ repository(owner:\"o\", name:\"r\") { id } }'"):
                 check(f"deadline (#1575): CONTROL (#1607): the coarse detector allows `{cmd}`", coarse(cmd) == 0, "exit 2: refused")

@@ -1,7 +1,8 @@
 """Mutation guard: hook_release_gate_deadline. The deadline block at the bottom of release-gate.sh. Run by scripts/mutation_check.py (#1575)."""
 from mutation_types import Guard, Mutation  # noqa: F401
 
-_BS, _BT = chr(92), chr(96)   # a backslash and a backtick, spelled so no escaping is read twice
+_BS, _BT = chr(92), chr(96)
+_PW = "      _pw='(^|[[:space:];&|(])[\"'\"'\"'" + _BS * 2 + "]*push'"   # the leading boundary line in release-gate.sh (quotes and backslashes may precede the word)   # a backslash and a backtick, spelled so no escaping is read twice
 _GX = '      _g_x="[' + _BS * 4 + '${_sq}' + _BS + _BT + ']"'   # the line in release-gate.sh
 
 GUARD = Guard(
@@ -266,7 +267,7 @@ GUARD = Guard(
         ),
         Mutation(
             "a word that merely ENDS in push (`feature/push fix`) starts a push again: the leading boundary is gone",
-            "      _pw='(^|[[:space:];&|(])push'",
+            _PW,
             "      _pw='push'",
             'allows `git checkout -b "feature/push fix"`',
         ),
@@ -287,6 +288,12 @@ GUARD = Guard(
             "attestation|agent-task|licenses|preview|api) ;;",
             "attestation|agent-task|licenses|preview) ;;",
             "allows `gh api repos/o/r/pulls`",
+        ),
+        Mutation(
+            "a QUOTED or ESCAPED push (`git \"push\" ...`) stops being a push, so the verb hides behind the quotes",
+            _PW,
+            "      _pw='(^|[[:space:];&|(])push'",
+            'git "push" origin HEAD:ma?n',
         ),
     ),
 )

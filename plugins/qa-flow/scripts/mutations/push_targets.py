@@ -551,5 +551,17 @@ GUARD = Guard(
             "    if False:",
             r"""( Q=\'query{a}\' ); gh api graphql -f query="$Q"': must be unjudgeable or main-ward""",
         ),
+        Mutation(
+            "an assignment inside double quotes (${Q:=...}, $(...), a backtick) is invisible to the flat-list check",
+            r"""            if re.search(r"\$\{[A-Za-z_]\w*:?[=+?-]|\$\(|`", cmd[i:j]):""",
+            "            if False:",
+            r"""Q=\'\'; : "${Q:=mutation""",
+        ),
+        Mutation(
+            "declare, typeset, local and readonly are no longer refused, so `declare -n Q=R` aliases a name unseen",
+            r"""                         r"declare|typeset|local|readonly)(?=[\s;]|$)", flat)""",
+            r"""                         r"nameref)(?=[\s;]|$)", flat)""",
+            "classify 'declare -n Q=R;",
+        ),
     ),
 )

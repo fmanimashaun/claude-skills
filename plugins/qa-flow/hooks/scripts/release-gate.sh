@@ -41,7 +41,9 @@ _coarse_looks_promotion() {
       # #1617 (N6): `push` is a WORD that starts a command word (after a space, `;`, `&`, `|` or `(`) and is not followed by a name character, so
       # `git checkout -b \"feature/push-fix\"` is not a push. The trailing test is an OPTIONAL group (an empty alternative is an invalid regex on macOS), not a consumed
       # character, so a backtick or a quote RIGHT after `push` is still seen by the rules that follow.
-      _pw='(^|[[:space:];&|(])push'
+      # QUOTES AND BACKSLASHES MAY SIT BEFORE THE WORD: shell quote removal makes `git \"push\" origin HEAD:ma?n` and `git \\push ...` a push (#1617 review:
+      # 20 spellings were refused by `dev` and allowed by the first version of this boundary). In the payload a quote is `\"`, so the class has both.
+      _pw='(^|[[:space:];&|(])["'"'"'\\]*push'
       _seg="${_pw}"'([^[:alnum:]_./-][^;&|]*)?'
       _seg_cmd="${_pw}"'([^[:alnum:]_./-][^;&|"]*)?'   # ends at the first RAW double quote: inside the command a quote is `\"`, so a later key (`"description":"don't wait"`) is out
       # #1617 (N5): a `?` is a glob unless it opens a URL query, which is `?key=`: `HEAD:ma?n` is main, `https://x.test/r.git?z=1` is not.

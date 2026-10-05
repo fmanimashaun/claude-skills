@@ -1412,12 +1412,18 @@ def _flat_list(cmd: str) -> bool:
             j = i + 1
             while j < n and cmd[j] != '"':
                 j += 2 if cmd[j] == "\\" else 1
+            # A double quote still EXPANDS: `"${Q:=...}"` assigns, `"$(...)"` and a backtick run a command, and none of it shows once the quote is
+            # masked (#1617 review). A plain `$name` or `${name}` only reads, and stays flat.
+            if re.search(r"\$\{[A-Za-z_]\w*:?[=+?-]|\$\(|`", cmd[i:j]):
+                return False
             out.append("x"); i = j + 1; continue
         out.append(c); i += 1
     flat = "".join(out)
     if re.search(r"[|&(){}`]|<<|\$\(", flat):
         return False
-    return not re.search(r"(^|[\s;])(if|then|else|elif|fi|for|while|until|do|done|case|esac|function|select|eval|source|\.|bash|sh|zsh|dash|ksh|exec)(?=[\s;]|$)", flat)
+    # `declare`, `typeset`, `local` and `readonly` bind a name in ways this does not follow (`declare -n Q=R` makes Q read R).
+    return not re.search(r"(^|[\s;])(if|then|else|elif|fi|for|while|until|do|done|case|esac|function|select|eval|source|\.|bash|sh|zsh|dash|ksh|exec|"
+                         r"declare|typeset|local|readonly)(?=[\s;]|$)", flat)
 
 
 def literal_vars(cmd: str) -> dict[str, str]:
@@ -1733,6 +1739,7 @@ def selftest() -> int:
             ("Q='mutation { mergePullRequest(input:{pullRequestId:\"PR_kw1\"}) { x } }'; gh api graphql -f query=\"$Q\"", ["GQL_PR PR_kw1"]),
             ("export Q='mutation { mergePullRequest(input:{pullRequestId:\"PR_kw1\"}) { x } }'\\ngh api graphql -f query=\"$Q\"", ["GQL_PR PR_kw1"]),
             ("Q='query{viewer{login}}'; gh api graphql -f query=\"$Q\"", []),
+            ("Q='query{viewer{login}}'; gh api graphql -f query=\"$Q\" -f o=\"$OWNER\" -f p=\"${PAGE}\"", []),
             ("gh api graphql -f query='query($o:String!){repository(owner:$o){id}}' -f o=\"$OWNER\"", []),
             ("gh api graphql -f query='mutation($id:ID!){mergePullRequest(input:{pullRequestId:$id}){x}}' -f id=\"$ID\"", ["GQL_PR -"]),
             ("gh api repos/o/r/pulls/5", []),
@@ -1774,6 +1781,12 @@ def selftest() -> int:
             "true || Q='query{a}'; gh api graphql -f query=\"$Q\"", "if c; then Q='query{a}'; fi; gh api graphql -f query=\"$Q\"",
             "for i in 1; do Q='query{a}'; done; gh api graphql -f query=\"$Q\"", "Q='query{a}' | cat; gh api graphql -f query=\"$Q\"",
             "bash -c \"Q='query{a}'\"; gh api graphql -f query=\"$Q\"", "Q='query{a}' & gh api graphql -f query=\"$Q\"",
+            # #1617 review: an assignment INSIDE double quotes (`${Q:=...}`, `$(...)`), and a name that is an alias of another (`declare -n`)
+            "Q=''; : \"${Q:=mutation{mergePullRequest(input:{pullRequestId:\\\"PR_x\\\"}){x}}}\"; gh api graphql -f query=\"$Q\"",
+            "Q='query{a}'; : \"$(Q=x)\"; gh api graphql -f query=\"$Q\"", "Q='query{a}'; : \"`Q=x`\"; gh api graphql -f query=\"$Q\"",
+            "declare -n Q=R; R='mutation{mergePullRequest(input:{pullRequestId:\"PR_x\"}){x}}'; gh api graphql -f query=\"$Q\"",
+            "typeset -n Q=R; R='mutation{mergePullRequest(input:{pullRequestId:\"PR_x\"}){x}}'; gh api graphql -f query=\"$Q\"",
+            "local Q='query{a}'; gh api graphql -f query=\"$Q\"", "readonly Q='query{a}'; gh api graphql -f query=\"$Q\"",
             "gh api -X PUT repos/o/r/pulls/$N/merge -f x=1 --input", "gh api -X $M repos/o/r/pulls/5/merge",
             "gh api -X PATCH repos/o/r/git/refs/heads/$B", "gh api graphql -f query=\"$(cat q)\"",
             "gh api -X POST repos/o/r/$X -f a=b", "gh release create $TAG", "gh release create v1 --target $T",
