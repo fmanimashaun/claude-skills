@@ -1996,15 +1996,21 @@ def release_gate_fixtures() -> None:
 FAKE_GH = """#!/bin/sh
 case "$1 $2" in
   "pr view") [ -z "${FAKE_PRVIEW:-}" ] || printf '%s https://github.com/%s/pull/7' "$FAKE_PRVIEW" "${FAKE_PRREPO:-o/r}"; exit 0 ;;
-  "api graphql") case "$*" in
+  "api graphql") if [ -n "${FAKE_LOOKUP_BODY:-}" ]; then printf '%s' "$FAKE_LOOKUP_BODY"; exit "${FAKE_LOOKUP_EXIT:-0}"; fi
+    case "$*" in
       *"on Ref"*) [ -z "${FAKE_REF:-}" ] || printf '%s %s' "$FAKE_REF" "${FAKE_PRREPO:-o/r}" ;;
       *) [ -z "${FAKE_NODE:-}" ] || printf '%s %s' "$FAKE_NODE" "${FAKE_PRREPO:-o/r}" ;;
-    esac; exit 0 ;;
+    esac; exit "${FAKE_LOOKUP_EXIT:-0}" ;;
   "release view") printf '%s' "${FAKE_RELVIEW:-}"; exit 0 ;;
-  "api repos"*) printf '%s' "${FAKE_RELID:-}"; exit 0 ;;
+  "api repos"*) if [ -n "${FAKE_LOOKUP_BODY:-}" ]; then printf '%s' "$FAKE_LOOKUP_BODY"; else printf '%s' "${FAKE_RELID:-}"; fi; exit "${FAKE_LOOKUP_EXIT:-0}" ;;
 esac
 exit 1
 """
+# #1626: REAL `gh` on a lookup that errors exits 1 and prints the raw error BODY to STDOUT (not stderr, and not nothing). The stub's FAKE_LOOKUP_EXIT is
+# the exit status and FAKE_LOOKUP_BODY the stdout of `gh api graphql` and `gh api repos/...`; the old "a node GitHub cannot name" row modelled
+# the failure as empty stdout with exit 0, a shape `gh` never produces.
+GH_ERROR_BODY = ('{"data":{"node":null},"errors":[{"type":"NOT_FOUND","path":["node"],'
+                 '"message":"Could not resolve to a node with the global id of \'PR_kw1\'"}]}')
 
 
 def release_gate_effects_fixtures() -> None:
@@ -2173,6 +2179,31 @@ def release_gate_effects_fixtures() -> None:
         ):
             rc, err = run(cmd, **env)
             check(f"release-gate (#1569): {label} could not be judged, so it is blocked", rc == 2, f"rc={rc} {err[:200]!r}")
+        # (#1626) A LOOKUP THAT ERRORS IS UNRESOLVED, NOT AN ANSWER. Real `gh` exits 1 and prints the raw error body to STDOUT; the lookups kept
+        # whatever was printed (`|| true`), so `base` held the JSON, was neither `main` nor empty, and a GraphQL merge into main was allowed.
+        merge_pinned = gql.replace('"PR_kw1"}', f'"PR_kw1", expectedHeadOid:"{stamped}"}}')
+        ref_to_certified = f"gh api graphql -f query='mutation {{ updateRef(input:{{refId:\"R1\", oid:\"{stamped}\"}}) {{ clientMutationId }} }}'"
+        patch_release = "gh api -X PATCH repos/o/r/releases/9 -F draft=false"
+        rc, err = run(merge_pinned, **promo_pr, FAKE_NODE=f"main {stamped}")
+        check("release-gate (#1626): CONTROL: a pinned GraphQL merge of the certified head resolves and is permitted", rc == 0, f"rc={rc} {err[:200]!r}")
+        rc, err = run(ref_to_certified, FAKE_REF="main")
+        check("release-gate (#1626): CONTROL: an updateRef of main to the certified commit resolves and is permitted", rc == 0, f"rc={rc} {err[:200]!r}")
+        for label, cmd in (("a GraphQL mergePullRequest", merge_pinned), ("a GraphQL updateRef", ref_to_certified), ("a release published by id", patch_release)):
+            rc, err = run(cmd, **promo_pr, FAKE_LOOKUP_BODY=GH_ERROR_BODY, FAKE_LOOKUP_EXIT="1")
+            check(f"release-gate (#1626): {label} whose lookup errors the way gh does (the JSON body on stdout, exit 1) is blocked",
+                  rc == 2, f"rc={rc} {err[:200]!r}")
+        # The exit status alone, with a plausible answer: a lookup that failed is not trusted for what it printed.
+        for label, cmd, env in (("a GraphQL mergePullRequest", merge_pinned, {"FAKE_NODE": f"main {stamped}"}),
+                                ("a GraphQL updateRef", ref_to_certified, {"FAKE_REF": "main"}),
+                                ("a release published by id", patch_release, {"FAKE_RELID": f"v2 {stamped}"})):
+            rc, err = run(cmd, **promo_pr, **env, FAKE_LOOKUP_EXIT="1")
+            check(f"release-gate (#1626): {label} whose lookup exits non-zero is blocked even though it printed an answer",
+                  rc == 2, f"rc={rc} {err[:200]!r}")
+        # The shape alone, with exit 0: what is printed must be a ref name (and a commit), or it is not an answer.
+        for label, cmd in (("a GraphQL mergePullRequest", merge_pinned), ("a GraphQL updateRef", ref_to_certified), ("a release published by id", patch_release)):
+            rc, err = run(cmd, **promo_pr, FAKE_LOOKUP_BODY=GH_ERROR_BODY, FAKE_LOOKUP_EXIT="0")
+            check(f"release-gate (#1626): {label} whose lookup prints something that is not a ref name (exit 0) is blocked",
+                  rc == 2, f"rc={rc} {err[:200]!r}")
         # Writes to main that are not a PR merge name no PR head, so they are judged at dev's tip: with dev
         # certified they are the ordinary promotion (permitted), with dev uncertified they are blocked.
         rc, err = run("gh api repos/o/r/merges -f base=main -f head=dev", FAKE_REF="main")
