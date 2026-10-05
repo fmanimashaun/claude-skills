@@ -54,7 +54,7 @@ GUARD = Guard(
         ),
         Mutation(
             "a run pass that disagrees with the survey is accepted, so --match can name the wrong check",
-            "if _INDEX >= len(_SURVEYED) or _SURVEYED[_INDEX] != label:",
+            "if _INDEX >= len(_SURVEYED) or _SURVEYED[_INDEX] != _stable(label):",
             "if False:",
             "--match raises when a fixture's result steers which checks follow",
         ),
