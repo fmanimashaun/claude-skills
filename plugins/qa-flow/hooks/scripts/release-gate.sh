@@ -523,6 +523,30 @@ reader="${CLAUDE_PLUGIN_ROOT:-}/scripts/read_certification.py"
 ev="${CLAUDE_PLUGIN_ROOT:-}/scripts/release_evidence.py"
 JWHY=""
 
+# extra_files <evidence paths>: reads changed paths on stdin and prints those that are neither the stamp nor
+# evidence the stamp names. ONE definition for this checkout and for another repository (#1591): the delta
+# since the certified commit may be the stamp and the evidence it names, and nothing else.
+extra_files() {
+  local evidence="$1" f p ok
+  while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    [ "$f" = "qa/CERTIFICATION" ] && continue
+    ok=0
+    while IFS= read -r p; do
+      [ -n "$p" ] || continue
+      # A directory (trailing "/") matches as a prefix; the sweep is ONE file and matches exactly.
+      # The leading "(" matters: inside $( ) a bare `pattern)` closes the substitution.
+      case "$p" in
+        (*/) case "$f" in ("$p"*) ok=1 ;; esac ;;
+        (*) [ "$f" = "$p" ] && ok=1 ;;
+      esac
+    done <<EVIDENCE
+$evidence
+EVIDENCE
+    [ "$ok" = 1 ] || printf '%s\n' "$f"
+  done
+}
+
 # judge <commit being shipped> <commit whose tree holds the stamp> <what to call the commit>
 # Returns 0 when a PASS stamp certifies <commit> (exactly, or through the stamp's own commit and the
 # evidence it names), 1 with JWHY set otherwise. One judgement for all three subjects (#1569): dev's
@@ -576,23 +600,7 @@ judge() {
       fi
       # The stamp's own commit may also carry the evidence it names (#1428): recorded AFTER the tested
       # sha, so requiring it before would be circular.
-      extra="$(printf '%s\n' "$delta" | while IFS= read -r f; do
-        [ -z "$f" ] && continue
-        [ "$f" = "qa/CERTIFICATION" ] && continue
-        ok=0
-        while IFS= read -r p; do
-          [ -n "$p" ] || continue
-          # A directory (trailing "/") matches as a prefix; the sweep is ONE file and matches exactly.
-          # The leading "(" matters: inside $( ) a bare `pattern)` closes the substitution.
-          case "$p" in
-            (*/) case "$f" in ("$p"*) ok=1 ;; esac ;;
-            (*) [ "$f" = "$p" ] && ok=1 ;;
-          esac
-        done <<EVIDENCE
-$evidence
-EVIDENCE
-        [ "$ok" = 1 ] || printf '%s\n' "$f"
-      done)"
+      extra="$(printf '%s\n' "$delta" | extra_files "$evidence")"
       if [ -n "$extra" ]; then
         JWHY="certification is for sha ${csha:0:12}; ${what} (${tgt:0:12}) has changed more than the stamp since: $(printf '%s' "$extra" | head -3 | tr '\n' ' '). Re-certify before promoting."; return 1
       fi
@@ -602,14 +610,34 @@ EVIDENCE
   return 0
 }
 
+# bounded <seconds> <command...>: run a command that talks to the network and stop it when the time is up (exit 124).
+# A PreToolUse hook that outlives its timeout (15 s) does not deny, it lets the command through, so a call that can
+# stall (`gh api`) must be cut short here and read as a failure, which every caller turns into a denial (#1591).
+bounded() {
+  python3 -c 'import subprocess, sys
+try:
+    done = subprocess.run(sys.argv[2:], capture_output=True, timeout=float(sys.argv[1]), stdin=subprocess.DEVNULL)
+except subprocess.TimeoutExpired:
+    sys.exit(124)
+except OSError:
+    sys.exit(127)
+sys.stdout.buffer.write(done.stdout)
+sys.stderr.buffer.write(done.stderr)
+sys.exit(done.returncode)' "$@"
+}
 # judge_remote <sha> <owner/repo> <what>: the stamp of a repository this checkout is NOT, read through the
 # API at that sha (#1569). It needs the stamp at the sha to be PASS and to certify it exactly, or to sit
-# on top of the tested sha with nothing else changed (the stamp's own commit). The release-only layers
-# (#1428) are NOT re-judged here -- their evidence files are not in this checkout -- and the stamp's
-# own words say so on stderr.
+# on top of the tested sha with nothing else changed but the stamp and the evidence it names. The release-only
+# layers (#1428) are judged exactly as for this checkout, from the evidence committed in THAT repository:
+# remote_evidence.py fetches the commit into a scratch repository and runs release_evidence.py there (#1591),
+# inside the time the hook has left, because a hook that outlives its timeout (15 s, hooks.json) does not deny: it
+# lets the command through. The whole gate also runs under a deadline (#1575, `_deadline_s`, 13 s by default since #1607, 10 s before), past which
+# its process group is killed and a promotion refused. So the helper runs LAST, after the cheap API calls, with what is
+# left of that deadline minus 2 s (never more than 8), so ITS denial speaks first, and a command that has no time left is
+# denied. Several ships in one command share that one deadline.
 judge_remote() {
-  local sha="$1" repo="$2" what="$3" verdict csha why cmp status files
-  if ! gh api -H 'Accept: application/vnd.github.raw+json' "repos/${repo}/contents/qa/CERTIFICATION?ref=${sha}" >"$stamp_tmp" 2>/dev/null; then
+  local sha="$1" repo="$2" what="$3" verdict csha why cmp status files evidence budget
+  if ! bounded 4 gh api -H 'Accept: application/vnd.github.raw+json' "repos/${repo}/contents/qa/CERTIFICATION?ref=${sha}" >"$stamp_tmp" 2>/dev/null; then
     JWHY="this command acts on ${repo}, not on this checkout's repository, and its qa/CERTIFICATION could not be read at ${what} (${sha:0:12}) through the GitHub API. Run it from a checkout of ${repo} that holds a PASS stamp, or set QA_ALLOW_MAIN=1."
     return 1
   fi
@@ -623,22 +651,37 @@ judge_remote() {
   fi
   [ -n "$csha" ] || { JWHY="${repo}: certification has no sha — the stamp is invalid. Re-run /qa-flow:certify."; return 1; }
   case "$csha" in *[!0-9a-fA-F]*) JWHY="${repo}: certification sha is not a commit id (${csha:0:20}) — the stamp is invalid. Re-run /qa-flow:certify."; return 1 ;; esac
+  # The cheap API call first: how the judged commit relates to the certified one.
+  cmp=""
   case "$sha" in
     "$csha"*) : ;;
     *)
-      if ! cmp="$(gh api "repos/${repo}/compare/${csha}...${sha}" --jq '.status, (.files[].filename)' 2>/dev/null)"; then
+      if ! cmp="$(bounded 4 gh api "repos/${repo}/compare/${csha}...${sha}" --jq '.status, (.files[].filename)' 2>/dev/null)"; then
         JWHY="${repo}: certification is for sha ${csha:0:12}, and ${what} (${sha:0:12}) could not be compared with it through the GitHub API. Re-certify."; return 1
       fi
       status="$(printf '%s\n' "$cmp" | head -1)"
-      files="$(printf '%s\n' "$cmp" | sed 1d | grep -vx 'qa/CERTIFICATION' | head -3 | tr '\n' ' ' || true)"
       case "$status" in ahead|identical) : ;; *)
         JWHY="${repo}: certification is for sha ${csha:0:12}, which is not an ancestor of ${what} (${sha:0:12}). ${what} moved — re-certify before promoting."; return 1 ;;
-      esac
-      if [ -n "$files" ]; then
-        JWHY="${repo}: certification is for sha ${csha:0:12}; ${what} (${sha:0:12}) has changed more than the stamp since: ${files}. Re-certify before promoting."; return 1
-      fi ;;
+      esac ;;
   esac
-  echo "qa-flow: ${repo}: certification valid for ${csha:0:12} — ${what} ${sha:0:12} permitted (the release-only layers are not re-judged for a repository other than this checkout's)." >&2
+  # (#1591) The release-only layers (#1428), as for this checkout, judged LAST and inside the time the hook has left
+  # (SECONDS counts from the hook's start). Fail-closed: any error, and no time, denies.
+  budget=$(( ${_deadline_s:-12} - 2 - SECONDS )); [ "$budget" -le 8 ] || budget=8
+  if [ "$budget" -lt 3 ]; then
+    JWHY="${repo}: there is no time left in this hook to judge the release-only layers (#1428) of ${what} (${sha:0:12}): the command acts on too many commits or repositories at once. Split it."; return 1
+  fi
+  if evidence="$(python3 "${CLAUDE_PLUGIN_ROOT:-}/scripts/remote_evidence.py" --repo "$repo" --sha "$sha" --budget "$budget" 2>"$evtmp")"; then
+    grep '^WARNING' "$evtmp" | sed "s|^WARNING |qa-flow: ${repo}: |" >&2
+  else
+    why="$(grep -E '^(FAIL|unusable)' "$evtmp" 2>/dev/null | head -3 | tr '\n' ' ')"
+    JWHY="${repo}: the release-only layers do not pass (#1428): ${why:-remote_evidence.py could not run.} Fix them and re-certify."; return 1
+  fi
+  # What changed since the certified commit may be the stamp and the evidence it names, and nothing else.
+  files="$(printf '%s\n' "$cmp" | sed 1d | extra_files "$evidence" | head -3 | tr '\n' ' ')"
+  if [ -n "$files" ]; then
+    JWHY="${repo}: certification is for sha ${csha:0:12}; ${what} (${sha:0:12}) has changed more than the stamp since: ${files}. Re-certify before promoting."; return 1
+  fi
+  echo "qa-flow: ${repo}: certification valid for ${csha:0:12} — ${what} ${sha:0:12} permitted." >&2
   return 0
 }
 # judge_in <sha> <repo or -> <what>
