@@ -1045,6 +1045,38 @@ def refresh_hook(tmp: Path) -> None:
     code, out, err, _ = run_hook(plugin_root=broken)
     check("a collector that raises and prints is silenced", code == 0 and out == "" and err == "", f"{code} {out!r} {err!r}")
 
+    # BOARD_HOOK_BUDGET and BOARD_HOOK_FRESH_MIN are clamped (#1616 review). A collector stand-in writes the arguments it was given.
+    spy = tmp / "spy-plugin"
+    (spy / "scripts").mkdir(parents=True)
+    argv_log = tmp / "spy-argv.txt"
+    (spy / "scripts" / "status_board.py").write_text(f"import sys\nopen({str(argv_log)!r}, 'w').write(' '.join(sys.argv[1:]))\n")
+
+    def budget_seen(value: "str | None") -> str:
+        argv_log.unlink(missing_ok=True)
+        os.utime(board, (old, old))
+        run_hook({"BOARD_HOOK_BUDGET": value} if value is not None else {}, plugin_root=spy)
+        got = argv_log.read_text().split() if argv_log.exists() else []
+        return got[got.index("--budget-seconds") + 1] if "--budget-seconds" in got else "none"
+    for value, want in (("5", "5"), ("8", "8"), ("1", "1"), ("12", "12"), ("0", "1"), ("13", "12"), ("99999", "12"), ("00000012", "12"),
+                        ("nan", "8"), ("inf", "8"), ("-5", "8"), ("1e3", "8"), ("8.5", "8"), ("", "8"), ("soon", "8"), (None, "8")):
+        check(f"BOARD_HOOK_BUDGET={value!r} reaches the collector as {want} (whole seconds, 1 to 12, else 8)", budget_seen(value) == want, budget_seen(value))
+
+    def ran(fresh: str, age_minutes: int) -> bool:
+        argv_log.unlink(missing_ok=True)
+        t = time.time() - age_minutes * 60
+        os.utime(board, (t, t))
+        run_hook({"BOARD_HOOK_FRESH_MIN": fresh}, plugin_root=spy)
+        return argv_log.exists()
+    check("BOARD_HOOK_FRESH_MIN is clamped to a day: 9999999 does not hold a 2-day-old board", ran("9999999", 2 * 24 * 60))
+    check("...while a 10-hour-old board stays under that clamp (near miss)", not ran("9999999", 600))
+    check("BOARD_HOOK_FRESH_MIN is clamped to 1440 from 1441 up: 5000 does not hold a 2-day-old board", ran("5000", 2 * 24 * 60))
+    check("BOARD_HOOK_FRESH_MIN of 1440 holds a 23-hour board and refreshes a 25-hour one", not ran("1440", 23 * 60) and ran("1440", 25 * 60))
+    for junk in ("nan", "inf", "-1", "1e3", "2.5"):
+        check(f"BOARD_HOOK_FRESH_MIN={junk!r} falls back to 2 minutes", ran(junk, 10) and not ran(junk, 1), junk)
+    for value, want in ((float("nan"), 40.0), (float("inf"), 40.0), (float("-inf"), 40.0), ("soon", 40.0), (None, 40.0), (-3, 1.0), (0, 1.0),
+                        (5000, 120.0), (8, 8.0), ("8", 8.0), (120, 120.0)):
+        check(f"the collector's own budget {value!r} becomes {want}", sb.clamp_budget(value) == want, str(sb.clamp_budget(value)))
+
     slow = tmp / "slowbin"
     slow.mkdir()
     (slow / "gh").write_text("#!/bin/sh\nsleep 30\n")

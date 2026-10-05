@@ -48,5 +48,29 @@ GUARD = Guard(
             '>/dev/null 2>&1\nexit $?',
             'a collector that exits 7 never fails the stop',
         ),
+        Mutation(
+            'the longest budget is not clamped',
+            '[ "$budget" -gt 12 ] && budget=12\n',
+            '',
+            "BOARD_HOOK_BUDGET='13'",
+        ),
+        Mutation(
+            'a decimal budget reaches the collector',
+            "''|*[!0-9]*) budget=8",
+            "''|*[!0-9.]*) budget=8",
+            "BOARD_HOOK_BUDGET='8.5'",
+        ),
+        Mutation(
+            'a zero budget reaches the collector',
+            '[ "$budget" -lt 1 ] && budget=1\n',
+            '',
+            "BOARD_HOOK_BUDGET='0'",
+        ),
+        Mutation(
+            'the throttle is not clamped to a day',
+            '[ "$fresh" -gt 1440 ] && fresh=1440\n',
+            '',
+            'BOARD_HOOK_FRESH_MIN is clamped to 1440 from 1441 up',
+        ),
     ),
 )

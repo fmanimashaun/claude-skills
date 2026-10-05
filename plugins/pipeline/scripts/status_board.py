@@ -42,6 +42,7 @@ import datetime as dt
 import getpass
 import html
 import json
+import math
 import os
 import re
 import subprocess
@@ -1077,8 +1078,20 @@ def toplevel(env: Env, cwd: Path) -> "Path | None":
     return Path(out.strip()) if rc == 0 and out.strip() else None
 
 
+BUDGET_DEFAULT, BUDGET_MIN, BUDGET_MAX = 40.0, 1.0, 120.0
+
+
+def clamp_budget(value: object) -> float:
+    """The time budget, finite and held to [BUDGET_MIN, BUDGET_MAX] seconds: `nan` or `inf` would never run out (#1616 review)."""
+    try:
+        v = float(value)                                  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return BUDGET_DEFAULT
+    return min(max(v, BUDGET_MIN), BUDGET_MAX) if math.isfinite(v) else BUDGET_DEFAULT
+
+
 def cmd_collect(args: argparse.Namespace, env: "Env | None" = None) -> int:
-    env = env or Env(real_run, real_read, dt.datetime.now(dt.timezone.utc), float(args.budget_seconds))
+    env = env or Env(real_run, real_read, dt.datetime.now(dt.timezone.utc), clamp_budget(args.budget_seconds))
     root = toplevel(env, Path(args.root))
     if root is None:
         print("not inside a git repository: no board", file=sys.stderr)

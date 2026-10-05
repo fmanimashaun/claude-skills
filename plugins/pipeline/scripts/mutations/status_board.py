@@ -314,5 +314,17 @@ GUARD = Guard(
             '    if False:\n        return ""',
             'a sibling with no parseable remote is read from its own directory',
         ),
+        Mutation(
+            "nan and inf are accepted as the collector's budget",
+            '    return min(max(v, BUDGET_MIN), BUDGET_MAX) if math.isfinite(v) else BUDGET_DEFAULT',
+            '    return min(max(v, BUDGET_MIN), BUDGET_MAX)',
+            "the collector's own budget nan",
+        ),
+        Mutation(
+            'a huge budget is not clamped',
+            '    return min(max(v, BUDGET_MIN), BUDGET_MAX) if math.isfinite(v) else BUDGET_DEFAULT',
+            '    return v if math.isfinite(v) else BUDGET_DEFAULT',
+            "the collector's own budget 5000",
+        ),
     ),
 )
