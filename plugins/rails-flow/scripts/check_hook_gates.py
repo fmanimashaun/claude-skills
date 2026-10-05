@@ -2532,6 +2532,42 @@ def release_gate_refs_fixtures() -> None:
               not any(c.startswith("fetch") and "--upload-pack" in c for c in calls) and not marker.exists() and rc == 2,
               f"rc={rc} marker={marker.exists()} fetch calls={[c for c in calls if c.startswith('fetch')]}")
 
+        # (#1610, hardening left by the #1609 review.) 1. The commit id GitHub's API returned is joined into
+        # `contents/qa/CERTIFICATION?ref=<sha>`: it is a commit id or the command is refused. The fake gh serves the stamp for
+        # whatever ref the id names, as an endpoint reached through a fragment, a climb or an escaped slash would.
+        # (The evidence helper refuses a short id too, but only AFTER the stamp was read through that URL, so the proof is the
+        # fake gh's own log: no contents call may carry the id.)
+        for bad in ("abc#frag", "../x", "a%2fb"):
+            calls = Path(td) / "gh-calls.log"
+            calls.unlink(missing_ok=True)
+            rc, err = run("gh api repos/other/fork/merges -f base=main -f head=dev",
+                          **{**ok_api, "FAKE_COMMIT": bad, "FAKE_STAMP_REF": bad, "FAKE_COMPARE": "ahead", "FAKE_LOG": str(calls)})
+            asked = [l for l in (calls.read_text().splitlines() if calls.exists() else []) if "contents/qa/CERTIFICATION" in l]
+            check(f"release-gate (#1610): a commit id from the API that reads `{bad}` is never put in a contents URL, and is DENIED",
+                  rc == 2 and "not a commit id" in err and not asked, f"rc={rc} contents calls={asked} {err[:200]!r}")
+        # 2. A release tag on the local path goes to `git ls-remote refs/tags/<tag>`, whose pattern takes a glob: `v*` lists every
+        # v tag. The command's own text cannot carry one (the classifier refuses it), so the way in is the tag GitHub's
+        # `releases/<id>` answer names (FAKE_RELID). A tag that is not a plain name is refused; a plain tag the remote holds is
+        # still resolved and judged.
+        sh("tag", "v1.0", stamped)
+        sh("push", "-q", "origin", "v1.0")
+        rc, err = run("gh api -X PATCH repos/o/r/releases/12 -f draft=false", FAKE_RELID="v* dev")
+        check("release-gate (#1610): a release tag with a glob is never handed to `git ls-remote` as a pattern, and is DENIED",
+              rc == 2, f"rc={rc} {err[:240]!r}")
+        rc, err = run("gh api -X PATCH repos/o/r/releases/12 -f draft=false", FAKE_RELID="v1.0 dev")
+        check("release-gate (#1610): CONTROL: a plain release tag the remote holds is still resolved and judged (certified: permitted)",
+              rc == 0, f"rc={rc} {err[:240]!r}")
+        # 3. `plain_ref` names what git itself would refuse: a leading or doubled or trailing slash, a component that starts with a
+        # dot, a `.lock` ending, a trailing dot. Through ANOTHER repository's API path each would otherwise be asked about.
+        for shape in ("/x", "./x", "a//b", "x/", "a/./b", "x.lock", "x."):
+            rc, err = run(f"gh api repos/other/fork/merges -f base=main -f head={shape}", **ok_api)
+            check(f"release-gate (#1610): the ref `{shape}`, which git refuses as a name, is never put in another repository's API path, and is DENIED",
+                  rc == 2, f"rc={rc} {err[:240]!r}")
+        for ok in ("feature/x-y", "release/2026-10", "v1.2.3", "a.b/c_d"):
+            rc, err = run(f"gh api repos/other/fork/merges -f base=main -f head={ok}", **ok_api)
+            check(f"release-gate (#1610): CONTROL: the plain name `{ok}` is still read and judged (certified: permitted)",
+                  rc == 0, f"rc={rc} {err[:240]!r}")
+
 
 @real_setup
 def release_gate_repos_fixtures() -> None:

@@ -37,7 +37,7 @@ GUARD = Guard(
         ),
         Mutation(
             "a ref is not checked for being a plain name, so a refspec is fetched and writes a local ref",
-            'plain_ref() { case "$1" in ""|-*|*[!A-Za-z0-9._/-]*|*..*) return 1 ;; esac; return 0; }',
+            'plain_ref() { case "$1" in ""|-*|*[!A-Za-z0-9._/-]*|*..*|/*|*//*|*/|.*|*/.*|*.lock|*.lock/*|*.) return 1 ;; esac; return 0; }',
             'plain_ref() { return 0; }',
             "a refspec) is never fetched",
         ),
@@ -68,8 +68,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a release tag that is not a plain name is put in another repository's API path",
-            '    [ -z "$tag" ] || plain_ref "$tag" || return 1\n',
-            '',
+            '    [ -z "$tag" ] || plain_ref "$tag" || return 1\n    [ -z "$tgt" ] || plain_ref "$tgt" || return 1\n',
+            '    [ -z "$tgt" ] || plain_ref "$tgt" || return 1\n',
             "a release's tag that climbs",
         ),
         Mutation(
@@ -77,6 +77,25 @@ GUARD = Guard(
             '        case "$t" in ""|*[!0-9a-fA-F]*) return 1 ;; esac\n',
             '',
             "an object id from `git ls-remote` that is an option",
+        ),
+        # ---- (#1610) hardening left by the #1609 review ----------------------------------------------------------------
+        Mutation(
+            "the commit id GitHub's API returned is put in a contents URL whatever it is",
+            '  case "$sha" in ""|*[!0-9a-fA-F]*) JWHY="${repo}: ${what} (${sha:0:20}) is not a commit id, so its certification cannot be read."; return 1 ;; esac\n',
+            '',
+            "is never put in a contents URL",
+        ),
+        Mutation(
+            "a release tag with a glob becomes a `git ls-remote` pattern",
+            '    [ -z "$tag" ] || plain_ref "$tag" || return 1\n    if [ -n "$tag" ] && git remote get-url origin',
+            '    if [ -n "$tag" ] && git remote get-url origin',
+            "a release tag with a glob is never handed to",
+        ),
+        Mutation(
+            "plain_ref is the old charset again, so names git refuses (a// , ./, x.lock) are asked about",
+            'plain_ref() { case "$1" in ""|-*|*[!A-Za-z0-9._/-]*|*..*|/*|*//*|*/|.*|*/.*|*.lock|*.lock/*|*.) return 1 ;; esac; return 0; }',
+            'plain_ref() { case "$1" in ""|-*|*[!A-Za-z0-9._/-]*|*..*) return 1 ;; esac; return 0; }',
+            "which git refuses as a name",
         ),
     ),
 )
