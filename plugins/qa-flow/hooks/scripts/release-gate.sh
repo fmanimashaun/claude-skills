@@ -9,6 +9,54 @@ IFS= read -r -d '' input || true
 # BLOCKING gate -> fail CLOSED when any is missing, but only for a command that looks like a
 # main-ward promotion. The fallback below uses bash builtins ONLY ([[ =~ ]], no grep): "grep:
 # command not found" reads as a non-match, which is exactly how a fallback fails open.
+# The COARSE promotion detector, builtins only (no grep, no python3): sets _looks_promotion from the raw payload.
+# Used when a tool is missing (below) AND when the deadline kills the real parse (#1575). Both cannot read the command,
+# so both ask the same question the same way and err on the same side.
+_coarse_looks_promotion() {
+  _in="$input"
+  for _esc in '\t' '\n' '\r' '\u0009' '\u000a' '\u000A' '\u000d' '\u000D' '\u0020'; do
+    _in="${_in//"$_esc"/ }"
+  done
+  _b='(^|[^[:alnum:]_])'; _e='([^[:alnum:]_]|$)'
+  _looks_promotion=0
+  if [[ $_in =~ ${_b}git${_e} ]]; then
+    # `heads/main` is git's own shorthand for `refs/heads/main` (`HEAD:heads/main`), so it is main too (#1602 review of
+    # the timeout path: the full path denied it, this one allowed it).
+    if [[ $_in =~ ${_b}push${_e} ]] && [[ $_in =~ (^|[^[:alnum:]_/.-]|refs/heads/|[^[:alnum:]_/.-]heads/)(main|master)${_e} ]]; then
+      _looks_promotion=1
+    fi
+    # A push of EVERY branch, main among them: `--all`, `--mirror`, or a wildcard refspec (`refs/heads/*:refs/heads/*`,
+    # `'*:*'`). The full path classifies all three as PUSH_MAIN; none names main in words. `--tags` is not on this list.
+    if [[ $_in =~ ${_b}push${_e} ]]; then
+      [[ $_in =~ (^|[^[:alnum:]_-])--(all|mirror)${_e} ]] && _looks_promotion=1
+      [[ $_in =~ [*] ]] && _looks_promotion=1
+    fi
+    [[ $_in =~ ${_b}merge${_e} ]] && _looks_promotion=1
+  fi
+  [[ $_in =~ ${_b}gh${_e} ]] && [[ $_in =~ ${_b}pr${_e} ]] && [[ $_in =~ ${_b}merge${_e} ]] && _looks_promotion=1
+  # #1569: a `gh api` write or a release publish, in the same coarse words-anywhere spirit.
+  if [[ $_in =~ ${_b}gh${_e} ]]; then
+    [[ $_in =~ ${_b}api${_e} ]] && [[ $_in =~ (merge|merges|refs|releases|mergePullRequest|updateRef|createRef) ]] && _looks_promotion=1
+    [[ $_in =~ ${_b}release${_e} ]] && [[ $_in =~ ${_b}(create|edit)${_e} ]] && _looks_promotion=1
+    # The full path refuses these as "could not judge: not a command known not to merge into main or publish" (the
+    # classifier's own words), and each can reach a release or a branch: update-branch, a workflow run, a repository
+    # dispatch. A timeout asks the same question by the words.
+    [[ $_in =~ update-branch ]] && _looks_promotion=1
+    [[ $_in =~ ${_b}workflow${_e} ]] && [[ $_in =~ ${_b}run${_e} ]] && _looks_promotion=1
+    [[ $_in =~ ${_b}api${_e} ]] && [[ $_in =~ dispatches ]] && _looks_promotion=1
+    # A GraphQL body the gate cannot read: `--input` (a file or stdin) or `-F`/`--field` with `=@file`. A lower-case
+    # `-f query=@x` is a LITERAL string in gh, not a file read, and is not on this list (the full path allows it too).
+    if [[ $_in =~ ${_b}api${_e} ]] && [[ $_in =~ ${_b}graphql${_e} ]]; then
+      [[ $_in =~ (^|[^[:alnum:]_-])--input${_e} ]] && _looks_promotion=1
+      [[ $_in =~ (^|[^[:alnum:]_-])(-F|--field)[[:space:]=]*[^[:space:]=]+=@ ]] && _looks_promotion=1
+    fi
+  fi
+  # #1575 (#1602 review F1): ANY GraphQL mutation. The full path denies one by shape; this path cannot parse, so it
+  # denies by the word, whatever the mutation is called or how the flag is spelled (-f, -F, --raw-field). A list of
+  # mutation NAMES let enablePullRequestAutoMerge, createCommitOnBranch and updatePullRequestBranch through.
+  [[ $_in =~ ${_b}gh${_e} ]] && [[ $_in =~ ${_b}api${_e} ]] && [[ $_in =~ ${_b}graphql${_e} ]] && [[ $_in =~ mutation ]] && _looks_promotion=1
+}
+
 _missing=""
 for _t in python3 git sed awk tr grep head; do
   type -P "$_t" >/dev/null 2>&1 || _missing="$_missing $_t"
@@ -22,24 +70,7 @@ if [ -n "$_missing" ]; then
   # degraded environment (a message that merely mentions `git push … main` is denied), which is the
   # safe direction for a gate that cannot tell. A ref under a path (`feature/main`) is not `main` --
   # except the fully qualified `refs/heads/main`, which is exactly main (#1437 round 4).
-  _in="$input"
-  for _esc in '\t' '\n' '\r' '\u0009' '\u000a' '\u000A' '\u000d' '\u000D' '\u0020'; do
-    _in="${_in//"$_esc"/ }"
-  done
-  _b='(^|[^[:alnum:]_])'; _e='([^[:alnum:]_]|$)'
-  _looks_promotion=0
-  if [[ $_in =~ ${_b}git${_e} ]]; then
-    if [[ $_in =~ ${_b}push${_e} ]] && [[ $_in =~ (^|[^[:alnum:]_/.-]|refs/heads/)(main|master)${_e} ]]; then
-      _looks_promotion=1
-    fi
-    [[ $_in =~ ${_b}merge${_e} ]] && _looks_promotion=1
-  fi
-  [[ $_in =~ ${_b}gh${_e} ]] && [[ $_in =~ ${_b}pr${_e} ]] && [[ $_in =~ ${_b}merge${_e} ]] && _looks_promotion=1
-  # #1569: a `gh api` write or a release publish, in the same coarse words-anywhere spirit.
-  if [[ $_in =~ ${_b}gh${_e} ]]; then
-    [[ $_in =~ ${_b}api${_e} ]] && [[ $_in =~ (merge|merges|refs|releases|mergePullRequest|updateRef|createRef) ]] && _looks_promotion=1
-    [[ $_in =~ ${_b}release${_e} ]] && [[ $_in =~ ${_b}(create|edit)${_e} ]] && _looks_promotion=1
-  fi
+  _coarse_looks_promotion
   if [ "$_looks_promotion" = "1" ]; then
     [ "${QA_ALLOW_MAIN:-0}" = "1" ] && { echo "qa-flow:${_missing} missing but QA_ALLOW_MAIN=1 — allowed (audited)." >&2; exit 0; }
     echo "BLOCKED by qa-flow release gate: not found on PATH:${_missing} — cannot verify certification. Install them (python3 on Windows: run Claude Code in WSL/Git Bash), or set QA_ALLOW_MAIN=1 to override." >&2
@@ -47,6 +78,8 @@ if [ -n "$_missing" ]; then
   fi
   exit 0
 fi
+# #1575: from here to the final `exit 0` runs in `_gate_main`, in its own process group, under a deadline (the end of this file).
+_gate_main() {
 cmd="$(printf '%s' "$input" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("tool_input",{}).get("command",""))' 2>/dev/null || printf '%s' "$input")"
 
 # --- Normalize the command so promotion detection can't be fooled (must fail CLOSED) ---
@@ -177,7 +210,10 @@ add_commit() {
           git fetch -q --end-of-options origin "$ref" 2>/dev/null && c="$(git rev-parse --verify -q 'FETCH_HEAD^{commit}' 2>/dev/null || true)"
         fi
       else
-        c="$(gh api "repos/${_R}/commits/${ref}" -q .sha 2>/dev/null || true)"
+        # Another repository: the ref becomes part of an API path, so it is a plain name, as on the local path above.
+        # `#` is a legal character in a ref name and starts a fragment in a URL: the gate would ask about `abc` while the
+        # command acts on `abc#frag`. A ref that is not plain is left unresolved, and the command is denied (#1606).
+        ! plain_ref "$ref" || c="$(gh api "repos/${_R}/commits/${ref}" -q .sha 2>/dev/null || true)"
       fi ;;
   esac
   if [ -n "$c" ]; then add_ship "$c" "${_R:--}" "$4"; else unresolved_pr=1; fi
@@ -612,6 +648,8 @@ resolve_release() {
       o="$(git ls-remote origin "refs/tags/${tag}" "refs/tags/${tag}^{}" 2>/dev/null)" || return 1
       if [ -n "$o" ]; then
         t="$(printf '%s\n' "$o" | awk '$2 ~ /\^\{\}$/ {p=$1} $2 !~ /\^\{\}$/ {d=$1} END {print (p != "" ? p : d)}')"
+        # What `git ls-remote` printed goes to `git fetch` below: it must be an object id, whatever the origin says (#1606).
+        case "$t" in ""|*[!0-9a-fA-F]*) return 1 ;; esac
         _rsha="$(git rev-parse --verify -q "${t}^{commit}" 2>/dev/null || true)"
         if [ -z "$_rsha" ]; then
           git fetch -q --end-of-options origin "$t" 2>/dev/null || true
@@ -628,6 +666,10 @@ resolve_release() {
       _rsha="$(default_tip 2>/dev/null | head -1)"
     fi
   else
+    # Another repository: a tag or target becomes part of an API path, so each is a plain name, else the commit cannot be
+    # named (#1606). This is the same splice as add_commit's, three more times.
+    [ -z "$tag" ] || plain_ref "$tag" || return 1
+    [ -z "$tgt" ] || plain_ref "$tgt" || return 1
     if [ -n "$tag" ]; then
       o="$(gh api "repos/${_R}/git/matching-refs/tags/${tag}" --jq '.[].ref' 2>/dev/null)" || return 1
       if printf '%s\n' "$o" | grep -qx "refs/tags/${tag}"; then
@@ -669,3 +711,32 @@ done <<EOF_RELS
 $releases
 EOF_RELS
 exit 0
+}
+
+# THE DEADLINE (#1575). qa-flow's gate sources the same normaliser as guard-bash, and a normaliser that spins left
+# awk children behind for hours. Past the deadline the whole process group is killed. This gate refuses only a
+# main-ward promotion, so a timeout does too: the COARSE builtin detector above judges the raw payload; a command
+# that does not look like a promotion is allowed (blocking every slow command would be the failure here), and one that
+# does is denied, QA_ALLOW_MAIN=1 honoured and audited exactly as in the missing-tool path. The default is under the
+# hook's 15 s timeout (hooks.json) and RAILS_FLOW_HOOK_DEADLINE is clamped at 13. The gate's NETWORK calls (`gh pr view`,
+# and since #1601 `gh api .../commits/...`, `git fetch` of a ref the command names, and `git ls-remote` of a release tag) are
+# reached only after the classifier has read the command as one that puts a commit on main or publishes a release, which
+# are the shapes the coarse detector denies, so a slow network fails closed. It also means a legitimate promotion on a
+# slow network is refused with "retry it", which is the cost of a bounded hook.
+_dl="$(dirname "${BASH_SOURCE[0]}")/lib/deadline.sh"
+if [ -f "$_dl" ] && . "$_dl" 2>/dev/null && type deadline_run >/dev/null 2>&1; then
+  deadline_seconds 10 13
+  deadline_run "$_deadline_s" _gate_main; _rc=$?
+  if [ "$_rc" -ge 128 ]; then
+    _coarse_looks_promotion
+    if [ "$_looks_promotion" = "1" ]; then
+      [ "${QA_ALLOW_MAIN:-0}" = "1" ] && { echo "qa-flow: the gate hit its ${_deadline_s}s deadline but QA_ALLOW_MAIN=1 — allowed (audited)." >&2; exit 0; }
+      echo "BLOCKED by qa-flow release gate: the gate took longer than ${_deadline_s}s, and this command looks like a promotion to main, so it is refused rather than guessed at. Retry it; if it keeps timing out, run /qa-flow:certify and check the repo and network." >&2
+      exit 2
+    fi
+    exit 0
+  fi
+  exit "$_rc"
+fi
+_gate_main
+exit $?

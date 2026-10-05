@@ -13,6 +13,7 @@ See the repo root README.md and CHANGELOG.md for full documentation.
 One line each, from the command's own description; the command file is the authority.
 
 - `/pipeline:ack` — Dismiss the post-merge QA-verify nudge marker (.git/pipeline-pending) without another merge or a manual rm.
+- `/pipeline:board` — Measure the repository and write the status board, .claude/state/board.json and a static drawing-sheet page, board.html. Read-only; a source that cannot be read shows as unknown.
 - `/pipeline:deploy-cloud` — One-command autonomous cloud deploy — read the prepared .kamal/deploy.env briefing sheet, route every value to its Rails-native home, wire Kamal, and deploy with self-verification.
 - `/pipeline:install-hooks` — Install local git-hook nudges that detect lifecycle transitions without spending tokens.
 - `/pipeline:pipeline` — Drive the software lifecycle — detect the current stage and run the next flow (build → verify → certify → release), honoring every gate.
