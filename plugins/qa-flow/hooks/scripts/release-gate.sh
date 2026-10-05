@@ -30,6 +30,30 @@ _coarse_looks_promotion() {
     if [[ $_in =~ ${_b}push${_e} ]]; then
       [[ $_in =~ (^|[^[:alnum:]_-])--(all|mirror)${_e} ]] && _looks_promotion=1
       [[ $_in =~ [*] ]] && _looks_promotion=1
+      # #1607 (S3): a destination SPELLED so no word shows: `HEAD:$B`, `mai?`, `ma[i]n`, `ma{in,}`, `'HEAD:ma''in'`. The full path refuses all
+      # of them ("cannot tell which commit..."), and `*` already was here. Read as RULES, in the shapes a glob or an expansion takes inside a
+      # WORD, and only AFTER `push` in the SAME simple command (no `;`, `&` or `|` between): the payload is JSON and has braces, brackets, commas
+      # and quotes of its own, and a `$` in an earlier line, an env prefix or a commit message that merely says "push" is not a destination (the
+      # measured over-block of the first version: 5 of 8 new refusals on 486 commands). A `?` followed by a letter is a URL query, not a glob.
+      # A verb built by a variable (`git $V push`) is its own rule, since the `$` comes BEFORE `push`.
+      # Cost: `git push origin $BRANCH` is refused on a timeout ("retry it").
+      _sq="'"
+      _seg='push[^;&|]*'
+      _seg_cmd='push[^;&|"]*'   # ends at the first RAW double quote: inside the command a quote is `\"`, so a later key (`"description":"don't wait"`) is out
+      _g_q='[[:alnum:]_/.-][?]([^[:alnum:]=&]|$)'
+      _g_b='[[:alnum:]_/.-][{][^{}"[:space:]]*,[^{}"[:space:]]*[}]'
+      _g_s='[[:alnum:]_/.-][[][^]"[:space:][]+[]]'
+      # A QUOTE, A BACKSLASH OR A BACKTICK after `push`: a name split by any of them (`HEAD:"ma"in`, `ma\in`, `m'ain'`, an empty pair) is `main` to a
+      # shell and no word to a regex, and each new spelling needed a new rule (the #1607 review: 19 of 31 got through the empty-pair one). One class
+      # instead of a list of shapes. In the payload a command's own double quote is `\"`, so the backslash covers it, and the JSON's own raw quotes
+      # are not in the class. Cost: `git push origin 'feat/x'` and a commit message that mentions `git push` inside backticks are refused on a timeout.
+      _g_x="[\\\\${_sq}\`]"
+      [[ $_in =~ ${_seg}[$] ]] && _looks_promotion=1
+      [[ $_in =~ ${_seg}${_g_q} ]] && _looks_promotion=1
+      [[ $_in =~ ${_seg}${_g_b} ]] && _looks_promotion=1
+      [[ $_in =~ ${_seg}${_g_s} ]] && _looks_promotion=1
+      [[ $_in =~ ${_seg_cmd}${_g_x} ]] && _looks_promotion=1
+      [[ $_in =~ ${_b}git[[:space:]]+[$] ]] && _looks_promotion=1
     fi
     [[ $_in =~ ${_b}merge${_e} ]] && _looks_promotion=1
   fi
@@ -49,7 +73,28 @@ _coarse_looks_promotion() {
     if [[ $_in =~ ${_b}api${_e} ]] && [[ $_in =~ ${_b}graphql${_e} ]]; then
       [[ $_in =~ (^|[^[:alnum:]_-])--input${_e} ]] && _looks_promotion=1
       [[ $_in =~ (^|[^[:alnum:]_-])(-F|--field)[[:space:]=]*[^[:space:]=]+=@ ]] && _looks_promotion=1
+      # #1607 (S4): a body built by substitution (`$(cat q.graphql)`, a backtick, `<(...)`): the full path refuses it, the words are not there.
+      case $_in in *'$('*|*'`'*|*'<('*) _looks_promotion=1 ;; esac
     fi
+    # #1607 (S1, S2): the full path refuses an unlisted `gh` write by default, and the coarse path was a list of words, so each word narrowed the
+    # gap and none closed it. A `gh api` that WRITES is a rule: a write method (PUT, POST, PATCH, DELETE) or any field or --input (gh sends a POST
+    # when it is given fields), unless the method is GET. GraphQL keeps its own rules above and below (a QUERY posted with -f is not a write).
+    # Cost, accepted for a fallback that runs only when the gate overran its deadline: an ordinary `gh api ... -f body=x` is refused too.
+    if [[ $_in =~ ${_b}api${_e} ]] && ! [[ $_in =~ ${_b}graphql${_e} ]]; then
+      _m_get='(^|[^[:alnum:]_-])(-X|--method)[^[:alnum:]]{0,3}[Gg][Ee][Tt]([^[:alnum:]_]|$)'
+      _m_wr='(^|[^[:alnum:]_-])(-X|--method)[^[:alnum:]]{0,3}([Pp][Uu][Tt]|[Pp][Oo][Ss][Tt]|[Pp][Aa][Tt][Cc][Hh]|[Dd][Ee][Ll][Ee][Tt][Ee])([^[:alnum:]_]|$)'
+      _m_fl='(^|[^[:alnum:]_-])(-f|-F|--field|--raw-field)[[:space:]=]*[A-Za-z_][A-Za-z0-9_.]*=|(^|[^[:alnum:]_-])--input([^[:alnum:]_-]|$)'
+      if [[ $_in =~ $_m_wr ]]; then
+        _looks_promotion=1
+      elif ! [[ $_in =~ $_m_get ]] && [[ $_in =~ $_m_fl ]]; then
+        _looks_promotion=1
+      fi
+    fi
+    # The CLI verbs that change a repository or re-run a workflow, by word: `gh repo sync|edit`, `gh run rerun` (and `.../rerun`,
+    # `.../rerun-failed-jobs` in an API path), `gh workflow enable`. `gh workflow run` is above.
+    [[ $_in =~ ${_b}repo${_e} ]] && [[ $_in =~ ${_b}(sync|edit)${_e} ]] && _looks_promotion=1
+    [[ $_in =~ rerun ]] && _looks_promotion=1
+    [[ $_in =~ ${_b}workflow${_e} ]] && [[ $_in =~ ${_b}enable${_e} ]] && _looks_promotion=1
   fi
   # #1575 (#1602 review F1): ANY GraphQL mutation. The full path denies one by shape; this path cannot parse, so it
   # denies by the word, whatever the mutation is called or how the flag is spelled (-f, -F, --raw-field). A list of
@@ -586,7 +631,7 @@ sys.exit(done.returncode)' "$@"
 # layers (#1428) are judged exactly as for this checkout, from the evidence committed in THAT repository:
 # remote_evidence.py fetches the commit into a scratch repository and runs release_evidence.py there (#1591),
 # inside the time the hook has left, because a hook that outlives its timeout (15 s, hooks.json) does not deny: it
-# lets the command through. The whole gate also runs under a deadline (#1575, `_deadline_s`, 10 s by default), past which
+# lets the command through. The whole gate also runs under a deadline (#1575, `_deadline_s`, 13 s by default since #1607, 10 s before), past which
 # its process group is killed and a promotion refused. So the helper runs LAST, after the cheap API calls, with what is
 # left of that deadline minus 2 s (never more than 8), so ITS denial speaks first, and a command that has no time left is
 # denied. Several ships in one command share that one deadline.
@@ -760,15 +805,19 @@ exit 0
 # awk children behind for hours. Past the deadline the whole process group is killed. This gate refuses only a
 # main-ward promotion, so a timeout does too: the COARSE builtin detector above judges the raw payload; a command
 # that does not look like a promotion is allowed (blocking every slow command would be the failure here), and one that
-# does is denied, QA_ALLOW_MAIN=1 honoured and audited exactly as in the missing-tool path. The default is under the
-# hook's 15 s timeout (hooks.json) and RAILS_FLOW_HOOK_DEADLINE is clamped at 13. The gate's NETWORK calls (`gh pr view`,
+# does is denied, QA_ALLOW_MAIN=1 honoured and audited exactly as in the missing-tool path. The default is 13 s, under the
+# hook's 15 s timeout (hooks.json), and RAILS_FLOW_HOOK_DEADLINE is clamped at 13. It was 10 until #1607: the foreign-repository judgment
+# (#1612) plans for up to about 12 s of its own and bounds each of its calls, so the deadline must sit ABOVE that budget, where it only
+# catches a call nobody bounded, and not cut a slow-but-bounded judgment off first with a less useful reason. The gate's NETWORK calls (`gh pr view`,
 # and since #1601 `gh api .../commits/...`, `git fetch` of a ref the command names, and `git ls-remote` of a release tag) are
 # reached only after the classifier has read the command as one that puts a commit on main or publishes a release, which
 # are the shapes the coarse detector denies, so a slow network fails closed. It also means a legitimate promotion on a
 # slow network is refused with "retry it", which is the cost of a bounded hook.
 _dl="$(dirname "${BASH_SOURCE[0]}")/lib/deadline.sh"
 if [ -f "$_dl" ] && . "$_dl" 2>/dev/null && type deadline_run >/dev/null 2>&1; then
-  deadline_seconds 10 13
+  # The margin to the hook's 15 s timeout is about 1.85 s (measured at load 22 to 33: the deadline's denial arrives at 13.14 s). A timed-out hook
+  # lets the command through, and the load that makes a hook time out is the load that makes this loop's one-second sleep drift: do not raise it.
+  deadline_seconds 13 13
   deadline_run "$_deadline_s" _gate_main; _rc=$?
   if [ "$_rc" -ge 128 ]; then
     _coarse_looks_promotion
