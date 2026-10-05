@@ -1070,13 +1070,13 @@ def selftest(skip_hook_e2e: bool = False) -> int:
         check("a NON-coordinator cannot record the board address: refused, names the holder, records nothing",
               bool(err) and "boss" in err and "board" not in bd, str(err))
         for ok_url in ("https://claude.ai/artifact/abc-123_X", "https://claude.ai/code/artifact/0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d", "https://claude.ai/artifact/" + "a" * 100):
-            check(f"a claude.ai artifact link is accepted: {ok_url[:48]}", set_board_url(bd, "C1", ok_url) is None and bd["board"]["artifact_url"] == ok_url)
-        check("the record keeps who published and when", bd["board"]["published_by"] == "C1" and bool(bd["board"].get("published_at")), str(bd["board"]))
-        bd["board"]["x_future"] = [1]
+            check(f"a claude.ai artifact link is accepted: {ok_url[:48]}", set_board_url(bd, "C1", ok_url) is None and bd.get("board", {}).get("artifact_url") == ok_url)
+        check("the record keeps who published and when", bd.get("board", {}).get("published_by") == "C1" and bool(bd.get("board", {}).get("published_at")), str(bd.get("board")))
+        bd.setdefault("board", {})["x_future"] = [1]
         set_board_url(bd, "C1", "https://claude.ai/artifact/second")
         check("a second publish rewrites the SAME block and keeps keys it does not know",
-              bd["board"]["artifact_url"].endswith("/second") and bd["board"].get("x_future") == [1], str(bd["board"]))
-        before = dict(bd["board"])
+              bd.get("board", {}).get("artifact_url").endswith("/second") and bd.get("board", {}).get("x_future") == [1], str(bd.get("board")))
+        before = dict(bd.get("board", {}))
         for label, bad in (("http", "http://claude.ai/artifact/x"), ("a look-alike host", "https://claude.ai.evil.com/artifact/x"),
                            ("another host", "https://evil.com/artifact/x"), ("the host as a path", "https://evil.com/claude.ai/artifact/x"),
                            ("a userinfo host", "https://user@claude.ai/artifact/x"), ("a query", "https://claude.ai/artifact/x?y=1"),
@@ -1086,7 +1086,7 @@ def selftest(skip_hook_e2e: bool = False) -> int:
                            ("a zero-width space", "https://claude.ai/artifact/x\u200b"), ("101 id characters", "https://claude.ai/artifact/" + "a" * 101),
                            ("a quote", 'https://claude.ai/artifact/x"onclick="y'), ("an empty string", ""), ("a non-string", None)):
             check(f"a board address with {label} is refused and changes nothing",
-                  bool(set_board_url(bd, "C1", bad)) and bd["board"] == before, repr(bad)[:50])
+                  bool(set_board_url(bd, "C1", bad)) and bd.get("board", {}) == before, repr(bad)[:50])
         bcli = Path(td) / "bcli"
         bcli.mkdir()
         subprocess.run(["git", "init", "-q"], cwd=bcli, check=True)
@@ -1099,7 +1099,7 @@ def selftest(skip_hook_e2e: bool = False) -> int:
         check("the CLI refuses a bad address with exit 2", done.returncode == 2 and "not a claude.ai artifact link" in done.stderr, f"{done.returncode} {done.stderr!r}")
         done = subprocess.run([sys.executable, __file__, "board-url", "--session-id", "C1", "--url", "https://claude.ai/artifact/abc", "--cwd", str(bcli)],
                               capture_output=True, text=True)
-        check("the CLI records a good address", done.returncode == 0 and load(record_path(bcli))["board"]["artifact_url"] == "https://claude.ai/artifact/abc",
+        check("the CLI records a good address", done.returncode == 0 and (load(record_path(bcli)).get("board") or {}).get("artifact_url") == "https://claude.ai/artifact/abc",
               f"{done.returncode} {done.stderr!r}")
 
         outside = Path(td) / "not-a-repo"
