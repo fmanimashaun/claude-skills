@@ -195,6 +195,7 @@ def run() -> int:
         the_command(tmp)
         read_only(tmp)
         refresh_hook(tmp)
+        live_address(tmp)
         portable()
     for f in FAILURES:
         print(f"FAIL: {f}", file=sys.stderr)
@@ -1091,6 +1092,55 @@ def refresh_hook(tmp: Path) -> None:
           and stop[0]["timeout"] == 15, str(stop))
     check("the hook script opts in, throttles and fails open by its text (no `exit 2`, no `set -e`)",
           "exit 2" not in hook.read_text() and "set -e" not in hook.read_text().replace("set -uo", ""))
+
+
+# ---- the live board's address (#1585 part 3) --------------------------------------------------------
+def live_address(tmp: Path) -> None:
+    """The record may carry where the coordinator published the board. The board shows it only when it is a claude.ai artifact
+    link, whatever a hand-edited record says, and a record with no address changes nothing."""
+    coord = {"session_id": "C", "name": "boss", "since": "2026-10-03T12:58Z"}
+    good = "https://claude.ai/artifact/abc-123_X"
+    w = w_with(tmp, "live1")
+    w.record({"version": 1, "coordinator": coord, "sessions": {}, "board": {"artifact_url": good}})
+    b = w.board()
+    page = sb.render_html(b)
+    check("a recorded claude.ai artifact link is on the board as live.url", b["live"] == {"url": good}, str(b["live"]))
+    check("...and is linked once from the title block, with rel=noopener", page.count(f'href="{good}"') == 1 and "noopener" in page, page[:0])
+    w = w_with(tmp, "live2")
+    w.record({"version": 1, "coordinator": coord, "sessions": {}})
+    b = w.board()
+    check("a record with no address: no live entry, no link, no label", b["live"] is None and "Live board" not in sb.render_html(b))
+    for label, bad in (("a javascript: url", "javascript:alert(1)"), ("http", "http://claude.ai/artifact/x"),
+                       ("another host", "https://evil.example/artifact/x"), ("a look-alike host", "https://claude.ai.evil.example/artifact/x"),
+                       ("an attribute break", 'https://claude.ai/artifact/x"onmouseover="y'), ("a non-string", 42), ("a list", ["https://claude.ai/artifact/x"])):
+        w = w_with(tmp, "live3")
+        w.record({"version": 1, "coordinator": coord, "sessions": {}, "board": {"artifact_url": bad}})
+        b = w.board()
+        pg = sb.render_html(b)
+        check(f"a hand-edited address that is {label} is not shown and not linked", b["live"] is None and "Live board" not in pg and "evil.example" not in pg
+              and "onmouseover" not in pg and "javascript:" not in pg, str(b["live"]))
+    for label, block in (("a list", ["x"]), ("a string", "https://claude.ai/artifact/x"), ("null", None)):
+        w = w_with(tmp, "live4")
+        w.record({"version": 1, "coordinator": coord, "sessions": {}, "board": block})
+        check(f"a board block that is {label} is ignored without a traceback", w.board()["live"] is None)
+    # The command, in a real repository with a recorded address.
+    stub = tmp / "stub-live"
+    stub.mkdir()
+    (stub / "gh").write_text("#!/bin/sh\necho '[]'\n")
+    (stub / "gh").chmod(0o755)
+    repo = tmp / "live-repo"
+    repo.mkdir()
+    env = {**os.environ, "PATH": f"{stub}:{os.environ['PATH']}", "GIT_CEILING_DIRECTORIES": str(tmp)}
+    for cmd in (["git", "init", "-q"], ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "i"]):
+        subprocess.run(cmd, cwd=repo, env=env, check=True, capture_output=True)
+    me = [sys.executable, str(Path(__file__).resolve().parent / "status_board.py")]
+    (repo / ".git" / sb.COORD_FILE).write_text(json.dumps({"version": 1, "coordinator": coord, "sessions": {}, "board": {"artifact_url": good}}))
+    done = subprocess.run([*me, "collect", "--root", str(repo)], capture_output=True, text=True, env=env)
+    check("the collect command prints a pointer to the live board when one is recorded", done.returncode == 0 and good in done.stdout,
+          f"{done.returncode} {done.stdout[-160:]!r}")
+    (repo / ".git" / sb.COORD_FILE).write_text(json.dumps({"version": 1, "coordinator": coord, "sessions": {}}))
+    done = subprocess.run([*me, "collect", "--root", str(repo)], capture_output=True, text=True, env=env)
+    check("...and says nothing about a live board when none is recorded", done.returncode == 0 and "live board" not in done.stdout.lower(), done.stdout[-160:])
 
 
 # ---- read-only ---------------------------------------------------------------------------------------

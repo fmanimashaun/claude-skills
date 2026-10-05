@@ -342,5 +342,35 @@ GUARD = Guard(
             'worktree_path={worktree}',
             'the worktree path is labelled and quoted',
         ),
+        Mutation(
+            "any address is accepted as the board's address",
+            '    if not isinstance(url, str) or not BOARD_URL.match(url):',
+            '    if False:',
+            'is refused and changes nothing',
+        ),
+        Mutation(
+            'the board address pattern is not anchored at the end',
+            'BOARD_URL = re.compile(r"https://claude\\.ai/(?:code/)?artifact/[A-Za-z0-9_-]{1,100}\\Z")',
+            'BOARD_URL = re.compile(r"https://claude\\.ai/(?:code/)?artifact/[A-Za-z0-9_-]{1,100}")',
+            'with a query is refused',
+        ),
+        Mutation(
+            'a host that only starts with claude.ai is accepted',
+            'BOARD_URL = re.compile(r"https://claude\\.ai/(?:code/)?artifact/[A-Za-z0-9_-]{1,100}\\Z")',
+            'BOARD_URL = re.compile(r"https://claude\\.ai.*/artifact/[A-Za-z0-9_-]{1,100}\\Z")',
+            'with a look-alike host is refused',
+        ),
+        Mutation(
+            'a non-coordinator may record the board address',
+            '    err = _refuse_unless_coordinator(record, caller, claiming=False)\n    if err:\n        return err\n    if not isinstance(url, str)',
+            '    if not isinstance(url, str)',
+            'a NON-coordinator cannot record the board address',
+        ),
+        Mutation(
+            'a second publish replaces the whole block, dropping what it does not know',
+            '    block = record.get("board")\n    block = block if isinstance(block, dict) else {}',
+            '    block = {}',
+            'keeps keys it does not know',
+        ),
     ),
 )
