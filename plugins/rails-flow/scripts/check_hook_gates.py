@@ -32,7 +32,9 @@ import shutil
 import signal
 import subprocess
 import sys
+import time
 import tempfile
+import types
 import time
 from pathlib import Path
 
@@ -57,6 +59,17 @@ _SKIP = False                       # True while the code before an unwanted che
 
 class MatchSequenceError(Exception):
     """The run pass reached a different check than the survey did, so `--match` cannot be trusted here."""
+
+
+# A label that carries a temp path differs between the survey and the run, because each pass makes its own directory, so
+# `--match` would refuse the group. The path is MASKED for the comparison, including a name a label cut short (`cmd[:40]` in
+# a label ends mid-name when the directory is short, as `/tmp` is on a Linux runner and `/private/var/folders/...` is not on
+# a Mac: a group that surveyed clean on a laptop was refused in CI, #1596). Failures still print the label as written.
+_TEMP_PATH = re.compile(r"/\S*?/tmp\w+")
+
+
+def _stable(label: str) -> str:
+    return _TEMP_PATH.sub("<tmp>", label)
 
 
 def skipping() -> bool:
@@ -84,10 +97,10 @@ def real_setup(fn):
 def check(label: str, ok: bool, detail: str = "") -> None:
     global CHECKS, _INDEX, _SKIP
     if _MATCH_MODE == "survey":
-        _SURVEYED.append(label)
+        _SURVEYED.append(_stable(label))
         return
     if _MATCH_MODE == "run":
-        if _INDEX >= len(_SURVEYED) or _SURVEYED[_INDEX] != label:
+        if _INDEX >= len(_SURVEYED) or _SURVEYED[_INDEX] != _stable(label):
             raise MatchSequenceError(
                 f"check #{_INDEX} is {label!r} in the run pass but "
                 f"{_SURVEYED[_INDEX] if _INDEX < len(_SURVEYED) else 'absent'!r} in the survey")
@@ -3069,6 +3082,385 @@ def timeout_fixtures() -> None:
 # as their selftest, each mutating ONE hook, and every mutant re-ran all ten groups -- about 70% of
 # the mutation-coverage budget. A guard now names the groups that drive its hook; the doctor's
 # `hook gates` gate and the harness's own guard still run every group.
+# ---- guard-worktree.sh (#1581) -------------------------------------------------------------------
+def _worktree_kit() -> types.SimpleNamespace:
+    """The helpers every worktree fixture group shares (#1581): a throwaway repository with a `dev` integration branch,
+    worktrees, the coordinator recording a lane, and the hook run on a PreToolUse payload."""
+    coord = HOOKS / "lib" / "coordination.py"
+
+    def git(cwd, *a):
+        return _run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *a], cwd=cwd, check=True,
+                    capture_output=True, text=True)
+
+    def new_repo(td) -> Path:
+        repo = Path(td) / "repo"
+        repo.mkdir()
+        git(repo, "init", "-q", "-b", "main")
+        git(repo, "commit", "-q", "--allow-empty", "-m", "init")
+        git(repo, "branch", "dev")          # the integration branch
+        return repo
+
+    def add_wt(repo: Path, name: str, branch: str, *, unmerged: bool = True) -> Path:
+        path = repo.parent / name
+        git(repo, "worktree", "add", "-q", "-b", branch, str(path), "dev")
+        if unmerged:
+            git(path, "commit", "-q", "--allow-empty", "-m", "wip")
+        return path.resolve()
+
+    def lane(repo: Path, owner: str, path: Path, branch: str) -> None:
+        """The COORDINATOR records the lane: hooks only read the record."""
+        for args in (["claim"], ["assign", "--path", str(path), "--branch", branch, "--owner", owner]):
+            _run([sys.executable, str(coord), args[0], "--session-id", "COORD", *args[1:], "--cwd", str(repo)],
+                 capture_output=True)
+
+    def payload(repo: Path, cmd: str, sid: str | None) -> str:
+        d = {"tool_name": "Bash", "hook_event_name": "PreToolUse", "tool_input": {"command": cmd}, "cwd": str(repo)}
+        if sid is not None:
+            d["session_id"] = sid
+        return json.dumps(d)
+
+    def guard(repo: Path, cmd: str, sid: str | None = "SESS-A", **kw) -> tuple[int, str]:
+        return run_hook("guard-worktree.sh", cwd=repo, stdin=payload(repo, cmd, sid), unset=("CLAUDE_PROJECT_DIR",), **kw)
+
+    def denied(label: str, res: tuple[int, str], *needles: str) -> None:
+        code, out = res
+        check(label, code == 2 and "BLOCKED by rails-flow worktree guard" in out, f"exit {code}: {out.strip()[:200]!r}")
+        for n in needles:
+            # The temp directory differs per run, and `--match` compares the survey's labels with the run's.
+            check(f"...and the message names {re.sub(r'/\S*?/tmp\w{8}(?=/|$)', '<tmp>', n)!r}", n in out, out.strip()[:300])
+
+    def allowed(label: str, res: tuple[int, str]) -> None:
+        check(label, res[0] == 0, f"exit {res[0]}: {res[1].strip()[:200]!r}")
+
+    return types.SimpleNamespace(coord=coord, git=git, new_repo=new_repo, add_wt=add_wt, lane=lane, payload=payload, guard=guard, denied=denied, allowed=allowed)
+
+
+def guard_worktree_fixtures() -> None:
+    """The RULES: one issue at a time, and no duplicate worktree for a branch or an issue (#1581)."""
+    k = _worktree_kit()
+    coord, git, new_repo, add_wt, lane, payload, guard, denied, allowed = (k.coord, k.git, k.new_repo, k.add_wt, k.lane, k.payload, k.guard, k.denied, k.allowed)
+    _ = (coord, git, new_repo, add_wt, lane, payload, guard, denied, allowed)     # a group uses some, not all
+    # 4. A fresh session that owns nothing, in a repository with no coordination record.
+    with tempfile.TemporaryDirectory() as td:
+        repo = new_repo(td)
+        allowed("guard-worktree: a session that owns nothing may add a worktree", guard(repo, "git worktree add ../fresh -b feature/fresh dev"))
+
+    # 1. This session owns an unmerged worktree: a second one is DENIED.
+    with tempfile.TemporaryDirectory() as td:
+        repo = new_repo(td)
+        wt = add_wt(repo, "a", "feature/a")
+        lane(repo, "SESS-A", wt, "feature/a")
+        denied("guard-worktree: a session that owns an UNMERGED worktree may not add another",
+               guard(repo, "git worktree add ../b -b feature/b dev"), str(wt), "feature/a", "hand the new task back")
+        denied("guard-worktree: ...also through `cd x && git worktree add`", guard(repo, f"cd {td} && git worktree add ../b -b feature/b dev"))
+        denied("guard-worktree: ...also through `git -C repo worktree add`", guard(repo, f"git -C {repo} worktree add ../b -b feature/b dev"))
+        denied("guard-worktree: ...also after an env prefix", guard(repo, "FOO=1 git worktree add ../b -b feature/b dev"))
+        denied("guard-worktree: a worktree add INSIDE `bash -c '...'` is judged, and names the lane it collides with",
+               guard(repo, "bash -c 'git worktree add ../b -b feature/b dev'"), str(wt))
+        denied("guard-worktree: ...inside `eval \"...\"`", guard(repo, 'eval "git worktree add ../b -b feature/b dev"'), str(wt))
+        allowed("guard-worktree: ...and a session owning nothing may still run it inside `bash -c`",
+                guard(repo, "bash -c 'git worktree add ../b -b feature/b dev'", "SESS-B"))
+        allowed("guard-worktree: ANOTHER session, owning nothing, is not held back by it", guard(repo, "git worktree add ../b -b feature/b dev", "SESS-B"))
+        allowed("guard-worktree: a payload with no session_id cannot be matched to an owner, so rule 1 does not fire",
+                guard(repo, "git worktree add ../b -b feature/b dev", None))
+        # Scope: only `git worktree add` is judged.
+        for cmd in ("git status", "git worktree list", f"git worktree remove {wt}", 'echo "git worktree add ../x"',
+                    "grep -c 'worktree add' notes.md"):
+            allowed(f"guard-worktree: NOT a worktree add, left alone: {cmd[:40]}", guard(repo, cmd))
+        # 3 (the other half). The lane's branch merges: the session may add one again.
+        git(repo, "branch", "-f", "dev", "feature/a")
+        allowed("guard-worktree: after the owned worktree's branch MERGES, a new worktree is allowed",
+                guard(repo, "git worktree add ../b -b feature/b dev"))
+
+    # A lane whose worktree has been removed is finished, not in progress.
+    with tempfile.TemporaryDirectory() as td:
+        repo = new_repo(td)
+        wt = add_wt(repo, "a", "feature/a")
+        lane(repo, "SESS-A", wt, "feature/a")
+        git(repo, "worktree", "remove", "--force", str(wt))
+        allowed("guard-worktree: a lane whose worktree no longer exists does not block", guard(repo, "git worktree add ../b -b feature/b dev"))
+
+    # 3. A DUPLICATE worktree for the same branch, or the same issue, is denied -- no record needed.
+    with tempfile.TemporaryDirectory() as td:
+        repo = new_repo(td)
+        wt = add_wt(repo, "issue-77", "feature/issue-77-x")
+        denied("guard-worktree: a second worktree for the SAME branch is denied (a resume creating a duplicate)",
+               guard(repo, "git worktree add ../dup feature/issue-77-x"), str(wt), "feature/issue-77-x")
+        denied("guard-worktree: ...even with --force", guard(repo, "git worktree add -f ../dup feature/issue-77-x"))
+        denied("guard-worktree: a second worktree for the same ISSUE under another branch name is denied",
+               guard(repo, "git worktree add ../again -b fix/77-again dev"), str(wt))
+        denied("guard-worktree: an attached -b<branch> for the same ISSUE is read (fix/77-again)",
+               guard(repo, "git worktree add -bfix/77-again ../again"), str(wt))
+        denied("guard-worktree: ...and by the new worktree's DIRECTORY name", guard(repo, "git worktree add ../issue-77-redo -b scratch dev"))
+        allowed("guard-worktree: a DIFFERENT issue is allowed beside it (two live worktrees for different work stay silent)",
+                guard(repo, "git worktree add ../other -b fix/78-other dev"))
+        add_wt(repo, "issue-2026", "feature/issue-2026-y")
+        allowed("guard-worktree: a DATE in a branch name is not issue 2026 (its year must not match a real issue 2026)",
+                guard(repo, "git worktree add ../d -b chore/2026-10-02-x dev"))
+        denied("guard-worktree: ...but a year-sized number written as an issue IS one (this repository will pass #1900)",
+               guard(repo, "git worktree add ../e -b fix/2026-again dev"))
+        git(repo, "branch", "-f", "dev", "feature/issue-77-x")
+        allowed("guard-worktree: once the same-issue worktree is MERGED, a new one for it is allowed (finished)",
+                guard(repo, "git worktree add ../again -b fix/77-again dev"))
+
+    # The exact-branch rule on its own: a branch with NO issue number, so the same-issue rule cannot be what refuses.
+    with tempfile.TemporaryDirectory() as td:
+        repo = new_repo(td)
+        wt = add_wt(repo, "lane-band", "feature/lane-band")
+        denied("guard-worktree: a second worktree for a branch with no issue number is denied by the branch alone",
+               guard(repo, "git worktree add ../dup feature/lane-band"), str(wt), "feature/lane-band")
+        denied("guard-worktree: ...also with --force", guard(repo, "git worktree add -f ../dup feature/lane-band"))
+        allowed("guard-worktree: a different branch with no issue number is allowed beside it",
+                guard(repo, "git worktree add ../other -b feature/other dev"))
+        # S1 (ae's review of 526470f): a backslash-newline is a continuation, and the shell joins the lines.
+        denied("guard-worktree: a backslash-newline continuation is joined: the operands on the next line are read",
+               guard(repo, "git worktree add \\\n../dup feature/lane-band"), "feature/lane-band")
+        denied("guard-worktree: ...also between an option and its value", guard(repo, "git worktree add -f -B \\\nfeature/lane-band ../dup"))
+        # PARSER DIFFERENTIAL (the push security review): the hook must read the command the way git does. These
+        # shapes made the helper see no branch at all, so the duplicate rule never fired.
+        denied("guard-worktree: an ATTACHED -B<branch> (git accepts it) is read: a forced duplicate of a checked-out branch",
+               guard(repo, "git worktree add -f -Bfeature/lane-band ../dup"), "feature/lane-band")
+        denied("guard-worktree: an attached -b<branch> bundled with a flag (-fb) is read too",
+               guard(repo, "git worktree add -fbfeature/lane-band ../dup"))
+        denied("guard-worktree: a redirect BEFORE the commit-ish does not hide the branch",
+               guard(repo, "git worktree add ../dup >/dev/null feature/lane-band"), "feature/lane-band")
+        denied("guard-worktree: ...nor a redirect with a separate target", guard(repo, "git worktree add ../dup > log feature/lane-band"))
+        denied("guard-worktree: ...nor a stderr redirect", guard(repo, "git worktree add ../dup 2>&1 feature/lane-band"))
+        denied("guard-worktree: a `--` before the operands is read", guard(repo, "git worktree add -- ../dup feature/lane-band"))
+        denied("guard-worktree: --reason <text> as two words does not swallow the branch",
+               guard(repo, "git worktree add --lock --reason wip ../dup feature/lane-band"))
+        denied("guard-worktree: --reason=<text> does not swallow the branch",
+               guard(repo, "git worktree add --lock --reason=wip ../dup feature/lane-band"))
+        allowed("guard-worktree: CONTROL: a redirect on a different, new branch is still allowed",
+                guard(repo, "git worktree add ../other -b feature/other dev >/dev/null 2>&1"))
+
+    # F1 (ae's review of #1596): an issue number is read only from the documented forms. `slug-20` is not issue 20.
+    with tempfile.TemporaryDirectory() as td:
+        repo = new_repo(td)
+        add_wt(repo, "node-20", "chore/node-20")
+        allowed("guard-worktree: `-b chore/ubuntu-20` is NOT issue 20 beside `chore/node-20`",
+                guard(repo, "git worktree add ../u -b chore/ubuntu-20 dev"))
+        allowed("guard-worktree: a directory `pr-20-review` is NOT issue 20", guard(repo, "git worktree add ../pr-20-review -b scratch dev"))
+        wt20 = add_wt(repo, "issue-21", "feature/issue-21-x")
+        denied("guard-worktree: CONTROL: `issue-21` as a branch segment IS issue 21", guard(repo, "git worktree add ../a -b feature/issue-21-again dev"))
+        denied("guard-worktree: CONTROL: `N-slug` (21-again) IS issue 21", guard(repo, "git worktree add ../b -b fix/21-again dev"))
+
+    # A record that cannot be read fails CLOSED, with the way out.
+    with tempfile.TemporaryDirectory() as td:
+        repo = new_repo(td)
+        bad = repo / ".git" / "coordination.json"
+        bad.parent.mkdir(parents=True, exist_ok=True)   # a `--match` survey stubs `git init`, so .git is not there yet
+        bad.write_text("{not json")
+        denied("guard-worktree: an unreadable coordination record fails closed", guard(repo, "git worktree add ../b -b feature/b dev"),
+               "unreadable")
+
+    # DORMANT outside a git repository: there are no worktrees to protect.
+    with tempfile.TemporaryDirectory() as td:
+        allowed("guard-worktree: outside a git repository the guard is dormant", guard(Path(td), "git worktree add ../x -b y"))
+
+
+
+def guard_worktree_parse_fixtures() -> None:
+    """What the hook READS: quoted words, mentions that are not commands, heredoc bodies (#1581)."""
+    k = _worktree_kit()
+    coord, git, new_repo, add_wt, lane, payload, guard, denied, allowed = (k.coord, k.git, k.new_repo, k.add_wt, k.lane, k.payload, k.guard, k.denied, k.allowed)
+    _ = (coord, git, new_repo, add_wt, lane, payload, guard, denied, allowed)     # a group uses some, not all
+    # Quoted words (ae's review): the shell's normaliser strips quoted spans, so these never reached the helper.
+    with tempfile.TemporaryDirectory() as td:
+        repo = new_repo(td)
+        wt = add_wt(repo, "lane-band", "feature/lane-band")
+        for cmd in ("'git' worktree add ../dup feature/lane-band", "git 'worktree' add ../dup feature/lane-band",
+                    'git worktree "add" ../dup feature/lane-band', "\\git worktree add ../dup feature/lane-band"):
+            denied(f"guard-worktree: a quoted or escaped word does not hide the command: {cmd}", guard(repo, cmd), "feature/lane-band")
+        for cmd in ('echo "git worktree add ../x"', "echo 'git worktree add ../x -b y'", "printf '%s' \"git worktree add\" > notes.txt"):
+            allowed(f"guard-worktree: ...and a plain MENTION is still left alone: {cmd[:44]}", guard(repo, cmd))
+
+    # A MENTION must pass even when this session HOLDS a lane: were it read as a command, rule 1 would refuse it.
+    with tempfile.TemporaryDirectory() as td:
+        repo = new_repo(td)
+        wt = add_wt(repo, "a", "feature/a")
+        lane(repo, "SESS-A", wt, "feature/a")
+        for cmd in ('echo "git worktree add ../x -b y"', "echo 'git worktree add ../x'", "grep -n 'worktree add' README.md",
+                    "printf '%s\\n' \"git worktree add ../x\" > notes.txt"):
+            allowed(f"guard-worktree: a mention is not a command, even while a lane is held: {cmd[:44]}", guard(repo, cmd))
+        # S2: a heredoc BODY that mentions the command is data for the command it feeds, unless that command is a shell.
+        for cmd in ("cat <<'EOF' > notes.txt\ngit worktree add ../x -b y dev\nEOF", "cat > f <<EOF\ngit worktree add ../x\nEOF"):
+            allowed(f"guard-worktree: a heredoc body that merely mentions it is not a command: {cmd[:30]!r}", guard(repo, cmd))
+        for cmd in ("bash <<'EOF'\ngit worktree add ../x -b y dev\nEOF", "sh <<EOF\ngit worktree add ../x -b y dev\nEOF"):
+            denied(f"guard-worktree: CONTROL: a heredoc fed to a SHELL is still read as commands: {cmd[:14]!r}", guard(repo, cmd), str(wt))
+        denied("guard-worktree: CONTROL: the same words as a real command ARE refused while a lane is held",
+               guard(repo, "'git' worktree add ../x -b y dev"), str(wt))
+
+
+
+def guard_worktree_failopen_fixtures() -> None:
+    """Every way the hook or git can misbehave must be a refusal, never a pass (#1581)."""
+    k = _worktree_kit()
+    coord, git, new_repo, add_wt, lane, payload, guard, denied, allowed = (k.coord, k.git, k.new_repo, k.add_wt, k.lane, k.payload, k.guard, k.denied, k.allowed)
+    _ = (coord, git, new_repo, add_wt, lane, payload, guard, denied, allowed)     # a group uses some, not all
+    # The fail-open (the push's security review): a payload cwd outside any repository made the guard dormant even
+    # when the command itself changes directory into one.
+    with tempfile.TemporaryDirectory() as td:
+        repo = new_repo(td)
+        add_wt(repo, "lane-band", "feature/lane-band")
+        outside = Path(td) / "elsewhere"
+        outside.mkdir()
+        denied("guard-worktree: `cd <repo> && git worktree add` from a cwd outside any repository cannot be judged, so it is refused",
+               guard(outside, f"cd {repo} && git worktree add ../dup feature/lane-band"), "cannot be judged")
+        denied("guard-worktree: ...and `git -C <repo> worktree add` likewise", guard(outside, f"git -C {repo} worktree add ../dup feature/lane-band"))
+        allowed("guard-worktree: CONTROL: a plain worktree add from outside any repository is still dormant",
+                guard(outside, "git worktree add ../x -b y"))
+
+    # FAIL-OPEN PATHS (the push's security review): every way git itself can misbehave must be a refusal, never a pass.
+    # A git that is missing, hangs, or cannot list worktrees used to read as "not a repository" or "no worktrees".
+    with tempfile.TemporaryDirectory() as td:
+        repo = new_repo(td)
+        add_wt(repo, "lane-band", "feature/lane-band")
+        real_git = shutil.which("git")
+
+        def stage_bin(name: str, git_body: str | None) -> dict[str, str]:
+            b = Path(td) / name
+            b.mkdir()
+            for tool in ("bash", "python3"):
+                (b / tool).symlink_to(shutil.which(tool))
+            if git_body is not None:
+                _stub(b, "git", git_body.replace("REAL_GIT", real_git).replace("REAL_SLEEP", shutil.which("sleep")))
+            return {"PATH": str(b)}
+
+        no_git = stage_bin("no-git", None)
+        denied("guard-worktree: with git missing a worktree add cannot be judged, so it is refused (not read as 'no repository')",
+               guard(repo, "git worktree add ../dup feature/lane-band", env_extra=no_git), "cannot be judged")
+        allowed("guard-worktree: ...and with git missing an ordinary command is untouched", guard(repo, "ls", env_extra=no_git))
+        # The ABSOLUTE sleep: this PATH holds only bash and python3, so a bare `sleep` is "not found" and fails at once, which made
+        # this fixture pass for the wrong reason (found when a mutation giving git a 60 s timeout survived it).
+        slow = stage_bin("slow-git", "exec REAL_SLEEP 20")
+        slow_env = dict(slow, WORKTREE_GUARD_BUDGET="1")
+        denied("guard-worktree: a git that hangs is cut off and the command is refused (the hook's own timeout would let it run)",
+               guard(repo, "git worktree add ../dup feature/lane-band", env_extra=slow_env), "timed out")
+        # TIMED IN ITS OWN CALL, so `--match` can run it alone: a clock started before the check above would be read after
+        # that check's code had been stubbed, and the check would pass on an elapsed time of zero (#1599, #1581).
+        t0 = time.monotonic()
+        guard(repo, "git worktree add ../dup feature/lane-band", env_extra=slow_env)
+        check("guard-worktree: ...and a slow git is cut off within the budget, not after it", time.monotonic() - t0 < 8,
+              f"{time.monotonic() - t0:.1f}s")
+        no_list = stage_bin("no-list", 'case "$*" in *"worktree list"*) echo "fatal: simulated" >&2; exit 1;; esac\nexec REAL_GIT "$@"')
+        no_common = stage_bin("no-common", 'case "$*" in *"git-common-dir"*) echo "fatal: simulated" >&2; exit 1;; esac\nexec REAL_GIT "$@"')
+        denied("guard-worktree: a record location git cannot give is refused, not read as 'this session holds no lane'",
+               guard(repo, "git worktree add ../x -b y dev", env_extra=no_common), "could not locate the coordination record")
+        denied("guard-worktree: a `git worktree list` that fails is refused, not read as 'no worktrees'",
+               guard(repo, "git worktree add ../dup feature/lane-band", env_extra=no_list), "could not list the worktrees")
+
+    # DEGRADED. No python3: the hook cannot judge, so it refuses a worktree add and leaves everything else alone.
+    with tempfile.TemporaryDirectory() as td:
+        repo = new_repo(td)
+        bindir = Path(td) / "bin"
+        bindir.mkdir()
+        for tool in ("bash", "git"):
+            (bindir / tool).symlink_to(shutil.which(tool))
+        bare = {"PATH": str(bindir)}
+        denied("guard-worktree: with no python3 a worktree add is refused, not waved through",
+               guard(repo, "git worktree add ../b -b feature/b dev", env_extra=bare), "python3")
+        allowed("guard-worktree: ...and with no python3 an ordinary command is untouched", guard(repo, "git status", env_extra=bare))
+
+    # A helper that crashes must fail CLOSED: any exit but 0 or 2 would let the command run.
+    with tempfile.TemporaryDirectory() as td:
+        repo = new_repo(td)
+        stage = Path(td) / "stage"
+        shutil.copytree(HOOKS, stage)
+        (stage / "lib" / "worktree_guard.py").write_text("import sys\nsys.exit(7)\n")
+        env = dict(os.environ)
+        env.pop("CLAUDE_PROJECT_DIR", None)
+        done = _run(["bash", str(stage / "guard-worktree.sh")], cwd=repo, input=payload(repo, "git worktree add ../b -b b dev", "S"),
+                    env=env, capture_output=True, text=True, timeout=60)
+        check("guard-worktree: a crashing helper fails CLOSED (exit 2, says so)",
+              done.returncode == 2 and "failed" in done.stderr, f"exit {done.returncode}: {done.stderr.strip()[:200]!r}")
+
+
+
+def guard_worktree_pointer_fixtures() -> None:
+    """The SessionStart resume pointer: advisory, fail open, silent when there is nothing to say (#1581)."""
+    k = _worktree_kit()
+    coord, git, new_repo, add_wt, lane, payload, guard, denied, allowed = (k.coord, k.git, k.new_repo, k.add_wt, k.lane, k.payload, k.guard, k.denied, k.allowed)
+    _ = (coord, git, new_repo, add_wt, lane, payload, guard, denied, allowed)     # a group uses some, not all
+    # ---- the SessionStart resume pointer: advisory, fail open, SILENT when there is nothing to say ----
+    def start(repo: Path, sid: str | None = "SESS-A", **env) -> tuple[int, str]:
+        stdin = json.dumps({"session_id": sid, "hook_event_name": "SessionStart"}) if sid is not None else "not json"
+        return run_hook("session-start.sh", cwd=repo, stdin=stdin, unset=("CLAUDE_PROJECT_DIR",),
+                        env_extra=dict({"RAILS_FLOW_ZOMBIE_WARN": "100000"}, **env))
+
+    with tempfile.TemporaryDirectory() as td:
+        repo = new_repo(td)
+        code, base = start(repo)
+        check("resume pointer: with nothing recorded the hook says nothing about worktrees",
+              code == 0 and "resume in place" not in base and "finished worktree" not in base and "zombie" not in base, base[:200])
+        wt = add_wt(repo, "a", "feature/a")
+        lane(repo, "SESS-A", wt, "feature/a")
+        code, out = start(repo)
+        check("resume pointer: the session that holds a lane is told where to resume",
+              code == 0 and "resume in place" in out and str(wt) in out and "feature/a" in out
+              and "finished worktree" not in out, out[-300:])
+        check("resume pointer: ANOTHER session is not pointed at it", "resume in place" not in start(repo, "SESS-B")[1])
+        # A stub `ps` that reports NO zombies, so the count is 0 whatever this machine is running: against the real `ps` an
+        # unclamped setting prints "3 zombie processes" when three happen to exist, and the fixture could not fail.
+        no_zombies = Path(td) / "no-zombies"
+        no_zombies.mkdir()
+        _stub(no_zombies, "ps", "exit 0")
+        for bad in ("0", "-5"):
+            out = run_hook("session-start.sh", cwd=repo, stdin=json.dumps({"session_id": "SESS-A"}), path_prefix=[no_zombies],
+                           env_extra={"RAILS_FLOW_ZOMBIE_WARN": bad}, unset=("CLAUDE_PROJECT_DIR",))[1]
+            check(f"resume pointer: RAILS_FLOW_ZOMBIE_WARN={bad} is clamped, so zero zombies prints no '0 zombie processes' line",
+                  "zombie" not in out and "resume in place" in out, out[-200:])
+        # S4: the zombie scan must finish inside session-start's own 10 s hook timeout, even when `ps` hangs.
+        slow_ps = Path(td) / "slow-ps"
+        slow_ps.mkdir()
+        _stub(slow_ps, "ps", f"exec {shutil.which('sleep')} 20")
+        t0 = time.monotonic()
+        res = run_hook("session-start.sh", cwd=repo, stdin=json.dumps({"session_id": "SESS-A"}), path_prefix=[slow_ps],
+                       unset=("CLAUDE_PROJECT_DIR",))
+        check("resume pointer: a hanging `ps` is cut off well inside the hook's 10 s timeout", time.monotonic() - t0 < 8,
+              f"{time.monotonic() - t0:.1f}s")
+        check("resume pointer: ...and the lane pointer still prints when `ps` hangs", "resume in place" in res[1], res[1][-200:])
+        check("resume pointer: a junk RAILS_FLOW_ZOMBIE_WARN falls back to the default and the pointer still prints",
+              "resume in place" in start(repo, RAILS_FLOW_ZOMBIE_WARN="abc")[1], start(repo, RAILS_FLOW_ZOMBIE_WARN="abc")[1][-200:])
+        check("resume pointer: a payload with no usable session_id is not pointed at anything (fails open, exit 0)",
+              start(repo, None)[0] == 0 and "resume in place" not in start(repo, None)[1])
+        done_wt = add_wt(repo, "done", "feature/done", unmerged=False)
+        out = start(repo)[1]
+        check("resume pointer: a merged, clean worktree is listed as finished, with how to remove it",
+              "finished worktree" in out and str(done_wt) in out and "git worktree remove" in out, out[-300:])
+        done_wt.mkdir(parents=True, exist_ok=True)   # a `--match` survey stubs `git worktree add`
+        (done_wt / "scratch.txt").write_text("uncommitted\n")
+        check("resume pointer: a merged worktree with uncommitted work is NOT listed as finished",
+              str(done_wt) not in start(repo)[1])
+        # Zombies: a real one, parented to this process, then reaped.
+        child = subprocess.Popen(["sh", "-c", "exit 0"])
+        time.sleep(0.5)
+        try:
+            out = start(repo, RAILS_FLOW_ZOMBIE_WARN="1")[1]
+            check("resume pointer: a zombie count at the threshold is reported, naming a parent",
+                  "zombie process" in out and "pid" in out, out[-300:])
+            check("resume pointer: below the threshold the zombie warning is silent", "zombie" not in start(repo)[1])
+        finally:
+            child.wait()
+        # A parent's command line can hold a credential: the advisory names the executable, never its arguments.
+        # A short command line on purpose: `ps` shows argv, and the advisory used to cut it at 60 characters, so a
+        # long interpreter path (Python re-executes through Python.app on macOS) would hide the secret and make
+        # this fixture pass whatever the code does. perl forks a child that exits unreaped: a real zombie.
+        check("resume pointer: the zombie fixture's parent can be started (perl)", shutil.which("perl") is not None, "perl not found")
+        parent = subprocess.Popen(["perl", "-e", "sleep 8 if fork;", "SECRET-TOKEN-xyz"])
+        time.sleep(1.0)
+        try:
+            out = start(repo, RAILS_FLOW_ZOMBIE_WARN="1", RAILS_FLOW_ZOMBIE_TOP="100")[1]
+            check("resume pointer: the zombie advisory lists a busy parent by pid", f"pid {parent.pid}" in out, out[-300:])
+            check("resume pointer: ...and never prints a parent's command-line arguments (they can hold a credential)",
+                  "SECRET-TOKEN" not in out, out[-300:])
+        finally:
+            parent.kill()
+            parent.wait()
+
+
+
+
 # ---- the wall-clock deadline (#1575) ---------------------------------------------------------------
 # A hook that outlives its timeout blocks every Bash call, and Claude Code's timeout stops WAITING without
 # killing the hook's descendants: orphaned awk processes ran 51 minutes, one 23 hours, and the load hit 348.
@@ -3370,8 +3762,35 @@ GROUPS = {
     "release_gate_effects": release_gate_effects_fixtures, "release_gate_repos": release_gate_repos_fixtures,
     "release_gate_refs": release_gate_refs_fixtures,
     "ci_verdict_hint": ci_verdict_hint_fixtures, "timeout": timeout_fixtures,
+    "guard_worktree": guard_worktree_fixtures, "guard_worktree_parse": guard_worktree_parse_fixtures,
+    "guard_worktree_failopen": guard_worktree_failopen_fixtures, "guard_worktree_pointer": guard_worktree_pointer_fixtures,
     "deadline": deadline_fixtures,
 }
+
+
+# The doctor runs this harness as THREE gates (`--part a`, `--part b`, `--part c`), because the whole run takes far longer than
+# the doctor's 180 s limit for a gate, and a gate that cannot finish is a SKIP on every sweep (#1581). It was two gates until
+# a measurement showed part a alone at 164 CPU-seconds and 244 s wall under load: dev's `guard_claims` had grown from 4.9 s to
+# 55.6 s since the first split, and the worktree groups came on top, so a skip would have been the normal result.
+# MEASURED per group (CPU seconds, user+sys, which a busy machine does not inflate the way wall time is): release_gate_effects
+# 60.7, guard_claims 55.6, release_gate 49.7, guard_bash 36.9, release_gate_repos 33.6, guard_worktree 11.1, guard_worktree_pointer
+# 6.1, release_gate_refs 4.1, guard_worktree_parse 3.4, guard_worktree_failopen 2.0, deadline 2.1 (but 19 s of wall, it waits on
+# hung processes), the rest under 1 each. So part a is
+# guard_claims + guard_bash + the small ones (about 96), part b the two release_gate groups (about 110), and part c the
+# repos, refs and deadline groups and the four worktree groups (about 60 CPU-s, about 80 s of wall). EVERY group must be in exactly one part: a group in none
+# would never run in the doctor, which is the vacuous gate this repository keeps finding; the selftest checks it below.
+PARTS = {
+    "a": ["stop_gate", "guard_lane", "guard_migrate", "lint_ruby", "self_consistency", "guard_bash", "guard_claims",
+          "ci_verdict_hint", "timeout"],
+    "b": ["release_gate", "release_gate_effects"],
+    "c": ["release_gate_repos", "release_gate_refs", "guard_worktree", "guard_worktree_parse",
+          "guard_worktree_failopen", "guard_worktree_pointer", "deadline"],
+}
+
+
+def parse_part(value: str) -> list[str] | None:
+    """The groups `--part` names, or None when it must be REFUSED: an unknown part would run nothing and pass."""
+    return list(PARTS[value]) if value in PARTS else None
 
 
 def parse_only(value: str) -> list[str] | None:
@@ -3439,6 +3858,20 @@ def meta_checks() -> None:
     for bad in ("nope", "", ",", "release_gate,nope", "release_gate,", " release_gate", "timeout,timeout"):
         check(f"--only {bad!r} is refused (exit 2), never an empty pass", parse_only(bad) is None,
               repr(parse_only(bad)))
+    # The partition behind the doctor's two gates: complete, disjoint, and a bad name refused.
+    flat = [g for part in PARTS.values() for g in part]
+    check("every fixture group is in exactly one PART, so the doctor's three gates together run all of them",
+          sorted(flat) == sorted(GROUPS), f"in a part but not a group, or the reverse: {sorted(set(flat) ^ set(GROUPS))}; "
+          f"repeated: {sorted({g for g in flat if flat.count(g) > 1})}")
+    check("a label's temp path is masked, including a name cut short, so --match compares the survey with the run (#1596)",
+          _stable("x: git worktree remove /tmp/tmpAbCd1234/a") == _stable("x: git worktree remove /tmp/tmpZyXw9876/a")
+          and _stable("x: git worktree remove /private/tmp/tmpp47g") == _stable("x: git worktree remove /private/tmp/tmp_1_y")
+          and _stable("no path in this label") == "no path in this label"
+          and _stable("a /tmp/tmpAbCd1234/x") != _stable("b /tmp/tmpAbCd1234/x"),
+          repr([_stable("x: git worktree remove /tmp/tmpAbCd1234/a"), _stable("x /private/tmp/tmpp47g")]))
+    check("--part a, --part b and --part c name groups; any other part is refused, never an empty pass",
+          all(parse_part(k) == PARTS[k] for k in ("a", "b", "c")) and all(parse_part(x) is None for x in ("", "d", "ab", "A")),
+          repr([parse_part(x) for x in ("a", "b", "c", "", "d")]))
     check("CONTROL: --only release_gate,guard_bash is accepted",
           parse_only("release_gate,guard_bash") == ["release_gate", "guard_bash"], repr(parse_only("release_gate,guard_bash")))
     # ...and a selection runs exactly what it names, proved on stand-ins so the proof costs nothing.
@@ -3562,6 +3995,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--selftest", action="store_true", help="drive every hook under its stub environments")
     ap.add_argument("--only", metavar="GROUP[,GROUP]",
                     help=f"run only these fixture groups: {', '.join(GROUPS)} (#1497)")
+    ap.add_argument("--part", metavar="a|b", help="run one half of the groups: the doctor runs both as two gates (#1581)")
     ap.add_argument("--match", metavar="SUBSTR",
                     help="run only the checks whose label contains SUBSTR, case-insensitively (#1599)")
     ap.add_argument("--fail-fast", action="store_true",
@@ -3570,7 +4004,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.match is not None and not args.match.strip():
         print("check_hook_gates: --match needs a non-empty label fragment", file=sys.stderr)
         return 2
+    if args.part is not None and args.only is not None:
+        print("check_hook_gates: --part and --only are alternatives, not both", file=sys.stderr)
+        return 2
     groups = None
+    if args.part is not None:
+        groups = parse_part(args.part)
+        if groups is None:
+            print(f"check_hook_gates: --part needs one of {', '.join(PARTS)}, got {args.part!r}", file=sys.stderr)
+            return 2
     if args.only is not None:
         groups = parse_only(args.only)
         if groups is None:

@@ -16,7 +16,9 @@ GUARD = Guard(
     # The same staging as hook_guard_bash: the suite drives every plugin's hooks. A literal, because
     # lint_self_consistency's harness-dependency-undeclared rule reads it statically -- and that rule is
     # what keeps this copy honest when a hook gains a script (it caught exactly that on #1477).
-    needs=("plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362
+    needs=(
+           'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py',  # session-start.sh runs both (#1581: the harness drives it)
+           "plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362
            'plugins/rails-flow/hooks/scripts', 'plugins/qa-flow/hooks/scripts', 'plugins/qa-flow/scripts',
            # guard-claims.sh runs extract_claims.py; without it the harness's two claim
            # fixtures fail in the staged tempdir and every mutation reads as caught (#1109).
@@ -53,7 +55,7 @@ GUARD = Guard(
         ),
         Mutation(
             "a run pass that disagrees with the survey is accepted, so --match can name the wrong check",
-            "if _INDEX >= len(_SURVEYED) or _SURVEYED[_INDEX] != label:",
+            "if _INDEX >= len(_SURVEYED) or _SURVEYED[_INDEX] != _stable(label):",
             "if False:",
             "--match raises when a fixture's result steers which checks follow",
         ),
@@ -121,6 +123,13 @@ GUARD = Guard(
             "--only 'timeout,timeout' is refused",
         ),
         Mutation(
+            # #1596
+            "a label's temp path is not masked, so a group that surveys clean on a Mac is refused on the Linux runner",
+            '    return _TEMP_PATH.sub("<tmp>", label)',
+            '    return label',
+            "a label's temp path is masked",
+        ),
+        Mutation(
             # review of PR #1506
             "a bare run executes no group, so the doctor's hook gates pass on nothing",
             'def run_groups(groups: list[str] | None, table: dict) -> None:\n    for name in (groups or list(table)):',
@@ -133,6 +142,18 @@ GUARD = Guard(
             '                  f"known: {\', \'.join(GROUPS)}", file=sys.stderr)\n            return 2',
             '                  f"known: {\', \'.join(GROUPS)}", file=sys.stderr)',
             'main() exits 2 for --only nope',
+        ),
+        Mutation(
+            "a fixture group is left out of every part, so the doctor would never run it",
+            '"b": ["release_gate", "release_gate_effects"],',
+            '"b": ["release_gate"],',
+            "every fixture group is in exactly one PART",
+        ),
+        Mutation(
+            "an unknown --part is accepted instead of refused",
+            "    return list(PARTS[value]) if value in PARTS else None",
+            "    return list(PARTS.get(value, PARTS['a']))",
+            "any other part is refused",
         ),
     ),
 )

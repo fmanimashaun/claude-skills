@@ -69,29 +69,10 @@ git worktree add -b fix/the-thing "$SCRATCH/repo-thing" origin/dev
 
 Three properties come with it, and each was paid for:
 
-- **THREE isolated resources, not one.** A private test database is the one people think of, and on
-  its own it leaves two of the three failures in place. Measured on one repository with six sessions
-  in a day: three distinct cross-session corruptions, and **every one of them first presented as a
-  defect in the code under test** (#1078).
-
-  1. **An isolated TEST database** — `myapp_test_<lane>`, so a suite that truncates tables cannot
-     empty another session's fixtures. Without it: `PG::TRDeadlockDetected` with the blocking PID
-     belonging to another session, and the loser sees `PG::UniqueViolation` from a seed in a
-     `before` hook. It reads as a broken seed.
-  2. **An isolated DEVELOPMENT database** — for whatever mints fixtures and serves a browser. Without
-     it: rows destroyed between load and use, surfacing as `ActiveRecord::InvalidForeignKey` inside a
-     rake task. It reads as a broken task.
-  3. **A port of its own, and a refusal to adopt a server it did not start.** *"Reusing the server
-     already answering on 3001"* is a sensible optimisation that becomes a cross-session corruption
-     the moment there are N sessions: the browser runs against another worktree's code, against a
-     third session's database. `/qa-flow:smoke` §2 now resolves the listener's working directory and
-     **refuses** a stranger; `crawl`, `walkthrough` and `/design-flow:audit` delegate to it.
-
-  **Set it in config, not with `DATABASE_URL`.** That variable is the obvious lever and it is the
-  wrong one: it names **one** database while a lane needs two, and a value set to isolate the *test*
-  database is inherited by any browser step that boots a *development* server — measured as 12
-  browser failures inside a CI run and 182 standalone, neither of them about the code. Per-lane names
-  belong in `config/database.yml`, where the environment picks the right one.
+- **THREE isolated resources, not one:** a test database, a development database, and a port of its own
+  with a refusal to adopt a server you did not start. Name them per lane in `config/database.yml`, never in
+  `DATABASE_URL`. Every one of three cross-session corruptions measured in a day first presented as a
+  defect in the code under test (#1078). Detail: [isolated resources](references/isolated-resources.md).
 - **A distinctive scratchpad path.** One agent had its `pr-body.md` overwritten mid-task by another
   writing to the same shared temp path.
 - **Gitignored files do not come with you.** See
@@ -99,6 +80,23 @@ Three properties come with it, and each was paid for:
 
 **Never `git worktree remove --force` without checking for uncommitted work.** A session destroyed a
 finished fix that way and rewrote it from memory.
+
+## 1a. One issue at a time, and the worktree is yours to end
+
+The owner's rules for parallel sessions (#1581). §1 says make a worktree per unit of work; these say when
+you may make the next one.
+
+1. **One issue at a time per session.** An issue is in progress until its PR **merges**.
+2. **A new assignment that arrives mid-issue is queued, or handed back**, never given a second worktree.
+3. **Clean up when done.** `git worktree remove <path>` (never `--force`) when the PR merges or a review ends.
+4. **Resume in place.** After a restart or cutoff, continue in the abandoned worktree; never create a new one.
+
+**What makes it true: the rails-flow `guard-worktree` hook.** With rails-flow installed, a `git worktree add`
+is **denied** when this session holds an unmerged recorded lane, or a worktree for the same branch or issue is
+already unmerged; session start points a resumed session at its lane. Without rails-flow these rules are advice.
+**Its limit, stated: it protects against accident, not impersonation.** Identity is the `session_id` a session
+sends, and only the coordinator writes the lane record. The coordinator's half, how a lane is recorded, and the
+limits in full: [one issue at a time](references/one-issue-at-a-time.md).
 
 ## 2. Say four things, unprompted
 
