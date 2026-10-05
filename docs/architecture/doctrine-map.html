@@ -334,7 +334,7 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 <li><code>gate:rails-flow worktree guard helper</code></li>
 <li><code>mutation:hook_guard_worktree</code></li>
 <li><code>mutation:hook_worktree_guard</code></li>
-<li><code>mutation:hook_session_start_pointer</code></li>
+<li><code>mutation:hook_session_start_resume</code></li>
 </ul>
 <p class="note">Fails closed, scoped to `git worktree add`. The duplicate rule reads `git worktree list` alone and needs no record or session identity; the one-issue rule reads the coordinator&#x27;s lane record. The measured failure it prevents: a restart creating a duplicate of the worktree it had just left, orphaning the first one with its uncommitted edits.</p>
 </div>
