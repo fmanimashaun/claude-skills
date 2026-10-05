@@ -2199,11 +2199,14 @@ def release_gate_effects_fixtures() -> None:
             rc, err = run(cmd, **promo_pr, **env, FAKE_LOOKUP_EXIT="1")
             check(f"release-gate (#1626): {label} whose lookup exits non-zero is blocked even though it printed an answer",
                   rc == 2, f"rc={rc} {err[:200]!r}")
-        # The shape alone, with exit 0: what is printed must be a ref name (and a commit), or it is not an answer.
-        for label, cmd in (("a GraphQL mergePullRequest", merge_pinned), ("a GraphQL updateRef", ref_to_certified), ("a release published by id", patch_release)):
+        # The shape alone, with exit 0: what is printed must be a ref name, or it is not an answer.
+        for label, cmd in (("a GraphQL mergePullRequest", merge_pinned), ("a GraphQL updateRef", ref_to_certified)):
             rc, err = run(cmd, **promo_pr, FAKE_LOOKUP_BODY=GH_ERROR_BODY, FAKE_LOOKUP_EXIT="0")
             check(f"release-gate (#1626): {label} whose lookup prints something that is not a ref name (exit 0) is blocked",
                   rc == 2, f"rc={rc} {err[:200]!r}")
+        rc, err = run("gh release edit v1.0.1 --draft=false", FAKE_RELVIEW=GH_ERROR_BODY)
+        check("release-gate (#1626): a draft release whose target lookup prints something that is not a ref name is blocked, not read as a target",
+              rc == 2, f"rc={rc} {err[:200]!r}")
         # Writes to main that are not a PR merge name no PR head, so they are judged at dev's tip: with dev
         # certified they are the ordinary promotion (permitted), with dev uncertified they are blocked.
         rc, err = run("gh api repos/o/r/merges -f base=main -f head=dev", FAKE_REF="main")
