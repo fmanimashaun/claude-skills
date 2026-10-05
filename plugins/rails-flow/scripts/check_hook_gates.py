@@ -2070,6 +2070,28 @@ def release_gate_effects_fixtures() -> None:
         rc, err = run(pinned("gh api -X PUT repos/o/r/pulls/7/merge", hot), FAKE_PRVIEW=f"main {hot}")
         check("release-gate (#1569): a hotfix head is judged by ITS stamp, not dev's (dev is certified, the head is not)",
               rc == 2 and hot[:12] in err, f"rc={rc} {err[:200]!r}")
+        # (#1617) A GRAPHQL MERGE HELD IN A VARIABLE. The literal form was judged and `Q='mutation{mergePullRequest...}'; gh api graphql -f query="$Q"`
+        # was allowed (found reviewing #1615, with a gh stub that targets main). A variable the command bound ONCE to a literal, earlier, is read as
+        # that literal and judged like one; any other variable is a document the gate cannot read, which it refuses.
+        held = 'mutation { mergePullRequest(input:{pullRequestId:"PR_kw1", expectedHeadOid:"%s"}) { clientMutationId } }' % hot
+        for label, cmd in (("a variable", f"Q='{held}'; gh api graphql -f query=\"$Q\""),
+                           ("an exported variable, set on an earlier line", f"export Q='{held}'\ngh api graphql -f query=\"$Q\"")):
+            rc, err = run(cmd, **hotfix_pr, FAKE_NODE=f"main {hot}")
+            check(f"release-gate (#1617): a GraphQL merge held in {label} is judged like a literal one, and blocked naming the PR head",
+                  rc == 2 and "PR head" in err, f"rc={rc} {err[:200]!r}")
+        for label, cmd in (("a variable the command never set", 'gh api graphql -f query="$Q"'),
+                           ("an unquoted variable", "gh api graphql -f query=$Q"),
+                           ("a variable read from a file", 'read Q < q.txt; gh api graphql -f query="$Q"'),
+                           ("a variable set in the command's own prefix", f"Q='{held}' gh api graphql -f query=\"$Q\""),
+                           ("a variable set twice", f"Q='query{{a}}'; Q='{held}'; gh api graphql -f query=\"$Q\"")):
+            rc, err = run(cmd, **hotfix_pr, FAKE_NODE=f"main {hot}")
+            check(f"release-gate (#1617): a GraphQL document held in {label} cannot be read, and the command is blocked",
+                  rc == 2 and "cannot tell which" in err, f"rc={rc} {err[:200]!r}")
+        for cmd in ("Q='query{viewer{login}}'; gh api graphql -f query=\"$Q\"",
+                    "gh api graphql -f query='query($o:String!){repository(owner:$o){id}}' -f o=\"$OWNER\""):
+            rc, err = run(cmd, **hotfix_pr, FAKE_NODE=f"main {hot}")
+            check(f"release-gate (#1617): CONTROL: a read-only query, or a variable that is only another field's value, is allowed: `{cmd[:60]}`",
+                  rc == 0, f"rc={rc} {err[:200]!r}")
         # (#1571) THE HEAD IS PINNED. The gate reads the PR's head, then GitHub merges whatever the head is a moment
         # later; a commit pushed in between would ride on the certification. So a merge into main must pin the head
         # the gate judged (`--match-head-commit`, `sha=`, `expectedHeadOid`), and the denial prints the command to run.

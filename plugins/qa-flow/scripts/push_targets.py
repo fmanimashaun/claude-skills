@@ -629,7 +629,7 @@ def _read_file(path: str) -> str:
 class ApiCall:
     """What `gh api ...` will send: methods it may use, the endpoint, and the body fields."""
 
-    def __init__(self, rest: list[str]):
+    def __init__(self, rest: list[str], known: dict[str, str] | None = None):
         self.method: str | None = None
         self.endpoint: str | None = None
         self.fields: list[tuple[str, str, bool]] = []      # (key, value, may-read-a-file)
@@ -677,6 +677,11 @@ class ApiCall:
                 self.hostname = val
         if self.endpoint is None:
             raise Unjudgeable("gh api with no endpoint that could be read")
+        # #1617: a `query` that is nothing but a variable the command bound to a literal earlier is that literal; any other
+        # variable is left as written, and `_graphql_effects` refuses a document it cannot read.
+        if known:
+            self.fields = [(k, known[m.group(1) or m.group(2)] if k == "query" and (m := re.fullmatch(r"\$(?:\{(\w+)\}|(\w+))", v))
+                            and (m.group(1) or m.group(2)) in known else v, r) for k, v, r in self.fields]
 
     def methods(self) -> set[str]:
         """Every method this call may use. An explicit one wins; gh otherwise sends POST when it has a
@@ -771,6 +776,17 @@ def _graphql_effects(call: ApiCall) -> list[str]:
     # parameterised read.
     if SUBST in text or "`" in text:
         raise Unjudgeable("a GraphQL document built by the shell cannot be read")
+    # #1617: a `$name` the document does not DECLARE (`query($id: ID!)`) is not GraphQL's, and GraphQL would refuse the document: it is a
+    # shell variable, and the document is whatever the variable holds (`Q='mutation{...}'; gh api graphql -f query="$Q"` passed). `${`
+    # is never GraphQL. A variable the command bound to a literal, once, earlier, was resolved before this point.
+    # ONLY the document: the VALUE of another field (`-f owner="$OWNER"`) is a variable's value, and an ordinary one.
+    doc = call.value("query") or ""
+    data = call.json_input() if call.input else None
+    if isinstance(data, dict) and isinstance(data.get("query"), str):
+        doc += "\n" + data["query"]
+    declared = set(re.findall(r"\$(\w+)\s*:", doc))
+    if "${" in doc or any(n not in declared for n in re.findall(r"\$([A-Za-z_]\w*)", doc)) or re.search(r"\$[0-9@*#?!$-]", doc):
+        raise Unjudgeable("a GraphQL document held in a shell variable cannot be read")
     out = []
     if "mergePullRequest" in text:
         pin = f" MATCH:{_token(_graphql_id(text, call, 'expectedHeadOid'))}" if "expectedHeadOid" in text else ""
@@ -791,12 +807,12 @@ def _graphql_effects(call: ApiCall) -> list[str]:
     return out
 
 
-def gh_api_effects(rest: list[str]) -> tuple[list[str], str]:
+def gh_api_effects(rest: list[str], known: dict[str, str] | None = None) -> tuple[list[str], str]:
     """`(lines, repo)` for one `gh api <rest>`: API_PR_MERGE <n>, API_MERGE <head>, API_REF <sha>,
     GQL_PR <id>, GQL_REF <id> <oid>, RELEASE <tag> <target>, RELEASE_ID <id>; `repo` is the one a literal
     `repos/<o>/<r>/` path names, else `-`. `-` in a line means unknown, which the hook denies (#1569:
     a ref write or a merge is judged by the commit it WRITES -- `sha`, `head`, `oid` -- not by dev)."""
-    call = ApiCall(rest)
+    call = ApiCall(rest, known)
     if call.hostname:
         raise Unjudgeable("gh api --hostname names another GitHub host")
     path = call.path()
@@ -1350,7 +1366,7 @@ def _git_effects_core(seg, j, cwd, current, flow, key):
     raise Unjudgeable(f"git {verb!r} is not on the list of commands that cannot merge into main or publish")
 
 
-def gh_effects_for(seg, j, cwd, env_repo):
+def gh_effects_for(seg, j, cwd, env_repo, known=None):
     """`[(line, repo, dir)]` for one `gh` invocation, or Unjudgeable when it is neither a modelled effect
     nor on the safe list."""
     names, rest, repo = gh_parts(seg, j)
@@ -1362,7 +1378,7 @@ def gh_effects_for(seg, j, cwd, env_repo):
         line = f"PR_MERGE {pr_merge_selector(rest)}" + ("" if pin is None else f" MATCH:{pin}")
         return [(line.rstrip(), repo or env_repo or "-", d)]
     if names[:1] == ["api"]:
-        lines, prepo = gh_api_effects(rest)
+        lines, prepo = gh_api_effects(rest, known)
         return [(ln, prepo if prepo != "-" else (env_repo or "-"), d) for ln in lines]
     if names == ["release", "create"]:
         return [(ln, repo or env_repo or "-", d) for ln in release_creates(rest)]
@@ -1379,18 +1395,42 @@ def gh_effects_for(seg, j, cwd, env_repo):
     raise Unjudgeable(f"gh {' '.join(names)!r} is not on the list of commands that cannot merge into main or publish a release")
 
 
+def literal_vars(cmd: str) -> dict[str, str]:
+    """#1617: the variables a command binds ONCE, to a literal, and mentions nowhere else as a word (no `read Q`, `for Q in`, `unset Q`,
+    `printf -v Q`, `export Q`, `Q+=`): only those can be read as what they hold. A name bound twice (an `if`/`else` that picks one), to
+    something built by the shell, or by any other form is unknown, and a document held in it is refused. Known limit: a variable already in
+    the environment that a conditional assignment may or may not replace."""
+    bound: dict[str, list[str | None]] = {}
+    bare: set[str] = set()
+    for seg in all_segments(cmd):
+        for w in seg:
+            m = re.match(r"([A-Za-z_]\w*)(\+?)=(.*)\Z", w, re.S)
+            if m:
+                v = m.group(3)
+                bound.setdefault(m.group(1), []).append(None if m.group(2) or _expanded(v) else v)   # no glob or brace expansion on an assignment's right side
+            elif re.fullmatch(r"[A-Za-z_]\w*", w):
+                bare.add(w)
+    return {n: vs[0] for n, vs in bound.items() if len(vs) == 1 and vs[0] is not None and n not in bare}
+
+
 def effects(cmd: str, current) -> list[tuple[str, str, str]]:
     """`(line, repo, dir)` for everything in `cmd` that merges into main or publishes. `repo` is the
     repository the command acts on when it says so (`-R`, GH_REPO, a `repos/o/r/` path, a git remote as
     `remote:<name>`), else `-`; `dir` is where it runs after a `cd` or `git -C`, else `-`."""
     out: list[tuple[str, str, str]] = []
     flow = _Flow()
+    lits, known = literal_vars(cmd), {}
     for seg, cwd, env_repo in ctx_segments(cmd):
         for tool, j in command_indexes(seg):
             if tool == "git":
                 out += git_effects(seg, j, cwd, current, flow)
             else:
-                out += gh_effects_for(seg, j, cwd, env_repo)
+                out += gh_effects_for(seg, j, cwd, env_repo, known)
+        # AFTER the segment: `Q=x gh api ... "$Q"` expands $Q before the prefix assignment takes effect.
+        for w in seg:
+            m = re.match(r"([A-Za-z_]\w*)=", w)
+            if m and m.group(1) in lits:
+                known[m.group(1)] = lits[m.group(1)]
     return out
 
 
@@ -1661,6 +1701,13 @@ def selftest() -> int:
             ("gh api graphql -f query='mutation { updateRef(input:{refId:\"R1\"}) { x } }' -f name=refs/heads/main", ["GQL_REF R1 -"]),
             ("gh api graphql -f query='mutation { createRef(input:{name:\"refs/heads/main\", oid:\"c1\"}) { x } }'", ["API_REF c1"]),
             ("gh api graphql -f query='query($o:String!){ repository(owner:$o) { id } }' -f o=x", []),
+            # #1617: a document held in a variable is read when the command bound it ONCE, to a literal, earlier; its VALUE is judged like
+            # a literal one. A variable passed as another field's value is ordinary.
+            ("Q='mutation { mergePullRequest(input:{pullRequestId:\"PR_kw1\"}) { x } }'; gh api graphql -f query=\"$Q\"", ["GQL_PR PR_kw1"]),
+            ("export Q='mutation { mergePullRequest(input:{pullRequestId:\"PR_kw1\"}) { x } }'\\ngh api graphql -f query=\"$Q\"", ["GQL_PR PR_kw1"]),
+            ("Q='query{viewer{login}}'; gh api graphql -f query=\"$Q\"", []),
+            ("gh api graphql -f query='query($o:String!){repository(owner:$o){id}}' -f o=\"$OWNER\"", []),
+            ("gh api graphql -f query='mutation($id:ID!){mergePullRequest(input:{pullRequestId:$id}){x}}' -f id=\"$ID\"", ["GQL_PR -"]),
             ("gh api repos/o/r/pulls/5", []),
             ("gh api -X GET repos/o/r/pulls/5/merge", []),
             ("gh api repos/o/r/pulls/5/merge", []),
@@ -1687,6 +1734,14 @@ def selftest() -> int:
             f"gh api graphql --input {td}/missing.json", f"gh api graphql -F query=@{td}/missing.graphql",
             f"gh api graphql --input={td}/missing.json", f"gh api graphql -F query=@{td}",
             "gh api graphql --input -", "gh api graphql -F query=@-",
+            # #1617: a document the command did not bind once, to a literal, before it uses it
+            "gh api graphql -f query=\"$Q\"", "gh api graphql -f query=$Q", "gh api graphql -f query=\"${Q}\"",
+            "Q='query{a}' gh api graphql -f query=\"$Q\"", "read Q < f; gh api graphql -f query=\"$Q\"",
+            "if c; then Q='query{a}'; else Q='mutation{x}'; fi; gh api graphql -f query=\"$Q\"",
+            "Q='query{a}'; Q='mutation{x}'; gh api graphql -f query=\"$Q\"", "Q='query{a}'; export Q; gh api graphql -f query=\"$Q\"",
+            "Q=$(cat q); gh api graphql -f query=\"$Q\"", "gh api graphql -f query=\"$Q\"; Q='query{a}'",
+            "Q='query{a}'; Q+='mutation{x}'; gh api graphql -f query=\"$Q\"",
+            "gh api graphql -f query=\"$1\"",
             "gh api -X PUT repos/o/r/pulls/$N/merge -f x=1 --input", "gh api -X $M repos/o/r/pulls/5/merge",
             "gh api -X PATCH repos/o/r/git/refs/heads/$B", "gh api graphql -f query=\"$(cat q)\"",
             "gh api -X POST repos/o/r/$X -f a=b", "gh release create $TAG", "gh release create v1 --target $T",
