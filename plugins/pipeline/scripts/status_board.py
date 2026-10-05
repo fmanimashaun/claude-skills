@@ -52,12 +52,13 @@ from pathlib import Path
 from typing import Callable
 
 SCHEMA = 1
-# The record's field names this module READS. `coordination.py` WRITES the first set today; the second
-# set is read here before any writer exists (PR 2 of #1585 adds them), so a reader tolerates their
-# absence. The selftest checks both sets against coordination.py, so neither can drift unseen.
+# The record's field names this module READS. `coordination.py` WRITES every one (PR 2 of #1585 added `pr`,
+# `asks` and `events`); the PLANNED set is for a key read before its writer exists, and is empty today. A
+# reader tolerates the absence of any key. `check_coordination_readers.py` checks both sets against
+# coordination.py, so neither can drift unseen.
 RECORD_KEYS_WRITTEN = ("coordinator", "sessions", "workspace", "session_id", "name", "since", "branch", "issue",
-                       "state", "updated", "repos", "path", "remote")
-RECORD_KEYS_PLANNED = ("pr", "asks", "events")
+                       "state", "updated", "repos", "path", "remote", "pr", "asks", "events")
+RECORD_KEYS_PLANNED = ()
 STATE_DIR = ".claude/state"
 BOARD_JSON = "board.json"
 BOARD_HTML = "board.html"
@@ -112,6 +113,8 @@ TEXT: dict[str, tuple[str, str]] = {
     "unknown.record": ("The coordination record cannot be read: {why}.", "description"),
     "unknown.no_record": ("This repository has no coordination record.", "description"),
     "unavailable.repo": ("Repo unavailable: {why}.", "description"),
+    "sibling.origin_unreadable": ("The origin of {path} cannot be read, so it cannot be checked against {remote}.", "description"),
+    "sibling.origin_differs": ("The origin of {path} is {own}, not {remote}.", "description"),
     "partial.count": ("{n} or more", "label"),
     "partial.note": ("The list reached its limit of {n}, so the count is a minimum.", "description"),
     # next actions on a pull request (a PR row says one thing to do)
@@ -396,7 +399,9 @@ def review_of(env: Env, repo: Repo, cfg: dict, n: object, head: str) -> dict:
 
 def run_of(env: Env, repo: Repo, cfg: dict, head: str) -> dict:
     wf = cfg.get("full_run_workflow")
-    if not wf:
+    if not wf or not head:
+        # no workflow, or no head: `gh run list --commit ""` ignores the empty filter and returns the newest
+        # runs of other commits, which would be drawn as THIS pull request's run
         return {"state": "unknown"}
     rc, out = repo.gh(env, ["run", "list", "--workflow", str(wf), "--commit", head, "--limit", str(RUN_LIMIT),
                             "--json", "databaseId,status,conclusion,event"])
@@ -654,6 +659,22 @@ def integration_branch_of(env: Env, root: Path, cfg: dict) -> str:
     return br.strip().split("/", 1)[-1] if rc == 0 and br.strip() else "main"
 
 
+def sibling_origin_mismatch(env: Env, sroot: Path, declared: "str | None") -> str:
+    """Why the sibling's directory is NOT the repository the record says it is, or "". The record gives a path AND
+    a remote; `gh --repo <remote>` would read one repository while `git` reads the directory, and a relative path
+    with `..` can point anywhere. So the directory's OWN origin must name the declared remote, or the sibling is
+    left out and named. A sibling that declares no remote is read from its own directory only."""
+    if not declared:
+        return ""
+    rc, out = env.sh(["git", "remote", "get-url", "origin"], sroot)
+    own = slug_of(out.strip()) if rc == 0 else None
+    if own is None:
+        return say("sibling.origin_unreadable", path=str(sroot), remote=declared)
+    if own.lower() != declared.lower():
+        return say("sibling.origin_differs", path=str(sroot), own=own, remote=declared)
+    return ""
+
+
 def collect(env: Env, root: Path) -> dict:
     cfg, cfg_err = load_config(env, root)
     integration = integration_branch_of(env, root, cfg)
@@ -673,11 +694,16 @@ def collect(env: Env, root: Path) -> dict:
         if not sib.get("path") or not sroot.is_dir():
             unavailable.append({"repo": sib["name"], "why": "its path is missing"})
             continue
+        declared = slug_of(str(sib.get("remote") or ""))
+        bad = sibling_origin_mismatch(env, sroot, declared)
+        if bad:
+            unavailable.append({"repo": sib["name"], "why": bad})
+            continue
         s_status, s_rec = read_record(env, sroot)
         if s_status == "unreadable":
             unavailable.append({"repo": sib["name"], "why": str(s_rec)})
             continue
-        repos.append(Repo(str(sib["name"]), sroot, slug_of(str(sib.get("remote") or "")), False))
+        repos.append(Repo(str(sib["name"]), sroot, declared, False))
         if s_status == "ok":
             sessions += sessions_of(s_rec, str(sib["name"]))
 
