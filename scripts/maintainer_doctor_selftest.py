@@ -616,6 +616,23 @@ def run() -> int:
     if missing:
         FAILURES.append(f"GATES references scripts that do not exist: {missing}")
 
+    # ---- every PART of a split harness is a gate (#1581, review of #1596) ----------------------------
+    # check_hook_gates.py runs as PARTS (`--part a|b`) because one run was past a gate's 180 s. Its own selftest proves
+    # every fixture group is in exactly one part; THIS proves every part is a gate. A part with no GATES entry never
+    # runs in the doctor: the reviewer deleted the `hook gates (release)` entry from an export, and this selftest and
+    # lint_self_consistency both stayed green.
+    _tick()
+    import importlib.util
+    _root = Path(__file__).resolve().parents[1]
+    _spec = importlib.util.spec_from_file_location("check_hook_gates", _root / "plugins/rails-flow/scripts/check_hook_gates.py")
+    _chg = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_chg)
+    _declared = {c[c.index("--part") + 1] for _, c in md.GATES
+                 if any(a.endswith("check_hook_gates.py") for a in c) and "--part" in c and c.index("--part") + 1 < len(c)}
+    if _declared != set(_chg.PARTS):
+        FAILURES.append(f"a PART of check_hook_gates.py has no gate in GATES (or a gate names a part that does not exist): "
+                        f"parts {sorted(_chg.PARTS)}, gates run {sorted(_declared)}")
+
     # ---- no selftest may be invisible to the sweep ----------------------------------
     # A gate the doctor never runs is a gate that does not exist for anyone relying on
     # `--gates`. This bit on #119: the new route_coverage selftest passed locally while the

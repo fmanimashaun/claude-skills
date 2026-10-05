@@ -202,6 +202,19 @@ GUARD = Guard(
             '                last = lines[-1] if lines else ""',
             "a slow gate's ok line must carry its `(jobs=N, Xs)` measurement",
         ),
+        # #1581, review of #1596: a PART of the split hook harness with no gate never runs.
+        Mutation(
+            "the release gate runs part a again, so part b of the hook harness has no gate and the doctor never runs it",
+            '"--selftest", "--part", "b")),',
+            '"--selftest", "--part", "a")),',
+            "has no gate in GATES",
+        ),
+        Mutation(
+            "the worktree gate runs part a again, so part c of the hook harness has no gate and the doctor never runs it",
+            '"--selftest", "--part", "c")),',
+            '"--selftest", "--part", "a")),',
+            "has no gate in GATES",
+        ),
         Mutation(
             # #1588
             'the detector never runs, so a fixture commit in the real repo goes unnoticed (#1588)',

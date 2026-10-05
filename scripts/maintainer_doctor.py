@@ -343,7 +343,12 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # five defects sat in what they DID, none visible on a Mac. This drives every hook end to end
     # under stub environments -- a GNU-shaped `timeout`, a `bundle` that fails the way Bundler does,
     # a `mise` that owns the Ruby. The environment is the fixture.
-    ("hook gates", ("python3", "plugins/rails-flow/scripts/check_hook_gates.py", "--selftest")),
+    # #1581: ONE harness, THREE gates. The whole run takes far longer than a gate's 180 s, so it skipped on every sweep; two halves
+    # were measured too close to it once dev's groups grew. The partition (PARTS in check_hook_gates.py) is checked there: every
+    # fixture group is in exactly one part.
+    ("hook gates", ("python3", "plugins/rails-flow/scripts/check_hook_gates.py", "--selftest", "--part", "a")),
+    ("hook gates (release)", ("python3", "plugins/rails-flow/scripts/check_hook_gates.py", "--selftest", "--part", "b")),
+    ("hook gates (worktree)", ("python3", "plugins/rails-flow/scripts/check_hook_gates.py", "--selftest", "--part", "c")),
     # #849. "Take the head of the queue" downstream was a claim nothing checked; the marketplace has
     # issue_graph.py --ready for itself, and this is the shipped equivalent for a project's tracker.
     ("issue readiness", ("python3", "plugins/rails-flow/scripts/check_issue_ready.py", "--selftest")),
@@ -410,6 +415,7 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("rails-flow PR-template sections", ("python3", "plugins/rails-flow/hooks/scripts/lib/pr_template.py", "--selftest")),
     # #1581. The per-repo coordination record a worktree guard reads; only the coordinator writes it.
     ("rails-flow coordination record", ("python3", "plugins/rails-flow/hooks/scripts/lib/coordination.py", "--selftest")),
+    ("rails-flow worktree guard helper", ("python3", "plugins/rails-flow/hooks/scripts/lib/worktree_guard.py", "--selftest")),
     ("rails-flow technical spec", ("python3", "plugins/rails-flow/scripts/check_spec.py", "--selftest")),
     ("rails-flow simple-form-only gate", ("python3", "plugins/rails-flow/scripts/check_simple_form_only.py", "--selftest")),
     ("shipped ERB passes simple-form-only", ("python3", "scripts/check_shipped_erb_forms.py")),
