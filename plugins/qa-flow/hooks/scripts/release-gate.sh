@@ -225,7 +225,9 @@ ctx_repo() {
 # OPTION: `git fetch origin --upload-pack=<program>` RUNS the program when origin is a local path or ssh. Also refused: a
 # `:` (a refspec would write a local ref) and `..`, a space or any other character a name does not have. The caller
 # fetches nothing, the ref stays unresolved, and the command is denied as one the hook cannot judge.
-plain_ref() { case "$1" in ""|-*|*[!A-Za-z0-9._/-]*|*..*) return 1 ;; esac; return 0; }
+# (#1610) It also refuses what `git check-ref-format` refuses in a name: a leading, doubled or trailing slash, a component that starts
+# with a dot, a `.lock` ending and a trailing dot, so the API is never asked about a name no repository can hold.
+plain_ref() { case "$1" in ""|-*|*[!A-Za-z0-9._/-]*|*..*|/*|*//*|*/|.*|*/.*|*.lock|*.lock/*|*.) return 1 ;; esac; return 0; }
 # resolve_pr <selector|""> <ctx repo> -> base, head, _PRR ("" when gh could not say). Resolved the way
 # the command resolves it: the same selector, the same -R/GH_REPO, the same directory.
 resolve_pr() {
@@ -637,6 +639,8 @@ sys.exit(done.returncode)' "$@"
 # denied. Several ships in one command share that one deadline.
 judge_remote() {
   local sha="$1" repo="$2" what="$3" verdict csha why cmp status files evidence budget
+  # (#1610) The commit id comes from GitHub's answer, not from the command, and it is joined into a URL below: it is a commit id.
+  case "$sha" in ""|*[!0-9a-fA-F]*) JWHY="${repo}: ${what} (${sha:0:20}) is not a commit id, so its certification cannot be read."; return 1 ;; esac
   if ! bounded 4 gh api -H 'Accept: application/vnd.github.raw+json' "repos/${repo}/contents/qa/CERTIFICATION?ref=${sha}" >"$stamp_tmp" 2>/dev/null; then
     JWHY="this command acts on ${repo}, not on this checkout's repository, and its qa/CERTIFICATION could not be read at ${what} (${sha:0:12}) through the GitHub API. Run it from a checkout of ${repo} that holds a PASS stamp, or set QA_ALLOW_MAIN=1."
     return 1
@@ -732,6 +736,8 @@ resolve_release() {
   local tag="$1" tgt="$2" o t
   _rsha=""
   if [ -z "$_R" ]; then
+    # (#1610) A tag becomes a `git ls-remote` PATTERN below, and a pattern takes a glob (`v*` lists every v tag).
+    [ -z "$tag" ] || plain_ref "$tag" || return 1
     if [ -n "$tag" ] && git remote get-url origin >/dev/null 2>&1; then
       o="$(git ls-remote origin "refs/tags/${tag}" "refs/tags/${tag}^{}" 2>/dev/null)" || return 1
       if [ -n "$o" ]; then
