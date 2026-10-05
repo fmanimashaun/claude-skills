@@ -7,7 +7,7 @@
     "extract_release_notes": 351.0,
     "hermetic_git": 138.0,
     "hook_command_cwd": 355.0,
-    "hook_coordination": 265.0,
+    "hook_coordination": 840.0,
     "hook_deadline": 340.0,
     "hook_guard_bash": 777.0,
     "hook_guard_claims": 183.0,
@@ -21,7 +21,8 @@
     "mutation_check_harness": 1037.0,
     "proc_group": 453.0,
     "process_containment": 69.0,
-    "project_gates": 96.0
+    "project_gates": 96.0,
+    "status_board": 136.0
   },
   "jobs": 4,
   "note": "seconds of work per guard (baseline plus every mutant, summed over all jobs) from a measured full run; re-set with `python3 scripts/mutation_check.py --rebaseline` (#1599)"
