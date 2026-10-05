@@ -684,29 +684,34 @@ def run() -> int:
     if mc.record_problems({"heavy", "medium", "extra"}, record):
         FAILURES.append("#1599 CONTROL: a record whose guards all exist is clean (a guard missing from it is not drift)")
 
+    class StandInGuard:
+        """The registry is replaced by one stand-in guard: the guards that run THIS selftest in a staged tempdir (hermetic_git,
+        proc_group, this harness) do not stage `scripts/mutations/`, so the real `mc.GUARDS` is empty there and indexing it
+        raised an IndexError that made three baselines inert (CI run 37223022427). The test needs a registry, not THE registry."""
+        name = "stand_in_guard"
+
     def check_record_exit(loader) -> int:
-        """`main(["--check-record"])` with the record replaced by `loader`; output swallowed."""
+        """`main(["--check-record"])` with the record replaced by `loader` and the registry by one stand-in guard; output swallowed."""
         import contextlib
         import io
-        real_loader = mc.load_cost_baseline
-        mc.load_cost_baseline = loader
+        real_loader, real_guards = mc.load_cost_baseline, mc.GUARDS
+        mc.load_cost_baseline, mc.GUARDS = loader, (StandInGuard,)
         try:
             with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
                 return mc.main(["--check-record"])
         except Exception:               # noqa: BLE001 -- a crash is not an exit code of 0 or 1
             return -1
         finally:
-            mc.load_cost_baseline = real_loader
+            mc.load_cost_baseline, mc.GUARDS = real_loader, real_guards
 
     def unreadable():
         raise ValueError("not a record")
 
-    first_guard = mc.GUARDS[0].name
     for label, loader, want in (
             ("--check-record exits 1 for a record naming a guard that is gone", lambda: {"guards": {"ghost_guard": 99.0}}, 1),
             ("--check-record exits 1 when there is no record", lambda: None, 1),
             ("--check-record exits 1 for an unreadable record", unreadable, 1),
-            ("--check-record exits 0 for a record that holds", lambda: {"guards": {first_guard: 99.0}}, 0)):
+            ("--check-record exits 0 for a record that holds", lambda: {"guards": {StandInGuard.name: 99.0}}, 0)):
         _tick()
         got = check_record_exit(loader)
         if got != want:
