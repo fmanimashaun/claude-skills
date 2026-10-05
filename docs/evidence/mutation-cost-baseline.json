@@ -15,6 +15,7 @@
     "hook_release_gate": 1019.0,
     "hook_release_gate_deadline": 673.0,
     "hook_release_gate_effects": 1579.0,
+    "hook_release_gate_refs": 171.0,
     "hook_release_gate_repos": 191.0,
     "kamal_destination": 63.0,
     "lint_self_consistency": 602.0,
