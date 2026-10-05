@@ -448,6 +448,11 @@ def main(argv: list[str] | None = None) -> int:
             p.add_argument("--pr", type=int)
             p.add_argument("--owner", type=_session_token)
     args = ap.parse_args(argv)
+    if args.skip_hook_e2e and not args.selftest:
+        # The flag only means something to the selftest. Run on its own it would be a silently ignored switch, and a caller who
+        # thought it skipped something would be wrong (#1618 review, 4f).
+        print("--skip-hook-e2e only applies to --selftest; refusing to run without it", file=sys.stderr)
+        return 3
     if args.selftest:
         return selftest(skip_hook_e2e=args.skip_hook_e2e)
     if not args.cmd:
@@ -524,6 +529,14 @@ def main(argv: list[str] | None = None) -> int:
     except LockError as e:
         print(f"could not write the coordination record: {e}", file=sys.stderr)
         return 3
+
+
+# Printed on the selftest's summary line when the real-hook block did not run, so "209 checks" is never read as the full count.
+SKIP_NOTICE = " [SKIPPED the real session-start.sh checks: --skip-hook-e2e; hook_session_start_pointer runs them]"
+
+
+def summary_line(ran: int, failures: int, skipped: bool) -> str:
+    return f"coordination selftest: {ran} checks, {failures} failure(s){SKIP_NOTICE if skipped else ''}"
 
 
 def selftest(skip_hook_e2e: bool = False) -> int:
@@ -1102,13 +1115,24 @@ def selftest(skip_hook_e2e: bool = False) -> int:
         check("the CLI records a good address", done.returncode == 0 and (load(record_path(bcli)).get("board") or {}).get("artifact_url") == "https://claude.ai/artifact/abc",
               f"{done.returncode} {done.stderr!r}")
 
+        # --skip-hook-e2e (4f's review of #1618): it must say what it skipped, and it means nothing without --selftest.
+        check("the skip notice names what was skipped and where it still runs",
+              "SKIPPED" in SKIP_NOTICE and "session-start.sh" in SKIP_NOTICE and "hook_session_start_pointer" in SKIP_NOTICE, SKIP_NOTICE)
+        lone = subprocess.run([sys.executable, __file__, "--skip-hook-e2e"], capture_output=True, text=True)
+        check("--skip-hook-e2e without --selftest is refused (exit 3) and says why", lone.returncode == 3 and "only applies to --selftest" in lone.stderr,
+              f"{lone.returncode} {lone.stderr!r}")
+        lone_cmd = subprocess.run([sys.executable, __file__, "--skip-hook-e2e", "lanes", "--session-id", "S1", "--cwd", str(sec)], capture_output=True, text=True)
+        check("...also when a command follows (it would otherwise be a silently ignored switch)", lone_cmd.returncode == 3 and not lone_cmd.stdout, f"{lone_cmd.returncode} {lone_cmd.stdout!r}")
+        check("the summary line says SKIPPED when the real-hook checks were skipped, and only then",
+              "SKIPPED" in summary_line(1, 0, True) and "SKIPPED" not in summary_line(1, 0, False), summary_line(1, 0, True))
+
         outside = Path(td) / "not-a-repo"
         outside.mkdir()
         check("outside a git repository there is no record", record_path(outside) is None)
 
     for f in failures:
         print(f"FAIL: {f}", file=sys.stderr)
-    print(f"coordination selftest: {ran[0]} checks, {len(failures)} failure(s)")
+    print(summary_line(ran[0], len(failures), skip_hook_e2e))
     return 1 if failures else 0
 
 
