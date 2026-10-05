@@ -63,6 +63,24 @@ def skipping() -> bool:
     return _MATCH_MODE == "survey" or (_MATCH_MODE == "run" and _SKIP)
 
 
+# A group whose fixtures build shared state as they go (repositories, commits, stamps) cannot have that setup stubbed with the
+# rest: the one wanted check would then run against nothing. `@real_setup` keeps every subprocess REAL under `--match`
+# except the hook itself, which is the cost the narrowing exists to avoid (#1592).
+_REAL_SETUP = False
+
+
+def real_setup(fn):
+    def wrapper(*a, **k):
+        global _REAL_SETUP
+        _REAL_SETUP = True
+        try:
+            return fn(*a, **k)
+        finally:
+            _REAL_SETUP = False
+    wrapper.__name__ = fn.__name__
+    return wrapper
+
+
 def check(label: str, ok: bool, detail: str = "") -> None:
     global CHECKS, _INDEX, _SKIP
     if _MATCH_MODE == "survey":
@@ -99,8 +117,14 @@ def record_failure(note: str) -> None:
 _EXPECTING_TIMEOUT = False      # set by timeout_fixtures, which times out on purpose, and the #1504 cost check
 
 
+def _is_hook_run(args) -> bool:
+    """The hook itself, as opposed to the git and gh the fixtures set up around it."""
+    argv = args[0] if args else []
+    return isinstance(argv, (list, tuple)) and any("release-gate.sh" in str(a) for a in argv)
+
+
 def _run(*args, **kw):
-    if skipping():          # `--match`: this is the code before an unwanted check, or the survey (#1599)
+    if skipping() and not (_REAL_SETUP and not _is_hook_run(args)):     # `--match`: the code before an unwanted check, or the survey (#1599)
         text = kw.get("text") or kw.get("universal_newlines")
         empty = "" if text else b""
         return subprocess.CompletedProcess(args[0] if args else kw.get("args"), 0, stdout=empty, stderr=empty)
@@ -2325,10 +2349,11 @@ case "$1 $2" in
 esac
 case "$ep" in
   repos/*/contents/*)
+    [ -z "${FAKE_SLEEP:-}" ] || sleep "$FAKE_SLEEP"
     ref="${ep##*ref=}"
     [ -n "${FAKE_STAMP_REF:-}" ] && [ "$ref" = "$FAKE_STAMP_REF" ] && [ -f "${FAKE_STAMP_FILE:-/nonexistent}" ] && { cat "$FAKE_STAMP_FILE"; exit 0; }
     exit 1 ;;
-  repos/*/compare/*) [ -n "${FAKE_COMPARE:-}" ] || exit 1; printf '%s\\n' "$FAKE_COMPARE"; exit 0 ;;
+  repos/*/compare/*) [ -z "${FAKE_SLEEP_COMPARE:-${FAKE_SLEEP:-}}" ] || sleep "${FAKE_SLEEP_COMPARE:-$FAKE_SLEEP}"; [ -n "${FAKE_COMPARE:-}" ] || exit 1; printf '%s\\n' "$FAKE_COMPARE"; exit 0 ;;
   repos/*/commits/*) [ -n "${FAKE_COMMIT:-}" ] || exit 1; printf '%s' "$FAKE_COMMIT"; exit 0 ;;
   repos/*/git/matching-refs/*) printf '%s' "${FAKE_TAGS:-}"; exit 0 ;;
   repos/*/releases/*) printf '%s' "${FAKE_RELID:-}"; exit 0 ;;
@@ -2354,6 +2379,9 @@ def release_gate_refs_fixtures() -> None:
         old = {**os.environ, "GIT_COMMITTER_DATE": "2026-09-01T00:00:00+00:00", "GIT_AUTHOR_DATE": "2026-09-01T00:00:00+00:00"}
         bare = Path(td) / "origin.git"
         _run(["git", "init", "-q", "--bare", str(bare)], check=True, capture_output=True)
+        # The bare repository also stands in for other/fork, whose evidence the hook fetches (#1591): it holds `stamped` as dev.
+        for k, v in (("uploadpack.allowFilter", "true"), ("uploadpack.allowAnySHA1InWant", "true")):
+            _run(["git", "config", k, v], cwd=bare, check=True, capture_output=True)
         # origin names o/r, and is a LOCAL PATH underneath: the transport that runs --upload-pack.
         sh("remote", "add", "origin", "https://github.com/o/r.git")
         sh("config", f"url.{bare}.insteadOf", "https://github.com/o/r.git")
@@ -2385,6 +2413,11 @@ def release_gate_refs_fixtures() -> None:
             env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env.pop("GH_REPO", None)
             env["CLAUDE_PLUGIN_ROOT"] = str(QA_HOOK.parents[2])
             env["PATH"] = str(Path(td) / "bin") + os.pathsep + env["PATH"]
+            # No test reaches github.com: every https://github.com/ url is a path that does not exist, except other/fork, which is
+            # the local bare repository (#1591).
+            env.update({"GIT_CONFIG_COUNT": "2",
+                        "GIT_CONFIG_KEY_0": "url./nonexistent-qa-flow-remote/.insteadOf", "GIT_CONFIG_VALUE_0": "https://github.com/",
+                        "GIT_CONFIG_KEY_1": f"url.{bare}.insteadOf", "GIT_CONFIG_VALUE_1": "https://github.com/other/fork.git"})
             env.update(extra)
             done = _run(["bash", str(QA_HOOK)], cwd=repo, input=json.dumps({"tool_input": {"command": cmd}}),
                         env=env, capture_output=True, text=True, timeout=60)
@@ -2500,6 +2533,7 @@ def release_gate_refs_fixtures() -> None:
               f"rc={rc} marker={marker.exists()} fetch calls={[c for c in calls if c.startswith('fetch')]}")
 
 
+@real_setup
 def release_gate_repos_fixtures() -> None:
     g = ["git", "-c", "user.email=t@t", "-c", "user.name=t"]
     with tempfile.TemporaryDirectory() as td:
@@ -2509,6 +2543,11 @@ def release_gate_repos_fixtures() -> None:
         old = {**os.environ, "GIT_COMMITTER_DATE": "2026-09-01T00:00:00+00:00", "GIT_AUTHOR_DATE": "2026-09-01T00:00:00+00:00"}
         bare = Path(td) / "origin.git"
         _run(["git", "init", "-q", "--bare", str(bare)], check=True, capture_output=True)
+        # other/fork, as the hook fetches it (#1591): a local bare repository standing in for github.com.
+        forkbare = Path(td) / "fork.git"
+        _run(["git", "init", "-q", "--bare", str(forkbare)], check=True, capture_output=True)
+        for k, v in (("uploadpack.allowFilter", "true"), ("uploadpack.allowAnySHA1InWant", "true")):
+            _run(["git", "config", k, v], cwd=forkbare, check=True, capture_output=True)
         sh("remote", "add", "origin", "https://github.com/o/r.git")
         sh("config", f"url.{bare}.insteadOf", "https://github.com/o/r.git")
         sh("remote", "add", "upstream", "https://github.com/other/fork.git")
@@ -2529,6 +2568,7 @@ def release_gate_repos_fixtures() -> None:
         sh("branch", "-f", "main", hot)
         sh("tag", "v0.9", stamped); sh("tag", "v0.8", hot)
         sh("push", "-q", "origin", "v0.9", "v0.8")
+        sh("push", "-q", str(forkbare), f"{stamped}:refs/heads/dev", f"{hot}:refs/heads/hot")
         # another checkout, on main, whose dev has no stamp at all
         sub = Path(td) / "sub"
         _git_repo(sub)
@@ -2544,6 +2584,11 @@ def release_gate_repos_fixtures() -> None:
             env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env.pop("GH_REPO", None)
             env["CLAUDE_PLUGIN_ROOT"] = str(QA_HOOK.parents[2])
             env["PATH"] = str(Path(td) / "bin") + os.pathsep + env["PATH"]
+            # No test reaches github.com: every https://github.com/ url is a path that does not exist, except
+            # other/fork, which is the local bare repository the hook may fetch evidence from (#1591).
+            env.update({"GIT_CONFIG_COUNT": "2",
+                        "GIT_CONFIG_KEY_0": "url./nonexistent-qa-flow-remote/.insteadOf", "GIT_CONFIG_VALUE_0": "https://github.com/",
+                        "GIT_CONFIG_KEY_1": f"url.{forkbare}.insteadOf", "GIT_CONFIG_VALUE_1": "https://github.com/other/fork.git"})
             env.update(extra)
             done = _run(["bash", str(QA_HOOK)], cwd=repo, input=json.dumps({"tool_input": {"command": cmd}}),
                         env=env, capture_output=True, text=True, timeout=60)
@@ -2583,6 +2628,18 @@ def release_gate_repos_fixtures() -> None:
             rc, err = run(_pin(cmd, stamped), **{**ok_api, **env})
             check(f"release-gate (#1569): {label} is permitted by the OTHER repository's own PASS stamp, read through the API",
                   rc == 0 and "other/fork" in err, f"rc={rc} {err[:240]!r}")
+        # Each of these has ONE signal that the command acts on another repository, so ignoring that signal is visible.
+        # GH_REPO alone: no -R, no path, no PR URL. Judged here, `--target main` (the uncertified local main) is denied.
+        rc, err = run("gh release create v1 --target main", GH_REPO="other/fork", **ok_api)
+        check("release-gate (#1591): GH_REPO ALONE sends a release to the OTHER repository's stamp, which permits it",
+              rc == 0 and "other/fork" in err, f"rc={rc} {err[:240]!r}")
+        # A host-qualified repository is not owner/repo: refused as unresolved, even where the API would answer for any repository.
+        # (Not `-R` or a path in the command: the classifier refuses a host-qualified repository there before the hook sees it. The
+        # hook's own check is the one on GH_REPO in ITS environment, which the classifier never reads. The fake gh serves a stamp
+        # for ANY repository, so a repository accepted by mistake would be judged and permitted.)
+        rc, err = run("gh release create v1 --target main", GH_REPO="ghe.example.com/o/r", **ok_api)
+        check("release-gate (#1591): a host-qualified GH_REPO is refused as unresolved, though the API would serve it a stamp",
+              rc == 2 and "cannot tell" in err, f"rc={rc} {err[:240]!r}")
         rc, err = run(_pin("gh pr merge 7 -R other/fork", stamped), **{**ok_api, **ok_pr, "FAKE_COMPARE": "ahead\napp.rb", "FAKE_STAMP_REF": hot}, )
         check("release-gate (#1569): another repository's stamp for an OLDER commit must cover only the stamp itself",
               rc == 2, f"rc={rc} {err[:240]!r}")
@@ -2740,6 +2797,125 @@ def release_gate_repos_fixtures() -> None:
 # ---- ci-verdict-hint.sh (#1173) -----------------------------------------------------------------
 # An ADVISORY, so every fixture asserts exit 0 -- a hint that could fail the tool call would be a gate
 # nobody asked for. What varies is whether it SPEAKS, and on which event.
+
+        # (10) #1591: a repository other than this checkout's is held to the SAME standard as this one. The
+        # stamp is not enough: a schema-2 stamp must name a passing first-boot walkthrough and authorization
+        # sweep (#1428), judged from the evidence AS COMMITTED in that repository, and the commit may carry
+        # that evidence beyond the stamp itself. The foreign repository's objects are fetched from a local
+        # bare repository, so nothing here touches the network.
+        fw = Path(td) / "fw"
+        _git_repo(fw)
+        fsh = lambda *a, **kw: _run([*g, *a], cwd=fw, check=True, capture_output=True, text=True, **kw).stdout.strip()
+        fb_rows = ("Step,Width,Actor,URL,Action,Expected,Actual,Status,Notes,Screenshot,Also,Issue,Env\n"
+                   "1.1,1280,root,/login,Sign in,In,In,Pass,,,,,empty db\n"
+                   "1.2,390,root,/login,Sign in,In,In,Pass,,,,,empty db\n")
+        az_head = "action,location,actor_role,target_role,guard,verdict,evidence,issue\n"
+        az_good = az_head + "demote,app/models/user.rb:40,it,root,root? refusal,GUARDED,,\n"
+        az_hole = az_good + "demote,app/controllers/staff.rb:88,it,root,,HOLE,forged PATCH,#1\n"
+        (fw / "app.rb").write_text("v1\n", encoding="utf-8")
+        fsh("add", "app.rb"); fsh("commit", "-q", "-m", "app", env=old)
+        tested_f = fsh("rev-parse", "HEAD")
+        fsh("push", "-q", str(forkbare), f"{tested_f}:refs/heads/main")      # the last PUBLISHED release
+        ev_files = ["qa/manual-tests/first-boot-v1/pages.csv", "qa/manual-tests/authz-v1/sweep.csv"]
+
+        def scenario(name: str, stamp: dict, authz: str, versions: tuple = ("v1",)) -> tuple:
+            fsh("checkout", "-q", "-B", name, tested_f)
+            for v in versions:
+                (fw / f"qa/manual-tests/first-boot-{v}").mkdir(parents=True, exist_ok=True)
+                (fw / f"qa/manual-tests/authz-{v}").mkdir(parents=True, exist_ok=True)
+                (fw / f"qa/manual-tests/first-boot-{v}/pages.csv").write_text(fb_rows, encoding="utf-8")
+                (fw / f"qa/manual-tests/authz-{v}/sweep.csv").write_text(authz, encoding="utf-8")
+            (fw / "qa").mkdir(exist_ok=True)
+            (fw / "qa" / "CERTIFICATION").write_text(json.dumps(stamp), encoding="utf-8")
+            fsh("add", "qa"); fsh("commit", "-q", "-m", name)
+            fsh("push", "-q", "-f", str(forkbare), f"HEAD:refs/heads/{name}")
+            return fsh("rev-parse", "HEAD"), stamp
+
+        base_stamp = {"sha": tested_f, "date": "2026-10-01", "verdict": "PASS", "report": "r.md"}
+        s2 = {**base_stamp, "schema": 2, "version": "v1", "first_boot": "qa/manual-tests/first-boot-v1",
+              "authz": "qa/manual-tests/authz-v1/sweep.csv"}
+
+        def foreign(sha: str, stamp: dict, delta: list, cmd: str = "gh pr merge 7 -R other/fork",
+                    repo_name: str = "other/fork", status: str = "ahead", **more) -> tuple:
+            f = Path(td) / f"stamp-{sha[:10]}.json"
+            f.write_text(json.dumps(stamp), encoding="utf-8")
+            return run(_pin(cmd, sha), FAKE_PRVIEW=f"main {sha}", FAKE_PRREPO=repo_name, FAKE_COMMIT=sha, FAKE_STAMP_REF=sha,
+                       FAKE_STAMP_FILE=str(f), FAKE_COMPARE=status + "\n" + "\n".join(["qa/CERTIFICATION", *delta]), **more)
+
+        sha_bare, st = scenario("bare", base_stamp, az_good, ())
+        rc, err = foreign(sha_bare, st, [])
+        check("release-gate (#1591): ANOTHER repository's bare PASS stamp, committed after the #1428 cutoff, is denied (no schema)",
+              rc == 2 and "schema" in err, f"rc={rc} {err[:300]!r}")
+        sha_good, st = scenario("good", s2, az_good)
+        rc, err = foreign(sha_good, st, ev_files)
+        check("release-gate (#1591): ANOTHER repository's schema-2 stamp, whose commit carries its passing evidence, is permitted",
+              rc == 0 and "other/fork" in err, f"rc={rc} {err[:300]!r}")
+        rc, err = foreign(sha_good, st, [*ev_files, "app.rb"])
+        check("release-gate (#1591): ... and a code change riding with that evidence is denied, naming it",
+              rc == 2 and "app.rb" in err, f"rc={rc} {err[:300]!r}")
+        rc, err = foreign(sha_good, st, [], cmd="gh release create v1 -R other/fork --target main")
+        check("release-gate (#1591): ... and a release of that commit is permitted too", rc == 0, f"rc={rc} {err[:300]!r}")
+        sha_hole, st = scenario("hole", s2, az_hole)
+        rc, err = foreign(sha_hole, st, ev_files)
+        check("release-gate (#1591): ANOTHER repository's committed HOLE in the sweep is denied, naming the layer",
+              rc == 2 and "#1428" in err and "HOLE" in err, f"rc={rc} {err[:300]!r}")
+        rc, err = foreign(sha_hole, st, ev_files, cmd="gh release create v1 -R other/fork --target main")
+        check("release-gate (#1591): ... and a release of that commit is denied too", rc == 2 and "HOLE" in err, f"rc={rc} {err[:300]!r}")
+        sha_twin, st = scenario("twin", s2, az_good, ("v0", "v1"))
+        rc, err = foreign(sha_twin, st, ev_files + ["qa/manual-tests/first-boot-v0/pages.csv", "qa/manual-tests/authz-v0/sweep.csv"])
+        check("release-gate (#1591): ANOTHER repository's evidence copied from another release is denied (byte-identical)",
+              rc == 2 and "byte-identical" in err, f"rc={rc} {err[:300]!r}")
+        sha_out, st = scenario("outside", {**s2, "first_boot": "app"}, az_good)
+        rc, err = foreign(sha_out, st, ev_files)
+        check("release-gate (#1591): ANOTHER repository's stamp naming evidence outside qa/manual-tests/ is denied",
+              rc == 2 and "qa/manual-tests/" in err, f"rc={rc} {err[:300]!r}")
+        rc, err = foreign(sha_good, {**s2, "verdict": "FAIL"}, ev_files)
+        check("release-gate (#1591): ANOTHER repository's stamp whose verdict is not PASS is denied", rc == 2 and "not PASS" in err,
+              f"rc={rc} {err[:300]!r}")
+        for status in ("diverged", "behind"):
+            rc, err = foreign(sha_good, s2, ev_files, status=status)
+            check(f"release-gate (#1591): ANOTHER repository's certified commit that is {status} of the judged one is denied (not an ancestor)",
+                  rc == 2 and "not an ancestor" in err, f"rc={rc} {err[:300]!r}")
+        # THE HOOK'S OWN TIME. A PreToolUse hook that outlives its timeout (15 s) does not deny: the command goes through.
+        # A fetch that stalls past that must be stopped by the helper's budget, and a hook that has spent its time on the
+        # API must not start one. A `git` that sleeps on `fetch` (20 s, longer than the hook may take) stands in for a slow remote.
+        gitbin = Path(td) / "gitbin"
+        gitbin.mkdir()
+        real_git = shutil.which("git")
+        (gitbin / "git").write_text(f'#!/bin/sh\ncase " $* " in *" fetch "*) sleep 20 ;; esac\nexec {real_git} "$@"\n', encoding="utf-8")
+        (gitbin / "git").chmod(0o755)
+        started = time.monotonic()
+        # (RAILS_FLOW_HOOK_DEADLINE=13, the gate's own largest deadline, so it is the helper's budget that speaks first, not #1602's.)
+        rc, err = foreign(sha_good, s2, ev_files, RAILS_FLOW_HOOK_DEADLINE="13",
+                          PATH=f"{gitbin}{os.pathsep}{Path(td) / 'bin'}{os.pathsep}{os.environ['PATH']}")
+        took = time.monotonic() - started
+        check("release-gate (#1591): a fetch that stalls past the hook's own 15 s is stopped by the budget and DENIED, inside the timeout",
+              rc == 2 and "time budget" in err and took < 15, f"rc={rc} took={took:.1f}s {err[:240]!r}")
+        # A `gh api` that stalls is cut short by `bounded` (4 s) and read as a failure: denied, well inside the 15 s.
+        started = time.monotonic()
+        rc, err = foreign(sha_good, s2, ev_files, FAKE_SLEEP="30")
+        took = time.monotonic() - started
+        # By ITS OWN message: with the stall left unbounded, #1602's deadline would cut it short too and the denial inside 15 s
+        # would still hold, so only "could not be read" tells this bound from the deadline's.
+        check("release-gate (#1591): a gh that stalls is cut short and the command DENIED, inside the hook's timeout",
+              rc == 2 and took < 15 and "could not be read" in err, f"rc={rc} took={took:.1f}s {err[:240]!r}")
+        # The compare call stalls alone (the stamp read is fast), so only ITS bound can stop it.
+        started = time.monotonic()
+        rc, err = foreign(sha_good, s2, ev_files, FAKE_SLEEP_COMPARE="30")
+        took = time.monotonic() - started
+        check("release-gate (#1591): a compare call that stalls on its own is cut short and the command DENIED, inside the hook's timeout",
+              rc == 2 and took < 15 and "could not be compared" in err, f"rc={rc} took={took:.1f}s {err[:240]!r}")
+        # Too little time left for the evidence judge: a gate whose deadline leaves under 3 s after the 2 s margin does not START
+        # the judge. A deadline of 4 s makes that deterministic (the API calls are instant here), where sleeping through earlier
+        # calls made it depend on how fast the machine was (it passed locally and was permitted on CI).
+        rc, err = foreign(sha_good, s2, ev_files, RAILS_FLOW_HOOK_DEADLINE="4")
+        check("release-gate (#1591): a hook with too little time left for the evidence judge does not start it, and DENIES",
+              rc == 2 and "no time left" in err, f"rc={rc} {err[:240]!r}")
+        rc, err = foreign(sha_good, s2, ev_files, cmd="gh pr merge 7 -R gone/repo", repo_name="gone/repo")
+        check("release-gate (#1591): a repository whose objects cannot be fetched is denied, naming the layer and the repository",
+              rc == 2 and "#1428" in err and "gone/repo" in err, f"rc={rc} {err[:300]!r}")
+
+
 def ci_verdict_hint_fixtures() -> None:
     # The PLUGIN root, two levels above hooks/scripts -- `HOOKS.parent` is hooks/, and pointing there
     # made every fixture silent for the wrong reason until the positive one said so.
@@ -3065,6 +3241,38 @@ def deadline_fixtures() -> None:
                 ("a release publish whose tag or target is not a plain name (#1606)",
                  ("gh release create v1.0.0 --repo o/r --target ../x", "gh release create v1.0.0 --repo o/r --target 'a#b'",
                   "gh release create ../v1 --repo o/r --target main", "gh release create 'v%2f..%2f1' --repo o/r --target main")),
+                # #1607 (the #1602 delta review's residuals S1-S4). The coarse detector is an allow-by-default WORD LIST while the full
+                # path denies an unlisted `gh` write by default, so each word narrowed the gap and none closed it. These are RULES: any
+                # `gh api` that writes, a few CLI verbs that write, a main spelled so no word shows, and a GraphQL body built by substitution.
+                ("a `gh api` that WRITES, by method or by fields (S1, S2); the cost, accepted for a fallback that runs only when the gate overran its "
+                 "deadline, is that an ordinary `gh api ... -f body=x` is refused too",
+                 ("gh api repos/o/r/contents/f.txt -X PUT -f branch=main -f message=m -f content=Zg==", "gh api -X DELETE repos/o/r/contents/f.txt -f branch=main",
+                  "gh api repos/o/r/contents/f.txt -XPUT -f branch=main", "gh api repos/o/r/branches/main/rename -f new_name=x",
+                  "gh api --method POST repos/o/r/issues -f title=x", "gh api repos/o/r/contents/f.txt --input body.json",
+                  "gh api -X POST repos/o/r/actions/runs/1/rerun", "gh api repos/o/r/actions/runs/1/rerun-failed-jobs -X POST",
+                  "gh api repos/o/r/issues/1/comments -f body=x", "gh api repos/o/r/issues/1/comments -fbody=x", "gh api repos/o/r/issues -F title=x",
+                  "gh api -X PUT repos/o/r/subscription", "gh api --method PATCH repos/o/r", "gh api -X 'DELETE' repos/o/r/subscription")),
+                ("a bare `gh api` on a merge, ref, release or dispatch endpoint: the word rules (#1602, #1606) still refuse what no method or field "
+                 "marks as a write, an over-block the full path does not share (it allows the read), accepted for the fallback",
+                 ("gh api repos/o/r/dispatches", "gh api repos/o/r/merges", "gh api repos/o/r/git/refs/heads/main", "gh api repos/o/r/releases")),
+                ("a `gh` verb that changes a repository or re-runs a workflow (S1, S2)",
+                 ("gh repo sync o/r --branch main", "gh repo edit --default-branch main", "gh repo edit o/r --description x",
+                  "gh run rerun 123", "gh run rerun 123 --failed", "gh workflow enable release.yml")),
+                ("a `git push` whose destination is spelled so no word shows (S3): a variable, a glob, a brace expansion, or a name split by a quote, a backslash or a backtick",
+                 ("git push origin HEAD:$B", "git push origin HEAD:${B}", "git push origin HEAD:refs/heads/mai?", "git push origin HEAD:ma[i]n",
+                  "git push origin HEAD:ma{in,}", "git push origin 'HEAD:ma''in'", 'git push origin "HEAD:ma""in"', "git push origin $(git rev-parse --abbrev-ref HEAD)",
+                  "git $V push origin feature/x", "git  $V push origin feature/x",
+                  # the #1607 review's 19 of 31: every quote, backslash and backtick spelling of main, not just the empty pair
+                  'git push origin HEAD:"ma"in', 'git push origin HEAD:m"ain"', "git push origin HEAD:ma'in'", "git push origin HEAD:'m'ain",
+                  "git push origin HEAD:m'a'in", "git push origin HEAD:ma\\in", "git push origin HEAD:m\\ain", "git push origin HEAD:mai\\n",
+                  "git push origin ma\\in", "git push origin 'HEAD:m'ain", "git push origin HEAD:ma`:`in", 'git push origin HEAD:refs/heads/"ma"in',
+                  "git push origin HEAD:heads/ma'in'", 'git push origin "ma"in', 'git push origin "HEAD":ma\\in')),
+                ("an ORDINARY quoted ref, a multi-line command or a backticked commit message that says `git push` (the accepted cost of one character class "
+                 "instead of a list of spellings: a fallback that runs only after the gate overran its deadline, 'retry it')",
+                 ("git push origin 'feat/x'", 'git push origin "feat/x"', "git push origin feature/x\ngit commit -m 'it works'",
+                  "git commit -m \"$(cat <<'EOF'\nnever `git push --force`\nEOF\n)\"")),
+                ("a GraphQL body built by substitution (S4)",
+                 ('gh api graphql -f query="$(cat q.graphql)"', "gh api graphql -f query=`cat q.graphql`", "gh api graphql -f query=<(cat q.graphql)")),
                 ("a push whose verb or remote is disguised but whose destination is still named",
                  ("git -c alias.p=push p origin HEAD:main", "git -c url.b.insteadOf=a push origin main")),
             ):
@@ -3073,13 +3281,40 @@ def deadline_fixtures() -> None:
             # THE CONTROLS: refusing everything would pass every example above. `-f query=@x` is a LITERAL string in gh (only
             # `-F` reads a file) and the full path allows it too; `--tags` pushes no branch; a branch NAMED heads/... or
             # feature/main-menu is not main.
+            # #1607 controls: a RULE over-blocks more than a word does, so each rule has the ordinary command it must leave alone. A
+            # `-X GET` (or no method and no fields) is a read; `?` inside a URL query is not a glob; a plain quoted ref is not an empty pair.
+            for cmd in ("gh api repos/o/r/pulls", "gh api repos/o/r/issues/1/comments", "gh api -X GET repos/o/r/pulls -f per_page=100",
+                        "gh api --method GET repos/o/r/pulls -F per_page=100", "gh api repos/o/r/issues --jq '.[].number'", "gh run list",
+                        "gh run view 123", "gh repo view o/r", "gh repo clone o/r", "gh workflow view release.yml",
+                        "git push https://x.test/r.git?z=1 feature/x", "git push origin feature/x:feature/y",
+                        "gh api graphql -f query='{ repository(owner:\"o\", name:\"r\") { id } }'"):
+                check(f"deadline (#1575): CONTROL (#1607): the coarse detector allows `{cmd}`", coarse(cmd) == 0, "exit 2: refused")
+            # #1607: the destination is what FOLLOWS `push` in the same simple command. A `$` in an earlier line, an env prefix, a commit
+            # message, or a loop that merely says "push" is not a destination (first version: 5 of 8 new refusals were this).
+            for cmd in ("cat <<EOF\n$(git rev-parse HEAD)\nEOF\ngit push origin feature/w", "x=$(git rev-parse HEAD) git push origin feature/w",
+                        "for k in \"force-push\" \"no-verify\"; do grep -c \"$k\" GUARDRAILS.md; done", "git status && git push origin feature/x"):
+                check(f"deadline (#1575): CONTROL (#1607): a `$` that does not follow `push` is not refused: `{cmd[:60]!r}`", coarse(cmd) == 0, "exit 2: refused")
+            # THE JSON WRAPPER IS NOT THE COMMAND: the payload holds braces, brackets, commas and quotes of its own, and a rule that looked at
+            # `{` or `[` anywhere would refuse every command. A payload with extra keys and an array must still pass.
+            wrapped = json.dumps({"tool_input": {"command": "git push origin feature/x", "description": "push the branch, then [wait]"},
+                                  "session_id": "s", "args": ["a", "b"],
+                                  "meta": {"a": 1, "b": 2}})
+            ok = _run(["/bin/bash", str(QA_HOOK)], cwd=bd, input=wrapped, env={"PATH": bd, "HOME": os.environ.get("HOME", "/tmp")},
+                      capture_output=True, text=True, timeout=60).returncode
+            check("deadline (#1575): CONTROL (#1607): a payload with extra keys, an array and braces of its own is not refused", ok == 0, f"exit {ok}")
+            # The quote/backslash/backtick rule stops at the first RAW double quote, which ends the command in the payload; an apostrophe in a LATER key
+            # (a `description` that says "don't wait") is not part of the destination.
+            apos = json.dumps({"tool_input": {"command": "git push origin feature/x", "description": "send the branch, don't wait"}, "session_id": "s"})
+            ok = _run(["/bin/bash", str(QA_HOOK)], cwd=bd, input=apos, env={"PATH": bd, "HOME": os.environ.get("HOME", "/tmp")},
+                      capture_output=True, text=True, timeout=60).returncode
+            check("deadline (#1575): CONTROL (#1607): an apostrophe in a later payload key is not read as part of the push destination", ok == 0, f"exit {ok}")
             for cmd in ("git push origin feature/x", "git push origin HEAD:heads/feature/x", "git push origin HEAD:heads/feature/main-menu",
                         "git push origin heads/feature/x", "git push --tags origin", "git status", "git commit -m tidy",
                         "gh workflow list", "gh workflow view release.yml", "gh run list", "gh pr view 7", "gh pr list",
                         "gh api repos/o/r/pulls", "gh api graphql -f query='{ viewer { login } }'",
                         "gh api graphql -f query=@q.graphql", "gh api graphql --raw-field query=@-", "git push -u origin fix/1010-one-main"):
                 check(f"deadline (#1575): CONTROL: the coarse detector allows `{cmd}`", coarse(cmd) == 0, "exit 2: refused")
-        for cmd in ("git push origin HEAD:heads/main", "git push --all"):
+        for cmd in ("git push origin HEAD:heads/main", "git push --all", "gh run rerun 123", "git push origin HEAD:$B"):
             rc, took, err, left = hung(QA_HOOK, cmd)
             check(f"deadline (#1575): a TIMEOUT refuses `{cmd}` through that same detector",
                   rc == 2 and "looks like a promotion" in err and not left, f"exit {rc}: {err[:120]!r}")

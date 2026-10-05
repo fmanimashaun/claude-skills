@@ -30,6 +30,30 @@ _coarse_looks_promotion() {
     if [[ $_in =~ ${_b}push${_e} ]]; then
       [[ $_in =~ (^|[^[:alnum:]_-])--(all|mirror)${_e} ]] && _looks_promotion=1
       [[ $_in =~ [*] ]] && _looks_promotion=1
+      # #1607 (S3): a destination SPELLED so no word shows: `HEAD:$B`, `mai?`, `ma[i]n`, `ma{in,}`, `'HEAD:ma''in'`. The full path refuses all
+      # of them ("cannot tell which commit..."), and `*` already was here. Read as RULES, in the shapes a glob or an expansion takes inside a
+      # WORD, and only AFTER `push` in the SAME simple command (no `;`, `&` or `|` between): the payload is JSON and has braces, brackets, commas
+      # and quotes of its own, and a `$` in an earlier line, an env prefix or a commit message that merely says "push" is not a destination (the
+      # measured over-block of the first version: 5 of 8 new refusals on 486 commands). A `?` followed by a letter is a URL query, not a glob.
+      # A verb built by a variable (`git $V push`) is its own rule, since the `$` comes BEFORE `push`.
+      # Cost: `git push origin $BRANCH` is refused on a timeout ("retry it").
+      _sq="'"
+      _seg='push[^;&|]*'
+      _seg_cmd='push[^;&|"]*'   # ends at the first RAW double quote: inside the command a quote is `\"`, so a later key (`"description":"don't wait"`) is out
+      _g_q='[[:alnum:]_/.-][?]([^[:alnum:]=&]|$)'
+      _g_b='[[:alnum:]_/.-][{][^{}"[:space:]]*,[^{}"[:space:]]*[}]'
+      _g_s='[[:alnum:]_/.-][[][^]"[:space:][]+[]]'
+      # A QUOTE, A BACKSLASH OR A BACKTICK after `push`: a name split by any of them (`HEAD:"ma"in`, `ma\in`, `m'ain'`, an empty pair) is `main` to a
+      # shell and no word to a regex, and each new spelling needed a new rule (the #1607 review: 19 of 31 got through the empty-pair one). One class
+      # instead of a list of shapes. In the payload a command's own double quote is `\"`, so the backslash covers it, and the JSON's own raw quotes
+      # are not in the class. Cost: `git push origin 'feat/x'` and a commit message that mentions `git push` inside backticks are refused on a timeout.
+      _g_x="[\\\\${_sq}\`]"
+      [[ $_in =~ ${_seg}[$] ]] && _looks_promotion=1
+      [[ $_in =~ ${_seg}${_g_q} ]] && _looks_promotion=1
+      [[ $_in =~ ${_seg}${_g_b} ]] && _looks_promotion=1
+      [[ $_in =~ ${_seg}${_g_s} ]] && _looks_promotion=1
+      [[ $_in =~ ${_seg_cmd}${_g_x} ]] && _looks_promotion=1
+      [[ $_in =~ ${_b}git[[:space:]]+[$] ]] && _looks_promotion=1
     fi
     [[ $_in =~ ${_b}merge${_e} ]] && _looks_promotion=1
   fi
@@ -49,7 +73,28 @@ _coarse_looks_promotion() {
     if [[ $_in =~ ${_b}api${_e} ]] && [[ $_in =~ ${_b}graphql${_e} ]]; then
       [[ $_in =~ (^|[^[:alnum:]_-])--input${_e} ]] && _looks_promotion=1
       [[ $_in =~ (^|[^[:alnum:]_-])(-F|--field)[[:space:]=]*[^[:space:]=]+=@ ]] && _looks_promotion=1
+      # #1607 (S4): a body built by substitution (`$(cat q.graphql)`, a backtick, `<(...)`): the full path refuses it, the words are not there.
+      case $_in in *'$('*|*'`'*|*'<('*) _looks_promotion=1 ;; esac
     fi
+    # #1607 (S1, S2): the full path refuses an unlisted `gh` write by default, and the coarse path was a list of words, so each word narrowed the
+    # gap and none closed it. A `gh api` that WRITES is a rule: a write method (PUT, POST, PATCH, DELETE) or any field or --input (gh sends a POST
+    # when it is given fields), unless the method is GET. GraphQL keeps its own rules above and below (a QUERY posted with -f is not a write).
+    # Cost, accepted for a fallback that runs only when the gate overran its deadline: an ordinary `gh api ... -f body=x` is refused too.
+    if [[ $_in =~ ${_b}api${_e} ]] && ! [[ $_in =~ ${_b}graphql${_e} ]]; then
+      _m_get='(^|[^[:alnum:]_-])(-X|--method)[^[:alnum:]]{0,3}[Gg][Ee][Tt]([^[:alnum:]_]|$)'
+      _m_wr='(^|[^[:alnum:]_-])(-X|--method)[^[:alnum:]]{0,3}([Pp][Uu][Tt]|[Pp][Oo][Ss][Tt]|[Pp][Aa][Tt][Cc][Hh]|[Dd][Ee][Ll][Ee][Tt][Ee])([^[:alnum:]_]|$)'
+      _m_fl='(^|[^[:alnum:]_-])(-f|-F|--field|--raw-field)[[:space:]=]*[A-Za-z_][A-Za-z0-9_.]*=|(^|[^[:alnum:]_-])--input([^[:alnum:]_-]|$)'
+      if [[ $_in =~ $_m_wr ]]; then
+        _looks_promotion=1
+      elif ! [[ $_in =~ $_m_get ]] && [[ $_in =~ $_m_fl ]]; then
+        _looks_promotion=1
+      fi
+    fi
+    # The CLI verbs that change a repository or re-run a workflow, by word: `gh repo sync|edit`, `gh run rerun` (and `.../rerun`,
+    # `.../rerun-failed-jobs` in an API path), `gh workflow enable`. `gh workflow run` is above.
+    [[ $_in =~ ${_b}repo${_e} ]] && [[ $_in =~ ${_b}(sync|edit)${_e} ]] && _looks_promotion=1
+    [[ $_in =~ rerun ]] && _looks_promotion=1
+    [[ $_in =~ ${_b}workflow${_e} ]] && [[ $_in =~ ${_b}enable${_e} ]] && _looks_promotion=1
   fi
   # #1575 (#1602 review F1): ANY GraphQL mutation. The full path denies one by shape; this path cannot parse, so it
   # denies by the word, whatever the mutation is called or how the flag is spelled (-f, -F, --raw-field). A list of
@@ -478,6 +523,30 @@ reader="${CLAUDE_PLUGIN_ROOT:-}/scripts/read_certification.py"
 ev="${CLAUDE_PLUGIN_ROOT:-}/scripts/release_evidence.py"
 JWHY=""
 
+# extra_files <evidence paths>: reads changed paths on stdin and prints those that are neither the stamp nor
+# evidence the stamp names. ONE definition for this checkout and for another repository (#1591): the delta
+# since the certified commit may be the stamp and the evidence it names, and nothing else.
+extra_files() {
+  local evidence="$1" f p ok
+  while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    [ "$f" = "qa/CERTIFICATION" ] && continue
+    ok=0
+    while IFS= read -r p; do
+      [ -n "$p" ] || continue
+      # A directory (trailing "/") matches as a prefix; the sweep is ONE file and matches exactly.
+      # The leading "(" matters: inside $( ) a bare `pattern)` closes the substitution.
+      case "$p" in
+        (*/) case "$f" in ("$p"*) ok=1 ;; esac ;;
+        (*) [ "$f" = "$p" ] && ok=1 ;;
+      esac
+    done <<EVIDENCE
+$evidence
+EVIDENCE
+    [ "$ok" = 1 ] || printf '%s\n' "$f"
+  done
+}
+
 # judge <commit being shipped> <commit whose tree holds the stamp> <what to call the commit>
 # Returns 0 when a PASS stamp certifies <commit> (exactly, or through the stamp's own commit and the
 # evidence it names), 1 with JWHY set otherwise. One judgement for all three subjects (#1569): dev's
@@ -531,23 +600,7 @@ judge() {
       fi
       # The stamp's own commit may also carry the evidence it names (#1428): recorded AFTER the tested
       # sha, so requiring it before would be circular.
-      extra="$(printf '%s\n' "$delta" | while IFS= read -r f; do
-        [ -z "$f" ] && continue
-        [ "$f" = "qa/CERTIFICATION" ] && continue
-        ok=0
-        while IFS= read -r p; do
-          [ -n "$p" ] || continue
-          # A directory (trailing "/") matches as a prefix; the sweep is ONE file and matches exactly.
-          # The leading "(" matters: inside $( ) a bare `pattern)` closes the substitution.
-          case "$p" in
-            (*/) case "$f" in ("$p"*) ok=1 ;; esac ;;
-            (*) [ "$f" = "$p" ] && ok=1 ;;
-          esac
-        done <<EVIDENCE
-$evidence
-EVIDENCE
-        [ "$ok" = 1 ] || printf '%s\n' "$f"
-      done)"
+      extra="$(printf '%s\n' "$delta" | extra_files "$evidence")"
       if [ -n "$extra" ]; then
         JWHY="certification is for sha ${csha:0:12}; ${what} (${tgt:0:12}) has changed more than the stamp since: $(printf '%s' "$extra" | head -3 | tr '\n' ' '). Re-certify before promoting."; return 1
       fi
@@ -557,14 +610,34 @@ EVIDENCE
   return 0
 }
 
+# bounded <seconds> <command...>: run a command that talks to the network and stop it when the time is up (exit 124).
+# A PreToolUse hook that outlives its timeout (15 s) does not deny, it lets the command through, so a call that can
+# stall (`gh api`) must be cut short here and read as a failure, which every caller turns into a denial (#1591).
+bounded() {
+  python3 -c 'import subprocess, sys
+try:
+    done = subprocess.run(sys.argv[2:], capture_output=True, timeout=float(sys.argv[1]), stdin=subprocess.DEVNULL)
+except subprocess.TimeoutExpired:
+    sys.exit(124)
+except OSError:
+    sys.exit(127)
+sys.stdout.buffer.write(done.stdout)
+sys.stderr.buffer.write(done.stderr)
+sys.exit(done.returncode)' "$@"
+}
 # judge_remote <sha> <owner/repo> <what>: the stamp of a repository this checkout is NOT, read through the
 # API at that sha (#1569). It needs the stamp at the sha to be PASS and to certify it exactly, or to sit
-# on top of the tested sha with nothing else changed (the stamp's own commit). The release-only layers
-# (#1428) are NOT re-judged here -- their evidence files are not in this checkout -- and the stamp's
-# own words say so on stderr.
+# on top of the tested sha with nothing else changed but the stamp and the evidence it names. The release-only
+# layers (#1428) are judged exactly as for this checkout, from the evidence committed in THAT repository:
+# remote_evidence.py fetches the commit into a scratch repository and runs release_evidence.py there (#1591),
+# inside the time the hook has left, because a hook that outlives its timeout (15 s, hooks.json) does not deny: it
+# lets the command through. The whole gate also runs under a deadline (#1575, `_deadline_s`, 13 s by default since #1607, 10 s before), past which
+# its process group is killed and a promotion refused. So the helper runs LAST, after the cheap API calls, with what is
+# left of that deadline minus 2 s (never more than 8), so ITS denial speaks first, and a command that has no time left is
+# denied. Several ships in one command share that one deadline.
 judge_remote() {
-  local sha="$1" repo="$2" what="$3" verdict csha why cmp status files
-  if ! gh api -H 'Accept: application/vnd.github.raw+json' "repos/${repo}/contents/qa/CERTIFICATION?ref=${sha}" >"$stamp_tmp" 2>/dev/null; then
+  local sha="$1" repo="$2" what="$3" verdict csha why cmp status files evidence budget
+  if ! bounded 4 gh api -H 'Accept: application/vnd.github.raw+json' "repos/${repo}/contents/qa/CERTIFICATION?ref=${sha}" >"$stamp_tmp" 2>/dev/null; then
     JWHY="this command acts on ${repo}, not on this checkout's repository, and its qa/CERTIFICATION could not be read at ${what} (${sha:0:12}) through the GitHub API. Run it from a checkout of ${repo} that holds a PASS stamp, or set QA_ALLOW_MAIN=1."
     return 1
   fi
@@ -578,22 +651,37 @@ judge_remote() {
   fi
   [ -n "$csha" ] || { JWHY="${repo}: certification has no sha — the stamp is invalid. Re-run /qa-flow:certify."; return 1; }
   case "$csha" in *[!0-9a-fA-F]*) JWHY="${repo}: certification sha is not a commit id (${csha:0:20}) — the stamp is invalid. Re-run /qa-flow:certify."; return 1 ;; esac
+  # The cheap API call first: how the judged commit relates to the certified one.
+  cmp=""
   case "$sha" in
     "$csha"*) : ;;
     *)
-      if ! cmp="$(gh api "repos/${repo}/compare/${csha}...${sha}" --jq '.status, (.files[].filename)' 2>/dev/null)"; then
+      if ! cmp="$(bounded 4 gh api "repos/${repo}/compare/${csha}...${sha}" --jq '.status, (.files[].filename)' 2>/dev/null)"; then
         JWHY="${repo}: certification is for sha ${csha:0:12}, and ${what} (${sha:0:12}) could not be compared with it through the GitHub API. Re-certify."; return 1
       fi
       status="$(printf '%s\n' "$cmp" | head -1)"
-      files="$(printf '%s\n' "$cmp" | sed 1d | grep -vx 'qa/CERTIFICATION' | head -3 | tr '\n' ' ' || true)"
       case "$status" in ahead|identical) : ;; *)
         JWHY="${repo}: certification is for sha ${csha:0:12}, which is not an ancestor of ${what} (${sha:0:12}). ${what} moved — re-certify before promoting."; return 1 ;;
-      esac
-      if [ -n "$files" ]; then
-        JWHY="${repo}: certification is for sha ${csha:0:12}; ${what} (${sha:0:12}) has changed more than the stamp since: ${files}. Re-certify before promoting."; return 1
-      fi ;;
+      esac ;;
   esac
-  echo "qa-flow: ${repo}: certification valid for ${csha:0:12} — ${what} ${sha:0:12} permitted (the release-only layers are not re-judged for a repository other than this checkout's)." >&2
+  # (#1591) The release-only layers (#1428), as for this checkout, judged LAST and inside the time the hook has left
+  # (SECONDS counts from the hook's start). Fail-closed: any error, and no time, denies.
+  budget=$(( ${_deadline_s:-12} - 2 - SECONDS )); [ "$budget" -le 8 ] || budget=8
+  if [ "$budget" -lt 3 ]; then
+    JWHY="${repo}: there is no time left in this hook to judge the release-only layers (#1428) of ${what} (${sha:0:12}): the command acts on too many commits or repositories at once. Split it."; return 1
+  fi
+  if evidence="$(python3 "${CLAUDE_PLUGIN_ROOT:-}/scripts/remote_evidence.py" --repo "$repo" --sha "$sha" --budget "$budget" 2>"$evtmp")"; then
+    grep '^WARNING' "$evtmp" | sed "s|^WARNING |qa-flow: ${repo}: |" >&2
+  else
+    why="$(grep -E '^(FAIL|unusable)' "$evtmp" 2>/dev/null | head -3 | tr '\n' ' ')"
+    JWHY="${repo}: the release-only layers do not pass (#1428): ${why:-remote_evidence.py could not run.} Fix them and re-certify."; return 1
+  fi
+  # What changed since the certified commit may be the stamp and the evidence it names, and nothing else.
+  files="$(printf '%s\n' "$cmp" | sed 1d | extra_files "$evidence" | head -3 | tr '\n' ' ')"
+  if [ -n "$files" ]; then
+    JWHY="${repo}: certification is for sha ${csha:0:12}; ${what} (${sha:0:12}) has changed more than the stamp since: ${files}. Re-certify before promoting."; return 1
+  fi
+  echo "qa-flow: ${repo}: certification valid for ${csha:0:12} — ${what} ${sha:0:12} permitted." >&2
   return 0
 }
 # judge_in <sha> <repo or -> <what>
@@ -717,15 +805,19 @@ exit 0
 # awk children behind for hours. Past the deadline the whole process group is killed. This gate refuses only a
 # main-ward promotion, so a timeout does too: the COARSE builtin detector above judges the raw payload; a command
 # that does not look like a promotion is allowed (blocking every slow command would be the failure here), and one that
-# does is denied, QA_ALLOW_MAIN=1 honoured and audited exactly as in the missing-tool path. The default is under the
-# hook's 15 s timeout (hooks.json) and RAILS_FLOW_HOOK_DEADLINE is clamped at 13. The gate's NETWORK calls (`gh pr view`,
+# does is denied, QA_ALLOW_MAIN=1 honoured and audited exactly as in the missing-tool path. The default is 13 s, under the
+# hook's 15 s timeout (hooks.json), and RAILS_FLOW_HOOK_DEADLINE is clamped at 13. It was 10 until #1607: the foreign-repository judgment
+# (#1612) plans for up to about 12 s of its own and bounds each of its calls, so the deadline must sit ABOVE that budget, where it only
+# catches a call nobody bounded, and not cut a slow-but-bounded judgment off first with a less useful reason. The gate's NETWORK calls (`gh pr view`,
 # and since #1601 `gh api .../commits/...`, `git fetch` of a ref the command names, and `git ls-remote` of a release tag) are
 # reached only after the classifier has read the command as one that puts a commit on main or publishes a release, which
 # are the shapes the coarse detector denies, so a slow network fails closed. It also means a legitimate promotion on a
 # slow network is refused with "retry it", which is the cost of a bounded hook.
 _dl="$(dirname "${BASH_SOURCE[0]}")/lib/deadline.sh"
 if [ -f "$_dl" ] && . "$_dl" 2>/dev/null && type deadline_run >/dev/null 2>&1; then
-  deadline_seconds 10 13
+  # The margin to the hook's 15 s timeout is about 1.85 s (measured at load 22 to 33: the deadline's denial arrives at 13.14 s). A timed-out hook
+  # lets the command through, and the load that makes a hook time out is the load that makes this loop's one-second sleep drift: do not raise it.
+  deadline_seconds 13 13
   deadline_run "$_deadline_s" _gate_main; _rc=$?
   if [ "$_rc" -ge 128 ]; then
     _coarse_looks_promotion

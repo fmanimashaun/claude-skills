@@ -1,6 +1,9 @@
 """Mutation guard: hook_release_gate_deadline. The deadline block at the bottom of release-gate.sh. Run by scripts/mutation_check.py (#1575)."""
 from mutation_types import Guard, Mutation  # noqa: F401
 
+_BS, _BT = chr(92), chr(96)   # a backslash and a backtick, spelled so no escaping is read twice
+_GX = '      _g_x="[' + _BS * 4 + '${_sq}' + _BS + _BT + ']"'   # the line in release-gate.sh
+
 GUARD = Guard(
     name="hook_release_gate_deadline",
     subject="plugins/qa-flow/hooks/scripts/release-gate.sh",
@@ -14,6 +17,7 @@ GUARD = Guard(
            "plugins/rails-flow/scripts/check_criteria.py", "plugins/rails-flow/scripts/check_handoff.py",
            "plugins/qa-flow/scripts/read_certification.py", "plugins/qa-flow/scripts/push_targets.py",
            "plugins/qa-flow/scripts/release_evidence.py", "plugins/rails-flow/scripts/self_consistency.py",
+           "plugins/qa-flow/scripts/remote_evidence.py",   # the release gate runs it (#1591)
            "plugins/rails-flow/scripts/extract_claims.py", "plugins/rails-flow/scripts/ci_verdict_hint.py"),
     mutations=(
         # A blocking gate: a promotion it cannot read must be refused.
@@ -40,7 +44,7 @@ GUARD = Guard(
         # Past hooks.json's 15 s Claude Code stops waiting.
         Mutation(
             "the default and ceiling move above the hook's own timeout",
-            'deadline_seconds 10 13',
+            'deadline_seconds 13 13',
             'deadline_seconds 20 30',
             "default and ceiling sit below the hook's configured timeout",
         ),
@@ -91,7 +95,7 @@ GUARD = Guard(
             'a repository dispatch stops being a promotion',
             '[[ $_in =~ ${_b}api${_e} ]] && [[ $_in =~ dispatches ]] && _looks_promotion=1',
             ':',
-            'refuses a repository dispatch',
+            'a bare `gh api` on a merge, ref, release or dispatch endpoint',
         ),
         # #1602 review of the timeout path: shapes the FULL path denies and the coarse detector allowed (a 486-command differential).
         Mutation(
@@ -126,7 +130,7 @@ GUARD = Guard(
             'a `gh api` REST merge or ref write stops being a promotion on a timeout',
             '[[ $_in =~ ${_b}api${_e} ]] && [[ $_in =~ (merge|merges|refs|releases|mergePullRequest|updateRef|createRef) ]] && _looks_promotion=1',
             ':',
-            'refuses a REST merge or ref write whose head or sha is not a plain name (#1606)',
+            'a bare `gh api` on a merge, ref, release or dispatch endpoint',
         ),
         # #1602 asked that the timeout path also refuse #1606's shapes; these are the two word rules that make it so.
         Mutation(
@@ -134,6 +138,136 @@ GUARD = Guard(
             '[[ $_in =~ ${_b}release${_e} ]] && [[ $_in =~ ${_b}(create|edit)${_e} ]] && _looks_promotion=1',
             ':',
             'refuses a release publish whose tag or target is not a plain name (#1606)',
+        ),
+        # #1607: the #1602 delta review's residuals S1-S4 (the coarse detector was an allow-by-default word list).
+        Mutation(
+            'a write method (PUT, POST, PATCH, DELETE) on a `gh api` stops being a promotion',
+            '      if [[ $_in =~ $_m_wr ]]; then',
+            '      if false; then',
+            '`gh api -X PUT repos/o/r/subscription`',
+        ),
+        # #1607: the #1602 delta review's residuals S1-S4 (the coarse detector was an allow-by-default word list).
+        Mutation(
+            'fields on a `gh api` (gh sends a POST) stop being a promotion',
+            '      elif ! [[ $_in =~ $_m_get ]] && [[ $_in =~ $_m_fl ]]; then',
+            '      elif false; then',
+            '`gh api repos/o/r/issues/1/comments -f body=x`',
+        ),
+        # #1607: the #1602 delta review's residuals S1-S4 (the coarse detector was an allow-by-default word list).
+        Mutation(
+            '`gh repo sync|edit` stops being a promotion',
+            '    [[ $_in =~ ${_b}repo${_e} ]] && [[ $_in =~ ${_b}(sync|edit)${_e} ]] && _looks_promotion=1',
+            ':',
+            '`gh repo sync o/r --branch main`',
+        ),
+        # #1607: the #1602 delta review's residuals S1-S4 (the coarse detector was an allow-by-default word list).
+        Mutation(
+            '`rerun` (gh run rerun, .../rerun, .../rerun-failed-jobs) stops being a promotion',
+            '    [[ $_in =~ rerun ]] && _looks_promotion=1',
+            ':',
+            '`gh run rerun 123`',
+        ),
+        # #1607: the #1602 delta review's residuals S1-S4 (the coarse detector was an allow-by-default word list).
+        Mutation(
+            '`gh workflow enable` stops being a promotion',
+            '    [[ $_in =~ ${_b}workflow${_e} ]] && [[ $_in =~ ${_b}enable${_e} ]] && _looks_promotion=1',
+            ':',
+            '`gh workflow enable release.yml`',
+        ),
+        # #1607: the #1602 delta review's residuals S1-S4 (the coarse detector was an allow-by-default word list).
+        Mutation(
+            'a `$` after `push` (a variable or substitution as the destination) stops being a promotion',
+            '      [[ $_in =~ ${_seg}[$] ]] && _looks_promotion=1',
+            ':',
+            '`git push origin HEAD:$B`',
+        ),
+        # #1607: the #1602 delta review's residuals S1-S4 (the coarse detector was an allow-by-default word list).
+        Mutation(
+            'a glob `?` after `push` stops being a promotion',
+            '      [[ $_in =~ ${_seg}${_g_q} ]] && _looks_promotion=1',
+            ':',
+            '`git push origin HEAD:refs/heads/mai?`',
+        ),
+        # #1607: the #1602 delta review's residuals S1-S4 (the coarse detector was an allow-by-default word list).
+        Mutation(
+            'a brace expansion after `push` stops being a promotion',
+            '      [[ $_in =~ ${_seg}${_g_b} ]] && _looks_promotion=1',
+            ':',
+            '`git push origin HEAD:ma{in,}`',
+        ),
+        # #1607: the #1602 delta review's residuals S1-S4 (the coarse detector was an allow-by-default word list).
+        Mutation(
+            'a bracket glob after `push` stops being a promotion',
+            '      [[ $_in =~ ${_seg}${_g_s} ]] && _looks_promotion=1',
+            ':',
+            '`git push origin HEAD:ma[i]n`',
+        ),
+        # #1607 (B1 of the PR review): ONE character class after `push` replaces a list of quote spellings; each member of the class has a mutant.
+        Mutation(
+            "a single quote after `push` stops being a promotion",
+            _GX,
+            '      _g_x="[' + _BS * 4 + _BS + _BT + ']"',
+            "`git push origin HEAD:m'a'in`",
+        ),
+        Mutation(
+            "a backslash after `push` stops being a promotion",
+            _GX,
+            '      _g_x="[${_sq}' + _BS + _BT + ']"',
+            "`git push origin HEAD:m" + _BS + "ain`",
+        ),
+        Mutation(
+            "a backtick after `push` stops being a promotion",
+            _GX,
+            '      _g_x="[' + _BS * 4 + '${_sq}]"',
+            "`git push origin HEAD:ma`:`in`",
+        ),
+        Mutation(
+            "the quote rule reads past the command into a later payload key",
+            '      [[ $_in =~ ${_seg_cmd}${_g_x} ]] && _looks_promotion=1',
+            '      [[ $_in =~ ${_seg}${_g_x} ]] && _looks_promotion=1',
+            "an apostrophe in a later payload key is not read as part of the push destination",
+        ),
+        # #1607: the #1602 delta review's residuals S1-S4 (the coarse detector was an allow-by-default word list).
+        Mutation(
+            'a git verb built by a variable (`git $V push`) stops being a promotion',
+            '      [[ $_in =~ ${_b}git[[:space:]]+[$] ]] && _looks_promotion=1',
+            ':',
+            '`git $V push origin feature/x`',
+        ),
+        # #1607: the #1602 delta review's residuals S1-S4 (the coarse detector was an allow-by-default word list).
+        Mutation(
+            'a GraphQL body built by substitution stops being a promotion',
+            "      case $_in in *'$('*|*'`'*|*'<('*) _looks_promotion=1 ;; esac",
+            "      case $_in in *'<('*) _looks_promotion=1 ;; esac",
+            'a GraphQL body built by substitution (S4)',
+        ),
+        # THE OTHER DIRECTION: a RULE over-blocks more than a word does, so each rule has a control that must be able to fail.
+        Mutation(
+            'a `-X GET` stops exempting a `gh api` read that carries fields (-f per_page=100)',
+            '      elif ! [[ $_in =~ $_m_get ]] && [[ $_in =~ $_m_fl ]]; then',
+            '      elif [[ $_in =~ $_m_fl ]]; then',
+            'CONTROL (#1607): the coarse detector allows `gh api -X GET repos/o/r/pulls -f per_page=100`',
+        ),
+        # THE OTHER DIRECTION: a RULE over-blocks more than a word does, so each rule has a control that must be able to fail.
+        Mutation(
+            'the `$` rule looks anywhere in a command that says push, not only after it',
+            '      [[ $_in =~ ${_seg}[$] ]] && _looks_promotion=1',
+            '      [[ $_in =~ [$] ]] && _looks_promotion=1',
+            'a `$` that does not follow `push` is not refused',
+        ),
+        # THE OTHER DIRECTION: a RULE over-blocks more than a word does, so each rule has a control that must be able to fail.
+        Mutation(
+            'a `?` followed by a letter (a URL query) counts as a glob',
+            "      _g_q='[[:alnum:]_/.-][?]([^[:alnum:]=&]|$)'",
+            "      _g_q='[[:alnum:]_/.-][?]'",
+            '`git push https://x.test/r.git?z=1 feature/x`',
+        ),
+        # THE OTHER DIRECTION: a RULE over-blocks more than a word does, so each rule has a control that must be able to fail.
+        Mutation(
+            "the brace rule matches the JSON wrapper's own braces and commas",
+            '      _g_b=\'[[:alnum:]_/.-][{][^{}"[:space:]]*,[^{}"[:space:]]*[}]\'',
+            "      _g_b='[{][^{}]*,[^{}]*[}]'",
+            'a payload with extra keys, an array and braces of its own is not refused',
         ),
     ),
 )
