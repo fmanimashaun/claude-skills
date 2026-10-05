@@ -293,7 +293,7 @@ def strip_comments_and_heredocs(cmd: str, bodies: list[str] | None = None) -> st
             while i < n and cmd[i] != "\n":
                 i += 1
             continue
-        if c == "<" and cmd.startswith("<<", i) and not cmd.startswith("<<<", i) and not owed:
+        if c == "<" and cmd.startswith("<<", i) and not cmd.startswith("<<<", i) and not owed and (i == 0 or cmd[i - 1] != "<"):
             op = _heredoc_at(cmd, i)
             if op:
                 pending.append((op[0], op[1], op[2]))
@@ -1450,6 +1450,21 @@ def selftest() -> int:
         # (#1470 review) a heredoc body with an apostrophe is not an unbalanced quote
         ("cat > note.md <<'EOF'\nit's done, push main later\nEOF\ngit push -u origin fix/x", on_feature, False),
         ("cat <<-EOF\n\tdon't\n\tEOF\ngit push origin fix/x", on_feature, False),
+        # a here-string (`<<<`) is a WORD, not a heredoc: it opens no body and hides nothing after it. Its second `<` once started
+        # a heredoc whose "delimiter" was the word, and the push after it was deleted with the body.
+        ("cat <<< x; git push origin main", on_feature, True),
+        ("cat <<<x; git push origin main", on_feature, True),
+        ("cat <<< x\ngit push origin main", on_feature, True),
+        ("git push origin main <<< x", on_feature, True),
+        ("cat <<< x; git push origin fix/x", on_feature, False),
+        ("cat <<< x\ngit push origin fix/x", on_feature, False),
+        ("cat <<< x <<EOF\nbody\nEOF\ngit push origin main", on_feature, True),     # a real heredoc after a here-string still opens
+        ("cat <<< x <<EOF\ngit push origin main\nEOF", on_feature, False),             # ... and still hides its own body
+        # the same inside a substitution, whose own scanner decides where it ends
+        ("y=$(cat <<< x)\ngit push origin main", on_feature, True),
+        ("y=$(cat <<<x\n)\ngit push origin main", on_feature, True),
+        ("y=$(cat <<< x)\ngit push origin fix/x", on_feature, False),
+        ("y=$(cat <<< x)\ncat <<EOF\ngit push origin main\nEOF\ngit push origin fix/x", on_feature, False),   # the here-string owes no delimiter
         # (#1542) a heredoc that a `$( )` ended early still owes its delimiter, and no new heredoc opens
         # until it is seen: a body line naming `cat <<END` must not swallow the push after the `)`.
         ("x=$(cat <<EOF\n)\ncat <<END\nEOF\n)\ngit push origin main", on_feature, True),
@@ -1606,6 +1621,7 @@ def selftest() -> int:
                       ('gh pr merge -b "a b" feat/x', ["PR_MERGE feat/x"]),
                       ("gh pr merge --merge https://github.com/o/r/pull/3", ["PR_MERGE https://github.com/o/r/pull/3"]),
                       ("timeout 60 gh pr merge 5", ["PR_MERGE 5"]),
+                      ("cat <<< x; gh pr merge 5", ["PR_MERGE 5"]), ("cat <<<x\ngh pr merge 5", ["PR_MERGE 5"]),
                       ("bash -c 'gh pr merge 7 --merge'", ["PR_MERGE 7"]),
                       ("git merge dev", ["GIT_MERGE dev"]), ("sudo git merge dev", ["GIT_MERGE dev"]),
                       ('git commit -m "merge it" && gh pr list', []),
@@ -1646,6 +1662,9 @@ def selftest() -> int:
             ("x=`gh api -X PUT repos/o/r/pulls/5/merge`", ["API_PR_MERGE 5"]),
             ("cat <<EOF\n$(gh api -X PUT repos/o/r/pulls/5/merge)\nEOF", ["API_PR_MERGE 5"]),
             ("cat <<'EOF'\ngh api -X PUT repos/o/r/pulls/5/merge\nEOF", []),
+            ("cat <<< x; gh api -X PUT repos/o/r/pulls/5/merge", ["API_PR_MERGE 5"]),
+            ("cat <<< x\ngh api graphql -f query='mutation { mergePullRequest(input:{pullRequestId:\"PR_kw1\"}) { x } }'", ["GQL_PR PR_kw1"]),
+            ("cat <<< x; gh api repos/o/r/merges -f base=main -f head=dev", ["API_MERGE dev"]),
             ("gh api repos/o/r/merges -f base=main -f head=dev", ["API_MERGE dev"]),
             ("gh api repos/o/r/merges -f base=dev -f head=x", []),
             ("gh api -X PATCH repos/o/r/git/refs/heads/main -f sha=a", ["API_REF a"]),
