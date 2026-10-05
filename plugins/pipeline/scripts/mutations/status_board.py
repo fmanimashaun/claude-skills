@@ -336,7 +336,7 @@ GUARD = Guard(
             'the renderer links without checking the address again',
             '    if board.get("live") and BOARD_URL.match(str(board["live"].get("url") or "")):',
             '    if board.get("live"):',
-            'linked once from the title block',
+            'render_html does not link a board.json address',
         ),
         Mutation(
             'the board pattern accepts a look-alike host',

@@ -1123,6 +1123,18 @@ def live_address(tmp: Path) -> None:
         w = w_with(tmp, "live4")
         w.record({"version": 1, "coordinator": coord, "sessions": {}, "board": block})
         check(f"a board block that is {label} is ignored without a traceback", w.board()["live"] is None)
+    # `render` draws from a board.json that may have been edited by hand, so the page checks the address AGAIN before it links it.
+    w = w_with(tmp, "live6")
+    w.record({"version": 1, "coordinator": coord, "sessions": {}, "board": {"artifact_url": good}})
+    edited = w.board()
+    for label, bad in (("a javascript: url", "javascript:alert(1)"), ("another host", "https://evil.example/artifact/x"), ("an attribute break", 'https://claude.ai/artifact/x" onclick="y')):
+        edited["live"] = {"url": bad}
+        pg = sb.render_html(edited)
+        check(f"render_html does not link a board.json address that is {label}", "Live board" not in pg and "evil.example" not in pg and "onclick" not in pg
+              and "javascript:" not in pg)
+    edited["live"] = {"url": good}
+    check("...and still links a good one drawn from board.json (near miss)", sb.render_html(edited).count(f'href="{good}"') == 1)
+
     # The command, in a real repository with a recorded address.
     stub = tmp / "stub-live"
     stub.mkdir()
