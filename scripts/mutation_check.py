@@ -253,7 +253,11 @@ RATCHET_FLOOR = 60.0
 # reads it as 82 s without anyone having made it more expensive. Measured on the runner (run 37183258895): the CI's
 # runner speed moved the whole gate between 967 s and 1536 s for the same work.
 RATCHET_NEW = 120.0
-RATCHET_GROWTH = 1.5
+# GROWTH IS TWICE THE RECORD, NOT 1.5x: a tolerance below the runner's own noise fails on a guard nobody touched. MEASURED: `hook_coordination`,
+# whose guard, subject and selftest are byte-identical between the two runs, cost 840 s in run 37273819948 and 1301 s in run 37279335358
+# (1.55x), the whole gate had moved 967 s to 1536 s (1.59x) before, and 1.5x tripped it. Twice the record plus the slack still refuses a
+# guard that has MORE than doubled.
+RATCHET_GROWTH = 2.0
 RATCHET_SLACK = 30.0
 # WHAT A FAILING RUN TELLS THE AUTHOR TO DO. The rule is that whoever adds or grows a heavy guard re-records it in the SAME PR, so the
 # cost lands as a reviewed one-line diff and a later PR's dispatched run is never the one to trip on it (#1599).

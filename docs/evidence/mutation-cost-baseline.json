@@ -13,8 +13,9 @@
     "hook_guard_claims": 183.0,
     "hook_normalize_cmd": 1701.0,
     "hook_release_gate": 1019.0,
-    "hook_release_gate_deadline": 289.0,
+    "hook_release_gate_deadline": 673.0,
     "hook_release_gate_effects": 1579.0,
+    "hook_release_gate_repos": 191.0,
     "kamal_destination": 63.0,
     "lint_self_consistency": 602.0,
     "maintainer_doctor": 468.0,
@@ -22,6 +23,7 @@
     "proc_group": 453.0,
     "process_containment": 69.0,
     "project_gates": 96.0,
+    "remote_evidence": 174.0,
     "status_board": 136.0
   },
   "jobs": 4,
