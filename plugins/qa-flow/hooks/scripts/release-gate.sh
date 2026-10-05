@@ -38,9 +38,14 @@ _coarse_looks_promotion() {
       # A verb built by a variable (`git $V push`) is its own rule, since the `$` comes BEFORE `push`.
       # Cost: `git push origin $BRANCH` is refused on a timeout ("retry it").
       _sq="'"
-      _seg='push[^;&|]*'
-      _seg_cmd='push[^;&|"]*'   # ends at the first RAW double quote: inside the command a quote is `\"`, so a later key (`"description":"don't wait"`) is out
-      _g_q='[[:alnum:]_/.-][?]([^[:alnum:]=&]|$)'
+      # #1617 (N6): `push` is a WORD that starts a command word (after a space, `;`, `&`, `|` or `(`) and is not followed by a name character, so
+      # `git checkout -b \"feature/push-fix\"` is not a push. The trailing test is an OPTIONAL group (an empty alternative is an invalid regex on macOS), not a consumed
+      # character, so a backtick or a quote RIGHT after `push` is still seen by the rules that follow.
+      _pw='(^|[[:space:];&|(])push'
+      _seg="${_pw}"'([^[:alnum:]_./-][^;&|]*)?'
+      _seg_cmd="${_pw}"'([^[:alnum:]_./-][^;&|"]*)?'   # ends at the first RAW double quote: inside the command a quote is `\"`, so a later key (`"description":"don't wait"`) is out
+      # #1617 (N5): a `?` is a glob unless it opens a URL query, which is `?key=`: `HEAD:ma?n` is main, `https://x.test/r.git?z=1` is not.
+      _g_q='[[:alnum:]_/.-][?][[:alnum:]_.%-]*([^[:alnum:]_.%=-]|$)'
       _g_b='[[:alnum:]_/.-][{][^{}"[:space:]]*,[^{}"[:space:]]*[}]'
       _g_s='[[:alnum:]_/.-][[][^]"[:space:][]+[]]'
       # A QUOTE, A BACKSLASH OR A BACKTICK after `push`: a name split by any of them (`HEAD:"ma"in`, `ma\in`, `m'ain'`, an empty pair) is `main` to a
@@ -61,12 +66,7 @@ _coarse_looks_promotion() {
   # #1569: a `gh api` write or a release publish, in the same coarse words-anywhere spirit.
   if [[ $_in =~ ${_b}gh${_e} ]]; then
     [[ $_in =~ ${_b}api${_e} ]] && [[ $_in =~ (merge|merges|refs|releases|mergePullRequest|updateRef|createRef) ]] && _looks_promotion=1
-    [[ $_in =~ ${_b}release${_e} ]] && [[ $_in =~ ${_b}(create|edit)${_e} ]] && _looks_promotion=1
-    # The full path refuses these as "could not judge: not a command known not to merge into main or publish" (the
-    # classifier's own words), and each can reach a release or a branch: update-branch, a workflow run, a repository
-    # dispatch. A timeout asks the same question by the words.
-    [[ $_in =~ update-branch ]] && _looks_promotion=1
-    [[ $_in =~ ${_b}workflow${_e} ]] && [[ $_in =~ ${_b}run${_e} ]] && _looks_promotion=1
+    # A repository dispatch is a `gh api` endpoint, so it stays a word here; the CLI verbs are a rule below.
     [[ $_in =~ ${_b}api${_e} ]] && [[ $_in =~ dispatches ]] && _looks_promotion=1
     # A GraphQL body the gate cannot read: `--input` (a file or stdin) or `-F`/`--field` with `=@file`. A lower-case
     # `-f query=@x` is a LITERAL string in gh, not a file read, and is not on this list (the full path allows it too).
@@ -90,12 +90,60 @@ _coarse_looks_promotion() {
         _looks_promotion=1
       fi
     fi
-    # The CLI verbs that change a repository or re-run a workflow, by word: `gh repo sync|edit`, `gh run rerun` (and `.../rerun`,
-    # `.../rerun-failed-jobs` in an API path), `gh workflow enable`. `gh workflow run` is above.
-    [[ $_in =~ ${_b}repo${_e} ]] && [[ $_in =~ ${_b}(sync|edit)${_e} ]] && _looks_promotion=1
-    [[ $_in =~ rerun ]] && _looks_promotion=1
-    [[ $_in =~ ${_b}workflow${_e} ]] && [[ $_in =~ ${_b}enable${_e} ]] && _looks_promotion=1
+    # #1617: THE CLI VERBS ARE A RULE, NOT A LIST OF THE ONES THAT WRITE. The full path refuses a verb it cannot place, and 13 of 23 verbs
+    # slipped through a word list here (`gh release delete`, `gh workflow disable`, an alias). A `gh` call whose verb is not on the full path's own
+    # safe list is refused (`gh api` has its own rules above). Cost, accepted for a fallback that runs only when the gate overran its deadline: a verb
+    # the full path cannot place (`gh repo rename`, `gh release delete`, `gh workflow disable`, an alias) is refused ("retry it").
   fi
+  # The words are the payload with its JSON and shell punctuation turned into spaces, command separators kept as `;`.
+  _t="${_in//[;&|()]/ ; }"
+  _t="${_t//[\"\{\}\\\`\$\']/ }"
+  _cw=(); read -ra _cw <<< "$_t"
+  _n=${#_cw[@]}; _i=0
+  while [ "$_i" -lt "$_n" ]; do
+    _tool="${_cw[$_i]}"
+    if [ "$_tool" = gh ] || [ "$_tool" = git ]; then
+      _v1=""; _v2=""; _words=""; _j=$((_i + 1))
+      while [ "$_j" -lt "$_n" ] && [ "${_cw[$_j]}" != ";" ]; do
+        case ${_cw[$_j]} in
+          -R|--repo|-C|-c|--hostname|--git-dir|--work-tree|--namespace) _j=$((_j + 2)); continue ;;
+          -*) ;;
+          *) if [ -z "$_v1" ]; then _v1="${_cw[$_j]}"; elif [ -z "$_v2" ]; then _v2="${_cw[$_j]}"; fi; _words="$_words ${_cw[$_j]}" ;;
+        esac
+        _j=$((_j + 1))
+      done
+      if [ "$_tool" = gh ] && [ -n "$_v1" ]; then
+        # THE FULL PATH'S OWN SAFE LIST (`GH_GROUPS_ANY` and `GH_GROUPS_SOME` in push_targets.py): a verb it allows cannot merge into main or
+        # publish a release, and a verb it does not list is one it cannot place. A fixture compares the two, so they cannot drift apart.
+        case "$_v1" in
+          issue|auth|config|status|browse|search|label|gist|extension|alias|completion|help|version|cache|variable|secret|ssh-key|gpg-key|project|\
+          attestation|agent-task|licenses|preview|api) ;;
+          *) case "$_v1 $_v2" in
+               "pr view"|"pr list"|"pr create"|"pr checks"|"pr diff"|"pr status"|"pr checkout"|"pr comment"|"pr edit"|"pr review"|"pr close"|"pr reopen"|\
+               "pr ready"|"pr lock"|"pr unlock"|"repo view"|"repo list"|"repo clone"|"repo fork"|"repo gitignore"|"repo license"|"run list"|"run view"|\
+               "run watch"|"run download"|"run cancel"|"run delete"|"workflow list"|"workflow view"|"release list"|"release view"|"release download"|\
+               "release upload"|"release delete-asset"|"ruleset list"|"ruleset view"|"ruleset check"|"org list") ;;
+               *) _looks_promotion=1 ;;
+             esac ;;
+        esac
+      fi
+      # #1617 (N4): a git alias hides `push` (`git p origin main` after `git config alias.p push`). A verb git does not have as a command, with
+      # main or master among its arguments (`origin main`, `HEAD:main`), is refused. A real verb that is not `push` is handled by its own rule.
+      if [ "$_tool" = git ] && [ -n "$_v1" ]; then
+        case $_v1 in
+          push|status|log|diff|show|add|commit|switch|branch|fetch|pull|merge|rebase|stash|reset|restore|tag|remote|config|rev-parse|rev-list|\
+          ls-remote|ls-files|ls-tree|worktree|clean|blame|grep|cherry-pick|revert|describe|shortlog|bisect|apply|am|archive|bundle|cat-file|count-objects|\
+          fsck|gc|help|init|clone|mv|rm|notes|reflog|show-ref|symbolic-ref|update-ref|var|version|whatchanged|diff-tree|name-rev|merge-base|for-each-ref|\
+          submodule|sparse-checkout|maintenance|format-patch|range-diff|cherry|check-ignore|hash-object|write-tree|read-tree|commit-tree|prune|repack|rerere|\
+          difftool|mergetool|request-pull|stage|annotate|verify-commit|verify-tag|credential|filter-branch) ;;
+          *) case " $_words " in
+               *" main "*|*" master "*|*" refs/heads/main "*|*" heads/main "*|*:main\ *|*:master\ *|*:refs/heads/main\ *|*:heads/main\ *|*:refs/heads/master\ *) _looks_promotion=1 ;;
+             esac ;;
+        esac
+      fi
+    fi
+    _i=$((_i + 1))
+  done
   # #1575 (#1602 review F1): ANY GraphQL mutation. The full path denies one by shape; this path cannot parse, so it
   # denies by the word, whatever the mutation is called or how the flag is spelled (-f, -F, --raw-field). A list of
   # mutation NAMES let enablePullRequestAutoMerge, createCommitOnBranch and updatePullRequestBranch through.

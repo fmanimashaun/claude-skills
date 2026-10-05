@@ -1395,11 +1395,38 @@ def gh_effects_for(seg, j, cwd, env_repo, known=None):
     raise Unjudgeable(f"gh {' '.join(names)!r} is not on the list of commands that cannot merge into main or publish a release")
 
 
+def _flat_list(cmd: str) -> bool:
+    """True when `cmd` is a plain list of simple commands joined by `;` or newlines: no pipe, `&&`, `||`, `&`, group, subshell, substitution,
+    heredoc, control-flow keyword or nested shell outside a quote. Only then is an assignment on an earlier line certain to hold at a later
+    one (#1617: `( Q=x )`, `true || Q=x`, `if ..; then Q=x; fi`, `Q=x | cat` bind in another scope or not at all, and the later `$Q` is whatever
+    the environment holds)."""
+    out, i, n = [], 0, len(cmd)
+    while i < n:
+        c = cmd[i]
+        if c == "\\":
+            out.append("x"); i += 2; continue
+        if c == "'":
+            j = cmd.find("'", i + 1)
+            out.append("x"); i = n if j < 0 else j + 1; continue
+        if c == '"':
+            j = i + 1
+            while j < n and cmd[j] != '"':
+                j += 2 if cmd[j] == "\\" else 1
+            out.append("x"); i = j + 1; continue
+        out.append(c); i += 1
+    flat = "".join(out)
+    if re.search(r"[|&(){}`]|<<|\$\(", flat):
+        return False
+    return not re.search(r"(^|[\s;])(if|then|else|elif|fi|for|while|until|do|done|case|esac|function|select|eval|source|\.|bash|sh|zsh|dash|ksh|exec)(?=[\s;]|$)", flat)
+
+
 def literal_vars(cmd: str) -> dict[str, str]:
     """#1617: the variables a command binds ONCE, to a literal, and mentions nowhere else as a word (no `read Q`, `for Q in`, `unset Q`,
     `printf -v Q`, `export Q`, `Q+=`): only those can be read as what they hold. A name bound twice (an `if`/`else` that picks one), to
     something built by the shell, or by any other form is unknown, and a document held in it is refused. Known limit: a variable already in
     the environment that a conditional assignment may or may not replace."""
+    if not _flat_list(cmd):
+        return {}
     bound: dict[str, list[str | None]] = {}
     bare: set[str] = set()
     for seg in all_segments(cmd):
@@ -1742,6 +1769,11 @@ def selftest() -> int:
             "Q=$(cat q); gh api graphql -f query=\"$Q\"", "gh api graphql -f query=\"$Q\"; Q='query{a}'",
             "Q='query{a}'; Q+='mutation{x}'; gh api graphql -f query=\"$Q\"",
             "gh api graphql -f query=\"$1\"",
+            # a binding in another scope, or one that may not run: the later $Q is whatever the environment holds
+            "( Q='query{a}' ); gh api graphql -f query=\"$Q\"", "false && Q='query{a}'; gh api graphql -f query=\"$Q\"",
+            "true || Q='query{a}'; gh api graphql -f query=\"$Q\"", "if c; then Q='query{a}'; fi; gh api graphql -f query=\"$Q\"",
+            "for i in 1; do Q='query{a}'; done; gh api graphql -f query=\"$Q\"", "Q='query{a}' | cat; gh api graphql -f query=\"$Q\"",
+            "bash -c \"Q='query{a}'\"; gh api graphql -f query=\"$Q\"", "Q='query{a}' & gh api graphql -f query=\"$Q\"",
             "gh api -X PUT repos/o/r/pulls/$N/merge -f x=1 --input", "gh api -X $M repos/o/r/pulls/5/merge",
             "gh api -X PATCH repos/o/r/git/refs/heads/$B", "gh api graphql -f query=\"$(cat q)\"",
             "gh api -X POST repos/o/r/$X -f a=b", "gh release create $TAG", "gh release create v1 --target $T",

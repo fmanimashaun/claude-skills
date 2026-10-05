@@ -545,5 +545,11 @@ GUARD = Guard(
             ":",
             r"""query="$1"': must be unjudgeable or main-ward""",
         ),
+        Mutation(
+            "a binding in a subshell, behind && or ||, in an if or a pipeline is read as if it were unconditional",
+            "    if not _flat_list(cmd):",
+            "    if False:",
+            r"""( Q=\'query{a}\' ); gh api graphql -f query="$Q"': must be unjudgeable or main-ward""",
+        ),
     ),
 )

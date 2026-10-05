@@ -3297,6 +3297,18 @@ def deadline_fixtures() -> None:
                  ('gh api graphql -f query="$(cat q.graphql)"', "gh api graphql -f query=`cat q.graphql`", "gh api graphql -f query=<(cat q.graphql)")),
                 ("a push whose verb or remote is disguised but whose destination is still named",
                  ("git -c alias.p=push p origin HEAD:main", "git -c url.b.insteadOf=a push origin main")),
+                # #1617 (the #1615 review, N1): a `gh` verb that is not on the READ-ONLY list is refused. 13 of these 23 slipped through the word list.
+                ("a `gh` verb that is not on the FULL path's safe list (#1617): the 13 the word list let through, and a spelling the walker must see through",
+                 ("gh repo rename x", "gh repo archive o/r", "gh repo unarchive o/r", "gh repo delete o/r --yes", "gh repo set-default o/r", "gh repo create o/x",
+                  "gh repo deploy-key add k.pub", "gh workflow disable ci.yml", "gh release delete v1", "gh ruleset create", "gh codespace create",
+                  "gh pm 1", "gh co 1", "gh -R o/r pr merge 7", "gh pr merge 7 --repo o/r", "gh pr update-branch 7", "gh workflow run r.yml", "gh release create v1",
+                  "gh release edit v1", "bash -c 'gh release create v1.0.1'")),
+                # #1617 (N4): a git alias hides `push`: the verb is not one git has, and main is among its arguments.
+                ("a git ALIAS that hides `push` (#1617, N4)",
+                 ("git p origin main", "git -C . p origin HEAD:main", "git -c user.name=x ph origin master", "git p origin HEAD:refs/heads/main")),
+                # #1617 (N5): `?` is a glob unless it opens a URL query (`?key=`); `ma?n` is main.
+                ("a `?` glob in the destination that is not a URL query (#1617, N5)",
+                 ("git push origin HEAD:ma?n", "git push origin HEAD:m?in", "git push origin HEAD:refs/heads/ma?n")),
             ):
                 for cmd in cmds:
                     check(f"deadline (#1575): the coarse detector refuses {what}: `{cmd}`", coarse(cmd) == 2, "exit 0: allowed")
@@ -3308,6 +3320,11 @@ def deadline_fixtures() -> None:
             for cmd in ("gh api repos/o/r/pulls", "gh api repos/o/r/issues/1/comments", "gh api -X GET repos/o/r/pulls -f per_page=100",
                         "gh api --method GET repos/o/r/pulls -F per_page=100", "gh api repos/o/r/issues --jq '.[].number'", "gh run list",
                         "gh run view 123", "gh repo view o/r", "gh repo clone o/r", "gh workflow view release.yml",
+                        # #1617: the read-only verbs stay allowed with a repo flag before or after, and a git ALIAS that does not name main is not a promotion
+                        "gh pr view 7", "gh pr list", "gh pr checks 7", "gh release list", "gh release view v1", "gh -R o/r pr view 7", "gh pr view 7 --repo o/r",
+                        "gh auth status", "gh search issues x", "gh pr create --fill", "gh issue comment 5 -b x", "gh run cancel 1", "gh release upload v1 f.zip", "gh secret delete X", "git p origin feature/x", "git checkout main", "git log main", "git diff main", "git fetch origin main",
+                        "git branch main", 'git checkout -b "feature/push-fix"', 'git checkout -b "feature/push fix"', "git checkout -b feature/push-fix",
+                        'git log --grep pushed "x y"', "git commit -m 'push the fix'",
                         "git push https://x.test/r.git?z=1 feature/x", "git push origin feature/x:feature/y",
                         "gh api graphql -f query='{ repository(owner:\"o\", name:\"r\") { id } }'"):
                 check(f"deadline (#1575): CONTROL (#1607): the coarse detector allows `{cmd}`", coarse(cmd) == 0, "exit 2: refused")
@@ -3324,6 +3341,19 @@ def deadline_fixtures() -> None:
             ok = _run(["/bin/bash", str(QA_HOOK)], cwd=bd, input=wrapped, env={"PATH": bd, "HOME": os.environ.get("HOME", "/tmp")},
                       capture_output=True, text=True, timeout=60).returncode
             check("deadline (#1575): CONTROL (#1607): a payload with extra keys, an array and braces of its own is not refused", ok == 0, f"exit {ok}")
+            # #1617: THE COARSE `gh` LIST IS THE FULL PATH'S. Every verb push_targets.py allows (`GH_GROUPS_ANY`, `GH_GROUPS_SOME`) is allowed on a timeout,
+            # and a sample of the verbs it does NOT list is refused, so the two cannot drift apart. Imported, not copied.
+            import importlib.util as _ilu
+            _sp = _ilu.spec_from_file_location("push_targets_for_drift", str(QA_HOOK.parents[2] / "scripts" / "push_targets.py"))
+            _pt = _ilu.module_from_spec(_sp); _sp.loader.exec_module(_pt)
+            _safe = [f"gh {g} x" for g in sorted(_pt.GH_GROUPS_ANY)] + [f"gh {g} {v} x" for g, vs in sorted(_pt.GH_GROUPS_SOME.items()) for v in sorted(vs)]
+            _bad = [c for c in _safe if coarse(c) != 0]
+            check("deadline (#1617): every `gh` verb the full path allows is allowed on a timeout, so the two lists agree", not _bad and len(_safe) > 40,
+                  f"{len(_safe)} verbs; refused on a timeout: {_bad[:6]}")
+            _unlisted = [f"gh {g} {v} x" for g, v in (("repo", "rename"), ("repo", "delete"), ("workflow", "disable"), ("workflow", "enable"), ("release", "delete"),
+                                                     ("release", "create"), ("ruleset", "create"), ("codespace", "create"), ("pr", "merge"), ("pr", "update-branch"))]
+            _bad = [c for c in _unlisted if coarse(c) != 2 or c.split()[2] in _pt.GH_GROUPS_SOME.get(c.split()[1], ())]
+            check("deadline (#1617): the `gh` verbs the full path does not list are refused on a timeout", not _bad, f"allowed or listed: {_bad}")
             # The quote/backslash/backtick rule stops at the first RAW double quote, which ends the command in the payload; an apostrophe in a LATER key
             # (a `description` that says "don't wait") is not part of the destination.
             apos = json.dumps({"tool_input": {"command": "git push origin feature/x", "description": "send the branch, don't wait"}, "session_id": "s"})
