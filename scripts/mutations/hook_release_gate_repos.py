@@ -136,7 +136,7 @@ GUARD = Guard(
             "a hook with no time left still starts the evidence judge",
             '  if [ "$budget" -lt 3 ]; then',
             '  if false; then',
-            "has spent its time on earlier API calls",
+            "too little time left for the evidence judge",
         ),
     ),
 )

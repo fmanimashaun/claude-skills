@@ -2895,20 +2895,21 @@ def release_gate_repos_fixtures() -> None:
         started = time.monotonic()
         rc, err = foreign(sha_good, s2, ev_files, FAKE_SLEEP="30")
         took = time.monotonic() - started
+        # By ITS OWN message: with the stall left unbounded, #1602's deadline would cut it short too and the denial inside 15 s
+        # would still hold, so only "could not be read" tells this bound from the deadline's.
         check("release-gate (#1591): a gh that stalls is cut short and the command DENIED, inside the hook's timeout",
-              rc == 2 and took < 15, f"rc={rc} took={took:.1f}s {err[:240]!r}")
+              rc == 2 and took < 15 and "could not be read" in err, f"rc={rc} took={took:.1f}s {err[:240]!r}")
         # The compare call stalls alone (the stamp read is fast), so only ITS bound can stop it.
         started = time.monotonic()
         rc, err = foreign(sha_good, s2, ev_files, FAKE_SLEEP_COMPARE="30")
         took = time.monotonic() - started
         check("release-gate (#1591): a compare call that stalls on its own is cut short and the command DENIED, inside the hook's timeout",
               rc == 2 and took < 15 and "could not be compared" in err, f"rc={rc} took={took:.1f}s {err[:240]!r}")
-        # Two foreign ships in one command share ONE deadline: each API call takes 2 s, so the second ship starts with
-        # no time left to judge the evidence and must deny (the first one, alone, is permitted).
-        two = (f"gh pr merge 7 -R other/fork --match-head-commit {sha_good}; "
-               f"gh pr merge 8 -R other/fork --match-head-commit {sha_good}")
-        rc, err = foreign(sha_good, s2, ev_files, cmd=two, FAKE_SLEEP="2", RAILS_FLOW_HOOK_DEADLINE="13")
-        check("release-gate (#1591): a hook that has spent its time on earlier API calls does not start the evidence judge, and DENIES",
+        # Too little time left for the evidence judge: a gate whose deadline leaves under 3 s after the 2 s margin does not START
+        # the judge. A deadline of 4 s makes that deterministic (the API calls are instant here), where sleeping through earlier
+        # calls made it depend on how fast the machine was (it passed locally and was permitted on CI).
+        rc, err = foreign(sha_good, s2, ev_files, RAILS_FLOW_HOOK_DEADLINE="4")
+        check("release-gate (#1591): a hook with too little time left for the evidence judge does not start it, and DENIES",
               rc == 2 and "no time left" in err, f"rc={rc} {err[:240]!r}")
         rc, err = foreign(sha_good, s2, ev_files, cmd="gh pr merge 7 -R gone/repo", repo_name="gone/repo")
         check("release-gate (#1591): a repository whose objects cannot be fetched is denied, naming the layer and the repository",
