@@ -60,18 +60,25 @@ def description(tree: str) -> str:
 
 
 def find_proof(tree: str, commits: list[tuple[str, str]], statuses: Callable[[str], list[dict]]) -> str | None:
-    """The sha of a commit with this tree carrying a successful `full-sweep` status for it, else None.
+    """The sha of a commit carrying the NEWEST owner `full-sweep` status for this tree, when that status is a success.
 
-    The status description must name the SAME tree: a status posted on a commit whose tree later
-    differs (a rebase reusing nothing, a hand-posted status) does not count."""
+    A tree's verdict is its newest status, not any success: an old pass followed by a failing re-run is no proof
+    (review of #1636, F2). A non-success without a timestamp counts as the newest, so a malformed answer cannot
+    resurrect an older success. The description must name the SAME tree: a status posted on a commit whose tree
+    later differs (a hand-posted status) does not count, and only the repository owner's statuses are read."""
+    newest: tuple[str, str, str] | None = None            # (created_at, sha, state)
     for sha, commit_tree in commits:
         if commit_tree != tree:
             continue
         for s in statuses(sha):
-            if (s.get("context") == CONTEXT and s.get("state") == "success" and s.get("description") == description(tree)
+            if not (s.get("context") == CONTEXT and s.get("description") == description(tree)
                     and (s.get("creator") or {}).get("login") == TRUSTED_CREATOR):
-                return sha
-    return None
+                continue
+            state = str(s.get("state"))
+            stamp = str(s.get("created_at") or ("9999" if state != "success" else ""))
+            if newest is None or stamp > newest[0]:
+                newest = (stamp, sha, state)
+    return newest[1] if newest and newest[2] == "success" else None
 
 
 def head_tree(run: Run) -> str:
@@ -92,8 +99,8 @@ def statuses_for(run: Run, sha: str) -> list[dict]:
 def verify(tree: str, run: Run = real_run) -> int:
     try:
         sha = find_proof(tree, recent_commits(run), lambda s: statuses_for(run, s))
-    except (RuntimeError, ValueError) as e:
-        print(f"no proof: lookup failed ({e}) — the full sweep will run")
+    except Exception as e:                                # any odd answer fails SAFE, and says so readably
+        print(f"no proof: lookup failed ({type(e).__name__}: {e}) — the full sweep will run")
         return 1
     if sha is None:
         print(f"no proof: no commit on dev with tree {tree} carries a passing `{CONTEXT}` status — the full sweep will run")
@@ -102,12 +109,29 @@ def verify(tree: str, run: Run = real_run) -> int:
     return 0
 
 
-def record(run: Run = real_run) -> int:
+def snapshot(run: Run = real_run) -> tuple[str, str] | None:
+    """(HEAD sha, its tree) to record, taken BEFORE the sweep starts; None when the worktree is not clean."""
     if run("git", "status", "--porcelain").strip():
+        return None
+    return run("git", "rev-parse", "HEAD").strip(), head_tree(run)
+
+
+def record(run: Run = real_run, before: tuple[str, str] | None = None) -> int:
+    """Post the status for `before`, the commit and tree the sweep STARTED on (review of #1636, F1).
+
+    Reading HEAD after a 30 to 60 minute sweep would record a tree the sweep never ran on if anything was committed
+    or edited meanwhile. Refuses when HEAD, the tree or the cleanliness differ now from the snapshot."""
+    now = snapshot(run)
+    if now is None:
         print("refusing to record: the worktree is not clean, so the sweep did not run on committed bytes", file=sys.stderr)
         return 1
-    sha = run("git", "rev-parse", "HEAD").strip()
-    tree = head_tree(run)
+    if before is None:
+        before = now
+    if now != before:
+        print(f"refusing to record: the tree moved during the sweep (started {before[0][:8]}, now {now[0][:8]}); "
+              "the sweep proves the bytes it STARTED on", file=sys.stderr)
+        return 1
+    sha, tree = before
     run("gh", "api", f"repos/{REPO}/statuses/{sha}", "-f", "state=success", "-f", f"context={CONTEXT}",
         "-f", f"description={description(tree)}")
     print(f"recorded: `{CONTEXT}` on {sha} for tree {tree}")
@@ -133,6 +157,10 @@ def check_wiring(release_yml: str, gates_yml: str, release_local: str) -> list[s
         out.append("release.yml: `release` may publish after a skipped `gates` ONLY when `proof` found a recorded sweep")
     if "!cancelled()" not in release_job:
         out.append("release.yml: `release` needs !cancelled(), or a skipped `gates` skips it too")
+    for job, text in (("release.yml `proof`", release_yml.split("\n  proof:", 1)[-1].split("\n  gates:", 1)[0]),
+                      ("release.yml `release`", release_job), ("gates.yml `gates`", gates_yml)):
+        if "timeout-minutes:" not in text:
+            out.append(f"{job}: needs `timeout-minutes`, or a hung job holds a runner for GitHub's 6 h default")
     if "sweep_proof.py verify" not in release_yml:
         out.append("release.yml: the `proof` job must run `sweep_proof.py verify`")
     if "github.ref == 'refs/heads/dev'" not in gates_yml or "'--fast'" not in gates_yml:
@@ -186,6 +214,21 @@ def selftest() -> int:
     check("a status whose description names another tree is no proof",
           find_proof("T1", commits, table({"c2": [dict(ok_status, description="tree=T9")]})) is None)
 
+    # F2: the newest owner status for the tree decides.
+    old_ok = dict(ok_status, created_at="2026-10-06T10:00:00Z")
+    new_fail = dict(ok_status, state="failure", created_at="2026-10-06T11:00:00Z")
+    new_ok = dict(ok_status, created_at="2026-10-06T12:00:00Z")
+    check("a newer failure beats an older success",
+          find_proof("T1", commits, table({"c2": [old_ok, new_fail]})) is None)
+    check("a newer failure on ANOTHER commit with the same tree beats an older success",
+          find_proof("T1", [("c2", "T1"), ("c9", "T1")], table({"c2": [old_ok], "c9": [new_fail]})) is None)
+    check("a newer error beats an older success", find_proof("T1", commits, table({"c2": [old_ok, dict(new_fail, state="error")]})) is None)
+    check("a newer success after a failure is a proof again", find_proof("T1", commits, table({"c2": [old_ok, new_fail, new_ok]})) == "c2")
+    check("a failure with no timestamp is treated as newest",
+          find_proof("T1", commits, table({"c2": [old_ok, {k: v for k, v in new_fail.items() if k != "created_at"}]})) is None)
+    check("a failure by someone else does not cancel the owner's success",
+          find_proof("T1", commits, table({"c2": [old_ok, dict(new_fail, creator={"login": "x"})]})) == "c2")
+
     calls: list[tuple[str, ...]] = []
 
     def fake(statuses_json: str, dirty: bool = False, fail_gh: bool = False) -> Run:
@@ -220,18 +263,45 @@ def selftest() -> int:
     calls.clear()
     check("record refuses a dirty worktree", quiet(lambda: record(fake("[]", dirty=True))) == 1)
     check("a refused record posts nothing", not any(c[0] == "gh" for c in calls))
+    # F1: the snapshot is taken before the sweep; the tree changing during it must refuse, and what is posted is the snapshot.
+    def moving(head: list[str], dirty: list[bool]) -> Run:
+        def run(*args: str) -> str:
+            calls.append(args)
+            if args[:2] == ("git", "status"):
+                return " M x\n" if dirty[0] else ""
+            if args[:3] == ("git", "rev-parse", "HEAD^{tree}"):
+                return head[1] + "\n"
+            if args[:2] == ("git", "rev-parse"):
+                return head[0] + "\n"
+            return ""
+        return run
+    state = ["c2", "T1"]
+    started = snapshot(moving(state, [False]))
+    check("the snapshot is the sha and tree at the start", started == ("c2", "T1"))
+    for label, head, dirty in (("a commit during the sweep", ["c3", "T3"], [False]),
+                               ("an edit to a tracked file during the sweep", ["c2", "T1"], [True]),
+                               ("an amend to the same tree under a new sha", ["c3", "T1"], [False])):
+        calls.clear()
+        check(f"record refuses {label}", quiet(lambda: record(moving(head, dirty), before=started)) == 1)
+        check(f"...and posts nothing for {label}", not any(c[0] == "gh" for c in calls))
+    calls.clear()
+    check("record posts the SNAPSHOT when nothing moved", quiet(lambda: record(moving(["c2", "T1"], [False]), before=started)) == 0)
+    check("the post names the snapshot's sha", any(c[0] == "gh" and "statuses/c2" in c[2] for c in calls))
+    check("snapshot is None on a dirty worktree", snapshot(moving(["c2", "T1"], [True])) is None)
+    check("verify turns an unexpected answer into 'the full sweep will run', not a traceback",
+          quiet(lambda: verify("T1", fake('{"not": "a list"}'))) == 1)
     calls.clear()
     check("record posts the status on a clean tree", quiet(lambda: record(fake("[]"))) == 0)
     posted = [c for c in calls if c[0] == "gh"]
     check("the post carries the tree and the context",
           len(posted) == 1 and "description=tree=T1" in posted[0] and f"context={CONTEXT}" in posted[0] and "state=success" in posted[0])
 
-    good_release = ("\n  gates:\n    needs: proof\n    if: needs.proof.outputs.found != 'true'\n"
-                    "\n  release:\n    if: >-\n      github.ref == 'refs/heads/main' && !cancelled() &&\n"
+    good_release = ("\n  proof:\n    timeout-minutes: 10\n    steps: x\n\n  gates:\n    needs: proof\n    if: needs.proof.outputs.found != 'true'\n"
+                    "\n  release:\n    timeout-minutes: 30\n    if: >-\n      github.ref == 'refs/heads/main' && !cancelled() &&\n"
                     "      (needs.gates.result == 'success' ||\n"
                     "       (needs.gates.result == 'skipped' && needs.proof.outputs.found == 'true'))\n"
                     "      python3 scripts/sweep_proof.py verify\n")
-    good_gates = "(github.ref == 'refs/heads/dev') && '--fast' || '--require-slow'"
+    good_gates = "timeout-minutes: 25\n(github.ref == 'refs/heads/dev') && '--fast' || '--require-slow'"
     good_local = "sweep_proof.py verify\nmaintainer_doctor.py --gates-only --require-slow\n"
     check("the good wiring has no problem", check_wiring(good_release, good_gates, good_local) == [])
     for label, mutate in (
@@ -239,6 +309,9 @@ def selftest() -> int:
         ("release ignores a successful gates", lambda r, g, l: (r.replace("needs.gates.result == 'success'", "true"), g, l)),
         ("release publishes after ANY skipped gates", lambda r, g, l: (r.replace(" && needs.proof.outputs.found == 'true'", ""), g, l)),
         ("release loses !cancelled()", lambda r, g, l: (r.replace("!cancelled()", "true"), g, l)),
+        ("the proof job loses its timeout", lambda r, g, l: (r.replace("timeout-minutes: 10", ""), g, l)),
+        ("the release job loses its timeout", lambda r, g, l: (r.replace("timeout-minutes: 30", ""), g, l)),
+        ("the gates job loses its timeout", lambda r, g, l: (r, g.replace("timeout-minutes: 25", ""), l)),
         ("no proof job runs verify", lambda r, g, l: (r.replace("sweep_proof.py verify", "true"), g, l)),
         ("dev push runs the full sweep", lambda r, g, l: (r, g.replace("'--fast'", "'--require-slow'"), l)),
         ("the release never runs the full sweep", lambda r, g, l: (r, g.replace("'--require-slow'", "'--fast'"), l)),

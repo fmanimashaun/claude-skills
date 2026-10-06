@@ -24,27 +24,45 @@ GUARD = Guard(
             "dev push runs the full sweep",
         ),
         Mutation(
+            "the wiring check stops requiring a timeout on the proof, release and gates jobs",
+            '''        if "timeout-minutes:" not in text:''',
+            "        if False:",
+            "loses its timeout",
+        ),
+        Mutation(
             "a status on a commit with a different tree counts",
             "        if commit_tree != tree:\n            continue\n",
             "",
             "a status on a commit with a DIFFERENT tree is ignored",
         ),
         Mutation(
-            "a failing status counts",
-            's.get("state") == "success"',
-            's.get("state") in ("success", "failure")',
-            "a failing status is no proof",
+            "a failing status counts as the newest verdict's success",
+            "    return newest[1] if newest and newest[2] == \"success\" else None",
+            "    return newest[1] if newest else None",
+            "a newer failure beats an older success",
+        ),
+        Mutation(
+            "an old success beats a newer failure (first success wins)",
+            "            if newest is None or stamp > newest[0]:",
+            "            if newest is None:",
+            "a newer failure beats an older success",
+        ),
+        Mutation(
+            "a failure with no timestamp is read as the oldest",
+            '''            stamp = str(s.get("created_at") or ("9999" if state != "success" else ""))''',
+            '''            stamp = str(s.get("created_at") or "")''',
+            "a failure with no timestamp is treated as newest",
         ),
         Mutation(
             "any status context counts",
-            's.get("context") == CONTEXT and ',
-            "",
+            '''            if not (s.get("context") == CONTEXT and s.get("description") == description(tree)''',
+            '''            if not (s.get("description") == description(tree)''',
             "a status for another context is no proof",
         ),
         Mutation(
             "the description need not name this tree",
-            ' and s.get("description") == description(tree)',
-            "",
+            '''            if not (s.get("context") == CONTEXT and s.get("description") == description(tree)''',
+            '''            if not (s.get("context") == CONTEXT''',
             "description names another tree",
         ),
         Mutation(
@@ -55,16 +73,23 @@ GUARD = Guard(
             "created by someone else is ignored",
         ),
         Mutation(
-            "a failed lookup crashes instead of running the full sweep",
-            "    except (RuntimeError, ValueError) as e:",
-            "    except KeyError as e:",
-            "verify exits 1 (not a crash) when gh fails",
+            "an odd lookup answer crashes instead of running the full sweep",
+            "    except Exception as e:                                # any odd answer fails SAFE, and says so readably",
+            "    except RuntimeError as e:",
+            "",   # the selftest itself crashes on the traceback, which is a catch
         ),
         Mutation(
             "record posts from a dirty worktree",
-            '    if run("git", "status", "--porcelain").strip():',
+            '''    if run("git", "status", "--porcelain").strip():
+        return None''',
+            "    if False:\n        return None",
+            "snapshot is None on a dirty worktree",
+        ),
+        Mutation(
+            "record posts whatever HEAD is now, not the snapshot",
+            "    if now != before:",
             "    if False:",
-            "record refuses a dirty worktree",
+            "record refuses a commit during the sweep",
         ),
     ),
 )

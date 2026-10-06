@@ -15,12 +15,24 @@ GUARD = Guard(
         "plugins",
         "evals", "plugins/rails-flow/scripts/process_containment.py"),
     mutations=(
-        # #1635: the cost ratchet compares wall seconds to a runner's record, so it runs only on a runner.
+        # #1635: a backgrounded doctor inherits SIGINT ignored; it must reset it, and only then.
         Mutation(
-            "a laptop under load enforces the cost ratchet and fails guards nobody touched",
-            '    return require_slow and env.get("GITHUB_ACTIONS") == "true"',
-            "    return require_slow",
-            "ratchet_enforced(require_slow=True, {})",
+            "a backgrounded doctor keeps an ignored SIGINT, so its Ctrl-C selftests never fire",
+            "    if signal.getsignal(signal.SIGINT) == signal.SIG_IGN:",
+            "    if False:",
+            "restore_sigint must reset an inherited-ignored SIGINT",
+        ),
+        Mutation(
+            "restore_sigint overrides a handler someone installed",
+            "    if signal.getsignal(signal.SIGINT) == signal.SIG_IGN:",
+            "    if True:",
+            "restore_sigint must leave a normal SIGINT alone",
+        ),
+        Mutation(
+            "main never takes the SIGINT reset",
+            "    restore_sigint()\n    p = argparse",
+            "    p = argparse",
+            "main() must call restore_sigint()",
         ),
         # #1635: an ordinary gate that outlives its budget is FAIL, named; it was a SKIP and read green.
         Mutation(
@@ -266,25 +278,25 @@ GUARD = Guard(
         # #1599: `--ratchet` is for the run that proves the record, and for `mutation coverage` alone.
         Mutation(
             "every run is ratcheted, so a laptop's load reads as growth",
-            '    return (*cmd, "--ratchet") if ratchet and name in RATCHETED_GATES else cmd',
+            '    return (*cmd, "--ratchet") if require_slow and name in RATCHETED_GATES else cmd',
             '    return (*cmd, "--ratchet") if name in RATCHETED_GATES else cmd',
             "without --require-slow, `mutation coverage` is run without --ratchet",
         ),
         Mutation(
             "no run is ratcheted, so the cost record enforces nothing",
-            '    return (*cmd, "--ratchet") if ratchet and name in RATCHETED_GATES else cmd',
+            '    return (*cmd, "--ratchet") if require_slow and name in RATCHETED_GATES else cmd',
             '    return cmd',
             "under --require-slow, `mutation coverage` is run with --ratchet",
         ),
         Mutation(
             "every gate is handed --ratchet under --require-slow",
-            '    return (*cmd, "--ratchet") if ratchet and name in RATCHETED_GATES else cmd',
-            '    return (*cmd, "--ratchet") if ratchet else cmd',
+            '    return (*cmd, "--ratchet") if require_slow and name in RATCHETED_GATES else cmd',
+            '    return (*cmd, "--ratchet") if require_slow else cmd',
             "under --require-slow, no OTHER gate is handed --ratchet",
         ),
         Mutation(
             "the gate runner ignores slow_gate_command and runs the bare command",
-            "            code, out = self.run(*slow_gate_command(name, cmd, self.ratchet),",
+            "            code, out = self.run(*slow_gate_command(name, cmd, self.require_slow),",
             "            code, out = self.run(*cmd,",
             "under --require-slow, `mutation coverage` is run with --ratchet",
         ),

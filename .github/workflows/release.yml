@@ -36,6 +36,8 @@ jobs:
   # the commit that carries the proof. Not found, or any error looking: the full sweep runs, as it always did.
   proof:
     runs-on: ubuntu-latest
+    # A lookup is a checkout and a few API reads; a hung one must not hold a runner for 6 h (#1635).
+    timeout-minutes: 10
     permissions:
       contents: read
       statuses: read
@@ -65,6 +67,8 @@ jobs:
 
   release:
     needs: [proof, gates]
+    # Build, notes and one `gh release create`; 30 minutes is generous for them, and a hung publish must not run for 6 h (#1635).
+    timeout-minutes: 30
     # Releases only ever come from main. workflow_dispatch stays available for re-runs,
     # but a dispatch from any other ref must NOT publish a release for that ref's commit.
     # `gates` is SKIPPED, not green, exactly when `proof` found a recorded sweep for this tree; a skipped

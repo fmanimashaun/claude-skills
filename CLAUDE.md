@@ -135,8 +135,8 @@ a promotion must carry no `Unreleased`, and a second arm would leave the first h
 
 ## Releases are automated — do NOT run `gh release` by hand
 
-`.github/workflows/release.yml` fires on every push to `main`: the gate sweep first (`needs: gates`),
-then tag `v` + `metadata.version`; if no release exists for it, build `dist/*.skill` with
+`.github/workflows/release.yml` fires on every push to `main`: a `proof` lookup, then the gate sweep
+unless a recorded one matches the tree (`gates` is skipped), then tag `v` + `metadata.version`; if no release exists for it, build `dist/*.skill` with
 `scripts/package_core.py`, verify committed `dist/` matches, extract every CHANGELOG `(release vX.Y.Z)`
 block with `scripts/extract_release_notes.py`, and publish with **every** `dist/*.skill` asset —
 **a glob, never a hand-typed list**. A version that already has a release is a no-op. Corollary: **a stray

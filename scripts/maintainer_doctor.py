@@ -623,28 +623,25 @@ SLOW_GATES: dict[str, int] = {
     # this bound prints it, and 5400 s is 1.5x the 3600 s floor. #1599 cuts the guards that re-run a whole fixture group
     # per mutant; re-set this from the `jobs=4, Xs` of a completed run, and lower it when #1599 lands.
     "mutation coverage": 5400,
+    # #1635, MEASURED on the maintainer's machine under other sessions' load: `check_hook_gates.py --selftest --part b` took
+    # 203 s wall (128 s CPU) at load 24, and `--part c` 190 s at load 50 (review of #1636), against the 180 s default; both
+    # pass (355 and 574 checks) when left to finish, and passed on the runner. 600 s is about 3x the larger figure. These are
+    # per-gate budgets, the global default stays 180 s: a hung check still surfaces in 10 minutes, not 90.
+    # `--part a` took 133 s wall (82 s CPU) at the same load, 1.35x under the default, so it gets the same room.
+    "hook gates": 400,
+    "hook gates (release)": 600,
+    "hook gates (worktree)": 600,
 }
 
 # The gates that also enforce a committed record, and so take `--ratchet` (#1599).
 RATCHETED_GATES = frozenset({"mutation coverage"})
 
 
-def ratchet_enforced(require_slow: bool, env: "os._Environ[str] | dict[str, str]") -> bool:
-    """Whether this run may enforce the cost ratchet: a `--require-slow` run ON A HOSTED RUNNER, and nowhere else (#1635).
-
-    The ratchet compares WALL seconds of work per guard against a record measured on the runner. Wall seconds depend on
-    machine load, so a laptop at load 30 to 80 reads every guard 2x to 4x over its record whatever the code: the v1.154.0
-    local release failed 15 of 2688 mutations, every one the ratchet and none a survivor (hook_normalize_cmd 4231 s against
-    1701 s recorded; six guards 'not on record' at 143 to 712 s that cost 61 to 95 s on the runner). A local full sweep keeps
-    the survivor check, which is what a proof is for; GitHub Actions sets GITHUB_ACTIONS=true."""
-    return require_slow and env.get("GITHUB_ACTIONS") == "true"
-
-
-def slow_gate_command(name: str, cmd: tuple[str, ...], ratchet: bool) -> tuple[str, ...]:
-    """The command a gate runs. `mutation coverage` gets `--ratchet` only when `ratchet_enforced` says so. A seconds
-    figure measured on a laptop under other sessions' load or on a PR runner is not growth, and the record is
-    measured on the runner (#1599)."""
-    return (*cmd, "--ratchet") if ratchet and name in RATCHETED_GATES else cmd
+def slow_gate_command(name: str, cmd: tuple[str, ...], require_slow: bool) -> tuple[str, ...]:
+    """The command a gate runs. `mutation coverage` gets `--ratchet` only on the run whose job is to prove it
+    (`--require-slow`: CI's push and promotion runs). A seconds figure measured on a laptop under other sessions' load
+    or on a PR runner is not growth, and the record is measured on the runner (#1599)."""
+    return (*cmd, "--ratchet") if require_slow and name in RATCHETED_GATES else cmd
 
 
 # A failing gate's output exists NOWHERE else on a runner: the doctor is the only thing that
@@ -708,8 +705,6 @@ class Doctor:
     # A push to dev and the promotion must PROVE the slow gates, not report them unknown (#1444).
     # Set by --require-slow, which only CI's non-PR runs pass: there, a SLOW_GATES timeout is FAIL.
     require_slow: bool = False
-    # Set from ratchet_enforced(): the cost ratchet runs only on a hosted runner (#1635).
-    ratchet: bool = False
     results: list[Result] = field(default_factory=list)
     fixed: list[str] = field(default_factory=list)
 
@@ -1273,7 +1268,7 @@ class Doctor:
                     " ".join(cmd),
                 )
                 continue
-            code, out = self.run(*slow_gate_command(name, cmd, self.ratchet),
+            code, out = self.run(*slow_gate_command(name, cmd, self.require_slow),
                                  timeout=SLOW_GATES.get(name, DEFAULT_TIMEOUT))
             if code == 0:
                 # A slow gate's own summary line (mutation_check prints jobs and elapsed) is the
@@ -1437,7 +1432,21 @@ class Doctor:
             print("Machine is ready.")
 
 
+def restore_sigint() -> bool:
+    """Make Ctrl-C reach the doctor even when it was started in the background (#1635).
+
+    A background child of a non-interactive shell inherits SIGINT as IGNORED, so the doctor never saw the Ctrl-C its own
+    selftests send (#1459) and a backgrounded `--record-proof` failed the `maintainer doctor` and `mutation check` gates.
+    Resets it to Python's default handler only when it was ignored; returns whether it did."""
+    import signal
+    if signal.getsignal(signal.SIGINT) == signal.SIG_IGN:
+        signal.signal(signal.SIGINT, signal.default_int_handler)
+        return True
+    return False
+
+
 def main(argv: list[str] | None = None) -> int:
+    restore_sigint()
     p = argparse.ArgumentParser(description="Diagnose and repair a maintainer machine.")
     p.add_argument("--fix", action="store_true", help="apply the SAFE repairs (never rewrites history)")
     p.add_argument("--gates", action="store_true", help="also run the full gate sweep (slower)")
@@ -1462,15 +1471,22 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.record_proof and not (args.gates_only and args.require_slow and not args.fast):
         p.error("--record-proof needs --gates-only --require-slow and not --fast: only a complete sweep may be recorded")
-    doctor = Doctor(fix=args.fix, require_slow=args.require_slow, ratchet=ratchet_enforced(args.require_slow, os.environ))
+    before = None
+    if args.record_proof:
+        # The sha and tree the sweep STARTS on, and a clean worktree, before anything runs (review of #1636, F1).
+        import sweep_proof
+        before = sweep_proof.snapshot()
+        if before is None:
+            print("--record-proof needs a clean worktree at the start: the sweep must run on committed bytes", file=sys.stderr)
+            return 2
+    doctor = Doctor(fix=args.fix, require_slow=args.require_slow)
     rc = doctor.diagnose(gates=args.gates or args.gates_only, gates_only=args.gates_only, fast=args.fast)
     if args.record_proof:
         skipped = [r.name for r in doctor.gate_results() if r.status == SKIP]
         if rc != 0 or skipped:
             print(f"not recording a sweep proof: {'a gate failed' if rc else 'skipped: ' + ', '.join(skipped)}")
             return rc or 1
-        import sweep_proof
-        return sweep_proof.record()
+        return sweep_proof.record(before=before)
     return rc
 
 
