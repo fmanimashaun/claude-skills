@@ -14,6 +14,19 @@ GUARD = Guard(
     selftest="scripts/mutation_check_selftest.py",
     deps=("scripts/mutation_check.py", "scripts/mutation_types.py", "scripts/hermetic_git.py", "plugins/rails-flow/scripts/process_containment.py",),
     mutations=(
+        # #1635: a backgrounded process inherits SIGINT ignored; the reset is only for that case.
+        Mutation(
+            "a backgrounded run keeps an ignored SIGINT, so the Ctrl-C selftests never fire",
+            "    if signal.getsignal(signal.SIGINT) == signal.SIG_IGN:",
+            "    if False:",
+            "restore_sigint must reset an inherited-ignored SIGINT",
+        ),
+        Mutation(
+            "restore_sigint overrides a handler someone installed",
+            "    if signal.getsignal(signal.SIGINT) == signal.SIG_IGN:",
+            "    if True:",
+            "restore_sigint must leave a normal SIGINT alone",
+        ),
         # #1635: the cost is CPU seconds of the run and everything it waited for.
         Mutation(
             "the cost wrapper reports nothing, so every run bills wall time",

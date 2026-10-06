@@ -597,6 +597,7 @@ def run_guard(guard: Guard) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    proc_group.restore_sigint()   # #1635: see its docstring; the Ctrl-C selftests need a SIGINT that arrives
     parser = argparse.ArgumentParser(
         description="Prove each selftest fails when the thing it guards breaks."
     )

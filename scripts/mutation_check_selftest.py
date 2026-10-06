@@ -436,7 +436,29 @@ def _cpu_cost_fixtures() -> None:
     mc._COST.clear()
 
 
+def _sigint_fixtures() -> None:
+    """#1635: proc_group.restore_sigint resets an inherited-IGNORED SIGINT, and only that."""
+    import signal as _sg
+    scripts = str(Path(mc.__file__).resolve().parent)
+    probe = ("import sys, signal; sys.path.insert(0, %r); import proc_group\n"
+             "was = signal.getsignal(signal.SIGINT) == signal.SIG_IGN\n"
+             "did = proc_group.restore_sigint()\n"
+             "print(was, did, signal.getsignal(signal.SIGINT) is signal.default_int_handler)\n" % scripts)
+
+    def child(ignored: bool) -> str:
+        return subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, timeout=60,
+                              preexec_fn=(lambda: _sg.signal(_sg.SIGINT, _sg.SIG_IGN)) if ignored else None).stdout.strip()
+
+    _tick()
+    if child(True) != "True True True":
+        FAILURES.append(f"#1635: restore_sigint must reset an inherited-ignored SIGINT, got {child(True)!r}")
+    _tick()
+    if child(False) != "False False True":
+        FAILURES.append(f"#1635: restore_sigint must leave a normal SIGINT alone, got {child(False)!r}")
+
+
 def run() -> int:
+    mc.proc_group.restore_sigint()   # #1635: a backgrounded run inherits SIGINT ignored
     original_repo = mc.REPO
 
     # ---- 0. EVERY DECLARED PATH RESOLVES FROM ITS GUARD'S BASE ------------------------
@@ -953,6 +975,7 @@ def run() -> int:
     # ---- 1f. NESTED runners, Ctrl-C, and an escapee (review of #1525) ---------------------------
     _proc_group_fixtures()
     _cpu_cost_fixtures()
+    _sigint_fixtures()
 
     # ---- 2. a SURVIVOR must be reported ------------------------------------------------
     # This mutation changes the subject in a way neither fixture observes, so the selftest still

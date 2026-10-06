@@ -227,3 +227,15 @@ def run_cpu(argv, *, timeout: float, input=None, **kw) -> tuple[subprocess.Compl
             os.unlink(path)
         except OSError:
             pass
+
+
+def restore_sigint() -> bool:
+    """Make Ctrl-C reach this process even when it was started in the background (#1635).
+
+    A background child of a non-interactive shell inherits SIGINT as IGNORED, so a doctor or harness never saw the Ctrl-C its own
+    selftests send (#1459, #1525) and a backgrounded full run failed them. Resets it to Python's default handler only when it was
+    ignored; returns whether it did. Called first by every entry point that runs those selftests."""
+    if signal.getsignal(signal.SIGINT) == signal.SIG_IGN:
+        signal.signal(signal.SIGINT, signal.default_int_handler)
+        return True
+    return False

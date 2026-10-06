@@ -17,18 +17,6 @@ GUARD = Guard(
     mutations=(
         # #1635: a backgrounded doctor inherits SIGINT ignored; it must reset it, and only then.
         Mutation(
-            "a backgrounded doctor keeps an ignored SIGINT, so its Ctrl-C selftests never fire",
-            "    if signal.getsignal(signal.SIGINT) == signal.SIG_IGN:",
-            "    if False:",
-            "restore_sigint must reset an inherited-ignored SIGINT",
-        ),
-        Mutation(
-            "restore_sigint overrides a handler someone installed",
-            "    if signal.getsignal(signal.SIGINT) == signal.SIG_IGN:",
-            "    if True:",
-            "restore_sigint must leave a normal SIGINT alone",
-        ),
-        Mutation(
             "main never takes the SIGINT reset",
             "    restore_sigint()\n    p = argparse",
             "    p = argparse",

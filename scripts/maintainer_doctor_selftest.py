@@ -424,6 +424,7 @@ def timeout_fixtures() -> None:
 
 
 def run() -> int:
+    md.restore_sigint()   # #1635: a backgrounded run inherits SIGINT ignored; the Ctrl-C fixtures below need it
     timeout_fixtures()
     repo_untouched_fixtures()
     ruleset_fixtures()

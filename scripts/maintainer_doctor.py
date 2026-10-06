@@ -1433,16 +1433,8 @@ class Doctor:
 
 
 def restore_sigint() -> bool:
-    """Make Ctrl-C reach the doctor even when it was started in the background (#1635).
-
-    A background child of a non-interactive shell inherits SIGINT as IGNORED, so the doctor never saw the Ctrl-C its own
-    selftests send (#1459) and a backgrounded `--record-proof` failed the `maintainer doctor` and `mutation check` gates.
-    Resets it to Python's default handler only when it was ignored; returns whether it did."""
-    import signal
-    if signal.getsignal(signal.SIGINT) == signal.SIG_IGN:
-        signal.signal(signal.SIGINT, signal.default_int_handler)
-        return True
-    return False
+    """See proc_group.restore_sigint (#1635): a backgrounded doctor inherits SIGINT ignored and never saw its own Ctrl-C selftests."""
+    return proc_group.restore_sigint()
 
 
 def main(argv: list[str] | None = None) -> int:
