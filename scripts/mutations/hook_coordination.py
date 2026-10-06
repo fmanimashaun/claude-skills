@@ -13,6 +13,12 @@ GUARD = Guard(
     selftest_args=("--skip-hook-e2e",),      # this guard is for coordination.py: the real-hook checks belong to hook_session_start_pointer (#1611)
     mutations=(
         Mutation(
+            "the summary line is built but never printed, so a run says nothing and still exits 0 (#1629)",
+            "    print(line)\n    return code",
+            "    line\n    return code",
+            "the summary line is printed, not only built",
+        ),
+        Mutation(
             "the coordinator check passes every caller, so a non-coordinator writes",
             '    if coord.get("session_id") == caller:\n        return None\n    holder',
             '    if True:\n        return None\n    holder',

@@ -43,6 +43,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import fcntl
+import io
 import json
 import math
 import os
@@ -537,6 +538,13 @@ SKIP_NOTICE = " [SKIPPED the real session-start.sh checks: --skip-hook-e2e; hook
 
 def summary_line(ran: int, failures: int, skipped: bool) -> str:
     return f"coordination selftest: {ran} checks, {failures} failure(s){SKIP_NOTICE if skipped else ''}"
+
+
+def report(line: str, code: int) -> int:
+    """THE SELFTEST'S ONE PRINTER, and checked by it (#1629): a summary line that is built but never printed exited 0 with
+    no output at all, and nothing noticed. The selftest captures what this writes, so removing the print fails a check."""
+    print(line)
+    return code
 
 
 def selftest(skip_hook_e2e: bool = False) -> int:
@@ -1123,6 +1131,12 @@ def selftest(skip_hook_e2e: bool = False) -> int:
               f"{lone.returncode} {lone.stderr!r}")
         lone_cmd = subprocess.run([sys.executable, __file__, "--skip-hook-e2e", "lanes", "--session-id", "S1", "--cwd", str(sec)], capture_output=True, text=True)
         check("...also when a command follows (it would otherwise be a silently ignored switch)", lone_cmd.returncode == 3 and not lone_cmd.stdout, f"{lone_cmd.returncode} {lone_cmd.stdout!r}")
+        # #1629: the line must REACH stdout. Checking the value of `line` proved the builder; it said nothing about the print.
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed):
+            code = report("coordination selftest: probe", 7)
+        check("the summary line is printed, not only built", printed.getvalue() == "coordination selftest: probe\n" and code == 7,
+              f"{code} {printed.getvalue()!r}")
         check("the summary line says SKIPPED when the real-hook checks were skipped, and only then",
               "SKIPPED" in summary_line(1, 0, True) and "SKIPPED" not in summary_line(1, 0, False), summary_line(1, 0, True))
 
@@ -1138,8 +1152,7 @@ def selftest(skip_hook_e2e: bool = False) -> int:
         line = summary_line(ran[0], len(failures), skip_hook_e2e)
     for f in failures:
         print(f"FAIL: {f}", file=sys.stderr)
-    print(line)
-    return 1 if failures else 0
+    return report(line, 1 if failures else 0)
 
 
 if __name__ == "__main__":
