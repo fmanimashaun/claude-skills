@@ -30,6 +30,7 @@ import os
 import shutil
 import signal
 import subprocess
+import sys
 import threading
 
 ESCAPEE_WAIT = 5        # seconds to keep reading after the kill, for a pipe an escapee still holds
@@ -190,3 +191,39 @@ def run(argv, *, timeout: float, input=None, **kw) -> subprocess.CompletedProces
     finally:
         with _lock:
             _live.discard(proc)
+
+
+# THE COST OF A RUN IS ITS CPU TIME, NOT ITS WALL TIME (#1635). `mutation_check`'s cost ratchet compared wall seconds to a record, so a
+# machine at load 30 to 80 read every guard 2x to 4x over its record whatever the code was (the v1.154.0 local release failed 15 of 2688
+# mutations, every one the ratchet). CPU seconds do not stretch with other processes' load. A run is wrapped in a small interpreter that
+# starts the real command, waits for it, and writes user + system seconds of everything it waited for to a file.
+_CPU_WRAPPER = (
+    "import os, resource, subprocess, sys\n"
+    "rc = subprocess.call(sys.argv[2:])\n"
+    "ru = resource.getrusage(resource.RUSAGE_CHILDREN)\n"
+    "with open(sys.argv[1], 'w') as f:\n"
+    "    f.write(repr(ru.ru_utime + ru.ru_stime))\n"
+    "sys.exit(rc if rc >= 0 else 128 - rc)\n"
+)
+
+
+def run_cpu(argv, *, timeout: float, input=None, **kw) -> tuple[subprocess.CompletedProcess, float | None]:
+    """`run(...)`, plus the CPU seconds (user + system) of the command and every descendant it waited for, or None when
+    the run was killed before it could say (a timeout raises, as `run` does; the caller bills its wall time instead).
+    The return code is the command's own; a signal death maps to 128 + signal, as a shell reports it."""
+    import tempfile
+    fd, path = tempfile.mkstemp(prefix="cpu-seconds-")
+    os.close(fd)
+    try:
+        result = run([sys.executable, "-c", _CPU_WRAPPER, path, *map(str, argv)], timeout=timeout, input=input, **kw)
+        try:
+            with open(path) as f:
+                cpu = float(f.read())
+        except (OSError, ValueError):
+            cpu = None
+        return result, cpu
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass

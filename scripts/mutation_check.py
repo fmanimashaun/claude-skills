@@ -46,6 +46,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -240,7 +241,7 @@ def apply_mutation(guard: Guard, mutation: Mutation, workdir: Path) -> Path:
 
 
 # THE COST RATCHET (#1599). `mutation coverage` reached 3490 s of its 3600 s budget and the CI log could not say which
-# guard had grown: the doctor kept one summary line. A guard over RATCHET_NEW seconds of work (baseline plus every
+# guard had grown: the doctor kept one summary line. A guard over RATCHET_NEW CPU seconds of work (#1635; baseline plus every
 # mutant, summed over all jobs) must be on record in COST_BASELINE, which holds every guard over RATCHET_FLOOR; a recorded one may cost RATCHET_GROWTH times its
 # record plus RATCHET_SLACK, which keeps a runner's speed from reading as growth; a record naming a guard that is gone
 # is drift. A new expensive guard therefore fails until it is made cheaper (`narrow_with`) or recorded from a measured
@@ -265,6 +266,31 @@ RECORD_INSTRUCTION = ("re-record docs/evidence/mutation-cost-baseline.json in th
                       "(`python3 scripts/mutation_check.py --rebaseline` writes it)")
 
 
+# THE COST IS CPU SECONDS (#1635). Each baseline, narrowing control and mutant run reports the CPU time (user + system) of itself and
+# every process it waited for; those are summed per guard here. Wall time is still used for the per-mutation LIMITS (a hung run
+# must still be killed on the clock), but it is no measure of cost: it stretches with the machine's load, so a loaded laptop failed
+# the ratchet on guards nobody had touched. A run killed on its limit bills its wall time, the one figure it has.
+_COST: dict[str, float] = {}
+_COST_LOCK = threading.Lock()
+
+
+def bill(guard_name: str, seconds: float) -> None:
+    with _COST_LOCK:
+        _COST[guard_name] = _COST.get(guard_name, 0.0) + seconds
+
+
+def run_costed(guard_name: str, argv, *, timeout: float, **kw) -> subprocess.CompletedProcess:
+    """`proc_group.run`, billing the run's CPU seconds to `guard_name`."""
+    started = time.monotonic()
+    try:
+        result, cpu = proc_group.run_cpu(argv, timeout=timeout, **kw)
+    except subprocess.TimeoutExpired:
+        bill(guard_name, time.monotonic() - started)
+        raise
+    bill(guard_name, cpu if cpu is not None else time.monotonic() - started)
+    return result
+
+
 def load_cost_baseline(path: Path = COST_BASELINE) -> dict | None:
     """The record, or None when there is no file. A file that is not a record RAISES: read as empty it would pass."""
     if not path.is_file():
@@ -282,7 +308,7 @@ def load_cost_baseline(path: Path = COST_BASELINE) -> dict | None:
 def write_cost_baseline(path: Path, cost: dict[str, float], jobs: int) -> None:
     """Record every guard over the floor, rounded and in a stable order, so a re-baseline is a reviewable diff."""
     heavy = {name: round(secs, 1) for name, secs in sorted(cost.items()) if secs > RATCHET_FLOOR}
-    record = {"note": "seconds of work per guard (baseline plus every mutant, summed over all jobs) from a measured "
+    record = {"note": "CPU seconds (user + system) of work per guard (baseline plus every mutant, summed over all jobs) from a measured "
                       "full run; re-set with `python3 scripts/mutation_check.py --rebaseline` (#1599)",
               "jobs": jobs, "floor": RATCHET_FLOOR, "guards": heavy}
     path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -388,7 +414,7 @@ def run_baseline_timed(guard: Guard) -> tuple[list[str], float]:
         # BASELINE's output raised before the INERT report could print.
         # stderr folded into stdout: one stream in the order it was written, so a tail of it is
         # what a person watching would have seen (#1532). Its own process group (#1459).
-        result = proc_group.run(argv, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        result = run_costed(guard.name, argv, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 text=True, errors="replace",
                                 env=hermetic_git.env(),  # no detached git maintenance (#1510)
                                 timeout=BASELINE_TIMEOUT)
@@ -436,7 +462,7 @@ def narrow_control(guard: Guard, mutation: Mutation, narrow: tuple[str, ...], ti
             argv.append("--selftest")
         argv.extend(guard.selftest_args)
         argv.extend(narrow)
-        result = proc_group.run(argv, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        result = run_costed(guard.name, argv, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 text=True, errors="replace", env=hermetic_git.env(), timeout=timeout)
         if result.returncode == 0:
             return []
@@ -472,7 +498,7 @@ def run_mutation(guard: Guard, mutation: Mutation, timeout: float = MUTATION_FLO
         # stderr folded into stdout, as in the baseline: `stdout + stderr` put the last 12 lines of
         # stderr in front of a label printed to stdout, and 12+ stderr lines hid it (#1532).
         started = time.monotonic()
-        result = proc_group.run(argv, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        result = run_costed(guard.name, argv, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 text=True, errors="replace",
                                 env=hermetic_git.env(),  # no detached git maintenance (#1510)
                                 timeout=timeout)
@@ -632,12 +658,12 @@ def main(argv: list[str] | None = None) -> int:
         live = live_mutations(guards, baselines)
         outcomes = run_live(pool, live, limits)
     by_guard: dict[str, list[str]] = {g.name: list(b) for g, b in zip(guards, baselines)}
-    # Seconds each guard cost: its baseline plus every mutant run (#1497). The CI log printed only
+    # Seconds each guard cost, in CPU time (#1635): its baseline plus every mutant run (#1497). The CI log printed only
     # the gate total, so where the budget went could not be read from it.
-    cost: dict[str, float] = {g.name: secs for g, (_, secs) in zip(guards, timed)}
-    for (g, _m), (found, secs) in zip(live, outcomes):
+    for (g, _m), (found, _secs) in zip(live, outcomes):
         by_guard[g.name].extend(found)
-        cost[g.name] += secs
+    with _COST_LOCK:
+        cost: dict[str, float] = {g.name: _COST.get(g.name, 0.0) for g in guards}
     problems: list[str] = []
     total = 0
     for guard in guards:

@@ -14,6 +14,25 @@ GUARD = Guard(
     selftest="scripts/mutation_check_selftest.py",
     deps=("scripts/mutation_check.py", "scripts/mutation_types.py", "scripts/hermetic_git.py", "plugins/rails-flow/scripts/process_containment.py",),
     mutations=(
+        # #1635: the cost is CPU seconds of the run and everything it waited for.
+        Mutation(
+            "the cost wrapper reports nothing, so every run bills wall time",
+            "ru.ru_utime + ru.ru_stime",
+            "0.0",
+            "a run that burns 1 s of CPU must be billed about 1 s",
+        ),
+        Mutation(
+            "the cost wrapper reads its own CPU, not its children's, so a descendant is never billed",
+            "resource.getrusage(resource.RUSAGE_CHILDREN)",
+            "resource.getrusage(resource.RUSAGE_SELF)",
+            "a run that burns 1 s of CPU must be billed about 1 s",
+        ),
+        Mutation(
+            "the cost wrapper swallows the command's exit code",
+            "sys.exit(rc if rc >= 0 else 128 - rc)",
+            "sys.exit(0)",
+            "pass the command's own exit code through",
+        ),
         Mutation(
             'the child shares our process group',
             '        proc = subprocess.Popen(argv, start_new_session=True, **kw)',
