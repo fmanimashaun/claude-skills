@@ -3,6 +3,7 @@
 
 Run:  python3 scripts/extract_release_notes.py                      # notes for marketplace.json's version
       python3 scripts/extract_release_notes.py --tag v1.92.0         # for a specific tag
+      python3 scripts/extract_release_notes.py --full                 # the whole notes, never shortened (for the issue notifier)
       python3 scripts/extract_release_notes.py --check                # gate: notes exist and are complete
       python3 scripts/extract_release_notes.py --selftest             # prove the parser, both directions
 
@@ -77,6 +78,17 @@ line that is neither a `###` nor a `##` heading joins the block above it. (Befor
 it too: v1.92.1's notes ended with `## Repository hygiene`, the one past tag whose extraction the
 fix changed.)
 
+A RELEASE BODY HAS A SIZE LIMIT, AND THE NOTES CAN EXCEED IT (#1637). GitHub refuses a release whose body is over
+125,000 characters (`HTTP 422: body is too long`). v1.154.0's notes were 163,008 characters (six component blocks, 87
+bullets); `release.yml` passed the gates, built the assets, and failed at `gh release create`, an hour after it
+started, and `release_local.sh` would have failed the same way because it uses this script. Nothing looked at the
+length. So the default output now fits: when the full notes are over `NOTES_BUDGET` (the limit less `BODY_HEADROOM`
+for the lines the callers append), it emits each bullet's HEADLINE (its bold lead) under the same headings, plus a link
+to `CHANGELOG.md` at the tag, and says on stderr that it did. `--full` is the unshortened text, which
+`close_on_dev_merge.py --shipped` needs because the issue numbers are in the bullets' citations, not the headlines.
+`--check` fails if even the headline form is over the budget, so the promotion PR shows it, not the release.
+Our own design; no framework claim.
+
 Exit codes:  0 = ok · 1 = --check found a problem · 2 = not this repo · 3 = ran, could not check everything
 
 Stdlib only.
@@ -86,6 +98,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -154,6 +167,70 @@ def render(text: str, tag: str) -> tuple[str, int]:
         parts.append(heading)
         parts.append("\n".join(body).strip("\n"))
     return "\n".join(parts).strip("\n") + "\n", len(found)
+
+
+# GITHUB'S LIMIT ON A RELEASE BODY, in characters (#1637): `gh release create` answers HTTP 422 over it. The budget keeps HEADROOM for what the callers
+# append after extraction (the `Install:` line, and the pointer below), so the file they publish is under the limit and not merely the extractor's output.
+GITHUB_BODY_LIMIT = 125_000
+BODY_HEADROOM = 2_000
+NOTES_BUDGET = GITHUB_BODY_LIMIT - BODY_HEADROOM
+DEFAULT_REPO = "fmanimashaun/claude-skills"
+BULLET = re.compile(r"^- ")
+HEADLINE = re.compile(r"^- \*\*(.+?)\*\*")
+HEADLINE_FALLBACK = 200
+
+
+def changelog_url(tag: str, repo: str = DEFAULT_REPO) -> str:
+    return f"https://github.com/{repo}/blob/{tag}/CHANGELOG.md"
+
+
+def headline(bullet_first_line: str) -> str:
+    """A bullet's headline: its bold lead (`- **Headline — `path`**`). A bullet with no bold lead keeps its first line, shortened."""
+    m = HEADLINE.match(bullet_first_line)
+    if m:
+        return f"- **{m.group(1)}**"
+    line = bullet_first_line.rstrip()
+    return line if len(line) <= HEADLINE_FALLBACK else line[:HEADLINE_FALLBACK].rstrip() + "…"
+
+
+def render_headlines(text: str, tag: str, repo: str = DEFAULT_REPO) -> tuple[str, int]:
+    """(notes, bullet-count): every block's heading and each bullet's headline, then a link to the full text at the tag.
+
+    A block with no bullet (prose only) keeps its first non-empty line, so it never vanishes."""
+    found = blocks_for(text, tag)
+    if not found:
+        return f"Marketplace {tag}. See CHANGELOG.md for details.\n", 0
+    parts = [f"Each change is listed by its headline: the full notes are over GitHub's {GITHUB_BODY_LIMIT:,}-character limit for a release body. "
+             f"Every bullet in full: {changelog_url(tag, repo)}", ""]
+    total = 0
+    for heading, body in found:
+        parts.append(heading)
+        bullets = [headline(line) for line in body if BULLET.match(line)]
+        if not bullets:
+            first = next((line.strip() for line in body if line.strip()), "")
+            bullets = [first] if first else []
+        parts.append("\n".join(bullets))
+        total += len(bullets)
+        parts.append("")
+    return "\n".join(parts).strip("\n") + "\n", total
+
+
+def render_for_publish(text: str, tag: str, repo: str = DEFAULT_REPO) -> tuple[str, str]:
+    """(body, mode): the full notes when they fit the budget, else the headline form. mode is `full` or `headlines`."""
+    full, _ = render(text, tag)
+    if len(full) <= NOTES_BUDGET:
+        return full, "full"
+    return render_headlines(text, tag, repo)[0], "headlines"
+
+
+def _check_size(text: str, tag: str, repo: str = DEFAULT_REPO) -> list[str]:
+    """Findings: even the headline form is over the budget, so no body this script emits would publish (#1637)."""
+    body, mode = render_for_publish(text, tag, repo)
+    if len(body) > NOTES_BUDGET:
+        return [f"the release notes for {tag} are {len(render(text, tag)[0]):,} characters and even the headline form is "
+                f"{len(body):,}, over the budget of {NOTES_BUDGET:,} (GitHub refuses a release body over {GITHUB_BODY_LIMIT:,}): "
+                f"shorten the headlines or split the release"]
+    return []
 
 
 def _check(text: str, tag: str) -> list[str]:
@@ -799,12 +876,78 @@ Intro prose under the next section.
     check("the real #1518 shape -- Unreleased under the stale rails-stack section -- is refused",
           stale_head in text and any("ARCHIVED section" in f for f in _check_sections(real_1518, component_versions()[0])))
 
+    # THE SIZE RULE (#1637). A CHANGELOG over the budget publishes each bullet's headline plus a link; one under it publishes the notes untouched.
+    def bullets_for(n: int, body_chars: int, tag: str = "v9.9.9") -> str:
+        lines = [f"## big", "", f"### 1.0.0 — 2026-01-01 (release {tag})", ""]
+        for i in range(n):
+            lines.append(f"- **Headline number {i} — `scripts/x{i}.py`** (#{1000 + i}). " + "word " * (body_chars // 5))
+        return "\n".join(lines) + "\n"
+
+    small = bullets_for(3, 100)
+    body, mode = render_for_publish(small, "v9.9.9")
+    check("notes under the budget are published whole", mode == "full" and body == render(small, "v9.9.9")[0])
+    big = bullets_for(60, 3000)
+    full_len = len(render(big, "v9.9.9")[0])
+    body, mode = render_for_publish(big, "v9.9.9")
+    check("the fixture is over GitHub's limit in full", full_len > GITHUB_BODY_LIMIT)
+    check("notes over the budget publish headlines", mode == "headlines")
+    check("the headline form fits the limit with the callers' appended lines",
+          len(body) + 500 < GITHUB_BODY_LIMIT)
+    check("every bullet's headline is kept", all(f"- **Headline number {i} — `scripts/x{i}.py`**" in body for i in range(60)))
+    check("the body links to CHANGELOG.md at the tag", "https://github.com/fmanimashaun/claude-skills/blob/v9.9.9/CHANGELOG.md" in body)
+    check("the prose of a bullet is not in the headline form", "word word" not in body)
+    check("the heading survives", "### 1.0.0 — 2026-01-01" in body and "(release v9.9.9)" not in body)
+    check("--check passes while the headline form fits", _check_size(big, "v9.9.9") == [])
+    check("--check says nothing about a small file", _check_size(small, "v9.9.9") == [])
+    mid = bullets_for(40, 3000)
+    mid += "- **pad** " + "x" * (124_000 - len(render(mid, "v9.9.9")[0]) - 12) + "\n"
+    mid_len = len(render(mid, "v9.9.9")[0])
+    check("the headroom case is built between the budget and GitHub's limit", NOTES_BUDGET < mid_len <= GITHUB_BODY_LIMIT)
+    check("notes inside the headroom are still shortened, because the callers append lines after extraction",
+          render_for_publish(mid, "v9.9.9")[1] == "headlines")
+    huge = bullets_for(4000, 100)
+    check("--check fails when even the headline form is over the budget", len(_check_size(huge, "v9.9.9")) == 1
+          and render_for_publish(huge, "v9.9.9")[1] == "headlines" and len(render_for_publish(huge, "v9.9.9")[0]) > NOTES_BUDGET)
+    plain = "## big\n\n### 1.0.0 — 2026-01-01 (release v9.9.9)\n\n- no bold lead " + "x" * 400 + "\n- **ok**\n"
+    hl = render_headlines(plain, "v9.9.9")[0]
+    check("a bullet with no bold lead keeps its shortened first line", "- no bold lead " in hl and "…" in hl and "x" * 400 not in hl)
+    two = ("## a\n\n### 1.0.0 — 2026-01-01 (release v9.9.9)\n\n- **A one** x\n\n## b\n\n"
+           "### 2.0.0 — 2026-01-01 (release v9.9.9)\n\n- **B one** y\n")
+    hl2, n2 = render_headlines(two, "v9.9.9")
+    check("every component block keeps its bullets in the headline form", n2 == 2 and "- **A one**" in hl2 and "- **B one**" in hl2)
+    # TAKEN FROM THE RELEASE THAT FAILED: v1.154.0's real notes are over GitHub's limit in full and fit as headlines.
+    real = (REPO / CHANGELOG).read_text(encoding="utf-8")
+    if "(release v1.154.0)" in real:
+        rb, rmode = render_for_publish(real, "v1.154.0")
+        check("v1.154.0's real notes are over the limit in full (the incident)", len(render(real, "v1.154.0")[0]) > GITHUB_BODY_LIMIT)
+        check("v1.154.0's real notes publish as headlines under the limit", rmode == "headlines" and len(rb) + 500 < GITHUB_BODY_LIMIT)
+    import io, contextlib
+    with contextlib.redirect_stderr(io.StringIO()) as err, contextlib.redirect_stdout(io.StringIO()) as out:
+        rc_full = main(["--tag", "v1.154.0", "--full"]) if "(release v1.154.0)" in real else 0
+        full_out = out.getvalue()
+    check("--full is never shortened and says nothing on stderr",
+          rc_full == 0 and ("(release v1.154.0)" not in real or (len(full_out) > GITHUB_BODY_LIMIT and err.getvalue() == "")))
+    with contextlib.redirect_stderr(io.StringIO()) as err, contextlib.redirect_stdout(io.StringIO()) as out:
+        rc_pub = main(["--tag", "v1.154.0"]) if "(release v1.154.0)" in real else 0
+        pub_out = out.getvalue()
+    check("the default output of a too-long release is the headline form, and stderr says so",
+          rc_pub == 0 and ("(release v1.154.0)" not in real or (len(pub_out) < GITHUB_BODY_LIMIT and "headline" in err.getvalue())))
+    check("--check runs the size rule (a rule main() never calls protects nothing)",
+          "_check_size(" in inspect.getsource(main))
+
     # And the call sites must actually USE this script -- the gate half lives in
     # lint_self_consistency, but assert the wiring here too so a stale call site fails fast.
     for rel in (".github/workflows/release.yml", "scripts/release_local.sh"):
         body = (REPO / rel).read_text(encoding="utf-8")
         check(f"{rel} calls extract_release_notes.py", "extract_release_notes.py" in body)
         check(f"{rel} has no inline extractor", "grab && /^### /" not in body)
+    wf = (REPO / ".github/workflows/release.yml").read_text(encoding="utf-8")
+    check("release.yml extracts the unabridged notes for the issue notifier (#1637)",
+          'extract_release_notes.py --tag "${{ steps.v.outputs.tag }}" --full' in wf)
+    check("the shipped-issue step reads the unabridged notes, not the publish body",
+          '--notes "${{ steps.notes.outputs.full }}"' in wf and '--notes "${{ steps.notes.outputs.file }}"' not in wf)
+    check("release_local.sh names the repo for the headline form's link",
+          'extract_release_notes.py --tag "$TAG" --repo "$REPO"' in (REPO / "scripts/release_local.sh").read_text(encoding="utf-8"))
 
     print(f"\n{ok} passed, {len(bad)} failed")
     for b in bad:
@@ -823,6 +966,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--promotion", action="store_true",
                     help="with --check: refuse any `### Unreleased` heading — for the promotion PR and the"
                          " release, never for dev, where Unreleased is the normal state (#990)")
+    ap.add_argument("--full", action="store_true",
+                    help="the whole notes, never shortened to fit GitHub's release-body limit (the shipped-issue notifier needs the citations)")
+    ap.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY") or DEFAULT_REPO,
+                    help="owner/name for the CHANGELOG link in the headline form (default: $GITHUB_REPOSITORY, else this repo)")
     ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args(argv)
 
@@ -848,6 +995,7 @@ def main(argv: list[str] | None = None) -> int:
                   f"did not run (exit 3, not a pass)", file=sys.stderr)
             return 3
         findings += problems + _check_sections(text, versions)
+        findings += _check_size(text, tag, a.repo)
         tags_unseen = False
         if a.all_tags:
             tags = existing_tags()
@@ -865,6 +1013,9 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"  {f}", file=sys.stderr)
             return 1
         _, n = render(text, tag)
+        if render_for_publish(text, tag, a.repo)[1] == "headlines":
+            print(f"note: the full notes for {tag} are {len(render(text, tag)[0]):,} characters, over the budget of {NOTES_BUDGET:,}; "
+                  f"the release will publish each bullet's headline plus a link to {CHANGELOG} at the tag")
         if tags_unseen:
             print("skip: no git tags visible in this checkout, so `(release vX)` headings were not checked "
                   "against real tags — a shallow clone; fetch tags to run that half. The shape half is clean.")
@@ -872,7 +1023,14 @@ def main(argv: list[str] | None = None) -> int:
         print(f"clean — {n} block(s) for {tag} would publish")
         return 0
 
-    notes, _ = render(text, tag)
+    if a.full:
+        sys.stdout.write(render(text, tag)[0])
+        return 0
+    notes, mode = render_for_publish(text, tag, a.repo)
+    if mode == "headlines":
+        print(f"compacted: the full notes for {tag} are {len(render(text, tag)[0]):,} characters, over the budget of "
+              f"{NOTES_BUDGET:,} (GitHub refuses a release body over {GITHUB_BODY_LIMIT:,}); publishing each bullet's headline "
+              f"plus a link to {CHANGELOG} at the tag ({len(notes):,} characters). `--full` prints the whole text.", file=sys.stderr)
     sys.stdout.write(notes)
     return 0
 
