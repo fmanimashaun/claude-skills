@@ -234,8 +234,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a PR lookup whose base is not a ref name (the JSON error body) is read as a base",
-            'sane_pr_lookup() { ref_name_returned "$base" ||',
-            'sane_pr_lookup() { true ||',
+            'sane_pr_lookup() { ref_name_returned "$base" &&',
+            'sane_pr_lookup() { true &&',
             "a GraphQL mergePullRequest whose lookup prints something that is not a ref name (exit 0) is blocked",
         ),
         Mutation(
@@ -243,6 +243,25 @@ GUARD = Guard(
             '          ref_name_returned "${_out%% *}" || _out=""   # #1626',
             '          true   # #1626',
             "a GraphQL updateRef whose lookup prints something that is not a ref name (exit 0) is blocked",
+        ),
+        # #1628: a looked-up name may come back qualified; the coarse detector reads `refs/heads/main` as main, so the full path strips ONE prefix.
+        Mutation(
+            "a PR lookup's base is not stripped of refs/heads/ or heads/, so refs/heads/main is judged not-main",
+            'base="$(short_ref "$base")"',
+            'base="$base"',
+            "a `gh pr merge` whose base is looked up as `refs/heads/main` is judged as main and blocked",
+        ),
+        Mutation(
+            "an updateRef lookup's name is not stripped, so refs/heads/main is judged not-main",
+            'case "$(short_ref "${_out%% *}")" in',
+            'case "${_out%% *}" in',
+            "an updateRef whose ref is looked up as `refs/heads/main` is judged as main and blocked",
+        ),
+        Mutation(
+            "short_ref strips only refs/heads/, so heads/main is judged not-main",
+            'r="${r#refs/heads/}"; [ "$r" = "$1" ] && r="${r#heads/}";',
+            'r="${r#refs/heads/}";',
+            "a `gh pr merge` whose base is looked up as `heads/main` is judged as main and blocked",
         ),
     ),
 )
