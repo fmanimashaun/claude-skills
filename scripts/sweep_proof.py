@@ -18,8 +18,11 @@ the commit: the promotion is a merge commit, which is a new commit over the same
 keyed to dev's commit would never match it. The tree sha is a hash of the content, so equal trees are
 the same bytes, and a lookup walks dev's recent commits for one with that tree and reads its statuses.
 
-WHAT IT DOES NOT PROVE. Only someone with write access to the repository can post a status, which is
-the same trust the owner already places in whoever promotes. A status says the maintainer ran the full
+WHO CAN FORGE ONE. Anyone with write access can post a status with any text, so the lookup also requires
+the status's CREATOR to be the repository owner's account (`creator.login`, set by GitHub, not by the
+poster). A collaborator's or a workflow's status (`github-actions[bot]`) is ignored and the full sweep
+runs. Today the owner is the only collaborator (`gh api repos/<repo>/collaborators`). The owner's own
+token can still post one, which is the intended trust: they are the person who promotes. A status says the maintainer ran the full
 doctor and it passed; it is not produced by a hosted runner (accepted on #1635). `record` refuses a
 dirty worktree, so the sweep it vouches for ran on the committed bytes.
 """
@@ -34,6 +37,10 @@ from typing import Callable
 
 REPO = os.environ.get("GITHUB_REPOSITORY") or "fmanimashaun/claude-skills"
 CONTEXT = "full-sweep"
+# Only a status CREATED by the repository owner's account counts. Anyone with write access can post a
+# status with any description, and a workflow's GITHUB_TOKEN posts as `github-actions[bot]`; neither is
+# the maintainer running the full doctor, so neither may excuse the release from its sweep.
+TRUSTED_CREATOR = REPO.split("/")[0]
 # How many of dev's newest commits are searched for one whose tree matches. The promotion's tree is
 # dev's tip when nothing landed after the sweep, so this only needs to cover a few folded fixes.
 DEPTH = 30
@@ -61,7 +68,8 @@ def find_proof(tree: str, commits: list[tuple[str, str]], statuses: Callable[[st
         if commit_tree != tree:
             continue
         for s in statuses(sha):
-            if s.get("context") == CONTEXT and s.get("state") == "success" and s.get("description") == description(tree):
+            if (s.get("context") == CONTEXT and s.get("state") == "success" and s.get("description") == description(tree)
+                    and (s.get("creator") or {}).get("login") == TRUSTED_CREATOR):
                 return sha
     return None
 
@@ -159,7 +167,7 @@ def selftest() -> int:
         if not ok:
             failures.append(label)
 
-    ok_status = {"context": CONTEXT, "state": "success", "description": "tree=T1"}
+    ok_status = {"context": CONTEXT, "state": "success", "description": "tree=T1", "creator": {"login": TRUSTED_CREATOR}}
     commits = [("c3", "T3"), ("c2", "T1"), ("c1", "T0")]
 
     def table(d: dict[str, list[dict]]) -> Callable[[str], list[dict]]:
@@ -170,6 +178,11 @@ def selftest() -> int:
     check("a status on a commit with a DIFFERENT tree is ignored", find_proof("T1", commits, table({"c3": [ok_status]})) is None)
     check("a failing status is no proof", find_proof("T1", commits, table({"c2": [dict(ok_status, state="failure")]})) is None)
     check("a status for another context is no proof", find_proof("T1", commits, table({"c2": [dict(ok_status, context="ci")]})) is None)
+    check("a status created by someone else is ignored (forgery)",
+          find_proof("T1", commits, table({"c2": [dict(ok_status, creator={"login": "someone-else"})]})) is None)
+    check("a status created by the actions bot is ignored",
+          find_proof("T1", commits, table({"c2": [dict(ok_status, creator={"login": "github-actions[bot]"})]})) is None)
+    check("a status with no creator is ignored", find_proof("T1", commits, table({"c2": [{k: v for k, v in ok_status.items() if k != "creator"}]})) is None)
     check("a status whose description names another tree is no proof",
           find_proof("T1", commits, table({"c2": [dict(ok_status, description="tree=T9")]})) is None)
 

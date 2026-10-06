@@ -48,6 +48,13 @@ GUARD = Guard(
             "description names another tree",
         ),
         Mutation(
+            "any creator's status counts, so a collaborator can forge a proof",
+            '''
+                    and (s.get("creator") or {}).get("login") == TRUSTED_CREATOR):''',
+            "):",
+            "created by someone else is ignored",
+        ),
+        Mutation(
             "a failed lookup crashes instead of running the full sweep",
             "    except (RuntimeError, ValueError) as e:",
             "    except KeyError as e:",

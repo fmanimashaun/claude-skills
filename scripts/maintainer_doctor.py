@@ -583,7 +583,7 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
 # silently stop the exemption applying — and that the set is exactly this one.
 CORPORA_GATES = frozenset({"coverage matrix drift"})
 # Gates a PULL-REQUEST or dev-push run skips -- reported as SKIP with the reason, never omitted (#866,
-# #1635). `mutation coverage` was 438 of the sweep's 475 seconds, on every PR, for a check whose subjects
+# #1635). `mutation coverage` is most of the sweep's cost (over 30 min of 41 locally at load, #1635), on every PR, for a check whose subjects
 # each PR's own selftest gates already run once. It runs on the maintainer's machine before a promotion
 # (`--require-slow --record-proof`, recorded against the tree by sweep_proof.py), and release.yml runs it
 # itself unless that record matches the tree it is publishing, so nothing reaches `main` without it.

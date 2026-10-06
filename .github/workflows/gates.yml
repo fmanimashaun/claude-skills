@@ -73,7 +73,7 @@ jobs:
       # The corpora-dependent gate SKIPs by design when the private repo is absent, which is exactly
       # a runner's situation. That was built for a maintainer without the kits; CI inherits it free.
       # A pull request AND a push to dev run --fast, which skips exactly PR_SKIPPED_GATES (`mutation
-      # coverage`, 438 of the sweep's 475 s) and REPORTS the skip. The full sweep runs where it is
+      # coverage`, most of the sweep's time) and REPORTS the skip. The full sweep runs where it is
       # published from: locally before a promotion (`--require-slow --record-proof`, #1635), and in
       # release.yml, which reuses that record only when it names the exact tree being released and
       # otherwise calls this workflow from `main`, where the condition below picks the full sweep.
