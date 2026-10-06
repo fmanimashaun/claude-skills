@@ -412,7 +412,17 @@ def timeout_fixtures() -> None:
         md.GATES = (("mutation coverage", ("python3", "scripts/_ratchet_probe.py")),
                     ("selftest other", ("python3", "scripts/_ratchet_probe.py")))
         md.SLOW_GATES = {"mutation coverage": 60}
-        on, off = md.Doctor(require_slow=True), md.Doctor()
+        on, off = md.Doctor(require_slow=True, ratchet=True), md.Doctor()
+        # #1635: a LOCAL --require-slow run is not handed --ratchet: wall seconds at load 30 to 80 are not growth.
+        local_strict = md.Doctor(require_slow=True)
+        local_strict.check_gates()
+        expect("a local --require-slow run does NOT ratchet (wall time is load, not growth)", local_strict,
+               "mutation coverage", md.PASS)
+        for flag, env, want in ((True, {"GITHUB_ACTIONS": "true"}, True), (True, {}, False), (True, {"GITHUB_ACTIONS": "false"}, False),
+                                (False, {"GITHUB_ACTIONS": "true"}, False)):
+            _tick()
+            if md.ratchet_enforced(flag, env) is not want:
+                FAILURES.append(f"#1635: ratchet_enforced(require_slow={flag}, {env}) must be {want}")
         on.check_gates()
         off.check_gates()
         expect("under --require-slow, `mutation coverage` is run with --ratchet (the probe fails on it)", on,

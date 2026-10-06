@@ -629,11 +629,22 @@ SLOW_GATES: dict[str, int] = {
 RATCHETED_GATES = frozenset({"mutation coverage"})
 
 
-def slow_gate_command(name: str, cmd: tuple[str, ...], require_slow: bool) -> tuple[str, ...]:
-    """The command a gate runs. `mutation coverage` gets `--ratchet` only on the run whose job is to prove it
-    (`--require-slow`: CI's push and promotion runs). A seconds figure measured on a laptop under other sessions' load
-    or on a PR runner is not growth, and the record is measured on the runner (#1599)."""
-    return (*cmd, "--ratchet") if require_slow and name in RATCHETED_GATES else cmd
+def ratchet_enforced(require_slow: bool, env: "os._Environ[str] | dict[str, str]") -> bool:
+    """Whether this run may enforce the cost ratchet: a `--require-slow` run ON A HOSTED RUNNER, and nowhere else (#1635).
+
+    The ratchet compares WALL seconds of work per guard against a record measured on the runner. Wall seconds depend on
+    machine load, so a laptop at load 30 to 80 reads every guard 2x to 4x over its record whatever the code: the v1.154.0
+    local release failed 15 of 2688 mutations, every one the ratchet and none a survivor (hook_normalize_cmd 4231 s against
+    1701 s recorded; six guards 'not on record' at 143 to 712 s that cost 61 to 95 s on the runner). A local full sweep keeps
+    the survivor check, which is what a proof is for; GitHub Actions sets GITHUB_ACTIONS=true."""
+    return require_slow and env.get("GITHUB_ACTIONS") == "true"
+
+
+def slow_gate_command(name: str, cmd: tuple[str, ...], ratchet: bool) -> tuple[str, ...]:
+    """The command a gate runs. `mutation coverage` gets `--ratchet` only when `ratchet_enforced` says so. A seconds
+    figure measured on a laptop under other sessions' load or on a PR runner is not growth, and the record is
+    measured on the runner (#1599)."""
+    return (*cmd, "--ratchet") if ratchet and name in RATCHETED_GATES else cmd
 
 
 # A failing gate's output exists NOWHERE else on a runner: the doctor is the only thing that
@@ -697,6 +708,8 @@ class Doctor:
     # A push to dev and the promotion must PROVE the slow gates, not report them unknown (#1444).
     # Set by --require-slow, which only CI's non-PR runs pass: there, a SLOW_GATES timeout is FAIL.
     require_slow: bool = False
+    # Set from ratchet_enforced(): the cost ratchet runs only on a hosted runner (#1635).
+    ratchet: bool = False
     results: list[Result] = field(default_factory=list)
     fixed: list[str] = field(default_factory=list)
 
@@ -1260,7 +1273,7 @@ class Doctor:
                     " ".join(cmd),
                 )
                 continue
-            code, out = self.run(*slow_gate_command(name, cmd, self.require_slow),
+            code, out = self.run(*slow_gate_command(name, cmd, self.ratchet),
                                  timeout=SLOW_GATES.get(name, DEFAULT_TIMEOUT))
             if code == 0:
                 # A slow gate's own summary line (mutation_check prints jobs and elapsed) is the
@@ -1449,7 +1462,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.record_proof and not (args.gates_only and args.require_slow and not args.fast):
         p.error("--record-proof needs --gates-only --require-slow and not --fast: only a complete sweep may be recorded")
-    doctor = Doctor(fix=args.fix, require_slow=args.require_slow)
+    doctor = Doctor(fix=args.fix, require_slow=args.require_slow, ratchet=ratchet_enforced(args.require_slow, os.environ))
     rc = doctor.diagnose(gates=args.gates or args.gates_only, gates_only=args.gates_only, fast=args.fast)
     if args.record_proof:
         skipped = [r.name for r in doctor.gate_results() if r.status == SKIP]
