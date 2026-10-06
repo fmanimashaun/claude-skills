@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Record, and look up, a full gate sweep that passed on an exact tree (#1635).
 
-Run:  python3 scripts/sweep_proof.py record                 # after a clean full doctor run, on that commit
+Run:  (record and record_failure are called by `maintainer_doctor.py --record-proof` only: a status needs the sweep's own snapshot)
       python3 scripts/sweep_proof.py verify [--tree <sha>]  # exit 0 and print the source, or exit 1
       python3 scripts/sweep_proof.py check-wiring           # release.yml, gates.yml, release_local.sh agree
       python3 scripts/sweep_proof.py --selftest
@@ -76,7 +76,8 @@ def find_proof(tree: str, commits: list[tuple[str, str]], statuses: Callable[[st
                 continue
             state = str(s.get("state"))
             stamp = str(s.get("created_at") or ("9999" if state != "success" else ""))
-            if newest is None or stamp > newest[0]:
+            # A same-second tie goes to the NON-success, so a failure can never lose to the pass it followed (review of #1636).
+            if newest is None or (stamp, state != "success") > (newest[0], newest[2] != "success"):
                 newest = (stamp, sha, state)
     return newest[1] if newest and newest[2] == "success" else None
 
@@ -135,6 +136,18 @@ def record(run: Run = real_run, before: tuple[str, str] | None = None) -> int:
     run("gh", "api", f"repos/{REPO}/statuses/{sha}", "-f", "state=success", "-f", f"context={CONTEXT}",
         "-f", f"description={description(tree)}")
     print(f"recorded: `{CONTEXT}` on {sha} for tree {tree}")
+    return 0
+
+
+def record_failure(before: tuple[str, str], run: Run = real_run) -> int:
+    """Post a `failure` status for the tree a full sweep FAILED on, so an older success for it stops counting (review of #1636).
+
+    Called by the doctor when a sweep that started on `before` ended with a failing gate; it is the newest owner status, which is
+    the one `find_proof` obeys. Nothing else posts a failure."""
+    sha, tree = before
+    run("gh", "api", f"repos/{REPO}/statuses/{sha}", "-f", "state=failure", "-f", f"context={CONTEXT}",
+        "-f", f"description={description(tree)}")
+    print(f"recorded: `{CONTEXT}` FAILED on {sha} for tree {tree}")
     return 0
 
 
@@ -226,6 +239,12 @@ def selftest() -> int:
     check("a newer success after a failure is a proof again", find_proof("T1", commits, table({"c2": [old_ok, new_fail, new_ok]})) == "c2")
     check("a failure with no timestamp is treated as newest",
           find_proof("T1", commits, table({"c2": [old_ok, {k: v for k, v in new_fail.items() if k != "created_at"}]})) is None)
+    tie_ok = dict(ok_status, created_at="2026-10-06T12:00:00Z")
+    tie_fail = dict(ok_status, state="failure", created_at="2026-10-06T12:00:00Z")
+    check("a same-second tie goes to the failure (success seen first)",
+          find_proof("T1", [("c1", "T1"), ("c2", "T1")], table({"c1": [tie_ok], "c2": [tie_fail]})) is None)
+    check("a same-second tie goes to the failure (failure seen first)",
+          find_proof("T1", [("c1", "T1"), ("c2", "T1")], table({"c1": [tie_fail], "c2": [tie_ok]})) is None)
     check("a failure by someone else does not cancel the owner's success",
           find_proof("T1", commits, table({"c2": [old_ok, dict(new_fail, creator={"login": "x"})]})) == "c2")
 
@@ -287,6 +306,15 @@ def selftest() -> int:
     calls.clear()
     check("record posts the SNAPSHOT when nothing moved", quiet(lambda: record(moving(["c2", "T1"], [False]), before=started)) == 0)
     check("the post names the snapshot's sha", any(c[0] == "gh" and "statuses/c2" in c[2] for c in calls))
+    calls.clear()
+    check("record_failure posts a failure for the snapshot's sha and tree", quiet(lambda: record_failure(("c2", "T1"), moving(["c2", "T1"], [False]))) == 0
+          and any(c[0] == "gh" and "statuses/c2" in c[2] and "state=failure" in c and "description=tree=T1" in c for c in calls))
+    try:
+        with contextlib.redirect_stderr(io.StringIO()):
+            main(["record"])
+        check("sweep_proof has no `record` subcommand a person could run without a sweep", False)
+    except SystemExit as e:
+        check("sweep_proof has no `record` subcommand a person could run without a sweep", e.code == 2)
     check("snapshot is None on a dirty worktree", snapshot(moving(["c2", "T1"], [True])) is None)
     check("verify turns an unexpected answer into 'the full sweep will run', not a traceback",
           quiet(lambda: verify("T1", fake('{"not": "a list"}'))) == 1)
@@ -328,19 +356,17 @@ def selftest() -> int:
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("cmd", nargs="?", choices=("record", "verify", "check-wiring"))
+    p.add_argument("cmd", nargs="?", choices=("verify", "check-wiring"))
     p.add_argument("--tree", help="verify: the tree to look up (default: HEAD's)")
     p.add_argument("--selftest", action="store_true")
     a = p.parse_args(argv)
     if a.selftest:
         return selftest()
-    if a.cmd == "record":
-        return record()
     if a.cmd == "check-wiring":
         return wiring_gate()
     if a.cmd == "verify":
         return verify(a.tree or head_tree(real_run))
-    p.error("a command (record | verify) or --selftest is required")
+    p.error("a command (verify | check-wiring) or --selftest is required")
     return 2
 
 

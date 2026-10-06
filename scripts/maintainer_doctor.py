@@ -1477,6 +1477,12 @@ def main(argv: list[str] | None = None) -> int:
         skipped = [r.name for r in doctor.gate_results() if r.status == SKIP]
         if rc != 0 or skipped:
             print(f"not recording a sweep proof: {'a gate failed' if rc else 'skipped: ' + ', '.join(skipped)}")
+            if rc != 0:
+                # A failed full re-run must outrank an older success for the same tree (review of #1636).
+                try:
+                    sweep_proof.record_failure(before)
+                except Exception as exc:        # the sweep's own verdict stands whether or not the status could be posted
+                    print(f"could not post the failure status: {exc}", file=sys.stderr)
             return rc or 1
         return sweep_proof.record(before=before)
     return rc

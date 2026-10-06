@@ -12,6 +12,18 @@ GUARD = Guard(
     needs=(".github", "scripts"),
     mutations=(
         Mutation(
+            "a same-second tie goes to the success",
+            '''            if newest is None or (stamp, state != "success") > (newest[0], newest[2] != "success"):''',
+            "            if newest is None or stamp > newest[0]:",
+            "a same-second tie goes to the failure",
+        ),
+        Mutation(
+            "a failed sweep posts a success",
+            '''"-f", "state=failure", "-f", f"context={CONTEXT}",''',
+            '''"-f", "state=success", "-f", f"context={CONTEXT}",''',
+            "record_failure posts a failure",
+        ),
+        Mutation(
             "the wiring check stops requiring that a skipped gates needs a found proof",
             '''    if "needs.gates.result == 'skipped' && needs.proof.outputs.found == 'true'" not in release_job:''',
             "    if False:",
@@ -43,7 +55,7 @@ GUARD = Guard(
         ),
         Mutation(
             "an old success beats a newer failure (first success wins)",
-            "            if newest is None or stamp > newest[0]:",
+            '''            if newest is None or (stamp, state != "success") > (newest[0], newest[2] != "success"):''',
             "            if newest is None:",
             "a newer failure beats an older success",
         ),
