@@ -57,5 +57,12 @@ GUARD = Guard(
             '',
             "a SIGTERM to the CLI still kills the command's tree",
         ),
+        Mutation(
+            # #1582 slice B, #1589 re-review S1
+            "the sweep is no longer shielded from a second signal, so one landing mid-sweep aborts it (#1589 re-review S1)",
+            "        with _deferred_signals():\n            box.killed = sweep(token)\n",
+            "        box.killed = sweep(token)\n",
+            "does not abort the sweep",
+        ),
     ),
 )
