@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -52,6 +53,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import hermetic_git  # noqa: E402 -- gates start no detached git (#1510)
+import proc_group  # noqa: E402 -- a timed-out gate's whole process group is killed (#1459)
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -269,6 +271,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("structural grid selftest", ("python3", "scripts/check_structural_grid.py", "--selftest")),
     ("packaging determinism", ("python3", "scripts/package_core.py", "--selftest")),
     ("rails-flow self-consistency", ("python3", "plugins/rails-flow/scripts/self_consistency.py", "--selftest")),
+    # The mods rails-flow ships, under plain Node with a hand-built host (#1547). `claude plugin test` is the
+    # engine-integration check and needs the `claude` CLI, which the gate runners do not have.
+    ("mod unit tests", ("python3", "plugins/rails-flow/scripts/check_mods.py")),
     ("acceptance criteria", ("python3", "plugins/rails-flow/scripts/check_criteria.py", "--selftest")),
     ("rails-flow guide", ("python3", "plugins/rails-flow/scripts/check_guide.py", "--selftest")),
     # Its last two checks reconcile the SHIPPED tier table against the SHIPPED agents, so this gate
@@ -338,7 +343,12 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # five defects sat in what they DID, none visible on a Mac. This drives every hook end to end
     # under stub environments -- a GNU-shaped `timeout`, a `bundle` that fails the way Bundler does,
     # a `mise` that owns the Ruby. The environment is the fixture.
-    ("hook gates", ("python3", "plugins/rails-flow/scripts/check_hook_gates.py", "--selftest")),
+    # #1581: ONE harness, THREE gates. The whole run takes far longer than a gate's 180 s, so it skipped on every sweep; two halves
+    # were measured too close to it once dev's groups grew. The partition (PARTS in check_hook_gates.py) is checked there: every
+    # fixture group is in exactly one part.
+    ("hook gates", ("python3", "plugins/rails-flow/scripts/check_hook_gates.py", "--selftest", "--part", "a")),
+    ("hook gates (release)", ("python3", "plugins/rails-flow/scripts/check_hook_gates.py", "--selftest", "--part", "b")),
+    ("hook gates (worktree)", ("python3", "plugins/rails-flow/scripts/check_hook_gates.py", "--selftest", "--part", "c")),
     # #849. "Take the head of the queue" downstream was a claim nothing checked; the marketplace has
     # issue_graph.py --ready for itself, and this is the shipped equivalent for a project's tracker.
     ("issue readiness", ("python3", "plugins/rails-flow/scripts/check_issue_ready.py", "--selftest")),
@@ -394,9 +404,18 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #1465. A Kamal destination is carried through whole: `-d` on every command, the destination's
     # secrets file and overlay, and the credentials environment read from the MERGED config.
     ("pipeline kamal destination", ("python3", "plugins/pipeline/scripts/kamal_destination.py", "--selftest")),
+    # #1585. The status board: every panel measured, UNKNOWN never 0, one drawing sheet with no network,
+    # and every sentence it writes inside the ASD-STE100 limits. The selftest answers gh/git/ps from canned output.
+    ("pipeline status board", ("python3", "plugins/pipeline/scripts/status_board.py", "--selftest")),
+    # #1585. The board repeats the coordination record's field names; this keeps them the writer's names.
+    ("status board record readers", ("python3", "scripts/check_coordination_readers.py")),
+    ("status board record readers selftest", ("python3", "scripts/check_coordination_readers.py", "--selftest")),
     # #1338. The auto-merge into dev stops for a human on a one-way door; this is the classifier.
     ("rails-flow one-way door classifier", ("python3", "plugins/rails-flow/scripts/classify_door.py", "--selftest")),
     ("rails-flow PR-template sections", ("python3", "plugins/rails-flow/hooks/scripts/lib/pr_template.py", "--selftest")),
+    # #1581. The per-repo coordination record a worktree guard reads; only the coordinator writes it.
+    ("rails-flow coordination record", ("python3", "plugins/rails-flow/hooks/scripts/lib/coordination.py", "--selftest")),
+    ("rails-flow worktree guard helper", ("python3", "plugins/rails-flow/hooks/scripts/lib/worktree_guard.py", "--selftest")),
     ("rails-flow technical spec", ("python3", "plugins/rails-flow/scripts/check_spec.py", "--selftest")),
     ("rails-flow simple-form-only gate", ("python3", "plugins/rails-flow/scripts/check_simple_form_only.py", "--selftest")),
     ("shipped ERB passes simple-form-only", ("python3", "scripts/check_shipped_erb_forms.py")),
@@ -475,6 +494,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # because it is the slowest (it re-runs every selftest once per declared mutation).
     ("mutation check", ("python3", "scripts/mutation_check.py", "--selftest")),
     ("mutation coverage", ("python3", "scripts/mutation_check.py")),
+    # #1599. The committed cost record exists, parses and names no guard that is gone. Runs no guard, so a pull
+    # request pays for it; the ratchet itself (`mutation coverage --ratchet`) runs only where the record was measured.
+    ("mutation cost record", ("python3", "scripts/mutation_check.py", "--check-record")),
     # #1040. The REPORT this tool produces is advisory and deliberately gates nothing -- an
     # unreached assertion is either vacuous or merely unguarded, and nothing here can tell those
     # apart. Its SELFTEST is a gate like any other, because a reachability auditor that silently
@@ -502,6 +524,11 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("hook output budget", ("python3", "scripts/check_hook_output_budget.py")),
     ("hook output budget selftest",
      ("python3", "scripts/check_hook_output_budget.py", "--selftest")),
+    # #1575. A hook that spins blocks every Bash call, and a timeout that kills only the parent bash left
+    # its awk child computing for 51 minutes. The selftest proves the harness kills the WHOLE process
+    # group; the real-hook run (slow, load-sensitive) is a maintainer command, not a per-PR gate.
+    ("hook slow paths selftest",
+     ("python3", "scripts/hook_slow_paths.py", "--selftest")),
     # #1086. An agent's answer lands in the PARENT conversation and stays there for the rest of
     # the session -- a permanent tax, not a one-off cost like its own turns. 27 of 29 shipped
     # agents declared nothing about what they return. This checks the DECLARATION, not the
@@ -509,6 +536,14 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("agent output contract", ("python3", "scripts/check_agent_output_contract.py")),
     ("agent output contract selftest",
      ("python3", "scripts/check_agent_output_contract.py", "--selftest")),
+    # #1563. A catalogue of what reviewers blocked on is only a defence while each class still names
+    # a fixture that exists on dev. A refactor deletes a fixture silently; this refuses the pointer.
+    ("blocked catalogue", ("python3", "scripts/check_blocked_catalogue.py")),
+    ("blocked catalogue selftest",
+     ("python3", "scripts/check_blocked_catalogue.py", "--selftest")),
+    # The deterministic floor of the /gauntlet agents (B2, B3 of the #1578 review): a known-bad fixture diff BLOCKS, a
+    # known-good one is CLEAN, and an agent whose instructions stop naming its command goes red.
+    ("gauntlet core selftest", ("python3", "scripts/gauntlet_core.py", "--selftest")),
     # #1096. A rebase across a promotion applies CLEANLY and files unshipped bullets under the
     # release heading the arm just renamed. A loss is absolute; an addition is ratcheted, because
     # 16 blocks already carry post-tag bullets from before anyone was watching.
@@ -524,6 +559,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("close-on-dev-merge selftest", ("python3", "scripts/close_on_dev_merge.py", "--selftest")),
     ("vendored alone", ("python3", "scripts/check_vendored_alone.py")),
     ("vendored alone selftest", ("python3", "scripts/check_vendored_alone.py", "--selftest")),
+    # #1556. How a process-group fixture learns its gate's pids: atomically, and waited for.
+    ("pid record selftest", ("python3", "scripts/pid_record_selftest.py")),
 )
 
 # Gates that cannot run without the licensed corpora, so their absence is a SKIP rather than a
@@ -571,8 +608,28 @@ SLOW_GATES: dict[str, int] = {
     # #1444, MEASURED on the runner: 1602 mutations / 145 guards took 604 s at jobs=4 (dev push run
     # after PR #1471, 2026-09-29). 1800 s is 3x that: room for the suite to grow, while a hung gate
     # still surfaces in 30 min rather than 90. Re-set it from the `jobs=N, Xs` on this gate's ok line.
-    "mutation coverage": 1800,
+    # #1569, MEASURED: dev's push run 37136784689 took 1588 s for 2182 mutations / 162 guards at jobs=4,
+    # 88% of 1800 s before any new guard. The release-gate guards run a whole fixture group per mutation,
+    # and this branch's ~60 more of them timed the dispatched run out at 1800 s (37136560968, no survivor
+    # in any guard that finished). 3600 s is 2.3x the dev measurement; re-set it from the `jobs=4, Xs`
+    # the completed run on this branch prints.
+    # #1599, MEASURED: since #1516 merged, every full run is killed at 3600 s (dev push 37176643896; #1601's
+    # run 37177382837; #1594 and #1595 the same), whole jobs of about 3,860 to 3,900 s, with no survivor in any guard
+    # that finished. The real time is therefore at least 3600 s and not yet measured: the run that completes under
+    # this bound prints it, and 5400 s is 1.5x the 3600 s floor. #1599 cuts the guards that re-run a whole fixture group
+    # per mutant; re-set this from the `jobs=4, Xs` of a completed run, and lower it when #1599 lands.
+    "mutation coverage": 5400,
 }
+
+# The gates that also enforce a committed record, and so take `--ratchet` (#1599).
+RATCHETED_GATES = frozenset({"mutation coverage"})
+
+
+def slow_gate_command(name: str, cmd: tuple[str, ...], require_slow: bool) -> tuple[str, ...]:
+    """The command a gate runs. `mutation coverage` gets `--ratchet` only on the run whose job is to prove it
+    (`--require-slow`: CI's push and promotion runs). A seconds figure measured on a laptop under other sessions' load
+    or on a PR runner is not growth, and the record is measured on the runner (#1599)."""
+    return (*cmd, "--ratchet") if require_slow and name in RATCHETED_GATES else cmd
 
 
 # A failing gate's output exists NOWHERE else on a runner: the doctor is the only thing that
@@ -645,17 +702,25 @@ class Doctor:
         try:
             # Every gate, and every selftest it runs, starts no detached git maintenance (#1510). The
             # two subprocesses the doctor launches directly (changelog coverage, check-ignore) pass it too.
-            p = subprocess.run(
-                args, cwd=cwd or REPO, capture_output=True, text=True, timeout=timeout,
-                env=hermetic_git.env(),
+            # Its own process group: a timeout kills the gate AND everything it started -- for
+            # `mutation coverage`, its whole pool of selftests -- not just the direct child (#1459).
+            p = proc_group.run(
+                args, cwd=cwd or REPO, text=True, timeout=timeout, env=hermetic_git.env(),
             )
             return p.returncode, (p.stdout + p.stderr).strip()
         except FileNotFoundError:
             return 127, f"{args[0]}: not found"
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as exc:
             # 124 is the conventional shell code for a timeout, and the gate loop reads it as a
             # SKIP rather than a FAIL -- a check that was killed did not run, and did not fail.
-            return 124, f"{' '.join(args)}: timed out after {timeout}s"
+            # What it printed before the kill comes with it: for `mutation coverage`, the guards
+            # that finished (#1459).
+            # bytes or str: subprocess's own TimeoutExpired carries bytes even in text mode.
+            def text(value) -> str:
+                return value.decode(errors="replace") if isinstance(value, bytes) else (value or "")
+            partial = (text(exc.output) + text(exc.stderr)).strip().splitlines()[-12:]
+            tail = "".join(f"\n      {line[:300]}" for line in partial) or " -- it printed nothing before the kill"
+            return 124, f"{' '.join(args)}: timed out after {timeout}s{tail}"
 
     def git(self, *args: str) -> tuple[int, str]:
         return self.run("git", *args)
@@ -851,8 +916,8 @@ class Doctor:
         if not script.is_file():
             self.add(SKIP, "changelog coverage", f"{script.name} is missing")
             return
-        proc = subprocess.run([sys.executable, str(script)], cwd=REPO, capture_output=True, text=True,
-                              timeout=DEFAULT_TIMEOUT, env=hermetic_git.env())  # no detached git (#1510)
+        proc = proc_group.run([sys.executable, str(script)], cwd=REPO, text=True,
+                              timeout=DEFAULT_TIMEOUT, env=hermetic_git.env())  # #1510, #1459
         if proc.returncode == 0:
             self.add(PASS, "every changed component has a CHANGELOG entry")
             return
@@ -1057,9 +1122,9 @@ class Doctor:
         ignored", so a broken invocation cannot be mistaken for a verdict.
         """
         try:
-            p = subprocess.run(
+            p = proc_group.run(
                 ["git", "check-ignore", "--", candidate],
-                cwd=probe, capture_output=True, text=True, timeout=60,
+                cwd=probe, text=True, timeout=60,
                 env=hermetic_git.env({**os.environ, "GIT_CONFIG_GLOBAL": os.devnull,
                                       "GIT_CONFIG_SYSTEM": os.devnull}),
             )
@@ -1115,7 +1180,55 @@ class Doctor:
                 if p not in snapshot:
                     p.unlink()
 
+    def _ref_tips(self) -> list[str] | None:
+        """Every ref tip and HEAD of the repository, or None if git cannot say."""
+        # LOCAL refs only (#1594 review D1): branches, the stash and HEAD. A `git fetch` during a sweep moves
+        # remote-tracking refs, and the commits it brings are other people's -- not a fixture escaping.
+        code, out = self.run("git", "-C", str(REPO), "for-each-ref", "--format=%(objectname)",
+                             "refs/heads", "refs/stash")
+        code2, head = self.run("git", "-C", str(REPO), "rev-parse", "HEAD")
+        if code != 0 or code2 != 0:
+            return None
+        return sorted(set(out.split()) | {head.strip()})
+
+    def check_repo_untouched(self, before: list[str] | None) -> None:
+        """THE DETECTOR (#1588). A gate must never commit into the real repository. On 2026-10-03 three
+        `t <t@t>` / `m` commits landed on dev from a selftest run under an inherited GIT_DIR. The strip in
+        hermetic_git closes that path; this catches the NEXT one, whatever its trigger: every commit the
+        sweep added to any ref, authored by anyone but the configured user. Other sessions commit as the
+        configured user, so their work on their own branches during the sweep is not flagged."""
+        name = "gate: the sweep committed nothing into the real repository"
+        after = self._ref_tips()
+        if before is None or after is None:
+            self.add(SKIP, name, "git could not list the refs before or after the sweep", "")
+            return
+        code, me = self.run("git", "-C", str(REPO), "config", "user.email")
+        me = me.strip() if code == 0 else ""
+        # `--remotes` on the NOT side: a commit any remote-tracking ref reaches came from a remote (a `fetch`,
+        # or a `pull` into a local branch), so it is not one a fixture made here. An escaped fixture commit is
+        # on no remote, and stays in the list.
+        code, out = self.run("git", "-C", str(REPO), "rev-list", "--format=%H %ae %s", *after, "--not", *before,
+                             "--remotes")
+        if code != 0:
+            self.add(SKIP, name, "git could not compare the refs", out.strip()[:200])
+            return
+        added = [ln for ln in out.splitlines() if ln and not ln.startswith("commit ")]
+        foreign = [ln for ln in added if not me or ln.split()[1] != me]
+        if foreign:
+            self.add(FAIL, name, f"{len(foreign)} commit(s) appeared during the sweep, not by {me or 'the configured user'}: "
+                     + "; ".join(foreign[:5]), "a gate's fixture escaped its temp repo (#1588) -- find it, and "
+                     "remove the commits with `git reset --keep` on the branch they landed on")
+        else:
+            self.add(PASS, name, f"{len(added)} commit(s) added during the sweep, all by {me or 'the configured user'}")
+
     def check_gates(self, fast: bool = False) -> None:
+        tips_before = self._ref_tips()
+        try:
+            self._check_gates(fast)
+        finally:
+            self.check_repo_untouched(tips_before)
+
+    def _check_gates(self, fast: bool = False) -> None:
         corpora_absent = any(not (REPO / CORPORA_DIR / c).exists() for c in CORPORA)
         for name, cmd in GATES:
             script = REPO / cmd[1]
@@ -1143,12 +1256,20 @@ class Doctor:
                     " ".join(cmd),
                 )
                 continue
-            code, out = self.run(*cmd, timeout=SLOW_GATES.get(name, DEFAULT_TIMEOUT))
+            code, out = self.run(*slow_gate_command(name, cmd, self.require_slow),
+                                 timeout=SLOW_GATES.get(name, DEFAULT_TIMEOUT))
             if code == 0:
                 # A slow gate's own summary line (mutation_check prints jobs and elapsed) is the
                 # measurement SLOW_GATES is set from; on a runner this is the only place it exists.
-                last = out.strip().splitlines()[-1] if name in SLOW_GATES and out.strip() else ""
-                self.add(PASS, f"gate: {name}", last)
+                # The line carrying `(jobs=N, Xs)`, not the last one: since #1497 a `heaviest guards`
+                # line follows it, and the ok line lost the figure the note above says to read.
+                lines = out.strip().splitlines() if name in SLOW_GATES else []
+                last = next((ln for ln in reversed(lines) if re.search(r"\(jobs=\d+, \d+s\)", ln)),
+                            lines[-1] if lines else "")
+                # The cost lines too (#1599): the CI log is the only place the per-guard measurement exists.
+                cost_lines = tuple(ln.strip() for ln in lines
+                                   if ln.startswith(("heaviest guards", "total work", "work by guard")))
+                self.add(PASS, f"gate: {name}", last, findings=cost_lines)
             elif code == 124 and self.require_slow and name in SLOW_GATES:
                 # #1444. Every dev push run reported `mutation coverage` as a timeout-skip and the
                 # job still went green, so the promotion's evidence silently disappeared for a day.

@@ -37,6 +37,18 @@ ROOT = Path(__file__).resolve().parent.parent
 # source -> derived. One entry today; the list is the mechanism, not the special case.
 MIRRORED = {
     Path("skills/parallel-session-lane/SKILL.md"): Path(".claude/skills/parallel-session-lane/SKILL.md"),
+    # #1481: the mirrored SKILL.md links these, so a mirror without them links to nothing.
+    Path("skills/parallel-session-lane/references/reading-a-list.md"):
+        Path(".claude/skills/parallel-session-lane/references/reading-a-list.md"),
+    Path("skills/parallel-session-lane/references/session-identity.md"):
+        Path(".claude/skills/parallel-session-lane/references/session-identity.md"),
+    Path("skills/parallel-session-lane/references/process-hygiene.md"):
+        Path(".claude/skills/parallel-session-lane/references/process-hygiene.md"),
+    # #1581: SKILL.md §1 and §1a link these.
+    Path("skills/parallel-session-lane/references/isolated-resources.md"):
+        Path(".claude/skills/parallel-session-lane/references/isolated-resources.md"),
+    Path("skills/parallel-session-lane/references/one-issue-at-a-time.md"):
+        Path(".claude/skills/parallel-session-lane/references/one-issue-at-a-time.md"),
 }
 
 BANNER = (
@@ -55,6 +67,9 @@ def render(source: Path) -> str:
     first — the skill silently stopped being a skill.
     """
     text = (ROOT / source).read_text(encoding="utf-8")
+    if source.name != "SKILL.md":
+        # A reference has no frontmatter to protect, so its banner simply goes on top (#1481).
+        return BANNER.format(source=source.as_posix()) + "\n" + text
     if not text.startswith("---\n"):
         raise SystemExit(f"{source} does not open with a frontmatter block")
     if "\n---\n" not in text[4:]:
@@ -120,15 +135,19 @@ def unregistered_mirrors() -> list[str]:
     The rule is not "nothing unregistered": `.claude/skills/plugin-boundaries/` is maintainer-only,
     has no counterpart under `skills/`, and is correct. A derived directory is illegal only when a
     SHIPPED skill of the same name exists and the registry does not govern it.
+
+    EVERY FILE, not only `SKILL.md` (#1536 review): a reference copied by hand, a directory holding
+    only references, or a reference left behind when its entry left MIRRORED all passed `--check`.
     """
     registered = {derived.as_posix() for derived in MIRRORED.values()}
     strays = []
-    for derived in sorted((ROOT / ".claude" / "skills").glob("*/SKILL.md")):
-        relative = derived.relative_to(ROOT).as_posix()
-        if relative in registered:
+    for skill_dir in sorted(p for p in (ROOT / ".claude" / "skills").glob("*") if p.is_dir()):
+        if not (ROOT / "skills" / skill_dir.name / "SKILL.md").exists():
             continue
-        if (ROOT / "skills" / derived.parent.name / "SKILL.md").exists():
-            strays.append(relative)
+        for derived in sorted(f for f in skill_dir.rglob("*") if f.is_file()):
+            relative = derived.relative_to(ROOT).as_posix()
+            if relative not in registered:
+                strays.append(relative)
     return strays
 
 
@@ -241,11 +260,35 @@ def selftest() -> int:
 
     failures.extend(head_read_arm())
 
+    # #1481: every relative link in a mirrored SKILL.md must land on a file that is mirrored too.
+    # The mirror linked `references/reading-a-list.md` and `references/session-identity.md`, which
+    # were never copied.
+    import re
+    derived_paths = {d.as_posix() for d in MIRRORED.values()}
+    for src, derived in MIRRORED.items():
+        if src.name != "SKILL.md":
+            continue
+        for target in re.findall(r"\]\(([^)#\s]+\.md)(?:#[^)]*)?\)", render(src)):
+            if target.startswith(("http", "/")):
+                continue
+            landed = (derived.parent / target).as_posix()
+            if landed not in derived_paths:
+                failures.append(f"{derived} links {target}, which no MIRRORED entry copies")
+    reference = next((s for s in MIRRORED if s.name != "SKILL.md"), None)
+    if reference is not None and not render(reference).startswith("<!-- GENERATED from"):
+        failures.append("a mirrored reference must open with the banner")
+
     real_blob = globals()["committed_blob"]
 
-    def check_against(blob: str | None) -> int:
-        """Run --check with HEAD pretending to hold `blob` for every mirrored path."""
-        globals()["committed_blob"] = lambda relative: blob
+    # Each mirrored path's clean blob is ITS OWN render (#1481: with references mirrored, one shared
+    # blob for every path made the clean control fail on the references).
+    clean = {derived.as_posix(): render(src) for src, derived in MIRRORED.items()}
+
+    def check_against(blob: str | None, path: Path | None = None) -> int:
+        """Run --check with HEAD holding each path's clean render -- except `path` (the SKILL.md
+        by default), which holds `blob` (the arm under test)."""
+        target = (path or MIRRORED[source]).as_posix()
+        globals()["committed_blob"] = lambda relative: blob if relative == target else clean.get(relative)
         try:
             return build(check=True)
         finally:
@@ -263,6 +306,24 @@ def selftest() -> int:
     # the state the working-tree read called clean, and it is the one CI fails on.
     if check_against(None) == 0:
         failures.append("--check passed with the mirror rebuilt on disk but never staged")
+
+    # The reference arms (#1536 review): a mirrored REFERENCE drifted, or never staged.
+    if reference is not None:
+        ref_derived = MIRRORED[reference]
+        if check_against(render(reference) + "\ndrifted\n", ref_derived) == 0:
+            failures.append(f"--check passed against an edited committed {ref_derived}")
+        if check_against(None, ref_derived) == 0:
+            failures.append(f"--check passed with {ref_derived} never committed")
+
+        # A stray REFERENCE beside a registered mirror: copied by hand, or left behind when its
+        # entry left MIRRORED.
+        stray_ref = ROOT / ref_derived.parent / "selftest-stray-reference.md"
+        try:
+            stray_ref.write_text("stray\n", encoding="utf-8")
+            if check_against(rendered) == 0:
+                failures.append("--check passed with an unregistered reference beside a mirror")
+        finally:
+            stray_ref.unlink(missing_ok=True)
 
     # The stray arm: a copy of a shipped skill that no MIRRORED entry governs, HEAD clean.
     shipped = sorted(
@@ -291,8 +352,8 @@ def selftest() -> int:
     if not failures:
         print(
             "selftest: ok — the read really is of HEAD (index and working copy both refused); a "
-            "clean committed copy passes; an edited one, an unstaged one and an unregistered copy "
-            "of a shipped skill each fail"
+            "clean committed copy passes; an edited one, an unstaged one, the same two for a "
+            "reference, and an unregistered copy of a shipped skill or reference each fail"
         )
     return 1 if failures else 0
 

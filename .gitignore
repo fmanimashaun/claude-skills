@@ -34,6 +34,7 @@ __pycache__/
 # a trailing slash matches only a real directory, and the point of that lesson was a pattern
 # that was written, believed, and matched nothing.
 /.claude/worktrees
+/.claude/state/
 
 /design-corpora
 
@@ -62,3 +63,6 @@ node_modules/
 # stage them — and this repository, which ships that rule, never applied it to itself (#1017). The
 # backstop went to clients and never came home.
 /.playwright-mcp/
+
+# Claude Code writes this beside a mod it loads with --plugin-dir (the types/ folder ignores itself)
+plugins/*/tsconfig.json

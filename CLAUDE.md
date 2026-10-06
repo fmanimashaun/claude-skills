@@ -226,8 +226,8 @@ local `main` ref; check out and pull `dev`), never rewrites history, and restore
 after the drift rebuild: a diagnostic never mutates the repo. A failing gate prints its **findings**,
 not a count (#820).
 
-Two committed, generated surfaces: `docs/evidence/coverage.html` (`scripts/build_coverage_artifact.py`) and
-the wiki's reference pages under `docs/wiki/` (`scripts/build_wiki.py`, which absorbed the inventory page, #892). **The rendered bytes must be a function of the DATA and nothing else.** No git
+Committed, generated surfaces are listed in `BUILDERS` in `scripts/rebuild_generated.py`, the one list. They include `docs/evidence/coverage.html`
+(`scripts/build_coverage_artifact.py`), `docs/wiki/` (`scripts/build_wiki.py`, #892), `dist/`, and the `.claude/skills/` mirrors. **The rendered bytes must be a function of the DATA and nothing else.** No git
 state, no corpora availability; the page stamps the release version only.
 **`--check` compares the blob at `HEAD`, never the file on disk**, so a page built and never
 `git add`ed fails honestly.
@@ -238,9 +238,9 @@ un-ignore them. (History: *The coverage matrix has a browsable page, and it is c
 
 ## First session in a clone
 
-Copy `.claude/settings.example.json` to `.claude/settings.local.json` (gitignored). Compound pipelines
-re-prompt on **one** unlisted binary; the example deliberately omits `rm`, `curl`, `wget`, `kill`,
-`chmod` and installers.
+Tracked `.claude/settings.json` holds a narrow allowlist every worktree gets; for more, copy
+`settings.example.json` to `.claude/settings.local.json` (gitignored). Compound pipelines re-prompt on
+**one** unlisted binary; the example omits `rm`, `curl`, `wget`, `kill`, `chmod` and installers.
 
 | file | tracked | who gets it | read by Claude |
 |---|---|---|---|
@@ -251,12 +251,12 @@ re-prompt on **one** unlisted binary; the example deliberately omits `rm`, `curl
 ## Platform
 
 Hooks are **bash + `python3`**; the flow drives `gh`. Windows: WSL or Git Bash. **Hooks do not all fail
-open.** Of the fifteen hook scripts, ten are advisory and fail open — an advisory that blocks work on a
-missing dependency gets disabled. Five **gates fail closed**, each scoped to what it guards:
+open.** Of the seventeen hook scripts, eleven are advisory and fail open — an advisory that blocks work on a
+missing dependency gets disabled. Six **gates fail closed**, each scoped to what it guards:
 `plugins/rails-flow/hooks/scripts/guard-bash.sh` (falls back to the raw payload;
 `git add -A` is blocked either way.), `plugins/qa-flow/hooks/scripts/release-gate.sh` (only for commands targeting `main`),
-`plugins/rails-flow/hooks/scripts/guard-lane.sh` (only when a lane is assigned), `plugins/rails-flow/hooks/scripts/guard-claims.sh` (only `gh pr create/edit` carrying a body),
-`plugins/rails-flow/hooks/scripts/guard-migrate.sh` (only a `Write` creating a new `db/migrate/` file). Classify a new hook
+`plugins/rails-flow/hooks/scripts/guard-lane.sh` (only when a lane is assigned), `plugins/rails-flow/hooks/scripts/guard-claims.sh` (only `gh pr create/edit` carrying a body, in a repo it can resolve),
+`plugins/rails-flow/hooks/scripts/guard-migrate.sh` (only a `Write` creating a new `db/migrate/` file), `plugins/rails-flow/hooks/scripts/guard-worktree.sh` (only a `git worktree add`; guards against accident, not impersonation). Classify a new hook
 with `docs/doctrine/harness-doctrine.md`'s test before writing it: advisory → fail open; guarantee → fail closed,
 scoped. Every hook is driven end to end by `plugins/rails-flow/scripts/check_hook_gates.py`, under the
 environments that broke them (#822–#826).

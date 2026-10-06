@@ -1047,6 +1047,61 @@ GUARD = Guard(
             "            if True:\n                continue",
             "command points at a skill doc that was renamed away",
         ),
+        # #1543: a conflict block passed a PR's gate run because nothing read for the markers.
+        Mutation(
+            "the opening marker stops being recognised",
+            '_CONFLICT_EDGE = re.compile(r"^(?:<{7}|>{7})(?: .*)?$")',
+            '_CONFLICT_EDGE = re.compile(r"^(?:>{7})(?: .*)?$")',
+            "only the opening marker is left",
+        ),
+        Mutation(
+            "the closing marker stops being recognised",
+            '_CONFLICT_EDGE = re.compile(r"^(?:<{7}|>{7})(?: .*)?$")',
+            '_CONFLICT_EDGE = re.compile(r"^(?:<{7})(?: .*)?$")',
+            "only the closing marker is left",
+        ),
+        Mutation(
+            "a marker is matched anywhere in a line, not as a whole line",
+            "if _CONFLICT_EDGE.match(line)]",
+            "if re.search(r\"<{7}|>{7}\", line)]",
+            "a marker quoted mid-line",
+        ),
+        Mutation(
+            "an indented marker counts",
+            "enumerate(lines, 1) if _CONFLICT_EDGE.match(line)]",
+            "enumerate(lines, 1) if _CONFLICT_EDGE.match(line.strip())]",
+            "an indented marker in a code block",
+        ),
+        Mutation(
+            "a longer run of characters counts as a marker",
+            '_CONFLICT_EDGE = re.compile(r"^(?:<{7}|>{7})(?: .*)?$")',
+            '_CONFLICT_EDGE = re.compile(r"^(?:<{7,}|>{7,})(?: .*)?$")',
+            "an eight-character run is not a marker",
+        ),
+        Mutation(
+            "a separator counts on its own, so a setext heading is refused",
+            "_CONFLICT_SEPARATOR.match(line)] if edges else []",
+            "_CONFLICT_SEPARATOR.match(line)]",
+            "a setext heading underline of seven characters",
+        ),
+        Mutation(
+            "the finding points at the first marker line, an earlier setext underline included",
+            "(edges or separators)[0],",
+            "min(edges + separators),",
+            "a heading underline before a real block",
+        ),
+        Mutation(
+            "only markdown is read",
+            '    for path in walk(""):\n        with path.open("rb") as handle:',
+            '    for path in walk(".md"):\n        with path.open("rb") as handle:',
+            "a workflow file",
+        ),
+        Mutation(
+            "binary files are read as text",
+            '            if b"\\0" in handle.read(8000):\n                continue\n        examined += 1',
+            '            if False:\n                continue\n        examined += 1',
+            "a binary file is skipped",
+        ),
         Mutation(
             "invisible characters stop being reported (#95)",
             "                if index == -1:\n                    continue",
@@ -1079,9 +1134,16 @@ GUARD = Guard(
         ),
         Mutation(
             "hook lib copies that differ stop being a finding",
-            "    if len(texts) == len(HOOK_LIB_COPIES) and len(set(texts.values())) > 1:",
-            "    if False:",
+            "        if len(texts) == len(pair) and len(set(texts.values())) > 1:",
+            "        if False:",
             "hook lib copies that differ by one byte are a finding",
+        ),
+        # #1575: the second lib. Checking only the first pair would leave deadline.sh free to drift.
+        Mutation(
+            "only the first lib pair is compared, so deadline.sh copies can differ unnoticed",
+            "    for pair in HOOK_LIB_PAIRS:\n        texts = {}",
+            "    for pair in HOOK_LIB_PAIRS[:1]:\n        texts = {}",
+            "deadline lib copies that differ by one byte are a finding",
         ),
         # #1041, and the two below are a matched pair. The rule has to sit between two failures,
         # so one mutation each way is the only way to prove it is still between them.
@@ -1181,5 +1243,40 @@ GUARD = Guard(
         r'`\.?/?([A-Za-z0-9_-]+',
         "a bullet naming only a dot-directory path is placeable",
     ),
+        Mutation(
+            # #1480
+            'a link climbing out of its plugin or skill is accepted again',
+            '                    if resolved == root or root in resolved.parents:\n                        continue',
+            '                    if True:\n                        continue',
+            "a design-flow command linking into rails-stack's skills/ leaves its package",
+        ),
+        Mutation(
+            # #1582
+            'uncontained-process-fixture accepts the import alone, so an unused helper passes',
+            '        if _CONTAIN_IMPORT.search(text) and _CONTAIN_WITH.search(text):',
+            '        if _CONTAIN_IMPORT.search(text):',
+            'uncontained-process-fixture / a selftest that imports the helper but never uses it',
+        ),
+        Mutation(
+            # #1582
+            'uncontained-process-fixture accepts any mention of contained(, so a comment passes',
+            '        if _CONTAIN_IMPORT.search(text) and _CONTAIN_WITH.search(text):',
+            '        if "contained(" in text:',
+            'uncontained-process-fixture / a selftest that only NAMES contained() in a comment',
+        ),
+        Mutation(
+            # #1582
+            'uncontained-process-fixture is not scoped to selftests, so every process-starting script is refused',
+            '        if "selftest" not in path.name:\n            continue\n        text = read(path)\n        if not _SPAWNS',
+            '        text = read(path)\n        if not _SPAWNS',
+            'uncontained-process-fixture / a non-selftest file that starts processes (out of scope)',
+        ),
+        Mutation(
+            # #1588
+            "fixture-git-drift never compares the copies, so a fix in one plugin's copy alone passes",
+            '        if canonical is not None and rel in texts and texts[rel] != canonical:',
+            '        if False:',
+            'fixture-git-drift / a fixture_git copy that differs by one byte is a finding',
+        ),
     ),
 )

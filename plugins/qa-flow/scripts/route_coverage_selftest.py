@@ -131,6 +131,28 @@ def run() -> int:
     if any("Pattern" in r.pattern for r in routes):
         FAILURES.append("rails: the header row was parsed as a route")
 
+    # #1546: a REDIRECT ROW, in each of the three forms Rails prints (actionpack redirection.rb:70/107/146).
+    # The path and option forms hold spaces, and refusing them refused the whole enumeration.
+    redirects = ("  people_access GET  /roles-permissions/access(.:format) redirect(301, /user-management)\n"
+                 "            old GET  /x(.:format)                         redirect(301, path: /y)\n"
+                 "           multi GET  /m(.:format)                         redirect(307, path: /n, subdomain: www)\n"
+                 "           block GET  /z(.:format)                         redirect(301)\n")
+    check("rails (#1546): every redirect form parses -- nothing left unparsed", rc.unparsed_rails_rows(redirects), [])
+    got = {r.pattern: (r.verb, r.area) for r in rc.from_rails(redirects)}
+    check("rails (#1546): each redirect row is enumerated as GET under the one `redirect` area",
+          sorted(got.values()), [("GET", "redirect")] * 4)
+    check("rails (#1546): the path redirect keeps its pattern",
+          "/roles-permissions/access" in got, True)
+    # A `)` INSIDE the target: matched only to the first `)`, the tail is rejected, so the row is
+    # REFUSED (unparsed), never silently read as something else.
+    paren = "    weird GET  /w(.:format)  redirect(301, /a(b)c)\n"
+    check("rails (#1546): a redirect whose target holds `)` is refused, not mis-parsed",
+          len(rc.unparsed_rails_rows(paren)), 1)
+    # CONTROL: an ordinary controller#action row still parses, and keeps its controller area.
+    plain = "   users GET  /users(.:format)  users#index\n"
+    check("rails (#1546): CONTROL: a controller#action row still parses under its controller area",
+          [(r.verb, r.area) for r in rc.from_rails(plain)], [("GET", "users")])
+
     # ---- enumeration: sitemap ----------------------------------------------------------
     sitemap = ("<urlset><url><loc>https://x.test/</loc></url>"
                "<url><loc>https://x.test/about/</loc></url>"

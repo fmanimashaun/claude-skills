@@ -13,14 +13,20 @@ GUARD = Guard(
         # missing path only after fixing the first is the point of `run_baseline`: an inert
         # guard hides every downstream problem behind the first one.
         "plugins",
-        "evals",
-    ),
+        "evals", "plugins/rails-flow/scripts/process_containment.py"),
     mutations=(
+        # #1459: a gate that times out takes its whole process group with it.
+        Mutation(
+            'a gate runs as a plain subprocess, so a timeout orphans what it started',
+            '            p = proc_group.run(\n                args, cwd=cwd or REPO, text=True, timeout=timeout, env=hermetic_git.env(),\n            )',
+            '            p = subprocess.run(\n                args, cwd=cwd or REPO, text=True, timeout=timeout, env=hermetic_git.env(), capture_output=True,\n            )',
+            '#1459: a timed-out gate',
+        ),
         # #1510: every gate subprocess runs with git auto-maintenance off.
         Mutation(
             "a gate runs with git's own auto-maintenance",
-            '                env=hermetic_git.env(),\n',
-            '',
+            '                args, cwd=cwd or REPO, text=True, timeout=timeout, env=hermetic_git.env(),',
+            '                args, cwd=cwd or REPO, text=True, timeout=timeout,',
             "#1510: a gate's git must see maintenance.auto=false",
         ),
         # #1097. A gate that was KILLED did not run. Reporting it as FAIL is the one verdict it
@@ -43,7 +49,7 @@ GUARD = Guard(
             # The reason has to name the allowance, or a reader cannot tell whether to raise the
             # budget or fix the gate -- which is the decision the skip exists to hand them.
             "the skip stops naming the allowance that was exceeded",
-            '            return 124, f"{\' \'.join(args)}: timed out after {timeout}s"',
+            '            return 124, f"{\' \'.join(args)}: timed out after {timeout}s{tail}"',
             '            return 124, "timed out"',
             "the timeout skip must name the allowance it exceeded",
         ),
@@ -159,19 +165,19 @@ GUARD = Guard(
         # nobody thinks of -- an "allowance" that is really a tightening.
         Mutation(
             "the slow-gate allowance is keyed on a gate that does not exist",
-            '    "mutation coverage": 1800,',
+            '    "mutation coverage": 5400,',
             '    "mutatoin coverage": 900,',
             "SLOW_GATES names no such gate",
         ),
         Mutation(
             "the slow-gate allowance widens to a gate that reads the tree once",
-            '    "mutation coverage": 1800,',
+            '    "mutation coverage": 5400,',
             '    "mutation coverage": 900,\n    "packaging determinism": 900,',
             "SLOW_GATES is",
         ),
         Mutation(
             "a SLOW_GATES entry silently tightens a gate instead of loosening it",
-            '    "mutation coverage": 1800,',
+            '    "mutation coverage": 5400,',
             '    "mutation coverage": 30,',
             "silently TIGHTENS a gate",
         ),
@@ -185,9 +191,82 @@ GUARD = Guard(
         Mutation(
             # #1486 / review of PR #1491
             "the gate's total drops below mutation_check's own caps, so a hung guard is killed unnamed",
-            '    "mutation coverage": 1800,',
+            '    "mutation coverage": 5400,',
             '    "mutation coverage": 1200,',
             "must stay under the gate's total",
+        ),
+        Mutation(
+            # review of #1525, suggestion 5: the last line became `heaviest guards`
+            "a slow gate's ok line keeps the last line, not its measurement",
+            '                last = next((ln for ln in reversed(lines) if re.search(r"\\(jobs=\\d+, \\d+s\\)", ln)),\n                            lines[-1] if lines else "")',
+            '                last = lines[-1] if lines else ""',
+            "a slow gate's ok line must carry its `(jobs=N, Xs)` measurement",
+        ),
+        # #1581, review of #1596: a PART of the split hook harness with no gate never runs.
+        Mutation(
+            "the release gate runs part a again, so part b of the hook harness has no gate and the doctor never runs it",
+            '"--selftest", "--part", "b")),',
+            '"--selftest", "--part", "a")),',
+            "has no gate in GATES",
+        ),
+        Mutation(
+            "the worktree gate runs part a again, so part c of the hook harness has no gate and the doctor never runs it",
+            '"--selftest", "--part", "c")),',
+            '"--selftest", "--part", "a")),',
+            "has no gate in GATES",
+        ),
+        Mutation(
+            # #1588
+            'the detector never runs, so a fixture commit in the real repo goes unnoticed (#1588)',
+            '        finally:\n            self.check_repo_untouched(tips_before)',
+            '        finally:\n            pass',
+            'a gate that plants a FOREIGN commit mid-sweep turns the sweep red',
+        ),
+        Mutation(
+            # #1588
+            'the detector treats every author as the configured user, so an escaped fixture commit passes (#1588)',
+            '        foreign = [ln for ln in added if not me or ln.split()[1] != me]',
+            '        foreign = []',
+            'a gate that plants a FOREIGN commit mid-sweep turns the sweep red',
+        ),
+        Mutation(
+            # #1588
+            "the detector flags every new commit, so another session's own work turns the sweep red (#1588)",
+            '        foreign = [ln for ln in added if not me or ln.split()[1] != me]',
+            '        foreign = added',
+            "a commit by the configured user (another session's work) is not flagged",
+        ),
+        Mutation(
+            # #1594 D1
+            'fetched commits are not excluded, so a git fetch during a sweep is a false alarm (#1594 review D1)',
+            '        code, out = self.run("git", "-C", str(REPO), "rev-list", "--format=%H %ae %s", *after, "--not", *before,\n                             "--remotes")',
+            '        code, out = self.run("git", "-C", str(REPO), "rev-list", "--format=%H %ae %s", *after, "--not", *before)',
+            "a fetch and pull of other authors' commits during the sweep is not flagged",
+        ),
+        # #1599: `--ratchet` is for the run that proves the record, and for `mutation coverage` alone.
+        Mutation(
+            "every run is ratcheted, so a laptop's load reads as growth",
+            '    return (*cmd, "--ratchet") if require_slow and name in RATCHETED_GATES else cmd',
+            '    return (*cmd, "--ratchet") if name in RATCHETED_GATES else cmd',
+            "without --require-slow, `mutation coverage` is run without --ratchet",
+        ),
+        Mutation(
+            "no run is ratcheted, so the cost record enforces nothing",
+            '    return (*cmd, "--ratchet") if require_slow and name in RATCHETED_GATES else cmd',
+            '    return cmd',
+            "under --require-slow, `mutation coverage` is run with --ratchet",
+        ),
+        Mutation(
+            "every gate is handed --ratchet under --require-slow",
+            '    return (*cmd, "--ratchet") if require_slow and name in RATCHETED_GATES else cmd',
+            '    return (*cmd, "--ratchet") if require_slow else cmd',
+            "under --require-slow, no OTHER gate is handed --ratchet",
+        ),
+        Mutation(
+            "the gate runner ignores slow_gate_command and runs the bare command",
+            "            code, out = self.run(*slow_gate_command(name, cmd, self.require_slow),",
+            "            code, out = self.run(*cmd,",
+            "under --require-slow, `mutation coverage` is run with --ratchet",
         ),
     ),
 )

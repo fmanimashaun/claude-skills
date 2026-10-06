@@ -35,7 +35,7 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 <main>
 <h1>Doctrine &rarr; enforcement</h1>
 <p class="lede">One row per doctrinal claim in this repo: where it is stated, and what makes it true. <strong>The unenforced rows are the deliverable.</strong> A claim with no enforcement is not automatically a defect &mdash; plenty are judgement, and gating judgement is worse than not gating it. The value is making the distinction visible instead of discovering it by accident.</p>
-<div class="tally"><b>48 claims</b><b>36 enforced guarantees</b><b>12 advisory</b><b>0 tracked gaps</b></div>
+<div class="tally"><b>51 claims</b><b>37 enforced guarantees</b><b>14 advisory</b><b>0 tracked gaps</b></div>
 <div class="controls"><button data-k="all">all</button><button data-k="guarantee">guarantees</button><button data-k="advice">advisory</button><button data-k="gap">gaps</button></div>
 <div class="row" data-k="guarantee">
 <h2>A SessionStart hook&#x27;s output is charged again after every compaction, so its bytes are budgeted and ratcheted; a shipped agent states a bounded output or returns a path.</h2>
@@ -324,6 +324,21 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 <p class="note">The whole safety property: overlapping lanes mean two sessions editing one tree while the guard believes each is alone, so both diffs review clean and the collision surfaces at merge.</p>
 </div>
 <div class="row" data-k="guarantee">
+<h2>A session that holds an unmerged recorded lane, or that adds a worktree for a branch or issue which already has an unmerged one, is refused `git worktree add`.</h2>
+<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>skills/parallel-session-lane/SKILL.md</code> &middot; #1581</span></div>
+<ul class="enf">
+<li><code>hook:plugins/rails-flow/hooks/scripts/guard-worktree.sh</code></li>
+<li><code>gate:hook gates</code></li>
+<li><code>gate:hook gates (release)</code></li>
+<li><code>gate:hook gates (worktree)</code></li>
+<li><code>gate:rails-flow worktree guard helper</code></li>
+<li><code>mutation:hook_guard_worktree</code></li>
+<li><code>mutation:hook_worktree_guard</code></li>
+<li><code>mutation:hook_session_start_resume</code></li>
+</ul>
+<p class="note">Fails closed, scoped to `git worktree add`. The duplicate rule reads `git worktree list` alone and needs no record or session identity; the one-issue rule reads the coordinator&#x27;s lane record. The measured failure it prevents: a restart creating a duplicate of the worktree it had just left, orphaning the first one with its uncommitted edits.</p>
+</div>
+<div class="row" data-k="guarantee">
 <h2>simple_form is mandatory in this stack — no form, and no form element, is built any other way.</h2>
 <div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>skills/rails-8/references/ecosystem-gems.md</code> &middot; #778 &middot; #1383</span></div>
 <ul class="enf">
@@ -421,6 +436,18 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 <div class="meta"><span class="k k-advice">advice</span><span>stated in <code>plugins/rails-flow/commands/fix.md</code> &middot; #647</span></div>
 <p class="none">Nothing enforces this.</p>
 <p class="note">Judgement by construction: which row a red test belongs to is the diagnosis. A gate would have to make that call to check it was made.</p>
+</div>
+<div class="row" data-k="advice">
+<h2>The worktree guard protects against accident, not impersonation: a session&#x27;s identity is the session id it sends.</h2>
+<div class="meta"><span class="k k-advice">advice</span><span>stated in <code>skills/parallel-session-lane/SKILL.md</code> &middot; #1581</span></div>
+<p class="none">Nothing enforces this.</p>
+<p class="note">A stated limit, not a guarantee, and nothing enforces it away: anything that can send the coordinator&#x27;s session id can write the lane record, and a session nobody recorded passes the one-issue rule. Deliberately so: the guard exists to stop a resumed or over-eager session creating a second worktree, and a stronger identity would need a host mechanism this repo does not have.</p>
+</div>
+<div class="row" data-k="advice">
+<h2>A session removes its worktree when its PR merges or its review finishes.</h2>
+<div class="meta"><span class="k k-advice">advice</span><span>stated in <code>skills/parallel-session-lane/SKILL.md</code> &middot; #1581</span></div>
+<p class="none">Nothing enforces this.</p>
+<p class="note">Advice with an advisory behind it: the session-start hook lists merged, clean worktrees for removal, but nothing removes them, and `--force` is refused by doctrine because a session destroyed a finished fix that way.</p>
 </div>
 <div class="row" data-k="advice">
 <h2>The quality pass never blocks a merge -- a gate on taste gets switched off, and then nothing checks quality at all.</h2>

@@ -213,6 +213,66 @@ def ruleset_fixtures() -> None:
             md.RULESET_ARGS = saved
 
 
+def repo_untouched_fixtures() -> None:
+    """#1588: a gate that commits into the real repository turns the sweep red, by name.
+
+    The fixture repo's configured user is `t@t`, so here `t@t` plays the maintainer (whose own sessions
+    may commit during a sweep) and `fx@fixture` plays a fixture that escaped its temp repo."""
+    work = fixture()
+    saved_gates, real = md.GATES, md.REPO
+    try:
+        md.REPO = work
+        scripts = work / "scripts"
+        scripts.mkdir(parents=True, exist_ok=True)
+        plant = ("import subprocess, sys\n"
+                 "subprocess.run(['git', '-c', f'user.email={sys.argv[1]}', '-c', 'user.name=x', 'commit', '-q',"
+                 " '--allow-empty', '-m', 'm'], check=True)\n")
+        (scripts / "_plant.py").write_text(plant, encoding="utf-8")
+        (scripts / "_quiet.py").write_text("print('ok')\n", encoding="utf-8")
+        cases = (("a gate that plants a FOREIGN commit mid-sweep turns the sweep red", "fx@fixture", md.FAIL),
+                 ("CONTROL: a commit by the configured user (another session's work) is not flagged", "t@t", md.PASS))
+        for label, author, want in cases:
+            md.GATES = (("selftest plants", ("python3", "scripts/_plant.py", author)),)
+            d = md.Doctor()
+            d.check_gates()
+            r = expect(label, d, "the sweep committed nothing into the real repository", want)
+            _tick()
+            if want == md.FAIL and r is not None and "fx@fixture" not in r.detail:
+                FAILURES.append(f"#1588: the finding must name the escaped commit's author: {r.detail!r}")
+        # #1594 review D1: a FETCH (and a pull into a local branch) during the sweep brings commits by other
+        # authors from the remote. They are not a fixture escaping, so the detector must not flag them.
+        other = work.parent / "other"
+        # The planted commits above are local only; unpushed, they make `dev` diverge and `--ff-only` refuse.
+        _git(work, "push", "-q", "origin", "dev")
+        _git(work.parent, "clone", "-q", str(work.parent / "remote.git"), str(other))
+        # On `dev`, the branch `work` tracks: a push from the clone's default branch (`main`) left the
+        # pull a no-op, and the control passed without ever seeing a foreign commit (#1594 review). The
+        # log assertion below keeps it from going vacuous again.
+        _git(other, "checkout", "-q", "dev")
+        _git(other, "-c", "user.email=someone@else", "-c", "user.name=s", "commit", "-q", "--allow-empty", "-m", "theirs")
+        _git(other, "push", "-q", "origin", "dev")
+        (scripts / "_fetch.py").write_text(
+            "import subprocess\n"
+            "subprocess.run(['git', 'fetch', '-q', 'origin'], check=True)\n"
+            "subprocess.run(['git', 'merge', '-q', '--ff-only', '@{u}'], check=True)\n", encoding="utf-8")
+        md.GATES = (("selftest fetches", ("python3", "scripts/_fetch.py")),)
+        d = md.Doctor()
+        d.check_gates()
+        expect("CONTROL: a fetch and pull of other authors' commits during the sweep is not flagged (#1594 D1)", d,
+               "the sweep committed nothing into the real repository", md.PASS)
+        _tick()
+        pulled = _git(work, "log", "--format=%ae %s", "-1", "dev")
+        if pulled != "someone@else theirs":
+            FAILURES.append(f"#1594 D1 control is vacuous: the pull did not bring the foreign commit onto dev ({pulled!r})")
+        md.GATES = (("selftest quiet", ("python3", "scripts/_quiet.py")),)
+        d = md.Doctor()
+        d.check_gates()
+        expect("CONTROL: a sweep that commits nothing passes the detector", d,
+               "the sweep committed nothing into the real repository", md.PASS)
+    finally:
+        md.GATES, md.REPO = saved_gates, real
+
+
 def timeout_fixtures() -> None:
     """A gate that is KILLED did not run -- so it is a skip, and a real failure is still a FAIL.
 
@@ -241,9 +301,14 @@ def timeout_fixtures() -> None:
         (scripts / "_hangs.py").write_text("import time\ntime.sleep(30)\n", encoding="utf-8")
         (scripts / "_fails.py").write_text(
             "import sys\nprint('a guard survived')\nsys.exit(1)\n", encoding="utf-8")
+        # mutation_check's two closing lines: the measurement, then the heaviest guards (#1497).
+        (scripts / "_slow_ok.py").write_text(
+            "print('mutation check: 9 mutation(s) across 2 guard(s), all caught (jobs=3, 7s)')\n"
+            "print('heaviest guards (seconds of work, all jobs): a 5s, b 2s')\n", encoding="utf-8")
         md.GATES = (("selftest slow", ("python3", "scripts/_slow.py")),
-                    ("selftest fails", ("python3", "scripts/_fails.py")))
-        md.SLOW_GATES = {"selftest slow": 1}
+                    ("selftest fails", ("python3", "scripts/_fails.py")),
+                    ("selftest slow ok", ("python3", "scripts/_slow_ok.py")))
+        md.SLOW_GATES = {"selftest slow": 1, "selftest slow ok": 60}
 
         d = md.Doctor()
         d.check_gates()
@@ -263,6 +328,13 @@ def timeout_fixtures() -> None:
         # satisfied by a doctor that reports everything as a skip -- which would hide the one
         # verdict that matters most on this gate.
         expect("a gate that RUNS and fails is still FAIL", d, "selftest fails", md.FAIL)
+        # Review of #1525: SLOW_GATES' note says to re-set the budget from `jobs=N, Xs` on this ok
+        # line, and the doctor kept the LAST line -- which became `heaviest guards`, without it.
+        ok = expect("a slow gate that passes is ok", d, "selftest slow ok", md.PASS)
+        _tick()
+        if ok is not None and "(jobs=3, 7s)" not in ok.detail:
+            FAILURES.append(f"a slow gate's ok line must carry its `(jobs=N, Xs)` measurement, which "
+                            f"SLOW_GATES is re-set from; got {ok.detail!r}")
         # ...and the summary must not tell anyone to fix a check that never ran.
         _tick()
         if any(x.status == md.FAIL and "slow" in x.name for x in d.results):
@@ -284,12 +356,29 @@ def timeout_fixtures() -> None:
             md.DEFAULT_TIMEOUT = saved_timeout
         expect("under --require-slow, a NON-slow gate that times out is still SKIP", hang,
                "selftest hangs", md.SKIP)
+        # #1599: `--ratchet` reaches `mutation coverage` ONLY under --require-slow, and no other gate. A stub fails when it
+        # is passed the flag, so each direction is read off a verdict: a ratchet on every local run reads a busy laptop as
+        # growth; one on no run enforces nothing; one on every gate hands an unknown flag to scripts that refuse it.
+        (scripts / "_ratchet_probe.py").write_text(
+            "import sys\nprint('ratcheted' if '--ratchet' in sys.argv else 'plain')\n"
+            "sys.exit(1 if '--ratchet' in sys.argv else 0)\n", encoding="utf-8")
+        md.GATES = (("mutation coverage", ("python3", "scripts/_ratchet_probe.py")),
+                    ("selftest other", ("python3", "scripts/_ratchet_probe.py")))
+        md.SLOW_GATES = {"mutation coverage": 60}
+        on, off = md.Doctor(require_slow=True), md.Doctor()
+        on.check_gates()
+        off.check_gates()
+        expect("under --require-slow, `mutation coverage` is run with --ratchet (the probe fails on it)", on,
+               "mutation coverage", md.FAIL)
+        expect("without --require-slow, `mutation coverage` is run without --ratchet", off, "mutation coverage", md.PASS)
+        expect("under --require-slow, no OTHER gate is handed --ratchet", on, "selftest other", md.PASS)
     finally:
         md.GATES, md.SLOW_GATES, md.REPO = saved_gates, saved_slow, real
 
 
 def run() -> int:
     timeout_fixtures()
+    repo_untouched_fixtures()
     ruleset_fixtures()
     # ---- healthy machine: nothing may FAIL ---------------------------------------------
     d = diagnose(fixture(corpora=True))
@@ -527,6 +616,23 @@ def run() -> int:
     if missing:
         FAILURES.append(f"GATES references scripts that do not exist: {missing}")
 
+    # ---- every PART of a split harness is a gate (#1581, review of #1596) ----------------------------
+    # check_hook_gates.py runs as PARTS (`--part a|b`) because one run was past a gate's 180 s. Its own selftest proves
+    # every fixture group is in exactly one part; THIS proves every part is a gate. A part with no GATES entry never
+    # runs in the doctor: the reviewer deleted the `hook gates (release)` entry from an export, and this selftest and
+    # lint_self_consistency both stayed green.
+    _tick()
+    import importlib.util
+    _root = Path(__file__).resolve().parents[1]
+    _spec = importlib.util.spec_from_file_location("check_hook_gates", _root / "plugins/rails-flow/scripts/check_hook_gates.py")
+    _chg = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_chg)
+    _declared = {c[c.index("--part") + 1] for _, c in md.GATES
+                 if any(a.endswith("check_hook_gates.py") for a in c) and "--part" in c and c.index("--part") + 1 < len(c)}
+    if _declared != set(_chg.PARTS):
+        FAILURES.append(f"a PART of check_hook_gates.py has no gate in GATES (or a gate names a part that does not exist): "
+                        f"parts {sorted(_chg.PARTS)}, gates run {sorted(_declared)}")
+
     # ---- no selftest may be invisible to the sweep ----------------------------------
     # A gate the doctor never runs is a gate that does not exist for anyone relying on
     # `--gates`. This bit on #119: the new route_coverage selftest passed locally while the
@@ -601,6 +707,12 @@ def run() -> int:
     _tick()
     if md.PR_SKIPPED_GATES - gate_names:
         FAILURES.append(f"PR_SKIPPED_GATES names no such gate: {sorted(md.PR_SKIPPED_GATES - gate_names)}")
+    _tick()
+    if md.RATCHETED_GATES != {"mutation coverage"} or not (md.RATCHETED_GATES <= gate_names):
+        FAILURES.append(f"RATCHETED_GATES is {sorted(md.RATCHETED_GATES)}; expected exactly ['mutation coverage'], a real gate")
+    _tick()
+    if "mutation cost record" not in gate_names or "mutation cost record" in md.PR_SKIPPED_GATES:
+        FAILURES.append("the cheap `--check-record` gate must be a gate AND must run on pull requests (not in PR_SKIPPED_GATES)")
     _tick()
     d_fast = md.Doctor()
     d_fast.check_gates(fast=True) if False else None  # the full sweep is minutes; assert the SKIP shape on the record instead
@@ -776,6 +888,145 @@ def run() -> int:
     if rc != 0 or out.split()[-2:] != ["false", "0"]:
         FAILURES.append(f"#1510: a gate's git must see maintenance.auto=false and gc.auto=0, got rc={rc} {out!r}")
 
+    # #1459: a gate that times out takes its WHOLE process group with it. The gate starts a grandchild
+    # that would outlive a plain kill, prints a line, then hangs; Doctor.run must come back as a
+    # timeout (124, read as SKIP -- never a pass) carrying that line, and the grandchild must be gone.
+    # CONTROL: a plain kill of the direct child -- what subprocess.run does on a timeout -- leaves it running.
+    #
+    # #1556: the gate learns nothing by being killed before it has started, and on a loaded runner a
+    # one-second timeout can land before the gate has written its record -- or halfway through
+    # writing it, which read as `int('')` and turned a full mutation-coverage run red. So the record
+    # is written atomically (pid_record.write) AFTER the line is printed, the timed-out run is
+    # retried with a longer timeout only while the gate never got that far, and the control waits
+    # for the record before it kills, instead of racing a timeout.
+    import signal as _signal
+    import time as _time
+    import pid_record
+    with tempfile.TemporaryDirectory() as td:
+        def gate(record: Path) -> str:
+            return (pid_record.import_line(pid_record.HERE) +
+                    "import subprocess, sys, time\n"
+                    "g = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'])\n"
+                    "print('gate-1459 started its grandchild', flush=True)\n"
+                    f"pid_record.write({str(record)!r}, g.pid)\n"
+                    "time.sleep(120)\n")
+
+        def alive(pid: int) -> bool:
+            for _ in range(20):           # a killed process can take a moment to be reaped
+                try:
+                    os.kill(pid, 0)
+                except ProcessLookupError:
+                    return False
+                _time.sleep(0.1)
+            return True
+
+        _tick()
+        pidfile = Path(td) / "grandchild.pid"
+        for timeout in (1, 2, 4, 8):      # longer only while the gate never started: that is no verdict
+            started = _time.monotonic()
+            rc, out = md.Doctor().run(sys.executable, "-c", gate(pidfile), timeout=timeout)
+            took = _time.monotonic() - started
+            recorded_pids = pid_record.wait(pidfile, timeout=0)
+            if recorded_pids:
+                break
+        if not recorded_pids:
+            FAILURES.append(f"#1459: the timed-out gate never started its grandchild, even with {timeout}s "
+                            f"(rc={rc}) -- the runner is too loaded to judge the group kill: {out!r}")
+        elif rc != 124 or "gate-1459 started its grandchild" not in out or took > timeout + 19:
+            FAILURES.append(f"#1459: a timed-out gate must return 124 promptly with what it printed, "
+                            f"got rc={rc} after {took:.0f}s: {out!r}")
+        _tick()
+        if recorded_pids and alive(recorded_pids[0]):
+            os.kill(recorded_pids[0], _signal.SIGKILL)
+            FAILURES.append("#1459: a timed-out gate left its grandchild running -- the process group was not killed")
+        _tick()
+        # No pipes: the control only needs to show the grandchild survives a kill of its parent.
+        control_file = Path(td) / "control.pid"
+        plain = subprocess.Popen([sys.executable, "-c", gate(control_file)],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        control_pids = pid_record.wait(control_file, timeout=60)
+        plain.kill()                      # exactly what subprocess.run(timeout=...) does on expiry
+        plain.wait()
+        control_alive = False
+        if control_pids:
+            try:                  # one look: alive is the expected answer, so there is nothing to wait for
+                os.kill(control_pids[0], 0)
+                control_alive = True
+                os.kill(control_pids[0], _signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        if not control_pids:
+            FAILURES.append("#1459 CONTROL: the control gate wrote no record within 60s -- it never started")
+        elif not control_alive:
+            FAILURES.append("#1459 CONTROL: a plain kill of the gate should leave the grandchild "
+                            "running, or the check above proves nothing")
+
+    # Review of #1525, end to end through the doctor. (1) A gate whose OWN children go through
+    # proc_group.run -- mutation coverage's pool -- each in a session the gate's group kill never
+    # reached; one also starts a grandchild in a session of its own, as check_hook_gates' hooks do.
+    # (2) Ctrl-C while a gate runs: the gate is in a session of its own and never sees the
+    # terminal's SIGINT, so the doctor must kill it on the way out (review: 2 survivors, 0 on dev).
+    scripts_dir = str(Path(md.__file__).resolve().parent)
+    inner = (pid_record.import_line(pid_record.HERE) +
+             "import os, subprocess, sys, time\n"
+             "g = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'], start_new_session=True)\n"
+             "pid_record.write(sys.argv[1], os.getpid(), g.pid)\n"
+             "time.sleep(120)\n")
+
+    def recorded(*files: Path) -> list[int]:
+        return [pid for f in files for pid in pid_record.wait(f)]
+
+    def survivors(pids: list[int]) -> list[int]:
+        left = [p for p in pids if alive(p)]
+        for p in left:
+            try:
+                os.kill(p, _signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        return left
+
+    with tempfile.TemporaryDirectory() as td:
+        nested = ("import sys\n"
+                  f"sys.path.insert(0, {scripts_dir!r})\n"
+                  "import proc_group\n"
+                  "from concurrent.futures import ThreadPoolExecutor\n"
+                  f"inner = {inner!r}\n"
+                  "def one(i):\n"
+                  f"    proc_group.run([sys.executable, '-c', inner, {td!r} + f'/m{{i}}.pids'], timeout=300)\n"
+                  "with ThreadPoolExecutor(2) as p:\n"
+                  "    list(p.map(one, range(2)))\n")
+        _tick()
+        rc, out = md.Doctor().run(sys.executable, "-c", nested, timeout=6)
+        pids = recorded(Path(td) / "m0.pids", Path(td) / "m1.pids")
+        left = survivors(pids)
+        if rc != 124 or len(pids) != 4 or left:
+            FAILURES.append(f"#1459: a timed-out gate left a nested child running (rc={rc}; recorded "
+                            f"{len(pids)} of 4 pids; survivors {left})")
+
+        pidfile = Path(td) / "sigint.pids"
+        driver = Path(td) / "driver.py"
+        driver.write_text("import sys\n"
+                          f"sys.path.insert(0, {scripts_dir!r})\n"
+                          "import maintainer_doctor as md\n"
+                          f"md.Doctor().run(sys.executable, '-c', {inner!r}, {str(pidfile)!r}, timeout=300)\n",
+                          encoding="utf-8")
+        _tick()
+        d = subprocess.Popen([sys.executable, str(driver)], start_new_session=True,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        pids = recorded(pidfile)
+        os.kill(d.pid, _signal.SIGINT)
+        try:
+            d.wait(timeout=20)
+            exited = True
+        except subprocess.TimeoutExpired:
+            exited = False
+            d.kill()
+            d.wait()
+        left = survivors(pids)
+        if not exited or len(pids) != 2 or left:
+            FAILURES.append(f"#1459: Ctrl-C during a gate left it running (doctor exited: {exited}; recorded "
+                            f"{len(pids)} of 2 pids; survivors {left})")
+
     if FAILURES:
         print(f"SELFTEST FAILED -- {len(FAILURES)} of {CHECKS} checks:", file=sys.stderr)
         for f in FAILURES:
@@ -786,4 +1037,11 @@ def run() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(run())
+    # CONTAINED (#1582): this selftest starts process trees on purpose, some built to leak, under
+    # every mutant too. Nothing it starts may outlive it -- the 2026-10-03 leak exhausted the
+    # user's process limit. Not optional: a missing helper must fail here, not run uncontained.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "plugins" / "rails-flow" / "scripts"))
+    from process_containment import contained
+    with contained():
+        _rc = run()
+    sys.exit(_rc)

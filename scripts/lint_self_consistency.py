@@ -29,8 +29,10 @@ WHAT IT CHECKS
                               what ships omits it
   undocumented-command        a plugins/<p>/commands/<c>.md that README.md (as `c`) or the
                               plugin's README (as /p:c) never names — same defect, one level down
-  hook-lib-drift              the two shipped copies of hooks/scripts/lib/normalize_cmd.sh differ, or
-                              one is missing -- one normaliser is a claim only while they are identical
+  hook-lib-drift              the two shipped copies of hooks/scripts/lib/normalize_cmd.sh, or of lib/deadline.sh,
+                              differ, or one is missing -- one normaliser is a claim only while they are identical
+  fixture-git-drift           the three shipped copies of scripts/fixture_git.py (rails-flow, qa-flow,
+                              pipeline) differ, or one is missing -- one fixture-git lock, three copies (#1588)
   claude-md-growth            CLAUDE.md past the ceiling recorded in its own marker (or no marker,
                               or its history file gone) — relocate incident paragraphs verbatim to
                               docs/brain/history/maintainer-history.md; claude_md_structure.py prints the diff
@@ -569,25 +571,62 @@ _CLAUDE_MD_MARKER = re.compile(r"<!--\s*claude-md:\s*max-lines\s+(\d+)\s*-->")
 # the other). A missing copy is a finding too: a hook whose lib is gone falls back to raw matching.
 HOOK_LIB_COPIES = ("plugins/rails-flow/hooks/scripts/lib/normalize_cmd.sh",
                    "plugins/qa-flow/hooks/scripts/lib/normalize_cmd.sh")
+# #1575: `lib/deadline.sh` is the second shared lib -- both hooks run their work under it, and a deadline that was
+# fixed in one plugin's copy and not the other leaves the other's hook able to spin for hours.
+HOOK_LIB_PAIRS = (HOOK_LIB_COPIES,
+                  ("plugins/rails-flow/hooks/scripts/lib/deadline.sh",
+                   "plugins/qa-flow/hooks/scripts/lib/deadline.sh"))
 
 
 def check_hook_lib_drift() -> tuple[list[Finding], int]:
-    """The hook lib copies exist and are byte-identical."""
+    """Each hook lib's copies exist and are byte-identical."""
+    findings: list[Finding] = []
+    for pair in HOOK_LIB_PAIRS:
+        texts = {}
+        for rel in pair:
+            p = ROOT / rel
+            if not p.is_file():
+                findings.append(Finding("hook-lib-drift", rel, 0,
+                                        "missing -- the hook beside it falls back to raw-text matching or runs with no "
+                                        "deadline; copy it from the other plugin"))
+                continue
+            texts[rel] = p.read_bytes()
+        if len(texts) == len(pair) and len(set(texts.values())) > 1:
+            a, b = pair
+            findings.append(Finding("hook-lib-drift", b, 0,
+                                    f"differs from {a} -- one lib, two copies: a fix landed in one and not the other. "
+                                    "Make them identical (cp) and re-run"))
+    return findings, sum(len(pair) for pair in HOOK_LIB_PAIRS)
+
+
+# Rule: fixture-git-drift (#1588)
+# Each plugin installs alone and cannot import another's code, so the helper that locks a fixture's git to
+# its own temp repo ships as one copy per plugin that runs fixture git. Maintainer `scripts/` import the
+# rails-flow copy. A fix to one copy that misses another reopens #1588 in that plugin.
+FIXTURE_GIT_COPIES = ("plugins/rails-flow/scripts/fixture_git.py",
+                      "plugins/qa-flow/scripts/fixture_git.py",
+                      "plugins/pipeline/scripts/fixture_git.py")
+
+
+def check_fixture_git_drift() -> tuple[list[Finding], int]:
+    """The fixture_git copies exist and are byte-identical to the rails-flow (canonical) one."""
     findings: list[Finding] = []
     texts = {}
-    for rel in HOOK_LIB_COPIES:
+    for rel in FIXTURE_GIT_COPIES:
         p = ROOT / rel
         if not p.is_file():
-            findings.append(Finding("hook-lib-drift", rel, 0,
-                                    "missing -- the hook beside it falls back to raw-text matching; copy it from the other plugin"))
+            findings.append(Finding("fixture-git-drift", rel, 0,
+                                    "missing -- this plugin's fixtures lose the lock that keeps their git out of the "
+                                    "real repo (#1588); copy it from plugins/rails-flow/scripts/fixture_git.py"))
             continue
         texts[rel] = p.read_bytes()
-    if len(texts) == len(HOOK_LIB_COPIES) and len(set(texts.values())) > 1:
-        a, b = HOOK_LIB_COPIES
-        findings.append(Finding("hook-lib-drift", b, 0,
-                                f"differs from {a} -- one normaliser, two copies: a fix landed in one and not the other. "
-                                "Make them identical (cp) and re-run"))
-    return findings, len(HOOK_LIB_COPIES)
+    canonical = texts.get(FIXTURE_GIT_COPIES[0])
+    for rel in FIXTURE_GIT_COPIES[1:]:
+        if canonical is not None and rel in texts and texts[rel] != canonical:
+            findings.append(Finding("fixture-git-drift", rel, 0,
+                                    f"differs from {FIXTURE_GIT_COPIES[0]} -- one fixture-git lock, three copies: a fix "
+                                    "landed in one and not the others. Copy the canonical file over it (cp) and re-run"))
+    return findings, len(FIXTURE_GIT_COPIES)
 
 
 def check_claude_md_growth() -> tuple[list[Finding], int]:
@@ -1773,6 +1812,98 @@ def check_invisible_characters() -> tuple[list[Finding], int]:
     return findings, examined
 
 
+# ---------------------------------------------------------------------------
+# Rule: conflict-marker (#1543)
+# ---------------------------------------------------------------------------
+
+# A line that is ONLY a marker, as git writes it: seven `<` or `>` then an optional label. Whole
+# lines, not substrings: this repo quotes markers in prose, in mutation anchors and in heredoc
+# fixtures, and none of those starts a line (measured on origin/dev: no tracked file has a matching
+# line). An indented marker, a mid-line quote, `<<EOF` and an eight-character run all stay quiet.
+_CONFLICT_EDGE = re.compile(r"^(?:<{7}|>{7})(?: .*)?$")
+# The separator is seven `=` and nothing else, which is ALSO a legal Markdown setext heading
+# underline for a seven-character title. So it counts only in a file that has an opening or closing
+# marker too; on its own it is a heading.
+_CONFLICT_SEPARATOR = re.compile(r"^={7}$")
+
+
+def check_conflict_markers() -> tuple[list[Finding], int]:
+    """No unresolved merge-conflict marker in any file we keep.
+
+    A resolution script refused its hunk, a `;` in the command chain committed and pushed anyway, and
+    the PR's gate run passed a CHANGELOG with a live conflict block in `### Unreleased` (#1543):
+    nothing read for the markers, and `release.yml` would have extracted them into published notes.
+    Every file is read, not a suffix list, and a binary one (a NUL in the first 8000 bytes, git's
+    test) is skipped -- the same two choices `package_core.py` makes. It walks the working tree, so
+    an untracked file is read too; a marker in a scratch file fails the sweep, which is harmless.
+    """
+    findings: list[Finding] = []
+    examined = 0
+    for path in walk(""):
+        with path.open("rb") as handle:
+            if b"\0" in handle.read(8000):
+                continue
+        examined += 1
+        lines = read(path).splitlines()
+        edges = [n for n, line in enumerate(lines, 1) if _CONFLICT_EDGE.match(line)]
+        separators = [n for n, line in enumerate(lines, 1) if _CONFLICT_SEPARATOR.match(line)] if edges else []
+        if edges or separators:
+            findings.append(Finding(
+                # An edge marker, not the first `=======`: a setext underline can come before a real block.
+                "conflict-marker", rel(path), (edges or separators)[0],
+                f"{len(edges) + len(separators)} unresolved merge-conflict marker line(s), the first "
+                "edge marker here -- a PR's gate run "
+                "passed a CHANGELOG carrying a live block (#1543), and `release.yml` would have "
+                "extracted it into the published notes. Resolve the conflict; do not commit the markers",
+            ))
+    return findings, examined
+
+
+# A selftest that starts processes, and the two halves of using the containment helper (#1582).
+_SPAWNS = re.compile(r"\b(?:subprocess|_sp)\.Popen\(|\bos\.fork\(|start_new_session\s*=\s*True")
+_CONTAIN_IMPORT = re.compile(r"^\s*from\s+process_containment\s+import\s+[^#\n]*\bcontained\b", re.M)
+_CONTAIN_WITH = re.compile(r"^\s*with\s+contained\(", re.M)
+
+
+def check_uncontained_process_fixtures() -> tuple[list[Finding], int]:
+    """A selftest that starts processes runs inside `process_containment.contained()` (#1582).
+
+    A red-first reproduction of a process bug leaks by design. On 2026-10-03 one ran 74 times with no
+    containment, left 74 stopped, orphaned trees, and every `fork()` on the machine failed. Scoped to
+    files named `*selftest*.py` that start processes (`Popen`, `os.fork`, a new session). Both the
+    import AND a `with contained(` block are required: a comment that names the helper is not using
+    it -- the leak's own cleanup matched a marker that was never there, and said nothing.
+
+    WHAT IT CHECKS IS PRESENCE, NOT ENCLOSURE (#1589 review L1). It does not prove the block wraps the
+    spawn: `with contained(): pass` followed by the spawn, or a block in a never-called function, both
+    pass. Lexical enclosure would refuse the normal shape -- `run()`'s spawns, under `with contained():`
+    in `__main__` -- so the rule asks for the deliberate act and the review checks the wrapping.
+    NOT SEEN (L2): a selftest that starts processes only through `subprocess.run` / `check_output` /
+    `os.system` (those wait for their child, so a leak needs a grandchild); measured, 3 such files.
+    """
+    findings: list[Finding] = []
+    examined = 0
+    for path in walk(".py"):
+        if "selftest" not in path.name:
+            continue
+        text = read(path)
+        if not _SPAWNS.search(text):
+            continue
+        examined += 1
+        if _CONTAIN_IMPORT.search(text) and _CONTAIN_WITH.search(text):
+            continue
+        line = next(n for n, ln in enumerate(text.splitlines(), 1) if _SPAWNS.search(ln))
+        findings.append(Finding(
+            "uncontained-process-fixture", rel(path), line,
+            "this selftest starts processes but does not import and use `process_containment.contained()` "
+            "(the rule checks both are present, not that the block encloses every spawn) -- "
+            "a fixture built to leak (a red-first process bug) left 74 stopped orphans on 2026-10-03 and "
+            "exhausted the user's process limit (#1582). Import it from "
+            "`plugins/rails-flow/scripts/process_containment.py` and run the selftest under `with contained():`",
+        ))
+    return findings, examined
+
+
 # A pointer to one of OUR files, in one of the two forms that are unambiguously ours:
 #   `${CLAUDE_PLUGIN_ROOT}/reference/x.md`  -- resolved against the OWNING plugin's directory
 #   `skills/rails-8/references/style.md`    -- resolved against the repo root
@@ -1907,6 +2038,44 @@ def check_broken_relative_link() -> tuple[list[Finding], int]:
                 f"links to `{raw}`, which resolves to nothing from {rel(path.parent)}/ -- "
                 "a relative link is read from its own directory, not from the repo root",
             ))
+    return findings, examined
+
+
+def check_link_leaves_package() -> tuple[list[Finding], int]:
+    """A shipped plugin's or skill's relative link must stay inside what ships with it.
+
+    #1480. Each plugin and each skill installs ALONE, so a link that climbs out of it -- to a sibling
+    plugin, or from design-flow into rails-stack's `skills/design-system/` -- names a path that does
+    not exist in an install, even when it resolves in this clone. Four did, in design-flow; two were
+    broken even here (`../../skills/...` from `commands/`). Name the other package's file in prose
+    (`` `skills/design-system/references/brand.md` ``, in rails-stack) instead.
+
+    A package is `plugins/<name>/` or `skills/<name>/`. Fences, inline code and comments only quote a
+    link; URLs and `#anchors` carry no path.
+    """
+    from urllib.parse import unquote
+    findings: list[Finding] = []
+    examined = 0
+    for base in ("plugins", "skills"):
+        for package in sorted(p for p in (ROOT / base).glob("*") if p.is_dir()):
+            root = package.resolve()
+            for path in sorted(package.rglob("*.md")):
+                prose = _blank_markdown_code(read(path))
+                links = [*_MD_LINK.finditer(prose), *_MD_REFDEF.finditer(prose)]
+                for match in sorted(links, key=lambda m: m.start()):
+                    raw = match.group(1) or match.group(2)
+                    target = unquote(raw.partition("#")[0])
+                    if not target or target.startswith("/") or re.match(r"[A-Za-z][A-Za-z0-9+.-]*:", target):
+                        continue
+                    examined += 1
+                    resolved = (path.parent / target).resolve()
+                    if resolved == root or root in resolved.parents:
+                        continue
+                    findings.append(Finding(
+                        "link-leaves-package", rel(path), prose[:match.start()].count("\n") + 1,
+                        f"links to `{raw}`, which leaves {rel(package)}/ -- each plugin and skill installs "
+                        "alone, so name the other package's file in prose instead of linking to it",
+                    ))
     return findings, examined
 
 
@@ -3442,6 +3611,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     undoc_cmds, commands_examined = check_undocumented_commands()
     growth, claude_md_lines = check_claude_md_growth()
     hook_lib, hook_lib_copies = check_hook_lib_drift()
+    fixture_git, fixture_git_copies = check_fixture_git_drift()
     bare, bare_examined = check_bare_plugin_entries()
     misdesc, agent_descs_examined = check_misdescribed_agents()
     unbounded, queries_examined = check_unbounded_issue_queries()
@@ -3449,8 +3619,11 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     components, components_examined = check_component_call_sites()
     call_sites, call_coverage = check_doctrine_call_sites()
     invisible, invisible_examined = check_invisible_characters()
+    markers, markers_examined = check_conflict_markers()
+    uncontained, uncontained_examined = check_uncontained_process_fixtures()
     pointers, pointers_examined = check_doc_pointers()
     rel_links, rel_links_examined = check_broken_relative_link()
+    leaving, leaving_examined = check_link_leaves_package()
     uninstallable, plugins_installable = check_uninstallable_plugins()
     plugin_root, yaml_blocks = check_plugin_root_in_ci()
     mkt_ver, mkt_ver_examined = check_marketplace_version_duplicate()
@@ -3495,14 +3668,18 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "commands_checked_for_documentation": commands_examined,
         "claude_md_lines": claude_md_lines,
         "hook_lib_copies": hook_lib_copies,
+        "fixture_git_copies": fixture_git_copies,
         "plugin_entries_checked_for_metadata": bare_examined,
         "plugin_descriptions_reconciled_against_agents": agent_descs_examined,
         "gh_list_calls_examined": queries_examined,
         "author_me_filters_examined": author_me_examined,
         "documented_components": components_examined,
         "shipped_files_scanned_for_invisibles": invisible_examined,
+        "files_scanned_for_conflict_markers": markers_examined,
+        "process_spawning_selftests_examined": uncontained_examined,
         "doc_pointers_examined": pointers_examined,
         "docs_relative_links_examined": rel_links_examined,
+        "package_relative_links_examined": leaving_examined,
         "plugins_checked_for_install_lines": plugins_installable,
         "yaml_blocks_scanned": yaml_blocks,
         "skill_docs_scanned_for_v4_outline": outlines_examined,
@@ -3540,8 +3717,8 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "scaffolded_boolean_toggles": toggles_examined,
         **call_coverage,
     }
-    return (dead + unenforced + undocumented + undoc_cmds + growth + hook_lib + bare + misdesc + unbounded + author_me + components + call_sites + invisible
-            + pointers + rel_links + outlines + uninstallable + plugin_root + mkt_ver + coercions + topologies + schema + unwired
+    return (dead + unenforced + undocumented + undoc_cmds + growth + hook_lib + fixture_git + bare + misdesc + unbounded + author_me + components + call_sites + invisible
+            + markers + uncontained + pointers + rel_links + leaving + outlines + uninstallable + plugin_root + mkt_ver + coercions + topologies + schema + unwired
             + ci_gates + cl_ignore + controllers + labels + comp_labels + orphans + keyfilter
             + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
             + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref + action_pins
@@ -3562,7 +3739,10 @@ def selftest() -> int:
     failures: list[str] = []
     checks = 0
 
-    def scenario(label: str, files: dict[str, str], *, rule: str, expect_finding: bool) -> None:
+    def scenario(label: str, files: dict[str, str], *, rule: str, expect_finding: bool, only=None,
+                 line: int | None = None) -> None:
+        # `only`: one rule's check, instead of every rule over the fixture tree. `run()` is ~0.2s a
+        # scenario, and this module is its own mutation guard's selftest -- run once per mutation.
         nonlocal checks
         global ROOT
         checks += 1
@@ -3573,10 +3753,12 @@ def selftest() -> int:
             target.write_text(content, encoding="utf-8")
         previous, ROOT = ROOT, root
         try:
-            findings, _ = run()
+            findings, _ = only() if only else run()
         finally:
             ROOT = previous
         got = [f for f in findings if f.rule == rule]
+        if line is not None and got and got[0].line != line:
+            failures.append(f"{rule} / {label}: expected the finding on line {line}, got {got[0].line}")
         if bool(got) != expect_finding:
             want = "a finding" if expect_finding else "silence"
             detail = "; ".join(str(f) for f in got) or "(none)"
@@ -3793,6 +3975,23 @@ def selftest() -> int:
                  "rails-flow (agentic flow plugin)",
                  "- **Eleven agents ran for every job.** (#656) Now there is a pack size.",
                  heading="### 1.23.0 — 2026-08-20 (release v1.92.0)")})
+
+    # -- link-leaves-package (#1480) -----------------------------------------
+    LLP = "link-leaves-package"
+    scenario("a design-flow command linking into rails-stack's skills/ leaves its package", rule=LLP, expect_finding=True,
+             files={"plugins/design-flow/commands/setup.md": "See [b](../../../skills/design-system/references/brand.md).\n",
+                    "skills/design-system/references/brand.md": "x\n"})
+    scenario("...even when it resolves to nothing", rule=LLP, expect_finding=True,
+             files={"plugins/design-flow/commands/setup.md": "See [b](../../skills/design-system/references/brand.md).\n"})
+    scenario("...a skill linking to a sibling skill", rule=LLP, expect_finding=True,
+             files={"skills/a/SKILL.md": "[x](../b/SKILL.md)\n", "skills/b/SKILL.md": "x\n"})
+    scenario("...silent on a link inside the same package, a prose path, a URL and an anchor", rule=LLP,
+             expect_finding=False,
+             files={"plugins/design-flow/commands/setup.md":
+                    "[r](../reference/x.md) `skills/design-system/references/brand.md` [u](https://x.test) [t](#top)\n",
+                    "plugins/design-flow/reference/x.md": "x\n"})
+    scenario("...silent inside a fenced block", rule=LLP, expect_finding=False,
+             files={"plugins/p/a.md": "```md\n[x](../../out.md)\n```\n"})
 
     # -- broken-relative-link (#1415) -----------------------------------------
     BRL = "broken-relative-link"
@@ -4599,12 +4798,27 @@ def selftest() -> int:
         files={"CLAUDE.md": "@AGENTS.md\nrule\n", **_hist},
     )
     LIB = "#!/usr/bin/env bash\nnormalize_segments() { cat; }\n"
+    DL = HOOK_LIB_PAIRS[1]
+    DL_OK = {DL[0]: LIB, DL[1]: LIB}          # the deadline pair, identical, so each scenario below tests ONE thing
     scenario("identical hook lib copies are silent", rule="hook-lib-drift", expect_finding=False,
-             files={HOOK_LIB_COPIES[0]: LIB, HOOK_LIB_COPIES[1]: LIB})
+             files={HOOK_LIB_COPIES[0]: LIB, HOOK_LIB_COPIES[1]: LIB, **DL_OK})
     scenario("hook lib copies that differ by one byte are a finding", rule="hook-lib-drift", expect_finding=True,
-             files={HOOK_LIB_COPIES[0]: LIB, HOOK_LIB_COPIES[1]: LIB + "\n"})
+             files={HOOK_LIB_COPIES[0]: LIB, HOOK_LIB_COPIES[1]: LIB + "\n", **DL_OK})
     scenario("a missing hook lib copy is a finding", rule="hook-lib-drift", expect_finding=True,
-             files={HOOK_LIB_COPIES[0]: LIB})
+             files={HOOK_LIB_COPIES[0]: LIB, **DL_OK})
+    scenario("identical deadline lib copies are silent", rule="hook-lib-drift", expect_finding=False,
+             files={HOOK_LIB_COPIES[0]: LIB, HOOK_LIB_COPIES[1]: LIB, DL[0]: LIB, DL[1]: LIB})
+    scenario("deadline lib copies that differ by one byte are a finding", rule="hook-lib-drift", expect_finding=True,
+             files={HOOK_LIB_COPIES[0]: LIB, HOOK_LIB_COPIES[1]: LIB, DL[0]: LIB, DL[1]: LIB + "\n"})
+    scenario("a missing deadline lib copy is a finding", rule="hook-lib-drift", expect_finding=True,
+             files={HOOK_LIB_COPIES[0]: LIB, HOOK_LIB_COPIES[1]: LIB, DL[0]: LIB})
+    FG = "def run(repo, *args):\n    pass\n"
+    scenario("identical fixture_git copies are silent", rule="fixture-git-drift", expect_finding=False,
+             files={c: FG for c in FIXTURE_GIT_COPIES})
+    scenario("a fixture_git copy that differs by one byte is a finding", rule="fixture-git-drift", expect_finding=True,
+             files={FIXTURE_GIT_COPIES[0]: FG, FIXTURE_GIT_COPIES[1]: FG, FIXTURE_GIT_COPIES[2]: FG + "\n"})
+    scenario("a missing fixture_git copy is a finding", rule="fixture-git-drift", expect_finding=True,
+             files={FIXTURE_GIT_COPIES[0]: FG, FIXTURE_GIT_COPIES[1]: FG})
     scenario(
         "the history file CLAUDE.md points at is missing", rule="claude-md-growth", expect_finding=True,
         files={"CLAUDE.md": "@AGENTS.md\n<!-- claude-md: max-lines 10 -->\nrule\n"},
@@ -5292,6 +5506,69 @@ def selftest() -> int:
              files={"skills/x/references/t.md": "    @variant, @size = variant.to_sym, size.to_sym\n"})
     scenario("outside shipped docs is out of scope", rule=UC, expect_finding=False,
              files={"docs/x.md": "    @px = SIZE[size.to_sym] || size.to_i\n"})
+
+    # ---- uncontained-process-fixture (#1582) ---------------------------------------
+    UP = "uncontained-process-fixture"
+    SPAWN = "import subprocess, sys\nsubprocess.Popen([sys.executable, '-c', 'pass'])\n"
+    CONTAINED = ("from process_containment import contained\n" + "def run():\n    " + SPAWN.replace("\n", "\n    ")
+                 + "\nwith contained():\n    run()\n")
+    scenario("a selftest that starts processes with no containment", rule=UP, only=check_uncontained_process_fixtures,
+             expect_finding=True, files={"scripts/x_selftest.py": SPAWN})
+    scenario("a selftest that forks with no containment", rule=UP, only=check_uncontained_process_fixtures,
+             expect_finding=True, files={"plugins/rails-flow/scripts/y_selftest.py": "import os\nif os.fork() == 0:\n    os._exit(0)\n"})
+    scenario("a selftest that only NAMES contained() in a comment", rule=UP, only=check_uncontained_process_fixtures,
+             expect_finding=True, files={"scripts/x_selftest.py": "# runs under contained() -- not really\n" + SPAWN})
+    scenario("a selftest that imports the helper but never uses it", rule=UP, only=check_uncontained_process_fixtures,
+             expect_finding=True, files={"scripts/x_selftest.py": "from process_containment import contained\n" + SPAWN})
+    scenario("a contained selftest", rule=UP, only=check_uncontained_process_fixtures,
+             expect_finding=False, files={"scripts/x_selftest.py": CONTAINED})
+    scenario("a selftest that starts no processes", rule=UP, only=check_uncontained_process_fixtures,
+             expect_finding=False, files={"scripts/x_selftest.py": "print('no processes')\n"})
+    scenario("a non-selftest file that starts processes (out of scope)", rule=UP, only=check_uncontained_process_fixtures,
+             expect_finding=False, files={"scripts/runner.py": SPAWN})
+
+    # ---- conflict-marker (#1543) -------------------------------------------------
+    CM = "conflict-marker"
+    BLOCK = "<<<<<<< HEAD\n- ours\n=======\n- theirs\n>>>>>>> origin/dev\n"
+    # THE REAL SHAPE: fd3ad02 on fix/1480 carried this block in the Repository `### Unreleased`, and
+    # the PR's `--gates-only --fast` run passed it.
+    scenario("a live block in the CHANGELOG's Unreleased section", rule=CM, only=check_conflict_markers, expect_finding=True,
+             files={"CHANGELOG.md": "# Changelog\n\n## Repository hygiene\n\n### Unreleased\n\n" + BLOCK
+                    + "\n### 2026-10-02 (release v1.153.0)\n"})
+    scenario("a CRLF file", rule=CM, only=check_conflict_markers, expect_finding=True, files={"docs/x.md": BLOCK.replace("\n", "\r\n")})
+    # Each of the three markers alone, as a half-resolved file leaves them.
+    scenario("only the opening marker is left", rule=CM, only=check_conflict_markers, expect_finding=True,
+             files={"docs/x.md": "<<<<<<< HEAD\ntext\n"})
+    scenario("only the closing marker is left", rule=CM, only=check_conflict_markers, expect_finding=True,
+             files={"docs/x.md": "text\n>>>>>>> origin/dev\n"})
+    # A half-resolved file keeps its separator beside one edge marker, and that still counts.
+    scenario("an opening marker and a separator, no closing marker", rule=CM, only=check_conflict_markers,
+             expect_finding=True, files={"docs/x.md": "<<<<<<< HEAD\ntext\n=======\nmore\n"})
+    # Not an allowlist of suffixes: a YAML workflow and an extensionless file are read too.
+    scenario("a workflow file", rule=CM, only=check_conflict_markers, expect_finding=True, files={".github/workflows/x.yml": BLOCK})
+    scenario("a file with no extension", rule=CM, only=check_conflict_markers, expect_finding=True, files={"scripts/runit": BLOCK})
+    # NEAR MISSES: every way this repo legitimately quotes a marker.
+    scenario("a marker quoted mid-line", rule=CM, only=check_conflict_markers, expect_finding=False,
+             files={"docs/x.md": "Resolve a `<<<<<<< HEAD` block by hand, then delete `=======`.\n"})
+    scenario("an indented marker in a code block", rule=CM, only=check_conflict_markers, expect_finding=False,
+             files={"docs/x.md": "Git writes:\n\n    <<<<<<< HEAD\n    =======\n    >>>>>>> origin/dev\n"})
+    scenario("a marker inside a Python string", rule=CM, only=check_conflict_markers, expect_finding=False,
+             files={"scripts/x.py": 'ANCHOR = "<<<<<<< HEAD\\n=======\\n>>>>>>> origin/dev"\n'})
+    # A seven-character title's setext underline is exactly the separator. Alone it is a heading.
+    scenario("a setext heading underline of seven characters", rule=CM, only=check_conflict_markers,
+             expect_finding=False, files={"docs/x.md": "Heading\n=======\n\nbody\n"})
+    # The finding points at the opening marker, not at an earlier setext underline.
+    scenario("a heading underline before a real block", rule=CM, only=check_conflict_markers,
+             expect_finding=True, line=4,
+             files={"docs/x.md": "Heading\n=======\n\n" + BLOCK})
+    scenario("a heredoc operator", rule=CM, only=check_conflict_markers, expect_finding=False,
+             files={"scripts/x.sh": "cat <<EOF\nbody\nEOF\ncat <<<\"here string\"\n"})
+    scenario("an eight-character run is not a marker", rule=CM, only=check_conflict_markers, expect_finding=False,
+             files={"docs/x.md": "<<<<<<<<\n========\n>>>>>>>>\n"})
+    scenario("a binary file is skipped", rule=CM, only=check_conflict_markers, expect_finding=False,
+             files={"docs/blob.bin": "\x00\x01" + BLOCK})
+    scenario("a skipped directory is not read", rule=CM, only=check_conflict_markers, expect_finding=False,
+             files={"design-corpora/x.md": BLOCK})
 
     # ---- invisible-character -----------------------------------------------------
     IC = "invisible-character"

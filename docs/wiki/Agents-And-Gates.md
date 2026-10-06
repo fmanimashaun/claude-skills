@@ -2,14 +2,14 @@
      Rebuild:  python3 scripts/build_wiki.py
      Drift:    python3 scripts/build_wiki.py --check  (runs in the gate sweep) -->
 # Agents and gates
-**30 shipped agents · 50 shipped commands · 4 tier tables**, plus 5 maintainer agents and 6 maintainer commands that are not installed.
+**30 shipped agents · 51 shipped commands · 4 tier tables**, plus 7 maintainer agents and 7 maintainer commands that are not installed.
 
 | plugin | version | agents | commands | tier rows |
 |---|---|---|---|---|
-| `design-flow` | 1.45.0 | 5 | 12 | 5 |
-| `pipeline` | 1.4.1 | 2 | 8 | 2 |
-| `qa-flow` | 1.35.0 | 11 | 8 | 11 |
-| `rails-flow` | 1.56.0 | 12 | 22 | 12 |
+| `design-flow` | 1.45.1 | 5 | 12 | 5 |
+| `pipeline` | 1.4.2 | 2 | 9 | 2 |
+| `qa-flow` | 1.36.0 | 11 | 8 | 11 |
+| `rails-flow` | 1.57.0 | 12 | 22 | 12 |
 
 ## Agents
 
@@ -71,8 +71,10 @@
 |---|---|---|---|---|
 | `doctrine-verifier` | sonnet | Read, Grep, Glob, Bash, WebFetch, WebSearch | `/maintainer-audit`, `/maintainer-onboard`, `/maintainer-setup-intake`, `/maintainer-upstream`, `/maintainer-work` | — |
 | `issue-triager` | sonnet | Read, Grep, Glob, Bash | `/maintainer-triage` | — |
+| `mutation-verifier` | haiku | Read, Grep, Glob, Bash | `/gauntlet` | — |
 | `plugin-doctor` | sonnet | Read, Grep, Glob, Edit, Write, Bash | `/maintainer-work` | — |
 | `release-manager` | sonnet | Read, Grep, Glob, Edit, Bash | `/maintainer-work` | — |
+| `shell-adversary` | sonnet | Read, Grep, Glob, Bash | `/gauntlet` | — |
 | `skill-doctor` | sonnet | Read, Grep, Glob, Edit, Write, Bash | `/maintainer-work` | — |
 
 ## Gates
@@ -106,6 +108,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | pipeline committed-secret scan | `pipeline` | `python3 plugins/pipeline/scripts/scan_committed_secrets.py --selftest` | selftest |
 | pipeline hook install | `pipeline` | `python3 plugins/pipeline/scripts/install_git_hooks_selftest.py` | live check |
 | pipeline kamal destination | `pipeline` | `python3 plugins/pipeline/scripts/kamal_destination.py --selftest` | selftest |
+| pipeline status board | `pipeline` | `python3 plugins/pipeline/scripts/status_board.py --selftest` | selftest |
 | pipeline stop conditions | `pipeline` | `python3 plugins/pipeline/scripts/breaker.py --selftest` | selftest |
 | qa-flow blast radius | `qa-flow` | `python3 plugins/qa-flow/scripts/blast_radius.py --selftest` | selftest |
 | qa-flow boot classifier | `qa-flow` | `python3 plugins/qa-flow/scripts/classify_boot_failure.py --selftest` | selftest |
@@ -127,14 +130,18 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | acceptance criteria | `rails-flow` | `python3 plugins/rails-flow/scripts/check_criteria.py --selftest` | selftest |
 | curated drift signal | `rails-flow` | `python3 plugins/rails-flow/scripts/check_drift_signal.py --selftest` | selftest |
 | design-flow tiers | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --agents plugins/design-flow/agents --tiers plugins/design-flow/reference/model-tiers.md` | live check |
-| hook gates | `rails-flow` | `python3 plugins/rails-flow/scripts/check_hook_gates.py --selftest` | selftest |
+| hook gates | `rails-flow` | `python3 plugins/rails-flow/scripts/check_hook_gates.py --selftest --part a` | selftest |
+| hook gates (release) | `rails-flow` | `python3 plugins/rails-flow/scripts/check_hook_gates.py --selftest --part b` | selftest |
+| hook gates (worktree) | `rails-flow` | `python3 plugins/rails-flow/scripts/check_hook_gates.py --selftest --part c` | selftest |
 | issue readiness | `rails-flow` | `python3 plugins/rails-flow/scripts/check_issue_ready.py --selftest` | selftest |
+| mod unit tests | `rails-flow` | `python3 plugins/rails-flow/scripts/check_mods.py` | live check |
 | pipeline tiers | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --agents plugins/pipeline/agents --tiers plugins/pipeline/reference/model-tiers.md` | live check |
 | project gates | `rails-flow` | `python3 plugins/rails-flow/scripts/project_gates.py --selftest` | selftest |
 | qa-flow tiers | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --agents plugins/qa-flow/agents --tiers plugins/qa-flow/reference/model-tiers.md` | live check |
 | rails-flow PR-template sections | `rails-flow` | `python3 plugins/rails-flow/hooks/scripts/lib/pr_template.py --selftest` | selftest |
 | rails-flow ci runs tests | `rails-flow` | `python3 plugins/rails-flow/scripts/check_ci_runs_tests.py --selftest` | selftest |
 | rails-flow claim extraction | `rails-flow` | `python3 plugins/rails-flow/scripts/extract_claims.py --selftest` | selftest |
+| rails-flow coordination record | `rails-flow` | `python3 plugins/rails-flow/hooks/scripts/lib/coordination.py --selftest` | selftest |
 | rails-flow coverage ratchets | `rails-flow` | `python3 plugins/rails-flow/scripts/check_coverage_ratchet.py --selftest` | selftest |
 | rails-flow escalation loop | `rails-flow` | `python3 plugins/rails-flow/scripts/escalation.py --selftest` | selftest |
 | rails-flow findings records | `rails-flow` | `python3 plugins/rails-flow/scripts/findings.py --selftest` | selftest |
@@ -156,11 +163,14 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | rails-flow tiers | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --agents plugins/rails-flow/agents --tiers plugins/rails-flow/reference/model-tiers.md` | live check |
 | rails-flow toolchain version | `rails-flow` | `python3 plugins/rails-flow/scripts/toolchain_version.py --selftest` | selftest |
 | rails-flow work order | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --selftest` | selftest |
+| rails-flow worktree guard helper | `rails-flow` | `python3 plugins/rails-flow/hooks/scripts/lib/worktree_guard.py --selftest` | selftest |
 | agent output contract | `repo` | `python3 scripts/check_agent_output_contract.py` | live check |
 | agent output contract selftest | `repo` | `python3 scripts/check_agent_output_contract.py --selftest` | selftest |
 | arm window | `repo` | `python3 scripts/check_arm_window.py` | live check |
 | arm window selftest | `repo` | `python3 scripts/check_arm_window.py --selftest` | selftest |
 | assertion reachability selftest | `repo` | `python3 scripts/audit_assertion_reachability.py --selftest` | selftest |
+| blocked catalogue | `repo` | `python3 scripts/check_blocked_catalogue.py` | live check |
+| blocked catalogue selftest | `repo` | `python3 scripts/check_blocked_catalogue.py --selftest` | selftest |
 | changelog coverage selftest | `repo` | `python3 scripts/check_changelog_coverage.py --selftest` | selftest |
 | checks.json paths | `repo` | `python3 scripts/check_manifest_paths.py` | live check |
 | checks.json paths selftest | `repo` | `python3 scripts/check_manifest_paths.py --selftest` | selftest |
@@ -184,11 +194,13 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | evals gates | `repo` | `python3 evals/selftest.py` | live check |
 | frontmatter is valid YAML | `repo` | `python3 scripts/check_frontmatter.py` | live check |
 | frontmatter selftest | `repo` | `python3 scripts/check_frontmatter.py --selftest` | selftest |
+| gauntlet core selftest | `repo` | `python3 scripts/gauntlet_core.py --selftest` | selftest |
 | generated artifacts registered | `repo` | `python3 scripts/rebuild_generated.py --selftest` | selftest |
 | hook commands selftest | `repo` | `python3 scripts/check_hook_commands.py --selftest` | selftest |
 | hook commands survive a spaced path | `repo` | `python3 scripts/check_hook_commands.py` | live check |
 | hook output budget | `repo` | `python3 scripts/check_hook_output_budget.py` | live check |
 | hook output budget selftest | `repo` | `python3 scripts/check_hook_output_budget.py --selftest` | selftest |
+| hook slow paths selftest | `repo` | `python3 scripts/hook_slow_paths.py --selftest` | selftest |
 | inventory data selftest | `repo` | `python3 scripts/inventory_data.py --selftest` | selftest |
 | issue graph selftest | `repo` | `python3 scripts/issue_graph.py --selftest` | selftest |
 | maintainer doctor | `repo` | `python3 scripts/maintainer_doctor.py --selftest` | selftest |
@@ -203,10 +215,12 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | markdown shell lint | `repo` | `python3 scripts/lint_markdown_shell.py` | live check |
 | markdown shell selftest | `repo` | `python3 scripts/lint_markdown_shell.py --selftest` | selftest |
 | mutation check | `repo` | `python3 scripts/mutation_check.py --selftest` | selftest |
-| mutation coverage | `repo` | `python3 scripts/mutation_check.py` | live check · 1800s budget |
+| mutation cost record | `repo` | `python3 scripts/mutation_check.py --check-record` | live check |
+| mutation coverage | `repo` | `python3 scripts/mutation_check.py` | live check · 5400s budget |
 | packaging determinism | `repo` | `python3 scripts/package_core.py --selftest` | selftest |
 | page pacing | `repo` | `python3 scripts/check_page_pacing.py` | live check |
 | page pacing selftest | `repo` | `python3 scripts/check_page_pacing.py --selftest` | selftest |
+| pid record selftest | `repo` | `python3 scripts/pid_record_selftest.py` | live check |
 | published blocks | `repo` | `python3 scripts/check_published_blocks.py` | live check |
 | published blocks selftest | `repo` | `python3 scripts/check_published_blocks.py --selftest` | selftest |
 | release notes complete | `repo` | `python3 scripts/extract_release_notes.py --check --all-tags` | live check |
@@ -222,6 +236,8 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | skill routing | `repo` | `python3 scripts/check_skill_routing.py` | live check |
 | skill routing selftest | `repo` | `python3 scripts/check_skill_routing.py --selftest` | selftest |
 | skill version tag selftest | `repo` | `python3 scripts/skill_version_tag.py --selftest` | selftest |
+| status board record readers | `repo` | `python3 scripts/check_coordination_readers.py` | live check |
+| status board record readers selftest | `repo` | `python3 scripts/check_coordination_readers.py --selftest` | selftest |
 | structural grid | `repo` | `python3 scripts/check_structural_grid.py` | live check |
 | structural grid selftest | `repo` | `python3 scripts/check_structural_grid.py --selftest` | selftest |
 | tenancy cop derived | `repo` | `python3 scripts/derive_tenancy_cop.py --check` | live check |

@@ -10,8 +10,8 @@ GUARD = Guard(
     mutations=(
         Mutation(
             "the substring match comes back, so fix/1010-one-main is a promotion again",
-            "            if dst in PROTECTED or",
-            "            if any(p in dst for p in PROTECTED) or",
+            "        if dst in PROTECTED or",
+            "        if any(p in dst for p in PROTECTED) or",
             "'git push -u origin fix/1010-one-main': expected does not target main",
         ),
         Mutation(
@@ -75,16 +75,122 @@ GUARD = Guard(
             '    for prefix in ("refs/",):',
             "'git push origin HEAD:heads/main': expected TARGETS main",
         ),
+        # #1542: a heredoc a `$( )` ended early still owes its delimiter.
+        Mutation(
+            "the delimiter owed after an early end is dropped, so `cat <<END` swallows the push",
+            "                return i + 1, owed",
+            "                return i + 1, []",
+            "'x=$(cat <<EOF\\n)\\ncat <<END\\nEOF\\n)\\ngit push origin main': expected TARGETS main",
+        ),
+        Mutation(
+            "a new heredoc opens while the delimiter is still owed",
+            ' and not cmd.startswith("<<<", i) and not owed and (i == 0 or cmd[i - 1] != "<"):',
+            ' and not cmd.startswith("<<<", i) and (i == 0 or cmd[i - 1] != "<"):',
+            "'x=$(cat <<EOF\\n)\\ncat <<END\\nEOF\\n)\\ngit push origin main': expected TARGETS main",
+        ),
+        Mutation(
+            "the owed delimiter is never recognised, so heredocs stay shut for the rest of the command",
+            "                owed.pop(0)\n        if c == \"\\n\" and pending:",
+            "                pass\n        if c == \"\\n\" and pending:",
+            "git push origin main\\nEND\\ngit push origin fix/x': expected does not target main",
+        ),
+        Mutation(
+            "a heredoc that closed inside the substitution is still owed",
+            "                owed.pop(0)                      # the body closed inside the substitution",
+            "                pass                             # the body closed inside the substitution",
+            "'x=$(cat <<EOF\\nhi\\nEOF\\n)\\ncat <<END\\ngit push origin main\\nEND\\ngit push origin fix/x': expected does not target main",
+        ),
+        Mutation(
+            "a tab-indented delimiter of a `<<-` heredoc is not recognised once owed",
+            '            if (line.lstrip("\\t") if tabs else line) == delim:\n                owed.pop(0)\n        if c == "\\n" and pending:',
+            '            if line == delim:\n                owed.pop(0)\n        if c == "\\n" and pending:',
+            "'x=$(cat <<-EOF\\n)\\n\\tEOF\\n)\\ncat <<END\\ngit push origin main\\nEND\\ngit push origin fix/x': expected does not target main",
+        ),
+        # #1550: what a substitution runs is a command in its own right.
+        Mutation(
+            "substitution bodies are never read, so a push inside one passes",
+            "    for body in bodies:\n        yield from all_segments(body, depth + 1)",
+            "    for body in []:\n        yield from all_segments(body, depth + 1)",
+            "'x=$(git push origin main)': expected TARGETS main",
+        ),
+        Mutation(
+            "a double-quoted substitution's body is not collected",
+            "            if bodies is not None:\n                bodies.append(body)",
+            "            if False:\n                bodies.append(body)",
+            "'echo \"$(git push origin main)\"': expected TARGETS main",
+        ),
+        Mutation(
+            "a backtick substitution's body is not collected",
+            "            if bodies is not None:\n                bodies.append(cmd[i + 1:end - 1])",
+            "            if False:\n                bodies.append(cmd[i + 1:end - 1])",
+            "'x=`git push origin main`': expected TARGETS main",
+        ),
+        Mutation(
+            "an unquoted $( ), <( ) or >( ) body is not collected",
+            "            if bodies is not None:\n                bodies.append(cmd[i + 2:end - 1])",
+            "            if False:\n                bodies.append(cmd[i + 2:end - 1])",
+            "'diff <(git push origin main) /dev/null': expected TARGETS main",
+        ),
+        Mutation(
+            "a substitution body is read BEFORE the outer command, so its cd leaks into the outer push",
+            '    toks = tokens(cmd, bodies)\n    if "()" in toks:',
+            '    toks = tokens(cmd, bodies)\n    for body in bodies:\n        yield from all_segments(body, depth + 1)\n    if "()" in toks:',
+            "'x=$(cd other); git push': expected does not target main",
+        ),
+        # #1551: a quote in a heredoc body inside a substitution is text.
+        Mutation(
+            "a quote in a heredoc body opens a quote again, so one apostrophe is an unterminated substitution",
+            "        elif c in \"'\\\"\" and not in_body:",
+            "        elif c in \"'\\\"\":",
+            "'git commit -m \"$(cat <<\\'EOF\\'\\nit\\'s done\\nEOF\\n)\"\\ngit push origin fix/x': expected does not target main",
+        ),
+        Mutation(
+            "the body state is never set, so quotes open inside every body",
+            "            in_body = bool(owed)",
+            "            in_body = False",
+            "'x=$(cat <<EOF\\nsay \"hi\\nEOF\\n)\\ngit push origin fix/x': expected does not target main",
+        ),
+        # #1553: an unquoted heredoc delimiter makes the shell expand substitutions in the body.
+        Mutation(
+            "an unquoted heredoc's substitutions are never read",
+            '                if expands and bodies is not None:',
+            '                if False and bodies is not None:',
+            "'cat <<EOF\\n$(git push origin main)\\nEOF': expected TARGETS main",
+        ),
+        Mutation(
+            'a quoted delimiter is treated as unquoted, so a body that is text is read as commands',
+            '        return m.group(3), m.group(1) == "-", m.group(2) == "", m.end()',
+            '        return m.group(3), m.group(1) == "-", True, m.end()',
+            '"cat <<\'EOF\'\\n$(git push origin main)\\nEOF": expected does not target main',
+        ),
+        Mutation(
+            '<<\\EOF is not recognised as a heredoc',
+            '    m = HEREDOC_BACKSLASH.match(cmd, i)\n    if m:',
+            '    m = None\n    if m:',
+            "'cat <<\\\\EOF\\ngit push origin main\\nEOF': expected does not target main",
+        ),
+        Mutation(
+            'a backslash-escaped substitution in an unquoted body is read',
+            '        if c == "\\\\":\n            i += 2; continue\n        if c == "$" and text.startswith',
+            '        if False:\n            i += 2; continue\n        if c == "$" and text.startswith',
+            "'cat <<EOF\\n\\\\$(git push origin main)\\nEOF': expected does not target main",
+        ),
+        Mutation(
+            'backticks in an unquoted body are not read',
+            '        if c == "`":\n            j = i + 1',
+            '        if False:\n            j = i + 1',
+            "'cat <<EOF\\n`git push origin main`\\nEOF': expected TARGETS main",
+        ),
         Mutation(
             "heredoc bodies are tokenised again, so an apostrophe denies a feature push",
-            "            if m:\n                pending.append",
+            "            if op:\n                pending.append",
             "            if False:\n                pending.append",
             "it's done, push main later",
         ),
         Mutation(
             "a prior cd is ignored, so a bare push is resolved in the wrong clone",
-            "            cwd = seg[1] if cwd is None",
-            "            cwd = None if cwd is None",
+            "            cwd = seg[1] if cwd is None or os.path.isabs",
+            "            cwd = None if cwd is None or os.path.isabs",
             "'cd other && git push': expected TARGETS main",
         ),
         Mutation(
@@ -158,8 +264,8 @@ GUARD = Guard(
         ),
         Mutation(
             "an inline alias is followed as its literal verb, so -c alias.p=push hides the push",
-            '                    raise Unjudgeable("a git alias defined inline can be any verb, push included")',
-            "                    pass",
+            'seg[i + 1].startswith("alias."):\n                    raise Unjudgeable("a git alias defined inline can be any verb, push included")',
+            'seg[i + 1].startswith("alias."):\n                    pass',
             "'git -c alias.p=push p origin main': expected TARGETS main",
         ),
         Mutation(
@@ -170,21 +276,305 @@ GUARD = Guard(
         ),
         Mutation(
             "gh pr merge ignores the PR it names and falls back to the current branch's",
-            "                sel = a\n                break",
-            "                break",
+            "        sel = a\n        break",
+            "        break",
             "classify 'gh pr merge 12'",
         ),
         Mutation(
             "git merge is no longer reported when a wrapper precedes it",
-            '    if any(git_verb(seg, "merge") is not None for seg in all_segments(cmd)):',
-            "    if False:",
-            "classify 'git merge dev'",
+            '    return [("git" if is_command(w, {"git"}) else "gh", i) for i, w in enumerate(seg)',
+            "    return []\n    return [(\"git\" if is_command(w, {\"git\"}) else \"gh\", i) for i, w in enumerate(seg)",
+            "classify 'sudo -u bob git merge dev'",
         ),
         Mutation(
             "shell options that take a value are no longer stepped over, so -o pipefail hides -c",
             "                    if seg[i] in SHELL_OPTS_WITH_VALUE:\n                        i += 2",
             "                    if False:\n                        i += 2",
             "\"bash -o pipefail -c 'git push origin main'\": expected TARGETS main",
+        ),
+        # #1569: `gh api` and `gh release create` are classified by EFFECT. Each mutation removes one piece
+        # of that classification, and the selftest must go red.
+        Mutation(
+            "gh api / gh release are never classified, so every API merge and release passes",
+            "                out += gh_effects_for(seg, j, cwd, env_repo, known)",
+            "                pass",
+            "classify 'gh api -X PUT repos/{owner}/{repo}/pulls/1200/merge",
+        ),
+        Mutation(
+            "a PUT to pulls/N/merge is no longer a PR merge",
+            "    if m:                                       # any write to it",
+            "    if False:                                   # any write to it",
+            "classify 'gh api --method=PUT repos/o/r/pulls/5/merge'",
+        ),
+        Mutation(
+            "--method=PUT (the `=` form) is read as a flag with no value",
+            '            if a.startswith("--") and "=" in a:',
+            "            if False:",
+            "classify 'gh api --method=PUT repos/o/r/pulls/5/merge'",
+        ),
+        Mutation(
+            "a body means GET again, so a POST merge with -f fields reads as a read",
+            '            out = {"POST" if (self.fields or self.input) else "GET"}',
+            '            out = {"GET"}',
+            "classify 'gh api repos/o/r/merges -f base=main -f head=dev'",
+        ),
+        Mutation(
+            "POST merges with base main is no longer main-ward",
+            "        if base is None or _expanded(base) or branch_of(base) in PROTECTED:",
+            "        if base is None or _expanded(base):",
+            "classify 'gh api repos/o/r/merges -f base=main -f head=dev'",
+        ),
+        Mutation(
+            "a PATCH of git/refs/heads/main is no longer main-ward",
+            "        if _expanded(ref) or branch_of(ref) in PROTECTED:",
+            "        if _expanded(ref):",
+            "classify 'gh api -X PATCH repos/o/r/git/refs/heads/main -f sha=a'",
+        ),
+        Mutation(
+            "a GraphQL mergePullRequest is no longer read",
+            '    if "mergePullRequest" in text:',
+            "    if False:",
+            "classify 'gh api graphql -F query=@",
+        ),
+        Mutation(
+            "a GraphQL updateRef is no longer read",
+            '    if "updateRef" in text:',
+            "    if False:",
+            "expected ['GQL_REF R1 a']",
+        ),
+        Mutation(
+            "a query file that cannot be read is answered as empty, so it reads as no merge",
+            '        raise Unjudgeable(f"gh api reads {path!r}, which cannot be read ({exc.__class__.__name__})") from exc',
+            '        return ""',
+            "must be unjudgeable or main-ward",
+        ),
+        Mutation(
+            "a GraphQL document built by the shell is read as plain text",
+            '    if SUBST in text or "`" in text:',
+            "    if False:",
+            "must be unjudgeable or main-ward",
+        ),
+        Mutation(
+            "gh release create is no longer reported",
+            '    if names == ["release", "create"]:',
+            "    if False:",
+            "classify \"gh release create v1.0.1 --target main",
+        ),
+        Mutation(
+            "POST .../releases is no longer a publish",
+            '    if re.fullmatch(r"(?:repos/[^/]+/[^/]+/)?releases", path):',
+            "    if False:",
+            "classify 'gh api repos/o/r/releases -f tag_name=v1",
+        ),
+        # (#1571) what earlier segments of ONE command did to the branch and refs the hook read before it ran
+        Mutation(
+            'a switch to a branch is no longer followed, so `switch main && merge` reads as off main',
+            '            return {positional[0]}, True, False\n        if len(positional) == 1:',
+            '            return None, False, False\n        if len(positional) == 1:',
+            "classify 'git switch main && git merge hotfix'",
+        ),
+        Mutation(
+            'a checkout of a name is judged only as `unchanged`, so `checkout main && merge` reads as off main',
+            'else {HOOK_HEAD, positional[0]}), True, False',
+            'else {HOOK_HEAD}), True, False',
+            "classify 'git checkout main && git merge hotfix'",
+        ),
+        Mutation(
+            'a checkout that may restore a path is judged only as the branch it names',
+            'else {HOOK_HEAD, positional[0]}), True, False',
+            'else {positional[0]}), True, False',
+            "classify 'git checkout README.md && git merge hotfix'",
+        ),
+        Mutation(
+            '`checkout -- <paths>` is no longer recognised as leaving HEAD alone',
+            'return (None, False, False) if new is None and not detach else unknown',
+            'return unknown',
+            "classify 'git checkout -- README.md && git merge hotfix'",
+        ),
+        Mutation(
+            'a branch rename onto main is not followed',
+            '        return ({HOOK_HEAD, positional[-1]} if renames and positional else None), False, writes',
+            '        return None, False, writes',
+            "classify 'git branch -M main && git merge hotfix'",
+        ),
+        Mutation(
+            'a rebase that checks out main is not followed',
+            '        return ({HOOK_HEAD, positional[-1]} if len(positional) >= 2 else None), True, True',
+            '        return None, True, True',
+            "classify 'git rebase dev main && git merge hotfix'",
+        ),
+        Mutation(
+            'a branch change that cannot be followed no longer denies a later merge or pull',
+            '        if UNKNOWN_BRANCH in poss or self.unknown_dir:\n            raise Unjudgeable("a merge or pull after',
+            '        if False:\n            raise Unjudgeable("a merge or pull after',
+            "classify 'git switch $B && git merge hotfix': must be unjudgeable",
+        ),
+        Mutation(
+            "a pull on main by the command's own doing is not reported",
+            '        for kind in flow.promotion_kinds(key, "GIT_PULL"):',
+            '        for kind in []:',
+            "classify 'git switch main && git pull'",
+        ),
+        Mutation(
+            "`git -C .` is read as a different directory from the hook's own",
+            '            key = "-" if key == "." else key',
+            '            key = key',
+            "classify 'git -C . switch main && git merge hotfix'",
+        ),
+        Mutation(
+            'a branch change in one directory is not applied to the others seen so far',
+            '                for other in self.branches:\n                    if other != key:\n                        self.branches[other] = self.branches[other] | branches\n',
+            '',
+            "classify 'git switch topic && git -C /elsewhere switch main && git merge hotfix'",
+        ),
+        Mutation(
+            'a segment that moves refs no longer blocks a later push to main',
+            '        if verb in REF_MOVING_VERBS:\n            head_moved = refs_moved = True',
+            '        if False:\n            head_moved = refs_moved = True',
+            "classify 'git commit --allow-empty -m x && git push origin main': must be unjudgeable",
+        ),
+        Mutation(
+            'a fetch of a refspec no longer counts as moving a ref',
+            '        elif verb == "fetch" and (any(":" in a for a in args) or "-u" in args or "--update-head-ok" in args):',
+            '        elif False:',
+            "classify 'git fetch origin hotfix:main && git push origin main': must be unjudgeable",
+        ),
+        Mutation(
+            'a plain fetch counts as moving a ref, so an ordinary fetch-then-push is refused',
+            '        elif verb == "fetch" and (any(":" in a for a in args) or',
+            '        elif verb == "fetch" and (True or',
+            "classify 'git fetch origin && git push origin dev:main'",
+        ),
+        Mutation(
+            'a push of HEAD to main ignores that an earlier segment moved HEAD',
+            '        if self.refs_moved or (head_relative and self.head_moved):',
+            '        if self.refs_moved:',
+            "classify 'git switch hotfix && git push origin HEAD:main': must be unjudgeable",
+        ),
+        Mutation(
+            'a switch is counted as moving a ref, so a harmless switch-then-push of a named ref is refused',
+            '            return {positional[0]}, True, False\n        if len(positional) == 1:',
+            '            return {positional[0]}, True, True\n        if len(positional) == 1:',
+            "classify 'git switch topic && git push origin dev:main'",
+        ),
+        # (#1571) the pin, in each of its three spellings
+        Mutation(
+            'a gh pr merge pin is no longer read',
+            '        pin = pr_merge_match(rest)\n        line =',
+            '        pin = None\n        line =',
+            "classify 'gh pr merge 5 --match-head-commit abc1234'",
+        ),
+        Mutation(
+            'the `--match-head-commit=<sha>` spelling is not read',
+            '        if a.startswith("--match-head-commit="):',
+            '        if False:',
+            "classify 'gh pr merge 5 --match-head-commit=ABC1234 --squash'",
+        ),
+        Mutation(
+            'a pin built by the shell is carried as its text instead of as unknown',
+            '            return _token(rest[i + 1]) if i + 1 < len(rest) else "-"',
+            '            return rest[i + 1] if i + 1 < len(rest) else "-"',
+            "classify 'gh pr merge 5 --match-head-commit $H'",
+        ),
+        Mutation(
+            'a REST `sha=` is no longer read',
+            '        pin = "" if sha is None else f" MATCH:{_token(str(sha))}"',
+            '        pin = ""',
+            "classify 'gh api -X PUT repos/o/r/pulls/5/merge -f sha=abc1234 -f merge_method=merge'",
+        ),
+        Mutation(
+            'a REST `sha=` built by the shell is carried as its text instead of as unknown',
+            '        pin = "" if sha is None else f" MATCH:{_token(str(sha))}"',
+            '        pin = "" if sha is None else f" MATCH:{sha}"',
+            "classify 'gh api -X PUT repos/o/r/pulls/5/merge -f sha=$H'",
+        ),
+        Mutation(
+            'a GraphQL expectedHeadOid is no longer read',
+            'if "expectedHeadOid" in text else ""',
+            'if False else ""',
+            "expected ['GQL_PR PR_kwDOA MATCH:abc1234']",
+        ),
+        # #1617: a GraphQL document held in a shell variable. Each mutant removes one decision; each is caught by its own row.
+        Mutation(
+            "a variable the command bound once to a literal is no longer read as that literal",
+            """        if known:
+            self.fields""",
+            """        if False:
+            self.fields""",
+            r"""gh api graphql -f query="$Q"': expected ['GQL_PR PR_kw1']""",
+        ),
+        Mutation(
+            "a document with a variable it does not declare is allowed again",
+            r"""    if "${" in doc or any(n not in declared for n in re.findall(r"\$([A-Za-z_]\w*)", doc)) or re.search(r"\$[0-9@*#?!$-]", doc):""",
+            "    if False:",
+            r"""'gh api graphql -f query=$Q': must be unjudgeable or main-ward""",
+        ),
+        Mutation(
+            "a name bound twice (an if/else, a reassignment) is read as its first value",
+            "len(vs) == 1 and vs[0] is not None and n not in bare}",
+            "len(vs) >= 1 and vs[0] is not None and n not in bare}",
+            r"""Q=\'mutation{x}\'; gh api graphql -f query="$Q"': must be unjudgeable or main-ward""",
+        ),
+        Mutation(
+            "a name mentioned as a bare word (read, export, unset, for) is still read as a literal",
+            "len(vs) == 1 and vs[0] is not None and n not in bare}",
+            "len(vs) == 1 and vs[0] is not None}",
+            r"""export Q; gh api graphql -f query="$Q"': must be unjudgeable or main-ward""",
+        ),
+        Mutation(
+            "a prefix assignment is read by its own command's arguments",
+            "                out += gh_effects_for(seg, j, cwd, env_repo, known)",
+            "                out += gh_effects_for(seg, j, cwd, env_repo, {**known, **{k: v for k, v in lits.items() if any(w.startswith(k + '=') for w in seg)}})",
+            r"""Q=\'query{a}\' gh api graphql -f query="$Q"': must be unjudgeable or main-ward""",
+        ),
+        Mutation(
+            "a variable passed as ANOTHER field's value is read as part of the document",
+            '    doc = call.value("query") or ""',
+            "    doc = text",
+            r"""-f o="$OWNER"': expected []""",
+        ),
+        Mutation(
+            "a brace expansion in the document stops being refused",
+            """    if "${" in doc or any(""",
+            "    if any(",
+            r"""query="${Q}"': must be unjudgeable or main-ward""",
+        ),
+        Mutation(
+            "a special parameter ($1, $@) in the document stops being refused",
+            r""" or re.search(r"\$[0-9@*#?!$-]", doc):""",
+            ":",
+            r"""query="$1"': must be unjudgeable or main-ward""",
+        ),
+        Mutation(
+            "a binding in a subshell, behind && or ||, in an if or a pipeline is read as if it were unconditional",
+            "    if not _flat_list(cmd):",
+            "    if False:",
+            r"""( Q=\'query{a}\' ); gh api graphql -f query="$Q"': must be unjudgeable or main-ward""",
+        ),
+        Mutation(
+            "an assignment inside double quotes (${Q:=...}, $(...), a backtick) is invisible to the flat-list check",
+            r"""            if re.search(r"\$\{[A-Za-z_]\w*:?[=+?-]|\$\(|`", cmd[i:j]):""",
+            "            if False:",
+            r"""Q=\'\'; : "${Q:=mutation""",
+        ),
+        Mutation(
+            "declare, typeset, local and readonly are no longer refused, so `declare -n Q=R` aliases a name unseen",
+            r"""                         r"declare|typeset|local|readonly)(?=[\s;]|$)", flat)""",
+            r"""                         r"nameref)(?=[\s;]|$)", flat)""",
+            "classify 'declare -n Q=R;",
+        ),
+        # A here-string (`<<<`) is a word: its second `<` must not open a heredoc whose delimiter is the word after it.
+        Mutation(
+            "a here-string's second `<` opens a heredoc, so the command after it is deleted with the body",
+            ' and not owed and (i == 0 or cmd[i - 1] != "<"):',
+            ' and not owed:',
+            "'cat <<< x\\ngit push origin main': expected TARGETS main",
+        ),
+        Mutation(
+            "inside a substitution a here-string owes a delimiter, so a later real heredoc never opens",
+            '        if not quote and c == "<" and cmd.startswith("<<", i) and not cmd.startswith("<<<", i) \\\n                and (i == 0 or cmd[i - 1] != "<"):',
+            '        if not quote and c == "<" and cmd.startswith("<<", i) and not cmd.startswith("<<<", i):',
+            "'y=$(cat <<< x)\\ncat <<EOF\\ngit push origin main\\nEOF\\ngit push origin fix/x': expected does not target main",
         ),
     ),
 )

@@ -125,7 +125,7 @@ Steps 1–2 are once per project. Steps 3–4 are the loop.
 <details>
 <summary><b>pipeline</b> — lifecycle and release</summary>
 
-`setup-pipeline` `pipeline` `status` `ack` `release` `install-hooks` · **cloud:** `setup-cloud`
+`setup-pipeline` `pipeline` `status` `board` `ack` `release` `install-hooks` · **cloud:** `setup-cloud`
 `deploy-cloud`
 
 </details>

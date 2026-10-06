@@ -1,0 +1,9 @@
+{
+  "title": "Release Desk",
+  "full_run_workflow": "gates.yml",
+  "integration_branch": "dev",
+  "notes": {
+    "prs": "A merge needs an independent CLEAN review and a green full run on the same commit.",
+    "sessions": "One issue per session until its PR merges. Remove the worktree when done."
+  }
+}

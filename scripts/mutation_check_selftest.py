@@ -96,6 +96,300 @@ def _fixture_guard(mutations: tuple[mc.Mutation, ...], selftest: str = SELFTEST)
     return guard, root
 
 
+# ---- review of #1525: what a group kill alone could not reach --------------------------------------
+# Every child script below records the pids it started in a file, so the fixture can see what
+# survived; each one is SIGKILLed at the end whatever the verdict, so a failing run leaks nothing.
+_SLEEPER_WITH_GRANDCHILD = (
+    "import os, subprocess, sys, time\n"
+    "g = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'], start_new_session=True)\n"
+    "open(sys.argv[1] + '.tmp', 'w').write(f'{os.getpid()} {g.pid}')\n"
+    "os.replace(sys.argv[1] + '.tmp', sys.argv[1])\n"
+    "time.sleep(120)\n"
+)
+
+
+def _pids(*files: Path, wait: float = 30.0) -> list[int]:
+    """The pids recorded in `files`, waiting up to `wait` seconds for each to appear."""
+    import time as _time
+    found: list[int] = []
+    for f in files:
+        deadline = _time.monotonic() + wait
+        while not f.exists() and _time.monotonic() < deadline:
+            _time.sleep(0.05)
+        if f.exists():
+            found.extend(int(p) for p in f.read_text().split())
+    return found
+
+
+def _survivors(pids: list[int]) -> list[int]:
+    """Which of `pids` are still running two seconds on (a killed process takes a moment to be reaped).
+    Every survivor is SIGKILLed before returning."""
+    import signal as _signal
+    import time as _time
+    deadline = _time.monotonic() + 2.0
+    alive = list(pids)
+    while alive and _time.monotonic() < deadline:
+        still = []
+        for pid in alive:
+            try:
+                os.kill(pid, 0)
+                still.append(pid)
+            except ProcessLookupError:
+                pass
+        alive = still
+        if alive:
+            _time.sleep(0.05)
+    for pid in alive:
+        try:
+            os.kill(pid, _signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    return alive
+
+
+def _proc_group_fixtures() -> None:
+    import signal as _signal
+    import subprocess as _sp
+    import time as _time
+    scripts = Path(mc.__file__).resolve().parent     # the staged copy under a mutant, not the repo's
+    pg = mc.proc_group
+    work = Path(tempfile.mkdtemp(prefix="procgroup-selftest-"))
+    try:
+        # (1) TWO LEVELS. A gate whose own children go through proc_group.run, from a thread pool, and
+        # one of those starts a grandchild in a session of ITS own -- mutation_check under the doctor,
+        # and check_hook_gates' hooks under a mutant. Each inner session is a group the outer killpg
+        # never reached: both mutants were alive after the gate's timeout.
+        outer = work / "outer.py"
+        outer.write_text(
+            "import sys\n"
+            f"sys.path.insert(0, {str(scripts)!r})\n"
+            "import proc_group\n"
+            "from concurrent.futures import ThreadPoolExecutor\n"
+            f"inner = {_SLEEPER_WITH_GRANDCHILD!r}\n"
+            "def one(i):\n"
+            f"    proc_group.run([sys.executable, '-c', inner, {str(work)!r} + f'/inner{{i}}.pids'], timeout=300)\n"
+            "with ThreadPoolExecutor(2) as p:\n"
+            "    list(p.map(one, range(2)))\n", encoding="utf-8")
+        _tick()
+        timed_out = False
+        try:
+            pg.run([sys.executable, str(outer)], timeout=4)
+        except _sp.TimeoutExpired:
+            timed_out = True
+        recorded = _pids(work / "inner0.pids", work / "inner1.pids", wait=0)
+        left = _survivors(recorded)
+        if not timed_out or len(recorded) != 4 or left:
+            FAILURES.append(f"#1459: a timed-out run left a nested child running -- its inner sessions were not "
+                            f"killed (timed out: {timed_out}; recorded {len(recorded)} of 4 pids; survivors {left})")
+
+        # (2) Ctrl-C. A child in a session of its own never sees the terminal's SIGINT, so run() must
+        # kill it on the way out: the review measured 2 survivors on the PR head, 0 on dev.
+        pids = work / "sigint.pids"
+        driver = work / "sigint_driver.py"
+        driver.write_text(
+            "import sys\n"
+            f"sys.path.insert(0, {str(scripts)!r})\n"
+            "import proc_group\n"
+            f"proc_group.run([sys.executable, '-c', {_SLEEPER_WITH_GRANDCHILD!r}, {str(pids)!r}], timeout=300)\n",
+            encoding="utf-8")
+        _tick()
+        d = _sp.Popen([sys.executable, str(driver)], start_new_session=True,
+                      stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+        recorded = _pids(pids)
+        os.kill(d.pid, _signal.SIGINT)
+        try:
+            d.wait(timeout=20)
+            exited = True
+        except _sp.TimeoutExpired:
+            exited = False
+            d.kill()
+            d.wait()
+        left = _survivors(recorded)
+        if not exited or len(recorded) != 2 or left:
+            FAILURES.append(f"#1459: Ctrl-C left a run's child running (exited: {exited}; recorded "
+                            f"{len(recorded)} of 2 pids; survivors {left})")
+
+        # (3) Ctrl-C under mutation_check's POOL. Its workers never see the interrupt: the join waited
+        # for the running mutant (24 s in the review) while it, and everything it started, kept going.
+        # One worker and two guards: the second must never start.
+        drv = work / "pool_driver.py"
+        hang = work / "hang_selftest.py"
+        hang.write_text(_SLEEPER_WITH_GRANDCHILD.replace("sys.argv[1]", repr(str(work) + "/pool-") + " + str(os.getpid())"),
+                        encoding="utf-8")
+        drv.write_text(
+            "import dataclasses, sys\n"
+            f"sys.path.insert(0, {str(scripts)!r})\n"
+            "import mutation_check as mc, mutation_check_selftest as st\n"
+            "guard, root = st._fixture_guard((mc.Mutation('unused', 'n % 2 == 0', 'True', 'fixture-odd'),),\n"
+            f"                                selftest=open({str(hang)!r}).read())\n"
+            "mc.REPO = root\n"
+            "mc.GUARDS = (guard, dataclasses.replace(guard, name='fixture-two'))\n"
+            "mc.main(['--jobs', '1'])\n", encoding="utf-8")
+        _tick()
+        d = _sp.Popen([sys.executable, str(drv)], start_new_session=True,
+                      stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+        deadline = _time.monotonic() + 30
+        while not any(f.name.startswith("pool-") and not f.name.endswith(".tmp") for f in work.iterdir()) \
+                and _time.monotonic() < deadline:
+            _time.sleep(0.05)
+        os.kill(d.pid, _signal.SIGINT)
+        started = _time.monotonic()
+        try:
+            d.wait(timeout=20)
+            exited = True
+        except _sp.TimeoutExpired:
+            exited = False
+            d.kill()
+            d.wait()
+        took = _time.monotonic() - started
+        _time.sleep(1)                  # long enough for a wrongly started second baseline to record itself
+        files = [f for f in work.iterdir() if f.name.startswith("pool-") and not f.name.endswith(".tmp")]
+        recorded = _pids(*files, wait=0)
+        left = _survivors(recorded)
+        if not exited or len(files) != 1 or left:
+            FAILURES.append(f"#1459: Ctrl-C under mutation_check's pool left work running (exited: {exited} "
+                            f"after {took:.0f}s; {len(files)} of 1 baselines started; survivors {left})")
+
+        # (4) ...and once interrupted, nothing new starts: a worker between two tasks would otherwise
+        # launch a fresh mutant after the kill, and the join would wait out its whole limit.
+        marker = work / "started-after-interrupt"
+        _tick()
+        # getattr: a proc_group without the mechanism must fail the ASSERTION below, not raise here.
+        getattr(pg, "kill_all", lambda: None)()   # nothing of this process is live here, so this kills nothing
+        try:
+            pg.run([sys.executable, "-c", f"open({str(marker)!r}, 'w')"], timeout=30)
+            refused = False
+        except KeyboardInterrupt:
+            refused = True
+        finally:
+            if hasattr(pg, "_closing"):
+                pg._closing.clear()
+        if not refused or marker.exists():
+            FAILURES.append("#1459: after an interrupt a new child still started -- the pool's join would "
+                            "wait out its whole limit")
+
+        # (5) AN ESCAPEE: a double fork leaves a process that is nobody's descendant and leads its own
+        # group, still holding the pipe. The wait for it is bounded, and what the child printed before
+        # the kill still comes back (the review found it reported as "printed nothing").
+        escapee = work / "escapee.pid"
+        child = ("import os, sys, time\n"
+                 "print('child-1459 up', flush=True)\n"
+                 "if os.fork() == 0:\n"
+                 "    os.setsid()\n"
+                 "    if os.fork() == 0:\n"
+                 f"        open({str(escapee)!r} + '.tmp', 'w').write(str(os.getpid()))\n"
+                 f"        os.replace({str(escapee)!r} + '.tmp', {str(escapee)!r})\n"
+                 "        time.sleep(60)\n"
+                 "    os._exit(0)\n"
+                 "os.wait()\n"
+                 "time.sleep(120)\n")
+        _tick()
+        started = _time.monotonic()
+        output, raised = None, False
+        saved_wait = getattr(pg, "ESCAPEE_WAIT", None)
+        pg.ESCAPEE_WAIT = 1             # the bound is the claim, not its size: keep the selftest quick
+        try:
+            pg.run([sys.executable, "-c", child], timeout=2, text=True)
+        except _sp.TimeoutExpired as exc:
+            output, raised = exc.output, True
+        finally:
+            pg.ESCAPEE_WAIT = saved_wait
+        took = _time.monotonic() - started
+        _survivors(_pids(escapee, wait=5))
+        if not raised or took > 2 + 1 + 10:
+            FAILURES.append(f"#1459: an escapee holding the pipe must cost at most ESCAPEE_WAIT, not a hang "
+                            f"(took {took:.0f}s, timed out: {raised})")
+        _tick()
+        text = output.decode(errors="replace") if isinstance(output, bytes) else (output or "")
+        if "child-1459 up" not in text:
+            FAILURES.append(f"#1459: an escapee's timeout dropped what the child printed before the kill; got {output!r}")
+
+        # (6) AN ORPHAN STILL IN THE GROUP: a double fork WITHOUT setsid leaves a process whose parent
+        # is gone, so no walk by parent pid finds it -- only the kill of the child's own group does,
+        # and that group is the child's only because it starts a session of its own.
+        orphan = work / "orphan.pid"
+        child = ("import os, sys, time\n"
+                 "if os.fork() == 0:\n"
+                 "    if os.fork() == 0:\n"
+                 "        null = os.open(os.devnull, os.O_WRONLY)\n"
+                 "        os.dup2(null, 1)\n"
+                 "        os.dup2(null, 2)\n"
+                 f"        open({str(orphan)!r} + '.tmp', 'w').write(str(os.getpid()))\n"
+                 f"        os.replace({str(orphan)!r} + '.tmp', {str(orphan)!r})\n"
+                 "        time.sleep(60)\n"
+                 "    os._exit(0)\n"
+                 "os.wait()\n"
+                 "time.sleep(120)\n")
+        _tick()
+        try:
+            pg.run([sys.executable, "-c", child], timeout=2)
+        except _sp.TimeoutExpired:
+            pass
+        recorded = _pids(orphan, wait=0)
+        left = _survivors(recorded)
+        if len(recorded) != 1 or left:
+            FAILURES.append(f"#1459: a timed-out run left an orphan in its group running (recorded "
+                            f"{len(recorded)} of 1 pid; survivors {left})")
+        # (5) #1548: an exception MID-WALK must not leave the tree SIGSTOPped. The first `ps` pass freezes
+        # the grandchild; the second raises, as a Ctrl-C or a failing `ps` would. Both must end up dead,
+        # not stopped, and the exception must still reach the caller.
+        midwalk = work / "midwalk.pids"
+        root = _sp.Popen([sys.executable, "-c", _SLEEPER_WITH_GRANDCHILD, str(midwalk)], start_new_session=True,
+                         stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+        tree = _pids(midwalk)
+        real_rows, calls = pg._ps_rows, [0]
+
+        def rows_then_raise():
+            calls[0] += 1
+            if calls[0] >= 2:
+                raise KeyboardInterrupt("injected mid-walk (#1548)")
+            return real_rows()
+        pg._ps_rows = rows_then_raise
+        reraised = False
+        try:
+            pg.kill_tree(root.pid)
+        except KeyboardInterrupt:
+            reraised = True
+        finally:
+            pg._ps_rows = real_rows
+        try:
+            root.wait(timeout=10)
+        except _sp.TimeoutExpired:
+            pass
+
+        def stat(pid: int) -> str:
+            return _sp.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()
+        _time.sleep(0.5)
+        stopped = [p for p in tree if stat(p).startswith("T")]
+        running = [p for p in tree if stat(p) and not stat(p).startswith(("T", "Z"))]
+        for p in tree:                    # never leave this fixture's own processes behind
+            try:
+                os.kill(p, _signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        if not reraised or stopped or running:
+            FAILURES.append(f"#1548: an exception mid-walk left the tree stopped or running (re-raised: {reraised}; "
+                            f"stopped {stopped}; running {running})")
+
+        # (6) #1548: a pool started after an interrupted one starts children again. `kill_all` sets
+        # `_closing` for the pool it interrupts; a later pool must not inherit it.
+        _tick()
+        pg.kill_all()
+        second = work / "second-pool"
+        try:
+            with pg.pool(1) as ex:
+                ex.submit(pg.run, [sys.executable, "-c", f"open({str(second)!r}, 'w')"], timeout=30).result()
+            started = second.exists()
+        except KeyboardInterrupt:
+            started = False
+        finally:
+            pg._closing.clear()
+        if not started:
+            FAILURES.append("#1548: a pool started after an interrupted one refused every child -- _closing never resets")
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
 def run() -> int:
     original_repo = mc.REPO
 
@@ -208,6 +502,248 @@ def run() -> int:
     finally:
         mc.REPO = original_repo
 
+    # ---- 1e. a mutant runs only the fixture its `expects` names, and only if that fixture passes alone (#1599) ----
+    # A guard that sets `narrow_with` gets `<flag> <expects>` on every mutant, and on a CONTROL run of the
+    # UNMUTATED code first: a fixture that cannot pass alone (it leans on state another fixture sets up)
+    # would otherwise "catch" every mutant by failing for that reason. The stand-in selftest honours the
+    # flag and logs each invocation, so what the baseline, the control and the mutant ran can be read.
+    narrow_src = (
+        "import sys\n"
+        "from pathlib import Path\n"
+        "sys.path.insert(0, str(Path(__file__).resolve().parent))\n"
+        "import subject_under_test as s\n"
+        "match = sys.argv[sys.argv.index('--match') + 1].lower() if '--match' in sys.argv else None\n"
+        "want = lambda label: match is None or match in label.lower()\n"
+        "if match is not None and 'REFUSE' in Path(s.__file__).read_text():\n"
+        "    print('selected no check for ' + match, file=sys.stderr); sys.exit(2)\n"
+        "ran, failures = [], []\n"
+        "if want('fixture-even'):\n"
+        "    ran.append('even')\n"
+        "    if s.is_even(4) is not True:\n"
+        "        failures.append('fixture-even: expected True for 4')\n"
+        "if want('fixture-odd'):\n"
+        "    ran.append('odd')\n"
+        "    if NEEDS_EVEN and 'even' not in ran:\n"
+        "        failures.append('fixture-odd: leans on the even fixture')\n"
+        "    if s.is_even(3) is not False:\n"
+        "        failures.append('fixture-odd: expected False for 3')\n"
+        "open(LOG, 'a').write(' '.join(sys.argv[1:]) + ' | ran ' + ','.join(ran) + '\\n')\n"
+        "if match is not None and not ran:\n"
+        "    print('selected no check', file=sys.stderr); sys.exit(2)\n"
+        "if failures:\n"
+        "    print('SELFTEST FAILED', file=sys.stderr)\n"
+        "    for f in failures: print('  - ' + f, file=sys.stderr)\n"
+        "    sys.exit(1)\n"
+        "print('ok')\n")
+
+    def narrow_guard(mutation: mc.Mutation, needs_even: bool = False, narrow_with: str = "--match"):
+        guard, root = _fixture_guard((mutation,))
+        log = root / "invocations.log"
+        (root / "scripts" / "subject_selftest.py").write_text(
+            narrow_src.replace("LOG", repr(str(log))).replace("NEEDS_EVEN", repr(needs_even)), encoding="utf-8")
+        return dataclasses.replace(guard, narrow_with=narrow_with), root, log
+
+    odd_break = mc.Mutation("odd numbers reported even", "n % 2 == 0", "True", "fixture-odd")
+    guard, root, log = narrow_guard(odd_break)
+    mc.REPO = root
+    try:
+        _tick()
+        problems = mc.run_guard(guard)
+        lines = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
+        narrowed = [l for l in lines if "--match fixture-odd" in l]
+        if problems or len(lines) != 3 or len(narrowed) != 2 or any("ran odd" not in l for l in narrowed):
+            FAILURES.append(f"#1599: a narrowing guard must run its baseline whole and its control and mutant on "
+                            f"the expected fixture only, got problems={problems} log={lines}")
+    finally:
+        mc.REPO = original_repo
+    # ...a guard that does not set it runs every mutant whole,
+    guard, root, log = narrow_guard(odd_break, narrow_with="")
+    mc.REPO = root
+    try:
+        _tick()
+        mc.run_guard(guard)
+        lines = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
+        if any("--match" in l for l in lines):
+            FAILURES.append(f"#1599 CONTROL: a guard with no narrow_with must not be narrowed, got {lines}")
+    finally:
+        mc.REPO = original_repo
+    # ...a mutation with no `expects`, or one that opts out, runs whole as well,
+    for label, mutation in (("no expects", dataclasses.replace(odd_break, expects="")),
+                            ("narrow=False", dataclasses.replace(odd_break, narrow=False))):
+        guard, root, log = narrow_guard(mutation)
+        mc.REPO = root
+        try:
+            _tick()
+            mc.run_guard(guard)
+            lines = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
+            if any("--match" in l for l in lines):
+                FAILURES.append(f"#1599: a mutation with {label} must run the whole selftest, got {lines}")
+        finally:
+            mc.REPO = original_repo
+    # THE CONTROL RUN: a fixture that cannot pass alone must not count a mutant as caught.
+    guard, root, log = narrow_guard(odd_break, needs_even=True)
+    mc.REPO = root
+    try:
+        _tick()
+        problems = mc.run_guard(guard)
+        if not any("cannot be narrowed" in x for x in problems):
+            FAILURES.append(f"#1599: a fixture that fails alone, unmutated, must be reported as unable to be "
+                            f"narrowed and never counted as catching its mutant, got {problems}")
+    finally:
+        mc.REPO = original_repo
+    # An `expects` that names no fixture selects nothing: loud, not an empty pass.
+    guard, root, log = narrow_guard(dataclasses.replace(odd_break, expects="no such fixture"))
+    mc.REPO = root
+    try:
+        _tick()
+        problems = mc.run_guard(guard)
+        if not any("cannot be narrowed" in x for x in problems):
+            FAILURES.append(f"#1599: an `expects` that selects no fixture must be reported, got {problems}")
+    finally:
+        mc.REPO = original_repo
+    # A mutant the SELECTED fixture does not notice still SURVIVES: narrowing cannot hide it.
+    guard, root, log = narrow_guard(mc.Mutation("only 4 is wrong", "n % 2 == 0", "n % 2 == 0 and n != 4", "fixture-odd"))
+    mc.REPO = root
+    try:
+        _tick()
+        problems = mc.run_guard(guard)
+        if not any("SURVIVED" in x for x in problems):
+            FAILURES.append(f"#1599: a mutant the narrowed fixture cannot see must be reported SURVIVED, got {problems}")
+    finally:
+        mc.REPO = original_repo
+    # A REFUSAL IS NOT A CATCH (review of #1603, F1). A mutant that makes the selection refuse exits 2 with a message
+    # that quotes the label `expects` names, so "non-zero and the label appears" counted it as caught. Only the
+    # selftest's own failure, exit 1, is a catch under narrowing.
+    guard, root, log = narrow_guard(mc.Mutation("the selection is refused", "n % 2 == 0", "n % 2 == 0  # REFUSE", "fixture-odd"))
+    mc.REPO = root
+    try:
+        _tick()
+        problems = mc.run_guard(guard)
+        if not any("refused or crashed" in x for x in problems):
+            FAILURES.append(f"#1599: a narrowed mutant that is REFUSED (exit 2) must be a problem, never a catch, got {problems}")
+    finally:
+        mc.REPO = original_repo
+
+    # ---- 1f. the cost ratchet: a new expensive guard fails until it is cheaper or the record is re-set (#1599) ----
+    # `mutation coverage` reached 3490 s of its 3600 s budget and nothing said which guard had grown. A guard over
+    # RATCHET_FLOOR seconds of work must be on record; one on record may not grow past RATCHET_GROWTH x its record
+    # plus RATCHET_SLACK; a record naming a guard that is gone is drift. Pure functions, so every rule has a case.
+    floor = mc.RATCHET_FLOOR
+    record = {"guards": {"heavy": 400.0, "medium": 100.0}}
+
+    def ratchet(cost: dict, base: dict | None) -> list[str]:
+        """`ratchet_problems`, with a raise reported as a problem: a mutant that breaks it by CRASHING would
+        otherwise die with a traceback that names no fixture, and read as caught by the wrong thing (#1599)."""
+        try:
+            return mc.ratchet_problems(cost, base)
+        except Exception as exc:        # noqa: BLE001 -- the check below fails by name
+            return [f"raised {exc!r}"]
+
+    cases = [
+        ("a NEW guard over the new-guard limit", {"heavy": 400.0, "medium": 100.0, "fresh": mc.RATCHET_NEW + 1},
+         record, "fresh"),
+        ("a recorded guard past growth and slack", {"heavy": 400.0 * mc.RATCHET_GROWTH + mc.RATCHET_SLACK + 1,
+                                                     "medium": 100.0}, record, "heavy"),
+        ("a record naming a guard that no longer exists", {"heavy": 400.0}, record, "medium"),
+    ]
+    for label, cost, base, names in cases:
+        _tick()
+        problems = ratchet(cost, base)
+        if not any(names in x for x in problems):
+            FAILURES.append(f"#1599: the ratchet must report {label} (naming {names!r}), got {problems}")
+        # AND SAY WHAT TO DO: a growth or a new guard is fixed by re-recording the file IN THIS PR (the coordinator's rule, 2026-10-05).
+        if names in ("fresh", "heavy") and not any("re-record docs/evidence/mutation-cost-baseline.json in this PR" in x
+                                                    for x in problems if names in x):
+            FAILURES.append(f"#1599: the ratchet's refusal for {label} must tell the author to re-record the baseline in this PR, got {problems}")
+    for label, cost, base in (
+            ("a new guard under the floor", {"heavy": 400.0, "medium": 100.0, "fresh": floor - 1}, record),
+            # THE REASON RATCHET_NEW EXISTS: a guard just under the record floor is not on record, and a slow runner
+            # can push it past the floor without anyone having made it more expensive.
+            ("a new guard between the record floor and the new-guard limit",
+             {"heavy": 400.0, "medium": 100.0, "fresh": mc.RATCHET_NEW - 1}, record),
+            ("a recorded guard within growth and slack", {"heavy": 400.0 * mc.RATCHET_GROWTH + mc.RATCHET_SLACK,
+                                                           "medium": 100.0}, record),
+            ("a recorded guard that got cheaper, even under the floor", {"heavy": 400.0, "medium": floor - 5}, record)):
+        _tick()
+        problems = ratchet(cost, base)
+        if problems:
+            FAILURES.append(f"#1599 CONTROL: the ratchet must accept {label}, got {problems}")
+    _tick()
+    problems = ratchet({"heavy": 400.0}, None)
+    if not (len(problems) == 1 and "no cost record" in problems[0]):
+        FAILURES.append(f"#1599: with no record at all the ratchet must say so once, never pass, got {problems}")
+    # The record alone, with no run (`--check-record`, the gate a pull request can afford): missing or naming a guard that
+    # is gone fails; a record that holds is clean. `ratchet_problems` reads the same function, so the two cannot disagree.
+    for label, base, guards, want in (
+            ("a missing record", None, {"heavy"}, "no cost record"),
+            ("a record naming a guard that is gone", record, {"heavy"}, "medium")):
+        _tick()
+        try:
+            found = mc.record_problems(guards, base)
+        except Exception as exc:        # noqa: BLE001 -- the check below fails by name
+            found = [f"raised {exc!r}"]
+        if not any(want in x for x in found):
+            FAILURES.append(f"#1599: the record check must report {label}, got {found}")
+    _tick()
+    if mc.record_problems({"heavy", "medium", "extra"}, record):
+        FAILURES.append("#1599 CONTROL: a record whose guards all exist is clean (a guard missing from it is not drift)")
+
+    class StandInGuard:
+        """The registry is replaced by one stand-in guard: the guards that run THIS selftest in a staged tempdir (hermetic_git,
+        proc_group, this harness) do not stage `scripts/mutations/`, so the real `mc.GUARDS` is empty there and indexing it
+        raised an IndexError that made three baselines inert (CI run 37223022427). The test needs a registry, not THE registry."""
+        name = "stand_in_guard"
+
+    def check_record_exit(loader) -> int:
+        """`main(["--check-record"])` with the record replaced by `loader` and the registry by one stand-in guard; output swallowed."""
+        import contextlib
+        import io
+        real_loader, real_guards = mc.load_cost_baseline, mc.GUARDS
+        mc.load_cost_baseline, mc.GUARDS = loader, (StandInGuard,)
+        try:
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                return mc.main(["--check-record"])
+        except Exception:               # noqa: BLE001 -- a crash is not an exit code of 0 or 1
+            return -1
+        finally:
+            mc.load_cost_baseline, mc.GUARDS = real_loader, real_guards
+
+    def unreadable():
+        raise ValueError("not a record")
+
+    for label, loader, want in (
+            ("--check-record exits 1 for a record naming a guard that is gone", lambda: {"guards": {"ghost_guard": 99.0}}, 1),
+            ("--check-record exits 1 when there is no record", lambda: None, 1),
+            ("--check-record exits 1 for an unreadable record", unreadable, 1),
+            ("--check-record exits 0 for a record that holds", lambda: {"guards": {StandInGuard.name: 99.0}}, 0)):
+        _tick()
+        got = check_record_exit(loader)
+        if got != want:
+            FAILURES.append(f"#1599: {label}; got exit {got}")
+    # The record: only guards over the floor, deterministic bytes, and a round trip.
+    with tempfile.TemporaryDirectory() as td:
+        path = Path(td) / "cost.json"
+        mc.write_cost_baseline(path, {"heavy": 400.04, "light": floor - 1, "medium": 100.0}, jobs=4)
+        first = path.read_bytes()
+        mc.write_cost_baseline(path, {"medium": 100.0, "light": floor - 1, "heavy": 400.04}, jobs=4)
+        loaded = mc.load_cost_baseline(path)
+        _tick()
+        if first != path.read_bytes() or loaded is None or set(loaded["guards"]) != {"heavy", "medium"} \
+                or loaded["guards"]["heavy"] != 400.0:
+            FAILURES.append(f"#1599: the record must hold only guards over the floor, rounded, in a stable order, "
+                            f"got {loaded} / {first!r}")
+        _tick()
+        if mc.load_cost_baseline(Path(td) / "absent.json") is not None:
+            FAILURES.append("#1599: an absent record must load as None, not as an empty one")
+        path.write_text("{not json", encoding="utf-8")
+        _tick()
+        try:
+            mc.load_cost_baseline(path)
+        except ValueError:
+            pass
+        else:
+            FAILURES.append("#1599: a malformed record must raise, never read as empty (which would pass everything)")
+
     # ---- 1d. baselines and mutants start no detached git maintenance (#1510) ----------------
     # The helper APPENDS to a caller's own pairs, never renumbers them over.
     _tick()
@@ -225,6 +761,32 @@ def run() -> int:
         if mc.hermetic_git.env(given) != given:
             FAILURES.append(f"#1510: a count git rejects ({bogus!r}) must be left untouched, "
                             f"got {mc.hermetic_git.env(given)}")
+    # #1588: an inherited GIT_DIR (git exports it to hooks, `rebase --exec`, `bisect run`...) must not
+    # survive into a fixture's environment: under it, `git -C <tmp> commit` commits into $GIT_DIR.
+    _tick()
+    poisoned = mc.hermetic_git.env({"GIT_DIR": "/real/.git", "GIT_WORK_TREE": "/real", "GIT_INDEX_FILE": "/real/i",
+                                    "PATH": "/usr/bin"})
+    if any(k in poisoned for k in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE")) or poisoned.get("PATH") != "/usr/bin":
+        FAILURES.append(f"#1588: hermetic_git.env must drop the repository-locating variables and keep the rest, "
+                        f"got {sorted(poisoned)}")
+    # ...end to end: the #1493 probe's own commands, under an inherited GIT_DIR naming a stand-in repo.
+    import subprocess as _sp, tempfile as _tf
+    with _tf.TemporaryDirectory() as _w:
+        _real = Path(_w) / "real"
+        _sp.run(["git", "init", "-q", str(_real)], check=True, env=mc.hermetic_git.env())
+        _sp.run(["git", "-C", str(_real), "-c", "user.email=x@x", "-c", "user.name=x", "commit", "-q",
+                 "--allow-empty", "-m", "real"], check=True, env=mc.hermetic_git.env())
+        _env = mc.hermetic_git.env({**os.environ, "GIT_DIR": str(_real / ".git")})
+        _tmp = Path(_w) / "probe"
+        _sp.run(["git", "init", "-q", str(_tmp)], env=_env, capture_output=True)
+        _sp.run(["git", "-C", str(_tmp), "-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgSign=false",
+                 "commit", "-q", "--allow-empty", "-m", "m"], env=_env, capture_output=True)
+        _n = _sp.run(["git", "-C", str(_real), "rev-list", "--count", "HEAD"], capture_output=True, text=True,
+                     env=mc.hermetic_git.env()).stdout.strip()
+        _tick()
+        if _n != "1":
+            FAILURES.append(f"#1588: a fixture commit under an inherited GIT_DIR reached the repo it names "
+                            f"({_n} commits, want 1) -- the t@t/m commits on dev")
     # A selftest that commits in a temp repo under GIT_TRACE and refuses to go on if git started
     # `maintenance run --auto` or `gc --auto` -- the #1493 race. Through run_guard, so it proves
     # the CALLER passes the env to both the baseline and the mutant, not only that the helper builds it.
@@ -266,6 +828,84 @@ def run() -> int:
         mc.hermetic_git.env = real_env
         os.environ.update(inherited)
         mc.REPO = original_repo
+
+    # ---- 1e. a mutant that times out takes its whole process group, and says what it knows (#1459)
+    # The mutated selftest starts a grandchild that would outlive a plain kill, prints a line, then
+    # hangs. run_mutation must report a timeout naming the guard, the mutation and the elapsed time,
+    # with that line as its tail, and leave nothing running. #1556: the grandchild's pid is recorded
+    # atomically AFTER the line is printed, and the timeout is lengthened only while the mutant never
+    # got that far -- a mutant killed before it started is no verdict on the group kill.
+    import signal as _signal
+    import time as _time
+    guard, root = _fixture_guard((
+        mc.Mutation("the mutant hangs", "n % 2 == 0", "n % 2 == 0 or __import__('time').sleep(0)", "fixture-odd"),
+    ))
+    pidfile = root / "grandchild.pid"
+    hang = root / "scripts" / "subject_selftest.py"
+    hang.write_text("import subprocess, sys, time\n"
+                    "g = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'])\n"
+                    "print('mutant-1459 started its grandchild', flush=True)\n"
+                    f"open({str(pidfile)!r} + '.tmp', 'w').write(str(g.pid))\n"
+                    f"__import__('os').replace({str(pidfile)!r} + '.tmp', {str(pidfile)!r})\n"
+                    "time.sleep(120)\n", encoding="utf-8")
+    mc.REPO = root
+    try:
+        _tick()
+        for limit in (2, 4, 8):
+            t0 = _time.monotonic()
+            problems = mc.run_mutation(guard, guard.mutations[0], timeout=limit)
+            took = _time.monotonic() - t0
+            recorded = _pids(pidfile, wait=0)
+            if recorded:
+                break
+        report = " | ".join(problems)
+        if not recorded:
+            FAILURES.append(f"#1459: the timed-out mutant never started its grandchild, even with {limit}s -- "
+                            f"the runner is too loaded to judge the group kill; got {problems!r}")
+        elif not ("fixture: the mutant hangs timed out after" in report and "mutant-1459 started its grandchild" in report
+                  and f"limit {limit}s" in report and took < limit + 18):
+            FAILURES.append(f"#1459: a timed-out mutant must report guard, mutation, elapsed and its tail, "
+                            f"promptly; got {problems!r} after {took:.0f}s")
+        _tick()
+        grandchild = recorded[0] if recorded else None
+        gone = grandchild is not None
+        for _ in range(20):
+            try:
+                os.kill(grandchild, 0)
+            except (ProcessLookupError, TypeError):
+                break
+            _time.sleep(0.1)
+        else:
+            gone = False
+            os.kill(grandchild, _signal.SIGKILL)
+        if not gone:
+            FAILURES.append("#1459: a timed-out mutant left its grandchild running -- its process group was not killed")
+    finally:
+        mc.REPO = original_repo
+
+    # ...and each guard's line prints the moment its last mutation finishes, once, not after the pool.
+    import contextlib as _contextlib
+    import io as _io
+    from concurrent.futures import ThreadPoolExecutor as _Pool
+    guard, root = _fixture_guard((
+        mc.Mutation("odd numbers reported even", "n % 2 == 0", "True", "fixture-odd"),
+        mc.Mutation("even numbers reported odd", "n % 2 == 0", "False", "fixture-even"),
+    ))
+    mc.REPO = root
+    try:
+        _tick()
+        buf = _io.StringIO()
+        with _contextlib.redirect_stdout(buf), _Pool(max_workers=2) as pool:
+            outcomes = mc.run_live(pool, [(guard, m) for m in guard.mutations], {guard.name: 60.0})
+        lines = [l for l in buf.getvalue().splitlines() if l.strip().startswith("[done] fixture:")]
+        if lines != ["  [done] fixture: 2 mutation(s), 0 problem(s)"] or len(outcomes) != 2:
+            FAILURES.append(f"#1459: a guard's progress line prints once when its last mutation ends, "
+                            f"got {buf.getvalue()!r} / {len(outcomes)} outcome(s)")
+    finally:
+        mc.REPO = original_repo
+
+    # ---- 1f. NESTED runners, Ctrl-C, and an escapee (review of #1525) ---------------------------
+    _proc_group_fixtures()
 
     # ---- 2. a SURVIVOR must be reported ------------------------------------------------
     # This mutation changes the subject in a way neither fixture observes, so the selftest still
@@ -378,7 +1018,10 @@ def run() -> int:
         if not (report and "exit 1" in report and tail):
             FAILURES.append(f"a wrong-fixture report does not carry the mutant's exit and output; got {problems}")
         _tick()
-        if len(tail) != 12 or "noise-01" in report or "fixture-odd" not in report:
+        tail_text = "\n".join(tail)
+        # The clause on the TAIL, not the report: the header names the expected fixture
+        # ('no mention of fixture-odd'), so a test of the whole report for it could never fail (#1532).
+        if len(tail) != 12 or "noise-01" in tail_text or "noise-20" not in tail_text:
             FAILURES.append(f"a wrong-fixture report does not carry exactly the last 12 lines of output; "
                             f"got {len(tail)} line(s), first={tail[:1]}")
         _tick()
@@ -386,6 +1029,61 @@ def run() -> int:
             FAILURES.append("a wrong-fixture report does not cut each output line to 300 characters; "
                             f"widest {max(len(l) for l in tail)}")
     finally:
+        mc.REPO = original_repo
+
+    # ---- #1530-#1532: the three diagnostics a CI-only failure depends on ------------------------
+    # (1) the tail is ONE interleaved stream. 13 stderr lines, then a label on stdout: the old
+    # `stdout + stderr` put the label first and cut it, so the line naming what fired was the one
+    # missing. (2) the INERT report is as width-bound as the wrong-fixture tail. (3) a TIMEOUT keeps
+    # what the child printed before the limit, for the baseline and the mutant alike.
+    labelled = SELFTEST.replace(
+        '    sys.exit(1)\n',
+        '    for i in range(13):\n        print(f"noise-{i:02d}", file=sys.stderr, flush=True)\n'
+        '    print("label-on-stdout", flush=True)\n    sys.exit(1)\n', 1)
+    assert labelled != SELFTEST
+    guard, root = _fixture_guard((
+        mc.Mutation("even numbers reported odd", "n % 2 == 0", "False", "fixture-odd"),
+    ), selftest=labelled)
+    mc.REPO = root
+    try:
+        _tick()
+        report = next((p for p in mc.run_guard(guard) if "not by the expected fixture" in p), "")
+        tail = [l.strip() for l in report.split("\n")[1:] if l.startswith("      ")]
+        if not tail or tail[-1] != "label-on-stdout":
+            FAILURES.append("a wrong-fixture tail hides a label printed to stdout behind 12+ stderr lines "
+                            f"(stdout and stderr are not one interleaved stream); tail ends {tail[-2:]}")
+    finally:
+        mc.REPO = original_repo
+
+    wide = 'import sys\nprint("w" * 5000)\nsys.exit(1)\n'
+    guard, root = _fixture_guard((mc.Mutation("unused", "n % 2 == 0", "True", "fixture-odd"),), selftest=wide)
+    mc.REPO = root
+    try:
+        _tick()
+        inert = next((p for p in mc.run_guard(guard) if "INERT" in p), "")
+        rows = inert.split("\n")[1:]
+        if not rows or any(len(r) > 306 for r in rows):
+            FAILURES.append("the INERT report does not cut each output line to 300 characters; "
+                            f"widest {max((len(r) for r in rows), default=0)}")
+    finally:
+        mc.REPO = original_repo
+
+    sleeper = 'import time\nprint("timeout-label", flush=True)\ntime.sleep(60)\n'
+    guard, root = _fixture_guard((mc.Mutation("unused", "n % 2 == 0", "True", "fixture-odd"),), selftest=sleeper)
+    mc.REPO = root
+    original_baseline_timeout = mc.BASELINE_TIMEOUT
+    try:
+        _tick()
+        timed_out = mc.run_mutation(guard, guard.mutations[0], timeout=2)
+        if not any("timed out" in p and "timeout-label" in p for p in timed_out):
+            FAILURES.append(f"a MUTANT's timeout report drops what it printed before the limit; got {timed_out}")
+        _tick()
+        mc.BASELINE_TIMEOUT = 2
+        timed_out = mc.run_baseline(guard)
+        if not any("timed out" in p and "timeout-label" in p for p in timed_out):
+            FAILURES.append(f"a BASELINE's timeout report drops what it printed before the limit; got {timed_out}")
+    finally:
+        mc.BASELINE_TIMEOUT = original_baseline_timeout
         mc.REPO = original_repo
 
     # ---- 5. every real guard's anchors still match exactly once ------------------------
@@ -594,5 +1292,12 @@ def run() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(run())
+    # CONTAINED (#1582): this selftest starts process trees on purpose, some built to leak, under
+    # every mutant too. Nothing it starts may outlive it -- the 2026-10-03 leak exhausted the
+    # user's process limit. Not optional: a missing helper must fail here, not run uncontained.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "plugins" / "rails-flow" / "scripts"))
+    from process_containment import contained
+    with contained():
+        _rc = run()
+    sys.exit(_rc)
 

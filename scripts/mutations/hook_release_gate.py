@@ -12,7 +12,9 @@ GUARD = Guard(
     # alongside rails-flow's (#906), so the whole hook tree plus qa-flow's scripts must be staged.
     # DECLARED, not assumed: an undeclared read makes the unmutated baseline die in the tempdir and
     # every mutation then reads as "caught" by an error that has nothing to do with the mutation.
-    needs=("plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362
+    needs=(
+           'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py',  # session-start.sh runs both (#1581: the harness drives it)
+           "plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362
            "plugins/rails-flow/hooks/scripts", "plugins/qa-flow/hooks/scripts",
            "plugins/qa-flow/scripts",
            'plugins/rails-flow/scripts/check_criteria.py',
@@ -24,6 +26,7 @@ GUARD = Guard(
            'plugins/qa-flow/scripts/read_certification.py',
            'plugins/qa-flow/scripts/push_targets.py',  # release-gate.sh runs it (#1410)
            'plugins/qa-flow/scripts/release_evidence.py',
+           'plugins/qa-flow/scripts/remote_evidence.py',   # the release gate runs it (#1591)
            'plugins/rails-flow/scripts/self_consistency.py'),
     mutations=(
         # #1410 / #1470: the hook must hand the RAW command to the classifier, for ANY command that
@@ -36,8 +39,8 @@ GUARD = Guard(
         ),
         Mutation(
             "an unjudgeable command is allowed instead of treated as a promotion",
-            "  else\n    targets_main=1\n  fi\nelif",
-            "  else\n    :\n  fi\nelif",
+            "  else\n    targets_main=1; needs_dev=1\n",
+            "  else\n    :\n",
             "release-gate (#1410): an unparseable push is treated as a promotion",
         ),
         Mutation(
@@ -54,15 +57,15 @@ GUARD = Guard(
         ),
         Mutation(
             "the fallback reads the normalised segment, losing a quoted main",
-            """    && printf '%s' "$cmd" | grep -qE '\\b(main|master)\\b' && targets_main=1""",
-            """    && printf '%s' "$seg" | grep -qE '\\b(main|master)\\b' && targets_main=1""",
+            """    && printf '%s' "$cmd" | grep -qE '\\b(main|master)\\b' && { targets_main=1; needs_dev=1; }""",
+            """    && printf '%s' "$seg" | grep -qE '\\b(main|master)\\b' && { targets_main=1; needs_dev=1; }""",
             "release-gate (#1410): parser missing -> a quoted `main` push is still blocked",
         ),
         # #1337: the stamp's own commit invalidates it again, or any delta slips through.
         Mutation(
             "an ancestor stamp is never accepted, so committing the stamp denies its promotion",
-            '        [ "$f" = "qa/CERTIFICATION" ] && continue',
-            '        [ "$f" = "__never__" ] && continue',
+            '    [ "$f" = "qa/CERTIFICATION" ] && continue',
+            '    [ "$f" = "__never__" ] && continue',
             "release-gate (#1337): the stamp committed on top of the tested sha still permits",
         ),
         Mutation(
@@ -74,22 +77,22 @@ GUARD = Guard(
         # #1428. The evidence check is skipped: a PASS stamp alone unlocks main again.
         Mutation(
             "the release-only layers are not checked, so a HOLE still promotes",
-            'if evidence="$(python3 "$ev" stamp --rev "$devsha" 2>"$evtmp")"; then',
-            'if evidence="$(python3 "$ev" stamp --rev "$devsha" 2>"$evtmp")" || true; then',
+            'if evidence="$(python3 "$ev" stamp --rev "$at" 2>"$evtmp")"; then',
+            'if evidence="$(python3 "$ev" stamp --rev "$at" 2>"$evtmp")" || true; then',
             "release-gate (#1428): a HOLE in the sweep denies",
         ),
         # The allowance matches ANY path under the evidence's parent, so code rides along unchecked.
         Mutation(
             "every changed file counts as evidence",
-            '            (*/) case "$f" in ("$p"*) ok=1 ;; esac ;;',
-            '            (*/) ok=1 ;;',
+            '      (*/) case "$f" in ("$p"*) ok=1 ;; esac ;;',
+            '      (*/) ok=1 ;;',
             "release-gate (#1428): a code change riding with the evidence is still denied",
         ),
         # The trailing slash is what stops first-boot-v1-other matching first-boot-v1.
         Mutation(
             "the evidence directory is matched without its trailing slash",
-            '            (*/) case "$f" in ("$p"*) ok=1 ;; esac ;;',
-            '            (*/) case "$f" in ("${p%/}"*) ok=1 ;; esac ;;',
+            '      (*/) case "$f" in ("$p"*) ok=1 ;; esac ;;',
+            '      (*/) case "$f" in ("${p%/}"*) ok=1 ;; esac ;;',
             "release-gate (#1428): a look-alike of the evidence path is not evidence",
         ),
         # ROUND 3 FOLD-IN 3: the degraded-PATH fallback must use builtins only.
@@ -101,7 +104,7 @@ GUARD = Guard(
         ),
         Mutation(
             "the fallback no longer recognises a push to main",
-            '    if [[ $_in =~ ${_b}push${_e} ]] && [[ $_in =~ (^|[^[:alnum:]_/.-]|refs/heads/)(main|master)${_e} ]]; then',
+            '    if [[ $_in =~ ${_b}push${_e} ]] && [[ $_in =~ (^|[^[:alnum:]_/.-]|refs/heads/|[^[:alnum:]_/.-]heads/)(main|master)${_e} ]]; then',
             "    if false; then",
             "with ONLY bash on PATH, a push to main is still blocked",
         ),
@@ -113,7 +116,7 @@ GUARD = Guard(
         ),
         Mutation(
             "the fallback's word boundary is dropped, so maintenance reads as main",
-            '    if [[ $_in =~ ${_b}push${_e} ]] && [[ $_in =~ (^|[^[:alnum:]_/.-]|refs/heads/)(main|master)${_e} ]]; then',
+            '    if [[ $_in =~ ${_b}push${_e} ]] && [[ $_in =~ (^|[^[:alnum:]_/.-]|refs/heads/|[^[:alnum:]_/.-]heads/)(main|master)${_e} ]]; then',
             "    if [[ $_in =~ push ]] && [[ $_in =~ (main|master) ]]; then",
             "`git push origin maintenance` is allowed",
         ),
@@ -121,57 +124,57 @@ GUARD = Guard(
             "JSON whitespace escapes are not normalised, so an escaped tab hides the verb",
             '    _in="${_in//"$_esc"/ }"',
             "    :",
-            "'git\\tpush origin main' is still blocked",
+            "'git\\tpush\\torigin\\tmain' is still blocked",
         ),
         Mutation(
             "a ref under a path counts as main in the fallback",
-            "[[ $_in =~ (^|[^[:alnum:]_/.-]|refs/heads/)(main|master)${_e} ]]",
+            "[[ $_in =~ (^|[^[:alnum:]_/.-]|refs/heads/|[^[:alnum:]_/.-]heads/)(main|master)${_e} ]]",
             "[[ $_in =~ (^|[^[:alnum:]_])(main|master)${_e} ]]",
             "`git push origin feature/main` is allowed",
         ),
         Mutation(
             "a fully qualified refs/heads/main is swallowed by the path-ref exclusion again",
-            "[[ $_in =~ (^|[^[:alnum:]_/.-]|refs/heads/)(main|master)${_e} ]]",
+            "[[ $_in =~ (^|[^[:alnum:]_/.-]|refs/heads/|[^[:alnum:]_/.-]heads/)(main|master)${_e} ]]",
             "[[ $_in =~ (^|[^[:alnum:]_/.-])(main|master)${_e} ]]",
             "'git push origin refs/heads/main' is still blocked",
         ),
         # ROUND 3 FOLD-IN 4: the stamp is read as committed at dev.
         Mutation(
             "the stamp is read from the working tree again",
-            'if ! git show "${devsha}:qa/CERTIFICATION" >"$stamp_tmp" 2>/dev/null; then',
+            'if ! git show "${at}:qa/CERTIFICATION" >"$stamp_tmp" 2>/dev/null; then',
             'if ! cp qa/CERTIFICATION "$stamp_tmp" 2>/dev/null; then',
             "an UNCOMMITTED stamp is denied",
         ),
         # #1437 review: a contains-match survived every fixture. The allowance is a PREFIX.
         Mutation(
             "the evidence allowance matches the path anywhere, not as a prefix",
-            '            (*/) case "$f" in ("$p"*) ok=1 ;; esac ;;',
-            '            (*/) case "$f" in (*"$p"*) ok=1 ;; esac ;;',
+            '      (*/) case "$f" in ("$p"*) ok=1 ;; esac ;;',
+            '      (*/) case "$f" in (*"$p"*) ok=1 ;; esac ;;',
             "release-gate (#1428): a path merely containing the evidence path is not evidence",
         ),
         # #1437 review round 2: the sweep FILE matched as a prefix, so sweep.csv.rb rode along.
         Mutation(
             "the sweep file matches as a prefix",
-            '            (*) [ "$f" = "$p" ] && ok=1 ;;',
-            '            (*) case "$f" in ("$p"*) ok=1 ;; esac ;;',
+            '      (*) [ "$f" = "$p" ] && ok=1 ;;',
+            '      (*) case "$f" in ("$p"*) ok=1 ;; esac ;;',
             "release-gate (#1428): a file that only starts with the sweep's name is not evidence",
         ),
         Mutation(
             "rename detection is back, so code moved into the evidence folder is never judged",
-            '      if ! delta="$(git -c core.quotePath=false diff --no-renames --name-only "$full" "$devsha" 2>/dev/null)"; then',
-            '      if ! delta="$(git -c core.quotePath=false diff -M --name-only "$full" "$devsha" 2>/dev/null)"; then',
+            '      if ! delta="$(git -c core.quotePath=false diff --no-renames --name-only "$full" "$tgt" 2>/dev/null)"; then',
+            '      if ! delta="$(git -c core.quotePath=false diff -M --name-only "$full" "$tgt" 2>/dev/null)"; then',
             "release-gate (#1428): code renamed into the evidence folder is denied",
         ),
         Mutation(
             "the evidence is judged in the working tree, not as committed at dev",
-            'if evidence="$(python3 "$ev" stamp --rev "$devsha" 2>"$evtmp")"; then',
+            'if evidence="$(python3 "$ev" stamp --rev "$at" 2>"$evtmp")"; then',
             'if evidence="$(python3 "$ev" stamp 2>"$evtmp")"; then',
             "release-gate (#1428): a committed HOLE denies though the fix is only staged",
         ),
         Mutation(
             "git quotes non-ASCII names again, so a legitimate evidence commit is denied",
-            '      if ! delta="$(git -c core.quotePath=false diff --no-renames --name-only "$full" "$devsha" 2>/dev/null)"; then',
-            '      if ! delta="$(git diff --no-renames --name-only "$full" "$devsha" 2>/dev/null)"; then',
+            '      if ! delta="$(git -c core.quotePath=false diff --no-renames --name-only "$full" "$tgt" 2>/dev/null)"; then',
+            '      if ! delta="$(git diff --no-renames --name-only "$full" "$tgt" 2>/dev/null)"; then',
             "release-gate (#1428): a non-ASCII evidence file name is recognised as evidence",
         ),
         # The paths come from stdout; losing them denies the stamp's own evidence commit.
@@ -183,7 +186,7 @@ GUARD = Guard(
         ),
         Mutation(
             "the ancestry check is skipped, so a stamp from another branch is accepted",
-            '      if [ -z "$full" ] || ! git merge-base --is-ancestor "$full" "$devsha" 2>/dev/null; then',
+            '      if [ -z "$full" ] || ! git merge-base --is-ancestor "$full" "$tgt" 2>/dev/null; then',
             '      if [ -z "$full" ]; then',
             "release-gate (#1337): a stamp for a sha that is not an ancestor of dev is denied",
         ),
@@ -191,15 +194,15 @@ GUARD = Guard(
             "the dev sha is read with plain rev-parse again, so a missing origin/dev poisons it",
             'devsha="$(git rev-parse --verify -q origin/dev 2>/dev/null || git rev-parse --verify -q dev 2>/dev/null || true)"',
             'devsha="$(git rev-parse origin/dev 2>/dev/null || git rev-parse dev 2>/dev/null || true)"',
-            "release-gate (#1337): the stamp committed on top of the tested sha still permits",
+            "release-gate (#1337): without the classifier, dev's tip is read and a missing origin/dev does not poison it",
         ),
         Mutation(
             # WITHOUT the carve-out the gate denies every promotion of its own source repo. That is
             # a gate wrong about correct code: the maintainer overrides it every release or turns
             # it off, and then it protects nobody. It blocked v1.134.0 before this landed.
             "the marketplace carve-out is removed, so the gate blocks its own repo",
-            'if [ -f ".claude-plugin/marketplace.json" ]; then',
-            "if false; then",
+            'if [ -f ".claude-plugin/marketplace.json" ] && [ -z "$_foreign" ] && only_marketplace_targets; then',
+            'if false; then',
             "the marketplace's OWN repo is not a consumer",
         ),
         Mutation(
@@ -208,9 +211,44 @@ GUARD = Guard(
             # Keyed on marketplace.json rather than "has no qa/ directory" precisely because the
             # latter is the ordinary state of an app that never ran /qa-flow:setup-qa.
             "the carve-out fires for every repo, so nothing is ever gated",
-            'if [ -f ".claude-plugin/marketplace.json" ]; then',
-            "if true; then",
+            'if [ -f ".claude-plugin/marketplace.json" ] && [ -z "$_foreign" ] && only_marketplace_targets; then',
+            'if true; then',
             "an ordinary repo with no certification is STILL blocked",
+        ),
+        Mutation(
+            # The exemption describes where a command GOES, and `remote.origin.pushurl` is where a push goes.
+            "the exemption reads only each remote's fetch url, not its push url",
+            'for mode in "" "--push"; do',
+            'for mode in ""; do',
+            "a pushurl that points elsewhere",
+        ),
+        Mutation(
+            # A second remote is where `gh` may resolve its default repository, and where a bare `git push <name>` goes.
+            "the exemption reads origin only, so another remote is ignored",
+            '$(git remote 2>/dev/null)\nEOF',
+            'origin\nEOF',
+            "a second remote that is another repository",
+        ),
+        Mutation(
+            # `remote.*.gh-resolved` is gh's own record of its default repository.
+            "a gh-resolved repository that names another repository is ignored",
+            'case "$v" in ""|base|other) ;; *) [ "$(printf \'%s\' "$v" | tr \'A-Z\' \'a-z\')" = "$MARKETPLACE_REPO" ] || return 1 ;; esac',
+            'case "$v" in *) ;; esac',
+            "gh's default repo named as another repository",
+        ),
+        Mutation(
+            # GH_REPO from the hook's own environment makes every gh command act on that repository.
+            "a GH_REPO naming another repository does not withdraw the exemption",
+            '[ -z "${GH_REPO:-}" ] || [ "$(printf \'%s\' "$GH_REPO" | tr \'A-Z\' \'a-z\')" = "$MARKETPLACE_REPO" ] || return 1',
+            'true',
+            "a GH_REPO that names another repository",
+        ),
+        Mutation(
+            # `get-url` applies insteadOf and pushInsteadOf; the raw config value does not.
+            "the exemption reads the raw configured url, not the one git resolves",
+            'u="$(git remote get-url $mode --all "$r" 2>/dev/null)"',
+            'u="$(git config --get-all "remote.$r.url" 2>/dev/null)"',
+            "a pushInsteadOf that rewrites the push target",
         ),
     ),
 )

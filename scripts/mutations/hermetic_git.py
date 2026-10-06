@@ -10,7 +10,7 @@ GUARD = Guard(
     name="hermetic_git",
     subject="scripts/hermetic_git.py",
     selftest="scripts/mutation_check_selftest.py",
-    deps=("scripts/mutation_check.py", "scripts/mutation_types.py"),
+    deps=("scripts/mutation_check.py", "scripts/mutation_types.py", "scripts/proc_group.py", "plugins/rails-flow/scripts/process_containment.py",),
     mutations=(
         Mutation(
             "a caller's GIT_CONFIG pairs are overwritten",
@@ -35,6 +35,13 @@ GUARD = Guard(
             'SETTINGS: tuple[tuple[str, str], ...] = (("maintenance.auto", "false"), ("gc.auto", "0"))',
             'SETTINGS: tuple[tuple[str, str], ...] = (("core.quotePath", "true"), ("core.safecrlf", "false"))',
             '#1510: the baseline and the mutant must run with git maintenance off',
+        ),
+        Mutation(
+            # #1588
+            'an inherited GIT_DIR survives hermetic_git.env, so a fixture commit lands in the real repo (#1588)',
+            '    out = {k: v for k, v in (os.environ if base is None else base).items() if k not in REPO_LOCATORS}',
+            '    out = dict(os.environ if base is None else base)',
+            '#1588: hermetic_git.env must drop the repository-locating variables',
         ),
     ),
 )

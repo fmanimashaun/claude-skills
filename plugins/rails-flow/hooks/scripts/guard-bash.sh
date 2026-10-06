@@ -2,9 +2,21 @@
 # PreToolUse[Bash] guardrails — mechanical enforcement of GUARDRAILS.md.
 # Exit 2 blocks the command; stderr is shown to Claude with the reason.
 set -uo pipefail
-input="$(cat)"
+# The `read` BUILTIN, never `cat`: with no `cat` on PATH, `$(cat)` read nothing and every rule passed
+# (#1529 review). Stops at a NUL, which JSON cannot contain.
+input=""; IFS= read -r -d '' input || true
 
-cmd="$(printf '%s' "$input" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("tool_input",{}).get("command",""))' 2>/dev/null || printf '%s' "$input")"
+# #1575: EVERYTHING below runs in `_guard_main`, in its own process group, under a wall-clock deadline (lib/deadline.sh,
+# at the bottom of this file). The body is not re-indented, to keep the diff reviewable.
+_guard_main() {
+
+# #1526: decoded with `surrogateescape`, so an invalid UTF-8 byte cannot make the parse fail. A failed
+# parse left the raw JSON as `cmd`, where the command sits inside double quotes the normaliser strips:
+# `git add -A \xff` was allowed.
+parsed=1
+cmd="$(printf '%s' "$input" | python3 -c 'import json,sys
+d=json.loads(sys.stdin.buffer.read().decode("utf-8","surrogateescape"))
+sys.stdout.buffer.write(str(d.get("tool_input",{}).get("command","")).encode("utf-8","replace"))' 2>/dev/null)" || { parsed=0; cmd="$input"; }
 
 deny() { echo "BLOCKED by rails-flow guardrails: $1" >&2; exit 2; }
 
@@ -15,19 +27,58 @@ deny() { echo "BLOCKED by rails-flow guardrails: $1" >&2; exit 2; }
 # FAIL CLOSED: if the lib cannot be sourced, match the raw text as before — a guard that goes
 # quiet because a file is missing is the one failure this hook must not have.
 _lib="$(dirname "${BASH_SOURCE[0]}")/lib/normalize_cmd.sh"
-if [ -f "$_lib" ] && . "$_lib" 2>/dev/null && type normalize_segments >/dev/null 2>&1; then
-  seg="$(printf '%s' "$cmd" | normalize_segments)"
+#
+# #1526: the lib needs awk, sed, tr and grep. Without awk it printed NOTHING, so every rule passed. An
+# unparsed payload, a missing lib, or a normaliser that EXITED NON-ZERO puts the hook in DEGRADED mode.
+# The exit status, not an empty result, decides: a comment-only command normalises to nothing and is a
+# mention (#906). A missing tool needs no check of its own -- the shell's 127 fails the pipeline under
+# `pipefail` and the lib returns it (#1529 review) -- and a `command -v` per tool changed no outcome,
+# which the mutation guard measured. `LC_ALL=C`: macOS awk aborts on an invalid byte in a UTF-8 locale.
+degraded=0
+if [ "$parsed" = 1 ] && [ -f "$_lib" ] && . "$_lib" 2>/dev/null && type normalize_segments >/dev/null 2>&1; then
+  seg="$(printf '%s' "$cmd" | LC_ALL=C normalize_segments)" || { seg="$cmd"; degraded=1; }
 else
-  seg="$cmd"
+  seg="$cmd"; degraded=1
 fi
-hit() { printf '%s\n' "$seg" | grep -qE "$1"; }
+# DEGRADED MEANS UNANCHORED (#1529 review). Every rule is anchored `^git`, and the raw text is the
+# JSON payload or a compound command (`cd x && git add -A`), so an anchored rule never matched it and
+# "fall back to the raw text" passed everything. In degraded mode a rule matches ANYWHERE: that refuses
+# a quoted mention too, which is the right side to err on when the command could not be read. With no
+# grep at all, bash's own `=~` matches (`\b` dropped, which only widens the match).
+have_grep=0; command -v grep >/dev/null 2>&1 && have_grep=1
+hit() {
+  local re="$1"
+  [ "$degraded" = 1 ] && re="${re#^}"
+  if [ "$have_grep" = 1 ]; then
+    # pipefail OFF inside the subshell: `grep -q` quits at the first match, `printf` takes SIGPIPE once the
+    # text outgrows the pipe buffer, and pipefail reported that 141 as "no match" -- `git add -A` plus
+    # 10k lines of echo was allowed. Only grep's own status may decide.
+    ( set +o pipefail; printf '%s\n' "$seg" | grep -qE "$re" )
+  else
+    # LINE BY LINE, as grep matches: one `=~` over the whole text let `^` see only the first segment,
+    # so `cd x && git add -A` passed with no grep (#1529 round-3 review).
+    re="${re//\\b/}"
+    # Split IN MEMORY, never through a heredoc: a heredoc needs a temp file, and with no writable temp
+    # dir it failed and `hit()` passed everything (#1529 round-4 review).
+    local rest="$seg"$'\n' line
+    while [ -n "$rest" ]; do
+      line="${rest%%$'\n'*}"; rest="${rest#*$'\n'}"
+      [[ $line =~ $re ]] && return 0
+    done
+    return 1
+  fi
+}
+# An EXEMPTION (`--force-with-lease`, clean's `-n`, restore's `--staged`) never applies in degraded
+# mode: unanchored, its `.*` reaches another segment, so `git clean -fd && echo -n` was exempt (#1529
+# review). Refusing a real dry run there is the price of a command that could not be read.
+exempt() { [ "$degraded" = 1 ] && return 1; hit "$1"; }
 
 # A rails/rake task segment that names db:reset (not the word inside a quoted string or a grep).
 if hit '^(bin/)?(rails|rake)([[:space:]]+[^[:space:]]+)*[[:space:]]+db:reset\b'; then
   deny "db:reset is prohibited (seeds break test isolation). Use: db:drop db:create db:schema:load."
 fi
 
-if hit '^git[[:space:]]+push\b.*(--force\b|[[:space:]]-f\b)' && ! hit '^git[[:space:]]+push\b.*--force-with-lease'; then
+if hit '^git[[:space:]]+push\b.*(--force\b|[[:space:]]-f\b)' && ! exempt '^git[[:space:]]+push\b.*--force-with-lease'; then
   deny "force-push is prohibited. Use --force-with-lease on your own feature branch only, never on main/dev/staging."
 fi
 if hit '^git[[:space:]]+push\b.*--force-with-lease' && hit '^git[[:space:]]+push\b.*\b(main|master|dev|staging)\b'; then
@@ -53,7 +104,7 @@ fi
 # `clean -n` (dry run), `branch -d` (refuses an unmerged branch), `checkout <branch>`,
 # `restore --staged` (unstage only) and `restore -- <explicit path>` (one named file, on purpose).
 if hit '^git[[:space:]]+clean\b.*([[:space:]]-[a-zA-Z]*f|[[:space:]]--force\b)' \
-   && ! hit '^git[[:space:]]+clean\b.*([[:space:]]-[a-zA-Z]*n|[[:space:]]--dry-run\b)'; then
+   && ! exempt '^git[[:space:]]+clean\b.*([[:space:]]-[a-zA-Z]*n|[[:space:]]--dry-run\b)'; then
   deny "git clean -f deletes untracked files with no undo. Run 'git clean -n' first and show the user what it would remove; delete named paths with approval."
 fi
 if hit '^git[[:space:]]+checkout\b.*[[:space:]]--([[:space:]]|$)' \
@@ -61,7 +112,7 @@ if hit '^git[[:space:]]+checkout\b.*[[:space:]]--([[:space:]]|$)' \
   deny "git checkout -- <path> / git checkout . overwrites uncommitted edits with no undo. To keep them: git stash push -m <why> -- <path>. To discard ONE file you own: git restore -- <that path>."
 fi
 if hit '^git[[:space:]]+restore\b.*[[:space:]](\./?|:/|\*)($|[[:space:]])' \
-   && ! hit '^git[[:space:]]+restore\b.*--staged\b' ; then
+   && ! exempt '^git[[:space:]]+restore\b.*--staged\b' ; then
   deny "git restore . discards every uncommitted edit in the tree. Name the one file you mean: git restore -- <path>."
 fi
 if hit '^git[[:space:]]+branch\b.*[[:space:]](-[a-zA-Z]*D\b|--delete[[:space:]]+--force\b|--force[[:space:]]+--delete\b)'; then
@@ -77,15 +128,18 @@ fi
 # Called whenever the text names a create ANYWHERE (#1423): a create in `sh -c`, `eval`, backticks
 # or behind `/usr/bin/gh` never starts a normalised segment, so a segment match alone never saw it.
 # The helper tells a command from a mention (`echo "gh issue create"` stays allowed).
-# Quotes, backslashes and newlines are dropped for this TRIGGER only (#1462): `gh issue "create"`,
+# Quotes, backslashes, `$` and newlines are dropped for this TRIGGER only (#1462, #1495): `gh issue "create"`, `gh issue $'create'`,
 # `gh issue \<newline>create` and `gh --repo o/r issue create` must reach the helper, which parses
 # the raw command properly and tells a create from a mention.
 # A shell reading a script by redirect (`bash < file`, #1489) names no create in its text at all, so it
 # triggers the helper too; the helper reads the file and decides. Coarse on purpose -- `/bin/bash < f`,
-# `bash --norc < f`, `bash -o errexit < f`, `sh<f`, `bash 0< f` -- because over-triggering costs one
+# `bash --norc < f`, `bash -o errexit < f`, `sh<f`, `bash 0< f`, `bash 2>&1 < f`, `bash &>log < f` (a
+# redirect's `&` is not a separator, #1495; glued: `bash>/dev/null<f`, #1513). And any `$'…'` holding an escape,
+# which can spell `create`, `issue` or `gh` (#1513) -- because over-triggering costs one
 # parse, and under-triggering skips the check.
-if printf '%s' "$cmd" | tr -d "\"'\\\\" | tr '\n' ' ' | grep -qE 'gh[[:space:]].*issue[[:space:]]+(create|new)' \
-   || printf '%s' "$cmd" | grep -qE '(^|[[:space:];&|(/])(sh|bash|zsh|dash|ksh)([[:space:]][^;&|]*)?<([^<(]|$)'; then
+if ( set +o pipefail; printf '%s' "$cmd" | tr -d "\"'\\\\\$" | tr '\n' ' ' | grep -qE 'gh[[:space:]].*issue[[:space:]]+(create|new)' ) \
+   || ( set +o pipefail; printf '%s' "$cmd" | grep -qE '(^|[[:space:];&|(/])(sh|bash|zsh|dash|ksh)([[:space:]<>&]([^;&|]|[<>]&|&>)*)?<([^<(]|$)' ) \
+   || ( set +o pipefail; printf '%s' "$cmd" | grep -q "\\$'[^']*\\\\" ); then
   _root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
   _why="$(printf '%s' "$cmd" | python3 "$(dirname "${BASH_SOURCE[0]}")/lib/issue_labels.py" --root "$_root" 2>&1)"
   _rc=$?
@@ -101,3 +155,22 @@ if hit '^kamal[[:space:]]+deploy\b' && [ "${RAILS_FLOW_ALLOW_DEPLOY:-0}" != "1" 
 fi
 
 exit 0
+}
+
+# THE DEADLINE (#1575). A hook that outlives its timeout blocks every Bash call and leaves awk children behind: one ran
+# 23 hours, the load reached 348. Past the deadline the whole process group is killed and the command is DENIED --
+# this is a fail-closed gate, so "took too long to read" refuses. The default is below the hook's own 10 s timeout
+# (hooks.json); RAILS_FLOW_HOOK_DEADLINE shortens it (tests) and is clamped at 8. With the lib missing the rules
+# still run and only the backstop is gone: lint_self_consistency's hook-lib-drift reports the missing copy.
+_dl="$(dirname "${BASH_SOURCE[0]}")/lib/deadline.sh"
+if [ -f "$_dl" ] && . "$_dl" 2>/dev/null && type deadline_run >/dev/null 2>&1; then
+  deadline_seconds 6 8
+  deadline_run "$_deadline_s" _guard_main; _rc=$?
+  if [ "$_rc" -ge 128 ]; then
+    echo "BLOCKED by rails-flow guardrails: this command took longer than ${_deadline_s}s to read, so it is refused rather than guessed at. Split it into smaller commands, or write the long text to a file first." >&2
+    exit 2
+  fi
+  exit "$_rc"
+fi
+_guard_main
+exit $?

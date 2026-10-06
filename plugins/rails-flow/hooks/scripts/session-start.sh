@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # SessionStart — inject repo state as context (stdout becomes context).
 set -uo pipefail
+# The hook payload (JSON, on stdin): read with a BUILTIN and a 2 s limit, so a caller that leaves stdin open (a hand run, a
+# harness) never holds the session start; a payload that does not arrive is an empty one.
+_payload=""
+[ -t 0 ] || IFS= read -r -t 2 -d '' _payload || true
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
 
 branch="$(git branch --show-current 2>/dev/null)"
@@ -11,6 +15,21 @@ base="main"; git show-ref --verify --quiet refs/heads/dev && base="dev"
 echo "## rails-flow session context"
 echo "- branch: ${branch:-detached} (base: $base) | uncommitted files: $dirty"
 echo "- last commit: $last"
+# #1585: ONE line, only when a coordinator is recorded for this repository and THIS session holds no lane on it. A session
+# cannot write the coordination record, so the line says to tell the coordinator its current name (names rotate at every
+# start). Silent for everyone else, so it costs no bytes here; fail open (an advisory never blocks a session start).
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/lib/coordination.py" ] && command -v python3 >/dev/null 2>&1; then
+  printf '%s' "$_payload" | python3 "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/lib/coordination.py" pointer --stdin 2>/dev/null || true
+fi
+# #1581. Resume in place (advisory, fail-open, SILENT when there is nothing to say): this session's recorded
+# worktree, worktrees that are finished and can be removed, and a zombie-process warning. This hook runs
+# again after every compaction, so an empty answer must cost nothing. The judgement lives in
+# lib/worktree_guard.py; here only the session_id is read, from the payload read ONCE above (stdin can be read a single time,
+# so a second read here would find it empty).
+if command -v python3 >/dev/null 2>&1; then
+  _sid="$(printf '%s' "$_payload" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("session_id",""))' 2>/dev/null)"
+  python3 "${BASH_SOURCE[0]%/*}/lib/worktree_guard.py" resume --session-id "$_sid" 2>/dev/null
+fi
 [ -f CLAUDE.md ] || echo "- NOTE: no CLAUDE.md — run /rails-flow:setup-flow to scaffold project conventions."
 [ -f GUARDRAILS.md ] || echo "- NOTE: no GUARDRAILS.md — run /rails-flow:setup-flow."
 if [ -f docs/brain/STATUS.md ]; then
