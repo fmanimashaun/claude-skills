@@ -2186,6 +2186,20 @@ def release_gate_effects_fixtures() -> None:
             check(f"release-gate (#1626): CONTROL: a PR into the branch `{odd}` is not a promotion and is permitted", rc == 0, f"rc={rc} {err[:160]!r}")
             rc, err = run(merge_pinned_odd := gql, FAKE_NODE=f"{odd} {hot}")
             check(f"release-gate (#1626): CONTROL: a GraphQL merge into the branch `{odd}` is not a promotion and is permitted", rc == 0, f"rc={rc} {err[:160]!r}")
+        # (#1628) A base or ref name GitHub returns qualified (`refs/heads/main`, `heads/main`) is still main: the coarse detector reads it as main,
+        # so the full path must too. Each form is refused on the `gh pr merge`, GraphQL merge and updateRef paths, with an UNCERTIFIED head.
+        ref_to_hot = f"gh api graphql -f query='mutation {{ updateRef(input:{{refId:\"R1\", oid:\"{hot}\"}}) {{ clientMutationId }} }}'"
+        for qualified in ("refs/heads/main", "heads/main", "refs/heads/master"):
+            rc, err = run("gh pr merge 7", FAKE_PRVIEW=f"{qualified} {hot}")
+            check(f"release-gate (#1628): a `gh pr merge` whose base is looked up as `{qualified}` is judged as main and blocked", rc == 2, f"rc={rc} {err[:160]!r}")
+            rc, err = run(gql, FAKE_NODE=f"{qualified} {hot}")
+            check(f"release-gate (#1628): a GraphQL merge whose base is looked up as `{qualified}` is judged as main and blocked", rc == 2, f"rc={rc} {err[:160]!r}")
+            rc, err = run(ref_to_hot, FAKE_REF=qualified)
+            check(f"release-gate (#1628): an updateRef whose ref is looked up as `{qualified}` is judged as main and blocked", rc == 2, f"rc={rc} {err[:160]!r}")
+        # CONTROL: only ONE prefix is stripped, and only a leading one: `refs/heads/dev` and `refs/heads/refs/heads/main` are not main.
+        for other_ref in ("refs/heads/dev", "heads/release+2026"):
+            rc, err = run("gh pr merge 7", FAKE_PRVIEW=f"{other_ref} {hot}")
+            check(f"release-gate (#1628): CONTROL: a PR into `{other_ref}` is not a promotion and is permitted", rc == 0, f"rc={rc} {err[:160]!r}")
         # (#1626) A LOOKUP THAT ERRORS IS UNRESOLVED, NOT AN ANSWER. Real `gh` exits 1 and prints the raw error body to STDOUT; the lookups kept
         # whatever was printed (`|| true`), so `base` held the JSON, was neither `main` nor empty, and a GraphQL merge into main was allowed.
         merge_pinned = gql.replace('"PR_kw1"}', f'"PR_kw1", expectedHeadOid:"{stamped}"}}')

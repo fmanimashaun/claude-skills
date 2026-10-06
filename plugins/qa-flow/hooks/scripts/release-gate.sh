@@ -302,7 +302,9 @@ resolve_pr() {
 # error body contains (whitespace, braces, quotes, brackets) and what git forbids in a ref name (: ? * ^ ~ \).
 ref_name_returned() { case "$1" in ""|*[[:space:]]*|*\{*|*\}*|*\"*|*\[*|*\]*|*:*|*\?*|*\**|*\^*|*\~*|*\\*) return 1 ;; esac; return 0; }
 # What a PR lookup returned must LOOK like a base ref name; else it is no answer (base and head "" = unresolved, refused by note_pr).
-sane_pr_lookup() { ref_name_returned "$base" || { base=""; head=""; _PRR=""; }; }
+# #1628: a looked-up ref may come back qualified (`refs/heads/main`, `heads/main`); the coarse detector already reads those as main, so strip ONE prefix.
+short_ref() { local r="$1"; r="${r#refs/heads/}"; [ "$r" = "$1" ] && r="${r#heads/}"; printf '%s' "$r"; }
+sane_pr_lookup() { ref_name_returned "$base" && base="$(short_ref "$base")" || { base=""; head=""; _PRR=""; }; }
 # add_ship <sha> <repo or -> <label>
 add_ship() { ship="${ship}${1}"$'\t'"${2:--}"$'\t'"${3}"$'\n'; }
 # add_commit <ref> <ctx repo> <local|branch> <label>: queue the commit <ref> names, or mark the command
@@ -458,7 +460,7 @@ if [ "$_mentions" = 1 ] && [ -f "$_pt" ]; then
           _out=""
           [ "$_id" = "-" ] || _out="$(gh_lookup api graphql -F id="$_id" -f query='query($id:ID!){node(id:$id){... on Ref{name repository{nameWithOwner}}}}' -q '.data.node.name + " " + .data.node.repository.nameWithOwner' || true)"
           ref_name_returned "${_out%% *}" || _out=""   # #1626: a lookup that printed anything but a ref name first is no answer
-          case "${_out%% *}" in
+          case "$(short_ref "${_out%% *}")" in
             main|master)
               targets_main=1
               if [ "$_oid" = "-" ]; then unresolved_pr=1
