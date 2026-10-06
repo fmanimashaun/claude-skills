@@ -7,6 +7,10 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **A gate that every shipped plugin script parses on Python 3.9 — `scripts/check_python_floor.py`, `scripts/mutations/check_python_floor.py`, `scripts/maintainer_doctor.py`** (#1597). Hooks run as `python3` on the user's machine, which on stock macOS is 3.9, while CI pins 3.12, so a newer-syntax change shipped unseen and a fail-closed hook then denied everything. The gate parses every `plugins/**/*.py` (227 files) and every `python3 -c` block in a plugin hook shell (14) on the 3.9 grammar, adds the PEP 701 f-string forms the grammar flag does not reject (a backslash, the enclosing quote, or a newline inside an expression), and compiles under a real 3.9 when the machine has one, saying so when it does not. **Measured** on `/usr/bin/python3` 3.9.6 against dev: 2 files failed; after the fix, 0. Not covered: what 3.9 reveals only at run time (an evaluated `int | None` annotation). The guard catches 6 mutations; the real-3.9 rule is not mutated because it runs only where a 3.9 exists.
+
 ### 2026-10-06 (release v1.154.0)
 
 - **#1619's new guard is on the cost record — `docs/evidence/mutation-cost-baseline.json`**. `hook_release_gate_refs` (added by #1619) was never recorded, so every full run since has failed the cost ratchet's 120 s new-guard limit: dev's push runs 37346306564 and 37346326987 measured 171 s and 168 s, and #1620's dispatched run 37347226462 measured 138 s. Recorded at the highest measured value, 171.0 s, written with `write_cost_baseline` so the bytes match a re-baseline. No constant changed. Our own design; no framework claim.
@@ -3670,6 +3674,10 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
   questions → Discussions) + `.github/labels.yml` taxonomy.
 
 ## rails-flow (agentic flow plugin)
+
+### Unreleased
+
+- **Two scripts that were a SyntaxError on Python 3.9 now parse — `plugins/rails-flow/scripts/project_gates.py`, `plugins/rails-flow/scripts/check_hook_gates.py`** (#1597). Each had a backslash inside an f-string expression (`summarise('   \n\n', 2)` and a `re.sub(r'/\S*?/tmp…')` call), legal only from 3.12. The expression is now hoisted into a variable before the f-string; behaviour is unchanged.
 
 ### 1.57.0 (release v1.154.0) — 2026-10-06
 
@@ -7410,6 +7418,10 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 
 ## pipeline (lifecycle orchestrator)
+
+### Unreleased
+
+- **The README names the Python floor, 3.9 — `plugins/pipeline/README.md`** (#1597). The scripts this plugin ships parse on the `python3` stock macOS ships, and a change that needs newer syntax is refused before it ships.
 
 ### 1.4.2 (release v1.154.0) — 2026-10-06
 
@@ -11690,6 +11702,10 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
+### Unreleased
+
+- **The README names the Python floor, 3.9 — `plugins/qa-flow/README.md`** (#1597). The scripts this plugin ships parse on the `python3` stock macOS ships, and a change that needs newer syntax is refused before it ships.
+
 ### 1.36.0 (release v1.154.0) — 2026-10-06
 
 - **The release gate's full path reads a base or ref name looked up as `refs/heads/main` or `heads/main` as main — `plugins/qa-flow/hooks/scripts/release-gate.sh`, `plugins/rails-flow/scripts/check_hook_gates.py`, `scripts/mutations/hook_release_gate_effects.py`** (Fixes #1628; found by the security review of #1627, older than it). The two `case` statements that decide whether a merge or ref write targets main compared the looked-up PR base and the looked-up `updateRef` name against bare `main` and `master`, so a lookup returning `refs/heads/main`, `heads/main` or `refs/heads/master` passed the ref-name shape check and was judged not-main: rc=0 with an uncertified head, on the `gh pr merge`, GraphQL PR merge and GraphQL `updateRef` paths, while the coarse detector read the same spelling as main. A new `short_ref` strips ONE leading `refs/heads/` or `heads/` before both `case` statements. **Red first:** 9 new rows (three spellings on three paths) failed against `dev` with rc=0, and pass now; controls pin that `refs/heads/dev` and `heads/release+2026` are still not a promotion. [Recall] real `gh` returns short names here, so this closes a disagreement between the gate's halves rather than a reproduced exploit. 3 mutations (strip removed from the PR lookup, from the `updateRef` name, and the `heads/` half), all caught by the rows named; one older anchor was re-pointed. Our own design; no framework claim.
@@ -13998,6 +14014,10 @@ boot/validation path — with a bullet each so the promotion could close them se
   proven features into the corpus rather than re-testing the current feature.
 
 ## design-flow (UI/design plugin)
+
+### Unreleased
+
+- **The README names the Python floor, 3.9 — `plugins/design-flow/README.md`** (#1597). The scripts this plugin ships parse on the `python3` stock macOS ships, and a change that needs newer syntax is refused before it ships.
 
 ### 1.45.1 (release v1.154.0) — 2026-10-06
 
