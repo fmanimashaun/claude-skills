@@ -952,6 +952,8 @@ def run() -> int:
         except SystemExit as e:
             if e.code != 2:
                 FAILURES.append(f"#1635: --record-proof with {args} must exit 2 (usage), got {e.code}")
+        except Exception as e:          # past the refusal it goes on to run things: that is the failure, not a crash of the selftest
+            FAILURES.append(f"#1635: --record-proof must refuse {args}, but it went on and raised {type(e).__name__}")
 
     # #1635: a doctor started in the BACKGROUND inherits SIGINT as ignored and never sees the Ctrl-C its own selftests send.
     # restore_sigint() resets it, only when it was ignored. Control: without the call the child still ignores it.
