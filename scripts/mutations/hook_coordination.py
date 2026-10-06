@@ -372,5 +372,23 @@ GUARD = Guard(
             '    block = {}',
             'keeps keys it does not know',
         ),
+        Mutation(
+            "the selftest summary drops the notice that real-hook checks were skipped",
+            "{SKIP_NOTICE if skipped else ''}",
+            "",
+            "the summary line says SKIPPED when the real-hook checks were skipped",
+        ),
+        Mutation(
+            "the selftest prints a summary built without the skip flag, so the bare count comes back",
+            "    line = summary_line(ran[0], len(failures), skip_hook_e2e)\n    if skip_hook_e2e",
+            "    line = summary_line(ran[0], len(failures), False)\n    if skip_hook_e2e",
+            "does not carry the notice of what was skipped",
+        ),
+        Mutation(
+            "--skip-hook-e2e without --selftest is silently accepted",
+            "    if args.skip_hook_e2e and not args.selftest:",
+            "    if False:",
+            "--skip-hook-e2e without --selftest is refused",
+        ),
     ),
 )
