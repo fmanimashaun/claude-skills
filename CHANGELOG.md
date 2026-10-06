@@ -7,6 +7,11 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+- **A push to `dev` runs the fast sweep; the full sweep runs before a promotion and the release reuses its record for an identical tree — `scripts/sweep_proof.py`, `scripts/mutations/sweep_proof.py`, `.github/workflows/release.yml`, `.github/workflows/gates.yml`, `scripts/release_local.sh`, `scripts/maintainer_doctor.py`** (#1635, the owner's decision recorded on the issue). `maintainer_doctor.py --gates-only --require-slow --record-proof` posts a `full-sweep` commit status naming the tree (refusing a dirty tree, a failure or a skipped gate); a new `proof` job in `release.yml` skips `gates` only when such a status exists on a dev commit with the released tree, logs the commit, and runs the full sweep otherwise or on any lookup error. `release_local.sh` mirrors it. `sweep_proof.py check-wiring` pins the three files together. Our own design; no framework claim. Not verified: the gate that hung for 2 h in the v1.154.0 attempt (its log was not kept).
+- **An ordinary gate that outlives its budget is FAIL by name, and its children die with it — `scripts/maintainer_doctor.py`, `scripts/maintainer_doctor_selftest.py`** (#1635). It was SKIP, so a hung gate read green; the selftest now drives a gate with a same-session and a new-session child and asserts the FAIL, the budget and that neither child survives. A slow gate still skips off CI.
+
 ### 2026-10-06 (release v1.154.0)
 
 - **#1619's new guard is on the cost record — `docs/evidence/mutation-cost-baseline.json`**. `hook_release_gate_refs` (added by #1619) was never recorded, so every full run since has failed the cost ratchet's 120 s new-guard limit: dev's push runs 37346306564 and 37346326987 measured 171 s and 168 s, and #1620's dispatched run 37347226462 measured 138 s. Recorded at the highest measured value, 171.0 s, written with `write_cost_baseline` so the bytes match a re-baseline. No constant changed. Our own design; no framework claim.

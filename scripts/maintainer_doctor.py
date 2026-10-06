@@ -557,6 +557,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("arm window", ("python3", "scripts/check_arm_window.py")),
     ("arm window selftest", ("python3", "scripts/check_arm_window.py", "--selftest")),
     ("close-on-dev-merge selftest", ("python3", "scripts/close_on_dev_merge.py", "--selftest")),
+    # #1635. The record a promotion's release reuses instead of re-running the full sweep.
+    ("sweep proof selftest", ("python3", "scripts/sweep_proof.py", "--selftest")),
+    ("sweep proof wiring", ("python3", "scripts/sweep_proof.py", "check-wiring")),
     ("vendored alone", ("python3", "scripts/check_vendored_alone.py")),
     ("vendored alone selftest", ("python3", "scripts/check_vendored_alone.py", "--selftest")),
     # #1556. How a process-group fixture learns its gate's pids: atomically, and waited for.
@@ -579,10 +582,11 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
 # Keyed by gate NAME, and the selftest asserts the name exists in GATES — otherwise a rename would
 # silently stop the exemption applying — and that the set is exactly this one.
 CORPORA_GATES = frozenset({"coverage matrix drift"})
-# Gates a PULL-REQUEST run skips -- reported as SKIP with the reason, never omitted (#866). `mutation
-# coverage` was 438 of the sweep's 475 seconds, on every PR, for a check whose subjects each PR's
-# own selftest gates already run once. It still runs on every push to `dev` (the merge commit no PR
-# tested) and inside release.yml's workflow_call at promotion, so nothing reaches `main` without it.
+# Gates a PULL-REQUEST or dev-push run skips -- reported as SKIP with the reason, never omitted (#866,
+# #1635). `mutation coverage` was 438 of the sweep's 475 seconds, on every PR, for a check whose subjects
+# each PR's own selftest gates already run once. It runs on the maintainer's machine before a promotion
+# (`--require-slow --record-proof`, recorded against the tree by sweep_proof.py), and release.yml runs it
+# itself unless that record matches the tree it is publishing, so nothing reaches `main` without it.
 # An exact set, pinned by the selftest in both directions like CORPORA_GATES: widening it is how a
 # "fast" mode becomes the only mode.
 PR_SKIPPED_GATES = frozenset({"mutation coverage"})
@@ -1252,7 +1256,7 @@ class Doctor:
             if fast and name in PR_SKIPPED_GATES:
                 self.add(
                     SKIP, f"gate: {name}",
-                    "not run in --fast mode — it runs on every push to dev and at promotion, not per PR",
+                    "not run in --fast mode — it runs locally before a promotion (--record-proof), and in the release when no proof matches the tree",
                     " ".join(cmd),
                 )
                 continue
@@ -1270,7 +1274,18 @@ class Doctor:
                 cost_lines = tuple(ln.strip() for ln in lines
                                    if ln.startswith(("heaviest guards", "total work", "work by guard")))
                 self.add(PASS, f"gate: {name}", last, findings=cost_lines)
-            elif code == 124 and self.require_slow and name in SLOW_GATES:
+            elif code == 124 and name not in SLOW_GATES:
+                # #1635. An ordinary gate reads the tree once and gets DEFAULT_TIMEOUT; one that outlives it
+                # is hung, not slow, and reporting it as a skip let a sweep go green with a gate that never
+                # answered (the v1.154.0 release's first attempt ran 2 h). The run() above already killed the
+                # gate's whole process group; this names the gate and ends its step as a failure.
+                self.add(
+                    FAIL, f"gate: {name}",
+                    f"{out.strip() or 'timed out'} — HUNG: it outlived its {DEFAULT_TIMEOUT}s budget, so its "
+                    f"process group was killed and the gate gave no verdict",
+                    " ".join(cmd),
+                )
+            elif code == 124 and self.require_slow:
                 # #1444. Every dev push run reported `mutation coverage` as a timeout-skip and the
                 # job still went green, so the promotion's evidence silently disappeared for a day.
                 # A skip stays the right verdict on a laptop; on the run whose purpose is to prove
@@ -1420,6 +1435,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--fast", action="store_true",
                    help="with --gates-only: skip the gates in PR_SKIPPED_GATES (reported as SKIP with the reason); "
                         "for pull requests -- dev pushes and the promotion run everything")
+    p.add_argument("--record-proof", action="store_true",
+                   help="with --gates-only --require-slow: when the whole sweep passed with nothing skipped, record that "
+                        "against this exact tree (scripts/sweep_proof.py) so the release can reuse it (#1635)")
     p.add_argument("--selftest", action="store_true", help="prove the checks fire and stay silent")
     args = p.parse_args(argv)
 
@@ -1429,8 +1447,18 @@ def main(argv: list[str] | None = None) -> int:
 
         return st.run()
 
-    return Doctor(fix=args.fix, require_slow=args.require_slow).diagnose(gates=args.gates or args.gates_only,
-                                         gates_only=args.gates_only, fast=args.fast)
+    if args.record_proof and not (args.gates_only and args.require_slow and not args.fast):
+        p.error("--record-proof needs --gates-only --require-slow and not --fast: only a complete sweep may be recorded")
+    doctor = Doctor(fix=args.fix, require_slow=args.require_slow)
+    rc = doctor.diagnose(gates=args.gates or args.gates_only, gates_only=args.gates_only, fast=args.fast)
+    if args.record_proof:
+        skipped = [r.name for r in doctor.gate_results() if r.status == SKIP]
+        if rc != 0 or skipped:
+            print(f"not recording a sweep proof: {'a gate failed' if rc else 'skipped: ' + ', '.join(skipped)}")
+            return rc or 1
+        import sweep_proof
+        return sweep_proof.record()
+    return rc
 
 
 if __name__ == "__main__":

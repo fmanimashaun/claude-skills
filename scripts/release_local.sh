@@ -162,8 +162,16 @@ step "4b. Run the gate sweep the hosted release runs first"
 # `--gates-only` is the same set CI runs: content gates only, no clone diagnostics.
 # `--require-slow` too, as release.yml gets it through gates.yml on a push (#1444): a slow gate
 # that times out is FAIL here, not a skip.
-"$PY" scripts/maintainer_doctor.py --gates-only --require-slow \
-  || fail "the gate sweep failed — the hosted release would not have published this. Fix the failures above, then re-run."
+#
+# Reuse a proven sweep exactly as release.yml's `proof` job does (#1635): a `full-sweep` status recorded
+# by `maintainer_doctor.py --gates-only --require-slow --record-proof` against THIS tree. Anything else
+# (no status, a lookup error) runs the whole sweep.
+if "$PY" scripts/sweep_proof.py verify; then
+  say "the full sweep already passed on this exact tree — not re-running it."
+else
+  "$PY" scripts/maintainer_doctor.py --gates-only --require-slow \
+    || fail "the gate sweep failed — the hosted release would not have published this. Fix the failures above, then re-run."
+fi
 
 step "5. Extract release notes from CHANGELOG"
 

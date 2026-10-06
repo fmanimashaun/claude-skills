@@ -240,6 +240,8 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | status board record readers selftest | `repo` | `python3 scripts/check_coordination_readers.py --selftest` | selftest |
 | structural grid | `repo` | `python3 scripts/check_structural_grid.py` | live check |
 | structural grid selftest | `repo` | `python3 scripts/check_structural_grid.py --selftest` | selftest |
+| sweep proof selftest | `repo` | `python3 scripts/sweep_proof.py --selftest` | selftest |
+| sweep proof wiring | `repo` | `python3 scripts/sweep_proof.py check-wiring` | live check |
 | tenancy cop derived | `repo` | `python3 scripts/derive_tenancy_cop.py --check` | live check |
 | tenancy cop derived selftest | `repo` | `python3 scripts/derive_tenancy_cop.py --selftest` | selftest |
 | token contrast | `repo` | `python3 scripts/check_token_contrast.py` | live check |
