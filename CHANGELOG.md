@@ -7,7 +7,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
-### Unreleased
+### 2026-10-06 (release v1.154.0)
 
 - **#1619's new guard is on the cost record — `docs/evidence/mutation-cost-baseline.json`**. `hook_release_gate_refs` (added by #1619) was never recorded, so every full run since has failed the cost ratchet's 120 s new-guard limit: dev's push runs 37346306564 and 37346326987 measured 171 s and 168 s, and #1620's dispatched run 37347226462 measured 138 s. Recorded at the highest measured value, 171.0 s, written with `write_cost_baseline` so the bytes match a re-baseline. No constant changed. Our own design; no framework claim.
 
@@ -41,7 +41,6 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 - **A harness that times `guard-bash.sh` per process group and kills the whole group on a deadline — `scripts/hook_slow_paths.py`, `scripts/mutations/hook_slow_paths.py`** (Refs #1575). A first attacker run killed only the parent `bash` and left its `awk` child computing; the orphans ran 51 minutes. Measured on `9a3d9dc`: 500 chained `echo hi;` inside `bash -c` cost 5.9 CPU-seconds and 1000 cost 40.6; 1000 lines of `echo $(true) N` cost 25.5. Each case runs in its own session and a deadline `killpg`s the group; the check is a ratchet both ways (an unmarked case over its CPU bound fails, and a case marked known-slow that got fast fails as a stale marker). The selftest forks a sleeper under a hung stub and asserts it is dead; four mutations, one per branch, each caught. Only the selftest is a doctor gate: the real run takes minutes and is load-sensitive, so a maintainer runs `python3 scripts/hook_slow_paths.py`. Our own design; no framework claim.
 
-(Maintainer-only; the version is assigned at promotion.)
 
 - **A release block ends at the next `## ` section heading, not only at the next `### ` one — `scripts/extract_release_notes.py`, `scripts/mutations/extract_release_notes.py`** (#1523). `blocks_for` ran a block to the next `### ` heading, so the `## ` heading that opens the next component's section, and any prose under it, joined the oldest block of the section above and was extracted into that release's notes. Measured against the pre-fix rule over every tag cut before the fix (204 tags): exactly one past tag's extraction changes, `v1.92.1`, whose notes ended with `## Repository hygiene`; the selftest prints the list and pins it. A published release is never re-published (`release.yml` is a no-op for a tag that has one), so no release body changes: only what this script would extract today. `check_published_blocks.py` (its own mirror, bullet identities only) still reports 203 blocks and 0 findings. Selftest 80 checks; five new mutations in the guard (31 in all, all caught), each by its own fixture. Our own parser; no framework claim.
 
@@ -3672,7 +3671,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
-### Unreleased
+### 1.57.0 (release v1.154.0) — 2026-10-06
 
 - **The coordination selftest checks that its summary line reaches stdout, not only that it was built — `plugins/rails-flow/hooks/scripts/lib/coordination.py`, `scripts/mutations/hook_coordination.py`** (#1629). Replacing the final `print(line)` with a bare `line` left `--selftest --skip-hook-e2e` exiting 0 with no output at all, so the `[SKIPPED …]` notice could vanish with the selftest green: the checks looked at the value of `line`, never at what was printed. The selftest now prints through one function, `report(line, code)`, and a fixture captures that function's stdout (`contextlib.redirect_stdout`) and requires the exact line and the code it was given. New mutation: the print removed from `report` is caught by "the summary line is printed, not only built" (exit 1, hand-applied on a copy before it was committed). 214 checks with `--skip-hook-e2e`. Not covered: a mutant that bypasses `report` at its one call site; only a harness reading the real stdout could see that. Our own design; no framework claim.
 - **`coordination.py --selftest --skip-hook-e2e` says what it skipped, and the flag is refused without `--selftest` — `plugins/rails-flow/hooks/scripts/lib/coordination.py`, `scripts/mutations/hook_coordination.py`** (review of #1618). The flag skips the checks that run the real `session-start.sh`, but its summary read "213 checks, 0 failure(s)" with nothing to say the count was short, so a reader could take it for the full run; the line now ends "[SKIPPED the real session-start.sh checks: --skip-hook-e2e; hook_session_start_pointer runs them]" (built by `summary_line`, which a fixture calls with and without the skip). On its own the flag meant nothing and was silently ignored, and a caller who believed it skipped something was wrong; it now exits 3 with "only applies to --selftest", also when a command follows. Four fixtures, and three mutations of the guard (the notice removed; the refusal removed; the printed summary built without the flag), each caught by its own fixture and hand-applied. The third came from the review of #1624: `summary_line` passing proved the builder, not the line `selftest()` prints, so the selftest now checks its own printed line when it skipped the real-hook block. A first draft of one fixture tested a constant against itself and could not fail; it was replaced by the `summary_line` check. Our own design; no framework claim.
@@ -7412,7 +7411,7 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## pipeline (lifecycle orchestrator)
 
-### Unreleased
+### 1.4.2 (release v1.154.0) — 2026-10-06
 
 - **The board links its published page, and `/pipeline:board publish` has rules — `plugins/pipeline/scripts/status_board.py`, `plugins/pipeline/commands/board.md`, `plugins/pipeline/scripts/mutations/status_board.py`** (#1585, part 3). When the record carries a live address the board shows it in the title block as a link (`rel=noopener`) and `collect` prints a pointer line; the address is checked when the board is collected AND again when the page is drawn (`render` reads a `board.json` that may have been edited), so a `javascript:` value, another host or an attribute break is never linked. `board.md` now says publishing is the coordinator's only, on an explicit request or at a few checkpoints (a merge, a promotion), never per event, on a timer or from a hook (the owner complained on 2026-10-03 that republishes kept opening browser windows), and gives the steps. One renderer: the published page is the static page; the db-row version is not built. 254 board selftest checks; 3 new mutations, hand-applied and caught (the full guards run in CI).
 
@@ -11691,7 +11690,7 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
-### Unreleased
+### 1.36.0 (release v1.154.0) — 2026-10-06
 
 - **The release gate's full path reads a base or ref name looked up as `refs/heads/main` or `heads/main` as main — `plugins/qa-flow/hooks/scripts/release-gate.sh`, `plugins/rails-flow/scripts/check_hook_gates.py`, `scripts/mutations/hook_release_gate_effects.py`** (Fixes #1628; found by the security review of #1627, older than it). The two `case` statements that decide whether a merge or ref write targets main compared the looked-up PR base and the looked-up `updateRef` name against bare `main` and `master`, so a lookup returning `refs/heads/main`, `heads/main` or `refs/heads/master` passed the ref-name shape check and was judged not-main: rc=0 with an uncertified head, on the `gh pr merge`, GraphQL PR merge and GraphQL `updateRef` paths, while the coarse detector read the same spelling as main. A new `short_ref` strips ONE leading `refs/heads/` or `heads/` before both `case` statements. **Red first:** 9 new rows (three spellings on three paths) failed against `dev` with rc=0, and pass now; controls pin that `refs/heads/dev` and `heads/release+2026` are still not a promotion. [Recall] real `gh` returns short names here, so this closes a disagreement between the gate's halves rather than a reproduced exploit. 3 mutations (strip removed from the PR lookup, from the `updateRef` name, and the `heads/` half), all caught by the rows named; one older anchor was re-pointed. Our own design; no framework claim.
 
@@ -14000,7 +13999,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## design-flow (UI/design plugin)
 
-### Unreleased
+### 1.45.1 (release v1.154.0) — 2026-10-06
 
 - **`setup`, `critique` and `design-critic` name the design-system references in prose instead of linking out of the plugin — `plugins/design-flow/commands/setup.md`, `plugins/design-flow/commands/critique.md`, `plugins/design-flow/agents/design-critic.md`** (#1480). Two `../../skills/...` links were broken even in the clone; two `../../../skills/...` links resolved only here, never in an install.
 
@@ -16969,7 +16968,7 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
-### Unreleased
+### 1.71.0 (release v1.154.0) — 2026-10-06
 
 - **`parallel-session-lane` states the owner's four rules for parallel sessions, and the limit of the guard that enforces them — `skills/parallel-session-lane/SKILL.md`, `skills/parallel-session-lane/references/one-issue-at-a-time.md`, `skills/parallel-session-lane/references/isolated-resources.md`, `skills/parallel-session-lane/references/process-hygiene.md`** (#1581, part 2). Our own design, not a framework claim; the owner's decision is recorded on [#1581](https://github.com/fmanimashaun/claude-skills/issues/1581). New §1a: one issue at a time (in progress until its PR merges); a mid-issue assignment is queued or handed back, never a second worktree; clean up with `git worktree remove` when the PR merges or the review finishes; resume in place after a restart. The coordinator's half (assign a build issue only to a session with nothing in progress; record each lane, and only the coordinator writes the record) is stated, and so is what rails-flow's `guard-worktree` hook refuses and its limit: it protects against accident, not impersonation. `references/process-hygiene.md` names the session-start zombie advisory. The skill body was exactly at the 500-line Level-2 budget, so the full text of §1a is in `references/one-issue-at-a-time.md`, and §1's long "three isolated resources" bullet moved VERBATIM to `references/isolated-resources.md` with a four-line summary left behind (`SKILL.md` is now 498 lines); nothing in it was reworded. Registered in the doctrine map as one guarantee and two `advice` rows.
 - **`parallel-session-lane`: the processes you start are yours to end — `skills/parallel-session-lane/references/process-hygiene.md`, `skills/parallel-session-lane/SKILL.md`** (#1582 slice A). §10's "do not clean up what you did not create" gains its other half as a reference (SKILL.md stays at 500 lines): run a reproduction of a process bug once and contained, never in a loop; count leftovers afterwards; a watcher loop reaps what it starts and stops on its own condition; ownership comes from what you can prove you started. The 2026-10-03 incident and the two measurements (`RLIMIT_NPROC` is per user; the environment survives re-parenting) are in the file. Also `skills/quality-pass/references/worked-example.md`: the `check(label, ok, detail)` harness count goes 42→43 (reach 22→23), because the helper's selftest is a new copy; `check_shared_shapes.py` only refuses a number that disagrees with the repo. Our own doctrine, no framework claim. Decision: the owner's decision on #1582 (https://github.com/fmanimashaun/claude-skills/issues/1582).
