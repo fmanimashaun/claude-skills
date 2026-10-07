@@ -58,7 +58,9 @@ def _write(body: str, *, header: str | None = None, bom: bool = False) -> Path:
     """Write a CSV fixture and return its path."""
     path = _tmpdir() / "2026-07-29-fixture-summary.csv"
     head = HEADER if header is None else header
-    path.write_text(f"{head}\n{body}", encoding="utf-8-sig" if bom else "utf-8", newline="")
+    # `open(newline="")`, not `Path.write_text(newline=)`: that argument is Python 3.10+, and the stock macOS python3 is 3.9 (#1597).
+    with path.open("w", encoding="utf-8-sig" if bom else "utf-8", newline="") as handle:
+        handle.write(f"{head}\n{body}")
     return path
 
 

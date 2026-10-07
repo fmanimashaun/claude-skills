@@ -3213,7 +3213,9 @@ def _worktree_kit() -> types.SimpleNamespace:
         check(label, code == 2 and "BLOCKED by rails-flow worktree guard" in out, f"exit {code}: {out.strip()[:200]!r}")
         for n in needles:
             # The temp directory differs per run, and `--match` compares the survey's labels with the run's.
-            check(f"...and the message names {re.sub(r'/\S*?/tmp\w{8}(?=/|$)', '<tmp>', n)!r}", n in out, out.strip()[:300])
+            # Hoisted: a backslash inside an f-string expression is a SyntaxError before Python 3.12 (#1597).
+            shown = re.sub(r'/\S*?/tmp\w{8}(?=/|$)', '<tmp>', n)
+            check(f"...and the message names {shown!r}", n in out, out.strip()[:300])
 
     def allowed(label: str, res: tuple[int, str]) -> None:
         check(label, res[0] == 0, f"exit {res[0]}: {res[1].strip()[:200]!r}")
