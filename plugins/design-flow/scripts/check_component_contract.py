@@ -72,7 +72,7 @@ from pathlib import Path
 
 import content_floors
 
-from source_text import strip_comments
+from source_text import is_html, strip_comments
 
 RAW_BUTTON = re.compile(r"<button\b", re.I)
 COMPONENT_CLASS = re.compile(r"^[ \t]*class (\w+Component) < ViewComponent::Base[ \t]*$", re.M)
@@ -162,7 +162,7 @@ def raw_elements(root: Path) -> list[str]:
             # COMMENTS ARE PROSE (#1128). A view explaining why NOT to hand-write a
             # `<button>` used to be reported for hand-writing one. Blanked in place, so `:n`
             # below still cites the right line.
-            source = strip_comments(path.read_text(encoding="utf-8", errors="replace"))
+            source = strip_comments(path.read_text(encoding="utf-8", errors="replace"), html=is_html(path.name))
             for n, line in enumerate(source.split("\n"), 1):
                 if not RAW_BUTTON.search(line):
                     continue
