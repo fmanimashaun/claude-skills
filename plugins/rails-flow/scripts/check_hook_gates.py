@@ -33,6 +33,7 @@ import signal
 import subprocess
 import sys
 import time
+import uuid
 import tempfile
 import types
 import time
@@ -130,6 +131,60 @@ def record_failure(note: str) -> None:
 _EXPECTING_TIMEOUT = False      # set by timeout_fixtures, which times out on purpose, and the #1504 cost check
 
 
+# A HOOK'S WALL BUDGET SCALES WITH THE MACHINE (#1638). Every subprocess a fixture starts gets a wall-clock bound, 180 s at least. Measured on an
+# idle machine the longest single subprocess of the `deadline` group takes under 8 s (the whole group 22 s), so 180 s is twenty times the need;
+# yet on a shared machine at load 12 to 80 a mutation baseline of `hook_guard_bash_deadline` hit it ("TIMEOUT after 180.0s: release-gate.sh") and the
+# guard read as INERT: a correct tree reported as broken. The bound cannot be CPU time: a hung hook sleeps and uses none, so a CPU bound would never
+# fire, which is the 30-minute hang #1469 closed. It is the same wall bound, scaled by how much slower than idle THIS machine is right now: a fixed
+# calibration workload (a `git init` and an empty commit in a throwaway repository, the work every fixture starts with) is timed against its idle
+# figure, as the mutation harness times a baseline and scales each mutant's limit from it (`mutation_check.mutation_timeout`).
+HOOK_BUDGET_FLOOR = 180.0       # seconds, on an idle machine
+HOOK_BUDGET_CAP = 600.0         # never more than ten minutes: the doctor's per-gate budgets (400 to 900 s) decide beyond that, so a larger bound would be a dead number
+CALIBRATION_IDLE = 0.06         # seconds the calibration workload takes on an idle machine (measured 0.056, median of nine)
+CALIBRATION_REFRESH = 30.0      # re-measured at most this often: load moves, and a measurement per subprocess would be the load
+_CALIBRATION = {"at": None, "slowdown": 1.0}
+
+
+def hook_limit(requested: float, slowdown: float) -> float:
+    """The wall bound for one subprocess: a fixture's own bound, raised to the floor, then scaled by the machine's slowdown up to the cap.
+
+    Never below the floor or the fixture's own bound, and never raised past the cap unless the fixture asked for more itself."""
+    base = max(float(requested or 0), HOOK_BUDGET_FLOOR)
+    return max(base, min(HOOK_BUDGET_CAP, base * max(1.0, slowdown)))
+
+
+CALIBRATION_SAMPLES = 3         # the median of three, so one stall (a lock, an exec held up) does not set the budget for a whole refresh window
+CALIBRATION_TIMEOUT = 60        # each calibration command is itself bounded: a calibration that hangs would be the hang it guards against (#1469)
+
+
+def _sample() -> float:
+    """Seconds ONE run of the calibration workload took here; the cap's worth of slowdown if it would not finish."""
+    with tempfile.TemporaryDirectory() as td:
+        began = time.monotonic()
+        try:
+            for cmd in (["git", "init", "-q"], ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "i"],
+                        ["bash", "-c", "true"]):
+                subprocess.call(cmd, cwd=td, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=CALIBRATION_TIMEOUT)
+        except (OSError, subprocess.SubprocessError):
+            return CALIBRATION_IDLE * (HOOK_BUDGET_CAP / HOOK_BUDGET_FLOOR)
+        return time.monotonic() - began
+
+
+def _calibrate(sample=_sample) -> float:
+    """The median of CALIBRATION_SAMPLES runs of the calibration workload: one outlier among calm samples is ignored."""
+    runs = sorted(sample() for _ in range(CALIBRATION_SAMPLES))
+    return runs[len(runs) // 2]
+
+
+def machine_slowdown(measure=_calibrate, now=time.monotonic) -> float:
+    """How many times slower than idle this machine is, at least 1, measured at most once per CALIBRATION_REFRESH."""
+    t = now()
+    if _CALIBRATION["at"] is None or t - _CALIBRATION["at"] >= CALIBRATION_REFRESH:
+        _CALIBRATION["slowdown"] = max(1.0, measure() / CALIBRATION_IDLE)
+        _CALIBRATION["at"] = t
+    return _CALIBRATION["slowdown"]
+
+
 def _is_hook_run(args) -> bool:
     """The hook itself, as opposed to the git and gh the fixtures set up around it."""
     argv = args[0] if args else []
@@ -141,10 +196,11 @@ def _run(*args, **kw):
         text = kw.get("text") or kw.get("universal_newlines")
         empty = "" if text else b""
         return subprocess.CompletedProcess(args[0] if args else kw.get("args"), 0, stdout=empty, stderr=empty)
-    # The override is exact (the no-crash proof sets it tiny); otherwise a fixture's own bound is
-    # raised to a 180s floor, since 60s was what a loaded machine outran. Read per call, not at import.
+    # The override is exact (the no-crash proof sets it tiny); otherwise a fixture's own bound is raised to the floor and scaled by how much slower than
+    # idle this machine is (`hook_limit`, #1638): 60 s was what a loaded machine outran, and a fixed 180 s is outrun at load 12 to 80 too. Read per call.
     override = os.environ.get("HOOK_GATES_TIMEOUT")
-    limit = float(override) if override else max(float(kw.pop("timeout", 0) or 0), 180.0)
+    requested = kw.pop("timeout", 0)
+    limit = float(override) if override else hook_limit(requested, machine_slowdown())
     kw.pop("timeout", None)
     # Its OWN process group, so a timeout kills the hook AND the stubs it started. subprocess.run
     # kills only the direct child; measured 2026-09-29, 43 stub processes were left orphaned and
@@ -171,7 +227,7 @@ def _run(*args, **kw):
                 for pipe in (proc.stdin, proc.stdout, proc.stderr):
                     if pipe:
                         pipe.close()
-            note = f"TIMEOUT after {limit}s: {proc.args}"
+            note = f"TIMEOUT after {limit}s (floor {HOOK_BUDGET_FLOOR:g}s, machine {_CALIBRATION['slowdown']:.1f}x slower than idle): {proc.args}"
             # A timeout is ALWAYS a recorded failure -- a setup step (`git init`, check=True) that
             # times out must not pass silently -- unless timeout_fixtures asked for one on purpose.
             if not _EXPECTING_TIMEOUT:
@@ -1008,6 +1064,37 @@ def guard_bash_fixtures() -> None:
 # guard that blocks everything is as useless as one that blocks nothing.
 
 
+# ---- guard-claims.sh under pipefail with a long command (#1579) --------------------------------------------------------
+def guard_claims_pipe_fixtures() -> None:
+    """A `gh pr create` FIRST and a long tail after it: `grep -q` quits at the early match, `printf` takes SIGPIPE once the
+    text outgrows the pipe buffer, and `pipefail` turned that 141 into "no match", so the guard exited 0 having checked
+    nothing (#1579; the class of #1570 in guard-bash.sh). The tail is 10,000 lines, well past any pipe buffer."""
+    TAIL = "\n" + "echo line\n" * 10000
+    NUMERIC = "The selftest reports **292 assertions**, up from 285.\n"
+    TPL = "## What changed\n\n## How to test\n"
+
+    def run(cmd: str, body: str | None = None, template: str | None = None) -> int:
+        with tempfile.TemporaryDirectory() as td:
+            if template is not None:
+                (Path(td) / ".github").mkdir()
+                (Path(td) / ".github" / "pull_request_template.md").write_text(template, encoding="utf-8")
+            if body is not None:
+                (Path(td) / "body.md").write_text(body, encoding="utf-8")
+                cmd = cmd.replace("BODY", str(Path(td) / "body.md"))
+            return run_hook("guard-claims.sh", cwd=Path(td), stdin=json.dumps({"tool_input": {"command": cmd}}),
+                            env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])})[0]
+
+    check("guard-claims (#1579): an unchecked claim is blocked when a 10,000-line tail FOLLOWS the gh pr create",
+          run("gh pr create --base dev --body-file BODY" + TAIL, NUMERIC) == 2, "exit 0: checked nothing")
+    check("guard-claims (#1579): ...and the same in an issue comment",
+          run("gh issue comment 1579 --body-file BODY" + TAIL, NUMERIC) == 2, "exit 0: checked nothing")
+    check("guard-claims (#1579): a missing template section is blocked with the long tail after it",
+          run("gh pr create --base dev --body-file BODY" + TAIL, "## What changed\nTidy the README.\n", TPL) == 2,
+          "exit 0: template not checked")
+    check("guard-claims (#1579) control: the 10,000-line tail alone is not a claim-carrying command, and passes",
+          run(TAIL.strip()) == 0, "blocked a benign command")
+
+
 def guard_claims_fixtures() -> None:
     def run(cmd: str, body: str | None = None, env_extra=None, template: str | None = None,
             with_output: bool = False):
@@ -1167,6 +1254,11 @@ def guard_claims_fixtures() -> None:
             (a / "$NOWHERE").mkdir()
             (a / "sub").mkdir()             # `cd sub` resolves here, so only CDPATH can make it unknown
             (a / "~nobody").mkdir()         # likewise, only the refusal of `~user` keeps that fixture red
+            # #1605: directories whose names the shell would EXPAND if unquoted (`cd [b]` runs in `b`, `cd {b1,b2}` in `b1`, never in
+            # these). Each carries B's template, so reading the name literally is visible: exit 2 and B's "## Risk".
+            for glob_dir in ("[b]", "{b1,b2}", "x*", "y?", "?", "*"):
+                (a / glob_dir / ".github").mkdir(parents=True)
+                (a / glob_dir / ".github" / "pull_request_template.md").write_text(TPL_B, encoding="utf-8")
             (b / "sub").mkdir()             # A/linkSub -> B/sub: `cd -P linkSub/..` is B, a logical one A
             (a / "linkSub").symlink_to(b / "sub")
             for odd in ("x#y", "x #y"):     # a `#` that is not a comment: B's template one level down
@@ -1212,6 +1304,11 @@ def guard_claims_fixtures() -> None:
             ("`cd B;`", "cd B_DIR; gh pr create --body-file BODY"),
             ("a newline after the cd", "cd B_DIR\ngh pr create --body-file BODY"),
             ("a quoted path", 'cd "B_DIR" && gh pr create --body-file BODY'),
+            ("a double-quoted glob path, which the shell takes literally (#1605)", 'cd "[b]" && gh pr create --body-file BODY'),
+            ("a single-quoted brace path, which the shell takes literally (#1605)", "cd '{b1,b2}' && gh pr create --body-file BODY"),
+            ("a single-quoted `?`, which the shell takes literally (#1605)", "cd '?' && gh pr create --body-file BODY"),
+            ("a single-quoted `*`, which the shell takes literally (#1605)", "cd '*' && gh pr create --body-file BODY"),
+            ("a backslash-escaped bracket path, which the shell takes literally (#1605)", "cd \\[b\\] && gh pr create --body-file BODY"),
             ("two cds in a row", "cd B_DIR/.. && cd b && gh pr create --body-file BODY"),
             ("a cd with its stderr redirected", "cd B_DIR 2>/dev/null && gh pr create --body-file BODY"),
             ("a cd with its stdout redirected", "cd B_DIR >/dev/null && gh pr create --body-file BODY"),
@@ -1244,6 +1341,7 @@ def guard_claims_fixtures() -> None:
     check("guard-claims: with no cd, a command before gh leaves it in the starting repo (control)",
           run_in("git push -u origin x && gh pr create --body-file BODY", FITS_B) == 2, "exit 0")
     for label, cmd in (("known-safe commands and an assignment before gh", "X=1 git status && echo ok | head -1; gh pr create --body-file BODY"),
+                       ("a `[ ... ]` test before gh: a lone `[` is not a glob (#1605)", "[ -d . ] && gh pr create --body-file BODY"),
                        ("a logical `cd link/..`, as bash resolves it", "cd linkSub/.. && gh pr create --body-file BODY")):
         rc, out = run_in(cmd, "Tidy the README.\n", with_output=True)
         check(f"guard-claims: {label} is judged in the starting repo (control, #1516 round 4)",
@@ -1344,6 +1442,14 @@ def guard_claims_fixtures() -> None:
             ("`X=1 . file`", "X=1 . /dev/null && gh pr create --body-file BODY"),
             ("a cd with an input redirect", "cd B_DIR </dev/null && gh pr create --body-file BODY"),
             ("a cd to ~user", "cd ~nobody && gh pr create --body-file BODY"),
+            ("an unquoted `[b]` glob in a cd path (#1605)", "cd [b] && gh pr create --body-file BODY"),
+            ("an unquoted `{b1,b2}` brace list in a cd path (#1605)", "cd {b1,b2} && gh pr create --body-file BODY"),
+            ("an unquoted `x*` glob in a cd path (#1605)", "cd x* && gh pr create --body-file BODY"),
+            ("an unquoted `y?` glob in a cd path (#1605)", "cd y? && gh pr create --body-file BODY"),
+            ("a bare unquoted `?` as a cd path (#1605)", "cd ? && gh pr create --body-file BODY"),
+            ("a bare unquoted `*` as a cd path (#1605)", "cd * && gh pr create --body-file BODY"),
+            ("an unquoted `[b]` glob followed by `/..` (#1605: normpath would collapse it back to the start)", "cd [b]/.. && gh pr create --body-file BODY"),
+            ("an unquoted `x*` glob followed by `/..` (#1605)", "cd x*/.. && gh pr create --body-file BODY"),
             ("`pushd`", "pushd B_DIR && gh pr create --body-file BODY"),
             ("a bare `cd`", "cd && gh pr create --body-file BODY"),
             ("`cd -`", "cd - && gh pr create --body-file BODY"),
@@ -3141,6 +3247,62 @@ def ci_verdict_hint_fixtures() -> None:
               code == 0 and out.strip() == "", f"exit {code}: {out.strip()[:120]!r}")
 
 
+def session_end_fixtures() -> None:
+    """#1582 slice C: session-end.sh reaps the session's own stopped orphans, fails open, and never blocks.
+
+    The reaper's own fixtures (the decoy, the other session, the running orphan, the child with a parent) live in
+    `session_reaper.py --selftest`; this proves the HOOK reaches it with the payload and stays silent and exit 0 when
+    it cannot."""
+    root = str(HOOKS.parents[1])
+    sid = str(uuid.uuid4())      # unique per run: guards run in parallel (#1646 R2)
+    leaf = ("import os, signal, sys, time\nopen(sys.argv[1], 'w').write(str(os.getpid()))\n"
+            "os.kill(os.getpid(), signal.SIGSTOP)\ntime.sleep(120)\n")
+    parent = ("import subprocess, sys\nN = subprocess.DEVNULL\n"
+              f"subprocess.Popen([sys.executable, '-c', {leaf!r}, sys.argv[1]], start_new_session=True, stdin=N, stdout=N, stderr=N)\n")
+    with tempfile.TemporaryDirectory() as td:
+        proj, pidfile = Path(td), Path(td) / "leaf.pid"
+        env = {k: v for k, v in os.environ.items() if k != "CLAUDE_CODE_SESSION_ID"}
+        env["CLAUDE_CODE_SESSION_ID"] = sid
+        _run([sys.executable, "-c", parent, str(pidfile)], cwd=proj, env=env, timeout=30)
+        pid = 0
+        for _ in range(100):
+            if pidfile.exists() and pidfile.read_text().strip():
+                pid = int(pidfile.read_text())
+                if _run(["ps", "-o", "stat=", "-p", str(pid)], cwd=proj, capture_output=True, text=True,
+                        timeout=10).stdout.strip().startswith("T"):
+                    break
+            time.sleep(0.05)
+
+        def alive() -> bool:
+            out = _run(["ps", "-o", "stat=", "-p", str(pid)], cwd=proj, capture_output=True, text=True,
+                       timeout=10).stdout.strip()
+            return bool(out) and not out.startswith("Z")
+
+        try:
+            check("session-end: the fixture is a stopped orphan before the hook runs", pid > 0 and alive(), f"pid {pid}")
+            code, out = run_hook("session-end.sh", cwd=proj, stdin=json.dumps({"session_id": "ffffffff-0000-0000-0000-000000000000"}),
+                                 env_extra={"CLAUDE_PLUGIN_ROOT": root})
+            check("session-end: another session's id reaps nothing and says nothing",
+                  code == 0 and out.strip() == "" and alive(), f"exit {code}: {out.strip()[:120]!r}, alive {alive()}")
+            code, out = run_hook("session-end.sh", cwd=proj, stdin=json.dumps({"session_id": sid, "hook_event_name": "SessionEnd"}),
+                                 env_extra={"CLAUDE_PLUGIN_ROOT": root})
+            time.sleep(0.3)
+            check("session-end: this session's stopped orphan is reaped and the hook exits 0",
+                  code == 0 and not alive(), f"exit {code}: {out.strip()[:120]!r}, alive {alive()}")
+        finally:
+            if pid > 0:
+                for sig in (signal.SIGCONT, signal.SIGKILL):
+                    try:
+                        os.kill(pid, sig)
+                    except (ProcessLookupError, PermissionError):
+                        pass
+        # `unset` and `env_extra` must not meet: run_hook unsets first and then adds env_extra back.
+        for label, kwargs in (("an unreadable payload", {"stdin": "not json", "env_extra": {"CLAUDE_PLUGIN_ROOT": root}}),
+                              ("CLAUDE_PLUGIN_ROOT unset", {"stdin": json.dumps({"session_id": sid}), "unset": ("CLAUDE_PLUGIN_ROOT",)})):
+            code, out = run_hook("session-end.sh", cwd=proj, **kwargs)
+            check(f"session-end: {label} exits 0 silently", code == 0 and out.strip() == "", f"exit {code}: {out.strip()[:120]!r}")
+
+
 def timeout_fixtures() -> None:
     """#1469: a subprocess that times out fails ITS fixture by name; the suite never crashes.
 
@@ -3199,7 +3361,51 @@ def timeout_fixtures() -> None:
     del FAILURES[before:]
     check("an UNEXPECTED timeout is recorded as a failure, never passed silently",
           len(recorded) == 1 and "TIMEOUT after" in recorded[0], f"{recorded}")
+    # THE BUDGET SCALES WITH THE MACHINE (#1638): pure arithmetic first, then the wiring.
+    check("an idle machine gets the floor, and a fixture's own larger bound is kept",
+          hook_limit(0, 1.0) == 180.0 and hook_limit(600, 1.0) == 600.0 and hook_limit(60, 1.0) == 180.0)
+    check("a slower machine gets proportionally more, so a loaded machine is not read as a hung hook",
+          hook_limit(0, 3.0) == 540.0 and hook_limit(100, 2.5) == 450.0)
+    check("a machine measured faster than idle never shrinks the budget", hook_limit(0, 0.3) == 180.0)
+    check("the budget stops at the cap, so a real hang under load still ends", hook_limit(0, 1000.0) == HOOK_BUDGET_CAP)
+    check("a fixture that asked for more than the cap keeps what it asked for", hook_limit(3600, 5.0) == 3600.0)
+    probe = {"slowdown": 1.0, "at": None}
+    saved_cal = dict(_CALIBRATION)
+    try:
+        ticks = iter([0.0, 5.0, 31.0])
+        measured = []
+        _CALIBRATION.update(probe)
+        s1 = machine_slowdown(measure=lambda: (measured.append(1), 0.6)[1], now=lambda: next(ticks))
+        s2 = machine_slowdown(measure=lambda: (measured.append(1), 0.06)[1], now=lambda: next(ticks))
+        s3 = machine_slowdown(measure=lambda: (measured.append(1), 0.06)[1], now=lambda: next(ticks))
+    finally:
+        _CALIBRATION.update(saved_cal)
+    check("the machine's slowdown is the calibration over its idle figure", abs(s1 - 10.0) < 1e-9, f"{s1}")
+    check("...measured once per refresh window, not once per subprocess", s2 == s1 and len(measured) == 2, f"{s2} {measured}")
+    check("...and again after the window, so a machine that calmed down gets its floor back", abs(s3 - 1.0) < 1e-9, f"{s3}")
+    real_call = subprocess.call
+    seen_timeouts: list = []
+
+    def _stalled(*a, **k):
+        seen_timeouts.append(k.get("timeout"))
+        raise subprocess.TimeoutExpired("calibration", 60)
+    subprocess.call = _stalled
+    try:
+        stalled = _calibrate()
+    finally:
+        subprocess.call = real_call
+    check("a calibration that cannot finish reads as the heaviest load, not as idle",
+          abs(stalled / CALIBRATION_IDLE - HOOK_BUDGET_CAP / HOOK_BUDGET_FLOOR) < 1e-9, f"{stalled}")
+    check("the calibration is itself bounded: every command it starts has a timeout",
+          seen_timeouts and all(isinstance(t, (int, float)) and 0 < t <= CALIBRATION_TIMEOUT for t in seen_timeouts), f"{seen_timeouts}")
+    check("one outlier among calm samples does not set the budget (the median of three)",
+          _calibrate(sample=iter([0.06, 0.5, 0.06]).__next__) == 0.06 and _calibrate(sample=iter([0.5, 0.06, 0.06]).__next__) == 0.06)
+    check("...but a machine that is slow in most samples is read as slow",
+          _calibrate(sample=iter([0.5, 0.06, 0.5]).__next__) == 0.5)
+    check("a calibration that runs reports a plausible, positive time", 0 < _calibrate() < 60)
     src = Path(__file__).read_text(encoding="utf-8")
+    check("every subprocess's bound goes through hook_limit, never a bare number",
+          src.count("else hook_limit(requested, " + "machine_slowdown())") == 1)
     raw = src.count("subprocess" + ".run(")
     check("every subprocess in this suite goes through the no-crash wrapper", raw == 0,
           f"{raw} direct subprocess.run call(s); every one must go through _run")
@@ -3254,7 +3460,9 @@ def _worktree_kit() -> types.SimpleNamespace:
         check(label, code == 2 and "BLOCKED by rails-flow worktree guard" in out, f"exit {code}: {out.strip()[:200]!r}")
         for n in needles:
             # The temp directory differs per run, and `--match` compares the survey's labels with the run's.
-            check(f"...and the message names {re.sub(r'/\S*?/tmp\w{8}(?=/|$)', '<tmp>', n)!r}", n in out, out.strip()[:300])
+            # Hoisted: a backslash inside an f-string expression is a SyntaxError before Python 3.12 (#1597).
+            shown = re.sub(r'/\S*?/tmp\w{8}(?=/|$)', '<tmp>', n)
+            check(f"...and the message names {shown!r}", n in out, out.strip()[:300])
 
     def allowed(label: str, res: tuple[int, str]) -> None:
         check(label, res[0] == 0, f"exit {res[0]}: {res[1].strip()[:200]!r}")
@@ -3513,7 +3721,7 @@ def guard_worktree_pointer_fixtures() -> None:
     def start(repo: Path, sid: str | None = "SESS-A", **env) -> tuple[int, str]:
         stdin = json.dumps({"session_id": sid, "hook_event_name": "SessionStart"}) if sid is not None else "not json"
         return run_hook("session-start.sh", cwd=repo, stdin=stdin, unset=("CLAUDE_PROJECT_DIR",),
-                        env_extra=dict({"RAILS_FLOW_ZOMBIE_WARN": "100000"}, **env))
+                        env_extra=dict({"RAILS_FLOW_ZOMBIE_WARN": "100000", "RAILS_FLOW_STOPPED_ORPHAN_WARN": "100000"}, **env))
 
     with tempfile.TemporaryDirectory() as td:
         repo = new_repo(td)
@@ -3537,6 +3745,39 @@ def guard_worktree_pointer_fixtures() -> None:
                            env_extra={"RAILS_FLOW_ZOMBIE_WARN": bad}, unset=("CLAUDE_PROJECT_DIR",))[1]
             check(f"resume pointer: RAILS_FLOW_ZOMBIE_WARN={bad} is clamped, so zero zombies prints no '0 zombie processes' line",
                   "zombie" not in out and "resume in place" in out, out[-200:])
+        # #1582 slice C: the stopped-orphan advisory. A stub `ps` lists stopped orphans for `-U`: two REAL processes (one
+        # whose environment names a session, one whose ARGUMENT only spells the entry, #1646 S1) and three made-up pids,
+        # plus a running one and a stopped one with a parent that must not count.
+        orphans = Path(td) / "orphans"
+        orphans.mkdir()
+        owner_id = str(uuid.uuid4())
+        env_owned = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], stdin=subprocess.DEVNULL,
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                     env={**os.environ, "CLAUDE_CODE_SESSION_ID": owner_id, "AWS_SECRET": "hunter2"})
+        spoofed_id = str(uuid.uuid4())
+        argv_spoof = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)", f"CLAUDE_CODE_SESSION_ID={spoofed_id}"],
+                                      stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                      env={k: v for k, v in os.environ.items() if k != "CLAUDE_CODE_SESSION_ID"})
+        _stub(orphans, "ps", 'case "$*" in\n'
+              f'  *-U*) printf "{env_owned.pid} T 1\\n{argv_spoof.pid} Ts 1\\n13 T 1\\n14 T 1\\n15 S 1\\n16 T 99\\n" ;;\n'
+              'esac\nexit 0')
+        try:
+            out = run_hook("session-start.sh", cwd=repo, stdin=json.dumps({"session_id": "SESS-A"}), path_prefix=[orphans],
+                           env_extra={"RAILS_FLOW_ZOMBIE_WARN": "100000", "RAILS_FLOW_STOPPED_ORPHAN_WARN": "3"},
+                           unset=("CLAUDE_PROJECT_DIR",))[1]
+            check("stopped orphans: four stopped orphans (ppid 1) are counted, a running one and a stopped one with a parent are not",
+                  "4 stopped orphan processes" in out, out[-300:])
+            check("stopped orphans: the owning session is named from the environment", owner_id in out, out[-300:])
+            check("stopped orphans: a session id that only an ARGUMENT spells is not shown as an owner", spoofed_id not in out, out[-300:])
+            check("stopped orphans: nothing else from the environment is printed", "hunter2" not in out and "AWS_SECRET" not in out, out[-300:])
+            out = run_hook("session-start.sh", cwd=repo, stdin=json.dumps({"session_id": "SESS-A"}), path_prefix=[orphans],
+                           env_extra={"RAILS_FLOW_ZOMBIE_WARN": "100000", "RAILS_FLOW_STOPPED_ORPHAN_WARN": "5"},
+                           unset=("CLAUDE_PROJECT_DIR",))[1]
+            check("stopped orphans: below the threshold the advisory is silent", "stopped orphan" not in out, out[-300:])
+        finally:
+            for proc in (env_owned, argv_spoof):
+                proc.kill()
+                proc.wait()
         # S4: the zombie scan must finish inside session-start's own 10 s hook timeout, even when `ps` hangs.
         slow_ps = Path(td) / "slow-ps"
         slow_ps.mkdir()
@@ -3593,6 +3834,76 @@ def guard_worktree_pointer_fixtures() -> None:
 # killing the hook's descendants: orphaned awk processes ran 51 minutes, one 23 hours, and the load hit 348.
 # `lib/deadline.sh` runs each hook's work in its own process group under a wall-clock deadline and kills the whole
 # group. The stub below is the incident: an `awk` that hangs and leaves a sleeper behind, every pid recorded.
+# ---- stop-where.sh + session-start.sh's where-stopped lines (#1639) -----------------------------------------------------
+def where_stopped_fixtures() -> None:
+    """Where this worktree stopped: the Stop hook writes the facts file and warns ONCE about unsaved work; SessionStart
+    points at it. Advisory, so every fixture also proves it fails open (exit 0, silent) rather than stopping a turn."""
+    def g(cwd: Path, *args: str) -> None:
+        _run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *args], cwd=cwd, check=True, capture_output=True)
+
+    def stop(repo: Path, **kw) -> tuple[int, str]:
+        return run_hook("stop-where.sh", cwd=repo, stdin=json.dumps({"hook_event_name": "Stop"}), **kw)
+
+    def start(repo: Path) -> str:
+        return run_hook("session-start.sh", cwd=repo, stdin=json.dumps({"session_id": "S", "hook_event_name": "SessionStart"}),
+                        unset=("CLAUDE_PROJECT_DIR",), env_extra={"RAILS_FLOW_ZOMBIE_WARN": "100000"})[1]
+
+    hooks = json.loads((HOOKS.parent / "hooks.json").read_text())["hooks"]
+    check("where-stopped: stop-where.sh is registered on Stop",
+          any("stop-where.sh" in h["command"] for e in hooks["Stop"] for h in e["hooks"]))
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td).resolve()
+        remote, repo = root / "remote.git", root / "repo"
+        g(root, "init", "-q", "--bare", str(remote))
+        g(root, "init", "-q", "-b", "dev", str(repo))
+        (repo / "a").write_text("a\n")
+        g(repo, "add", "a")
+        g(repo, "commit", "-q", "-m", "one")
+        g(repo, "remote", "add", "origin", str(remote))
+        g(repo, "push", "-q", "origin", "dev")
+        handoff = Path(_run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], cwd=repo,
+                            capture_output=True, text=True).stdout.strip()) / "handoff"
+
+        code, out = stop(repo)
+        check("where-stopped: clean and pushed, the Stop hook exits 0 and says nothing", code == 0 and out.strip() == "", out)
+        files = list(handoff.glob("*.md")) if handoff.is_dir() else []
+        check("where-stopped: the facts file is written under <git-common-dir>/handoff, one per worktree",
+              len(files) == 1 and files[0].name.startswith("repo-"), str(files))
+        out = start(repo)
+        check("where-stopped: clean and pushed, SessionStart prints neither line though the file exists (#1643 D1)",
+              "unsaved work" not in out and "where this worktree stopped" not in out, out[-300:])
+
+        (repo / "b").write_text("b\n")
+        g(repo, "add", "b")
+        g(repo, "commit", "-q", "-m", "two")
+        (repo / "c").write_text("c\n")
+        code, out = stop(repo)
+        msg = json.loads(out).get("systemMessage", "") if out.strip().startswith("{") else ""
+        check("where-stopped: unpushed and uncommitted work is named once, as a systemMessage, exit 0",
+              code == 0 and "1 commit not on any remote" in msg and "1 uncommitted file" in msg, out)
+        check("where-stopped: the same counts on the next turn are not repeated", stop(repo)[1].strip() == "")
+        text = files[0].read_text() if files else ""
+        check("where-stopped: the file holds the branch, both counts and the dirty path",
+              "- branch: dev" in text and "- commits not on any remote: 1" in text and "  - c" in text, text[:300])
+
+        out = start(repo)
+        check("where-stopped: SessionStart states the unsaved work and points at the file",
+              "- unsaved work: 1 commit not on any remote, 1 uncommitted file" in out
+              and f"where this worktree stopped (last turn, " in out and str(files[0] if files else "?") in out, out[-400:])
+
+        # FAIL OPEN: a python3 that fails never stops the turn (a hung git is bounded by the lib's own deadline, which
+        # where_stopped.py --selftest proves; the harness does not hang a real git here).
+        bad = root / "bad-python"
+        bad.mkdir()
+        _stub(bad, "python3", "exit 7")
+        code, out = stop(repo, path_prefix=[bad])
+        check("where-stopped: a failing interpreter is silent and exits 0", code == 0 and out.strip() == "", out)
+        outside = root / "plain"
+        outside.mkdir()
+        code, out = stop(outside)
+        check("where-stopped: outside a git repository, silent and exit 0", code == 0 and out.strip() == "", out)
+
+
 def deadline_fixtures() -> None:
     guard = HOOKS / "guard-bash.sh"
     base_env = {k: v for k, v in os.environ.items() if k not in ("QA_ALLOW_MAIN", "RAILS_FLOW_LANE", "RAILS_FLOW_HOOK_DEADLINE")}
@@ -3921,13 +4232,13 @@ GROUPS = {
     "stop_gate": stop_gate_fixtures, "guard_lane": guard_lane_fixtures,
     "guard_migrate": guard_migrate_fixtures, "lint_ruby": lint_ruby_fixtures,
     "self_consistency": self_consistency_fixtures, "guard_bash": guard_bash_fixtures,
-    "guard_claims": guard_claims_fixtures, "release_gate": release_gate_fixtures,
+    "guard_claims": guard_claims_fixtures, "guard_claims_pipe": guard_claims_pipe_fixtures, "release_gate": release_gate_fixtures,
     "release_gate_effects": release_gate_effects_fixtures, "release_gate_repos": release_gate_repos_fixtures,
     "release_gate_refs": release_gate_refs_fixtures,
-    "ci_verdict_hint": ci_verdict_hint_fixtures, "timeout": timeout_fixtures,
+    "ci_verdict_hint": ci_verdict_hint_fixtures, "session_end": session_end_fixtures, "timeout": timeout_fixtures,
     "guard_worktree": guard_worktree_fixtures, "guard_worktree_parse": guard_worktree_parse_fixtures,
     "guard_worktree_failopen": guard_worktree_failopen_fixtures, "guard_worktree_pointer": guard_worktree_pointer_fixtures,
-    "deadline": deadline_fixtures,
+    "deadline": deadline_fixtures, "where_stopped": where_stopped_fixtures,
 }
 
 
@@ -3943,11 +4254,11 @@ GROUPS = {
 # repos, refs and deadline groups and the four worktree groups (about 60 CPU-s, about 80 s of wall). EVERY group must be in exactly one part: a group in none
 # would never run in the doctor, which is the vacuous gate this repository keeps finding; the selftest checks it below.
 PARTS = {
-    "a": ["stop_gate", "guard_lane", "guard_migrate", "lint_ruby", "self_consistency", "guard_bash", "guard_claims",
-          "ci_verdict_hint", "timeout"],
+    "a": ["stop_gate", "guard_lane", "guard_migrate", "lint_ruby", "self_consistency", "guard_bash", "guard_claims", "guard_claims_pipe",
+          "ci_verdict_hint", "session_end", "timeout"],
     "b": ["release_gate", "release_gate_effects"],
     "c": ["release_gate_repos", "release_gate_refs", "guard_worktree", "guard_worktree_parse",
-          "guard_worktree_failopen", "guard_worktree_pointer", "deadline"],
+          "guard_worktree_failopen", "guard_worktree_pointer", "deadline", "where_stopped"],
 }
 
 

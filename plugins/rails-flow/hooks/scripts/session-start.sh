@@ -15,6 +15,9 @@ base="main"; git show-ref --verify --quiet refs/heads/dev && base="dev"
 echo "## rails-flow session context"
 echo "- branch: ${branch:-detached} (base: $base) | uncommitted files: $dirty"
 echo "- last commit: $last"
+# #1639: unpushed and uncommitted work, and where this worktree stopped (the facts file the Stop hook rewrites each turn).
+# Advisory, fail open, SILENT when there is nothing to say; the judgement lives in lib/where_stopped.py.
+python3 "${BASH_SOURCE[0]%/*}/lib/where_stopped.py" pointer 2>/dev/null
 # #1585: ONE line, only when a coordinator is recorded for this repository and THIS session holds no lane on it. A session
 # cannot write the coordination record, so the line says to tell the coordinator its current name (names rotate at every
 # start). Silent for everyone else, so it costs no bytes here; fail open (an advisory never blocks a session start).

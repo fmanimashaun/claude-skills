@@ -58,7 +58,7 @@ from pathlib import Path
 
 import content_floors
 
-from source_text import strip_comments
+from source_text import is_html, strip_comments
 
 # The layout recipes a surface must not wrap its content in.
 RECIPES = ("stack", "cluster", "grid-auto", "switcher", "sidebar", "reel", "center", "cover")
@@ -185,13 +185,15 @@ def co_occurring_recipe(source: str) -> str | None:
     return None
 
 
-def wraps_slot_in_recipe(source: str, sibling: str = "") -> str | None:
+def wraps_slot_in_recipe(source: str, sibling: str = "", *, html: bool = False) -> str | None:
     """The recipe a slot is wrapped in, or None. Returns the recipe so the finding can name it."""
     # COMMENTS ARE PROSE (#1128). A file explaining why the wrapper was removed used to re-trip the
     # gate its own fix satisfies. `run()` still tests the RAW source for the `# composition:`
     # declaration, which lives in a comment on purpose.
-    source = strip_comments(source)
-    slots = declared_slots(source, strip_comments(sibling))
+    # `html` is whether SOURCE is a template (#1466, 02's review of #1651); its sibling is the other half of the pair, so
+    # the other kind: an `.html.erb` with a `.rb` beside it, or the reverse.
+    source = strip_comments(source, html=html)
+    slots = declared_slots(source, strip_comments(sibling, html=not html))
     if not renders_a_slot(source, slots):
         return None                      # renders no slot; nothing arbitrary to arrange
     # MARKUP GETS CONTAINMENT; RUBY-BUILT MARKUP GETS CO-OCCURRENCE. When no element here carries a
@@ -226,7 +228,7 @@ def run(root: Path) -> tuple[list[str], int]:
         # The DECLARATION lives in the `.rb`; the rendering lives in the `.html.erb`. Reading one
         # without the other is why a template's attribute readers looked like slots.
         sibling = _sibling_source(path)
-        recipe = wraps_slot_in_recipe(source, sibling)
+        recipe = wraps_slot_in_recipe(source, sibling, html=is_html(path.name))
         if not recipe:
             continue
         if DECLARES.search(source):

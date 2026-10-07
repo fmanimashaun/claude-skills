@@ -54,6 +54,32 @@ Downstream projects using the toolchain file issues here (via rails-flow's
   One issue per branch is the default; **related issues may share one branch** under the
   conditions below.
 
+### The full sweep runs before a promotion and the release reuses its record (#1635)
+
+The v1.154.0 release re-ran an hour-long sweep that the identical dev tree had already passed, and one
+gate outlived its timeout (attempt 1 ran 2 h; its log was not kept, so the hung gate is unidentified).
+Owner's decision on #1635 ("implement ur recommendation"): PRs and dev pushes run `--fast`; the full
+sweep runs locally before a promotion and is recorded against the exact tree; `release.yml` reuses it
+only for an identical tree.
+
+- **The form is a commit status `full-sweep` whose description is `tree=<sha>`, posted by `gh`.** A
+  committed file would change the tree it vouches for, so it could never be true of its own commit.
+  The tree and not the commit, because the promotion is a merge commit over the same content. The
+  lookup walks dev's newest 30 commits for one with that tree. Posting needs repository write access,
+  the trust already placed in whoever promotes; it is NOT produced by a hosted runner (accepted).
+- **Ordinary gate that outlives `DEFAULT_TIMEOUT` is FAIL, named**; the process-group kill already existed
+  (#1459, #1525). A slow gate off CI still skips (a busy laptop), under `--require-slow` it fails.
+- **The cost ratchet is hosted-only.** `work` per guard is wall seconds (`time.monotonic()` around the baseline and each
+  mutant, summed over jobs), so it moves with machine load and cannot be compared across machines. The v1.154.0 local
+  release failed 15 of 2688 mutations at load 30 to 80, all ratchet and no survivor. `ratchet_enforced` passes `--ratchet`
+  only when `GITHUB_ACTIONS=true`; a local proof keeps the survivor check. Cost: the ratchet now runs only where a hosted
+  full sweep runs (the release fallback, or a dispatched gates.yml), no longer on every dev push. Six guards were "not on
+  record" locally because the hosted run had them at 61 to 95 s, under the 120 s new-guard limit, and the record holds only
+  guards over 60 s that someone recorded: five were over it and are now recorded; `release_evidence` is under the floor there.
+- **Failure modes of the reuse:** any error looking up the proof runs the full sweep; `record` refuses a
+  dirty tree, a failure or a skipped gate. `sweep_proof.py check-wiring` pins release.yml, gates.yml and
+  release_local.sh together. Not verified: the 2 h gate's identity.
+
 ### Grouping related issues on one branch — the preferred path
 
 **Group related issues and knock them off together.** It covers more ground per branch, and for

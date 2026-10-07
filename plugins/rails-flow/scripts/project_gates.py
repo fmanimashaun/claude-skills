@@ -1108,9 +1108,9 @@ def selftest() -> int:
     check("falls back to the first line when nothing looks like a finding",
           summarise(_t, 3)[0] == "something opaque happened",
           f"got {summarise(_t, 3)[0]!r}")
-    check("empty output falls back to the exit code",
-          summarise("   \n\n", 2)[0] == "exit 2",
-          f"got {summarise('   \n\n', 2)[0]!r}")
+    # Hoisted: a backslash inside an f-string expression is a SyntaxError before Python 3.12 (#1597).
+    blank = summarise("   \n\n", 2)[0]
+    check("empty output falls back to the exit code", blank == "exit 2", f"got {blank!r}")
     check("the detail is capped at 160 chars",
           len(summarise("error " + "x" * 500, 1)[0]) == 160,
           f"got {len(summarise('error ' + 'x' * 500, 1)[0])}")

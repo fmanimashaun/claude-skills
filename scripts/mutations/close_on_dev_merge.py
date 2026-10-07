@@ -28,6 +28,19 @@ GUARD = Guard(
             "        seen.append(n)",
             "Fixes #12",
         ),
+        # #1637: v1.154.0 cited #1628, #1626 and #1607 as `(Fixes #n; ...)` and none was told it shipped.
+        Mutation(
+            "a (Fixes #n) or (Closes #n) citation is not read, so those issues are never told they shipped",
+            r'CITATION = re.compile(r"\(\s*(?:(?:Fixes|Closes)\s+)?(#\d+(?:\s*[,/]\s*#\d+)*)", re.I)',
+            r'CITATION = re.compile(r"\((#\d+(?:\s*[,/]\s*#\d+)*)")',
+            "shipped_issues reads (Fixes #n; ...) and (Closes #n)",
+        ),
+        Mutation(
+            "(Refs #n) opens a citation too, so a partial fix is told it shipped",
+            r'CITATION = re.compile(r"\(\s*(?:(?:Fixes|Closes)\s+)?(#\d+(?:\s*[,/]\s*#\d+)*)", re.I)',
+            r'CITATION = re.compile(r"\(\s*(?:(?:Fixes|Closes|Refs)\s+)?(#\d+(?:\s*[,/]\s*#\d+)*)", re.I)',
+            "shipped_issues leaves (Refs #n) out",
+        ),
         Mutation(
             "the shipped note reads every #n in the notes, not only the (#n) citations",
             '    return sorted({int(n) for run in CITATION.findall(notes) for n in re.findall(r"#(\\d+)", run)})',
@@ -64,22 +77,22 @@ GUARD = Guard(
         Mutation(
             # review of PR #1488
             'a grouped citation (#a, #b) is read as nothing',
-            'CITATION = re.compile(r"\\((#\\d+(?:\\s*[,/]\\s*#\\d+)*)")',
-            'CITATION = re.compile(r"\\((#\\d+)")',
+            'CITATION = re.compile(r"\\(\\s*(?:(?:Fixes|Closes)\\s+)?(#\\d+(?:\\s*[,/]\\s*#\\d+)*)", re.I)',
+            'CITATION = re.compile(r"\\(\\s*(?:(?:Fixes|Closes)\\s+)?(#\\d+)", re.I)',
             'shipped_issues reads single, grouped and annotated citations',
         ),
         Mutation(
             # v1.153.0 missed #1404 this way
             'a citation whose annotation holds a markdown link is missed again',
-            'CITATION = re.compile(r"\\((#\\d+(?:\\s*[,/]\\s*#\\d+)*)")',
-            'CITATION = re.compile(r"\\((#\\d+[^()]*)\\)")',
+            'CITATION = re.compile(r"\\(\\s*(?:(?:Fixes|Closes)\\s+)?(#\\d+(?:\\s*[,/]\\s*#\\d+)*)", re.I)',
+            'CITATION = re.compile(r"\\(\\s*(?:(?:Fixes|Closes)\\s+)?(#\\d+[^()]*)\\)", re.I)',
             'shipped_issues reads single, grouped and annotated citations',
         ),
         Mutation(
             # independent review of PR #1533
             'a slash pair (#a/#b) loses its second number again',
-            'CITATION = re.compile(r"\\((#\\d+(?:\\s*[,/]\\s*#\\d+)*)")',
-            'CITATION = re.compile(r"\\((#\\d+(?:\\s*,\\s*#\\d+)*)")',
+            'CITATION = re.compile(r"\\(\\s*(?:(?:Fixes|Closes)\\s+)?(#\\d+(?:\\s*[,/]\\s*#\\d+)*)", re.I)',
+            'CITATION = re.compile(r"\\(\\s*(?:(?:Fixes|Closes)\\s+)?(#\\d+(?:\\s*,\\s*#\\d+)*)", re.I)',
             'shipped_issues reads single, grouped and annotated citations',
         ),
     ),

@@ -42,6 +42,7 @@ import coordination  # noqa: E402
 INTEGRATION = ("origin/dev", "dev", "origin/main", "main", "origin/master", "master")
 PREFIX = "BLOCKED by rails-flow worktree guard:"
 ZOMBIE_WARN = 50
+STOPPED_ORPHAN_WARN = 3     # a stopped process nobody waits on is never normal, so far fewer than zombies
 # The DOCUMENTED forms only: `issue-77` / `issue_77` (after a separator or at the start), and `77-slug` / `.../77-slug`
 # (a number that STARTS a path segment). `slug-20` is not issue 20 (ae's review of #1596: `node-20` and `ubuntu-20`).
 ISSUE_WORD = re.compile(r"(?:^|[/_-])issue[-_]?(\d{2,6})(?=[-_/]|$)")
@@ -376,6 +377,40 @@ def zombies() -> tuple[int, list[tuple[int, str, int]]]:
     return sum(by_parent.values()), names
 
 
+def stopped_orphans() -> tuple[int, list[tuple[int, str]]]:
+    """(count of this user's STOPPED ORPHANS, the first few as (pid, session id or "?")) (#1582 slice C).
+
+    Stopped (state T) and re-parented to pid 1: a process a session stopped and left, which no one will ever resume.
+    The owner is read from the process's ENVIRONMENT (`CLAUDE_CODE_SESSION_ID`), the same marker the SessionEnd reaper
+    uses, and only that one entry is kept: an environment can hold a credential, and this prints into the model's context."""
+    left = _remaining()
+    if left <= 0:
+        return 0, []
+    try:
+        out = subprocess.run(["ps", "-U", str(os.getuid()), "-o", "pid=,stat=,ppid="], capture_output=True, text=True,
+                             timeout=min(3.0, left)).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return 0, []
+    pids = []
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) == 3 and parts[0].isdigit() and parts[1].startswith("T") and parts[2] == "1":
+            pids.append(int(parts[0]))
+    # The owner is read by the reaper's own exact parser (the variable named exactly CLAUDE_CODE_SESSION_ID), never from
+    # `ps -E` text: that joins argv and environment, so an argument spelling the entry showed as the owner (#1646 S1).
+    shown = pids[:max(1, _env_int("RAILS_FLOW_ZOMBIE_TOP", 3))]
+    owners = [(pid, "?") for pid in shown]
+    reaper = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "scripts", "session_reaper.py")
+    try:
+        got = subprocess.run([sys.executable, reaper, "--owners", *map(str, shown)], capture_output=True, text=True,
+                             timeout=max(0.5, min(2, _remaining()))).stdout
+        known = dict(line.split(None, 1) for line in got.splitlines() if len(line.split()) == 2)
+        owners = [(pid, known.get(str(pid), "?")) for pid in shown]
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        pass
+    return len(pids), owners
+
+
 def resume(session_id: str, cwd: str) -> int:
     """The SessionStart pointer. Silent when there is nothing to say: this prints again after every compaction."""
     global BUDGET
@@ -406,6 +441,12 @@ def resume(session_id: str, cwd: str) -> int:
         parents = "; ".join(f"pid {p} `{c}` ({n})" for p, c, n in top)
         lines.append(f"- {count} zombie processes on this machine; busiest parents: {parents}. Every fork() fails at the "
                      f"per-user limit: see parallel-session-lane process-hygiene.")
+    orphans, owners = stopped_orphans()
+    if orphans >= max(1, _env_int("RAILS_FLOW_STOPPED_ORPHAN_WARN", STOPPED_ORPHAN_WARN)):
+        who = ", ".join(f"pid {p} (session {sid})" for p, sid in owners)
+        lines.append(f"- {orphans} stopped orphan processes (parent pid 1) that a session left behind: {who}. A session's own "
+                     f"are reaped when it ends; to clear one now: echo '{{\"session_id\":\"<id>\"}}' | python3 "
+                     f"\"${{CLAUDE_PLUGIN_ROOT}}/scripts/session_reaper.py\".")
     if lines:
         print("\n".join(lines))
     return 0
