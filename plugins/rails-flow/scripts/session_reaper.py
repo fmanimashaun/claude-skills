@@ -60,6 +60,8 @@ def stopped_orphans(session_id: str) -> list[int]:
 def reap(session_id: str) -> list[int]:
     """CONT then TERM each stopped orphan, then KILL any still holding the id. Returns the pids it signalled."""
     targets = stopped_orphans(session_id)
+    if not targets:
+        return []             # a clean session costs one scan, not three
     for pid in targets:
         for sig in (signal.SIGCONT, signal.SIGTERM):        # CONT first: a stopped process only sees TERM once resumed
             try:
