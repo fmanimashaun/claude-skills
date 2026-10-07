@@ -114,14 +114,14 @@ GUARD = Guard(
         ),
         Mutation(
             "-R/--repo is no longer recognised, so another repository's PR is judged by this template",
-            '  if printf \'%s\' "$pr_seg" | grep -qE \'(^|[[:space:]])(-R|--repo)\'; then',
+            '  if has "$pr_seg" \'(^|[[:space:]])(-R|--repo)\'; then',
             '  if false; then',
             "-R targets another repo, so its template is not judged here",
         ),
         Mutation(
             "the template check is scoped to create only, so `gh pr edit` slips past it",
-            "if printf '%s' \"$cmd\" | grep -qE '\\bgh[[:space:]]+pr[[:space:]]+(create|edit)\\b'; then\n  tpl_lib",
-            "if printf '%s' \"$cmd\" | grep -qE '\\bgh[[:space:]]+pr[[:space:]]+(create)\\b'; then\n  tpl_lib",
+            "if has \"$cmd\" '\\bgh[[:space:]]+pr[[:space:]]+(create|edit)\\b'; then\n  tpl_lib",
+            "if has \"$cmd\" '\\bgh[[:space:]]+pr[[:space:]]+(create)\\b'; then\n  tpl_lib",
             "`gh pr edit` with the same body is blocked too",
         ),
         Mutation(
@@ -129,8 +129,8 @@ GUARD = Guard(
             # body carrying eight unverified claims, four ISSUE COMMENTS carrying counts went out
             # unchecked -- the same artifact, durable and read by someone else, through a hole.
             "an issue comment is out of scope again, so its claims go unchecked",
-            'printf \'%s\' "$cmd" | grep -qE \'\\bgh[[:space:]]+(pr[[:space:]]+(create|edit)|issue[[:space:]]+comment)\\b\' || exit 0',
-            'printf \'%s\' "$cmd" | grep -qE \'\\bgh[[:space:]]+pr[[:space:]]+(create|edit)\\b\' || exit 0',
+            'has "$cmd" \'\\bgh[[:space:]]+(pr[[:space:]]+(create|edit)|issue[[:space:]]+comment)\\b\' || exit 0',
+            'has "$cmd" \'\\bgh[[:space:]]+pr[[:space:]]+(create|edit)\\b\' || exit 0',
             "guard-claims: an unchecked numeric claim in an ISSUE COMMENT is blocked",
         ),
         Mutation(

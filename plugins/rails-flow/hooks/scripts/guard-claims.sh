@@ -31,9 +31,15 @@ input="$(cat)"
 
 cmd="$(printf '%s' "$input" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("tool_input",{}).get("command",""))' 2>/dev/null || printf '%s' "$input")"
 
+# DOES THE TEXT MATCH? With pipefail OFF in a subshell (#1579, the class of #1570 in guard-bash.sh's `hit()`): `grep -q`
+# quits at the first match, `printf` takes SIGPIPE once the text outgrows the pipe buffer, and pipefail reported that 141
+# as "no match". So a `gh pr create` FIRST and 10k lines after it exited 0 here having checked nothing. Only grep's own
+# status may decide. Every match below that can skip a check goes through this.
+has() { ( set +o pipefail; printf '%s' "$1" | grep -qE "$2" ); }
+
 # Not a claim-carrying command -- nothing to say. This is the common case and it must be silent.
-printf '%s' "$cmd" | grep -qE '\bgh[[:space:]]+(pr[[:space:]]+(create|edit)|issue[[:space:]]+comment)\b' || exit 0
-printf '%s' "$cmd" | grep -qE '(--body-file|--body)\b' || exit 0
+has "$cmd" '\bgh[[:space:]]+(pr[[:space:]]+(create|edit)|issue[[:space:]]+comment)\b' || exit 0
+has "$cmd" '(--body-file|--body)\b' || exit 0
 
 # The audited escape. A fail-closed guard with no visible way past it gets disabled the first time
 # it is wrong about something, and then it protects nothing.
@@ -69,7 +75,7 @@ fi
 session_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 
 body=""
-if printf '%s' "$cmd" | grep -qE '\-\-body-file\b'; then
+if has "$cmd" '\-\-body-file\b'; then
   # A separator (`;`, `&`, `|`, `)`) ends the path: `--body-file b.md; fi` names b.md (#1509 review).
   body="$(printf '%s' "$cmd" | sed -nE 's/.*--body-file[[:space:]]+"?([^";&|)[:space:]]+)"?.*/\1/p' | head -1)"
 fi
@@ -98,7 +104,7 @@ fi
 # was prose, followed 0 times in 5. Its sections are read from the template, never hardcoded; a
 # section the template marks conditional ('If ...', 'Optional', '(optional)', '(if ...)') may be left
 # out; a section that does not apply stays and says N/A. PR bodies only: an issue comment has no template. Dormant with no template.
-if printf '%s' "$cmd" | grep -qE '\bgh[[:space:]]+pr[[:space:]]+(create|edit)\b'; then
+if has "$cmd" '\bgh[[:space:]]+pr[[:space:]]+(create|edit)\b'; then
   tpl_lib="$(dirname "$0")/lib/pr_template.py"
   # Exit status, not stdout alone: 0 is clean, 1 names the missing sections, and anything else (a
   # crash, a missing helper or python3) is said out loud. Reading only stdout let a crash pass
@@ -131,7 +137,7 @@ while i < len(s):
 sys.stdout.write("".join(out))
 ' 2>/dev/null)"
   pr_seg="$(printf '%s' "$unquoted" | grep -oE 'gh[[:space:]]+pr[[:space:]]+(create|edit)[^;&|]*' | head -1)"
-  if printf '%s' "$pr_seg" | grep -qE '(^|[[:space:]])(-R|--repo)'; then
+  if has "$pr_seg" '(^|[[:space:]])(-R|--repo)'; then
     echo "rails-flow: PR-template sections NOT checked (-R/--repo targets another repository's template)." >&2
   elif [ ! -f "$tpl_lib" ] || ! command -v python3 >/dev/null 2>&1; then
     # FAIL CLOSED (owner decision on #1435): this is a gate, and a gate whose checker is missing has

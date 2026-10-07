@@ -967,6 +967,37 @@ def guard_bash_fixtures() -> None:
 # guard that blocks everything is as useless as one that blocks nothing.
 
 
+# ---- guard-claims.sh under pipefail with a long command (#1579) --------------------------------------------------------
+def guard_claims_pipe_fixtures() -> None:
+    """A `gh pr create` FIRST and a long tail after it: `grep -q` quits at the early match, `printf` takes SIGPIPE once the
+    text outgrows the pipe buffer, and `pipefail` turned that 141 into "no match", so the guard exited 0 having checked
+    nothing (#1579; the class of #1570 in guard-bash.sh). The tail is 10,000 lines, well past any pipe buffer."""
+    TAIL = "\n" + "echo line\n" * 10000
+    NUMERIC = "The selftest reports **292 assertions**, up from 285.\n"
+    TPL = "## What changed\n\n## How to test\n"
+
+    def run(cmd: str, body: str | None = None, template: str | None = None) -> int:
+        with tempfile.TemporaryDirectory() as td:
+            if template is not None:
+                (Path(td) / ".github").mkdir()
+                (Path(td) / ".github" / "pull_request_template.md").write_text(template, encoding="utf-8")
+            if body is not None:
+                (Path(td) / "body.md").write_text(body, encoding="utf-8")
+                cmd = cmd.replace("BODY", str(Path(td) / "body.md"))
+            return run_hook("guard-claims.sh", cwd=Path(td), stdin=json.dumps({"tool_input": {"command": cmd}}),
+                            env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])})[0]
+
+    check("guard-claims (#1579): an unchecked claim is blocked when a 10,000-line tail FOLLOWS the gh pr create",
+          run("gh pr create --base dev --body-file BODY" + TAIL, NUMERIC) == 2, "exit 0: checked nothing")
+    check("guard-claims (#1579): ...and the same in an issue comment",
+          run("gh issue comment 1579 --body-file BODY" + TAIL, NUMERIC) == 2, "exit 0: checked nothing")
+    check("guard-claims (#1579): a missing template section is blocked with the long tail after it",
+          run("gh pr create --base dev --body-file BODY" + TAIL, "## What changed\nTidy the README.\n", TPL) == 2,
+          "exit 0: template not checked")
+    check("guard-claims (#1579) control: the 10,000-line tail alone is not a claim-carrying command, and passes",
+          run(TAIL.strip()) == 0, "blocked a benign command")
+
+
 def guard_claims_fixtures() -> None:
     def run(cmd: str, body: str | None = None, env_extra=None, template: str | None = None,
             with_output: bool = False):
@@ -3880,7 +3911,7 @@ GROUPS = {
     "stop_gate": stop_gate_fixtures, "guard_lane": guard_lane_fixtures,
     "guard_migrate": guard_migrate_fixtures, "lint_ruby": lint_ruby_fixtures,
     "self_consistency": self_consistency_fixtures, "guard_bash": guard_bash_fixtures,
-    "guard_claims": guard_claims_fixtures, "release_gate": release_gate_fixtures,
+    "guard_claims": guard_claims_fixtures, "guard_claims_pipe": guard_claims_pipe_fixtures, "release_gate": release_gate_fixtures,
     "release_gate_effects": release_gate_effects_fixtures, "release_gate_repos": release_gate_repos_fixtures,
     "release_gate_refs": release_gate_refs_fixtures,
     "ci_verdict_hint": ci_verdict_hint_fixtures, "timeout": timeout_fixtures,
@@ -3902,7 +3933,7 @@ GROUPS = {
 # repos, refs and deadline groups and the four worktree groups (about 60 CPU-s, about 80 s of wall). EVERY group must be in exactly one part: a group in none
 # would never run in the doctor, which is the vacuous gate this repository keeps finding; the selftest checks it below.
 PARTS = {
-    "a": ["stop_gate", "guard_lane", "guard_migrate", "lint_ruby", "self_consistency", "guard_bash", "guard_claims",
+    "a": ["stop_gate", "guard_lane", "guard_migrate", "lint_ruby", "self_consistency", "guard_bash", "guard_claims", "guard_claims_pipe",
           "ci_verdict_hint", "timeout"],
     "b": ["release_gate", "release_gate_effects"],
     "c": ["release_gate_repos", "release_gate_refs", "guard_worktree", "guard_worktree_parse",
