@@ -111,7 +111,10 @@ def blank_html_comments(source: str, *, html: bool = False) -> str:
     doctype and `</>` emits nothing, so both stay as they are.
 
     NOT `<?` (doctrine-verifier, 2026-10-07): the living standard's tag open state now enters a PROCESSING INSTRUCTION
-    state, so `<?name ...>` is a processing-instruction token, not a comment; it is left live. So is `<![CDATA[`: a
+    state, so `<?name ...>` is a processing-instruction token, not a comment; it is left live.
+
+    A DYNAMIC CLOSER IS LOST, HARMLESSLY (02's review of #1651): `</<%= tag %>>` is `</` before a non-letter, so in a
+    template it is a bogus comment that ends at the `>` of `%>`. Only a closing tag is blanked, never an element start. So is `<![CDATA[`: a
     bogus comment in HTML content but real CDATA in foreign content (SVG), and leaving it hides nothing.
 
     BOGUS COMMENTS ONLY WITH `html=True` (the downstream diff of #1466): a Ruby file has no HTML data state, and Ruby's
@@ -249,6 +252,16 @@ def _selftest() -> int:
     expect("`<!doctype` is a doctype in any case", strip_comments("<!doctype html><p>", html=True) == "<!doctype html><p>")
     out = strip_comments('<script/><!--</script><p class="k-sc"></p>')
     expect("`<script/>` still opens a raw-text body (a trailing `/` closes no HTML element)", 'class="k-sc"' in out)
+
+    # 02's review of #1651: CDATA, a close tag with a space, a lone `</`, and blank_html_comments's own default.
+    expect("`<![CDATA[` is left live, even in a template",
+           strip_comments("<![CDATA[ x ]]><p>", html=True) == "<![CDATA[ x ]]><p>")
+    out = strip_comments('<script>s</script ><!-- c <button> --><p class="k-sp"></p>')
+    expect("`</script >` (a space before `>`) closes the script, so the comment after it is blanked",
+           "button" not in out and 'class="k-sp"' in out)
+    expect("a lone `</` at the end of input is left as it is", strip_comments("<p>a</", html=True) == "<p>a</")
+    expect("blank_html_comments keeps the bogus rule off by default",
+           blank_html_comments("<! x> <p>") == "<! x> <p>" and blank_html_comments("<! x> <p>", html=True) == " <p>")
 
     # RUBY HAS NO HTML DATA STATE: a regex lookbehind is `<!` not followed by `--`, and blanking it hid a model's code.
     rb = '    Regexp.new("(?<![[:word:]])#{x}(?![[:word:]])", options)\n  end\n  def stack = "stack"\n'

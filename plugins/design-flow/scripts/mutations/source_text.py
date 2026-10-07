@@ -132,6 +132,30 @@ GUARD = Guard(
             "`<script/>` still opens a raw-text body",
         ),
         Mutation(
+            "`<![CDATA[` is blanked as a bogus comment",
+            '            if source[c + 2:c + 9].upper() == "DOCTYPE" or source.startswith("<![CDATA[", c):',
+            '            if source[c + 2:c + 9].upper() == "DOCTYPE":',
+            "`<![CDATA[` is left live",
+        ),
+        Mutation(
+            "whitespace no longer terminates a close tag, so `</script >` does not close the script",
+            '                close = re.compile(rf"</{name}[\\s/>]", re.I).search(source, end)',
+            '                close = re.compile(rf"</{name}[/>]", re.I).search(source, end)',
+            "`</script >` (a space before `>`) closes the script",
+        ),
+        Mutation(
+            "the bogus rule is on by default, so a caller that forgets html= blanks Ruby",
+            'def blank_html_comments(source: str, *, html: bool = False) -> str:',
+            'def blank_html_comments(source: str, *, html: bool = True) -> str:',
+            "blank_html_comments keeps the bogus rule off by default",
+        ),
+        Mutation(
+            "a lone `</` at the end of input is blanked as a bogus comment",
+            '            if _ascii_alpha(after) or after == ">" or after == "":',
+            '            if _ascii_alpha(after) or after == ">":',
+            "a lone `</` at the end of input is left as it is",
+        ),
+        Mutation(
             "a doctype is blanked as a bogus comment",
             '            if source[c + 2:c + 9].upper() == "DOCTYPE" or source.startswith("<![CDATA[", c):',
             '            if False:',
