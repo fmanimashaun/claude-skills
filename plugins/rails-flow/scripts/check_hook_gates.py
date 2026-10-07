@@ -1904,6 +1904,10 @@ def release_gate_fixtures() -> None:
                   gate_bytes(b"echo \xff\ngit push origin main\n", ub_root) == 2, "exit != 2")
             check("release-gate (#1657): without the classifier, a command the normaliser reads as NOTHING (only comments) is refused, not passed",
                   gate_bytes(b"# git push origin main", ub_root) == 2, "exit != 2")
+            # `grep -q` closes its pipe at the first match; under `set -o pipefail` a producer still writing (a segment over the pipe buffer, 64 KB) dies of
+            # SIGPIPE and the pipeline reads 141, which skipped the `&&` branch: a push on the FIRST line of a long command was not seen (a fail-open).
+            check("release-gate (#1657): without the classifier, a push on the first line of a 120 KB command is refused (grep -q must not read 141)",
+                  gate_bytes(b"git push origin main\n" + b"x\n" * 60000, ub_root) == 2, "exit != 2")
         sh("add", "qa/CERTIFICATION"); sh_old("commit", "-q", "-m", "stamp")
         rc, err = gate()
         check("release-gate (#1337): the stamp committed on top of the tested sha still permits", rc == 0, err)

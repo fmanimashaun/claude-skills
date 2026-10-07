@@ -273,7 +273,7 @@ ctx_repo() {
        r="$(printf '%s' "$f" | tr 'A-Z' 'a-z')" ;;
     *) r="$(printf '%s' "$f" | tr 'A-Z' 'a-z')" ;;
   esac
-  printf '%s\n' "$r" | grep -qE '^[a-z0-9_.-]+/[a-z0-9_.-]+$' || { unresolved_pr=1; return 0; }
+  grep -qE '^[a-z0-9_.-]+/[a-z0-9_.-]+$' <<<"$r" || { unresolved_pr=1; return 0; }
   [ "$r" = "$L" ] && return 0
   _R="$r"; _foreign=1
 }
@@ -415,7 +415,7 @@ if [ "$_mentions" = 1 ] && [ -f "$_pt" ]; then
           targets_main=1; unresolved_pr=1 ;;
         GIT_PULL)
           # `git pull` on main merges commits that are not fetched yet, so no commit can be named: deny.
-          if git rev-parse --abbrev-ref HEAD 2>/dev/null | grep -qE '^(main|master)$'; then targets_main=1; unresolved_pr=1; fi ;;
+          if grep -qE '^(main|master)$' <<<"$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"; then targets_main=1; unresolved_pr=1; fi ;;
         "PUSH_REF "*)
           # #1569: `git push <remote> <src>:main` ships <src>, so <src> is what must be certified.
           targets_main=1; add_commit "${_line#PUSH_REF }" "$_crepo" local "the commit being merged or pushed" ;;
@@ -429,7 +429,7 @@ if [ "$_mentions" = 1 ] && [ -f "$_pt" ]; then
         GIT_MERGE*)
           # #1569: `git merge <ref>` on main brings in <ref>'s commit (bare = the upstream; --continue =
           # MERGE_HEAD). An unresolvable ref denies. Off main it is not a promotion.
-          if git rev-parse --abbrev-ref HEAD 2>/dev/null | grep -qE '^(main|master)$'; then
+          if grep -qE '^(main|master)$' <<<"$(git rev-parse --abbrev-ref HEAD 2>/dev/null)"; then
             targets_main=1
             _refs="${_line#GIT_MERGE}"; _refs="${_refs# }"
             [ -n "$_refs" ] || _refs='@{upstream}'
@@ -515,17 +515,17 @@ elif [ "$_mentions" = 1 ]; then
   # `LC_ALL=C` on each grep: BSD grep stops at an invalid byte in a UTF-8 locale, so a push on a LATER line of the same command read as no match.
   # The normaliser could not be read (above): over-blocks a command that is only comments, never under-blocks one it lost.
   [ "$_seg_unread" = 1 ] && { targets_main=1; needs_dev=1; unresolved_pr=1; }
-  printf '%s\n' "$seg" | LC_ALL=C grep -qE '^[[:space:]]*git[[:space:]]+push\b' \
-    && printf '%s' "$cmd" | LC_ALL=C grep -qE '\b(main|master)\b' && { targets_main=1; needs_dev=1; }
-  printf '%s\n' "$seg" | LC_ALL=C grep -qE '^[[:space:]]*git[[:space:]]+merge\b' \
-    && git rev-parse --abbrev-ref HEAD 2>/dev/null | LC_ALL=C grep -qE '^(main|master)$' && { targets_main=1; needs_dev=1; }
-  if printf '%s\n' "$seg" | LC_ALL=C grep -qE '^[[:space:]]*gh[[:space:]]+pr[[:space:]]+merge\b'; then
+  LC_ALL=C grep -qE '^[[:space:]]*git[[:space:]]+push\b' <<<"$seg" \
+    && LC_ALL=C grep -qE '\b(main|master)\b' <<<"$cmd" && { targets_main=1; needs_dev=1; }
+  LC_ALL=C grep -qE '^[[:space:]]*git[[:space:]]+merge\b' <<<"$seg" \
+    && LC_ALL=C grep -qE '^(main|master)$' <<<"$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" && { targets_main=1; needs_dev=1; }
+  if LC_ALL=C grep -qE '^[[:space:]]*gh[[:space:]]+pr[[:space:]]+merge\b' <<<"$seg"; then
     num="$(printf '%s' "$seg" | LC_ALL=C grep -oE '(^|[[:space:]])[0-9]+([[:space:]]|$)' | tr -d ' ' | head -1)"
     resolve_pr "$num" "-"; note_pr
   fi
   # #1569: without the classifier a `gh api` write or a release cannot be read, so it is a promotion.
-  printf '%s\n' "$seg" | LC_ALL=C grep -qE '^[[:space:]]*gh[[:space:]]+(api|release[[:space:]]+(create|edit))\b' \
-    && printf '%s' "$cmd" | LC_ALL=C grep -qiE 'merge|refs|releases|release[[:space:]]+(create|edit)|mutation' && { targets_main=1; needs_dev=1; }
+  LC_ALL=C grep -qE '^[[:space:]]*gh[[:space:]]+(api|release[[:space:]]+(create|edit))\b' <<<"$seg" \
+    && LC_ALL=C grep -qiE 'merge|refs|releases|release[[:space:]]+(create|edit)|mutation' <<<"$cmd" && { targets_main=1; needs_dev=1; }
 fi
 [ "$targets_main" -eq 1 ] || [ -n "$releases" ] || exit 0
 
@@ -843,7 +843,7 @@ resolve_release() {
     [ -z "$tgt" ] || plain_ref "$tgt" || return 1
     if [ -n "$tag" ]; then
       o="$(gh api "repos/${_R}/git/matching-refs/tags/${tag}" --jq '.[].ref' 2>/dev/null)" || return 1
-      if printf '%s\n' "$o" | grep -qx "refs/tags/${tag}"; then
+      if grep -qx "refs/tags/${tag}" <<<"$o"; then
         _rsha="$(gh_lookup api "repos/${_R}/commits/${tag}" --jq .sha || true)"; [ -n "$_rsha" ]; return
       fi
     fi

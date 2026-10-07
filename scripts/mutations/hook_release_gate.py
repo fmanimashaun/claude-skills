@@ -37,6 +37,12 @@ GUARD = Guard(
             "release-gate (#1657): an invalid byte on an EARLIER line does not hide a push to main under a UTF-8 locale",
         ),
         Mutation(
+            "the fallback's `git push` match is a pipe into `grep -q` again, so under pipefail a 120 KB command whose first line is the push reads 141 and is passed",
+            "LC_ALL=C grep -qE '^[[:space:]]*git[[:space:]]+push\\b' <<<\"$seg\" \\",
+            "printf '%s\\n' \"$seg\" | LC_ALL=C grep -qE '^[[:space:]]*git[[:space:]]+push\\b' \\",
+            "release-gate (#1657): without the classifier, a push on the first line of a 120 KB command is refused",
+        ),
+        Mutation(
             "a normaliser output of nothing for a command that is not empty is no longer 'could not read', so a comment-only mention passes in the degraded path",
             """  [ -n "$seg" ] || [ -z "$cmd" ] || _seg_unread=1\n""",
             "",
