@@ -564,6 +564,7 @@ def _stdin_is_script(args: list[str]) -> bool:
 
 
 _UNKNOWN_DIR = "\0unknown-dir"     # a relative script after a cd that cannot be followed
+_SCRIPT_CAP = 1_000_000               # the most of a script this hook reads; a larger file is refused, not half-read (#1515)
 _UNREADABLE = "\0unreadable"       # a literal script path that is not a readable file (#1515: refused, fail closed)
 
 
@@ -586,10 +587,12 @@ def _read_script(target: str | None, cwd: Path | None) -> str | None:
             return _UNKNOWN_DIR
         path = cwd / path
     try:
-        if not path.is_file():
+        # A file past the 1 MB read cap would be judged on its first megabyte only, and a create after it would pass: it is refused instead
+        # of half-read (fail closed, as for any file this hook cannot read).
+        if not path.is_file() or path.stat().st_size > _SCRIPT_CAP:
             return _UNREADABLE
         with path.open("rb") as fh:
-            return fh.read(1_000_000).decode("utf-8", errors="replace")
+            return fh.read(_SCRIPT_CAP).decode("utf-8", errors="replace")
     except OSError:
         return _UNREADABLE
 
@@ -1246,7 +1249,8 @@ def selftest() -> int:
         big = Path(td) / "big.sh"
         big.write_text("gh issue create -t X\n" + "#" * 1_100_000 + "\n", encoding="utf-8")
         ok, why = verdict(f"bash < {big}", bare)
-        check("a script over 1 MB with a create in its first 1 MB is refused", not ok and "by redirect" in why, why)
+        check("a script over 1 MB is refused whole, not read for its first megabyte (#1515: past the read cap it cannot be judged)",
+              not ok and "cannot read" in why, why)
         check("CONTROL: a multi-stage pipe ending in grep is not a hidden create",
               verdict("echo 'gh issue create' | cat | grep create", bare)[0])
         # ---- #1467: an UNQUOTED heredoc's substitutions really run ----------------------------------
@@ -1282,6 +1286,8 @@ def selftest() -> int:
         fine = Path(td) / "fine.sh"
         fine.write_text("echo hi\n", encoding="utf-8")
         gone = Path(td) / "gone.sh"
+        huge = Path(td) / "huge.sh"
+        huge.write_text("echo hi\n" + "# padding\n" * 120_000 + "gh issue create -t X --body y\n", encoding="utf-8")
         for cmd, why_ in ((f"bash {bad}", "a script operand"), (f"sh {bad}", "sh with an operand"),
                           (f"source {bad}", "source"), (f". {bad}", "the dot"),
                           (f"cat {bad} | bash", "cat into a shell"), (f"bash <(cat {bad})", "a process substitution"),
@@ -1296,6 +1302,8 @@ def selftest() -> int:
             ok, why = verdict(cmd, bare)
             check(f"(#1515) a script file that cannot be read is REFUSED, fail closed: {cmd.replace(str(td), '')!r}",
                   not ok and "cannot read" in why, why)
+        ok, why = verdict(f"bash {huge}", bare)
+        check("(#1515) a script past the 1 MB read cap is refused, not judged on its first megabyte", not ok and "cannot read" in why, why)
         for cmd, why_ in ((f"bash {fine}", "a harmless script"), (f"source {fine}", "source of a harmless one"),
                           (f"cat {fine} | bash", "cat of a harmless one into a shell"), (f"bash <(cat {fine})", "a harmless substitution"),
                           (f'bash -c "$(cat {fine})"', "a harmless command string"),

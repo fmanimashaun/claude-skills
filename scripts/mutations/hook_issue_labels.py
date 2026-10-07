@@ -474,10 +474,10 @@ GUARD = Guard(
             "$HOME expands and the script is read",
         ),
         Mutation(
-            "a large script is skipped instead of read, so a create at its top escapes",
-            "            return fh.read(1_000_000).decode(\"utf-8\", errors=\"replace\")",
-            "            return None if path.stat().st_size > 1_000_000 else fh.read().decode(\"utf-8\", errors=\"replace\")",
-            "a script over 1 MB with a create in its first 1 MB is refused",
+            "the size cap is not enforced, so a script over 1 MB is judged on its first megabyte only",
+            "        if not path.is_file() or path.stat().st_size > _SCRIPT_CAP:",
+            "        if not path.is_file():",
+            "(#1515) a script past the 1 MB read cap is refused",
         ),
         Mutation(
             "only a spaced `<` is read, so bash <file escapes",
