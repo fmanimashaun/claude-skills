@@ -20,8 +20,8 @@ GUARD = Guard(
         ),
         Mutation(
             "the fixture's git starts background maintenance again -- the #1493 root cause",
-            'FIXTURE_GIT = ("-c", "user.email=t@t", "-c", "user.name=t", "-c", "maintenance.auto=false", "-c", "gc.auto=0",',
-            'FIXTURE_GIT = ("-c", "user.email=t@t", "-c", "user.name=t",',
+            'FIXTURE_GIT = ("-c", "user.email=t@t", "-c", "user.name=t", "-c", "maintenance.auto=false", "-c", "gc.auto=0",',  # fixture-git: exempt (the argv is the subject: this fixture tests git's own maintenance behaviour; bound by -C)
+            'FIXTURE_GIT = ("-c", "user.email=t@t", "-c", "user.name=t",',  # fixture-git: exempt (the argv is the subject: this fixture tests git's own maintenance behaviour; bound by -C)
             'cleanup: a fixture commit starts no background maintenance or gc',
         ),
         Mutation(
