@@ -3587,6 +3587,9 @@ def where_stopped_fixtures() -> None:
         files = list(handoff.glob("*.md")) if handoff.is_dir() else []
         check("where-stopped: the facts file is written under <git-common-dir>/handoff, one per worktree",
               len(files) == 1 and files[0].name.startswith("repo-"), str(files))
+        out = start(repo)
+        check("where-stopped: clean and pushed, SessionStart prints neither line though the file exists (#1643 D1)",
+              "unsaved work" not in out and "where this worktree stopped" not in out, out[-300:])
 
         (repo / "b").write_text("b\n")
         g(repo, "add", "b")
@@ -3606,7 +3609,8 @@ def where_stopped_fixtures() -> None:
               "- unsaved work: 1 commit not on any remote, 1 uncommitted file" in out
               and f"where this worktree stopped (last turn, " in out and str(files[0] if files else "?") in out, out[-400:])
 
-        # FAIL OPEN: a python3 that fails and one that hangs past the hook's own budget never stop the turn.
+        # FAIL OPEN: a python3 that fails never stops the turn (a hung git is bounded by the lib's own deadline, which
+        # where_stopped.py --selftest proves; the harness does not hang a real git here).
         bad = root / "bad-python"
         bad.mkdir()
         _stub(bad, "python3", "exit 7")
