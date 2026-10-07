@@ -67,6 +67,12 @@ GUARD = Guard(
             "release-gate (#1657): with the classifier, an invalid byte in a command that is not a push does not refuse it",
         ),
         Mutation(
+            "the `gh api`/release check reads the raw command in the caller's locale, so an invalid byte before a merge call hides it",
+            """    && LC_ALL=C grep -qiE 'merge|refs|releases|release[[:space:]]+(create|edit)|mutation' <<<"$cmd" && { targets_main=1; needs_dev=1; }""",
+            """    && grep -qiE 'merge|refs|releases|release[[:space:]]+(create|edit)|mutation' <<<"$cmd" && { targets_main=1; needs_dev=1; }""",
+            "release-gate (#1657): without the classifier, an invalid byte before a `gh api` merge does not hide it",
+        ),
+        Mutation(
             "a normaliser output of nothing for a command that is not empty is no longer 'could not read', so a comment-only mention passes in the degraded path",
             """  [ -n "$seg" ] || [ -z "$cmd" ] || _seg_unread=1\n""",
             "",

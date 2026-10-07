@@ -191,6 +191,12 @@ def _is_hook_run(args) -> bool:
     return isinstance(argv, (list, tuple)) and any("release-gate.sh" in str(a) for a in argv)
 
 
+def gate_exit(returncode: int, stderr: bytes) -> int:
+    """A release gate's exit code as a FIXTURE should read it. The gate's own deadline also exits 2 ("the gate took longer than 13s"), which on a loaded
+    machine reads as the refusal a fixture is looking for and lets a mutant survive for the wrong reason: it is 124 here, equal to neither 0 nor 2."""
+    return 124 if b"took longer than" in stderr else returncode
+
+
 def _run(*args, **kw):
     if skipping() and not (_REAL_SETUP and not _is_hook_run(args)):     # `--match`: the code before an unwanted check, or the survey (#1599)
         text = kw.get("text") or kw.get("universal_newlines")
@@ -1892,9 +1898,7 @@ def release_gate_fixtures() -> None:
             if path_prefix is not None:
                 e["PATH"] = f"{path_prefix}{os.pathsep}{e['PATH']}"
             done = _run(["bash", str(QA_HOOK)], cwd=repo, env=e, capture_output=True, timeout=60, input=payload)
-            # The gate's own deadline also exits 2 ("the gate took longer than 13s"), which on a loaded machine would read as the refusal under test
-            # and let a mutant survive for the wrong reason: report it as 124, which equals neither 0 nor 2.
-            return 124 if b"took longer than" in done.stderr else done.returncode
+            return gate_exit(done.returncode, done.stderr)
 
         with tempfile.TemporaryDirectory() as ubtd:
             ub_root = Path(ubtd) / "qa-flow"
@@ -1916,6 +1920,10 @@ def release_gate_fixtures() -> None:
                   gate_bytes(b"echo \xff; git push origin main", ub_root) == 2, "exit != 2")
             check("release-gate (#1657): without the classifier, a Latin-1 byte before `&& git push origin main` does not hide it",
                   gate_bytes(b"echo \xe9 && git push origin main", ub_root) == 2, "exit != 2")
+            # The gh api / release promotion check reads the RAW command (unanchored: `merge|refs|releases|...`), and BSD grep stops at an invalid byte earlier on the
+            # same line: `echo \xff; gh api -X PUT repos/o/r/merges -f base=main` merged into main with no classifier (the pin on that grep is what refuses it).
+            check("release-gate (#1657): without the classifier, an invalid byte before a `gh api` merge does not hide it",
+                  gate_bytes(b"echo \xff; gh api -X PUT repos/o/r/merges -f base=main", ub_root) == 2, "exit != 2")
             # A normaliser that FAILS (an awk that passes its input through and exits 2) is "could not read": refused. The pass-through keeps the output non-empty, so
             # the empty-output refusal cannot be what refuses; and `FOO=1 git push …` is not anchored without the peel, so the raw text cannot be what refuses either.
             with tempfile.TemporaryDirectory() as sbtd:
@@ -3403,6 +3411,20 @@ def timeout_fixtures() -> None:
             os.kill(int(pid), 9)
         except (ProcessLookupError, ValueError):
             pass
+    # #1657: the release gate's OWN deadline also exits 2, so a release-gate fixture reads it through `gate_exit`: a refusal under test is 2, a deadline is 124.
+    check("a gate_exit of the gate's deadline message is 124, a real refusal stays 2, an allow stays 0",
+          gate_exit(2, b"BLOCKED by qa-flow release gate: the gate took longer than 13s, and this command looks like a promotion") == 124
+          and gate_exit(2, b"BLOCKED by qa-flow release gate: no qa/CERTIFICATION is committed") == 2 and gate_exit(0, b"") == 0, "mapping wrong")
+    with tempfile.TemporaryDirectory() as dltd:
+        slow = Path(dltd) / "awk"
+        slow.write_text("#!/bin/sh\nsleep 6\n", encoding="utf-8"); slow.chmod(0o755)
+        denv = {k: v for k, v in os.environ.items() if k not in ("QA_ALLOW_MAIN", "RAILS_FLOW_LANE")}
+        denv.update(PATH=f"{slow.parent}{os.pathsep}{denv['PATH']}", RAILS_FLOW_HOOK_DEADLINE="2", CLAUDE_PLUGIN_ROOT=str(QA_HOOK.parents[2]))
+        began = time.monotonic()
+        done = _run(["bash", str(QA_HOOK)], cwd=dltd, env=denv, capture_output=True, timeout=60, input=json.dumps({"tool_input": {"command": "git push origin main"}}).encode())
+        check("release-gate (#1657): a gate that hits its own deadline reads as 124 to the fixtures, not as the refusal under test",
+              done.returncode == 2 and b"took longer than" in done.stderr and gate_exit(done.returncode, done.stderr) == 124 and time.monotonic() - began < 30,
+              f"exit {done.returncode}, {done.stderr[:120]!r}")
     # An UNEXPECTED timeout is a recorded failure (a setup step that times out must not pass).
     before = len(FAILURES)
     os.environ["HOOK_GATES_TIMEOUT"] = "0.2"
