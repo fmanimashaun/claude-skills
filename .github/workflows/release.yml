@@ -146,9 +146,16 @@ jobs:
           # FAIL CLOSED before extracting (#990): every block written for this tag publishes, every
           # heading in the file is in order and names a real tag, and no `### Unreleased` rides along.
           python scripts/extract_release_notes.py --check --all-tags --promotion --tag "${{ steps.v.outputs.tag }}"
-          python scripts/extract_release_notes.py --tag "${{ steps.v.outputs.tag }}" > "$notes"
+          # THE BODY MUST FIT GITHUB'S 125,000-CHARACTER LIMIT (#1637): v1.154.0's notes were 163,008 and `gh release create` failed with HTTP 422 after
+          # the gates passed. The default output is the full notes when they fit, else each bullet's headline plus a link to CHANGELOG.md at the tag
+          # (the extractor says so on stderr, and `--check` above fails if even that is too long). The ISSUE NOTIFIER reads the unabridged text
+          # (`--full`), because the issue numbers are in the bullets' citations, not their headlines.
+          python scripts/extract_release_notes.py --tag "${{ steps.v.outputs.tag }}" --repo "$GITHUB_REPOSITORY" > "$notes"
+          full="$(mktemp)"
+          python scripts/extract_release_notes.py --tag "${{ steps.v.outputs.tag }}" --full > "$full"
           printf '\nInstall: /plugin marketplace add %s\n' "$GITHUB_REPOSITORY" >> "$notes"
           echo "file=$notes" >> "$GITHUB_OUTPUT"
+          echo "full=$full" >> "$GITHUB_OUTPUT"
           echo "--- notes ---"; cat "$notes"
 
       - name: Publish release
@@ -170,4 +177,4 @@ jobs:
         if: steps.check.outputs.exists == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python scripts/close_on_dev_merge.py --shipped "${{ steps.v.outputs.tag }}" --notes "${{ steps.notes.outputs.file }}"
+        run: python scripts/close_on_dev_merge.py --shipped "${{ steps.v.outputs.tag }}" --notes "${{ steps.notes.outputs.full }}"
