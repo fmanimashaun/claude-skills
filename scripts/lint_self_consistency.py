@@ -655,7 +655,7 @@ def check_findings_script_drift() -> tuple[list[Finding], int]:
         texts[rel] = p.read_bytes()
     canonical = texts.get(FINDINGS_COPIES[0])
     for rel in FINDINGS_COPIES[1:]:
-        if canonical is not None and rel in texts and texts[rel] != canonical:
+        if canonical is not None and texts.get(rel, canonical) != canonical:
             findings.append(Finding("findings-script-drift", rel, 0,
                                     f"differs from {FINDINGS_COPIES[0]} -- one findings schema, two copies: QA and "
                                     "review records would validate against different rules. Copy the canonical "
