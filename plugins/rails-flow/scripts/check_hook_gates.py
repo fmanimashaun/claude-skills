@@ -721,11 +721,11 @@ def guard_bash_fixtures() -> None:
     groups = {"groups": [{"one_of": ["bug", "feature", "enhancement"]},
                          {"when": "bug", "one_of": ["severity:s1", "severity:s2"]}]}
     def labelled(cmd: str, *, declare: bool = True, drop_helper: bool = False,
-                 files: dict[str, str] | None = None) -> tuple[int, str]:
+                 files: dict[str, str | bytes] | None = None) -> tuple[int, str]:
         with tempfile.TemporaryDirectory() as td:
-            for rel, text in (files or {}).items():     # relative scripts the command reads (#1495)
+            for rel, text in (files or {}).items():     # relative scripts the command reads (#1495); bytes for an encoding a text write cannot make (#1671)
                 (Path(td) / rel).parent.mkdir(parents=True, exist_ok=True)
-                (Path(td) / rel).write_text(text, encoding="utf-8")
+                (Path(td) / rel).write_bytes(text) if isinstance(text, bytes) else (Path(td) / rel).write_text(text, encoding="utf-8")
             if declare:
                 (Path(td) / ".rails-flow").mkdir()
                 (Path(td) / ".rails-flow" / "issue-labels.json").write_text(json.dumps(groups), encoding="utf-8")
@@ -869,6 +869,19 @@ def guard_bash_fixtures() -> None:
                      ("alias g=gh; g issue list", "an alias used for something else"),
                      ("gh issue create -t X --body y --label bug --label severity:s2", "a direct labelled create")):
         check(f"guard-bash (#1515): CONTROL: `{cmd}` is allowed ({why})", labelled(cmd)[0] == 0)
+    # #1671: a script's encoding must not hide its create. A UTF-8 BOM made the first word `\ufeffgh`; a UTF-16 file read as no command at all.
+    create = b"gh issue create -t x -b y\n"
+    enc_tree = {"bom.sh": b"\xef\xbb\xbf" + create, "plain.sh": create, "u16.sh": create.decode().encode("utf-16"),
+                "u16le.sh": create.decode().encode("utf-16-le"), "bom_ok.sh": b"\xef\xbb\xbfls -la\n"}
+    rc_plain, err_plain = labelled("bash plain.sh", files=enc_tree)
+    check("guard-bash (#1671): CONTROL: the plain script's unlabelled create is refused", rc_plain == 2 and "inside a script" in err_plain, err_plain)
+    for cmd, why in (("bash bom.sh", "a UTF-8 BOM script"), ("source bom.sh", "a UTF-8 BOM script, sourced"), ("bash < bom.sh", "a UTF-8 BOM script on stdin")):
+        rc, err = labelled(cmd, files=enc_tree)
+        check(f"guard-bash (#1671): `{cmd}` is refused ({why})", rc == 2 and "inside a script" in err, err)
+    for cmd, why in (("bash u16.sh", "UTF-16 with its BOM"), ("bash u16le.sh", "UTF-16LE, NUL-interleaved, no BOM")):
+        rc, err = labelled(cmd, files=enc_tree)
+        check(f"guard-bash (#1671): `{cmd}` is refused as unreadable ({why})", rc == 2 and "cannot read" in err, err)
+    check("guard-bash (#1671): CONTROL: a BOM script with no create is allowed", labelled("bash bom_ok.sh", files=enc_tree)[0] == 0)
     # CodeQL (#1645): a pathological command must not hang the guard. The old pattern backtracked exponentially on repeated `<&>` after a shell word; the
     # hook has to DECIDE (allow: nothing is created) within its budget, and a hang is the harness's timeout (rc 124, recorded as a failure).
     for cmd, want, why in (("bash " + "<&>" * 50000 + " ok", 0, "50,000 x `<&>` after a shell word"),
