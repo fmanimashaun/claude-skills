@@ -39,6 +39,9 @@ import types
 import time
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import fixture_git  # noqa: E402  (#1588: a fixture's git touches only its own temp repo)
+
 HOOKS = Path(__file__).resolve().parents[1] / "hooks" / "scripts"
 
 FAILURES: list[str] = []
@@ -162,9 +165,10 @@ def _sample() -> float:
     with tempfile.TemporaryDirectory() as td:
         began = time.monotonic()
         try:
-            for cmd in (["git", "init", "-q"], ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "i"],
+            for cmd in (["git", "init", "-q"], ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "i"],  # fixture-git: exempt (the timed calibration workload: its argv is what is measured; repo-locating env stripped below)
                         ["bash", "-c", "true"]):
-                subprocess.call(cmd, cwd=td, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=CALIBRATION_TIMEOUT)
+                subprocess.call(cmd, cwd=td, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=CALIBRATION_TIMEOUT,
+                                env=fixture_git.hermetic())     # no inherited GIT_DIR: cwd alone does not bind (#1660 R3)
         except (OSError, subprocess.SubprocessError):
             return CALIBRATION_IDLE * (HOOK_BUDGET_CAP / HOOK_BUDGET_FLOOR)
         return time.monotonic() - began
@@ -263,12 +267,24 @@ fi
 exec "$@"'''
 
 
+def _fixture_git(cwd: Path, *args: str, **kw) -> subprocess.CompletedProcess:
+    """A fixture's git (#1588). In a repo, through fixture_git: bound to that temp repo, refused if its init failed.
+    Anything else -- an `init`, a bare remote, or a linked worktree (whose .git file fixture_git refuses by design) --
+    runs through `_run`, bound by its cwd, with the fixture identity on the one line below."""
+    cwd = Path(cwd)
+    if (cwd / ".git").is_dir():
+        kw.setdefault("check", True)
+        return fixture_git.run(cwd, *args, **kw)
+    kw.setdefault("capture_output", True)
+    kw.setdefault("text", True)
+    kw["env"] = fixture_git.hermetic(kw.get("env"))      # drops an inherited GIT_DIR & co: cwd alone does not bind (#1660 R3)
+    return _run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *args], cwd=cwd, **kw)  # fixture-git: exempt (an init, a bare remote or a linked worktree, which fixture_git refuses by design; repo-locating env stripped)
+
+
 def _git_repo(root: Path) -> None:
     root.mkdir(parents=True, exist_ok=True)
-    for cmd in (["git", "init", "-q"],
-                ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q",
-                 "--allow-empty", "-m", "init"]):
-        _run(cmd, cwd=root, check=True, capture_output=True)
+    _run(["git", "init", "-q"], cwd=root, check=True, capture_output=True)
+    _fixture_git(root, "commit", "-q", "--allow-empty", "-m", "init")
 
 
 def run_hook(name: str, *, cwd: Path, stdin: str, path_prefix: list[Path] = (),
@@ -770,11 +786,11 @@ def guard_bash_fixtures() -> None:
     groups = {"groups": [{"one_of": ["bug", "feature", "enhancement"]},
                          {"when": "bug", "one_of": ["severity:s1", "severity:s2"]}]}
     def labelled(cmd: str, *, declare: bool = True, drop_helper: bool = False,
-                 files: dict[str, str] | None = None) -> tuple[int, str]:
+                 files: dict[str, str | bytes] | None = None) -> tuple[int, str]:
         with tempfile.TemporaryDirectory() as td:
-            for rel, text in (files or {}).items():     # relative scripts the command reads (#1495)
+            for rel, text in (files or {}).items():     # relative scripts the command reads (#1495); bytes for an encoding a text write cannot make (#1671)
                 (Path(td) / rel).parent.mkdir(parents=True, exist_ok=True)
-                (Path(td) / rel).write_text(text, encoding="utf-8")
+                (Path(td) / rel).write_bytes(text) if isinstance(text, bytes) else (Path(td) / rel).write_text(text, encoding="utf-8")
             if declare:
                 (Path(td) / ".rails-flow").mkdir()
                 (Path(td) / ".rails-flow" / "issue-labels.json").write_text(json.dumps(groups), encoding="utf-8")
@@ -918,6 +934,19 @@ def guard_bash_fixtures() -> None:
                      ("alias g=gh; g issue list", "an alias used for something else"),
                      ("gh issue create -t X --body y --label bug --label severity:s2", "a direct labelled create")):
         check(f"guard-bash (#1515): CONTROL: `{cmd}` is allowed ({why})", labelled(cmd)[0] == 0)
+    # #1671: a script's encoding must not hide its create. A UTF-8 BOM made the first word `\ufeffgh`; a UTF-16 file read as no command at all.
+    create = b"gh issue create -t x -b y\n"
+    enc_tree = {"bom.sh": b"\xef\xbb\xbf" + create, "plain.sh": create, "u16.sh": create.decode().encode("utf-16"),
+                "u16le.sh": create.decode().encode("utf-16-le"), "bom_ok.sh": b"\xef\xbb\xbfls -la\n"}
+    rc_plain, err_plain = labelled("bash plain.sh", files=enc_tree)
+    check("guard-bash (#1671): CONTROL: the plain script's unlabelled create is refused", rc_plain == 2 and "inside a script" in err_plain, err_plain)
+    for cmd, why in (("bash bom.sh", "a UTF-8 BOM script"), ("source bom.sh", "a UTF-8 BOM script, sourced"), ("bash < bom.sh", "a UTF-8 BOM script on stdin")):
+        rc, err = labelled(cmd, files=enc_tree)
+        check(f"guard-bash (#1671): `{cmd}` is refused ({why})", rc == 2 and "inside a script" in err, err)
+    for cmd, why in (("bash u16.sh", "UTF-16 with its BOM"), ("bash u16le.sh", "UTF-16LE, NUL-interleaved, no BOM")):
+        rc, err = labelled(cmd, files=enc_tree)
+        check(f"guard-bash (#1671): `{cmd}` is refused as unreadable ({why})", rc == 2 and "cannot read" in err, err)
+    check("guard-bash (#1671): CONTROL: a BOM script with no create is allowed", labelled("bash bom_ok.sh", files=enc_tree)[0] == 0)
     # CodeQL (#1645): a pathological command must not hang the guard. The old pattern backtracked exponentially on repeated `<&>` after a shell word; the
     # hook has to DECIDE (allow: nothing is created) within its budget, and a hang is the harness's timeout (rc 124, recorded as a failure).
     for cmd, want, why in (("bash " + "<&>" * 50000 + " ok", 0, "50,000 x `<&>` after a shell word"),
@@ -1666,8 +1695,7 @@ def guard_claims_fixtures() -> None:
                 _run(["git", *args], cwd=root, capture_output=True)
             target.write_text("x\n", encoding="utf-8")
             _run(["git", "add", "-A"], cwd=root, capture_output=True)
-            _run(["git", "-c", "user.email=f@e", "-c", "user.name=f",
-                            "commit", "-qm", "base"], cwd=root, capture_output=True)
+            _fixture_git(root, "commit", "-qm", "base", check=False)
             target.write_text("changed\n", encoding="utf-8")
             return run_hook("guard-claims.sh", cwd=root,
                             stdin=json.dumps({"tool_input": {
@@ -1700,8 +1728,7 @@ def guard_claims_fixtures() -> None:
             (a / "skills" / "x.md").write_text("x\n", encoding="utf-8")
             for d in (a, b):
                 _run(["git", "add", "-A"], cwd=d, capture_output=True)
-                _run(["git", "-c", "user.email=f@e", "-c", "user.name=f", "commit", "-qm", "base"],
-                     cwd=d, capture_output=True)
+                _fixture_git(d, "commit", "-qm", "base", check=False)
             (a / "skills" / "x.md").write_text("changed\n", encoding="utf-8")
             # STAGED, because another repository is read through its staged diff only (no code from the target,
             # #1516): an unstaged change would let a hook that read the wrong repository look right.
@@ -1738,8 +1765,7 @@ def guard_claims_fixtures() -> None:
             (b / "skills" / "x.md").write_text("x\n", encoding="utf-8")
             for d in (a, b):
                 _run(["git", "add", "-A"], cwd=d, capture_output=True)
-                _run(["git", "-c", "user.email=f@e", "-c", "user.name=f", "commit", "-qm", "base"],
-                     cwd=d, capture_output=True)
+                _fixture_git(d, "commit", "-qm", "base", check=False)
             (b / "README.md").write_text("changed\n", encoding="utf-8")        # a working-tree change to hash
             if stage_skills:
                 (b / "skills" / "x.md").write_text("changed\n", encoding="utf-8")
@@ -1775,8 +1801,7 @@ def guard_claims_fixtures() -> None:
                 _run(["git", "init", "-q", "-b", "main"], cwd=d, capture_output=True)
                 (d / "README.md").write_text("x\n", encoding="utf-8")
                 _run(["git", "add", "-A"], cwd=d, capture_output=True)
-                _run(["git", "-c", "user.email=f@e", "-c", "user.name=f", "commit", "-qm", "base"],
-                     cwd=d, capture_output=True)
+                _fixture_git(d, "commit", "-qm", "base", check=False)
             big = a if big_repo == "session" else b
             (big / "skills").mkdir()
             for i in range(2500):
@@ -1968,11 +1993,10 @@ def release_gate_fixtures() -> None:
 
     # #1337. The stamp is bound to the tested dev sha; committing it to dev by PR moves dev. The gate
     # accepts an ANCESTOR of dev only when the delta since is the stamp itself.
-    g = ["git", "-c", "user.email=t@t", "-c", "user.name=t"]
     with tempfile.TemporaryDirectory() as td:
         repo = Path(td)
         _git_repo(repo)
-        sh = lambda *a: _run([*g, *a], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+        sh = lambda *a: _fixture_git(repo, *a, check=True, capture_output=True, text=True).stdout.strip()
         (repo / "app.rb").write_text("v1\n", encoding="utf-8")
         sh("add", "app.rb"); sh("commit", "-q", "-m", "app")
         tested = sh("rev-parse", "HEAD")
@@ -1984,7 +2008,7 @@ def release_gate_fixtures() -> None:
         # #1428 cutoff -- so they are committed with an old committer date.
         old_env = {**os.environ, "GIT_COMMITTER_DATE": "2026-09-01T00:00:00+00:00",
                    "GIT_AUTHOR_DATE": "2026-09-01T00:00:00+00:00"}
-        sh_old = lambda *a: _run([*g, *a], cwd=repo, check=True, capture_output=True, text=True,
+        sh_old = lambda *a: _fixture_git(repo, *a, check=True, capture_output=True, text=True,
                                            env=old_env).stdout.strip()
 
         def gate() -> tuple[int, str]:
@@ -2104,7 +2128,7 @@ def release_gate_fixtures() -> None:
     with tempfile.TemporaryDirectory() as td:
         repo = Path(td)
         _git_repo(repo)
-        sh = lambda *a: _run([*g, *a], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+        sh = lambda *a: _fixture_git(repo, *a, check=True, capture_output=True, text=True).stdout.strip()
         (repo / "app.rb").write_text("v1\n", encoding="utf-8")
         sh("add", "app.rb"); sh("commit", "-q", "-m", "app")
         # Work on a branch that is not `main`: main is the last PUBLISHED release, and evidence
@@ -2227,7 +2251,7 @@ def release_gate_fixtures() -> None:
         old_stamp = {k: v for k, v in new_stamp.items() if k in ("date", "verdict", "report")}
         old_stamp["sha"] = sh("rev-parse", "HEAD")
         (repo / "qa" / "CERTIFICATION").write_text(json.dumps(old_stamp), encoding="utf-8")
-        _run([*g, "commit", "-q", "-am", "an old-style stamp"], cwd=repo, check=True, capture_output=True,
+        _fixture_git(repo, "commit", "-q", "-am", "an old-style stamp", check=True, capture_output=True,
                        env={**os.environ, "GIT_COMMITTER_DATE": "2026-09-01T00:00:00+00:00"})
         rc, err = gate2()
         check("release-gate (#1428): an old stamp is grandfathered -- it permits, and says re-certify",
@@ -2349,11 +2373,10 @@ GH_ERROR_BODY = ('{"data":{"node":null},"errors":[{"type":"NOT_FOUND","path":["n
 
 
 def release_gate_effects_fixtures() -> None:
-    g = ["git", "-c", "user.email=t@t", "-c", "user.name=t"]
     with tempfile.TemporaryDirectory() as td:
         repo = Path(td) / "repo"
         _git_repo(repo)
-        sh = lambda *a, **kw: _run([*g, *a], cwd=repo, check=True, capture_output=True, text=True, **kw).stdout.strip()
+        sh = lambda *a, **kw: _fixture_git(repo, *a, check=True, capture_output=True, text=True, **kw).stdout.strip()
         old = {**os.environ, "GIT_COMMITTER_DATE": "2026-09-01T00:00:00+00:00", "GIT_AUTHOR_DATE": "2026-09-01T00:00:00+00:00"}
         # THIS checkout is github.com/o/r (so `repos/o/r/...` and `-R o/r` name it, and nothing else does),
         # and the remote's refs live in a local bare repo behind insteadOf, so `git ls-remote origin`
@@ -2805,11 +2828,10 @@ def release_gate_refs_fixtures() -> None:
     if not QA_HOOK.is_file():
         check("release-gate (#1600): release-gate.sh present beside rails-flow", False, str(QA_HOOK))
         return
-    g = ["git", "-c", "user.email=t@t", "-c", "user.name=t"]
     with tempfile.TemporaryDirectory() as td:
         repo = Path(td) / "repo"
         _git_repo(repo)
-        sh = lambda *a, **kw: _run([*g, *a], cwd=repo, check=True, capture_output=True, text=True, **kw).stdout.strip()
+        sh = lambda *a, **kw: _fixture_git(repo, *a, check=True, capture_output=True, text=True, **kw).stdout.strip()
         old = {**os.environ, "GIT_COMMITTER_DATE": "2026-09-01T00:00:00+00:00", "GIT_AUTHOR_DATE": "2026-09-01T00:00:00+00:00"}
         bare = Path(td) / "origin.git"
         _run(["git", "init", "-q", "--bare", str(bare)], check=True, capture_output=True)
@@ -2885,7 +2907,7 @@ def release_gate_refs_fixtures() -> None:
         # A stamp is data from the repository being promoted: its `sha` is a commit id, never an option.
         bad = Path(td) / "badstamp"
         _git_repo(bad)
-        bsh = lambda *a, **kw: _run([*g, *a], cwd=bad, check=True, capture_output=True, text=True, **kw).stdout.strip()
+        bsh = lambda *a, **kw: _fixture_git(bad, *a, check=True, capture_output=True, text=True, **kw).stdout.strip()
         _run(["git", "checkout", "-q", "-B", "main"], cwd=bad, check=True, capture_output=True)
         (bad / "qa").mkdir()
         (bad / "qa" / "CERTIFICATION").write_text(json.dumps(
@@ -3005,11 +3027,10 @@ def release_gate_refs_fixtures() -> None:
 
 @real_setup
 def release_gate_repos_fixtures() -> None:
-    g = ["git", "-c", "user.email=t@t", "-c", "user.name=t"]
     with tempfile.TemporaryDirectory() as td:
         repo = Path(td) / "repo"
         _git_repo(repo)
-        sh = lambda *a, **kw: _run([*g, *a], cwd=repo, check=True, capture_output=True, text=True, **kw).stdout.strip()
+        sh = lambda *a, **kw: _fixture_git(repo, *a, check=True, capture_output=True, text=True, **kw).stdout.strip()
         old = {**os.environ, "GIT_COMMITTER_DATE": "2026-09-01T00:00:00+00:00", "GIT_AUTHOR_DATE": "2026-09-01T00:00:00+00:00"}
         bare = Path(td) / "origin.git"
         _run(["git", "init", "-q", "--bare", str(bare)], check=True, capture_output=True)
@@ -3042,8 +3063,8 @@ def release_gate_repos_fixtures() -> None:
         # another checkout, on main, whose dev has no stamp at all
         sub = Path(td) / "sub"
         _git_repo(sub)
-        _run([*g, "checkout", "-q", "-B", "main"], cwd=sub, check=True, capture_output=True)
-        _run([*g, "branch", "dev"], cwd=sub, check=True, capture_output=True)
+        _fixture_git(sub, "checkout", "-q", "-B", "main", check=True, capture_output=True)
+        _fixture_git(sub, "branch", "dev", check=True, capture_output=True)
         (Path(td) / "bin").mkdir()
         (Path(td) / "bin" / "gh").write_text(FAKE_GH2, encoding="utf-8")
         (Path(td) / "bin" / "gh").chmod(0o755)
@@ -3246,11 +3267,11 @@ def release_gate_repos_fixtures() -> None:
         # The marketplace exemption needs the marketplace's identity, even after a cd into a directory that has the file.
         spoof = Path(td) / "spoof"
         _git_repo(spoof)
-        _run([*g, "checkout", "-q", "-B", "main"], cwd=spoof, check=True, capture_output=True)
+        _fixture_git(spoof, "checkout", "-q", "-B", "main", check=True, capture_output=True)
         (spoof / ".claude-plugin").mkdir()
         (spoof / ".claude-plugin" / "marketplace.json").write_text('{"name":"x","plugins":[]}', encoding="utf-8")
-        _run([*g, "remote", "add", "origin", "https://github.com/acme/app.git"], cwd=spoof, check=True, capture_output=True)
-        _run([*g, "branch", "dev"], cwd=spoof, check=True, capture_output=True)
+        _fixture_git(spoof, "remote", "add", "origin", "https://github.com/acme/app.git", check=True, capture_output=True)
+        _fixture_git(spoof, "branch", "dev", check=True, capture_output=True)
         rc, err = run(f"cd {spoof} && git merge dev")
         check("release-gate (#1569): a directory with a marketplace.json but another repository's origin is not exempt", rc == 2, f"rc={rc} {err[:240]!r}")
         # (9) `git push origin main` ships the LOCAL main: dev's stamp must not stand in for it.
@@ -3275,7 +3296,7 @@ def release_gate_repos_fixtures() -> None:
         # bare repository, so nothing here touches the network.
         fw = Path(td) / "fw"
         _git_repo(fw)
-        fsh = lambda *a, **kw: _run([*g, *a], cwd=fw, check=True, capture_output=True, text=True, **kw).stdout.strip()
+        fsh = lambda *a, **kw: _fixture_git(fw, *a, check=True, capture_output=True, text=True, **kw).stdout.strip()
         fb_rows = ("Step,Width,Actor,URL,Action,Expected,Actual,Status,Notes,Screenshot,Also,Issue,Env\n"
                    "1.1,1280,root,/login,Sign in,In,In,Pass,,,,,empty db\n"
                    "1.2,390,root,/login,Sign in,In,In,Pass,,,,,empty db\n")
@@ -3624,8 +3645,7 @@ def _worktree_kit() -> types.SimpleNamespace:
     coord = HOOKS / "lib" / "coordination.py"
 
     def git(cwd, *a):
-        return _run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *a], cwd=cwd, check=True,
-                    capture_output=True, text=True)
+        return _fixture_git(cwd, *a)
 
     def new_repo(td) -> Path:
         repo = Path(td) / "repo"
@@ -4041,7 +4061,7 @@ def where_stopped_fixtures() -> None:
     """Where this worktree stopped: the Stop hook writes the facts file and warns ONCE about unsaved work; SessionStart
     points at it. Advisory, so every fixture also proves it fails open (exit 0, silent) rather than stopping a turn."""
     def g(cwd: Path, *args: str) -> None:
-        _run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *args], cwd=cwd, check=True, capture_output=True)
+        _fixture_git(cwd, *args)
 
     def stop(repo: Path, **kw) -> tuple[int, str]:
         return run_hook("stop-where.sh", cwd=repo, stdin=json.dumps({"hook_event_name": "Stop"}), **kw)
@@ -4104,6 +4124,45 @@ def where_stopped_fixtures() -> None:
         outside.mkdir()
         code, out = stop(outside)
         check("where-stopped: outside a git repository, silent and exit 0", code == 0 and out.strip() == "", out)
+
+
+# ---- _fixture_git under an inherited GIT_DIR (#1660 review R3) ----------------------------------------------------------
+def fixture_git_binding_fixtures() -> None:
+    """THE #1588 INCIDENT, in the harness's own helper: an inherited GIT_DIR naming another repo must not receive a
+    fixture's commit, through the fixture_git path or through the fallback (an init dir, a linked worktree)."""
+    def count(repo: Path) -> str:
+        return _run(["git", "-C", str(repo), "rev-list", "--count", "--all"], capture_output=True, text=True,
+                    env=fixture_git.hermetic()).stdout.strip()
+
+    with tempfile.TemporaryDirectory() as td:
+        real = Path(td) / "real"                                    # a stand-in for the maintainer's checkout
+        _git_repo(real)
+        before = count(real)
+        check("binding CONTROL: the stand-in repo's commits are countable", before == "1", before)
+        inherited = {**os.environ, "GIT_DIR": str(real / ".git")}
+        repo = Path(td) / "fixture"
+        _git_repo(repo)
+        _fixture_git(repo, "commit", "-q", "--allow-empty", "-m", "m", env=inherited, check=False)
+        check("binding: a fixture commit through fixture_git under an inherited GIT_DIR stays out of the other repo",
+              count(real) == before and count(repo) == "2", f"real {count(real)}, fixture {count(repo)}")
+        plain = Path(td) / "not-a-repo"
+        plain.mkdir()
+        _fixture_git(plain, "commit", "-q", "--allow-empty", "-m", "m", env=inherited, check=False)
+        check("binding: the fallback (no .git here) under an inherited GIT_DIR does not commit into the other repo",
+              count(real) == before, f"real went from {before} to {count(real)}")
+        # The CALIBRATION workload (#1660 review R3): its own `git init` + commit in a throwaway dir, under the same
+        # inherited GIT_DIR, must not reach the other repo either.
+        saved = os.environ.get("GIT_DIR")
+        os.environ["GIT_DIR"] = str(real / ".git")
+        try:
+            _sample()
+        finally:
+            if saved is None:
+                os.environ.pop("GIT_DIR", None)
+            else:
+                os.environ["GIT_DIR"] = saved
+        check("binding: the calibration workload under an inherited GIT_DIR does not commit into the other repo",
+              count(real) == before, f"real went from {before} to {count(real)}")
 
 
 def deadline_fixtures() -> None:
@@ -4441,6 +4500,7 @@ GROUPS = {
     "guard_worktree": guard_worktree_fixtures, "guard_worktree_parse": guard_worktree_parse_fixtures,
     "guard_worktree_failopen": guard_worktree_failopen_fixtures, "guard_worktree_pointer": guard_worktree_pointer_fixtures,
     "deadline": deadline_fixtures, "where_stopped": where_stopped_fixtures,
+    "fixture_git_binding": fixture_git_binding_fixtures,
 }
 
 
@@ -4460,7 +4520,7 @@ PARTS = {
           "ci_verdict_hint", "session_end", "timeout"],
     "b": ["release_gate", "release_gate_effects"],
     "c": ["release_gate_repos", "release_gate_refs", "guard_worktree", "guard_worktree_parse",
-          "guard_worktree_failopen", "guard_worktree_pointer", "deadline", "where_stopped"],
+          "guard_worktree_failopen", "guard_worktree_pointer", "deadline", "where_stopped", "fixture_git_binding"],
 }
 
 

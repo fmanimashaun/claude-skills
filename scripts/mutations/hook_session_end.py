@@ -7,7 +7,7 @@ GUARD = Guard(
     subject="plugins/rails-flow/hooks/scripts/session-end.sh",
     selftest="plugins/rails-flow/scripts/check_hook_gates.py",
     selftest_args=("--only", "session_end"),
-    needs=(
+    needs=("plugins/rails-flow/scripts/fixture_git.py", 
            'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py',
            "plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362
            "plugins/rails-flow/hooks/scripts", "plugins/qa-flow/hooks/scripts",

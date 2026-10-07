@@ -615,6 +615,25 @@ GUARD = Guard(
             "        if False:",
             "(#1645 CodeQL) 40 x `bash <(echo `",
         ),
+        # ---- #1671: a script's encoding must not hide its create
+        Mutation(
+            "a UTF-8 BOM is not stripped, so the first word reads as `\\ufeffgh` and a create hides",
+            "    return raw.decode(\"utf-8-sig\", errors=\"replace\")",
+            "    return raw.decode(\"utf-8\", errors=\"replace\")",
+            "(#1671) a UTF-8 BOM script's unlabelled create is refused like the plain one",
+        ),
+        Mutation(
+            "a file that opens with a UTF-16 BOM is decoded as text instead of refused",
+            "    if raw.startswith((b\"\\xff\\xfe\", b\"\\xfe\\xff\")) or b\"\\x00\" in raw:",
+            "    if b\"\\x00\" in raw:",
+            "(#1671) a file that opens with a UTF-16 BOM is refused as unreadable even with no NUL byte",
+        ),
+        Mutation(
+            "a NUL byte (UTF-16 or UTF-32 without a BOM) is read as text instead of refused",
+            "    if raw.startswith((b\"\\xff\\xfe\", b\"\\xfe\\xff\")) or b\"\\x00\" in raw:",
+            "    if raw.startswith((b\"\\xff\\xfe\", b\"\\xfe\\xff\")):",
+            "(#1671) a script that is UTF-16LE with no BOM (NUL-interleaved) is refused as unreadable",
+        ),
         Mutation(
             "backslash-newlines are joined before comments are stripped, so a comment ending in a backslash swallows the create on the next line",
             "    cmd = _strip_comments(cmd).replace(\"\\\\\\n\", \"\").replace(\"\\n\", \" ; \")",

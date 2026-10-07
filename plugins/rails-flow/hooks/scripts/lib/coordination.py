@@ -564,8 +564,8 @@ def selftest(skip_hook_e2e: bool = False) -> int:
         check("the record lives in the common git dir", rp is not None and rp.parent.name == ".git", str(rp))
         # Every worktree of a clone must see the SAME record, or a lane assigned from one is invisible
         # from another. A plain clone cannot tell --git-dir from --git-common-dir; a linked worktree can.
-        subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "i"],
-                       cwd=repo, check=True, capture_output=True)
+        sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts")); import fixture_git  # #1588
+        fixture_git.run(repo, "commit", "-q", "--allow-empty", "-m", "i")
         linked = Path(td) / "linked"
         subprocess.run(["git", "worktree", "add", "-q", "-b", "side", str(linked)], cwd=repo, check=True,
                        capture_output=True)

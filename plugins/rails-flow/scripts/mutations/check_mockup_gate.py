@@ -9,7 +9,7 @@ GUARD = Guard(
     subject="scripts/check_mockup_gate.py",
     selftest="scripts/check_mockup_gate.py",   # --selftest lives in the module itself
     # The selftest also reads the scaffolded opt-out from setup-flow.md (#1496 review R8).
-    needs=("scripts/classify_door.py", "commands/setup-flow.md"),
+    needs=("scripts/fixture_git.py", "scripts/classify_door.py", "commands/setup-flow.md"),
     mutations=(
         Mutation(
             "a UI change with no record passes",

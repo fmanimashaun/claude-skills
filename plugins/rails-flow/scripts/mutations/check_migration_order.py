@@ -5,6 +5,7 @@ GUARD = Guard(
     name="check_migration_order",
     subject="scripts/check_migration_order.py",
     selftest="scripts/check_migration_order.py",
+    needs=("scripts/fixture_git.py",),   # its selftest's git goes through fixture_git (#1588)
     deps=("scripts/session_coordinator.py",),
     mutations=(
         Mutation(

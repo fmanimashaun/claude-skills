@@ -12,7 +12,7 @@ GUARD = Guard(
     # Each mutant runs only the fixture its `expects` names (#1599); the ones marked `narrow=False` depend on state an
     # earlier fixture builds, cannot run alone, and run the whole sub-group (#1581, surveyed one by one).
     narrow_with="--match",
-    needs=(
+    needs=("plugins/rails-flow/scripts/fixture_git.py", 
            'plugins/qa-flow/scripts/remote_evidence.py',  # #1581 merge: run by release-gate.sh
            'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py',  # session-start.sh runs both (#1581: the harness drives it)
            "plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362

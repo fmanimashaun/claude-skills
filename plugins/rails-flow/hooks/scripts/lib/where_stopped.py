@@ -203,9 +203,14 @@ def pointer(cwd: Path) -> str:
 
 # ------------------------------------------------------------------------------------------------------------- selftest
 def _sh(cwd: Path, *args: str) -> None:
-    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True,
-                   env={**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
-                        "GIT_COMMITTER_EMAIL": "t@t"})
+    """Fixture git (#1588): in a repo through fixture_git, bound to it and refused if its init failed; anything else
+    (an `init`, a bare remote, a `worktree add`'s checkout) runs plain and commits nothing, so it needs no identity."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+    import fixture_git
+    if (cwd / ".git").is_dir():
+        fixture_git.run(cwd, *args)
+    else:
+        subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
 
 
 def selftest() -> int:
