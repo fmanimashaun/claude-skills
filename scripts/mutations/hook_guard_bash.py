@@ -27,7 +27,7 @@ GUARD = Guard(
            'plugins/rails-flow/scripts/extract_claims.py',
            # ci-verdict-hint.sh runs ci_verdict_hint.py; unstaged, its fixtures fail and every
            # mutation reads as caught -- the harness reported this guard INERT until it was added (#1173).
-           'plugins/rails-flow/scripts/ci_verdict_hint.py'),   # the harness drives release-gate.sh too (#906)
+           'plugins/rails-flow/scripts/ci_verdict_hint.py', 'plugins/rails-flow/scripts/session_reaper.py', 'plugins/rails-flow/scripts/process_containment.py'),   # the harness drives release-gate.sh too (#906)
     mutations=(
         # #1570: grep -q quits at the first match, printf takes SIGPIPE once the text outgrows the pipe
         # buffer, and pipefail read that 141 as "no match". `git add -A` plus 10k lines was allowed.

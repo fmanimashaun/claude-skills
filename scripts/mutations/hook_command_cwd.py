@@ -29,7 +29,7 @@ GUARD = Guard(
            "plugins/qa-flow/scripts/remote_evidence.py",   # the release gate runs it (#1591)
            "plugins/rails-flow/scripts/self_consistency.py",
            "plugins/rails-flow/scripts/extract_claims.py",
-           "plugins/rails-flow/scripts/ci_verdict_hint.py"),
+           "plugins/rails-flow/scripts/ci_verdict_hint.py", "plugins/rails-flow/scripts/session_reaper.py", "plugins/rails-flow/scripts/process_containment.py"),
     mutations=(
         Mutation(
             'a cd joined by || counts as having run',
