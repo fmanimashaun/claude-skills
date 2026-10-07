@@ -14,7 +14,7 @@ GUARD = Guard(
     # Only the fixture groups that drive this subject (#1497): the whole harness per
     # mutant was ~70% of the mutation-coverage budget.
     selftest_args=("--only", "guard_migrate"),
-    needs=(
+    needs=("plugins/rails-flow/scripts/fixture_git.py", 
            'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py',  # session-start.sh runs both (#1581: the harness drives it)
            'plugins/rails-flow/hooks/scripts',
            'plugins/qa-flow/hooks/scripts', 'plugins/qa-flow/scripts',
