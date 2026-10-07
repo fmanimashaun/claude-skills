@@ -33,6 +33,7 @@ import signal
 import subprocess
 import sys
 import time
+import uuid
 import tempfile
 import types
 import time
@@ -3205,6 +3206,62 @@ def ci_verdict_hint_fixtures() -> None:
               code == 0 and out.strip() == "", f"exit {code}: {out.strip()[:120]!r}")
 
 
+def session_end_fixtures() -> None:
+    """#1582 slice C: session-end.sh reaps the session's own stopped orphans, fails open, and never blocks.
+
+    The reaper's own fixtures (the decoy, the other session, the running orphan, the child with a parent) live in
+    `session_reaper.py --selftest`; this proves the HOOK reaches it with the payload and stays silent and exit 0 when
+    it cannot."""
+    root = str(HOOKS.parents[1])
+    sid = str(uuid.uuid4())      # unique per run: guards run in parallel (#1646 R2)
+    leaf = ("import os, signal, sys, time\nopen(sys.argv[1], 'w').write(str(os.getpid()))\n"
+            "os.kill(os.getpid(), signal.SIGSTOP)\ntime.sleep(120)\n")
+    parent = ("import subprocess, sys\nN = subprocess.DEVNULL\n"
+              f"subprocess.Popen([sys.executable, '-c', {leaf!r}, sys.argv[1]], start_new_session=True, stdin=N, stdout=N, stderr=N)\n")
+    with tempfile.TemporaryDirectory() as td:
+        proj, pidfile = Path(td), Path(td) / "leaf.pid"
+        env = {k: v for k, v in os.environ.items() if k != "CLAUDE_CODE_SESSION_ID"}
+        env["CLAUDE_CODE_SESSION_ID"] = sid
+        _run([sys.executable, "-c", parent, str(pidfile)], cwd=proj, env=env, timeout=30)
+        pid = 0
+        for _ in range(100):
+            if pidfile.exists() and pidfile.read_text().strip():
+                pid = int(pidfile.read_text())
+                if _run(["ps", "-o", "stat=", "-p", str(pid)], cwd=proj, capture_output=True, text=True,
+                        timeout=10).stdout.strip().startswith("T"):
+                    break
+            time.sleep(0.05)
+
+        def alive() -> bool:
+            out = _run(["ps", "-o", "stat=", "-p", str(pid)], cwd=proj, capture_output=True, text=True,
+                       timeout=10).stdout.strip()
+            return bool(out) and not out.startswith("Z")
+
+        try:
+            check("session-end: the fixture is a stopped orphan before the hook runs", pid > 0 and alive(), f"pid {pid}")
+            code, out = run_hook("session-end.sh", cwd=proj, stdin=json.dumps({"session_id": "ffffffff-0000-0000-0000-000000000000"}),
+                                 env_extra={"CLAUDE_PLUGIN_ROOT": root})
+            check("session-end: another session's id reaps nothing and says nothing",
+                  code == 0 and out.strip() == "" and alive(), f"exit {code}: {out.strip()[:120]!r}, alive {alive()}")
+            code, out = run_hook("session-end.sh", cwd=proj, stdin=json.dumps({"session_id": sid, "hook_event_name": "SessionEnd"}),
+                                 env_extra={"CLAUDE_PLUGIN_ROOT": root})
+            time.sleep(0.3)
+            check("session-end: this session's stopped orphan is reaped and the hook exits 0",
+                  code == 0 and not alive(), f"exit {code}: {out.strip()[:120]!r}, alive {alive()}")
+        finally:
+            if pid > 0:
+                for sig in (signal.SIGCONT, signal.SIGKILL):
+                    try:
+                        os.kill(pid, sig)
+                    except (ProcessLookupError, PermissionError):
+                        pass
+        # `unset` and `env_extra` must not meet: run_hook unsets first and then adds env_extra back.
+        for label, kwargs in (("an unreadable payload", {"stdin": "not json", "env_extra": {"CLAUDE_PLUGIN_ROOT": root}}),
+                              ("CLAUDE_PLUGIN_ROOT unset", {"stdin": json.dumps({"session_id": sid}), "unset": ("CLAUDE_PLUGIN_ROOT",)})):
+            code, out = run_hook("session-end.sh", cwd=proj, **kwargs)
+            check(f"session-end: {label} exits 0 silently", code == 0 and out.strip() == "", f"exit {code}: {out.strip()[:120]!r}")
+
+
 def timeout_fixtures() -> None:
     """#1469: a subprocess that times out fails ITS fixture by name; the suite never crashes.
 
@@ -3623,7 +3680,7 @@ def guard_worktree_pointer_fixtures() -> None:
     def start(repo: Path, sid: str | None = "SESS-A", **env) -> tuple[int, str]:
         stdin = json.dumps({"session_id": sid, "hook_event_name": "SessionStart"}) if sid is not None else "not json"
         return run_hook("session-start.sh", cwd=repo, stdin=stdin, unset=("CLAUDE_PROJECT_DIR",),
-                        env_extra=dict({"RAILS_FLOW_ZOMBIE_WARN": "100000"}, **env))
+                        env_extra=dict({"RAILS_FLOW_ZOMBIE_WARN": "100000", "RAILS_FLOW_STOPPED_ORPHAN_WARN": "100000"}, **env))
 
     with tempfile.TemporaryDirectory() as td:
         repo = new_repo(td)
@@ -3647,6 +3704,39 @@ def guard_worktree_pointer_fixtures() -> None:
                            env_extra={"RAILS_FLOW_ZOMBIE_WARN": bad}, unset=("CLAUDE_PROJECT_DIR",))[1]
             check(f"resume pointer: RAILS_FLOW_ZOMBIE_WARN={bad} is clamped, so zero zombies prints no '0 zombie processes' line",
                   "zombie" not in out and "resume in place" in out, out[-200:])
+        # #1582 slice C: the stopped-orphan advisory. A stub `ps` lists stopped orphans for `-U`: two REAL processes (one
+        # whose environment names a session, one whose ARGUMENT only spells the entry, #1646 S1) and three made-up pids,
+        # plus a running one and a stopped one with a parent that must not count.
+        orphans = Path(td) / "orphans"
+        orphans.mkdir()
+        owner_id = str(uuid.uuid4())
+        env_owned = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], stdin=subprocess.DEVNULL,
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                     env={**os.environ, "CLAUDE_CODE_SESSION_ID": owner_id, "AWS_SECRET": "hunter2"})
+        spoofed_id = str(uuid.uuid4())
+        argv_spoof = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)", f"CLAUDE_CODE_SESSION_ID={spoofed_id}"],
+                                      stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                      env={k: v for k, v in os.environ.items() if k != "CLAUDE_CODE_SESSION_ID"})
+        _stub(orphans, "ps", 'case "$*" in\n'
+              f'  *-U*) printf "{env_owned.pid} T 1\\n{argv_spoof.pid} Ts 1\\n13 T 1\\n14 T 1\\n15 S 1\\n16 T 99\\n" ;;\n'
+              'esac\nexit 0')
+        try:
+            out = run_hook("session-start.sh", cwd=repo, stdin=json.dumps({"session_id": "SESS-A"}), path_prefix=[orphans],
+                           env_extra={"RAILS_FLOW_ZOMBIE_WARN": "100000", "RAILS_FLOW_STOPPED_ORPHAN_WARN": "3"},
+                           unset=("CLAUDE_PROJECT_DIR",))[1]
+            check("stopped orphans: four stopped orphans (ppid 1) are counted, a running one and a stopped one with a parent are not",
+                  "4 stopped orphan processes" in out, out[-300:])
+            check("stopped orphans: the owning session is named from the environment", owner_id in out, out[-300:])
+            check("stopped orphans: a session id that only an ARGUMENT spells is not shown as an owner", spoofed_id not in out, out[-300:])
+            check("stopped orphans: nothing else from the environment is printed", "hunter2" not in out and "AWS_SECRET" not in out, out[-300:])
+            out = run_hook("session-start.sh", cwd=repo, stdin=json.dumps({"session_id": "SESS-A"}), path_prefix=[orphans],
+                           env_extra={"RAILS_FLOW_ZOMBIE_WARN": "100000", "RAILS_FLOW_STOPPED_ORPHAN_WARN": "5"},
+                           unset=("CLAUDE_PROJECT_DIR",))[1]
+            check("stopped orphans: below the threshold the advisory is silent", "stopped orphan" not in out, out[-300:])
+        finally:
+            for proc in (env_owned, argv_spoof):
+                proc.kill()
+                proc.wait()
         # S4: the zombie scan must finish inside session-start's own 10 s hook timeout, even when `ps` hangs.
         slow_ps = Path(td) / "slow-ps"
         slow_ps.mkdir()
@@ -4104,7 +4194,7 @@ GROUPS = {
     "guard_claims": guard_claims_fixtures, "guard_claims_pipe": guard_claims_pipe_fixtures, "release_gate": release_gate_fixtures,
     "release_gate_effects": release_gate_effects_fixtures, "release_gate_repos": release_gate_repos_fixtures,
     "release_gate_refs": release_gate_refs_fixtures,
-    "ci_verdict_hint": ci_verdict_hint_fixtures, "timeout": timeout_fixtures,
+    "ci_verdict_hint": ci_verdict_hint_fixtures, "session_end": session_end_fixtures, "timeout": timeout_fixtures,
     "guard_worktree": guard_worktree_fixtures, "guard_worktree_parse": guard_worktree_parse_fixtures,
     "guard_worktree_failopen": guard_worktree_failopen_fixtures, "guard_worktree_pointer": guard_worktree_pointer_fixtures,
     "deadline": deadline_fixtures, "where_stopped": where_stopped_fixtures,
@@ -4124,7 +4214,7 @@ GROUPS = {
 # would never run in the doctor, which is the vacuous gate this repository keeps finding; the selftest checks it below.
 PARTS = {
     "a": ["stop_gate", "guard_lane", "guard_migrate", "lint_ruby", "self_consistency", "guard_bash", "guard_claims", "guard_claims_pipe",
-          "ci_verdict_hint", "timeout"],
+          "ci_verdict_hint", "session_end", "timeout"],
     "b": ["release_gate", "release_gate_effects"],
     "c": ["release_gate_repos", "release_gate_refs", "guard_worktree", "guard_worktree_parse",
           "guard_worktree_failopen", "guard_worktree_pointer", "deadline", "where_stopped"],
