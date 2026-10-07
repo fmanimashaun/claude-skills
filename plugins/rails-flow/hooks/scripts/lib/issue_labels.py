@@ -321,7 +321,8 @@ def hidden_create(cmd: str) -> str | None:
         after = opener[mark:]
         feeders = [_command_word(opener[:mark])] + ([_command_word(after)] if "|" in after else [])
         for feeder in feeders:
-            if (feeder in SHELLS or feeder == "eval") and _names_create(text):
+            # A body a shell runs has its escapes decoded first: `gh i\\ssue cr\\eate` is `gh issue create` to the shell (#1515).
+            if (feeder in SHELLS or feeder == "eval") and (_names_create(text) or _names_create(re.sub(r"\\(.)", r"\1", text, flags=re.S))):
                 return f"a heredoc fed to `{feeder}`"
         if not quoted:
             # An escaped character is literal in an unquoted body too: `\\`gh issue create\\`` is text.
@@ -351,6 +352,14 @@ def hidden_create(cmd: str) -> str | None:
     found = _substituted_create(subst)
     if found:
         return found
+    # A shell fed a file through a substitution (#1515): `bash <(cat f)`, `bash -c "$(cat f)"`, `bash <<<"$(cat f)"`.
+    for m in _SHELL_FED.finditer(body):
+        for operand in _cat_operands(m.group(1)):
+            fed = _read_script(operand, Path.cwd())
+            if fed is _UNREADABLE or fed is _UNKNOWN_DIR:
+                return f"a script file `{operand}` fed to a shell that this hook cannot read"
+            if fed is not None and _names_create(fed):
+                return "a script file fed to a shell through a substitution"
     try:
         lexer = shlex.shlex(_fold_fd_redirects(body).replace("\n", " ; "), posix=True, punctuation_chars=";&|()")
         lexer.whitespace_split = True
@@ -358,6 +367,8 @@ def hidden_create(cmd: str) -> str | None:
     except ValueError:
         return None
     seg: list[str] = []
+    gh_names: set[str] = set()       # names bound to gh in this command (`alias g=gh`, `G=gh`) (#1515)
+    prev_cat: list[str] = []         # the files a `cat` earlier in this pipeline reads (#1515)
     prev_text, prev_op = "", ""      # the pipeline so far (every `|`-joined segment), and the last operator
     # Where a relative `bash < script` resolves (#1489 review, #1495): the session's directory, moved by
     # each literal `cd` to a directory that EXISTS -- a cd to a missing one fails and changes nothing,
@@ -375,6 +386,25 @@ def hidden_create(cmd: str) -> str | None:
             if words and os.path.basename(_split_redirects(words[:1])[0]) in SHELLS:
                 words = _split_redirects(words)
             head = os.path.basename(words[0]) if words else ""
+            # INDIRECT CREATES (#1515, decided by the coordinator: the gate claims them). The `gh` word built at run time
+            # (`$G issue create`, and `$(echo gh) issue create`, whose substitution splits the segment so a bare `issue create`
+            # is left), an alias of gh, and the verb arriving through a pipe to `xargs gh` all file an unlabelled issue.
+            for seg_word in raw_seg.split():
+                if "=" in seg_word and seg_word.split("=", 1)[0].isidentifier() and os.path.basename(seg_word.split("=", 1)[1].strip("'\"")) == "gh":
+                    gh_names.add(seg_word.split("=", 1)[0])
+            if head == "alias":
+                for alias_word in words[1:]:
+                    name, _, value = alias_word.partition("=")
+                    if value.strip("'\"").split()[:1] and os.path.basename(value.strip("'\"").split()[0]) == "gh":
+                        gh_names.add(name)
+            tail = [w for w in words[1:] if not w.startswith("-")]
+            names_verb = len(words) > 1 and any(a == "issue" and b in ("create", "new") for a, b in zip(words, words[1:]))
+            if words and names_verb and (words[0].startswith("$") or "`" in words[0] or words[0] in gh_names):
+                return "a `gh` word built at run time or aliased"
+            if head == "issue" and tail[:1] and tail[0] in ("create", "new"):
+                return "a `gh` word built at run time (a substitution before `issue create`)"
+            if head == "gh" and len(words) == 1 and prev_op in ("|", "|&") and re.search(r"\bissue\s+(create|new)\b", prev_text):
+                return "a pipe into `xargs gh`"
             # A cd in the background (`cd sub &`) or in a pipeline (`cd sub | …`, `… | cd sub`) runs in a
             # subshell and never moves this shell (#1513 review), so it is not followed.
             in_subshell = tok.rstrip("()") in ("&", "|", "|&") or prev_op in ("|", "|&")
@@ -392,10 +422,34 @@ def hidden_create(cmd: str) -> str | None:
                 return f"`{head} -c`"
             if head == "eval" and _names_create(rest):
                 return "`eval`"
+            # A script the shell runs from a FILE (#1515): `bash f`, `sh ./f`, `source f`, `. f`. The file is read; one that cannot be
+            # read is refused (the coordinator's call: fail closed), as is a relative one after a cd this parser cannot follow.
+            operand = None
+            if head in SHELLS and not runs_string and not any(w.startswith("<<<") for w in words[1:]):
+                operand, has_s = _first_operand(words[1:])
+                operand = None if has_s else operand
+            elif head in ("source", ".") and len(words) > 1:
+                operand = words[1]
+            if operand:
+                fed = _read_script(operand, here_dir)
+                if fed is _UNKNOWN_DIR:
+                    return (f"a script run by `{head}` after a cd this hook cannot follow; give the script an absolute path")
+                if fed is _UNREADABLE:
+                    return f"a script file `{operand}` run by `{head}` that this hook cannot read"
+                if fed is not None and _names_create(fed):
+                    return f"a script run by `{head}`"
             # A shell reading its SCRIPT from stdin (#1462): a pipe into it, or a herestring.
             if head in SHELLS and not runs_string:
                 if prev_op in ("|", "|&") and _names_create(prev_text):
                     return f"a pipe into `{head}`"
+                # `cat f | bash` (#1515): the files `cat` read are the script.
+                if prev_op in ("|", "|&") and prev_cat:
+                    for cat_file in prev_cat:
+                        fed = _read_script(cat_file, here_dir)
+                        if fed is _UNREADABLE or fed is _UNKNOWN_DIR:
+                            return f"a script file `{cat_file}` piped into `{head}` that this hook cannot read"
+                        if fed is not None and _names_create(fed):
+                            return f"a script file piped into `{head}`"
                 here = next((k for k, w in enumerate(words) if w.startswith("<<<")), None)
                 if here is not None and _names_create(" ".join([words[here][3:]] + words[here + 1:])):
                     return f"a herestring fed to `{head}`"
@@ -403,12 +457,15 @@ def hidden_create(cmd: str) -> str | None:
                 # A file that cannot be read is allowed, as before. But a RELATIVE script after a cd this
                 # parser cannot follow is refused (#1513 review, owner rule #1423): it may be anywhere.
                 script = _redirected_script(words[1:], here_dir) if _stdin_is_script(words[1:]) else None
+                if script is _UNREADABLE:
+                    return f"a redirected script for `{head}` that this hook cannot read"
                 if script is _UNKNOWN_DIR:
                     return (f"a script fed to `{head}` by redirect after a cd this hook cannot follow; "
                             "give the script an absolute path")
                 if script is not None and _names_create(script):
                     return f"a script fed to `{head}` by redirect"
             # A pipeline feeds its whole upstream: `echo … | cat | bash` runs what echo wrote.
+            prev_cat = ((prev_cat if prev_op in ("|", "|&") else []) + (_cat_operands(" ".join(words[1:])) if head == "cat" else []))
             prev_text = (prev_text + " " + raw_seg) if prev_op in ("|", "|&") else raw_seg
             prev_op = tok
             for ch in tok:
@@ -472,9 +529,9 @@ def _peel(words: list[str]) -> list[str]:
     return words
 
 
-def _stdin_is_script(args: list[str]) -> bool:
-    """Does a shell run its STDIN as the script? Only with no operand, or with `-s` (#1489 review):
-    `bash script.sh < notes.md` runs script.sh and hands it notes.md as data."""
+def _first_operand(args: list[str]) -> tuple[str | None, bool]:
+    """A shell's first operand (the script file, or the `-c` string) and whether `-s` was given (#1489 review).
+    Redirects, flags and the words `-o`/`-O` take are not operands."""
     k, has_s, ended = 0, False, False
     while k < len(args):
         w = args[k]
@@ -495,31 +552,30 @@ def _stdin_is_script(args: list[str]) -> bool:
             elif re.fullmatch(r"[-+][A-Za-z]+", w):
                 k += w.count("o") + w.count("O")   # each o/O takes a word: `-eo x`, `-ox x`, `-oO a b` (#1513)
             continue
-        return has_s                 # an operand: the script is that file, unless -s
-    return True
+        return w, has_s              # an operand: the script is that file, unless -s
+    return None, has_s
+
+
+def _stdin_is_script(args: list[str]) -> bool:
+    """Does a shell run its STDIN as the script? Only with no operand, or with `-s` (#1489 review):
+    `bash script.sh < notes.md` runs script.sh and hands it notes.md as data."""
+    operand, has_s = _first_operand(args)
+    return operand is None or has_s
 
 
 _UNKNOWN_DIR = "\0unknown-dir"     # a relative script after a cd that cannot be followed
+_UNREADABLE = "\0unreadable"       # a literal script path that is not a readable file (#1515: refused, fail closed)
 
 
-def _redirected_script(args: list[str], cwd: Path | None) -> str | None:
-    """The contents of the file a shell reads as stdin (`< path`, `<path`, `0< path`), or None.
+def _read_script(target: str | None, cwd: Path | None) -> str | None:
+    """The contents of the script file TARGET names, read the way the shell would find it.
 
-    Only a real, readable file, of which the first 1 MB is read; a relative path resolves from CWD,
-    the directory the command has moved to, and is unknown when that is (None). `$HOME` expands.
-    `<<` (heredoc) and `<<<` (herestring) are other forms, handled elsewhere; `<(` is a process
-    substitution, not a file. Unreadable means unknown, and unknown keeps dev's behaviour: allow.
+    Only a literal path: one with `$` or a backtick cannot be resolved here and is None (allowed, as before; refusing every
+    `bash "$DIR/x.sh"` would block ordinary commands). A literal path that is not a readable file is `_UNREADABLE`, and
+    a relative one after a cd this parser cannot follow is `_UNKNOWN_DIR`: both are REFUSED (#1515, decided by the
+    coordinator: a script file that cannot be read fails closed, as #1513 did for an unfollowable cd). The first 1 MB is read;
+    a relative path resolves from CWD, the directory the command has moved to; `$HOME` expands.
     """
-    target = None
-    for k, w in enumerate(args):
-        if w.startswith("0<"):
-            w = w[1:]
-        if w == "<" and k + 1 < len(args):
-            target = args[k + 1]
-            break
-        if w.startswith("<") and not w.startswith(("<<", "<(")) and len(w) > 1:
-            target = w[1:]
-            break
     if target:
         target = re.sub(r"^\$(HOME|\{HOME\})(?=/|$)", lambda _: os.path.expanduser("~"), target)
     if not target or "$" in target or "`" in target:
@@ -531,11 +587,43 @@ def _redirected_script(args: list[str], cwd: Path | None) -> str | None:
         path = cwd / path
     try:
         if not path.is_file():
-            return None
+            return _UNREADABLE
         with path.open("rb") as fh:
             return fh.read(1_000_000).decode("utf-8", errors="replace")
     except OSError:
-        return None
+        return _UNREADABLE
+
+
+def _redirected_script(args: list[str], cwd: Path | None) -> str | None:
+    """The contents of the file a shell reads as stdin (`< path`, `<path`, `0< path`), or None.
+
+    `<<` (heredoc) and `<<<` (herestring) are other forms, handled elsewhere; `<(` is a process substitution, not a file.
+    """
+    target = None
+    for k, w in enumerate(args):
+        if w.startswith("0<"):
+            w = w[1:]
+        if w == "<" and k + 1 < len(args):
+            target = args[k + 1]
+            break
+        if w.startswith("<") and not w.startswith(("<<", "<(")) and len(w) > 1:
+            target = w[1:]
+            break
+    return _read_script(target, cwd)
+
+
+# A SHELL FED A FILE THROUGH A SUBSTITUTION (#1515): `bash <(cat f)`, `bash -c "$(cat f)"`, `bash <<<"$(cat f)"`, and the backtick form. The
+# shell word and the `cat` sit in one segment (no `;`, `&` or `|` between them); `cat`'s operands are the files.
+_SHELL_FED = re.compile(r"(?:^|[\s;&|(])(?:sh|bash|zsh|dash|ksh)\b(?:[^;&|\n]|[<>]&|&>)*?(?:<\(|\$\(|`)\s*cat\s+([^)`]+)")
+
+
+def _cat_operands(text: str) -> list[str]:
+    """The files `cat` is given in TEXT (a command's words after `cat`): not flags, not redirects."""
+    try:
+        words = shlex.split(text, posix=True)
+    except ValueError:
+        return []
+    return [w for w in words if not w.startswith(("-", "<", ">")) and not re.fullmatch(r"\d*[<>]&?\d*", w)]
 
 
 def _command_word(text: str) -> str:
@@ -633,11 +721,71 @@ def matches(label: str, pattern: str) -> bool:
     return label.startswith(pattern[:-1]) if pattern.endswith("*") else label == pattern
 
 
+_ISSUES_ENDPOINT = re.compile(r"^/?repos/[^/\s]+/[^/\s]+/issues/?(?:\?.*)?$")
+
+
+def api_issue_post(cmd: str) -> str | None:
+    """A `gh api` request that CREATES an issue, which never uses the `issue create` verb (#1515), or None.
+
+    `gh api -X POST repos/o/r/issues -f title=X` files an issue with no label. Decided by the coordinator: the gate claims it, and a POST to
+    an issues COLLECTION is refused (a comment, `repos/o/r/issues/12/comments`, or a GET is not). A request that sends fields
+    (`-f`, `-F`, `--field`, `--raw-field`, `--input`) with no `-X` is a POST too, which is how `gh api` behaves.
+    """
+    try:
+        lexer = shlex.shlex(_fold_fd_redirects(cmd).replace("\n", " ; "), posix=True, punctuation_chars=";&|()")
+        lexer.whitespace_split = True
+        tokens = list(lexer)
+    except ValueError:
+        return None
+    seg: list[str] = []
+    for tok in tokens + [";"]:
+        if tok and set(tok) <= set(";&|()"):
+            words = _peel([w for w in seg if not ("=" in w and w.split("=", 1)[0].isidentifier())])
+            seg = []
+            if len(words) < 2 or os.path.basename(words[0]) != "gh":
+                continue
+            rest = words[1:]
+            while rest and rest[0] in ("-R", "--repo") and len(rest) > 1:
+                rest = rest[2:]            # gh's global repo flag before the subcommand
+            if not rest or rest[0] != "api":
+                continue
+            method, sends, endpoint, k, args = "", False, None, 0, rest[1:]
+            while k < len(args):
+                w = args[k]
+                k += 1
+                if w in ("-X", "--method") and k < len(args):
+                    method = args[k].upper(); k += 1
+                elif w.startswith("--method="):
+                    method = w.split("=", 1)[1].upper()
+                elif w.startswith("-X") and len(w) > 2:
+                    method = w[2:].upper()
+                elif w in ("-f", "-F", "--field", "--raw-field", "--input", "-H", "--header", "--jq", "-q", "--template", "-t", "--cache", "--hostname"):
+                    sends = sends or w in ("-f", "-F", "--field", "--raw-field", "--input")
+                    k += 1
+                elif w.startswith("-"):
+                    continue
+                elif endpoint is None:
+                    endpoint = w
+            posts = method == "POST" or (not method and sends)
+            if posts and endpoint and _ISSUES_ENDPOINT.match(endpoint):
+                return f"`gh api` POST to {endpoint}"
+        else:
+            seg.append(tok)
+    return None
+
+
 def verdict(cmd: str, root: Path) -> tuple[bool, str]:
     shape = hidden_create(cmd)
     if shape:
+        if "cannot read" in shape or "cannot follow" in shape:
+            return False, (f"{shape}, so a `gh issue create` in it cannot be label-checked, and the command is refused rather than let "
+                           "through unlabelled. Fix the path (a readable file), or run the create directly with its --label flags (#1515).")
         return False, (f"a `gh issue create` inside {shape} cannot be label-checked (its labels are one "
                        "quoted string here). Run it directly, with its --label flags (#1423).")
+    api = api_issue_post(cmd)
+    if api:
+        return False, (f"{api} files an issue with no label check. File it with `gh issue create` and its --label flags (a template "
+                       "never applies from the shell) (#1515).")
     creates = issue_creates(cmd)
     if not creates:
         return True, ""
@@ -995,7 +1143,8 @@ def selftest() -> int:
         harmless = Path(td) / "no-issue.sh"
         harmless.write_text("#!/bin/sh\necho hi\n", encoding="utf-8")
         check("CONTROL: a redirected script without a create is allowed", verdict(f"bash < {harmless}", bare)[0])
-        check("CONTROL: a redirect to a missing file is allowed, as before", verdict(f"bash < {td}/nope.sh", bare)[0])
+        ok, why = verdict(f"bash < {td}/nope.sh", bare)
+        check("a redirect to a file that cannot be read is refused, fail closed (#1515)", not ok and "cannot read" in why, why)
         check("CONTROL: cat reading the same file is not a shell running it",
               verdict(f"cat < {script}", bare)[0])
         # #1489 review: the shell spellings and redirect forms the first version missed.
@@ -1022,8 +1171,9 @@ def selftest() -> int:
             ok, why = verdict("cd sub && cd $X && bash < only.sh", bare)
             check("after a cd it cannot resolve, a relative script is refused as unfollowable (#1513)",
                   not ok and "cannot follow" in why, why)
-            check("CONTROL: a cd inside ( ) does not outlive it, so only.sh is looked for where it is not, and allowed",
-                  verdict("(cd sub) && bash < only.sh", bare)[0])
+            ok, why = verdict("(cd sub) && bash < only.sh", bare)
+            check("a cd inside ( ) does not outlive it, so only.sh is looked for where it is not: unreadable, refused (#1515)",
+                  not ok and "cannot read" in why, why)
             ok, why = verdict("bash < c2.sh", bare)
             check("with no cd, a relative script is read from the session directory", not ok and "by redirect" in why, why)
             # #1495: the five #1489 edge cases. c2.sh here has a create; sub/c2.sh is harmless.
@@ -1088,7 +1238,7 @@ def selftest() -> int:
             else:
                 os.environ["HOME"] = home
         # A shell with a script OPERAND runs that file; the redirected file is only its data.
-        for form in (f"bash other.sh < {script}", f"bash < {script} other.sh", f"sh -e other.sh < {script}"):
+        for form in (f"bash {harmless} < {script}", f"bash < {script} {harmless}", f"sh -e {harmless} < {script}"):
             check(f"CONTROL: {form.split(str(td))[0]!r}: stdin is data for a script operand, allowed", verdict(form, bare)[0])
         for form in (f"bash -s < {script}", f"bash -s arg1 < {script}", f"bash -o errexit < {script}", f"bash -- < {script}"):
             ok, why = verdict(form, bare)
@@ -1125,6 +1275,55 @@ def selftest() -> int:
         (r / CONFIG).write_text("{not json", encoding="utf-8")
         check("an unreadable declaration refuses rather than allowing",
               not verdict("gh issue create -t X --label feature", r)[0])
+
+        # #1515 (a): A SCRIPT THE SHELL RUNS THAT THE HELPER NEVER READ. Each is refused through the helper, with a control.
+        bad = Path(td) / "bad.sh"
+        bad.write_text("gh issue create -t X --body y\n", encoding="utf-8")
+        fine = Path(td) / "fine.sh"
+        fine.write_text("echo hi\n", encoding="utf-8")
+        gone = Path(td) / "gone.sh"
+        for cmd, why_ in ((f"bash {bad}", "a script operand"), (f"sh {bad}", "sh with an operand"),
+                          (f"source {bad}", "source"), (f". {bad}", "the dot"),
+                          (f"cat {bad} | bash", "cat into a shell"), (f"bash <(cat {bad})", "a process substitution"),
+                          (f'bash -c "$(cat {bad})"', "a command string built from the file"),
+                          (f'bash 2>&1 <<<"$(cat {bad})"', "a herestring built from the file"),
+                          (f"bash -c `cat {bad}`", "backticks around cat")):
+            ok, why = verdict(cmd, bare)
+            check(f"(#1515) {why_}: {cmd.replace(str(td), '')!r} is refused", not ok, why)
+        ok, why = verdict("bash -s <<'EOF'\ngh i\\ssue cr\\eate -t X --body y\nEOF", bare)
+        check("(#1515) a quoted heredoc fed to `bash -s` has its escapes decoded before matching", not ok and "heredoc" in why, why)
+        for cmd in (f"bash {gone}", f"source {gone}", f"cat {gone} | bash", f"bash <(cat {gone})"):
+            ok, why = verdict(cmd, bare)
+            check(f"(#1515) a script file that cannot be read is REFUSED, fail closed: {cmd.replace(str(td), '')!r}",
+                  not ok and "cannot read" in why, why)
+        for cmd, why_ in ((f"bash {fine}", "a harmless script"), (f"source {fine}", "source of a harmless one"),
+                          (f"cat {fine} | bash", "cat of a harmless one into a shell"), (f"bash <(cat {fine})", "a harmless substitution"),
+                          (f'bash -c "$(cat {fine})"', "a harmless command string"),
+                          (f"cat {bad} | wc -l", "cat of a create script is not run by a shell"),
+                          (f'echo "$(cat {bad})"', "a substitution no shell runs"),
+                          ('bash "$DIR/run.sh"', "a path the hook cannot resolve is allowed, as before"),
+                          (f"bash -c 'echo hi' {bad}", "-c runs its string, the operand is data")):
+            check(f"(#1515) CONTROL: {cmd.replace(str(td), '')!r} is allowed ({why_})", verdict(cmd, bare)[0])
+
+        # #1515 (b): A CREATE INVOKED INDIRECTLY (decided: the gate claims them). Each refused, with a control.
+        for cmd, why_ in (("$(echo gh) issue create -t X --body y", "a gh word from a substitution"),
+                          ("G=gh; $G issue create -t X --body y", "a gh word from a variable"),
+                          ("alias g=gh; g issue create -t X --body y", "an alias"),
+                          ("echo issue create -t X --body y | xargs gh", "the verb through xargs"),
+                          ("gh api -X POST repos/o/r/issues -f title=X", "the API, an explicit POST"),
+                          ("gh api repos/o/r/issues -f title=X", "the API, fields imply a POST"),
+                          ("gh api --method POST /repos/o/r/issues --field title=X", "the API, long flags"),
+                          ("gh -R o/r api -X POST repos/o/r/issues -f title=X", "the API after the repo flag")):
+            ok, why = verdict(cmd, bare)
+            check(f"(#1515) {why_}: {cmd!r} is refused", not ok, why)
+        for cmd, why_ in (("gh api repos/o/r/issues", "a GET of the collection"),
+                          ("gh api -X POST repos/o/r/issues/12/comments -f body=x", "a comment, not an issue"),
+                          ("gh api repos/o/r/issues/12", "one issue"),
+                          ("alias g=gh; g issue list", "an alias used for something else"),
+                          ('echo "alias g=gh"', "the words in an echo"),
+                          ("echo issue create | cat", "the verb piped to cat, not to xargs gh"),
+                          ("gh issue create -t X --body y --label feature", "a direct labelled create still passes")):
+            check(f"(#1515) CONTROL: {cmd!r} is allowed ({why_})", verdict(cmd, bare)[0])
 
     for f in fails:
         print(f"FAIL {f}")

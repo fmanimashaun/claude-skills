@@ -749,8 +749,8 @@ def guard_bash_fixtures() -> None:
             rc, err = labelled(form)
             check(f"guard-bash (#1489 review): `{form.split(sd)[0]}` with a create is refused through the real hook",
                   rc == 2 and "by redirect" in err, err)
-        check("guard-bash (#1489 review): CONTROL: `bash other.sh < file` hands the file to a script as data, allowed",
-              labelled(f"bash other.sh < {script}")[0] == 0)
+        check("guard-bash (#1489 review): CONTROL: `bash <script> < file` hands the file to a script as data, allowed",
+              labelled(f"bash {plain} < {script}")[0] == 0)
         check("guard-bash (#1489 review): CONTROL: `$'…'` before a harmless redirected script is allowed",
               labelled(f"echo $'it\\'s'; bash < {plain}")[0] == 0)
     # A relative script is read from the cd target (#1489 review, through the real hook).
@@ -771,10 +771,48 @@ def guard_bash_fixtures() -> None:
                      ("bash &>log < bad.sh", "&> is a redirect, not a background &")):
         rc, err = labelled(cmd, files=tree)
         check(f"guard-bash (#1495): `{cmd}` is refused ({why})", rc == 2 and "by redirect" in err and "cannot follow" not in err, err)
-    for cmd, why in (("(cd sub) && bash < only.sh", "the subshell's cd does not outlive it; only.sh is not here"),
-                     ("bash -eo pipefail ok.sh < bad.sh", "a script operand after -eo VALUE reads stdin as data"),
+    rc, err = labelled("(cd sub) && bash < only.sh", files=tree)
+    check("guard-bash (#1515): `(cd sub) && bash < only.sh` is refused: the subshell's cd does not outlive it, so only.sh is not here and "
+          "a script file that cannot be read fails closed", rc == 2 and "cannot read" in err, err)
+    for cmd, why in (("bash -eo pipefail ok.sh < bad.sh", "a script operand after -eo VALUE reads stdin as data"),
                      ("bash 2>&1 < ok.sh", "a harmless script behind 2>&1")):
         check(f"guard-bash (#1495): CONTROL: `{cmd}` is allowed ({why})", labelled(cmd, files=tree)[0] == 0)
+    # #1515 (a): A SCRIPT THE SHELL RUNS THAT THE HELPER NEVER READ. Each refused through the real hook, with a control. The coordinator's call: a
+    # script file that cannot be read is REFUSED (fail closed).
+    for cmd, why in (("bash bad.sh", "a script operand"), ("sh ./bad.sh", "sh with a relative operand"),
+                     ("source bad.sh", "source"), (". bad.sh", "the dot"),
+                     ("cat bad.sh | bash", "cat into a shell"), ("bash <(cat bad.sh)", "a process substitution"),
+                     ('bash -c "$(cat bad.sh)"', "a command string built from the file"),
+                     ('bash 2>&1 <<<"$(cat bad.sh)"', "a herestring built from the file")):
+        rc, err = labelled(cmd, files=tree)
+        check(f"guard-bash (#1515): `{cmd}` is refused ({why})", rc == 2, err)
+    rc, err = labelled("bash -s <<'EOF'\ngh i\\ssue cr\\eate -t X --body y\nEOF")
+    check("guard-bash (#1515): a quoted heredoc fed to `bash -s` has its escapes decoded before matching",
+          rc == 2 and "heredoc" in err, err)
+    for cmd in ("bash gone.sh", "source gone.sh", "cat gone.sh | bash", "bash <(cat gone.sh)"):
+        rc, err = labelled(cmd, files=tree)
+        check(f"guard-bash (#1515): `{cmd}` (a script file that cannot be read) is REFUSED, fail closed", rc == 2 and "cannot read" in err, err)
+    for cmd, why in (("bash ok.sh", "a harmless script"), ("source ok.sh", "source of a harmless one"),
+                     ("cat ok.sh | bash", "cat of a harmless one into a shell"), ("bash <(cat ok.sh)", "a harmless substitution"),
+                     ('bash -c "$(cat ok.sh)"', "a harmless command string"),
+                     ("cat bad.sh | wc -l", "cat of a create script no shell runs"), ('echo "$(cat bad.sh)"', "a substitution no shell runs"),
+                     ('bash "$DIR/run.sh"', "a path the hook cannot resolve is allowed, as before")):
+        check(f"guard-bash (#1515): CONTROL: `{cmd}` is allowed ({why})", labelled(cmd, files=tree)[0] == 0)
+    # #1515 (b): A CREATE INVOKED INDIRECTLY (decided: the gate claims them). The trigger must reach the helper for each.
+    for cmd, why in (("$(echo gh) issue create -t X --body y", "a gh word from a substitution"),
+                     ("G=gh; $G issue create -t X --body y", "a gh word from a variable"),
+                     ("alias g=gh; g issue create -t X --body y", "an alias"),
+                     ("echo issue create -t X --body y | xargs gh", "the verb arriving through xargs"),
+                     ("gh api -X POST repos/o/r/issues -f title=X", "the API with an explicit POST"),
+                     ("gh api repos/o/r/issues -f title=X", "the API, whose fields imply a POST"),
+                     ("gh api --method POST /repos/o/r/issues --field title=X", "the API with long flags")):
+        rc, err = labelled(cmd)
+        check(f"guard-bash (#1515): `{cmd}` is refused ({why})", rc == 2, err)
+    for cmd, why in (("gh api repos/o/r/issues", "a GET of the collection"),
+                     ("gh api -X POST repos/o/r/issues/12/comments -f body=x", "a comment on an issue, not an issue"),
+                     ("alias g=gh; g issue list", "an alias used for something else"),
+                     ("gh issue create -t X --body y --label bug --label severity:s2", "a direct labelled create")):
+        check(f"guard-bash (#1515): CONTROL: `{cmd}` is allowed ({why})", labelled(cmd)[0] == 0)
     # #1513 review: shapes the first #1495 version still let through, each through the real hook.
     tree2 = {**tree, "sub/ok.sh": harmless}
     for cmd, why in (("cd sub &>/dev/null; bash < only.sh", "a cd's own redirect is not an argument"),
@@ -876,6 +914,7 @@ def guard_bash_fixtures() -> None:
     no_awk = bindir(base + ("grep",), python=True)
     no_python = bindir(base + ("grep", "sed", "tr", "awk"), python=False)
     no_grep = bindir(base + ("sed", "tr", "awk"), python=True)
+    no_tr = bindir(base + ("grep", "sed", "awk"), python=True)
     try:
         check("guard-bash (#1529 review): with no awk, a COMPOUND `cd x && git add -A` is blocked",
               raw(payload("cd x && git add -A"), no_awk) == 2, "exit 0: the anchored rules missed the raw text")
@@ -901,8 +940,32 @@ def guard_bash_fixtures() -> None:
               raw(payload("cd x && git status"), no_grep) == 0, "exit 2")
         check("guard-bash (#1529 r3): CONTROL: with no grep, a dry-run `cd x && git clean -n -fd` passes",
               raw(payload("cd x && git clean -n -fd"), no_grep) == 0, "exit 2")
+        # #1545: THE ISSUE-LABEL TRIGGER USED grep AND tr DIRECTLY. With either missing the pipeline failed, the `if` read false and the helper
+        # never ran, so an unlabelled `gh issue create` passed on a machine where every other rule fails closed. Each case below is the SAME
+        # command through the real hook with the tool absent (absolute /usr/bin symlinks, as above), with a control that must still pass.
+        unlabelled = "gh issue create -t X --body y"
+        for tool, bd in (("grep", no_grep), ("tr", no_tr)):
+            check(f"guard-bash (#1545): with no {tool} on PATH, an unlabelled `gh issue create` is still refused",
+                  raw(payload(unlabelled), bd) == 2, "exit 0: the trigger's pipeline failed and the label check was skipped")
+            check(f"guard-bash (#1545): with no {tool} on PATH, a QUOTED verb `gh issue \"create\"` is still refused",
+                  raw(payload('gh issue "create" -t X --body y'), bd) == 2, "exit 0")
+            check(f"guard-bash (#1545): CONTROL: with no {tool} on PATH, a labelled create passes",
+                  raw(payload(unlabelled + " --label bug"), bd) == 0, "exit 2")
+            check(f"guard-bash (#1545): CONTROL: with no {tool} on PATH, an unrelated command passes",
+                  raw(payload("ls -la"), bd) == 0, "exit 2")
+        # THE FAIL-CLOSED PATH PAST THE 64 KB PIPE BUFFER (the #1570 lesson: `grep -q` quits at the first match, `printf` takes SIGPIPE, and
+        # pipefail read that 141 as "no match"): the create FIRST and 10k lines after it, in each environment, still refused.
+        big = unlabelled + "\n" + "".join(f"echo line {i}\n" for i in range(10000))
+        # No grep has no pipe to overflow, and bash's own line-by-line `=~` is quadratic over 10k lines (hit() has always been), so that
+        # environment is checked with a few hundred lines instead.
+        short = unlabelled + "\n" + "".join(f"echo line {i}\n" for i in range(300))
+        for name, bd, text in (("full PATH", None, big), ("no tr", no_tr, big), ("no grep, 300 lines", no_grep, short)):
+            check(f"guard-bash (#1545): a create followed by a long text is still refused ({name})",
+                  (raw(payload(text)) if bd is None else raw(payload(text), bd)) == 2, "exit 0: the long text hid the create from the trigger")
+        check("guard-bash (#1545): CONTROL: 130 KB of text with no create still passes (full PATH)",
+              raw(payload("echo hi\n" + "".join(f"echo line {i}\n" for i in range(10000)))) == 0, "exit 2")
     finally:
-        for bd in (no_awk, no_python, no_grep):
+        for bd in (no_awk, no_python, no_grep, no_tr):
             shutil.rmtree(bd, ignore_errors=True)
     check("guard-bash (#1529 review): a lone surrogate does not hide `git add -A`",
           raw(b'{"tool_input":{"command":"git add -A \\ud800"}}') == 2, "exit 0")

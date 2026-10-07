@@ -266,7 +266,7 @@ GUARD = Guard(
         ),
         Mutation(
             "a heredoc fed to a shell is not refused",
-            '            if (feeder in SHELLS or feeder == "eval") and _names_create(text):',
+            '            if (feeder in SHELLS or feeder == "eval") and (_names_create(text) or _names_create(re.sub(r"\\\\(.)", r"\\1", text, flags=re.S))):',
             "            if False:",
             "a create in a heredoc fed to `bash` is refused and named",
         ),
@@ -341,8 +341,8 @@ GUARD = Guard(
         # #1489 review: each fix below has a fixture that must notice it going.
         Mutation(
             "stdin is read as the script even when a script operand is given",
-            "        return has_s                 # an operand: the script is that file, unless -s",
-            "        return True",
+            "        return w, has_s              # an operand: the script is that file, unless -s",
+            "        return None, True",
             "stdin is data for a script operand, allowed",
         ),
         Mutation(
@@ -521,6 +521,55 @@ GUARD = Guard(
             '                    if cd is not None and (i != 0 or set(env) - {"GH_REPO"}):',
             "                    if cd is not None and (i != 0):",
             "refused: GIT_DIR on the create itself",
+        ),
+        # #1515: scripts the shell runs and creates invoked indirectly.
+        Mutation(
+            "a script operand is never read",
+            "            if operand:\n                fed = _read_script(operand, here_dir)",
+            "            if False:\n                fed = _read_script(operand, here_dir)",
+            "(#1515) a script operand",
+        ),
+        Mutation(
+            "a script file that cannot be read is allowed again, not refused",
+            "                if fed is _UNREADABLE:\n                    return f\"a script file `{operand}` run by",
+            "                if False:\n                    return f\"a script file `{operand}` run by",
+            "(#1515) a script file that cannot be read is REFUSED, fail closed: 'bash",
+        ),
+        Mutation(
+            "a heredoc fed to a shell is matched without its escapes decoded",
+            ' or _names_create(re.sub(r"\\\\(.)", r"\\1", text, flags=re.S))):',
+            "):",
+            "(#1515) a quoted heredoc fed to `bash -s`",
+        ),
+        Mutation(
+            "`cat f | bash` no longer reads the files cat was given",
+            '                if prev_op in ("|", "|&") and prev_cat:',
+            "                if False:",
+            "(#1515) cat into a shell",
+        ),
+        Mutation(
+            "a shell fed a file through a substitution is not read",
+            "    for m in _SHELL_FED.finditer(body):",
+            "    for m in []:",
+            "(#1515) a process substitution",
+        ),
+        Mutation(
+            "an alias of gh is not tracked",
+            '            if words and names_verb and (words[0].startswith("$") or "`" in words[0] or words[0] in gh_names):',
+            '            if words and names_verb and (words[0].startswith("$") or "`" in words[0]):',
+            "(#1515) an alias",
+        ),
+        Mutation(
+            "the verb piped to xargs gh is not refused",
+            '            if head == "gh" and len(words) == 1 and prev_op in ("|", "|&")',
+            '            if False and head == "gh" and len(words) == 1 and prev_op in ("|", "|&")',
+            "(#1515) the verb through xargs",
+        ),
+        Mutation(
+            "a gh api POST to the issues collection is allowed",
+            "    api = api_issue_post(cmd)\n    if api:",
+            "    api = api_issue_post(cmd)\n    if False:",
+            "(#1515) the API, an explicit POST",
         ),
         Mutation(
             "a newline after && breaks the chain",
