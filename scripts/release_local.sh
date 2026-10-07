@@ -178,7 +178,9 @@ trap 'rm -f "$NOTES"' EXIT
 # the bug itself had. The script keeps the `/^### /` anchor (a line merely MENTIONING the
 # tag must not start a grab — a verified failure, not a hypothesis) and the bare-pointer
 # fallback, so a release never publishes an empty body.
-"$PY" scripts/extract_release_notes.py --tag "$TAG" > "$NOTES"
+# THE BODY MUST FIT GITHUB'S 125,000-CHARACTER LIMIT (#1637), as in release.yml: the extractor emits the full notes when they fit, else each bullet's headline
+# plus a link to CHANGELOG.md at the tag, and says so on stderr. (This path has no issue-notifier step; release.yml's reads the unabridged `--full` text.)
+"$PY" scripts/extract_release_notes.py --tag "$TAG" --repo "$REPO" > "$NOTES"
 
 # FAIL, not warn (#832). This printed "Publishing anyway" -- so the `release notes complete` gate
 # that BLOCKS a hosted release could not block here, in the one path that exists for when the
