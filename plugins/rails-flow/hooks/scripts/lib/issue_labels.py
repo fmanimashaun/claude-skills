@@ -795,9 +795,16 @@ def _read_script(target: str | None, cwd: Path | None) -> str | None:
         if not path.is_file() or path.stat().st_size > _SCRIPT_CAP:
             return _UNREADABLE
         with path.open("rb") as fh:
-            return fh.read(_SCRIPT_CAP).decode("utf-8", errors="replace")
+            raw = fh.read(_SCRIPT_CAP)
     except OSError:
         return _UNREADABLE
+    # A UTF-16 or UTF-32 file (its BOM, or any NUL byte) is not decoded: a shell cannot run one, a decode here would only be a guess at what some
+    # other tool does with it, and the read-and-judge below would see no command in it (`g\0h\0 …`) and let a create through (#1671). Refused as
+    # unreadable, which fails closed. A UTF-8 BOM is stripped: a shell skips it on the first line no more than we should, and without the
+    # strip the first word read as `\ufeffgh`, which names no create (#1671).
+    if raw.startswith((b"\xff\xfe", b"\xfe\xff")) or b"\x00" in raw:
+        return _UNREADABLE
+    return raw.decode("utf-8-sig", errors="replace")
 
 
 def _redirected_script(args: list[str], cwd: Path | None) -> str | None:
@@ -1605,6 +1612,32 @@ def selftest() -> int:
                           ("echo 'see #12'\ngh issue list", "a # inside single quotes"),
                           ("cat > b.md <<'EOF'\n# a heading\nEOF\ngh issue list", "a # in a heredoc body")):
             check(f"(#1645 R1) CONTROL: {cmd!r} is allowed ({why_})", verdict(cmd, bare)[0], verdict(cmd, bare)[1])
+
+        # #1671: A SCRIPT'S ENCODING MUST NOT HIDE ITS CREATE. A UTF-8 BOM made the first word read as `\ufeffgh`; a UTF-16 file decoded to no command at all.
+        create = "gh issue create -t x -b y\n"
+        enc = {"bom": b"\xef\xbb\xbf" + create.encode(), "plain": create.encode(),
+               "u16": create.encode("utf-16"), "u16le": create.encode("utf-16-le"), "u16be": create.encode("utf-16-be"), "u32": create.encode("utf-32"),
+               "u16bom_ascii": b"\xff\xfe" + create.encode(), "nul": b"echo hi\x00\n" + create.encode(),
+               "bom_ok": b"\xef\xbb\xbf" + b"ls -la\n", "bom_labelled": b"\xef\xbb\xbf" + (create.rstrip() + " --label feature\n").encode(),
+               "plain_labelled": (create.rstrip() + " --label feature\n").encode()}
+        for name, data in enc.items():
+            (Path(td) / f"enc-{name}.sh").write_bytes(data)
+        def judge(name: str, how: str = "bash {f}") -> tuple[bool, str]:
+            return verdict(how.format(f=Path(td) / f"enc-{name}.sh"), bare)
+        ok, why = judge("plain")
+        check("(#1671) CONTROL: the plain script's unlabelled create is refused (the baseline the BOM must match)", not ok and "inside a script" in why, why)
+        for how in ("bash {f}", "source {f}", "bash < {f}", "sh {f}"):
+            ok, why = judge("bom", how)
+            check(f"(#1671) a UTF-8 BOM script's unlabelled create is refused like the plain one ({how})", not ok and "inside a script" in why or not ok and "cannot read" in why, why)
+        for name, label in (("u16", "UTF-16 with its BOM"), ("u16le", "UTF-16LE with no BOM (NUL-interleaved)"), ("u16be", "UTF-16BE with no BOM"),
+                            ("u32", "UTF-32"), ("nul", "a NUL byte after the first line")):
+            ok, why = judge(name)
+            check(f"(#1671) a script that is {label} is refused as unreadable, not read as no command", not ok and "cannot read" in why, why)
+        ok, why = judge("u16bom_ascii")
+        check("(#1671) a file that opens with a UTF-16 BOM is refused as unreadable even with no NUL byte", not ok and "cannot read" in why, why)
+        check("(#1671) CONTROL: a BOM script with no create is allowed", judge("bom_ok")[0], judge("bom_ok")[1])
+        check("(#1671) CONTROL: a labelled create in a BOM script gets the same verdict as in the plain script",
+              judge("bom_labelled") == judge("plain_labelled"), f"{judge('bom_labelled')} vs {judge('plain_labelled')}")
 
         # CodeQL (#1645): NO COMMAND MAY MAKE THE GUARD HANG. Each shape is decided in a CHILD process with a hard timeout, so a pattern that backtracks fails here
         # instead of hanging the selftest; the child reports its own CPU seconds (best of two), which a loaded machine does not inflate as it does the wall clock.
