@@ -133,6 +133,12 @@ def _fixture(tmp: Path, lessons: int = 20) -> Path:
     for args in (["init", "-q", "-b", "main"], ["add", "-A"],
                  ["commit", "-q", "-m", "fixture"]):
         subprocess.run(["git", *args], cwd=project, env=env, capture_output=True)
+    # A WORKED-IN CLONE HAS A WHERE-STOPPED FILE (#1639): rails-flow's Stop hook writes one every turn, so the measurement
+    # includes what SessionStart prints with one on disk, rather than the empty case a brand-new clone is in (#1643 D1).
+    stopped = REPO / "plugins/rails-flow/hooks/scripts/lib/where_stopped.py"
+    if stopped.is_file():
+        subprocess.run([sys.executable, str(stopped), "stop", "--cwd", str(project)], input="{}", env=env,
+                       capture_output=True, text=True, timeout=30)
     return project
 
 

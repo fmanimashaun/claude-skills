@@ -26,14 +26,57 @@ jobs:
   # gates.yml already gives for watching `dev`: a merge commit is content no PR run ever tested. A
   # clean merge of two clean branches can still break a gate that reads across both, and here the
   # blast radius of that is a published release.
+  #
+  # REUSE A PROVEN SWEEP, NEVER ASSUME ONE (#1635). A push to dev now runs only the fast sweep, and the
+  # full one (with `mutation coverage`) runs on the maintainer's machine before a promotion, where
+  # `maintainer_doctor.py --gates-only --require-slow --record-proof` posts a `full-sweep` commit status
+  # whose description names the TREE it ran on. This job looks for such a status on a dev commit with the
+  # SAME tree as the commit being released (a tree is a hash of the content, so equal trees are the same
+  # bytes even though the promotion is a new merge commit). Found: `gates` below is skipped and the log names
+  # the commit that carries the proof. Not found, or any error looking: the full sweep runs, as it always did.
+  proof:
+    runs-on: ubuntu-latest
+    # A lookup is a checkout and a few API reads; a hung one must not hold a runner for 6 h (#1635).
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      statuses: read
+    outputs:
+      found: ${{ steps.verify.outputs.found }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Look for a full sweep recorded against this tree
+        id: verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if python3 scripts/sweep_proof.py verify; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
   gates:
+    needs: proof
+    if: needs.proof.outputs.found != 'true'
     uses: ./.github/workflows/gates.yml
 
   release:
-    needs: gates
+    needs: [proof, gates]
+    # Build, notes and one `gh release create`; 30 minutes is generous for them, and a hung publish must not run for 6 h (#1635).
+    timeout-minutes: 30
     # Releases only ever come from main. workflow_dispatch stays available for re-runs,
     # but a dispatch from any other ref must NOT publish a release for that ref's commit.
-    if: github.ref == 'refs/heads/main'
+    # `gates` is SKIPPED, not green, exactly when `proof` found a recorded sweep for this tree; a skipped
+    # `gates` with no proof (which the `gates` condition cannot produce) would not publish.
+    if: >-
+      github.ref == 'refs/heads/main' && !cancelled() &&
+      (needs.gates.result == 'success' ||
+       (needs.gates.result == 'skipped' && needs.proof.outputs.found == 'true'))
     runs-on: ubuntu-latest
     permissions:
       contents: write   # `gh release create` makes the tag and the release
