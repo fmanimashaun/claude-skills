@@ -155,5 +155,49 @@ GUARD = Guard(
             "    return list(PARTS.get(value, PARTS['a']))",
             "any other part is refused",
         ),
+
+        # #1638: a hook's wall budget scales with how much slower than idle the machine is, so a loaded machine is not read as a hung hook.
+        Mutation(
+            "the budget ignores the machine's slowdown, so a loaded machine is read as a hung hook again",
+            "    return max(base, min(HOOK_BUDGET_CAP, base * max(1.0, slowdown)))",
+            "    return base",
+            "a slower machine gets proportionally more",
+        ),
+        Mutation(
+            "the cap is gone, so a hang under load waits for ever longer",
+            "    return max(base, min(HOOK_BUDGET_CAP, base * max(1.0, slowdown)))",
+            "    return max(base, base * max(1.0, slowdown))",
+            "the budget stops at the cap",
+        ),
+        Mutation(
+            "the floor drops to 60 s, which a loaded machine outran (#1469)",
+            "HOOK_BUDGET_FLOOR = 180.0",
+            "HOOK_BUDGET_FLOOR = 60.0",
+            "an idle machine gets the floor",
+        ),
+        Mutation(
+            "a fixture's own larger bound is ignored",
+            "    base = max(float(requested or 0), HOOK_BUDGET_FLOOR)",
+            "    base = HOOK_BUDGET_FLOOR",
+            "a fixture's own larger bound is kept",
+        ),
+        Mutation(
+            "the machine is measured once per subprocess, so the calibration becomes the load",
+            '    if _CALIBRATION["at"] is None or t - _CALIBRATION["at"] >= CALIBRATION_REFRESH:',
+            "    if True:",
+            "measured once per refresh window",
+        ),
+        Mutation(
+            "a calibration that cannot finish reads as idle",
+            "            return CALIBRATION_IDLE * (HOOK_BUDGET_CAP / HOOK_BUDGET_FLOOR)",
+            "            return CALIBRATION_IDLE",
+            "a calibration that cannot finish reads as the heaviest load",
+        ),
+        Mutation(
+            "a subprocess's bound bypasses hook_limit and is a bare number again",
+            "limit = float(override) if override else hook_limit(requested, machine_slowdown())",
+            "limit = float(override) if override else max(float(requested or 0), 180.0)",
+            "every subprocess's bound goes through hook_limit",
+        ),
     ),
 )

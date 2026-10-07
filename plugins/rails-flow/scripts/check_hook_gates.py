@@ -130,6 +130,50 @@ def record_failure(note: str) -> None:
 _EXPECTING_TIMEOUT = False      # set by timeout_fixtures, which times out on purpose, and the #1504 cost check
 
 
+# A HOOK'S WALL BUDGET SCALES WITH THE MACHINE (#1638). Every subprocess a fixture starts gets a wall-clock bound, 180 s at least. Measured on an
+# idle machine the longest single subprocess of the `deadline` group takes under 8 s (the whole group 22 s), so 180 s is twenty times the need;
+# yet on a shared machine at load 12 to 80 a mutation baseline of `hook_guard_bash_deadline` hit it ("TIMEOUT after 180.0s: release-gate.sh") and the
+# guard read as INERT: a correct tree reported as broken. The bound cannot be CPU time: a hung hook sleeps and uses none, so a CPU bound would never
+# fire, which is the 30-minute hang #1469 closed. It is the same wall bound, scaled by how much slower than idle THIS machine is right now: a fixed
+# calibration workload (a `git init` and an empty commit in a throwaway repository, the work every fixture starts with) is timed against its idle
+# figure, as the mutation harness times a baseline and scales each mutant's limit from it (`mutation_check.mutation_timeout`).
+HOOK_BUDGET_FLOOR = 180.0       # seconds, on an idle machine
+HOOK_BUDGET_CAP = 1800.0        # never more than thirty minutes, so a real hang under load still ends
+CALIBRATION_IDLE = 0.06         # seconds the calibration workload takes on an idle machine (measured 0.056, median of nine)
+CALIBRATION_REFRESH = 30.0      # re-measured at most this often: load moves, and a measurement per subprocess would be the load
+_CALIBRATION = {"at": None, "slowdown": 1.0}
+
+
+def hook_limit(requested: float, slowdown: float) -> float:
+    """The wall bound for one subprocess: a fixture's own bound, raised to the floor, then scaled by the machine's slowdown up to the cap.
+
+    Never below the floor or the fixture's own bound, and never raised past the cap unless the fixture asked for more itself."""
+    base = max(float(requested or 0), HOOK_BUDGET_FLOOR)
+    return max(base, min(HOOK_BUDGET_CAP, base * max(1.0, slowdown)))
+
+
+def _calibrate() -> float:
+    """Seconds the calibration workload took here; the cap's worth of slowdown if it would not finish."""
+    with tempfile.TemporaryDirectory() as td:
+        began = time.monotonic()
+        try:
+            for cmd in (["git", "init", "-q"], ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "i"],
+                        ["bash", "-c", "true"]):
+                subprocess.call(cmd, cwd=td, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
+        except (OSError, subprocess.SubprocessError):
+            return CALIBRATION_IDLE * (HOOK_BUDGET_CAP / HOOK_BUDGET_FLOOR)
+        return time.monotonic() - began
+
+
+def machine_slowdown(measure=_calibrate, now=time.monotonic) -> float:
+    """How many times slower than idle this machine is, at least 1, measured at most once per CALIBRATION_REFRESH."""
+    t = now()
+    if _CALIBRATION["at"] is None or t - _CALIBRATION["at"] >= CALIBRATION_REFRESH:
+        _CALIBRATION["slowdown"] = max(1.0, measure() / CALIBRATION_IDLE)
+        _CALIBRATION["at"] = t
+    return _CALIBRATION["slowdown"]
+
+
 def _is_hook_run(args) -> bool:
     """The hook itself, as opposed to the git and gh the fixtures set up around it."""
     argv = args[0] if args else []
@@ -141,10 +185,11 @@ def _run(*args, **kw):
         text = kw.get("text") or kw.get("universal_newlines")
         empty = "" if text else b""
         return subprocess.CompletedProcess(args[0] if args else kw.get("args"), 0, stdout=empty, stderr=empty)
-    # The override is exact (the no-crash proof sets it tiny); otherwise a fixture's own bound is
-    # raised to a 180s floor, since 60s was what a loaded machine outran. Read per call, not at import.
+    # The override is exact (the no-crash proof sets it tiny); otherwise a fixture's own bound is raised to the floor and scaled by how much slower than
+    # idle this machine is (`hook_limit`, #1638): 60 s was what a loaded machine outran, and a fixed 180 s is outrun at load 12 to 80 too. Read per call.
     override = os.environ.get("HOOK_GATES_TIMEOUT")
-    limit = float(override) if override else max(float(kw.pop("timeout", 0) or 0), 180.0)
+    requested = kw.pop("timeout", 0)
+    limit = float(override) if override else hook_limit(requested, machine_slowdown())
     kw.pop("timeout", None)
     # Its OWN process group, so a timeout kills the hook AND the stubs it started. subprocess.run
     # kills only the direct child; measured 2026-09-29, 43 stub processes were left orphaned and
@@ -171,7 +216,7 @@ def _run(*args, **kw):
                 for pipe in (proc.stdin, proc.stdout, proc.stderr):
                     if pipe:
                         pipe.close()
-            note = f"TIMEOUT after {limit}s: {proc.args}"
+            note = f"TIMEOUT after {limit}s (floor {HOOK_BUDGET_FLOOR:g}s, machine {_CALIBRATION['slowdown']:.1f}x slower than idle): {proc.args}"
             # A timeout is ALWAYS a recorded failure -- a setup step (`git init`, check=True) that
             # times out must not pass silently -- unless timeout_fixtures asked for one on purpose.
             if not _EXPECTING_TIMEOUT:
@@ -3158,7 +3203,42 @@ def timeout_fixtures() -> None:
     del FAILURES[before:]
     check("an UNEXPECTED timeout is recorded as a failure, never passed silently",
           len(recorded) == 1 and "TIMEOUT after" in recorded[0], f"{recorded}")
+    # THE BUDGET SCALES WITH THE MACHINE (#1638): pure arithmetic first, then the wiring.
+    check("an idle machine gets the floor, and a fixture's own larger bound is kept",
+          hook_limit(0, 1.0) == 180.0 and hook_limit(600, 1.0) == 600.0 and hook_limit(60, 1.0) == 180.0)
+    check("a slower machine gets proportionally more, so a loaded machine is not read as a hung hook",
+          hook_limit(0, 4.0) == 720.0 and hook_limit(100, 2.5) == 450.0)
+    check("a machine measured faster than idle never shrinks the budget", hook_limit(0, 0.3) == 180.0)
+    check("the budget stops at the cap, so a real hang under load still ends", hook_limit(0, 1000.0) == HOOK_BUDGET_CAP)
+    check("a fixture that asked for more than the cap keeps what it asked for", hook_limit(3600, 5.0) == 3600.0)
+    probe = {"slowdown": 1.0, "at": None}
+    saved_cal = dict(_CALIBRATION)
+    try:
+        ticks = iter([0.0, 5.0, 31.0])
+        measured = []
+        _CALIBRATION.update(probe)
+        s1 = machine_slowdown(measure=lambda: (measured.append(1), 0.6)[1], now=lambda: next(ticks))
+        s2 = machine_slowdown(measure=lambda: (measured.append(1), 0.06)[1], now=lambda: next(ticks))
+        s3 = machine_slowdown(measure=lambda: (measured.append(1), 0.06)[1], now=lambda: next(ticks))
+    finally:
+        _CALIBRATION.update(saved_cal)
+    check("the machine's slowdown is the calibration over its idle figure", abs(s1 - 10.0) < 1e-9, f"{s1}")
+    check("...measured once per refresh window, not once per subprocess", s2 == s1 and len(measured) == 2, f"{s2} {measured}")
+    check("...and again after the window, so a machine that calmed down gets its floor back", abs(s3 - 1.0) < 1e-9, f"{s3}")
+    real_call = subprocess.call
+    def _stalled(*a, **k):
+        raise subprocess.TimeoutExpired("calibration", 60)
+    subprocess.call = _stalled
+    try:
+        stalled = _calibrate()
+    finally:
+        subprocess.call = real_call
+    check("a calibration that cannot finish reads as the heaviest load, not as idle",
+          abs(stalled / CALIBRATION_IDLE - HOOK_BUDGET_CAP / HOOK_BUDGET_FLOOR) < 1e-9, f"{stalled}")
+    check("a calibration that runs reports a plausible, positive time", 0 < _calibrate() < 60)
     src = Path(__file__).read_text(encoding="utf-8")
+    check("every subprocess's bound goes through hook_limit, never a bare number",
+          src.count("else hook_limit(requested, " + "machine_slowdown())") == 1)
     raw = src.count("subprocess" + ".run(")
     check("every subprocess in this suite goes through the no-crash wrapper", raw == 0,
           f"{raw} direct subprocess.run call(s); every one must go through _run")
