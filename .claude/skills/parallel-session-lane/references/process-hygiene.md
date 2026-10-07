@@ -31,7 +31,8 @@ line, but the leaked roots' command lines ended with something else, so it match
    helper: `scripts/process_containment.py` in the rails-flow plugin. Use it from Python as
    `with contained():`, or wrap any command with `python3 <rails-flow>/scripts/process_containment.py -- <command>`.
    Every process started inside it inherits a unique environment token. When the block ends, even
-   after a crash, every process carrying the token is frozen and killed.
+   after a crash, every process carrying the token is frozen and killed. A second interrupt that arrives
+   while the helper is cleaning up waits until the cleanup has finished; it does not abandon it.
 2. **Count afterwards.** After a reproduction, check `ps` for leftovers, for example processes in
    state `T` or with parent pid 1. A clean exit status says nothing about what the run left behind.
 3. **A watcher loop reaps what it starts and stops on its own condition.** Use `subprocess.run` or
@@ -48,8 +49,33 @@ line, but the leaked roots' command lines ended with something else, so it match
   running, a cap of 64 made the next `fork()` fail at once (`EAGAIN`, macOS). There is no per-tree
   process limit to set, so the helper reports what it killed instead, and a fixture can assert on that.
 - **The environment survives re-parenting.** A grandchild started in a new session, whose parent then
-  exited (its parent pid becomes 1), is still found by its inherited token, through `ps -E` on macOS or
-  `/proc/<pid>/environ` on Linux.
+  exited (its parent pid becomes 1), is still found by its inherited token, read from the process's
+  environment. Read it as separate `NAME=value` entries and compare each WHOLE: a search over printed
+  text mistook another variable's value for the variable, and a reaper killed another session's process
+  that way (#1646 review). Where the environment cannot be read, match nothing.
+
+## What a session's end reaps
+
+rails-flow's `SessionEnd` hook runs `scripts/session_reaper.py`, once, when the session ends. It cannot
+block the end, and it never fails it. Claude Code sets `CLAUDE_CODE_SESSION_ID` (v2.1.132 and later) in
+Bash and PowerShell tool subprocesses and in hook command subprocesses, and (v2.1.154 and later) in stdio
+MCP server subprocesses; it matches the `session_id` in the hook's JSON input and is updated on `/clear`
+(https://code.claude.com/docs/en/env-vars). Two consequences for the reaper: a process started before a
+`/clear` carries the OLD id, so it is not this session's by that test; and a process the docs do not list
+(a monitor, a background task) is not documented to carry the id at all, so the reaper may not find it. The
+reaper signals a process only if ALL of these hold:
+
+1. its environment has the variable named exactly `CLAUDE_CODE_SESSION_ID`, whose whole value is this
+   session's id;
+2. its parent is pid 1, so nothing is waiting on it;
+3. it is stopped (`ps` state `T`).
+
+It sends CONT, then TERM, then KILL to one that ignores TERM. Everything else is left alone: another
+session's processes, a process whose command line merely mentions the id, a stopped process that still
+has a parent, and a RUNNING orphan, which may be a server you meant to leave. It never matches a process
+by its name or command line; `pkill -f rspec` killed other sessions' runs twice, and that is the habit
+this refuses. It does not replace rule 1: contain a fixture so it does not leak, and let the reaper be the
+net for what leaked anyway.
 
 ## The advisory that watches for it
 
@@ -57,3 +83,9 @@ rails-flow's session-start hook counts zombie processes (`ps` state `Z`) and, at
 (`RAILS_FLOW_ZOMBIE_WARN` to change it), prints the count and the busiest parents by command. It prints
 nothing below the threshold, because this hook runs again after every compaction. It is advice: it
 cannot stop the process that is leaking, and the leak is still fixed by rule 3 above.
+
+The same hook also counts the user's STOPPED ORPHANS (state `T`, parent pid 1) and, at 3 or more
+(`RAILS_FLOW_STOPPED_ORPHAN_WARN` to change it), prints the count and the owning session ids, read from
+each process's environment. It is silent below the threshold. A session's own are reaped when it ends;
+to clear one now, send the owning session's id to the reaper:
+`echo '{"session_id":"<id>"}' | python3 <rails-flow>/scripts/session_reaper.py`.
