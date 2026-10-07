@@ -756,6 +756,89 @@ def run() -> int:
     if mc.record_problems({"heavy", "medium", "extra"}, record):
         FAILURES.append("#1599 CONTROL: a record whose guards all exist is clean (a guard missing from it is not drift)")
 
+    # ---- 1g. a ratchet failure names the load and job count it ran at (#1652) ----
+    # An identical guard cost 669 s when recorded and 1418 s in a run under load (688 s at jobs 10 and ambient load, 528 s at jobs 4):
+    # the failure read as growth. The sentence says what the run was, and whether that is what the record was made at.
+    for label, load, ran, recorded_at, want, forbid in (
+            ("a quiet machine at the recorded job count reads as growth", 3.2, 10, 10,
+             ("5-minute load was 3.2", "jobs=10", "read this as growth"), ("re-run on a quiet machine", "do not re-record")),
+            ("a loaded machine is told to re-run", 14.5, 10, 10,
+             ("5-minute load was 14.5", "jobs=10", "re-run on a quiet machine at the recorded job count", "do not re-record from this run"),
+             ("read this as growth",)),
+            ("a different job count is told to re-run even on a quiet machine", 3.2, 4, 10,
+             ("jobs=4", "jobs=10", "re-run on a quiet machine"), ("read this as growth",)),
+            ("a platform with no load average says so instead of printing 0", None, 10, 10,
+             ("unavailable", "jobs=10", "re-run on a quiet machine"), ("load was 0", "read this as growth")),
+            ("a record that names no job count prints a question mark, not a guess", 3.2, 10, None,
+             ("jobs=?", "re-run on a quiet machine"), ("read this as growth",))):
+        _tick()
+        try:
+            text = mc.ratchet_context(load, ran, recorded_at)
+        except Exception as exc:        # noqa: BLE001 -- the check below fails by name
+            text = f"raised {exc!r}"
+        if not all(w in text for w in want) or any(f in text for f in forbid):
+            FAILURES.append(f"#1652: the ratchet context for {label} must carry {want} and none of {forbid}, got {text!r}")
+
+    def with_loadavg(replacement):
+        """`mc.five_minute_load()` with `os.getloadavg` replaced, and put back."""
+        real = os.getloadavg
+        os.getloadavg = replacement
+        try:
+            return mc.five_minute_load()
+        except Exception as exc:        # noqa: BLE001 -- the check below fails by name
+            return f"raised {exc!r}"
+        finally:
+            os.getloadavg = real
+
+    def refuse(exc: Exception):
+        def getloadavg():
+            raise exc
+        return getloadavg
+
+    for label, replacement, want in (
+            ("the 5-minute figure, not the 1- or the 15-minute one", lambda: (1.0, 5.5, 9.0), 5.5),
+            ("None where the platform has no load average (OSError)", refuse(OSError("no load")), None),
+            ("None where os has no getloadavg at all (AttributeError)", refuse(AttributeError("no getloadavg")), None)):
+        _tick()
+        got = with_loadavg(replacement)
+        if got != want:
+            FAILURES.append(f"#1652: five_minute_load must return {want!r} for {label}, got {got!r}")
+
+    growth = {"heavy": 400.0 * mc.RATCHET_GROWTH + mc.RATCHET_SLACK + 1, "medium": 100.0}
+    for label, cost, base, want in (
+            ("a recorded guard past its growth", growth, record, ["CTX"]),
+            ("a new guard over the new-guard limit", {"heavy": 400.0, "medium": 100.0, "fresh": mc.RATCHET_NEW + 1}, record, ["CTX"]),
+            ("two cost refusals still carry ONE note", {"heavy": growth["heavy"], "medium": 100.0 * mc.RATCHET_GROWTH + mc.RATCHET_SLACK + 1},
+             record, ["CTX"]),
+            ("a run within budget carries none", {"heavy": 400.0, "medium": 100.0}, record, []),
+            ("a record-only refusal (a guard that is gone) has no cost to explain", {"heavy": 400.0}, record, []),
+            ("no record at all has no cost to explain", {"heavy": 400.0}, None, [])):
+        _tick()
+        try:
+            got = mc.ratchet_notes(cost, base, "CTX")
+        except Exception as exc:        # noqa: BLE001 -- the check below fails by name
+            got = [f"raised {exc!r}"]
+        if got != want:
+            FAILURES.append(f"#1652: ratchet_notes for {label} must be {want!r}, got {got!r}")
+    _tick()
+    # A NOTE IS NOT A PROBLEM: the failure header prints `len(problems)`, so the context must never ride in that list.
+    if any("ratchet context" in x or "CTX" in x for x in ratchet(growth, record)):
+        FAILURES.append("#1652: the load context must be printed apart from the problems, never counted among them")
+    _tick()
+    try:
+        report = mc.failure_report(["a", "b"], ["CTX"], 10)
+    except Exception as exc:        # noqa: BLE001 -- the check below fails by name
+        report = f"raised {exc!r}"
+    if report != "\nMUTATION CHECK FAILED — 2 of 10:\n  - a\n  - b\n  CTX":
+        FAILURES.append(f"#1652: failure_report must count the problems only and print the note after them, got {report!r}")
+    _tick()
+    try:
+        bare = mc.failure_report(["a"], [], 3)
+    except Exception as exc:        # noqa: BLE001 -- the check below fails by name
+        bare = f"raised {exc!r}"
+    if bare != "\nMUTATION CHECK FAILED — 1 of 3:\n  - a":
+        FAILURES.append(f"#1652: failure_report with no note must be exactly the problems, with no stray line, got {bare!r}")
+
     class StandInGuard:
         """The registry is replaced by one stand-in guard: the guards that run THIS selftest in a staged tempdir (hermetic_git,
         proc_group, this harness) do not stage `scripts/mutations/`, so the real `mc.GUARDS` is empty there and indexing it
