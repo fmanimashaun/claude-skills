@@ -193,6 +193,18 @@ def headline(bullet_first_line: str) -> str:
     return line if len(line) <= HEADLINE_FALLBACK else line[:HEADLINE_FALLBACK].rstrip() + "…"
 
 
+def _top_level_lines(body: list[str]) -> list[str]:
+    """The block's lines outside fenced code, so a `- item` inside a code sample is never taken for a bullet."""
+    out, fenced = [], False
+    for line in body:
+        if line.lstrip().startswith("```"):
+            fenced = not fenced
+            continue
+        if not fenced:
+            out.append(line)
+    return out
+
+
 def render_headlines(text: str, tag: str, repo: str = DEFAULT_REPO) -> tuple[str, int]:
     """(notes, bullet-count): every block's heading and each bullet's headline, then a link to the full text at the tag.
 
@@ -205,7 +217,7 @@ def render_headlines(text: str, tag: str, repo: str = DEFAULT_REPO) -> tuple[str
     total = 0
     for heading, body in found:
         parts.append(heading)
-        bullets = [headline(line) for line in body if BULLET.match(line)]
+        bullets = [headline(line) for line in _top_level_lines(body) if BULLET.match(line)]
         if not bullets:
             first = next((line.strip() for line in body if line.strip()), "")
             bullets = [first] if first else []
@@ -911,6 +923,9 @@ Intro prose under the next section.
     plain = "## big\n\n### 1.0.0 — 2026-01-01 (release v9.9.9)\n\n- no bold lead " + "x" * 400 + "\n- **ok**\n"
     hl = render_headlines(plain, "v9.9.9")[0]
     check("a bullet with no bold lead keeps its shortened first line", "- no bold lead " in hl and "…" in hl and "x" * 400 not in hl)
+    fenced_sample = "## a\n\n### 1.0.0 — 2026-01-01 (release v9.9.9)\n\n- **Real** one\n\n```\n- **not a bullet** in a code sample\n```\n"
+    hf = render_headlines(fenced_sample, "v9.9.9")[0]
+    check("a `- item` inside a fenced code block is not a bullet in the headline form", "- **Real**" in hf and "not a bullet" not in hf)
     two = ("## a\n\n### 1.0.0 — 2026-01-01 (release v9.9.9)\n\n- **A one** x\n\n## b\n\n"
            "### 2.0.0 — 2026-01-01 (release v9.9.9)\n\n- **B one** y\n")
     hl2, n2 = render_headlines(two, "v9.9.9")
