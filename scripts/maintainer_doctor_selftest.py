@@ -345,17 +345,64 @@ def timeout_fixtures() -> None:
         strict.check_gates()
         expect("under --require-slow, a slow gate that times out is FAIL", strict, "selftest slow", md.FAIL)
         expect("...and a real failure is still FAIL there", strict, "selftest fails", md.FAIL)
-        # ...but ONLY a SLOW_GATES gate: an ordinary gate that hangs is still a skip under the flag,
-        # or `and name in SLOW_GATES` could be dropped with nothing noticing (#1457 review).
+        # #1635: an ORDINARY gate that hangs is FAIL, named, under either flag. The pin from #1457's review said
+        # SKIP here, so a hung gate went green; its direction is now reversed, and the two controls are: a SLOW
+        # gate still skips off CI (above), and a gate that merely FAILS keeps its own verdict.
         saved_timeout = md.DEFAULT_TIMEOUT
-        md.GATES, md.DEFAULT_TIMEOUT = (("selftest hangs", ("python3", "scripts/_hangs.py")),), 1
+        (scripts / "_hang_kids.py").write_text(
+            "import os, subprocess, sys, time\n"
+            "a = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'])\n"
+            "b = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'], start_new_session=True)\n"
+            "open(sys.argv[1], 'w').write(f'{a.pid} {b.pid}')\n"
+            "print('gate hung-with-children started', flush=True)\n"
+            "time.sleep(120)\n", encoding="utf-8")
+        import signal as _sig
+        import time as _tm
+        kids_file = work / "kids.pids"
+        md.GATES = (("selftest hangs", ("python3", "scripts/_hang_kids.py", str(kids_file))),)
+        md.SLOW_GATES = {}
         try:
-            hang = md.Doctor(require_slow=True)
-            hang.check_gates()
+            for label, flags in (("default", {}), ("--require-slow", {"require_slow": True})):
+                for budget in (2, 5, 10):          # longer only while the gate never wrote its pids: no verdict yet
+                    md.DEFAULT_TIMEOUT = budget
+                    if kids_file.exists():
+                        kids_file.unlink()
+                    began = _tm.monotonic()
+                    hang = md.Doctor(**flags)
+                    hang.check_gates()
+                    took = _tm.monotonic() - began
+                    if kids_file.exists() and kids_file.read_text().strip():
+                        break
+                hr = expect(f"{label}: an ordinary gate that times out is FAIL, named", hang, "selftest hangs", md.FAIL)
+                _tick()
+                if hr is not None and ("HUNG" not in hr.detail or "process group was killed" not in hr.detail):
+                    FAILURES.append(f"{label}: the hung-gate FAIL must say HUNG and that its group was killed: {hr.detail!r}")
+                _tick()
+                if took > budget + 19:
+                    FAILURES.append(f"{label}: a hung gate must end its step at its budget ({budget}s), took {took:.0f}s")
+                pids = [int(x) for x in kids_file.read_text().split()] if kids_file.exists() and kids_file.read_text().strip() else []
+                _tick()
+                if len(pids) != 2:
+                    FAILURES.append(f"{label}: the hung gate never started its two children (runner too loaded?): {pids}")
+                for pid in pids:
+                    _tm.sleep(0.2)
+                    try:
+                        os.kill(pid, 0)
+                    except ProcessLookupError:
+                        continue
+                    os.kill(pid, _sig.SIGKILL)
+                    FAILURES.append(f"{label}: a child of a hung gate (pid {pid}) outlived the doctor's kill")
         finally:
             md.DEFAULT_TIMEOUT = saved_timeout
-        expect("under --require-slow, a NON-slow gate that times out is still SKIP", hang,
-               "selftest hangs", md.SKIP)
+        md.GATES = (("selftest hangs", ("python3", "scripts/_hangs.py")),)
+        md.SLOW_GATES = {"selftest hangs": 1}
+        md.DEFAULT_TIMEOUT = 1
+        try:
+            slow_hang = md.Doctor()
+            slow_hang.check_gates()
+        finally:
+            md.DEFAULT_TIMEOUT = saved_timeout
+        expect("CONTROL: a SLOW gate that times out off CI is still SKIP", slow_hang, "selftest hangs", md.SKIP)
         # #1599: `--ratchet` reaches `mutation coverage` ONLY under --require-slow, and no other gate. A stub fails when it
         # is passed the flag, so each direction is read off a verdict: a ratchet on every local run reads a busy laptop as
         # growth; one on no run enforces nothing; one on every gate hands an unknown flag to scripts that refuse it.
@@ -377,6 +424,7 @@ def timeout_fixtures() -> None:
 
 
 def run() -> int:
+    md.restore_sigint()   # #1635: a backgrounded run inherits SIGINT ignored; the Ctrl-C fixtures below need it
     timeout_fixtures()
     repo_untouched_fixtures()
     ruleset_fixtures()
@@ -761,11 +809,13 @@ def run() -> int:
     # given ten minutes is a gate that hangs for ten minutes before anyone hears about it. Only a
     # check whose cost grows with the number of checks belongs here.
     _tick()
-    expected_slow = {"mutation coverage"}
+    # #1635: the two hook-gate parts that run whole hook fixture groups took 190 to 203 s at the maintainer's machine load, past the
+    # 180 s default, and are measured in SLOW_GATES' comment. Exactly these four; a fourth needs its own measurement.
+    expected_slow = {"mutation coverage", "hook gates", "hook gates (release)", "hook gates (worktree)"}
     if set(md.SLOW_GATES) != expected_slow:
         FAILURES.append(
             f"SLOW_GATES is {sorted(md.SLOW_GATES)}, expected {sorted(expected_slow)} — only "
-            "`mutation_check.py` spawns one subprocess per declared mutation and therefore gets "
+            "`mutation_check.py` spawns one subprocess per declared mutation (and two hook-gate parts run whole fixture groups: #1635) and therefore gets "
             "slower every time the repo gets safer. Everything else reads the tree once; if one "
             "of those is near the limit, that is a defect in the check, not a budget to raise."
         )
@@ -887,6 +937,50 @@ def run() -> int:
         os.environ.update(inherited)
     if rc != 0 or out.split()[-2:] != ["false", "0"]:
         FAILURES.append(f"#1510: a gate's git must see maintenance.auto=false and gc.auto=0, got rc={rc} {out!r}")
+
+    # #1635: --record-proof records only a COMPLETE sweep, so it is refused without --require-slow, with --fast, or
+    # without --gates-only (a fast or partial run vouching for a release is exactly the failure it exists to stop).
+    import contextlib
+    import io
+    for args in (["--record-proof"], ["--gates-only", "--record-proof"],
+                 ["--gates-only", "--require-slow", "--fast", "--record-proof"]):
+        _tick()
+        try:
+            with contextlib.redirect_stderr(io.StringIO()):
+                md.main(args)
+            FAILURES.append(f"#1635: --record-proof must refuse {args}")
+        except SystemExit as e:
+            if e.code != 2:
+                FAILURES.append(f"#1635: --record-proof with {args} must exit 2 (usage), got {e.code}")
+        except Exception as e:          # past the refusal it goes on to run things: that is the failure, not a crash of the selftest
+            FAILURES.append(f"#1635: --record-proof must refuse {args}, but it went on and raised {type(e).__name__}")
+
+    # #1635: a doctor started in the BACKGROUND inherits SIGINT as ignored and never sees the Ctrl-C its own selftests send.
+    # restore_sigint() resets it, only when it was ignored. Control: without the call the child still ignores it.
+    import signal as _sg
+    probe = ("import sys, signal; sys.path.insert(0, %r); import maintainer_doctor as md\n"
+             "before = signal.getsignal(signal.SIGINT) == signal.SIG_IGN\n"
+             "did = md.restore_sigint()\n"
+             "print(before, did, signal.getsignal(signal.SIGINT) is signal.default_int_handler)\n" % str(Path(md.__file__).resolve().parent))
+
+    def child(env_ignore: bool) -> str:
+        return subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, timeout=60,
+                              preexec_fn=(lambda: _sg.signal(_sg.SIGINT, _sg.SIG_IGN)) if env_ignore else None).stdout.strip()
+
+    _tick()
+    if child(True) != "True True True":
+        FAILURES.append(f"#1635: restore_sigint must reset an inherited-ignored SIGINT to the default handler, got {child(True)!r}")
+    _tick()
+    via_main = ("import sys, signal; sys.path.insert(0, %r); import maintainer_doctor as md\n"
+                "try:\n    md.main(['--record-proof'])\nexcept SystemExit:\n    pass\n"
+                "print(signal.getsignal(signal.SIGINT) is signal.default_int_handler)\n" % str(Path(md.__file__).resolve().parent))
+    got = subprocess.run([sys.executable, "-c", via_main], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=60,
+                         preexec_fn=lambda: _sg.signal(_sg.SIGINT, _sg.SIG_IGN)).stdout.strip()
+    if got != "True":
+        FAILURES.append(f"#1635: main() must call restore_sigint() first (a backgrounded doctor's Ctrl-C selftests need it), got {got!r}")
+    _tick()
+    if child(False) != "False False True":
+        FAILURES.append(f"#1635: restore_sigint must leave a normal SIGINT alone and report False, got {child(False)!r}")
 
     # #1459: a gate that times out takes its WHOLE process group with it. The gate starts a grandchild
     # that would outlive a plain kill, prints a line, then hangs; Doctor.run must come back as a

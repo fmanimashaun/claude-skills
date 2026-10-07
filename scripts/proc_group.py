@@ -30,6 +30,7 @@ import os
 import shutil
 import signal
 import subprocess
+import sys
 import threading
 
 ESCAPEE_WAIT = 5        # seconds to keep reading after the kill, for a pipe an escapee still holds
@@ -190,3 +191,51 @@ def run(argv, *, timeout: float, input=None, **kw) -> subprocess.CompletedProces
     finally:
         with _lock:
             _live.discard(proc)
+
+
+# THE COST OF A RUN IS ITS CPU TIME, NOT ITS WALL TIME (#1635). `mutation_check`'s cost ratchet compared wall seconds to a record, so a
+# machine at load 30 to 80 read every guard 2x to 4x over its record whatever the code was (the v1.154.0 local release failed 15 of 2688
+# mutations, every one the ratchet). CPU seconds do not stretch with other processes' load. A run is wrapped in a small interpreter that
+# starts the real command, waits for it, and writes user + system seconds of everything it waited for to a file.
+_CPU_WRAPPER = (
+    "import os, resource, subprocess, sys\n"
+    "rc = subprocess.call(sys.argv[2:])\n"
+    "ru = resource.getrusage(resource.RUSAGE_CHILDREN)\n"
+    "with open(sys.argv[1], 'w') as f:\n"
+    "    f.write(repr(ru.ru_utime + ru.ru_stime))\n"
+    "sys.exit(rc if rc >= 0 else 128 - rc)\n"
+)
+
+
+def run_cpu(argv, *, timeout: float, input=None, **kw) -> tuple[subprocess.CompletedProcess, float | None]:
+    """`run(...)`, plus the CPU seconds (user + system) of the command and every descendant it waited for, or None when
+    the run was killed before it could say (a timeout raises, as `run` does; the caller bills its wall time instead).
+    The return code is the command's own; a signal death maps to 128 + signal, as a shell reports it."""
+    import tempfile
+    fd, path = tempfile.mkstemp(prefix="cpu-seconds-")
+    os.close(fd)
+    try:
+        result = run([sys.executable, "-c", _CPU_WRAPPER, path, *map(str, argv)], timeout=timeout, input=input, **kw)
+        try:
+            with open(path) as f:
+                cpu = float(f.read())
+        except (OSError, ValueError):
+            cpu = None
+        return result, cpu
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
+def restore_sigint() -> bool:
+    """Make Ctrl-C reach this process even when it was started in the background (#1635).
+
+    A background child of a non-interactive shell inherits SIGINT as IGNORED, so a doctor or harness never saw the Ctrl-C its own
+    selftests send (#1459, #1525) and a backgrounded full run failed them. Resets it to Python's default handler only when it was
+    ignored; returns whether it did. Called first by every entry point that runs those selftests."""
+    if signal.getsignal(signal.SIGINT) == signal.SIG_IGN:
+        signal.signal(signal.SIGINT, signal.default_int_handler)
+        return True
+    return False
