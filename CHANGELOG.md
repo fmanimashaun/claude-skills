@@ -3671,6 +3671,10 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-flow (agentic flow plugin)
 
+### Unreleased
+
+- **Where this worktree stopped, and a warning about unpushed work — `plugins/rails-flow/hooks/scripts/stop-where.sh`, `plugins/rails-flow/hooks/scripts/lib/where_stopped.py`, `plugins/rails-flow/hooks/scripts/session-start.sh`, `plugins/rails-flow/hooks/hooks.json`, `plugins/rails-flow/scripts/check_hook_gates.py`** (#1639; our own design, the owner's delegated decision recorded on the issue). A session killed without warning (a restart, a spend limit) left nothing saying where it was, and no hook warned about commits on no remote. A new advisory Stop hook rewrites `<git-common-dir>/handoff/<worktree-key>.md` after every turn (branch, HEAD sha, commits not on any remote, uncommitted files, time). It is keyed by WORKTREE, never by session or directory, and it says ONCE, as a `systemMessage`, when the unpushed or uncommitted counts change. SessionStart states the unsaved work and points at the file, and says when HEAD has moved since it was written. Both fail open and are silent when there is nothing to say, so the hook-output budget fixture (a clean repository) measures no growth: 1245 bytes, unchanged, so no `--update`. `where_stopped.py --selftest` (16 checks) and a `where_stopped` group in `check_hook_gates.py`, part c, which drives both hooks end to end; a mutant dropping the once-per-change rule fails it.
+
 ### 1.57.0 (release v1.154.0) — 2026-10-06
 
 - **The coordination selftest checks that its summary line reaches stdout, not only that it was built — `plugins/rails-flow/hooks/scripts/lib/coordination.py`, `scripts/mutations/hook_coordination.py`** (#1629). Replacing the final `print(line)` with a bare `line` left `--selftest --skip-hook-e2e` exiting 0 with no output at all, so the `[SKIPPED …]` notice could vanish with the selftest green: the checks looked at the value of `line`, never at what was printed. The selftest now prints through one function, `report(line, code)`, and a fixture captures that function's stdout (`contextlib.redirect_stdout`) and requires the exact line and the code it was given. New mutation: the print removed from `report` is caught by "the summary line is printed, not only built" (exit 1, hand-applied on a copy before it was committed). 214 checks with `--skip-hook-e2e`. Not covered: a mutant that bypasses `report` at its one call site; only a harness reading the real stdout could see that. Our own design; no framework claim.
@@ -16967,6 +16971,10 @@ boot/validation path — with a bullet each so the promotion could close them se
   (token/logo/icon/brand-pack enforcement).
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
+
+### Unreleased
+
+- **Leave a where-I-stopped note a killed session could resume from — `skills/parallel-session-lane/references/where-i-stopped.md`, `skills/parallel-session-lane/SKILL.md`** (#1639). Advice only, a reference file with one pointer line at the end of §5a, which keeps SKILL.md at its 500-line budget. `skills/quality-pass/references/worked-example.md` now counts the new `check(label, ok, detail)` harness in `where_stopped.py` (50 copies, reach 26). It separates the facts file rails-flow's Stop hook writes for you from the note you keep in `HANDOFF.md`, and it is named apart from `/rails-flow:handoff`'s work orders. The note carries each claim with the command that verifies it, the last request word for word, and numbers copied from a measurement.
 
 ### 1.71.0 (release v1.154.0) — 2026-10-06
 
