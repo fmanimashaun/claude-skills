@@ -171,7 +171,9 @@ function peel(t, n,    i, w) {
 # `((`. Quotes are LINE-LOCAL, as the sed they replace was: a quote with no partner on its line is an ordinary character.
 # `simple(v)`: nothing in v that a shell would act on, so the quoted text is one plain word.
 _dequote() {
-  awk "$_NC_AWK_LIB"'
+  # LC_ALL=C: the lexer is BYTE-oriented. gawk in a UTF-8 locale makes sprintf("%c", 233) the two bytes of U+00E9, so a `$'\xe9'` or `\u00e9` decoded to
+  # the wrong bytes; pinned here so the caller's locale (release-gate.sh does not pin one, the harness inherits C.UTF-8) cannot matter.
+  LC_ALL=C awk "$_NC_AWK_LIB"'
   function simple(v,    k, n) {
     n = length(v); if (n == 0) return 0
     for (k = 1; k <= n; k++) if (index(BAD, substr(v, k, 1)) || substr(v, k, 1) < " ") return 0
@@ -307,7 +309,7 @@ _peel() {
 
 # Step 5. One string per line, its own newlines carried as \001 so a multi-line string survives.
 _inner_strings() {
-  awk -v batch="${1:-0}" "$_NC_AWK_LIB"'
+  LC_ALL=C awk -v batch="${1:-0}" "$_NC_AWK_LIB"'
   function emit(v) { if (SKIP) return; gsub(/\n/, "\001", v); print v }
   function bt_end(s, i,    n, c) {
     n = length(s)

@@ -616,7 +616,7 @@ NEGATIVES_1568 = ['git add "app/x.rb" "spec/y.rb"', "git add 'x y' app/z.rb", 'g
                   'git add "app/models/user.rb"', "git add 'a.rb' 'b.rb'", 'git commit -m "fix"', 'git status "-s"']
 # ANSI-C bodies whose decoding must equal bash's own, byte for byte (compared when the result is one plain word, the only kind kept).
 ANSIC_BODIES_1613 = ["\\x61bc", "a\\x62c", "\\141bc", "\\1411", "a\\x6", "\\x", "a\\u0062c", "a\\U00000062c", "ab\\0cd", "a\\x00b",
-                     "\\x41\\x42", "x\\u00e9y", "\\e", "\\q", "\\cA", "a\\\\b", "a\\'b", "a\\?b", "a\\\"b", "\\a\\b\\t"]
+                     "\\x41\\x42", "x\\u00e9y", "x\\xc3\\xa9y", "\\e", "\\q", "\\cA", "a\\\\b", "a\\'b", "a\\?b", "a\\\"b", "\\a\\b\\t"]
 
 
 def normaliser_pipelines(cmd: str) -> int | str:
@@ -689,9 +689,11 @@ def guard_bash_fixtures() -> None:
         if not unicode_ok and ("\\u" in body or "\\U" in body):
             continue
         word = _run(["bash", "-c", "printf '%s' $'" + body + "'"], capture_output=True, text=True).stdout
-        plain = bool(word) and all(ch > " " and ch not in ";|&()<>$`\"\\#'" and ord(ch) < 127 for ch in word)
+        plain = bool(word) and all(ch > " " and ch not in ";|&()<>$`\"\\#'" for ch in word)
+        # Under a UTF-8 locale ON PURPOSE: gawk there turns sprintf("%c", 233) into the two bytes of U+00E9, which the lib's own LC_ALL=C pin must
+        # prevent (release-gate.sh does not pin one). BSD awk (macOS) and mawk are byte-oriented either way, so this can only be red on gawk, i.e. on Linux CI.
         got = _run(["bash", "-c", f"source {lib}; printf '%s' \"$1\" | normalize_segments", "x", "git $'" + body + "'"],
-                             capture_output=True, text=True).stdout.strip()
+                   capture_output=True, text=True, env={**os.environ, "LC_ALL": "C.UTF-8"}).stdout.strip()
         want = f"git {word}" if plain else "git"
         check(f"guard-bash (#1613): ANSI-C decoder agrees with bash on `$'{body}'`", got == want, f"bash made {word!r}; normaliser said {got!r}")
     # #1504: a depth's strings are normalised as ONE batch, so each must still be judged on its own.
