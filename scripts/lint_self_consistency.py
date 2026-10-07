@@ -1904,6 +1904,87 @@ def check_uncontained_process_fixtures() -> tuple[list[Finding], int]:
     return findings, examined
 
 
+# A fixture that commits in a temp repo (#1577), and what makes that safe.
+_HERMETIC_REF = re.compile(r"hermetic_git|fixture_git|maintenance\.auto|GIT_CONFIG_COUNT")
+_TEMP_USE = re.compile(r"tempfile|mkdtemp|TemporaryDirectory")
+HERMETIC_BASELINE = "scripts/hermetic_git_baseline.txt"
+
+
+def _spawns_git_commit(text: str) -> int | None:
+    """The line of the first call that passes a literal `"commit"` in a file that also names `"git"`, else None.
+
+    Wrappers count: `git(repo, "commit", "-m", "m")` is a call with the literal as an argument, and so is
+    `subprocess.run(["git", "commit"])`, where it sits inside a list argument. Only calls count, so a comment,
+    a docstring or a `Mutation("...", "commit", ...)` string in a data table does not."""
+    import ast
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return None
+    if not any(isinstance(n, ast.Constant) and n.value == "git" for n in ast.walk(tree)):
+        return None
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            literals = [e.value for a in node.args for e in ([a] if isinstance(a, ast.Constant) else getattr(a, "elts", []))
+                        if isinstance(e, ast.Constant) and isinstance(e.value, str)]
+            if "commit" in literals:
+                return node.lineno
+    return None
+
+
+def check_non_hermetic_fixture_git() -> tuple[list[Finding], int]:
+    """A script that commits in a temp repo must run git hermetic: `maintenance.auto=false`, `gc.auto=0` (#1577).
+
+    A `git commit` in a fixture repo starts `git maintenance run --auto --quiet --detach` (`GIT_TRACE` shows it), a
+    background process that can still be writing when the selftest removes the temp directory, so cleanup fails with
+    "Directory not empty" (#1493, #1510). `scripts/hermetic_git.py` sets both keys, and the three `fixture_git.py` copies
+    use it; nothing checked that a NEW fixture does. Scope: a Python file under `scripts/` or `plugins/*/scripts/` (not
+    `mutations/`) that creates temp directories AND calls git with a literal `"commit"`; the requirement is a reference
+    to `hermetic_git`, `fixture_git`, `maintenance.auto` or `GIT_CONFIG_COUNT` anywhere in the file. A script that commits
+    in the user's real repo by design is outside the scope: it creates no temp directory. NOT SEEN: a file that
+    commits through a helper it imports from a module with no such reference, and a reference that is only a comment
+    (the same presence-not-enclosure limit as `uncontained-process-fixture`).
+
+    A RATCHET, NOT A THRESHOLD: `scripts/hermetic_git_baseline.txt` names the files that commit without the reference
+    today, measured when this rule landed. A file outside it is a finding; an entry whose file is now hermetic, no
+    longer commits or is gone is a finding too, so the list only shrinks."""
+    findings: list[Finding] = []
+    examined = 0
+    baseline_path = ROOT / HERMETIC_BASELINE
+    baseline = ({ln.strip() for ln in read(baseline_path).splitlines() if ln.strip() and not ln.startswith("#")}
+                if baseline_path.is_file() else set())
+    offenders: dict[str, int] = {}
+    for path in walk(".py"):
+        name = rel(path)
+        if not re.match(r"^(scripts|plugins/[^/]+/scripts)/[^/]+\.py$", name):     # direct children only: not `mutations/`
+            continue
+        text = read(path)
+        if not _TEMP_USE.search(text):
+            continue
+        line = _spawns_git_commit(text)
+        if line is None:
+            continue
+        examined += 1
+        if not _HERMETIC_REF.search(text):
+            offenders[name] = line
+    for name, line in sorted(offenders.items()):
+        if name not in baseline:
+            findings.append(Finding(
+                "non-hermetic-fixture-git", name, line,
+                "this script makes temp directories and runs `git commit`, but never references `hermetic_git`, "
+                "`fixture_git`, `maintenance.auto` or `GIT_CONFIG_COUNT`: the commit starts a detached `git maintenance` that "
+                "can race the temp directory's cleanup (#1493, #1510). Pass `env=hermetic_git.env()` (or build the repo with "
+                f"`fixture_git`). Do NOT add it to `{HERMETIC_BASELINE}`: that list only shrinks",
+            ))
+    for name in sorted(baseline - set(offenders)):
+        findings.append(Finding(
+            "non-hermetic-fixture-git", HERMETIC_BASELINE, 1,
+            f"`{name}` is listed as committing without a hermetic reference, but it no longer does (it is hermetic now, "
+            "commits no more, or is gone): delete the line, so the baseline only shrinks",
+        ))
+    return findings, examined
+
+
 # A pointer to one of OUR files, in one of the two forms that are unambiguously ours:
 #   `${CLAUDE_PLUGIN_ROOT}/reference/x.md`  -- resolved against the OWNING plugin's directory
 #   `skills/rails-8/references/style.md`    -- resolved against the repo root
@@ -3621,6 +3702,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     invisible, invisible_examined = check_invisible_characters()
     markers, markers_examined = check_conflict_markers()
     uncontained, uncontained_examined = check_uncontained_process_fixtures()
+    nonhermetic, nonhermetic_examined = check_non_hermetic_fixture_git()
     pointers, pointers_examined = check_doc_pointers()
     rel_links, rel_links_examined = check_broken_relative_link()
     leaving, leaving_examined = check_link_leaves_package()
@@ -3677,6 +3759,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "shipped_files_scanned_for_invisibles": invisible_examined,
         "files_scanned_for_conflict_markers": markers_examined,
         "process_spawning_selftests_examined": uncontained_examined,
+        "git_committing_fixtures_examined": nonhermetic_examined,
         "doc_pointers_examined": pointers_examined,
         "docs_relative_links_examined": rel_links_examined,
         "package_relative_links_examined": leaving_examined,
@@ -3718,7 +3801,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         **call_coverage,
     }
     return (dead + unenforced + undocumented + undoc_cmds + growth + hook_lib + fixture_git + bare + misdesc + unbounded + author_me + components + call_sites + invisible
-            + markers + uncontained + pointers + rel_links + leaving + outlines + uninstallable + plugin_root + mkt_ver + coercions + topologies + schema + unwired
+            + markers + uncontained + nonhermetic + pointers + rel_links + leaving + outlines + uninstallable + plugin_root + mkt_ver + coercions + topologies + schema + unwired
             + ci_gates + cl_ignore + controllers + labels + comp_labels + orphans + keyfilter
             + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
             + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref + action_pins
@@ -5526,6 +5609,37 @@ def selftest() -> int:
              expect_finding=False, files={"scripts/x_selftest.py": "print('no processes')\n"})
     scenario("a non-selftest file that starts processes (out of scope)", rule=UP, only=check_uncontained_process_fixtures,
              expect_finding=False, files={"scripts/runner.py": SPAWN})
+
+    # ---- non-hermetic-fixture-git (#1577) ------------------------------------------
+    NH = "non-hermetic-fixture-git"
+    COMMITS = ("import subprocess, tempfile\n"
+               "d = tempfile.mkdtemp()\n"
+               "subprocess.run(['git', '-C', d, 'commit', '-qm', 'm'])\n")
+    scenario("a fixture that commits in a temp repo with no hermetic reference", rule=NH, only=check_non_hermetic_fixture_git,
+             expect_finding=True, files={"scripts/x_selftest.py": COMMITS})
+    scenario("...through a wrapper whose argument is the literal commit", rule=NH, only=check_non_hermetic_fixture_git,
+             expect_finding=True, files={"plugins/qa-flow/scripts/y.py":
+                                         "import tempfile\nd = tempfile.mkdtemp()\ndef git(*a): return ['git', *a]\ngit('commit', '-qm', 'm')\n"})
+    scenario("a fixture that references hermetic_git", rule=NH, only=check_non_hermetic_fixture_git,
+             expect_finding=False, files={"scripts/x_selftest.py": "import hermetic_git\n" + COMMITS})
+    scenario("a fixture that sets the two keys itself", rule=NH, only=check_non_hermetic_fixture_git,
+             expect_finding=False, files={"scripts/x_selftest.py": "# maintenance.auto=false, gc.auto=0\n" + COMMITS})
+    scenario("a script that commits but makes no temp directory (the user's real repo, by design)", rule=NH,
+             only=check_non_hermetic_fixture_git, expect_finding=False,
+             files={"scripts/x.py": "import subprocess\nsubprocess.run(['git', 'commit', '-qm', 'm'])\n"})
+    scenario("a temp-using script that mentions commit only in a docstring and a comment", rule=NH,
+             only=check_non_hermetic_fixture_git, expect_finding=False,
+             files={"scripts/x.py": '"""runs git commit"""\nimport subprocess, tempfile\n# git commit\nsubprocess.run(["git", "status"], cwd=tempfile.mkdtemp())\n'})
+    scenario("a mutation guard file is out of scope", rule=NH, only=check_non_hermetic_fixture_git, expect_finding=False,
+             files={"scripts/mutations/x.py": COMMITS})
+    scenario("a baseline entry that still commits without the reference is tolerated", rule=NH,
+             only=check_non_hermetic_fixture_git, expect_finding=False,
+             files={"scripts/x_selftest.py": COMMITS, HERMETIC_BASELINE: "# c\nscripts/x_selftest.py\n"})
+    scenario("a baseline entry whose file is hermetic now is a stale line", rule=NH, only=check_non_hermetic_fixture_git,
+             expect_finding=True, files={"scripts/x_selftest.py": "import hermetic_git\n" + COMMITS,
+                                         HERMETIC_BASELINE: "scripts/x_selftest.py\n"})
+    scenario("a baseline entry whose file is gone is a stale line", rule=NH, only=check_non_hermetic_fixture_git,
+             expect_finding=True, files={HERMETIC_BASELINE: "scripts/gone_selftest.py\n"})
 
     # ---- conflict-marker (#1543) -------------------------------------------------
     CM = "conflict-marker"

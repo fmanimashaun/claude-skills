@@ -1,0 +1,14 @@
+# Files that make temp directories and run `git commit` WITHOUT a hermetic reference, measured when the
+# `non-hermetic-fixture-git` rule landed (#1577). A RATCHET: it only shrinks. Make the file hermetic
+# (`env=hermetic_git.env()` or `fixture_git`) and delete its line; the rule refuses a stale line.
+plugins/pipeline/scripts/install_git_hooks_selftest.py
+plugins/qa-flow/scripts/remote_evidence.py
+plugins/rails-flow/scripts/architecture_graph.py
+plugins/rails-flow/scripts/build_project_wiki.py
+plugins/rails-flow/scripts/check_mockup_gate.py
+plugins/rails-flow/scripts/check_spec_review.py
+plugins/rails-flow/scripts/classify_door.py
+scripts/audit_assertion_reachability.py
+scripts/build_maintainer_skills.py
+scripts/check_published_blocks.py
+scripts/skill_version_tag.py
