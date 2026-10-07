@@ -264,6 +264,35 @@ RATCHET_SLACK = 30.0
 # cost lands as a reviewed one-line diff and a later PR's dispatched run is never the one to trip on it (#1599).
 RECORD_INSTRUCTION = ("re-record docs/evidence/mutation-cost-baseline.json in this PR from this run's cost "
                       "(`python3 scripts/mutation_check.py --rebaseline` writes it)")
+# THE LOAD A RECORD IS FAIR AT (#1652). CPU seconds are steadier than wall seconds but not load-independent on a machine with
+# efficiency cores: MEASURED on the 10-core maintainer machine, `lint_self_consistency` (178 mutations, byte-identical between the
+# record and the failing run) cost 688 s at jobs 10 and ambient load, 528 s at jobs 4, 826 s and 1010 s with five busy loops added, and
+# 1418 s in a `--record-proof` run under heavy load (record 669 s): a growth failure that was the machine. So a failure prints the 5-minute
+# load and the job count it ran at, and says whether they are what the record was made at (a load under this, and the recorded jobs).
+RATCHET_QUIET_LOAD = 10.0
+
+
+def five_minute_load() -> float | None:
+    """The 5-minute load average, or None where the platform has none: a figure that is missing must read as missing, not as 0."""
+    try:
+        return float(os.getloadavg()[1])
+    except (AttributeError, OSError):
+        return None
+
+
+def ratchet_context(load: float | None, jobs: int, recorded_jobs: int | None) -> str:
+    """One sentence for a ratchet failure: the load and job count it ran at, and whether that is a fair comparison with the record.
+
+    A quiet machine at the recorded job count makes the failure growth; anything else makes it a question to re-run first."""
+    seen = (f"the 5-minute load was {load:.1f} at the start and jobs={jobs}" if load is not None
+            else f"the load average is unavailable here and jobs={jobs}")
+    if load is not None and load <= RATCHET_QUIET_LOAD and recorded_jobs == jobs:
+        return (f"ratchet context: {seen}, the conditions the record was made at (a load under {RATCHET_QUIET_LOAD:g}), "
+                "so read this as growth.")
+    return (f"ratchet context: {seen}; the record was made at jobs={recorded_jobs if recorded_jobs is not None else '?'} and a load "
+            f"under {RATCHET_QUIET_LOAD:g}. CPU seconds rise with load and with the job count (about 1.5x with half the cores busy, "
+            "1.3x from 4 to 10 jobs; #1652), so re-run on a quiet machine at the recorded job count before treating this as growth, "
+            "and do not re-record from this run: a record made under load would hide real growth later.")
 
 
 # THE COST IS CPU SECONDS (#1635). Each baseline, narrowing control and mutant run reports the CPU time (user + system) of itself and
@@ -324,11 +353,9 @@ def record_problems(guard_names: set[str], baseline: dict | None) -> list[str]:
             for name in sorted(set(baseline["guards"]) - guard_names)]
 
 
-def ratchet_problems(cost: dict[str, float], baseline: dict | None) -> list[str]:
-    """What the cost ratchet refuses, as sentences; an empty list is within budget."""
-    problems = record_problems(set(cost), baseline)
-    if baseline is None:
-        return problems
+def cost_problems(cost: dict[str, float], baseline: dict) -> list[str]:
+    """The cost refusals alone: a recorded guard past its growth, a new guard over the new-guard limit."""
+    problems = []
     recorded = baseline["guards"]
     for name, secs in sorted(cost.items()):
         if name in recorded:
@@ -342,6 +369,30 @@ def ratchet_problems(cost: dict[str, float], baseline: dict | None) -> list[str]
                             "and not on record; make it cheaper (`narrow_with` runs each mutant on one fixture), or "
                             f"{RECORD_INSTRUCTION}")
     return problems
+
+
+def ratchet_problems(cost: dict[str, float], baseline: dict | None) -> list[str]:
+    """What the cost ratchet refuses, as sentences; an empty list is within budget."""
+    problems = record_problems(set(cost), baseline)
+    if baseline is None:
+        return problems
+    return problems + cost_problems(cost, baseline)
+
+
+def ratchet_notes(cost: dict[str, float], baseline: dict | None, context: str) -> list[str]:
+    """What to print AFTER the refusals (#1652): the load and job count context, once, and only when a COST was refused.
+
+    A note is not a problem (the failure header counts problems), and a clean run or a record-only refusal (a missing record, a guard that
+    is gone) has no cost to explain, so it carries no extra line."""
+    return [context] if baseline is not None and cost_problems(cost, baseline) else []
+
+
+def failure_report(problems: list[str], notes: list[str], total: int) -> str:
+    """The text of a failing run: the header counts the PROBLEMS (a note is not one), each on its own line, then the notes."""
+    lines = [f"\nMUTATION CHECK FAILED — {len(problems)} of {total}:"]
+    lines += [f"  - {problem}" for problem in problems]
+    lines += [f"  {note}" for note in notes]
+    return "\n".join(lines)
 
 
 # PER-MUTATION LIMITS COME FROM THE GUARD'S OWN BASELINE (#1486). A fixed 300 s bound was shorter than
@@ -651,6 +702,7 @@ def main(argv: list[str] | None = None) -> int:
     # its own, so Ctrl-C reaches only this process, and a bare pool's join waited for the slowest
     # running mutant while every one of them kept going (review of #1525: 24 s, survivors).
     jobs = max(1, args.jobs or os.cpu_count() or 1)
+    start_load = five_minute_load()     # BEFORE the pool starts: this run's own work is not the load it ran under (#1652)
     started = time.monotonic()
     with proc_group.pool(jobs) as pool:
         timed = list(pool.map(run_baseline_timed, guards))
@@ -666,6 +718,7 @@ def main(argv: list[str] | None = None) -> int:
     with _COST_LOCK:
         cost: dict[str, float] = {g.name: _COST.get(g.name, 0.0) for g in guards}
     problems: list[str] = []
+    notes: list[str] = []
     total = 0
     for guard in guards:
         total += len(guard.mutations)
@@ -681,13 +734,13 @@ def main(argv: list[str] | None = None) -> int:
               f"{RATCHET_FLOOR:g}s floor)")
     elif args.ratchet:
         try:
-            problems.extend(ratchet_problems(cost, load_cost_baseline()))
+            baseline = load_cost_baseline()
+            problems.extend(ratchet_problems(cost, baseline))
+            notes = ratchet_notes(cost, baseline, ratchet_context(start_load, jobs, (baseline or {}).get("jobs")))
         except ValueError as exc:
             problems.append(f"the cost record is unreadable: {exc}")
     if problems:
-        print(f"\nMUTATION CHECK FAILED — {len(problems)} of {total}:", file=sys.stderr)
-        for problem in problems:
-            print(f"  - {problem}", file=sys.stderr)
+        print(failure_report(problems, notes, total), file=sys.stderr)
         return 1
     print(f"\nmutation check: {total} mutation(s) across {len(guards)} guard(s), all caught "
           f"(jobs={jobs}, {time.monotonic() - started:.0f}s)")
