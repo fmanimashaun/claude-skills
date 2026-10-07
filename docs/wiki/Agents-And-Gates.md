@@ -30,7 +30,7 @@
 | agent | tier · model | tools | named by | what proves its output |
 |---|---|---|---|---|
 | `kamal-configurator` | judgement · inherit | Read, Grep, Glob, Write, Edit, Bash | `/pipeline:deploy-cloud` | — |
-| `pipeline-coordinator` | judgement · inherit | Read, Grep, Glob, Bash | `/pipeline:pipeline`, `/pipeline:setup-pipeline`, `/pipeline:status` | — |
+| `pipeline-coordinator` | judgement · inherit | Read, Grep, Glob, Bash, Skill | `/pipeline:pipeline`, `/pipeline:setup-pipeline`, `/pipeline:status` | — |
 
 ### `qa-flow`
 
