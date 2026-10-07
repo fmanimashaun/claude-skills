@@ -54,7 +54,7 @@ GUARD = Guard(
         # Comments are prose (#1128). Without this call the gate reports a file for DESCRIBING the
         # anti-pattern -- and the file that describes it is usually the one that fixed it.
         "comments are matched as if they were code",
-        '    source = strip_comments(source)',
+        '    source = strip_comments(source, html=html)',
         '    source = source',
         'a comment describing the wrapper is not the wrapper',
     ),

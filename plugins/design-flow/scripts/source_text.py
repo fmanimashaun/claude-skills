@@ -52,15 +52,131 @@ def _blank(match: re.Match[str]) -> str:
     return "\n" * match.group(0).count("\n")
 
 
-def blank_html_comments(source: str) -> str:
-    """Only the HTML comments blanked, newlines kept -- for a caller that reads ERB or Ruby comments itself."""
-    return HTML_COMMENT.sub(_blank, source)
+# ELEMENTS WHOSE BODY THE TOKENIZER NEVER READS AS MARKUP (#1466): RAWTEXT and RCDATA, and script data. Inside them
+# `<!--` starts no comment, so blanking from it would hide the real markup after the element.
+RAW_TEXT = ("script", "style", "textarea", "title", "xmp", "iframe", "noembed", "noframes")
+TAG_NAME = re.compile(r"[A-Za-z][^\s/>]*")
 
 
-def strip_comments(source: str) -> str:
+def _ascii_alpha(ch: str) -> bool:
+    """The tokenizer's ASCII ALPHA. `str.isalpha()` is Unicode-aware, so `<é` was taken for a tag and crashed on the
+    ASCII-only TAG_NAME (#1651 review R1); `</é` is a bogus comment in the standard, not an end tag."""
+    return ch.isascii() and ch.isalpha()
+
+
+def _skip_erb(source: str, i: int) -> int:
+    """Past an ERB tag starting at `i` (`<%` ... `%>`); one never closed runs to the end."""
+    end = source.find("%>", i + 2)
+    return len(source) if end < 0 else end + 2
+
+
+def _skip_tag(source: str, i: int) -> int:
+    """Past a start tag at `i`, to just after its `>`. Quoted attribute values and ERB inside the tag are opaque: a `>`
+    or `<!--` there is not markup. An ERB tag inside a quoted value may itself contain quotes (`class="<%= a ? "x" : "y" %>"`),
+    so ERB is skipped first inside a value too."""
+    n, j = len(source), i + 1
+    while j < n:
+        if source.startswith("<%", j):
+            j = _skip_erb(source, j)
+        elif source[j] in "\"'":
+            q, j = source[j], j + 1
+            while j < n and source[j] != q:
+                j = _skip_erb(source, j) if source.startswith("<%", j) else j + 1
+            j += 1
+        elif source[j] == ">":
+            return j + 1
+        else:
+            j += 1
+    return n
+
+
+def _bogus_end(source: str, i: int) -> int:
+    """A bogus comment ends at the first `>`, or at the end of input."""
+    end = source.find(">", i)
+    return len(source) if end < 0 else end + 1
+
+
+def is_html(name: str) -> bool:
+    """Whether a file is HTML or an ERB template, so the BOGUS-comment rule applies to it (see `blank_html_comments`)."""
+    return name.endswith((".erb", ".html", ".htm"))
+
+
+def blank_html_comments(source: str, *, html: bool = False) -> str:
+    """Only the HTML comments blanked, newlines kept -- for a caller that reads ERB or Ruby comments itself.
+
+    AS THE TOKENIZER SEES THEM (#1466; WHATWG HTML, tokenization): a comment starts only in the DATA state, so `<!--`
+    inside a quoted attribute value, inside a `<script>`/`<style>`/RCDATA body, or inside ERB is text, not a comment.
+    And two openers are BOGUS comments that end at the first `>` (§13.2.5.42, 13.2.5.7, 13.2.5.41): `<!` not followed by
+    `--`, `DOCTYPE` or `[CDATA[`; and `</` followed by something that is not a letter and not `>`. `<!DOCTYPE` is a
+    doctype and `</>` emits nothing, so both stay as they are.
+
+    NOT `<?` (doctrine-verifier, 2026-10-07): the living standard's tag open state now enters a PROCESSING INSTRUCTION
+    state, so `<?name ...>` is a processing-instruction token, not a comment; it is left live.
+
+    A DYNAMIC CLOSER IS LOST, HARMLESSLY (02's review of #1651): `</<%= tag %>>` is `</` before a non-letter, so in a
+    template it is a bogus comment that ends at the `>` of `%>`. Only a closing tag is blanked, never an element start. So is `<![CDATA[`: a
+    bogus comment in HTML content but real CDATA in foreign content (SVG), and leaving it hides nothing.
+
+    BOGUS COMMENTS ONLY WITH `html=True` (the downstream diff of #1466): a Ruby file has no HTML data state, and Ruby's
+    regex lookbehind `(?<![...` is exactly `<!` not followed by `--`, so blanking it hid real code in a model. A caller
+    passes `html=is_html(path)`; the default keeps the bogus rule off, so a caller that forgets it hides nothing new.
+    The rest -- `<!--` only in the data state -- only ever leaves MORE text live, so it applies to every file."""
+    out, n, i, last = [], len(source), 0, 0
+
+    def blank(start: int, end: int) -> None:
+        nonlocal last
+        out.append(source[last:start])
+        out.append("\n" * source.count("\n", start, end))
+        last = end
+
+    while True:
+        c = source.find("<", i)
+        if c < 0:
+            break
+        nxt = source[c + 1:c + 2]
+        if source.startswith("<%", c):
+            i = _skip_erb(source, c)
+        elif source.startswith("<!--", c):
+            m = HTML_COMMENT.match(source, c)
+            if m is None:                                  # cannot happen while the pattern ends in `\Z`; never crash
+                i = c + 4
+                continue
+            blank(c, m.end())
+            i = m.end()
+        elif nxt == "!":
+            if source[c + 2:c + 9].upper() == "DOCTYPE" or source.startswith("<![CDATA[", c):
+                i = _bogus_end(source, c)                          # a doctype or CDATA: markup, left live
+            else:
+                i = _bogus_end(source, c)
+                if html:
+                    blank(c, i)
+        elif nxt == "/":
+            after = source[c + 2:c + 3]
+            if _ascii_alpha(after) or after == ">" or after == "":
+                i = _bogus_end(source, c) if _ascii_alpha(after) else c + 2   # an end tag, `</>`, or a lone `</` at the end
+            else:
+                i = _bogus_end(source, c)
+                if html:
+                    blank(c, i)
+        elif _ascii_alpha(nxt):
+            end = _skip_tag(source, c)
+            name = TAG_NAME.match(source, c + 1).group(0).lower()
+            i = end
+            # A trailing `/` does NOT close a non-void element in HTML (the self-closing flag is ignored outside foreign
+            # content), so `<script/>` still opens raw text (#1651 review N4).
+            if name in RAW_TEXT:
+                close = re.compile(rf"</{name}[\s/>]", re.I).search(source, end)
+                i = close.start() if close else n
+        else:
+            i = c + 1
+    out.append(source[last:])
+    return "".join(out)
+
+
+def strip_comments(source: str, *, html: bool = False) -> str:
     """Blank every comment in place. Safe on both `.rb` and `.erb`; the patterns do not overlap."""
     source = ERB_COMMENT.sub(_blank, source)
-    source = HTML_COMMENT.sub(_blank, source)
+    source = blank_html_comments(source, html=html)
     return RUBY_LINE_COMMENT.sub(lambda m: m.group(1), source)
 
 
@@ -90,6 +206,68 @@ def _selftest() -> int:
     expect("...and the markup before it survives", "<p>a</p>" in out)
     out = strip_comments('<!--><p class="after">x</p><!---><i class="also"></i>')
     expect("`<!-->` and `<!--->` are complete empty comments", 'class="after"' in out and 'class="also"' in out)
+
+    # A COMMENT STARTS ONLY IN THE DATA STATE (#1466). Blanking from a `<!--` that is not one hid the markup after it.
+    # A `>` inside the value too: without the value being opaque the tag would end there, and `<!--` would be read as data.
+    out = strip_comments('<input value="a > <!-- b"><button class="real">x</button>')
+    expect("`<!--` inside a quoted attribute value starts no comment", 'class="real"' in out)
+    out = strip_comments('<script>var s = "<!--";</script><div class="live"></div>')
+    expect("`<!--` inside a <script> body starts no comment", 'class="live"' in out)
+    out = strip_comments('<style>/* <!-- */</style><p class="after"></p>')
+    expect("`<!--` inside a <style> body starts no comment", 'class="after"' in out)
+    out = strip_comments('<%= "<!--" %><div class="erb-live"></div>')
+    expect("`<!--` inside ERB starts no comment", 'class="erb-live"' in out)
+    # An ODD number of quote characters inside the ERB: skipped as ERB, the value runs to its real close; read as text, the
+    # ERB's `"` closes the value, the `>` after it ends the tag, and `<!--` is read as a comment that hides the next element.
+    out = strip_comments('<div title="<%= a.delete(%q(")) %> > <!-- y"><p class="kept"></p>')
+    expect("ERB with quotes inside a quoted value does not end the value early", 'class="kept"' in out)
+    # BOGUS COMMENTS end at the first `>` (WHATWG 13.2.5.42 `<!x`, 13.2.5.7 `</ x`).
+    out = strip_comments('<! a hidden <button\n> <p class="live1"></p>', html=True)
+    expect("`<!` not followed by `--` is a bogus comment, blanked to `>`", "button" not in out and 'class="live1"' in out)
+    expect("...and its newline is kept", out.count("\n") == 1)
+    out = strip_comments('</ a hidden button> <p class="live2"></p>', html=True)
+    expect("`</` followed by a non-letter is a bogus comment", "button" not in out and 'class="live2"' in out)
+    # NOT COMMENTS, so left exactly as they are.
+    for src in ('<!DOCTYPE html><p class="d"></p>', '<?xml version="1.0"?><p class="d"></p>', '<p></></p>'):
+        expect(f"{src[:12]!r} is not a comment and is left as it is", strip_comments(src, html=True) == src)
+    # #1651 REVIEW: each of these broke with nothing failing.
+    for odd in ("a <é b", "x <ß>", "</é z>"):
+        try:
+            strip_comments(odd, html=True)
+            ok_ = True
+        except Exception:  # noqa: BLE001
+            ok_ = False
+        expect(f"a non-ASCII letter after `<` does not crash ({odd!r})", ok_)
+    expect("`</é` is a bogus comment (ASCII alpha only starts an end tag)", "é" not in strip_comments("</é z> <p>", html=True))
+    out = strip_comments('<div <%= "x" if a > b %> title="<!-- t"><p class="k-erb"></p>')
+    expect("ERB in a tag OUTSIDE any quote is opaque: its `>` does not end the tag", 'class="k-erb"' in out)
+    # A LITERAL list, not RAW_TEXT itself: a loop over the tuple under test loses an element's check with the element.
+    for name in ("script", "style", "textarea", "title", "xmp", "iframe", "noembed", "noframes"):
+        out = strip_comments(f'<{name}><!--</{name}><p class="k-{name}"></p>')
+        expect(f"`<!--` inside a <{name}> body starts no comment", f'class="k-{name}"' in out)
+    out = strip_comments('<script>x</scripts><!--</script><p class="k-close"></p>')
+    expect("`</scripts>` does not close a <script>: the close tag needs a terminator", 'class="k-close"' in out)
+    out = strip_comments("<input value='a > <!-- b'><button class=\"k-single\">x</button>")
+    expect("a single-quoted attribute value is opaque too", 'class="k-single"' in out)
+    expect("`<!doctype` is a doctype in any case", strip_comments("<!doctype html><p>", html=True) == "<!doctype html><p>")
+    out = strip_comments('<script/><!--</script><p class="k-sc"></p>')
+    expect("`<script/>` still opens a raw-text body (a trailing `/` closes no HTML element)", 'class="k-sc"' in out)
+
+    # 02's review of #1651: CDATA, a close tag with a space, a lone `</`, and blank_html_comments's own default.
+    expect("`<![CDATA[` is left live, even in a template",
+           strip_comments("<![CDATA[ x ]]><p>", html=True) == "<![CDATA[ x ]]><p>")
+    out = strip_comments('<script>s</script ><!-- c <button> --><p class="k-sp"></p>')
+    expect("`</script >` (a space before `>`) closes the script, so the comment after it is blanked",
+           "button" not in out and 'class="k-sp"' in out)
+    expect("a lone `</` at the end of input is left as it is", strip_comments("<p>a</", html=True) == "<p>a</")
+    expect("blank_html_comments keeps the bogus rule off by default",
+           blank_html_comments("<! x> <p>") == "<! x> <p>" and blank_html_comments("<! x> <p>", html=True) == " <p>")
+
+    # RUBY HAS NO HTML DATA STATE: a regex lookbehind is `<!` not followed by `--`, and blanking it hid a model's code.
+    rb = '    Regexp.new("(?<![[:word:]])#{x}(?![[:word:]])", options)\n  end\n  def stack = "stack"\n'
+    expect("by default (a Ruby file) a `(?<!` lookbehind is not a bogus comment", strip_comments(rb) == rb)
+    expect("is_html: templates are HTML, Ruby is not",
+           is_html("a/b.html.erb") and is_html("x.html") and not is_html("a/b.rb"))
 
     out = strip_comments('  # use `class: "stack"` on the caller\n  attr_reader :x\n')
     expect("a Ruby whole-line comment's text is gone", "stack" not in out)

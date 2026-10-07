@@ -76,7 +76,7 @@ from pathlib import Path
 
 import content_floors
 
-from source_text import strip_comments
+from source_text import is_html, strip_comments
 
 # BOTH RENDERINGS, BOTH QUOTES (#1189). This was `class="([^"]*)"` -- the HTML attribute only -- so a
 # class passed through a Rails helper's keyword, `link_to ..., class: "flex items-center gap-1.5"`,
@@ -138,7 +138,7 @@ def run(root: Path) -> tuple[list[str], int]:
         # lives in a comment ON PURPOSE, so it is still read from the RAW line. Stripping both is
         # how the first attempt at this fix silently disabled the opt-out.
         raw = path.read_text(encoding="utf-8", errors="replace").split("\n")
-        lines = strip_comments("\n".join(raw)).split("\n")
+        lines = strip_comments("\n".join(raw), html=is_html(path.name)).split("\n")
         for n, line in enumerate(lines, 1):
             # The swap declaration may sit on the line or the one above it, because the element
             # is often long enough that the comment goes on its own line.
