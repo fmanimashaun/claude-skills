@@ -115,6 +115,9 @@
      "used_by": ["plugins/rails-flow/hooks/context-nudge.mjs"]},
     {"id": "session-id-env", "url": "https://code.claude.com/docs/en/env-vars",
      "quote": "hook command subprocesses, and stdio MCP server subprocesses",
-     "used_by": ["skills/parallel-session-lane/references/process-hygiene.md", "plugins/rails-flow/scripts/session_reaper.py"]}
+     "used_by": ["skills/parallel-session-lane/references/process-hygiene.md", "plugins/rails-flow/scripts/session_reaper.py"]},
+    {"id": "statusline-rate-limits", "url": "https://code.claude.com/docs/en/statusline",
+     "quote": "appears only for claude.ai Pro and Max subscribers",
+     "used_by": ["docs/evidence/audits/2026-10-07-mods-tool-call-ratelimits-2.1.292.md", "plugins/rails-flow/reference/context-budget.md", "plugins/rails-flow/hooks/budget-guard.mjs"]}
   ]
 }
