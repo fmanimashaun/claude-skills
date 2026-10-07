@@ -94,6 +94,46 @@ def strip_heredocs(cmd: str, bodies: list | None = None) -> str:
     return "\n".join(out)
 
 
+def _strip_comments(text: str) -> str:
+    """Drop every shell comment, quote-aware and PER LINE, before the lines are joined (#1645 review R1).
+
+    `issue_creates` and `hidden_create` turn each newline into ` ; ` and then run `shlex`, whose default `commenters` is `#`: the first `#` in the
+    whole command commented out EVERYTHING after it, so `# note` + newline + an unlabelled create was allowed (on dev too). A `#` starts a comment
+    only at the start of a word (after whitespace or a separator) and outside quotes; it runs to the end of THAT line. A `#` inside a word (`a#b`),
+    inside quotes (`"see #12"`) or in a heredoc body (stripped earlier) is text."""
+    out: list[str] = []
+    i, n, quote = 0, len(text), ""
+    while i < n:
+        c = text[i]
+        if quote:
+            out.append(c)
+            if c == "\\" and quote == '"' and i + 1 < n:
+                out.append(text[i + 1])
+                i += 2
+                continue
+            if c == quote:
+                quote = ""
+            i += 1
+            continue
+        if c == "\\" and i + 1 < n:
+            out.append(c)
+            out.append(text[i + 1])
+            i += 2
+            continue
+        if c in "'\"":
+            quote = c
+            out.append(c)
+            i += 1
+            continue
+        if c == "#" and (not out or out[-1] in " \t\n;&|()"):
+            while i < n and text[i] != "\n":
+                i += 1
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
 def issue_creates(cmd: str) -> list[tuple[list[str], str | None, str | None]]:
     """(argv, the directory it runs in, a GH_REPO prefix) for every `gh issue create` in the command.
 
@@ -115,13 +155,14 @@ def issue_creates(cmd: str) -> list[tuple[list[str], str | None, str | None]]:
         cmd = _ansi_c(strip_heredocs(cmd))
     except ValueError:
         return _unparseable(cmd)
-    cmd = cmd.replace("\\\n", "").replace("\n", " ; ")   # a backslash-newline JOINS: `cre\\<nl>ate`
+    cmd = _strip_comments(cmd.replace("\\\n", "")).replace("\n", " ; ")   # a backslash-newline JOINS: `cre\\<nl>ate`; comments go first (#1645 R1)
     # The followed cd shape is checked on the RAW text too (#1440): shlex drops quotes, so a quoted
     # `'&&'` would otherwise read as the separator. The operand may itself be quoted.
     raw_cd_shape = bool(re.match(r"""\s*cd\s+('[^']*'|"[^"]*"|[^\s'"&;|()]+)\s*&&""", cmd))
     try:
         lexer = shlex.shlex(cmd, posix=True, punctuation_chars=";&|()")
         lexer.whitespace_split = True
+        lexer.commenters = ""            # comments were stripped line by line above; shlex's own would eat everything after the first `#`
         tokens = list(lexer)
     except ValueError:
         return _unparseable(cmd)
@@ -299,7 +340,21 @@ def _ansi_c(cmd: str) -> str:
 WRAPPERS = {"env", "sudo", "command", "builtin", "exec", "nohup", "timeout", "nice", "time", "xargs"}
 
 
-def hidden_create(cmd: str) -> str | None:
+_MAX_DEPTH = 3     # how many levels of "a shell runs text that runs text" are followed; deeper is not claimed (#1645)
+
+
+def _runs(text: str, depth: int, cwd: Path | None) -> bool:
+    """Would a shell that RUNS `text` (a script file, a heredoc body, a `-c` string, text piped in) file an issue?
+
+    The words `gh issue create` anywhere in it, OR any indirect shape `hidden_create` refuses (an alias, a function wrapper, `$G`, `xargs gh`,
+    another script it reads, a nested `-c`), judged by the same rules as the command line itself, to `_MAX_DEPTH` levels (#1645 R2: part B was
+    applied to the command line only, so the shapes it refuses passed one level down)."""
+    if _names_create(text):
+        return True
+    return depth < _MAX_DEPTH and hidden_create(text, depth + 1, cwd) is not None
+
+
+def hidden_create(cmd: str, depth: int = 0, cwd: Path | None = None) -> str | None:
     """A `gh issue create` the parser cannot label-check, named by its shape, or None (#1423).
 
     Owner decision (#1423): refuse, and say "run it directly". A create inside a command STRING runs
@@ -308,6 +363,7 @@ def hidden_create(cmd: str) -> str | None:
     and stays allowed: only a shell, `eval`, or a substitution EXECUTES the string.
     """
     heredocs: list = []
+    base_dir = cwd if cwd is not None else Path.cwd()
     try:
         body = _ansi_c(strip_heredocs(cmd, heredocs))
     except ValueError:
@@ -322,7 +378,7 @@ def hidden_create(cmd: str) -> str | None:
         feeders = [_command_word(opener[:mark])] + ([_command_word(after)] if "|" in after else [])
         for feeder in feeders:
             # A body a shell runs has its escapes decoded first: `gh i\\ssue cr\\eate` is `gh issue create` to the shell (#1515).
-            if (feeder in SHELLS or feeder == "eval") and (_names_create(text) or _names_create(re.sub(r"\\(.)", r"\1", text, flags=re.S))):
+            if (feeder in SHELLS or feeder == "eval") and (_runs(text, depth, base_dir) or _runs(re.sub(r"\\(.)", r"\1", text, flags=re.S), depth, base_dir)):
                 return f"a heredoc fed to `{feeder}`"
         if not quoted:
             # An escaped character is literal in an unquoted body too: `\\`gh issue create\\`` is text.
@@ -354,35 +410,44 @@ def hidden_create(cmd: str) -> str | None:
         return found
     # A shell fed a file through a substitution (#1515): `bash <(cat f)`, `bash -c "$(cat f)"`, `bash <<<"$(cat f)"`.
     for m in _SHELL_FED.finditer(body):
-        for operand in _cat_operands(m.group(1)):
-            fed = _read_script(operand, Path.cwd())
+        for operand in (_cat_operands(m.group(1)) if m.group(1) else [m.group(2)]):    # `cat f`, or `<f` (#1645 R2: `$(<f)`)
+            fed = _read_script(operand, base_dir)
             if fed is _UNREADABLE or fed is _UNKNOWN_DIR:
                 return f"a script file `{operand}` fed to a shell that this hook cannot read"
-            if fed is not None and _names_create(fed):
+            if fed is not None and _runs(fed, depth, base_dir):
                 return "a script file fed to a shell through a substitution"
+    # The text a shell is fed by `echo`/`printf` through a substitution is the script (#1645 R2): `bash <(echo 'gh issue create …')`.
+    for m in _SHELL_FED_ECHO.finditer(body):
+        if _runs(m.group(1), depth, base_dir):
+            return "text fed to a shell through a substitution"
     try:
-        lexer = shlex.shlex(_fold_fd_redirects(body).replace("\n", " ; "), posix=True, punctuation_chars=";&|()")
+        lexer = shlex.shlex(_fold_fd_redirects(_strip_comments(body)).replace("\n", " ; "), posix=True, punctuation_chars=";&|()")
         lexer.whitespace_split = True
+        lexer.commenters = ""            # (#1645 R1) see `_strip_comments`
         tokens = list(lexer)
     except ValueError:
         return None
     seg: list[str] = []
-    gh_names: set[str] = set()       # names bound to gh in this command (`alias g=gh`, `G=gh`) (#1515)
+    fn_wrappers, fn_creators = _functions(_strip_comments(body))    # functions that run gh / name a create (#1645 R2)
+    gh_names: set[str] = set(fn_wrappers)   # names bound to gh in this command (`alias g=gh`, `G=gh`, a function that runs gh) (#1515, #1645)
+    aliases: dict[str, list[str]] = {}      # alias name -> the words it expands to (#1645 R2: `alias g='gh issue'; g create`)
+    prev_files: list[str] = []              # the contents of files a pipeline reader (`tail f`) read earlier in this pipeline (#1645 R2)
     prev_cat: list[str] = []         # the files a `cat` earlier in this pipeline reads (#1515)
     prev_text, prev_op = "", ""      # the pipeline so far (every `|`-joined segment), and the last operator
     # Where a relative `bash < script` resolves (#1489 review, #1495): the session's directory, moved by
     # each literal `cd` to a directory that EXISTS -- a cd to a missing one fails and changes nothing,
     # and `;` runs the next command anyway. `( )` is a subshell: a cd inside it holds until the `)`.
     # Any other cd (`cd -`, `cd $X`, bare, `pushd`/`popd`) makes it unknown, and an unknown file is allowed.
-    here_dir: Path | None = Path.cwd()
+    here_dir: Path | None = base_dir
     dir_stack: list[Path | None] = []
     for tok in tokens + [";"]:
         if tok and set(tok) <= set(";&|()"):
             raw_seg = " ".join(seg)
             words = [w for w in seg if not ("=" in w and w.split("=", 1)[0].isidentifier())]
-            words = _peel(words)       # `env sh -c`, `sudo bash -c`, `timeout 5 sh -c`, `command eval`
+            words, peeled, xinfo = _peel_info(words)   # `env sh -c`, `sudo bash -c`, `timeout 5 sh -c`, `command eval`, `then . f`, `xargs -a f gh`
             # A redirect glued to the shell or to its operands (`sh<f`, `bash 2>&1<f`, `bash>/dev/null<f`,
             # #1513 review) is cut out so the shell and its stdin are seen.
+            unsplit = list(words)       # `_split_redirects` splits on whitespace inside a quoted word; the `-c` string needs it whole (#1645 R2)
             if words and os.path.basename(_split_redirects(words[:1])[0]) in SHELLS:
                 words = _split_redirects(words)
             head = os.path.basename(words[0]) if words else ""
@@ -393,10 +458,21 @@ def hidden_create(cmd: str) -> str | None:
                 if "=" in seg_word and seg_word.split("=", 1)[0].isidentifier() and os.path.basename(seg_word.split("=", 1)[1].strip("'\"")) == "gh":
                     gh_names.add(seg_word.split("=", 1)[0])
             if head == "alias":
-                for alias_word in words[1:]:
+                for alias_word in (seg[seg.index("alias") + 1:] if "alias" in seg else []):
                     name, _, value = alias_word.partition("=")
+                    aliases[name] = value.split()
                     if value.strip("'\"").split()[:1] and os.path.basename(value.strip("'\"").split()[0]) == "gh":
                         gh_names.add(name)
+            # A call of an alias or of a function that files an issue (#1645 R2): `alias mk='gh issue create'; mk -t X`, `alias g='gh issue'; g create`,
+            # `g() { gh issue create "$@"; }; g -t X`. The alias is expanded, so the create it hides is read as the create it is.
+            if words and not (head == "alias"):
+                expanded, hops = list(words), 0
+                while expanded and expanded[0] in aliases and hops < 4:
+                    expanded, hops = aliases[expanded[0]] + expanded[1:], hops + 1
+                if hops and gh_issue_create_at(expanded, 0)[0] is not None:
+                    return "an alias that expands to a create"
+                if words[0] in fn_creators:
+                    return "a function whose body files an issue"
             tail = [w for w in words[1:] if not w.startswith("-")]
             names_verb = len(words) > 1 and any(a == "issue" and b in ("create", "new") for a, b in zip(words, words[1:]))
             if words and names_verb and (words[0].startswith("$") or "`" in words[0] or words[0] in gh_names):
@@ -405,6 +481,26 @@ def hidden_create(cmd: str) -> str | None:
                 return "a `gh` word built at run time (a substitution before `issue create`)"
             if head == "gh" and len(words) == 1 and prev_op in ("|", "|&") and re.search(r"\bissue\s+(create|new)\b", prev_text):
                 return "a pipe into `xargs gh`"
+            # `xargs` builds gh's arguments from its input (#1645 R2): `-a FILE`, a file `cat`/`tail` pipes in, or the text `echo` pipes in; with
+            # `-I{}` the input replaces `{}` in the command. The verb arriving that way, side by side, is an unlabelled create.
+            if "xargs" in peeled and head == "gh":
+                data: list[str] = []
+                sources = [xinfo["a"]] if xinfo.get("a") else []
+                for src in sources + (prev_cat if prev_op in ("|", "|&") else []):
+                    fed = _read_script(src, here_dir)
+                    if isinstance(fed, str) and fed not in (_UNREADABLE, _UNKNOWN_DIR):
+                        data += fed.split()
+                for fed in (prev_files if prev_op in ("|", "|&") else []):
+                    data += fed.split()
+                if prev_op in ("|", "|&") and prev_text:
+                    data += prev_text.replace("'", " ").replace('"', " ").split()
+                cmd_tokens = words[1:]
+                if xinfo.get("I"):
+                    candidates = [[w.replace(xinfo["I"], d) for w in cmd_tokens] for d in data]
+                else:
+                    candidates = [" ".join(cmd_tokens + data).split()]
+                if any(_verb_tokens(tokens) for tokens in candidates):
+                    return "the verb arriving through `xargs gh` (its input names `issue create`)"
             # A cd in the background (`cd sub &`) or in a pipeline (`cd sub | …`, `… | cd sub`) runs in a
             # subshell and never moves this shell (#1513 review), so it is not followed.
             in_subshell = tok.rstrip("()") in ("&", "|", "|&") or prev_op in ("|", "|&")
@@ -418,9 +514,11 @@ def hidden_create(cmd: str) -> str | None:
             rest = " ".join(words[1:])
             # `-c` may be bundled with other short flags: `bash -lc '…'`.
             runs_string = any(w.startswith("-") and not w.startswith("--") and "c" in w for w in words[1:])
-            if head in SHELLS and runs_string and _names_create(rest):
-                return f"`{head} -c`"
-            if head == "eval" and _names_create(rest):
+            if head in SHELLS and runs_string:
+                c_operand = _first_operand(unsplit[1:])[0]
+                if _names_create(rest) or (c_operand and _runs(c_operand, depth, here_dir)):    # the string is a script: `sh -c '. f'`, `sh -c 'bash f'` (#1645 R2)
+                    return f"`{head} -c`"
+            if head == "eval" and _runs(rest, depth, here_dir):
                 return "`eval`"
             # A script the shell runs from a FILE (#1515): `bash f`, `sh ./f`, `source f`, `. f`. The file is read; one that cannot be
             # read is refused (the coordinator's call: fail closed), as is a relative one after a cd this parser cannot follow.
@@ -436,22 +534,25 @@ def hidden_create(cmd: str) -> str | None:
                     return (f"a script run by `{head}` after a cd this hook cannot follow; give the script an absolute path")
                 if fed is _UNREADABLE:
                     return f"a script file `{operand}` run by `{head}` that this hook cannot read"
-                if fed is not None and _names_create(fed):
+                if fed is not None and _runs(fed, depth, here_dir):
                     return f"a script run by `{head}`"
             # A shell reading its SCRIPT from stdin (#1462): a pipe into it, or a herestring.
             if head in SHELLS and not runs_string:
-                if prev_op in ("|", "|&") and _names_create(prev_text):
+                if prev_op in ("|", "|&") and _runs(prev_text, depth, here_dir):
                     return f"a pipe into `{head}`"
                 # `cat f | bash` (#1515): the files `cat` read are the script.
-                if prev_op in ("|", "|&") and prev_cat:
+                if prev_op in ("|", "|&") and (prev_cat or prev_files):
                     for cat_file in prev_cat:
                         fed = _read_script(cat_file, here_dir)
                         if fed is _UNREADABLE or fed is _UNKNOWN_DIR:
                             return f"a script file `{cat_file}` piped into `{head}` that this hook cannot read"
-                        if fed is not None and _names_create(fed):
+                        if fed is not None and _runs(fed, depth, here_dir):
                             return f"a script file piped into `{head}`"
+                    for fed in prev_files:       # `tail -n +2 f | sh`, `sed 1d f | bash`, `grep . f | sh` (#1645 R2)
+                        if _runs(fed, depth, here_dir):
+                            return f"a file read by a pipeline reader and piped into `{head}`"
                 here = next((k for k, w in enumerate(words) if w.startswith("<<<")), None)
-                if here is not None and _names_create(" ".join([words[here][3:]] + words[here + 1:])):
+                if here is not None and _runs(" ".join([words[here][3:]] + words[here + 1:]), depth, here_dir):
                     return f"a herestring fed to `{head}`"
                 # `bash < script` / `bash <script` (#1489): the create lives in the FILE, so read it.
                 # A file that cannot be read is allowed, as before. But a RELATIVE script after a cd this
@@ -462,9 +563,10 @@ def hidden_create(cmd: str) -> str | None:
                 if script is _UNKNOWN_DIR:
                     return (f"a script fed to `{head}` by redirect after a cd this hook cannot follow; "
                             "give the script an absolute path")
-                if script is not None and _names_create(script):
+                if script is not None and _runs(script, depth, here_dir):
                     return f"a script fed to `{head}` by redirect"
             # A pipeline feeds its whole upstream: `echo … | cat | bash` runs what echo wrote.
+            prev_files = ((prev_files if prev_op in ("|", "|&") else []) + (_reader_files(words, here_dir) if head in _READERS else []))
             prev_cat = ((prev_cat if prev_op in ("|", "|&") else []) + (_cat_operands(" ".join(words[1:])) if head == "cat" else []))
             prev_text = (prev_text + " " + raw_seg) if prev_op in ("|", "|&") else raw_seg
             prev_op = tok
@@ -516,17 +618,111 @@ def _substituted_create(text: str) -> str | None:
     return None
 
 
+# Reserved words and a `!` that put a command in the position `then`/`do`/`{` introduces: `then . f` runs f (#1645 R2).
+KEYWORDS = {"then", "do", "else", "elif", "if", "while", "until", "{", "}", "!"}
+_XARGS_VALUED = {"-a", "--arg-file", "-I", "-n", "-L", "-P", "-d", "-s", "-E", "-l", "--max-args", "--max-lines", "--max-procs", "--delimiter",
+                 "--max-chars", "--eof"}
+
+
+def _peel_info(words: list[str]) -> tuple[list[str], list[str], dict]:
+    """(the command words with wrappers peeled, the wrappers peeled, xargs's `-a FILE` and replace-string).
+
+    Wrappers that run their arguments as a command -- `env`, `sudo`, `timeout 5`, `command`, `builtin`, `time`, … -- with their own flags and
+    timeout's or nice's number; reserved words (`then`, `do`, `{`, `!`, #1645 R2); `xargs`'s options that take a value (`-a f`, `-I {}`, #1645 R2);
+    and `find … -exec CMD … ;`, whose CMD is what runs. One peel, used everywhere."""
+    words, peeled, info = list(words), [], {}
+    while words:
+        base = os.path.basename(words[0])
+        if base in KEYWORDS:
+            words.pop(0)
+            peeled.append(base)
+            continue
+        if base in WRAPPERS:
+            words.pop(0)
+            peeled.append(base)
+            while words and words[0].startswith("-"):
+                flag = words.pop(0)
+                if base == "xargs":
+                    name, eq, value = flag.partition("=")
+                    if flag.startswith("-I") and len(flag) > 2:
+                        info["I"] = flag[2:]
+                    elif flag in _XARGS_VALUED or name in _XARGS_VALUED and not eq:
+                        if words:
+                            value = words.pop(0)
+                            if flag in ("-a", "--arg-file"):
+                                info["a"] = value
+                            elif flag in ("-I", "--replace"):
+                                info["I"] = value
+                    elif flag.startswith("-a") and len(flag) > 2:
+                        info["a"] = flag[2:]
+                    elif eq and name in ("--arg-file",):
+                        info["a"] = value
+                    elif eq and name in ("--replace",):
+                        info["I"] = value
+            if base in ("timeout", "nice") and words and re.fullmatch(r"[\d.]+[smhd]?", words[0]):
+                words.pop(0)
+            continue
+        if base == "find":
+            at = next((k for k, w in enumerate(words) if w in ("-exec", "-execdir", "-ok", "-okdir")), None)
+            if at is None:
+                break
+            sub = words[at + 1:]
+            cut = next((k for k, w in enumerate(sub) if w in (";", "+", "\\;")), len(sub))
+            words = sub[:cut]
+            peeled.append("find")
+            continue
+        break
+    return words, peeled, info
+
+
 def _peel(words: list[str]) -> list[str]:
-    """Drop wrappers that run their arguments as a command -- `env`, `sudo`, `timeout 5`, `command`,
-    … -- with their own flags and timeout's or nice's number. One peel, used everywhere."""
-    words = list(words)
-    while words and os.path.basename(words[0]) in WRAPPERS:
-        wrapper = os.path.basename(words.pop(0))
-        while words and words[0].startswith("-"):
-            words.pop(0)
-        if wrapper in ("timeout", "nice") and words and re.fullmatch(r"[\d.]+[smhd]?", words[0]):
-            words.pop(0)
-    return words
+    return _peel_info(words)[0]
+
+
+_FN_DEF = re.compile(r"(?:^|[;&|({\s])(?:function\s+([A-Za-z_][\w.:+-]*)\s*(?:\(\s*\))?|([A-Za-z_][\w.:+-]*)\s*\(\s*\))\s*\{")
+_GH_WORD = re.compile(r"(?:^|[\s;&|({])(?:\S*/)?gh(?=[\s;&|)}]|$)")
+
+
+def _functions(text: str) -> tuple[set[str], set[str]]:
+    """(functions whose body runs `gh`, functions whose body names a create) defined in TEXT (#1645 R2).
+
+    `g() { command gh "$@"; }; g issue create -t X` files an unlabelled issue through a function: the call has a gh word the hook never sees.
+    A body is read to its own closing brace (counted). A wrapper is any function whose body has `gh` as a command word."""
+    wrappers: set[str] = set()
+    creators: set[str] = set()
+    for m in _FN_DEF.finditer(text):
+        name, depth, j = m.group(1) or m.group(2), 1, m.end()
+        while j < len(text) and depth:
+            depth += {"{": 1, "}": -1}.get(text[j], 0)
+            j += 1
+        body = text[m.end():j - (0 if depth else 1)]
+        if _GH_WORD.search(body):
+            wrappers.add(name)
+        if _names_create(body):
+            creators.add(name)
+    return wrappers, creators
+
+
+# The commands that read FILES and write them on, so `tail -n +2 f | sh` runs f's lines (#1645 R2). `cat` has its own, stricter, handling.
+_READERS = {"head", "tail", "sed", "grep", "egrep", "fgrep", "awk", "tac", "nl", "cut", "sort", "uniq", "paste", "fmt", "fold", "column", "less", "more"}
+
+
+def _reader_files(words: list[str], cwd: Path | None) -> list[str]:
+    """The contents of the existing files a pipeline reader (`tail -n +2 f`, `sed 1d f`, `grep . f`) is given: flags, numbers and patterns that
+    are not files are skipped, and a file that is not readable is not a script (`cat` is the strict one)."""
+    texts: list[str] = []
+    for w in words[1:]:
+        if not w or w[0] in "-+" or w.isdigit() or w.startswith(("<", ">")):
+            continue
+        fed = _read_script(w, cwd)
+        if isinstance(fed, str) and fed not in (_UNREADABLE, _UNKNOWN_DIR):
+            texts.append(fed)
+    return texts
+
+
+def _verb_tokens(tokens: list[str]) -> bool:
+    """Do these words hold `issue create|new` side by side: the verb arriving as data (#1645 R2)."""
+    return any(a == "issue" and b in ("create", "new") for a, b in zip(tokens, tokens[1:]))
 
 
 def _first_operand(args: list[str]) -> tuple[str | None, bool]:
@@ -617,7 +813,9 @@ def _redirected_script(args: list[str], cwd: Path | None) -> str | None:
 
 # A SHELL FED A FILE THROUGH A SUBSTITUTION (#1515): `bash <(cat f)`, `bash -c "$(cat f)"`, `bash <<<"$(cat f)"`, and the backtick form. The
 # shell word and the `cat` sit in one segment (no `;`, `&` or `|` between them); `cat`'s operands are the files.
-_SHELL_FED = re.compile(r"(?:^|[\s;&|(])(?:sh|bash|zsh|dash|ksh)\b(?:[^;&|\n]|[<>]&|&>)*?(?:<\(|\$\(|`)\s*cat\s+([^)`]+)")
+_SHELL_FED = re.compile(r"(?:^|[\s;&|(])(?:sh|bash|zsh|dash|ksh|eval)\b(?:[^;&|\n]|[<>]&|&>)*?(?:<\(|\$\(|`)\s*(?:cat\s+([^)`]+)|<\s*([^)`\s]+))")
+# The same, fed by `echo`/`printf` (#1645 R2): the printed text IS the script.
+_SHELL_FED_ECHO = re.compile(r"(?:^|[\s;&|(])(?:sh|bash|zsh|dash|ksh|eval)\b(?:[^;&|\n]|[<>]&|&>)*?(?:<\(|\$\(|`)\s*(?:echo|printf)\s+([^)`]+)")
 
 
 def _cat_operands(text: str) -> list[str]:
