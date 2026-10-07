@@ -3552,6 +3552,76 @@ def guard_worktree_pointer_fixtures() -> None:
 # killing the hook's descendants: orphaned awk processes ran 51 minutes, one 23 hours, and the load hit 348.
 # `lib/deadline.sh` runs each hook's work in its own process group under a wall-clock deadline and kills the whole
 # group. The stub below is the incident: an `awk` that hangs and leaves a sleeper behind, every pid recorded.
+# ---- stop-where.sh + session-start.sh's where-stopped lines (#1639) -----------------------------------------------------
+def where_stopped_fixtures() -> None:
+    """Where this worktree stopped: the Stop hook writes the facts file and warns ONCE about unsaved work; SessionStart
+    points at it. Advisory, so every fixture also proves it fails open (exit 0, silent) rather than stopping a turn."""
+    def g(cwd: Path, *args: str) -> None:
+        _run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *args], cwd=cwd, check=True, capture_output=True)
+
+    def stop(repo: Path, **kw) -> tuple[int, str]:
+        return run_hook("stop-where.sh", cwd=repo, stdin=json.dumps({"hook_event_name": "Stop"}), **kw)
+
+    def start(repo: Path) -> str:
+        return run_hook("session-start.sh", cwd=repo, stdin=json.dumps({"session_id": "S", "hook_event_name": "SessionStart"}),
+                        unset=("CLAUDE_PROJECT_DIR",), env_extra={"RAILS_FLOW_ZOMBIE_WARN": "100000"})[1]
+
+    hooks = json.loads((HOOKS.parent / "hooks.json").read_text())["hooks"]
+    check("where-stopped: stop-where.sh is registered on Stop",
+          any("stop-where.sh" in h["command"] for e in hooks["Stop"] for h in e["hooks"]))
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td).resolve()
+        remote, repo = root / "remote.git", root / "repo"
+        g(root, "init", "-q", "--bare", str(remote))
+        g(root, "init", "-q", "-b", "dev", str(repo))
+        (repo / "a").write_text("a\n")
+        g(repo, "add", "a")
+        g(repo, "commit", "-q", "-m", "one")
+        g(repo, "remote", "add", "origin", str(remote))
+        g(repo, "push", "-q", "origin", "dev")
+        handoff = Path(_run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], cwd=repo,
+                            capture_output=True, text=True).stdout.strip()) / "handoff"
+
+        code, out = stop(repo)
+        check("where-stopped: clean and pushed, the Stop hook exits 0 and says nothing", code == 0 and out.strip() == "", out)
+        files = list(handoff.glob("*.md")) if handoff.is_dir() else []
+        check("where-stopped: the facts file is written under <git-common-dir>/handoff, one per worktree",
+              len(files) == 1 and files[0].name.startswith("repo-"), str(files))
+        out = start(repo)
+        check("where-stopped: clean and pushed, SessionStart prints neither line though the file exists (#1643 D1)",
+              "unsaved work" not in out and "where this worktree stopped" not in out, out[-300:])
+
+        (repo / "b").write_text("b\n")
+        g(repo, "add", "b")
+        g(repo, "commit", "-q", "-m", "two")
+        (repo / "c").write_text("c\n")
+        code, out = stop(repo)
+        msg = json.loads(out).get("systemMessage", "") if out.strip().startswith("{") else ""
+        check("where-stopped: unpushed and uncommitted work is named once, as a systemMessage, exit 0",
+              code == 0 and "1 commit not on any remote" in msg and "1 uncommitted file" in msg, out)
+        check("where-stopped: the same counts on the next turn are not repeated", stop(repo)[1].strip() == "")
+        text = files[0].read_text() if files else ""
+        check("where-stopped: the file holds the branch, both counts and the dirty path",
+              "- branch: dev" in text and "- commits not on any remote: 1" in text and "  - c" in text, text[:300])
+
+        out = start(repo)
+        check("where-stopped: SessionStart states the unsaved work and points at the file",
+              "- unsaved work: 1 commit not on any remote, 1 uncommitted file" in out
+              and f"where this worktree stopped (last turn, " in out and str(files[0] if files else "?") in out, out[-400:])
+
+        # FAIL OPEN: a python3 that fails never stops the turn (a hung git is bounded by the lib's own deadline, which
+        # where_stopped.py --selftest proves; the harness does not hang a real git here).
+        bad = root / "bad-python"
+        bad.mkdir()
+        _stub(bad, "python3", "exit 7")
+        code, out = stop(repo, path_prefix=[bad])
+        check("where-stopped: a failing interpreter is silent and exits 0", code == 0 and out.strip() == "", out)
+        outside = root / "plain"
+        outside.mkdir()
+        code, out = stop(outside)
+        check("where-stopped: outside a git repository, silent and exit 0", code == 0 and out.strip() == "", out)
+
+
 def deadline_fixtures() -> None:
     guard = HOOKS / "guard-bash.sh"
     base_env = {k: v for k, v in os.environ.items() if k not in ("QA_ALLOW_MAIN", "RAILS_FLOW_LANE", "RAILS_FLOW_HOOK_DEADLINE")}
@@ -3886,7 +3956,7 @@ GROUPS = {
     "ci_verdict_hint": ci_verdict_hint_fixtures, "timeout": timeout_fixtures,
     "guard_worktree": guard_worktree_fixtures, "guard_worktree_parse": guard_worktree_parse_fixtures,
     "guard_worktree_failopen": guard_worktree_failopen_fixtures, "guard_worktree_pointer": guard_worktree_pointer_fixtures,
-    "deadline": deadline_fixtures,
+    "deadline": deadline_fixtures, "where_stopped": where_stopped_fixtures,
 }
 
 
@@ -3906,7 +3976,7 @@ PARTS = {
           "ci_verdict_hint", "timeout"],
     "b": ["release_gate", "release_gate_effects"],
     "c": ["release_gate_repos", "release_gate_refs", "guard_worktree", "guard_worktree_parse",
-          "guard_worktree_failopen", "guard_worktree_pointer", "deadline"],
+          "guard_worktree_failopen", "guard_worktree_pointer", "deadline", "where_stopped"],
 }
 
 
