@@ -54,7 +54,7 @@ GUARD = Guard(
         # Comments are prose (#1128). Without this call the gate reports a file for DESCRIBING the
         # anti-pattern -- and the file that describes it is usually the one that fixed it.
         "comments are matched as if they were code",
-        '            source = strip_comments(path.read_text(encoding="utf-8", errors="replace"))',
+        '            source = strip_comments(path.read_text(encoding="utf-8", errors="replace"), html=is_html(path.name))',
         '            source = path.read_text(encoding="utf-8", errors="replace")',
         'a comment warning against a raw `<button>` is not a raw `<button>`',
     ),

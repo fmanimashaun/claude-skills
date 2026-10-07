@@ -16,7 +16,7 @@ GUARD = Guard(
         ),
         Mutation(
             "HTML comments are left in the source",
-            "    source = HTML_COMMENT.sub(_blank, source)",
+            "    source = blank_html_comments(source, html=html)",
             "    source = source",
             "an HTML comment's text is gone",
         ),
@@ -38,6 +38,61 @@ GUARD = Guard(
             'HTML_COMMENT = re.compile(r"<!--(?:-?>|[\\s\\S]*?(?:--!?>|\\Z))")',
             'HTML_COMMENT = re.compile(r"<!--(?:[\\s\\S]*?(?:--!?>|\\Z))")',
             "`<!-->` and `<!--->` are complete empty comments",
+        ),
+        # #1466: a comment starts only in the data state, and the two bogus openers are comments.
+        Mutation(
+            "context-blind again: `<!--` anywhere starts a comment, hiding the markup after a quoted one",
+            '    out, n, i, last = [], len(source), 0, 0',
+            '    return HTML_COMMENT.sub(_blank, source)\n    out, n, i, last = [], len(source), 0, 0',
+            "`<!--` inside a quoted attribute value starts no comment",
+        ),
+        Mutation(
+            "a quoted attribute value is not opaque, so a `<!--` inside one is read as markup",
+            '        elif source[j] in "\\"\'":',
+            '        elif False:',
+            "`<!--` inside a quoted attribute value starts no comment",
+        ),
+        Mutation(
+            "a <script>/<style> body is read as markup",
+            '            if name in RAW_TEXT and not source[c:end].rstrip(">").endswith("/"):',
+            '            if False:',
+            "`<!--` inside a <script> body starts no comment",
+        ),
+        Mutation(
+            "ERB in the data state is read as markup",
+            '        if source.startswith("<%", c):\n            i = _skip_erb(source, c)',
+            '        if False:\n            i = _skip_erb(source, c)',
+            "`<!--` inside ERB starts no comment",
+        ),
+        Mutation(
+            "ERB inside a quoted value is not skipped, so its quotes end the value early",
+            '                j = _skip_erb(source, j) if source.startswith("<%", j) else j + 1',
+            '                j = j + 1',
+            "ERB with quotes inside a quoted value does not end the value early",
+        ),
+        Mutation(
+            "`<!x` is left live instead of being blanked as a bogus comment",
+            '                if html:\n                    blank(c, i)\n        elif nxt == "/":',
+            '                if False:\n                    blank(c, i)\n        elif nxt == "/":',
+            "`<!` not followed by `--` is a bogus comment",
+        ),
+        Mutation(
+            "`</ x` is left live instead of being blanked as a bogus comment",
+            '                if html:\n                    blank(c, i)\n        elif nxt.isalpha():',
+            '                if False:\n                    blank(c, i)\n        elif nxt.isalpha():',
+            "`</` followed by a non-letter is a bogus comment",
+        ),
+        Mutation(
+            "the bogus rule applies to Ruby too, so a regex lookbehind `(?<![` blanks a model's code",
+            '                if html:\n                    blank(c, i)\n        elif nxt == "/":',
+            '                if True:\n                    blank(c, i)\n        elif nxt == "/":',
+            "a `(?<!` lookbehind is not a bogus comment",
+        ),
+        Mutation(
+            "a doctype is blanked as a bogus comment",
+            '            if source[c + 2:c + 9].upper() == "DOCTYPE" or source.startswith("<![CDATA[", c):',
+            '            if False:',
+            "is not a comment and is left as it is",
         ),
         Mutation(
             "Ruby whole-line comments are left in the source",
