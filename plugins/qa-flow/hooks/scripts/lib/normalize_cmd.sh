@@ -12,11 +12,18 @@
 # release-gate.sh fixed in #3/#7/#48).
 #
 # Order matters:
-#  1. Un-quote heredoc delimiters (<<'EOF'/<<"EOF" -> <<EOF) so a REAL quoted-delimiter heredoc
-#     survives the quote-strip below, while a <<EOF that lives only inside a quote or a comment does
-#     NOT survive and cannot be read as an opener.
-#  2. Strip quoted spans, THEN comments — quotes first so a '#' inside a string (-m "fix #43") is
-#     already gone and never mis-cut as a comment (which would drop a later segment → fail OPEN).
+#  1+2. `_dequote` (#1568, #1613) reads the command LEFT TO RIGHT, a line at a time, as the shell does, and rewrites each
+#     word the way the shell would present it to the command. A quoted span with nothing in it a shell would act on
+#     (`"-A"`, `'add'`, `"git"`, `$'\x2dA'`, a decoded `$'\x67\x69\x74'`) becomes the BARE word, so it matches a rule
+#     as the plain spelling does. Any other quoted span is deleted, as before: it MENTIONS text (#906), and deleting
+#     it is why `git add "x y" .` is still seen. An unquoted backslash before a character that means nothing to the
+#     shell goes (`g\it`, `\-A`), and a backslash-newline joins the lines (a heredoc BODY with a quoted delimiter
+#     excepted). The sed this replaces deleted `'…'` and then `"…"` by regex, so it paired quotes out of order
+#     (`echo "a'b"; git add -A; echo "c'd"` lost the middle) and read a quoted word as a mention. It also un-quotes
+#     a heredoc delimiter (<<'EOF' -> <<EOF) so a REAL quoted-delimiter heredoc is seen, while a <<EOF inside a quote
+#     or a comment is not, and turns an arithmetic `<<` (`$((1<<2))`) into `< <` so it cannot open a heredoc.
+#     THEN comments — quotes first so a '#' inside a string (-m "fix #43") is already gone and never mis-cut as a
+#     comment (which would drop a later segment → fail OPEN).
 #  3. Strip heredoc BODIES (unquoted text that quote-stripping cannot remove).
 #  4. Split on ; | && || ( ) and newlines, then peel what runs the real command (`_peel`): env
 #     assignments; `sudo`/`env`/`command`/`exec`/`nohup`/`nice`/`time`/`timeout`/`xargs` with their
@@ -38,8 +45,6 @@
 # /bin/sh) ends a `$( )` at the first `)` inside a heredoc body, so a backtick after it RUNS there; this
 # lexer follows zsh and bash 4+, which read the body as text (accepted on #1498; dev never saw it either).
 # bash 3.2 / BSD sed / POSIX awk only.
-_unquote_delims() { sed -E "s/<<(-?)[[:space:]]*[\"']([A-Za-z0-9_][A-Za-z0-9_-]*)[\"']/<<\1\2/g"; }
-_strip_quotes()   { sed -E "s/'[^']*'//g; s/\"[^\"]*\"//g"; }
 _strip_comments() { sed -E "s/^[[:space:]]*#.*\$//; s/([[:space:]])#.*\$/\1/"; }
 # #1526: a heredoc opened INSIDE an unclosed `$( )` (or backticks) ends where bash ends it, at the line that closes the
 # `$( )`, and that line is then read as commands. Kept open to the end, it hid
@@ -52,14 +57,14 @@ _strip_heredocs() {
     # A batch boundary (#1504): one string ends, and every heredoc state of it ends with it.
     $0 == "\002" { inh=0; pending=""; insub=0; inbt=0; next }
     inh {
-      t=$0; if (dash) sub(/^\t+/,"",t)
+      t=$0; sub(/\r$/,"",t); if (dash) sub(/^\t+/,"",t)
       if (t==delim) { inh=0; next }
       if (insub && $0 ~ /^[ \t]*\)/) { inh=0; pending=delim; pdash=dash; print; next }
       if (inbt && index($0, "`")) { inh=0; pending=delim; pdash=dash; print; next }
       next
     }
     pending != "" {
-      t=$0; if (pdash) sub(/^\t+/,"",t)
+      t=$0; sub(/\r$/,"",t); if (pdash) sub(/^\t+/,"",t)
       if (t==pending) pending=""
       print; next
     }
@@ -85,6 +90,54 @@ _strip_heredocs() {
 # ones that take a separate value) are stepped over, so `sudo -u deploy git` and `nice -n 5 git`
 # reach `git`.
 _NC_AWK_LIB='
+# ANSI-C quoting, $\047...\047 (#1613), decoded as bash decodes it: \a \b \e \E \f \n \r \t \v \\\\ \047 \" \?, \nnn (octal),
+# \xHH, \uHHHH, \UHHHHHHHH and \cx; any other backslash stays as written; the text is cut at a NUL, as bash cuts it.
+# ansic(s, i): s[i] is the first character after the opening quote. Sets ANSIV (the decoded text), ANSIEND (the index
+# just past the closing quote) and ANSIOK (0 when no closing quote follows).
+function hexd(c) { return index("0123456789abcdef", tolower(c)) - 1 }
+function utf8(cp) {
+  if (cp < 128)   return sprintf("%c", cp)
+  if (cp < 2048)  return sprintf("%c%c", 192 + int(cp / 64), 128 + cp % 64)
+  if (cp < 65536) return sprintf("%c%c%c", 224 + int(cp / 4096), 128 + int(cp / 64) % 64, 128 + cp % 64)
+  return sprintf("%c%c%c%c", 240 + int(cp / 262144), 128 + int(cp / 4096) % 64, 128 + int(cp / 64) % 64, 128 + cp % 64)
+}
+function ansic(s, i,    n, c, d, v, k, h, cp, cut, w, m) {
+  n = length(s); v = ""; cut = 0
+  while (i <= n) {
+    c = substr(s, i, 1)
+    if (c == "\047") { ANSIV = v; ANSIEND = i + 1; ANSIOK = 1; return }
+    if (c != "\\") { if (!cut) v = v c; i++; continue }
+    d = substr(s, i + 1, 1); i += 2; w = ""
+    if (d == "") { ANSIV = v; ANSIEND = n + 1; ANSIOK = 0; return }
+    m = index("abefnrtvE", d)
+    if (m)                                                  w = substr("\007\010\033\014\012\015\011\013\033", m, 1)
+    else if (d == "\\" || d == "\047" || d == "\"" || d == "?") w = d
+    else if (d ~ /[0-7]/) {
+      cp = d + 0
+      for (k = 1; k < 3 && substr(s, i, 1) ~ /[0-7]/; k++) { cp = cp * 8 + substr(s, i, 1); i++ }
+      cp = cp % 256
+      if (cp == 0) cut = 1; else w = sprintf("%c", cp)
+    }
+    else if (d == "x") {
+      cp = 0
+      for (k = 0; k < 2 && (h = hexd(substr(s, i, 1))) >= 0; k++) { cp = cp * 16 + h; i++ }
+      if (k == 0) w = "\\x"; else if (cp == 0) cut = 1; else w = sprintf("%c", cp)
+    }
+    else if (d == "u" || d == "U") {
+      cp = 0; m = (d == "u") ? 4 : 8
+      for (k = 0; k < m && (h = hexd(substr(s, i, 1))) >= 0; k++) { cp = cp * 16 + h; i++ }
+      if (k == 0) w = "\\" d; else if (cp == 0) cut = 1; else w = utf8(cp)
+    }
+    else if (d == "c") {
+      h = substr(s, i, 1)
+      if (h == "" || h == "\047") w = "\\c"
+      else { i++; cp = index(" !\"#$%&\047()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~", h) + 31; cp = (h == "?") ? 127 : cp % 32; if (cp == 0) cut = 1; else w = sprintf("%c", cp) }
+    }
+    else w = "\\" d
+    if (!cut) v = v w
+  }
+  ANSIV = v; ANSIEND = n + 1; ANSIOK = 0
+}
 function skipopts(t, n, i, valued,    w, name) {
   valued = " " valued " "
   while (i <= n && t[i] ~ /^-/) {
@@ -113,6 +166,109 @@ function peel(t, n,    i, w) {
   return i
 }
 '
+
+# Steps 1+2. One input line at a time, left to right, with the state a line hands the next: a heredoc owed a body, an open
+# `((`. Quotes are LINE-LOCAL, as the sed they replace was: a quote with no partner on its line is an ordinary character.
+# `simple(v)`: nothing in v that a shell would act on, so the quoted text is one plain word.
+_dequote() {
+  awk "$_NC_AWK_LIB"'
+  function simple(v,    k, n) {
+    n = length(v); if (n == 0) return 0
+    for (k = 1; k <= n; k++) if (index(BAD, substr(v, k, 1)) || substr(v, k, 1) < " ") return 0
+    return 1
+  }
+  # The index of the closing double quote after i, a backslash skipping the next character; 0 when the line holds none.
+  function dq_end(s, i,    n, c) {
+    n = length(s)
+    while (i <= n) { c = substr(s, i, 1); if (c == "\\") { i += 2; continue } if (c == "\"") return i; i++ }
+    return 0
+  }
+  # One line -> OUT. Sets JOIN when the line ends in an unquoted backslash (the caller joins the next line and lexes again),
+  # and appends every heredoc the line opens to NQ (committed by the caller once the line is final).
+  function lex(s,    n, i, c, d, j, k, out, w, q, dash, word, quoted, comment) {
+    n = length(s); i = 1; out = ""; JOIN = 0; NQN = 0
+    while (i <= n) {
+      c = substr(s, i, 1)
+      if (c == "\\") {
+        d = substr(s, i + 1, 1)
+        if (d == "") { JOIN = 1; i++; continue }
+        if (index(BAD, d)) { out = out c d; i += 2; continue }
+        out = out d; i += 2; continue
+      }
+      if (c == "\047") {
+        j = index(substr(s, i + 1), "\047")
+        if (j == 0) { out = out c; i++; continue }
+        w = substr(s, i + 1, j - 1); if (simple(w)) out = out w
+        i += j + 1; continue
+      }
+      if (c == "\"") {
+        j = dq_end(s, i + 1)
+        if (j == 0) { out = out c; i++; continue }
+        w = substr(s, i + 1, j - i - 1); if (simple(w)) out = out w
+        i = j + 1; continue
+      }
+      if (c == "$" && substr(s, i + 1, 1) == "\047") {
+        ansic(s, i + 2)
+        if (!ANSIOK) { out = out c; i++; continue }
+        if (simple(ANSIV)) out = out ANSIV
+        i = ANSIEND; continue
+      }
+      if (c == "#" && (i == 1 || substr(s, i - 1, 1) == " " || substr(s, i - 1, 1) == "\t")) { out = out substr(s, i); break }
+      if (c == "(") {
+        if (AR > 0) AR++
+        else if (substr(s, i + 1, 1) == "(") { AR = 2; out = out "(("; i += 2; continue }
+        out = out c; i++; continue
+      }
+      if (c == ")") { if (AR > 0) AR--; out = out c; i++; continue }
+      if (c == "<" && substr(s, i, 2) == "<<" && substr(s, i + 2, 1) != "<" && (i == 1 || substr(s, i - 1, 1) != "<")) {
+        if (AR > 0) { out = out "< <"; i += 2; continue }
+        j = i + 2; dash = 0
+        if (substr(s, j, 1) == "-") { dash = 1; j++ }
+        while (substr(s, j, 1) == " " || substr(s, j, 1) == "\t") j++
+        word = ""; quoted = 0
+        while (j <= n) {
+          d = substr(s, j, 1)
+          if (d == " " || d == "\t" || d == ";" || d == "&" || d == "|" || d == "(" || d == ")" || d == "<" || d == ">") break
+          if (d == "\047") { k = index(substr(s, j + 1), "\047"); if (k == 0) break; word = word substr(s, j + 1, k - 1); quoted = 1; j += k + 1; continue }
+          if (d == "\"") { k = dq_end(s, j + 1); if (k == 0) break; word = word substr(s, j + 1, k - j - 1); quoted = 1; j = k + 1; continue }
+          if (d == "\\") { word = word substr(s, j + 1, 1); quoted = 1; j += 2; continue }
+          word = word d; j++
+        }
+        if (word ~ /^[A-Za-z0-9_][A-Za-z0-9_-]*$/) {
+          out = out "<<" (dash ? "-" : "") word
+          NQN++; NQW[NQN] = word; NQD[NQN] = dash; NQQ[NQN] = quoted
+          i = j; continue
+        }
+      }
+      out = out c; i++
+    }
+    OUT = out
+  }
+  function reset() { INB = 0; QN = 0; QI = 0; BUF = ""; ACC = ""; HOLD = 0; AR = 0 }
+  # A batch boundary (#1504): one string ends, and every state of it ends with it.
+  $0 == "\002" { reset(); print; next }
+  INB {
+    # A heredoc body is not lexed. An UNQUOTED delimiter lets a backslash-newline join the body lines, as it does in bash, and
+    # the terminator is compared after the join; a quoted delimiter joins nothing. A CR is part of both words in bash.
+    line = $0
+    if (!QQ[QI] && line ~ /\\$/ && substr(line, length(line) - 1, 1) != "\\") { ACC = ACC substr(line, 1, length(line) - 1); HOLD = 1; next }
+    line = ACC line; ACC = ""; HOLD = 0
+    t = line; sub(/\r$/, "", t); if (QD[QI]) sub(/^\t+/, "", t)
+    print line
+    if (t == QW[QI]) { QI++; if (QI > QN) { INB = 0; QN = 0; QI = 0 } }
+    next
+  }
+  {
+    raw = BUF $0; lex(raw)
+    if (JOIN) { BUF = substr(raw, 1, length(raw) - 1); next }
+    BUF = ""
+    print OUT
+    if (NQN) { for (k = 1; k <= NQN; k++) { QN++; QW[QN] = NQW[k]; QD[QN] = NQD[k]; QQ[QN] = NQQ[k] } QI = 1; INB = 1 }
+  }
+  END { if (BUF != "") { lex(BUF); print OUT } }
+  BEGIN { BAD = ";|&()<>$`\"\\# \t\n\r\f\v\047"; reset() }
+  '
+}
 
 # Step 4's peel, one segment per line. git's global options were measured against git 2.50.1:
 # `-C -c --git-dir --work-tree --namespace --attr-source --config-env` take a separate value;
@@ -260,16 +416,7 @@ _inner_strings() {
       c = substr(s, i, 1)
       if (c == "\\") { d = substr(s, i + 1, 1); if (d != "\n" && d != "") { W = W d; HAS = 1 } i += 2; continue }
       if (c == "\047") { j = index(substr(s, i + 1), "\047"); if (j == 0) break; W = W substr(s, i + 1, j - 1); HAS = 1; i += j + 1; continue }
-      if (c == "$" && substr(s, i + 1, 1) == "\047") {
-        i += 2
-        while (i <= n) {
-          c = substr(s, i, 1)
-          if (c == "\047") { i++; break }
-          if (c == "\\") { d = substr(s, i + 1, 1); W = W (d == "n" ? "\n" : d == "t" ? "\t" : d); i += 2; continue }
-          W = W c; i++
-        }
-        HAS = 1; continue
-      }
+      if (c == "$" && substr(s, i + 1, 1) == "\047") { ansic(s, i + 2); W = W ANSIV; HAS = 1; i = ANSIEND; continue }
       if (c == "\"") { i = dquote(s, i + 1); W = W DQV; HAS = 1; continue }
       if (c == "$" && substr(s, i + 1, 1) == "(") { j = subst_end(s, i + 2); emit(substr(s, i + 2, j - i - 2)); W = W substr(s, i, j - i + 1); HAS = 1; i = j + 1; continue }
       if (c == "`") { j = bt_end(s, i + 1); emit(substr(s, i + 1, j - i - 1)); W = W substr(s, i, j - i + 1); HAS = 1; i = j + 1; continue }
@@ -322,7 +469,7 @@ _inner_strings() {
 _join_strings() { awk 'NR > 1 { print "\002" } { gsub(/\002/, ""); gsub(/\001/, "\n"); print }'; }
 
 _normalize_one() {
-  _unquote_delims | _strip_quotes | _strip_comments | _strip_heredocs \
+  _dequote | _strip_comments | _strip_heredocs \
     | tr ';|&()' '\n' \
     | _peel
 }

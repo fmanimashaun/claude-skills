@@ -541,6 +541,27 @@ NEGATIVES_1472 = ["bash -c 'git add app/x.rb'", "bash -c 'git push origin featur
                   "git commit -m \"$(cat <<'EOF'\na) first\nb) never `git push --force`\nEOF\n)\"",
                   "echo \"$(cat <<'EOF'\nAdds :) emoji then `git add -A`\nEOF\n)\""]
 
+# #1613: ANSI-C quoting, `$'...'`, spells the verb, the subcommand or the flag; the shell decodes it and runs the command, and the normaliser
+# printed the quotes' CONTENT as it was written, so no rule matched. Each decodes (here, in bash) to a command that stages everything.
+POSITIVES_1613 = ["$'\\x67\\x69\\x74' add -A", "git $'\\x61dd' -A", "git add $'\\x2dA'", "git add $'\\055A'", "git add $'\\u002dA'",
+                  "git $'a\\x64d' -A", "git $'\\x70ush' --force origin main", "git add -$'\\x41'"]
+# #1568: the other spellings of the same words that the sed-based quote strip read as a MENTION, plus the continuation and heredoc shapes
+# the shell reads differently from the normaliser (each measured against bash with git stubbed: bash ran the command, the hook said nothing).
+POSITIVES_1568 = ['git add "-A"', "git add '.'", "git 'add' -A", '"git" add -A', 'git push "--force" origin main', "git 'reset' --hard",
+                  'git add\\\n -A', 'g\\\nit add -A', 'g\\it add -A', 'gi\\t add -A', 'git a\\dd -A', 'git add \\-A', 'git add -\\A',
+                  'echo $((1<<2))\ngit add -A', 'echo $(( 1 << 2 ))\ngit add -A',
+                  'cat <<EOF\r\nx\r\nEOF\r\ngit add -A', "cat <<'EOF'\nfoo\\\nEOF\ngit add -A",
+                  'echo "a\'b"; git add -A; echo "c\'d"']
+# ...and the twins that must stay allowed: the same words only MENTIONED, quoted spans holding spaces, and the shapes bash reads as text.
+NEGATIVES_1568 = ['git add "app/x.rb" "spec/y.rb"', "git add 'x y' app/z.rb", 'git commit -m "git add -A"', "echo $'git add -A'",
+                  "git add $'a\\x20b' app/z.rb", 'echo "$((1<<2))"', 'echo $((1<<2))\ngit status',
+                  'cat <<EOF\nfoo\\\nEOF\ngit add -A\nEOF', 'cat <<-EOF\n\tfoo\\\n\tEOF\ngit add -A\nEOF',
+                  'echo "a\\"; git add -A; echo \\"b"', 'echo "a\'b"; git status; echo "c\'d"', "git commit -m 'it'\"'\"'s'",
+                  'git add "app/models/user.rb"', "git add 'a.rb' 'b.rb'", 'git commit -m "fix"', 'git status "-s"']
+# ANSI-C bodies whose decoding must equal bash's own, byte for byte (compared when the result is one plain word, the only kind kept).
+ANSIC_BODIES_1613 = ["\\x61bc", "a\\x62c", "\\141bc", "\\1411", "a\\x6", "\\x", "a\\u0062c", "a\\U00000062c", "ab\\0cd", "a\\x00b",
+                     "\\x41\\x42", "x\\u00e9y", "\\e", "\\q", "\\cA", "a\\\\b", "a\\'b", "a\\?b", "a\\\"b", "\\a\\b\\t"]
+
 
 def normaliser_pipelines(cmd: str) -> int | str:
     """#1504: how many `_normalize_one` pipelines `normalize_segments` runs for `cmd`. The lib is sourced
@@ -597,6 +618,26 @@ def guard_bash_fixtures() -> None:
         check(f"guard-bash (#1472): `{cmd!r}` runs the command and is blocked", run(cmd) == 2, "exit 0")
     for cmd in NEGATIVES_1472:
         check(f"guard-bash (#1472): CONTROL: `{cmd[:60]!r}` passes", run(cmd) == 0, "exit 2")
+    for cmd in POSITIVES_1613:
+        check(f"guard-bash (#1613): ANSI-C `{cmd!r}` is the command it decodes to, and is blocked", run(cmd) == 2, "exit 0")
+    for cmd in POSITIVES_1568:
+        check(f"guard-bash (#1568): `{cmd!r}` is read as the shell reads it, and is blocked", run(cmd) == 2, "exit 0")
+    for cmd in NEGATIVES_1568:
+        check(f"guard-bash (#1568): CONTROL: `{cmd[:60]!r}` passes", run(cmd) == 0, "exit 2")
+    # #1613: the decoder against bash ITSELF. `git $'BODY'` goes through normalize_segments; `printf %s $'BODY'` is what bash makes of it.
+    # Compared only when bash's word is plain (no space or shell character), because only a plain word is kept; any other is deleted.
+    lib = HOOKS / "lib" / "normalize_cmd.sh"
+    # bash 3.2 (macOS /bin/bash) does not decode \\u and \\U at all, so its answer is no reference for them; a newer bash is.
+    unicode_ok = _run(["bash", "-c", "printf '%s' $'\\u0061'"], capture_output=True, text=True).stdout == "a"
+    for body in ANSIC_BODIES_1613:
+        if not unicode_ok and ("\\u" in body or "\\U" in body):
+            continue
+        word = _run(["bash", "-c", "printf '%s' $'" + body + "'"], capture_output=True, text=True).stdout
+        plain = bool(word) and all(ch > " " and ch not in ";|&()<>$`\"\\#'" and ord(ch) < 127 for ch in word)
+        got = _run(["bash", "-c", f"source {lib}; printf '%s' \"$1\" | normalize_segments", "x", "git $'" + body + "'"],
+                             capture_output=True, text=True).stdout.strip()
+        want = f"git {word}" if plain else "git"
+        check(f"guard-bash (#1613): ANSI-C decoder agrees with bash on `$'{body}'`", got == want, f"bash made {word!r}; normaliser said {got!r}")
     # #1504: a depth's strings are normalised as ONE batch, so each must still be judged on its own.
     for cmd, why in (("bash -c 'cat <<EOF'; bash -c 'git add -A'", "an unclosed heredoc in one string does not swallow the next"),
                      ("bash -c \"echo it's\"; bash -c \"eval 'git add -A'\"", "an unbalanced quote in one string does not stop the next being lexed"),
