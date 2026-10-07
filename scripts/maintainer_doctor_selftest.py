@@ -745,13 +745,17 @@ def run() -> int:
     #     "fix the failures before doing maintenance work" about optional licensed files. Proved by
     #     pointing the corpora root at a nonexistent path: the gate returned 1.
     # An exact set means either direction has to be a deliberate edit here, with a reason.
-    # PR_SKIPPED_GATES (#866): exactly the one gate that costs 92 % of the sweep. Every member must be a
+    # PR_SKIPPED_GATES (#866, #1667): `mutation coverage`, which costs most of the sweep, and the full tier of the guard-bash
+    # cases (about 300 real-hook runs; its ~50-case fast tier runs everywhere). Every member must be a
     # real gate, and the set must not grow without an edit here -- a "fast" mode that quietly absorbs
     # gates is how it becomes the only mode.
     _tick()
-    if set(md.PR_SKIPPED_GATES) != {"mutation coverage"}:
-        FAILURES.append(f"PR_SKIPPED_GATES is {sorted(md.PR_SKIPPED_GATES)}, expected ['mutation coverage'] -- "
+    if set(md.PR_SKIPPED_GATES) != {"mutation coverage", "guard-bash cases (full)"}:
+        FAILURES.append(f"PR_SKIPPED_GATES is {sorted(md.PR_SKIPPED_GATES)}, expected ['guard-bash cases (full)', 'mutation coverage'] -- "
                         "widening it needs a reason recorded here")
+    _tick()
+    if "guard-bash cases" not in gate_names or "guard-bash cases" in md.PR_SKIPPED_GATES:
+        FAILURES.append("the fast tier of the guard-bash cases must be a gate AND must run on pull requests (not in PR_SKIPPED_GATES)")
     _tick()
     if md.PR_SKIPPED_GATES - gate_names:
         FAILURES.append(f"PR_SKIPPED_GATES names no such gate: {sorted(md.PR_SKIPPED_GATES - gate_names)}")
@@ -810,12 +814,13 @@ def run() -> int:
     # check whose cost grows with the number of checks belongs here.
     _tick()
     # #1635: the two hook-gate parts that run whole hook fixture groups took 190 to 203 s at the maintainer's machine load, past the
-    # 180 s default, and are measured in SLOW_GATES' comment. Exactly these four; a fourth needs its own measurement.
-    expected_slow = {"mutation coverage", "hook gates", "hook gates (release)", "hook gates (worktree)"}
+    # 180 s default, and are measured in SLOW_GATES' comment. #1667: the full tier of the guard-bash cases is about 300 real-hook runs (94 s at a load of
+    # 35, measured in SLOW_GATES' comment). Exactly these five; a sixth needs its own measurement.
+    expected_slow = {"mutation coverage", "hook gates", "hook gates (release)", "hook gates (worktree)", "guard-bash cases (full)"}
     if set(md.SLOW_GATES) != expected_slow:
         FAILURES.append(
             f"SLOW_GATES is {sorted(md.SLOW_GATES)}, expected {sorted(expected_slow)} — only "
-            "`mutation_check.py` spawns one subprocess per declared mutation (and two hook-gate parts run whole fixture groups: #1635) and therefore gets "
+            "`mutation_check.py` spawns one subprocess per declared mutation (and two hook-gate parts run whole fixture groups: #1635; the guard-bash full tier runs ~300 real-hook processes: #1667) and therefore gets "
             "slower every time the repo gets safer. Everything else reads the tree once; if one "
             "of those is near the limit, that is a defect in the check, not a budget to raise."
         )

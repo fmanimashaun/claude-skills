@@ -197,6 +197,9 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | frontmatter selftest | `repo` | `python3 scripts/check_frontmatter.py --selftest` | selftest |
 | gauntlet core selftest | `repo` | `python3 scripts/gauntlet_core.py --selftest` | selftest |
 | generated artifacts registered | `repo` | `python3 scripts/rebuild_generated.py --selftest` | selftest |
+| guard-bash cases | `repo` | `python3 scripts/check_guard_bash_cases.py --tier fast` | live check |
+| guard-bash cases (full) | `repo` | `python3 scripts/check_guard_bash_cases.py --tier full` | live check · 600s budget |
+| guard-bash cases selftest | `repo` | `python3 scripts/check_guard_bash_cases.py --selftest` | selftest |
 | hook commands selftest | `repo` | `python3 scripts/check_hook_commands.py --selftest` | selftest |
 | hook commands survive a spaced path | `repo` | `python3 scripts/check_hook_commands.py` | live check |
 | hook output budget | `repo` | `python3 scripts/check_hook_output_budget.py` | live check |
