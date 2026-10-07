@@ -2078,9 +2078,8 @@ def selftest() -> int:
         primary = os.path.join(td, "myproject")
         os.makedirs(primary)
         _sp.run(["git", "init", "-q", primary], check=True)
-        _sp.run(["git", "-C", primary, "commit", "-q", "--allow-empty", "-m", "x"],
-                check=True, env={**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
-                                 "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"})
+        import sys as _sys; _sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); import fixture_git as _fg  # #1588
+        _fg.run(primary, "commit", "-q", "--allow-empty", "-m", "x")
         check("with no remote, the name comes from the PRIMARY checkout",
               project_name(primary) == "myproject", project_name(primary))
 
