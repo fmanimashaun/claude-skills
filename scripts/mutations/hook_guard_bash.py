@@ -39,53 +39,79 @@ GUARD = Guard(
         ),
         # #1489: `bash < file` names no create, so the trigger must fire on the redirect itself.
         Mutation(
-            "the trigger ignores a shell reading a redirect, so bash < file never reaches the helper",
-            "   || ( set +o pipefail; printf '%s' \"$cmd\" | grep -qE '(^|[[:space:];&|(/])(sh|bash|zsh|dash|ksh)([[:space:]<>&]([^;&|]|[<>]&|&>)*)?<([^<(]|$)' ) \\",
-            "   || false \\",
+            "the trigger ignores a shell word, so a shell reading a redirect or a script operand never reaches the helper",
+            ' || rawhit "$cmd" "$_re_shell_word" \\\n   || rawhit',
+            ' \\\n   || rawhit',
             "a script with a create fed to bash by redirect is refused through the real hook",
         ),
         Mutation(
             "the trigger keeps `$`, so gh issue $'create' never reaches the helper (#1495)",
-            "if ( set +o pipefail; printf '%s' \"$cmd\" | tr -d \"\\\"'\\\\\\\\\\$\" | tr '\\n' ' ' | grep -qE 'gh[[:space:]].*issue[[:space:]]+(create|new)' ) \\",
-            "if ( set +o pipefail; printf '%s' \"$cmd\" | tr -d \"\\\"'\\\\\\\\\" | tr '\\n' ' ' | grep -qE 'gh[[:space:]].*issue[[:space:]]+(create|new)' ) \\",
+            "  _flat=\"$(printf '%s' \"$cmd\" | tr -d \"\\\"'\\\\\\\\\\$\" | tr '\\n' ' ')\"",
+            "  _flat=\"$(printf '%s' \"$cmd\" | tr -d \"\\\"'\\\\\\\\\" | tr '\\n' ' ')\"",
             "`gh issue $'create'` reaches the helper",
         ),
         Mutation(
-            "the redirect trigger stops at a redirect's &, so bash 2>&1 < f never reaches the helper (#1495)",
-            "   || ( set +o pipefail; printf '%s' \"$cmd\" | grep -qE '(^|[[:space:];&|(/])(sh|bash|zsh|dash|ksh)([[:space:]<>&]([^;&|]|[<>]&|&>)*)?<([^<(]|$)' ) \\",
-            "   || ( set +o pipefail; printf '%s' \"$cmd\" | grep -qE '(^|[[:space:];&|(/])(sh|bash|zsh|dash|ksh)([[:space:]<>&][^;&|]*)?<([^<(]|$)' ) \\",
-            "the & of a fd duplication is not a separator",
+            "the shell word needs a space after it, so sh<f, bash>/dev/null<f and bash&>log<f never reach the helper (#1489, #1495, #1513)",
+            "_re_shell_word='(^|[[:space:];&|(/])(sh|bash|zsh|dash|ksh)([[:space:]<>&]|$)'",
+            "_re_shell_word='(^|[[:space:];&|(/])(sh|bash|zsh|dash|ksh)([[:space:]]|$)'",
+            "guard-bash (#1489 review): `sh<`",
         ),
         Mutation(
             "the trigger ignores an escaped $'…', so gh issue $'\\x63reate' never reaches the helper (#1513)",
-            "   || ( set +o pipefail; printf '%s' \"$cmd\" | grep -q \"\\\\$'[^']*\\\\\\\\\" ); then",
-            "   : || ( set +o pipefail; printf '%s' \"$cmd\" | false && grep -q \"\\\\$'[^']*\\\\\\\\\" ); then",
+            ' || rawhit "$cmd" "$_re_ansi"; then',
+            '; then',
             "x63reate'` reaches the helper",
         ),
         Mutation(
-            "the trigger needs a space after the shell, so bash&>log<f never reaches the helper (#1513)",
-            "   || ( set +o pipefail; printf '%s' \"$cmd\" | grep -qE '(^|[[:space:];&|(/])(sh|bash|zsh|dash|ksh)([[:space:]<>&]([^;&|]|[<>]&|&>)*)?<([^<(]|$)' ) \\",
-            "   || ( set +o pipefail; printf '%s' \"$cmd\" | grep -qE '(^|[[:space:];&|(/])(sh|bash|zsh|dash|ksh)([[:space:]]([^;&|]|[<>]&|&>)*)?<([^<(]|$)' ) \\",
-            "the trigger sees a redirect glued to the shell",
-        ),
-        Mutation(
-            "the redirect trigger is the first version's, so /bin/bash, --norc, sh<f and 0< never reach the helper",
-            "   || ( set +o pipefail; printf '%s' \"$cmd\" | grep -qE '(^|[[:space:];&|(/])(sh|bash|zsh|dash|ksh)([[:space:]<>&]([^;&|]|[<>]&|&>)*)?<([^<(]|$)' ) \\",
-            "   || ( set +o pipefail; printf '%s' \"$cmd\" | grep -qE '(^|[[:space:];&|(])(sh|bash|zsh|dash|ksh)([[:space:]]+-[a-zA-Z]+)*[[:space:]]*<[^<(]' ) \\",
-            "guard-bash (#1489 review):",
-        ),
-        Mutation(
             "the trigger keeps quotes, so gh issue \"create\" never reaches the helper",
-            "if ( set +o pipefail; printf '%s' \"$cmd\" | tr -d \"\\\"'\\\\\\\\\\$\" | tr '\\n' ' ' | grep -qE 'gh[[:space:]].*issue[[:space:]]+(create|new)' ) \\",
-            "if ( set +o pipefail; printf '%s' \"$cmd\" | tr '\\n' ' ' | grep -qE 'gh[[:space:]].*issue[[:space:]]+(create|new)' ) \\",
+            "  _flat=\"$(printf '%s' \"$cmd\" | tr -d \"\\\"'\\\\\\\\\\$\" | tr '\\n' ' ')\"",
+            "  _flat=\"$(printf '%s' \"$cmd\" | tr '\\n' ' ')\"",
             "guard-bash (#1462): `gh issue \"create\" -t X --body-` with no label is refused",
         ),
         # #1423: the label helper must run for a create that never starts a normalised segment.
         Mutation(
-            "the label helper runs only for a create at a segment start, so sh -c and /usr/bin/gh escape",
-            "if ( set +o pipefail; printf '%s' \"$cmd\" | tr -d \"\\\"'\\\\\\\\\\$\" | tr '\\n' ' ' | grep -qE 'gh[[:space:]].*issue[[:space:]]+(create|new)' ) \\",
+            "the label helper runs only for a create at a normalised segment start, so a spelling the normaliser does not resolve escapes",
+            'if [ "$_fire" = 1 ] || rawhit "$_flat" "$_re_verb" || rawhit "$cmd" "$_re_shell_word" \\\n   || rawhit "$cmd" "$_re_source" || rawhit "$cmd" "$_re_runs_text" || rawhit "$_flat" "$_re_api" || rawhit "$cmd" "$_re_ansi"; then',
             "if hit '^gh[[:space:]]+issue[[:space:]]+create\\b'; then",
-            "a create inside `sh -c` is refused through the real hook",
+            "guard-bash (#1495): `gh issue $'create'` reaches the helper",
+        ),
+        # #1545: the label trigger had grep and tr called directly, so with either missing it was skipped.
+        Mutation(
+            "the raw-text matcher calls grep even when there is none, so the trigger fails closed's opposite: skipped",
+            'local text="$1" re="$2"\n  if [ "$have_grep" = 1 ]; then',
+            'local text="$1" re="$2"\n  if true; then',
+            "guard-bash (#1545): with no grep on PATH, an unlabelled",
+        ),
+        Mutation(
+            "with no tr the trigger no longer fires unconditionally, so the label check is skipped there",
+            '_flat="$cmd"; _fire=1',
+            '_flat="$cmd"; _fire=0',
+            "guard-bash (#1545): with no tr on PATH, a QUOTED verb",
+        ),
+        # #1515: the trigger must reach the helper for a script, a source, an indirect create and a `gh api` POST.
+        Mutation(
+            "`source` and the dot no longer trigger the helper",
+            ' || rawhit "$cmd" "$_re_source"',
+            '',
+            "guard-bash (#1515): `source bad.sh` is refused",
+        ),
+        Mutation(
+            "`eval`, `xargs`, `alias` and a function definition no longer trigger the helper (#1645 R2)",
+            ' || rawhit "$cmd" "$_re_runs_text"',
+            '',
+            "guard-bash (#1645 R2): `alias g='gh issue'; g create -t X` is refused",
+        ),
+        Mutation(
+            "`gh api` naming issues no longer triggers the helper",
+            ' || rawhit "$_flat" "$_re_api"',
+            '',
+            "guard-bash (#1515): `gh api -X POST repos/o/r/issues",
+        ),
+        Mutation(
+            "the verb trigger needs a gh word again, so a gh word built at run time never reaches the helper",
+            "_re_verb='issue[[:space:]]+(create|new)'",
+            "_re_verb='gh[[:space:]].*issue[[:space:]]+(create|new)'",
+            "guard-bash (#1515): `$(echo gh) issue create",
         ),
         # #1342: each discarding form goes unblocked again, or its safe twin gets caught with it.
         Mutation(
@@ -166,8 +192,8 @@ GUARD = Guard(
         Mutation(
             # #1529 review
             'with no grep, hit() matches nothing, so every rule passes',
-            '      [[ $line =~ $re ]] && return 0',
-            '      false',
+            '    local rest="$seg"$\'\\n\' line\n    while [ -n "$rest" ]; do\n      line="${rest%%$\'\\n\'*}"; rest="${rest#*$\'\\n\'}"\n      [[ $line =~ $re ]] && return 0',
+            '    local rest="$seg"$\'\\n\' line\n    while [ -n "$rest" ]; do\n      line="${rest%%$\'\\n\'*}"; rest="${rest#*$\'\\n\'}"\n      false',
             'with no grep, `git add -A` is blocked',
         ),
         Mutation(

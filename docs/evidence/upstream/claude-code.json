@@ -1,6 +1,6 @@
 {
-  "changelog_reviewed": "2.1.285",
-  "reviewed_on": "2026-09-30",
+  "changelog_reviewed": "2.1.292",
+  "reviewed_on": "2026-10-07",
   "quotes": [
     {"id": "subagent-model-order", "url": "https://code.claude.com/docs/en/sub-agents",
      "quote": "1. The per-invocation `model` parameter 2. The subagent definition's `model` frontmatter, where `inherit` selects the main conversation's model",
@@ -112,6 +112,9 @@
      "used_by": ["plugins/rails-flow/hooks/context-nudge.mjs"]},
     {"id": "mods-session-measure-cadence", "url": "https://code.claude.com/docs/en/plugins/mods/reference",
      "quote": "After each turn, and when a plan limit's percent used changes",
-     "used_by": ["plugins/rails-flow/hooks/context-nudge.mjs"]}
+     "used_by": ["plugins/rails-flow/hooks/context-nudge.mjs"]},
+    {"id": "session-id-env", "url": "https://code.claude.com/docs/en/env-vars",
+     "quote": "hook command subprocesses, and stdio MCP server subprocesses",
+     "used_by": ["skills/parallel-session-lane/references/process-hygiene.md", "plugins/rails-flow/scripts/session_reaper.py"]}
   ]
 }
