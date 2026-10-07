@@ -3722,7 +3722,8 @@ def guard_worktree_pointer_fixtures() -> None:
               'esac\nexit 0')
         try:
             out = run_hook("session-start.sh", cwd=repo, stdin=json.dumps({"session_id": "SESS-A"}), path_prefix=[orphans],
-                           env_extra={"RAILS_FLOW_ZOMBIE_WARN": "100000", "RAILS_FLOW_STOPPED_ORPHAN_WARN": "3"},
+                           env_extra={"RAILS_FLOW_ZOMBIE_WARN": "100000", "RAILS_FLOW_STOPPED_ORPHAN_WARN": "3",
+                      "WORKTREE_GUARD_BUDGET": "60"},   # the shared 10 s budget is spent by the git calls before it under load
                            unset=("CLAUDE_PROJECT_DIR",))[1]
             check("stopped orphans: four stopped orphans (ppid 1) are counted, a running one and a stopped one with a parent are not",
                   "4 stopped orphan processes" in out, out[-300:])
