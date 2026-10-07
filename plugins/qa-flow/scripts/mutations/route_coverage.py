@@ -17,6 +17,12 @@ GUARD = Guard(
           "scripts/evidence_app_tie.py"),
     mutations=(
         Mutation(
+            "an exclusion matches a redirect row by its target again, so excluding /admin drops GET /old (#1584)",
+            '        controller = "" if route.controller.startswith("redirect(") else route.controller',
+            '        controller = route.controller',
+            "keeps a redirect that only points at /admin/x",
+        ),
+        Mutation(
             # The whole reason the third state exists: folding a crawl visit into `covered`
             # would inflate the one number this tool keeps honest, on exactly the routes
             # nobody wrote a test for.
