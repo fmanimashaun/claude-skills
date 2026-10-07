@@ -32,6 +32,18 @@ GUARD = Guard(
            "plugins/rails-flow/scripts/ci_verdict_hint.py"),
     mutations=(
         Mutation(
+            'the explicit refusal of a marked cd path is dropped: normpath then collapses it (#1605 review)',
+            '    if GLOB_MARK in a:',
+            '    if False:',
+            'an unquoted `[b]` glob followed by `/..` (#1605: normpath would collapse it back to the start) is NOT checked',
+        ),
+        Mutation(
+            'every glob character, not only `[` and `]`, may be a lone word (#1605 review)',
+            '            lone = c in "[]" and word_start',
+            '            lone = word_start',
+            'a bare unquoted `?` as a cd path (#1605) is NOT checked',
+        ),
+        Mutation(
             'prepare() no longer marks an unquoted glob or brace character (#1605)',
             '            out.append(GLOB_MARK if c in GLOB_CHARS and not lone else c)',
             '            out.append(c)',

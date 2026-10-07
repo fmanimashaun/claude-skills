@@ -1159,7 +1159,7 @@ def guard_claims_fixtures() -> None:
             (a / "~nobody").mkdir()         # likewise, only the refusal of `~user` keeps that fixture red
             # #1605: directories whose names the shell would EXPAND if unquoted (`cd [b]` runs in `b`, `cd {b1,b2}` in `b1`, never in
             # these). Each carries B's template, so reading the name literally is visible: exit 2 and B's "## Risk".
-            for glob_dir in ("[b]", "{b1,b2}", "x*", "y?"):
+            for glob_dir in ("[b]", "{b1,b2}", "x*", "y?", "?", "*"):
                 (a / glob_dir / ".github").mkdir(parents=True)
                 (a / glob_dir / ".github" / "pull_request_template.md").write_text(TPL_B, encoding="utf-8")
             (b / "sub").mkdir()             # A/linkSub -> B/sub: `cd -P linkSub/..` is B, a logical one A
@@ -1209,6 +1209,8 @@ def guard_claims_fixtures() -> None:
             ("a quoted path", 'cd "B_DIR" && gh pr create --body-file BODY'),
             ("a double-quoted glob path, which the shell takes literally (#1605)", 'cd "[b]" && gh pr create --body-file BODY'),
             ("a single-quoted brace path, which the shell takes literally (#1605)", "cd '{b1,b2}' && gh pr create --body-file BODY"),
+            ("a single-quoted `?`, which the shell takes literally (#1605)", "cd '?' && gh pr create --body-file BODY"),
+            ("a single-quoted `*`, which the shell takes literally (#1605)", "cd '*' && gh pr create --body-file BODY"),
             ("a backslash-escaped bracket path, which the shell takes literally (#1605)", "cd \\[b\\] && gh pr create --body-file BODY"),
             ("two cds in a row", "cd B_DIR/.. && cd b && gh pr create --body-file BODY"),
             ("a cd with its stderr redirected", "cd B_DIR 2>/dev/null && gh pr create --body-file BODY"),
@@ -1347,6 +1349,10 @@ def guard_claims_fixtures() -> None:
             ("an unquoted `{b1,b2}` brace list in a cd path (#1605)", "cd {b1,b2} && gh pr create --body-file BODY"),
             ("an unquoted `x*` glob in a cd path (#1605)", "cd x* && gh pr create --body-file BODY"),
             ("an unquoted `y?` glob in a cd path (#1605)", "cd y? && gh pr create --body-file BODY"),
+            ("a bare unquoted `?` as a cd path (#1605)", "cd ? && gh pr create --body-file BODY"),
+            ("a bare unquoted `*` as a cd path (#1605)", "cd * && gh pr create --body-file BODY"),
+            ("an unquoted `[b]` glob followed by `/..` (#1605: normpath would collapse it back to the start)", "cd [b]/.. && gh pr create --body-file BODY"),
+            ("an unquoted `x*` glob followed by `/..` (#1605)", "cd x*/.. && gh pr create --body-file BODY"),
             ("`pushd`", "pushd B_DIR && gh pr create --body-file BODY"),
             ("a bare `cd`", "cd && gh pr create --body-file BODY"),
             ("`cd -`", "cd - && gh pr create --body-file BODY"),

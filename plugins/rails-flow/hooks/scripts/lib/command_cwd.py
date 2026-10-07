@@ -141,7 +141,7 @@ def prepare(cmd: str) -> str:
         elif c.isdigit() and word_start and re.match(r"\d+[<>]", cmd[i:]):
             i += re.match(r"\d+", cmd[i:]).end()
         else:
-            lone = word_start and (i + 1 >= n or cmd[i + 1] in META)     # `[` or `]` as a word of its own: `test`
+            lone = c in "[]" and word_start and (i + 1 >= n or cmd[i + 1] in META)   # `[` or `]` as a word of its own: `test`. NOT `?` or `*`: bare, they glob (#1605 review)
             out.append(GLOB_MARK if c in GLOB_CHARS and not lone else c)
             i += 1
     return "".join(out)
@@ -151,8 +151,8 @@ def _target(args: list[str], here: str, home: str) -> str:
     if len(args) != 1:
         raise Unresolved("cd takes exactly one path here")
     a = args[0]
-    # The `isdir` check below would refuse the mark too (no directory is named with it), so this line only NAMES the reason: it is why
-    # no mutation is declared for it (#1605), and the marks `prepare()` leaves are what the fixtures and the mutations hold.
+    # NOT redundant with the `isdir` check below (#1605 review): `normpath` collapses a marked component before it, so `cd [a]/..` or
+    # `cd x*/..` would resolve the directory it started in. This is what answers "cannot tell" for them.
     if GLOB_MARK in a:
         raise Unresolved("cd to a path with an unquoted glob or brace character: the shell expands it")
     if a.startswith("-") or "$" in a or "`" in a:
