@@ -545,7 +545,10 @@ def excluded(routes: list[Route], patterns: list[str]) -> tuple[list[Route], lis
         return routes, []
     kept, dropped = [], []
     for route in routes:
-        if any(p in route.pattern or p in route.controller for p in patterns):
+        # THE ROUTE ITSELF, NOT WHERE IT REDIRECTS TO (#1584): a redirect row's controller column is the redirect's
+        # `inspect` and carries its TARGET (`redirect(301, /admin/x)`), so it is left out of what an exclusion matches.
+        controller = "" if route.controller.startswith("redirect(") else route.controller
+        if any(p in route.pattern or p in controller for p in patterns):
             dropped.append(route)
         else:
             kept.append(route)
