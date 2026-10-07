@@ -26,6 +26,7 @@ class Case(NamedTuple):
 
 # name -> content, with @FX@ for the fixture directory. Scripts a case runs a shell on; never executed by the gate.
 FIXTURES: dict[str, str | bytes] = {
+    'selfextract.sh': b'#!/bin/sh\necho installing\nexit 0\n\x00\x01\x02BINARYPAYLOAD\x00\n',
     'Makefile': 'issue:\n\tgh issue create -t x -b y\n',
     'apos_comment.sh': "# don't forget\ngh issue create -t x -b y\n",
     'args.txt': 'issue create -t x -b y\n',
@@ -324,6 +325,7 @@ _ROWS = (
     ('file:/dev/zero', 'full', 'full', 'bash /dev/zero', 'block', ''),
     ('file:/dev/stdin', 'full', 'full', 'bash /dev/stdin', 'block', ''),
     ('file:/dev/null (control?)', 'fast', 'full', 'bash /dev/null', 'block', '#1656 (moved from #1671): a device file is refused as unreadable'),
+    ('file:self-extracting script (NUL payload)', 'fast', 'full', 'bash @FX@/selfextract.sh', 'block', '#1675: any NUL byte refuses a script, so a shell script with a binary payload is refused where an allow is right'),
     ('file:/proc/self/environ', 'full', 'full', 'bash /proc/self/environ', 'block', ''),
     ('file:/dev/fd/0', 'full', 'full', 'bash /dev/fd/0', 'block', '')
 )
