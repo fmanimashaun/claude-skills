@@ -105,5 +105,33 @@ GUARD = Guard(
             'a hanging `ps` is cut off',
             narrow=False,
         ),
+        Mutation(
+            'the stopped-orphan advisory always fires',
+            '    if orphans >= max(1, _env_int("RAILS_FLOW_STOPPED_ORPHAN_WARN", STOPPED_ORPHAN_WARN)):',
+            '    if True:',
+            'below the threshold the advisory is silent',
+            narrow=False,
+        ),
+        Mutation(
+            'a RUNNING orphan is counted as stopped',
+            'parts[1].startswith("T") and parts[2] == "1"',
+            'parts[2] == "1"',
+            'four stopped orphans (ppid 1) are counted',
+            narrow=False,
+        ),
+        Mutation(
+            'a stopped process that still has a parent is counted as an orphan',
+            'parts[1].startswith("T") and parts[2] == "1"',
+            'parts[1].startswith("T")',
+            'four stopped orphans (ppid 1) are counted',
+            narrow=False,
+        ),
+        Mutation(
+            "the advisory prints the process's whole environment line, credentials included, instead of the session id",
+            'owners.append((pid, m.group(1) if m else "?"))',
+            'owners.append((pid, env.strip()))',
+            'nothing else from the environment is printed',
+            narrow=False,
+        ),
     ),
 )

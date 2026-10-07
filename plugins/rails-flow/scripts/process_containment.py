@@ -38,9 +38,10 @@ import uuid
 TOKEN_VAR = "CLAUDE_CONTAIN_TOKEN"
 
 
-def tagged(token: str) -> list[int]:
-    """Every live process started with `TOKEN_VAR=token` in its environment, never this one."""
-    needle, me = f"{TOKEN_VAR}={token}", os.getpid()
+def holding(var: str, value: str) -> list[int]:
+    """Every live process whose environment has the WHOLE entry `var=value`, never this one. A command line
+    that merely mentions the value does not match: only the environment is read (#1582 slice C)."""
+    needle, me = f"{var}={value}", os.getpid()
     found: list[int] = []
     if sys.platform.startswith("linux"):
         for entry in os.listdir("/proc"):
@@ -53,15 +54,25 @@ def tagged(token: str) -> list[int]:
             except OSError:
                 pass
         return found
-    out = subprocess.run(["ps", "-E", "-ww", "-A", "-o", "pid=,command="],
-                         capture_output=True, text=True, check=False).stdout
-    for line in out.splitlines():
-        # A whole environment entry: the token is unique per run, and is followed by a space or the end.
-        if f" {needle} " in f" {line} ":
-            pid = int(line.split(None, 1)[0])
-            if pid != me:
-                found.append(pid)
+    # `ps -E` prints the command line and then the environment as ONE string. Strip the command line (read again
+    # without -E) so only the environment is searched: an argument that spells `var=value` must not match.
+    def listing(*flags: str) -> dict[int, str]:
+        out = subprocess.run(["ps", *flags, "-ww", "-A", "-o", "pid=,command="],
+                             capture_output=True, text=True, check=False).stdout
+        rows = (line.strip().split(None, 1) for line in out.splitlines() if line.strip())
+        return {int(r[0]): (r[1] if len(r) > 1 else "") for r in rows if r[0].isdigit()}
+    plain = listing()
+    for pid, line in listing("-E").items():
+        argv = plain.get(pid, "")
+        env_part = line[len(argv):] if line.startswith(argv) else line
+        if pid != me and f" {needle} " in f" {env_part} ":     # a whole entry: space or end after the value
+            found.append(pid)
     return found
+
+
+def tagged(token: str) -> list[int]:
+    """Every live process started with `TOKEN_VAR=token` in its environment, never this one."""
+    return holding(TOKEN_VAR, token)
 
 
 def _signal(pid: int, sig: int) -> None:
