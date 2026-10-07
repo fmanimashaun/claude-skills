@@ -97,7 +97,10 @@ def _section_end(source: str, i: int, closer: str) -> int:
     return end + len(closer) if end >= 0 else _bogus_end(source, i)
 
 
-SCRIPT_TOKEN = re.compile(r"<!--|-->|</?script[\s/>]", re.I)
+# `-->` ONLY, never `--!>`: in WHATWG §13.2.5.28 (script data escaped dash dash state) only `>` after `--` returns to
+# script data; `--!>` closes an HTML COMMENT (comment end bang state), not an escaped script run (#1654, CodeQL).
+SCRIPT_ESCAPE_ENDS = ("-->",)
+SCRIPT_TOKEN = re.compile(r"<!--|" + "|".join(map(re.escape, SCRIPT_ESCAPE_ENDS)) + r"|</?script[\s/>]", re.I)
 
 
 def _script_end(source: str, i: int) -> int:
@@ -109,7 +112,7 @@ def _script_end(source: str, i: int) -> int:
         tok = m.group(0).lower()
         if tok == "<!--":
             state = "escaped" if state == "data" else state
-        elif tok == "-->":
+        elif tok in SCRIPT_ESCAPE_ENDS:
             state = "data"
         elif tok.startswith("</"):
             if state == "double":
@@ -337,6 +340,12 @@ def _selftest() -> int:
     expect("an uppercase </SCRIPT> ends the script (case-insensitive)", "button" not in out)
     out = strip_comments("<![CDATA[ a > <!-- b --><p class=k-cd></p>", html=True)
     expect("an unterminated CDATA falls back to the first `>`, not the end of input", "<!-- b" not in out and "class=k-cd" in out)
+
+    # #1654 (CodeQL): `--!>` ends an HTML comment but NOT an escaped script run -- both sides pinned.
+    out = strip_comments("<script><!-- --!> <script> </script> '<!--' </script><b class=k-bang></b>")
+    expect("`--!>` inside a script does not return it to data (only `-->` does)", "class=k-bang" in out)
+    out = strip_comments("<!-- c --!> <b class=k-bang2></b>")
+    expect("`--!>` still ends an HTML comment", "class=k-bang2" in out)
 
     # RUBY HAS NO HTML DATA STATE: a regex lookbehind is `<!` not followed by `--`, and blanking it hid a model's code.
     rb = '    Regexp.new("(?<![[:word:]])#{x}(?![[:word:]])", options)\n  end\n  def stack = "stack"\n'

@@ -211,14 +211,14 @@ GUARD = Guard(
         ),
         Mutation(
             'the script close needs no terminator, so `</scripts>` ends a <script>',
-            'SCRIPT_TOKEN = re.compile(r"<!--|-->|</?script[\\s/>]", re.I)',
-            'SCRIPT_TOKEN = re.compile(r"<!--|-->|</?script", re.I)',
+            'SCRIPT_TOKEN = re.compile(r"<!--|" + "|".join(map(re.escape, SCRIPT_ESCAPE_ENDS)) + r"|</?script[\\s/>]", re.I)',
+            'SCRIPT_TOKEN = re.compile(r"<!--|" + "|".join(map(re.escape, SCRIPT_ESCAPE_ENDS)) + r"|</?script", re.I)',
             '`</scripts>` does not close a <script>',
         ),
         Mutation(
             'whitespace no longer terminates a script close, so `</script >` does not close the script',
-            'SCRIPT_TOKEN = re.compile(r"<!--|-->|</?script[\\s/>]", re.I)',
-            'SCRIPT_TOKEN = re.compile(r"<!--|-->|</?script[/>]", re.I)',
+            'SCRIPT_TOKEN = re.compile(r"<!--|" + "|".join(map(re.escape, SCRIPT_ESCAPE_ENDS)) + r"|</?script[\\s/>]", re.I)',
+            'SCRIPT_TOKEN = re.compile(r"<!--|" + "|".join(map(re.escape, SCRIPT_ESCAPE_ENDS)) + r"|</?script[/>]", re.I)',
             '`</script >` (a space before `>`) closes the script',
         ),
         # 13's review of #1654.
@@ -242,14 +242,14 @@ GUARD = Guard(
         ),
         Mutation(
             '--> no longer returns an escaped script to data',
-            '        elif tok == "-->":\n            state = "data"',
-            '        elif tok == "-->":\n            pass',
+            '        elif tok in SCRIPT_ESCAPE_ENDS:\n            state = "data"',
+            '        elif tok in SCRIPT_ESCAPE_ENDS:\n            pass',
             '`-->` returns an escaped script to plain data',
         ),
         Mutation(
             'the script-token pattern is case-sensitive',
-            'SCRIPT_TOKEN = re.compile(r"<!--|-->|</?script[\\s/>]", re.I)',
-            'SCRIPT_TOKEN = re.compile(r"<!--|-->|</?script[\\s/>]")',
+            'SCRIPT_TOKEN = re.compile(r"<!--|" + "|".join(map(re.escape, SCRIPT_ESCAPE_ENDS)) + r"|</?script[\\s/>]", re.I)',
+            'SCRIPT_TOKEN = re.compile(r"<!--|" + "|".join(map(re.escape, SCRIPT_ESCAPE_ENDS)) + r"|</?script[\\s/>]")',
             'an uppercase </SCRIPT> ends the script',
         ),
         Mutation(
@@ -257,6 +257,19 @@ GUARD = Guard(
             '    return end + len(closer) if end >= 0 else _bogus_end(source, i)',
             '    return end + len(closer) if end >= 0 else len(source)',
             'an unterminated CDATA falls back to the first `>`',
+        ),
+        # #1654 CodeQL: both sides of --!>.
+        Mutation(
+            '`--!>` returns an escaped script to data (it must not: WHATWG script data escaped dash dash)',
+            'SCRIPT_ESCAPE_ENDS = ("-->",)',
+            'SCRIPT_ESCAPE_ENDS = ("-->", "--!>")',
+            '`--!>` inside a script does not return it to data',
+        ),
+        Mutation(
+            '`--!>` no longer ends an HTML comment (#1654 pin)',
+            'HTML_COMMENT = re.compile(r"<!--(?:-?>|[\\s\\S]*?(?:--!?>|\\Z))")',
+            'HTML_COMMENT = re.compile(r"<!--(?:-?>|[\\s\\S]*?(?:-->|\\Z))")',
+            '`--!>` still ends an HTML comment',
         ),
     ),
 )
