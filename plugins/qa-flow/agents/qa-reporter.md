@@ -45,11 +45,12 @@ filing command below): the record schema is shared with rails-flow and gated by 
 while the label carries the QA grade. Two vocabularies, deliberately.
 
 That is the same list `rails-flow/scripts/findings.py` enforces, and `findings-schema-drift` fails
-the build if this section and that script ever disagree. Where rails-flow is installed alongside
-qa-flow, the same tooling applies to these records unchanged:
+the build if this section and that script ever disagree. qa-flow ships its own byte-identical copy
+(`findings-script-drift` keeps the two equal), so the validator runs whether or not rails-flow is
+installed:
 
 ```bash
-python3 ../rails-flow/scripts/findings.py validate docs/evidence/qa/<date>/findings.jsonl
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/findings.py" validate docs/evidence/qa/<date>/findings.jsonl
 ```
 
 The `signature` rule below is what makes the record worth writing — it is the dedupe key, and the
