@@ -221,5 +221,42 @@ GUARD = Guard(
             'SCRIPT_TOKEN = re.compile(r"<!--|-->|</?script[/>]", re.I)',
             '`</script >` (a space before `>`) closes the script',
         ),
+        # 13's review of #1654.
+        Mutation(
+            'whitespace between = and a quote no longer opens a value',
+            'and source[i:j].rstrip().endswith("=")',
+            'and source[i:j].endswith("=")',
+            'whitespace between `=` and a quote still opens a value',
+        ),
+        Mutation(
+            'a <!-- while double-escaped resets to escaped',
+            '            state = "escaped" if state == "data" else state',
+            '            state = "escaped"',
+            'a `<!--` while double-escaped does not reset to escaped',
+        ),
+        Mutation(
+            '</script while double-escaped goes to data',
+            '            if state == "double":\n                state = "escaped"',
+            '            if state == "double":\n                state = "data"',
+            '`</script` while double-escaped steps back to escaped',
+        ),
+        Mutation(
+            '--> no longer returns an escaped script to data',
+            '        elif tok == "-->":\n            state = "data"',
+            '        elif tok == "-->":\n            pass',
+            '`-->` returns an escaped script to plain data',
+        ),
+        Mutation(
+            'the script-token pattern is case-sensitive',
+            'SCRIPT_TOKEN = re.compile(r"<!--|-->|</?script[\\s/>]", re.I)',
+            'SCRIPT_TOKEN = re.compile(r"<!--|-->|</?script[\\s/>]")',
+            'an uppercase </SCRIPT> ends the script',
+        ),
+        Mutation(
+            'an unterminated CDATA/PI runs to the end of input',
+            '    return end + len(closer) if end >= 0 else _bogus_end(source, i)',
+            '    return end + len(closer) if end >= 0 else len(source)',
+            'an unterminated CDATA falls back to the first `>`',
+        ),
     ),
 )

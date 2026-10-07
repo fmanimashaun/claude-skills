@@ -144,6 +144,10 @@ def blank_html_comments(source: str, *, html: bool = False) -> str:
     NOT `<?` (doctrine-verifier, 2026-10-07): the living standard's tag open state now enters a PROCESSING INSTRUCTION
     state, so `<?name ...>` is a processing-instruction token, not a comment; it is left live.
 
+    CDATA IS READ AS IN FOREIGN CONTENT (#1654 review N2): to `]]>`, which is right for inline SVG. In HTML content the
+    standard makes `<![CDATA[` a bogus comment ending at the first `>`; reading it to `]]>` there leaves a later `<!--`
+    live -- the safe direction, since it only ever leaves MORE text visible to a gate.
+
     A DYNAMIC CLOSER IS LOST, HARMLESSLY (02's review of #1651): `</<%= tag %>>` is `</` before a non-letter, so in a
     template it is a bogus comment that ends at the `>` of `%>`. Only a closing tag is blanked, never an element start. So is `<![CDATA[`: a
     bogus comment in HTML content but real CDATA in foreign content (SVG), and leaving it hides nothing.
@@ -319,6 +323,20 @@ def _selftest() -> int:
     out = strip_comments('<a b"c>\n<!-- hid <button> -->\n<p class=n3></p>')
     expect("N3: a quote outside a value (not after `=`) opens nothing, so the comment after the tag is blanked",
            "button" not in out and "class=n3" in out)
+
+    # 13's review of #1654: six behaviours the first fixtures did not hold.
+    out = strip_comments('<a b = "x > <!-- y"><p class=k-ws></p>')
+    expect("whitespace between `=` and a quote still opens a value", "class=k-ws" in out)
+    out = strip_comments("<script><!-- <script> <!-- </script> '<!--' <i class=x> </script><b class=after2></b>")
+    expect("a `<!--` while double-escaped does not reset to escaped", "class=after2" in out)
+    out = strip_comments("<script><!-- <script> </script> <script> </script> '<!--' </script><b class=after3></b>")
+    expect("`</script` while double-escaped steps back to escaped, not to data", "class=after3" in out)
+    out = strip_comments("<script><!-- --> <script> </script><i class=x></i> <!-- c <button> -->")
+    expect("`-->` returns an escaped script to plain data", "button" not in out)
+    out = strip_comments("<SCRIPT>x</SCRIPT><!-- c <button> -->")
+    expect("an uppercase </SCRIPT> ends the script (case-insensitive)", "button" not in out)
+    out = strip_comments("<![CDATA[ a > <!-- b --><p class=k-cd></p>", html=True)
+    expect("an unterminated CDATA falls back to the first `>`, not the end of input", "<!-- b" not in out and "class=k-cd" in out)
 
     # RUBY HAS NO HTML DATA STATE: a regex lookbehind is `<!` not followed by `--`, and blanking it hid a model's code.
     rb = '    Regexp.new("(?<![[:word:]])#{x}(?![[:word:]])", options)\n  end\n  def stack = "stack"\n'
