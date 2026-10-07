@@ -1282,7 +1282,7 @@ GUARD = Guard(
             "fixture-git-bypass never reports a fixture identity outside fixture_git (#1588 part 2)",
             '            findings.append(Finding("fixture-git-bypass", str(rel), n,',
             '            None and findings.append(Finding("fixture-git-bypass", str(rel), n,',
-            'fixture-git-bypass: a -c user.email=t@t argv outside fixture_git is a finding',
+            'fixture-git-bypass: a -c user.email=t@t argv outside fixture_git is a finding',  # fixture-git: exempt (the expected-fixture label quotes the identity it detects)
         ),
         Mutation(
             "fixture-git-bypass accepts an exemption with no reason",

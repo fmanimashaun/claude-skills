@@ -28,6 +28,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import maintainer_doctor as md  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "plugins" / "rails-flow" / "scripts"))
+import fixture_git  # noqa: E402  (#1588: a fixture's git touches only its own temp repo)
 
 FAILURES: list[str] = []
 CHECKS = 0
@@ -48,7 +50,12 @@ def _tick() -> None:
 
 
 def _git(cwd: Path, *args: str) -> str:
-    p = subprocess.run(("git",) + args, cwd=cwd, capture_output=True, text=True)
+    """Fixture git (#1588): in a repo through fixture_git, bound to it and refused if its init failed; anything else
+    (`init --bare` and `clone` from the temp root) runs plain and commits nothing."""
+    if (cwd / ".git").is_dir():
+        p = fixture_git.run(cwd, *args, check=False)
+    else:
+        p = subprocess.run(("git",) + args, cwd=cwd, capture_output=True, text=True)
     return (p.stdout + p.stderr).strip()
 
 
@@ -68,7 +75,9 @@ def fixture(*, on_branch: str = "dev", stale_main: bool = False, dirty: bool = F
     remote, work = root / "remote.git", root / "work"
     _git(root, "init", "--bare", "-b", "main", str(remote))
     _git(root, "clone", str(remote), str(work))
-    _git(work, "config", "user.email", "t@t")
+    # The doctor reads the clone's CONFIGURED user to tell its own commits from a foreign one, so this is the code
+    # under test's input, not a fixture identity; `_git` binds it to `work` through fixture_git (#1588).
+    _git(work, "config", "user.email", "t@t")  # fixture-git: exempt (the configured user is what the doctor under test reads)
     _git(work, "config", "user.name", "t")
 
     if marketplace:
