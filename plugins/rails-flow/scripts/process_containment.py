@@ -290,7 +290,9 @@ def selftest() -> int:
         # The CLI turns SIGTERM into an exception, and a second one arriving while `contained()`'s `finally` runs the
         # sweep raised again INSIDE it: the sweep stopped partway and the tree survived (5 of 5 with a 0.3 s gap).
         # Each pair below is sent to a fresh CLI whose command leaks the stopped-orphan shape.
-        for first, second in ((signal.SIGTERM, signal.SIGTERM), (signal.SIGHUP, signal.SIGTERM), (signal.SIGINT, signal.SIGTERM)):
+        # The SECOND signal varies too (#1642 review): dropping SIGHUP or SIGINT from the held set must fail a fixture, not only dropping SIGTERM.
+        for first, second in ((signal.SIGTERM, signal.SIGTERM), (signal.SIGHUP, signal.SIGTERM), (signal.SIGINT, signal.SIGTERM),
+                              (signal.SIGTERM, signal.SIGHUP), (signal.SIGTERM, signal.SIGINT)):
             fd = pidfile(f"cli-twice-{first.name}-{second.name}.pids")
             w = subprocess.Popen([sys.executable, __file__, "--", sys.executable, "-c",
                                   _LEAKY + "time.sleep(60)\n", fd],
