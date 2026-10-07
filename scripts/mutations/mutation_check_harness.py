@@ -13,6 +13,25 @@ GUARD = Guard(
     selftest="scripts/mutation_check_selftest.py",
     deps=("scripts/mutation_types.py", "scripts/hermetic_git.py", "scripts/proc_group.py", "plugins/rails-flow/scripts/process_containment.py",),
     mutations=(
+        # #1635: a guard's cost is CPU seconds, so machine load cannot make it grow.
+        Mutation(
+            "a run is billed its wall time, so load stretches the cost again",
+            "    bill(guard_name, cpu if cpu is not None else time.monotonic() - started)",
+            "    bill(guard_name, time.monotonic() - started)",
+            "a run that only sleeps must cost ~0 CPU seconds",
+        ),
+        Mutation(
+            "a run killed on its limit is billed nothing",
+            "        bill(guard_name, time.monotonic() - started)\n        raise",
+            "        raise",
+            "a run killed on its limit bills its WALL time",
+        ),
+        Mutation(
+            "runs of one guard replace each other instead of adding up",
+            "        _COST[guard_name] = _COST.get(guard_name, 0.0) + seconds",
+            "        _COST[guard_name] = seconds",
+            "runs of one guard must ADD UP",
+        ),
         # #1599: the cost ratchet. Each mutation undoes one of its rules; the selftest's section 1f must notice.
         Mutation(
             "a NEW guard over the new-guard limit is accepted, so a new expensive guard never has to be made cheaper",
