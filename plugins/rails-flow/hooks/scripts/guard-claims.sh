@@ -137,6 +137,8 @@ while i < len(s):
 sys.stdout.write("".join(out))
 ' 2>/dev/null)"
   pr_seg="$(printf '%s' "$unquoted" | grep -oE 'gh[[:space:]]+pr[[:space:]]+(create|edit)[^;&|]*' | head -1)"
+  # `has` for uniformity: this input is ONE line, which grep reads whole before it can match, so it cannot take SIGPIPE
+  # (measured, 0 x 5 at 200 KB; #1648 review). A long multi-line tail is what reaches the other sites.
   if has "$pr_seg" '(^|[[:space:]])(-R|--repo)'; then
     echo "rails-flow: PR-template sections NOT checked (-R/--repo targets another repository's template)." >&2
   elif [ ! -f "$tpl_lib" ] || ! command -v python3 >/dev/null 2>&1; then
