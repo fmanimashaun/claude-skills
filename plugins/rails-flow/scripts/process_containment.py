@@ -112,6 +112,21 @@ class Box:
 
 
 @contextlib.contextmanager
+def _deferred_signals():
+    """HOLD SIGTERM, SIGHUP AND SIGINT UNTIL THE SWEEP HAS FINISHED (#1582 slice B, #1589 re-review S1). The CLI turns
+    those signals into an exception, and a second one that landed while `contained()`'s `finally` was sweeping raised
+    AGAIN inside it: the sweep stopped partway and the tree survived (measured 5 of 5, a 0.3 s gap between the two).
+    Blocked, a signal waits pending (equal signals coalesce) and is delivered when the mask is restored, after the sweep,
+    to whatever handler the caller installed -- so the interrupt still ends the caller, just not the cleanup."""
+    held = {signal.SIGTERM, signal.SIGHUP, signal.SIGINT}
+    previous = signal.pthread_sigmask(signal.SIG_BLOCK, held)
+    try:
+        yield
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, previous)
+
+
+@contextlib.contextmanager
 def contained():
     """Run the block with `TOKEN_VAR` set, so every process it starts is tagged. On any exit that
     reaches `finally` -- a return, an exception, Ctrl-C -- sweep them all. A library installs no signal
@@ -127,7 +142,8 @@ def contained():
             os.environ.pop(TOKEN_VAR, None)
         else:
             os.environ[TOKEN_VAR] = saved
-        box.killed = sweep(token)
+        with _deferred_signals():
+            box.killed = sweep(token)
 
 
 # A BROKEN FIXTURE, the shape of the 2026-10-03 leak. The fixture starts a CHILD; the child starts a
@@ -269,6 +285,31 @@ def selftest() -> int:
             check(f"a {sig.name} to the CLI still kills the command's tree",
                   len(_recorded(fs)) == 2 and not any(_alive(p) for p in _tree(fs)),
                   f"recorded {_tree(fs)}, alive {[p for p in _tree(fs) if _alive(p)]}")
+
+        # 8. #1582 slice B (from #1589's re-review S1): A SECOND SIGNAL DURING THE TEARDOWN MUST NOT ABORT THE SWEEP.
+        # The CLI turns SIGTERM into an exception, and a second one arriving while `contained()`'s `finally` runs the
+        # sweep raised again INSIDE it: the sweep stopped partway and the tree survived (5 of 5 with a 0.3 s gap).
+        # Each pair below is sent to a fresh CLI whose command leaks the stopped-orphan shape.
+        # The SECOND signal varies too (#1642 review): dropping SIGHUP or SIGINT from the held set must fail a fixture, not only dropping SIGTERM.
+        for first, second in ((signal.SIGTERM, signal.SIGTERM), (signal.SIGHUP, signal.SIGTERM), (signal.SIGINT, signal.SIGTERM),
+                              (signal.SIGTERM, signal.SIGHUP), (signal.SIGTERM, signal.SIGINT)):
+            fd = pidfile(f"cli-twice-{first.name}-{second.name}.pids")
+            w = subprocess.Popen([sys.executable, __file__, "--", sys.executable, "-c",
+                                  _LEAKY + "time.sleep(60)\n", fd],
+                                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            wait_for(fd)
+            w.send_signal(first)
+            time.sleep(0.3)                  # the first is in the teardown, the second lands inside the sweep
+            w.send_signal(second)
+            try:
+                w.wait(timeout=20)
+            except subprocess.TimeoutExpired:
+                w.kill()
+                w.wait()
+            time.sleep(0.3)
+            check(f"a {second.name} {0.3}s after a {first.name} does not abort the sweep: the tree is gone",
+                  len(_recorded(fd)) == 2 and not any(_alive(p) for p in _tree(fd)),
+                  f"recorded {_tree(fd)}, alive {[p for p in _tree(fd) if _alive(p)]}")
     finally:
         # SAFETY NET by RECORDED PID, never by token and never through `sweep()`: under a mutant either may
         # be the broken part, and running this guard must not leak what it tests.
