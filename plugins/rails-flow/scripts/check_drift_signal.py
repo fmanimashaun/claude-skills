@@ -42,13 +42,13 @@ def run_hook(*, hashers: str, manifest_hash: str, manifest: str | None = None, b
         (root / "tracked.md").write_text("ORIGINAL\n")
         (root / ".claude" / "skills" / ".manifest.tsv").write_text(
             manifest if manifest is not None else f"tracked.md\t{manifest_hash}\n")
-        for cmd in (["git", "init", "-q"], ["git", "add", "-A"],
-                    ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "x"]):
-            subprocess.run(cmd, cwd=root, check=True, capture_output=True)
+        import sys as _sys; _sys.path.insert(0, str(Path(__file__).resolve().parent)); import fixture_git as _fg  # #1588
+        _fg.init(root)
+        _fg.run(root, "add", "-A")
+        _fg.run(root, "commit", "-qm", "x")
         if behind is not None:
             # #1243: a real upstream, with `behind` commits this checkout has not pulled.
             up, other = Path(td) / "up.git", Path(td) / "other"
-            g = ["git", "-c", "user.email=t@t", "-c", "user.name=t"]
             for cmd in (["git", "clone", "-q", "--bare", str(root), str(up)],
                         ["git", "-C", str(root), "remote", "add", "origin", str(up)],
                         ["git", "-C", str(root), "fetch", "-q", "origin"],
@@ -56,8 +56,7 @@ def run_hook(*, hashers: str, manifest_hash: str, manifest: str | None = None, b
                         ["git", "clone", "-q", str(up), str(other)]):
                 subprocess.run(cmd, check=True, capture_output=True)
             for i in range(behind):
-                subprocess.run(g + ["-C", str(other), "commit", "-q", "--allow-empty", "-m", f"up {i}"],
-                               check=True, capture_output=True)
+                _fg.run(other, "commit", "-q", "--allow-empty", "-m", f"up {i}")
             subprocess.run(["git", "-C", str(other), "push", "-q", "origin", "HEAD"], check=True, capture_output=True)
             subprocess.run(["git", "-C", str(root), "fetch", "-q", "origin"], check=True, capture_output=True)
 

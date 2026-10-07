@@ -5,6 +5,7 @@ GUARD = Guard(
     name="generated_docs",
     subject="scripts/generated_docs.py",
     selftest="scripts/generated_docs.py",
+    needs=("scripts/fixture_git.py",),   # its selftest's git goes through fixture_git (#1588)
     mutations=(
         Mutation(
             # With no policy file every branch must enforce: the opt-in is what makes it safe to ship.

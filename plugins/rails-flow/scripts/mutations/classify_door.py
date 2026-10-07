@@ -8,6 +8,7 @@ GUARD = Guard(
     name="classify_door",
     subject="scripts/classify_door.py",
     selftest="scripts/classify_door.py",   # --selftest lives in the module itself
+    needs=("scripts/fixture_git.py",),   # its selftest's git goes through fixture_git (#1588)
     mutations=(
         Mutation(
             "untracked files are invisible again, so a brand-new destructive migration is two-way",

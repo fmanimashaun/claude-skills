@@ -565,8 +565,10 @@ def selftest() -> int:
         check("a clean tree passes --check (exit 0)", main(["--check", "--root", str(root)]) == 0)
         # #1233: a locally dirty SOURCE is named, and a clean git tree names nothing (the control).
         import contextlib as _cl, io as _io, subprocess as _sp
-        for cmd in (["init", "-q"], ["add", "-A"], ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "x"]):
-            _sp.run(["git", "-C", str(root), *cmd], check=True, capture_output=True)
+        import sys as _sys; _sys.path.insert(0, str(Path(__file__).resolve().parent)); import fixture_git as _fg  # #1588
+        _fg.init(root)
+        _fg.run(root, "add", "-A")
+        _fg.run(root, "commit", "-qm", "x")
         out = _io.StringIO()
         with _cl.redirect_stdout(out):
             main(["--check", "--root", str(root)])
