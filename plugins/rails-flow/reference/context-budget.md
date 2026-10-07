@@ -99,7 +99,7 @@ these:
    drawing.
 2. **Nudges once per climb.** When the person submits a prompt and the fill is at or past the threshold, it
    adds ONE context line only Claude reads (about 230 characters, asserted at most 400): finish the step,
-   offer `/rails-flow:handoff`, tell the user to `/clear` or `/compact`. It adds nothing again until the fill
+   offer `/rails-flow:handoff`, then tell the user to `/clear` (owner decision, 2026-10-07: `/clear`, not `/compact`, because once the handoff is written a compaction only carries a summary of what the handoff already holds). It adds nothing again until the fill
    has fallen below the threshold or lost its reading (a `/clear` or a compaction). It is added only to a
    prompt from a person at an interactive surface: `composer`, `bridge` or no origin. The other fourteen of
    the engine's sixteen origin kinds are refused on purpose, `sdk` included, because `claude -p` has nobody to
@@ -155,7 +155,7 @@ budget, and the work carries on after a reset.
 
 | Limit | At the warn level | At the hard level |
 |---|---|---|
-| Context window (`context-nudge.mjs`) | at 70%: one line asks for `/rails-flow:handoff`, then `/clear` or `/compact` | — |
+| Context window (`context-nudge.mjs`) | at 70%: one line asks for `/rails-flow:handoff`, then `/clear` | — |
 | 5-hour session window | at 80%: update the handoff, commit and push, no fan-out | at 90%: finish the step, save everything, stop; **resume by itself just after the reset** |
 | 7-day window | at 80%: the same | at 90%: the same, and new `Workflow` and `Agent` calls are refused |
 | Any usage | a `Workflow` whose script has agents only relay `SendMessage` is refused | — |

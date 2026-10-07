@@ -135,5 +135,11 @@ GUARD = Guard(
             "const WINDOWS = ['seven_day']",
             "the 5-hour warn line tells Claude to write the handoff",
         ),
+        Mutation(
+            "the nudge offers /compact again, against the owner's decision (#1678)",
+            "tell the user to run /clear (not /compact: the handoff already holds it) before new work.",
+            "tell the user to run /clear or /compact before new work.",
+            "asks for /clear after the handoff, not /compact",
+        ),
     ),
 )

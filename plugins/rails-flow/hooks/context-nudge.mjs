@@ -35,7 +35,7 @@ let nudged = false
 export function nudgeLine(fill) {
   return (
     `Context note: this session's context window is ${fill}% full. Finish the current step, then offer to ` +
-    'write a handoff with /rails-flow:handoff and tell the user to run /clear or /compact before new work. ' +
+    'write a handoff with /rails-flow:handoff and tell the user to run /clear (not /compact: the handoff already holds it) before new work. ' +
     'Say this once; do not repeat it.'
   )
 }

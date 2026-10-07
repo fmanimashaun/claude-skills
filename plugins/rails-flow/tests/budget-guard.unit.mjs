@@ -194,6 +194,12 @@ await check('a window with no reset time schedules no resume', async () => {
   await n.measure(10, 96)
   assert.equal(n.timers.length, 1)
 })
+await check('the context nudge asks for /clear after the handoff, not /compact (owner decision)', async () => {
+  const { nudgeLine } = await import(`../hooks/context-nudge.mjs?fresh=${++fresh}`)
+  const line = nudgeLine(72)
+  assert.ok(line.includes('/rails-flow:handoff') && line.includes('/clear'))
+  assert.ok(!/or \/compact/.test(line), 'offers /compact as an option')
+})
 await check('the usage line is short (it is billed on every later request)', async () => {
   const { budgetLine } = (await guard(0)).mod
   assert.ok(budgetLine('seven_day', 96, 'block', RESET).length <= 260 && budgetLine('five_hour', 85, 'warn', RESET).length <= 260)
