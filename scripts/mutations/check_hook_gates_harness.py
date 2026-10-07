@@ -34,6 +34,56 @@ GUARD = Guard(
            # mutation reads as caught -- the harness reported this guard INERT until it was added (#1173).
            'plugins/rails-flow/scripts/ci_verdict_hint.py', 'plugins/rails-flow/scripts/session_reaper.py', 'plugins/rails-flow/scripts/process_containment.py'),
     mutations=(
+        # #1664: a timing result the MACHINE decided is a counted SKIP. Each mutation breaks one of the three conditions, the
+        # exit code, the counting, or the order of verdicts, so a STARVED result can no longer pass for a pass or hide a failure.
+        Mutation(
+            "a STARVED result is counted as a pass",
+            '            STARVED.append(f"{label}: {why}")      # NOT counted in CHECKS: a skip is not a pass (#1664)\n            return',
+            '            CHECKS += 1\n            return',
+            "starved: through check(), a STARVED result is NOT counted as a pass and NOT recorded as a failure, only listed",
+        ),
+        Mutation(
+            "a run with a STARVED skip exits 0, so the doctor reads it as ok",
+            "        return EXIT_STARVED, [f\"check_hook_gates selftest",
+            "        return 0, [f\"check_hook_gates selftest",
+            "finish: a STARVED skip with no failure exits EXIT_STARVED (3), never 0, and says so on its FIRST line",
+        ),
+        Mutation(
+            "a skip outranks a failure",
+            "    if failures:\n        return 1,",
+            "    if starved:\n        return EXIT_STARVED, [f\"STARVED {len(starved)}\"], []\n    if failures:\n        return 1,",
+            "finish: a failure outranks a skip",
+        ),
+        Mutation(
+            "a quiet machine excuses a deadline denial (the load condition is dropped)",
+            "and cpu_s < STARVED_MAX_CPU_S and load > cores)",
+            "and cpu_s < STARVED_MAX_CPU_S)",
+            "...but a machine under its cores never excuses a deadline denial",
+        ),
+        Mutation(
+            "a hook that burned CPU is excused (the CPU condition is dropped)",
+            "and cpu_s < STARVED_MAX_CPU_S and load > cores)",
+            "and load > cores)",
+            "...but a hook that burned 5 CPU seconds past its deadline is the HOOK's fault, at any load",
+        ),
+        Mutation(
+            "any failure is STARVED on a loaded machine (the marker condition is dropped)",
+            "and any(m in text for m in STARVED_MARKERS)",
+            "and True",
+            "...and a failure that is not a deadline or budget message is never STARVED",
+        ),
+        Mutation(
+            "the groups that test the timing itself are not exempt",
+            "return (group not in STARVED_EXEMPT_GROUPS and any(m in text",
+            "return (any(m in text",
+            "...and the groups that test the timing itself are exempt",
+        ),
+        Mutation(
+            "the core count is assumed, not read from os.cpu_count()",
+            "    return load, os.cpu_count() or 1",
+            "    return load, 1",
+            "starved: the core count comes from os.cpu_count()",
+        ),
         # #1599: `--match` runs only the fixtures a label names. Each mutation undoes one half of that.
         Mutation(
             "--match selects every check, so a narrowed mutant still runs the whole group",
