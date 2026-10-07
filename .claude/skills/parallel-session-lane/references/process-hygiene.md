@@ -57,9 +57,13 @@ line, but the leaked roots' command lines ended with something else, so it match
 ## What a session's end reaps
 
 rails-flow's `SessionEnd` hook runs `scripts/session_reaper.py`, once, when the session ends. It cannot
-block the end, and it never fails it. Claude Code starts every process of a session with
-`CLAUDE_CODE_SESSION_ID` in its environment, and the hook receives the same id. The reaper signals a
-process only if ALL of these hold:
+block the end, and it never fails it. Claude Code sets `CLAUDE_CODE_SESSION_ID` (v2.1.132 and later) in
+Bash and PowerShell tool subprocesses and in hook command subprocesses, and (v2.1.154 and later) in stdio
+MCP server subprocesses; it matches the `session_id` in the hook's JSON input and is updated on `/clear`
+(https://code.claude.com/docs/en/env-vars). Two consequences for the reaper: a process started before a
+`/clear` carries the OLD id, so it is not this session's by that test; and a process the docs do not list
+(a monitor, a background task) is not documented to carry the id at all, so the reaper may not find it. The
+reaper signals a process only if ALL of these hold:
 
 1. its environment has the variable named exactly `CLAUDE_CODE_SESSION_ID`, whose whole value is this
    session's id;
