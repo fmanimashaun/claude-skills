@@ -96,6 +96,12 @@ GUARD = Guard(
             "    if False:\n        return False",
             "CONTROL: a body naming none of our commands is silent",
         ),
+        Mutation(
+            "an agent with no tools field is read as unable to invoke a skill",
+            '    can_invoke = ("tools" not in f and not blocked) or "Skill" in tools',
+            '    can_invoke = "Skill" in tools',
+            "CONTROL: an agent with no `tools:` field inherits Skill, so it is never an unrunnable-command finding",
+        ),
         # #1343: an agent that inherits every tool passes again.
         Mutation(
             "an agent with no tools declaration passes",

@@ -25,10 +25,14 @@ TWO AGENT RULES, for the same reason: a frontmatter that says less than the body
     since the skill lives in the plugin cache), with an allowlist that omitted Skill and no
     `skills:` preload, so the instruction did nothing.
 
-  * agent-unrunnable-command (#1663): a command is a skill, so an agent runs one only through the Skill tool; a
-    `skills:` preload injects content and does not run it. `pipeline-coordinator` was told to "execute the next
-    stage" (`/qa-flow:verify`, `/pipeline:release`) with `tools: Read, Grep, Glob, Bash`. Handing the command to a
-    person is the other way out and is not a finding.
+  * agent-unrunnable-command (#1663): a command is a skill, and the supported way for an agent to run one is the Skill
+    tool (the docs do not exclude a nested `claude -p`, so this is not "only"); a `skills:` preload injects content
+    and does not run it. `pipeline-coordinator` was told to "execute the next stage" (`/qa-flow:verify`,
+    `/pipeline:release`) with `tools: Read, Grep, Glob, Bash`. Handing the command to a person is the other way out
+    and is not a finding. SCOPE: it applies only to an explicit `tools:` allowlist or a `disallowedTools: Skill`; an
+    agent with no `tools:` field inherits Skill and is never a finding here (it is `agent-undeclared-tools`'s).
+    NOT CHECKED: a command with `disable-model-invocation: true` cannot be run through Skill at all; the three
+    commands the coordinator runs do not set it (only `deploy-cloud` does), and this rule does not check that.
 
 USER-INVOKED COMMANDS, pinned both ways (#1335). Claude Code: commands "have been merged into skills",
 and `disable-model-invocation: true` is for "workflows with side effects ... You don't want Claude
@@ -103,7 +107,7 @@ def fields(text: str) -> dict[str, str]:
     return out
 
 
-# #1663: a command is a skill ("commands have been merged into skills"), and an agent runs one only through the Skill tool.
+# #1663: a command is a skill ("commands have been merged into skills"), and the supported way for an agent to run one is the Skill tool.
 # `skills:` preloading injects a skill's CONTENT; it does not let the agent run a command. So an agent told to EXECUTE a
 # stage or one of our commands, with no way to invoke a skill, was handed an instruction it cannot follow
 # (pipeline-coordinator, measured: its tool list is Read, Bash and the hand-back, no Skill). An instruction to hand the
@@ -142,9 +146,10 @@ def agent_problems(text: str) -> list[str]:
         found.append(f"[agent-unloadable-skill] tells the agent to use {', '.join(named)} but can neither "
                      "invoke skills (no `Skill` in its tools) nor has them preloaded (`skills:`)")
     if runs_command(body) and not can_invoke:
-        found.append("[agent-unrunnable-command] is told to execute a stage or one of our commands, but cannot invoke "
-                     "one (no `Skill` in its tools; a `skills:` preload injects content and does not run a command): "
-                     "add `Skill`, or have it hand the command to the user")
+        found.append("[agent-unrunnable-command] is told to execute a stage or one of our commands, but its explicit "
+                     "`tools:` allowlist has no `Skill` (or `disallowedTools` blocks it), and the supported way for an "
+                     "agent to run a command is the Skill tool; a `skills:` preload injects content and does not run "
+                     "a command: add `Skill`, or have it hand the command to the user")
     return found
 
 
@@ -257,6 +262,8 @@ def selftest() -> int:
     expect("CONTROL: a command named in a report to the caller is not an instruction to run it",
            not any("agent-unrunnable-command" in p for p in agent_problems(agent(
                "tools: Read, Bash\n", "Stale area -> report `run /rails-flow:explain <area>` and stop.\n\nOne next action: run /qa-flow:verify."))))
+    expect("CONTROL: an agent with no `tools:` field inherits Skill, so it is never an unrunnable-command finding",
+           not any("agent-unrunnable-command" in p for p in agent_problems(agent("", coordinator))))
     expect("CONTROL: a body naming none of our commands is silent",
            not any("agent-unrunnable-command" in p for p in agent_problems(agent(
                "tools: Read, Bash\n", "Execute the next stage of the checklist, then report."))))
