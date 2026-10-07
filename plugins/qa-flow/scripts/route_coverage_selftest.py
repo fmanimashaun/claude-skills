@@ -649,6 +649,14 @@ def run() -> int:
     check("exclusions: ...and drops the /admin/x route itself", [r.pattern for r in dropped_r], ["/admin/x"])
     check("exclusions: an ordinary row's real controller still matches",
           [r.pattern for r in rc.excluded(redirect_rows, ["admin/reports"])[1]], ["/reports"])
+    # ...AND A REDIRECT ROW CAN STILL BE EXCLUDED (02's review of #1650): by its own path, and a real `redirects#show`
+    # controller is not mistaken for a redirect endpoint.
+    check("exclusions: a redirect row is dropped by its own path",
+          [r.pattern for r in rc.excluded(redirect_rows, ["/old"])[1]], ["/old"])
+    named = rc.from_rails("      old GET  /old(.:format)   redirect(301, /admin/x)\n"
+                          "    hop GET  /hop(.:format)   redirects#show\n")
+    check("exclusions: a real redirects#show controller still matches; the redirect endpoint's inspect does not",
+          [r.pattern for r in rc.excluded(named, ["redirects#"])[1]], ["/hop"])
 
     # ---- gap ordering: destructive, then authenticated, then the rest ----------------
     gaps = sorted(

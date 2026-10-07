@@ -23,6 +23,18 @@ GUARD = Guard(
             "keeps a redirect that only points at /admin/x",
         ),
         Mutation(
+            "a redirect row can never be excluded, even by its own path (02's review of #1650)",
+            '        if any(p in route.pattern or p in controller for p in patterns):',
+            '        if not route.controller.startswith("redirect(") and any(p in route.pattern or p in controller for p in patterns):',
+            "a redirect row is dropped by its own path",
+        ),
+        Mutation(
+            "a real redirects#show controller is taken for a redirect endpoint and stops matching",
+            '        controller = "" if route.controller.startswith("redirect(") else route.controller',
+            '        controller = "" if route.controller.startswith("redirect") else route.controller',
+            "a real redirects#show controller still matches",
+        ),
+        Mutation(
             # The whole reason the third state exists: folding a crawl visit into `covered`
             # would inflate the one number this tool keeps honest, on exactly the routes
             # nobody wrote a test for.
