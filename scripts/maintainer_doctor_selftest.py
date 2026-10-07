@@ -273,6 +273,49 @@ def repo_untouched_fixtures() -> None:
         md.GATES, md.REPO = saved_gates, real
 
 
+def starved_gate_fixtures() -> None:
+    """#1664: a gate that RAN but whose timing checks were STARVED exits 3, which is a `skip`, never `ok`, and refuses a release proof.
+
+    A skip inside a total has hidden a real failure here before, so the three consequences are asserted: the verdict, the reason (the
+    gate's own first line, with the labels it lists), and that `--record-proof` refuses; with CONTROLS that a clean gate still passes
+    and a proof of a clean sweep is still allowed."""
+    work = fixture()
+    saved_gates, real = md.GATES, md.REPO
+    try:
+        md.REPO = work
+        scripts = work / "scripts"
+        scripts.mkdir(parents=True, exist_ok=True)
+        (scripts / "_starved.py").write_text(
+            "import sys\n"
+            "print('check_hook_gates selftest: 90 checks passed, 2 STARVED and NOT judged (the machine, not the hook, decided)')\n"
+            "print('  - STARVED release-gate (#1569): gh pr merge -R acts on ANOTHER repository')\n"
+            "sys.exit(3)\n", encoding="utf-8")
+        (scripts / "_clean.py").write_text("print('check_hook_gates selftest: 92 checks passed')\n", encoding="utf-8")
+        md.GATES = (("selftest starved", ("python3", "scripts/_starved.py")),)
+        d = md.Doctor()
+        d.check_gates()
+        r = expect("a gate that exits 3 because its timing checks were STARVED is a SKIP, never ok", d, "gate: selftest starved", md.SKIP)
+        _tick()
+        if r is not None and "STARVED" not in r.detail:
+            FAILURES.append(f"#1664: the skip's reason must be the gate's own first line (it says STARVED), got {r.detail!r}")
+        refusal = md.proof_refusal(0, d.gate_results())
+        _tick()
+        if not refusal or "gate: selftest starved" not in refusal:
+            FAILURES.append(f"#1664: a sweep with a STARVED gate must REFUSE to be recorded as a proof, naming the gate, got {refusal!r}")
+        md.GATES = (("selftest clean", ("python3", "scripts/_clean.py")),)
+        d = md.Doctor()
+        d.check_gates()
+        expect("CONTROL: a clean gate still passes", d, "gate: selftest clean", md.PASS)
+        _tick()
+        if md.proof_refusal(0, d.gate_results()) is not None:
+            FAILURES.append("#1664: CONTROL: a clean sweep must still be recordable as a proof")
+        _tick()
+        if "a gate failed" not in (md.proof_refusal(1, d.gate_results()) or ""):
+            FAILURES.append("#1664: a failed sweep must still refuse a proof, as a failure")
+    finally:
+        md.GATES, md.REPO = saved_gates, real
+
+
 def timeout_fixtures() -> None:
     """A gate that is KILLED did not run -- so it is a skip, and a real failure is still a FAIL.
 
@@ -426,6 +469,7 @@ def timeout_fixtures() -> None:
 def run() -> int:
     md.restore_sigint()   # #1635: a backgrounded run inherits SIGINT ignored; the Ctrl-C fixtures below need it
     timeout_fixtures()
+    starved_gate_fixtures()
     repo_untouched_fixtures()
     ruleset_fixtures()
     # ---- healthy machine: nothing may FAIL ---------------------------------------------

@@ -643,6 +643,18 @@ SLOW_GATES: dict[str, int] = {
 RATCHETED_GATES = frozenset({"mutation coverage"})
 
 
+def proof_refusal(rc: int, gate_results) -> str | None:
+    """Why a sweep must NOT be recorded as release proof, or None when it may be (#1664).
+
+    A proof says "every gate ran and passed on this exact tree", so any SKIP refuses it, and a gate that exits 3 is a SKIP (the `code == 3`
+    branch of `_check_gates`): `check_hook_gates.py` exits 3 when some timing checks were STARVED, i.e. decided by a machine too loaded
+    to judge the hook. Re-run on a quiet machine; never record around it."""
+    skipped = [r.name for r in gate_results if r.status == SKIP]
+    if rc != 0 or skipped:
+        return f"not recording a sweep proof: {'a gate failed' if rc else 'skipped: ' + ', '.join(skipped)}"
+    return None
+
+
 def slow_gate_command(name: str, cmd: tuple[str, ...], require_slow: bool) -> tuple[str, ...]:
     """The command a gate runs. `mutation coverage` gets `--ratchet` only on the run whose job is to prove it
     (`--require-slow`: CI's push and promotion runs). A seconds figure measured on a laptop under other sessions' load
@@ -1337,7 +1349,8 @@ class Doctor:
             elif code == 3:
                 # Exit 3 is a gate's own "I ran but could not check everything" — currently
                 # lint_markdown_code.py with node or ruby absent, which is the normal state of a
-                # cloud container. Reporting `ok` there would let 242 of 276 blocks go unchecked
+                # cloud container, and check_hook_gates.py when some timing checks were STARVED (the machine,
+                # not the hook, decided them: #1664), whose first output line is the reason and lists the labels. Reporting `ok` there would let 242 of 276 blocks go unchecked
                 # behind a green line, so it is a SKIP and the reason comes from the gate itself.
                 reason = out.strip().splitlines()[0] if out.strip() else "incomplete run"
                 self.add(SKIP, f"gate: {name}", reason,
@@ -1480,9 +1493,9 @@ def main(argv: list[str] | None = None) -> int:
     doctor = Doctor(fix=args.fix, require_slow=args.require_slow)
     rc = doctor.diagnose(gates=args.gates or args.gates_only, gates_only=args.gates_only, fast=args.fast)
     if args.record_proof:
-        skipped = [r.name for r in doctor.gate_results() if r.status == SKIP]
-        if rc != 0 or skipped:
-            print(f"not recording a sweep proof: {'a gate failed' if rc else 'skipped: ' + ', '.join(skipped)}")
+        refusal = proof_refusal(rc, doctor.gate_results())
+        if refusal:
+            print(refusal)
             if rc != 0:
                 # A failed full re-run must outrank an older success for the same tree (review of #1636).
                 try:
