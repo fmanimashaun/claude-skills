@@ -54,7 +54,9 @@ Everything else is exit 3 ("cannot tell"):
   by `&&` or `;` (so `if`/`while`/`until`/`for`/`case`, subshells, brace groups, functions, `eval`,
   `source`, `.`, `pushd`/`popd`, `chdir`, `builtin`, `export`, `!`, `$x`, and any word not in SAFE), and a
   cd joined by `||`, `|` or `&`;
-- a cd target with `$`, a backquote or `~user`; `-` or any option (`-P`, `-L`); a missing directory; a
+- a cd target with `$`, a backquote or `~user`, or an UNQUOTED glob or brace character (`* ? [ ] { }`, #1605: the shell
+  expands them, so `cd [a]` runs in `a` and `cd {a,ab}` in `a` (bash) or nowhere (zsh), never in a directory named
+  `[a]`; a quoted or backslash-escaped one is literal and is followed); `-` or any option (`-P`, `-L`); a missing directory; a
   relative path while CDPATH is set; a bare `cd` or one with two arguments; a redirect on a cd other than
   `>`, `>>`, `>&`;
 - a gh that is no command word of the grammar (`sudo gh`, `bash -c "…"`, `env -C dir gh`, any `env`
@@ -94,6 +96,11 @@ GIT_SAFE_SUB = {"status", "log", "diff", "show", "add", "commit", "push", "fetch
 GIT_OPTS = {"-c": 2, "-C": 2, "--no-pager": 1, "-P": 1}  # plus --config-env=… / --git-dir=… / --work-tree=…
 GH_SAFE_SUB = {"pr", "issue", "run", "auth", "api", "status", "search", "workflow"}
 META = set(" \t\n;&|()<>")
+# An UNQUOTED glob or brace character is expanded by the shell (#1605), but shlex strips the quotes, so by the time a cd target is read
+# `[a]` and `"[a]"` look alike. `prepare()` therefore marks the unquoted ones with a private-use character that survives lexing, and
+# `_target` refuses a path carrying it. A lone `[` or `]` is the `test` command and its closing word, not a glob: left as they are.
+GLOB_CHARS = "*?[]{}"
+GLOB_MARK = "\ue000"
 
 
 class Unresolved(Exception):
@@ -134,7 +141,8 @@ def prepare(cmd: str) -> str:
         elif c.isdigit() and word_start and re.match(r"\d+[<>]", cmd[i:]):
             i += re.match(r"\d+", cmd[i:]).end()
         else:
-            out.append(c)
+            lone = word_start and (i + 1 >= n or cmd[i + 1] in META)     # `[` or `]` as a word of its own: `test`
+            out.append(GLOB_MARK if c in GLOB_CHARS and not lone else c)
             i += 1
     return "".join(out)
 
@@ -143,6 +151,10 @@ def _target(args: list[str], here: str, home: str) -> str:
     if len(args) != 1:
         raise Unresolved("cd takes exactly one path here")
     a = args[0]
+    # The `isdir` check below would refuse the mark too (no directory is named with it), so this line only NAMES the reason: it is why
+    # no mutation is declared for it (#1605), and the marks `prepare()` leaves are what the fixtures and the mutations hold.
+    if GLOB_MARK in a:
+        raise Unresolved("cd to a path with an unquoted glob or brace character: the shell expands it")
     if a.startswith("-") or "$" in a or "`" in a:
         raise Unresolved(f"cd {a}")
     if a == "~" or a.startswith("~/"):
