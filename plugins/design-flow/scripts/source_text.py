@@ -78,7 +78,8 @@ def _skip_tag(source: str, i: int) -> int:
     while j < n:
         if source.startswith("<%", j):
             j = _skip_erb(source, j)
-        elif source[j] in "\"'":
+        elif source[j] in "\"'" and source[i:j].rstrip().endswith("="):
+            # ONLY AFTER `=` (#1653 N3): a quote anywhere else in a tag is part of an attribute NAME, and opens nothing.
             q, j = source[j], j + 1
             while j < n and source[j] != q:
                 j = _skip_erb(source, j) if source.startswith("<%", j) else j + 1
@@ -88,6 +89,36 @@ def _skip_tag(source: str, i: int) -> int:
         else:
             j += 1
     return n
+
+
+def _section_end(source: str, i: int, closer: str) -> int:
+    """Past a CDATA section or a processing instruction: to its own closer, or to the first `>` when it has none."""
+    end = source.find(closer, i)
+    return end + len(closer) if end >= 0 else _bogus_end(source, i)
+
+
+SCRIPT_TOKEN = re.compile(r"<!--|-->|</?script[\s/>]", re.I)
+
+
+def _script_end(source: str, i: int) -> int:
+    """Where a script body that starts at `i` ends: the start of its real `</script>` (#1653 N1). As the tokenizer's script
+    data states: `<!--` enters ESCAPED, a `<script` there enters DOUBLE-ESCAPED, where `</script` only steps back to
+    escaped; `-->` returns to plain script data. Only `</script` in plain or escaped data ends the body."""
+    state = "data"
+    for m in SCRIPT_TOKEN.finditer(source, i):
+        tok = m.group(0).lower()
+        if tok == "<!--":
+            state = "escaped" if state == "data" else state
+        elif tok == "-->":
+            state = "data"
+        elif tok.startswith("</"):
+            if state == "double":
+                state = "escaped"
+            else:
+                return m.start()
+        elif state == "escaped":                               # `<script` inside an escaped run
+            state = "double"
+    return len(source)
 
 
 def _bogus_end(source: str, i: int) -> int:
@@ -144,8 +175,10 @@ def blank_html_comments(source: str, *, html: bool = False) -> str:
             blank(c, m.end())
             i = m.end()
         elif nxt == "!":
-            if source[c + 2:c + 9].upper() == "DOCTYPE" or source.startswith("<![CDATA[", c):
-                i = _bogus_end(source, c)                          # a doctype or CDATA: markup, left live
+            if source.startswith("<![CDATA[", c):
+                i = _section_end(source, c, "]]>")                 # CDATA runs to `]]>` (#1653 N2), left live
+            elif source[c + 2:c + 9].upper() == "DOCTYPE":
+                i = _bogus_end(source, c)                          # a doctype: markup, left live
             else:
                 i = _bogus_end(source, c)
                 if html:
@@ -164,9 +197,13 @@ def blank_html_comments(source: str, *, html: bool = False) -> str:
             i = end
             # A trailing `/` does NOT close a non-void element in HTML (the self-closing flag is ignored outside foreign
             # content), so `<script/>` still opens raw text (#1651 review N4).
-            if name in RAW_TEXT:
+            if name == "script":
+                i = _script_end(source, end)
+            elif name in RAW_TEXT:
                 close = re.compile(rf"</{name}[\s/>]", re.I).search(source, end)
                 i = close.start() if close else n
+        elif nxt == "?":
+            i = _section_end(source, c, "?>")                     # a processing instruction runs to `?>` (#1653 N2), live
         else:
             i = c + 1
     out.append(source[last:])
@@ -262,6 +299,26 @@ def _selftest() -> int:
     expect("a lone `</` at the end of input is left as it is", strip_comments("<p>a</", html=True) == "<p>a</")
     expect("blank_html_comments keeps the bogus rule off by default",
            blank_html_comments("<! x> <p>") == "<! x> <p>" and blank_html_comments("<! x> <p>", html=True) == " <p>")
+
+    # The generic raw-text close, now that <script> has its own scanner (#1653): <style> carries the same two checks.
+    out = strip_comments('<style>x</styles><!--</style><p class="k-close2"></p>')
+    expect("`</styles>` does not close a <style>: the close tag needs a terminator", 'class="k-close2"' in out)
+    out = strip_comments('<style>s</style ><!-- c <button> --><p class="k-sp2"></p>')
+    expect("`</style >` (a space before `>`) closes the style", "button" not in out and 'class="k-sp2"' in out)
+
+    # #1653 (13's review of #1651, N1 to N3).
+    out = strip_comments("<script><!-- <script> </script> --> var x='<!--'; </script><i class=after></i>")
+    expect("N1: a script double-escaped by `<!-- <script>` ends only at its real `</script>`", "class=after" in out)
+    out = strip_comments("<script>a</script><!-- gone <b> --><i class=n1-control></i>")
+    expect("N1 control: a plain script still ends at `</script>`, and a comment after it is blanked",
+           "<b>" not in out and "class=n1-control" in out)
+    out = strip_comments("<svg><![CDATA[ a > <!-- b ]]></svg><p class=n2-cdata></p>", html=True)
+    expect("N2: CDATA runs to `]]>`, so a `<!--` inside it starts no comment", "class=n2-cdata" in out)
+    out = strip_comments("<?x > <!-- hid ?><p class=n2-pi></p>", html=True)
+    expect("N2: a processing instruction runs to `?>`, so a `<!--` inside it starts no comment", "class=n2-pi" in out)
+    out = strip_comments('<a b"c>\n<!-- hid <button> -->\n<p class=n3></p>')
+    expect("N3: a quote outside a value (not after `=`) opens nothing, so the comment after the tag is blanked",
+           "button" not in out and "class=n3" in out)
 
     # RUBY HAS NO HTML DATA STATE: a regex lookbehind is `<!` not followed by `--`, and blanking it hid a model's code.
     rb = '    Regexp.new("(?<![[:word:]])#{x}(?![[:word:]])", options)\n  end\n  def stack = "stack"\n'
