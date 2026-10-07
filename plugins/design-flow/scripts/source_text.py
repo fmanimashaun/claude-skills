@@ -58,6 +58,12 @@ RAW_TEXT = ("script", "style", "textarea", "title", "xmp", "iframe", "noembed", 
 TAG_NAME = re.compile(r"[A-Za-z][^\s/>]*")
 
 
+def _ascii_alpha(ch: str) -> bool:
+    """The tokenizer's ASCII ALPHA. `str.isalpha()` is Unicode-aware, so `<é` was taken for a tag and crashed on the
+    ASCII-only TAG_NAME (#1651 review R1); `</é` is a bogus comment in the standard, not an end tag."""
+    return ch.isascii() and ch.isalpha()
+
+
 def _skip_erb(source: str, i: int) -> int:
     """Past an ERB tag starting at `i` (`<%` ... `%>`); one never closed runs to the end."""
     end = source.find("%>", i + 2)
@@ -143,17 +149,19 @@ def blank_html_comments(source: str, *, html: bool = False) -> str:
                     blank(c, i)
         elif nxt == "/":
             after = source[c + 2:c + 3]
-            if after.isalpha() or after == ">" or after == "":
-                i = _bogus_end(source, c) if after.isalpha() else c + 2   # an end tag, `</>`, or a lone `</` at the end
+            if _ascii_alpha(after) or after == ">" or after == "":
+                i = _bogus_end(source, c) if _ascii_alpha(after) else c + 2   # an end tag, `</>`, or a lone `</` at the end
             else:
                 i = _bogus_end(source, c)
                 if html:
                     blank(c, i)
-        elif nxt.isalpha():
+        elif _ascii_alpha(nxt):
             end = _skip_tag(source, c)
             name = TAG_NAME.match(source, c + 1).group(0).lower()
             i = end
-            if name in RAW_TEXT and not source[c:end].rstrip(">").endswith("/"):
+            # A trailing `/` does NOT close a non-void element in HTML (the self-closing flag is ignored outside foreign
+            # content), so `<script/>` still opens raw text (#1651 review N4).
+            if name in RAW_TEXT:
                 close = re.compile(rf"</{name}[\s/>]", re.I).search(source, end)
                 i = close.start() if close else n
         else:
@@ -219,6 +227,29 @@ def _selftest() -> int:
     # NOT COMMENTS, so left exactly as they are.
     for src in ('<!DOCTYPE html><p class="d"></p>', '<?xml version="1.0"?><p class="d"></p>', '<p></></p>'):
         expect(f"{src[:12]!r} is not a comment and is left as it is", strip_comments(src, html=True) == src)
+    # #1651 REVIEW: each of these broke with nothing failing.
+    for odd in ("a <é b", "x <ß>", "</é z>"):
+        try:
+            strip_comments(odd, html=True)
+            ok_ = True
+        except Exception:  # noqa: BLE001
+            ok_ = False
+        expect(f"a non-ASCII letter after `<` does not crash ({odd!r})", ok_)
+    expect("`</é` is a bogus comment (ASCII alpha only starts an end tag)", "é" not in strip_comments("</é z> <p>", html=True))
+    out = strip_comments('<div <%= "x" if a > b %> title="<!-- t"><p class="k-erb"></p>')
+    expect("ERB in a tag OUTSIDE any quote is opaque: its `>` does not end the tag", 'class="k-erb"' in out)
+    # A LITERAL list, not RAW_TEXT itself: a loop over the tuple under test loses an element's check with the element.
+    for name in ("script", "style", "textarea", "title", "xmp", "iframe", "noembed", "noframes"):
+        out = strip_comments(f'<{name}><!--</{name}><p class="k-{name}"></p>')
+        expect(f"`<!--` inside a <{name}> body starts no comment", f'class="k-{name}"' in out)
+    out = strip_comments('<script>x</scripts><!--</script><p class="k-close"></p>')
+    expect("`</scripts>` does not close a <script>: the close tag needs a terminator", 'class="k-close"' in out)
+    out = strip_comments("<input value='a > <!-- b'><button class=\"k-single\">x</button>")
+    expect("a single-quoted attribute value is opaque too", 'class="k-single"' in out)
+    expect("`<!doctype` is a doctype in any case", strip_comments("<!doctype html><p>", html=True) == "<!doctype html><p>")
+    out = strip_comments('<script/><!--</script><p class="k-sc"></p>')
+    expect("`<script/>` still opens a raw-text body (a trailing `/` closes no HTML element)", 'class="k-sc"' in out)
+
     # RUBY HAS NO HTML DATA STATE: a regex lookbehind is `<!` not followed by `--`, and blanking it hid a model's code.
     rb = '    Regexp.new("(?<![[:word:]])#{x}(?![[:word:]])", options)\n  end\n  def stack = "stack"\n'
     expect("by default (a Ruby file) a `(?<!` lookbehind is not a bogus comment", strip_comments(rb) == rb)

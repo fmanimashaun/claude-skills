@@ -54,7 +54,7 @@ GUARD = Guard(
         ),
         Mutation(
             "a <script>/<style> body is read as markup",
-            '            if name in RAW_TEXT and not source[c:end].rstrip(">").endswith("/"):',
+            '            if name in RAW_TEXT:',
             '            if False:',
             "`<!--` inside a <script> body starts no comment",
         ),
@@ -78,8 +78,8 @@ GUARD = Guard(
         ),
         Mutation(
             "`</ x` is left live instead of being blanked as a bogus comment",
-            '                if html:\n                    blank(c, i)\n        elif nxt.isalpha():',
-            '                if False:\n                    blank(c, i)\n        elif nxt.isalpha():',
+            '                if html:\n                    blank(c, i)\n        elif _ascii_alpha(nxt):',
+            '                if False:\n                    blank(c, i)\n        elif _ascii_alpha(nxt):',
             "`</` followed by a non-letter is a bogus comment",
         ),
         Mutation(
@@ -87,6 +87,49 @@ GUARD = Guard(
             '                if html:\n                    blank(c, i)\n        elif nxt == "/":',
             '                if True:\n                    blank(c, i)\n        elif nxt == "/":',
             "a `(?<!` lookbehind is not a bogus comment",
+        ),
+        # #1651 review R1 and R2.
+        Mutation(
+            "Unicode letters start a tag again, so `<é` crashes on the ASCII tag-name pattern",
+            '    return ch.isascii() and ch.isalpha()',
+            '    return ch.isalpha()',
+            "a non-ASCII letter after `<` does not crash",
+        ),
+        Mutation(
+            "ERB outside a quote inside a tag is not skipped, so its `>` ends the tag",
+            '        if source.startswith("<%", j):\n            j = _skip_erb(source, j)\n        elif source[j] in',
+            '        if False:\n            j = _skip_erb(source, j)\n        elif source[j] in',
+            "ERB in a tag OUTSIDE any quote is opaque",
+        ),
+        Mutation(
+            "<textarea> is no longer a raw-text element",
+            'RAW_TEXT = ("script", "style", "textarea", "title", "xmp", "iframe", "noembed", "noframes")',
+            'RAW_TEXT = ("script", "style", "title", "xmp", "iframe", "noembed", "noframes")',
+            "inside a <textarea> body starts no comment",
+        ),
+        Mutation(
+            "the close tag needs no terminator, so `</scripts>` ends a <script>",
+            '                close = re.compile(rf"</{name}[\\s/>]", re.I).search(source, end)',
+            '                close = re.compile(rf"</{name}", re.I).search(source, end)',
+            "`</scripts>` does not close a <script>",
+        ),
+        Mutation(
+            "a single quote no longer opens an attribute value",
+            '        elif source[j] in "\\"\'":',
+            '        elif source[j] in "\\"":',
+            "a single-quoted attribute value is opaque too",
+        ),
+        Mutation(
+            "DOCTYPE is matched case-sensitively, so `<!doctype` is blanked as a bogus comment",
+            '            if source[c + 2:c + 9].upper() == "DOCTYPE" or source.startswith("<![CDATA[", c):',
+            '            if source[c + 2:c + 9] == "DOCTYPE" or source.startswith("<![CDATA[", c):',
+            "`<!doctype` is a doctype in any case",
+        ),
+        Mutation(
+            "a trailing `/` closes a raw-text element again, so `<script/>` is read as markup",
+            '            if name in RAW_TEXT:',
+            '            if name in RAW_TEXT and not source[c:end].rstrip(">").endswith("/"):',
+            "`<script/>` still opens a raw-text body",
         ),
         Mutation(
             "a doctype is blanked as a bogus comment",
