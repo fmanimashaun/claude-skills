@@ -839,7 +839,10 @@ def _shell_fed(body: str) -> list[tuple[str, str]]:
     out: list[tuple[str, str]] = []
     seen: set[tuple[str, str]] = set()
     shell = False
+    resume = 0                  # a marker inside an operand already taken belongs to it: `_runs` reads it there (else n markers = n overlapping re-reads, exponential)
     for m in _FED_SCAN.finditer(body):
+        if m.start() < resume:
+            continue
         if m.lastgroup == "sep":
             shell = False
         elif m.lastgroup == "shell":
@@ -853,8 +856,10 @@ def _shell_fed(body: str) -> list[tuple[str, str]]:
                 k = bisect.bisect_left(ends, start)
                 text = body[start:ends[k] if k < len(ends) else len(body)]
                 found = (kind, text) if text else None
+                resume = start + len(text)
             elif (r := _FED_READ.match(body, at)):
                 found = ("read", r.group(1))
+                resume = r.end()
             else:
                 found = None
             if found and found not in seen:
@@ -1609,7 +1614,8 @@ def selftest() -> int:
         for shape, why_ in (("bash " + "<&>" * 50000 + " ok", "50,000 x `<&>` after a shell word (CodeQL's shape)"),
                             ("bash " + "<&>" * 50000 + "$(echo hi)", "50,000 x `<&>` before an echo substitution"),
                             ("bash " * 50000, "50,000 shell words with no substitution (a rescan from each)"),
-                            ("$(" * 50000, "50,000 nested `$(` (each span re-read)")):
+                            ("$(" * 50000, "50,000 nested `$(` (each span re-read)"),
+                            ("bash <(echo " * 40, "40 x `bash <(echo ` (each marker's operand re-read by the next: exponential)")):
             try:
                 done = subprocess.run([sys.executable, "-c", timing.format(shape=shape), str(Path(__file__).resolve().parent)],
                                       capture_output=True, text=True, timeout=30)

@@ -873,7 +873,8 @@ def guard_bash_fixtures() -> None:
     # hook has to DECIDE (allow: nothing is created) within its budget, and a hang is the harness's timeout (rc 124, recorded as a failure).
     for cmd, want, why in (("bash " + "<&>" * 50000 + " ok", 0, "50,000 x `<&>` after a shell word"),
                            ("bash " + "<&>" * 50000 + "$(echo hi)", 0, "50,000 x `<&>` before an echo substitution"),
-                           ("bash " * 50000, 2, "50,000 shell words (a script file named `bash` cannot be read: refused)")):
+                           ("bash " * 50000, 2, "50,000 shell words (a script file named `bash` cannot be read: refused)"),
+                           ("bash <(echo " * 200, 0, "200 x `bash <(echo ` (each operand re-read by the next marker: exponential)")):
         began = time.monotonic()
         rc, err = labelled(cmd)
         took = time.monotonic() - began

@@ -610,6 +610,12 @@ GUARD = Guard(
             "(#1645 CodeQL) 50,000 nested `$(`",
         ),
         Mutation(
+            "a marker inside an operand already taken is taken again, so `bash <(echo ` repeated re-reads each operand and the cost doubles per repetition",
+            "        if m.start() < resume:",
+            "        if False:",
+            "(#1645 CodeQL) 40 x `bash <(echo `",
+        ),
+        Mutation(
             "backslash-newlines are joined before comments are stripped, so a comment ending in a backslash swallows the create on the next line",
             "    cmd = _strip_comments(cmd).replace(\"\\\\\\n\", \"\").replace(\"\\n\", \" ; \")",
             "    cmd = _strip_comments(cmd.replace(\"\\\\\\n\", \"\")).replace(\"\\n\", \" ; \")",
