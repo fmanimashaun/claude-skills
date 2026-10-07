@@ -316,14 +316,14 @@ _ROWS = (
     ('file:symlink to a script', 'full', 'full', 'bash @FX@/link.sh', 'block', ''),
     ('file:dangling symlink', 'full', 'full', 'bash @FX@/dangling.sh', 'block', ''),
     ('file:CRLF script', 'full', 'full', 'bash @FX@/crlf.sh', 'block', ''),
-    ('file:UTF-16 script', 'full', 'full', 'bash @FX@/utf16.sh', 'allow', '#1671'),
+    ('file:UTF-16 script', 'full', 'full', 'bash @FX@/utf16.sh', 'block', ''),
     ('file:NUL byte before create', 'full', 'full', 'bash @FX@/nul.sh', 'block', ''),
-    ('file:UTF-8 BOM script', 'fast', 'full', 'bash @FX@/bom.sh', 'allow', '#1671'),
+    ('file:UTF-8 BOM script', 'fast', 'full', 'bash @FX@/bom.sh', 'block', ''),
     ('file:invalid UTF-8 script', 'full', 'full', 'bash @FX@/invalid_utf8.sh', 'block', ''),
     ('file:empty script (control)', 'fast', 'full', 'bash @FX@/empty.sh', 'allow', ''),
     ('file:/dev/zero', 'full', 'full', 'bash /dev/zero', 'block', ''),
     ('file:/dev/stdin', 'full', 'full', 'bash /dev/stdin', 'block', ''),
-    ('file:/dev/null (control?)', 'full', 'full', 'bash /dev/null', 'block', '#1671'),
+    ('file:/dev/null (control?)', 'fast', 'full', 'bash /dev/null', 'block', '#1656 (moved from #1671): a device file is refused as unreadable'),
     ('file:/proc/self/environ', 'full', 'full', 'bash /proc/self/environ', 'block', ''),
     ('file:/dev/fd/0', 'full', 'full', 'bash /dev/fd/0', 'block', '')
 )
@@ -350,7 +350,7 @@ def _big() -> list[Case]:
     for mode in ("full", "nogrep", "notr"):
         for label, cmd, want in shapes:
             if mode != "full" and want == "allow":
-                continue        # the no-grep / no-tr paths spend the hook's whole 6 s deadline on 137 KB: that is timing, not logic (#1671)
+                continue        # the no-grep / no-tr paths spend the hook's whole 6 s deadline on 137 KB: that is timing, not logic (#1656)
             tier = "fast" if mode == "full" and label == "create then 137KB filler" else "full"
             out.append(Case(f"size:{label}" + ("" if mode == "full" else f"@{mode}"), tier, mode, cmd, want))
     return out
