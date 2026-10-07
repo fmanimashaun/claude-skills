@@ -573,12 +573,11 @@ def _selftest() -> int:
         # and a fixture that stubbed that out would test everything except the part that fails.
         # Modelled on the hand measurement in #1048: a suite where SOME cases catch the old
         # implementation and one does not, so the correct answer is a SPLIT -- not all, not none.
+        import sys as _sys; _sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "plugins" / "rails-flow" / "scripts")); import fixture_git as _fg  # #1588
         def _g(*a):
-            subprocess.run(("git", *a), cwd=root, capture_output=True, text=True, check=False)
+            return _fg.run(root, *a, check=False)               # bound to this temp repo (#1588)
 
-        _g("init", "-q")
-        _g("config", "user.email", "selftest@example.invalid")
-        _g("config", "user.name", "selftest")
+        _fg.init(root)
         # OLD: returns every token. Right on the plain case by luck, wrong on the splat.
         (root / "scripts" / "widget.py").write_text(
             "def keys(text):\n"

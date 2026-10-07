@@ -258,7 +258,7 @@ def repo_untouched_fixtures() -> None:
         # pull a no-op, and the control passed without ever seeing a foreign commit (#1594 review). The
         # log assertion below keeps it from going vacuous again.
         _git(other, "checkout", "-q", "dev")
-        _git(other, "-c", "user.email=someone@else", "-c", "user.name=s", "commit", "-q", "--allow-empty", "-m", "theirs")
+        _git(other, "-c", "user.email=someone@else", "-c", "user.name=s", "commit", "-q", "--allow-empty", "-m", "theirs")  # fixture-git: exempt (a deliberately FOREIGN author: the test needs a commit not by the configured user; bound through fixture_git by _git)
         _git(other, "push", "-q", "origin", "dev")
         (scripts / "_fetch.py").write_text(
             "import subprocess\n"

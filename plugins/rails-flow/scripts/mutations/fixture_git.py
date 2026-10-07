@@ -57,7 +57,7 @@ GUARD = Guard(
         Mutation(
             "an unknown leading option is let through, so `--config-env x=y --git-dir REAL` rebinds the repo (#1660 R2)",
             '        else:\n            raise NotATempRepo(f"{a!r} before the subcommand',
-            '        elif False:\n            raise NotATempRepo(f"{a!r} before the subcommand',
+            '        else:\n            i += 1; NotATempRepo(f"{a!r} before the subcommand',
             "a leading --config-env core.x=HOME ... is refused",
         ),
     ),

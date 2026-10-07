@@ -1511,8 +1511,7 @@ def guard_claims_fixtures() -> None:
                 _run(["git", *args], cwd=root, capture_output=True)
             target.write_text("x\n", encoding="utf-8")
             _run(["git", "add", "-A"], cwd=root, capture_output=True)
-            _run(["git", "-c", "user.email=f@e", "-c", "user.name=f",
-                            "commit", "-qm", "base"], cwd=root, capture_output=True)
+            _fixture_git(root, "commit", "-qm", "base", check=False)
             target.write_text("changed\n", encoding="utf-8")
             return run_hook("guard-claims.sh", cwd=root,
                             stdin=json.dumps({"tool_input": {
@@ -1545,8 +1544,7 @@ def guard_claims_fixtures() -> None:
             (a / "skills" / "x.md").write_text("x\n", encoding="utf-8")
             for d in (a, b):
                 _run(["git", "add", "-A"], cwd=d, capture_output=True)
-                _run(["git", "-c", "user.email=f@e", "-c", "user.name=f", "commit", "-qm", "base"],
-                     cwd=d, capture_output=True)
+                _fixture_git(d, "commit", "-qm", "base", check=False)
             (a / "skills" / "x.md").write_text("changed\n", encoding="utf-8")
             # STAGED, because another repository is read through its staged diff only (no code from the target,
             # #1516): an unstaged change would let a hook that read the wrong repository look right.
@@ -1583,8 +1581,7 @@ def guard_claims_fixtures() -> None:
             (b / "skills" / "x.md").write_text("x\n", encoding="utf-8")
             for d in (a, b):
                 _run(["git", "add", "-A"], cwd=d, capture_output=True)
-                _run(["git", "-c", "user.email=f@e", "-c", "user.name=f", "commit", "-qm", "base"],
-                     cwd=d, capture_output=True)
+                _fixture_git(d, "commit", "-qm", "base", check=False)
             (b / "README.md").write_text("changed\n", encoding="utf-8")        # a working-tree change to hash
             if stage_skills:
                 (b / "skills" / "x.md").write_text("changed\n", encoding="utf-8")
@@ -1620,8 +1617,7 @@ def guard_claims_fixtures() -> None:
                 _run(["git", "init", "-q", "-b", "main"], cwd=d, capture_output=True)
                 (d / "README.md").write_text("x\n", encoding="utf-8")
                 _run(["git", "add", "-A"], cwd=d, capture_output=True)
-                _run(["git", "-c", "user.email=f@e", "-c", "user.name=f", "commit", "-qm", "base"],
-                     cwd=d, capture_output=True)
+                _fixture_git(d, "commit", "-qm", "base", check=False)
             big = a if big_repo == "session" else b
             (big / "skills").mkdir()
             for i in range(2500):

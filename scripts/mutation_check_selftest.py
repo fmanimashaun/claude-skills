@@ -925,7 +925,7 @@ def run() -> int:
     with _tf.TemporaryDirectory() as _w:
         _real = Path(_w) / "real"
         _sp.run(["git", "init", "-q", str(_real)], check=True, env=mc.hermetic_git.env())
-        _sp.run(["git", "-C", str(_real), "-c", "user.email=x@x", "-c", "user.name=x", "commit", "-q",
+        _sp.run(["git", "-C", str(_real), "-c", "user.email=x@x", "-c", "user.name=x", "commit", "-q",  # fixture-git: exempt (the stand-in for the real repo in the incident replay: its own temp dir, under hermetic_git's env)
                  "--allow-empty", "-m", "real"], check=True, env=mc.hermetic_git.env())
         _env = mc.hermetic_git.env({**os.environ, "GIT_DIR": str(_real / ".git")})
         _tmp = Path(_w) / "probe"

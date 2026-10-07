@@ -1291,9 +1291,15 @@ GUARD = Guard(
             'fixture-git-bypass: an exemption without a reason is still a finding',
         ),
         Mutation(
+            "fixture-git-bypass no longer sees an identity in --author (#1660 review R4)",
+            '''                               r"""|--author["']?[\\s,=]+["']?[^"'<]*<[\\w.+-]+@[\\w.-]+>""")''',
+            '''                               r"""|--author-never-matches""")''',
+            'fixture-git-bypass: an email in --author outside fixture_git is a finding',
+        ),
+        Mutation(
             "fixture-git-bypass no longer sees an env-dict identity",
-            """_FIXTURE_IDENTITY = re.compile(r\"\"\"user\\.email=t@t|(?:EMAIL|email)[\"']?\\s*[:=,]\\s*[\"']t@t[\"']|[\"']t@t[\"']\\s*\\)\"\"\")""",
-            """_FIXTURE_IDENTITY = re.compile(r\"\"\"user\\.email=t@t|[\"']t@t[\"']\\s*\\)\"\"\")""",
+            '''                               r"""|GIT_(?:AUTHOR|COMMITTER)_EMAIL["']?\\s*[:=,]\\s*["'][\\w.+-]+@[\\w.-]+["']"""''',
+            '''                               r"""|GIT_NEVER_MATCHES"""''',
             'fixture-git-bypass: a GIT_AUTHOR_EMAIL env entry outside fixture_git is a finding',
         ),
     ),

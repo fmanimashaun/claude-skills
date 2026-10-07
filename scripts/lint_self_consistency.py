@@ -636,7 +636,13 @@ def check_fixture_git_drift() -> tuple[list[Finding], int]:
 # The fixture identity `t@t` marks a fixture's git: production code never commits as it. Every such call goes
 # through fixture_git, which binds GIT_DIR/GIT_WORK_TREE to the temp repo and refuses one whose init failed --
 # the incident was a fixture's `git commit` landing in the real dev checkout through an inherited cwd and GIT_DIR.
-_FIXTURE_IDENTITY = re.compile(r"""user\.email=t@t|(?:EMAIL|email)["']?\s*[:=,]\s*["']t@t["']|["']t@t["']\s*\)""")
+# ANY FIXTURE IDENTITY (#1660 review R4), not only `t@t`: an email in `-c user.email=`, in a GIT_AUTHOR/COMMITTER_EMAIL
+# entry, set with `config user.email`, or in `--author "name <email>"`. Production code sets none of these.
+_FIXTURE_IDENTITY = re.compile(r"""user\.email=[\w.+-]+@[\w.-]+"""
+                               r"""|GIT_(?:AUTHOR|COMMITTER)_EMAIL["']?\s*[:=,]\s*["'][\w.+-]+@[\w.-]+["']"""
+                               r"""|\bemail\s*=\s*["']t@t["']"""
+                               r"""|["']user\.email["']\s*,\s*["'][\w.+-]+@[\w.-]+["']"""
+                               r"""|--author["']?[\s,=]+["']?[^"'<]*<[\w.+-]+@[\w.-]+>""")
 _FIXTURE_EXEMPT = re.compile(r"#\s*fixture-git:\s*exempt\s*\([^)]+\)")
 
 
@@ -4861,6 +4867,14 @@ def selftest() -> int:
                         ("a keyword email", 'git_env(email="t@t")\n')):
         scenario(f"fixture-git-bypass: {label} outside fixture_git is a finding", rule="fixture-git-bypass",
                  expect_finding=True, files={"plugins/x/scripts/x_selftest.py": body})
+    # #1660 review R4: any fixture identity, not only `t@t`.
+    for label, body in (("another email in -c user.email=", 'subprocess.run(["git", "-c", "user.email=f@e", "commit"])\n'),
+                        ("an email set with config user.email", 'git("config", "user.email", "t@example.com")\n'),
+                        ("an email in --author", 'subprocess.run(["git", "commit", "--author", "t <t@t>"])\n')):
+        scenario(f"fixture-git-bypass: {label} outside fixture_git is a finding", rule="fixture-git-bypass",
+                 expect_finding=True, files={"plugins/x/scripts/x_selftest.py": body})
+    scenario("fixture-git-bypass: an email in Ruby test data is not a git identity, and silent", rule="fixture-git-bypass",
+             expect_finding=False, files={"plugins/x/scripts/x_selftest.py": "'    User.create!(email: \"a@b.test\")\\n'\n"})
     scenario("fixture-git-bypass: an exempt line with a reason is silent", rule="fixture-git-bypass", expect_finding=False,
              files={"plugins/x/scripts/x_selftest.py":
                     'subprocess.run(["git", "-c", "user.email=t@t", "worktree", "add"])  # fixture-git: exempt (worktree add)\n'})
