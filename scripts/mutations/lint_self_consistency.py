@@ -1278,5 +1278,23 @@ GUARD = Guard(
             '        if False:',
             'fixture-git-drift / a fixture_git copy that differs by one byte is a finding',
         ),
+        Mutation(
+            "fixture-git-bypass never reports a fixture identity outside fixture_git (#1588 part 2)",
+            '            findings.append(Finding("fixture-git-bypass", str(rel), n,',
+            '            None and findings.append(Finding("fixture-git-bypass", str(rel), n,',
+            'fixture-git-bypass: a -c user.email=t@t argv outside fixture_git is a finding',
+        ),
+        Mutation(
+            "fixture-git-bypass accepts an exemption with no reason",
+            '_FIXTURE_EXEMPT = re.compile(r"#\\s*fixture-git:\\s*exempt\\s*\\([^)]+\\)")',
+            '_FIXTURE_EXEMPT = re.compile(r"#\\s*fixture-git:\\s*exempt")',
+            'fixture-git-bypass: an exemption without a reason is still a finding',
+        ),
+        Mutation(
+            "fixture-git-bypass no longer sees an env-dict identity",
+            """_FIXTURE_IDENTITY = re.compile(r\"\"\"user\\.email=t@t|(?:EMAIL|email)[\"']?\\s*[:=,]\\s*[\"']t@t[\"']|[\"']t@t[\"']\\s*\\)\"\"\")""",
+            """_FIXTURE_IDENTITY = re.compile(r\"\"\"user\\.email=t@t|[\"']t@t[\"']\\s*\\)\"\"\")""",
+            'fixture-git-bypass: a GIT_AUTHOR_EMAIL env entry outside fixture_git is a finding',
+        ),
     ),
 )
