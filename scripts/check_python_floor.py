@@ -13,13 +13,15 @@ WHAT IS CHECKED, over `plugins/**/*.py` and every `python3 -c '...'` block in a 
    rest of what the grammar flag covers. On an interpreter older than 3.12 it is the real parser.
 2. The PEP 701 f-string forms, which `feature_version` does NOT reject (measured: it parses a
    backslash in an f-string expression under feature_version=(3, 9) on 3.14): a backslash, a
-   newline in a single-quoted f-string, or the enclosing quote character, inside an expression.
+   newline in a single-quoted f-string, the enclosing quote character, or a `#` comment, inside an expression.
 3. When a real Python 3.9 is on the machine, `compile()` under it: the authority, and reported as
    a note when there is none, because a check that silently ran only the approximation would read
    as the same claim.
 
 NOT CHECKED: what 3.9 only reveals at RUN time (`int | None` in an evaluated annotation, a stdlib
-name added after 3.9). A SyntaxError is what crashes a hook before it can fail open or closed.
+name or argument added after 3.9: measured on 2026-10-07 by running each of the 125 non-mutation shipped scripts with `--help` on
+3.9.6, exactly one, `validate_evidence_selftest.py`'s `Path.write_text(newline=)`, a 3.10+ argument, fixed here). A SyntaxError is what
+crashes a hook before it can fail open or closed, which is why it is the part gated.
 
 Exit 0 clean, 1 findings, 2 unusable (nothing to check). `--selftest` proves each rule can fail.
 """
@@ -48,27 +50,33 @@ def _quote_of(opening: str) -> str:
     return ""
 
 
-def _fstring_ranges(source: str) -> list[tuple[tuple[int, int], tuple[int, int], str]]:
-    """(start, end, quote) of every f-string LITERAL PIECE, from the 3.12 tokenizer. A JoinedStr built by implicit
-    concatenation (`"a" f'{x}'`) has one quote per piece, so the AST node alone cannot say which one encloses an expression."""
+def _fstring_tokens(source: str):
+    """From the 3.12 tokenizer: (ranges, comments). `ranges` is (start, end, quote) of every f-string LITERAL PIECE; a JoinedStr built by
+    implicit concatenation (`"a" f'{x}'`) has one quote per piece, so the AST node alone cannot say which one encloses an expression.
+    `comments` is the start of every COMMENT token that falls INSIDE an f-string: only an expression can hold one, because a `#` in the
+    literal text is FSTRING_MIDDLE and a `#` in a string inside the expression is a STRING token, which 3.9 accepts (so a bare `'#' in text`
+    test would be a false positive)."""
     import io
     import tokenize
 
-    ranges, stack = [], []
+    ranges, comments, stack = [], [], []
     for tok in tokenize.generate_tokens(io.StringIO(source).readline):
         if tok.type == tokenize.FSTRING_START:
             stack.append((tok.start, _quote_of(tok.string)))
         elif tok.type == tokenize.FSTRING_END and stack:
             start, quote = stack.pop()
             ranges.append((start, tok.end, quote))
-    return ranges
+        elif tok.type == tokenize.COMMENT and stack:
+            comments.append(tok.start)
+    return ranges, comments
 
 
 def pep701_findings(source: str, tree: ast.AST) -> list[tuple[int, str]]:
     """Expressions inside an f-string that only 3.12+ parses. Needed only where the interpreter is 3.12+;
     an older one rejects them in `ast.parse` already."""
     found: list[tuple[int, str]] = []
-    ranges = _fstring_ranges(source)
+    ranges, comments = _fstring_tokens(source)
+    found.extend((row, "a # comment inside an f-string expression (3.12+)") for row, _ in comments)
     lines = source.splitlines()
     for part in ast.walk(tree):
         if not isinstance(part, ast.FormattedValue):
@@ -180,6 +188,12 @@ def selftest() -> int:
            bool(parse_findings("d = {'k': 1}\nprint(f\"{d[\"k\"]}\")\n", "t.py")))
     expect("a backslash OUTSIDE the expression is fine", parse_findings("print(f'line\\n{1}')\n", "t.py") == [])
     expect("a different quote inside the expression is fine", parse_findings("d = {'k': 1}\nprint(f\"{d['k']}\")\n", "t.py") == [])
+    expect("a # comment inside an f-string expression is refused",
+           bool(parse_findings('x = 1\nprint(f"""{x # note\n}""")\n', "t.py")))
+    expect("a # comment inside a parenthesised f-string expression is refused",
+           bool(parse_findings('x = 1\nprint(f"""{(x # note\n)}""")\n', "t.py")))
+    expect("a # inside a string literal in the expression is fine (3.9 accepts it)", parse_findings("print(f\"{'#'}\")\n", "t.py") == [])
+    expect("a # in an f-string's literal text is fine", parse_findings('x = 1\nprint(f"# {x}")\n', "t.py") == [])
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)

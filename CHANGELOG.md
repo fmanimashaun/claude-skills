@@ -9,7 +9,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ### Unreleased
 
-- **A gate that every shipped plugin script parses on Python 3.9 — `scripts/check_python_floor.py`, `scripts/mutations/check_python_floor.py`, `scripts/maintainer_doctor.py`** (#1597). Hooks run as `python3` on the user's machine, which on stock macOS is 3.9, while CI pins 3.12, so a newer-syntax change shipped unseen and a fail-closed hook then denied everything. The gate parses every `plugins/**/*.py` (227 files) and every `python3 -c` block in a plugin hook shell (14) on the 3.9 grammar, adds the PEP 701 f-string forms the grammar flag does not reject (a backslash, the enclosing quote, or a newline inside an expression), and compiles under a real 3.9 when the machine has one, saying so when it does not. **Measured** on `/usr/bin/python3` 3.9.6 against dev: 2 files failed; after the fix, 0. Not covered: what 3.9 reveals only at run time (an evaluated `int | None` annotation). The guard catches 6 mutations; the real-3.9 rule is not mutated because it runs only where a 3.9 exists.
+- **A gate that every shipped plugin script parses on Python 3.9 — `scripts/check_python_floor.py`, `scripts/mutations/check_python_floor.py`, `scripts/maintainer_doctor.py`** (#1597). Hooks run as `python3` on the user's machine, which on stock macOS is 3.9, while CI pins 3.12, so a newer-syntax change shipped unseen and a fail-closed hook then denied everything. The gate parses every `plugins/**/*.py` (227 files) and every `python3 -c` block in a plugin hook shell (14) on the 3.9 grammar, adds the PEP 701 f-string forms the grammar flag does not reject (a backslash, the enclosing quote, or a newline inside an expression), and compiles under a real 3.9 when the machine has one, saying so when it does not. **Measured** on `/usr/bin/python3` 3.9.6 against dev: 2 files failed; after the fix, 0. Not covered: what 3.9 reveals only at run time (an evaluated `int | None` annotation). The gate also refuses a `#` comment inside an f-string expression, found with the 3.12 tokenizer's COMMENT tokens (a bare `'#'` test would flag `f"{'#'}"`, which 3.9 accepts); it was missed in the first draft and found in review by running the real 3.9. The guard catches 7 mutations; the real-3.9 rule is not mutated because it runs only where a 3.9 exists. The run-time gap is measured, not assumed: of the 125 non-mutation shipped scripts run with `--help` on 3.9.6, exactly one failed, a selftest (`validate_evidence_selftest.py`'s `Path.write_text(newline=)`, a 3.10+ argument), fixed here.
 
 ### 2026-10-06 (release v1.154.0)
 
@@ -11703,6 +11703,8 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 ## qa-flow (independent QA plugin)
 
 ### Unreleased
+
+- **`validate_evidence.py --selftest` no longer crashes on Python 3.9 — `plugins/qa-flow/scripts/validate_evidence_selftest.py`** (#1597). Its fixture writer called `Path.write_text(newline=)`, an argument added in 3.10, so the selftest raised a `TypeError` on the stock macOS `python3`; it now writes through `Path.open("w", newline="")`. Measured on 3.9.6: 281 checks pass, on 3.9 and on 3.14.
 
 - **The README names the Python floor, 3.9 — `plugins/qa-flow/README.md`** (#1597). The scripts this plugin ships parse on the `python3` stock macOS ships, and a change that needs newer syntax is refused before it ships.
 

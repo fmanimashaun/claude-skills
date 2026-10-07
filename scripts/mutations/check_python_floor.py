@@ -30,6 +30,12 @@ GUARD = Guard(
             "the f-string's own quote reused in its expression is refused",
         ),
         Mutation(
+            "a # comment inside an f-string expression is allowed",
+            "        elif tok.type == tokenize.COMMENT and stack:",
+            "        elif False:",
+            "a # comment inside an f-string expression is refused",
+        ),
+        Mutation(
             "an empty tree reads clean",
             "    if count == 0:",
             "    if False:",
