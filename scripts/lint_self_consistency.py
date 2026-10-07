@@ -674,7 +674,9 @@ def check_cross_plugin_relative_path() -> tuple[list[Finding], int]:
     # rails-stack ships the top-level skills/ (its marketplace source is the repo root), so it has no
     # plugins/ directory but is still a plugin a doc could wrongly reach into.
     plugins = sorted({p.name for p in (ROOT / "plugins").glob("*") if p.is_dir()} | {"rails-stack"})
-    pattern = re.compile(r"(?<![\w.])(?:\.\./)+(" + "|".join(map(re.escape, plugins)) + r")/")
+    # `(?:plugins/)?` catches the clone path a rails-stack skill would write (`../../plugins/rails-flow/`);
+    # `(?![\w-])` ends the name without needing a slash (`cd ../rails-flow`) and keeps `rails-flow-x` out.
+    pattern = re.compile(r"(?<![\w.])(?:\.\./)+(?:plugins/)?(" + "|".join(map(re.escape, plugins)) + r")(?![\w-])")
     docs = [(p, p.relative_to(ROOT).as_posix().split("/")[1]) for p in sorted((ROOT / "plugins").glob("*/**/*.md"))]
     docs += [(p, "rails-stack") for p in sorted((ROOT / "skills").glob("**/*.md"))]
     examined = 0
@@ -3794,8 +3796,8 @@ def run() -> tuple[list[Finding], dict[str, int]]:
             + ci_gates + cl_ignore + controllers + labels + comp_labels + orphans + keyfilter
             + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
             + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref + action_pins
-            + xplugin + unowned + toggles + ci_step + promo_ctx + bothways + harness_dep
-            + findings_copy + rel_xplugin,
+            + findings_copy + rel_xplugin
+            + xplugin + unowned + toggles + ci_step + promo_ctx + bothways + harness_dep,
             coverage)
 
 
@@ -4923,6 +4925,15 @@ def selftest() -> int:
     scenario("a rails-stack skill reaching ../rails-flow/ is a finding", rule=XP, expect_finding=True,
              only=check_cross_plugin_relative_path,
              files={**XP_TREE, "skills/hotwire/SKILL.md": "run ../../plugins/x ../rails-flow/scripts/a.py\n"})
+    scenario("`cd ../rails-flow` with no trailing slash is a finding", rule=XP, expect_finding=True,
+             only=check_cross_plugin_relative_path,
+             files={**XP_TREE, "plugins/qa-flow/commands/c.md": "cd ../rails-flow && python3 scripts/findings.py\n"})
+    scenario("a skill's clone path ../../plugins/rails-flow/ is a finding", rule=XP, expect_finding=True,
+             only=check_cross_plugin_relative_path,
+             files={**XP_TREE, "skills/hotwire/SKILL.md": "python3 ../../plugins/rails-flow/scripts/findings.py\n"})
+    scenario("a longer name that only starts with a plugin's is silent", rule=XP, expect_finding=False,
+             only=check_cross_plugin_relative_path,
+             files={**XP_TREE, "plugins/qa-flow/agents/a.md": "see ../rails-flow-notes/x.md\n"})
     scenario("a tests/ fixture is silent", rule=XP, expect_finding=False,
              only=check_cross_plugin_relative_path,
              files={**XP_TREE, "plugins/qa-flow/tests/t.md": "../rails-flow/scripts/x.py\n"})
