@@ -138,7 +138,7 @@ _EXPECTING_TIMEOUT = False      # set by timeout_fixtures, which times out on pu
 # calibration workload (a `git init` and an empty commit in a throwaway repository, the work every fixture starts with) is timed against its idle
 # figure, as the mutation harness times a baseline and scales each mutant's limit from it (`mutation_check.mutation_timeout`).
 HOOK_BUDGET_FLOOR = 180.0       # seconds, on an idle machine
-HOOK_BUDGET_CAP = 1800.0        # never more than thirty minutes, so a real hang under load still ends
+HOOK_BUDGET_CAP = 600.0         # never more than ten minutes: the doctor's per-gate budgets (400 to 900 s) decide beyond that, so a larger bound would be a dead number
 CALIBRATION_IDLE = 0.06         # seconds the calibration workload takes on an idle machine (measured 0.056, median of nine)
 CALIBRATION_REFRESH = 30.0      # re-measured at most this often: load moves, and a measurement per subprocess would be the load
 _CALIBRATION = {"at": None, "slowdown": 1.0}
@@ -152,17 +152,27 @@ def hook_limit(requested: float, slowdown: float) -> float:
     return max(base, min(HOOK_BUDGET_CAP, base * max(1.0, slowdown)))
 
 
-def _calibrate() -> float:
-    """Seconds the calibration workload took here; the cap's worth of slowdown if it would not finish."""
+CALIBRATION_SAMPLES = 3         # the median of three, so one stall (a lock, an exec held up) does not set the budget for a whole refresh window
+CALIBRATION_TIMEOUT = 60        # each calibration command is itself bounded: a calibration that hangs would be the hang it guards against (#1469)
+
+
+def _sample() -> float:
+    """Seconds ONE run of the calibration workload took here; the cap's worth of slowdown if it would not finish."""
     with tempfile.TemporaryDirectory() as td:
         began = time.monotonic()
         try:
             for cmd in (["git", "init", "-q"], ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "i"],
                         ["bash", "-c", "true"]):
-                subprocess.call(cmd, cwd=td, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
+                subprocess.call(cmd, cwd=td, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=CALIBRATION_TIMEOUT)
         except (OSError, subprocess.SubprocessError):
             return CALIBRATION_IDLE * (HOOK_BUDGET_CAP / HOOK_BUDGET_FLOOR)
         return time.monotonic() - began
+
+
+def _calibrate(sample=_sample) -> float:
+    """The median of CALIBRATION_SAMPLES runs of the calibration workload: one outlier among calm samples is ignored."""
+    runs = sorted(sample() for _ in range(CALIBRATION_SAMPLES))
+    return runs[len(runs) // 2]
 
 
 def machine_slowdown(measure=_calibrate, now=time.monotonic) -> float:
@@ -3207,7 +3217,7 @@ def timeout_fixtures() -> None:
     check("an idle machine gets the floor, and a fixture's own larger bound is kept",
           hook_limit(0, 1.0) == 180.0 and hook_limit(600, 1.0) == 600.0 and hook_limit(60, 1.0) == 180.0)
     check("a slower machine gets proportionally more, so a loaded machine is not read as a hung hook",
-          hook_limit(0, 4.0) == 720.0 and hook_limit(100, 2.5) == 450.0)
+          hook_limit(0, 3.0) == 540.0 and hook_limit(100, 2.5) == 450.0)
     check("a machine measured faster than idle never shrinks the budget", hook_limit(0, 0.3) == 180.0)
     check("the budget stops at the cap, so a real hang under load still ends", hook_limit(0, 1000.0) == HOOK_BUDGET_CAP)
     check("a fixture that asked for more than the cap keeps what it asked for", hook_limit(3600, 5.0) == 3600.0)
@@ -3226,7 +3236,10 @@ def timeout_fixtures() -> None:
     check("...measured once per refresh window, not once per subprocess", s2 == s1 and len(measured) == 2, f"{s2} {measured}")
     check("...and again after the window, so a machine that calmed down gets its floor back", abs(s3 - 1.0) < 1e-9, f"{s3}")
     real_call = subprocess.call
+    seen_timeouts: list = []
+
     def _stalled(*a, **k):
+        seen_timeouts.append(k.get("timeout"))
         raise subprocess.TimeoutExpired("calibration", 60)
     subprocess.call = _stalled
     try:
@@ -3235,6 +3248,12 @@ def timeout_fixtures() -> None:
         subprocess.call = real_call
     check("a calibration that cannot finish reads as the heaviest load, not as idle",
           abs(stalled / CALIBRATION_IDLE - HOOK_BUDGET_CAP / HOOK_BUDGET_FLOOR) < 1e-9, f"{stalled}")
+    check("the calibration is itself bounded: every command it starts has a timeout",
+          seen_timeouts and all(isinstance(t, (int, float)) and 0 < t <= CALIBRATION_TIMEOUT for t in seen_timeouts), f"{seen_timeouts}")
+    check("one outlier among calm samples does not set the budget (the median of three)",
+          _calibrate(sample=iter([0.06, 0.5, 0.06]).__next__) == 0.06 and _calibrate(sample=iter([0.5, 0.06, 0.06]).__next__) == 0.06)
+    check("...but a machine that is slow in most samples is read as slow",
+          _calibrate(sample=iter([0.5, 0.06, 0.5]).__next__) == 0.5)
     check("a calibration that runs reports a plausible, positive time", 0 < _calibrate() < 60)
     src = Path(__file__).read_text(encoding="utf-8")
     check("every subprocess's bound goes through hook_limit, never a bare number",

@@ -194,6 +194,24 @@ GUARD = Guard(
             "a calibration that cannot finish reads as the heaviest load",
         ),
         Mutation(
+            "the calibration takes one sample, so one stall sets the budget for a whole refresh window",
+            "    runs = sorted(sample() for _ in range(CALIBRATION_SAMPLES))\n    return runs[len(runs) // 2]",
+            "    return sample()",
+            "one outlier among calm samples does not set the budget",
+        ),
+        Mutation(
+            "the median becomes the largest sample, so an outlier is not ignored",
+            "    return runs[len(runs) // 2]",
+            "    return runs[-1]",
+            "one outlier among calm samples does not set the budget",
+        ),
+        Mutation(
+            "the calibration's own commands lose their timeout, so a hung calibration is the hang it guards against",
+            "stderr=subprocess.DEVNULL, timeout=CALIBRATION_TIMEOUT)",
+            "stderr=subprocess.DEVNULL)",
+            "the calibration is itself bounded",
+        ),
+        Mutation(
             "a subprocess's bound bypasses hook_limit and is a bare number again",
             "limit = float(override) if override else hook_limit(requested, machine_slowdown())",
             "limit = float(override) if override else max(float(requested or 0), 180.0)",
