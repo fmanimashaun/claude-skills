@@ -148,8 +148,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a backslash-newline becomes a space, so `cre\\\\<nl>ate` is not a create",
-            '    cmd = _strip_comments(cmd.replace("\\\\\\n", "")).replace("\\n", " ; ")',
-            '    cmd = _strip_comments(cmd.replace("\\\\\\n", " ")).replace("\\n", " ; ")',
+            '    cmd = _strip_comments(cmd).replace("\\\\\\n", "").replace("\\n", " ; ")',
+            '    cmd = _strip_comments(cmd).replace("\\\\\\n", " ").replace("\\n", " ; ")',
             "a backslash-newline joins",
         ),
         # ---- #1440: a quoted `&&` is not the separator ------------------------------------------
@@ -580,9 +580,15 @@ GUARD = Guard(
         # ---- #1645 R1: a comment line swallowed the create after it
         Mutation(
             "comments are not stripped line by line before the lines are joined, so a # eats everything after it",
-            "    cmd = _strip_comments(cmd.replace(\"\\\\\\n\", \"\")).replace(\"\\n\", \" ; \")",
+            "    cmd = _strip_comments(cmd).replace(\"\\\\\\n\", \"\").replace(\"\\n\", \" ; \")",
             "    cmd = cmd.replace(\"\\\\\\n\", \"\").replace(\"\\n\", \" ; \")",
             "the command named only inside a comment",
+        ),
+        Mutation(
+            "backslash-newlines are joined before comments are stripped, so a comment ending in a backslash swallows the create on the next line",
+            "    cmd = _strip_comments(cmd).replace(\"\\\\\\n\", \"\").replace(\"\\n\", \" ; \")",
+            "    cmd = _strip_comments(cmd.replace(\"\\\\\\n\", \"\")).replace(\"\\n\", \" ; \")",
+            "a comment ending in a backslash, then an unlabelled create",
         ),
         Mutation(
             "a # inside a quoted body starts a comment, so the quoted text after it is cut",

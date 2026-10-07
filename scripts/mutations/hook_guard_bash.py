@@ -108,10 +108,10 @@ GUARD = Guard(
             "guard-bash (#1515): `gh api -X POST repos/o/r/issues",
         ),
         Mutation(
-            "the verb trigger needs a gh word again, so an alias never reaches the helper",
+            "the verb trigger needs a gh word again, so a gh word built at run time never reaches the helper",
             "_re_verb='issue[[:space:]]+(create|new)'",
             "_re_verb='gh[[:space:]].*issue[[:space:]]+(create|new)'",
-            "guard-bash (#1515): `alias g=gh; g issue create",
+            "guard-bash (#1515): `$(echo gh) issue create",
         ),
         # #1342: each discarding form goes unblocked again, or its safe twin gets caught with it.
         Mutation(

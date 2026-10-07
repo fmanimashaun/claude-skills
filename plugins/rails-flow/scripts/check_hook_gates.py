@@ -872,11 +872,13 @@ def guard_bash_fixtures() -> None:
     # #1645 R1: a comment line must not swallow the create after it. Each through the real hook (also true on dev before this).
     for cmd, why in (("# note\ngh issue create -t X --body y", "a comment line, then an unlabelled create"),
                      ("echo hi # note\ngh issue create -t X --body y", "a trailing comment, then an unlabelled create"),
-                     ("# note\n\ngh issue create -t X --body y", "a comment, a blank line, then an unlabelled create")):
+                     ("# note\n\ngh issue create -t X --body y", "a comment, a blank line, then an unlabelled create"),
+                     ("# note \\\ngh issue create -t X --body y", "a comment ending in a backslash, then an unlabelled create")):
         rc, err = labelled(cmd)
         check(f"guard-bash (#1645 R1): `{cmd!r}` is refused ({why})", rc == 2 and "no --label" in err, err)
     for cmd, why in (("# note\ngh issue create -t X --body y --label bug --label severity:s2", "a labelled create after a comment"),
                      ("# gh issue create is how you file one\necho hi", "the command named only inside a comment"),
+                     ("# note \\\ngh issue create -t X --body y --label bug --label severity:s2", "a labelled create after a comment ending in a backslash"),
                      ('echo "see #12 and #13"', "a # inside double quotes")):
         check(f"guard-bash (#1645 R1): CONTROL: `{cmd!r}` is allowed ({why})", labelled(cmd)[0] == 0)
     # #1645 R2: the shapes the gate claims, one spelling away. The trigger must reach the helper for each, and the helper must judge it.

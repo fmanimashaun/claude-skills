@@ -155,7 +155,7 @@ def issue_creates(cmd: str) -> list[tuple[list[str], str | None, str | None]]:
         cmd = _ansi_c(strip_heredocs(cmd))
     except ValueError:
         return _unparseable(cmd)
-    cmd = _strip_comments(cmd.replace("\\\n", "")).replace("\n", " ; ")   # a backslash-newline JOINS: `cre\\<nl>ate`; comments go first (#1645 R1)
+    cmd = _strip_comments(cmd).replace("\\\n", "").replace("\n", " ; ")   # comments go first: `# note \<nl>` ends at the newline in a shell; a backslash-newline outside one JOINS (`cre\\<nl>ate`) (#1645 R1)
     # The followed cd shape is checked on the RAW text too (#1440): shlex drops quotes, so a quoted
     # `'&&'` would otherwise read as the separator. The operand may itself be quoted.
     raw_cd_shape = bool(re.match(r"""\s*cd\s+('[^']*'|"[^"]*"|[^\s'"&;|()]+)\s*&&""", cmd))
@@ -1533,7 +1533,8 @@ def selftest() -> int:
         for cmd, why_ in (("# note\ngh issue create -t X --body y", "a comment line, then an unlabelled create"),
                           ("echo hi # note\ngh issue create -t X --body y", "a trailing comment, then an unlabelled create"),
                           ("# note\n\ngh issue create -t X --body y", "a comment, a blank line, then an unlabelled create"),
-                          ("# one\n# two\ngh issue create -t X --body y", "two comment lines, then an unlabelled create")):
+                          ("# one\n# two\ngh issue create -t X --body y", "two comment lines, then an unlabelled create"),
+                          ("# note \\\ngh issue create -t X --body y", "a comment ending in a backslash, then an unlabelled create")):
             ok, why = verdict(cmd, bare)
             check(f"(#1645 R1) {why_}: {cmd!r} is refused", not ok and "no --label" in why, why)
         ok, why = verdict("echo a#b; gh issue create -t X --body y", bare)
@@ -1546,6 +1547,7 @@ def selftest() -> int:
               verdict('echo "see #12 and #13"\ngh issue create -t X --body y --label feature', bare)[0],
               verdict('echo "see #12 and #13"\ngh issue create -t X --body y --label feature', bare)[1])
         for cmd, why_ in (("# note\ngh issue create -t X --body y --label feature", "a labelled create after a comment"),
+                          ("# note \\\ngh issue create -t X --body y --label feature", "a labelled create after a comment ending in a backslash"),
                           ("# gh issue create is how you file one\necho hi", "the command named only inside a comment"),
                           ("echo a#b", "a # inside a word"), ('echo "see #12 and #13"', "a # inside double quotes"),
                           ("echo 'see #12'\ngh issue list", "a # inside single quotes"),
