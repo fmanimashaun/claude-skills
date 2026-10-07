@@ -464,6 +464,8 @@ the branch you just recovered, on the day you are least inclined to doubt your s
 trap arriving a second time, through a door you thought you had already closed. So re-copy from the
 project's own list before the first run, rather than deriving it from what breaks.
 
+**Leave a where-I-stopped note a killed session could resume from** (claims with the command that verifies them, the last request word for word, measured numbers): `references/where-i-stopped.md`.
+
 ## 6. Read the repository's agent instructions first
 
 Read `CLAUDE.md` (and anything it imports, such as an `AGENTS.md`) in **your** worktree before

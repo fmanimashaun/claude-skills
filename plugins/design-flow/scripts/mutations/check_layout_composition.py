@@ -68,7 +68,7 @@ GUARD = Guard(
         # Comments are prose (#1128). Without this call the gate reports a file for DESCRIBING the
         # anti-pattern -- and the file that describes it is usually the one that fixed it.
         "comments are matched as if they were code",
-        '        lines = strip_comments("\\n".join(raw)).split("\\n")',
+        '        lines = strip_comments("\\n".join(raw), html=is_html(path.name)).split("\\n")',
         '        lines = list(raw)',
         'a comment quoting the old breakpoint markup is not that markup',
     ),

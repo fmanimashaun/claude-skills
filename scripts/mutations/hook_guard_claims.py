@@ -33,7 +33,7 @@ GUARD = Guard(
            "plugins/rails-flow/scripts/self_consistency.py",
            "plugins/rails-flow/scripts/extract_claims.py",
            # ci-verdict-hint.sh runs it; unstaged, every mutation here read as caught (#1173).
-           "plugins/rails-flow/scripts/ci_verdict_hint.py"),
+           "plugins/rails-flow/scripts/ci_verdict_hint.py", "plugins/rails-flow/scripts/session_reaper.py", "plugins/rails-flow/scripts/process_containment.py"),
     mutations=(
         # #1516, push security reviews: NO CODE RUNS BEFORE PERMISSION. The hook reads a diff in the directory the
         # command `cd`s into, before the person is asked, and a repository's own config can name a program that
@@ -114,14 +114,14 @@ GUARD = Guard(
         ),
         Mutation(
             "-R/--repo is no longer recognised, so another repository's PR is judged by this template",
-            '  if printf \'%s\' "$pr_seg" | grep -qE \'(^|[[:space:]])(-R|--repo)\'; then',
+            '  if has "$pr_seg" \'(^|[[:space:]])(-R|--repo)\'; then',
             '  if false; then',
             "-R targets another repo, so its template is not judged here",
         ),
         Mutation(
             "the template check is scoped to create only, so `gh pr edit` slips past it",
-            "if printf '%s' \"$cmd\" | grep -qE '\\bgh[[:space:]]+pr[[:space:]]+(create|edit)\\b'; then\n  tpl_lib",
-            "if printf '%s' \"$cmd\" | grep -qE '\\bgh[[:space:]]+pr[[:space:]]+(create)\\b'; then\n  tpl_lib",
+            "if has \"$cmd\" '\\bgh[[:space:]]+pr[[:space:]]+(create|edit)\\b'; then\n  tpl_lib",
+            "if has \"$cmd\" '\\bgh[[:space:]]+pr[[:space:]]+(create)\\b'; then\n  tpl_lib",
             "`gh pr edit` with the same body is blocked too",
         ),
         Mutation(
@@ -129,8 +129,8 @@ GUARD = Guard(
             # body carrying eight unverified claims, four ISSUE COMMENTS carrying counts went out
             # unchecked -- the same artifact, durable and read by someone else, through a hole.
             "an issue comment is out of scope again, so its claims go unchecked",
-            'printf \'%s\' "$cmd" | grep -qE \'\\bgh[[:space:]]+(pr[[:space:]]+(create|edit)|issue[[:space:]]+comment)\\b\' || exit 0',
-            'printf \'%s\' "$cmd" | grep -qE \'\\bgh[[:space:]]+pr[[:space:]]+(create|edit)\\b\' || exit 0',
+            'has "$cmd" \'\\bgh[[:space:]]+(pr[[:space:]]+(create|edit)|issue[[:space:]]+comment)\\b\' || exit 0',
+            'has "$cmd" \'\\bgh[[:space:]]+pr[[:space:]]+(create|edit)\\b\' || exit 0',
             "guard-claims: an unchecked numeric claim in an ISSUE COMMENT is blocked",
         ),
         Mutation(

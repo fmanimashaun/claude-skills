@@ -96,6 +96,8 @@ second `setup` laid over the first's managed block — two packs' roles in one b
 The hook is **advisory and fails open**: with `python3` absent it goes quiet rather than blocking
 an edit, per the guarantee-vs-advice test in `docs/doctrine/harness-doctrine.md`.
 
+**The Python floor is 3.9**, the `python3` stock macOS ships: every script this plugin's hook runs parses there, and a change that needs newer syntax is refused before it ships.
+
 ## The doctrine
 
 Everything follows the **design-system** skill (`skills/design-system/`): foundations/tokens,

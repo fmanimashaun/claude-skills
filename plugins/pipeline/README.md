@@ -29,3 +29,5 @@ This plugin's hooks are **bash + python3** scripts. On Windows, run Claude Code 
 release gate) can't execute. macOS/Linux need no action. The release-gate and other
 guards fail safe if their interpreter is missing, but a missing interpreter means the
 gate does not run — so ensure the toolchain is present where enforcement matters.
+
+**The Python floor is 3.9**, the `python3` stock macOS ships: every script this plugin ships parses there, and a change that needs newer syntax is refused before it ships.

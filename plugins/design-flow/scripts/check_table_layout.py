@@ -75,7 +75,7 @@ import sys
 from pathlib import Path
 
 import content_floors
-from source_text import strip_comments
+from source_text import is_html, strip_comments
 
 GATE = "table-layout"
 
@@ -216,7 +216,7 @@ def fixed_min_width(attrs: str) -> str | None:
 
 def check_file(rel: str, raw: str, directory_has_target: bool,
                scrollers: frozenset[str] = frozenset()) -> list[str]:
-    source = strip_comments(raw)
+    source = strip_comments(raw, html=is_html(rel))
     findings: list[str] = []
     tables = tables_in(source, scrollers)
     for line, attrs, scrolled in tables:
@@ -267,7 +267,7 @@ def run(root: Path) -> tuple[list[str], int]:
     scrollers = frozenset(app_scrollers(css))
     targets: dict[Path, bool] = {}
     for p in files:
-        if opens_a_record(strip_comments(p.read_text(encoding="utf-8", errors="replace"))):
+        if opens_a_record(strip_comments(p.read_text(encoding="utf-8", errors="replace"), html=is_html(p.name))):
             targets[p.parent] = True
     findings: list[str] = []
     for p in files:

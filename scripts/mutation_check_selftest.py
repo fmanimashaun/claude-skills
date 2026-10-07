@@ -25,6 +25,7 @@ import ast
 import dataclasses
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -390,7 +391,74 @@ def _proc_group_fixtures() -> None:
         shutil.rmtree(work, ignore_errors=True)
 
 
+def _cpu_cost_fixtures() -> None:
+    """#1635: the cost is CPU seconds, so load cannot inflate it.
+
+    A run that SLEEPS for two seconds takes two seconds of wall time and almost none of CPU; a run that BURNS takes the CPU it
+    uses, including a grandchild's. If the harness billed wall time, the sleeper would cost two seconds and a loaded machine
+    would stretch every guard's cost, which is how the ratchet failed 15 guards nobody had touched."""
+    import time as _time
+    _tick()
+    mc._COST.clear()
+    started = _time.monotonic()
+    mc.run_costed("sleeper", [sys.executable, "-c", "import time; time.sleep(2)"], timeout=60)
+    wall = _time.monotonic() - started
+    if wall < 1.9 or mc._COST.get("sleeper", 99) > 1.0:
+        FAILURES.append(f"#1635: a run that only sleeps must cost ~0 CPU seconds, not its wall time: wall {wall:.1f}s, billed "
+                        f"{mc._COST.get('sleeper')}")
+    _tick()
+    burn = "import time\nt=time.process_time()\nwhile time.process_time()-t < 1.0: pass\n"
+    mc.run_costed("burner", [sys.executable, "-c", burn], timeout=60)
+    if not 0.9 <= mc._COST.get("burner", 0) <= 4.0:
+        FAILURES.append(f"#1635: a run that burns 1 s of CPU must be billed about 1 s, got {mc._COST.get('burner')}")
+    _tick()
+    nested = ("import subprocess, sys\nsubprocess.run([sys.executable, '-c', %r])\n" % burn)
+    mc.run_costed("nested", [sys.executable, "-c", nested], timeout=60)
+    if not 0.9 <= mc._COST.get("nested", 0) <= 4.0:
+        FAILURES.append(f"#1635: a descendant's CPU must be billed to the run that waited for it, got {mc._COST.get('nested')}")
+    _tick()
+    before = mc._COST.get("twice", 0.0)
+    mc.run_costed("twice", [sys.executable, "-c", burn], timeout=60)
+    mc.run_costed("twice", [sys.executable, "-c", burn], timeout=60)
+    if mc._COST.get("twice", 0.0) - before < 1.8:
+        FAILURES.append(f"#1635: runs of one guard must ADD UP, got {mc._COST.get('twice')}")
+    _tick()
+    rc = mc.run_costed("rc", [sys.executable, "-c", "import sys; sys.exit(7)"], timeout=60).returncode
+    if rc != 7:
+        FAILURES.append(f"#1635: run_costed must pass the command's own exit code through, got {rc}")
+    _tick()
+    try:
+        mc.run_costed("hung", [sys.executable, "-c", "import time; time.sleep(60)"], timeout=1)
+        FAILURES.append("#1635: a run over its limit must still raise TimeoutExpired")
+    except subprocess.TimeoutExpired:
+        if not 0.9 <= mc._COST.get("hung", 0) <= 15:
+            FAILURES.append(f"#1635: a run killed on its limit bills its WALL time, got {mc._COST.get('hung')}")
+    mc._COST.clear()
+
+
+def _sigint_fixtures() -> None:
+    """#1635: proc_group.restore_sigint resets an inherited-IGNORED SIGINT, and only that."""
+    import signal as _sg
+    scripts = str(Path(mc.__file__).resolve().parent)
+    probe = ("import sys, signal; sys.path.insert(0, %r); import proc_group\n"
+             "was = signal.getsignal(signal.SIGINT) == signal.SIG_IGN\n"
+             "did = proc_group.restore_sigint()\n"
+             "print(was, did, signal.getsignal(signal.SIGINT) is signal.default_int_handler)\n" % scripts)
+
+    def child(ignored: bool) -> str:
+        return subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, timeout=60,
+                              preexec_fn=(lambda: _sg.signal(_sg.SIGINT, _sg.SIG_IGN)) if ignored else None).stdout.strip()
+
+    _tick()
+    if child(True) != "True True True":
+        FAILURES.append(f"#1635: restore_sigint must reset an inherited-ignored SIGINT, got {child(True)!r}")
+    _tick()
+    if child(False) != "False False True":
+        FAILURES.append(f"#1635: restore_sigint must leave a normal SIGINT alone, got {child(False)!r}")
+
+
 def run() -> int:
+    mc.proc_group.restore_sigint()   # #1635: a backgrounded run inherits SIGINT ignored
     original_repo = mc.REPO
 
     # ---- 0. EVERY DECLARED PATH RESOLVES FROM ITS GUARD'S BASE ------------------------
@@ -906,6 +974,8 @@ def run() -> int:
 
     # ---- 1f. NESTED runners, Ctrl-C, and an escapee (review of #1525) ---------------------------
     _proc_group_fixtures()
+    _cpu_cost_fixtures()
+    _sigint_fixtures()
 
     # ---- 2. a SURVIVOR must be reported ------------------------------------------------
     # This mutation changes the subject in a way neither fixture observes, so the selftest still

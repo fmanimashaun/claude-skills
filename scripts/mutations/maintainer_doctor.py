@@ -15,6 +15,26 @@ GUARD = Guard(
         "plugins",
         "evals", "plugins/rails-flow/scripts/process_containment.py"),
     mutations=(
+        # #1635: a backgrounded doctor inherits SIGINT ignored; it must reset it, and only then.
+        Mutation(
+            "main never takes the SIGINT reset",
+            "    restore_sigint()\n    p = argparse",
+            "    p = argparse",
+            "main() must call restore_sigint()",
+        ),
+        # #1635: an ordinary gate that outlives its budget is FAIL, named; it was a SKIP and read green.
+        Mutation(
+            "a hung ordinary gate is a skip again",
+            "            elif code == 124 and name not in SLOW_GATES:",
+            "            elif False:",
+            "an ordinary gate that times out is FAIL",
+        ),
+        Mutation(
+            "--record-proof accepts a fast run",
+            "    if args.record_proof and not (args.gates_only and args.require_slow and not args.fast):",
+            "    if False:",
+            "--record-proof must refuse",
+        ),
         # #1459: a gate that times out takes its whole process group with it.
         Mutation(
             'a gate runs as a plain subprocess, so a timeout orphans what it started',
@@ -182,11 +202,11 @@ GUARD = Guard(
             "silently TIGHTENS a gate",
         ),
         Mutation(
-            # #1444: --require-slow must FAIL only a SLOW_GATES timeout; any other hang stays a skip.
-            "--require-slow fails every timed-out gate, not just the slow ones",
-            "elif code == 124 and self.require_slow and name in SLOW_GATES:",
-            "elif code == 124 and self.require_slow:",
-            "NON-slow gate that times out is still SKIP",
+            # #1444 / #1635: a SLOW gate that times out is FAIL only under --require-slow; off CI it stays a skip.
+            "a slow gate's timeout fails off CI too, so a busy laptop reads a mutation-coverage failure",
+            "            elif code == 124 and self.require_slow:",
+            "            elif code == 124:",
+            "CONTROL: a SLOW gate that times out off CI is still SKIP",
         ),
         Mutation(
             # #1486 / review of PR #1491
