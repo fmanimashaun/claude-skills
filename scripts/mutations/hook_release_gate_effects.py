@@ -99,7 +99,7 @@ GUARD = Guard(
         ),
         Mutation(
             "git merge on main is no longer a promotion",
-            "          if git rev-parse --abbrev-ref HEAD 2>/dev/null | grep -qE '^(main|master)$'; then\n            targets_main=1\n            _refs",
+            "          if grep -qE '^(main|master)$' <<<\"$(git rev-parse --abbrev-ref HEAD 2>/dev/null)\"; then\n            targets_main=1\n            _refs",
             "          if false; then\n            targets_main=1\n            _refs",
             "`git merge` on main of an uncertified hotfix branch is blocked",
         ),

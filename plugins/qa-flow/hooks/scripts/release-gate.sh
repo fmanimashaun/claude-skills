@@ -379,7 +379,9 @@ note_pr() {
   esac
 }
 if [ "$_mentions" = 1 ] && [ -f "$_pt" ]; then
-  if _found="$(printf '%s' "$cmd" | python3 "$_pt" --classify 2>/dev/null)"; then
+  # `LC_ALL=C`: under a UTF-8 locale the classifier decodes strictly and an invalid byte anywhere in the command made it fail, which this gate reads as
+  # "could not judge" and refuses (a harmless `git status` too, with a misleading message). In the C locale it reads the bytes and judges the command.
+  if _found="$(printf '%s' "$cmd" | LC_ALL=C python3 "$_pt" --classify 2>/dev/null)"; then
     while IFS= read -r _line; do
       case "$_line" in
         "CTX "*)

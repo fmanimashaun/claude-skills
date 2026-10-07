@@ -43,6 +43,30 @@ GUARD = Guard(
             "release-gate (#1657): without the classifier, a push on the first line of a 120 KB command is refused",
         ),
         Mutation(
+            "`normalize_segments` runs in the caller's locale, so a UTF-8 locale and an invalid byte leave it with nothing to read",
+            "| LC_ALL=C normalize_segments)",
+            "| normalize_segments)",
+            "release-gate (#1657): CONTROL: without the classifier, an invalid byte with no push in the command is not itself a refusal",
+        ),
+        Mutation(
+            "the fallback's `main|master` grep runs in the caller's locale, so an invalid byte earlier on the SAME line hides the push",
+            """    && LC_ALL=C grep -qE '\\b(main|master)\\b' <<<"$cmd" && { targets_main=1; needs_dev=1; }""",
+            """    && grep -qE '\\b(main|master)\\b' <<<"$cmd" && { targets_main=1; needs_dev=1; }""",
+            "release-gate (#1657): without the classifier, an invalid byte EARLIER ON THE SAME LINE does not hide a push to main",
+        ),
+        Mutation(
+            "a normaliser that exits non-zero is no longer 'could not read', so its (pass-through) output is judged as if it were the segments",
+            """ || { seg="$cmd"; _seg_unread=1; }""",
+            "",
+            "release-gate (#1657): without the classifier, a normaliser that fails (awk exits 2) is refused",
+        ),
+        Mutation(
+            "the classifier runs in the caller's locale, so an invalid byte makes it fail and a harmless git command is refused wholesale",
+            """| LC_ALL=C python3 "$_pt" --classify""",
+            """| python3 "$_pt" --classify""",
+            "release-gate (#1657): with the classifier, an invalid byte in a command that is not a push does not refuse it",
+        ),
+        Mutation(
             "a normaliser output of nothing for a command that is not empty is no longer 'could not read', so a comment-only mention passes in the degraded path",
             """  [ -n "$seg" ] || [ -z "$cmd" ] || _seg_unread=1\n""",
             "",
@@ -52,8 +76,8 @@ GUARD = Guard(
         # mentions git or gh, treat "could not judge" as a promotion, and keep a raw-text fallback.
         Mutation(
             "the classifier reads the normalised segment, so a quoted main is stripped and allowed",
-            """  if _found="$(printf '%s' "$cmd" | python3 "$_pt" --classify 2>/dev/null)"; then""",
-            """  if _found="$(printf '%s' "$seg" | python3 "$_pt" --classify 2>/dev/null)"; then""",
+            """  if _found="$(printf '%s' "$cmd" | LC_ALL=C python3 "$_pt" --classify 2>/dev/null)"; then""",
+            """  if _found="$(printf '%s' "$seg" | LC_ALL=C python3 "$_pt" --classify 2>/dev/null)"; then""",
             'release-gate (#1410): `git push origin "main"` targets main',
         ),
         Mutation(
@@ -70,14 +94,14 @@ GUARD = Guard(
         ),
         Mutation(
             "the pre-check reads the raw text again, so g''it and gi\\t skip the classifier",
-            '_probe="$(printf \'%s\' "$cmd" | tr -d "\'\\"\\\\\\\\")"',
+            '_probe="$(printf \'%s\' "$cmd" | LC_ALL=C tr -d "\'\\"\\\\\\\\")"',
             '_probe="$cmd"',
             "`\"g''it push origin main\"` reaches main",
         ),
         Mutation(
             "the fallback reads the normalised segment, losing a quoted main",
-            """    && printf '%s' "$cmd" | grep -qE '\\b(main|master)\\b' && { targets_main=1; needs_dev=1; }""",
-            """    && printf '%s' "$seg" | grep -qE '\\b(main|master)\\b' && { targets_main=1; needs_dev=1; }""",
+            """    && LC_ALL=C grep -qE '\\b(main|master)\\b' <<<"$cmd" && { targets_main=1; needs_dev=1; }""",
+            """    && LC_ALL=C grep -qE '\\b(main|master)\\b' <<<"$seg" && { targets_main=1; needs_dev=1; }""",
             "release-gate (#1410): parser missing -> a quoted `main` push is still blocked",
         ),
         # #1337: the stamp's own commit invalidates it again, or any delta slips through.

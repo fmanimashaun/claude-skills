@@ -1885,11 +1885,16 @@ def release_gate_fixtures() -> None:
         # are byte-safe and these pass either way, so they can only be red on macOS (the maintainer's own machine).
         import shutil
 
-        def gate_bytes(payload: bytes, root: Path | None = None) -> int:
+        def gate_bytes(payload: bytes, root: Path | None = None, path_prefix: Path | None = None) -> int:
             e = {**env, "LC_ALL": "en_US.UTF-8"}
             if root is not None:
                 e["CLAUDE_PLUGIN_ROOT"] = str(root)
-            return _run(["bash", str(QA_HOOK)], cwd=repo, env=e, capture_output=True, timeout=60, input=payload).returncode
+            if path_prefix is not None:
+                e["PATH"] = f"{path_prefix}{os.pathsep}{e['PATH']}"
+            done = _run(["bash", str(QA_HOOK)], cwd=repo, env=e, capture_output=True, timeout=60, input=payload)
+            # The gate's own deadline also exits 2 ("the gate took longer than 13s"), which on a loaded machine would read as the refusal under test
+            # and let a mutant survive for the wrong reason: report it as 124, which equals neither 0 nor 2.
+            return 124 if b"took longer than" in done.stderr else done.returncode
 
         with tempfile.TemporaryDirectory() as ubtd:
             ub_root = Path(ubtd) / "qa-flow"
@@ -1904,6 +1909,27 @@ def release_gate_fixtures() -> None:
                   gate_bytes(b"echo \xff\ngit push origin main\n", ub_root) == 2, "exit != 2")
             check("release-gate (#1657): without the classifier, a command the normaliser reads as NOTHING (only comments) is refused, not passed",
                   gate_bytes(b"# git push origin main", ub_root) == 2, "exit != 2")
+            # BSD grep stops matching at an invalid byte EARLIER ON THE SAME LINE under a UTF-8 locale (an earlier LINE is fine), so the fallback's `main|master` match
+            # read `echo \xff; git push origin main` as no main: the greps run under LC_ALL=C. Two spellings of the invalid byte (\xff, and \xe9 which is a valid
+            # Latin-1 letter but not valid UTF-8).
+            check("release-gate (#1657): without the classifier, an invalid byte EARLIER ON THE SAME LINE does not hide a push to main",
+                  gate_bytes(b"echo \xff; git push origin main", ub_root) == 2, "exit != 2")
+            check("release-gate (#1657): without the classifier, a Latin-1 byte before `&& git push origin main` does not hide it",
+                  gate_bytes(b"echo \xe9 && git push origin main", ub_root) == 2, "exit != 2")
+            # A normaliser that FAILS (an awk that passes its input through and exits 2) is "could not read": refused. The pass-through keeps the output non-empty, so
+            # the empty-output refusal cannot be what refuses; and `FOO=1 git push …` is not anchored without the peel, so the raw text cannot be what refuses either.
+            with tempfile.TemporaryDirectory() as sbtd:
+                stub = Path(sbtd) / "awk"
+                stub.write_text("#!/bin/sh\ncat\nexit 2\n", encoding="utf-8"); stub.chmod(0o755)
+                check("release-gate (#1657): without the classifier, a normaliser that fails (awk exits 2) is refused, not read as nothing to judge",
+                      gate_bytes(b"FOO=1 git push origin main\n", ub_root, stub.parent) == 2, "exit != 2")
+            check("release-gate (#1657): CONTROL: the same command is judged and refused by the real normaliser too",
+                  gate_bytes(b"FOO=1 git push origin main\n", ub_root) == 2, "exit != 2")
+            check("release-gate (#1657): CONTROL: without the classifier, a git command that is not a push passes with the real normaliser",
+                  gate_bytes(b"FOO=1 git status\n", ub_root) == 0, "exit != 0")
+            # The classifier decodes strictly in a UTF-8 locale; an invalid byte made it fail and the gate refused even a `git status`, naming nothing. Under C it judges the command.
+            check("release-gate (#1657): with the classifier, an invalid byte in a command that is not a push does not refuse it",
+                  gate_bytes(b"echo \xff\ngit status\n") == 0, "exit != 0")
             # `grep -q` closes its pipe at the first match; under `set -o pipefail` a producer still writing (a segment over the pipe buffer, 64 KB) dies of
             # SIGPIPE and the pipeline reads 141, which skipped the `&&` branch: a push on the FIRST line of a long command was not seen (a fail-open).
             check("release-gate (#1657): without the classifier, a push on the first line of a 120 KB command is refused (grep -q must not read 141)",
