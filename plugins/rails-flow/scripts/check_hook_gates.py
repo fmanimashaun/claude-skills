@@ -3875,8 +3875,8 @@ def fixture_git_binding_fixtures() -> None:
     """THE #1588 INCIDENT, in the harness's own helper: an inherited GIT_DIR naming another repo must not receive a
     fixture's commit, through the fixture_git path or through the fallback (an init dir, a linked worktree)."""
     def count(repo: Path) -> str:
-        return subprocess.run(["git", "-C", str(repo), "rev-list", "--count", "--all"], capture_output=True, text=True,
-                              env=fixture_git.hermetic()).stdout.strip()
+        return _run(["git", "-C", str(repo), "rev-list", "--count", "--all"], capture_output=True, text=True,
+                    env=fixture_git.hermetic()).stdout.strip()
 
     with tempfile.TemporaryDirectory() as td:
         real = Path(td) / "real"                                    # a stand-in for the maintainer's checkout
