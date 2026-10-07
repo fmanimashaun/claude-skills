@@ -194,6 +194,8 @@ def selftest() -> int:
            bool(parse_findings('x = 1\nprint(f"""{(x # note\n)}""")\n', "t.py")))
     expect("a # inside a string literal in the expression is fine (3.9 accepts it)", parse_findings("print(f\"{'#'}\")\n", "t.py") == [])
     expect("a # in an f-string's literal text is fine", parse_findings('x = 1\nprint(f"# {x}")\n', "t.py") == [])
+    expect("a multi-line expression in a triple-quoted f-string with NO comment is fine",
+           parse_findings('x = 1\nprint(f"""{x\n}""")\n', "t.py") == [])
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)

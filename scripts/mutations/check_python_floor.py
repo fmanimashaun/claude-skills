@@ -36,6 +36,12 @@ GUARD = Guard(
             "a # comment inside an f-string expression is refused",
         ),
         Mutation(
+            "any line break inside an f-string reads as a comment (an NL token, which a comment's line break also is)",
+            "        elif tok.type == tokenize.COMMENT and stack:",
+            "        elif tok.type == tokenize.NL and stack:",
+            "a multi-line expression in a triple-quoted f-string with NO comment is fine",
+        ),
+        Mutation(
             "an empty tree reads clean",
             "    if count == 0:",
             "    if False:",
