@@ -7,6 +7,7 @@ GUARD = Guard(
     name="architecture_graph",
     subject="scripts/architecture_graph.py",
     selftest="scripts/architecture_graph.py",
+    needs=("scripts/fixture_git.py",),   # #1588
     deps=("scripts/generated_docs.py",),   # #1230: imported for the opt-in branch policy
     mutations=(
         # The quoted-path class narrowed again, so hyphens, `:segments` and dots cut the path short.

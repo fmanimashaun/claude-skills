@@ -925,12 +925,12 @@ def run() -> int:
     with _tf.TemporaryDirectory() as _w:
         _real = Path(_w) / "real"
         _sp.run(["git", "init", "-q", str(_real)], check=True, env=mc.hermetic_git.env())
-        _sp.run(["git", "-C", str(_real), "-c", "user.email=x@x", "-c", "user.name=x", "commit", "-q",
+        _sp.run(["git", "-C", str(_real), "-c", "user.email=x@x", "-c", "user.name=x", "commit", "-q",  # fixture-git: exempt (the stand-in for the real repo in the incident replay: its own temp dir, under hermetic_git's env)
                  "--allow-empty", "-m", "real"], check=True, env=mc.hermetic_git.env())
         _env = mc.hermetic_git.env({**os.environ, "GIT_DIR": str(_real / ".git")})
         _tmp = Path(_w) / "probe"
         _sp.run(["git", "init", "-q", str(_tmp)], env=_env, capture_output=True)
-        _sp.run(["git", "-C", str(_tmp), "-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgSign=false",
+        _sp.run(["git", "-C", str(_tmp), "-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgSign=false",  # fixture-git: exempt (the argv is the subject: it replays the #1588 incident; the GIT_DIR it inherits is a stand-in repo in the same throwaway dir, by design)
                  "commit", "-q", "--allow-empty", "-m", "m"], env=_env, capture_output=True)
         _n = _sp.run(["git", "-C", str(_real), "rev-list", "--count", "HEAD"], capture_output=True, text=True,
                      env=mc.hermetic_git.env()).stdout.strip()
@@ -945,7 +945,7 @@ def run() -> int:
         "import os, subprocess, sys, tempfile\n"
         "with tempfile.TemporaryDirectory() as d:\n"
         "    subprocess.run(['git', 'init', '-q', d], check=True)\n"
-        "    t = subprocess.run(['git', '-C', d, '-c', 'user.email=t@t', '-c', 'user.name=t', '-c',\n"
+        "    t = subprocess.run(['git', '-C', d, '-c', 'user.email=t@t', '-c', 'user.name=t', '-c',\n"  # fixture-git: exempt (the argv is the subject: it replays the #1588 incident; the GIT_DIR it inherits is a stand-in repo in the same throwaway dir, by design)
         "                        'commit.gpgSign=false', 'commit', '-q', '--allow-empty', '-m', 'm'],\n"
         "                       capture_output=True, text=True, env={**os.environ, 'GIT_TRACE': '1'})\n"
         "    if 'maintenance run' in t.stderr or 'gc --auto' in t.stderr:\n"
