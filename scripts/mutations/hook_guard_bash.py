@@ -71,7 +71,7 @@ GUARD = Guard(
         # #1423: the label helper must run for a create that never starts a normalised segment.
         Mutation(
             "the label helper runs only for a create at a normalised segment start, so a spelling the normaliser does not resolve escapes",
-            'if [ "$_fire" = 1 ] || rawhit "$_flat" "$_re_verb" || rawhit "$cmd" "$_re_shell_word" \\\n   || rawhit "$cmd" "$_re_source" || rawhit "$_flat" "$_re_api" || rawhit "$cmd" "$_re_ansi"; then',
+            'if [ "$_fire" = 1 ] || rawhit "$_flat" "$_re_verb" || rawhit "$cmd" "$_re_shell_word" \\\n   || rawhit "$cmd" "$_re_source" || rawhit "$cmd" "$_re_runs_text" || rawhit "$_flat" "$_re_api" || rawhit "$cmd" "$_re_ansi"; then',
             "if hit '^gh[[:space:]]+issue[[:space:]]+create\\b'; then",
             "guard-bash (#1495): `gh issue $'create'` reaches the helper",
         ),
@@ -94,6 +94,12 @@ GUARD = Guard(
             ' || rawhit "$cmd" "$_re_source"',
             '',
             "guard-bash (#1515): `source bad.sh` is refused",
+        ),
+        Mutation(
+            "`eval`, `xargs`, `alias` and a function definition no longer trigger the helper (#1645 R2)",
+            ' || rawhit "$cmd" "$_re_runs_text"',
+            '',
+            "guard-bash (#1645 R2): `alias g='gh issue'; g create -t X` is refused",
         ),
         Mutation(
             "`gh api` naming issues no longer triggers the helper",
