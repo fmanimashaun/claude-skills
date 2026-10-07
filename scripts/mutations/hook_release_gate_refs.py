@@ -16,7 +16,7 @@ GUARD = Guard(
     subject="plugins/qa-flow/hooks/scripts/release-gate.sh",
     selftest="plugins/rails-flow/scripts/check_hook_gates.py",
     selftest_args=("--only", "release_gate_refs"),
-    needs=("plugins/rails-flow/hooks/hooks.json",
+    needs=("plugins/rails-flow/scripts/fixture_git.py", "plugins/rails-flow/hooks/hooks.json",
            "plugins/rails-flow/hooks/scripts", "plugins/qa-flow/hooks/scripts",
            "plugins/qa-flow/scripts",
            'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py',  # session-start.sh runs both (#1581: the harness drives it)

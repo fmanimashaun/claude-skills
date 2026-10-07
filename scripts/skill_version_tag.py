@@ -25,6 +25,9 @@ import sys
 import tempfile
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "plugins" / "rails-flow" / "scripts"))
+import fixture_git  # noqa: E402  (#1588: a fixture's git touches only its own temp repo)
+
 MANIFEST = ".claude-plugin/marketplace.json"
 
 
@@ -139,7 +142,7 @@ def selftest() -> int:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(json.dumps(manifest), encoding="utf-8")
             _git(repo, "add", "README" if manifest is None else MANIFEST)
-            _git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", tag)
+            fixture_git.run(repo, "commit", "-qm", tag, check=False)  # #1588: bound to this temp repo; status unread, as before
             _git(repo, "tag", tag)
 
         _git(repo, "init", "-q")

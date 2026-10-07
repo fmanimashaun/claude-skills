@@ -197,14 +197,14 @@ def selftest() -> int:
     with tempfile.TemporaryDirectory() as td:
         d = Path(td)
         saved_tmp, tempfile.tempdir = tempfile.tempdir, str(d)     # scratch repositories land here, not in a shared /tmp
-        g = ["git", "-c", "user.email=t@t", "-c", "user.name=t"]
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import fixture_git  # (#1588) the fixture's git touches only its own temp repo
         src = d / "src.git"
         subprocess.run(["git", "init", "-q", "--bare", str(src)], check=True)
-        work = d / "work"
-        subprocess.run(["git", "init", "-q", str(work)], check=True)
+        work = fixture_git.init(d / "work")
         (work / "a.txt").write_text("a\n", encoding="utf-8")
-        subprocess.run([*g, "add", "a.txt"], cwd=work, check=True)
-        subprocess.run([*g, "commit", "-q", "-m", "a"], cwd=work, check=True)
+        fixture_git.run(work, "add", "a.txt")
+        fixture_git.run(work, "commit", "-q", "-m", "a")
         sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=work, capture_output=True, text=True, check=True).stdout.strip()
         subprocess.run(["git", "push", "-q", str(src), "HEAD:refs/heads/dev"], cwd=work, check=True)
         for k, v in (("uploadpack.allowFilter", "true"), ("uploadpack.allowAnySHA1InWant", "true")):

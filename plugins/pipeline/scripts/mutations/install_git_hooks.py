@@ -9,6 +9,7 @@ GUARD = Guard(
     name="install_git_hooks",
     subject="hooks/scripts/install-git-hooks.sh",
     selftest="scripts/install_git_hooks_selftest.py",
+    needs=("scripts/fixture_git.py",),   # its selftest's git goes through fixture_git (#1588)
     mutations=(
         Mutation(
             "the hooks directory is derived from --git-dir again, ignoring core.hooksPath",

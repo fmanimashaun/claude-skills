@@ -20,8 +20,8 @@ GUARD = Guard(
         ),
         Mutation(
             "the fixture's git starts background maintenance again -- the #1493 root cause",
-            'FIXTURE_GIT = ("-c", "user.email=t@t", "-c", "user.name=t", "-c", "maintenance.auto=false", "-c", "gc.auto=0",',
-            'FIXTURE_GIT = ("-c", "user.email=t@t", "-c", "user.name=t",',
+            'FIXTURE_GIT = ("-c", "user.email=t@t", "-c", "user.name=t", "-c", "maintenance.auto=false", "-c", "gc.auto=0",',  # fixture-git: exempt (the argv is the subject: this fixture tests git's own maintenance behaviour; bound by -C)
+            'FIXTURE_GIT = ("-c", "user.email=t@t", "-c", "user.name=t",',  # fixture-git: exempt (the argv is the subject: this fixture tests git's own maintenance behaviour; bound by -C)
             'cleanup: a fixture commit starts no background maintenance or gc',
         ),
         Mutation(
@@ -274,6 +274,12 @@ GUARD = Guard(
             '                    print("\\n".join(paths))        # the release gate reads these',
             '                    print("\\n".join(paths), file=sys.stderr)',
             "stamp: both layers passing -> 0 and the evidence paths on stdout",
+        ),
+        Mutation(
+            "the selftest keeps an inherited GIT_DIR, so a fixture commit lands in the repo it names (#1660 review R3)",
+            '    for key in _REPO_LOCATORS:\n        os.environ.pop(key, None)',
+            '    for key in ():\n        os.environ.pop(key, None)',
+            "binding: under an inherited GIT_DIR a fixture commit stays out of the repo it names",
         ),
     ),
 )

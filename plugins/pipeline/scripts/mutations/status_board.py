@@ -12,7 +12,7 @@ GUARD = Guard(
     name="status_board",
     subject="scripts/status_board.py",
     selftest="scripts/status_board_selftest.py",
-    needs=("scripts/status_board_verdicts.json", "hooks/scripts/board-refresh.sh", "hooks/hooks.json"),     # the selftest runs the Stop hook
+    needs=("scripts/fixture_git.py", "scripts/status_board_verdicts.json", "hooks/scripts/board-refresh.sh", "hooks/hooks.json"),     # the selftest runs the Stop hook
     mutations=(
         Mutation(
             "a pull request list gh cannot read is drawn as an empty, measured list -- unknown becomes 0",

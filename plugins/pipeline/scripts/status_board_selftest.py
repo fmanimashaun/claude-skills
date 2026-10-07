@@ -27,6 +27,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import fixture_git  # noqa: E402  (#1588: a fixture's git touches only its own temp repo)
 
 import status_board as sb  # noqa: E402
 
@@ -914,8 +915,8 @@ def the_command(tmp: Path) -> None:
     repo = tmp / "cli-repo"
     repo.mkdir()
     env = {**os.environ, "PATH": f"{stub}:{os.environ['PATH']}", "GIT_CEILING_DIRECTORIES": str(tmp)}
-    for cmd in (["git", "init", "-q"], ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "i"]):
-        subprocess.run(cmd, cwd=repo, env=env, check=True, capture_output=True)
+    fixture_git.init(repo)                                        # #1588: bound to this temp repo, refused if init failed
+    fixture_git.run(repo, "commit", "-q", "--allow-empty", "-m", "i")
     me = [sys.executable, str(Path(__file__).resolve().parent / "status_board.py")]
     done = subprocess.run([*me, "collect", "--root", str(repo)], capture_output=True, text=True, env=env)
     state = repo / ".claude" / "state"
@@ -1143,8 +1144,8 @@ def live_address(tmp: Path) -> None:
     repo = tmp / "live-repo"
     repo.mkdir()
     env = {**os.environ, "PATH": f"{stub}:{os.environ['PATH']}", "GIT_CEILING_DIRECTORIES": str(tmp)}
-    for cmd in (["git", "init", "-q"], ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "i"]):
-        subprocess.run(cmd, cwd=repo, env=env, check=True, capture_output=True)
+    fixture_git.init(repo)                                        # #1588: bound to this temp repo, refused if init failed
+    fixture_git.run(repo, "commit", "-q", "--allow-empty", "-m", "i")
     me = [sys.executable, str(Path(__file__).resolve().parent / "status_board.py")]
     (repo / ".git" / sb.COORD_FILE).write_text(json.dumps({"version": 1, "coordinator": coord, "sessions": {}, "board": {"artifact_url": good}}))
     done = subprocess.run([*me, "collect", "--root", str(repo)], capture_output=True, text=True, env=env)

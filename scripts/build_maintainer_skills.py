@@ -207,12 +207,11 @@ def head_read_arm() -> list[str]:
     with tempfile.TemporaryDirectory(prefix="mskills-head-") as tmp:
         repo = Path(tmp)
 
+        import sys as _sys; _sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "plugins" / "rails-flow" / "scripts")); import fixture_git as _fg  # #1588
         def git(*args: str) -> None:
-            subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True, check=True)
+            _fg.run(repo, *args)                                # bound to this temp repo (#1588)
 
-        git("init", "-q")
-        git("config", "user.email", "selftest@example.invalid")
-        git("config", "user.name", "selftest")
+        _fg.init(repo)
         git("config", "commit.gpgsign", "false")
         (repo / "f.md").write_text("committed\n", encoding="utf-8")
         git("add", "f.md")

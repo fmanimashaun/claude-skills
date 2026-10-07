@@ -208,11 +208,11 @@ def _selftest() -> int:
     import tempfile
     root = Path(tempfile.mkdtemp(prefix="published-blocks-"))
     try:
-        env = ["-c", "user.email=f@e", "-c", "user.name=f"]
+        import sys as _sys; _sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "plugins" / "rails-flow" / "scripts")); import fixture_git as _fg  # #1588
         (root / "CHANGELOG.md").write_text(AT_TAG, encoding="utf-8")
-        subprocess.run(["git", "init", "-q", "-b", "main"], cwd=root, capture_output=True)
-        subprocess.run(["git", *env, "add", "-A"], cwd=root, capture_output=True)
-        subprocess.run(["git", *env, "commit", "-qm", "r"], cwd=root, capture_output=True)
+        _fg.init(root, "-b", "main")                            # bound to this temp repo (#1588)
+        _fg.run(root, "add", "-A", check=False)
+        _fg.run(root, "commit", "-qm", "r", check=False)
         subprocess.run(["git", "tag", "v1.0.0"], cwd=root, capture_output=True)
 
         f, n = check(root, baseline=[])

@@ -148,10 +148,10 @@ def selftest() -> int:
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
+        import sys as _sys; _sys.path.insert(0, str(Path(__file__).resolve().parent)); import fixture_git as _fg  # #1588
         def git(*a: str) -> None:
-            subprocess.run(("git",) + a, cwd=root, check=True, capture_output=True)
+            _fg.init(root, *a[2:]) if a[:2] == ("init", "-q") else _fg.run(root, *a)   # bound to this temp repo (#1588)
         git("init", "-q", "-b", "main")
-        git("config", "user.email", "t@example.com"); git("config", "user.name", "t")
         (root / "app/models").mkdir(parents=True)
         (root / "app/models/invoice.rb").write_text("class Invoice; end\n")
         (root / "app/models/untouched.rb").write_text("class Untouched; end\n")
