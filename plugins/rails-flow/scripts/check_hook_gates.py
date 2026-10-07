@@ -1878,6 +1878,32 @@ def release_gate_fixtures() -> None:
         # tell it from the real one (#1571, measured on both). Only stage 1 says to run /qa-flow:certify.
         check("release-gate (#1428): an UNCOMMITTED stamp is denied -- main would not receive it",
               rc == 2 and "no qa/CERTIFICATION is committed at" in err and "Run /qa-flow:certify against staging" in err, err)
+        # #1657 review: the gate's own text tools are not byte-safe in a UTF-8 locale. macOS `tr` (the git/gh pre-check) and BSD `grep` stop at an invalid
+        # byte and drop the REST of the command, and macOS `sed` (inside the normaliser) aborts: `echo \xff` + a newline + a push read as no git at all and
+        # was allowed. The hook pins `LC_ALL=C` itself, whatever the caller's locale; a normaliser that yields nothing for a command that is not empty is
+        # "could not read", which refuses in the degraded (no classifier) path. Run under en_US.UTF-8 ON PURPOSE; on a host without that locale the tools
+        # are byte-safe and these pass either way, so they can only be red on macOS (the maintainer's own machine).
+        import shutil
+
+        def gate_bytes(payload: bytes, root: Path | None = None) -> int:
+            e = {**env, "LC_ALL": "en_US.UTF-8"}
+            if root is not None:
+                e["CLAUDE_PLUGIN_ROOT"] = str(root)
+            return _run(["bash", str(QA_HOOK)], cwd=repo, env=e, capture_output=True, timeout=60, input=payload).returncode
+
+        with tempfile.TemporaryDirectory() as ubtd:
+            ub_root = Path(ubtd) / "qa-flow"
+            shutil.copytree(QA_HOOK.parents[2], ub_root, ignore=shutil.ignore_patterns("push_targets.py", "__pycache__"))
+            check("release-gate (#1657): an invalid byte on an EARLIER line does not hide a push to main under a UTF-8 locale",
+                  gate_bytes(b"echo \xff\ngit push origin main\n") == 2, "exit != 2")
+            check("release-gate (#1657): CONTROL: the same push without the invalid byte is refused",
+                  gate_bytes(b"echo ok\ngit push origin main\n") == 2, "exit != 2")
+            check("release-gate (#1657): CONTROL: without the classifier, an invalid byte with no push in the command is not itself a refusal",
+                  gate_bytes(b"echo \xff\ngit status\n", ub_root) == 0, "exit != 0")
+            check("release-gate (#1657): without the classifier, an invalid byte on an earlier line does not hide a push to main",
+                  gate_bytes(b"echo \xff\ngit push origin main\n", ub_root) == 2, "exit != 2")
+            check("release-gate (#1657): without the classifier, a command the normaliser reads as NOTHING (only comments) is refused, not passed",
+                  gate_bytes(b"# git push origin main", ub_root) == 2, "exit != 2")
         sh("add", "qa/CERTIFICATION"); sh_old("commit", "-q", "-m", "stamp")
         rc, err = gate()
         check("release-gate (#1337): the stamp committed on top of the tested sha still permits", rc == 0, err)

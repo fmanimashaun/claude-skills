@@ -29,6 +29,19 @@ GUARD = Guard(
            'plugins/qa-flow/scripts/remote_evidence.py',   # the release gate runs it (#1591)
            'plugins/rails-flow/scripts/self_consistency.py'),
     mutations=(
+        # #1657 review: the gate's text tools are byte-oriented, and an unreadable command is a refusal.
+        Mutation(
+            "the git/gh pre-check runs `tr` in the caller's locale, so an invalid byte drops the rest of the command and a later push reads as no git",
+            "| LC_ALL=C tr -d ",
+            "| tr -d ",
+            "release-gate (#1657): an invalid byte on an EARLIER line does not hide a push to main under a UTF-8 locale",
+        ),
+        Mutation(
+            "a normaliser output of nothing for a command that is not empty is no longer 'could not read', so a comment-only mention passes in the degraded path",
+            """  [ -n "$seg" ] || [ -z "$cmd" ] || _seg_unread=1\n""",
+            "",
+            "release-gate (#1657): without the classifier, a command the normaliser reads as NOTHING",
+        ),
         # #1410 / #1470: the hook must hand the RAW command to the classifier, for ANY command that
         # mentions git or gh, treat "could not judge" as a promotion, and keep a raw-text fallback.
         Mutation(

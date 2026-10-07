@@ -185,8 +185,14 @@ cmd="$(printf '%s' "$input" | python3 -c 'import json,sys;print(json.load(sys.st
 # segment. FAIL CLOSED if the lib is missing: match the raw text, as before #3/#7/#48.
 _here="${BASH_SOURCE[0]%/*}"; [ "$_here" = "${BASH_SOURCE[0]}" ] && _here=.
 _lib="$_here/lib/normalize_cmd.sh"
+# `LC_ALL=C` and a fail-closed reading (#1657 review): sed and the lib's other stages are not byte-safe in a UTF-8 locale, and
+# macOS's sed aborts on an invalid byte ("illegal byte sequence"), which left the line, or the whole command, with NO segments:
+# `git push origin main \xff` read as nothing and passed. The caller's locale is not ours to trust, and an output the normaliser
+# could not produce (a non-zero status, or nothing for a command that is not empty) is "could not read", never "nothing to judge".
+_seg_unread=0
 if [ -f "$_lib" ] && . "$_lib" 2>/dev/null && type normalize_segments >/dev/null 2>&1; then
-  seg="$(printf '%s' "$cmd" | normalize_segments)"
+  seg="$(printf '%s' "$cmd" | LC_ALL=C normalize_segments)" || { seg="$cmd"; _seg_unread=1; }
+  [ -n "$seg" ] || [ -z "$cmd" ] || _seg_unread=1
 else
   seg="$cmd"
 fi
@@ -207,7 +213,8 @@ targets_main=0
 _pt="${CLAUDE_PLUGIN_ROOT:-}/scripts/push_targets.py"
 # Quotes and backslashes are dropped before the pre-check: `g''it`, `gi\t` and `"g"it` are all git
 # to the shell, and a literal `*git*` test sent them past the classifier (41's delta review).
-_probe="$(printf '%s' "$cmd" | tr -d "'\"\\\\")"
+# `LC_ALL=C`: macOS tr aborts at an invalid byte in a UTF-8 locale and drops the rest, so `echo \xff` + a newline + a push read as no git at all (#1657 review).
+_probe="$(printf '%s' "$cmd" | LC_ALL=C tr -d "'\"\\\\")"
 # #1569: AND any command with a shell expansion in it. `g$'h' api`, `$'\x67h'`, `g{h,}` and `$g` all run gh
 # without the letters g-h-t-h next to each other, so the probe above never saw them. The classifier
 # finds nothing in a command that has no effect and denies one whose command word it cannot read.
@@ -505,17 +512,20 @@ elif [ "$_mentions" = 1 ]; then
   # The classifier is missing: the pre-#1410 detection, with the whole-word match over the RAW
   # command so a quoted `"main"` is still seen. Over-blocks a `-main` branch name; never under-blocks
   # what it used to catch.
-  printf '%s\n' "$seg" | grep -qE '^[[:space:]]*git[[:space:]]+push\b' \
-    && printf '%s' "$cmd" | grep -qE '\b(main|master)\b' && { targets_main=1; needs_dev=1; }
-  printf '%s\n' "$seg" | grep -qE '^[[:space:]]*git[[:space:]]+merge\b' \
-    && git rev-parse --abbrev-ref HEAD 2>/dev/null | grep -qE '^(main|master)$' && { targets_main=1; needs_dev=1; }
-  if printf '%s\n' "$seg" | grep -qE '^[[:space:]]*gh[[:space:]]+pr[[:space:]]+merge\b'; then
-    num="$(printf '%s' "$seg" | grep -oE '(^|[[:space:]])[0-9]+([[:space:]]|$)' | tr -d ' ' | head -1)"
+  # `LC_ALL=C` on each grep: BSD grep stops at an invalid byte in a UTF-8 locale, so a push on a LATER line of the same command read as no match.
+  # The normaliser could not be read (above): over-blocks a command that is only comments, never under-blocks one it lost.
+  [ "$_seg_unread" = 1 ] && { targets_main=1; needs_dev=1; unresolved_pr=1; }
+  printf '%s\n' "$seg" | LC_ALL=C grep -qE '^[[:space:]]*git[[:space:]]+push\b' \
+    && printf '%s' "$cmd" | LC_ALL=C grep -qE '\b(main|master)\b' && { targets_main=1; needs_dev=1; }
+  printf '%s\n' "$seg" | LC_ALL=C grep -qE '^[[:space:]]*git[[:space:]]+merge\b' \
+    && git rev-parse --abbrev-ref HEAD 2>/dev/null | LC_ALL=C grep -qE '^(main|master)$' && { targets_main=1; needs_dev=1; }
+  if printf '%s\n' "$seg" | LC_ALL=C grep -qE '^[[:space:]]*gh[[:space:]]+pr[[:space:]]+merge\b'; then
+    num="$(printf '%s' "$seg" | LC_ALL=C grep -oE '(^|[[:space:]])[0-9]+([[:space:]]|$)' | tr -d ' ' | head -1)"
     resolve_pr "$num" "-"; note_pr
   fi
   # #1569: without the classifier a `gh api` write or a release cannot be read, so it is a promotion.
-  printf '%s\n' "$seg" | grep -qE '^[[:space:]]*gh[[:space:]]+(api|release[[:space:]]+(create|edit))\b' \
-    && printf '%s' "$cmd" | grep -qiE 'merge|refs|releases|release[[:space:]]+(create|edit)|mutation' && { targets_main=1; needs_dev=1; }
+  printf '%s\n' "$seg" | LC_ALL=C grep -qE '^[[:space:]]*gh[[:space:]]+(api|release[[:space:]]+(create|edit))\b' \
+    && printf '%s' "$cmd" | LC_ALL=C grep -qiE 'merge|refs|releases|release[[:space:]]+(create|edit)|mutation' && { targets_main=1; needs_dev=1; }
 fi
 [ "$targets_main" -eq 1 ] || [ -n "$releases" ] || exit 0
 
