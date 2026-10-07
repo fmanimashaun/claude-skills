@@ -144,6 +144,35 @@ pass on 2.1.288.
 - One clause of the prompt hook, the explicit `percent === null`, is redundant because `null < 70` is already
   true in JavaScript. Removing it changes nothing, so no test can catch it, and it is left out of the guard.
 
+## The account's usage limit: budget-guard (#1676, #1677)
+
+The context nudge watches one window. The account's 5-hour and weekly limits were invisible to the agent: on
+2026-10-07 the owner had to say "we are still at 96% of weekly limit", after four Workflow broadcasts had spent
+about 680k tokens each. Each broadcast started 11 agents, each paying about 62k tokens of startup context, only
+to call `SendMessage`. `hooks/budget-guard.mjs` does three things:
+
+1. **Refuses a relay workflow, at any usage.** A `Workflow` whose script starts agents and names `SendMessage`
+   is refused, with the fix in the message: call `SendMessage` directly, once per recipient, in one turn. A
+   script whose agents do real work and also report by message opts out with the line
+   `// budget-guard: not a relay`. This works on every account, with or without usage figures.
+2. **Refuses fan-out at the weekly hard limit.** At or past 90% of the 7-day window, a new `Workflow` or
+   `Agent` call is refused. Direct tool calls are never touched. `RAILS_FLOW_BUDGET_ALLOW=1` overrides this for a
+   session, and `RAILS_FLOW_BUDGET_BLOCK_PCT` moves the threshold (a whole percent, 1 to 100).
+3. **Shows the limits, through the context nudge.** A plugin registers each event once, so `context-nudge.mjs`
+   carries this part using budget-guard's helpers. The status line reads `context 30% · week 42% · 5h 12%`,
+   and when the weekly window first reaches the warn level (80%, set by `RAILS_FLOW_BUDGET_WARN_PCT`) and again at
+   the hard limit, ONE short line rides on a prompt so Claude knows its budget. It resets when usage falls
+   back below warn.
+
+**Where the figures come from, and when there are none.** The usage figures are `$.session.usage()` and
+`session.measure`'s `rateLimits`, each window a `{ kind, percentUsed, resetsAt }`. They exist only on a
+claude.ai Pro or Max subscription, or behind a gateway spend limit, and only after the session's first
+response. With no reading, nothing is refused for usage and nothing is announced. A guard that fails is
+skipped and the call runs (the engine's rule), so the usage refusal fails open. The relay refusal decides
+before anything that could fail. Excerpts and their checksum are in
+`docs/evidence/audits/2026-10-07-mods-tool-call-ratelimits-2.1.292.md`.
+
+
 ## What this does not cover
 
 Whether the content is *worth* its bytes is a review question, not a gate. The check answers only
