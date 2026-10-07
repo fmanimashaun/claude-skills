@@ -223,6 +223,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | pid record selftest | `repo` | `python3 scripts/pid_record_selftest.py` | live check |
 | published blocks | `repo` | `python3 scripts/check_published_blocks.py` | live check |
 | published blocks selftest | `repo` | `python3 scripts/check_published_blocks.py --selftest` | selftest |
+| python floor selftest | `repo` | `python3 scripts/check_python_floor.py --selftest` | selftest |
 | release notes complete | `repo` | `python3 scripts/extract_release_notes.py --check --all-tags` | live check |
 | release notes selftest | `repo` | `python3 scripts/extract_release_notes.py --selftest` | selftest |
 | section landmarks | `repo` | `python3 scripts/check_section_landmarks.py` | live check |
@@ -233,6 +234,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | shared shapes selftest | `repo` | `python3 scripts/check_shared_shapes.py --selftest` | selftest |
 | shipped ERB forms selftest | `repo` | `python3 scripts/check_shipped_erb_forms.py --selftest` | selftest |
 | shipped ERB passes simple-form-only | `repo` | `python3 scripts/check_shipped_erb_forms.py` | live check |
+| shipped python parses on 3.9 | `repo` | `python3 scripts/check_python_floor.py` | live check |
 | skill routing | `repo` | `python3 scripts/check_skill_routing.py` | live check |
 | skill routing selftest | `repo` | `python3 scripts/check_skill_routing.py --selftest` | selftest |
 | skill version tag selftest | `repo` | `python3 scripts/skill_version_tag.py --selftest` | selftest |
