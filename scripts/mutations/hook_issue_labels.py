@@ -549,8 +549,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a shell fed a file through a substitution is not read",
-            "    for m in _SHELL_FED.finditer(body):",
-            "    for m in []:",
+            "    for kind, text in _shell_fed(body):",
+            "    for kind, text in []:",
             "(#1515) a process substitution",
         ),
         Mutation(
@@ -583,6 +583,31 @@ GUARD = Guard(
             "    cmd = _strip_comments(cmd).replace(\"\\\\\\n\", \"\").replace(\"\\n\", \" ; \")",
             "    cmd = cmd.replace(\"\\\\\\n\", \"\").replace(\"\\n\", \" ; \")",
             "the command named only inside a comment",
+        ),
+        # ---- CodeQL (#1645): no command may hang the guard
+        Mutation(
+            "the old shell-fed pattern is back: `<&>` splits three ways, so repeated `<&>` backtracks exponentially",
+            "    for kind, text in _shell_fed(body):",
+            "    for kind, text in [(\"cat\" if mm.group(1) else \"read\", mm.group(1) or mm.group(2)) for mm in re.finditer(r\"(?:^|[\\s;&|(])(?:sh|bash|zsh|dash|ksh|eval)\\b(?:[^;&|\\n]|[<>]&|&>)*?(?:<\\(|\\$\\(|`)\\s*(?:cat\\s+([^)`]+)|<\\s*([^)`\\s]+))\", body)]:",
+            "(#1645 CodeQL) 50,000 x `<&>` after a shell word",
+        ),
+        Mutation(
+            "every shell word rescans the rest of the command, so 50,000 of them take quadratic time",
+            "        elif m.lastgroup == \"shell\":\n            shell = True",
+            "        elif m.lastgroup == \"shell\":\n            shell = True\n            for _ in _FED_SCAN.finditer(body, m.end()):\n                pass",
+            "(#1645 CodeQL) 50,000 shell words with no substitution",
+        ),
+        Mutation(
+            "every nested `$(` is re-read to its close, so 50,000 of them take cubic time",
+            "        i = j\n    return None",
+            "        i = m.end()\n    return None",
+            "(#1645 CodeQL) 50,000 nested `$(`",
+        ),
+        Mutation(
+            "the path before `gh` runs to the end of the token from every `(`, so `$($(` takes quadratic time",
+            "(?:[^\\s`(;&|/]*/)*gh(?:\\s+-\\S+",
+            "(?:\\S*/)?gh(?:\\s+-\\S+",
+            "(#1645 CodeQL) 50,000 nested `$(`",
         ),
         Mutation(
             "backslash-newlines are joined before comments are stripped, so a comment ending in a backslash swallows the create on the next line",
@@ -629,20 +654,20 @@ GUARD = Guard(
         ),
         Mutation(
             "`$(<f)` is not read as the file's contents",
-            "for operand in (_cat_operands(m.group(1)) if m.group(1) else [m.group(2)]):",
-            "for operand in (_cat_operands(m.group(1)) if m.group(1) else []):",
+            "for operand in (_cat_operands(text) if kind == \"cat\" else [text]):",
+            "for operand in (_cat_operands(text) if kind == \"cat\" else []):",
             "(#1645 R2) $(<f) in a -c string",
         ),
         Mutation(
             "`eval` is not one of the shells a substitution can feed",
-            '_SHELL_FED = re.compile(r"(?:^|[\\s;&|(])(?:sh|bash|zsh|dash|ksh|eval)',
-            '_SHELL_FED = re.compile(r"(?:^|[\\s;&|(])(?:sh|bash|zsh|dash|ksh)',
+            "|ksh|eval)",
+            "|ksh)",
             "(#1645 R2) eval of cat",
         ),
         Mutation(
             "text echoed into a process substitution for a shell is not judged",
-            "    for m in _SHELL_FED_ECHO.finditer(body):",
-            "    for m in []:",
+            "        if kind == \"echo\":",
+            "        if kind == \"echo\":\n            continue\n        if kind == \"echo\":",
             "(#1645 R2) a process substitution that echoes the script",
         ),
         Mutation(

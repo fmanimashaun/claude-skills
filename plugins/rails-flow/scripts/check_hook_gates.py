@@ -869,6 +869,16 @@ def guard_bash_fixtures() -> None:
                      ("alias g=gh; g issue list", "an alias used for something else"),
                      ("gh issue create -t X --body y --label bug --label severity:s2", "a direct labelled create")):
         check(f"guard-bash (#1515): CONTROL: `{cmd}` is allowed ({why})", labelled(cmd)[0] == 0)
+    # CodeQL (#1645): a pathological command must not hang the guard. The old pattern backtracked exponentially on repeated `<&>` after a shell word; the
+    # hook has to DECIDE (allow: nothing is created) within its budget, and a hang is the harness's timeout (rc 124, recorded as a failure).
+    for cmd, want, why in (("bash " + "<&>" * 50000 + " ok", 0, "50,000 x `<&>` after a shell word"),
+                           ("bash " + "<&>" * 50000 + "$(echo hi)", 0, "50,000 x `<&>` before an echo substitution"),
+                           ("bash " * 50000, 2, "50,000 shell words (a script file named `bash` cannot be read: refused)")):
+        began = time.monotonic()
+        rc, err = labelled(cmd)
+        took = time.monotonic() - began
+        check(f"guard-bash (#1645 CodeQL): {why} is decided, not hung (rc {rc}, {took:.1f}s of at most {10 * max(1.0, machine_slowdown()):.0f}s)",
+              rc == want and took < 10 * max(1.0, machine_slowdown()), err)
     # #1645 R1: a comment line must not swallow the create after it. Each through the real hook (also true on dev before this).
     for cmd, why in (("# note\ngh issue create -t X --body y", "a comment line, then an unlabelled create"),
                      ("echo hi # note\ngh issue create -t X --body y", "a trailing comment, then an unlabelled create"),

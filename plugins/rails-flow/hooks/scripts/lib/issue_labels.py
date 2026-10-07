@@ -32,6 +32,7 @@ Run:  issue_labels.py [--root DIR] < command.txt
 """
 from __future__ import annotations
 
+import bisect
 import json
 import os
 import re
@@ -222,7 +223,9 @@ def _cd_in_force(prefix: list[str]) -> str | None:
 
 
 # `gh [global flags] issue create|new`, quote characters removed first (see `_names_create`).
-CREATE_TEXT = re.compile(r"(?:^|[\s`(;&|])(?:\S*/)?gh(?:\s+-\S+(?:\s+[^-\s]\S*)?)*\s+issue\s+(?:create|new)\b")
+# The path prefix stops at a separator (`[^\s`(;&|/]*/`, not `\S*/`): from every `(` of `$($($(` a `\S*` ran to the end of the token, so it was quadratic; a prefix that
+# held a separator is matched from the LATER start point anyway.
+CREATE_TEXT = re.compile(r"(?:^|[\s`(;&|])(?:[^\s`(;&|/]*/)*gh(?:\s+-\S+(?:\s+[^-\s]\S*)?)*\s+issue\s+(?:create|new)\b")
 
 
 def _names_create(text: str) -> bool:
@@ -409,17 +412,17 @@ def hidden_create(cmd: str, depth: int = 0, cwd: Path | None = None) -> str | No
     if found:
         return found
     # A shell fed a file through a substitution (#1515): `bash <(cat f)`, `bash -c "$(cat f)"`, `bash <<<"$(cat f)"`.
-    for m in _SHELL_FED.finditer(body):
-        for operand in (_cat_operands(m.group(1)) if m.group(1) else [m.group(2)]):    # `cat f`, or `<f` (#1645 R2: `$(<f)`)
+    for kind, text in _shell_fed(body):
+        if kind == "echo":      # the text a shell is fed by `echo`/`printf` IS the script (#1645 R2): `bash <(echo 'gh issue create ...')`
+            if _runs(text, depth, base_dir):
+                return "text fed to a shell through a substitution"
+            continue
+        for operand in (_cat_operands(text) if kind == "cat" else [text]):    # `cat f`, or `<f` (#1645 R2: `$(<f)`)
             fed = _read_script(operand, base_dir)
             if fed is _UNREADABLE or fed is _UNKNOWN_DIR:
                 return f"a script file `{operand}` fed to a shell that this hook cannot read"
             if fed is not None and _runs(fed, depth, base_dir):
                 return "a script file fed to a shell through a substitution"
-    # The text a shell is fed by `echo`/`printf` through a substitution is the script (#1645 R2): `bash <(echo 'gh issue create …')`.
-    for m in _SHELL_FED_ECHO.finditer(body):
-        if _runs(m.group(1), depth, base_dir):
-            return "text fed to a shell through a substitution"
     try:
         lexer = shlex.shlex(_fold_fd_redirects(_strip_comments(body)).replace("\n", " ; "), posix=True, punctuation_chars=";&|()")
         lexer.commenters = ""            # (#1645 R1) see `_strip_comments`
@@ -598,6 +601,9 @@ def gh_issue_create_at(words: list[str], i: int) -> tuple[int | None, list[str]]
     return None, []
 
 
+_SUBST_OPEN = re.compile(r"\$\(")
+
+
 def _substituted_create(text: str) -> str | None:
     """A create inside a backtick or `$( … )` substitution in TEXT, named, or None."""
     # Backticks PAIR: the text between the 1st and 2nd is a substitution, the 2nd and 3rd is not.
@@ -605,14 +611,17 @@ def _substituted_create(text: str) -> str | None:
     ticks = text.split("`")
     if any(_names_create(span) for span in ticks[1::2]):
         return "backticks"
-    # `$( … )` to its OWN closing parenthesis, counted, so a create after it is not inside it.
-    for m in re.finditer(r"\$\(", text):
+    # `$( … )` to its OWN closing parenthesis, counted, so a create after it is not inside it. Only the OUTERMOST substitution is read, once, and the scan
+    # resumes after it: a create inside a nested one is inside the outer one, and re-reading each nested span made `$(` x 2,000 take ten seconds (cubic).
+    i = 0
+    while (m := _SUBST_OPEN.search(text, i)):
         depth, j = 1, m.end()
         while j < len(text) and depth:
             depth += {"(": 1, ")": -1}.get(text[j], 0)
             j += 1
         if _names_create(text[m.end():j - (0 if depth else 1)]):
             return "a `$( … )` substitution"
+        i = j
     return None
 
 
@@ -678,7 +687,7 @@ def _peel(words: list[str]) -> list[str]:
 
 
 _FN_DEF = re.compile(r"(?:^|[;&|({\s])(?:function\s+([A-Za-z_][\w.:+-]*)\s*(?:\(\s*\))?|([A-Za-z_][\w.:+-]*)\s*\(\s*\))\s*\{")
-_GH_WORD = re.compile(r"(?:^|[\s;&|({])(?:\S*/)?gh(?=[\s;&|)}]|$)")
+_GH_WORD = re.compile(r"(?:^|[\s;&|({])(?:[^\s;&|({/]*/)*gh(?=[\s;&|)}]|$)")
 
 
 def _functions(text: str) -> tuple[set[str], set[str]]:
@@ -809,11 +818,49 @@ def _redirected_script(args: list[str], cwd: Path | None) -> str | None:
     return _read_script(target, cwd)
 
 
-# A SHELL FED A FILE THROUGH A SUBSTITUTION (#1515): `bash <(cat f)`, `bash -c "$(cat f)"`, `bash <<<"$(cat f)"`, and the backtick form. The
-# shell word and the `cat` sit in one segment (no `;`, `&` or `|` between them); `cat`'s operands are the files.
-_SHELL_FED = re.compile(r"(?:^|[\s;&|(])(?:sh|bash|zsh|dash|ksh|eval)\b(?:[^;&|\n]|[<>]&|&>)*?(?:<\(|\$\(|`)\s*(?:cat\s+([^)`]+)|<\s*([^)`\s]+))")
-# The same, fed by `echo`/`printf` (#1645 R2): the printed text IS the script.
-_SHELL_FED_ECHO = re.compile(r"(?:^|[\s;&|(])(?:sh|bash|zsh|dash|ksh|eval)\b(?:[^;&|\n]|[<>]&|&>)*?(?:<\(|\$\(|`)\s*(?:echo|printf)\s+([^)`]+)")
+# A SHELL FED A FILE OR TEXT THROUGH A SUBSTITUTION (#1515, #1645 R2): `bash <(cat f)`, `bash -c "$(cat f)"`, `bash <<<"$(cat f)"`, the backtick form,
+# `$(<f)`, and `bash <(echo '...')`. The shell word and the substitution sit in one segment (no `;`, `|`, newline or bare `&` between them).
+# ONE LINEAR PASS, NOT A BACKTRACKING PATTERN (CodeQL: exponential backtracking on repeated `<&>`): the pattern this replaces let `<&>` match three
+# ways, and even once unambiguous it rescanned to the end of the command from every shell word (`bash ` x 8000 took 15 s). Here each character is
+# looked at once; the end of an operand comes from a precomputed list of terminators, so no marker rescans the text.
+_FED_SCAN = re.compile(
+    r"(?P<sep>[;|\n]|(?<![<>])&(?!>))"                          # a `&` is part of a segment only as an fd dup (`2>&1`, after `<`/`>`) or as `&>`
+    r"|(?P<shell>(?<![^\s;&|(])(?:sh|bash|zsh|dash|ksh|eval)\b)"
+    r"|(?P<mark><\(|\$\(|`)")
+_FED_END = re.compile(r"[)`]")
+_FED_CAT = re.compile(r"\s*cat\s+")
+_FED_ECHO = re.compile(r"\s*(?:echo|printf)\s+")
+_FED_READ = re.compile(r"\s*<\s*([^)`\s]{1,4096})")
+
+
+def _shell_fed(body: str) -> list[tuple[str, str]]:
+    """What a shell in BODY is fed through a substitution: ("cat", the text after `cat`), ("read", the `<f` operand), ("echo", the printed text)."""
+    ends = [m.start() for m in _FED_END.finditer(body)]
+    out: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    shell = False
+    for m in _FED_SCAN.finditer(body):
+        if m.lastgroup == "sep":
+            shell = False
+        elif m.lastgroup == "shell":
+            shell = True
+        elif shell:
+            at = m.end()
+            kind = ""
+            if (c := _FED_CAT.match(body, at)) or (c := _FED_ECHO.match(body, at)):
+                kind = "cat" if "cat" in c.group() else "echo"
+                start = c.end()
+                k = bisect.bisect_left(ends, start)
+                text = body[start:ends[k] if k < len(ends) else len(body)]
+                found = (kind, text) if text else None
+            elif (r := _FED_READ.match(body, at)):
+                found = ("read", r.group(1))
+            else:
+                found = None
+            if found and found not in seen:
+                seen.add(found)
+                out.append(found)
+    return out
 
 
 def _cat_operands(text: str) -> list[str]:
@@ -1553,6 +1600,23 @@ def selftest() -> int:
                           ("echo 'see #12'\ngh issue list", "a # inside single quotes"),
                           ("cat > b.md <<'EOF'\n# a heading\nEOF\ngh issue list", "a # in a heredoc body")):
             check(f"(#1645 R1) CONTROL: {cmd!r} is allowed ({why_})", verdict(cmd, bare)[0], verdict(cmd, bare)[1])
+
+        # CodeQL (#1645): NO COMMAND MAY MAKE THE GUARD HANG. Each shape is decided in a CHILD process with a hard timeout, so a pattern that backtracks fails here
+        # instead of hanging the selftest; the child reports its own CPU seconds (best of two), which a loaded machine does not inflate as it does the wall clock.
+        timing = ("import sys, time, tempfile\nfrom pathlib import Path\nsys.path.insert(0, sys.argv[1])\nimport issue_labels as il\n"
+                  "cmd = {shape!r}\nroot = Path(tempfile.mkdtemp())\nbest = 1e9\n"
+                  "for _ in range(2):\n    t = time.process_time(); il.verdict(cmd, root); best = min(best, time.process_time() - t)\nprint(best)\n")
+        for shape, why_ in (("bash " + "<&>" * 50000 + " ok", "50,000 x `<&>` after a shell word (CodeQL's shape)"),
+                            ("bash " + "<&>" * 50000 + "$(echo hi)", "50,000 x `<&>` before an echo substitution"),
+                            ("bash " * 50000, "50,000 shell words with no substitution (a rescan from each)"),
+                            ("$(" * 50000, "50,000 nested `$(` (each span re-read)")):
+            try:
+                done = subprocess.run([sys.executable, "-c", timing.format(shape=shape), str(Path(__file__).resolve().parent)],
+                                      capture_output=True, text=True, timeout=30)
+                spent = float(done.stdout.strip() or 1e9)
+            except subprocess.TimeoutExpired:
+                spent = float("inf")
+            check(f"(#1645 CodeQL) {why_}: decided in under 1 CPU second (took {spent:.2f}s)", spent < 1.0)
 
         # #1645 R2: VARIANTS OF THE SHAPES THE GATE CLAIMS. Each refused through the helper, with a control. Files are absolute so the cwd does not matter.
         argsf = Path(td) / "args.txt"
