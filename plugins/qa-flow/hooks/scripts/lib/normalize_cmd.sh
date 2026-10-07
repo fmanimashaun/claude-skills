@@ -185,7 +185,7 @@ _dequote() {
   }
   # One line -> OUT. Sets JOIN when the line ends in an unquoted backslash (the caller joins the next line and lexes again),
   # and appends every heredoc the line opens to NQ (committed by the caller once the line is final).
-  function lex(s,    n, i, c, d, j, k, out, w, q, dash, word, quoted, comment) {
+  function lex(s,    n, i, c, d, j, k, out, w, dash, word, quoted) {
     n = length(s); i = 1; out = ""; JOIN = 0; NQN = 0
     while (i <= n) {
       c = substr(s, i, 1)
@@ -244,15 +244,16 @@ _dequote() {
     }
     OUT = out
   }
-  function reset() { INB = 0; QN = 0; QI = 0; BUF = ""; ACC = ""; HOLD = 0; AR = 0 }
+  function reset() { INB = 0; QN = 0; QI = 0; BUF = ""; ACC = ""; AR = 0 }
   # A batch boundary (#1504): one string ends, and every state of it ends with it.
   $0 == "\002" { reset(); print; next }
   INB {
-    # A heredoc body is not lexed. An UNQUOTED delimiter lets a backslash-newline join the body lines, as it does in bash, and
+    # A heredoc body is not lexed. An UNQUOTED delimiter lets a backslash-newline join the body lines, as it does in bash (an odd run of
+    # backslashes is judged by the character before the last, which is enough for a body line), and
     # the terminator is compared after the join; a quoted delimiter joins nothing. A CR is part of both words in bash.
     line = $0
-    if (!QQ[QI] && line ~ /\\$/ && substr(line, length(line) - 1, 1) != "\\") { ACC = ACC substr(line, 1, length(line) - 1); HOLD = 1; next }
-    line = ACC line; ACC = ""; HOLD = 0
+    if (!QQ[QI] && line ~ /\\$/ && substr(line, length(line) - 1, 1) != "\\") { ACC = ACC substr(line, 1, length(line) - 1); next }
+    line = ACC line; ACC = ""
     t = line; sub(/\r$/, "", t); if (QD[QI]) sub(/^\t+/, "", t)
     print line
     if (t == QW[QI]) { QI++; if (QI > QN) { INB = 0; QN = 0; QI = 0 } }
