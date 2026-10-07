@@ -161,8 +161,8 @@ def issue_creates(cmd: str) -> list[tuple[list[str], str | None, str | None]]:
     raw_cd_shape = bool(re.match(r"""\s*cd\s+('[^']*'|"[^"]*"|[^\s'"&;|()]+)\s*&&""", cmd))
     try:
         lexer = shlex.shlex(cmd, posix=True, punctuation_chars=";&|()")
+        lexer.commenters = ""            # (#1645 R1) comments are stripped line by line by `_strip_comments`; shlex's own would eat everything after the first `#`
         lexer.whitespace_split = True
-        lexer.commenters = ""            # comments were stripped line by line above; shlex's own would eat everything after the first `#`
         tokens = list(lexer)
     except ValueError:
         return _unparseable(cmd)
@@ -422,8 +422,8 @@ def hidden_create(cmd: str, depth: int = 0, cwd: Path | None = None) -> str | No
             return "text fed to a shell through a substitution"
     try:
         lexer = shlex.shlex(_fold_fd_redirects(_strip_comments(body)).replace("\n", " ; "), posix=True, punctuation_chars=";&|()")
-        lexer.whitespace_split = True
         lexer.commenters = ""            # (#1645 R1) see `_strip_comments`
+        lexer.whitespace_split = True
         tokens = list(lexer)
     except ValueError:
         return None
@@ -479,8 +479,6 @@ def hidden_create(cmd: str, depth: int = 0, cwd: Path | None = None) -> str | No
                 return "a `gh` word built at run time or aliased"
             if head == "issue" and tail[:1] and tail[0] in ("create", "new"):
                 return "a `gh` word built at run time (a substitution before `issue create`)"
-            if head == "gh" and len(words) == 1 and prev_op in ("|", "|&") and re.search(r"\bissue\s+(create|new)\b", prev_text):
-                return "a pipe into `xargs gh`"
             # `xargs` builds gh's arguments from its input (#1645 R2): `-a FILE`, a file `cat`/`tail` pipes in, or the text `echo` pipes in; with
             # `-I{}` the input replaces `{}` in the command. The verb arriving that way, side by side, is an unlabelled create.
             if "xargs" in peeled and head == "gh":
@@ -1530,6 +1528,86 @@ def selftest() -> int:
                           ("echo issue create | cat", "the verb piped to cat, not to xargs gh"),
                           ("gh issue create -t X --body y --label feature", "a direct labelled create still passes")):
             check(f"(#1515) CONTROL: {cmd!r} is allowed ({why_})", verdict(cmd, bare)[0])
+
+        # #1645 R1: A COMMENT LINE MUST NOT SWALLOW THE CREATE AFTER IT (also true on dev). Each refused, with controls that must stay allowed.
+        for cmd, why_ in (("# note\ngh issue create -t X --body y", "a comment line, then an unlabelled create"),
+                          ("echo hi # note\ngh issue create -t X --body y", "a trailing comment, then an unlabelled create"),
+                          ("# note\n\ngh issue create -t X --body y", "a comment, a blank line, then an unlabelled create"),
+                          ("# one\n# two\ngh issue create -t X --body y", "two comment lines, then an unlabelled create")):
+            ok, why = verdict(cmd, bare)
+            check(f"(#1645 R1) {why_}: {cmd!r} is refused", not ok and "no --label" in why, why)
+        ok, why = verdict("echo a#b; gh issue create -t X --body y", bare)
+        check("(#1645 R1) a # inside a word is not a comment: the create after it on the same line is refused", not ok and "no --label" in why, repr((ok, why)))
+        cs = Path(td) / "commented.sh"
+        cs.write_text("# don't file this by hand\ngh issue create -t X --body y\n", encoding="utf-8")
+        ok, why = verdict(f"sh {cs}", bare)
+        check("(#1645 R1) a script body: a comment line, then an unlabelled create (the second parse) is refused", not ok, why)
+        check("(#1645 R1) CONTROL: a # inside quotes does not hide a labelled create after the closing quote",
+              verdict('echo "see #12 and #13"\ngh issue create -t X --body y --label feature', bare)[0],
+              verdict('echo "see #12 and #13"\ngh issue create -t X --body y --label feature', bare)[1])
+        for cmd, why_ in (("# note\ngh issue create -t X --body y --label feature", "a labelled create after a comment"),
+                          ("# gh issue create is how you file one\necho hi", "the command named only inside a comment"),
+                          ("echo a#b", "a # inside a word"), ('echo "see #12 and #13"', "a # inside double quotes"),
+                          ("echo 'see #12'\ngh issue list", "a # inside single quotes"),
+                          ("cat > b.md <<'EOF'\n# a heading\nEOF\ngh issue list", "a # in a heredoc body")):
+            check(f"(#1645 R1) CONTROL: {cmd!r} is allowed ({why_})", verdict(cmd, bare)[0], verdict(cmd, bare)[1])
+
+        # #1645 R2: VARIANTS OF THE SHAPES THE GATE CLAIMS. Each refused through the helper, with a control. Files are absolute so the cwd does not matter.
+        argsf = Path(td) / "args.txt"
+        argsf.write_text("issue create -t X --body y\n", encoding="utf-8")
+        okargs = Path(td) / "okargs.txt"
+        okargs.write_text("issue list\n", encoding="utf-8")
+        ind = Path(td) / "ind.sh"
+        ind.write_text("G=gh; $G issue create -t X\n", encoding="utf-8")
+        als = Path(td) / "als.sh"
+        als.write_text("alias g=gh\ng issue create -t X\n", encoding="utf-8")
+        fnsh = Path(td) / "fn.sh"
+        fnsh.write_text('g() { command gh "$@"; }\ng issue create -t X\n', encoding="utf-8")
+        chain = Path(td) / "chain.sh"
+        chain.write_text(f". {bad}\n", encoding="utf-8")
+        selfsrc = Path(td) / "self.sh"
+        selfsrc.write_text(f". {selfsrc}\n", encoding="utf-8")
+        check("(#1645 R2) a self-sourcing script is bounded: the recursion stops at its depth cap and the harmless script is allowed",
+              verdict(f"bash {selfsrc}", bare)[0], verdict(f"bash {selfsrc}", bare)[1])
+        for cmd, label in (
+                ("alias g='gh issue'; g create -t X", "alias whose body is `gh issue`"),
+                ("alias mk='gh issue create'; mk -t X", "alias whose body is the whole create"),
+                ('g() { command gh "$@"; }; g issue create -t X', "function wrapper"),
+                ('function g { gh "$@"; }; g issue create -t X', "`function` keyword wrapper"),
+                ('g() { gh issue create "$@"; }; g -t X', "function whose body is the create"),
+                (f"xargs -a {argsf} gh", "xargs -a FILE"), (f"cat {argsf} | xargs gh", "a file piped to xargs gh"),
+                ("echo create | xargs -I{} gh issue {} -t X", "xargs -I{} replacing the verb"),
+                (f'bash -c "$(<{bad})"', "$(<f) in a -c string"), (f'bash <<< "$(<{bad})"', "$(<f) in a herestring"),
+                (f"bash <(<{bad})", "a process substitution that reads the file"), (f'eval "$(cat {bad})"', "eval of cat"),
+                (f'eval "$(<{bad})"', "eval of $(<f)"), ("bash <(echo 'gh issue create -t X')", "a process substitution that echoes the script"),
+                (f"tail -n +1 {bad} | sh", "tail into a shell"), (f"head -5 {bad} | sh", "head into a shell"),
+                (f"sed 1d {bad} | bash", "sed into a shell"), (f"grep . {bad} | sh", "grep into a shell"),
+                (f"xargs sh {bad}", "xargs sh FILE"), (f"find . -exec sh {bad} \\;", "find -exec sh FILE"),
+                (f"bash {ind}", "a script that builds the gh word at run time"), (f"bash {als}", "a script that aliases gh"),
+                (f"bash {fnsh}", "a script that wraps gh in a function"),
+                ("sh <<'EOF'\nG=gh; $G issue create -t X\nEOF", "a heredoc fed to a shell that builds the gh word"),
+                ("sh <<'EOF'\nalias g=gh\ng issue create -t X\nEOF", "a heredoc fed to a shell that aliases gh"),
+                (f"sh -c '. {bad}'", "a -c string that sources the file"), (f"sh -c 'bash {bad}'", "a -c string that runs a shell on the file"),
+                (f"if true; then . {bad}; fi", "`then . f`"), (f"for i in 1; do . {bad}; done", "`do . f`"),
+                (f"{{ . {bad}; }}", "`{ . f; }`"), (f"builtin source {bad}", "builtin source"), (f"command . {bad}", "command ."),
+                (f"time . {bad}", "time ."), (f"! . {bad}", "`! . f`"), (f"bash {chain}", "a script that sources a script")):
+            ok, why = verdict(cmd, bare)
+            check(f"(#1645 R2) {label}: {cmd.replace(str(td), '')!r} is refused", not ok, why)
+        for cmd, label in (
+                ("alias g='gh issue'; g list", "an alias of `gh issue` used for a list"), ('g() { gh "$@"; }; g issue list', "a gh wrapper used for a list"),
+                ("g() { echo hi; }; g issue create-nothing", "a function that is not gh"),
+                (f"xargs -a {okargs} gh", "xargs -a FILE naming a list"), (f"cat {fine} | xargs gh", "a harmless file piped to xargs gh"),
+                ("echo list | xargs -I{} gh issue {}", "xargs -I{} replacing a list verb"),
+                (f'bash -c "$(<{fine})"', "$(<f) of a harmless file"), (f'eval "$(cat {fine})"', "eval of a harmless file"),
+                ("bash <(echo 'echo hi')", "a process substitution that echoes harmless text"),
+                (f"tail -n +1 {fine} | sh", "tail of a harmless file into a shell"), (f"sed 1d {fine} | bash", "sed of a harmless file into a shell"),
+                (f"tail -n +1 {bad} | wc -l", "tail of a create script that no shell runs"),
+                (f"find . -exec echo {bad} \\;", "find -exec of a command that is not a shell"),
+                (f"sh -c '. {fine}'", "a -c string that sources a harmless file"), (f"if true; then . {fine}; fi", "`then . f` of a harmless file"),
+                (f"{{ . {fine}; }}", "`{ . f; }` of a harmless file"), (f"builtin source {fine}", "builtin source of a harmless file"),
+                (f"time . {fine}", "time . of a harmless file"), (f"bash {fine}", "a harmless script"),
+                ("sh <<'EOF'\necho hi\nEOF", "a harmless heredoc fed to a shell")):
+            check(f"(#1645 R2) CONTROL: {cmd.replace(str(td), '')!r} is allowed ({label})", verdict(cmd, bare)[0], verdict(cmd, bare)[1])
 
     for f in fails:
         print(f"FAIL {f}")

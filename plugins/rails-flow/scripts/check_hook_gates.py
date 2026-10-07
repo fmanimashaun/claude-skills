@@ -813,6 +813,52 @@ def guard_bash_fixtures() -> None:
                      ("alias g=gh; g issue list", "an alias used for something else"),
                      ("gh issue create -t X --body y --label bug --label severity:s2", "a direct labelled create")):
         check(f"guard-bash (#1515): CONTROL: `{cmd}` is allowed ({why})", labelled(cmd)[0] == 0)
+    # #1645 R1: a comment line must not swallow the create after it. Each through the real hook (also true on dev before this).
+    for cmd, why in (("# note\ngh issue create -t X --body y", "a comment line, then an unlabelled create"),
+                     ("echo hi # note\ngh issue create -t X --body y", "a trailing comment, then an unlabelled create"),
+                     ("# note\n\ngh issue create -t X --body y", "a comment, a blank line, then an unlabelled create")):
+        rc, err = labelled(cmd)
+        check(f"guard-bash (#1645 R1): `{cmd!r}` is refused ({why})", rc == 2 and "no --label" in err, err)
+    for cmd, why in (("# note\ngh issue create -t X --body y --label bug --label severity:s2", "a labelled create after a comment"),
+                     ("# gh issue create is how you file one\necho hi", "the command named only inside a comment"),
+                     ('echo "see #12 and #13"', "a # inside double quotes")):
+        check(f"guard-bash (#1645 R1): CONTROL: `{cmd!r}` is allowed ({why})", labelled(cmd)[0] == 0)
+    # #1645 R2: the shapes the gate claims, one spelling away. The trigger must reach the helper for each, and the helper must judge it.
+    tree3 = {"bad.sh": create, "ok.sh": harmless, "args.txt": "issue create -t X --body y\n", "okargs.txt": "issue list\n",
+             "ind.sh": "G=gh; $G issue create -t X\n", "als.sh": "alias g=gh\ng issue create -t X\n",
+             "fn.sh": 'g() { command gh "$@"; }\ng issue create -t X\n', "chain.sh": ". ./bad.sh\n"}
+    for cmd, why in (("alias g='gh issue'; g create -t X", "an alias whose body is `gh issue`"),
+                     ("alias mk='gh issue create'; mk -t X", "an alias whose body is the create"),
+                     ('g() { command gh "$@"; }; g issue create -t X', "a function wrapper"),
+                     ('function g { gh "$@"; }; g issue create -t X', "a `function` keyword wrapper"),
+                     ("xargs -a args.txt gh", "xargs -a FILE"), ("cat args.txt | xargs gh", "a file piped to xargs gh"),
+                     ("echo create | xargs -I{} gh issue {} -t X", "xargs -I{} replacing the verb"),
+                     ('bash -c "$(<bad.sh)"', "$(<f) in a -c string"), ('bash <<< "$(<bad.sh)"', "$(<f) in a herestring"),
+                     ("bash <(<bad.sh)", "a process substitution that reads the file"),
+                     ('eval "$(cat bad.sh)"', "eval of cat"), ('eval "$(<bad.sh)"', "eval of $(<f)"),
+                     ("bash <(echo 'gh issue create -t X')", "a process substitution that echoes the script"),
+                     ("tail -n +1 bad.sh | sh", "tail into a shell"), ("sed 1d bad.sh | bash", "sed into a shell"),
+                     ("grep . bad.sh | sh", "grep into a shell"), ("xargs sh bad.sh", "xargs sh FILE"),
+                     ("find . -exec sh bad.sh \\;", "find -exec sh FILE"),
+                     ("bash ind.sh", "a script that builds the gh word at run time"), ("bash als.sh", "a script that aliases gh"),
+                     ("bash fn.sh", "a script that wraps gh in a function"),
+                     ("sh <<'EOF'\nG=gh; $G issue create -t X\nEOF", "a heredoc fed to a shell that builds the gh word"),
+                     ("sh -c '. bad.sh'", "a -c string that sources the file"), ("sh -c 'bash bad.sh'", "a -c string that runs a shell on the file"),
+                     ("if true; then . bad.sh; fi", "`then . f`"), ("for i in 1; do . bad.sh; done", "`do . f`"),
+                     ("{ . bad.sh; }", "`{ . f; }`"), ("builtin source bad.sh", "builtin source"),
+                     ("command . bad.sh", "command ."), ("time . bad.sh", "time ."), ("! . bad.sh", "`! . f`"),
+                     ("bash chain.sh", "a script that sources a script")):
+        rc, err = labelled(cmd, files=tree3)
+        check(f"guard-bash (#1645 R2): `{cmd}` is refused ({why})", rc == 2, err)
+    for cmd, why in (("alias g='gh issue'; g list", "an alias of `gh issue` used for a list"),
+                     ('g() { gh "$@"; }; g issue list', "a gh wrapper used for a list"),
+                     ("xargs -a okargs.txt gh", "xargs -a FILE naming a list"), ("echo list | xargs -I{} gh issue {}", "xargs -I{} replacing a list verb"),
+                     ('bash -c "$(<ok.sh)"', "$(<f) of a harmless file"), ('eval "$(cat ok.sh)"', "eval of a harmless file"),
+                     ("tail -n +1 ok.sh | sh", "tail of a harmless file into a shell"), ("tail -n +1 bad.sh | wc -l", "tail of a create script no shell runs"),
+                     ("find . -exec echo bad.sh \\;", "find -exec of a command that is not a shell"),
+                     ("sh -c '. ok.sh'", "a -c string that sources a harmless file"), ("if true; then . ok.sh; fi", "`then . f` of a harmless file"),
+                     ("{ . ok.sh; }", "`{ . f; }` of a harmless file"), ("builtin source ok.sh", "builtin source of a harmless file")):
+        check(f"guard-bash (#1645 R2): CONTROL: `{cmd}` is allowed ({why})", labelled(cmd, files=tree3)[0] == 0)
     # #1513 review: shapes the first #1495 version still let through, each through the real hook.
     tree2 = {**tree, "sub/ok.sh": harmless}
     for cmd, why in (("cd sub &>/dev/null; bash < only.sh", "a cd's own redirect is not an argument"),

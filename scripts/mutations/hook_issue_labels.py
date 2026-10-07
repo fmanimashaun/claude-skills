@@ -148,8 +148,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a backslash-newline becomes a space, so `cre\\\\<nl>ate` is not a create",
-            '    cmd = cmd.replace("\\\\\\n", "").replace("\\n", " ; ")',
-            '    cmd = cmd.replace("\\\\\\n", " ").replace("\\n", " ; ")',
+            '    cmd = _strip_comments(cmd.replace("\\\\\\n", "")).replace("\\n", " ; ")',
+            '    cmd = _strip_comments(cmd.replace("\\\\\\n", " ")).replace("\\n", " ; ")',
             "a backslash-newline joins",
         ),
         # ---- #1440: a quoted `&&` is not the separator ------------------------------------------
@@ -192,8 +192,8 @@ GUARD = Guard(
         ),
         Mutation(
             "sh -c strings are not refused",
-            "            if head in SHELLS and runs_string and _names_create(rest):",
-            "            if False:",
+            '            if head in SHELLS and runs_string:\n                c_operand = _first_operand(unsplit[1:])[0]',
+            '            if False:\n                c_operand = _first_operand(unsplit[1:])[0]',
             "a create inside `sh -c` is refused",
         ),
         Mutation(
@@ -204,8 +204,8 @@ GUARD = Guard(
         ),
         Mutation(
             "eval strings are not refused",
-            "            if head == \"eval\" and _names_create(rest):",
-            "            if False:",
+            '            if head == "eval" and _runs(rest, depth, here_dir):',
+            '            if False:',
             "a create inside `eval` is refused",
         ),
         Mutation(
@@ -229,20 +229,20 @@ GUARD = Guard(
         ),
         Mutation(
             "wrappers are not peeled, so env sh -c escapes",
-            "    while words and os.path.basename(words[0]) in WRAPPERS:\n        wrapper = os.path.basename(words.pop(0))",
-            "    while False:\n        wrapper = os.path.basename(words.pop(0))",
+            '        if base in WRAPPERS:\n            words.pop(0)',
+            '        if False:\n            words.pop(0)',
             "a create behind `env` is refused",
         ),
         Mutation(
             "a wrapper's flags are not peeled, so sudo -E bash -c escapes",
-            "        while words and words[0].startswith(\"-\"):\n            words.pop(0)\n        if wrapper in",
-            "        while False:\n            words.pop(0)\n        if wrapper in",
+            '            while words and words[0].startswith("-"):\n                flag = words.pop(0)',
+            '            while False:\n                flag = words.pop(0)',
             "a create behind `sudo` is refused",
         ),
         Mutation(
             "timeout's duration is not peeled, so timeout 5 bash -c escapes",
-            '        if wrapper in ("timeout", "nice") and words and re.fullmatch(r"[\\d.]+[smhd]?", words[0]):',
-            "        if False:",
+            '            if base in ("timeout", "nice") and words and re.fullmatch(r"[\\d.]+[smhd]?", words[0]):',
+            '            if False:',
             "a create behind `timeout` is refused",
         ),
         # ---- #1462 / #1467 / #1468 (group C2) ---------------------------------------------------
@@ -266,8 +266,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a heredoc fed to a shell is not refused",
-            '            if (feeder in SHELLS or feeder == "eval") and (_names_create(text) or _names_create(re.sub(r"\\\\(.)", r"\\1", text, flags=re.S))):',
-            "            if False:",
+            '            if (feeder in SHELLS or feeder == "eval") and (_runs(text, depth, base_dir) or _runs(re.sub(r"\\\\(.)", r"\\1", text, flags=re.S), depth, base_dir)):',
+            '            if False:',
             "a create in a heredoc fed to `bash` is refused and named",
         ),
         Mutation(
@@ -284,14 +284,14 @@ GUARD = Guard(
         ),
         Mutation(
             "a pipe into a shell is not refused",
-            '                if prev_op in ("|", "|&") and _names_create(prev_text):',
-            "                if False:",
+            '                if prev_op in ("|", "|&") and _runs(prev_text, depth, here_dir):',
+            '                if False:',
             "a create in a pipe into `bash` is refused and named",
         ),
         Mutation(
             "a herestring fed to a shell is not refused",
-            '                if here is not None and _names_create(" ".join([words[here][3:]] + words[here + 1:])):',
-            "                if False:",
+            '                if here is not None and _runs(" ".join([words[here][3:]] + words[here + 1:]), depth, here_dir):',
+            '                if False:',
             "a create in a herestring fed to `bash` is refused and named",
         ),
         Mutation(
@@ -327,15 +327,15 @@ GUARD = Guard(
         ),
         Mutation(
             "|& is not a pipe",
-            '                if prev_op in ("|", "|&") and _names_create(prev_text):',
-            '                if prev_op == "|" and _names_create(prev_text):',
+            '                if prev_op in ("|", "|&") and _runs(prev_text, depth, here_dir):',
+            '                if prev_op == "|" and _runs(prev_text, depth, here_dir):',
             "refused as a pipe into `bash`",
         ),
         # #1489: a script fed to a shell by redirect.
         Mutation(
             "a redirected script is not read, so bash < file escapes",
-            "                if script is not None and _names_create(script):",
-            "                if False:",
+            '                if script is not None and _runs(script, depth, here_dir):',
+            '                if False:',
             "a spaced redirect feeding a script with a create to a shell is refused",
         ),
         # #1489 review: each fix below has a fixture that must notice it going.
@@ -537,14 +537,14 @@ GUARD = Guard(
         ),
         Mutation(
             "a heredoc fed to a shell is matched without its escapes decoded",
-            ' or _names_create(re.sub(r"\\\\(.)", r"\\1", text, flags=re.S))):',
-            "):",
+            ' or _runs(re.sub(r"\\\\(.)", r"\\1", text, flags=re.S), depth, base_dir)):',
+            '):',
             "(#1515) a quoted heredoc fed to `bash -s`",
         ),
         Mutation(
             "`cat f | bash` no longer reads the files cat was given",
-            '                if prev_op in ("|", "|&") and prev_cat:',
-            "                if False:",
+            '                if prev_op in ("|", "|&") and (prev_cat or prev_files):',
+            '                if False:',
             "(#1515) cat into a shell",
         ),
         Mutation(
@@ -554,15 +554,15 @@ GUARD = Guard(
             "(#1515) a process substitution",
         ),
         Mutation(
-            "an alias of gh is not tracked",
+            "a name bound to gh (an alias, a variable, a function wrapper) is not tracked",
             '            if words and names_verb and (words[0].startswith("$") or "`" in words[0] or words[0] in gh_names):',
             '            if words and names_verb and (words[0].startswith("$") or "`" in words[0]):',
-            "(#1515) an alias",
+            "(#1645 R2) function wrapper",
         ),
         Mutation(
             "the verb piped to xargs gh is not refused",
-            '            if head == "gh" and len(words) == 1 and prev_op in ("|", "|&")',
-            '            if False and head == "gh" and len(words) == 1 and prev_op in ("|", "|&")',
+            '            if "xargs" in peeled and head == "gh":',
+            '            if False and "xargs" in peeled and head == "gh":',
             "(#1515) the verb through xargs",
         ),
         Mutation(
@@ -576,6 +576,110 @@ GUARD = Guard(
             '        if tok == ";" and items and items[-1] in ("&&", "||", "|"):\n            continue',
             "        if False:\n            continue",
             "a newline after && continues the chain",
+        ),
+        # ---- #1645 R1: a comment line swallowed the create after it
+        Mutation(
+            "comments are not stripped line by line before the lines are joined, so a # eats everything after it",
+            "    cmd = _strip_comments(cmd.replace(\"\\\\\\n\", \"\")).replace(\"\\n\", \" ; \")",
+            "    cmd = cmd.replace(\"\\\\\\n\", \"\").replace(\"\\n\", \" ; \")",
+            "the command named only inside a comment",
+        ),
+        Mutation(
+            "a # inside a quoted body starts a comment, so the quoted text after it is cut",
+            "        if quote:\n            out.append(c)",
+            "        if False:\n            out.append(c)",
+            "(#1645 R1) CONTROL: a # inside quotes does not hide a labelled create after the closing quote",
+        ),
+        Mutation(
+            "a # inside a word starts a comment",
+            '        if c == "#" and (not out or out[-1] in " \\t\\n;&|()"):',
+            '        if c == "#":',
+            "(#1645 R1) a # inside a word is not a comment",
+        ),
+        # ---- #1645 R2: shapes one spelling away from the claimed ones
+        Mutation(
+            "an alias is not expanded, so an alias of `gh issue` or of the whole create is read as a quoted mention",
+            "                while expanded and expanded[0] in aliases and hops < 4:",
+            "                while False:",
+            "(#1645 R2) alias whose body is `gh issue`",
+        ),
+        Mutation(
+            "a function whose body runs gh is not tracked as a gh word",
+            "    fn_wrappers, fn_creators = _functions(_strip_comments(body))",
+            "    fn_wrappers, fn_creators = set(), set()",
+            "(#1645 R2) function wrapper",
+        ),
+        Mutation(
+            "xargs's `-I{}` replace string is not substituted, so the verb arrives unseen",
+            '                if xinfo.get("I"):\n                    candidates =',
+            '                if False:\n                    candidates =',
+            "(#1645 R2) xargs -I{} replacing the verb",
+        ),
+        Mutation(
+            "xargs's `-a FILE` input is not read",
+            '                sources = [xinfo["a"]] if xinfo.get("a") else []',
+            "                sources = []",
+            "(#1645 R2) xargs -a FILE",
+        ),
+        Mutation(
+            "`$(<f)` is not read as the file's contents",
+            "for operand in (_cat_operands(m.group(1)) if m.group(1) else [m.group(2)]):",
+            "for operand in (_cat_operands(m.group(1)) if m.group(1) else []):",
+            "(#1645 R2) $(<f) in a -c string",
+        ),
+        Mutation(
+            "`eval` is not one of the shells a substitution can feed",
+            '_SHELL_FED = re.compile(r"(?:^|[\\s;&|(])(?:sh|bash|zsh|dash|ksh|eval)',
+            '_SHELL_FED = re.compile(r"(?:^|[\\s;&|(])(?:sh|bash|zsh|dash|ksh)',
+            "(#1645 R2) eval of cat",
+        ),
+        Mutation(
+            "text echoed into a process substitution for a shell is not judged",
+            "    for m in _SHELL_FED_ECHO.finditer(body):",
+            "    for m in []:",
+            "(#1645 R2) a process substitution that echoes the script",
+        ),
+        Mutation(
+            "a pipeline reader other than cat (tail, sed, grep) is not followed into a shell",
+            '            prev_files = ((prev_files if prev_op in ("|", "|&") else []) + (_reader_files(words, here_dir) if head in _READERS else []))',
+            '            prev_files = []',
+            "(#1645 R2) tail into a shell",
+        ),
+        Mutation(
+            "find -exec's command is not peeled, so `find -exec sh f` is read as find",
+            '        if base == "find":',
+            '        if False:',
+            "(#1645 R2) find -exec sh FILE",
+        ),
+        Mutation(
+            "reserved words (then, do, {, !) are not peeled, so `then . f` is read as `then`",
+            "        if base in KEYWORDS:",
+            "        if False:",
+            "(#1645 R2) `then . f`",
+        ),
+        Mutation(
+            "a script's own text is judged for the words only, not for the indirect shapes (part B one level down)",
+            "    return depth < _MAX_DEPTH and hidden_create(text, depth + 1, cwd) is not None",
+            "    return False",
+            "(#1645 R2) a script that builds the gh word at run time",
+        ),
+        Mutation(
+            "a -c string is judged for the words only, so `sh -c '. f'` is not followed",
+            "                if _names_create(rest) or (c_operand and _runs(c_operand, depth, here_dir)):",
+            "                if _names_create(rest):",
+            "(#1645 R2) a -c string that sources the file",
+        ),
+        Mutation(
+            "the -c string is read from the whitespace-split words, so a quoted string is cut apart",
+            "                c_operand = _first_operand(unsplit[1:])[0]",
+            "                c_operand = _first_operand(words[1:])[0]",
+            "(#1645 R2) a -c string that sources the file",
+        ),
+        Mutation(
+            "recursion has no depth cap (a script that sources itself would never end)",
+            "_MAX_DEPTH = 3 ",
+            "_MAX_DEPTH = 10 ** 9 ",
+            "RecursionError",
         ),
     ),
 )
