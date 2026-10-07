@@ -38,36 +38,73 @@ import uuid
 TOKEN_VAR = "CLAUDE_CONTAIN_TOKEN"
 
 
-def holding(var: str, value: str) -> list[int]:
-    """Every live process whose environment has the WHOLE entry `var=value`, never this one. A command line
-    that merely mentions the value does not match: only the environment is read (#1582 slice C)."""
-    needle, me = f"{var}={value}", os.getpid()
-    found: list[int] = []
+def environ_of(pid: int) -> list[bytes] | None:
+    """The process's environment as SEPARATE entries (`NAME=value`, bytes), or None when it cannot be read.
+
+    Exact on both platforms, never a search over printed text: Linux reads `/proc/<pid>/environ`; macOS asks the kernel
+    (`sysctl kern.procargs2`, which returns argv and environment as NUL-separated strings, argv counted off). `ps -E`
+    cannot be used: it joins the command line and every variable with spaces, so a VALUE containing ` VAR=x ` is
+    indistinguishable from the variable (#1646 review R1: another session's orphan was killed that way)."""
     if sys.platform.startswith("linux"):
-        for entry in os.listdir("/proc"):
-            if not entry.isdigit() or int(entry) == me:
-                continue
-            try:
-                with open(f"/proc/{entry}/environ", "rb") as f:
-                    if needle.encode() in f.read().split(b"\0"):
-                        found.append(int(entry))
-            except OSError:
-                pass
-        return found
-    # `ps -E` prints the command line and then the environment as ONE string. Strip the command line (read again
-    # without -E) so only the environment is searched: an argument that spells `var=value` must not match.
-    def listing(*flags: str) -> dict[int, str]:
-        out = subprocess.run(["ps", *flags, "-ww", "-A", "-o", "pid=,command="],
-                             capture_output=True, text=True, check=False).stdout
-        rows = (line.strip().split(None, 1) for line in out.splitlines() if line.strip())
-        return {int(r[0]): (r[1] if len(r) > 1 else "") for r in rows if r[0].isdigit()}
-    plain = listing()
-    for pid, line in listing("-E").items():
-        argv = plain.get(pid, "")
-        env_part = line[len(argv):] if line.startswith(argv) else line
-        if pid != me and f" {needle} " in f" {env_part} ":     # a whole entry: space or end after the value
-            found.append(pid)
-    return found
+        try:
+            with open(f"/proc/{pid}/environ", "rb") as f:
+                return [e for e in f.read().split(b"\0") if e]
+        except OSError:
+            return None
+    if sys.platform != "darwin":
+        return None
+    try:
+        import ctypes
+        import ctypes.util
+        libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
+        mib = (ctypes.c_int * 3)(1, 49, pid)                  # CTL_KERN, KERN_PROCARGS2, pid
+        size = ctypes.c_size_t(0)
+        if libc.sysctl(mib, 3, None, ctypes.byref(size), None, 0) != 0:
+            return None
+        buf = ctypes.create_string_buffer(size.value)
+        if libc.sysctl(mib, 3, buf, ctypes.byref(size), None, 0) != 0:
+            return None
+        data = buf.raw[:size.value]
+        argc, rest = int.from_bytes(data[:4], "little"), data[4:]
+        i = rest.index(b"\0")                                 # the executable path, then NUL padding
+        while i < len(rest) and rest[i] == 0:
+            i += 1
+        for _ in range(argc):
+            i = rest.index(b"\0", i) + 1
+        entries = []
+        for e in rest[i:].split(b"\0"):
+            if not e:
+                break                                         # the environment ends at the first empty string
+            entries.append(e)
+        return entries
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def _all_pids() -> list[int]:
+    if sys.platform.startswith("linux"):
+        return [int(e) for e in os.listdir("/proc") if e.isdigit()]
+    out = subprocess.run(["ps", "-A", "-o", "pid="], capture_output=True, text=True, check=False).stdout
+    return [int(x) for x in out.split() if x.isdigit()]
+
+
+def value_of(pid: int, var: str) -> str | None:
+    """The value of the variable named EXACTLY `var` in that process's environment, or None."""
+    prefix = f"{var}=".encode()
+    for entry in environ_of(pid) or []:
+        if entry.startswith(prefix):
+            return entry[len(prefix):].decode("utf-8", "surrogateescape")
+    return None
+
+
+def holding(var: str, value: str) -> list[int]:
+    """Every live process whose environment has an entry that IS `var=value`, never this one. Entries are compared whole
+    and separately: a command line, or another variable's value, that merely contains the text does not match, and where
+    the environment cannot be read at all nothing matches (refuse, never guess)."""
+    needle, me = f"{var}={value}".encode(), os.getpid()
+    if environ_of(me) is None:
+        return []
+    return [pid for pid in _all_pids() if pid != me and needle in (environ_of(pid) or [])]
 
 
 def tagged(token: str) -> list[int]:

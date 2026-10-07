@@ -33,6 +33,7 @@ import signal
 import subprocess
 import sys
 import time
+import uuid
 import tempfile
 import types
 import time
@@ -3107,7 +3108,7 @@ def session_end_fixtures() -> None:
     `session_reaper.py --selftest`; this proves the HOOK reaches it with the payload and stays silent and exit 0 when
     it cannot."""
     root = str(HOOKS.parents[1])
-    sid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    sid = str(uuid.uuid4())      # unique per run: guards run in parallel (#1646 R2)
     leaf = ("import os, signal, sys, time\nopen(sys.argv[1], 'w').write(str(os.getpid()))\n"
             "os.kill(os.getpid(), signal.SIGSTOP)\ntime.sleep(120)\n")
     parent = ("import subprocess, sys\nN = subprocess.DEVNULL\n"
@@ -3552,24 +3553,39 @@ def guard_worktree_pointer_fixtures() -> None:
                            env_extra={"RAILS_FLOW_ZOMBIE_WARN": bad}, unset=("CLAUDE_PROJECT_DIR",))[1]
             check(f"resume pointer: RAILS_FLOW_ZOMBIE_WARN={bad} is clamped, so zero zombies prints no '0 zombie processes' line",
                   "zombie" not in out and "resume in place" in out, out[-200:])
-        # #1582 slice C: the stopped-orphan advisory. A stub `ps` that lists four stopped orphans for `-U` (and none of
-        # anything else), and shows one of them with its environment, which carries a credential that must NOT be printed.
+        # #1582 slice C: the stopped-orphan advisory. A stub `ps` lists stopped orphans for `-U`: two REAL processes (one
+        # whose environment names a session, one whose ARGUMENT only spells the entry, #1646 S1) and three made-up pids,
+        # plus a running one and a stopped one with a parent that must not count.
         orphans = Path(td) / "orphans"
         orphans.mkdir()
+        owner_id = str(uuid.uuid4())
+        env_owned = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], stdin=subprocess.DEVNULL,
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                     env={**os.environ, "CLAUDE_CODE_SESSION_ID": owner_id, "AWS_SECRET": "hunter2"})
+        spoofed_id = str(uuid.uuid4())
+        argv_spoof = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)", f"CLAUDE_CODE_SESSION_ID={spoofed_id}"],
+                                      stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                      env={k: v for k, v in os.environ.items() if k != "CLAUDE_CODE_SESSION_ID"})
         _stub(orphans, "ps", 'case "$*" in\n'
-              '  *-U*) printf "11 T 1\\n12 Ts 1\\n13 T 1\\n14 T 1\\n15 S 1\\n16 T 99\\n" ;;\n'
-              '  *-E*) echo "python3 x.py CLAUDE_CODE_SESSION_ID=abcdef12-0000-4000-8000-000000000000 AWS_SECRET=hunter2" ;;\n'
+              f'  *-U*) printf "{env_owned.pid} T 1\\n{argv_spoof.pid} Ts 1\\n13 T 1\\n14 T 1\\n15 S 1\\n16 T 99\\n" ;;\n'
               'esac\nexit 0')
-        out = run_hook(
-            "session-start.sh", cwd=repo, stdin=json.dumps({"session_id": "SESS-A"}), path_prefix=[orphans],
-            env_extra={"RAILS_FLOW_ZOMBIE_WARN": "100000", "RAILS_FLOW_STOPPED_ORPHAN_WARN": "3"}, unset=("CLAUDE_PROJECT_DIR",))[1]
-        check("stopped orphans: four stopped orphans (ppid 1) are counted, a running one and a stopped one with a parent are not",
-              "4 stopped orphan processes" in out, out[-300:])
-        check("stopped orphans: the owning session is named from the environment", "abcdef12-0000-4000-8000-000000000000" in out, out[-300:])
-        check("stopped orphans: nothing else from the environment is printed", "hunter2" not in out and "AWS_SECRET" not in out, out[-300:])
-        out = run_hook("session-start.sh", cwd=repo, stdin=json.dumps({"session_id": "SESS-A"}), path_prefix=[orphans],
-                       env_extra={"RAILS_FLOW_ZOMBIE_WARN": "100000", "RAILS_FLOW_STOPPED_ORPHAN_WARN": "5"}, unset=("CLAUDE_PROJECT_DIR",))[1]
-        check("stopped orphans: below the threshold the advisory is silent", "stopped orphan" not in out, out[-300:])
+        try:
+            out = run_hook("session-start.sh", cwd=repo, stdin=json.dumps({"session_id": "SESS-A"}), path_prefix=[orphans],
+                           env_extra={"RAILS_FLOW_ZOMBIE_WARN": "100000", "RAILS_FLOW_STOPPED_ORPHAN_WARN": "3"},
+                           unset=("CLAUDE_PROJECT_DIR",))[1]
+            check("stopped orphans: four stopped orphans (ppid 1) are counted, a running one and a stopped one with a parent are not",
+                  "4 stopped orphan processes" in out, out[-300:])
+            check("stopped orphans: the owning session is named from the environment", owner_id in out, out[-300:])
+            check("stopped orphans: a session id that only an ARGUMENT spells is not shown as an owner", spoofed_id not in out, out[-300:])
+            check("stopped orphans: nothing else from the environment is printed", "hunter2" not in out and "AWS_SECRET" not in out, out[-300:])
+            out = run_hook("session-start.sh", cwd=repo, stdin=json.dumps({"session_id": "SESS-A"}), path_prefix=[orphans],
+                           env_extra={"RAILS_FLOW_ZOMBIE_WARN": "100000", "RAILS_FLOW_STOPPED_ORPHAN_WARN": "5"},
+                           unset=("CLAUDE_PROJECT_DIR",))[1]
+            check("stopped orphans: below the threshold the advisory is silent", "stopped orphan" not in out, out[-300:])
+        finally:
+            for proc in (env_owned, argv_spoof):
+                proc.kill()
+                proc.wait()
         # S4: the zombie scan must finish inside session-start's own 10 s hook timeout, even when `ps` hangs.
         slow_ps = Path(td) / "slow-ps"
         slow_ps.mkdir()

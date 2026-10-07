@@ -1,8 +1,7 @@
 """Mutation guard: process_containment_holding. Declared here, run by scripts/mutation_check.py (#866).
 
-#1582 slice C. `holding()` reads a process's ENVIRONMENT, and `ps -E` prints the command line and the environment as
-one string, so an argument spelling `CLAUDE_CODE_SESSION_ID=<id>` looked like an environment entry. It strips the
-command line first. The fixture that needs a process with such an argument lives in the reaper's selftest, so this guard
+#1582 slice C. `holding()` reads a process's ENVIRONMENT, and The environment is read as SEPARATE entries (/proc, or sysctl kern.procargs2 on macOS) and compared whole, so neither an
+argument nor another variable's value that spells the entry matches (#1646 R1). The fixture that needs a process with such an argument lives in the reaper's selftest, so this guard
 runs that selftest against `process_containment.py`.
 """
 from mutation_types import Guard, Mutation  # noqa: F401
@@ -15,10 +14,16 @@ GUARD = Guard(
     needs=("scripts/session_reaper.py",),
     mutations=(
         Mutation(
-            "the command line is not stripped, so an argument that spells the entry matches (a name-based kill by another route)",
-            "env_part = line[len(argv):] if line.startswith(argv) else line",
-            "env_part = line",
-            "survives: a command line that only MENTIONS the id (not its environment)",
+            "entries are searched as joined text, so another variable's VALUE containing the entry matches (#1646 R1)",
+            "needle in (environ_of(pid) or [])",
+            "needle in b\" \".join(environ_of(pid) or [])",
+            "survives: another session's orphan with a variable whose VALUE contains this session's entry",
+        ),
+        Mutation(
+            "value_of accepts any entry that merely CONTAINS the variable's text, so a spoofed value is read as the id",
+            "        if entry.startswith(prefix):",
+            "        if prefix in entry:",
+            "value_of reads the exact variable",
         ),
     ),
 )

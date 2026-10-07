@@ -32,9 +32,10 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from process_containment import holding  # noqa: E402
+from process_containment import holding, value_of  # noqa: E402
 
 SESSION_VAR = "CLAUDE_CODE_SESSION_ID"
 _ID = re.compile(r"^[0-9A-Fa-f][0-9A-Fa-f-]{7,63}$")     # a uuid; never empty, never a prefix of everything
@@ -82,6 +83,11 @@ def reap(session_id: str) -> list[int]:
 def main(argv: list[str]) -> int:
     if argv[:1] == ["--selftest"]:
         return selftest()
+    if argv[:1] == ["--owners"]:           # `pid session-id|?` per pid, read from the exact variable (the advisory's reader)
+        for arg in argv[1:]:
+            owner = value_of(int(arg), SESSION_VAR) if arg.isdigit() else None
+            print(f"{arg} {owner if owner and _ID.match(owner) else '?'}")
+        return 0
     try:
         session_id = json.loads(sys.stdin.read() or "{}").get("session_id", "")
         killed = reap(session_id) if isinstance(session_id, str) else []
@@ -106,7 +112,9 @@ _PARENT = ("import subprocess, sys\n"
 def selftest() -> int:
     failures: list[str] = []
     work = tempfile.mkdtemp(prefix="reaper-selftest-")
-    mine, other = "11111111-2222-3333-4444-555555555555", "99999999-8888-7777-6666-555555555555"
+    # UNIQUE PER RUN: two guards run this selftest together under --jobs, and a shared id made each reap the other's
+    # fixtures, so both went inert (#1646 review R2).
+    mine, other = str(uuid.uuid4()), str(uuid.uuid4())
     started: list[int] = []
 
     def check(label: str, ok: bool, detail: str = "") -> None:
@@ -120,12 +128,13 @@ def selftest() -> int:
         s = state(pid)
         return bool(s) and not s[0].startswith("Z")
 
-    def spawn(name: str, env_id: str | None, mode: str, extra: tuple = (), orphan: bool = True) -> int:
+    def spawn(name: str, env_id: str | None, mode: str, extra: tuple = (), orphan: bool = True, env_more: dict | None = None) -> int:
         """Start one leaf and return its pid. `env_id` None: no id in the environment at all."""
         path = os.path.join(work, name)
         env = {k: v for k, v in os.environ.items() if k != SESSION_VAR}
         if env_id is not None:
             env[SESSION_VAR] = env_id
+        env = {**(env_more or {}), **env}       # the spoofing variables come FIRST: a reader that stops at a substring hit takes them
         if orphan:
             subprocess.run([sys.executable, "-c", _PARENT, path, mode, *extra], env=env, check=False)
         else:
@@ -147,6 +156,9 @@ def selftest() -> int:
         target = spawn("mine-stopped-orphan", mine, "stop")
         decoy = spawn("decoy-in-argv", None, "stop", extra=(f"{SESSION_VAR}={mine}", mine))
         foreign = spawn("other-session", other, "stop")
+        # #1646 review R1: ANOTHER session's orphan whose environment has a different variable whose VALUE contains
+        # " CLAUDE_CODE_SESSION_ID=<mine> ". Text-matching over `ps -E` killed it; an exact entry comparison cannot.
+        spoof = spawn("other-session-spoof", other, "stop", env_more={"NOTE": f"x {SESSION_VAR}={mine} y", "TAIL": f"{SESSION_VAR}={mine}"})
         running = spawn("mine-running-orphan", mine, "run")
         stubborn = spawn("mine-ignores-term", mine, "stubborn")
         blank = spawn("empty-id", "", "stop")      # SESSION_VAR set to the empty string: must not match an empty id
@@ -166,10 +178,14 @@ def selftest() -> int:
         check("an orphan that IGNORES SIGTERM is killed too", not alive(stubborn), f"{state(stubborn)}")
         for label, pid in (("a command line that only MENTIONS the id (not its environment)", decoy),
                            ("another session's stopped orphan", foreign),
+                           ("another session's orphan with a variable whose VALUE contains this session's entry", spoof),
                            ("this session's RUNNING orphan", running),
                            ("a process whose id is the EMPTY string, reaped with an empty id", blank),
                            ("this session's stopped process that still has a parent", child)):
             check(f"survives: {label}", pid > 0 and alive(pid), f"pid {pid} was killed: {state(pid)}")
+        check("value_of reads the exact variable: this session's id for its own, None for a spoofed one",
+              value_of(running, SESSION_VAR) == mine and value_of(spoof, SESSION_VAR) == other and value_of(decoy, SESSION_VAR) is None,
+              f"{value_of(running, SESSION_VAR)!r} {value_of(spoof, SESSION_VAR)!r} {value_of(decoy, SESSION_VAR)!r}")
         check("a second reap finds nothing left to reap", reap(mine) == [], "reaped again")
     finally:
         for pid in started:                     # the safety net, by the pids the fixtures recorded

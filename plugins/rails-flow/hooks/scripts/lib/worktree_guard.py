@@ -396,15 +396,18 @@ def stopped_orphans() -> tuple[int, list[tuple[int, str]]]:
         parts = line.split()
         if len(parts) == 3 and parts[0].isdigit() and parts[1].startswith("T") and parts[2] == "1":
             pids.append(int(parts[0]))
-    owners = []
-    for pid in pids[:max(1, _env_int("RAILS_FLOW_ZOMBIE_TOP", 3))]:
-        try:
-            env = subprocess.run(["ps", "-E", "-ww", "-o", "command=", "-p", str(pid)], capture_output=True, text=True,
-                                 timeout=max(0.5, min(2, _remaining()))).stdout
-        except (OSError, subprocess.TimeoutExpired):
-            env = ""
-        m = re.search(r"(?:^|\s)CLAUDE_CODE_SESSION_ID=([0-9A-Fa-f-]{8,64})(?:\s|$)", env)
-        owners.append((pid, m.group(1) if m else "?"))
+    # The owner is read by the reaper's own exact parser (the variable named exactly CLAUDE_CODE_SESSION_ID), never from
+    # `ps -E` text: that joins argv and environment, so an argument spelling the entry showed as the owner (#1646 S1).
+    shown = pids[:max(1, _env_int("RAILS_FLOW_ZOMBIE_TOP", 3))]
+    owners = [(pid, "?") for pid in shown]
+    reaper = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "scripts", "session_reaper.py")
+    try:
+        got = subprocess.run([sys.executable, reaper, "--owners", *map(str, shown)], capture_output=True, text=True,
+                             timeout=max(0.5, min(2, _remaining()))).stdout
+        known = dict(line.split(None, 1) for line in got.splitlines() if len(line.split()) == 2)
+        owners = [(pid, known.get(str(pid), "?")) for pid in shown]
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        pass
     return len(pids), owners
 
 
