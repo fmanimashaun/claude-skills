@@ -112,9 +112,13 @@ def run(repo: str | os.PathLike, *args: str, check: bool = True, **kw) -> subpro
         raise NotATempRepo(f"{path}/.git resolves to {target}, outside this repo -- a gitlink or symlink "
                            "would send the fixture's git elsewhere (#1588)")
     # An explicit --git-dir / --work-tree overrides the GIT_DIR binding (#1594 review S2): refused.
-    for a in args:
+    # Only as a GLOBAL option, before the subcommand: `git rev-parse --git-dir` is a query, not an override (#1588 part 2).
+    i = 0
+    while i < len(args) and args[i].startswith("-"):
+        a = args[i]
         if a in ("--git-dir", "--work-tree") or a.startswith(("--git-dir=", "--work-tree=")):
             raise NotATempRepo(f"{a!r} in a fixture's git arguments would override the temp-repo binding (#1588)")
+        i += 2 if a in ("-C", "-c", "--namespace") else 1
     kw.setdefault("capture_output", True)
     kw.setdefault("text", True)
     return subprocess.run(["git", *IDENTITY, *args], env=env(path, kw.pop("env", None)), cwd=path,
@@ -209,6 +213,13 @@ def selftest() -> int:
             check(f"an explicit {flag[0].split('=')[0]} in the arguments is refused", isinstance(raised4, NotATempRepo),
                   f"got {type(raised4).__name__ if raised4 else 'no refusal'}")
         check("...and none of them reached the other repo", commits(real) == before, f"now {commits(real)}")
+        # 4e. ...but AFTER the subcommand the same words are arguments to it, not overrides (#1588 part 2).
+        try:
+            gd = run(good, "rev-parse", "--git-dir").stdout.strip()
+            ok_q = Path(gd if Path(gd).is_absolute() else good / gd).resolve() == (good / ".git").resolve()
+        except Exception as e:  # noqa: BLE001
+            ok_q, gd = False, repr(e)
+        check("`rev-parse --git-dir` is a query, not an override, and answers for the temp repo", ok_q, gd)
         # 5. #1577: the background-maintenance settings reach git.
         # From a CLEAN base: the mutation harness already exports these settings (scripts/hermetic_git.py),
         # and a check that reads them from the inherited environment passes whatever this module does.
