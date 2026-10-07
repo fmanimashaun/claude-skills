@@ -34,5 +34,11 @@ GUARD = Guard(
             '',
             "binding: the fallback (no .git here) under an inherited GIT_DIR does not commit into the other repo",
         ),
+        Mutation(
+            "the calibration workload keeps an inherited GIT_DIR, so its commit lands in the repo it names",
+            "                                env=fixture_git.hermetic())     # no inherited GIT_DIR: cwd alone does not bind (#1660 R3)",
+            "                                )",
+            "binding: the calibration workload under an inherited GIT_DIR does not commit into the other repo",
+        ),
     ),
 )

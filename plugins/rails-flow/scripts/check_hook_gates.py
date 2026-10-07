@@ -3894,6 +3894,19 @@ def fixture_git_binding_fixtures() -> None:
         _fixture_git(plain, "commit", "-q", "--allow-empty", "-m", "m", env=inherited, check=False)
         check("binding: the fallback (no .git here) under an inherited GIT_DIR does not commit into the other repo",
               count(real) == before, f"real went from {before} to {count(real)}")
+        # The CALIBRATION workload (#1660 review R3): its own `git init` + commit in a throwaway dir, under the same
+        # inherited GIT_DIR, must not reach the other repo either.
+        saved = os.environ.get("GIT_DIR")
+        os.environ["GIT_DIR"] = str(real / ".git")
+        try:
+            _sample()
+        finally:
+            if saved is None:
+                os.environ.pop("GIT_DIR", None)
+            else:
+                os.environ["GIT_DIR"] = saved
+        check("binding: the calibration workload under an inherited GIT_DIR does not commit into the other repo",
+              count(real) == before, f"real went from {before} to {count(real)}")
 
 
 def deadline_fixtures() -> None:

@@ -275,5 +275,11 @@ GUARD = Guard(
             '                    print("\\n".join(paths), file=sys.stderr)',
             "stamp: both layers passing -> 0 and the evidence paths on stdout",
         ),
+        Mutation(
+            "the selftest keeps an inherited GIT_DIR, so a fixture commit lands in the repo it names (#1660 review R3)",
+            '    for key in _REPO_LOCATORS:\n        os.environ.pop(key, None)',
+            '    for key in ():\n        os.environ.pop(key, None)',
+            "binding: under an inherited GIT_DIR a fixture commit stays out of the repo it names",
+        ),
     ),
 )
