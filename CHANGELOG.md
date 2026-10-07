@@ -7821,6 +7821,10 @@ discipline and skipping it under momentum is not a knowledge gap, so three thing
 
 ## rails-stack (rails-8 + hotwire + fidara-design skills)
 
+### Unreleased
+
+- **Process hygiene doctrine, in step with the reaper and the advisory — `skills/parallel-session-lane/references/process-hygiene.md`** (#1582 item 4, the last increment). Rules 1 to 4 stay as slice A wrote them. Added: what the helper does when a second interrupt arrives during its cleanup (it waits until the cleanup has finished; it does not abandon it); that a process's environment is read as separate entries and each compared whole, never searched as printed text (the #1646 review finding, stated as our own incident); a section on what the `SessionEnd` reaper signals (environment entry `CLAUDE_CODE_SESSION_ID` equal to the session's id, parent pid 1, stopped; CONT then TERM then KILL; never by name or command line; a running orphan left alone); and the stopped-orphan advisory with its threshold variable and the one-line command to reap a session now. Our own design with no framework claim, so no `doctrine-verifier`: the claims are what the shipped scripts do, each proven by their selftests, and nothing states what `ps` or any signal guarantees on an OS. `dist/parallel-session-lane.skill` and the `.claude/skills/` mirror regenerated; no other skill changed. Decision: owner delegated technical calls (2026-10-06); coordinator decided item 4 as written (https://github.com/fmanimashaun/claude-skills/issues/1582#issuecomment-6032221780).
+
 ### 2026-09-17 (release v1.131.1)
 
 - **§2a: each session merges its own work — `skills/parallel-session-lane/SKILL.md`** (#1004). Both alternatives failed in one day on one repository: routing every merge through a single session stalled eighteen merges behind one queue with two authors idle holding green work, and leaving it unstated let a session merge a peer's PR before its author's message arrived. The author merges and carries the rebase-and-re-verify; measurement moves after the merge.
