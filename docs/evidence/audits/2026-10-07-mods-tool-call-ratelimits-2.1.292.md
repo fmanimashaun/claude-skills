@@ -1,12 +1,15 @@
 # Mods API for budget-guard (#1676, #1677): Claude Code 2.1.292
 
-Excerpts from the engine's own type declaration, `claude-code.d.ts`, written by Claude Code 2.1.292 and shipped with its plugin-authoring skill. sha256 `06d8cf21493d10bfd3c6d321d6312d8c783869b348ee4643426562b714cb4fca`. Taken 2026-10-07 by the coordinator. The website's hooks reference (https://code.claude.com/docs/en/hooks) separately documents PreToolUse denial for every tool, and documents no rate-limit field in any hook input. The status line page (https://code.claude.com/docs/en/statusline) documents `rate_limits.five_hour` and `rate_limits.seven_day` with `used_percentage` and `resets_at`, which "appears only for claude.ai Pro and Max subscribers, or behind a Claude apps gateway that sets a spend limit for you, and only after the first API response in the session."
+Excerpts from the engine's own type declaration, `claude-code.d.ts`, written by Claude Code 2.1.292 and shipped with its plugin-authoring skill. sha256 `06d8cf21493d10bfd3c6d321d6312d8c783869b348ee4643426562b714cb4fca`. Taken 2026-10-07 by the coordinator. Each block notes the line range it comes from, and `// ...` marks a gap between non-adjacent ranges.
+
+Other sources:
+- https://code.claude.com/docs/en/hooks: PreToolUse fires "on every tool call inside the agentic loop", and can deny. No hook input carries rate limits.
+- https://code.claude.com/docs/en/statusline: `rate_limits` "appears only for claude.ai Pro and Max subscribers, or behind a Claude apps gateway that sets a spend limit for you, and only after the first API response in the session." There, `resets_at` is epoch seconds; in a mod, `resetsAt` is ISO 8601.
+- Claude Code CHANGELOG 2.1.287: "Added Claude Mods: plugins may now modify deeper behavior". That is the floor. Whether `tool.call` existed at 2.1.287 is not stated (it is first named at 2.1.290), so this was developed and verified against 2.1.292.
 
 ## A tool.call hook refuses with `{ deny }`, and a guard that fails is skipped
-
-budget-guard decides the relay refusal before any `await`, so no failure can skip it. The usage refusal reads `$.session.usage()`; if that fails, the guard is skipped and the call runs, failing open, which is the intended behaviour for an advisory budget limit.
-
 ```ts
+// ... claude-code.d.ts lines 3905-3927
    * The events the engine raises at its call sites, and `engine.create`; the
    * classic settings hooks' events are ClassicEventOf.
    *
@@ -30,6 +33,7 @@ budget-guard decides the relay refusal before any `await`, so no failure can ski
        *   `.catch(($, e, next) => next.called ? next(e) : { deny: "no" })`.
        */
       'tool.call': ToolCallInput;
+// ... claude-code.d.ts lines 12597-12650
    * of which the tool sees (the engine strips them before the tool runs).
    *
    * `consent` is the person's own words for the press that raised the call
@@ -88,6 +92,7 @@ budget-guard decides the relay refusal before any `await`, so no failure can ski
 
 ## `$.session.usage()` returns the rate-limit windows
 ```ts
+// ... claude-code.d.ts lines 2797-2809
           /**
            * Returns when the session began, and the context window's fill, the
            * rate-limit windows and the cost as the status line has them, itemized.
@@ -105,6 +110,7 @@ budget-guard decides the relay refusal before any `await`, so no failure can ski
 
 ## `session.measure` pushes them
 ```ts
+// ... claude-code.d.ts lines 4374-4384
       /**
        * Fires when the engine measures the session and a unit moved: after each
        * main-thread turn, and when a rate-limit window moves a whole point.
@@ -116,6 +122,7 @@ budget-guard decides the relay refusal before any `await`, so no failure can ski
        * @example
        * on("session.measure", ($, e, next) => (toastPast90(e.rateLimits), next(e)))
        */
+// ... claude-code.d.ts lines 11028-11045
        * The rate-limit windows the last response reported, each with its
        * `percentUsed`; empty off a subscription or before the first reading.
        */
@@ -138,6 +145,7 @@ budget-guard decides the relay refusal before any `await`, so no failure can ski
 
 ## One window
 ```ts
+// ... claude-code.d.ts lines 11203-11222
   /**
    * One rate-limit window as the rate-limit notices read it.
    */
@@ -160,10 +168,10 @@ budget-guard decides the relay refusal before any `await`, so no failure can ski
 
 ```
 
-## The Workflow tool input carries the script
+## The Workflow tool input carries the script (optional)
 ```ts
     Workflow: {
-      /** Self-contained workflow script. Must begin with `export const meta = { name, description, phases }` (pure literal, no computed values) followed by the script body using agent()/parallel()/pi
+      /** Self-contained workflow script. Must begin with `export const meta = { name, description, phases }` (pure literal, no computed values) followed by the script body using agent()/parallel()/pipeline()/phase(). */
       script?: string
       /** Name of a predefined workflow (built-in or from .claude/workflows/). Resolves to a self-contained script. */
       name?: string
@@ -171,9 +179,101 @@ budget-guard decides the relay refusal before any `await`, so no failure can ski
       description?: string
       /** Ignored — set the workflow title in the script's `meta` block. */
       title?: string
-      /** Optional input value exposed to the script as the global `args`, verbatim. Pass arrays/objects as actual JSON values, NOT as a JSON-encoded string — a stringified list breaks `args.filter`/`
+      /** Optional input value exposed to the script as the global `args`, verbatim. Pass arrays/objects as actual JSON values, NOT as a JSON-encoded string — a stringified list breaks `args.filter`/`args.map` in the scr
       args?: unknown
-      /** Path to a workflow script file on disk. Every Workflow invocation persists its script under the session directory and returns the path in the tool result. To iterate, edit that file with Wri
+      /** Path to a workflow script file on disk. Every Workflow invocation persists its script under the session directory and returns the path in the tool result. To iterate, edit that file with Write/Edit and re-invok
       scriptPath?: string
-      /** Run ID of a prior Workflow invocation to resume from. Completed agent() calls with unchanged (prompt, opts) return their cached results instantly; only edited or new calls re-run. Same-sessi
+      /** Run ID of a prior Workflow invocation to resume from. Completed agent() calls with unchanged (prompt, opts) return their cached results instantly; only edited or new calls re-run. Same-session only. Stop the pr
+```
+
+## Timers (`$.clock`) and a prompt from a mod (`$.prompt.submit`), for the 5-hour resume
+```ts
+// ... claude-code.d.ts lines 3391-3440
+       * The time and timers, each an event through the host: `clock.now` reads
+       * the time; `clock.sleep`, `after` and `every` wait until it has passed.
+       *
+       * A timer's callback is the plugin's own function, kept in its environment
+       * and run there when the wait resolves; a hot reload of the plugin cancels
+       * its pending waits with the old environment.
+       */
+      clock: {
+          /**
+           * Resolves milliseconds since the epoch, now.
+           *
+           * @example
+           * const startedAt = await $.clock.now()
+           */
+          now: () => Promise<number>;
+          /**
+           * Resolves after `ms` milliseconds; rejects at once when `signal` aborts.
+           *
+           * The wait is the hook's own time and its budget runs on through it, as
+           * through no other `$` call: a `turn.step` generator that polls with it
+           * pays every sleep out of its one budget (`next.budget.remainingMs`).
+           *
+           * @param ms how long, in milliseconds
+           * @param options `signal`: ends the wait early with a rejection (pass
+           *   `next.signal` so a hook's wait ends with its dispatch)
+           * @example
+           * await $.clock.sleep(500, { signal: next.signal })
+           */
+          sleep: (ms: number, options?: SleepOptions) => Promise<void>;
+          /**
+           * Calls `fn` once after `ms` milliseconds; `cancel()` before then stops it.
+           *
+           * One `clock.after` dispatch: `fn` runs when it resolves, and never when
+           * a hook refuses it.
+           */
+          after: TimerCall;
+          /**
+           * Calls `fn` every `ms` milliseconds (at least 1) until `cancel()`.
+           *
+           * One `clock.every` dispatch per period: `fn` runs when it resolves and
+           * the next period is asked; a refused period ends the interval.
+           *
+           * @example
+           * const tick = $.clock.every(1000, () => $.ui.status("polling"))
+           */
+          every: TimerCall;
+      };
+      /**
+       * The network, through the host.
+       */
+// ... claude-code.d.ts lines 12546-12546
+  export type TimerCall = (ms: number, fn: () => void) => Timer;
+// ... claude-code.d.ts lines 2909-2921
+      prompt: {
+          /**
+           * Submits a prompt: the event `prompt.submit`, the same call the engine
+           * makes for a typed prompt; a turn of its own, once the session is idle.
+           *
+           * It goes through every hook but the calling one (the plugin's others
+           * see it) with `e.origin` `{ kind: 'plugin', name }`, the name the
+           * model reads it under unless a hook leaves it out of its answer.
+           *
+           * @example
+           * void $.prompt.submit({ text: "List the TODOs you just mentioned." })
+           */
+          submit: EventCalls['prompt']['submit'];
+```
+
+## `$.env.get` takes a literal name
+```ts
+// ... claude-code.d.ts lines 3555-3570
+       *
+       * `get` and `set` take the variable's name as a string literal, so what a
+       * module reads and writes is read off its source: `claude plugin validate`
+       * lists the names, and a name the module does not spell is refused.
+       */
+      env: {
+          /**
+           * Resolves with the variable's value, or `undefined` when it is unset.
+           *
+           * `name` must be a string literal; `claude plugin validate` lists the
+           * names your module reads and writes.
+           *
+           * @example
+           * const home = await $.env.get("HOME")
+           */
+          get: (name: string) => Promise<string | undefined>;
 ```

@@ -66,5 +66,23 @@ GUARD = Guard(
             "  return typeof w?.percentUsed === 'number' ? w.percentUsed : 100",
             "no usage reading refuses nothing for usage",
         ),
+        Mutation(
+            "the warn line stops asking for the handoff",
+            "Update the handoff now (/rails-flow:handoff) and commit and push work in progress",
+            "Be careful",
+            "the 5-hour warn line tells Claude to write the handoff",
+        ),
+        Mutation(
+            "the reset time is dropped from the line",
+            "? ` (resets ${t.toISOString().slice(11, 16)} UTC)` : ''",
+            "? '' : ''",
+            "names the reset time",
+        ),
+        Mutation(
+            "the resume waits for the wrong time (from the epoch, not from now)",
+            "Math.max(0, t - now)",
+            "Math.max(0, t)",
+            "at the 5-hour hard level one resume is scheduled",
+        ),
     ),
 )

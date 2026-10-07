@@ -16,11 +16,14 @@
 // cheap (#1547). RAILS_FLOW_CONTEXT_NUDGE_PCT overrides it, whole percent, 1 to 99.
 const DEFAULT_THRESHOLD = 70
 
-import { budgetLine, DEFAULT_BLOCK, DEFAULT_WARN, level, limitsLabel, weekly } from './budget-guard.mjs'
+import { budgetLine, DEFAULT_BLOCK, DEFAULT_WARN, level, limitsLabel, msUntil, RESUME_TEXT, windowOf } from './budget-guard.mjs'
 
-// The weekly window's last reading and the highest level already announced since it was last below warn.
-let week = null
-let announced = null
+// Each window's last reading, and the highest level announced since it was last below warn.
+const WINDOWS = ['five_hour', 'seven_day']
+const reading = { five_hour: null, seven_day: null }
+const announced = { five_hour: null, seven_day: null }
+// The pending resume after the 5-hour window resets, so it is scheduled once.
+let resume = null
 
 // The last fill the engine measured, in whole percent, or null while the live window has no reading.
 let percent = null
@@ -72,11 +75,20 @@ export function register(on) {
   // Runs after each turn, and whenever the fill moved: the figure is pushed, not polled
   on('session.measure', async ($, e, next) => {
     percent = e.context.percent ?? null
-    week = weekly(e.rateLimits)
+    const levels = await budgetLevels($)
+    for (const k of WINDOWS) {
+      reading[k] = windowOf(e.rateLimits, k)
+      if (level(reading[k]?.pct, ...levels) === null) announced[k] = null
+    }
     const limits = limitsLabel(e.rateLimits)
     const parts = [percent === null ? null : `context ${percent}%`, limits ?? null].filter(Boolean)
     $.ui.status(parts.length ? parts.join(' · ') : undefined)
-    if (week === null || level(week, ...(await budgetLevels($))) === null) announced = null
+    // At the 5-hour hard level, schedule one prompt for just after the reset, so the work resumes by itself.
+    const five = reading.five_hour
+    if (resume === null && level(five?.pct, ...levels) === 'block' && (await $.env.get('RAILS_FLOW_AUTO_RESUME')) !== '0') {
+      const ms = msUntil(five.resetsAt, await $.clock.now())
+      if (ms !== null) resume = $.clock.after(ms + 120000, () => { resume = null; void $.prompt.submit({ text: RESUME_TEXT }) })
+    }
     if (percent === null || percent < (await threshold($))) nudged = false
     return next(e)
   })
@@ -84,10 +96,13 @@ export function register(on) {
   // Runs when a prompt is submitted
   on('prompt.submit', async ($, e, next) => {
     const lines = []
-    const lvl = level(week, ...(await budgetLevels($)))
-    if (lvl !== null && lvl !== announced && !(announced === 'block' && lvl === 'warn')) {
-      announced = lvl
-      lines.push(budgetLine(week, lvl))
+    const levels = await budgetLevels($)
+    for (const k of WINDOWS) {
+      const lvl = level(reading[k]?.pct, ...levels)
+      if (lvl !== null && lvl !== announced[k] && !(announced[k] === 'block' && lvl === 'warn')) {
+        announced[k] = lvl
+        lines.push(budgetLine(k, reading[k].pct, lvl, reading[k].resetsAt, k === 'five_hour' && resume !== null))
+      }
     }
     if (percent !== null && !nudged && isTheirs(e.origin) && percent >= (await threshold($))) {
       nudged = true

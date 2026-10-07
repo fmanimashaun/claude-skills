@@ -21,9 +21,11 @@ async function check(name, body) {
   try { await body() } catch (err) { failures.push(`${name}: ${err.message}`) }
 }
 
-const win = (week, five) => [
-  ...(week === undefined ? [] : [{ kind: 'seven_day', percentUsed: week }]),
-  ...(five === undefined ? [] : [{ kind: 'five_hour', percentUsed: five }]),
+const RESET = '2026-10-07T14:05:00.000Z'
+const NOW = Date.parse('2026-10-07T13:05:00.000Z')
+const win = (week, five, resetsAt = RESET) => [
+  ...(week === undefined ? [] : [{ kind: 'seven_day', percentUsed: week, resetsAt }]),
+  ...(five === undefined ? [] : [{ kind: 'five_hour', percentUsed: five, resetsAt }]),
 ]
 const echo = async (e) => ({ passed: e })
 const RELAY = "await parallel(peers.map(p => () => agent(`Load SendMessage and send this to ${p}`)))"
@@ -48,11 +50,20 @@ async function nudge(env = {}) {
   const hooks = {}
   mod.register((event, ...rest) => { hooks[event] = rest[rest.length - 1] })
   const status = []
-  const $ = { env: { get: async (k) => env[k] }, ui: { status: (t) => status.push(t) } }
+  const timers = []
+  const submitted = []
+  const $ = {
+    env: { get: async (k) => env[k] },
+    ui: { status: (t) => status.push(t) },
+    clock: { now: async () => NOW, after: (ms, fn) => { const t = { ms, fn, cancel() {} }; timers.push(t); return t } },
+    prompt: { submit: async (p) => submitted.push(p) },
+  }
   const id = async (e) => e
   return {
     status,
-    measure: (week, five, ctx) => hooks['session.measure']($, { context: { window: 200000, ...(ctx === undefined ? {} : { percent: ctx, tokens: ctx * 2000 }) }, rateLimits: win(week, five), changed: ['rateLimits'] }, id),
+    timers,
+    submitted,
+    measure: (week, five, ctx, resetsAt = RESET) => hooks['session.measure']($, { context: { window: 200000, ...(ctx === undefined ? {} : { percent: ctx, tokens: ctx * 2000 }) }, rateLimits: win(week, five, resetsAt), changed: ['rateLimits'] }, id),
     submit: () => hooks['prompt.submit']($, { text: 'hi' }, id),
   }
 }
@@ -134,7 +145,56 @@ await check('falling below warn resets, so the next climb is told again', async 
   await n.measure(81)
   assert.equal((await n.submit()).context.length, 1)
 })
+await check('the 5-hour warn line tells Claude to write the handoff and names the reset time', async () => {
+  const n = await nudge()
+  await n.measure(10, 82)
+  const line = (await n.submit()).context[0]
+  assert.ok(line.includes('5-hour') && line.includes('/rails-flow:handoff') && line.includes('resets 14:05 UTC'))
+})
+await check('the weekly warn line also asks for the handoff before work is lost', async () => {
+  const n = await nudge()
+  await n.measure(84, 10)
+  assert.ok((await n.submit()).context[0].includes('Update the handoff now'))
+})
+await check('both windows at warn give one line each, once', async () => {
+  const n = await nudge()
+  await n.measure(85, 85)
+  assert.equal((await n.submit()).context.length, 2)
+  assert.equal((await n.submit()).context, undefined)
+})
+await check('at the 5-hour hard level one resume is scheduled for just after the reset', async () => {
+  const n = await nudge()
+  await n.measure(10, 93)
+  await n.measure(10, 94)
+  assert.equal(n.timers.length, 1)
+  assert.equal(n.timers[0].ms, 3600000 + 120000)
+  n.timers[0].fn()
+  await Promise.resolve()
+  assert.ok(n.submitted[0].text.startsWith('The 5-hour usage limit has reset'))
+})
+await check('the 5-hour block line says the session will resume', async () => {
+  const n = await nudge()
+  await n.measure(10, 93)
+  assert.ok((await n.submit()).context[0].includes('will resume this session'))
+})
+await check('RAILS_FLOW_AUTO_RESUME=0 schedules nothing', async () => {
+  const n = await nudge({ RAILS_FLOW_AUTO_RESUME: '0' })
+  await n.measure(10, 95)
+  assert.equal(n.timers.length, 0)
+})
+await check('a weekly hard level schedules no resume (it does not reset in hours)', async () => {
+  const n = await nudge()
+  await n.measure(95, 10)
+  assert.equal(n.timers.length, 0)
+})
+await check('a window with no reset time schedules no resume', async () => {
+  const n = await nudge()
+  await n.measure(10, 95, undefined, null)
+  assert.equal(n.timers.length, 0)
+  await n.measure(10, 96)
+  assert.equal(n.timers.length, 1)
+})
 await check('the usage line is short (it is billed on every later request)', async () => {
   const { budgetLine } = (await guard(0)).mod
-  assert.ok(budgetLine(96, 'block').length <= 200 && budgetLine(85, 'warn').length <= 200)
+  assert.ok(budgetLine('seven_day', 96, 'block', RESET).length <= 260 && budgetLine('five_hour', 85, 'warn', RESET).length <= 260)
 })

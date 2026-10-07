@@ -89,13 +89,13 @@ GUARD = Guard(
         ),
         Mutation(
             "#1677: the usage line is announced on every prompt, not once per level",
-            "      announced = lvl\n",
+            "        announced[k] = lvl\n",
             "",
             "at the warn level one usage line rides on the next prompt, once",
         ),
         Mutation(
             "#1677: falling below warn never resets, so the next climb is never told",
-            "    if (week === null || level(week, ...(await budgetLevels($))) === null) announced = null\n",
+            "      if (level(reading[k]?.pct, ...levels) === null) announced[k] = null\n",
             "",
             "falling below warn resets, so the next climb is told again",
         ),
@@ -107,9 +107,33 @@ GUARD = Guard(
         ),
         Mutation(
             "#1677: block after warn is swallowed as already announced",
-            "lvl !== announced && ",
-            "announced === null && ",
+            "lvl !== announced[k] && ",
+            "announced[k] === null && ",
             "reaching block after warn adds the block line, once",
+        ),
+        Mutation(
+            "the auto-resume never fires: the timer is never set",
+            "      if (ms !== null) resume = $.clock.after(",
+            "      if (false) resume = $.clock.after(",
+            "at the 5-hour hard level one resume is scheduled",
+        ),
+        Mutation(
+            "the resume is scheduled on every measurement, not once",
+            "    if (resume === null && level(five?.pct",
+            "    if (level(five?.pct",
+            "at the 5-hour hard level one resume is scheduled",
+        ),
+        Mutation(
+            "RAILS_FLOW_AUTO_RESUME=0 is ignored",
+            " && (await $.env.get('RAILS_FLOW_AUTO_RESUME')) !== '0'",
+            "",
+            "RAILS_FLOW_AUTO_RESUME=0 schedules nothing",
+        ),
+        Mutation(
+            "only the weekly window is announced; the 5-hour window is never watched",
+            "const WINDOWS = ['five_hour', 'seven_day']",
+            "const WINDOWS = ['seven_day']",
+            "the 5-hour warn line tells Claude to write the handoff",
         ),
     ),
 )

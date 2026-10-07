@@ -144,34 +144,45 @@ pass on 2.1.288.
 - One clause of the prompt hook, the explicit `percent === null`, is redundant because `null < 70` is already
   true in JavaScript. Removing it changes nothing, so no test can catch it, and it is left out of the guard.
 
-## The account's usage limit: budget-guard (#1676, #1677)
+## Three limits, one automation: context, the 5-hour session, the week (#1676, #1677)
 
-The context nudge watches one window. The account's 5-hour and weekly limits were invisible to the agent: on
-2026-10-07 the owner had to say "we are still at 96% of weekly limit", after four Workflow broadcasts had spent
-about 680k tokens each. Each broadcast started 11 agents, each paying about 62k tokens of startup context, only
-to call `SendMessage`. `hooks/budget-guard.mjs` does three things:
+The context nudge watches one window. The account's 5-hour session limit and weekly limit were invisible to the
+agent: on 2026-10-07 the owner had to say "we are still at 96% of weekly limit", after four Workflow broadcasts
+had spent about 680k tokens each. Each started 11 agents, each paying about 62k tokens of startup context
+(the workflow's own report divided by 11), only to call `SendMessage`. The point of this section is that the
+agent knows where all three limits stand and acts in time: it writes things down while there is still
+budget, and the work carries on after a reset.
 
-1. **Refuses a relay workflow, at any usage.** A `Workflow` whose script starts agents and names `SendMessage`
-   is refused, with the fix in the message: call `SendMessage` directly, once per recipient, in one turn. A
-   script whose agents do real work and also report by message opts out with the line
-   `// budget-guard: not a relay`. This works on every account, with or without usage figures.
-2. **Refuses fan-out at the weekly hard limit.** At or past 90% of the 7-day window, a new `Workflow` or
-   `Agent` call is refused. Direct tool calls are never touched. `RAILS_FLOW_BUDGET_ALLOW=1` overrides this for a
-   session, and `RAILS_FLOW_BUDGET_BLOCK_PCT` moves the threshold (a whole percent, 1 to 100).
-3. **Shows the limits, through the context nudge.** A plugin registers each event once, so `context-nudge.mjs`
-   carries this part using budget-guard's helpers. The status line reads `context 30% · week 42% · 5h 12%`,
-   and when the weekly window first reaches the warn level (80%, set by `RAILS_FLOW_BUDGET_WARN_PCT`) and again at
-   the hard limit, ONE short line rides on a prompt so Claude knows its budget. It resets when usage falls
-   back below warn.
+| Limit | At the warn level | At the hard level |
+|---|---|---|
+| Context window (`context-nudge.mjs`) | at 70%: one line asks for `/rails-flow:handoff`, then `/clear` or `/compact` | — |
+| 5-hour session window | at 80%: update the handoff, commit and push, no fan-out | at 90%: finish the step, save everything, stop; **resume by itself just after the reset** |
+| 7-day window | at 80%: the same | at 90%: the same, and new `Workflow` and `Agent` calls are refused |
+| Any usage | a `Workflow` whose script has agents only relay `SendMessage` is refused | — |
 
-**Where the figures come from, and when there are none.** The usage figures are `$.session.usage()` and
-`session.measure`'s `rateLimits`, each window a `{ kind, percentUsed, resetsAt }`. They exist only on a
-claude.ai Pro or Max subscription, or behind a gateway spend limit, and only after the session's first
-response. With no reading, nothing is refused for usage and nothing is announced. A guard that fails is
-skipped and the call runs (the engine's rule), so the usage refusal fails open. The relay refusal decides
-before anything that could fail. Excerpts and their checksum are in
+- **The status line** reads `context 30% · week 42% · 5h 12%`. Each usage line names the window's reset time,
+  in UTC, and rides on a prompt once per level reached. It resets when usage falls back below warn.
+- **The resume.** At the 5-hour hard level, the mod sets one timer (`$.clock.after`) for two minutes after the
+  window's `resetsAt`. When it fires, it submits one prompt (`$.prompt.submit`), which runs once the session is
+  idle, telling Claude to read the handoff and continue. Timers live in the session: a hot reload or the end of
+  the session cancels them, so a closed session does not resume. `RAILS_FLOW_AUTO_RESUME=0` turns it off. The
+  weekly window gets no resume, because it does not reset within a session.
+- **Thresholds and override:** `RAILS_FLOW_BUDGET_WARN_PCT` (default 80) and `RAILS_FLOW_BUDGET_BLOCK_PCT`
+  (default 90), whole percents from 1 to 100. `RAILS_FLOW_BUDGET_ALLOW=1` lifts the weekly fan-out refusal, but
+  not the relay refusal.
+- **The relay refusal** needs the script: a `Workflow` started by `name` or `scriptPath` carries none, so it
+  is not checked. A script whose agents do real work and also report by message opts out with the line
+  `// budget-guard: not a relay`.
+
+**Where the figures come from, and when there are none.** They are `$.session.usage()` and
+`session.measure`'s `rateLimits`, each window a `{ kind, percentUsed, resetsAt }` (`resetsAt` is ISO 8601 here;
+the status line's own JSON uses epoch seconds). They appear only on a claude.ai Pro or Max subscription, or
+behind a gateway spend limit, and only after the session's first response. Behind a gateway alone, the window
+is `spend_limit`, so the 5-hour and weekly rules do not apply there. With no reading, nothing is refused and
+nothing is announced. A guard that throws is skipped and the call runs (the engine's rule), so the usage
+refusal fails open; the relay refusal makes no async call before it decides. Mods need Claude Code 2.1.287 or
+later; this was developed against 2.1.292. The declarations and their checksum are in
 `docs/evidence/audits/2026-10-07-mods-tool-call-ratelimits-2.1.292.md`.
-
 
 ## What this does not cover
 
