@@ -292,7 +292,7 @@ paths:
 ```
 
 Rules live in `.claude/rules/*.md` (committed, team-shared) and a rule with `paths:` loads
-**only when Claude reads a matching file** — so it costs nothing on sessions that never touch
+**only when Claude uses the Read, Write or Edit tool on a matching file** (Write and Edit since Claude Code 2.1.288; before that, only Read) — so it costs nothing on sessions that never touch
 that area. A rule with no `paths:` loads every session, same as `CLAUDE.md`; use that only for
 genuinely global content.
 
