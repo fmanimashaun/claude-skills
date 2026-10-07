@@ -629,7 +629,7 @@ AUTHZ_GOOD = [
 # repo when the temp directory is removed -- `rmtree` then raises "Directory not empty" from cleanup, the
 # selftest dies before printing its verdict, and mutation coverage reads a correct mutant as caught by the
 # wrong fixture (#1493). Signing is off too, so a maintainer's own git config never reaches the fixture.
-FIXTURE_GIT = ("-c", "user.email=t@t", "-c", "user.name=t", "-c", "maintenance.auto=false", "-c", "gc.auto=0",  # fixture-git: exempt (the argv is the subject: this fixture tests git's own maintenance behaviour; bound by -C)
+FIXTURE_GIT = ("-c", "user.email=t@t", "-c", "user.name=t", "-c", "maintenance.auto=false", "-c", "gc.auto=0",  # fixture-git: exempt (the argv is the subject: this fixture tests git's own maintenance behaviour; repo-locating env stripped: bare_env drops every GIT_*)
                "-c", "commit.gpgSign=false", "-c", "tag.gpgSign=false")
 
 
@@ -836,14 +836,16 @@ def selftest() -> int:
         # Only FIXTURE_GIT may supply the settings: a runner that already disables maintenance through
         # GIT_CONFIG_* (ours does, #1510) would otherwise satisfy this check with the fixture's own
         # settings removed -- and a downstream project runs this selftest without our runner.
-        bare_env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_CONFIG_")}
+        # No GIT_* at all (#1660 review R3): not the CONFIG pairs this check must not inherit, and not an inherited
+        # GIT_DIR either, which `-C` does not override -- the #1588 incident.
+        bare_env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
         traced = subprocess.run([*g, "commit", "-q", "--allow-empty", "-m", "trace"], capture_output=True,
                                 text=True, env={**bare_env, "GIT_TRACE": "1"})
         # CONTROL: with auto-maintenance ON the same commit does run it, so the check above is not vacuous
         # on this git. It runs in the FOREGROUND (`autoDetach=false`): a detached control would be the very
         # #1493 race, hidden by the cleanup (review of PR #1511). `maintenance.auto=true` on the command
         # line, so a maintainer's global config cannot turn the control red.
-        bare = ["git", "-C", str(proj), "-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgSign=false",  # fixture-git: exempt (the argv is the subject: this fixture tests git's own maintenance behaviour; bound by -C)
+        bare = ["git", "-C", str(proj), "-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgSign=false",  # fixture-git: exempt (the argv is the subject: this fixture tests git's own maintenance behaviour; repo-locating env stripped: bare_env drops every GIT_*)
                 "-c", "maintenance.auto=true", "-c", "maintenance.autoDetach=false", "-c", "gc.autoDetach=false"]
         control = subprocess.run([*bare, "commit", "-q", "--allow-empty", "-m", "control"], capture_output=True,
                                  text=True, env={**bare_env, "GIT_TRACE": "1"})

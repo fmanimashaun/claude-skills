@@ -165,9 +165,10 @@ def _sample() -> float:
     with tempfile.TemporaryDirectory() as td:
         began = time.monotonic()
         try:
-            for cmd in (["git", "init", "-q"], ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "i"],  # fixture-git: exempt (the timed calibration workload: its argv is what is measured)
+            for cmd in (["git", "init", "-q"], ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "i"],  # fixture-git: exempt (the timed calibration workload: its argv is what is measured; repo-locating env stripped below)
                         ["bash", "-c", "true"]):
-                subprocess.call(cmd, cwd=td, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=CALIBRATION_TIMEOUT)
+                subprocess.call(cmd, cwd=td, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=CALIBRATION_TIMEOUT,
+                                env=fixture_git.hermetic())     # no inherited GIT_DIR: cwd alone does not bind (#1660 R3)
         except (OSError, subprocess.SubprocessError):
             return CALIBRATION_IDLE * (HOOK_BUDGET_CAP / HOOK_BUDGET_FLOOR)
         return time.monotonic() - began
@@ -270,7 +271,8 @@ def _fixture_git(cwd: Path, *args: str, **kw) -> subprocess.CompletedProcess:
         return fixture_git.run(cwd, *args, **kw)
     kw.setdefault("capture_output", True)
     kw.setdefault("text", True)
-    return _run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *args], cwd=cwd, **kw)  # fixture-git: exempt (an init, a bare remote or a linked worktree, which fixture_git refuses by design; bound by cwd)
+    kw["env"] = fixture_git.hermetic(kw.get("env"))      # drops an inherited GIT_DIR & co: cwd alone does not bind (#1660 R3)
+    return _run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *args], cwd=cwd, **kw)  # fixture-git: exempt (an init, a bare remote or a linked worktree, which fixture_git refuses by design; repo-locating env stripped)
 
 
 def _git_repo(root: Path) -> None:
@@ -3872,6 +3874,32 @@ def where_stopped_fixtures() -> None:
         check("where-stopped: outside a git repository, silent and exit 0", code == 0 and out.strip() == "", out)
 
 
+# ---- _fixture_git under an inherited GIT_DIR (#1660 review R3) ----------------------------------------------------------
+def fixture_git_binding_fixtures() -> None:
+    """THE #1588 INCIDENT, in the harness's own helper: an inherited GIT_DIR naming another repo must not receive a
+    fixture's commit, through the fixture_git path or through the fallback (an init dir, a linked worktree)."""
+    def count(repo: Path) -> str:
+        return subprocess.run(["git", "-C", str(repo), "rev-list", "--count", "--all"], capture_output=True, text=True,
+                              env=fixture_git.hermetic()).stdout.strip()
+
+    with tempfile.TemporaryDirectory() as td:
+        real = Path(td) / "real"                                    # a stand-in for the maintainer's checkout
+        _git_repo(real)
+        before = count(real)
+        check("binding CONTROL: the stand-in repo's commits are countable", before == "1", before)
+        inherited = {**os.environ, "GIT_DIR": str(real / ".git")}
+        repo = Path(td) / "fixture"
+        _git_repo(repo)
+        _fixture_git(repo, "commit", "-q", "--allow-empty", "-m", "m", env=inherited, check=False)
+        check("binding: a fixture commit through fixture_git under an inherited GIT_DIR stays out of the other repo",
+              count(real) == before and count(repo) == "2", f"real {count(real)}, fixture {count(repo)}")
+        plain = Path(td) / "not-a-repo"
+        plain.mkdir()
+        _fixture_git(plain, "commit", "-q", "--allow-empty", "-m", "m", env=inherited, check=False)
+        check("binding: the fallback (no .git here) under an inherited GIT_DIR does not commit into the other repo",
+              count(real) == before, f"real went from {before} to {count(real)}")
+
+
 def deadline_fixtures() -> None:
     guard = HOOKS / "guard-bash.sh"
     base_env = {k: v for k, v in os.environ.items() if k not in ("QA_ALLOW_MAIN", "RAILS_FLOW_LANE", "RAILS_FLOW_HOOK_DEADLINE")}
@@ -4207,6 +4235,7 @@ GROUPS = {
     "guard_worktree": guard_worktree_fixtures, "guard_worktree_parse": guard_worktree_parse_fixtures,
     "guard_worktree_failopen": guard_worktree_failopen_fixtures, "guard_worktree_pointer": guard_worktree_pointer_fixtures,
     "deadline": deadline_fixtures, "where_stopped": where_stopped_fixtures,
+    "fixture_git_binding": fixture_git_binding_fixtures,
 }
 
 
@@ -4226,7 +4255,7 @@ PARTS = {
           "ci_verdict_hint", "session_end", "timeout"],
     "b": ["release_gate", "release_gate_effects"],
     "c": ["release_gate_repos", "release_gate_refs", "guard_worktree", "guard_worktree_parse",
-          "guard_worktree_failopen", "guard_worktree_pointer", "deadline", "where_stopped"],
+          "guard_worktree_failopen", "guard_worktree_pointer", "deadline", "where_stopped", "fixture_git_binding"],
 }
 
 

@@ -207,8 +207,8 @@ GUARD = Guard(
         ),
         Mutation(
             "the calibration's own commands lose their timeout, so a hung calibration is the hang it guards against",
-            "stderr=subprocess.DEVNULL, timeout=CALIBRATION_TIMEOUT)",
-            "stderr=subprocess.DEVNULL)",
+            "stderr=subprocess.DEVNULL, timeout=CALIBRATION_TIMEOUT,",
+            "stderr=subprocess.DEVNULL,",
             "the calibration is itself bounded",
         ),
         Mutation(
