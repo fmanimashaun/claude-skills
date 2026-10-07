@@ -47,6 +47,55 @@ GUARD = Guard(
             "    if named and not can_invoke:",
             "CONTROL: a skills: preload can load it",
         ),
+        # #1663: an agent told to run a stage or a command, with no way to invoke a skill, passes again.
+        Mutation(
+            "an agent told to run a command it cannot invoke passes",
+            "    if runs_command(body) and not can_invoke:",
+            "    if False:",
+            "an agent told to execute a stage, with no way to invoke a skill, is a finding",
+        ),
+        Mutation(
+            "an agent that has the Skill tool is a false finding",
+            "    if runs_command(body) and not can_invoke:",
+            "    if runs_command(body):",
+            "CONTROL: Skill in the tools list can run it",
+        ),
+        Mutation(
+            "a skills: preload is taken as able to run a command",
+            "    if runs_command(body) and not can_invoke:",
+            '    if runs_command(body) and not can_invoke and "skills" not in f:',
+            "...a skills: preload injects content, it does not run a command",
+        ),
+        Mutation(
+            "'execute the next stage' is not recognised as an instruction",
+            'EXECUTES = re.compile(r"\\b(?:execute|invoke|launch|chain)\\b[^.\\n`]{0,24}\\b(?:stages?|flows?|commands?|pipeline)\\b"',
+            'EXECUTES = re.compile(r"\\bNEVERMATCHES\\b"',
+            "an agent told to execute a stage, with no way to invoke a skill, is a finding",
+        ),
+        Mutation(
+            "'run `/cmd`' is not recognised as an instruction",
+            '                      r"|\\b(?:execute|run|invoke|start|launch)\\s+(?:the\\s+|next\\s+)?`?" + OUR_COMMAND, re.I)',
+            '                      r"|\\bNEVERMATCHES\\b" + OUR_COMMAND, re.I)',
+            "...and so is one told to run a named command",
+        ),
+        Mutation(
+            "asking a person to run the command is read as an instruction to the agent",
+            "        if not HANDS_OFF.search(clause):",
+            "        if True:",
+            "CONTROL: asking a person to run the command is how an agent without Skill works",
+        ),
+        Mutation(
+            "'One next action: run ...' in a report is read as an instruction to the agent",
+            '                       r"|next action)\\b", re.I)',
+            '                       r")\\b", re.I)',
+            "CONTROL: a command named in a report to the caller is not an instruction to run it",
+        ),
+        Mutation(
+            "a body naming none of our commands is still flagged",
+            "    if not NAMES_COMMAND.search(body):\n        return False",
+            "    if False:\n        return False",
+            "CONTROL: a body naming none of our commands is silent",
+        ),
         # #1343: an agent that inherits every tool passes again.
         Mutation(
             "an agent with no tools declaration passes",

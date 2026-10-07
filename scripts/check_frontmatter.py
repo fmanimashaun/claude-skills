@@ -25,6 +25,11 @@ TWO AGENT RULES, for the same reason: a frontmatter that says less than the body
     since the skill lives in the plugin cache), with an allowlist that omitted Skill and no
     `skills:` preload, so the instruction did nothing.
 
+  * agent-unrunnable-command (#1663): a command is a skill, so an agent runs one only through the Skill tool; a
+    `skills:` preload injects content and does not run it. `pipeline-coordinator` was told to "execute the next
+    stage" (`/qa-flow:verify`, `/pipeline:release`) with `tools: Read, Grep, Glob, Bash`. Handing the command to a
+    person is the other way out and is not a finding.
+
 USER-INVOKED COMMANDS, pinned both ways (#1335). Claude Code: commands "have been merged into skills",
 and `disable-model-invocation: true` is for "workflows with side effects ... You don't want Claude
 deciding to deploy because your code looks ready." `/pipeline:deploy-cloud` performs a production
@@ -98,6 +103,30 @@ def fields(text: str) -> dict[str, str]:
     return out
 
 
+# #1663: a command is a skill ("commands have been merged into skills"), and an agent runs one only through the Skill tool.
+# `skills:` preloading injects a skill's CONTENT; it does not let the agent run a command. So an agent told to EXECUTE a
+# stage or one of our commands, with no way to invoke a skill, was handed an instruction it cannot follow
+# (pipeline-coordinator, measured: its tool list is Read, Bash and the hand-back, no Skill). An instruction to hand the
+# command to a person is not that: "ask the engineer to run `/qa-flow:setup-qa`" is how an agent without Skill is meant to work.
+OUR_COMMAND = r"/(?:rails-flow|qa-flow|pipeline|design-flow|rails-stack)(?::[a-z][a-z0-9-]*)?\b"
+NAMES_COMMAND = re.compile(OUR_COMMAND)
+EXECUTES = re.compile(r"\b(?:execute|invoke|launch|chain)\b[^.\n`]{0,24}\b(?:stages?|flows?|commands?|pipeline)\b"
+                      r"|\b(?:execute|run|invoke|start|launch)\s+(?:the\s+|next\s+)?`?" + OUR_COMMAND, re.I)
+HANDS_OFF = re.compile(r"\b(?:ask|tell|report|suggest|recommend|name|print|show|relay|offer|hand|say|emit|user|engineer|human"
+                       r"|next action)\b", re.I)
+
+
+def runs_command(body: str) -> bool:
+    """True when the body names one of our commands and tells the AGENT to execute a stage or a command."""
+    if not NAMES_COMMAND.search(body):
+        return False
+    for m in EXECUTES.finditer(body):
+        clause = re.split(r"[.!?]\s|\n\s*\n", body[:m.start()])[-1]       # what the sentence says before the verb
+        if not HANDS_OFF.search(clause):
+            return True
+    return False
+
+
 def agent_problems(text: str) -> list[str]:
     f = fields(text)
     found = []
@@ -112,6 +141,10 @@ def agent_problems(text: str) -> list[str]:
     if named and not can_invoke and "skills" not in f:
         found.append(f"[agent-unloadable-skill] tells the agent to use {', '.join(named)} but can neither "
                      "invoke skills (no `Skill` in its tools) nor has them preloaded (`skills:`)")
+    if runs_command(body) and not can_invoke:
+        found.append("[agent-unrunnable-command] is told to execute a stage or one of our commands, but cannot invoke "
+                     "one (no `Skill` in its tools; a `skills:` preload injects content and does not run a command): "
+                     "add `Skill`, or have it hand the command to the user")
     return found
 
 
@@ -139,7 +172,7 @@ def check(root: Path) -> tuple[int, list[str]]:
     if findings:
         return 1, [f"{len(findings)} finding(s) across {len(files)} frontmatter file(s):", *findings]
     return 0, [f"all {len(files)} frontmatter blocks are valid YAML; every shipped agent declares its tools "
-               "and can load the skills it names"]
+               "and can load the skills it names and run the commands it is told to"]
 
 
 def selftest() -> int:
@@ -201,6 +234,32 @@ def selftest() -> int:
            not agent_problems(agent("tools: Read\nskills: rails-8\n", "Consult the rails-8 skill.")))
     expect("CONTROL: a body naming no skill of ours is silent",
            not agent_problems(agent("tools: Read\n", "Run its review-pr skill if installed.")))
+
+    # #1663: an agent told to RUN a stage or a command needs the Skill tool, because a command is a skill.
+    coordinator = ("Next: `/qa-flow:verify`, then `/pipeline:release`.\n\nOn `/pipeline`, execute the next stage, stop at "
+                   "its gate, report, and only advance when the gate is green.")
+    expect("an agent told to execute a stage, with no way to invoke a skill, is a finding",
+           any("agent-unrunnable-command" in p for p in agent_problems(agent("tools: Read, Bash\n", coordinator))))
+    expect("...and so is one told to run a named command",
+           any("agent-unrunnable-command" in p for p in
+               agent_problems(agent("tools: Read, Bash\n", "When the gate is green, run `/pipeline:release`."))))
+    expect("...a skills: preload injects content, it does not run a command",
+           any("agent-unrunnable-command" in p for p in
+               agent_problems(agent("tools: Read, Bash\nskills: rails-8\n", coordinator))))
+    expect("...and a Skill in disallowedTools blocks it",
+           any("agent-unrunnable-command" in p for p in
+               agent_problems(agent("disallowedTools: Skill\n", coordinator))))
+    expect("CONTROL: Skill in the tools list can run it",
+           not any("agent-unrunnable-command" in p for p in agent_problems(agent("tools: Read, Bash, Skill\n", coordinator))))
+    expect("CONTROL: asking a person to run the command is how an agent without Skill works",
+           not any("agent-unrunnable-command" in p for p in agent_problems(agent(
+               "tools: Read, Bash\n", "If the file is absent, ask the engineer to\nrun `/qa-flow:setup-qa`, or ask which stack."))))
+    expect("CONTROL: a command named in a report to the caller is not an instruction to run it",
+           not any("agent-unrunnable-command" in p for p in agent_problems(agent(
+               "tools: Read, Bash\n", "Stale area -> report `run /rails-flow:explain <area>` and stop.\n\nOne next action: run /qa-flow:verify."))))
+    expect("CONTROL: a body naming none of our commands is silent",
+           not any("agent-unrunnable-command" in p for p in agent_problems(agent(
+               "tools: Read, Bash\n", "Execute the next stage of the checklist, then report."))))
 
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
