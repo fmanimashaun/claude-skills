@@ -17,8 +17,9 @@ THE FILE (the shape one consumer designed, adopted as the standard):
 RULES
   * every column of every `create_table` in db/schema.rb, and in every other `db/*_schema.rb` a second database dumps
     (`schema_dump: observability_schema.rb` -> db/observability_schema.rb), is listed (the implicit `id` key is exempt);
-    the Rails 8 Solid trio (db/cache_schema.rb, db/queue_schema.rb, db/cable_schema.rb) is framework-owned and is NOT read,
-    so a project that never classified `solid_*` tables does not turn red (their job arguments are a separate question);
+    the Rails 8 Solid trio (db/cache_schema.rb, db/queue_schema.rb, db/cable_schema.rb) is framework-owned and is NOT read
+    WHEN EVERY ONE OF ITS TABLES IS `solid_*` (a file of that name holding anything else is the project's own and is read), so a
+    project that never classified `solid_*` tables does not turn red (their job arguments are a separate question);
   * a table that appears in two schema files is a finding: the inventory is keyed by table name, so it could not say which;
   * `category: none` is an explicit "not personal"; any other category needs `basis` and `retention`;
   * an entry for a table or column that no schema file has any more is a finding (it would mislead the policy);
@@ -42,7 +43,7 @@ from build_project_wiki import parse_schema, parse_yaml_subset  # noqa: E402  --
 
 SCHEMA = Path("db/schema.rb")
 # The Solid trio: a Rails 8 app has all three by default and never classified their tables; reading them would turn the gate red for
-# every consumer. Decided in #1695; classifying `solid_*` (the queue holds job arguments) is a separate question.
+# every consumer, and only a file that holds nothing but `solid_*` tables is skipped. Decided in #1695; classifying `solid_*` (the queue holds job arguments) is a separate question.
 FRAMEWORK_SCHEMAS = frozenset({"cache_schema.rb", "queue_schema.rb", "cable_schema.rb"})
 INVENTORY = Path("config/privacy_inventory.yml")
 FLOW = re.compile(r"^\{(?P<body>.*)\}$")
@@ -103,9 +104,15 @@ def load_inventory(root: Path) -> dict[str, dict[str, dict]] | None:
     return inv
 
 
+def _solid_only(path: Path) -> bool:
+    """True when a framework-named schema file holds nothing but Solid tables: only then is it the framework's, not the project's."""
+    return all(table.startswith("solid_") for table in parse_schema(path.read_text(encoding="utf-8"))["tables"])
+
+
 def schema_files(root: Path) -> list[Path]:
-    """db/schema.rb first, then every other db/*_schema.rb a second database dumps, in name order, minus the Solid trio."""
-    others = sorted(p for p in (root / "db").glob("*_schema.rb") if p.name not in FRAMEWORK_SCHEMAS)
+    """db/schema.rb first, then every other db/*_schema.rb a second database dumps, in name order, minus a Solid trio file that
+    holds only `solid_*` tables. A cache_schema.rb with a table of the project's own is read: the name alone decides nothing."""
+    others = sorted(p for p in (root / "db").glob("*_schema.rb") if not (p.name in FRAMEWORK_SCHEMAS and _solid_only(p)))
     return [root / SCHEMA, *others]
 
 
@@ -126,7 +133,7 @@ def check(root: Path) -> tuple[int, list[str]]:
 
     def where(table: str) -> str:
         """Only a table from a second schema file is named; db/schema.rb stays unmentioned, as before."""
-        return "" if source[table] == str(SCHEMA) else f" (in {source[table]})"
+        return "" if source[table] == SCHEMA.as_posix() else f" (in {source[table]})"
 
     files = ", ".join(sorted({*source.values()}))
     try:
@@ -332,6 +339,16 @@ def selftest() -> int:
                code == 0 and not any("solid_" in l for l in out), f"{code} {out}")
         code, out = check(app(t / "solidone", good, extra={"cache_schema.rb": trio["cache_schema.rb"]}))
         check_("a solid_* table in cache_schema.rb alone is not reported", code == 0, f"{code} {out}")
+
+        # A FILE NAMED LIKE THE TRIO BUT HOLDING THE PROJECT'S OWN TABLE is the project's: the name alone decides nothing.
+        own = second.replace("error_groups", "page_cache")
+        code, out = check(app(t / "ownnamed", both, extra={"cache_schema.rb": own}))
+        check_("a cache_schema.rb holding a non-solid_* table is read, not skipped by its name",
+               any("[unclassified] page_cache.message (in db/cache_schema.rb)" in l for l in out), f"{code} {out}")
+        mixed = solid("solid_cache_entries", "value").replace("  end\nend\n", '  end\n  create_table "page_cache", force: :cascade do |t|\n    t.string "key"\n  end\nend\n')
+        code, out = check(app(t / "mixedtrio", both, extra={"queue_schema.rb": mixed}))
+        check_("a Solid-trio file with ONE non-solid_* table is read",
+               any("[unclassified] page_cache.key (in db/queue_schema.rb)" in l for l in out), f"{code} {out}")
 
         code, out = check(app(t / "othername", both, extra={"analytics_schema.rb": second.replace("error_groups", "page_views")}))
         check_("any other db/*_schema.rb is read: an unclassified table in it is a finding",
