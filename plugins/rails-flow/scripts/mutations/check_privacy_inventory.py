@@ -59,7 +59,7 @@ GUARD = Guard(
             "the Solid trio is read as well",
             "if p.name not in FRAMEWORK_SCHEMAS)",
             "if True)",
-            "the Solid trio (cache, queue, cable) is framework-owned and not read",
+            "the Solid trio is framework-owned: a solid_* table in cache_schema.rb, queue_schema.rb or cable_schema.rb is not reported",
         ),
         Mutation(
             "a table in two schema files is picked silently",

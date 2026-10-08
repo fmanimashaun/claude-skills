@@ -321,10 +321,17 @@ def selftest() -> int:
         check_("a second schema's tables with no inventory entry at all are unclassified, never skipped",
                code == 1 and any("[unclassified] error_groups.message" in l for l in out), f"{code} {out}")
 
-        solid = ('ActiveRecord::Schema[8.1].define(version: 1) do\n'
-                 '  create_table "solid_queue_jobs", force: :cascade do |t|\n    t.text "arguments"\n  end\nend\n')
-        code, out = check(app(t / "solid", good, extra={"queue_schema.rb": solid, "cache_schema.rb": solid, "cable_schema.rb": solid}))
-        check_("the Solid trio (cache, queue, cable) is framework-owned and not read", code == 0, f"{code} {out}")
+        def solid(table: str, column: str) -> str:
+            return ('ActiveRecord::Schema[8.1].define(version: 1) do\n'
+                    f'  create_table "{table}", force: :cascade do |t|\n    t.text "{column}"\n  end\nend\n')
+
+        trio = {"cache_schema.rb": solid("solid_cache_entries", "value"), "queue_schema.rb": solid("solid_queue_jobs", "arguments"),
+                "cable_schema.rb": solid("solid_cable_messages", "payload")}
+        code, out = check(app(t / "solid", good, extra=trio))
+        check_("the Solid trio is framework-owned: a solid_* table in cache_schema.rb, queue_schema.rb or cable_schema.rb is not reported",
+               code == 0 and not any("solid_" in l for l in out), f"{code} {out}")
+        code, out = check(app(t / "solidone", good, extra={"cache_schema.rb": trio["cache_schema.rb"]}))
+        check_("a solid_* table in cache_schema.rb alone is not reported", code == 0, f"{code} {out}")
 
         code, out = check(app(t / "othername", both, extra={"analytics_schema.rb": second.replace("error_groups", "page_views")}))
         check_("any other db/*_schema.rb is read: an unclassified table in it is a finding",
