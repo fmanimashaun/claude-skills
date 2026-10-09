@@ -217,5 +217,11 @@ GUARD = Guard(
             "limit = float(override) if override else max(float(requested or 0), 180.0)",
             "every subprocess's bound goes through hook_limit",
         ),
+        Mutation(
+            "a release-gate fixture reads the gate's own deadline (which also exits 2) as the refusal under test",
+            '    return 124 if b"took longer than" in stderr else returncode',
+            "    return returncode",
+            "a gate that hits its own deadline reads as 124 to the fixtures",
+        ),
     ),
 )

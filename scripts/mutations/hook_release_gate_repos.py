@@ -60,7 +60,7 @@ GUARD = Guard(
         ),
         Mutation(
             "a repository that is not owner/repo (a host-qualified one) is accepted",
-            """  printf '%s\\n' "$r" | grep -qE '^[a-z0-9_.-]+/[a-z0-9_.-]+$' || { unresolved_pr=1; return 0; }""",
+            """  grep -qE '^[a-z0-9_.-]+/[a-z0-9_.-]+$' <<<"$r" || { unresolved_pr=1; return 0; }""",
             "  :",
             "a host-qualified GH_REPO is refused as unresolved",
         ),
