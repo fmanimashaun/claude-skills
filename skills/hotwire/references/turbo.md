@@ -92,7 +92,7 @@ instant from cache).
 - **Visit direction** (8.0.0+): from the start of a visit until it completes,
   `<html>` carries `data-turbo-visit-direction` = `forward` (advance), `back`
   (restore) or `none` (replace), so CSS can animate by direction
-  (`html[data-turbo-visit-direction="back"] ::view-transition-old(root) { … }`).
+  (`html[data-turbo-visit-direction="back"]::view-transition-old(root) { … }`).
   It is not set for a visit that accepts a stream response.
 
 ## 3. Morphing page refreshes (Turbo 8)
