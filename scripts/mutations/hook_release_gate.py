@@ -80,11 +80,13 @@ GUARD = Guard(
         ),
         # #1410 / #1470: the hook must hand the RAW command to the classifier, for ANY command that
         # mentions git or gh, treat "could not judge" as a promotion, and keep a raw-text fallback.
+        # #1657 made the normaliser READ a quoted `main` as the shell does, so `git push origin "main"` is no longer lost on the normalised
+        # segment and cannot tell the two apart; what the normaliser still drops is a command substitution's words and a `-C` argument.
         Mutation(
-            "the classifier reads the normalised segment, so a quoted main is stripped and allowed",
+            "the classifier reads the normalised segment, so a substitution in the push is dropped and the push allowed",
             """  if _found="$(printf '%s' "$cmd" | LC_ALL=C python3 "$_pt" --classify 2>/dev/null)"; then""",
             """  if _found="$(printf '%s' "$seg" | LC_ALL=C python3 "$_pt" --classify 2>/dev/null)"; then""",
-            'release-gate (#1410): `git push origin "main"` targets main',
+            '`git -C $(pwd) push origin main` reaches main and is blocked',
         ),
         Mutation(
             "an unjudgeable command is allowed instead of treated as a promotion",
@@ -104,11 +106,13 @@ GUARD = Guard(
             '_probe="$cmd"',
             "`\"g''it push origin main\"` reaches main",
         ),
+        # Likewise: the quoted-main fixture below passes on either text since #1657, so the mutant is named for what only the raw command keeps, a
+        # push on the first line of a command too long for the normalised segment.
         Mutation(
-            "the fallback reads the normalised segment, losing a quoted main",
+            "the fallback reads the normalised segment, losing the push in a command too long to normalise",
             """    && LC_ALL=C grep -qE '\\b(main|master)\\b' <<<"$cmd" && { targets_main=1; needs_dev=1; }""",
             """    && LC_ALL=C grep -qE '\\b(main|master)\\b' <<<"$seg" && { targets_main=1; needs_dev=1; }""",
-            "release-gate (#1410): parser missing -> a quoted `main` push is still blocked",
+            "a push on the first line of a 120 KB command is refused",
         ),
         # #1337: the stamp's own commit invalidates it again, or any delta slips through.
         Mutation(
