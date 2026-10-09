@@ -5688,8 +5688,13 @@ def selftest() -> int:
                                          "import tempfile\nd = tempfile.mkdtemp()\ndef git(*a): return ['git', *a]\ngit('commit', '-qm', 'm')\n"})
     scenario("a fixture that references hermetic_git", rule=NH, only=check_non_hermetic_fixture_git,
              expect_finding=False, files={"scripts/x_selftest.py": "import hermetic_git\n" + COMMITS})
+    SETS_KEYS = ("import subprocess, tempfile\n"
+                 "d = tempfile.mkdtemp()\n"
+                 "env = {'GIT_CONFIG_COUNT': '2', 'GIT_CONFIG_KEY_0': 'maintenance.auto', 'GIT_CONFIG_VALUE_0': 'false',\n"
+                 "       'GIT_CONFIG_KEY_1': 'gc.auto', 'GIT_CONFIG_VALUE_1': '0'}\n"
+                 "subprocess.run(['git', '-C', d, 'commit', '-qm', 'm'], env=env)\n")
     scenario("a fixture that sets the two keys itself", rule=NH, only=check_non_hermetic_fixture_git,
-             expect_finding=False, files={"scripts/x_selftest.py": "# maintenance.auto=false, gc.auto=0\n" + COMMITS})
+             expect_finding=False, files={"scripts/x_selftest.py": SETS_KEYS})
     scenario("a script that commits but makes no temp directory (the user's real repo, by design)", rule=NH,
              only=check_non_hermetic_fixture_git, expect_finding=False,
              files={"scripts/x.py": "import subprocess\nsubprocess.run(['git', 'commit', '-qm', 'm'])\n"})
