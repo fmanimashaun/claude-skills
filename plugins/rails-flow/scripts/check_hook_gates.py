@@ -1999,6 +1999,18 @@ def release_gate_fixtures() -> None:
                   run(cmd, plugin_root=Path(bare_root)) == 2, "exit 0")
         check("release-gate (#1472): parser missing -> CONTROL: `bash -c 'git push origin feature/x'` passes",
               run("bash -c 'git push origin feature/x'", plugin_root=Path(bare_root)) == 0, "exit 2")
+        # #1720: the normaliser splits a command substitution into its own segment, so `git -C $(pwd) push` reached the fallback as
+        # `git` | `pwd` | `push origin main` and was allowed; the fallback now also reads git and push as words of the RAW command.
+        for cmd in ("git -C $(pwd) push origin main", 'git -C "$(pwd)" push origin main', "git --git-dir=$(pwd)/.git push origin main"):
+            check(f"release-gate (#1720): parser missing -> `{cmd}` is blocked",
+                  run(cmd, plugin_root=Path(bare_root)) == 2, "exit 0")
+        check("release-gate (#1720): parser missing -> CONTROL: `git -C $(pwd) push origin feature/x` passes",
+              run("git -C $(pwd) push origin feature/x", plugin_root=Path(bare_root)) == 0, "exit 2")
+        on_main = (("checkout", "-q", "main"),)
+        check("release-gate (#1720): parser missing -> `git -C $(pwd) merge` with HEAD on main is blocked",
+              run("git -C $(pwd) merge feature/work", plugin_root=Path(bare_root), git_config=on_main) == 2, "exit 0")
+        check("release-gate (#1720): parser missing -> CONTROL: `git -C $(pwd) merge` on a feature branch passes",
+              run("git -C $(pwd) merge feature/work", plugin_root=Path(bare_root)) == 0, "exit 2")
 
     # THE DISCRIMINATING PAIR for the marketplace carve-out. The same command, the same absence of
     # a certification, and the ONLY difference is `.claude-plugin/marketplace.json`. Without the

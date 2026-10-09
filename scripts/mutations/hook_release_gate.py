@@ -38,8 +38,8 @@ GUARD = Guard(
         ),
         Mutation(
             "the fallback's `git push` match is a pipe into `grep -q` again, so under pipefail a 120 KB command whose first line is the push reads 141 and is passed",
-            "LC_ALL=C grep -qE '^[[:space:]]*git[[:space:]]+push\\b' <<<\"$seg\" \\",
-            "printf '%s\\n' \"$seg\" | LC_ALL=C grep -qE '^[[:space:]]*git[[:space:]]+push\\b' \\",
+            "  { LC_ALL=C grep -qE '^[[:space:]]*git[[:space:]]+push\\b' <<<\"$seg\" || _raw_git push; } \\",
+            "  printf '%s\\n' \"$seg\" | LC_ALL=C grep -qE '^[[:space:]]*git[[:space:]]+push\\b' \\",
             "release-gate (#1657): without the classifier, a push on the first line of a 120 KB command is refused",
         ),
         Mutation(
@@ -294,6 +294,19 @@ GUARD = Guard(
             'u="$(git remote get-url $mode --all "$r" 2>/dev/null)"',
             'u="$(git config --get-all "remote.$r.url" 2>/dev/null)"',
             "a pushInsteadOf that rewrites the push target",
+        ),
+        # #1720: without the classifier, a `git -C $(pwd)` push or merge reached the fallback split into segments.
+        Mutation(
+            "the fallback reads only the normalised segments for a push, so `git -C $(pwd) push origin main` passes again",
+            "<<<\"$seg\" || _raw_git push; }",
+            "<<<\"$seg\"; }",
+            "release-gate (#1720): parser missing -> `git -C $(pwd) push origin main` is blocked",
+        ),
+        Mutation(
+            "the fallback reads only the normalised segments for a merge, so `git -C $(pwd) merge` on main passes again",
+            "<<<\"$seg\" || _raw_git merge; }",
+            "<<<\"$seg\"; }",
+            "release-gate (#1720): parser missing -> `git -C $(pwd) merge` with HEAD on main is blocked",
         ),
     ),
 )

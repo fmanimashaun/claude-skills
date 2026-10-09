@@ -517,9 +517,14 @@ elif [ "$_mentions" = 1 ]; then
   # `LC_ALL=C` on each grep: BSD grep stops at an invalid byte in a UTF-8 locale, so a push on a LATER line of the same command read as no match.
   # The normaliser could not be read (above): over-blocks a command that is only comments, never under-blocks one it lost.
   [ "$_seg_unread" = 1 ] && { targets_main=1; needs_dev=1; unresolved_pr=1; }
-  LC_ALL=C grep -qE '^[[:space:]]*git[[:space:]]+push\b' <<<"$seg" \
+  # #1720: THE RAW COMMAND TOO. The normaliser splits a command substitution into its own segment, so `git -C $(pwd) push origin
+  # main` reaches here as `git` | `pwd` | `push origin main` (and a quoted `"$(pwd)"` loses `push` altogether): no segment starts
+  # with `git push`, and the push to main was allowed. `git` and `push` as whole words anywhere in the raw command count as a push;
+  # this over-blocks a command that only mentions them, never under-blocks one that runs it.
+  _raw_git() { LC_ALL=C grep -qE "(^|[^[:alnum:]_.-])git([^[:alnum:]_.-]|\$)" <<<"$cmd" && LC_ALL=C grep -qE "(^|[^[:alnum:]_.-])$1([^[:alnum:]_.-]|\$)" <<<"$cmd"; }
+  { LC_ALL=C grep -qE '^[[:space:]]*git[[:space:]]+push\b' <<<"$seg" || _raw_git push; } \
     && LC_ALL=C grep -qE '\b(main|master)\b' <<<"$cmd" && { targets_main=1; needs_dev=1; }
-  LC_ALL=C grep -qE '^[[:space:]]*git[[:space:]]+merge\b' <<<"$seg" \
+  { LC_ALL=C grep -qE '^[[:space:]]*git[[:space:]]+merge\b' <<<"$seg" || _raw_git merge; } \
     && LC_ALL=C grep -qE '^(main|master)$' <<<"$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" && { targets_main=1; needs_dev=1; }
   if LC_ALL=C grep -qE '^[[:space:]]*gh[[:space:]]+pr[[:space:]]+merge\b' <<<"$seg"; then
     num="$(printf '%s' "$seg" | LC_ALL=C grep -oE '(^|[[:space:]])[0-9]+([[:space:]]|$)' | tr -d ' ' | head -1)"

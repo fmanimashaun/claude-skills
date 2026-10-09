@@ -11768,6 +11768,10 @@ anywhere in it: every replacement reuses a recipe already shipped elsewhere in t
 
 ## qa-flow (independent QA plugin)
 
+### Unreleased
+
+- **Without its classifier, the release gate refuses `git -C $(pwd) push origin main` — `plugins/qa-flow/hooks/scripts/release-gate.sh`, `plugins/rails-flow/scripts/check_hook_gates.py`, `scripts/mutations/hook_release_gate.py`** (#1720). With `push_targets.py` missing and python3 present, the fallback allowed that command (exit 0, where the classifier gives 2). The shared normaliser splits a command substitution into its own segment, so no segment started with `git push`, and a quoted `"$(pwd)"` lost `push` entirely. The fallback now also treats `git` and `push` (or `merge`) as whole words of the RAW command. It uses only `grep`, which the gate already requires and refuses without. It over-blocks a command that only mentions them, never under-blocks one that runs them. 4 new refusal fixtures (3 push shapes, 1 merge), 2 controls and 2 new mutants; the existing pipe mutant was retargeted to the new line. Each was replayed by hand and caught by its named fixture.
+
 ### 1.36.1 (release v1.155.0) — 2026-10-08
 
 - **The release gate reads ANSI-C quoting as the shell does — `plugins/qa-flow/hooks/scripts/lib/normalize_cmd.sh`** (#1613). A byte-identical copy of rails-flow's normaliser (the `hook-lib-drift` lint refuses any difference), so `release-gate.sh` decodes `$'…'` as bash does; see the rails-flow entry.
