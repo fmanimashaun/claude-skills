@@ -5,6 +5,7 @@ GUARD = Guard(
     name="check_published_blocks",
     subject="scripts/check_published_blocks.py",
     selftest="scripts/check_published_blocks.py",   # --selftest lives in the module
+    needs=("plugins/rails-flow/scripts/fixture_git.py",),   # #1588
     mutations=(
         Mutation(
             # The destructive direction. A published note a reader relied on vanishing is the

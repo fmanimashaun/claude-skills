@@ -5,6 +5,7 @@ GUARD = Guard(
     name="audit_assertion_reachability",
     subject="scripts/audit_assertion_reachability.py",
     selftest="scripts/audit_assertion_reachability.py",   # --selftest lives in the module itself
+    needs=("plugins/rails-flow/scripts/fixture_git.py",),   # #1588
     deps=("scripts/mutation_check.py", "scripts/mutation_types.py", "scripts/hermetic_git.py", "scripts/proc_group.py"),
     mutations=(
         Mutation(

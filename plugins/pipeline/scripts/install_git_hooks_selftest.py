@@ -22,6 +22,9 @@ import sys
 import tempfile
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import fixture_git  # noqa: E402  (#1588: a fixture's git touches only its own temp repo)
+
 SCRIPT = Path(__file__).resolve().parent.parent / "hooks" / "scripts" / "install-git-hooks.sh"
 MARKER = "# >>> pipeline-nudge >>>"
 
@@ -39,14 +42,21 @@ def _env(home: Path) -> dict[str, str]:
            if not k.startswith("GIT_") and k not in {"HOME", "XDG_CONFIG_HOME"}}
     gc = home / "gitconfig"
     gc.write_text("")
-    env.update(HOME=str(home), GIT_CONFIG_GLOBAL=str(gc), GIT_CONFIG_NOSYSTEM="1",
-               GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t",
-               GIT_COMMITTER_EMAIL="t@t")
+    env.update(HOME=str(home), GIT_CONFIG_GLOBAL=str(gc), GIT_CONFIG_NOSYSTEM="1")
     return env
 
 
 def git(cwd: Path, env: dict[str, str], *args: str) -> str:
-    r = subprocess.run(["git", *args], cwd=cwd, env=env, capture_output=True, text=True)
+    """Fixture git through fixture_git (#1588): bound to `cwd`'s own temp repo, refused if its init failed."""
+    if args and args[0] == "init":
+        fixture_git.init(cwd, *args[1:])
+        return ""
+    if (cwd / ".git").is_file():
+        # A LINKED WORKTREE: its .git points at the main repo, which fixture_git refuses by design. Bound by -C instead.
+        r = subprocess.run(["git", "-C", str(cwd), "-c", "user.name=t", "-c", "user.email=t@t", *args],  # fixture-git: exempt (a linked worktree, which fixture_git refuses by design; bound by -C)
+                           env=fixture_git.hermetic(env), capture_output=True, text=True)
+    else:
+        r = fixture_git.run(cwd, *args, env=env, check=False)
     if r.returncode != 0:
         raise RuntimeError(f"git {' '.join(args)} failed in {cwd}: {r.stderr.strip()}")
     return r.stdout.strip()

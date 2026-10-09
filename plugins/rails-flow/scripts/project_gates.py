@@ -778,9 +778,10 @@ def selftest() -> int:
         # A DIAGNOSTIC NEVER MUTATES (#849). A check that writes into the project during an audit is
         # ERROR and ours -- the user is told which path moved. Needs a git repo to assert; the
         # project fixture becomes one here.
-        for cmd in (["git", "init", "-q"], ["git", "add", "-A"],
-                    ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "x"]):
-            subprocess.run(cmd, cwd=project, check=True, capture_output=True)
+        import sys as _sys; _sys.path.insert(0, str(Path(__file__).resolve().parent)); import fixture_git as _fg  # #1588
+        _fg.init(project)
+        _fg.run(project, "add", "-A")
+        _fg.run(project, "commit", "-qm", "x")
         (root / "scripts" / "writer.py").write_text(
             "import pathlib, sys; pathlib.Path('docs/generated.md').write_text('x'); sys.exit(0)\n", encoding="utf-8")
         r = run_check(mk(command=["python3", str(root / "scripts/writer.py")]), project)

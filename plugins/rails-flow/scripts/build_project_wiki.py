@@ -565,8 +565,26 @@ def selftest() -> int:
         check("a clean tree passes --check (exit 0)", main(["--check", "--root", str(root)]) == 0)
         # #1233: a locally dirty SOURCE is named, and a clean git tree names nothing (the control).
         import contextlib as _cl, io as _io, subprocess as _sp
-        for cmd in (["init", "-q"], ["add", "-A"], ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "x"]):
-            _sp.run(["git", "-C", str(root), *cmd], check=True, capture_output=True)
+        def _fx(repo, *a):
+            """#1588: a fixture's git, bound to `repo`. Through fixture_git when it ships beside this script; VENDORED ALONE
+            (check_vendored_alone), the same binding inline: no inherited GIT_*, GIT_DIR/GIT_WORK_TREE set to `repo`."""
+            import os as _o, subprocess as _p, sys as _s
+            _s.path.insert(0, _o.path.dirname(_o.path.abspath(__file__)))
+            try:
+                import fixture_git as _fg
+            except ImportError:
+                _fg = None
+            repo = str(repo)
+            if _fg is not None:
+                return _fg.init(repo) if a[:1] == ("init",) else _fg.run(repo, *a)
+            env = {k: v for k, v in _o.environ.items() if not k.startswith("GIT_")}
+            if a[:1] == ("init",):
+                return _p.run(["git", "init", "-q", repo], env=env, check=True, capture_output=True)
+            env.update(GIT_DIR=_o.path.join(repo, ".git"), GIT_WORK_TREE=repo)
+            return _p.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *a], cwd=repo, env=env, check=True, capture_output=True)  # fixture-git: exempt (vendored alone: fixture_git is not shipped beside it; the same GIT_DIR/GIT_WORK_TREE binding, inline)
+        _fx(root, "init")
+        _fx(root, "add", "-A")
+        _fx(root, "commit", "-qm", "x")
         out = _io.StringIO()
         with _cl.redirect_stdout(out):
             main(["--check", "--root", str(root)])
