@@ -3,7 +3,7 @@
   "guards": {
     "board_refresh_hook": 81.9,
     "check_tenancy_cop": 70.1,
-    "evals_compare": 115.5,
+    "evals_compare": 277.0,
     "extract_release_notes": 141.5,
     "hook_command_cwd": 2105.0,
     "hook_coordination": 1097.2,

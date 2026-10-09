@@ -216,6 +216,18 @@ _LEAKY = ("import os, subprocess, sys, time\n"
           "time.sleep(1.0)\n")
 
 
+# THE SWEEP IS SLOWED INSIDE THIS CHILD ONLY (#1729). The second signal has to land while the sweep is running, and the real sweep is a
+# few milliseconds on Linux (it reads /proc) against a 0.3 s gap, so on the hosted runner every second signal arrived after the sweep and
+# the three mutants that stop holding it survived; on macOS the sweep (`ps`) is slower than the gap, which is the only reason it ever worked.
+# The CLI wrapper below replaces the module's `sweep` with one that waits 1 s first, with the signals still blocked or not exactly as the
+# code under test arranges: a held signal waits, an unheld one aborts the wait. `contained()` looks `sweep` up by name at call time.
+_SLOW_SWEEP_CLI = ("import sys, time\nsys.path.insert(0, sys.argv[1])\nimport process_containment as pc\n"
+                   "real = pc.sweep\n"
+                   "def slow(token):\n    time.sleep(1.0)\n    return real(token)\n"
+                   "pc.sweep = slow\n"
+                   "sys.exit(pc.main(['--'] + sys.argv[2:]))\n")
+
+
 def _recorded(pidfile: str) -> list[int]:
     try:
         return [int(p) for p in open(pidfile).read().split()]
@@ -342,12 +354,12 @@ def selftest() -> int:
         for first, second in ((signal.SIGTERM, signal.SIGTERM), (signal.SIGHUP, signal.SIGTERM), (signal.SIGINT, signal.SIGTERM),
                               (signal.SIGTERM, signal.SIGHUP), (signal.SIGTERM, signal.SIGINT)):
             fd = pidfile(f"cli-twice-{first.name}-{second.name}.pids")
-            w = subprocess.Popen([sys.executable, __file__, "--", sys.executable, "-c",
-                                  _LEAKY + "time.sleep(60)\n", fd],
+            w = subprocess.Popen([sys.executable, "-c", _SLOW_SWEEP_CLI, os.path.dirname(os.path.abspath(__file__)),
+                                  sys.executable, "-c", _LEAKY + "time.sleep(60)\n", fd],
                                  stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             wait_for(fd)
             w.send_signal(first)
-            time.sleep(0.3)                  # the first is in the teardown, the second lands inside the sweep
+            time.sleep(0.3)                  # the first is in the teardown, the second lands inside the (slowed) sweep
             w.send_signal(second)
             try:
                 w.wait(timeout=20)
