@@ -42,7 +42,18 @@ ProcessPaymentJob.perform_all_later(orders.map { ProcessPaymentJob.new(_1) })  #
   `ActiveJob::Serializer` if truly needed).
 - **Enqueue-after-commit is the default** (`:default` behavior since 7.2/8):
   `perform_later` inside a transaction enqueues only after commit, so jobs
-  never race an uncommitted record. Don't fight this.
+  never race an uncommitted record. Don't fight this. **8.1 removed** the
+  `:never`, `:always` and `:default` symbol values of
+  `ActiveJob::Base.enqueue_after_transaction_commit` (and the global
+  `config.active_job.enqueue_after_transaction_commit`): in an 8.1 app it is a
+  per-job boolean (8.1 release notes, Removals; `activejob/CHANGELOG.md` on
+  `8-1-stable`). 8.2 (unreleased) brings the global boolean back:
+  `references/rails-8-2-readiness.md`.
+- **The built-in `:sidekiq` adapter is deprecated in 8.1**: use the adapter that
+  ships in the sidekiq gem (sidekiq 7.3.3 or newer). The built-in adapter is
+  removed on 8.2 `main` (unreleased), which also deprecates the built-in
+  `queue_classic`, `resque`, `delayed_job`, `backburner` and `sneakers`
+  adapters: `references/rails-8-2-readiness.md`.
 - Unhandled exceptions after retries exhaust → job discarded to the failed
   set (Solid Queue keeps failed executions for inspection/retry). Report
   with `Rails.error` if you rescue manually.
