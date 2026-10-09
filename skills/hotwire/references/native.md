@@ -403,7 +403,7 @@ configuration:
   `static var pathConfigurationIdentifier: String { "numbers" }`. The rule
   only sets `proposal.viewController`; the screen **requires** a
   `NavigatorDelegate` implementing `handle(proposal:from:)` that returns
-  `.acceptCustom(vc)` — without it the URL loads as a plain web screen:
+  `.acceptCustom(vc)`:
 
   ```swift
   extension SceneDelegate: NavigatorDelegate {
@@ -425,7 +425,7 @@ configuration:
   `@HotwireDestinationDeepLink(uri = "hotwire://fragment/numbers")` and
   registered via `Hotwire.registerFragmentDestinations(HotwireWebFragment::class,
   MyCustomFragment::class)` — the list **must include `HotwireWebFragment`**
-  or ordinary web screens stop resolving. `fallback_uri`
+  ("Don't forget to register this for regular destinations"). `fallback_uri`
   covers app versions that lack the destination; `title` sets the toolbar.
 
 ### Tabs
@@ -449,9 +449,10 @@ configuration:
   that location.
 - Android 1.3.1 (#205): fixes a crash on `mailto:` / `tel:` links introduced
   in 1.3.0 — avoid 1.3.0 for apps with such links.
-- iOS 1.3.0 (#191), opt-in: register
-  `SafariViewControllerRouteDecisionHandler(openUniversalLinksInApp: true)`
-  via `Hotwire.registerRouteDecisionHandlers` to open universal links in-app.
+- iOS 1.3.0 (#191): the default `SafariViewControllerRouteDecisionHandler`
+  first tries the URL as a universal link (`universalLinksOnly`), so a link
+  claimed by an installed app opens in that app; no configuration (its only
+  initializer is `init()`).
 
 The web app still owns the URL: `/numbers` renders HTML for browsers, while
 apps intercept it natively. Keep both in sync or redirect web users
