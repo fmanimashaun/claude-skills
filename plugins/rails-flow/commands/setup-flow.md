@@ -797,7 +797,8 @@ places a regulator reads.
    `category: none` for a column that holds no personal data. The `privacy-inventory` gate then fails
    any `db/schema.rb` column (and any column of another `db/*_schema.rb`, such as a second database's
    `db/observability_schema.rb`; not the Solid trio) left unclassified, so a new personal field cannot slip past the policy
-   (#1310, #1695). The inventory covers:
+   (#1310, #1695). A Solid table the inventory NAMES is read and its listed entries judged; its unlisted columns are
+   exempt (#1732). The inventory covers:
    - every personal-data field in `db/schema.rb`;
    - what each form collects;
    - what users upload (Active Storage);
