@@ -14,7 +14,7 @@ GUARD = Guard(
     # The selftest READS the source and the derived copy, and globs `skills/*/SKILL.md` for a
     # shipped skill with no derived directory. `code-review` is that skill; without it staged, the
     # stray arm has nothing to copy and the baseline is inert rather than passing.
-    needs=(
+    needs=("plugins/rails-flow/scripts/fixture_git.py", 
         "skills/parallel-session-lane/SKILL.md",
         "skills/code-review/SKILL.md",
         ".claude/skills/parallel-session-lane/SKILL.md",

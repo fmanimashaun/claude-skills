@@ -7,7 +7,7 @@ GUARD = Guard(
     name="hook_session_start",
     subject="plugins/rails-flow/hooks/scripts/session-start.sh",
     selftest="plugins/rails-flow/scripts/check_drift_signal.py",
-    needs=('plugins/rails-flow/hooks/scripts', 'plugins/qa-flow/hooks/scripts', 'plugins/qa-flow/scripts',
+    needs=("plugins/rails-flow/scripts/fixture_git.py", 'plugins/rails-flow/hooks/scripts', 'plugins/qa-flow/hooks/scripts', 'plugins/qa-flow/scripts',
            # guard-claims.sh runs extract_claims.py; without it the harness's two claim
            # fixtures fail in the staged tempdir and every mutation reads as caught (#1109).
            'plugins/rails-flow/scripts/extract_claims.py'),   # check_hook_gates drives BOTH plugins' hooks (#906)

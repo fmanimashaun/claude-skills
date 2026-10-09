@@ -9,7 +9,7 @@ GUARD = Guard(
     name="check_spec_review",
     subject="scripts/check_spec_review.py",
     selftest="scripts/check_spec_review.py",   # --selftest lives in the module itself
-    needs=("scripts/check_criteria.py", "scripts/findings.py"),
+    needs=("scripts/fixture_git.py", "scripts/check_criteria.py", "scripts/findings.py"),
     mutations=(
         Mutation(
             "an invented criterion is accepted",

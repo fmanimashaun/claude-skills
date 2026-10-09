@@ -292,7 +292,7 @@ paths:
 ```
 
 Rules live in `.claude/rules/*.md` (committed, team-shared) and a rule with `paths:` loads
-**only when Claude reads a matching file** — so it costs nothing on sessions that never touch
+**only when Claude uses the Read, Write or Edit tool on a matching file** (Write and Edit since Claude Code 2.1.288; before that, only Read) — so it costs nothing on sessions that never touch
 that area. A rule with no `paths:` loads every session, same as `CLAUDE.md`; use that only for
 genuinely global content.
 
@@ -795,8 +795,9 @@ places a regulator reads.
 1. **Build the data inventory from the code, not from memory**, and write it as
    `config/privacy_inventory.yml`: table → column → `{ category, basis, retention }`, with
    `category: none` for a column that holds no personal data. The `privacy-inventory` gate then fails
-   any `db/schema.rb` column left unclassified, so a new personal field cannot slip past the policy
-   (#1310). The inventory covers:
+   any `db/schema.rb` column (and any column of another `db/*_schema.rb`, such as a second database's
+   `db/observability_schema.rb`; not the Solid trio) left unclassified, so a new personal field cannot slip past the policy
+   (#1310, #1695). The inventory covers:
    - every personal-data field in `db/schema.rb`;
    - what each form collects;
    - what users upload (Active Storage);
