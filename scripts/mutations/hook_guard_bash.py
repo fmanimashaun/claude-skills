@@ -69,11 +69,14 @@ GUARD = Guard(
             "guard-bash (#1462): `gh issue \"create\" -t X --body-` with no label is refused",
         ),
         # #1423: the label helper must run for a create that never starts a normalised segment.
+        # #1657 made the normaliser read ANSI-C quoting (`gh issue $'create'`), so that spelling no longer escapes a helper that waits for a normalised
+        # segment start and its fixture cannot tell the two apart. What this mutant still removes is every RAW trigger beside it: a script that sources
+        # a script, and one read from stdin or through a redirect glued to the shell, which only the raw text shows. Those fixtures catch it.
         Mutation(
             "the label helper runs only for a create at a normalised segment start, so a spelling the normaliser does not resolve escapes",
             'if [ "$_fire" = 1 ] || rawhit "$_flat" "$_re_verb" || rawhit "$cmd" "$_re_shell_word" \\\n   || rawhit "$cmd" "$_re_source" || rawhit "$cmd" "$_re_runs_text" || rawhit "$_flat" "$_re_api" || rawhit "$cmd" "$_re_ansi"; then',
             "if hit '^gh[[:space:]]+issue[[:space:]]+create\\b'; then",
-            "guard-bash (#1495): `gh issue $'create'` reaches the helper",
+            "`bash chain.sh` is refused (a script that sources a script)",
         ),
         # #1545: the label trigger had grep and tr called directly, so with either missing it was skipped.
         Mutation(
