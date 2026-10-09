@@ -1272,6 +1272,48 @@ GUARD = Guard(
             'uncontained-process-fixture / a non-selftest file that starts processes (out of scope)',
         ),
         Mutation(
+            # #1577
+            'non-hermetic-fixture-git accepts a hermetic fixture as a finding: the reference is never looked for',
+            '        if not _HERMETIC_REF.search(text):\n            offenders[name] = line',
+            '        if True:\n            offenders[name] = line',
+            'non-hermetic-fixture-git / a fixture that references hermetic_git',
+        ),
+        Mutation(
+            # #1577
+            'non-hermetic-fixture-git is not scoped to scripts that make temp directories',
+            '        if not _TEMP_USE.search(text):\n            continue\n        line = _spawns_git_commit(text)',
+            '        line = _spawns_git_commit(text)',
+            'non-hermetic-fixture-git / a script that commits but makes no temp directory',
+        ),
+        Mutation(
+            # #1577
+            'non-hermetic-fixture-git counts the word commit in a comment or docstring',
+            '            if "commit" in literals:',
+            '            if "commit" in literals or True:',
+            'non-hermetic-fixture-git / a temp-using script that mentions commit only in a docstring and a comment',
+        ),
+        Mutation(
+            # #1577
+            'non-hermetic-fixture-git scans mutation guard files too',
+            r'        if not re.match(r"^(scripts|plugins/[^/]+/scripts)/[^/]+\.py$", name):',
+            r'        if not re.match(r"^(scripts|plugins/[^/]+/scripts)/.+\.py$", name):',
+            'non-hermetic-fixture-git / a mutation guard file is out of scope',
+        ),
+        Mutation(
+            # #1577
+            'non-hermetic-fixture-git ignores the baseline, so every known offender is a finding',
+            '        if name not in baseline:',
+            '        if True:',
+            'non-hermetic-fixture-git / a baseline entry that still commits without the reference is tolerated',
+        ),
+        Mutation(
+            # #1577
+            'non-hermetic-fixture-git never flags a stale baseline line, so the list cannot shrink',
+            '    for name in sorted(baseline - set(offenders)):',
+            '    for name in []:',
+            'non-hermetic-fixture-git / a baseline entry whose file is hermetic now is a stale line',
+        ),
+        Mutation(
             # #1588
             "fixture-git-drift never compares the copies, so a fix in one plugin's copy alone passes",
             '        if canonical is not None and rel in texts and texts[rel] != canonical:',
