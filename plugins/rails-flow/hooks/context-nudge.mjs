@@ -19,7 +19,7 @@
 const DEFAULT_THRESHOLD = 70
 
 import { budgetLine, DEFAULT_BLOCK, DEFAULT_WARN, level, limitsLabel, msUntil, RESUME_TEXT, windowOf } from './budget-guard.mjs'
-import { compactInstructions, compactReason, DEFAULT_COMPACT_PCT, DEFAULT_COORDINATOR_HANDOFF, job, jobDoneShape, state, wholePct } from './session-reset.mjs'
+import { compactInstructions, compactReason, DEFAULT_COMPACT_PCT, DEFAULT_COORDINATOR_HANDOFF, debugNote, job, jobDoneShape, state, wholePct } from './session-reset.mjs'
 
 // Mid-job compaction (#1687): which sources have already compacted this climb, so each fires once.
 const compacted = { context: false, five_hour: false, seven_day: false }
@@ -97,6 +97,10 @@ function isTheirs(origin) {
 async function maybeCompact($, levels) {
   try {
     const role = state.role
+    if (state.rearm !== null) {
+      compacted[state.rearm] = false // the queued /compact was rejected: due again
+      state.rearm = null
+    }
     const compactPct = wholePct(await $.env.get('RAILS_FLOW_COMPACT_PCT'), DEFAULT_COMPACT_PCT)
     const sources = {
       context: { fill: percent, windows: [] },
@@ -109,19 +113,20 @@ async function maybeCompact($, levels) {
     }
     if (role === null || (role === 'implementation' && (jobDoneShape() || job.pending))) return
     for (const [key, src] of Object.entries(sources)) {
-      if (compacted[key] || compactReason({ role, compactPct, nudged, ...src }) === null) continue
-      if ((await $.session.surfaces()).length === 0) return
+      if (compacted[key]) continue
+      const reason = compactReason({ role, compactPct, nudged, ...src })
+      if (reason === null) continue
+      const surfaces = (await $.session.surfaces()).length
+      if (surfaces === 0) {
+        debugNote(`compact skipped (${key}: ${reason}): no surface`)
+        return
+      }
       compacted[key] = true
       const text = compactInstructions(role, job, (await $.env.get('RAILS_FLOW_COORDINATOR_HANDOFF')) || DEFAULT_COORDINATOR_HANDOFF)
-      $.clock.after(0, () => {
-        void (async () => {
-          try {
-            await $.session.compact({ instructions: text })
-          } catch {
-            compacted[key] = false
-          }
-        })()
-      })
+      // Only RECORD that a compaction is due. This hook fires during a turn, where a compaction is rejected; the
+      // session-reset module queues it at turn.complete, when the session is idle.
+      state.compactDue = { key, text, reason }
+      debugNote(`compact due (${key}: ${reason}) role=${role} fill=${percent} surfaces=${surfaces}`)
       return
     }
   } catch {

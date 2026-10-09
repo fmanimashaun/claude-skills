@@ -19,8 +19,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a compaction that was rejected is never retried",
-            "            compacted[key] = false\n          }\n        })()",
-            "            // never retried\n          }\n        })()",
+            "      compacted[state.rearm] = false // the queued /compact was rejected: due again\n",
+            "",
             "a compaction that is rejected",
         ),
         Mutation(
@@ -31,8 +31,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a claude -p run (no surface) compacts",
-            "      if ((await $.session.surfaces()).length === 0) return\n",
-            "",
+            "      if (surfaces === 0) {",
+            "      if (false) {",
             "claude -p (no surface) and a role-less",
         ),
         Mutation(
@@ -58,6 +58,12 @@ GUARD = Guard(
             "wholePct(await $.env.get('RAILS_FLOW_COMPACT_PCT'), DEFAULT_COMPACT_PCT)",
             "DEFAULT_COMPACT_PCT",
             "RAILS_FLOW_COMPACT_PCT moves the compact threshold",
+        ),
+        Mutation(
+            "session.measure compacts by itself, inside the turn, instead of recording that a compaction is due",
+            "      state.compactDue = { key, text, reason }\n",
+            "      await $.session.compact({ instructions: text })\n",
+            "a compact is never requested inside a turn",
         ),
     ),
 )

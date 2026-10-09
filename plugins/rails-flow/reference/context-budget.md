@@ -207,7 +207,13 @@ the hook only reads the cache and, if it says all merged for the current epoch, 
 on"; measured on 2.1.293 under `claude -p`, a call from `turn.complete` did not reject). The clear is therefore queued
 before any later prompt, so a new assignment waits behind it and lands in the fresh context. If the turn ends before
 the early check answers, the check fires the clear when it does. Any tool call voids the cached answer, and one made
-after the clear was queued leaves the new job's tracking alone and skips the reset prompt. A compaction "rejects while a turn runs", so a rejected one is tried again at the next `session.measure`.
+after the clear was queued leaves the new job's tracking alone and skips the reset prompt. **How the compaction is queued (live finding, 2.1.296).** `$.session.compact` "rejects while a turn runs", and
+`session.measure` fires DURING a turn, so a compact tried from there was rejected every time and never ran. Now
+`session.measure` only RECORDS that a compaction is due; the turn-end hook queues it with `$.command.run({ command:
+"compact", args: <instructions> })`, which is "queued and run once the session is idle", the same way the clear is. A
+rejection re-arms it for the next measure. **Debug log:** with `RAILS_FLOW_DEBUG=1` each compact or clear decision, the
+election, the surface count and any rejection is appended, timestamped, to `~/.claude/rails-flow/debug.log`; off,
+nothing is written. It exists so a live test can be read without a transcript.
 The mid-job compact does not commit or push anything (that is #1564's separate work); it requires only that the
 handoff was asked for first, and the usage warning already tells the session to commit and push.
 

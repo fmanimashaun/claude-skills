@@ -11,8 +11,8 @@
 // Run: node plugins/rails-flow/tests/session-reset.unit.mjs
 
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { execFileSync, spawn } from 'node:child_process'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -80,6 +80,9 @@ async function session({ holdClear = false, onGh = null, env = {}, role = 'imple
   reset.state.hasSurface = surfaces.length > 0
   reset.state.coordinator = null
   reset.state.line = null
+  reset.state.compactDue = null
+  reset.state.rearm = null
+  reset.state.debug.length = 0
   const hooks = {}
   const add = (event, ...rest) => {
     hooks[rest.length > 1 ? `${event}:${JSON.stringify(rest[0])}` : event] = rest[rest.length - 1]
@@ -90,7 +93,10 @@ async function session({ holdClear = false, onGh = null, env = {}, role = 'imple
   const order = []
   let releaseClear
   const clearGate = new Promise((r) => (releaseClear = r))
-  const calls = { order, clear: 0, compact: [], submitted: [], gh: [] }
+  const calls = { order, clear: 0, compact: [], compactInTurn: 0, directCompact: 0, submitted: [], gh: [] }
+  let inTurn = false
+  const debugHome = mkdtempSync(join(tmpdir(), 'rf-debug-'))
+  cleanups.push(() => rmSync(debugHome, { recursive: true, force: true }))
   const timers = []
   let rejects = compactRejects
   const $ = {
@@ -101,16 +107,27 @@ async function session({ holdClear = false, onGh = null, env = {}, role = 'imple
       id: async () => sid,
       turns: async () => { if (turns === 'throws') throw new Error('unreadable'); return turns },
       surfaces: async () => surfaces,
-      compact: async (a) => {
-        if (rejects-- > 0) throw new Error('a turn is running')
-        calls.compact.push(a.instructions)
-        return {}
+      // The mod must never call this: it rejects while a turn runs. Compaction goes through /compact on command.run.
+      compact: async () => { calls.directCompact++; throw new Error('session.compact is never called by the mod') },
+    },
+    command: {
+      run: async ({ command, args }) => {
+        if (command === 'clear') { calls.clear++; order.push('clear'); if (holdClear) await clearGate }
+        if (command === 'compact') {
+          if (inTurn) calls.compactInTurn++
+          if (rejects-- > 0) throw new Error('a turn is running')
+          calls.compact.push(args)
+        }
+        return { text: '' }
       },
     },
-    command: { run: async ({ command }) => { if (command === 'clear') { calls.clear++; order.push('clear'); if (holdClear) await clearGate } return { text: '' } } },
     prompt: { submit: async (p) => { calls.submitted.push(p.text) } },
     process: {
       run: async (argv) => {
+        if (argv[0] === 'sh' && String(argv[2]).includes('debug.log')) {
+          execFileSync('sh', argv.slice(1), { env: { ...process.env, HOME: debugHome } }) // the REAL debug writer, on a throwaway HOME
+          return { exitCode: 0, stdout: '' }
+        }
         if (argv[0] === 'sh') return { exitCode: 0, stdout: await proc.run(argv) }
         calls.gh.push(argv.join(' '))
         if (onGh) await onGh()
@@ -123,9 +140,9 @@ async function session({ holdClear = false, onGh = null, env = {}, role = 'imple
   const through = (e, specific) => hooks['tool.call']($, e, async () => specific())
   const bash = (command, text, extra = {}) => (order.push('bash'), through({ tool: 'Bash', command, ...extra }, () => hooks['tool.call:{"tool":"Bash"}']($, { tool: 'Bash', command, ...extra }, async () => ({ text }))))
   const read = () => through({ tool: 'Read' }, async () => ({ text: '' }))
-  const turnStart = () => hooks['turn.start']($, { text: 'next assignment', turnId: 't2' }, async (e) => e)
+  const turnStart = () => ((inTurn = true), hooks['turn.start']($, { text: 'next assignment', turnId: 't2' }, async (e) => e))
   const write = (file_path) => through({ tool: 'Write', file_path }, () => hooks['tool.call:{"tool":["Write","Edit"]}']($, { tool: 'Write', file_path }, async () => ({ result: {} })))
-  const turnDone = () => hooks['turn.complete']($, { answer: '', durationMs: 1, isAborted: false, turnId: 't', reason: 'answer' }, async (e) => e)
+  const turnDone = () => ((inTurn = false), hooks['turn.complete']($, { answer: '', durationMs: 1, isAborted: false, turnId: 't', reason: 'answer' }, async (e) => e))
   const start = () => hooks['session.start:{"isInteractive":true}']($, { cwd: '/x', surface: 'terminal', isInteractive: true }, async (e) => e)
   const measure = (ctx, week, five) =>
     hooks['session.measure'](
@@ -142,7 +159,9 @@ async function session({ holdClear = false, onGh = null, env = {}, role = 'imple
     )
   const submit = (origin) => (order.push('prompt'), hooks['prompt.submit']($, { text: 'hi', ...(origin ? { origin } : {}) }, async (e) => e))
   const run = async () => { while (timers.length) timers.shift()(); await new Promise((r) => setTimeout(r, 60)) }
-  return { releaseClear: () => releaseClear(), read, turnStart, calls, bash, write, turnDone, start, measure, submit, run, hooks }
+  const settleTurn = async () => { await turnDone(); await new Promise((r) => setTimeout(r, 80)) }
+  const debugLog = () => (existsSync(join(debugHome, '.claude/rails-flow/debug.log')) ? readFileSync(join(debugHome, '.claude/rails-flow/debug.log'), 'utf8') : '')
+  return { settleTurn, debugLog, releaseClear: () => releaseClear(), read, turnStart, calls, bash, write, turnDone, start, measure, submit, run, hooks }
 }
 
 const MERGED = { 7: { state: 'MERGED', baseRefName: 'dev' } }
@@ -321,51 +340,51 @@ await check('mid-job at the context threshold: an implementation session compact
   await s.bash('gh pr create', 'https://github.com/o/r/pull/7')
   await s.write('/tmp/wt-x/HANDOFF.md')
   await s.measure(80)
-  await s.run()
+  await s.settleTurn()
   assert.equal(s.calls.compact.length, 0, 'not before the nudge reached the model')
   await s.submit()
   await s.measure(80)
-  await s.run()
+  await s.settleTurn()
   assert.equal(s.calls.compact.length, 1)
   assert.equal(s.calls.clear, 0)
   for (const k of ['/tmp/wt-x/HANDOFF.md', '/tmp/wt-x', 'feature/x', 'https://github.com/o/r/pull/7', 'Do not remove any worktree']) assert.ok(s.calls.compact[0].includes(k), `keeps ${k}`)
   assert.ok(reset.job.worktrees.has('/tmp/wt-x'), 'the worktree is untouched')
-  await s.measure(82); await s.run()
+  await s.measure(82); await s.settleTurn()
   assert.equal(s.calls.compact.length, 1, 'once per climb')
-  await s.measure(undefined); await s.measure(80); await s.submit(); await s.measure(80); await s.run()
+  await s.measure(undefined); await s.measure(80); await s.submit(); await s.measure(80); await s.settleTurn()
   assert.equal(s.calls.compact.length, 2, 'the next climb compacts again')
 })
 
 await check('a compaction that is rejected (a turn is running) is tried again at the next measure', async () => {
   const s = await session({ compactRejects: 1 })
-  await s.measure(80); await s.submit(); await s.measure(80); await s.run()
-  assert.equal(s.calls.compact.length, 0)
-  await s.measure(81); await s.run()
-  assert.equal(s.calls.compact.length, 1)
+  await s.measure(80); await s.submit(); await s.measure(80); await s.settleTurn()
+  assert.equal(s.calls.compact.length, 0, 'the first queued /compact was rejected')
+  await s.measure(81); await s.settleTurn()
+  assert.equal(s.calls.compact.length, 1, 'due again at the next measure, queued at the next turn end')
 })
 
 await check('RAILS_FLOW_COMPACT_PCT moves the compact threshold', async () => {
   const s = await session({ env: { RAILS_FLOW_COMPACT_PCT: '90' } })
-  await s.measure(80); await s.submit(); await s.measure(80); await s.run()
+  await s.measure(80); await s.submit(); await s.measure(80); await s.settleTurn()
   assert.equal(s.calls.compact.length, 0)
-  await s.measure(91); await s.run()
+  await s.measure(91); await s.settleTurn()
   assert.equal(s.calls.compact.length, 1)
 })
 
 await check('the coordinator compacts at the threshold with its handoff path, queue and open PRs kept, and never clears', async () => {
   const s = await session({ role: 'coordinator' })
-  await s.measure(80); await s.run()
+  await s.measure(80); await s.settleTurn()
   assert.equal(s.calls.compact.length, 1)
   assert.equal(s.calls.clear, 0)
   assert.ok(s.calls.compact[0].includes(reset.DEFAULT_COORDINATOR_HANDOFF) && /queue/.test(s.calls.compact[0]) && /open pull requests/.test(s.calls.compact[0]))
   const t = await session({ role: 'coordinator', env: { RAILS_FLOW_COORDINATOR_HANDOFF: '/x/H.md' } })
-  await t.measure(80); await t.run()
+  await t.measure(80); await t.settleTurn()
   assert.ok(t.calls.compact[0].includes('/x/H.md'))
 })
 
 await check('below the threshold nothing compacts', async () => {
   const s = await session({ role: 'coordinator' })
-  await s.measure(60); await s.run()
+  await s.measure(60); await s.settleTurn()
   assert.equal(s.calls.compact.length, 0)
 })
 
@@ -373,14 +392,14 @@ await check('a usage window at warn compacts mid-job once its line has reached t
   for (const [week, five] of [[85, undefined], [undefined, 85]]) {
     const s = await session()
     await s.bash('git worktree add -b feature/x /tmp/wt-x origin/dev', '')
-    await s.measure(10, week, five); await s.run()
+    await s.measure(10, week, five); await s.settleTurn()
     assert.equal(s.calls.compact.length, 0, 'the line has not reached the model yet')
     const r = await s.submit()
     assert.ok(r.context.some((l) => l.startsWith('Usage note')), 'budget-guard still asks for the handoff')
-    await s.measure(10, week, five); await s.run()
+    await s.measure(10, week, five); await s.settleTurn()
     assert.equal(s.calls.compact.length, 1)
     assert.equal(s.calls.clear, 0)
-    await s.measure(10, week, five); await s.run()
+    await s.measure(10, week, five); await s.settleTurn()
     assert.equal(s.calls.compact.length, 1, 'once while the window stays at warn')
   }
 })
@@ -394,16 +413,16 @@ await check('the 5-hour hard level still schedules its resume, beside the compac
 await check('a session whose job is done is not compacted: the clear takes over', async () => {
   const s = await session({ gh: MERGED })
   await finishJob(s)
-  await s.measure(90); await s.submit(); await s.measure(90); await s.run()
+  await s.measure(90); await s.submit(); await s.measure(90); await s.settleTurn()
   assert.equal(s.calls.compact.length, 0)
 })
 
 await check('claude -p (no surface) and a role-less session never compact', async () => {
   let s = await session({ surfaces: [], role: 'coordinator' })
-  await s.measure(95); await s.run()
+  await s.measure(95); await s.settleTurn()
   assert.equal(s.calls.compact.length, 0)
   s = await session({ role: null })
-  await s.measure(99, 95, 95); await s.submit(); await s.measure(99, 95, 95); await s.run()
+  await s.measure(99, 95, 95); await s.submit(); await s.measure(99, 95, 95); await s.settleTurn()
   assert.equal(s.calls.compact.length, 0)
 })
 
@@ -782,6 +801,63 @@ await check('round 3: until, elif and wrapper options are read as the shell read
   assert.deepEqual(reset.parseWorktreeAdd('sudo -u me git worktree add ../y'), want)
   assert.deepEqual(reset.parseWorktreeAdd('env -i PATH=$PATH git worktree add ../y'), want)
   assert.equal(reset.parseWorktreeAdd('sudo -u me ls && git status'), null)
+})
+
+// ---- live finding on 2.1.296: the mid-job compact never fired -----------------------------------------
+
+await check('a compact is never requested inside a turn: measure only records it, the turn end queues it, through /compact', async () => {
+  const s = await session({ gh: MERGED })
+  await s.bash('git worktree add -b feature/x /tmp/wt-x origin/dev', '')
+  await s.turnStart()
+  await s.measure(80); await s.submit(); await s.measure(80) // session.measure fires during the turn
+  await new Promise((r) => setTimeout(r, 60))
+  assert.equal(s.calls.compact.length + s.calls.compactInTurn, 0, 'nothing requested while the turn runs')
+  assert.equal(s.calls.directCompact, 0, 'session.compact is never called')
+  await s.settleTurn()
+  assert.equal(s.calls.compact.length, 1, 'queued at turn.complete')
+  assert.equal(s.calls.compactInTurn, 0)
+  assert.equal(s.calls.directCompact, 0)
+  assert.ok(s.calls.compact[0].includes('Do not remove any worktree'), 'the instructions travel as the /compact arguments')
+})
+
+await check('a compaction due while the turn runs is requested once at its end, not once per measure', async () => {
+  const s = await session({ role: 'coordinator' })
+  await s.turnStart()
+  for (const pct of [80, 81, 82]) await s.measure(pct)
+  await s.settleTurn()
+  assert.equal(s.calls.compact.length, 1)
+  await s.settleTurn()
+  assert.equal(s.calls.compact.length, 1, 'a second turn end has nothing due')
+})
+
+await check('RAILS_FLOW_DEBUG=1 writes each compact decision and any rejection to a log; off, nothing is written', async () => {
+  let s = await session({ env: { RAILS_FLOW_DEBUG: '1' }, compactRejects: 1 })
+  await s.turnStart()
+  await s.measure(80); await s.submit(); await s.measure(80)
+  await s.settleTurn()
+  await s.measure(81); await s.settleTurn()
+  const log = s.debugLog()
+  for (const k of ['compact due (context: context 80%)', 'surfaces=1', 'compact queued (context', 'compact REJECTED (context): a turn is running', 'compact done (context)']) assert.ok(log.includes(k), `${k}\n${log}`)
+  assert.match(log, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d compact due/m, 'each line is timestamped')
+  s = await session({ role: 'coordinator' })
+  await s.turnStart(); await s.measure(80); await s.settleTurn()
+  assert.equal(s.calls.compact.length, 1)
+  assert.equal(s.debugLog(), '', 'no RAILS_FLOW_DEBUG, no file')
+})
+
+await check('RAILS_FLOW_DEBUG=1 also records a clear decision and a no-surface skip', async () => {
+  let s = await session({ env: { RAILS_FLOW_DEBUG: '1' }, gh: MERGED })
+  await finishJob(s)
+  await new Promise((r) => setTimeout(r, 40))
+  await s.settleTurn()
+  const log = s.debugLog()
+  assert.ok(log.includes('merge check') && log.includes('clear queued'), log)
+  s = await session({ env: { RAILS_FLOW_DEBUG: '1' }, role: 'coordinator', surfaces: [] })
+  await s.measure(80)
+  await new Promise((r) => setTimeout(r, 60))
+  await s.settleTurn()
+  assert.equal(s.calls.compact.length, 0)
+  assert.ok(s.debugLog().includes('compact skipped (context: context 80%): no surface'), s.debugLog())
 })
 
 // The simulated session processes keep stdio open; end them so the process can exit and report.

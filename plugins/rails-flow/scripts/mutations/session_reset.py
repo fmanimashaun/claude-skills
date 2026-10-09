@@ -303,5 +303,23 @@ GUARD = Guard(
             "      while (false && i < w.length && w[i].startsWith('-'))",
             "round 3: until, elif and wrapper options",
         ),
+        Mutation(
+            "a due compaction is never queued at turn.complete",
+            "        if (due !== null) {\n          if (job.pending",
+            "        if (false) {\n          if (job.pending",
+            "a compact is never requested inside a turn",
+        ),
+        Mutation(
+            "a rejected /compact does not re-arm the compaction",
+            "    state.rearm = due.key\n",
+            "",
+            "tried again at the next measure",
+        ),
+        Mutation(
+            "the debug log is written without RAILS_FLOW_DEBUG",
+            "if (lines.length === 0 || (await $.env.get('RAILS_FLOW_DEBUG')) !== '1') return",
+            "if (lines.length === 0) return",
+            "RAILS_FLOW_DEBUG=1 writes each compact decision",
+        ),
     ),
 )

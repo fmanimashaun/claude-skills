@@ -38,7 +38,52 @@ export const DEFAULT_COORDINATOR_HANDOFF = '~/projects/claude-skills-wt/_logs/CO
 
 // This session's elected role. Module variables survive a /clear (the process goes on, and session.start does
 // not fire again), so the role survives it; a resume is a new process and elects again.
-export const state = { role: null, coordinator: null, line: null, hasSurface: false }
+export const state = { role: null, coordinator: null, line: null, hasSurface: false, compactDue: null, rearm: null, debug: [] }
+
+// Debug notes: with RAILS_FLOW_DEBUG=1 each compact or clear decision, and any rejection, is appended to
+// ~/.claude/rails-flow/debug.log, so a live test can be read without a transcript. Off, the notes are dropped.
+// context-nudge.mjs adds notes through this pure function; only this module holds `$` and writes the file.
+export function debugNote(line) {
+  state.debug.push(String(line).slice(0, 400))
+  if (state.debug.length > 100) state.debug.shift()
+}
+
+async function debugFlush($) {
+  const lines = state.debug.splice(0)
+  try {
+    if (lines.length === 0 || (await $.env.get('RAILS_FLOW_DEBUG')) !== '1') return
+    await $.process.run(
+      ['sh', '-c', 'd="$HOME/.claude/rails-flow"; mkdir -p "$d" && printf "%s\\n" "$1" | while IFS= read -r l; do printf "%s %s\\n" "$(date +%Y-%m-%dT%H:%M:%S)" "$l"; done >> "$d/debug.log"', 'sh', lines.join('\n')],
+      { timeoutMs: 5000 },
+    )
+  } catch {
+    // A debug log never affects the session
+  }
+}
+
+function say($, line) {
+  debugNote(line)
+  void debugFlush($)
+}
+
+// Queue the compaction the context-nudge decided is due. `/compact` goes through `$.command.run`: it is "queued and
+// run once the session is idle", where `$.session.compact` "rejects while a turn runs" (measured live on 2.1.296: a
+// compact tried from session.measure, which fires during a turn, never ran). Called from turn.complete only.
+function queueCompact($, due) {
+  say($, `compact queued (${due.key}: ${due.reason}) via /compact, role=${state.role}`)
+  const failed = (err) => {
+    state.rearm = due.key
+    say($, `compact REJECTED (${due.key}): ${String(err?.message ?? err).slice(0, 200)}`)
+  }
+  try {
+    $.command
+      .run({ command: 'compact', args: due.text })
+      .then(() => say($, `compact done (${due.key})`))
+      .catch(failed)
+  } catch (err) {
+    failed(err)
+  }
+}
 
 // POSIX sh, run with $1 = this session's id, $2 = "1" to force a claim, $3 = "1" for a RESUMED session: it never
 // makes or takes a claim, it only keeps one that already carries its own session id (owner rule, 2026-10-09, #1724).
@@ -363,6 +408,7 @@ async function precheck($, epoch) {
   }
   if (job.epoch !== epoch) return
   job.checked = { epoch, ok }
+  say($, `merge check (epoch ${epoch}): ${ok ? 'all merged into dev' : 'not all merged'}`)
   if (ok && job.turnEnd === epoch && jobDoneShape()) fire($, epoch)
 }
 
@@ -378,6 +424,7 @@ function maybePrecheck($) {
 // session is idle and its promise settles after it ran; it is never awaited inside a hook. A tool call after the
 // clear was queued (new work) leaves the job's own tracking alone and skips the reset prompt.
 function fire($, epoch) {
+  say($, `clear queued (epoch ${epoch})`)
   job.pending = true
   job.cleared = true
   const handoff = job.handoff
@@ -393,9 +440,10 @@ function fire($, epoch) {
         resetJob()
         return $.prompt.submit({ text: resetPrompt(handoff) })
       })
-      .catch(() => {
+      .catch((err) => {
         // Fail open: a failed reset leaves the session as it was; `cleared` stays set so it is not retried in a loop.
         job.pending = false
+        say($, `clear REJECTED: ${String(err?.message ?? err).slice(0, 200)}`)
       })
   } catch {
     job.pending = false
@@ -416,6 +464,7 @@ export function register(on) {
       } catch {
         state.hasSurface = false
       }
+      say($, `role=${r.role} hasSurface=${state.hasSurface}`)
     }
     return next(e)
   })
@@ -490,10 +539,19 @@ export function register(on) {
         job.turnEnd = job.touched ? job.epoch : null
         if (job.touched && state.role === 'implementation' && state.hasSurface && jobDoneShape() && job.checked?.ok === true && job.checked.epoch === job.epoch) fire($, job.epoch)
         else maybePrecheck($) // no cached answer for this epoch (a background job just ended): ask now; precheck fires the clear
+        // A compaction the nudge found due is queued HERE, at turn end, never from session.measure (which fires during a
+        // turn). A session whose job is done is cleared instead; a clear that was just queued wins.
+        const due = state.compactDue
+        state.compactDue = null
+        if (due !== null) {
+          if (job.pending || jobDoneShape(true)) say($, `compact dropped (${due.key}): the job is done, the clear takes over`)
+          else queueCompact($, due)
+        }
       }
     } catch {
       job.pending = false
     }
+    void debugFlush($) // anything the nudge noted during the turn (a skip, a due compaction) is written now
     return next(e)
   })
 }
