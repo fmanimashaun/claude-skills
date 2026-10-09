@@ -42,7 +42,18 @@ ProcessPaymentJob.perform_all_later(orders.map { ProcessPaymentJob.new(_1) })  #
   `ActiveJob::Serializer` if truly needed).
 - **Enqueue-after-commit is the default** (`:default` behavior since 7.2/8):
   `perform_later` inside a transaction enqueues only after commit, so jobs
-  never race an uncommitted record. Don't fight this.
+  never race an uncommitted record. Don't fight this. **8.1 removed** the
+  `:never`, `:always` and `:default` symbol values of
+  `ActiveJob::Base.enqueue_after_transaction_commit` (and the global
+  `config.active_job.enqueue_after_transaction_commit`): in an 8.1 app it is a
+  per-job boolean (8.1 release notes, Removals; `activejob/CHANGELOG.md` on
+  `8-1-stable`). 8.2 (unreleased) brings the global boolean back:
+  `references/rails-8-2-readiness.md`.
+- **The built-in `:sidekiq` adapter is deprecated in 8.1**: use the adapter that
+  ships in the sidekiq gem (sidekiq 7.3.3 or newer). The built-in adapter is
+  removed on 8.2 `main` (unreleased), which also deprecates the built-in
+  `queue_classic`, `resque`, `delayed_job`, `backburner` and `sneakers`
+  adapters: `references/rails-8-2-readiness.md`.
 - Unhandled exceptions after retries exhaust → job discarded to the failed
   set (Solid Queue keeps failed executions for inspection/retry). Report
   with `Rails.error` if you rescue manually.
@@ -285,6 +296,14 @@ reading the same signed session cookie the web app sets
 (`identified_by :current_user`; reject unless found). Broadcast from
 `after_commit`/jobs, never mid-transaction.
 
+Origins: Action Cable only accepts a WebSocket from an allowed origin. A page
+served from the same host as the cable endpoint passes by default (verified in
+actioncable 8.1.4); for any other origin set
+`config.action_cable.allowed_request_origins = ["https://app.example.com", %r{…}]`.
+In development any `localhost` port is allowed. Never set
+`config.action_cable.disable_request_forgery_protection = true` in production:
+it makes Action Cable accept connections from every origin.
+
 ## 8. Threading & the Rails executor
 
 Rails-managed threads — requests, jobs, Action Cable — already run inside the
@@ -301,7 +320,16 @@ Thread.new do
 end
 ```
 
-- Never nest `executor.wrap` inside a request or job — those are already wrapped.
+- Don't wrap code that already runs inside a request or job — Rails wraps those.
+  Doing it is harmless (the Executor is re-entrant: `wrap` is a no-op when it is
+  already active) but adds nothing. Wrap only threads you start yourself.
+- A top-level long-running loop that repeatedly calls application code (your own
+  worker or poller) wraps each iteration in `Rails.application.reloader.wrap`
+  instead, so reloading works; the Reloader starts the Executor for you. Child
+  threads it spawns use `executor.wrap`: a Reloader in a child thread whose
+  parent waits inside the Executor deadlocks. Where a block is impractical, use
+  `execution_context = Rails.application.executor.run!` and
+  `execution_context.complete! if execution_context` in an `ensure`.
 - Blocking on another thread FROM wrapped code can deadlock the dev autoloader;
   wrap the wait:
   `ActiveSupport::Dependencies.interlock.permit_concurrent_loads { thread.join }`.
