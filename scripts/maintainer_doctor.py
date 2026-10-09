@@ -353,6 +353,12 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("hook gates", ("python3", "plugins/rails-flow/scripts/check_hook_gates.py", "--selftest", "--part", "a")),
     ("hook gates (release)", ("python3", "plugins/rails-flow/scripts/check_hook_gates.py", "--selftest", "--part", "b")),
     ("hook gates (worktree)", ("python3", "plugins/rails-flow/scripts/check_hook_gates.py", "--selftest", "--part", "c")),
+    # #1667. The adversarial cases that found #1645's bypasses, through the REAL guard-bash.sh with a stub `gh` that must
+    # never be called. The fast tier (~50 cases, ~10 s) runs in every sweep; the full tier (~300 cases, ~90 s at load 35)
+    # is in PR_SKIPPED_GATES, so only the full sweep (the release proof) pays for it.
+    ("guard-bash cases", ("python3", "scripts/check_guard_bash_cases.py", "--tier", "fast")),
+    ("guard-bash cases selftest", ("python3", "scripts/check_guard_bash_cases.py", "--selftest")),
+    ("guard-bash cases (full)", ("python3", "scripts/check_guard_bash_cases.py", "--tier", "full")),
     # #849. "Take the head of the queue" downstream was a claim nothing checked; the marketplace has
     # issue_graph.py --ready for itself, and this is the shipped equivalent for a project's tracker.
     ("issue readiness", ("python3", "plugins/rails-flow/scripts/check_issue_ready.py", "--selftest")),
@@ -595,7 +601,7 @@ CORPORA_GATES = frozenset({"coverage matrix drift"})
 # itself unless that record matches the tree it is publishing, so nothing reaches `main` without it.
 # An exact set, pinned by the selftest in both directions like CORPORA_GATES: widening it is how a
 # "fast" mode becomes the only mode.
-PR_SKIPPED_GATES = frozenset({"mutation coverage"})
+PR_SKIPPED_GATES = frozenset({"mutation coverage", "guard-bash cases (full)"})
 
 # Seconds a subprocess gets before the doctor calls it hung. Right for a check that reads the tree
 # once, which is nearly all of them.
@@ -637,6 +643,8 @@ SLOW_GATES: dict[str, int] = {
     "hook gates": 400,
     "hook gates (release)": 600,
     "hook gates (worktree)": 600,
+    # #1667, MEASURED: the full tier took 94 s wall at a load of 35 (about 300 real-hook runs, four at a time). 600 s is 6x that.
+    "guard-bash cases (full)": 600,
 }
 
 # The gates that also enforce a committed record, and so take `--ratchet` (#1599).
