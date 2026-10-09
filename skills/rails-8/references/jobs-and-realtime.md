@@ -296,6 +296,14 @@ reading the same signed session cookie the web app sets
 (`identified_by :current_user`; reject unless found). Broadcast from
 `after_commit`/jobs, never mid-transaction.
 
+Origins: Action Cable only accepts a WebSocket from an allowed origin. A page
+served from the same host as the cable endpoint passes by default (verified in
+actioncable 8.1.4); for any other origin set
+`config.action_cable.allowed_request_origins = ["https://app.example.com", %r{…}]`.
+In development any `localhost` port is allowed. Never set
+`config.action_cable.disable_request_forgery_protection = true` in production:
+it makes Action Cable accept connections from every origin.
+
 ## 8. Threading & the Rails executor
 
 Rails-managed threads — requests, jobs, Action Cable — already run inside the

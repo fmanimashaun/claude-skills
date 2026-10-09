@@ -143,7 +143,10 @@ columns, enqueueing a job about *this* record
 (`after_create_commit :send_welcome_email_later`). Prefer
 `after_*_commit` for anything that leaves the process (jobs, mail,
 broadcasts) — plain `after_save` fires before the transaction commits and the
-job may not find the record.
+job may not find the record. To run one method on create and on update, use
+`after_save_commit :sync`; declaring `after_create_commit :sync` and
+`after_update_commit :sync` with the same method name registers only the last
+(both alias `after_commit`, which replaces an earlier callback of that name).
 
 Avoid: touching other aggregates, conditional business branching, anything
 you'll need to skip constantly. Halting: `throw :abort` in a `before_*`

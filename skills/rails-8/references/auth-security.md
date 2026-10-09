@@ -731,7 +731,12 @@ Rails defaults do a lot; your job is to not undo them and to cover the gaps.
   `config/initializers/content_security_policy.rb`; with importmap, use
   nonces (`content_security_policy_nonce_generator` +
   `javascript_importmap_tags` picks them up). Start report-only, then
-  enforce.
+  enforce. A random nonce per request (`SecureRandom.base64(16)`) is
+  incompatible with conditional GET: every response gets a new ETag, so a `304`
+  never happens on those pages. The guide's alternative,
+  `-> request { request.session.id.to_s }`, keeps ETags working, but its
+  security depends on the session id being random and never exposed in an
+  insecure cookie. Choose deliberately; it is a trade-off, not an upgrade.
 - Default security headers (X-Frame-Options SAMEORIGIN, nosniff, etc.) are
   set — extend via `config.action_dispatch.default_headers` if needed.
 
@@ -752,6 +757,150 @@ Rails defaults do a lot; your job is to not undo them and to cover the gaps.
   pinned JS.
 - Keep Rails patched: security releases land on supported series only —
   8.1 gets fixes; stay current.
+
+**Outbound requests to a URL a user supplies (SSRF)** — webhooks, link
+previews, uptime monitors, "import from URL". The Rails Security guide does not
+cover this (it never mentions SSRF); the sources are OWASP's *Server-Side
+Request Forgery Prevention Cheat Sheet*, the IANA special-purpose address
+registries and the Ruby `Net::HTTP`, `IPAddr` and `Addrinfo` docs. Each rule
+below was checked against them; the address, resolver, pinning and proxy rules
+were also run on Ruby 4.0.6 (net-http 0.9.1).
+
+- **Allow-list when you can; a deny-list is OWASP's last resort.** If the
+  destinations are known up front, match the host against an allow-list and
+  build the request yourself. OWASP: "Deny-lists are bypass-prone. Prefer
+  allow-lists." When the destination really is arbitrary user input (a webhook,
+  a link preview), a deny-list is the heading OWASP files under "Last Resort",
+  and the code below is that: it needs the ranges maintained. Allow only
+  `http`/`https`.
+- **Validate the address, not the string.** Check the *resolved* destination
+  address. Hex, octal, decimal and mixed encodings of an address
+  (`0x7f.0.0.1`, `2130706433`, `127.1`) get past a check on the hostname text.
+- **Resolve with the resolver the socket uses.** `Addrinfo.getaddrinfo` is
+  libc's, like `TCPSocket`; measured, `Resolv.getaddresses("127.1")` returns
+  `[]` while libc returns `127.0.0.1`, so validating with `Resolv` and
+  connecting through libc is the gap.
+- **List the ranges; `IPAddr#private?` is not enough.** Measured on Ruby 4.0.6
+  (ipaddr 1.2.8), `private?`, `loopback?` and `link_local?` together cover
+  `10/8`, `172.16/12`, `192.168/16`, `fc00::/7`, `127/8`, `::1`, `169.254/16`,
+  `fe80::/10` and IPv4-mapped forms of those (after `IPAddr#native`). They are
+  all `false` for `0.0.0.0` and `::`, `100.64/10`, multicast (`224.0.0.1`,
+  `ff02::1`), `192.0.0/24`, `192.0.2/24`, `198.18/15`, `240/4`,
+  `2001:db8::/32`, and any NAT64 or 6to4 address. OWASP's minimum list names
+  multicast (`224.0.0.0/4`, `ff00::/8`); the IANA special-purpose registries
+  (IPv4 and IPv6, last updated 2025-10-09) add rows that are not globally
+  reachable (`192.0.0.0/24`, `198.18.0.0/15`, `240.0.0.0/4`, the three
+  documentation blocks, `2001:db8::/32`), which the list below includes.
+  Convert IPv4-mapped IPv6 (`::ffff:127.0.0.1`) with `IPAddr#native` before the
+  check.
+- **Connect to the address you checked, on a direct connection.** OWASP: a
+  second, unchecked DNS lookup between validation and connection can bypass the
+  checks (DNS rebinding). `Net::HTTP#ipaddr=` (Ruby 2.7+) pins the address; set
+  it before `start`, because it raises `IOError` once started. TLS still
+  verifies the certificate against the original hostname. **The pin covers a
+  direct connection only:** `Net::HTTP.new` reads `http_proxy` from the
+  environment, and when a proxy is in effect the connection goes to the proxy
+  and the proxy resolves the host (measured: the request line names the host and
+  `ipaddr=` is not used). Behind a proxy, treat the proxy as the control, or
+  decide deliberately; this section does not say to turn it off.
+- **Do not follow redirects.** OWASP: disable redirect following in the client.
+  `Net::HTTP` does not follow them itself. If you must follow one, run the
+  `Location` through the same check first (that last step is our rule, not
+  OWASP's).
+- **Ports are not checked below.** OWASP gives no rule for destination ports
+  (it speaks of a scheme, port and path the application fixes itself), so
+  `http://1.1.1.1:22/` passes this code. If your use case allows only 80 and
+  443, check `uri.port` as well: that is our rule, not OWASP's.
+- **Embedded IPv4 (our rule, not Ruby's and not IANA's).** A NAT64 address
+  (`64:ff9b::/96`) carries its IPv4 address in the low 32 bits (RFC 6052 §2.2)
+  and a 6to4 address (`2002::/16`) in bits 16-47 (RFC 3056 §2), and a check on
+  the IPv6 address alone does not look at either. So the code also runs the
+  embedded IPv4 address through the same list; the prefixes themselves are not
+  refused, so an IPv4-only destination on a DNS64 network still works.
+  RFC 6052 §3.1 forbids the Well-Known Prefix for private IPv4, but an
+  operator's own prefix may carry one and no RFC makes the translator filter
+  it, so this check stays mandatory: extraction adds to the deny-list and never
+  replaces it, and NAT64 dropping the packet is not a reason to skip it.
+  `64:ff9b:1::/48` (RFC 8215, local use) is refused: its layout is whatever the
+  deployment chose (RFC 6052's /48 form splits the IPv4 address around a zero
+  octet, `64:ff9b:1:a00:0:100::` is `10.0.0.1`), so it cannot be read from the
+  address alone; accept it only if your deployment declares its prefix length.
+  A network-specific prefix of your own (RFC 6052 §2.2 gives the embedding for
+  several prefix lengths) needs its own entry in this code: one it does not
+  know, such as `64:ff9b:2::a00:1`, passes (measured).
+- **Refusals are exceptions.** `URI::InvalidURIError` and a hostname that does
+  not resolve (`Socket::ResolutionError`) are refusals too; the code below turns
+  both into `SafeFetch::Refused`, and so should any caller that parses a URL
+  itself.
+
+```ruby
+require "net/http"
+require "ipaddr"
+require "socket"
+
+# A deny-list: OWASP's "last resort". Use an allow-list if the destinations are known.
+module SafeFetch
+  class Refused < StandardError; end
+
+  BLOCKED = %w[
+    0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12
+    192.0.0.0/24 192.0.2.0/24 192.168.0.0/16 198.18.0.0/15 198.51.100.0/24
+    203.0.113.0/24 224.0.0.0/4 240.0.0.0/4
+    ::/128 ::1/128 2001:db8::/32 fc00::/7 fe80::/10 ff00::/8
+  ].map { |net| IPAddr.new(net) }.freeze
+  NAT64       = IPAddr.new("64:ff9b::/96")
+  NAT64_LOCAL = IPAddr.new("64:ff9b:1::/48") # RFC 8215: layout is deployment-defined
+  SIX_TO_FOUR = IPAddr.new("2002::/16")
+
+  # Our rule: an IPv6 address that carries an IPv4 one is judged on that one too.
+  def self.embedded_v4(ip)
+    return unless ip.ipv6?
+    raise Refused, "NAT64 local-use prefix" if NAT64_LOCAL.include?(ip)
+    return IPAddr.new(ip.to_i & 0xffff_ffff, Socket::AF_INET) if NAT64.include?(ip)
+
+    IPAddr.new((ip.to_i >> 80) & 0xffff_ffff, Socket::AF_INET) if SIX_TO_FOUR.include?(ip)
+  end
+
+  # Every resolved address (and any IPv4 it embeds) must be public; the first is the one we connect to.
+  def self.public_address(host, port)
+    ips = Addrinfo.getaddrinfo(host, port, nil, :STREAM)
+                  .map { |info| IPAddr.new(info.ip_address).native }
+    raise Refused, "no address for #{host}" if ips.empty?
+
+    checked = ips.flat_map { |ip| [ip, embedded_v4(ip)].compact }
+    raise Refused, "#{host} is not public" if checked.any? { |ip| BLOCKED.any? { |net| net.include?(ip) } }
+
+    ips.first.to_s
+  rescue SocketError => e # includes Socket::ResolutionError
+    raise Refused, e.message
+  end
+
+  def self.get(url)
+    uri = URI.parse(url)
+    raise Refused, "scheme" unless %w[http https].include?(uri.scheme)
+
+    http = Net::HTTP.new(uri.hostname, uri.port)
+    http.ipaddr = public_address(uri.hostname, uri.port) # direct connection only
+    http.use_ssl = uri.scheme == "https"
+    http.start { |conn| conn.get(uri.request_uri) }      # redirects are not followed
+  rescue URI::InvalidURIError => e
+    raise Refused, e.message
+  end
+end
+```
+
+Measured with this module: `127.0.0.1`, `localhost`, `0x7f.0.0.1`,
+`2130706433`, `127.1`, `169.254.169.254`, `0.0.0.0`, `::1`, `::ffff:127.0.0.1`,
+`::ffff:10.0.0.1`, `10.1.2.3`, `100.64.0.1`, `224.0.0.1`, `239.255.255.250`,
+`ff02::1`, `240.0.0.1`, `198.18.0.1`, `192.0.2.1`, `2001:db8::1`, `192.0.0.1`,
+`198.51.100.7`, `203.0.113.9`, `64:ff9b::a00:1`, `64:ff9b::7f00:1`,
+`64:ff9b::a9fe:a9fe`, `64:ff9b:1::a00:1`, `64:ff9b:1:a00:0:100::`,
+`2002:a00:1::`, `2002:7f00:1::` and `localhost.` are all refused; the public
+`1.1.1.1`, `8.8.8.8`, `2606:4700:4700::1111`, `64:ff9b::808:808`,
+`2002:808:808::` and `64:ff9b::101:101` pass; a bad URL, an `ftp:` URL and a
+name that does not resolve each raise `SafeFetch::Refused`; and a request
+pinned to a local server under another hostname connects and sends that
+hostname as `Host`.
 
 ## Route naming for auth (see controllers-routing §1a)
 
