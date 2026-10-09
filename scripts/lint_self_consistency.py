@@ -33,6 +33,10 @@ WHAT IT CHECKS
                               differ, or one is missing -- one normaliser is a claim only while they are identical
   fixture-git-drift           the three shipped copies of scripts/fixture_git.py (rails-flow, qa-flow,
                               pipeline) differ, or one is missing -- one fixture-git lock, three copies (#1588)
+  findings-script-drift       the two shipped copies of scripts/findings.py (rails-flow, qa-flow) differ,
+                              or one is missing -- qa-reporter runs its own copy (#1680)
+  cross-plugin-relative-path  shipped markdown that runs `../<other-plugin>/...`, which resolves in the
+                              clone and not in an install's per-plugin cache directories (#1680)
   fixture-git-bypass          a git call with the fixture identity (`t@t`) outside fixture_git -- a fixture's git
                               that can reach the real repo when its temp init fails (#1588); `# fixture-git: exempt
                               (<reason>)` on the line for what the helper refuses by design (a `git worktree add` checkout)
@@ -630,6 +634,72 @@ def check_fixture_git_drift() -> tuple[list[Finding], int]:
                                     f"differs from {FIXTURE_GIT_COPIES[0]} -- one fixture-git lock, three copies: a fix "
                                     "landed in one and not the others. Copy the canonical file over it (cp) and re-run"))
     return findings, len(FIXTURE_GIT_COPIES)
+
+
+# Rule: findings-script-drift (#1680)
+# qa-reporter validates its findings records with findings.py, which rails-flow owns. It used to call
+# `../rails-flow/scripts/findings.py`, which resolves only in this repo's checkout: an install puts each
+# plugin in its own versioned cache directory. qa-flow now ships a copy; this keeps it the same script.
+FINDINGS_COPIES = ("plugins/rails-flow/scripts/findings.py",
+                   "plugins/qa-flow/scripts/findings.py")
+
+
+def check_findings_script_drift() -> tuple[list[Finding], int]:
+    """The findings.py copies exist and are byte-identical to the rails-flow (canonical) one."""
+    findings: list[Finding] = []
+    texts = {}
+    for rel in FINDINGS_COPIES:
+        p = ROOT / rel
+        if not p.is_file():
+            findings.append(Finding("findings-script-drift", rel, 0,
+                                    "missing -- qa-reporter's findings validation has nothing to run (#1680); "
+                                    "copy it from plugins/rails-flow/scripts/findings.py"))
+            continue
+        texts[rel] = p.read_bytes()
+    canonical = texts.get(FINDINGS_COPIES[0])
+    for rel in FINDINGS_COPIES[1:]:
+        if canonical is not None and texts.get(rel, canonical) != canonical:
+            findings.append(Finding("findings-script-drift", rel, 0,
+                                    f"differs from {FINDINGS_COPIES[0]} -- one findings schema, two copies: QA and "
+                                    "review records would validate against different rules. Copy the canonical "
+                                    "file over it (cp) and re-run"))
+    return findings, len(FINDINGS_COPIES)
+
+
+# Rule: cross-plugin-relative-path (#1680)
+# A shipped doc that tells the user to run `../<other-plugin>/...` works from this repo's checkout, where
+# the plugins are siblings, and fails from an install, where each plugin sits in its own
+# `<plugin>/<version>/` cache directory. The checkout confirms itself, so every gate stayed green.
+# Keyed on the target being ANOTHER plugin's directory: `../scripts/` inside one plugin is fine.
+def check_cross_plugin_relative_path() -> tuple[list[Finding], int]:
+    """No shipped markdown reaches into a sibling plugin by a relative `../<plugin>/` path."""
+    findings: list[Finding] = []
+    # rails-stack ships the top-level skills/ (its marketplace source is the repo root), so it has no
+    # plugins/ directory but is still a plugin a doc could wrongly reach into.
+    plugins = sorted({p.name for p in (ROOT / "plugins").glob("*") if p.is_dir()} | {"rails-stack"})
+    # `(?:plugins/)?` catches the clone path a rails-stack skill would write (`../../plugins/rails-flow/`);
+    # `(?![\w-])` ends the name without needing a slash (`cd ../rails-flow`) and keeps `rails-flow-x` out.
+    pattern = re.compile(r"(?<![\w.])(?:\.\./)+(?:plugins/)?(" + "|".join(map(re.escape, plugins)) + r")(?![\w-])")
+    docs = [(p, p.relative_to(ROOT).as_posix().split("/")[1]) for p in sorted((ROOT / "plugins").glob("*/**/*.md"))]
+    docs += [(p, "rails-stack") for p in sorted((ROOT / "skills").glob("**/*.md"))]
+    examined = 0
+    for path, own in docs:
+        rel = path.relative_to(ROOT).as_posix()
+        if "/tests/" in rel:
+            continue
+        examined += 1
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for match in pattern.finditer(text):
+            if match.group(1) == own:
+                continue
+            line = text[: match.start()].count("\n") + 1
+            findings.append(Finding(
+                "cross-plugin-relative-path", rel, line,
+                f"`{match.group(0)}` reaches into the {match.group(1)} plugin by a relative path. That resolves "
+                f"only in this repo's checkout; an install puts each plugin in its own versioned cache "
+                f"directory, so the user's command fails. Ship what you need inside this plugin and call it "
+                f"through ${{CLAUDE_PLUGIN_ROOT}} (see FINDINGS_COPIES for the pattern)."))
+    return findings, examined
 
 
 # Rule: fixture-git-bypass (#1588)
@@ -3733,6 +3803,8 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     growth, claude_md_lines = check_claude_md_growth()
     hook_lib, hook_lib_copies = check_hook_lib_drift()
     fixture_git, fixture_git_copies = check_fixture_git_drift()
+    findings_copy, findings_copies = check_findings_script_drift()
+    rel_xplugin, rel_xplugin_examined = check_cross_plugin_relative_path()
     fixture_bypass, fixture_bypass_examined = check_fixture_git_bypass(python_sources)
     bare, bare_examined = check_bare_plugin_entries()
     misdesc, agent_descs_examined = check_misdescribed_agents()
@@ -3792,6 +3864,8 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "claude_md_lines": claude_md_lines,
         "hook_lib_copies": hook_lib_copies,
         "fixture_git_copies": fixture_git_copies,
+        "findings_script_copies": findings_copies,
+        "shipped_markdown_checked_for_cross_plugin_paths": rel_xplugin_examined,
         "fixture_git_identity_lines": fixture_bypass_examined,
         "plugin_entries_checked_for_metadata": bare_examined,
         "plugin_descriptions_reconciled_against_agents": agent_descs_examined,
@@ -3847,6 +3921,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
             + ci_gates + cl_ignore + controllers + labels + comp_labels + orphans + keyfilter
             + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
             + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref + action_pins
+            + findings_copy + rel_xplugin
             + xplugin + unowned + toggles + ci_step + promo_ctx + bothways + harness_dep,
             coverage)
 
@@ -4944,6 +5019,49 @@ def selftest() -> int:
              files={FIXTURE_GIT_COPIES[0]: FG, FIXTURE_GIT_COPIES[1]: FG, FIXTURE_GIT_COPIES[2]: FG + "\n"})
     scenario("a missing fixture_git copy is a finding", rule="fixture-git-drift", expect_finding=True,
              files={FIXTURE_GIT_COPIES[0]: FG, FIXTURE_GIT_COPIES[1]: FG})
+    FS = "REQUIRED = ('id',)\n"
+    scenario("identical findings.py copies are silent", rule="findings-script-drift", expect_finding=False,
+             files={c: FS for c in FINDINGS_COPIES}, only=check_findings_script_drift)
+    scenario("a findings.py copy that differs by one byte is a finding", rule="findings-script-drift",
+             expect_finding=True, files={FINDINGS_COPIES[0]: FS, FINDINGS_COPIES[1]: FS + "\n"},
+             only=check_findings_script_drift)
+    scenario("a missing qa-flow findings.py is a finding", rule="findings-script-drift", expect_finding=True,
+             files={FINDINGS_COPIES[0]: FS}, only=check_findings_script_drift)
+    XP = "cross-plugin-relative-path"
+    XP_TREE = {"plugins/rails-flow/scripts/findings.py": FS}
+    scenario("an agent running ../rails-flow/ from qa-flow is a finding (the #1680 line)", rule=XP,
+             expect_finding=True, line=3, only=check_cross_plugin_relative_path,
+             files={**XP_TREE, "plugins/qa-flow/agents/qa-reporter.md":
+                    "# r\n\npython3 ../rails-flow/scripts/findings.py validate x.jsonl\n"})
+    scenario("a skill reaching ../../pipeline/ is a finding", rule=XP, expect_finding=True,
+             only=check_cross_plugin_relative_path,
+             files={**XP_TREE, "plugins/pipeline/x": "", "plugins/qa-flow/skills/s/SKILL.md":
+                    "see ../../pipeline/scripts/a.py\n"})
+    scenario("the CLAUDE_PLUGIN_ROOT form is silent", rule=XP, expect_finding=False,
+             only=check_cross_plugin_relative_path,
+             files={**XP_TREE, "plugins/qa-flow/agents/qa-reporter.md":
+                    'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/findings.py" validate x\n'})
+    scenario("a relative path inside the same plugin is silent", rule=XP, expect_finding=False,
+             only=check_cross_plugin_relative_path,
+             files={**XP_TREE, "plugins/rails-flow/commands/c.md": "python3 ../rails-flow/scripts/x.py\n"})
+    scenario("a plugin's own name with no ../ is silent", rule=XP, expect_finding=False,
+             only=check_cross_plugin_relative_path,
+             files={**XP_TREE, "plugins/qa-flow/agents/a.md": "rails-flow/scripts/findings.py owns it\n"})
+    scenario("a rails-stack skill reaching ../rails-flow/ is a finding", rule=XP, expect_finding=True,
+             only=check_cross_plugin_relative_path,
+             files={**XP_TREE, "skills/hotwire/SKILL.md": "run ../../plugins/x ../rails-flow/scripts/a.py\n"})
+    scenario("`cd ../rails-flow` with no trailing slash is a finding", rule=XP, expect_finding=True,
+             only=check_cross_plugin_relative_path,
+             files={**XP_TREE, "plugins/qa-flow/commands/c.md": "cd ../rails-flow && python3 scripts/findings.py\n"})
+    scenario("a skill's clone path ../../plugins/rails-flow/ is a finding", rule=XP, expect_finding=True,
+             only=check_cross_plugin_relative_path,
+             files={**XP_TREE, "skills/hotwire/SKILL.md": "python3 ../../plugins/rails-flow/scripts/findings.py\n"})
+    scenario("a longer name that only starts with a plugin's is silent", rule=XP, expect_finding=False,
+             only=check_cross_plugin_relative_path,
+             files={**XP_TREE, "plugins/qa-flow/agents/a.md": "see ../rails-flow-notes/x.md\n"})
+    scenario("a tests/ fixture is silent", rule=XP, expect_finding=False,
+             only=check_cross_plugin_relative_path,
+             files={**XP_TREE, "plugins/qa-flow/tests/t.md": "../rails-flow/scripts/x.py\n"})
     # #1588: the fixture identity outside fixture_git, in the shapes the corpus uses.
     for label, body in (("a -c user.email=t@t argv", 'subprocess.run(["git", "-c", "user.email=t@t", "commit"])\n'),
                         ("a GIT_AUTHOR_EMAIL env entry", 'env = {"GIT_AUTHOR_EMAIL": "t@t"}\n'),

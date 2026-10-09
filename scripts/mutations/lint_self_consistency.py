@@ -1321,6 +1321,41 @@ GUARD = Guard(
             'fixture-git-drift / a fixture_git copy that differs by one byte is a finding',
         ),
         Mutation(
+            # #1680
+            "findings-script-drift never compares the copies, so qa-flow's findings.py can drift from rails-flow's",
+            '        if canonical is not None and texts.get(rel, canonical) != canonical:',
+            '        if False:',
+            'findings-script-drift / a findings.py copy that differs by one byte is a finding',
+        ),
+        Mutation(
+            # #1680
+            'findings-script-drift does not notice a missing qa-flow copy',
+            '            findings.append(Finding("findings-script-drift", rel, 0,\n                                    "missing',
+            '            continue\n            findings.append(Finding("findings-script-drift", rel, 0,\n                                    "missing',
+            'findings-script-drift / a missing qa-flow findings.py is a finding',
+        ),
+        Mutation(
+            # #1680
+            'cross-plugin-relative-path loses its same-plugin exemption, so ../scripts/ inside a plugin is refused',
+            '            if match.group(1) == own:\n                continue\n',
+            '',
+            'cross-plugin-relative-path / a relative path inside the same plugin is silent',
+        ),
+        Mutation(
+            # #1680
+            "cross-plugin-relative-path skips rails-stack's skills/, which the marketplace ships",
+            '    docs += [(p, "rails-stack") for p in sorted((ROOT / "skills").glob("**/*.md"))]\n',
+            '',
+            'cross-plugin-relative-path / a rails-stack skill reaching ../rails-flow/ is a finding',
+        ),
+        Mutation(
+            # #1680
+            'cross-plugin-relative-path scans tests/ fixtures, which never ship',
+            '        if "/tests/" in rel:\n            continue\n        examined += 1\n        text = path.read_text(encoding="utf-8", errors="replace")',
+            '        examined += 1\n        text = path.read_text(encoding="utf-8", errors="replace")',
+            'cross-plugin-relative-path / a tests/ fixture is silent',
+        ),
+        Mutation(
             "fixture-git-bypass never reports a fixture identity outside fixture_git (#1588 part 2)",
             '            findings.append(Finding("fixture-git-bypass", str(rel), n,',
             '            None and findings.append(Finding("fixture-git-bypass", str(rel), n,',
