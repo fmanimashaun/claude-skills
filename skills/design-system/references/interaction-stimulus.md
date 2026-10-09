@@ -65,7 +65,7 @@ mandated (#142).
 | Component | Roles / ARIA | Keyboard | Mixins |
 |---|---|---|---|
 | Dropdown/Menu | trigger `aria-haspopup aria-expanded aria-controls`; `role=menu/menuitem` | Enter/Space/↓ open · ↑↓ · Home/End · type-ahead · Esc | list-nav + dismissable + anchored |
-| Dialog/Modal | native `<dialog>` + `showModal()` + `aria-labelledby` (`aria-modal` redundant); fallback `role=dialog aria-modal` | Esc close · Tab trapped (native) | native; fallback focus-trap + dismissable |
+| Dialog/Modal | native `<dialog>` + `showModal()` + `aria-labelledby` (`aria-modal` redundant); fallback `role=dialog aria-modal` | Esc close · rest of page inert (native, no scripted trap); fallback Tab trapped | native; fallback focus-trap + dismissable |
 | Drawer (overlay) | as Dialog — no APG pattern of its own | Esc · Tab trapped | focus-trap + dismissable |
 | Drawer (persistent / push) | **not a dialog** — see the contract below | none | none |
 | Carousel | `role=region` **or** `group` + `aria-roledescription=carousel` | prev/next buttons | carousel |
@@ -476,7 +476,7 @@ nobody has specified yet:
   nothing, because the navigation already did. It composes none of the four mixins — it is neither a
   layer, nor a list, nor a position, nor a trap — and saying so is the point: a component that needs
   a fifth is a component whose behaviour has to be written down, which is this bullet.
-- **`carousel`** (`::scroll-marker` / `::scroll-button`, Chrome/Edge 135 only, are not Baseline as of 2026-10-10, so it stays) — prev/next plus, *only if it auto-rotates*, play/pause and stop-on-hover/focus. The
+- **`carousel`** (stays; see [components.md](components.md#carousel)) — prev/next plus, *only if it auto-rotates*, play/pause and stop-on-hover/focus. The
   lightbox composes it inside `modal` rather than adding a controller of its own.
 - **This bullet used to say `carousel` was "the only new controller the #95 rows need", and the docs
   around it already said otherwise (#95).** The shipped snippets prescribe `dropzone` and `clipboard`

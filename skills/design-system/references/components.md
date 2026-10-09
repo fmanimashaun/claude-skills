@@ -370,9 +370,12 @@ against it, and the `inset-viewport` utility
 - **Behavior (as of 2026-10-10): the panel is a native `<dialog>` opened with `showModal()`** —
   Baseline Widely (available since 2022-03, Widely 2024-09-14). The platform supplies what the
   hand-written trap did: top layer + `::backdrop`, the rest of the document made inert, focus moved to
-  the first focusable element (`autofocus` overrides it), `Esc` closes (a cancelable `cancel` event
+  the dialog's focus delegate (MDN: "focus is set on the first nested focusable element"; `autofocus`
+  decides it, and with nothing focusable inside the HTML spec's dialog focusing steps fall back to the
+  dialog itself), `Esc` closes (a cancelable `cancel` event
   fires first, per the HTML spec), and focus returns to the previously focused element on close.
-  Name it with `aria-labelledby`; **`aria-modal` is redundant on a native modal dialog**, and a
+  Name it with `aria-labelledby`; **`aria-modal` is redundant on a native modal dialog** (MDN: dialogs "invoked by the `showModal()`
+  method implicitly have `aria-modal="true"`"), and a
   `div role="dialog"` + hand-written trap is the fallback shape, not the recommendation. The `modal`
   Stimulus controller shrinks to a **thin opener/closer** (call `showModal()` / `close()`) plus
   **backdrop-click close** — `closedby="any"` does that natively but is **not Baseline** (Chrome 134,

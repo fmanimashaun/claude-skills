@@ -118,7 +118,7 @@ export function listNavigation(controller, { itemsTarget = "item", orientation =
 
 **As of 2026-10-10 the Modal is a native `<dialog>` opened with `showModal()`** (Baseline Widely,
 2024-09-14; available since 2022-03). It supplies the top layer and `::backdrop`, makes the rest of the
-document inert, moves focus to the first focusable element (`autofocus` overrides), closes on `Esc`
+document inert, moves focus to the dialog's focus delegate (MDN: "focus is set on the first nested focusable element"; `autofocus` decides it; with nothing focusable the spec falls back to the dialog itself), closes on `Esc`
 (a cancelable `cancel` event fires first), and returns focus to the previously focused element on close
 — so none of the mixin below is wired for it, and `aria-modal` is redundant. The Stimulus controller is a thin
 opener/closer calling `showModal()` / `close()`, plus backdrop-click close (`closedby="any"` is **not**
