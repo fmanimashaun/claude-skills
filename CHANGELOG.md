@@ -17064,6 +17064,10 @@ boot/validation path — with a bullet each so the promotion could close them se
 
 ## rails-stack (skills plugin: rails-8 + hotwire + fidara-design + code-review)
 
+### Unreleased
+
+- **Hotwire Native reference: native screens need a `NavigatorDelegate`, plus the iOS/Android config knobs, tabs and 1.3.1 notes — `skills/hotwire/references/native.md`** (#1744). The iOS native-screen rule only sets `proposal.viewController`; the screen requires a `NavigatorDelegate` `handle(proposal:from:)` returning `.acceptCustom(vc)` (https://native.hotwired.dev/ios/native-screens). Added iOS config (`backButtonDisplayMode`, `hideTabBarWhenPushed` 1.3.0, `animateReplaceActions` 1.3.0, `redirectResolutionTimeout`, `makeCustomWebView`, `makeCustomErrorView` 1.3.0, `log` 1.3.0, `matchQueryStrings`; https://native.hotwired.dev/ios/configuration), Android config (`webViewDebuggingEnabled`, `jsonConverter`, `defaultFragmentDestination`; `registerFragmentDestinations` must include `HotwireWebFragment`; https://native.hotwired.dev/android/configuration), a Tabs section (https://native.hotwired.dev/ios/tabs, /android/tabs; iOS `lazyLoadTabs` is an initializer argument defaulting to `false` from 1.3.0), and 1.3.1 notes (iOS #261, Android #207, Android #205 crash on `mailto:`/`tel:` introduced in 1.3.0). Verified by `doctrine-verifier` (CONFIRMED, 2026-10-09). Component: rails-stack.
+
 ### 1.72.0 (release v1.155.0) — 2026-10-08
 
 - **The quality-pass worked example's harness count follows the repo: 52 copies of the `check(label, ok, detail)` selftest harness — `skills/quality-pass/references/worked-example.md`** (#1680; found by the `shared shapes` gate on PR #1688). #1688 added a copy of the harness, so the table's 51 disagreed with the repo's 52 and `scripts/check_shared_shapes.py` failed. It refuses only a number disagreeing with the repo, so the table was updated, not the gate. Measured: `python3 scripts/check_shared_shapes.py` reports the file matches the repo. `dist/quality-pass.skill` is rebuilt. Our own measurement; no framework claim.
