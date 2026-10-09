@@ -978,55 +978,86 @@ def run() -> int:
         with tempfile.TemporaryDirectory() as td:
             shards = Path(td) / "shards"
             shards.mkdir()
-            proof_path, cost_path = Path(td) / "proof.json", Path(td) / "cost.json"
-            real_paths = mc.PROOF_FILE, mc.COST_BASELINE
-            mc.PROOF_FILE, mc.COST_BASELINE = proof_path, cost_path
+            cost_path = Path(td) / "cost.json"
+            real_state = (mc.COST_BASELINE, mc.commit_id, mc.inc.post_proof)
+            posts: list[tuple] = []
+            mc.COST_BASELINE = cost_path
+            mc.commit_id = lambda: "c1"
+            mc.inc.post_proof = lambda env, system, sha: (posts.append((system, sha)) or (True, "stub"))
+            here = mc.inc.harness_hash(mc.REPO)
 
-            def shard_file(i, full=True, commit="c1", guards=(StandInGuard.name,)):
+            def shard_file(i, skipped=(), commit="c1", harness=None, guards=(StandInGuard.name,)):
                 (shards / f"shard-{i}.json").write_text(json.dumps(
-                    {"shard": i, "of": 2, "os": "linux", "commit": commit, "harness": "H", "jobs": 4, "full": full,
-                     "guards": {g: "h" for g in guards}, "skipped": {}, "cost": {g: 5.0 for g in guards}}), encoding="utf-8")
+                    {"shard": i, "of": 2, "os": "linux", "commit": commit, "harness": harness or here, "jobs": 4,
+                     "guards": {g: "h" for g in guards}, "skipped": {g: "old" for g in skipped}, "cost": {g: 5.0 for g in guards}}),
+                    encoding="utf-8")
+
+            def merge():
+                return quietly(["--merge-shards", str(shards), "--expect-shards", "2", "--host", "lab"])
 
             try:
                 shard_file(1)
                 _tick()
-                got = quietly(["--merge-shards", str(shards), "--expect-shards", "2", "--host", "lab"])
-                if got != 1 or proof_path.exists() or cost_path.exists():
-                    FAILURES.append(f"#1739: a MISSING shard must fail the summary and write no record; got exit {got}, "
-                                    f"proof written: {proof_path.exists()}")
+                got = merge()
+                if got != 1 or cost_path.exists() or posts:
+                    FAILURES.append(f"#1739: a MISSING shard must fail the summary and record and post nothing; got exit {got}, posted {posts}")
                 shard_file(2, guards=())
                 _tick()
-                got = quietly(["--merge-shards", str(shards), "--expect-shards", "2", "--host", "lab"])
-                if got != 0 or not proof_path.exists() or (mc.load_cost_baseline(cost_path) or {}).get("host") != "lab":
-                    FAILURES.append(f"#1739: every shard present and covering the guard must pass and record the proof and the "
-                                    f"cost record from the runner; got exit {got}")
-                proof_path.unlink()
-                shard_file(2, guards=(), full=False)
+                got = merge()
+                if got != 0 or (mc.load_cost_baseline(cost_path) or {}).get("host") != "lab":
+                    FAILURES.append(f"#1739: every shard present and covering the guard must pass and write the cost record from the runner; got exit {got}")
                 _tick()
-                got = quietly(["--merge-shards", str(shards), "--expect-shards", "2", "--host", "lab"])
-                if got != 0 or proof_path.exists():
-                    FAILURES.append(f"#1739: a set with a non-full shard passes but must NOT write a proof (a skip is not a pass); got exit {got}")
+                if posts != [("linux", "c1")]:
+                    FAILURES.append(f"#1738: a complete set with nothing skipped must post the proof once, for its commit; posted {posts}")
+                posts.clear()
+                shard_file(1, skipped=(), guards=())
+                shard_file(2, skipped=(StandInGuard.name,), guards=())
+                _tick()
+                got = merge()
+                if got != 0 or posts:
+                    FAILURES.append(f"#1738: a set in which a guard was SKIPPED passes but must NOT post a proof (a skip is not a pass); got exit {got}, posted {posts}")
+                shard_file(1)
                 shard_file(2, guards=(), commit="c2")
                 _tick()
-                got = quietly(["--merge-shards", str(shards), "--expect-shards", "2", "--host", "lab"])
-                if got != 1:
-                    FAILURES.append(f"#1739: shards for different commits must fail the summary; got exit {got}")
+                got = merge()
+                if got != 1 or posts:
+                    FAILURES.append(f"#1739: shards for different commits must fail the summary; got exit {got}, posted {posts}")
+                shard_file(2, guards=(), commit="c2")
+                shard_file(1, commit="c2")
+                _tick()
+                got = merge()
+                if got != 1 or posts:
+                    FAILURES.append(f"#1738: shard results for another commit than this checkout's must fail the summary (a stale artifact); got exit {got}, posted {posts}")
+                shard_file(1)
+                shard_file(2, guards=(), harness="OTHER-HARNESS")
+                _tick()
+                got = merge()
+                if got != 1 or posts:
+                    FAILURES.append(f"#1738: shard results for another harness must fail the summary; got exit {got}, posted {posts}")
+                shard_file(2, guards=())
                 (shards / "shard-2.json").write_text("{nope", encoding="utf-8")
                 _tick()
-                got = quietly(["--merge-shards", str(shards), "--expect-shards", "2", "--host", "lab"])
+                got = merge()
                 if got != 1:
                     FAILURES.append(f"#1739: an unreadable shard result must fail the summary; got exit {got}")
             finally:
-                mc.PROOF_FILE, mc.COST_BASELINE = real_paths
+                mc.COST_BASELINE, mc.commit_id, mc.inc.post_proof = real_state
     finally:
         mc.GUARDS = real_guards
 
-    # ---- 1i. THE PATH CI RUNS, end to end: record, skip, change, --full, harness, shards, release mode (#1738, #1739) ----
+    # ---- 1i. THE PATH CI RUNS, end to end: trusted skip, change, --full, harness, shards, release mode (#1738, #1739) ----
     guard, root = _fixture_guard((mc.Mutation("odd numbers reported even", "n % 2 == 0", "True", "fixture-odd"),))
-    saved = (mc.REPO, mc.GUARDS, mc.PROOF_FILE, mc.COST_BASELINE, mc.load_cost_baseline, mc.RATCHET_SLACK, mc.RATCHET_GROWTH)
-    proof_path = root / "proof.json"
-    mc.REPO, mc.GUARDS, mc.PROOF_FILE, mc.COST_BASELINE = root, (guard,), proof_path, root / "cost.json"
+    saved = (mc.REPO, mc.GUARDS, mc.COST_BASELINE, mc.load_cost_baseline, mc.RATCHET_SLACK, mc.RATCHET_GROWTH, mc.inc.github_proof_lookup)
+    mc.REPO, mc.GUARDS, mc.COST_BASELINE = root, (guard,), root / "cost.json"
     mc.load_cost_baseline = lambda path=None: None
+    proof_commits: set[str] = set()
+    mc.inc.github_proof_lookup = lambda repo, system, run=None: (lambda sha: sha in proof_commits)
+
+    sys.path.insert(0, str(original_repo / "plugins" / "rails-flow" / "scripts"))
+    import fixture_git as fg
+
+    def fixture_git(*args: str) -> str:
+        return fg.run(root, *args, check=False).stdout.strip()
 
     def drive(*argv):
         out, err = io.StringIO(), io.StringIO()
@@ -1038,12 +1069,17 @@ def run() -> int:
         return rc, out.getvalue(), err.getvalue()
 
     try:
-        rc, out, _ = drive("--record-hashes")
+        fg.init(root, "-b", "main")
+        fixture_git("add", "-A")
+        fixture_git("commit", "-q", "-m", "proven")
+        proven = fixture_git("rev-parse", "HEAD")
+        fixture_git("update-ref", "refs/remotes/origin/main", proven)
+
+        rc, out, _ = drive()
         _tick()
-        recorded = mc.inc.load_proof(proof_path)
-        if rc != 0 or not recorded or mc.inc.os_key() not in recorded["systems"] \
-                or "fixture" not in recorded["systems"][mc.inc.os_key()]["guards"]:
-            FAILURES.append(f"#1738: --record-hashes after a passing full run must record every guard's hash for this OS, exit {rc}: {out[-200:]}")
+        if rc != 0 or "[ok" not in out or "[skip]" in out:
+            FAILURES.append(f"#1738: with NO trusted proof every guard must run, exit {rc}: {out}")
+        proof_commits.add(proven)
         rc, out, _ = drive()
         _tick()
         if rc != 0 or "[skip] fixture: skip (unchanged since " not in out or "[ok" in out:
@@ -1054,6 +1090,16 @@ def run() -> int:
         _tick()
         if "NOT run and not a pass" not in out:
             FAILURES.append(f"#1738: a run with skips must say plainly that a skip is not a pass, got {out}")
+        # THE FORGERY: a pull request writes a hash file and a guard edit together. Nothing it writes is read.
+        subject = root / "scripts" / "subject_under_test.py"
+        subject.write_text(SUBJECT + "\n# edited by the pull request\n", encoding="utf-8")
+        (root / "docs" / "evidence").mkdir(parents=True, exist_ok=True)
+        (root / "docs" / "evidence" / "mutation-proof.json").write_text('{"systems": {"anything": 1}}', encoding="utf-8")
+        rc, out, _ = drive()
+        _tick()
+        if rc != 0 or "[ok" not in out or "[skip]" in out:
+            FAILURES.append(f"#1738: a guard the pull request changed must re-run whatever hash file it wrote, exit {rc}: {out}")
+        subject.write_text(SUBJECT, encoding="utf-8")
         rc, out, _ = drive("--full")
         _tick()
         if rc != 0 or "[ok" not in out or "[skip]" in out:
@@ -1062,13 +1108,6 @@ def run() -> int:
         _tick()
         if rc != 0 or "[ok" not in out:
             FAILURES.append(f"#1738: a guard named with --guard must run, exit {rc}: {out}")
-        subject = root / "scripts" / "subject_under_test.py"
-        subject.write_text(SUBJECT + "\n# edited\n", encoding="utf-8")
-        rc, out, _ = drive()
-        _tick()
-        if rc != 0 or "[ok" not in out or "[skip]" in out:
-            FAILURES.append(f"#1738: a guard whose subject changed must re-run, exit {rc}: {out}")
-        subject.write_text(SUBJECT, encoding="utf-8")
         (root / "scripts" / "mutation_check.py").write_text("# a harness edit\n", encoding="utf-8")
         rc, out, _ = drive()
         _tick()
@@ -1077,24 +1116,29 @@ def run() -> int:
         (root / "scripts" / "mutation_check.py").unlink()
 
         # Shards: the guard is in exactly one of two shards; the other runs nothing and still reports.
+        mc.commit_id, real_commit = (lambda: "c1"), mc.commit_id
         for index in (1, 2):
             rc, out, _ = drive("--full", "--shard", f"{index}/2", "--shard-out", str(root / f"shard-{index}.json"))
             _tick()
             if rc != 0 or not (root / f"shard-{index}.json").is_file():
                 FAILURES.append(f"#1739: shard {index}/2 must pass and write its result, exit {rc}: {out}")
-        owners = [i for i in (1, 2) if "fixture" in json.loads((root / f"shard-{i}.json").read_text(encoding="utf-8")).get("guards", {})]
+        owners = [i for i in (1, 2) if (root / f"shard-{i}.json").is_file()
+                  and "fixture" in json.loads((root / f"shard-{i}.json").read_text(encoding="utf-8")).get("guards", {})]
         _tick()
         if len(owners) != 1:
             FAILURES.append(f"#1739: the guard must be in exactly one shard, was in {owners}")
-        rc, out, _ = drive("--merge-shards", str(root), "--expect-shards", "2", "--host", "lab")
-        _tick()
-        if rc != 0:
-            FAILURES.append(f"#1739: the two shards together must pass the summary, exit {rc}: {out}")
-        (root / f"shard-{owners[0] if owners else 1}.json").unlink()
-        rc, out, _ = drive("--merge-shards", str(root), "--expect-shards", "2", "--host", "lab")
-        _tick()
-        if rc != 1:
-            FAILURES.append(f"#1739: with a shard missing the summary must fail, exit {rc}")
+        try:
+            rc, out, _ = drive("--merge-shards", str(root), "--expect-shards", "2", "--host", "lab")
+            _tick()
+            if rc != 0:
+                FAILURES.append(f"#1739: the two shards together must pass the summary, exit {rc}: {out}")
+            (root / f"shard-{owners[0] if owners else 1}.json").unlink(missing_ok=True)
+            rc, out, _ = drive("--merge-shards", str(root), "--expect-shards", "2", "--host", "lab")
+            _tick()
+            if rc != 1:
+                FAILURES.append(f"#1739: with a shard missing the summary must fail, exit {rc}")
+        finally:
+            mc.commit_id = real_commit
 
         # Release mode: growth warns, strict mode fails. The limit is zeroed so the fixture's real CPU seconds are growth.
         mc.RATCHET_SLACK, mc.RATCHET_GROWTH = 0.0, 0.0
@@ -1117,7 +1161,8 @@ def run() -> int:
         if rc != 1 or "SURVIVED" not in err:
             FAILURES.append(f"#1738: in the release a survivor must still FAIL, exit {rc}: {err}")
     finally:
-        mc.REPO, mc.GUARDS, mc.PROOF_FILE, mc.COST_BASELINE, mc.load_cost_baseline, mc.RATCHET_SLACK, mc.RATCHET_GROWTH = saved
+        (mc.REPO, mc.GUARDS, mc.COST_BASELINE, mc.load_cost_baseline, mc.RATCHET_SLACK, mc.RATCHET_GROWTH,
+         mc.inc.github_proof_lookup) = saved
 
     # ---- 1d. baselines and mutants start no detached git maintenance (#1510) ----------------
     # The helper APPENDS to a caller's own pairs, never renumbers them over.

@@ -103,6 +103,12 @@ GUARD = Guard(
             "    if False:",
             "record refuses a commit during the sweep",
         ),
+        Mutation(
+            "a gates call that cannot post the proof status is accepted",
+            'if "statuses: write" not in gates_job:',
+            "if False:",
+            "the gates call stops granting statuses: write",
+        ),
         # #1739 / #1738: the shard matrix and the weekly sweep are wired so a missing or failed shard cannot read as a pass.
         Mutation(
             'the full sweep also runs mutation coverage itself, beside the shards',

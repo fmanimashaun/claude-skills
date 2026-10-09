@@ -164,6 +164,9 @@ def check_wiring(release_yml: str, gates_yml: str, release_local: str) -> list[s
     release_job = release_yml.split("\n  release:", 1)[1] if "\n  release:" in release_yml else ""
     if "needs.proof.outputs.found != 'true'" not in gates_job:
         out.append("release.yml: `gates` must run unless `proof` found a recorded sweep (needs.proof.outputs.found != 'true')")
+    if "statuses: write" not in gates_job:
+        out.append("release.yml: the `gates` call must grant `statuses: write`, or the called workflow cannot post `mutation-proof/<os>` "
+                   "(and a called workflow that asks for more than its caller grants fails to start)")
     if "needs.gates.result == 'success'" not in release_job:
         out.append("release.yml: `release` must publish when `gates` succeeded")
     if "needs.gates.result == 'skipped' && needs.proof.outputs.found == 'true'" not in release_job:
@@ -377,6 +380,7 @@ def selftest() -> int:
           len(posted) == 1 and "description=tree=T1" in posted[0] and f"context={CONTEXT}" in posted[0] and "state=success" in posted[0])
 
     good_release = ("\n  proof:\n    timeout-minutes: 10\n    steps: x\n\n  gates:\n    needs: proof\n    if: needs.proof.outputs.found != 'true'\n"
+                    "    permissions:\n      statuses: write\n"
                     "\n  release:\n    timeout-minutes: 30\n    if: >-\n      github.ref == 'refs/heads/main' && !cancelled() &&\n"
                     "      (needs.gates.result == 'success' ||\n"
                     "       (needs.gates.result == 'skipped' && needs.proof.outputs.found == 'true'))\n"
@@ -394,6 +398,7 @@ def selftest() -> int:
         ("release ignores a successful gates", lambda r, g, l: (r.replace("needs.gates.result == 'success'", "true"), g, l)),
         ("release publishes after ANY skipped gates", lambda r, g, l: (r.replace(" && needs.proof.outputs.found == 'true'", ""), g, l)),
         ("release loses !cancelled()", lambda r, g, l: (r.replace("!cancelled()", "true"), g, l)),
+        ("the gates call stops granting statuses: write", lambda r, g, l: (r.replace("statuses: write", "statuses: read"), g, l)),
         ("the proof job loses its timeout", lambda r, g, l: (r.replace("timeout-minutes: 10", ""), g, l)),
         ("the release job loses its timeout", lambda r, g, l: (r.replace("timeout-minutes: 30", ""), g, l)),
         ("the gates job loses its timeout", lambda r, g, l: (r, g.replace("timeout-minutes: 25", ""), l)),

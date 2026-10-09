@@ -284,8 +284,8 @@ GUARD = Guard(
         ),
         Mutation(
             "the gate runner ignores slow_gate_command and runs the bare command",
-            "            command = slow_gate_command(name, cmd, self.require_slow)",
-            "            command = cmd",
+            "            code, out = self.run(*slow_gate_command(name, cmd, self.require_slow),",
+            "            code, out = self.run(*cmd,",
             "under --require-slow, `mutation coverage` is run with --ratchet-warn",
         ),
         # #1738, #1739: the shard and record flags.
@@ -300,18 +300,6 @@ GUARD = Guard(
             "            if self.shards_external and name in RATCHETED_GATES:",
             "            if self.shards_external:",
             "under --mutation-shards, no OTHER gate is skipped",
-        ),
-        Mutation(
-            "--record-mutation is ignored, so nothing is ever recorded",
-            "            if self.record_mutation and name in RATCHETED_GATES:",
-            "            if False and name in RATCHETED_GATES:",
-            "with --record-mutation, `mutation coverage` is run full and recording",
-        ),
-        Mutation(
-            "--record-mutation hands --full to every gate",
-            "            if self.record_mutation and name in RATCHETED_GATES:",
-            "            if self.record_mutation:",
-            "with --record-mutation, no OTHER gate is handed --full",
         ),
     ),
 )

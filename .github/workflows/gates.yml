@@ -162,6 +162,10 @@ jobs:
     runs-on: ubuntu-latest
     # About a quarter of the 64 minutes the single job took, with room for a slow runner; re-set from a measured run, never to get green.
     timeout-minutes: 75
+    # Reads the `mutation-proof/<os>` commit status a skip rests on; nothing a pull request can write is trusted (#1738).
+    permissions:
+      contents: read
+      statuses: read
     strategy:
       fail-fast: false
       matrix:
@@ -190,6 +194,7 @@ jobs:
       - name: Mutation guards, one shard of 4
         env:
           SHARD: ${{ matrix.shard }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           mkdir -p shard-out
@@ -213,6 +218,10 @@ jobs:
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # `statuses: write` ONLY to post `mutation-proof/<os>`, which mutation_incremental.post_proof does from CI on refs/heads/main alone (#1738).
+    permissions:
+      contents: read
+      statuses: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -238,14 +247,14 @@ jobs:
 
       - name: Every shard present, every guard covered once
         if: ${{ needs.mutation.result == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: python3 scripts/mutation_check.py --merge-shards shard-in --expect-shards 4
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ needs.mutation.result == 'success' }}
         with:
           name: mutation-records
-          path: |
-            docs/evidence/mutation-proof.json
-            docs/evidence/mutation-cost-baseline.json
+          path: docs/evidence/mutation-cost-baseline.json
           if-no-files-found: warn
           retention-days: 30

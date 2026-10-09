@@ -249,8 +249,6 @@ def apply_mutation(guard: Guard, mutation: Mutation, workdir: Path) -> Path:
 # run with `--rebaseline`, a diff somebody reviews. Seconds depend on the runner, so the record is measured where the gate
 # runs (CI) and enforced only with `--ratchet`, which the doctor passes on the run whose job is to prove this gate.
 COST_BASELINE = REPO / "docs" / "evidence" / "mutation-cost-baseline.json"
-# The per-OS record of each guard's staged-files hash at the last passing FULL run (#1738); see scripts/mutation_incremental.py.
-PROOF_FILE = REPO / "docs" / "evidence" / "mutation-proof.json"
 RATCHET_FLOOR = 60.0
 # A guard NOT on record fails only over RATCHET_NEW, twice the floor that decides what gets recorded. The record holds the
 # guards that cost over 60 s; one that cost 55 s when it was made is not in it, and a runner that is 1.5x slower on the day
@@ -362,9 +360,15 @@ def commit_id() -> str:
     return out.stdout.strip() if out.returncode == 0 and out.stdout.strip() else "unknown"
 
 
+def trusted_proof_skips(guards: list, hashes: dict[str, str], harness: str, system: str) -> dict[str, str]:
+    """`{guard: proof commit}` skippable now: unchanged since the newest `main` commit carrying CI's `mutation-proof/<os>` status (#1738)."""
+    return inc.trusted_skips(guards, hashes, harness, inc.main_first_parents(REPO), inc.github_proof_lookup(REPO, system),
+                             lambda sha: inc.GitTree(REPO, sha))
+
+
 def merge_command(directory: Path, expect: int, host: str | None) -> int:
     """`--merge-shards DIR`: the summary step (#1739). Fails unless shards 1..N are all present and cover every guard once; after a
-    set of FULL shards it writes the proof and the cost record, and says where the cost came from."""
+    set of FULL shards it writes the cost record and, on `main` in CI, posts the `mutation-proof/<os>` status a later run may skip on."""
     if expect < 1:
         print("--merge-shards needs --expect-shards N", file=sys.stderr)
         return 2
@@ -375,7 +379,7 @@ def merge_command(directory: Path, expect: int, host: str | None) -> int:
         except ValueError as exc:
             print(f"  - {path}: not valid JSON ({exc})", file=sys.stderr)
             return 1
-    merged, problems = inc.merge_shards(results, expect, {g.name for g in GUARDS})
+    merged, problems = inc.merge_shards(results, expect, {g.name for g in GUARDS}, commit=commit_id(), harness=inc.harness_hash(REPO))
     if merged is None:
         print(failure_report(problems, [], len(GUARDS)), file=sys.stderr)
         return 1
@@ -387,13 +391,15 @@ def merge_command(directory: Path, expect: int, host: str | None) -> int:
     if refusal:
         print(refusal, file=sys.stderr)
         return 2
-    inc.write_proof(PROOF_FILE, merged["os"], merged["commit"], merged["harness"], merged["guards"])
     _, warnings = ratchet_outcome(merged["cost"], load_cost_baseline(), {g.name for g in GUARDS}, warn_only=True)
     for warning in warnings:
         print(f"warning: {warning}")
     write_cost_baseline(COST_BASELINE, merged["cost"], int(merged.get("jobs") or 0), label)
-    print(f"wrote {PROOF_FILE.name} and {COST_BASELINE.name} (host {label}); commit them from this run's artifact")
-    return 0
+    print(f"wrote {COST_BASELINE.name} (host {label}); commit it from this run's artifact")
+    # THE ONE THING A LATER RUN MAY SKIP ON (#1738): a status on a `main` commit, posted here and nowhere a pull request can reach.
+    posted, why = inc.post_proof(os.environ, merged["os"], merged["commit"])
+    print(f"proof: {why}")
+    return 0       # failing to post a proof must not fail the release: the next run simply skips nothing
 
 
 def record_problems(guard_names: set[str], baseline: dict | None) -> list[str]:
@@ -738,10 +744,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="--ratchet for the RELEASE: cost growth is printed as a warning and does not fail the run; a "
                              "survivor, an inert guard and a wrong-fixture catch still do (#1738)")
     parser.add_argument("--full", action="store_true",
-                        help="run every guard, skipping none for being unchanged since the recorded full run (#1738)")
-    parser.add_argument("--record-hashes", action="store_true",
-                        help="after a passing FULL run, record every guard's staged-files hash for this OS in "
-                             "docs/evidence/mutation-proof.json (#1738)")
+                        help="run every guard, skipping none for being unchanged since the last trusted full run (#1738)")
     parser.add_argument("--shard", metavar="I/N",
                         help="run only shard I of N: guards are split by recorded cost, largest first, the same way every time (#1739)")
     parser.add_argument("--shard-out", metavar="FILE",
@@ -763,8 +766,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.shard_out and not shard:
         print("--shard-out needs --shard", file=sys.stderr)
         return 2
-    if args.shard and (args.rebaseline or args.record_hashes):
-        print("--rebaseline and --record-hashes record a whole run; with --shard the summary step records (--merge-shards)", file=sys.stderr)
+    if args.shard and args.rebaseline:
+        print("--rebaseline records a whole run; with --shard the summary step records (--merge-shards)", file=sys.stderr)
         return 2
     host = None
     if args.rebaseline:
@@ -812,17 +815,19 @@ def main(argv: list[str] | None = None) -> int:
     # and a named guard all run what they are asked to.
     every = list(guards)
     try:
-        proof = inc.load_proof(PROOF_FILE)
         record = load_cost_baseline()
     except ValueError as exc:
-        print(f"the proof or cost record is unreadable: {exc}", file=sys.stderr)
+        print(f"the cost record is unreadable: {exc}", file=sys.stderr)
         return 1
     hashes = {g.name: inc.guard_hash(REPO, g) for g in every}
     harness = inc.harness_hash(REPO)
     system = inc.os_key()
     weights = dict((record or {}).get("guards", {}))
-    full = args.full or args.rebaseline or args.record_hashes
-    guards, skipped = inc.select_guards(every, hashes, harness, proof, system, full=full, named=bool(wanted), shard=shard,
+    full = args.full or args.rebaseline
+    # A skip is taken only from a commit of `main` that CI marked proven, with every hash recomputed from that commit's own objects.
+    # Nothing a pull request can edit is read, and anything unreadable skips nothing (see scripts/mutation_incremental.py).
+    skips = {} if full or wanted else trusted_proof_skips(every, hashes, harness, system)
+    guards, skipped = inc.select_guards(every, hashes, skips=skips, full=full, named=bool(wanted), shard=shard,
                                         weights=weights, default=RATCHET_FLOOR)
     start_load = five_minute_load()     # BEFORE the pool starts: this run's own work is not the load it ran under (#1652)
     started = time.monotonic()
@@ -876,9 +881,6 @@ def main(argv: list[str] | None = None) -> int:
     if problems:
         print(failure_report(problems, notes, total), file=sys.stderr)
         return 1
-    if args.record_hashes:
-        inc.write_proof(PROOF_FILE, system, commit_id(), harness, hashes)
-        print(f"hash record written: {PROOF_FILE.relative_to(REPO)} ({len(hashes)} guard(s), {system})")
     if args.shard_out:
         result = {"shard": shard[0], "of": shard[1], "os": system, "commit": commit_id(), "harness": harness, "jobs": jobs,
                   "full": full or not skipped, "guards": {n: hashes[n] for n in sorted(cost)},

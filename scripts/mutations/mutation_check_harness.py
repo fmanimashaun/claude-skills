@@ -12,6 +12,7 @@ GUARD = Guard(
     subject="scripts/mutation_check.py",
     selftest="scripts/mutation_check_selftest.py",
     deps=("scripts/mutation_incremental.py", "scripts/mutation_types.py", "scripts/hermetic_git.py", "scripts/proc_group.py", "plugins/rails-flow/scripts/process_containment.py",),
+    needs=("plugins/rails-flow/scripts/fixture_git.py",),   # the selftest builds throwaway repos through it (#1588, #1738)
     mutations=(
         # #1635: a guard's cost is CPU seconds, so machine load cannot make it grow.
         Mutation(
@@ -419,12 +420,6 @@ GUARD = Guard(
             '--shard-out without --shard is refused',
         ),
         Mutation(
-            '--rebaseline with --shard is accepted',
-            '    if args.shard and (args.rebaseline or args.record_hashes):',
-            '    if False:',
-            '--rebaseline with --shard is refused',
-        ),
-        Mutation(
             '--merge-shards without a count is accepted',
             '    if expect < 1:',
             '    if False:',
@@ -440,13 +435,7 @@ GUARD = Guard(
             'the summary writes a proof for a set that skipped guards',
             '    if not merged["full"]:',
             '    if False:',
-            'a set with a non-full shard passes but must NOT write a proof',
-        ),
-        Mutation(
-            'the summary never writes the proof',
-            '    inc.write_proof(PROOF_FILE, merged["os"], merged["commit"], merged["harness"], merged["guards"])',
-            '    pass',
-            'every shard present and covering the guard must pass and record',
+            'a set in which a guard was SKIPPED passes but must NOT post a proof',
         ),
         Mutation(
             'an unchanged guard is not reported as a skip',
@@ -459,18 +448,6 @@ GUARD = Guard(
             'skipped, NOT run and not a pass:',
             'skipped:',
             'must say plainly that a skip is not a pass',
-        ),
-        Mutation(
-            '--record-hashes records nothing',
-            '    if args.record_hashes:\n        inc.write_proof(',
-            '    if False:\n        inc.write_proof(',
-            '--record-hashes after a passing full run must record',
-        ),
-        Mutation(
-            '--full is ignored',
-            '    full = args.full or args.rebaseline or args.record_hashes',
-            '    full = args.rebaseline or args.record_hashes',
-            '--full must run a guard that is unchanged',
         ),
         Mutation(
             'the shard is not applied',
@@ -503,16 +480,40 @@ GUARD = Guard(
             "the warning's context must name the host",
         ),
         Mutation(
-            'the harness hash is not compared',
-            '    harness = inc.harness_hash(REPO)',
-            '    harness = ""',
-            'a harness edit must force a full run',
+            '--rebaseline with --shard is accepted',
+            '    if args.shard and args.rebaseline:',
+            '    if False:',
+            '--rebaseline with --shard is refused',
         ),
         Mutation(
-            'every guard hashes alike',
-            '    hashes = {g.name: inc.guard_hash(REPO, g) for g in every}',
-            '    hashes = {g.name: "same" for g in every}',
-            'a guard whose subject changed must re-run',
+            'the summary never posts the proof',
+            '    posted, why = inc.post_proof(os.environ, merged["os"], merged["commit"])',
+            '    posted, why = False, "never"',
+            'a complete set with nothing skipped must post the proof once',
+        ),
+        Mutation(
+            'the summary accepts shard results for another commit or harness',
+            'commit=commit_id(), harness=inc.harness_hash(REPO))',
+            'commit=None, harness=None)',
+            'must fail the summary (a stale artifact)',
+        ),
+        Mutation(
+            '--full is ignored',
+            '    full = args.full or args.rebaseline',
+            '    full = args.rebaseline',
+            '--full must run a guard that is unchanged',
+        ),
+        Mutation(
+            'a skip is never taken, so the incremental path is dead',
+            '    skips = {} if full or wanted else trusted_proof_skips(every, hashes, harness, system)',
+            '    skips = {}',
+            'an unchanged guard must be reported as `skip (unchanged since <sha>)`',
+        ),
+        Mutation(
+            'the trusted proof is read from a file a pull request can write instead of from the proof commit',
+            '    return inc.trusted_skips(guards, hashes, harness, inc.main_first_parents(REPO), inc.github_proof_lookup(REPO, system),',
+            "    return inc.trusted_skips(guards, hashes, harness, ['HEAD'], lambda sha: True,",
+            'with NO trusted proof every guard must run',
         ),
     ),
 )

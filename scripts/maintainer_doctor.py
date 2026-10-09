@@ -732,8 +732,6 @@ class Doctor:
     require_slow: bool = False
     # The mutation guards run as separate shard jobs in CI (#1739), so this sweep reports `mutation coverage` as a skip, with the reason.
     shards_external: bool = False
-    # Run `mutation coverage` as a full run and record each guard's hash for this OS (#1738); the local pre-promotion sweep.
-    record_mutation: bool = False
     results: list[Result] = field(default_factory=list)
     fixed: list[str] = field(default_factory=list)
 
@@ -1304,10 +1302,7 @@ class Doctor:
                     " ".join(cmd),
                 )
                 continue
-            command = slow_gate_command(name, cmd, self.require_slow)
-            if self.record_mutation and name in RATCHETED_GATES:
-                command += ("--full", "--record-hashes")
-            code, out = self.run(*command,
+            code, out = self.run(*slow_gate_command(name, cmd, self.require_slow),
                                  timeout=SLOW_GATES.get(name, DEFAULT_TIMEOUT))
             if code == 0:
                 # A slow gate's own summary line (mutation_check prints jobs and elapsed) is the
@@ -1493,9 +1488,6 @@ def main(argv: list[str] | None = None) -> int:
                         "against this exact tree (scripts/sweep_proof.py) so the release can reuse it (#1635)")
     p.add_argument("--mutation-shards", action="store_true",
                    help="`mutation coverage` is run by separate shard jobs (gates.yml): report it as a skip here (#1739)")
-    p.add_argument("--record-mutation", action="store_true",
-                   help="run `mutation coverage` as a FULL run and record every guard's hash for this OS in "
-                        "docs/evidence/mutation-proof.json (#1738); not with --mutation-shards")
     p.add_argument("--selftest", action="store_true", help="prove the checks fire and stay silent")
     args = p.parse_args(argv)
 
@@ -1515,10 +1507,7 @@ def main(argv: list[str] | None = None) -> int:
         if before is None:
             print("--record-proof needs a clean worktree at the start: the sweep must run on committed bytes", file=sys.stderr)
             return 2
-    if args.mutation_shards and args.record_mutation:
-        p.error("--mutation-shards and --record-mutation are opposites: the shards' summary job records, a local run records itself")
-    doctor = Doctor(fix=args.fix, require_slow=args.require_slow, shards_external=args.mutation_shards,
-                    record_mutation=args.record_mutation)
+    doctor = Doctor(fix=args.fix, require_slow=args.require_slow, shards_external=args.mutation_shards)
     rc = doctor.diagnose(gates=args.gates or args.gates_only, gates_only=args.gates_only, fast=args.fast)
     if args.record_proof:
         skipped = [r.name for r in doctor.gate_results() if r.status == SKIP]

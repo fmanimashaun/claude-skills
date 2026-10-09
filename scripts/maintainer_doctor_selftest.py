@@ -428,21 +428,14 @@ def timeout_fixtures() -> None:
                "mutation coverage", md.FAIL)
         expect("without --require-slow, `mutation coverage` is run without --ratchet-warn", off, "mutation coverage", md.PASS)
         expect("under --require-slow, no OTHER gate is handed --ratchet-warn", on, "selftest other", md.PASS)
-        # #1738/#1739: `--mutation-shards` reports `mutation coverage` as a skip (the shard jobs run it), and `--record-mutation` makes it a
-        # FULL, recording run; neither reaches another gate. The probe fails when handed the flags, so each direction is a verdict.
-        (scripts / "_record_probe.py").write_text(
-            "import sys\nsys.exit(1 if '--full' in sys.argv and '--record-hashes' in sys.argv else 0)\n", encoding="utf-8")
-        md.GATES = (("mutation coverage", ("python3", "scripts/_record_probe.py")),
-                    ("selftest other", ("python3", "scripts/_record_probe.py")))
-        shards, recording, plain = md.Doctor(shards_external=True), md.Doctor(record_mutation=True), md.Doctor()
-        for d in (shards, recording, plain):
-            d.check_gates()
+        # #1739: `--mutation-shards` reports `mutation coverage` as a skip (the shard jobs run it) and reaches no other gate.
+        md.GATES = (("mutation coverage", ("python3", "scripts/_ratchet_probe.py")),
+                    ("selftest other", ("python3", "scripts/_ratchet_probe.py")))
+        shards = md.Doctor(shards_external=True)
+        shards.check_gates()
         expect("under --mutation-shards, `mutation coverage` is a skip (the shard jobs run it)", shards, "mutation coverage", md.SKIP)
         expect("under --mutation-shards, no OTHER gate is skipped", shards, "selftest other", md.PASS)
-        expect("with --record-mutation, `mutation coverage` is run full and recording (the probe fails on it)", recording,
-               "mutation coverage", md.FAIL)
-        expect("with --record-mutation, no OTHER gate is handed --full", recording, "selftest other", md.PASS)
-        expect("without --record-mutation, `mutation coverage` is not run full", plain, "mutation coverage", md.PASS)
+
     finally:
         md.GATES, md.SLOW_GATES, md.REPO = saved_gates, saved_slow, real
 

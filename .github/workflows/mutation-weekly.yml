@@ -51,7 +51,6 @@ jobs:
       - name: Mutation guards, every one, one shard of 4
         env:
           SHARD: ${{ matrix.shard }}
-          OS_NAME: ${{ matrix.os }}
         run: |
           set -euo pipefail
           mkdir -p shard-out
@@ -75,6 +74,10 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
+    # `statuses: write` ONLY to post `mutation-proof/<os>` on the commit of `main` this run proved (#1738).
+    permissions:
+      contents: read
+      statuses: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -97,13 +100,13 @@ jobs:
           merge-multiple: true
 
       - name: Every shard present, every guard covered once
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: python3 scripts/mutation_check.py --merge-shards shard-in --expect-shards 4
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mutation-records-${{ matrix.os }}
-          path: |
-            docs/evidence/mutation-proof.json
-            docs/evidence/mutation-cost-baseline.json
+          path: docs/evidence/mutation-cost-baseline.json
           if-no-files-found: error
           retention-days: 30
