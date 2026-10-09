@@ -823,6 +823,9 @@ were also run on Ruby 4.0.6 (net-http 0.9.1).
   deployment chose (RFC 6052's /48 form splits the IPv4 address around a zero
   octet, `64:ff9b:1:a00:0:100::` is `10.0.0.1`), so it cannot be read from the
   address alone; accept it only if your deployment declares its prefix length.
+  A network-specific prefix of your own (RFC 6052 §2.2 gives the embedding for
+  several prefix lengths) needs its own entry in this code: one it does not
+  know, such as `64:ff9b:2::a00:1`, passes (measured).
 - **Refusals are exceptions.** `URI::InvalidURIError` and a hostname that does
   not resolve (`Socket::ResolutionError`) are refusals too; the code below turns
   both into `SafeFetch::Refused`, and so should any caller that parses a URL
