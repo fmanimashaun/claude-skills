@@ -26,7 +26,7 @@ const compacted = { context: false, five_hour: false, seven_day: false }
 // The one role line (the elected role, or that none could be elected) has been added.
 let askedRole = false
 export const ROLE_LINE =
-  'Role note: rails-flow could not elect a role for this session. Start it with RAILS_FLOW_ROLE=coordinator or ' +
+  'rails-flow role: rails-flow could not elect a role for this session. Start it with RAILS_FLOW_ROLE=coordinator or ' +
   'RAILS_FLOW_ROLE=implementation; until then it will neither clear nor compact this session. Say this once.'
 
 // Each window's last reading, and the highest level announced since it was last below warn.

@@ -24,7 +24,7 @@ function recordStatus(on): (string | undefined)[] {
 }
 
 // The lines a prompt carries besides the one role line the first person prompt of a session adds (#1724)
-const only = (r: { context?: string[] }) => (r.context ?? []).filter((l) => !l.startsWith('Role note'))
+const only = (r: { context?: string[] }) => (r.context ?? []).filter((l) => !l.startsWith('rails-flow role'))
 
 function noEnv(on) {
   on('env.get', () => ({ value: undefined }))

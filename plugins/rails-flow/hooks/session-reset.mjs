@@ -89,8 +89,8 @@ export function parseElection(out) {
 
 export function electionLine(r) {
   return r.role === 'coordinator'
-    ? 'Role note: this session was elected coordinator (none was live). It compacts itself near a limit and never clears.'
-    : `Role note: this session is an implementation session; the coordinator is ${r.coordinator ?? 'another live session'}. ` +
+    ? 'rails-flow role: this session was elected coordinator (none was live). It compacts itself near a limit and never clears.'
+    : `rails-flow role: this session is an implementation session; the coordinator is ${r.coordinator ?? 'another live session'}. ` +
         'It clears itself after its PR is merged into dev and its worktree is removed.'
 }
 
