@@ -1640,9 +1640,9 @@ def selftest() -> int:
               judge("bom_labelled") == judge("plain_labelled"), f"{judge('bom_labelled')} vs {judge('plain_labelled')}")
 
         # CodeQL (#1645): NO COMMAND MAY MAKE THE GUARD HANG. Each shape is decided in a CHILD process with a hard timeout, so a pattern that backtracks fails here
-        # instead of hanging the selftest; the child reports its own CPU seconds (best of two), which a loaded machine does not inflate as it does the wall clock.
+        # instead of hanging the selftest (the shape goes in on STDIN: one argv string is capped at 128 KiB on Linux, MAX_ARG_STRLEN, and a 150 KB shape died there, #1729); the child reports its own CPU seconds (best of two), which a loaded machine does not inflate as it does the wall clock.
         timing = ("import sys, time, tempfile\nfrom pathlib import Path\nsys.path.insert(0, sys.argv[1])\nimport issue_labels as il\n"
-                  "cmd = {shape!r}\nroot = Path(tempfile.mkdtemp())\nbest = 1e9\n"
+                  "cmd = sys.stdin.read()\nroot = Path(tempfile.mkdtemp())\nbest = 1e9\n"
                   "for _ in range(2):\n    t = time.process_time(); il.verdict(cmd, root); best = min(best, time.process_time() - t)\nprint(best)\n")
         for shape, why_ in (("bash " + "<&>" * 50000 + " ok", "50,000 x `<&>` after a shell word (CodeQL's shape)"),
                             ("bash " + "<&>" * 50000 + "$(echo hi)", "50,000 x `<&>` before an echo substitution"),
@@ -1650,8 +1650,8 @@ def selftest() -> int:
                             ("$(" * 50000, "50,000 nested `$(` (each span re-read)"),
                             ("bash <(echo " * 40, "40 x `bash <(echo ` (each marker's operand re-read by the next: exponential)")):
             try:
-                done = subprocess.run([sys.executable, "-c", timing.format(shape=shape), str(Path(__file__).resolve().parent)],
-                                      capture_output=True, text=True, timeout=30)
+                done = subprocess.run([sys.executable, "-c", timing, str(Path(__file__).resolve().parent)],
+                                      input=shape, capture_output=True, text=True, timeout=30)
                 spent = float(done.stdout.strip() or 1e9)
             except subprocess.TimeoutExpired:
                 spent = float("inf")
