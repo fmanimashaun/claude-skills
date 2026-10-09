@@ -1644,18 +1644,26 @@ def selftest() -> int:
         timing = ("import sys, time, tempfile\nfrom pathlib import Path\nsys.path.insert(0, sys.argv[1])\nimport issue_labels as il\n"
                   "cmd = sys.stdin.read()\nroot = Path(tempfile.mkdtemp())\nbest = 1e9\n"
                   "for _ in range(2):\n    t = time.process_time(); il.verdict(cmd, root); best = min(best, time.process_time() - t)\nprint(best)\n")
-        for shape, why_ in (("bash " + "<&>" * 50000 + " ok", "50,000 x `<&>` after a shell word (CodeQL's shape)"),
-                            ("bash " + "<&>" * 50000 + "$(echo hi)", "50,000 x `<&>` before an echo substitution"),
-                            ("bash " * 50000, "50,000 shell words with no substitution (a rescan from each)"),
-                            ("$(" * 50000, "50,000 nested `$(` (each span re-read)"),
-                            ("bash <(echo " * 40, "40 x `bash <(echo ` (each marker's operand re-read by the next: exponential)")):
+        def cpu(shape: str) -> float:
             try:
                 done = subprocess.run([sys.executable, "-c", timing, str(Path(__file__).resolve().parent)],
                                       input=shape, capture_output=True, text=True, timeout=30)
-                spent = float(done.stdout.strip() or 1e9)
+                return float(done.stdout.strip() or 1e9)
             except subprocess.TimeoutExpired:
-                spent = float("inf")
-            check(f"(#1645 CodeQL) {why_}: decided in under 1 CPU second (took {spent:.2f}s)", spent < 1.0)
+                return float("inf")
+        # The bound is the GROWTH, not a fixed CPU budget (#1729): a fixed 1 s held on a fast laptop and failed a linear verdict at 1.06-1.22 s on the
+        # hosted runner. Doubling the input roughly doubles a linear verdict and quadruples a quadratic one, on any machine, so the ratio of the full shape
+        # to the half shape is the check; the absolute ceiling only stops a hang (a backtracking pattern times out and reads as inf).
+        for build, why_ in ((lambda n: "bash " + "<&>" * n + " ok", "50,000 x `<&>` after a shell word (CodeQL's shape)"),
+                            (lambda n: "bash " + "<&>" * n + "$(echo hi)", "50,000 x `<&>` before an echo substitution"),
+                            (lambda n: "bash " * n, "50,000 shell words with no substitution (a rescan from each)"),
+                            (lambda n: "$(" * n, "50,000 nested `$(` (each span re-read)")):
+            half, full = cpu(build(25000)), cpu(build(50000))
+            ratio = full / max(half, 0.01)
+            check(f"(#1645 CodeQL) {why_}: decided in linear time (half {half:.2f}s, full {full:.2f}s, ratio {ratio:.1f}, under 3.0) and under 10 CPU seconds",
+                  ratio < 3.0 and full < 10.0)
+        spent = cpu("bash <(echo " * 40)
+        check(f"(#1645 CodeQL) 40 x `bash <(echo ` (each marker's operand re-read by the next: exponential): decided in under 1 CPU second (took {spent:.2f}s)", spent < 1.0)
 
         # #1645 R2: VARIANTS OF THE SHAPES THE GATE CLAIMS. Each refused through the helper, with a control. Files are absolute so the cwd does not matter.
         argsf = Path(td) / "args.txt"
