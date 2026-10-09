@@ -184,6 +184,13 @@ subscriber is a class with `report(error, handled:, severity:, context:,
 source: nil)` registered via `Rails.error.subscribe` — handy in test to
 assert reports, or to fan out to a Teams/Slack webhook.
 
+Rails 8.1+ also has `Rails.error.add_middleware(callable)`, which can modify
+the error context before any subscriber sees it (`ActiveSupport::ErrorReporter`,
+new in 8.1.0, so absent on 8.0 and earlier): the callable receives the report's
+parameters and returns the context hash to use, e.g. to merge in a tenant id.
+Check the middleware's exact signature in the Rails source for your version;
+the 8.1 guide does not document it.
+
 ## 6. Logging: tags, levels, health-check silence
 
 - Production logs go to STDOUT tagged with `:request_id` (generated default:
