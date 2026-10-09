@@ -681,7 +681,9 @@ Rails defaults do a lot; your job is to not undo them and to cover the gaps.
 **Requests & sessions**
 - CSRF: `protect_from_forgery with: :exception` is on; keep non-GET
   state changes non-GET (use `button_to`), and don't disable per-controller
-  except token-authenticated JSON APIs.
+  except token-authenticated JSON APIs. (Rails 8.2, **unreleased**, adds
+  `Sec-Fetch-Site` header checking and deprecates a bare
+  `protect_from_forgery`: `references/rails-8-2-readiness.md`.)
 - `reset_session` after login (the generator's flow effectively rotates by
   replacing the cookie) and on logout.
 - Cookies: only signed/encrypted jar for anything trusted; `httponly:
