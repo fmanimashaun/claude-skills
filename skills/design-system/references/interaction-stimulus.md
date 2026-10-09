@@ -18,7 +18,8 @@ mixins**, then compose them — don't re-solve accessibility per component.
      combobox produces a control that swallows the space bar.
 2. **focus-trap + restore** — on open, move focus in and cycle first/last on Tab; on close,
    **restore focus to the trigger**; mark the background **`inert`** and lock body scroll. Used by
-   modal + drawer only (never trap outside a true modal).
+   modal + drawer only (never trap outside a true modal). **A native `<dialog>` + `showModal()` does
+   all of this for you** (as of 2026-10-10, Baseline Widely 2024-09-14); this mixin is the fallback.
    - **`inert` is the load-bearing part, not the Tab handler**, and it shipped missing from
      `focus_trap.js` for as long as `aria-modal="true"` shipped on the Modal. Tab-cycling confines
      *the tab sequence*; a virtual cursor, a rotor, a swipe, or a click still reach the background.
@@ -33,9 +34,16 @@ mixins**, then compose them — don't re-solve accessibility per component.
      it.
 3. **dismissable-layer** — Esc + outside-click close, maintained as a **stack** so nested
    overlays close top-first. Used by dropdown, popover, tooltip, drawer, modal.
+   - **`popover="auto"` gives light dismiss natively** (outside click + `Esc`; Newly Baseline,
+     2025-01-27), so a plain popover needs no layer. It does **not** replace the stack for a nested
+     modal `<dialog>`.
+     ```html
+     <button popovertarget="mypopover">Toggle the popover</button> <div id="mypopover" popover>Popover content</div>
+     ```
 4. **anchored-position** — place a floating element relative to a trigger with collision
    flipping; prefer CSS anchor positioning where available, else a small JS positioner. Used by
-   dropdown, popover, tooltip, combobox.
+   dropdown, popover, tooltip, combobox. CSS anchor positioning is **not Baseline as of 2026-10-10**,
+   so keep the JS fallback.
 
 **None of the four is a *gesture* mixin, and when one is built it inherits a contract these do not
 have.** A press or drag does not only end in a clean `pointerup` — there are **eight** ways it can be
@@ -57,7 +65,7 @@ mandated (#142).
 | Component | Roles / ARIA | Keyboard | Mixins |
 |---|---|---|---|
 | Dropdown/Menu | trigger `aria-haspopup aria-expanded aria-controls`; `role=menu/menuitem` | Enter/Space/↓ open · ↑↓ · Home/End · type-ahead · Esc | list-nav + dismissable + anchored |
-| Dialog/Modal | `role=dialog aria-modal aria-labelledby` | Esc close · Tab trapped | focus-trap + dismissable |
+| Dialog/Modal | native `<dialog>` + `showModal()` + `aria-labelledby` (`aria-modal` redundant); fallback `role=dialog aria-modal` | Esc close · Tab trapped (native) | native; fallback focus-trap + dismissable |
 | Drawer (overlay) | as Dialog — no APG pattern of its own | Esc · Tab trapped | focus-trap + dismissable |
 | Drawer (persistent / push) | **not a dialog** — see the contract below | none | none |
 | Carousel | `role=region` **or** `group` + `aria-roledescription=carousel` | prev/next buttons | carousel |
@@ -68,7 +76,7 @@ mandated (#142).
 | Date picker, custom | **no APG pattern**: Dialog **or** Combobox + `role=grid`; `aria-selected` = chosen, `aria-current="date"` = today | grid navigation; month/year heading is a live region | focus-trap + dismissable |
 | Lightbox / gallery viewer | Dialog **containing** a Carousel | Esc · Tab trapped · prev/next | focus-trap + dismissable + carousel |
 | Tabs | `role=tablist/tab/tabpanel` `aria-selected aria-controls`; the **panel** carries `aria-labelledby` back to its tab, and the tablist is named; see the contract below | ←→ · ↑↓ **only** when `aria-orientation=vertical` · Space/Enter when activation is manual · **Home/End are `(Optional)`** | list-nav |
-| Tooltip | `role=tooltip` `aria-describedby` | show on focus+hover · Esc | anchored + dismissable |
+| Tooltip | `role=tooltip` `aria-describedby` (`popover="hint"`: Chrome/Edge 151, Firefox 153, no Safari; `interestfor`: Chrome/Edge 142 only — neither Baseline as of 2026-10-10, so the controller stays) | show on focus+hover · Esc | anchored + dismissable |
 | Popover | trigger `aria-expanded aria-controls` | Esc · focus moves in | anchored + dismissable + focus-trap(soft) |
 | Combobox | input `role=combobox aria-expanded aria-controls` (**both** required); listbox popup `aria-activedescendant` | ↓ into list · ↑↓ in list · Enter · Esc | list-nav + anchored |
 | Disclosure (collapse) | trigger `<button aria-expanded>` + `aria-controls`; panel `hidden` | Enter **and** Space toggle | disclosure |
@@ -321,9 +329,16 @@ nothing about the end state.
 or the browser scrolls to a `hidden` element and lands nowhere.
 
 **`<details>`/`<summary>` — a genuine option, with two constraints.** It is *not* an APG-endorsed
-implementation of this pattern (APG's Disclosure page never mentions it), and it has **no built-in
-way to animate open/close**, so it cannot host the transition above. Use it for simple, static,
-unanimated disclosure where the cheapness is worth it; reach for the controller otherwise.
+implementation of this pattern (APG's Disclosure page never mentions it). Open/close **can** be
+animated since 2025-09-16 (`::details-content`, Newly Baseline: Chrome/Edge 131, Safari 18.4, Firefox 143):
+```css
+details::details-content { opacity: 0; transition: opacity 600ms, content-visibility 600ms allow-discrete; }
+details[open]::details-content { opacity: 1; }
+```
+Animating **height** to `auto` additionally needs `interpolate-size: allow-keywords` (Chromium 129 only,
+not Baseline as of 2026-10-10), so the height transition above still needs the controller. For single-open,
+`<details name="...">` is a native exclusive accordion (Newly Baseline, 2024-09-03; see components.md).
+Use `<details>` for simple disclosure where the cheapness is worth it; reach for the controller otherwise.
 Practitioners also document inconsistent screen-reader state announcement across readers —
 enough to know the gaps exist, not enough to pin one.
 
@@ -461,7 +476,7 @@ nobody has specified yet:
   nothing, because the navigation already did. It composes none of the four mixins — it is neither a
   layer, nor a list, nor a position, nor a trap — and saying so is the point: a component that needs
   a fifth is a component whose behaviour has to be written down, which is this bullet.
-- **`carousel`** — prev/next plus, *only if it auto-rotates*, play/pause and stop-on-hover/focus. The
+- **`carousel`** (`::scroll-marker` / `::scroll-button`, Chrome/Edge 135 only, are not Baseline as of 2026-10-10, so it stays) — prev/next plus, *only if it auto-rotates*, play/pause and stop-on-hover/focus. The
   lightbox composes it inside `modal` rather than adding a controller of its own.
 - **This bullet used to say `carousel` was "the only new controller the #95 rows need", and the docs
   around it already said otherwise (#95).** The shipped snippets prescribe `dropzone` and `clipboard`

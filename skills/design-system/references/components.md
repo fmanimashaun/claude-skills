@@ -367,8 +367,25 @@ against it, and the `inset-viewport` utility
 - **`placement:`** picks centre or an edge: `:center` (default) · `:left` · `:right` · `:bottom`. An
   **overlay drawer is this component with `placement: :right`** — one dialog implementation, one focus
   trap, one `Esc`. A *persistent* sidebar is not a dialog and must not come through here.
-- **Behavior:** the `modal` Stimulus controller = focus-trap + focus-restore + Esc + backdrop-close +
-  body-scroll-lock; `role="dialog" aria-modal="true" aria-labelledby`. Delete-confirmation = Modal(`sm`) recipe.
+- **Behavior (as of 2026-10-10): the panel is a native `<dialog>` opened with `showModal()`** —
+  Baseline Widely (available since 2022-03, Widely 2024-09-14). The platform supplies what the
+  hand-written trap did: top layer + `::backdrop`, the rest of the document made inert, focus moved to
+  the first focusable element (`autofocus` overrides it), `Esc` closes (a cancelable `cancel` event
+  fires first, per the HTML spec), and focus returns to the previously focused element on close.
+  Name it with `aria-labelledby`; **`aria-modal` is redundant on a native modal dialog**, and a
+  `div role="dialog"` + hand-written trap is the fallback shape, not the recommendation. The `modal`
+  Stimulus controller shrinks to a **thin opener/closer** (call `showModal()` / `close()`) plus
+  **backdrop-click close** — `closedby="any"` does that natively but is **not Baseline** (Chrome 134,
+  Firefox 141, no Safari; values `any` | `closerequest` | `none`), so keep the click handler. Under
+  Turbo morph, guard the `open` attribute ([hotwire production.md](../../hotwire/references/production.md)).
+  Delete-confirmation = Modal(`sm`) recipe.
+- **Invoker commands (Newly Baseline, 2025-12-12 — Chrome/Edge 135, Firefox 144, Safari 26.2):** a
+  button can open and close the dialog with no script. Offer this where the audience is on current
+  browsers; keep `data-action="modal#open"` / `modal#close` as the fallback for older ones.
+  ```html
+  <button command="show-modal" commandfor="my-dialog">Open dialog</button>
+  <dialog id="my-dialog"><p>This dialog was opened using an invoker command.</p><button commandfor="my-dialog" command="close">Close</button></dialog>
+  ```
 - **Destructive confirmation has two strengths, and the count is the confirmation** (#969, #978).
   *Click to confirm* — the `sm` recipe: the number and the noun in the title (**"Delete 12 people?"**,
   never "Delete?"), what cannot be undone in one sentence, `destructive` primary, initial focus on
@@ -423,6 +440,8 @@ against it, and the `inset-viewport` utility
   not the technique APG names, and translating a slide off-screen while leaving it in the tree is the
   failure the pattern warns about.
 - `Tab` is **not scripted** — it follows the page tab sequence. Behavior: the `carousel` controller.
+  `::scroll-marker` / `::scroll-button` (Chrome/Edge 135 only) are not Baseline as of 2026-10-10, so the
+  controller stays.
 
 ## Image gallery / Lightbox
 - **No APG pattern** — a *composition*, the same shape as the Command palette: the documented **Modal**
@@ -775,8 +794,20 @@ consumer copies demonstrates the rule rather than contradicting it.
   between headers. Height transition respects `prefers-reduced-motion`, and the state change never
   depends on an animation event firing. Full contract, and what is APG-required versus ours, in
   [interaction-stimulus.md](interaction-stimulus.md#disclosure--the-full-contract-142).
-- **`<details>`/`<summary>`** is the cheaper option for simple, unanimated cases — but it cannot
-  animate open/close at all, so it is not a drop-in swap for the controller.
+- **`<details>`/`<summary>`** is the cheaper option for simple cases. Open/close **can** be animated
+  since 2025-09-16 (`::details-content`, Newly Baseline: Chrome/Edge 131, Safari 18.4, Firefox 143):
+  ```css
+  details::details-content { opacity: 0; transition: opacity 600ms, content-visibility 600ms allow-discrete; }
+  details[open]::details-content { opacity: 1; }
+  ```
+  Animating **height** to `auto` additionally needs `interpolate-size: allow-keywords` (Chromium 129
+  only, not Baseline as of 2026-10-10), so the height transition above still belongs to the controller.
+- **`<details name="...">` is a native exclusive accordion** (Newly Baseline, 2024-09-03): only one
+  `<details>` in a same-`name` group is open at a time, and the elements need not be adjacent. It is
+  the single-open (`group:`) mode with no script.
+  ```html
+  <details name="requirements"><summary>Graduation Requirements</summary><p>...</p></details>
+  ```
 
 ## Navigation — app header / navbar
 - **There is no APG pattern for a navbar.** The index lists 30 and *"navbar"*, *"header navigation"*

@@ -402,6 +402,10 @@ end
 ```erb
 <%# composition: title, body and actions in that order IS the dialog %>
 <%# modal_component.html.erb — rendered into <turbo-frame id="modal">; modal controller = trap+dismiss %>
+<%# FALLBACK SHAPE (as of 2026-10-10). The recommended Modal is a native <dialog> opened with showModal():
+    top layer, ::backdrop, inert background, initial focus, Esc and focus restore come from the platform,
+    aria-modal is redundant, and the controller is only an opener/closer plus backdrop-click close.
+    Use the div+trap below only where that cannot be used. See components.md, Modal / Dialog. %>
 <%# NO Escape key filter on this element. Escape belongs to the dismissable layer the controller
     opens: it reads `e.key` itself AND respects the layer stack, so a nested overlay closes one
     level. A `keydown.esc` filter does neither — Stimulus consults the filter only inside

@@ -114,7 +114,16 @@ export function listNavigation(controller, { itemsTarget = "item", orientation =
 }
 ```
 
-### `focus_trap.js` — trap + restore (modal, drawer only)
+### `focus_trap.js` — trap + restore (fallback; a native `<dialog>` needs none of it)
+
+**As of 2026-10-10 the Modal is a native `<dialog>` opened with `showModal()`** (Baseline Widely,
+2024-09-14; available since 2022-03). It supplies the top layer and `::backdrop`, makes the rest of the
+document inert, moves focus to the first focusable element (`autofocus` overrides), closes on `Esc`
+(a cancelable `cancel` event fires first), and returns focus to the previously focused element on close
+— so none of the mixin below is wired for it, and `aria-modal` is redundant. The Stimulus controller is a thin
+opener/closer calling `showModal()` / `close()`, plus backdrop-click close (`closedby="any"` is **not**
+Baseline: Chrome 134, Firefox 141, no Safari). Keep this mixin only for a hand-rolled overlay that cannot
+be a `<dialog>`, and for the reasoning below, which still explains what `aria-modal` promises.
 
 ```js
 const SEL = 'a[href],button:not([disabled]),input:not([disabled]),select,textarea,[tabindex]:not([tabindex="-1"])'
