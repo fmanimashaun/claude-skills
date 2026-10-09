@@ -8,6 +8,7 @@ GUARD = Guard(
     name="build_project_wiki",
     subject="scripts/build_project_wiki.py",
     selftest="scripts/build_project_wiki.py",   # --selftest lives in the module itself
+    needs=("scripts/fixture_git.py",),   # its selftest's git goes through fixture_git (#1588)
     deps=("scripts/generated_docs.py",),   # #1230: imported for the opt-in branch policy
     mutations=(
         # Constraints read as columns again: the data-model page lists `(code)::text ~ ...` as a column.

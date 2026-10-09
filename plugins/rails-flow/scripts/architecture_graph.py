@@ -2078,9 +2078,24 @@ def selftest() -> int:
         primary = os.path.join(td, "myproject")
         os.makedirs(primary)
         _sp.run(["git", "init", "-q", primary], check=True)
-        _sp.run(["git", "-C", primary, "commit", "-q", "--allow-empty", "-m", "x"],
-                check=True, env={**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
-                                 "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"})
+        def _fx(repo, *a):
+            """#1588: a fixture's git, bound to `repo`. Through fixture_git when it ships beside this script; VENDORED ALONE
+            (check_vendored_alone), the same binding inline: no inherited GIT_*, GIT_DIR/GIT_WORK_TREE set to `repo`."""
+            import os as _o, subprocess as _p, sys as _s
+            _s.path.insert(0, _o.path.dirname(_o.path.abspath(__file__)))
+            try:
+                import fixture_git as _fg
+            except ImportError:
+                _fg = None
+            repo = str(repo)
+            if _fg is not None:
+                return _fg.init(repo) if a[:1] == ("init",) else _fg.run(repo, *a)
+            env = {k: v for k, v in _o.environ.items() if not k.startswith("GIT_")}
+            if a[:1] == ("init",):
+                return _p.run(["git", "init", "-q", repo], env=env, check=True, capture_output=True)
+            env.update(GIT_DIR=_o.path.join(repo, ".git"), GIT_WORK_TREE=repo)
+            return _p.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *a], cwd=repo, env=env, check=True, capture_output=True)  # fixture-git: exempt (vendored alone: fixture_git is not shipped beside it; the same GIT_DIR/GIT_WORK_TREE binding, inline)
+        _fx(primary, "commit", "-q", "--allow-empty", "-m", "x")
         check("with no remote, the name comes from the PRIMARY checkout",
               project_name(primary) == "myproject", project_name(primary))
 

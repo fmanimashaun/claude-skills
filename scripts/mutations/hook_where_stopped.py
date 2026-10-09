@@ -9,6 +9,7 @@ GUARD = Guard(
     name="hook_where_stopped",
     subject="plugins/rails-flow/hooks/scripts/lib/where_stopped.py",
     selftest="plugins/rails-flow/hooks/scripts/lib/where_stopped.py",
+    needs=("plugins/rails-flow/scripts/fixture_git.py",),   # #1588
     mutations=(
         Mutation(
             "a HEAD that moved since the last Stop is not flagged, so the file is read as the current state",

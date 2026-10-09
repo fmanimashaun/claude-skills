@@ -6,10 +6,10 @@
 
 | plugin | version | agents | commands | tier rows |
 |---|---|---|---|---|
-| `design-flow` | 1.45.1 | 5 | 12 | 5 |
-| `pipeline` | 1.4.2 | 2 | 9 | 2 |
-| `qa-flow` | 1.36.0 | 11 | 8 | 11 |
-| `rails-flow` | 1.57.0 | 12 | 22 | 12 |
+| `design-flow` | 1.45.2 | 5 | 12 | 5 |
+| `pipeline` | 1.4.3 | 2 | 9 | 2 |
+| `qa-flow` | 1.36.1 | 11 | 8 | 11 |
+| `rails-flow` | 1.58.0 | 12 | 22 | 12 |
 
 ## Agents
 
@@ -30,7 +30,7 @@
 | agent | tier · model | tools | named by | what proves its output |
 |---|---|---|---|---|
 | `kamal-configurator` | judgement · inherit | Read, Grep, Glob, Write, Edit, Bash | `/pipeline:deploy-cloud` | — |
-| `pipeline-coordinator` | judgement · inherit | Read, Grep, Glob, Bash | `/pipeline:pipeline`, `/pipeline:setup-pipeline`, `/pipeline:status` | — |
+| `pipeline-coordinator` | judgement · inherit | Read, Grep, Glob, Bash, Skill | `/pipeline:pipeline`, `/pipeline:setup-pipeline`, `/pipeline:status` | — |
 
 ### `qa-flow`
 
