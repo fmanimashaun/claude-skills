@@ -128,10 +128,12 @@ Rendering:
   public and the signed id in the URL is permanent: anyone who has the URL can
   fetch the file even if the rest of the app requires a sign-in (Rails 8.1
   Active Storage guide, "Serving Files"). For files that need protection, serve
-  them from your own authenticated controller and set
-  `config.active_storage.draw_routes = false` so the public routes are gone.
-- **Variants and untrusted images.** Never build a variant from arbitrary
-  request parameters — the guide calls user-supplied transformations unsafe.
+  them from your own authenticated controller (guide section 6.3,
+  "Authenticated Controllers") and set `config.active_storage.draw_routes =
+  false` so the public routes are gone.
+- **Variants and untrusted images.** Do not build a variant from arbitrary
+  request parameters: the guide says it "should be considered unsafe to provide
+  arbitrary user supplied transformations or parameters to variant processors".
   libvips marks some loaders and savers as *unfuzzed* (not for untrusted
   content); ImageMagick is one and is disabled by default. Re-enabling needs
   libvips 8.13+ and ruby-vips 2.2.1+, and the guide still calls even that

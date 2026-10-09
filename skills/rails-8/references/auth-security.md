@@ -759,44 +759,74 @@ Rails defaults do a lot; your job is to not undo them and to cover the gaps.
 **Outbound requests to a URL a user supplies (SSRF)** — webhooks, link
 previews, uptime monitors, "import from URL". The Rails Security guide does not
 cover this (it never mentions SSRF); the sources are OWASP's *Server-Side
-Request Forgery Prevention Cheat Sheet* and the Ruby `Net::HTTP`, `IPAddr` and
-`Addrinfo` docs. Each rule below was checked against them; the address,
-resolver and pinning rules were also run on Ruby 4.0.6.
+Request Forgery Prevention Cheat Sheet*, the IANA special-purpose address
+registries and the Ruby `Net::HTTP`, `IPAddr` and `Addrinfo` docs. Each rule
+below was checked against them; the address, resolver, pinning and proxy rules
+were also run on Ruby 4.0.6 (net-http 0.9.1).
 
-- **Validate the address, not the string.** OWASP: check the *resolved*
-  destination IP against the networks you permit, and prefer an allow-list to
-  a deny-list ("Deny-lists are bypass-prone"). Allow only `http`/`https`.
-  Hex, octal, decimal and mixed encodings of an address (`0x7f.0.0.1`,
-  `2130706433`, `127.1`) get past a check on the hostname text.
+- **Allow-list when you can; a deny-list is OWASP's last resort.** If the
+  destinations are known up front, match the host against an allow-list and
+  build the request yourself. OWASP: "Deny-lists are bypass-prone. Prefer
+  allow-lists." When the destination really is arbitrary user input (a webhook,
+  a link preview), a deny-list is the heading OWASP files under "Last Resort",
+  and the code below is that: it needs the ranges maintained. Allow only
+  `http`/`https`.
+- **Validate the address, not the string.** Check the *resolved* destination
+  address. Hex, octal, decimal and mixed encodings of an address
+  (`0x7f.0.0.1`, `2130706433`, `127.1`) get past a check on the hostname text.
 - **Resolve with the resolver the socket uses.** `Addrinfo.getaddrinfo` is
   libc's, like `TCPSocket`; measured, `Resolv.getaddresses("127.1")` returns
   `[]` while libc returns `127.0.0.1`, so validating with `Resolv` and
   connecting through libc is the gap.
 - **List the ranges; do not lean on `IPAddr#private?`.** Measured, `private?`,
-  `loopback?` and `link_local?` are all `false` for `0.0.0.0`, `::` and
-  `100.64.0.1` (carrier-grade NAT). Convert IPv4-mapped IPv6
-  (`::ffff:127.0.0.1`) with `IPAddr#native` before the check.
-- **Connect to the address you checked.** OWASP: a second, unchecked DNS lookup
-  between validation and connection can bypass the checks (DNS rebinding).
-  `Net::HTTP#ipaddr=` (Ruby 2.7+) pins the address; set it before `start`,
-  because it raises `IOError` once started. TLS still verifies the certificate
-  against the original hostname.
+  `loopback?` and `link_local?` cover only `fc00::/7`, `fe80::/10` and (after
+  `IPAddr#native`) IPv4-mapped forms; they are all `false` for `0.0.0.0`, `::`,
+  `100.64.0.1` and for multicast (`224.0.0.1`, `ff02::1`). OWASP's minimum list
+  names multicast (`224.0.0.0/4`, `ff00::/8`); the IANA special-purpose
+  registries (IPv4 and IPv6, last updated 2025-10-09) add rows that are not
+  globally reachable, which the list below includes: `192.0.0.0/24`,
+  `198.18.0.0/15`, `240.0.0.0/4`, the three documentation blocks and
+  `2001:db8::/32`. Convert IPv4-mapped IPv6 (`::ffff:127.0.0.1`) with
+  `IPAddr#native` before the check.
+- **Connect to the address you checked, on a direct connection.** OWASP: a
+  second, unchecked DNS lookup between validation and connection can bypass the
+  checks (DNS rebinding). `Net::HTTP#ipaddr=` (Ruby 2.7+) pins the address; set
+  it before `start`, because it raises `IOError` once started. TLS still
+  verifies the certificate against the original hostname. **The pin covers a
+  direct connection only:** `Net::HTTP.new` reads `http_proxy` from the
+  environment, and when a proxy is in effect the connection goes to the proxy
+  and the proxy resolves the host (measured: the request line names the host and
+  `ipaddr=` is not used). Behind a proxy, treat the proxy as the control, or
+  decide deliberately; this section does not say to turn it off.
 - **Do not follow redirects.** OWASP: disable redirect following in the client.
   `Net::HTTP` does not follow them itself. If you must follow one, run the
   `Location` through the same check first (that last step is our rule, not
   OWASP's).
+- **Ports are not checked below.** OWASP gives no rule for destination ports
+  (it speaks of a scheme, port and path the application fixes itself), so
+  `http://1.1.1.1:22/` passes this code. If your use case allows only 80 and
+  443, check `uri.port` as well: that is our rule, not OWASP's.
+- **Embedded IPv4.** NAT64 (`64:ff9b::/96`) and 6to4 (`2002::/16`) addresses
+  carry an IPv4 address that a range check on the IPv6 address does not look
+  at, and IANA does not list them as unreachable. Extracting and checking the
+  embedded IPv4 is our rule, not IANA's; leave them out only if your network
+  never hands them out.
 
 ```ruby
 require "net/http"
 require "ipaddr"
 require "socket"
 
+# A deny-list: OWASP's "last resort". Use an allow-list if the destinations are known.
 module SafeFetch
   class Refused < StandardError; end
 
-  BLOCKED = %w[0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16
-               172.16.0.0/12 192.168.0.0/16 ::/128 ::1/128 fc00::/7 fe80::/10]
-            .map { |net| IPAddr.new(net) }.freeze
+  BLOCKED = %w[
+    0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12
+    192.0.0.0/24 192.0.2.0/24 192.168.0.0/16 198.18.0.0/15 198.51.100.0/24
+    203.0.113.0/24 224.0.0.0/4 240.0.0.0/4
+    ::/128 ::1/128 2001:db8::/32 fc00::/7 fe80::/10 ff00::/8
+  ].map { |net| IPAddr.new(net) }.freeze
 
   # Every resolved address must be public; the first is the one we connect to.
   def self.public_address(host, port)
@@ -813,7 +843,7 @@ module SafeFetch
     raise Refused, "scheme" unless %w[http https].include?(uri.scheme)
 
     http = Net::HTTP.new(uri.hostname, uri.port)
-    http.ipaddr = public_address(uri.hostname, uri.port) # no second lookup
+    http.ipaddr = public_address(uri.hostname, uri.port) # direct connection only
     http.use_ssl = uri.scheme == "https"
     http.start { |conn| conn.get(uri.request_uri) }      # redirects are not followed
   end
@@ -822,8 +852,10 @@ end
 
 Measured with this module: `127.0.0.1`, `localhost`, `0x7f.0.0.1`,
 `2130706433`, `127.1`, `169.254.169.254`, `0.0.0.0`, `::1`, `::ffff:127.0.0.1`,
-`10.1.2.3` and `100.64.0.1` are all refused, and a request pinned to a local
-server under another hostname connects and sends that hostname as `Host`.
+`10.1.2.3`, `100.64.0.1`, `224.0.0.1`, `239.255.255.250`, `ff02::1`,
+`240.0.0.1`, `198.18.0.1`, `192.0.2.1` and `2001:db8::1` are all refused, and
+a request pinned to a local server under another hostname connects and sends
+that hostname as `Host`.
 
 ## Route naming for auth (see controllers-routing §1a)
 
