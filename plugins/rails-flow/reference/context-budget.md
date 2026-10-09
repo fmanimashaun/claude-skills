@@ -224,6 +224,19 @@ more). The pid is `$PPID` of the shell `$.process.run` starts: measured under `c
   `RAILS_FLOW_ROLE=coordinator`. This is a limit, not a guarantee.
 - **Not done:** the role is not written to the board's session record (`coordination.py`); that is a separate change.
 
+**Hardening from the adversarial review of #1728.** (1) Any tool call after the turn ended, or while `gh` answers,
+cancels the clear (a job epoch is compared before `$.command.run` and before the prompt). (2) A path, branch, session
+id or URL is put into a prompt or the compact instructions only if it is plain (`[\w.\/~-]`, URLs
+`https://github.com/...`); otherwise a generic phrase is used, so a newline in tool input cannot become an
+instruction. (3) A handoff kept as a comment counts only with the comment URL `gh` printed, and the reset prompt says
+to verify the author, because the repository is public. (4) A PR is the LAST full `github.com/.../pull/N` URL of
+`gh pr create`'s output, and `gh pr view` is given that URL, never a bare number (the coordinator works in two
+repositories). (5) Worktree commands are read as commands: `git` must be the command word (after `;`, `|`, `&&`,
+`(`, an env prefix, or inside `bash -c`/`eval`), with `-C`/`-c` skipped, and heredoc bodies are dropped. A background
+count goes down when a task notification arrives (it can undercount, since any task's notification counts; the live
+PR check still gates the clear). The claim file's threat model is the same user: it guards against accident, not
+impersonation.
+
 **What the job-done test cannot see.** "A job" is what the session did in Bash and `Write`/`Edit`: a worktree it added
 and removed, a PR it opened with `gh pr create`, a file named `*handoff*` it wrote (or a `gh pr|issue comment`
 mentioning a handoff). A session that opened no PR never clears itself, on purpose. A background job

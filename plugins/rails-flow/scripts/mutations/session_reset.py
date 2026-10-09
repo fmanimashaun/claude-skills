@@ -56,8 +56,8 @@ GUARD = Guard(
         ),
         Mutation(
             "the clear is requested inside the awaited hook, where command.run rejects",
-            "$.clock.after(0, () => void reset($))",
-            "void reset($)",
+            "$.clock.after(0, () => void reset($, epoch))",
+            "void reset($, epoch)",
             "the clear is requested from a timer",
         ),
         Mutation(
@@ -143,6 +143,61 @@ GUARD = Guard(
             "      state.role = r.role\n",
             "",
             "the first session is elected coordinator",
+        ),
+        # Fable's review of #1728: each fix is held by its own check.
+        Mutation(
+            "a worktree added while gh answers does not cancel the clear",
+            "    if (!(await allMerged($)) || !still()) {",
+            "    if (!(await allMerged($))) {",
+            "P1: a tool call after the turn ended",
+        ),
+        Mutation(
+            "a tool call does not move the epoch",
+            "      job.epoch += 1\n      const cmd",
+            "      const cmd",
+            "P1: a tool call after the turn ended",
+        ),
+        Mutation(
+            "the reset prompt interpolates any handoff text",
+            "${safe(handoff, SAFE_PATH) ?? 'the handoff you wrote (HANDOFF.md, or your last handoff comment)'}",
+            "${handoff}",
+            "P3: a path, branch or session id with a newline",
+        ),
+        Mutation(
+            "a branch with a newline is kept in the compact instructions",
+            "(safe(b, SAFE_BRANCH) ? `${p} (${b})` : p)",
+            "`${p} (${b})`",
+            "P3: a path, branch or session id with a newline",
+        ),
+        Mutation(
+            "a handoff comment counts without its URL",
+            "? lastMatch(COMMENT_URL, text) : null",
+            "? (lastMatch(COMMENT_URL, text) ?? 'a comment') : null",
+            "P2: a handoff comment counts only with its URL",
+        ),
+        Mutation(
+            "the first PR URL wins instead of the last",
+            "[...String(text ?? '').matchAll(re)].map((m) => m[0]).pop() ?? null",
+            "[...String(text ?? '').matchAll(re)].map((m) => m[0]).shift() ?? null",
+            "P2: the last full PR URL is kept",
+        ),
+        Mutation(
+            "any word git counts as the git command, prose included",
+            "    } else if (head === 'git') yield w.slice(i + 1)",
+            "    } else if (w.includes('git')) yield w.slice(w.indexOf('git') + 1)",
+            "P3: commands are read as commands",
+        ),
+        Mutation(
+            "a bash -c script is not looked into",
+            "    if (SHELLS.has(head)) {",
+            "    if (false) {",
+            "P3: commands are read as commands",
+        ),
+        Mutation(
+            "a finished background task never decrements the count",
+            "  if (job.background > 0) job.background -= 1",
+            "  if (job.background > 0) job.background -= 0",
+            "a background job that ends",
         ),
     ),
 )
