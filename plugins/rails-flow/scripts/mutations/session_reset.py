@@ -9,6 +9,8 @@ from mutation_types import Guard, Mutation  # noqa: F401
 #
 # NOT listed, because equivalent: dropping `kill -0` from the liveness test. A dead pid has no start time, so
 # the start-time comparison alone already calls its claim stale; the two tests overlap on purpose.
+# Also NOT listed: dropping `job.checked.epoch === job.epoch` in turn.complete. maybePrecheck already replaces the
+# cached answer with a fresh unanswered one on any tool call, so the comparison is a second line of defence.
 # Also NOT listed: dropping the takeover lock. Whether two simultaneous takers both win depends on timing, so no
 # mutant of it is caught every time; the test runs the real race five rounds and the lock is reasoned, not proved.
 GUARD = Guard(
@@ -50,26 +52,26 @@ GUARD = Guard(
         ),
         Mutation(
             "the session compacts instead of clearing when its job is done",
-            "await $.command.run({ command: 'clear' })",
-            "await $.session.compact({ instructions: 'x' })",
+            "      .run({ command: 'clear' })\n",
+            "      .run({ command: 'compact' })\n",
             "job done: the session clears exactly once",
         ),
         Mutation(
-            "the clear is requested inside the awaited hook, where command.run rejects",
-            "$.clock.after(0, () => void reset($, epoch))",
-            "void reset($, epoch)",
-            "the clear is requested from a timer",
+            "an await stands ahead of command.run in turn.complete, so a later prompt can be queued before the clear",
+            "job.checked.epoch === job.epoch) fire($, job.epoch)\n",
+            "job.checked.epoch === job.epoch) { await Promise.resolve(); fire($, job.epoch) }\n",
+            "the clear is queued synchronously from turn.complete",
         ),
         Mutation(
             "the coordinator and a role-less session clear too",
-            "state.role === 'implementation' && jobDoneShape()",
-            "jobDoneShape()",
+            "state.role === 'implementation' && state.hasSurface && jobDoneShape(true)",
+            "state.hasSurface && jobDoneShape(true)",
             "only an implementation session clears",
         ),
         Mutation(
             "a claude -p run (no surface) clears",
-            " && (await $.session.surfaces()).length > 0",
-            "",
+            "state.role === 'implementation' && state.hasSurface && jobDoneShape(true)",
+            "state.role === 'implementation' && jobDoneShape(true)",
             "claude -p (no surface) never clears",
         ),
         Mutation(
@@ -146,16 +148,22 @@ GUARD = Guard(
         ),
         # Fable's review of #1728: each fix is held by its own check.
         Mutation(
-            "a worktree added while gh answers does not cancel the clear",
-            "    if (!(await allMerged($)) || !still()) {",
-            "    if (!(await allMerged($))) {",
-            "P1: a tool call after the turn ended",
-        ),
-        Mutation(
             "a tool call does not move the epoch",
             "      job.epoch += 1\n      const cmd",
             "      const cmd",
-            "P1: a tool call after the turn ended",
+            "P1: work that starts while gh answers",
+        ),
+        Mutation(
+            "a turn that ends before the early merge check answers is never cleared",
+            "    job.turnEnd = job.epoch\n",
+            "",
+            "the merge check is early",
+        ),
+        Mutation(
+            "work after the clear was queued still gets the reset prompt over it",
+            "        if (job.epoch !== epoch) {\n          job.cleared = false",
+            "        if (false) {\n          job.cleared = false",
+            "the clear is queued synchronously from turn.complete",
         ),
         Mutation(
             "the reset prompt interpolates any handoff text",

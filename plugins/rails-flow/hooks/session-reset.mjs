@@ -18,8 +18,10 @@
 // 2.1.295 is the version in scope; docs/evidence/audits/2026-10-09-mods-command-run-clear-2.1.292.md):
 //   $.command.run({ command })  "Runs a slash command as if the person typed `/command args` ... queued
 //                               and run once the session is idle ... Rejects an unknown name, and inside
-//                               a hook the turn is waiting on."  So it is called from a $.clock.after
-//                               timer, never from the awaited hook itself.
+//                               a hook the turn is waiting on."  So it is never AWAITED inside a hook. It is
+//                               called (not awaited) from turn.complete, with no await before it, so the clear
+//                               is queued ahead of any later prompt. Measured on 2.1.293 under `claude -p`: a
+//                               call from a turn.complete hook did not reject. Not measured interactively.
 //   $.session.compact({ instructions })  "between turns ... rejects while a turn runs"
 //   $.prompt.submit({ text })   "a turn of its own, once the session is idle"
 //   $.session.surfaces()        "Empty in a plain -p run"
@@ -36,7 +38,7 @@ export const DEFAULT_COORDINATOR_HANDOFF = '~/projects/claude-skills-wt/_logs/CO
 
 // This session's elected role. Module variables survive a /clear (the process goes on, and session.start does
 // not fire again), so the role survives it; a resume is a new process and elects again.
-export const state = { role: null, coordinator: null, line: null }
+export const state = { role: null, coordinator: null, line: null, hasSurface: false }
 
 // POSIX sh, run with $1 = this session's id and $2 = "1" to force a claim. $PPID is the engine's own pid
 // (measured under `claude -p` 2.1.293: the shell `$.process.run` starts has the claude process as parent).
@@ -99,7 +101,7 @@ export async function electRole($) {
 // What this session has done in its current job. Reset after a clear.
 export const job = freshJob()
 function freshJob(epoch = 0) {
-  return { epoch, worktrees: new Map(), prs: new Set(), handoff: null, removed: false, background: 0, pending: false, cleared: false }
+  return { epoch, checked: null, turnEnd: null, worktrees: new Map(), prs: new Set(), handoff: null, removed: false, background: 0, pending: false, cleared: false }
 }
 export function resetJob() {
   Object.assign(job, freshJob(job.epoch)) // the epoch only ever grows, so a timer from before a reset can never match
@@ -319,28 +321,53 @@ export function jobDoneShape(ignorePending = false) {
   return job.removed && job.handoff !== null && job.worktrees.size === 0 && job.background === 0 && (ignorePending || !job.pending) && !job.cleared
 }
 
-// `epoch` is the job's epoch when the turn ended. Any tool call afterwards bumps it, so work that starts while gh
-// answers, or between the timer and the queued clear, cancels the reset (Fable's review of #1728, P1).
-async function reset($, epoch) {
-  const still = () => job.epoch === epoch && jobDoneShape(true)
+// The slow part, done EARLY: `gh pr view` for every PR, once the job looks finished (a worktree removed, a handoff
+// written). The answer is cached against the job epoch, so turn.complete only has to read it. A tool call after
+// the check moves the epoch and voids it. If the turn already ended while this ran, the clear fires from here.
+async function precheck($, epoch) {
+  let ok = false
   try {
-    if (!(await allMerged($)) || !still()) {
-      job.pending = false
-      return
-    }
-    const handoff = job.handoff
-    job.cleared = true
-    await $.command.run({ command: 'clear' })
-    if (job.epoch !== epoch) {
-      // Work began while the clear was queued: leave the job's own tracking alone.
-      job.cleared = false
-      job.pending = false
-      return
-    }
-    resetJob()
-    await $.prompt.submit({ text: resetPrompt(handoff) })
+    ok = await allMerged($)
   } catch {
-    // Fail open: a failed reset leaves the session as it was. `cleared` stays set so it is not retried in a loop.
+    ok = false
+  }
+  if (job.epoch !== epoch) return
+  job.checked = { epoch, ok }
+  if (ok && job.turnEnd === epoch && jobDoneShape()) fire($, epoch)
+}
+
+function maybePrecheck($) {
+  if (state.role === 'implementation' && state.hasSurface && jobDoneShape(true) && job.checked?.epoch !== job.epoch) {
+    job.checked = { epoch: job.epoch, ok: false }
+    void precheck($, job.epoch)
+  }
+}
+
+// Queue the clear NOW, with no await before it, so it is ahead of any prompt that arrives later: a new
+// assignment then waits behind the clear and lands in the fresh context. `$.command.run` is queued until the
+// session is idle and its promise settles after it ran; it is never awaited inside a hook. A tool call after the
+// clear was queued (new work) leaves the job's own tracking alone and skips the reset prompt.
+function fire($, epoch) {
+  job.pending = true
+  job.cleared = true
+  const handoff = job.handoff
+  try {
+    $.command
+      .run({ command: 'clear' })
+      .then(() => {
+        if (job.epoch !== epoch) {
+          job.cleared = false
+          job.pending = false
+          return undefined
+        }
+        resetJob()
+        return $.prompt.submit({ text: resetPrompt(handoff) })
+      })
+      .catch(() => {
+        // Fail open: a failed reset leaves the session as it was; `cleared` stays set so it is not retried in a loop.
+        job.pending = false
+      })
+  } catch {
     job.pending = false
   }
 }
@@ -354,6 +381,11 @@ export function register(on) {
       state.role = r.role
       state.coordinator = r.coordinator
       state.line = electionLine(r)
+      try {
+        state.hasSurface = (await $.session.surfaces()).length > 0
+      } catch {
+        state.hasSurface = false
+      }
     }
     return next(e)
   })
@@ -380,6 +412,7 @@ export function register(on) {
       const pr = createdPr(cmd, out)
       if (pr !== null) job.prs.add(pr)
       job.handoff = handoffComment(cmd, out) ?? job.handoff
+      maybePrecheck($)
     } catch {
       // Bookkeeping only; never alter the call
     }
@@ -392,6 +425,7 @@ export function register(on) {
       if (!r?.deny && !r?.isError) {
         job.epoch += 1
         job.handoff = handoffFile(e.tool, e.file_path) ?? job.handoff
+        maybePrecheck($)
       }
     } catch {
       // Bookkeeping only
@@ -399,13 +433,15 @@ export function register(on) {
     return r
   })
 
-  // The reset runs from a timer, never inside this awaited hook: command.run rejects there.
+  // Cheap and synchronous: the merge check was done early (precheck), so this only reads it. command.run is called
+  // from here with no await before it. It is not awaited, because the turn waits on this hook and the clear runs
+  // once the session is idle. Measured on 2.1.293 under `claude -p`: calling it from turn.complete does not reject.
   on('turn.complete', async ($, e, next) => {
     try {
-      if (e.agentId === undefined && state.role === 'implementation' && jobDoneShape() && (await $.session.surfaces()).length > 0) {
-        job.pending = true
-        const epoch = job.epoch
-        $.clock.after(0, () => void reset($, epoch))
+      if (e.agentId === undefined) {
+        job.turnEnd = job.epoch
+        if (state.role === 'implementation' && state.hasSurface && jobDoneShape() && job.checked?.ok === true && job.checked.epoch === job.epoch) fire($, job.epoch)
+        else maybePrecheck($) // no cached answer for this epoch (a background job just ended): ask now; precheck fires the clear
       }
     } catch {
       job.pending = false

@@ -200,9 +200,14 @@ So `hooks/session-reset.mjs` and the mid-job part of `hooks/context-nudge.mjs` d
 | **Coordinator** | compacts at the same fill or usage level, keeping `RAILS_FLOW_COORDINATOR_HANDOFF` (default `~/projects/claude-skills-wt/_logs/COORDINATOR-HANDOFF.md`), the queue and the open PRs; no precondition, its handoff lives in a file | never clears |
 | **No role** (election failed, `claude -p`) | one context line says so | no clear, no compact |
 
-**Why the clear runs from a timer.** `$.command.run` "rejects ... inside a hook the turn is waiting on". The job is
-spotted in `turn.complete` and the clear is requested from `$.clock.after(0, ...)`, never from the hook itself.
-A compaction "rejects while a turn runs", so a rejected one is tried again at the next `session.measure`.
+**How the clear is queued ahead of the next prompt.** The slow part, `gh pr view` for each PR, is done EARLY, as soon
+as the job looks finished (worktree removed, handoff written), and cached against the job epoch. At `turn.complete`
+the hook only reads the cache and, if it says all merged for the current epoch, calls `$.command.run({ command:
+"clear" })` at once, with no `await` before it and without awaiting it ("rejects ... inside a hook the turn is waiting
+on"; measured on 2.1.293 under `claude -p`, a call from `turn.complete` did not reject). The clear is therefore queued
+before any later prompt, so a new assignment waits behind it and lands in the fresh context. If the turn ends before
+the early check answers, the check fires the clear when it does. Any tool call voids the cached answer, and one made
+after the clear was queued leaves the new job's tracking alone and skips the reset prompt. A compaction "rejects while a turn runs", so a rejected one is tried again at the next `session.measure`.
 The mid-job compact does not commit or push anything (that is #1564's separate work); it requires only that the
 handoff was asked for first, and the usage warning already tells the session to commit and push.
 

@@ -74,9 +74,10 @@ const home = () => {
 
 // One session: both modules registered onto one hook table, a recording host.
 //   role: pre-set role (null = leave to the election); proc: the process that runs the election script
-async function session({ onGh = null, env = {}, role = 'implementation', gh = {}, surfaces = ['terminal'], compactRejects = 0, proc = null, sid = 's1' } = {}) {
+async function session({ holdClear = false, onGh = null, env = {}, role = 'implementation', gh = {}, surfaces = ['terminal'], compactRejects = 0, proc = null, sid = 's1' } = {}) {
   reset.resetJob()
   reset.state.role = role
+  reset.state.hasSurface = surfaces.length > 0
   reset.state.coordinator = null
   reset.state.line = null
   const hooks = {}
@@ -86,7 +87,10 @@ async function session({ onGh = null, env = {}, role = 'implementation', gh = {}
   reset.register(add)
   const nudge = await import(`../hooks/context-nudge.mjs?fresh=${++fresh}`)
   nudge.register(add)
-  const calls = { clear: 0, compact: [], submitted: [], gh: [] }
+  const order = []
+  let releaseClear
+  const clearGate = new Promise((r) => (releaseClear = r))
+  const calls = { order, clear: 0, compact: [], submitted: [], gh: [] }
   const timers = []
   let rejects = compactRejects
   const $ = {
@@ -102,7 +106,7 @@ async function session({ onGh = null, env = {}, role = 'implementation', gh = {}
         return {}
       },
     },
-    command: { run: async ({ command }) => { if (command === 'clear') calls.clear++; return { text: '' } } },
+    command: { run: async ({ command }) => { if (command === 'clear') { calls.clear++; order.push('clear'); if (holdClear) await clearGate } return { text: '' } } },
     prompt: { submit: async (p) => { calls.submitted.push(p.text) } },
     process: {
       run: async (argv) => {
@@ -115,7 +119,7 @@ async function session({ onGh = null, env = {}, role = 'implementation', gh = {}
       },
     },
   }
-  const bash = (command, text, extra = {}) => hooks['tool.call:{"tool":"Bash"}']($, { tool: 'Bash', command, ...extra }, async () => ({ text }))
+  const bash = (command, text, extra = {}) => (order.push('bash'), hooks['tool.call:{"tool":"Bash"}']($, { tool: 'Bash', command, ...extra }, async () => ({ text })))
   const write = (file_path) => hooks['tool.call:{"tool":["Write","Edit"]}']($, { tool: 'Write', file_path }, async () => ({ result: {} }))
   const turnDone = () => hooks['turn.complete']($, { answer: '', durationMs: 1, isAborted: false, turnId: 't', reason: 'answer' }, async (e) => e)
   const start = () => hooks['session.start:{"isInteractive":true}']($, { cwd: '/x', surface: 'terminal', isInteractive: true }, async (e) => e)
@@ -132,9 +136,9 @@ async function session({ onGh = null, env = {}, role = 'implementation', gh = {}
       },
       async (e) => e,
     )
-  const submit = (origin) => hooks['prompt.submit']($, { text: 'hi', ...(origin ? { origin } : {}) }, async (e) => e)
-  const run = async () => { while (timers.length) timers.shift()(); await flush() }
-  return { calls, bash, write, turnDone, start, measure, submit, run, hooks }
+  const submit = (origin) => (order.push('prompt'), hooks['prompt.submit']($, { text: 'hi', ...(origin ? { origin } : {}) }, async (e) => e))
+  const run = async () => { while (timers.length) timers.shift()(); await new Promise((r) => setTimeout(r, 60)) }
+  return { releaseClear: () => releaseClear(), calls, bash, write, turnDone, start, measure, submit, run, hooks }
 }
 
 const MERGED = { 7: { state: 'MERGED', baseRefName: 'dev' } }
@@ -179,14 +183,45 @@ await check('job done: the session clears exactly once, then submits one prompt 
   assert.equal(s.calls.compact.length, 0, 'a finished job is cleared, never compacted')
 })
 
-await check('the clear is requested from a timer, not inside the awaited hook', async () => {
-  const s = await session({ gh: MERGED })
+await check('the clear is queued synchronously from turn.complete, ahead of any later prompt or tool call', async () => {
+  const s = await session({ gh: MERGED, holdClear: true })
+  await finishJob(s)
+  await new Promise((r) => setTimeout(r, 40)) // the early merge check settles while the session wraps up
+  const turn = s.turnDone()
+  assert.equal(s.calls.clear, 1, 'command.run was called before the hook yielded: no await ahead of it')
+  await turn
+  // a new assignment and its first tool call arrive after the turn ended
+  await s.submit()
+  await s.bash('ls', '')
+  await new Promise((r) => setTimeout(r, 40))
+  assert.deepEqual(s.calls.order.slice(-3), ['clear', 'prompt', 'bash'], s.calls.order.join(','))
+  s.releaseClear() // the session goes idle and the queued clear runs; the new work began before it did
+  await new Promise((r) => setTimeout(r, 40))
+  assert.deepEqual(s.calls.submitted, [], 'work began after the clear was queued: no reset prompt over it')
+})
+
+await check('the merge check is early: a turn that ends before it answers still clears, from the check itself', async () => {
+  let release
+  const gate = new Promise((r) => (release = r))
+  const s = await session({ gh: MERGED, onGh: () => gate })
   await finishJob(s)
   await s.turnDone()
+  assert.equal(s.calls.clear, 0, 'the merge answer has not arrived')
+  release()
   await new Promise((r) => setTimeout(r, 40))
-  assert.equal(s.calls.clear, 0, 'nothing ran inside turn.complete: only the timer clears')
-  await s.run()
   assert.equal(s.calls.clear, 1)
+})
+
+await check('the early answer is voided by a tool call after it: the old answer never licenses a later clear', async () => {
+  const s = await session({ gh: MERGED })
+  await finishJob(s)
+  await new Promise((r) => setTimeout(r, 40))
+  await s.bash('ls', '') // epoch moves, the cached answer is for the old one
+  const turn = s.turnDone()
+  assert.equal(s.calls.clear, 0, 'the old answer does not license a clear at this turn end')
+  await turn
+  await new Promise((r) => setTimeout(r, 40))
+  assert.equal(s.calls.clear, 1, 'the job is still finished, so it is asked again and clears when that answer arrives')
 })
 
 await check('never mid-job: a live worktree, an unmerged PR, a PR merged elsewhere, an unreadable PR, no handoff, no PR each block the clear', async () => {
@@ -486,28 +521,31 @@ await check('an election that fails leaves no role, and the one line says so', a
 
 // ---- adversarial review of #1728 (Fable, f8bff97b) ---------------------------------------------------
 
-await check('P1: a tool call after the turn ended, or during the gh lookup, cancels the clear', async () => {
-  let s = await session({ gh: MERGED })
-  await finishJob(s); await s.turnDone()
-  await s.bash('git worktree add -b next /tmp/next origin/dev', '')
-  await s.run()
-  assert.equal(s.calls.clear, 0, 'a worktree added before the timer fired')
-  // any tool call at all, even one that changes nothing the job tracks, means work resumed
-  s = await session({ gh: MERGED })
-  await finishJob(s); await s.turnDone()
-  await s.bash('ls', '')
-  await s.run()
-  assert.equal(s.calls.clear, 0, 'a Bash call before the timer fired')
-  s = await session({ gh: MERGED })
-  await finishJob(s); await s.turnDone()
-  await s.write('/tmp/notes.md')
-  await s.run()
-  assert.equal(s.calls.clear, 0, 'a file write before the timer fired')
+await check('P1: work that starts while gh answers cancels the clear; work after the clear was queued skips the reset prompt', async () => {
   let fired = false
-  s = await session({ gh: MERGED, onGh: async () => { if (!fired) { fired = true; await s.bash('git worktree add -b next /tmp/next origin/dev', '') } } })
+  let s = await session({ gh: MERGED, onGh: async () => { if (!fired) { fired = true; await s.bash('git worktree add -b next /tmp/next origin/dev', '') } } })
   await finishJob(s); await s.turnDone(); await s.run()
   assert.equal(s.calls.clear, 0, 'a worktree added while gh answered')
   assert.deepEqual(s.calls.submitted, [], 'and no reset prompt either')
+  // a tool call between the early check and the turn end voids the cached answer
+  s = await session({ gh: MERGED })
+  await finishJob(s)
+  await new Promise((r) => setTimeout(r, 40))
+  await s.write('/tmp/notes.md')
+  const turn = s.turnDone()
+  assert.equal(s.calls.clear, 0, 'a file write after the check voids the cached answer')
+  await turn
+  // new work after the clear was queued: the clear stands (the new work lands behind it), the reset prompt does not
+  s = await session({ gh: MERGED, holdClear: true })
+  await finishJob(s)
+  await new Promise((r) => setTimeout(r, 40))
+  await s.turnDone()
+  await s.bash('git worktree add -b next /tmp/next origin/dev', '')
+  s.releaseClear()
+  await s.run()
+  assert.equal(s.calls.clear, 1)
+  assert.deepEqual(s.calls.submitted, [], 'a tool call after the clear was queued')
+  assert.ok(reset.job.worktrees.has('/tmp/next'), 'the new job is still tracked')
 })
 
 await check('P3: a path, branch or session id with a newline never reaches a prompt or the compact instructions', async () => {
