@@ -12,23 +12,8 @@ GUARD = Guard(
     selftest='plugins/rails-flow/scripts/check_hook_gates.py',
     selftest_args=("--only", "guard_bash_db_reset"),
     # Staged exactly as hook_guard_bash stages it: the harness resolves every hook from the selftest's own location.
-    needs=("plugins/rails-flow/scripts/fixture_git.py", 
-           'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py',  # session-start.sh runs both (#1581: the harness drives it)
-           "plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362
-           'plugins/rails-flow/hooks/scripts', 'plugins/qa-flow/hooks/scripts', 'plugins/qa-flow/scripts',
-           # guard-claims.sh runs extract_claims.py; without it the harness's two claim
-           # fixtures fail in the staged tempdir and every mutation reads as caught (#1109).
-           'plugins/rails-flow/scripts/check_criteria.py',
-           'plugins/rails-flow/scripts/check_handoff.py',
-           'plugins/qa-flow/scripts/read_certification.py',
-           'plugins/qa-flow/scripts/push_targets.py',  # release-gate.sh runs it (#1410)
-           'plugins/qa-flow/scripts/release_evidence.py',
-           'plugins/qa-flow/scripts/remote_evidence.py',   # the release gate runs it (#1591)
-           'plugins/rails-flow/scripts/self_consistency.py',
-           'plugins/rails-flow/scripts/extract_claims.py',
-           # ci-verdict-hint.sh runs ci_verdict_hint.py; unstaged, its fixtures fail and every
-           # mutation reads as caught -- the harness reported this guard INERT until it was added (#1173).
-           'plugins/rails-flow/scripts/ci_verdict_hint.py', 'plugins/rails-flow/scripts/session_reaper.py', 'plugins/rails-flow/scripts/process_containment.py'),   # the harness drives release-gate.sh too (#906)
+    # Only what `--only guard_bash_db_reset` touches: the hook, its libs, and what the harness imports or reads at start-up.
+    needs=("plugins/rails-flow/scripts/fixture_git.py", "plugins/rails-flow/hooks/hooks.json", "plugins/rails-flow/hooks/scripts"),
     mutations=(
         Mutation(
             'the declaration is not required, so an undeclared project may run the test-database reset',
@@ -95,6 +80,30 @@ GUARD = Guard(
             '  elif [ "$_seeded" = 1 ]; then',
             '  elif false; then',
             "the declared project's refusal says what IS allowed",
+        ),
+        Mutation(
+            'lines inside a fenced block are read, so an example of the declaration in a code fence declares it',
+            '      [ "$_fenced" = 1 ] && continue\n',
+            '',
+            'a fenced example does not declare it',
+        ),
+        Mutation(
+            'indented code is read, so an example of the declaration indented four spaces declares it',
+            '      [[ $_line =~ $_re_indented ]] && continue\n',
+            '',
+            'an indented code example does not declare it',
+        ),
+        Mutation(
+            'only a backtick fence is recognised, so a tilde-fenced example declares it',
+            "_re_fence='^[[:space:]]{0,3}(```|~~~)'",
+            "_re_fence='^[[:space:]]{0,3}(```)'",
+            'a tilde-fenced example does not declare it',
+        ),
+        Mutation(
+            'a tab does not make code, so a tab-indented example declares it',
+            '"^([[:space:]]{4,}|${_tab})"',
+            '"^([[:space:]]{4,})"',
+            'a tab-indented example does not declare it',
         ),
     ),
 )

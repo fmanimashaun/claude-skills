@@ -103,8 +103,20 @@ if hit '^(bin/)?(rails|rake)([[:space:]]+[^[:space:]]+)*[[:space:]]+db:reset\b';
   _root="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
   _seeded=0
   if [ -f "$_root/GUARDRAILS.md" ]; then
+    # LINE BY LINE, SKIPPING CODE: a GUARDRAILS.md that EXPLAINS the declaration inside a fenced block (```, ~~~) or an indented one would otherwise
+    # declare it by accident, and so would a quoted example (the same defect `mockup-gate: off` had to be fixed for). An unclosed fence hides the rest
+    # of the file, which is the safe side. Pure bash, so it needs no grep and no awk.
     _guardrails="$(<"$_root/GUARDRAILS.md")" || _guardrails=""
-    rawhit "$_guardrails" '^[[:space:]]*([-*+][[:space:]]*)?`?test-db-seeded:[[:space:]]*yes`?[[:space:]]*$' && _seeded=1
+    _re_fence='^[[:space:]]{0,3}(```|~~~)'
+    _tab=$'\t'; _re_indented="^([[:space:]]{4,}|${_tab})"
+    _re_declares='^[[:space:]]*([-*+][[:space:]]*)?`?test-db-seeded:[[:space:]]*yes`?[[:space:]]*$'
+    _fenced=0
+    while IFS= read -r _line || [ -n "$_line" ]; do
+      if [[ $_line =~ $_re_fence ]]; then _fenced=$((1 - _fenced)); continue; fi
+      [ "$_fenced" = 1 ] && continue
+      [[ $_line =~ $_re_indented ]] && continue
+      if [[ $_line =~ $_re_declares ]]; then _seeded=1; break; fi
+    done <<< "$_guardrails"
   fi
   _runner='((bundle[[:space:]]+exec[[:space:]]+)?(bin/)?(rails|rake))'
   _env_first="^[[:space:]]*(env[[:space:]]+)?RAILS_ENV=test[[:space:]]+${_runner}[[:space:]]+db:reset[[:space:]]*$"

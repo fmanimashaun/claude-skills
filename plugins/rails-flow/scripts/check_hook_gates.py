@@ -1290,7 +1290,9 @@ DB_RESET_STILL_REFUSED = ("bin/rails db:reset", "RAILS_ENV=development bin/rails
                           "RAILS_ENV=test bin/rails db:reset; bin/rails db:reset", "RAILS_ENV=test bin/rails db:reset | tee log",
                           "RAILS_ENV=test bin/rails db:reset\nbin/rails db:reset", "RAILS_ENV=test bin/rails db:reset db:seed",
                           "RAILS_ENV=test RAILS_ENV=development bin/rails db:reset", "RAILS_ENV=development RAILS_ENV=test bin/rails db:reset",
-                          "bin/rails db:reset RAILS_ENV=development", "(RAILS_ENV=test bin/rails db:reset)", "sudo RAILS_ENV=test bin/rails db:reset")
+                          "bin/rails db:reset RAILS_ENV=development", "(RAILS_ENV=test bin/rails db:reset)", "sudo RAILS_ENV=test bin/rails db:reset",
+                          "RAILS_ENV=test bin/rails db:reset\nrm tmp/x", "RAILS_ENV=test bin/rails db:reset\r\nbin/rails db:reset",
+                          "RAILS_ENV=test bin/rails db:reset # then\nbin/rails db:reset", "RAILS_ENV=test bin/rails db:reset `bin/rails db:reset`")
 
 
 def guard_bash_db_reset_fixtures() -> None:
@@ -1357,6 +1359,11 @@ def guard_bash_db_reset_fixtures() -> None:
             "a longer value": "# Guardrails\n\n- test-db-seeded: yes but only on Tuesdays\n",
             "another key": "# Guardrails\n\n- test-db-seeded-maybe: yes\n",
             "an empty file": "",
+            "a fenced example": "# Guardrails\n\n```markdown\n- test-db-seeded: yes\n```\n",
+            "a tilde-fenced example": "# Guardrails\n\n~~~\ntest-db-seeded: yes\n~~~\n",
+            "an indented code example": "# Guardrails\n\nAdd this:\n\n    - test-db-seeded: yes\n",
+            "a tab-indented example": "# Guardrails\n\nAdd this:\n\ttest-db-seeded: yes\n",
+            "an unclosed fence": "# Guardrails\n\n```\n- test-db-seeded: yes\n",
         }
         for why, text in not_declared.items():
             root = project(text)
@@ -1366,7 +1373,8 @@ def guard_bash_db_reset_fixtures() -> None:
             finally:
                 shutil.rmtree(root, ignore_errors=True)
         # ...and the spellings of a real declaration that ARE one (the line may be bulleted, backticked, or bare).
-        for text in ("- `test-db-seeded: yes`\n", "* test-db-seeded: yes\n", "test-db-seeded: yes\n", "  - test-db-seeded:   yes  \n", "x\r\n- test-db-seeded: yes\n"):
+        for text in ("- `test-db-seeded: yes`\n", "* test-db-seeded: yes\n", "test-db-seeded: yes\n", "  - test-db-seeded:   yes  \n", "x\r\n- test-db-seeded: yes\n",
+                 "```sh\nexample\n```\n- test-db-seeded: yes\n", "   - test-db-seeded: yes\n"):
             root = project("# Guardrails\n\n" + text)
             try:
                 rc, out = run(root, "RAILS_ENV=test bin/rails db:reset")
