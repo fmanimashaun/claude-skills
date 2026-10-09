@@ -21,8 +21,9 @@ shows no revision of its own. Statuses: **[On main, unreleased]** unless a row s
   `config.action_controller.default_protect_from_forgery_with`. Whether `using:` alone silences the deprecation
   was not verified.
 - `ActionController::InvalidAuthenticityToken` is deprecated in favour of `InvalidCrossOriginRequest`.
-- Rails 8.1 (released) has none of this: there `protect_from_forgery with: :exception` is what
-  `default_protect_from_forgery` calls (8-1-stable `railtie.rb`).
+- Rails 8.1 (released): `protect_from_forgery with: :exception` is what `default_protect_from_forgery` calls
+  (8-1-stable `railtie.rb`), the 8-1-stable `actionpack/CHANGELOG.md` has no `Sec-Fetch-Site`, `header_only` or
+  deprecation entry, and the 8.1 release notes mention no CSRF change.
 - Sources: `actionpack/CHANGELOG.md` on `main`; <https://edgeguides.rubyonrails.org/8_2_release_notes.html>.
 
 ## Active Job — [On main, unreleased], with the 8.1 side marked
@@ -67,10 +68,9 @@ in either `ENV` or the encrypted credentials file (the edge guide lists `require
   `ActionText::RichText#to_trix_html`, `Attachable#to_trix_content_attachment_partial_path` (replaced by
   `#to_editor_content_attachment_partial_path`), `Attachments::TrixConversion` and `ActionText::TrixAttachment`.
   The guide gives no replacement for `to_trix_html`. `actiontext/CHANGELOG.md`.
-- **`has_json` and `has_delegated_json`** are **Active Model**, not Active Record: schema-enforced access to JSON
-  attributes. By the changelog, `has_json` gives typed accessors and defaults for declared keys and casts
-  assigned values (`"100"` is stored as the integer `100`); `has_delegated_json` does the same but exposes the
-  keys directly on the model. `activemodel/CHANGELOG.md`.
+- **`has_json` and `has_delegated_json`** are **Active Model**, not Active Record: "schema-enforced access to JSON
+  attributes" (`activemodel/CHANGELOG.md`; the edge guide gives the same one line and no more). Their semantics
+  beyond that line were not verified, so none are recorded here.
 
 ## Herb compiles HTML ERB — [On main, unreleased], in flux
 
