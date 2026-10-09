@@ -1272,11 +1272,88 @@ GUARD = Guard(
             'uncontained-process-fixture / a non-selftest file that starts processes (out of scope)',
         ),
         Mutation(
+            # #1577
+            'non-hermetic-fixture-git accepts a hermetic fixture as a finding: the reference is never looked for',
+            '        if not _HERMETIC_REF.search(text):\n            offenders[name] = line',
+            '        if True:\n            offenders[name] = line',
+            'non-hermetic-fixture-git / a fixture that references hermetic_git',
+        ),
+        Mutation(
+            # #1577
+            'non-hermetic-fixture-git is not scoped to scripts that make temp directories',
+            '        if not _TEMP_USE.search(text):\n            continue\n        line = _spawns_git_commit(text)',
+            '        line = _spawns_git_commit(text)',
+            'non-hermetic-fixture-git / a script that commits but makes no temp directory',
+        ),
+        Mutation(
+            # #1577
+            'non-hermetic-fixture-git counts the word commit in a comment or docstring',
+            '            if "commit" in literals:',
+            '            if "commit" in literals or True:',
+            'non-hermetic-fixture-git / a temp-using script that mentions commit only in a docstring and a comment',
+        ),
+        Mutation(
+            # #1577
+            'non-hermetic-fixture-git scans mutation guard files too',
+            r'        if not re.match(r"^(scripts|plugins/[^/]+/scripts)/[^/]+\.py$", name):',
+            r'        if not re.match(r"^(scripts|plugins/[^/]+/scripts)/.+\.py$", name):',
+            'non-hermetic-fixture-git / a mutation guard file is out of scope',
+        ),
+        Mutation(
+            # #1577
+            'non-hermetic-fixture-git ignores the baseline, so every known offender is a finding',
+            '        if name not in baseline:',
+            '        if True:',
+            'non-hermetic-fixture-git / a baseline entry that still commits without the reference is tolerated',
+        ),
+        Mutation(
+            # #1577
+            'non-hermetic-fixture-git never flags a stale baseline line, so the list cannot shrink',
+            '    for name in sorted(baseline - set(offenders)):',
+            '    for name in []:',
+            'non-hermetic-fixture-git / a baseline entry whose file is hermetic now is a stale line',
+        ),
+        Mutation(
             # #1588
             "fixture-git-drift never compares the copies, so a fix in one plugin's copy alone passes",
             '        if canonical is not None and rel in texts and texts[rel] != canonical:',
             '        if False:',
             'fixture-git-drift / a fixture_git copy that differs by one byte is a finding',
+        ),
+        Mutation(
+            # #1680
+            "findings-script-drift never compares the copies, so qa-flow's findings.py can drift from rails-flow's",
+            '        if canonical is not None and texts.get(rel, canonical) != canonical:',
+            '        if False:',
+            'findings-script-drift / a findings.py copy that differs by one byte is a finding',
+        ),
+        Mutation(
+            # #1680
+            'findings-script-drift does not notice a missing qa-flow copy',
+            '            findings.append(Finding("findings-script-drift", rel, 0,\n                                    "missing',
+            '            continue\n            findings.append(Finding("findings-script-drift", rel, 0,\n                                    "missing',
+            'findings-script-drift / a missing qa-flow findings.py is a finding',
+        ),
+        Mutation(
+            # #1680
+            'cross-plugin-relative-path loses its same-plugin exemption, so ../scripts/ inside a plugin is refused',
+            '            if match.group(1) == own:\n                continue\n',
+            '',
+            'cross-plugin-relative-path / a relative path inside the same plugin is silent',
+        ),
+        Mutation(
+            # #1680
+            "cross-plugin-relative-path skips rails-stack's skills/, which the marketplace ships",
+            '    docs += [(p, "rails-stack") for p in sorted((ROOT / "skills").glob("**/*.md"))]\n',
+            '',
+            'cross-plugin-relative-path / a rails-stack skill reaching ../rails-flow/ is a finding',
+        ),
+        Mutation(
+            # #1680
+            'cross-plugin-relative-path scans tests/ fixtures, which never ship',
+            '        if "/tests/" in rel:\n            continue\n        examined += 1\n        text = path.read_text(encoding="utf-8", errors="replace")',
+            '        examined += 1\n        text = path.read_text(encoding="utf-8", errors="replace")',
+            'cross-plugin-relative-path / a tests/ fixture is silent',
         ),
         Mutation(
             "fixture-git-bypass never reports a fixture identity outside fixture_git (#1588 part 2)",

@@ -4,7 +4,7 @@ description: >
   Lifecycle stage router. Determines where a repo sits in the build->verify->certify->
   release pipeline and drives the correct next flow, honoring every gate. Use via
   /pipeline and /pipeline:status.
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob, Bash, Skill
 model: inherit
 ---
 
