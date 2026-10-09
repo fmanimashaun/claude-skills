@@ -180,10 +180,60 @@ def check_wiring(release_yml: str, gates_yml: str, release_local: str) -> list[s
         out.append("gates.yml: a push to dev must run --fast")
     if "'--require-slow'" not in gates_yml:
         out.append("gates.yml: every other run (the release's call) must run --require-slow")
+    out += shard_wiring(gates_yml)
     if "sweep_proof.py verify" not in release_local:
         out.append("release_local.sh: it must reuse a proven sweep the way release.yml does (sweep_proof.py verify)")
     if "maintainer_doctor.py --gates-only --require-slow" not in release_local:
         out.append("release_local.sh: it must still run the full sweep when no proof matches")
+    return out
+
+
+def shard_wiring(gates_yml: str) -> list[str]:
+    """What must be true of the mutation shards in gates.yml, or a missing or failed shard could read as a pass (#1739).
+
+    A text check, like the rest: the matrix size, the `--shard I/N` and the `--expect-shards N` are three places one number is written, and
+    editing one of them is exactly the change that leaves a shard unrun and the summary still green."""
+    import re
+    out: list[str] = []
+    if "--mutation-shards" not in gates_yml:
+        out.append("gates.yml: the full sweep must pass --mutation-shards, or `mutation coverage` runs twice: in the sweep and in the shards")
+    sizes = re.findall(r"shard: \[([0-9, ]+)\]", gates_yml)
+    count = len([x for x in sizes[0].split(",") if x.strip()]) if sizes else 0
+    if not count:
+        out.append("gates.yml: the `mutation` job needs a `shard: [1, 2, ...]` matrix")
+    if count and f'--shard "${{SHARD}}/{count}"' not in gates_yml:
+        out.append(f"gates.yml: each shard must run `--shard \"${{SHARD}}/{count}\"`, the matrix size")
+    if count and f"--expect-shards {count}" not in gates_yml:
+        out.append(f"gates.yml: the summary must `--expect-shards {count}`, the matrix size, or a missing shard goes unnoticed")
+    mutation_job = gates_yml.split("\n  mutation:", 1)[1].split("\n  mutation-coverage:", 1)[0] if "\n  mutation:" in gates_yml else ""
+    summary_job = gates_yml.split("\n  mutation-coverage:", 1)[1] if "\n  mutation-coverage:" in gates_yml else ""
+    if "fail-fast: false" not in mutation_job:
+        out.append("gates.yml: the `mutation` matrix needs fail-fast: false, or one shard's failure cancels the others and hides their findings")
+    if "needs: mutation" not in summary_job:
+        out.append("gates.yml: the `mutation coverage` summary job must `needs: mutation`")
+    if "if: ${{ always() }}" not in summary_job:
+        out.append("gates.yml: the `mutation coverage` summary job must run `if: ${{ always() }}`, or a failed shard skips it and a skipped job reads as green")
+    if "mutation_incremental.py verdict" not in summary_job:
+        out.append("gates.yml: the summary must read the shards' result (mutation_incremental.py verdict)")
+    if "--merge-shards" not in summary_job:
+        out.append("gates.yml: the summary must check every shard is present (mutation_check.py --merge-shards)")
+    return out
+
+
+def check_weekly(weekly_yml: str) -> list[str]:
+    """The weekly full sweep (#1738): scheduled, on both operating systems, with no incremental skip, and failing on a missing shard."""
+    out: list[str] = []
+    if "schedule:" not in weekly_yml or "cron:" not in weekly_yml:
+        out.append("mutation-weekly.yml: it must run on a schedule (cron)")
+    for system in ("ubuntu-latest", "macos-latest"):
+        if system not in weekly_yml:
+            out.append(f"mutation-weekly.yml: the matrix must include {system}")
+    if "--full" not in weekly_yml:
+        out.append("mutation-weekly.yml: the weekly run must pass --full, or it skips what it exists to re-prove")
+    if "--expect-shards" not in weekly_yml or "mutation_incremental.py verdict" not in weekly_yml:
+        out.append("mutation-weekly.yml: its summary must verify every shard (verdict and --merge-shards --expect-shards)")
+    if "fail-fast: false" not in weekly_yml:
+        out.append("mutation-weekly.yml: fail-fast: false, so one OS's failure does not hide the other's")
     return out
 
 
@@ -192,6 +242,8 @@ def wiring_gate() -> int:
     root = Path(__file__).resolve().parents[1]
     problems = check_wiring(*(( root / f).read_text(encoding="utf-8") for f in
                               (".github/workflows/release.yml", ".github/workflows/gates.yml", "scripts/release_local.sh")))
+    problems += check_weekly((root / ".github/workflows/mutation-weekly.yml").read_text(encoding="utf-8")
+                             if (root / ".github/workflows/mutation-weekly.yml").is_file() else "")
     for pr in problems:
         print(f"FAIL: {pr}")
     print(f"sweep proof wiring: {'FAILED' if problems else 'ok'} ({len(problems)} problem(s))")
@@ -329,7 +381,12 @@ def selftest() -> int:
                     "      (needs.gates.result == 'success' ||\n"
                     "       (needs.gates.result == 'skipped' && needs.proof.outputs.found == 'true'))\n"
                     "      python3 scripts/sweep_proof.py verify\n")
-    good_gates = "timeout-minutes: 25\n(github.ref == 'refs/heads/dev') && '--fast' || '--require-slow'"
+    good_gates = ("timeout-minutes: 25\n(github.ref == 'refs/heads/dev') && '--fast' || '--require-slow' --mutation-shards\n"
+                  "\n  mutation:\n    strategy:\n      fail-fast: false\n      matrix:\n        shard: [1, 2, 3, 4]\n"
+                  '    run: python3 scripts/mutation_check.py --shard "${SHARD}/4"\n'
+                  "\n  mutation-coverage:\n    needs: mutation\n    if: ${{ always() }}\n"
+                  "    run: python3 scripts/mutation_incremental.py verdict x full\n"
+                  "    run: python3 scripts/mutation_check.py --merge-shards d --expect-shards 4\n")
     good_local = "sweep_proof.py verify\nmaintainer_doctor.py --gates-only --require-slow\n"
     check("the good wiring has no problem", check_wiring(good_release, good_gates, good_local) == [])
     for label, mutate in (
@@ -343,10 +400,29 @@ def selftest() -> int:
         ("no proof job runs verify", lambda r, g, l: (r.replace("sweep_proof.py verify", "true"), g, l)),
         ("dev push runs the full sweep", lambda r, g, l: (r, g.replace("'--fast'", "'--require-slow'"), l)),
         ("the release never runs the full sweep", lambda r, g, l: (r, g.replace("'--require-slow'", "'--fast'"), l)),
+        ("the full sweep also runs mutation coverage itself", lambda r, g, l: (r, g.replace(" --mutation-shards", ""), l)),
+        ("the matrix grows and the shard count does not", lambda r, g, l: (r, g.replace("[1, 2, 3, 4]", "[1, 2, 3, 4, 5]"), l)),
+        ("a shard is told it is one of a different N", lambda r, g, l: (r, g.replace('"${SHARD}/4"', '"${SHARD}/3"'), l)),
+        ("the summary expects a different N", lambda r, g, l: (r, g.replace("--expect-shards 4", "--expect-shards 3"), l)),
+        ("the summary does not need the shards", lambda r, g, l: (r, g.replace("needs: mutation\n", ""), l)),
+        ("the summary can be skipped by a failed shard", lambda r, g, l: (r, g.replace("if: ${{ always() }}", ""), l)),
+        ("the summary does not read the shards' result", lambda r, g, l: (r, g.replace("mutation_incremental.py verdict", "true"), l)),
+        ("the summary does not merge the shards", lambda r, g, l: (r, g.replace("--merge-shards", "--nothing"), l)),
+        ("one failed shard cancels the rest", lambda r, g, l: (r, g.replace("fail-fast: false", "fail-fast: true"), l)),
         ("release_local skips the proof lookup", lambda r, g, l: (r, g, l.replace("sweep_proof.py verify", ""))),
         ("release_local drops the full sweep", lambda r, g, l: (r, g, l.replace("maintainer_doctor.py --gates-only --require-slow", ""))),
     ):
         check(f"wiring: {label} is reported", check_wiring(*mutate(good_release, good_gates, good_local)) != [])
+
+    good_weekly = ("schedule:\n  - cron: '17 3 * * 1'\nfail-fast: false\nos: [ubuntu-latest, macos-latest]\n"
+                   "--full --shard x\n--expect-shards 4\nmutation_incremental.py verdict\n")
+    check("the good weekly has no problem", check_weekly(good_weekly) == [])
+    for label, edit in (("no schedule", lambda w: w.replace("schedule:", "")), ("no macOS", lambda w: w.replace("macos-latest", "")),
+                        ("no Linux", lambda w: w.replace("ubuntu-latest", "")), ("it skips unchanged guards", lambda w: w.replace("--full", "")),
+                        ("it does not verify the shards", lambda w: w.replace("--expect-shards", "")),
+                        ("one OS cancels the other", lambda w: w.replace("fail-fast: false", ""))):
+        check(f"weekly: {label} is reported", check_weekly(edit(good_weekly)) != [])
+    check("weekly: a missing file is reported", check_weekly("") != [])
 
     for f in failures:
         print(f"FAIL: {f}")

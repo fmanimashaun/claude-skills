@@ -128,7 +128,7 @@ a promotion must carry no `Unreleased`, and a second arm would leave the first h
   Before promoting run `maintainer_doctor.py --gates-only --require-slow --record-proof`: it posts a
   `full-sweep` status for the tree; `release.yml` reuses it for an identical tree, else runs all (#1635).
 - **A gate over its budget is FAIL by name**, its group killed. Guards live one per file, from **two
-  roots**: `scripts/mutations/` (maintainer-only) and `plugins/<name>/scripts/mutations/` (ships, #1109).
+  roots**: `scripts/mutations/` (maintainer-only) and `plugins/<name>/scripts/mutations/` (ships, #1109). Before pushing a change to a guard, run it on Linux: `scripts/linux_check.sh <guard>` (docker; fails closed without it, #1738).
 - **It asserts `node` and `ruby` are present**; without them `lint_markdown_code.py` exits 3 and a skip
   is indistinguishable from a pass. `dist/` drift is checked here **and** in `release.yml`; change one,
   change the other — same for `scripts/release_local.sh`.

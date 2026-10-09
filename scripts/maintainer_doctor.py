@@ -509,6 +509,10 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #1599. The committed cost record exists, parses and names no guard that is gone. Runs no guard, so a pull
     # request pays for it; the ratchet itself (`mutation coverage --ratchet`) runs only where the record was measured.
     ("mutation cost record", ("python3", "scripts/mutation_check.py", "--check-record")),
+    # #1738, #1739. What the harness skips and which shard owns a guard; its own cases, driven without running a guard.
+    ("mutation incremental selftest", ("python3", "scripts/mutation_incremental_selftest.py")),
+    # #1738. The Linux container check fails closed with no docker; proven with a stub docker, so no container is needed.
+    ("linux check selftest", ("python3", "scripts/linux_check_selftest.py")),
     # #1040. The REPORT this tool produces is advisory and deliberately gates nothing -- an
     # unreached assertion is either vacuous or merely unguarded, and nothing here can tell those
     # apart. Its SELFTEST is a gate like any other, because a reachability auditor that silently
@@ -657,10 +661,12 @@ RATCHETED_GATES = frozenset({"mutation coverage"})
 
 
 def slow_gate_command(name: str, cmd: tuple[str, ...], require_slow: bool) -> tuple[str, ...]:
-    """The command a gate runs. `mutation coverage` gets `--ratchet` only on the run whose job is to prove it
-    (`--require-slow`: CI's push and promotion runs). A seconds figure measured on a laptop under other sessions' load
+    """The command a gate runs. `mutation coverage` gets `--ratchet-warn` only on the run whose job is to prove it
+    (`--require-slow`: CI's push and promotion runs): cost growth there is a WARNING, because the release must not fail on a cost the
+    pull request that added it could have re-recorded; a survivor, an inert guard and a wrong-fixture catch still fail it (#1738).
+    A bare `mutation_check.py --ratchet` is strict, which is what a pull request's author runs. A seconds figure measured on a laptop under other sessions' load
     or on a PR runner is not growth, and the record is measured on the runner (#1599)."""
-    return (*cmd, "--ratchet") if require_slow and name in RATCHETED_GATES else cmd
+    return (*cmd, "--ratchet-warn") if require_slow and name in RATCHETED_GATES else cmd
 
 
 # A failing gate's output exists NOWHERE else on a runner: the doctor is the only thing that
@@ -724,6 +730,10 @@ class Doctor:
     # A push to dev and the promotion must PROVE the slow gates, not report them unknown (#1444).
     # Set by --require-slow, which only CI's non-PR runs pass: there, a SLOW_GATES timeout is FAIL.
     require_slow: bool = False
+    # The mutation guards run as separate shard jobs in CI (#1739), so this sweep reports `mutation coverage` as a skip, with the reason.
+    shards_external: bool = False
+    # Run `mutation coverage` as a full run and record each guard's hash for this OS (#1738); the local pre-promotion sweep.
+    record_mutation: bool = False
     results: list[Result] = field(default_factory=list)
     fixed: list[str] = field(default_factory=list)
 
@@ -1287,7 +1297,17 @@ class Doctor:
                     " ".join(cmd),
                 )
                 continue
-            code, out = self.run(*slow_gate_command(name, cmd, self.require_slow),
+            if self.shards_external and name in RATCHETED_GATES:
+                self.add(
+                    SKIP, f"gate: {name}",
+                    "run by the `mutation` shard jobs and the `mutation coverage` summary job of this workflow, not in this step",
+                    " ".join(cmd),
+                )
+                continue
+            command = slow_gate_command(name, cmd, self.require_slow)
+            if self.record_mutation and name in RATCHETED_GATES:
+                command += ("--full", "--record-hashes")
+            code, out = self.run(*command,
                                  timeout=SLOW_GATES.get(name, DEFAULT_TIMEOUT))
             if code == 0:
                 # A slow gate's own summary line (mutation_check prints jobs and elapsed) is the
@@ -1471,6 +1491,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--record-proof", action="store_true",
                    help="with --gates-only --require-slow: when the whole sweep passed with nothing skipped, record that "
                         "against this exact tree (scripts/sweep_proof.py) so the release can reuse it (#1635)")
+    p.add_argument("--mutation-shards", action="store_true",
+                   help="`mutation coverage` is run by separate shard jobs (gates.yml): report it as a skip here (#1739)")
+    p.add_argument("--record-mutation", action="store_true",
+                   help="run `mutation coverage` as a FULL run and record every guard's hash for this OS in "
+                        "docs/evidence/mutation-proof.json (#1738); not with --mutation-shards")
     p.add_argument("--selftest", action="store_true", help="prove the checks fire and stay silent")
     args = p.parse_args(argv)
 
@@ -1490,7 +1515,10 @@ def main(argv: list[str] | None = None) -> int:
         if before is None:
             print("--record-proof needs a clean worktree at the start: the sweep must run on committed bytes", file=sys.stderr)
             return 2
-    doctor = Doctor(fix=args.fix, require_slow=args.require_slow)
+    if args.mutation_shards and args.record_mutation:
+        p.error("--mutation-shards and --record-mutation are opposites: the shards' summary job records, a local run records itself")
+    doctor = Doctor(fix=args.fix, require_slow=args.require_slow, shards_external=args.mutation_shards,
+                    record_mutation=args.record_mutation)
     rc = doctor.diagnose(gates=args.gates or args.gates_only, gates_only=args.gates_only, fast=args.fast)
     if args.record_proof:
         skipped = [r.name for r in doctor.gate_results() if r.status == SKIP]

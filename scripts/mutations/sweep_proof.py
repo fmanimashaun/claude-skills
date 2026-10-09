@@ -103,5 +103,78 @@ GUARD = Guard(
             "    if False:",
             "record refuses a commit during the sweep",
         ),
+        # #1739 / #1738: the shard matrix and the weekly sweep are wired so a missing or failed shard cannot read as a pass.
+        Mutation(
+            'the full sweep also runs mutation coverage itself, beside the shards',
+            'if "--mutation-shards" not in gates_yml:',
+            'if False:',
+            'the full sweep also runs mutation coverage itself',
+        ),
+        Mutation(
+            'a matrix size that disagrees with the shard count is not noticed',
+            '    if count and f\'--shard "${{SHARD}}/{count}"\' not in gates_yml:',
+            '    if False:',
+            'a shard is told it is one of a different N',
+        ),
+        Mutation(
+            'a summary expecting a different N than the matrix is not noticed',
+            '    if count and f"--expect-shards {count}" not in gates_yml:',
+            '    if False:',
+            'the summary expects a different N',
+        ),
+        Mutation(
+            'a summary that does not need the shards is accepted',
+            'if "needs: mutation" not in summary_job:',
+            'if False:',
+            'the summary does not need the shards',
+        ),
+        Mutation(
+            'a summary a failed shard can skip is accepted',
+            'if "if: ${{ always() }}" not in summary_job:',
+            'if False:',
+            'the summary can be skipped by a failed shard',
+        ),
+        Mutation(
+            "a summary that never reads the shards' result is accepted",
+            'if "mutation_incremental.py verdict" not in summary_job:',
+            'if False:',
+            "the summary does not read the shards' result",
+        ),
+        Mutation(
+            'a summary that never merges the shards is accepted',
+            'if "--merge-shards" not in summary_job:',
+            'if False:',
+            'the summary does not merge the shards',
+        ),
+        Mutation(
+            'a matrix that cancels its siblings is accepted',
+            'if "fail-fast: false" not in mutation_job:',
+            'if False:',
+            'one failed shard cancels the rest',
+        ),
+        Mutation(
+            'an unscheduled weekly is accepted',
+            'if "schedule:" not in weekly_yml or "cron:" not in weekly_yml:',
+            'if False:',
+            'weekly: no schedule is reported',
+        ),
+        Mutation(
+            'a weekly that skips unchanged guards is accepted',
+            'if "--full" not in weekly_yml:',
+            'if False:',
+            'weekly: it skips unchanged guards is reported',
+        ),
+        Mutation(
+            'a weekly without a verdict is accepted',
+            'if "--expect-shards" not in weekly_yml or "mutation_incremental.py verdict" not in weekly_yml:',
+            'if False:',
+            'weekly: it does not verify the shards is reported',
+        ),
+        Mutation(
+            'the shard wiring is not part of the wiring check',
+            '    out += shard_wiring(gates_yml)\n',
+            '',
+            'wiring: the full sweep also runs mutation coverage itself is reported',
+        ),
     ),
 )

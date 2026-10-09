@@ -83,7 +83,9 @@ jobs:
       # otherwise calls this workflow from `main`, where the condition below picks the full sweep.
       # (`github.ref` is the CALLER's ref under workflow_call: `refs/heads/main` in a release.)
       - name: Gate sweep
-        run: python3 scripts/maintainer_doctor.py --gates-only ${{ (github.event_name == 'pull_request' || github.ref == 'refs/heads/dev') && '--fast' || '--require-slow' }}
+        # `--mutation-shards` on the full sweep only: `mutation coverage` then runs as the `mutation` shard jobs below (#1739) and this step
+        # reports it as a skip, with the reason. A skip here is not the gate passing; the `mutation coverage` job below is what proves it.
+        run: python3 scripts/maintainer_doctor.py --gates-only ${{ (github.event_name == 'pull_request' || github.ref == 'refs/heads/dev') && '--fast' || '--require-slow' }} ${{ !(github.event_name == 'pull_request' || github.ref == 'refs/heads/dev') && '--mutation-shards' || '' }}
 
       # The PROMOTION pre-flight (#990): a pull request whose base is `main` is the one merge that
       # publishes, so it is the one place `### Unreleased` must not survive. The v1.127.0 promotion
@@ -148,3 +150,102 @@ jobs:
             exit 1
           fi
           echo "dist/ matches a clean build."
+
+  # THE FULL MUTATION SWEEP, AS PARALLEL SHARDS (#1739). One job ran every guard in about 64 minutes against a 120-minute cap, and was the critical
+  # path of every release. Now N=4 jobs each run the guards `mutation_check.py --shard I/4` assigns them: a split by RECORDED COST (largest guard
+  # first onto the lightest shard), the same on every machine, so no shard is much longer than the others. Each shard applies the incremental skip
+  # (a guard unchanged since the recorded full run on this OS is skipped, reported as a skip and never as a pass, #1738) and the cost ratchet as
+  # a WARNING (growth blocks on the pull request that adds it, not in the release). Only the full sweep runs them: a pull request and a push to
+  # dev run --fast and skip them, exactly as they skipped the single job. The matrix size, 4, is also the `--expect-shards` below: change both.
+  mutation:
+    if: ${{ !(github.event_name == 'pull_request' || github.ref == 'refs/heads/dev') }}
+    runs-on: ubuntu-latest
+    # About a quarter of the 64 minutes the single job took, with room for a slow runner; re-set from a measured run, never to get green.
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      # The same interpreters and Kamal the gate sweep asserts: a guard whose fixtures need them reads INERT without (#1465).
+      - name: Interpreters and Kamal the guards shell out to
+        run: |
+          set -euo pipefail
+          for bin in node ruby; do
+            command -v "$bin" >/dev/null || { echo "::error::$bin is not on PATH"; exit 1; }
+            echo "$bin: $("$bin" --version)"
+          done
+          gem install --user-install --no-document kamal -v 2.12.0
+          ruby -e 'require "kamal"; puts "kamal: #{Kamal::VERSION}"'
+
+      - name: Mutation guards, one shard of 4
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          set -euo pipefail
+          mkdir -p shard-out
+          python3 scripts/mutation_check.py --shard "${SHARD}/4" --ratchet-warn --shard-out "shard-out/shard-${SHARD}.json"
+
+      # The summary reads every shard's result from these. A failed shard uploads nothing, and the summary fails anyway.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mutation-shard-${{ matrix.shard }}
+          path: shard-out/shard-${{ matrix.shard }}.json
+          if-no-files-found: error
+          retention-days: 14
+
+  # THE `mutation coverage` VERDICT (#1739). Named for the gate it stands in for. It `needs` every shard and runs `if: always()`, so a failed, cancelled or
+  # never-run shard cannot skip it into a pass: the verdict is read from `needs.mutation.result`, and the merge then checks that shards 1..4 are ALL present for
+  # one commit and that together they cover every guard exactly once. A missing shard is a failure. In a --fast run no shard is expected, and the verdict says
+  # so. The proof and cost record are written only from a complete set in which no guard was skipped, and are uploaded for a person to commit (#1738).
+  mutation-coverage:
+    name: mutation coverage
+    needs: mutation
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Every shard succeeded
+        env:
+          SHARDS_RESULT: ${{ needs.mutation.result }}
+          MODE: ${{ (github.event_name == 'pull_request' || github.ref == 'refs/heads/dev') && 'fast' || 'full' }}
+        run: python3 scripts/mutation_incremental.py verdict "$SHARDS_RESULT" "$MODE"
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: ${{ needs.mutation.result == 'success' }}
+        with:
+          pattern: mutation-shard-*
+          path: shard-in
+          merge-multiple: true
+
+      - name: Every shard present, every guard covered once
+        if: ${{ needs.mutation.result == 'success' }}
+        run: python3 scripts/mutation_check.py --merge-shards shard-in --expect-shards 4
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ needs.mutation.result == 'success' }}
+        with:
+          name: mutation-records
+          path: |
+            docs/evidence/mutation-proof.json
+            docs/evidence/mutation-cost-baseline.json
+          if-no-files-found: warn
+          retention-days: 30
