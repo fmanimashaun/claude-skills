@@ -46,6 +46,9 @@ async function guard(week, env = {}) {
 
 // context-nudge's two hooks, to see the usage view it carries.
 async function nudge(env = {}) {
+  const reset = await import('../hooks/session-reset.mjs')
+  reset.state.role = 'implementation'
+  reset.state.line = null
   const mod = await import(`../hooks/context-nudge.mjs?fresh=${++fresh}`)
   const hooks = {}
   mod.register((event, ...rest) => { hooks[event] = rest[rest.length - 1] })
@@ -59,6 +62,7 @@ async function nudge(env = {}) {
     prompt: { submit: async (p) => submitted.push(p) },
   }
   const id = async (e) => e
+  await hooks['prompt.submit']($, { text: 'prime' }, id) // the one role line
   return {
     status,
     timers,
@@ -199,6 +203,9 @@ await check('the context nudge asks for /clear after the handoff, not /compact (
   const line = nudgeLine(72)
   assert.ok(line.includes('/rails-flow:handoff') && line.includes('/clear'))
   assert.ok(!/or \/compact/.test(line), 'offers /compact as an option')
+  // A declared role is told the truth: the session resets itself, so nobody is asked to type /clear (#1687).
+  assert.ok(!/tell the user to run \/clear/.test(nudgeLine(72, 'implementation')) && /clears itself/.test(nudgeLine(72, 'implementation')))
+  assert.ok(/compacts itself/.test(nudgeLine(72, 'coordinator')))
 })
 await check('the usage line is short (it is billed on every later request)', async () => {
   const { budgetLine } = (await guard(0)).mod

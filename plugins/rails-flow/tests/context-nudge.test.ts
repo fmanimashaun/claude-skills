@@ -23,6 +23,9 @@ function recordStatus(on): (string | undefined)[] {
   return seen
 }
 
+// The lines a prompt carries besides the one role line the first person prompt of a session adds (#1724)
+const only = (r: { context?: string[] }) => (r.context ?? []).filter((l) => !l.startsWith('Role note'))
+
 function noEnv(on) {
   on('env.get', () => ({ value: undefined }))
 }
@@ -42,7 +45,7 @@ test('below the threshold a prompt carries no added context', async ($, on) => {
   recordStatus(on)
   await $.session.measure(measure(69))
   const r = await $.prompt.submit({ text: 'next step' })
-  expect(r.context ?? []).toEqual([])
+  expect(only(r)).toEqual([])
   expect(r.text).toBe('next step')
 })
 
@@ -53,12 +56,14 @@ test('at the threshold one line is added, once, and the prompt text is untouched
   await $.session.measure(measure(74))
   const first = await $.prompt.submit({ text: 'next step' })
   expect(first.text).toBe('next step')
-  expect(first.context).toHaveLength(1)
-  expect(first.context[0]).toContain('74% full')
-  expect(first.context[0]).toContain('/rails-flow:handoff')
+  // The first prompt of a session also carries the one role line (#1724); the nudge is the other.
+  const lines = only(first)
+  expect(lines).toHaveLength(1)
+  expect(lines[0]).toContain('74% full')
+  expect(lines[0]).toContain('/rails-flow:handoff')
   await $.session.measure(measure(81))
   const second = await $.prompt.submit({ text: 'and again' })
-  expect(second.context ?? []).toEqual([])
+  expect(only(second)).toEqual([])
 })
 
 test('the line is short, because it is billed again on every later request', async ($, on) => {
@@ -67,7 +72,7 @@ test('the line is short, because it is billed again on every later request', asy
   recordStatus(on)
   await $.session.measure(measure(99))
   const r = await $.prompt.submit({ text: 'x' })
-  expect(r.context[0].length).toBeLessThanOrEqual(400)
+  for (const line of only(r)) expect(line.length).toBeLessThanOrEqual(400)
 })
 
 test('a compaction resets it: the next climb past the threshold is told again', async ($, on) => {
@@ -79,7 +84,7 @@ test('a compaction resets it: the next climb past the threshold is told again', 
   await $.session.measure(measure(undefined))
   await $.session.measure(measure(72))
   const r = await $.prompt.submit({ text: 'two' })
-  expect(r.context).toHaveLength(1)
+  expect(only(r)).toHaveLength(1)
 })
 
 test('RAILS_FLOW_CONTEXT_NUDGE_PCT moves the threshold; a bad value keeps the default', async ($, on) => {
@@ -88,7 +93,7 @@ test('RAILS_FLOW_CONTEXT_NUDGE_PCT moves the threshold; a bad value keeps the de
   on('env.get', () => ({ value: '40' }))
   await $.session.measure(measure(45))
   const lowered = await $.prompt.submit({ text: 'a' })
-  expect(lowered.context).toHaveLength(1)
+  expect(only(lowered)).toHaveLength(1)
 })
 
 test('a bad threshold value falls back to the default', async ($, on) => {
@@ -97,7 +102,7 @@ test('a bad threshold value falls back to the default', async ($, on) => {
   on('env.get', () => ({ value: 'lots' }))
   await $.session.measure(measure(69))
   const below = await $.prompt.submit({ text: 'a' })
-  expect(below.context ?? []).toEqual([])
+  expect(only(below)).toEqual([])
 })
 
 test("a peer session's message or an SDK turn never takes the line, and does not use it up", async ($, on) => {
@@ -106,9 +111,9 @@ test("a peer session's message or an SDK turn never takes the line, and does not
   recordStatus(on)
   await $.session.measure(measure(90))
   const peer = await $.prompt.submit({ text: 'from a peer', origin: { kind: 'peer' } })
-  expect(peer.context ?? []).toEqual([])
+  expect(only(peer)).toEqual([])
   const sdk = await $.prompt.submit({ text: 'from claude -p', origin: { kind: 'sdk' } })
-  expect(sdk.context ?? []).toEqual([])
+  expect(only(sdk)).toEqual([])
   const theirs = await $.prompt.submit({ text: 'typed', origin: { kind: 'composer' } })
-  expect(theirs.context).toHaveLength(1)
+  expect(only(theirs)).toHaveLength(1)
 })

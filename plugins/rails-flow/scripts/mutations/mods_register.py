@@ -11,7 +11,7 @@ GUARD = Guard(
     subject="hooks/register.js",
     selftest="scripts/check_mods.py",
     selftest_args=("register",),
-    needs=("tests/register.unit.mjs", "hooks/context-nudge.mjs", "hooks/lane-band.js", "hooks/budget-guard.mjs", "hooks/hooks.json"),
+    needs=("tests/register.unit.mjs", "hooks/context-nudge.mjs", "hooks/lane-band.js", "hooks/budget-guard.mjs", "hooks/session-reset.mjs", "hooks/hooks.json"),
     mutations=(
         Mutation(
             "a mod is registered twice, so its events are registered twice",

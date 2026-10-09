@@ -16,6 +16,7 @@ const failures = []
 let checks = 0
 let inFlight = '' // the check running right now, named if it never settles
 let fresh = 0
+const reset = await import('../hooks/session-reset.mjs')
 
 // Report from an 'exit' handler registered BEFORE the first await (so it exists when a check never settles): a check that never settles ends the process (exit
 // code 13, an unsettled top-level await) before any line below would run, and the failures would vanish.
@@ -33,14 +34,17 @@ process.on('exit', (code) => {
 
 // A new copy of the module each time: it keeps its state in module variables, as a mod does.
 async function harness(env) {
+  reset.state.role = 'implementation'
+  reset.state.line = null
   const mod = await import(`../hooks/context-nudge.mjs?fresh=${++fresh}`)
   const hooks = {}
   mod.register((event, ...rest) => {
     hooks[event] = rest[rest.length - 1]
   })
   const status = []
-  const $ = { env: { get: async () => env }, ui: { status: (t) => status.push(t) } }
+  const $ = { env: { get: async (k) => env }, ui: { status: (t) => status.push(t) } }
   const echo = async (e) => e
+  await hooks['prompt.submit']($, { text: 'prime' }, echo) // the one role line, so the checks below see only their own
   return {
     mod,
     status,

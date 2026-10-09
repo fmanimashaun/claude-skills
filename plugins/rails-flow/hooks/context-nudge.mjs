@@ -1,5 +1,7 @@
 // context-nudge: shows how full this session's context window is, and once per climb past a
-// threshold adds ONE line only Claude reads, asking it to offer a handoff and a /clear (#1547).
+// threshold adds ONE line only Claude reads, asking it to offer a handoff (#1547). A session with an elected
+// role is told it resets itself instead, and compacts mid-job at RAILS_FLOW_COMPACT_PCT or a usage warn level
+// (#1723, #1724; hooks/session-reset.mjs).
 // It blocks nothing and rewrites no prompt text: every hook returns next(e), the prompt hook with at
 // most one added context line. Mods need Claude Code 2.1.287 or later.
 //
@@ -17,6 +19,15 @@
 const DEFAULT_THRESHOLD = 70
 
 import { budgetLine, DEFAULT_BLOCK, DEFAULT_WARN, level, limitsLabel, msUntil, RESUME_TEXT, windowOf } from './budget-guard.mjs'
+import { compactInstructions, compactReason, DEFAULT_COMPACT_PCT, DEFAULT_COORDINATOR_HANDOFF, job, jobDoneShape, state, wholePct } from './session-reset.mjs'
+
+// Mid-job compaction (#1687): which sources have already compacted this climb, so each fires once.
+const compacted = { context: false, five_hour: false, seven_day: false }
+// The one role line (the elected role, or that none could be elected) has been added.
+let askedRole = false
+export const ROLE_LINE =
+  'Role note: rails-flow could not elect a role for this session. Start it with RAILS_FLOW_ROLE=coordinator or ' +
+  'RAILS_FLOW_ROLE=implementation; until then it will neither clear nor compact this session. Say this once.'
 
 // Each window's last reading, and the highest level announced since it was last below warn.
 const WINDOWS = ['five_hour', 'seven_day']
@@ -32,9 +43,17 @@ let nudged = false
 
 // The line itself. It rides on a prompt, so its size is a cost: every character is billed again on
 // each later request, which is why it is added once per climb and kept this short.
-export function nudgeLine(fill) {
+export function nudgeLine(fill, role = null) {
+  const head = `Context note: this session's context window is ${fill}% full. Finish the current step, then `
+  if (role === 'coordinator')
+    return `${head}update the coordinator handoff. This session compacts itself at the compact threshold; do not ask the user to run /clear. Say this once; do not repeat it.`
+  if (role === 'implementation')
+    return (
+      `${head}update the handoff (/rails-flow:handoff) and commit and push work in progress. This session compacts itself ` +
+      'at the compact threshold and clears itself once its PR is merged into dev and its worktree is removed; do not ask the user to run /clear. Say this once; do not repeat it.'
+    )
   return (
-    `Context note: this session's context window is ${fill}% full. Finish the current step, then offer to ` +
+    `${head}offer to ` +
     'write a handoff with /rails-flow:handoff and tell the user to run /clear (not /compact: the handoff already holds it) before new work. ' +
     'Say this once; do not repeat it.'
   )
@@ -71,6 +90,45 @@ function isTheirs(origin) {
   return origin === undefined || origin.kind === 'composer' || origin.kind === 'bridge'
 }
 
+// Compact this session, never clear it, when the context fill or a usage window reaches its level while the
+// session has a declared role (#1687). Runs from a timer: compact rejects inside a hook the turn waits on, and
+// a rejection (a turn is running) re-arms the source so the next measure tries again. A role-less session, a
+// `claude -p` run (no surface) and a session whose job is done (it clears instead) are left alone.
+async function maybeCompact($, levels) {
+  try {
+    const role = state.role
+    const compactPct = wholePct(await $.env.get('RAILS_FLOW_COMPACT_PCT'), DEFAULT_COMPACT_PCT)
+    const sources = {
+      context: { fill: percent, windows: [] },
+      five_hour: { fill: null, windows: [{ lvl: level(reading.five_hour?.pct, ...levels), announced: announced.five_hour }] },
+      seven_day: { fill: null, windows: [{ lvl: level(reading.seven_day?.pct, ...levels), announced: announced.seven_day }] },
+    }
+    for (const [key, src] of Object.entries(sources)) {
+      const live = key === 'context' ? percent !== null && percent >= compactPct : src.windows[0].lvl !== null
+      if (!live) compacted[key] = false
+    }
+    if (role === null || (role === 'implementation' && (jobDoneShape() || job.pending))) return
+    for (const [key, src] of Object.entries(sources)) {
+      if (compacted[key] || compactReason({ role, compactPct, nudged, ...src }) === null) continue
+      if ((await $.session.surfaces()).length === 0) return
+      compacted[key] = true
+      const text = compactInstructions(role, job, (await $.env.get('RAILS_FLOW_COORDINATOR_HANDOFF')) || DEFAULT_COORDINATOR_HANDOFF)
+      $.clock.after(0, () => {
+        void (async () => {
+          try {
+            await $.session.compact({ instructions: text })
+          } catch {
+            compacted[key] = false
+          }
+        })()
+      })
+      return
+    }
+  } catch {
+    // Advisory: a failed check leaves the session as it was
+  }
+}
+
 export function register(on) {
   // Runs after each turn, and whenever the fill moved: the figure is pushed, not polled
   on('session.measure', async ($, e, next) => {
@@ -90,6 +148,7 @@ export function register(on) {
       if (ms !== null) resume = $.clock.after(ms + 120000, () => { resume = null; void $.prompt.submit({ text: RESUME_TEXT }) })
     }
     if (percent === null || percent < (await threshold($))) nudged = false
+    await maybeCompact($, levels)
     return next(e)
   })
 
@@ -104,9 +163,14 @@ export function register(on) {
         lines.push(budgetLine(k, reading[k].pct, lvl, reading[k].resetsAt, k === 'five_hour' && resume !== null))
       }
     }
+    const role = state.role
+    if (!askedRole && isTheirs(e.origin)) {
+      askedRole = true
+      lines.push(state.line ?? ROLE_LINE)
+    }
     if (percent !== null && !nudged && isTheirs(e.origin) && percent >= (await threshold($))) {
       nudged = true
-      lines.push(nudgeLine(percent))
+      lines.push(nudgeLine(percent, role))
     }
     return lines.length ? next({ ...e, context: [...(e.context ?? []), ...lines] }) : next(e)
   })
