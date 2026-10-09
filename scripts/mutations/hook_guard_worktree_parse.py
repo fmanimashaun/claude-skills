@@ -28,12 +28,8 @@ GUARD = Guard(
            'plugins/rails-flow/scripts/extract_claims.py',
            'plugins/rails-flow/scripts/ci_verdict_hint.py', 'plugins/rails-flow/scripts/session_reaper.py', 'plugins/rails-flow/scripts/process_containment.py'),
     mutations=(
-        Mutation(
-            "quoted words are never matched, so 'git' worktree add never reaches the helper",
-            'then hit=1; raw=1; fi',
-            'then true; fi',
-            'a quoted or escaped word does not hide the command',
-        ),
+        # The mutation "quoted words are never matched, so 'git' worktree add never reaches the helper" was dropped: since #1657 the normaliser reads a
+        # quoted word as the shell does, so the raw-text fallback it disabled changes no exit code (8 shapes probed, see the CHANGELOG).
         Mutation(
             'a raw-only match is judged as an ordinary one, so a mention is refused as unreadable',
             '[ "$raw" = 1 ] && flag="--raw"',
