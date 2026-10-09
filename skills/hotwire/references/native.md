@@ -441,7 +441,7 @@ configuration:
   `HotwireBottomNavigationController` inside a `HotwireActivity`; tabs load
   lazily as of 1.3.0 (#202). Source: native.hotwired.dev/android/tabs.
 
-### Patch notes (1.3.1 / 1.3.0 opt-ins)
+### Patch notes (1.3.0 / 1.3.1)
 
 - iOS 1.3.1 (#261): a redirect from a modal to a default-context URL routes
   after the dismissal completes.
