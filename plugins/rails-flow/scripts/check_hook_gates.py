@@ -1891,6 +1891,9 @@ def guard_claims_fixtures() -> None:
 
 
 # ---- release-gate.sh (qa-flow) shares the normaliser: drive it too, or the "one normaliser" claim is prose (#906) ----
+# #1720: the shell-adversary's inputs against the classifier-missing fallback at cc80da33; every one must be refused.
+ADVERSARY_1720 = ('git -C $(pwd) push origin main', 'git -C "$(pwd)" push origin main', "'git' push origin main", 'git push origin main', 'git -c x=y push origin main', 'git push origin HEAD:main', 'git push origin +main', 'git push origin HEAD:refs/heads/main', 'git push --all', 'git push --mirror', 'git push origin HEAD:heads/main', '\\git push origin main', 'g\\it push origin main', "git $'\\x70ush' origin main", "git pu''sh origin main", 'git "push" origin main', 'env GIT_DIR=. git push origin main', 'command git push origin main', 'echo git push origin main | xargs -0 sh -c', 'echo main | xargs git push origin', 'eval "git push origin main"', "eval 'g''it pu''sh origin main'", "git push origin ma''in", 'git push origin "ma"in', "git push origin $'ma\\x69n'", 'git push origin m\\ain', 'git push origin mai[n]', 'git push origin ma{in,}', 'git push origin $(echo main)', 'git push origin $BR', 'git push', 'git push origin HEAD', 'git checkout main; git merge dev', 'git merge dev', 'git -C . merge origin/dev', 'git "merge" dev', "git me''rge dev", 'git pull origin main', 'git pull', 'git rebase dev', 'git cherry-pick abc', 'git reset --hard origin/main', 'git fetch origin main:main', 'git update-ref refs/heads/main HEAD', 'git branch -f main HEAD', 'git push origin dev:main', 'git push . HEAD:main', 'git push origin :main', 'git push origin HEAD:master', 'git send-pack origin main', 'gh pr merge 5', 'gh pr merge 5 --squash', 'gh api -X PUT repos/a/b/pulls/5/merge', 'git push origin dev')
+
 QA_HOOK = HOOKS.parents[2] / "qa-flow" / "hooks" / "scripts" / "release-gate.sh"
 
 
@@ -1991,26 +1994,23 @@ def release_gate_fixtures() -> None:
     with tempfile.TemporaryDirectory() as bare_root:
         check("release-gate (#1410): parser missing -> a quoted `main` push is still blocked",
               run('git push origin "main"', plugin_root=Path(bare_root)) == 2, "exit 0")
-        check("release-gate (#1410): parser missing -> CONTROL: a feature push still passes",
-              run("git push origin feature/x", plugin_root=Path(bare_root)) == 0, "exit 2")
+        # #1720: without the classifier the gate fails closed BY SHAPE, so a feature push is refused too (reinstall the plugin).
+        check("release-gate (#1720): parser missing -> even a feature push is refused (the fallback fails closed by shape)",
+              run("git push origin feature/x", plugin_root=Path(bare_root)) == 2, "exit 0")
         # #1472: without the parser the shared normaliser decides, and it now sees inside a shell string.
         for cmd in ("bash -c 'git push origin main'", 'eval "git push origin main"', "command git push origin main"):
             check(f"release-gate (#1472): parser missing -> `{cmd}` is blocked",
                   run(cmd, plugin_root=Path(bare_root)) == 2, "exit 0")
-        check("release-gate (#1472): parser missing -> CONTROL: `bash -c 'git push origin feature/x'` passes",
-              run("bash -c 'git push origin feature/x'", plugin_root=Path(bare_root)) == 0, "exit 2")
+        check("release-gate (#1720): parser missing -> `bash -c 'git push origin feature/x'` is refused too",
+              run("bash -c 'git push origin feature/x'", plugin_root=Path(bare_root)) == 2, "exit 0")
         # #1720: the normaliser splits a command substitution into its own segment, so `git -C $(pwd) push` reached the fallback as
         # `git` | `pwd` | `push origin main` and was allowed; the fallback now also reads git and push as words of the RAW command.
         for cmd in ("git -C $(pwd) push origin main", 'git -C "$(pwd)" push origin main', "git --git-dir=$(pwd)/.git push origin main"):
             check(f"release-gate (#1720): parser missing -> `{cmd}` is blocked",
                   run(cmd, plugin_root=Path(bare_root)) == 2, "exit 0")
-        check("release-gate (#1720): parser missing -> CONTROL: `git -C $(pwd) push origin feature/x` passes",
-              run("git -C $(pwd) push origin feature/x", plugin_root=Path(bare_root)) == 0, "exit 2")
         on_main = (("checkout", "-q", "main"),)
         check("release-gate (#1720): parser missing -> `git -C $(pwd) merge` with HEAD on main is blocked",
               run("git -C $(pwd) merge feature/work", plugin_root=Path(bare_root), git_config=on_main) == 2, "exit 0")
-        check("release-gate (#1720): parser missing -> CONTROL: `git -C $(pwd) merge` on a feature branch passes",
-              run("git -C $(pwd) merge feature/work", plugin_root=Path(bare_root)) == 0, "exit 2")
 
     # THE DISCRIMINATING PAIR for the marketplace carve-out. The same command, the same absence of
     # a certification, and the ONLY difference is `.claude-plugin/marketplace.json`. Without the
@@ -2178,8 +2178,9 @@ def release_gate_fixtures() -> None:
             done = _run(["bash", str(QA_HOOK)], cwd=repo, env={**env, "CLAUDE_PLUGIN_ROOT": str(fb_root)},
                         capture_output=True, text=True, timeout=60,
                         input=json.dumps({"tool_input": {"command": "git push origin main"}}))
-        check("release-gate (#1337): without the classifier, dev's tip is read and a missing origin/dev does not poison it",
-              done.returncode == 0, done.stderr)
+        # #1720: without the classifier a push is refused by shape, even a certified one; the audited override is the way through.
+        check("release-gate (#1720): without the classifier, even a certified push is refused, naming the reinstall",
+              done.returncode == 2 and "reinstall the plugin" in done.stderr, done.stderr)
         (repo / "app.rb").write_text("v2\n", encoding="utf-8")
         sh("commit", "-q", "-am", "untested change")
         rc, err = gate()
@@ -4616,13 +4617,58 @@ def deadline_fixtures() -> None:
               rc == 0 and "audited" in err, f"exit {rc}: {err[:160]!r}")
 
 
+def _fallback_gate(td: str, bare: str):
+    """The release gate with no classifier beside it (CLAUDE_PLUGIN_ROOT names an empty directory), in repository `td`."""
+    env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env.pop("GH_REPO", None); env["CLAUDE_PLUGIN_ROOT"] = bare
+
+    def gate(cmd: str, **extra: str):
+        return _run(["bash", str(QA_HOOK)], cwd=td, input=json.dumps({"tool_input": {"command": cmd}}),
+                    env={**env, **extra}, capture_output=True, text=True, timeout=60)
+    return gate
+
+
+def release_gate_adversary_fixtures() -> None:
+    """#1720: the shell-adversary's inputs against the classifier-missing fallback at cc80da33, every one refused. A regression
+    corpus in its own group, so no mutant re-runs 54 hook calls; each rule that refuses them has its own fixture and mutant in
+    `release_gate_fallback`. The fallback reads no HEAD and no remote, so one repository serves every case."""
+    with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as bare:
+        _git_repo(Path(td))
+        gate = _fallback_gate(td, bare)
+        for cmd in ADVERSARY_1720:
+            check(f"release-gate fallback (#1720): adversarial `{cmd[:60]}` is refused", gate(cmd).returncode == 2, "exit 0")
+
+
+def release_gate_fallback_fixtures() -> None:
+    """#1720: WITHOUT ITS CLASSIFIER the release gate fails closed BY SHAPE: one fixture per rule, the controls and the message."""
+    with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as bare:
+        _git_repo(Path(td))   # HEAD on main: a merge or pull here would be one into main
+        gate = _fallback_gate(td, bare)
+        # ONE FIXTURE PER RULE that only that rule catches, so a mutant removing it cannot hide behind the others.
+        check("release-gate fallback (#1720): (a) a marker alone refuses: a base64-decoded push run through sh from `git log $(...)`",
+              gate("git log $(echo Z2l0IHB1c2ggb3JpZ2luIG1haW4= | base64 -d | sh)").returncode == 2, "exit 0")
+        check("release-gate fallback (#1720): (b) `fetch` with a `:` refspec refuses", gate("git fetch origin main:main").returncode == 2, "exit 0")
+        check("release-gate fallback (#1720): (b) `branch -f` refuses", gate("git branch -f main HEAD").returncode == 2, "exit 0")
+        check("release-gate fallback (#1720): (b) a gh write refuses", gate("gh release create v9.9.9").returncode == 2, "exit 0")
+        check("release-gate fallback (#1720): (c) a git alias, not on the read-only list, refuses", gate("git p origin main").returncode == 2, "exit 0")
+        for cmd in ("ls", "git status", "git log", "git log --oneline -3", "git diff", "git fetch origin", "git branch -a", "git -C repo status"):
+            check(f"release-gate fallback (#1720): CONTROL: read-only `{cmd}` passes", gate(cmd).returncode == 0, "exit 2")
+        done = gate("git push origin main")
+        check("release-gate fallback (#1720): the refusal names the missing classifier and the fix",
+              done.returncode == 2 and "classifier missing: restore plugins/qa-flow/scripts/push_targets.py (reinstall the plugin)" in done.stderr,
+              done.stderr[:200])
+        done = gate("git push origin main", QA_ALLOW_MAIN="1")
+        check("release-gate fallback (#1720): QA_ALLOW_MAIN=1 is honoured and audited, as in the missing-tool path",
+              done.returncode == 0 and "audited" in done.stderr, done.stderr[:200])
+
+
 GROUPS = {
     "stop_gate": stop_gate_fixtures, "guard_lane": guard_lane_fixtures,
     "guard_migrate": guard_migrate_fixtures, "lint_ruby": lint_ruby_fixtures,
     "self_consistency": self_consistency_fixtures, "guard_bash": guard_bash_fixtures,
     "guard_claims": guard_claims_fixtures, "guard_claims_pipe": guard_claims_pipe_fixtures, "release_gate": release_gate_fixtures,
     "release_gate_effects": release_gate_effects_fixtures, "release_gate_repos": release_gate_repos_fixtures,
-    "release_gate_refs": release_gate_refs_fixtures,
+    "release_gate_refs": release_gate_refs_fixtures, "release_gate_fallback": release_gate_fallback_fixtures,
+    "release_gate_adversary": release_gate_adversary_fixtures,
     "ci_verdict_hint": ci_verdict_hint_fixtures, "session_end": session_end_fixtures, "timeout": timeout_fixtures,
     "guard_worktree": guard_worktree_fixtures, "guard_worktree_parse": guard_worktree_parse_fixtures,
     "guard_worktree_failopen": guard_worktree_failopen_fixtures, "guard_worktree_pointer": guard_worktree_pointer_fixtures,
@@ -4646,7 +4692,7 @@ PARTS = {
     "a": ["stop_gate", "guard_lane", "guard_migrate", "lint_ruby", "self_consistency", "guard_bash", "guard_claims", "guard_claims_pipe",
           "ci_verdict_hint", "session_end", "timeout"],
     "b": ["release_gate", "release_gate_effects"],
-    "c": ["release_gate_repos", "release_gate_refs", "guard_worktree", "guard_worktree_parse",
+    "c": ["release_gate_repos", "release_gate_refs", "release_gate_fallback", "release_gate_adversary", "guard_worktree", "guard_worktree_parse",
           "guard_worktree_failopen", "guard_worktree_pointer", "deadline", "where_stopped", "fixture_git_binding"],
 }
 
