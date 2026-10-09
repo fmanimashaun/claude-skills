@@ -161,6 +161,11 @@ await check('parsers read the worktree, the pull request and the handoff', () =>
   assert.equal(reset.parseWorktreeRemove('git worktree list'), null)
   assert.equal(reset.createdPr('gh pr create --base dev', 'https://github.com/o/r/pull/12\n'), 'https://github.com/o/r/pull/12')
   assert.equal(reset.createdPr('gh pr view 12', 'https://github.com/o/r/pull/12'), null)
+  // anchored whole-word URLs (CodeQL js/regex/missing-regexp-anchor): an address embedded in another URL is not a PR
+  assert.equal(reset.createdPr('gh pr create', 'https://evil.example/?u=https://github.com/o/r/pull/9'), null)
+  assert.equal(reset.createdPr('gh pr create', 'xhttps://github.com/o/r/pull/9'), null)
+  assert.equal(reset.createdPr('gh pr create', 'Created (https://github.com/o/r/pull/13).'), 'https://github.com/o/r/pull/13')
+  assert.equal(reset.handoffComment('gh pr comment 7 --body handoff', 'see https://evil.example/https://github.com/o/r/pull/7#issuecomment-1'), null)
   assert.equal(reset.handoffFile('Write', '/a/HANDOFF.md'), '/a/HANDOFF.md')
   assert.equal(reset.handoffFile('Write', '/a/notes.md'), null)
   assert.equal(reset.handoffFile('Read', '/a/HANDOFF.md'), null)

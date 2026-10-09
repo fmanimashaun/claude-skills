@@ -114,13 +114,14 @@ export function resetJob() {
 // one would be an instruction in the model's next prompt (Fable's review of #1728).
 const SAFE_PATH = /^[\w.\/~-]+$/
 const SAFE_BRANCH = /^[\w.\/-]+$/
-const PR_URL = /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/g
-const COMMENT_URL = /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/(?:pull|issues)\/\d+#issuecomment-\d+/g
+// Anchored: a URL is accepted only as a WHOLE word, so a github.com address embedded in another URL or text never
+// counts (CodeQL js/regex/missing-regexp-anchor on #1728). lastMatch splits the text into words first.
+const PR_URL = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/
+const COMMENT_URL = /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/(?:pull|issues)\/\d+#issuecomment-\d+$/
 const safe = (v, re) => (typeof v === 'string' && re.test(v) ? v : null)
-const whole = (re) => new RegExp(`^${re.source}$`)
-const isCommentUrl = (v) => typeof v === 'string' && whole(COMMENT_URL).test(v)
-const isPrUrl = (v) => typeof v === 'string' && whole(PR_URL).test(v)
-const lastMatch = (re, text) => [...String(text ?? '').matchAll(re)].map((m) => m[0]).pop() ?? null
+const isCommentUrl = (v) => typeof v === 'string' && COMMENT_URL.test(v)
+const isPrUrl = (v) => typeof v === 'string' && PR_URL.test(v)
+const lastMatch = (re, text) => (String(text ?? '').match(/\S+/g) ?? []).map((w) => w.replace(/^[(<\["']+|[)>\].,;:"']+$/g, '')).filter((w) => re.test(w)).pop() ?? null
 
 // Drop heredoc bodies: their lines are text, not commands.
 function stripHeredocs(cmd) {
