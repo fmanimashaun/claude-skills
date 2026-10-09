@@ -287,6 +287,68 @@ def _git_repo(root: Path) -> None:
     _fixture_git(root, "commit", "-q", "--allow-empty", "-m", "init")
 
 
+# THE INVALID-BYTE FIXTURES MUST NOT DEPEND ON THE HOST'S TEXT TOOLS (#1729). The gate pins `LC_ALL=C` on its `tr`, `grep` and `sed` because BSD's (macOS)
+# stop at an invalid byte in a UTF-8 locale and drop the rest of the command. GNU's do not, so on the hosted Linux runner every mutant that removed one of
+# those pins was an EQUIVALENT mutant and survived (four of them, run 37903416854). These shims go first on PATH for those fixtures only and reproduce the
+# BSD behaviour on STDIN when the locale named in the environment is a UTF-8 one: `tr` keeps the input up to the first invalid byte and exits 1, `grep`
+# sees each line only up to its first invalid byte, `sed` stops at the line that holds one and exits 1. Under `LC_ALL=C` (the gate's pin), or given a file
+# operand, they hand over to the real tool untouched, so the unmutated gate is judged by what it does today and a mutant that drops a pin by what macOS does.
+_BSD_TEXT_PY = r'''import subprocess, sys
+real, tool = sys.argv[1], sys.argv[2]
+args = sys.argv[3:]
+def bad(b):
+    try:
+        b.decode("utf-8")
+        return -1
+    except UnicodeDecodeError as e:
+        return e.start
+data = sys.stdin.buffer.read()
+rc, err = None, b""
+if tool == "tr":
+    k = bad(data)
+    if k >= 0:
+        data, rc, err = data[:k], 1, b"tr: Illegal byte sequence\n"
+elif tool == "grep":
+    data = b"".join(l if bad(l) < 0 else l[:bad(l)] + (b"\n" if l.endswith(b"\n") else b"") for l in data.splitlines(True))
+elif tool == "sed":
+    out = []
+    for l in data.splitlines(True):
+        if bad(l) >= 0:
+            rc, err = 1, b"sed: illegal byte sequence\n"
+            break
+        out.append(l)
+    data = b"".join(out)
+child = subprocess.Popen([real] + args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+out_b, err_b = child.communicate(data)
+sys.stdout.buffer.write(out_b)
+sys.stdout.buffer.flush()
+sys.stderr.buffer.write(err_b + err)
+sys.exit(rc if rc is not None else child.returncode)
+'''
+# The REAL tool is named by absolute path, so the shim never finds itself again however PATH is arranged around it.
+_BSD_TEXT_SH = '''#!/bin/sh
+case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in *[Uu][Tt][Ff]*) ;; *) exec "@REAL@" "$@" ;; esac
+for a in "$@"; do if [ -f "$a" ]; then exec "@REAL@" "$@"; fi; done
+exec "@PY@" "${0%/*}/bsd_text.py" "@REAL@" @TOOL@ "$@"
+'''
+
+
+def bsd_text_shims() -> Path:
+    """A fresh directory holding `tr`, `grep` and `sed` shims that behave like BSD's on invalid UTF-8 (see above)."""
+    import atexit
+    d = Path(tempfile.mkdtemp(prefix="bsd-text-shim-")).resolve()
+    atexit.register(shutil.rmtree, d, True)
+    (d / "bsd_text.py").write_text(_BSD_TEXT_PY, encoding="utf-8")
+    for tool in ("tr", "grep", "sed"):
+        real = shutil.which(tool)
+        if real is None:
+            continue
+        w = d / tool
+        w.write_text(_BSD_TEXT_SH.replace("@TOOL@", tool).replace("@REAL@", real).replace("@PY@", sys.executable), encoding="utf-8")
+        w.chmod(0o755)
+    return d
+
+
 def run_hook(name: str, *, cwd: Path, stdin: str, path_prefix: list[Path] = (),
              env_extra: dict[str, str] | None = None, unset: tuple[str, ...] = (),
              shell: str = "bash") -> tuple[int, str]:
@@ -2033,12 +2095,15 @@ def release_gate_fixtures() -> None:
         # #1657 review: the gate's own text tools are not byte-safe in a UTF-8 locale. macOS `tr` (the git/gh pre-check) and BSD `grep` stop at an invalid
         # byte and drop the REST of the command, and macOS `sed` (inside the normaliser) aborts: `echo \xff` + a newline + a push read as no git at all and
         # was allowed. The hook pins `LC_ALL=C` itself, whatever the caller's locale; a normaliser that yields nothing for a command that is not empty is
-        # "could not read", which refuses in the degraded (no classifier) path. Run under en_US.UTF-8 ON PURPOSE; on a host without that locale the tools
-        # are byte-safe and these pass either way, so they can only be red on macOS (the maintainer's own machine).
+        # "could not read", which refuses in the degraded (no classifier) path. Run under en_US.UTF-8 ON PURPOSE. GNU tools are byte-safe whatever the
+        # locale, so on Linux these would pass either way and every mutant below would survive (#1729): the shims put BSD's behaviour on PATH there too.
         import shutil
+
+        bsd_shims = bsd_text_shims()      # #1729: BSD's behaviour on this host too, or a dropped `LC_ALL=C` pin is an equivalent mutant on Linux
 
         def gate_bytes(payload: bytes, root: Path | None = None, path_prefix: Path | None = None) -> int:
             e = {**env, "LC_ALL": "en_US.UTF-8"}
+            e["PATH"] = f"{bsd_shims}{os.pathsep}{e['PATH']}"
             if root is not None:
                 e["CLAUDE_PLUGIN_ROOT"] = str(root)
             if path_prefix is not None:

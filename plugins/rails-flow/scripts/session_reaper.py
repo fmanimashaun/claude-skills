@@ -118,6 +118,11 @@ def selftest() -> int:
     # fixtures, so both went inert (#1646 review R2).
     mine, other = str(uuid.uuid4()), str(uuid.uuid4())
     started: list[int] = []
+    # THIS PROCESS CARRIES ANOTHER SESSION'S ID (#1729). The reaper must read the id it is GIVEN, never its own environment. On a maintainer's machine
+    # the selftest runs inside a session, so its environment already held a different id; on the hosted runner it held none, the fallback equalled the
+    # argument, and the mutant that reads its own environment survived. Set explicitly, the check does not depend on where it runs.
+    saved_id = os.environ.get(SESSION_VAR)
+    os.environ[SESSION_VAR] = other
 
     def check(label: str, ok: bool, detail: str = "") -> None:
         if not ok:
@@ -190,6 +195,10 @@ def selftest() -> int:
               f"{value_of(running, SESSION_VAR)!r} {value_of(spoof, SESSION_VAR)!r} {value_of(decoy, SESSION_VAR)!r}")
         check("a second reap finds nothing left to reap", reap(mine) == [], "reaped again")
     finally:
+        if saved_id is None:
+            os.environ.pop(SESSION_VAR, None)
+        else:
+            os.environ[SESSION_VAR] = saved_id
         for pid in started:                     # the safety net, by the pids the fixtures recorded
             for sig in (signal.SIGCONT, signal.SIGKILL):
                 try:
