@@ -515,5 +515,11 @@ GUARD = Guard(
             "    return inc.trusted_skips(guards, hashes, harness, ['HEAD'], lambda sha: True,",
             'with NO trusted proof every guard must run',
         ),
+        Mutation(
+            "a --host rebaseline from a laptop writes the committed record CI trusts",
+            'target = COST_BASELINE if os.environ.get("GITHUB_ACTIONS") == "true" else COST_BASELINE.with_name("mutation-cost-baseline.local.json")',
+            "target = COST_BASELINE",
+            "--rebaseline --host outside CI must write a local record and NOT the committed one",
+        ),
     ),
 )

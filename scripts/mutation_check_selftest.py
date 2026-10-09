@@ -1115,6 +1115,22 @@ def run() -> int:
             FAILURES.append(f"#1738: a harness edit must force a full run (no skip), exit {rc}: {out}")
         (root / "scripts" / "mutation_check.py").unlink()
 
+        # A record written outside CI under --host is a LOCAL file nothing reads; only CI writes the committed record.
+        saved_ci = os.environ.pop("GITHUB_ACTIONS", None)
+        try:
+            rc, out, _ = drive("--rebaseline", "--host", "lab")
+            _tick()
+            if rc != 0 or (root / "cost.json").exists() or not (root / "mutation-cost-baseline.local.json").is_file():
+                FAILURES.append(f"#1738: --rebaseline --host outside CI must write a local record and NOT the committed one, exit {rc}: {out}")
+            os.environ["GITHUB_ACTIONS"] = "true"
+            rc, out, _ = drive("--rebaseline")
+            _tick()
+            if rc != 0 or not (root / "cost.json").is_file():
+                FAILURES.append(f"#1738: --rebaseline in CI writes the committed record, exit {rc}: {out}")
+        finally:
+            os.environ.pop("GITHUB_ACTIONS", None)
+            if saved_ci is not None:
+                os.environ["GITHUB_ACTIONS"] = saved_ci
         # Shards: the guard is in exactly one of two shards; the other runs nothing and still reports.
         mc.commit_id, real_commit = (lambda: "c1"), mc.commit_id
         for index in (1, 2):

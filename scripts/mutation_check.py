@@ -867,9 +867,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.rebaseline:
         # The growth the new record forgives is still SAID, once, so a re-record is never a silent one (#1738).
         _, warnings = ratchet_outcome(cost, record, everyone, warn_only=True)
-        write_cost_baseline(COST_BASELINE, cost, jobs, host)
-        print(f"cost record rewritten: {COST_BASELINE.relative_to(REPO)} ({len(over_floor)} guard(s) over the "
-              f"{RATCHET_FLOOR:g}s floor, host {host})")
+        # A RECORD CI READS COMES FROM CI ONLY (#1738, security review). Outside CI an explicit --host writes a `.local` file that nothing
+        # reads: the ratchet, the shard split and the release see only the committed record, which a person takes from the runner's artifact.
+        target = COST_BASELINE if os.environ.get("GITHUB_ACTIONS") == "true" else COST_BASELINE.with_name("mutation-cost-baseline.local.json")
+        write_cost_baseline(target, cost, jobs, host)
+        print(f"cost record rewritten: {target.relative_to(REPO)} ({len(over_floor)} guard(s) over the "
+              f"{RATCHET_FLOOR:g}s floor, host {host})" + ("" if target == COST_BASELINE else "; a local record, which CI never reads"))
     elif args.ratchet or args.ratchet_warn:
         blocking, warnings = ratchet_outcome(cost, record, everyone, warn_only=args.ratchet_warn)
         problems.extend(blocking)
