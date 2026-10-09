@@ -40,14 +40,16 @@ export const DEFAULT_COORDINATOR_HANDOFF = '~/projects/claude-skills-wt/_logs/CO
 // not fire again), so the role survives it; a resume is a new process and elects again.
 export const state = { role: null, coordinator: null, line: null, hasSurface: false }
 
-// POSIX sh, run with $1 = this session's id and $2 = "1" to force a claim. $PPID is the engine's own pid
+// POSIX sh, run with $1 = this session's id, $2 = "1" to force a claim, $3 = "1" for a RESUMED session: it never
+// makes or takes a claim, it only keeps one that already carries its own session id (owner rule, 2026-10-09, #1724).
+// A resumed session whose claim holds another id, or none, reports implementation. $PPID is the engine's own pid
 // (measured under `claude -p` 2.1.293: the shell `$.process.run` starts has the claude process as parent).
 // The claim is a directory made with mkdir, which is atomic: of two simultaneous starts exactly one makes it.
 // A claim is live only while its pid exists AND its process start time matches (a recycled pid after a
 // reboot is not the coordinator). A stale claim is replaced under a second mkdir lock, so two takers cannot
 // both win; a taker that finds the lock held reports implementation (fewer coordinators, never more).
 export const ELECT_SCRIPT = `
-d="$HOME/.claude/rails-flow"; c="$d/coordinator"; lk="$d/lock"; me="$PPID"; sid="$1"; force="$2"
+d="$HOME/.claude/rails-flow"; c="$d/coordinator"; lk="$d/lock"; me="$PPID"; sid="$1"; force="$2"; resumed="$3"
 mkdir -p "$d" || { echo error; exit 0; }
 start() { ps -o lstart= -p "$1" 2>/dev/null | sed 's/^ *//'; }
 claim() { mkdir "$c" 2>/dev/null || return 1; printf '%s\\n%s\\n%s\\n%s\\n' "$me" "$sid" "$(date +%s)" "$(start "$me")" > "$c/claim"; }
@@ -55,6 +57,13 @@ alive() { [ -n "$1" ] && kill -0 "$1" 2>/dev/null && [ "$(start "$1")" = "$2" ];
 read_claim() { hp=$(sed -n 1p "$c/claim" 2>/dev/null); hs=$(sed -n 2p "$c/claim" 2>/dev/null); hl=$(sed -n 4p "$c/claim" 2>/dev/null); }
 report() { echo "implementation $hp $hs"; exit 0; }
 if [ "$force" = "1" ]; then rm -rf "$c"; fi
+if [ "$resumed" = "1" ] && [ "$force" != "1" ]; then
+  read_claim
+  if [ -n "$hp" ] && [ "$hs" = "$sid" ] && { [ "$hp" = "$me" ] || ! alive "$hp" "$hl"; }; then
+    printf '%s\\n%s\\n%s\\n%s\\n' "$me" "$sid" "$(date +%s)" "$(start "$me")" > "$c/claim"; echo coordinator; exit 0
+  fi
+  report
+fi
 if claim; then echo coordinator; exit 0; fi
 read_claim
 if [ -z "$hp" ]; then sleep 1; read_claim; fi
@@ -85,13 +94,28 @@ export function electionLine(r) {
         'It clears itself after its PR is merged into dev and its worktree is removed.'
 }
 
+// Is this session a resume (or continue, or fork)? The mods `session.start` input carries no start source: its
+// SessionStartInput is { cwd, surface, isInteractive } (plugins/rails-flow/.claude-plugin/types/claude-code/index.d.ts
+// line 11679). The `source: 'startup' | 'resume' | 'clear' | 'compact' | 'fork'` field is on the classic hook's
+// SessionStartHookInput (line 11653), which a mod does not receive. A mod sees the transcript instead:
+// `$.session.turns()` (line 2799, "how many prompts the user has sent this session (user turns in the transcript)")
+// is 0 at a fresh start and above 0 in a resumed conversation. Unmeasured live. If it cannot be read the session
+// counts as resumed: fewer coordinators, never more.
+async function isResumed($) {
+  try {
+    return (await $.session.turns()) > 0
+  } catch {
+    return true
+  }
+}
+
 // Elect this session's role. Fails open to null: any error leaves the session with no automatic action.
 export async function electRole($) {
   try {
     const forced = roleOf(await $.env.get('RAILS_FLOW_ROLE'))
     if (forced === 'implementation') return { role: forced, coordinator: null }
     const sid = await $.session.id()
-    const r = await $.process.run(['sh', '-c', ELECT_SCRIPT, 'sh', String(sid), forced === 'coordinator' ? '1' : '0'], { timeoutMs: 8000 })
+    const r = await $.process.run(['sh', '-c', ELECT_SCRIPT, 'sh', String(sid), forced === 'coordinator' ? '1' : '0', (await isResumed($)) ? '1' : '0'], { timeoutMs: 8000 })
     return r.exitCode === 0 ? parseElection(r.stdout) : null
   } catch {
     return null

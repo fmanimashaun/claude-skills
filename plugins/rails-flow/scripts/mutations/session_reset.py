@@ -135,6 +135,48 @@ GUARD = Guard(
             "a live coordinator is not displaced",
         ),
         Mutation(
+            "a resumed session is never recognised: the turn count is ignored",
+            "return (await $.session.turns()) > 0",
+            "return (await $.session.turns()) < 0",
+            "every session resumed at once",
+        ),
+        Mutation(
+            "a turn count that cannot be read counts as a fresh start",
+            "  } catch {\n    return true\n  }",
+            "  } catch {\n    return false\n  }",
+            "cannot be read counts as a resume",
+        ),
+        Mutation(
+            "the resumed flag never reaches the election script",
+            "(await isResumed($)) ? '1' : '0'",
+            "'0'",
+            "every session resumed at once",
+        ),
+        Mutation(
+            "a resumed session takes a claim that carries another session's id",
+            '[ -n "$hp" ] && [ "$hs" = "$sid" ] && {',
+            '[ -n "$hp" ] && {',
+            "a different id does not inherit it",
+        ),
+        Mutation(
+            "a resumed session displaces a live coordinator of its own id",
+            '{ [ "$hp" = "$me" ] || ! alive "$hp" "$hl"; }',
+            '{ true; }',
+            "does not displace a LIVE coordinator",
+        ),
+        Mutation(
+            "a resumed session no longer keeps the claim it owns",
+            '{ [ "$hp" = "$me" ] || ! alive "$hp" "$hl"; }',
+            '{ false; }',
+            "stays coordinator",
+        ),
+        Mutation(
+            "the override is ignored for a resumed session",
+            'if [ "$resumed" = "1" ] && [ "$force" != "1" ]; then',
+            'if [ "$resumed" = "1" ]; then',
+            "still claims for a resumed session",
+        ),
+        Mutation(
             "RAILS_FLOW_ROLE=implementation still claims when no coordinator exists",
             "    if (forced === 'implementation') return { role: forced, coordinator: null }\n",
             "",

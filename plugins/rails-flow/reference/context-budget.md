@@ -224,9 +224,17 @@ more). The pid is `$PPID` of the shell `$.process.run` starts: measured under `c
   coordinator, or `RAILS_FLOW_ROLE=implementation` to opt out of the election. The old coordinator keeps its role
   until it restarts; the effect of a stale belief is only that it compacts instead of clearing.
 - **A `/clear` keeps the role.** The process goes on and "no `session.start` fires" for a clear, so the mod's variables,
-  and the claim's pid, are unchanged. **A resume starts a new process** and elects again: a resumed coordinator
-  re-takes its stale claim only if it starts before any other session does. Otherwise relaunch it with
-  `RAILS_FLOW_ROLE=coordinator`. This is a limit, not a guarantee.
+  and the claim's pid, are unchanged.
+- **A resumed session never claims the coordinator role** (owner rule, 2026-10-09, #1724: the human driver starts
+  the coordinator session first after a restart; sessions do not start themselves). An IDE restart resumes every
+  session within about a minute, and whichever started first used to win the election. The mods `session.start`
+  input has no start source (`SessionStartInput` is `{ cwd, surface, isInteractive }`, declaration line 11679; the
+  `source: 'startup' | 'resume' | ...` field, line 11653, belongs to the classic hook), so a session counts as
+  resumed when `$.session.turns()` (line 2799, user turns in the transcript) is above 0, or cannot be read.
+  That is not measured live. A resumed session is an implementation session, except that it keeps a claim
+  already recorded under its own session id when that claim's process is gone (or is this process). A fresh start,
+  or `RAILS_FLOW_ROLE=coordinator`, is the only way to claim a free or stale claim. A resumed coordinator whose
+  session id changed on resume therefore becomes an implementation session: relaunch it with the override.
 - **Not done:** the role is not written to the board's session record (`coordination.py`); that is a separate change.
 
 **Hardening from the adversarial review of #1728.** (1) Any tool call after the turn ended, or while `gh` answers,

@@ -53,7 +53,7 @@ class Proc {
   // Run the election script as this process's child; resolve with its stdout.
   run(argv) {
     const tag = `__DONE_${++fresh}__`
-    this.sh.stdin.write(`sh -c "$ELECT" sh '${argv[4]}' '${argv[5]}'; echo ${tag}\n`)
+    this.sh.stdin.write(`sh -c "$ELECT" sh '${argv[4]}' '${argv[5]}' '${argv[6] ?? 0}'; echo ${tag}\n`)
     return new Promise((resolve) => {
       const t = setInterval(() => {
         if (this.buf.includes(tag)) {
@@ -74,7 +74,7 @@ const home = () => {
 
 // One session: both modules registered onto one hook table, a recording host.
 //   role: pre-set role (null = leave to the election); proc: the process that runs the election script
-async function session({ holdClear = false, onGh = null, env = {}, role = 'implementation', gh = {}, surfaces = ['terminal'], compactRejects = 0, proc = null, sid = 's1' } = {}) {
+async function session({ holdClear = false, onGh = null, env = {}, role = 'implementation', gh = {}, surfaces = ['terminal'], compactRejects = 0, proc = null, sid = 's1', turns = 0 } = {}) {
   reset.resetJob()
   reset.state.role = role
   reset.state.hasSurface = surfaces.length > 0
@@ -99,6 +99,7 @@ async function session({ holdClear = false, onGh = null, env = {}, role = 'imple
     clock: { now: async () => 0, after: (ms, fn) => { timers.push(fn); return { cancel() {} } } },
     session: {
       id: async () => sid,
+      turns: async () => { if (turns === 'throws') throw new Error('unreadable'); return turns },
       surfaces: async () => surfaces,
       compact: async (a) => {
         if (rejects-- > 0) throw new Error('a turn is running')
@@ -486,13 +487,68 @@ await check('the role survives a clear: the process goes on and session.start do
   assert.equal(reset.state.role, 'implementation', 'tool calls and the job bookkeeping leave the role alone')
 })
 
-await check('resume: a resumed coordinator in a new process re-takes the stale claim when it starts first', async () => {
+await check('resume: every session resumed at once over a stale claim gives no coordinator (owner rule, #1724)', async () => {
   const h = home()
   const before = new Proc(h)
   await before.run(['sh', '-c', '', 'sh', 'old-id', '0'])
   before.kill()
   await new Promise((r) => setTimeout(r, 100))
-  const s = await session({ role: null, proc: new Proc(h), sid: 'resumed-id' })
+  const roles = []
+  for (let i = 0; i < 4; i++) {
+    const s = await session({ role: null, proc: new Proc(h), sid: `resumed-${i}`, turns: 7 })
+    await s.start()
+    roles.push(reset.state.role)
+  }
+  assert.deepEqual(roles, ['implementation', 'implementation', 'implementation', 'implementation'])
+})
+
+await check('resume: a fresh start followed by resumes gives exactly one coordinator', async () => {
+  const h = home()
+  const roles = []
+  for (const turns of [7, 0, 3, 9]) {
+    const s = await session({ role: null, proc: new Proc(h), sid: `s-${roles.length}`, turns })
+    await s.start()
+    roles.push(reset.state.role)
+  }
+  assert.deepEqual(roles, ['implementation', 'coordinator', 'implementation', 'implementation'])
+})
+
+await check('resume: a resumed session that already owns the claim (same session id, process gone) stays coordinator', async () => {
+  const h = home()
+  const before = new Proc(h)
+  await before.run(['sh', '-c', '', 'sh', 'owner-id', '0'])
+  before.kill()
+  await new Promise((r) => setTimeout(r, 100))
+  const other = await session({ role: null, proc: new Proc(h), sid: 'other-id', turns: 4 })
+  await other.start()
+  assert.equal(reset.state.role, 'implementation', 'a different id does not inherit it')
+  const s = await session({ role: null, proc: new Proc(h), sid: 'owner-id', turns: 4 })
+  await s.start()
+  assert.equal(reset.state.role, 'coordinator')
+  const later = await session({ role: null, proc: new Proc(h), sid: 'late-id', turns: 4 })
+  await later.start()
+  assert.equal(reset.state.role, 'implementation', 'and it is a live claim now')
+})
+
+await check('resume: a session of the owning id does not displace a LIVE coordinator in another process', async () => {
+  const h = home()
+  const live = new Proc(h)
+  await live.run(['sh', '-c', '', 'sh', 'x', '1']) // takes the claim, alive
+  const s = await session({ role: null, proc: new Proc(h), sid: 'x', turns: 4 })
+  await s.start()
+  assert.equal(reset.state.role, 'implementation')
+})
+
+await check('resume: a turn count that cannot be read counts as a resume', async () => {
+  const h = home()
+  const s = await session({ role: null, proc: new Proc(h), sid: 'u', turns: 'throws' })
+  await s.start()
+  assert.equal(reset.state.role, 'implementation')
+})
+
+await check('resume: RAILS_FLOW_ROLE=coordinator still claims for a resumed session', async () => {
+  const h = home()
+  const s = await session({ role: null, proc: new Proc(h), sid: 'r', turns: 5, env: { RAILS_FLOW_ROLE: 'coordinator' } })
   await s.start()
   assert.equal(reset.state.role, 'coordinator')
 })
