@@ -301,7 +301,16 @@ Thread.new do
 end
 ```
 
-- Never nest `executor.wrap` inside a request or job — those are already wrapped.
+- Don't wrap code that already runs inside a request or job — Rails wraps those.
+  Doing it is harmless (the Executor is re-entrant: `wrap` is a no-op when it is
+  already active) but adds nothing. Wrap only threads you start yourself.
+- A top-level long-running loop that repeatedly calls application code (your own
+  worker or poller) wraps each iteration in `Rails.application.reloader.wrap`
+  instead, so reloading works; the Reloader starts the Executor for you. Child
+  threads it spawns use `executor.wrap`: a Reloader in a child thread whose
+  parent waits inside the Executor deadlocks. Where a block is impractical, use
+  `execution_context = Rails.application.executor.run!` and
+  `execution_context.complete! if execution_context` in an `ensure`.
 - Blocking on another thread FROM wrapped code can deadlock the dev autoloader;
   wrap the wait:
   `ActiveSupport::Dependencies.interlock.permit_concurrent_loads { thread.join }`.
