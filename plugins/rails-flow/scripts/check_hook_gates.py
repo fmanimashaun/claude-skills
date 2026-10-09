@@ -4198,27 +4198,62 @@ def deadline_fixtures() -> None:
         (d / "awk").chmod(0o755)
         return str(d), pidfile
 
-    def hung(hook: Path, cmd: str, extra: dict[str, str] | None = None, deadline: str = "1"):
-        """The hook with a HANGING awk: (exit, seconds, stderr, sleepers still alive afterwards)."""
+    def hung(hook: Path, cmd: str, extra: dict[str, str] | None = None, deadline: str = "1", must_start: bool = False):
+        """The hook with a HANGING awk: (exit, seconds, stderr, sleepers still alive afterwards).
+
+        `must_start`: THE STUB MUST HAVE STARTED, or the run proves nothing (the controls, where the hook may legitimately never run awk, leave it off): a hook killed at its deadline before its awk was ever launched (a loaded machine,
+        eight mutants at once) leaves an empty pidfile, `survivors` then reports none, and every check below passes over a stub that never ran, so
+        the mutant that kills by pid only was caught by a DIFFERENT fixture. A run whose stub never started is repeated with twice the deadline,
+        up to four times (1, 2, 4, 8 s); if it still did not start, `left` says so, so the checks fail loudly instead of passing vacuously."""
+        hung.deadline_used = deadline       # what the verdict line names, which a retry below changes
+        if not must_start:
+            return hung_once(hook, cmd, extra, deadline)[:4]
+        tries = (int(deadline), int(deadline) * 2, int(deadline) * 4, int(deadline) * 8)
+        for attempt, seconds in enumerate(tries):
+            hung.deadline_used = str(seconds)
+            result = hung_once(hook, cmd, extra, str(seconds))
+            if result[4] or attempt == len(tries) - 1:
+                return result[0], result[1], result[2], result[3] if result[4] else ["the awk stub never started: the hook was killed before it ran it"]
+        raise AssertionError("unreachable")
+
+    def hung_once(hook: Path, cmd: str, extra: dict[str, str] | None, deadline: str):
+        """One run: (exit, seconds, stderr, sleepers still alive afterwards, whether the stub started)."""
         with tempfile.TemporaryDirectory() as td:
             d, pidfile = stubs(td)
             env = dict(base_env, PATH=d + os.pathsep + base_env["PATH"], RAILS_FLOW_HOOK_DEADLINE=deadline, **(extra or {}))
+            # The hook's output goes to FILES and the wait is on the hook's own exit, not on the end of its pipes: a hook whose deadline kills
+            # only the child (the bug this fixture exists to catch) leaves a tree of processes holding the pipes open, and `communicate` would
+            # wait out the whole limit, so that mutant TIMED OUT at 300 s in the mutation harness instead of failing on `survivors` within
+            # seconds. Its own session, so the cleanup below reaches the hook's group, as `_run`'s does.
+            out_path, err_path = Path(td) / "hook.out", Path(td) / "hook.err"
             t0 = time.monotonic()
-            r = _run(["/bin/bash", str(hook)], cwd=td, input=json.dumps({"tool_input": {"command": cmd}}), env=env,
-                     capture_output=True, text=True, timeout=60)
-            took = time.monotonic() - t0
-            return r.returncode, took, r.stderr, survivors(pidfile)
+            with out_path.open("wb") as out, err_path.open("wb") as err:
+                proc = subprocess.Popen(["/bin/bash", str(hook)], cwd=td, env=env, stdin=subprocess.PIPE, stdout=out, stderr=err,
+                                        start_new_session=True)
+                try:
+                    proc.communicate(json.dumps({"tool_input": {"command": cmd}}).encode(), timeout=hook_limit(60, machine_slowdown()))
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
+                took = time.monotonic() - t0
+            started = pidfile.exists() and bool(pidfile.read_text().split())
+            left = survivors(pidfile)         # BEFORE any group kill below, which could take the evidence with it
+            try:
+                os.killpg(proc.pid, int(signal.SIGKILL))   # whatever of the hook's group is left: it must not outlive this fixture
+            except (ProcessLookupError, PermissionError):
+                pass
+            return proc.returncode, took, err_path.read_text(errors="replace"), left, started
 
     # 1. guard-bash: past the deadline the command is DENIED, in about the deadline, with the whole group dead.
-    rc, took, err, left = hung(guard, "git status")
+    rc, took, err, left = hung(guard, "git status", must_start=True)
     check("deadline (#1575): guard-bash refuses a command its normaliser cannot read in time (fails CLOSED)",
           rc == 2, f"exit {rc}: a hung awk was ALLOWED")
-    check("deadline (#1575): ...at the deadline, not at the stub's 300 s", took < 6, f"{took:.1f}s")
+    check("deadline (#1575): ...at the deadline, not at the stub's 300 s", took < int(hung.deadline_used) + 5, f"{took:.1f}s")
     check("deadline (#1575): ...and no process the hook started outlives it (the whole group is killed)",
           not left, f"still running: {left} -- a kill of the parent alone orphans them")
     lines = [x for x in err.strip().splitlines() if x.strip()]
     check("deadline (#1575): ...with ONE line on stderr, the verdict, and no job-control notice (Claude reads stderr)",
-          len(lines) == 1 and lines[0].startswith("BLOCKED by rails-flow guardrails: this command took longer than 1s"),
+          len(lines) == 1 and lines[0].startswith(f"BLOCKED by rails-flow guardrails: this command took longer than {hung.deadline_used}s"),
           repr(err[:200]))
     # 2. CONTROLS: the deadline must not be what denies an ordinary command, and a real rule still says its own reason.
     with tempfile.TemporaryDirectory() as td:
@@ -4233,27 +4268,42 @@ def deadline_fixtures() -> None:
     check("deadline (#1575): CONTROL: a refused command still gives ITS reason, not the deadline's",
           bad.returncode == 2 and "git add -A" in bad.stderr and "took longer" not in bad.stderr, bad.stderr[:160])
     # 3. THE ORPHAN: Claude Code SIGKILLs the hook at its own timeout. The group must not run on for the deadline.
-    with tempfile.TemporaryDirectory() as td:
-        d, pidfile = stubs(td)
-        env = dict(base_env, PATH=d + os.pathsep + base_env["PATH"], RAILS_FLOW_HOOK_DEADLINE="8")
-        proc = subprocess.Popen(["/bin/bash", str(guard)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE, cwd=td, env=env, start_new_session=True)
-        try:
-            proc.stdin.write(json.dumps({"tool_input": {"command": "git status"}}).encode())
-            proc.stdin.close()
-            for _ in range(100):                                  # until the stub has really started
-                if pidfile.exists() and pidfile.read_text().strip():
-                    break
-                time.sleep(0.1)
-            time.sleep(0.3)
-            proc.kill()
-            proc.wait()
-            t0 = time.monotonic()
-            left = survivors(pidfile, within=4.0)
-            gone = time.monotonic() - t0
-        finally:
-            if proc.poll() is None:
+    # THE RUN MUST LEAVE ROOM TO TELL THE TWO APART: a watchdog that notices its parent died ends the group within a poll (about a second); one
+    # that does not ends it at the 8 s deadline, counted from the hook's START. On a loaded machine (eight mutants at once) the stub can start so
+    # late that the deadline falls INSIDE the 4 s look-out, the orphan then dies "in time" for the wrong reason and the broken watchdog is
+    # not caught (measured: the mutant survived 3 runs in 8, on dev's own fixture). So the elapsed time since the hook started is read at the
+    # kill, and a run with less than `need` s left before the deadline is discarded and repeated with a fresh hook; the look-out is shortened to
+    # end a second before the deadline, which is still longer than the watchdog's one-second poll.
+    deadline_s, look_out, need = 8.0, 4.0, 3.5
+    left, gone, margin = [], 0.0, 0.0
+    for _attempt in range(4):
+        with tempfile.TemporaryDirectory() as td:
+            d, pidfile = stubs(td)
+            env = dict(base_env, PATH=d + os.pathsep + base_env["PATH"], RAILS_FLOW_HOOK_DEADLINE=str(int(deadline_s)))
+            started = time.monotonic()
+            proc = subprocess.Popen(["/bin/bash", str(guard)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE, cwd=td, env=env, start_new_session=True)
+            try:
+                proc.stdin.write(json.dumps({"tool_input": {"command": "git status"}}).encode())
+                proc.stdin.close()
+                for _ in range(100):                                  # until the stub has really started
+                    if pidfile.exists() and pidfile.read_text().strip():
+                        break
+                    time.sleep(0.1)
+                time.sleep(0.3)
                 proc.kill()
+                proc.wait()
+                margin = deadline_s - (time.monotonic() - started)
+                t0 = time.monotonic()
+                left = survivors(pidfile, within=min(look_out, margin - 1.0))   # the deadline must still be a second off when the look-out ends
+                gone = time.monotonic() - t0
+            finally:
+                if proc.poll() is None:
+                    proc.kill()
+        if margin >= need:
+            break
+    check("deadline (#1575): the parent-kill run left room before the 8 s deadline to tell a watchdog that notices from one that does not",
+          margin >= need, f"only {margin:.1f}s were left at the kill, after 4 tries: the machine is too slow to judge this")
     check("deadline (#1575): the group dies within a poll of its PARENT being SIGKILLed, not at the 8 s deadline",
           not left and gone < 4, f"still running after {gone:.1f}s: {left}")
     # 4. NO `sleep` ON PATH: a watchdog that cannot wait would reach the deadline at once and deny EVERYTHING.
