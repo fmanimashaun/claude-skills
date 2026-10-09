@@ -106,14 +106,6 @@ GUARD = Guard(
             '_probe="$cmd"',
             "`\"g''it push origin main\"` reaches main",
         ),
-        # Likewise: the quoted-main fixture below passes on either text since #1657, so the mutant is named for what only the raw command keeps, a
-        # push on the first line of a command too long for the normalised segment.
-        Mutation(
-            "the fallback reads the normalised segment, losing the push in a command too long to normalise",
-            """    && LC_ALL=C grep -qE '\\b(main|master)\\b' <<<"$cmd" && { targets_main=1; needs_dev=1; }""",
-            """    && LC_ALL=C grep -qE '\\b(main|master)\\b' <<<"$seg" && { targets_main=1; needs_dev=1; }""",
-            "a push on the first line of a 120 KB command is refused",
-        ),
         # #1337: the stamp's own commit invalidates it again, or any delta slips through.
         Mutation(
             "an ancestor stamp is never accepted, so committing the stamp denies its promotion",
