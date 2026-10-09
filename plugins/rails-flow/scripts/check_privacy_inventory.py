@@ -16,10 +16,14 @@ THE FILE (the shape one consumer designed, adopted as the standard):
 
 RULES
   * every column of every `create_table` in db/schema.rb, and in every other `db/*_schema.rb` a second database dumps
-    (`schema_dump: observability_schema.rb` -> db/observability_schema.rb), is listed (the implicit `id` key is exempt);
+    (`schema_dump: observability_schema.rb` -> db/observability_schema.rb), is listed. The implicit `id` key is exempt, and
+    it is PRESENT: an inventory may list it, and that entry is stale only when the table says `id: false` (#1732);
     the Rails 8 Solid trio (db/cache_schema.rb, db/queue_schema.rb, db/cable_schema.rb) is framework-owned and is NOT read
     WHEN EVERY ONE OF ITS TABLES IS `solid_*` (a file of that name holding anything else is the project's own and is read), so a
-    project that never classified `solid_*` tables does not turn red (their job arguments are a separate question);
+    project that never classified `solid_*` tables does not turn red (their job arguments are a separate question). A table of
+    such a file that the inventory NAMES is read, and only that table: the entries listed for it are judged (they exist, they
+    carry a category) rather than reported stale, its unlisted columns are not required, and the file's other Solid tables stay the
+    framework's (#1732);
   * a table that appears in two schema files is a finding: the inventory is keyed by table name, so it could not say which;
   * `category: none` is an explicit "not personal"; any other category needs `basis` and `retention`;
   * an entry for a table or column that no schema file has any more is a finding (it would mislead the policy);
@@ -110,36 +114,50 @@ def _solid_only(path: Path) -> bool:
 
 
 def schema_files(root: Path) -> list[Path]:
-    """db/schema.rb first, then every other db/*_schema.rb a second database dumps, in name order, minus a Solid trio file that
-    holds only `solid_*` tables. A cache_schema.rb with a table of the project's own is read: the name alone decides nothing."""
-    others = sorted(p for p in (root / "db").glob("*_schema.rb") if not (p.name in FRAMEWORK_SCHEMAS and _solid_only(p)))
-    return [root / SCHEMA, *others]
+    """db/schema.rb first, then every other db/*_schema.rb a second database dumps, in name order."""
+    return [root / SCHEMA, *sorted((root / "db").glob("*_schema.rb"))]
+
+
+def framework_owned(path: Path) -> bool:
+    """A Solid trio file holding only `solid_*` tables. A cache_schema.rb with a table of the project's own is the project's: the
+    name alone decides nothing."""
+    return path.name in FRAMEWORK_SCHEMAS and _solid_only(path)
 
 
 def check(root: Path) -> tuple[int, list[str]]:
     if not (root / SCHEMA).is_file():
         return 3, [f"not applicable: no {SCHEMA}"]
+    try:
+        inv = load_inventory(root)
+    except Unusable as exc:
+        return 2, [f"UNUSABLE: {exc}"]
     tables: dict = {}
     source: dict[str, str] = {}
     duplicates: list[str] = []
+    named = frozenset(inv or ())
+    framework: set[str] = set()   # Solid tables the inventory names: listed entries judged, unlisted columns not required (#1732)
     for path in schema_files(root):
         name = path.relative_to(root).as_posix()
+        owned = framework_owned(path)
         for table, spec in parse_schema(path.read_text(encoding="utf-8"))["tables"].items():
+            if owned and table not in named:
+                continue   # the framework's, and the project never classified it (#1695); a named one is judged (#1732)
+            if owned:
+                framework.add(table)
             if table in tables:
                 duplicates.append(f"  [duplicate-table] {table} -- in {source[table]} and in {name}; the inventory is keyed by table name")
                 continue
             tables[table], source[table] = spec, name
     columns = {(t, c[0]) for t, spec in tables.items() for c in spec["columns"]}
+    # What an inventory entry may name: the listed columns, plus the `id` Rails adds unless the table says `id: false` (#1732). Never
+    # required (an unlisted implicit id is not unclassified), only allowed.
+    present = columns | {(t, "id") for t, spec in tables.items() if spec["implicit_id"]}
 
     def where(table: str) -> str:
         """Only a table from a second schema file is named; db/schema.rb stays unmentioned, as before."""
         return "" if source[table] == SCHEMA.as_posix() else f" (in {source[table]})"
 
     files = ", ".join(sorted({*source.values()}))
-    try:
-        inv = load_inventory(root)
-    except Unusable as exc:
-        return 2, [f"UNUSABLE: {exc}"]
     if inv is None:
         return 1, [f"no {INVENTORY}: all {len(columns)} column(s) across {len(tables)} table(s) are "
                    "unclassified. /rails-flow:setup-flow drafts it; each column gets a category, or "
@@ -147,6 +165,8 @@ def check(root: Path) -> tuple[int, list[str]]:
     findings = []
     for t, c in sorted(columns):
         entry = inv.get(t, {}).get(c)
+        if entry is None and t in framework:
+            continue
         if entry is None:
             findings.append(f"  [unclassified] {t}.{c}{where(t)} -- not in {INVENTORY}")
             continue
@@ -162,7 +182,7 @@ def check(root: Path) -> tuple[int, list[str]]:
             findings.append(f"  [stale-table] {t} -- in {INVENTORY} but in no schema file ({files})")
             continue
         for c in sorted(cols):
-            if (t, c) not in columns:
+            if (t, c) not in present:
                 findings.append(f"  [stale-column] {t}.{c} -- in {INVENTORY} but not in {source[t]}")
     findings = duplicates + findings
     if findings:
@@ -357,6 +377,38 @@ def selftest() -> int:
         code, out = check(app(t / "dup", both, extra={"observability_schema.rb": second.replace("error_groups", "widgets")}))
         check_("a table in two schema files is a finding, not a silent pick",
                any("[duplicate-table] widgets" in l for l in out), f"{out}")
+
+        # #1732 (a): THE IMPLICIT `id`. Rails adds it unless the table says `id: false`; the dump never lists it as a column, so an
+        # inventory that classifies it was read as stale. Allowed when implicit; still stale when the table has no id at all.
+        code, out = check(app(t / "listedid", good + "  id: { category: none }\n"))
+        check_("a listed implicit id is not stale", code == 0, f"{code} {out}")
+        noid = schema.replace('create_table "widgets", force: :cascade do', 'create_table "widgets", id: false, force: :cascade do')
+        code, out = check(app(t / "noid", good + "  id: { category: none }\n", noid))
+        check_("a listed id on an `id: false` table is still stale",
+               code == 1 and any("[stale-column] widgets.id" in l for l in out), f"{code} {out}")
+
+        # #1732 (b): A SOLID TABLE THE INVENTORY NAMES. The project classified it, so its file is read and the entry judged, not
+        # reported as a table in no schema file; a Solid file nobody named is still skipped (the trio fixtures above).
+        named = good + "solid_queue_jobs:\n  arguments: { category: none }\n"
+        code, out = check(app(t / "namedsolid", named, extra={"queue_schema.rb": trio["queue_schema.rb"]}))
+        check_("a Solid table the inventory names is read: its entry is not stale", code == 0, f"{code} {out}")
+        code, out = check(app(t / "namedsolidgrown", named, extra={"queue_schema.rb": trio["queue_schema.rb"].replace(
+            '    t.text "arguments"\n', '    t.text "arguments"\n    t.string "concurrency_key"\n')}))
+        check_("a named Solid table's unlisted columns are not required (the framework's), only its listed entries judged",
+               code == 0 and not any("concurrency_key" in l for l in out), f"{code} {out}")
+        code, out = check(app(t / "namedsolidstale", named + "  gone_col: { category: none }\n",
+                              extra={"queue_schema.rb": trio["queue_schema.rb"]}))
+        check_("a listed column a named Solid table no longer has is still stale",
+               any("[stale-column] solid_queue_jobs.gone_col" in l for l in out), f"{code} {out}")
+        code, out = check(app(t / "namedsolidnocat", good + "solid_queue_jobs:\n  arguments: { basis: x }\n",
+                              extra={"queue_schema.rb": trio["queue_schema.rb"]}))
+        check_("a named Solid table's entry still needs a category",
+               any("[no-category] solid_queue_jobs.arguments" in l for l in out), f"{code} {out}")
+        sibling = trio["queue_schema.rb"].replace("  end\nend\n", '  end\n  create_table "solid_queue_processes", force: :cascade do |t|\n'
+                                                  '    t.string "hostname"\n  end\nend\n')
+        code, out = check(app(t / "namedsibling", named, extra={"queue_schema.rb": sibling}))
+        check_("an unnamed Solid table beside a named one stays the framework's: not read at all (5 columns, not 6)",
+               code == 0 and "all 5 column(s)" in out[0] and not any("solid_queue_processes" in l for l in out), f"{code} {out}")
 
         code, out = check(app(t / "nosecond", good))
         check_("CONTROL: a project with only db/schema.rb is judged exactly as before", code == 0, f"{code} {out}")

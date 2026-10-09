@@ -119,7 +119,9 @@ def parse_schema(text: str) -> dict:
                 # Rails can emit `t.index` with options this does not model, and the page must say
                 # so rather than quietly shorten the list.
                 unparsed.append(line.strip())
-        tables[name] = {"columns": cols, "indexes": idx, "id": (re.search(r"id:\s*(:\w+)", opts) or [None, "bigint"])[1]}
+        # `implicit_id`: Rails adds an `id` primary key that the dump never lists as a column, unless the table says `id: false` (#1732).
+        tables[name] = {"columns": cols, "indexes": idx, "id": (re.search(r"id:\s*(:\w+)", opts) or [None, "bigint"])[1],
+                        "implicit_id": not re.search(r"\bid:\s*false\b", opts)}
     fks = re.findall(r'^\s*add_foreign_key\s+"([^"]+)",\s*"([^"]+)"', text, re.M)
     return {"version": version, "tables": tables, "foreign_keys": fks,
             "unparsed_indexes": unparsed,
