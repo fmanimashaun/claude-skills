@@ -634,7 +634,12 @@ SLOW_GATES: dict[str, int] = {
     # that finished. The real time is therefore at least 3600 s and not yet measured: the run that completes under
     # this bound prints it, and 5400 s is 1.5x the 3600 s floor. #1599 cuts the guards that re-run a whole fixture group
     # per mutant; re-set this from the `jobs=4, Xs` of a completed run, and lower it when #1599 lands.
-    "mutation coverage": 5400,
+    # 2026-10-09, MEASURED on the maintainer's machine, three completed or killed promotion sweeps of the same guards (2940 mutations / 199
+    # guards at jobs=10): 62 min (dcb433ad), 77 min (8b7a0786), and 100 min (56d2df61), the last killed at this bound with no survivor in any
+    # guard that finished, while the coordinator's build agent, adversary rounds and ten sessions' handoff cleanup ran beside it (load 34).
+    # 5400 s left 1.2 to 1.5x over a whole gate that takes 62 to 77 min on its own, so another session's load decided the sweep. 9000 s is
+    # 1.9x the 77 min that completed under load. It is still a STOP-GAP (see #1599 above): lower it when #1599 cuts the guards.
+    "mutation coverage": 9000,
     # #1635, MEASURED on the maintainer's machine under other sessions' load: `check_hook_gates.py --selftest --part b` took
     # 203 s wall (128 s CPU) at load 24, and `--part c` 190 s at load 50 (review of #1636), against the 180 s default; both
     # pass (355 and 574 checks) when left to finish, and passed on the runner. 600 s is about 3x the larger figure. These are
