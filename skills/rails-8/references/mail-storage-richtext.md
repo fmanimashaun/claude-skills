@@ -118,7 +118,9 @@ Rendering:
   or label already says it, as a post hero next to its `<h1>` does.
 - Variants need the `image_processing` gem (uncomment in Gemfile) and
   libvips (the generated Dockerfile installs it). `preprocessed: true`
-  generates eagerly in a job instead of first-request.
+  generates eagerly in a job instead of first-request. (Rails 8.2, **unreleased**,
+  deprecates `preprocessed: true` in favour of `process: :later`:
+  `references/rails-8-2-readiness.md`.)
 - URL modes: default redirect controller (short-lived signed redirect to
   the service) — fine generally; **proxying**
   (`rails_storage_proxy_path`, or `config.active_storage.resolve_model_to_route
