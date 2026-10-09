@@ -125,7 +125,7 @@ GUARD = Guard(
         # #1451 review: comment stripping, and the pager shapes a real app writes.
         Mutation(
             "COMMENTS ARE NO LONGER STRIPPED, so a described anti-pattern counts as committed",
-            "    source = strip_comments(raw)\n",
+            "    source = strip_comments(raw, html=is_html(rel))\n",
             "    source = raw\n",
             "a scroller named only in a comment is silent",
         ),

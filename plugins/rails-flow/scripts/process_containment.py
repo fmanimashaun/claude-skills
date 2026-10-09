@@ -38,30 +38,78 @@ import uuid
 TOKEN_VAR = "CLAUDE_CONTAIN_TOKEN"
 
 
+def environ_of(pid: int) -> list[bytes] | None:
+    """The process's environment as SEPARATE entries (`NAME=value`, bytes), or None when it cannot be read.
+
+    Exact on both platforms, never a search over printed text: Linux reads `/proc/<pid>/environ`; macOS asks the kernel
+    (`sysctl kern.procargs2`, which returns argv and environment as NUL-separated strings, argv counted off). `ps -E`
+    cannot be used: it joins the command line and every variable with spaces, so a VALUE containing ` VAR=x ` is
+    indistinguishable from the variable (#1646 review R1: another session's orphan was killed that way)."""
+    if sys.platform.startswith("linux"):
+        try:
+            with open(f"/proc/{pid}/environ", "rb") as f:
+                return [e for e in f.read().split(b"\0") if e]
+        except OSError:
+            return None
+    if sys.platform != "darwin":
+        return None
+    try:
+        import ctypes
+        import ctypes.util
+        libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
+        mib = (ctypes.c_int * 3)(1, 49, pid)                  # CTL_KERN, KERN_PROCARGS2, pid
+        size = ctypes.c_size_t(0)
+        if libc.sysctl(mib, 3, None, ctypes.byref(size), None, 0) != 0:
+            return None
+        buf = ctypes.create_string_buffer(size.value)
+        if libc.sysctl(mib, 3, buf, ctypes.byref(size), None, 0) != 0:
+            return None
+        data = buf.raw[:size.value]
+        argc, rest = int.from_bytes(data[:4], "little"), data[4:]
+        i = rest.index(b"\0")                                 # the executable path, then NUL padding
+        while i < len(rest) and rest[i] == 0:
+            i += 1
+        for _ in range(argc):
+            i = rest.index(b"\0", i) + 1
+        entries = []
+        for e in rest[i:].split(b"\0"):
+            if not e:
+                break                                         # the environment ends at the first empty string
+            entries.append(e)
+        return entries
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def _all_pids() -> list[int]:
+    if sys.platform.startswith("linux"):
+        return [int(e) for e in os.listdir("/proc") if e.isdigit()]
+    out = subprocess.run(["ps", "-A", "-o", "pid="], capture_output=True, text=True, check=False).stdout
+    return [int(x) for x in out.split() if x.isdigit()]
+
+
+def value_of(pid: int, var: str) -> str | None:
+    """The value of the variable named EXACTLY `var` in that process's environment, or None."""
+    prefix = f"{var}=".encode()
+    for entry in environ_of(pid) or []:
+        if entry.startswith(prefix):
+            return entry[len(prefix):].decode("utf-8", "surrogateescape")
+    return None
+
+
+def holding(var: str, value: str) -> list[int]:
+    """Every live process whose environment has an entry that IS `var=value`, never this one. Entries are compared whole
+    and separately: a command line, or another variable's value, that merely contains the text does not match, and where
+    the environment cannot be read at all nothing matches (refuse, never guess)."""
+    needle, me = f"{var}={value}".encode(), os.getpid()
+    if environ_of(me) is None:
+        return []
+    return [pid for pid in _all_pids() if pid != me and needle in (environ_of(pid) or [])]
+
+
 def tagged(token: str) -> list[int]:
     """Every live process started with `TOKEN_VAR=token` in its environment, never this one."""
-    needle, me = f"{TOKEN_VAR}={token}", os.getpid()
-    found: list[int] = []
-    if sys.platform.startswith("linux"):
-        for entry in os.listdir("/proc"):
-            if not entry.isdigit() or int(entry) == me:
-                continue
-            try:
-                with open(f"/proc/{entry}/environ", "rb") as f:
-                    if needle.encode() in f.read().split(b"\0"):
-                        found.append(int(entry))
-            except OSError:
-                pass
-        return found
-    out = subprocess.run(["ps", "-E", "-ww", "-A", "-o", "pid=,command="],
-                         capture_output=True, text=True, check=False).stdout
-    for line in out.splitlines():
-        # A whole environment entry: the token is unique per run, and is followed by a space or the end.
-        if f" {needle} " in f" {line} ":
-            pid = int(line.split(None, 1)[0])
-            if pid != me:
-                found.append(pid)
-    return found
+    return holding(TOKEN_VAR, token)
 
 
 def _signal(pid: int, sig: int) -> None:
@@ -112,6 +160,21 @@ class Box:
 
 
 @contextlib.contextmanager
+def _deferred_signals():
+    """HOLD SIGTERM, SIGHUP AND SIGINT UNTIL THE SWEEP HAS FINISHED (#1582 slice B, #1589 re-review S1). The CLI turns
+    those signals into an exception, and a second one that landed while `contained()`'s `finally` was sweeping raised
+    AGAIN inside it: the sweep stopped partway and the tree survived (measured 5 of 5, a 0.3 s gap between the two).
+    Blocked, a signal waits pending (equal signals coalesce) and is delivered when the mask is restored, after the sweep,
+    to whatever handler the caller installed -- so the interrupt still ends the caller, just not the cleanup."""
+    held = {signal.SIGTERM, signal.SIGHUP, signal.SIGINT}
+    previous = signal.pthread_sigmask(signal.SIG_BLOCK, held)
+    try:
+        yield
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, previous)
+
+
+@contextlib.contextmanager
 def contained():
     """Run the block with `TOKEN_VAR` set, so every process it starts is tagged. On any exit that
     reaches `finally` -- a return, an exception, Ctrl-C -- sweep them all. A library installs no signal
@@ -127,7 +190,8 @@ def contained():
             os.environ.pop(TOKEN_VAR, None)
         else:
             os.environ[TOKEN_VAR] = saved
-        box.killed = sweep(token)
+        with _deferred_signals():
+            box.killed = sweep(token)
 
 
 # A BROKEN FIXTURE, the shape of the 2026-10-03 leak. The fixture starts a CHILD; the child starts a
@@ -269,6 +333,31 @@ def selftest() -> int:
             check(f"a {sig.name} to the CLI still kills the command's tree",
                   len(_recorded(fs)) == 2 and not any(_alive(p) for p in _tree(fs)),
                   f"recorded {_tree(fs)}, alive {[p for p in _tree(fs) if _alive(p)]}")
+
+        # 8. #1582 slice B (from #1589's re-review S1): A SECOND SIGNAL DURING THE TEARDOWN MUST NOT ABORT THE SWEEP.
+        # The CLI turns SIGTERM into an exception, and a second one arriving while `contained()`'s `finally` runs the
+        # sweep raised again INSIDE it: the sweep stopped partway and the tree survived (5 of 5 with a 0.3 s gap).
+        # Each pair below is sent to a fresh CLI whose command leaks the stopped-orphan shape.
+        # The SECOND signal varies too (#1642 review): dropping SIGHUP or SIGINT from the held set must fail a fixture, not only dropping SIGTERM.
+        for first, second in ((signal.SIGTERM, signal.SIGTERM), (signal.SIGHUP, signal.SIGTERM), (signal.SIGINT, signal.SIGTERM),
+                              (signal.SIGTERM, signal.SIGHUP), (signal.SIGTERM, signal.SIGINT)):
+            fd = pidfile(f"cli-twice-{first.name}-{second.name}.pids")
+            w = subprocess.Popen([sys.executable, __file__, "--", sys.executable, "-c",
+                                  _LEAKY + "time.sleep(60)\n", fd],
+                                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            wait_for(fd)
+            w.send_signal(first)
+            time.sleep(0.3)                  # the first is in the teardown, the second lands inside the sweep
+            w.send_signal(second)
+            try:
+                w.wait(timeout=20)
+            except subprocess.TimeoutExpired:
+                w.kill()
+                w.wait()
+            time.sleep(0.3)
+            check(f"a {second.name} {0.3}s after a {first.name} does not abort the sweep: the tree is gone",
+                  len(_recorded(fd)) == 2 and not any(_alive(p) for p in _tree(fd)),
+                  f"recorded {_tree(fd)}, alive {[p for p in _tree(fd) if _alive(p)]}")
     finally:
         # SAFETY NET by RECORDED PID, never by token and never through `sweep()`: under a mutant either may
         # be the broken part, and running this guard must not leak what it tests.

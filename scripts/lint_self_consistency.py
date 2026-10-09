@@ -33,6 +33,13 @@ WHAT IT CHECKS
                               differ, or one is missing -- one normaliser is a claim only while they are identical
   fixture-git-drift           the three shipped copies of scripts/fixture_git.py (rails-flow, qa-flow,
                               pipeline) differ, or one is missing -- one fixture-git lock, three copies (#1588)
+  findings-script-drift       the two shipped copies of scripts/findings.py (rails-flow, qa-flow) differ,
+                              or one is missing -- qa-reporter runs its own copy (#1680)
+  cross-plugin-relative-path  shipped markdown that runs `../<other-plugin>/...`, which resolves in the
+                              clone and not in an install's per-plugin cache directories (#1680)
+  fixture-git-bypass          a git call with the fixture identity (`t@t`) outside fixture_git -- a fixture's git
+                              that can reach the real repo when its temp init fails (#1588); `# fixture-git: exempt
+                              (<reason>)` on the line for what the helper refuses by design (a `git worktree add` checkout)
   claude-md-growth            CLAUDE.md past the ceiling recorded in its own marker (or no marker,
                               or its history file gone) — relocate incident paragraphs verbatim to
                               docs/brain/history/maintainer-history.md; claude_md_structure.py prints the diff
@@ -627,6 +634,109 @@ def check_fixture_git_drift() -> tuple[list[Finding], int]:
                                     f"differs from {FIXTURE_GIT_COPIES[0]} -- one fixture-git lock, three copies: a fix "
                                     "landed in one and not the others. Copy the canonical file over it (cp) and re-run"))
     return findings, len(FIXTURE_GIT_COPIES)
+
+
+# Rule: findings-script-drift (#1680)
+# qa-reporter validates its findings records with findings.py, which rails-flow owns. It used to call
+# `../rails-flow/scripts/findings.py`, which resolves only in this repo's checkout: an install puts each
+# plugin in its own versioned cache directory. qa-flow now ships a copy; this keeps it the same script.
+FINDINGS_COPIES = ("plugins/rails-flow/scripts/findings.py",
+                   "plugins/qa-flow/scripts/findings.py")
+
+
+def check_findings_script_drift() -> tuple[list[Finding], int]:
+    """The findings.py copies exist and are byte-identical to the rails-flow (canonical) one."""
+    findings: list[Finding] = []
+    texts = {}
+    for rel in FINDINGS_COPIES:
+        p = ROOT / rel
+        if not p.is_file():
+            findings.append(Finding("findings-script-drift", rel, 0,
+                                    "missing -- qa-reporter's findings validation has nothing to run (#1680); "
+                                    "copy it from plugins/rails-flow/scripts/findings.py"))
+            continue
+        texts[rel] = p.read_bytes()
+    canonical = texts.get(FINDINGS_COPIES[0])
+    for rel in FINDINGS_COPIES[1:]:
+        if canonical is not None and texts.get(rel, canonical) != canonical:
+            findings.append(Finding("findings-script-drift", rel, 0,
+                                    f"differs from {FINDINGS_COPIES[0]} -- one findings schema, two copies: QA and "
+                                    "review records would validate against different rules. Copy the canonical "
+                                    "file over it (cp) and re-run"))
+    return findings, len(FINDINGS_COPIES)
+
+
+# Rule: cross-plugin-relative-path (#1680)
+# A shipped doc that tells the user to run `../<other-plugin>/...` works from this repo's checkout, where
+# the plugins are siblings, and fails from an install, where each plugin sits in its own
+# `<plugin>/<version>/` cache directory. The checkout confirms itself, so every gate stayed green.
+# Keyed on the target being ANOTHER plugin's directory: `../scripts/` inside one plugin is fine.
+def check_cross_plugin_relative_path() -> tuple[list[Finding], int]:
+    """No shipped markdown reaches into a sibling plugin by a relative `../<plugin>/` path."""
+    findings: list[Finding] = []
+    # rails-stack ships the top-level skills/ (its marketplace source is the repo root), so it has no
+    # plugins/ directory but is still a plugin a doc could wrongly reach into.
+    plugins = sorted({p.name for p in (ROOT / "plugins").glob("*") if p.is_dir()} | {"rails-stack"})
+    # `(?:plugins/)?` catches the clone path a rails-stack skill would write (`../../plugins/rails-flow/`);
+    # `(?![\w-])` ends the name without needing a slash (`cd ../rails-flow`) and keeps `rails-flow-x` out.
+    pattern = re.compile(r"(?<![\w.])(?:\.\./)+(?:plugins/)?(" + "|".join(map(re.escape, plugins)) + r")(?![\w-])")
+    docs = [(p, p.relative_to(ROOT).as_posix().split("/")[1]) for p in sorted((ROOT / "plugins").glob("*/**/*.md"))]
+    docs += [(p, "rails-stack") for p in sorted((ROOT / "skills").glob("**/*.md"))]
+    examined = 0
+    for path, own in docs:
+        rel = path.relative_to(ROOT).as_posix()
+        if "/tests/" in rel:
+            continue
+        examined += 1
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for match in pattern.finditer(text):
+            if match.group(1) == own:
+                continue
+            line = text[: match.start()].count("\n") + 1
+            findings.append(Finding(
+                "cross-plugin-relative-path", rel, line,
+                f"`{match.group(0)}` reaches into the {match.group(1)} plugin by a relative path. That resolves "
+                f"only in this repo's checkout; an install puts each plugin in its own versioned cache "
+                f"directory, so the user's command fails. Ship what you need inside this plugin and call it "
+                f"through ${{CLAUDE_PLUGIN_ROOT}} (see FINDINGS_COPIES for the pattern)."))
+    return findings, examined
+
+
+# Rule: fixture-git-bypass (#1588)
+# The fixture identity `t@t` marks a fixture's git: production code never commits as it. Every such call goes
+# through fixture_git, which binds GIT_DIR/GIT_WORK_TREE to the temp repo and refuses one whose init failed --
+# the incident was a fixture's `git commit` landing in the real dev checkout through an inherited cwd and GIT_DIR.
+# ANY FIXTURE IDENTITY (#1660 review R4), not only `t@t`: an email in `-c user.email=`, in a GIT_AUTHOR/COMMITTER_EMAIL
+# entry, set with `config user.email`, or in `--author "name <email>"`. Production code sets none of these.
+_FIXTURE_IDENTITY = re.compile(r"""user\.email=[\w.+-]+@[\w.-]+"""
+                               r"""|GIT_(?:AUTHOR|COMMITTER)_EMAIL["']?\s*[:=,]\s*["'][\w.+-]+@[\w.-]+["']"""
+                               r"""|\bemail\s*=\s*["']t@t["']"""
+                               r"""|["']user\.email["']\s*,\s*["'][\w.+-]+@[\w.-]+["']"""
+                               r"""|--author["']?[\s,=]+["']?[^"'<]*<[\w.+-]+@[\w.-]+>""")
+_FIXTURE_EXEMPT = re.compile(r"#\s*fixture-git:\s*exempt\s*\([^)]+\)")
+
+
+def check_fixture_git_bypass(python_sources: dict[Path, str]) -> tuple[list[Finding], int]:
+    """A line that sets the fixture git identity outside the fixture_git copies (and outside this rule) is a finding."""
+    findings: list[Finding] = []
+    examined = 0
+    own = {Path(c) for c in FIXTURE_GIT_COPIES} | {Path("scripts/lint_self_consistency.py")}
+    for path, text in python_sources.items():
+        rel = path.relative_to(ROOT) if path.is_absolute() else path
+        if rel in own:
+            continue
+        for n, line in enumerate(text.splitlines(), 1):
+            if not _FIXTURE_IDENTITY.search(line):
+                continue
+            examined += 1
+            if _FIXTURE_EXEMPT.search(line):
+                continue
+            findings.append(Finding("fixture-git-bypass", str(rel), n,
+                                    "a fixture git identity outside fixture_git: run this git through "
+                                    "fixture_git.run(repo, ...) (it refuses a repo whose init failed, and binds "
+                                    "GIT_DIR to the temp repo), or mark a case the helper refuses by design "
+                                    "`# fixture-git: exempt (<reason>)` (#1588)"))
+    return findings, examined
 
 
 def check_claude_md_growth() -> tuple[list[Finding], int]:
@@ -1900,6 +2010,87 @@ def check_uncontained_process_fixtures() -> tuple[list[Finding], int]:
             "a fixture built to leak (a red-first process bug) left 74 stopped orphans on 2026-10-03 and "
             "exhausted the user's process limit (#1582). Import it from "
             "`plugins/rails-flow/scripts/process_containment.py` and run the selftest under `with contained():`",
+        ))
+    return findings, examined
+
+
+# A fixture that commits in a temp repo (#1577), and what makes that safe.
+_HERMETIC_REF = re.compile(r"hermetic_git|fixture_git|maintenance\.auto|GIT_CONFIG_COUNT")
+_TEMP_USE = re.compile(r"tempfile|mkdtemp|TemporaryDirectory")
+HERMETIC_BASELINE = "scripts/hermetic_git_baseline.txt"
+
+
+def _spawns_git_commit(text: str) -> int | None:
+    """The line of the first call that passes a literal `"commit"` in a file that also names `"git"`, else None.
+
+    Wrappers count: `git(repo, "commit", "-m", "m")` is a call with the literal as an argument, and so is
+    `subprocess.run(["git", "commit"])`, where it sits inside a list argument. Only calls count, so a comment,
+    a docstring or a `Mutation("...", "commit", ...)` string in a data table does not."""
+    import ast
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return None
+    if not any(isinstance(n, ast.Constant) and n.value == "git" for n in ast.walk(tree)):
+        return None
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            literals = [e.value for a in node.args for e in ([a] if isinstance(a, ast.Constant) else getattr(a, "elts", []))
+                        if isinstance(e, ast.Constant) and isinstance(e.value, str)]
+            if "commit" in literals:
+                return node.lineno
+    return None
+
+
+def check_non_hermetic_fixture_git() -> tuple[list[Finding], int]:
+    """A script that commits in a temp repo must run git hermetic: `maintenance.auto=false`, `gc.auto=0` (#1577).
+
+    A `git commit` in a fixture repo starts `git maintenance run --auto --quiet --detach` (`GIT_TRACE` shows it), a
+    background process that can still be writing when the selftest removes the temp directory, so cleanup fails with
+    "Directory not empty" (#1493, #1510). `scripts/hermetic_git.py` sets both keys, and the three `fixture_git.py` copies
+    use it; nothing checked that a NEW fixture does. Scope: a Python file under `scripts/` or `plugins/*/scripts/` (not
+    `mutations/`) that creates temp directories AND calls git with a literal `"commit"`; the requirement is a reference
+    to `hermetic_git`, `fixture_git`, `maintenance.auto` or `GIT_CONFIG_COUNT` anywhere in the file. A script that commits
+    in the user's real repo by design is outside the scope: it creates no temp directory. NOT SEEN: a file that
+    commits through a helper it imports from a module with no such reference, and a reference that is only a comment
+    (the same presence-not-enclosure limit as `uncontained-process-fixture`).
+
+    A RATCHET, NOT A THRESHOLD: `scripts/hermetic_git_baseline.txt` names the files that commit without the reference
+    today, measured when this rule landed. A file outside it is a finding; an entry whose file is now hermetic, no
+    longer commits or is gone is a finding too, so the list only shrinks."""
+    findings: list[Finding] = []
+    examined = 0
+    baseline_path = ROOT / HERMETIC_BASELINE
+    baseline = ({ln.strip() for ln in read(baseline_path).splitlines() if ln.strip() and not ln.startswith("#")}
+                if baseline_path.is_file() else set())
+    offenders: dict[str, int] = {}
+    for path in walk(".py"):
+        name = rel(path)
+        if not re.match(r"^(scripts|plugins/[^/]+/scripts)/[^/]+\.py$", name):     # direct children only: not `mutations/`
+            continue
+        text = read(path)
+        if not _TEMP_USE.search(text):
+            continue
+        line = _spawns_git_commit(text)
+        if line is None:
+            continue
+        examined += 1
+        if not _HERMETIC_REF.search(text):
+            offenders[name] = line
+    for name, line in sorted(offenders.items()):
+        if name not in baseline:
+            findings.append(Finding(
+                "non-hermetic-fixture-git", name, line,
+                "this script makes temp directories and runs `git commit`, but never references `hermetic_git`, "
+                "`fixture_git`, `maintenance.auto` or `GIT_CONFIG_COUNT`: the commit starts a detached `git maintenance` that "
+                "can race the temp directory's cleanup (#1493, #1510). Pass `env=hermetic_git.env()` (or build the repo with "
+                f"`fixture_git`). Do NOT add it to `{HERMETIC_BASELINE}`: that list only shrinks",
+            ))
+    for name in sorted(baseline - set(offenders)):
+        findings.append(Finding(
+            "non-hermetic-fixture-git", HERMETIC_BASELINE, 1,
+            f"`{name}` is listed as committing without a hermetic reference, but it no longer does (it is hermetic now, "
+            "commits no more, or is gone): delete the line, so the baseline only shrinks",
         ))
     return findings, examined
 
@@ -3612,6 +3803,9 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     growth, claude_md_lines = check_claude_md_growth()
     hook_lib, hook_lib_copies = check_hook_lib_drift()
     fixture_git, fixture_git_copies = check_fixture_git_drift()
+    findings_copy, findings_copies = check_findings_script_drift()
+    rel_xplugin, rel_xplugin_examined = check_cross_plugin_relative_path()
+    fixture_bypass, fixture_bypass_examined = check_fixture_git_bypass(python_sources)
     bare, bare_examined = check_bare_plugin_entries()
     misdesc, agent_descs_examined = check_misdescribed_agents()
     unbounded, queries_examined = check_unbounded_issue_queries()
@@ -3621,6 +3815,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     invisible, invisible_examined = check_invisible_characters()
     markers, markers_examined = check_conflict_markers()
     uncontained, uncontained_examined = check_uncontained_process_fixtures()
+    nonhermetic, nonhermetic_examined = check_non_hermetic_fixture_git()
     pointers, pointers_examined = check_doc_pointers()
     rel_links, rel_links_examined = check_broken_relative_link()
     leaving, leaving_examined = check_link_leaves_package()
@@ -3669,6 +3864,9 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "claude_md_lines": claude_md_lines,
         "hook_lib_copies": hook_lib_copies,
         "fixture_git_copies": fixture_git_copies,
+        "findings_script_copies": findings_copies,
+        "shipped_markdown_checked_for_cross_plugin_paths": rel_xplugin_examined,
+        "fixture_git_identity_lines": fixture_bypass_examined,
         "plugin_entries_checked_for_metadata": bare_examined,
         "plugin_descriptions_reconciled_against_agents": agent_descs_examined,
         "gh_list_calls_examined": queries_examined,
@@ -3677,6 +3875,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "shipped_files_scanned_for_invisibles": invisible_examined,
         "files_scanned_for_conflict_markers": markers_examined,
         "process_spawning_selftests_examined": uncontained_examined,
+        "git_committing_fixtures_examined": nonhermetic_examined,
         "doc_pointers_examined": pointers_examined,
         "docs_relative_links_examined": rel_links_examined,
         "package_relative_links_examined": leaving_examined,
@@ -3717,11 +3916,12 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "scaffolded_boolean_toggles": toggles_examined,
         **call_coverage,
     }
-    return (dead + unenforced + undocumented + undoc_cmds + growth + hook_lib + fixture_git + bare + misdesc + unbounded + author_me + components + call_sites + invisible
-            + markers + uncontained + pointers + rel_links + leaving + outlines + uninstallable + plugin_root + mkt_ver + coercions + topologies + schema + unwired
+    return (dead + unenforced + undocumented + undoc_cmds + growth + hook_lib + fixture_git + fixture_bypass + bare + misdesc + unbounded + author_me + components + call_sites + invisible
+            + markers + uncontained + nonhermetic + pointers + rel_links + leaving + outlines + uninstallable + plugin_root + mkt_ver + coercions + topologies + schema + unwired
             + ci_gates + cl_ignore + controllers + labels + comp_labels + orphans + keyfilter
             + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
             + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref + action_pins
+            + findings_copy + rel_xplugin
             + xplugin + unowned + toggles + ci_step + promo_ctx + bothways + harness_dep,
             coverage)
 
@@ -4819,6 +5019,73 @@ def selftest() -> int:
              files={FIXTURE_GIT_COPIES[0]: FG, FIXTURE_GIT_COPIES[1]: FG, FIXTURE_GIT_COPIES[2]: FG + "\n"})
     scenario("a missing fixture_git copy is a finding", rule="fixture-git-drift", expect_finding=True,
              files={FIXTURE_GIT_COPIES[0]: FG, FIXTURE_GIT_COPIES[1]: FG})
+    FS = "REQUIRED = ('id',)\n"
+    scenario("identical findings.py copies are silent", rule="findings-script-drift", expect_finding=False,
+             files={c: FS for c in FINDINGS_COPIES}, only=check_findings_script_drift)
+    scenario("a findings.py copy that differs by one byte is a finding", rule="findings-script-drift",
+             expect_finding=True, files={FINDINGS_COPIES[0]: FS, FINDINGS_COPIES[1]: FS + "\n"},
+             only=check_findings_script_drift)
+    scenario("a missing qa-flow findings.py is a finding", rule="findings-script-drift", expect_finding=True,
+             files={FINDINGS_COPIES[0]: FS}, only=check_findings_script_drift)
+    XP = "cross-plugin-relative-path"
+    XP_TREE = {"plugins/rails-flow/scripts/findings.py": FS}
+    scenario("an agent running ../rails-flow/ from qa-flow is a finding (the #1680 line)", rule=XP,
+             expect_finding=True, line=3, only=check_cross_plugin_relative_path,
+             files={**XP_TREE, "plugins/qa-flow/agents/qa-reporter.md":
+                    "# r\n\npython3 ../rails-flow/scripts/findings.py validate x.jsonl\n"})
+    scenario("a skill reaching ../../pipeline/ is a finding", rule=XP, expect_finding=True,
+             only=check_cross_plugin_relative_path,
+             files={**XP_TREE, "plugins/pipeline/x": "", "plugins/qa-flow/skills/s/SKILL.md":
+                    "see ../../pipeline/scripts/a.py\n"})
+    scenario("the CLAUDE_PLUGIN_ROOT form is silent", rule=XP, expect_finding=False,
+             only=check_cross_plugin_relative_path,
+             files={**XP_TREE, "plugins/qa-flow/agents/qa-reporter.md":
+                    'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/findings.py" validate x\n'})
+    scenario("a relative path inside the same plugin is silent", rule=XP, expect_finding=False,
+             only=check_cross_plugin_relative_path,
+             files={**XP_TREE, "plugins/rails-flow/commands/c.md": "python3 ../rails-flow/scripts/x.py\n"})
+    scenario("a plugin's own name with no ../ is silent", rule=XP, expect_finding=False,
+             only=check_cross_plugin_relative_path,
+             files={**XP_TREE, "plugins/qa-flow/agents/a.md": "rails-flow/scripts/findings.py owns it\n"})
+    scenario("a rails-stack skill reaching ../rails-flow/ is a finding", rule=XP, expect_finding=True,
+             only=check_cross_plugin_relative_path,
+             files={**XP_TREE, "skills/hotwire/SKILL.md": "run ../../plugins/x ../rails-flow/scripts/a.py\n"})
+    scenario("`cd ../rails-flow` with no trailing slash is a finding", rule=XP, expect_finding=True,
+             only=check_cross_plugin_relative_path,
+             files={**XP_TREE, "plugins/qa-flow/commands/c.md": "cd ../rails-flow && python3 scripts/findings.py\n"})
+    scenario("a skill's clone path ../../plugins/rails-flow/ is a finding", rule=XP, expect_finding=True,
+             only=check_cross_plugin_relative_path,
+             files={**XP_TREE, "skills/hotwire/SKILL.md": "python3 ../../plugins/rails-flow/scripts/findings.py\n"})
+    scenario("a longer name that only starts with a plugin's is silent", rule=XP, expect_finding=False,
+             only=check_cross_plugin_relative_path,
+             files={**XP_TREE, "plugins/qa-flow/agents/a.md": "see ../rails-flow-notes/x.md\n"})
+    scenario("a tests/ fixture is silent", rule=XP, expect_finding=False,
+             only=check_cross_plugin_relative_path,
+             files={**XP_TREE, "plugins/qa-flow/tests/t.md": "../rails-flow/scripts/x.py\n"})
+    # #1588: the fixture identity outside fixture_git, in the shapes the corpus uses.
+    for label, body in (("a -c user.email=t@t argv", 'subprocess.run(["git", "-c", "user.email=t@t", "commit"])\n'),
+                        ("a GIT_AUTHOR_EMAIL env entry", 'env = {"GIT_AUTHOR_EMAIL": "t@t"}\n'),
+                        ("a keyword email", 'git_env(email="t@t")\n')):
+        scenario(f"fixture-git-bypass: {label} outside fixture_git is a finding", rule="fixture-git-bypass",
+                 expect_finding=True, files={"plugins/x/scripts/x_selftest.py": body})
+    # #1660 review R4: any fixture identity, not only `t@t`.
+    for label, body in (("another email in -c user.email=", 'subprocess.run(["git", "-c", "user.email=f@e", "commit"])\n'),
+                        ("an email set with config user.email", 'git("config", "user.email", "t@example.com")\n'),
+                        ("an email in --author", 'subprocess.run(["git", "commit", "--author", "t <t@t>"])\n')):
+        scenario(f"fixture-git-bypass: {label} outside fixture_git is a finding", rule="fixture-git-bypass",
+                 expect_finding=True, files={"plugins/x/scripts/x_selftest.py": body})
+    scenario("fixture-git-bypass: an email in Ruby test data is not a git identity, and silent", rule="fixture-git-bypass",
+             expect_finding=False, files={"plugins/x/scripts/x_selftest.py": "'    User.create!(email: \"a@b.test\")\\n'\n"})
+    scenario("fixture-git-bypass: an exempt line with a reason is silent", rule="fixture-git-bypass", expect_finding=False,
+             files={"plugins/x/scripts/x_selftest.py":
+                    'subprocess.run(["git", "-c", "user.email=t@t", "worktree", "add"])  # fixture-git: exempt (worktree add)\n'})
+    scenario("fixture-git-bypass: an exemption without a reason is still a finding", rule="fixture-git-bypass",
+             expect_finding=True, files={"plugins/x/scripts/x_selftest.py":
+                                         'subprocess.run(["git", "-c", "user.email=t@t", "commit"])  # fixture-git: exempt\n'})
+    scenario("fixture-git-bypass: the identity inside a fixture_git copy is its own, and silent", rule="fixture-git-bypass",
+             expect_finding=False, files={FIXTURE_GIT_COPIES[0]: 'IDENTITY = ("-c", "user.email=t@t")\n'})
+    scenario("fixture-git-bypass: a file with no fixture identity is silent", rule="fixture-git-bypass",
+             expect_finding=False, files={"plugins/x/scripts/x.py": 'subprocess.run(["git", "status"])\n'})
     scenario(
         "the history file CLAUDE.md points at is missing", rule="claude-md-growth", expect_finding=True,
         files={"CLAUDE.md": "@AGENTS.md\n<!-- claude-md: max-lines 10 -->\nrule\n"},
@@ -5526,6 +5793,42 @@ def selftest() -> int:
              expect_finding=False, files={"scripts/x_selftest.py": "print('no processes')\n"})
     scenario("a non-selftest file that starts processes (out of scope)", rule=UP, only=check_uncontained_process_fixtures,
              expect_finding=False, files={"scripts/runner.py": SPAWN})
+
+    # ---- non-hermetic-fixture-git (#1577) ------------------------------------------
+    NH = "non-hermetic-fixture-git"
+    COMMITS = ("import subprocess, tempfile\n"
+               "d = tempfile.mkdtemp()\n"
+               "subprocess.run(['git', '-C', d, 'commit', '-qm', 'm'])\n")
+    scenario("a fixture that commits in a temp repo with no hermetic reference", rule=NH, only=check_non_hermetic_fixture_git,
+             expect_finding=True, files={"scripts/x_selftest.py": COMMITS})
+    scenario("...through a wrapper whose argument is the literal commit", rule=NH, only=check_non_hermetic_fixture_git,
+             expect_finding=True, files={"plugins/qa-flow/scripts/y.py":
+                                         "import tempfile\nd = tempfile.mkdtemp()\ndef git(*a): return ['git', *a]\ngit('commit', '-qm', 'm')\n"})
+    scenario("a fixture that references hermetic_git", rule=NH, only=check_non_hermetic_fixture_git,
+             expect_finding=False, files={"scripts/x_selftest.py": "import hermetic_git\n" + COMMITS})
+    SETS_KEYS = ("import subprocess, tempfile\n"
+                 "d = tempfile.mkdtemp()\n"
+                 "env = {'GIT_CONFIG_COUNT': '2', 'GIT_CONFIG_KEY_0': 'maintenance.auto', 'GIT_CONFIG_VALUE_0': 'false',\n"
+                 "       'GIT_CONFIG_KEY_1': 'gc.auto', 'GIT_CONFIG_VALUE_1': '0'}\n"
+                 "subprocess.run(['git', '-C', d, 'commit', '-qm', 'm'], env=env)\n")
+    scenario("a fixture that sets the two keys itself", rule=NH, only=check_non_hermetic_fixture_git,
+             expect_finding=False, files={"scripts/x_selftest.py": SETS_KEYS})
+    scenario("a script that commits but makes no temp directory (the user's real repo, by design)", rule=NH,
+             only=check_non_hermetic_fixture_git, expect_finding=False,
+             files={"scripts/x.py": "import subprocess\nsubprocess.run(['git', 'commit', '-qm', 'm'])\n"})
+    scenario("a temp-using script that mentions commit only in a docstring and a comment", rule=NH,
+             only=check_non_hermetic_fixture_git, expect_finding=False,
+             files={"scripts/x.py": '"""runs git commit"""\nimport subprocess, tempfile\n# git commit\nsubprocess.run(["git", "status"], cwd=tempfile.mkdtemp())\n'})
+    scenario("a mutation guard file is out of scope", rule=NH, only=check_non_hermetic_fixture_git, expect_finding=False,
+             files={"scripts/mutations/x.py": COMMITS})
+    scenario("a baseline entry that still commits without the reference is tolerated", rule=NH,
+             only=check_non_hermetic_fixture_git, expect_finding=False,
+             files={"scripts/x_selftest.py": COMMITS, HERMETIC_BASELINE: "# c\nscripts/x_selftest.py\n"})
+    scenario("a baseline entry whose file is hermetic now is a stale line", rule=NH, only=check_non_hermetic_fixture_git,
+             expect_finding=True, files={"scripts/x_selftest.py": "import hermetic_git\n" + COMMITS,
+                                         HERMETIC_BASELINE: "scripts/x_selftest.py\n"})
+    scenario("a baseline entry whose file is gone is a stale line", rule=NH, only=check_non_hermetic_fixture_git,
+             expect_finding=True, files={HERMETIC_BASELINE: "scripts/gone_selftest.py\n"})
 
     # ---- conflict-marker (#1543) -------------------------------------------------
     CM = "conflict-marker"

@@ -40,12 +40,17 @@ LABEL = "fixed-on-dev"
 LABEL_COLOR = "0e8a16"
 LABEL_TEXT = "Fixed on dev, not yet released: ships in the next dev -> main promotion"
 FIXES = re.compile(r"^\s*(?:[-*]\s+)?Fixes\s+#(\d+)\s*$", re.M | re.I)
-# A CHANGELOG citation: a parenthesised group that STARTS with `#n` -- `(#1410)`, `(#1461, #1462)`,
-# `(#1483, the owner's decision)`. "(in PR #1470)" is a cross-reference and does not start with `#`.
-# Only the run of `#n` that OPENS the group is read, so an annotation may hold anything, including a
-# markdown link whose own parentheses ended the old `[^()]*` match early: v1.153.0 cited
-# `(#1404, [maintainer decision](https://…))`, and #1404 never got its shipped note.
-CITATION = re.compile(r"\((#\d+(?:\s*[,/]\s*#\d+)*)")
+# A CHANGELOG citation: a parenthesised group that STARTS with `#n`, or with `Fixes #n` / `Closes #n` -- `(#1410)`, `(#1461, #1462)`,
+# `(#1483, the owner's decision)`, `(Fixes #1628; found by the security review of #1627)`, `(Closes #484)`. "(in PR #1470)" is a
+# cross-reference and does not start with `#`. Only the run of `#n` that OPENS the group is read, so an annotation may hold anything,
+# including a markdown link whose own parentheses ended the old `[^()]*` match early (v1.153.0 cited `(#1404, [maintainer decision](https://…))`,
+# and #1404 never got its shipped note), and a second `#n` inside the annotation ("found by the review of #1627") is not a citation.
+#
+# `Fixes` AND `Closes` OPEN A CITATION (#1637): v1.154.0's notes cited #1628, #1626 and #1607 as `(Fixes #…; …)`, and the old pattern, which needed
+# `#` straight after `(`, told none of them they had shipped. `Refs` STAYS OUT, deliberately: it marks a partial fix (an EPIC's increment), the issue
+# stays open, and "shipped" must not be said of work that is not complete. (`mark_shipped` also skips any issue without the `fixed-on-dev` label,
+# which only a merged `Fixes` PR sets, so a `Refs` bullet could never have been told in practice; this keeps the rule stated rather than incidental.)
+CITATION = re.compile(r"\(\s*(?:(?:Fixes|Closes)\s+)?(#\d+(?:\s*[,/]\s*#\d+)*)", re.I)
 
 Gh = Callable[..., str]
 
@@ -192,6 +197,18 @@ def selftest() -> int:
     }.items():
         got = fixed_issues(body)
         check(f"fixed_issues({body!r})", got == want, f"expected {want}, got {got}")
+    # THE SHAPES OF v1.154.0'S OWN NOTES (#1637): three were never told they shipped. `#1627` and `#1620` are cross-references inside the annotation.
+    release = ("- **a** (Fixes #1628; found by the security review of #1627, older than it)\n"
+               "- **b** (Fixes #1607, the timeout path)\n"
+               "- **c** (Fixes #1626; found by the delta security review of #1620, and older than it)\n"
+               "- **d** (Fixes #1617)\n- **e** (Closes #484). All five criteria verified\n- **f** (fixes #1700, #1701)\n- **g** (closes #1702)\n")
+    got = shipped_issues(release)
+    check("shipped_issues reads (Fixes #n; ...) and (Closes #n), not the #n cited inside the annotation",
+          got == [484, 1607, 1617, 1626, 1628, 1700, 1701, 1702], got)
+    check("shipped_issues leaves (Refs #n) out: a partial fix is not shipped",
+          shipped_issues("- **x** (Refs #531)\n- **y** (Refs #487, #490)\n- z (Fixes #5) (Refs #6)") == [5])
+    check("shipped_issues does not read a bare Fixes #n that is not in a citation group",
+          shipped_issues("Fixes #77 is prose. See (the Fixes #78 note) and Fixes #79.") == [])
     notes = ("- **x** (#1410). See also (in PR #1470) and #99.\n- y (#1444) (#1410)\n"
              "- z (#1461, #1462)\n- w (#1483, the owner's decision)\n"
              "- v (#1404, [maintainer decision](https://github.com/o/r/issues/1404#issuecomment-1))\n"

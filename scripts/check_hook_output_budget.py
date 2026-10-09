@@ -128,11 +128,17 @@ def _fixture(tmp: Path, lessons: int = 20) -> Path:
                 f"long enough to be representative of a real one\n" for i in range(lessons)),
         encoding="utf-8")
     (project / "GUARDRAILS.md").write_text("# GUARDRAILS\n", encoding="utf-8")
-    env = {**os.environ, "GIT_AUTHOR_NAME": "f", "GIT_AUTHOR_EMAIL": "f@e",
-           "GIT_COMMITTER_NAME": "f", "GIT_COMMITTER_EMAIL": "f@e"}
-    for args in (["init", "-q", "-b", "main"], ["add", "-A"],
-                 ["commit", "-q", "-m", "fixture"]):
-        subprocess.run(["git", *args], cwd=project, env=env, capture_output=True)
+    env = dict(os.environ)
+    import sys as _sys; _sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "plugins" / "rails-flow" / "scripts")); import fixture_git as _fg  # #1588
+    _fg.init(project, "-b", "main")                             # bound to this temp repo (#1588)
+    _fg.run(project, "add", "-A", check=False)
+    _fg.run(project, "commit", "-q", "-m", "fixture", check=False)
+    # A WORKED-IN CLONE HAS A WHERE-STOPPED FILE (#1639): rails-flow's Stop hook writes one every turn, so the measurement
+    # includes what SessionStart prints with one on disk, rather than the empty case a brand-new clone is in (#1643 D1).
+    stopped = REPO / "plugins/rails-flow/hooks/scripts/lib/where_stopped.py"
+    if stopped.is_file():
+        subprocess.run([sys.executable, str(stopped), "stop", "--cwd", str(project)], input="{}", env=env,
+                       capture_output=True, text=True, timeout=30)
     return project
 
 

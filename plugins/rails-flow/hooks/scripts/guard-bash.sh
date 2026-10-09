@@ -68,6 +68,22 @@ hit() {
     return 1
   fi
 }
+# THE SAME MATCH OVER RAW TEXT, for the issue-label trigger (#1545). `hit()` reads the normalised `seg`, which strips the quotes the trigger needs to
+# see, so the trigger matches the raw command. It has hit()'s no-grep path (bash's own `=~`, line by line, in memory): with no `grep` on PATH the
+# trigger used to fail its pipeline, the `if` read false, and the label check never ran.
+rawhit() {
+  local text="$1" re="$2"
+  if [ "$have_grep" = 1 ]; then
+    ( set +o pipefail; printf '%s\n' "$text" | grep -qE "$re" )
+  else
+    local rest="$text"$'\n' line
+    while [ -n "$rest" ]; do
+      line="${rest%%$'\n'*}"; rest="${rest#*$'\n'}"
+      [[ $line =~ $re ]] && return 0
+    done
+    return 1
+  fi
+}
 # An EXEMPTION (`--force-with-lease`, clean's `-n`, restore's `--staged`) never applies in degraded
 # mode: unanchored, its `.*` reaches another segment, so `git clean -fd && echo -n` was exempt (#1529
 # review). Refusing a real dry run there is the price of a command that could not be read.
@@ -128,18 +144,38 @@ fi
 # Called whenever the text names a create ANYWHERE (#1423): a create in `sh -c`, `eval`, backticks
 # or behind `/usr/bin/gh` never starts a normalised segment, so a segment match alone never saw it.
 # The helper tells a command from a mention (`echo "gh issue create"` stays allowed).
-# Quotes, backslashes, `$` and newlines are dropped for this TRIGGER only (#1462, #1495): `gh issue "create"`, `gh issue $'create'`,
+# Quotes, backslashes, `$` and newlines are dropped for this TRIGGER only (#1462, #1495): `gh issue "create" -t X --body y`, `gh issue $'create'`,
 # `gh issue \<newline>create` and `gh --repo o/r issue create` must reach the helper, which parses
-# the raw command properly and tells a create from a mention.
+# the raw command properly and tells a create from a mention. With no `tr` the pipeline failed and the check was skipped (#1545); it now fires
+# unconditionally there.
 # A shell reading a script by redirect (`bash < file`, #1489) names no create in its text at all, so it
 # triggers the helper too; the helper reads the file and decides. Coarse on purpose -- `/bin/bash < f`,
 # `bash --norc < f`, `bash -o errexit < f`, `sh<f`, `bash 0< f`, `bash 2>&1 < f`, `bash &>log < f` (a
 # redirect's `&` is not a separator, #1495; glued: `bash>/dev/null<f`, #1513). And any `$'…'` holding an escape,
 # which can spell `create`, `issue` or `gh` (#1513) -- because over-triggering costs one
 # parse, and under-triggering skips the check.
-if ( set +o pipefail; printf '%s' "$cmd" | tr -d "\"'\\\\\$" | tr '\n' ' ' | grep -qE 'gh[[:space:]].*issue[[:space:]]+(create|new)' ) \
-   || ( set +o pipefail; printf '%s' "$cmd" | grep -qE '(^|[[:space:];&|(/])(sh|bash|zsh|dash|ksh)([[:space:]<>&]([^;&|]|[<>]&|&>)*)?<([^<(]|$)' ) \
-   || ( set +o pipefail; printf '%s' "$cmd" | grep -q "\\$'[^']*\\\\" ); then
+# #1515: the helper also reads a script a shell runs (`bash f`, `source f`, `cat f | bash`), and refuses the INDIRECT creates (a gh word built at
+# run time, an alias, the verb through `xargs gh`) and a `gh api` POST to an issues collection, none of which names `gh issue create` in a
+# way the old trigger saw. So the trigger also fires on the words `issue create|new` anywhere (an alias leaves no `gh` beside them), on any
+# shell or `source` word, and on `gh api` naming issues.
+# With `tr` the quotes, backslashes and `$` are dropped before matching. With NO `tr` the trigger fires unconditionally (#1545): over-triggering costs one
+# parse, under-triggering skips the check, and the in-bash alternative (`${cmd//[...]/}`) is quadratic -- 130 KB did not finish in two minutes, so the
+# deadline below would refuse every long command on a machine without `tr`.
+_fire=0
+if command -v tr >/dev/null 2>&1; then
+  _flat="$(printf '%s' "$cmd" | tr -d "\"'\\\\\$" | tr '\n' ' ')"
+else
+  _flat="$cmd"; _fire=1
+fi
+_re_verb='issue[[:space:]]+(create|new)'
+_re_shell_word='(^|[[:space:];&|(/])(sh|bash|zsh|dash|ksh)([[:space:]<>&]|$)'
+_re_source='(^|[[:space:];&|({!])(source|\.)[[:space:]]+[^[:space:]]'
+# #1645 R2: more ways to run text or build a gh command from data -- `eval`, `xargs`, an `alias`, a function definition. Over-triggering costs one parse.
+_re_runs_text='(^|[[:space:];&|({!])(eval|xargs|alias|function)([[:space:]]|$)|\([[:space:]]*\)[[:space:]]*\{'
+_re_api='[[:space:]]api[[:space:]]([^;&|]*)issues'
+_re_ansi="[\$]'[^']*[\\\\]"
+if [ "$_fire" = 1 ] || rawhit "$_flat" "$_re_verb" || rawhit "$cmd" "$_re_shell_word" \
+   || rawhit "$cmd" "$_re_source" || rawhit "$cmd" "$_re_runs_text" || rawhit "$_flat" "$_re_api" || rawhit "$cmd" "$_re_ansi"; then
   _root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
   _why="$(printf '%s' "$cmd" | python3 "$(dirname "${BASH_SOURCE[0]}")/lib/issue_labels.py" --root "$_root" 2>&1)"
   _rc=$?

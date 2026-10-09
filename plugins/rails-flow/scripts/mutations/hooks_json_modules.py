@@ -14,6 +14,7 @@ GUARD = Guard(
         "hooks/register.js",
         "hooks/context-nudge.mjs",
         "hooks/lane-band.js",
+        "hooks/budget-guard.mjs",
     ),
     mutations=(
         Mutation(

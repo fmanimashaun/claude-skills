@@ -66,7 +66,7 @@ import sys
 from pathlib import Path
 
 import content_floors
-from source_text import blank_html_comments, strip_comments
+from source_text import blank_html_comments, is_html, strip_comments
 
 GATE = "modal-fit"
 
@@ -167,8 +167,8 @@ def pinned_edges(rel: str, raw: str) -> list[str]:
     markers, or one comment spanning two placements -- declares nothing, because the maintainer's
     decision allows a drawer or sheet exactly one edge (#1451 review, round 2). HTML comments never count."""
     out = []
-    raw_lines = blank_html_comments(raw).split("\n")
-    for n, line in enumerate(strip_comments(raw).split("\n")):
+    raw_lines = blank_html_comments(raw, html=is_html(rel)).split("\n")
+    for n, line in enumerate(strip_comments(raw, html=is_html(rel)).split("\n")):
         placements = _placements(line)
         here = _comment_of(raw_lines[n]) if n < len(raw_lines) else ""
         above = raw_lines[n - 1] if n > 0 else ""
@@ -199,7 +199,7 @@ def check_component(rel: str, source: str, sibling: str = "", vh_utilities: froz
                     sibling_rel: str | None = None) -> list[str]:
     """Judge one dialog component; `source` declares the dialog, `sibling` is its pair."""
     raw_source, raw_sibling = source, sibling
-    source, sibling = strip_comments(source), strip_comments(sibling)
+    source, sibling = strip_comments(source, html=is_html(rel)), strip_comments(sibling, html=is_html(sibling_rel or ""))
     m = DIALOG.search(source)
     if not m:
         return []

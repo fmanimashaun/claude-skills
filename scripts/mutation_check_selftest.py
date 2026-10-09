@@ -25,6 +25,7 @@ import ast
 import dataclasses
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -390,7 +391,74 @@ def _proc_group_fixtures() -> None:
         shutil.rmtree(work, ignore_errors=True)
 
 
+def _cpu_cost_fixtures() -> None:
+    """#1635: the cost is CPU seconds, so load cannot inflate it.
+
+    A run that SLEEPS for two seconds takes two seconds of wall time and almost none of CPU; a run that BURNS takes the CPU it
+    uses, including a grandchild's. If the harness billed wall time, the sleeper would cost two seconds and a loaded machine
+    would stretch every guard's cost, which is how the ratchet failed 15 guards nobody had touched."""
+    import time as _time
+    _tick()
+    mc._COST.clear()
+    started = _time.monotonic()
+    mc.run_costed("sleeper", [sys.executable, "-c", "import time; time.sleep(2)"], timeout=60)
+    wall = _time.monotonic() - started
+    if wall < 1.9 or mc._COST.get("sleeper", 99) > 1.0:
+        FAILURES.append(f"#1635: a run that only sleeps must cost ~0 CPU seconds, not its wall time: wall {wall:.1f}s, billed "
+                        f"{mc._COST.get('sleeper')}")
+    _tick()
+    burn = "import time\nt=time.process_time()\nwhile time.process_time()-t < 1.0: pass\n"
+    mc.run_costed("burner", [sys.executable, "-c", burn], timeout=60)
+    if not 0.9 <= mc._COST.get("burner", 0) <= 4.0:
+        FAILURES.append(f"#1635: a run that burns 1 s of CPU must be billed about 1 s, got {mc._COST.get('burner')}")
+    _tick()
+    nested = ("import subprocess, sys\nsubprocess.run([sys.executable, '-c', %r])\n" % burn)
+    mc.run_costed("nested", [sys.executable, "-c", nested], timeout=60)
+    if not 0.9 <= mc._COST.get("nested", 0) <= 4.0:
+        FAILURES.append(f"#1635: a descendant's CPU must be billed to the run that waited for it, got {mc._COST.get('nested')}")
+    _tick()
+    before = mc._COST.get("twice", 0.0)
+    mc.run_costed("twice", [sys.executable, "-c", burn], timeout=60)
+    mc.run_costed("twice", [sys.executable, "-c", burn], timeout=60)
+    if mc._COST.get("twice", 0.0) - before < 1.8:
+        FAILURES.append(f"#1635: runs of one guard must ADD UP, got {mc._COST.get('twice')}")
+    _tick()
+    rc = mc.run_costed("rc", [sys.executable, "-c", "import sys; sys.exit(7)"], timeout=60).returncode
+    if rc != 7:
+        FAILURES.append(f"#1635: run_costed must pass the command's own exit code through, got {rc}")
+    _tick()
+    try:
+        mc.run_costed("hung", [sys.executable, "-c", "import time; time.sleep(60)"], timeout=1)
+        FAILURES.append("#1635: a run over its limit must still raise TimeoutExpired")
+    except subprocess.TimeoutExpired:
+        if not 0.9 <= mc._COST.get("hung", 0) <= 15:
+            FAILURES.append(f"#1635: a run killed on its limit bills its WALL time, got {mc._COST.get('hung')}")
+    mc._COST.clear()
+
+
+def _sigint_fixtures() -> None:
+    """#1635: proc_group.restore_sigint resets an inherited-IGNORED SIGINT, and only that."""
+    import signal as _sg
+    scripts = str(Path(mc.__file__).resolve().parent)
+    probe = ("import sys, signal; sys.path.insert(0, %r); import proc_group\n"
+             "was = signal.getsignal(signal.SIGINT) == signal.SIG_IGN\n"
+             "did = proc_group.restore_sigint()\n"
+             "print(was, did, signal.getsignal(signal.SIGINT) is signal.default_int_handler)\n" % scripts)
+
+    def child(ignored: bool) -> str:
+        return subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, timeout=60,
+                              preexec_fn=(lambda: _sg.signal(_sg.SIGINT, _sg.SIG_IGN)) if ignored else None).stdout.strip()
+
+    _tick()
+    if child(True) != "True True True":
+        FAILURES.append(f"#1635: restore_sigint must reset an inherited-ignored SIGINT, got {child(True)!r}")
+    _tick()
+    if child(False) != "False False True":
+        FAILURES.append(f"#1635: restore_sigint must leave a normal SIGINT alone, got {child(False)!r}")
+
+
 def run() -> int:
+    mc.proc_group.restore_sigint()   # #1635: a backgrounded run inherits SIGINT ignored
     original_repo = mc.REPO
 
     # ---- 0. EVERY DECLARED PATH RESOLVES FROM ITS GUARD'S BASE ------------------------
@@ -688,6 +756,89 @@ def run() -> int:
     if mc.record_problems({"heavy", "medium", "extra"}, record):
         FAILURES.append("#1599 CONTROL: a record whose guards all exist is clean (a guard missing from it is not drift)")
 
+    # ---- 1g. a ratchet failure names the load and job count it ran at (#1652) ----
+    # An identical guard cost 669 s when recorded and 1418 s in a run under load (688 s at jobs 10 and ambient load, 528 s at jobs 4):
+    # the failure read as growth. The sentence says what the run was, and whether that is what the record was made at.
+    for label, load, ran, recorded_at, want, forbid in (
+            ("a quiet machine at the recorded job count reads as growth", 3.2, 10, 10,
+             ("5-minute load was 3.2", "jobs=10", "read this as growth"), ("re-run on a quiet machine", "do not re-record")),
+            ("a loaded machine is told to re-run", 14.5, 10, 10,
+             ("5-minute load was 14.5", "jobs=10", "re-run on a quiet machine at the recorded job count", "do not re-record from this run"),
+             ("read this as growth",)),
+            ("a different job count is told to re-run even on a quiet machine", 3.2, 4, 10,
+             ("jobs=4", "jobs=10", "re-run on a quiet machine"), ("read this as growth",)),
+            ("a platform with no load average says so instead of printing 0", None, 10, 10,
+             ("unavailable", "jobs=10", "re-run on a quiet machine"), ("load was 0", "read this as growth")),
+            ("a record that names no job count prints a question mark, not a guess", 3.2, 10, None,
+             ("jobs=?", "re-run on a quiet machine"), ("read this as growth",))):
+        _tick()
+        try:
+            text = mc.ratchet_context(load, ran, recorded_at)
+        except Exception as exc:        # noqa: BLE001 -- the check below fails by name
+            text = f"raised {exc!r}"
+        if not all(w in text for w in want) or any(f in text for f in forbid):
+            FAILURES.append(f"#1652: the ratchet context for {label} must carry {want} and none of {forbid}, got {text!r}")
+
+    def with_loadavg(replacement):
+        """`mc.five_minute_load()` with `os.getloadavg` replaced, and put back."""
+        real = os.getloadavg
+        os.getloadavg = replacement
+        try:
+            return mc.five_minute_load()
+        except Exception as exc:        # noqa: BLE001 -- the check below fails by name
+            return f"raised {exc!r}"
+        finally:
+            os.getloadavg = real
+
+    def refuse(exc: Exception):
+        def getloadavg():
+            raise exc
+        return getloadavg
+
+    for label, replacement, want in (
+            ("the 5-minute figure, not the 1- or the 15-minute one", lambda: (1.0, 5.5, 9.0), 5.5),
+            ("None where the platform has no load average (OSError)", refuse(OSError("no load")), None),
+            ("None where os has no getloadavg at all (AttributeError)", refuse(AttributeError("no getloadavg")), None)):
+        _tick()
+        got = with_loadavg(replacement)
+        if got != want:
+            FAILURES.append(f"#1652: five_minute_load must return {want!r} for {label}, got {got!r}")
+
+    growth = {"heavy": 400.0 * mc.RATCHET_GROWTH + mc.RATCHET_SLACK + 1, "medium": 100.0}
+    for label, cost, base, want in (
+            ("a recorded guard past its growth", growth, record, ["CTX"]),
+            ("a new guard over the new-guard limit", {"heavy": 400.0, "medium": 100.0, "fresh": mc.RATCHET_NEW + 1}, record, ["CTX"]),
+            ("two cost refusals still carry ONE note", {"heavy": growth["heavy"], "medium": 100.0 * mc.RATCHET_GROWTH + mc.RATCHET_SLACK + 1},
+             record, ["CTX"]),
+            ("a run within budget carries none", {"heavy": 400.0, "medium": 100.0}, record, []),
+            ("a record-only refusal (a guard that is gone) has no cost to explain", {"heavy": 400.0}, record, []),
+            ("no record at all has no cost to explain", {"heavy": 400.0}, None, [])):
+        _tick()
+        try:
+            got = mc.ratchet_notes(cost, base, "CTX")
+        except Exception as exc:        # noqa: BLE001 -- the check below fails by name
+            got = [f"raised {exc!r}"]
+        if got != want:
+            FAILURES.append(f"#1652: ratchet_notes for {label} must be {want!r}, got {got!r}")
+    _tick()
+    # A NOTE IS NOT A PROBLEM: the failure header prints `len(problems)`, so the context must never ride in that list.
+    if any("ratchet context" in x or "CTX" in x for x in ratchet(growth, record)):
+        FAILURES.append("#1652: the load context must be printed apart from the problems, never counted among them")
+    _tick()
+    try:
+        report = mc.failure_report(["a", "b"], ["CTX"], 10)
+    except Exception as exc:        # noqa: BLE001 -- the check below fails by name
+        report = f"raised {exc!r}"
+    if report != "\nMUTATION CHECK FAILED — 2 of 10:\n  - a\n  - b\n  CTX":
+        FAILURES.append(f"#1652: failure_report must count the problems only and print the note after them, got {report!r}")
+    _tick()
+    try:
+        bare = mc.failure_report(["a"], [], 3)
+    except Exception as exc:        # noqa: BLE001 -- the check below fails by name
+        bare = f"raised {exc!r}"
+    if bare != "\nMUTATION CHECK FAILED — 1 of 3:\n  - a":
+        FAILURES.append(f"#1652: failure_report with no note must be exactly the problems, with no stray line, got {bare!r}")
+
     class StandInGuard:
         """The registry is replaced by one stand-in guard: the guards that run THIS selftest in a staged tempdir (hermetic_git,
         proc_group, this harness) do not stage `scripts/mutations/`, so the real `mc.GUARDS` is empty there and indexing it
@@ -774,12 +925,12 @@ def run() -> int:
     with _tf.TemporaryDirectory() as _w:
         _real = Path(_w) / "real"
         _sp.run(["git", "init", "-q", str(_real)], check=True, env=mc.hermetic_git.env())
-        _sp.run(["git", "-C", str(_real), "-c", "user.email=x@x", "-c", "user.name=x", "commit", "-q",
+        _sp.run(["git", "-C", str(_real), "-c", "user.email=x@x", "-c", "user.name=x", "commit", "-q",  # fixture-git: exempt (the stand-in for the real repo in the incident replay: its own temp dir, under hermetic_git's env)
                  "--allow-empty", "-m", "real"], check=True, env=mc.hermetic_git.env())
         _env = mc.hermetic_git.env({**os.environ, "GIT_DIR": str(_real / ".git")})
         _tmp = Path(_w) / "probe"
         _sp.run(["git", "init", "-q", str(_tmp)], env=_env, capture_output=True)
-        _sp.run(["git", "-C", str(_tmp), "-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgSign=false",
+        _sp.run(["git", "-C", str(_tmp), "-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgSign=false",  # fixture-git: exempt (the argv is the subject: it replays the #1588 incident; the GIT_DIR it inherits is a stand-in repo in the same throwaway dir, by design)
                  "commit", "-q", "--allow-empty", "-m", "m"], env=_env, capture_output=True)
         _n = _sp.run(["git", "-C", str(_real), "rev-list", "--count", "HEAD"], capture_output=True, text=True,
                      env=mc.hermetic_git.env()).stdout.strip()
@@ -794,7 +945,7 @@ def run() -> int:
         "import os, subprocess, sys, tempfile\n"
         "with tempfile.TemporaryDirectory() as d:\n"
         "    subprocess.run(['git', 'init', '-q', d], check=True)\n"
-        "    t = subprocess.run(['git', '-C', d, '-c', 'user.email=t@t', '-c', 'user.name=t', '-c',\n"
+        "    t = subprocess.run(['git', '-C', d, '-c', 'user.email=t@t', '-c', 'user.name=t', '-c',\n"  # fixture-git: exempt (the argv is the subject: it replays the #1588 incident; the GIT_DIR it inherits is a stand-in repo in the same throwaway dir, by design)
         "                        'commit.gpgSign=false', 'commit', '-q', '--allow-empty', '-m', 'm'],\n"
         "                       capture_output=True, text=True, env={**os.environ, 'GIT_TRACE': '1'})\n"
         "    if 'maintenance run' in t.stderr or 'gc --auto' in t.stderr:\n"
@@ -906,6 +1057,8 @@ def run() -> int:
 
     # ---- 1f. NESTED runners, Ctrl-C, and an escapee (review of #1525) ---------------------------
     _proc_group_fixtures()
+    _cpu_cost_fixtures()
+    _sigint_fixtures()
 
     # ---- 2. a SURVIVOR must be reported ------------------------------------------------
     # This mutation changes the subject in a way neither fixture observes, so the selftest still

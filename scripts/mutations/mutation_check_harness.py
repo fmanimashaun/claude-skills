@@ -13,6 +13,25 @@ GUARD = Guard(
     selftest="scripts/mutation_check_selftest.py",
     deps=("scripts/mutation_types.py", "scripts/hermetic_git.py", "scripts/proc_group.py", "plugins/rails-flow/scripts/process_containment.py",),
     mutations=(
+        # #1635: a guard's cost is CPU seconds, so machine load cannot make it grow.
+        Mutation(
+            "a run is billed its wall time, so load stretches the cost again",
+            "    bill(guard_name, cpu if cpu is not None else time.monotonic() - started)",
+            "    bill(guard_name, time.monotonic() - started)",
+            "a run that only sleeps must cost ~0 CPU seconds",
+        ),
+        Mutation(
+            "a run killed on its limit is billed nothing",
+            "        bill(guard_name, time.monotonic() - started)\n        raise",
+            "        raise",
+            "a run killed on its limit bills its WALL time",
+        ),
+        Mutation(
+            "runs of one guard replace each other instead of adding up",
+            "        _COST[guard_name] = _COST.get(guard_name, 0.0) + seconds",
+            "        _COST[guard_name] = seconds",
+            "runs of one guard must ADD UP",
+        ),
         # #1599: the cost ratchet. Each mutation undoes one of its rules; the selftest's section 1f must notice.
         Mutation(
             "a NEW guard over the new-guard limit is accepted, so a new expensive guard never has to be made cheaper",
@@ -38,6 +57,61 @@ GUARD = Guard(
             '("re-record docs/evidence/mutation-cost-baseline.json in this PR from this run\'s cost "',
             '("re-set the record from a measured run "',
             "must tell the author to re-record the baseline in this PR",
+        ),
+        # #1652: a ratchet failure says the load and job count it ran at (the selftest's section 1g). Each mutation undoes one rule.
+        Mutation(
+            "the load context is never offered, so a failure under load reads as growth again",
+            "    return [context] if baseline is not None and cost_problems(cost, baseline) else []",
+            "    return []",
+            "ratchet_notes for a recorded guard past its growth must be",
+        ),
+        Mutation(
+            "the load context is offered on every run, even one within budget",
+            "    return [context] if baseline is not None and cost_problems(cost, baseline) else []",
+            "    return [context] if baseline is not None else []",
+            "ratchet_notes for a run within budget carries none must be",
+        ),
+        Mutation(
+            "a different job count than the record's is still called a fair comparison",
+            "    if load is not None and load <= RATCHET_QUIET_LOAD and recorded_jobs == jobs:",
+            "    if load is not None and load <= RATCHET_QUIET_LOAD:",
+            "a different job count is told to re-run even on a quiet machine",
+        ),
+        Mutation(
+            "a quiet machine is told to re-run and a loaded one to read the failure as growth",
+            "    if load is not None and load <= RATCHET_QUIET_LOAD and recorded_jobs == jobs:",
+            "    if load is not None and load >= RATCHET_QUIET_LOAD and recorded_jobs == jobs:",
+            "a quiet machine at the recorded job count reads as growth",
+        ),
+        Mutation(
+            "the 1-minute load is reported as the 5-minute one",
+            "        return float(os.getloadavg()[1])",
+            "        return float(os.getloadavg()[0])",
+            "five_minute_load must return 5.5 for the 5-minute figure",
+        ),
+        Mutation(
+            "a platform without a load average reports 0, which reads as an idle machine",
+            "    except (AttributeError, OSError):\n        return None",
+            "    except (AttributeError, OSError):\n        return 0.0",
+            "five_minute_load must return None for None where the platform has no load average (OSError)",
+        ),
+        Mutation(
+            "the load context rides in the list of problems, so it is counted as one",
+            "    return problems + cost_problems(cost, baseline)",
+            '    return problems + cost_problems(cost, baseline) + ["ratchet context: CTX"]',
+            "the load context must be printed apart from the problems",
+        ),
+        Mutation(
+            "the failure header counts the notes as problems",
+            "    lines = [f\"\\nMUTATION CHECK FAILED — {len(problems)} of {total}:\"]",
+            "    lines = [f\"\\nMUTATION CHECK FAILED — {len(problems) + len(notes)} of {total}:\"]",
+            "failure_report must count the problems only and print the note after them",
+        ),
+        Mutation(
+            "the failure report drops the notes",
+            '    lines += [f"  {note}" for note in notes]\n',
+            "",
+            "failure_report must count the problems only and print the note after them",
         ),
         # #1599: `--check-record`, the gate a pull request can afford.
         Mutation(

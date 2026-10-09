@@ -2,8 +2,10 @@
 // Add a mod here with one import and one call; do not add a second path to hooks.json.
 import { register as contextNudge } from './context-nudge.mjs'
 import { register as laneBand } from './lane-band.js'
+import { register as budgetGuard } from './budget-guard.mjs'
 
 export function register(on, options) {
   contextNudge(on, options)
   laneBand(on, options)
+  budgetGuard(on, options)
 }

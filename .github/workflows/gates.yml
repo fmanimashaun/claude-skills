@@ -30,6 +30,10 @@ permissions:
 jobs:
   gates:
     runs-on: ubuntu-latest
+    # A hung job holds a runner for GitHub's default 6 h (#1635, review of #1636). MEASURED: a pull request's fast sweep took 5m37s;
+    # the last full runs took `mutation coverage` 3831 s of a job near 3900 s to 4300 s (dev push 37460087650, jobs=4), so 120 minutes
+    # is about 1.7x the full run, and 25 minutes about 4.5x the fast one. Re-set both from a measured run, never to get green.
+    timeout-minutes: ${{ (github.event_name == 'pull_request' || github.ref == 'refs/heads/dev') && 25 || 120 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -72,11 +76,14 @@ jobs:
       #
       # The corpora-dependent gate SKIPs by design when the private repo is absent, which is exactly
       # a runner's situation. That was built for a maintainer without the kits; CI inherits it free.
-      # A pull request runs --fast, which skips exactly PR_SKIPPED_GATES (`mutation coverage`, 438 of the
-      # sweep's 475 s) and REPORTS the skip. A push to dev -- the merge commit no PR tested -- and the
-      # promotion (release.yml calls this workflow) run everything, so nothing reaches main without it (#866).
+      # A pull request AND a push to dev run --fast, which skips exactly PR_SKIPPED_GATES (`mutation
+      # coverage`, most of the sweep's time, and the full tier of the guard-bash cases) and REPORTS the skip. The full sweep runs where it is
+      # published from: locally before a promotion (`--require-slow --record-proof`, #1635), and in
+      # release.yml, which reuses that record only when it names the exact tree being released and
+      # otherwise calls this workflow from `main`, where the condition below picks the full sweep.
+      # (`github.ref` is the CALLER's ref under workflow_call: `refs/heads/main` in a release.)
       - name: Gate sweep
-        run: python3 scripts/maintainer_doctor.py --gates-only ${{ github.event_name == 'pull_request' && '--fast' || '--require-slow' }}
+        run: python3 scripts/maintainer_doctor.py --gates-only ${{ (github.event_name == 'pull_request' || github.ref == 'refs/heads/dev') && '--fast' || '--require-slow' }}
 
       # The PROMOTION pre-flight (#990): a pull request whose base is `main` is the one merge that
       # publishes, so it is the one place `### Unreleased` must not survive. The v1.127.0 promotion

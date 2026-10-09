@@ -16,7 +16,7 @@ GUARD = Guard(
     selftest_args=("--only", "guard_claims"),
     narrow_with="--match",
     # The same staging as hook_guard_claims: the harness runs every hook from the whole directory.
-    needs=(
+    needs=("plugins/rails-flow/scripts/fixture_git.py", 
            'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py',  # session-start.sh runs both (#1581: the harness drives it)
            "plugins/rails-flow/hooks/hooks.json",
            "plugins/rails-flow/hooks/scripts", "plugins/qa-flow/hooks/scripts",
@@ -29,8 +29,38 @@ GUARD = Guard(
            "plugins/qa-flow/scripts/remote_evidence.py",   # the release gate runs it (#1591)
            "plugins/rails-flow/scripts/self_consistency.py",
            "plugins/rails-flow/scripts/extract_claims.py",
-           "plugins/rails-flow/scripts/ci_verdict_hint.py"),
+           "plugins/rails-flow/scripts/ci_verdict_hint.py", "plugins/rails-flow/scripts/session_reaper.py", "plugins/rails-flow/scripts/process_containment.py"),
     mutations=(
+        Mutation(
+            'the explicit refusal of a marked cd path is dropped: normpath then collapses it (#1605 review)',
+            '    if GLOB_MARK in a:',
+            '    if False:',
+            'an unquoted `[b]` glob followed by `/..` (#1605: normpath would collapse it back to the start) is NOT checked',
+        ),
+        Mutation(
+            'every glob character, not only `[` and `]`, may be a lone word (#1605 review)',
+            '            lone = c in "[]" and word_start',
+            '            lone = word_start',
+            'a bare unquoted `?` as a cd path (#1605) is NOT checked',
+        ),
+        Mutation(
+            'prepare() no longer marks an unquoted glob or brace character (#1605)',
+            '            out.append(GLOB_MARK if c in GLOB_CHARS and not lone else c)',
+            '            out.append(c)',
+            'an unquoted `{b1,b2}` brace list in a cd path (#1605) is NOT checked',
+        ),
+        Mutation(
+            'a lone `[` (the test command) is marked as a glob too (#1605)',
+            '            out.append(GLOB_MARK if c in GLOB_CHARS and not lone else c)',
+            '            out.append(GLOB_MARK if c in GLOB_CHARS else c)',
+            'a `[ ... ]` test before gh: a lone `[` is not a glob (#1605) is judged in the starting repo',
+        ),
+        Mutation(
+            'a quoted or escaped glob character is refused too (#1605)',
+            '    if GLOB_MARK in a:',
+            '    if GLOB_MARK in a or any(g in a for g in GLOB_CHARS):',
+            'a double-quoted glob path, which the shell takes literally (#1605) is followed',
+        ),
         Mutation(
             'a cd joined by || counts as having run',
             'SEPS = {"&&", ";"}',

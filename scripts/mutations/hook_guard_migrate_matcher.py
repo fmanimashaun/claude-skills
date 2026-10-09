@@ -14,7 +14,7 @@ GUARD = Guard(
     # Only the fixture groups that drive this subject (#1497): the whole harness per
     # mutant was ~70% of the mutation-coverage budget.
     selftest_args=("--only", "guard_migrate"),
-    needs=(
+    needs=("plugins/rails-flow/scripts/fixture_git.py", 
            'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py',  # session-start.sh runs both (#1581: the harness drives it)
            'plugins/rails-flow/hooks/scripts',
            'plugins/qa-flow/hooks/scripts', 'plugins/qa-flow/scripts',
@@ -26,7 +26,7 @@ GUARD = Guard(
            'plugins/qa-flow/scripts/remote_evidence.py',   # the release gate runs it (#1591)
            'plugins/rails-flow/scripts/self_consistency.py',
            'plugins/rails-flow/scripts/extract_claims.py',
-           'plugins/rails-flow/scripts/ci_verdict_hint.py'),
+           'plugins/rails-flow/scripts/ci_verdict_hint.py', 'plugins/rails-flow/scripts/session_reaper.py', 'plugins/rails-flow/scripts/process_containment.py'),
     mutations=(
         Mutation(
             'the matcher is widened to also route Edit and MultiEdit into the creation-only guard',

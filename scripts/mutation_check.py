@@ -46,6 +46,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -240,7 +241,7 @@ def apply_mutation(guard: Guard, mutation: Mutation, workdir: Path) -> Path:
 
 
 # THE COST RATCHET (#1599). `mutation coverage` reached 3490 s of its 3600 s budget and the CI log could not say which
-# guard had grown: the doctor kept one summary line. A guard over RATCHET_NEW seconds of work (baseline plus every
+# guard had grown: the doctor kept one summary line. A guard over RATCHET_NEW CPU seconds of work (#1635; baseline plus every
 # mutant, summed over all jobs) must be on record in COST_BASELINE, which holds every guard over RATCHET_FLOOR; a recorded one may cost RATCHET_GROWTH times its
 # record plus RATCHET_SLACK, which keeps a runner's speed from reading as growth; a record naming a guard that is gone
 # is drift. A new expensive guard therefore fails until it is made cheaper (`narrow_with`) or recorded from a measured
@@ -263,6 +264,60 @@ RATCHET_SLACK = 30.0
 # cost lands as a reviewed one-line diff and a later PR's dispatched run is never the one to trip on it (#1599).
 RECORD_INSTRUCTION = ("re-record docs/evidence/mutation-cost-baseline.json in this PR from this run's cost "
                       "(`python3 scripts/mutation_check.py --rebaseline` writes it)")
+# THE LOAD A RECORD IS FAIR AT (#1652). CPU seconds are steadier than wall seconds but not load-independent on a machine with
+# efficiency cores: MEASURED on the 10-core maintainer machine, `lint_self_consistency` (178 mutations, byte-identical between the
+# record and the failing run) cost 688 s at jobs 10 and ambient load, 528 s at jobs 4, 826 s and 1010 s with five busy loops added, and
+# 1418 s in a `--record-proof` run under heavy load (record 669 s): a growth failure that was the machine. So a failure prints the 5-minute
+# load and the job count it ran at, and says whether they are what the record was made at (a load under this, and the recorded jobs).
+RATCHET_QUIET_LOAD = 10.0
+
+
+def five_minute_load() -> float | None:
+    """The 5-minute load average, or None where the platform has none: a figure that is missing must read as missing, not as 0."""
+    try:
+        return float(os.getloadavg()[1])
+    except (AttributeError, OSError):
+        return None
+
+
+def ratchet_context(load: float | None, jobs: int, recorded_jobs: int | None) -> str:
+    """One sentence for a ratchet failure: the load and job count it ran at, and whether that is a fair comparison with the record.
+
+    A quiet machine at the recorded job count makes the failure growth; anything else makes it a question to re-run first."""
+    seen = (f"the 5-minute load was {load:.1f} at the start and jobs={jobs}" if load is not None
+            else f"the load average is unavailable here and jobs={jobs}")
+    if load is not None and load <= RATCHET_QUIET_LOAD and recorded_jobs == jobs:
+        return (f"ratchet context: {seen}, the conditions the record was made at (a load under {RATCHET_QUIET_LOAD:g}), "
+                "so read this as growth.")
+    return (f"ratchet context: {seen}; the record was made at jobs={recorded_jobs if recorded_jobs is not None else '?'} and a load "
+            f"under {RATCHET_QUIET_LOAD:g}. CPU seconds rise with load and with the job count (about 1.5x with half the cores busy, "
+            "1.3x from 4 to 10 jobs; #1652), so re-run on a quiet machine at the recorded job count before treating this as growth, "
+            "and do not re-record from this run: a record made under load would hide real growth later.")
+
+
+# THE COST IS CPU SECONDS (#1635). Each baseline, narrowing control and mutant run reports the CPU time (user + system) of itself and
+# every process it waited for; those are summed per guard here. Wall time is still used for the per-mutation LIMITS (a hung run
+# must still be killed on the clock), but it is no measure of cost: it stretches with the machine's load, so a loaded laptop failed
+# the ratchet on guards nobody had touched. A run killed on its limit bills its wall time, the one figure it has.
+_COST: dict[str, float] = {}
+_COST_LOCK = threading.Lock()
+
+
+def bill(guard_name: str, seconds: float) -> None:
+    with _COST_LOCK:
+        _COST[guard_name] = _COST.get(guard_name, 0.0) + seconds
+
+
+def run_costed(guard_name: str, argv, *, timeout: float, **kw) -> subprocess.CompletedProcess:
+    """`proc_group.run`, billing the run's CPU seconds to `guard_name`."""
+    started = time.monotonic()
+    try:
+        result, cpu = proc_group.run_cpu(argv, timeout=timeout, **kw)
+    except subprocess.TimeoutExpired:
+        bill(guard_name, time.monotonic() - started)
+        raise
+    bill(guard_name, cpu if cpu is not None else time.monotonic() - started)
+    return result
 
 
 def load_cost_baseline(path: Path = COST_BASELINE) -> dict | None:
@@ -282,7 +337,7 @@ def load_cost_baseline(path: Path = COST_BASELINE) -> dict | None:
 def write_cost_baseline(path: Path, cost: dict[str, float], jobs: int) -> None:
     """Record every guard over the floor, rounded and in a stable order, so a re-baseline is a reviewable diff."""
     heavy = {name: round(secs, 1) for name, secs in sorted(cost.items()) if secs > RATCHET_FLOOR}
-    record = {"note": "seconds of work per guard (baseline plus every mutant, summed over all jobs) from a measured "
+    record = {"note": "CPU seconds (user + system) of work per guard (baseline plus every mutant, summed over all jobs) from a measured "
                       "full run; re-set with `python3 scripts/mutation_check.py --rebaseline` (#1599)",
               "jobs": jobs, "floor": RATCHET_FLOOR, "guards": heavy}
     path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -298,11 +353,9 @@ def record_problems(guard_names: set[str], baseline: dict | None) -> list[str]:
             for name in sorted(set(baseline["guards"]) - guard_names)]
 
 
-def ratchet_problems(cost: dict[str, float], baseline: dict | None) -> list[str]:
-    """What the cost ratchet refuses, as sentences; an empty list is within budget."""
-    problems = record_problems(set(cost), baseline)
-    if baseline is None:
-        return problems
+def cost_problems(cost: dict[str, float], baseline: dict) -> list[str]:
+    """The cost refusals alone: a recorded guard past its growth, a new guard over the new-guard limit."""
+    problems = []
     recorded = baseline["guards"]
     for name, secs in sorted(cost.items()):
         if name in recorded:
@@ -316,6 +369,30 @@ def ratchet_problems(cost: dict[str, float], baseline: dict | None) -> list[str]
                             "and not on record; make it cheaper (`narrow_with` runs each mutant on one fixture), or "
                             f"{RECORD_INSTRUCTION}")
     return problems
+
+
+def ratchet_problems(cost: dict[str, float], baseline: dict | None) -> list[str]:
+    """What the cost ratchet refuses, as sentences; an empty list is within budget."""
+    problems = record_problems(set(cost), baseline)
+    if baseline is None:
+        return problems
+    return problems + cost_problems(cost, baseline)
+
+
+def ratchet_notes(cost: dict[str, float], baseline: dict | None, context: str) -> list[str]:
+    """What to print AFTER the refusals (#1652): the load and job count context, once, and only when a COST was refused.
+
+    A note is not a problem (the failure header counts problems), and a clean run or a record-only refusal (a missing record, a guard that
+    is gone) has no cost to explain, so it carries no extra line."""
+    return [context] if baseline is not None and cost_problems(cost, baseline) else []
+
+
+def failure_report(problems: list[str], notes: list[str], total: int) -> str:
+    """The text of a failing run: the header counts the PROBLEMS (a note is not one), each on its own line, then the notes."""
+    lines = [f"\nMUTATION CHECK FAILED — {len(problems)} of {total}:"]
+    lines += [f"  - {problem}" for problem in problems]
+    lines += [f"  {note}" for note in notes]
+    return "\n".join(lines)
 
 
 # PER-MUTATION LIMITS COME FROM THE GUARD'S OWN BASELINE (#1486). A fixed 300 s bound was shorter than
@@ -388,7 +465,7 @@ def run_baseline_timed(guard: Guard) -> tuple[list[str], float]:
         # BASELINE's output raised before the INERT report could print.
         # stderr folded into stdout: one stream in the order it was written, so a tail of it is
         # what a person watching would have seen (#1532). Its own process group (#1459).
-        result = proc_group.run(argv, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        result = run_costed(guard.name, argv, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 text=True, errors="replace",
                                 env=hermetic_git.env(),  # no detached git maintenance (#1510)
                                 timeout=BASELINE_TIMEOUT)
@@ -436,7 +513,7 @@ def narrow_control(guard: Guard, mutation: Mutation, narrow: tuple[str, ...], ti
             argv.append("--selftest")
         argv.extend(guard.selftest_args)
         argv.extend(narrow)
-        result = proc_group.run(argv, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        result = run_costed(guard.name, argv, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 text=True, errors="replace", env=hermetic_git.env(), timeout=timeout)
         if result.returncode == 0:
             return []
@@ -472,7 +549,7 @@ def run_mutation(guard: Guard, mutation: Mutation, timeout: float = MUTATION_FLO
         # stderr folded into stdout, as in the baseline: `stdout + stderr` put the last 12 lines of
         # stderr in front of a label printed to stdout, and 12+ stderr lines hid it (#1532).
         started = time.monotonic()
-        result = proc_group.run(argv, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        result = run_costed(guard.name, argv, cwd=workdir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 text=True, errors="replace",
                                 env=hermetic_git.env(),  # no detached git maintenance (#1510)
                                 timeout=timeout)
@@ -571,6 +648,7 @@ def run_guard(guard: Guard) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    proc_group.restore_sigint()   # #1635: see its docstring; the Ctrl-C selftests need a SIGINT that arrives
     parser = argparse.ArgumentParser(
         description="Prove each selftest fails when the thing it guards breaks."
     )
@@ -624,6 +702,7 @@ def main(argv: list[str] | None = None) -> int:
     # its own, so Ctrl-C reaches only this process, and a bare pool's join waited for the slowest
     # running mutant while every one of them kept going (review of #1525: 24 s, survivors).
     jobs = max(1, args.jobs or os.cpu_count() or 1)
+    start_load = five_minute_load()     # BEFORE the pool starts: this run's own work is not the load it ran under (#1652)
     started = time.monotonic()
     with proc_group.pool(jobs) as pool:
         timed = list(pool.map(run_baseline_timed, guards))
@@ -632,13 +711,14 @@ def main(argv: list[str] | None = None) -> int:
         live = live_mutations(guards, baselines)
         outcomes = run_live(pool, live, limits)
     by_guard: dict[str, list[str]] = {g.name: list(b) for g, b in zip(guards, baselines)}
-    # Seconds each guard cost: its baseline plus every mutant run (#1497). The CI log printed only
+    # Seconds each guard cost, in CPU time (#1635): its baseline plus every mutant run (#1497). The CI log printed only
     # the gate total, so where the budget went could not be read from it.
-    cost: dict[str, float] = {g.name: secs for g, (_, secs) in zip(guards, timed)}
-    for (g, _m), (found, secs) in zip(live, outcomes):
+    for (g, _m), (found, _secs) in zip(live, outcomes):
         by_guard[g.name].extend(found)
-        cost[g.name] += secs
+    with _COST_LOCK:
+        cost: dict[str, float] = {g.name: _COST.get(g.name, 0.0) for g in guards}
     problems: list[str] = []
+    notes: list[str] = []
     total = 0
     for guard in guards:
         total += len(guard.mutations)
@@ -654,13 +734,13 @@ def main(argv: list[str] | None = None) -> int:
               f"{RATCHET_FLOOR:g}s floor)")
     elif args.ratchet:
         try:
-            problems.extend(ratchet_problems(cost, load_cost_baseline()))
+            baseline = load_cost_baseline()
+            problems.extend(ratchet_problems(cost, baseline))
+            notes = ratchet_notes(cost, baseline, ratchet_context(start_load, jobs, (baseline or {}).get("jobs")))
         except ValueError as exc:
             problems.append(f"the cost record is unreadable: {exc}")
     if problems:
-        print(f"\nMUTATION CHECK FAILED — {len(problems)} of {total}:", file=sys.stderr)
-        for problem in problems:
-            print(f"  - {problem}", file=sys.stderr)
+        print(failure_report(problems, notes, total), file=sys.stderr)
         return 1
     print(f"\nmutation check: {total} mutation(s) across {len(guards)} guard(s), all caught "
           f"(jobs={jobs}, {time.monotonic() - started:.0f}s)")

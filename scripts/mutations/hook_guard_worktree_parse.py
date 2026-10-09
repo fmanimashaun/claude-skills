@@ -12,7 +12,7 @@ GUARD = Guard(
     # Each mutant runs only the fixture its `expects` names (#1599); the ones marked `narrow=False` depend on state an
     # earlier fixture builds, cannot run alone, and run the whole sub-group (#1581, surveyed one by one).
     narrow_with="--match",
-    needs=(
+    needs=("plugins/rails-flow/scripts/fixture_git.py", 
            'plugins/qa-flow/scripts/remote_evidence.py',  # #1581 merge: run by session-start.sh / release-gate.sh
            'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py',  # session-start.sh runs both (#1581: the harness drives it)
            "plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362
@@ -26,14 +26,10 @@ GUARD = Guard(
            'plugins/qa-flow/scripts/release_evidence.py',
            'plugins/rails-flow/scripts/self_consistency.py',
            'plugins/rails-flow/scripts/extract_claims.py',
-           'plugins/rails-flow/scripts/ci_verdict_hint.py'),
+           'plugins/rails-flow/scripts/ci_verdict_hint.py', 'plugins/rails-flow/scripts/session_reaper.py', 'plugins/rails-flow/scripts/process_containment.py'),
     mutations=(
-        Mutation(
-            "quoted words are never matched, so 'git' worktree add never reaches the helper",
-            'then hit=1; raw=1; fi',
-            'then true; fi',
-            'a quoted or escaped word does not hide the command',
-        ),
+        # The mutation "quoted words are never matched, so 'git' worktree add never reaches the helper" was dropped: since #1657 the normaliser reads a
+        # quoted word as the shell does, so the raw-text fallback it disabled changes no exit code (8 shapes probed, see the CHANGELOG).
         Mutation(
             'a raw-only match is judged as an ordinary one, so a mention is refused as unreadable',
             '[ "$raw" = 1 ] && flag="--raw"',

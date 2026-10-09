@@ -11,7 +11,7 @@ GUARD = Guard(
     selftest_args=("--only", "ci_verdict_hint"),
     # check_hook_gates drives every hook in both plugins from its own location, so the whole set is
     # staged, plus each script a hook shells out to -- one missing and every mutation reads as caught.
-    needs=(
+    needs=("plugins/rails-flow/scripts/fixture_git.py", 
            'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py',  # session-start.sh runs both (#1581: the harness drives it)
            "plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362
            "plugins/rails-flow/hooks/scripts", "plugins/qa-flow/hooks/scripts",
@@ -24,7 +24,7 @@ GUARD = Guard(
            "plugins/qa-flow/scripts/remote_evidence.py",   # the release gate runs it (#1591)
            "plugins/rails-flow/scripts/self_consistency.py",
            "plugins/rails-flow/scripts/extract_claims.py",
-           "plugins/rails-flow/scripts/ci_verdict_hint.py"),
+           "plugins/rails-flow/scripts/ci_verdict_hint.py", "plugins/rails-flow/scripts/session_reaper.py", "plugins/rails-flow/scripts/process_containment.py"),
     mutations=(
         Mutation(
             # PROVES THE POSITIVE FIXTURE IS LIVE. Point at a script that is not there and the hook is

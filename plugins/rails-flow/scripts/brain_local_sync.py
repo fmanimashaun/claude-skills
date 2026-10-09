@@ -398,11 +398,11 @@ def selftest() -> int:
     with _tf.TemporaryDirectory() as _t:
         base = Path(_t).resolve()
         prim, wt, home = base / "proj", base / "wt-1", base / "home"
-        g = ["git", "-c", "user.name=t", "-c", "user.email=t@t"]
-        _sp.run(["git", "init", "-q", str(prim)], check=True)
+        import sys as _sys; _sys.path.insert(0, str(Path(__file__).resolve().parent)); import fixture_git as _fg  # #1588
+        _fg.init(prim)
         (prim / "f").write_text("x\n")
-        _sp.run(g + ["-C", str(prim), "add", "f"], check=True)
-        _sp.run(g + ["-C", str(prim), "commit", "-qm", "x"], check=True)
+        _fg.run(prim, "add", "f")
+        _fg.run(prim, "commit", "-qm", "x")
         _sp.run(["git", "-C", str(prim), "worktree", "add", "-q", "--detach", str(wt)], check=True)
         primary_store = store_dir(prim, home)
         primary_store.mkdir(parents=True)

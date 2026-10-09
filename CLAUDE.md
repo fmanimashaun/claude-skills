@@ -119,24 +119,24 @@ a promotion must carry no `Unreleased`, and a second arm would leave the first h
 
 ## The gates run in CI — and how
 
-`.github/workflows/gates.yml` runs on every pull request and every push to `dev`; `release.yml` calls
-it before publishing.
+`.github/workflows/gates.yml` runs on every pull request and every push to `dev`; `release.yml` calls it.
 
 - **It runs `--gates-only`, not `--gates`**: content gates only; the machine diagnostics are about a
   maintainer's clone and would teach people to ignore a red build.
-- **A pull request runs `--fast`; a push to `dev` and the promotion run everything.** `--fast` skips
-  exactly `PR_SKIPPED_GATES` (`mutation coverage`, 438 of the sweep's 475 s) and reports the skip as
-  `skip` with its reason. The set is pinned by the doctor's selftest in both directions (#866).
-  Guards live one per file, globbed from **two roots**: `scripts/mutations/` (maintainer-only or
-  cross-plugin) and `plugins/<name>/scripts/mutations/` (plugin-relative, ships, #1109).
+- **A pull request and a push to `dev` run `--fast`; the full sweep runs before a promotion, on your
+  machine.** `--fast` skips exactly `PR_SKIPPED_GATES` (`mutation coverage`, `guard-bash cases (full)`), reported as `skip` (#866).
+  Before promoting run `maintainer_doctor.py --gates-only --require-slow --record-proof`: it posts a
+  `full-sweep` status for the tree; `release.yml` reuses it for an identical tree, else runs all (#1635).
+- **A gate over its budget is FAIL by name**, its group killed. Guards live one per file, from **two
+  roots**: `scripts/mutations/` (maintainer-only) and `plugins/<name>/scripts/mutations/` (ships, #1109).
 - **It asserts `node` and `ruby` are present**; without them `lint_markdown_code.py` exits 3 and a skip
   is indistinguishable from a pass. `dist/` drift is checked here **and** in `release.yml`; change one,
   change the other — same for `scripts/release_local.sh`.
 
 ## Releases are automated — do NOT run `gh release` by hand
 
-`.github/workflows/release.yml` fires on every push to `main`: the gate sweep first (`needs: gates`),
-then tag `v` + `metadata.version`; if no release exists for it, build `dist/*.skill` with
+`.github/workflows/release.yml` fires on every push to `main`: a `proof` lookup, then the gate sweep
+unless a recorded one matches the tree (`gates` is skipped), then tag `v` + `metadata.version`; if no release exists for it, build `dist/*.skill` with
 `scripts/package_core.py`, verify committed `dist/` matches, extract every CHANGELOG `(release vX.Y.Z)`
 block with `scripts/extract_release_notes.py`, and publish with **every** `dist/*.skill` asset —
 **a glob, never a hand-typed list**. A version that already has a release is a no-op. Corollary: **a stray
@@ -251,7 +251,7 @@ Tracked `.claude/settings.json` holds a narrow allowlist every worktree gets; fo
 ## Platform
 
 Hooks are **bash + `python3`**; the flow drives `gh`. Windows: WSL or Git Bash. **Hooks do not all fail
-open.** Of the seventeen hook scripts, eleven are advisory and fail open — an advisory that blocks work on a
+open.** Of the nineteen hook scripts, thirteen are advisory and fail open — an advisory that blocks work on a
 missing dependency gets disabled. Six **gates fail closed**, each scoped to what it guards:
 `plugins/rails-flow/hooks/scripts/guard-bash.sh` (falls back to the raw payload;
 `git add -A` is blocked either way.), `plugins/qa-flow/hooks/scripts/release-gate.sh` (only for commands targeting `main`),

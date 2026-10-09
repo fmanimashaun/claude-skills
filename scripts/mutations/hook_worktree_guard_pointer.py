@@ -12,7 +12,7 @@ GUARD = Guard(
     # Each mutant runs only the fixture its `expects` names (#1599); the ones marked `narrow=False` depend on state an
     # earlier fixture builds, cannot run alone, and run the whole sub-group (#1581, surveyed one by one).
     narrow_with="--match",
-    needs=(
+    needs=("plugins/rails-flow/scripts/fixture_git.py", 
            'plugins/qa-flow/scripts/remote_evidence.py',  # #1581 merge: run by release-gate.sh
            'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py',  # session-start.sh runs both (#1581: the harness drives it)
            "plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362
@@ -26,7 +26,7 @@ GUARD = Guard(
            'plugins/qa-flow/scripts/release_evidence.py',
            'plugins/rails-flow/scripts/self_consistency.py',
            'plugins/rails-flow/scripts/extract_claims.py',
-           'plugins/rails-flow/scripts/ci_verdict_hint.py'),
+           'plugins/rails-flow/scripts/ci_verdict_hint.py', 'plugins/rails-flow/scripts/session_reaper.py', 'plugins/rails-flow/scripts/process_containment.py'),
     mutations=(
         Mutation(
             'the resume pointer is never printed',
@@ -103,6 +103,34 @@ GUARD = Guard(
             'timeout=min(3, left)).stdout',
             'timeout=15).stdout',
             'a hanging `ps` is cut off',
+            narrow=False,
+        ),
+        Mutation(
+            'the stopped-orphan advisory always fires',
+            '    if orphans >= max(1, _env_int("RAILS_FLOW_STOPPED_ORPHAN_WARN", STOPPED_ORPHAN_WARN)):',
+            '    if True:',
+            'below the threshold the advisory is silent',
+            narrow=False,
+        ),
+        Mutation(
+            'a RUNNING orphan is counted as stopped',
+            'parts[1].startswith("T") and parts[2] == "1"',
+            'parts[2] == "1"',
+            'four stopped orphans (ppid 1) are counted',
+            narrow=False,
+        ),
+        Mutation(
+            'a stopped process that still has a parent is counted as an orphan',
+            'parts[1].startswith("T") and parts[2] == "1"',
+            'parts[1].startswith("T")',
+            'four stopped orphans (ppid 1) are counted',
+            narrow=False,
+        ),
+        Mutation(
+            "the advisory never names the owning session",
+            'owners = [(pid, known.get(str(pid), "?")) for pid in shown]',
+            'owners = [(pid, "?") for pid in shown]',
+            'the owning session is named from the environment',
             narrow=False,
         ),
     ),

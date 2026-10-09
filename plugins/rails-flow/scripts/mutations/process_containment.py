@@ -57,5 +57,25 @@ GUARD = Guard(
             '',
             "a SIGTERM to the CLI still kills the command's tree",
         ),
+        Mutation(
+            # #1582 slice B, #1589 re-review S1
+            "the sweep is no longer shielded from a second signal, so one landing mid-sweep aborts it (#1589 re-review S1)",
+            "        with _deferred_signals():\n            box.killed = sweep(token)\n",
+            "        box.killed = sweep(token)\n",
+            "does not abort the sweep",
+        ),
+        Mutation(
+            # #1642 review: the pairs used to vary only the FIRST signal, so a held set without SIGHUP or SIGINT survived
+            "SIGHUP is no longer held during the sweep, so a SIGHUP landing mid-sweep aborts it",
+            "    held = {signal.SIGTERM, signal.SIGHUP, signal.SIGINT}",
+            "    held = {signal.SIGTERM, signal.SIGINT}",
+            "a SIGHUP 0.3s after a SIGTERM does not abort the sweep",
+        ),
+        Mutation(
+            "SIGINT is no longer held during the sweep, so a SIGINT landing mid-sweep aborts it",
+            "    held = {signal.SIGTERM, signal.SIGHUP, signal.SIGINT}",
+            "    held = {signal.SIGTERM, signal.SIGHUP}",
+            "a SIGINT 0.3s after a SIGTERM does not abort the sweep",
+        ),
     ),
 )

@@ -778,9 +778,10 @@ def selftest() -> int:
         # A DIAGNOSTIC NEVER MUTATES (#849). A check that writes into the project during an audit is
         # ERROR and ours -- the user is told which path moved. Needs a git repo to assert; the
         # project fixture becomes one here.
-        for cmd in (["git", "init", "-q"], ["git", "add", "-A"],
-                    ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "x"]):
-            subprocess.run(cmd, cwd=project, check=True, capture_output=True)
+        import sys as _sys; _sys.path.insert(0, str(Path(__file__).resolve().parent)); import fixture_git as _fg  # #1588
+        _fg.init(project)
+        _fg.run(project, "add", "-A")
+        _fg.run(project, "commit", "-qm", "x")
         (root / "scripts" / "writer.py").write_text(
             "import pathlib, sys; pathlib.Path('docs/generated.md').write_text('x'); sys.exit(0)\n", encoding="utf-8")
         r = run_check(mk(command=["python3", str(root / "scripts/writer.py")]), project)
@@ -1108,9 +1109,9 @@ def selftest() -> int:
     check("falls back to the first line when nothing looks like a finding",
           summarise(_t, 3)[0] == "something opaque happened",
           f"got {summarise(_t, 3)[0]!r}")
-    check("empty output falls back to the exit code",
-          summarise("   \n\n", 2)[0] == "exit 2",
-          f"got {summarise('   \n\n', 2)[0]!r}")
+    # Hoisted: a backslash inside an f-string expression is a SyntaxError before Python 3.12 (#1597).
+    blank = summarise("   \n\n", 2)[0]
+    check("empty output falls back to the exit code", blank == "exit 2", f"got {blank!r}")
     check("the detail is capped at 160 chars",
           len(summarise("error " + "x" * 500, 1)[0]) == 160,
           f"got {len(summarise('error ' + 'x' * 500, 1)[0])}")

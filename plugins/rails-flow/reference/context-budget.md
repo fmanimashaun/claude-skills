@@ -99,7 +99,7 @@ these:
    drawing.
 2. **Nudges once per climb.** When the person submits a prompt and the fill is at or past the threshold, it
    adds ONE context line only Claude reads (about 230 characters, asserted at most 400): finish the step,
-   offer `/rails-flow:handoff`, tell the user to `/clear` or `/compact`. It adds nothing again until the fill
+   offer `/rails-flow:handoff`, then tell the user to `/clear` (owner decision, 2026-10-07: `/clear`, not `/compact`, because once the handoff is written a compaction only carries a summary of what the handoff already holds). It adds nothing again until the fill
    has fallen below the threshold or lost its reading (a `/clear` or a compaction). It is added only to a
    prompt from a person at an interactive surface: `composer`, `bridge` or no origin. The other fourteen of
    the engine's sixteen origin kinds are refused on purpose, `sdk` included, because `claude -p` has nobody to
@@ -143,6 +143,46 @@ pass on 2.1.288.
 - The mod's own variables reset on a hot reload, so a reload can repeat the nudge once. Development only.
 - One clause of the prompt hook, the explicit `percent === null`, is redundant because `null < 70` is already
   true in JavaScript. Removing it changes nothing, so no test can catch it, and it is left out of the guard.
+
+## Three limits, one automation: context, the 5-hour session, the week (#1676, #1677)
+
+The context nudge watches one window. The account's 5-hour session limit and weekly limit were invisible to the
+agent: on 2026-10-07 the owner had to say "we are still at 96% of weekly limit", after four Workflow broadcasts
+had spent about 680k tokens each. Each started 11 agents, each paying about 62k tokens of startup context
+(the workflow's own report divided by 11), only to call `SendMessage`. The point of this section is that the
+agent knows where all three limits stand and acts in time: it writes things down while there is still
+budget, and the work carries on after a reset.
+
+| Limit | At the warn level | At the hard level |
+|---|---|---|
+| Context window (`context-nudge.mjs`) | at 70%: one line asks for `/rails-flow:handoff`, then `/clear` | — |
+| 5-hour session window | at 80%: update the handoff, commit and push, no fan-out | at 90%: finish the step, save everything, stop; **resume by itself just after the reset** |
+| 7-day window | at 80%: the same | at 90%: the same, and new `Workflow` and `Agent` calls are refused |
+| Any usage | a `Workflow` whose script has agents only relay `SendMessage` is refused | — |
+
+- **The status line** reads `context 30% · week 42% · 5h 12%`. Each usage line names the window's reset time,
+  in UTC, and rides on a prompt once per level reached. It resets when usage falls back below warn.
+- **The resume.** At the 5-hour hard level, the mod sets one timer (`$.clock.after`) for two minutes after the
+  window's `resetsAt`. When it fires, it submits one prompt (`$.prompt.submit`), which runs once the session is
+  idle, telling Claude to read the handoff and continue. Timers live in the session: a hot reload or the end of
+  the session cancels them, so a closed session does not resume. `RAILS_FLOW_AUTO_RESUME=0` turns it off. The
+  weekly window gets no resume, because it does not reset within a session.
+- **Thresholds and override:** `RAILS_FLOW_BUDGET_WARN_PCT` (default 80) and `RAILS_FLOW_BUDGET_BLOCK_PCT`
+  (default 90), whole percents from 1 to 100. `RAILS_FLOW_BUDGET_ALLOW=1` lifts the weekly fan-out refusal, but
+  not the relay refusal.
+- **The relay refusal** needs the script: a `Workflow` started by `name` or `scriptPath` carries none, so it
+  is not checked. A script whose agents do real work and also report by message opts out with the line
+  `// budget-guard: not a relay`.
+
+**Where the figures come from, and when there are none.** They are `$.session.usage()` and
+`session.measure`'s `rateLimits`, each window a `{ kind, percentUsed, resetsAt }` (`resetsAt` is ISO 8601 here;
+the status line's own JSON uses epoch seconds). They appear only on a claude.ai Pro or Max subscription, or
+behind a gateway spend limit, and only after the session's first response. Behind a gateway alone, the window
+is `spend_limit`, so the 5-hour and weekly rules do not apply there. With no reading, nothing is refused and
+nothing is announced. A guard that throws is skipped and the call runs (the engine's rule), so the usage
+refusal fails open; the relay refusal makes no async call before it decides. Mods need Claude Code 2.1.287 or
+later; this was developed against 2.1.292. The declarations and their checksum are in
+`docs/evidence/audits/2026-10-07-mods-tool-call-ratelimits-2.1.292.md`.
 
 ## What this does not cover
 

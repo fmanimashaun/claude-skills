@@ -10,7 +10,7 @@ GUARD = Guard(
     # Only the fixture groups that drive this subject (#1497): the whole harness per
     # mutant was ~70% of the mutation-coverage budget.
     selftest_args=("--only", "guard_bash,release_gate"),
-    needs=(
+    needs=("plugins/rails-flow/scripts/fixture_git.py", 
            'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py',  # session-start.sh runs both (#1581: the harness drives it)
            "plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362
            "plugins/rails-flow/hooks/scripts", "plugins/qa-flow/hooks/scripts", "plugins/qa-flow/scripts",
@@ -19,7 +19,7 @@ GUARD = Guard(
            'plugins/rails-flow/scripts/extract_claims.py',
            # ci-verdict-hint.sh runs ci_verdict_hint.py; unstaged, its fixtures fail and every
            # mutation reads as caught -- the harness reported this guard INERT until it was added (#1173).
-           'plugins/rails-flow/scripts/ci_verdict_hint.py',
+           'plugins/rails-flow/scripts/ci_verdict_hint.py', 'plugins/rails-flow/scripts/session_reaper.py', 'plugins/rails-flow/scripts/process_containment.py',
            'plugins/qa-flow/scripts/read_certification.py',
            'plugins/qa-flow/scripts/push_targets.py',  # release-gate.sh runs it (#1410)
            'plugins/qa-flow/scripts/release_evidence.py',
@@ -33,10 +33,59 @@ GUARD = Guard(
             "`git -C repo add -A` is blocked",
         ),
         Mutation(
-            "quoted spans are kept, so a commit message carrying `; git add -A` splits inside the quote and is blocked",
-            '_strip_quotes()   { sed -E "s/\'[^\']*\'//g; s/\\"[^\\"]*\\"//g"; }',
-            "_strip_quotes()   { cat; }",
+            "quotes are not read, so a commit message carrying `; git add -A` splits inside the quote and is blocked",
+            "  _dequote | _strip_comments | _strip_heredocs \\",
+            "  cat | _strip_comments | _strip_heredocs \\",
             "wip; git add -A comes later",
+        ),
+        # ---- #1568 / #1613: the words the shell presents to the command ------------------------------
+        Mutation(
+            "a plain single-quoted word is deleted, not read as the word, so `git 'add' -A` presents as `git -A`",
+            "w = substr(s, i + 1, j - 1); if (simple(w)) out = out w",
+            "w = substr(s, i + 1, j - 1)",
+            "git 'add' -A",
+        ),
+        Mutation(
+            "a plain double-quoted word is deleted, not read as the word, so `git add \"-A\"` presents as `git add`",
+            "w = substr(s, i + 1, j - i - 1); if (simple(w)) out = out w",
+            "w = substr(s, i + 1, j - i - 1)",
+            'git add "-A"',
+        ),
+        Mutation(
+            "an ANSI-C word is never kept, so `git add $'\\x2dA'` presents as `git add`",
+            "if (simple(ANSIV)) out = out ANSIV",
+            "",
+            "(#1613): ANSI-C",
+        ),
+        Mutation(
+            "a backslash before a plain character stays, so `g\\it add -A` is not git",
+            "        out = out d; i += 2; continue",
+            "        out = out c d; i += 2; continue",
+            "gi\\\\t add -A",
+        ),
+        Mutation(
+            "a backslash-newline does not join, so `git add\\<newline> -A` is two commands",
+            "if (JOIN) { BUF = substr(raw, 1, length(raw) - 1); next }",
+            "if (0) { next }",
+            "git add\\\\\\n -A",
+        ),
+        Mutation(
+            "an arithmetic `<<` opens a heredoc, so `echo $((1<<2))` hides the command after it",
+            'if (AR > 0) { out = out "< <"; i += 2; continue }',
+            "if (0) { i += 2; continue }",
+            "echo $((1<<2))",
+        ),
+        Mutation(
+            "a CR on a heredoc terminator line is not ignored, so `EOF\\r` never ends the body and hides the command after it",
+            "      t=$0; sub(/\\r$/,\"\",t); if (dash) sub(/^\\t+/,\"\",t)",
+            "      t=$0; if (dash) sub(/^\\t+/,\"\",t)",
+            "cat <<EOF\\r\\nx",
+        ),
+        Mutation(
+            "an unquoted-delimiter heredoc body does not join a backslash-newline, so a body line naming git add -A runs",
+            "if (!QQ[QI] && line ~",
+            "if (0 && line ~",
+            "(#1568): CONTROL: `'cat <<EOF",
         ),
         Mutation(
             "segments are not split, so `git status && git add -A` has no segment starting with git add",

@@ -629,8 +629,22 @@ AUTHZ_GOOD = [
 # repo when the temp directory is removed -- `rmtree` then raises "Directory not empty" from cleanup, the
 # selftest dies before printing its verdict, and mutation coverage reads a correct mutant as caught by the
 # wrong fixture (#1493). Signing is off too, so a maintainer's own git config never reaches the fixture.
-FIXTURE_GIT = ("-c", "user.email=t@t", "-c", "user.name=t", "-c", "maintenance.auto=false", "-c", "gc.auto=0",
+FIXTURE_GIT = ("-c", "user.email=t@t", "-c", "user.name=t", "-c", "maintenance.auto=false", "-c", "gc.auto=0",  # fixture-git: exempt (the argv is the subject: this fixture tests git's own maintenance behaviour; repo-locating env dropped from the whole selftest process by _drop_repo_locators, which a check proves)
                "-c", "commit.gpgSign=false", "-c", "tag.gpgSign=false")
+
+
+# The repository-locating variables git exports to its hooks (`git rev-parse --local-env-vars`). An inherited GIT_DIR
+# beats `-C`, so a fixture commit run under a hook lands in the repo it names -- the #1588 incident (#1660 review R3).
+_REPO_LOCATORS = ("GIT_DIR", "GIT_WORK_TREE", "GIT_IMPLICIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY",
+                  "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR", "GIT_GRAFT_FILE", "GIT_SHALLOW_FILE",
+                  "GIT_PREFIX", "GIT_NO_REPLACE_OBJECTS", "GIT_REPLACE_REF_BASE")
+
+
+def _drop_repo_locators() -> None:
+    """Remove them from THIS selftest process, so every fixture git it starts -- each env is built from os.environ --
+    can only reach the repo its `-C` names."""
+    for key in _REPO_LOCATORS:
+        os.environ.pop(key, None)
 
 
 def _fixture_tempdir() -> tempfile.TemporaryDirectory:
@@ -678,6 +692,28 @@ def selftest() -> int:
         if probe:
             shutil.rmtree(Path(tempfile.gettempdir()) / probe, ignore_errors=True)
     check("cleanup: a directory still being written at cleanup does not crash the selftest", crashed is None, crashed)
+
+    # #1660 review R3: an INHERITED GIT_DIR naming another repo must not receive a fixture commit.
+    with _fixture_tempdir() as bd:
+        stand_in, fx = Path(bd) / "real", Path(bd) / "fx"
+        for r in (stand_in, fx):
+            subprocess.run(["git", "init", "-q", str(r)], check=True, capture_output=True,
+                           env={k: v for k, v in os.environ.items() if k not in _REPO_LOCATORS})
+        saved = os.environ.get("GIT_DIR")
+        os.environ["GIT_DIR"] = str(stand_in / ".git")
+        try:
+            _drop_repo_locators()
+            subprocess.run(["git", "-C", str(fx), *FIXTURE_GIT, "commit", "-q", "--allow-empty", "-m", "m"],
+                           capture_output=True)
+        finally:
+            if saved is None:
+                os.environ.pop("GIT_DIR", None)
+            else:
+                os.environ["GIT_DIR"] = saved
+        landed = subprocess.run(["git", "-C", str(stand_in), "rev-list", "--all", "--count"], capture_output=True,
+                                text=True, env={k: v for k, v in os.environ.items() if k not in _REPO_LOCATORS}).stdout.strip()
+        check("binding: under an inherited GIT_DIR a fixture commit stays out of the repo it names", landed in ("", "0"),
+              f"{landed} commit(s) landed in the stand-in")
 
     with _fixture_tempdir() as td:
         tmp = Path(td)
@@ -827,6 +863,7 @@ def selftest() -> int:
         sweep = proj / f"qa/manual-tests/authz-{V}/sweep.csv"
         sweep.write_text(AUTHZ_HEADER + "\n".join(AUTHZ_GOOD) + "\n", encoding="utf-8")
         stamp = proj / "qa/CERTIFICATION"
+        _drop_repo_locators()
         g = ["git", "-C", str(proj), *FIXTURE_GIT]
         # The work branch is dev; main is created below, only where a fixture needs a PUBLISHED release.
         subprocess.run(["git", "init", "-q", "-b", "dev", str(proj)], check=True)
@@ -836,14 +873,16 @@ def selftest() -> int:
         # Only FIXTURE_GIT may supply the settings: a runner that already disables maintenance through
         # GIT_CONFIG_* (ours does, #1510) would otherwise satisfy this check with the fixture's own
         # settings removed -- and a downstream project runs this selftest without our runner.
-        bare_env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_CONFIG_")}
+        # No GIT_* at all (#1660 review R3): not the CONFIG pairs this check must not inherit, and not an inherited
+        # GIT_DIR either, which `-C` does not override -- the #1588 incident.
+        bare_env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
         traced = subprocess.run([*g, "commit", "-q", "--allow-empty", "-m", "trace"], capture_output=True,
                                 text=True, env={**bare_env, "GIT_TRACE": "1"})
         # CONTROL: with auto-maintenance ON the same commit does run it, so the check above is not vacuous
         # on this git. It runs in the FOREGROUND (`autoDetach=false`): a detached control would be the very
         # #1493 race, hidden by the cleanup (review of PR #1511). `maintenance.auto=true` on the command
         # line, so a maintainer's global config cannot turn the control red.
-        bare = ["git", "-C", str(proj), "-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgSign=false",
+        bare = ["git", "-C", str(proj), "-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgSign=false",  # fixture-git: exempt (the argv is the subject: this fixture tests git's own maintenance behaviour; repo-locating env dropped from the whole selftest process by _drop_repo_locators, which a check proves)
                 "-c", "maintenance.auto=true", "-c", "maintenance.autoDetach=false", "-c", "gc.autoDetach=false"]
         control = subprocess.run([*bare, "commit", "-q", "--allow-empty", "-m", "control"], capture_output=True,
                                  text=True, env={**bare_env, "GIT_TRACE": "1"})
