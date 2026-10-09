@@ -42,6 +42,14 @@ REPO_LOCATORS = ("GIT_DIR", "GIT_WORK_TREE", "GIT_IMPLICIT_WORK_TREE", "GIT_INDE
                 "GIT_PREFIX", "GIT_NO_REPLACE_OBJECTS", "GIT_REPLACE_REF_BASE")
 
 
+# The global options fixture_git lets through before the subcommand. Not `--git-dir`, `--work-tree` or `--bare`: they
+# would rebind the repository.
+GLOBAL_WITH_VALUE = ("-C", "-c", "--namespace", "--config-env", "--attr-source")
+GLOBAL_WITH_INLINE_VALUE = ("--namespace=", "--config-env=", "--attr-source=", "--exec-path=")
+GLOBAL_FLAGS = ("-p", "--paginate", "-P", "--no-pager", "--no-replace-objects", "--literal-pathspecs", "--glob-pathspecs",
+                "--noglob-pathspecs", "--icase-pathspecs", "--no-optional-locks", "--no-advice", "--no-lazy-fetch")
+
+
 class NotATempRepo(RuntimeError):
     """Raised instead of letting a fixture's git touch anything but its own temp repo."""
 
@@ -112,9 +120,20 @@ def run(repo: str | os.PathLike, *args: str, check: bool = True, **kw) -> subpro
         raise NotATempRepo(f"{path}/.git resolves to {target}, outside this repo -- a gitlink or symlink "
                            "would send the fixture's git elsewhere (#1588)")
     # An explicit --git-dir / --work-tree overrides the GIT_DIR binding (#1594 review S2): refused.
-    for a in args:
-        if a in ("--git-dir", "--work-tree") or a.startswith(("--git-dir=", "--work-tree=")):
-            raise NotATempRepo(f"{a!r} in a fixture's git arguments would override the temp-repo binding (#1588)")
+    # GLOBAL OPTIONS, before the subcommand, FAIL CLOSED (#1660 review R2): only the options below are let through, and
+    # any other leading `-...` is refused -- a list of the forbidden ones missed `--config-env x=y --git-dir REAL`, whose
+    # separate value ended the scan early. After the subcommand the same words are its own arguments
+    # (`git rev-parse --git-dir` is a query, not an override).
+    i = 0
+    while i < len(args) and args[i].startswith("-"):
+        a = args[i]
+        if a in GLOBAL_WITH_VALUE:
+            i += 2
+        elif a in GLOBAL_FLAGS or a.startswith(GLOBAL_WITH_INLINE_VALUE):
+            i += 1
+        else:
+            raise NotATempRepo(f"{a!r} before the subcommand is not a global option fixture_git allows: it could override "
+                               "the temp-repo binding (#1588)")
     kw.setdefault("capture_output", True)
     kw.setdefault("text", True)
     return subprocess.run(["git", *IDENTITY, *args], env=env(path, kw.pop("env", None)), cwd=path,
@@ -209,6 +228,30 @@ def selftest() -> int:
             check(f"an explicit {flag[0].split('=')[0]} in the arguments is refused", isinstance(raised4, NotATempRepo),
                   f"got {type(raised4).__name__ if raised4 else 'no refusal'}")
         check("...and none of them reached the other repo", commits(real) == before, f"now {commits(real)}")
+        # 4d2. #1660 review R2: a separate-value option before `--git-dir` (the scan once stopped at its value), and an
+        # unknown leading option, are refused.
+        for lead in (["--config-env", "core.x=HOME", "--git-dir", str(real / ".git")],
+                     ["--config-env", "core.x=HOME", f"--work-tree={real}"], ["--bare"], ["--unknown-global"]):
+            raised5 = None
+            try:
+                run(good, *lead, "rev-parse", "--git-dir")
+            except Exception as e:  # noqa: BLE001
+                raised5 = e
+            check(f"a leading {' '.join(lead[:2])} ... is refused", isinstance(raised5, NotATempRepo),
+                  f"got {type(raised5).__name__ if raised5 else 'no refusal'}")
+        try:
+            run(good, "-c", "a.b=c", "--no-pager", "rev-parse", "--git-dir")
+            ok_g = True
+        except Exception as e:  # noqa: BLE001
+            ok_g = False
+        check("CONTROL: known global options (-c x=y, --no-pager) are still let through", ok_g)
+        # 4e. ...but AFTER the subcommand the same words are arguments to it, not overrides (#1588 part 2).
+        try:
+            gd = run(good, "rev-parse", "--git-dir").stdout.strip()
+            ok_q = Path(gd if Path(gd).is_absolute() else good / gd).resolve() == (good / ".git").resolve()
+        except Exception as e:  # noqa: BLE001
+            ok_q, gd = False, repr(e)
+        check("`rev-parse --git-dir` is a query, not an override, and answers for the temp repo", ok_q, gd)
         # 5. #1577: the background-maintenance settings reach git.
         # From a CLEAN base: the mutation harness already exports these settings (scripts/hermetic_git.py),
         # and a check that reads them from the inherited environment passes whatever this module does.

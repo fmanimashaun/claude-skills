@@ -159,23 +159,24 @@ def selftest() -> int:
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
-        g = ["git", "-C", tmp, "-c", "user.name=t", "-c", "user.email=t@t"]
-        subprocess.run(["git", "init", "-q", "-b", "dev", tmp], check=True)
+        import sys as _sys; _sys.path.insert(0, str(Path(__file__).resolve().parent)); import fixture_git as _fg  # #1588
+        _fg.init(root, "-b", "dev")
+        _g = lambda *a: _fg.run(root, *a)
         (root / "docs/architecture").mkdir(parents=True)
         (root / "docs/architecture/graph.json").write_text("{}\n")
         (root / "app.rb").write_text("x\n")
-        subprocess.run(g + ["add", "."], check=True)
-        subprocess.run(g + ["commit", "-qm", "base"], check=True)
+        _g("add", ".")
+        _g("commit", "-qm", "base")
         feature = {"GENERATED_DOCS_BRANCH": "fix/1"}
         expect("guard is n/a without a policy file", guard(root, feature)[0] == 3)
         (root / ".rails-flow").mkdir()
         (root / POLICY_FILE).write_text(json.dumps({"enforce_on": ["dev"], "base": "dev"}))
-        subprocess.run(g + ["checkout", "-qb", "fix/1"], check=True)
+        _g("checkout", "-qb", "fix/1")
         (root / "app.rb").write_text("y\n")
-        subprocess.run(g + ["commit", "-qam", "code"], check=True)
+        _g("commit", "-qam", "code")
         expect("guard: a feature branch changing only code is clean", guard(root, feature)[0] == 0)
         (root / "docs/architecture/graph.json").write_text('{"a":1}\n')
-        subprocess.run(g + ["commit", "-qam", "regen"], check=True)
+        _g("commit", "-qam", "regen")
         code, msg = guard(root, feature)
         expect("guard: a feature branch changing graph.json FAILS", code == 1 and "graph.json" in msg)
         expect("guard: an enforcing branch may change it", guard(root, {"GENERATED_DOCS_BRANCH": "dev"})[0] == 0)

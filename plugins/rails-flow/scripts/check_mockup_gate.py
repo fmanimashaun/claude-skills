@@ -686,9 +686,10 @@ def selftest() -> int:
     # directory: the one above holds untracked records, which would rightly count as on the branch.
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
+        import sys as _sys; _sys.path.insert(0, str(Path(__file__).resolve().parent)); import fixture_git as _fg  # #1588
         def git(*a: str) -> None:
-            subprocess.run(("git",) + a, cwd=root, check=True, capture_output=True)
-        git("init", "-q", "-b", "dev"); git("config", "user.email", "t@example.com"); git("config", "user.name", "t")
+            _fg.init(root, *a[2:]) if a[:2] == ("init", "-q") else _fg.run(root, *a)   # bound to this temp repo (#1588)
+        git("init", "-q", "-b", "dev")
         (root / "README.md").write_text("x\n"); git("add", "README.md"); git("commit", "-qm", "base")
         git("checkout", "-q", "-b", "feature")
         (root / "app/views/invoices").mkdir(parents=True)

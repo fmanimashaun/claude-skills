@@ -9,6 +9,7 @@ GUARD = Guard(
     name="brain_local_sync",
     subject="scripts/brain_local_sync.py",
     selftest="scripts/brain_local_sync.py",   # --selftest lives in the module itself
+    needs=("scripts/fixture_git.py",),   # its selftest's git goes through fixture_git (#1588)
     mutations=(
         Mutation(
             "a user memory crosses into the brain, so a personal note becomes team doctrine",

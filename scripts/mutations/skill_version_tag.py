@@ -9,6 +9,7 @@ GUARD = Guard(
     name="skill_version_tag",
     subject="scripts/skill_version_tag.py",
     selftest="scripts/skill_version_tag.py",
+    needs=("plugins/rails-flow/scripts/fixture_git.py",),   # #1588
     mutations=(
         Mutation(
             "tags sort lexically, so v1.10.0 is read before v1.9.0",

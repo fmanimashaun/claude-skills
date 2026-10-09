@@ -137,9 +137,9 @@ def selftest() -> int:
 
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
-        g = lambda *a: subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *a], cwd=root,
-                                      check=True, capture_output=True, text=True)
-        g("init", "-q", "-b", "dev")
+        import sys as _sys; _sys.path.insert(0, str(Path(__file__).resolve().parent)); import fixture_git as _fg  # #1588
+        g = lambda *a: _fg.run(root, *a)
+        _fg.init(root, "-b", "dev")
         (root / "config").mkdir()
         (root / "config/routes.rb").write_text("Rails.application.routes.draw do\n  resources :invoices\n  get :health\nend\n")
         (root / "app/serializers").mkdir(parents=True)

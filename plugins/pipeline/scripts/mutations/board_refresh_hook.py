@@ -10,7 +10,7 @@ GUARD = Guard(
     subject="hooks/scripts/board-refresh.sh",
     selftest="scripts/status_board_selftest.py",
     deps=("scripts/status_board.py",),
-    needs=("scripts/status_board_verdicts.json", "hooks/hooks.json"),
+    needs=("scripts/fixture_git.py", "scripts/status_board_verdicts.json", "hooks/hooks.json"),
     mutations=(
         Mutation(
             'the hook runs in a repository that never asked for a board',

@@ -33,6 +33,9 @@ WHAT IT CHECKS
                               differ, or one is missing -- one normaliser is a claim only while they are identical
   fixture-git-drift           the three shipped copies of scripts/fixture_git.py (rails-flow, qa-flow,
                               pipeline) differ, or one is missing -- one fixture-git lock, three copies (#1588)
+  fixture-git-bypass          a git call with the fixture identity (`t@t`) outside fixture_git -- a fixture's git
+                              that can reach the real repo when its temp init fails (#1588); `# fixture-git: exempt
+                              (<reason>)` on the line for what the helper refuses by design (a `git worktree add` checkout)
   claude-md-growth            CLAUDE.md past the ceiling recorded in its own marker (or no marker,
                               or its history file gone) — relocate incident paragraphs verbatim to
                               docs/brain/history/maintainer-history.md; claude_md_structure.py prints the diff
@@ -627,6 +630,43 @@ def check_fixture_git_drift() -> tuple[list[Finding], int]:
                                     f"differs from {FIXTURE_GIT_COPIES[0]} -- one fixture-git lock, three copies: a fix "
                                     "landed in one and not the others. Copy the canonical file over it (cp) and re-run"))
     return findings, len(FIXTURE_GIT_COPIES)
+
+
+# Rule: fixture-git-bypass (#1588)
+# The fixture identity `t@t` marks a fixture's git: production code never commits as it. Every such call goes
+# through fixture_git, which binds GIT_DIR/GIT_WORK_TREE to the temp repo and refuses one whose init failed --
+# the incident was a fixture's `git commit` landing in the real dev checkout through an inherited cwd and GIT_DIR.
+# ANY FIXTURE IDENTITY (#1660 review R4), not only `t@t`: an email in `-c user.email=`, in a GIT_AUTHOR/COMMITTER_EMAIL
+# entry, set with `config user.email`, or in `--author "name <email>"`. Production code sets none of these.
+_FIXTURE_IDENTITY = re.compile(r"""user\.email=[\w.+-]+@[\w.-]+"""
+                               r"""|GIT_(?:AUTHOR|COMMITTER)_EMAIL["']?\s*[:=,]\s*["'][\w.+-]+@[\w.-]+["']"""
+                               r"""|\bemail\s*=\s*["']t@t["']"""
+                               r"""|["']user\.email["']\s*,\s*["'][\w.+-]+@[\w.-]+["']"""
+                               r"""|--author["']?[\s,=]+["']?[^"'<]*<[\w.+-]+@[\w.-]+>""")
+_FIXTURE_EXEMPT = re.compile(r"#\s*fixture-git:\s*exempt\s*\([^)]+\)")
+
+
+def check_fixture_git_bypass(python_sources: dict[Path, str]) -> tuple[list[Finding], int]:
+    """A line that sets the fixture git identity outside the fixture_git copies (and outside this rule) is a finding."""
+    findings: list[Finding] = []
+    examined = 0
+    own = {Path(c) for c in FIXTURE_GIT_COPIES} | {Path("scripts/lint_self_consistency.py")}
+    for path, text in python_sources.items():
+        rel = path.relative_to(ROOT) if path.is_absolute() else path
+        if rel in own:
+            continue
+        for n, line in enumerate(text.splitlines(), 1):
+            if not _FIXTURE_IDENTITY.search(line):
+                continue
+            examined += 1
+            if _FIXTURE_EXEMPT.search(line):
+                continue
+            findings.append(Finding("fixture-git-bypass", str(rel), n,
+                                    "a fixture git identity outside fixture_git: run this git through "
+                                    "fixture_git.run(repo, ...) (it refuses a repo whose init failed, and binds "
+                                    "GIT_DIR to the temp repo), or mark a case the helper refuses by design "
+                                    "`# fixture-git: exempt (<reason>)` (#1588)"))
+    return findings, examined
 
 
 def check_claude_md_growth() -> tuple[list[Finding], int]:
@@ -3612,6 +3652,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     growth, claude_md_lines = check_claude_md_growth()
     hook_lib, hook_lib_copies = check_hook_lib_drift()
     fixture_git, fixture_git_copies = check_fixture_git_drift()
+    fixture_bypass, fixture_bypass_examined = check_fixture_git_bypass(python_sources)
     bare, bare_examined = check_bare_plugin_entries()
     misdesc, agent_descs_examined = check_misdescribed_agents()
     unbounded, queries_examined = check_unbounded_issue_queries()
@@ -3669,6 +3710,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "claude_md_lines": claude_md_lines,
         "hook_lib_copies": hook_lib_copies,
         "fixture_git_copies": fixture_git_copies,
+        "fixture_git_identity_lines": fixture_bypass_examined,
         "plugin_entries_checked_for_metadata": bare_examined,
         "plugin_descriptions_reconciled_against_agents": agent_descs_examined,
         "gh_list_calls_examined": queries_examined,
@@ -3717,7 +3759,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "scaffolded_boolean_toggles": toggles_examined,
         **call_coverage,
     }
-    return (dead + unenforced + undocumented + undoc_cmds + growth + hook_lib + fixture_git + bare + misdesc + unbounded + author_me + components + call_sites + invisible
+    return (dead + unenforced + undocumented + undoc_cmds + growth + hook_lib + fixture_git + fixture_bypass + bare + misdesc + unbounded + author_me + components + call_sites + invisible
             + markers + uncontained + pointers + rel_links + leaving + outlines + uninstallable + plugin_root + mkt_ver + coercions + topologies + schema + unwired
             + ci_gates + cl_ignore + controllers + labels + comp_labels + orphans + keyfilter
             + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
@@ -4819,6 +4861,30 @@ def selftest() -> int:
              files={FIXTURE_GIT_COPIES[0]: FG, FIXTURE_GIT_COPIES[1]: FG, FIXTURE_GIT_COPIES[2]: FG + "\n"})
     scenario("a missing fixture_git copy is a finding", rule="fixture-git-drift", expect_finding=True,
              files={FIXTURE_GIT_COPIES[0]: FG, FIXTURE_GIT_COPIES[1]: FG})
+    # #1588: the fixture identity outside fixture_git, in the shapes the corpus uses.
+    for label, body in (("a -c user.email=t@t argv", 'subprocess.run(["git", "-c", "user.email=t@t", "commit"])\n'),
+                        ("a GIT_AUTHOR_EMAIL env entry", 'env = {"GIT_AUTHOR_EMAIL": "t@t"}\n'),
+                        ("a keyword email", 'git_env(email="t@t")\n')):
+        scenario(f"fixture-git-bypass: {label} outside fixture_git is a finding", rule="fixture-git-bypass",
+                 expect_finding=True, files={"plugins/x/scripts/x_selftest.py": body})
+    # #1660 review R4: any fixture identity, not only `t@t`.
+    for label, body in (("another email in -c user.email=", 'subprocess.run(["git", "-c", "user.email=f@e", "commit"])\n'),
+                        ("an email set with config user.email", 'git("config", "user.email", "t@example.com")\n'),
+                        ("an email in --author", 'subprocess.run(["git", "commit", "--author", "t <t@t>"])\n')):
+        scenario(f"fixture-git-bypass: {label} outside fixture_git is a finding", rule="fixture-git-bypass",
+                 expect_finding=True, files={"plugins/x/scripts/x_selftest.py": body})
+    scenario("fixture-git-bypass: an email in Ruby test data is not a git identity, and silent", rule="fixture-git-bypass",
+             expect_finding=False, files={"plugins/x/scripts/x_selftest.py": "'    User.create!(email: \"a@b.test\")\\n'\n"})
+    scenario("fixture-git-bypass: an exempt line with a reason is silent", rule="fixture-git-bypass", expect_finding=False,
+             files={"plugins/x/scripts/x_selftest.py":
+                    'subprocess.run(["git", "-c", "user.email=t@t", "worktree", "add"])  # fixture-git: exempt (worktree add)\n'})
+    scenario("fixture-git-bypass: an exemption without a reason is still a finding", rule="fixture-git-bypass",
+             expect_finding=True, files={"plugins/x/scripts/x_selftest.py":
+                                         'subprocess.run(["git", "-c", "user.email=t@t", "commit"])  # fixture-git: exempt\n'})
+    scenario("fixture-git-bypass: the identity inside a fixture_git copy is its own, and silent", rule="fixture-git-bypass",
+             expect_finding=False, files={FIXTURE_GIT_COPIES[0]: 'IDENTITY = ("-c", "user.email=t@t")\n'})
+    scenario("fixture-git-bypass: a file with no fixture identity is silent", rule="fixture-git-bypass",
+             expect_finding=False, files={"plugins/x/scripts/x.py": 'subprocess.run(["git", "status"])\n'})
     scenario(
         "the history file CLAUDE.md points at is missing", rule="claude-md-growth", expect_finding=True,
         files={"CLAUDE.md": "@AGENTS.md\n<!-- claude-md: max-lines 10 -->\nrule\n"},

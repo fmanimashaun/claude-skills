@@ -48,6 +48,43 @@ GUARD = Guard(
             "            if False:",
             "an entry for a vanished column is a finding",
         ),
+        # #1695: a second database's schema file.
+        Mutation(
+            "a second db/*_schema.rb is never read",
+            "    return [root / SCHEMA, *others]",
+            "    return [root / SCHEMA]",
+            "a new column in the SECOND schema fails until it is classified, and the finding names its file",
+        ),
+        Mutation(
+            "the Solid trio is read as well",
+            "if not (p.name in FRAMEWORK_SCHEMAS and _solid_only(p)))",
+            "if True)",
+            "the Solid trio is framework-owned: a solid_* table in cache_schema.rb, queue_schema.rb or cable_schema.rb is not reported",
+        ),
+        Mutation(
+            "a trio-named file is skipped by its name alone",
+            "if not (p.name in FRAMEWORK_SCHEMAS and _solid_only(p)))",
+            "if p.name not in FRAMEWORK_SCHEMAS)",
+            "a cache_schema.rb holding a non-solid_* table is read, not skipped by its name",
+        ),
+        Mutation(
+            "a table in two schema files is picked silently",
+            "            if table in tables:\n                duplicates.append(",
+            "            if False:\n                duplicates.append(",
+            "a table in two schema files is a finding, not a silent pick",
+        ),
+        Mutation(
+            "a finding does not say which file a column came from",
+            '        return "" if source[table] == SCHEMA.as_posix() else f" (in {source[table]})"',
+            '        return ""',
+            "a new column in the SECOND schema fails until it is classified, and the finding names its file",
+        ),
+        Mutation(
+            "a stale table is judged against db/schema.rb alone",
+            "        if t not in tables:",
+            "        if t not in {name for name, file in source.items() if file == SCHEMA.as_posix()}:",
+            "CONTROL: a second schema file's columns, classified, are clean and counted",
+        ),
         Mutation(
             "an inline { } entry is not parsed",
             '    m = FLOW.match(str(value).strip())\n    if not m:',

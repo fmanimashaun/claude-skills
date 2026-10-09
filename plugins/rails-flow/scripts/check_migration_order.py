@@ -58,29 +58,30 @@ def selftest() -> int:
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
-        g = ["git", "-C", tmp, "-c", "user.name=t", "-c", "user.email=t@t"]
-        subprocess.run(["git", "init", "-q", "-b", "dev", tmp], check=True)
+        import sys as _sys; _sys.path.insert(0, str(Path(__file__).resolve().parent)); import fixture_git as _fg  # #1588
+        _fg.init(root, "-b", "dev")
+        _g = lambda *a: _fg.run(root, *a)
         (root / "db" / "migrate").mkdir(parents=True)
         (root / "db" / "schema.rb").write_text(schema("2026_01_01_000000"))
-        subprocess.run(g + ["add", "."], check=True)
-        subprocess.run(g + ["commit", "-qm", "base"], check=True)
+        _g("add", ".")
+        _g("commit", "-qm", "base")
         expect("the base branch itself adds nothing and is in order", check(root, "dev")[0] == 0)
 
-        subprocess.run(g + ["checkout", "-qb", "feat"], check=True)
+        _g("checkout", "-qb", "feat")
         (root / "db/migrate/20260102000000_add_good.rb").write_text("class AddGood; end\n")
-        subprocess.run(g + ["add", "."], check=True)
-        subprocess.run(g + ["commit", "-qm", "good"], check=True)
+        _g("add", ".")
+        _g("commit", "-qm", "good")
         expect("a migration numbered above the base's version is in order", check(root, "dev")[0] == 0)
 
         # THE REPORTED CASE: dev moves past the branch's migration, then the branch merges dev.
-        subprocess.run(g + ["checkout", "-q", "dev"], check=True)
+        _g("checkout", "-q", "dev")
         (root / "db" / "migrate").mkdir(parents=True, exist_ok=True)   # git does not track an empty dir
         (root / "db/migrate/20260105000000_on_dev.rb").write_text("class OnDev; end\n")
         (root / "db" / "schema.rb").write_text(schema("2026_01_05_000000"))
-        subprocess.run(g + ["add", "."], check=True)
-        subprocess.run(g + ["commit", "-qm", "dev moves on"], check=True)
-        subprocess.run(g + ["checkout", "-q", "feat"], check=True)
-        subprocess.run(g + ["merge", "-q", "--no-edit", "dev"], check=True)
+        _g("add", ".")
+        _g("commit", "-qm", "dev moves on")
+        _g("checkout", "-q", "feat")
+        _g("merge", "-q", "--no-edit", "dev")
         code, lines = check(root, "dev")
         expect("a branch migration below dev's newer schema version FAILS, even after merging dev",
                code == 1 and "20260102000000_add_good.rb" in " ".join(lines))
