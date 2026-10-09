@@ -930,11 +930,17 @@ def run() -> int:
     if warnings or not any("heavy" in b for b in blocking):
         FAILURES.append(f"#1738: outside the release, cost growth still BLOCKS, got blocking={blocking} warnings={warnings}")
     _tick()
-    blocking, _ = mc.ratchet_outcome({"heavy": 400.0}, record, {"heavy"}, warn_only=True)
+    try:
+        blocking, _ = mc.ratchet_outcome({"heavy": 400.0}, record, {"heavy"}, warn_only=True)
+    except Exception as exc:        # noqa: BLE001 -- the check below fails by name
+        blocking = [f"raised {exc!r}"]
     if not any("medium" in b for b in blocking):
         FAILURES.append(f"#1738: in the release, a record naming a guard that is gone still BLOCKS, got {blocking}")
     _tick()
-    blocking, _ = mc.ratchet_outcome({"heavy": 400.0}, None, {"heavy"}, warn_only=True)
+    try:
+        blocking, _ = mc.ratchet_outcome({"heavy": 400.0}, None, {"heavy"}, warn_only=True)
+    except Exception as exc:        # noqa: BLE001 -- the check below fails by name
+        blocking = [f"raised {exc!r}"]
     if not any("no cost record" in b for b in blocking):
         FAILURES.append(f"#1738: in the release, a missing cost record still BLOCKS, got {blocking}")
     _tick()
