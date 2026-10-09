@@ -166,6 +166,8 @@ function commands(cmd) {
     if (c === "'" || c === '"') {
       q = c
       word = word ?? ''
+    } else if (c === '#' && word === null) {
+      while (i + 1 < text.length && text[i + 1] !== '\n') i++ // a comment runs to the end of the line
     } else if (c === '\\' && i + 1 < text.length) {
       const n = text[++i]
       if (n !== '\n') word = (word ?? '') + n
@@ -177,7 +179,7 @@ function commands(cmd) {
   return cmds
 }
 
-const WRAPPERS = new Set(['env', 'command', 'exec', 'sudo', 'time', 'nohup'])
+const WRAPPERS = new Set(['env', 'command', 'exec', 'sudo', 'time', 'nohup', '{', 'if', 'then', 'else', 'do', '!', 'xargs'])
 const SHELLS = new Set(['bash', 'sh', 'zsh', 'dash'])
 
 // The argument lists of every `git` command in a line, looking inside `bash -c '...'`, `sh -c` and `eval`, with a
@@ -189,7 +191,7 @@ function* gitCommands(cmd, depth = 0) {
     while (i < w.length && (/^\w+=/.test(w[i]) || WRAPPERS.has(w[i]))) i++
     const head = w[i]
     if (SHELLS.has(head)) {
-      const k = w.indexOf('-c', i)
+      const k = w.findIndex((x, n) => n > i && /^-[a-z]*c$/.test(x))
       if (k >= 0 && w[k + 1] !== undefined && depth < 4) yield* gitCommands(w[k + 1], depth + 1)
     } else if (head === 'eval') {
       if (depth < 4) yield* gitCommands(w.slice(i + 1).join(' '), depth + 1)
@@ -217,7 +219,10 @@ export function parseWorktreeAdd(cmd) {
     if (a[k] === '-b' || a[k] === '-B') branch = a[++k] ?? ''
     else if (!a[k].startsWith('-')) rest.push(a[k])
   }
-  return rest.length ? { path: rest[0], branch } : null
+  // A path built by the shell (`$VAR`, `$(...)`, a backtick) or read from stdin (`xargs`) is unknown: it is recorded as
+  // a worktree that no later remove can match, so the job never looks finished.
+  const path = rest[0] === undefined || /[$`]/.test(rest[0]) ? '(unknown)' : rest[0]
+  return { path, branch }
 }
 
 // `git worktree remove [flags] <path>` -> the path, or null.
@@ -243,12 +248,6 @@ export function handoffFile(tool, path) {
 // lets the next prompt say whose it must be.
 export function handoffComment(cmd, text) {
   return /\bgh\s+(pr|issue)\s+comment\b/.test(String(cmd)) && /handoff/i.test(String(cmd)) ? lastMatch(COMMENT_URL, text) : null
-}
-
-// One background task has ended (its notification arrived). Floors at zero. A notification can be for any
-// background task, so this can undercount; the live PR check still gates the clear.
-export function backgroundEnded() {
-  if (job.background > 0) job.background -= 1
 }
 
 // Is this a whole percent from 1 to 99, else the default.
@@ -431,6 +430,20 @@ export function register(on) {
       // Bookkeeping only
     }
     return r
+  })
+
+  // A new turn is new work: a cached turn end belongs to the turn before it, and must not let a merge answer that
+  // arrives mid-turn queue a clear (Fable's second review of #1728, P1).
+  on('turn.start', async ($, e, next) => {
+    job.turnEnd = null
+    return next(e)
+  })
+
+  // Every tool call moves the epoch, whatever the tool (Read, Grep, Task as well as Bash, Write, Edit): any call after
+  // the cached merge answer means the session is working again.
+  on('tool.call', async ($, e, next) => {
+    job.epoch += 1
+    return next(e)
   })
 
   // Cheap and synchronous: the merge check was done early (precheck), so this only reads it. command.run is called

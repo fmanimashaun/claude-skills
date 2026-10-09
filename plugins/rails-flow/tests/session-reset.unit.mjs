@@ -119,8 +119,11 @@ async function session({ holdClear = false, onGh = null, env = {}, role = 'imple
       },
     },
   }
-  const bash = (command, text, extra = {}) => (order.push('bash'), hooks['tool.call:{"tool":"Bash"}']($, { tool: 'Bash', command, ...extra }, async () => ({ text })))
-  const write = (file_path) => hooks['tool.call:{"tool":["Write","Edit"]}']($, { tool: 'Write', file_path }, async () => ({ result: {} }))
+  const through = (e, specific) => hooks['tool.call']($, e, async () => specific())
+  const bash = (command, text, extra = {}) => (order.push('bash'), through({ tool: 'Bash', command, ...extra }, () => hooks['tool.call:{"tool":"Bash"}']($, { tool: 'Bash', command, ...extra }, async () => ({ text }))))
+  const read = () => through({ tool: 'Read' }, async () => ({ text: '' }))
+  const turnStart = () => hooks['turn.start']($, { text: 'next assignment', turnId: 't2' }, async (e) => e)
+  const write = (file_path) => through({ tool: 'Write', file_path }, () => hooks['tool.call:{"tool":["Write","Edit"]}']($, { tool: 'Write', file_path }, async () => ({ result: {} })))
   const turnDone = () => hooks['turn.complete']($, { answer: '', durationMs: 1, isAborted: false, turnId: 't', reason: 'answer' }, async (e) => e)
   const start = () => hooks['session.start:{"isInteractive":true}']($, { cwd: '/x', surface: 'terminal', isInteractive: true }, async (e) => e)
   const measure = (ctx, week, five) =>
@@ -138,7 +141,7 @@ async function session({ holdClear = false, onGh = null, env = {}, role = 'imple
     )
   const submit = (origin) => (order.push('prompt'), hooks['prompt.submit']($, { text: 'hi', ...(origin ? { origin } : {}) }, async (e) => e))
   const run = async () => { while (timers.length) timers.shift()(); await new Promise((r) => setTimeout(r, 60)) }
-  return { releaseClear: () => releaseClear(), calls, bash, write, turnDone, start, measure, submit, run, hooks }
+  return { releaseClear: () => releaseClear(), read, turnStart, calls, bash, write, turnDone, start, measure, submit, run, hooks }
 }
 
 const MERGED = { 7: { state: 'MERGED', baseRefName: 'dev' } }
@@ -627,18 +630,65 @@ await check('P3: commands are read as commands, not as prose', () => {
   assert.equal(reset.parseWorktreeRemove('cd x && git worktree remove --force /tmp/y; true'), '/tmp/y')
 })
 
-await check('a background job that ends (its task notification arrives) no longer blocks the clear', async () => {
+await check('P2: a task notification never unblocks a background job: the clear stays off, whoever finished', async () => {
   const s = await session({ gh: MERGED })
   await s.bash('bin/ci', '', { run_in_background: true })
-  assert.equal(reset.job.background, 1)
-  await finishJob(s); await s.turnDone(); await s.run()
-  assert.equal(s.calls.clear, 0, 'still running')
-  await s.submit({ kind: 'task-notification' })
-  assert.equal(reset.job.background, 0)
-  await s.submit({ kind: 'task-notification' })
-  assert.equal(reset.job.background, 0, 'never below zero')
+  await finishJob(s)
+  await s.submit({ kind: 'task-notification' }) // a subagent finished; the prompt names no task id, so nothing is decremented
+  await s.read()
   await s.turnDone(); await s.run()
-  assert.equal(s.calls.clear, 1)
+  assert.equal(reset.job.background, 1)
+  assert.equal(s.calls.clear, 0, 'bin/ci may still be running')
+})
+
+await check('P1 round 2: a merge answer that arrives during the NEXT turn does not queue a clear mid-turn', async () => {
+  let release
+  const gate = new Promise((r) => (release = r))
+  const s = await session({ gh: MERGED, onGh: () => gate })
+  await finishJob(s) // worktree remove is the last call of turn 1
+  await s.turnDone() // turn 1 ends before gh answered
+  await s.turnStart() // the coordinator's assignment starts turn 2
+  release() // gh answers MERGED, during turn 2
+  await new Promise((r) => setTimeout(r, 40))
+  assert.equal(s.calls.clear, 0, 'no clear while turn 2 runs')
+  await s.turnDone() // turn 2 ends with the job still finished (it only read and answered)
+  await new Promise((r) => setTimeout(r, 40))
+  assert.equal(s.calls.clear, 1, 'it clears at the end of turn 2, and the reset prompt follows')
+  assert.equal(s.calls.submitted.length, 1)
+})
+
+await check('P1 round 2: a Read, Grep or Task call also voids the cached merge answer', async () => {
+  for (const tool of ['Read', 'Grep', 'Task']) {
+    const s = await session({ gh: MERGED })
+    await finishJob(s)
+    await new Promise((r) => setTimeout(r, 40))
+    await s.hooks['tool.call']({}, { tool }, async () => ({ text: '' }))
+    const turn = s.turnDone()
+    assert.equal(s.calls.clear, 0, `${tool}: the old answer does not license a clear`)
+    await turn
+  }
+})
+
+await check('P3: a comment word, wrappers, -lc and shell-built paths are read as the shell reads them', () => {
+  assert.equal(reset.parseWorktreeRemove('echo hi # x; git worktree remove ../x'), null, 'a comment is not a command')
+  assert.equal(reset.parseWorktreeRemove('git worktree remove ../x # done'), '../x', 'a trailing comment is dropped')
+  assert.deepEqual(reset.parseWorktreeAdd('{ git worktree add ../y; }'), { path: '../y', branch: '' })
+  assert.deepEqual(reset.parseWorktreeAdd('if git worktree add ../y; then :; fi'), { path: '../y', branch: '' })
+  assert.deepEqual(reset.parseWorktreeAdd("bash -lc 'git worktree add ../y'"), { path: '../y', branch: '' })
+  assert.equal(reset.parseWorktreeAdd('xargs git worktree add').path, '(unknown)', 'a path read from stdin is unknown')
+  assert.equal(reset.parseWorktreeAdd('git worktree add ../x$(date +%s)').path, '(unknown)', 'a path built by the shell is unknown')
+  assert.equal(reset.parseWorktreeAdd('git worktree add "$HOME/x"').path, '(unknown)')
+  assert.equal(reset.parseWorktreeAdd('git worktree add ../plain').path, '../plain')
+})
+
+await check('P3: an add whose path the shell builds is a worktree no remove can match, so the clear never fires', async () => {
+  const s = await session({ gh: MERGED })
+  await s.bash('git worktree add ../x$(date +%s) -b b origin/dev', '')
+  await s.bash('gh pr create', 'https://github.com/o/r/pull/7')
+  await s.write('/tmp/wt-x/HANDOFF.md')
+  await s.bash('git worktree remove ../x1700000000', '')
+  await s.turnDone(); await s.run()
+  assert.equal(s.calls.clear, 0)
 })
 
 // The simulated session processes keep stdio open; end them so the process can exit and report.

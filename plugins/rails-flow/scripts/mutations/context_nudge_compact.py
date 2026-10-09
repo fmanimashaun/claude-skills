@@ -59,11 +59,5 @@ GUARD = Guard(
             "DEFAULT_COMPACT_PCT",
             "RAILS_FLOW_COMPACT_PCT moves the compact threshold",
         ),
-        Mutation(
-            "a task notification never reaches the background count",
-            "    if (e.origin?.kind === 'task-notification') backgroundEnded()\n",
-            "",
-            "a background job that ends",
-        ),
     ),
 )

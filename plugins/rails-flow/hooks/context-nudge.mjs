@@ -19,7 +19,7 @@
 const DEFAULT_THRESHOLD = 70
 
 import { budgetLine, DEFAULT_BLOCK, DEFAULT_WARN, level, limitsLabel, msUntil, RESUME_TEXT, windowOf } from './budget-guard.mjs'
-import { backgroundEnded, compactInstructions, compactReason, DEFAULT_COMPACT_PCT, DEFAULT_COORDINATOR_HANDOFF, job, jobDoneShape, state, wholePct } from './session-reset.mjs'
+import { compactInstructions, compactReason, DEFAULT_COMPACT_PCT, DEFAULT_COORDINATOR_HANDOFF, job, jobDoneShape, state, wholePct } from './session-reset.mjs'
 
 // Mid-job compaction (#1687): which sources have already compacted this climb, so each fires once.
 const compacted = { context: false, five_hour: false, seven_day: false }
@@ -163,7 +163,6 @@ export function register(on) {
         lines.push(budgetLine(k, reading[k].pct, lvl, reading[k].resetsAt, k === 'five_hour' && resume !== null))
       }
     }
-    if (e.origin?.kind === 'task-notification') backgroundEnded()
     const role = state.role
     if (!askedRole && isTheirs(e.origin)) {
       askedRole = true

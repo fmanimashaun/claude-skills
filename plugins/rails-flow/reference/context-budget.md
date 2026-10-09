@@ -237,10 +237,15 @@ instruction. (3) A handoff kept as a comment counts only with the comment URL `g
 to verify the author, because the repository is public. (4) A PR is the LAST full `github.com/.../pull/N` URL of
 `gh pr create`'s output, and `gh pr view` is given that URL, never a bare number (the coordinator works in two
 repositories). (5) Worktree commands are read as commands: `git` must be the command word (after `;`, `|`, `&&`,
-`(`, an env prefix, or inside `bash -c`/`eval`), with `-C`/`-c` skipped, and heredoc bodies are dropped. A background
-count goes down when a task notification arrives (it can undercount, since any task's notification counts; the live
-PR check still gates the clear). The claim file's threat model is the same user: it guards against accident, not
-impersonation.
+`(`, `{`, `if`/`then`/`else`/`do`, `!`, `xargs`, an env prefix, or inside `bash -c`/`-lc`/`eval`), with `-C`/`-c`
+skipped, a `#` comment dropped to the end of its line, and heredoc bodies dropped; a worktree path the shell builds
+(`$VAR`, `$(...)`) or `xargs` reads is recorded as unknown, which no remove can match, so the clear never fires.
+(6) Round 2: `turn.start` forgets the previous turn's end, so a merge answer arriving during the next turn cannot queue
+a clear mid-turn; and EVERY tool call (Read, Grep, Task too) moves the epoch. (7) A background count is never
+decremented: a task notification names no task id at `prompt.submit` (`origin` is only `{ kind }`), so a finished
+subagent cannot be told from a finished `bin/ci`. A session that started a background Bash job therefore never
+clears itself; it compacts or is cleared by hand. The claim file's threat model is the same user: it guards against
+accident, not impersonation.
 
 **What the job-done test cannot see.** "A job" is what the session did in Bash and `Write`/`Edit`: a worktree it added
 and removed, a PR it opened with `gh pr create`, a file named `*handoff*` it wrote (or a `gh pr|issue comment`
