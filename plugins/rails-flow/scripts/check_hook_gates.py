@@ -318,11 +318,12 @@ elif tool == "sed":
             break
         out.append(l)
     data = b"".join(out)
-done = subprocess.run([real] + args, input=data, capture_output=True)
-sys.stdout.buffer.write(done.stdout)
+child = subprocess.Popen([real] + args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+out_b, err_b = child.communicate(data)
+sys.stdout.buffer.write(out_b)
 sys.stdout.buffer.flush()
-sys.stderr.buffer.write(done.stderr + err)
-sys.exit(rc if rc is not None else done.returncode)
+sys.stderr.buffer.write(err_b + err)
+sys.exit(rc if rc is not None else child.returncode)
 '''
 # The REAL tool is named by absolute path, so the shim never finds itself again however PATH is arranged around it.
 _BSD_TEXT_SH = '''#!/bin/sh
