@@ -90,8 +90,38 @@ rawhit() {
 exempt() { [ "$degraded" = 1 ] && return 1; hit "$1"; }
 
 # A rails/rake task segment that names db:reset (not the word inside a quoted string or a grep).
+#
+# #1734: THE RULE IS SITUATIONAL. "Seeds break test isolation" holds for a project whose suite expects an UNSEEDED test database. A project that
+# seeds its test DB on purpose (Retask's config/ci.rb: the seeded Setting rows are part of the test contract) needs the opposite, and the
+# sequence this message used to recommend (drop, create, schema:load) left it with 0 locations and 0 users and 158 failing specs. So a project
+# DECLARES the choice, the way `mockup-gate: off` is declared: a line `test-db-seeded: yes` of its own in GUARDRAILS.md. Undeclared stays refused.
+#
+# WHAT A DECLARATION ALLOWS IS ONE COMMAND: `RAILS_ENV=test bin/rails db:reset` (or the `env`, `bundle exec`, `rake` and trailing-assignment spellings),
+# and nothing else. It is matched against the WHOLE raw command, so a compound command that also resets the development database, `RAILS_ENV=development`,
+# or an unreadable payload (degraded mode: the env prefix the normaliser peels is exactly what this must read) is still refused.
 if hit '^(bin/)?(rails|rake)([[:space:]]+[^[:space:]]+)*[[:space:]]+db:reset\b'; then
-  deny "db:reset is prohibited (seeds break test isolation). Use: db:drop db:create db:schema:load."
+  _root="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+  _seeded=0
+  if [ -f "$_root/GUARDRAILS.md" ]; then
+    _guardrails="$(<"$_root/GUARDRAILS.md")" || _guardrails=""
+    rawhit "$_guardrails" '^[[:space:]]*([-*+][[:space:]]*)?`?test-db-seeded:[[:space:]]*yes`?[[:space:]]*$' && _seeded=1
+  fi
+  _runner='((bundle[[:space:]]+exec[[:space:]]+)?(bin/)?(rails|rake))'
+  _env_first="^[[:space:]]*(env[[:space:]]+)?RAILS_ENV=test[[:space:]]+${_runner}[[:space:]]+db:reset[[:space:]]*$"
+  _env_last="^[[:space:]]*${_runner}[[:space:]]+db:reset[[:space:]]+RAILS_ENV=test[[:space:]]*$"
+  if [ "$_seeded" = 1 ] && [ "$degraded" = 0 ] && { [[ $cmd =~ $_env_first ]] || [[ $cmd =~ $_env_last ]]; }; then
+    :   # declared, and exactly the test-database reset: allowed
+  elif [ "$_seeded" = 1 ]; then
+    deny "this project declares test-db-seeded in GUARDRAILS.md, so 'RAILS_ENV=test bin/rails db:reset' is allowed, run on its own. Any other db:reset (development, production, or inside a compound command) is refused."
+  else
+    _ci_hint=""
+    if [ -f "$_root/bin/ci" ]; then
+      _ci_hint=" If this project's suite needs a SEEDED test database, run bin/ci, which does its own reset."
+    elif [ -f "$_root/config/ci.rb" ]; then
+      _ci_hint=" If this project's suite needs a SEEDED test database, run its CI script (config/ci.rb), which does its own reset."
+    fi
+    deny "db:reset is prohibited (seeds break test isolation). Use: db:drop db:create db:schema:load.${_ci_hint} A project that seeds its test DB on purpose declares 'test-db-seeded: yes' in GUARDRAILS.md, which allows 'RAILS_ENV=test bin/rails db:reset'."
+  fi
 fi
 
 if hit '^git[[:space:]]+push\b.*(--force\b|[[:space:]]-f\b)' && ! exempt '^git[[:space:]]+push\b.*--force-with-lease'; then

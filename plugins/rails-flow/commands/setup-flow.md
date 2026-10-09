@@ -317,6 +317,23 @@ force-push, no `git add -A`, no `--no-verify`, stage specific files, small logic
 approval). Note at the top: *the rails-flow hooks enforce these mechanically; this document
 is the human-readable law they implement.*
 
+**Ask, and record the answer: is the test database seeded on purpose? (#1734)** *"Does this project's
+suite expect a seeded test database, with a CI script that resets it (`config/ci.rb` running
+`db:reset`)?"* The default is **no**, and it needs no line: the guard refuses `db:reset` because
+seeds break test isolation for a suite that expects an empty database. A project whose suite needs
+the seed rows (Retask's `Setting` rows are part of its test contract) answers yes, and
+GUARDRAILS.md gets its own line:
+
+```markdown
+- test-db-seeded: yes
+```
+
+`guard-bash.sh` reads exactly that line. It then allows ONE command, `RAILS_ENV=test bin/rails
+db:reset`, run alone. A development or production reset, a compound command, and a payload the
+hook cannot read are still refused, and a project that declares nothing is refused with the name of
+its CI script (`bin/ci`, else `config/ci.rb`) in the message. Prose that merely mentions the key
+does not declare it.
+
 **Ask, and record the answer: the mock-up gate (#1376).** *"Does a change a user can see wait for
 your approval of a clickable mock-up before it is built?"* The default is **yes**, and it needs no
 line. A team with no one to approve designs answers no, and GUARDRAILS.md gets its own line:
