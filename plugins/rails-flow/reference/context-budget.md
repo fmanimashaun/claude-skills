@@ -244,7 +244,9 @@ skipped, a `#` comment dropped to the end of its line, and heredoc bodies droppe
 a clear mid-turn; and EVERY tool call (Read, Grep, Task too) moves the epoch. (7) A background count is never
 decremented: a task notification names no task id at `prompt.submit` (`origin` is only `{ kind }`), so a finished
 subagent cannot be told from a finished `bin/ci`. A session that started a background Bash job therefore never
-clears itself; it compacts or is cleared by hand. The claim file's threat model is the same user: it guards against
+clears itself; it compacts or is cleared by hand. (8) Round 3: a turn that made no tool call (an assignment answered
+in text) is not the end of the finished job and never clears, so the assignment is not lost; `until`, `elif`, `while`
+and the options of `sudo`, `env` and `xargs` are skipped when finding the command word. The claim file's threat model is the same user: it guards against
 accident, not impersonation.
 
 **What the job-done test cannot see.** "A job" is what the session did in Bash and `Write`/`Edit`: a worktree it added

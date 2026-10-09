@@ -155,7 +155,7 @@ GUARD = Guard(
         ),
         Mutation(
             "a turn that ends before the early merge check answers is never cleared",
-            "    job.turnEnd = job.epoch\n",
+            "        job.turnEnd = job.touched ? job.epoch : null\n",
             "",
             "the merge check is early",
         ),
@@ -203,14 +203,14 @@ GUARD = Guard(
         ),
         Mutation(
             "a new turn does not clear the cached turn end, so a merge answer mid-turn queues a clear",
-            "    job.turnEnd = null\n    return next(e)",
-            "    return next(e)",
+            "    job.turnEnd = null\n    job.touched = false\n    return next(e)",
+            "    job.touched = false\n    return next(e)",
             "P1 round 2: a merge answer that arrives during the NEXT turn",
         ),
         Mutation(
             "only Bash, Write and Edit move the epoch; a Read or Grep leaves the cached answer standing",
-            "    job.epoch += 1\n    return next(e)\n  })\n\n  // Cheap",
-            "    return next(e)\n  })\n\n  // Cheap",
+            "    job.epoch += 1\n    job.touched = true\n    return next(e)\n  })\n\n  // Cheap",
+            "    job.touched = true\n    return next(e)\n  })\n\n  // Cheap",
             "a Read, Grep or Task call also voids",
         ),
         Mutation(
@@ -221,7 +221,7 @@ GUARD = Guard(
         ),
         Mutation(
             "if, then, braces and xargs are not skipped as wrappers",
-            "'nohup', '{', 'if', 'then', 'else', 'do', '!', 'xargs'])",
+            "'nohup', '{', 'if', 'then', 'else', 'elif', 'do', 'until', 'while', '!', 'xargs'])",
             "'nohup'])",
             "P3: a comment word",
         ),
@@ -233,9 +233,33 @@ GUARD = Guard(
         ),
         Mutation(
             "a path built by the shell is taken at face value",
-            "rest[0] === undefined || /[$`]/.test(rest[0])",
+            "rest[0] === undefined || /[$`{]/.test(rest[0])",
             "rest[0] === undefined",
             "P3: a comment word",
+        ),
+        Mutation(
+            "a tool-free turn counts as the end of the finished job, so an assignment answered in text is cleared",
+            "        job.turnEnd = job.touched ? job.epoch : null\n        if (job.touched && state.role",
+            "        job.turnEnd = job.epoch\n        if (state.role",
+            "round 3: a tool-free turn after the job ended",
+        ),
+        Mutation(
+            "a turn start does not reset the touched flag",
+            "    job.turnEnd = null\n    job.touched = false\n",
+            "    job.turnEnd = null\n",
+            "round 3: a tool-free turn after the job ended",
+        ),
+        Mutation(
+            "until, elif and while are not skipped",
+            "'else', 'elif', 'do', 'until', 'while', '!', 'xargs'",
+            "'else', 'do', '!', 'xargs'",
+            "round 3: until, elif and wrapper options",
+        ),
+        Mutation(
+            "a wrapper's options are read as the command",
+            "      while (WRAPPERS.has(wrapper) && i < w.length && w[i].startsWith('-'))",
+            "      while (false && i < w.length && w[i].startsWith('-'))",
+            "round 3: until, elif and wrapper options",
         ),
     ),
 )

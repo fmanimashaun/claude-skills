@@ -651,7 +651,8 @@ await check('P1 round 2: a merge answer that arrives during the NEXT turn does n
   release() // gh answers MERGED, during turn 2
   await new Promise((r) => setTimeout(r, 40))
   assert.equal(s.calls.clear, 0, 'no clear while turn 2 runs')
-  await s.turnDone() // turn 2 ends with the job still finished (it only read and answered)
+  await s.read() // turn 2 did some work (a read) before it ended; the job is still finished
+  await s.turnDone()
   await new Promise((r) => setTimeout(r, 40))
   assert.equal(s.calls.clear, 1, 'it clears at the end of turn 2, and the reset prompt follows')
   assert.equal(s.calls.submitted.length, 1)
@@ -689,6 +690,37 @@ await check('P3: an add whose path the shell builds is a worktree no remove can 
   await s.bash('git worktree remove ../x1700000000', '')
   await s.turnDone(); await s.run()
   assert.equal(s.calls.clear, 0)
+})
+
+await check('round 3: a tool-free turn after the job ended (an assignment answered in text) does not clear', async () => {
+  const s = await session({ gh: MERGED })
+  await finishJob(s) // a worktree removal is turn 3's last call
+  await new Promise((r) => setTimeout(r, 40)) // the early merge check answers MERGED and is cached
+  await s.turnStart() // turn 4: the coordinator's assignment
+  const turn = s.turnDone() // the model answered in text only
+  assert.equal(s.calls.clear, 0, 'a tool-free turn does not clear')
+  await turn
+  await new Promise((r) => setTimeout(r, 40))
+  assert.equal(s.calls.clear, 0, 'and nothing clears it later either')
+  // the same job, ended by a turn that DID make a tool call, still clears
+  const t = await session({ gh: MERGED })
+  await t.turnStart()
+  await finishJob(t)
+  await new Promise((r) => setTimeout(r, 40))
+  await t.turnDone()
+  assert.equal(t.calls.clear, 1)
+})
+
+await check('round 3: until, elif and wrapper options are read as the shell reads them', () => {
+  const want = { path: '../y', branch: '' }
+  assert.deepEqual(reset.parseWorktreeAdd('until git worktree add ../y; do sleep 1; done'), want)
+  assert.deepEqual(reset.parseWorktreeAdd('if false; then :; elif git worktree add ../y; then :; fi'), want)
+  assert.deepEqual(reset.parseWorktreeAdd('while git worktree add ../y; do break; done'), want)
+  assert.equal(reset.parseWorktreeAdd('xargs -I{} git worktree add {}').path, '(unknown)', 'a placeholder is not a path')
+  assert.equal(reset.parseWorktreeAdd('xargs -n 1 git worktree add ../y').path, '../y')
+  assert.deepEqual(reset.parseWorktreeAdd('sudo -u me git worktree add ../y'), want)
+  assert.deepEqual(reset.parseWorktreeAdd('env -i PATH=$PATH git worktree add ../y'), want)
+  assert.equal(reset.parseWorktreeAdd('sudo -u me ls && git status'), null)
 })
 
 // The simulated session processes keep stdio open; end them so the process can exit and report.

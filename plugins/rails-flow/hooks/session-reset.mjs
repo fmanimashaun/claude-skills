@@ -101,7 +101,7 @@ export async function electRole($) {
 // What this session has done in its current job. Reset after a clear.
 export const job = freshJob()
 function freshJob(epoch = 0) {
-  return { epoch, checked: null, turnEnd: null, worktrees: new Map(), prs: new Set(), handoff: null, removed: false, background: 0, pending: false, cleared: false }
+  return { epoch, touched: false, checked: null, turnEnd: null, worktrees: new Map(), prs: new Set(), handoff: null, removed: false, background: 0, pending: false, cleared: false }
 }
 export function resetJob() {
   Object.assign(job, freshJob(job.epoch)) // the epoch only ever grows, so a timer from before a reset can never match
@@ -179,7 +179,9 @@ function commands(cmd) {
   return cmds
 }
 
-const WRAPPERS = new Set(['env', 'command', 'exec', 'sudo', 'time', 'nohup', '{', 'if', 'then', 'else', 'do', '!', 'xargs'])
+const WRAPPERS = new Set(['env', 'command', 'exec', 'sudo', 'time', 'nohup', '{', 'if', 'then', 'else', 'elif', 'do', 'until', 'while', '!', 'xargs'])
+// Options of a wrapper that take a value in the next word (`sudo -u me`, `xargs -n 1`, `env -u VAR`).
+const FLAG_VALUE = { sudo: ['-u', '-g', '-h', '-p', '-C', '-D', '-R', '-T', '-r', '-t', '-U'], xargs: ['-I', '-n', '-P', '-L', '-s', '-d', '-E', '-a'], env: ['-u', '-C', '-S'] }
 const SHELLS = new Set(['bash', 'sh', 'zsh', 'dash'])
 
 // The argument lists of every `git` command in a line, looking inside `bash -c '...'`, `sh -c` and `eval`, with a
@@ -188,7 +190,11 @@ const SHELLS = new Set(['bash', 'sh', 'zsh', 'dash'])
 function* gitCommands(cmd, depth = 0) {
   for (const w of commands(cmd)) {
     let i = 0
-    while (i < w.length && (/^\w+=/.test(w[i]) || WRAPPERS.has(w[i]))) i++
+    while (i < w.length && (/^\w+=/.test(w[i]) || WRAPPERS.has(w[i]))) {
+      const wrapper = w[i++]
+      // the options of a wrapper are not the command: `xargs -I{} git ...`, `sudo -u me git ...`, `env -i git ...`
+      while (WRAPPERS.has(wrapper) && i < w.length && w[i].startsWith('-')) i += (FLAG_VALUE[wrapper] ?? []).includes(w[i]) ? 2 : 1
+    }
     const head = w[i]
     if (SHELLS.has(head)) {
       const k = w.findIndex((x, n) => n > i && /^-[a-z]*c$/.test(x))
@@ -221,7 +227,7 @@ export function parseWorktreeAdd(cmd) {
   }
   // A path built by the shell (`$VAR`, `$(...)`, a backtick) or read from stdin (`xargs`) is unknown: it is recorded as
   // a worktree that no later remove can match, so the job never looks finished.
-  const path = rest[0] === undefined || /[$`]/.test(rest[0]) ? '(unknown)' : rest[0]
+  const path = rest[0] === undefined || /[$`{]/.test(rest[0]) ? '(unknown)' : rest[0]
   return { path, branch }
 }
 
@@ -436,6 +442,7 @@ export function register(on) {
   // arrives mid-turn queue a clear (Fable's second review of #1728, P1).
   on('turn.start', async ($, e, next) => {
     job.turnEnd = null
+    job.touched = false
     return next(e)
   })
 
@@ -443,6 +450,7 @@ export function register(on) {
   // the cached merge answer means the session is working again.
   on('tool.call', async ($, e, next) => {
     job.epoch += 1
+    job.touched = true
     return next(e)
   })
 
@@ -452,8 +460,10 @@ export function register(on) {
   on('turn.complete', async ($, e, next) => {
     try {
       if (e.agentId === undefined) {
-        job.turnEnd = job.epoch
-        if (state.role === 'implementation' && state.hasSurface && jobDoneShape() && job.checked?.ok === true && job.checked.epoch === job.epoch) fire($, job.epoch)
+        // A turn that made no tool call (an assignment answered in text) is not the end of the finished job: it
+        // must not clear the session and lose that assignment.
+        job.turnEnd = job.touched ? job.epoch : null
+        if (job.touched && state.role === 'implementation' && state.hasSurface && jobDoneShape() && job.checked?.ok === true && job.checked.epoch === job.epoch) fire($, job.epoch)
         else maybePrecheck($) // no cached answer for this epoch (a background job just ended): ask now; precheck fires the clear
       }
     } catch {
