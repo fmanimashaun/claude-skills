@@ -729,7 +729,12 @@ Rails defaults do a lot; your job is to not undo them and to cover the gaps.
   `config/initializers/content_security_policy.rb`; with importmap, use
   nonces (`content_security_policy_nonce_generator` +
   `javascript_importmap_tags` picks them up). Start report-only, then
-  enforce.
+  enforce. A random nonce per request (`SecureRandom.base64(16)`) is
+  incompatible with conditional GET: every response gets a new ETag, so a `304`
+  never happens on those pages. The guide's alternative,
+  `-> request { request.session.id.to_s }`, keeps ETags working, but its
+  security depends on the session id being random and never exposed in an
+  insecure cookie. Choose deliberately; it is a trade-off, not an upgrade.
 - Default security headers (X-Frame-Options SAMEORIGIN, nosniff, etc.) are
   set — extend via `config.action_dispatch.default_headers` if needed.
 
@@ -750,6 +755,75 @@ Rails defaults do a lot; your job is to not undo them and to cover the gaps.
   pinned JS.
 - Keep Rails patched: security releases land on supported series only —
   8.1 gets fixes; stay current.
+
+**Outbound requests to a URL a user supplies (SSRF)** — webhooks, link
+previews, uptime monitors, "import from URL". The Rails Security guide does not
+cover this (it never mentions SSRF); the sources are OWASP's *Server-Side
+Request Forgery Prevention Cheat Sheet* and the Ruby `Net::HTTP`, `IPAddr` and
+`Addrinfo` docs. Each rule below was checked against them; the address,
+resolver and pinning rules were also run on Ruby 4.0.6.
+
+- **Validate the address, not the string.** OWASP: check the *resolved*
+  destination IP against the networks you permit, and prefer an allow-list to
+  a deny-list ("Deny-lists are bypass-prone"). Allow only `http`/`https`.
+  Hex, octal, decimal and mixed encodings of an address (`0x7f.0.0.1`,
+  `2130706433`, `127.1`) get past a check on the hostname text.
+- **Resolve with the resolver the socket uses.** `Addrinfo.getaddrinfo` is
+  libc's, like `TCPSocket`; measured, `Resolv.getaddresses("127.1")` returns
+  `[]` while libc returns `127.0.0.1`, so validating with `Resolv` and
+  connecting through libc is the gap.
+- **List the ranges; do not lean on `IPAddr#private?`.** Measured, `private?`,
+  `loopback?` and `link_local?` are all `false` for `0.0.0.0`, `::` and
+  `100.64.0.1` (carrier-grade NAT). Convert IPv4-mapped IPv6
+  (`::ffff:127.0.0.1`) with `IPAddr#native` before the check.
+- **Connect to the address you checked.** OWASP: a second, unchecked DNS lookup
+  between validation and connection can bypass the checks (DNS rebinding).
+  `Net::HTTP#ipaddr=` (Ruby 2.7+) pins the address; set it before `start`,
+  because it raises `IOError` once started. TLS still verifies the certificate
+  against the original hostname.
+- **Do not follow redirects.** OWASP: disable redirect following in the client.
+  `Net::HTTP` does not follow them itself. If you must follow one, run the
+  `Location` through the same check first (that last step is our rule, not
+  OWASP's).
+
+```ruby
+require "net/http"
+require "ipaddr"
+require "socket"
+
+module SafeFetch
+  class Refused < StandardError; end
+
+  BLOCKED = %w[0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16
+               172.16.0.0/12 192.168.0.0/16 ::/128 ::1/128 fc00::/7 fe80::/10]
+            .map { |net| IPAddr.new(net) }.freeze
+
+  # Every resolved address must be public; the first is the one we connect to.
+  def self.public_address(host, port)
+    ips = Addrinfo.getaddrinfo(host, port, nil, :STREAM)
+                  .map { |info| IPAddr.new(info.ip_address).native }
+    raise Refused, "no address for #{host}" if ips.empty?
+    raise Refused, "#{host} is not public" if ips.any? { |ip| BLOCKED.any? { |net| net.include?(ip) } }
+
+    ips.first.to_s
+  end
+
+  def self.get(url)
+    uri = URI.parse(url)
+    raise Refused, "scheme" unless %w[http https].include?(uri.scheme)
+
+    http = Net::HTTP.new(uri.hostname, uri.port)
+    http.ipaddr = public_address(uri.hostname, uri.port) # no second lookup
+    http.use_ssl = uri.scheme == "https"
+    http.start { |conn| conn.get(uri.request_uri) }      # redirects are not followed
+  end
+end
+```
+
+Measured with this module: `127.0.0.1`, `localhost`, `0x7f.0.0.1`,
+`2130706433`, `127.1`, `169.254.169.254`, `0.0.0.0`, `::1`, `::ffff:127.0.0.1`,
+`10.1.2.3` and `100.64.0.1` are all refused, and a request pinned to a local
+server under another hostname connects and sends that hostname as `Host`.
 
 ## Route naming for auth (see controllers-routing §1a)
 

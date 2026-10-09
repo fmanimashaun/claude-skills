@@ -193,6 +193,11 @@ assert reports, or to fan out to a Teams/Slack webhook.
 - Level via `RAILS_LOG_LEVEL` env (`config.log_level = ENV.fetch("RAILS_LOG_LEVEL", "info")` is generated).
 - `config.silence_healthcheck_path = "/up"` (generated) keeps kamal-proxy's
   probes out of the logs — set the same for any other probe path.
+- `config.active_record.query_log_tags_enabled = true` (SQL comment tags for
+  slow-query attribution) also **turns prepared statements off app-wide** in
+  Rails 8.0 and 8.1 (the Rails debugging guide says so, and `ActiveRecord.disable_prepared_statements`
+  is set in the railtie): every query is planned each time. Turn it on knowing
+  that cost, not as a free log tag.
 - One-format-per-app: if you adopt JSON logs (via a `Rails.event` subscriber
   or a formatter), convert everything; mixed text/JSON streams are the worst
   of both.
