@@ -4151,11 +4151,13 @@ def deadline_fixtures() -> None:
     # that does not ends it at the 8 s deadline, counted from the hook's START. On a loaded machine (eight mutants at once) the stub can start so
     # late that the deadline falls INSIDE the 4 s look-out, the orphan then dies "in time" for the wrong reason and the broken watchdog is
     # not caught (measured: the mutant survived 3 runs in 8, on dev's own fixture). So the elapsed time since the hook started is read at the
-    # kill, and a run with less than `need` s left before the deadline is discarded and repeated with a fresh hook; the look-out is shortened to
-    # end a second before the deadline, which is still longer than the watchdog's one-second poll.
-    deadline_s, look_out, need = 8.0, 4.0, 3.5
+    # kill, and a run with less than `need` s left before the deadline is discarded and repeated with a fresh hook, at most `attempts` (ten) times and
+    # only on that timing, never on what the run found; the look-out is shortened to end a second before the deadline, still longer than the
+    # watchdog's one-second poll. Measured: the stub started 2.5 to 5.4 s after the hook with eight copies running, 1.1 s alone. If every attempt
+    # is too late, the check below FAILS by name: a run that could not judge is not a pass.
+    deadline_s, look_out, need, attempts = 8.0, 4.0, 3.5, 10
     left, gone, margin = [], 0.0, 0.0
-    for _attempt in range(4):
+    for _attempt in range(attempts):
         with tempfile.TemporaryDirectory() as td:
             d, pidfile = stubs(td)
             env = dict(base_env, PATH=d + os.pathsep + base_env["PATH"], RAILS_FLOW_HOOK_DEADLINE=str(int(deadline_s)))
@@ -4174,7 +4176,7 @@ def deadline_fixtures() -> None:
                 proc.wait()
                 margin = deadline_s - (time.monotonic() - started)
                 t0 = time.monotonic()
-                left = survivors(pidfile, within=min(look_out, margin - 1.0))   # the deadline must still be a second off when the look-out ends
+                left = survivors(pidfile, within=max(0.0, min(look_out, margin - 1.0)))   # the deadline must still be a second off when the look-out ends
                 gone = time.monotonic() - t0
             finally:
                 if proc.poll() is None:
@@ -4182,9 +4184,10 @@ def deadline_fixtures() -> None:
         if margin >= need:
             break
     check("deadline (#1575): the parent-kill run left room before the 8 s deadline to tell a watchdog that notices from one that does not",
-          margin >= need, f"only {margin:.1f}s were left at the kill, after 4 tries: the machine is too slow to judge this")
-    check("deadline (#1575): the group dies within a poll of its PARENT being SIGKILLed, not at the 8 s deadline",
-          not left and gone < 4, f"still running after {gone:.1f}s: {left}")
+          margin >= need, f"only {margin:.1f}s were left at the kill, after {attempts} tries: the machine is too slow to judge this")
+    if margin >= need:      # otherwise the check above has already failed by name, and this one would only repeat it under a look-out too short to mean anything
+        check("deadline (#1575): the group dies within a poll of its PARENT being SIGKILLed, not at the 8 s deadline",
+              not left and gone < 4, f"still running after {gone:.1f}s: {left}")
     # 4. NO `sleep` ON PATH: a watchdog that cannot wait would reach the deadline at once and deny EVERYTHING.
     with tempfile.TemporaryDirectory() as bd:
         for tool in ("bash", "git", "sed", "tr", "grep", "dirname", "cat", "env", "head", "awk"):
@@ -4239,25 +4242,25 @@ def deadline_fixtures() -> None:
     # 6. qa-flow's release gate shares the normaliser and the lib; a timeout refuses a PROMOTION and nothing else.
     if QA_HOOK.is_file():
         for cmd in ("git push origin main", "gh pr merge 12 --merge"):
-            rc, took, err, left = hung(QA_HOOK, cmd)
+            rc, took, err, left = hung(QA_HOOK, cmd, must_start=True)
             check(f"deadline (#1575): release-gate refuses `{cmd}` when it cannot finish reading it (fails CLOSED)",
                   rc == 2 and "looks like a promotion" in err, f"exit {rc}: {err[:160]!r}")
             check(f"deadline (#1575): ...in about the deadline, with no process left running",
-                  took < 6 and not left, f"{took:.1f}s, still running: {left}")
+                  took < int(hung.deadline_used) + 5 and not left, f"{took:.1f}s, still running: {left}")
         # F1 (#1602 review): the normal path denies ANY GraphQL mutation by shape, so the timeout path denies by the word,
         # whatever the mutation is called or how the flag is spelled. A list of names let three promotions through.
         gql = "gh api graphql %s query='mutation { %s(input:{}) { clientMutationId } }'"
         for flag, name in (("-f", "enablePullRequestAutoMerge"), ("-F", "enablePullRequestAutoMerge"),
                            ("--raw-field", "enablePullRequestAutoMerge"), ("-F", "createCommitOnBranch"),
                            ("--raw-field", "updatePullRequestBranch")):
-            rc, took, err, left = hung(QA_HOOK, gql % (flag, name))
+            rc, took, err, left = hung(QA_HOOK, gql % (flag, name), must_start=True)
             check(f"deadline (#1575): release-gate refuses `gh api graphql {flag}` {name} when it cannot finish reading it",
-                  rc == 2 and "looks like a promotion" in err and not left, f"exit {rc}: {err[:120]!r}")
+                  rc == 2 and "looks like a promotion" in err and not left, f"exit {rc}, still running: {left}: {err[:120]!r}")
         for what, cmd in (("a GraphQL query with no mutation", "gh api graphql -f query='{ viewer { login } }'"),
                           ("a REST read", "gh api repos/o/r/issues")):
-            rc, took, err, left = hung(QA_HOOK, cmd)
+            rc, took, err, left = hung(QA_HOOK, cmd, must_start=True)
             check(f"deadline (#1575): CONTROL: release-gate ALLOWS {what} on a timeout", rc == 0 and not left,
-                  f"exit {rc}: {err[:120]!r}")
+                  f"exit {rc}, still running: {left}: {err[:120]!r}")
         # THE DIFFERENTIAL (#1602 review of the timeout path). The coarse detector decides on a timeout, and for the
         # missing-tool path too: it is ONE function. 486 promotion-shaped commands from this file's own fixtures were run
         # through the full path and through a timeout; every shape below was DENIED by the full path and ALLOWED by the
@@ -4407,13 +4410,13 @@ def deadline_fixtures() -> None:
                         "gh api graphql -f query=@q.graphql", "gh api graphql --raw-field query=@-", "git push -u origin fix/1010-one-main"):
                 check(f"deadline (#1575): CONTROL: the coarse detector allows `{cmd}`", coarse(cmd) == 0, "exit 2: refused")
         for cmd in ("git push origin HEAD:heads/main", "git push --all", "gh run rerun 123", "git push origin HEAD:$B"):
-            rc, took, err, left = hung(QA_HOOK, cmd)
+            rc, took, err, left = hung(QA_HOOK, cmd, must_start=True)
             check(f"deadline (#1575): a TIMEOUT refuses `{cmd}` through that same detector",
-                  rc == 2 and "looks like a promotion" in err and not left, f"exit {rc}: {err[:120]!r}")
-        rc, took, err, left = hung(QA_HOOK, "ls -la")
+                  rc == 2 and "looks like a promotion" in err and not left, f"exit {rc}, still running: {left}: {err[:120]!r}")
+        rc, took, err, left = hung(QA_HOOK, "ls -la", must_start=True)
         check("deadline (#1575): release-gate ALLOWS a command that does not look like a promotion when it times out "
-              "(blocking every slow command would be the failure)", rc == 0 and not left, f"exit {rc}: {err[:120]!r}")
-        rc, took, err, left = hung(QA_HOOK, "git push origin main", {"QA_ALLOW_MAIN": "1"})
+              "(blocking every slow command would be the failure)", rc == 0 and not left, f"exit {rc}, still running: {left}: {err[:120]!r}")
+        rc, took, err, left = hung(QA_HOOK, "git push origin main", {"QA_ALLOW_MAIN": "1"}, must_start=True)
         check("deadline (#1575): QA_ALLOW_MAIN=1 is honoured and audited on a timeout, as in the missing-tool path",
               rc == 0 and "audited" in err, f"exit {rc}: {err[:160]!r}")
 
