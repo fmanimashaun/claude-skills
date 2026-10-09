@@ -386,6 +386,13 @@ def selftest() -> int:
         code, out = check(app(t / "noid", good + "  id: { category: none }\n", noid))
         check_("a listed id on an `id: false` table is still stale",
                code == 1 and any("[stale-column] widgets.id" in l for l in out), f"{code} {out}")
+        coded = schema.replace('create_table "widgets", force: :cascade do', 'create_table "widgets", primary_key: "code", force: :cascade do')
+        code, out = check(app(t / "pkcode", good + "  id: { category: none }\n", coded))
+        check_("a listed id on a table whose primary key is another column is still stale",
+               code == 1 and any("[stale-column] widgets.id" in l for l in out), f"{code} {out}")
+        code, out = check(app(t / "pkid", good + "  id: { category: none }\n",
+                              schema.replace('create_table "widgets", force: :cascade do', 'create_table "widgets", primary_key: "id", force: :cascade do')))
+        check_("CONTROL: `primary_key: \"id\"` keeps the implicit id", code == 0, f"{code} {out}")
 
         # #1732 (b): A SOLID TABLE THE INVENTORY NAMES. The project classified it, so its file is read and the entry judged, not
         # reported as a table in no schema file; a Solid file nobody named is still skipped (the trio fixtures above).

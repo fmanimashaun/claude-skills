@@ -131,5 +131,18 @@ GUARD = Guard(
             "        advisory = None\n",
             "with a policy, wiki drift on fix/1 exits 0",
         ),
+        # #1732: a table keyed on another column has no implicit id.
+        Mutation(
+            "a table keyed on another column still has an implicit id",
+            "(pk is None or pk.group(1) == '\"id\"')}",
+            "True}",
+            "schema.rb: a table has an implicit id unless `id: false` or another primary key is named",
+        ),
+        Mutation(
+            "`id: false` still has an implicit id",
+            '"implicit_id": not re.search(r"\\bid:\\s*false\\b", opts) and',
+            '"implicit_id":',
+            "schema.rb: a table has an implicit id unless `id: false` or another primary key is named",
+        ),
     ),
 )

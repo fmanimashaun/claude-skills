@@ -119,9 +119,11 @@ def parse_schema(text: str) -> dict:
                 # Rails can emit `t.index` with options this does not model, and the page must say
                 # so rather than quietly shorten the list.
                 unparsed.append(line.strip())
-        # `implicit_id`: Rails adds an `id` primary key that the dump never lists as a column, unless the table says `id: false` (#1732).
+        # `implicit_id`: Rails adds an `id` primary key that the dump never lists as a column, unless the table says `id: false`
+        # or names another key (`primary_key: "code"`, or a composite list) (#1732).
+        pk = re.search(r'\bprimary_key:\s*("[^"]*"|\[[^\]]*\])', opts)
         tables[name] = {"columns": cols, "indexes": idx, "id": (re.search(r"id:\s*(:\w+)", opts) or [None, "bigint"])[1],
-                        "implicit_id": not re.search(r"\bid:\s*false\b", opts)}
+                        "implicit_id": not re.search(r"\bid:\s*false\b", opts) and (pk is None or pk.group(1) == '"id"')}
     fks = re.findall(r'^\s*add_foreign_key\s+"([^"]+)",\s*"([^"]+)"', text, re.M)
     return {"version": version, "tables": tables, "foreign_keys": fks,
             "unparsed_indexes": unparsed,
@@ -497,6 +499,12 @@ def selftest() -> int:
                       "    t.check_constraint \"(code)::text ~ '^[A-Z]{3}$'::text\", name: \"w_code\"\n  end\n")
     check("schema.rb: a check constraint is not read as a column",
           [c[0] for c in cs["tables"]["w"]["columns"]] == ["code"], str(cs["tables"]["w"]["columns"]))
+    # #1732. THE IMPLICIT `id`: present by default and with `primary_key: "id"`; absent with `id: false` or another named key.
+    pks = parse_schema("".join(f'  create_table "{n}"{o}, force: :cascade do |t|\n    t.string "code"\n  end\n' for n, o in
+                               (("plain", ""), ("noid", ", id: false"), ("coded", ', primary_key: "code"'), ("idkey", ', primary_key: "id"'))))
+    check("schema.rb: a table has an implicit id unless `id: false` or another primary key is named",
+          {n: t["implicit_id"] for n, t in pks["tables"].items()} == {"plain": True, "noid": False, "coded": False, "idkey": True},
+          str({n: t["implicit_id"] for n, t in pks["tables"].items()}))
     check("yaml: a `#` after whitespace starts a comment, as YAML reads it",
           _strip_yaml_comment("  a: b  # note") == "  a: b")
     check("yaml: a `#` with no space before it is part of the value", _strip_yaml_comment("  a: rate#893") == "  a: rate#893")
