@@ -185,8 +185,8 @@ GUARD = Guard(
         ),
         Mutation(
             "the first PR URL wins instead of the last",
-            "[...String(text ?? '').matchAll(re)].map((m) => m[0]).pop() ?? null",
-            "[...String(text ?? '').matchAll(re)].map((m) => m[0]).shift() ?? null",
+            ".filter((w) => re.test(w)).pop() ?? null",
+            ".filter((w) => re.test(w)).shift() ?? null",
             "P2: the last full PR URL is kept",
         ),
         Mutation(
