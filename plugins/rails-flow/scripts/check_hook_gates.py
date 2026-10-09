@@ -195,6 +195,12 @@ def _is_hook_run(args) -> bool:
     return isinstance(argv, (list, tuple)) and any("release-gate.sh" in str(a) for a in argv)
 
 
+def gate_exit(returncode: int, stderr: bytes) -> int:
+    """A release gate's exit code as a FIXTURE should read it. The gate's own deadline also exits 2 ("the gate took longer than 13s"), which on a loaded
+    machine reads as the refusal a fixture is looking for and lets a mutant survive for the wrong reason: it is 124 here, equal to neither 0 nor 2."""
+    return 124 if b"took longer than" in stderr else returncode
+
+
 def _run(*args, **kw):
     if skipping() and not (_REAL_SETUP and not _is_hook_run(args)):     # `--match`: the code before an unwanted check, or the survey (#1599)
         text = kw.get("text") or kw.get("universal_newlines")
@@ -613,6 +619,27 @@ NEGATIVES_1472 = ["bash -c 'git add app/x.rb'", "bash -c 'git push origin featur
                   "git commit -m \"$(cat <<'EOF'\na) first\nb) never `git push --force`\nEOF\n)\"",
                   "echo \"$(cat <<'EOF'\nAdds :) emoji then `git add -A`\nEOF\n)\""]
 
+# #1613: ANSI-C quoting, `$'...'`, spells the verb, the subcommand or the flag; the shell decodes it and runs the command, and the normaliser
+# printed the quotes' CONTENT as it was written, so no rule matched. Each decodes (here, in bash) to a command that stages everything.
+POSITIVES_1613 = ["$'\\x67\\x69\\x74' add -A", "git $'\\x61dd' -A", "git add $'\\x2dA'", "git add $'\\055A'", "git add $'\\u002dA'",
+                  "git $'a\\x64d' -A", "git $'\\x70ush' --force origin main", "git add -$'\\x41'"]
+# #1568: the other spellings of the same words that the sed-based quote strip read as a MENTION, plus the continuation and heredoc shapes
+# the shell reads differently from the normaliser (each measured against bash with git stubbed: bash ran the command, the hook said nothing).
+POSITIVES_1568 = ['git add "-A"', "git add '.'", "git 'add' -A", '"git" add -A', 'git push "--force" origin main', "git 'reset' --hard",
+                  'git add\\\n -A', 'g\\\nit add -A', 'g\\it add -A', 'gi\\t add -A', 'git a\\dd -A', 'git add \\-A', 'git add -\\A',
+                  'echo $((1<<2))\ngit add -A', 'echo $(( 1 << 2 ))\ngit add -A',
+                  'cat <<EOF\r\nx\r\nEOF\r\ngit add -A', "cat <<'EOF'\nfoo\\\nEOF\ngit add -A",
+                  'echo "a\'b"; git add -A; echo "c\'d"']
+# ...and the twins that must stay allowed: the same words only MENTIONED, quoted spans holding spaces, and the shapes bash reads as text.
+NEGATIVES_1568 = ['git add "app/x.rb" "spec/y.rb"', "git add 'x y' app/z.rb", 'git commit -m "git add -A"', "echo $'git add -A'",
+                  "git add $'a\\x20b' app/z.rb", 'echo "$((1<<2))"', 'echo $((1<<2))\ngit status',
+                  'cat <<EOF\nfoo\\\nEOF\ngit add -A\nEOF', 'cat <<-EOF\n\tfoo\\\n\tEOF\ngit add -A\nEOF',
+                  'echo "a\\"; git add -A; echo \\"b"', 'echo "a\'b"; git status; echo "c\'d"', "git commit -m 'it'\"'\"'s'",
+                  'git add "app/models/user.rb"', "git add 'a.rb' 'b.rb'", 'git commit -m "fix"', 'git status "-s"']
+# ANSI-C bodies whose decoding must equal bash's own, byte for byte (compared when the result is one plain word, the only kind kept).
+ANSIC_BODIES_1613 = ["\\x61bc", "a\\x62c", "\\141bc", "\\1411", "a\\x6", "\\x", "a\\u0062c", "a\\U00000062c", "ab\\0cd", "a\\x00b",
+                     "\\x41\\x42", "x\\u00e9y", "x\\xc3\\xa9y", "\\e", "\\q", "\\cA", "a\\\\b", "a\\'b", "a\\?b", "a\\\"b", "\\a\\b\\t"]
+
 
 def normaliser_pipelines(cmd: str) -> int | str:
     """#1504: how many `_normalize_one` pipelines `normalize_segments` runs for `cmd`. The lib is sourced
@@ -669,6 +696,28 @@ def guard_bash_fixtures() -> None:
         check(f"guard-bash (#1472): `{cmd!r}` runs the command and is blocked", run(cmd) == 2, "exit 0")
     for cmd in NEGATIVES_1472:
         check(f"guard-bash (#1472): CONTROL: `{cmd[:60]!r}` passes", run(cmd) == 0, "exit 2")
+    for cmd in POSITIVES_1613:
+        check(f"guard-bash (#1613): ANSI-C `{cmd!r}` is the command it decodes to, and is blocked", run(cmd) == 2, "exit 0")
+    for cmd in POSITIVES_1568:
+        check(f"guard-bash (#1568): `{cmd!r}` is read as the shell reads it, and is blocked", run(cmd) == 2, "exit 0")
+    for cmd in NEGATIVES_1568:
+        check(f"guard-bash (#1568): CONTROL: `{cmd[:60]!r}` passes", run(cmd) == 0, "exit 2")
+    # #1613: the decoder against bash ITSELF. `git $'BODY'` goes through normalize_segments; `printf %s $'BODY'` is what bash makes of it.
+    # Compared only when bash's word is plain (no space or shell character), because only a plain word is kept; any other is deleted.
+    lib = HOOKS / "lib" / "normalize_cmd.sh"
+    # bash 3.2 (macOS /bin/bash) does not decode \\u and \\U at all, so its answer is no reference for them; a newer bash is.
+    unicode_ok = _run(["bash", "-c", "printf '%s' $'\\u0061'"], capture_output=True, text=True).stdout == "a"
+    for body in ANSIC_BODIES_1613:
+        if not unicode_ok and ("\\u" in body or "\\U" in body):
+            continue
+        word = _run(["bash", "-c", "printf '%s' $'" + body + "'"], capture_output=True, text=True).stdout
+        plain = bool(word) and all(ch > " " and ch not in ";|&()<>$`\"\\#'" for ch in word)
+        # Under a UTF-8 locale ON PURPOSE: gawk there turns sprintf("%c", 233) into the two bytes of U+00E9, which the lib's own LC_ALL=C pin must
+        # prevent (release-gate.sh does not pin one). BSD awk (macOS) and mawk are byte-oriented either way, so this can only be red on gawk, i.e. on Linux CI.
+        got = _run(["bash", "-c", f"source {lib}; printf '%s' \"$1\" | normalize_segments", "x", "git $'" + body + "'"],
+                   capture_output=True, text=True, env={**os.environ, "LC_ALL": "C.UTF-8"}).stdout.strip()
+        want = f"git {word}" if plain else "git"
+        check(f"guard-bash (#1613): ANSI-C decoder agrees with bash on `$'{body}'`", got == want, f"bash made {word!r}; normaliser said {got!r}")
     # #1504: a depth's strings are normalised as ONE batch, so each must still be judged on its own.
     for cmd, why in (("bash -c 'cat <<EOF'; bash -c 'git add -A'", "an unclosed heredoc in one string does not swallow the next"),
                      ("bash -c \"echo it's\"; bash -c \"eval 'git add -A'\"", "an unbalanced quote in one string does not stop the next being lexed"),
@@ -1981,6 +2030,64 @@ def release_gate_fixtures() -> None:
         # tell it from the real one (#1571, measured on both). Only stage 1 says to run /qa-flow:certify.
         check("release-gate (#1428): an UNCOMMITTED stamp is denied -- main would not receive it",
               rc == 2 and "no qa/CERTIFICATION is committed at" in err and "Run /qa-flow:certify against staging" in err, err)
+        # #1657 review: the gate's own text tools are not byte-safe in a UTF-8 locale. macOS `tr` (the git/gh pre-check) and BSD `grep` stop at an invalid
+        # byte and drop the REST of the command, and macOS `sed` (inside the normaliser) aborts: `echo \xff` + a newline + a push read as no git at all and
+        # was allowed. The hook pins `LC_ALL=C` itself, whatever the caller's locale; a normaliser that yields nothing for a command that is not empty is
+        # "could not read", which refuses in the degraded (no classifier) path. Run under en_US.UTF-8 ON PURPOSE; on a host without that locale the tools
+        # are byte-safe and these pass either way, so they can only be red on macOS (the maintainer's own machine).
+        import shutil
+
+        def gate_bytes(payload: bytes, root: Path | None = None, path_prefix: Path | None = None) -> int:
+            e = {**env, "LC_ALL": "en_US.UTF-8"}
+            if root is not None:
+                e["CLAUDE_PLUGIN_ROOT"] = str(root)
+            if path_prefix is not None:
+                e["PATH"] = f"{path_prefix}{os.pathsep}{e['PATH']}"
+            done = _run(["bash", str(QA_HOOK)], cwd=repo, env=e, capture_output=True, timeout=60, input=payload)
+            return gate_exit(done.returncode, done.stderr)
+
+        with tempfile.TemporaryDirectory() as ubtd:
+            ub_root = Path(ubtd) / "qa-flow"
+            shutil.copytree(QA_HOOK.parents[2], ub_root, ignore=shutil.ignore_patterns("push_targets.py", "__pycache__"))
+            check("release-gate (#1657): an invalid byte on an EARLIER line does not hide a push to main under a UTF-8 locale",
+                  gate_bytes(b"echo \xff\ngit push origin main\n") == 2, "exit != 2")
+            check("release-gate (#1657): CONTROL: the same push without the invalid byte is refused",
+                  gate_bytes(b"echo ok\ngit push origin main\n") == 2, "exit != 2")
+            check("release-gate (#1657): CONTROL: without the classifier, an invalid byte with no push in the command is not itself a refusal",
+                  gate_bytes(b"echo \xff\ngit status\n", ub_root) == 0, "exit != 0")
+            check("release-gate (#1657): without the classifier, an invalid byte on an earlier line does not hide a push to main",
+                  gate_bytes(b"echo \xff\ngit push origin main\n", ub_root) == 2, "exit != 2")
+            check("release-gate (#1657): without the classifier, a command the normaliser reads as NOTHING (only comments) is refused, not passed",
+                  gate_bytes(b"# git push origin main", ub_root) == 2, "exit != 2")
+            # BSD grep stops matching at an invalid byte EARLIER ON THE SAME LINE under a UTF-8 locale (an earlier LINE is fine), so the fallback's `main|master` match
+            # read `echo \xff; git push origin main` as no main: the greps run under LC_ALL=C. Two spellings of the invalid byte (\xff, and \xe9 which is a valid
+            # Latin-1 letter but not valid UTF-8).
+            check("release-gate (#1657): without the classifier, an invalid byte EARLIER ON THE SAME LINE does not hide a push to main",
+                  gate_bytes(b"echo \xff; git push origin main", ub_root) == 2, "exit != 2")
+            check("release-gate (#1657): without the classifier, a Latin-1 byte before `&& git push origin main` does not hide it",
+                  gate_bytes(b"echo \xe9 && git push origin main", ub_root) == 2, "exit != 2")
+            # The gh api / release promotion check reads the RAW command (unanchored: `merge|refs|releases|...`), and BSD grep stops at an invalid byte earlier on the
+            # same line: `echo \xff; gh api -X PUT repos/o/r/merges -f base=main` merged into main with no classifier (the pin on that grep is what refuses it).
+            check("release-gate (#1657): without the classifier, an invalid byte before a `gh api` merge does not hide it",
+                  gate_bytes(b"echo \xff; gh api -X PUT repos/o/r/merges -f base=main", ub_root) == 2, "exit != 2")
+            # A normaliser that FAILS (an awk that passes its input through and exits 2) is "could not read": refused. The pass-through keeps the output non-empty, so
+            # the empty-output refusal cannot be what refuses; and `FOO=1 git push …` is not anchored without the peel, so the raw text cannot be what refuses either.
+            with tempfile.TemporaryDirectory() as sbtd:
+                stub = Path(sbtd) / "awk"
+                stub.write_text("#!/bin/sh\ncat\nexit 2\n", encoding="utf-8"); stub.chmod(0o755)
+                check("release-gate (#1657): without the classifier, a normaliser that fails (awk exits 2) is refused, not read as nothing to judge",
+                      gate_bytes(b"FOO=1 git push origin main\n", ub_root, stub.parent) == 2, "exit != 2")
+            check("release-gate (#1657): CONTROL: the same command is judged and refused by the real normaliser too",
+                  gate_bytes(b"FOO=1 git push origin main\n", ub_root) == 2, "exit != 2")
+            check("release-gate (#1657): CONTROL: without the classifier, a git command that is not a push passes with the real normaliser",
+                  gate_bytes(b"FOO=1 git status\n", ub_root) == 0, "exit != 0")
+            # The classifier decodes strictly in a UTF-8 locale; an invalid byte made it fail and the gate refused even a `git status`, naming nothing. Under C it judges the command.
+            check("release-gate (#1657): with the classifier, an invalid byte in a command that is not a push does not refuse it",
+                  gate_bytes(b"echo \xff\ngit status\n") == 0, "exit != 0")
+            # `grep -q` closes its pipe at the first match; under `set -o pipefail` a producer still writing (a segment over the pipe buffer, 64 KB) dies of
+            # SIGPIPE and the pipeline reads 141, which skipped the `&&` branch: a push on the FIRST line of a long command was not seen (a fail-open).
+            check("release-gate (#1657): without the classifier, a push on the first line of a 120 KB command is refused (grep -q must not read 141)",
+                  gate_bytes(b"git push origin main\n" + b"x\n" * 60000, ub_root) == 2, "exit != 2")
         sh("add", "qa/CERTIFICATION"); sh_old("commit", "-q", "-m", "stamp")
         rc, err = gate()
         check("release-gate (#1337): the stamp committed on top of the tested sha still permits", rc == 0, err)
@@ -3447,6 +3554,20 @@ def timeout_fixtures() -> None:
             os.kill(int(pid), 9)
         except (ProcessLookupError, ValueError):
             pass
+    # #1657: the release gate's OWN deadline also exits 2, so a release-gate fixture reads it through `gate_exit`: a refusal under test is 2, a deadline is 124.
+    check("a gate_exit of the gate's deadline message is 124, a real refusal stays 2, an allow stays 0",
+          gate_exit(2, b"BLOCKED by qa-flow release gate: the gate took longer than 13s, and this command looks like a promotion") == 124
+          and gate_exit(2, b"BLOCKED by qa-flow release gate: no qa/CERTIFICATION is committed") == 2 and gate_exit(0, b"") == 0, "mapping wrong")
+    with tempfile.TemporaryDirectory() as dltd:
+        slow = Path(dltd) / "awk"
+        slow.write_text("#!/bin/sh\nsleep 6\n", encoding="utf-8"); slow.chmod(0o755)
+        denv = {k: v for k, v in os.environ.items() if k not in ("QA_ALLOW_MAIN", "RAILS_FLOW_LANE")}
+        denv.update(PATH=f"{slow.parent}{os.pathsep}{denv['PATH']}", RAILS_FLOW_HOOK_DEADLINE="2", CLAUDE_PLUGIN_ROOT=str(QA_HOOK.parents[2]))
+        began = time.monotonic()
+        done = _run(["bash", str(QA_HOOK)], cwd=dltd, env=denv, capture_output=True, timeout=60, input=json.dumps({"tool_input": {"command": "git push origin main"}}).encode())
+        check("release-gate (#1657): a gate that hits its own deadline reads as 124 to the fixtures, not as the refusal under test",
+              done.returncode == 2 and b"took longer than" in done.stderr and gate_exit(done.returncode, done.stderr) == 124 and time.monotonic() - began < 30,
+              f"exit {done.returncode}, {done.stderr[:120]!r}")
     # An UNEXPECTED timeout is a recorded failure (a setup step that times out must not pass).
     before = len(FAILURES)
     os.environ["HOOK_GATES_TIMEOUT"] = "0.2"
