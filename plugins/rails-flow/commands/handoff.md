@@ -149,6 +149,39 @@ mechanical backstop for delegated work, and a per-agent one. It bounds turns, no
 complements the attempt cap rather than replacing it: an agent can burn three attempts inside one
 turn, or spend twenty turns making real progress on one.
 
+## Progress — what a cut-off session leaves behind (optional, #1564)
+
+The nine sections are the contract; they do not say how far the run got. A session cut off by a spend limit, an expired login or a
+reboot leaves a branch and a work order and no record of the step it was on, so the next session starts over. An executor therefore
+keeps one more section current, and it is **optional** (an order written before this still validates):
+
+```markdown
+## Progress
+Status: in-progress
+Last green: `a1b2c3d`
+Current step: AC-2, the 422 path
+Next step: run the full suite
+Pending gates: code-reviewer, test-runner
+```
+
+`Status` is `not-started`, `in-progress`, `stopped` or `done`; `Last green` is the last commit every gate passed on, or `none`; the
+other three are one line each (`Pending gates: none` once nothing is left, which a `done` order must say). The checker validates a
+Progress section when there is one, as it does the base commit: a Status it does not list, a missing line, or a Last green that is not a
+commit in this repository is a finding, because a plausible value nobody can resolve is worse than an absent one.
+
+**Update it at each gate and each commit, and set `Status: done` when the order is finished.** Commit it with the work.
+
+**Resuming.** `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/resume_lanes.py"` lists every order that is not `done` (or that records no Progress
+at all), checks that its branch exists locally or as `origin/<branch>` and which worktree has it, and prints the recorded steps and the one
+command to start with. It is read-only and fetches nothing. A resumed lane re-runs only its `Pending gates`.
+
+**The WIP commit.** The plugin's `Stop` hook commits tracked changes to a lane branch (`feature/*` or `fix/*`; never `main`,
+`master`, `dev` or the default branch) when a turn ends with the tree dirty, so a cut-off loses at most one turn. It is advisory: it
+fails open, runs only an absolute `git` found outside the project with a scrubbed environment, never `git add -A`, and never runs a hook
+the repository supplies. There is deliberately no hook on `git push`, `gh pr merge` or `gh pr ready`: a `PreToolUse` hook runs before the
+user is asked, under an environment a project's settings can set, so it must not execute anything the repository or the environment chose
+(the threat model is `docs/evidence/audits/2026-10-10-hook-environment-1821.md`).
+
 ## Run
 
 **1. Resolve the slug.** `$ARGUMENTS` if given, else the current branch after `feature/`|`fix/`
