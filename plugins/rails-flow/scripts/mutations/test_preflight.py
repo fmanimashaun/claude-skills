@@ -50,10 +50,17 @@ GUARD = Guard(
             "the flag ON with no command says nothing was started, and starts nothing",
         ),
         Mutation(
+            # THE ENVIRONMENT IS NOT THE USER'S: a project's settings can set it. A command to run comes from a file under HOME only.
+            "the start command is read from the environment, which a repository's settings can set",
+            '        command = str(load_config(env).get("pg_start", "")).strip()\n',
+            '        command = str(env.get("RAILS_FLOW_PREFLIGHT_PG_START", "")).strip()\n',
+            "a start command supplied through the ENVIRONMENT is never run",
+        ),
+        Mutation(
             "the flag with a command never runs it",
             '        run_quiet(["bash", "-c", command], env, timeout=20)\n',
             "        pass\n",
-            "the flag ON with a command runs exactly that command and re-checks",
+            "the flag ON with a command in the user's file runs exactly that command and re-checks",
         ),
         Mutation(
             # A hung probe must be cut off. An unanswered pg_isready is silence, not an accusation.
@@ -142,7 +149,20 @@ GUARD = Guard(
         ),
         # ---- the project's own hook point
         Mutation(
-            "a project hook that is not executable is run anyway",
+            # CODE EXECUTION BEFORE PERMISSION (the security review of this change): a PreToolUse hook runs before the user is asked about the command.
+            "a project's own script runs without being pinned, before anyone has read it",
+            "    if not isinstance(trusted, dict) or trusted.get(os.path.realpath(hook)) != sha256_of(hook):\n",
+            "    if False:\n",
+            "a project's .claude/test-preflight that nobody pinned is NOT run",
+        ),
+        Mutation(
+            "a pin keeps working after the pinned script is edited",
+            "    if not isinstance(trusted, dict) or trusted.get(os.path.realpath(hook)) != sha256_of(hook):\n",
+            "    if not isinstance(trusted, dict) or os.path.realpath(hook) not in trusted:\n",
+            "a pinned script that is edited afterwards is un-pinned",
+        ),
+        Mutation(
+            "a non-executable project script is run (or named) anyway",
             "        if not (hook.is_file() and hook.stat().st_mode & stat.S_IXUSR):\n",
             "        if not hook.is_file():\n",
             "a non-executable one is ignored",

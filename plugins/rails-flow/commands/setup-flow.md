@@ -195,7 +195,7 @@ the database is up (`pg_isready` for Postgres; start it and re-check if it is no
 no held `bundler.lock` (a Ruby LSP `bundle update` holds it), and read `uptime` — under high load run in the
 foreground or in smaller shards, never many background runs. Never swap hooks or config from another branch while
 a sweep runs. *Advice, not enforced: the rails-flow `test-preflight` hook reports the first four as an advisory;
-the project's own checks go in an executable `.claude/test-preflight`.*
+the project's own checks go in an executable `.claude/test-preflight`, which the hook runs only after you pin it with `--trust`.*
 <!-- /emit-if -->
 
 ## How to work with me
@@ -268,7 +268,8 @@ AGENTS routing → the rails-flow plugin agents · GUARDRAILS.md · docs/brain/M
 **The test-run preflight block is conditional (#1561).** The block between `<!-- emit-if: database -->` and `<!-- /emit-if -->` is written only when
 the project has a database (Step 1's inspection finds `config/database.yml` or a database gem); with none, write nothing for it. Either way the two
 marker lines are dropped, never copied into the project's CLAUDE.md. It is advice (tier 1); the `test-preflight` hook (#1566) is its advisory,
-deterministic half, and a project's own preflight lives in `.claude/test-preflight`, which the hook runs after the generic checks. Every line of it is
+deterministic half, and a project's own preflight lives in `.claude/test-preflight`, which the hook runs after the generic checks but only once the user has pinned it by hash with
+`test_preflight.py --trust`: a PreToolUse hook runs before the user is asked about the command, so a script from the checkout must never run unread. Every line of it is
 re-read every session, so it stays this short.
 
 ## 2b. Area- or mode-specific instructions belong in `.claude/rules/`
