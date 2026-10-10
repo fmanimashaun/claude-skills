@@ -1622,7 +1622,9 @@ def guard_claims_pipe_fixtures() -> None:
     """A `gh pr create` FIRST and a long tail after it: `grep -q` quits at the early match, `printf` takes SIGPIPE once the
     text outgrows the pipe buffer, and `pipefail` turned that 141 into "no match", so the guard exited 0 having checked
     nothing (#1579; the class of #1570 in guard-bash.sh). The tail is 10,000 lines, well past any pipe buffer."""
-    TAIL = "\n" + "echo line\n" * 10000
+    # ~1 MB, far past the 64 KB pipe buffer: at ~100 KB grep sometimes read it all before exiting, so SIGPIPE was a race and
+    # the pipefail mutant was caught by a different fixture each run (gates run 38009764013).
+    TAIL = "\n" + "echo line\n" * 100000
     NUMERIC = "The selftest reports **292 assertions**, up from 285.\n"
     TPL = "## What changed\n\n## How to test\n"
 
@@ -1637,14 +1639,14 @@ def guard_claims_pipe_fixtures() -> None:
             return run_hook("guard-claims.sh", cwd=Path(td), stdin=json.dumps({"tool_input": {"command": cmd}}),
                             env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])})[0]
 
-    check("guard-claims (#1579): an unchecked claim is blocked when a 10,000-line tail FOLLOWS the gh pr create",
+    check("guard-claims (#1579): an unchecked claim is blocked when a 100,000-line tail FOLLOWS the gh pr create",
           run("gh pr create --base dev --body-file BODY" + TAIL, NUMERIC) == 2, "exit 0: checked nothing")
     check("guard-claims (#1579): ...and the same in an issue comment",
           run("gh issue comment 1579 --body-file BODY" + TAIL, NUMERIC) == 2, "exit 0: checked nothing")
     check("guard-claims (#1579): a missing template section is blocked with the long tail after it",
           run("gh pr create --base dev --body-file BODY" + TAIL, "## What changed\nTidy the README.\n", TPL) == 2,
           "exit 0: template not checked")
-    check("guard-claims (#1579) control: the 10,000-line tail alone is not a claim-carrying command, and passes",
+    check("guard-claims (#1579) control: the 100,000-line tail alone is not a claim-carrying command, and passes",
           run(TAIL.strip()) == 0, "blocked a benign command")
 
 
