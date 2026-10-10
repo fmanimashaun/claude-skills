@@ -35,7 +35,7 @@ GUARD = Guard(
             "hit() runs under pipefail again, so a long command that matches is read as no match",
             '( set +o pipefail; printf \'%s\\n\' "$seg" | grep -qE "$re" )',
             'printf \'%s\\n\' "$seg" | grep -qE "$re"',
-            "followed by 16k lines (~240 KB) is still blocked",
+            "`git reset --hard` followed by 16k lines (~240 KB) is still blocked",
         ),
         # #1489: `bash < file` names no create, so the trigger must fire on the redirect itself.
         Mutation(

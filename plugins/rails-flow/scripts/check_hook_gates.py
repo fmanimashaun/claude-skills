@@ -1167,8 +1167,9 @@ def guard_bash_fixtures() -> None:
     # certain; at ~145 KB grep could read it all first, a race (#1783: once `git add` became an allowlist, `hit()` was the only thing the
     # pipefail mutant could break, and only this rule shows it). Inside the hook's 6 s deadline: ~2 s at load 7.
     sigpipe_tail = "".join(f"echo line {i}\n" for i in range(16000))
-    check("guard-bash: a force-push to dev followed by 16k lines (~240 KB) is still blocked (pipefail + SIGPIPE, not a race)",
-          raw(payload("git push --force origin dev\n" + sigpipe_tail)) == 2, "exit 0: grep -q's early exit was read as no match")
+    # `git reset --hard`, because only hit() decides it: a force-push is also refused by the option-prefix check, which never pipes into -q.
+    check("guard-bash: `git reset --hard` followed by 16k lines (~240 KB) is still blocked (pipefail + SIGPIPE, not a race)",
+          raw(payload("git reset --hard\n" + sigpipe_tail)) == 2, "exit 0: grep -q's early exit was read as no match")
     # 2. AN UNCLOSED HEREDOC INSIDE `$( )`: bash ends it at the line closing the `$( )`.
     check("guard-bash (#1526): a heredoc left open inside $( ) does not hide the `git add -A` after it",
           run("x=$(cat <<EOF\nfoo\n)\ngit add -A") == 2, "exit 0")
