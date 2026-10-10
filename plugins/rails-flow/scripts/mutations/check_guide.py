@@ -111,7 +111,7 @@ GUARD = Guard(
         ),
         Mutation(
             'a file edited since the pin stops being noted',
-            '            elif _git(repo, "diff", "--quiet", sha, "HEAD", "--", path).returncode != 0:',
+            '            elif _git(repo, "rev-parse", f"{sha}:{path}").stdout != _git(repo, "rev-parse", f"HEAD:{path}").stdout:',
             '            elif False:',
             'a file edited since the pin is a note',
         ),
@@ -120,6 +120,12 @@ GUARD = Guard(
             '    findings += pin_findings\n',
             '',
             'main() with a pin past the end of its file exited',
+        ),
+        Mutation(
+            "the edited-since note looks the path up relative to the guide's folder",
+            '            elif _git(repo, "rev-parse", f"{sha}:{path}").stdout != _git(repo, "rev-parse", f"HEAD:{path}").stdout:',
+            '            elif _git(repo, "diff", "--quiet", sha, "HEAD", "--", path).returncode != 0:',
+            "an edit since the pin is noted when the repo given is a subfolder of it",
         ),
     ),
 )

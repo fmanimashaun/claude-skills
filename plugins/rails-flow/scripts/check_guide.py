@@ -628,7 +628,7 @@ def check_pins(sections: list[Section], repo: Path, require: bool = False) -> tu
                     f"{where}: {path} no longer exists at HEAD -- the diagram describes code that was removed or renamed; "
                     "re-draw it from the current file and re-pin"
                 )
-            elif _git(repo, "diff", "--quiet", sha, "HEAD", "--", path).returncode != 0:
+            elif _git(repo, "rev-parse", f"{sha}:{path}").stdout != _git(repo, "rev-parse", f"HEAD:{path}").stdout:
                 notes.append(f"{where}: {path} has changed since {sha[:12]} -- compare lines {start}-{end} with the diagram")
     return findings, notes
 

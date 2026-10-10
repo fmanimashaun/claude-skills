@@ -523,6 +523,11 @@ def run() -> int:
     fixture_git.run(repo, "add", "app/job.rb")
     fixture_git.run(repo, "commit", "-q", "-m", "grow job")
     pin_check("a file edited since the pin is a note, not a finding", pins(pin("app/job.rb:2")), contains=None, note="changed since")
+    # The guide sits in docs/, so the default repo is docs/: the path in a pin is the REPOSITORY's, not
+    # docs/'s. A pathspec diff run from there looked app/job.rb up as docs/app/job.rb and never saw the edit.
+    (repo / "docs").mkdir()
+    pin_check("an edit since the pin is noted when the repo given is a subfolder of it",
+              pins(pin("app/job.rb:2")), contains=None, repo_dir=repo / "docs", note="changed since")
     fixture_git.run(repo, "rm", "-q", "app/job.rb")
     fixture_git.run(repo, "commit", "-q", "-m", "drop job")
     pin_check("a file deleted at HEAD is a finding", pins(pin("app/job.rb:1")), contains="no longer exists at HEAD")
