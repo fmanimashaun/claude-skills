@@ -89,6 +89,15 @@ def load(path: Path) -> list[dict]:
             raise Unusable(f"{path}:{number} is not valid JSON: {exc}") from exc
         if not isinstance(record, dict):
             raise Unusable(f"{path}:{number} is a {type(record).__name__}, not an object")
+        # #1689: an id is a dict key and an edge a set member, so a list or an object where an id belongs crashed every
+        # command with a TypeError (exit 1, a traceback). It is input this tool cannot read: refused here, naming the field.
+        for field in ("id", "caused_by", "duplicate_of"):
+            if isinstance(record.get(field), (list, dict)):
+                raise Unusable(f"{path}:{number}: `{field}` must be an id string, got {type(record[field]).__name__}")
+        if isinstance(record.get("blocks"), list):
+            for target in record["blocks"]:
+                if isinstance(target, (list, dict)):
+                    raise Unusable(f"{path}:{number}: `blocks` must list id strings, got a {type(target).__name__} in it")
         record["_line"] = number
         records.append(record)
     return records
@@ -423,6 +432,19 @@ def selftest() -> int:
         empty = Path(tmp) / "empty.jsonl"
         empty.write_text("", encoding="utf-8")
         check("an empty file is clean, not unusable", main(["validate", str(empty)]) == 0)
+        # #1689: an id-shaped field holding a list or an object is UNUSABLE (2), on every command, never a TypeError.
+        base = '"pass": "p", "severity": "P2", "category": "c", "file": "f", "signature": "s", "issue": "i"'
+        shapes = {"a list id": '{"id": ["a"], %s}', "an object id": '{"id": {"k": 1}, %s}',
+                  "a list caused_by": '{"id": "a", %s, "caused_by": ["b"]}', "a list inside blocks": '{"id": "a", %s, "blocks": [["x"]]}'}
+        for label, shape in shapes.items():
+            path = Path(tmp) / "shape.jsonl"
+            path.write_text(shape % base + "\n", encoding="utf-8")
+            for command in ("validate", "order", "report"):
+                try:
+                    code = main([command, str(path)])
+                except TypeError as exc:
+                    code = f"TypeError: {exc}"
+                check(f"{label} is UNUSABLE (2) for {command}, not a TypeError", code == 2, f"{code}")
 
     if failures:
         print(f"SELFTEST FAILED — {len(failures)} of {checks} checks:", file=sys.stderr)
