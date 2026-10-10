@@ -894,7 +894,7 @@ Undeclared, it still refuses an issue with no label at all.
 **Then install the server-side labeller, which sees the issue however it was filed (#1791).** The hook reads command text, which a
 shell only gives meaning when it expands it, so it cannot catch every spelling; GitHub sees the issue itself. Copy
 `${CLAUDE_PLUGIN_ROOT}/scripts/label_new_issue.py` to `.github/scripts/` and `${CLAUDE_PLUGIN_ROOT}/templates/label-new-issues.yml` to
-`.github/workflows/`, pin its `actions/checkout` to a commit SHA, and commit both. An issue missing a declared group then gets a
+`.github/workflows/` (its `actions/checkout` is already pinned to a commit SHA; keep it pinned when you update it), and commit both. An issue missing a declared group then gets a
 `needs-labels` label and one comment naming what is missing (it guesses no label). An `issues` workflow runs from the default
 branch, so it starts when that commit is on it. Ask first: it adds a workflow and a label to the repository.
 

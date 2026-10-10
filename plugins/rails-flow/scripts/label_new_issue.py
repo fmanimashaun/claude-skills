@@ -41,6 +41,9 @@ LABEL = "needs-labels"
 LABEL_COLOR = "d93f0b"
 LABEL_TEXT = "A new issue is missing a declared label group (comp, type or prio): see the comment"
 MARK = "<!-- label-new-issue -->"
+# The author of a comment made with the workflow's token. Only a comment by this login is ever read as ours or edited: the marker is public
+# text, so anyone could plant it in their own comment to make the labeller edit THEIR comment (or stay silent) instead of posting.
+BOT = os.environ.get("LABELLER_BOT", "github-actions[bot]")
 CONFIG = Path(os.environ.get("ISSUE_LABELS_CONFIG", ".rails-flow/issue-labels.json"))
 
 Gh = Callable[..., str]
@@ -117,7 +120,8 @@ def run(issue: int, dry_run: bool, gh: Gh = real_gh, groups: list[dict] | None =
         print(f"#{issue}: complete, nothing to do")
         return 0
     comments = json.loads(gh("api", f"repos/{REPO}/issues/{issue}/comments", "--paginate", "--slurp"))
-    mine = next((c for page in comments for c in page if MARK in (c.get("body") or "")), None)
+    mine = next((c for page in comments for c in page
+                 if MARK in (c.get("body") or "") and (c.get("user") or {}).get("login") == BOT), None)
     body = comment_body(missing, existing)
     if dry_run:
         print(f"#{issue}: would {'flag' if missing else 'unflag'} and {'edit' if mine else 'post'} the comment:\n{body}")
@@ -193,8 +197,8 @@ def selftest() -> int:
         return {"state": state, "labels": [{"name": x} for x in labels], **({"pull_request": {}} if pr else {})}
 
     gh = StubGh({1: issue([]), 2: issue(["comp:a", "type:bug", "prio:P1"]), 3: issue(["comp:a", "type:bug", "prio:P1", LABEL]),
-                 4: issue([], state="closed"), 5: issue([], pr=True), 6: issue(["type:bug", LABEL])},
-                comments={3: [{"id": 33, "body": f"{MARK}\nold"}], 6: [{"id": 66, "body": comment_body(missing_groups(["type:bug"], GROUPS), gh_labels := ["comp:a", "comp:b", "type:bug", "prio:P1", LABEL])}]})
+                 4: issue([], state="closed"), 5: issue([], pr=True), 6: issue(["type:bug", LABEL]), 7: issue([])},
+                comments={7: [{"id": 77, "body": f"{MARK}\nplanted", "user": {"login": "mallory"}}], 3: [{"id": 33, "body": f"{MARK}\nold", "user": {"login": BOT}}], 6: [{"id": 66, "user": {"login": BOT}, "body": comment_body(missing_groups(["type:bug"], GROUPS), gh_labels := ["comp:a", "comp:b", "type:bug", "prio:P1", LABEL])}]})
     rc = attempt(run, 1, False, gh, GROUPS)
     check("an empty issue exits 0", rc == 0, rc)
     check("an empty issue gets the flag", any("--add-label" in c and LABEL in c for c in gh.calls), gh.calls)
@@ -213,6 +217,11 @@ def selftest() -> int:
     check("a pull request is left alone", gh.calls == [], gh.calls)
     attempt(run, 6, False, gh, GROUPS)
     check("a still-incomplete flagged issue is not flagged or commented again", gh.calls == [], gh.calls)
+    gh.calls.clear()
+    attempt(run, 7, False, gh, GROUPS)
+    check("a comment that merely carries the marker, by another user, is never edited", not any(c[0] == "patch" for c in gh.calls), gh.calls)
+    check("and the labeller still posts its own comment", any(c[:2] == ("issue", "comment") for c in gh.calls), gh.calls)
+    gh.calls.clear()
     attempt(run, 1, True, gh, GROUPS)
     check("--dry-run changes nothing", gh.calls == [], gh.calls)
     body = comment_body(missing_groups([], GROUPS), ["comp:a", "type:bug", "prio:P1"])

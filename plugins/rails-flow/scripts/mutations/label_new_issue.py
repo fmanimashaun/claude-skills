@@ -42,9 +42,15 @@ GUARD = Guard(
         ),
         Mutation(
             "the comment is posted again instead of edited",
-            "    mine = next((c for page in comments for c in page if MARK in (c.get(\"body\") or \"\")), None)",
+            "    mine = next((c for page in comments for c in page\n                 if MARK in (c.get(\"body\") or \"\") and (c.get(\"user\") or {}).get(\"login\") == BOT), None)",
             "    mine = None",
             "the old comment is edited, not repeated",
+        ),
+        Mutation(
+            "any commenter's comment carrying the marker is taken as the labeller's own, so it is edited and no comment is posted",
+            ' and (c.get("user") or {}).get("login") == BOT)',
+            ')',
+            "a comment that merely carries the marker, by another user, is never edited",
         ),
         Mutation(
             "a completed issue keeps its flag",
