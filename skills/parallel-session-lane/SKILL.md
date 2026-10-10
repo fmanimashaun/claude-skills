@@ -197,7 +197,7 @@ listing `PENDING|IN_PROGRESS` exits early on a `QUEUED` row it never named. On C
 wait for a local peer with `SendMessage` and `notify_when_idle: true` (one notice when it next goes idle or
 exits; sessions on this machine only), and watch a state that flips with the **Monitor** tool (a command
 that prints one line on the change; every watch has a deadline, 5 minutes by default and at most 30, so
-re-arm it). The terminal-state rule still applies to whatever command the Monitor runs.
+re-arm it). Monitor is not available on Amazon Bedrock, Google Cloud's Agent Platform or Microsoft Foundry, nor when `DISABLE_TELEMETRY` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` is set (on Windows, only with Git Bash); there, re-check with dynamic `/loop` instead. The terminal-state rule still applies to whatever command the Monitor runs.
 
 **Two git answers that look like measurements and are not** — `--is-ancestor` after a squash merge,
 and `git grep -E '\b…'` on macOS — are in [`references/reading-a-list.md`](references/reading-a-list.md#two-git-answers-that-are-not-measurements).

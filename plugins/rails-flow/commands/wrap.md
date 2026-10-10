@@ -40,7 +40,7 @@ It prints the round message once, then one line per session: `send`, `skip` or `
 - **`skip`** — the session holds a heavy run. Never interrupt it: a run cut short is a run repeated, and its result
   is lost. Subscribe instead: `SendMessage` with `notify_when_idle: true` and no message, to that session. You get
   one notice when it next goes idle or exits, and it costs that session nothing. This works only from your main
-  conversation and only for sessions on this machine; a subscription with no notice in 12 hours is dropped, and both
+  conversation and only for sessions on this machine; if no notice has arrived within 12 hours the subscription is dropped and you are told; both
   sessions need Claude Code v2.1.236 or later. When the notice arrives, send that session the round.
 - **`self`** — you. The coordinator compacts; it does not clear.
 
@@ -67,9 +67,14 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/wrap_round.py" verify --sessions sessions
 | `SKIP` | holds a heavy run; send the round when the `notify_when_idle` notice arrives |
 | `SELF` | the coordinator |
 
-It exits 0 only when every sent session verified, 1 on any finding, 3 if a read failed (nothing was verified — say
-so; do not report an empty result). It runs three reads (`git ls-remote`, `git worktree list`,
-`git merge-base --is-ancestor`) and refuses anything else; it never sends, merges or removes.
+It exits 0 only when every session is `READY` (or is you); 1 on any finding **or any `SKIP`** — a session still
+waiting on a heavy run has not had the round, so `verify && compact` must not compact yet; 3 if a read failed,
+timed out or `git` is missing (nothing was verified — say so; do not report an empty result). It runs three reads,
+each in one exact shape — `git ls-remote origin <ref>`, `git worktree list --porcelain`,
+`git merge-base --is-ancestor <a> <b>` — and refuses any other command, any extra word, and any positional value
+starting with `-`; it never sends, merges or removes. A branch name containing a glob character (`*`, `?`, `[`), a
+backslash, whitespace or `..` is a finding: `git ls-remote` reads its pattern as a glob, so `*` would match every
+branch.
 
 Chase each `MISMATCH` and `MISSING` with the finding quoted. Re-run `verify` after their corrected replies.
 

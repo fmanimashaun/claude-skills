@@ -9,13 +9,15 @@
 `plan` prints the round message once and one line per session: `send`, `skip` (it holds a heavy run, so it gets the
 round when that run has finished, never mid-run) or `self` (the coordinator does not clear itself; it compacts).
 
-`verify` checks every reply against git instead of believing it. A claimed head must be a full 40-character SHA, and
+`verify` checks every reply against git instead of believing it; it exits 0 only when every session is READY (a SKIP,
+still waiting on a heavy run, is not done). A claimed head must be a full 40-character SHA, and
 must be what `origin` holds for that branch -- or, when the branch is gone because it merged, an ancestor of the
 integration branch. A worktree the session says it removed must be absent from `git worktree list`. A missing reply
 is a finding, not a pass: silence and READY look identical on a board nobody re-derives.
 
 It reports and writes two local files (the board rows and the coordinator handoff); it sends nothing, merges nothing,
-and runs only the reads in READ_ONLY. Exit: 0 every sent session verified READY, 1 findings, 2 usage, 3 a read failed.
+and runs only the reads in READ_ONLY, in their exact shapes. Exit: 0 every session READY (or the coordinator), 1 a
+finding or a session still waiting (SKIP), 2 usage, 3 a read failed (including a timeout or a missing git).
 """
 from __future__ import annotations
 
@@ -36,12 +38,19 @@ ROUND = (
     'all 40 characters>, "removed": [<worktree paths you removed>]}.'
 )
 
-# Exact argv prefixes. `git worktree` is deliberately NOT a two-token key: `list` reads, `remove` destroys.
-READ_ONLY: tuple[tuple[str, ...], ...] = (
-    ("git", "ls-remote"),
-    ("git", "worktree", "list"),
-    ("git", "merge-base", "--is-ancestor"),
+# Exact argv SHAPES: fixed words, and None for a positional slot. A prefix match let
+# `git ls-remote --upload-pack=<cmd> origin` through (review of #1833); a shape fixes the length and every word, and a
+# slot may not start with "-", so no option can be smuggled into one. `git worktree` is never a two-token key: `list`
+# reads, `remove` destroys.
+READ_ONLY: tuple[tuple[str | None, ...], ...] = (
+    ("git", "ls-remote", "origin", None),
+    ("git", "worktree", "list", "--porcelain"),
+    ("git", "merge-base", "--is-ancestor", None, None),
 )
+
+# `git ls-remote` reads its pattern as a GLOB: `*`, `feat/*` and `feat/rea?` all match feat/real, so a reply naming
+# branch "*" verified any branch's head as READY (review of #1833, reproduced). A branch name must be a plain ref name.
+BAD_BRANCH = re.compile(r"[*?\[\\\s]|^-|\.\.|^$")
 
 SHA = re.compile(r"[0-9a-f]{40}")
 
@@ -56,13 +65,24 @@ class ReadFailed(RuntimeError):
         self.returncode = returncode
 
 
+def allowed(argv: list[str]) -> bool:
+    return any(len(argv) == len(shape) and all(w == s if s is not None else not w.startswith("-")
+                                               for w, s in zip(argv, shape)) for shape in READ_ONLY)
+
+
 def run(argv: list[str], cwd: Path, execute=subprocess.run, ok_codes: tuple[int, ...] = (0,)) -> tuple[int, str]:
     """A read from READ_ONLY, or an exception. `ok_codes` names the non-zero codes that are ANSWERS, not failures:
     `merge-base --is-ancestor` says "no" with exit 1, and folding that into "the read failed" would hide a real
-    mismatch behind an unknown."""
-    if not any(tuple(argv[:len(p)]) == p for p in READ_ONLY):
-        raise WriteAttempted(f"refused: {' '.join(argv[:3])} is not a read this round needs")
-    r = execute(argv, cwd=cwd, capture_output=True, text=True, timeout=60)
+    mismatch behind an unknown. A read that hangs or whose binary is missing is a failed read (exit 3), never a
+    traceback."""
+    if not allowed(argv):
+        raise WriteAttempted(f"refused: {' '.join(argv[:4])} is not a read this round needs, in the exact shape it needs")
+    try:
+        r = execute(argv, cwd=cwd, capture_output=True, text=True, timeout=60)
+    except subprocess.TimeoutExpired:
+        raise ReadFailed(argv, 124, "timed out after 60 s")
+    except FileNotFoundError as exc:
+        raise ReadFailed(argv, 127, str(exc))
     if r.returncode not in ok_codes:
         raise ReadFailed(argv, r.returncode, r.stderr)
     return r.returncode, r.stdout
@@ -83,9 +103,14 @@ def plan(sessions: list[dict], me: str | None) -> list[tuple[str, str, str]]:
 
 
 def remote_head(branch: str, root: Path, runner=run) -> str | None:
-    _, out = runner(["git", "ls-remote", "origin", f"refs/heads/{branch}"], root)
-    line = out.strip().split("\n")[0] if out.strip() else ""
-    return line.split()[0] if line else None
+    """The head origin holds for EXACTLY refs/heads/<branch>, or None. Never line 1 of a glob's answer."""
+    ref = f"refs/heads/{branch}"
+    _, out = runner(["git", "ls-remote", "origin", ref], root)
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[1] == ref:
+            return parts[0]
+    return None
 
 
 def worktrees(root: Path, runner=run) -> set[str]:
@@ -118,6 +143,8 @@ def verify(sessions: list[dict], replies: list[dict], root: Path, base: str, me:
             f.append(f"head {head!r} is not a full 40-character SHA (a short or placeholder SHA is not a claim git can check)")
         elif not branch:
             f.append("no branch named, so the head cannot be checked")
+        elif BAD_BRANCH.search(str(branch)):
+            f.append(f"branch {branch!r} is not a plain ref name (git ls-remote would read it as a glob)")
         else:
             on_origin = remote_head(branch, root, runner)
             if on_origin is None:
@@ -132,6 +159,12 @@ def verify(sessions: list[dict], replies: list[dict], root: Path, base: str, me:
         row["state"] = "READY" if not f else "MISMATCH"
         rows.append(row)
     return rows
+
+
+def exit_code(rows: list[dict]) -> int:
+    """SKIP is not done: a session still holding a heavy run has not had the round, so `verify && compact` must not
+    compact yet (review of #1833). 0 means every session is READY, or is the coordinator."""
+    return 0 if all(r["state"] in ("READY", "SELF") for r in rows) else 1
 
 
 def handoff(rows: list[dict]) -> str:
@@ -158,7 +191,11 @@ def selftest() -> int:
         raise AssertionError("EXECUTED a command that is not a read")
 
     for argv in (["git", "worktree", "remove", "x"], ["git", "push", "origin", "x"], ["gh", "pr", "merge", "1"],
-                 ["git", "worktree", "prune"]):
+                 ["git", "worktree", "prune"],
+                 # #1833 review: options smuggled into an allowed read, and shapes one word too long or short.
+                 ["git", "ls-remote", "--upload-pack=touch /tmp/x", "origin"], ["git", "ls-remote", "--exec=x", "origin"],
+                 ["git", "ls-remote", "origin", "--upload-pack=x"], ["git", "merge-base", "--is-ancestor", "--help", "x"],
+                 ["git", "worktree", "list"], ["git", "ls-remote", "origin", "refs/heads/a", "extra"]):
         try:
             run(argv, Path("."), execute=never)
             failures.append(f"{argv} was NOT refused")
@@ -167,6 +204,32 @@ def selftest() -> int:
         except AssertionError as exc:
             failures.append(f"{argv}: {exc}")
 
+    # The three reads the round needs are ACCEPTED. Without this, narrowing READ_ONLY to nothing passes every refusal.
+    seen: list[list[str]] = []
+
+    def spy(argv, **_k):
+        seen.append(argv)
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    for argv in (["git", "ls-remote", "origin", "refs/heads/feat/a"], ["git", "worktree", "list", "--porcelain"],
+                 ["git", "merge-base", "--is-ancestor", "a" * 40, "origin/dev"]):
+        try:
+            run(argv, Path("."), execute=spy)
+        except Exception as exc:  # any refusal or crash is this fixture's failure, reported by name
+            failures.append(f"accept: {argv} was refused: {exc}")
+    check("accept: each of the three reads reached the executor", len(seen) == 3, str(seen))
+
+    def hang(argv, **_k):
+        raise subprocess.TimeoutExpired(argv, 60)
+
+    try:
+        run(["git", "worktree", "list", "--porcelain"], Path("."), execute=hang)
+        failures.append("timeout: a hung read did not raise ReadFailed")
+    except ReadFailed as exc:
+        check("timeout: a hung read is a failed read with code 124", exc.returncode == 124, str(exc))
+    except Exception as exc:
+        failures.append(f"timeout: a hung read escaped as {type(exc).__name__}, not ReadFailed")
+
     A, B, C = "a" * 40, "b" * 40, "c" * 40
     remote = {"feat/a": A, "feat/c": "d" * 40}            # feat/b merged and deleted; feat/c's push did not land
     ancestors = {B}
@@ -174,8 +237,10 @@ def selftest() -> int:
 
     def stub(argv, root, ok_codes=(0,)):
         if argv[:2] == ["git", "ls-remote"]:
-            br = argv[3].removeprefix("refs/heads/")
-            return 0, (f"{remote[br]}\trefs/heads/{br}\n" if br in remote else "")
+            # As git does: the pattern is a glob, matched against every ref (the #1833 bypass).
+            import fnmatch
+            return 0, "".join(f"{sha}\trefs/heads/{br}\n" for br, sha in remote.items()
+                              if fnmatch.fnmatchcase(f"refs/heads/{br}", argv[3]))
         if argv[:3] == ["git", "worktree", "list"]:
             return 0, "".join(f"worktree {p}\nHEAD {A}\n\n" for p in tree)
         if argv[:3] == ["git", "merge-base", "--is-ancestor"]:
@@ -210,6 +275,26 @@ def selftest() -> int:
     check("verify: an unpushed, unmerged branch is a MISMATCH",
           verify([{"name": "x"}], [{"name": "x", "ready": True, "branch": "feat/none", "head": C}], Path("."),
                  "origin/dev", None, runner=stub)[0]["state"] == "MISMATCH", "")
+    def one(reply):
+        return verify([{"name": "x"}], [{"name": "x", **reply}], Path("."), "origin/dev", None, runner=stub)[0]
+
+    g = one({"ready": True, "branch": "*", "head": A})
+    check("verify: a glob branch is refused, never matched against every ref", g["state"] == "MISMATCH"
+          and "plain ref name" in " ".join(g["findings"]), str(g))
+    g = one({"ready": True, "branch": "feat/?", "head": A})
+    check("verify: a glob branch is refused, never matched against every ref (?)", g["state"] == "MISMATCH", str(g))
+    check("verify: not ready is a MISMATCH even when the head checks out",
+          one({"ready": False, "branch": "feat/a", "head": A})["state"] == "MISMATCH", "")
+    nb = one({"ready": True, "head": A})
+    check("verify: no branch named is a MISMATCH", nb["state"] == "MISMATCH"
+          and "no branch named" in " ".join(nb["findings"]), str(nb))
+    def broad(argv, root, ok_codes=(0,)):   # an answer whose FIRST line is a different ref
+        return 0, f"{B}\trefs/heads/feat/a-old\n{A}\trefs/heads/feat/a\n"
+
+    check("remote_head: exact ref only, never line 1 of a broader answer",
+          remote_head("feat/a", Path("."), runner=broad) == A, "")
+    check("exit: a session still waiting on a heavy run (SKIP) is not done", exit_code([rows["s1"], rows["s4"]]) == 1, "")
+    check("exit: every session READY or the coordinator is done", exit_code([rows["s1"], rows["s2"]]) == 0, "")
     h = handoff(list(rows.values()))
     check("handoff: names who to resend to after their heavy run", "Send the round to s4" in h, h)
     check("handoff: names who to chase", "Chase s3, s5, s6, s7" in h, h)
@@ -254,7 +339,7 @@ def main() -> int:
         Path(a.board_out).write_text(json.dumps(rows, indent=2) + "\n", encoding="utf-8")
     if a.handoff_out:
         Path(a.handoff_out).write_text(handoff(rows), encoding="utf-8")
-    return 0 if all(r["state"] in ("READY", "SKIP", "SELF") for r in rows) else 1
+    return exit_code(rows)
 
 
 if __name__ == "__main__":

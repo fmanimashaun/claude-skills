@@ -13,7 +13,7 @@ GUARD = Guard(
     mutations=(
         Mutation(
             "the read-only boundary accepts anything, so the round can remove a worktree itself",
-            "    if not any(tuple(argv[:len(p)]) == p for p in READ_ONLY):",
+            "    if not allowed(argv):",
             "    if False:",
             "EXECUTED a command that is not a read",
         ),
@@ -46,6 +46,60 @@ GUARD = Guard(
             "                if code != 0:",
             "                if False:",
             "verify: an unpushed, unmerged branch is a MISMATCH",
+        ),
+        Mutation(
+            "an option is accepted in a positional slot (`ls-remote --upload-pack=<cmd>`)",
+            "else not w.startswith(\"-\")",
+            "else True",
+            "--upload-pack",
+        ),
+        Mutation(
+            "the allowlist accepts nothing, and only refusals are tested",
+            "    return any(len(argv) == len(shape)",
+            "    return False and any(len(argv) == len(shape)",
+            "accept: ",
+        ),
+        Mutation(
+            "a glob branch is matched against every ref again (the #1833 bypass)",
+            "        elif BAD_BRANCH.search(str(branch)):",
+            "        elif False:",
+            "verify: a glob branch is refused, never matched against every ref",
+        ),
+        Mutation(
+            "remote_head takes line 1 of a broader answer instead of the exact ref",
+            "        if len(parts) == 2 and parts[1] == ref:",
+            "        if len(parts) == 2:",
+            "remote_head: exact ref only",
+        ),
+        Mutation(
+            "a head origin does not hold is accepted",
+            "            elif on_origin != head:",
+            "            elif False:",
+            "verify: a head origin does not hold is a MISMATCH",
+        ),
+        Mutation(
+            "a reply naming no branch passes",
+            "        elif not branch:",
+            "        elif False:",
+            "verify: no branch named is a MISMATCH",
+        ),
+        Mutation(
+            "a reply that says not ready passes when its head checks out",
+            "        if r.get(\"ready\") is not True:",
+            "        if False:",
+            "verify: not ready is a MISMATCH even when the head checks out",
+        ),
+        Mutation(
+            "a session still waiting on a heavy run counts as done, so `verify && compact` compacts early",
+            "    return 0 if all(r[\"state\"] in (\"READY\", \"SELF\") for r in rows) else 1",
+            "    return 0 if all(r[\"state\"] in (\"READY\", \"SKIP\", \"SELF\") for r in rows) else 1",
+            "exit: a session still waiting on a heavy run (SKIP) is not done",
+        ),
+        Mutation(
+            "a hung read escapes as a traceback instead of a failed read",
+            "    except subprocess.TimeoutExpired:\n        raise ReadFailed(argv, 124, \"timed out after 60 s\")",
+            "    except subprocess.TimeoutExpired:\n        raise",
+            "timeout: ",
         ),
     ),
 )

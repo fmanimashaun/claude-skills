@@ -100,8 +100,8 @@ On Claude Code, each kind of waiting has a tool. Use it rather than a loop of `s
 
 | waiting for | use | what to know |
 |---|---|---|
-| a local session to finish (a review, a long run) | `SendMessage` with `notify_when_idle: true` | one notice when it next goes idle or exits; main conversation only, sessions on this machine only; dropped after 12 hours with no notice; v2.1.236+ in both sessions |
-| a state that flips (PR checks, a merge, the load average crossing a gate) | the **Monitor** tool, with a command that prints one line when the state changes | every watch has a deadline — 5 minutes by default, at most 30 — and ends with one notice, so re-arm it if still needed |
+| a local session to finish (a review, a long run) | `SendMessage` with `notify_when_idle: true` | one notice when it next goes idle or exits; main conversation only, sessions on this machine only; if no notice arrives within 12 hours the subscription is dropped and you are told; v2.1.236+ in both sessions |
+| a state that flips (PR checks, a merge, the load average crossing a gate) | the **Monitor** tool, with a command that prints one line when the state changes | every watch has a deadline — 5 minutes by default, at most 30 — and ends with one notice, so re-arm it if still needed. Monitor is not available on Amazon Bedrock, Google Cloud's Agent Platform or Microsoft Foundry, nor when `DISABLE_TELEMETRY` or `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` is set (on Windows, only with Git Bash); there, re-check with dynamic `/loop` instead |
 | a recurring pass (re-running this command) | dynamic `/loop`, which reschedules itself with `ScheduleWakeup` | it picks a delay between one minute and one hour; an iteration that neither reschedules nor stops gets one fallback wake-up about 20 minutes later |
 | the next session to read the state after a restart | the handoff file | a self-paced `/loop` and a Monitor watch are not restored on resume; `CronCreate` tasks are, but recurring ones expire after 7 days |
 
