@@ -35,6 +35,15 @@ the head is a moment later, so `gh pr merge … --match-head-commit <sha>` (or `
 `expectedHeadOid` on the GraphQL one) is required, with `<sha>` the PR's head: at least 7 hex digits, a prefix of it.
 The denial prints the exact command. A merge into any other branch needs no pin.
 
+**A promotion into ANOTHER repository needs a recorded verdict (#1686).** Judging a repository's first-boot and authorization
+evidence takes tens of seconds (35.7 s measured against a 2055-file `qa/`), and the hook has 15, so the judgement runs first,
+as its own command: `python3 "$CLAUDE_PLUGIN_ROOT/scripts/remote_evidence.py" --repo OWNER/REPO --sha FULL_SHA --record`. It
+writes a verdict, PASS or FAIL, under the plugin's data directory (`$CLAUDE_PLUGIN_DATA/remote-verdicts/`, never in a repository,
+so it cannot be committed), keyed by the repository, the exact commit and the evidence tree id (`git rev-parse <sha>:qa`). The gate
+only reads it: it recomputes all three and refuses on any mismatch, and a verdict is good for 30 minutes. A missing, stale,
+unparsable, mismatched or FAIL verdict refuses, and the denial names which one it was and the command to run. **The limit:** this
+guards against an accidental promotion, not against a session that hand-writes a PASS file.
+
 **One command, one branch.** The gate reads `HEAD` and the refs before the command runs, so it follows them through
 the command: after `git switch main`, a later `git merge`, `git pull` or push is judged as on `main`, and a push to
 `main` after a command that moves a ref or `HEAD` is refused (run them as separate commands). A branch change it
