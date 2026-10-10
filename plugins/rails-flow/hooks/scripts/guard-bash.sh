@@ -152,14 +152,18 @@ if hit '^(bundle[[:space:]]+exec[[:space:]]+)?(bin/)?(rails|rake)([[:space:]]+[^
   fi
 fi
 
+# `--mirror` always forces (every ref made to match), with or without a lease (#1783 review).
+if hit '^git[[:space:]]+push\b.*[[:space:]]--mirror\b'; then
+  deny "git push --mirror force-updates and deletes every remote branch to match yours; it requires explicit user approval."
+fi
 # #1706: a bundled `-fu` and a `+<ref>` refspec force as surely as `-f`, the `+` leading the refspec or after its colon (`HEAD:+main`).
 if hit '^git[[:space:]]+push\b.*([[:space:]]--force\b|[[:space:]]-[a-zA-Z]*f[a-zA-Z]*\b|[[:space:]]\+[^[:space:]]|:\+[^[:space:]])' && ! exempt '^git[[:space:]]+push\b.*--force-with-lease'; then
   deny "force-push is prohibited. Use --force-with-lease on your own feature branch only, never on main/dev/staging."
 fi
 # #1708: the protected branch is a whole ref (`main`, `HEAD:main`, `+dev`, `refs/heads/staging`), not the word inside `feature/main-menu`.
 # #1708 scope (#1783 review): deleting a protected branch on the remote, `git push origin :main` or `--delete main`.
-if hit '^git[[:space:]]+push\b.*[[:space:]]:(refs/heads/)?(main|master|dev|staging)([[:space:]]|$)' \
-   || { hit '^git[[:space:]]+push\b.*[[:space:]](--delete|-d)\b' && hit '^git[[:space:]]+push\b.*[[:space:]](refs/heads/)?(main|master|dev|staging)([[:space:]]|$)'; }; then
+if hit '^git[[:space:]]+push\b.*([[:space:]]:|=)(refs/heads/)?(main|master|dev|staging)([[:space:]]|$)' \
+   || { hit '^git[[:space:]]+push\b.*[[:space:]](--delete|-d)(\b|=)' && hit '^git[[:space:]]+push\b.*[[:space:]](refs/heads/)?(main|master|dev|staging)([[:space:]]|$)'; }; then
   deny "deleting a protected branch (main/dev/staging) on the remote requires explicit user approval."
 fi
 # `--all` and `--mirror` push every branch, the protected ones included (#1783 review).
@@ -171,6 +175,47 @@ fi
 # Leading short flags are allowed through (`-v -A`), `-A` may sit inside a bundle (`-vA`), and the
 # repo-root spellings `./` and `:/` count as `.` (#826). Verb at the START of a segment (#906).
 # #1706: long options and `--` may come first too (`add --verbose -A`, `add -- .`).
+# A `git add` PATHSPEC RESOLVED, not spelled (#1783 review): `./.`, `src/..`, `../x`, `./*` and `.*` stage as much as `.`, and
+# listing spellings one by one kept missing the next. Each argument after `git add` (options skipped until `--`) is resolved:
+# `.` and empty components dropped, `x/..` collapsed, a leading `:/` read as the repo root. A result that is the root, or goes
+# above it, is the whole tree; so is a lone `*` or `.*`. Bash only: it reads the normalised segments, so no new dependency.
+_add_whole_tree() {
+  [ "$degraded" = 1 ] && return 1   # the degraded path keeps the spelled rule below
+  local line w opts p comp depth out
+  local rest="$seg"$'\n'
+  while [ -n "$rest" ]; do
+    line="${rest%%$'\n'*}"; rest="${rest#*$'\n'}"
+    [[ $line =~ ^git[[:space:]]+add([[:space:]]|$) ]] || continue
+    opts=1
+    set -f
+    for w in ${line#git}; do
+      [ "$w" = add ] && continue
+      if [ "$opts" = 1 ]; then
+        [ "$w" = -- ] && { opts=0; continue; }
+        [[ $w == -* ]] && continue
+      fi
+      p="$w"
+      [[ $p == :/* ]] && p="${p#:/}"
+      depth=0; out=""
+      local IFS=/
+      for comp in $p; do
+        case "$comp" in
+          ''|.) ;;
+          ..) if [ "$depth" -gt 0 ]; then depth=$((depth - 1)); out="${out%/*}"; else set +f; return 0; fi ;;
+          *) depth=$((depth + 1)); out="$out/$comp" ;;
+        esac
+      done
+      unset IFS
+      out="${out#/}"
+      if [ -z "$out" ] || [ "$out" = '*' ] || [ "$out" = '.*' ]; then set +f; return 0; fi
+    done
+    set +f
+  done
+  return 1
+}
+if [[ "$seg" == *add* ]]; then
+  _add_whole_tree && deny "stage specific files, never 'git add -A' / 'git add .' (GUARDRAILS: no accidental secrets or stray files)."
+fi
 # `*` and `..` stage as much as `.` (#1783 review).
 if hit '^git[[:space:]]+add([[:space:]]+-[a-zA-Z-]*)*[[:space:]]+(-[a-zA-Z]*A[a-zA-Z]*\b|--all\b|\.{1,2}/?($|[[:space:]])|:/($|[[:space:]])|\*($|[[:space:]]))'; then
   deny "stage specific files, never 'git add -A' / 'git add .' (GUARDRAILS: no accidental secrets or stray files)."
@@ -194,7 +239,7 @@ if hit '^git[[:space:]]+clean\b.*([[:space:]]-[a-zA-Z]*f|[[:space:]]--force\b)' 
 fi
 if hit '^git[[:space:]]+checkout\b.*[[:space:]]--([[:space:]]|$)' \
    || hit '^git[[:space:]]+checkout([[:space:]]+[^[:space:]]+)*[[:space:]]+(\./?|:/)($|[[:space:]])' \
-   || hit '^git[[:space:]]+checkout\b.*[[:space:]](-f|--force)($|[[:space:]])'; then   # #1706: `checkout HEAD .`; review: `checkout -f` discards too
+   || hit '^git[[:space:]]+(checkout|switch)\b.*[[:space:]](-f|--force|--discard-changes)($|[[:space:]])'; then   # #1706: `checkout HEAD .`; review: `checkout -f` discards too
   deny "git checkout -- <path> / git checkout . overwrites uncommitted edits with no undo. To keep them: git stash push -m <why> -- <path>. To discard ONE file you own: git restore -- <that path>."
 fi
 if hit '^git[[:space:]]+restore\b.*[[:space:]](\./?|:/|\*)($|[[:space:]])' \
