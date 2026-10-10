@@ -43,12 +43,10 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from build_project_wiki import parse_schema, parse_yaml_subset  # noqa: E402  -- one reader each
+# one reader each, and ONE rule for which schema files are the project's (`schema_files`, `framework_owned`, decided in #1695 and shared since #1698 with the Data-Model page and the graph)
+from build_project_wiki import SCHEMA_RB, framework_owned, parse_schema, parse_yaml_subset, schema_files  # noqa: E402
 
-SCHEMA = Path("db/schema.rb")
-# The Solid trio: a Rails 8 app has all three by default and never classified their tables; reading them would turn the gate red for
-# every consumer, and only a file that holds nothing but `solid_*` tables is skipped. Decided in #1695; classifying `solid_*` (the queue holds job arguments) is a separate question.
-FRAMEWORK_SCHEMAS = frozenset({"cache_schema.rb", "queue_schema.rb", "cable_schema.rb"})
+SCHEMA = Path(SCHEMA_RB)
 INVENTORY = Path("config/privacy_inventory.yml")
 FLOW = re.compile(r"^\{(?P<body>.*)\}$")
 
@@ -106,22 +104,6 @@ def load_inventory(root: Path) -> dict[str, dict[str, dict]] | None:
             raise Unusable(f"{INVENTORY}: `{table}` must map columns, got {cols!r}")
         inv[table] = {col: _entry(v) for col, v in cols.items()}
     return inv
-
-
-def _solid_only(path: Path) -> bool:
-    """True when a framework-named schema file holds nothing but Solid tables: only then is it the framework's, not the project's."""
-    return all(table.startswith("solid_") for table in parse_schema(path.read_text(encoding="utf-8"))["tables"])
-
-
-def schema_files(root: Path) -> list[Path]:
-    """db/schema.rb first, then every other db/*_schema.rb a second database dumps, in name order."""
-    return [root / SCHEMA, *sorted((root / "db").glob("*_schema.rb"))]
-
-
-def framework_owned(path: Path) -> bool:
-    """A Solid trio file holding only `solid_*` tables. A cache_schema.rb with a table of the project's own is the project's: the
-    name alone decides nothing."""
-    return path.name in FRAMEWORK_SCHEMAS and _solid_only(path)
 
 
 def check(root: Path) -> tuple[int, list[str]]:
