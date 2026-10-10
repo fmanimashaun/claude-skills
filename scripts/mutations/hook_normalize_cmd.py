@@ -65,8 +65,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a backslash-newline does not join, so `git add\\<newline> -A` is two commands",
-            "if (JOIN) { BUF = substr(raw, 1, length(raw) - 1); next }",
-            "if (0) { next }",
+            "if (JOIN) { BUF = substr(raw, 1, length(raw) - 1); return }",
+            "if (0) { return }",
             "git add\\\\\\n -A",
         ),
         Mutation(
@@ -255,6 +255,78 @@ GUARD = Guard(
             '    next="$(printf \'%s\' "$level" | _inner_strings "$(( d > 0 ))" | _join_strings)"\n'
             '    [ -n "$next" ] || return 0\n    printf \'%s\\n\' "$next" | _normalize_one\n',
             'with an awk that exits 2',
+        ),
+        Mutation(
+            "a quoted operand of a git option is dropped when it sits in single quotes, so `git -C 'my repo' add -A` reads `add` as the directory",
+            'if (simple(w)) out = out w; else if (optval(out)) out = out "_"\n        i += j + 1; continue',
+            'if (simple(w)) out = out w\n        i += j + 1; continue',
+            "git -C 'my repo' add -A",
+        ),
+        Mutation(
+            'a quoted operand of a git option is dropped when it sits in double quotes, so `git -C "my repo" add -A` reads `add` as the directory',
+            'if (simple(w)) out = out w; else if (optval(out)) out = out "_"\n        i = j + 1; continue',
+            'if (simple(w)) out = out w\n        i = j + 1; continue',
+            'git -C "my repo" add -A',
+        ),
+        Mutation(
+            "a decoded ANSI-C operand of a git option is dropped, so `git -C $'my repo' add -A` reads `add` as the directory",
+            'if (simple(ANSIV)) out = out ANSIV; else if (optval(out)) out = out "_"',
+            'if (simple(ANSIV)) out = out ANSIV',
+            "git -C $'my repo' add -A",
+        ),
+        Mutation(
+            '--git-dir is not an option that takes a separate value, so `git --git-dir "a b" add -A` passes',
+            '(-C|-c|--git-dir|--work-tree|--namespace',
+            '(-C|-c|--work-tree|--namespace',
+            'git --git-dir "a b" add -A',
+        ),
+        Mutation(
+            '--work-tree is not an option that takes a separate value, so `git --work-tree "a b" add -A` passes',
+            '(-C|-c|--git-dir|--work-tree|--namespace',
+            '(-C|-c|--git-dir|--namespace',
+            'git --work-tree "a b" add -A',
+        ),
+        Mutation(
+            'an unclosed double quote does not span lines, so a `#` line inside it hides the command after it',
+            'if (j == 0) { if (!LEG) { OPENDQ = 1; return } out = out c; i++; continue }',
+            'if (j == 0) { out = out c; i++; continue }',
+            'echo "a\\n# not comment"; git add -A',
+        ),
+        Mutation(
+            'a quote that never closes is dropped instead of read line by line, so the command after it is never seen',
+            'n = DQN; DQN = 0; LEG = 1; AR = AR0',
+            'n = DQN; DQN = 0; LEG = 0; AR = AR0',
+            'echo "a; git add -A',
+        ),
+        Mutation(
+            '`$"..."` is not read as a double-quoted span by the dequoter, so `$"git" add -A` passes',
+            '      if (c == "$" && substr(s, i + 1, 1) == "\\"") { i++; continue }\n      if (c == "\\"") {\n        j = dq_end(s, i + 1)',
+            '      if (c == "\\"") {\n        j = dq_end(s, i + 1)',
+            '$"git" add -A',
+        ),
+        Mutation(
+            '`$"..."` is not read as a double-quoted span in a `-c` string, so `bash -c $"git add -A"` passes',
+            '      if (c == "$" && substr(s, i + 1, 1) == "\\"") { i++; continue }\n      if (c == "$" && substr(s, i + 1, 1) == "\\047") { ansic(s, i + 2); W = W ANSIV',
+            '      if (c == "$" && substr(s, i + 1, 1) == "\\047") { ansic(s, i + 2); W = W ANSIV',
+            'bash -c $"git add -A"',
+        ),
+        Mutation(
+            'a leading brace list is not expanded, so `{git,add,-A}` passes',
+            'if (i <= n && t[i] ~ /^\\{[^{}]*,[^{}]*\\}$/) {',
+            'if (0) {',
+            "'{git,add,-A}'",
+        ),
+        Mutation(
+            'the peel is not read again after a brace list, so `{sudo,git,add,.}` passes',
+            'n = k; i = peel(t, n)',
+            'n = k',
+            "'{sudo,git,add,.}'",
+        ),
+        Mutation(
+            'a brace word with no comma is expanded, so `{git} add -A` is read as git',
+            'if (i <= n && t[i] ~ /^\\{[^{}]*,[^{}]*\\}$/) {',
+            'if (i <= n && t[i] ~ /^\\{[^{}]*\\}$/) {',
+            "'{git} add -A'",
         ),
     ),
 )

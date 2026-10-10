@@ -22,6 +22,10 @@
 #     (`echo "a'b"; git add -A; echo "c'd"` lost the middle) and read a quoted word as a mention. It also un-quotes
 #     a heredoc delimiter (<<'EOF' -> <<EOF) so a REAL quoted-delimiter heredoc is seen, while a <<EOF inside a quote
 #     or a comment is not, and turns an arithmetic `<<` (`$((1<<2))`) into `< <` so it cannot open a heredoc.
+#     An UNCLOSED double quote spans lines as it does in the shell (#1717): the lines up to the one that closes it are read as one
+#     quoted span, so a `#` at the start of one of them is no comment. One that never closes is read line by line, as before, so
+#     nothing after it is hidden. `$"..."` is read as `"..."` (#1718). A quoted word that is the VALUE of a git option taking one
+#     (`-C "my repo"`) becomes a one-word placeholder, so the peel does not read the verb as the directory (#1709).
 #     THEN comments — quotes first so a '#' inside a string (-m "fix #43") is already gone and never mis-cut as a
 #     comment (which would drop a later segment → fail OPEN).
 #  3. Strip heredoc BODIES (unquoted text that quote-stripping cannot remove).
@@ -31,6 +35,7 @@
 #     git's global options (`-C`, `-c`, `--git-dir`, `--no-pager`, `--attr-source`, …); and an inline
 #     alias (`git -c alias.p=push p` presents as `git push`). So `FOO=1 git add -A`, `sudo -u x git
 #     add .`, `( git add -A )` and `git -C repo add -A` present as `git add …` at the START of a segment.
+#     A leading brace list is expanded first (#1719): `{git,add,-A}` presents as `git add -A`.
 #  5. #1472. A quoted span is stripped in step 2, so a command inside one was never seen:
 #     `bash -c 'git add -A'`, `eval "git push --force"`, `echo "$(git add -A)"`. `_inner_strings`
 #     lexes the RAW command (quotes, escapes, comments, redirects and heredoc bodies understood) and
@@ -187,8 +192,11 @@ _dequote() {
   }
   # One line -> OUT. Sets JOIN when the line ends in an unquoted backslash (the caller joins the next line and lexes again),
   # and appends every heredoc the line opens to NQ (committed by the caller once the line is final).
+  # #1709: the word before a deleted quoted span is a git option that takes a SEPARATE value (`-C "my repo"`). Deleting the span left
+  # `git -C add -A`, and the peel read `add` as the directory. A one-word placeholder keeps the operand where the shell has it.
+  function optval(o) { return o ~ /(^|[ \t])(-C|-c|--git-dir|--work-tree|--namespace|--attr-source|--config-env)[ \t]+$/ }
   function lex(s,    n, i, c, d, j, k, out, w, dash, word, quoted) {
-    n = length(s); i = 1; out = ""; JOIN = 0; NQN = 0
+    n = length(s); i = 1; out = ""; JOIN = 0; NQN = 0; OPENDQ = 0
     while (i <= n) {
       c = substr(s, i, 1)
       if (c == "\\") {
@@ -200,19 +208,23 @@ _dequote() {
       if (c == "\047") {
         j = index(substr(s, i + 1), "\047")
         if (j == 0) { out = out c; i++; continue }
-        w = substr(s, i + 1, j - 1); if (simple(w)) out = out w
+        w = substr(s, i + 1, j - 1); if (simple(w)) out = out w; else if (optval(out)) out = out "_"
         i += j + 1; continue
       }
+      # #1718: `$"..."` is read like `"..."` (the locale lookup falls back to the text), so the `$` goes and the span is lexed as an ordinary one.
+      if (c == "$" && substr(s, i + 1, 1) == "\"") { i++; continue }
       if (c == "\"") {
         j = dq_end(s, i + 1)
-        if (j == 0) { out = out c; i++; continue }
-        w = substr(s, i + 1, j - i - 1); if (simple(w)) out = out w
+        # #1717: an UNCLOSED double quote spans lines in the shell. The caller joins the following lines until one closes it (LEG: it never did, so the
+        # old reading stands: the quote is an ordinary character and the rest of the line stays visible, which can only block).
+        if (j == 0) { if (!LEG) { OPENDQ = 1; return } out = out c; i++; continue }
+        w = substr(s, i + 1, j - i - 1); if (simple(w)) out = out w; else if (optval(out)) out = out "_"
         i = j + 1; continue
       }
       if (c == "$" && substr(s, i + 1, 1) == "\047") {
         ansic(s, i + 2)
         if (!ANSIOK) { out = out c; i++; continue }
-        if (simple(ANSIV)) out = out ANSIV
+        if (simple(ANSIV)) out = out ANSIV; else if (optval(out)) out = out "_"
         i = ANSIEND; continue
       }
       if (c == "#" && (i == 1 || substr(s, i - 1, 1) == " " || substr(s, i - 1, 1) == "\t")) { out = out substr(s, i); break }
@@ -246,29 +258,50 @@ _dequote() {
     }
     OUT = out
   }
-  function reset() { INB = 0; QN = 0; QI = 0; BUF = ""; ACC = ""; AR = 0 }
-  # A batch boundary (#1504): one string ends, and every state of it ends with it.
-  $0 == "\002" { reset(); print; next }
-  INB {
-    # A heredoc body is not lexed. An UNQUOTED delimiter lets a backslash-newline join the body lines, as it does in bash (an odd run of
-    # backslashes is judged by the character before the last, which is enough for a body line), and
-    # the terminator is compared after the join; a quoted delimiter joins nothing. A CR is part of both words in bash.
-    line = $0
-    if (!QQ[QI] && line ~ /\\$/ && substr(line, length(line) - 1, 1) != "\\") { ACC = ACC substr(line, 1, length(line) - 1); next }
-    line = ACC line; ACC = ""
-    t = line; sub(/\r$/, "", t); if (QD[QI]) sub(/^\t+/, "", t)
-    print line
-    if (t == QW[QI]) { QI++; if (QI > QN) { INB = 0; QN = 0; QI = 0 } }
-    next
-  }
-  {
-    raw = BUF $0; lex(raw)
-    if (JOIN) { BUF = substr(raw, 1, length(raw) - 1); next }
+  function reset() { INB = 0; QN = 0; QI = 0; BUF = ""; ACC = ""; AR = 0; DQN = 0; AR0 = 0 }
+  # One finished logical line: lex it, print it, and commit the heredocs it opens. An unclosed double quote (#1717) holds it back instead:
+  # DQL[1..DQN] are the lines read since the quote opened, joined and lexed again by `step` once one of them closes it.
+  function process(raw) {
+    AR0 = AR; lex(raw)
+    if (JOIN) { BUF = substr(raw, 1, length(raw) - 1); return }
+    if (OPENDQ && !LEG) { BUF = ""; DQN = 1; DQL[1] = raw; return }
     BUF = ""
     print OUT
     if (NQN) { for (k = 1; k <= NQN; k++) { QN++; QW[QN] = NQW[k]; QD[QN] = NQD[k]; QQ[QN] = NQQ[k] } QI = 1; INB = 1 }
   }
-  END { if (BUF != "") { lex(BUF); print OUT } }
+  function step(line,    t, raw, k) {
+    if (INB) {
+      # A heredoc body is not lexed. An UNQUOTED delimiter lets a backslash-newline join the body lines, as it does in bash (an odd run of
+      # backslashes is judged by the character before the last, which is enough for a body line), and
+      # the terminator is compared after the join; a quoted delimiter joins nothing. A CR is part of both words in bash.
+      if (!QQ[QI] && line ~ /\\$/ && substr(line, length(line) - 1, 1) != "\\") { ACC = ACC substr(line, 1, length(line) - 1); return }
+      line = ACC line; ACC = ""
+      t = line; sub(/\r$/, "", t); if (QD[QI]) sub(/^\t+/, "", t)
+      print line
+      if (t == QW[QI]) { QI++; if (QI > QN) { INB = 0; QN = 0; QI = 0 } }
+      return
+    }
+    if (DQN > 0 && !LEG) {
+      # Cost: a line that does not close the quote is only stored, so a long unclosed quote is not lexed again for every line it holds.
+      if (dq_end(line, 1) == 0) { DQL[++DQN] = line; return }
+      raw = DQL[1]; for (k = 2; k <= DQN; k++) raw = raw "\n" DQL[k]
+      raw = raw "\n" line; DQN = 0; AR = AR0
+      process(raw); return
+    }
+    process(BUF line)
+  }
+  # The quote never closed (the end of the input, or a batch boundary): read those lines one at a time, as before #1717.
+  function flushdq(    n, k, held) {
+    if (DQN == 0) return
+    n = DQN; DQN = 0; LEG = 1; AR = AR0
+    for (k = 1; k <= n; k++) held[k] = DQL[k]
+    for (k = 1; k <= n; k++) step(held[k])
+    LEG = 0
+  }
+  # A batch boundary (#1504): one string ends, and every state of it ends with it.
+  $0 == "\002" { flushdq(); reset(); print; next }
+  { step($0) }
+  END { flushdq(); if (BUF != "") { lex(BUF); print OUT } }
   BEGIN { BAD = ";|&()<>$`\"\\# \t\n\r\f\v\047"; reset() }
   '
 }
@@ -282,6 +315,17 @@ _peel() {
   {
     n = split($0, t, " ")
     i = peel(t, n)
+    # #1719: the shell expands a leading brace list into words BEFORE it runs anything: `{git,add,-A}` runs `git add -A`. Expanded here, then the peel is
+    # read again, so `{sudo,git,add,.}` is seen too. Only a list of plain words with a comma (`{a,b}`; not `{`, `{ x; }` or `{1..3}`) is expanded.
+    if (i <= n && t[i] ~ /^\{[^{}]*,[^{}]*\}$/) {
+      m = split(substr(t[i], 2, length(t[i]) - 2), bw, ",")
+      split("", t2); k = 0
+      for (j = 1; j < i; j++) t2[++k] = t[j]
+      for (j = 1; j <= m; j++) if (bw[j] != "") t2[++k] = bw[j]
+      for (j = i + 1; j <= n; j++) t2[++k] = t[j]
+      split("", t); for (j = 1; j <= k; j++) t[j] = t2[j]
+      n = k; i = peel(t, n)
+    }
     if (i <= n) { w = t[i]; sub(/^\\/, "", w); t[i] = w }
     if (i <= n && isgit(t[i])) {
       split("", al); j = i + 1
@@ -419,6 +463,7 @@ _inner_strings() {
       c = substr(s, i, 1)
       if (c == "\\") { d = substr(s, i + 1, 1); if (d != "\n" && d != "") { W = W d; HAS = 1 } i += 2; continue }
       if (c == "\047") { j = index(substr(s, i + 1), "\047"); if (j == 0) break; W = W substr(s, i + 1, j - 1); HAS = 1; i += j + 1; continue }
+      if (c == "$" && substr(s, i + 1, 1) == "\"") { i++; continue }
       if (c == "$" && substr(s, i + 1, 1) == "\047") { ansic(s, i + 2); W = W ANSIV; HAS = 1; i = ANSIEND; continue }
       if (c == "\"") { i = dquote(s, i + 1); W = W DQV; HAS = 1; continue }
       if (c == "$" && substr(s, i + 1, 1) == "(") { j = subst_end(s, i + 2); emit(substr(s, i + 2, j - i - 2)); W = W substr(s, i, j - i + 1); HAS = 1; i = j + 1; continue }

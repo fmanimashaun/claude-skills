@@ -685,6 +685,18 @@ NEGATIVES_1472 = ["bash -c 'git add app/x.rb'", "bash -c 'git push origin featur
 # printed the quotes' CONTENT as it was written, so no rule matched. Each decodes (here, in bash) to a command that stages everything.
 POSITIVES_1613 = ["$'\\x67\\x69\\x74' add -A", "git $'\\x61dd' -A", "git add $'\\x2dA'", "git add $'\\055A'", "git add $'\\u002dA'",
                   "git $'a\\x64d' -A", "git $'\\x70ush' --force origin main", "git add -$'\\x41'"]
+# #1709 #1717 #1718 #1719: four more spellings the shell reads as the command (each measured against bash with git stubbed: bash ran it, the hook said nothing).
+# A quoted operand of a git option that takes a separate value; a `#` at the start of a line INSIDE a multi-line double quote; `$"..."`; a leading brace list.
+POSITIVES_LEXER = ['git -C "my repo" add -A', "git -C 'my repo' add -A", "git -C $'my repo' add -A", 'git --git-dir "a b" add -A', 'git --work-tree "a b" add -A',
+                   'git -C "my repo" -C "other dir" add -A', 'git -C dir add -A',
+                   'echo "a\n# not comment"; git add -A', 'echo "a\nb"; git add -A', 'echo "a\n\n# x\n# y"; git add -A',
+                   'echo "a; git add -A',
+                   '$"git" add -A', 'git add $"-A"', 'bash -c $"git add -A"',
+                   '{git,add,-A}', '{sudo,git,add,.}', 'FOO=1 {git,add,-A}', "bash -c '{git,add,-A}'", '{git,add,-A}; echo done']
+NEGATIVES_LEXER = ['git -C "my repo" status', "git -C 'my repo' status", 'git --git-dir "a b" status',
+                   'echo "a\n# git add -A"', 'echo "a\nb"', 'echo "a\n# not comment"; git status',
+                   'echo "$HOME"', 'echo $"git add -A"', 'git commit -m $"a b"',
+                   'echo {a,b}', 'echo {git,add,-A}', '{ git status; }', '{git} add -A', '{1..3}']
 # #1568: the other spellings of the same words that the sed-based quote strip read as a MENTION, plus the continuation and heredoc shapes
 # the shell reads differently from the normaliser (each measured against bash with git stubbed: bash ran the command, the hook said nothing).
 POSITIVES_1568 = ['git add "-A"', "git add '.'", "git 'add' -A", '"git" add -A', 'git push "--force" origin main', "git 'reset' --hard",
@@ -764,6 +776,13 @@ def guard_bash_fixtures() -> None:
         check(f"guard-bash (#1568): `{cmd!r}` is read as the shell reads it, and is blocked", run(cmd) == 2, "exit 0")
     for cmd in NEGATIVES_1568:
         check(f"guard-bash (#1568): CONTROL: `{cmd[:60]!r}` passes", run(cmd) == 0, "exit 2")
+    for cmd in POSITIVES_LEXER:
+        check(f"guard-bash (#1709 #1717 #1718 #1719): `{cmd!r}` is read as the shell reads it, and is blocked", run(cmd) == 2, "exit 0")
+    for cmd in NEGATIVES_LEXER:
+        check(f"guard-bash (#1709 #1717 #1718 #1719): CONTROL: `{cmd!r}` passes", run(cmd) == 0, "exit 2")
+    # #1717 cost: a quote that never closes holds every later line back, and must still be read in linear time (the hook's deadline is 6 s).
+    check("guard-bash (#1717): 20,000 lines under one unclosed quote are read, not hung, and the command after them is still seen",
+          run('echo "start\n' + "x\n" * 20000 + 'git add -A') == 2, "exit 0")
     # #1613: the decoder against bash ITSELF. `git $'BODY'` goes through normalize_segments; `printf %s $'BODY'` is what bash makes of it.
     # Compared only when bash's word is plain (no space or shell character), because only a plain word is kept; any other is deleted.
     lib = HOOKS / "lib" / "normalize_cmd.sh"
