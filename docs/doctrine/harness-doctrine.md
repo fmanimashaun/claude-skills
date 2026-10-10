@@ -148,7 +148,7 @@ checkable rather than atmospheric.
 
 | Mechanism | Kind | What it actually does |
 |---|---|---|
-| `plugins/rails-flow/hooks/scripts/stop-gate.sh` | `Stop` hook, blocking | Exit 2 when `app/`/`lib/` Ruby changed with no `spec/**/*_spec.rb` change; when a `feature/*`/`fix/*` branch has app changes and no `docs/acceptance/<slug>.md`; or when the changed specs are red. |
+| `plugins/rails-flow/hooks/scripts/stop-gate.sh` | `Stop` hook, blocking | Exit 2 when `app/`/`lib/` Ruby changed with no `spec/**/*_spec.rb` change; when a `feature/*`/`fix/*` branch has app changes and no `docs/product/acceptance/<slug>.md`; or when the changed specs are red. |
 | `plugins/qa-flow/hooks/scripts/release-gate.sh` | `PreToolUse[Bash]`, blocking | Exit 2 on a `dev → main` promotion unless `qa/CERTIFICATION` exists, its verdict is `PASS`, and its `sha` still matches `origin/dev`. Normalises the command first, so a promotion hidden in a heredoc or behind `git -C` is still caught. |
 | `plugins/rails-flow/hooks/scripts/guard-bash.sh` | `PreToolUse[Bash]`, blocking | The literal command shapes listed in §2 above. |
 | `.github/workflows/release.yml` (drift guard) | CI step, blocking | Rebuilds `dist/` with `package_core.py` and fails the release if `git status --porcelain -- dist/` is non-empty — deliberately `status`, not `diff --quiet`, so a **new** skill whose artifact was never committed also trips it. |
@@ -262,7 +262,7 @@ nothing carried it generally.
 check: a spec, a gate, a separate reviewing plugin, or an acceptance criterion agreed **in advance**.
 
 The advance part is load-bearing, and it is shipped (#125). `stop-gate.sh` blocks a `feature/*` or
-`fix/*` branch whose `app/`/`lib/` Ruby changed with no `docs/acceptance/<slug>.md`, then validates
+`fix/*` branch whose `app/`/`lib/` Ruby changed with no `docs/product/acceptance/<slug>.md`, then validates
 that file with `plugins/rails-flow/scripts/check_criteria.py`, which is itself a gate
 (`acceptance criteria` in `GATES`). The gate's own comment says why the ordering matters:
 
@@ -277,7 +277,7 @@ also why delegating execution to a cheaper model tier is only safe once criteria
 to be external to whoever is being cheap.
 
 Note the scoping, which follows §5: the criteria requirement fires only on the flow's own branch
-names. Demanding a `docs/acceptance/` file on every branch would break ad-hoc work that never entered
+names. Demanding a `docs/product/acceptance/` file on every branch would break ad-hoc work that never entered
 the flow — and "criteria before implementation" is a promise the flow made, not a rule about all Ruby
 edits.
 
@@ -295,7 +295,7 @@ P1 count and the `type:incorrect-doctrine` count. Both are stdout-becomes-contex
 **The self-contained work order now exists.** [#127](https://github.com/fmanimashaun/claude-skills/issues/127)
 asked for a per-unit file — goal, acceptance criteria, files in and explicitly out of scope,
 applicable guardrails, stop conditions, how to verify — so that execution does not depend on
-conversation state. `/rails-flow:handoff` writes `docs/handoff/<slug>.md` (per unit, **not** a root
+conversation state. `/rails-flow:handoff` writes `docs/product/handoff/<slug>.md` (per unit, **not** a root
 `HANDOFF.md`: concurrent branches each have one, and a single root file conflicts on every merge),
 and `check_handoff.py` rejects one that points at the conversation, leaves a `<placeholder>`, or
 restates a criterion instead of citing its id. This paragraph read *"#127 is open. Nothing in the
@@ -434,7 +434,7 @@ The harness generalisation:
 > **If you cannot diff it, you cannot gate it.**
 
 Every mechanism in this document is a text file in git for that reason — and so is every artefact they
-consume: `qa/CERTIFICATION`, `docs/acceptance/<slug>.md`, the fenced `deps` blocks in issue bodies,
+consume: `qa/CERTIFICATION`, `docs/product/acceptance/<slug>.md`, the fenced `deps` blocks in issue bodies,
 `docs/brain/*`. An opaque store cannot be a guarantee, because rung 3 of §4 is unavailable: you cannot
 mutate it on purpose and watch the gate go red.
 

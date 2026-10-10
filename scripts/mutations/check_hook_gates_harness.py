@@ -34,6 +34,68 @@ GUARD = Guard(
            # mutation reads as caught -- the harness reported this guard INERT until it was added (#1173).
            'plugins/rails-flow/scripts/ci_verdict_hint.py', 'plugins/rails-flow/scripts/session_reaper.py', 'plugins/rails-flow/scripts/process_containment.py'),
     mutations=(
+        # #1664: a timing result the MACHINE decided is a counted SKIP. Each mutation breaks one of the three conditions, the
+        # exit code, the counting, or the order of verdicts, so a STARVED result can no longer pass for a pass or hide a failure.
+        Mutation(
+            "a STARVED result is counted as a pass",
+            '            STARVED.append(f"{label}: {why}")      # NOT counted in CHECKS: a skip is not a pass (#1664)\n            return',
+            '            CHECKS += 1\n            return',
+            "starved: through check(), a STARVED result is NOT counted as a pass and NOT recorded as a failure, only listed",
+        ),
+        Mutation(
+            "a run with a STARVED skip exits 0, so the doctor reads it as ok",
+            "        return EXIT_STARVED, [f\"check_hook_gates selftest",
+            "        return 0, [f\"check_hook_gates selftest",
+            "finish: a STARVED skip with no failure exits EXIT_STARVED (3), never 0, and says so on its FIRST line",
+        ),
+        Mutation(
+            "a skip outranks a failure",
+            "    if failures:\n        return 1,",
+            "    if starved:\n        return EXIT_STARVED, [f\"STARVED {len(starved)}\"], []\n    if failures:\n        return 1,",
+            "finish: a failure outranks a skip",
+        ),
+        Mutation(
+            "a quiet machine excuses a deadline denial (the load condition is dropped)",
+            "and cpu_s < STARVED_MAX_CPU_S and load > cores)",
+            "and cpu_s < STARVED_MAX_CPU_S)",
+            "...and a machine under its cores never excuses a deadline denial",
+        ),
+        Mutation(
+            "a hook that burned CPU is excused (the CPU condition is dropped)",
+            "and cpu_s < STARVED_MAX_CPU_S and load > cores)",
+            "and load > cores)",
+            "...but a hook that burned 5 CPU seconds past its deadline is the HOOK's fault, at any load",
+        ),
+        Mutation(
+            "any failure is STARVED on a loaded machine (the marker condition is dropped)",
+            "and any(m in text for m in STARVED_MARKERS)",
+            "and True",
+            "...and a failure that is not a deadline or budget message is never STARVED",
+        ),
+        Mutation(
+            "the groups that test the timing itself are not exempt",
+            "and group not in STARVED_EXEMPT_GROUPS and any(m in text",
+            "and any(m in text",
+            "...and the groups that test the timing itself are exempt",
+        ),
+        Mutation(
+            "every subprocess's CPU is recorded as the hook's, so a git run after the hook overwrites it",
+            '    return isinstance(argv, (list, tuple)) and any("hooks/scripts/" in str(a) for a in argv)',
+            "    return True",
+            "only a hook script's run sets the CPU",
+        ),
+        Mutation(
+            "--strict-timing changes nothing, so a mutant that stalls a hook is read as a skip, not a catch",
+            "return (not (STRICT_TIMING if strict is None else strict) and",
+            "return (True and",
+            "with --strict-timing the same deadline denial is a FAILURE",
+        ),
+        Mutation(
+            "the core count is assumed, not read from os.cpu_count()",
+            "    return load, os.cpu_count() or 1",
+            "    return load, 1",
+            "starved: the core count comes from os.cpu_count()",
+        ),
         # #1599: `--match` runs only the fixtures a label names. Each mutation undoes one half of that.
         Mutation(
             "--match selects every check, so a narrowed mutant still runs the whole group",
@@ -111,8 +173,8 @@ GUARD = Guard(
         Mutation(
             # #1497
             '--only runs every group whatever it names',
-            'def run_groups(groups: list[str] | None, table: dict) -> None:\n    for name in (groups or list(table)):',
-            'def run_groups(groups: list[str] | None, table: dict) -> None:\n    for name in list(table):',
+            '    global _CURRENT_GROUP\n    for name in (groups or list(table)):',
+            '    global _CURRENT_GROUP\n    for name in list(table):',
             '--only runs exactly the groups it names',
         ),
         Mutation(
@@ -132,8 +194,8 @@ GUARD = Guard(
         Mutation(
             # review of PR #1506
             "a bare run executes no group, so the doctor's hook gates pass on nothing",
-            'def run_groups(groups: list[str] | None, table: dict) -> None:\n    for name in (groups or list(table)):',
-            'def run_groups(groups: list[str] | None, table: dict) -> None:\n    for name in (groups or []):',
+            '    global _CURRENT_GROUP\n    for name in (groups or list(table)):',
+            '    global _CURRENT_GROUP\n    for name in (groups or []):',
             'a bare run (no --only) runs every group',
         ),
         Mutation(

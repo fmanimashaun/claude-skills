@@ -604,6 +604,11 @@ def run() -> int:
         "    for f in failures: print('  - ' + f, file=sys.stderr)\n"
         "    sys.exit(1)\n"
         "print('ok')\n")
+    narrow_src = narrow_src.replace(
+        "ran, failures = [], []\n",
+        "if 'STARVE' in Path(s.__file__).read_text():\n"
+        "    print('check fixture-odd STARVED and NOT judged', file=sys.stderr); sys.exit(3)\n"
+        "ran, failures = [], []\n")
 
     def narrow_guard(mutation: mc.Mutation, needs_even: bool = False, narrow_with: str = "--match"):
         guard, root = _fixture_guard((mutation,))
@@ -690,6 +695,18 @@ def run() -> int:
         problems = mc.run_guard(guard)
         if not any("refused or crashed" in x for x in problems):
             FAILURES.append(f"#1599: a narrowed mutant that is REFUSED (exit 2) must be a problem, never a catch, got {problems}")
+    finally:
+        mc.REPO = original_repo
+
+    # A STARVED RUN IS NOT A CATCH (review of #1775). check_hook_gates exits 3 when a timing check was starved by the machine, and its output
+    # still quotes the label `expects` names: an UN-narrowed guard counted any non-zero exit with that label as caught.
+    guard, root, log = narrow_guard(mc.Mutation("a starved run", "n % 2 == 0", "n % 2 == 0  # STARVE", "fixture-odd"), narrow_with="")
+    mc.REPO = root
+    try:
+        _tick()
+        problems = mc.run_guard(guard)
+        if not any("STARVED, not judged" in x for x in problems):
+            FAILURES.append(f"#1775: an un-narrowed mutant whose run exits 3 (STARVED) must be a problem, never a catch, got {problems}")
     finally:
         mc.REPO = original_repo
 

@@ -35,7 +35,7 @@ the Button loader-spinner are the documented exception — `animate-spin size-4`
 The canonical way to render the **Prism mark** + wordmark — so no screen hand-rolls a text
 eyebrow. The three facet hues are **fixed brand colors** (brand.md: *never recolor facets*) — the
 one place raw brand hex is correct, not role tokens. Swap the inline paths for your exact asset
-from `docs/design-system/brand-assets/01-logos/` if the geometry differs.
+from `docs/design/assets/brand/01-logos/` if the geometry differs.
 
 ```ruby
 # frozen_string_literal: true
@@ -368,8 +368,8 @@ module Ui
     renders_one :title
     renders_one :actions   # the BODY is the block content, not a slot — same shape as Alert
     SIZE = { sm: "max-w-md", md: "max-w-lg", lg: "max-w-2xl", xl: "max-w-4xl", full: "max-w-full" }.freeze
-    # A DRAWER IS THIS COMPONENT AT AN EDGE (decision, no upstream): one dialog implementation, one
-    # focus trap, one Esc handler. `placement:` is the whole difference, so a drawer never needs a
+    # A DRAWER IS THIS COMPONENT AT AN EDGE (decision, no upstream): one dialog, one
+    # Esc path. `placement:` is the whole difference, so a drawer never needs a
     # second component -- and never needs a caller passing raw positioning classes, which is what an
     # invented `class:` argument would have meant. NOTE: only the OVERLAY drawer is this component.
     # A persistent push sidebar is not a dialog at all and must not come through here.
@@ -401,20 +401,27 @@ end
 ```
 ```erb
 <%# composition: title, body and actions in that order IS the dialog %>
-<%# modal_component.html.erb — rendered into <turbo-frame id="modal">; modal controller = trap+dismiss %>
-<%# FALLBACK SHAPE (as of 2026-10-10). The recommended Modal is a native <dialog> opened with showModal():
-    top layer, ::backdrop, inert background, initial focus, Esc and focus restore come from the platform,
-    aria-modal is redundant, and the controller is only an opener/closer plus backdrop-click close.
-    Use the div+trap below only where that cannot be used. See components.md, Modal / Dialog. %>
-<%# NO Escape key filter on this element. Escape belongs to the dismissable layer the controller
-    opens: it reads `e.key` itself AND respects the layer stack, so a nested overlay closes one
-    level. A `keydown.esc` filter does neither — Stimulus consults the filter only inside
-    `event instanceof KeyboardEvent`, so a bare `new Event("keydown")` skips it and empties this
-    frame. See stimulus.md, "A key filter is not a type check". %>
-<div data-controller="modal" class="fixed inset-0 z-50 flex inset-viewport">
-  <div class="fixed inset-0 bg-overlay/50 backdrop-blur-sm" data-action="click->modal#backdrop"></div>
-  <div class="<%= panel %>" role="dialog" aria-modal="true" aria-labelledby="<%= @labelledby %>"
-       data-modal-target="panel">
+<%# modal_component.html.erb — rendered into <turbo-frame id="modal">; modal controller = showModal + close %>
+<%# The recommended Modal is a native <dialog> opened with showModal(): top layer, ::backdrop, inert background,
+    initial focus, Esc and focus restore come from the platform. The <dialog> IS the full-viewport transparent
+    wrapper, so PLACEMENT / inset-viewport layout is unchanged, and a click on the transparent area or the
+    ::backdrop targets the dialog itself (HTML spec: "a pointer event that hits the ::backdrop pseudo element of
+    a dialog will result in event having a target of the dialog element itself"). `open:flex` because the UA
+    hides `dialog:not([open])`. No role="dialog" / aria-modal: the role is implicit and showModal() implies
+    aria-modal=true. `backdrop:bg-overlay/50` reads a theme variable inside ::backdrop, which inherits from its
+    originating element only in Chrome/Edge 122, Firefox 120, Safari 17.4+; older browsers show an untinted
+    backdrop and the dialog is still modal. Fallback: a div role="dialog" + hand-written trap, only where
+    <dialog> cannot be used (reference-implementation.md, focus_trap.js). %>
+<%# NO Escape key filter on this element. Escape is handled natively by the dialog's close request; a nested
+    layer (dropdown, popover) stops it by calling preventDefault on its own Escape keydown (see
+    reference-implementation.md, dismissable_layer.js), so one Esc closes one level. A `keydown.esc` filter
+    does neither — Stimulus consults the filter only inside `event instanceof KeyboardEvent`, so a bare
+    `new Event("keydown")` skips it. See stimulus.md, "A key filter is not a type check". %>
+<dialog data-controller="modal"
+        data-action="click->modal#backdrop close->modal#closed turbo:before-morph-attribute->modal#preventCloseOnMorphing"
+        aria-labelledby="<%= @labelledby %>"
+        class="fixed inset-0 m-0 size-full max-w-none max-h-none border-0 bg-transparent open:flex inset-viewport backdrop:bg-overlay/50">
+  <div class="<%= panel %>">
     <div class="box stack min-h-0" style="--space: var(--space-s)">
       <div class="cluster" style="--justify: space-between">
         <h2 id="<%= @labelledby %>" class="text-step-1 font-semibold"><%= title %></h2>
@@ -429,7 +436,7 @@ end
       <% if actions? %><div class="cluster" style="--justify: flex-end"><%= actions %></div><% end %>
     </div>
   </div>
-</div>
+</dialog>
 ```
 
 ## Dropdown — `app/components/ui/dropdown_component.rb`
@@ -1538,9 +1545,9 @@ Empty state — arranged. What goes wrong is not the Ruby: it is a `<button>` ne
   </div>
 <% end %>
 
-<%# ---- CART DRAWER. The documented Modal at an edge. aria-modal is a CLAIM; `inert` on ---- %>
-<%# the page behind is the mechanism that makes it true, and it is also what keeps the %>
-<%# drawer clear of 2.4.11 -- nothing behind an inert subtree can take focus at all. %>
+<%# ---- CART DRAWER. The documented Modal at an edge, so a native <dialog>: showModal() makes ---- %>
+<%# the page behind inert, which keeps the drawer clear of 2.4.11 -- nothing behind an inert %>
+<%# subtree can take focus. Only the div+trap fallback must set `inert` on the page itself. %>
 <%= render Ui::ModalComponent.new(size: :sm, placement: :right) do |m| %>
   <% m.with_title { "Basket" } %>
 

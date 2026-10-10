@@ -84,6 +84,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | gate | owner | runs | kind |
 |---|---|---|---|
 | design-flow LLM-tell detector | `design-flow` | `python3 plugins/design-flow/scripts/llm_tell_detector.py --selftest` | selftest |
+| design-flow asset home selftest | `design-flow` | `python3 plugins/design-flow/scripts/asset_home.py --selftest` | selftest |
 | design-flow brand pack lint | `design-flow` | `python3 plugins/design-flow/scripts/brand_pack_lint.py --selftest` | selftest |
 | design-flow brand packs conform | `design-flow` | `python3 plugins/design-flow/scripts/brand_pack_lint.py plugins/design-flow/brands/fidara plugins/design-flow/brands/reliance` | live check |
 | design-flow composition brief selftest | `design-flow` | `python3 plugins/design-flow/scripts/compose_brief.py --selftest` | selftest |
@@ -106,6 +107,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | design-flow variant conformance | `design-flow` | `python3 plugins/design-flow/scripts/variant_conformance.py --selftest` | selftest |
 | pipeline apm advisory | `pipeline` | `python3 plugins/pipeline/scripts/apm_advisory.py --selftest` | selftest |
 | pipeline committed-secret scan | `pipeline` | `python3 plugins/pipeline/scripts/scan_committed_secrets.py --selftest` | selftest |
+| pipeline git guards | `pipeline` | `python3 plugins/pipeline/scripts/git_guard_selftest.py` | live check |
 | pipeline hook install | `pipeline` | `python3 plugins/pipeline/scripts/install_git_hooks_selftest.py` | live check |
 | pipeline kamal destination | `pipeline` | `python3 plugins/pipeline/scripts/kamal_destination.py --selftest` | selftest |
 | pipeline status board | `pipeline` | `python3 plugins/pipeline/scripts/status_board.py --selftest` | selftest |
@@ -134,6 +136,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | hook gates (release) | `rails-flow` | `python3 plugins/rails-flow/scripts/check_hook_gates.py --selftest --part b` | selftest · 600s budget |
 | hook gates (worktree) | `rails-flow` | `python3 plugins/rails-flow/scripts/check_hook_gates.py --selftest --part c` | selftest · 600s budget |
 | issue readiness | `rails-flow` | `python3 plugins/rails-flow/scripts/check_issue_ready.py --selftest` | selftest |
+| label-new-issue selftest | `rails-flow` | `python3 plugins/rails-flow/scripts/label_new_issue.py --selftest` | selftest |
 | mod unit tests | `rails-flow` | `python3 plugins/rails-flow/scripts/check_mods.py` | live check |
 | pipeline tiers | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --agents plugins/pipeline/agents --tiers plugins/pipeline/reference/model-tiers.md` | live check |
 | project gates | `rails-flow` | `python3 plugins/rails-flow/scripts/project_gates.py --selftest` | selftest |

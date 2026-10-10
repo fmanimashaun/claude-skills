@@ -15,6 +15,19 @@ GUARD = Guard(
         "plugins",
         "evals", "plugins/rails-flow/scripts/process_containment.py"),
     mutations=(
+        # #1664: a gate that exits 3 because its timing checks were STARVED is a skip, and a skip refuses a release proof.
+        Mutation(
+            "a STARVED gate (exit 3) is read as a failure-free ok instead of a skip",
+            "            elif code == 3:\n",
+            "            elif code == 99:\n",
+            "a gate that exits 3 because its timing checks were STARVED is a SKIP, never ok",
+        ),
+        Mutation(
+            "a skip no longer refuses a release proof",
+            "    skipped = [r.name for r in gate_results if r.status == SKIP]\n    if rc != 0 or skipped:",
+            "    skipped = []\n    if rc != 0 or skipped:",
+            "a sweep with a STARVED gate must REFUSE to be recorded as a proof",
+        ),
         # #1635: a backgrounded doctor inherits SIGINT ignored; it must reset it, and only then.
         Mutation(
             "main never takes the SIGINT reset",

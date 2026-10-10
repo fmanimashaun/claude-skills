@@ -8,7 +8,8 @@ GUARD = Guard(
     # The LAY-017 fixture (#476) re-derives its measurement from the REAL band table, so the
     # doc has to be staged. Without it the baseline selftest fails in the tempdir and every
     # mutation below is INERT -- which run_baseline reported rather than passing silently.
-    needs=("skills/design-system/references/page-anatomies.md",
+    needs=("plugins/design-flow/scripts/asset_home.py",   # #1779: compose_brief imports it
+           "skills/design-system/references/page-anatomies.md",
            "skills/design-system/references/coverage.md",
            "skills/design-system/references/foundations-tokens.md",
            # #639. It now imports the band parser from the shipped plugin rather than
