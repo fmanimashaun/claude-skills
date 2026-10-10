@@ -56,6 +56,11 @@ SEVERITY_MAP = {
     "p3": "low", "minor": "low", "low": "low", "suggestion": "low", "advisory": "low", "info": "low",
 }
 DATED = re.compile(r"^\d{4}-\d{2}-\d{2}")
+# A severity word written into the category ("claims-vs-enforcement (BLOCKING)", "Suggestion coverage-gap") splits one recurring class into
+# several one-off groups. Leading or trailing severity words, with or without parentheses, are stripped and the case folded; nothing else
+# is merged (a different phrase is a different category), and the report lists every spelling it merged.
+SEVERITY_WORDS = r"(?:blocking|blocker|suggestion|advisory|major|minor|medium|low|info|p[123])"
+EDGE = re.compile(rf"^(?:\(?{SEVERITY_WORDS}\)?[\s:,-]+)+|(?:[\s:,-]+\(?{SEVERITY_WORDS}\)?)+$", re.IGNORECASE)
 
 
 class Unusable(Exception):
@@ -113,6 +118,15 @@ def text_of(value) -> str:
     return value.strip() if isinstance(value, str) and value.strip() else ""
 
 
+def category_of(record) -> tuple[str, str]:
+    """(the key records are grouped by, the spelling as written); a missing category is NO_CATEGORY."""
+    raw = text_of(record.get("category"))
+    if not raw:
+        return NO_CATEGORY, NO_CATEGORY
+    key = " ".join(EDGE.sub("", raw).lower().split())
+    return (key or raw.lower()), raw
+
+
 def level_of(raw) -> str | None:
     return SEVERITY_MAP.get(raw.strip().lower()) if isinstance(raw, str) else None
 
@@ -129,15 +143,17 @@ def file_pattern(file_field) -> str | None:
 
 def analyse(items, min_prs):
     """`items` is [(source, record)]. Returns the numbers the report is written from."""
-    by_cat = defaultdict(list)
+    by_cat, spellings = defaultdict(list), defaultdict(Counter)
     for source, record in items:
-        by_cat[text_of(record.get("category")) or NO_CATEGORY].append((source, record))
+        key, raw = category_of(record)
+        by_cat[key].append((source, record))
+        spellings[key][raw] += 1
     sig_sources, sig_cat = defaultdict(set), {}
     for source, record in items:
         sig = text_of(record.get("signature")) or text_of(record.get("rule"))
         if sig:
             sig_sources[sig].add(source)
-            sig_cat.setdefault(sig, text_of(record.get("category")) or NO_CATEGORY)
+            sig_cat.setdefault(sig, category_of(record)[0])
     groups = []
     for category, members in by_cat.items():
         sources = sorted({s for s, _ in members})
@@ -152,7 +168,7 @@ def analyse(items, min_prs):
             mechanical = f"a signature that recurs in 2+ sources: {', '.join(repeated[:3])}"
         elif recurs and top and top_n / len(members) >= DOMINANT and len(pattern_sources) >= min_prs:
             mechanical = f"a file pattern {top} ({top_n} of {len(members)} records, {len(pattern_sources)} sources)"
-        groups.append({"category": category, "records": members, "sources": sources, "levels": levels, "recurs": recurs,
+        groups.append({"category": category, "spellings": dict(spellings[category]), "records": members, "sources": sources, "levels": levels, "recurs": recurs,
                        "mechanical": mechanical, "repeated": repeated})
     groups.sort(key=lambda g: (-len(g["sources"]), -len(g["records"]), g["category"]))
     recurring_sigs = sorted(((sig, len(srcs)) for sig, srcs in sig_sources.items() if len(srcs) >= 2), key=lambda x: (-x[1], x[0]))
@@ -160,7 +176,7 @@ def analyse(items, min_prs):
 
 
 def cite(members, limit=6):
-    cited = [f"{source}:{text_of(record.get('id')) or '?'}" for source, record in members]
+    cited = [f"{source}:{record['id'] if isinstance(record.get('id'), (str, int)) and str(record.get('id')).strip() else '?'}" for source, record in members]
     shown = ", ".join(cited[:limit])
     return shown + (f", +{len(cited) - limit} more" if len(cited) > limit else "")
 
@@ -185,10 +201,19 @@ def render(day, root, min_prs, filters, files, items, skipped, excluded_undated,
         lines.append(f"| {level} | {sum(raw[level].values())} | {spellings} |")
     lines += ["", "`unmapped` is a spelling this does not know (or a state such as `resolved`); it is listed, never guessed.", "",
               "## Recurrence by category", "", "| category | records | sources | high | medium | low | unmapped | recurs |", "|---|---|---|---|---|---|---|---|"]
-    for group in groups:
+    shown = [g for g in groups if len(g["sources"]) >= 2 or g["category"] == NO_CATEGORY]
+    for group in shown:
         lv = group["levels"]
         lines.append(f"| {group['category']} | {len(group['records'])} | {len(group['sources'])} | {lv['high']} | {lv['medium']} | {lv['low']} | "
                      f"{lv['unmapped']} | {'yes' if group['recurs'] else 'no'} |")
+    singles = [g["category"] for g in groups if g not in shown]
+    if singles:
+        lines += ["", f"{len(singles)} categor(y/ies) appear in a single source and are not tabled: " + ", ".join(f"`{c}`" for c in singles[:20])
+                  + (f", and {len(singles) - 20} more" if len(singles) > 20 else "") + "."]
+    merged = [(g["category"], g["spellings"]) for g in groups if len(g["spellings"]) > 1]
+    if merged:
+        lines += ["", "Category spellings merged (a severity word written into the category is stripped, nothing else):"]
+        lines += [f"- `{key}`: " + ", ".join(f"`{raw}` x{n}" for raw, n in sorted(sp.items(), key=lambda x: (-x[1], x[0]))) for key, sp in merged[:15]]
     lines += ["", "## Signatures that recur (2+ sources)", ""]
     lines += ([f"- `{sig}`: {n} sources" for sig, n in recurring_sigs[:15]] if recurring_sigs else
               [f"None: {distinct_sigs} distinct signature(s)/rule(s), each in a single source."])
@@ -205,6 +230,10 @@ def render(day, root, min_prs, filters, files, items, skipped, excluded_undated,
             if group["mechanical"]:
                 lines += [f"- **mechanical candidate**: {group['mechanical']}.",
                           "- Propose a deterministic check, in order of preference: a rubocop cop, a repo lint, a spec helper, a hook. A person decides whether the pattern is fixed enough."]
+                for sig in group["repeated"][:2]:
+                    seen = [(s, text_of(r.get("issue"))[:110]) for s, r in members if (text_of(r.get("signature")) or text_of(r.get("rule"))) == sig][:3]
+                    lines += [f"- Look before you trust `{sig}` (a signature is the reviewer's own label and can coincide, such as a numbered criterion in different PRs): "
+                              + "; ".join(f"{s}: \"{issue}\"" for s, issue in seen)]
             else:
                 lines += ["- **judgement**: no shared file pattern or repeated signature. Propose a line in the project's review doctrine, not a check."]
             lines += [f"- Findings behind it: {cite(members)}.", ""]
@@ -292,6 +321,7 @@ def selftest() -> int:
         check("a recurring category is reported", "### claims-vs-enforcement: 6 record(s) in 3 sources" in text, text)
         check("the file pattern makes it a mechanical candidate", "**mechanical candidate**: a file pattern app/models/**/*.rb" in text, text)
         check("the findings behind it are cited", "prs/pr-1:F1" in text and "prs/pr-3:G3" in text, text)
+        check("a numeric id is cited, not '?'", cite([("prs/x", {"id": 7})]) == "prs/x:7" and cite([("prs/x", {})]) == "prs/x:?", cite([("prs/x", {"id": 7})]))
         check("the preference order is named", "a rubocop cop, a repo lint, a spec helper, a hook" in text, text)
         # 2. the same count with scattered files is judgement
         b = Path(tmp) / "b"
@@ -300,13 +330,20 @@ def selftest() -> int:
         _, text = go(b)
         check("scattered files are judgement", "**judgement**" in text and "mechanical candidate" not in text, text)
         check("and the report says nothing mechanical recurs", "Nothing mechanical recurs" in text, text)
+        # 2b. a pattern few of the group's records share is not mechanical, however many sources carry it
+        lw = Path(tmp) / "lw"
+        for n in (1, 2, 3):
+            write(lw, f"prs/pr-{n}/pr-reviewer-findings.jsonl", [rec(f"F{n}", file="app/models/a.rb"), rec(f"G{n}", file="docs/x.md"), rec(f"H{n}", file="qa/y.ts"), rec(f"J{n}", file="lib/z.rb")])
+        _, text = go(lw)
+        check("a low-dominance pattern is not mechanical", "**judgement**" in text and "mechanical candidate" not in text, text)
         # 3. a repeated signature (2 sources) in a category that recurs is mechanical even with scattered files
         c = Path(tmp) / "c"
         for n, f in ((1, "app/a.rb"), (2, "docs/x.md"), (3, "qa/y.ts")):
             write(c, f"prs/pr-{n}/pr-reviewer-findings.jsonl", [rec(f"F{n}", file=f, sig="dead-flag:Foo" if n < 3 else "other")])
         _, text = go(c)
-        check("a repeated signature is a mechanical candidate", "a signature that recurs in 2+ sources: dead-flag:Foo" in text, text)
+        check("a repeated signature is a mechanical candidate", "a signature that recurs in 2+ sources: dead-flag:Foo." in text, text)
         check("and is listed under recurring signatures", "- `dead-flag:Foo`: 2 sources" in text, text)
+        check("a signature candidate shows the issue text so a person can see a coincidence", "Look before you trust `dead-flag:Foo`" in text and 'prs/pr-1: "x"' in text, text)
         # 4. all singletons: it says so
         d = Path(tmp) / "d"
         for n in (1, 2):
@@ -328,10 +365,25 @@ def selftest() -> int:
         spellings = ["P1", "blocker", "BLOCKING", "P2", "major", "medium", "P3", "minor", "low", "SUGGESTION", "advisory", "info", "resolved", "weird", "p1"]
         write(f, "prs/pr-1/x-findings.jsonl", [rec(f"S{i}", severity=s) for i, s in enumerate(spellings)] + [{"id": "N", "category": "c", "file": "a/b.rb"}])
         _, text = go(f)
-        check("high maps P1, blocker, BLOCKING (and lower-case p1)", "| high | 4 | `P1` x1, `BLOCKING` x1, `blocker` x1, `p1` x1 |" in text, text)
+        check("high maps P1, blocker, BLOCKING (and lower-case p1)", "| high | 4 | `BLOCKING` x1, `P1` x1, `blocker` x1, `p1` x1 |" in text, text)
         check("medium maps P2, major, medium", "| medium | 3 | `P2` x1, `major` x1, `medium` x1 |" in text, text)
         check("low maps P3, minor, low, SUGGESTION, advisory, info", "| low | 6 |" in text and "`SUGGESTION` x1" in text, text)
         check("a state and an unknown spelling and a missing one are unmapped and listed", "| unmapped | 3 | `(none)` x1, `resolved` x1, `weird` x1 |" in text, text)
+        # 7b. a severity word in the category does not split it: one class, merged, and the spellings listed
+        m = Path(tmp) / "m"
+        for n, c in ((1, "claims-vs-enforcement"), (2, "claims-vs-enforcement (BLOCKING)"), (3, "Suggestion claims-vs-enforcement")):
+            write(m, f"prs/pr-{n}/x-findings.jsonl", [rec(f"M{n}", category=c)])
+        _, text = go(m)
+        check("severity-word spellings merge into one recurring category", "### claims-vs-enforcement: 3 record(s) in 3 sources" in text, text)
+        check("the merged spellings are listed", "`claims-vs-enforcement`: `Suggestion claims-vs-enforcement` x1, `claims-vs-enforcement` x1, `claims-vs-enforcement (BLOCKING)` x1" in text, text)
+        check("a different phrase is not merged", category_of({"category": "BLOCKING mock-up gate evidence"})[0] == "mock-up gate evidence" and category_of({"category": "d-109"})[0] != category_of({"category": "d-109 phone card"})[0])
+        check("a category that is only a severity word keeps its own spelling", category_of({"category": "BLOCKING"})[0] == "blocking", category_of({"category": "BLOCKING"}))
+        # 7c. single-source categories are summarised, not tabled
+        sgl = Path(tmp) / "sgl"
+        write(sgl, "prs/pr-1/x-findings.jsonl", [rec("A1", category="alpha"), rec("A2", category="beta")])
+        write(sgl, "prs/pr-2/x-findings.jsonl", [rec("B1", category="alpha")])
+        _, text = go(sgl)
+        check("a single-source category is summarised", "1 categor(y/ies) appear in a single source and are not tabled: `beta`" in text and "| beta |" not in text and "| alpha | 2 | 2 |" in text, text)
         # 8. unreadable lines are counted and named, not dropped
         g = Path(tmp) / "g"
         write(g, "prs/pr-1/x-findings.jsonl", [rec("A1")], extra_lines=["not json", "[1, 2]", ""])
