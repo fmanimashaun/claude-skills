@@ -713,8 +713,8 @@ GUARD = Guard(
         # #1803. The local delete of a non-protected ref is allowed; every protected, malformed or setting form stays refused.
         Mutation(
             'protected branch names are no longer refused, so update-ref -d refs/heads/main is allowed',
-            '    return bool(branch) and branch not in UPDATE_REF_PROTECTED',
-            '    return bool(branch)',
+            '    return (ref, no_deref) if branch and branch.casefold() not in _PROTECTED_FOLDED else None',
+            '    return (ref, no_deref) if branch else None',
             "unlisted shape 'git update-ref -d refs/heads/main': must be unjudgeable",
         ),
         Mutation(
@@ -737,9 +737,28 @@ GUARD = Guard(
         ),
         Mutation(
             'the allowance is switched off, so the review ref is refused again',
-            '        return _local_ref_delete(args)',
-            '        return False',
+            '        if found and (found[1] or not _symbolic_probe(found[0], workdir)):',
+            '        if False:',
             "classify 'git update-ref -d refs/remotes/review/1559': expected []",
+        ),
+        # #1803 security review: update-ref -d follows a symbolic ref and deletes its TARGET; the classifier must ask git, and compare names the way the filesystem does.
+        Mutation(
+            "the symbolic-ref probe is ignored, so deleting a symbolic alias of main is allowed",
+            '        if found and (found[1] or not _symbolic_probe(found[0], workdir)):',
+            '        if found:',
+            "unlisted shape 'git update-ref -d refs/remotes/review/alias': must be unjudgeable",
+        ),
+        Mutation(
+            "a protected name is compared case-sensitively, so refs/heads/MAIN is allowed",
+            '    return (ref, no_deref) if branch and branch.casefold() not in _PROTECTED_FOLDED else None',
+            '    return (ref, no_deref) if branch and branch not in UPDATE_REF_PROTECTED else None',
+            "unlisted shape 'git update-ref -d refs/heads/MAIN': must be unjudgeable",
+        ),
+        Mutation(
+            "a directory git cannot read reads as 'not symbolic', so the probe fails open",
+            '        return subprocess.run(cmd, capture_output=True, text=True, timeout=10).returncode != 1',
+            '        return subprocess.run(cmd, capture_output=True, text=True, timeout=10).returncode == 0',
+            "symbolic probe: a directory git cannot read must read as 'cannot say' (True), so the delete is refused",
         ),
     ),
 )

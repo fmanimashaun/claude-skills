@@ -1120,7 +1120,6 @@ GIT_SAFE = {
     "check-ref-format", "var", "verify-commit", "verify-tag", "sparse-checkout", "notes", "hash-object",
     "write-tree", "read-tree", "commit-tree", "mktree", "mktag", "unpack-file", "stripspace", "interpret-trailers",
     "maintenance", "remote", "config", "submodule", "bundle", "difftool", "citool", "gui", "gitk", "last-modified",
-    "update-ref",   # ONLY the local delete of a non-protected ref (#1803); `_git_read_only` refuses every other form
 }
 GIT_FLAGS = {"--no-pager", "-p", "--paginate", "-P", "--bare", "--no-replace-objects", "--literal-pathspecs",
              "--glob-pathspecs", "--noglob-pathspecs", "--icase-pathspecs", "--no-optional-locks",
@@ -1231,48 +1230,65 @@ def git_parse(seg: list[str], j: int):
 # whose branch name is not one of these. `HEAD`, the tags, `refs/replace/` (which changes what an object IS), a symbolic or stdin form, and any
 # command that SETS a ref stay refused: those move what main, dev or staging point at, or what a later push reads.
 UPDATE_REF_PROTECTED = {"main", "master", "dev", "staging", "HEAD"}
+# COMPARED CASE-INSENSITIVELY: on a case-insensitive filesystem (macOS by default) the loose ref `refs/heads/MAIN` is the FILE `main`, so a delete named
+# `MAIN` is a delete of main. The name the classifier reads must not differ from the ref git acts on.
+_PROTECTED_FOLDED = {n.casefold() for n in UPDATE_REF_PROTECTED}
 
 
-def _local_ref_delete(args: list[str]) -> bool:
-    """True only for `git update-ref [-m <reason>] [--no-deref] -d <ref> [<oldvalue>]` of a non-protected local ref."""
-    delete, positional, i = False, [], 0
+def _local_ref_delete(args: list[str]):
+    """`(ref, no_deref)` for `git update-ref [-m <reason>] [--no-deref] -d <ref> [<oldvalue>]` of a non-protected local ref, else None."""
+    delete, no_deref, positional, i = False, False, [], 0
     while i < len(args):
         a = args[i]
         if a == "-d":
             delete = True
         elif a == "--no-deref":
-            pass
+            no_deref = True
         elif a == "-m":
             i += 1
             if i >= len(args) or _opaque(args[i]):
-                return False
+                return None
         elif a.startswith("-") or _opaque(a):
-            return False          # --stdin, -z, --create-reflog, an unknown flag, or a word the shell has not expanded yet
+            return None           # --stdin, -z, --create-reflog, an unknown flag, or a word the shell has not expanded yet
         else:
             positional.append(a)
         i += 1
     if not delete or not 1 <= len(positional) <= 2:
-        return False
+        return None
     ref = positional[0]
     if len(positional) == 2 and not re.fullmatch(r"[0-9a-fA-F]{4,64}", positional[1]):
-        return False
-    if ref in UPDATE_REF_PROTECTED or any(c in ref for c in "*?[\\ ~^:") or ".." in ref or ref.endswith(("/", ".lock")):
-        return False
+        return None
+    if (ref.casefold() in _PROTECTED_FOLDED or any(c in ref for c in "*?[\\ ~^:") or ".." in ref or "@{" in ref or ref.endswith(("/", ".lock"))
+            or any(part == "" or part.startswith(".") for part in ref.split("/"))):
+        return None
     if ref.startswith("refs/heads/"):
         branch = ref[len("refs/heads/"):]
     elif ref.startswith("refs/remotes/"):
         remote, _, branch = ref[len("refs/remotes/"):].partition("/")
         if not remote or not branch:
-            return False
+            return None
     else:
-        return False
-    return bool(branch) and branch not in UPDATE_REF_PROTECTED
+        return None
+    return (ref, no_deref) if branch and branch.casefold() not in _PROTECTED_FOLDED else None
+
+
+def _probe_symbolic(ref: str, workdir: str | None) -> bool:
+    """True when `ref` is a symbolic ref, or when git cannot say (so the caller refuses). `git symbolic-ref -q` exits 0 for a symref and 1 for a regular or missing ref."""
+    cmd = ["git"] + (["-C", workdir] if workdir else []) + ["symbolic-ref", "-q", ref]
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=10).returncode != 1
+    except (OSError, subprocess.SubprocessError):
+        return True
+
+
+# `git update-ref -d <ref>` FOLLOWS a symbolic ref and deletes its TARGET (measured: `symbolic-ref refs/remotes/review/alias refs/heads/main`, then
+# `update-ref -d refs/remotes/review/alias`, and refs/heads/main is gone). The name the classifier reads is not the ref git deletes, so a delete is allowed
+# only with `--no-deref` (which deletes the symref itself) or when git says the ref is not symbolic. Looked up at call time so a selftest can replace it.
+_symbolic_probe = _probe_symbolic
 
 
 def _git_read_only(verb: str, args: list[str]) -> bool:
     """`git remote` and `git config` can repoint where a later push goes: only their read forms are safe."""
-    if verb == "update-ref":
-        return _local_ref_delete(args)
     if verb == "remote":
         sub = next((a for a in args if not a.startswith("-")), "")
         return sub in ("", "show", "get-url", "add")       # `add` cannot repoint an existing remote
@@ -1506,7 +1522,11 @@ def _git_effects_core(seg, j, cwd, current, flow, key):
         for kind in flow.promotion_kinds(key, "GIT_PULL"):
             out.append((kind, "-", _dir_word(cwd, workdir)))
         return out
-    if verb in GIT_SAFE and _git_read_only(verb, args):
+    if verb == "update-ref":
+        found = _local_ref_delete(args)     # #1803: ONLY the local delete of a non-protected, non-symbolic ref
+        if found and (found[1] or not _symbolic_probe(found[0], workdir)):
+            return []
+    elif verb in GIT_SAFE and _git_read_only(verb, args):
         return []
     raise Unjudgeable(f"git {verb!r} is not on the list of commands that cannot merge into main or publish")
 
@@ -1660,8 +1680,12 @@ def git_current(push: bool, workdir: str | None) -> str | None:
 
 
 def selftest() -> int:
+    global _symbolic_probe
     failures: list[str] = []
     os.environ["HOME"] = "/home/selftest"    # the cases below name directories through it (#1764); a real HOME would make them depend on the machine
+    # #1803: the classifier asks git whether a ref is symbolic. The cases below must not depend on a directory on this machine, so the probe is a fake that
+    # knows two symbolic aliases; the real probe is checked against real git, after the classify cases.
+    real_probe, _symbolic_probe = _symbolic_probe, (lambda ref, workdir: ref in ("refs/remotes/review/alias", "refs/heads/alias"))
 
     def cls(cmd, cur):
         return [ln for ln in classify(cmd, cur) if not ln.startswith("CTX ")]
@@ -1888,7 +1912,9 @@ def selftest() -> int:
                       ("git -C /tmp/r update-ref -d refs/remotes/review/1559", []),
                       ("git update-ref -d refs/heads/feature/x", []),
                       ("git update-ref -m gone -d refs/remotes/origin/feature/x abc123def", []),
-                      ("git update-ref --no-deref -d refs/heads/old", [])):
+                      ("git update-ref --no-deref -d refs/heads/old", []),
+                      # `--no-deref` deletes the symbolic ref ITSELF, not its target, so it is allowed even for an alias
+                      ("git update-ref --no-deref -d refs/remotes/review/alias", [])):
         try:
             got = cls(cmd, on_feature)
         except Unjudgeable as exc:
@@ -1901,6 +1927,25 @@ def selftest() -> int:
             failures.append(f"classify {cmd!r}: must be unjudgeable (the hook denies)")
         except Unjudgeable:
             pass
+    # #1803: the REAL probe against real git, including the attack itself: a symbolic alias of main, deleted without --no-deref, takes main with it.
+    import tempfile as _tf
+    with _tf.TemporaryDirectory() as _td:
+        def _git(*a):
+            return subprocess.run(["git", "-C", _td, "-c", "user.email=t@t", "-c", "user.name=t", *a], capture_output=True, text=True)
+        subprocess.run(["git", "init", "-q", "-b", "main", _td], capture_output=True)
+        _git("commit", "-q", "--allow-empty", "-m", "i")
+        _git("update-ref", "refs/remotes/review/1559", "HEAD")
+        _git("symbolic-ref", "refs/remotes/review/alias", "refs/heads/main")
+        for ref, want, why in (("refs/remotes/review/alias", True, "a symbolic ref"), ("refs/remotes/review/1559", False, "a regular ref"),
+                               ("refs/remotes/review/missing", False, "a ref that does not exist")):
+            if real_probe(ref, _td) is not want:
+                failures.append(f"symbolic probe: {ref} ({why}): expected {want}")
+        if real_probe("refs/heads/x", os.path.join(_td, "no-such-dir")) is not True:
+            failures.append("symbolic probe: a directory git cannot read must read as 'cannot say' (True), so the delete is refused")
+        _git("update-ref", "-d", "refs/remotes/review/alias")
+        if _git("show-ref", "--verify", "-q", "refs/heads/main").returncode == 0:
+            failures.append("premise: a plain update-ref -d of a symbolic alias no longer deletes its target; the probe may be unnecessary")
+
     # #1569: `gh api` and `gh release create`, classified by EFFECT.
     import tempfile
     with tempfile.TemporaryDirectory() as td:
@@ -2247,6 +2292,11 @@ def selftest() -> int:
         "git update-ref -d refs/heads/main", "git update-ref -d refs/heads/master", "git update-ref -d refs/heads/dev", "git update-ref -d refs/heads/staging",
         "git update-ref -d HEAD", "git update-ref -d refs/remotes/origin/main", "git update-ref -d refs/remotes/origin/dev", "git update-ref -d refs/remotes/origin/HEAD",
         "git update-ref -d refs/tags/v1", "git update-ref -d refs/replace/abc", "git update-ref refs/heads/x abc", "git update-ref refs/heads/x abc123def", "git update-ref refs/remotes/review/1 abc123def", "git update-ref -d $REF",
+        # a plain delete of a SYMBOLIC ref deletes its TARGET: `symbolic-ref refs/remotes/review/alias refs/heads/main; update-ref -d refs/remotes/review/alias` removed main
+        "git update-ref -d refs/remotes/review/alias", "git update-ref -d refs/heads/alias",
+        # the name the classifier reads must be the ref git acts on: case (a case-insensitive filesystem), reflog syntax, empty and dot components
+        "git update-ref -d refs/heads/MAIN", "git update-ref -d refs/heads/Dev", "git update-ref -d refs/remotes/origin/DEV", "git update-ref -d refs/heads//x",
+        "git update-ref -d refs/heads/./x", "git update-ref -d refs/heads/.hidden", "git update-ref -d refs/heads/a@{1}",
         "git update-ref -d refs/heads/$B", "git update-ref --stdin", "git update-ref -d refs/heads/*", "git update-ref -d", "git update-ref -d refs/heads/x a b",
         # ...and a delete in a CHAIN still counts as a command that moves refs (#1571), so a push to main after it in the same command is refused: split the command.
         "git update-ref -d refs/remotes/review/1559 && git push origin main",
@@ -2312,6 +2362,7 @@ def selftest() -> int:
     if NO in (0, 1) or UNJUDGEABLE == NO:
         failures.append(f"exit codes: NO={NO} must differ from 0, 1 (a crash) and UNJUDGEABLE")
     total = len(cases) + 5 + 12 + api_total
+    _symbolic_probe = real_probe     # the fake above was for this selftest only
     if failures:
         print(f"push_targets selftest FAILED -- {len(failures)} of {total}:", file=sys.stderr)
         for f in failures:
