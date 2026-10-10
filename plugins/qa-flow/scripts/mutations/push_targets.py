@@ -710,5 +710,36 @@ GUARD = Guard(
             "    if head in (\"cd\", \"pushd\", \"popd\"):",
             "function fixture 'f(){ git push; }; GIT_DIR=/x f': expected None",
         ),
+        # #1803. The local delete of a non-protected ref is allowed; every protected, malformed or setting form stays refused.
+        Mutation(
+            'protected branch names are no longer refused, so update-ref -d refs/heads/main is allowed',
+            '    return bool(branch) and branch not in UPDATE_REF_PROTECTED',
+            '    return bool(branch)',
+            "unlisted shape 'git update-ref -d refs/heads/main': must be unjudgeable",
+        ),
+        Mutation(
+            'any refs/ namespace is accepted, so the remote-tracking copy of a protected branch, tags and replace refs can be deleted',
+            '    if ref.startswith("refs/heads/"):',
+            '    if ref.startswith("refs/"):',
+            "unlisted shape 'git update-ref -d refs/remotes/origin/main': must be unjudgeable",
+        ),
+        Mutation(
+            'a ref is SET without -d is allowed, so update-ref moves a branch',
+            '    if not delete or not 1 <= len(positional) <= 2:',
+            '    if not 1 <= len(positional) <= 2:',
+            "unlisted shape 'git update-ref refs/heads/x abc123def': must be unjudgeable",
+        ),
+        Mutation(
+            'a word the shell has not expanded is read literally, so update-ref -d refs/heads/$B is allowed',
+            '        elif a.startswith("-") or _opaque(a):',
+            '        elif a.startswith("-"):',
+            "unlisted shape 'git update-ref -d refs/heads/$B': must be unjudgeable",
+        ),
+        Mutation(
+            'the allowance is switched off, so the review ref is refused again',
+            '        return _local_ref_delete(args)',
+            '        return False',
+            "classify 'git update-ref -d refs/remotes/review/1559': expected []",
+        ),
     ),
 )

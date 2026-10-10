@@ -2246,7 +2246,7 @@ def selftest() -> int:
         # hook reads origin/dev), tags and replace refs, any command that SETS a ref, the stdin form, and anything the shell has not expanded yet stay refused.
         "git update-ref -d refs/heads/main", "git update-ref -d refs/heads/master", "git update-ref -d refs/heads/dev", "git update-ref -d refs/heads/staging",
         "git update-ref -d HEAD", "git update-ref -d refs/remotes/origin/main", "git update-ref -d refs/remotes/origin/dev", "git update-ref -d refs/remotes/origin/HEAD",
-        "git update-ref -d refs/tags/v1", "git update-ref -d refs/replace/abc", "git update-ref refs/heads/x abc", "git update-ref -d $REF",
+        "git update-ref -d refs/tags/v1", "git update-ref -d refs/replace/abc", "git update-ref refs/heads/x abc", "git update-ref refs/heads/x abc123def", "git update-ref refs/remotes/review/1 abc123def", "git update-ref -d $REF",
         "git update-ref -d refs/heads/$B", "git update-ref --stdin", "git update-ref -d refs/heads/*", "git update-ref -d", "git update-ref -d refs/heads/x a b",
         # ...and a delete in a CHAIN still counts as a command that moves refs (#1571), so a push to main after it in the same command is refused: split the command.
         "git update-ref -d refs/remotes/review/1559 && git push origin main",
