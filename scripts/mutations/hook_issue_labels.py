@@ -731,6 +731,56 @@ GUARD = Guard(
             "                c_operand = _first_operand(words[1:])[0]",
             "(#1645 R2) a -c string that sources the file",
         ),
+        # #1711: a subcommand built at run time.
+        Mutation(
+            "`gh issue <word>` with a run-time word is allowed",
+            "        return len(operands) > 1 and _dynamic(operands[1])",
+            "        return False",
+            "(#1711) a variable: 'V=create; gh issue $V -t X' is refused",
+        ),
+        Mutation(
+            "`gh <variable> create` is allowed",
+            '        return any(_dynamic(w) or w in ("issue", "create", "new") for w in operands[1:])',
+            "        return False",
+            "(#1711) the group built at run time: 'S=issue; gh $S create -t X' is refused",
+        ),
+        Mutation(
+            "a backtick is no longer run-time text",
+            '    return "$" in word or "`" in word',
+            '    return "$" in word',
+            "(#1711) backticks: 'gh issue `echo create` -t X' is refused",
+        ),
+        Mutation(
+            "the value of -R is read as the subcommand",
+            '        elif w in ("-R", "--repo"):\n            skip = True',
+            '        elif False:\n            skip = True',
+            "(#1711) after the repo flag: 'gh -R o/r issue $V -t X' is refused",
+        ),
+        # #1714: a `gh api` create the endpoint pattern missed.
+        Mutation(
+            "a full URL is matched whole, so the host hides the endpoint",
+            '_ISSUES_ENDPOINT.match(_API_ORIGIN.sub("", endpoint))',
+            "_ISSUES_ENDPOINT.match(endpoint)",
+            "(#1714) a full URL: 'gh api -X POST https://api.github.com/repos/o/r/issues -f title=X' is refused",
+        ),
+        Mutation(
+            "the repository-id endpoint is not recognised",
+            r"|repositories/[^/\s]+)/(?:issues",
+            r")/(?:issues",
+            "(#1714) the repository id form: 'gh api -X POST repositories/123/issues -f title=X' is refused",
+        ),
+        Mutation(
+            "the import endpoint is not recognised",
+            "(?:issues|import/issues|issues/import)",
+            "(?:issues)",
+            "(#1714) the import endpoint: 'gh api -X POST repos/o/r/import/issues -f title=X' is refused",
+        ),
+        Mutation(
+            "a POST to a path built at run time is allowed",
+            "            if posts and endpoint and _dynamic(endpoint):",
+            "            if False:",
+            "(#1714) a path in a variable: 'P=repos/o/r/issues; gh api -X POST $P -f title=X' is refused",
+        ),
         Mutation(
             "recursion has no depth cap (a script that sources itself would never end)",
             "_MAX_DEPTH = 3 ",

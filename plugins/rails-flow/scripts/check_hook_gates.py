@@ -996,6 +996,13 @@ def guard_bash_fixtures() -> None:
                      ("alias g=gh; g issue list", "an alias used for something else"),
                      ("gh issue create -t X --body y --label bug --label severity:s2", "a direct labelled create")):
         check(f"guard-bash (#1515): CONTROL: `{cmd}` is allowed ({why})", labelled(cmd)[0] == 0)
+    # #1711, #1714: the trigger fires on a `$` or backtick beside a gh word -- the text names neither `issue create` nor `issues`.
+    for cmd, why in (("V=create; gh issue $V -t X --body y", "the verb in a variable"),
+                     ("gh issue $(echo create) -t X --body y", "the verb from a substitution"),
+                     ("P=repos/o/r/issues; gh api -X POST $P -f title=X", "the API path in a variable")):
+        rc, err = labelled(cmd)
+        check(f"guard-bash (#1711, #1714): `{cmd}` reaches the helper and is refused ({why})", rc == 2, err)
+    check("guard-bash (#1711, #1714): CONTROL: `gh issue list --label $L` reaches the helper and is allowed", labelled("gh issue list --label $L")[0] == 0)
     # #1671: a script's encoding must not hide its create. A UTF-8 BOM made the first word `\ufeffgh`; a UTF-16 file read as no command at all.
     create = b"gh issue create -t x -b y\n"
     enc_tree = {"bom.sh": b"\xef\xbb\xbf" + create, "plain.sh": create, "u16.sh": create.decode().encode("utf-16"),

@@ -116,6 +116,12 @@ GUARD = Guard(
             "_re_verb='gh[[:space:]].*issue[[:space:]]+(create|new)'",
             "guard-bash (#1515): `$(echo gh) issue create",
         ),
+        Mutation(
+            "a `$` or backtick beside a gh word no longer triggers the helper (#1711, #1714)",
+            ' \\\n   || rawhit "$cmd" "$_re_dynamic"',
+            '',
+            "guard-bash (#1711, #1714): `V=create; gh issue $V",
+        ),
         # #1342: each discarding form goes unblocked again, or its safe twin gets caught with it.
         Mutation(
             "git clean -f is allowed",

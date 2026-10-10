@@ -357,6 +357,38 @@ def _runs(text: str, depth: int, cwd: Path | None) -> bool:
     return depth < _MAX_DEPTH and hidden_create(text, depth + 1, cwd) is not None
 
 
+def _dynamic(word: str) -> bool:
+    """A word the shell fills in at run time: a variable, a substitution (shlex leaves a lone `$` where `$(` was), or a backtick."""
+    return "$" in word or "`" in word
+
+
+def runtime_subcommand(words: list[str]) -> bool:
+    """`gh` whose subcommand is built at run time, so a create cannot be told from a list (#1711).
+
+    Refused, and nothing wider: `gh issue <word>` where the word is not literal (`$V`, `${V}`, `$(echo create)`, backticks, `"$1"`, `"${a[0]}"`),
+    and `gh <word> …` where the first word is not literal and a later word is `issue`, `create`, `new` or not literal either
+    (`gh $S create`, `gh $A $B`). A literal subcommand (`gh issue list`, `gh pr $N`) and a lone `gh $X` are left alone. Flags are skipped,
+    and the owner's threat model is an honest mistake (#1470), so no shell is evaluated to find out what the word becomes.
+    """
+    if not words or os.path.basename(words[0]) != "gh":
+        return False
+    operands, skip = [], False
+    for w in words[1:]:
+        if skip:
+            skip = False                    # the value of `-R o/r`, which is not a subcommand
+        elif w in ("-R", "--repo"):
+            skip = True
+        elif not w.startswith("-"):
+            operands.append(w)
+    if not operands:
+        return False
+    if operands[0] == "issue":
+        return len(operands) > 1 and _dynamic(operands[1])
+    if _dynamic(operands[0]):
+        return any(_dynamic(w) or w in ("issue", "create", "new") for w in operands[1:])
+    return False
+
+
 def hidden_create(cmd: str, depth: int = 0, cwd: Path | None = None) -> str | None:
     """A `gh issue create` the parser cannot label-check, named by its shape, or None (#1423).
 
@@ -482,6 +514,8 @@ def hidden_create(cmd: str, depth: int = 0, cwd: Path | None = None) -> str | No
                 return "a `gh` word built at run time or aliased"
             if head == "issue" and tail[:1] and tail[0] in ("create", "new"):
                 return "a `gh` word built at run time (a substitution before `issue create`)"
+            if runtime_subcommand(words):
+                return "a `gh` subcommand built at run time"
             # `xargs` builds gh's arguments from its input (#1645 R2): `-a FILE`, a file `cat`/`tail` pipes in, or the text `echo` pipes in; with
             # `-I{}` the input replaces `{}` in the command. The verb arriving that way, side by side, is an unlabelled create.
             if "xargs" in peeled and head == "gh":
@@ -979,7 +1013,9 @@ def matches(label: str, pattern: str) -> bool:
     return label.startswith(pattern[:-1]) if pattern.endswith("*") else label == pattern
 
 
-_ISSUES_ENDPOINT = re.compile(r"^/?repos/[^/\s]+/[^/\s]+/issues/?(?:\?.*)?$")
+# Every spelling of "create an issue" the REST API has: the collection, by owner/name or by repository id, and the import endpoint (#1714).
+_ISSUES_ENDPOINT = re.compile(r"^/?(?:repos/[^/\s]+/[^/\s]+|repositories/[^/\s]+)/(?:issues|import/issues|issues/import)/?(?:\?.*)?$")
+_API_ORIGIN = re.compile(r"^https?://[^/\s]+/(?:api/v3/)?", re.I)    # a full URL names the host first (api.github.com, or an enterprise /api/v3/)
 
 
 def api_issue_post(cmd: str) -> str | None:
@@ -1025,7 +1061,9 @@ def api_issue_post(cmd: str) -> str | None:
                 elif endpoint is None:
                     endpoint = w
             posts = method == "POST" or (not method and sends)
-            if posts and endpoint and _ISSUES_ENDPOINT.match(endpoint):
+            if posts and endpoint and _dynamic(endpoint):
+                return f"`gh api` POST to a path built at run time ({endpoint})"      # (#1714) the way a run-time subcommand is refused
+            if posts and endpoint and _ISSUES_ENDPOINT.match(_API_ORIGIN.sub("", endpoint)):
                 return f"`gh api` POST to {endpoint}"
         else:
             seg.append(tok)
@@ -1034,6 +1072,9 @@ def api_issue_post(cmd: str) -> str | None:
 
 def verdict(cmd: str, root: Path) -> tuple[bool, str]:
     shape = hidden_create(cmd)
+    if shape == "a `gh` subcommand built at run time":
+        return False, (f"{shape}: `gh issue create` cannot be told from `gh issue list` here, so its labels cannot be checked. "
+                       "Write the subcommand out, with its --label flags (#1711).")
     if shape:
         if "cannot read" in shape or "cannot follow" in shape:
             return False, (f"{shape}, so a `gh issue create` in it cannot be label-checked, and the command is refused rather than let "
@@ -1042,6 +1083,9 @@ def verdict(cmd: str, root: Path) -> tuple[bool, str]:
                        "quoted string here). Run it directly, with its --label flags (#1423).")
     api = api_issue_post(cmd)
     if api:
+        if "built at run time" in api:
+            return False, (f"{api} may file an issue with no label check. Write the endpoint out, or file it with `gh issue create` and its "
+                           "--label flags (#1714).")
         return False, (f"{api} files an issue with no label check. File it with `gh issue create` and its --label flags (a template "
                        "never applies from the shell) (#1515).")
     creates = issue_creates(cmd)
@@ -1587,6 +1631,50 @@ def selftest() -> int:
                           ("echo issue create | cat", "the verb piped to cat, not to xargs gh"),
                           ("gh issue create -t X --body y --label feature", "a direct labelled create still passes")):
             check(f"(#1515) CONTROL: {cmd!r} is allowed ({why_})", verdict(cmd, bare)[0])
+
+        # #1711: A SUBCOMMAND BUILT AT RUN TIME cannot be told from a list, so it is refused. Controls keep literal subcommands allowed.
+        for cmd, why_ in (("V=create; gh issue $V -t X", "a variable"),
+                          ("V=create; gh issue ${V} -t X", "a braced variable"),
+                          ("gh issue $(echo create) -t X", "a substitution"),
+                          ("gh issue `echo create` -t X", "backticks"),
+                          ("gh issue \"$(echo create)\" -t X", "a quoted substitution"),
+                          ("set -- create; gh issue \"$1\" -t X", "a positional"),
+                          ("a=(create); gh issue \"${a[0]}\" -t X", "an array element"),
+                          ("S=issue; gh $S create -t X", "the group built at run time"),
+                          ("A=issue; B=create; gh $A $B -t X", "both words built at run time"),
+                          ("gh -R o/r issue $V -t X", "after the repo flag"),
+                          ("gh issue cre$X -t X", "a literal glued to a variable")):
+            ok, why = verdict(cmd, bare)
+            check(f"(#1711) {why_}: {cmd!r} is refused, saying why", not ok and "built at run time" in why, why)
+        for cmd, why_ in (("gh issue list", "a literal list"),
+                          ("gh issue view 12", "a literal view"),
+                          ("gh issue view $N", "a variable AFTER a literal subcommand"),
+                          ("gh issue list --label $L", "a variable flag value"),
+                          ("gh pr $N", "another group with a variable"),
+                          ("gh $X", "a lone variable word"),
+                          ("echo gh issue $V", "the words in an echo")):
+            check(f"(#1711) CONTROL: {cmd!r} is allowed ({why_})", verdict(cmd, bare)[0])
+
+        # #1714: A `gh api` ISSUE CREATE the endpoint pattern missed. Each refused; controls stay allowed.
+        for cmd, why_ in (("gh api -X POST https://api.github.com/repos/o/r/issues -f title=X", "a full URL"),
+                          ("gh api -X POST https://ghe.test/api/v3/repos/o/r/issues -f title=X", "an enterprise URL"),
+                          ("gh api -X POST repositories/123/issues -f title=X", "the repository id form"),
+                          ("gh api -X POST repos/o/r/import/issues -f title=X", "the import endpoint"),
+                          ("gh api -X POST repos/o/r/issues/import -f title=X", "the import endpoint, other order"),
+                          ("P=repos/o/r/issues; gh api -X POST $P -f title=X", "a path in a variable"),
+                          ("P=repos/o/r/issues; gh api -X POST \"${P}\" -f title=X", "a path in a braced variable"),
+                          ("gh api -X POST $(echo repos/o/r/issues) -f title=X", "a path from a substitution"),
+                          ("P=repos/o/r/issues; gh api $P -f title=X", "a path in a variable, fields imply a POST")):
+            ok, why = verdict(cmd, bare)
+            check(f"(#1714) {why_}: {cmd!r} is refused", not ok, why)
+        for cmd, why_ in (("gh api https://api.github.com/repos/o/r/issues", "a full URL, a GET"),
+                          ("gh api -X POST https://api.github.com/repos/o/r/issues/12/comments -f body=x", "a comment by full URL"),
+                          ("gh api -X POST repositories/123/issues/12/comments -f body=x", "a comment by repository id"),
+                          ("gh api -X POST orgs/o/issues -f title=x", "an org path"),
+                          ("gh api -X POST repos/o/r/import/issues/12 -f x=y", "one import, not the endpoint"),
+                          ("P=repos/o/r/issues; gh api $P", "a path in a variable, a GET"),
+                          ("P=repos/o/r/issues; gh api -X GET $P", "a path in a variable, an explicit GET")):
+            check(f"(#1714) CONTROL: {cmd!r} is allowed ({why_})", verdict(cmd, bare)[0])
 
         # #1645 R1: A COMMENT LINE MUST NOT SWALLOW THE CREATE AFTER IT (also true on dev). Each refused, with controls that must stay allowed.
         for cmd, why_ in (("# note\ngh issue create -t X --body y", "a comment line, then an unlabelled create"),

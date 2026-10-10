@@ -231,9 +231,14 @@ _re_source='(^|[[:space:];&|({!])(source|\.)[[:space:]]+[^[:space:]]'
 # #1645 R2: more ways to run text or build a gh command from data -- `eval`, `xargs`, an `alias`, a function definition. Over-triggering costs one parse.
 _re_runs_text='(^|[[:space:];&|({!])(eval|xargs|alias|function)([[:space:]]|$)|\([[:space:]]*\)[[:space:]]*\{'
 _re_api='[[:space:]]api[[:space:]]([^;&|]*)issues'
+# #1711, #1714: a `gh` whose subcommand or API path is built at run time (`gh issue $V`, `gh api -X POST $P`) names neither `issue create` nor `issues` for the
+# patterns above to see, and `_flat` has dropped the `$`. So the RAW text triggers on a `$` or a backtick within 120 characters of a `gh` word in
+# its segment. Over-triggering costs one parse (`gh issue list --label $L` reaches the helper and is allowed); the bound keeps a long command linear.
+_re_dynamic='(^|[[:space:];&|(/])gh[[:space:]][^;&|]{0,120}[$`]'
 _re_ansi="[\$]'[^']*[\\\\]"
 if [ "$_fire" = 1 ] || rawhit "$_flat" "$_re_verb" || rawhit "$cmd" "$_re_shell_word" \
-   || rawhit "$cmd" "$_re_source" || rawhit "$cmd" "$_re_runs_text" || rawhit "$_flat" "$_re_api" || rawhit "$cmd" "$_re_ansi"; then
+   || rawhit "$cmd" "$_re_source" || rawhit "$cmd" "$_re_runs_text" || rawhit "$_flat" "$_re_api" || rawhit "$cmd" "$_re_ansi" \
+   || rawhit "$cmd" "$_re_dynamic"; then
   _root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
   _why="$(printf '%s' "$cmd" | python3 "$(dirname "${BASH_SOURCE[0]}")/lib/issue_labels.py" --root "$_root" 2>&1)"
   _rc=$?
