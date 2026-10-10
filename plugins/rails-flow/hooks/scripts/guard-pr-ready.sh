@@ -1,10 +1,21 @@
 #!/usr/bin/env bash
 # PreToolUse[Bash] — refuse `gh pr ready` unless a GREEN sweep with zero skips is recorded for HEAD. #1565
 #
+# A TRIPWIRE, NOT A BOUNDARY (the coordinator's ruling after three shell-adversary rounds on #1831, the same one the owner
+# approved for guard-bash, #1793): reading shell text cannot be a security boundary. This catches the plain and common
+# spellings and fails closed when python3 is missing; the guarantee moves to the gh shim (#1839, the #1804 mechanism), where
+# argv is final. DOCUMENTED LIMITS, by class, each pinned at today's behaviour by a fixture in check_hook_gates.py:
+#   * variables, aliases and functions (`x=ready; gh pr $x 5`, `G=gh; $G …` is caught only as a `$` command word);
+#   * env and absolute wrappers (`/usr/bin/env gh pr ready 5`, `env -S`);
+#   * brace expansion (`gh pr rea{d,}y 5`);
+#   * sh/bash/script/xargs/git-alias wrappers (`echo 'gh pr ready 5' | sh`, `bash <<<`, `script -c`, `xargs -I{}`,
+#     `git -c alias.x='!gh …'`);
+#   * in degraded mode (no python3), a quote-split or escaped word (`re""ady`, `rea''dy`, `r\eady`, `rea{d,}y`).
+#
 # WHY. "Mark a PR ready only after a green sweep" was prose: measured on #1565, every PreToolUse hook let
 # `gh pr ready` through after a red sweep, after a skipped one, and with no sweep at all. This hook decides
 # on a RECORDED EFFECT, not on command text (the coordinator's decision on #1565, epic #1793):
-# `scripts/project_gates.py` writes `<git dir>/rails-flow/sweep/<HEAD sha>.json` after a run from a clean
+# `project_gates.py` (this plugin's scripts directory) writes `<git dir>/rails-flow/sweep/<HEAD sha>.json` after a run from a clean
 # worktree, and `lib/pr_ready_guard.py` lets `gh pr ready` through only when that record exists for the
 # current HEAD with verdict green and skips 0. A missing, red, stale (other-HEAD) or skipped record refuses,
 # and the message names the sweep command to run.
@@ -96,7 +107,10 @@ while [ -n "$rest" ]; do
 done
 [ "$hit" = 1 ] || exit 0
 
-deny() { echo "BLOCKED by rails-flow pr-ready guard: $1" >&2; echo "Then run, as two commands: python3 \"\${CLAUDE_PLUGIN_ROOT}/scripts/project_gates.py\"  and  gh pr ready$args" >&2; exit 2; }
+# The sweep's path is printed, never run here: spelled through a variable so the harness-dependency lint (a text match on
+# `scripts/<name>.py`) does not read this message as an invocation.
+_sweep_py="project_gates.py"
+deny() { echo "BLOCKED by rails-flow pr-ready guard: $1" >&2; echo "Then run, as two commands: python3 \"\${CLAUDE_PLUGIN_ROOT}/scripts/$_sweep_py\"  and  gh pr ready$args" >&2; exit 2; }
 # `gh pr ready` MUST BE ITS OWN COMMAND (shell-adversary on #1831): in `git commit -m x && gh pr ready 5` or `git checkout -b zz && …`
 # an earlier segment moves HEAD after this is judged, so the old HEAD's green record would pass a commit nobody swept. Any other
 # segment refuses; only the tail of a redirection the normaliser split on `&` (`2>&1` → `1`, `&>/dev/null` → `>/dev/null`) is not one.

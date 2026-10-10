@@ -5466,6 +5466,17 @@ def guard_pr_ready_fixtures() -> None:
             expect(f"guard-pr-ready: with no python3 on PATH (degraded), any `ready` refuses: {cmd!r}", degraded(cmd), 2,
                    "could not be read")
         expect("guard-pr-ready: with no python3 on PATH (degraded), a command without `ready` passes: ls", degraded("ls"), 0)
+        # DOCUMENTED LIMITS (#1831's third adversary round; the coordinator's ruling, as for guard-bash, #1793): this hook is a
+        # TRIPWIRE, not a boundary. Each class below is pinned at TODAY's behaviour, so a change in either direction is seen. The
+        # guarantee moves to the gh shim, where argv is final. NOT a statement that these are acceptable forever.
+        expect("guard-pr-ready LIMIT (degraded): a quote-split word is not seen: gh pr re\"\"ady 5", degraded('gh pr re""ady 5'), 0)
+        # A FRESH repo, in force with NO record: here exit 0 can only mean "not seen" (with a green record a seen command passes too).
+        lim = new_repo(td, "limits")
+        expect("guard-pr-ready: the limits repo has no record, so a plain `gh pr ready` there IS refused", guard(lim, "gh pr ready 5"), 2,
+               "no sweep record")
+        for cmd, cls in (("x=ready; gh pr $x 5", "a variable"), ("/usr/bin/env gh pr ready 5", "an env or absolute wrapper"),
+                         ("gh pr rea{d,}y 5", "brace expansion"), ("echo 'gh pr ready 5' | sh", "an sh/bash/script/xargs/git-alias wrapper")):
+            expect(f"guard-pr-ready LIMIT: {cls} is not seen (tripwire): {cmd}", guard(lim, cmd), 0)
         for cmd in ("$(echo gh) pr ready 5", "G=gh; $G pr ready 5"):
             expect(f"guard-pr-ready: a command word built by the shell refuses: {cmd}", guard(repo, cmd), 2, "built by the shell")
         expect("guard-pr-ready: a `$` command word with no `ready` is left alone: $HOME/bin/ls", guard(repo, "$HOME/bin/ls"), 0)

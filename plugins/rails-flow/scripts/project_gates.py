@@ -1266,13 +1266,10 @@ def selftest() -> int:
 
     # THE SWEEP RECORD (#1565): what guard-pr-ready.sh reads. Built in a real git repo.
     with tempfile.TemporaryDirectory() as tmp:
-        import os
-        repo = Path(tmp) / "repo"
-        repo.mkdir()
-        env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
-               "GIT_COMMITTER_EMAIL": "t@t", "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
-        for argv in (["init", "-q"], ["commit", "-q", "--allow-empty", "-m", "x"]):
-            subprocess.run(["git", *argv], cwd=repo, env=env, check=True, capture_output=True)
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import fixture_git  # #1588: a fixture's git touches only its own temp repo
+        repo = fixture_git.init(Path(tmp) / "repo")
+        fixture_git.run(repo, "commit", "-q", "--allow-empty", "-m", "x")
         head = _git(repo, "rev-parse", "HEAD")
         rec_path = repo / ".git" / "rails-flow" / "sweep" / f"{head}.json"
         c = Check(plugin="p", id="c", why="w", command=[], applies_when=[], requires=[], root=repo)

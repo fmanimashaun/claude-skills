@@ -256,7 +256,7 @@ missing dependency gets disabled. Seven **gates fail closed**, each scoped to wh
 `plugins/rails-flow/hooks/scripts/guard-bash.sh` (a tripwire for the common spellings, not a boundary: the guarantee moves to #1789/#1790, #1793; falls back to the raw payload;
 the literal `git add -A` is blocked either way.), `plugins/qa-flow/hooks/scripts/release-gate.sh` (only for commands targeting `main`),
 `plugins/rails-flow/hooks/scripts/guard-lane.sh` (only when a lane is assigned), `plugins/rails-flow/hooks/scripts/guard-claims.sh` (only `gh pr create/edit` carrying a body, in a repo it can resolve),
-`plugins/rails-flow/hooks/scripts/guard-migrate.sh` (only a `Write` creating a new `db/migrate/` file), `plugins/rails-flow/hooks/scripts/guard-worktree.sh` (only a `git worktree add`; guards against accident, not impersonation), `plugins/rails-flow/hooks/scripts/guard-pr-ready.sh` (only `gh pr ready`, in a repo that runs project_gates; needs a green sweep record for HEAD, #1565). Classify a new hook
+`plugins/rails-flow/hooks/scripts/guard-migrate.sh` (only a `Write` creating a new `db/migrate/` file), `plugins/rails-flow/hooks/scripts/guard-worktree.sh` (only a `git worktree add`; guards against accident, not impersonation), `plugins/rails-flow/hooks/scripts/guard-pr-ready.sh` (a tripwire, not a boundary: the guarantee moves to #1839; only `gh pr ready`, in a repo that runs project_gates; needs a green sweep record for HEAD, #1565). Classify a new hook
 with `docs/doctrine/harness-doctrine.md`'s test before writing it: advisory → fail open; guarantee → fail closed,
 scoped. Every hook is driven end to end by `plugins/rails-flow/scripts/check_hook_gates.py`, under the
 environments that broke them (#822–#826).
