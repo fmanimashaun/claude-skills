@@ -296,7 +296,7 @@ GUARD = Guard(
         # of that classification, and the selftest must go red.
         Mutation(
             "gh api / gh release are never classified, so every API merge and release passes",
-            "                out += gh_effects_for(seg, j, cwd, env_repo, known)",
+            "                out += gh_effects_for(seg, j, cwd, env_repo, known, flow)",
             "                pass",
             "classify 'gh api -X PUT repos/{owner}/{repo}/pulls/1200/merge",
         ),
@@ -523,8 +523,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a prefix assignment is read by its own command's arguments",
-            "                out += gh_effects_for(seg, j, cwd, env_repo, known)",
-            "                out += gh_effects_for(seg, j, cwd, env_repo, {**known, **{k: v for k, v in lits.items() if any(w.startswith(k + '=') for w in seg)}})",
+            "                out += gh_effects_for(seg, j, cwd, env_repo, known, flow)",
+            "                out += gh_effects_for(seg, j, cwd, env_repo, {**known, **{k: v for k, v in lits.items() if any(w.startswith(k + '=') for w in seg)}}, flow)",
             r"""Q=\'query{a}\' gh api graphql -f query="$Q"': must be unjudgeable or main-ward""",
         ),
         Mutation(
@@ -709,6 +709,42 @@ GUARD = Guard(
             "    if head in (\"cd\", \"pushd\", \"popd\") or any(GIT_ENV_REDIRECT.match(w) for w in seg):",
             "    if head in (\"cd\", \"pushd\", \"popd\"):",
             "function fixture 'f(){ git push; }; GIT_DIR=/x f': expected None",
+        ),
+        Mutation(
+            "#1781: `gh pr checkout` is not a HEAD-moving subcommand, so a HEAD push after it is judged against the branch the hook saw",
+            'GH_HEAD_MOVING = (["pr", "checkout"],)',
+            "GH_HEAD_MOVING = ()",
+            "classify 'gh pr checkout main; git push origin HEAD': must be unjudgeable",
+        ),
+        Mutation(
+            "#1781: `git bisect start|good|bad|reset|run` is read as not moving HEAD",
+            '        if verb == "bisect" and sub not in BISECT_READ_ONLY:',
+            "        if False:",
+            "classify 'git bisect start main; git push origin HEAD': must be unjudgeable",
+        ),
+        Mutation(
+            "#1781: `git worktree add` is read as not changing where a later command acts",
+            '        if verb == "worktree" and sub == "add":',
+            "        if False:",
+            "classify 'git worktree add -f x main; git push origin HEAD': must be unjudgeable",
+        ),
+        Mutation(
+            "#1781: `git stash branch <name>` (creates and checks out a branch) is read as a plain stash",
+            '        if verb == "stash" and sub == "branch":',
+            "        if False:",
+            "classify 'git stash branch b; git push origin HEAD': must be unjudgeable",
+        ),
+        Mutation(
+            "#1781: every `git stash` is refused as HEAD-moving, though a plain stash leaves the branch alone",
+            '        if verb == "stash" and sub == "branch":',
+            '        if verb == "stash":',
+            "'git stash; git push origin HEAD': expected []",
+        ),
+        Mutation(
+            "#1781: a trap's command string is ignored, so a deferred push to main is allowed",
+            "                deferred.append(targs[0])",
+            "                pass",
+            "expected ['PUSH_MAIN main'], got []",
         ),
     ),
 )

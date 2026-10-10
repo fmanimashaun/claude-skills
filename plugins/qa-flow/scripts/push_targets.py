@@ -482,8 +482,17 @@ def all_segments(cmd: str, depth: int = 0):
     toks = tokens(cmd, bodies)
     if "()" in toks:
         FUNCS[0] = True       # `name() body`: the name is its own segment and the body's commands are segments below, judged as written (#1770)
+    deferred: list[str] = []
     for seg in segments(toks):
         check_words(seg)
+        if seg[0] == "trap":
+            # #1781: `trap '<command>' SIGNAL...` runs a command string later, at exit or on a signal. It is read like `bash -c '<string>'`, and AFTER
+            # every other segment (it fires once the rest has run). `trap - SIG`, `trap '' SIG`, `trap -p` and `trap -l` carry no command. A string that IS a variable (`trap "$CMD" EXIT`) is refused by `check_words` once it is read as a segment.
+            targs = [w for w in seg[1:] if w != "--"]
+            if targs and targs[0] in ("-p", "-l"):
+                pass
+            elif targs and targs[0] not in ("-", ""):
+                deferred.append(targs[0])
         if seg[0] in ("alias", "coproc"):
             raise Unjudgeable(f"`{seg[0]}` defines a name that can run any command later")
         if seg[0] == "function":
@@ -515,6 +524,8 @@ def all_segments(cmd: str, depth: int = 0):
     # After the outer segments, so a `cd` inside a substitution (a subshell) cannot move where the
     # outer command's bare `git push` resolves.
     for body in bodies:
+        yield from all_segments(body, depth + 1)
+    for body in deferred:
         yield from all_segments(body, depth + 1)
 
 
@@ -1278,6 +1289,8 @@ CHECKOUT_FLAGS = {"-q", "--quiet", "-f", "--force", "-m", "--merge", "--guess", 
                   "--no-overlay", "-t", "--track", "--no-track", "-l"}
 REF_MOVING_VERBS = {"commit", "reset", "cherry-pick", "am", "revert", "update-ref", "symbolic-ref", "merge",
                     "pull", "replace"}
+GH_HEAD_MOVING = (["pr", "checkout"],)       # #1781: the gh subcommands that move HEAD, as the `[group, name]` prefix of the subcommand
+BISECT_READ_ONLY = {"log", "visualize", "view", "terms", "help"}      # #1781: every other `git bisect` sub-command may check a commit out
 BRANCH_WRITE_FLAGS = {"-f", "--force", "-d", "-D", "--delete", "-m", "-M", "--move", "-c", "-C", "--copy",
                       "-u", "--set-upstream-to", "--unset-upstream", "--edit-description"}
 
@@ -1324,6 +1337,19 @@ def branch_change(verb: str, args: list[str]):
             return {positional[0]}, True, False
         if len(positional) == 1:
             return ({UNKNOWN_BRANCH} if _opaque(positional[0]) else {HOOK_HEAD, positional[0]}), True, False
+        return None, False, False
+    if verb in ("bisect", "worktree", "stash"):
+        # #1781. Verbs that may check a commit or branch out, in THIS directory (`bisect start|good|bad|skip|reset|run|replay`) or in a new one a later
+        # `cd` enters (`worktree add`), so a later HEAD-relative push is judged against the wrong branch. Anything not named read-only is refused, not
+        # modelled. `git stash` itself does NOT move HEAD or change the current branch (it saves and cleans the working tree, and `stash pop|apply|
+        # list|show|drop|push|create|store|clear` leave the branch alone), so it stays allowed; `git stash branch <name>` creates and checks out a branch.
+        sub = next((a for a in args if not a.startswith("-")), "")
+        if verb == "bisect" and sub not in BISECT_READ_ONLY:
+            return unknown
+        if verb == "worktree" and sub == "add":
+            return unknown
+        if verb == "stash" and sub == "branch":
+            return unknown
         return None, False, False
     if verb == "rebase":
         positional = [a for a in args if not a.startswith("-")]
@@ -1375,6 +1401,13 @@ class _Flow:
         if self.refs_moved or (head_relative and self.head_moved):
             raise Unjudgeable("a push to main after a command that moves refs or HEAD: the commit it ships "
                               "is not the one the hook can read; run them as separate commands")
+
+    def after_gh(self, names: list[str]) -> None:
+        """#1781: `gh pr checkout` switches HEAD to the pull request's branch, which is unknown here (no `gh` call is made)."""
+        if names[:2] in GH_HEAD_MOVING:
+            self.head_moved = True
+            self.tainted.add(UNKNOWN_BRANCH)
+            self.unknown_dir = True
 
     def after(self, verb: str, args: list[str], key: str | None) -> None:
         """Fold one `git` segment into the state."""
@@ -1465,11 +1498,13 @@ def _git_effects_core(seg, j, cwd, current, flow, key):
     raise Unjudgeable(f"git {verb!r} is not on the list of commands that cannot merge into main or publish")
 
 
-def gh_effects_for(seg, j, cwd, env_repo, known=None):
+def gh_effects_for(seg, j, cwd, env_repo, known=None, flow=None):
     """`[(line, repo, dir)]` for one `gh` invocation, or Unjudgeable when it is neither a modelled effect
     nor on the safe list."""
     names, rest, repo = gh_parts(seg, j)
     d = _dir_word(cwd)
+    if flow is not None:
+        flow.after_gh(names)
     if names and (_expanded(names[0]) or EXPANDS & set(names[0]) or (len(names) > 1 and (_expanded(names[1]) or EXPANDS & set(names[1])))):
         raise Unjudgeable("the gh subcommand is built by the shell")
     if names == ["pr", "merge"]:
@@ -1553,6 +1588,11 @@ def _function_state_check(seg: list[str]) -> None:
     if head in ("cd", "pushd", "popd") or any(GIT_ENV_REDIRECT.match(w) for w in seg):
         raise Unjudgeable("a command that defines a function and also changes directory or redirects git: where the body runs cannot be read")
     for tool, j in command_indexes(seg):
+        if tool == "gh":
+            scratch = _Flow()
+            scratch.after_gh(gh_parts(seg, j)[0])
+            if scratch.head_moved:
+                raise Unjudgeable("a command that defines a function and also moves HEAD (gh pr checkout): when the body runs cannot be read")
         if tool == "git":
             verb, args, _, _ = git_parse(seg, j)
             if verb:
@@ -1578,7 +1618,7 @@ def effects(cmd: str, current) -> list[tuple[str, str, str]]:
             if tool == "git":
                 out += git_effects(seg, j, cwd, current, flow)
             else:
-                out += gh_effects_for(seg, j, cwd, env_repo, known)
+                out += gh_effects_for(seg, j, cwd, env_repo, known, flow)
         # AFTER the segment: `Q=x gh api ... "$Q"` expands $Q before the prefix assignment takes effect.
         for w in seg:
             m = re.match(r"([A-Za-z_]\w*)=", w)
@@ -2011,6 +2051,13 @@ def selftest() -> int:
         ("git fetch origin && git push origin dev:main", ["PUSH_REF dev"]),
         ("git switch topic && git push origin dev:main", ["PUSH_REF dev"]),
         ("git commit --allow-empty -m x && git push origin feature/x", []),
+        # #1781 harmless controls: none of these moves HEAD, so a later push is judged as the hook saw it
+        ("gh pr checkout 3", []), ("git stash; git status", []), ("git stash; git push origin HEAD", []), ("git stash pop; git push origin HEAD", []),
+        ("git bisect log", []), ("git bisect log; git push origin HEAD", []), ("git worktree list; git push origin HEAD", []),
+        ("trap - EXIT", []), ("trap '' INT", []), ("trap -p", []), ("trap 'echo bye' EXIT", []),
+        # a trap string is classified like `bash -c`'s
+        ("trap 'git push origin main' EXIT", ["PUSH_MAIN main"]), ("trap 'git push origin main' EXIT; git status", ["PUSH_MAIN main"]),
+        ("trap 'gh pr merge 7' EXIT", ["PR_MERGE 7"]),
     ]
     for cmd, want in ref_cases:
         try:
@@ -2019,7 +2066,14 @@ def selftest() -> int:
             got = [f"unjudgeable: {exc}"]
         if got != want:
             failures.append(f"classify {cmd!r}: expected {want}, got {got}")
-    for cmd in ("git switch $B && git merge hotfix", "git checkout - && git merge hotfix",
+    for cmd in ("gh pr checkout main; git push origin HEAD", "gh pr checkout 3; git push origin HEAD", "gh pr checkout 3 && git push origin HEAD",
+                "git bisect start main; git push origin HEAD", "git bisect good; git push origin HEAD", "git bisect reset; git push origin HEAD",
+                "git bisect run make; git push origin HEAD", "git worktree add -f x main; git push origin HEAD",
+                "git worktree add -f x main; cd x; git push origin HEAD", "git stash branch b; git push origin HEAD",
+                "trap 'git push origin $B' EXIT", "trap \"$CMD\" EXIT", "trap 'git push origin main' EXIT; echo 'unbalanced",
+                "f(){ gh pr checkout 3; }; git push origin HEAD", "f(){ git bisect start main; }; f; git push origin HEAD",
+                "f(){ git worktree add x main; }; f; git push origin HEAD", "f(){ git stash branch b; }; f; git push origin HEAD",
+                "git switch $B && git merge hotfix", "git checkout - && git merge hotfix",
                 "git switch main && git merge dev && git push origin main",
                 "git commit --allow-empty -m x && git push origin main",
                 "git fetch origin hotfix:main && git push origin main",
@@ -2033,7 +2087,7 @@ def selftest() -> int:
             failures.append(f"classify {cmd!r}: must be unjudgeable (the hook denies)")
         except Unjudgeable:
             pass
-    api_total += len(ref_cases) + 15
+    api_total += len(ref_cases) + 15 + 17
     # #1569 -- the parser differential. The same command, spelled the way bash reads it differently from
     # shlex: every transformation must give the SAME effects as the plain spelling, or be unjudgeable
     # (the hook denies). Never "no effect".
@@ -2248,6 +2302,20 @@ def selftest() -> int:
             got = None
         if got != want:
             failures.append(f"function fixture {cmd!r}: expected {want}, got {got}")
+    # #1781: the inline model and the function check read ONE definition of what moves HEAD (the function check folds each verb through `_Flow`),
+    # so every verb the inline model refuses must be refused when a function is defined too.
+    for names in GH_HEAD_MOVING:
+        probe = f"f(){{ gh {' '.join(names)} 3; }}; f"
+        try:
+            cls(probe, on_feature)
+            failures.append(f"function check does not refuse the HEAD-moving gh subcommand {names}")
+        except Unjudgeable:
+            pass
+    for verb, args in (("bisect", ["start"]), ("worktree", ["add", "x"]), ("stash", ["branch", "b"])):
+        flow = _Flow()
+        flow.after(verb, args, None)
+        if not (flow.head_moved and flow.unknown_dir):
+            failures.append(f"git {verb} {' '.join(args)} must move HEAD in the flow model")
     # "no" must not share an exit code with a crash: python's uncaught-exception exit is 1.
     if NO in (0, 1) or UNJUDGEABLE == NO:
         failures.append(f"exit codes: NO={NO} must differ from 0, 1 (a crash) and UNJUDGEABLE")
