@@ -41,7 +41,8 @@ Classify every finding into exactly one bucket; act only on the first two:
    - **Contradicts fact**: the App Identity/stack table disagrees with the Gemfile or
      config (says Postgres when the adapter is sqlite3; names Devise when the app uses
      the Rails 8 generator; wrong Ruby/Rails version); a pointer references a path that
-     doesn't exist (`docs/brain/` absent); AGENTS.md routing names an agent the plugin
+     doesn't exist (`docs/brain/` absent; a "Before you change an area" line naming a doc
+     that is not there); AGENTS.md routing names an agent the plugin
      doesn't provide.
    - **Broken safety rule**: a Delegation Rules block missing the anti-recursion role
      check (executors that can spawn executors → runaway subagents); a rule that
@@ -157,6 +158,15 @@ dependency list, NOT "it uses Service Objects" — Claude Code's own /doctor tri
 overviews, and an agent can read the tree. Structure lives in the graph; point there:
 "for what-calls-what, query docs/architecture/graph.json". An empty section is a valid
 answer for a simple CRUD app — say so rather than padding it.>
+
+## Before you change an area, read its doc
+<one line per task area that HAS a deeper doc, naming the file to read before that kind of
+change — e.g. "authorization or a new policy → docs/authorization.md", "billing, plans or
+webhooks → docs/billing.md". List ONLY files that exist (`ls` them); never invent a doc to fill
+a row, and an empty section is a valid answer. The doc holds the detail, this line only routes to
+it, so a CSS change never loads the billing contract. A `.claude/rules/` rule (§2b) fires when a
+matching FILE is read or edited; this line fires on the TASK, before any file is opened —
+use both where an area has both.>
 
 ## Common Commands
 <dev server, console, migrate, targeted + full rspec, rubocop on changed files, brakeman,

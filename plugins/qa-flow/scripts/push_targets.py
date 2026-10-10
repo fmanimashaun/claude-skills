@@ -324,11 +324,46 @@ def strip_comments_and_heredocs(cmd: str, bodies: list[str] | None = None) -> st
     return "".join(out)               # an unterminated quote is left for shlex to refuse
 
 
-def tokens(cmd: str, bodies: list[str] | None = None) -> list[str]:
-    lex = shlex.shlex(strip_comments_and_heredocs(cmd, bodies), posix=True, punctuation_chars=";&|()<>\n")
+def tokens_lexer(text: str, posix: bool):
+    """The one lexer: `tokens` reads words with it, and `note_home_words` reads the SAME text with `posix=False` to keep the quotes."""
+    lex = shlex.shlex(text, posix=posix, punctuation_chars=";&|()<>\n")
     lex.whitespace = " \t\r"          # a newline separates commands; it is not mere whitespace
     lex.whitespace_split = True
     lex.commenters = ""               # removed above, by bash's rule
+    return lex
+
+
+# WHICH HOME-DIRECTORY WORDS THE SHELL WILL REALLY EXPAND (#1764 review). shlex drops quotes, so `~/x`, `'~/x'`, `"~/x"` and `\\~/x` all arrive as the word `~/x`, but only the
+# unquoted one is expanded by the shell: git is handed a literal directory named `~` for the others, and a hook that expanded them anyway would judge HEAD in a checkout the push
+# never touches. `note_home_words` reads the RAW text with its quotes: a word is expandable only if EVERY spelling of it is: `~` and `$HOME` unquoted, or `$HOME` inside double
+# quotes (which the shell expands); a single-quoted, backslash-escaped or `"~..."` spelling makes the word unexpandable wherever else it appears.
+HOME_WORD = re.compile(r"(~|\$HOME|\$\{HOME\})")
+HOME_GOOD: set[str] = set()
+HOME_BAD: set[str] = set()
+
+
+def note_home_words(text: str) -> None:
+    try:
+        raw_tokens = list(tokens_lexer(text, posix=False))
+    except ValueError:
+        return
+    for raw in raw_tokens:
+        try:
+            parts = shlex.split(raw)
+        except ValueError:
+            continue
+        if len(parts) != 1 or not HOME_WORD.match(parts[0]):
+            continue
+        word = parts[0]
+        plain = not re.search(r"""["'\\]""", raw)
+        double = len(raw) >= 2 and raw[0] == '"' and raw[-1] == '"' and not re.search(r"""["'\\]""", raw[1:-1]) and word.startswith("$")
+        (HOME_GOOD if plain or double else HOME_BAD).add(word)
+
+
+def tokens(cmd: str, bodies: list[str] | None = None) -> list[str]:
+    stripped = strip_comments_and_heredocs(cmd, bodies)
+    note_home_words(stripped)
+    lex = tokens_lexer(stripped, posix=True)
     try:
         return list(lex)
     except ValueError as exc:
@@ -343,7 +378,7 @@ def segments(toks: list[str]) -> list[list[str]]:
         if skip:
             skip = False
             continue
-        if set(t) <= SEPARATOR_CHARS:
+        if t and set(t) <= SEPARATOR_CHARS:    # a NON-EMPTY run of separator characters: `set("") <= anything`, so an empty-string argument (`''`) used to END the command (#1768)
             out.append([])
         elif set(t) <= set("<>&") and set(t) & set("<>"):
             skip = True               # `>`, `>>`, `2>&` ... : the next token is its target
@@ -358,6 +393,23 @@ def is_command(word: str, names: set[str]) -> bool:
     return base in names or (base.endswith(".exe") and base[:-4] in names)
 
 
+def home_expanded(word: str) -> str:
+    """A directory word with a LEADING `~`, `$HOME` or `${HOME}` expanded, as the shell will have by the time git runs (#1764).
+
+    The hook is handed the RAW command, which nothing has expanded yet, so `git -C ~/proj push` and `cd ~/proj && git push` name a directory
+    that does not exist when read as text: HEAD could not be resolved there and the gate refused a feature-branch push. Only the home
+    directory is expanded, and only at the start of the word (`~`, `~/x`, `$HOME`, `$HOME/x`, `${HOME}/x`): `~user`, any other variable, a
+    substitution, and a `~` inside a word are left exactly as they were, so they stay unresolved and the caller still fails closed. With no
+    HOME in the environment nothing is expanded, for the same reason."""
+    home = os.environ.get("HOME")
+    if not home or not os.path.isabs(home) or word not in HOME_GOOD or word in HOME_BAD:
+        return word
+    for prefix in ("${HOME}", "$HOME", "~"):
+        if word == prefix or word.startswith(prefix + "/"):
+            return home + word[len(prefix):]
+    return word
+
+
 def git_verb(seg: list[str], verb: str) -> tuple[list[str], str | None] | None:
     """The arguments after `git <verb>` and any `git -C <dir>`, wherever git appears in the segment
     (after `sudo -u x`, `timeout 60`, `command`, `{`, a substitution ...); None if there is none."""
@@ -370,7 +422,7 @@ def git_verb(seg: list[str], verb: str) -> tuple[list[str], str | None] | None:
                 if seg[i] == "-c" and i + 1 < len(seg) and seg[i + 1].startswith("alias."):
                     raise Unjudgeable("a git alias defined inline can be any verb, push included")
                 if seg[i] == "-C" and i + 1 < len(seg):
-                    workdir = seg[i + 1]
+                    workdir = home_expanded(seg[i + 1])
                 i += 2
             else:
                 i += 1
@@ -420,6 +472,8 @@ def all_segments(cmd: str, depth: int = 0):
     parsed as commands in their own right (41's delta review of #1470)."""
     if depth > MAX_DEPTH:
         raise Unjudgeable("shell strings nested too deeply to read")
+    if depth == 0:
+        HOME_GOOD.clear(); HOME_BAD.clear()
     bodies: list[str] = []
     toks = tokens(cmd, bodies)
     if "()" in toks:
@@ -551,7 +605,8 @@ def targets_detail(cmd: str, current: Callable[[bool, str | None], str | None]) 
     cwd: str | None = None                    # a prior `cd <dir>` moves where a bare push resolves
     for seg in all_segments(cmd):
         if seg[0] == "cd" and len(seg) == 2:
-            cwd = seg[1] if cwd is None or os.path.isabs(seg[1]) else os.path.join(cwd, seg[1])
+            target = home_expanded(seg[1])
+            cwd = target if cwd is None or os.path.isabs(target) else os.path.join(cwd, target)
             continue
         hits += [(d, src) for d, src, _, _ in _push_hits(seg, cwd, current)]
     return hits
@@ -986,8 +1041,9 @@ def ctx_segments(cmd: str):
                 if seg[0] in ("export",) or all(re.fullmatch(r"[A-Za-z_]\w*=.*", x) for x in seg):
                     env_repo = seg_repo
         if seg[0] in ("cd", "pushd"):
-            if len(seg) == 2 and seg[1] != "-" and not _expanded(seg[1]):
-                cwd = seg[1] if cwd is None or cwd is UNKNOWN_DIR or os.path.isabs(seg[1]) else os.path.join(cwd, seg[1])
+            target = home_expanded(seg[1]) if len(seg) == 2 else ""
+            if len(seg) == 2 and seg[1] != "-" and not _expanded(target):
+                cwd = target if cwd is None or cwd is UNKNOWN_DIR or os.path.isabs(target) else os.path.join(cwd, target)
             else:
                 cwd = UNKNOWN_DIR
             continue
@@ -1059,6 +1115,12 @@ GIT_FLAGS = {"--no-pager", "-p", "--paginate", "-P", "--bare", "--no-replace-obj
 BENIGN_CONFIG = re.compile(r"^(user\.|core\.(quotepath|pager|editor|autocrlf|filemode|ignorecase|precomposeunicode|"
                            r"longpaths|abbrev|whitespace|fsmonitor)$|color\.|advice\.|gc\.auto$|safe\.directory$|"
                            r"init\.defaultbranch$|commit\.gpgsign$|diff\.|log\.)", re.I)
+# (#1768) what turns `git config` into a write, and the options that take a value of their own (so the value is not the key's value)
+CONFIG_WRITE_FLAGS = {"--add", "--unset", "--unset-all", "--replace-all", "-e", "--edit", "--rename-section", "--remove-section"}
+CONFIG_READ_ACTIONS = {"--get", "--get-all", "--get-regexp", "--list", "-l", "--get-urlmatch"}
+CONFIG_VALUE_FLAGS = {"--file", "-f", "--blob", "--type", "--default"}
+CONFIG_READ_FLAGS = {"--global", "--local", "--system", "--worktree", "--includes", "--no-includes", "--show-origin", "--show-scope", "-z", "--null",
+                     "--name-only", "--bool", "--int", "--bool-or-int", "--path", "--expiry-date", "--fixed-value", "--no-type"}
 GIT_ENV_REDIRECT = re.compile(r"^GIT_(DIR|WORK_TREE|CONFIG\w*|SSH\w*|ALTERNATE\w*|OBJECT_DIRECTORY|INDEX_FILE|NAMESPACE)=")
 INERT = {"echo", "printf", "which", "type", "man", "ls", "cat", "grep", "rg", "head", "tail", "wc", "cut", "tr",
          "sort", "uniq", "test", "[", "[[", "true", "false", ":", "export", "set", "unset", "read", "mkdir", "rm",
@@ -1128,7 +1190,7 @@ def git_parse(seg: list[str], j: int):
         if a in ("-C", "-c"):
             if i + 1 >= len(seg):
                 raise Unjudgeable(f"git {a} with no value")
-            v = seg[i + 1]
+            v = seg[i + 1] if a == "-c" else home_expanded(seg[i + 1])
             if a == "-c":
                 if v.startswith("alias."):
                     raise Unjudgeable("a git alias defined inline can be any verb, push included")
@@ -1157,7 +1219,31 @@ def _git_read_only(verb: str, args: list[str]) -> bool:
         sub = next((a for a in args if not a.startswith("-")), "")
         return sub in ("", "show", "get-url", "add")       # `add` cannot repoint an existing remote
     if verb == "config":
-        if any(a in ("--get", "--get-all", "--get-regexp", "--list", "-l", "--get-urlmatch", "get", "list") for a in args):
+        # `--get`, `--list` and the like are read FLAGS; `get` and `list` are the read SUB-COMMANDS of newer git, and only in the FIRST position:
+        # anywhere else they are a VALUE (`git config core.hooksPath get` points the hooks at ./get; #1768 review).
+        if any(a in CONFIG_READ_ACTIONS for a in args):
+            return True
+        if any(a in CONFIG_WRITE_FLAGS for a in args):
+            return False
+        # (#1768) A bare `git config <key>`: ONE positional word, no write flag, is a READ of that key, whichever key it is: `core.hooksPath` is not on the benign
+        # list because SETTING it redirects the hooks, but reading it is how a session asks where they are. Three ways this could be a write, each refused:
+        #   - a flag this rule does not KNOW is harmless: git accepts any unambiguous prefix of a long option (`--unset-a`, `--uns`), so a list of the write flags
+        #     is not enough; only the flags that select a file or a value type are allowed;
+        #   - a word that is not a key: `edit`, `set`, `unset` are sub-commands of newer git, and a key always has a dot (`section.name`);
+        #   - a second word (a value), or a word the shell has not expanded yet.
+        words, skip, only_known = [], False, True
+        for a in args:
+            if skip:
+                skip = False
+            elif a in CONFIG_VALUE_FLAGS:
+                skip = True
+            elif a.startswith("-"):
+                only_known = only_known and a in CONFIG_READ_FLAGS
+            else:
+                words.append(a)
+        if only_known and words and words[0] in ("get", "list"):
+            return True
+        if only_known and len(words) == 1 and "." in words[0] and not _opaque(words[0]):
             return True
         keys = [a for a in args if not a.startswith("-")]
         return bool(keys) and BENIGN_CONFIG.match(keys[0]) is not None
@@ -1496,6 +1582,7 @@ def git_current(push: bool, workdir: str | None) -> str | None:
 
 def selftest() -> int:
     failures: list[str] = []
+    os.environ["HOME"] = "/home/selftest"    # the cases below name directories through it (#1764); a real HOME would make them depend on the machine
 
     def cls(cmd, cur):
         return [ln for ln in classify(cmd, cur) if not ln.startswith("CTX ")]
@@ -1672,6 +1759,23 @@ def selftest() -> int:
         ("cd other && git push", fake("topic", by_dir={"other": "main"}), True),
         ("cd other\ngit push", fake("topic", by_dir={"other": "main"}), True),
         ("git -C other push", fake("topic", by_dir={"other": "main"}), True),
+        # (#1768) an empty-string argument does not end the command: the refspecs after it are still read
+        ("git push origin '' main", on_feature, True),
+        # (#1764) a directory named through HOME is expanded BEFORE the push's HEAD is resolved there: the hook is handed the raw command
+        ("git -C ~/proj push", fake("topic", by_dir={"/home/selftest/proj": "main"}), True),
+        ("git -C ~/proj push", fake("main", by_dir={"/home/selftest/proj": "topic"}), False),
+        ("cd ~/proj && git push", fake("topic", by_dir={"/home/selftest/proj": "main"}), True),
+        ("cd ~/proj && git push", fake("main", by_dir={"/home/selftest/proj": "topic"}), False),
+        ("git -C $HOME/proj push", fake("topic", by_dir={"/home/selftest/proj": "main"}), True),
+        ("git -C ${HOME}/proj push", fake("topic", by_dir={"/home/selftest/proj": "main"}), True),
+        ("cd $HOME/proj && git push", fake("topic", by_dir={"/home/selftest/proj": "main"}), True),
+        ("cd ~ && git push", fake("topic", by_dir={"/home/selftest": "main"}), True),
+        ('git -C "$HOME/proj" push', fake("topic", by_dir={"/home/selftest/proj": "main"}), True),
+        # ...but only a spelling the shell WILL expand: quoted or escaped, `~/proj` is a literal directory name to git, and expanding it would judge HEAD in a checkout the push never touches
+        ("git -C '~/proj' push", fake("topic", by_dir={"/home/selftest/proj": "main"}), False),
+        ('git -C "~/proj" push', fake("topic", by_dir={"/home/selftest/proj": "main"}), False),
+        ("git -C \\~/proj push", fake("topic", by_dir={"/home/selftest/proj": "main"}), False),
+        ("git -C '~/proj' push; git -C ~/proj push", fake("topic", by_dir={"/home/selftest/proj": "main"}), False),
     ]
     for cmd, cur, want in cases:
         try:
@@ -1974,6 +2078,12 @@ def selftest() -> int:
         ("cd /a/b; cd ../c; gh pr merge 7", ["CTX - /a/b/../c", "PR_MERGE 7"]),
         ("git -C ../x merge dev", ["CTX - ../x", "GIT_MERGE dev"]),
         ("git -C /abs push origin hot:main", ["CTX remote:origin /abs", "PUSH_REF hot"]),
+        # (#1764) the home directory is expanded; another user's (`~someone`) and any other variable are not, so they stay unresolved
+        ("git -C ~/proj push origin hot:main", ["CTX remote:origin /home/selftest/proj", "PUSH_REF hot"]),
+        ("cd $HOME/proj && git merge dev", ["CTX - /home/selftest/proj", "GIT_MERGE dev"]),
+        ("git -C ~someone/proj merge dev", ["CTX - ~someone/proj", "GIT_MERGE dev"]),
+        ('git -C "$HOME/proj" push origin hot:main', ["CTX remote:origin /home/selftest/proj", "PUSH_REF hot"]),
+        ("git -C '~/proj' push origin hot:main", ["CTX remote:origin ~/proj", "PUSH_REF hot"]),
         ("git merge dev", ["CTX - -", "GIT_MERGE dev"]),
         ("gh api repos/o/r/merges -f base=main -f head=dev", ["CTX o/r -", "API_MERGE dev"]),
         ("gh api -iXPUT repos/o/r/pulls/7/merge", ["CTX o/r -", "API_PR_MERGE 7"]),
@@ -2009,6 +2119,10 @@ def selftest() -> int:
         "git status", "git log --oneline -5", "git diff HEAD~1 -- app.rb", "git fetch origin", "git add -A", "git commit -m 'x y'",
         "git checkout -b feature/x", "git push -u origin feature/x", "git branch -D old", "git -c user.name=x -c user.email=y commit -m z",
         "git -C /tmp/x status", "git config --get remote.origin.url", "git config user.email a@b", "git remote -v",
+        # (#1768) a bare `git config <key>` is a READ of that key, whichever key it is
+        "git config get core.hooksPath", "git config list", "git config get --local remote.origin.url",
+        "git config core.hooksPath", "git config --local core.hooksPath", "git config --global core.hooksPath", "git config --file .git/config core.hooksPath",
+        "git config remote.origin.url", "git config --local url.x.insteadOf",
         "git remote add up https://github.com/o/r", "git stash pop", "git rebase dev", "git reset --hard HEAD~1",
         "git cherry-pick abc123", "git rev-parse HEAD", "git --no-pager log", "git --version", "git",
         "gh pr view 7", "gh pr list --state open", "gh pr create --title t --body b", "gh pr checks 7", "gh pr checkout 7",
@@ -2032,6 +2146,16 @@ def selftest() -> int:
         "git ci -m x", "git -c core.sshCommand=x push origin feature/x", "git -c url.x.insteadOf=y push origin feature/x",
         "git --weird-option status", "git $V push origin feature/x", "git remote set-url origin https://github.com/x/y",
         "git remote remove origin", "git config remote.origin.url https://github.com/x/y", "git config url.x.insteadOf y",
+        # (#1768) ...but a value, a write flag, or a word the hook cannot read is a WRITE (or could be): still refused
+        "git config core.hooksPath /tmp/x", "git config --local core.hooksPath ''", "git config --add core.hooksPath /tmp/x",
+        "git config --unset core.hooksPath", "git config --unset-all remote.origin.url", "git config --replace-all remote.origin.url x",
+        "git config -e", "git config --edit", "git config --rename-section remote.origin remote.up", "git config --remove-section remote.origin",
+        "git config $KEY", "git config core.hooksPath $VALUE", "git config remote.$NAME.url",
+        # (#1768 review) the sub-commands of newer git (`edit` opens the editor on the config), and abbreviated long options (git accepts any unambiguous prefix)
+        # (#1768 review) `get` and `list` are sub-commands only in the FIRST position: as a VALUE they are a write (`git config core.hooksPath get` points the hooks at ./get)
+        "git config core.hooksPath get", "git config core.hooksPath list", "git config remote.origin.url list",
+        "git config edit", "git config set core.hooksPath /tmp/x", "git config unset core.hooksPath", "git config --unset-a core.hooksPath",
+        "git config --edi", "git config --uns core.hooksPath", "git config --remove-s remote.origin", "git config -z -e",
         "git send-pack origin main", "git update-ref refs/heads/main abc", "git symbolic-ref HEAD refs/heads/x",
         "git filter-branch -f", "git fast-import", "git svn dcommit", "git http-push x",
         "gh workflow run release.yml", "gh pr update-branch 7", "gh repo sync", "gh repo delete x --yes", "gh release delete v1",
