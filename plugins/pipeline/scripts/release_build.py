@@ -277,10 +277,11 @@ def selftest():
     check("a hostile value stays one argv element", argv[3] == f"X={nasty}" and len(argv) == len(base) + 2, argv)
     # the Dockerfile scan
     docker = ('ARG RUBY_VERSION=3.4\nFROM ruby:$RUBY_VERSION AS base\nARG APP_VERSION\nARG TARGETARCH\nARG http_proxy\n'
-              'ARG A=1 B\nARG RUBY_VERSION\n# ARG COMMENTED\nARG MULTI \\\n  =x\nARG  \\\n  CONT\n')
+              'ARG A=1 B\nARG RUBY_VERSION\n# ARG COMMENTED\nARG MULTI \\\n  =x\nARG  \\\n  CONT\nARG TARGETARCHX\nARG NO_PROXY_EXTRA\n')
     names = unfed_args(docker, set())
     check("an unfed ARG is named", "APP_VERSION" in names, names)
     check("predefined args are never named", not ({"TARGETARCH", "http_proxy"} & set(names)), names)
+    check("a near-miss of a predefined name is named", {"TARGETARCHX", "NO_PROXY_EXTRA"} <= set(names), names)
     check("a name with a default anywhere is not unfed", not ({"RUBY_VERSION", "A"} & set(names)), names)
     check("a bare ARG beside a defaulted one is named", "B" in names, names)
     check("a commented ARG is not read", "COMMENTED" not in names, names)

@@ -28,10 +28,13 @@ sha AND a moving tag:
 
 ```bash
 SHA=$(git rev-parse --short origin/dev)
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/release_build.py" --image "$IMAGE" --sha "$SHA"
-echo "$KAMAL_REGISTRY_PASSWORD" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
-docker push "$IMAGE:$SHA" && docker push "$IMAGE:latest"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/release_build.py" --image "$IMAGE" --sha "$SHA" \
+  && echo "$KAMAL_REGISTRY_PASSWORD" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin \
+  && docker push "$IMAGE:$SHA" && docker push "$IMAGE:latest"
 ```
+
+A failed build (exit non-zero) stops the chain before the login and the push: never push `latest`
+after a build that did not happen, or the registry's `latest` is a previous release's image.
 
 **The build is `release_build.py`, not a bare `docker build`** (#1701). A project declares what its
 image needs in `pipeline.yml`, and the script passes each entry to `docker build`:
