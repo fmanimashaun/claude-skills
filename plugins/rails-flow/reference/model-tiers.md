@@ -84,7 +84,8 @@ judgement the user is paying for, or is its output proven by something outside i
 
 ## The policy (ours)
 
-Two tiers, because two is what the mechanism can express honestly.
+Two tiers, because two is what the mechanism can express honestly, and ONE named exception to them: the `adversarial` tier, for
+`adversary` only (see *`adversary` is the one deliberate pin up*, below).
 
 - **judgement → `model: inherit`.** The session model is the user's declared ceiling. `inherit`
   tracks it up when they upgrade and never overrides it downward. Anything whose output is a
@@ -321,8 +322,9 @@ per-agent file above.
 - **A full model ID.** It pins a version that ages, and `claude-opus-5` is meaningless on Bedrock,
   Google Cloud's Agent Platform, and Microsoft Foundry, which *"use provider-specific deployment
   IDs rather than Anthropic model IDs"* ([cc-model]).
-- **A third tier.** The two values the table permits are the two the mechanism can defend. A
-  project that wants more forks the table and points the checker at its own copy.
+- **A third tier.** The two values the table permits are the two the mechanism can defend, plus the one named exception for
+  `adversary` (#1819), which the checker accepts for that agent and no other. A project that wants more forks the table and points
+  the checker at its own copy.
 
 ## What this does not cover
 

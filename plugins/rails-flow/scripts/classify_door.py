@@ -63,11 +63,18 @@ def diff(root: Path, base: str) -> dict[str, tuple[list[str], list[str]]]:
     merge_base = _git(root, "merge-base", base, "HEAD").strip()
     out: dict[str, tuple[list[str], list[str]]] = {}
     path = None
-    for line in _git(root, "diff", "--no-color", "-U0", merge_base).splitlines():
+    # `--no-renames`: a rename is a delete of the old path AND an add of the new one. Git's default pairs them and prints only the
+    # NEW path in the header, so `git mv app/policies/p_policy.rb app/services/p.rb` read as a change to app/services/p.rb and a
+    # policy move was two-way (review of #1834). `core.quotePath=false` keeps a non-ASCII path readable instead of octal-quoted.
+    for line in _git(root, "-c", "core.quotePath=false", "diff", "--no-color", "--no-renames", "-U0", merge_base).splitlines():
         if line.startswith("diff --git "):
-            path = line.split(" b/", 1)[1] if " b/" in line else None
-            if path is not None:
-                out.setdefault(path, ([], []))
+            rest = line[len("diff --git "):]
+            # A path git still quotes (a quote, a backslash, a control character) or one that contains " b/" cannot be split
+            # unambiguously. Dropping it silently meant its changes were never classified; an unclassified diff is exit 2.
+            if rest.startswith('"') or ' "b/' in rest or rest.count(" b/") != 1:
+                raise Unusable(f"a diff header this reader cannot split into a path (quoted or ambiguous): {rest[:80]}")
+            path = rest.split(" b/", 1)[1]
+            out.setdefault(path, ([], []))
         elif path is None or line.startswith(("+++", "---", "@@", "index ", "new file", "deleted file")):
             continue
         elif line.startswith("+"):
@@ -76,7 +83,7 @@ def diff(root: Path, base: str) -> dict[str, tuple[list[str], list[str]]]:
             out[path][1].append(line[1:])
     # A new, not-yet-added file is in no `git diff` output at all (the #1341 blind spot): a fresh
     # migration or policy would read as two-way. Every untracked, not-ignored file counts as added.
-    for rel in _git(root, "ls-files", "--others", "--exclude-standard").splitlines():
+    for rel in filter(None, _git(root, "ls-files", "-z", "--others", "--exclude-standard").split("\0")):   # -z: exact names, never octal-quoted
         try:
             out[rel] = ((root / rel).read_text(encoding="utf-8").splitlines(), [])
         except (OSError, UnicodeDecodeError):
@@ -179,6 +186,25 @@ def selftest() -> int:
         case({"app/services/pay.rb": "class Pay\n  def call = Faraday.post(URL)\nend\n"},
              "a new outside HTTP call is one-way", "outbound")
         case({"spec/services/pay_spec.rb": "stub = Faraday.new\n"}, "CONTROL: an HTTP client in a spec is two-way", None)
+        # (review of #1834) a RENAME out of a guarded directory is still a change to it, and an unreadable path is not two-way.
+        (root / "app/policies").mkdir(parents=True, exist_ok=True)
+        (root / "app/policies/p_policy.rb").write_text("def show? = false\n")
+        g("checkout", "-q", "dev")      # the policy exists on the BASE; the branch then moves it
+        g("add", "."); g("commit", "-q", "-m", "policy")
+        g("checkout", "-q", "-B", "feature/y")
+        (root / "app/services").mkdir(parents=True, exist_ok=True)
+        g("mv", "app/policies/p_policy.rb", "app/services/p.rb")
+        expect("a policy renamed out of app/policies is one-way", any(r.startswith("access") for r in classify(diff(root, "dev"))),
+               classify(diff(root, "dev")))
+        g("reset", "-q", "--hard", "HEAD")
+        (root / "app/policies/a\"b.rb").write_text("x\n")
+        g("add", "."); g("commit", "-q", "-m", "quoted")
+        try:
+            diff(root, "dev")
+            expect("a path git quotes is UNUSABLE, never silently dropped", False)
+        except Unusable:
+            pass
+        g("reset", "-q", "--hard", "HEAD~1")
         try:
             diff(root, "no-such-branch")
             expect("an unresolvable base is UNUSABLE, never two-way", False)

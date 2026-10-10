@@ -13,7 +13,7 @@ Retask sessions ran one by hand and recorded a "Fable adversary HOLDS" verdict o
 This is the part of the remembering a script can do: say which diffs are risky, and whether the pass left its record. It is the
 sibling of `classify_door.py` (is the change reversible) and `check_mockup_gate.py` (did a user-visible change get a mock-up).
 
-RISKY means the diff touches one of five things, by PATH or by a line it adds or removes (never in spec/ or test/):
+RISKY means the diff touches one of four things, by PATH or by a line it adds or removes (never in spec/ or test/):
   * auth       the authentication concern, session and password controllers, the Session and Current models, an
                auth/devise/omniauth/session_store/rack_attack/cors initializer; `has_secure_password`, `authenticate_by`,
                `reset_session`, signed or encrypted cookies
@@ -21,7 +21,8 @@ RISKY means the diff touches one of five things, by PATH or by a line it adds or
   * parsing    app/parsers/, a parser or importer class; JSON/YAML/Marshal/CSV/Nokogiri/Oj parsing, and strong parameters
                (`params.require`, `params.permit`)
   * privacy    the parameter-log filter, redact/mask/privacy/pii concerns; `filter_attributes`, `filter_parameters`, `encrypts`
-  * (the one pattern list below is the whole definition; a path or line outside it is not risky)
+  The pattern lists below are the whole definition; a path or line outside them is not risky. A RENAME counts as a delete and an add
+  (`--no-renames`), so moving a policy out of app/policies/ is still a change to it.
 
 THE RECORD. `--record` names the file the pass leaves. It counts only if it has a line `Head: <sha>` that is a prefix of the
 CURRENT HEAD (a record for an earlier commit says nothing about this one) and ends with a line `VERDICT: CLEAN` or
@@ -199,6 +200,28 @@ def selftest() -> int:
         case("CONTROL: a test that uses authorize is not risky", {"test/controllers/x_test.rb": "authorize @x\n"}, None)
         case("CONTROL: a comment-free non-code file mentioning JSON.parse is not risky", {"docs/notes.md": "JSON.parse\n"}, None)
         case("CONTROL: `authorized_users` is not `authorize`", {"app/services/report.rb": "authorized_users.map(&:name)\n"}, None)
+        # (review of #1834) a rename out of a guarded path, a non-ASCII path, and a path git quotes
+        (root / "app/policies").mkdir(parents=True, exist_ok=True)
+        (root / "app/policies/p_policy.rb").write_text("def show? = false\n")
+        g("checkout", "-q", "dev")      # the policy exists on the BASE; the branch then moves it
+        g("add", "."); g("commit", "-q", "-m", "policy")
+        g("checkout", "-q", "-B", "feature/y")
+        (root / "app/services").mkdir(parents=True, exist_ok=True)
+        g("mv", "app/policies/p_policy.rb", "app/services/p.rb")
+        expect("a policy RENAMED out of app/policies is risky (access)", any(r.startswith("access") for r in classify(diff(root, "dev"))),
+               classify(diff(root, "dev")))
+        g("reset", "-q", "--hard", "HEAD")
+        (root / "app/policies/\u00e9.rb").write_text("x\n")
+        expect("a NON-ASCII path under app/policies is risky, not dropped", any(r.startswith("access") for r in classify(diff(root, "dev"))))
+        (root / "app/policies/\u00e9.rb").unlink()
+        (root / "app/policies/a\"b.rb").write_text("x\n")
+        g("add", "."); g("commit", "-q", "-m", "quoted")
+        try:
+            diff(root, "dev")
+            expect("a path git quotes is UNUSABLE, never silently dropped", False)
+        except Unusable:
+            pass
+        g("reset", "-q", "--hard", "HEAD~1")
         try:
             diff(root, "no-such-branch")
             expect("an unresolvable base is UNUSABLE, never not-risky", False)
