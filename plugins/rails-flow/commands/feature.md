@@ -75,7 +75,7 @@ schema impact. Then produce a short plan:
 
 ### Acceptance criteria — write them BEFORE any code
 
-Every unit gets criteria, recorded in `docs/product/acceptance/<branch-slug>.md` (the layout's home for WHAT we are building; a pre-layout `docs/acceptance/` is still recognised by the gate, #910) — the slug is the
+Every unit gets criteria, recorded in `docs/product/acceptance/<branch-slug>.md` (the layout's home for WHAT we are building; a pre-layout `docs/product/acceptance/` is still recognised by the gate, #910) — the slug is the
 branch name after `feature/`, with any remaining `/` flattened to `-` (so `feature/team/foo`
 → `docs/product/acceptance/team-foo.md`). One `##` section per unit:
 
@@ -123,13 +123,13 @@ spec truly asserts the observable, so that judgement stays yours.
 
 ### The work order — write it once the criteria exist
 
-Run `/rails-flow:handoff` (or write `docs/handoff/<slug>.md` in its shape) before Phase 3. It is the
+Run `/rails-flow:handoff` (or write `docs/product/handoff/<slug>.md` in its shape) before Phase 3. It is the
 one file an executor can work from with **no** conversation history: the goal, the criteria ids it is
 graded by, the files in and explicitly out of scope, the guardrails in play, the **stop conditions**,
 how to verify, and what to record on completion.
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_handoff.py" "docs/handoff/<slug>.md" \
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_handoff.py" "docs/product/handoff/<slug>.md" \
   --criteria "docs/product/acceptance/<slug>.md"
 ```
 

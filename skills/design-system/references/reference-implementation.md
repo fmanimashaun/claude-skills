@@ -183,7 +183,10 @@ if it was the one to lock it.
 ```js
 const stack = []
 export function dismissableLayer(el, onDismiss) {
-  function onKey(e) { if (e.key === "Escape" && stack.at(-1) === layer) { e.stopPropagation(); onDismiss() } }
+  // preventDefault on the Escape keydown stops the browser's close request, so an open dropdown inside a modal
+  // <dialog> closes alone; stopPropagation does not (HTML spec close requests: "If event is not null, and its
+  // canceled flag is set, then return").
+  function onKey(e) { if (e.key === "Escape" && stack.at(-1) === layer) { e.preventDefault(); e.stopPropagation(); onDismiss() } }
   function onClick(e) { if (stack.at(-1) === layer && !el.contains(e.target)) onDismiss() }
   const layer = {
     open() { stack.push(layer); document.addEventListener("keydown", onKey, true)

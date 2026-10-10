@@ -407,6 +407,45 @@ def stop_gate_fixtures() -> None:
     check("stop-gate: the no-timeout (stock macOS) path still passes a green suite",
           code == 0, f"exit {code}: {out.strip()[:160]!r}")
 
+    # WHERE THE CRITERIA AND THE WORK ORDER LIVE (#1700). `/rails-flow:feature` writes the criteria at `docs/product/acceptance/<slug>.md` and
+    # `/rails-flow:handoff` writes the work order at `docs/product/handoff/<slug>.md`, the paths `docs_layout.py` accepts. The gate read only the
+    # pre-layout `docs/acceptance/` and `docs/handoff/`, so a branch that followed the commands was blocked for criteria it had written. Both old
+    # paths still count for a project that committed there before.
+    def paths_scenario(*files: str) -> tuple[int, str]:
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            _git_repo(repo)
+            _run(["git", "checkout", "-q", "-b", "feature/widgets"], cwd=repo, check=True, capture_output=True)
+            (repo / "spec").mkdir()
+            (repo / "app").mkdir()
+            (repo / "app" / "widget.rb").write_text("class Widget; end\n")  # uncommitted app code: the gate wants criteria
+            criteria_ok = ("- **AC-1** Given a widget, when it is saved, then it is listed.\n"
+                           "- **AC-2** Given a blank name, when it is saved, then it is rejected with an error message.\n")
+            for rel in files:
+                (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+                (repo / rel).write_text(criteria_ok if "acceptance" in rel else "not a work order\n")
+            stubs = Path(td) / "bin"
+            stubs.mkdir()
+            _stub(stubs, "bundle", passing)
+            return run_hook("stop-gate.sh", cwd=repo, stdin="{}", path_prefix=[stubs],
+                            env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])})
+
+    code, out = paths_scenario()
+    check("stop-gate: app code with no criteria blocks, and names the layout path docs/product/acceptance/<slug>.md",
+          code == 2 and "Expected: docs/product/acceptance/widgets.md" in out, f"exit {code}: {out.strip()[:200]!r}")
+    code, out = paths_scenario("docs/product/acceptance/widgets.md")
+    check("stop-gate: criteria at docs/product/acceptance/<slug>.md are found (not 'no acceptance criteria')",
+          "no acceptance criteria" not in out, f"exit {code}: {out.strip()[:200]!r}")
+    code, out = paths_scenario("docs/acceptance/widgets.md")
+    check("stop-gate: criteria at the pre-layout docs/acceptance/<slug>.md still count",
+          "no acceptance criteria" not in out, f"exit {code}: {out.strip()[:200]!r}")
+    code, out = paths_scenario("docs/product/acceptance/widgets.md", "docs/product/handoff/widgets.md")
+    check("stop-gate: a work order at docs/product/handoff/<slug>.md is read, and one that does not hold blocks",
+          code == 2 and "the work order does not hold" in out, f"exit {code}: {out.strip()[:200]!r}")
+    code, out = paths_scenario("docs/product/acceptance/widgets.md", "docs/handoff/widgets.md")
+    check("stop-gate: a work order at the pre-layout docs/handoff/<slug>.md is still read",
+          code == 2 and "the work order does not hold" in out, f"exit {code}: {out.strip()[:200]!r}")
+
 
 # ---- guard-lane.sh (#823) -----------------------------------------------------------------------
 def guard_lane_fixtures() -> None:
@@ -1121,7 +1160,7 @@ def guard_bash_fixtures() -> None:
             if real:
                 os.symlink(real, Path(bd) / tool)
         os.symlink(sys.executable, Path(bd) / "python3")
-        check("guard-bash (#1526): with no awk on PATH, `git add -A` is still blocked",
+        check("guard-bash (#1526): with no awk on PATH, the literal `git add -A` is still blocked",
               raw(payload("git add -A"), bd) == 2, "exit 0: the normaliser printed nothing and every rule passed")
         check("guard-bash (#1526): with no awk on PATH, a force-push to dev is still blocked",
               raw(payload("git push --force origin dev"), bd) == 2, "exit 0")
@@ -1131,7 +1170,7 @@ def guard_bash_fixtures() -> None:
     # the pipe buffer, and `set -o pipefail` read that 141 as "no match". `git add -A` plus 10k lines of echo
     # was allowed (attacker corpus b2/b3/b4/b14). 10k lines of `echo line N` is ~130KB, past a 64KB pipe.
     long_tail = "".join(f"echo line {i}\n" for i in range(10000))
-    check("guard-bash: `git add -A` followed by 10k lines is still blocked (pipefail + SIGPIPE)",
+    check("guard-bash: the literal `git add -A` followed by 10k lines is still blocked (pipefail + SIGPIPE)",
           raw(payload("git add -A\n" + long_tail)) == 2, "exit 0: grep -q's early exit was read as no match")
     check("guard-bash: a force-push to dev followed by 10k lines is still blocked",
           raw(payload("git push --force origin dev\n" + long_tail)) == 2, "exit 0")
@@ -1171,15 +1210,15 @@ def guard_bash_fixtures() -> None:
     no_grep = bindir(base + ("sed", "tr", "awk"), python=True)
     no_tr = bindir(base + ("grep", "sed", "awk"), python=True)
     try:
-        check("guard-bash (#1529 review): with no awk, a COMPOUND `cd x && git add -A` is blocked",
+        check("guard-bash (#1529 review): with no awk, a COMPOUND literal `cd x && git add -A` is blocked",
               raw(payload("cd x && git add -A"), no_awk) == 2, "exit 0: the anchored rules missed the raw text")
         check("guard-bash (#1529 review): CONTROL: with no awk, `cd x && git status` passes",
               raw(payload("cd x && git status"), no_awk) == 0, "exit 2")
-        check("guard-bash (#1529 review): with no python3, `git add -A` is blocked (the raw JSON is matched)",
+        check("guard-bash (#1529 review): with no python3, the literal `git add -A` is blocked (the raw JSON is matched)",
               raw(payload("git add -A"), no_python) == 2, "exit 0")
         check("guard-bash (#1529 review): CONTROL: with no python3, `git status` passes",
               raw(payload("git status"), no_python) == 0, "exit 2")
-        check("guard-bash (#1529 review): with no grep, `git add -A` is blocked",
+        check("guard-bash (#1529 review): with no grep, the literal `git add -A` is blocked",
               raw(payload("git add -A"), no_grep) == 2, "exit 0: hit() failed on every rule")
         check("guard-bash (#1529 review): with no grep, a force-push to dev is blocked",
               raw(payload("git push --force origin dev"), no_grep) == 2, "exit 0")
@@ -1252,11 +1291,11 @@ def guard_bash_fixtures() -> None:
     # carries the failure (#1529 round 3).
     no_sed = bindir(base + ("grep", "tr", "awk"), python=True)
     try:
-        check("guard-bash (#1529 r3): with no sed, `git add -A` is blocked",
+        check("guard-bash (#1529 r3): with no sed, the literal `git add -A` is blocked",
               raw(payload("git add -A"), no_sed) == 2, "exit 0: an early stage failed and the last one's 0 won")
         check("guard-bash (#1529 r3): CONTROL: with no sed, `git status` passes",
               raw(payload("git status"), no_sed) == 0, "exit 2")
-        check("guard-bash (#1529 r2): with an awk that exits 2, `git add -A` is blocked",
+        check("guard-bash (#1529 r2): with an awk that exits 2, the literal `git add -A` is blocked",
               raw(payload("git add -A"), fake) == 2, "exit 0: the normaliser's status was discarded")
         check("guard-bash (#1529 r2): CONTROL: with an awk that exits 2, `git status` passes",
               raw(payload("git status"), fake) == 0, "exit 2")
@@ -1266,7 +1305,7 @@ def guard_bash_fixtures() -> None:
             check(f"guard-bash (#1529 r2): with no awk, `{cmd}` is not exempted by another segment",
                   raw(payload(cmd), no_awk) == 2, "exit 0")
         # Suggestion 1: `$(cat)` read nothing without cat.
-        check("guard-bash (#1529 r2): with no cat, `git add -A` is blocked",
+        check("guard-bash (#1529 r2): with no cat, the literal `git add -A` is blocked",
               raw(payload("git add -A"), no_cat) == 2, "exit 0: stdin was never read")
         check("guard-bash (#1529 r2): CONTROL: with no cat, `git status` passes",
               raw(payload("git status"), no_cat) == 0, "exit 2")
@@ -1285,7 +1324,16 @@ DB_RESET_TEST_FORMS = ("RAILS_ENV=test bin/rails db:reset", "env RAILS_ENV=test 
                        "RAILS_ENV=test rake db:reset", "RAILS_ENV=test bin/rake db:reset", "bin/rails db:reset RAILS_ENV=test",
                        "  RAILS_ENV=test bin/rails db:reset  ", "RAILS_ENV=test\tbin/rails db:reset")
 # Refused even for a declared project: not the test database, not alone, or not the bare reset.
-DB_RESET_STILL_REFUSED = ("bin/rails db:reset", "RAILS_ENV=development bin/rails db:reset", "RAILS_ENV=production bin/rails db:reset",
+# #1761, shell-adversary review of 65d1e154: wrappers CHAIN, and the runner may sit at any path ending in bin/rails or bin/rake. Every one resets the database.
+# `--trace` and `-t` are NOT listings (`-T` is), so the exemption for a listing must not reach them.
+DB_RESET_WRAPPED = ("bundle exec spring rails db:reset", "bundle exec spring rake db:reset", "bundle exec bin/spring rails db:reset", "./bin/spring rails db:reset", "bundle exec ruby bin/rails db:reset",
+                    "ruby -S rails db:reset", "bundle exec -- rails db:reset", "./bin/rails db:reset", "/app/bin/rails db:reset", "cd app && ./bin/rails db:reset",
+                    "/usr/bin/env bin/rails db:reset", "/usr/bin/env FOO=1 bin/rails db:reset", "bin/rails db:reset --trace", "rake -t db:reset")
+# A listing prints the matching tasks and runs nothing, so it passes for a declared and an undeclared project alike.
+DB_RESET_LISTING = ("bin/rails -T db:reset", "rake -T db:reset", "bundle exec rake -T db:reset", "bin/rails --tasks db:reset", "rake -D db:reset")
+DB_RESET_LISTING_THEN_RESET = ("rake -T; rake db:reset", "bin/rails -T && bin/rails db:reset", "bin/rails -T; bin/rails db:reset", "rake -T | rake db:reset", "rake -D\nbin/rails db:reset",
+                               "bin/rails db:reset && rake -T", "bin/rails db:reset\nbin/rails -T", "bin/rails -T db:reset\nbin/rails db:reset")
+DB_RESET_STILL_REFUSED = (*DB_RESET_LISTING_THEN_RESET, "bin/rails db:reset", "RAILS_ENV=development bin/rails db:reset", "RAILS_ENV=production bin/rails db:reset",
                           "RAILS_ENV=testing bin/rails db:reset", "RAILS_ENV=test bin/rails db:reset && bin/rails db:reset",
                           "RAILS_ENV=test bin/rails db:reset; bin/rails db:reset", "RAILS_ENV=test bin/rails db:reset | tee log",
                           "RAILS_ENV=test bin/rails db:reset\nbin/rails db:reset", "RAILS_ENV=test bin/rails db:reset db:seed",
@@ -1296,7 +1344,10 @@ DB_RESET_STILL_REFUSED = ("bin/rails db:reset", "RAILS_ENV=development bin/rails
                           # #1760 review: `[[:space:]]` matched a newline and `=~` anchors only at the ends of the whole string, so a bare assignment on one line and a
                           # DEVELOPMENT reset on the next was one allowed command.
                           "RAILS_ENV=test\nbin/rails db:reset", "bin/rails db:reset\nRAILS_ENV=test", "bin/rails db:reset\rRAILS_ENV=test",
-                          "RAILS_ENV=test\n\nbin/rails db:reset", "env RAILS_ENV=test\nbin/rails db:reset", "bundle exec rails db:reset\nRAILS_ENV=test")
+                          "RAILS_ENV=test\n\nbin/rails db:reset", "env RAILS_ENV=test\nbin/rails db:reset", "bundle exec rails db:reset\nRAILS_ENV=test",
+                          # Runners the normaliser does not peel, and an engine's namespaced task: the same db:reset.
+                          "ruby bin/rails db:reset", "spring rails db:reset", "bin/spring rails db:reset", "bin/rails app:db:reset",
+                          "RAILS_ENV=test ruby bin/rails db:reset", "RAILS_ENV=test spring rails db:reset", *DB_RESET_WRAPPED)
 
 
 def guard_bash_db_reset_fixtures() -> None:
@@ -1334,13 +1385,19 @@ def guard_bash_db_reset_fixtures() -> None:
 
         # UNDECLARED: the refusal stays, for every spelling, and a project with a CI script is pointed at it.
         for cmd in ("bin/rails db:reset", "RAILS_ENV=test bin/rails db:reset", "env RAILS_ENV=test bin/rails db:reset", "bundle exec rails db:reset",
-                    "bundle exec bin/rails db:reset", "RAILS_ENV=test bundle exec rails db:reset", "bundle exec rake db:reset"):
+                    "bundle exec bin/rails db:reset", "RAILS_ENV=test bundle exec rails db:reset", "bundle exec rake db:reset",
+                    "ruby bin/rails db:reset", "spring rails db:reset", "bin/spring rails db:reset", "bin/rails app:db:reset", *DB_RESET_WRAPPED):
             rc, out = run(plain, cmd)
             check(f"guard-bash (#1734): an UNDECLARED project is still refused `{cmd}`", rc == 2 and "db:reset is prohibited" in out, f"exit {rc}: {out[:120]}")
         check("guard-bash (#1734): CONTROL: the refusal still recommends the unseeded sequence", "db:drop db:create db:schema:load" in out, out[:200])
         check("guard-bash (#1734): with no CI script the refusal names none", "bin/ci" not in out and "config/ci.rb" not in out, out[:200])
         check("guard-bash (#1734): the refusal says how to declare the choice", "test-db-seeded: yes" in out, out[:200])
         check("guard-bash (#1734): the undeclared refusal is not the declared project's message", "this project declares" not in out, out[:200])
+
+        for cmd in DB_RESET_LISTING:
+            for kind, root in (("declared", seeded), ("undeclared", plain)):
+                rc, out = run(root, cmd)
+                check(f"guard-bash (#1761): a listing is not a reset, so a {kind} project may run `{cmd}`", rc == 0, f"exit {rc}: {out[:120]}")
 
         with_ci = project("# Guardrails\n", ci_script=True)
         with_rb = project("# Guardrails\n", ci_rb=True)
@@ -1394,6 +1451,8 @@ def guard_bash_db_reset_fixtures() -> None:
         # FAIL CLOSED: an unreadable payload cannot show which env the command sets, so even a declared project is refused.
         rc, out = hook(seeded, "RAILS_ENV=test bin/rails db:reset")
         check("guard-bash (#1734): a payload the hook cannot parse is refused even for a declared project", rc == 2, f"exit {rc}: {out[:120]}")
+        rc, out = hook(plain, "rake -T db:reset")
+        check("guard-bash (#1761): a listing in a payload the hook cannot parse is refused, because an exemption cannot be trusted there", rc == 2, f"exit {rc}: {out[:120]}")
         # The declaration is read from the PROJECT (CLAUDE_PROJECT_DIR), not from wherever the command's shell happens to be.
         elsewhere = Path(tempfile.mkdtemp())
         try:

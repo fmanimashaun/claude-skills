@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Reject a work order an executor cannot run from -- and an agent whose model contradicts doctrine.
 
-Run:  python3 check_handoff.py docs/handoff/<slug>.md
-      python3 check_handoff.py docs/handoff/<slug>.md --criteria docs/acceptance/<slug>.md
+Run:  python3 check_handoff.py docs/product/handoff/<slug>.md
+      python3 check_handoff.py docs/product/handoff/<slug>.md --criteria docs/product/acceptance/<slug>.md
       python3 check_handoff.py --agents <plugin>/agents --tiers <plugin>/reference/model-tiers.md
       python3 check_handoff.py --selftest
 
 WHY (rails-flow #127, and the rails-flow half of #128). `/rails-flow:handoff` writes
-`docs/handoff/<slug>.md`: the one file an executor reads instead of the conversation. It makes three
+`docs/product/handoff/<slug>.md`: the one file an executor reads instead of the conversation. It makes three
 promises a reader cannot check by reading it, and each has a way of failing that looks fine:
 
   1. **"Self-contained by construction."** A work order saying "the scope we discussed" reads as
@@ -855,10 +855,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Validate a rails-flow work order, and reconcile agents with the tier table."
     )
-    parser.add_argument("handoff_path", nargs="?", help="docs/handoff/<slug>.md")
+    parser.add_argument("handoff_path", nargs="?", help="docs/product/handoff/<slug>.md")
     parser.add_argument(
         "--criteria", metavar="FILE",
-        help="the acceptance criteria this work order is graded by (docs/acceptance/<slug>.md); "
+        help="the acceptance criteria this work order is graded by (docs/product/acceptance/<slug>.md); "
              "every cited AC-n must exist there",
     )
     parser.add_argument(

@@ -359,7 +359,7 @@ non-determinism nobody without the licence could even test. See the decision rec
 A single 3-facet prism — **left = cerulean `#0077CC`, right = electric `#00A3FF`, top = cyan
 `#00D4FF`** — the three facets denote the three product modules (FM / IT / Fleet). Exact SVG
 paths live in `01-logos/DESIGN-SPECIFICATIONS.md`. Full brand assets live per-repo under
-`docs/design-system/brand-assets/`; the canonical superset is in
+`docs/design/assets/brand/`; the canonical superset is in
 `fidara-solutions/fidara-platform`.
 
 - Wordmark: **Bricolage Grotesque Black (900)**, uppercase, tight tracking, `foreground` on
