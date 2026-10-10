@@ -470,15 +470,19 @@ def check_words(seg: list[str]) -> None:
         break
 
 
-def _trap_args(seg: list[str]):
-    """#1781: the words after `trap` when this segment RUNS the `trap` builtin, else None. Prefixes are skipped the way `command_indexes` skips them
-    (`builtin`, `command`, `env`, `{`, `then`, `do`, an assignment, an option), and so are the `name ()` and `{` of a function definition, so a trap
-    inside a function body or a compound command is seen as well as a bare one."""
-    for i, w in enumerate(seg):
-        if re.fullmatch(r"[A-Za-z_]\w*=.*", w) or w in WRAPPERS or w.startswith("-") or w in ("()", "(", ")", "}"):
+def _trap_strings(seg: list[str]) -> list[str]:
+    """#1781: the command string of EVERY `trap` word in `seg`, wherever it stands. `trap '<command>' SIGNAL...` runs the string later, at exit or on a
+    signal. An allowlist of the prefixes that may come before `trap` (`sudo -u r`, `exec -a x`, `nice -n 5`, `timeout 5`, `builtin`, `{` ...) cannot be
+    completed, so no position is assumed: a word that is `trap` is read as the builtin, and `echo trap 'git push origin main'` is over-blocked on
+    purpose (a release gate fails closed). `-p`, `-l` and `--` are options; `-` and `''` carry no command."""
+    out: list[str] = []
+    for k, w in enumerate(seg):
+        if w.rsplit("/", 1)[-1] != "trap":
             continue
-        return seg[i + 1:] if w == "trap" else None
-    return None
+        rest = [a for a in seg[k + 1:] if a not in ("--", "-p", "-l")]
+        if rest and rest[0] not in ("-", ""):
+            out.append(rest[0])
+    return out
 
 
 def all_segments(cmd: str, depth: int = 0):
@@ -496,14 +500,9 @@ def all_segments(cmd: str, depth: int = 0):
     deferred: list[str] = []
     for seg in segments(toks):
         check_words(seg)
-        if _trap_args(seg) is not None:
-            # #1781: `trap '<command>' SIGNAL...` runs a command string later, at exit or on a signal. It is read like `bash -c '<string>'`, and AFTER
-            # every other segment (it fires once the rest has run). `trap - SIG`, `trap '' SIG`, `trap -p` and `trap -l` carry no command. A string that IS a variable (`trap "$CMD" EXIT`) is refused by `check_words` once it is read as a segment.
-            targs = [w for w in _trap_args(seg) if w != "--"]
-            if targs and targs[0] in ("-p", "-l"):
-                pass
-            elif targs and targs[0] not in ("-", ""):
-                deferred.append(targs[0])
+        # `trap` is read BEFORE the function-keyword handling below, from the whole segment, so a `function f {` body and a compound body are seen
+        # by the same path as a bare one. The strings run after every other segment (a trap fires last).
+        deferred += _trap_strings(seg)
         if seg[0] in ("alias", "coproc"):
             raise Unjudgeable(f"`{seg[0]}` defines a name that can run any command later")
         if seg[0] == "function":
@@ -2070,6 +2069,13 @@ def selftest() -> int:
         ("env trap 'git push origin main' EXIT", ["PUSH_MAIN main"]), ("f(){ trap 'git push origin main' EXIT; }; f", ["PUSH_MAIN main"]),
         ("{ trap 'git push origin main' EXIT; }", ["PUSH_MAIN main"]), ("if true; then trap 'git push origin main' EXIT; fi", ["PUSH_MAIN main"]),
         ("( trap 'git push origin main' EXIT )", ["PUSH_MAIN main"]), ("builtin trap - EXIT", []), ("f(){ trap 'echo bye' EXIT; }; f", []),
+        # #1781: `trap` is found at ANY position, so no prefix list can leak; the echo case is a documented over-block (fail closed)
+        ("function f { trap 'git push origin main' EXIT; }; f", ["PUSH_MAIN main"]), ("function f { { trap 'git push origin main' EXIT; }; }; f", ["PUSH_MAIN main"]),
+        ("function f() { trap 'git push origin main' EXIT; }; f", ["PUSH_MAIN main"]),
+        ("sudo -u r trap 'git push origin main' EXIT", ["PUSH_MAIN main"]), ("exec -a x trap 'git push origin main' EXIT", ["PUSH_MAIN main"]),
+        ("nice -n 5 trap 'git push origin main' EXIT", ["PUSH_MAIN main"]), ("timeout 5 trap 'git push origin main' EXIT", ["PUSH_MAIN main"]),
+        ("echo trap 'git push origin main'", ["PUSH_MAIN main"]), ("trap -- 'git push origin main' EXIT", ["PUSH_MAIN main"]),
+        ("sudo trap -p", []), ("echo trap", []), ("trap -l", []),
         ("trap - EXIT", []), ("trap '' INT", []), ("trap -p", []), ("trap 'echo bye' EXIT", []),
         # a trap string is classified like `bash -c`'s
         ("trap 'git push origin main' EXIT", ["PUSH_MAIN main"]), ("trap 'git push origin main' EXIT; git status", ["PUSH_MAIN main"]),

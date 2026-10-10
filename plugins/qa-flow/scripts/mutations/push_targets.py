@@ -742,15 +742,21 @@ GUARD = Guard(
         ),
         Mutation(
             "#1781: a trap's command string is ignored, so a deferred push to main is allowed",
-            "                deferred.append(targs[0])",
-            "                pass",
+            "            out.append(rest[0])",
+            "            pass",
             "expected ['PUSH_MAIN main'], got []",
         ),
         Mutation(
-            "#1781: `builtin`, `command`, `env` and the compound-command words (`{`, `then`) are not skipped before `trap`, so a prefixed or nested trap is not read",
-            '        if re.fullmatch(r"[A-Za-z_]\\w*=.*", w) or w in WRAPPERS or w.startswith("-") or w in ("()", "(", ")", "}"):',
-            '        if re.fullmatch(r"[A-Za-z_]\\w*=.*", w) or w.startswith("-") or w in ("()", "(", ")", "}"):',
-            "\"builtin trap 'git push origin main' EXIT\": expected ['PUSH_MAIN main']",
+            "#1781: `trap` is only read at the first word of a segment, so a prefixed one (`sudo -u r trap ...`) is not read",
+            '    for k, w in enumerate(seg):\n        if w.rsplit("/", 1)[-1] != "trap":',
+            '    for k, w in enumerate(seg[:1]):\n        if w.rsplit("/", 1)[-1] != "trap":',
+            "\"sudo -u r trap 'git push origin main' EXIT\": expected ['PUSH_MAIN main']",
+        ),
+        Mutation(
+            "#1781: the trap scan runs only after the `function` keyword is dropped from a segment, so a `function f { trap ...; }` body is missed",
+            "        deferred += _trap_strings(seg)\n",
+            "        deferred += _trap_strings(seg) if seg[0] != \"function\" else []\n",
+            "\"function f { trap 'git push origin main' EXIT; }; f\": expected ['PUSH_MAIN main']",
         ),
         Mutation(
             "#1781: `git bisect --help` is refused as HEAD-moving",
