@@ -5,7 +5,7 @@ ADV=https://code.claude.com/docs/en/advisor  ENV=https://code.claude.com/docs/en
 SET=https://code.claude.com/docs/en/settings-reference  CLI=https://code.claude.com/docs/en/cli-reference
 PRC=https://platform.claude.com/docs/en/about-claude/pricing  H55=https://platform.claude.com/docs/en/models/haiku-5-5/overview
 MIG=https://platform.claude.com/docs/en/models/haiku-5-5/migration-guide  EFF=https://platform.claude.com/docs/en/build-with-claude/effort
-CHG=https://code.claude.com/docs/en/changelog
+CHG=https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md (the source the docs changelog page renders)
 
 ## A. haiku alias -> Haiku 5.5 on Anthropic API; 4.5 elsewhere; v2.1.293+  -- CONFIRMED
 MC provider table: "| Anthropic API | Opus 5.5 | Sonnet 5.5 | Haiku 5.5 |"; "| Claude Platform on AWS | Opus 5.5 | Sonnet 4.6 | Haiku 4.5 |";

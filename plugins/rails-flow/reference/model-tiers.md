@@ -190,8 +190,9 @@ plain digits; anything else is ignored, so the variable can adjust the cap but c
 ### The advisor: judgement agents use it, mechanical agents consult it only when stuck
 
 *"Subagents inherit the configured advisor and apply the same pairing check against their own
-model"* ([cc-advisor]), and a Haiku main model (5.5 or 4.5) accepts a Fable, Opus or Sonnet advisor: *"Haiku can
-call the advisor but cannot act as one"*. No frontmatter field controls it per agent; the sub-agents
+model"* ([cc-advisor]), and a Haiku 4.5 main model accepts a Fable, Opus, Sonnet or Haiku 5.5 advisor
+(Haiku 5.5 needs Claude Code v2.1.293 or later): *"Haiku 4.5 can call the advisor but can't act as
+one"*. No frontmatter field controls it per agent; the sub-agents
 page does not mention the advisor at all (checked 2026-09-30, #1505). The advisor is experimental and on the
 Anthropic API only, and it can stay off without saying so in an agent's output: *"In a session where a variable
 that turns flag fetching off is set, such as `DISABLE_TELEMETRY`, the advisor stays off."* ([cc-advisor], re-read

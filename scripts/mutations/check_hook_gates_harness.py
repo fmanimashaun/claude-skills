@@ -59,6 +59,12 @@ GUARD = Guard(
             '        check(f"guard-bash: `{cmd}` is blocked", run(cmd) == 2, "exit 0")',
             'guard-bash fixtures: no check that runs the hook carries a bare constant `exit N` as its detail (it must carry what the hook said)',
         ),
+        Mutation(
+            'a guard-claims fixture carries a bare constant detail again (#1801)',
+            '          run("gh pr create --base dev --body-file BODY", NUMERIC) == 2, said())',
+            '          run("gh pr create --base dev --body-file BODY", NUMERIC) == 2, "exit 0")',
+            'guard-claims fixtures: no check that runs the hook carries a bare constant `exit N` as its detail (it must carry what the hook said)',
+        ),
         # #1664: a timing result the MACHINE decided is a counted SKIP. Each mutation breaks one of the three conditions, the
         # exit code, the counting, or the order of verdicts, so a STARVED result can no longer pass for a pass or hide a failure.
         Mutation(
