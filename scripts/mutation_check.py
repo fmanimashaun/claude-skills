@@ -52,6 +52,7 @@ from pathlib import Path
 
 import proc_group  # noqa: E402 -- a timeout kills the whole process group (#1459)
 import hermetic_git  # noqa: E402 -- the runner's subprocesses start no detached git (#1510)
+import mutation_incremental as inc  # noqa: E402 -- the skip, shard and record rules, pure so a selftest can drive each (#1738, #1739)
 from mutation_types import Guard, Mutation  # noqa: F401 -- re-exported: mutation_check_selftest and doctrine_map use mc.Guard / mc.Mutation
 
 REPO = Path(__file__).resolve().parents[1]
@@ -280,12 +281,14 @@ def five_minute_load() -> float | None:
         return None
 
 
-def ratchet_context(load: float | None, jobs: int, recorded_jobs: int | None) -> str:
+def ratchet_context(load: float | None, jobs: int, recorded_jobs: int | None, recorded_host: str | None = None) -> str:
     """One sentence for a ratchet failure: the load and job count it ran at, and whether that is a fair comparison with the record.
 
     A quiet machine at the recorded job count makes the failure growth; anything else makes it a question to re-run first."""
     seen = (f"the 5-minute load was {load:.1f} at the start and jobs={jobs}" if load is not None
             else f"the load average is unavailable here and jobs={jobs}")
+    # WHICH MACHINE THE RECORD CAME FROM (#1738): jobs is only comparable to the job count of the host that recorded it.
+    seen += f"; the record was measured on {recorded_host}" if recorded_host else "; the record names no host"
     if load is not None and load <= RATCHET_QUIET_LOAD and recorded_jobs == jobs:
         return (f"ratchet context: {seen}, the conditions the record was made at (a load under {RATCHET_QUIET_LOAD:g}), "
                 "so read this as growth.")
@@ -334,13 +337,69 @@ def load_cost_baseline(path: Path = COST_BASELINE) -> dict | None:
     return data
 
 
-def write_cost_baseline(path: Path, cost: dict[str, float], jobs: int) -> None:
+def write_cost_baseline(path: Path, cost: dict[str, float], jobs: int, host: str | None = None) -> None:
     """Record every guard over the floor, rounded and in a stable order, so a re-baseline is a reviewable diff."""
     heavy = {name: round(secs, 1) for name, secs in sorted(cost.items()) if secs > RATCHET_FLOOR}
     record = {"note": "CPU seconds (user + system) of work per guard (baseline plus every mutant, summed over all jobs) from a measured "
                       "full run; re-set with `python3 scripts/mutation_check.py --rebaseline` (#1599)",
               "jobs": jobs, "floor": RATCHET_FLOOR, "guards": heavy}
+    if host:
+        record["host"] = host
     path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def commit_id() -> str:
+    """The commit this run is on: the runner's own variable, else `rev-parse HEAD`, else `unknown` (a record must still be writable)."""
+    sha = os.environ.get("GITHUB_SHA")
+    if sha:
+        return sha
+    try:
+        out = subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO, capture_output=True, text=True, timeout=30, env=hermetic_git.env())
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+    return out.stdout.strip() if out.returncode == 0 and out.stdout.strip() else "unknown"
+
+
+def trusted_proof_skips(guards: list, hashes: dict[str, str], harness: str, system: str) -> dict[str, str]:
+    """`{guard: proof commit}` skippable now: unchanged since the newest `main` commit carrying CI's `mutation-proof/<os>` status (#1738)."""
+    return inc.trusted_skips(guards, hashes, harness, inc.main_first_parents(REPO), inc.github_proof_lookup(REPO, system),
+                             lambda sha: inc.GitTree(REPO, sha))
+
+
+def merge_command(directory: Path, expect: int, host: str | None) -> int:
+    """`--merge-shards DIR`: the summary step (#1739). Fails unless shards 1..N are all present and cover every guard once; after a
+    set of FULL shards it writes the cost record and, on `main` in CI, posts the `mutation-proof/<os>` status a later run may skip on."""
+    if expect < 1:
+        print("--merge-shards needs --expect-shards N", file=sys.stderr)
+        return 2
+    results = []
+    for path in sorted(directory.rglob("shard-*.json")):
+        try:
+            results.append(json.loads(path.read_text(encoding="utf-8")))
+        except ValueError as exc:
+            print(f"  - {path}: not valid JSON ({exc})", file=sys.stderr)
+            return 1
+    merged, problems = inc.merge_shards(results, expect, {g.name for g in GUARDS}, commit=commit_id(), harness=inc.harness_hash(REPO))
+    if merged is None:
+        print(failure_report(problems, [], len(GUARDS)), file=sys.stderr)
+        return 1
+    print(f"all {expect} shard(s) present for {merged['os']} at {merged['commit'][:12]}; {len(merged['guards'])} guard(s) covered once each")
+    if not merged["full"]:
+        print("some shard skipped unchanged guards, so this is not a full run: no record is written (a skip is not a pass)")
+        return 0
+    label, refusal = inc.record_host(os.environ, host, merged["os"])
+    if refusal:
+        print(refusal, file=sys.stderr)
+        return 2
+    _, warnings = ratchet_outcome(merged["cost"], load_cost_baseline(), {g.name for g in GUARDS}, warn_only=True)
+    for warning in warnings:
+        print(f"warning: {warning}")
+    write_cost_baseline(COST_BASELINE, merged["cost"], int(merged.get("jobs") or 0), label)
+    print(f"wrote {COST_BASELINE.name} (host {label}); commit it from this run's artifact")
+    # THE ONE THING A LATER RUN MAY SKIP ON (#1738): a status on a `main` commit, posted here and nowhere a pull request can reach.
+    posted, why = inc.post_proof(os.environ, merged["os"], merged["commit"])
+    print(f"proof: {why}")
+    return 0       # failing to post a proof must not fail the release: the next run simply skips nothing
 
 
 def record_problems(guard_names: set[str], baseline: dict | None) -> list[str]:
@@ -371,12 +430,26 @@ def cost_problems(cost: dict[str, float], baseline: dict) -> list[str]:
     return problems
 
 
-def ratchet_problems(cost: dict[str, float], baseline: dict | None) -> list[str]:
-    """What the cost ratchet refuses, as sentences; an empty list is within budget."""
-    problems = record_problems(set(cost), baseline)
+def ratchet_problems(cost: dict[str, float], baseline: dict | None, known: set[str] | None = None) -> list[str]:
+    """What the cost ratchet refuses, as sentences; an empty list is within budget.
+
+    `known` is every guard that exists, when `cost` holds only the guards THIS run measured (a shard, or a run that skipped
+    unchanged guards): a guard that was not run is not a guard that is gone (#1738)."""
+    problems = record_problems(set(cost) if known is None else known, baseline)
     if baseline is None:
         return problems
     return problems + cost_problems(cost, baseline)
+
+
+def ratchet_outcome(cost: dict[str, float], baseline: dict | None, known: set[str] | None,
+                    warn_only: bool) -> tuple[list[str], list[str]]:
+    """`(problems that block, warnings)`. In the release (`warn_only`) cost growth is a WARNING (#1738): a survivor, an inert
+    baseline and a wrong-fixture catch block elsewhere, and a missing record or a gone guard is drift, not cost.
+    Growth blocks only a bare `--ratchet`, which a maintainer runs by hand: pull request CI runs no mutation job and every automated full run
+    (the shard jobs, the doctor's `--require-slow`) passes `--ratchet-warn`, so there growth is a warning a person has to read in the log."""
+    if baseline is None or not warn_only:
+        return ratchet_problems(cost, baseline, known), []
+    return record_problems(set(cost) if known is None else known, baseline), cost_problems(cost, baseline)
 
 
 def ratchet_notes(cost: dict[str, float], baseline: dict | None, context: str) -> list[str]:
@@ -674,7 +747,43 @@ def main(argv: list[str] | None = None) -> int:
                              "runs no guard, so a pull request can afford it (#1599)")
     parser.add_argument("--rebaseline", action="store_true",
                         help="after a full run, rewrite the committed cost record from it (#1599)")
+    parser.add_argument("--host", help="with --rebaseline: the machine the record is measured on. Without it, --rebaseline "
+                                       "refuses outside CI (#1738)")
+    parser.add_argument("--ratchet-warn", action="store_true",
+                        help="--ratchet for the RELEASE: cost growth is printed as a warning and does not fail the run; a "
+                             "survivor, an inert guard and a wrong-fixture catch still do (#1738)")
+    parser.add_argument("--full", action="store_true",
+                        help="run every guard, skipping none for being unchanged since the last trusted full run (#1738)")
+    parser.add_argument("--shard", metavar="I/N",
+                        help="run only shard I of N: guards are split by recorded cost, largest first, the same way every time (#1739)")
+    parser.add_argument("--shard-out", metavar="FILE",
+                        help="with --shard, after a passing run write this shard's result (guards, hashes, cost) for --merge-shards (#1739)")
+    parser.add_argument("--merge-shards", metavar="DIR",
+                        help="the summary step: check that every shard in DIR passed for one commit and that together they cover every "
+                             "guard once; after a FULL set, write the proof and cost record (#1739)")
+    parser.add_argument("--expect-shards", type=int, default=0, help="with --merge-shards: N, the number of shards")
     args = parser.parse_args(argv)
+    if args.merge_shards:
+        return merge_command(Path(args.merge_shards), args.expect_shards, args.host)
+    shard = None
+    if args.shard:
+        try:
+            shard = inc.parse_shard(args.shard)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+    if args.shard_out and not shard:
+        print("--shard-out needs --shard", file=sys.stderr)
+        return 2
+    if args.shard and args.rebaseline:
+        print("--rebaseline records a whole run; with --shard the summary step records (--merge-shards)", file=sys.stderr)
+        return 2
+    host = None
+    if args.rebaseline:
+        host, refusal = inc.record_host(os.environ, args.host, inc.os_key())
+        if refusal:
+            print(refusal, file=sys.stderr)
+            return 2
     if args.check_record:
         try:
             found = record_problems({g.name for g in GUARDS}, load_cost_baseline())
@@ -710,6 +819,26 @@ def main(argv: list[str] | None = None) -> int:
     # its own, so Ctrl-C reaches only this process, and a bare pool's join waited for the slowest
     # running mutant while every one of them kept going (review of #1525: 24 s, survivors).
     jobs = max(1, args.jobs or os.cpu_count() or 1)
+    # WHICH GUARDS RUN (#1738, #1739). The shard is chosen over ALL guards (by recorded cost), then a guard whose staged files are unchanged
+    # since the recorded full run on this OS is SKIPPED -- reported as a skip, never counted as a pass. A record, a rebaseline, `--full`
+    # and a named guard all run what they are asked to.
+    every = list(guards)
+    try:
+        record = load_cost_baseline()
+    except ValueError as exc:
+        print(f"the cost record is unreadable: {exc}", file=sys.stderr)
+        return 1
+    hashes = {g.name: inc.guard_hash(REPO, g) for g in every}
+    harness = inc.harness_hash(REPO)
+    system = inc.os_key()
+    weights = dict((record or {}).get("guards", {}))
+    full = args.full or args.rebaseline
+    # A skip is taken only from a commit of `main` that CI marked proven, with every hash recomputed from that commit's own objects.
+    # Nothing a pull request can edit is read, and anything unreadable skips nothing (see scripts/mutation_incremental.py).
+    # And only where the code deciding the skip is trusted: CI on `main`. A branch's own code could skip anything, so off `main` every guard runs.
+    skips = {} if full or wanted or not inc.skip_allowed(os.environ) else trusted_proof_skips(every, hashes, harness, system)
+    guards, skipped = inc.select_guards(every, hashes, skips=skips, full=full, named=bool(wanted), shard=shard,
+                                        weights=weights, default=RATCHET_FLOOR)
     start_load = five_minute_load()     # BEFORE the pool starts: this run's own work is not the load it ran under (#1652)
     started = time.monotonic()
     with proc_group.pool(jobs) as pool:
@@ -728,7 +857,13 @@ def main(argv: list[str] | None = None) -> int:
     problems: list[str] = []
     notes: list[str] = []
     total = 0
-    for guard in guards:
+    for guard in every:
+        if guard.name in skipped:
+            # A SKIP IS NOT A PASS (#1738): nothing ran, so nothing is claimed beyond the record it is skipped on.
+            print(f"  [skip] {guard.name}: skip (unchanged since {skipped[guard.name][:12]})")
+            continue
+        if guard.name not in cost:
+            continue                    # another shard's guard
         total += len(guard.mutations)
         found = by_guard[guard.name]
         status = "ok" if not found else "FAIL"
@@ -736,28 +871,44 @@ def main(argv: list[str] | None = None) -> int:
         problems.extend(found)
 
     over_floor = sorted(((n, s) for n, s in cost.items() if s > RATCHET_FLOOR), key=lambda kv: -kv[1])
+    warnings: list[str] = []
+    everyone = {g.name for g in every}
+    context = ratchet_context(start_load, jobs, (record or {}).get("jobs"), (record or {}).get("host"))
     if args.rebaseline:
-        write_cost_baseline(COST_BASELINE, cost, jobs)
-        print(f"cost record rewritten: {COST_BASELINE.relative_to(REPO)} ({len(over_floor)} guard(s) over the "
-              f"{RATCHET_FLOOR:g}s floor)")
-    elif args.ratchet:
-        try:
-            baseline = load_cost_baseline()
-            problems.extend(ratchet_problems(cost, baseline))
-            notes = ratchet_notes(cost, baseline, ratchet_context(start_load, jobs, (baseline or {}).get("jobs")))
-        except ValueError as exc:
-            problems.append(f"the cost record is unreadable: {exc}")
+        # The growth the new record forgives is still SAID, once, so a re-record is never a silent one (#1738).
+        _, warnings = ratchet_outcome(cost, record, everyone, warn_only=True)
+        # A RECORD CI READS COMES FROM CI ONLY (#1738, security review). Outside CI an explicit --host writes a `.local` file that nothing
+        # reads: the ratchet, the shard split and the release see only the committed record, which a person takes from the runner's artifact.
+        target = COST_BASELINE if os.environ.get("GITHUB_ACTIONS") == "true" else COST_BASELINE.with_name("mutation-cost-baseline.local.json")
+        write_cost_baseline(target, cost, jobs, host)
+        print(f"cost record rewritten: {target.relative_to(REPO)} ({len(over_floor)} guard(s) over the "
+              f"{RATCHET_FLOOR:g}s floor, host {host})" + ("" if target == COST_BASELINE else "; a local record, which CI never reads"))
+    elif args.ratchet or args.ratchet_warn:
+        blocking, warnings = ratchet_outcome(cost, record, everyone, warn_only=args.ratchet_warn)
+        problems.extend(blocking)
+        notes = ratchet_notes(cost, record, context)
+    for warning in warnings:
+        print(f"warning: {warning}")
+    if warnings:
+        print(f"warning: {context}")
     if problems:
         print(failure_report(problems, notes, total), file=sys.stderr)
         return 1
-    print(f"\nmutation check: {total} mutation(s) across {len(guards)} guard(s), all caught "
+    if args.shard_out:
+        result = {"shard": shard[0], "of": shard[1], "os": system, "commit": commit_id(), "harness": harness, "jobs": jobs,
+                  "full": full or not skipped, "guards": {n: hashes[n] for n in sorted(cost)},
+                  "skipped": {n: skipped[n] for n in sorted(skipped)}, "cost": {n: round(s, 1) for n, s in sorted(cost.items())}}
+        Path(args.shard_out).write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(f"\nmutation check: {total} mutation(s) across {len(cost)} guard(s), all caught "
           f"(jobs={jobs}, {time.monotonic() - started:.0f}s)")
+    if skipped:
+        print(f"skipped, NOT run and not a pass: {len(skipped)} guard(s) unchanged since the recorded full run on {system}")
     heaviest = sorted(cost.items(), key=lambda kv: kv[1], reverse=True)[:5]
     print("heaviest guards (seconds of work, all jobs): "
           + ", ".join(f"{name} {secs:.0f}s" for name, secs in heaviest))
     # The table the cost record is made from, in the log of the run that measured it: before #1599 the CI log held
     # only the two lines above, so no one could see which guard had grown.
-    print(f"total work: {sum(cost.values()):.0f}s across {len(guards)} guard(s)")
+    print(f"total work: {sum(cost.values()):.0f}s across {len(cost)} guard(s)")
     print(f"work by guard over the {RATCHET_FLOOR:g}s floor (seconds, all jobs): "
           + (", ".join(f"{name} {secs:.0f}" for name, secs in over_floor) or "none"))
     return 0

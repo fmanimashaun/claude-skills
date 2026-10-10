@@ -459,18 +459,26 @@ def timeout_fixtures() -> None:
         # is passed the flag, so each direction is read off a verdict: a ratchet on every local run reads a busy laptop as
         # growth; one on no run enforces nothing; one on every gate hands an unknown flag to scripts that refuse it.
         (scripts / "_ratchet_probe.py").write_text(
-            "import sys\nprint('ratcheted' if '--ratchet' in sys.argv else 'plain')\n"
-            "sys.exit(1 if '--ratchet' in sys.argv else 0)\n", encoding="utf-8")
+            "import sys\nprint('ratcheted' if '--ratchet-warn' in sys.argv else 'plain')\n"
+            "sys.exit(1 if '--ratchet-warn' in sys.argv else 0)\n", encoding="utf-8")
         md.GATES = (("mutation coverage", ("python3", "scripts/_ratchet_probe.py")),
                     ("selftest other", ("python3", "scripts/_ratchet_probe.py")))
         md.SLOW_GATES = {"mutation coverage": 60}
         on, off = md.Doctor(require_slow=True), md.Doctor()
         on.check_gates()
         off.check_gates()
-        expect("under --require-slow, `mutation coverage` is run with --ratchet (the probe fails on it)", on,
+        expect("under --require-slow, `mutation coverage` is run with --ratchet-warn (the probe fails on it)", on,
                "mutation coverage", md.FAIL)
-        expect("without --require-slow, `mutation coverage` is run without --ratchet", off, "mutation coverage", md.PASS)
-        expect("under --require-slow, no OTHER gate is handed --ratchet", on, "selftest other", md.PASS)
+        expect("without --require-slow, `mutation coverage` is run without --ratchet-warn", off, "mutation coverage", md.PASS)
+        expect("under --require-slow, no OTHER gate is handed --ratchet-warn", on, "selftest other", md.PASS)
+        # #1739: `--mutation-shards` reports `mutation coverage` as a skip (the shard jobs run it) and reaches no other gate.
+        md.GATES = (("mutation coverage", ("python3", "scripts/_ratchet_probe.py")),
+                    ("selftest other", ("python3", "scripts/_ratchet_probe.py")))
+        shards = md.Doctor(shards_external=True)
+        shards.check_gates()
+        expect("under --mutation-shards, `mutation coverage` is a skip (the shard jobs run it)", shards, "mutation coverage", md.SKIP)
+        expect("under --mutation-shards, no OTHER gate is skipped", shards, "selftest other", md.PASS)
+
     finally:
         md.GATES, md.SLOW_GATES, md.REPO = saved_gates, saved_slow, real
 

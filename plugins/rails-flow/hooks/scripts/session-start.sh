@@ -5,6 +5,14 @@ set -uo pipefail
 # harness) never holds the session start; a payload that does not arrive is an empty one.
 _payload=""
 [ -t 0 ] || IFS= read -r -t 2 -d '' _payload || true
+# #1790: put the git shim FIRST on PATH for the Bash tool. A plugin's own `bin/` is appended to PATH (measured: entry 27, after /usr/bin), so a
+# `git` there would never run; `CLAUDE_ENV_FILE` (documented for SessionStart) is how a hook prepends. Advisory and SILENT, and FAIL OPEN: with no
+# env file, no plugin root or no shim it does nothing, and an env file it cannot write is ignored. Rewritten every start (the plugin root moves on
+# update), once per distinct line (this hook runs again after every compaction). Before the git check below: a session outside a repository gets it too.
+if [ -n "${CLAUDE_ENV_FILE:-}" ] && [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -x "${CLAUDE_PLUGIN_ROOT}/git-shim/git" ]; then
+  _shim_line="$(printf 'export PATH=%q:"$PATH"' "${CLAUDE_PLUGIN_ROOT}/git-shim")"
+  grep -qxF -- "$_shim_line" "$CLAUDE_ENV_FILE" 2>/dev/null || printf '%s\n' "$_shim_line" >> "$CLAUDE_ENV_FILE" 2>/dev/null || true
+fi
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
 
 branch="$(git branch --show-current 2>/dev/null)"
