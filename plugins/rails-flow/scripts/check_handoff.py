@@ -67,8 +67,11 @@ EXTERNAL CLAIMS THIS ENCODES, AND THEIR SOURCES (verified 2026-07-31)
 
     NOT claimed, because checking said otherwise: there is no "mid" model tier to select. #127's
     three-row table (strongest/mid/cheapest) has no mechanism -- the middle row is `effort`
-    (`low`..`max`), a separate field. And no effort level is asserted for any model, because
-    "available levels depend on the model" and Claude Code does not publish which.
+    (`low`..`max`), a separate field. And this file asserts no effort level for any model. Claude Code
+    DOES publish which models support effort: "The available effort levels depend on the model. Models
+    not listed here do not support effort:", followed by a per-model table that changes with every model
+    release (https://code.claude.com/docs/en/model-config, re-read 2026-10-10, #1670). The current
+    reading of that table is `reference/model-tiers.md`'s, not this docstring's.
 
 Exit codes:  0 clean · 1 findings · 2 unusable input (no file / not a work order / no tier table)
 
@@ -814,7 +817,8 @@ def check_tiers(rows: list[TierRow], agents: dict[str, tuple[Path, str | None]] 
             findings.append(
                 f"{path}: agent `{name}` pins `effort: {effort}` -- a shipped agent inherits the "
                 "session's effort (model-tiers.md, #1326): a pin below the session caps a user who "
-                "chose more, and Haiku 4.5 supports no effort level at all. A project that wants one "
+                "chose more, and `haiku` takes every level on Haiku 5.5 (Anthropic API) but none on Haiku 4.5 "
+                "(every other provider), so a pin means something different per user. A project that wants one "
                 "overrides the agent in its own .claude/agents/."
             )
         row = next((r for r in rows if r.agent == name), None)

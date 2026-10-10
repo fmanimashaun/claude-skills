@@ -16,6 +16,7 @@ which of our agents counts as judgement work — is **ours**, recorded on
 [cc-settings]: https://code.claude.com/docs/en/settings
 [cc-settings-ref]: https://code.claude.com/docs/en/settings-reference
 [cc-advisor]: https://code.claude.com/docs/en/advisor
+[cc-env]: https://code.claude.com/docs/en/env-vars
 
 ---
 
@@ -41,7 +42,9 @@ Six facts decide this whole document, and four of them contradict the shape #127
    **Sonnet 4.6** on Claude Platform on AWS, **Sonnet 4.5** on Amazon Bedrock and Google Cloud's
    Agent Platform *and* on Microsoft Foundry. `opus` is **Opus 5.5** on every one of those
    **except Microsoft Foundry**, where it is **Opus 4.6** ([cc-model], re-read 2026-09-25; it was Opus 5
-   when this was first written, which is the point of the next sentence). And *"Aliases point to the
+   when this was first written, which is the point of the next sentence). `haiku` is **Haiku 5.5** on the
+   Anthropic API and **Haiku 4.5** on Claude Platform on AWS, Amazon Bedrock, Google Cloud's Agent Platform and
+   Microsoft Foundry: *"Use v2.1.293 or later with Haiku 5.5."* ([cc-model], re-read 2026-10-10, #1691). And *"Aliases point to the
    recommended version for your provider and update over time"* ([cc-model]). A shipped plugin
    cannot know which model its own frontmatter selects.
 
@@ -156,28 +159,44 @@ without capping *what* it can be. That is the honest home for "constrained execu
 
 **No shipped agent sets it, and `check_handoff.py --tiers` refuses one that does (#1326).** This
 section first deferred the lever because Claude Code did not say which levels each model accepts. It
-now does: its effort table lists Fable, Opus and Sonnet models, and *"Models not listed here do not
-support effort"* ([cc-model], re-read 2026-09-25) — Haiku 4.5 is not listed. That settles it:
+now does: its effort table lists the models, and *"Models not listed here do not support effort"*
+([cc-model]). Since v2.1.293 the table's top row includes Haiku 5.5 — *"Opus 5.5, Sonnet 5.5, Haiku 5.5, Opus 5,
+Sonnet 5, Opus 4.8, and Opus 4.7"* ([cc-model], re-read 2026-10-10, #1691) — and Haiku 4.5 is still not listed.
+So the policy holds, for a reason that is now per provider:
 
-- The **6 `haiku` agents** cannot take an effort level at all.
+- The **6 `haiku` agents** run on Haiku 5.5 (every effort level) on the Anthropic API and on Haiku 4.5 (no
+  effort at all) on every other provider. A pin would mean one thing for one user and nothing for another.
 - The **23 `inherit` agents** are the judgement agents, and a pin *below* the session is the same cap
   as a model pin: *"Frontmatter effort applies when that skill or subagent is active, overriding the
   session level but not the environment variable"* ([cc-model]). A user who ran `/effort high` for a
   security review would get our `medium`.
 
-So there is no agent in the catalogue the lever fits. Every agent inherits the session's effort,
+So no shipped agent pins it. Every agent inherits the session's effort,
 which on Opus 5.5 is `medium` unless the user chose otherwise ([cc-model]). Sonnet 5.5 also defaults
 to `medium` in Claude Code, where the API's default is `high`. Its thinking cannot be turned off:
 *"You can't turn thinking off on Opus 5.5, Sonnet 5.5, or the Fable models"* ([cc-model], re-read
 2026-09-29, #1449). A project that wants one
-agent at another level overrides it in `.claude/agents/`, as below.
+agent at another level overrides it in `.claude/agents/`, as below. A user sets a level per model in settings:
+*"Save an effort level for each model you use."* ([cc-settings-ref], `modelSettings.<model>.effortLevel`, v2.1.251+);
+the older top-level `effortLevel` in user settings no longer reaches new models — *"Opus 5.5 and models released
+after it ignore it"* ([cc-settings-ref]). And `CLAUDE_CODE_EFFORT_LEVEL` beats both, and the agent's own field.
+
+**Two more facts about where a tier pin stops applying** (#1691). `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` replaces every
+pin wholesale (see *Override* below). A custom agent named `Explore` keeps its own: *"A user or project subagent named
+`Explore` overrides the built-in and keeps its own `model` field"* ([cc-agents]). And parallel agents are capped, a cap
+that can move but not go: `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` (default 20) *"Accepts a positive whole number in
+plain digits; anything else is ignored, so the variable can adjust the cap but can't disable it."* ([cc-env], v2.1.217+).
 
 ### The advisor: judgement agents use it, mechanical agents consult it only when stuck
 
 *"Subagents inherit the configured advisor and apply the same pairing check against their own
-model"* ([cc-advisor]), and a Haiku 4.5 main model accepts a Fable, Opus or Sonnet advisor: *"Haiku can
-call the advisor but cannot act as one"*. No frontmatter field controls it per agent; the sub-agents
-page does not mention the advisor at all (checked 2026-09-30, #1505).
+model"* ([cc-advisor]), and a Haiku 4.5 main model accepts a Fable, Opus, Sonnet or Haiku 5.5 advisor
+(Haiku 5.5 needs Claude Code v2.1.293 or later): *"Haiku 4.5 can call the advisor but can't act as
+one"*. No frontmatter field controls it per agent; the sub-agents
+page does not mention the advisor at all (checked 2026-09-30, #1505). The advisor is experimental and on the
+Anthropic API only, and it can stay off without saying so in an agent's output: *"In a session where a variable
+that turns flag fetching off is set, such as `DISABLE_TELEMETRY`, the advisor stays off."* ([cc-advisor], re-read
+2026-10-10, #1691).
 
 **Its cost is the agent's transcript, and ours are not short.** *"Each advisor call processes the full
 transcript anew, with no reuse between calls"*. Measured on 2026-09-30 by
