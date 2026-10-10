@@ -22,7 +22,7 @@ and the version they were on.
 
 1. **Component** (which artifact owns the problem) — apply exactly one `comp:*` label:
    `comp:rails-8`, `comp:hotwire`, `comp:design-system` (the design-system skill),
-   `comp:rails-flow`, `comp:qa-flow`, `comp:pipeline`, `comp:design-flow` (the UI/design
+   `comp:rails-flow`, `comp:qa-flow`, `comp:pipeline`, `comp:flow-suite`, `comp:design-flow` (the UI/design
    plugin), `comp:packaging` (the `dist/*.skill` build), `comp:marketplace` (manifest/registry).
    Infer from the title/body and the reported command or file path when unlabeled.
 2. **Type** — apply one `type:*` label:

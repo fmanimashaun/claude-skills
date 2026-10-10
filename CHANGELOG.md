@@ -18652,6 +18652,12 @@ The release number is assigned at promotion.
   pure RSpec, Solid stack, Kamal 2, OpenAPI via rswag, ruby_llm) and hotwire
   (Turbo, Stimulus, Hotwire Native) skills, bundled as one installable plugin.
 
+## flow-suite (bundle plugin)
+
+### Unreleased
+
+The release number is assigned at promotion.
+
 ## Repository / marketplace
 
 ### 2026-08-09g (release v1.85.4)

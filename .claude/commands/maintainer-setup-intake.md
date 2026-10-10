@@ -54,7 +54,7 @@ versions so options stay truthful.
 Define and create the taxonomy (idempotently — `gh label create <n> --color <hex> --force`
 or skip-if-exists):
 - `comp:rails-8`, `comp:hotwire`, `comp:rails-flow`, `comp:qa-flow`, `comp:pipeline`,
-  `comp:packaging`, `comp:marketplace`
+  `comp:flow-suite`, `comp:packaging`, `comp:marketplace`
 - `type:incorrect-doctrine`, `type:skill-gap`, `type:bug`, `type:feature`, `type:chore`
 - `prio:P1`, `prio:P2`, `prio:P3`
 - `needs-info`, `duplicate`, `lapse`
