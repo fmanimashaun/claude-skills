@@ -17,8 +17,9 @@ pull request can write is consulted: its edits change the working-tree hash, and
 another matter: any same-repo pull request whose edited workflow holds `statuses: write` can post `mutation-proof/<os> = success` as
 github-actions[bot], so a status is believed only with the run behind it (`run_is_trusted`: its `target_url` is a run of this repository, of
 release.yml or mutation-weekly.yml, started by a push, the schedule or a dispatch, on `main`, for exactly that commit, completed and
-successful; a run only `main` can make, and one that proved the commit directly or, with its own skips, together with the earlier proof
-it skipped on). And the skip is taken only where the code that decides it is trusted (`skip_allowed`: CI on `main`). No status, no run, no
+successful; a run only `main` can make) AND the run's own JOBS (`jobs_prove`) show the full sweep for that OS, every shard and the summary that
+posts the proof, because a genuine release run SKIPS `gates` when the tree matched a maintainer's local proof and then holds no mutation job at
+all. A run that proved the commit directly or, with its own skips, together with the earlier proof it skipped on, is the intended case. And the skip is taken only where the code that decides it is trusted (`skip_allowed`: CI on `main`). No status, no run, no
 `gh`, no `origin/main`, a lookup error: nothing is skipped, which is the safe direction (a full run). The bytes are a function of the data.
 
 SHARDS (#1739). `assign_shards` splits the guards over N jobs, largest recorded cost first onto the lightest shard: a pure function of the
@@ -30,6 +31,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import platform
 import re
 import subprocess
@@ -50,6 +52,8 @@ PROOF_CONTEXT = "mutation-proof"
 # alone is writable by any same-repo pull request whose edited workflow holds `statuses: write`, and posts as github-actions[bot] like a real one).
 TRUSTED_RUN_WORKFLOWS = (".github/workflows/release.yml", ".github/workflows/mutation-weekly.yml")
 TRUSTED_RUN_EVENTS = ("push", "schedule", "workflow_dispatch")
+EXPECTED_SHARDS = 4                      # the matrix in gates.yml and mutation-weekly.yml, and `--expect-shards` in both (a selftest reads the files)
+RUNNER_OF = {"linux": "ubuntu-latest", "darwin": "macos-latest"}
 LOOKBACK = 40            # main first-parent commits searched for a proof status
 CI_HOST_PREFIX = "github-actions/"
 
@@ -93,6 +97,15 @@ class WorkTree:
         path = self.repo / relative
         return path.read_bytes() if path.is_file() else None
 
+    def kind(self, relative: str) -> str | None:
+        """`link` for a symlink, `x` for an executable file, `-` for any other file, None when there is no such file (git's own distinction)."""
+        path = self.repo / relative
+        if path.is_symlink():
+            return "link"
+        if path.is_file():
+            return "x" if path.stat().st_mode & 0o111 else "-"
+        return None
+
 
 class GitTree:
     """The files as they were at `commit`, read from git's objects. Immutable: nothing in the working tree or the index can change them.
@@ -102,6 +115,7 @@ class GitTree:
     def __init__(self, repo: Path, commit: str):
         self.repo, self.commit = Path(repo), commit
         self._listing: dict[str, str] | None = None
+        self._modes: dict[str, str] = {}
         self._blobs: dict[str, bytes | None] = {}
 
     def _git(self, *args: str) -> subprocess.CompletedProcess:
@@ -117,6 +131,7 @@ class GitTree:
                 fields = meta.split()
                 if len(fields) == 3 and fields[1] == b"blob":
                     listing[name.decode("utf-8")] = fields[2].decode("ascii")
+                    self._modes[name.decode("utf-8")] = fields[0].decode("ascii")
             self._listing = listing
         return self._listing
 
@@ -127,6 +142,14 @@ class GitTree:
     def files_under(self, relative: str) -> list[str]:
         prefix = relative.rstrip("/") + "/"
         return sorted(n for n in self._files() if n.startswith(prefix) and "__pycache__" not in n.split("/") and not n.endswith(".pyc"))
+
+    def kind(self, relative: str) -> str | None:
+        """The same distinction `WorkTree.kind` makes, from the commit's own tree entry mode (120000 link, 100755 executable)."""
+        self._files()
+        mode = self._modes.get(relative)
+        if mode is None:
+            return None
+        return "link" if mode == "120000" else "x" if mode == "100755" else "-"
 
     def read(self, relative: str) -> bytes | None:
         blob = self._files().get(relative)
@@ -145,11 +168,18 @@ def _digest(h, source, relative: str, raw: bool = False) -> None:
     `read_text`/`write_text`, which normalises line endings, so for those a checkout's line endings are not a change; but it copies the
     `needs` files BYTE FOR BYTE (`shutil.copyfile`, `copytree`), so for those they are one: a CRLF rewrite of a shell hook breaks it
     ("set: pipefail: invalid option name") and a guard that runs it must run again (#1738, adversary finding)."""
+    kind = source.kind(relative)
+    if kind == "link":
+        # The runner follows a symlink (`copytree`, `read_text`) while git stores its text, so the two sides cannot be compared: a symlink in a
+        # staged path makes the guard UNHASHABLE, which never equals anything, so it always runs (adversary advisory).
+        h.update(b"SYMLINK\0" + relative.encode("utf-8") + b"\0" + os.urandom(16))
+        return
     if source.is_dir(relative):
         for child in source.files_under(relative):
             _digest(h, source, child, raw)
         return
-    h.update((b"RAW\0" if raw else b"TXT\0") + relative.encode("utf-8") + b"\0")
+    # The file mode is staged too (`copytree` keeps the executable bit): 100755 against 100644 is a change, not a no-op.
+    h.update((b"RAW\0" if raw else b"TXT\0") + (kind or "-").encode("ascii") + b"\0" + relative.encode("utf-8") + b"\0")
     data = source.read(relative)
     if data is None:
         h.update(b"MISSING\0")
@@ -270,22 +300,66 @@ def proof_run_id(statuses_json: str, system: str, slug: str) -> str | None:
     return found.group(1) if found else None
 
 
-def run_is_trusted(run_json: str, sha: str, slug: str) -> bool:
-    """True only for a COMPLETED, successful Actions run of this repository on `main` for exactly `sha`, started by a push, the schedule or a
-    dispatch, of the release or the weekly workflow. A pull request, a dispatch on a branch, another workflow, another commit and a fork are all
-    refused, so a status a pull request wrote cannot borrow a run it did not make."""
+def trusted_run_workflow(run_json: str, sha: str, slug: str) -> str | None:
+    """The workflow path (`.github/workflows/release.yml` or `.../mutation-weekly.yml`) of a COMPLETED, successful Actions run of this repository
+    on `main` for exactly `sha`, started by a push, the schedule or a dispatch; None for anything else. A pull request, a dispatch on a branch,
+    another workflow, another commit and a fork are all refused, so a status a pull request wrote cannot borrow a run it did not make."""
     try:
         run = json.loads(run_json)
     except ValueError:
-        return False
+        return None
     if not isinstance(run, dict):
-        return False
+        return None
     repo = (run.get("repository") or {}).get("full_name")
     head_repo = (run.get("head_repository") or {}).get("full_name")
     path = str(run.get("path") or "").split("@")[0]
-    return (run.get("head_sha") == sha and run.get("head_branch") == "main" and run.get("event") in TRUSTED_RUN_EVENTS
+    if (run.get("head_sha") == sha and run.get("head_branch") == "main" and run.get("event") in TRUSTED_RUN_EVENTS
             and path in TRUSTED_RUN_WORKFLOWS and run.get("status") == "completed" and run.get("conclusion") == "success"
-            and repo == slug and head_repo == slug)
+            and repo == slug and head_repo == slug):
+        return path
+    return None
+
+
+def run_is_trusted(run_json: str, sha: str, slug: str) -> bool:
+    return trusted_run_workflow(run_json, sha, slug) is not None
+
+
+def jobs_prove(jobs_json: str, workflow: str, system: str) -> bool:
+    """True only when the run's own JOBS show a full mutation sweep for `system`: every shard 1..EXPECTED_SHARDS, and the summary job that posts the
+    proof, each with conclusion success, and no duplicate of them that did not succeed.
+
+    A run that is itself genuine can still prove nothing: `release.yml` SKIPS `gates` whenever the tree matched a maintainer's local proof
+    (recorded on macOS), so a successful push run of `main` may hold no mutation job at all (adversary finding). Names: in `release.yml` the
+    called `gates.yml` shows as `gates / mutation (N)` and `gates / mutation coverage` (Linux only); in `mutation-weekly.yml` as
+    `mutation (<runner>, N)` and `summary (<runner>)`."""
+    try:
+        jobs = json.loads(jobs_json).get("jobs")
+    except (ValueError, AttributeError):
+        return False
+    if not isinstance(jobs, list):
+        return False
+    runner = RUNNER_OF.get(system)
+    if workflow == ".github/workflows/release.yml":
+        if system != "linux":
+            return False
+        shard_re, summary_re = r"(?:gates / )?mutation \((\d+)\)", r"(?:gates / )?mutation coverage"
+    elif workflow == ".github/workflows/mutation-weekly.yml" and runner:
+        shard_re, summary_re = rf"mutation \({re.escape(runner)}, (\d+)\)", rf"summary \({re.escape(runner)}\)"
+    else:
+        return False
+    shards: dict[int, list[bool]] = {}
+    summaries: list[bool] = []
+    for job in jobs:
+        if not isinstance(job, dict):
+            continue
+        name, ok = str(job.get("name") or ""), job.get("status") == "completed" and job.get("conclusion") == "success"
+        found = re.fullmatch(shard_re, name)
+        if found:
+            shards.setdefault(int(found.group(1)), []).append(ok)
+        elif re.fullmatch(summary_re, name):
+            summaries.append(ok)
+    return (set(shards) == set(range(1, EXPECTED_SHARDS + 1)) and all(all(v) for v in shards.values())
+            and bool(summaries) and all(summaries))
 
 
 def github_proof_lookup(repo: Path, system: str, run=subprocess.run) -> Callable[[str], bool]:
@@ -313,7 +387,13 @@ def github_proof_lookup(repo: Path, system: str, run=subprocess.run) -> Callable
                 return False                  # a status with no run behind it (or a run of another repository) is not a proof
             found = run(["gh", "api", f"repos/{slug}/actions/runs/{run_id}"], capture_output=True, text=True, timeout=60,
                         stdin=subprocess.DEVNULL)
-            return found.returncode == 0 and run_is_trusted(found.stdout, sha, slug)
+            workflow = trusted_run_workflow(found.stdout, sha, slug) if found.returncode == 0 else None
+            if workflow is None:
+                return False
+            # The run is genuine; does it hold a full sweep for this OS? (a release whose `gates` were skipped does not)
+            jobs = run(["gh", "api", f"repos/{slug}/actions/runs/{run_id}/jobs?per_page=100&filter=latest"], capture_output=True, text=True,
+                       timeout=60, stdin=subprocess.DEVNULL)
+            return jobs.returncode == 0 and jobs_prove(jobs.stdout, workflow, system)
         except (OSError, subprocess.SubprocessError):
             return False
     return has_proof

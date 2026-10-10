@@ -143,6 +143,59 @@ def git_objects() -> None:
         check("git: a directory is recognised as one", tree.is_dir("docs/dir") and not tree.is_dir("docs/need.md"))
         check("git: a commit that does not exist reads nothing", inc.GitTree(root, "0" * 40).read("scripts/s.py") is None)
 
+    # THE FILE MODE IS STAGED TOO (adversary advisory): `copytree` keeps the executable bit, so 100755 against 100644 is a change.
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        fg.init(root)
+        g = guard(needs=("hooks/h.sh",))
+        write(root, "scripts/s.py", "s")
+        write(root, "scripts/s_selftest.py", "t")
+        write(root, "scripts/mutations/g.py", "decl")
+        write(root, "hooks/h.sh", "echo hi\n")
+        (root / "hooks/h.sh").chmod(0o644)
+        before = inc.guard_hash(root, g)
+        (root / "hooks/h.sh").chmod(0o755)
+        check("mode: making a needs file executable changes the hash of a guard that needs it", inc.guard_hash(root, g) != before)
+        (root / "hooks/h.sh").chmod(0o644)
+        fg.run(root, "add", "-A")
+        plain = commit(root, "plain mode")
+        (root / "hooks/h.sh").chmod(0o755)
+        fg.run(root, "add", "-A")
+        executable = commit(root, "executable mode")
+        check("mode: a commit's own tree entry (100755 against 100644) is part of its hash",
+              inc.guard_hash(inc.GitTree(root, plain), g) != inc.guard_hash(inc.GitTree(root, executable), g))
+        check("mode: the working tree and the commit it was committed as agree on the mode",
+              inc.guard_hash(root, g) == inc.guard_hash(inc.GitTree(root, executable), g))
+        (root / "hooks/h.sh").chmod(0o644)
+        check("mode: a working tree that lost the executable bit no longer equals the executable commit",
+              inc.guard_hash(root, g) != inc.guard_hash(inc.GitTree(root, executable), g))
+
+    # A SYMLINK IN A STAGED PATH: the runner follows it, git stores its text, so the sides cannot be compared; the guard becomes unhashable
+    # (never equal to anything), which means it always runs.
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        fg.init(root)
+        g = guard(needs=("docs/link.md", "docs/dir"))
+        write(root, "scripts/s.py", "s")
+        write(root, "scripts/s_selftest.py", "t")
+        write(root, "scripts/mutations/g.py", "decl")
+        write(root, "docs/real.md", "real")
+        write(root, "docs/dir/a.txt", "a")
+        (root / "docs/link.md").symlink_to("real.md")
+        first = commit(root, "with a symlink")
+        check("symlink: a symlink in a needs path makes the working-tree hash unequal to itself (the guard always runs)",
+              inc.guard_hash(root, g) != inc.guard_hash(root, g))
+        check("symlink: a symlink in a needs path makes the commit's hash unequal to itself too",
+              inc.guard_hash(inc.GitTree(root, first), g) != inc.guard_hash(inc.GitTree(root, first), g))
+        check("symlink: the working tree never equals the commit it was committed as while the link is there",
+              inc.guard_hash(root, g) != inc.guard_hash(inc.GitTree(root, first), g))
+        (root / "docs/dir/ln.txt").symlink_to("a.txt")
+        check("symlink: a symlink INSIDE a needs directory is unhashable too", inc.guard_hash(root, g) != inc.guard_hash(root, g))
+        (root / "docs/link.md").unlink()
+        (root / "docs/dir/ln.txt").unlink()
+        write(root, "docs/link.md", "real")
+        check("symlink: with no symlink left the same files hash the same again", inc.guard_hash(root, g) == inc.guard_hash(root, g))
+
 
 def first_parents() -> None:
     with tempfile.TemporaryDirectory() as td:
@@ -256,8 +309,13 @@ def trust() -> None:
         good_run = {"id": 777, "head_sha": "abc", "head_branch": "main", "event": "push", "path": ".github/workflows/release.yml",
                     "status": "completed", "conclusion": "success", "repository": {"full_name": "o/r"}, "head_repository": {"full_name": "o/r"}}
 
-        def api(statuses_out, run_obj, run_code=0):
-            """A `gh` stub that answers the statuses endpoint and the runs endpoint separately."""
+        def jobs_of(names, conclusion="success"):
+            return {"total_count": len(names), "jobs": [{"name": n, "status": "completed", "conclusion": conclusion} for n in names]}
+
+        release_jobs = jobs_of(["proof", "gates / gates", *[f"gates / mutation ({i})" for i in (1, 2, 3, 4)], "gates / mutation coverage", "release"])
+
+        def api(statuses_out, run_obj, run_code=0, jobs_obj=None, jobs_code=0):
+            """A `gh` stub that answers the statuses endpoint, the run endpoint and the run's jobs endpoint separately."""
             calls: list[list[str]] = []
 
             def fake(argv, **kw):
@@ -265,6 +323,8 @@ def trust() -> None:
                 joined = " ".join(argv)
                 if "/statuses" in joined:
                     return SimpleNamespace(returncode=0, stdout=statuses_out, stderr="")
+                if "/jobs" in joined:
+                    return SimpleNamespace(returncode=jobs_code, stdout=json.dumps(jobs_obj if jobs_obj is not None else release_jobs), stderr="")
                 if "/actions/runs/" in joined:
                     return SimpleNamespace(returncode=run_code, stdout=json.dumps(run_obj) if not isinstance(run_obj, str) else run_obj, stderr="")
                 return SimpleNamespace(returncode=1, stdout="", stderr="unexpected")
@@ -307,14 +367,83 @@ def trust() -> None:
         for ok_event in ("push", "schedule", "workflow_dispatch"):
             fake, _ = api(pointed, dict(good_run, event=ok_event))
             check(f"lookup: a {ok_event} run on main is a proof", inc.github_proof_lookup(Path("."), "linux", run=fake)("abc") is True)
-        fake, _ = api(pointed, dict(good_run, path=".github/workflows/mutation-weekly.yml"))
-        check("lookup: the weekly workflow's run on main is a proof", inc.github_proof_lookup(Path("."), "linux", run=fake)("abc") is True)
+        for label, workflow in (("gates.yml", ".github/workflows/gates.yml"), ("another workflow", ".github/workflows/other.yml")):
+            check(f"run: a run of {label} is refused by the run check itself, not only by the jobs check",
+                  inc.trusted_run_workflow(json.dumps(dict(good_run, path=workflow)), "abc", "o/r") is None)
         fake, _ = api(pointed, dict(good_run, path=".github/workflows/release.yml@refs/heads/main"))
         check("lookup: a workflow path with an @ref suffix is read by its path", inc.github_proof_lookup(Path("."), "linux", run=fake)("abc") is True)
+        # A GENUINE RUN CAN STILL PROVE NOTHING (adversary round 2): release.yml SKIPS `gates` when the tree matched a maintainer's local proof,
+        # which is recorded on macOS, so a successful push run of main may hold no mutation job. The run's JOBS must show the full sweep.
+        fake, calls = api(pointed, good_run)
+        check("jobs: a release run whose gates and 4 mutation shards all succeeded is a proof", inc.github_proof_lookup(Path("."), "linux", run=fake)("abc") is True)
+        check("jobs: it reads the jobs of that run (latest attempts)", any("actions/runs/777/jobs" in " ".join(c) and "filter=latest" in " ".join(c) for c in calls), str(calls))
+        skipped_gates = {"jobs": [{"name": "proof", "status": "completed", "conclusion": "success"},
+                                  {"name": "gates / gates", "status": "completed", "conclusion": "skipped"},
+                                  {"name": "release", "status": "completed", "conclusion": "success"}]}
+        fake, _ = api(pointed, good_run, jobs_obj=skipped_gates)
+        check("jobs: a successful release run in which `gates` was SKIPPED is not a proof",
+              inc.github_proof_lookup(Path("."), "linux", run=fake)("abc") is False)
+        names = ["proof", "gates / gates", *[f"gates / mutation ({i})" for i in (1, 2, 3, 4)], "gates / mutation coverage", "release"]
+        for label, jobs_obj in (
+                ("mutation coverage skipped", {"jobs": [dict(j, conclusion="skipped") if j["name"] == "gates / mutation coverage" else j for j in jobs_of(names)["jobs"]]}),
+                ("mutation coverage cancelled", {"jobs": [dict(j, conclusion="cancelled") if j["name"] == "gates / mutation coverage" else j for j in jobs_of(names)["jobs"]]}),
+                ("mutation coverage failed", {"jobs": [dict(j, conclusion="failure") if j["name"] == "gates / mutation coverage" else j for j in jobs_of(names)["jobs"]]}),
+                ("mutation coverage missing", jobs_of([n for n in names if n != "gates / mutation coverage"])),
+                ("one of the 4 shards missing", jobs_of([n for n in names if n != "gates / mutation (4)"])),
+                ("three shards only, a fifth numbered shard instead", jobs_of([n for n in names if n != "gates / mutation (4)"] + ["gates / mutation (5)"])),
+                ("one shard skipped", {"jobs": [dict(j, conclusion="skipped") if j["name"] == "gates / mutation (2)" else j for j in jobs_of(names)["jobs"]]}),
+                ("one shard failed", {"jobs": [dict(j, conclusion="failure") if j["name"] == "gates / mutation (3)" else j for j in jobs_of(names)["jobs"]]}),
+                ("one shard still in progress", {"jobs": [dict(j, status="in_progress", conclusion=None) if j["name"] == "gates / mutation (1)" else j for j in jobs_of(names)["jobs"]]}),
+                ("a shard that succeeded once and failed on another attempt", {"jobs": jobs_of(names)["jobs"] + [{"name": "gates / mutation (2)", "status": "completed", "conclusion": "failure"}]}),
+                ("no jobs at all", {"jobs": []}),
+                ("a body that is not a job list", {"message": "Not Found"}),
+                ("look-alike names", jobs_of(["gates / evil mutation (1)", "gates / evil mutation (2)", "gates / evil mutation (3)", "gates / evil mutation (4)", "gates / evil mutation coverage"]))):
+            fake, _ = api(pointed, good_run, jobs_obj=jobs_obj)
+            check(f"jobs: a release run with {label} is not a proof", inc.github_proof_lookup(Path("."), "linux", run=fake)("abc") is False)
+        fake, _ = api(pointed, good_run, jobs_code=1)
+        check("jobs: a jobs lookup that fails reads as NO proof", inc.github_proof_lookup(Path("."), "linux", run=fake)("abc") is False)
+        fake, _ = api(json.dumps([{"context": "mutation-proof/darwin", "state": "success", "target_url": url}]), good_run)
+        check("jobs: a release run proves LINUX only (its gates run on ubuntu); a darwin proof pointing at it is refused",
+              inc.github_proof_lookup(Path("."), "darwin", run=fake)("abc") is False)
+        # The weekly workflow: shards `mutation (<runner>, N)` and a `summary (<runner>)` per OS.
+        weekly_run = dict(good_run, path=".github/workflows/mutation-weekly.yml", event="schedule")
+
+        def weekly(runner, shards=(1, 2, 3, 4), summary=True, other_runner_complete=True):
+            out = [f"mutation ({runner}, {i})" for i in shards] + ([f"summary ({runner})"] if summary else [])
+            other = "macos-latest" if runner == "ubuntu-latest" else "ubuntu-latest"
+            if other_runner_complete:
+                out += [f"mutation ({other}, {i})" for i in (1, 2, 3, 4)] + [f"summary ({other})"]
+            return jobs_of(out)
+        for system, runner in (("linux", "ubuntu-latest"), ("darwin", "macos-latest")):
+            weekly_pointed = json.dumps([{"context": f"mutation-proof/{system}", "state": "success", "target_url": url}])
+            fake, _ = api(weekly_pointed, weekly_run, jobs_obj=weekly(runner))
+            check(f"jobs: the weekly run with all 4 {runner} shards and its summary is a {system} proof", inc.github_proof_lookup(Path("."), system, run=fake)("abc") is True)
+            fake, _ = api(weekly_pointed, weekly_run, jobs_obj=weekly(runner, shards=(1, 2, 3)))
+            check(f"jobs: the weekly run with one {runner} shard missing is not a {system} proof (the other OS being complete does not help)",
+                  inc.github_proof_lookup(Path("."), system, run=fake)("abc") is False)
+            fake, _ = api(weekly_pointed, weekly_run, jobs_obj=weekly(runner, summary=False))
+            check(f"jobs: the weekly run with no {runner} summary is not a {system} proof", inc.github_proof_lookup(Path("."), system, run=fake)("abc") is False)
+        fake, _ = api(json.dumps([{"context": "mutation-proof/darwin", "state": "success", "target_url": url}]), weekly_run, jobs_obj=weekly("ubuntu-latest", other_runner_complete=False))
+        check("jobs: a darwin proof pointing at a weekly run that only swept ubuntu is not a proof",
+              inc.github_proof_lookup(Path("."), "darwin", run=fake)("abc") is False)
+        for label, workflow in (("gates.yml", ".github/workflows/gates.yml"), ("another workflow", ".github/workflows/other.yml")):
+            fake, _ = api(pointed, dict(good_run, path=workflow))
+            check(f"jobs: a run of {label} is refused before its jobs are read", inc.github_proof_lookup(Path("."), "linux", run=fake)("abc") is False)
+        # The shard count is the workflows' matrices: a selftest reads the files so a fifth shard cannot be added in one place only.
+        import re as _re
+        for wf in (".github/workflows/gates.yml", ".github/workflows/mutation-weekly.yml"):
+            text = (Path(__file__).resolve().parent.parent / wf).read_text(encoding="utf-8")
+            matrices = _re.findall(r"shard:\s*\[([0-9, ]+)\]", text)
+            check(f"jobs: {wf} shards the sweep exactly EXPECTED_SHARDS ways", matrices == [", ".join(str(i) for i in range(1, inc.EXPECTED_SHARDS + 1))], str(matrices))
+            check(f"jobs: {wf} merges with --expect-shards {inc.EXPECTED_SHARDS}", f"--expect-shards {inc.EXPECTED_SHARDS}" in text)
+
         def statuses_fail(argv, **kw):
             """The statuses endpoint errors (but still prints a body that looks like a proof); the run endpoint is fine."""
-            if "/statuses" in " ".join(argv):
+            joined = " ".join(argv)
+            if "/statuses" in joined:
                 return SimpleNamespace(returncode=1, stdout=pointed, stderr="HTTP 403")
+            if "/jobs" in joined:
+                return SimpleNamespace(returncode=0, stdout=json.dumps(release_jobs), stderr="")
             return SimpleNamespace(returncode=0, stdout=json.dumps(good_run), stderr="")
         check("lookup: an API error reads as NO proof, never as proof", inc.github_proof_lookup(Path("."), "linux", run=statuses_fail)("abc") is False)
 

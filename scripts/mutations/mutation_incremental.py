@@ -10,7 +10,9 @@ GUARD = Guard(
     name="mutation_incremental",
     subject="scripts/mutation_incremental.py",
     selftest="scripts/mutation_incremental_selftest.py",
-    needs=("plugins/rails-flow/scripts/fixture_git.py",),   # the selftest builds throwaway repos through it (#1588)
+    # fixture_git: the selftest builds throwaway repos through it (#1588). The two workflows: the selftest reads their shard matrices and
+    # `--expect-shards` against EXPECTED_SHARDS, so a change to either re-runs this guard.
+    needs=("plugins/rails-flow/scripts/fixture_git.py", ".github/workflows/gates.yml", ".github/workflows/mutation-weekly.yml"),
     mutations=(
         Mutation(
             "the hash ignores a guard's needs files, so a changed fixture is skipped as unchanged",
@@ -122,27 +124,27 @@ GUARD = Guard(
         ),
         Mutation(
             'a proof run on any branch is trusted, so a branch run lends its status',
-            '    return (run.get("head_sha") == sha and run.get("head_branch") == "main" and run.get("event") in TRUSTED_RUN_EVENTS',
-            '    return (run.get("head_sha") == sha and run.get("event") in TRUSTED_RUN_EVENTS',
+            '    if (run.get("head_sha") == sha and run.get("head_branch") == "main" and run.get("event") in TRUSTED_RUN_EVENTS',
+            '    if (run.get("head_sha") == sha and run.get("event") in TRUSTED_RUN_EVENTS',
             'a run on another branch is not a proof',
         ),
         Mutation(
             'any event is trusted, so a pull request run lends its status',
-            '    return (run.get("head_sha") == sha and run.get("head_branch") == "main" and run.get("event") in TRUSTED_RUN_EVENTS',
-            '    return (run.get("head_sha") == sha and run.get("head_branch") == "main" and True',
+            '    if (run.get("head_sha") == sha and run.get("head_branch") == "main" and run.get("event") in TRUSTED_RUN_EVENTS',
+            '    if (run.get("head_sha") == sha and run.get("head_branch") == "main" and True',
             'a pull request run that claims branch main is not a proof',
         ),
         Mutation(
             'a proof for another commit is accepted',
-            '    return (run.get("head_sha") == sha and run.get("head_branch") == "main" and run.get("event") in TRUSTED_RUN_EVENTS',
-            '    return (run.get("head_branch") == "main" and run.get("event") in TRUSTED_RUN_EVENTS',
+            '    if (run.get("head_sha") == sha and run.get("head_branch") == "main" and run.get("event") in TRUSTED_RUN_EVENTS',
+            '    if (run.get("head_branch") == "main" and run.get("event") in TRUSTED_RUN_EVENTS',
             'a run for another commit is not a proof',
         ),
         Mutation(
             'any workflow is trusted, so gates.yml lends its status',
             '            and path in TRUSTED_RUN_WORKFLOWS and run.get("status") == "completed" and run.get("conclusion") == "success"',
             '            and path.endswith(".yml") and run.get("status") == "completed" and run.get("conclusion") == "success"',
-            'a run of another workflow (gates.yml) is not a proof',
+            'a run of gates.yml is refused by the run check itself',
         ),
         Mutation(
             'a run that did not succeed is trusted',
@@ -170,7 +172,7 @@ GUARD = Guard(
         ),
         Mutation(
             'the run behind the status is never read, so the status alone is trusted',
-            '            return found.returncode == 0 and run_is_trusted(found.stdout, sha, slug)',
+            '            workflow = trusted_run_workflow(found.stdout, sha, slug) if found.returncode == 0 else None',
             '            return True',
             'a pull request run is not a proof',
         ),
@@ -191,6 +193,84 @@ GUARD = Guard(
             '               "-f", f"target_url=https://github.com/{slug}/actions/runs/{run_id}",\n',
             '',
             'the status carries the run it was posted from',
+        ),
+        Mutation(
+            'the jobs of a trusted run are never read, so a release whose gates were skipped lends its status',
+            '            return jobs.returncode == 0 and jobs_prove(jobs.stdout, workflow, system)',
+            '            return jobs.returncode == 0',
+            'a successful release run in which `gates` was SKIPPED is not a proof',
+        ),
+        Mutation(
+            'a run with a shard missing is a proof',
+            '    return (set(shards) == set(range(1, EXPECTED_SHARDS + 1)) and all(all(v) for v in shards.values())',
+            '    return (bool(shards) and all(all(v) for v in shards.values())',
+            'one of the 4 shards missing',
+        ),
+        Mutation(
+            'a shard that did not succeed is a proof',
+            '    return (set(shards) == set(range(1, EXPECTED_SHARDS + 1)) and all(all(v) for v in shards.values())',
+            '    return (set(shards) == set(range(1, EXPECTED_SHARDS + 1))',
+            'one shard skipped',
+        ),
+        Mutation(
+            'the summary job is not required, so a run whose mutation coverage was skipped is a proof',
+            '            and bool(summaries) and all(summaries))',
+            '            and True)',
+            'mutation coverage skipped',
+        ),
+        Mutation(
+            'a job that merely did not fail counts as success',
+            '        name, ok = str(job.get("name") or ""), job.get("status") == "completed" and job.get("conclusion") == "success"',
+            '        name, ok = str(job.get("name") or ""), job.get("conclusion") != "failure"',
+            'one shard skipped',
+        ),
+        Mutation(
+            'a release run proves any OS',
+            '        if system != "linux":\n            return False\n',
+            '',
+            'a release run proves LINUX only',
+        ),
+        Mutation(
+            'the weekly shards of either OS count for either OS',
+            '        shard_re, summary_re = rf"mutation \\({re.escape(runner)}, (\\d+)\\)", rf"summary \\({re.escape(runner)}\\)"',
+            '        shard_re, summary_re = rf"mutation \\(.*, (\\d+)\\)", rf"summary \\(.*\\)"',
+            '(the other OS being complete does not help)',
+        ),
+        Mutation(
+            'a superseded attempt is read, so a rerun cannot cure a failed shard',
+            'jobs?per_page=100&filter=latest',
+            'jobs?per_page=100',
+            'it reads the jobs of that run (latest attempts)',
+        ),
+        Mutation(
+            'the file mode is not hashed',
+            '    h.update((b"RAW\\0" if raw else b"TXT\\0") + (kind or "-").encode("ascii") + b"\\0" + relative.encode("utf-8") + b"\\0")',
+            '    h.update((b"RAW\\0" if raw else b"TXT\\0") + relative.encode("utf-8") + b"\\0")',
+            'making a needs file executable changes the hash',
+        ),
+        Mutation(
+            'the working tree reads every file as non-executable',
+            '            return "x" if path.stat().st_mode & 0o111 else "-"',
+            '            return "-"',
+            'making a needs file executable changes the hash',
+        ),
+        Mutation(
+            "a commit's tree entry mode is ignored",
+            '        return "link" if mode == "120000" else "x" if mode == "100755" else "-"',
+            '        return "link" if mode == "120000" else "-"',
+            "a commit's own tree entry (100755 against 100644) is part of its hash",
+        ),
+        Mutation(
+            'a symlink in the working tree is hashed like a file',
+            '    if kind == "link":',
+            '    if False:',
+            'a symlink in a needs path makes the working-tree hash unequal to itself',
+        ),
+        Mutation(
+            'a symlink in a commit is hashed like a file',
+            '        return "link" if mode == "120000" else "x" if mode == "100755" else "-"',
+            '        return "x" if mode == "100755" else "-"',
+            "makes the commit's hash unequal to itself too",
         ),
         Mutation(
             'needs files are hashed with CRLF normalised, though the runner copies them byte for byte',
