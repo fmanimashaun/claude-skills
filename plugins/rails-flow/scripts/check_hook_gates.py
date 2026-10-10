@@ -4662,7 +4662,7 @@ def release_gate_fallback_fixtures() -> None:
               gate("gh workflow run release.yml").returncode == 2, "exit 0")
         check("release-gate fallback (#1720): `gh api -X POST` refuses", gate("gh api -X POST repos/a/b/merges").returncode == 2, "exit 0")
         # #1720 confirm pass: main-rewrite spellings past an option list, so the rule is ANY option token beside main.
-        for cmd in ("git checkout -Bmain dev", "git switch --force-create main", "git branch --copy dev main"):
+        for cmd in ("git checkout -Bmain dev", "git switch --force-create main", "git branch --copy dev main", "git branch -m dev Main"):
             check(f"release-gate fallback (#1720): `{cmd}` (an option beside main) refuses", gate(cmd).returncode == 2, "exit 0")
         # #1720 security review: an option value glued on (`-XPOST`, `-fbase=main`) is still the option.
         check("release-gate fallback (#1720): `gh api -XPOST` (a glued method) refuses", gate("gh api -XPOST repos/a/b/merges").returncode == 2, "exit 0")

@@ -565,7 +565,8 @@ elif [ "$_mentions" = 1 ]; then
         [ -n "$_g" ] || continue
         # A RULE, not a list of spellings (`-Bmain`, `--force-create`, `--copy` each got past one): branch, checkout, switch or
         # worktree with main or master as a word (or glued to a short option, `-Bmain`) AND any option token refuses; a plain `git checkout main` has no option and passes.
-        if LC_ALL=C grep -qE "(${_w}|[[:space:]]-[[:alpha:]]+)(main|master)${_e}" <<<"$_g" \
+        # `-i`: on a case-insensitive filesystem (macOS by default) `Main` writes the loose ref refs/heads/main (#1720 review).
+        if LC_ALL=C grep -qiE "(${_w}|[[:space:]]-[[:alpha:]]+)(main|master)${_e}" <<<"$_g" \
            && LC_ALL=C grep -qE "${_w}(branch|checkout|switch|worktree)${_e}" <<<"$_g" \
            && LC_ALL=C grep -qE "(^|[[:space:]])-" <<<"$_g"; then
           _why="it creates, moves, copies or deletes a local main or master"; break

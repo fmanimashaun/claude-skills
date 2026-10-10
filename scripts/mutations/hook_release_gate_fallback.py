@@ -111,5 +111,11 @@ GUARD = Guard(
             "                --field|",
             "release-gate fallback (#1720): `gh api ... -fbase=main` (a glued field) refuses",
         ),
+        Mutation(
+            "main is matched case-sensitively, so `Main` rewrites main on a case-insensitive filesystem",
+            'if LC_ALL=C grep -qiE "(${_w}|[[:space:]]-[[:alpha:]]+)(main|master)${_e}"',
+            'if LC_ALL=C grep -qE "(${_w}|[[:space:]]-[[:alpha:]]+)(main|master)${_e}"',
+            "release-gate fallback (#1720): `git branch -m dev Main` (an option beside main) refuses",
+        ),
     ),
 )
