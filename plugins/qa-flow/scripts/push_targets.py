@@ -52,6 +52,7 @@ What counts as a destination, per `git help push`:
 from __future__ import annotations
 
 import fnmatch
+from pathlib import Path
 import os
 import re
 import shlex
@@ -1272,6 +1273,22 @@ def _local_ref_delete(args: list[str]):
     return (ref, no_deref) if branch and branch.casefold() not in _PROTECTED_FOLDED else None
 
 
+def _plain_git_context(seg: list[str], j: int) -> bool:
+    """True when the options between `git` and its verb are at most ONE `-C <dir>` and flags that change nothing about which repository or ref is meant."""
+    benign = {"--no-pager", "-P", "-p", "--paginate", "--no-optional-locks", "--no-lazy-fetch", "--literal-pathspecs", "--glob-pathspecs",
+              "--noglob-pathspecs", "--icase-pathspecs"}
+    dirs, i = 0, j + 1
+    while i < len(seg) and seg[i].startswith("-"):
+        if seg[i] == "-C":
+            dirs += 1
+            i += 2
+        elif seg[i] in benign:
+            i += 1
+        else:
+            return False          # -c, --git-dir, --work-tree, --namespace, --exec-path, an unknown flag
+    return dirs <= 1
+
+
 def _probe_symbolic(ref: str, workdir: str | None) -> bool:
     """True when `ref` is a symbolic ref, or when git cannot say (so the caller refuses). `git symbolic-ref -q` exits 0 for a symref and 1 for a regular or missing ref."""
     cmd = ["git"] + (["-C", workdir] if workdir else []) + ["symbolic-ref", "-q", ref]
@@ -1523,9 +1540,14 @@ def _git_effects_core(seg, j, cwd, current, flow, key):
             out.append((kind, "-", _dir_word(cwd, workdir)))
         return out
     if verb == "update-ref":
-        found = _local_ref_delete(args)     # #1803: ONLY the local delete of a non-protected, non-symbolic ref
-        if found and (found[1] or not _symbolic_probe(found[0], workdir)):
-            return []
+        # #1803: ONLY the local delete of a non-protected, non-symbolic ref, judged in the repository git will really act on. Anything that could make the
+        # classifier and git disagree about WHICH repository, or which ref, is refused: a repeated `-C` (git applies them cumulatively, `git_verb` keeps the last), an
+        # option it does not model, a redirected git dir or GIT_* environment, a `cd` it could not follow (`_dir_word` raises), and arguments from xargs.
+        found = _local_ref_delete(args)
+        if found and _plain_git_context(seg, j) and not redirected and not envs and not any(w == "xargs" for w in seg[:j]):
+            where = _dir_word(cwd, workdir)
+            if found[1] or not _symbolic_probe(found[0], None if where == "-" else where):
+                return []
     elif verb in GIT_SAFE and _git_read_only(verb, args):
         return []
     raise Unjudgeable(f"git {verb!r} is not on the list of commands that cannot merge into main or publish")
@@ -1927,23 +1949,38 @@ def selftest() -> int:
             failures.append(f"classify {cmd!r}: must be unjudgeable (the hook denies)")
         except Unjudgeable:
             pass
+    # #1803: the probe is asked about the repository git will really act on: a `cd` earlier in the chain, and `-C`, and nothing else.
+    asked = []
+    _symbolic_probe = lambda ref, workdir: asked.append((ref, workdir)) or False      # noqa: E731 -- records, then says "not symbolic"
+    for cmd, want in (("git update-ref -d refs/remotes/review/1", None), ("git -C /x update-ref -d refs/remotes/review/1", "/x"),
+                      ("cd /other && git update-ref -d refs/remotes/review/1", "/other"), ("cd /a && git -C b update-ref -d refs/remotes/review/1", "/a/b"),
+                      ("cd /a && git -C /b update-ref -d refs/remotes/review/1", "/b")):
+        asked.clear()
+        try:
+            cls(cmd, on_feature)
+        except Unjudgeable as exc:
+            failures.append(f"probe dir {cmd!r}: unexpectedly unjudgeable: {exc}")
+            continue
+        if asked != [("refs/remotes/review/1", want)]:
+            failures.append(f"probe dir {cmd!r}: the symbolic probe was asked {asked}, expected the ref in {want!r}")
+    _symbolic_probe = lambda ref, workdir: ref in ("refs/remotes/review/alias", "refs/heads/alias")    # noqa: E731 -- the selftest's fake again
+
     # #1803: the REAL probe against real git, including the attack itself: a symbolic alias of main, deleted without --no-deref, takes main with it.
+    import fixture_git      # (#1588) the fixture's git touches only its own temp repo
     import tempfile as _tf
     with _tf.TemporaryDirectory() as _td:
-        def _git(*a):
-            return subprocess.run(["git", "-C", _td, "-c", "user.email=t@t", "-c", "user.name=t", *a], capture_output=True, text=True)
-        subprocess.run(["git", "init", "-q", "-b", "main", _td], capture_output=True)
-        _git("commit", "-q", "--allow-empty", "-m", "i")
-        _git("update-ref", "refs/remotes/review/1559", "HEAD")
-        _git("symbolic-ref", "refs/remotes/review/alias", "refs/heads/main")
+        work = fixture_git.init(Path(_td) / "work", "-b", "main")
+        fixture_git.run(work, "commit", "-q", "--allow-empty", "-m", "i")
+        fixture_git.run(work, "update-ref", "refs/remotes/review/1559", "HEAD")
+        fixture_git.run(work, "symbolic-ref", "refs/remotes/review/alias", "refs/heads/main")
         for ref, want, why in (("refs/remotes/review/alias", True, "a symbolic ref"), ("refs/remotes/review/1559", False, "a regular ref"),
                                ("refs/remotes/review/missing", False, "a ref that does not exist")):
-            if real_probe(ref, _td) is not want:
+            if real_probe(ref, str(work)) is not want:
                 failures.append(f"symbolic probe: {ref} ({why}): expected {want}")
-        if real_probe("refs/heads/x", os.path.join(_td, "no-such-dir")) is not True:
+        if real_probe("refs/heads/x", str(Path(_td) / "no-such-dir")) is not True:
             failures.append("symbolic probe: a directory git cannot read must read as 'cannot say' (True), so the delete is refused")
-        _git("update-ref", "-d", "refs/remotes/review/alias")
-        if _git("show-ref", "--verify", "-q", "refs/heads/main").returncode == 0:
+        fixture_git.run(work, "update-ref", "-d", "refs/remotes/review/alias")
+        if fixture_git.run(work, "show-ref", "--verify", "-q", "refs/heads/main", check=False).returncode == 0:
             failures.append("premise: a plain update-ref -d of a symbolic alias no longer deletes its target; the probe may be unnecessary")
 
     # #1569: `gh api` and `gh release create`, classified by EFFECT.
@@ -2297,6 +2334,9 @@ def selftest() -> int:
         # the name the classifier reads must be the ref git acts on: case (a case-insensitive filesystem), reflog syntax, empty and dot components
         "git update-ref -d refs/heads/MAIN", "git update-ref -d refs/heads/Dev", "git update-ref -d refs/remotes/origin/DEV", "git update-ref -d refs/heads//x",
         "git update-ref -d refs/heads/./x", "git update-ref -d refs/heads/.hidden", "git update-ref -d refs/heads/a@{1}",
+        # the classifier and git must agree on WHICH repository and ref: repeated -C (git applies them cumulatively), an option that is not modelled, a redirected git dir
+        "git -C a -C b update-ref -d refs/remotes/review/1", "git -c core.x=y update-ref -d refs/remotes/review/1", "git --git-dir=/x update-ref -d refs/remotes/review/1",
+        "git --namespace=n update-ref -d refs/remotes/review/1", "GIT_DIR=/x git update-ref -d refs/remotes/review/1",
         "git update-ref -d refs/heads/$B", "git update-ref --stdin", "git update-ref -d refs/heads/*", "git update-ref -d", "git update-ref -d refs/heads/x a b",
         # ...and a delete in a CHAIN still counts as a command that moves refs (#1571), so a push to main after it in the same command is refused: split the command.
         "git update-ref -d refs/remotes/review/1559 && git push origin main",

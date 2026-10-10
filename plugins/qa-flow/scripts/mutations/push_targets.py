@@ -7,6 +7,7 @@ GUARD = Guard(
     name="push_targets",
     subject="scripts/push_targets.py",
     selftest="scripts/push_targets.py",
+    needs=("scripts/fixture_git.py",),   # the selftest builds a real repo with a symbolic alias (#1803) through the shared fixture helper
     mutations=(
         Mutation(
             "the substring match comes back, so fix/1010-one-main is a promotion again",
@@ -737,15 +738,15 @@ GUARD = Guard(
         ),
         Mutation(
             'the allowance is switched off, so the review ref is refused again',
-            '        if found and (found[1] or not _symbolic_probe(found[0], workdir)):',
+            '        if found and _plain_git_context(seg, j) and not redirected and not envs and not any(w == "xargs" for w in seg[:j]):',
             '        if False:',
             "classify 'git update-ref -d refs/remotes/review/1559': expected []",
         ),
         # #1803 security review: update-ref -d follows a symbolic ref and deletes its TARGET; the classifier must ask git, and compare names the way the filesystem does.
         Mutation(
             "the symbolic-ref probe is ignored, so deleting a symbolic alias of main is allowed",
-            '        if found and (found[1] or not _symbolic_probe(found[0], workdir)):',
-            '        if found:',
+            '            if found[1] or not _symbolic_probe(found[0], None if where == "-" else where):',
+            '            if True:',
             "unlisted shape 'git update-ref -d refs/remotes/review/alias': must be unjudgeable",
         ),
         Mutation(
@@ -759,6 +760,31 @@ GUARD = Guard(
             '        return subprocess.run(cmd, capture_output=True, text=True, timeout=10).returncode != 1',
             '        return subprocess.run(cmd, capture_output=True, text=True, timeout=10).returncode == 0',
             "symbolic probe: a directory git cannot read must read as 'cannot say' (True), so the delete is refused",
+        ),
+        # #1803 security review (2): the classifier and git must agree on WHICH repository, and on which ref.
+        Mutation(
+            'the probe is asked about the wrong directory, so a cd or -C before the command is ignored',
+            '            if found[1] or not _symbolic_probe(found[0], None if where == "-" else where):',
+            '            if found[1] or not _symbolic_probe(found[0], None):',
+            "probe dir 'git -C /x update-ref -d refs/remotes/review/1': the symbolic probe was asked",
+        ),
+        Mutation(
+            'a repeated -C is accepted, though git applies them cumulatively and the classifier keeps the last',
+            '    return dirs <= 1',
+            '    return True',
+            "unlisted shape 'git -C a -C b update-ref -d refs/remotes/review/1': must be unjudgeable",
+        ),
+        Mutation(
+            'an option the classifier does not model is skipped, so -c and --namespace pass',
+            '            return False          # -c, --git-dir, --work-tree, --namespace, --exec-path, an unknown flag',
+            '            i += 1',
+            "unlisted shape 'git -c core.x=y update-ref -d refs/remotes/review/1': must be unjudgeable",
+        ),
+        Mutation(
+            'a GIT_DIR or redirected git dir is not refused for update-ref',
+            '        if found and _plain_git_context(seg, j) and not redirected and not envs and not any(w == "xargs" for w in seg[:j]):',
+            '        if found and _plain_git_context(seg, j):',
+            "unlisted shape 'GIT_DIR=/x git update-ref -d refs/remotes/review/1': must be unjudgeable",
         ),
     ),
 )
