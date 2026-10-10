@@ -46,6 +46,16 @@ AGENT_COMMANDS = {
     "mutation-verifier": "python3 scripts/gauntlet_core.py guards",
     "shell-adversary": "python3 scripts/gauntlet_core.py battery",
 }
+# EACH AGENT'S MODEL, PINNED (#1702). The owner's rule of 2026-10-08: Fable is the model for ADVERSARIAL ATTACK passes, the
+# ones that try to break a change. `shell-adversary` is one; `mutation-verifier` is mechanical (it applies the declared
+# mutants through the harness) and stays on `haiku`, `model-tiers.md`'s mechanical tier. `fable` is a documented subagent
+# `model:` alias (https://code.claude.com/docs/en/sub-agents, "Choose a model": `sonnet`, `opus`, `haiku`, or `fable`). The
+# selftest reads each agent's frontmatter, so a pin that drifts either way is red.
+AGENT_MODELS = {
+    "mutation-verifier": "haiku",
+    "shell-adversary": "fable",
+}
+ADVERSARY_MODEL = AGENT_MODELS["shell-adversary"]
 
 # What counts as a changed script that needs a guard (mutation-verifier step 1). A guard file is the check itself and
 # is not guarded by another one; a changed SELFTEST is a changed check, so it reaches the guard of the script it tests.
@@ -132,6 +142,19 @@ def battery_verdict(hook: Path) -> tuple[int, list[str]]:
     return (1 if wrong else 0), lines
 
 
+def frontmatter_model(text: str) -> str | None:
+    """The `model:` value of an agent file's YAML frontmatter (the block between the first two `---` lines), or None."""
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return None
+    for line in lines[1:]:
+        if line.strip() == "---":
+            return None
+        if line.startswith("model:"):
+            return line.split(":", 1)[1].strip().strip("\"'") or None
+    return None
+
+
 def prompt_names_command(agent: str, text: str) -> bool:
     """True when the agent's instructions still tell it to run its command."""
     return AGENT_COMMANDS[agent] in text
@@ -212,6 +235,12 @@ def selftest() -> int:
         check(f"{agent}'s instructions name `{AGENT_COMMANDS[agent]}`", prompt_names_command(agent, text), rel)
         check(f"{agent}'s instructions, reverted to the prose step, no longer do (the check can go red)",
               not prompt_names_command(agent, reverted[agent]))
+        check(f"{agent} pins `model: {AGENT_MODELS[agent]}` (#1702)", frontmatter_model(text) == AGENT_MODELS[agent], f"{rel}: model {frontmatter_model(text)!r}")
+
+    # The pin check can go red: the model the agents had before #1702, a `model:` line in the BODY only, and no frontmatter.
+    check("a frontmatter `model: sonnet` is not the adversary model", frontmatter_model("---\nname: x\nmodel: sonnet\n---\n") != ADVERSARY_MODEL)
+    check("`model: fable` after the frontmatter does not count", frontmatter_model("---\nname: x\n---\nmodel: fable\n") is None)
+    check("a file with no frontmatter has no model", frontmatter_model("model: fable\n") is None)
 
     for f in failures:
         print("SELFTEST FAIL", f)

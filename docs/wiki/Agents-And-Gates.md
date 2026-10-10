@@ -74,7 +74,7 @@
 | `mutation-verifier` | haiku | Read, Grep, Glob, Bash | `/gauntlet` | — |
 | `plugin-doctor` | sonnet | Read, Grep, Glob, Edit, Write, Bash | `/maintainer-work` | — |
 | `release-manager` | sonnet | Read, Grep, Glob, Edit, Bash | `/maintainer-work` | — |
-| `shell-adversary` | sonnet | Read, Grep, Glob, Bash | `/gauntlet` | — |
+| `shell-adversary` | fable | Read, Grep, Glob, Bash | `/gauntlet` | — |
 | `skill-doctor` | sonnet | Read, Grep, Glob, Edit, Write, Bash | `/maintainer-work` | — |
 
 ## Gates
