@@ -8,7 +8,8 @@ GUARD = Guard(
     # #636 added the import of `STYLES`, and the standing rule applies: a guard's `needs` is
     # EVERYTHING the subject opens, so an added import is an added need. Without it every
     # mutation dies on ModuleNotFoundError and reads as "caught" while proving nothing.
-    needs=("scripts/generation_gate.py",),
+    needs=("scripts/generation_gate.py",
+           "scripts/asset_home.py"),   # #1779: generation_gate imports it
     # Otherwise every fixture is a dict literal and nothing here touches the network -- which
     # matters more than usual, because the subject is about BROWSING other people's sites.
     mutations=(

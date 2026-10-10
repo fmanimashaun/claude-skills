@@ -71,14 +71,14 @@
     },
     {
       "id": "work-order",
-      "why": "A work order an executor cannot run from is not self-contained.",
+      "why": "A work order an executor cannot run from is not self-contained. It lives at docs/product/handoff/<slug>.md under the shipped layout; the pre-layout docs/handoff/ is still matched (#1700).",
       "command": [
         "python3",
         "{plugin}/scripts/check_handoff.py",
-        "{match:docs/handoff/*.md}"
+        "{match:docs/**/handoff/*.md}"
       ],
       "applies_when": [
-        "docs/handoff"
+        "docs"
       ],
       "requires": [
         "python3"

@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# rails-flow-git-guard: pre-commit v1 -- managed by /pipeline:install-hooks, which rewrites this file. Edit the plugin's copy, not this one.
+#
+# WHAT IT ENFORCES (#1789, the owner's decision on #1793): the staged CONTENT, whatever command staged it. `git add -A` is not the danger;
+# the stray files it stages are, and the index shows them however the add was spelled (`--al`, `$X`, a glob, a pathspec, a script).
+#
+# THE RULE. The commit is refused when it stages (index against HEAD):
+#   1. a NEW path (added, copied or renamed in) that should never be committed, matched case-insensitively: .env and .env.* (not .example,
+#      .sample, .template; `.env.example.bak` IS refused), *.pem, *.key, *.p12, id_rsa and id_rsa.* (not id_rsa.pub), *.sqlite3, *.log, .DS_Store,
+#      anything under node_modules/ or .bundle/ at any depth, or anything under tmp/, log/ or coverage/ at the repository ROOT
+#      (a .keep or .gitkeep placeholder is fine);
+#   2. any file over 5 MiB (`max-staged-file-mb: N` in GUARDRAILS.md changes it);
+#   3. more than 100 newly ADDED files in one commit (`max-new-files-per-commit: N` changes it) -- the signal that the whole tree went in.
+#      Not applied to the first commit of a repository.
+# A file that is already tracked and is only MODIFIED or DELETED is not a new path, so it never trips rule 1.
+#
+# LIMITS, stated: (a) a secret under a name not listed (`production.env`, `secrets.json`, `credentials.yml`) is not recognised; (b) rule 3
+# counts one commit, so the same files split across several commits pass; (c) `git commit --no-verify` skips this hook (the `git` wrapper,
+# #1790, refuses that flag); (d) a clone with no hook is not covered. A tripwire that reads the index, not a boundary.
+# FAIL CLOSED: a declared number that is not a number, or an index it cannot read, is a refusal.
+# AUDITED ESCAPE: RAILS_FLOW_STAGING_OK=1 lets the commit through and says so.
+#
+# Git's githooks(5): pre-commit takes no arguments, runs before the message is requested, and a non-zero exit aborts the commit. For
+# `git commit <path>` git points GIT_INDEX_FILE at the index it will commit, and `git diff --cached` below reads that one.
+set -u
+set -f
+_tab=$'\t'
+
+fail() { printf '%s\n' "git-guard (pre-commit): $*" >&2; exit 1; }
+
+_declared() {
+  local key="$1" top file line fence=0 comment=0 val="" re_fence re_indent re_decl
+  top="$(git rev-parse --show-toplevel 2>/dev/null)" || return 0
+  file="$top/GUARDRAILS.md"
+  [ -f "$file" ] || return 0
+  re_fence='^[[:space:]]{0,3}(```|~~~)'
+  re_indent="^([[:space:]]{4,}|${_tab})"
+  re_decl='^[[:space:]]*([-*+][[:space:]]*)?`?'"$key"':[[:space:]]*([^`]*[^`[:space:]])?`?[[:space:]]*$'
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [[ $line =~ $re_fence ]]; then fence=$((1 - fence)); continue; fi
+    [ "$fence" = 1 ] && continue
+    if [ "$comment" = 1 ]; then case "$line" in *"-->"*) comment=0 ;; esac; continue; fi
+    case "$line" in *"<!--"*) case "$line" in *"-->"*) ;; *) comment=1 ;; esac; continue ;; esac
+    [[ $line =~ $re_indent ]] && continue
+    if [[ $line =~ $re_decl ]]; then val="${BASH_REMATCH[2]}"; fi
+  done < "$file"
+  printf '%s' "$val"
+}
+
+if [ "${RAILS_FLOW_STAGING_OK:-}" = 1 ]; then
+  printf '%s\n' "git-guard (pre-commit): RAILS_FLOW_STAGING_OK=1, so the staged content is not checked." >&2
+  exit 0
+fi
+
+max_mb=5
+max_new=100
+v="$(_declared max-staged-file-mb)" || fail "cannot read GUARDRAILS.md"
+if [ -n "$v" ]; then [[ $v =~ ^[0-9]+$ ]] || fail "max-staged-file-mb in GUARDRAILS.md is '$v', not a whole number"; max_mb="$v"; fi
+v="$(_declared max-new-files-per-commit)" || fail "cannot read GUARDRAILS.md"
+if [ -n "$v" ]; then [[ $v =~ ^[0-9]+$ ]] || fail "max-new-files-per-commit in GUARDRAILS.md is '$v', not a whole number"; max_new="$v"; fi
+max_bytes=$((max_mb * 1024 * 1024))
+
+# Matched on the LOWERCASED path: `.ENV`, `KEY.PEM` and `Foo.LOG` are the same files on a case-insensitive filesystem (macOS, Windows).
+never_commit() {
+  local lc base
+  lc="$(printf '%s' "$1" | LC_ALL=C tr 'A-Z' 'a-z')"
+  [ -n "$lc" ] || lc="$1"
+  base="${lc##*/}"
+  case "$base" in
+    .keep|.gitkeep|id_rsa.pub) return 1 ;;
+    .env|.env.*) case "$base" in *.example|*.sample|*.template) return 1 ;; esac; return 0 ;;
+    *.pem|*.key|*.p12|id_rsa|id_rsa.*|*.sqlite3|*.log|.ds_store) return 0 ;;
+  esac
+  case "/$lc" in
+    */node_modules/*|*/.bundle/*) return 0 ;;     # at any depth: a dependency tree is never source
+    /tmp/*|/log/*|/coverage/*) return 0 ;;       # at the repository ROOT only: app/services/log/x.rb and docs/coverage/z.md are source
+  esac
+  return 1
+}
+
+first_commit=0
+git rev-parse --verify -q HEAD >/dev/null 2>&1 || first_commit=1
+
+problems=""
+nproblems=0
+note() { problems="${problems}  - $1"$'\n'; nproblems=$((nproblems + 1)); }
+
+# The staged paths go to a temp file first: a `git diff` that fails inside `< <(...)` would read as "nothing staged" and let the commit through.
+tmp="$(mktemp "${TMPDIR:-/tmp}/git-guard.XXXXXX")" || fail "cannot create a temp file, so the staged content cannot be read"
+trap 'rm -f "$tmp"' EXIT
+staged() { git diff --cached --name-only -z --diff-filter="$1" > "$tmp" 2>/dev/null || fail "cannot read the index (git diff --cached failed)"; }
+
+# Rule 1: a new path (added, copied, renamed in).
+staged ACR
+while IFS= read -r -d '' p; do
+  never_commit "$p" && note "$p: a file that should never be committed (rule 1)"
+done < "$tmp"
+
+# Rule 2: any staged blob over the limit (added, copied, renamed, modified).
+staged ACMR
+while IFS= read -r -d '' p; do
+  size="$(git cat-file -s ":$p" 2>/dev/null)" || { note "$p: cannot read its size (rule 2)"; continue; }
+  [[ $size =~ ^[0-9]+$ ]] || { note "$p: cannot read its size (rule 2)"; continue; }
+  if [ "$size" -gt "$max_bytes" ]; then note "$p: $size bytes, over the ${max_mb} MiB limit (rule 2)"; fi
+done < "$tmp"
+
+# Rule 3: too many new files.
+if [ "$first_commit" = 0 ]; then
+  staged A
+  new_files=0
+  while IFS= read -r -d '' p; do new_files=$((new_files + 1)); done < "$tmp"
+  if [ "$new_files" -gt "$max_new" ]; then note "$new_files newly added files, over the limit of $max_new (rule 3: the whole tree?)"; fi
+fi
+
+if [ "$nproblems" -gt 0 ]; then
+  {
+    printf '%s\n' "git-guard (pre-commit): refused. The staged content breaks a rule ($nproblems finding(s)):"
+    printf '%s' "$problems" | head -n 20
+    [ "$nproblems" -gt 20 ] && printf '%s\n' "  ... and $((nproblems - 20)) more"
+    printf '%s\n' "Unstage what you did not mean to commit: git restore --staged <path>. Limits are declared in GUARDRAILS.md (max-staged-file-mb, max-new-files-per-commit). A deliberate exception: RAILS_FLOW_STAGING_OK=1 git commit ... (audited)."
+  } >&2
+  exit 1
+fi
+exit 0

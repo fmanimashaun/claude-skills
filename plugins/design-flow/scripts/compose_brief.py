@@ -3,7 +3,7 @@
 
 #639. The asymmetry this closes, stated plainly:
 
-    what to buy    ->  docs/assets/plan.json + a generated plan.md, one row per asset, reviewable
+    what to buy    ->  docs/design/assets/plan.json + a generated plan.md, one row per asset, reviewable
     how to compose ->  nothing
 
 We generate a concrete, reviewable artefact for the decision that costs MONEY, and nothing at all for
@@ -57,11 +57,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import asset_home  # noqa: E402
 import doctrine_path  # noqa: E402
 
 COMPOSITION_DIR = Path("docs/design/compositions")
 RESEARCH_PATH = Path("docs/design/reference-research.json")
-MANIFEST_PATH = Path("docs/assets/manifest.json")
+MANIFEST_PATH = Path("docs/design/assets/manifest.json")
 
 # The marked block in `page-anatomies.md` that carries the paced band sequence. Bounded by the same
 # markers `scripts/check_page_pacing.py` uses, so both read the same region rather than two
@@ -576,6 +577,9 @@ def main(argv: list[str]) -> int:
     if args.selftest:
         return selftest()
     root = Path.cwd()
+    moved = asset_home.refusal(root)  # #1779
+    if moved:
+        raise SystemExit(moved)
     try:
         if args.check:
             problems = []
@@ -621,7 +625,7 @@ def selftest() -> int:
     PROOF = Band(2, "Proof — the customer marks", "Logo cloud", "background", "1", "shell")
 
     print("the manifest is READ, and `avoid` outranks `use_cases`")
-    lattice = {"file": "docs/assets/assets-library/hero.svg", "name": "Hero lattice",
+    lattice = {"file": "docs/design/assets/assets-library/hero.svg", "name": "Hero lattice",
                "use_cases": ["marketing hero"], "avoid": ["beside a product screenshot"]}
     cands, rej = rank_candidates(HERO, "marketing-hero", [lattice])
     ok("a matching use case makes it a candidate", [c["name"] for c in cands] == ["Hero lattice"])
@@ -639,7 +643,7 @@ def selftest() -> int:
     # The fixture is the reporter's verbatim manifest, because every one of these came from a real
     # project and none from a fixture -- which is the lesson worth encoding.
     ACCENTS = {
-        "file": "docs/assets/assets-library/marketing-accents.svg", "name": "marketing-accents",
+        "file": "docs/design/assets/assets-library/marketing-accents.svg", "name": "marketing-accents",
         "use_cases": [
             "Home - honest-proof, three-outcomes and 'the questions you're asking' bands",
             "/how-it-works - a mark beside the flywheel schematic, not replacing it",
@@ -767,15 +771,15 @@ def selftest() -> int:
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         (root / "docs/design").mkdir(parents=True)
-        (root / "docs/assets/assets-library").mkdir(parents=True)
-        (root / "docs/assets/assets-library/hero.svg").write_text("<svg/>", encoding="utf-8")
+        (root / "docs/design/assets/assets-library").mkdir(parents=True)
+        (root / "docs/design/assets/assets-library/hero.svg").write_text("<svg/>", encoding="utf-8")
         (root / RESEARCH_PATH).write_text(json.dumps({
             "style": "minimalist-ink",
             "recognition_traits": ["monochrome line-work", "single ink weight"]}), encoding="utf-8")
         # A second row scoped to the surface and matching NO band label — #676's second root cause,
         # end to end. Testing `surface_relevant` and `render` separately left `compose` itself
         # unguarded, and the mutation harness slipped straight between them.
-        scoped_only = {"file": "docs/assets/assets-library/accent.svg", "name": "Page accent",
+        scoped_only = {"file": "docs/design/assets/assets-library/accent.svg", "name": "Page accent",
                        "surfaces": ["marketing-hero"],
                        # Deliberately shares no word with any band label -- "one mark" collided
                        # with band 2's "the customer marks, on one line" and made this a candidate,
@@ -790,7 +794,7 @@ def selftest() -> int:
         ok("...and its recognition traits", "single ink weight" in brief["recognition_traits"])
         ok("...and the per-surface intent", "emotion" in brief["intent"]["brief"])
         ok("the hero band is filled from the manifest",
-           brief["bands"][0]["suggested"] == "docs/assets/assets-library/hero.svg")
+           brief["bands"][0]["suggested"] == "docs/design/assets/assets-library/hero.svg")
         ok("...and later bands are honestly empty",
            any(b["suggested"] is None for b in brief["bands"]))
         # #672 defect 1. An unfilled band NAMES WHAT THE PROJECT OWNS, so a synonym miss reads as
@@ -825,7 +829,7 @@ def selftest() -> int:
 
         # A JOIN, NOT A JUDGEMENT: a named asset must exist.
         ok("a brief naming a real asset passes the join", check_joins(brief, root) == [])
-        ghost = {**brief, "bands": [{**brief["bands"][0], "suggested": "docs/assets/gone.svg"}]}
+        ghost = {**brief, "bands": [{**brief["bands"][0], "suggested": "docs/design/assets/gone.svg"}]}
         ok("...and one naming a missing asset does not",
            any("not on disk" in p for p in check_joins(ghost, root)))
 

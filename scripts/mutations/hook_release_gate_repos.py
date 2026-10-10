@@ -12,7 +12,7 @@ GUARD = Guard(
     subject="plugins/qa-flow/hooks/scripts/release-gate.sh",
     selftest="plugins/rails-flow/scripts/check_hook_gates.py",
     # Only the group that drives this subject, as the two other release-gate guards do (#1497).
-    selftest_args=("--only", "release_gate_repos"),
+    selftest_args=("--only", "release_gate_repos", "--strict-timing"),   # its stall mutants are STARVED-shaped by design (#1664)
     # Each mutant runs only the fixture its `expects` names (#1599), after a control run of the unmutated hook with the same
     # flag: seventeen mutants of a 150-check group would otherwise cost seventeen whole groups.
     narrow_with="--match",
