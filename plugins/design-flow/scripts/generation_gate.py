@@ -565,6 +565,7 @@ def selftest() -> int:
                 (root / CONFIG_PATH).write_text(json.dumps(config), encoding="utf-8")
             if library is not None:
                 (root / "docs" / "assets").mkdir(parents=True)
+                (root / "docs/design/assets").mkdir(parents=True, exist_ok=True)
                 (root / "docs/design/assets/manifest.json").write_text(json.dumps(library), encoding="utf-8")
             try:
                 decide(root, request)

@@ -11,7 +11,8 @@ GUARD = Guard(
     # #625 added the second import, and the rule is the one above rather than a new one: a
     # guard's `needs` is EVERYTHING the subject opens, so an added import is an added need.
     needs=("scripts/generation_gate.py",
-           "scripts/prompt_library.py"),
+           "scripts/prompt_library.py",
+           "scripts/asset_home.py"),   # #1779: every entry point stops on a library left at the old place
     # Every fixture is a tempdir and NOTHING reaches the network. A test that needed
     # a provider would not be a test -- it would be a bill. Each mutation removes one thing that
     # stands between a request and someone's card.

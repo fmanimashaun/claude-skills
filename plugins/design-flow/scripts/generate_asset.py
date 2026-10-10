@@ -64,9 +64,11 @@ ASSET_DIR = Path("docs/design/assets")
 # library each have a home instead of everything landing in one flat directory beside the indexes.
 #
 # The indexes STAY at the assets-dir root -- `plan.json`/`plan.md` and `manifest.json` describe the
-# contents, so root holds descriptions and the subfolders hold contents. Leaving `manifest.json`
-# where it is also means no existing project has to move a file, and every doc and command that
-# already names `docs/design/assets/manifest.json` keeps working.
+# contents, so root holds descriptions and the subfolders hold contents.
+#
+# #1779 REVERSES ONE HALF OF THAT, on the maintainer's recorded decision: the assets dir itself moved from `docs/assets/` to
+# `docs/design/assets/`, because the old place failed rails-flow's docs-layout gate. A project that still has the old place is
+# stopped (`asset_home.refusal`) and moves it with `asset_home.py --migrate`; it is never read as an empty library.
 #
 # Kebab, not the space the layout was drawn with: a path with a space in it breaks every unquoted
 # shell one-liner in our own docs, and `lint_markdown_shell.py` checks 191 of those.
