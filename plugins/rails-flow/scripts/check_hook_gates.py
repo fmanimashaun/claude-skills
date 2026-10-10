@@ -698,6 +698,12 @@ NEGATIVES_1568 = ['git add "app/x.rb" "spec/y.rb"', "git add 'x y' app/z.rb", 'g
                   'cat <<EOF\nfoo\\\nEOF\ngit add -A\nEOF', 'cat <<-EOF\n\tfoo\\\n\tEOF\ngit add -A\nEOF',
                   'echo "a\\"; git add -A; echo \\"b"', 'echo "a\'b"; git status; echo "c\'d"', "git commit -m 'it'\"'\"'s'",
                   'git add "app/models/user.rb"', "git add 'a.rb' 'b.rb'", 'git commit -m "fix"', 'git status "-s"']
+# #1706: the honest-mistake spellings beside a blocked one, each measured allowed on dev before this change; and #1708's force-with-lease
+# to a branch whose NAME contains main, which was blocked. Controls must keep their verdict.
+POSITIVES_1706 = ["git push -fu origin dev", "git push origin +dev", "git checkout HEAD .", "git branch -d -f x", "git branch -df x",
+                  "git add -- .", "git add --verbose -A", "git reset HEAD~1 --hard", "git push --force-with-lease origin HEAD:main"]
+NEGATIVES_1706 = ["git add file.rb", "git add -- app/x.rb", "git branch -d x", "git push origin feature", "git checkout feature/x",
+                  "git reset HEAD~1", "git push -u origin feature/x", "git push --force-with-lease origin feature/main-menu"]
 # ANSI-C bodies whose decoding must equal bash's own, byte for byte (compared when the result is one plain word, the only kind kept).
 ANSIC_BODIES_1613 = ["\\x61bc", "a\\x62c", "\\141bc", "\\1411", "a\\x6", "\\x", "a\\u0062c", "a\\U00000062c", "ab\\0cd", "a\\x00b",
                      "\\x41\\x42", "x\\u00e9y", "x\\xc3\\xa9y", "\\e", "\\q", "\\cA", "a\\\\b", "a\\'b", "a\\?b", "a\\\"b", "\\a\\b\\t"]
@@ -764,6 +770,15 @@ def guard_bash_fixtures() -> None:
         check(f"guard-bash (#1568): `{cmd!r}` is read as the shell reads it, and is blocked", run(cmd) == 2, "exit 0")
     for cmd in NEGATIVES_1568:
         check(f"guard-bash (#1568): CONTROL: `{cmd[:60]!r}` passes", run(cmd) == 0, "exit 2")
+    for cmd in POSITIVES_1706:
+        check(f"guard-bash (#1706): `{cmd}` is blocked like its plain sibling", run(cmd) == 2, "exit 0")
+    for cmd in NEGATIVES_1706:
+        check(f"guard-bash (#1706/#1708): CONTROL: `{cmd}` passes", run(cmd) == 0, "exit 2")
+    # #1708: an inline override is not read (an agent cannot approve its own deploy), so the message must not tell anyone to write it inline.
+    with tempfile.TemporaryDirectory() as td:
+        code, out = run_hook("guard-bash.sh", cwd=Path(td), stdin=json.dumps({"tool_input": {"command": "RAILS_FLOW_ALLOW_DEPLOY=1 kamal deploy"}}))[:2]
+    check("guard-bash (#1708): an inline RAILS_FLOW_ALLOW_DEPLOY=1 is still blocked, and the message says it is not read",
+          code == 2 and "not read" in out and "rerun with RAILS_FLOW_ALLOW_DEPLOY=1 kamal deploy" not in out, f"exit {code}: {out[:200]!r}")
     # #1613: the decoder against bash ITSELF. `git $'BODY'` goes through normalize_segments; `printf %s $'BODY'` is what bash makes of it.
     # Compared only when bash's word is plain (no space or shell character), because only a plain word is kept; any other is deleted.
     lib = HOOKS / "lib" / "normalize_cmd.sh"

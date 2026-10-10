@@ -152,16 +152,19 @@ if hit '^(bundle[[:space:]]+exec[[:space:]]+)?(bin/)?(rails|rake)([[:space:]]+[^
   fi
 fi
 
-if hit '^git[[:space:]]+push\b.*(--force\b|[[:space:]]-f\b)' && ! exempt '^git[[:space:]]+push\b.*--force-with-lease'; then
+# #1706: a bundled `-fu` and a `+<ref>` refspec force as surely as `-f`.
+if hit '^git[[:space:]]+push\b.*([[:space:]]--force\b|[[:space:]]-[a-zA-Z]*f[a-zA-Z]*\b|[[:space:]]\+[^[:space:]])' && ! exempt '^git[[:space:]]+push\b.*--force-with-lease'; then
   deny "force-push is prohibited. Use --force-with-lease on your own feature branch only, never on main/dev/staging."
 fi
-if hit '^git[[:space:]]+push\b.*--force-with-lease' && hit '^git[[:space:]]+push\b.*\b(main|master|dev|staging)\b'; then
+# #1708: the protected branch is a whole ref (`main`, `HEAD:main`, `+dev`, `refs/heads/staging`), not the word inside `feature/main-menu`.
+if hit '^git[[:space:]]+push\b.*--force-with-lease' && hit '^git[[:space:]]+push\b.*([[:space:]]|:|\+)(refs/heads/)?(main|master|dev|staging)([[:space:]]|$)'; then
   deny "force-pushing a protected branch (main/dev/staging) requires explicit user approval."
 fi
 
 # Leading short flags are allowed through (`-v -A`), `-A` may sit inside a bundle (`-vA`), and the
 # repo-root spellings `./` and `:/` count as `.` (#826). Verb at the START of a segment (#906).
-if hit '^git[[:space:]]+add([[:space:]]+-[a-zA-Z]+)*[[:space:]]+(-[a-zA-Z]*A[a-zA-Z]*\b|--all\b|\./?($|[[:space:]])|:/($|[[:space:]]))'; then
+# #1706: long options and `--` may come first too (`add --verbose -A`, `add -- .`).
+if hit '^git[[:space:]]+add([[:space:]]+-[a-zA-Z-]*)*[[:space:]]+(-[a-zA-Z]*A[a-zA-Z]*\b|--all\b|\./?($|[[:space:]])|:/($|[[:space:]]))'; then
   deny "stage specific files, never 'git add -A' / 'git add .' (GUARDRAILS: no accidental secrets or stray files)."
 fi
 
@@ -170,7 +173,7 @@ if hit '^git[[:space:]]+(commit|push|merge|rebase|cherry-pick)\b.*[[:space:]]--n
   deny "--no-verify skips pre-commit checks and is prohibited."
 fi
 
-if hit '^git[[:space:]]+reset[[:space:]]+--hard\b'; then
+if hit '^git[[:space:]]+reset\b.*[[:space:]]--hard\b'; then   # #1706: `reset HEAD~1 --hard` too
   deny "git reset --hard requires explicit user approval (uncommitted work loss)."
 fi
 
@@ -182,14 +185,16 @@ if hit '^git[[:space:]]+clean\b.*([[:space:]]-[a-zA-Z]*f|[[:space:]]--force\b)' 
   deny "git clean -f deletes untracked files with no undo. Run 'git clean -n' first and show the user what it would remove; delete named paths with approval."
 fi
 if hit '^git[[:space:]]+checkout\b.*[[:space:]]--([[:space:]]|$)' \
-   || hit '^git[[:space:]]+checkout([[:space:]]+-[a-zA-Z-]+)*[[:space:]]+(\./?|:/)($|[[:space:]])'; then
+   || hit '^git[[:space:]]+checkout([[:space:]]+[^[:space:]]+)*[[:space:]]+(\./?|:/)($|[[:space:]])'; then   # #1706: `checkout HEAD .` too
   deny "git checkout -- <path> / git checkout . overwrites uncommitted edits with no undo. To keep them: git stash push -m <why> -- <path>. To discard ONE file you own: git restore -- <that path>."
 fi
 if hit '^git[[:space:]]+restore\b.*[[:space:]](\./?|:/|\*)($|[[:space:]])' \
    && ! exempt '^git[[:space:]]+restore\b.*--staged\b' ; then
   deny "git restore . discards every uncommitted edit in the tree. Name the one file you mean: git restore -- <path>."
 fi
-if hit '^git[[:space:]]+branch\b.*[[:space:]](-[a-zA-Z]*D\b|--delete[[:space:]]+--force\b|--force[[:space:]]+--delete\b)'; then
+# #1706: a delete flag and a force flag in any spelling (`-d -f`, `-df`, `--delete --force`) are `-D`.
+if hit '^git[[:space:]]+branch\b.*[[:space:]](-[a-zA-Z]*D\b|--delete[[:space:]]+--force\b|--force[[:space:]]+--delete\b)' \
+   || { hit '^git[[:space:]]+branch\b.*[[:space:]](-[a-zA-Z]*d[a-zA-Z]*|--delete)\b' && hit '^git[[:space:]]+branch\b.*[[:space:]](-[a-zA-Z]*f[a-zA-Z]*|--force)\b'; }; then
   deny "git branch -D deletes an unmerged branch. Use 'git branch -d' (refuses unmerged work), or ask the user."
 fi
 if hit '^git[[:space:]]+stash[[:space:]]+(drop|clear)\b'; then
@@ -245,7 +250,9 @@ if [ "$_fire" = 1 ] || rawhit "$_flat" "$_re_verb" || rawhit "$cmd" "$_re_shell_
 fi
 
 if hit '^kamal[[:space:]]+deploy\b' && [ "${RAILS_FLOW_ALLOW_DEPLOY:-0}" != "1" ]; then
-  deny "production deploys require explicit user approval. Ask the user; on approval rerun with RAILS_FLOW_ALLOW_DEPLOY=1 kamal deploy ..."
+  # #1708: the override is read from the HOOK's environment, so an inline assignment in the command (an agent approving itself)
+  # stays blocked; the message no longer tells anyone to write it inline.
+  deny "production deploys require explicit user approval. Ask the user; on approval THEY set RAILS_FLOW_ALLOW_DEPLOY=1 in this session's environment (an assignment written into the command is not read), then rerun kamal deploy."
 fi
 
 exit 0
