@@ -186,16 +186,15 @@ def main() -> int:
                           "own checkout, after its sweep.", args)
         return 0
     if where is None:
-        # lib/command_cwd.py says "cannot tell" for ANY word outside its SAFE list before gh, so `python3 <sweep> && gh pr ready`
-        # landed here and was refused for the directory, never judged on its record. The decision is that such a chain passes
-        # only when a green record ALREADY exists, so it must be judged. With no directory change in the command, the target is
-        # the session's directory, and that is judged like any other; a `cd`/`pushd`/`popd` that could not be followed still refuses.
-        if re.search(r"(?:^|[;&|(]\s*)(?:cd|pushd|popd)(?:\s|$)", raw):
-            root = git(start, "rev-parse", "--show-toplevel")
-            if root and in_force(root):
-                return refuse(f"which repository this `gh pr ready` targets cannot be told ({why}).", args)
-            return 0
-        where = start
+        # Which repository and HEAD this `gh pr ready` targets cannot be told (lib/command_cwd.py: any word outside its SAFE list
+        # before gh, a `cd` it cannot follow). A guarantee FAILS CLOSED: no guessing the session's directory, because an earlier
+        # segment (`gh repo set-default`, `git remote set-url`, a url.insteadOf) can retarget gh (#1565, the coordinator's call
+        # after the review of 7315b31e). Refused where the session's repository is in force; left alone where it is not.
+        root = git(start, "rev-parse", "--show-toplevel")
+        if root and in_force(root):
+            return refuse(f"which repository this `gh pr ready` targets cannot be told ({why}). Run `gh pr ready <number>` "
+                          "as its own command, from the PR's checkout, after its sweep.", args)
+        return 0
     root = git(where, "rev-parse", "--show-toplevel")
     if not root or not in_force(root):
         return 0

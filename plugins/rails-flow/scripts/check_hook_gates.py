@@ -5327,7 +5327,7 @@ def guard_pr_ready_fixtures() -> None:
         expect("guard-pr-ready: the refusal names the sweep command and the two-command retry",
                guard(repo, "gh pr ready 12"), 2, 'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/project_gates.py"', "gh pr ready 12", "TWO separate commands")
         expect("guard-pr-ready: a sweep chained before it in ONE command does not count (no chain parsing)",
-               guard(repo, "python3 project_gates.py && gh pr ready 12"), 2, "no sweep record")
+               guard(repo, "python3 project_gates.py && gh pr ready 12"), 2, "cannot be told")
         expect("guard-pr-ready: `gh pr ready --undo` is always allowed", guard(repo, "gh pr ready 12 --undo"), 0)
         expect("guard-pr-ready: `--undo` after a bare `--` is a positional, not the flag: judged, not exempted",
                guard(repo, "gh pr ready 5 -- --undo"), 2, "argument --undo is not a plain PR number or branch")
@@ -5349,10 +5349,13 @@ def guard_pr_ready_fixtures() -> None:
         expect("guard-pr-ready: `gh --repo o/r pr ready --undo 5` is allowed", guard(repo, "gh --repo o/r pr ready --undo 5"), 0)
         record(repo, head)
         expect("guard-pr-ready: a GREEN record with zero skips for HEAD allows it", guard(repo, "gh pr ready 12"), 0)
-        # A word outside command_cwd's SAFE list before gh is "cannot tell" there; with no `cd` in the command the target is
-        # the session's directory, judged on its record (the decision: a chained sweep passes only on an EXISTING green record).
-        expect("guard-pr-ready: with a green record, a sweep chained before it in ONE command is judged on the record and allowed",
-               guard(repo, "python3 project_gates.py && gh pr ready 12"), 0)
+        # A word outside command_cwd's SAFE list before gh is "cannot tell": the gate FAILS CLOSED rather than guess the session's
+        # directory, because an earlier segment can retarget gh (coordinator's call after the review of 7315b31e).
+        expect("guard-pr-ready: with a green record, a sweep chained before it in ONE command is still refused (cannot tell, fails closed)",
+               guard(repo, "python3 project_gates.py && gh pr ready 12"), 2, "cannot be told")
+        for cmd in ("gh repo set-default o/r && gh pr ready 5", "git remote set-url origin https://x/o/r && gh pr ready 5"):
+            expect(f"guard-pr-ready: with a green record, an earlier segment that can retarget gh refuses: {cmd[:40]}",
+                   guard(repo, cmd), 2, "cannot be told")
         expect("guard-pr-ready: a `cd` the resolver cannot follow still refuses, even with a green record",
                guard(repo, "cd $HOME && gh pr ready 12"), 2, "cannot be told")
         expect("guard-pr-ready: a scheme-less PR URL is an explicit target", guard(repo, "gh pr ready github.com/o/r/pull/5"), 2,
