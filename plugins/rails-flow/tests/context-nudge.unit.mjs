@@ -108,6 +108,11 @@ await check('the line is short, because it is billed again on every later reques
   assert.ok(r.context[0].length <= 400, `length ${r.context[0].length}`)
 })
 
+await check('every variant of the line is short: undeclared, implementation and coordinator', async () => {
+  const { nudgeLine } = await import(`../hooks/context-nudge.mjs?fresh=${++fresh}`)
+  for (const role of [null, 'implementation', 'coordinator']) assert.ok(nudgeLine(99, role).length <= 400, `${role}: ${nudgeLine(99, role).length}`)
+})
+
 await check('a compaction resets it: the next climb past the threshold is told again', async () => {
   const h = await harness(undefined)
   await h.measure(75)

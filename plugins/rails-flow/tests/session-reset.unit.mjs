@@ -413,7 +413,9 @@ await check('the 5-hour hard level still schedules its resume, beside the compac
 await check('a session whose job is done is not compacted: the clear takes over', async () => {
   const s = await session({ gh: MERGED })
   await finishJob(s)
-  await s.measure(90); await s.submit(); await s.measure(90); await s.settleTurn()
+  await s.measure(90); await s.submit(); await s.measure(90)
+  assert.equal(reset.state.compactDue, null, 'nothing is even recorded as due for a finished job')
+  await s.settleTurn()
   assert.equal(s.calls.compact.length, 0)
 })
 

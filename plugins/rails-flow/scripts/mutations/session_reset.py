@@ -9,6 +9,7 @@ from mutation_types import Guard, Mutation  # noqa: F401
 #
 # NOT listed, because equivalent: dropping `kill -0` from the liveness test. A dead pid has no start time, so
 # the start-time comparison alone already calls its claim stale; the two tests overlap on purpose.
+# Removed, because equivalent once the catch-all hook owned the epoch: a Bash-only bump (the catch-all bumps for every tool, Bash included).
 # Also NOT listed: dropping `job.checked.epoch === job.epoch` in turn.complete. maybePrecheck already replaces the
 # cached answer with a fresh unanswered one on any tool call, so the comparison is a second line of defence.
 # Also NOT listed: dropping the takeover lock. Whether two simultaneous takers both win depends on timing, so no
@@ -189,12 +190,6 @@ GUARD = Guard(
             "the first session is elected coordinator",
         ),
         # Fable's review of #1728: each fix is held by its own check.
-        Mutation(
-            "a tool call does not move the epoch",
-            "      job.epoch += 1\n      const cmd",
-            "      const cmd",
-            "P1: work that starts while gh answers",
-        ),
         Mutation(
             "a turn that ends before the early merge check answers is never cleared",
             "        job.turnEnd = job.touched ? job.epoch : null\n",

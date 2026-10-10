@@ -473,7 +473,7 @@ export function register(on) {
     const r = await next(e)
     try {
       if (r?.deny || r?.isError) return r
-      job.epoch += 1
+      // (the epoch is moved by the catch-all tool.call hook below, for every tool, before this code runs)
       const cmd = e.command ?? ''
       if (e.run_in_background === true) job.background += 1
       const add = parseWorktreeAdd(cmd)
@@ -502,7 +502,6 @@ export function register(on) {
     const r = await next(e)
     try {
       if (!r?.deny && !r?.isError) {
-        job.epoch += 1
         job.handoff = handoffFile(e.tool, e.file_path) ?? job.handoff
         maybePrecheck($)
       }
