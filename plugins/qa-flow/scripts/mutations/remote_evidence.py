@@ -45,14 +45,20 @@ GUARD = Guard(
         ),
         Mutation(
             "the judge's findings are not passed through: every verdict reads as clean",
-            "        return done.returncode\n    finally:",
-            "        return 0\n    finally:",
+            "        sys.stderr.write(done.stderr)\n        return done.returncode\n    finally:",
+            "        sys.stderr.write(done.stderr)\n        return 0\n    finally:",
             "a finding is passed through as exit 1",
         ),
         Mutation(
             "the scratch repository is left behind",
-            "        shutil.rmtree(scratch, ignore_errors=True)",
-            "        pass",
+            "        sys.stderr.write(done.stderr)\n        return done.returncode\n    finally:\n        shutil.rmtree(scratch, ignore_errors=True)",
+            "        sys.stderr.write(done.stderr)\n        return done.returncode\n    finally:\n        pass",
+            "no scratch repository is left behind",
+        ),
+        Mutation(
+            "the recording's scratch repository is left behind",
+            '        return done.returncode\n    finally:\n        shutil.rmtree(scratch, ignore_errors=True)\n\n\nclass Unusable(',
+            '        return done.returncode\n    finally:\n        pass\n\n\nclass Unusable(',
             "no scratch repository is left behind",
         ),
         Mutation(
@@ -60,6 +66,49 @@ GUARD = Guard(
             "            os.killpg(proc.pid, signal.SIGKILL)",
             "            proc.kill()",
             "leaves no child running",
+        ),
+        # ---- the recorded verdict (#1686) -------------------------------------------------------------------------------
+        Mutation(
+            "a verdict never expires, so a stale judgement still permits a promotion",
+            "    if (time.time() if now is None else now) - at > VERDICT_TTL:",
+            "    if False:",
+            "a verdict 31 minutes old is stale",
+        ),
+        Mutation(
+            "the evidence tree id is not compared, so a verdict for other evidence permits",
+            '    if not tree or v["tree"] != tree:',
+            "    if False:",
+            "a verdict for another evidence tree is a mismatch",
+        ),
+        Mutation(
+            "the verdict's own repo and sha fields are not compared, so a copied file permits",
+            '    if v["repo"] != repo or v["sha"] != sha:',
+            "    if False:",
+            "names another is a mismatch",
+        ),
+        Mutation(
+            "a FAIL verdict reads as a pass",
+            '    if v["verdict"] != "PASS":',
+            "    if False:",
+            "a FAIL is recorded as a FAIL",
+        ),
+        Mutation(
+            "a FAIL is recorded as a PASS",
+            '"verdict": "PASS" if done.returncode == EXIT_OK else "FAIL"',
+            '"verdict": "PASS"',
+            "a FAIL is recorded as a FAIL",
+        ),
+        Mutation(
+            "an unusable judgement still records a verdict",
+            "        if done.returncode not in (EXIT_OK, EXIT_FINDINGS):",
+            "        if False:",
+            "an unusable judgement records NO verdict",
+        ),
+        Mutation(
+            "the verdict file is world-readable and writable",
+            "os.O_TRUNC, 0o600)",
+            "os.O_TRUNC, 0o666)",
+            "owner-only",
         ),
     ),
 )

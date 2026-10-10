@@ -341,6 +341,83 @@ def selftest() -> int:
         check("a commit that does not exist is unusable", rc == EXIT_UNUSABLE and "could not be fetched" in se, f"rc={rc} {se!r}")
         rc, _, se = judged(sha, str(d / "nowhere"), fake)
         check("a repository that cannot be reached is unusable", rc == EXIT_UNUSABLE, f"rc={rc} {se!r}")
+        # (#1686) A verdict is recorded ahead of the promotion and READ by the gate: keyed by repository, commit and evidence tree id,
+        # good for 30 minutes, outside every repository. A commit with no qa/ tree has nothing to judge and records nothing.
+        (work / "qa").mkdir()
+        (work / "qa" / "e.txt").write_text("e\n", encoding="utf-8")
+        fixture_git.run(work, "add", "qa")
+        fixture_git.run(work, "commit", "-q", "-m", "qa")
+        sha2 = subprocess.run(["git", "rev-parse", "HEAD"], cwd=work, capture_output=True, text=True, check=True).stdout.strip()
+        tree2 = subprocess.run(["git", "rev-parse", "HEAD:qa"], cwd=work, capture_output=True, text=True, check=True).stdout.strip()
+        subprocess.run(["git", "push", "-q", str(src), "HEAD:refs/heads/dev"], cwd=work, check=True)
+        saved_data = os.environ.get("CLAUDE_PLUGIN_DATA")
+        os.environ["CLAUDE_PLUGIN_DATA"] = str(d / "data")
+
+        def recorded(commit: str, script: Path) -> tuple[int, str]:
+            keep = (sys.stdout, sys.stderr)
+            with open(out / "ro", "w+", encoding="utf-8") as so, open(out / "re", "w+", encoding="utf-8") as se:
+                sys.stdout, sys.stderr = so, se
+                try:
+                    try:
+                        rc = record(Clock(30), "o/r", commit, url=str(src), evidence_script=script)
+                    except Unusable as exc:
+                        print(f"unusable: {exc}", file=sys.stderr)
+                        rc = EXIT_UNUSABLE
+                finally:
+                    sys.stdout, sys.stderr = keep
+                se.seek(0)
+                return rc, se.read()
+
+        fake.write_text("import sys\nprint('qa/manual-tests/first-boot-v1/')\nsys.exit(0)\n", encoding="utf-8")
+        rc, se = recorded(sha2, fake)
+        vpath = verdict_path("o/r", sha2)
+        check("a PASS is recorded, and read back for the same repository, commit and evidence tree",
+              rc == 0 and read_verdict("o/r", sha2, tree2) == ("ok", "qa/manual-tests/first-boot-v1/\n"), f"rc={rc} {se!r} {read_verdict('o/r', sha2, tree2)}")
+        check("the verdict is kept in the plugin's data directory, owner-only", str(vpath).startswith(str(d / "data"))
+              and oct(vpath.stat().st_mode & 0o777) == "0o600", f"{vpath} {oct(vpath.stat().st_mode & 0o777)}")
+        check("a verdict for another evidence tree is a mismatch", read_verdict("o/r", sha2, "c" * 40)[0] == "mismatch")
+        check("a verdict read with no evidence tree is a mismatch, not a pass", read_verdict("o/r", sha2, "")[0] == "mismatch")
+        check("a verdict for another repository is missing", read_verdict("x/y", sha2, tree2)[0] == "missing")
+        check("a verdict for another commit is missing", read_verdict("o/r", sha, tree2)[0] == "missing")
+        at = json.loads(vpath.read_text())["at"]
+        check("a verdict 31 minutes old is stale", read_verdict("o/r", sha2, tree2, now=at + 31 * 60)[0] == "stale")
+        check("a verdict 29 minutes old is still good", read_verdict("o/r", sha2, tree2, now=at + 29 * 60)[0] == "ok")
+        check("a verdict dated in the future is refused", read_verdict("o/r", sha2, tree2, now=at - 3600)[0] == "unparsable")
+        good_text = vpath.read_text()
+        for label, text in (("garbage", "nope {"), ("a list", "[1]"), ("an object without its fields", "{}")):
+            vpath.write_text(text, encoding="utf-8")
+            check(f"a verdict file that is {label} is unparsable", read_verdict("o/r", sha2, tree2)[0] == "unparsable", read_verdict("o/r", sha2, tree2))
+        for field, value in (("repo", "x/y"), ("sha", "e" * 40)):
+            vpath.write_text(json.dumps({**json.loads(good_text), field: value}), encoding="utf-8")
+            check(f"a verdict whose own `{field}` field names another is a mismatch", read_verdict("o/r", sha2, tree2)[0] == "mismatch",
+                  read_verdict("o/r", sha2, tree2))
+        vpath.write_text(good_text, encoding="utf-8")
+        cli = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--repo", "o/r", "--sha", sha2, "--check-verdict", "--tree", tree2],
+                             capture_output=True, text=True, timeout=60)
+        check("--check-verdict exits 0 and prints the evidence listing for a good verdict",
+              cli.returncode == 0 and "first-boot-v1/" in cli.stdout, f"rc={cli.returncode} {cli.stdout!r} {cli.stderr!r}")
+        cli = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--repo", "o/r", "--sha", sha2, "--check-verdict", "--tree", "d" * 40],
+                             capture_output=True, text=True, timeout=60)
+        check("--check-verdict exits 2 and names the reason for a mismatch", cli.returncode == EXIT_UNUSABLE and "mismatch" in cli.stderr,
+              f"rc={cli.returncode} {cli.stderr!r}")
+        fake.write_text("import sys\nprint('FAIL layer: HOLE', file=sys.stderr)\nsys.exit(1)\n", encoding="utf-8")
+        rc, se = recorded(sha2, fake)
+        kind, why = read_verdict("o/r", sha2, tree2)
+        check("a FAIL is recorded as a FAIL naming the finding, and exits 1", rc == 1 and kind == "FAIL" and "HOLE" in why, f"rc={rc} {kind} {why!r}")
+        cli = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--repo", "o/r", "--sha", sha2, "--check-verdict", "--tree", tree2],
+                             capture_output=True, text=True, timeout=60)
+        check("--check-verdict exits 1 for a FAIL verdict", cli.returncode == EXIT_FINDINGS, f"rc={cli.returncode} {cli.stderr!r}")
+        vpath.unlink()
+        fake.write_text("import sys\nsys.exit(2)\n", encoding="utf-8")
+        rc, se = recorded(sha2, fake)
+        check("an unusable judgement records NO verdict", rc == EXIT_UNUSABLE and not vpath.exists(), f"rc={rc} exists={vpath.exists()}")
+        rc, se = recorded(sha, fake)
+        check("a commit with no qa/ tree is unusable and records NO verdict",
+              rc == EXIT_UNUSABLE and "no qa/ tree" in se and not verdict_path("o/r", sha).exists(), f"rc={rc} {se!r}")
+        if saved_data is None:
+            os.environ.pop("CLAUDE_PLUGIN_DATA", None)
+        else:
+            os.environ["CLAUDE_PLUGIN_DATA"] = saved_data
         slow = d / "slow.py"
         slow.write_text("import time\ntime.sleep(30)\n", encoding="utf-8")
         started = time.monotonic()
