@@ -15,9 +15,23 @@ jobs:
       - uses: actions/checkout@v4
       - name: Log in to ghcr
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+      # The build passes what pipeline.yml declares (#1701), as `/pipeline:release` does: each `build_args` entry
+      # as --build-arg, each `labels` entry as --label. `{{sha}}` and `{{release_name}}` are substituted exactly;
+      # set RELEASE_NAME in this step's env to name the release (default: the sha). Ruby reads the YAML (it is
+      # on the ubuntu runner image, 3.2.3 on ubuntu-24.04); with neither key set this is the bare build.
       - name: Build and push
         run: |
           IMAGE=ghcr.io/${{ github.repository }}
           SHA=$(git rev-parse --short HEAD)
-          docker build -t "$IMAGE:$SHA" -t "$IMAGE:latest" .
+          RELEASE_NAME=${RELEASE_NAME:-$SHA}
+          ARGS=()
+          if [ -f pipeline.yml ]; then
+            while IFS=$'\t' read -r kind key value; do
+              value=${value//\{\{sha\}\}/$SHA}
+              value=${value//\{\{release_name\}\}/$RELEASE_NAME}
+              case "$value" in *"{{"*) echo "pipeline.yml: unknown {{variable}} in $key" >&2; exit 2 ;; esac
+              if [ "$kind" = arg ]; then ARGS+=(--build-arg "$key=$value"); else ARGS+=(--label "$key=$value"); fi
+            done < <(ruby -ryaml -e 'c = YAML.safe_load(File.read("pipeline.yml")) || {}; { "arg" => "build_args", "label" => "labels" }.each { |kind, section| (c[section] || {}).each { |k, v| row = [kind, k, v].map(&:to_s); abort "pipeline.yml: #{section}.#{k} has a tab or newline" if row.any? { |f| f.match?(/[\t\n]/) }; puts row.join("\t") } }')
+          fi
+          docker build ${ARGS[@]+"${ARGS[@]}"} -t "$IMAGE:$SHA" -t "$IMAGE:latest" .
           docker push "$IMAGE:$SHA" && docker push "$IMAGE:latest"

@@ -17,7 +17,8 @@ gate hook enforces this at the git layer too; this is the flow-level check.)
 ## Read config
 
 `pipeline.yml`: `registry` (default `ghcr.io`), `image` (e.g.
-`ghcr.io/fmanimashaun/fidara-ledger`), `mode` (`local` | `cloud`). Absent → tell the
+`ghcr.io/fmanimashaun/fidara-ledger`), `mode` (`local` | `cloud`), and two OPTIONAL
+mappings that shape the build: `build_args` and `labels` (below). Absent → tell the
 user to run `/pipeline:setup-pipeline`.
 
 ## Build → tag → push (both modes)
@@ -27,10 +28,31 @@ sha AND a moving tag:
 
 ```bash
 SHA=$(git rev-parse --short origin/dev)
-docker build -t "$IMAGE:$SHA" -t "$IMAGE:latest" .
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/release_build.py" --image "$IMAGE" --sha "$SHA"
 echo "$KAMAL_REGISTRY_PASSWORD" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
 docker push "$IMAGE:$SHA" && docker push "$IMAGE:latest"
 ```
+
+**The build is `release_build.py`, not a bare `docker build`** (#1701). A project declares what its
+image needs in `pipeline.yml`, and the script passes each entry to `docker build`:
+
+```yaml
+build_args: { APP_VERSION: "{{release_name}}" }   # --build-arg APP_VERSION=...
+labels:     { service: myapp }                    # --label service=myapp (Kamal reads this one)
+```
+
+- `{{sha}}` is the short certified sha; `{{release_name}}` is `$RELEASE_NAME` when the user gave
+  the release a name (`RELEASE_NAME=v1.3.0` before running the command), else the sha. No other
+  `{{variable}}` exists, and an unknown one stops the build.
+- With neither key set the command is exactly `docker build -t "$IMAGE:$SHA" -t "$IMAGE:latest" .`.
+- Build args are visible in the image's history: never put a secret in `build_args`.
+- A `pipeline.yml` the script cannot read (a list, a bad name, a twice-declared key) is exit 2 and
+  nothing is built. Do not "repair" it silently and build anyway.
+- `--dry-run` prints the exact command and the report without building.
+- The report lists every build arg and label passed, and names each Dockerfile `ARG` that has no
+  default and that `build_args` does not feed (`UNFED ARG`). **Relay that line verbatim** and ask
+  the user whether the ARG is meant to stay unset; it does not stop the build. An app that shows
+  "version not set" has this line to thank for being told before it shipped.
 
 The `$SHA` tag is the immutable release; `latest` is convenience. Registry auth uses
 a GitHub PAT with `write:packages` as `KAMAL_REGISTRY_PASSWORD` (Kamal's own var name,
@@ -116,9 +138,10 @@ skill's `references/observability.md` §7.
 
 ## Report
 
-Image ref + digest (the pullable release), boot/deploy verdict, the registry URL
-a future server would pull from, the architecture-graph verdict, and the monitoring
-advisory line if one was printed.
+Image ref + digest (the pullable release), the build args and labels passed (and any
+`UNFED ARG` line, verbatim), boot/deploy verdict, the registry URL a future server would
+pull from, the architecture-graph verdict, and the monitoring advisory line if one was
+printed.
 
 State the graph verdict **explicitly, as one of three words** — `verified`, `skipped` (no graph
 in this project), or `FAILED` — followed by the delta (or "no structural change"). Never report
