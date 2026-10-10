@@ -22,6 +22,14 @@ missing (`/plugin install rails-stack@claude-skills`) and stop.** Porting from m
 
 You also need `rails-8` and `hotwire`. Same rule.
 
+**Nothing may still sit at an old place (#1779).** design-flow's files moved under `docs/design/`, and a project that has not moved them yet would be misread: it would find no prompt for the surface it is porting (the prompts moved to `docs/design/prompts/`). Run this first:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/asset_home.py" --check
+```
+
+Exit 1 means an old place still holds files. **Stop**, run the command it prints (`asset_home.py --migrate`, once), and start this command again.
+
 ## What to hand over
 
 - The artboard — a `.dc.html` canvas export, or the JSX/TSX component tree.

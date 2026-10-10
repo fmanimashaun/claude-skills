@@ -21,6 +21,14 @@ sequence come from there. **If you cannot read it, name what is missing
 (`/plugin install rails-stack@claude-skills`) and stop.** A prompt composed from memory of the catalog
 invites the canvas to draw components that do not exist, which is the whole failure being prevented.
 
+**Nothing may still sit at an old place (#1779).** design-flow's files moved under `docs/design/`, and a project that has not moved them yet would be misread: it would write the new prompt beside a stale set at the old place (the prompts moved to `docs/design/prompts/`). Run this first:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/asset_home.py" --check
+```
+
+Exit 1 means an old place still holds files. **Stop**, run the command it prints (`asset_home.py --migrate`, once), and start this command again.
+
 ## 1. Name the surface, and read what governs it
 
 Which surface is this — dashboard, detail, settings, auth, a marketing page? The band sequence and the

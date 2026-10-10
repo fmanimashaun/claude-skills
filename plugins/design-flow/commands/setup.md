@@ -84,6 +84,14 @@ changing the palette changes the surface those hues sit on.
 right default. Mention `python3 "$CANDIDATES" --list-fonts` once; do not make it a question the
 user has to answer before the pack can be created.
 
+**Nothing may still sit at an old place (#1779).** design-flow's files moved under `docs/design/`, and a project that has not moved them yet would be misread: it would scaffold placeholder logos over the real ones (the brand logos moved to `docs/design/assets/brand/`). Run this first:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/asset_home.py" --check
+```
+
+Exit 1 means an old place still holds files. **Stop**, run the command it prints (`asset_home.py --migrate`, once), and start this command again.
+
 ## Idempotency
 
 Own only what you scaffold; re-runnable. Wrap generated `@theme`/token blocks and `@utility`

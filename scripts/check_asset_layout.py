@@ -41,7 +41,11 @@ import generate_asset  # noqa: E402
 import prompt_library  # noqa: E402
 
 
-def check(scripts: Path = SCRIPTS) -> list[str]:
+COMMANDS = ROOT / "plugins" / "design-flow" / "commands"
+CHECK_FIRST = 'asset_home.py" --check'
+
+
+def check(scripts: Path = SCRIPTS, commands: Path = COMMANDS) -> list[str]:
     findings: list[str] = []
 
     if asset_plan.LIBRARY_DIR != generate_asset.ASSET_LIBRARY:
@@ -98,9 +102,18 @@ def check(scripts: Path = SCRIPTS) -> list[str]:
                                     ("compose_brief.py", ["--check"], ""), ("generation_gate.py", ["--request", "-"], "{}")):
             done = subprocess.run([sys.executable, str(scripts / script), *args], cwd=root, input=stdin,
                                   capture_output=True, text=True, timeout=60)
-            if done.returncode == 0 or "moved from docs/assets/" not in done.stdout + done.stderr:
+            if done.returncode == 0 or "moved under docs/design/" not in done.stdout + done.stderr:
                 findings.append(f"{script} {' '.join(args)} did not stop on a library left at docs/assets/ (exit {done.returncode}): "
                                 f"it would read that library as empty. It must call asset_home.refusal(root) first.")
+
+    # THE COMMANDS THAT READ A MOVED PLACE ASK FIRST (#1779). `/design-flow:port` reads the prompts, `/design-flow:setup` the brand logos, `/design-flow:canvas`
+    # writes the prompts: on a project that has not migrated, each one misreads (no prompt found, placeholder logos scaffolded over the real ones). They are
+    # instructions to an agent, not scripts, so the enforcement is that the instruction is present.
+    for name in ("port.md", "setup.md", "canvas.md"):
+        path = commands / name
+        if not path.is_file() or CHECK_FIRST not in path.read_text(encoding="utf-8"):
+            findings.append(f"commands/{name} does not run `asset_home.py --check` first: on a project that still has docs/assets/ or "
+                            f"docs/design-system/ it would misread, or overwrite, the files that moved.")
     return findings
 
 
@@ -149,6 +162,13 @@ def selftest() -> int:
             (stubs / name).write_text("print('fine')\n", encoding="utf-8")
         ok("an entry point that does not stop on the old place is caught",
            sum("did not stop" in f for f in check(scripts=stubs)) == 4)
+
+    with tempfile.TemporaryDirectory() as td:
+        bare = Path(td)
+        for name in ("port.md", "setup.md", "canvas.md"):
+            (bare / name).write_text("no first step here\n", encoding="utf-8")
+        ok("a command that does not run asset_home.py --check first is caught",
+           sum("does not run `asset_home.py --check`" in f for f in check(commands=bare)) == 3)
 
     ok("and it is clean again afterwards", check() == [])
     print(f"\n{len(failures)} failed" if failures else "\nall passed")
