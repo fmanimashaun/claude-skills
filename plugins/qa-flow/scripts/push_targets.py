@@ -324,11 +324,46 @@ def strip_comments_and_heredocs(cmd: str, bodies: list[str] | None = None) -> st
     return "".join(out)               # an unterminated quote is left for shlex to refuse
 
 
-def tokens(cmd: str, bodies: list[str] | None = None) -> list[str]:
-    lex = shlex.shlex(strip_comments_and_heredocs(cmd, bodies), posix=True, punctuation_chars=";&|()<>\n")
+def tokens_lexer(text: str, posix: bool):
+    """The one lexer: `tokens` reads words with it, and `note_home_words` reads the SAME text with `posix=False` to keep the quotes."""
+    lex = shlex.shlex(text, posix=posix, punctuation_chars=";&|()<>\n")
     lex.whitespace = " \t\r"          # a newline separates commands; it is not mere whitespace
     lex.whitespace_split = True
     lex.commenters = ""               # removed above, by bash's rule
+    return lex
+
+
+# WHICH HOME-DIRECTORY WORDS THE SHELL WILL REALLY EXPAND (#1764 review). shlex drops quotes, so `~/x`, `'~/x'`, `"~/x"` and `\\~/x` all arrive as the word `~/x`, but only the
+# unquoted one is expanded by the shell: git is handed a literal directory named `~` for the others, and a hook that expanded them anyway would judge HEAD in a checkout the push
+# never touches. `note_home_words` reads the RAW text with its quotes: a word is expandable only if EVERY spelling of it is: `~` and `$HOME` unquoted, or `$HOME` inside double
+# quotes (which the shell expands); a single-quoted, backslash-escaped or `"~..."` spelling makes the word unexpandable wherever else it appears.
+HOME_WORD = re.compile(r"(~|\$HOME|\$\{HOME\})")
+HOME_GOOD: set[str] = set()
+HOME_BAD: set[str] = set()
+
+
+def note_home_words(text: str) -> None:
+    try:
+        raw_tokens = list(tokens_lexer(text, posix=False))
+    except ValueError:
+        return
+    for raw in raw_tokens:
+        try:
+            parts = shlex.split(raw)
+        except ValueError:
+            continue
+        if len(parts) != 1 or not HOME_WORD.match(parts[0]):
+            continue
+        word = parts[0]
+        plain = not re.search(r"""["'\\]""", raw)
+        double = len(raw) >= 2 and raw[0] == '"' and raw[-1] == '"' and not re.search(r"""["'\\]""", raw[1:-1]) and word.startswith("$")
+        (HOME_GOOD if plain or double else HOME_BAD).add(word)
+
+
+def tokens(cmd: str, bodies: list[str] | None = None) -> list[str]:
+    stripped = strip_comments_and_heredocs(cmd, bodies)
+    note_home_words(stripped)
+    lex = tokens_lexer(stripped, posix=True)
     try:
         return list(lex)
     except ValueError as exc:
@@ -367,7 +402,7 @@ def home_expanded(word: str) -> str:
     substitution, and a `~` inside a word are left exactly as they were, so they stay unresolved and the caller still fails closed. With no
     HOME in the environment nothing is expanded, for the same reason."""
     home = os.environ.get("HOME")
-    if not home or not os.path.isabs(home):
+    if not home or not os.path.isabs(home) or word not in HOME_GOOD or word in HOME_BAD:
         return word
     for prefix in ("${HOME}", "$HOME", "~"):
         if word == prefix or word.startswith(prefix + "/"):
@@ -437,6 +472,8 @@ def all_segments(cmd: str, depth: int = 0):
     parsed as commands in their own right (41's delta review of #1470)."""
     if depth > MAX_DEPTH:
         raise Unjudgeable("shell strings nested too deeply to read")
+    if depth == 0:
+        HOME_GOOD.clear(); HOME_BAD.clear()
     bodies: list[str] = []
     toks = tokens(cmd, bodies)
     if "()" in toks:
@@ -1701,6 +1738,12 @@ def selftest() -> int:
         ("git -C ${HOME}/proj push", fake("topic", by_dir={"/home/selftest/proj": "main"}), True),
         ("cd $HOME/proj && git push", fake("topic", by_dir={"/home/selftest/proj": "main"}), True),
         ("cd ~ && git push", fake("topic", by_dir={"/home/selftest": "main"}), True),
+        ('git -C "$HOME/proj" push', fake("topic", by_dir={"/home/selftest/proj": "main"}), True),
+        # ...but only a spelling the shell WILL expand: quoted or escaped, `~/proj` is a literal directory name to git, and expanding it would judge HEAD in a checkout the push never touches
+        ("git -C '~/proj' push", fake("topic", by_dir={"/home/selftest/proj": "main"}), False),
+        ('git -C "~/proj" push', fake("topic", by_dir={"/home/selftest/proj": "main"}), False),
+        ("git -C \\~/proj push", fake("topic", by_dir={"/home/selftest/proj": "main"}), False),
+        ("git -C '~/proj' push; git -C ~/proj push", fake("topic", by_dir={"/home/selftest/proj": "main"}), False),
     ]
     for cmd, cur, want in cases:
         try:
@@ -2007,6 +2050,8 @@ def selftest() -> int:
         ("git -C ~/proj push origin hot:main", ["CTX remote:origin /home/selftest/proj", "PUSH_REF hot"]),
         ("cd $HOME/proj && git merge dev", ["CTX - /home/selftest/proj", "GIT_MERGE dev"]),
         ("git -C ~someone/proj merge dev", ["CTX - ~someone/proj", "GIT_MERGE dev"]),
+        ('git -C "$HOME/proj" push origin hot:main', ["CTX remote:origin /home/selftest/proj", "PUSH_REF hot"]),
+        ("git -C '~/proj' push origin hot:main", ["CTX remote:origin ~/proj", "PUSH_REF hot"]),
         ("git merge dev", ["CTX - -", "GIT_MERGE dev"]),
         ("gh api repos/o/r/merges -f base=main -f head=dev", ["CTX o/r -", "API_MERGE dev"]),
         ("gh api -iXPUT repos/o/r/pulls/7/merge", ["CTX o/r -", "API_PR_MERGE 7"]),

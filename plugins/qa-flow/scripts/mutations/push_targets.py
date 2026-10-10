@@ -625,5 +625,23 @@ GUARD = Guard(
             '                    workdir = seg[i + 1]',
             "'git -C ~/proj push': expected TARGETS main",
         ),
+        Mutation(
+            "a word is expanded even when one of its spellings is quoted, so `'~/proj'` is judged in the home directory when git runs in a literal directory named `~`",
+            '    if not home or not os.path.isabs(home) or word not in HOME_GOOD or word in HOME_BAD:',
+            '    if not home or not os.path.isabs(home) or word not in HOME_GOOD:',
+            "\"git -C '~/proj' push; git -C ~/proj push\": expected does not target main",
+        ),
+        Mutation(
+            "a double-quoted `\"$HOME/proj\"` (which the shell expands) is no longer expanded",
+            '        (HOME_GOOD if plain or double else HOME_BAD).add(word)',
+            '        (HOME_GOOD if plain else HOME_BAD).add(word)',
+            "'git -C \"$HOME/proj\" push': expected TARGETS main",
+        ),
+        Mutation(
+            "a quoted or escaped spelling is read as unquoted",
+            '        plain = not re.search(r"""["\'\\\\]""", raw)',
+            '        plain = True',
+            "\"git -C '~/proj' push\": expected does not target main",
+        ),
     ),
 )

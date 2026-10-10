@@ -3421,6 +3421,16 @@ def release_gate_repos_fixtures() -> None:
         ):
             rc, err = run(cmd, **home)
             check(f"release-gate (#1764): {label} cannot be read, so the push is blocked", rc == 2, f"rc={rc} {err[:240]!r}")
+        for label, cmd in (
+            ("a single-quoted `~/feat` (the shell does not expand it: git is handed a literal directory named `~`)", "git -C '~/feat' push -u origin HEAD"),
+            ("a double-quoted `\"~/feat\"` (a `~` is not expanded inside quotes)", 'git -C "~/feat" push -u origin HEAD'),
+            ("a backslash-escaped `\\~/feat`", "git -C \\~/feat push -u origin HEAD"),
+            ("a single-quoted `'$HOME/feat'`", "git -C '$HOME/feat' push -u origin HEAD"),
+            ("a `cd` into a quoted `'~/feat'`", "cd '~/feat' && git push -u origin HEAD"),
+            ("an unquoted `~/feat` AND a quoted `'~/feat'` in one command (the spelling is ambiguous)", "git -C ~/feat status; git -C '~/feat' push -u origin HEAD"),
+        ):
+            rc, err = run(cmd, **home)
+            check(f"release-gate (#1764): {label} is not the home directory and the push is blocked", rc == 2, f"rc={rc} {err[:240]!r}")
         rc, err = run("git -C ~/feat push -u origin HEAD", HOME="")
         check("release-gate (#1764): with no HOME at all `~/feat` cannot be expanded, so the push is blocked", rc == 2, f"rc={rc} {err[:240]!r}")
         # (4) The ARGUMENT the command acts on, not another one in the command line.
