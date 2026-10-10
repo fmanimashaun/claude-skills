@@ -415,7 +415,8 @@ STATUS are the repo side of memory, not lost in chat history.
 
 The brain is one of up to **three** memory systems that inject into every session, and none knows
 about the others: Claude Code's **auto-memory** (on by default; its `MEMORY.md` index, first 200
-lines or 25KB), the **`remember`** plugin (a day's log and a handoff), and this brain. Each costs
+lines or 25KB, whichever comes first, and nothing past that is loaded; `python3
+"${CLAUDE_PLUGIN_ROOT}/scripts/check_memory_index.py"` measures it, and the SessionStart hook says so when it is near), the **`remember`** plugin (a day's log and a handoff), and this brain. Each costs
 tokens at every session start and again after every compaction. Measured on one repository they were
 ~3,800, ~5,700 and ~520 tokens — and the largest was a handoff another session had written.
 

@@ -359,6 +359,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #1790. The git shim (put first on PATH by the SessionStart hook) refuses whole-tree add, reset --hard, tree checkout/restore, clean -f and
     # --no-verify by what git is asked to do; proven with real git on real repositories and a look at what MOVED.
     ("git shim", ("python3", "plugins/rails-flow/scripts/git_shim_selftest.py")),
+    # #1828. The auto-memory index limit check: its boundaries (200 lines, 25KB read as KiB), the ratchet baseline and the one-line SessionStart output.
+    ("memory index limit", ("python3", "plugins/rails-flow/scripts/check_memory_index.py", "--selftest")),
     # #1667. The adversarial cases that found #1645's bypasses, through the REAL guard-bash.sh with a stub `gh` that must
     # never be called. The fast tier (~50 cases, ~10 s) runs in every sweep; the full tier (~300 cases, ~90 s at load 35)
     # is in PR_SKIPPED_GATES, so only the full sweep (the release proof) pays for it.
