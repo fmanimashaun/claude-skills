@@ -99,8 +99,13 @@ exempt() { [ "$degraded" = 1 ] && return 1; hit "$1"; }
 # WHAT A DECLARATION ALLOWS IS ONE COMMAND: `RAILS_ENV=test bin/rails db:reset` (or the `env`, `bundle exec`, `rake` and trailing-assignment spellings),
 # and nothing else. It is matched against the WHOLE raw command, so a compound command that also resets the development database, `RAILS_ENV=development`,
 # or an unreadable payload (degraded mode: the env prefix the normaliser peels is exactly what this must read) is still refused.
-# `bundle exec` is part of the command (#1760 review): its verb is `bundle`, so a rule anchored on rails or rake never saw `bundle exec rails db:reset` at all.
-if hit '^(bundle[[:space:]]+exec[[:space:]]+)?(bin/)?(rails|rake)([[:space:]]+[^[:space:]]+)*[[:space:]]+db:reset\b'; then
+# A RUNNER IS PART OF THE COMMAND (#1760 review, #1761): `bundle exec`, `ruby`, `spring` and `bin/spring` are not peeled by the normaliser, so a rule anchored on rails or rake never
+# saw `bundle exec rails db:reset`, `ruby bin/rails db:reset` or `spring rails db:reset`; and an engine's `app:db:reset` is the same task.
+# THE LIMITS, STATED (#1761). This rule lists spellings, and a list of spellings is never complete. NOT covered, on purpose:
+#   - `db:setup` and `db:migrate:reset` are OTHER tasks (`db:setup` creates, loads the schema and seeds without dropping; `db:migrate:reset` drops, creates and migrates);
+#   - a wrapper that runs the command SOMEWHERE ELSE cannot be listed: `docker compose exec web bin/rails db:reset`, `ssh host '...'`, a `make` target, a script that runs it.
+# This hook is an accident guard, not a boundary (as guard-worktree says): it stops the command that is typed by habit, not one built to get past it.
+if hit '^((bundle[[:space:]]+exec|ruby|spring|bin/spring)[[:space:]]+)?(bin/)?(rails|rake)([[:space:]]+[^[:space:]]+)*[[:space:]]+(app:)?db:reset\b'; then
   _root="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
   _tab=$'\t'
   _seeded=0

@@ -1296,7 +1296,10 @@ DB_RESET_STILL_REFUSED = ("bin/rails db:reset", "RAILS_ENV=development bin/rails
                           # #1760 review: `[[:space:]]` matched a newline and `=~` anchors only at the ends of the whole string, so a bare assignment on one line and a
                           # DEVELOPMENT reset on the next was one allowed command.
                           "RAILS_ENV=test\nbin/rails db:reset", "bin/rails db:reset\nRAILS_ENV=test", "bin/rails db:reset\rRAILS_ENV=test",
-                          "RAILS_ENV=test\n\nbin/rails db:reset", "env RAILS_ENV=test\nbin/rails db:reset", "bundle exec rails db:reset\nRAILS_ENV=test")
+                          "RAILS_ENV=test\n\nbin/rails db:reset", "env RAILS_ENV=test\nbin/rails db:reset", "bundle exec rails db:reset\nRAILS_ENV=test",
+                          # Runners the normaliser does not peel, and an engine's namespaced task: the same db:reset.
+                          "ruby bin/rails db:reset", "spring rails db:reset", "bin/spring rails db:reset", "bin/rails app:db:reset",
+                          "RAILS_ENV=test ruby bin/rails db:reset", "RAILS_ENV=test spring rails db:reset")
 
 
 def guard_bash_db_reset_fixtures() -> None:
@@ -1334,7 +1337,8 @@ def guard_bash_db_reset_fixtures() -> None:
 
         # UNDECLARED: the refusal stays, for every spelling, and a project with a CI script is pointed at it.
         for cmd in ("bin/rails db:reset", "RAILS_ENV=test bin/rails db:reset", "env RAILS_ENV=test bin/rails db:reset", "bundle exec rails db:reset",
-                    "bundle exec bin/rails db:reset", "RAILS_ENV=test bundle exec rails db:reset", "bundle exec rake db:reset"):
+                    "bundle exec bin/rails db:reset", "RAILS_ENV=test bundle exec rails db:reset", "bundle exec rake db:reset",
+                    "ruby bin/rails db:reset", "spring rails db:reset", "bin/spring rails db:reset", "bin/rails app:db:reset"):
             rc, out = run(plain, cmd)
             check(f"guard-bash (#1734): an UNDECLARED project is still refused `{cmd}`", rc == 2 and "db:reset is prohibited" in out, f"exit {rc}: {out[:120]}")
         check("guard-bash (#1734): CONTROL: the refusal still recommends the unseeded sequence", "db:drop db:create db:schema:load" in out, out[:200])
