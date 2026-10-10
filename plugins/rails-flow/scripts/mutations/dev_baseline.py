@@ -36,6 +36,32 @@ GUARD = Guard(
             "a json run reads the failed examples only",
         ),
         Mutation(
+            # #1567 review (1): a dev that fails to LOAD prints no failed examples, so it would read as clean.
+            "a run with errors outside of examples reads as a clean baseline",
+            "    if OUTSIDE_ERRORS.search(text):",
+            "    if False:",
+            "a run with errors outside of examples is unreadable, never an empty baseline",
+        ),
+        Mutation(
+            "the json errors_outside_of_examples_count is ignored",
+            '            return (data["summary"].get("errors_outside_of_examples_count") or 0) > 0',
+            "            return False",
+            "a json run with errors_outside_of_examples_count > 0 is unreadable",
+        ),
+        Mutation(
+            # #1567 review (3): an unreadable changed-file set must not read as "the branch touched nothing".
+            "an unreadable changed-file set reads as empty, so everything looks untouched",
+            "    except RuntimeError:\n        return None\n    return {normalise",
+            "    except RuntimeError:\n        return set()\n    return {normalise",
+            "a ref that does not exist leaves the changed set unknown, not empty",
+        ),
+        Mutation(
+            "the changed set leaves out uncommitted edits",
+            '        names = git("diff", "--name-only", base, cwd=cwd)',
+            '        names = git("diff", "--name-only", base + "..HEAD", cwd=cwd)',
+            "the files this branch changed since the merge base are read, committed or not",
+        ),
+        Mutation(
             "record measures whatever is checked out, whatever ref it claims",
             "            if head != want:",
             "            if False:",

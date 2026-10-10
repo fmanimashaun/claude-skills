@@ -53,6 +53,9 @@ ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 # `rspec ./spec/a_spec.rb:12` and `rspec ./spec/a_spec.rb[1:2:3]`, anchored to the start of the line: RSpec
 # prints this list from column 0, and a description that happens to contain "rspec ./x" must not count.
 FAILED_ROW = re.compile(r"^rspec (\./\S+)", re.MULTILINE)
+# "1 error occurred outside of examples": a spec file failed to LOAD, so its examples never ran and appear in no
+# failure list. A run with that line has examples nobody counted, however clean the rest of it reads.
+OUTSIDE_ERRORS = re.compile(r"\b[1-9]\d* errors? occurred outside of examples\b")
 
 
 def normalise(example_id: str) -> str:
@@ -61,12 +64,32 @@ def normalise(example_id: str) -> str:
     return example_id if example_id.startswith("./") else "./" + example_id
 
 
+def has_outside_errors(output: str) -> bool:
+    """True when the run reports errors outside of examples (text summary or json summary)."""
+    text = ANSI.sub("", output)
+    if OUTSIDE_ERRORS.search(text):
+        return True
+    stripped = text.lstrip()
+    if stripped.startswith("{"):
+        try:
+            data = json.loads(stripped)
+        except ValueError:
+            return False
+        if isinstance(data, dict) and isinstance(data.get("summary"), dict):
+            return (data["summary"].get("errors_outside_of_examples_count") or 0) > 0
+    return False
+
+
 def parse_failures(output: str) -> list[str] | None:
     """The failing example ids in an RSpec run, sorted and de-duplicated; None when it cannot tell.
 
     None is not the same as an empty list. A suite that printed nothing we can read would otherwise record
-    "no failures", which is the flattering answer to a question the output never answered.
+    "no failures", which is the flattering answer to a question the output never answered. A run with errors
+    outside of examples is None for the same reason (#1567 review): a dev that fails to LOAD has no failed
+    examples to list, and would read as clean.
     """
+    if has_outside_errors(output):
+        return None
     text = ANSI.sub("", output)
     stripped = text.lstrip()
     if stripped.startswith("{"):
@@ -101,6 +124,25 @@ def git(*args: str, cwd: str | None = None) -> str:
     if done.returncode != 0:
         raise RuntimeError(f"git {' '.join(args)}: {done.stderr.strip() or 'failed'}")
     return done.stdout.strip()
+
+
+def file_of(example_id: str) -> str:
+    """The spec file an example id names: `./spec/a_spec.rb:12` and `./spec/a_spec.rb[1:2]` are both `./spec/a_spec.rb`."""
+    return re.split(r"[:\[]", normalise(example_id), maxsplit=1)[0]
+
+
+def touched_files(ref: str, cwd: str | None = None) -> set[str] | None:
+    """Files this branch changed since its merge base with `ref`, committed or not, as `./path`; None when unknown.
+
+    None is conservative on purpose: a baseline entry is only evidence about a spec this branch did not edit, so
+    when the changed set cannot be read nothing is called PREEXISTING (#1567 review).
+    """
+    try:
+        base = git("merge-base", "HEAD", ref, cwd=cwd)
+        names = git("diff", "--name-only", base, cwd=cwd)
+    except RuntimeError:
+        return None
+    return {normalise(n) for n in names.splitlines() if n.strip()}
 
 
 def write_baseline(path: Path, commit: str, failures: list[str], command: str) -> None:
@@ -214,6 +256,20 @@ def _selftest() -> int:
         {"status": "passed", "file_path": "./spec/j_spec.rb", "line_number": 8}]})
     expect("a json run reads the failed examples only", parse_failures(as_json) == ["./spec/j_spec.rb:7"])
     expect("ids are normalised to a leading ./", normalise("spec/a_spec.rb:1") == "./spec/a_spec.rb:1")
+    # #1567 review: a dev that fails to LOAD prints no failed examples at all.
+    load_error = ("An error occurred while loading ./spec/x_spec.rb.\n\nFinished in 0.01 seconds\n"
+                  "0 examples, 0 failures, 1 error occurred outside of examples\n")
+    expect("a run with errors outside of examples is unreadable, never an empty baseline",
+           parse_failures(load_error) is None)
+    expect("...even when it also lists failed examples",
+           parse_failures("rspec ./spec/a_spec.rb:1 # a\n2 examples, 1 failure, 2 errors occurred outside of examples\n") is None)
+    json_load_error = json.dumps({"examples": [], "summary": {"errors_outside_of_examples_count": 1}})
+    expect("a json run with errors_outside_of_examples_count > 0 is unreadable",
+           parse_failures(json_load_error) is None)
+    expect("a json run with a zero count is read normally",
+           parse_failures(json.dumps({"examples": [], "summary": {"errors_outside_of_examples_count": 0}})) == [])
+    expect("a spec file is the part of an id before the line or the group path",
+           file_of("./spec/a_spec.rb:12") == "./spec/a_spec.rb" and file_of("spec/a_spec.rb[1:2]") == "./spec/a_spec.rb")
 
     with tempfile.TemporaryDirectory() as tmp:
         repo = Path(tmp)
@@ -243,6 +299,16 @@ def _selftest() -> int:
         (repo / "g").write_text("x")
         run("add", "g")
         run("commit", "-q", "-m", "branch")
+        (repo / "spec_touched.rb").write_text("y")
+        run("add", "spec_touched.rb")
+        run("commit", "-q", "-m", "branch two")
+        (repo / "f").write_text("dirty")
+        touched = touched_files("main", cwd=str(repo))
+        expect("the files this branch changed since the merge base are read, committed or not",
+               touched is not None and {"./g", "./spec_touched.rb", "./f"} <= touched)
+        expect("a ref that does not exist leaves the changed set unknown, not empty",
+               touched_files("no-such-ref", cwd=str(repo)) is None)
+        run("checkout", "-q", "--", "f")
         fresh, why = freshness(data, "main", cwd=str(repo))
         expect("a baseline at a commit that is not the merge base is stale", not fresh and "merge base" in why)
         nsc = build_parser().parse_args(["check", "--baseline", str(base), "--ref", "main", "--cwd", str(repo)])
