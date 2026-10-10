@@ -1072,10 +1072,10 @@ def api_issue_post(cmd: str) -> str | None:
 
 def verdict(cmd: str, root: Path) -> tuple[bool, str]:
     shape = hidden_create(cmd)
-    if shape == "a `gh` subcommand built at run time":
-        return False, (f"{shape}: `gh issue create` cannot be told from `gh issue list` here, so its labels cannot be checked. "
-                       "Write the subcommand out, with its --label flags (#1711).")
     if shape:
+        if shape == "a `gh` subcommand built at run time":
+            return False, (f"{shape}: `gh issue create` cannot be told from `gh issue list` here, so its labels cannot be checked. "
+                           "Write the subcommand out, with its --label flags (#1711).")
         if "cannot read" in shape or "cannot follow" in shape:
             return False, (f"{shape}, so a `gh issue create` in it cannot be label-checked, and the command is refused rather than let "
                            "through unlabelled. Fix the path (a readable file), or run the create directly with its --label flags (#1515).")
