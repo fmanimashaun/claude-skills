@@ -4242,6 +4242,13 @@ def test_preflight_fixtures() -> None:
         code, out = hook(mono / "web", rspec, PATH=os.pathsep.join([str(base / "outsi*" / "bin"), path]), **db_url)
         check("test-preflight: a PATH entry that is a glob is taken literally, so it cannot expand into a directory holding a python3, and the hook still speaks",
               code == 0 and not outside_ran.exists() and "Postgres is not accepting connections" in out, out.strip()[:160])
+        link_dir = base / "links"
+        link_dir.mkdir()
+        (link_dir / "python3").symlink_to(mono / "bin" / "python3")          # in a directory OUTSIDE the repository, but a link INTO it
+        py_ran.unlink(missing_ok=True)
+        code, out = hook(mono / "web", rspec, PATH=os.pathsep.join([str(link_dir), path]), **db_url)
+        check("test-preflight: a python3 that is a symlink into the repository is NOT run, even from a directory outside it, and the hook still speaks",
+              code == 0 and not py_ran.exists() and "Postgres is not accepting connections" in out, out.strip()[:160])
         shim = base / "shim"
         shim.mkdir()
         (shim / "json.py").write_text(f"import pathlib\npathlib.Path({str(base / 'ran-shim')!r}).touch()\n")

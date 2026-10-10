@@ -37,6 +37,26 @@ while [ "$depth" -lt 64 ]; do
   depth=$((depth + 1))
 done
 
+# A LINK in a trusted directory can point back INTO the repository, so the interpreter's own TARGET is checked too, not only its directory: the link chain is followed
+# (16 hops) with `readlink` taken from a fixed system location, never from PATH, and the final directory is resolved through `physical`. A symlinked interpreter is
+# skipped when it cannot be resolved (no readlink): quiet, never unsafe. Homebrew's, pyenv's and mise's links all resolve to somewhere outside the repository.
+readlink_bin=""
+for candidate in /usr/bin/readlink /bin/readlink; do
+  if [ -x "$candidate" ]; then readlink_bin="$candidate"; break; fi
+done
+
+target_of() {
+  local f="$1" hops=0 t d
+  while [ -L "$f" ]; do
+    { [ "$hops" -lt 16 ] && [ -n "$readlink_bin" ]; } || return 1
+    t="$("$readlink_bin" "$f")" || return 1
+    case "$t" in /*) f="$t" ;; *) f="${f%/*}/$t" ;; esac
+    hops=$((hops + 1))
+  done
+  d="$(physical "${f%/*}")" || return 1
+  printf '%s\n' "$d/${f##*/}"
+}
+
 python=""
 old_ifs="$IFS"
 IFS=:
@@ -45,7 +65,12 @@ for dir in ${PATH:-}; do
   case "$dir" in /*) ;; *) continue ;; esac
   real="$(physical "$dir")" || continue
   case "$real/" in "$root"/*) continue ;; esac
-  if [ -x "$real/python3" ]; then python="$real/python3"; break; fi
+  if [ -x "$real/python3" ]; then
+    target="$(target_of "$real/python3")" || continue
+    case "$target" in "$root"/*) continue ;; esac
+    python="$real/python3"
+    break
+  fi
 done
 IFS="$old_ifs"
 set +f

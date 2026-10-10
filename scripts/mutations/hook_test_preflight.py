@@ -70,6 +70,13 @@ GUARD = Guard(
             "a python3 and a pg_isready the repository ships in its bin/ are NOT run",
         ),
         Mutation(
+            # The directory is outside the repository; the interpreter FILE in it is a link into the checkout.
+            "an interpreter that is a link into the repository is run, because only its directory was checked",
+            '    case "$target" in "$root"/*) continue ;; esac\n',
+            "    :\n",
+            "a python3 that is a symlink into the repository is NOT run, even from a directory outside it",
+        ),
+        Mutation(
             # A `*` in a PATH entry would be expanded against the filesystem by an unquoted `for dir in $PATH`.
             "PATH entries are globbed, so one can expand into a directory outside the repository",
             "set -f    # PATH entries are LITERAL: an unquoted expansion would glob a `*` in an entry against the filesystem\n",

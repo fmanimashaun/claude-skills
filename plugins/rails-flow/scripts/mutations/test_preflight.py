@@ -179,6 +179,24 @@ GUARD = Guard(
             "a repository's own bin/ is excluded from PATH even when the working directory is a subdirectory with its own nested .git and no Gemfile",
         ),
         Mutation(
+            "text the pg_isready printed reaches the context with its control characters",
+            "{printable(said[0], 80) if said else 'no answer'}",
+            "{said[0] if said else 'no answer'}",
+            "text the pg_isready printed reaches the context as printable ASCII only",
+        ),
+        Mutation(
+            "a lock path the repository chose reaches the context with its control characters",
+            "out.append(f\"`{printable(str(path))}` is locked",
+            "out.append(f\"`{path}` is locked",
+            "a lock path with control characters and glob characters is found, and reaches the context as printable ASCII on one line",
+        ),
+        Mutation(
+            "a `[` in BUNDLE_PATH is read as a glob pattern, so its own lock is never found",
+            "            safe = glob.escape(base)     # a `[`, `*` or `?` IN the path is part of the path, not a pattern\n",
+            "            safe = base\n",
+            "a lock path with control characters and glob characters is found, and reaches the context as printable ASCII on one line",
+        ),
+        Mutation(
             # The directory passes but the FILE is a link into the checkout.
             "a program that is a symlink into the repository is run from a trusted directory",
             "            if target == base or target.startswith(base + os.sep):\n",
