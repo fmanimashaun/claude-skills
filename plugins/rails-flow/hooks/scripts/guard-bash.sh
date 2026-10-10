@@ -344,7 +344,7 @@ if [[ "$seg" == *--* ]] && { hit "^git[[:space:]]+reset([[:space:]].*)?[[:space:
    || { hit "^git[[:space:]]+clean([[:space:]].*)?[[:space:]]--f(o(r(c(e)?)?)?)?${_tw_end}" \
         && ! exempt "^git[[:space:]]+clean([[:space:]].*)?([[:space:]]-[a-zA-Z]*n|[[:space:]]--d(r(y(-(r(u(n)?)?)?)?)?)?${_tw_end})"; } \
    || hit "^git[[:space:]]+(commit|push|merge|rebase|cherry-pick|pull|am|revert)([[:space:]].*)?[[:space:]]--no-v(e(r(i(f(y)?)?)?)?)?${_tw_end}"; }; then
-  deny "an abbreviated dangerous option (--ha for --hard, --forc for --force, --no-v for --no-verify) is read by git as the full option, so it is refused like the full spelling: it can discard work or skip the checks, and requires explicit user approval."
+  deny "git reset --hard (uncommitted work loss), clean --force and --no-verify require explicit user approval, and so does any abbreviation git reads as the full option (--ha for --hard, --forc for --force, --no-v for --no-verify)."
 fi
 # `*` and `..` stage as much as `.` (#1783 review).
 if hit '^git[[:space:]]+add([[:space:]]+-[a-zA-Z-]*)*[[:space:]]+(-[a-zA-Z]*A[a-zA-Z]*\b|--all\b|\.{1,2}/?($|[[:space:]])|:/($|[[:space:]])|\*($|[[:space:]]))'; then
@@ -356,9 +356,7 @@ if hit '^git[[:space:]]+(commit|push|merge|rebase|cherry-pick)\b.*[[:space:]]--n
   deny "--no-verify skips pre-commit checks and is prohibited."
 fi
 
-if hit '^git[[:space:]]+reset\b.*[[:space:]]--hard\b'; then   # #1706: `reset HEAD~1 --hard` too
-  deny "git reset --hard requires explicit user approval (uncommitted work loss)."
-fi
+# (`git reset --hard`, written out or abbreviated, is the tripwire's prefix rule above, which subsumed the spelled-out rule that stood here (#1792).)
 
 # #1342. The other ways git throws away work with no undo. Each keeps a safe twin allowed:
 # `clean -n` (dry run), `branch -d` (refuses an unmerged branch), `checkout <branch>`,
