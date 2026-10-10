@@ -5,16 +5,18 @@
 # the stray files it stages are, and the index shows them however the add was spelled (`--al`, `$X`, a glob, a pathspec, a script).
 #
 # THE RULE. The commit is refused when it stages (index against HEAD):
-#   1. a NEW path (added, copied or renamed in) that should never be committed: .env and .env.* (not .example, .sample, .template),
-#      *.pem, *.key, *.p12, id_rsa and id_rsa.*, *.sqlite3, *.log, .DS_Store, or anything under node_modules/, tmp/, log/, coverage/ or .bundle/
+#   1. a NEW path (added, copied or renamed in) that should never be committed, matched case-insensitively: .env and .env.* (not .example,
+#      .sample, .template; `.env.example.bak` IS refused), *.pem, *.key, *.p12, id_rsa and id_rsa.* (not id_rsa.pub), *.sqlite3, *.log, .DS_Store,
+#      anything under node_modules/ or .bundle/ at any depth, or anything under tmp/, log/ or coverage/ at the repository ROOT
 #      (a .keep or .gitkeep placeholder is fine);
 #   2. any file over 5 MiB (`max-staged-file-mb: N` in GUARDRAILS.md changes it);
 #   3. more than 100 newly ADDED files in one commit (`max-new-files-per-commit: N` changes it) -- the signal that the whole tree went in.
 #      Not applied to the first commit of a repository.
 # A file that is already tracked and is only MODIFIED or DELETED is not a new path, so it never trips rule 1.
 #
-# NOT COVERED: `git commit --no-verify` (git skips this hook), a clone with no hook, and anything that is neither of the three above.
-# A tripwire that reads the index, not a boundary.
+# LIMITS, stated: (a) a secret under a name not listed (`production.env`, `secrets.json`, `credentials.yml`) is not recognised; (b) rule 3
+# counts one commit, so the same files split across several commits pass; (c) `git commit --no-verify` skips this hook (the `git` wrapper,
+# #1790, refuses that flag); (d) a clone with no hook is not covered. A tripwire that reads the index, not a boundary.
 # FAIL CLOSED: a declared number that is not a number, or an index it cannot read, is a refusal.
 # AUDITED ESCAPE: RAILS_FLOW_STAGING_OK=1 lets the commit through and says so.
 #
@@ -58,15 +60,20 @@ v="$(_declared max-new-files-per-commit)" || fail "cannot read GUARDRAILS.md"
 if [ -n "$v" ]; then [[ $v =~ ^[0-9]+$ ]] || fail "max-new-files-per-commit in GUARDRAILS.md is '$v', not a whole number"; max_new="$v"; fi
 max_bytes=$((max_mb * 1024 * 1024))
 
+# Matched on the LOWERCASED path: `.ENV`, `KEY.PEM` and `Foo.LOG` are the same files on a case-insensitive filesystem (macOS, Windows).
 never_commit() {
-  local p="$1" base="${1##*/}"
+  local lc base
+  lc="$(printf '%s' "$1" | LC_ALL=C tr 'A-Z' 'a-z')"
+  [ -n "$lc" ] || lc="$1"
+  base="${lc##*/}"
   case "$base" in
-    .keep|.gitkeep) return 1 ;;
+    .keep|.gitkeep|id_rsa.pub) return 1 ;;
     .env|.env.*) case "$base" in *.example|*.sample|*.template) return 1 ;; esac; return 0 ;;
-    *.pem|*.key|*.p12|id_rsa|id_rsa.*|*.sqlite3|*.log|.DS_Store) return 0 ;;
+    *.pem|*.key|*.p12|id_rsa|id_rsa.*|*.sqlite3|*.log|.ds_store) return 0 ;;
   esac
-  case "/$p" in
-    */node_modules/*|*/tmp/*|*/log/*|*/coverage/*|*/.bundle/*) return 0 ;;
+  case "/$lc" in
+    */node_modules/*|*/.bundle/*) return 0 ;;     # at any depth: a dependency tree is never source
+    /tmp/*|/log/*|/coverage/*) return 0 ;;       # at the repository ROOT only: app/services/log/x.rb and docs/coverage/z.md are source
   esac
   return 1
 }

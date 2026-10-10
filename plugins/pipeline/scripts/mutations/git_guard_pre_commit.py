@@ -24,26 +24,26 @@ GUARD = Guard(
         ),
         Mutation(
             'a .keep placeholder is refused',
-            '    .keep|.gitkeep) return 1 ;;\n',
+            '    .keep|.gitkeep|id_rsa.pub) return 1 ;;\n',
             '',
             'look-alikes are allowed',
         ),
         Mutation(
             'certificates are not a never-commit class',
-            '    *.pem|*.key|*.p12|id_rsa|id_rsa.*|*.sqlite3|*.log|.DS_Store) return 0 ;;',
-            '    *.key|*.p12|id_rsa|id_rsa.*|*.sqlite3|*.log|.DS_Store) return 0 ;;',
+            '    *.pem|*.key|*.p12|id_rsa|id_rsa.*|*.sqlite3|*.log|.ds_store) return 0 ;;',
+            '    *.key|*.p12|id_rsa|id_rsa.*|*.sqlite3|*.log|.ds_store) return 0 ;;',
             'a key or certificate is refused',
         ),
         Mutation(
             'databases, logs and .DS_Store are not a never-commit class',
-            '    *.pem|*.key|*.p12|id_rsa|id_rsa.*|*.sqlite3|*.log|.DS_Store) return 0 ;;',
+            '    *.pem|*.key|*.p12|id_rsa|id_rsa.*|*.sqlite3|*.log|.ds_store) return 0 ;;',
             '    *.pem|*.key|*.p12|id_rsa|id_rsa.*) return 0 ;;',
             'a database, a log or an OS file is refused',
         ),
         Mutation(
             'dependency and temp directories are not a never-commit class',
-            '    */node_modules/*|*/tmp/*|*/log/*|*/coverage/*|*/.bundle/*) return 0 ;;',
-            '    */node_modules/*) return 0 ;;',
+            '    */node_modules/*|*/.bundle/*) return 0 ;;     # at any depth: a dependency tree is never source',
+            '    */.bundle/*) return 0 ;;     # at any depth: a dependency tree is never source',
             'a dependency or temp directory is refused',
         ),
         Mutation(
@@ -123,6 +123,30 @@ GUARD = Guard(
             '> "$tmp" 2>/dev/null || fail "cannot read the index (git diff --cached failed)"',
             '> "$tmp" 2>/dev/null || :',
             'a corrupt index refuses',
+        ),
+        Mutation(
+            'paths are matched case-sensitively, so .ENV, KEY.PEM and Foo.LOG commit freely',
+            'lc="$(printf \'%s\' "$1" | LC_ALL=C tr \'A-Z\' \'a-z\')"',
+            'lc="$1"',
+            'a new env file is refused',
+        ),
+        Mutation(
+            'tmp/, log/ and coverage/ match at any depth, so app/services/log/x.rb is refused',
+            '    /tmp/*|/log/*|/coverage/*) return 0 ;;       # at the repository ROOT only: app/services/log/x.rb and docs/coverage/z.md are source',
+            '    */tmp/*|*/log/*|*/coverage/*) return 0 ;;',
+            'look-alikes are allowed',
+        ),
+        Mutation(
+            'tmp/, log/ and coverage/ at the root are not a never-commit class',
+            '    /tmp/*|/log/*|/coverage/*) return 0 ;;       # at the repository ROOT only: app/services/log/x.rb and docs/coverage/z.md are source',
+            '    /nothing/*) return 0 ;;',
+            'a dependency or temp directory is refused',
+        ),
+        Mutation(
+            'id_rsa.pub is refused with the private key',
+            '    .keep|.gitkeep|id_rsa.pub) return 1 ;;',
+            '    .keep|.gitkeep) return 1 ;;',
+            'look-alikes are allowed',
         ),
     ),
 )

@@ -302,10 +302,10 @@ def _(base):
 
 
 for _label, _files in (
-    ("a new env file", [".env", ".env.local", ".env.production", "config/.env"]),
-    ("a key or certificate", ["config/master.key", "server.pem", "cert.p12", "id_rsa", "id_rsa.pub.bak"]),
-    ("a database, a log or an OS file", ["db/dev.sqlite3", "x.log", ".DS_Store", "docs/.DS_Store"]),
-    ("a dependency or temp directory", ["node_modules/x/index.js", "tmp/cache/x", "log/dev.out", "coverage/index.html", ".bundle/config", "app/tmp/x"]),
+    ("a new env file", [".env", ".env.local", ".env.production", "config/.env", ".ENV", ".Env", ".Env.Local", ".env.example.bak"]),
+    ("a key or certificate", ["config/master.key", "server.pem", "cert.p12", "id_rsa", "id_rsa.bak", "KEY.PEM", "ID_RSA"]),
+    ("a database, a log or an OS file", ["db/dev.sqlite3", "x.log", ".DS_Store", "docs/.DS_Store", "Foo.LOG", "DB/X.SQLITE3", ".DS_STORE"]),
+    ("a dependency or temp directory", ["node_modules/x/index.js", "tmp/cache/x", "log/dev.out", "coverage/index.html", ".bundle/config", "web/node_modules/y.js", "app/.bundle/config", "TMP/x", "Log/y.out", "Node_Modules/z.js"]),
 ):
     @case(f"pre-commit: {_label} is refused and nothing is committed")
     def _(base, _label=_label, _files=_files):
@@ -320,7 +320,8 @@ def _(base):
     label = "pre-commit: look-alikes are allowed"
     w = World(base, "lookalike", remote=False)
     for rel in (".env.example", ".env.sample", ".env.template", "config/.env.example", "tmp/.keep", "log/.gitkeep", "config/environment.rb", "lib/env.rb",
-                "docs/keys.md", "app/models/log_entry.rb", "notes.logger", "src/node_modules_notes.md"):
+                "docs/keys.md", "app/models/log_entry.rb", "notes.logger", "src/node_modules_notes.md",
+                "id_rsa.pub", "app/services/log/x.rb", "lib/tmp/y.rb", "docs/coverage/z.md", "app/tmp/x"):
         p = stage_and_commit(w, {rel: "ok\n"}, rel)
         check(label, p.returncode == 0, f"{rel}: exit {p.returncode}: {p.stderr.strip()[:160]}")
 

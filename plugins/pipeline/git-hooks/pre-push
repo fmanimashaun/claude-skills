@@ -11,8 +11,9 @@
 #
 # PROTECTED: main, dev and staging, plus the names or shell globs on a line `protected-branches: release/* hotfix` in the project's
 # GUARDRAILS.md (outside a code block or comment). A declaration can only ADD. Applies to every remote.
-# NOT COVERED: tags, a branch that is not protected, `git push --no-verify` (git skips this hook; the server's branch protection is the
-# backstop) and a clone that has no hook. A tripwire under the server rules, not a boundary.
+# LIMITS, stated: (a) TAGS are not protected (a tag can be force-moved or deleted); (b) a branch that is not protected is not checked; (c) `git push
+# --no-verify` skips this hook (the `git` wrapper, #1790, refuses that flag; the server's branch protection is the backstop); (d) a clone that has
+# no hook is not covered. A tripwire under the server rules, not a boundary.
 # FAIL CLOSED: a line it cannot read, a local commit it cannot resolve, a remote tip that is not in this clone (fetch first) is a refusal.
 # AUDITED ESCAPE: RAILS_FLOW_PROTECTED_OK=1 lets the push through and says so.
 set -u
