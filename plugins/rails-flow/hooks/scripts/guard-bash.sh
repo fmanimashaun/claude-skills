@@ -175,46 +175,100 @@ fi
 # Leading short flags are allowed through (`-v -A`), `-A` may sit inside a bundle (`-vA`), and the
 # repo-root spellings `./` and `:/` count as `.` (#826). Verb at the START of a segment (#906).
 # #1706: long options and `--` may come first too (`add --verbose -A`, `add -- .`).
-# A `git add` PATHSPEC RESOLVED, not spelled (#1783 review): `./.`, `src/..`, `../x`, `./*` and `.*` stage as much as `.`, and
-# listing spellings one by one kept missing the next. Each argument after `git add` (options skipped until `--`) is resolved:
-# `.` and empty components dropped, `x/..` collapsed, a leading `:/` read as the repo root. A result that is the root, or goes
-# above it, is the whole tree; so is a lone `*` or `.*`. Bash only: it reads the normalised segments, so no new dependency.
-_add_whole_tree() {
-  [ "$degraded" = 1 ] && return 1   # the degraded path keeps the spelled rule below
-  local line w opts p comp depth out
-  local rest="$seg"$'\n'
+# `git add` IS AN ALLOWLIST (#1783, the coordinator's decision after three review rounds): a list of whole-tree spellings could not
+# be completed (`./.`, `**`, `:(top)`, `:!x`, `$PWD`, `{.,x}`, `--pathspec-from-file` each got past one). So a `git add` passes only
+# when every option is one of -u -p -N -v (and their long forms) or `--`, and every pathspec is a plain relative path: no magic `:`
+# prefix, no `**`, no `..` that reaches the root or above, a glob only in its LAST component and only with a letter or digit in it
+# (`src/*.rb`, `*.md`). Shell expansion (`$`, a backtick, `{`, `}`, `~`) anywhere in a command that holds a `git add` refuses: the
+# normaliser splits a substitution into its own segment, so the pathspec it produces is invisible here. Bash only, over the
+# normalised segments. The degraded path (no normaliser) keeps the spelled rule below, and refusing more there is S9's (#1710).
+_add_refused() {
+  [ "$degraded" = 1 ] && return 1
+  local line w opts p comp depth n last
+  # Only the `git add` lines are walked: a bash loop over every line of a 10k-line command ran past the hook's deadline (#1783).
+  local rest any=0
+  if [ "$have_grep" = 1 ]; then rest="$(printf '%s\n' "$seg" | LC_ALL=C grep -E '^git[[:space:]]+add([[:space:]]|$)')"$'\n'; else rest="$seg"$'\n'; fi
   while [ -n "$rest" ]; do
     line="${rest%%$'\n'*}"; rest="${rest#*$'\n'}"
     [[ $line =~ ^git[[:space:]]+add([[:space:]]|$) ]] || continue
+    any=1
     opts=1
+    local specs=0 pathless=0
     set -f
     for w in ${line#git}; do
       [ "$w" = add ] && continue
       if [ "$opts" = 1 ]; then
         [ "$w" = -- ] && { opts=0; continue; }
-        [[ $w == -* ]] && continue
-      fi
-      p="$w"
-      [[ $p == :/* ]] && p="${p#:/}"
-      depth=0; out=""
-      local IFS=/
-      for comp in $p; do
-        case "$comp" in
-          ''|.) ;;
-          ..) if [ "$depth" -gt 0 ]; then depth=$((depth - 1)); out="${out%/*}"; else set +f; return 0; fi ;;
-          *) depth=$((depth + 1)); out="$out/$comp" ;;
+        case "$w" in
+          -u|-p|-N|--update|--patch|--intent-to-add) pathless=1; continue ;;
+          -v|--verbose) continue ;;
+          -*) set +f; return 0 ;;
         esac
-      done
+      fi
+      specs=$((specs + 1))
+      p="$w"
+      case "$p" in
+        :*|*'**'*) set +f; return 0 ;;
+      esac
+      depth=0; n=0; last=""
+      local IFS=/
+      local comps=($p)
       unset IFS
-      out="${out#/}"
-      if [ -z "$out" ] || [ "$out" = '*' ] || [ "$out" = '.*' ]; then set +f; return 0; fi
+      for comp in "${comps[@]}"; do
+        n=$((n + 1))
+        case "$comp" in
+          ''|.) continue ;;
+          ..) [ "$depth" -gt 0 ] || { set +f; return 0; }; depth=$((depth - 1)) ;;
+          *) depth=$((depth + 1)) ;;
+        esac
+        # a glob in a directory component refuses; the last component is judged below
+        if [ "$n" -lt "${#comps[@]}" ] && [[ $comp == *[\*\?\[\]]* ]]; then set +f; return 0; fi
+        last="$comp"
+      done
+      [ "$depth" -gt 0 ] || { set +f; return 0; }
+      if [[ $last == *[\*\?\[\]]* ]] && ! [[ $last =~ [[:alnum:]] ]]; then set +f; return 0; fi
+    done
+    set +f
+    # The normaliser DELETES a word it cannot keep plain (a quoted `:(top)`, `' .'`, a path with a space), so a `git add` left with no
+    # pathspec had its arguments taken away: refused, unless -u/-p/-N, which act without one.
+    [ "$specs" = 0 ] && [ "$pathless" = 0 ] && return 0
+  done
+  # `$'...'` is ANSI-C QUOTING (decoded by the normaliser), not an expansion, so only a `$` that is not followed by `'` counts.
+  [ "$any" = 1 ] && [[ $cmd =~ \$[^\']|\$$|\`|\{|\}|~ ]] && return 0
+  return 1
+}
+if [[ "$seg" == *add* ]]; then
+  _add_refused && deny "stage specific files by plain relative path, never 'git add -A' / 'git add .' or a pattern that may reach the whole tree (GUARDRAILS: no accidental secrets or stray files). Allowed: -u -p -N -v, a path, or a glob in the last component with a literal in it (src/*.rb)."
+fi
+# A LONG OPTION IS ANY UNIQUE PREFIX, and short flags bundle (#1783): git reads `--mirr`, `--disc`, `--prun` and `-fc` as the full
+# option, so `push`, `switch` and `checkout` refuse any option word that is a prefix of a dangerous one, and a bundle holding `f`
+# (switch/checkout). A wildcard refspec (`refs/*:refs/*`) pushes every ref, like --mirror.
+_dangerous_option() {
+  [ "$degraded" = 1 ] && return 1
+  local line w o rest
+  if [ "$have_grep" = 1 ]; then rest="$(printf '%s\n' "$seg" | LC_ALL=C grep -E '^git[[:space:]]+(push|switch|checkout)([[:space:]]|$)')"$'\n'; else rest="$seg"$'\n'; fi
+  while [ -n "$rest" ]; do
+    line="${rest%%$'\n'*}"; rest="${rest#*$'\n'}"
+    [[ $line =~ ^git[[:space:]]+(push|switch|checkout)([[:space:]]|$) ]] || continue
+    set -f
+    for w in $line; do
+      case "$w" in
+        --force-with-lease*|--force-if-includes*) continue ;;
+        --?*)
+          o="${w%%=*}"
+          for d in --force --discard-changes --mirror --prune; do
+            [ "${#o}" -ge 3 ] && [ "${d#"$o"}" != "$d" ] && { set +f; return 0; }
+          done ;;
+        -[!-]*) [[ $w == *f* ]] && [[ $line =~ ^git[[:space:]]+(switch|checkout) ]] && { set +f; return 0; } ;;
+        *'*'*:*) [[ $line =~ ^git[[:space:]]+push ]] && { set +f; return 0; } ;;
+      esac
     done
     set +f
   done
   return 1
 }
-if [[ "$seg" == *add* ]]; then
-  _add_whole_tree && deny "stage specific files, never 'git add -A' / 'git add .' (GUARDRAILS: no accidental secrets or stray files)."
+if [[ "$seg" == *git* ]]; then
+  _dangerous_option && deny "a force, discard-changes, mirror or prune option (in any unique prefix or bundle, or a wildcard refspec) can overwrite or delete work; it requires explicit user approval."
 fi
 # `*` and `..` stage as much as `.` (#1783 review).
 if hit '^git[[:space:]]+add([[:space:]]+-[a-zA-Z-]*)*[[:space:]]+(-[a-zA-Z]*A[a-zA-Z]*\b|--all\b|\.{1,2}/?($|[[:space:]])|:/($|[[:space:]])|\*($|[[:space:]]))'; then
