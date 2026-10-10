@@ -325,5 +325,13 @@ GUARD = Guard(
                  "    if (r.startsWith('/') ? h === r || h.startsWith(`${r}/`) : h.includes(`/${r.split('/').pop()}/`)) return false\n",
                  '',
                  'a handoff written inside the worktree it then removes does not count'),
+        Mutation('the handoff file is not asked for, so a session clears onto a handoff that is gone',
+                 '    ok = (await allMerged($)) && (await handoffPresent($))',
+                 '    ok = await allMerged($)',
+                 'a handoff whose file is gone does not clear'),
+        Mutation('a future-dated empty claim counts as young, so clock skew leaves it never taken over',
+                 '&& ! future; }',
+                 '; }',
+                 'an empty claim dated in the FUTURE (clock skew) is stale'),
     ),
 )

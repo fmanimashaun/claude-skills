@@ -93,7 +93,8 @@ function queueCompact($, due) {
 // A claim is live only while its pid exists AND its process start time matches (a recycled pid after a
 // reboot is not the coordinator). A stale claim is replaced under a second mkdir lock, so two takers cannot
 // both win; a taker that finds the lock held reports implementation (fewer coordinators, never more). A claim directory
-// exists a moment before its `claim` file is written, so an EMPTY claim younger than a minute is one being made, and is
+// exists a moment before its `claim` file is written, so an EMPTY claim younger than a minute (and not dated in the future,
+// which clock skew can do) is one being made, and is
 // never taken over (#1728 review: a taker that removed it let both sessions print coordinator). A coordinator that dies is
 // replaced only at the NEXT session start, and RAILS_FLOW_ROLE=coordinator (force) takes the claim without telling the
 // live holder, which keeps believing it coordinates until it next starts.
@@ -116,7 +117,8 @@ fi
 if claim; then echo coordinator; exit 0; fi
 read_claim
 if [ -z "$hp" ]; then sleep 1; read_claim; fi
-young_empty() { [ -z "$hp" ] && [ -d "$c" ] && [ -z "$(find "$c" -maxdepth 0 -mmin +1 2>/dev/null)" ]; }
+future() { ref="$d/.now.$$"; : > "$ref" 2>/dev/null; f=$(find "$c" -maxdepth 0 -newer "$ref" 2>/dev/null); rm -f "$ref"; [ -n "$f" ]; }
+young_empty() { [ -z "$hp" ] && [ -d "$c" ] && [ -z "$(find "$c" -maxdepth 0 -mmin +1 2>/dev/null)" ] && ! future; }
 if young_empty; then report; fi
 if [ "$hp" = "$me" ] && [ "$hl" = "$(start "$me")" ]; then echo coordinator; exit 0; fi
 if alive "$hp" "$hl"; then report; fi
@@ -397,6 +399,18 @@ async function allMerged($) {
   return true
 }
 
+// THE HANDOFF FILE EXISTS when the decision is made (#1728 delta review): a path string cannot tell `/tmp` from
+// `/private/tmp`, a symlink into the worktree from a file, or `./wt-x/.` from `wt-x`, so the filesystem is asked.
+// `test -e` follows a symlink, so a dangling one fails. A comment URL needs no file. Run through `$.process.run`,
+// the mod's one route to the machine (no mod imports node:fs).
+async function handoffPresent($) {
+  const h = job.handoff
+  if (isCommentUrl(h)) return true
+  if (typeof h !== 'string' || h === '') return false
+  const r = await $.process.run(['test', '-e', h], { timeoutMs: 5000 })
+  return r.exitCode === 0
+}
+
 // Does the job look finished? Cheap checks first, then the live pull-request state.
 // A HANDOFF THAT SURVIVES the job (#1728 review): a comment URL, or a file outside every worktree this job removed.
 // A handoff written inside a worktree that is then removed is gone, and the session must not clear onto it.
@@ -421,7 +435,7 @@ export function jobDoneShape(ignorePending = false) {
 async function precheck($, epoch) {
   let ok = false
   try {
-    ok = await allMerged($)
+    ok = (await allMerged($)) && (await handoffPresent($))
   } catch {
     ok = false
   }

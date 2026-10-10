@@ -12,7 +12,7 @@
 
 import assert from 'node:assert/strict'
 import { execFileSync, spawn } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -129,6 +129,9 @@ async function session({ holdClear = false, onGh = null, env = {}, role = 'imple
           return { exitCode: 0, stdout: '' }
         }
         if (argv[0] === 'sh') return { exitCode: 0, stdout: await proc.run(argv) }
+        // The handoff check asks the REAL filesystem. By convention /tmp/handoffs/ stands for a handoff that still exists,
+        // so the job tests need no shared files (mutation jobs run in parallel); the #1728 cases below use real paths.
+        if (argv[0] === 'test') return { exitCode: argv[2].startsWith('/tmp/handoffs/') || existsSync(argv[2]) ? 0 : 1, stdout: '' }
         calls.gh.push(argv.join(' '))
         if (onGh) await onGh()
         await flush() // gh answers on a later macrotask, so a reset that ran inside the hook would clear before the timer fires
@@ -296,6 +299,43 @@ await check('#1728 review: a handoff written inside the worktree it then removes
   assert.equal(reset.handoffSurvives('/tmp/wt-x/HANDOFF.md'), false)
   assert.equal(reset.handoffSurvives('/tmp/handoffs/HANDOFF-x.md'), true)
   assert.equal(reset.handoffSurvives('https://github.com/o/r/pull/7#issuecomment-1'), true)
+})
+
+await check('#1728 delta: a handoff whose file is gone does not clear: the /private/tmp alias and a dangling symlink', async () => {
+  for (const shape of ['alias', 'symlink']) {
+    const d = mkdtempSync(join(tmpdir(), 'rf-handoff-'))
+    cleanups.push(() => rmSync(d, { recursive: true, force: true }))
+    const wt = join(d, 'wt-x')
+    mkdirSync(wt)
+    writeFileSync(join(wt, 'HANDOFF.md'), 'x')
+    const written = shape === 'alias' ? join(wt, 'HANDOFF.md') : join(d, 'HANDOFF.md')
+    if (shape === 'symlink') symlinkSync(join(wt, 'HANDOFF.md'), written)
+    // the removal names the OTHER spelling of the directory (macOS: /var/... is /private/var/...), or the worktree itself
+    const removed = shape === 'alias' ? realpathSync(wt) : wt
+    const s = await session({ gh: MERGED })
+    await s.bash(`git worktree add -b feature/x ${removed} origin/dev`, '')
+    await s.bash('gh pr create --base dev', 'https://github.com/o/r/pull/7')
+    await s.write(written)
+    await s.bash(`git worktree remove ${removed}`, '')
+    rmSync(wt, { recursive: true, force: true })   // what git worktree remove does to the files
+    await s.turnDone()
+    await s.run()
+    assert.equal(s.calls.clear, 0, `${shape}: the handoff went with the worktree`)
+  }
+})
+
+await check('#1728 delta: CONTROL: a handoff file that still exists outside the worktree clears', async () => {
+  const d = mkdtempSync(join(tmpdir(), 'rf-handoff-'))
+  cleanups.push(() => rmSync(d, { recursive: true, force: true }))
+  writeFileSync(join(d, 'HANDOFF.md'), 'x')
+  const s = await session({ gh: MERGED })
+  await s.bash('git worktree add -b feature/x /tmp/wt-z origin/dev', '')
+  await s.bash('gh pr create --base dev', 'https://github.com/o/r/pull/7')
+  await s.write(join(d, 'HANDOFF.md'))
+  await s.bash('git worktree remove /tmp/wt-z', '')
+  await s.turnDone()
+  await s.run()
+  assert.equal(s.calls.clear, 1)
 })
 
 await check('a Bash call that errors or is denied records nothing', async () => {
@@ -493,6 +533,17 @@ await check('#1728 review: an empty claim being written is never taken over, so 
   const r = reset.parseElection(await taker.run(['sh', '-c', '', 'sh', 'taker', '0']))
   assert.equal(r.role, 'implementation', 'a taker must not remove a claim that is still being written')
   assert.ok(existsSync(join(h, '.claude', 'rails-flow', 'coordinator')), 'the young claim is left in place')
+})
+
+await check('#1728 delta: an empty claim dated in the FUTURE (clock skew) is stale, and is taken over', async () => {
+  const h = home()
+  const { utimesSync } = await import('node:fs')
+  const c = join(h, '.claude', 'rails-flow', 'coordinator')
+  mkdirSync(c, { recursive: true })
+  const later = new Date(Date.now() + 3600 * 1000)
+  utimesSync(c, later, later)
+  const taker = new Proc(h)
+  assert.equal(reset.parseElection(await taker.run(['sh', '-c', '', 'sh', 'taker', '0'])).role, 'coordinator', 'a future-dated empty claim is never young')
 })
 
 await check('a live coordinator is not displaced by a later start', async () => {
