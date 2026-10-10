@@ -4141,6 +4141,16 @@ def test_preflight_fixtures() -> None:
         check("test-preflight: once the user has pinned it (`--trust`), the project's script runs AFTER the generic checks",
               pin.returncode == 0 and code == 0 and ran.exists() and "Project preflight: master key missing" in out and out.find("Postgres") < out.find("Project preflight"),
               f"{pin.stdout.strip()[:80]} | {out.strip()[:160]}")
+        # A PROGRAM THE REPOSITORY SHIPS must not run: with the project as the working directory, a relative or empty PATH entry resolves INTO the checkout.
+        repo_ran = base / "ran-repo-pg_isready"
+        (app / "bin").mkdir()
+        (app / "bin" / "pg_isready").write_text(f"#!/bin/sh\ntouch {repo_ran}\nexit 2\n")
+        (app / "bin" / "pg_isready").chmod(0o755)
+        stub("pg_isready", "exit 0")                                      # the trusted one: Postgres is up, so a correct hook is silent about it
+        code, out = hook(app, rspec, PATH=os.pathsep.join(["bin", "", ".", path]))
+        check("test-preflight: a pg_isready the repository ships, reachable through a relative or empty PATH entry, is NOT run",
+              code == 0 and not repo_ran.exists() and "Postgres" not in out, out.strip()[:160])
+        stub("pg_isready", "exit 2")
         # #825's environment: the harness sets the variable; a person driving the script does not. A missing script is python's exit 2, which the wrapper must not pass on.
         code, out = run_hook("test-preflight.sh", cwd=app, stdin=json.dumps({"tool_name": "Bash", "tool_input": {"command": rspec}, "cwd": str(app)}),
                              env_extra={"PATH": path}, unset=("CLAUDE_PLUGIN_ROOT",))
