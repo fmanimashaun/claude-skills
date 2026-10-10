@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+# rails-flow-git-guard: pre-push v1 -- managed by /pipeline:install-hooks, which rewrites this file. Edit the plugin's copy, not this one.
+#
+# WHAT IT ENFORCES (#1789, the owner's decision on #1793): a push may not DELETE a protected branch or move it to a commit that does not
+# contain its current tip (a non-fast-forward), however the command was typed -- `+main`, `--force`, `--mirror`, `--mir`, an alias, a
+# variable. Git hands this hook the refs AFTER it has resolved the command, so it never reads the spelling.
+#
+# INPUT, from git's githooks(5): two arguments (the remote's name and URL) and, on stdin, one line per ref being pushed,
+#   <local-ref> SP <local-oid> SP <remote-ref> SP <remote-oid> LF
+# A delete has local-ref `(delete)` and an all-zero local-oid; a remote ref that does not exist yet has an all-zero remote-oid.
+#
+# PROTECTED: main, dev and staging, plus the names or shell globs on a line `protected-branches: release/* hotfix` in the project's
+# GUARDRAILS.md (outside a code block or comment). A declaration can only ADD. Applies to every remote.
+# NOT COVERED: tags, a branch that is not protected, `git push --no-verify` (git skips this hook; the server's branch protection is the
+# backstop) and a clone that has no hook. A tripwire under the server rules, not a boundary.
+# FAIL CLOSED: a line it cannot read, a local commit it cannot resolve, a remote tip that is not in this clone (fetch first) is a refusal.
+# AUDITED ESCAPE: RAILS_FLOW_PROTECTED_OK=1 lets the push through and says so.
+set -u
+set -f   # a declared glob (`release/*`) is a case pattern here, never expanded against the working tree
+
+PROTECTED="main dev staging"
+_tab=$'\t'
+
+fail() { printf '%s\n' "git-guard (pre-push): $*" >&2; exit 1; }
+
+# The value of the last `<key>: <value>` declaration in GUARDRAILS.md, skipping fenced, indented and commented text; nothing if none.
+_declared() {
+  local key="$1" top file line fence=0 comment=0 val="" re_fence re_indent re_decl
+  top="$(git rev-parse --show-toplevel 2>/dev/null)" || return 0
+  file="$top/GUARDRAILS.md"
+  [ -f "$file" ] || return 0
+  re_fence='^[[:space:]]{0,3}(```|~~~)'
+  re_indent="^([[:space:]]{4,}|${_tab})"
+  re_decl='^[[:space:]]*([-*+][[:space:]]*)?`?'"$key"':[[:space:]]*([^`]*[^`[:space:]])?`?[[:space:]]*$'
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [[ $line =~ $re_fence ]]; then fence=$((1 - fence)); continue; fi
+    [ "$fence" = 1 ] && continue
+    if [ "$comment" = 1 ]; then case "$line" in *"-->"*) comment=0 ;; esac; continue; fi
+    case "$line" in *"<!--"*) case "$line" in *"-->"*) ;; *) comment=1 ;; esac; continue ;; esac
+    [[ $line =~ $re_indent ]] && continue
+    if [[ $line =~ $re_decl ]]; then val="${BASH_REMATCH[2]}"; fi
+  done < "$file"
+  printf '%s' "$val"
+}
+
+extra="$(_declared protected-branches)" || fail "cannot read GUARDRAILS.md"
+extra="${extra//,/ }"
+PROTECTED="$PROTECTED $extra"
+
+is_protected() {
+  local name="$1" p
+  for p in $PROTECTED; do
+    case "$name" in $p) return 0 ;; esac
+  done
+  return 1
+}
+
+if [ "${RAILS_FLOW_PROTECTED_OK:-}" = 1 ]; then
+  printf '%s\n' "git-guard (pre-push): RAILS_FLOW_PROTECTED_OK=1, so this push is not checked against the protected branches." >&2
+  exit 0
+fi
+
+bad=""
+while IFS=' ' read -r lref lsha rref rsha more || [ -n "${lref}${lsha}${rref}${rsha}" ]; do
+  [ -z "${lref}${lsha}${rref}${rsha}" ] && continue
+  if [ -z "${rsha:-}" ] || [ -n "${more:-}" ]; then
+    fail "cannot read this line from git, so the push is refused: '$lref $lsha $rref $rsha ${more:-}'"
+  fi
+  case "$rref" in
+    refs/heads/*) name="${rref#refs/heads/}" ;;
+    *) continue ;;
+  esac
+  is_protected "$name" || continue
+  if [[ $lsha =~ ^0+$ ]]; then
+    bad="${bad}  - $rref: a delete (protected branches are never deleted by a push)"$'\n'
+    continue
+  fi
+  if [[ $rsha =~ ^0+$ ]]; then continue; fi    # the branch does not exist on the remote yet: nothing to overwrite
+  if ! git rev-parse --verify -q "${lsha}^{commit}" >/dev/null 2>&1; then
+    bad="${bad}  - $rref: cannot resolve the commit being pushed ($lsha)"$'\n'
+    continue
+  fi
+  git merge-base --is-ancestor "$rsha" "$lsha" >/dev/null 2>&1
+  case $? in
+    0) ;;
+    1) bad="${bad}  - $rref: not a fast-forward ($rsha is not an ancestor of $lsha), so it would rewrite history"$'\n' ;;
+    *) bad="${bad}  - $rref: cannot tell whether it is a fast-forward, because the remote tip $rsha is not in this clone (git fetch first)"$'\n' ;;
+  esac
+done
+
+if [ -n "$bad" ]; then
+  {
+    printf '%s\n' "git-guard (pre-push): refused. A protected branch (${PROTECTED}) is only ever fast-forwarded:"
+    printf '%s' "$bad"
+    printf '%s\n' "Rebase or merge so the push only adds commits. A deliberate rewrite: RAILS_FLOW_PROTECTED_OK=1 git push ... (audited; the server's branch protection still applies)."
+  } >&2
+  exit 1
+fi
+exit 0
