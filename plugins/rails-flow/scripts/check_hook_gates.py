@@ -4636,6 +4636,10 @@ def release_gate_adversary_fixtures() -> None:
         gate = _fallback_gate(td, bare)
         for cmd in ADVERSARY_1720:
             check(f"release-gate fallback (#1720): adversarial `{cmd[:60]}` is refused", gate(cmd).returncode == 2, "exit 0")
+        for cmd in ("ls", "git log", "git log --oneline -3", "git diff", "git fetch origin", "git branch -a", "git -C repo status",
+                    "git-status", "git branch -d dev", "git worktree add ../w main", "gh pr view 5", "gh issue list", "gh run list",
+                    "gh api repos/a/b/pulls", "gh api -XGET repos/a/b", "gh auth status", "git checkout main", "git switch main"):
+            check(f"release-gate fallback (#1720): CONTROL: read-only `{cmd}` passes", gate(cmd).returncode == 0, "exit 2")
 
 
 def release_gate_fallback_fixtures() -> None:
@@ -4657,9 +4661,15 @@ def release_gate_fallback_fixtures() -> None:
         check("release-gate fallback (#1720): a gh subcommand off the allow-list (`gh workflow run`) refuses",
               gate("gh workflow run release.yml").returncode == 2, "exit 0")
         check("release-gate fallback (#1720): `gh api -X POST` refuses", gate("gh api -X POST repos/a/b/merges").returncode == 2, "exit 0")
-        for cmd in ("ls", "git status", "git log", "git log --oneline -3", "git diff", "git fetch origin", "git branch -a", "git -C repo status",
-                    "git-status", "git branch -d dev", "git worktree add ../w main", "gh pr view 5", "gh issue list", "gh run list",
-                    "gh api repos/a/b/pulls", "gh api -X GET repos/a/b", "gh auth status"):
+        # #1720 confirm pass: main-rewrite spellings past an option list, so the rule is ANY option token beside main.
+        for cmd in ("git checkout -Bmain dev", "git switch --force-create main", "git branch --copy dev main"):
+            check(f"release-gate fallback (#1720): `{cmd}` (an option beside main) refuses", gate(cmd).returncode == 2, "exit 0")
+        # #1720 security review: an option value glued on (`-XPOST`, `-fbase=main`) is still the option.
+        check("release-gate fallback (#1720): `gh api -XPOST` (a glued method) refuses", gate("gh api -XPOST repos/a/b/merges").returncode == 2, "exit 0")
+        check("release-gate fallback (#1720): `gh api ... -fbase=main` (a glued field) refuses",
+              gate("gh api repos/a/b/merges -fbase=main").returncode == 2, "exit 0")
+        # The controls a mutant names stay here; the rest run in `release_gate_adversary`, which no mutant re-runs.
+        for cmd in ("git status", "gh api -X GET repos/a/b"):
             check(f"release-gate fallback (#1720): CONTROL: read-only `{cmd}` passes", gate(cmd).returncode == 0, "exit 2")
         done = gate("git push origin main")
         check("release-gate fallback (#1720): the refusal names the missing classifier and the fix",

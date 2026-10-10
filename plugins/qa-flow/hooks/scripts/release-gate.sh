@@ -563,8 +563,11 @@ elif [ "$_mentions" = 1 ]; then
     if [ -z "$_why" ]; then
       while IFS= read -r _g; do
         [ -n "$_g" ] || continue
-        if LC_ALL=C grep -qE "${_w}(main|master)${_e}" <<<"$_g" \
-           && LC_ALL=C grep -qE "${_w}(branch[[:space:]]([^[:space:]]+[[:space:]]+)*-[[:alpha:]]*[mMcCdDf][[:alpha:]]*|checkout[[:space:]]([^[:space:]]+[[:space:]]+)*-B|switch[[:space:]]([^[:space:]]+[[:space:]]+)*-C|worktree[[:space:]]+add[[:space:]]([^[:space:]]+[[:space:]]+)*-B)${_e}" <<<"$_g"; then
+        # A RULE, not a list of spellings (`-Bmain`, `--force-create`, `--copy` each got past one): branch, checkout, switch or
+        # worktree with main or master as a word (or glued to a short option, `-Bmain`) AND any option token refuses; a plain `git checkout main` has no option and passes.
+        if LC_ALL=C grep -qE "(${_w}|[[:space:]]-[[:alpha:]]+)(main|master)${_e}" <<<"$_g" \
+           && LC_ALL=C grep -qE "${_w}(branch|checkout|switch|worktree)${_e}" <<<"$_g" \
+           && LC_ALL=C grep -qE "(^|[[:space:]])-" <<<"$_g"; then
           _why="it creates, moves, copies or deletes a local main or master"; break
         fi
         _gh="$(LC_ALL=C grep -oE "${_w}gh([[:space:]]+[^[:space:]]+)*" <<<"$_g" | head -1)"
@@ -573,11 +576,18 @@ elif [ "$_mentions" = 1 ]; then
         case "${1:-} ${2:-}" in
           "issue "*|"run "*|"pr list"|"pr view"|"pr checks"|"pr diff"|"pr status"|"repo view"|"auth status") ;;
           "api "*)
-            if LC_ALL=C grep -qE "[[:space:]](-[fF]|--field|--raw-field|--input)([[:space:]=]|$)" <<<"$_g" \
-               || { LC_ALL=C grep -qE "[[:space:]](-X|--method)([[:space:]=]|$)" <<<"$_g" \
-                    && ! LC_ALL=C grep -qE "[[:space:]](-X|--method)[[:space:]=]*GET([[:space:]]|$)" <<<"$_g"; }; then
-              _why="\`gh api\` with a method other than GET or with fields writes"; break
-            fi ;;
+            # TOKEN BY TOKEN, so a glued value (`-XPOST`, `-fbase=main`) or an `=` form reads as the option it is (#1720 review).
+            _m=GET; _wr=""; shift
+            while [ $# -gt 0 ]; do
+              case "$1" in
+                -X|--method) _m="${2:-}"; shift ;;
+                -X*) _m="${1#-X}"; _m="${_m#=}" ;;
+                --method=*) _m="${1#--method=}" ;;
+                -f*|-F*|--field|--field=*|--raw-field|--raw-field=*|--input|--input=*) _wr=1 ;;
+              esac
+              shift
+            done
+            if [ -n "$_wr" ] || [ "$_m" != GET ]; then _why="\`gh api\` with a method other than GET or with fields writes"; break; fi ;;
           *) _why="\`gh ${1:-} ${2:-}\` is not on the read-only list"; break ;;
         esac
       done <<<"$(LC_ALL=C tr ';&|' '\n\n\n' <<<"$_flat")"

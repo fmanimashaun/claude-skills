@@ -71,9 +71,9 @@ GUARD = Guard(
         ),
         Mutation(
             "a local rewrite of main is not checked",
-            '           && LC_ALL=C grep -qE "${_w}(branch[[:space:]]',
-            '           && false && LC_ALL=C grep -qE "${_w}(branch[[:space:]]',
-            "release-gate fallback (#1720): a local rewrite of main (`git branch -m dev main`) refuses",
+            '           && LC_ALL=C grep -qE "(^|[[:space:]])-" <<<"$_g"; then',
+            "           && false; then",
+            "release-gate fallback (#1720): `git switch --force-create main` (an option beside main) refuses",
         ),
         Mutation(
             "a gh subcommand off the allow-list passes",
@@ -83,15 +83,33 @@ GUARD = Guard(
         ),
         Mutation(
             "a gh api write passes",
-            '              _why="\\`gh api\\` with a method other than GET or with fields writes"; break',
-            "              :",
+            '            if [ -n "$_wr" ] || [ "$_m" != GET ]; then _why="\\`gh api\\` with a method other than GET or with fields writes"; break; fi ;;',
+            "            ;;",
             "release-gate fallback (#1720): `gh api -X POST` refuses",
         ),
         Mutation(
             "a GET is read as a write: every `gh api -X GET` refuses",
-            '&& ! LC_ALL=C grep -qE "[[:space:]](-X|--method)[[:space:]=]*GET([[:space:]]|$)" <<<"$_g"; }; then',
-            '; }; then',
+            '            if [ -n "$_wr" ] || [ "$_m" != GET ]; then',
+            '            if [ -n "$_wr" ] || [ "$_m" = GET ]; then',
             "release-gate fallback (#1720): CONTROL: read-only `gh api -X GET repos/a/b` passes",
+        ),
+        Mutation(
+            "main glued to a short option (`-Bmain`) is not seen",
+            '"(${_w}|[[:space:]]-[[:alpha:]]+)(main|master)${_e}"',
+            '"${_w}(main|master)${_e}"',
+            "release-gate fallback (#1720): `git checkout -Bmain dev` (an option beside main) refuses",
+        ),
+        Mutation(
+            "a glued `-XPOST` is read as no method",
+            '                -X*) _m="${1#-X}"; _m="${_m#=}" ;;',
+            "                -X*) ;;",
+            "release-gate fallback (#1720): `gh api -XPOST` (a glued method) refuses",
+        ),
+        Mutation(
+            "a glued field `-fbase=main` is not a write",
+            "                -f*|-F*|--field|",
+            "                --field|",
+            "release-gate fallback (#1720): `gh api ... -fbase=main` (a glued field) refuses",
         ),
     ),
 )
