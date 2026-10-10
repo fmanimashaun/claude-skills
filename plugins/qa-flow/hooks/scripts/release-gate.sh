@@ -189,6 +189,10 @@ _lib="$_here/lib/normalize_cmd.sh"
 # macOS's sed aborts on an invalid byte ("illegal byte sequence"), which left the line, or the whole command, with NO segments:
 # `git push origin main \xff` read as nothing and passed. The caller's locale is not ours to trust, and an output the normaliser
 # could not produce (a non-zero status, or nothing for a command that is not empty) is "could not read", never "nothing to judge".
+# #1729: since #1759 the fallback refuses by shape, so NOTHING reads `seg` or `_seg_unread`. The pass stays on purpose: it is the
+# external process the #1575 deadline fixtures hang (a stubbed `awk`) to prove the watchdog denies a promotion it cannot finish
+# reading, and without it those fixtures refuse as "classifier missing" and every deadline guard reads INERT. Mutants on its
+# output cannot fail and are not declared.
 _seg_unread=0
 if [ -f "$_lib" ] && . "$_lib" 2>/dev/null && type normalize_segments >/dev/null 2>&1; then
   seg="$(printf '%s' "$cmd" | LC_ALL=C normalize_segments)" || { seg="$cmd"; _seg_unread=1; }
@@ -846,6 +850,8 @@ judge_in() { if [ "$2" = "-" ]; then judge "$1" "$1" "$3"; else judge_remote "$1
 [ -z "$unresolved_pr" ] || deny "cannot tell which commit or repository this command merges or publishes (a PR, ref, release or repository could not be resolved, a query or body file could not be read, or the command could not be parsed), so no certification can be matched to it. Name the PR by number, give a readable file, authenticate gh, and retry."
 
 # (1) dev's tip: a push of `main` to this repo's own remote with no explicit source.
+# NOTE (#1729): every path that sets `needs_dev=1` today also sets `unresolved_pr=1`, which denies at (0); this block is a second
+# layer, reached only if that changes. `hook_release_gate_effects` mutants re-enable `needs_dev` on the PR-head and merge paths.
 if [ "$needs_dev" = 1 ]; then
   # `--verify -q` prints NOTHING for a missing ref; plain `rev-parse origin/dev` echoes the literal
   # "origin/dev" before failing (found by the #1337 fixtures).
