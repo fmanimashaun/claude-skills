@@ -237,8 +237,7 @@ _re_runs_text='(^|[[:space:];&|({!])(eval|xargs|alias|function)([[:space:]]|$)|\
 _re_api='[[:space:]]api[[:space:]]([^;&|]*)issues'
 _re_ansi="[\$]'[^']*[\\\\]"
 if [ "$_fire" = 1 ] || rawhit "$_flat" "$_re_verb" || rawhit "$cmd" "$_re_shell_word" \
-   || rawhit "$cmd" "$_re_source" || rawhit "$cmd" "$_re_runs_text" || rawhit "$_flat" "$_re_api" || rawhit "$cmd" "$_re_ansi" \
-   || rawhit "$cmd" "$_re_interp"; then
+   || rawhit "$cmd" "$_re_source" || rawhit "$cmd" "$_re_runs_text" || rawhit "$_flat" "$_re_api" || rawhit "$cmd" "$_re_interp" || rawhit "$cmd" "$_re_ansi"; then
   _root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
   _why="$(printf '%s' "$cmd" | python3 "$(dirname "${BASH_SOURCE[0]}")/lib/issue_labels.py" --root "$_root" 2>&1)"
   _rc=$?

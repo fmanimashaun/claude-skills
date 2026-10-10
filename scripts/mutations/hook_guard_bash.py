@@ -52,8 +52,8 @@ GUARD = Guard(
         ),
         Mutation(
             "the shell word needs a space after it, so sh<f, bash>/dev/null<f and bash&>log<f never reach the helper (#1489, #1495, #1513)",
-            "_re_shell_word='(^|[[:space:];&|(/])(sh|bash|zsh|dash|ksh)([[:space:]<>&]|$)'",
-            "_re_shell_word='(^|[[:space:];&|(/])(sh|bash|zsh|dash|ksh)([[:space:]]|$)'",
+            "_re_shell_word='(^|[[:space:];&|(/])(sh|bash|zsh|dash|ksh|fish|csh|tcsh|ash|mksh|rbash|pwsh|busybox)([[:space:]<>&]|$)'",
+            "_re_shell_word='(^|[[:space:];&|(/])(sh|bash|zsh|dash|ksh|fish|csh|tcsh|ash|mksh|rbash|pwsh|busybox)([[:space:]]|$)'",
             "guard-bash (#1489 review): `sh<`",
         ),
         Mutation(
@@ -74,7 +74,7 @@ GUARD = Guard(
         # a script, and one read from stdin or through a redirect glued to the shell, which only the raw text shows. Those fixtures catch it.
         Mutation(
             "the label helper runs only for a create at a normalised segment start, so a spelling the normaliser does not resolve escapes",
-            'if [ "$_fire" = 1 ] || rawhit "$_flat" "$_re_verb" || rawhit "$cmd" "$_re_shell_word" \\\n   || rawhit "$cmd" "$_re_source" || rawhit "$cmd" "$_re_runs_text" || rawhit "$_flat" "$_re_api" || rawhit "$cmd" "$_re_ansi"; then',
+            'if [ "$_fire" = 1 ] || rawhit "$_flat" "$_re_verb" || rawhit "$cmd" "$_re_shell_word" \\\n   || rawhit "$cmd" "$_re_source" || rawhit "$cmd" "$_re_runs_text" || rawhit "$_flat" "$_re_api" || rawhit "$cmd" "$_re_interp" || rawhit "$cmd" "$_re_ansi"; then',
             "if hit '^gh[[:space:]]+issue[[:space:]]+create\\b'; then",
             "`bash chain.sh` is refused (a script that sources a script)",
         ),
@@ -124,7 +124,7 @@ GUARD = Guard(
         ),
         Mutation(
             "another interpreter's program text no longer triggers the helper (#1713)",
-            ' \\\n   || rawhit "$cmd" "$_re_interp"',
+            ' || rawhit "$cmd" "$_re_interp"',
             '',
             "guard-bash (#1712, #1713): `python3 -c",
         ),

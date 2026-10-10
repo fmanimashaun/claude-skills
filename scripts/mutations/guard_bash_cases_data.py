@@ -31,9 +31,9 @@ GUARD = Guard(
         ),
         Mutation(
             "an open row is recorded as already blocked, as if #1656 had landed",
-            "('direct:fish -c', 'fast', 'full', \"fish -c '@G@ @I@ @C@ -t x'\", 'allow',",
-            "('direct:fish -c', 'fast', 'full', \"fish -c '@G@ @I@ @C@ -t x'\", 'block',",
-            "direct:fish -c",
+            "('direct:eval var', 'fast', 'full', 'C=\\'@G@ @I@ @C@ -t x\\'; eval \"$C\"', 'allow',",
+            "('direct:eval var', 'fast', 'full', 'C=\\'@G@ @I@ @C@ -t x\\'; eval \"$C\"', 'block',",
+            "direct:eval var",
         ),
         Mutation(
             "the script a case reads no longer holds a create",
