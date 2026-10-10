@@ -1120,6 +1120,7 @@ GIT_SAFE = {
     "check-ref-format", "var", "verify-commit", "verify-tag", "sparse-checkout", "notes", "hash-object",
     "write-tree", "read-tree", "commit-tree", "mktree", "mktag", "unpack-file", "stripspace", "interpret-trailers",
     "maintenance", "remote", "config", "submodule", "bundle", "difftool", "citool", "gui", "gitk", "last-modified",
+    "update-ref",   # ONLY the local delete of a non-protected ref (#1803); `_git_read_only` refuses every other form
 }
 GIT_FLAGS = {"--no-pager", "-p", "--paginate", "-P", "--bare", "--no-replace-objects", "--literal-pathspecs",
              "--glob-pathspecs", "--noglob-pathspecs", "--icase-pathspecs", "--no-optional-locks",
@@ -1225,8 +1226,53 @@ def git_parse(seg: list[str], j: int):
     return verb, seg[i + 1:], workdir, redirected
 
 
+# #1803. `git update-ref -d refs/remotes/review/1559` deletes a LOCAL ref in a review namespace: it merges and publishes nothing, and the ref was left
+# behind because the gate refused every `update-ref`. A delete is allowed only for a LITERAL, fully-qualified ref under `refs/heads/` or `refs/remotes/`
+# whose branch name is not one of these. `HEAD`, the tags, `refs/replace/` (which changes what an object IS), a symbolic or stdin form, and any
+# command that SETS a ref stay refused: those move what main, dev or staging point at, or what a later push reads.
+UPDATE_REF_PROTECTED = {"main", "master", "dev", "staging", "HEAD"}
+
+
+def _local_ref_delete(args: list[str]) -> bool:
+    """True only for `git update-ref [-m <reason>] [--no-deref] -d <ref> [<oldvalue>]` of a non-protected local ref."""
+    delete, positional, i = False, [], 0
+    while i < len(args):
+        a = args[i]
+        if a == "-d":
+            delete = True
+        elif a == "--no-deref":
+            pass
+        elif a == "-m":
+            i += 1
+            if i >= len(args) or _opaque(args[i]):
+                return False
+        elif a.startswith("-") or _opaque(a):
+            return False          # --stdin, -z, --create-reflog, an unknown flag, or a word the shell has not expanded yet
+        else:
+            positional.append(a)
+        i += 1
+    if not delete or not 1 <= len(positional) <= 2:
+        return False
+    ref = positional[0]
+    if len(positional) == 2 and not re.fullmatch(r"[0-9a-fA-F]{4,64}", positional[1]):
+        return False
+    if ref in UPDATE_REF_PROTECTED or any(c in ref for c in "*?[\\ ~^:") or ".." in ref or ref.endswith(("/", ".lock")):
+        return False
+    if ref.startswith("refs/heads/"):
+        branch = ref[len("refs/heads/"):]
+    elif ref.startswith("refs/remotes/"):
+        remote, _, branch = ref[len("refs/remotes/"):].partition("/")
+        if not remote or not branch:
+            return False
+    else:
+        return False
+    return bool(branch) and branch not in UPDATE_REF_PROTECTED
+
+
 def _git_read_only(verb: str, args: list[str]) -> bool:
     """`git remote` and `git config` can repoint where a later push goes: only their read forms are safe."""
+    if verb == "update-ref":
+        return _local_ref_delete(args)
     if verb == "remote":
         sub = next((a for a in args if not a.startswith("-")), "")
         return sub in ("", "show", "get-url", "add")       # `add` cannot repoint an existing remote
@@ -1836,7 +1882,13 @@ def selftest() -> int:
                       ("bash -c 'gh pr merge 7 --merge'", ["PR_MERGE 7"]),
                       ("git merge dev", ["GIT_MERGE dev"]), ("sudo git merge dev", ["GIT_MERGE dev"]),
                       ('git commit -m "merge it" && gh pr list', []),
-                      ("git push origin main", ["PUSH_MAIN main"])):
+                      ("git push origin main", ["PUSH_MAIN main"]),
+                      # #1803: the local delete of a non-protected ref merges and publishes nothing, and is allowed
+                      ("git update-ref -d refs/remotes/review/1559", []),
+                      ("git -C /tmp/r update-ref -d refs/remotes/review/1559", []),
+                      ("git update-ref -d refs/heads/feature/x", []),
+                      ("git update-ref -m gone -d refs/remotes/origin/feature/x abc123def", []),
+                      ("git update-ref --no-deref -d refs/heads/old", [])):
         try:
             got = cls(cmd, on_feature)
         except Unjudgeable as exc:
@@ -2190,6 +2242,14 @@ def selftest() -> int:
         "git config edit", "git config set core.hooksPath /tmp/x", "git config unset core.hooksPath", "git config --unset-a core.hooksPath",
         "git config --edi", "git config --uns core.hooksPath", "git config --remove-s remote.origin", "git config -z -e",
         "git send-pack origin main", "git update-ref refs/heads/main abc", "git symbolic-ref HEAD refs/heads/x",
+        # #1803: only the local delete of a non-protected ref is allowed. The protected branches and HEAD, the remote-tracking copy of a protected branch (the
+        # hook reads origin/dev), tags and replace refs, any command that SETS a ref, the stdin form, and anything the shell has not expanded yet stay refused.
+        "git update-ref -d refs/heads/main", "git update-ref -d refs/heads/master", "git update-ref -d refs/heads/dev", "git update-ref -d refs/heads/staging",
+        "git update-ref -d HEAD", "git update-ref -d refs/remotes/origin/main", "git update-ref -d refs/remotes/origin/dev", "git update-ref -d refs/remotes/origin/HEAD",
+        "git update-ref -d refs/tags/v1", "git update-ref -d refs/replace/abc", "git update-ref refs/heads/x abc", "git update-ref -d $REF",
+        "git update-ref -d refs/heads/$B", "git update-ref --stdin", "git update-ref -d refs/heads/*", "git update-ref -d", "git update-ref -d refs/heads/x a b",
+        # ...and a delete in a CHAIN still counts as a command that moves refs (#1571), so a push to main after it in the same command is refused: split the command.
+        "git update-ref -d refs/remotes/review/1559 && git push origin main",
         "git filter-branch -f", "git fast-import", "git svn dcommit", "git http-push x",
         "gh workflow run release.yml", "gh pr update-branch 7", "gh repo sync", "gh repo delete x --yes", "gh release delete v1",
         "gh foo", "gh $x", "gh pr $verb 7", "gh api -X POST repos/o/r/dispatches -f event_type=x",
