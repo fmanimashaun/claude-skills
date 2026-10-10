@@ -138,6 +138,29 @@ Two things deliberately **not** claimed, because checking them said otherwise:
 If `stateDiagram-v2` does not render, try `stateDiagram` — mermaid's own page documents an
 older renderer, and which spelling a given version prefers is not something to guess at.
 
+### Pin each diagram to the code it draws
+
+A diagram that describes code which has since moved still renders and still passes every rule
+above, so give each mermaid block a **pin**: one HTML comment on the line directly above its
+fence, a full 40-character commit and the `path:start-end` lines the diagram is drawn from.
+
+```markdown
+<!-- rails-flow:pin 3f2a9c1d0b7e4a5c8d6f1e2b3a4c5d6e7f8091a2 app/jobs/billing_job.rb:12-40 app/models/invoice.rb:8 -->
+```
+
+Take the sha from `git rev-parse HEAD` at the moment you read the files, never from memory, a
+branch name or a short sha: those move or become ambiguous, and a pin that can drift proves
+nothing. `check_guide.py` then reads git: the commit exists, each file exists at it, each line is
+inside the file at it, and the file still exists at HEAD (a deleted file is a finding; a file merely
+edited since is a NOTE telling the reader which lines to compare). A guide with no pins is still
+valid, but once **one** diagram is pinned **all** must be; `--require-pins` demands it of a guide
+that has none, and `--repo DIR` names the repository when the guide lives outside it.
+
+**The limit, stated exactly:** a pin proves the cited lines **exist** at that commit. It does not
+prove the diagram is a correct picture of them, and it does not notice a diagram that drifted
+while its pin stayed true. Its value is that a reviewer is told which lines to compare. Do not
+describe a pinned guide as verified.
+
 [gh-diagrams]: https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/creating-diagrams
 [gh-gists]: https://github.blog/changelog/2022-02-28-gists-now-support-mermaid-diagrams/
 [mm-flow]: https://mermaid.js.org/syntax/flowchart.html
