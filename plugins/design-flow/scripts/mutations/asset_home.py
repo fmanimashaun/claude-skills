@@ -16,8 +16,8 @@ GUARD = Guard(
         ),
         Mutation(
             'an empty old directory counts as a library to move',
-            '    return path.is_dir() and any(path.iterdir())',
-            '    return path.is_dir()',
+            '        return any(path.iterdir())',
+            '        return True',
             'an EMPTY old directory is not a library to move',
         ),
         Mutation(
@@ -28,7 +28,7 @@ GUARD = Guard(
         ),
         Mutation(
             'the brand-logos move is no longer refused',
-            '    (Path("docs/design-system/brand-assets"), Path("docs/design/assets/brand")),\n',
+            '    (Path("docs/design-system/brand-assets"), BRAND),\n',
             '',
             'brand logos at docs/design-system/brand-assets/ are refused too',
         ),
@@ -61,6 +61,24 @@ GUARD = Guard(
             '        parent.rmdir()                         # the two moves emptied it',
             '        pass',
             '...removing the docs/design-system/ it emptied',
+        ),
+        Mutation(
+            'a file at an old path is ignored',
+            '    return path.exists() or path.is_symlink()',
+            '    return False',
+            'a FILE at an old path counts as something there',
+        ),
+        Mutation(
+            'the brand/ collision is not named after the move',
+            '            if new.parent in arrived:',
+            '            if False:',
+            '...and names the brand/ collision in the NOT moved text',
+        ),
+        Mutation(
+            'the brand/ collision is not warned about before the move',
+            '        elif new == BRAND and _has_content(root / LEGACY / BRAND.name):',
+            '        elif False:',
+            'a library holding its own brand/ is warned about BEFORE the move, naming the collision',
         ),
     ),
 )

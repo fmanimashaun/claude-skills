@@ -31,11 +31,12 @@ from pathlib import Path
 
 HOME = Path("docs/design/assets")
 LEGACY = Path("docs/assets")
+BRAND = Path("docs/design/assets/brand")
 # (old, new), in the order they must move: the library first, because the brand logos move INTO it.
 MOVES = (
     (LEGACY, HOME),
     (Path("docs/design-system/prompts"), Path("docs/design/prompts")),
-    (Path("docs/design-system/brand-assets"), Path("docs/design/assets/brand")),
+    (Path("docs/design-system/brand-assets"), BRAND),
 )
 # The files whose content names these paths, and so are rewritten after the move. Anchored: `mydocs/assets/x` is not a path of ours.
 RENAMED = ("manifest.json", "plan.json", "plan.md", "prompts.json", "prompts.md")
@@ -43,7 +44,10 @@ REWRITES = tuple((re.compile(r"(?<![\w/.-])" + re.escape(old.as_posix() + "/")),
 
 
 def _has_content(path: Path) -> bool:
-    return path.is_dir() and any(path.iterdir())
+    """A folder with anything in it, or ANYTHING that is not a folder (a file named docs/assets is still something at the old place)."""
+    if path.is_dir():
+        return any(path.iterdir())
+    return path.exists() or path.is_symlink()
 
 
 def legacy_found(root: Path) -> list[tuple[Path, Path]]:
@@ -58,8 +62,14 @@ def refusal(root: Path) -> str | None:
         return None
     lines = []
     for old, new in pairs:
-        blocked = _has_content(root / new)
-        lines.append(f"  {old}/ -> {new}/" + ("   (BLOCKED: both exist, so merge them by hand)" if blocked else ""))
+        note = ""
+        if not (root / old).is_dir():
+            note = "   (a FILE, not a folder: move it by hand)"
+        elif _has_content(root / new):
+            note = "   (BLOCKED: both exist, so merge them by hand)"
+        elif new == BRAND and _has_content(root / LEGACY / BRAND.name):
+            note = f"   (COLLIDES: {LEGACY}/ holds its own {BRAND.name}/, which would sit where these logos go; merge by hand)"
+        lines.append(f"  {old}/ -> {new}/" + note)
     return ("design-flow's files moved under docs/design/ (#1779), and this project still has some at the old place:\n" + "\n".join(lines) + "\n"
             "Stopping rather than reading an empty library, finding no prompt, or scaffolding placeholder logos over the real ones. Move them with:\n"
             "  python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/asset_home.py\" --migrate\n"
@@ -70,19 +80,26 @@ def migrate(root: Path) -> tuple[int, str]:
     """Move what sits at the old places and rewrite the old paths in the moved files. Never merges: a place whose destination exists is left, and the exit code says so."""
     if not legacy_found(root):
         return 0, "nothing at an old place to move."
-    moved, left = [], []
+    moved, left, arrived = [], [], []
     for old, new in MOVES:
         src, dst = root / old, root / new
         if not _has_content(src):
             continue
+        if not src.is_dir():
+            left.append(f"{old} (a file, not a folder: move it by hand)")
+            continue
         if _has_content(dst) or (dst.exists() and not dst.is_dir()):
-            left.append(f"{old}/ (destination {new}/ exists)")
+            why = f"destination {new}/ exists"
+            if new.parent in arrived:
+                why += f": it arrived with the {new.parent}/ you just moved, which already held its own {new.name}/"
+            left.append(f"{old}/ ({why})")
             continue
         dst.parent.mkdir(parents=True, exist_ok=True)
         if dst.exists():
             dst.rmdir()                       # an empty directory: moving onto it would nest the source inside
         shutil.move(str(src), str(dst))
         moved.append(f"{old}/ to {new}/")
+        arrived.append(new)
     parent = root / "docs/design-system"
     if parent.is_dir() and not any(parent.iterdir()):
         parent.rmdir()                         # the two moves emptied it
@@ -166,6 +183,24 @@ def selftest() -> int:
         check("both places existing is refused, never merged silently", "BLOCKED" in (refusal(root) or ""))
         code, said = migrate(root)
         check("--migrate refuses to merge two libraries", code == 1 and (root / "docs/assets/plan.json").is_file() and "merge by hand" in said)
+
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        write(root, "docs/assets/brand/own.svg")
+        write(root, "docs/design-system/brand-assets/01-logos/l.svg")
+        check("a library holding its own brand/ is warned about BEFORE the move, naming the collision", "COLLIDES" in (refusal(root) or ""))
+        code, said = migrate(root)
+        check("...--migrate moves the library but not the logos, and exits 1", code == 1 and (root / "docs/design/assets/brand/own.svg").is_file())
+        check("...leaving the logos where they were", (root / "docs/design-system/brand-assets/01-logos/l.svg").is_file())
+        check("...and names the brand/ collision in the NOT moved text", "NOT moved" in said and "already held its own brand/" in said)
+
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        write(root, "docs/assets", "a file where the folder should be\n")
+        msg = refusal(root) or ""
+        check("a FILE at an old path counts as something there", "docs/assets/ -> docs/design/assets/" in msg and "a FILE" in msg)
+        code, said = migrate(root)
+        check("--migrate leaves a file at an old path for the owner, and exits 1", code == 1 and (root / "docs/assets").is_file() and "move it by hand" in said)
 
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
