@@ -116,6 +116,18 @@ GUARD = Guard(
             "_re_verb='gh[[:space:]].*issue[[:space:]]+(create|new)'",
             "guard-bash (#1515): `$(echo gh) issue create",
         ),
+        Mutation(
+            "the other shells no longer trigger the helper (#1712)",
+            "(sh|bash|zsh|dash|ksh|fish|csh|tcsh|ash|mksh|rbash|pwsh|busybox)",
+            "(sh|bash|zsh|dash|ksh)",
+            "guard-bash (#1712, #1713): `fish -c",
+        ),
+        Mutation(
+            "another interpreter's program text no longer triggers the helper (#1713)",
+            ' \\\n   || rawhit "$cmd" "$_re_interp"',
+            '',
+            "guard-bash (#1712, #1713): `python3 -c",
+        ),
         # #1342: each discarding form goes unblocked again, or its safe twin gets caught with it.
         Mutation(
             "git clean -f is allowed",

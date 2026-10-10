@@ -731,6 +731,50 @@ GUARD = Guard(
             "                c_operand = _first_operand(words[1:])[0]",
             "(#1645 R2) a -c string that sources the file",
         ),
+        # #1712: shells the hook did not know.
+        Mutation(
+            "the shell list is the old five again",
+            'SHELLS = {"sh", "bash", "zsh", "dash", "ksh", "fish", "csh", "tcsh", "ash", "mksh", "rbash", "pwsh"}',
+            'SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}',
+            "(#1712) fish: \"fish -c 'gh issue create -t X'\" is refused",
+        ),
+        Mutation(
+            "busybox is not peeled, so `busybox sh -c` is read as busybox",
+            '        if base == "busybox" and len(words) > 1:',
+            "        if False:",
+            "(#1712) busybox sh: \"busybox sh -c 'gh issue create -t X'\" is refused",
+        ),
+        Mutation(
+            "env -S's string is not split into the command",
+            '                if base == "env" and (flag in ("-S", "--split-string")',
+            '                if False and (flag in ("-S", "--split-string")',
+            "(#1712) env -S: \"env -S 'gh issue create -t X'\" is refused",
+        ),
+        Mutation(
+            "an env -S create is no longer refused (its split words look like a plain create)",
+            '            if xinfo.get("S") and gh_issue_create_at(words, 0)[0] is not None:',
+            "            if False:",
+            "(#1712) env -S: \"env -S 'gh issue create -t X'\" is refused",
+        ),
+        # #1713: another interpreter's program text.
+        Mutation(
+            "no interpreter's program text is read for a create",
+            "            if INTERPRETER.match(head) and INTERPRETED_CREATE.search",
+            "            if False and INTERPRETER.match(head) and INTERPRETED_CREATE.search",
+            "(#1713) python os.system",
+        ),
+        Mutation(
+            "the create words must be one run of spaces, so a list's quotes and commas hide them",
+            r'INTERPRETED_CREATE = re.compile(r"\bgh\W+issue\W+(?:create|new)\b")',
+            r'INTERPRETED_CREATE = re.compile(r"\bgh +issue +(?:create|new)\b")',
+            "(#1713) python subprocess list",
+        ),
+        Mutation(
+            "any `gh issue <word>` in program text is refused, so a list is caught with the create",
+            r'INTERPRETED_CREATE = re.compile(r"\bgh\W+issue\W+(?:create|new)\b")',
+            r'INTERPRETED_CREATE = re.compile(r"\bgh\W+issue\b")',
+            "is allowed (a list)",
+        ),
         Mutation(
             "recursion has no depth cap (a script that sources itself would never end)",
             "_MAX_DEPTH = 3 ",

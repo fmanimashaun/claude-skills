@@ -996,6 +996,13 @@ def guard_bash_fixtures() -> None:
                      ("alias g=gh; g issue list", "an alias used for something else"),
                      ("gh issue create -t X --body y --label bug --label severity:s2", "a direct labelled create")):
         check(f"guard-bash (#1515): CONTROL: `{cmd}` is allowed ({why})", labelled(cmd)[0] == 0)
+    # #1712, #1713: the trigger reaches the helper for the other shells and for another interpreter's program text.
+    for cmd, why in (("fish -c 'gh issue create -t X --body y'", "a shell the hook did not know"),
+                     ("busybox sh -c 'gh issue create -t X --body y'", "busybox's sh applet"),
+                     ("python3 -c \"import subprocess; subprocess.run(['gh','issue','create','-t','X'])\"", "python with the words in a list")):
+        rc, err = labelled(cmd)
+        check(f"guard-bash (#1712, #1713): `{cmd}` reaches the helper and is refused ({why})", rc == 2, err)
+    check("guard-bash (#1712, #1713): CONTROL: `python3 -c \"print('gh issue list')\"` reaches the helper and is allowed", labelled("python3 -c \"print('gh issue list')\"")[0] == 0)
     # #1671: a script's encoding must not hide its create. A UTF-8 BOM made the first word `\ufeffgh`; a UTF-16 file read as no command at all.
     create = b"gh issue create -t x -b y\n"
     enc_tree = {"bom.sh": b"\xef\xbb\xbf" + create, "plain.sh": create, "u16.sh": create.decode().encode("utf-16"),
