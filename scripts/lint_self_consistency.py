@@ -32,6 +32,8 @@ WHAT IT CHECKS
                               fails the plugin's own docs-layout gate (#1700)
   undocumented-command        a plugins/<p>/commands/<c>.md that README.md (as `c`) or the
                               plugin's README (as /p:c) never names — same defect, one level down
+  schema-reader-drift         `architecture_graph.py` (vendored alone) carries its own copy of the rule that decides which db/*_schema.rb files are the project's;
+                              this runs it and `build_project_wiki.py`'s over the same fixture trees and refuses a difference (#1698)
   hook-lib-drift              the two shipped copies of hooks/scripts/lib/normalize_cmd.sh, or of lib/deadline.sh,
                               differ, or one is missing -- one normaliser is a claim only while they are identical
   fixture-git-drift           the three shipped copies of scripts/fixture_git.py (rails-flow, qa-flow,
@@ -637,6 +639,60 @@ def check_fixture_git_drift() -> tuple[list[Finding], int]:
                                     f"differs from {FIXTURE_GIT_COPIES[0]} -- one fixture-git lock, three copies: a fix "
                                     "landed in one and not the others. Copy the canonical file over it (cp) and re-run"))
     return findings, len(FIXTURE_GIT_COPIES)
+
+
+# Rule: schema-reader-drift (#1698)
+# WHICH schema files are the project's (db/schema.rb, every other db/*_schema.rb a second database dumps, minus a Solid trio file that holds only `solid_*` tables) is decided in
+# `build_project_wiki.py` and imported by `check_privacy_inventory.py`. `architecture_graph.py` is vendored ALONE and cannot import it, so it carries a copy of the rule. Two
+# implementations of one rule differ on the first edge nobody tested, and the graph would then draw a different set of tables from the page beside it. Not a text diff (the copies
+# differ where they must: the wiki parses a file, the graph reads its table names): BEHAVIOUR, over the same fixture trees.
+SCHEMA_TREES = (
+    {"schema.rb": ["invoices"]},
+    {"schema.rb": ["invoices"], "observability_schema.rb": ["error_groups"]},
+    {"schema.rb": ["invoices"], "cache_schema.rb": ["solid_cache_entries"], "queue_schema.rb": ["solid_queue_jobs"], "cable_schema.rb": ["solid_cable_messages"]},
+    {"schema.rb": ["invoices"], "cache_schema.rb": ["cache_notes"]},
+    {"schema.rb": ["invoices"], "cache_schema.rb": ["solid_cache_entries", "cache_notes"]},
+    {"schema.rb": ["invoices"], "cache_schema.rb": []},
+    {"schema.rb": ["invoices"], "zeta_schema.rb": ["z"], "alpha_schema.rb": ["a"], "queue_schema.rb": ["solid_queue_jobs"]},
+    {"observability_schema.rb": ["error_groups"]},
+)
+
+
+def check_schema_reader_drift() -> tuple[list[Finding], int]:
+    import importlib.util
+    import tempfile
+    wiki_rel, graph_rel = "plugins/rails-flow/scripts/build_project_wiki.py", "plugins/rails-flow/scripts/architecture_graph.py"
+    if not (ROOT / wiki_rel).is_file() or not (ROOT / graph_rel).is_file():
+        return [], 0        # a tree without both scripts has no two copies to disagree
+
+    def load(rel: str, name: str):
+        spec = importlib.util.spec_from_file_location(name, ROOT / rel)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        try:
+            spec.loader.exec_module(module)
+        finally:
+            sys.modules.pop(name, None)
+        return module
+
+    findings: list[Finding] = []
+    try:
+        wiki, graph = load(wiki_rel, "_sr_wiki"), load(graph_rel, "_sr_graph")
+        wiki_fn, graph_fn = wiki.app_schema_files, graph.app_schema_files
+    except Exception as exc:        # a script that cannot load, or lost the function, is a finding, never a silent pass
+        return [Finding("schema-reader-drift", wiki_rel, 0, f"cannot compare the schema-file rule in {wiki_rel} and {graph_rel}: {type(exc).__name__}: {exc}")], 0
+    for tree in SCHEMA_TREES:
+        with tempfile.TemporaryDirectory() as td:
+            (Path(td) / "db").mkdir()
+            for name, tables in tree.items():
+                (Path(td) / "db" / name).write_text("".join(f'  create_table "{t}", force: :cascade do |t|\n  end\n' for t in tables), encoding="utf-8")
+            wiki_files = [Path(f).relative_to(td).as_posix() for f in wiki_fn(Path(td))]
+            graph_files = [Path(f).relative_to(td).as_posix() for f in graph_fn(td)]
+            if wiki_files != graph_files:
+                findings.append(Finding("schema-reader-drift", graph_rel, 0,
+                                        f"over db/{{{', '.join(sorted(tree))}}} the wiki builder reads {wiki_files} and the graph reads {graph_files}: one rule, two copies, and they "
+                                        f"disagree. The wiki's (build_project_wiki.py `app_schema_files`) is the one decided in #1695/#1698; bring the graph's copy back to it"))
+    return findings, len(SCHEMA_TREES)
 
 
 # Rule: findings-script-drift (#1680)
@@ -3864,6 +3920,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     growth, claude_md_lines = check_claude_md_growth()
     hook_lib, hook_lib_copies = check_hook_lib_drift()
     fixture_git, fixture_git_copies = check_fixture_git_drift()
+    schema_drift, schema_drift_examined = check_schema_reader_drift()
     findings_copy, findings_copies = check_findings_script_drift()
     rel_xplugin, rel_xplugin_examined = check_cross_plugin_relative_path()
     fixture_bypass, fixture_bypass_examined = check_fixture_git_bypass(python_sources)
@@ -3925,6 +3982,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "claude_md_lines": claude_md_lines,
         "hook_lib_copies": hook_lib_copies,
         "fixture_git_copies": fixture_git_copies,
+        "schema_trees_compared": schema_drift_examined,
         "findings_script_copies": findings_copies,
         "shipped_markdown_checked_for_cross_plugin_paths": rel_xplugin_examined,
         "fixture_git_identity_lines": fixture_bypass_examined,
@@ -3978,7 +4036,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "scaffolded_boolean_toggles": toggles_examined,
         **call_coverage,
     }
-    return (dead + unenforced + undocumented + undoc_cmds + docs_paths + growth + hook_lib + fixture_git + fixture_bypass + bare + misdesc + unbounded + author_me + components + call_sites + invisible
+    return (dead + unenforced + undocumented + undoc_cmds + docs_paths + growth + hook_lib + fixture_git + schema_drift + fixture_bypass + bare + misdesc + unbounded + author_me + components + call_sites + invisible
             + markers + uncontained + nonhermetic + pointers + rel_links + leaving + outlines + uninstallable + plugin_root + mkt_ver + coercions + topologies + schema + unwired
             + ci_gates + cl_ignore + controllers + labels + comp_labels + orphans + keyfilter
             + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
@@ -5191,6 +5249,22 @@ def selftest() -> int:
              only=check_docs_path_outside_layout, files={"plugins/rails-flow/commands/handoff.md": "docs/handoff/<slug>.md\n"})
     scenario("a LAYOUT that is not a literal dict is itself a finding", rule=DP, expect_finding=True, only=check_docs_path_outside_layout,
              files={"plugins/rails-flow/scripts/docs_layout.py": "LAYOUT = build()\n"})
+
+    # -- schema-reader-drift (#1698) --------------------------------------
+    SR = "schema-reader-drift"
+    WIKI_REL, GRAPH_REL = "plugins/rails-flow/scripts/build_project_wiki.py", "plugins/rails-flow/scripts/architecture_graph.py"
+    WIKI_OK = "from pathlib import Path\ndef app_schema_files(root):\n    return [p for p in sorted(Path(root).glob('db/*.rb'))]\n"
+    GRAPH_OK = "from pathlib import Path\ndef app_schema_files(root):\n    return [str(p) for p in sorted(Path(root).glob('db/*.rb'))]\n"
+    scenario("the wiki builder and the graph read the same schema files over every fixture tree: silent", rule=SR, expect_finding=False,
+             only=check_schema_reader_drift, files={WIKI_REL: WIKI_OK, GRAPH_REL: GRAPH_OK})
+    scenario("the graph's copy reads fewer schema files than the wiki builder: a finding", rule=SR, expect_finding=True,
+             only=check_schema_reader_drift, files={WIKI_REL: WIKI_OK, GRAPH_REL: "def app_schema_files(root):\n    return []\n"})
+    scenario("a graph copy that lost the function is a finding, never a silent pass", rule=SR, expect_finding=True,
+             only=check_schema_reader_drift, files={WIKI_REL: WIKI_OK, GRAPH_REL: "x = 1\n"})
+    scenario("a script that cannot even load is a finding", rule=SR, expect_finding=True,
+             only=check_schema_reader_drift, files={WIKI_REL: WIKI_OK, GRAPH_REL: "this is not python (\n"})
+    scenario("a tree without both scripts has no two copies to disagree, and is silent", rule=SR, expect_finding=False,
+             only=check_schema_reader_drift, files={WIKI_REL: WIKI_OK})
 
     # -- undocumented-command (#835) --------------------------------------
     # Four shipped commands were in neither README; design-flow's listed six of twelve.
