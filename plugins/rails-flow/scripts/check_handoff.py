@@ -67,8 +67,11 @@ EXTERNAL CLAIMS THIS ENCODES, AND THEIR SOURCES (verified 2026-07-31)
 
     NOT claimed, because checking said otherwise: there is no "mid" model tier to select. #127's
     three-row table (strongest/mid/cheapest) has no mechanism -- the middle row is `effort`
-    (`low`..`max`), a separate field. And no effort level is asserted for any model, because
-    "available levels depend on the model" and Claude Code does not publish which.
+    (`low`..`max`), a separate field. And this file asserts no effort level for any model. Claude Code
+    DOES publish which models support effort: "The available effort levels depend on the model. Models
+    not listed here do not support effort:", followed by a per-model table that changes with every model
+    release (https://code.claude.com/docs/en/model-config, re-read 2026-10-10, #1670). The current
+    reading of that table is `reference/model-tiers.md`'s, not this docstring's.
 
 Exit codes:  0 clean · 1 findings · 2 unusable input (no file / not a work order / no tier table)
 

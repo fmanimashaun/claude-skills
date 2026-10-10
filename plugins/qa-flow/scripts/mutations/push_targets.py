@@ -7,6 +7,7 @@ GUARD = Guard(
     name="push_targets",
     subject="scripts/push_targets.py",
     selftest="scripts/push_targets.py",
+    needs=("scripts/fixture_git.py",),   # the selftest builds a real repo with a symbolic alias (#1803) through the shared fixture helper
     mutations=(
         Mutation(
             "the substring match comes back, so fix/1010-one-main is a promotion again",
@@ -709,6 +710,61 @@ GUARD = Guard(
             "    if head in (\"cd\", \"pushd\", \"popd\") or any(GIT_ENV_REDIRECT.match(w) for w in seg):",
             "    if head in (\"cd\", \"pushd\", \"popd\"):",
             "function fixture 'f(){ git push; }; GIT_DIR=/x f': expected None",
+        ),
+        # #1803. ONLY `update-ref --no-deref -d` of a literal, non-protected local ref is allowed (a plain delete follows a symbolic ref and removes its target).
+        Mutation(
+            'protected branch names are no longer refused, so --no-deref -d refs/heads/main is allowed',
+            '    return ref if branch and branch.casefold() not in _PROTECTED_FOLDED else None',
+            '    return ref if branch else None',
+            "unlisted shape 'git update-ref --no-deref -d refs/heads/MAIN': must be unjudgeable",
+        ),
+        Mutation(
+            'a protected name is compared case-sensitively, so refs/heads/MAIN is allowed',
+            '    return ref if branch and branch.casefold() not in _PROTECTED_FOLDED else None',
+            '    return ref if branch and branch not in UPDATE_REF_PROTECTED else None',
+            "unlisted shape 'git update-ref --no-deref -d refs/heads/MAIN': must be unjudgeable",
+        ),
+        Mutation(
+            'any refs/ namespace is accepted, so the remote-tracking copy of a protected branch, tags and replace refs can be deleted',
+            '    if ref.startswith("refs/heads/"):',
+            '    if ref.startswith("refs/"):',
+            "unlisted shape 'git update-ref --no-deref -d refs/remotes/origin/DEV': must be unjudgeable",
+        ),
+        Mutation(
+            'a ref is SET without -d is allowed, so update-ref moves a branch',
+            '    if not delete or not no_deref or not 1 <= len(positional) <= 2:',
+            '    if not no_deref or not 1 <= len(positional) <= 2:',
+            "unlisted shape 'git update-ref --no-deref refs/heads/x abc123def': must be unjudgeable",
+        ),
+        Mutation(
+            'a word the shell has not expanded is read literally, so --no-deref -d refs/heads/$B is allowed',
+            '        elif a.startswith("-") or _opaque(a):',
+            '        elif a.startswith("-"):',
+            "unlisted shape 'git update-ref --no-deref -d refs/heads/$B': must be unjudgeable",
+        ),
+        Mutation(
+            '--no-deref is no longer required, so a plain delete follows a symbolic ref and removes its target',
+            '    if not delete or not no_deref or not 1 <= len(positional) <= 2:',
+            '    if not delete or not 1 <= len(positional) <= 2:',
+            "unlisted shape 'git update-ref -d refs/remotes/review/1559': must be unjudgeable",
+        ),
+        Mutation(
+            'the allowance is switched off, so the review ref is refused again',
+            '        if _local_ref_delete(args) and not redirected and not envs and not any(w == "xargs" for w in seg[:j]):',
+            '        if False:',
+            "classify 'git update-ref --no-deref -d refs/remotes/review/1559': expected []",
+        ),
+        Mutation(
+            'a GIT_DIR or a redirected git dir is not refused for update-ref',
+            '        if _local_ref_delete(args) and not redirected and not envs and not any(w == "xargs" for w in seg[:j]):',
+            '        if _local_ref_delete(args):',
+            "unlisted shape 'GIT_DIR=/x git update-ref --no-deref -d refs/remotes/review/1': must be unjudgeable",
+        ),
+        Mutation(
+            'empty and dot components are accepted, so refs/heads//x passes',
+            '            or any(part == "" or part.startswith(".") for part in ref.split("/"))):',
+            '            or False):',
+            "unlisted shape 'git update-ref --no-deref -d refs/heads//x': must be unjudgeable",
         ),
         Mutation(
             "#1781: `gh pr checkout` is not a HEAD-moving subcommand, so a HEAD push after it is judged against the branch the hook saw",
