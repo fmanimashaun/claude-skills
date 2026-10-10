@@ -199,8 +199,14 @@ def git_objects() -> None:
         # while copytree staged the linked directory as real files. Alone here (the file links above are gone), so only this can fail the line.
         write(root, "docs/other/b.txt", "b")
         (root / "docs/dir/evil_dir").symlink_to("../other")
-        check("symlink: a symlink to a DIRECTORY inside a needs directory is unhashable too (the guard always runs)",
-              inc.guard_hash(root, g) != inc.guard_hash(root, g))
+        def unhashable() -> bool:
+            # An error is a failed row, not a crash: a mutant that treats a link as a file raises here, and a raise would end the run
+            # before the earlier row that mutant is declared to trip is ever reported.
+            try:
+                return inc.guard_hash(root, g) != inc.guard_hash(root, g)
+            except Exception:
+                return False
+        check("symlink: a symlink to a DIRECTORY inside a needs directory is unhashable too (the guard always runs)", unhashable())
         check("symlink: ...and it is listed as one entry, never walked into",
               inc.WorkTree(root).files_under("docs/dir") == ["docs/dir/a.txt", "docs/dir/evil_dir"])
         (root / "docs/dir/evil_dir").unlink()
