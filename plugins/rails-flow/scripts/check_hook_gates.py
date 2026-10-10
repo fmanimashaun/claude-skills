@@ -860,6 +860,23 @@ NEGATIVES_1568 = ['git add "app/x.rb" "spec/y.rb"', "git add 'x y' app/z.rb", 'g
                   'cat <<EOF\nfoo\\\nEOF\ngit add -A\nEOF', 'cat <<-EOF\n\tfoo\\\n\tEOF\ngit add -A\nEOF',
                   'echo "a\\"; git add -A; echo \\"b"', 'echo "a\'b"; git status; echo "c\'d"', "git commit -m 'it'\"'\"'s'",
                   'git add "app/models/user.rb"', "git add 'a.rb' 'b.rb'", 'git commit -m "fix"', 'git status "-s"']
+# #1706: the honest-mistake spellings beside a blocked one, each measured allowed on dev before this change; and #1708's force-with-lease
+# to a branch whose NAME contains main, which was blocked. Controls must keep their verdict.
+POSITIVES_1706 = ["git add /abs/path", "git add :/src/x.rb", "git add ':(top)src/x.rb'", "git add src/**/*.rb", "git add '*.*'", "git add '?'", "git add {.,x}", "git add $PWD",
+                  "git add $(pwd)", "git add 'my file.rb'", "git add -f x.rb", "git add 'src/*/x.rb'", "git switch --disc dev", "git switch -fc x",
+                  "git push --mir origin", "git push --prune origin", "git push origin 'refs/*:refs/*'", "git checkout --forc dev",
+                  "git add ':(top)'", "git add ':!secret.env'", "git add ':(exclude)x'", "git add '**'", "git add '**/*'",
+                  "git add ./**", "git add ':(glob)**'", "git add --pathspec-from-file=list", "git add ./.", "git add ./*", "git add .*", "git add src/..", "git add ../x", "git add -v -- ./.",
+                  "git switch -f dev", "git switch --discard-changes dev", "git push origin --delete=main", "git push origin --mirror",
+                  "git push origin HEAD:+main", "git push origin feature/x:+dev", "git push origin HEAD:+refs/heads/staging",
+                  "git push origin :main", "git push origin --delete main", "git push origin -d dev", "git push --force-with-lease --all origin", "git push --force-with-lease --mirror origin",
+                  "git add *", "git add -- *", "git add ..", "git add ../", "git checkout -f", "git checkout --force",
+                  "git push -fu origin dev", "git push origin +dev", "git checkout HEAD .", "git branch -d -f x", "git branch -df x",
+                  "git add -- .", "git add --verbose -A", "git reset HEAD~1 --hard", "git push --force-with-lease origin HEAD:main"]
+NEGATIVES_1706 = ["git push --force-if-includes origin x", "git push --force-with-lease --force-if-includes origin x", "git add -u", "git add -p src/x.rb", "git add -N new.rb", "git add -v -- src/x.rb", "git add '*.md'", "git add src/x.rb", "git add ./src/x.rb", "git add src/../lib/y.rb", "git add src/*.rb", "git add app/.env.example",
+                  "git push origin :feature/old", "git push origin --delete feature/old", "git push origin HEAD:feature/x", "git add -u", "git add app/*.rb", "git checkout -b feature/x", "git push --all origin",
+                  "git add file.rb", "git add -- app/x.rb", "git branch -d x", "git push origin feature", "git checkout feature/x",
+                  "git reset HEAD~1", "git push -u origin feature/x", "git push --force-with-lease origin feature/main-menu"]
 # ANSI-C bodies whose decoding must equal bash's own, byte for byte (compared when the result is one plain word, the only kind kept).
 ANSIC_BODIES_1613 = ["\\x61bc", "a\\x62c", "\\141bc", "\\1411", "a\\x6", "\\x", "a\\u0062c", "a\\U00000062c", "ab\\0cd", "a\\x00b",
                      "\\x41\\x42", "x\\u00e9y", "x\\xc3\\xa9y", "\\e", "\\q", "\\cA", "a\\\\b", "a\\'b", "a\\?b", "a\\\"b", "\\a\\b\\t"]
@@ -936,6 +953,15 @@ def guard_bash_fixtures() -> None:
         check(f"guard-bash (#1568): `{cmd!r}` is read as the shell reads it, and is blocked", run(cmd) == 2, said())
     for cmd in NEGATIVES_1568:
         check(f"guard-bash (#1568): CONTROL: `{cmd[:60]!r}` passes", run(cmd) == 0, said())
+    for cmd in POSITIVES_1706:
+        check(f"guard-bash (#1706): `{cmd}` is blocked like its plain sibling", run(cmd) == 2, said())
+    for cmd in NEGATIVES_1706:
+        check(f"guard-bash (#1706/#1708): CONTROL: `{cmd}` passes", run(cmd) == 0, said())
+    # #1708: an inline override is not read (an agent cannot approve its own deploy), so the message must not tell anyone to write it inline.
+    with tempfile.TemporaryDirectory() as td:
+        code, out = run_hook("guard-bash.sh", cwd=Path(td), stdin=json.dumps({"tool_input": {"command": "RAILS_FLOW_ALLOW_DEPLOY=1 kamal deploy"}}))[:2]
+    check("guard-bash (#1708): an inline RAILS_FLOW_ALLOW_DEPLOY=1 is still blocked, and the message says it is not read",
+          code == 2 and "not read" in out and "rerun with RAILS_FLOW_ALLOW_DEPLOY=1 kamal deploy" not in out, f"exit {code}: {out[:200]!r}")
     # #1613: the decoder against bash ITSELF. `git $'BODY'` goes through normalize_segments; `printf %s $'BODY'` is what bash makes of it.
     # Compared only when bash's word is plain (no space or shell character), because only a plain word is kept; any other is deleted.
     lib = HOOKS / "lib" / "normalize_cmd.sh"
@@ -1311,6 +1337,13 @@ def guard_bash_fixtures() -> None:
           raw(payload("git push --force origin dev\n" + long_tail)) == 2, said())
     check("guard-bash: CONTROL: `git status` followed by 10k lines still passes",
           raw(payload("git status\n" + long_tail)) == 0, said())
+    # ~240 KB, past GNU grep's ~96 KB read AND the 64 KB pipe buffer, so `printf` is still writing when `grep -q` exits and SIGPIPE is
+    # certain; at ~145 KB grep could read it all first, a race (#1783: once `git add` became an allowlist, `hit()` was the only thing the
+    # pipefail mutant could break, and only this rule shows it). Inside the hook's 6 s deadline: ~2 s at load 7.
+    sigpipe_tail = "".join(f"echo line {i}\n" for i in range(16000))
+    # `git reset --hard`, because only hit() decides it: a force-push is also refused by the option-prefix check, which never pipes into -q.
+    check("guard-bash: `git reset --hard` followed by 16k lines (~240 KB) is still blocked (pipefail + SIGPIPE, not a race)",
+          raw(payload("git reset --hard\n" + sigpipe_tail)) == 2, "exit 0: grep -q's early exit was read as no match")
     # 2. AN UNCLOSED HEREDOC INSIDE `$( )`: bash ends it at the line closing the `$( )`.
     check("guard-bash (#1526): a heredoc left open inside $( ) does not hide the `git add -A` after it",
           run("x=$(cat <<EOF\nfoo\n)\ngit add -A") == 2, said())
