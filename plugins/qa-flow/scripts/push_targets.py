@@ -358,6 +358,23 @@ def is_command(word: str, names: set[str]) -> bool:
     return base in names or (base.endswith(".exe") and base[:-4] in names)
 
 
+def home_expanded(word: str) -> str:
+    """A directory word with a LEADING `~`, `$HOME` or `${HOME}` expanded, as the shell will have by the time git runs (#1764).
+
+    The hook is handed the RAW command, which nothing has expanded yet, so `git -C ~/proj push` and `cd ~/proj && git push` name a directory
+    that does not exist when read as text: HEAD could not be resolved there and the gate refused a feature-branch push. Only the home
+    directory is expanded, and only at the start of the word (`~`, `~/x`, `$HOME`, `$HOME/x`, `${HOME}/x`): `~user`, any other variable, a
+    substitution, and a `~` inside a word are left exactly as they were, so they stay unresolved and the caller still fails closed. With no
+    HOME in the environment nothing is expanded, for the same reason."""
+    home = os.environ.get("HOME")
+    if not home or not os.path.isabs(home):
+        return word
+    for prefix in ("${HOME}", "$HOME", "~"):
+        if word == prefix or word.startswith(prefix + "/"):
+            return home + word[len(prefix):]
+    return word
+
+
 def git_verb(seg: list[str], verb: str) -> tuple[list[str], str | None] | None:
     """The arguments after `git <verb>` and any `git -C <dir>`, wherever git appears in the segment
     (after `sudo -u x`, `timeout 60`, `command`, `{`, a substitution ...); None if there is none."""
@@ -370,7 +387,7 @@ def git_verb(seg: list[str], verb: str) -> tuple[list[str], str | None] | None:
                 if seg[i] == "-c" and i + 1 < len(seg) and seg[i + 1].startswith("alias."):
                     raise Unjudgeable("a git alias defined inline can be any verb, push included")
                 if seg[i] == "-C" and i + 1 < len(seg):
-                    workdir = seg[i + 1]
+                    workdir = home_expanded(seg[i + 1])
                 i += 2
             else:
                 i += 1
@@ -551,7 +568,8 @@ def targets_detail(cmd: str, current: Callable[[bool, str | None], str | None]) 
     cwd: str | None = None                    # a prior `cd <dir>` moves where a bare push resolves
     for seg in all_segments(cmd):
         if seg[0] == "cd" and len(seg) == 2:
-            cwd = seg[1] if cwd is None or os.path.isabs(seg[1]) else os.path.join(cwd, seg[1])
+            target = home_expanded(seg[1])
+            cwd = target if cwd is None or os.path.isabs(target) else os.path.join(cwd, target)
             continue
         hits += [(d, src) for d, src, _, _ in _push_hits(seg, cwd, current)]
     return hits
@@ -986,8 +1004,9 @@ def ctx_segments(cmd: str):
                 if seg[0] in ("export",) or all(re.fullmatch(r"[A-Za-z_]\w*=.*", x) for x in seg):
                     env_repo = seg_repo
         if seg[0] in ("cd", "pushd"):
-            if len(seg) == 2 and seg[1] != "-" and not _expanded(seg[1]):
-                cwd = seg[1] if cwd is None or cwd is UNKNOWN_DIR or os.path.isabs(seg[1]) else os.path.join(cwd, seg[1])
+            target = home_expanded(seg[1]) if len(seg) == 2 else ""
+            if len(seg) == 2 and seg[1] != "-" and not _expanded(target):
+                cwd = target if cwd is None or cwd is UNKNOWN_DIR or os.path.isabs(target) else os.path.join(cwd, target)
             else:
                 cwd = UNKNOWN_DIR
             continue
@@ -1128,7 +1147,7 @@ def git_parse(seg: list[str], j: int):
         if a in ("-C", "-c"):
             if i + 1 >= len(seg):
                 raise Unjudgeable(f"git {a} with no value")
-            v = seg[i + 1]
+            v = seg[i + 1] if a == "-c" else home_expanded(seg[i + 1])
             if a == "-c":
                 if v.startswith("alias."):
                     raise Unjudgeable("a git alias defined inline can be any verb, push included")
@@ -1496,6 +1515,7 @@ def git_current(push: bool, workdir: str | None) -> str | None:
 
 def selftest() -> int:
     failures: list[str] = []
+    os.environ["HOME"] = "/home/selftest"    # the cases below name directories through it (#1764); a real HOME would make them depend on the machine
 
     def cls(cmd, cur):
         return [ln for ln in classify(cmd, cur) if not ln.startswith("CTX ")]
@@ -1672,6 +1692,15 @@ def selftest() -> int:
         ("cd other && git push", fake("topic", by_dir={"other": "main"}), True),
         ("cd other\ngit push", fake("topic", by_dir={"other": "main"}), True),
         ("git -C other push", fake("topic", by_dir={"other": "main"}), True),
+        # (#1764) a directory named through HOME is expanded BEFORE the push's HEAD is resolved there: the hook is handed the raw command
+        ("git -C ~/proj push", fake("topic", by_dir={"/home/selftest/proj": "main"}), True),
+        ("git -C ~/proj push", fake("main", by_dir={"/home/selftest/proj": "topic"}), False),
+        ("cd ~/proj && git push", fake("topic", by_dir={"/home/selftest/proj": "main"}), True),
+        ("cd ~/proj && git push", fake("main", by_dir={"/home/selftest/proj": "topic"}), False),
+        ("git -C $HOME/proj push", fake("topic", by_dir={"/home/selftest/proj": "main"}), True),
+        ("git -C ${HOME}/proj push", fake("topic", by_dir={"/home/selftest/proj": "main"}), True),
+        ("cd $HOME/proj && git push", fake("topic", by_dir={"/home/selftest/proj": "main"}), True),
+        ("cd ~ && git push", fake("topic", by_dir={"/home/selftest": "main"}), True),
     ]
     for cmd, cur, want in cases:
         try:
@@ -1974,6 +2003,10 @@ def selftest() -> int:
         ("cd /a/b; cd ../c; gh pr merge 7", ["CTX - /a/b/../c", "PR_MERGE 7"]),
         ("git -C ../x merge dev", ["CTX - ../x", "GIT_MERGE dev"]),
         ("git -C /abs push origin hot:main", ["CTX remote:origin /abs", "PUSH_REF hot"]),
+        # (#1764) the home directory is expanded; another user's (`~someone`) and any other variable are not, so they stay unresolved
+        ("git -C ~/proj push origin hot:main", ["CTX remote:origin /home/selftest/proj", "PUSH_REF hot"]),
+        ("cd $HOME/proj && git merge dev", ["CTX - /home/selftest/proj", "GIT_MERGE dev"]),
+        ("git -C ~someone/proj merge dev", ["CTX - ~someone/proj", "GIT_MERGE dev"]),
         ("git merge dev", ["CTX - -", "GIT_MERGE dev"]),
         ("gh api repos/o/r/merges -f base=main -f head=dev", ["CTX o/r -", "API_MERGE dev"]),
         ("gh api -iXPUT repos/o/r/pulls/7/merge", ["CTX o/r -", "API_PR_MERGE 7"]),

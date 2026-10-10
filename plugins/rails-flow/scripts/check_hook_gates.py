@@ -3281,6 +3281,11 @@ def release_gate_repos_fixtures() -> None:
         _git_repo(sub)
         _fixture_git(sub, "checkout", "-q", "-B", "main", check=True, capture_output=True)
         _fixture_git(sub, "branch", "dev", check=True, capture_output=True)
+        # a checkout on a feature branch that a command names through the HOME directory (#1764): HOME is this temp dir, so `~/feat` is it
+        feat = Path(td) / "feat"
+        _git_repo(feat)
+        _fixture_git(feat, "checkout", "-q", "-b", "fix/issue-1764-x", check=True, capture_output=True)
+        _fixture_git(feat, "remote", "add", "origin", "https://github.com/o/r.git", check=True, capture_output=True)
         (Path(td) / "bin").mkdir()
         (Path(td) / "bin" / "gh").write_text(FAKE_GH2, encoding="utf-8")
         (Path(td) / "bin" / "gh").chmod(0o755)
@@ -3384,6 +3389,40 @@ def release_gate_repos_fixtures() -> None:
         check("release-gate (#1569): CONTROL: a cd with no merge or push passes", rc == 0, f"rc={rc} {err[:240]!r}")
         rc, err = run("git merge dev")
         check("release-gate (#1569): CONTROL: `git merge dev` off main in this checkout is not a promotion", rc == 0, f"rc={rc} {err[:240]!r}")
+        # (3b) #1764: A DIRECTORY NAMED THROUGH THE HOME DIRECTORY. The hook is handed the RAW command, which no shell has expanded, so `~/feat` and `$HOME/feat`
+        # are text. Read as relative paths they name nothing, the push's HEAD cannot be resolved, and a feature-branch push in another checkout was refused
+        # ("cannot tell which commit or repository"). HOME is this fixture's temp dir, so `~/feat` is the feature checkout and `~/sub` the one on main.
+        home = {"HOME": str(td)}
+        for label, cmd in (
+            ("`git -C ~/feat push -u origin HEAD`", "git -C ~/feat push -u origin HEAD"),
+            ("`cd ~/feat && git push -u origin HEAD 2>&1 | tail -2`", "cd ~/feat && git push -u origin HEAD 2>&1 | tail -2"),
+            ("`git -C $HOME/feat push -u origin HEAD`", "git -C $HOME/feat push -u origin HEAD"),
+            ("`git -C ${HOME}/feat push -u origin HEAD`", "git -C ${HOME}/feat push -u origin HEAD"),
+            ("`cd $HOME/feat && git push -u origin HEAD`", "cd $HOME/feat && git push -u origin HEAD"),
+            ("`git -C \"$HOME/feat\" push -u origin HEAD` (double-quoted: the shell expands `$HOME` inside quotes)", "git -C \"$HOME/feat\" push -u origin HEAD"),
+            ("the same push by absolute path (the control)", f"git -C {feat} push -u origin HEAD"),
+        ):
+            rc, err = run(cmd, **home)
+            check(f"release-gate (#1764): {label} pushes a FEATURE branch of another checkout and passes", rc == 0, f"rc={rc} {err[:240]!r}")
+        for label, cmd in (
+            ("`git -C ~/feat push -u origin main`", "git -C ~/feat push -u origin main"),
+            ("`cd ~/feat && git push origin main`", "cd ~/feat && git push origin main"),
+            ("`git -C $HOME/feat push origin HEAD:main`", "git -C $HOME/feat push origin HEAD:main"),
+            ("`git -C ~/sub push -u origin HEAD` (that checkout is ON main: HEAD must resolve THERE, not in this feature checkout)", "git -C ~/sub push -u origin HEAD"),
+            ("`cd ~/sub && git push`", "cd ~/sub && git push"),
+        ):
+            rc, err = run(cmd, **home)
+            check(f"release-gate (#1764): {label} reaches main and is blocked", rc == 2, f"rc={rc} {err[:240]!r}")
+        for label, cmd in (
+            ("a directory that is not there", "git -C ~/nonexistent push -u origin HEAD"),
+            ("`cd` into a directory that is not there", "cd ~/nonexistent && git push -u origin HEAD"),
+            ("another user's home (`~someone`), which this hook cannot expand", "git -C ~someone/feat push -u origin HEAD"),
+            ("another variable (`$ELSEWHERE`)", "git -C $ELSEWHERE/feat push -u origin HEAD"),
+        ):
+            rc, err = run(cmd, **home)
+            check(f"release-gate (#1764): {label} cannot be read, so the push is blocked", rc == 2, f"rc={rc} {err[:240]!r}")
+        rc, err = run("git -C ~/feat push -u origin HEAD", HOME="")
+        check("release-gate (#1764): with no HOME at all `~/feat` cannot be expanded, so the push is blocked", rc == 2, f"rc={rc} {err[:240]!r}")
         # (4) The ARGUMENT the command acts on, not another one in the command line.
         rc, err = run("gh pr merge -b 8 7", FAKE_PRVIEW_7=f"main {hot}", FAKE_PRVIEW_8=f"dev {stamped}")
         check("release-gate (#1569): `gh pr merge -b 8 7` merges PR 7 (not the 8 that is the body) and is judged on PR 7's head",
