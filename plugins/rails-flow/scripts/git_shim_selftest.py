@@ -55,10 +55,11 @@ class Repo:
         home = base / f"{name}-home"; home.mkdir()
         gc = home / "gitconfig"; gc.write_text("")
         self.env = {k: v for k, v in os.environ.items() if not k.startswith(("GIT_", "RAILS_FLOW_")) and k not in {"HOME", "XDG_CONFIG_HOME"}}
-        self.env.update(HOME=str(home), GIT_CONFIG_GLOBAL=str(gc), GIT_CONFIG_NOSYSTEM="1", GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",  # fixture-git: exempt (the shim under test finds the repository from its cwd; fixture_git's GIT_DIR binding would hide that)
+        # NO GIT_CONFIG_* here: the shim refuses a command run with one (they can define aliases and hooks it cannot see), so the home directory isolates.
+        self.env.update(HOME=str(home), GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",  # fixture-git: exempt (the shim under test finds the repository from its cwd; fixture_git's GIT_DIR binding would hide that)
                         GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t", GIT_TERMINAL_PROMPT="0", GIT_EDITOR=":")  # fixture-git: exempt (the shim under test finds the repository from its cwd; fixture_git's GIT_DIR binding would hide that)
         fixture_git.init(self.work, "-b", "main")
-        self.real("config", "commit.gpgsign", "false")
+        self.real("config", "commit.gpgsign", "false"); self.real("config", "maintenance.auto", "false"); self.real("config", "gc.auto", "0")
         self.write("a.txt", "one\n"); self.write("src/b.txt", "b\n")
         self.real("add", "a.txt", "src/b.txt"); self.real("commit", "-q", "-m", "init")
         self.real("branch", "other")
@@ -77,7 +78,7 @@ class Repo:
     def g(self, *args: str, cwd: Path | None = None, env: dict[str, str] | None = None, stdin: str = "") -> subprocess.CompletedProcess:
         e = dict(self.path_env)
         e.update(env or {})
-        return subprocess.run(["git", *args], cwd=cwd or self.work, env=fixture_git.hermetic(e), capture_output=True, text=True, input=stdin, timeout=20)
+        return subprocess.run(["git", *args], cwd=cwd or self.work, env=e, capture_output=True, text=True, input=stdin, timeout=20)
 
     def snapshot(self) -> tuple:
         status = self.real("status", "--porcelain=v1", "-uall").stdout
@@ -116,8 +117,37 @@ def _(base):
     r = Repo(base, "addroot")
     for args in (("add", "."), ("add", "./."), ("add", "src/.."), ("add", ":/"), ("add", ":(top)"), ("add", ":(top)."), ("add", "*"), ("add", "**"),
                  ("add", "--", "."), ("add", "a.txt", "."), ("add", str(r.work.resolve())), ("add", ":/.")):
-        refused(r, label, *args, why="repository root")
-    refused(r, label, "-C", str(r.work), "add", ".", cwd=base, why="repository root")
+        refused(r, label, *args, why="plain relative paths")
+    refused(r, label, "-C", str(r.work), "add", ".", cwd=base, why="plain relative paths")
+
+
+@case("shim: a pathspec that is not a plain relative path is refused (absolute, magic, glob, a file list)")
+def _(base):
+    label = "shim: a pathspec that is not a plain relative path is refused (absolute, magic, glob, a file list)"
+    r = Repo(base, "plain")
+    (r.work / "list.txt").write_text("a.txt\n")
+    for args in (("add", str(r.work / "a.txt")), ("add", "/etc/hosts"), ("add", ":(exclude)u.txt", "a.txt"), ("add", ":!u.txt"), ("add", "*.txt"), ("add", "src/*"),
+                 ("add", "a.t?t"), ("add", "[a].txt"), ("add", "--pathspec-from-file=list.txt"), ("add", "--pathspec-from-file", "list.txt"),
+                 ("checkout", "--", "*.txt"), ("restore", "*.txt"), ("add", "../outside")):
+        refused(r, label, *args, why="cannot be judged" if "pathspec-from-file" in " ".join(args) else "plain relative paths")
+    runs(r, label, "add", "a.txt", "src/b.txt")
+
+
+@case("shim: --no-<option> negates a dry run, and a dry run counts only while it is still in force")
+def _(base):
+    label = "shim: --no-<option> negates a dry run, and a dry run counts only while it is still in force"
+    r = Repo(base, "negate")
+    for args in (("add", "-n", "--no-dry-run", "."), ("add", "--dry-run", "--no-dry-run", "-A"), ("add", "-n", "--no-dry", "."),
+                 ("clean", "-n", "--no-dry-run", "-f"), ("clean", "-nf", "--no-dry-run")):
+        refused(r, label, *args)
+    runs(r, label, "add", "--no-dry-run", "-n", "-A")
+    runs(r, label, "clean", "--no-dry-run", "-nf")
+    check(label, (r.work / "u.txt").exists(), "a dry run deleted a file")
+    r.real("add", "a.txt")
+    runs(r, label, "commit", "--no-verify", "--verify", "-m", "x")
+    check(label, r.real("log", "-1", "--format=%s").stdout.strip() == "x", "commit --no-verify --verify should run as a verified commit")
+    r.write("a.txt", "again\n"); r.real("add", "a.txt")
+    refused(r, label, "commit", "--verify", "--no-verify", "-m", "y")
 
 
 @case("shim: add near-misses run and stage only what was named")
@@ -197,7 +227,7 @@ def _(base):
     r = Repo(base, "restore")
     for args in (("restore", "."), ("restore", ":/"), ("restore", "--worktree", "."), ("restore", "--source=HEAD", "."), ("restore", "-SW", "."),
                  ("restore", "--staged", "--worktree", "."), ("restore", "-W", ".")):
-        refused(r, label, *args, why="overwrites the working tree")
+        refused(r, label, *args, why="plain relative paths")
     r.real("add", "a.txt")
     runs(r, label, "restore", "--staged", ".")
     check(label, r.real("diff", "--cached", "--name-only").stdout == "" and (r.work / "a.txt").read_text() == "dirty\n",
@@ -206,6 +236,48 @@ def _(base):
     runs(r, label, "restore", "-S", ".")
     runs(r, label, "restore", "a.txt")
     check(label, (r.work / "a.txt").read_text() == "one\n", "restore a.txt (one named path) did not restore it")
+
+
+@case("shim: stash drop and clear, checkout-index -f, read-tree --reset -u and rm of the root are refused")
+def _(base):
+    label = "shim: stash drop and clear, checkout-index -f, read-tree --reset -u and rm of the root are refused"
+    r = Repo(base, "more")
+    r.real("stash", "push", "-m", "saved")
+    r.write("a.txt", "dirty again\n")
+    for args in (("stash", "drop"), ("stash", "clear"), ("stash", "-q", "drop"), ("checkout-index", "-f", "a.txt"), ("checkout-index", "--force", "-a"),
+                 ("checkout-index", "--fo", "-a"), ("read-tree", "--reset", "-u", "HEAD"), ("read-tree", "-u", "--reset", "HEAD"), ("read-tree", "--res", "-u", "HEAD"),
+                 ("rm", "-r", "."), ("rm", "-rf", "."), ("rm", "-r", "--", "."), ("rm", "-r", "*"), ("rm", "-rf", "src/..")):
+        refused(r, label, *args)
+    check(label, r.real("stash", "list").stdout.strip() != "", "the stash was dropped")
+    runs(r, label, "stash", "list")
+    runs(r, label, "read-tree", "--reset", "HEAD")
+    p = r.g("rm", "-n", "-r", ".")                                   # a dry run: the shim lets it through (git may still complain about a dirty file)
+    check(label, "git-shim" not in p.stderr, f"`git rm -n -r .` was refused by the shim: {p.stderr.strip()[:140]}")
+    runs(r, label, "rm", "--cached", "-r", "src")
+    check(label, (r.work / "src" / "b.txt").exists(), "rm --cached deleted a file from disk")
+    r.real("add", "src/b.txt")
+    runs(r, label, "rm", "-r", "src")
+    check(label, not (r.work / "src" / "b.txt").exists(), "rm -r src (a named path) did not remove it")
+    runs(r, label, "stash", "push", "-m", "drop")                  # a message that says drop
+    q = r.g("rm", "--cached", "-r", ".")                           # index only: the shim must let even the root through with --cached
+    check(label, "git-shim" not in q.stderr and (r.work / "a.txt").exists(), f"`git rm --cached -r .` was refused or deleted a file: {q.stderr.strip()[:140]}")
+
+
+@case("shim: with no tr or dirname on PATH it still refuses and still passes the rest through")
+def _(base):
+    label = "shim: with no tr or dirname on PATH it still refuses and still passes the rest through"
+    r = Repo(base, "bare-path")
+    only = base / "only-git"
+    only.mkdir()
+    (only / "git").symlink_to(REAL_GIT)
+    (only / "bash").symlink_to(shutil.which("bash") or "/bin/bash")     # the shebang is `env bash`; tr and dirname are what is missing
+    r.path_env = dict(r.env, PATH=f"{SHIM_DIR}{os.pathsep}{only}")
+    for tool in ("tr", "dirname"):
+        check(label, shutil.which(tool, path=r.path_env["PATH"]) is None, f"{tool} is still on the test PATH")
+    refused(r, label, "reset", "--hard")
+    refused(r, label, "-c", "core.hooksPath=/dev/null", "status")
+    p = r.g("status", "--porcelain")
+    check(label, p.returncode == 0 and "a.txt" in p.stdout, f"status through the shim with a bare PATH: exit {p.returncode}: {p.stderr.strip()[:140]}")
 
 
 @case("shim: clean --force in every spelling is refused and the strays survive")
@@ -238,7 +310,8 @@ def _(base):
     r.real("add", "a.txt")
     for args in (("commit", "--no-verify", "-m", "x"), ("commit", "-n", "-m", "x"), ("commit", "--no-v", "-m", "x"), ("commit", "-nm", "x"),
                  ("commit", "-anm", "x"), ("commit", "-m", "x", "--no-verify"), ("push", "--no-verify", "origin", "main"),
-                 ("merge", "--no-verify", "other"), ("rebase", "--no-verify", "other")):
+                 ("merge", "--no-verify", "other"), ("rebase", "--no-verify", "other"), ("pull", "--no-verify"), ("am", "--no-verify", "x.patch"),
+                 ("cherry-pick", "--no-verify", "other"), ("revert", "--no-verify", "HEAD")):
         refused(r, label, *args, why="--no-verify")
 
 
@@ -258,6 +331,25 @@ def _(base):
     fixture_git.init(bare, "--bare")
     r.real("remote", "add", "origin", str(bare))
     runs(r, label, "push", "-n", "origin", "main")
+    r.write("a.txt", "four\n"); r.real("add", "a.txt")
+    runs(r, label, "commit", "-uno", "-m", "attached value")     # -u takes the attached mode `no`; it is not -n
+    check(label, r.real("log", "-1", "--format=%s").stdout.strip() == "attached value", "commit -uno was refused or not committed")
+    runs(r, label, "merge", "-n", "other")                        # merge -n is --no-stat
+
+
+@case("shim: git config of core.hooksPath or include.*, a GIT_CONFIG_* variable, and -c include.path are refused")
+def _(base):
+    label = "shim: git config of core.hooksPath or include.*, a GIT_CONFIG_* variable, and -c include.path are refused"
+    r = Repo(base, "cfg")
+    for args in (("config", "core.hooksPath", "/dev/null"), ("config", "--local", "core.hookspath", "x"), ("config", "--get", "core.hooksPath"),
+                 ("config", "include.path", "/tmp/x"), ("config", "includeIf.gitdir:/x/.path", "y"), ("-c", "include.path=/tmp/x", "status"),
+                 ("-c", "includeIf.gitdir:/x/.path=y", "status"), ("--config-env=include.path=X", "status")):
+        refused(r, label, *args, why="can switch the #1789 git hooks off")
+    for var in ("GIT_CONFIG_COUNT", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "GIT_CONFIG_PARAMETERS"):
+        p = r.g("status", env={var: "0"})
+        check(label, p.returncode != 0 and "GIT_CONFIG_" in p.stderr, f"{var} in the environment was not refused: exit {p.returncode}: {p.stderr.strip()[:120]}")
+    runs(r, label, "config", "user.name", "someone")
+    runs(r, label, "config", "--get", "user.name")
 
 
 @case("shim: -c core.hooksPath on the command line is refused")
@@ -267,7 +359,7 @@ def _(base):
     r.real("add", "a.txt")
     for args in (("-c", "core.hooksPath=/dev/null", "commit", "-m", "x"), ("-c", "core.hookspath=/dev/null", "status"),
                  ("--config-env=core.hooksPath=X", "status")):
-        refused(r, label, *args, why="switches the #1789 git hooks off")
+        refused(r, label, *args, why="switch the #1789 git hooks off")
     runs(r, label, "-c", "user.name=u", "-c", "user.email=u@u", "commit", "-m", "y")  # fixture-git: exempt (the shim under test finds the repository from its cwd; fixture_git's GIT_DIR binding would hide that)
 
 
@@ -281,11 +373,36 @@ def _(base):
     refused(r, label, "cleanall")
     r.real("config", "alias.st", "status --short")
     runs(r, label, "st")
-    for name, text in (("x", "!git reset --hard"), ("y", "!echo hi; git clean -fd"), ("z", "!cd . && /usr/bin/git add -A"), ("w", "!exec git checkout -f")):
+    r.real("config", "alias.hi", "!echo hi")
+    p = runs(r, label, "hi")
+    check(label, p.stdout.strip() == "hi", f"a shell alias that does not mention git should run: {p.stdout!r}")
+
+
+@case("shim: a shell alias that mentions git is refused, because the git it calls never reaches the shim")
+def _(base):
+    label = "shim: a shell alias that mentions git is refused, because the git it calls never reaches the shim"
+    r = Repo(base, "shellalias")
+    for name, text in (("x", "!git reset --hard"), ("y", "!echo hi; git clean -fd"), ("z", "!cd . && /usr/bin/git add -A"), ("w", "!exec git checkout -f"),
+                       ("v", "!sh -c 'g=gi; ${g}t reset --hard'"), ("u", "!GIT=1 Git reset --hard")):
         r.real("config", f"alias.{name}", text)
-        refused(r, label, name)
-    r.real("config", "alias.ok", "!git status --short && echo done")
-    runs(r, label, "ok")
+    for name in ("x", "y", "z", "w", "u"):
+        refused(r, label, name, why="mentions git")
+
+
+@case("shim: an alias with a quote in its value, or a chain deeper than 5, is refused")
+def _(base):
+    label = "shim: an alias with a quote in its value, or a chain deeper than 5, is refused"
+    r = Repo(base, "aliasdeep")
+    r.real("config", "alias.q", "log --format='%h'")
+    r.real("config", "alias.q2", 'log --format="%h"')
+    r.real("config", "alias.q3", "log --format=\\%h")
+    for name in ("q", "q2", "q3"):
+        refused(r, label, name, why="quote or a backslash")
+    for k in range(1, 8):
+        r.real("config", f"alias.c{k}", f"c{k + 1}")
+    r.real("config", "alias.c8", "status --short")
+    refused(r, label, "c1", why="deeper than 5")
+    runs(r, label, "c5")
 
 
 @case("shim: -C is honoured when it decides what the root is")
