@@ -605,6 +605,61 @@ def _check_base_commit(section: Section, findings: list[str],
                 f"them, because a moved branch is where a self-contained order stops being one.")
 
 
+# ---- the optional `## Progress` section (#1564) ----------------------------------------------------------------------------------
+# A work order is the contract; what a session leaves behind when it is CUT OFF (a spend limit, an expired login, a reboot) is the
+# state of the run, and the next session needs it to resume instead of starting over. Optional, so every order written before
+# this still validates; when present it is checked like the base commit is: present-but-unusable is not passable.
+PROGRESS_ALIASES = ("progress", "run state", "resume state")
+PROGRESS_STATUSES = ("not-started", "in-progress", "stopped", "done")
+PROGRESS_FIELDS = ("status", "last green", "current step", "next step", "pending gates")
+PROGRESS_LINE_RE = re.compile(r"^\s*(?:[-*]\s+)?[*_]*([A-Za-z][A-Za-z ]*?)[*_]*\s*:\s*[*_]*\s*(.*?)\s*$")
+
+
+def parse_progress(lines: list[str]) -> dict[str, str]:
+    """`Field: value` lines of a Progress section -> {lower-cased field: value without backticks}; the first occurrence of a field wins."""
+    out: dict[str, str] = {}
+    for line in lines:
+        m = PROGRESS_LINE_RE.match(line)
+        if not m:
+            continue
+        key = " ".join(m.group(1).lower().split())
+        if key in PROGRESS_FIELDS and key not in out:
+            out[key] = m.group(2).strip().strip("`").strip()
+    return out
+
+
+def progress_status(value: str) -> str:
+    return value.strip().strip("`*_ ").lower().replace(" ", "-").replace("_", "-")
+
+
+def _check_progress(section: Section, findings: list[str], resolve=None) -> None:
+    resolve = resolve or _resolve
+    fields = parse_progress(section.lines)
+    for name in PROGRESS_FIELDS:
+        if not fields.get(name):
+            findings.append(
+                f"`## progress` has no `{name.title()}:` value -- a resume reads these five lines first, and one missing is a guess."
+            )
+    status = progress_status(fields.get("status", ""))
+    if fields.get("status") and status not in PROGRESS_STATUSES:
+        findings.append(
+            f"`## progress` Status is {fields['status']!r}, not one of {', '.join(PROGRESS_STATUSES)} -- `resume_lanes.py` lists "
+            "every order that is not `done`, so a spelling it does not know is a lane that is never resumed."
+        )
+    green = fields.get("last green", "")
+    if green and green.lower() != "none":
+        shas = SHA_RE.findall(green.lower())
+        if not shas or not any(resolve(sha) for sha in shas):
+            findings.append(
+                f"`## progress` Last green is {green!r}, which is not `none` and not a commit in this repository. A plausible hex string "
+                "is worse than an absent one: the resume will start from it."
+            )
+    if status == "done" and fields.get("pending gates", "none").strip().lower() not in ("none", ""):
+        findings.append(
+            "`## progress` says Status: done but still lists Pending gates -- a finished order has none. Finish them or change the status."
+        )
+
+
 def check(sections: list[Section], criteria: Path | None = None,
           resolve=None, ahead=None) -> list[str]:
     findings: list[str] = []
@@ -631,6 +686,9 @@ def check(sections: list[Section], criteria: Path | None = None,
         _check_criteria(found["acceptance criteria"], criteria, tier, findings)
     if "base commit" in found:
         _check_base_commit(found["base commit"], findings, resolve, ahead)
+    progress = next((sec for sec in sections if sec.matches(PROGRESS_ALIASES)), None)
+    if progress is not None:
+        _check_progress(progress, findings, resolve)
 
     # ---- self-containment: the promise that makes the file worth writing --------------------
     for section in sections:

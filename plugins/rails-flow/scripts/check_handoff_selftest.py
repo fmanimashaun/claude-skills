@@ -285,6 +285,30 @@ def run() -> int:  # noqa: PLR0915 -- a flat list of fixtures reads better than 
             contains=f"no `## {label}` section",
         )
 
+    # ---- #1564: the optional `## Progress` section -----------------------------------------------------------------
+    good_progress = (f"## Progress\nStatus: in-progress\nLast green: `{_HEAD}`\nCurrent step: AC-2, the 422 path\n"
+                     "Next step: run the full suite\nPending gates: code-reviewer, test-runner\n")
+    expect_clean("an order with no Progress section still validates (it is optional)", GOOD)
+    expect_clean("a complete Progress section", GOOD + "\n" + good_progress)
+    expect_clean("Last green: none is allowed (nothing has passed yet)",
+                 GOOD + "\n" + good_progress.replace(f"`{_HEAD}`", "none"))
+    expect_clean("a DONE order with no pending gates",
+                 GOOD + "\n" + good_progress.replace("in-progress", "done").replace("code-reviewer, test-runner", "none"))
+    expect_findings("a Progress section with no Status", GOOD + "\n" + good_progress.replace("Status: in-progress\n", ""),
+                    contains="no `Status:` value")
+    expect_findings("a Progress section with no Next step", GOOD + "\n" + good_progress.replace("Next step: run the full suite\n", ""),
+                    contains="no `Next Step:` value")
+    expect_findings("a Status this tool does not list", GOOD + "\n" + good_progress.replace("in-progress", "wip"),
+                    contains="not one of")
+    expect_findings("a Last green that is not a commit here", GOOD + "\n" + good_progress.replace(_HEAD, "deadbeef"),
+                    contains="not a commit in this repository")
+    expect_findings("a Last green with no hex at all", GOOD + "\n" + good_progress.replace(f"`{_HEAD}`", "the green one"),
+                    contains="not a commit in this repository")
+    expect_findings("DONE while gates are still pending", GOOD + "\n" + good_progress.replace("in-progress", "done"),
+                    contains="still lists Pending gates")
+    expect_findings("a progress section with a placeholder is still caught by the self-containment rule",
+                    GOOD + "\n" + good_progress.replace("run the full suite", "TBD"), contains="TBD")
+
     # ---- #659: the base commit must be a commit THIS repository has ----------------------
     # PRESENT-BUT-UNUSABLE IS NOT PASSABLE. A plausible hex string tells an executor where to start
     # and is worse than an absent one, because it will be trusted -- the rule this file already
