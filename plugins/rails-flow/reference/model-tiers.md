@@ -115,11 +115,24 @@ not a nicety — and why the mechanical column below has to name the proof for e
 | `test-runner` | mechanical | `haiku` | `bundle exec rspec` exit status — 0 failures or the gate blocks |
 | `design-auditor` | mechanical | `haiku` | the mandated greps must come back empty (`form_with`, `f.label`) |
 | `doc-updater` | mechanical | `haiku` | `architecture_graph.py` regenerates and its digest guard fails on drift |
+| `adversary` | adversarial | `fable` | — |
 <!-- rails-flow:tiers:end -->
 
 The markers are load-bearing: `check_handoff.py --agents <dir> --tiers <this file>` parses **that**
 table and fails when an agent's frontmatter disagrees with it, so this document cannot quietly
 become folklore again. A stale row naming an agent that no longer exists fails too.
+
+**`adversary` is the one deliberate pin up, and it is `fable` (#1819).** Everything above says a shipped agent must not pin a more
+expensive model than the user chose, because a pin spends their money on our authority. The owner's rule of 2026-10-08 (on #1702)
+is the exception: *Fable is the model for adversarial attack passes, the ones that try to break a change*, and ordinary reviews stay
+on the default. So the table has a third tier, `adversarial`, and `check_handoff.py --tiers` accepts it for exactly the agents in
+its `PINNED_UP` list (today `adversary`), pinned to exactly the model named there; any other agent claiming it, and any other pin
+of `fable` or `opus`, is still refused. The reasons it is safe enough to be the exception: the agent runs only on a **risky**
+diff (`risky_diff.py` decides, #1819), once per PR head, not on every review; and `fable` is a documented subagent alias
+(https://code.claude.com/docs/en/sub-agents, "Choose a model"). What is **not claimed**: what happens for a user whose plan or
+organization cannot use Fable beyond what fact 4 records for a blocked family alias (newest permitted version of that family on
+the Anthropic API and Claude Platform on AWS, the inherited model elsewhere). The agent is read-only and a `VERDICT: BLOCKED`
+from it is a finding for a human, never an automatic stop.
 
 **`claim-verifier` is `inherit`, and that deserves a sentence because it looks wrong.** Its whole
 value is being a *different* model from the one that wrote the change — a second opinion that shares

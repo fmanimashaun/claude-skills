@@ -199,6 +199,12 @@ TIERS_END = "<!-- rails-flow:tiers:end -->"
 TIERS_BEGIN_RE = re.compile(r"<!--\s*([a-z0-9-]+):tiers:begin\s*-->")
 TIERS_END_RE = re.compile(r"<!--\s*([a-z0-9-]+):tiers:end\s*-->")
 TIER_MODELS: dict[str, str] = {"judgement": "inherit", "mechanical": "haiku"}
+# THE ONE DELIBERATE EXCEPTION to "never pin up on the user's behalf" (#1819, the owner's rule of 2026-10-08 on #1702: Fable is
+# the model for adversarial ATTACK passes). It is a named list, not a third tier word that any agent may claim: an agent is
+# `adversarial` only if it is a key here, and its `model:` must be exactly the value here. Work orders stay two-valued
+# (TIER_MODELS); this is a table-row tier and nothing else.
+ADVERSARIAL_TIER = "adversarial"
+PINNED_UP: dict[str, str] = {"adversary": "fable"}
 # Aliases that select a MORE expensive model than the session already chose. Shipping one spends a
 # stranger's money on our authority. Where their availableModels allowlist blocks it, a family alias
 # (`opus`, `sonnet`, `haiku`, `fable`) runs on the newest version of that family the allowlist permits,
@@ -773,11 +779,25 @@ def check_tiers(rows: list[TierRow], agents: dict[str, tuple[Path, str | None]] 
             )
         seen[row.agent] = row.line
 
+        if row.tier == ADVERSARIAL_TIER:
+            pinned = PINNED_UP.get(row.agent)
+            if pinned is None:
+                findings.append(
+                    f"tier table line {row.line}: `{row.agent}` claims the `{ADVERSARIAL_TIER}` tier, which is the owner's "
+                    f"named exception for {', '.join(f'`{a}`' for a in sorted(PINNED_UP))} only (#1819) -- any other pin up "
+                    "spends a stranger's money on our authority. Use `judgement` and `inherit`."
+                )
+            elif row.model != pinned:
+                findings.append(
+                    f"tier table line {row.line}: `{row.agent}` is `{ADVERSARIAL_TIER}` but pins `{row.model}` instead of "
+                    f"`{pinned}` -- the exception exists to run attack passes on exactly that model."
+                )
+            continue
         if row.tier not in TIER_MODELS:
             findings.append(
                 f"tier table line {row.line}: `{row.agent}` has tier {row.tier!r}, not one of "
-                f"{', '.join(sorted(TIER_MODELS))} -- the two values are the two the mechanism can "
-                "defend; a third tier needs its own doctrine, not a new word."
+                f"{', '.join(sorted(TIER_MODELS))} or the named `{ADVERSARIAL_TIER}` exception -- the values are the ones "
+                "the mechanism can defend; another tier needs its own doctrine, not a new word."
             )
             continue
         want = TIER_MODELS[row.tier]
