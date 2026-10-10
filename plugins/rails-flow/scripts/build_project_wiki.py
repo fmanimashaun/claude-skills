@@ -9,7 +9,7 @@ asserted against the source's own total, and every page names the commit its inp
   page                  source
   Architecture.md       docs/architecture/graph.json   (from /rails-flow:graph -- the structured parse of the app)
   Routes.md             graph.json route nodes + its `notes` (which say what the static parser could not model)
-  Data-Model.md         db/schema.rb + graph.json association edges
+  Data-Model.md         db/schema.rb (and every other project-owned db/*_schema.rb) + graph.json association edges
   Jobs-And-Queues.md    graph.json job nodes + config/queue.yml + config/recurring.yml
   Components.md         graph.json component / stimulus / turbo nodes
   Dependencies.md       Gemfile.lock + package.json
@@ -168,6 +168,63 @@ def parse_package_json(text: str) -> list[tuple[str, str]]:
 
 # ----------------------------------------------------------------------------- the model
 
+# ----------------------------------------------------------------------------- the schema files a project has (#1698, #1695)
+# A project with a second database dumps its schema to another file (`schema_dump: observability_schema.rb` -> db/observability_schema.rb), and the Rails 8
+# Solid trio (db/cache_schema.rb, db/queue_schema.rb, db/cable_schema.rb) is framework-owned. THIS is where "which schema files are the project's" is decided,
+# once: the Data-Model page reads it, `check_privacy_inventory.py` imports it, and `architecture_graph.py`, which is vendored ALONE and cannot import it,
+# carries a verbatim copy that `lint_self_consistency.py`'s `schema-reader-drift` rule keeps equal to this one.
+SCHEMA_RB = "db/schema.rb"
+# The Solid trio: only a file that holds nothing but `solid_*` tables is the framework's (decided in #1695); a cache_schema.rb with a table of the project's own is the project's.
+FRAMEWORK_SCHEMAS = frozenset({"cache_schema.rb", "queue_schema.rb", "cable_schema.rb"})
+
+
+def _solid_only(path: Path) -> bool:
+    """True when a framework-named schema file holds nothing but Solid tables: only then is it the framework's, not the project's."""
+    return all(table.startswith("solid_") for table in parse_schema(path.read_text(encoding="utf-8"))["tables"])
+
+
+def schema_files(root: Path) -> list[Path]:
+    """db/schema.rb first, then every other db/*_schema.rb a second database dumps, in name order."""
+    return [root / SCHEMA_RB, *sorted((root / "db").glob("*_schema.rb"))]
+
+
+def framework_owned(path: Path) -> bool:
+    """A Solid trio file holding only `solid_*` tables. A cache_schema.rb with a table of the project's own is the project's: the
+    name alone decides nothing."""
+    return path.name in FRAMEWORK_SCHEMAS and _solid_only(path)
+
+
+def app_schema_files(root: Path) -> list[Path]:
+    """The schema files that exist and are the PROJECT's: what the Data-Model page and the graph describe."""
+    return [p for p in schema_files(root) if p.is_file() and not framework_owned(p)]
+
+
+def load_schemas(root: Path) -> dict | None:
+    """`parse_schema`'s shape for every schema file the project owns, merged: db/schema.rb's version, every table (first file wins a name, and a
+    repeat is recorded in `duplicates`, as the privacy gate refuses one), every foreign key, and the file each table is in. None without db/schema.rb."""
+    if not (root / SCHEMA_RB).is_file():
+        return None
+    merged: dict | None = None
+    for path in app_schema_files(root):
+        rel = path.relative_to(root).as_posix()
+        one = parse_schema(path.read_text(encoding="utf-8"))
+        for spec in one["tables"].values():
+            spec["file"] = rel
+        if merged is None:
+            merged = {**one, "files": [rel], "duplicates": []}
+            continue
+        merged["files"].append(rel)
+        merged["declared_tables"] += one["declared_tables"]
+        merged["foreign_keys"] += one["foreign_keys"]
+        merged["unparsed_indexes"] = list(merged.get("unparsed_indexes", [])) + list(one.get("unparsed_indexes", []))
+        for name, spec in one["tables"].items():
+            if name in merged["tables"]:
+                merged["duplicates"].append((name, merged["tables"][name]["file"], rel))
+            else:
+                merged["tables"][name] = spec
+    return merged
+
+
 def build_model(root: Path) -> dict:
     g = load_graph(root)
     if g is None:
@@ -176,8 +233,7 @@ def build_model(root: Path) -> dict:
     by_type: dict[str, list[dict]] = {}
     for n in nodes:
         by_type.setdefault(n.get("type", "?"), []).append(n)
-    schema_p = root / "db" / "schema.rb"
-    schema = parse_schema(schema_p.read_text(encoding="utf-8")) if schema_p.is_file() else None
+    schema = load_schemas(root)
     q = root / "config" / "queue.yml"; r = root / "config" / "recurring.yml"
     queue_text = q.read_text(encoding="utf-8") if q.is_file() else None
     recurring = parse_yaml_subset(r.read_text(encoding="utf-8")) if r.is_file() else None
@@ -242,8 +298,12 @@ def page_data_model(m: dict) -> str:
     if s is None:
         return _banner(m, "db/schema.rb") + "# Data model\n\n_no `db/schema.rb` in this project_\n"
     assoc = [e for e in m["edges"] if e.get("kind") in ("belongs_to", "has_many", "has_one", "has_and_belongs_to_many")]
-    out = [_banner(m, "db/schema.rb", "docs/architecture/graph.json (association edges)"), "# Data model\n",
+    files = s.get("files") or ["db/schema.rb"]
+    out = [_banner(m, *files, "docs/architecture/graph.json (association edges)"), "# Data model\n",
            f"**{len(s['tables'])} tables** (schema version `{s['version']}`), **{len(s['foreign_keys'])} foreign keys**, **{len(assoc)} associations** declared in models.\n"]
+    if len(files) > 1:
+        # A SECOND DATABASE'S TABLES ARE THE PROJECT'S TOO (#1698): each is listed under its own name, with the schema file it is in.
+        out.append("Tables come from " + ", ".join(f"`{f}`" for f in files) + ", one schema file per database.\n")
     # THE PARSER SAYS WHAT IT COULD NOT READ (#1157). Before this, an index form the parser did not
     # model was skipped and the page rendered the rest, reading as a complete list -- so a dropped
     # unique index looked like a dropped constraint. A page that admits a gap is usable; a page that
@@ -251,11 +311,13 @@ def page_data_model(m: dict) -> str:
     if s.get("unparsed_indexes"):
         out.append("> **This generator could not classify "
                    f"{len(s['unparsed_indexes'])} `t.index` line(s)**, so they are absent from the "
-                   "index lists below. They are in `db/schema.rb` and are real; this page is "
+                   "index lists below. They are in " + " and ".join(f"`{f}`" for f in files) + " and are real; this page is "
                    "incomplete, not the database:\n>\n"
                    + "\n".join(f"> - `{line}`" for line in s["unparsed_indexes"]) + "\n")
     for name, t in sorted(s["tables"].items()):
         out.append(f"## `{name}`\n")
+        if t.get("file", "db/schema.rb") != "db/schema.rb":
+            out.append(f"_database: `{t['file']}`_\n")
         out.append(_table(["column", "type", "options"], [[c, ty, o] for c, ty, o in t["columns"]]))
         if t["indexes"]:
             out.append("Indexes: " + "; ".join(f"`{'+'.join(cols)}`{' (unique)' if u else ''}" for cols, _, u in t["indexes"]) + "\n")
@@ -329,8 +391,11 @@ def assert_totals(m: dict, pages: dict[str, str]) -> list[str]:
     """Every count a page states must equal its source's own total (derived-artifacts rule 2)."""
     problems = []
     s = m["schema"]
-    if s is not None and s["declared_tables"] != len(s["tables"]):
-        problems.append(f"Data-Model: schema.rb declares {s['declared_tables']} create_table but {len(s['tables'])} parsed -- the parser missed a shape")
+    repeats = len(s.get("duplicates", ())) if s is not None else 0
+    if s is not None and s["declared_tables"] != len(s["tables"]) + repeats:
+        problems.append(f"Data-Model: schema.rb declares {s['declared_tables']} create_table but {len(s['tables']) + repeats} parsed -- the parser missed a shape")
+    for name, first, again in (s.get("duplicates", ()) if s is not None else ()):
+        problems.append(f"Data-Model: table `{name}` is in {first} and in {again}; the page is keyed by table name, so rename one or list it once (#1698)")
     if f"**{len(m['nodes'])} nodes" not in pages["Architecture.md"]:
         problems.append("Architecture: the node count on the page is not the graph's")
     if f"**{len(m['by_type'].get('route', []))} routes**" not in pages["Routes.md"]:
@@ -428,8 +493,10 @@ def drift_is_advisory(root) -> str | None:
 def dirty_sources(root: Path) -> list[str]:
     """The SOURCES that differ from HEAD in `root`, or [] outside a git repository."""
     import subprocess
+    # `db/schema.rb` stands for every schema file the page reads (#1698): a second database's dump is a source too
+    extra = [p.relative_to(root).as_posix() for p in app_schema_files(root) if p.relative_to(root).as_posix() != SCHEMA_RB]
     try:
-        done = subprocess.run(["git", "-C", str(root), "status", "--porcelain", "--", *SOURCES],
+        done = subprocess.run(["git", "-C", str(root), "status", "--porcelain", "--", *SOURCES, *extra],
                               capture_output=True, text=True, timeout=30)
     except (OSError, subprocess.SubprocessError):
         return []
@@ -609,6 +676,10 @@ def selftest() -> int:
               out.getvalue())
         check("dirty_sources names exactly the dirty source", dirty_sources(root) == ["db/schema.rb"], str(dirty_sources(root)))
         schema_path.write_text(original, encoding="utf-8")
+        # #1698: a second database's dump is a source of the page too, so a local `db:migrate` that rewrites it is named, not mistaken for drift
+        (root / "db" / "observability_schema.rb").write_text('ActiveRecord::Schema[8.1].define(version: 1) do\n  create_table "error_groups", force: :cascade do |t|\n    t.string "k"\n  end\nend\n', encoding="utf-8")
+        check("dirty_sources names a second database's schema file", dirty_sources(root) == ["db/observability_schema.rb"], str(dirty_sources(root)))
+        (root / "db" / "observability_schema.rb").unlink()
         import shutil as _sh
         _sh.rmtree(root / ".git")
         main(["--root", str(root)])
@@ -655,6 +726,40 @@ def selftest() -> int:
 
     for f in failures:
         print(f"FAIL {f}")
+
+    # ---- #1698: A SECOND DATABASE'S TABLES ARE ON THE DATA-MODEL PAGE --------------------------------------------------------------------
+    def one_table(table: str, version: int = 1) -> str:
+        return (f'ActiveRecord::Schema[8.1].define(version: {version}) do\n  create_table "{table}", force: :cascade do |t|\n    t.string "k"\n'
+                f'    t.index ["k"], name: "index_{table}_on_k", unique: true\n  end\nend\n')
+    with tempfile.TemporaryDirectory() as td:
+        base_root = Path(td) / "base"; base_root.mkdir(); make(base_root)
+        base_page = render_all(build_model(base_root))["Data-Model.md"]
+        single = Path(td) / "single"; single.mkdir(); make(single)
+        for name, table in (("cache_schema.rb", "solid_cache_entries"), ("queue_schema.rb", "solid_queue_jobs"), ("cable_schema.rb", "solid_cable_messages")):
+            (single / "db" / name).write_text(one_table(table), encoding="utf-8")
+        check("#1698 the Solid trio, holding only solid_* tables, is the framework's and is NOT on the page: the page is byte for byte the single-database page",
+              render_all(build_model(single))["Data-Model.md"] == base_page)
+        check("#1698 a single database's page says nothing about schema files (no `Tables come from` line)", "Tables come from" not in base_page)
+        second = Path(td) / "second"; second.mkdir(); make(second)
+        (second / "db" / "observability_schema.rb").write_text(one_table("error_groups", 2026_10_01), encoding="utf-8")
+        m2 = build_model(second); page2 = render_all(m2)["Data-Model.md"]
+        check("#1698 a second database's table is on the Data-Model page, with the schema file it is in",
+              "## `error_groups`\n\n_database: `db/observability_schema.rb`_" in page2, page2[:600])
+        check("#1698 ...the count includes it (3 tables become 4) and the page names both schema files",
+              "**4 tables**" in page2 and "Tables come from `db/schema.rb`, `db/observability_schema.rb`" in page2, page2[:400])
+        check("#1698 ...the banner names every schema file it is built from", "from db/schema.rb + db/observability_schema.rb + docs/architecture/graph.json" in page2, page2[:300])
+        check("#1698 ...the primary database's tables are not marked with a database", "## `invoices`\n\n_database" not in page2)
+        check("#1698 ...and the totals agree: nothing declared and not parsed", assert_totals(m2, render_all(m2)) == [], str(assert_totals(m2, render_all(m2))))
+        project_cache = Path(td) / "projectcache"; project_cache.mkdir(); make(project_cache)
+        (project_cache / "db" / "cache_schema.rb").write_text(one_table("cache_notes"), encoding="utf-8")
+        check("#1698 a cache_schema.rb holding a table of the PROJECT's own is the project's, and is on the page (the name alone decides nothing)",
+              "## `cache_notes`" in render_all(build_model(project_cache))["Data-Model.md"])
+        dup = Path(td) / "dup"; dup.mkdir(); make(dup)
+        (dup / "db" / "observability_schema.rb").write_text(one_table("invoices"), encoding="utf-8")
+        m3 = build_model(dup)
+        check("#1698 a table name in two schema files is a problem, never silently one of them (the page is keyed by table name)",
+              any("`invoices` is in db/schema.rb and in db/observability_schema.rb" in x for x in assert_totals(m3, render_all(m3))), str(assert_totals(m3, render_all(m3))))
+        check("#1698 ...and the page lists it once", render_all(m3)["Data-Model.md"].count("## `invoices`") == 1)
     print(f"build_project_wiki selftest: {n} checks, {len(failures)} failure(s)")
     return 1 if failures else 0
 
