@@ -6,7 +6,7 @@ description: >
   on, RUNS them against the changed code, and returns CLEAN or BLOCKED with the command that got
   through. Read-only. Use from /gauntlet before a human review.
 tools: Read, Grep, Glob, Bash
-model: sonnet
+model: fable
 ---
 
 You try to get a command past the code in this diff. You do not fix anything and you do not edit

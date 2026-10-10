@@ -1,5 +1,5 @@
 ---
-description: Regenerate the living architecture graph — docs/architecture/{graph.json,index.html,graph.md} — from routes, app/** and db/schema.rb. Also runs the drift check and the release-notes delta.
+description: Regenerate the living architecture graph — docs/architecture/{graph.json,index.html,graph.md} — from routes, app/** and db/schema.rb (and every other project-owned db/*_schema.rb a second database dumps). Also runs the drift check and the release-notes delta.
 argument-hint: "[blank to regenerate | check | delta <ref>]"
 ---
 

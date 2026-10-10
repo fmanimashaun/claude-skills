@@ -600,7 +600,7 @@ now runs this on an interval; pair with `--expires` for bounded sessions.
 ## 6b. Architecture graph (`docs/architecture/`)
 
 Tell the user about `/rails-flow:graph`: it extracts `{nodes, edges, flows}` from
-`config/routes.rb`, `app/**` and `db/schema.rb` into `docs/architecture/graph.json`, a
+`config/routes.rb`, `app/**` and `db/schema.rb` (and every other project-owned `db/*_schema.rb`) into `docs/architecture/graph.json`, a
 self-contained `index.html` (inline CSS/JS, zero external requests — opens from disk
 offline) and a mermaid `graph.md` for GitHub. One artefact, three consumers: humans get a
 picture, agents get structural context without reading the whole codebase, and qa-flow gets
@@ -614,7 +614,7 @@ fails when the code moves and the graph does not.
 ## 6c. The project wiki (`docs/wiki/`) — generated reference, rebuilt at ship (#887)
 
 A hand-written reference is a transcription, and transcriptions rot. The reference pages are a join
-over structured sources — the architecture graph, `db/schema.rb`, `config/queue.yml`,
+over structured sources — the architecture graph, `db/schema.rb` (and every other project-owned `db/*_schema.rb`), `config/queue.yml`,
 `config/recurring.yml`, `Gemfile.lock`, `package.json` — so they cannot drift silently: every count on
 a page is asserted against its source's total, every page names the graph's commit, and `--check`
 fails the `project-wiki-drift` check when a source moved and the pages did not.

@@ -45,13 +45,14 @@ Commands are namespaced by plugin: `/rails-flow:feature`, `/qa-flow:verify`.
 **Setup** — scaffold the flow into a project
 
 - `/rails-flow:explain` — Explain the built system back to its human owner — plain-language docs/GUIDE.md with mermaid diagrams, section-scoped and idempotent.
-- `/rails-flow:graph` — Regenerate the living architecture graph — docs/architecture/{graph.json,index.html,graph.md} — from routes, app/** and db/schema.rb.
+- `/rails-flow:graph` — Regenerate the living architecture graph — docs/architecture/{graph.json,index.html,graph.md} — from routes, app/** and db/schema.rb (and every other project-owned db/*_schema.rb a second database dumps).
 - `/rails-flow:setup-flow` — Scaffold, update, or repair the rails-flow conventions in this project — CLAUDE.md, GUARDRAILS.md, docs/brain.
 
 
 **Ungrouped** — shipped but not yet placed in a group above
 
 - `/rails-flow:coordinate` — Cross-session coordination computed from the repository — who is idle with finished work, which announced paths collide, which conflicts are generated and which are the author's judgement.
+- `/rails-flow:retro` — Count the review findings that recur across PRs and propose a check or a doctrine line for each.
 - `/rails-flow:slice` — Break a spec, a brief or an issue into dependency-ordered vertical slices.
 - `/rails-flow:spec` — Turn an idea or a brief into a technical spec before anything is built.
 - `/rails-flow:toolchain-audit` — Audit an existing project's whole claude-skills setup — update the toolchain, verify the scaffolding, run every check that applies, and report in three states.
@@ -159,4 +160,4 @@ Commands are namespaced by plugin: `/rails-flow:feature`, `/qa-flow:verify`.
 
 ---
 
-**52 commands** across 4 plugins.
+**53 commands** across 4 plugins.

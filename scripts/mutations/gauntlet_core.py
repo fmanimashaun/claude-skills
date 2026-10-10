@@ -68,5 +68,19 @@ GUARD = Guard(
             "    return True",
             "instructions, reverted to the prose step, no longer do",
         ),
+        Mutation(
+            # #1702: the adversaries run on Fable. A reader that always answers the adversary model passes any agent.
+            "an agent's model pin is never read",
+            "            return line.split(\":\", 1)[1].strip().strip(\"\\\"'\") or None",
+            "            return ADVERSARY_MODEL",
+            "a frontmatter `model: sonnet` is not the adversary model",
+        ),
+        Mutation(
+            # A body line that mentions `model: fable` must not satisfy the pin: the frontmatter ends at its second `---`.
+            "the frontmatter never ends, so a body line counts",
+            "        if line.strip() == \"---\":\n            return None\n",
+            "",
+            "`model: fable` after the frontmatter does not count",
+        ),
     ),
 )
