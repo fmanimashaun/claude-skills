@@ -33,7 +33,7 @@ GUARD = Guard(
         ),
         Mutation(
             "a table the parser missed is accepted, so the Data-Model page is quietly shorter than the schema",
-            '    if s is not None and s["declared_tables"] != len(s["tables"]):',
+            '    if s is not None and s["declared_tables"] != len(s["tables"]) + repeats:',
             '    if False:',
             "a table the parser missed is a PROBLEM",
         ),
@@ -143,6 +143,43 @@ GUARD = Guard(
             '"implicit_id": not re.search(r"\\bid:\\s*false\\b", opts) and',
             '"implicit_id":',
             "schema.rb: a table has an implicit id unless `id: false` or another primary key is named",
+        ),
+        # #1698: which schema files the Data-Model page reads. The rule is decided here once; check_privacy_inventory.py imports it.
+        Mutation(
+            'a second db/*_schema.rb is never read',
+            '    return [root / SCHEMA_RB, *sorted((root / "db").glob("*_schema.rb"))]',
+            '    return [root / SCHEMA_RB]',
+            "#1698 a second database's table is on the Data-Model page, with the schema file it is in",
+        ),
+        Mutation(
+            'the Solid trio is read as well',
+            '    return path.name in FRAMEWORK_SCHEMAS and _solid_only(path)',
+            '    return False',
+            "#1698 the Solid trio, holding only solid_* tables, is the framework's and is NOT on the page",
+        ),
+        Mutation(
+            'a trio-named file is skipped by its name alone',
+            '    return path.name in FRAMEWORK_SCHEMAS and _solid_only(path)',
+            '    return path.name in FRAMEWORK_SCHEMAS',
+            "#1698 a cache_schema.rb holding a table of the PROJECT's own is the project's",
+        ),
+        Mutation(
+            'a table in two schema files is picked silently',
+            '            if name in merged["tables"]:',
+            '            if False:',
+            '#1698 a table name in two schema files is a problem, never silently one of them',
+        ),
+        Mutation(
+            "dirty_sources ignores a second database's dump",
+            '    extra = [p.relative_to(root).as_posix() for p in app_schema_files(root) if p.relative_to(root).as_posix() != SCHEMA_RB]',
+            '    extra = []',
+            "dirty_sources names a second database's schema file",
+        ),
+        Mutation(
+            'the Solid prefix loses its underscore',
+            '    return all(table.startswith("solid_") for table in parse_schema(path.read_text(encoding="utf-8"))["tables"])',
+            '    return all(table.startswith("solid") for table in parse_schema(path.read_text(encoding="utf-8"))["tables"])',
+            "#1698 a project table that merely BEGINS `solid` (solidarity_votes) keeps its cache_schema.rb the project's",
         ),
     ),
 )

@@ -28,7 +28,9 @@ earned, so report `nothing to attack`, not CLEAN.
    base is `$ARGUMENTS`, else `origin/dev`; `git fetch origin dev` first.
 2. List the diff with `git diff --name-only <base>...HEAD` and pick the agents from the table.
 3. **Launch the chosen agents in one message so they run in parallel.** Give each the base ref and
-   nothing else; they read the diff themselves.
+   nothing else; they read the diff themselves. **Pass no `model`:** each agent pins its own (`shell-adversary` on
+   `fable`, the owner's rule for adversarial attack passes, #1702; `mutation-verifier` on `haiku`, being
+   mechanical), and a per-invocation `model` overrides the agent's own (https://code.claude.com/docs/en/sub-agents, "Choose a model").
 4. Collect the verdicts. Print one line per agent: its name, CLEAN or BLOCKED, and its finding count.
 5. For every BLOCKED agent: fix each finding in the code, **add the regression fixture the finding
    implies**, and re-run only the agents that blocked. Stage what you authored by name, never
