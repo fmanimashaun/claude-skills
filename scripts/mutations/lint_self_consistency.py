@@ -1379,5 +1379,36 @@ GUARD = Guard(
             '''                               r"""|GIT_NEVER_MATCHES"""''',
             'fixture-git-bypass: a GIT_AUTHOR_EMAIL env entry outside fixture_git is a finding',
         ),
+        # #1700. A path the plugin prescribes that its own docs-layout gate fails.
+        Mutation(
+            "a docs/<dir>/ outside LAYOUT stops being a finding",
+            "                if directory not in allowed and directory not in OWN_REPO_DOCS:",
+            "                if False:",
+            "a command that writes docs/handoff/<slug>.md, a directory the layout lacks",
+        ),
+        Mutation(
+            "a line that names the path as pre-layout is flagged too",
+            '            if "pre-layout" in line:',
+            "            if False:",
+            "a line that says pre-layout is a fallback, not a prescription, and silent",
+        ),
+        Mutation(
+            "a pointer to this repository's own doctrine docs is flagged",
+            'OWN_REPO_DOCS = {"doctrine"}',
+            "OWN_REPO_DOCS = set()",
+            "a pointer to this repository's own docs/doctrine/ is silent",
+        ),
+        Mutation(
+            "selftests and fixtures are scanned too",
+            '                 if not p.name.endswith("_selftest.py")',
+            "                 if True",
+            "a selftest, docs_layout.py's own tables and another plugin's docs are out of scope, and silent",
+        ),
+        Mutation(
+            "a LAYOUT nobody can read stops being a finding",
+            "    if not allowed:",
+            "    if False:",
+            "a LAYOUT that is not a literal dict is itself a finding",
+        ),
     ),
 )
