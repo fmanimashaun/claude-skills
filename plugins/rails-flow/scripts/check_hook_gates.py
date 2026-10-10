@@ -3718,7 +3718,8 @@ def release_gate_repos_fixtures() -> None:
         # (#1686) The verdict file is read, never trusted blindly: each of these writes a verdict that is wrong in ONE way, over a good one,
         # and the hook must refuse by naming that way. THREAT MODEL, as the hook states it: an accident, not a session that writes a PASS file.
         vfile = Path(td) / "plugin-data" / "remote-verdicts" / f"other__fork@{sha_good}.json"
-        good = json.loads(vfile.read_text())
+        good = json.loads(vfile.read_text()) if vfile.exists() else {}      # absent while the group is only SURVEYED under stubs (--match)
+        vfile.parent.mkdir(parents=True, exist_ok=True)
         other = "b" * 40
         for label, change, kind in (
             ("another commit's", {"sha": other}, "mismatch"),
@@ -3738,7 +3739,7 @@ def release_gate_repos_fixtures() -> None:
             rc, err = foreign(sha_good, s2, ev_files, _record=False)
             check(f"release-gate (#1686): a verdict file that is {label} denies as `unparsable`",
                   rc == 2 and "no usable verdict: unparsable:" in err, f"rc={rc} {err[:300]!r}")
-        vfile.unlink()
+        vfile.unlink(missing_ok=True)
         rc, err = foreign(sha_good, s2, ev_files, _record=False)
         check("release-gate (#1686): no verdict at all denies as `missing`, naming the command",
               rc == 2 and "no usable verdict: missing:" in err and "--record" in err, f"rc={rc} {err[:300]!r}")
