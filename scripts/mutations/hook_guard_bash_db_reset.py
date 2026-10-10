@@ -147,10 +147,22 @@ GUARD = Guard(
             '<!-- note -->\\n- test-db-seeded: yes',
         ),
         Mutation(
-            'the db:reset rule ignores a bundle exec prefix, so bundle exec rails db:reset is never refused',
-            "if hit '^(bundle[[:space:]]+exec[[:space:]]+)?(bin/)?(rails|rake)([[:space:]]+[^[:space:]]+)*[[:space:]]+db:reset\\b'; then",
-            "if hit '^(bin/)?(rails|rake)([[:space:]]+[^[:space:]]+)*[[:space:]]+db:reset\\b'; then",
+            'the db:reset rule ignores every runner prefix, so bundle exec rails db:reset is never refused',
+            "if hit '^((bundle[[:space:]]+exec|ruby|spring|bin/spring)[[:space:]]+)?(bin/)?(rails|rake)([[:space:]]+[^[:space:]]+)*[[:space:]]+(app:)?db:reset\\b'; then",
+            "if hit '^(bin/)?(rails|rake)([[:space:]]+[^[:space:]]+)*[[:space:]]+(app:)?db:reset\\b'; then",
             'still refused `bundle exec rails db:reset`',
+        ),
+        Mutation(
+            'the ruby, spring and bin/spring runners are dropped from the db:reset rule, so ruby bin/rails db:reset is never refused',
+            "if hit '^((bundle[[:space:]]+exec|ruby|spring|bin/spring)[[:space:]]+)?(bin/)?(rails|rake)([[:space:]]+[^[:space:]]+)*[[:space:]]+(app:)?db:reset\\b'; then",
+            "if hit '^((bundle[[:space:]]+exec)[[:space:]]+)?(bin/)?(rails|rake)([[:space:]]+[^[:space:]]+)*[[:space:]]+(app:)?db:reset\\b'; then",
+            'still refused `ruby bin/rails db:reset`',
+        ),
+        Mutation(
+            'the app: namespace is dropped from the db:reset rule, so bin/rails app:db:reset is never refused',
+            "if hit '^((bundle[[:space:]]+exec|ruby|spring|bin/spring)[[:space:]]+)?(bin/)?(rails|rake)([[:space:]]+[^[:space:]]+)*[[:space:]]+(app:)?db:reset\\b'; then",
+            "if hit '^((bundle[[:space:]]+exec|ruby|spring|bin/spring)[[:space:]]+)?(bin/)?(rails|rake)([[:space:]]+[^[:space:]]+)*[[:space:]]+db:reset\\b'; then",
+            'still refused `bin/rails app:db:reset`',
         ),
     ),
 )
