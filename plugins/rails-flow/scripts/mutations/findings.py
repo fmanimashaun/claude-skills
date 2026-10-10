@@ -27,5 +27,11 @@ GUARD = Guard(
             "                if False:",
             "a list inside blocks is UNUSABLE (2) for validate, not a TypeError",
         ),
+        Mutation(
+            "a `blocks` that is not a list is let through, so `order` reads an object's keys as edges and exits 0",
+            '        if "blocks" in record and not isinstance(record["blocks"], list):',
+            "        if False:",
+            "a blocks that is an object is UNUSABLE (2) for order, not a TypeError",
+        ),
     ),
 )

@@ -94,6 +94,9 @@ def load(path: Path) -> list[dict]:
         for field in ("id", "caused_by", "duplicate_of"):
             if isinstance(record.get(field), (list, dict)):
                 raise Unusable(f"{path}:{number}: `{field}` must be an id string, got {type(record[field]).__name__}")
+        if "blocks" in record and not isinstance(record["blocks"], list):
+            # `order` iterated an object's keys as edges and exited 0 on {"blocks": {"x": 1}} (#1689 review).
+            raise Unusable(f"{path}:{number}: `blocks` must be a list of id strings, got {type(record['blocks']).__name__}")
         if isinstance(record.get("blocks"), list):
             for target in record["blocks"]:
                 if isinstance(target, (list, dict)):
@@ -435,7 +438,10 @@ def selftest() -> int:
         # #1689: an id-shaped field holding a list or an object is UNUSABLE (2), on every command, never a TypeError.
         base = '"pass": "p", "severity": "P2", "category": "c", "file": "f", "signature": "s", "issue": "i"'
         shapes = {"a list id": '{"id": ["a"], %s}', "an object id": '{"id": {"k": 1}, %s}',
-                  "a list caused_by": '{"id": "a", %s, "caused_by": ["b"]}', "a list inside blocks": '{"id": "a", %s, "blocks": [["x"]]}'}
+                  "a list caused_by": '{"id": "a", %s, "caused_by": ["b"]}', "a list inside blocks": '{"id": "a", %s, "blocks": [["x"]]}',
+                  "a dict inside blocks": '{"id": "a", %s, "blocks": [{"x": 1}]}', "a dict caused_by": '{"id": "a", %s, "caused_by": {"b": 1}}',
+                  "a list duplicate_of": '{"id": "a", %s, "duplicate_of": ["b"]}', "a dict duplicate_of": '{"id": "a", %s, "duplicate_of": {"b": 1}}',
+                  "a blocks that is an object": '{"id": "a", %s, "blocks": {"x": 1}}', "a blocks that is a string": '{"id": "a", %s, "blocks": "x"}'}
         for label, shape in shapes.items():
             path = Path(tmp) / "shape.jsonl"
             path.write_text(shape % base + "\n", encoding="utf-8")
