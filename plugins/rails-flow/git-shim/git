@@ -1,0 +1,323 @@
+#!/usr/bin/env bash
+# rails-flow git shim (#1790, the owner's decision on #1793). Put FIRST on PATH for the Bash tool by the SessionStart hook, so it sees
+# git's arguments AFTER the shell has expanded them (`$X`, `$(...)`, braces, globs, `eval`, `bash -c`, `xargs`, shell aliases): the
+# spelling that defeated a text match is already gone. Everything it does not guard is exec'd with its argv unchanged.
+#
+# REFUSES (each is a way to destroy work or to skip the guards of #1789):
+#   add        -A / --all, or a pathspec that is the repository root (`.` at the root, `./.`, `src/..`, `:/`, `:(top)`, `*`)
+#   reset      --hard
+#   checkout   -f / --force; `checkout [--] .` (or any root pathspec) which overwrites the working tree
+#   switch     -f / --force / --discard-changes
+#   restore    a root pathspec that restores the WORKING TREE (`restore --staged .` only unstages, so it passes)
+#   clean      -f / --force (clusters too: -fd, -xdf); also a bare `clean` when clean.requireForce is false
+#   commit | push | merge | rebase   --no-verify (and `commit -n`)
+#   any        -c core.hooksPath=... / --config-env=core.hooksPath=... on the command line (it switches the #1789 hooks off)
+# A long option is read by git's UNIQUE-PREFIX rule: `--al` is `--all`, `--ha` is `--hard`, `--no-v` is `--no-verify`. A prefix git would
+# call ambiguous is a command git refuses itself, so reading it as the dangerous option only refuses what would not run anyway.
+# A DRY RUN passes (`add -n .`, `clean -nfd`), and so do interactive and update-only forms (`add -p .`, `add -u .`).
+# Git ALIASES are expanded by asking the real git (`alias.<name>`, with the same global options, so `-c alias.p='reset --hard' p` is seen).
+#
+# LIMITS, stated (this is a tripwire, not a boundary; the server's branch protection and the #1789 hooks are the backstop):
+#   - an absolute /usr/bin/git, `command git`, `env -i git` or a non-shell exec of git never reach this file (PATH is not consulted);
+#   - a `!` shell alias is scanned for commands that start with `git`, but its variables and quoting are not read (the git it calls is
+#     found in git's own exec-path, never through this shim); an alias whose value holds quoted words is split on whitespace;
+#   - `git config core.hooksPath ...` written to disk, and GIT_CONFIG_* in the environment;
+#   - a session where the SessionStart hook did not run (no PATH export), and any process that is not the Bash tool;
+#   - a pathspec file (`--pathspec-from-file`) is read when it is a regular file; from stdin it is refused.
+# AUDITED ESCAPE: RAILS_FLOW_GIT_OK=1 runs the real git and says so.
+# bash 3.2 compatible; needs only bash and git.
+set -f
+ORIG=("$@")      # the arguments as given; the alias loop below overwrites "$@"
+
+self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+
+# The real git: the first executable `git` on PATH that is not this directory, else /usr/bin/git.
+real=""
+old_ifs="$IFS"; IFS=:
+for d in $PATH; do
+  [ -n "$d" ] || d="."
+  [ -x "$d/git" ] && [ ! -d "$d/git" ] || continue
+  dd="$(cd "$d" 2>/dev/null && pwd -P)" || continue
+  [ "$dd" = "$self_dir" ] && continue
+  real="$d/git"; break
+done
+IFS="$old_ifs"
+[ -n "$real" ] || { [ -x /usr/bin/git ] && real=/usr/bin/git; }
+[ -n "$real" ] || { echo "git-shim (rails-flow): no real git found on PATH" >&2; exit 127; }
+
+if [ "${RAILS_FLOW_GIT_OK:-}" = 1 ]; then
+  echo "git-shim (rails-flow): RAILS_FLOW_GIT_OK=1, so this git command is not checked." >&2
+  exec "$real" "${ORIG[@]}"
+fi
+
+refuse() {
+  {
+    printf '%s\n' "git-shim (rails-flow): refused \`git $*\`"
+    printf '%s\n' "  rule: $RULE"
+    printf '%s\n' "  Do the narrower thing instead: stage named files, restore named paths, or ask the owner. A deliberate exception: RAILS_FLOW_GIT_OK=1 git ... (audited)."
+  } >&2
+  exit 1
+}
+
+lower() { printf '%s' "$1" | LC_ALL=C tr 'A-Z' 'a-z'; }
+
+# A path relative to the repository top: `norm <prefix> <path>` prints it ("" for the root, "OUT" when it leaves the repository).
+norm() {
+  local p="$1$2" part out="" depth=0 parts IFS=/
+  parts=()
+  for part in $p; do
+    case "$part" in
+      ""|.) ;;
+      ..) if [ "$depth" -gt 0 ]; then depth=$((depth - 1)); unset "parts[$depth]"; else printf 'OUT'; return; fi ;;
+      *) parts[$depth]="$part"; depth=$((depth + 1)) ;;
+    esac
+  done
+  [ "$depth" -gt 0 ] && out="${parts[*]}"
+  printf '%s' "$out"
+}
+
+TOP=""; PREFIX=""; HAVE_TOP=0
+find_top() {
+  [ "$HAVE_TOP" = 1 ] && return 0
+  HAVE_TOP=1
+  TOP="$("$real" "${GLOBALS[@]}" rev-parse --show-toplevel 2>/dev/null)" || TOP=""
+  PREFIX="$("$real" "${GLOBALS[@]}" rev-parse --show-prefix 2>/dev/null)" || PREFIX=""
+}
+
+# Is this pathspec the whole working tree (relative to the repository root)?
+is_root_pathspec() {
+  local p="$1" rest magic
+  find_top
+  [ -n "$TOP" ] || return 1
+  case "$p" in
+    :/*) rest="${p#:/}"; p="$rest"; PFX="" ;;
+    ":("*")"*) magic="${p#:(}"; magic="${magic%%)*}"; rest="${p#*)}"
+               case ",$magic," in *,top,*) p="$rest"; PFX="" ;; *) p="$rest"; PFX="$PREFIX" ;; esac ;;
+    :!*|:^*) return 1 ;;
+    :*) p="${p#:}"; PFX="$PREFIX" ;;
+    *) PFX="$PREFIX" ;;
+  esac
+  case "$p" in
+    /*) local abs; abs="$(cd "$p" 2>/dev/null && pwd -P)" || abs="$p"
+        [ "$abs" = "$TOP" ] && return 0
+        return 1 ;;
+  esac
+  case "$p" in
+    "*"|"**") p="" ;;
+    */"*"|*/"**") p="${p%/*}" ;;
+  esac
+  [ "$(norm "$PFX" "$p")" = "" ]
+}
+
+# Pathspecs listed in a --pathspec-from-file: refused when unreadable, since their content cannot be seen.
+pathspec_file_has_root() {
+  local f="$1" line
+  [ "$f" = "-" ] && return 0
+  [ -f "$f" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    [ -z "$line" ] && continue
+    is_root_pathspec "$line" && return 0
+  done < "$f"
+  return 1
+}
+
+CANON_long() {   # per subcommand: the long options this shim cares about
+  case "$1" in
+    add) echo "all dry-run update patch interactive" ;;
+    reset) echo "hard" ;;
+    checkout) echo "force patch" ;;
+    switch) echo "force discard-changes" ;;
+    restore) echo "staged worktree patch" ;;
+    clean) echo "force dry-run interactive" ;;
+    commit|push|merge|rebase) echo "no-verify" ;;
+  esac
+}
+CANON_short() {  # "<char>=<canonical> ..."
+  case "$1" in
+    add) echo "A=all n=dry-run u=update p=patch i=interactive" ;;
+    checkout) echo "f=force p=patch" ;;
+    switch) echo "f=force" ;;
+    restore) echo "S=staged W=worktree p=patch" ;;
+    clean) echo "f=force n=dry-run i=interactive" ;;
+    commit) echo "n=no-verify" ;;
+  esac
+}
+VALUED_short() {
+  case "$1" in
+    commit) echo "mFCct" ;; push) echo "o" ;; merge) echo "mFsX" ;; rebase) echo "sXxC" ;;
+    checkout) echo "bB" ;; switch) echo "cC" ;; restore) echo "s" ;; clean) echo "e" ;;
+  esac
+}
+VALUED_long() {
+  case "$1" in
+    commit) echo "message file reuse-message reedit-message fixup squash author date template cleanup trailer pathspec-from-file" ;;
+    push) echo "push-option repo receive-pack exec" ;;
+    merge) echo "message file strategy strategy-option into-name" ;;
+    rebase) echo "strategy strategy-option exec onto" ;;
+    add) echo "chmod pathspec-from-file" ;;
+    reset) echo "pathspec-from-file" ;;
+    checkout) echo "orphan conflict pathspec-from-file" ;;
+    switch) echo "orphan conflict create force-create" ;;
+    restore) echo "source pathspec-from-file" ;;
+    clean) echo "exclude" ;;
+  esac
+}
+
+SEEN=" "          # canonical flags seen, space-delimited
+PATHS=()          # non-option arguments (after `--` too)
+PFILES=()         # --pathspec-from-file values
+
+# analyse <sub> <args...>: fills SEEN, PATHS, PFILES.
+analyse() {
+  local sub="$1"; shift
+  local args=("$@") n=$# i=0 a name rest c canon val seen_dd=0 k pair ch
+  local longs shorts vshort vlong
+  longs="$(CANON_long "$sub")"; shorts="$(CANON_short "$sub")"; vshort="$(VALUED_short "$sub")"; vlong="$(VALUED_long "$sub")"
+  SEEN=" "; PATHS=(); PFILES=()
+  while [ "$i" -lt "$n" ]; do
+    a="${args[$i]}"; i=$((i + 1))
+    if [ "$seen_dd" = 1 ]; then PATHS[${#PATHS[@]}]="$a"; continue; fi
+    case "$a" in
+      --) seen_dd=1 ;;
+      --*)
+        name="${a#--}"; val=""; case "$name" in *=*) val="${name#*=}"; name="${name%%=*}" ;; esac
+        hit=0
+        for c in $longs; do
+          case "$c" in "$name"*) SEEN="$SEEN$c "; hit=1 ;; esac
+        done
+        case "pathspec-from-file" in "$name"*) [ -n "$name" ] && { if [ -n "$val" ] || [ "$a" != "--$name" ]; then PFILES[${#PFILES[@]}]="$val"; elif [ "$i" -lt "$n" ]; then PFILES[${#PFILES[@]}]="${args[$i]}"; i=$((i + 1)); fi; } ;; esac
+        if [ "$hit" = 0 ] && [ "$a" = "--$name" ]; then
+          for c in $vlong; do
+            [ "$c" = "pathspec-from-file" ] && continue
+            case "$c" in "$name"*) [ "$i" -lt "$n" ] && i=$((i + 1)); break ;; esac
+          done
+        fi ;;
+      -?*)
+        rest="${a#-}"; k=0
+        while [ "$k" -lt "${#rest}" ]; do
+          ch="${rest:$k:1}"; k=$((k + 1))
+          case "$vshort" in *"$ch"*) [ "$k" -ge "${#rest}" ] && [ "$i" -lt "$n" ] && i=$((i + 1)); break ;; esac
+          for pair in $shorts; do
+            [ "${pair%%=*}" = "$ch" ] && SEEN="$SEEN${pair#*=} "
+          done
+        done ;;
+      *) PATHS[${#PATHS[@]}]="$a" ;;
+    esac
+  done
+}
+seen() { case "$SEEN" in *" $1 "*) return 0 ;; esac; return 1; }
+
+any_root_pathspec() {
+  local p f
+  for p in "${PATHS[@]}"; do is_root_pathspec "$p" && return 0; done
+  for f in "${PFILES[@]}"; do pathspec_file_has_root "$f" && return 0; done
+  return 1
+}
+
+# Decide one (possibly alias-expanded) command. $1.. is the subcommand and its arguments; GLOBALS is set.
+decide() {
+  local sub="$1"; shift
+  case "$sub" in
+    add|reset|checkout|switch|restore|clean|commit|push|merge|rebase) ;;
+    *) return 0 ;;
+  esac
+  analyse "$sub" "$@"
+  case "$sub" in
+    add)
+      seen dry-run && return 0
+      if seen all; then RULE="git add --all stages every change in the tree, including strays (stage named files)"; return 1; fi
+      seen update && return 0; seen patch && return 0; seen interactive && return 0
+      if any_root_pathspec; then RULE="git add of the repository root stages the whole tree (stage named files)"; return 1; fi ;;
+    reset)
+      if seen hard; then RULE="git reset --hard destroys uncommitted work"; return 1; fi ;;
+    checkout)
+      if seen force; then RULE="git checkout --force discards local changes"; return 1; fi
+      seen patch && return 0
+      if any_root_pathspec; then RULE="git checkout of the repository root overwrites the working tree"; return 1; fi ;;
+    switch)
+      if seen force || seen discard-changes; then RULE="git switch --force/--discard-changes discards local changes"; return 1; fi ;;
+    restore)
+      seen patch && return 0
+      if { seen worktree || ! seen staged; } && any_root_pathspec; then RULE="git restore of the repository root overwrites the working tree (restore --staged only unstages)"; return 1; fi ;;
+    clean)
+      seen dry-run && return 0
+      if seen force; then RULE="git clean --force deletes untracked files"; return 1; fi
+      if ! seen interactive && [ "$("$real" "${GLOBALS[@]}" config --type=bool --get clean.requireForce 2>/dev/null)" = "false" ]; then
+        RULE="git clean with clean.requireForce=false deletes untracked files without --force"; return 1
+      fi ;;
+    commit|push|merge|rebase)
+      if seen no-verify; then RULE="--no-verify skips the pre-commit and pre-push guards"; return 1; fi ;;
+  esac
+  return 0
+}
+
+EVAL_DEPTH=0
+# evaluate <git arguments...>: 0 to let the command run, 1 (with RULE set) to refuse it. Recurses into alias text.
+evaluate() {
+  local ARGV n i a SUB REST val depth=0 line seg words w
+  GLOBALS=()
+  ARGV=("$@"); n=$#; i=0; SUB=""
+  while [ "$i" -lt "$n" ]; do
+    a="${ARGV[$i]}"
+    case "$a" in
+      -C|--git-dir|--work-tree|--namespace|--attr-source|--super-prefix)
+        GLOBALS[${#GLOBALS[@]}]="$a"; i=$((i + 1))
+        [ "$i" -lt "$n" ] && { GLOBALS[${#GLOBALS[@]}]="${ARGV[$i]}"; i=$((i + 1)); } ;;
+      -c|--config-env)
+        GLOBALS[${#GLOBALS[@]}]="$a"; i=$((i + 1))
+        if [ "$i" -lt "$n" ]; then
+          case "$(lower "${ARGV[$i]}")" in core.hookspath*) RULE="-c core.hooksPath switches the #1789 git hooks off"; return 1 ;; esac
+          GLOBALS[${#GLOBALS[@]}]="${ARGV[$i]}"; i=$((i + 1))
+        fi ;;
+      --config-env=*)
+        case "$(lower "$a")" in --config-env=core.hookspath*) RULE="--config-env=core.hooksPath switches the #1789 git hooks off"; return 1 ;; esac
+        GLOBALS[${#GLOBALS[@]}]="$a"; i=$((i + 1)) ;;
+      --version|--help|-h|--exec-path|--html-path|--man-path|--info-path|--list-cmds=*) return 0 ;;
+      -*) GLOBALS[${#GLOBALS[@]}]="$a"; i=$((i + 1)) ;;
+      *) SUB="$a"; i=$((i + 1)); break ;;
+    esac
+  done
+  [ -n "$SUB" ] || return 0
+  REST=("${ARGV[@]:$i}")
+
+  # Expand a git alias (not for a built-in name, which an alias cannot shadow). Depth-limited.
+  while :; do
+    case "$SUB" in
+      add|reset|checkout|switch|restore|clean|commit|push|merge|rebase) break ;;
+    esac
+    val="$("$real" "${GLOBALS[@]}" config --get "alias.$SUB" 2>/dev/null)" || val=""
+    [ -n "$val" ] || break
+    depth=$((depth + 1)); [ "$depth" -le 5 ] || break
+    case "$val" in
+      "!"*)
+        # A SHELL alias: git runs it through `sh -c`, and the git it calls is found in git's own exec-path, never through this shim. So its
+        # text is scanned: each command that starts with `git` is judged by the same rules. Variables and quoting inside it are not read.
+        EVAL_DEPTH=$((EVAL_DEPTH + 1)); [ "$EVAL_DEPTH" -le 5 ] || return 0
+        line="$(printf '%s' "${val#!}" | tr ';&|()\n' '\n\n\n\n\n\n')"
+        local saved_globals=("${GLOBALS[@]}")
+        while IFS= read -r seg; do
+          set -- $seg
+          while [ "$#" -gt 0 ]; do
+            case "$1" in exec|command|builtin|sudo|env|nohup|time) shift ;; [A-Za-z_]*=*) shift ;; *) break ;; esac
+          done
+          [ "$#" -gt 0 ] || continue
+          case "${1##*/}" in git|git.exe) shift; evaluate "$@" || return 1 ;; esac
+        done <<EOF2
+$line
+EOF2
+        GLOBALS=("${saved_globals[@]}")
+        return 0 ;;
+    esac
+    set -- $val
+    SUB="$1"; shift
+    REST=("$@" "${REST[@]}")
+  done
+
+  decide "$SUB" "${REST[@]}"
+}
+
+RULE=""
+if ! evaluate "${ORIG[@]}"; then
+  refuse "${ORIG[@]}"
+fi
+exec "$real" "${ORIG[@]}"
