@@ -28,7 +28,9 @@
 # command runs in (lib/command_cwd.py follows its own `cd`s), so a PR whose head is not checked out there
 # is refused unless that HEAD was swept, and a PR whose head differs from a swept local HEAD is not told
 # apart. When the command's directory cannot be told, it is refused only if the session's repository is in
-# force. A PR argument (or -R value) holding `$` or a backtick is refused where it is in force: it cannot be judged without
+# force. ONLY A PLAIN PR NUMBER OR BRANCH NAME IS JUDGED (an allowlist, the third security review): any other word in the
+# `gh ... pr ... ready ...` segment (any flag before `pr`, before `ready` or after it, a URL, `owner/repo#n`) is refused
+# where it is in force; a redirection and its target are skipped. A PR argument (or -R value) holding `$` or a backtick is refused where it is in force: it cannot be judged without
 # running it. `--undo` exempts only before a bare `--`. A remote-targeted `gh pr ready` (-R/--repo/GH_REPO/a PR URL) is refused when the command's or the session's repo is
 # in force, and passes from a session and directory where neither repo is in force. A record can be hand-written; the guard protects against accident, not forgery. `gh api` calls
 # that mark a PR ready, and a `gh` reached through a variable, alias or function, are out of reach.

@@ -5330,7 +5330,7 @@ def guard_pr_ready_fixtures() -> None:
                guard(repo, "python3 project_gates.py && gh pr ready 12"), 2, "no sweep record")
         expect("guard-pr-ready: `gh pr ready --undo` is always allowed", guard(repo, "gh pr ready 12 --undo"), 0)
         expect("guard-pr-ready: `--undo` after a bare `--` is a positional, not the flag: judged, not exempted",
-               guard(repo, "gh pr ready 5 -- --undo"), 2, "no sweep record")
+               guard(repo, "gh pr ready 5 -- --undo"), 2, "argument --undo is not a plain PR number or branch")
         for cmd in ("gh pr view 12", "gh pr create --title x --body y", "ls", 'echo "gh pr ready 12"'):
             expect(f"guard-pr-ready: NOT a pr ready, left alone: {cmd[:40]}", guard(repo, cmd), 0)
         record(repo, "f" * 40)
@@ -5353,7 +5353,11 @@ def guard_pr_ready_fixtures() -> None:
                "explicit repository target")
         for cmd in ("gh pr ready $PR", 'gh pr ready "$(echo 5)"'):
             expect(f"guard-pr-ready: a PR argument built by the shell cannot be judged: {cmd}", guard(repo, cmd), 2, "without running it")
-        for cmd in ("gh pr ready 5", "gh pr ready -- 5", "gh pr ready 5 --undo=false", "gh pr ready 5 > /dev/null", "gh pr ready --undo"):
+        for cmd in ("gh pr ready 5 --rep o/r", "gh pr ready o/r#5", "gh pr ready 5 --hostname x", "gh --help pr ready 5",
+                    "gh pr ready 5 --undo=false"):
+            expect(f"guard-pr-ready: with a green record, a word that is not a plain number or branch is refused: {cmd}",
+                   guard(repo, cmd), 2, "is not a plain PR number or branch")
+        for cmd in ("gh pr ready my-branch", "gh pr ready feature/x-1", "gh pr ready 5", "gh pr ready -- 5", "gh pr ready 5 > /dev/null", "gh pr ready --undo"):
             expect(f"guard-pr-ready: with a green record, allowed: {cmd}", guard(repo, cmd), 0)
         for cmd in ("gh pr ready 5 -R o/r", "GH_REPO=o/r gh pr ready 5", "gh pr ready https://github.com/o/r/pull/5"):
             expect(f"guard-pr-ready: an explicit remote target is refused even with a green record: {cmd}", guard(repo, cmd), 2,

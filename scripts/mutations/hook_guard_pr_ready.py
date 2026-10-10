@@ -29,6 +29,12 @@ GUARD = Guard(
     needs=_NEEDS,
     mutations=(
         Mutation(
+            "the allowlist accepts any word",
+            "        if not seen_ready or not plain_word(w):\n",
+            "        if False:\n",
+            "a word that is not a plain number or branch is refused: gh pr ready 5 --rep o/r",
+        ),
+        Mutation(
             "a scheme-less PR URL is not an explicit target",
             '    return any("/pull/" in w for w in words)    # a PR URL, with or without a scheme\n',
             '    return any(w.startswith("http") and "/pull/" in w for w in words)\n',

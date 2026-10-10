@@ -83,6 +83,53 @@ def resolve_dir(payload: dict, start: str) -> tuple[str | None, str]:
     return None, (done.stderr.strip() or f"lib/command_cwd.py exited {done.returncode}")[:200]
 
 
+PLAIN_NUMBER = re.compile(r"\A[0-9]+\Z")
+PLAIN_BRANCH = re.compile(r"\A[A-Za-z0-9._/-]+\Z")
+REDIRECT = re.compile(r"\A[0-9]*(?:<|>|>>|>&|<&|&>)\Z")
+
+
+def plain_word(w: str) -> bool:
+    """A plain PR number, or a branch name that cannot name another repository or be a flag."""
+    if PLAIN_NUMBER.match(w):
+        return True
+    return bool(PLAIN_BRANCH.match(w)) and "/pull/" not in w and not w.startswith("-")
+
+
+def bad_word(segment: str) -> str | None:
+    """THE ALLOWLIST (#1565, third security review): the first word of the `gh ... pr ... ready ...` segment that is not a
+    plain PR number or branch, or None. Every flag before `pr`, before `ready` or after it is refused: a denylist of
+    the spellings that pick another repository lost one spelling per review round. A redirection and its target
+    (`> /dev/null`) are the shell's, not gh's, and are skipped."""
+    words = segment.split()
+    i = next((k for k, w in enumerate(words) if w == "gh" or w.endswith("/gh")), None)
+    if i is None:
+        return segment.strip() or "(empty)"
+    rest = words[i + 1:]
+    seen_pr = seen_ready = cut = False
+    skip = False
+    for w in rest:
+        if skip:
+            skip = False
+            continue
+        if REDIRECT.match(w):
+            skip = True
+            continue
+        if not seen_pr and w == "pr":
+            seen_pr = True
+            continue
+        if seen_pr and not seen_ready and w == "ready":
+            seen_ready = True
+            continue
+        if seen_ready and w == "--" and not cut:
+            cut = True
+            continue
+        if seen_ready and w == "--undo" and not cut:
+            continue
+        if not seen_ready or not plain_word(w):
+            return w
+    return None
+
+
 def explicit_target(segment: str, raw: str) -> bool:
     """The PR is named by repository, not by this checkout: its HEAD says nothing about that PR (#1565 review)."""
     words = segment.split()
@@ -127,6 +174,13 @@ def main() -> int:
         roots = {git(d, "rev-parse", "--show-toplevel") for d in (where, start) if d}
         if any(r and in_force(r) for r in roots):
             return refuse(EXPLICIT + ".", args)
+        return 0
+    word = bad_word(segment)
+    if word is not None:
+        roots = {git(d, "rev-parse", "--show-toplevel") for d in (where, start) if d}
+        if any(r and in_force(r) for r in roots):
+            return refuse(f"argument {word} is not a plain PR number or branch; run `gh pr ready <number>` from the PR's "
+                          "own checkout, after its sweep.", args)
         return 0
     if where is None:
         # Which repository the command targets cannot be told. Refuse only where the session's own repository
