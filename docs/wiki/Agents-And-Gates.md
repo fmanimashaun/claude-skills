@@ -69,7 +69,7 @@
 
 | agent | tier · model | tools | named by | what proves its output |
 |---|---|---|---|---|
-| `doctrine-verifier` | sonnet | Read, Grep, Glob, Bash, WebFetch, WebSearch | `/maintainer-audit`, `/maintainer-onboard`, `/maintainer-setup-intake`, `/maintainer-upstream`, `/maintainer-work` | — |
+| `doctrine-verifier` | inherit | Read, Grep, Glob, Bash, WebFetch, WebSearch | `/maintainer-audit`, `/maintainer-onboard`, `/maintainer-setup-intake`, `/maintainer-upstream`, `/maintainer-work` | — |
 | `issue-triager` | sonnet | Read, Grep, Glob, Bash | `/maintainer-triage` | — |
 | `mutation-verifier` | haiku | Read, Grep, Glob, Bash | `/gauntlet` | — |
 | `plugin-doctor` | sonnet | Read, Grep, Glob, Edit, Write, Bash | `/maintainer-work` | — |
