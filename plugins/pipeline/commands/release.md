@@ -47,6 +47,8 @@ labels:     { service: myapp }                    # --label service=myapp (Kamal
 - `{{sha}}` is the short certified sha; `{{release_name}}` is `$RELEASE_NAME` when the user gave
   the release a name (`RELEASE_NAME=v1.3.0` before running the command), else the sha. No other
   `{{variable}}` exists, and an unknown one stops the build.
+- Double braces are RESERVED for those two variables: a `{{` or `}}` anywhere else in a value (a nested JSON
+  label such as `{"a": {"b": 1}}` has a `}}`) is an error that names the value, never text. Single braces are fine.
 - With neither key set the command is exactly `docker build -t "$IMAGE:$SHA" -t "$IMAGE:latest" .`.
 - Build args are visible in the image's history: never put a secret in `build_args`.
 - A `pipeline.yml` the script cannot read (a list, a bad name, a twice-declared key) is exit 2 and

@@ -362,11 +362,16 @@ def selftest():
               and out[0].splitlines()[1].strip() == shlex.join(base), out)
     # the dormant Actions workflow runs THIS script (one reader of pipeline.yml), and has no process-substitution reader: a failing
     # `done < <(cmd)` is not seen by `bash -e`, so a reader that aborted would build with no args and push `latest` (#1701 review)
-    example = Path(__file__).resolve().parents[1] / "pipeline.actions.yml.example"
-    text = example.read_text(encoding="utf-8") if example.exists() else ""
-    check("the Actions example exists and was read", "docker push" in text, str(example))
-    check("the Actions example runs release_build.py", "release_build.py" in text, text[:200])
-    check("the Actions example has no process-substitution reader", "< <(" not in text and "<(" not in text.replace("${{", ""), text)
+    plugin_root = Path(__file__).resolve().parents[1]
+    example = plugin_root / "pipeline.actions.yml.example"
+    if example.exists() or (plugin_root / ".claude-plugin").exists():
+        text = example.read_text(encoding="utf-8") if example.exists() else ""
+        check("the Actions example exists and was read", "docker push" in text, str(example))
+        check("the Actions example runs release_build.py", "release_build.py" in text, text[:200])
+        check("the Actions example has no process-substitution reader", "< <(" not in text and "<(" not in text.replace("${{", ""), text)
+    else:
+        # a project that copied this script out of the plugin (as the Actions example says to) has no example beside it
+        print("note: pipeline.actions.yml.example is not beside this script (copied out of the plugin): the three Actions-example checks were SKIPPED, not passed")
     if failures:
         print("release_build selftest FAILED:")
         for failure in failures:
