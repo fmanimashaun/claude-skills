@@ -7,6 +7,12 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
 
 ## Repository hygiene
 
+### Unreleased
+
+The release number is assigned at promotion.
+
+- **The doctrine map no longer lists guard-bash as a guarantee for `git add -A` — `scripts/doctrine_map.py`, `docs/architecture/doctrine-map.html`** (#1788, part 1 of the owner decision recorded on #1793: enforce git safety where the effect happens, not in shell text). The row becomes `advice` (guard-bash is a tripwire: 18 of 21 hostile spellings passed it on dev), and a new tracked `gap` row states the guarantee that does not exist yet, pointing at the wrapper (#1790) and the git hooks (#1789). The fail-closed hook row keeps guard-bash for its posture only, and says so. Our own design, so no doctrine-verifier verdict applies.
+
 ### 2026-10-08 (release v1.155.0)
 
 - **Two mutation-cost records re-set from the hosted runner's measured run — `docs/evidence/mutation-cost-baseline.json`** (Refs the v1.155.0 release run 37982635906). `hook_issue_labels` 1226 → 2648 s: #1730 made its #1645 timing shapes run at half and full size to check growth instead of a fixed CPU second, so the guard does about twice the timing work, measured. `extract_release_notes` 141.5 → 433 s: recorded on a laptop; the runner, where the record is meant to be measured, takes about three times as long. Every mutant was caught; only the cost ratchet failed.
