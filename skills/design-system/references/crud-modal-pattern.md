@@ -121,7 +121,11 @@ keep `data-action` as the fallback:
 import { Controller } from "@hotwired/stimulus"
 
 export default class extends Controller {
-  connect() { this.opener = document.activeElement; this.element.showModal() }
+  connect() {
+    // A dialog that arrives by Turbo Stream finds <body> focused: no opener to restore
+    this.opener = document.activeElement === document.body ? null : document.activeElement
+    this.element.showModal()
+  }
   disconnect() { if (this.opener?.isConnected) this.opener.focus() }   // removal restores nothing
   backdrop(event) { if (event.target === this.element) this.element.close() }
   close() { this.element.close() }
@@ -148,7 +152,8 @@ A Turbo Stream `turbo_stream.update("modal", "")` removes the dialog while it is
 removing steps take it out of the top layer and destroy its close watcher, but fire no `close` event and do
 **not** restore focus, so `closed()` never runs and the browser leaves focus on `<body>`. `disconnect()` closes
 that gap by refocusing the element that opened the dialog, if it is still in the page; on the `close()` path
-the browser has already restored focus, and refocusing the same element changes nothing.
+the browser has already restored focus, and refocusing the same element changes nothing. **Check it by hand:** open the modal from its trigger with the keyboard, submit so the server answers with
+`turbo_stream.update("modal", "")`, then confirm `document.activeElement` in the console is the trigger, not `<body>`.
 
 ## Rules
 
