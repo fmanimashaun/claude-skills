@@ -84,6 +84,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | gate | owner | runs | kind |
 |---|---|---|---|
 | design-flow LLM-tell detector | `design-flow` | `python3 plugins/design-flow/scripts/llm_tell_detector.py --selftest` | selftest |
+| design-flow asset home selftest | `design-flow` | `python3 plugins/design-flow/scripts/asset_home.py --selftest` | selftest |
 | design-flow brand pack lint | `design-flow` | `python3 plugins/design-flow/scripts/brand_pack_lint.py --selftest` | selftest |
 | design-flow brand packs conform | `design-flow` | `python3 plugins/design-flow/scripts/brand_pack_lint.py plugins/design-flow/brands/fidara plugins/design-flow/brands/reliance` | live check |
 | design-flow composition brief selftest | `design-flow` | `python3 plugins/design-flow/scripts/compose_brief.py --selftest` | selftest |
