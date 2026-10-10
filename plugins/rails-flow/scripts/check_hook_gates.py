@@ -983,7 +983,7 @@ def guard_bash_fixtures() -> None:
     for cmd in NEGATIVES_1706:
         check(f"guard-bash (#1706/#1708): CONTROL: `{cmd}` passes", run(cmd) == 0, said())
     # #1708: an inline override is not read (an agent cannot approve its own deploy), so the message must not tell anyone to write it inline.
-    with tempfile.TemporaryDirectory() as td:
+    with scratch_dir() as td:
         code, out = run_hook("guard-bash.sh", cwd=Path(td), stdin=json.dumps({"tool_input": {"command": "RAILS_FLOW_ALLOW_DEPLOY=1 kamal deploy"}}))[:2]
     check("guard-bash (#1708): an inline RAILS_FLOW_ALLOW_DEPLOY=1 is still blocked, and the message says it is not read",
           code == 2 and "not read" in out and "rerun with RAILS_FLOW_ALLOW_DEPLOY=1 kamal deploy" not in out, f"exit {code}: {out[:200]!r}")
