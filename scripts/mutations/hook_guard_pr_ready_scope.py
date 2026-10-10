@@ -35,9 +35,9 @@ GUARD = Guard(
             "`gh pr ready` inside a compound command is refused: git commit --allow-empty",
         ),
         Mutation(
-            "the degraded match keeps a left anchor, so the raw JSON never matches and the hook fails open",
-            're="gh${_f}[[:space:]]+pr${_f}[[:space:]]+ready([^[:alnum:]_-]|\\$)"',
-            're="(^|[[:space:]])gh${_f}[[:space:]]+pr${_f}[[:space:]]+ready([^[:alnum:]_-]|\\$)"',
+            "degraded mode lets everything through (fails open without python3)",
+            '  if [[ $input == *ready* ]]; then',
+            '  if false; then',
             "with no python3 on PATH (degraded, raw JSON)",
         ),
         Mutation(

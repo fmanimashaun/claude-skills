@@ -5458,6 +5458,14 @@ def guard_pr_ready_fixtures() -> None:
                        env_extra={"PATH": str(bindir)}, shell=shutil.which("bash") or "bash")
         expect("guard-pr-ready: with no python3 on PATH (degraded, raw JSON), `gh pr ready` is still refused, never fails open", res, 2,
                "BLOCKED by rails-flow pr-ready guard")
+        # Degraded mode does no parsing (coordinator's ruling after two adversary rounds): any `ready` in the raw payload refuses.
+        def degraded(cmd: str) -> tuple[int, str]:
+            return run_hook("guard-pr-ready.sh", cwd=repo, stdin=json.dumps({"tool_input": {"command": cmd}, "cwd": str(repo)}),
+                            env_extra={"PATH": str(bindir)}, shell=shutil.which("bash") or "bash")
+        for cmd in ('gh pr "ready" 5', 'g""h pr ready 5', "gh pr \\\nready 5", "GH PR READY 5"):
+            expect(f"guard-pr-ready: with no python3 on PATH (degraded), any `ready` refuses: {cmd!r}", degraded(cmd), 2,
+                   "could not be read")
+        expect("guard-pr-ready: with no python3 on PATH (degraded), a command without `ready` passes: ls", degraded("ls"), 0)
         expect("guard-pr-ready: a scheme-less PR URL is an explicit target", guard(repo, "gh pr ready github.com/o/r/pull/5"), 2,
                "explicit repository target")
         expect("guard-pr-ready: a PR argument built by the shell cannot be judged: gh pr ready $PR", guard(repo, "gh pr ready $PR"), 2,

@@ -57,9 +57,18 @@ fi
 # `^gh pr ready` missed `gh -R o/r pr ready` and `/usr/local/bin/gh pr ready` (security review of #1565).
 _f='([[:space:]]+-[^[:space:]]+([[:space:]]+[^-[:space:]][^[:space:]]*)?)*'
 re="^([^[:space:]]*/)?gh${_f}[[:space:]]+pr${_f}[[:space:]]+ready([[:space:]]|\$)"
-# DEGRADED, NO LEFT ANCHOR (shell-adversary on #1831): here `cmd` can be the raw JSON, where gh follows a `"`, so the old
-# `(^|[[:space:]])gh` never matched `{"command":"gh pr ready 5"}` and the hook exited 0 before its deny. Anywhere in the text counts.
-[ "$degraded" = 1 ] && re="gh${_f}[[:space:]]+pr${_f}[[:space:]]+ready([^[:alnum:]_-]|\$)"
+# DEGRADED: NO PARSING AT ALL (the coordinator's ruling after two shell-adversary rounds on #1831). Here the command could not be
+# read or split, and every regex over the raw payload leaked a new spelling (a `"` before gh, `\"ready\"`, `g\"\"h`, a
+# backslash-newline). So ANY `ready`, in any case, anywhere in the raw payload refuses; anything else passes. A false refusal is
+# accepted: python3 or the normaliser missing is rare, and the message says what to fix. `nocasematch`, since macOS bash 3.2 has no `${x,,}`.
+if [ "$degraded" = 1 ]; then
+  shopt -s nocasematch
+  if [[ $input == *ready* ]]; then
+    echo "BLOCKED by rails-flow pr-ready guard: the command could not be read (python3 or the hook's normaliser is unavailable), and it mentions \`ready\`, so it is refused rather than guessed. Install python3, or reinstall the rails-flow plugin, and retry." >&2
+    exit 2
+  fi
+  exit 0
+fi
 hit=0; args=""; segment=""
 rest="$seg"$'\n'
 while [ -n "$rest" ]; do
@@ -77,7 +86,6 @@ deny() { echo "BLOCKED by rails-flow pr-ready guard: $1" >&2; echo "Then run, as
 # `gh pr ready` MUST BE ITS OWN COMMAND (shell-adversary on #1831): in `git commit -m x && gh pr ready 5` or `git checkout -b zz && …`
 # an earlier segment moves HEAD after this is judged, so the old HEAD's green record would pass a commit nobody swept. Any other
 # segment refuses; only the tail of a redirection the normaliser split on `&` (`2>&1` → `1`, `&>/dev/null` → `>/dev/null`) is not one.
-[ "$degraded" = 1 ] && deny "the command could not be split into its parts, so whether \`gh pr ready\` is its own command cannot be told."
 while IFS= read -r l; do
   [ "$l" = "$segment" ] && continue
   [ -z "${l//[[:space:]]/}" ] && continue
