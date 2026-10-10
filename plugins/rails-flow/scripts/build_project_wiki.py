@@ -724,9 +724,6 @@ def selftest() -> int:
         check("--print renders one page to stdout and writes nothing", rc == 0 and buf.getvalue().startswith("<!-- GENERATED") and "# Routes" in buf.getvalue()
               and {q.name: q.read_bytes() for q in (root / WIKI).iterdir()} == before)
 
-    for f in failures:
-        print(f"FAIL {f}")
-
     # ---- #1698: A SECOND DATABASE'S TABLES ARE ON THE DATA-MODEL PAGE --------------------------------------------------------------------
     def one_table(table: str, version: int = 1) -> str:
         return (f'ActiveRecord::Schema[8.1].define(version: {version}) do\n  create_table "{table}", force: :cascade do |t|\n    t.string "k"\n'
@@ -760,6 +757,10 @@ def selftest() -> int:
         check("#1698 a table name in two schema files is a problem, never silently one of them (the page is keyed by table name)",
               any("`invoices` is in db/schema.rb and in db/observability_schema.rb" in x for x in assert_totals(m3, render_all(m3))), str(assert_totals(m3, render_all(m3))))
         check("#1698 ...and the page lists it once", render_all(m3)["Data-Model.md"].count("## `invoices`") == 1)
+
+    for f in failures:
+        print(f"FAIL {f}")
+
     print(f"build_project_wiki selftest: {n} checks, {len(failures)} failure(s)")
     return 1 if failures else 0
 
