@@ -1387,6 +1387,12 @@ GUARD = Guard(
             "a command that writes docs/handoff/<slug>.md, a directory the layout lacks",
         ),
         Mutation(
+            "reference documents are not scanned",
+            '*sorted(plugin.glob("reference/*.md")),',
+            "",
+            "a reference document that names docs/acceptance/<slug>.md (model-tiers.md did, by hand-fix only)",
+        ),
+        Mutation(
             "a line that names the path as pre-layout is flagged too",
             '            if "pre-layout" in line:',
             "            if False:",

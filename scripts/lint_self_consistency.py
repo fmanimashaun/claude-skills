@@ -812,7 +812,8 @@ def check_docs_path_outside_layout() -> tuple[list[Finding], int]:
         return [Finding("docs-path-outside-layout", layout_file.relative_to(ROOT).as_posix(), 0,
                         "LAYOUT is not a literal dict of directory names, so no path the plugin prescribes can be checked against it")], 0
     plugin = ROOT / "plugins" / "rails-flow"
-    scanned = [*sorted(plugin.glob("commands/*.md")), *sorted(plugin.glob("agents/*.md")), *sorted(plugin.glob("hooks/scripts/**/*.sh")),
+    scanned = [*sorted(plugin.glob("commands/*.md")), *sorted(plugin.glob("agents/*.md")), *sorted(plugin.glob("reference/*.md")),
+               *sorted(plugin.glob("hooks/scripts/**/*.sh")),
                *sorted(plugin.glob("checks.json")),
                *(p for p in sorted(plugin.glob("scripts/*.py"))
                  if not p.name.endswith("_selftest.py") and not p.name.startswith(("docs_layout", "check_hook_gates")))]
@@ -5152,6 +5153,9 @@ def selftest() -> int:
     DP = "docs-path-outside-layout"
     scenario("a command that writes docs/handoff/<slug>.md, a directory the layout lacks", rule=DP, expect_finding=True,
              only=check_docs_path_outside_layout, files={**DL, "plugins/rails-flow/commands/handoff.md": "Write `docs/handoff/<slug>.md`.\n"}, line=1)
+    scenario("a reference document that names docs/acceptance/<slug>.md (model-tiers.md did, by hand-fix only)", rule=DP, expect_finding=True,
+             only=check_docs_path_outside_layout,
+             files={**DL, "plugins/rails-flow/reference/model-tiers.md": "is why `docs/acceptance/<slug>.md` is a precondition\n"}, line=1)
     scenario("a hook script that reads docs/acceptance/<slug>.md", rule=DP, expect_finding=True, only=check_docs_path_outside_layout,
              files={**DL, "plugins/rails-flow/hooks/scripts/stop-gate.sh": 'criteria="docs/acceptance/${slug}.md"\n'})
     scenario("a checks.json glob that names a directory outside the layout", rule=DP, expect_finding=True, only=check_docs_path_outside_layout,
