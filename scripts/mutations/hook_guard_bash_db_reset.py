@@ -11,6 +11,8 @@ GUARD = Guard(
     subject='plugins/rails-flow/hooks/scripts/guard-bash.sh',
     selftest='plugins/rails-flow/scripts/check_hook_gates.py',
     selftest_args=("--only", "guard_bash_db_reset"),
+    # Each mutant runs only the fixture its `expects` names (#1599): the whole group cost 177 s of work on the CI runner for 22 mutants, over the 120 s limit for a new guard.
+    narrow_with="--match",
     # Staged exactly as hook_guard_bash stages it, and in full even though `--only guard_bash_db_reset` drives one hook: the harness resolves every hook from
     # the selftest's own location, and `lint_self_consistency`'s harness-dependency-undeclared refuses a guard on this harness that lists fewer (a trimmed
     # list was tried and refused).
@@ -36,13 +38,13 @@ GUARD = Guard(
             'the declaration is not required, so an undeclared project may run the test-database reset',
             'if [ "$_seeded" = 1 ] && [ "$degraded" = 0 ] && {',
             'if [ "$degraded" = 0 ] && {',
-            'an UNDECLARED project is still refused',
+            'still refused `RAILS_ENV=test bin/rails db:reset`',
         ),
         Mutation(
             'a declaration allows nothing, so a project that declares test-db-seeded is still refused its own reset',
             '    :   # declared, and exactly the test-database reset: allowed',
             '    deny "mutant: a declaration allows nothing"',
-            'a project declaring test-db-seeded ALLOWS',
+            'ALLOWS `RAILS_ENV=test bin/rails db:reset`',
         ),
         Mutation(
             'degraded mode is not checked, so an unreadable payload is read as a plain test reset',
@@ -54,19 +56,19 @@ GUARD = Guard(
             'the end anchor of the env-first form is dropped, so a compound command that also resets the development database is allowed',
             'db:reset${_s}*\\$"\n  _env_last=',
             'db:reset"\n  _env_last=',
-            'even a declared project is still refused',
+            "still refused `'RAILS_ENV=test bin/rails db:reset && bin/rails db:reset'`",
         ),
         Mutation(
             'the start anchor of the env-first form is dropped, so RAILS_ENV=development followed by RAILS_ENV=test is allowed',
             '_env_first="^${_s}*(env${_s}+)?RAILS_ENV=test',
             '_env_first="${_s}*(env${_s}+)?RAILS_ENV=test',
-            'even a declared project is still refused',
+            "still refused `'RAILS_ENV=development RAILS_ENV=test bin/rails db:reset'`",
         ),
         Mutation(
             'the environment is not pinned to test, so a declared project may reset the development database',
             '(env${_s}+)?RAILS_ENV=test${_s}+${_runner}',
             '(env${_s}+)?RAILS_ENV=[a-z]+${_s}+${_runner}',
-            'even a declared project is still refused',
+            "still refused `'RAILS_ENV=development bin/rails db:reset'`",
         ),
         Mutation(
             'the CI hint is dropped, so an undeclared project with bin/ci is not pointed at it',
@@ -126,7 +128,7 @@ GUARD = Guard(
             'the separator is [[:space:]] again, so a newline between the assignment and the command is one allowed command',
             '_s="[ ${_tab}]"',
             '_s="[[:space:]]"',
-            'RAILS_ENV=test\\nbin/rails db:reset',
+            "still refused `'RAILS_ENV=test\\nbin/rails db:reset'`",
         ),
         Mutation(
             'an HTML comment is not recognised, so the declaration inside a multi-line comment declares it',
@@ -147,10 +149,88 @@ GUARD = Guard(
             '<!-- note -->\\n- test-db-seeded: yes',
         ),
         Mutation(
-            'the db:reset rule ignores a bundle exec prefix, so bundle exec rails db:reset is never refused',
-            "if hit '^(bundle[[:space:]]+exec[[:space:]]+)?(bin/)?(rails|rake)([[:space:]]+[^[:space:]]+)*[[:space:]]+db:reset\\b'; then",
-            "if hit '^(bin/)?(rails|rake)([[:space:]]+[^[:space:]]+)*[[:space:]]+db:reset\\b'; then",
+            'the db:reset rule ignores every runner prefix, so bundle exec rails db:reset is never refused',
+            "_wrappers='((bundle[[:space:]]+exec([[:space:]]+--)?|ruby([[:space:]]+-S)?|spring|([^[:space:]]*/)?bin/spring|([^[:space:]]*/)?env([[:space:]]+[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*)*)[[:space:]]+)*'",
+            "_wrappers=''",
             'still refused `bundle exec rails db:reset`',
+        ),
+        Mutation(
+            'the ruby, spring and bin/spring runners are dropped from the db:reset rule, so ruby bin/rails db:reset is never refused',
+            "_wrappers='((bundle[[:space:]]+exec([[:space:]]+--)?|ruby([[:space:]]+-S)?|spring|([^[:space:]]*/)?bin/spring|([^[:space:]]*/)?env([[:space:]]+[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*)*)[[:space:]]+)*'",
+            "_wrappers='((bundle[[:space:]]+exec([[:space:]]+--)?|([^[:space:]]*/)?env([[:space:]]+[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*)*)[[:space:]]+)*'",
+            'still refused `ruby bin/rails db:reset`',
+        ),
+        Mutation(
+            'the app: namespace is dropped from the db:reset rule, so bin/rails app:db:reset is never refused',
+            '  if hit "^${_wrappers}${_runner_cmd}([[:space:]]+[^[:space:]]+)*[[:space:]]+(app:)?db:reset\\\\b" \\',
+            '  if hit "^${_wrappers}${_runner_cmd}([[:space:]]+[^[:space:]]+)*[[:space:]]+db:reset\\\\b" \\',
+            'still refused `bin/rails app:db:reset`',
+        ),
+        Mutation(
+            'wrappers no longer chain, so bundle exec spring rails db:reset is never refused (shell-adversary review)',
+            "_wrappers='((bundle[[:space:]]+exec([[:space:]]+--)?|ruby([[:space:]]+-S)?|spring|([^[:space:]]*/)?bin/spring|([^[:space:]]*/)?env([[:space:]]+[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*)*)[[:space:]]+)*'",
+            "_wrappers='((bundle[[:space:]]+exec([[:space:]]+--)?|ruby([[:space:]]+-S)?|spring|([^[:space:]]*/)?bin/spring|([^[:space:]]*/)?env([[:space:]]+[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*)*)[[:space:]]+)?'",
+            'still refused `bundle exec spring rails db:reset`',
+        ),
+        Mutation(
+            'bundle exec -- is not read, so bundle exec -- rails db:reset is never refused',
+            "_wrappers='((bundle[[:space:]]+exec([[:space:]]+--)?|ruby([[:space:]]+-S)?|spring|([^[:space:]]*/)?bin/spring|([^[:space:]]*/)?env([[:space:]]+[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*)*)[[:space:]]+)*'",
+            "_wrappers='((bundle[[:space:]]+exec|ruby([[:space:]]+-S)?|spring|([^[:space:]]*/)?bin/spring|([^[:space:]]*/)?env([[:space:]]+[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*)*)[[:space:]]+)*'",
+            'still refused `bundle exec -- rails db:reset`',
+        ),
+        Mutation(
+            'ruby -S is not read, so ruby -S rails db:reset is never refused',
+            "_wrappers='((bundle[[:space:]]+exec([[:space:]]+--)?|ruby([[:space:]]+-S)?|spring|([^[:space:]]*/)?bin/spring|([^[:space:]]*/)?env([[:space:]]+[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*)*)[[:space:]]+)*'",
+            "_wrappers='((bundle[[:space:]]+exec([[:space:]]+--)?|ruby|spring|([^[:space:]]*/)?bin/spring|([^[:space:]]*/)?env([[:space:]]+[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*)*)[[:space:]]+)*'",
+            'still refused `ruby -S rails db:reset`',
+        ),
+        Mutation(
+            'a full-path env is not a wrapper, so /usr/bin/env bin/rails db:reset is never refused',
+            "_wrappers='((bundle[[:space:]]+exec([[:space:]]+--)?|ruby([[:space:]]+-S)?|spring|([^[:space:]]*/)?bin/spring|([^[:space:]]*/)?env([[:space:]]+[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*)*)[[:space:]]+)*'",
+            "_wrappers='((bundle[[:space:]]+exec([[:space:]]+--)?|ruby([[:space:]]+-S)?|spring|([^[:space:]]*/)?bin/spring)[[:space:]]+)*'",
+            'still refused `/usr/bin/env bin/rails db:reset`',
+        ),
+        Mutation(
+            'env assignments are not read, so /usr/bin/env FOO=1 bin/rails db:reset is never refused',
+            "_wrappers='((bundle[[:space:]]+exec([[:space:]]+--)?|ruby([[:space:]]+-S)?|spring|([^[:space:]]*/)?bin/spring|([^[:space:]]*/)?env([[:space:]]+[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*)*)[[:space:]]+)*'",
+            "_wrappers='((bundle[[:space:]]+exec([[:space:]]+--)?|ruby([[:space:]]+-S)?|spring|([^[:space:]]*/)?bin/spring|([^[:space:]]*/)?env))[[:space:]]+)*'",
+            'still refused `/usr/bin/env FOO=1 bin/rails db:reset`',
+        ),
+        Mutation(
+            'the runner must be a bare bin/ path, so ./bin/rails and /app/bin/rails are never refused',
+            "_runner_cmd='(([^[:space:]]*/)?bin/(rails|rake)|rails|rake)'",
+            "_runner_cmd='((bin/)?(rails|rake)|rails|rake)'",
+            'still refused `/app/bin/rails db:reset`',
+        ),
+        Mutation(
+            'spring at a path is not a wrapper, so ./bin/spring rails db:reset is never refused',
+            "_wrappers='((bundle[[:space:]]+exec([[:space:]]+--)?|ruby([[:space:]]+-S)?|spring|([^[:space:]]*/)?bin/spring|([^[:space:]]*/)?env([[:space:]]+[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*)*)[[:space:]]+)*'",
+            "_wrappers='((bundle[[:space:]]+exec([[:space:]]+--)?|ruby([[:space:]]+-S)?|spring|bin/spring|([^[:space:]]*/)?env([[:space:]]+[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*)*)[[:space:]]+)*'",
+            'still refused `./bin/spring rails db:reset`',
+        ),
+        Mutation(
+            'a listing is not exempt, so rake -T db:reset is refused',
+            '     && ! exempt "^${_wrappers}${_runner_cmd}([[:space:]]+[^[:space:]]+)*[[:space:]]+(-T|--tasks|-D|--describe)([[:space:]=]|\\$)"; then',
+            '     && ! false; then',
+            'may run `rake -T db:reset`',
+        ),
+        Mutation(
+            'every option is exempt, so db:reset with --trace is read as a listing',
+            '     && ! exempt "^${_wrappers}${_runner_cmd}([[:space:]]+[^[:space:]]+)*[[:space:]]+(-T|--tasks|-D|--describe)([[:space:]=]|\\$)"; then',
+            '     && ! exempt "^${_wrappers}${_runner_cmd}([[:space:]]+[^[:space:]]+)*[[:space:]]+(-[A-Za-z]|--[a-z]+)([[:space:]=]|\\$)"; then',
+            'still refused `bin/rails db:reset --trace`',
+        ),
+        Mutation(
+            'the listing exemption applies when the payload cannot be parsed, so a listing in an unreadable payload passes',
+            '     && ! exempt "^${_wrappers}${_runner_cmd}([[:space:]]+[^[:space:]]+)*[[:space:]]+(-T|--tasks|-D|--describe)([[:space:]=]|\\$)"; then',
+            '     && ! hit "^${_wrappers}${_runner_cmd}([[:space:]]+[^[:space:]]+)*[[:space:]]+(-T|--tasks|-D|--describe)([[:space:]=]|\\$)"; then',
+            'a listing in a payload the hook cannot parse is refused',
+        ),
+        Mutation(
+            'the listing exemption is judged on the whole command, so a -T in one segment exempts a reset in another',
+            "  seg=\"${_rest%%$'\\n'*}\"; _rest=\"${_rest#*$'\\n'}\"",
+            "  _rest=\"${_rest#*$'\\n'}\"",
+            'rake -T; rake db:reset',
         ),
     ),
 )

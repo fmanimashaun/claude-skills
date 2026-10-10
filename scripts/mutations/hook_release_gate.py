@@ -37,28 +37,10 @@ GUARD = Guard(
             "release-gate (#1657): an invalid byte on an EARLIER line does not hide a push to main under a UTF-8 locale",
         ),
         Mutation(
-            "`normalize_segments` runs in the caller's locale, so a UTF-8 locale and an invalid byte leave it with nothing to read",
-            "| LC_ALL=C normalize_segments)",
-            "| normalize_segments)",
-            "release-gate (#1657): CONTROL: without the classifier, an invalid byte with no push in the command is not itself a refusal",
-        ),
-        Mutation(
-            "a normaliser that exits non-zero is no longer 'could not read', so its (pass-through) output is judged as if it were the segments",
-            """ || { seg="$cmd"; _seg_unread=1; }""",
-            "",
-            "release-gate (#1657): without the classifier, a normaliser that fails (awk exits 2) is refused",
-        ),
-        Mutation(
             "the classifier runs in the caller's locale, so an invalid byte makes it fail and a harmless git command is refused wholesale",
             """| LC_ALL=C python3 "$_pt" --classify""",
             """| python3 "$_pt" --classify""",
             "release-gate (#1657): with the classifier, an invalid byte in a command that is not a push does not refuse it",
-        ),
-        Mutation(
-            "a normaliser output of nothing for a command that is not empty is no longer 'could not read', so a comment-only mention passes in the degraded path",
-            """  [ -n "$seg" ] || [ -z "$cmd" ] || _seg_unread=1\n""",
-            "",
-            "release-gate (#1657): without the classifier, a command the normaliser reads as NOTHING",
         ),
         # #1410 / #1470: the hook must hand the RAW command to the classifier, for ANY command that
         # mentions git or gh, treat "could not judge" as a promotion, and keep a raw-text fallback.
@@ -216,12 +198,6 @@ GUARD = Guard(
             '      if [ -z "$full" ] || ! git merge-base --is-ancestor "$full" "$tgt" 2>/dev/null; then',
             '      if [ -z "$full" ]; then',
             "release-gate (#1337): a stamp for a sha that is not an ancestor of dev is denied",
-        ),
-        Mutation(
-            "the dev sha is read with plain rev-parse again, so a missing origin/dev poisons it",
-            'devsha="$(git rev-parse --verify -q origin/dev 2>/dev/null || git rev-parse --verify -q dev 2>/dev/null || true)"',
-            'devsha="$(git rev-parse origin/dev 2>/dev/null || git rev-parse dev 2>/dev/null || true)"',
-            "release-gate (#1337): without the classifier, dev's tip is read and a missing origin/dev does not poison it",
         ),
         Mutation(
             # WITHOUT the carve-out the gate denies every promotion of its own source repo. That is

@@ -84,6 +84,14 @@ changing the palette changes the surface those hues sit on.
 right default. Mention `python3 "$CANDIDATES" --list-fonts` once; do not make it a question the
 user has to answer before the pack can be created.
 
+**Nothing may still sit at an old place (#1779).** design-flow's files moved under `docs/design/`, and a project that has not moved them yet would be misread: it would scaffold placeholder logos over the real ones (the brand logos moved to `docs/design/assets/brand/`). Run this first:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/asset_home.py" --check
+```
+
+Exit 1 means an old place still holds files. **Stop**, run the command it prints (`asset_home.py --migrate`, once), and start this command again.
+
 ## Idempotency
 
 Own only what you scaffold; re-runnable. Wrap generated `@theme`/token blocks and `@utility`
@@ -127,7 +135,7 @@ authored; `git status` after.
    ≥20px, `brand_variant:` selecting the pack variant whose `endorsement` string is rendered — no
    brand name is ever hardcoded) so no screen hand-rolls a text eyebrow.
    Facet hues are fixed brand colors — the documented exception to role-tokens-only. If
-   `docs/design-system/brand-assets/01-logos/` exists, use its exact SVG paths; otherwise scaffold
+   `docs/design/assets/brand/01-logos/` exists, use its exact SVG paths; otherwise scaffold
    the canonical 3-facet prism from component-implementations.md and tell the user to swap in the
    official asset. Pair it with the **auth/focused-page** recipe (`cover > center > stack`) for
    sign-in / splash / onboarding screens.

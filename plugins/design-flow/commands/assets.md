@@ -12,9 +12,9 @@ Four files, four jobs, and confusing them is the trap:
 | file | holds | written by |
 |---|---|---|
 | `.design-flow/generation.json` | how to buy — ladder, ceiling, briefs | you, once |
-| `docs/assets/plan.json` | **what the product needs** | the seeding pass |
-| `docs/assets/manifest.json` | **what the project owns** | each successful generate |
-| `docs/assets/prompts-library/prompts.json` | **what was asked for, by which model, at what price** | each generate and each verdict |
+| `docs/design/assets/plan.json` | **what the product needs** | the seeding pass |
+| `docs/design/assets/manifest.json` | **what the project owns** | each successful generate |
+| `docs/design/assets/prompts-library/prompts.json` | **what was asked for, by which model, at what price** | each generate and each verdict |
 
 The **gap between plan and manifest is the remaining work.** That is the whole reason both exist.
 
@@ -37,7 +37,7 @@ It also creates **both destinations, before the first `--run`**, so nothing has 
 mid-generation:
 
 ```
-docs/assets/
+docs/design/assets/
 ├── plan.json          ┐
 ├── plan.md            ├─ the INDEXES — what is needed, what exists
 ├── manifest.json      ┘
@@ -178,7 +178,7 @@ who has to **review** it — which is the step the plan exists for.
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/asset_plan.py" --render
 ```
 
-writes `docs/assets/plan.md`: one row per asset, with the surface, kind, status, group, priority,
+writes `docs/design/assets/plan.md`: one row per asset, with the surface, kind, status, group, priority,
 per-row cost estimate, produced file and `why`. Unpriced rows are marked **unpriced** rather than
 shown as `$0.00`, so the reason a run will refuse is visible in the document you read to decide.
 

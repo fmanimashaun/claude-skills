@@ -643,5 +643,72 @@ GUARD = Guard(
             '        plain = True',
             "\"git -C '~/proj' push\": expected does not target main",
         ),
+        # ---- #1768: a bare `git config <key>` is a read; an empty-string argument does not end the command ----
+        Mutation(
+            "an empty-string argument ends the command again, so the words after it are read as a command of their own",
+            "        if t and set(t) <= SEPARATOR_CHARS:",
+            "        if set(t) <= SEPARATOR_CHARS:",
+            "\"git push origin '' main\": expected TARGETS main",
+        ),
+        Mutation(
+            "`git config <key> <value>` is read as a read, so setting core.hooksPath passes",
+            '        if only_known and len(words) == 1 and "." in words[0] and not _opaque(words[0]):',
+            '        if only_known and len(words) >= 1 and "." in words[0] and not _opaque(words[0]):',
+            "unlisted shape 'git config core.hooksPath /tmp/x'",
+        ),
+        Mutation(
+            "an option's own value (`--file <path>`) is counted as a positional word, so the read of that key is refused",
+            "            elif a in CONFIG_VALUE_FLAGS:\n                skip = True",
+            "            elif False:\n                skip = True",
+            "safe shape 'git config --file .git/config core.hooksPath'",
+        ),
+        Mutation(
+            "a key the shell has not expanded yet (`git config $KEY`) is read as a read",
+            '        if only_known and len(words) == 1 and "." in words[0] and not _opaque(words[0]):',
+            '        if only_known and len(words) == 1 and "." in words[0]:',
+            "unlisted shape 'git config remote.$NAME.url'",
+        ),
+        Mutation(
+            "a one-word `git config edit` (the sub-command that opens the editor on the config) is read as the read of a key",
+            '        if only_known and len(words) == 1 and "." in words[0] and not _opaque(words[0]):',
+            '        if only_known and len(words) == 1 and not _opaque(words[0]):',
+            "unlisted shape 'git config edit'",
+        ),
+        Mutation(
+            "any flag is accepted in a bare read, so an abbreviated write option (`--unset-a`) reads as a read",
+            "                only_known = only_known and a in CONFIG_READ_FLAGS",
+            "                only_known = only_known",
+            "unlisted shape 'git config --unset-a core.hooksPath'",
+        ),
+        Mutation(
+            "`get`/`list` count as a read sub-command in ANY position, so `git config core.hooksPath get` (a write of the value `get`) reads as a read",
+            '        if only_known and words and words[0] in ("get", "list"):',
+            '        if only_known and any(w in ("get", "list") for w in words):',
+            "unlisted shape 'git config core.hooksPath get'",
+        ),
+        Mutation(
+            "#1770: a `name() body` definition is a no-op, so the body is never classified and a function that pushes to main is allowed",
+            '    if "()" in toks:\n',
+            '    if "()" in toks:\n        return\n    if False:\n',
+            "function fixture 'f(){ git push origin main; }; f': expected ['PUSH_MAIN main']",
+        ),
+        Mutation(
+            "#1770: the body of a `function NAME { ... }` definition is dropped with the keyword, so it is never classified",
+            "            seg = seg[2:]\n",
+            "            seg = []\n",
+            "function fixture 'function f { git push origin main; }; f': expected ['PUSH_MAIN main']",
+        ),
+        Mutation(
+            "#1770: a cd (or a branch change) in a command that defines a function is followed instead of refused, so the call site's directory is misjudged",
+            "    if FUNCS[0]:\n",
+            "    if False:\n",
+            "function fixture 'f(){ cd /tmp; }; git push': expected None",
+        ),
+        Mutation(
+            "#1770: a GIT_DIR redirect on a call to a function that pushes is not refused",
+            "    if head in (\"cd\", \"pushd\", \"popd\") or any(GIT_ENV_REDIRECT.match(w) for w in seg):",
+            "    if head in (\"cd\", \"pushd\", \"popd\"):",
+            "function fixture 'f(){ git push; }; GIT_DIR=/x f': expected None",
+        ),
     ),
 )

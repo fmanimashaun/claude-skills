@@ -1,5 +1,5 @@
 ---
-description: Compose a Claude Design prompt for one surface that carries this project's own tokens, component catalog and band sequence — so the canvas comes back speaking the system and the port is a reconciliation rather than a translation. Saves to docs/design-system/prompts/.
+description: Compose a Claude Design prompt for one surface that carries this project's own tokens, component catalog and band sequence — so the canvas comes back speaking the system and the port is a reconciliation rather than a translation. Saves to docs/design/prompts/.
 ---
 
 # /design-flow:canvas
@@ -20,6 +20,14 @@ plugin, and no `plugin.json` can declare that — there is no `requires` field. 
 sequence come from there. **If you cannot read it, name what is missing
 (`/plugin install rails-stack@claude-skills`) and stop.** A prompt composed from memory of the catalog
 invites the canvas to draw components that do not exist, which is the whole failure being prevented.
+
+**Nothing may still sit at an old place (#1779).** design-flow's files moved under `docs/design/`, and a project that has not moved them yet would be misread: it would write the new prompt beside a stale set at the old place (the prompts moved to `docs/design/prompts/`). Run this first:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/asset_home.py" --check
+```
+
+Exit 1 means an old place still holds files. **Stop**, run the command it prints (`asset_home.py --migrate`, once), and start this command again.
 
 ## 1. Name the surface, and read what governs it
 
@@ -53,7 +61,7 @@ The script will not write this and should not. Add, in the project's own words:
 
 ## 4. Save it where the loop expects it
 
-`docs/design-system/prompts/<surface-slug>.md`. That directory is the record of what was asked for,
+`docs/design/prompts/<surface-slug>.md`. That directory is the record of what was asked for,
 and it is what makes a returned canvas reviewable — without it, nobody can tell whether the canvas
 answered the brief or drifted from it.
 
