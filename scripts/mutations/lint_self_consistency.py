@@ -1428,5 +1428,24 @@ GUARD = Guard(
             "    if False:",
             "a LAYOUT that is not a literal dict is itself a finding",
         ),
+        # #1698. The graph's vendored-alone copy of the schema-file rule must read the same files as the wiki builder's.
+        Mutation(
+            'the two copies are no longer compared',
+            '            if wiki_files != graph_files:',
+            '            if False:',
+            "the graph's copy reads fewer schema files than the wiki builder: a finding",
+        ),
+        Mutation(
+            'a script that cannot load is swallowed',
+            '        return [Finding("schema-reader-drift", wiki_rel, 0, f"cannot compare the schema-file rule in {wiki_rel} and {graph_rel}: {type(exc).__name__}: {exc}")], 0',
+            '        return [], 0',
+            'a graph copy that lost the function is a finding, never a silent pass',
+        ),
+        Mutation(
+            'a tree without both scripts is compared anyway',
+            '        return [], 0        # a tree without both scripts has no two copies to disagree',
+            '        pass',
+            'a tree without both scripts has no two copies to disagree, and is silent',
+        ),
     ),
 )
