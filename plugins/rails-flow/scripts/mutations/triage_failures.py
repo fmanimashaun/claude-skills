@@ -75,6 +75,13 @@ GUARD = Guard(
             "a rerun that exits 1 fails whatever it printed",
         ),
         Mutation(
+            # #1830: the pass line must be the WHOLE summary, or a pending example reads as a pass.
+            "a rerun whose only example is pending counts as a pass",
+            'PASS_LINE = re.compile(r"\\b1 example, 0 failures?(?![\\w,])")',
+            'PASS_LINE = re.compile(r"\\b1 example, 0 failures?\\b")',
+            "a rerun whose only example is pending does NOT pass",
+        ),
+        Mutation(
             "a run with errors outside of examples is triaged from its failed rows",
             "        if db.has_outside_errors(output):",
             "        if False:",
