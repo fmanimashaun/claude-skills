@@ -531,7 +531,7 @@ changes (README, packaging, infrastructure). Every version bump gets an entry he
   the warning and be deleted along with it; that carve-out has its own negative test, a fixture for
   the refusal sitting *under* a fenced command (the first window stopped one line short of every
   fenced case), and a control proving a refusal about some **other** subject further away does not
-  excuse it. 325 selftest assertions, 133 mutations.
+  excuse it. 325 selftest assertions, 132 mutations.
 
 - **Three times an added import has orphaned a neighbouring guard, so the harness now says so in a
   second — `scripts/mutation_check.py`, `scripts/mutation_check_selftest.py`,
