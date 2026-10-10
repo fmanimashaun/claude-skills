@@ -1277,6 +1277,144 @@ def guard_bash_fixtures() -> None:
           run("git clean -n -fd") == 0, "exit 2")
 
 
+# ---- guard-bash.sh: db:reset is situational (#1734) ---------------------------------------------------------------------
+# Retask's config/ci.rb REQUIRES a seeded `db:reset` and the guard refused it, recommending a sequence that leaves that project's test DB
+# unseeded (158 specs failed). A project now DECLARES `test-db-seeded: yes` on a line of its own in GUARDRAILS.md. A declaration allows ONE
+# command, `RAILS_ENV=test ... db:reset` run alone; every other reset, and every undeclared project, is refused as before.
+DB_RESET_TEST_FORMS = ("RAILS_ENV=test bin/rails db:reset", "env RAILS_ENV=test bin/rails db:reset", "RAILS_ENV=test bundle exec rails db:reset",
+                       "RAILS_ENV=test rake db:reset", "RAILS_ENV=test bin/rake db:reset", "bin/rails db:reset RAILS_ENV=test",
+                       "  RAILS_ENV=test bin/rails db:reset  ", "RAILS_ENV=test\tbin/rails db:reset")
+# Refused even for a declared project: not the test database, not alone, or not the bare reset.
+DB_RESET_STILL_REFUSED = ("bin/rails db:reset", "RAILS_ENV=development bin/rails db:reset", "RAILS_ENV=production bin/rails db:reset",
+                          "RAILS_ENV=testing bin/rails db:reset", "RAILS_ENV=test bin/rails db:reset && bin/rails db:reset",
+                          "RAILS_ENV=test bin/rails db:reset; bin/rails db:reset", "RAILS_ENV=test bin/rails db:reset | tee log",
+                          "RAILS_ENV=test bin/rails db:reset\nbin/rails db:reset", "RAILS_ENV=test bin/rails db:reset db:seed",
+                          "RAILS_ENV=test RAILS_ENV=development bin/rails db:reset", "RAILS_ENV=development RAILS_ENV=test bin/rails db:reset",
+                          "bin/rails db:reset RAILS_ENV=development", "(RAILS_ENV=test bin/rails db:reset)", "sudo RAILS_ENV=test bin/rails db:reset",
+                          "RAILS_ENV=test bin/rails db:reset\nrm tmp/x", "RAILS_ENV=test bin/rails db:reset\r\nbin/rails db:reset",
+                          "RAILS_ENV=test bin/rails db:reset # then\nbin/rails db:reset", "RAILS_ENV=test bin/rails db:reset `bin/rails db:reset`",
+                          # #1760 review: `[[:space:]]` matched a newline and `=~` anchors only at the ends of the whole string, so a bare assignment on one line and a
+                          # DEVELOPMENT reset on the next was one allowed command.
+                          "RAILS_ENV=test\nbin/rails db:reset", "bin/rails db:reset\nRAILS_ENV=test", "bin/rails db:reset\rRAILS_ENV=test",
+                          "RAILS_ENV=test\n\nbin/rails db:reset", "env RAILS_ENV=test\nbin/rails db:reset", "bundle exec rails db:reset\nRAILS_ENV=test")
+
+
+def guard_bash_db_reset_fixtures() -> None:
+    def project(guardrails: str | None, *, ci_script: bool = False, ci_rb: bool = False) -> Path:
+        root = Path(tempfile.mkdtemp())
+        if guardrails is not None:
+            (root / "GUARDRAILS.md").write_text(guardrails)
+        if ci_script:
+            (root / "bin").mkdir()
+            (root / "bin" / "ci").write_text("#!/bin/sh\n")
+        if ci_rb:
+            (root / "config").mkdir()
+            (root / "config" / "ci.rb").write_text("# CI\n")
+        return root
+
+    def hook(root: Path, stdin: str, cwd: Path | None = None) -> tuple[int, str]:
+        # CLAUDE_PROJECT_DIR is set explicitly: the harness may itself run inside a session whose project is another repository.
+        return run_hook("guard-bash.sh", cwd=cwd or root, stdin=stdin, env_extra={"CLAUDE_PROJECT_DIR": str(root)})
+
+    def run(root: Path, cmd: str, cwd: Path | None = None) -> tuple[int, str]:
+        return hook(root, json.dumps({"tool_input": {"command": cmd}}), cwd)
+
+    seeded = project("# Guardrails\n\n- test-db-seeded: yes\n")
+    plain = project("# Guardrails\n\nNothing declared here.\n")
+    try:
+        for cmd in DB_RESET_TEST_FORMS:
+            rc, out = run(seeded, cmd)
+            check(f"guard-bash (#1734): a project declaring test-db-seeded ALLOWS `{cmd.strip()}`", rc == 0, f"exit {rc}: {out[:120]}")
+        for cmd in DB_RESET_STILL_REFUSED:
+            rc, out = run(seeded, cmd)
+            check(f"guard-bash (#1734): even a declared project is still refused `{cmd!r}`", rc == 2, f"exit {rc}: {out[:120]}")
+        rc, out = run(seeded, "bin/rails db:reset")
+        # Text only the DECLARED message has: the undeclared one also names `RAILS_ENV=test bin/rails db:reset` (as what a declaration would allow).
+        check("guard-bash (#1734): the declared project's refusal says what IS allowed", "this project declares test-db-seeded" in out and "run on its own" in out, out[:200])
+
+        # UNDECLARED: the refusal stays, for every spelling, and a project with a CI script is pointed at it.
+        for cmd in ("bin/rails db:reset", "RAILS_ENV=test bin/rails db:reset", "env RAILS_ENV=test bin/rails db:reset", "bundle exec rails db:reset",
+                    "bundle exec bin/rails db:reset", "RAILS_ENV=test bundle exec rails db:reset", "bundle exec rake db:reset"):
+            rc, out = run(plain, cmd)
+            check(f"guard-bash (#1734): an UNDECLARED project is still refused `{cmd}`", rc == 2 and "db:reset is prohibited" in out, f"exit {rc}: {out[:120]}")
+        check("guard-bash (#1734): CONTROL: the refusal still recommends the unseeded sequence", "db:drop db:create db:schema:load" in out, out[:200])
+        check("guard-bash (#1734): with no CI script the refusal names none", "bin/ci" not in out and "config/ci.rb" not in out, out[:200])
+        check("guard-bash (#1734): the refusal says how to declare the choice", "test-db-seeded: yes" in out, out[:200])
+        check("guard-bash (#1734): the undeclared refusal is not the declared project's message", "this project declares" not in out, out[:200])
+
+        with_ci = project("# Guardrails\n", ci_script=True)
+        with_rb = project("# Guardrails\n", ci_rb=True)
+        both = project("# Guardrails\n", ci_script=True, ci_rb=True)
+        try:
+            rc, out = run(with_ci, "RAILS_ENV=test bin/rails db:reset")
+            check("guard-bash (#1734): an undeclared project WITH bin/ci is told to run bin/ci", rc == 2 and "run bin/ci" in out, f"exit {rc}: {out[:200]}")
+            rc, out = run(with_rb, "RAILS_ENV=test bin/rails db:reset")
+            check("guard-bash (#1734): one with only config/ci.rb is told its CI script", rc == 2 and "config/ci.rb" in out and "run bin/ci" not in out, f"exit {rc}: {out[:200]}")
+            rc, out = run(both, "RAILS_ENV=test bin/rails db:reset")
+            check("guard-bash (#1734): one with both names bin/ci", rc == 2 and "run bin/ci" in out, f"exit {rc}: {out[:200]}")
+        finally:
+            for d in (with_ci, with_rb, both):
+                shutil.rmtree(d, ignore_errors=True)
+
+        # WHAT IS NOT A DECLARATION: a mention, a refusal written as prose, `no`, a different key, a line that continues past the value.
+        not_declared = {
+            "a mention inside a sentence": "# Guardrails\n\nWe never write test-db-seeded: yes here.\n",
+            "a sentence that ENDS with it": "# Guardrails\n\nWe never write test-db-seeded: yes\n",
+            "the value no": "# Guardrails\n\n- test-db-seeded: no\n",
+            "a longer value": "# Guardrails\n\n- test-db-seeded: yes but only on Tuesdays\n",
+            "another key": "# Guardrails\n\n- test-db-seeded-maybe: yes\n",
+            "an empty file": "",
+            "a fenced example": "# Guardrails\n\n```markdown\n- test-db-seeded: yes\n```\n",
+            "a tilde-fenced example": "# Guardrails\n\n~~~\ntest-db-seeded: yes\n~~~\n",
+            "an indented code example": "# Guardrails\n\nAdd this:\n\n    - test-db-seeded: yes\n",
+            "a tab-indented example": "# Guardrails\n\nAdd this:\n\ttest-db-seeded: yes\n",
+            "an unclosed fence": "# Guardrails\n\n```\n- test-db-seeded: yes\n",
+            "an HTML comment spanning lines": "# Guardrails\n\n<!--\n- test-db-seeded: yes\n-->\n",
+            "a one-line HTML comment": "# Guardrails\n\n<!-- - test-db-seeded: yes -->\n",
+            "an unclosed HTML comment": "# Guardrails\n\n<!--\n- test-db-seeded: yes\n",
+        }
+        for why, text in not_declared.items():
+            root = project(text)
+            try:
+                rc, out = run(root, "RAILS_ENV=test bin/rails db:reset")
+                check(f"guard-bash (#1734): {why} does not declare it, so the reset is refused", rc == 2, f"exit {rc}: {out[:120]}")
+            finally:
+                shutil.rmtree(root, ignore_errors=True)
+        # ...and the spellings of a real declaration that ARE one (the line may be bulleted, backticked, or bare).
+        for text in ("- `test-db-seeded: yes`\n", "* test-db-seeded: yes\n", "test-db-seeded: yes\n", "  - test-db-seeded:   yes  \n", "x\r\n- test-db-seeded: yes\n",
+                 "```sh\nexample\n```\n- test-db-seeded: yes\n", "   - test-db-seeded: yes\n",
+                 "<!-- note -->\n- test-db-seeded: yes\n", "<!--\nnote\n-->\n- test-db-seeded: yes\n"):
+            root = project("# Guardrails\n\n" + text)
+            try:
+                rc, out = run(root, "RAILS_ENV=test bin/rails db:reset")
+                check(f"guard-bash (#1734): the declaration {text.strip()!r} is read", rc == 0, f"exit {rc}: {out[:120]}")
+            finally:
+                shutil.rmtree(root, ignore_errors=True)
+
+        # FAIL CLOSED: an unreadable payload cannot show which env the command sets, so even a declared project is refused.
+        rc, out = hook(seeded, "RAILS_ENV=test bin/rails db:reset")
+        check("guard-bash (#1734): a payload the hook cannot parse is refused even for a declared project", rc == 2, f"exit {rc}: {out[:120]}")
+        # The declaration is read from the PROJECT (CLAUDE_PROJECT_DIR), not from wherever the command's shell happens to be.
+        elsewhere = Path(tempfile.mkdtemp())
+        try:
+            rc, out = run(seeded, "RAILS_ENV=test bin/rails db:reset", cwd=elsewhere)
+            check("guard-bash (#1734): the declaration is read from the project directory, not the shell's cwd", rc == 0, f"exit {rc}: {out[:120]}")
+            rc, out = run(plain, "RAILS_ENV=test bin/rails db:reset", cwd=elsewhere)
+            check("guard-bash (#1734): CONTROL: an undeclared project is refused from the same cwd", rc == 2, f"exit {rc}: {out[:120]}")
+            # No CLAUDE_PROJECT_DIR (a plain terminal): the git root or cwd decides.
+            rc, out = run_hook("guard-bash.sh", cwd=seeded, unset=("CLAUDE_PROJECT_DIR",),
+                               stdin=json.dumps({"tool_input": {"command": "RAILS_ENV=test bin/rails db:reset"}}))
+            check("guard-bash (#1734): with no CLAUDE_PROJECT_DIR the working directory's GUARDRAILS.md is read", rc == 0, f"exit {rc}: {out[:120]}")
+        finally:
+            shutil.rmtree(elsewhere, ignore_errors=True)
+        # Other rules are untouched by a declaration.
+        rc, out = run(seeded, "git add -A")
+        check("guard-bash (#1734): CONTROL: a declaration does not relax `git add -A`", rc == 2, f"exit {rc}: {out[:120]}")
+    finally:
+        for d in (seeded, plain):
+            shutil.rmtree(d, ignore_errors=True)
+
+
 # ---- guard-claims.sh (#1106) --------------------------------------------------------------------
 # `claim-verifier` exists, works, covers "any number: counts, ratios, versions, timings", and is
 # named in /maintainer-work -- and it was skipped for a whole working day while two wrong numbers
@@ -4608,6 +4746,7 @@ GROUPS = {
     "stop_gate": stop_gate_fixtures, "guard_lane": guard_lane_fixtures,
     "guard_migrate": guard_migrate_fixtures, "lint_ruby": lint_ruby_fixtures,
     "self_consistency": self_consistency_fixtures, "guard_bash": guard_bash_fixtures,
+    "guard_bash_db_reset": guard_bash_db_reset_fixtures,
     "guard_claims": guard_claims_fixtures, "guard_claims_pipe": guard_claims_pipe_fixtures, "release_gate": release_gate_fixtures,
     "release_gate_effects": release_gate_effects_fixtures, "release_gate_repos": release_gate_repos_fixtures,
     "release_gate_refs": release_gate_refs_fixtures,
@@ -4631,7 +4770,7 @@ GROUPS = {
 # repos, refs and deadline groups and the four worktree groups (about 60 CPU-s, about 80 s of wall). EVERY group must be in exactly one part: a group in none
 # would never run in the doctor, which is the vacuous gate this repository keeps finding; the selftest checks it below.
 PARTS = {
-    "a": ["stop_gate", "guard_lane", "guard_migrate", "lint_ruby", "self_consistency", "guard_bash", "guard_claims", "guard_claims_pipe",
+    "a": ["stop_gate", "guard_lane", "guard_migrate", "lint_ruby", "self_consistency", "guard_bash", "guard_bash_db_reset", "guard_claims", "guard_claims_pipe",
           "ci_verdict_hint", "session_end", "timeout"],
     "b": ["release_gate", "release_gate_effects"],
     "c": ["release_gate_repos", "release_gate_refs", "guard_worktree", "guard_worktree_parse",

@@ -95,7 +95,7 @@ The fix is **split across two tiers, and the split is the lesson**:
 
 The prose half is the half that was violated in the first place, and it is still prose. Measured
 against the only relevant guard — `plugins/rails-flow/hooks/scripts/guard-bash.sh`, a `PreToolUse`
-hook that blocks `db:reset`, force-push, `git add -A` / `git add .`, `--no-verify`, `git reset --hard`
+hook that blocks `db:reset` (except `RAILS_ENV=test db:reset` run alone in a project that declares `test-db-seeded: yes`, #1734), force-push, `git add -A` / `git add .`, `--no-verify`, `git reset --hard`
 and un-approved `kamal deploy` — a plain push to a shared branch is **not** blocked. Fed
 `{"tool_input":{"command":"git push origin dev"}}` on stdin, it exits `0`.
 

@@ -90,8 +90,66 @@ rawhit() {
 exempt() { [ "$degraded" = 1 ] && return 1; hit "$1"; }
 
 # A rails/rake task segment that names db:reset (not the word inside a quoted string or a grep).
-if hit '^(bin/)?(rails|rake)([[:space:]]+[^[:space:]]+)*[[:space:]]+db:reset\b'; then
-  deny "db:reset is prohibited (seeds break test isolation). Use: db:drop db:create db:schema:load."
+#
+# #1734: THE RULE IS SITUATIONAL. "Seeds break test isolation" holds for a project whose suite expects an UNSEEDED test database. A project that
+# seeds its test DB on purpose (Retask's config/ci.rb: the seeded Setting rows are part of the test contract) needs the opposite, and the
+# sequence this message used to recommend (drop, create, schema:load) left it with 0 locations and 0 users and 158 failing specs. So a project
+# DECLARES the choice, the way `mockup-gate: off` is declared: a line `test-db-seeded: yes` of its own in GUARDRAILS.md. Undeclared stays refused.
+#
+# WHAT A DECLARATION ALLOWS IS ONE COMMAND: `RAILS_ENV=test bin/rails db:reset` (or the `env`, `bundle exec`, `rake` and trailing-assignment spellings),
+# and nothing else. It is matched against the WHOLE raw command, so a compound command that also resets the development database, `RAILS_ENV=development`,
+# or an unreadable payload (degraded mode: the env prefix the normaliser peels is exactly what this must read) is still refused.
+# `bundle exec` is part of the command (#1760 review): its verb is `bundle`, so a rule anchored on rails or rake never saw `bundle exec rails db:reset` at all.
+if hit '^(bundle[[:space:]]+exec[[:space:]]+)?(bin/)?(rails|rake)([[:space:]]+[^[:space:]]+)*[[:space:]]+db:reset\b'; then
+  _root="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+  _tab=$'\t'
+  _seeded=0
+  if [ -f "$_root/GUARDRAILS.md" ]; then
+    # LINE BY LINE, SKIPPING CODE: a GUARDRAILS.md that EXPLAINS the declaration inside a fenced block (```, ~~~) or an indented one would otherwise
+    # declare it by accident, and so would a quoted example (the same defect `mockup-gate: off` had to be fixed for). An unclosed fence hides the rest
+    # of the file, which is the safe side. Pure bash, so it needs no grep and no awk.
+    _guardrails="$(<"$_root/GUARDRAILS.md")" || _guardrails=""
+    _re_fence='^[[:space:]]{0,3}(```|~~~)'
+    _re_indented="^([[:space:]]{4,}|${_tab})"
+    _re_declares='^[[:space:]]*([-*+][[:space:]]*)?`?test-db-seeded:[[:space:]]*yes`?[[:space:]]*$'
+    _fenced=0; _commented=0
+    while IFS= read -r _line || [ -n "$_line" ]; do
+      # An HTML comment hides what is inside it, across lines: `<!--` opens it, the first `-->` closes it, and an unclosed one hides the rest.
+      if [ "$_commented" = 1 ]; then
+        [[ $_line == *'-->'* ]] && _commented=0
+        continue
+      fi
+      if [[ $_line =~ $_re_fence ]]; then _fenced=$((1 - _fenced)); continue; fi
+      [ "$_fenced" = 1 ] && continue
+      if [[ $_line == *'<!--'* ]]; then
+        _after_open="${_line#*<!--}"
+        [[ $_after_open == *'-->'* ]] || _commented=1
+        continue
+      fi
+      [[ $_line =~ $_re_indented ]] && continue
+      if [[ $_line =~ $_re_declares ]]; then _seeded=1; break; fi
+    done <<< "$_guardrails"
+  fi
+  # A SPACE OR A TAB, NEVER [[:space:]]: it matches a newline, and `=~` anchors only at the ends of the whole string, so `RAILS_ENV=test` + newline +
+  # `bin/rails db:reset` (a bare assignment, then a DEVELOPMENT reset) matched as one command (#1760 review). With a space or a tab only, a newline or a return
+  # can match no part of the pattern, so a command that holds one is refused.
+  _s="[ ${_tab}]"
+  _runner="((bundle${_s}+exec${_s}+)?(bin/)?(rails|rake))"
+  _env_first="^${_s}*(env${_s}+)?RAILS_ENV=test${_s}+${_runner}${_s}+db:reset${_s}*\$"
+  _env_last="^${_s}*${_runner}${_s}+db:reset${_s}+RAILS_ENV=test${_s}*\$"
+  if [ "$_seeded" = 1 ] && [ "$degraded" = 0 ] && { [[ $cmd =~ $_env_first ]] || [[ $cmd =~ $_env_last ]]; }; then
+    :   # declared, and exactly the test-database reset: allowed
+  elif [ "$_seeded" = 1 ]; then
+    deny "this project declares test-db-seeded in GUARDRAILS.md, so 'RAILS_ENV=test bin/rails db:reset' is allowed, run on its own. Any other db:reset (development, production, or inside a compound command) is refused."
+  else
+    _ci_hint=""
+    if [ -f "$_root/bin/ci" ]; then
+      _ci_hint=" If this project's suite needs a SEEDED test database, run bin/ci, which does its own reset."
+    elif [ -f "$_root/config/ci.rb" ]; then
+      _ci_hint=" If this project's suite needs a SEEDED test database, run its CI script (config/ci.rb), which does its own reset."
+    fi
+    deny "db:reset is prohibited (seeds break test isolation). Use: db:drop db:create db:schema:load.${_ci_hint} A project that seeds its test DB on purpose declares 'test-db-seeded: yes' in GUARDRAILS.md, which allows 'RAILS_ENV=test bin/rails db:reset'."
+  fi
 fi
 
 if hit '^git[[:space:]]+push\b.*(--force\b|[[:space:]]-f\b)' && ! exempt '^git[[:space:]]+push\b.*--force-with-lease'; then
