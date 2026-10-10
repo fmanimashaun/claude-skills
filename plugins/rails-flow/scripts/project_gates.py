@@ -82,7 +82,9 @@ Stdlib only, no network.
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -705,7 +707,7 @@ def sweep_record(results: list[Result], problems: list[str], code: int, head: st
             "passed": count(PASS), "failed": count(FAIL), "errored": errored,
             "not_applicable": len(na), "not_applicable_checks": na,
             "manifest_problems": len(problems), "skips": errored + len(problems),
-            "at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
+            "at": datetime.datetime.now(datetime.timezone.utc)
                   .strftime("%Y-%m-%dT%H:%M:%SZ"),
             "project_gates": ".".join(map(str, plugin_identity(Path(__file__).resolve().parent.parent)[1]))}
 
@@ -728,7 +730,7 @@ def write_sweep_record(project: Path, results: list[Result], problems: list[str]
         folder = Path(where) if Path(where).is_absolute() else project / where
         folder.mkdir(parents=True, exist_ok=True)
         target = folder / f"{head}.json"
-        tmp = folder / f".{head}.json.{__import__('os').getpid()}.tmp"
+        tmp = folder / f".{head}.json.{os.getpid()}.tmp"
         tmp.write_text(json.dumps(sweep_record(results, problems, code, head, tree), indent=2) + "\n",
                        encoding="utf-8")
         tmp.replace(target)
