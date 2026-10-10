@@ -521,6 +521,11 @@ elif [ "$_mentions" = 1 ]; then
   #   (c) every `git` call names a read-only subcommand on the list below, so a configured alias (`git p` for push) is refused too.
   # (`checkout`/`switch` chained with a ref-changing verb is refused by (b), which reads the whole command.)
   # The over-block is the point: the message names the missing file, and reinstalling the plugin restores the full gate.
+  # SCOPE (coordinator ruling on #1720): like guard-worktree, this guards against ACCIDENT, not a malicious executor, which can run
+  # `./evil` without git at all. Out of scope: arbitrary programs reached through options (`--upload-pack`, `-c core.pager`,
+  # `-c alias.x=!cmd`, GIT_SSH_COMMAND, `--exec-path=`, `grep -O`), file writes through `--output`, and `remote add/set-url`,
+  # `restore` and `stash`. In scope: every way to put commits on main or move a ref, including the dashed `git-push`, a gh write
+  # (gh calls are allow-listed), and a local rewrite of main (`branch -m/-C/-d/-f`, `checkout -B`, `switch -C`, `worktree add -B`).
   # Builtins plus `grep` and `tr` only, both on the required-tool list above, which refuses when either is missing.
   _flat="$(LC_ALL=C tr -d "'\"\\\\" <<<"$cmd")"
   _w='(^|[^[:alnum:]_.-])'; _e='([^[:alnum:]_.-]|$)'
@@ -529,8 +534,7 @@ elif [ "$_mentions" = 1 ]; then
     _why="it uses a shell expansion, quote, backslash, glob or brace, which only the classifier can read"
   elif LC_ALL=C grep -qE "${_w}(push|merge|pull|send-pack|update-ref|reset|rebase|cherry-pick|revert|commit)${_e}" <<<"$_flat" \
     || LC_ALL=C grep -qE "${_w}fetch${_e}[^;&|]*:" <<<"$_flat" \
-    || LC_ALL=C grep -qE "${_w}branch[[:space:]][^;&|]*-(f|M|D|-force|-delete|-move)${_e}" <<<"$_flat" \
-    || LC_ALL=C grep -qE "${_w}gh[[:space:]]([^;&|]*[[:space:]])?(pr|api|release|repo)${_e}" <<<"$_flat"; then
+    || LC_ALL=C grep -qE "${_w}branch[[:space:]][^;&|]*-(f|M|D|-force|-delete|-move)${_e}" <<<"$_flat"; then
     _why="it changes a ref or a release"
   else
     # (c): each `git` call, past its global options, must name a read-only subcommand.
@@ -545,6 +549,39 @@ elif [ "$_mentions" = 1 ]; then
       esac
     done <<<"$_sub"
     if [ -z "$_why" ] && LC_ALL=C grep -qE "${_w}git${_e}" <<<"$_flat" && [ -z "$_sub" ]; then _why="a git call names no subcommand it can read"; fi
+    # The dashed form: `git-push` is `git push` (#1720 re-attack). Only a read-only verb may follow `git-`.
+    if [ -z "$_why" ]; then
+      while IFS= read -r _s; do
+        [ -n "$_s" ] || continue
+        case "$_s" in
+          status|log|diff|show|rev-parse|rev-list|ls-files|ls-tree|ls-remote|blame|grep|describe|shortlog|help|version) ;;
+          *) _why="\`git-$_s\` is not on the read-only list"; break ;;
+        esac
+      done <<<"$(LC_ALL=C grep -oE "${_w}git-[[:alnum:]-]+" <<<"$_flat" | LC_ALL=C grep -oE 'git-[[:alnum:]-]+' | LC_ALL=C sed 's/^git-//')"
+    fi
+    # PER SEGMENT (split at `;`, `&`, `|` and newlines): a LOCAL rewrite of main, and every gh call against an allow-list.
+    if [ -z "$_why" ]; then
+      while IFS= read -r _g; do
+        [ -n "$_g" ] || continue
+        if LC_ALL=C grep -qE "${_w}(main|master)${_e}" <<<"$_g" \
+           && LC_ALL=C grep -qE "${_w}(branch[[:space:]]([^[:space:]]+[[:space:]]+)*-[[:alpha:]]*[mMcCdDf][[:alpha:]]*|checkout[[:space:]]([^[:space:]]+[[:space:]]+)*-B|switch[[:space:]]([^[:space:]]+[[:space:]]+)*-C|worktree[[:space:]]+add[[:space:]]([^[:space:]]+[[:space:]]+)*-B)${_e}" <<<"$_g"; then
+          _why="it creates, moves, copies or deletes a local main or master"; break
+        fi
+        _gh="$(LC_ALL=C grep -oE "${_w}gh([[:space:]]+[^[:space:]]+)*" <<<"$_g" | head -1)"
+        [ -n "$_gh" ] || continue
+        set -- $_gh; while [ $# -gt 0 ] && [ "$1" != gh ]; do shift; done; shift
+        case "${1:-} ${2:-}" in
+          "issue "*|"run "*|"pr list"|"pr view"|"pr checks"|"pr diff"|"pr status"|"repo view"|"auth status") ;;
+          "api "*)
+            if LC_ALL=C grep -qE "[[:space:]](-[fF]|--field|--raw-field|--input)([[:space:]=]|$)" <<<"$_g" \
+               || { LC_ALL=C grep -qE "[[:space:]](-X|--method)([[:space:]=]|$)" <<<"$_g" \
+                    && ! LC_ALL=C grep -qE "[[:space:]](-X|--method)[[:space:]=]*GET([[:space:]]|$)" <<<"$_g"; }; then
+              _why="\`gh api\` with a method other than GET or with fields writes"; break
+            fi ;;
+          *) _why="\`gh ${1:-} ${2:-}\` is not on the read-only list"; break ;;
+        esac
+      done <<<"$(LC_ALL=C tr ';&|' '\n\n\n' <<<"$_flat")"
+    fi
   fi
   if [ -n "$_why" ]; then
     [ "${QA_ALLOW_MAIN:-0}" = "1" ] && { echo "qa-flow: release-gate classifier missing, but QA_ALLOW_MAIN=1 — allowed (audited)." >&2; exit 0; }

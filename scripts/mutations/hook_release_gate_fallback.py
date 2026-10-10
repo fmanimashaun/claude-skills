@@ -41,15 +41,9 @@ GUARD = Guard(
         ),
         Mutation(
             "(b) `branch -f` is not a ref change",
-            '    || LC_ALL=C grep -qE "${_w}branch[[:space:]][^;&|]*-(f|M|D|-force|-delete|-move)${_e}" <<<"$_flat" \\',
-            "    || false \\",
-            "release-gate fallback (#1720): (b) `branch -f` refuses",
-        ),
-        Mutation(
-            "(b) a gh write is not a ref change",
-            '    || LC_ALL=C grep -qE "${_w}gh[[:space:]]([^;&|]*[[:space:]])?(pr|api|release|repo)${_e}" <<<"$_flat"; then',
+            '    || LC_ALL=C grep -qE "${_w}branch[[:space:]][^;&|]*-(f|M|D|-force|-delete|-move)${_e}" <<<"$_flat"; then',
             "    || false; then",
-            "release-gate fallback (#1720): (b) a gh write refuses",
+            "release-gate fallback (#1720): (b) `branch -f/-D` refuses even without main (`git branch -D feature/x`)",
         ),
         Mutation(
             "(c) a git subcommand off the read-only list passes",
@@ -65,9 +59,39 @@ GUARD = Guard(
         ),
         Mutation(
             "the read-only list is not consulted: every git call is refused",
-            "        status|log|diff|show|rev-parse|",
-            "        __none__|",
+            "        status|log|diff|show|rev-parse|rev-list|ls-files|ls-tree|ls-remote|branch|",
+            "        __none__|rev-list|ls-files|ls-tree|ls-remote|branch|",
             "release-gate fallback (#1720): CONTROL: read-only `git status` passes",
+        ),
+        Mutation(
+            "the dashed `git-<verb>` form is not checked",
+            '          *) _why="\\`git-$_s\\` is not on the read-only list"; break ;;',
+            "          *) ;;",
+            "release-gate fallback (#1720): the dashed `git-push origin main` refuses",
+        ),
+        Mutation(
+            "a local rewrite of main is not checked",
+            '           && LC_ALL=C grep -qE "${_w}(branch[[:space:]]',
+            '           && false && LC_ALL=C grep -qE "${_w}(branch[[:space:]]',
+            "release-gate fallback (#1720): a local rewrite of main (`git branch -m dev main`) refuses",
+        ),
+        Mutation(
+            "a gh subcommand off the allow-list passes",
+            '          *) _why="\\`gh ${1:-} ${2:-}\\` is not on the read-only list"; break ;;',
+            "          *) ;;",
+            "release-gate fallback (#1720): a gh subcommand off the allow-list (`gh workflow run`) refuses",
+        ),
+        Mutation(
+            "a gh api write passes",
+            '              _why="\\`gh api\\` with a method other than GET or with fields writes"; break',
+            "              :",
+            "release-gate fallback (#1720): `gh api -X POST` refuses",
+        ),
+        Mutation(
+            "a GET is read as a write: every `gh api -X GET` refuses",
+            '&& ! LC_ALL=C grep -qE "[[:space:]](-X|--method)[[:space:]=]*GET([[:space:]]|$)" <<<"$_g"; }; then',
+            '; }; then',
+            "release-gate fallback (#1720): CONTROL: read-only `gh api -X GET repos/a/b` passes",
         ),
     ),
 )
