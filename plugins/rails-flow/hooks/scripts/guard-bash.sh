@@ -152,19 +152,27 @@ if hit '^(bundle[[:space:]]+exec[[:space:]]+)?(bin/)?(rails|rake)([[:space:]]+[^
   fi
 fi
 
-# #1706: a bundled `-fu` and a `+<ref>` refspec force as surely as `-f`.
-if hit '^git[[:space:]]+push\b.*([[:space:]]--force\b|[[:space:]]-[a-zA-Z]*f[a-zA-Z]*\b|[[:space:]]\+[^[:space:]])' && ! exempt '^git[[:space:]]+push\b.*--force-with-lease'; then
+# #1706: a bundled `-fu` and a `+<ref>` refspec force as surely as `-f`, the `+` leading the refspec or after its colon (`HEAD:+main`).
+if hit '^git[[:space:]]+push\b.*([[:space:]]--force\b|[[:space:]]-[a-zA-Z]*f[a-zA-Z]*\b|[[:space:]]\+[^[:space:]]|:\+[^[:space:]])' && ! exempt '^git[[:space:]]+push\b.*--force-with-lease'; then
   deny "force-push is prohibited. Use --force-with-lease on your own feature branch only, never on main/dev/staging."
 fi
 # #1708: the protected branch is a whole ref (`main`, `HEAD:main`, `+dev`, `refs/heads/staging`), not the word inside `feature/main-menu`.
-if hit '^git[[:space:]]+push\b.*--force-with-lease' && hit '^git[[:space:]]+push\b.*([[:space:]]|:|\+)(refs/heads/)?(main|master|dev|staging)([[:space:]]|$)'; then
+# #1708 scope (#1783 review): deleting a protected branch on the remote, `git push origin :main` or `--delete main`.
+if hit '^git[[:space:]]+push\b.*[[:space:]]:(refs/heads/)?(main|master|dev|staging)([[:space:]]|$)' \
+   || { hit '^git[[:space:]]+push\b.*[[:space:]](--delete|-d)\b' && hit '^git[[:space:]]+push\b.*[[:space:]](refs/heads/)?(main|master|dev|staging)([[:space:]]|$)'; }; then
+  deny "deleting a protected branch (main/dev/staging) on the remote requires explicit user approval."
+fi
+# `--all` and `--mirror` push every branch, the protected ones included (#1783 review).
+if hit '^git[[:space:]]+push\b.*--force-with-lease' && { hit '^git[[:space:]]+push\b.*([[:space:]]|:|\+)(refs/heads/)?(main|master|dev|staging)([[:space:]]|$)' \
+   || hit '^git[[:space:]]+push\b.*[[:space:]]--(all|mirror)\b'; }; then
   deny "force-pushing a protected branch (main/dev/staging) requires explicit user approval."
 fi
 
 # Leading short flags are allowed through (`-v -A`), `-A` may sit inside a bundle (`-vA`), and the
 # repo-root spellings `./` and `:/` count as `.` (#826). Verb at the START of a segment (#906).
 # #1706: long options and `--` may come first too (`add --verbose -A`, `add -- .`).
-if hit '^git[[:space:]]+add([[:space:]]+-[a-zA-Z-]*)*[[:space:]]+(-[a-zA-Z]*A[a-zA-Z]*\b|--all\b|\./?($|[[:space:]])|:/($|[[:space:]]))'; then
+# `*` and `..` stage as much as `.` (#1783 review).
+if hit '^git[[:space:]]+add([[:space:]]+-[a-zA-Z-]*)*[[:space:]]+(-[a-zA-Z]*A[a-zA-Z]*\b|--all\b|\.{1,2}/?($|[[:space:]])|:/($|[[:space:]])|\*($|[[:space:]]))'; then
   deny "stage specific files, never 'git add -A' / 'git add .' (GUARDRAILS: no accidental secrets or stray files)."
 fi
 
@@ -185,7 +193,8 @@ if hit '^git[[:space:]]+clean\b.*([[:space:]]-[a-zA-Z]*f|[[:space:]]--force\b)' 
   deny "git clean -f deletes untracked files with no undo. Run 'git clean -n' first and show the user what it would remove; delete named paths with approval."
 fi
 if hit '^git[[:space:]]+checkout\b.*[[:space:]]--([[:space:]]|$)' \
-   || hit '^git[[:space:]]+checkout([[:space:]]+[^[:space:]]+)*[[:space:]]+(\./?|:/)($|[[:space:]])'; then   # #1706: `checkout HEAD .` too
+   || hit '^git[[:space:]]+checkout([[:space:]]+[^[:space:]]+)*[[:space:]]+(\./?|:/)($|[[:space:]])' \
+   || hit '^git[[:space:]]+checkout\b.*[[:space:]](-f|--force)($|[[:space:]])'; then   # #1706: `checkout HEAD .`; review: `checkout -f` discards too
   deny "git checkout -- <path> / git checkout . overwrites uncommitted edits with no undo. To keep them: git stash push -m <why> -- <path>. To discard ONE file you own: git restore -- <that path>."
 fi
 if hit '^git[[:space:]]+restore\b.*[[:space:]](\./?|:/|\*)($|[[:space:]])' \
