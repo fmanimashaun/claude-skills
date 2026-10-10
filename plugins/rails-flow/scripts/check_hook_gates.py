@@ -3097,7 +3097,7 @@ def release_gate_refs_fixtures() -> None:
             env.update({"GIT_CONFIG_COUNT": "2",
                         "GIT_CONFIG_KEY_0": "url./nonexistent-qa-flow-remote/.insteadOf", "GIT_CONFIG_VALUE_0": "https://github.com/",
                         "GIT_CONFIG_KEY_1": f"url.{bare}.insteadOf", "GIT_CONFIG_VALUE_1": "https://github.com/other/fork.git"})
-            env.update({"CLAUDE_PLUGIN_DATA": str(Path(td) / "plugin-data"), "FAKE_TREE_REPO": str(bare)})
+            env.update({"QA_FLOW_VERDICT_DIR": str(Path(td) / "plugin-data"), "FAKE_TREE_REPO": str(bare)})
             env.update(extra)
             if _env_out is not None:
                 _env_out.append(env)
@@ -3324,7 +3324,7 @@ def release_gate_repos_fixtures() -> None:
             env.update({"GIT_CONFIG_COUNT": "2",
                         "GIT_CONFIG_KEY_0": "url./nonexistent-qa-flow-remote/.insteadOf", "GIT_CONFIG_VALUE_0": "https://github.com/",
                         "GIT_CONFIG_KEY_1": f"url.{forkbare}.insteadOf", "GIT_CONFIG_VALUE_1": "https://github.com/other/fork.git"})
-            env.update({"CLAUDE_PLUGIN_DATA": str(Path(td) / "plugin-data"), "FAKE_TREE_REPO": str(forkbare)})
+            env.update({"QA_FLOW_VERDICT_DIR": str(Path(td) / "plugin-data"), "FAKE_TREE_REPO": str(forkbare)})
             env.update(extra)
             if _env_out is not None:
                 _env_out.append(env)
@@ -3694,7 +3694,7 @@ def release_gate_repos_fixtures() -> None:
         started = time.monotonic()
         done = _run([sys.executable, str(QA_HOOK.parents[2] / "scripts" / "remote_evidence.py"), "--repo", "other/fork", "--sha", sha_good,
                      "--record", "--budget", "3"], cwd=repo, capture_output=True, text=True, timeout=60,
-                    env={**os.environ, "PATH": f"{gitbin}{os.pathsep}{os.environ['PATH']}", "CLAUDE_PLUGIN_DATA": str(stalled_data),
+                    env={**os.environ, "PATH": f"{gitbin}{os.pathsep}{os.environ['PATH']}", "QA_FLOW_VERDICT_DIR": str(stalled_data),
                          "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": f"url.{forkbare}.insteadOf",
                          "GIT_CONFIG_VALUE_0": "https://github.com/other/fork.git"})
         took = time.monotonic() - started
@@ -3742,6 +3742,24 @@ def release_gate_repos_fixtures() -> None:
         rc, err = foreign(sha_good, s2, ev_files, _record=False)
         check("release-gate (#1686): no verdict at all denies as `missing`, naming the command",
               rc == 2 and "no usable verdict: missing:" in err and "--record" in err, f"rc={rc} {err[:300]!r}")
+        # END TO END (#1686): the recording runs through the Bash tool, which gets NO CLAUDE_PLUGIN_DATA, and the gate runs as a hook, which gets
+        # it (code.claude.com/docs/en/plugins/manifest-reference.md). Record with the variable unset and the verdict directory unset, read through the
+        # hook with the variable SET to somewhere else, over the same HOME: the verdict must be found.
+        home = Path(td) / "e2e-home"
+        home.mkdir(exist_ok=True)
+        e2e_env = {k: v for k, v in os.environ.items() if k not in ("CLAUDE_PLUGIN_DATA", "QA_FLOW_VERDICT_DIR")}
+        e2e_env.update({"HOME": str(home), "PATH": f"{Path(td) / 'bin'}{os.pathsep}{os.environ['PATH']}", "GIT_CONFIG_COUNT": "1",
+                        "GIT_CONFIG_KEY_0": f"url.{forkbare}.insteadOf", "GIT_CONFIG_VALUE_0": "https://github.com/other/fork.git"})
+        done = _run([sys.executable, str(QA_HOOK.parents[2] / "scripts" / "remote_evidence.py"), "--repo", "other/fork", "--sha", sha_good, "--record"],
+                    cwd=repo, env=e2e_env, capture_output=True, text=True, timeout=120)
+        written = home / ".claude" / "qa-flow" / "remote-verdicts" / f"other__fork@{sha_good}.json"
+        check("release-gate (#1686): a recording run with no CLAUDE_PLUGIN_DATA writes under ~/.claude/qa-flow/remote-verdicts",
+              done.returncode == 0 and written.is_file(), f"rc={done.returncode} {done.stderr[:200]!r}")
+        for stale in (Path(td) / "plugin-data" / "remote-verdicts").glob("*.json"):
+            stale.unlink()
+        rc, err = foreign(sha_good, s2, ev_files, _record=False, HOME=str(home), QA_FLOW_VERDICT_DIR="", CLAUDE_PLUGIN_DATA=str(Path(td) / "hook-data"))
+        check("release-gate (#1686): the hook, with CLAUDE_PLUGIN_DATA set elsewhere, finds the verdict the Bash-side recording wrote",
+              rc == 0, f"rc={rc} {err[:300]!r}")
         vfile.write_text(json.dumps(good), encoding="utf-8")
         rc, err = foreign(sha_good, s2, ev_files, _record=False)
         check("release-gate (#1686): CONTROL: the good verdict, put back, permits again", rc == 0, f"rc={rc} {err[:240]!r}")

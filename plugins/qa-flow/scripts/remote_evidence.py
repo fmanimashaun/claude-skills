@@ -10,7 +10,7 @@ WHY A SEPARATE STEP (#1686). Judging a repository with real evidence took 35.7 s
 `--filter=blob:none` turns every blob it reads into a network round trip), and the hook has 15 s. So the judgement runs here, ahead of
 the promotion, with minutes to spare, and writes a VERDICT FILE that the release gate only READS. A verdict is keyed by repository,
 the exact commit and the evidence tree id (`git rev-parse SHA:qa`, which the gate recomputes in one API call), expires after 30
-minutes, lives in the plugin's data directory (never in a repository, so it cannot be committed), and anything missing, stale,
+minutes, lives in `~/.claude/qa-flow/remote-verdicts` (never in a repository, so it cannot be committed), and anything missing, stale,
 unparsable, mismatched or FAIL refuses, naming which one it was and the command to run.
 THREAT MODEL: this guards against an ACCIDENTAL promotion, not against a session that hand-writes a PASS file.
 
@@ -62,8 +62,10 @@ VERDICT_TTL = 30 * 60     # seconds a recorded verdict is honoured (#1686)
 
 
 def verdict_path(repo: str, sha: str) -> Path:
-    """Where the verdict for (repo, sha) lives: the plugin's data directory, never inside a repository."""
-    base = os.environ.get("CLAUDE_PLUGIN_DATA") or str(Path.home() / ".claude" / "qa-flow")
+    """Where the verdict for (repo, sha) lives: `~/.claude/qa-flow/remote-verdicts`, never inside a repository. It does NOT depend on
+    CLAUDE_PLUGIN_DATA: Claude Code gives that variable to hook processes and NOT to Bash-tool commands (code.claude.com/docs/en/plugins/manifest-reference.md),
+    and the recording runs through Bash while the gate runs as a hook, so the two would have looked in different places. QA_FLOW_VERDICT_DIR is for tests."""
+    base = os.environ.get("QA_FLOW_VERDICT_DIR") or str(Path.home() / ".claude" / "qa-flow")
     return Path(base) / "remote-verdicts" / f"{repo.replace('/', '__')}@{sha}.json"
 
 
@@ -350,8 +352,8 @@ def selftest() -> int:
         sha2 = subprocess.run(["git", "rev-parse", "HEAD"], cwd=work, capture_output=True, text=True, check=True).stdout.strip()
         tree2 = subprocess.run(["git", "rev-parse", "HEAD:qa"], cwd=work, capture_output=True, text=True, check=True).stdout.strip()
         subprocess.run(["git", "push", "-q", str(src), "HEAD:refs/heads/dev"], cwd=work, check=True)
-        saved_data = os.environ.get("CLAUDE_PLUGIN_DATA")
-        os.environ["CLAUDE_PLUGIN_DATA"] = str(d / "data")
+        saved_data = os.environ.get("QA_FLOW_VERDICT_DIR")
+        os.environ["QA_FLOW_VERDICT_DIR"] = str(d / "data")
 
         def recorded(commit: str, script: Path) -> tuple[int, str]:
             keep = (sys.stdout, sys.stderr)
@@ -373,7 +375,7 @@ def selftest() -> int:
         vpath = verdict_path("o/r", sha2)
         check("a PASS is recorded, and read back for the same repository, commit and evidence tree",
               rc == 0 and read_verdict("o/r", sha2, tree2) == ("ok", "qa/manual-tests/first-boot-v1/\n"), f"rc={rc} {se!r} {read_verdict('o/r', sha2, tree2)}")
-        check("the verdict is kept in the plugin's data directory, owner-only", str(vpath).startswith(str(d / "data"))
+        check("the verdict is kept under the verdict directory, owner-only", str(vpath).startswith(str(d / "data"))
               and oct(vpath.stat().st_mode & 0o777) == "0o600", f"{vpath} {oct(vpath.stat().st_mode & 0o777)}")
         check("a verdict for another evidence tree is a mismatch", read_verdict("o/r", sha2, "c" * 40)[0] == "mismatch")
         check("a verdict read with no evidence tree is a mismatch, not a pass", read_verdict("o/r", sha2, "")[0] == "mismatch")
@@ -415,9 +417,9 @@ def selftest() -> int:
         check("a commit with no qa/ tree is unusable and records NO verdict",
               rc == EXIT_UNUSABLE and "no qa/ tree" in se and not verdict_path("o/r", sha).exists(), f"rc={rc} {se!r}")
         if saved_data is None:
-            os.environ.pop("CLAUDE_PLUGIN_DATA", None)
+            os.environ.pop("QA_FLOW_VERDICT_DIR", None)
         else:
-            os.environ["CLAUDE_PLUGIN_DATA"] = saved_data
+            os.environ["QA_FLOW_VERDICT_DIR"] = saved_data
         slow = d / "slow.py"
         slow.write_text("import time\ntime.sleep(30)\n", encoding="utf-8")
         started = time.monotonic()
