@@ -281,13 +281,45 @@ worthwhile add-on is the first-party ops dashboard:
 mount MissionControl::Jobs::Engine, at: "/jobs"
 ```
 
-The outcome is a dashboard only admins can reach. mission_control-jobs (1.3.1) ships with HTTP basic
-auth **enabled and closed**, so until credentials are set nobody can open it. To admit your admins
-instead, set `config.mission_control.jobs.base_controller_class = "AdminController"` to your app's
-authenticated admin controller ([README](https://github.com/rails/mission_control-jobs#authentication)).
+The outcome must be a dashboard only admins can reach, and the default is not that.
+mission_control-jobs (1.3.1) ships with HTTP basic auth **enabled and closed** (README):
+every request answers 401 until `http_basic_auth_user` and `http_basic_auth_password` are
+set (`bin/rails mission_control:jobs:authentication:configure`, the
+`mission_control.http_basic_auth_*` Rails credentials keys, or the two settings).
 
-Queues, in-flight and failed jobs with backtraces, retry/discard buttons —
-mount it behind admin auth like any ops surface.
+To admit your own admins instead, **both** of these are needed (1.3.1):
+
+```ruby
+# config/application.rb (or an initializer)
+config.mission_control.jobs.base_controller_class = "AdminController" # your authenticating controller
+config.mission_control.jobs.http_basic_auth_enabled = false
+```
+
+`base_controller_class` alone is not enough: the engine's controller always includes its
+basic-auth concern, whose `before_action` answers 401 while `http_basic_auth_enabled` is
+true (the default). Your controller's own `before_action`s run first, so a redirect there
+halts the chain before basic auth. The README's "you can disable" is softer than the code.
+The README's other approach wraps the `mount` in a `constraints` lambda, and it also needs
+`http_basic_auth_enabled = false` if you do not want both.
+
+Two more settings that bite (1.3.1):
+
+- **`filter_arguments` matches root-level hash keys only.** It never recurses into the value
+  under an unmatched key, and a positional value is never filtered; the README says only
+  root-level hash keys are supported. The raw-data view applies it at the top of the
+  arguments array only; the list, queue, worker and job-detail views re-apply it at each
+  plain-hash level but never to a GlobalID or serialised object; the recurring-task pages
+  and a worker's raw data are not filtered. Do not rely on it for nested or positional
+  secrets: keep them out of job arguments.
+- **`adapters` defaults to `[config.active_job.queue_adapter || :async]`**, and the engine
+  prepends its Solid Queue extension only when `:solid_queue` is in the list at boot. Where
+  the app's adapter is `:async` (development) or `:test` and the list does not name
+  `:solid_queue`, the dashboard renders but reads nothing on `:async` (empty), and `:test`
+  has no handling in the gem (expected to fail on the first request: inferred from the
+  code, not run). Set `config.mission_control.jobs.adapters = [:solid_queue]` to read the
+  Solid Queue tables in every environment.
+
+Queues, in-flight and failed jobs with backtraces, retry/discard buttons.
 
 ## 9. Model utilities
 
