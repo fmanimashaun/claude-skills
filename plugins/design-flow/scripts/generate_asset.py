@@ -58,7 +58,7 @@ PLACEHOLDER_RE = re.compile(
     r"^(your[-_ ]?api[-_ ]?key|your[-_ ]?key|changeme|replace[-_ ]?me|todo|xxx+|placeholder|"
     r"<[^>]*>|\.\.\.|)$", re.I)
 
-ASSET_DIR = Path("docs/assets")
+ASSET_DIR = Path("docs/design/assets")
 # #625/#628/#629 — MAINTAINER DECISION, recorded on those issues rather than derived from any
 # upstream: the assets dir splits into two named folders, so the finished artefacts and the prompt
 # library each have a home instead of everything landing in one flat directory beside the indexes.
@@ -66,7 +66,7 @@ ASSET_DIR = Path("docs/assets")
 # The indexes STAY at the assets-dir root -- `plan.json`/`plan.md` and `manifest.json` describe the
 # contents, so root holds descriptions and the subfolders hold contents. Leaving `manifest.json`
 # where it is also means no existing project has to move a file, and every doc and command that
-# already names `docs/assets/manifest.json` keeps working.
+# already names `docs/design/assets/manifest.json` keeps working.
 #
 # Kebab, not the space the layout was drawn with: a path with a space in it breaks every unquoted
 # shell one-liner in our own docs, and `lint_markdown_shell.py` checks 191 of those.
@@ -942,14 +942,14 @@ def fetch_url(url: str, timeout: int) -> bytes:
 
     THE SCHEME CHECK IS NOT A FORMALITY. `--from-url` takes a string an agent read out of a tool
     result, and `file:///etc/passwd` is a URL `urlopen` will happily open -- after which the gate's
-    format sniff decides whether a local secret gets written into `docs/assets/` and committed. Only
+    format sniff decides whether a local secret gets written into `docs/design/assets/` and committed. Only
     http(s) is ever fetched.
     """
     scheme = url.split(":", 1)[0].lower() if ":" in url else ""
     if scheme not in ("http", "https"):
         raise Unusable(f"refusing to fetch {url!r}: only http and https are fetched. A `file:` or "
                        f"`data:` URL would read this machine rather than the provider, and the "
-                       f"result would be committed into docs/assets as though a model had made it.")
+                       f"result would be committed into docs/design/assets as though a model had made it.")
     try:
         # CONSTRUCTED INSIDE THE TRY. `Request.__init__` parses the URL, so a malformed one raises
         # ValueError HERE rather than at `urlopen` -- and built outside, that is an uncaught
@@ -1305,7 +1305,7 @@ def selftest() -> int:
         except Unusable:
             pass
         check("...while a path inside it resolves relative",
-              _project_relative(root / "docs/assets/x.svg", root) == "docs/assets/x.svg")
+              _project_relative(root / "docs/design/assets/x.svg", root) == "docs/design/assets/x.svg")
 
     # THE CRITIC. `acceptance` was a string that had to be PRESENT before the ladder could climb --
     # letter of the criterion, not spirit: nothing read the asset, so the climb trigger was one
@@ -1331,7 +1331,7 @@ def selftest() -> int:
         check("the critique brief carries the acceptance check",
               brief["acceptance"] == "reads as the brand at a glance")
         check("...and the brief it was generated from", brief["brief"]["style"] == "flat-vector")
-        check("...and the asset path, relative", brief["asset"].startswith("docs/assets"))
+        check("...and the asset path, relative", brief["asset"].startswith("docs/design/assets"))
         # A criterion is REQUIRED: a critic without one produces an opinion, and an opinion
         # recorded as a verdict is worse than no verdict.
         checks += 1
@@ -1375,7 +1375,7 @@ def selftest() -> int:
         lib = prompt_library.load(root)["prompts"]
         check("a re-judged prompt stays one row", len(lib) == 1)
         check("...whose verdict moved to accept", lib[0]["verdict"] == "accept")
-        check("...and now names the asset it kept", lib[0]["asset"].startswith("docs/assets"))
+        check("...and now names the asset it kept", lib[0]["asset"].startswith("docs/design/assets"))
         # A verdict with no reason is refused in BOTH directions: an accept nobody can review is
         # as useless as a reject nobody can act on.
 
@@ -1437,7 +1437,7 @@ def selftest() -> int:
                              "avoid": ["stock photography"]}},
         }), encoding="utf-8")
         # `library_miss` is stated up front because the FIRST --record writes a manifest, and from
-        # that moment `docs/assets` is a curated library the gate requires every later request to
+        # that moment `docs/design/assets` is a curated library the gate requires every later request to
         # search. Discovered by this fixture: without it the second call refuses, correctly.
         req = {"kind": "vector", "pack": {"variant": "default"},
                "library_miss": {"searched_for": "a tray", "why_no_fit": "nothing depicts one"},
@@ -1470,7 +1470,7 @@ def selftest() -> int:
         check("...the prompt verbatim", "flat-vector" in lib[0]["prompt"])
         check("...the brief's use cases", lib[0]["use_cases"] == ["the s surface"])
         check("...the brief's avoid list", lib[0]["avoid"] == ["stock photography"])
-        check("...the asset it produced", lib[0]["asset"] == "docs/assets/s-agent.svg")
+        check("...the asset it produced", lib[0]["asset"] == "docs/design/assets/s-agent.svg")
         check("...and nothing spent, because nothing was", lib[0]["spent_total_usd"] == 0.0)
 
         # RECORDING THE SAME SURFACE TWICE IS REFUSED, and finding that out here is the point of
@@ -1555,7 +1555,7 @@ def selftest() -> int:
 
         # ONLY http(s) IS EVER FETCHED, and this is not a formality: `--from-url` takes a string an
         # agent read out of a tool result, so a `file:` URL would read this machine and commit the
-        # result into docs/assets as though a model had made it.
+        # result into docs/design/assets as though a model had made it.
         for bad in ("file:///etc/passwd", "data:image/png;base64,AAAA", "/etc/passwd"):
             checks += 1
             try:

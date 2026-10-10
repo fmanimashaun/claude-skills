@@ -35,7 +35,7 @@ the Button loader-spinner are the documented exception — `animate-spin size-4`
 The canonical way to render the **Prism mark** + wordmark — so no screen hand-rolls a text
 eyebrow. The three facet hues are **fixed brand colors** (brand.md: *never recolor facets*) — the
 one place raw brand hex is correct, not role tokens. Swap the inline paths for your exact asset
-from `docs/design-system/brand-assets/01-logos/` if the geometry differs.
+from `docs/design/assets/brand/01-logos/` if the geometry differs.
 
 ```ruby
 # frozen_string_literal: true

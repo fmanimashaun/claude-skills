@@ -94,7 +94,7 @@ GUARD = Guard(
         Mutation(
             # #628. `--from-url` takes a string an agent read out of a tool result, so the
             # scheme check is the only thing between that string and `urlopen` reading this
-            # machine. A `file:` URL would be fetched, sniffed, written into docs/assets and
+            # machine. A `file:` URL would be fetched, sniffed, written into docs/design/assets and
             # committed as though a model had made it -- a local secret laundered into art.
             "any URL scheme is fetched, so file: reads this machine into the asset folder",
             '    if scheme not in ("http", "https"):',

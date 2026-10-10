@@ -127,7 +127,7 @@ authored; `git status` after.
    ≥20px, `brand_variant:` selecting the pack variant whose `endorsement` string is rendered — no
    brand name is ever hardcoded) so no screen hand-rolls a text eyebrow.
    Facet hues are fixed brand colors — the documented exception to role-tokens-only. If
-   `docs/design-system/brand-assets/01-logos/` exists, use its exact SVG paths; otherwise scaffold
+   `docs/design/assets/brand/01-logos/` exists, use its exact SVG paths; otherwise scaffold
    the canonical 3-facet prism from component-implementations.md and tell the user to swap in the
    official asset. Pair it with the **auth/focused-page** recipe (`cover > center > stack`) for
    sign-in / splash / onboarding screens.

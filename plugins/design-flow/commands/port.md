@@ -25,7 +25,7 @@ You also need `rails-8` and `hotwire`. Same rule.
 ## What to hand over
 
 - The artboard — a `.dc.html` canvas export, or the JSX/TSX component tree.
-- The prompt that produced it, if there is one, from `docs/design-system/prompts/`. It is what makes
+- The prompt that produced it, if there is one, from `docs/design/prompts/`. It is what makes
   the canvas reviewable: without it nobody can tell whether the result answered the brief or drifted.
 
 ## Run it

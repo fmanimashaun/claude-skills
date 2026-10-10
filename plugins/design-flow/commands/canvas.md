@@ -1,5 +1,5 @@
 ---
-description: Compose a Claude Design prompt for one surface that carries this project's own tokens, component catalog and band sequence — so the canvas comes back speaking the system and the port is a reconciliation rather than a translation. Saves to docs/design-system/prompts/.
+description: Compose a Claude Design prompt for one surface that carries this project's own tokens, component catalog and band sequence — so the canvas comes back speaking the system and the port is a reconciliation rather than a translation. Saves to docs/design/prompts/.
 ---
 
 # /design-flow:canvas
@@ -53,7 +53,7 @@ The script will not write this and should not. Add, in the project's own words:
 
 ## 4. Save it where the loop expects it
 
-`docs/design-system/prompts/<surface-slug>.md`. That directory is the record of what was asked for,
+`docs/design/prompts/<surface-slug>.md`. That directory is the record of what was asked for,
 and it is what makes a returned canvas reviewable — without it, nobody can tell whether the canvas
 answered the brief or drifted from it.
 
