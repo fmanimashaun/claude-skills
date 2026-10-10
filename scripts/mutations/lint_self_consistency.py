@@ -1387,6 +1387,18 @@ GUARD = Guard(
             "a command that writes docs/handoff/<slug>.md, a directory the layout lacks",
         ),
         Mutation(
+            "design-flow is no longer scanned for docs paths outside the layout",
+            '    for plugin in (ROOT / "plugins" / "rails-flow", ROOT / "plugins" / "design-flow"):   # design-flow since #1779: it prescribed docs/assets/ and docs/design-system/',
+            '    for plugin in (ROOT / "plugins" / "rails-flow",):',
+            "design-flow's command that writes docs/assets/<x> is a finding too (#1779)",
+        ),
+        Mutation(
+            "design-flow's migration module is scanned, so it is flagged for naming its old places",
+            'MIGRATIONS = {"asset_home.py"}',
+            "MIGRATIONS = set()",
+            "design-flow's own migration module names its old places on purpose, and is silent",
+        ),
+        Mutation(
             "reference documents are not scanned",
             '*sorted(plugin.glob("reference/*.md")),',
             "",

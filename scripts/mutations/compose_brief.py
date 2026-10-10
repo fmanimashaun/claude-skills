@@ -13,6 +13,7 @@ GUARD = Guard(
     # are both needs -- and without them every mutation dies on "cannot find design-system",
     # which reads as "caught" while proving nothing.
     needs=("plugins/design-flow/scripts/doctrine_path.py",
+           "plugins/design-flow/scripts/asset_home.py",   # #1779
            "skills/design-system/references/page-anatomies.md"),
     mutations=(
         Mutation(
