@@ -9,17 +9,14 @@ WHY THIS EXISTS. A usage-insights report on 36 sessions (2026-10-03; counts are 
 only) found the same four environment faults reading as test failures: Postgres down mid-suite, a held
 `bundler.lock`, an overloaded machine, a spec path that did not exist. Each costs a diagnosis of the wrong
 thing: a red suite that was never the code's fault. Nothing checked the environment first; this is the generic
-layer a plugin can own. A project's own preflight (its master key, its seeded database) stays the project's and
-runs AFTER this one, through one hook point, so there is one entry and one wording.
+layer a plugin can own. A project's own preflight (its master key, its seeded database) stays the project's, and the
+project runs it itself, before the suite: this hook EXECUTES NOTHING a repository or the environment supplies (below).
 
 WHAT IT CHECKS, on a command that runs a test suite (rspec, `rails test`, `rake test`, Playwright, `bin/e2e`,
 `bin/ci`), and on nothing else:
 
   1. POSTGRES, only when the project's database is detected (`config/database.yml` names a Postgres adapter, or
-     `DATABASE_URL` does). `pg_isready` says no -> the fix is printed. It is NEVER restarted unless
-     `RAILS_FLOW_PREFLIGHT_RESTART=1` AND `pg_start` in YOUR `~/.claude/rails-flow-preflight.json` names the
-     command to run: this script cannot know how Postgres is installed on a machine, so it will not guess a
-     command and run it.
+     `DATABASE_URL` does). `pg_isready` says no -> the fix is printed. This hook only REPORTS: it never starts Postgres.
   2. A HELD `bundler.lock`. Bundler's `ProcessLock` takes an exclusive `flock` on `<bundle_path>/bundler.lock`
      for the length of `bundle install` and `bundle pristine` (bundler/process_lock.rb, installer.rb); a Ruby LSP
      `bundle update` is the usual holder. MEASURED on this machine: a non-blocking shared `flock` from Python
@@ -29,20 +26,17 @@ WHAT IT CHECKS, on a command that runs a test suite (rspec, `rails test`, `rake 
      run in the foreground or in smaller shards, not several background runs.
   4. SPEC PATHS. Every spec path the command names exists (`rspec` and `rails test` only: a Playwright path is
      relative to a directory this script cannot know).
-  5. THE PROJECT'S HOOK POINT: an executable `.claude/test-preflight` in the project is run after the generic
-     checks and its output is added, but ONLY once you have pinned it (see below). Its exit status is ignored (this
-     is advisory) and it is cut off at `RAILS_FLOW_PREFLIGHT_PROJECT_TIMEOUT` seconds (default 10).
 
-NOTHING A REPOSITORY CONTROLS IS EVER EXECUTED BY DEFAULT. A PreToolUse hook runs BEFORE the user is asked about
-the command, so a script the hook ran from the checkout would run on a command the user may then refuse: clone a
-repository, ask for its tests, and its `.claude/test-preflight` has already run. A security review of this very
-change found that. So a project's script runs only if its SHA-256 is pinned in the user's own
-`~/.claude/rails-flow-preflight.json` (written by `test_preflight.py --trust`, after reading the file); editing the
-script un-pins it; an unpinned one is NAMED in the output and not run, and what runs is a private copy of exactly the
-bytes that were hashed, so the file cannot be swapped between the check and the run. The restart command lives in the
-same user-level file for the same reason: the environment can be set by a project's settings, a file under HOME cannot.
-Programs are looked up only in ABSOLUTE `PATH` entries outside the project: a `.`, an empty entry or `./bin` resolves
-into the checkout, and a `pg_isready` shipped there would be repository code run before the user is asked.
+WHAT IT NEVER DOES: EXECUTE ANYTHING A REPOSITORY OR THE ENVIRONMENT SUPPLIES. A PreToolUse hook runs BEFORE the user
+is asked about the command, so whatever it executes runs on a command the user may then refuse. Two automatic security
+reviews flagged the first version of this change for exactly that (a project's `.claude/test-preflight` run from the
+checkout, and a restart command read from the environment); both features were REMOVED, not hardened (#1821 keeps the
+designs and the threat analysis). What it does run is `pg_isready`, `lsof` and `ps`, found only in ABSOLUTE `PATH`
+entries outside the project (`trusted_which`): a `.`, an empty entry or `./bin` resolves into the checkout, and a
+`pg_isready` shipped there would be repository code run before the user is asked. NOT closable here, and the same for
+every plugin hook: anything that can set the whole environment before the hook starts (`PYTHONPATH`, `LD_PRELOAD`,
+`CLAUDE_PLUGIN_ROOT`) beats this script, which is a harness and workspace-trust question; and `DATABASE_URL` makes
+`pg_isready` contact the host it names (it executes nothing).
 
 CLASSIFIED under `docs/doctrine/harness-doctrine.md` section 10:
   * TIER 3 (deterministic) for the DETECTION: the same environment gives the same finding, whatever the model.
@@ -59,13 +53,11 @@ from __future__ import annotations
 import argparse
 import fcntl
 import glob
-import hashlib
 import json
 import os
 import re
 import shlex
 import shutil
-import stat
 import subprocess
 import sys
 import tempfile
@@ -90,68 +82,6 @@ VALUE_OPTIONS = {
 WRAPPERS = {"env", "time", "nice", "exec", "command", "npx", "xvfb-run"}
 ENV_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 PG_ADAPTER = re.compile(r"adapter:\s*[\"']?(?:postgres|postgresql|postgis)\b", re.I)
-
-
-CONFIG_RELATIVE = Path(".claude") / "rails-flow-preflight.json"
-
-
-def config_path(env) -> Path:
-    """The USER's file. Under HOME, never under the project: a repository must not be able to supply a command or a pin."""
-    return Path(str(env.get("HOME") or os.path.expanduser("~"))) / CONFIG_RELATIVE
-
-
-def config_is_sound(path: Path, root: Path) -> bool:
-    """Is this file one the USER wrote, rather than one a repository could have supplied? `$HOME` is part of the environment, so a config
-    that sits inside the project (HOME pointed at the checkout) is refused, and so is one that group or others can write."""
-    try:
-        real, base = os.path.realpath(path), os.path.realpath(root)
-        if real == base or real.startswith(base + os.sep):
-            return False
-        return not path.stat().st_mode & 0o022
-    except OSError:
-        return False
-
-
-def load_config(env, root: Path) -> dict:
-    path = config_path(env)
-    if not config_is_sound(path, root):
-        return {}
-    try:
-        data = json.loads(path.read_text())
-    except (OSError, ValueError):
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def sha256_of(path: Path) -> str | None:
-    try:
-        return hashlib.sha256(path.read_bytes()).hexdigest()
-    except OSError:
-        return None
-
-
-def pin_trust(root: Path, env) -> str:
-    """Pin the project's `.claude/test-preflight` by its SHA-256 in the user's file. The only way a project script becomes runnable."""
-    hook = root / ".claude" / "test-preflight"
-    digest = sha256_of(hook) if hook.is_file() else None
-    if digest is None:
-        return f"nothing to trust: {hook} is not a readable file"
-    target = config_path(env)
-    if not config_is_sound(target, root) and target.exists():
-        return f"refused: {target} is inside the project or writable by others, so it cannot hold a pin"
-    real_target, base = os.path.realpath(target), os.path.realpath(root)
-    if real_target == base or real_target.startswith(base + os.sep):
-        return f"refused: {target} is inside the project, so it cannot hold a pin (HOME must be your own home directory)"
-    config = load_config(env, root)
-    trusted = config.get("trusted") if isinstance(config.get("trusted"), dict) else {}
-    trusted[os.path.realpath(hook)] = digest
-    config["trusted"] = trusted
-    target.parent.mkdir(parents=True, exist_ok=True)
-    scratch = target.with_suffix(".tmp")
-    scratch.write_text(json.dumps(config, indent=2, sort_keys=True) + "\n")
-    os.chmod(scratch, 0o600)
-    os.replace(scratch, target)
-    return f"trusted {os.path.realpath(hook)} (sha256 {digest}) in {target}"
 
 
 def segments(command: str) -> list[list[str]]:
@@ -299,20 +229,8 @@ def check_postgres(root: Path, env) -> list[str]:
         return []
     said = (probe.stdout or probe.stderr).strip().splitlines()[:1]
     head = f"Postgres is not accepting connections (`pg_isready`: {said[0] if said else 'no answer'}, exit {probe.returncode})."
-    if str(env.get("RAILS_FLOW_PREFLIGHT_RESTART", "")) == "1":
-        command = str(load_config(env, root).get("pg_start", "")).strip()
-        if not command:
-            return [head + f" RAILS_FLOW_PREFLIGHT_RESTART=1 is set but `pg_start` in {config_path(env)} names no command, so nothing was started."]
-        shell = trusted_which("bash", env, root)
-        if shell is not None:
-            run_quiet([shell, "-c", command], env, timeout=20)
-        again = run_quiet([binary, *pg_args(env)], env)
-        if again is not None and again.returncode == 0:
-            return [head + " Ran your `pg_start` and `pg_isready` now answers."]
-        return [head + " Ran your `pg_start` and it still does not answer."]
     return [head + " Start it and re-run the suite (for example `brew services start postgresql@<version>` on macOS, "
-            "`sudo systemctl start postgresql` on Linux); this hook never starts it unless RAILS_FLOW_PREFLIGHT_RESTART=1 "
-            "and `pg_start` in ~/.claude/rails-flow-preflight.json name how."]
+            "`sudo systemctl start postgresql` on Linux); this hook only reports, it never starts it."]
 
 
 def bundler_lock_candidates(root: Path, env) -> list[Path]:
@@ -408,36 +326,8 @@ def check_spec_paths(kind: str, args: list[str], cwd: str) -> list[str]:
     return [f"Spec path(s) that do not exist: {names}. The run will report \"no examples\" or a load error, which is the path, not the code."]
 
 
-def check_project_hook(root: Path, env) -> list[str]:
-    hook = root / ".claude" / "test-preflight"
-    try:
-        if not (hook.is_file() and hook.stat().st_mode & stat.S_IXUSR):
-            return []
-        seconds = float(env.get("RAILS_FLOW_PREFLIGHT_PROJECT_TIMEOUT") or 10)
-        data = hook.read_bytes()
-    except (OSError, ValueError):
-        return []
-    trusted = load_config(env, root).get("trusted")
-    if not isinstance(trusted, dict) or trusted.get(os.path.realpath(hook)) != hashlib.sha256(data).hexdigest():
-        return ["`.claude/test-preflight` exists but is NOT pinned, so it was not run: a repository's own script must not run before you have read it. "
-                f"Read it, then pin it with `python3 {Path(__file__).resolve()} --trust --cwd {root}` (any later edit un-pins it)."]
-    # THE BYTES THAT WERE HASHED are the bytes that run: a private 0700 copy, so the file cannot be swapped between the check and the run.
-    with tempfile.TemporaryDirectory(prefix="rails-flow-preflight-") as scratch:
-        copy = Path(scratch) / "test-preflight"
-        try:
-            copy.write_bytes(data)
-            copy.chmod(0o700)
-            done = subprocess.run([str(copy)], cwd=str(root), env=dict(env), capture_output=True, text=True, timeout=seconds, check=False)
-        except subprocess.TimeoutExpired:
-            return [f"The project's preflight (`.claude/test-preflight`) did not finish in {seconds:g}s and was skipped."]
-        except (OSError, subprocess.SubprocessError, ValueError):
-            return []
-    text = (done.stdout or "").strip()
-    return [f"Project preflight: {line.strip()}" for line in text.splitlines() if line.strip()][:3]
-
-
 def findings_for(command: str, cwd: str, env=None, loadavg=os.getloadavg, cores=os.cpu_count) -> list[str]:
-    """Every finding for one command, or [] to stay silent. The generic checks come first, the project's after."""
+    """Every finding for one command, or [] to stay silent."""
     env = os.environ if env is None else env
     for segment in segments(command):
         found = runner(segment)
@@ -450,7 +340,6 @@ def findings_for(command: str, cwd: str, env=None, loadavg=os.getloadavg, cores=
         out += check_bundler_lock(root, env)
         out += check_load(env, loadavg, cores)
         out += check_spec_paths(kind, args, cwd)
-        out += check_project_hook(root, env)
         return out
     return []
 
@@ -555,28 +444,7 @@ def selftest() -> int:
         check("a `pg_isready` that hangs is cut off at the deadline, and the hook is silent", quiet == "" and time.monotonic() - started < 10, f"{time.monotonic() - started:.1f}s {quiet[:60]!r}")
         stub("pg_isready", pg_down)
 
-        # 1b. RESTART only behind the explicit flag, and only with the command the USER wrote in their own file under HOME.
-        def write_config(**data) -> None:
-            (tmp / ".claude").mkdir(exist_ok=True)
-            (tmp / ".claude" / "rails-flow-preflight.json").write_text(json.dumps(data))
-
-        witness.with_suffix(".started").unlink(missing_ok=True)
-        stub("pg_isready", f"if [ -e {witness}.started ]; then echo ok; exit 0; fi; echo 'no response'; exit 2")
-        write_config(pg_start=f"touch {witness}.started")
-        hook(rspec, root, env_for())
-        check("an outage with a start command configured but the flag OFF does not start anything", not witness.with_suffix(".started").exists())
-        write_config()
-        text, _ = hook(rspec, root, env_for(RAILS_FLOW_PREFLIGHT_RESTART="1"))
-        check("the flag ON with no command says nothing was started, and starts nothing", "names no command" in text and not witness.with_suffix(".started").exists(), text[:160])
-        hook(rspec, root, env_for(RAILS_FLOW_PREFLIGHT_RESTART="1", RAILS_FLOW_PREFLIGHT_PG_START=f"touch {witness}.started"))
-        check("a start command supplied through the ENVIRONMENT is never run (a project's settings can set the environment)", not witness.with_suffix(".started").exists())
-        write_config(pg_start=f"touch {witness}.started")
-        text, _ = hook(rspec, root, env_for(RAILS_FLOW_PREFLIGHT_RESTART="1"))
-        check("the flag ON with a command in the user's file runs exactly that command and re-checks", witness.with_suffix(".started").exists() and "now answers" in text, text[:160])
-        (tmp / ".claude" / "rails-flow-preflight.json").unlink()
-        stub("pg_isready", pg_down)
-
-        # 1c. PROGRAMS ARE LOOKED UP ONLY WHERE A REPOSITORY CANNOT REACH: absolute PATH entries outside the project. A `pg_isready` shipped in the
+        # 1b. PROGRAMS ARE LOOKED UP ONLY WHERE A REPOSITORY CANNOT REACH: absolute PATH entries outside the project. A `pg_isready` shipped in the
         #     checkout would otherwise be repository code run before the user is asked about the command.
         repo_ran = witness.with_suffix(".reporan")
         repo_bin = root / "bin"
@@ -648,72 +516,7 @@ def selftest() -> int:
                                ("a pipe", "rspec spec/missing_spec.rb | tail -5")):
             check(f"{label} is still read as a suite run", "do not exist" in hook(command, root, env_for())[0])
 
-        # 6. THE PROJECT'S HOOK POINT, after the generic checks, advisory in its own right, and run ONLY once the user has pinned it. A PreToolUse hook
-        #    runs before the user is asked about the command, so a script it ran from a checkout would run on a command the user may refuse.
-        stub("pg_isready", pg_down)
-        (root / ".claude").mkdir()
-        mine = root / ".claude" / "test-preflight"
-        ran = witness.with_suffix(".ranproject")
-
-        def project_script(body: str = "echo 'master key missing'") -> None:
-            mine.write_text(f"#!/bin/sh\ntouch {ran}\n{body}\nexit 3\n")
-            mine.chmod(0o755)
-
-        project_script()
-        text, _ = hook(rspec, root, env_for())
-        check("a project's .claude/test-preflight that nobody pinned is NOT run: the hook names it and says how to pin it",
-              not ran.exists() and "NOT pinned" in text and "--trust" in text, repr(text[:240]))
-        check("...and its output never reaches the context", "master key missing" not in text)
-        pinned = pin_trust(root, env_for())
-        check("pinning records the file's SHA-256 in the user's own file, readable by the user alone", "sha256" in pinned and (tmp / ".claude" / "rails-flow-preflight.json").stat().st_mode & 0o077 == 0, pinned[:120])
-        text, _ = hook(rspec, root, env_for())
-        check("a PINNED .claude/test-preflight is run and its output added", ran.exists() and "Project preflight: master key missing" in text, repr(text[:200]))
-        check("...AFTER the generic checks, so one entry and one order", text.find("Postgres") < text.find("Project preflight"), repr(text[:200]))
-        ran.unlink()
-        project_script("echo 'changed after it was read'")
-        text, _ = hook(rspec, root, env_for())
-        check("a pinned script that is edited afterwards is un-pinned: not run, and named again", not ran.exists() and "NOT pinned" in text, repr(text[:200]))
-        project_script('echo "path:$0"')
-        pin_trust(root, env_for())
-        text, _ = hook(rspec, root, env_for())
-        check("the pinned script runs from a private copy of exactly the bytes that were hashed, not from the checkout",
-              "path:" in text and str(root) not in text and "rails-flow-preflight-" in text, repr(text[:200]))
-        project_script("echo 'changed after it was read'")
-        check("--trust, the command a person runs after reading it, pins the current file end to end",
-              subprocess.run([sys.executable, __file__, "--trust", "--cwd", str(root)], capture_output=True, text=True, env=env_for(), check=False).returncode == 0
-              and "changed after it was read" in hook(rspec, root, env_for())[0])
-        # THE ATTACK: a repository ships its own pin for its own script. The pin is read from the user's HOME only, so it is worth nothing.
-        (tmp / "empty-home").mkdir(exist_ok=True)
-        (root / ".claude" / "rails-flow-preflight.json").write_text(json.dumps({"trusted": {os.path.realpath(mine): sha256_of(mine)}}))
-        ran.unlink(missing_ok=True)
-        check("a pin that the REPOSITORY ships is not honoured: only the user's file under HOME pins a script",
-              not ran.exists() and "NOT pinned" in hook(rspec, root, env_for(HOME=str(tmp / "empty-home")))[0] and not ran.exists())
-        # $HOME is part of the environment: pointed at the checkout, it would make a shipped file "the user's". A config inside the project is refused.
-        project_script("echo 'pinned by a file the repository ships'")
-        (root / ".claude" / "rails-flow-preflight.json").write_text(json.dumps({"trusted": {os.path.realpath(mine): sha256_of(mine)}}))
-        ran.unlink(missing_ok=True)
-        check("a pin file INSIDE the project is refused, even when HOME is pointed at the checkout", not ran.exists() and "NOT pinned" in hook(rspec, root, env_for(HOME=str(root)))[0])
-        pin_trust(root, env_for())
-        user_config = tmp / ".claude" / "rails-flow-preflight.json"
-        user_config.chmod(0o666)
-        ran.unlink(missing_ok=True)
-        check("a pin file that group or others can write is refused", not ran.exists() and "NOT pinned" in hook(rspec, root, env_for())[0])
-        user_config.chmod(0o600)
-        project_script("echo 'edited again, so it is unpinned'")     # unpinned AND not executable: only the executable check keeps it from being named
-        mine.chmod(0o644)
-        check("a non-executable one is ignored (neither run nor named)", "Project preflight" not in hook(rspec, root, env_for())[0] and "NOT pinned" not in hook(rspec, root, env_for())[0])
-        project_script("sleep 5")
-        pin_trust(root, env_for())
-        text, _ = hook(rspec, root, env_for(RAILS_FLOW_PREFLIGHT_PROJECT_TIMEOUT="0.3"))
-        check("one that hangs is cut off, said so, and does not hold the run", "did not finish in 0.3s" in text, repr(text[:200]))
-        mine.write_text("#!/nonexistent/interpreter\n")
-        mine.chmod(0o755)
-        pin_trust(root, env_for())
-        check("one that cannot run fails open (the generic findings still arrive)", "Postgres" in hook(rspec, root, env_for())[0])
-        mine.unlink()
-        check("nothing to pin is said plainly, not an error", "nothing to trust" in pin_trust(root, env_for()))
-
-        # 7. ADVISORY: odd input is silence and the process still exits 0.
+        # 6. ADVISORY: odd input is silence and the process still exits 0.
         for label, raw in (("not JSON", "not json"), ("a JSON list", "[]"), ("empty", ""), ("a non-Bash tool", json.dumps({"tool_name": "Read", "tool_input": {"command": rspec}})),
                            ("no command", json.dumps({"tool_name": "Bash", "tool_input": {}}))):
             check(f"{label} is silent", run(raw, env_for()) == "")
@@ -738,14 +541,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--selftest", action="store_true")
     parser.add_argument("--command", help="run the checks for this command by hand and print them")
-    parser.add_argument("--trust", action="store_true", help="pin the project's .claude/test-preflight (by SHA-256) so the hook may run it; read it first")
     parser.add_argument("--cwd", default=os.getcwd())
     args = parser.parse_args(argv)
     if args.selftest:
         return selftest()
-    if args.trust:
-        print(pin_trust(project_root(args.cwd), os.environ))
-        return 0
     if args.command is not None:
         findings = findings_for(args.command, args.cwd)
         print("\n".join(findings) if findings else "nothing to report")

@@ -4082,9 +4082,7 @@ def test_preflight_fixtures() -> None:
         # A PATH holding the stubs, bash and python3 and nothing else: a real Ruby on the machine running the sweep, someone else's held
         # `bundler.lock` and the load of a busy runner must not make a fixture speak (the load threshold is raised for the same reason).
         path = os.pathsep.join(dict.fromkeys([str(stubs)] + [os.path.dirname(shutil.which(n) or "/usr/bin/x") for n in ("bash", "python3")]))
-        home = base / "home"          # the USER's HOME: where a pin and a restart command are read from, and nowhere a repository can reach
-        home.mkdir()
-        env = {"CLAUDE_PLUGIN_ROOT": root, "PATH": path, "HOME": str(home), "RAILS_FLOW_PREFLIGHT_LOAD_MAX": "1000000"}
+        env = {"CLAUDE_PLUGIN_ROOT": root, "PATH": path, "RAILS_FLOW_PREFLIGHT_LOAD_MAX": "1000000"}
 
         def stub(name: str, body: str) -> None:
             (stubs / name).write_text("#!/bin/sh\n" + body + "\n")
@@ -4124,23 +4122,6 @@ def test_preflight_fixtures() -> None:
         stub("pg_isready", "exit 0")
         code, out = hook(app, "bundle exec rspec spec/a_spec.rb spec/missing_spec.rb")
         check("test-preflight: a spec path that does not exist is named", code == 0 and "spec/missing_spec.rb" in out and "a_spec.rb`" not in out, out.strip()[:160])
-        (app / ".claude").mkdir()
-        mine = app / ".claude" / "test-preflight"
-        ran = base / "ran-project-script"
-        mine.write_text(f"#!/bin/sh\ntouch {ran}\necho 'master key missing'\n")
-        mine.chmod(0o755)
-        stub("pg_isready", "exit 2")
-        # CODE EXECUTION BEFORE PERMISSION (a security review of this change): a PreToolUse hook runs before the user is asked about the command, so a
-        # script it ran from a checkout would run on a command the user may refuse. Only a script the user pinned by hash, under their own HOME, runs.
-        code, out = hook(app, rspec)
-        check("test-preflight: a project's own .claude/test-preflight that nobody pinned is NOT run, only named",
-              code == 0 and not ran.exists() and "NOT pinned" in out and "master key missing" not in out, out.strip()[:200])
-        pin = _run([sys.executable, str(HOOKS.parents[1] / "scripts" / "test_preflight.py"), "--trust", "--cwd", str(app)],
-                   capture_output=True, text=True, timeout=60, env={"PATH": path, "HOME": str(home)})
-        code, out = hook(app, rspec)
-        check("test-preflight: once the user has pinned it (`--trust`), the project's script runs AFTER the generic checks",
-              pin.returncode == 0 and code == 0 and ran.exists() and "Project preflight: master key missing" in out and out.find("Postgres") < out.find("Project preflight"),
-              f"{pin.stdout.strip()[:80]} | {out.strip()[:160]}")
         # A PROGRAM THE REPOSITORY SHIPS must not run: with the project as the working directory, a relative or empty PATH entry resolves INTO the checkout.
         repo_ran = base / "ran-repo-pg_isready"
         (app / "bin").mkdir()

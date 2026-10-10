@@ -3,8 +3,8 @@
 #
 # When the command runs a test suite (rspec, `rails test`, Playwright, `bin/e2e`, `bin/ci`), `test_preflight.py` checks Postgres
 # (only when the project's database is detected), a held `bundler.lock`, the load average and the spec paths the command names,
-# then runs the project's own `.claude/test-preflight` ONLY IF the user has pinned it by hash (`test_preflight.py --trust`): this hook runs before the user
-# is asked about the command, so it never runs a script a repository controls on its own. Silent otherwise, and silent when everything is fine.
+# and says so. It EXECUTES NOTHING a repository or the environment supplies (a PreToolUse hook runs before the user is asked about the command; #1821 keeps the
+# removed project hook point and restart). Silent otherwise, and silent when everything is fine.
 #
 # ADVISORY, so it FAILS OPEN and ALWAYS exits 0 (docs/doctrine/harness-doctrine.md §5): a missing `python3`, `pg_isready` or `lsof`
 # is silence, never a blocked command. Its text reaches the model as `additionalContext`, which Claude Code documents as added
