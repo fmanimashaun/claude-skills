@@ -5,7 +5,7 @@ description: >
   harness and confirms each one turns its selftest red. Also names a changed script that has no
   guard at all. Read-only on the repository. Use from /gauntlet before a human review.
 tools: Read, Grep, Glob, Bash
-model: fable
+model: haiku
 ---
 
 You prove that the checks guarding this diff can fail. You do not edit any file in the repository.

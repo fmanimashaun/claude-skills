@@ -46,11 +46,16 @@ AGENT_COMMANDS = {
     "mutation-verifier": "python3 scripts/gauntlet_core.py guards",
     "shell-adversary": "python3 scripts/gauntlet_core.py battery",
 }
-# THE ADVERSARIES RUN ON FABLE (#1702; the owner's rule of 2026-10-08: Fable is the model for adversarial passes, the ones
-# that try to break a change; ordinary reviews stay on the default). `fable` is a documented subagent `model:` alias
-# (https://code.claude.com/docs/en/sub-agents, "Choose a model": `sonnet`, `opus`, `haiku`, or `fable`). The selftest
-# reads each agent's frontmatter, so a pin that drifts back to another model is red.
-ADVERSARY_MODEL = "fable"
+# EACH AGENT'S MODEL, PINNED (#1702). The owner's rule of 2026-10-08: Fable is the model for ADVERSARIAL ATTACK passes, the
+# ones that try to break a change. `shell-adversary` is one; `mutation-verifier` is mechanical (it applies the declared
+# mutants through the harness) and stays on `haiku`, `model-tiers.md`'s mechanical tier. `fable` is a documented subagent
+# `model:` alias (https://code.claude.com/docs/en/sub-agents, "Choose a model": `sonnet`, `opus`, `haiku`, or `fable`). The
+# selftest reads each agent's frontmatter, so a pin that drifts either way is red.
+AGENT_MODELS = {
+    "mutation-verifier": "haiku",
+    "shell-adversary": "fable",
+}
+ADVERSARY_MODEL = AGENT_MODELS["shell-adversary"]
 
 # What counts as a changed script that needs a guard (mutation-verifier step 1). A guard file is the check itself and
 # is not guarded by another one; a changed SELFTEST is a changed check, so it reaches the guard of the script it tests.
@@ -230,7 +235,7 @@ def selftest() -> int:
         check(f"{agent}'s instructions name `{AGENT_COMMANDS[agent]}`", prompt_names_command(agent, text), rel)
         check(f"{agent}'s instructions, reverted to the prose step, no longer do (the check can go red)",
               not prompt_names_command(agent, reverted[agent]))
-        check(f"{agent} pins `model: {ADVERSARY_MODEL}` (#1702)", frontmatter_model(text) == ADVERSARY_MODEL, f"{rel}: model {frontmatter_model(text)!r}")
+        check(f"{agent} pins `model: {AGENT_MODELS[agent]}` (#1702)", frontmatter_model(text) == AGENT_MODELS[agent], f"{rel}: model {frontmatter_model(text)!r}")
 
     # The pin check can go red: the model the agents had before #1702, a `model:` line in the BODY only, and no frontmatter.
     check("a frontmatter `model: sonnet` is not the adversary model", frontmatter_model("---\nname: x\nmodel: sonnet\n---\n") != ADVERSARY_MODEL)
