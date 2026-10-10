@@ -74,13 +74,30 @@ def hashing() -> None:
         (root / "docs/dir/c.txt").unlink()
         write(root, "unrelated.txt", "x")
         check("hash: a file the guard does not stage does not change the hash", inc.guard_hash(root, g) == base)
-        crlf = guard(needs=("docs/crlf.md",))
-        write(root, "docs/crlf.md", b"a\nb\n")
-        lf_hash = inc.guard_hash(root, crlf)
-        write(root, "docs/crlf.md", b"a\r\nb\r\n")
-        check("hash: a CRLF checkout of the same text is not a change", inc.guard_hash(root, crlf) == lf_hash)
+        # The runner stages the subject, selftest and deps through write_text (line endings normalised) and copies `needs` BYTE FOR BYTE,
+        # so a CRLF rewrite is no change for the first and a change for the second (adversary finding: a CRLF rewrite of a shell hook
+        # that is a `needs` file broke it and every guard was skipped as unchanged).
+        for label, rel in (("the subject", "scripts/s.py"), ("the selftest", "scripts/s_selftest.py"), ("a dep", "scripts/dep.py")):
+            original = (root / rel).read_bytes()
+            write(root, rel, b"a\nb\n")
+            lf_hash = inc.guard_hash(root, g)
+            write(root, rel, b"a\r\nb\r\n")
+            check(f"hash: a CRLF checkout of {label} (staged through write_text) is not a change", inc.guard_hash(root, g) == lf_hash)
+            write(root, rel, original)
+        for label, rel in (("a needs file", "docs/need.md"), ("a file inside a needs directory", "docs/dir/a.txt")):
+            original = (root / rel).read_bytes()
+            write(root, rel, b"a\nb\n")
+            lf_hash = inc.guard_hash(root, g)
+            write(root, rel, b"a\r\nb\r\n")
+            check(f"hash: a CRLF rewrite of {label} (copied byte for byte) IS a change", inc.guard_hash(root, g) != lf_hash)
+            write(root, rel, original)
+        crlf_hook = guard(needs=("hooks/h.sh",))
+        write(root, "hooks/h.sh", b"set -o pipefail\nexit 0\n")
+        lf_hook = inc.guard_hash(root, crlf_hook)
+        write(root, "hooks/h.sh", b"set -o pipefail\r\nexit 0\r\n")
+        check("hash: a hook rewritten with CRLF line endings changes the hash of a guard that needs it", inc.guard_hash(root, crlf_hook) != lf_hook)
         write(root, "docs/bin.dat", b"\0a\r\nb")
-        binary = guard(needs=("docs/bin.dat",))
+        binary = guard(deps=("docs/bin.dat",))          # a dep is staged through write_text (normalised), so only the binary test keeps its bytes
         before = inc.guard_hash(root, binary)
         write(root, "docs/bin.dat", b"\0a\nb")
         check("hash: a binary file is hashed byte for byte, CRLF included", inc.guard_hash(root, binary) != before)
@@ -231,12 +248,75 @@ def trust() -> None:
     saved = os.environ.get("GITHUB_REPOSITORY")
     os.environ["GITHUB_REPOSITORY"] = "o/r"
     try:
-        run, calls = stub(0, status)
-        lookup = inc.github_proof_lookup(Path("."), "linux", run=run)
-        check("lookup: a commit whose statuses hold the proof reads as proven", lookup("abc") is True)
+        # THE STATUS ALONE IS NOT TRUSTED (adversary finding): a same-repo pull request whose edited workflow holds `statuses: write` posts
+        # `mutation-proof/linux = success` as github-actions[bot], exactly like a real one. So the status must POINT AT an Actions run that only
+        # `main` can have produced, and the run is read back from the API and judged (`run_is_trusted`).
+        url = "https://github.com/o/r/actions/runs/777"
+        pointed = json.dumps([{"context": "mutation-proof/linux", "state": "success", "target_url": url}])
+        good_run = {"id": 777, "head_sha": "abc", "head_branch": "main", "event": "push", "path": ".github/workflows/release.yml",
+                    "status": "completed", "conclusion": "success", "repository": {"full_name": "o/r"}, "head_repository": {"full_name": "o/r"}}
+
+        def api(statuses_out, run_obj, run_code=0):
+            """A `gh` stub that answers the statuses endpoint and the runs endpoint separately."""
+            calls: list[list[str]] = []
+
+            def fake(argv, **kw):
+                calls.append(list(argv))
+                joined = " ".join(argv)
+                if "/statuses" in joined:
+                    return SimpleNamespace(returncode=0, stdout=statuses_out, stderr="")
+                if "/actions/runs/" in joined:
+                    return SimpleNamespace(returncode=run_code, stdout=json.dumps(run_obj) if not isinstance(run_obj, str) else run_obj, stderr="")
+                return SimpleNamespace(returncode=1, stdout="", stderr="unexpected")
+            return fake, calls
+
+        fake, calls = api(pointed, good_run)
+        lookup = inc.github_proof_lookup(Path("."), "linux", run=fake)
+        check("lookup: a success status that points at a successful main release run for that commit reads as proven", lookup("abc") is True)
         check("lookup: it asks the statuses endpoint of that commit", any("repos/o/r/commits/abc/statuses" in a for a in calls[0]), str(calls))
-        run, _ = stub(1, status, "HTTP 403")
-        check("lookup: an API error reads as NO proof, never as proof", inc.github_proof_lookup(Path("."), "linux", run=run)("abc") is False)
+        check("lookup: it reads the run the status points at", any("repos/o/r/actions/runs/777" in " ".join(c) for c in calls), str(calls))
+        fake, _ = api(pointed, good_run, 1)
+        check("lookup: a run lookup that fails reads as NO proof", inc.github_proof_lookup(Path("."), "linux", run=fake)("abc") is False)
+        fake, _ = api(pointed, "not json")
+        check("lookup: a run answer that is not JSON reads as NO proof", inc.github_proof_lookup(Path("."), "linux", run=fake)("abc") is False)
+        fake, _ = api(status, good_run)
+        check("lookup: a success status with NO target_url is not a proof (a forged status carries no run)",
+              inc.github_proof_lookup(Path("."), "linux", run=fake)("abc") is False)
+        for label, target in (("another repository's run", "https://github.com/evil/r/actions/runs/777"),
+                              ("a URL that is not a run", "https://github.com/o/r/pull/777"),
+                              ("a look-alike host", "https://github.com.evil.example/o/r/actions/runs/777"),
+                              ("a run URL with the repository only as a prefix", "https://github.com/o/r-evil/actions/runs/777")):
+            forged = json.dumps([{"context": "mutation-proof/linux", "state": "success", "target_url": target}])
+            fake, _ = api(forged, good_run)
+            check(f"lookup: a status whose target_url is {label} is not a proof", inc.github_proof_lookup(Path("."), "linux", run=fake)("abc") is False)
+        for label, change in (("a pull request run", {"event": "pull_request", "head_branch": "feature/x"}),
+                              ("a pull request run that claims branch main", {"event": "pull_request"}),
+                              ("a run on another branch", {"head_branch": "feature/x"}),
+                              ("a run of another workflow (gates.yml)", {"path": ".github/workflows/gates.yml"}),
+                              ("a run whose path only ends like a trusted one", {"path": ".github/workflows/evil-release.yml"}),
+                              ("a run for another commit", {"head_sha": "def"}),
+                              ("a run that failed", {"conclusion": "failure"}),
+                              ("a run that is cancelled", {"conclusion": "cancelled"}),
+                              ("a run still in progress", {"status": "in_progress", "conclusion": None}),
+                              ("a run from a fork", {"head_repository": {"full_name": "fork/r"}}),
+                              ("a run of another repository", {"repository": {"full_name": "evil/r"}}),
+                              ("a run with a trusted event name that is not one (workflow_run)", {"event": "workflow_run"}),
+                              ("a run with no event", {"event": None})):
+            fake, _ = api(pointed, dict(good_run, **change))
+            check(f"lookup: {label} is not a proof", inc.github_proof_lookup(Path("."), "linux", run=fake)("abc") is False)
+        for ok_event in ("push", "schedule", "workflow_dispatch"):
+            fake, _ = api(pointed, dict(good_run, event=ok_event))
+            check(f"lookup: a {ok_event} run on main is a proof", inc.github_proof_lookup(Path("."), "linux", run=fake)("abc") is True)
+        fake, _ = api(pointed, dict(good_run, path=".github/workflows/mutation-weekly.yml"))
+        check("lookup: the weekly workflow's run on main is a proof", inc.github_proof_lookup(Path("."), "linux", run=fake)("abc") is True)
+        fake, _ = api(pointed, dict(good_run, path=".github/workflows/release.yml@refs/heads/main"))
+        check("lookup: a workflow path with an @ref suffix is read by its path", inc.github_proof_lookup(Path("."), "linux", run=fake)("abc") is True)
+        def statuses_fail(argv, **kw):
+            """The statuses endpoint errors (but still prints a body that looks like a proof); the run endpoint is fine."""
+            if "/statuses" in " ".join(argv):
+                return SimpleNamespace(returncode=1, stdout=pointed, stderr="HTTP 403")
+            return SimpleNamespace(returncode=0, stdout=json.dumps(good_run), stderr="")
+        check("lookup: an API error reads as NO proof, never as proof", inc.github_proof_lookup(Path("."), "linux", run=statuses_fail)("abc") is False)
 
         def missing_gh(argv, **kw):
             raise FileNotFoundError("gh")
@@ -247,7 +327,7 @@ def trust() -> None:
         else:
             os.environ["GITHUB_REPOSITORY"] = saved
 
-    main_env = {"GITHUB_ACTIONS": "true", "GITHUB_REF": "refs/heads/main", "GITHUB_REPOSITORY": "o/r"}
+    main_env = {"GITHUB_ACTIONS": "true", "GITHUB_REF": "refs/heads/main", "GITHUB_REPOSITORY": "o/r", "GITHUB_RUN_ID": "777"}
     check("skip_allowed: CI on main may skip a proven, unchanged guard", inc.skip_allowed(main_env) is True)
     for label, env in (("a pull request run", dict(main_env, GITHUB_REF="refs/pull/9/merge")),
                        ("a dispatch on a branch", dict(main_env, GITHUB_REF="refs/heads/feature/x")),
@@ -260,7 +340,7 @@ def trust() -> None:
         check(f"skip_allowed: {label} never skips (the branch's own code decides the skip there)", inc.skip_allowed(env) is False)
     for label, env in (("a pull request run", dict(main_env, GITHUB_REF="refs/pull/9/merge")),
                        ("a dispatch on a branch", dict(main_env, GITHUB_REF="refs/heads/feature/x")),
-                       ("a laptop", {"GITHUB_REF": "refs/heads/main", "GITHUB_REPOSITORY": "o/r"}),
+                       ("a laptop", {"GITHUB_REF": "refs/heads/main", "GITHUB_REPOSITORY": "o/r", "GITHUB_RUN_ID": "777"}),
                        ("CI on dev", dict(main_env, GITHUB_REF="refs/heads/dev"))):
         run, calls = stub(0)
         posted, why = inc.post_proof(env, "linux", "a" * 40, run=run)
@@ -270,6 +350,14 @@ def trust() -> None:
     check("post: CI on main posts mutation-proof/<os> = success on the commit",
           posted and any("repos/o/r/statuses/" + "a" * 40 in a for a in calls[0]) and "context=mutation-proof/linux" in calls[0] and "state=success" in calls[0],
           str(calls))
+    check("post: the status carries the run it was posted from, as target_url, so a later run can verify it",
+          "target_url=https://github.com/o/r/actions/runs/777" in calls[0], str(calls))
+    for label, env in (("no run id", {k: v for k, v in main_env.items() if k != "GITHUB_RUN_ID"}),
+                       ("a run id that is not a number", dict(main_env, GITHUB_RUN_ID="7;rm")),
+                       ("an empty run id", dict(main_env, GITHUB_RUN_ID=""))):
+        run, calls = stub(0)
+        posted, why = inc.post_proof(env, "linux", "a" * 40, run=run)
+        check(f"post: {label} posts nothing (a status must point at a run)", posted is False and not calls, why)
     run, calls = stub(1, "", "denied")
     posted, why = inc.post_proof(main_env, "linux", "a" * 40, run=run)
     check("post: a failed post says so and is not reported as posted", posted is False and "could not post" in why, why)

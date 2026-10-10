@@ -155,14 +155,14 @@ jobs:
   # path of every release. Now N=4 jobs each run the guards `mutation_check.py --shard I/4` assigns them: a split by RECORDED COST (largest guard
   # first onto the lightest shard), the same on every machine, so no shard is much longer than the others. Each shard applies the incremental skip
   # (a guard unchanged since the recorded full run on this OS is skipped, reported as a skip and never as a pass, #1738) and the cost ratchet as
-  # a WARNING (growth blocks on the pull request that adds it, not in the release). Only the full sweep runs them: a pull request and a push to
+  # a WARNING in every automated run (it blocks only a bare `--ratchet`, which a maintainer runs by hand; pull request CI runs no mutation job). Only the full sweep runs them: a pull request and a push to
   # dev run --fast and skip them, exactly as they skipped the single job. The matrix size, 4, is also the `--expect-shards` below: change both.
   mutation:
     if: ${{ !(github.event_name == 'pull_request' || github.ref == 'refs/heads/dev') }}
     runs-on: ubuntu-latest
     # About a quarter of the 64 minutes the single job took, with room for a slow runner; re-set from a measured run, never to get green.
     timeout-minutes: 75
-    # Reads the `mutation-proof/<os>` commit status a skip rests on; nothing a pull request can write is trusted (#1738).
+    # Reads the `mutation-proof/<os>` commit status a skip rests on, and believes it only with the Actions run behind it (a run of release.yml or mutation-weekly.yml that succeeded on main for that commit, #1738).
     permissions:
       contents: read
       statuses: read

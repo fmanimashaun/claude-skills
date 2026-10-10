@@ -12,8 +12,13 @@ WHERE THE STATE LIVES, AND WHY IT IS NOT A FILE A PULL REQUEST CAN EDIT (decisio
 hashes in a JSON file. A pull request can edit that file: weaken a guard, write the weakened guard's new hash beside it, and the release
 skips the guard it never ran. So the state is a COMMIT STATUS, `mutation-proof/<os>` = success, posted by CI on a commit of `main` after a
 complete full run in which no guard was skipped (the weekly run, or a release). `trusted_skips` takes the newest `main` first-parent commit
-that carries one, RECOMPUTES every hash from that commit's own git objects (`GitTree`), and compares them with the working tree's. Nothing a
-pull request can write is consulted: its edits change the working-tree hash, and the proof commit's objects are immutable. No status, no
+that carries one, RECOMPUTES every hash from that commit's own git objects (`GitTree`), and compares them with the working tree's. No file a
+pull request can write is consulted: its edits change the working-tree hash, and the proof commit's objects are immutable. The STATUS is
+another matter: any same-repo pull request whose edited workflow holds `statuses: write` can post `mutation-proof/<os> = success` as
+github-actions[bot], so a status is believed only with the run behind it (`run_is_trusted`: its `target_url` is a run of this repository, of
+release.yml or mutation-weekly.yml, started by a push, the schedule or a dispatch, on `main`, for exactly that commit, completed and
+successful; a run only `main` can make, and one that proved the commit directly or, with its own skips, together with the earlier proof
+it skipped on). And the skip is taken only where the code that decides it is trusted (`skip_allowed`: CI on `main`). No status, no run, no
 `gh`, no `origin/main`, a lookup error: nothing is skipped, which is the safe direction (a full run). The bytes are a function of the data.
 
 SHARDS (#1739). `assign_shards` splits the guards over N jobs, largest recorded cost first onto the lightest shard: a pure function of the
@@ -26,6 +31,7 @@ from __future__ import annotations
 import hashlib
 import json
 import platform
+import re
 import subprocess
 from pathlib import Path
 from typing import Callable, Iterable, Mapping
@@ -40,6 +46,10 @@ HARNESS_FILES = (
 )
 
 PROOF_CONTEXT = "mutation-proof"
+# A proof status is believed only when it points at an Actions run that only `main` can have produced (#1738, adversary finding: the status
+# alone is writable by any same-repo pull request whose edited workflow holds `statuses: write`, and posts as github-actions[bot] like a real one).
+TRUSTED_RUN_WORKFLOWS = (".github/workflows/release.yml", ".github/workflows/mutation-weekly.yml")
+TRUSTED_RUN_EVENTS = ("push", "schedule", "workflow_dispatch")
 LOOKBACK = 40            # main first-parent commits searched for a proof status
 CI_HOST_PREFIX = "github-actions/"
 
@@ -128,42 +138,55 @@ class GitTree:
         return self._blobs[blob]
 
 
-def _digest(h, source, relative: str) -> None:
-    """Fold one file (or directory, recursively, sorted) into `h`: its path, then its bytes with CRLF normalised."""
+def _digest(h, source, relative: str, raw: bool = False) -> None:
+    """Fold one file (or directory, recursively, sorted) into `h`: its path, then its bytes.
+
+    Text has CRLF normalised unless `raw`. The mode is part of the digest: the runner stages a guard's subject, selftest and deps by
+    `read_text`/`write_text`, which normalises line endings, so for those a checkout's line endings are not a change; but it copies the
+    `needs` files BYTE FOR BYTE (`shutil.copyfile`, `copytree`), so for those they are one: a CRLF rewrite of a shell hook breaks it
+    ("set: pipefail: invalid option name") and a guard that runs it must run again (#1738, adversary finding)."""
     if source.is_dir(relative):
         for child in source.files_under(relative):
-            _digest(h, source, child)
+            _digest(h, source, child, raw)
         return
-    h.update(relative.encode("utf-8") + b"\0")
+    h.update((b"RAW\0" if raw else b"TXT\0") + relative.encode("utf-8") + b"\0")
     data = source.read(relative)
     if data is None:
         h.update(b"MISSING\0")
         return
-    if b"\0" not in data[:8000]:                 # text only: a checkout's line endings are not a change
+    if not raw and b"\0" not in data[:8000]:    # staged through write_text: a checkout's line endings are not a change
         data = data.replace(b"\r\n", b"\n")
     h.update(hashlib.sha256(data).digest())
 
 
-def hash_paths(source, relatives: Iterable[str]) -> str:
-    """`source` is a WorkTree or a GitTree; a bare Path means the working tree."""
+def hash_paths(source, relatives: Iterable[str], raw: Iterable[str] = ()) -> str:
+    """`source` is a WorkTree or a GitTree; a bare Path means the working tree. `raw` paths are hashed byte for byte (see `_digest`)."""
     if isinstance(source, (str, Path)):
         source = WorkTree(Path(source))
     h = hashlib.sha256()
-    for relative in sorted(set(relatives)):
-        _digest(h, source, relative)
+    for relative, is_raw in sorted({(r, False) for r in relatives} | {(r, True) for r in raw}):
+        _digest(h, source, relative, is_raw)
     return h.hexdigest()
 
 
+def _base(guard) -> str:
+    return "" if guard.base in (".", "") else guard.base.rstrip("/") + "/"
+
+
 def guard_files(guard) -> list[str]:
-    """Every repo-relative path the runner stages for `guard`, plus its own declaration module."""
-    base = "" if guard.base in (".", "") else guard.base.rstrip("/") + "/"
-    module = f"{base}scripts/mutations/{guard.name}.py"
-    staged = [guard.subject, guard.selftest, *guard.deps, *guard.needs]
-    return [module] + [f"{base}{p}" for p in staged]
+    """The paths the runner stages THROUGH `write_text` for `guard` (line endings normalised there), plus its own declaration module."""
+    base = _base(guard)
+    return [f"{base}scripts/mutations/{guard.name}.py"] + [f"{base}{p}" for p in (guard.subject, guard.selftest, *guard.deps)]
+
+
+def guard_needs(guard) -> list[str]:
+    """The `needs` the runner copies BYTE FOR BYTE (files and whole directories): hashed raw, so a line-ending change is a change."""
+    base = _base(guard)
+    return [f"{base}{p}" for p in guard.needs]
 
 
 def guard_hash(source, guard) -> str:
-    return hash_paths(source, guard_files(guard))
+    return hash_paths(source, guard_files(guard), raw=guard_needs(guard))
 
 
 def harness_hash(source) -> str:
@@ -215,22 +238,60 @@ def main_first_parents(repo: Path, count: int = LOOKBACK) -> list[str]:
     return out.stdout.split() if out.returncode == 0 else []
 
 
-def status_has_proof(statuses_json: str, system: str) -> bool:
-    """True when the statuses of a commit hold a `mutation-proof/<system>` whose LATEST state is success."""
+def _latest_proof_status(statuses_json: str, system: str) -> dict | None:
+    """The newest `mutation-proof/<system>` status of a commit, whatever its state; None when there is none."""
     try:
         statuses = json.loads(statuses_json)
     except ValueError:
-        return False
+        return None
     if not isinstance(statuses, list):
-        return False
+        return None
     for status in statuses:                       # the API lists newest first; the newest state of a context is the one that counts
         if isinstance(status, dict) and status.get("context") == proof_context(system):
-            return status.get("state") == "success"
-    return False
+            return status
+    return None
+
+
+def status_has_proof(statuses_json: str, system: str) -> bool:
+    """True when the statuses of a commit hold a `mutation-proof/<system>` whose LATEST state is success. NOT enough to trust it: see `run_is_trusted`."""
+    status = _latest_proof_status(statuses_json, system)
+    return bool(status) and status.get("state") == "success"
+
+
+def proof_run_id(statuses_json: str, system: str, slug: str) -> str | None:
+    """The Actions run id a success status points at (`target_url` must be a run of THIS repository), or None."""
+    status = _latest_proof_status(statuses_json, system)
+    if not status or status.get("state") != "success":
+        return None
+    url = status.get("target_url")
+    if not isinstance(url, str) or not slug:
+        return None
+    found = re.fullmatch(r"https://github\.com/" + re.escape(slug) + r"/actions/runs/(\d+)(?:/.*)?", url)
+    return found.group(1) if found else None
+
+
+def run_is_trusted(run_json: str, sha: str, slug: str) -> bool:
+    """True only for a COMPLETED, successful Actions run of this repository on `main` for exactly `sha`, started by a push, the schedule or a
+    dispatch, of the release or the weekly workflow. A pull request, a dispatch on a branch, another workflow, another commit and a fork are all
+    refused, so a status a pull request wrote cannot borrow a run it did not make."""
+    try:
+        run = json.loads(run_json)
+    except ValueError:
+        return False
+    if not isinstance(run, dict):
+        return False
+    repo = (run.get("repository") or {}).get("full_name")
+    head_repo = (run.get("head_repository") or {}).get("full_name")
+    path = str(run.get("path") or "").split("@")[0]
+    return (run.get("head_sha") == sha and run.get("head_branch") == "main" and run.get("event") in TRUSTED_RUN_EVENTS
+            and path in TRUSTED_RUN_WORKFLOWS and run.get("status") == "completed" and run.get("conclusion") == "success"
+            and repo == slug and head_repo == slug)
 
 
 def github_proof_lookup(repo: Path, system: str, run=subprocess.run) -> Callable[[str], bool]:
-    """`has_proof(sha)` backed by `gh api`; any error (no gh, no token, no network) reads as 'no proof'."""
+    """`has_proof(sha)` backed by `gh api`: the commit holds a success `mutation-proof/<os>` status AND that status points at a run of
+    `release.yml` or `mutation-weekly.yml` that succeeded on `main` for exactly this commit (`run_is_trusted`). Any error (no gh, no token,
+    no network, a malformed answer) reads as 'no proof'."""
     import os
     slug = os.environ.get("GITHUB_REPOSITORY", "")
 
@@ -245,7 +306,14 @@ def github_proof_lookup(repo: Path, system: str, run=subprocess.run) -> Callable
                 return False
             got = run(["gh", "api", f"repos/{slug}/commits/{sha}/statuses?per_page=100"], capture_output=True, text=True, timeout=60,
                       stdin=subprocess.DEVNULL)
-            return got.returncode == 0 and status_has_proof(got.stdout, system)
+            if got.returncode != 0 or not status_has_proof(got.stdout, system):
+                return False
+            run_id = proof_run_id(got.stdout, system, slug)
+            if run_id is None:
+                return False                  # a status with no run behind it (or a run of another repository) is not a proof
+            found = run(["gh", "api", f"repos/{slug}/actions/runs/{run_id}"], capture_output=True, text=True, timeout=60,
+                        stdin=subprocess.DEVNULL)
+            return found.returncode == 0 and run_is_trusted(found.stdout, sha, slug)
         except (OSError, subprocess.SubprocessError):
             return False
     return has_proof
@@ -258,9 +326,11 @@ def post_proof(env: Mapping[str, str], system: str, sha: str, run=subprocess.run
     if env.get("GITHUB_ACTIONS") != "true" or env.get("GITHUB_REF") != "refs/heads/main":
         return False, "not posted: only CI on refs/heads/main posts a proof (a branch, a pull request or a laptop never does)"
     slug = env.get("GITHUB_REPOSITORY", "")
-    if not slug or not sha:
-        return False, "not posted: no repository or commit"
+    run_id = env.get("GITHUB_RUN_ID", "")
+    if not slug or not sha or not run_id.isdigit():
+        return False, "not posted: no repository, commit or run id (the status must point at the run that proved it)"
     got = run(["gh", "api", "-X", "POST", f"repos/{slug}/statuses/{sha}", "-f", "state=success", "-f", f"context={proof_context(system)}",
+               "-f", f"target_url=https://github.com/{slug}/actions/runs/{run_id}",
                "-f", "description=full mutation run passed, no guard skipped"], capture_output=True, text=True, timeout=60,
               stdin=subprocess.DEVNULL)
     if got.returncode != 0:

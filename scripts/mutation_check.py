@@ -445,7 +445,8 @@ def ratchet_outcome(cost: dict[str, float], baseline: dict | None, known: set[st
                     warn_only: bool) -> tuple[list[str], list[str]]:
     """`(problems that block, warnings)`. In the release (`warn_only`) cost growth is a WARNING (#1738): a survivor, an inert
     baseline and a wrong-fixture catch block elsewhere, and a missing record or a gone guard is drift, not cost.
-    Everywhere else growth blocks, on the pull request that adds the cost, where it can be re-recorded."""
+    Growth blocks only a bare `--ratchet`, which a maintainer runs by hand: pull request CI runs no mutation job and every automated full run
+    (the shard jobs, the doctor's `--require-slow`) passes `--ratchet-warn`, so there growth is a warning a person has to read in the log."""
     if baseline is None or not warn_only:
         return ratchet_problems(cost, baseline, known), []
     return record_problems(set(cost) if known is None else known, baseline), cost_problems(cost, baseline)
