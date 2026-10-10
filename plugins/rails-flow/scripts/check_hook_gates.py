@@ -2008,7 +2008,7 @@ def release_gate_fixtures() -> None:
         for cmd in ("git -C $(pwd) push origin main", 'git -C "$(pwd)" push origin main', "git --git-dir=$(pwd)/.git push origin main"):
             check(f"release-gate (#1720): parser missing -> `{cmd}` is blocked",
                   run(cmd, plugin_root=Path(bare_root)) == 2, "exit 0")
-        on_main = (("checkout", "-q", "main"),)
+        on_main = (("checkout", "-q", "-B", "main"),)  # -B: the runner's git init may name its first branch master
         check("release-gate (#1720): parser missing -> `git -C $(pwd) merge` with HEAD on main is blocked",
               run("git -C $(pwd) merge feature/work", plugin_root=Path(bare_root), git_config=on_main) == 2, "exit 0")
 
@@ -4645,7 +4645,7 @@ def release_gate_adversary_fixtures() -> None:
 def release_gate_fallback_fixtures() -> None:
     """#1720: WITHOUT ITS CLASSIFIER the release gate fails closed BY SHAPE: one fixture per rule, the controls and the message."""
     with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as bare:
-        _git_repo(Path(td))   # HEAD on main: a merge or pull here would be one into main
+        _git_repo(Path(td))   # the fallback reads no HEAD, so the first branch's name (main or master) does not matter
         gate = _fallback_gate(td, bare)
         # ONE FIXTURE PER RULE that only that rule catches, so a mutant removing it cannot hide behind the others.
         check("release-gate fallback (#1720): (a) a marker alone refuses: a base64-decoded push run through sh from `git log $(...)`",
