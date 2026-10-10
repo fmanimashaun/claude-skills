@@ -25,6 +25,8 @@ Exit 0: every fixture holds.  Exit 1: a fixture failed (a hook regressed).  Exit
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 import os
 import re
@@ -44,6 +46,29 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fixture_git  # noqa: E402  (#1588: a fixture's git touches only its own temp repo)
 
 HOOKS = Path(__file__).resolve().parents[1] / "hooks" / "scripts"
+
+
+@contextlib.contextmanager
+def scratch_dir():
+    """A temp directory a fixture owns, removed on exit WITHOUT ever failing the run (#1800).
+
+    `tempfile.TemporaryDirectory` raises from its `__exit__` when `shutil.rmtree` loses a race: a hook's git or a stub that left its process group
+    (or is still being reaped) creates an entry between rmtree's listing and its `rmdir`, so `os.rmdir` fails "Directory not empty". That raise
+    escaped the fixture group, failed the whole selftest, and read in the mutation harness as "the UNMUTATED selftest fails" (run 38054049242):
+    a cleanup problem reported as a verdict. A leftover temp directory is harmless; a raised cleanup is not. So: retry a few times, then give
+    up, and say what was left on stderr so the next occurrence names its writer instead of being a bare traceback."""
+    path = tempfile.mkdtemp(prefix="hookgates-")
+    try:
+        yield path
+    finally:
+        for attempt in range(5):
+            shutil.rmtree(path, ignore_errors=True)
+            if not os.path.exists(path):
+                break
+            time.sleep(0.2 * (attempt + 1))
+        else:
+            left = sorted(os.listdir(path))[:5] if os.path.isdir(path) else []
+            print(f"check_hook_gates: could not remove {path} (left: {left}); a leftover temp directory does not fail a check", file=sys.stderr)
 
 FAILURES: list[str] = []
 CHECKS = 0
@@ -248,7 +273,7 @@ CALIBRATION_TIMEOUT = 60        # each calibration command is itself bounded: a 
 
 def _sample() -> float:
     """Seconds ONE run of the calibration workload took here; the cap's worth of slowdown if it would not finish."""
-    with tempfile.TemporaryDirectory() as td:
+    with scratch_dir() as td:
         began = time.monotonic()
         try:
             for cmd in (["git", "init", "-q"], ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "i"],  # fixture-git: exempt (the timed calibration workload: its argv is what is measured; repo-locating env stripped below)
@@ -493,7 +518,7 @@ def run_hook(name: str, *, cwd: Path, stdin: str, path_prefix: list[Path] = (),
 # ---- stop-gate.sh (#822) ------------------------------------------------------------------------
 def stop_gate_fixtures() -> None:
     def scenario(*, timeout_present: bool, bundle_body: str) -> tuple[int, str]:
-        with tempfile.TemporaryDirectory() as td:
+        with scratch_dir() as td:
             repo = Path(td) / "repo"
             _git_repo(repo)
             (repo / "spec").mkdir()
@@ -535,7 +560,7 @@ def stop_gate_fixtures() -> None:
     # pre-layout `docs/acceptance/` and `docs/handoff/`, so a branch that followed the commands was blocked for criteria it had written. Both old
     # paths still count for a project that committed there before.
     def paths_scenario(*files: str) -> tuple[int, str]:
-        with tempfile.TemporaryDirectory() as td:
+        with scratch_dir() as td:
             repo = Path(td) / "repo"
             _git_repo(repo)
             _run(["git", "checkout", "-q", "-b", "feature/widgets"], cwd=repo, check=True, capture_output=True)
@@ -573,7 +598,7 @@ def stop_gate_fixtures() -> None:
 # ---- guard-lane.sh (#823) -----------------------------------------------------------------------
 def guard_lane_fixtures() -> None:
     def write(path: str, lane: str | None) -> tuple[int, str]:
-        with tempfile.TemporaryDirectory() as td:
+        with scratch_dir() as td:
             payload = json.dumps({"tool_input": {"file_path": path}})
             extra = {"RAILS_FLOW_LANE": lane} if lane else None
             return run_hook("guard-lane.sh", cwd=Path(td), stdin=payload, env_extra=extra)
@@ -595,7 +620,7 @@ def guard_lane_fixtures() -> None:
 # ---- guard-migrate.sh (#1362) --------------------------------------------------------------------
 def guard_migrate_fixtures() -> None:
     def write(file_path_fn, *, rails: bool = True, existing: str | None = None) -> tuple[int, str]:
-        with tempfile.TemporaryDirectory() as td:
+        with scratch_dir() as td:
             proj = Path(td) / "proj"
             (proj / "db" / "migrate").mkdir(parents=True)
             if rails:
@@ -633,7 +658,7 @@ def guard_migrate_fixtures() -> None:
           code == 0, f"exit {code}")
 
     def via_symlink() -> int:
-        with tempfile.TemporaryDirectory() as td:
+        with scratch_dir() as td:
             proj = Path(td) / "proj"
             (proj / "db" / "migrate").mkdir(parents=True)
             (proj / "bin").mkdir()
@@ -678,7 +703,7 @@ def guard_migrate_fixtures() -> None:
     # FAIL CLOSED, SCOPED: an unparsable payload. Judged on the raw text alone, paired on the one
     # thing that differs -- whether a db/migrate/*.rb path appears in it at all.
     def raw(stdin: str) -> tuple[int, str]:
-        with tempfile.TemporaryDirectory() as td:
+        with scratch_dir() as td:
             proj = Path(td) / "proj"
             (proj / "db" / "migrate").mkdir(parents=True)
             (proj / "bin").mkdir()
@@ -697,7 +722,7 @@ def guard_migrate_fixtures() -> None:
     # ALLOWED a new migration while claiming to fail closed. PATH is replaced, not prefixed, or the
     # host's python3 would answer and the fallback would never run.
     def bare(file_path: str, bash: str | None = None) -> tuple[int, str]:
-        with tempfile.TemporaryDirectory() as td:
+        with scratch_dir() as td:
             proj = Path(td) / "proj"
             (proj / "db" / "migrate").mkdir(parents=True)
             (proj / "bin").mkdir()
@@ -743,7 +768,7 @@ def guard_migrate_fixtures() -> None:
 # ---- lint-ruby.sh (#824) ------------------------------------------------------------------------
 def lint_ruby_fixtures() -> None:
     def edit(rubocop_body: str, *, with_mise: bool = False) -> tuple[int, str]:
-        with tempfile.TemporaryDirectory() as td:
+        with scratch_dir() as td:
             proj = Path(td) / "proj"
             proj.mkdir()
             (proj / "a.rb").write_text("puts 1\n")
@@ -795,7 +820,7 @@ def lint_ruby_fixtures() -> None:
 
 # ---- self-consistency.sh (#825) -----------------------------------------------------------------
 def self_consistency_fixtures() -> None:
-    with tempfile.TemporaryDirectory() as td:
+    with scratch_dir() as td:
         proj = Path(td)
         (proj / "a.rb").write_text("puts 1\n")
         payload = json.dumps({"tool_input": {"file_path": str(proj / "a.rb")}})
@@ -886,7 +911,7 @@ def normaliser_pipelines(cmd: str) -> int | str:
     """#1504: how many `_normalize_one` pipelines `normalize_segments` runs for `cmd`. The lib is sourced
     and `_normalize_one` wrapped to append one byte to a file per call: a file, because each depth's
     pipeline (and, per string, each recursion) runs in a subshell a shell variable would not survive."""
-    with tempfile.TemporaryDirectory() as td:
+    with scratch_dir() as td:
         count = Path(td) / "count"; count.write_text("")
         script = ('. "$1"\n'
                   'eval "_nc_counted_$(declare -f _normalize_one)"\n'
@@ -915,7 +940,7 @@ def guard_bash_fixtures() -> None:
     last = {"rc": 0, "out": ""}
 
     def run(cmd: str, shell: str = "bash") -> int:
-        with tempfile.TemporaryDirectory() as td:
+        with scratch_dir() as td:
             last["rc"], last["out"] = run_hook("guard-bash.sh", cwd=Path(td), shell=shell,
                                                stdin=json.dumps({"tool_input": {"command": cmd}}))
         return last["rc"]
@@ -1034,7 +1059,7 @@ def guard_bash_fixtures() -> None:
         check(f"guard-bash (#1504): {what} cost {want} normaliser pipeline(s), one per depth (ratchet)",
               got == want, f"{got} pipelines" + (": lower the ratchet" if isinstance(got, int) and got < want else ""))
     # FAIL CLOSED without the lib: a staged copy of the hook with lib/ removed must still block the raw text.
-    with tempfile.TemporaryDirectory() as td:
+    with scratch_dir() as td:
         stage = Path(td) / "hooks"; shutil.copytree(HOOKS, stage); shutil.rmtree(stage / "lib")
         payload = lambda c: json.dumps({"tool_input": {"command": c}})
         r1 = _run(["bash", str(stage / "guard-bash.sh")], input=payload("git add -A"), capture_output=True, text=True, cwd=td)
@@ -1047,7 +1072,7 @@ def guard_bash_fixtures() -> None:
                          {"when": "bug", "one_of": ["severity:s1", "severity:s2"]}]}
     def labelled(cmd: str, *, declare: bool = True, drop_helper: bool = False,
                  files: dict[str, str | bytes] | None = None) -> tuple[int, str]:
-        with tempfile.TemporaryDirectory() as td:
+        with scratch_dir() as td:
             for rel, text in (files or {}).items():     # relative scripts the command reads (#1495); bytes for an encoding a text write cannot make (#1671)
                 (Path(td) / rel).parent.mkdir(parents=True, exist_ok=True)
                 (Path(td) / rel).write_bytes(text) if isinstance(text, bytes) else (Path(td) / rel).write_text(text, encoding="utf-8")
@@ -1080,7 +1105,7 @@ def guard_bash_fixtures() -> None:
           rc == 2 and "no --label" in err, err)
     # #1400: the TARGET repository's declaration, through the real hook. The session stands in a repo
     # that wants comp/type/prio; the command cds into one that wants a type and, for a bug, a severity.
-    with tempfile.TemporaryDirectory() as td:
+    with scratch_dir() as td:
         session, other = Path(td) / "session", Path(td) / "other"
         for repo, decl in ((session, {"groups": [{"one_of": ["comp:*"]}, {"one_of": ["type:*"]}]}), (other, groups)):
             (repo / ".rails-flow").mkdir(parents=True)
@@ -1114,7 +1139,7 @@ def guard_bash_fixtures() -> None:
         check(f"guard-bash (#1462): `{form[:30]}` with no label is refused through the real hook",
               rc == 2 and "no --label" in err, err)
     # #1489: `bash < file` names no create in its text; the trigger must still reach the helper.
-    with tempfile.TemporaryDirectory() as sd:
+    with scratch_dir() as sd:
         script = Path(sd) / "file.sh"
         script.write_text("#!/bin/sh\ngh issue create -t X\n", encoding="utf-8")
         rc, err = labelled(f"bash < {script}")
@@ -1135,7 +1160,7 @@ def guard_bash_fixtures() -> None:
         check("guard-bash (#1489 review): CONTROL: `$'…'` before a harmless redirected script is allowed",
               labelled(f"echo $'it\\'s'; bash < {plain}")[0] == 0)
     # A relative script is read from the cd target (#1489 review, through the real hook).
-    with tempfile.TemporaryDirectory() as sd:
+    with scratch_dir() as sd:
         (Path(sd) / "only.sh").write_text("gh issue create -t X\n", encoding="utf-8")
         rc, err = labelled(f"cd {sd} && bash < only.sh")
         check("guard-bash (#1489 review): `cd <dir> && bash < only.sh` reads the cd target's script and is refused",
@@ -1304,7 +1329,7 @@ def guard_bash_fixtures() -> None:
     def raw(stdin: bytes, path: str | None = None, lang: str = "C") -> int:
         env = {"HOME": os.environ.get("HOME", "/tmp"), "LANG": lang, "LC_ALL": lang,
                "PATH": path if path is not None else os.environ["PATH"]}
-        with tempfile.TemporaryDirectory() as td:
+        with scratch_dir() as td:
             done = _run(["/bin/bash", str(HOOKS / "guard-bash.sh")], cwd=td, input=stdin, env=env,
                         capture_output=True, timeout=60)
         last["rc"], last["out"] = done.returncode, (done.stdout + done.stderr).decode("utf-8", "replace")
@@ -1315,7 +1340,7 @@ def guard_bash_fixtures() -> None:
 
     # 1. NO awk ON PATH: the normaliser printed nothing. Absolute binaries, so an alias or a shell
     # function for one of them cannot stand in (zsh here aliases grep).
-    with tempfile.TemporaryDirectory() as bd:
+    with scratch_dir() as bd:
         for tool in ("bash", "git", "sed", "tr", "grep", "dirname", "cat", "env", "head"):
             real = next((f"{d}/{tool}" for d in ("/usr/bin", "/bin") if os.path.exists(f"{d}/{tool}")), None)
             if real:
@@ -1662,7 +1687,7 @@ def guard_claims_pipe_fixtures() -> None:
     TPL = "## What changed\n\n## How to test\n"
 
     def run(cmd: str, body: str | None = None, template: str | None = None) -> int:
-        with tempfile.TemporaryDirectory() as td:
+        with scratch_dir() as td:
             if template is not None:
                 (Path(td) / ".github").mkdir()
                 (Path(td) / ".github" / "pull_request_template.md").write_text(template, encoding="utf-8")
@@ -1686,7 +1711,7 @@ def guard_claims_pipe_fixtures() -> None:
 def guard_claims_fixtures() -> None:
     def run(cmd: str, body: str | None = None, env_extra=None, template: str | None = None,
             with_output: bool = False):
-        with tempfile.TemporaryDirectory() as td:
+        with scratch_dir() as td:
             if template is not None:
                 (Path(td) / ".github").mkdir()
                 (Path(td) / ".github" / "pull_request_template.md").write_text(template, encoding="utf-8")
@@ -1761,11 +1786,11 @@ def guard_claims_fixtures() -> None:
               template=TPL) == 0, "exit 2")
     # Third pre-release review: a helper that dies AT IMPORT exits 1 with nothing listed. Run a COPY of
     # the hook whose helper cannot import, so the branch that says so is proven reachable.
-    with tempfile.TemporaryDirectory() as hd:
+    with scratch_dir() as hd:
         copy = Path(hd) / "scripts"
         shutil.copytree(HOOKS, copy)
         (copy / "lib" / "pr_template.py").write_text("import nonexistent_module_for_the_fixture\n", encoding="utf-8")
-        with tempfile.TemporaryDirectory() as td:
+        with scratch_dir() as td:
             (Path(td) / ".github").mkdir()
             (Path(td) / ".github" / "pull_request_template.md").write_text(TPL, encoding="utf-8")
             (Path(td) / "body.md").write_text("## What changed\nx\n", encoding="utf-8")
@@ -1786,11 +1811,11 @@ def guard_claims_fixtures() -> None:
     for label, mangle in (
             ("missing", lambda f: f.rename(f.with_name("command_cwd_renamed.py"))),
             ("crashing", lambda f: f.write_text("import sys\nsys.exit(1)\n", encoding="utf-8"))):
-        with tempfile.TemporaryDirectory() as hd:
+        with scratch_dir() as hd:
             copy = Path(hd) / "scripts"
             shutil.copytree(HOOKS, copy)
             mangle(copy / "lib" / "command_cwd.py")
-            with tempfile.TemporaryDirectory() as td:
+            with scratch_dir() as td:
                 a, b = Path(td) / "a", Path(td) / "b"
                 for d in (a, b):
                     (d / ".github").mkdir(parents=True)
@@ -1831,7 +1856,7 @@ def guard_claims_fixtures() -> None:
 
     def run_in(cmd: str, body: str, *, body_in: str = "a", with_output: bool = False, payload_cwd: str = "",
                env_extra: dict[str, str] | None = None):
-        with tempfile.TemporaryDirectory() as td:
+        with scratch_dir() as td:
             a, b = Path(td) / "a", Path(td) / "b"
             # `a/5` carries B's template, so `cd 5 >/dev/null` read as a bare `cd` (HOME, set to A) is visible.
             for d, tpl in ((a, TPL), (b, TPL_B), (a / "5", TPL_B)):
@@ -2115,7 +2140,7 @@ def guard_claims_fixtures() -> None:
     # body, which no gate in this repo reads". This hook reads the PR body, so it is mechanisable
     # now. Driven in a real git repo, because the rule is scoped by `git diff --name-only`.
     def run_in_repo(cmd: str, body: str, touch: str) -> int:
-        with tempfile.TemporaryDirectory() as td:
+        with scratch_dir() as td:
             root = Path(td)
             (root / "body.md").write_text(body, encoding="utf-8")
             target = root / touch
@@ -2147,7 +2172,7 @@ def guard_claims_fixtures() -> None:
     # #1516 review: the change-type check ran `git diff` in the SESSION's repo. A session with a modified
     # skills/ file blocked `cd <other repo> && gh pr create` for a PR that touches nothing there.
     def run_skills_cd(cmd: str) -> int:
-        with tempfile.TemporaryDirectory() as td:
+        with scratch_dir() as td:
             a, b = Path(td) / "a", Path(td) / "b"
             for d in (a, b):
                 d.mkdir()
@@ -2179,7 +2204,7 @@ def guard_claims_fixtures() -> None:
     # clean filter running), so the hook reads a repository other than the session's with only the staged diff, which
     # hashes nothing. The marker file is what the program writes; it must not exist afterwards.
     def run_exec_cd(cmd: str, vector: str, stage_skills: bool = False) -> tuple[int, bool]:
-        with tempfile.TemporaryDirectory() as td:
+        with scratch_dir() as td:
             a, b = Path(td) / "a", Path(td) / "b"
             marker, script = Path(td) / "PROGRAM_RAN", Path(td) / "program.sh"
             script.write_text(f"#!/bin/sh\necho ran >> '{marker}'\n" + ("cat\n" if vector == "filter" else ""),
@@ -2223,7 +2248,7 @@ def guard_claims_fixtures() -> None:
     # the first hit, `git` dies of SIGPIPE, the pipeline reports failure and the gate reads "no skills/ change". 2500
     # staged files with long names are about 170 KiB, well past the 64 KiB buffer.
     def run_big_skills_diff(cmd: str, big_repo: str) -> int:
-        with tempfile.TemporaryDirectory() as td:
+        with scratch_dir() as td:
             a, b = Path(td) / "a", Path(td) / "b"
             for d in (a, b):
                 d.mkdir()
@@ -2283,7 +2308,7 @@ def release_gate_fixtures() -> None:
     def run(cmd: str, marketplace: bool = False, plugin_root: Path | None = None,
             origin: str | None = "https://github.com/fmanimashaun/claude-skills.git",
             git_config: tuple[tuple[str, ...], ...] = (), extra_env: dict[str, str] | None = None) -> int:
-        with tempfile.TemporaryDirectory() as td:
+        with scratch_dir() as td:
             _git_repo(Path(td))
             # ON A FEATURE BRANCH (#1410). `git init` leaves HEAD on main, where a bare `git push`
             # really IS a push to main -- so a parser handed the quote-stripped `git push origin `
@@ -2364,7 +2389,7 @@ def release_gate_fixtures() -> None:
           run('git push origin "feature/x') == 2, "exit 0")
     # FAIL CLOSED without the parser: the whole-word match over the RAW command still sees a quoted
     # main (the pair's control is the feature push beside it, which must still pass).
-    with tempfile.TemporaryDirectory() as bare_root:
+    with scratch_dir() as bare_root:
         check("release-gate (#1410): parser missing -> a quoted `main` push is still blocked",
               run('git push origin "main"', plugin_root=Path(bare_root)) == 2, "exit 0")
         # #1720: without the classifier the gate fails closed BY SHAPE, so a feature push is refused too (reinstall the plugin).
@@ -2440,7 +2465,7 @@ def release_gate_fixtures() -> None:
 
     # #1337. The stamp is bound to the tested dev sha; committing it to dev by PR moves dev. The gate
     # accepts an ANCESTOR of dev only when the delta since is the stamp itself.
-    with tempfile.TemporaryDirectory() as td:
+    with scratch_dir() as td:
         repo = Path(td)
         _git_repo(repo)
         sh = lambda *a: _fixture_git(repo, *a, check=True, capture_output=True, text=True).stdout.strip()
@@ -2496,7 +2521,7 @@ def release_gate_fixtures() -> None:
             done = _run(["bash", str(QA_HOOK)], cwd=repo, env=e, capture_output=True, timeout=60, input=payload)
             return gate_exit(done.returncode, done.stderr)
 
-        with tempfile.TemporaryDirectory() as ubtd:
+        with scratch_dir() as ubtd:
             ub_root = Path(ubtd) / "qa-flow"
             shutil.copytree(QA_HOOK.parents[2], ub_root, ignore=shutil.ignore_patterns("push_targets.py", "__pycache__"))
             check("release-gate (#1657): an invalid byte on an EARLIER line does not hide a push to main under a UTF-8 locale",
@@ -2522,7 +2547,7 @@ def release_gate_fixtures() -> None:
                   gate_bytes(b"echo \xff; gh api -X PUT repos/o/r/merges -f base=main", ub_root) == 2, "exit != 2")
             # A normaliser that FAILS (an awk that passes its input through and exits 2) is "could not read": refused. The pass-through keeps the output non-empty, so
             # the empty-output refusal cannot be what refuses; and `FOO=1 git push …` is not anchored without the peel, so the raw text cannot be what refuses either.
-            with tempfile.TemporaryDirectory() as sbtd:
+            with scratch_dir() as sbtd:
                 stub = Path(sbtd) / "awk"
                 stub.write_text("#!/bin/sh\ncat\nexit 2\n", encoding="utf-8"); stub.chmod(0o755)
                 check("release-gate (#1657): without the classifier, a normaliser that fails (awk exits 2) is refused, not read as nothing to judge",
@@ -2545,7 +2570,7 @@ def release_gate_fixtures() -> None:
         # path needs its own fixture. A plugin copy WITHOUT push_targets.py forces the fallback, and this repo has
         # no origin/dev: plain `git rev-parse origin/dev` echoes the literal ref and poisons the value (#1337).
         import shutil
-        with tempfile.TemporaryDirectory() as fbtd:
+        with scratch_dir() as fbtd:
             fb_root = Path(fbtd) / "qa-flow"
             shutil.copytree(QA_HOOK.parents[2], fb_root, ignore=shutil.ignore_patterns("push_targets.py", "__pycache__"))
             done = _run(["bash", str(QA_HOOK)], cwd=repo, env={**env, "CLAUDE_PLUGIN_ROOT": str(fb_root)},
@@ -2576,7 +2601,7 @@ def release_gate_fixtures() -> None:
                "1.2,390,root,/login,Sign in,In,In,Pass,,,,,empty db\n")
     az_head = "action,location,actor_role,target_role,guard,verdict,evidence,issue\n"
     az_good = az_head + "demote,app/models/user.rb:40,it,root,root? refusal,GUARDED,,\n"
-    with tempfile.TemporaryDirectory() as td:
+    with scratch_dir() as td:
         repo = Path(td)
         _git_repo(repo)
         sh = lambda *a: _fixture_git(repo, *a, check=True, capture_output=True, text=True).stdout.strip()
@@ -2735,7 +2760,7 @@ def release_gate_fixtures() -> None:
     # Round 3: a DEGRADED PATH -- only bash. grep, sed, awk, tr, head, python3 and git are all gone;
     # the builtins-only fallback must still deny a promotion. PATH replaced, not prefixed.
     def bare_gate(cmd: str, tools: tuple[str, ...] = ("bash",)) -> tuple[int, str]:
-        with tempfile.TemporaryDirectory() as td:
+        with scratch_dir() as td:
             only = Path(td) / "only"
             only.mkdir()
             for tool in tools:
@@ -2824,7 +2849,7 @@ GH_ERROR_BODY = ('{"data":{"node":null},"errors":[{"type":"NOT_FOUND","path":["n
 
 
 def release_gate_effects_fixtures() -> None:
-    with tempfile.TemporaryDirectory() as td:
+    with scratch_dir() as td:
         repo = Path(td) / "repo"
         _git_repo(repo)
         sh = lambda *a, **kw: _fixture_git(repo, *a, check=True, capture_output=True, text=True, **kw).stdout.strip()
@@ -3280,7 +3305,7 @@ def release_gate_refs_fixtures() -> None:
     if not QA_HOOK.is_file():
         check("release-gate (#1600): release-gate.sh present beside rails-flow", False, str(QA_HOOK))
         return
-    with tempfile.TemporaryDirectory() as td:
+    with scratch_dir() as td:
         repo = Path(td) / "repo"
         _git_repo(repo)
         sh = lambda *a, **kw: _fixture_git(repo, *a, check=True, capture_output=True, text=True, **kw).stdout.strip()
@@ -3495,7 +3520,7 @@ def release_gate_refs_fixtures() -> None:
 
 @real_setup
 def release_gate_repos_fixtures() -> None:
-    with tempfile.TemporaryDirectory() as td:
+    with scratch_dir() as td:
         repo = Path(td) / "repo"
         _git_repo(repo)
         sh = lambda *a, **kw: _fixture_git(repo, *a, check=True, capture_output=True, text=True, **kw).stdout.strip()
@@ -4012,7 +4037,7 @@ def ci_verdict_hint_fixtures() -> None:
     passed = json.dumps({"hook_event_name": "PostToolUse", "tool_name": "Bash",
                          "tool_input": {"command": "gh pr checks 1172"},
                          "tool_response": {"stdout": pass_rows, "stderr": "", "exit_code": 0}})
-    with tempfile.TemporaryDirectory() as td:
+    with scratch_dir() as td:
         proj = Path(td)
         code, out = run_hook("ci-verdict-hint.sh", cwd=proj, stdin=failed,
                              env_extra={"CLAUDE_PLUGIN_ROOT": root})
@@ -4059,7 +4084,7 @@ def session_end_fixtures() -> None:
             "os.kill(os.getpid(), signal.SIGSTOP)\ntime.sleep(120)\n")
     parent = ("import subprocess, sys\nN = subprocess.DEVNULL\n"
               f"subprocess.Popen([sys.executable, '-c', {leaf!r}, sys.argv[1]], start_new_session=True, stdin=N, stdout=N, stderr=N)\n")
-    with tempfile.TemporaryDirectory() as td:
+    with scratch_dir() as td:
         proj, pidfile = Path(td), Path(td) / "leaf.pid"
         env = {k: v for k, v in os.environ.items() if k != "CLAUDE_CODE_SESSION_ID"}
         env["CLAUDE_CODE_SESSION_ID"] = sid
@@ -4149,7 +4174,7 @@ def timeout_fixtures() -> None:
     check("a gate_exit of the gate's deadline message is 124, a real refusal stays 2, an allow stays 0",
           gate_exit(2, b"BLOCKED by qa-flow release gate: the gate took longer than 13s, and this command looks like a promotion") == 124
           and gate_exit(2, b"BLOCKED by qa-flow release gate: no qa/CERTIFICATION is committed") == 2 and gate_exit(0, b"") == 0, "mapping wrong")
-    with tempfile.TemporaryDirectory() as dltd:
+    with scratch_dir() as dltd:
         slow = Path(dltd) / "awk"
         slow.write_text("#!/bin/sh\nsleep 6\n", encoding="utf-8"); slow.chmod(0o755)
         denv = {k: v for k, v in os.environ.items() if k not in ("QA_ALLOW_MAIN", "RAILS_FLOW_LANE")}
@@ -4289,12 +4314,12 @@ def guard_worktree_fixtures() -> None:
     coord, git, new_repo, add_wt, lane, payload, guard, denied, allowed = (k.coord, k.git, k.new_repo, k.add_wt, k.lane, k.payload, k.guard, k.denied, k.allowed)
     _ = (coord, git, new_repo, add_wt, lane, payload, guard, denied, allowed)     # a group uses some, not all
     # 4. A fresh session that owns nothing, in a repository with no coordination record.
-    with tempfile.TemporaryDirectory() as td:
+    with scratch_dir() as td:
         repo = new_repo(td)
         allowed("guard-worktree: a session that owns nothing may add a worktree", guard(repo, "git worktree add ../fresh -b feature/fresh dev"))
 
     # 1. This session owns an unmerged worktree: a second one is DENIED.
-    with tempfile.TemporaryDirectory() as td:
+    with scratch_dir() as td:
         repo = new_repo(td)
         wt = add_wt(repo, "a", "feature/a")
         lane(repo, "SESS-A", wt, "feature/a")
@@ -4321,7 +4346,7 @@ def guard_worktree_fixtures() -> None:
                 guard(repo, "git worktree add ../b -b feature/b dev"))
 
     # A lane whose worktree has been removed is finished, not in progress.
-    with tempfile.TemporaryDirectory() as td:
+    with scratch_dir() as td:
         repo = new_repo(td)
         wt = add_wt(repo, "a", "feature/a")
         lane(repo, "SESS-A", wt, "feature/a")
@@ -4329,7 +4354,7 @@ def guard_worktree_fixtures() -> None:
         allowed("guard-worktree: a lane whose worktree no longer exists does not block", guard(repo, "git worktree add ../b -b feature/b dev"))
 
     # 3. A DUPLICATE worktree for the same branch, or the same issue, is denied -- no record needed.
-    with tempfile.TemporaryDirectory() as td:
+    with scratch_dir() as td:
         repo = new_repo(td)
         wt = add_wt(repo, "issue-77", "feature/issue-77-x")
         denied("guard-worktree: a second worktree for the SAME branch is denied (a resume creating a duplicate)",
@@ -4352,7 +4377,7 @@ def guard_worktree_fixtures() -> None:
                 guard(repo, "git worktree add ../again -b fix/77-again dev"))
 
     # The exact-branch rule on its own: a branch with NO issue number, so the same-issue rule cannot be what refuses.
-    with tempfile.TemporaryDirectory() as td:
+    with scratch_dir() as td:
         repo = new_repo(td)
         wt = add_wt(repo, "lane-band", "feature/lane-band")
         denied("guard-worktree: a second worktree for a branch with no issue number is denied by the branch alone",
@@ -4383,7 +4408,7 @@ def guard_worktree_fixtures() -> None:
                 guard(repo, "git worktree add ../other -b feature/other dev >/dev/null 2>&1"))
 
     # F1 (ae's review of #1596): an issue number is read only from the documented forms. `slug-20` is not issue 20.
-    with tempfile.TemporaryDirectory() as td:
+    with scratch_dir() as td:
         repo = new_repo(td)
         add_wt(repo, "node-20", "chore/node-20")
         allowed("guard-worktree: `-b chore/ubuntu-20` is NOT issue 20 beside `chore/node-20`",
@@ -4394,7 +4419,7 @@ def guard_worktree_fixtures() -> None:
         denied("guard-worktree: CONTROL: `N-slug` (21-again) IS issue 21", guard(repo, "git worktree add ../b -b fix/21-again dev"))
 
     # A record that cannot be read fails CLOSED, with the way out.
-    with tempfile.TemporaryDirectory() as td:
+    with scratch_dir() as td:
         repo = new_repo(td)
         bad = repo / ".git" / "coordination.json"
         bad.parent.mkdir(parents=True, exist_ok=True)   # a `--match` survey stubs `git init`, so .git is not there yet
@@ -4403,7 +4428,7 @@ def guard_worktree_fixtures() -> None:
                "unreadable")
 
     # DORMANT outside a git repository: there are no worktrees to protect.
-    with tempfile.TemporaryDirectory() as td:
+    with scratch_dir() as td:
         allowed("guard-worktree: outside a git repository the guard is dormant", guard(Path(td), "git worktree add ../x -b y"))
 
 
@@ -4414,7 +4439,7 @@ def guard_worktree_parse_fixtures() -> None:
     coord, git, new_repo, add_wt, lane, payload, guard, denied, allowed = (k.coord, k.git, k.new_repo, k.add_wt, k.lane, k.payload, k.guard, k.denied, k.allowed)
     _ = (coord, git, new_repo, add_wt, lane, payload, guard, denied, allowed)     # a group uses some, not all
     # Quoted words (ae's review): the shell's normaliser strips quoted spans, so these never reached the helper.
-    with tempfile.TemporaryDirectory() as td:
+    with scratch_dir() as td:
         repo = new_repo(td)
         wt = add_wt(repo, "lane-band", "feature/lane-band")
         for cmd in ("'git' worktree add ../dup feature/lane-band", "git 'worktree' add ../dup feature/lane-band",
@@ -4424,7 +4449,7 @@ def guard_worktree_parse_fixtures() -> None:
             allowed(f"guard-worktree: ...and a plain MENTION is still left alone: {cmd[:44]}", guard(repo, cmd))
 
     # A MENTION must pass even when this session HOLDS a lane: were it read as a command, rule 1 would refuse it.
-    with tempfile.TemporaryDirectory() as td:
+    with scratch_dir() as td:
         repo = new_repo(td)
         wt = add_wt(repo, "a", "feature/a")
         lane(repo, "SESS-A", wt, "feature/a")
@@ -4454,7 +4479,7 @@ def tools_missing_fixtures() -> None:
     variants = (("no sed, tr or awk", ("bash", "python3", "git", "dirname", "cat", "grep", "head"), ("sed", "awk", "tr")),
                 ("no text tools at all", ("bash", "python3", "git"), TEXT_TOOLS))
     for variant, kept, gone in variants:
-        with tempfile.TemporaryDirectory() as td:
+        with scratch_dir() as td:
             repo = Path(td) / "repo"
             _git_repo(repo)
             thin = Path(td) / "thin"
@@ -4503,7 +4528,7 @@ def tools_missing_fixtures() -> None:
 
         # guard-worktree: a duplicate lane is still refused, and an ordinary command is still left alone.
         k = _worktree_kit()
-        with tempfile.TemporaryDirectory() as td:
+        with scratch_dir() as td:
             wrepo = k.new_repo(td)
             k.add_wt(wrepo, "lane-band", "feature/lane-band")
             thin = Path(td) / "thin"
@@ -4522,7 +4547,7 @@ def guard_worktree_failopen_fixtures() -> None:
     _ = (coord, git, new_repo, add_wt, lane, payload, guard, denied, allowed)     # a group uses some, not all
     # The fail-open (the push's security review): a payload cwd outside any repository made the guard dormant even
     # when the command itself changes directory into one.
-    with tempfile.TemporaryDirectory() as td:
+    with scratch_dir() as td:
         repo = new_repo(td)
         add_wt(repo, "lane-band", "feature/lane-band")
         outside = Path(td) / "elsewhere"
@@ -4535,7 +4560,7 @@ def guard_worktree_failopen_fixtures() -> None:
 
     # FAIL-OPEN PATHS (the push's security review): every way git itself can misbehave must be a refusal, never a pass.
     # A git that is missing, hangs, or cannot list worktrees used to read as "not a repository" or "no worktrees".
-    with tempfile.TemporaryDirectory() as td:
+    with scratch_dir() as td:
         repo = new_repo(td)
         add_wt(repo, "lane-band", "feature/lane-band")
         real_git = shutil.which("git")
@@ -4572,7 +4597,7 @@ def guard_worktree_failopen_fixtures() -> None:
                guard(repo, "git worktree add ../dup feature/lane-band", env_extra=no_list), "could not list the worktrees")
 
     # DEGRADED. No python3: the hook cannot judge, so it refuses a worktree add and leaves everything else alone.
-    with tempfile.TemporaryDirectory() as td:
+    with scratch_dir() as td:
         repo = new_repo(td)
         bindir = Path(td) / "bin"
         bindir.mkdir()
@@ -4583,7 +4608,7 @@ def guard_worktree_failopen_fixtures() -> None:
         allowed("guard-worktree: ...and with no python3 an ordinary command is untouched", guard(repo, "git status", env_extra=bare))
 
     # A helper that crashes must fail CLOSED: any exit but 0 or 2 would let the command run.
-    with tempfile.TemporaryDirectory() as td:
+    with scratch_dir() as td:
         repo = new_repo(td)
         stage = Path(td) / "stage"
         shutil.copytree(HOOKS, stage)
@@ -4608,7 +4633,7 @@ def guard_worktree_pointer_fixtures() -> None:
         return run_hook("session-start.sh", cwd=repo, stdin=stdin, unset=("CLAUDE_PROJECT_DIR",),
                         env_extra=dict({"RAILS_FLOW_ZOMBIE_WARN": "100000", "RAILS_FLOW_STOPPED_ORPHAN_WARN": "100000"}, **env))
 
-    with tempfile.TemporaryDirectory() as td:
+    with scratch_dir() as td:
         repo = new_repo(td)
         code, base = start(repo)
         check("resume pointer: with nothing recorded the hook says nothing about worktrees",
@@ -4736,7 +4761,7 @@ def where_stopped_fixtures() -> None:
     hooks = json.loads((HOOKS.parent / "hooks.json").read_text())["hooks"]
     check("where-stopped: stop-where.sh is registered on Stop",
           any("stop-where.sh" in h["command"] for e in hooks["Stop"] for h in e["hooks"]))
-    with tempfile.TemporaryDirectory() as td:
+    with scratch_dir() as td:
         root = Path(td).resolve()
         remote, repo = root / "remote.git", root / "repo"
         g(root, "init", "-q", "--bare", str(remote))
@@ -4797,7 +4822,7 @@ def fixture_git_binding_fixtures() -> None:
         return _run(["git", "-C", str(repo), "rev-list", "--count", "--all"], capture_output=True, text=True,
                     env=fixture_git.hermetic()).stdout.strip()
 
-    with tempfile.TemporaryDirectory() as td:
+    with scratch_dir() as td:
         real = Path(td) / "real"                                    # a stand-in for the maintainer's checkout
         _git_repo(real)
         before = count(real)
@@ -4881,7 +4906,7 @@ def deadline_fixtures() -> None:
 
     def hung_once(hook: Path, cmd: str, extra: dict[str, str] | None, deadline: str):
         """One run: (exit, seconds, stderr, sleepers still alive afterwards, whether the stub started)."""
-        with tempfile.TemporaryDirectory() as td:
+        with scratch_dir() as td:
             d, pidfile = stubs(td)
             env = dict(base_env, PATH=d + os.pathsep + base_env["PATH"], RAILS_FLOW_HOOK_DEADLINE=deadline, **(extra or {}))
             # The hook's output goes to FILES and the wait is on the hook's own exit, not on the end of its pipes: a hook whose deadline kills
@@ -4919,7 +4944,7 @@ def deadline_fixtures() -> None:
           len(lines) == 1 and lines[0].startswith(f"BLOCKED by rails-flow guardrails: this command took longer than {hung.deadline_used}s"),
           repr(err[:200]))
     # 2. CONTROLS: the deadline must not be what denies an ordinary command, and a real rule still says its own reason.
-    with tempfile.TemporaryDirectory() as td:
+    with scratch_dir() as td:
         t0 = time.monotonic()
         ok = _run(["/bin/bash", str(guard)], cwd=td, input=json.dumps({"tool_input": {"command": "git status"}}), env=base_env,
                   capture_output=True, text=True, timeout=60)
@@ -4940,7 +4965,7 @@ def deadline_fixtures() -> None:
     deadline_s, look_out, need = 8.0, 4.0, 3.5
     left, gone, margin = [], 0.0, 0.0
     for _attempt in range(4):
-        with tempfile.TemporaryDirectory() as td:
+        with scratch_dir() as td:
             d, pidfile = stubs(td)
             env = dict(base_env, PATH=d + os.pathsep + base_env["PATH"], RAILS_FLOW_HOOK_DEADLINE=str(int(deadline_s)))
             started = time.monotonic()
@@ -4970,14 +4995,14 @@ def deadline_fixtures() -> None:
     check("deadline (#1575): the group dies within a poll of its PARENT being SIGKILLed, not at the 8 s deadline",
           not left and gone < 4, f"still running after {gone:.1f}s: {left}")
     # 4. NO `sleep` ON PATH: a watchdog that cannot wait would reach the deadline at once and deny EVERYTHING.
-    with tempfile.TemporaryDirectory() as bd:
+    with scratch_dir() as bd:
         for tool in ("bash", "git", "sed", "tr", "grep", "dirname", "cat", "env", "head", "awk"):
             real = next((f"{x}/{tool}" for x in ("/usr/bin", "/bin") if os.path.exists(f"{x}/{tool}")), None)
             if real:
                 os.symlink(real, Path(bd) / tool)
         os.symlink(sys.executable, Path(bd) / "python3")
         def nosleep(cmd: str) -> int:
-            with tempfile.TemporaryDirectory() as td:
+            with scratch_dir() as td:
                 return _run(["/bin/bash", str(guard)], cwd=td, input=json.dumps({"tool_input": {"command": cmd}}),
                             env=dict(base_env, PATH=bd, RAILS_FLOW_HOOK_DEADLINE="1"), capture_output=True, text=True,
                             timeout=60).returncode
@@ -5015,7 +5040,7 @@ def deadline_fixtures() -> None:
               f"deadline_seconds {m.groups() if m else None} against a timeout of {timeout}")
     # 5c. END TO END: an overflowing or zero knob must not make the hook deny an ordinary command.
     for value in ("99999999999999999999", "00"):
-        with tempfile.TemporaryDirectory() as td:
+        with scratch_dir() as td:
             r = _run(["/bin/bash", str(guard)], cwd=td, input=json.dumps({"tool_input": {"command": "git status"}}),
                      env=dict(base_env, RAILS_FLOW_HOOK_DEADLINE=value), capture_output=True, text=True, timeout=60)
         check(f"deadline (#1575): RAILS_FLOW_HOOK_DEADLINE={value} does not make guard-bash deny an ordinary command",
@@ -5047,7 +5072,7 @@ def deadline_fixtures() -> None:
         # through the full path and through a timeout; every shape below was DENIED by the full path and ALLOWED by the
         # coarse one. It is driven through the missing-tool path (PATH holds only bash), which reaches the same function
         # and answers at once, with two end-to-end timeout checks to show the timeout path really calls it.
-        with tempfile.TemporaryDirectory() as bd:
+        with scratch_dir() as bd:
             os.symlink("/bin/bash", Path(bd) / "bash")
 
             def coarse(cmd: str) -> int:
@@ -5216,7 +5241,7 @@ def release_gate_adversary_fixtures() -> None:
     """#1720: the shell-adversary's inputs against the classifier-missing fallback at cc80da33, every one refused. A regression
     corpus in its own group, so no mutant re-runs 54 hook calls; each rule that refuses them has its own fixture and mutant in
     `release_gate_fallback`. The fallback reads no HEAD and no remote, so one repository serves every case."""
-    with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as bare:
+    with scratch_dir() as td, scratch_dir() as bare:
         _git_repo(Path(td))
         gate = _fallback_gate(td, bare)
         for cmd in ADVERSARY_1720:
@@ -5229,7 +5254,7 @@ def release_gate_adversary_fixtures() -> None:
 
 def release_gate_fallback_fixtures() -> None:
     """#1720: WITHOUT ITS CLASSIFIER the release gate fails closed BY SHAPE: one fixture per rule, the controls and the message."""
-    with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as bare:
+    with scratch_dir() as td, scratch_dir() as bare:
         _git_repo(Path(td))   # the fallback reads no HEAD, so the first branch's name (main or master) does not matter
         gate = _fallback_gate(td, bare)
         # ONE FIXTURE PER RULE that only that rule catches, so a mutant removing it cannot hide behind the others.
@@ -5404,7 +5429,7 @@ def meta_checks() -> None:
     check("a bare run (no --only) runs every group", ran == list(GROUPS), repr(ran))
     # `--match` (#1599), proved on stand-in groups: a few process starts, no hook fixture.
     global CHECKS
-    with tempfile.TemporaryDirectory() as td:
+    with scratch_dir() as td:
         spawned = Path(td) / "spawned"
 
         def mark(name: str) -> None:
@@ -5482,6 +5507,45 @@ def meta_checks() -> None:
         check("main() exits 2 for --match that selects nothing", rc_none == 2, f"exit {rc_none}")
         check("main() exits 2 for a blank --match", rc_blank == 2, f"exit {rc_blank}")
 
+    # #1800: a fixture's temp directory is removed without ever failing the run, even when a writer wins the race with rmtree. A lost race is
+    # simulated, not raced (a real one would make the check itself flaky): `shutil.rmtree` is made to leave the directory behind.
+    _real_rmtree, _real_sleep = shutil.rmtree, time.sleep
+    def _lost_race(times: int):
+        left = [times]
+        def rmtree(path, *a, **k):
+            if left[0] > 0:
+                left[0] -= 1
+                return
+            return _real_rmtree(path, *a, **k)
+        return rmtree
+    try:
+        time.sleep = lambda s: None
+        shutil.rmtree = _lost_race(2)
+        with scratch_dir() as _lost:
+            (Path(_lost) / "late").write_text("x")
+        check("scratch_dir: a removal that loses the race twice is retried until the directory is gone", not os.path.exists(_lost), _lost)
+        shutil.rmtree = _lost_race(10 ** 6)
+        _err = io.StringIO()
+        _raised = None
+        try:
+            with contextlib.redirect_stderr(_err):
+                with scratch_dir() as _stuck:
+                    (Path(_stuck) / "late").write_text("x")
+        except Exception as exc:          # noqa: BLE001 -- the check IS that nothing is raised
+            _raised = exc
+        check("scratch_dir: a directory that cannot be removed does not raise out of the fixture (the #1800 failure)", _raised is None, repr(_raised))
+        check("scratch_dir: ...and names what was left, so the writer can be found", "late" in _err.getvalue(), _err.getvalue())
+    finally:
+        shutil.rmtree, time.sleep = _real_rmtree, _real_sleep
+        _real_rmtree(_stuck, ignore_errors=True)
+    _gone = scratch_dir()
+    with _gone as _p:
+        (Path(_p) / "a" / "b").mkdir(parents=True)
+        (Path(_p) / "a" / "b" / "f").write_text("x")
+    check("scratch_dir: a quiet temp directory is removed", not os.path.exists(_p), _p)
+    _src = Path(__file__).read_text(encoding="utf-8")
+    check("no fixture creates its temp directory with tempfile.TemporaryDirectory, whose cleanup can fail a run",
+          _src.count("tempfile." + "TemporaryDirectory(") == 0, "use scratch_dir()")
     # STARVED (#1664): a timing result the machine decided is a counted skip, never a pass and never a failure.
     hot = "BLOCKED by qa-flow release gate: the gate took longer than 13s, and this command looks like a promotion to main"
     check("starved: a deadline denial from a hook under 2 CPU seconds on a machine over its cores is STARVED",
