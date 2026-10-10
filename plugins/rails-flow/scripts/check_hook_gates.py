@@ -700,7 +700,7 @@ NEGATIVES_1568 = ['git add "app/x.rb" "spec/y.rb"', "git add 'x y' app/z.rb", 'g
                   'git add "app/models/user.rb"', "git add 'a.rb' 'b.rb'", 'git commit -m "fix"', 'git status "-s"']
 # #1706: the honest-mistake spellings beside a blocked one, each measured allowed on dev before this change; and #1708's force-with-lease
 # to a branch whose NAME contains main, which was blocked. Controls must keep their verdict.
-POSITIVES_1706 = ["git add :/src/x.rb", "git add ':(top)src/x.rb'", "git add src/**/*.rb", "git add '*.*'", "git add '?'", "git add {.,x}", "git add $PWD",
+POSITIVES_1706 = ["git add /abs/path", "git add :/src/x.rb", "git add ':(top)src/x.rb'", "git add src/**/*.rb", "git add '*.*'", "git add '?'", "git add {.,x}", "git add $PWD",
                   "git add $(pwd)", "git add 'my file.rb'", "git add -f x.rb", "git add 'src/*/x.rb'", "git switch --disc dev", "git switch -fc x",
                   "git push --mir origin", "git push --prune origin", "git push origin 'refs/*:refs/*'", "git checkout --forc dev",
                   "git add ':(top)'", "git add ':!secret.env'", "git add ':(exclude)x'", "git add '**'", "git add '**/*'",
@@ -711,7 +711,7 @@ POSITIVES_1706 = ["git add :/src/x.rb", "git add ':(top)src/x.rb'", "git add src
                   "git add *", "git add -- *", "git add ..", "git add ../", "git checkout -f", "git checkout --force",
                   "git push -fu origin dev", "git push origin +dev", "git checkout HEAD .", "git branch -d -f x", "git branch -df x",
                   "git add -- .", "git add --verbose -A", "git reset HEAD~1 --hard", "git push --force-with-lease origin HEAD:main"]
-NEGATIVES_1706 = ["git add -u", "git add -p src/x.rb", "git add -N new.rb", "git add -v -- src/x.rb", "git add '*.md'", "git add src/x.rb", "git add ./src/x.rb", "git add src/../lib/y.rb", "git add src/*.rb", "git add app/.env.example",
+NEGATIVES_1706 = ["git push --force-if-includes origin x", "git push --force-with-lease --force-if-includes origin x", "git add -u", "git add -p src/x.rb", "git add -N new.rb", "git add -v -- src/x.rb", "git add '*.md'", "git add src/x.rb", "git add ./src/x.rb", "git add src/../lib/y.rb", "git add src/*.rb", "git add app/.env.example",
                   "git push origin :feature/old", "git push origin --delete feature/old", "git push origin HEAD:feature/x", "git add -u", "git add app/*.rb", "git checkout -b feature/x", "git push --all origin",
                   "git add file.rb", "git add -- app/x.rb", "git branch -d x", "git push origin feature", "git checkout feature/x",
                   "git reset HEAD~1", "git push -u origin feature/x", "git push --force-with-lease origin feature/main-menu"]

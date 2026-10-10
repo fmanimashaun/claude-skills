@@ -157,7 +157,7 @@ if hit '^git[[:space:]]+push\b.*[[:space:]]--mirror\b'; then
   deny "git push --mirror force-updates and deletes every remote branch to match yours; it requires explicit user approval."
 fi
 # #1706: a bundled `-fu` and a `+<ref>` refspec force as surely as `-f`, the `+` leading the refspec or after its colon (`HEAD:+main`).
-if hit '^git[[:space:]]+push\b.*([[:space:]]--force\b|[[:space:]]-[a-zA-Z]*f[a-zA-Z]*\b|[[:space:]]\+[^[:space:]]|:\+[^[:space:]])' && ! exempt '^git[[:space:]]+push\b.*--force-with-lease'; then
+if hit '^git[[:space:]]+push\b.*([[:space:]]--force($|[[:space:]]|=)|[[:space:]]-[a-zA-Z]*f[a-zA-Z]*\b|[[:space:]]\+[^[:space:]]|:\+[^[:space:]])' && ! exempt '^git[[:space:]]+push\b.*--force-with-lease'; then
   deny "force-push is prohibited. Use --force-with-lease on your own feature branch only, never on main/dev/staging."
 fi
 # #1708: the protected branch is a whole ref (`main`, `HEAD:main`, `+dev`, `refs/heads/staging`), not the word inside `feature/main-menu`.
@@ -209,6 +209,7 @@ _add_refused() {
       p="$w"
       case "$p" in
         :*|*'**'*) set +f; return 0 ;;
+        /*) set +f; return 0 ;;   # absolute: the root as `/abs/repo` stages everything (#1783 final check)
       esac
       depth=0; n=0; last=""
       local IFS=/

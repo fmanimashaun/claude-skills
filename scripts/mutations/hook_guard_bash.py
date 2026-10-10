@@ -325,5 +325,13 @@ GUARD = Guard(
                  "        *'*'*:*) [[ $line =~ ^git[[:space:]]+push ]] && { set +f; return 0; } ;;",
                  "        *'*'*:*) ;;",
                  "guard-bash (#1706): `git push origin 'refs/*:refs/*'` is blocked like its plain sibling"),
+        Mutation("an absolute git-add pathspec passes",
+                 "        /*) set +f; return 0 ;;",
+                 "        /*) ;;",
+                 "guard-bash (#1706): `git add /abs/path` is blocked like its plain sibling"),
+        Mutation("--force-if-includes is read as --force again",
+                 "[[:space:]]--force($|[[:space:]]|=)|",
+                 "[[:space:]]--force\\b|",
+                 "guard-bash (#1706/#1708): CONTROL: `git push --force-if-includes origin x` passes"),
     ),
 )
