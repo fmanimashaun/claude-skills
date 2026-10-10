@@ -129,10 +129,10 @@ GUARD = Guard(
             "a pg_isready the repository ships inside its own tree is never run, even FIRST on PATH",
         ),
         Mutation(
-            "a relative or empty PATH entry is searched, so it resolves into the checkout",
+            "a relative PATH entry is searched, so it resolves against wherever the process happens to be",
             "        if not entry or not os.path.isabs(entry):\n            continue\n",
             "        if not entry:\n            continue\n",
-            "a pg_isready reachable through a RELATIVE or EMPTY PATH entry is never run",
+            "a RELATIVE PATH entry is never searched, wherever the process happens to be",
         ),
         # ---- the advisory contract: speak on one channel, decide nothing, never fail
         Mutation(
@@ -152,13 +152,13 @@ GUARD = Guard(
             # FAILS OPEN. An advisory that raises takes the tool call down with it.
             "an error inside a check raises instead of staying silent",
             "    except Exception:  # noqa: BLE001 - an advisory that raises takes the tool call down with it\n        return \"\"\n",
-            "    except ZeroDivisionError:\n        return \"\"\n",
+            "    except (ValueError, TypeError):\n        return \"\"\n",
             "an exception inside a check is silence, not a crash",
         ),
         Mutation(
             "input that is not even text takes the process down",
-            "    except Exception:  # noqa: BLE001 - advisory: always exit 0\n        pass\n",
-            "    except ZeroDivisionError:\n        pass\n",
+            '    sys.stdout.write(run(sys.stdin.buffer.read().decode("utf-8", "replace")))\n',
+            '    sys.stdout.write(run(sys.stdin.buffer.read().decode("utf-8")))\n',
             "the entry point exits 0 on garbage that is not even text, and prints nothing",
         ),
         Mutation(

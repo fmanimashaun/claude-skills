@@ -4600,7 +4600,7 @@ def selftest() -> int:
     spf = lambda label, files, expect: scenario(label, rule=SP, expect_finding=expect, files=files, only=check_setup_flow_preflight)
     spf("CONTROL: a template with the conditional preflight, both git rules and the pointer is silent", _setup_flow(), False)
     spf("a preflight written into EVERY project, with no condition around it", _setup_flow(wrap=False), True)
-    spf("a conditional block that is not the preflight, so a project with a database gets none", _setup_flow(block="## Something else\nx\n"), True)
+    spf("a conditional block that is not the preflight, so a project with a database gets none", _setup_flow(block="## Something else\npg_isready; spec path; bundler.lock; uptime; swap hooks or config. Advice, not enforced.\n"), True)
     spf("a preflight block that lost the held-lock check", _setup_flow(block="## Test-run preflight\npg_isready; spec path; uptime; swap hooks or config. Advice, not enforced.\n"), True)
     spf("two conditional blocks where the template promises one", _setup_flow(second_block=True), True)
     spf("a GUARDRAILS section with no placeholder-SHA rule", _setup_flow(guard="Git: `git rev-parse HEAD`; `run_sweep && gh pr ready`.\n"), True)

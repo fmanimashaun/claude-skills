@@ -436,12 +436,12 @@ def selftest() -> int:
         check("no `pg_isready` on PATH fails open: silent", hook(rspec, root, env_for())[1] == "")
         stub("pg_isready", pg_down)
         # A probe that hangs is cut off at the deadline and is SILENCE: an unanswered `pg_isready` is not evidence that Postgres is down.
-        stub("pg_isready", "sleep 5")
+        stub("pg_isready", "sleep 5; exit 2")
         PROBE_SECONDS = 0.3
         started = time.monotonic()
         quiet = hook(rspec, root, env_for())[1]
         PROBE_SECONDS = 30.0
-        check("a `pg_isready` that hangs is cut off at the deadline, and the hook is silent", quiet == "" and time.monotonic() - started < 10, f"{time.monotonic() - started:.1f}s {quiet[:60]!r}")
+        check("a `pg_isready` that hangs is cut off at the deadline, and the hook is silent", quiet == "" and time.monotonic() - started < 3, f"{time.monotonic() - started:.1f}s {quiet[:60]!r}")
         stub("pg_isready", pg_down)
 
         # 1b. PROGRAMS ARE LOOKED UP ONLY WHERE A REPOSITORY CANNOT REACH: absolute PATH entries outside the project. A `pg_isready` shipped in the
@@ -461,6 +461,16 @@ def selftest() -> int:
         finally:
             os.chdir(previous)
         check("a pg_isready reachable through a RELATIVE or EMPTY PATH entry is never run", not repo_ran.exists() and raw == "", raw[:100])
+        elsewhere = tmp / "elsewhere"
+        (elsewhere / "bin").mkdir(parents=True)
+        (elsewhere / "bin" / "pg_isready").write_text(f"#!/bin/sh\ntouch {repo_ran}\nexit 2\n")
+        (elsewhere / "bin" / "pg_isready").chmod(0o755)
+        os.chdir(elsewhere)
+        try:
+            _, raw = hook(rspec, root, env_for(PATH=f"bin:{bindir}:/usr/bin:/bin"))
+        finally:
+            os.chdir(previous)
+        check("a RELATIVE PATH entry is never searched, wherever the process happens to be (only the absolute-path rule stops this one)", not repo_ran.exists() and raw == "", raw[:100])
         stub("pg_isready", pg_down)
 
         # 2. A HELD bundler.lock: a real flock held by a real child, a stub `lsof` naming it.
@@ -501,7 +511,7 @@ def selftest() -> int:
         check("an option's value that looks like a path is not a spec path", hook("rspec -r spec/support/nope.rb --format progress spec/a_spec.rb", root, env_for())[1] == "")
         check("a glob is not checked", hook("rspec 'spec/**/*_spec.rb'", root, env_for())[1] == "")
         check("`rails test` paths are checked too", "test/models/x_test.rb" in hook("bin/rails test test/models/x_test.rb", root, env_for())[0])
-        check("a Playwright path is NOT checked (it is relative to a directory this cannot know)", hook("npx playwright test e2e/x.spec.ts", root, env_for())[1] == "")
+        check("a Playwright path is NOT checked (it is relative to a directory this cannot know)", hook("npx playwright test test/e2e/x.spec.ts", root, env_for())[1] == "")
 
         # 5. WHAT IT IS ABOUT: a suite run, in command position, and nothing else.
         for label, command in (("a commit message that says rspec", 'git commit -m "fix rspec spec/missing_spec.rb"'),
@@ -520,12 +530,20 @@ def selftest() -> int:
         for label, raw in (("not JSON", "not json"), ("a JSON list", "[]"), ("empty", ""), ("a non-Bash tool", json.dumps({"tool_name": "Read", "tool_input": {"command": rspec}})),
                            ("no command", json.dumps({"tool_name": "Bash", "tool_input": {}}))):
             check(f"{label} is silent", run(raw, env_for()) == "")
-        check("an exception inside a check is silence, not a crash", run(json.dumps({"tool_name": "Bash", "tool_input": {"command": rspec}, "cwd": str(root)}), {"PATH": None}) == "")
+        # A check that really raises (a RuntimeError: unlike bad JSON, nothing narrower than the blanket guard in run() catches it).
+        def a_check_fails() -> tuple[float, float, float]:
+            raise RuntimeError("a check failed")
+
+        try:
+            guarded = run(json.dumps({"tool_name": "Bash", "tool_input": {"command": rspec}, "cwd": str(root)}), env_for(), loadavg=a_check_fails)
+        except Exception as exc:  # noqa: BLE001 - the guard under test is gone: report it under this check's own name, not as a traceback
+            guarded = f"raised {exc!r}"
+        check("an exception inside a check is silence, not a crash", guarded == "", guarded[:100])
         proc = subprocess.run([sys.executable, __file__], input=b"garbage \xff\xfe not text", capture_output=True, check=False)
         check("the entry point exits 0 on garbage that is not even text, and prints nothing", proc.returncode == 0 and proc.stdout == b"", repr((proc.returncode, proc.stdout, proc.stderr[:100])))
         # The caps, asked of `render` itself: no realistic command produces enough findings to reach them, so only oversized input can fail them.
         wide, tall = render([f"finding {i}" for i in range(50)]), render(["x" * 5000])
-        check("the context is capped in lines and characters", wide.count("\n- ") + 1 <= MAX_LINES and len(tall) <= MAX_CHARS and "finding 49" not in wide, f"{wide.count(chr(10))} lines, {len(tall)} chars")
+        check("the context is capped in lines and characters", wide.count("\n- ") <= MAX_LINES and len(tall) <= MAX_CHARS and "finding 49" not in wide, f"{wide.count(chr(10))} lines, {len(tall)} chars")
 
     PROBE_SECONDS = saved_probe
     if failures:
@@ -549,10 +567,8 @@ def main(argv: list[str] | None = None) -> int:
         findings = findings_for(args.command, args.cwd)
         print("\n".join(findings) if findings else "nothing to report")
         return 0
-    try:
-        sys.stdout.write(run(sys.stdin.read()))
-    except Exception:  # noqa: BLE001 - advisory: always exit 0
-        pass
+    # BYTES, decoded with `replace`: input that is not text cannot raise here, so the entry point needs no guard of its own and still always exits 0.
+    sys.stdout.write(run(sys.stdin.buffer.read().decode("utf-8", "replace")))
     return 0
 
 
