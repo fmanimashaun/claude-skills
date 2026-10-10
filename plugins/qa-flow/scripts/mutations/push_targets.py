@@ -680,5 +680,11 @@ GUARD = Guard(
             "                only_known = only_known",
             "unlisted shape 'git config --unset-a core.hooksPath'",
         ),
+        Mutation(
+            "`get`/`list` count as a read sub-command in ANY position, so `git config core.hooksPath get` (a write of the value `get`) reads as a read",
+            '        if only_known and words and words[0] in ("get", "list"):',
+            '        if only_known and any(w in ("get", "list") for w in words):',
+            "unlisted shape 'git config core.hooksPath get'",
+        ),
     ),
 )

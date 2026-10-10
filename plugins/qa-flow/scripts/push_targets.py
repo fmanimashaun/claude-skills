@@ -1117,6 +1117,7 @@ BENIGN_CONFIG = re.compile(r"^(user\.|core\.(quotepath|pager|editor|autocrlf|fil
                            r"init\.defaultbranch$|commit\.gpgsign$|diff\.|log\.)", re.I)
 # (#1768) what turns `git config` into a write, and the options that take a value of their own (so the value is not the key's value)
 CONFIG_WRITE_FLAGS = {"--add", "--unset", "--unset-all", "--replace-all", "-e", "--edit", "--rename-section", "--remove-section"}
+CONFIG_READ_ACTIONS = {"--get", "--get-all", "--get-regexp", "--list", "-l", "--get-urlmatch"}
 CONFIG_VALUE_FLAGS = {"--file", "-f", "--blob", "--type", "--default"}
 CONFIG_READ_FLAGS = {"--global", "--local", "--system", "--worktree", "--includes", "--no-includes", "--show-origin", "--show-scope", "-z", "--null",
                      "--name-only", "--bool", "--int", "--bool-or-int", "--path", "--expiry-date", "--fixed-value", "--no-type"}
@@ -1218,7 +1219,9 @@ def _git_read_only(verb: str, args: list[str]) -> bool:
         sub = next((a for a in args if not a.startswith("-")), "")
         return sub in ("", "show", "get-url", "add")       # `add` cannot repoint an existing remote
     if verb == "config":
-        if any(a in ("--get", "--get-all", "--get-regexp", "--list", "-l", "--get-urlmatch", "get", "list") for a in args):
+        # `--get`, `--list` and the like are read FLAGS; `get` and `list` are the read SUB-COMMANDS of newer git, and only in the FIRST position:
+        # anywhere else they are a VALUE (`git config core.hooksPath get` points the hooks at ./get; #1768 review).
+        if any(a in CONFIG_READ_ACTIONS for a in args):
             return True
         if any(a in CONFIG_WRITE_FLAGS for a in args):
             return False
@@ -1238,6 +1241,8 @@ def _git_read_only(verb: str, args: list[str]) -> bool:
                 only_known = only_known and a in CONFIG_READ_FLAGS
             else:
                 words.append(a)
+        if only_known and words and words[0] in ("get", "list"):
+            return True
         if only_known and len(words) == 1 and "." in words[0] and not _opaque(words[0]):
             return True
         keys = [a for a in args if not a.startswith("-")]
@@ -2115,6 +2120,7 @@ def selftest() -> int:
         "git checkout -b feature/x", "git push -u origin feature/x", "git branch -D old", "git -c user.name=x -c user.email=y commit -m z",
         "git -C /tmp/x status", "git config --get remote.origin.url", "git config user.email a@b", "git remote -v",
         # (#1768) a bare `git config <key>` is a READ of that key, whichever key it is
+        "git config get core.hooksPath", "git config list", "git config get --local remote.origin.url",
         "git config core.hooksPath", "git config --local core.hooksPath", "git config --global core.hooksPath", "git config --file .git/config core.hooksPath",
         "git config remote.origin.url", "git config --local url.x.insteadOf",
         "git remote add up https://github.com/o/r", "git stash pop", "git rebase dev", "git reset --hard HEAD~1",
@@ -2146,6 +2152,8 @@ def selftest() -> int:
         "git config -e", "git config --edit", "git config --rename-section remote.origin remote.up", "git config --remove-section remote.origin",
         "git config $KEY", "git config core.hooksPath $VALUE", "git config remote.$NAME.url",
         # (#1768 review) the sub-commands of newer git (`edit` opens the editor on the config), and abbreviated long options (git accepts any unambiguous prefix)
+        # (#1768 review) `get` and `list` are sub-commands only in the FIRST position: as a VALUE they are a write (`git config core.hooksPath get` points the hooks at ./get)
+        "git config core.hooksPath get", "git config core.hooksPath list", "git config remote.origin.url list",
         "git config edit", "git config set core.hooksPath /tmp/x", "git config unset core.hooksPath", "git config --unset-a core.hooksPath",
         "git config --edi", "git config --uns core.hooksPath", "git config --remove-s remote.origin", "git config -z -e",
         "git send-pack origin main", "git update-ref refs/heads/main abc", "git symbolic-ref HEAD refs/heads/x",
