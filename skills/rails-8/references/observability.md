@@ -16,7 +16,7 @@ Four channels, four jobs. Pick the right one before writing telemetry code:
 4. Structured Event Reporting — `Rails.event` (8.1)
 5. Error reporting — `Rails.error`
 6. Logging: tags, levels, health-check silence
-7. Wiring up APMs / OpenTelemetry (self-hosted: Rails Pulse)
+7. Wiring up APMs / OpenTelemetry (self-hosted: Rails Pulse, or an in-house OpenTelemetry store)
 
 ---
 
@@ -178,11 +178,67 @@ end
 Rails.error.set_context(user_id: Current.user&.id, section: "checkout")
 ```
 
-Unhandled exceptions in requests and jobs are reported automatically — these
-APIs exist for errors *you* rescue but still want visibility on. A custom
+Some unhandled exceptions in requests and jobs are reported automatically, and
+some are not (the next subsection) — these APIs exist for errors *you* rescue but
+still want visibility on. A custom
 subscriber is a class with `report(error, handled:, severity:, context:,
 source: nil)` registered via `Rails.error.subscribe` — handy in test to
 assert reports, or to fan out to a Teams/Slack webhook.
+
+### What is reported automatically, and what a subscriber receives (Rails 8.1.4)
+
+Read from the installed `actionpack`, `activejob` and `activesupport` 8.1.4;
+earlier Rails versions were not checked. Each bullet says what was confirmed, what
+was only partly confirmed (and how it is narrowed), and what is measured in one
+app; the audit record `docs/evidence/audits/2026-10-11-observability-otel-1694.md`
+has the row for each.
+
+- **A request exception is reported on one of two paths, and sometimes on neither.**
+  `ActionDispatch::Executor` (outermost, then `ShowExceptions`, then `DebugExceptions`)
+  reports with `handled: false`, `source: "application.action_dispatch"`:
+  1. *After the app returns normally*, when `ShowExceptions` rendered the error page and
+     the exception class has no `rescue_responses` entry (`ShowExceptions` sets
+     `action_dispatch.report_exception` to `!wrapper.rescue_response?`).
+  2. *When an exception propagates out of the inner app*, whatever its class, because
+     `Executor` rescues, reports and re-raises. `ShowExceptions` re-raises when
+     `show_exceptions` is `:none`, or `:rescuable` and the class has no entry. With
+     `show_detailed_exceptions` false, `DebugExceptions` re-raises to `ShowExceptions`,
+     so a 500 under `:all` takes path 1.
+
+  `DebugExceptions` renders its own page and returns normally when
+  `show_detailed_exceptions` is true, so nothing reaches `ShowExceptions` and nothing is
+  reported. By the generator defaults: development (`:all`, detailed) reports nothing;
+  test (`:rescuable`, detailed) reports an exception with no `rescue_responses` entry (path 2,
+  and it is raised into the spec) but not a 404 or 422; production (`:all`, not
+  detailed) reports a 500 by path 1 and not a 404 or 422. A 404 (`RecordNotFound`) or
+  422 (`InvalidAuthenticityToken`) is reported under `show_exceptions = :none`, or when it
+  arrives wrapped (`ActionView::Template::Error` has no entry, and its cause is what is
+  reported). To see which path a spec takes, assert on a subscriber under the
+  environment's real `show_exceptions` and `show_detailed_exceptions` rather than
+  assuming one.
+- **The failing request's path and verb are in the env.** `ShowExceptions` stores
+  them as `action_dispatch.original_path` and `action_dispatch.original_request_method`
+  before it rewrites the request to `GET /500`. When the exceptions app is a routed
+  controller, `ActiveSupport::ExecutionContext[:controller]` is that controller, not
+  the one that failed.
+- **Job retries and discards are not reported by default.** `retry_on` reports each
+  retried attempt only with `report: true`; when attempts run out, with no block the
+  error is re-raised (and the job execution wrapper reports it), with a block it is
+  swallowed and only `retry_stopped.active_job` fires. `discard_on` reports only with
+  `report: true`. The `enqueue_retry`, `retry_stopped` and `discard` events
+  (`.active_job`) carry the job and `error:` in the payload; a tracker that must see
+  retries subscribes to them as well and de-duplicates on the exception object.
+- **The `context:` a subscriber receives holds live objects.** `Rails.error.report`
+  merges `ActiveSupport::ExecutionContext.to_h` (the `:controller` and `:job`
+  instances), and `ParameterFilter` cannot see inside an object. A subscriber that
+  stores `context` as it comes can store a job's arguments: copy named fields only.
+- **`error.message` can carry personal data.** A wrapped driver error such as
+  `ActiveRecord::RecordNotUnique` passes through the database's detail text, which
+  for some constraint errors names the failing values (the exact PostgreSQL format is
+  not verified here). `RecordInvalid` messages name the
+  attribute and normally not the value, unless a custom message uses `%{value}`.
+  Scrub or drop the message before an error store keeps it, and test the scrubber
+  with fixtures.
 
 Rails 8.1+ also has `Rails.error.add_middleware(callable)`, which can modify
 the error context before any subscriber sees it (`ActiveSupport::ErrorReporter`,
@@ -220,8 +276,10 @@ in-house: **solid_errors** (database-backed error tracker riding
 `Rails.error`, with its own dashboard — no SaaS) and the community
 **solid_telemetry** (OpenTelemetry traces stored in your own database). For
 vendor-neutral tracing, `opentelemetry-sdk` +
-`opentelemetry-instrumentation-rails` maps the same hooks to OTel spans
-exportable anywhere. Your custom `instrument`/`Rails.event` calls then ride
+the OpenTelemetry instrumentation gems map the same hooks to OTel spans
+exportable anywhere (`opentelemetry-instrumentation-rails` is a bundle, not the
+instrumentation itself: see the in-house subsection below for what `c.use` of it
+does and does not install). Your custom `instrument`/`Rails.event` calls then ride
 along as first-class spans/events in whichever backend the app uses.
 
 ### Self-hosted performance monitoring — Rails Pulse
@@ -406,3 +464,119 @@ whose CHANGELOG says otherwise, as 0.3 → 0.4 did, runs
 `bin/rails db:migrate:rails_pulse` as a step of the release itself, before the
 new version boots. Read its CHANGELOG
 before every `bundle update rails_pulse`, and finish with `rails_pulse:status`.
+
+
+### An in-house OpenTelemetry store (when the data stays in your database and Pulse is not the choice)
+
+One defensible design, built and measured in a production Rails 8.1.4 app (Ruby
+4.0.6; opentelemetry-sdk 1.13.1, api 1.11.1; instrumentation: rails 0.42.0,
+action_pack 0.18.1, rack 0.31.2, pg 0.37.0, net_http 0.29.2). Most framework
+claims below were checked against those gem sources or the official docs (the audit
+record `docs/evidence/audits/2026-10-11-observability-otel-1694.md` has each row and
+verdict); a claim that is only partly confirmed is narrowed in the text, and anything
+else is marked "measured in Retask" (one app, not read from source) or "design" (a
+choice, not a fact). No exporter is installed and nothing leaves the server:
+spans are folded in process into aggregates and written to the app's own database.
+
+**Capture**
+
+- **The Rack instrumentation records the query string, and has no option to drop it
+  (rack 0.31.2).** The server span carries it as `url.query` (stable semantic conventions), or as
+  `http.target` including `?query` under the deprecated `http/dup` and `old` modes;
+  `url_quantization` only affects the span *name*. If a query can hold personal data
+  (`?q=…`), drop or redact it before spans leave the process. An attribute
+  **allow-list** wrapper around the exporter or processor (an unlisted key is dropped,
+  so a library upgrade that records something new records nothing until it is listed)
+  is one safe design, not the only one.
+- **Install the Action Pack instrumentation, and do not insert the middleware
+  yourself.** `c.use "OpenTelemetry::Instrumentation::ActionPack"` installs the Rack
+  instrumentation and its railtie inserts the middleware at position 0; inserting it
+  again by hand gives a second entry. Guard it with a spec that asserts exactly one
+  middleware entry carrying the OpenTelemetry handler.
+- **`c.use "OpenTelemetry::Instrumentation::Rails"` installs no instrumentation of
+  its own** (its install block is `install { true }`; rails 0.42.0). Use `c.use_all`
+  (the documented way), or `c.use` each of ActionPack, ActionView, ActiveSupport,
+  ActiveRecord and ActiveJob. A request span needs ActionPack.
+- **The PG instrumentation traces every query, and a prepared statement is two
+  spans.** PREPARE and EXECUTE are separate spans carrying the obfuscated statement
+  (with `db_statement: :obfuscate`, literals become `?` and `$1` becomes `$?`);
+  there is no `SCHEMA` name to filter on, so filter on `db.operation`. Schema
+  lookups on the `pg_` catalog tables appear in the stream too (measured in Retask,
+  not read from source). Scrub the statement again before using it as a display name.
+- **Span ids are drawn with `Random.bytes`,** the default generator that `srand`
+  seeds, so every span moves a seeded sequence and a spec that fixes a seed and runs a
+  query is no longer deterministic. Give the SDK its own id generator (any object
+  responding to `generate_trace_id` and `generate_span_id`, built on
+  `Random.urandom`) through `OpenTelemetry::SDK.configure`.
+- **An exception inside an exporter or processor does not fail the request.** The
+  two processors differ (sdk 1.13.1): `SimpleSpanProcessor` catches it and calls
+  `OpenTelemetry.handle_error`, which logs `unexpected error in span.on_finish`;
+  `BatchSpanProcessor` has its own failure handling on export (FAILURE result, counted
+  as `otel.bsp.error`). A custom exporter's bug looks like missing spans, so unit
+  test the exporter by calling it directly.
+
+**Specs for spans**
+
+- WebMock replaces `Net::HTTP` with a subclass that, read from the webmock and
+  net_http instrumentation sources (not run here), never calls the patched `request`
+  for a stubbed call, so a stubbed request has no client span; allow a real loopback
+  connection to assert on one.
+- `start_span(start_timestamp:)`, `finish(end_timestamp:)` and `add_event(timestamp:)`
+  take a `Time` or a number of **seconds** (the SDK multiplies by 1e9), never
+  nanoseconds.
+- From Ruby 4.0 `benchmark` is a bundled gem: under Bundler, `require "benchmark"`
+  raised `LoadError` when it was not in the Gemfile (checked on Ruby 4.0.6), so a
+  script run with `bin/rails runner` needs it listed.
+- Code that an initializer needs must not sit in an autoloaded `lib/`: use
+  `config.autoload_lib_once`, or `require` it and keep it out of autoloading with
+  `autoload_lib(ignore:)` (Rails autoloading guide).
+
+**Store and read side (design choices, and facts measured in Retask)**
+
+- Put the store on a **separate database** with its own migrations
+  (`migrations_paths: db/observability_migrate` and a `schema_dump` file on that
+  database in `database.yml`) (design); `db:prepare` creating it is measured in Retask
+  on Rails 8.1.4, not documented. The §7 Pulse traps are written for Pulse's generated
+  schema and do not apply to your own models; what still bites (measured in Retask) is
+  a spec that the models really connect to the second database and that the primary has
+  no copy of the tables.
+- Keep **retention per table** and purge in bounded batches (for example errors 90
+  days, performance 30; design, a recommendation), and make a missing table a loud error,
+  not an empty page.
+
+**`pg_stat_statements` for slow queries**
+
+- **`CREATE EXTENSION pg_stat_statements` is not enough.** The library must be in
+  `shared_preload_libraries` (a server restart; PostgreSQL 16 docs), and the extension
+  is created per database. Retask measured on `postgres:16` (16.15) that reading the
+  view then fails with *"pg_stat_statements must be loaded via
+  shared_preload_libraries"* while `CREATE EXTENSION` succeeds; the error text is
+  measured, not documented. Availability must therefore be decided by **trying the
+  view**, not by checking `pg_extension`.
+- **Utility statements keep their literals.** `pg_stat_statements.track_utility`
+  defaults to on and tracks every command other than SELECT, INSERT, UPDATE, DELETE
+  and MERGE; constants are replaced by `$n` only in the statements it normalises.
+  Measured: `create role … password '…'` appeared verbatim. Set
+  `pg_stat_statements.track_utility = off` and read data statements only before
+  showing the text to anyone.
+- **On Kamal 2.12.0 the preload flag is the accessory's `cmd:`** (for example
+  `postgres -c shared_preload_libraries=pg_stat_statements`). It takes effect only
+  when the container is recreated: `kamal accessory reboot NAME` (prepare, pull the
+  image, stop, remove, boot) does that, restarting the database once and pulling the
+  image; `kamal accessory restart` (stop, start) does not apply a changed `cmd`.
+
+**Alerts from an error store (one defensible design)**
+
+- A recurring **scan** of the error store, rather than work inside a `Rails.error`
+  subscriber (which must never raise), with a lookback longer than the scan interval
+  so the next scan recovers a missed one. A **unique claim per occurrence**, taken
+  before anyone is told, makes a repeated scan harmless and gives at-most-once
+  delivery: if sending raises after the claim, rescue it and call
+  `Rails.error.report(error, handled: true)` so the failure is not silent
+  (`deliver_later` only covers the enqueue; a later mail-job failure is recorded by
+  the job's own error handling). A rate alert keyed by clock hour can fire twice
+  across an hour boundary.
+- An alert carries **a sentence, a count and a link**, never an error class, message,
+  argument, backtrace line or id; keep the fingerprint for throttling only. Hold it
+  with a spec that feeds forbidden strings through the source and fails if the alert
+  path ever asks for a detail or any of them reaches a subject, body or inbox row.
