@@ -19,10 +19,15 @@ Strategy:
 3. On failure: read the failing spec AND the code under test before diagnosing. Report each
    failure as: spec location → what it asserts → why it fails → concrete fix (code or spec,
    and say which one is wrong).
-4. Distinguish real failures from environment issues (missing migration on test DB →
+4. A red run is not yet a verdict. If `.rails-flow/dev-baseline.json` exists, save the run's output to a file and run
+   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/triage_failures.py" --output <file>`; report each failure under the class it
+   prints (NEW, PREEXISTING, FLAKY with its rerun count), never a bare list. Only NEW is attributed to this branch, but the suite
+   stays red until every PREEXISTING and FLAKY is stated; a stale baseline is stated, not dropped. No baseline file: say so and report the raw list. The baseline is recorded with
+   `dev_baseline.py record` (see its header); this agent never records or refreshes it.
+5. Distinguish real failures from environment issues (missing migration on test DB →
    `bin/rails db:migrate RAILS_ENV=test`; corrupted test DB →
    `bin/rails db:drop db:create db:schema:load RAILS_ENV=test`).
-5. Note coverage signals if SimpleCov output is present, but never treat coverage as the goal.
+6. Note coverage signals if SimpleCov output is present, but never treat coverage as the goal.
 
 Never mark the task done with a red suite. Output: command run, pass/fail counts, per-failure
 analysis, recommended next action for the orchestrator.
