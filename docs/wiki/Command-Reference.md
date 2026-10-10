@@ -45,7 +45,7 @@ Commands are namespaced by plugin: `/rails-flow:feature`, `/qa-flow:verify`.
 **Setup** — scaffold the flow into a project
 
 - `/rails-flow:explain` — Explain the built system back to its human owner — plain-language docs/GUIDE.md with mermaid diagrams, section-scoped and idempotent.
-- `/rails-flow:graph` — Regenerate the living architecture graph — docs/architecture/{graph.json,index.html,graph.md} — from routes, app/** and db/schema.rb.
+- `/rails-flow:graph` — Regenerate the living architecture graph — docs/architecture/{graph.json,index.html,graph.md} — from routes, app/** and db/schema.rb (and every other project-owned db/*_schema.rb a second database dumps).
 - `/rails-flow:setup-flow` — Scaffold, update, or repair the rails-flow conventions in this project — CLAUDE.md, GUARDRAILS.md, docs/brain.
 
 
