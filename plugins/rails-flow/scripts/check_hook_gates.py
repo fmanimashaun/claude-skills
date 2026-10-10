@@ -4072,6 +4072,82 @@ def ci_verdict_hint_fixtures() -> None:
               code == 0 and out.strip() == "", f"exit {code}: {out.strip()[:120]!r}")
 
 
+def test_preflight_fixtures() -> None:
+    """test-preflight.sh: the advisory test-run preflight, driven end to end with the REAL script and stub binaries (#1561, #1566)."""
+    root = str(HOOKS.parents[1])
+    with scratch_dir() as td:
+        base = Path(td)
+        stubs = base / "stubs"
+        stubs.mkdir()
+        # A PATH holding the stubs, bash and python3 and nothing else: a real Ruby on the machine running the sweep, someone else's held
+        # `bundler.lock` and the load of a busy runner must not make a fixture speak (the load threshold is raised for the same reason).
+        path = os.pathsep.join(dict.fromkeys([str(stubs)] + [os.path.dirname(shutil.which(n) or "/usr/bin/x") for n in ("bash", "python3")]))
+        env = {"CLAUDE_PLUGIN_ROOT": root, "PATH": path, "RAILS_FLOW_PREFLIGHT_LOAD_MAX": "1000000"}
+
+        def stub(name: str, body: str) -> None:
+            (stubs / name).write_text("#!/bin/sh\n" + body + "\n")
+            (stubs / name).chmod(0o755)
+
+        def project(name: str, adapter: str = "postgresql") -> Path:
+            proj = base / name
+            (proj / "config").mkdir(parents=True)
+            (proj / "spec").mkdir()
+            (proj / "Gemfile").write_text("")
+            (proj / "spec" / "a_spec.rb").write_text("")
+            (proj / "config" / "database.yml").write_text(f"default: &default\n  adapter: {adapter}\n")
+            return proj
+
+        def hook(proj: Path, command: str, **extra: str) -> tuple[int, str]:
+            payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(proj)})
+            return run_hook("test-preflight.sh", cwd=proj, stdin=payload, env_extra=dict(env, **extra))
+
+        rspec = "bundle exec rspec spec/a_spec.rb"
+        app = project("app")
+        stub("pg_isready", "echo '/tmp:5432 - no response'; exit 2")        # a simulated Postgres outage, with the real tool's exit status
+        code, out = hook(app, rspec)
+        check("test-preflight: a Postgres outage before an rspec run is named, and the hook still exits 0",
+              code == 0 and "Postgres is not accepting connections" in out and "exit 2" in out, f"exit {code}: {out.strip()[:160]!r}")
+        check("test-preflight: ...as PreToolUse additionalContext, the channel documented as reaching the model",
+              '"hookEventName": "PreToolUse"' in out and '"additionalContext"' in out, out.strip()[:140])
+        check("test-preflight: ...and it decides no permission (an advisory cannot block or allow a call)", "permissionDecision" not in out)
+        stub("pg_isready", "exit 0")
+        code, out = hook(app, rspec)
+        check("test-preflight: Postgres up, everything fine: silent and exits 0", code == 0 and out.strip() == "", f"exit {code}: {out.strip()[:120]!r}")
+        stub("pg_isready", "exit 2")
+        for label, command in (("a `git status`", "git status"), ("a commit message that says rspec", 'git commit -m "fix rspec"')):
+            code, out = hook(app, command)
+            check(f"test-preflight: {label} is not a suite run, so it is silent even with Postgres down", code == 0 and out.strip() == "", out.strip()[:120])
+        code, out = hook(project("lite", "sqlite3"), rspec)
+        check("test-preflight: a project whose database is not Postgres is not probed (dormant without one)", code == 0 and out.strip() == "", out.strip()[:120])
+        stub("pg_isready", "exit 0")
+        code, out = hook(app, "bundle exec rspec spec/a_spec.rb spec/missing_spec.rb")
+        check("test-preflight: a spec path that does not exist is named", code == 0 and "spec/missing_spec.rb" in out and "a_spec.rb`" not in out, out.strip()[:160])
+        (app / ".claude").mkdir()
+        mine = app / ".claude" / "test-preflight"
+        mine.write_text("#!/bin/sh\necho 'master key missing'\n")
+        mine.chmod(0o755)
+        stub("pg_isready", "exit 2")
+        code, out = hook(app, rspec)
+        check("test-preflight: the project's own .claude/test-preflight runs AFTER the generic checks",
+              code == 0 and "Project preflight: master key missing" in out and out.find("Postgres") < out.find("Project preflight"), out.strip()[:200])
+        # #825's environment: the harness sets the variable; a person driving the script does not. A missing script is python's exit 2, which the wrapper must not pass on.
+        code, out = run_hook("test-preflight.sh", cwd=app, stdin=json.dumps({"tool_name": "Bash", "tool_input": {"command": rspec}, "cwd": str(app)}),
+                             env_extra={"PATH": path}, unset=("CLAUDE_PLUGIN_ROOT",))
+        check("test-preflight: with CLAUDE_PLUGIN_ROOT unset it exits 0 silently, not `unbound variable` and not python's exit 2",
+              code == 0 and "unbound" not in out and out.strip() == "", f"exit {code}: {out.strip()[:120]!r}")
+        # No python3 on PATH: only a `bash` survives. Proved by a PATH that genuinely lacks it.
+        bare = base / "bare-bin"
+        bare.mkdir()
+        (bare / "bash").symlink_to(shutil.which("bash"))
+        done = _run([str(bare / "bash"), str(HOOKS / "test-preflight.sh")], cwd=app,
+                    input=json.dumps({"tool_name": "Bash", "tool_input": {"command": rspec}, "cwd": str(app)}),
+                    capture_output=True, text=True, timeout=60, env={"PATH": str(bare), "CLAUDE_PLUGIN_ROOT": root, "HOME": td})
+        check("test-preflight: with no python3 on PATH it exits 0 and says nothing",
+              done.returncode == 0 and (done.stdout + done.stderr).strip() == "", f"exit {done.returncode}: {(done.stdout + done.stderr).strip()[:120]!r}")
+        code, out = run_hook("test-preflight.sh", cwd=app, stdin="not json", env_extra=env)
+        check("test-preflight: an unreadable payload exits 0 silently", code == 0 and out.strip() == "", f"exit {code}: {out.strip()[:120]!r}")
+
+
 def session_end_fixtures() -> None:
     """#1582 slice C: session-end.sh reaps the session's own stopped orphans, fails open, and never blocks.
 
@@ -5299,7 +5375,7 @@ GROUPS = {
     "release_gate_effects": release_gate_effects_fixtures, "release_gate_repos": release_gate_repos_fixtures,
     "release_gate_refs": release_gate_refs_fixtures, "release_gate_fallback": release_gate_fallback_fixtures,
     "release_gate_adversary": release_gate_adversary_fixtures,
-    "ci_verdict_hint": ci_verdict_hint_fixtures, "session_end": session_end_fixtures, "timeout": timeout_fixtures,
+    "ci_verdict_hint": ci_verdict_hint_fixtures, "test_preflight": test_preflight_fixtures, "session_end": session_end_fixtures, "timeout": timeout_fixtures,
     "guard_worktree": guard_worktree_fixtures, "guard_worktree_parse": guard_worktree_parse_fixtures,
     "guard_worktree_failopen": guard_worktree_failopen_fixtures, "guard_worktree_pointer": guard_worktree_pointer_fixtures,
     "deadline": deadline_fixtures, "where_stopped": where_stopped_fixtures, "tools_missing": tools_missing_fixtures,
@@ -5323,7 +5399,7 @@ PARTS = {
           "ci_verdict_hint", "session_end", "timeout"],
     "b": ["release_gate", "release_gate_effects"],
     "c": ["release_gate_repos", "release_gate_refs", "release_gate_fallback", "release_gate_adversary", "guard_worktree", "guard_worktree_parse",
-          "guard_worktree_failopen", "guard_worktree_pointer", "deadline", "where_stopped", "tools_missing", "fixture_git_binding"],
+          "guard_worktree_failopen", "guard_worktree_pointer", "deadline", "where_stopped", "tools_missing", "fixture_git_binding", "test_preflight"],
 }
 
 

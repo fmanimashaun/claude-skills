@@ -188,6 +188,16 @@ job shape (idempotent `perform`; the argument convention THIS codebase actually 
 <grep one-liners that mechanically check the overrides, e.g. no raw form_with in views,
 no unguarded .unscoped, no raw palette colors>
 
+<!-- emit-if: database -->
+## Test-run preflight
+Before a full suite or e2e run, check the environment, because it fails as a red suite that is not the code's fault:
+the database is up (`pg_isready` for Postgres; start it and re-check if it is not), `ls` every spec path you name,
+no held `bundler.lock` (a Ruby LSP `bundle update` holds it), and read `uptime` — under high load run in the
+foreground or in smaller shards, never many background runs. Never swap hooks or config from another branch while
+a sweep runs. *Advice, not enforced: the rails-flow `test-preflight` hook reports the first four as an advisory;
+the project's own checks go in an executable `.claude/test-preflight`.*
+<!-- /emit-if -->
+
 ## How to work with me
 Act as an advisor, not an assistant. Default to scrutiny.
 - **Scope.** Full protocol for decisions, architecture, root-cause claims, estimates, plans, and
@@ -252,8 +262,14 @@ the tree; walk `edges` backwards from a node for its blast radius. Regenerate wi
 `/rails-flow:graph`; `index.html` is the human view. Generated — never hand-edit.
 
 ## See Also
-AGENTS routing → the rails-flow plugin agents · GUARDRAILS.md · docs/brain/MEMORY.md
+AGENTS routing → the rails-flow plugin agents · GUARDRAILS.md · docs/brain/MEMORY.md · `/rails-flow:handoff` (the work order for another session or an executor)
 ```
+
+**The test-run preflight block is conditional (#1561).** The block between `<!-- emit-if: database -->` and `<!-- /emit-if -->` is written only when
+the project has a database (Step 1's inspection finds `config/database.yml` or a database gem); with none, write nothing for it. Either way the two
+marker lines are dropped, never copied into the project's CLAUDE.md. It is advice (tier 1); the `test-preflight` hook (#1566) is its advisory,
+deterministic half, and a project's own preflight lives in `.claude/test-preflight`, which the hook runs after the generic checks. Every line of it is
+re-read every session, so it stays this short.
 
 ## 2b. Area- or mode-specific instructions belong in `.claude/rules/`
 
@@ -322,7 +338,8 @@ loads in full every session.
 Sections: **Database migrations** (safe vs prohibited-without-approval, the migration
 checklist with rollback proof, required patterns incl. money `decimal(15,2)`), **Git**
 (branch model `main ← staging ← dev ← feature/*` adapted to this repo's real branches; no
-force-push, no `git add -A`, no `--no-verify`, stage specific files, small logical commits),
+force-push, no `git add -A`, no `--no-verify`, stage specific files, small logical commits; never report a placeholder SHA — after pushing run
+`git rev-parse HEAD` and report that exact value; make `gh pr ready` and any merge depend on the sweep result with `&&` (`run_sweep && gh pr ready`), never `;`),
 **Secrets** (credentials only; never commit .env), **Deploys** (require explicit user
 approval). Note at the top: *the rails-flow hooks enforce these mechanically; this document
 is the human-readable law they implement.*

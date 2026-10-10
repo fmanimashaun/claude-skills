@@ -251,7 +251,7 @@ Tracked `.claude/settings.json` holds a narrow allowlist every worktree gets; fo
 ## Platform
 
 Hooks are **bash + `python3`**; the flow drives `gh`. Windows: WSL or Git Bash. **Hooks do not all fail
-open.** Of the nineteen hook scripts, thirteen are advisory and fail open — an advisory that blocks work on a
+open.** Of the twenty hook scripts, fourteen are advisory and fail open — an advisory that blocks work on a
 missing dependency gets disabled. Six **gates fail closed**, each scoped to what it guards:
 `plugins/rails-flow/hooks/scripts/guard-bash.sh` (a tripwire for the common spellings, not a boundary: the guarantee moves to #1789/#1790, #1793; falls back to the raw payload;
 the literal `git add -A` is blocked either way.), `plugins/qa-flow/hooks/scripts/release-gate.sh` (only for commands targeting `main`),
