@@ -111,6 +111,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | pipeline git guards | `pipeline` | `python3 plugins/pipeline/scripts/git_guard_selftest.py` | live check |
 | pipeline hook install | `pipeline` | `python3 plugins/pipeline/scripts/install_git_hooks_selftest.py` | live check |
 | pipeline kamal destination | `pipeline` | `python3 plugins/pipeline/scripts/kamal_destination.py --selftest` | selftest |
+| pipeline release build | `pipeline` | `python3 plugins/pipeline/scripts/release_build.py --selftest` | selftest |
 | pipeline status board | `pipeline` | `python3 plugins/pipeline/scripts/status_board.py --selftest` | selftest |
 | pipeline stop conditions | `pipeline` | `python3 plugins/pipeline/scripts/breaker.py --selftest` | selftest |
 | qa-flow blast radius | `qa-flow` | `python3 plugins/qa-flow/scripts/blast_radius.py --selftest` | selftest |
