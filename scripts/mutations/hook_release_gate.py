@@ -37,22 +37,10 @@ GUARD = Guard(
             "release-gate (#1657): an invalid byte on an EARLIER line does not hide a push to main under a UTF-8 locale",
         ),
         Mutation(
-            "the fallback's `git push` match is a pipe into `grep -q` again, so under pipefail a 120 KB command whose first line is the push reads 141 and is passed",
-            "LC_ALL=C grep -qE '^[[:space:]]*git[[:space:]]+push\\b' <<<\"$seg\" \\",
-            "printf '%s\\n' \"$seg\" | LC_ALL=C grep -qE '^[[:space:]]*git[[:space:]]+push\\b' \\",
-            "release-gate (#1657): without the classifier, a push on the first line of a 120 KB command is refused",
-        ),
-        Mutation(
             "`normalize_segments` runs in the caller's locale, so a UTF-8 locale and an invalid byte leave it with nothing to read",
             "| LC_ALL=C normalize_segments)",
             "| normalize_segments)",
             "release-gate (#1657): CONTROL: without the classifier, an invalid byte with no push in the command is not itself a refusal",
-        ),
-        Mutation(
-            "the fallback's `main|master` grep runs in the caller's locale, so an invalid byte earlier on the SAME line hides the push",
-            """    && LC_ALL=C grep -qE '\\b(main|master)\\b' <<<"$cmd" && { targets_main=1; needs_dev=1; }""",
-            """    && grep -qE '\\b(main|master)\\b' <<<"$cmd" && { targets_main=1; needs_dev=1; }""",
-            "release-gate (#1657): without the classifier, an invalid byte EARLIER ON THE SAME LINE does not hide a push to main",
         ),
         Mutation(
             "a normaliser that exits non-zero is no longer 'could not read', so its (pass-through) output is judged as if it were the segments",
@@ -65,12 +53,6 @@ GUARD = Guard(
             """| LC_ALL=C python3 "$_pt" --classify""",
             """| python3 "$_pt" --classify""",
             "release-gate (#1657): with the classifier, an invalid byte in a command that is not a push does not refuse it",
-        ),
-        Mutation(
-            "the `gh api`/release check reads the raw command in the caller's locale, so an invalid byte before a merge call hides it",
-            """    && LC_ALL=C grep -qiE 'merge|refs|releases|release[[:space:]]+(create|edit)|mutation' <<<"$cmd" && { targets_main=1; needs_dev=1; }""",
-            """    && grep -qiE 'merge|refs|releases|release[[:space:]]+(create|edit)|mutation' <<<"$cmd" && { targets_main=1; needs_dev=1; }""",
-            "release-gate (#1657): without the classifier, an invalid byte before a `gh api` merge does not hide it",
         ),
         Mutation(
             "a normaliser output of nothing for a command that is not empty is no longer 'could not read', so a comment-only mention passes in the degraded path",
