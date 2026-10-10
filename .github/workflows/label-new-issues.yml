@@ -1,0 +1,31 @@
+name: label new issues
+
+# Owner's decision (2026-10-10, #1793): label rules are enforced where the issue exists, not by parsing the text of a
+# `gh issue create` command. An issue missing a declared label group (`.rails-flow/issue-labels.json`) gets the
+# `needs-labels` label and ONE comment naming what is missing; the label is removed when the groups are complete.
+# It guesses no label. See plugins/rails-flow/scripts/label_new_issue.py.
+#
+# `issues` workflows run from the DEFAULT branch (`main`), so this does nothing until the next dev -> main promotion.
+on:
+  issues:
+    types: [opened, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Flag the missing label groups
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+        # The number is read from the environment, never interpolated into this script.
+        run: python3 plugins/rails-flow/scripts/label_new_issue.py --issue "$ISSUE"

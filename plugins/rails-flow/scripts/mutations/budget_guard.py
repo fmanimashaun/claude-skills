@@ -10,7 +10,7 @@ GUARD = Guard(
     subject="hooks/budget-guard.mjs",
     selftest="scripts/check_mods.py",
     selftest_args=("budget-guard",),
-    needs=("tests/budget-guard.unit.mjs", "hooks/context-nudge.mjs"),
+    needs=("tests/budget-guard.unit.mjs", "hooks/context-nudge.mjs", "hooks/session-reset.mjs"),
     mutations=(
         Mutation(
             "a relay workflow is no longer refused",

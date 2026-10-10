@@ -11,7 +11,7 @@ GUARD = Guard(
     subject="hooks/register.js",
     selftest="scripts/check_mods.py",
     selftest_args=("register",),
-    needs=("tests/register.unit.mjs", "hooks/context-nudge.mjs", "hooks/lane-band.js", "hooks/budget-guard.mjs", "hooks/hooks.json"),
+    needs=("tests/register.unit.mjs", "hooks/context-nudge.mjs", "hooks/lane-band.js", "hooks/budget-guard.mjs", "hooks/session-reset.mjs", "hooks/hooks.json"),
     mutations=(
         Mutation(
             "a mod is registered twice, so its events are registered twice",
@@ -46,8 +46,10 @@ GUARD = Guard(
         ),
         Mutation(
             "no mod is registered at all",
-            "  contextNudge(on, options)\n  laneBand(on, options)\n  budgetGuard(on, options)\n",
-            "  void contextNudge\n  void laneBand\n  void budgetGuard\n",
+            # Every call, session-reset's included (#1687): voiding only the first three left one mod registered, so the
+            # mutant was caught by "lane-band.js: its hook" and never reached the fixture named here.
+            "  contextNudge(on, options)\n  laneBand(on, options)\n  budgetGuard(on, options)\n  sessionReset(on, options)\n",
+            "  void contextNudge\n  void laneBand\n  void budgetGuard\n  void sessionReset\n",
             "registered no hook at all",
         ),
     ),

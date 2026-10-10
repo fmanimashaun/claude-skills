@@ -13,11 +13,11 @@ GUARD = Guard(
     subject="hooks/context-nudge.mjs",
     selftest="scripts/check_mods.py",
     selftest_args=("context-nudge", "budget-guard"),
-    needs=("tests/context-nudge.unit.mjs", "tests/budget-guard.unit.mjs", "hooks/budget-guard.mjs"),
+    needs=("tests/context-nudge.unit.mjs", "tests/budget-guard.unit.mjs", "hooks/budget-guard.mjs", "hooks/session-reset.mjs"),
     mutations=(
         Mutation(
             "the once-per-climb flag is never set, so every prompt past the threshold is nagged",
-            "      nudged = true\n      lines.push(nudgeLine(percent))",
+            "      nudged = true\n      lines.push(nudgeLine(percent, role))",
             "      lines.push(nudgeLine(percent))",
             "at the threshold one line is added, once",
         ),

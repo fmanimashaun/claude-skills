@@ -99,7 +99,7 @@ these:
    drawing.
 2. **Nudges once per climb.** When the person submits a prompt and the fill is at or past the threshold, it
    adds ONE context line only Claude reads (about 230 characters, asserted at most 400): finish the step,
-   offer `/rails-flow:handoff`, then tell the user to `/clear` (owner decision, 2026-10-07: `/clear`, not `/compact`, because once the handoff is written a compaction only carries a summary of what the handoff already holds). It adds nothing again until the fill
+   offer `/rails-flow:handoff`, then tell the user to `/clear` (owner decision, 2026-10-07: `/clear`, not `/compact`, because once the handoff is written a compaction only carries a summary of what the handoff already holds). A session with an elected role is told instead that it resets itself, and is not asked to type anything (see *A session resets itself*). It adds nothing again until the fill
    has fallen below the threshold or lost its reading (a `/clear` or a compaction). It is added only to a
    prompt from a person at an interactive surface: `composer`, `bridge` or no origin. The other fourteen of
    the engine's sixteen origin kinds are refused on purpose, `sdk` included, because `claude -p` has nobody to
@@ -120,8 +120,9 @@ pass on 2.1.288.
   mod and not a status line script.
 - Two hooks on the same event with no matcher fail to load, so `hooks/register.js` (the one module
   `hooks.json` names) must register each event and matcher once. This mod uses `session.measure` and
-  `prompt.submit`; the lane band uses `session.start`, `turn.complete` and `ui.render` on `AbovePrompt`.
-  A module may not pass `$` to a function imported from another of its files, and this mod imports nothing.
+  `prompt.submit`; the lane band uses `session.start` and `ui.render` on `AbovePrompt`; `session-reset.mjs` uses `session.start` with the matcher `isInteractive`, `tool.call` for `Bash` and for `Write|Edit`, and `turn.complete`.
+  A module may not pass `$` to a function imported from another of its files; this mod imports only pure helpers
+  and shared plain data from `budget-guard.mjs` and `session-reset.mjs`, never `$`.
 - "No usage field reaches a hook" stayed INCONCLUSIVE, so the claim here is only that the docs document none.
 
 **What CI checks, and what it cannot.**
@@ -155,7 +156,7 @@ budget, and the work carries on after a reset.
 
 | Limit | At the warn level | At the hard level |
 |---|---|---|
-| Context window (`context-nudge.mjs`) | at 70%: one line asks for `/rails-flow:handoff`, then `/clear` | — |
+| Context window (`context-nudge.mjs`) | at 70%: one line asks for `/rails-flow:handoff`; at 75% the session compacts itself (see *A session resets itself*) | — |
 | 5-hour session window | at 80%: update the handoff, commit and push, no fan-out | at 90%: finish the step, save everything, stop; **resume by itself just after the reset** |
 | 7-day window | at 80%: the same | at 90%: the same, and new `Workflow` and `Agent` calls are refused |
 | Any usage | a `Workflow` whose script has agents only relay `SendMessage` is refused | — |
@@ -183,6 +184,99 @@ nothing is announced. A guard that throws is skipped and the call runs (the engi
 refusal fails open; the relay refusal makes no async call before it decides. Mods need Claude Code 2.1.287 or
 later; this was developed against 2.1.292. The declarations and their checksum are in
 `docs/evidence/audits/2026-10-07-mods-tool-call-ratelimits-2.1.292.md`.
+
+## A session resets itself: clear when the job is done, compact mid-job (#1687, #1723, #1724)
+
+**What is true today.** `/clear` and `/compact` are commands a person types, and the owner does not want to be the
+one typing them for every session. Claude Code 2.1.292's mods API (the newest declaration on this machine; 2.1.295
+is the version in scope and its declaration has not been read) has `$.command.run`, which "runs a slash command as
+if the person typed `/command args` ... queued and run once the session is idle", and `$.session.compact`.
+So `hooks/session-reset.mjs` and the mid-job part of `hooks/context-nudge.mjs` do it, on the owner's rule of 2026-10-09.
+
+| Situation | What happens | Never |
+|---|---|---|
+| **Job done** (implementation session): every PR it opened is MERGED into `dev` (read live with `gh pr view <n> --json state,baseRefName`), a handoff was written this session, and `git worktree remove` has removed every worktree it added | `$.command.run({ command: "clear" })`, then ONE prompt: "Read <handoff> first, then wait for the coordinator's message" | no clear while any PR is unmerged or unreadable, any worktree is live, a background Bash job was started this job, or under `claude -p` |
+| **Mid-job at a limit** (implementation session): the context fill reaches `RAILS_FLOW_COMPACT_PCT` (default 75, a starting value, nothing measured it) or a 5-hour or weekly window reaches its warn level | `$.session.compact({ instructions })` keeping the handoff, worktrees, branches, PRs and next step | touches no worktree; never clears; waits until the nudge or the usage line has reached the model, so the handoff was asked for first |
+| **Coordinator** | compacts at the same fill or usage level, keeping `RAILS_FLOW_COORDINATOR_HANDOFF` (default `~/projects/claude-skills-wt/_logs/COORDINATOR-HANDOFF.md`), the queue and the open PRs; no precondition, its handoff lives in a file | never clears |
+| **No role** (election failed, `claude -p`) | one context line says so | no clear, no compact |
+
+**How the clear is queued ahead of the next prompt.** The slow part, `gh pr view` for each PR, is done EARLY, as soon
+as the job looks finished (worktree removed, handoff written), and cached against the job epoch. At `turn.complete`
+the hook only reads the cache and, if it says all merged for the current epoch, calls `$.command.run({ command:
+"clear" })` at once, with no `await` before it and without awaiting it ("rejects ... inside a hook the turn is waiting
+on"; measured on 2.1.293 under `claude -p`, a call from `turn.complete` did not reject). The clear is therefore queued
+before any later prompt, so a new assignment waits behind it and lands in the fresh context. If the turn ends before
+the early check answers, the check fires the clear when it does. Any tool call voids the cached answer, and one made
+after the clear was queued leaves the new job's tracking alone and skips the reset prompt. **How the compaction is queued (live finding, 2.1.296).** `$.session.compact` "rejects while a turn runs", and
+`session.measure` fires DURING a turn, so a compact tried from there was rejected every time and never ran. Now
+`session.measure` only RECORDS that a compaction is due; the turn-end hook queues it with `$.command.run({ command:
+"compact", args: <instructions> })`, which is "queued and run once the session is idle", the same way the clear is. A
+rejection re-arms it for the next measure. **Debug log:** with `RAILS_FLOW_DEBUG=1` each compact or clear decision, the
+election, the surface count and any rejection is appended, timestamped, to `~/.claude/rails-flow/debug.log`; off,
+nothing is written. It exists so a live test can be read without a transcript.
+The mid-job compact does not commit or push anything (that is #1564's separate work); it requires only that the
+handoff was asked for first, and the usage warning already tells the session to commit and push.
+
+**The role is elected, machine-wide, at `session.start`** (owner rule, 2026-10-09). The first live session to
+start becomes the coordinator; every later one is an implementation session. The claim is the directory
+`~/.claude/rails-flow/coordinator` (the owner works across repositories, so it is not per repo), made with `mkdir`,
+which is atomic: of two simultaneous starts exactly one makes it. It records the claimant's pid, session id, start
+time and the process start time (`ps -o lstart`). A claim is live only while its pid exists AND that process start
+time matches, so a pid recycled after a reboot is not the coordinator; a stale claim is replaced under a second
+`mkdir` lock, and a taker that finds the lock held becomes an implementation session (fewer coordinators, never
+more). The pid is `$PPID` of the shell `$.process.run` starts: measured under `claude -p` on 2.1.293, it is the
+`claude` process itself. One context line tells the session its role, and an implementation session who the coordinator is.
+- **Override and hand-over:** start a session with `RAILS_FLOW_ROLE=coordinator` to take the claim from a live
+  coordinator, or `RAILS_FLOW_ROLE=implementation` to opt out of the election. The old coordinator keeps its role
+  until it restarts; the effect of a stale belief is only that it compacts instead of clearing.
+- **A `/clear` keeps the role.** The process goes on and "no `session.start` fires" for a clear, so the mod's variables,
+  and the claim's pid, are unchanged.
+- **A resumed session never claims the coordinator role** (owner rule, 2026-10-09, #1724: the human driver starts
+  the coordinator session first after a restart; sessions do not start themselves). An IDE restart resumes every
+  session within about a minute, and whichever started first used to win the election. The mods `session.start`
+  input has no start source (`SessionStartInput` is `{ cwd, surface, isInteractive }`, declaration line 11679; the
+  `source: 'startup' | 'resume' | ...` field, line 11653, belongs to the classic hook), so a session counts as
+  resumed when `$.session.turns()` (line 2799, user turns in the transcript) is above 0, or cannot be read.
+  That is not measured live. A resumed session is an implementation session, except that it keeps a claim
+  already recorded under its own session id when that claim's process is gone (or is this process). A fresh start,
+  or `RAILS_FLOW_ROLE=coordinator`, is the only way to claim a free or stale claim. A resumed coordinator whose
+  session id changed on resume therefore becomes an implementation session: relaunch it with the override.
+- **Not done:** the role is not written to the board's session record (`coordination.py`); that is a separate change.
+
+**Hardening from the adversarial review of #1728.** (1) Any tool call after the turn ended, or while `gh` answers,
+cancels the clear (a job epoch is compared before `$.command.run` and before the prompt). (2) A path, branch, session
+id or URL is put into a prompt or the compact instructions only if it is plain (`[\w.\/~-]`, URLs
+`https://github.com/...`); otherwise a generic phrase is used, so a newline in tool input cannot become an
+instruction. (3) A handoff kept as a comment counts only with the comment URL `gh` printed, and the reset prompt says
+to verify the author, because the repository is public. (4) A PR is the LAST full `github.com/.../pull/N` URL of
+`gh pr create`'s output, and `gh pr view` is given that URL, never a bare number (the coordinator works in two
+repositories). (5) Worktree commands are read as commands: `git` must be the command word (after `;`, `|`, `&&`,
+`(`, `{`, `if`/`then`/`else`/`do`, `!`, `xargs`, an env prefix, or inside `bash -c`/`-lc`/`eval`), with `-C`/`-c`
+skipped, a `#` comment dropped to the end of its line, and heredoc bodies dropped; a worktree path the shell builds
+(`$VAR`, `$(...)`) or `xargs` reads is recorded as unknown, which no remove can match, so the clear never fires.
+(6) Round 2: `turn.start` forgets the previous turn's end, so a merge answer arriving during the next turn cannot queue
+a clear mid-turn; and EVERY tool call (Read, Grep, Task too) moves the epoch. (7) A background count is never
+decremented: a task notification names no task id at `prompt.submit` (`origin` is only `{ kind }`), so a finished
+subagent cannot be told from a finished `bin/ci`. A session that started a background Bash job therefore never
+clears itself; it compacts or is cleared by hand. (8) Round 3: a turn that made no tool call (an assignment answered
+in text) is not the end of the finished job and never clears, so the assignment is not lost; `until`, `elif`, `while`
+and the options of `sudo`, `env` and `xargs` are skipped when finding the command word. The claim file's threat model is the same user: it guards against
+accident, not impersonation.
+
+**What the job-done test cannot see.** "A job" is what the session did in Bash and `Write`/`Edit`: a worktree it added
+and removed, a PR it opened with `gh pr create`, a file named `*handoff*` it wrote (or a `gh pr|issue comment`
+mentioning a handoff). A session that opened no PR never clears itself, on purpose. A background job
+(`run_in_background`) started during the job blocks the clear for good, because no event says when it ended.
+State is in memory only: a reload forgets the job and the session does nothing until it has done one.
+
+**Verified, and how.** The declaration excerpts and their sha256 are in
+`docs/evidence/audits/2026-10-09-mods-command-run-clear-2.1.292.md`. The unit test
+`tests/session-reset.unit.mjs` runs the real election script against a throwaway `HOME` (five rounds of simultaneous
+starts, a stale takeover, a recycled pid, the override) and drives both modules with a fake host; the mutation
+guards `session_reset` and `context_nudge_compact` prove those checks can fail. `claude plugin validate` and
+`claude plugin test` pass on 2.1.293. **Not verified:** that `$.command.run({ command: "clear" })` really clears a live
+interactive session and leaves the mod's variables intact (the declaration says so; no interactive session was driven),
+that `session.start` with the `isInteractive` matcher fires beside lane-band's unmatched one, and anything on 2.1.295.
 
 ## What this does not cover
 

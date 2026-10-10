@@ -32,7 +32,7 @@ GUARD = Guard(
             "pipefail is back on inside has(), so SIGPIPE from a long tail reads as no match and the guard checks nothing",
             """has() { ( set +o pipefail; printf '%s' "$1" | grep -qE "$2" ); }""",
             """has() { ( printf '%s' "$1" | grep -qE "$2" ); }""",
-            "an unchecked claim is blocked when a 10,000-line tail FOLLOWS the gh pr create",
+            "an unchecked claim is blocked when a 100,000-line tail FOLLOWS the gh pr create",
         ),
     ),
 )

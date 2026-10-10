@@ -528,6 +528,9 @@ def narrow_control(guard: Guard, mutation: Mutation, narrow: tuple[str, ...], ti
         shutil.rmtree(workdir, ignore_errors=True)
 
 
+EXIT_STARVED = 3      # check_hook_gates.py's exit for a run in which a timing check was starved (#1664): a skip, never a catch
+
+
 def run_mutation(guard: Guard, mutation: Mutation, timeout: float = MUTATION_FLOOR) -> list[str]:
     """One mutation, in its own tempdir. Independent of every other mutation, so the suite can run
     them in parallel (#1444). `run_guard` and `main` both come through here: one implementation."""
@@ -557,6 +560,11 @@ def run_mutation(guard: Guard, mutation: Mutation, timeout: float = MUTATION_FLO
         if result.returncode == 0:
             return [f"{guard.name}: SURVIVED — {mutation.name}. The selftest passed with this "
                     "broken, so nothing guards it."]
+        if result.returncode == EXIT_STARVED:
+            # A STARVED run (exit 3) was never judged: the machine, not the mutant, decided, and the report still quotes the very label
+            # `expects` names, so the label test below would score it as a catch on a loaded runner (review of #1775).
+            return [f"{guard.name}: {mutation.name!r} was STARVED, not judged (exit {EXIT_STARVED}) — not a catch"
+                    + tail_block(output, 8)]
         if narrow and result.returncode != 1:
             # A refusal (exit 2) quotes the very label `expects` names, so the label check below would score it as a
             # catch; a crash is no catch either. Only the selftest's own failure, exit 1, is one (review of #1603, F1).

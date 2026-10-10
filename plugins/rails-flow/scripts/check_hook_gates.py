@@ -28,6 +28,7 @@ import argparse
 import json
 import os
 import re
+import resource
 import shutil
 import signal
 import subprocess
@@ -98,7 +99,7 @@ def real_setup(fn):
     return wrapper
 
 
-def check(label: str, ok: bool, detail: str = "") -> None:
+def check(label: str, ok: bool, detail: str = "", starved_max_cpu_s: float | None = None) -> None:
     global CHECKS, _INDEX, _SKIP
     if _MATCH_MODE == "survey":
         _SURVEYED.append(_stable(label))
@@ -113,9 +114,94 @@ def check(label: str, ok: bool, detail: str = "") -> None:
         _SKIP = _INDEX not in _WANTED        # the code before the NEXT check runs for real only if it is wanted
         if not live:
             return
+    if not ok:
+        why = starved_reason(detail, starved_max_cpu_s)
+        if why:
+            STARVED.append(f"{label}: {why}")      # NOT counted in CHECKS: a skip is not a pass (#1664)
+            return
     CHECKS += 1
     if not ok:
-        FAILURES.append(f"{label}: {detail}" if detail else label)
+        FAILURES.append(f"{label}: {detail}{_timing_suffix(detail)}" if detail else label)
+
+
+# ---- STARVED: a timing check that the MACHINE decided, not the hook (#1664) -----------------------------------------------
+# The release gate's 13 s deadline and the worktree helper's 10 s budget are WALL-CLOCK on purpose: the hook's real timeout is
+# wall-clock. Under load a correct hook is starved of CPU, hits one of them, and denies with a DIFFERENT message than the one a
+# fixture asserts, so the fixture failed at random (load 19 to 36 here) and taught everyone to re-run it. A failing check is
+# STARVED, and counted as a SKIP with its reason, only when ALL THREE hold:
+#   1. its failure detail carries a deadline or budget denial (STARVED_MARKERS);
+#   2. the hook's own CPU time for that run (getrusage over the children, the delta of the last `_run`) is under STARVED_MAX_CPU_S:
+#      a correct hook needs well under one CPU-second, and one that burns CPU past its deadline is the HOOK's fault at any load;
+#   3. the machine is oversubscribed: the 1-minute load average is above `os.cpu_count()` (the core count is read here, not assumed).
+# Anything else is a real FAILURE and prints the load, the cores and the CPU. Skips are listed and make the run exit EXIT_STARVED,
+# which the doctor reads as `skip`, never `ok`, and which `--record-proof` therefore refuses. The `deadline` and `timeout` groups
+# test the timing itself and are exempt. KNOWN LIMIT: a hook that is slow by SLEEPING rather than by burning CPU is
+# indistinguishable from starvation at high load; at normal load the same fault fails, and a CPU-burning hook fails at any load.
+EXIT_STARVED = 3
+STARVED_MAX_CPU_S = 2.0
+STARVED_MARKERS = ("took longer than", "no time left in this hook", "git did not answer in time", "time budget")
+STARVED_EXEMPT_GROUPS = frozenset({"deadline", "timeout"})
+STARVED: list[str] = []
+# `--strict-timing`: never STARVED. The mutation harness runs a guard whose mutants STALL a hook on purpose (an unbounded fetch or gh): the
+# stalled hook is idle (low CPU) on a loaded machine, which is exactly the STARVED signature, so the catch would be read as a skip and a
+# skip is "not a catch". Those guards pass the flag; their control run (the unmutated hook) must then pass on its own merits.
+STRICT_TIMING = False
+LAST_CPU_S = 0.0
+_CURRENT_GROUP = ""
+# THE 50,000-CHARACTER guard-bash FIXTURES (#1785): the hook legitimately needs about 4.2 CPU-seconds to read 150 KB (measured at load 16 on 10 cores), against
+# its own 6 s deadline, so under load it is denied "took longer than 6s to read" while having used less CPU than a hang would. A hang (the #1645 backtracking
+# these fixtures exist to catch) burns CPU until the deadline, about 6 s; so below this bound the hook was starved, at or above it the hook hung.
+BIG_INPUT_STARVED_CPU_S = 5.0
+
+
+def machine_load() -> tuple[float, int]:
+    """(the 1-minute load average, the core count from os.cpu_count())."""
+    try:
+        load = os.getloadavg()[0]
+    except OSError:
+        load = 0.0
+    return load, os.cpu_count() or 1
+
+
+def is_starved(text: str, cpu_s: float, load: float, cores: int, group: str = "", strict: bool | None = None,
+               max_cpu_s: float | None = None) -> bool:
+    """True only when ALL THREE conditions above hold (and the group is not one that tests the timing itself).
+
+    `max_cpu_s` is a check's own allowance for condition 2 (#1785): the default (STARVED_MAX_CPU_S) assumes a correct hook needs well under a CPU-second,
+    which is false for a fixture that feeds guard-bash 150 KB (measured: about 4.2 CPU-seconds of legitimate work, so the default could never excuse it).
+    Such a check passes a bound just under the deadline it is judged by: a hook that hangs burns CPU until the deadline kills it, so a denial with CPU below
+    the bound is a hook that was not given its CPU.
+    """
+    limit = STARVED_MAX_CPU_S if max_cpu_s is None else max_cpu_s
+    return (not (STRICT_TIMING if strict is None else strict) and group not in STARVED_EXEMPT_GROUPS and any(m in text for m in STARVED_MARKERS)
+            and cpu_s < limit and load > cores)
+
+
+def starved_reason(detail: str, max_cpu_s: float | None = None) -> str:
+    """The reason to print for a STARVED skip, or "" when the failure is the hook's."""
+    load, cores = machine_load()
+    if is_starved(detail, LAST_CPU_S, load, cores, _CURRENT_GROUP, max_cpu_s=max_cpu_s):
+        return f"STARVED (load {load:.1f} over {cores} cores by os.cpu_count(), hook CPU {LAST_CPU_S:.1f}s): {detail[:160]}"
+    return ""
+
+
+def _timing_suffix(detail: str) -> str:
+    """Every deadline-class failure says what the machine was doing, so a real one is not read as load (nor load as real)."""
+    if not any(m in detail for m in STARVED_MARKERS):
+        return ""
+    load, cores = machine_load()
+    return f" [load {load:.1f} over {cores} cores by os.cpu_count(), hook CPU {LAST_CPU_S:.1f}s, not STARVED]"
+
+
+def finish(checks: int, failures: list[str], starved: list[str]) -> tuple[int, list[str], list[str]]:
+    """(exit code, stdout lines, stderr lines) of a selftest. A failure outranks a skip; a skip is never exit 0."""
+    if failures:
+        return 1, [], [f"check_hook_gates selftest: {len(failures)} of {checks} checks FAILED", *(f"  - {f}" for f in failures)]
+    if starved:
+        return EXIT_STARVED, [f"check_hook_gates selftest: {checks} checks passed, {len(starved)} STARVED and NOT judged "
+                              f"(the machine, not the hook, decided; run again on a quiet machine)",
+                              *(f"  - STARVED {x}" for x in starved)], []
+    return 0, [f"check_hook_gates selftest: {checks} checks passed"], []
 
 
 def record_failure(note: str) -> None:
@@ -195,6 +281,19 @@ def _is_hook_run(args) -> bool:
     return isinstance(argv, (list, tuple)) and any("release-gate.sh" in str(a) for a in argv)
 
 
+def _runs_a_hook(args) -> bool:
+    """Any hook script (`.../hooks/scripts/*.sh`) as an argument of the command, in this checkout or in a mutation's staged tree."""
+    argv = args[0] if args else []
+    return isinstance(argv, (list, tuple)) and any("hooks/scripts/" in str(a) for a in argv)
+
+
+def _note_cpu(before) -> None:
+    """The CPU seconds (user + system) the children of this process spent since `before`: the hook's own cost for the run that just ended."""
+    global LAST_CPU_S
+    now = resource.getrusage(resource.RUSAGE_CHILDREN)
+    LAST_CPU_S = (now.ru_utime - before.ru_utime) + (now.ru_stime - before.ru_stime)
+
+
 def gate_exit(returncode: int, stderr: bytes) -> int:
     """A release gate's exit code as a FIXTURE should read it. The gate's own deadline also exits 2 ("the gate took longer than 13s"), which on a loaded
     machine reads as the refusal a fixture is looking for and lets a mutant survive for the wrong reason: it is 124 here, equal to neither 0 nor 2."""
@@ -221,6 +320,7 @@ def _run(*args, **kw):
         kw["stdout"], kw["stderr"] = subprocess.PIPE, subprocess.PIPE
     if data is not None:
         kw["stdin"] = subprocess.PIPE
+    cpu0 = resource.getrusage(resource.RUSAGE_CHILDREN)
     with subprocess.Popen(*args, start_new_session=True, **kw) as proc:
         try:
             out, err = proc.communicate(data, timeout=limit)
@@ -245,6 +345,8 @@ def _run(*args, **kw):
             empty = "" if kw.get("text") else b""
             return subprocess.CompletedProcess(proc.args, 124, stdout=empty,
                                                stderr=note if kw.get("text") else note.encode())
+        if _runs_a_hook(args):      # the CPU of the HOOK's run, not of the git or gh a fixture ran after it (review of #1775)
+            _note_cpu(cpu0)
         done = subprocess.CompletedProcess(proc.args, proc.returncode, stdout=out, stderr=err)
         if want_check:
             done.check_returncode()
@@ -347,6 +449,27 @@ def bsd_text_shims() -> Path:
         w.write_text(_BSD_TEXT_SH.replace("@TOOL@", tool).replace("@REAL@", real).replace("@PY@", sys.executable), encoding="utf-8")
         w.chmod(0o755)
     return d
+
+
+# The text tools the hooks' normaliser (`lib/normalize_cmd.sh`) runs: a fixture that builds a deliberately thin PATH keeps THESE unless it is
+# the fixture about their absence (`tools_missing`), so the one thing it varies is the one thing it names (#1664). Before that, a PATH of
+# bash, python3 and a git stub was also a PATH with no sed, tr or awk: every such run printed six `command not found` lines, and a failure
+# detail cut at 300 characters showed those and hid the hook's own message.
+TEXT_TOOLS = ("sed", "awk", "tr", "grep", "head", "cat", "dirname")
+
+
+def link_tools(bindir: Path, tools=("bash", "python3")) -> None:
+    """Symlink the named tools (those this machine has) into `bindir`, for a PATH that holds nothing else."""
+    for tool in tools:
+        found = shutil.which(tool)
+        if found and not (bindir / tool).exists():
+            (bindir / tool).symlink_to(found)
+
+
+def blocked_lines(out: str) -> str:
+    """The hook's own refusal lines, which a failure detail must show: the noise before them can be longer than any cut."""
+    lines = [ln.strip() for ln in out.splitlines() if "BLOCKED" in ln]
+    return " | ".join(lines)[:400] if lines else out.strip()[-300:]
 
 
 def run_hook(name: str, *, cwd: Path, stdin: str, path_prefix: list[Path] = (),
@@ -772,37 +895,47 @@ def pattern_expansion_sites() -> list[str] | str:
 
 
 def guard_bash_fixtures() -> None:
+    last = {"rc": 0, "out": ""}
+
     def run(cmd: str, shell: str = "bash") -> int:
         with tempfile.TemporaryDirectory() as td:
-            return run_hook("guard-bash.sh", cwd=Path(td), shell=shell,
-                            stdin=json.dumps({"tool_input": {"command": cmd}}))[0]
+            last["rc"], last["out"] = run_hook("guard-bash.sh", cwd=Path(td), shell=shell,
+                                               stdin=json.dumps({"tool_input": {"command": cmd}}))
+        return last["rc"]
+
+    def said() -> str:
+        """The detail of a failed check: the exit code AND what the hook said (#1785). A bare "exit 2" hid whether the hook refused the command or ran out of
+        time, and `check` can only call a timing denial STARVED when the denial's own words are in the detail."""
+        return f"exit {last['rc']}: {last['out'].strip()[:200]}"
 
     for cmd in ("git add -A", "git add .", "git add --all",
                 # THE #826 SHAPES.
                 "git add -v -A", "git add -vA", "git add ./", "git add :/", "git add -v ."):
-        check(f"guard-bash: `{cmd}` is blocked", run(cmd) == 2, "exit 0")
+        check(f"guard-bash: `{cmd}` is blocked", run(cmd) == 2, said())
+    run("git add -A")
+    check("guard-bash (#1785): the detail of a failed check carries what the hook said, not just its exit code", "BLOCKED" in said() and "exit 2" in said(), said())
     for cmd in ("git add app/models/user.rb", "git add -p app/models/user.rb", "git add ./app/x.rb",
                 "git add spec/models/user_spec.rb spec/support/x.rb", "git status", "git add -v lib/a.rb"):
-        check(f"guard-bash: `{cmd}` passes", run(cmd) == 0, "exit 2")
+        check(f"guard-bash: `{cmd}` passes", run(cmd) == 0, said())
 
     # #906: MATCH THE INVOKED COMMAND, NOT ANY SUBSTRING. Every negative here merely MENTIONS the rule;
     # every positive stages everything behind a prefix the old adjacency match could not see.
     for cmd in NEGATIVES_906:
-        check(f"guard-bash (#906): `{cmd[:50]}` only mentions the rule and passes", run(cmd) == 0, "exit 2")
+        check(f"guard-bash (#906): `{cmd[:50]}` only mentions the rule and passes", run(cmd) == 0, said())
     for cmd in POSITIVES_906:
-        check(f"guard-bash (#906): `{cmd}` is blocked", run(cmd) == 2, "exit 0")
+        check(f"guard-bash (#906): `{cmd}` is blocked", run(cmd) == 2, said())
     for cmd in NEGATIVES_1342:
-        check(f"guard-bash (#1342): safe twin `{cmd[:60]}` stays allowed", run(cmd) == 0, "exit 2")
+        check(f"guard-bash (#1342): safe twin `{cmd[:60]}` stays allowed", run(cmd) == 0, said())
     for cmd in POSITIVES_1472:
-        check(f"guard-bash (#1472): `{cmd!r}` runs the command and is blocked", run(cmd) == 2, "exit 0")
+        check(f"guard-bash (#1472): `{cmd!r}` runs the command and is blocked", run(cmd) == 2, said())
     for cmd in NEGATIVES_1472:
-        check(f"guard-bash (#1472): CONTROL: `{cmd[:60]!r}` passes", run(cmd) == 0, "exit 2")
+        check(f"guard-bash (#1472): CONTROL: `{cmd[:60]!r}` passes", run(cmd) == 0, said())
     for cmd in POSITIVES_1613:
-        check(f"guard-bash (#1613): ANSI-C `{cmd!r}` is the command it decodes to, and is blocked", run(cmd) == 2, "exit 0")
+        check(f"guard-bash (#1613): ANSI-C `{cmd!r}` is the command it decodes to, and is blocked", run(cmd) == 2, said())
     for cmd in POSITIVES_1568:
-        check(f"guard-bash (#1568): `{cmd!r}` is read as the shell reads it, and is blocked", run(cmd) == 2, "exit 0")
+        check(f"guard-bash (#1568): `{cmd!r}` is read as the shell reads it, and is blocked", run(cmd) == 2, said())
     for cmd in NEGATIVES_1568:
-        check(f"guard-bash (#1568): CONTROL: `{cmd[:60]!r}` passes", run(cmd) == 0, "exit 2")
+        check(f"guard-bash (#1568): CONTROL: `{cmd[:60]!r}` passes", run(cmd) == 0, said())
     # #1613: the decoder against bash ITSELF. `git $'BODY'` goes through normalize_segments; `printf %s $'BODY'` is what bash makes of it.
     # Compared only when bash's word is plain (no space or shell character), because only a plain word is kept; any other is deleted.
     lib = HOOKS / "lib" / "normalize_cmd.sh"
@@ -827,7 +960,7 @@ def guard_bash_fixtures() -> None:
                      ("bash -c 'x\n\x02\ny'; bash -c 'git add -A'", "a raw \\002 line does not split the command"),
                      # ...and a string carrying one cannot fake a boundary inside the next depth's batch.
                      ("bash -c \"bash -c 'x\n\x02\ny'; bash -c 'git add -A'\"", "a \\002 line inside a string does not split the batch")):
-        check(f"guard-bash (#1504): {why}", run(cmd) == 2, "exit 0")
+        check(f"guard-bash (#1504): {why}", run(cmd) == 2, said())
     # #1504: COST. The #1498 pre-check used bash's `${var//[set]/}`, superlinear on bash 3.2: an 8 KB PR body
     # took 32-96 s in guard-bash on dev. The bound is the hook's OWN declared timeout, read from hooks.json,
     # not a number of ours: past it Claude Code kills the hook. Measured after the fix: 0.16 s.
@@ -1058,7 +1191,7 @@ def guard_bash_fixtures() -> None:
         rc, err = labelled(cmd)
         took = time.monotonic() - began
         check(f"guard-bash (#1645 CodeQL): {why} is decided, not hung (rc {rc}, {took:.1f}s of at most {10 * max(1.0, machine_slowdown()):.0f}s)",
-              rc == want and took < 10 * max(1.0, machine_slowdown()), err)
+              rc == want and took < 10 * max(1.0, machine_slowdown()), err, starved_max_cpu_s=BIG_INPUT_STARVED_CPU_S)
     # #1645 R1: a comment line must not swallow the create after it. Each through the real hook (also true on dev before this).
     for cmd, why in (("# note\ngh issue create -t X --body y", "a comment line, then an unlabelled create"),
                      ("echo hi # note\ngh issue create -t X --body y", "a trailing comment, then an unlabelled create"),
@@ -1146,8 +1279,10 @@ def guard_bash_fixtures() -> None:
         env = {"HOME": os.environ.get("HOME", "/tmp"), "LANG": lang, "LC_ALL": lang,
                "PATH": path if path is not None else os.environ["PATH"]}
         with tempfile.TemporaryDirectory() as td:
-            return _run(["/bin/bash", str(HOOKS / "guard-bash.sh")], cwd=td, input=stdin, env=env,
-                        capture_output=True, timeout=60).returncode
+            done = _run(["/bin/bash", str(HOOKS / "guard-bash.sh")], cwd=td, input=stdin, env=env,
+                        capture_output=True, timeout=60)
+        last["rc"], last["out"] = done.returncode, (done.stdout + done.stderr).decode("utf-8", "replace")
+        return done.returncode
 
     def payload(cmd: str) -> bytes:
         return json.dumps({"tool_input": {"command": cmd}}).encode()
@@ -1163,9 +1298,9 @@ def guard_bash_fixtures() -> None:
         check("guard-bash (#1526): with no awk on PATH, the literal `git add -A` is still blocked",
               raw(payload("git add -A"), bd) == 2, "exit 0: the normaliser printed nothing and every rule passed")
         check("guard-bash (#1526): with no awk on PATH, a force-push to dev is still blocked",
-              raw(payload("git push --force origin dev"), bd) == 2, "exit 0")
+              raw(payload("git push --force origin dev"), bd) == 2, said())
         check("guard-bash (#1526): CONTROL: with no awk on PATH, `git status` still passes",
-              raw(payload("git status"), bd) == 0, "exit 2")
+              raw(payload("git status"), bd) == 0, said())
     # 1b. A LONG COMMAND: `grep -q` quits at the first match, `printf` takes SIGPIPE once the text outgrows
     # the pipe buffer, and `set -o pipefail` read that 141 as "no match". `git add -A` plus 10k lines of echo
     # was allowed (attacker corpus b2/b3/b4/b14). 10k lines of `echo line N` is ~130KB, past a 64KB pipe.
@@ -1173,21 +1308,21 @@ def guard_bash_fixtures() -> None:
     check("guard-bash: the literal `git add -A` followed by 10k lines is still blocked (pipefail + SIGPIPE)",
           raw(payload("git add -A\n" + long_tail)) == 2, "exit 0: grep -q's early exit was read as no match")
     check("guard-bash: a force-push to dev followed by 10k lines is still blocked",
-          raw(payload("git push --force origin dev\n" + long_tail)) == 2, "exit 0")
+          raw(payload("git push --force origin dev\n" + long_tail)) == 2, said())
     check("guard-bash: CONTROL: `git status` followed by 10k lines still passes",
-          raw(payload("git status\n" + long_tail)) == 0, "exit 2")
+          raw(payload("git status\n" + long_tail)) == 0, said())
     # 2. AN UNCLOSED HEREDOC INSIDE `$( )`: bash ends it at the line closing the `$( )`.
     check("guard-bash (#1526): a heredoc left open inside $( ) does not hide the `git add -A` after it",
-          run("x=$(cat <<EOF\nfoo\n)\ngit add -A") == 2, "exit 0")
+          run("x=$(cat <<EOF\nfoo\n)\ngit add -A") == 2, said())
     check("guard-bash (#1526): CONTROL: the same shape followed by `git status` passes",
-          run("x=$(cat <<EOF\nfoo\n)\ngit status") == 0, "exit 2")
+          run("x=$(cat <<EOF\nfoo\n)\ngit status") == 0, said())
     check("guard-bash (#1526): CONTROL: `git add -A` INSIDE a closed heredoc in $( ) is a mention and passes",
-          run("x=$(cat <<EOF\ngit add -A\nEOF\n)") == 0, "exit 2")
+          run("x=$(cat <<EOF\ngit add -A\nEOF\n)") == 0, said())
     # 3. AN INVALID UTF-8 BYTE: the parse failed, and the raw JSON's quotes hid the command.
     check("guard-bash (#1526): an invalid UTF-8 byte does not hide `git add -A`",
-          raw(b'{"tool_input":{"command":"git add -A \xff"}}', lang="en_US.UTF-8") == 2, "exit 0")
+          raw(b'{"tool_input":{"command":"git add -A \xff"}}', lang="en_US.UTF-8") == 2, said())
     check("guard-bash (#1526): CONTROL: an invalid UTF-8 byte after `git status` passes",
-          raw(b'{"tool_input":{"command":"git status \xff"}}', lang="en_US.UTF-8") == 0, "exit 2")
+          raw(b'{"tool_input":{"command":"git status \xff"}}', lang="en_US.UTF-8") == 0, said())
     check("guard-bash (#1529 review): CONTROL: an invalid byte beside a QUOTED mention still parses and passes",
           raw(b'{"tool_input":{"command":"echo \\"never git add -A\\" \xff"}}', lang="en_US.UTF-8") == 0,
           "exit 2: the payload was not decoded, so the hook fell to degraded mode")
@@ -1213,17 +1348,17 @@ def guard_bash_fixtures() -> None:
         check("guard-bash (#1529 review): with no awk, a COMPOUND literal `cd x && git add -A` is blocked",
               raw(payload("cd x && git add -A"), no_awk) == 2, "exit 0: the anchored rules missed the raw text")
         check("guard-bash (#1529 review): CONTROL: with no awk, `cd x && git status` passes",
-              raw(payload("cd x && git status"), no_awk) == 0, "exit 2")
+              raw(payload("cd x && git status"), no_awk) == 0, said())
         check("guard-bash (#1529 review): with no python3, the literal `git add -A` is blocked (the raw JSON is matched)",
-              raw(payload("git add -A"), no_python) == 2, "exit 0")
+              raw(payload("git add -A"), no_python) == 2, said())
         check("guard-bash (#1529 review): CONTROL: with no python3, `git status` passes",
-              raw(payload("git status"), no_python) == 0, "exit 2")
+              raw(payload("git status"), no_python) == 0, said())
         check("guard-bash (#1529 review): with no grep, the literal `git add -A` is blocked",
               raw(payload("git add -A"), no_grep) == 2, "exit 0: hit() failed on every rule")
         check("guard-bash (#1529 review): with no grep, a force-push to dev is blocked",
-              raw(payload("git push --force origin dev"), no_grep) == 2, "exit 0")
+              raw(payload("git push --force origin dev"), no_grep) == 2, said())
         check("guard-bash (#1529 review): CONTROL: with no grep, `git status` passes",
-              raw(payload("git status"), no_grep) == 0, "exit 2")
+              raw(payload("git status"), no_grep) == 0, said())
         # #1529 round 3: with no grep the lib still normalises, so the hook is NOT degraded -- and one
         # `=~` over the multi-line text let `^` see only the first segment.
         for cmd in ("cd x && git add -A", "echo hi; git add -A", "x=$(git add -A)",
@@ -1231,9 +1366,9 @@ def guard_bash_fixtures() -> None:
             check(f"guard-bash (#1529 r3): with no grep, a LATER segment `{cmd}` is blocked",
                   raw(payload(cmd), no_grep) == 2, "exit 0: `^` matched only the first line")
         check("guard-bash (#1529 r3): CONTROL: with no grep, `cd x && git status` passes",
-              raw(payload("cd x && git status"), no_grep) == 0, "exit 2")
+              raw(payload("cd x && git status"), no_grep) == 0, said())
         check("guard-bash (#1529 r3): CONTROL: with no grep, a dry-run `cd x && git clean -n -fd` passes",
-              raw(payload("cd x && git clean -n -fd"), no_grep) == 0, "exit 2")
+              raw(payload("cd x && git clean -n -fd"), no_grep) == 0, said())
         # #1545: THE ISSUE-LABEL TRIGGER USED grep AND tr DIRECTLY. With either missing the pipeline failed, the `if` read false and the helper
         # never ran, so an unlabelled `gh issue create` passed on a machine where every other rule fails closed. Each case below is the SAME
         # command through the real hook with the tool absent (absolute /usr/bin symlinks, as above), with a control that must still pass.
@@ -1242,11 +1377,11 @@ def guard_bash_fixtures() -> None:
             check(f"guard-bash (#1545): with no {tool} on PATH, an unlabelled `gh issue create` is still refused",
                   raw(payload(unlabelled), bd) == 2, "exit 0: the trigger's pipeline failed and the label check was skipped")
             check(f"guard-bash (#1545): with no {tool} on PATH, a QUOTED verb `gh issue \"create\"` is still refused",
-                  raw(payload('gh issue "create" -t X --body y'), bd) == 2, "exit 0")
+                  raw(payload('gh issue "create" -t X --body y'), bd) == 2, said())
             check(f"guard-bash (#1545): CONTROL: with no {tool} on PATH, a labelled create passes",
-                  raw(payload(unlabelled + " --label bug"), bd) == 0, "exit 2")
+                  raw(payload(unlabelled + " --label bug"), bd) == 0, said())
             check(f"guard-bash (#1545): CONTROL: with no {tool} on PATH, an unrelated command passes",
-                  raw(payload("ls -la"), bd) == 0, "exit 2")
+                  raw(payload("ls -la"), bd) == 0, said())
         # THE FAIL-CLOSED PATH PAST THE 64 KB PIPE BUFFER (the #1570 lesson: `grep -q` quits at the first match, `printf` takes SIGPIPE, and
         # pipefail read that 141 as "no match"): the create FIRST and 10k lines after it, in each environment, still refused.
         big = unlabelled + "\n" + "".join(f"echo line {i}\n" for i in range(10000))
@@ -1257,16 +1392,16 @@ def guard_bash_fixtures() -> None:
             check(f"guard-bash (#1545): a create followed by a long text is still refused ({name})",
                   (raw(payload(text)) if bd is None else raw(payload(text), bd)) == 2, "exit 0: the long text hid the create from the trigger")
         check("guard-bash (#1545): CONTROL: 130 KB of text with no create still passes (full PATH)",
-              raw(payload("echo hi\n" + "".join(f"echo line {i}\n" for i in range(10000)))) == 0, "exit 2")
+              raw(payload("echo hi\n" + "".join(f"echo line {i}\n" for i in range(10000)))) == 0, said())
     finally:
         for bd in (no_awk, no_python, no_grep, no_tr):
             shutil.rmtree(bd, ignore_errors=True)
     check("guard-bash (#1529 review): a lone surrogate does not hide `git add -A`",
-          raw(b'{"tool_input":{"command":"git add -A \\ud800"}}') == 2, "exit 0")
+          raw(b'{"tool_input":{"command":"git add -A \\ud800"}}') == 2, said())
     check("guard-bash (#1529 review): a heredoc left open inside BACKTICKS does not hide what follows",
-          run("x=`cat <<EOF\nfoo\n`\ngit add -A") == 2, "exit 0")
+          run("x=`cat <<EOF\nfoo\n`\ngit add -A") == 2, said())
     check("guard-bash (#1529 review): CONTROL: the backtick shape followed by `git status` passes",
-          run("x=`cat <<EOF\nfoo\n`\ngit status") == 0, "exit 2")
+          run("x=`cat <<EOF\nfoo\n`\ngit status") == 0, said())
 
     # #1529 round-2 review. B1: after a heredoc ended early at the `)`, a body line naming `cat <<END`
     # opened a heredoc that never closed and hid what bash runs next -- a regression on dev's exit 2.
@@ -1274,7 +1409,7 @@ def guard_bash_fixtures() -> None:
           run("gh pr view 1 --json body -q \"$(cat <<'EOF'\n) note\nuse `cat <<END` here\nEOF\n)\"\ngit add -A") == 2,
           "exit 0: a phantom heredoc swallowed the command")
     check("guard-bash (#1529 r2): the minimal phantom-heredoc shape is blocked",
-          run("x=$(cat <<EOF\n)\ncat <<END\nEOF\n)\ngit add -A") == 2, "exit 0")
+          run("x=$(cat <<EOF\n)\ncat <<END\nEOF\n)\ngit add -A") == 2, said())
     # B2: an awk that FAILS (not a missing one) read as a clean empty result.
     fake = tempfile.mkdtemp()
     for tool in ("bash", "git", "dirname", "cat", "env", "head", "sed", "tr", "grep"):
@@ -1294,26 +1429,26 @@ def guard_bash_fixtures() -> None:
         check("guard-bash (#1529 r3): with no sed, the literal `git add -A` is blocked",
               raw(payload("git add -A"), no_sed) == 2, "exit 0: an early stage failed and the last one's 0 won")
         check("guard-bash (#1529 r3): CONTROL: with no sed, `git status` passes",
-              raw(payload("git status"), no_sed) == 0, "exit 2")
+              raw(payload("git status"), no_sed) == 0, said())
         check("guard-bash (#1529 r2): with an awk that exits 2, the literal `git add -A` is blocked",
               raw(payload("git add -A"), fake) == 2, "exit 0: the normaliser's status was discarded")
         check("guard-bash (#1529 r2): CONTROL: with an awk that exits 2, `git status` passes",
-              raw(payload("git status"), fake) == 0, "exit 2")
+              raw(payload("git status"), fake) == 0, said())
         # B3: unanchored, an exemption's `.*` reached another segment.
         for cmd in ("git clean -fd && echo -n done", "git push --force origin feat; echo --force-with-lease",
                     "git restore . && echo --staged"):
             check(f"guard-bash (#1529 r2): with no awk, `{cmd}` is not exempted by another segment",
-                  raw(payload(cmd), no_awk) == 2, "exit 0")
+                  raw(payload(cmd), no_awk) == 2, said())
         # Suggestion 1: `$(cat)` read nothing without cat.
         check("guard-bash (#1529 r2): with no cat, the literal `git add -A` is blocked",
               raw(payload("git add -A"), no_cat) == 2, "exit 0: stdin was never read")
         check("guard-bash (#1529 r2): CONTROL: with no cat, `git status` passes",
-              raw(payload("git status"), no_cat) == 0, "exit 2")
+              raw(payload("git status"), no_cat) == 0, said())
     finally:
         for bd in (fake, no_cat, no_awk, no_sed):
             shutil.rmtree(bd, ignore_errors=True)
     check("guard-bash (#1529 r2): CONTROL: with the full PATH, `git clean -n -fd` is still a dry run",
-          run("git clean -n -fd") == 0, "exit 2")
+          run("git clean -n -fd") == 0, said())
 
 
 # ---- guard-bash.sh: db:reset is situational (#1734) ---------------------------------------------------------------------
@@ -1487,7 +1622,9 @@ def guard_claims_pipe_fixtures() -> None:
     """A `gh pr create` FIRST and a long tail after it: `grep -q` quits at the early match, `printf` takes SIGPIPE once the
     text outgrows the pipe buffer, and `pipefail` turned that 141 into "no match", so the guard exited 0 having checked
     nothing (#1579; the class of #1570 in guard-bash.sh). The tail is 10,000 lines, well past any pipe buffer."""
-    TAIL = "\n" + "echo line\n" * 10000
+    # ~1 MB, far past the 64 KB pipe buffer: at ~100 KB grep sometimes read it all before exiting, so SIGPIPE was a race and
+    # the pipefail mutant was caught by a different fixture each run (gates run 38009764013).
+    TAIL = "\n" + "echo line\n" * 100000
     NUMERIC = "The selftest reports **292 assertions**, up from 285.\n"
     TPL = "## What changed\n\n## How to test\n"
 
@@ -1502,14 +1639,14 @@ def guard_claims_pipe_fixtures() -> None:
             return run_hook("guard-claims.sh", cwd=Path(td), stdin=json.dumps({"tool_input": {"command": cmd}}),
                             env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])})[0]
 
-    check("guard-claims (#1579): an unchecked claim is blocked when a 10,000-line tail FOLLOWS the gh pr create",
+    check("guard-claims (#1579): an unchecked claim is blocked when a 100,000-line tail FOLLOWS the gh pr create",
           run("gh pr create --base dev --body-file BODY" + TAIL, NUMERIC) == 2, "exit 0: checked nothing")
     check("guard-claims (#1579): ...and the same in an issue comment",
           run("gh issue comment 1579 --body-file BODY" + TAIL, NUMERIC) == 2, "exit 0: checked nothing")
     check("guard-claims (#1579): a missing template section is blocked with the long tail after it",
           run("gh pr create --base dev --body-file BODY" + TAIL, "## What changed\nTidy the README.\n", TPL) == 2,
           "exit 0: template not checked")
-    check("guard-claims (#1579) control: the 10,000-line tail alone is not a claim-carrying command, and passes",
+    check("guard-claims (#1579) control: the 100,000-line tail alone is not a claim-carrying command, and passes",
           run(TAIL.strip()) == 0, "blocked a benign command")
 
 
@@ -3094,6 +3231,7 @@ case "$ep" in
   repos/*/compare/*) [ -z "${FAKE_SLEEP_COMPARE:-${FAKE_SLEEP:-}}" ] || sleep "${FAKE_SLEEP_COMPARE:-$FAKE_SLEEP}"; [ -n "${FAKE_COMPARE:-}" ] || exit 1; printf '%s\\n' "$FAKE_COMPARE"; exit 0 ;;
   repos/*/commits/*) [ -n "${FAKE_COMMIT:-}" ] || exit 1; printf '%s' "$FAKE_COMMIT"; exit 0 ;;
   repos/*/git/matching-refs/*) printf '%s' "${FAKE_TAGS:-}"; exit 0 ;;
+  repos/*/git/trees/*) [ -n "${FAKE_TREE_REPO:-}" ] || exit 1; git -C "$FAKE_TREE_REPO" rev-parse "${ep##*/trees/}" 2>/dev/null || exit 1; exit 0 ;;
   repos/*/releases/*) printf '%s' "${FAKE_RELID:-}"; exit 0 ;;
   repos/*) printf 'main'; exit 0 ;;
 esac
@@ -3145,7 +3283,7 @@ def release_gate_refs_fixtures() -> None:
         prog.chmod(0o755)
         evil = f"--upload-pack={prog}"
 
-        def run(cmd: str, **extra) -> tuple[int, str]:
+        def run_once(cmd: str, _env_out: list | None = None, **extra) -> tuple[int, str]:
             marker.unlink(missing_ok=True)
             env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env.pop("GH_REPO", None)
             env["CLAUDE_PLUGIN_ROOT"] = str(QA_HOOK.parents[2])
@@ -3155,10 +3293,26 @@ def release_gate_refs_fixtures() -> None:
             env.update({"GIT_CONFIG_COUNT": "2",
                         "GIT_CONFIG_KEY_0": "url./nonexistent-qa-flow-remote/.insteadOf", "GIT_CONFIG_VALUE_0": "https://github.com/",
                         "GIT_CONFIG_KEY_1": f"url.{bare}.insteadOf", "GIT_CONFIG_VALUE_1": "https://github.com/other/fork.git"})
+            env.update({"QA_FLOW_VERDICT_DIR": str(Path(td) / "plugin-data"), "FAKE_TREE_REPO": str(bare)})
             env.update(extra)
+            if _env_out is not None:
+                _env_out.append(env)
             done = _run(["bash", str(QA_HOOK)], cwd=repo, input=json.dumps({"tool_input": {"command": cmd}}),
                         env=env, capture_output=True, text=True, timeout=60)
             return done.returncode, done.stderr
+
+        def run(cmd: str, _record: bool = True, **extra) -> tuple[int, str]:
+            """As in release_gate_repos_fixtures: a refusal for want of a verdict (#1686) is answered by running the command it names."""
+            tried: set = set()
+            while True:
+                envs: list = []
+                rc, err = run_once(cmd, envs, **extra)
+                found = re.search(r"python3 (\S+remote_evidence\.py) --repo (\S+) --sha ([0-9a-f]{40}) --record", err)
+                if not _record or rc != 2 or not found or found.groups() in tried:
+                    return rc, err
+                tried.add(found.groups())
+                _run([sys.executable, found.group(1), "--repo", found.group(2), "--sha", found.group(3), "--record"],
+                     cwd=repo, env=envs[0], capture_output=True, text=True, timeout=120)
 
         # The proof that the marker is observable: the same program, handed to git the way the hook would have.
         marker.unlink(missing_ok=True)
@@ -3357,7 +3511,7 @@ def release_gate_repos_fixtures() -> None:
         foreign_stamp = Path(td) / "foreign-stamp.json"
         foreign_stamp.write_text(json.dumps({"sha": stamped, "date": "2026-10-01", "verdict": "PASS", "report": "r.md"}), encoding="utf-8")
 
-        def run(cmd: str, **extra) -> tuple[int, str]:
+        def run_once(cmd: str, _env_out: list | None = None, **extra) -> tuple[int, str]:
             env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env.pop("GH_REPO", None)
             env["CLAUDE_PLUGIN_ROOT"] = str(QA_HOOK.parents[2])
             env["PATH"] = str(Path(td) / "bin") + os.pathsep + env["PATH"]
@@ -3366,10 +3520,28 @@ def release_gate_repos_fixtures() -> None:
             env.update({"GIT_CONFIG_COUNT": "2",
                         "GIT_CONFIG_KEY_0": "url./nonexistent-qa-flow-remote/.insteadOf", "GIT_CONFIG_VALUE_0": "https://github.com/",
                         "GIT_CONFIG_KEY_1": f"url.{forkbare}.insteadOf", "GIT_CONFIG_VALUE_1": "https://github.com/other/fork.git"})
+            env.update({"QA_FLOW_VERDICT_DIR": str(Path(td) / "plugin-data"), "FAKE_TREE_REPO": str(forkbare)})
             env.update(extra)
+            if _env_out is not None:
+                _env_out.append(env)
             done = _run(["bash", str(QA_HOOK)], cwd=repo, input=json.dumps({"tool_input": {"command": cmd}}),
                         env=env, capture_output=True, text=True, timeout=60)
             return done.returncode, done.stderr
+
+        def run(cmd: str, _record: bool = True, **extra) -> tuple[int, str]:
+            """The hook as before, except that a refusal for want of a verdict (#1686) is answered the way the message says to: the
+            command it names runs (the judgement the hook no longer does itself), then the hook runs again. One attempt per commit,
+            and `_record=False` skips it, for the fixtures about a missing verdict."""
+            tried: set = set()
+            while True:
+                envs: list = []
+                rc, err = run_once(cmd, envs, **extra)
+                found = re.search(r"python3 (\S+remote_evidence\.py) --repo (\S+) --sha ([0-9a-f]{40}) --record", err)
+                if not _record or rc != 2 or not found or found.groups() in tried:
+                    return rc, err
+                tried.add(found.groups())
+                _run([sys.executable, found.group(1), "--repo", found.group(2), "--sha", found.group(3), "--record"],
+                     cwd=repo, env=envs[0], capture_output=True, text=True, timeout=120)
 
         ok_pr = {"FAKE_PRVIEW": f"main {stamped}"}
         # (1) THE SAME COMMAND, a different repository. This checkout is o/r and holds a PASS stamp at the PR's
@@ -3698,20 +3870,33 @@ def release_gate_repos_fixtures() -> None:
             check(f"release-gate (#1591): ANOTHER repository's certified commit that is {status} of the judged one is denied (not an ancestor)",
                   rc == 2 and "not an ancestor" in err, f"rc={rc} {err[:300]!r}")
         # THE HOOK'S OWN TIME. A PreToolUse hook that outlives its timeout (15 s) does not deny: the command goes through.
-        # A fetch that stalls past that must be stopped by the helper's budget, and a hook that has spent its time on the
-        # API must not start one. A `git` that sleeps on `fetch` (20 s, longer than the hook may take) stands in for a slow remote.
+        # (#1686) The hook no longer judges the evidence, so it no longer fetches: a `git` that sleeps on `fetch` (20 s) stands in for a
+        # slow remote, and the hook with a recorded verdict must not notice it. The RECORDING step (`remote_evidence.py --record`, run
+        # ahead of the promotion) is the one a slow remote stops, by its own budget, and it must record NOTHING when it does.
         gitbin = Path(td) / "gitbin"
         gitbin.mkdir()
         real_git = shutil.which("git")
         (gitbin / "git").write_text(f'#!/bin/sh\ncase " $* " in *" fetch "*) sleep 20 ;; esac\nexec {real_git} "$@"\n', encoding="utf-8")
         (gitbin / "git").chmod(0o755)
+        rc, err = foreign(sha_good, s2, ev_files)           # records the verdict (and permits) with the real git
+        check("release-gate (#1686): CONTROL: a recorded verdict permits the same promotion", rc == 0, f"rc={rc} {err[:240]!r}")
         started = time.monotonic()
-        # (RAILS_FLOW_HOOK_DEADLINE=13, the gate's own largest deadline, so it is the helper's budget that speaks first, not #1602's.)
-        rc, err = foreign(sha_good, s2, ev_files, RAILS_FLOW_HOOK_DEADLINE="13",
+        rc, err = foreign(sha_good, s2, ev_files, _record=False, RAILS_FLOW_HOOK_DEADLINE="13",
                           PATH=f"{gitbin}{os.pathsep}{Path(td) / 'bin'}{os.pathsep}{os.environ['PATH']}")
         took = time.monotonic() - started
-        check("release-gate (#1591): a fetch that stalls past the hook's own 15 s is stopped by the budget and DENIED, inside the timeout",
-              rc == 2 and "time budget" in err and took < 15, f"rc={rc} took={took:.1f}s {err[:240]!r}")
+        check("release-gate (#1686): the hook does no fetch of its own, so a git that stalls on fetch does not slow a recorded verdict",
+              rc == 0 and took < 10, f"rc={rc} took={took:.1f}s {err[:240]!r}")
+        stalled_data = Path(td) / "stalled-data"
+        started = time.monotonic()
+        done = _run([sys.executable, str(QA_HOOK.parents[2] / "scripts" / "remote_evidence.py"), "--repo", "other/fork", "--sha", sha_good,
+                     "--record", "--budget", "3"], cwd=repo, capture_output=True, text=True, timeout=60,
+                    env={**os.environ, "PATH": f"{gitbin}{os.pathsep}{os.environ['PATH']}", "QA_FLOW_VERDICT_DIR": str(stalled_data),
+                         "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": f"url.{forkbare}.insteadOf",
+                         "GIT_CONFIG_VALUE_0": "https://github.com/other/fork.git"})
+        took = time.monotonic() - started
+        check("release-gate (#1686): a recording whose fetch stalls is stopped by its budget, exits 2 and writes NO verdict",
+              done.returncode == 2 and "time budget" in done.stderr and took < 15 and not list(stalled_data.rglob("*.json")),
+              f"rc={done.returncode} took={took:.1f}s files={list(stalled_data.rglob('*'))} {done.stderr[:200]!r}")
         # A `gh api` that stalls is cut short by `bounded` (4 s) and read as a failure: denied, well inside the 15 s.
         started = time.monotonic()
         rc, err = foreign(sha_good, s2, ev_files, FAKE_SLEEP="30")
@@ -3726,12 +3911,55 @@ def release_gate_repos_fixtures() -> None:
         took = time.monotonic() - started
         check("release-gate (#1591): a compare call that stalls on its own is cut short and the command DENIED, inside the hook's timeout",
               rc == 2 and took < 15 and "could not be compared" in err, f"rc={rc} took={took:.1f}s {err[:240]!r}")
-        # Too little time left for the evidence judge: a gate whose deadline leaves under 3 s after the 2 s margin does not START
-        # the judge. A deadline of 4 s makes that deterministic (the API calls are instant here), where sleeping through earlier
-        # calls made it depend on how fast the machine was (it passed locally and was permitted on CI).
-        rc, err = foreign(sha_good, s2, ev_files, RAILS_FLOW_HOOK_DEADLINE="4")
-        check("release-gate (#1591): a hook with too little time left for the evidence judge does not start it, and DENIES",
-              rc == 2 and "no time left" in err, f"rc={rc} {err[:240]!r}")
+        # (#1686) The verdict file is read, never trusted blindly: each of these writes a verdict that is wrong in ONE way, over a good one,
+        # and the hook must refuse by naming that way. THREAT MODEL, as the hook states it: an accident, not a session that writes a PASS file.
+        vfile = Path(td) / "plugin-data" / "remote-verdicts" / f"other__fork@{sha_good}.json"
+        good = json.loads(vfile.read_text()) if vfile.exists() else {}      # absent while the group is only SURVEYED under stubs (--match)
+        vfile.parent.mkdir(parents=True, exist_ok=True)
+        other = "b" * 40
+        for label, change, kind in (
+            ("another commit's", {"sha": other}, "mismatch"),
+            ("another evidence tree's", {"tree": "c" * 40}, "mismatch"),
+            ("another repository's", {"repo": "o/other"}, "mismatch"),
+            ("an expired (31 minutes old)", {"at": time.time() - 31 * 60}, "stale"),
+            ("a FAIL", {"verdict": "FAIL", "why": "FAIL layer: first-boot: a HOLE"}, "FAIL"),
+            ("a verdict missing its evidence field", {"evidence": None}, "unparsable"),
+        ):
+            body = {k: v for k, v in {**good, **change}.items() if not (k == "evidence" and v is None)}
+            vfile.write_text(json.dumps(body), encoding="utf-8")
+            rc, err = foreign(sha_good, s2, ev_files, _record=False)
+            check(f"release-gate (#1686): {label} verdict denies, naming `{kind}` and the command that records one",
+                  rc == 2 and f"no usable verdict: {kind}:" in err and "--record" in err, f"rc={rc} {err[:300]!r}")
+        for label, text in (("garbage", "not json {"), ("an empty file", ""), ("a JSON list", "[1, 2]")):
+            vfile.write_text(text, encoding="utf-8")
+            rc, err = foreign(sha_good, s2, ev_files, _record=False)
+            check(f"release-gate (#1686): a verdict file that is {label} denies as `unparsable`",
+                  rc == 2 and "no usable verdict: unparsable:" in err, f"rc={rc} {err[:300]!r}")
+        vfile.unlink(missing_ok=True)
+        rc, err = foreign(sha_good, s2, ev_files, _record=False)
+        check("release-gate (#1686): no verdict at all denies as `missing`, naming the command",
+              rc == 2 and "no usable verdict: missing:" in err and "--record" in err, f"rc={rc} {err[:300]!r}")
+        # END TO END (#1686): the recording runs through the Bash tool, which gets NO CLAUDE_PLUGIN_DATA, and the gate runs as a hook, which gets
+        # it (code.claude.com/docs/en/plugins/manifest-reference.md). Record with the variable unset and the verdict directory unset, read through the
+        # hook with the variable SET to somewhere else, over the same HOME: the verdict must be found.
+        home = Path(td) / "e2e-home"
+        home.mkdir(exist_ok=True)
+        e2e_env = {k: v for k, v in os.environ.items() if k not in ("CLAUDE_PLUGIN_DATA", "QA_FLOW_VERDICT_DIR")}
+        e2e_env.update({"HOME": str(home), "PATH": f"{Path(td) / 'bin'}{os.pathsep}{os.environ['PATH']}", "GIT_CONFIG_COUNT": "1",
+                        "GIT_CONFIG_KEY_0": f"url.{forkbare}.insteadOf", "GIT_CONFIG_VALUE_0": "https://github.com/other/fork.git"})
+        done = _run([sys.executable, str(QA_HOOK.parents[2] / "scripts" / "remote_evidence.py"), "--repo", "other/fork", "--sha", sha_good, "--record"],
+                    cwd=repo, env=e2e_env, capture_output=True, text=True, timeout=120)
+        written = home / ".claude" / "qa-flow" / "remote-verdicts" / f"other__fork@{sha_good}.json"
+        check("release-gate (#1686): a recording run with no CLAUDE_PLUGIN_DATA writes under ~/.claude/qa-flow/remote-verdicts",
+              done.returncode == 0 and written.is_file(), f"rc={done.returncode} {done.stderr[:200]!r}")
+        for stale in (Path(td) / "plugin-data" / "remote-verdicts").glob("*.json"):
+            stale.unlink()
+        rc, err = foreign(sha_good, s2, ev_files, _record=False, HOME=str(home), QA_FLOW_VERDICT_DIR="", CLAUDE_PLUGIN_DATA=str(Path(td) / "hook-data"))
+        check("release-gate (#1686): the hook, with CLAUDE_PLUGIN_DATA set elsewhere, finds the verdict the Bash-side recording wrote",
+              rc == 0, f"rc={rc} {err[:300]!r}")
+        vfile.write_text(json.dumps(good), encoding="utf-8")
+        rc, err = foreign(sha_good, s2, ev_files, _record=False)
+        check("release-gate (#1686): CONTROL: the good verdict, put back, permits again", rc == 0, f"rc={rc} {err[:240]!r}")
         rc, err = foreign(sha_good, s2, ev_files, cmd="gh pr merge 7 -R gone/repo", repo_name="gone/repo")
         check("release-gate (#1591): a repository whose objects cannot be fetched is denied, naming the layer and the repository",
               rc == 2 and "#1428" in err and "gone/repo" in err, f"rc={rc} {err[:300]!r}")
@@ -4009,12 +4237,12 @@ def _worktree_kit() -> types.SimpleNamespace:
 
     def denied(label: str, res: tuple[int, str], *needles: str) -> None:
         code, out = res
-        check(label, code == 2 and "BLOCKED by rails-flow worktree guard" in out, f"exit {code}: {out.strip()[:200]!r}")
+        check(label, code == 2 and "BLOCKED by rails-flow worktree guard" in out, f"exit {code}: {blocked_lines(out)!r}")
         for n in needles:
             # The temp directory differs per run, and `--match` compares the survey's labels with the run's.
             # Hoisted: a backslash inside an f-string expression is a SyntaxError before Python 3.12 (#1597).
             shown = re.sub(r'/\S*?/tmp\w{8}(?=/|$)', '<tmp>', n)
-            check(f"...and the message names {shown!r}", n in out, out.strip()[:300])
+            check(f"...and the message names {shown!r}", n in out, blocked_lines(out))
 
     def allowed(label: str, res: tuple[int, str]) -> None:
         check(label, res[0] == 0, f"exit {res[0]}: {res[1].strip()[:200]!r}")
@@ -4180,6 +4408,80 @@ def guard_worktree_parse_fixtures() -> None:
 
 
 
+def tools_missing_fixtures() -> None:
+    """A hook that cannot find sed, tr or awk must still refuse what it refuses (#1664).
+
+    Their normaliser (`lib/normalize_cmd.sh`) runs sed, tr and awk, and a PATH without them used to be an accident of other fixtures. A
+    missing tool that turned a refusal into an allow would be a fail-open in a guard, so it is stated here, on purpose, for every hook and
+    for BOTH ways the tools can be missing, because they take different roads through a hook: with `dirname` present but sed, tr and awk
+    gone, the normaliser FAILS and the hook degrades (`degraded=1`); with everything but bash, python3 and git gone, `dirname` is gone too,
+    the hook cannot even find its library, and it takes the missing-library road. Measured when this was written: nothing opens. guard-bash
+    and guard-worktree fall back to a broader rule; release-gate checks `python3 git sed awk tr grep head` up front and judges promotions
+    with a coarser rule that over-blocks."""
+    variants = (("no sed, tr or awk", ("bash", "python3", "git", "dirname", "cat", "grep", "head"), ("sed", "awk", "tr")),
+                ("no text tools at all", ("bash", "python3", "git"), TEXT_TOOLS))
+    for variant, kept, gone in variants:
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            _git_repo(repo)
+            thin = Path(td) / "thin"
+            thin.mkdir()
+            link_tools(thin, kept)
+            for tool in gone:
+                check(f"tools-missing ({variant}): CONTROL: the thin PATH really has no {tool}", not (thin / tool).exists(), str(thin / tool))
+            env = {"PATH": str(thin)}
+
+            def bash_hook(cmd: str, env=env, repo=repo) -> tuple[int, str]:
+                return run_hook("guard-bash.sh", cwd=repo, stdin=json.dumps({"tool_input": {"command": cmd}}), env_extra=env)
+
+            for cmd in ("git add -A", "git add .", "git checkout -- app", "git checkout .", "git reset --hard HEAD~1", "git clean -fd",
+                        "git branch -D x", "echo hi && git add -A", "cd /tmp && git add -A"):
+                rc, out = bash_hook(cmd)
+                check(f"tools-missing ({variant}): guard-bash.sh still refuses `{cmd}`", rc == 2 and "BLOCKED" in out,
+                      f"exit {rc}: {blocked_lines(out)!r}")
+            for cmd in ("git status", "ls"):
+                rc, out = bash_hook(cmd)
+                if variant == "no text tools at all":
+                    # WITHOUT grep, sed, tr, awk AND dirname the hook cannot tell a `gh issue create` from any other command, so the issue-label check (#1645)
+                    # runs for every command, cannot start (it is found through `dirname`), and REFUSES: fail-closed, for harmless commands too. That is the
+                    # design (a gate that cannot run denies), pinned here so a change to it is a decision and not an accident.
+                    check(f"tools-missing ({variant}): CONTROL: guard-bash.sh fails closed on `{cmd}` and says the label check could not run",
+                          rc == 2 and "could not run" in out, f"exit {rc}: {blocked_lines(out)!r}")
+                else:
+                    check(f"tools-missing ({variant}): CONTROL: guard-bash.sh still lets `{cmd}` through", rc == 0, f"exit {rc}: {blocked_lines(out)!r}")
+
+            # The release gate: promotions are refused by the up-front missing-tools rule (QA_ALLOW_MAIN is not set), whatever the normaliser can do.
+            gate_env = {k: v for k, v in os.environ.items() if not k.startswith(("GIT_", "GH_")) and k != "QA_ALLOW_MAIN"}
+            gate_env["PATH"] = str(thin)
+
+            def gate(cmd: str, gate_env=gate_env, repo=repo) -> tuple[int, str]:
+                done = _run(["bash", str(QA_HOOK)], cwd=repo, input=json.dumps({"tool_input": {"command": cmd}}), env=gate_env,
+                            capture_output=True, text=True, timeout=60)
+                return done.returncode, done.stdout + done.stderr
+
+            for cmd in ("git push origin main", "git push origin HEAD:main", "git push --force origin main", "gh pr merge 1 --merge",
+                        "gh pr merge 1 -R other/repo --squash", "gh release create v1.2.3", "git merge main", "echo \"git push origin main\""):
+                rc, out = gate(cmd)
+                check(f"tools-missing ({variant}): release-gate.sh still refuses `{cmd}`", rc == 2 and "not found on PATH" in out,
+                      f"exit {rc}: {blocked_lines(out)!r}")
+            for cmd in ("git status", "git push origin feature/x"):
+                rc, out = gate(cmd)
+                check(f"tools-missing ({variant}): CONTROL: release-gate.sh still lets `{cmd}` through", rc == 0, f"exit {rc}: {blocked_lines(out)!r}")
+
+        # guard-worktree: a duplicate lane is still refused, and an ordinary command is still left alone.
+        k = _worktree_kit()
+        with tempfile.TemporaryDirectory() as td:
+            wrepo = k.new_repo(td)
+            k.add_wt(wrepo, "lane-band", "feature/lane-band")
+            thin = Path(td) / "thin"
+            thin.mkdir()
+            link_tools(thin, kept)
+            k.denied(f"tools-missing ({variant}): guard-worktree.sh still refuses a duplicate `git worktree add`",
+                     k.guard(wrepo, "git worktree add ../dup feature/lane-band", env_extra={"PATH": str(thin)}))
+            k.allowed(f"tools-missing ({variant}): CONTROL: guard-worktree.sh still lets `git status` through",
+                      k.guard(wrepo, "git status", env_extra={"PATH": str(thin)}))
+
+
 def guard_worktree_failopen_fixtures() -> None:
     """Every way the hook or git can misbehave must be a refusal, never a pass (#1581)."""
     k = _worktree_kit()
@@ -4208,8 +4510,7 @@ def guard_worktree_failopen_fixtures() -> None:
         def stage_bin(name: str, git_body: str | None) -> dict[str, str]:
             b = Path(td) / name
             b.mkdir()
-            for tool in ("bash", "python3"):
-                (b / tool).symlink_to(shutil.which(tool))
+            link_tools(b, ("bash", "python3", *TEXT_TOOLS))
             if git_body is not None:
                 _stub(b, "git", git_body.replace("REAL_GIT", real_git).replace("REAL_SLEEP", shutil.which("sleep")))
             return {"PATH": str(b)}
@@ -4242,8 +4543,7 @@ def guard_worktree_failopen_fixtures() -> None:
         repo = new_repo(td)
         bindir = Path(td) / "bin"
         bindir.mkdir()
-        for tool in ("bash", "git"):
-            (bindir / tool).symlink_to(shutil.which(tool))
+        link_tools(bindir, ("bash", "git", *TEXT_TOOLS))
         bare = {"PATH": str(bindir)}
         denied("guard-worktree: with no python3 a worktree add is refused, not waved through",
                guard(repo, "git worktree add ../b -b feature/b dev", env_extra=bare), "python3")
@@ -4944,7 +5244,7 @@ GROUPS = {
     "ci_verdict_hint": ci_verdict_hint_fixtures, "session_end": session_end_fixtures, "timeout": timeout_fixtures,
     "guard_worktree": guard_worktree_fixtures, "guard_worktree_parse": guard_worktree_parse_fixtures,
     "guard_worktree_failopen": guard_worktree_failopen_fixtures, "guard_worktree_pointer": guard_worktree_pointer_fixtures,
-    "deadline": deadline_fixtures, "where_stopped": where_stopped_fixtures,
+    "deadline": deadline_fixtures, "where_stopped": where_stopped_fixtures, "tools_missing": tools_missing_fixtures,
     "fixture_git_binding": fixture_git_binding_fixtures,
 }
 
@@ -4965,7 +5265,7 @@ PARTS = {
           "ci_verdict_hint", "session_end", "timeout"],
     "b": ["release_gate", "release_gate_effects"],
     "c": ["release_gate_repos", "release_gate_refs", "release_gate_fallback", "release_gate_adversary", "guard_worktree", "guard_worktree_parse",
-          "guard_worktree_failopen", "guard_worktree_pointer", "deadline", "where_stopped", "fixture_git_binding"],
+          "guard_worktree_failopen", "guard_worktree_pointer", "deadline", "where_stopped", "tools_missing", "fixture_git_binding"],
 }
 
 
@@ -4989,7 +5289,9 @@ _NESTED = False
 
 
 def run_groups(groups: list[str] | None, table: dict) -> None:
+    global _CURRENT_GROUP
     for name in (groups or list(table)):
+        _CURRENT_GROUP = name
         table[name]()
 
 
@@ -5008,7 +5310,7 @@ def run_matching(groups: list[str] | None, table: dict, match: str) -> int:
 
     Two passes per group (see the note at `_MATCH_MODE`). Raises `MatchSequenceError` when the passes
     disagree or a group cannot be surveyed under stubs, so a selection is never silently wrong."""
-    global _MATCH_MODE, _SURVEYED, _WANTED, _INDEX, _SKIP
+    global _MATCH_MODE, _SURVEYED, _WANTED, _INDEX, _SKIP, _CURRENT_GROUP
     ran = 0
     try:
         for name in (groups or list(table)):
@@ -5021,6 +5323,7 @@ def run_matching(groups: list[str] | None, table: dict, match: str) -> int:
             if not _WANTED:
                 continue
             _MATCH_MODE, _INDEX, _SKIP = "run", 0, 0 not in _WANTED
+            _CURRENT_GROUP = name
             table[name]()
             if _INDEX != len(_SURVEYED):
                 raise MatchSequenceError(f"group {name!r} made {_INDEX} checks in the run pass and "
@@ -5034,6 +5337,7 @@ def run_matching(groups: list[str] | None, table: dict, match: str) -> int:
 def meta_checks() -> None:
     """The checks about `--only` and `--match` themselves. Cheap, but not free (about 2.5 s), so a `--match` run
     skips them: the baseline run of the same file has already shown them pass (#1599)."""
+    global CHECKS, LAST_CPU_S, _CURRENT_GROUP, machine_load
     # --only REFUSES what it cannot run (#1497), checked on every run whatever the selection: a
     # silently empty selection is how a mutant would "survive" with no fixture ever consulted.
     for bad in ("nope", "", ",", "release_gate,nope", "release_gate,", " release_gate", "timeout,timeout"):
@@ -5145,6 +5449,81 @@ def meta_checks() -> None:
         check("main() exits 2 for --match that selects nothing", rc_none == 2, f"exit {rc_none}")
         check("main() exits 2 for a blank --match", rc_blank == 2, f"exit {rc_blank}")
 
+    # STARVED (#1664): a timing result the machine decided is a counted skip, never a pass and never a failure.
+    hot = "BLOCKED by qa-flow release gate: the gate took longer than 13s, and this command looks like a promotion to main"
+    check("starved: a deadline denial from a hook under 2 CPU seconds on a machine over its cores is STARVED",
+          is_starved(hot, 0.4, 24.0, 10), "not starved")
+    check("starved: ...but a hook that burned 5 CPU seconds past its deadline is the HOOK's fault, at any load",
+          not is_starved(hot, 5.0, 40.0, 10), "starved")
+    check("starved: only a hook script's run sets the CPU a verdict is judged by, never the git or gh a fixture ran after it",
+          _runs_a_hook((["bash", "/x/plugins/qa-flow/hooks/scripts/release-gate.sh"],)) and _runs_a_hook((["bash", "/x/hooks/scripts/guard-bash.sh"],))
+          and not _runs_a_hook((["git", "status"],)) and not _runs_a_hook((["gh", "pr", "view"],)), "misclassified")
+    check("starved: ...and a machine under its cores never excuses a deadline denial", not is_starved(hot, 0.4, 3.0, 10), "starved")
+    check("starved: with --strict-timing the same deadline denial is a FAILURE, never a skip (a mutant that stalls a hook is a catch)",
+          not is_starved("the gate took longer than 13s", 0.3, 40.0, 4, "release_gate_repos", strict=True)
+          and is_starved("the gate took longer than 13s", 0.3, 40.0, 4, "release_gate_repos", strict=False), "strict has no effect")
+    check("starved: ...and a failure that is not a deadline or budget message is never STARVED",
+          not is_starved("rc=2 'BLOCKED by qa-flow release gate: other/fork has no stamp'", 0.1, 40.0, 10), "starved")
+    check("starved: ...and the groups that test the timing itself are exempt", not is_starved(hot, 0.4, 24.0, 10, "deadline"), "starved")
+    check("starved: the core count comes from os.cpu_count()", machine_load()[1] == (os.cpu_count() or 1), f"{machine_load()}")
+    # #1785: a check whose hook legitimately needs more than 2 CPU seconds (guard-bash reading 150 KB: about 4.2) carries its own allowance.
+    hot6 = "BLOCKED by rails-flow guardrails: this command took longer than 6s to read, so it is refused rather than guessed at."
+    check("starved: a hook that legitimately needs 4.2 CPU seconds is never excused by the DEFAULT 2 s allowance (why #1785 needed one)",
+          not is_starved(hot6, 4.2, 24.0, 10), "starved")
+    check("starved: ...but with the 50,000-character fixtures' own allowance the same denial on an oversubscribed machine IS starved",
+          is_starved(hot6, 4.2, 24.0, 10, max_cpu_s=BIG_INPUT_STARVED_CPU_S), "not starved")
+    check("starved: ...and a hook that hung (burned 5.9 CPU seconds to the 6 s deadline, the #1645 backtracking) is the HOOK's fault even with the allowance",
+          not is_starved(hot6, 5.9, 40.0, 10, max_cpu_s=BIG_INPUT_STARVED_CPU_S), "starved")
+    check("starved: ...and an allowance never excuses a machine under its cores, nor a failure that is not a deadline message",
+          not is_starved(hot6, 4.2, 3.0, 10, max_cpu_s=BIG_INPUT_STARVED_CPU_S)
+          and not is_starved("rc=2 'BLOCKED: git add -A'", 4.2, 40.0, 10, max_cpu_s=BIG_INPUT_STARVED_CPU_S), "starved")
+    check("starved: the allowance sits BELOW the hook's own 6 s deadline, or a hang could never be told from starvation",
+          STARVED_MAX_CPU_S < BIG_INPUT_STARVED_CPU_S < 6.0, f"{BIG_INPUT_STARVED_CPU_S}")
+    rc_s, out_s, _ = finish(10, [], ["a: STARVED"])
+    check("finish: a STARVED skip with no failure exits EXIT_STARVED (3), never 0, and says so on its FIRST line (the doctor's reason)",
+          rc_s == EXIT_STARVED == 3 and out_s and "STARVED" in out_s[0], f"{rc_s} {out_s}")
+    check("finish: a failure outranks a skip", finish(10, ["f"], ["a: STARVED"])[0] == 1, "not 1")
+    check("finish: nothing failed and nothing STARVED exits 0", finish(10, [], [])[0] == 0, "not 0")
+    # The real check(), driven with a patched machine: a STARVED result is in STARVED, in neither CHECKS nor FAILURES.
+    saved = (CHECKS, list(FAILURES), list(STARVED), LAST_CPU_S, _CURRENT_GROUP, machine_load)
+    try:
+        machine_load = lambda: (24.0, 10)       # noqa: E731 -- a loaded machine, for this probe only
+        LAST_CPU_S, _CURRENT_GROUP = 0.4, "release_gate_repos"
+        before = (CHECKS, len(FAILURES), len(STARVED))
+        check("probe: a deadline denial on a starved machine", False, hot)
+        after = (CHECKS, len(FAILURES), len(STARVED))
+        LAST_CPU_S = 5.0
+        check("probe: the same denial from a hook that burned CPU", False, hot)
+        burned = (CHECKS, len(FAILURES), len(STARVED))
+        burned_text = FAILURES[-1] if FAILURES else ""
+    finally:
+        CHECKS, FAILURES[:], STARVED[:], LAST_CPU_S, _CURRENT_GROUP, machine_load = saved[0], saved[1], saved[2], saved[3], saved[4], saved[5]
+    check("starved: through check(), a STARVED result is NOT counted as a pass and NOT recorded as a failure, only listed",
+          after == (before[0], before[1], before[2] + 1), f"{before} -> {after}")
+    check("starved: ...and a failure from a hook that burned CPU is a FAILURE that prints the load, cores and CPU",
+          burned == (after[0] + 1, after[1] + 1, after[2]) and "os.cpu_count()" in burned_text and "CPU" in burned_text, f"{after} -> {burned} {burned_text[-120:]!r}")
+    # #1785, through the real check(): the per-check allowance changes the verdict of a 4.2-CPU-second denial, and only that.
+    saved = (CHECKS, list(FAILURES), list(STARVED), LAST_CPU_S, _CURRENT_GROUP, machine_load)
+    try:
+        machine_load = lambda: (24.0, 10)       # noqa: E731 -- a loaded machine, for this probe only
+        LAST_CPU_S, _CURRENT_GROUP = 4.2, "guard_bash"
+        b0 = (CHECKS, len(FAILURES), len(STARVED))
+        check("probe: a 4.2 CPU-second deadline denial, default allowance", False, hot6)
+        b1 = (CHECKS, len(FAILURES), len(STARVED))
+        check("probe: the same denial with the 50,000-character fixtures' allowance", False, hot6, starved_max_cpu_s=BIG_INPUT_STARVED_CPU_S)
+        b2 = (CHECKS, len(FAILURES), len(STARVED))
+    finally:
+        CHECKS, FAILURES[:], STARVED[:], LAST_CPU_S, _CURRENT_GROUP, machine_load = saved[0], saved[1], saved[2], saved[3], saved[4], saved[5]
+    check("starved: through check(), the default allowance leaves a 4.2 CPU-second denial a FAILURE and the per-check allowance makes it a skip",
+          b1 == (b0[0] + 1, b0[1] + 1, b0[2]) and b2 == (b1[0], b1[1], b1[2] + 1), f"{b0} -> {b1} -> {b2}")
+    # #1785: every guard-bash fixture that runs the hook says what the hook SAID when it fails. A constant "exit 2" hid whether the hook refused the command or ran
+    # out of time, and check() can only call a timing denial STARVED when the denial's own words are in the detail.
+    import inspect
+    gb_src = inspect.getsource(guard_bash_fixtures)
+    bare = [l.strip()[:100] for l in gb_src.splitlines() if re.search(r"(?:run|raw)\(", l) and re.search(r',\s*"exit [02]"\)\s*$', l)]
+    check("guard-bash fixtures: no check that runs the hook carries a bare constant `exit N` as its detail (it must carry what the hook said)",
+          not bare, f"{len(bare)} left, e.g. {bare[:2]}")
+
 
 def selftest(groups: list[str] | None = None, match: str | None = None, fail_fast: bool = False) -> int:
     if match is None:
@@ -5162,13 +5541,12 @@ def selftest(groups: list[str] | None = None, match: str | None = None, fail_fas
             print(f"check_hook_gates: --match {match!r} selected no check, which would be an empty pass",
                   file=sys.stderr)
             return 2
-    if FAILURES:
-        print(f"check_hook_gates selftest: {len(FAILURES)} of {CHECKS} checks FAILED", file=sys.stderr)
-        for f in FAILURES:
-            print(f"  - {f}", file=sys.stderr)
-        return 1
-    print(f"check_hook_gates selftest: {CHECKS} checks passed")
-    return 0
+    rc, out_lines, err_lines = finish(CHECKS, FAILURES, STARVED)
+    for line in out_lines:
+        print(line)
+    for line in err_lines:
+        print(line, file=sys.stderr)
+    return rc
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -5179,6 +5557,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--part", metavar="a|b", help="run one half of the groups: the doctor runs both as two gates (#1581)")
     ap.add_argument("--match", metavar="SUBSTR",
                     help="run only the checks whose label contains SUBSTR, case-insensitively (#1599)")
+    ap.add_argument("--strict-timing", action="store_true",
+                    help="never treat a deadline denial as STARVED: for the mutation guards whose mutants stall a hook on purpose (#1664)")
     ap.add_argument("--fail-fast", action="store_true",
                     help="skip the real hook groups when the suite's own meta-checks have already failed (#1599)")
     args = ap.parse_args(argv)
@@ -5203,6 +5583,8 @@ def main(argv: list[str] | None = None) -> int:
     # `--selftest` is accepted for symmetry with every other check here, and bare invocation does
     # the same thing: the mutation harness runs a separate selftest file with no arguments, and a
     # script that printed usage there would be INERT -- every mutation "caught" by an exit 2.
+    global STRICT_TIMING
+    STRICT_TIMING = args.strict_timing
     return selftest(groups, args.match, args.fail_fast)
 
 
