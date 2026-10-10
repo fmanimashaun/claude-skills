@@ -57,7 +57,9 @@ import dev_baseline as db  # noqa: E402
 NEW, PREEXISTING, PASSED_ALONE = "NEW", "PREEXISTING", "PASSED ALONE"
 # The classes that fail the run. PASSED ALONE is one of them: it is not evidence the failure was nothing.
 BLOCKING = (NEW, PASSED_ALONE)
-PASS_LINE = re.compile(r"\b1 example, 0 failures?\b")
+# NOTHING MAY FOLLOW THE SUMMARY'S FAILURE COUNT: `1 example, 0 failures, 1 pending` exits 0 and matches a bare
+# prefix, but a pending example never ran its body (#1830). The same goes for `, 1 error occurred outside of examples`.
+PASS_LINE = re.compile(r"\b1 example, 0 failures?(?![\w,])")
 DEFAULT_RERUN = "bundle exec rspec --no-color {id}"
 
 
@@ -209,6 +211,11 @@ def _selftest() -> int:
     expect("a rerun that exits 0 and says `1 example, 0 failures` passes", rerun_passes(good, "./a[1:2]", None))
     expect("a rerun that exits 0 but matched no example does NOT pass", not rerun_passes(nothing_ran, "./a[1:2]", None))
     expect("a rerun that exits 1 fails whatever it printed", not rerun_passes(exits_one, "./a[1:2]", None))
+    # #1830: a pending example exits 0 and prints the same prefix, but did not pass.
+    pending = f"{py} -c 'print(\"1 example, 0 failures, 1 pending\")' {{id}}"
+    expect("a rerun whose only example is pending does NOT pass", not rerun_passes(pending, "./a[1:2]", None))
+    load_err = f"{py} -c 'print(\"1 example, 0 failures, 1 error occurred outside of examples\")' {{id}}"
+    expect("a rerun with an error outside of examples does NOT pass", not rerun_passes(load_err, "./a[1:2]", None))
 
     with tempfile.TemporaryDirectory() as tmp:
         try:
