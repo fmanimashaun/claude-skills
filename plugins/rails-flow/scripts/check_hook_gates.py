@@ -142,6 +142,10 @@ STARVED_MAX_CPU_S = 2.0
 STARVED_MARKERS = ("took longer than", "no time left in this hook", "git did not answer in time", "time budget")
 STARVED_EXEMPT_GROUPS = frozenset({"deadline", "timeout"})
 STARVED: list[str] = []
+# `--strict-timing`: never STARVED. The mutation harness runs a guard whose mutants STALL a hook on purpose (an unbounded fetch or gh): the
+# stalled hook is idle (low CPU) on a loaded machine, which is exactly the STARVED signature, so the catch would be read as a skip and a
+# skip is "not a catch". Those guards pass the flag; their control run (the unmutated hook) must then pass on its own merits.
+STRICT_TIMING = False
 LAST_CPU_S = 0.0
 _CURRENT_GROUP = ""
 
@@ -155,9 +159,9 @@ def machine_load() -> tuple[float, int]:
     return load, os.cpu_count() or 1
 
 
-def is_starved(text: str, cpu_s: float, load: float, cores: int, group: str = "") -> bool:
+def is_starved(text: str, cpu_s: float, load: float, cores: int, group: str = "", strict: bool | None = None) -> bool:
     """True only when ALL THREE conditions above hold (and the group is not one that tests the timing itself)."""
-    return (group not in STARVED_EXEMPT_GROUPS and any(m in text for m in STARVED_MARKERS)
+    return (not (STRICT_TIMING if strict is None else strict) and group not in STARVED_EXEMPT_GROUPS and any(m in text for m in STARVED_MARKERS)
             and cpu_s < STARVED_MAX_CPU_S and load > cores)
 
 
@@ -5269,6 +5273,9 @@ def meta_checks() -> None:
     check("starved: ...but a hook that burned 5 CPU seconds past its deadline is the HOOK's fault, at any load",
           not is_starved(hot, 5.0, 40.0, 10), "starved")
     check("starved: ...and a machine under its cores never excuses a deadline denial", not is_starved(hot, 0.4, 3.0, 10), "starved")
+    check("starved: with --strict-timing the same deadline denial is a FAILURE, never a skip (a mutant that stalls a hook is a catch)",
+          not is_starved("the gate took longer than 13s", 0.3, 40.0, 4, "release_gate_repos", strict=True)
+          and is_starved("the gate took longer than 13s", 0.3, 40.0, 4, "release_gate_repos", strict=False), "strict has no effect")
     check("starved: ...and a failure that is not a deadline or budget message is never STARVED",
           not is_starved("rc=2 'BLOCKED by qa-flow release gate: other/fork has no stamp'", 0.1, 40.0, 10), "starved")
     check("starved: ...and the groups that test the timing itself are exempt", not is_starved(hot, 0.4, 24.0, 10, "deadline"), "starved")
@@ -5330,6 +5337,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--part", metavar="a|b", help="run one half of the groups: the doctor runs both as two gates (#1581)")
     ap.add_argument("--match", metavar="SUBSTR",
                     help="run only the checks whose label contains SUBSTR, case-insensitively (#1599)")
+    ap.add_argument("--strict-timing", action="store_true",
+                    help="never treat a deadline denial as STARVED: for the mutation guards whose mutants stall a hook on purpose (#1664)")
     ap.add_argument("--fail-fast", action="store_true",
                     help="skip the real hook groups when the suite's own meta-checks have already failed (#1599)")
     args = ap.parse_args(argv)
@@ -5354,6 +5363,8 @@ def main(argv: list[str] | None = None) -> int:
     # `--selftest` is accepted for symmetry with every other check here, and bare invocation does
     # the same thing: the mutation harness runs a separate selftest file with no arguments, and a
     # script that printed usage there would be INERT -- every mutation "caught" by an exit 2.
+    global STRICT_TIMING
+    STRICT_TIMING = args.strict_timing
     return selftest(groups, args.match, args.fail_fast)
 
 

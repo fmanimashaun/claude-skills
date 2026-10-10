@@ -58,7 +58,7 @@ GUARD = Guard(
             "a quiet machine excuses a deadline denial (the load condition is dropped)",
             "and cpu_s < STARVED_MAX_CPU_S and load > cores)",
             "and cpu_s < STARVED_MAX_CPU_S)",
-            "...but a machine under its cores never excuses a deadline denial",
+            "...and a machine under its cores never excuses a deadline denial",
         ),
         Mutation(
             "a hook that burned CPU is excused (the CPU condition is dropped)",
@@ -74,9 +74,15 @@ GUARD = Guard(
         ),
         Mutation(
             "the groups that test the timing itself are not exempt",
-            "return (group not in STARVED_EXEMPT_GROUPS and any(m in text",
-            "return (any(m in text",
+            "and group not in STARVED_EXEMPT_GROUPS and any(m in text",
+            "and any(m in text",
             "...and the groups that test the timing itself are exempt",
+        ),
+        Mutation(
+            "--strict-timing changes nothing, so a mutant that stalls a hook is read as a skip, not a catch",
+            "return (not (STRICT_TIMING if strict is None else strict) and",
+            "return (True and",
+            "with --strict-timing the same deadline denial is a FAILURE",
         ),
         Mutation(
             "the core count is assumed, not read from os.cpu_count()",
