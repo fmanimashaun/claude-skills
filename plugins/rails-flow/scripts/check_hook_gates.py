@@ -5503,6 +5503,142 @@ def release_gate_fallback_fixtures() -> None:
               done.returncode == 0 and "audited" in done.stderr, done.stderr[:200])
 
 
+# ---- guard-pr-ready.sh (#1565) ------------------------------------------------------------------
+def guard_pr_ready_fixtures() -> None:
+    """`gh pr ready` only on a GREEN sweep record with zero skips for HEAD; chains are not parsed (#1565)."""
+    def head_of(repo: Path) -> str:
+        done = _fixture_git(repo, "rev-parse", "HEAD", check=False)
+        return (getattr(done, "stdout", "") or "").strip() or "0" * 40     # a `--match` survey stubs git
+
+    def new_repo(td: str, name: str = "repo", marker: bool = True) -> Path:
+        repo = Path(td) / name
+        _git_repo(repo)
+        if marker:
+            (repo / "CLAUDE.md").write_text("# x\n<!-- rails-flow:begin -->\n<!-- rails-flow:end -->\n", encoding="utf-8")
+        return repo
+
+    def record(repo: Path, head: str, **over) -> Path:
+        d = repo / ".git" / "rails-flow" / "sweep"
+        d.mkdir(parents=True, exist_ok=True)
+        rec = {"head": head, "tree": "t", "verdict": "green", "passed": 3, "failed": 0, "errored": 0, "not_applicable": 2,
+               "manifest_problems": 0, "skips": 0, "at": "2026-10-10T00:00:00Z", "project_gates": "0"}
+        rec.update(over)
+        f = d / f"{head}.json"
+        f.write_text(json.dumps(rec), encoding="utf-8")
+        return f
+
+    def guard(repo: Path, cmd: str) -> tuple[int, str]:
+        return run_hook("guard-pr-ready.sh", cwd=repo, stdin=json.dumps({"tool_input": {"command": cmd}, "cwd": str(repo)}))
+
+    def expect(label: str, res: tuple[int, str], code: int, *needles: str) -> None:
+        check(label, res[0] == code and all(n in res[1] for n in needles), f"exit {res[0]}: {blocked_lines(res[1])!r}")
+
+    with scratch_dir() as td:
+        repo = new_repo(td)
+        head = head_of(repo)
+        expect("guard-pr-ready: in force with NO record, `gh pr ready` is refused", guard(repo, "gh pr ready 12"), 2, "no sweep record")
+        expect("guard-pr-ready: the refusal names the sweep command and the two-command retry",
+               guard(repo, "gh pr ready 12"), 2, 'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/project_gates.py"', "gh pr ready 12", "TWO separate commands")
+        expect("guard-pr-ready: a sweep chained before it in ONE command does not count (no chain parsing)",
+               guard(repo, "python3 project_gates.py && gh pr ready 12"), 2, "must be its own command")
+        expect("guard-pr-ready: `gh pr ready --undo` is always allowed", guard(repo, "gh pr ready 12 --undo"), 0)
+        expect("guard-pr-ready: `--undo` after a bare `--` is a positional, not the flag: judged, not exempted",
+               guard(repo, "gh pr ready 5 -- --undo"), 2, "argument --undo is not a plain PR number or branch")
+        for cmd in ("gh pr view 12", "gh pr create --title x --body y", "ls", 'echo "gh pr ready 12"'):
+            expect(f"guard-pr-ready: NOT a pr ready, left alone: {cmd[:40]}", guard(repo, cmd), 0)
+        record(repo, "f" * 40)
+        expect("guard-pr-ready: a green record for ANOTHER HEAD is stale and refused", guard(repo, "gh pr ready 12"), 2, head[:12])
+        f = record(repo, head, verdict="red", failed=2)
+        expect("guard-pr-ready: a RED record is refused, with its verdict and counts", guard(repo, "gh pr ready 12"), 2, "RED", "failed 2")
+        record(repo, head, errored=1, skips=1)
+        expect("guard-pr-ready: a green record with skips > 0 is refused", guard(repo, "gh pr ready 12"), 2, "skips 1")
+        f.write_text("{not json", encoding="utf-8")
+        expect("guard-pr-ready: a MALFORMED record fails closed", guard(repo, "gh pr ready 12"), 2, "malformed")
+        record(repo, head, skips="0")
+        expect("guard-pr-ready: a record whose skips is not a number fails closed", guard(repo, "gh pr ready 12"), 2, "malformed")
+        for cmd in ("gh --repo o/r pr ready 5", "gh -R o/r pr ready 5", "/usr/local/bin/gh pr ready 5"):
+            expect(f"guard-pr-ready: a flag before `pr`, or gh by path, is still judged: {cmd}", guard(repo, cmd), 2, "BLOCKED")
+        expect("guard-pr-ready: `gh --repo o/r pr view 5` is left alone", guard(repo, "gh --repo o/r pr view 5"), 0)
+        expect("guard-pr-ready: `gh --repo o/r pr ready --undo 5` is allowed", guard(repo, "gh --repo o/r pr ready --undo 5"), 0)
+        record(repo, head)
+        expect("guard-pr-ready: a GREEN record with zero skips for HEAD allows it", guard(repo, "gh pr ready 12"), 0)
+        # A word outside command_cwd's SAFE list before gh is "cannot tell": the gate FAILS CLOSED rather than guess the session's
+        # directory, because an earlier segment can retarget gh (coordinator's call after the review of 7315b31e).
+        expect("guard-pr-ready: with a green record, a sweep chained before it in ONE command is still refused (cannot tell, fails closed)",
+               guard(repo, "python3 project_gates.py && gh pr ready 12"), 2, "must be its own command")
+        for cmd in ("gh repo set-default o/r && gh pr ready 5", "git remote set-url origin https://x/o/r && gh pr ready 5"):
+            expect(f"guard-pr-ready: with a green record, an earlier segment that can retarget gh refuses: {cmd[:40]}",
+                   guard(repo, cmd), 2, "must be its own command")
+        expect("guard-pr-ready: a `cd` before it is another command: refused, even with a green record",
+               guard(repo, "cd $HOME && gh pr ready 12"), 2, "must be its own command")
+        # shell-adversary on #1831: an earlier segment that MOVES HEAD would pass on the old HEAD's green record.
+        for cmd in ("git commit --allow-empty -m x && gh pr ready 5", "git checkout -b zz && gh pr ready 5", "ls; gh pr ready 5",
+                    "gh pr ready 5 | cat"):
+            expect(f"guard-pr-ready: with a green record, `gh pr ready` inside a compound command is refused: {cmd[:40]}",
+                   guard(repo, cmd), 2, "must be its own command")
+        bindir = Path(td) / "only-bash-cat"
+        bindir.mkdir()
+        link_tools(bindir, ("bash", "cat"))
+        res = run_hook("guard-pr-ready.sh", cwd=repo, stdin=json.dumps({"tool_input": {"command": "gh pr ready 5"}, "cwd": str(repo)}),
+                       env_extra={"PATH": str(bindir)}, shell=shutil.which("bash") or "bash")
+        expect("guard-pr-ready: with no python3 on PATH (degraded, raw JSON), `gh pr ready` is still refused, never fails open", res, 2,
+               "BLOCKED by rails-flow pr-ready guard")
+        # Degraded mode does no parsing (coordinator's ruling after two adversary rounds): any `ready` in the raw payload refuses.
+        def degraded(cmd: str) -> tuple[int, str]:
+            return run_hook("guard-pr-ready.sh", cwd=repo, stdin=json.dumps({"tool_input": {"command": cmd}, "cwd": str(repo)}),
+                            env_extra={"PATH": str(bindir)}, shell=shutil.which("bash") or "bash")
+        for cmd in ('gh pr "ready" 5', 'g""h pr ready 5', "gh pr \\\nready 5", "GH PR READY 5"):
+            expect(f"guard-pr-ready: with no python3 on PATH (degraded), any `ready` refuses: {cmd!r}", degraded(cmd), 2,
+                   "could not be read")
+        expect("guard-pr-ready: with no python3 on PATH (degraded), a command without `ready` passes: ls", degraded("ls"), 0)
+        # DOCUMENTED LIMITS (#1831's third adversary round; the coordinator's ruling, as for guard-bash, #1793): this hook is a
+        # TRIPWIRE, not a boundary. Each class below is pinned at TODAY's behaviour, so a change in either direction is seen. The
+        # guarantee moves to the gh shim, where argv is final. NOT a statement that these are acceptable forever.
+        expect("guard-pr-ready LIMIT (degraded): a quote-split word is not seen: gh pr re\"\"ady 5", degraded('gh pr re""ady 5'), 0)
+        # A FRESH repo, in force with NO record: here exit 0 can only mean "not seen" (with a green record a seen command passes too).
+        lim = new_repo(td, "limits")
+        expect("guard-pr-ready: the limits repo has no record, so a plain `gh pr ready` there IS refused", guard(lim, "gh pr ready 5"), 2,
+               "no sweep record")
+        for cmd, cls in (("x=ready; gh pr $x 5", "a variable"), ("/usr/bin/env gh pr ready 5", "an env or absolute wrapper"),
+                         ("gh pr rea{d,}y 5", "brace expansion"), ("echo 'gh pr ready 5' | sh", "an sh/bash/script/xargs/git-alias wrapper")):
+            expect(f"guard-pr-ready LIMIT: {cls} is not seen (tripwire): {cmd}", guard(lim, cmd), 0)
+        for cmd in ("$(echo gh) pr ready 5", "G=gh; $G pr ready 5"):
+            expect(f"guard-pr-ready: a command word built by the shell refuses: {cmd}", guard(repo, cmd), 2, "built by the shell")
+        expect("guard-pr-ready: a `$` command word with no `ready` is left alone: $HOME/bin/ls", guard(repo, "$HOME/bin/ls"), 0)
+        expect("guard-pr-ready: a scheme-less PR URL is an explicit target", guard(repo, "gh pr ready github.com/o/r/pull/5"), 2,
+               "explicit repository target")
+        expect("guard-pr-ready: a PR argument built by the shell cannot be judged: gh pr ready $PR", guard(repo, "gh pr ready $PR"), 2,
+               "without running it")
+        # A command substitution is ANOTHER command to the normaliser, so it is refused one step earlier, as a compound command.
+        expect('guard-pr-ready: a PR argument built by command substitution is refused: gh pr ready "$(echo 5)"',
+               guard(repo, 'gh pr ready "$(echo 5)"'), 2, "BLOCKED by rails-flow pr-ready guard")
+        for cmd in ("gh pr ready 5 --rep o/r", "gh pr ready o/r#5", "gh pr ready 5 --hostname x", "gh --help pr ready 5",
+                    "gh pr ready 5 --undo=false", "gh pr ready 5 >-R o/r"):
+            expect(f"guard-pr-ready: with a green record, a word that is not a plain number or branch is refused: {cmd}",
+                   guard(repo, cmd), 2, "is not a plain PR number or branch")
+        for cmd in ("gh pr ready 5 2>/dev/null", "gh pr ready 5 >/tmp/out", "gh pr ready 5 &>/dev/null", "gh pr ready my-branch", "gh pr ready feature/x-1", "gh pr ready 5", "gh pr ready -- 5", "gh pr ready 5 > /dev/null", "gh pr ready --undo"):
+            expect(f"guard-pr-ready: with a green record, allowed: {cmd}", guard(repo, cmd), 0)
+        for cmd in ("gh pr ready 5 -R o/r", "GH_REPO=o/r gh pr ready 5", "gh pr ready https://github.com/o/r/pull/5"):
+            expect(f"guard-pr-ready: an explicit remote target is refused even with a green record: {cmd}", guard(repo, cmd), 2,
+                   "explicit repository target")
+        expect("guard-pr-ready: `cd <same repo> && gh pr ready` is a compound command: refused", guard(repo, f"cd {repo} && gh pr ready 12"), 2,
+               "must be its own command")
+        # The checkout it runs in picks the repository judged: the other repository has no record.
+        other = new_repo(td, "other")
+        expect("guard-pr-ready: run in ANOTHER checkout, it is judged against THAT repo's HEAD",
+               guard(other, "gh pr ready 3"), 2, head_of(other)[:12])
+        record(other, head_of(other))
+        expect("guard-pr-ready: ...and allowed once THAT HEAD has a green record", guard(other, "gh pr ready 3"), 0)
+
+    with scratch_dir() as td:
+        plain = new_repo(td, "plain", marker=False)
+        expect("guard-pr-ready: NOT in force (no marker, no workflow, no record dir): allowed", guard(plain, "gh pr ready 12"), 0)
+        wf = plain / ".github" / "workflows"
+        wf.mkdir(parents=True)
+        (wf / "ci.yml").write_text("run: python3 project_gates.py\n", encoding="utf-8")
+        expect("guard-pr-ready: a workflow naming project_gates.py puts it in force", guard(plain, "gh pr ready 12"), 2, "no sweep record")
+
+
 GROUPS = {
     "stop_gate": stop_gate_fixtures, "guard_lane": guard_lane_fixtures,
     "guard_migrate": guard_migrate_fixtures, "lint_ruby": lint_ruby_fixtures,
@@ -5516,7 +5652,7 @@ GROUPS = {
     "guard_worktree": guard_worktree_fixtures, "guard_worktree_parse": guard_worktree_parse_fixtures,
     "guard_worktree_failopen": guard_worktree_failopen_fixtures, "guard_worktree_pointer": guard_worktree_pointer_fixtures,
     "deadline": deadline_fixtures, "where_stopped": where_stopped_fixtures, "tools_missing": tools_missing_fixtures,
-    "fixture_git_binding": fixture_git_binding_fixtures,
+    "fixture_git_binding": fixture_git_binding_fixtures, "guard_pr_ready": guard_pr_ready_fixtures,
 }
 
 
@@ -5536,7 +5672,8 @@ PARTS = {
           "ci_verdict_hint", "session_end", "timeout"],
     "b": ["release_gate", "release_gate_effects"],
     "c": ["release_gate_repos", "release_gate_refs", "release_gate_fallback", "release_gate_adversary", "guard_worktree", "guard_worktree_parse",
-          "guard_worktree_failopen", "guard_worktree_pointer", "deadline", "where_stopped", "tools_missing", "fixture_git_binding", "test_preflight"],
+          "guard_worktree_failopen", "guard_worktree_pointer", "deadline", "where_stopped", "tools_missing", "fixture_git_binding", "test_preflight",
+          "guard_pr_ready"],
 }
 
 
