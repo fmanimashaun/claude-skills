@@ -423,6 +423,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #1465. A Kamal destination is carried through whole: `-d` on every command, the destination's
     # secrets file and overlay, and the credentials environment read from the MERGED config.
     ("pipeline kamal destination", ("python3", "plugins/pipeline/scripts/kamal_destination.py", "--selftest")),
+    # #1701. The release image build passes the build args and labels pipeline.yml declares (a bare build when it declares
+    # none), reads the two keys strictly, and names a Dockerfile ARG nothing feeds.
+    ("pipeline release build", ("python3", "plugins/pipeline/scripts/release_build.py", "--selftest")),
     # #1585. The status board: every panel measured, UNKNOWN never 0, one drawing sheet with no network,
     # and every sentence it writes inside the ASD-STE100 limits. The selftest answers gh/git/ps from canned output.
     ("pipeline status board", ("python3", "plugins/pipeline/scripts/status_board.py", "--selftest")),
