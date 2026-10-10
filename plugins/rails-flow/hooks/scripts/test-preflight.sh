@@ -3,8 +3,8 @@
 #
 # When the command runs a test suite (rspec, `rails test`, Playwright, `bin/e2e`, `bin/ci`), `test_preflight.py` checks Postgres
 # (only when the project's database is detected), a held `bundler.lock`, the load average and the spec paths the command names,
-# and says so. It EXECUTES NOTHING a repository or the environment supplies (a PreToolUse hook runs before the user is asked about the command; #1821 keeps the
-# removed project hook point and restart). Silent otherwise, and silent when everything is fine.
+# and says so. It runs no script or command line that a repository or the environment supplies, only `pg_isready`, `lsof` and `ps` (a PreToolUse hook runs before the
+# user is asked about the command; #1821 keeps the removed project hook point and restart). Silent otherwise, and silent when everything is fine.
 #
 # ADVISORY, so it FAILS OPEN and ALWAYS exits 0 (docs/doctrine/harness-doctrine.md §5): a missing `python3`, `pg_isready` or `lsof`
 # is silence, never a blocked command. Its text reaches the model as `additionalContext`, which Claude Code documents as added

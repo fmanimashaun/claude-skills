@@ -10,7 +10,7 @@ only) found the same four environment faults reading as test failures: Postgres 
 `bundler.lock`, an overloaded machine, a spec path that did not exist. Each costs a diagnosis of the wrong
 thing: a red suite that was never the code's fault. Nothing checked the environment first; this is the generic
 layer a plugin can own. A project's own preflight (its master key, its seeded database) stays the project's, and the
-project runs it itself, before the suite: this hook EXECUTES NOTHING a repository or the environment supplies (below).
+project runs it itself, before the suite: this hook runs no script or command line that a repository or the environment supplies (below).
 
 WHAT IT CHECKS, on a command that runs a test suite (rspec, `rails test`, `rake test`, Playwright, `bin/e2e`,
 `bin/ci`), and on nothing else:
@@ -27,16 +27,17 @@ WHAT IT CHECKS, on a command that runs a test suite (rspec, `rails test`, `rake 
   4. SPEC PATHS. Every spec path the command names exists (`rspec` and `rails test` only: a Playwright path is
      relative to a directory this script cannot know).
 
-WHAT IT NEVER DOES: EXECUTE ANYTHING A REPOSITORY OR THE ENVIRONMENT SUPPLIES. A PreToolUse hook runs BEFORE the user
+WHAT IT NEVER DOES: RUN A SCRIPT OR COMMAND LINE THAT A REPOSITORY OR THE ENVIRONMENT SUPPLIES. A PreToolUse hook runs BEFORE the user
 is asked about the command, so whatever it executes runs on a command the user may then refuse. Two automatic security
 reviews flagged the first version of this change for exactly that (a project's `.claude/test-preflight` run from the
 checkout, and a restart command read from the environment); both features were REMOVED, not hardened (#1821 keeps the
-designs and the threat analysis). What it does run is `pg_isready`, `lsof` and `ps`, found only in ABSOLUTE `PATH`
-entries outside the project (`trusted_which`): a `.`, an empty entry or `./bin` resolves into the checkout, and a
+designs and the threat analysis). What it does run is three fixed system tools, `pg_isready`, `lsof` and `ps`, found only in
+ABSOLUTE `PATH` entries outside the project (`trusted_which`): a `.`, an empty entry or `./bin` resolves into the checkout, and a
 `pg_isready` shipped there would be repository code run before the user is asked. NOT closable here, and the same for
-every plugin hook: anything that can set the whole environment before the hook starts (`PYTHONPATH`, `LD_PRELOAD`,
-`CLAUDE_PLUGIN_ROOT`) beats this script, which is a harness and workspace-trust question; and `DATABASE_URL` makes
-`pg_isready` contact the host it names (it executes nothing).
+every plugin hook: anything that can set the environment before the hook starts beats this script (`PATH` itself, which still
+chooses WHICH `pg_isready` runs and cannot be narrowed to world-writable directories only without more code, `PYTHONPATH`,
+`LD_PRELOAD`, `CLAUDE_PLUGIN_ROOT`), which is a harness and workspace-trust question; and `DATABASE_URL` makes
+`pg_isready` contact the host it names (a connection, not code execution).
 
 CLASSIFIED under `docs/doctrine/harness-doctrine.md` section 10:
   * TIER 3 (deterministic) for the DETECTION: the same environment gives the same finding, whatever the model.
@@ -511,6 +512,14 @@ def selftest() -> int:
         check("an option's value that looks like a path is not a spec path", hook("rspec -r spec/support/nope.rb --format progress spec/a_spec.rb", root, env_for())[1] == "")
         check("a glob is not checked", hook("rspec 'spec/**/*_spec.rb'", root, env_for())[1] == "")
         check("`rails test` paths are checked too", "test/models/x_test.rb" in hook("bin/rails test test/models/x_test.rb", root, env_for())[0])
+        # EVERY COMMAND THE DOCS NAME is read as a suite run, by kind, and a near miss of each is not (a coverage gap otherwise: only three kinds were exercised).
+        for command, kind in (("bundle exec rspec spec/a_spec.rb", "rspec"), ("bin/parallel-rspec 6", "rspec"), ("parallel_rspec -n 4 spec", "rspec"),
+                              ("bin/rails test", "rails-test"), ("bundle exec rake spec", "rake"), ("rake test:models", "rake"),
+                              ("npx playwright test", "e2e"), ("cypress run", "e2e"), ("bin/e2e e2e/x.spec.ts", "e2e"), ("RAILS_ENV=test bin/ci", "ci")):
+            found = runner(segments(command)[0])
+            check(f"`{command}` is read as a {kind} suite run", found is not None and found[0] == kind, repr(found))
+        for command in ("rake db:migrate", "bin/rails server", "bin/rails db:reset", "playwright install", "cypress open", "gh ci status", "bin/ci-docker"):
+            check(f"`{command}` is not a suite run", runner(segments(command)[0]) is None, repr(runner(segments(command)[0])))
         check("a Playwright path is NOT checked (it is relative to a directory this cannot know)", hook("npx playwright test test/e2e/x.spec.ts", root, env_for())[1] == "")
 
         # 5. WHAT IT IS ABOUT: a suite run, in command position, and nothing else.

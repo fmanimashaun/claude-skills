@@ -116,6 +116,49 @@ GUARD = Guard(
             "env assignments first is still read as a suite run",
         ),
         Mutation(
+            "parallel_rspec stops being read as an rspec run",
+            '    if program in ("rspec", "parallel_rspec", "parallel-rspec"):\n',
+            '    if program in ("rspec",):\n',
+            "`parallel_rspec -n 4 spec` is read as a rspec suite run",
+        ),
+        Mutation(
+            "rake test and rake spec stop being read as a suite run",
+            '    if program == "rake" and args[:1] and re.match(r"^(?:test|spec)\\b", args[0]):\n',
+            "    if False:\n",
+            "`bundle exec rake spec` is read as a rake suite run",
+        ),
+        Mutation(
+            "every `rake` command is read as a suite run, a migration included",
+            '    if program == "rake" and args[:1] and re.match(r"^(?:test|spec)\\b", args[0]):\n',
+            '    if program == "rake":\n',
+            "`rake db:migrate` is not a suite run",
+        ),
+        Mutation(
+            "bin/e2e stops being read as a suite run",
+            '    if program == "e2e" and "bin/e2e" in tokens[0]:\n',
+            "    if False:\n",
+            "`bin/e2e e2e/x.spec.ts` is read as a e2e suite run",
+        ),
+        Mutation(
+            "bin/ci stops being read as a suite run",
+            '    if program == "ci" and "bin/ci" in tokens[0]:\n',
+            "    if False:\n",
+            "`RAILS_ENV=test bin/ci` is read as a ci suite run",
+        ),
+        Mutation(
+            # Any program called `ci` is not `bin/ci`.
+            "any program called ci is read as bin/ci",
+            '    if program == "ci" and "bin/ci" in tokens[0]:\n',
+            '    if program == "ci":\n',
+            "`gh ci status` is not a suite run",
+        ),
+        Mutation(
+            "`cypress open` is read as a suite run",
+            '    if program == "cypress" and args[:1] == ["run"]:\n',
+            '    if program == "cypress":\n',
+            "`cypress open` is not a suite run",
+        ),
+        Mutation(
             "an unbalanced quote raises instead of reading as no command",
             "    except ValueError:\n        return []\n    out: list[list[str]] = []\n",
             "    except ZeroDivisionError:\n        return []\n    out: list[list[str]] = []\n",
