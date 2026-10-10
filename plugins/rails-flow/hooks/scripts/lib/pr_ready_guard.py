@@ -85,7 +85,7 @@ def resolve_dir(payload: dict, start: str) -> tuple[str | None, str]:
 
 PLAIN_NUMBER = re.compile(r"\A[0-9]+\Z")
 PLAIN_BRANCH = re.compile(r"\A[A-Za-z0-9._/-]+\Z")
-REDIRECT = re.compile(r"\A[0-9]*(?:<|>|>>|>&|<&|&>)\Z")
+REDIRECT = re.compile(r"\A[0-9]*(?:>>?|<&?|&>|>&)(.*)\Z", re.S)
 
 
 def plain_word(w: str) -> bool:
@@ -111,9 +111,12 @@ def bad_word(segment: str) -> str | None:
         if skip:
             skip = False
             continue
-        if REDIRECT.match(w):
+        r = REDIRECT.match(w)
+        if r and not r.group(1):            # a bare operator: it and its target are the shell's
             skip = True
             continue
+        if r and not r.group(1).startswith("-"):
+            continue                        # an attached target (`2>/dev/null`); `>-R` is not one, and is judged
         if not seen_pr and w == "pr":
             seen_pr = True
             continue

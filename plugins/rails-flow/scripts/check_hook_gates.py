@@ -5354,10 +5354,10 @@ def guard_pr_ready_fixtures() -> None:
         for cmd in ("gh pr ready $PR", 'gh pr ready "$(echo 5)"'):
             expect(f"guard-pr-ready: a PR argument built by the shell cannot be judged: {cmd}", guard(repo, cmd), 2, "without running it")
         for cmd in ("gh pr ready 5 --rep o/r", "gh pr ready o/r#5", "gh pr ready 5 --hostname x", "gh --help pr ready 5",
-                    "gh pr ready 5 --undo=false"):
+                    "gh pr ready 5 --undo=false", "gh pr ready 5 >-R o/r"):
             expect(f"guard-pr-ready: with a green record, a word that is not a plain number or branch is refused: {cmd}",
                    guard(repo, cmd), 2, "is not a plain PR number or branch")
-        for cmd in ("gh pr ready my-branch", "gh pr ready feature/x-1", "gh pr ready 5", "gh pr ready -- 5", "gh pr ready 5 > /dev/null", "gh pr ready --undo"):
+        for cmd in ("gh pr ready 5 2>/dev/null", "gh pr ready 5 >/tmp/out", "gh pr ready 5 &>/dev/null", "gh pr ready my-branch", "gh pr ready feature/x-1", "gh pr ready 5", "gh pr ready -- 5", "gh pr ready 5 > /dev/null", "gh pr ready --undo"):
             expect(f"guard-pr-ready: with a green record, allowed: {cmd}", guard(repo, cmd), 0)
         for cmd in ("gh pr ready 5 -R o/r", "GH_REPO=o/r gh pr ready 5", "gh pr ready https://github.com/o/r/pull/5"):
             expect(f"guard-pr-ready: an explicit remote target is refused even with a green record: {cmd}", guard(repo, cmd), 2,
