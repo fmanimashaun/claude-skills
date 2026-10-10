@@ -43,8 +43,8 @@ archive is valid and the changed file is present inside it before handing off.
 ## Hand off
 
 Report: the issue, the confirmed correction with its citation, files edited, the
-version boundary recorded, and the repackage/verify result. Add your notes to the CHANGELOG
-under the component's **`### Unreleased`** heading — with the citation and the upstream
+version boundary recorded, and the repackage/verify result. Add your notes as a CHANGELOG fragment
+(`changelog.d/<issue>-<slug>.md`, folded under the component's **`### Unreleased`**) — with the citation and the upstream
 version boundary — but **bump no version**: numbers are assigned at the `dev -> main`
 promotion by `release-manager`. State which component changed (`rails-stack`) so the
 promotion bumps the right one. Stage only the files you authored; never `git add -A`.
