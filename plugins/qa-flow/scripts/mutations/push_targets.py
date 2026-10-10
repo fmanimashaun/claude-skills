@@ -643,5 +643,36 @@ GUARD = Guard(
             '        plain = True',
             "\"git -C '~/proj' push\": expected does not target main",
         ),
+        # ---- #1768: a bare `git config <key>` is a read; an empty-string argument does not end the command ----
+        Mutation(
+            "an empty-string argument ends the command again, so the words after it are read as a command of their own",
+            "        if t and set(t) <= SEPARATOR_CHARS:",
+            "        if set(t) <= SEPARATOR_CHARS:",
+            "\"git push origin '' main\": expected TARGETS main",
+        ),
+        Mutation(
+            "a write flag no longer turns `git config <key>` into a write",
+            "        if any(a in CONFIG_WRITE_FLAGS for a in args):\n            return False",
+            "        if False:\n            return False",
+            "unlisted shape 'git config --unset core.hooksPath'",
+        ),
+        Mutation(
+            "`git config <key> <value>` is read as a read, so setting core.hooksPath passes",
+            "        if len(words) == 1 and not _opaque(words[0]):",
+            "        if len(words) >= 1 and not _opaque(words[0]):",
+            "unlisted shape 'git config core.hooksPath /tmp/x'",
+        ),
+        Mutation(
+            "an option's own value (`--file <path>`) is counted as a positional word, so the read of that key is refused",
+            "            elif a in CONFIG_VALUE_FLAGS:\n                skip = True",
+            "            elif False:\n                skip = True",
+            "safe shape 'git config --file .git/config core.hooksPath'",
+        ),
+        Mutation(
+            "a key the shell has not expanded yet (`git config $KEY`) is read as a read",
+            "        if len(words) == 1 and not _opaque(words[0]):",
+            "        if len(words) == 1:",
+            "unlisted shape 'git config $KEY'",
+        ),
     ),
 )
