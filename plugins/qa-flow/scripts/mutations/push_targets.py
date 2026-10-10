@@ -189,7 +189,7 @@ GUARD = Guard(
         ),
         Mutation(
             "a prior cd is ignored, so a bare push is resolved in the wrong clone",
-            "            cwd = seg[1] if cwd is None or os.path.isabs",
+            "            cwd = target if cwd is None or os.path.isabs",
             "            cwd = None if cwd is None or os.path.isabs",
             "'cd other && git push': expected TARGETS main",
         ),
@@ -575,6 +575,73 @@ GUARD = Guard(
             '        if not quote and c == "<" and cmd.startswith("<<", i) and not cmd.startswith("<<<", i) \\\n                and (i == 0 or cmd[i - 1] != "<"):',
             '        if not quote and c == "<" and cmd.startswith("<<", i) and not cmd.startswith("<<<", i):',
             "'y=$(cat <<< x)\\ncat <<EOF\\ngit push origin main\\nEOF\\ngit push origin fix/x': expected does not target main",
+        ),
+        # ---- #1764: a directory named through the home directory (the hook is handed the RAW command) ----
+        Mutation(
+            "`~` is no longer expanded, so `git -C ~/proj push` resolves HEAD in a directory that does not exist (refused as unjudgeable, or judged in the wrong checkout)",
+            '    for prefix in ("${HOME}", "$HOME", "~"):',
+            '    for prefix in ("${HOME}", "$HOME"):',
+            "'git -C ~/proj push': expected TARGETS main",
+        ),
+        Mutation(
+            "`${HOME}` is no longer expanded",
+            '    for prefix in ("${HOME}", "$HOME", "~"):',
+            '    for prefix in ("$HOME", "~"):',
+            "'git -C ${HOME}/proj push': expected TARGETS main",
+        ),
+        Mutation(
+            "`$HOME` is no longer expanded",
+            '    for prefix in ("${HOME}", "$HOME", "~"):',
+            '    for prefix in ("${HOME}", "~"):',
+            "'git -C $HOME/proj push': expected TARGETS main",
+        ),
+        Mutation(
+            "another user's home (`~someone`) is expanded as if it were this one, so a directory the hook cannot know is judged as if it were read",
+            '        if word == prefix or word.startswith(prefix + "/"):',
+            '        if word.startswith(prefix):',
+            "'git -C ~someone/proj merge dev'",
+        ),
+        Mutation(
+            "a `cd` into the home directory is not expanded, so a push after it resolves HEAD in the wrong place",
+            '            target = home_expanded(seg[1])\n            cwd = target if cwd is None or os.path.isabs(target) else os.path.join(cwd, target)',
+            '            target = seg[1]\n            cwd = target if cwd is None or os.path.isabs(target) else os.path.join(cwd, target)',
+            "'cd ~/proj && git push': expected TARGETS main",
+        ),
+        Mutation(
+            "a `cd` into the home directory is not expanded where the context is read, so the stamp is read in the wrong place",
+            '            target = home_expanded(seg[1]) if len(seg) == 2 else ""',
+            '            target = seg[1] if len(seg) == 2 else ""',
+            "'cd $HOME/proj && git merge dev'",
+        ),
+        Mutation(
+            "`git -C ~/dir` is not expanded where the global option is parsed",
+            '            v = seg[i + 1] if a == "-c" else home_expanded(seg[i + 1])',
+            '            v = seg[i + 1]',
+            "'git -C ~/proj push origin hot:main'",
+        ),
+        Mutation(
+            "`git -C ~/dir` is not expanded where the verb is found",
+            '                    workdir = home_expanded(seg[i + 1])',
+            '                    workdir = seg[i + 1]',
+            "'git -C ~/proj push': expected TARGETS main",
+        ),
+        Mutation(
+            "a word is expanded even when one of its spellings is quoted, so `'~/proj'` is judged in the home directory when git runs in a literal directory named `~`",
+            '    if not home or not os.path.isabs(home) or word not in HOME_GOOD or word in HOME_BAD:',
+            '    if not home or not os.path.isabs(home) or word not in HOME_GOOD:',
+            "\"git -C '~/proj' push; git -C ~/proj push\": expected does not target main",
+        ),
+        Mutation(
+            "a double-quoted `\"$HOME/proj\"` (which the shell expands) is no longer expanded",
+            '        (HOME_GOOD if plain or double else HOME_BAD).add(word)',
+            '        (HOME_GOOD if plain else HOME_BAD).add(word)',
+            "'git -C \"$HOME/proj\" push': expected TARGETS main",
+        ),
+        Mutation(
+            "a quoted or escaped spelling is read as unquoted",
+            '        plain = not re.search(r"""["\'\\\\]""", raw)',
+            '        plain = True',
+            "\"git -C '~/proj' push\": expected does not target main",
         ),
     ),
 )
