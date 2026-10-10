@@ -149,8 +149,8 @@ GUARD = Guard(
         ),
         Mutation(
             'a capitalised Git in command position is no longer refused',
-            "(G[iI][tT]|g[I][tT]|gi[T])[[:space:]]'; then",
-            "(GNEVER)[[:space:]]'; then",
+            "if hit '^([^[:space:]]*/)?(G[iI][tT]|g[I][tT]|gi[T])([[:space:]]|$)'; then",
+            'if false; then',
             'the tripwire refuses `Git add -A`',
         ),
         Mutation(
@@ -161,8 +161,8 @@ GUARD = Guard(
         ),
         Mutation(
             'an abbreviation of a dangerous option is matched only when written in full',
-            'hit "^git[[:space:]]+reset([[:space:]].*)?[[:space:]]--h(a(r(d)?)?)?${_tw_end}"',
-            'hit "^git[[:space:]]+reset([[:space:]].*)?[[:space:]]--hard${_tw_end}"',
+            'hit "^git[[:space:]]+reset${_tw_nodd}[[:space:]]+--h(a(r(d)?)?)?${_tw_end}"',
+            'hit "^git[[:space:]]+reset${_tw_nodd}[[:space:]]+--hard${_tw_end}"',
             'the tripwire refuses `git reset --ha`',
         ),
         Mutation(
@@ -176,6 +176,36 @@ GUARD = Guard(
             '([[:space:]]+([^-[:space:]]|-[^-[:space:]]|--[^[:space:]])[^[:space:]]*)*[[:space:]]+(-T|--tasks|-D|--describe)',
             '([[:space:]]+[^[:space:]]+)*[[:space:]]+(-T|--tasks|-D|--describe)',
             'the tripwire refuses `bin/rails db:reset -- -T',
+        ),
+        Mutation(
+            'clean --force written as a prefix is no longer refused',
+            'hit "^git[[:space:]]+clean${_tw_nodd}[[:space:]]+--f(o(r(c(e)?)?)?)?${_tw_end}"',
+            'false',
+            'the tripwire refuses `git clean --forc`',
+        ),
+        Mutation(
+            'an abbreviated --no-verify is no longer refused',
+            'hit "^git[[:space:]]+(commit|push|merge|rebase|cherry-pick|pull|am|revert)${_tw_nodd}[[:space:]]+--no-v(e(r(i(f(y)?)?)?)?)?${_tw_end}"',
+            'false',
+            'the tripwire refuses `git commit --no-v -m x`',
+        ),
+        Mutation(
+            'a path after `--` is read as an option, so `git reset -- --ha` is refused',
+            "_tw_nodd='([[:space:]]+([^-[:space:]]|-[^-[:space:]]|--[^[:space:]])[^[:space:]]*)*'",
+            "_tw_nodd='([[:space:]]+[^[:space:]]+)*'",
+            'CONTROL: `git reset -- --ha`',
+        ),
+        Mutation(
+            'a quoted `--no-v` is read as an option, so a commit message is refused',
+            'rawhit "$cmd" "(^|[[:space:]])--no-v(e(r(i(f(y)?)?)?)?)?${_tw_end}"',
+            'true',
+            'CONTROL: `git commit -m "--no-v"',
+        ),
+        Mutation(
+            'a capitalised Git is read in the raw lines, so a body line that starts `Git hygiene` is refused',
+            "if hit '^([^[:space:]]*/)?(G[iI][tT]|g[I][tT]|gi[T])([[:space:]]|$)'; then",
+            'if rawhit "$cmd" \'(^|[[:space:]])(G[iI][tT]|g[I][tT]|gi[T])[[:space:]]\'; then',
+            'CONTROL: `git commit -m "$(cat <<\'EOF\'',
         ),
         # #1342: each discarding form goes unblocked again, or its safe twin gets caught with it.
         Mutation(

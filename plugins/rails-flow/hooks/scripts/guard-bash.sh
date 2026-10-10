@@ -309,6 +309,8 @@ fi
 #   4. `git` spelled with a capital (`Git`, `GIT`, `gIt`) in command position, before any argument: it is the same program on macOS.
 #   5. The unique prefix of a dangerous long option: `reset --ha`, `clean --forc`, `commit|push|merge|rebase|cherry-pick|pull|am|revert --no-v`. git reads an unambiguous prefix as the
 #      option, so `--ha` is `--hard`; a prefix git calls ambiguous would not run, so refusing it costs nothing. (push/switch/checkout are `_dangerous_option`, above.)
+# WHAT THIS DOES NOT CLAIM (#1793: the tripwire is not the boundary). `git${IFS}reset --hard`, `git $x --hard` and a verb that arrives through a variable are not read here; the
+# `git` shim (#1790) sees them after the shell expands them, and the pre-push and pre-commit hooks (#1789) judge the effect. No rule is added per spelling.
 # DEGRADED MODE keeps the unanchored rules below and refuses more by itself; nothing here can make a degraded command pass.
 _tw_all='(add|reset|checkout|switch|restore|clean|stash|branch|rm)'     # the verbs a dynamic COMMAND WORD or an eval hides
 _tw_verbs='(reset|checkout|switch|restore|clean|stash|branch|rm)'      # `add` is `_add_refused`'s: it allows a plain path and a glob in the last component (#1783), and refuses `$`, a backtick and a brace itself
@@ -331,7 +333,9 @@ if rawhit "$cmd" '[gG][iI][tT]'; then
   if [ "$degraded" = 0 ] && hit '^eval([[:space:]]|$)' && rawhit "$cmd" "[gG][iI][tT]([[:space:]]+-[^[:space:]]+)*[[:space:]]+${_tw_all}([[:space:]]|\$)"; then
     deny "eval beside a git working-tree command runs text built at run time, which cannot be read here, so it is refused. Write the git command out literally."
   fi
-  if rawhit "$cmd" '(^|[;&|(`{][[:space:]]*|^[[:space:]]*)(G[iI][tT]|g[I][tT]|gi[T])[[:space:]]'; then
+  # Rule 4 reads the NORMALISED segments (quotes and heredoc bodies already stripped), never the raw lines: a commit message or PR body with a line that starts "Git hygiene" is our
+  # own standard pattern, and a raw match refused it (#1813 review). A segment starts with the command word, so only a command named `Git` is seen.
+  if hit '^([^[:space:]]*/)?(G[iI][tT]|g[I][tT]|gi[T])([[:space:]]|$)'; then
     deny "write 'git' in lower case: on a case-insensitive filesystem (macOS) 'Git' runs the same program, and the rules here match the lower-case word."
   fi
 fi
@@ -340,10 +344,15 @@ fi
 # (`--no-` and `--no-e` are other options, which is why the floor is six characters); `--f` and longer of `--force`, which a dry run (`-n`, `--dry-run` or a prefix)
 # makes harmless on `clean`, as it does for the written-out option above. The exemption reads any segment, as the rules above do, and never applies in degraded mode.
 _tw_end='([[:space:]=]|$)'
-if [[ "$seg" == *--* ]] && { hit "^git[[:space:]]+reset([[:space:]].*)?[[:space:]]--h(a(r(d)?)?)?${_tw_end}" \
-   || { hit "^git[[:space:]]+clean([[:space:]].*)?[[:space:]]--f(o(r(c(e)?)?)?)?${_tw_end}" \
+# `--no-v…` is also read in the RAW text, where it must stand as its own word: the normaliser keeps a quoted `"--no-v"` as the bare word `--no-v` (it must, so `git add "-A"` is seen),
+# and raw text keeps the quote beside it, so `git commit -m "--no-v"` (a message) is not an option while `commit -m "fix" --no-v` is.
+# The words BEFORE a bare `--`: a path after `--` (`git reset -- --ha`) is not an option. (Quoted text is the raw check's business: see the `--no-v` note above.)
+_tw_nodd='([[:space:]]+([^-[:space:]]|-[^-[:space:]]|--[^[:space:]])[^[:space:]]*)*'
+if [[ "$seg" == *--* ]] && { hit "^git[[:space:]]+reset${_tw_nodd}[[:space:]]+--h(a(r(d)?)?)?${_tw_end}" \
+   || { hit "^git[[:space:]]+clean${_tw_nodd}[[:space:]]+--f(o(r(c(e)?)?)?)?${_tw_end}" \
         && ! exempt "^git[[:space:]]+clean([[:space:]].*)?([[:space:]]-[a-zA-Z]*n|[[:space:]]--d(r(y(-(r(u(n)?)?)?)?)?)?${_tw_end})"; } \
-   || hit "^git[[:space:]]+(commit|push|merge|rebase|cherry-pick|pull|am|revert)([[:space:]].*)?[[:space:]]--no-v(e(r(i(f(y)?)?)?)?)?${_tw_end}"; }; then
+   || { hit "^git[[:space:]]+(commit|push|merge|rebase|cherry-pick|pull|am|revert)${_tw_nodd}[[:space:]]+--no-v(e(r(i(f(y)?)?)?)?)?${_tw_end}" \
+        && rawhit "$cmd" "(^|[[:space:]])--no-v(e(r(i(f(y)?)?)?)?)?${_tw_end}"; }; }; then
   deny "git reset --hard (uncommitted work loss), clean --force and --no-verify require explicit user approval, and so does any abbreviation git reads as the full option (--ha for --hard, --forc for --force, --no-v for --no-verify)."
 fi
 # `*` and `..` stage as much as `.` (#1783 review).
