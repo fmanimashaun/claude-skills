@@ -35,7 +35,7 @@ GUARD = Guard(
             "hit() runs under pipefail again, so a long command that matches is read as no match",
             '( set +o pipefail; printf \'%s\\n\' "$seg" | grep -qE "$re" )',
             'printf \'%s\\n\' "$seg" | grep -qE "$re"',
-            "followed by 10k lines is still blocked",
+            "followed by 16k lines (~240 KB) is still blocked",
         ),
         # #1489: `bash < file` names no create, so the trigger must fire on the redirect itself.
         Mutation(
@@ -159,12 +159,7 @@ GUARD = Guard(
             "  : \"git stash drop/clear is refused",
             "`git stash drop` is blocked",
         ),
-        Mutation(
-            "the `git add` pattern goes back to first-argument anchoring",
-            "if hit '^git[[:space:]]+add([[:space:]]+-[a-zA-Z-]*)*[[:space:]]+(-[a-zA-Z]*A[a-zA-Z]*\\b|--all\\b|\\.{1,2}/?($|[[:space:]])|:/($|[[:space:]])|\\*($|[[:space:]]))'; then",
-            "if hit '^git[[:space:]]+add[[:space:]]+(-A\\b|--all\\b|\\.($|[[:space:]]))'; then",
-            "`git add -v -A` is blocked",
-        ),
+        # (No mutant for first-argument anchoring of the spelled `git add` rule: the allowlist refuses `git add -v -A` on its own (#1783).)
         # #906. The normaliser is what separates "mentions the rule" from "stages everything".
         Mutation(
             "the normaliser is bypassed and the raw text is matched, so a prefixed `FOO=1 git add -A` fails OPEN",
@@ -197,7 +192,7 @@ GUARD = Guard(
             'with no grep, hit() matches nothing, so every rule passes',
             '    local rest="$seg"$\'\\n\' line\n    while [ -n "$rest" ]; do\n      line="${rest%%$\'\\n\'*}"; rest="${rest#*$\'\\n\'}"\n      [[ $line =~ $re ]] && return 0',
             '    local rest="$seg"$\'\\n\' line\n    while [ -n "$rest" ]; do\n      line="${rest%%$\'\\n\'*}"; rest="${rest#*$\'\\n\'}"\n      false',
-            'with no grep, `git add -A` is blocked',
+            'with no grep, a LATER segment `cd x && git clean -fd` is blocked',   # `git add` is the allowlist's now (#1783)
         ),
         Mutation(
             # #1529 round 2
