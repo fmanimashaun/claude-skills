@@ -105,10 +105,12 @@ later). The outcomes:
 - The site proves it belongs to the app: it serves `/.well-known/assetlinks.json` at the root of the
   domain, naming the app's package and signing-certificate fingerprints, and "statement lists in any other
   location, or with any other name, are not valid"
-  ([Google](https://developers.google.com/digital-asset-links/v1/getting-started)). Play may re-sign the
-  app, so the Play signing fingerprint is needed too.
-- Without a valid link the app falls back to a Custom Tab with browser UI.
-- Play's own current policy (target API, developer account) is not stated here: read Play's pages.
+  ([Google](https://developers.google.com/digital-asset-links/v1/getting-started)). When Play App Signing is used, Play re-signs the
+  app, so the Play signing fingerprint is needed too
+  ([Android](https://developer.android.com/studio/publish/app-signing)).
+- Without a valid link the app falls back to a Custom Tab with browser UI
+  ([Chrome](https://developer.chrome.com/docs/android/trusted-web-activity/quick-start)).
+- Play's current policy (target API, developer account) is not documented here: read Play's pages.
 
 ## Proving it
 
@@ -116,5 +118,5 @@ later). The outcomes:
   icon files it names exist.
 - A test of the service worker's fetch handling asserts that a signed-in navigation is never
   written to a cache. It is not enough to assert that a public one is.
-- A request spec asserts that `/.well-known/assetlinks.json`, when the app ships a TWA, is served as JSON with
-  each `relation` and `target` field present.
+- Our own advice: a request spec asserts that `/.well-known/assetlinks.json`, when the app ships a TWA, is
+  served as JSON with each `relation` and `target` field present.
