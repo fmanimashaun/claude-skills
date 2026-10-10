@@ -175,5 +175,11 @@ GUARD = Guard(
             '    extra = []',
             "dirty_sources names a second database's schema file",
         ),
+        Mutation(
+            'the Solid prefix loses its underscore',
+            '    return all(table.startswith("solid_") for table in parse_schema(path.read_text(encoding="utf-8"))["tables"])',
+            '    return all(table.startswith("solid") for table in parse_schema(path.read_text(encoding="utf-8"))["tables"])',
+            "#1698 a project table that merely BEGINS `solid` (solidarity_votes) keeps its cache_schema.rb the project's",
+        ),
     ),
 )

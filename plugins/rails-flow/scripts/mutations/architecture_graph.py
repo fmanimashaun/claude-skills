@@ -131,5 +131,11 @@ GUARD = Guard(
             '                if False:',
             '#1698 a table in two schema files is drawn once (the first), and a note says so',
         ),
+        Mutation(
+            'the Solid prefix loses its underscore',
+            'all(t.startswith("solid_") for t in tables)',
+            'all(t.startswith("solid") for t in tables)',
+            "#1698 a project table that merely BEGINS `solid` (solidarity_votes) keeps its cache_schema.rb the project's",
+        ),
     ),
 )

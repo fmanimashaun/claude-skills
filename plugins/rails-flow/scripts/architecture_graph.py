@@ -2339,6 +2339,9 @@ def selftest() -> int:
     cache, _ = _tables({"schema.rb": _schema("invoices"), "cache_schema.rb": _schema("cache_notes")})
     check("#1698 a cache_schema.rb holding a table of the PROJECT's own is the project's (the name alone decides nothing)",
           cache.get("cache_notes") == "db/cache_schema.rb", str(cache))
+    solidarity, _ = _tables({"schema.rb": _schema("invoices"), "cache_schema.rb": _schema("solidarity_votes")})
+    check("#1698 a project table that merely BEGINS `solid` (solidarity_votes) keeps its cache_schema.rb the project's: the prefix is `solid_`",
+          solidarity.get("solidarity_votes") == "db/cache_schema.rb", str(solidarity))
     dup, notes = _tables({"schema.rb": _schema("invoices"), "observability_schema.rb": _schema("invoices")})
     check("#1698 a table in two schema files is drawn once (the first), and a note says so",
           dup == {"invoices": "db/schema.rb"} and any("table 'invoices' is in db/schema.rb and in db/observability_schema.rb" in n for n in notes), f"{dup} {notes}")

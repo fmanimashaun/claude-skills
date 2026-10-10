@@ -655,6 +655,7 @@ SCHEMA_TREES = (
     {"schema.rb": ["invoices"], "cache_schema.rb": []},
     {"schema.rb": ["invoices"], "zeta_schema.rb": ["z"], "alpha_schema.rb": ["a"], "queue_schema.rb": ["solid_queue_jobs"]},
     {"observability_schema.rb": ["error_groups"]},
+    {"schema.rb": ["invoices"], "cache_schema.rb": ["solidarity_votes"]},        # a project table that merely BEGINS "solid": `startswith("solid")` would call the file the framework's
 )
 
 
@@ -5265,6 +5266,18 @@ def selftest() -> int:
              only=check_schema_reader_drift, files={WIKI_REL: WIKI_OK, GRAPH_REL: "this is not python (\n"})
     scenario("a tree without both scripts has no two copies to disagree, and is silent", rule=SR, expect_finding=False,
              only=check_schema_reader_drift, files={WIKI_REL: WIKI_OK})
+    # The rule's own edge: a Solid trio file is the framework's only when EVERY table starts `solid_`. Stub copies that differ in exactly that prefix must disagree over the tree
+    # holding `solidarity_votes`; deleting that tree from SCHEMA_TREES turns this scenario silent.
+    def solid_copy(prefix: str, returns_str: bool) -> str:
+        wrap = "str(p)" if returns_str else "p"
+        return ("import re\nfrom pathlib import Path\ndef app_schema_files(root):\n    out = []\n    for p in sorted(Path(root).glob('db/*.rb')):\n"
+                "        tables = re.findall(r'create_table \"([^\"]+)\"', p.read_text())\n"
+                f"        if p.name.endswith('_schema.rb') and p.name != 'schema.rb' and tables and all(t.startswith({prefix!r}) for t in tables):\n            continue\n"
+                f"        out.append({wrap})\n    return out\n")
+    scenario("a graph copy whose Solid prefix is `solid`, not `solid_`, disagrees over a project table named solidarity_votes: a finding", rule=SR, expect_finding=True,
+             only=check_schema_reader_drift, files={WIKI_REL: solid_copy("solid_", False), GRAPH_REL: solid_copy("solid", True)})
+    scenario("copies with the same Solid prefix agree over every tree: silent", rule=SR, expect_finding=False,
+             only=check_schema_reader_drift, files={WIKI_REL: solid_copy("solid_", False), GRAPH_REL: solid_copy("solid_", True)})
 
     # -- undocumented-command (#835) --------------------------------------
     # Four shipped commands were in neither README; design-flow's listed six of twelve.

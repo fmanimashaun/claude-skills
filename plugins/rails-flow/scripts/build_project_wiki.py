@@ -751,6 +751,10 @@ def selftest() -> int:
         (project_cache / "db" / "cache_schema.rb").write_text(one_table("cache_notes"), encoding="utf-8")
         check("#1698 a cache_schema.rb holding a table of the PROJECT's own is the project's, and is on the page (the name alone decides nothing)",
               "## `cache_notes`" in render_all(build_model(project_cache))["Data-Model.md"])
+        solidarity = Path(td) / "solidarity"; solidarity.mkdir(); make(solidarity)
+        (solidarity / "db" / "cache_schema.rb").write_text(one_table("solidarity_votes"), encoding="utf-8")
+        check("#1698 a project table that merely BEGINS `solid` (solidarity_votes) keeps its cache_schema.rb the project's: the prefix is `solid_`",
+              "## `solidarity_votes`" in render_all(build_model(solidarity))["Data-Model.md"])
         dup = Path(td) / "dup"; dup.mkdir(); make(dup)
         (dup / "db" / "observability_schema.rb").write_text(one_table("invoices"), encoding="utf-8")
         m3 = build_model(dup)

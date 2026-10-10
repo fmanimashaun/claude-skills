@@ -1447,5 +1447,11 @@ GUARD = Guard(
             '        pass',
             'a tree without both scripts has no two copies to disagree, and is silent',
         ),
+        Mutation(
+            'the project-table-that-begins-solid tree is dropped',
+            '    {"schema.rb": ["invoices"], "cache_schema.rb": ["solidarity_votes"]},',
+            '',
+            'a graph copy whose Solid prefix is `solid`, not `solid_`, disagrees over a project table named solidarity_votes',
+        ),
     ),
 )
