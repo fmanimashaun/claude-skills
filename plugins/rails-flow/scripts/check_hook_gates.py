@@ -407,6 +407,45 @@ def stop_gate_fixtures() -> None:
     check("stop-gate: the no-timeout (stock macOS) path still passes a green suite",
           code == 0, f"exit {code}: {out.strip()[:160]!r}")
 
+    # WHERE THE CRITERIA AND THE WORK ORDER LIVE (#1700). `/rails-flow:feature` writes the criteria at `docs/product/acceptance/<slug>.md` and
+    # `/rails-flow:handoff` writes the work order at `docs/product/handoff/<slug>.md`, the paths `docs_layout.py` accepts. The gate read only the
+    # pre-layout `docs/acceptance/` and `docs/handoff/`, so a branch that followed the commands was blocked for criteria it had written. Both old
+    # paths still count for a project that committed there before.
+    def paths_scenario(*files: str) -> tuple[int, str]:
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            _git_repo(repo)
+            _run(["git", "checkout", "-q", "-b", "feature/widgets"], cwd=repo, check=True, capture_output=True)
+            (repo / "spec").mkdir()
+            (repo / "app").mkdir()
+            (repo / "app" / "widget.rb").write_text("class Widget; end\n")  # uncommitted app code: the gate wants criteria
+            criteria_ok = ("- **AC-1** Given a widget, when it is saved, then it is listed.\n"
+                           "- **AC-2** Given a blank name, when it is saved, then it is rejected with an error message.\n")
+            for rel in files:
+                (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+                (repo / rel).write_text(criteria_ok if "acceptance" in rel else "not a work order\n")
+            stubs = Path(td) / "bin"
+            stubs.mkdir()
+            _stub(stubs, "bundle", passing)
+            return run_hook("stop-gate.sh", cwd=repo, stdin="{}", path_prefix=[stubs],
+                            env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])})
+
+    code, out = paths_scenario()
+    check("stop-gate: app code with no criteria blocks, and names the layout path docs/product/acceptance/<slug>.md",
+          code == 2 and "Expected: docs/product/acceptance/widgets.md" in out, f"exit {code}: {out.strip()[:200]!r}")
+    code, out = paths_scenario("docs/product/acceptance/widgets.md")
+    check("stop-gate: criteria at docs/product/acceptance/<slug>.md are found (not 'no acceptance criteria')",
+          "no acceptance criteria" not in out, f"exit {code}: {out.strip()[:200]!r}")
+    code, out = paths_scenario("docs/acceptance/widgets.md")
+    check("stop-gate: criteria at the pre-layout docs/acceptance/<slug>.md still count",
+          "no acceptance criteria" not in out, f"exit {code}: {out.strip()[:200]!r}")
+    code, out = paths_scenario("docs/product/acceptance/widgets.md", "docs/product/handoff/widgets.md")
+    check("stop-gate: a work order at docs/product/handoff/<slug>.md is read, and one that does not hold blocks",
+          code == 2 and "the work order does not hold" in out, f"exit {code}: {out.strip()[:200]!r}")
+    code, out = paths_scenario("docs/product/acceptance/widgets.md", "docs/handoff/widgets.md")
+    check("stop-gate: a work order at the pre-layout docs/handoff/<slug>.md is still read",
+          code == 2 and "the work order does not hold" in out, f"exit {code}: {out.strip()[:200]!r}")
+
 
 # ---- guard-lane.sh (#823) -----------------------------------------------------------------------
 def guard_lane_fixtures() -> None:
