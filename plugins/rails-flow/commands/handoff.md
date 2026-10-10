@@ -6,7 +6,7 @@ argument-hint: "[blank to infer from the branch | <slug>]"
 # /rails-flow:handoff — $ARGUMENTS
 
 Everything an executor needs today is spread across `CLAUDE.md`, `GUARDRAILS.md`, the phase plan,
-`docs/brain/`, `docs/acceptance/<slug>.md` — and the conversation. That last one is the problem.
+`docs/brain/`, `docs/product/acceptance/<slug>.md` — and the conversation. That last one is the problem.
 Context that lives in chat evaporates on a fresh session, on a resume after a crash, on a second
 machine, and when the work is delegated to a subagent that never saw the discussion. What survives
 is what was written down.
@@ -15,10 +15,12 @@ So: **one file per unit of work**, holding everything needed to execute it and n
 
 ## Where it lives, and why not `HANDOFF.md`
 
-`docs/handoff/<slug>.md`, **committed**. The slug is the branch name after `feature/` or `fix/`
+`docs/product/handoff/<slug>.md`, **committed**. The slug is the branch name after `feature/` or `fix/`
 with any remaining `/` flattened to `-` — byte-identical to the rule
-`/rails-flow:feature` uses for `docs/acceptance/<slug>.md`, so a unit of work is one slug with two
-files: what "done" means, and how to get there.
+`/rails-flow:feature` uses for `docs/product/acceptance/<slug>.md`, so a unit of work is one slug with two
+files: what "done" means, and how to get there. It sits under `docs/product/` because that is where
+`docs_layout.py` homes a work order (a directory of its own fails that gate, #1700). A project that
+committed the pre-layout `docs/handoff/<slug>.md` is still read by the Stop gate and `checks.json`.
 
 [#127](https://github.com/fmanimashaun/claude-skills/issues/127) proposed a root `HANDOFF.md` and
 left committed-vs-gitignored open. Both halves are decided here, against the issue:
@@ -45,7 +47,7 @@ specific, observed failure — not for symmetry.
 One paragraph: what is being built and the outcome that makes it worth doing. No implementation.
 
 ## Acceptance criteria
-Graded by `docs/acceptance/<slug>.md` — AC-1, AC-2, AC-3. Cite the ids; do not restate them.
+Graded by `docs/product/acceptance/<slug>.md` — AC-1, AC-2, AC-3. Cite the ids; do not restate them.
 
 ## Scope
 ### In
@@ -72,7 +74,7 @@ clinic-scoped, no `Model.find(params[:id])`, 422 on invalid and 303 on redirect 
 
 ## Verify
 1. `bundle exec rspec spec/models/invoice_spec.rb` — 0 failures.
-2. `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_criteria.py" docs/acceptance/<slug>.md --specs spec`
+2. `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_criteria.py" docs/product/acceptance/<slug>.md --specs spec`
 3. `bundle exec rspec` — full suite, 0 failures.
 
 ## Executor
@@ -153,19 +155,19 @@ turn, or spend twenty turns making real progress on one.
 with `/` flattened to `-`. Not on such a branch and no argument: say so and stop — a work order
 with no slug has nothing to pair with.
 
-**2. Read before writing.** `docs/acceptance/<slug>.md` (the criteria — they are the graded
+**2. Read before writing.** `docs/product/acceptance/<slug>.md` (the criteria — they are the graded
 contract, and the work order cites their ids), `CLAUDE.md`, `GUARDRAILS.md`, and the plan for this
 unit. Do not invent criteria here: if the acceptance file is missing, write it first
 (`/rails-flow:feature` Phase 1) — a work order that grades itself is not a work order.
 
-**3. Write `docs/handoff/<slug>.md`.** Fill every section. Resolve every placeholder. Nothing may
+**3. Write `docs/product/handoff/<slug>.md`.** Fill every section. Resolve every placeholder. Nothing may
 depend on this conversation.
 
 **4. Verify — this gate does not get skipped.**
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_handoff.py" "docs/handoff/<slug>.md" \
-  --criteria "docs/acceptance/<slug>.md"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_handoff.py" "docs/product/handoff/<slug>.md" \
+  --criteria "docs/product/acceptance/<slug>.md"
 ```
 
 Exit `0` clean · `1` findings · `2` unusable (no file, or not a work order at all). On findings, fix
@@ -176,7 +178,7 @@ What the checker cannot do: judge whether the goal is the *right* goal, whether 
 enough*, or whether the stop conditions are *wise*. It checks that each is present, numeric where a
 number is the only falsifiable form, and free of dangling references. The judgement stays yours.
 
-**5. Commit** `docs/handoff/<slug>.md` by name, in the same commit as the criteria where possible.
+**5. Commit** `docs/product/handoff/<slug>.md` by name, in the same commit as the criteria where possible.
 Never `git add -A`.
 
 ## Reconciling the agents with the tier doctrine

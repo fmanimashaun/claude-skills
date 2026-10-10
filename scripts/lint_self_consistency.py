@@ -27,6 +27,9 @@ WHAT IT CHECKS
   undocumented-plugin         a plugin declared in marketplace.json that CLAUDE.md or
                               README.md never names — it ships while the doc describing
                               what ships omits it
+  docs-path-outside-layout    a `docs/<dir>/` that rails-flow's commands, agents, hooks, checks or scripts name,
+                              where `<dir>` is not in `docs_layout.py`'s LAYOUT: the path the plugin prescribes
+                              fails the plugin's own docs-layout gate (#1700)
   undocumented-command        a plugins/<p>/commands/<c>.md that README.md (as `c`) or the
                               plugin's README (as /p:c) never names — same defect, one level down
   hook-lib-drift              the two shipped copies of hooks/scripts/lib/normalize_cmd.sh, or of lib/deadline.sh,
@@ -775,6 +778,58 @@ def check_claude_md_growth() -> tuple[list[Finding], int]:
             f"`{CLAUDE_MD_HISTORY}` is missing -- CLAUDE.md's rules point at it for their reasoning, and a "
             "pointer to a file that does not exist reads as authoritative while resolving to nothing"))
     return findings, count
+
+
+DOCS_DIR = re.compile(r"(?<![\w/.-])docs/([A-Za-z0-9_-]+)/")
+# THIS REPOSITORY'S OWN DOCS, cited by the plugins as pointers (`docs/doctrine/harness-doctrine.md`): they live in the marketplace repo, not in the
+# project the plugin runs in, so no project's layout gate ever reads them.
+OWN_REPO_DOCS = {"doctrine"}
+
+
+def check_docs_path_outside_layout() -> tuple[list[Finding], int]:
+    """Every `docs/<dir>/` rails-flow tells an agent to write or read is a directory its own layout gate accepts (#1700).
+
+    `/rails-flow:handoff` and `/rails-flow:feature` told the agent to commit `docs/handoff/<slug>.md`, and `docs_layout.py` (run by
+    `bin/doctrine` as `rails-flow/docs-layout`) failed that very path because `handoff` is not in its LAYOUT. #910 was the same defect
+    for `docs/acceptance/`. Two parts of one plugin disagreeing about where a file lives is invisible to each part alone, so this reads
+    LAYOUT and every place the plugin names a `docs/<dir>/`.
+
+    A MENTION OF A PRE-LAYOUT PATH THAT SAYS SO IS NOT A PRESCRIPTION: a project that committed `docs/handoff/` before the layout keeps
+    working because the Stop gate and `checks.json` still read it, and the line that reads it says "pre-layout". Any other line naming a
+    directory outside LAYOUT is a finding. Out of scope, deliberately: `docs_layout.py` itself (its migration tables name the old
+    directories), selftests and the hook fixtures (they build trees on purpose), and the other plugins, which keep their own docs.
+    """
+    layout_file = ROOT / "plugins" / "rails-flow" / "scripts" / "docs_layout.py"
+    if not layout_file.is_file():
+        return [], 0  # a tree without the layout gate has nothing to disagree with
+    allowed: set[str] = set()
+    for node in ast.walk(ast.parse(read(layout_file))):
+        if isinstance(node, (ast.Assign, ast.AnnAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            if any(isinstance(t, ast.Name) and t.id == "LAYOUT" for t in targets) and isinstance(node.value, ast.Dict):
+                allowed = {k.value for k in node.value.keys if isinstance(k, ast.Constant) and isinstance(k.value, str)}
+    if not allowed:
+        return [Finding("docs-path-outside-layout", layout_file.relative_to(ROOT).as_posix(), 0,
+                        "LAYOUT is not a literal dict of directory names, so no path the plugin prescribes can be checked against it")], 0
+    plugin = ROOT / "plugins" / "rails-flow"
+    scanned = [*sorted(plugin.glob("commands/*.md")), *sorted(plugin.glob("agents/*.md")), *sorted(plugin.glob("reference/*.md")),
+               *sorted(plugin.glob("hooks/scripts/**/*.sh")),
+               *sorted(plugin.glob("checks.json")),
+               *(p for p in sorted(plugin.glob("scripts/*.py"))
+                 if not p.name.endswith("_selftest.py") and not p.name.startswith(("docs_layout", "check_hook_gates")))]
+    findings: list[Finding] = []
+    for path in scanned:
+        for number, line in enumerate(read(path).splitlines(), 1):
+            if "pre-layout" in line:
+                continue
+            for directory in DOCS_DIR.findall(line):
+                if directory not in allowed and directory not in OWN_REPO_DOCS:
+                    findings.append(Finding(
+                        "docs-path-outside-layout", path.relative_to(ROOT).as_posix(), number,
+                        f"names `docs/{directory}/`, which is not in docs_layout.py's LAYOUT ({', '.join(sorted(allowed))}): the path the plugin "
+                        f"prescribes fails its own docs-layout gate. Put it under a LAYOUT directory (docs/product/{directory}/), or, for a "
+                        f"fallback that reads the old path, say \"pre-layout\" on that line"))
+    return findings, len(scanned)
 
 
 def check_undocumented_commands() -> tuple[list[Finding], int]:
@@ -3800,6 +3855,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     unenforced, flag_examined = check_unenforced_mandatory_flags(python_sources)
     undocumented, plugins_examined = check_undocumented_plugins()
     undoc_cmds, commands_examined = check_undocumented_commands()
+    docs_paths, docs_paths_examined = check_docs_path_outside_layout()
     growth, claude_md_lines = check_claude_md_growth()
     hook_lib, hook_lib_copies = check_hook_lib_drift()
     fixture_git, fixture_git_copies = check_fixture_git_drift()
@@ -3906,6 +3962,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "unreleased_changelog_bullets_placed": bullet_sec_examined,
         "plugins_with_a_changelog_section": cl_sections_examined,
         "hook_scripts_counted": hook_cnt_examined,
+        "rails_flow_files_checked_for_docs_paths_outside_layout": docs_paths_examined,
         "conditional_floor_claims": dangling_examined,
         "plugin_paragraphs_naming_a_role": flat_role_examined,
         "shipped_docs_contemplating_a_running_server": unowned_examined,
@@ -3916,7 +3973,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "scaffolded_boolean_toggles": toggles_examined,
         **call_coverage,
     }
-    return (dead + unenforced + undocumented + undoc_cmds + growth + hook_lib + fixture_git + fixture_bypass + bare + misdesc + unbounded + author_me + components + call_sites + invisible
+    return (dead + unenforced + undocumented + undoc_cmds + docs_paths + growth + hook_lib + fixture_git + fixture_bypass + bare + misdesc + unbounded + author_me + components + call_sites + invisible
             + markers + uncontained + nonhermetic + pointers + rel_links + leaving + outlines + uninstallable + plugin_root + mkt_ver + coercions + topologies + schema + unwired
             + ci_gates + cl_ignore + controllers + labels + comp_labels + orphans + keyfilter
             + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
@@ -5090,6 +5147,36 @@ def selftest() -> int:
         "the history file CLAUDE.md points at is missing", rule="claude-md-growth", expect_finding=True,
         files={"CLAUDE.md": "@AGENTS.md\n<!-- claude-md: max-lines 10 -->\nrule\n"},
     )
+
+    # -- docs-path-outside-layout (#1700) ---------------------------------
+    DL = {"plugins/rails-flow/scripts/docs_layout.py": 'LAYOUT: dict[str, tuple[str, str]] = {"product": ("a", "b"), "brain": ("c", "d")}\n'}
+    DP = "docs-path-outside-layout"
+    scenario("a command that writes docs/handoff/<slug>.md, a directory the layout lacks", rule=DP, expect_finding=True,
+             only=check_docs_path_outside_layout, files={**DL, "plugins/rails-flow/commands/handoff.md": "Write `docs/handoff/<slug>.md`.\n"}, line=1)
+    scenario("a reference document that names docs/acceptance/<slug>.md (model-tiers.md did, by hand-fix only)", rule=DP, expect_finding=True,
+             only=check_docs_path_outside_layout,
+             files={**DL, "plugins/rails-flow/reference/model-tiers.md": "is why `docs/acceptance/<slug>.md` is a precondition\n"}, line=1)
+    scenario("a hook script that reads docs/acceptance/<slug>.md", rule=DP, expect_finding=True, only=check_docs_path_outside_layout,
+             files={**DL, "plugins/rails-flow/hooks/scripts/stop-gate.sh": 'criteria="docs/acceptance/${slug}.md"\n'})
+    scenario("a checks.json glob that names a directory outside the layout", rule=DP, expect_finding=True, only=check_docs_path_outside_layout,
+             files={**DL, "plugins/rails-flow/checks.json": '{"match": "{match:docs/handoff/*.md}"}\n'})
+    scenario("a script docstring that names one", rule=DP, expect_finding=True, only=check_docs_path_outside_layout,
+             files={**DL, "plugins/rails-flow/scripts/check_x.py": '"""Run: python3 check_x.py docs/handoff/<slug>.md"""\n'})
+    scenario("a path under a LAYOUT directory is silent", rule=DP, expect_finding=False, only=check_docs_path_outside_layout,
+             files={**DL, "plugins/rails-flow/commands/handoff.md": "Write `docs/product/handoff/<slug>.md` and `docs/brain/STATUS.md`.\n"})
+    scenario("a line that says pre-layout is a fallback, not a prescription, and silent", rule=DP, expect_finding=False,
+             only=check_docs_path_outside_layout,
+             files={**DL, "plugins/rails-flow/hooks/scripts/stop-gate.sh": '[ -f "docs/handoff/${slug}.md" ] && h=1  # pre-layout path, still read\n'})
+    scenario("a selftest, docs_layout.py's own tables and another plugin's docs are out of scope, and silent", rule=DP, expect_finding=False,
+             only=check_docs_path_outside_layout,
+             files={**DL, "plugins/rails-flow/scripts/check_x_selftest.py": "docs/handoff/x.md\n",
+                    "plugins/design-flow/commands/assets.md": "docs/assets/x\n"})
+    scenario("a pointer to this repository's own docs/doctrine/ is silent", rule=DP, expect_finding=False, only=check_docs_path_outside_layout,
+             files={**DL, "plugins/rails-flow/hooks/scripts/x.sh": "# see docs/doctrine/harness-doctrine.md\n"})
+    scenario("a tree without docs_layout.py has nothing to disagree with, and is silent", rule=DP, expect_finding=False,
+             only=check_docs_path_outside_layout, files={"plugins/rails-flow/commands/handoff.md": "docs/handoff/<slug>.md\n"})
+    scenario("a LAYOUT that is not a literal dict is itself a finding", rule=DP, expect_finding=True, only=check_docs_path_outside_layout,
+             files={"plugins/rails-flow/scripts/docs_layout.py": "LAYOUT = build()\n"})
 
     # -- undocumented-command (#835) --------------------------------------
     # Four shipped commands were in neither README; design-flow's listed six of twelve.
