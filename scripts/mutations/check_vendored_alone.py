@@ -66,5 +66,41 @@ GUARD = Guard(
             '',
             'a script named only beside the vendor DIRECTORY is not run',
         ),
+        Mutation(
+            'a digit in a name is no longer read in a .claude/scripts path, so check2.py under .claude/scripts is never found (#1773)',
+            'VENDORED_PATH = re.compile(r"\\.claude/scripts/([a-z0-9_]+\\.py)")',
+            'VENDORED_PATH = re.compile(r"\\.claude/scripts/([a-z_]+\\.py)")',
+            'a script under .claude/scripts with a digit in its name is discovered',
+        ),
+        Mutation(
+            'a digit in a name is no longer read beside a vendoring verb, so a script named step2.py is never found (#1773)',
+            'BACKTICKED_SCRIPT = re.compile(r"`([a-z0-9_]+\\.py)`")',
+            'BACKTICKED_SCRIPT = re.compile(r"`([a-z_]+\\.py)`")',
+            'a script with a digit in its name, named beside a vendoring verb, is discovered',
+        ),
+        Mutation(
+            'the verb copy is no longer read, so Copy `x.py` into your project does not put x.py under the gate (#1773)',
+            '    re.compile(r"\\b(?:copy|copies|copied|copying)\\s+" + _ARTICLE + r"`([a-z0-9_]+\\.py)`", re.I),\n',
+            '',
+            'a script a doc tells projects to copy, with the verb beside its name, is discovered',
+        ),
+        Mutation(
+            'drop in is no longer read, so Drop in `x.py` does not put x.py under the gate (#1773)',
+            '    re.compile(r"\\bdrop\\s+in\\s+" + _ARTICLE + r"`([a-z0-9_]+\\.py)`", re.I),\n',
+            '',
+            'a script a doc tells projects to drop in is discovered',
+        ),
+        Mutation(
+            'Drop `x.py` in is no longer read, so the verb before the name and in after it does not put x.py under the gate (#1773)',
+            '    re.compile(r"\\bdrop(?:s|ped|ping)?\\s+" + _ARTICLE + r"`([a-z0-9_]+\\.py)`\\s+in\\b", re.I),\n',
+            '',
+            'the verb before its name and in after it, is discovered',
+        ),
+        Mutation(
+            'copy may sit anywhere before the name, so a script only near the word copy is run (#1773)',
+            '    re.compile(r"\\b(?:copy|copies|copied|copying)\\s+" + _ARTICLE + r"`([a-z0-9_]+\\.py)`", re.I),\n',
+            '    re.compile(r"\\b(?:copy|copies|copied|copying)\\s+(?:\\w+\\s+){0,6}" + _ARTICLE + r"`([a-z0-9_]+\\.py)`", re.I),\n',
+            'a script only near the word copy, not beside it as a verb, is not run',
+        ),
     ),
 )
