@@ -33,6 +33,9 @@ Then write the report (`docs/brain/retro/<today>.md`; `--out` picks another path
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/retro.py"
 ```
 
+With `--since` or `--until` it runs `git log -1 --format=%cs` (read-only) on each PR file to date it. `--out` is refused when it is under the
+findings directory, ends in `findings.jsonl`, or names an existing file that is not a previous retro report: it never overwrites a finding.
+
 Exit 2 means there was **nothing to read** (no findings files, or none with a usable record): say so. It is not "nothing recurs", and you
 must not report it as clean.
 
@@ -40,8 +43,11 @@ must not report it as clean.
 
 - **Severity** is mapped to high, medium and low, and every raw spelling it mapped is listed (real records use P1 to P3, blocker/major/minor,
   BLOCKING/SUGGESTION and more). A spelling it does not know, or a state like `resolved`, is `unmapped`: it is listed, never guessed.
-- **Categories** are merged only where a severity word was written into the category (`claims-vs-enforcement (BLOCKING)`); the report lists
-  each spelling it merged. A different phrase is a different category. Records without a category are counted and never proposed on.
+- **Categories** are grouped by their spelling with a severity word stripped from the edge (`blocking`, `blocker`, `suggestion`, `advisory`,
+  `p1` to `p3`, with or without parentheses) and the case folded, so `claims-vs-enforcement (BLOCKING)` joins `claims-vs-enforcement`. Ordinary
+  words such as `info` or `minor` are not stripped. **Every** category whose key differs from the spelling it was written in is listed, merged
+  or alone, so nothing is renamed out of sight. Records without a category are counted and never proposed on.
+- A **signature** counts per category: the same label in two categories is two defects, not a repeat.
 - **mechanical candidate**: a signature that recurs in 2 or more sources, or a file pattern (two directories and a suffix) that 60% of the
   group's records share across the threshold's sources. This is a **heuristic for a person to judge**, not a verdict: a signature is the
   reviewer's own label and can coincide (a numbered criterion in different PRs), which is why the report prints the issue text beside it.
