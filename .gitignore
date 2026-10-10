@@ -66,3 +66,6 @@ node_modules/
 
 # Claude Code writes this beside a mod it loads with --plugin-dir (the types/ folder ignores itself)
 plugins/*/tsconfig.json
+
+# A cost record measured outside CI under --host; nothing reads it (#1738)
+docs/evidence/mutation-cost-baseline.local.json

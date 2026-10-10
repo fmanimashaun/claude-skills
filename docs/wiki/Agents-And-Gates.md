@@ -210,6 +210,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | hook slow paths selftest | `repo` | `python3 scripts/hook_slow_paths.py --selftest` | selftest |
 | inventory data selftest | `repo` | `python3 scripts/inventory_data.py --selftest` | selftest |
 | issue graph selftest | `repo` | `python3 scripts/issue_graph.py --selftest` | selftest |
+| linux check selftest | `repo` | `python3 scripts/linux_check_selftest.py` | live check |
 | maintainer doctor | `repo` | `python3 scripts/maintainer_doctor.py --selftest` | selftest |
 | maintainer skill drift | `repo` | `python3 scripts/build_maintainer_skills.py --check` | live check |
 | maintainer skill selftest | `repo` | `python3 scripts/build_maintainer_skills.py --selftest` | selftest |
@@ -224,6 +225,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | mutation check | `repo` | `python3 scripts/mutation_check.py --selftest` | selftest |
 | mutation cost record | `repo` | `python3 scripts/mutation_check.py --check-record` | live check |
 | mutation coverage | `repo` | `python3 scripts/mutation_check.py` | live check · 9000s budget |
+| mutation incremental selftest | `repo` | `python3 scripts/mutation_incremental_selftest.py` | live check |
 | packaging determinism | `repo` | `python3 scripts/package_core.py --selftest` | selftest |
 | page pacing | `repo` | `python3 scripts/check_page_pacing.py` | live check |
 | page pacing selftest | `repo` | `python3 scripts/check_page_pacing.py --selftest` | selftest |
