@@ -442,6 +442,9 @@ SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
 # `bash -o pipefail -c 'git push origin main'` stopped at `-o` and passed).
 SHELL_OPTS_WITH_VALUE = {"-o", "+o", "-O", "+O", "--rcfile", "--init-file"}
 MAX_DEPTH = 4
+# #1770: set while `all_segments` reads a command that DEFINES a shell function. A body is judged where it is written, as if it ran there, whether or
+# not (or when, or how often) the name is called; `effects` then refuses the state a call site could change under that model.
+FUNCS = [False]
 
 
 WRAPPERS = {"sudo", "doas", "env", "command", "exec", "nohup", "time", "timeout", "nice", "builtin", "stdbuf",
@@ -474,14 +477,23 @@ def all_segments(cmd: str, depth: int = 0):
         raise Unjudgeable("shell strings nested too deeply to read")
     if depth == 0:
         HOME_GOOD.clear(); HOME_BAD.clear()
+        FUNCS[0] = False
     bodies: list[str] = []
     toks = tokens(cmd, bodies)
     if "()" in toks:
-        raise Unjudgeable("a function definition: what its name runs later is not read")
+        FUNCS[0] = True       # `name() body`: the name is its own segment and the body's commands are segments below, judged as written (#1770)
     for seg in segments(toks):
         check_words(seg)
-        if seg[0] in ("alias", "function", "coproc"):
+        if seg[0] in ("alias", "coproc"):
             raise Unjudgeable(f"`{seg[0]}` defines a name that can run any command later")
+        if seg[0] == "function":
+            # `function NAME { body }` / `function NAME() { body }`: drop the keyword and the name, judge the rest as written (#1770)
+            if len(seg) < 2 or not re.fullmatch(r"[A-Za-z_][\w.:+@-]*", seg[1]):
+                raise Unjudgeable("a function definition whose name cannot be read")
+            FUNCS[0] = True
+            seg = seg[2:]
+            if not seg:
+                continue
         yield seg
         for k, word in enumerate(seg):
             if is_command(word, SHELLS):
@@ -1533,6 +1545,23 @@ def literal_vars(cmd: str) -> dict[str, str]:
     return {n: vs[0] for n, vs in bound.items() if len(vs) == 1 and vs[0] is not None and n not in bare}
 
 
+def _function_state_check(seg: list[str]) -> None:
+    """#1770. A function body is judged where it is written, but it RUNS where it is called, which may be before the definition, after a `cd`, or after a
+    branch change. So in a command that defines a function, anything that changes where or on what a later git runs is refused rather than modelled: a
+    `cd`/`pushd`, a GIT_DIR-style environment redirect, and any git verb that moves HEAD or a ref."""
+    head = next((w for w in seg if w not in WRAPPERS and not re.fullmatch(r"[A-Za-z_]\w*=.*", w)), "")
+    if head in ("cd", "pushd", "popd") or any(GIT_ENV_REDIRECT.match(w) for w in seg):
+        raise Unjudgeable("a command that defines a function and also changes directory or redirects git: where the body runs cannot be read")
+    for tool, j in command_indexes(seg):
+        if tool == "git":
+            verb, args, _, _ = git_parse(seg, j)
+            if verb:
+                scratch = _Flow()
+                scratch.after(verb, args, None)
+                if scratch.head_moved or scratch.refs_moved or scratch.tainted or scratch.unknown_dir:
+                    raise Unjudgeable("a command that defines a function and also moves HEAD or a ref: when the body runs cannot be read")
+
+
 def effects(cmd: str, current) -> list[tuple[str, str, str]]:
     """`(line, repo, dir)` for everything in `cmd` that merges into main or publishes. `repo` is the
     repository the command acts on when it says so (`-R`, GH_REPO, a `repos/o/r/` path, a git remote as
@@ -1540,6 +1569,10 @@ def effects(cmd: str, current) -> list[tuple[str, str, str]]:
     out: list[tuple[str, str, str]] = []
     flow = _Flow()
     lits, known = literal_vars(cmd), {}
+    every = list(all_segments(cmd))
+    if FUNCS[0]:
+        for seg in every:
+            _function_state_check(seg)
     for seg, cwd, env_repo in ctx_segments(cmd):
         for tool, j in command_indexes(seg):
             if tool == "git":
@@ -2164,7 +2197,7 @@ def selftest() -> int:
         "gh api -X POST repos/o/r/merge-upstream -f branch=main", "gh api -X POST repos/o/r/transfer",
         "gh api graphql -f query='mutation{mergeBranch(input:{}){x}}'",
         "gh api graphql -f query='mutation{createDeployment(input:{}){x}}'",
-        "foo() { gh pr merge 7; }; foo", "alias gm='git merge'", "function f { git merge x; }",
+        "alias gm='git merge'",
         "git merge $((1+1))", "git push origin $((1+1))",
     ]
     for cmd in unlisted:
@@ -2186,6 +2219,35 @@ def selftest() -> int:
             got = [f"unjudgeable: {exc}"]
         if got != want:
             failures.append(f"classify {cmd!r}: expected {want}, got {got}")
+    # (#1770) A function body is judged where it is written, as the same commands would be inline; what a call site could change under that model is refused.
+    # want None = Unjudgeable (the gate refuses); a list = the effect lines.
+    push_main = ["PUSH_MAIN main"]
+    for cmd, want in (
+            ("g(){ echo hi; }; g", []), ("g(){ git grep -n \"$1\" HEAD; }; g x", []),
+            ("g() { echo hi; } && g", []), ("g(){\n  echo hi\n}\ng", []), ("function g { echo hi; }; g", []), ("function g() { echo hi; }; g", []),
+            ("f(){ git push origin main; }; f", push_main), ("f(){ git push origin main; }", push_main),         # never called: judged as if called, since a call can come from anywhere
+            ("f(){\n  git push origin main\n}\nf", push_main), ("function f { git push origin main; }; f", push_main),
+            ("function f() { git push origin main; }; f", push_main), ("f; f(){ git push origin main; }", push_main),
+            ("git(){ command git push origin main; }; git status", push_main), ("g(){ echo hi; }; g(){ git push origin main; }; g", push_main),
+            ("g(){ git push origin main; }; g(){ echo hi; }; g", push_main),                                        # the first body may have run: both are judged
+            ("a(){ b(){ git push origin main; }; b; }; a", push_main), ("f(){ f; git push origin main; }; f", push_main),
+            ("f(){ ( git push origin main ); }; f", push_main), ("f() ( git push origin main ); f", push_main),
+            ("f(){ git merge x; }; f", None), ("foo() { gh pr merge 7; }; foo", ["PR_MERGE 7"]),
+            ("f(){ git push origin feat/x; }; f", []), ("function f", []),
+            ("f(){ git push \"$@\"; }; f origin main", None), ("f(){ git push origin $1; }; f main", None), ("f(){ git push origin \"${1}\"; }; f main", None),
+            ("f(){ git push origin \"$*\"; }; f main", None), ("f(){ shift; git push origin \"$1\"; }; f x main", None),
+            ("f(){ git \"$@\"; }; f push origin main", None), ("f(){ \"$@\"; }; f git push origin main", None), ("f(){ $1 push origin main; }; f git", None),
+            ("f(){ eval \"$1\"; }; f 'git push origin main'", None), ("f(){ eval git push origin main; }; f", push_main),
+            ("f(){ bash -c 'git push origin main'; }; f", push_main), ("f(){ cd /tmp; }; git push", None), ("f(){ git push; }; cd /x; f", None),
+            ("f(){ git checkout dev; }; f; git push", None), ("git checkout dev; f(){ git push; }; f", None), ("f(){ git push; }; GIT_DIR=/x f", None),
+            ("function $x { echo; }", None), ("alias g='git push origin main'; g", None)):
+        api_total += 1
+        try:
+            got = cls(cmd.replace("\\n", "\n"), on_feature)
+        except Unjudgeable as exc:
+            got = None
+        if got != want:
+            failures.append(f"function fixture {cmd!r}: expected {want}, got {got}")
     # "no" must not share an exit code with a crash: python's uncaught-exception exit is 1.
     if NO in (0, 1) or UNJUDGEABLE == NO:
         failures.append(f"exit codes: NO={NO} must differ from 0, 1 (a crash) and UNJUDGEABLE")

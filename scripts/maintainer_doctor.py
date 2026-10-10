@@ -412,6 +412,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #1204. The installer reported success and wrote a hook git never runs under core.hooksPath
     # or from a linked worktree; the selftest proves each case with a real merge, not a file check.
     ("pipeline hook install", ("python3", "plugins/pipeline/scripts/install_git_hooks_selftest.py")),
+    # #1789. The pre-push and pre-commit guards (a protected branch is only fast-forwarded; the staged content is checked) are proven with real
+    # pushes into a bare remote and real commits, and then a look at what MOVED, not at an exit code.
+    ("pipeline git guards", ("python3", "plugins/pipeline/scripts/git_guard_selftest.py")),
     # #1341. The deploy safety pass is BLOCKING; its "no secret in a committed file" step is this script.
     ("pipeline committed-secret scan", ("python3", "plugins/pipeline/scripts/scan_committed_secrets.py", "--selftest")),
     # #1465. A Kamal destination is carried through whole: `-d` on every command, the destination's
