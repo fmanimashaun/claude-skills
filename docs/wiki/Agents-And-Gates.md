@@ -52,7 +52,7 @@
 
 | agent | tier · model | tools | named by | what proves its output |
 |---|---|---|---|---|
-| `adversary` | adversarial · fable | Read, Grep, Glob, Bash | — | — |
+| `adversary` | adversarial · fable | Read, Grep, Glob, Bash | `/rails-flow:feature`, `/rails-flow:fix` | — |
 | `claim-verifier` | judgement · inherit | Read, Grep, Glob, Bash | `/rails-flow:issues` | — |
 | `claude-skills-reporter` | judgement · inherit | Read, Grep, Glob, Bash, Write, Skill | `/rails-flow:report`, `/rails-flow:setup-flow` | — |
 | `code-reviewer` | judgement · inherit | Read, Grep, Glob, Bash, Skill | `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:issues` | — |
