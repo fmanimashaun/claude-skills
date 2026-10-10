@@ -784,6 +784,8 @@ DOCS_DIR = re.compile(r"(?<![\w/.-])docs/([A-Za-z0-9_-]+)/")
 # THIS REPOSITORY'S OWN DOCS, cited by the plugins as pointers (`docs/doctrine/harness-doctrine.md`): they live in the marketplace repo, not in the
 # project the plugin runs in, so no project's layout gate ever reads them.
 OWN_REPO_DOCS = {"doctrine"}
+# THE MODULE THAT MOVES A PLUGIN'S OWN FILES out of the old places exists to name them (`docs/assets/`, `docs/design-system/`), so it is not scanned (#1779).
+MIGRATIONS = {"asset_home.py"}
 
 
 def check_docs_path_outside_layout() -> tuple[list[Finding], int]:
@@ -797,7 +799,9 @@ def check_docs_path_outside_layout() -> tuple[list[Finding], int]:
     A MENTION OF A PRE-LAYOUT PATH THAT SAYS SO IS NOT A PRESCRIPTION: a project that committed `docs/handoff/` before the layout keeps
     working because the Stop gate and `checks.json` still read it, and the line that reads it says "pre-layout". Any other line naming a
     directory outside LAYOUT is a finding. Out of scope, deliberately: `docs_layout.py` itself (its migration tables name the old
-    directories), selftests and the hook fixtures (they build trees on purpose), and the other plugins, which keep their own docs.
+    directories), `asset_home.py` (design-flow's own migration, which exists to name its old places), selftests and the hook fixtures (they
+    build trees on purpose), and the other plugins, which keep their own docs. design-flow is in scope since #1779, when it was found
+    prescribing `docs/assets/` and `docs/design-system/`.
     """
     layout_file = ROOT / "plugins" / "rails-flow" / "scripts" / "docs_layout.py"
     if not layout_file.is_file():
@@ -811,12 +815,13 @@ def check_docs_path_outside_layout() -> tuple[list[Finding], int]:
     if not allowed:
         return [Finding("docs-path-outside-layout", layout_file.relative_to(ROOT).as_posix(), 0,
                         "LAYOUT is not a literal dict of directory names, so no path the plugin prescribes can be checked against it")], 0
-    plugin = ROOT / "plugins" / "rails-flow"
-    scanned = [*sorted(plugin.glob("commands/*.md")), *sorted(plugin.glob("agents/*.md")), *sorted(plugin.glob("reference/*.md")),
-               *sorted(plugin.glob("hooks/scripts/**/*.sh")),
-               *sorted(plugin.glob("checks.json")),
-               *(p for p in sorted(plugin.glob("scripts/*.py"))
-                 if not p.name.endswith("_selftest.py") and not p.name.startswith(("docs_layout", "check_hook_gates")))]
+    scanned: list[Path] = []
+    for plugin in (ROOT / "plugins" / "rails-flow", ROOT / "plugins" / "design-flow"):   # design-flow since #1779: it prescribed docs/assets/ and docs/design-system/
+        scanned += [*sorted(plugin.glob("commands/*.md")), *sorted(plugin.glob("agents/*.md")), *sorted(plugin.glob("reference/*.md")),
+                    *sorted(plugin.glob("hooks/scripts/**/*.sh")),
+                    *sorted(plugin.glob("checks.json")),
+                    *(p for p in sorted(plugin.glob("scripts/*.py"))
+                      if not p.name.endswith("_selftest.py") and not p.name.startswith(("docs_layout", "check_hook_gates")) and p.name not in MIGRATIONS)]
     findings: list[Finding] = []
     for path in scanned:
         for number, line in enumerate(read(path).splitlines(), 1):
@@ -5149,7 +5154,7 @@ def selftest() -> int:
     )
 
     # -- docs-path-outside-layout (#1700) ---------------------------------
-    DL = {"plugins/rails-flow/scripts/docs_layout.py": 'LAYOUT: dict[str, tuple[str, str]] = {"product": ("a", "b"), "brain": ("c", "d")}\n'}
+    DL = {"plugins/rails-flow/scripts/docs_layout.py": 'LAYOUT: dict[str, tuple[str, str]] = {"product": ("a", "b"), "design": ("e", "f"), "brain": ("c", "d")}\n'}
     DP = "docs-path-outside-layout"
     scenario("a command that writes docs/handoff/<slug>.md, a directory the layout lacks", rule=DP, expect_finding=True,
              only=check_docs_path_outside_layout, files={**DL, "plugins/rails-flow/commands/handoff.md": "Write `docs/handoff/<slug>.md`.\n"}, line=1)
@@ -5170,7 +5175,16 @@ def selftest() -> int:
     scenario("a selftest, docs_layout.py's own tables and another plugin's docs are out of scope, and silent", rule=DP, expect_finding=False,
              only=check_docs_path_outside_layout,
              files={**DL, "plugins/rails-flow/scripts/check_x_selftest.py": "docs/handoff/x.md\n",
-                    "plugins/design-flow/commands/assets.md": "docs/assets/x\n"})
+                    "plugins/qa-flow/commands/assets.md": "docs/assets/x\n"})
+    scenario("design-flow's command that writes docs/assets/<x> is a finding too (#1779)", rule=DP, expect_finding=True, only=check_docs_path_outside_layout,
+             files={**DL, "plugins/design-flow/commands/assets.md": "Write `docs/assets/manifest.json`.\n"}, line=1)
+    scenario("design-flow's script that names docs/design-system/prompts/ is a finding", rule=DP, expect_finding=True, only=check_docs_path_outside_layout,
+             files={**DL, "plugins/design-flow/scripts/x.py": 'PROMPTS = "docs/design-system/prompts"\n'})
+    scenario("design-flow's paths under docs/design/ are silent", rule=DP, expect_finding=False, only=check_docs_path_outside_layout,
+             files={**DL, "plugins/design-flow/commands/assets.md": "Write `docs/design/assets/manifest.json`.\n"})
+    scenario("design-flow's own migration module names its old places on purpose, and is silent", rule=DP, expect_finding=False,
+             only=check_docs_path_outside_layout,
+             files={**DL, "plugins/design-flow/scripts/asset_home.py": 'LEGACY = "docs/assets/"\n'})
     scenario("a pointer to this repository's own docs/doctrine/ is silent", rule=DP, expect_finding=False, only=check_docs_path_outside_layout,
              files={**DL, "plugins/rails-flow/hooks/scripts/x.sh": "# see docs/doctrine/harness-doctrine.md\n"})
     scenario("a tree without docs_layout.py has nothing to disagree with, and is silent", rule=DP, expect_finding=False,

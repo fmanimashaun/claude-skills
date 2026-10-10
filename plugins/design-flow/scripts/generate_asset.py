@@ -66,8 +66,8 @@ ASSET_DIR = Path("docs/design/assets")
 # The indexes STAY at the assets-dir root -- `plan.json`/`plan.md` and `manifest.json` describe the
 # contents, so root holds descriptions and the subfolders hold contents.
 #
-# #1779 REVERSES ONE HALF OF THAT, on the maintainer's recorded decision: the assets dir itself moved from `docs/assets/` to
-# `docs/design/assets/`, because the old place failed rails-flow's docs-layout gate. A project that still has the old place is
+# #1779 REVERSES ONE HALF OF THAT, on the owner's recorded decision: the assets dir itself moved from the pre-layout `docs/assets/`
+# to `docs/design/assets/`, because the old place failed rails-flow's docs-layout gate. A project that still has the old place is
 # stopped (`asset_home.refusal`) and moves it with `asset_home.py --migrate`; it is never read as an empty library.
 #
 # Kebab, not the space the layout was drawn with: a path with a space in it breaks every unquoted
