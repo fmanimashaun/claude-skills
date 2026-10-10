@@ -18,4 +18,11 @@ CONFIRMED rows; the last column says what the doctrine does.
 | X4 | route-helper precedence and `back_to_main_app_path` | CONFIRMED (README) | README:106,133 | NOT written: the `jobs-and-realtime.md` claim about the authentication generator's helper was not verified |
 | X5 | the ways to set credentials | CONFIRMED | README:59-84; `engine.rb:43-46` | stated |
 
+## Added after review of #1820 (6d at 57589f0e)
+
+| id | claim | verdict | authority | what the doctrine does |
+|---|---|---|---|---|
+| I1 | `config.mission_control.jobs.*` is copied into `MissionControl::Jobs` in a `before_initialize` hook, which runs before `config/initializers` load, so "(or an initializer)" for the `config.` form was wrong and the setting has no effect there | CONFIRMED for the copy and the hook (`engine.rb:24-30`) and for `adapters` being read in `before_initialize` (`engine.rb:32-34,57-66`); the load order (`before_initialize` before `config/initializers`) is the Rails initialization order, read here by the author directly and not by a verifier subagent (usage limit); the README names "environment config or `application.rb`" (README:94-97) and the direct module form (README:88-91) | `engine.rb`; README:88-97; Retask `config/initializers/mission_control_jobs.rb` (module setters inside `to_prepare`) | "(or an initializer)" removed; the direct form named for initializers; `adapters` only in application.rb / environment config |
+| I2 | the filter's "root-level keys only" headline is about the filter itself; the views re-apply it per level; keys match as strings | CONFIRMED (M2, `arguments_filter.rb:9-20`, `jobs_helper.rb:74`) | as M2 | headline narrowed; `k.to_s` stated |
+
 `jobs-and-realtime.md` carried the same one-setting recipe; it is corrected in the same PR (same defect, same row).

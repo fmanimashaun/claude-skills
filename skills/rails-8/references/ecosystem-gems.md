@@ -290,7 +290,7 @@ set (`bin/rails mission_control:jobs:authentication:configure`, the
 To admit your own admins instead, **both** of these are needed (1.3.1):
 
 ```ruby
-# config/application.rb (or an initializer)
+# config/application.rb or an environment file (the README's places)
 config.mission_control.jobs.base_controller_class = "AdminController" # your authenticating controller
 config.mission_control.jobs.http_basic_auth_enabled = false
 ```
@@ -302,11 +302,21 @@ halts the chain before basic auth. The README's "you can disable" is softer than
 The README's other approach wraps the `mount` in a `constraints` lambda, and it also needs
 `http_basic_auth_enabled = false` if you do not want both.
 
+**Where the settings go matters.** The engine copies `config.mission_control.jobs.*` into
+`MissionControl::Jobs` in a `before_initialize` hook, which runs before `config/initializers`
+load, so in an initializer the `config.` form is read too late and has no effect. From an
+initializer set the module directly (README:88-91), for example
+`Rails.application.config.to_prepare { MissionControl::Jobs.base_controller_class = "AdminController" }`
+(`to_prepare` because the class name is a reloadable constant; the `to_prepare` form is what Retask runs, measured there, not from the README). `adapters` is read in
+`before_initialize` as well (below), so it belongs in `config/application.rb` or an
+environment file only.
+
 Two more settings that bite (1.3.1):
 
-- **`filter_arguments` matches root-level hash keys only.** It never recurses into the value
-  under an unmatched key, and a positional value is never filtered; the README says only
-  root-level hash keys are supported. The raw-data view applies it at the top of the
+- **The `filter_arguments` filter itself matches root-level hash keys only,** by string
+  (`k.to_s` equality). It never recurses into the value under an unmatched key, and a
+  positional value is never filtered; the README says only root-level hash keys are
+  supported. The raw-data view applies it at the top of the
   arguments array only; the list, queue, worker and job-detail views re-apply it at each
   plain-hash level but never to a GlobalID or serialised object; the recurring-task pages
   and a worker's raw data are not filtered. Do not rely on it for nested or positional
