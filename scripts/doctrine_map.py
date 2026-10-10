@@ -515,17 +515,33 @@ CLAIMS: tuple[Claim, ...] = (
                      "hook:plugins/rails-flow/hooks/scripts/guard-lane.sh"),
         note="The rule pins the advisory/gate split by count, so adding a hook without classifying it "
              "fails. A gate that failed closed on UNRELATED work would get switched off, which is why "
-             "scoping is part of the claim rather than a refinement of it.",
+             "scoping is part of the claim rather than a refinement of it. guard-bash is listed for its "
+             "fail-closed POSTURE only (a parse failure refuses); what it can recognise is a tripwire, "
+             "not a guarantee (#1788, #1793).",
     ),
     Claim(
-        claim="`git add -A` is refused, even when the payload cannot be parsed.",
+        claim="guard-bash refuses the common spellings of `git add -A`, even when the payload cannot be parsed. It is a tripwire, "
+              "not a boundary: it matches the command's text, and a shell gives that text its meaning only when it expands it.",
         stated_in="CLAUDE.md",
         anchor="`git add -A` is blocked either way.",
-        kind=GUARANTEE,
+        kind=ADVICE,
         enforced_by=("hook:plugins/rails-flow/hooks/scripts/guard-bash.sh",),
-        note="Verified by running it with python3 shadowed by a stub that exits 127: line 7 falls back "
-             "to the raw JSON payload, which still contains the command text, so every pattern still "
-             "matches and it still exits 2.",
+        refs=(1788, 1793),
+        note="Reclassified from guarantee (owner decision, #1793): a probe of 21 hostile spellings against the hook on dev found 18 allowed "
+             "(`git add --al`, `X=-A; git add $X`, `printf 'git add -A' | sh`, `Git add -A` on a case-insensitive filesystem). "
+             "Still true and worth keeping: with python3 shadowed by a stub that exits 127, line 7 falls back to the raw JSON payload, "
+             "which still contains the command text, so the common spelling still matches and exits 2. The guarantee is the next row.",
+    ),
+    Claim(
+        claim="No spelling of `git add -A` stages the whole tree: the refusal is made where the effect happens (the `git` wrapper on PATH, "
+              "which sees the arguments after the shell has expanded them, and a `pre-commit` hook that checks what is staged), not where "
+              "the command is typed.",
+        stated_in="CLAUDE.md",
+        anchor="**Never `git add -A`.** Stage what you authored",
+        kind=GAP,
+        refs=(1789, 1790, 1793),
+        note="Neither layer exists yet: #1790 is the wrapper and #1789 the git hooks. When they land, this row becomes a guarantee citing "
+             "them, and the `validate` check `resolved gap` fails until it is reclassified.",
     ),
     Claim(
         claim="The maintainer copy of a shipped skill cannot drift from the skill it is derived from.",
