@@ -162,8 +162,8 @@ GUARD = Guard(
         ),
         Mutation(
             'the app: namespace is dropped from the db:reset rule, so bin/rails app:db:reset is never refused',
-            'if hit "^${_wrappers}${_runner_cmd}([[:space:]]+[^[:space:]]+)*[[:space:]]+(app:)?db:reset\\\\b" \\',
-            'if hit "^${_wrappers}${_runner_cmd}([[:space:]]+[^[:space:]]+)*[[:space:]]+db:reset\\\\b" \\',
+            '  if hit "^${_wrappers}${_runner_cmd}([[:space:]]+[^[:space:]]+)*[[:space:]]+(app:)?db:reset\\\\b" \\',
+            '  if hit "^${_wrappers}${_runner_cmd}([[:space:]]+[^[:space:]]+)*[[:space:]]+db:reset\\\\b" \\',
             'still refused `bin/rails app:db:reset`',
         ),
         Mutation(
@@ -210,21 +210,27 @@ GUARD = Guard(
         ),
         Mutation(
             'a listing is not exempt, so rake -T db:reset is refused',
-            '   && ! exempt "^${_wrappers}${_runner_cmd}([[:space:]]+[^[:space:]]+)*[[:space:]]+(-T|--tasks|-D|--describe)([[:space:]=]|\\$)"; then',
-            '   && ! false; then',
+            '     && ! exempt "^${_wrappers}${_runner_cmd}([[:space:]]+[^[:space:]]+)*[[:space:]]+(-T|--tasks|-D|--describe)([[:space:]=]|\\$)"; then',
+            '     && ! false; then',
             'may run `rake -T db:reset`',
         ),
         Mutation(
             'every option is exempt, so db:reset with --trace is read as a listing',
-            '   && ! exempt "^${_wrappers}${_runner_cmd}([[:space:]]+[^[:space:]]+)*[[:space:]]+(-T|--tasks|-D|--describe)([[:space:]=]|\\$)"; then',
-            '   && ! exempt "^${_wrappers}${_runner_cmd}([[:space:]]+[^[:space:]]+)*[[:space:]]+(-[A-Za-z]|--[a-z]+)([[:space:]=]|\\$)"; then',
+            '     && ! exempt "^${_wrappers}${_runner_cmd}([[:space:]]+[^[:space:]]+)*[[:space:]]+(-T|--tasks|-D|--describe)([[:space:]=]|\\$)"; then',
+            '     && ! exempt "^${_wrappers}${_runner_cmd}([[:space:]]+[^[:space:]]+)*[[:space:]]+(-[A-Za-z]|--[a-z]+)([[:space:]=]|\\$)"; then',
             'still refused `bin/rails db:reset --trace`',
         ),
         Mutation(
             'the listing exemption applies when the payload cannot be parsed, so a listing in an unreadable payload passes',
-            '   && ! exempt "^${_wrappers}${_runner_cmd}([[:space:]]+[^[:space:]]+)*[[:space:]]+(-T|--tasks|-D|--describe)([[:space:]=]|\\$)"; then',
-            '   && ! hit "^${_wrappers}${_runner_cmd}([[:space:]]+[^[:space:]]+)*[[:space:]]+(-T|--tasks|-D|--describe)([[:space:]=]|\\$)"; then',
+            '     && ! exempt "^${_wrappers}${_runner_cmd}([[:space:]]+[^[:space:]]+)*[[:space:]]+(-T|--tasks|-D|--describe)([[:space:]=]|\\$)"; then',
+            '     && ! hit "^${_wrappers}${_runner_cmd}([[:space:]]+[^[:space:]]+)*[[:space:]]+(-T|--tasks|-D|--describe)([[:space:]=]|\\$)"; then',
             'a listing in a payload the hook cannot parse is refused',
+        ),
+        Mutation(
+            'the listing exemption is judged on the whole command, so a -T in one segment exempts a reset in another',
+            "  seg=\"${_rest%%$'\\n'*}\"; _rest=\"${_rest#*$'\\n'}\"",
+            "  _rest=\"${_rest#*$'\\n'}\"",
+            'rake -T; rake db:reset',
         ),
     ),
 )

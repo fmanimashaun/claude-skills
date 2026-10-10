@@ -112,8 +112,20 @@ exempt() { [ "$degraded" = 1 ] && return 1; hit "$1"; }
 # This hook is an accident guard, not a boundary (as guard-worktree says): it stops the command that is typed by habit, not one built to get past it.
 _wrappers='((bundle[[:space:]]+exec([[:space:]]+--)?|ruby([[:space:]]+-S)?|spring|([^[:space:]]*/)?bin/spring|([^[:space:]]*/)?env([[:space:]]+[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*)*)[[:space:]]+)*'
 _runner_cmd='(([^[:space:]]*/)?bin/(rails|rake)|rails|rake)'
-if hit "^${_wrappers}${_runner_cmd}([[:space:]]+[^[:space:]]+)*[[:space:]]+(app:)?db:reset\\b" \
-   && ! exempt "^${_wrappers}${_runner_cmd}([[:space:]]+[^[:space:]]+)*[[:space:]]+(-T|--tasks|-D|--describe)([[:space:]=]|\$)"; then
+# THE LISTING EXEMPTION IS JUDGED PER SEGMENT (#1761, background review of 1db657ab): hit() and exempt() each match ANY segment, so `rake -T; rake db:reset` and
+# `rake -T | rake db:reset` let the `-T` of one segment exempt the reset in another. Each segment is tested alone, with `seg` swapped for it and restored after.
+# One match over the whole text first (a 10k-line command must not cost a grep per line); the per-segment loop runs only when some segment names the task.
+_seg_all="$seg"; _reset=0; _rest="$seg"$'\n'
+hit "^${_wrappers}${_runner_cmd}([[:space:]]+[^[:space:]]+)*[[:space:]]+(app:)?db:reset\\b" || _rest=""
+while [ -n "$_rest" ]; do
+  seg="${_rest%%$'\n'*}"; _rest="${_rest#*$'\n'}"
+  if hit "^${_wrappers}${_runner_cmd}([[:space:]]+[^[:space:]]+)*[[:space:]]+(app:)?db:reset\\b" \
+     && ! exempt "^${_wrappers}${_runner_cmd}([[:space:]]+[^[:space:]]+)*[[:space:]]+(-T|--tasks|-D|--describe)([[:space:]=]|\$)"; then
+    _reset=1; break
+  fi
+done
+seg="$_seg_all"
+if [ "$_reset" = 1 ]; then
   _root="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
   _tab=$'\t'
   _seeded=0

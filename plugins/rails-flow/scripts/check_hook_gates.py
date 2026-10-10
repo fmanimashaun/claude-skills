@@ -1292,7 +1292,9 @@ DB_RESET_WRAPPED = ("bundle exec spring rails db:reset", "bundle exec spring rak
                     "/usr/bin/env bin/rails db:reset", "/usr/bin/env FOO=1 bin/rails db:reset", "bin/rails db:reset --trace", "rake -t db:reset")
 # A listing prints the matching tasks and runs nothing, so it passes for a declared and an undeclared project alike.
 DB_RESET_LISTING = ("bin/rails -T db:reset", "rake -T db:reset", "bundle exec rake -T db:reset", "bin/rails --tasks db:reset", "rake -D db:reset")
-DB_RESET_STILL_REFUSED = ("bin/rails db:reset", "RAILS_ENV=development bin/rails db:reset", "RAILS_ENV=production bin/rails db:reset",
+DB_RESET_LISTING_THEN_RESET = ("rake -T; rake db:reset", "bin/rails -T && bin/rails db:reset", "bin/rails -T; bin/rails db:reset", "rake -T | rake db:reset", "rake -D\nbin/rails db:reset",
+                               "bin/rails db:reset && rake -T", "bin/rails db:reset\nbin/rails -T", "bin/rails -T db:reset\nbin/rails db:reset")
+DB_RESET_STILL_REFUSED = (*DB_RESET_LISTING_THEN_RESET, "bin/rails db:reset", "RAILS_ENV=development bin/rails db:reset", "RAILS_ENV=production bin/rails db:reset",
                           "RAILS_ENV=testing bin/rails db:reset", "RAILS_ENV=test bin/rails db:reset && bin/rails db:reset",
                           "RAILS_ENV=test bin/rails db:reset; bin/rails db:reset", "RAILS_ENV=test bin/rails db:reset | tee log",
                           "RAILS_ENV=test bin/rails db:reset\nbin/rails db:reset", "RAILS_ENV=test bin/rails db:reset db:seed",
