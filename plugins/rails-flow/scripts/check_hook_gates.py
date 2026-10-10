@@ -936,6 +936,25 @@ def pattern_expansion_sites() -> list[str] | str:
     return re.findall(r"\$\{[A-Za-z_][A-Za-z0-9_]*(?:/|%|#)[^}]*\}", r.stdout)
 
 
+# #1792: THE TRIPWIRE. Text matching cannot read what a shell expands, so a working-tree git verb beside a variable, a brace, a glob or an `eval`, a variable command
+# word, a capitalised `Git` and an abbreviated dangerous option are REFUSED (the git shim and the git hooks judge the real command). Each control is an everyday
+# command that must keep passing: a quoted variable, a commit message from a substitution, a push of a variable branch, a mention.
+POSITIVES_1792 = ["git checkout $BRANCH", "git reset $(git rev-parse x)", "git restore $f", "git branch -d feat-{1,2}", "git rm app/*.rb", "git clean -fd $DIR",
+                  "git stash drop ${N}", "git switch `git branch --show-current`", "g=git; $g reset x", "$(which git) reset x", "C='git reset --hard'; eval \"$C\"",
+                  "Git add -A", "GIT status", "gIt reset x", "cd x && Git add src/a.rb",
+                  "git reset --ha", "git reset --har HEAD~1", "git clean --forc", "git commit --no-v -m x", "git push --no-ve origin x", "git rebase --no-ver main",
+                  "git cherry-pick --no-verif abc", "git merge --no-veri x",
+                  "bin/rails db:reset -- -T", "bundle exec rake db:reset -- --tasks", "git clean -fd --forc", "cd x && git commit --no-v", "git commit '--no-v' -m x", "git push origin x '--no-ver'"]
+NEGATIVES_1792 = ["git checkout \"$branch\"", "git stash push -m \"wip $x\"", "git push origin \"$BRANCH\"", "git commit -m \"$(cat <<'EOF'\nmsg\nEOF\n)\"",
+                  "git diff $(git merge-base HEAD main)", "git switch -c feature/x", "git branch --show-current", "git clean --dry-run --forc", "git commit --no-edit",
+                  "git add src/*.rb", "echo Git is fine", "echo 'eval \"git add -A\"'", "git log --oneline", "git status", "git reset --soft HEAD~1",
+                  "bin/rails -T db:reset", "rake --tasks db:reset", "rake -D db:reset",
+                  # #1813 review: a path after `--` and quoted text are not options; a commit or PR body whose lines start with "Git" is our own standard pattern.
+                  "git reset -- --ha", "git commit -m \"--no-v\"", "git clean -n -- --forc",
+                  "git commit -m \"$(cat <<'EOF'\nsubject\n\nGit hygiene: stage named files\nEOF\n)\"",
+                  "gh pr create --title t --body-file - <<'EOF'\nGit hygiene: stage named files\nEOF"]
+
+
 def guard_bash_fixtures() -> None:
     last = {"rc": 0, "out": ""}
 
@@ -982,6 +1001,10 @@ def guard_bash_fixtures() -> None:
         check(f"guard-bash (#1706): `{cmd}` is blocked like its plain sibling", run(cmd) == 2, said())
     for cmd in NEGATIVES_1706:
         check(f"guard-bash (#1706/#1708): CONTROL: `{cmd}` passes", run(cmd) == 0, said())
+    for cmd in POSITIVES_1792:
+        check(f"guard-bash (#1792): the tripwire refuses `{cmd[:70]}`", run(cmd) == 2, said())
+    for cmd in NEGATIVES_1792:
+        check(f"guard-bash (#1792): CONTROL: `{cmd[:70]}` is an everyday command and passes", run(cmd) == 0, said())
     # #1708: an inline override is not read (an agent cannot approve its own deploy), so the message must not tell anyone to write it inline.
     with scratch_dir() as td:
         code, out = run_hook("guard-bash.sh", cwd=Path(td), stdin=json.dumps({"tool_input": {"command": "RAILS_FLOW_ALLOW_DEPLOY=1 kamal deploy"}}))[:2]
