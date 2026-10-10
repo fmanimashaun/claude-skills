@@ -69,7 +69,7 @@ case "$branch" in
     # THE LAYOUT'S PATH FIRST (#1700): `/rails-flow:feature` writes the criteria at docs/product/acceptance/, the home `docs_layout.py` accepts.
     # A project that committed them at the pre-layout docs/acceptance/ keeps working: that path counts when the layout's does not exist.
     criteria="docs/product/acceptance/${slug}.md"
-    [ -f "$criteria" ] || { [ -f "docs/acceptance/${slug}.md" ] && criteria="docs/acceptance/${slug}.md"; }
+    [ -f "$criteria" ] || { [ -f "docs/acceptance/${slug}.md" ] && criteria="docs/acceptance/${slug}.md"; }  # pre-layout path, still read
     if [ -n "$app_changed" ] && [ ! -f "$criteria" ]; then
       {
         echo "rails-flow stop gate: app code changed with no acceptance criteria."
@@ -118,7 +118,7 @@ case "$branch" in
     # the verdict.
     # ---------------------------------------------------------------------------------
     handoff="docs/product/handoff/${slug}.md"
-    [ -f "$handoff" ] || { [ -f "docs/handoff/${slug}.md" ] && handoff="docs/handoff/${slug}.md"; }
+    [ -f "$handoff" ] || { [ -f "docs/handoff/${slug}.md" ] && handoff="docs/handoff/${slug}.md"; }  # pre-layout path, still read
     if [ -f "$handoff" ] && command -v python3 >/dev/null 2>&1; then
       hchecker="${CLAUDE_PLUGIN_ROOT:-}/scripts/check_handoff.py"
       if [ -f "$hchecker" ]; then
