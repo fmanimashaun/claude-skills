@@ -4148,6 +4148,131 @@ def ci_verdict_hint_fixtures() -> None:
               code == 0 and out.strip() == "", f"exit {code}: {out.strip()[:120]!r}")
 
 
+def test_preflight_fixtures() -> None:
+    """test-preflight.sh: the advisory test-run preflight, driven end to end with the REAL script and stub binaries (#1561, #1566)."""
+    root = str(HOOKS.parents[1])
+    with scratch_dir() as td:
+        base = Path(td)
+        stubs = base / "stubs"
+        stubs.mkdir()
+        # A PATH holding the stubs and a directory with SYMLINKS to bash and python3, and nothing else (not even `dirname` or `touch`): a real Ruby on the
+        # machine running the sweep, someone else's held `bundler.lock` and the load of a busy runner must not make a fixture speak, and a wrapper that needs
+        # any other program fails here on every machine, not only on one whose bash and python3 live outside /usr/bin (a `dirname` in the wrapper hung exactly there).
+        tools = base / "tools"
+        tools.mkdir()
+        (tools / "bash").symlink_to(shutil.which("bash"))
+        (tools / "python3").symlink_to(os.path.realpath(sys.executable))
+        path = os.pathsep.join([str(stubs), str(tools)])
+        env = {"CLAUDE_PLUGIN_ROOT": root, "PATH": path, "RAILS_FLOW_PREFLIGHT_LOAD_MAX": "1000000"}
+
+        def stub(name: str, body: str) -> None:
+            (stubs / name).write_text("#!/bin/sh\n" + body + "\n")
+            (stubs / name).chmod(0o755)
+
+        def project(name: str, adapter: str = "postgresql") -> Path:
+            proj = base / name
+            (proj / "config").mkdir(parents=True)
+            (proj / "spec").mkdir()
+            (proj / "Gemfile").write_text("")
+            (proj / "spec" / "a_spec.rb").write_text("")
+            (proj / "config" / "database.yml").write_text(f"default: &default\n  adapter: {adapter}\n")
+            return proj
+
+        def hook(proj: Path, command: str, **extra: str) -> tuple[int, str]:
+            payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(proj)})
+            return run_hook("test-preflight.sh", cwd=proj, stdin=payload, env_extra=dict(env, **extra))
+
+        rspec = "bundle exec rspec spec/a_spec.rb"
+        app = project("app")
+        stub("pg_isready", "echo '/tmp:5432 - no response'; exit 2")        # a simulated Postgres outage, with the real tool's exit status
+        code, out = hook(app, rspec)
+        check("test-preflight: a Postgres outage before an rspec run is named, and the hook still exits 0",
+              code == 0 and "Postgres is not accepting connections" in out and "exit 2" in out, f"exit {code}: {out.strip()[:160]!r}")
+        check("test-preflight: ...as PreToolUse additionalContext, the channel documented as reaching the model",
+              '"hookEventName": "PreToolUse"' in out and '"additionalContext"' in out, out.strip()[:140])
+        check("test-preflight: ...and it decides no permission (an advisory cannot block or allow a call)", "permissionDecision" not in out)
+        stub("pg_isready", "exit 0")
+        code, out = hook(app, rspec)
+        check("test-preflight: Postgres up, everything fine: silent and exits 0", code == 0 and out.strip() == "", f"exit {code}: {out.strip()[:120]!r}")
+        stub("pg_isready", "exit 2")
+        for label, command in (("a `git status`", "git status"), ("a commit message that says rspec", 'git commit -m "fix rspec"')):
+            code, out = hook(app, command)
+            check(f"test-preflight: {label} is not a suite run, so it is silent even with Postgres down", code == 0 and out.strip() == "", out.strip()[:120])
+        code, out = hook(project("lite", "sqlite3"), rspec)
+        check("test-preflight: a project whose database is not Postgres is not probed (dormant without one)", code == 0 and out.strip() == "", out.strip()[:120])
+        stub("pg_isready", "exit 0")
+        code, out = hook(app, "bundle exec rspec spec/a_spec.rb spec/missing_spec.rb")
+        check("test-preflight: a spec path that does not exist is named", code == 0 and "spec/missing_spec.rb" in out and "a_spec.rb`" not in out, out.strip()[:160])
+        # A PROGRAM THE REPOSITORY SHIPS must not run: with the project as the working directory, a relative or empty PATH entry resolves INTO the checkout.
+        repo_ran = base / "ran-repo-pg_isready"
+        (app / "bin").mkdir()
+        (app / "bin" / "pg_isready").write_text(f"#!/bin/sh\n: > {repo_ran}\nexit 2\n")
+        (app / "bin" / "pg_isready").chmod(0o755)
+        stub("pg_isready", "exit 0")                                      # the trusted one: Postgres is up, so a correct hook is silent about it
+        code, out = hook(app, rspec, PATH=os.pathsep.join(["bin", "", ".", path]))
+        check("test-preflight: a pg_isready the repository ships, reachable through a relative or empty PATH entry, is NOT run",
+              code == 0 and not repo_ran.exists() and "Postgres" not in out, out.strip()[:160])
+        stub("pg_isready", "exit 2")
+        # THE INTERPRETER (review of #1826). The wrapper picks python3 itself: from an ABSOLUTE PATH entry outside the repository, the repository being the outermost of
+        # the Gemfile and .git ancestors, and runs it isolated. A python3 or pg_isready the repository ships must not run however it reaches PATH.
+        mono = base / "mono"
+        (mono / ".git").mkdir(parents=True)
+        (mono / "bin").mkdir()
+        (mono / "web").mkdir()
+        (mono / "web" / ".git").write_text("gitdir: /elsewhere/.git/modules/web\n")     # a NESTED .git (a submodule's, a worktree's): the repository is still the outer one
+        (base / "outside" / "bin").mkdir(parents=True)
+        py_ran, outside_ran = base / "ran-repo-python3", base / "ran-outside-python3"
+        for where, witness_file in ((mono / "bin", py_ran), (mono / "web", py_ran), (base / "outside" / "bin", outside_ran)):
+            (where / "python3").write_text(f"#!/bin/sh\n: > {witness_file}\nexit 0\n")
+            (where / "python3").chmod(0o755)
+        (mono / "bin" / "pg_isready").write_text(f"#!/bin/sh\n: > {repo_ran}\nexit 2\n")
+        (mono / "bin" / "pg_isready").chmod(0o755)
+        stub("pg_isready", "exit 2")                                      # the trusted one: an outage, so a hook that really ran SPEAKS
+        db_url = {"DATABASE_URL": "postgres://u@db.internal/app"}           # detection must not depend on where the root is
+        repo_ran.unlink(missing_ok=True)
+        code, out = hook(mono / "web", rspec, PATH=f"{mono / 'bin'}:{path}", **db_url)
+        check("test-preflight: a python3 and a pg_isready the repository ships in its bin/ are NOT run (absolute PATH entry, working directory a subdirectory with no Gemfile), and the hook still speaks",
+              code == 0 and not py_ran.exists() and not repo_ran.exists() and "Postgres is not accepting connections" in out, out.strip()[:160])
+        code, out = hook(mono / "web", rspec, PATH=os.pathsep.join(["", ".", path]), **db_url)
+        check("test-preflight: a python3 in the working directory, reachable through an empty or `.` PATH entry, is NOT run, and the hook still speaks",
+              code == 0 and not py_ran.exists() and "Postgres is not accepting connections" in out, out.strip()[:160])
+        code, out = hook(mono / "web", rspec, PATH=os.pathsep.join(["../../outside/bin", path]), **db_url)
+        check("test-preflight: a python3 reachable through a RELATIVE PATH entry is NOT run, even when it resolves outside the repository, and the hook still speaks",
+              code == 0 and not outside_ran.exists() and "Postgres is not accepting connections" in out, out.strip()[:160])
+        code, out = hook(mono / "web", rspec, PATH=os.pathsep.join([str(base / "outsi*" / "bin"), path]), **db_url)
+        check("test-preflight: a PATH entry that is a glob is taken literally, so it cannot expand into a directory holding a python3, and the hook still speaks",
+              code == 0 and not outside_ran.exists() and "Postgres is not accepting connections" in out, out.strip()[:160])
+        link_dir = base / "links"
+        link_dir.mkdir()
+        (link_dir / "python3").symlink_to(mono / "bin" / "python3")          # in a directory OUTSIDE the repository, but a link INTO it
+        py_ran.unlink(missing_ok=True)
+        code, out = hook(mono / "web", rspec, PATH=os.pathsep.join([str(link_dir), path]), **db_url)
+        check("test-preflight: a python3 that is a symlink into the repository is NOT run, even from a directory outside it, and the hook still speaks",
+              code == 0 and not py_ran.exists() and "Postgres is not accepting connections" in out, out.strip()[:160])
+        shim = base / "shim"
+        shim.mkdir()
+        (shim / "json.py").write_text(f"import pathlib\npathlib.Path({str(base / 'ran-shim')!r}).touch()\n")
+        code, out = hook(app, rspec, PYTHONPATH=str(shim))
+        check("test-preflight: PYTHONPATH cannot make the script import a module the environment supplies (it runs isolated), and the hook still speaks",
+              code == 0 and not (base / "ran-shim").exists() and "Postgres is not accepting connections" in out, out.strip()[:160])
+        # #825's environment: the harness sets the variable; a person driving the script does not. A missing script is python's exit 2, which the wrapper must not pass on.
+        code, out = run_hook("test-preflight.sh", cwd=app, stdin=json.dumps({"tool_name": "Bash", "tool_input": {"command": rspec}, "cwd": str(app)}),
+                             env_extra={"PATH": path}, unset=("CLAUDE_PLUGIN_ROOT",))
+        check("test-preflight: with CLAUDE_PLUGIN_ROOT unset it exits 0 silently, not `unbound variable` and not python's exit 2",
+              code == 0 and "unbound" not in out and out.strip() == "", f"exit {code}: {out.strip()[:120]!r}")
+        # No python3 on PATH: only a `bash` survives. Proved by a PATH that genuinely lacks it.
+        bare = base / "bare-bin"
+        bare.mkdir()
+        (bare / "bash").symlink_to(shutil.which("bash"))
+        done = _run([str(bare / "bash"), str(HOOKS / "test-preflight.sh")], cwd=app,
+                    input=json.dumps({"tool_name": "Bash", "tool_input": {"command": rspec}, "cwd": str(app)}),
+                    capture_output=True, text=True, timeout=60, env={"PATH": str(bare), "CLAUDE_PLUGIN_ROOT": root, "HOME": td})
+        check("test-preflight: with no python3 on PATH it exits 0 and says nothing",
+              done.returncode == 0 and (done.stdout + done.stderr).strip() == "", f"exit {done.returncode}: {(done.stdout + done.stderr).strip()[:120]!r}")
+        code, out = run_hook("test-preflight.sh", cwd=app, stdin="not json", env_extra=env)
+        check("test-preflight: an unreadable payload exits 0 silently", code == 0 and out.strip() == "", f"exit {code}: {out.strip()[:120]!r}")
+
+
 def session_end_fixtures() -> None:
     """#1582 slice C: session-end.sh reaps the session's own stopped orphans, fails open, and never blocks.
 
@@ -5387,7 +5512,7 @@ GROUPS = {
     "release_gate_effects": release_gate_effects_fixtures, "release_gate_repos": release_gate_repos_fixtures,
     "release_gate_refs": release_gate_refs_fixtures, "release_gate_fallback": release_gate_fallback_fixtures,
     "release_gate_adversary": release_gate_adversary_fixtures,
-    "ci_verdict_hint": ci_verdict_hint_fixtures, "session_end": session_end_fixtures, "timeout": timeout_fixtures,
+    "ci_verdict_hint": ci_verdict_hint_fixtures, "test_preflight": test_preflight_fixtures, "session_end": session_end_fixtures, "timeout": timeout_fixtures,
     "guard_worktree": guard_worktree_fixtures, "guard_worktree_parse": guard_worktree_parse_fixtures,
     "guard_worktree_failopen": guard_worktree_failopen_fixtures, "guard_worktree_pointer": guard_worktree_pointer_fixtures,
     "deadline": deadline_fixtures, "where_stopped": where_stopped_fixtures, "tools_missing": tools_missing_fixtures,
@@ -5411,7 +5536,7 @@ PARTS = {
           "ci_verdict_hint", "session_end", "timeout"],
     "b": ["release_gate", "release_gate_effects"],
     "c": ["release_gate_repos", "release_gate_refs", "release_gate_fallback", "release_gate_adversary", "guard_worktree", "guard_worktree_parse",
-          "guard_worktree_failopen", "guard_worktree_pointer", "deadline", "where_stopped", "tools_missing", "fixture_git_binding"],
+          "guard_worktree_failopen", "guard_worktree_pointer", "deadline", "where_stopped", "tools_missing", "fixture_git_binding", "test_preflight"],
 }
 
 
