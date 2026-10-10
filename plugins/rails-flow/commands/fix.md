@@ -113,7 +113,7 @@ hypothesis that turned out to be the cause, so the next reader learns it.
    on `fix/*` branches.
 4. **A phase backlog gets a work order.** For a single reproduced bug the criteria are usually
    enough. For a multi-phase report — and for anything that will run unattended — write
-   `docs/handoff/<phase-or-slug>.md` with `/rails-flow:handoff` first: the scope boundary and the
+   `docs/product/handoff/<phase-or-slug>.md` with `/rails-flow:handoff` first: the scope boundary and the
    stop conditions are what keep a grinder inside the rails, and the Stop gate validates the file
    whenever it exists.
 5. **Every behavioral change gets a NEW spec proving the new behavior.** Passing the
@@ -175,5 +175,5 @@ success. So an unattended run needs the work order's **stop conditions** as well
   attempted. A grinder that reports "all phases done" having skipped two has produced a worse
   outcome than one that stopped at phase one and said so.
 
-Write them into `docs/handoff/<phase-or-slug>.md` (`/rails-flow:handoff`) before starting the run —
+Write them into `docs/product/handoff/<phase-or-slug>.md` (`/rails-flow:handoff`) before starting the run —
 a bound that lives only in the prompt is gone the moment the session is resumed.
