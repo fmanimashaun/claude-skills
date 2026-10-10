@@ -89,7 +89,7 @@ Two tiers, because two is what the mechanism can express honestly.
 **The dependency #127 asks us to state plainly:** a mechanical pin is only safe while the proof is
 **external to the executor**. Cheap execution against *acceptance criteria the executor cannot
 edit* is delegation; cheap execution against its own judgement is a discount on the judgement. That
-is why `docs/acceptance/<slug>.md` is a precondition of the work order (`/rails-flow:handoff`) and
+is why `docs/product/acceptance/<slug>.md` is a precondition of the work order (`/rails-flow:handoff`) and
 not a nicety — and why the mechanical column below has to name the proof for every row.
 
 <!-- rails-flow:tiers:begin -->

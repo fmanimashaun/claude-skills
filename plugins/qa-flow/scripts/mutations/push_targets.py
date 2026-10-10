@@ -686,5 +686,29 @@ GUARD = Guard(
             '        if only_known and any(w in ("get", "list") for w in words):',
             "unlisted shape 'git config core.hooksPath get'",
         ),
+        Mutation(
+            "#1770: a `name() body` definition is a no-op, so the body is never classified and a function that pushes to main is allowed",
+            '    if "()" in toks:\n',
+            '    if "()" in toks:\n        return\n    if False:\n',
+            "function fixture 'f(){ git push origin main; }; f': expected ['PUSH_MAIN main']",
+        ),
+        Mutation(
+            "#1770: the body of a `function NAME { ... }` definition is dropped with the keyword, so it is never classified",
+            "            seg = seg[2:]\n",
+            "            seg = []\n",
+            "function fixture 'function f { git push origin main; }; f': expected ['PUSH_MAIN main']",
+        ),
+        Mutation(
+            "#1770: a cd (or a branch change) in a command that defines a function is followed instead of refused, so the call site's directory is misjudged",
+            "    if FUNCS[0]:\n",
+            "    if False:\n",
+            "function fixture 'f(){ cd /tmp; }; git push': expected None",
+        ),
+        Mutation(
+            "#1770: a GIT_DIR redirect on a call to a function that pushes is not refused",
+            "    if head in (\"cd\", \"pushd\", \"popd\") or any(GIT_ENV_REDIRECT.match(w) for w in seg):",
+            "    if head in (\"cd\", \"pushd\", \"popd\"):",
+            "function fixture 'f(){ git push; }; GIT_DIR=/x f': expected None",
+        ),
     ),
 )

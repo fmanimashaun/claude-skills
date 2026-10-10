@@ -128,7 +128,7 @@ Commands are namespaced by plugin: `/rails-flow:feature`, `/qa-flow:verify`.
 
 **Setup** — wire the lifecycle into a project
 
-- `/pipeline:install-hooks` — Install local git-hook nudges that detect lifecycle transitions without spending tokens
+- `/pipeline:install-hooks` — Install the local git hooks, the pre-push and pre-commit guards and the lifecycle nudges that spend no tokens
 - `/pipeline:setup-pipeline` — Scaffold pipeline.yml and the local git-hook nudges; verify the Docker/Kamal release prerequisites
 
 
