@@ -3241,6 +3241,7 @@ case "$ep" in
   repos/*/compare/*) [ -z "${FAKE_SLEEP_COMPARE:-${FAKE_SLEEP:-}}" ] || sleep "${FAKE_SLEEP_COMPARE:-$FAKE_SLEEP}"; [ -n "${FAKE_COMPARE:-}" ] || exit 1; printf '%s\\n' "$FAKE_COMPARE"; exit 0 ;;
   repos/*/commits/*) [ -n "${FAKE_COMMIT:-}" ] || exit 1; printf '%s' "$FAKE_COMMIT"; exit 0 ;;
   repos/*/git/matching-refs/*) printf '%s' "${FAKE_TAGS:-}"; exit 0 ;;
+  repos/*/git/trees/*) [ -n "${FAKE_TREE_REPO:-}" ] || exit 1; git -C "$FAKE_TREE_REPO" rev-parse "${ep##*/trees/}" 2>/dev/null || exit 1; exit 0 ;;
   repos/*/releases/*) printf '%s' "${FAKE_RELID:-}"; exit 0 ;;
   repos/*) printf 'main'; exit 0 ;;
 esac
@@ -3292,7 +3293,7 @@ def release_gate_refs_fixtures() -> None:
         prog.chmod(0o755)
         evil = f"--upload-pack={prog}"
 
-        def run(cmd: str, **extra) -> tuple[int, str]:
+        def run_once(cmd: str, _env_out: list | None = None, **extra) -> tuple[int, str]:
             marker.unlink(missing_ok=True)
             env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env.pop("GH_REPO", None)
             env["CLAUDE_PLUGIN_ROOT"] = str(QA_HOOK.parents[2])
@@ -3302,10 +3303,26 @@ def release_gate_refs_fixtures() -> None:
             env.update({"GIT_CONFIG_COUNT": "2",
                         "GIT_CONFIG_KEY_0": "url./nonexistent-qa-flow-remote/.insteadOf", "GIT_CONFIG_VALUE_0": "https://github.com/",
                         "GIT_CONFIG_KEY_1": f"url.{bare}.insteadOf", "GIT_CONFIG_VALUE_1": "https://github.com/other/fork.git"})
+            env.update({"QA_FLOW_VERDICT_DIR": str(Path(td) / "plugin-data"), "FAKE_TREE_REPO": str(bare)})
             env.update(extra)
+            if _env_out is not None:
+                _env_out.append(env)
             done = _run(["bash", str(QA_HOOK)], cwd=repo, input=json.dumps({"tool_input": {"command": cmd}}),
                         env=env, capture_output=True, text=True, timeout=60)
             return done.returncode, done.stderr
+
+        def run(cmd: str, _record: bool = True, **extra) -> tuple[int, str]:
+            """As in release_gate_repos_fixtures: a refusal for want of a verdict (#1686) is answered by running the command it names."""
+            tried: set = set()
+            while True:
+                envs: list = []
+                rc, err = run_once(cmd, envs, **extra)
+                found = re.search(r"python3 (\S+remote_evidence\.py) --repo (\S+) --sha ([0-9a-f]{40}) --record", err)
+                if not _record or rc != 2 or not found or found.groups() in tried:
+                    return rc, err
+                tried.add(found.groups())
+                _run([sys.executable, found.group(1), "--repo", found.group(2), "--sha", found.group(3), "--record"],
+                     cwd=repo, env=envs[0], capture_output=True, text=True, timeout=120)
 
         # The proof that the marker is observable: the same program, handed to git the way the hook would have.
         marker.unlink(missing_ok=True)
@@ -3504,7 +3521,7 @@ def release_gate_repos_fixtures() -> None:
         foreign_stamp = Path(td) / "foreign-stamp.json"
         foreign_stamp.write_text(json.dumps({"sha": stamped, "date": "2026-10-01", "verdict": "PASS", "report": "r.md"}), encoding="utf-8")
 
-        def run(cmd: str, **extra) -> tuple[int, str]:
+        def run_once(cmd: str, _env_out: list | None = None, **extra) -> tuple[int, str]:
             env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env.pop("GH_REPO", None)
             env["CLAUDE_PLUGIN_ROOT"] = str(QA_HOOK.parents[2])
             env["PATH"] = str(Path(td) / "bin") + os.pathsep + env["PATH"]
@@ -3513,10 +3530,28 @@ def release_gate_repos_fixtures() -> None:
             env.update({"GIT_CONFIG_COUNT": "2",
                         "GIT_CONFIG_KEY_0": "url./nonexistent-qa-flow-remote/.insteadOf", "GIT_CONFIG_VALUE_0": "https://github.com/",
                         "GIT_CONFIG_KEY_1": f"url.{forkbare}.insteadOf", "GIT_CONFIG_VALUE_1": "https://github.com/other/fork.git"})
+            env.update({"QA_FLOW_VERDICT_DIR": str(Path(td) / "plugin-data"), "FAKE_TREE_REPO": str(forkbare)})
             env.update(extra)
+            if _env_out is not None:
+                _env_out.append(env)
             done = _run(["bash", str(QA_HOOK)], cwd=repo, input=json.dumps({"tool_input": {"command": cmd}}),
                         env=env, capture_output=True, text=True, timeout=60)
             return done.returncode, done.stderr
+
+        def run(cmd: str, _record: bool = True, **extra) -> tuple[int, str]:
+            """The hook as before, except that a refusal for want of a verdict (#1686) is answered the way the message says to: the
+            command it names runs (the judgement the hook no longer does itself), then the hook runs again. One attempt per commit,
+            and `_record=False` skips it, for the fixtures about a missing verdict."""
+            tried: set = set()
+            while True:
+                envs: list = []
+                rc, err = run_once(cmd, envs, **extra)
+                found = re.search(r"python3 (\S+remote_evidence\.py) --repo (\S+) --sha ([0-9a-f]{40}) --record", err)
+                if not _record or rc != 2 or not found or found.groups() in tried:
+                    return rc, err
+                tried.add(found.groups())
+                _run([sys.executable, found.group(1), "--repo", found.group(2), "--sha", found.group(3), "--record"],
+                     cwd=repo, env=envs[0], capture_output=True, text=True, timeout=120)
 
         ok_pr = {"FAKE_PRVIEW": f"main {stamped}"}
         # (1) THE SAME COMMAND, a different repository. This checkout is o/r and holds a PASS stamp at the PR's
@@ -3845,20 +3880,33 @@ def release_gate_repos_fixtures() -> None:
             check(f"release-gate (#1591): ANOTHER repository's certified commit that is {status} of the judged one is denied (not an ancestor)",
                   rc == 2 and "not an ancestor" in err, f"rc={rc} {err[:300]!r}")
         # THE HOOK'S OWN TIME. A PreToolUse hook that outlives its timeout (15 s) does not deny: the command goes through.
-        # A fetch that stalls past that must be stopped by the helper's budget, and a hook that has spent its time on the
-        # API must not start one. A `git` that sleeps on `fetch` (20 s, longer than the hook may take) stands in for a slow remote.
+        # (#1686) The hook no longer judges the evidence, so it no longer fetches: a `git` that sleeps on `fetch` (20 s) stands in for a
+        # slow remote, and the hook with a recorded verdict must not notice it. The RECORDING step (`remote_evidence.py --record`, run
+        # ahead of the promotion) is the one a slow remote stops, by its own budget, and it must record NOTHING when it does.
         gitbin = Path(td) / "gitbin"
         gitbin.mkdir()
         real_git = shutil.which("git")
         (gitbin / "git").write_text(f'#!/bin/sh\ncase " $* " in *" fetch "*) sleep 20 ;; esac\nexec {real_git} "$@"\n', encoding="utf-8")
         (gitbin / "git").chmod(0o755)
+        rc, err = foreign(sha_good, s2, ev_files)           # records the verdict (and permits) with the real git
+        check("release-gate (#1686): CONTROL: a recorded verdict permits the same promotion", rc == 0, f"rc={rc} {err[:240]!r}")
         started = time.monotonic()
-        # (RAILS_FLOW_HOOK_DEADLINE=13, the gate's own largest deadline, so it is the helper's budget that speaks first, not #1602's.)
-        rc, err = foreign(sha_good, s2, ev_files, RAILS_FLOW_HOOK_DEADLINE="13",
+        rc, err = foreign(sha_good, s2, ev_files, _record=False, RAILS_FLOW_HOOK_DEADLINE="13",
                           PATH=f"{gitbin}{os.pathsep}{Path(td) / 'bin'}{os.pathsep}{os.environ['PATH']}")
         took = time.monotonic() - started
-        check("release-gate (#1591): a fetch that stalls past the hook's own 15 s is stopped by the budget and DENIED, inside the timeout",
-              rc == 2 and "time budget" in err and took < 15, f"rc={rc} took={took:.1f}s {err[:240]!r}")
+        check("release-gate (#1686): the hook does no fetch of its own, so a git that stalls on fetch does not slow a recorded verdict",
+              rc == 0 and took < 10, f"rc={rc} took={took:.1f}s {err[:240]!r}")
+        stalled_data = Path(td) / "stalled-data"
+        started = time.monotonic()
+        done = _run([sys.executable, str(QA_HOOK.parents[2] / "scripts" / "remote_evidence.py"), "--repo", "other/fork", "--sha", sha_good,
+                     "--record", "--budget", "3"], cwd=repo, capture_output=True, text=True, timeout=60,
+                    env={**os.environ, "PATH": f"{gitbin}{os.pathsep}{os.environ['PATH']}", "QA_FLOW_VERDICT_DIR": str(stalled_data),
+                         "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": f"url.{forkbare}.insteadOf",
+                         "GIT_CONFIG_VALUE_0": "https://github.com/other/fork.git"})
+        took = time.monotonic() - started
+        check("release-gate (#1686): a recording whose fetch stalls is stopped by its budget, exits 2 and writes NO verdict",
+              done.returncode == 2 and "time budget" in done.stderr and took < 15 and not list(stalled_data.rglob("*.json")),
+              f"rc={done.returncode} took={took:.1f}s files={list(stalled_data.rglob('*'))} {done.stderr[:200]!r}")
         # A `gh api` that stalls is cut short by `bounded` (4 s) and read as a failure: denied, well inside the 15 s.
         started = time.monotonic()
         rc, err = foreign(sha_good, s2, ev_files, FAKE_SLEEP="30")
@@ -3873,12 +3921,55 @@ def release_gate_repos_fixtures() -> None:
         took = time.monotonic() - started
         check("release-gate (#1591): a compare call that stalls on its own is cut short and the command DENIED, inside the hook's timeout",
               rc == 2 and took < 15 and "could not be compared" in err, f"rc={rc} took={took:.1f}s {err[:240]!r}")
-        # Too little time left for the evidence judge: a gate whose deadline leaves under 3 s after the 2 s margin does not START
-        # the judge. A deadline of 4 s makes that deterministic (the API calls are instant here), where sleeping through earlier
-        # calls made it depend on how fast the machine was (it passed locally and was permitted on CI).
-        rc, err = foreign(sha_good, s2, ev_files, RAILS_FLOW_HOOK_DEADLINE="4")
-        check("release-gate (#1591): a hook with too little time left for the evidence judge does not start it, and DENIES",
-              rc == 2 and "no time left" in err, f"rc={rc} {err[:240]!r}")
+        # (#1686) The verdict file is read, never trusted blindly: each of these writes a verdict that is wrong in ONE way, over a good one,
+        # and the hook must refuse by naming that way. THREAT MODEL, as the hook states it: an accident, not a session that writes a PASS file.
+        vfile = Path(td) / "plugin-data" / "remote-verdicts" / f"other__fork@{sha_good}.json"
+        good = json.loads(vfile.read_text()) if vfile.exists() else {}      # absent while the group is only SURVEYED under stubs (--match)
+        vfile.parent.mkdir(parents=True, exist_ok=True)
+        other = "b" * 40
+        for label, change, kind in (
+            ("another commit's", {"sha": other}, "mismatch"),
+            ("another evidence tree's", {"tree": "c" * 40}, "mismatch"),
+            ("another repository's", {"repo": "o/other"}, "mismatch"),
+            ("an expired (31 minutes old)", {"at": time.time() - 31 * 60}, "stale"),
+            ("a FAIL", {"verdict": "FAIL", "why": "FAIL layer: first-boot: a HOLE"}, "FAIL"),
+            ("a verdict missing its evidence field", {"evidence": None}, "unparsable"),
+        ):
+            body = {k: v for k, v in {**good, **change}.items() if not (k == "evidence" and v is None)}
+            vfile.write_text(json.dumps(body), encoding="utf-8")
+            rc, err = foreign(sha_good, s2, ev_files, _record=False)
+            check(f"release-gate (#1686): {label} verdict denies, naming `{kind}` and the command that records one",
+                  rc == 2 and f"no usable verdict: {kind}:" in err and "--record" in err, f"rc={rc} {err[:300]!r}")
+        for label, text in (("garbage", "not json {"), ("an empty file", ""), ("a JSON list", "[1, 2]")):
+            vfile.write_text(text, encoding="utf-8")
+            rc, err = foreign(sha_good, s2, ev_files, _record=False)
+            check(f"release-gate (#1686): a verdict file that is {label} denies as `unparsable`",
+                  rc == 2 and "no usable verdict: unparsable:" in err, f"rc={rc} {err[:300]!r}")
+        vfile.unlink(missing_ok=True)
+        rc, err = foreign(sha_good, s2, ev_files, _record=False)
+        check("release-gate (#1686): no verdict at all denies as `missing`, naming the command",
+              rc == 2 and "no usable verdict: missing:" in err and "--record" in err, f"rc={rc} {err[:300]!r}")
+        # END TO END (#1686): the recording runs through the Bash tool, which gets NO CLAUDE_PLUGIN_DATA, and the gate runs as a hook, which gets
+        # it (code.claude.com/docs/en/plugins/manifest-reference.md). Record with the variable unset and the verdict directory unset, read through the
+        # hook with the variable SET to somewhere else, over the same HOME: the verdict must be found.
+        home = Path(td) / "e2e-home"
+        home.mkdir(exist_ok=True)
+        e2e_env = {k: v for k, v in os.environ.items() if k not in ("CLAUDE_PLUGIN_DATA", "QA_FLOW_VERDICT_DIR")}
+        e2e_env.update({"HOME": str(home), "PATH": f"{Path(td) / 'bin'}{os.pathsep}{os.environ['PATH']}", "GIT_CONFIG_COUNT": "1",
+                        "GIT_CONFIG_KEY_0": f"url.{forkbare}.insteadOf", "GIT_CONFIG_VALUE_0": "https://github.com/other/fork.git"})
+        done = _run([sys.executable, str(QA_HOOK.parents[2] / "scripts" / "remote_evidence.py"), "--repo", "other/fork", "--sha", sha_good, "--record"],
+                    cwd=repo, env=e2e_env, capture_output=True, text=True, timeout=120)
+        written = home / ".claude" / "qa-flow" / "remote-verdicts" / f"other__fork@{sha_good}.json"
+        check("release-gate (#1686): a recording run with no CLAUDE_PLUGIN_DATA writes under ~/.claude/qa-flow/remote-verdicts",
+              done.returncode == 0 and written.is_file(), f"rc={done.returncode} {done.stderr[:200]!r}")
+        for stale in (Path(td) / "plugin-data" / "remote-verdicts").glob("*.json"):
+            stale.unlink()
+        rc, err = foreign(sha_good, s2, ev_files, _record=False, HOME=str(home), QA_FLOW_VERDICT_DIR="", CLAUDE_PLUGIN_DATA=str(Path(td) / "hook-data"))
+        check("release-gate (#1686): the hook, with CLAUDE_PLUGIN_DATA set elsewhere, finds the verdict the Bash-side recording wrote",
+              rc == 0, f"rc={rc} {err[:300]!r}")
+        vfile.write_text(json.dumps(good), encoding="utf-8")
+        rc, err = foreign(sha_good, s2, ev_files, _record=False)
+        check("release-gate (#1686): CONTROL: the good verdict, put back, permits again", rc == 0, f"rc={rc} {err[:240]!r}")
         rc, err = foreign(sha_good, s2, ev_files, cmd="gh pr merge 7 -R gone/repo", repo_name="gone/repo")
         check("release-gate (#1591): a repository whose objects cannot be fetched is denied, naming the layer and the repository",
               rc == 2 and "#1428" in err and "gone/repo" in err, f"rc={rc} {err[:300]!r}")

@@ -1,8 +1,18 @@
 #!/usr/bin/env python3
 """Judge the release-only layers (#1428) of a repository this checkout is NOT, from the evidence as committed there.
 
-Run:  python3 remote_evidence.py --repo OWNER/REPO --sha FULL_SHA [--budget SECONDS]
+Run:  python3 remote_evidence.py --repo OWNER/REPO --sha FULL_SHA --record [--budget SECONDS]   (BEFORE the promotion)
+      python3 remote_evidence.py --repo OWNER/REPO --sha FULL_SHA --check-verdict --tree TREE_ID  (what the release gate runs)
+      python3 remote_evidence.py --repo OWNER/REPO --sha FULL_SHA [--budget SECONDS]              (judge, print, record nothing)
       python3 remote_evidence.py --selftest
+
+WHY A SEPARATE STEP (#1686). Judging a repository with real evidence took 35.7 s wall (measured against a 2055-file `qa/`,
+`--filter=blob:none` turns every blob it reads into a network round trip), and the hook has 15 s. So the judgement runs here, ahead of
+the promotion, with minutes to spare, and writes a VERDICT FILE that the release gate only READS. A verdict is keyed by repository,
+the exact commit and the evidence tree id (`git rev-parse SHA:qa`, which the gate recomputes in one API call), expires after 30
+minutes, lives in `~/.claude/qa-flow/remote-verdicts` (never in a repository, so it cannot be committed), and anything missing, stale,
+unparsable, mismatched or FAIL refuses, naming which one it was and the command to run.
+THREAT MODEL: this guards against an ACCIDENTAL promotion, not against a session that hand-writes a PASS file.
 
 WHY (#1591). `release_evidence.py stamp --rev R` judges the first-boot walkthrough and the authorization
 sweep a PASS stamp names, from the files COMMITTED at R, in the repository it runs in. The release gate
@@ -32,6 +42,8 @@ Stdlib only.
 from __future__ import annotations
 
 import argparse
+import json
+import math
 import os
 import re
 import shutil
@@ -47,6 +59,92 @@ REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 SHA = re.compile(r"^[0-9a-f]{40}$")
 DEFAULT_BUDGET = 8.0      # the release gate (hook timeout 15 s) passes what it has left, never more than this
 HERE = Path(__file__).resolve().parent
+VERDICT_TTL = 30 * 60     # seconds a recorded verdict is honoured (#1686)
+
+
+def verdict_path(repo: str, sha: str) -> Path:
+    """Where the verdict for (repo, sha) lives: `~/.claude/qa-flow/remote-verdicts`, never inside a repository. It does NOT depend on
+    CLAUDE_PLUGIN_DATA: Claude Code gives that variable to hook processes and NOT to Bash-tool commands (code.claude.com/docs/en/plugins/manifest-reference.md),
+    and the recording runs through Bash while the gate runs as a hook, so the two would have looked in different places. QA_FLOW_VERDICT_DIR is for tests."""
+    base = os.environ.get("QA_FLOW_VERDICT_DIR") or str(Path.home() / ".claude" / "qa-flow")
+    if not os.path.isabs(base):
+        # The recording and the gate run from different directories: a relative path would send them to two places.
+        raise Unusable(f"QA_FLOW_VERDICT_DIR must be an absolute path, got {base!r}")
+    return Path(base) / "remote-verdicts" / f"{repo.replace('/', '__')}@{sha}.json"
+
+
+def read_verdict(repo: str, sha: str, tree: str, now: float | None = None) -> tuple[str, str]:
+    """(kind, detail). kind is "ok" only for a fresh PASS recorded for exactly this repo, commit and evidence tree; detail is then the
+    evidence listing the gate lets the stamp's commit carry. Every other kind is a refusal: missing, unparsable, mismatch, stale, FAIL."""
+    try:
+        path = verdict_path(repo, sha)
+    except Unusable as exc:
+        return "unparsable", str(exc)
+    try:
+        text = path.read_text()
+    except FileNotFoundError:
+        return "missing", "no verdict has been recorded for this commit"
+    except OSError as exc:
+        return "unparsable", f"the verdict file could not be read: {exc}"
+    try:
+        v = json.loads(text)
+        if not isinstance(v, dict) or not all(k in v for k in ("repo", "sha", "tree", "verdict", "at", "evidence")):
+            raise ValueError("a field is missing")
+        at = float(v["at"])
+        if not math.isfinite(at):
+            # json.loads accepts NaN and Infinity, and every comparison with NaN is false, so a NaN `at` would never read as stale.
+            raise ValueError("the time it was recorded is not a finite number")
+    except (ValueError, TypeError) as exc:
+        return "unparsable", f"the verdict file is not a verdict: {exc}"
+    if v["repo"] != repo or v["sha"] != sha:
+        return "mismatch", f"the verdict is for {v['repo']}@{str(v['sha'])[:12]}, not {repo}@{sha[:12]}"
+    if not tree or v["tree"] != tree:
+        return "mismatch", f"the evidence tree is {tree[:12] or 'unknown'} but the verdict judged {str(v['tree'])[:12]}"
+    if (time.time() if now is None else now) - at > VERDICT_TTL:
+        return "stale", "the verdict is older than 30 minutes"
+    if at > (time.time() if now is None else now) + 60:
+        return "unparsable", "the verdict is dated in the future"
+    if v["verdict"] != "PASS":
+        return "FAIL", str(v.get("why") or "the release-only layers do not pass")
+    return "ok", str(v["evidence"])
+
+
+def record(clock: Clock, repo: str, sha: str, url: str | None = None, evidence_script: Path | None = None) -> int:
+    """Judge as `judge` does, and write the verdict file. Exit 0 PASS, 1 FAIL (both recorded); unusable records nothing."""
+    scratch = Path(tempfile.mkdtemp(prefix="qa-remote-evidence."))
+    try:
+        snapshot(clock, repo, sha, scratch, url)
+        tree = git(clock, scratch, "rev-parse", f"{sha}:qa")
+        if tree.returncode != 0 or not re.fullmatch(r"[0-9a-f]{40}", tree.stdout.decode().strip() if isinstance(tree.stdout, bytes) else tree.stdout.strip()):
+            raise Unusable(f"{repo} at {sha[:12]} has no qa/ tree to judge")
+        tree_id = tree.stdout.decode().strip() if isinstance(tree.stdout, bytes) else tree.stdout.strip()
+        left = clock.left()
+        if left <= 0:
+            raise Unusable("the time budget ran out before the evidence could be judged")
+        try:
+            done = run_group([sys.executable, str(evidence_script or HERE / "release_evidence.py"), "stamp", "--rev", sha], scratch, left)
+        except subprocess.TimeoutExpired as exc:
+            raise Unusable("the evidence was not judged within the time budget") from exc
+        out, err = done.stdout, done.stderr
+        out = out.decode() if isinstance(out, bytes) else out
+        err = err.decode() if isinstance(err, bytes) else err
+        if done.returncode not in (EXIT_OK, EXIT_FINDINGS):
+            raise Unusable(f"release_evidence.py could not judge it: {err.strip()[:200]}")
+        why = " ".join(line for line in err.splitlines() if line.startswith("FAIL"))[:600]
+        body = {"repo": repo, "sha": sha, "tree": tree_id, "verdict": "PASS" if done.returncode == EXIT_OK else "FAIL",
+                "at": time.time(), "evidence": out, "why": why}
+        path = verdict_path(repo, sha)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as fh:
+            json.dump(body, fh)
+        os.replace(tmp, path)
+        sys.stderr.write(err)
+        print(f"recorded {body['verdict']} for {repo}@{sha[:12]} (evidence tree {tree_id[:12]}), good for 30 minutes: {path}")
+        return done.returncode
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
 
 
 class Unusable(Exception):
@@ -143,6 +241,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--repo")
     ap.add_argument("--sha")
     ap.add_argument("--budget", type=float, default=DEFAULT_BUDGET)
+    ap.add_argument("--record", action="store_true", help="judge, then write the verdict file the release gate reads (#1686)")
+    ap.add_argument("--check-verdict", action="store_true", help="read the recorded verdict; exit 0 only for a fresh matching PASS")
+    ap.add_argument("--tree", help="with --check-verdict: the evidence tree id, `git rev-parse SHA:qa`")
     ap.add_argument("--selftest", action="store_true")
     args = ap.parse_args(argv)
     if args.selftest:
@@ -152,6 +253,15 @@ def main(argv: list[str] | None = None) -> int:
             raise Unusable(f"--repo must be OWNER/REPO, got {args.repo!r}")
         if not args.sha or not SHA.match(args.sha):
             raise Unusable(f"--sha must be a full 40-digit commit, got {args.sha!r}")
+        if args.check_verdict:
+            kind, detail = read_verdict(args.repo, args.sha, args.tree or "")
+            if kind == "ok":
+                sys.stdout.write(detail)
+                return EXIT_OK
+            print(f"{kind}: {detail}", file=sys.stderr)
+            return EXIT_FINDINGS if kind == "FAIL" else EXIT_UNUSABLE
+        if args.record:
+            return record(Clock(args.budget), args.repo, args.sha)
         return judge(Clock(args.budget), args.repo, args.sha)
     except Unusable as exc:
         print(f"unusable: {exc}", file=sys.stderr)
@@ -243,6 +353,101 @@ def selftest() -> int:
         check("a commit that does not exist is unusable", rc == EXIT_UNUSABLE and "could not be fetched" in se, f"rc={rc} {se!r}")
         rc, _, se = judged(sha, str(d / "nowhere"), fake)
         check("a repository that cannot be reached is unusable", rc == EXIT_UNUSABLE, f"rc={rc} {se!r}")
+        # (#1686) A verdict is recorded ahead of the promotion and READ by the gate: keyed by repository, commit and evidence tree id,
+        # good for 30 minutes, outside every repository. A commit with no qa/ tree has nothing to judge and records nothing.
+        (work / "qa").mkdir()
+        (work / "qa" / "e.txt").write_text("e\n", encoding="utf-8")
+        fixture_git.run(work, "add", "qa")
+        fixture_git.run(work, "commit", "-q", "-m", "qa")
+        sha2 = subprocess.run(["git", "rev-parse", "HEAD"], cwd=work, capture_output=True, text=True, check=True).stdout.strip()
+        tree2 = subprocess.run(["git", "rev-parse", "HEAD:qa"], cwd=work, capture_output=True, text=True, check=True).stdout.strip()
+        subprocess.run(["git", "push", "-q", str(src), "HEAD:refs/heads/dev"], cwd=work, check=True)
+        saved_data = os.environ.get("QA_FLOW_VERDICT_DIR")
+        os.environ["QA_FLOW_VERDICT_DIR"] = str(d / "data")
+
+        def recorded(commit: str, script: Path) -> tuple[int, str]:
+            keep = (sys.stdout, sys.stderr)
+            with open(out / "ro", "w+", encoding="utf-8") as so, open(out / "re", "w+", encoding="utf-8") as se:
+                sys.stdout, sys.stderr = so, se
+                try:
+                    try:
+                        rc = record(Clock(30), "o/r", commit, url=str(src), evidence_script=script)
+                    except Unusable as exc:
+                        print(f"unusable: {exc}", file=sys.stderr)
+                        rc = EXIT_UNUSABLE
+                finally:
+                    sys.stdout, sys.stderr = keep
+                se.seek(0)
+                return rc, se.read()
+
+        fake.write_text("import sys\nprint('qa/manual-tests/first-boot-v1/')\nsys.exit(0)\n", encoding="utf-8")
+        rc, se = recorded(sha2, fake)
+        vpath = verdict_path("o/r", sha2)
+        check("a PASS is recorded, and read back for the same repository, commit and evidence tree",
+              rc == 0 and read_verdict("o/r", sha2, tree2) == ("ok", "qa/manual-tests/first-boot-v1/\n"), f"rc={rc} {se!r} {read_verdict('o/r', sha2, tree2)}")
+        check("the verdict is kept under the verdict directory, owner-only", str(vpath).startswith(str(d / "data"))
+              and oct(vpath.stat().st_mode & 0o777) == "0o600", f"{vpath} {oct(vpath.stat().st_mode & 0o777)}")
+        check("a verdict for another evidence tree is a mismatch", read_verdict("o/r", sha2, "c" * 40)[0] == "mismatch")
+        check("a verdict read with no evidence tree is a mismatch, not a pass", read_verdict("o/r", sha2, "")[0] == "mismatch")
+        check("a verdict for another repository is missing", read_verdict("x/y", sha2, tree2)[0] == "missing")
+        check("a verdict for another commit is missing", read_verdict("o/r", sha, tree2)[0] == "missing")
+        at = json.loads(vpath.read_text())["at"]
+        check("a verdict 31 minutes old is stale", read_verdict("o/r", sha2, tree2, now=at + 31 * 60)[0] == "stale")
+        check("a verdict 29 minutes old is still good", read_verdict("o/r", sha2, tree2, now=at + 29 * 60)[0] == "ok")
+        check("a verdict dated in the future is refused", read_verdict("o/r", sha2, tree2, now=at - 3600)[0] == "unparsable")
+        good_text = vpath.read_text()
+        for label, text in (("garbage", "nope {"), ("a list", "[1]"), ("an object without its fields", "{}")):
+            vpath.write_text(text, encoding="utf-8")
+            check(f"a verdict file that is {label} is unparsable", read_verdict("o/r", sha2, tree2)[0] == "unparsable", read_verdict("o/r", sha2, tree2))
+        for field, value in (("repo", "x/y"), ("sha", "e" * 40)):
+            vpath.write_text(json.dumps({**json.loads(good_text), field: value}), encoding="utf-8")
+            check(f"a verdict whose own `{field}` field names another is a mismatch", read_verdict("o/r", sha2, tree2)[0] == "mismatch",
+                  read_verdict("o/r", sha2, tree2))
+        for label, bad_at in (("NaN", float("nan")), ("Infinity", float("inf")), ("-Infinity", float("-inf")), ("the string 'nan'", "nan")):
+            vpath.write_text(json.dumps({**json.loads(good_text), "at": bad_at}), encoding="utf-8")
+            check(f"a verdict whose `at` is {label} is unparsable, not good forever", read_verdict("o/r", sha2, tree2)[0] == "unparsable",
+                  read_verdict("o/r", sha2, tree2))
+        vpath.write_text(good_text, encoding="utf-8")
+        saved_dir = os.environ["QA_FLOW_VERDICT_DIR"]
+        os.environ["QA_FLOW_VERDICT_DIR"] = "relative/dir"
+        try:
+            kind, why = read_verdict("o/r", sha2, tree2)
+            try:
+                verdict_path("o/r", sha2)
+                refused = False
+            except Unusable:
+                refused = True
+        finally:
+            os.environ["QA_FLOW_VERDICT_DIR"] = saved_dir
+        check("a relative QA_FLOW_VERDICT_DIR is refused (reads as unparsable, never resolved against the current directory)",
+              refused and kind == "unparsable" and "absolute" in why, f"{kind} {why!r} refused={refused}")
+        vpath.write_text(good_text, encoding="utf-8")
+        cli = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--repo", "o/r", "--sha", sha2, "--check-verdict", "--tree", tree2],
+                             capture_output=True, text=True, timeout=60)
+        check("--check-verdict exits 0 and prints the evidence listing for a good verdict",
+              cli.returncode == 0 and "first-boot-v1/" in cli.stdout, f"rc={cli.returncode} {cli.stdout!r} {cli.stderr!r}")
+        cli = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--repo", "o/r", "--sha", sha2, "--check-verdict", "--tree", "d" * 40],
+                             capture_output=True, text=True, timeout=60)
+        check("--check-verdict exits 2 and names the reason for a mismatch", cli.returncode == EXIT_UNUSABLE and "mismatch" in cli.stderr,
+              f"rc={cli.returncode} {cli.stderr!r}")
+        fake.write_text("import sys\nprint('FAIL layer: HOLE', file=sys.stderr)\nsys.exit(1)\n", encoding="utf-8")
+        rc, se = recorded(sha2, fake)
+        kind, why = read_verdict("o/r", sha2, tree2)
+        check("a FAIL is recorded as a FAIL naming the finding, and exits 1", rc == 1 and kind == "FAIL" and "HOLE" in why, f"rc={rc} {kind} {why!r}")
+        cli = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--repo", "o/r", "--sha", sha2, "--check-verdict", "--tree", tree2],
+                             capture_output=True, text=True, timeout=60)
+        check("--check-verdict exits 1 for a FAIL verdict", cli.returncode == EXIT_FINDINGS, f"rc={cli.returncode} {cli.stderr!r}")
+        vpath.unlink()
+        fake.write_text("import sys\nsys.exit(2)\n", encoding="utf-8")
+        rc, se = recorded(sha2, fake)
+        check("an unusable judgement records NO verdict", rc == EXIT_UNUSABLE and not vpath.exists(), f"rc={rc} exists={vpath.exists()}")
+        rc, se = recorded(sha, fake)
+        check("a commit with no qa/ tree is unusable and records NO verdict",
+              rc == EXIT_UNUSABLE and "no qa/ tree" in se and not verdict_path("o/r", sha).exists(), f"rc={rc} {se!r}")
+        if saved_data is None:
+            os.environ.pop("QA_FLOW_VERDICT_DIR", None)
+        else:
+            os.environ["QA_FLOW_VERDICT_DIR"] = saved_data
         slow = d / "slow.py"
         slow.write_text("import time\ntime.sleep(30)\n", encoding="utf-8")
         started = time.monotonic()
