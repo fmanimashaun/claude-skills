@@ -944,7 +944,7 @@ POSITIVES_1792 = ["git checkout $BRANCH", "git reset $(git rev-parse x)", "git r
                   "Git add -A", "GIT status", "gIt reset x", "cd x && Git add src/a.rb",
                   "git reset --ha", "git reset --har HEAD~1", "git clean --forc", "git commit --no-v -m x", "git push --no-ve origin x", "git rebase --no-ver main",
                   "git cherry-pick --no-verif abc", "git merge --no-veri x",
-                  "bin/rails db:reset -- -T", "bundle exec rake db:reset -- --tasks", "git clean -fd --forc", "cd x && git commit --no-v"]
+                  "bin/rails db:reset -- -T", "bundle exec rake db:reset -- --tasks", "git clean -fd --forc", "cd x && git commit --no-v", "git commit '--no-v' -m x", "git push origin x '--no-ver'"]
 NEGATIVES_1792 = ["git checkout \"$branch\"", "git stash push -m \"wip $x\"", "git push origin \"$BRANCH\"", "git commit -m \"$(cat <<'EOF'\nmsg\nEOF\n)\"",
                   "git diff $(git merge-base HEAD main)", "git switch -c feature/x", "git branch --show-current", "git clean --dry-run --forc", "git commit --no-edit",
                   "git add src/*.rb", "echo Git is fine", "echo 'eval \"git add -A\"'", "git log --oneline", "git status", "git reset --soft HEAD~1",

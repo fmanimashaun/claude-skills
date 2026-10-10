@@ -344,15 +344,22 @@ fi
 # (`--no-` and `--no-e` are other options, which is why the floor is six characters); `--f` and longer of `--force`, which a dry run (`-n`, `--dry-run` or a prefix)
 # makes harmless on `clean`, as it does for the written-out option above. The exemption reads any segment, as the rules above do, and never applies in degraded mode.
 _tw_end='([[:space:]=]|$)'
-# `--no-v…` is also read in the RAW text, where it must stand as its own word: the normaliser keeps a quoted `"--no-v"` as the bare word `--no-v` (it must, so `git add "-A"` is seen),
-# and raw text keeps the quote beside it, so `git commit -m "--no-v"` (a message) is not an option while `commit -m "fix" --no-v` is.
+# `--no-v…` is also read in the RAW text, with the VALUES of message-like options removed first: the normaliser keeps a quoted `"--no-v"` as the bare word `--no-v` (it must, so
+# `git add "-A"` is seen), so `git commit -m "--no-v"` (a message) and `git commit "--no-v"` (an option) look the same there. In the raw text the value of `-m`/`-F`/`--message`... is
+# cut out, so `-m "--no-v"` is gone while `-m "fix" --no-v` and a quoted `'--no-ve'` stay (the quote may stand beside the option). If sed cannot run, the raw text is used whole: refuse.
+_tw_endq='(["'"'"']|[[:space:]=]|$)'
+_tw_raw_no_values() {
+  local r
+  r="$(printf '%s\n' "$cmd" | LC_ALL=C sed -E "s/[[:space:]](-m|-F|-C|-c|-t|--message|--file|--author|--template|--reuse-message|--reedit-message|--fixup|--squash|--cleanup|--date|--trailer)[[:space:]]+(\"[^\"]*\"|'[^']*'|[^[:space:]]+)/ /g")" || r="$cmd"
+  printf '%s' "$r"
+}
 # The words BEFORE a bare `--`: a path after `--` (`git reset -- --ha`) is not an option. (Quoted text is the raw check's business: see the `--no-v` note above.)
 _tw_nodd='([[:space:]]+([^-[:space:]]|-[^-[:space:]]|--[^[:space:]])[^[:space:]]*)*'
 if [[ "$seg" == *--* ]] && { hit "^git[[:space:]]+reset${_tw_nodd}[[:space:]]+--h(a(r(d)?)?)?${_tw_end}" \
    || { hit "^git[[:space:]]+clean${_tw_nodd}[[:space:]]+--f(o(r(c(e)?)?)?)?${_tw_end}" \
         && ! exempt "^git[[:space:]]+clean([[:space:]].*)?([[:space:]]-[a-zA-Z]*n|[[:space:]]--d(r(y(-(r(u(n)?)?)?)?)?)?${_tw_end})"; } \
    || { hit "^git[[:space:]]+(commit|push|merge|rebase|cherry-pick|pull|am|revert)${_tw_nodd}[[:space:]]+--no-v(e(r(i(f(y)?)?)?)?)?${_tw_end}" \
-        && rawhit "$cmd" "(^|[[:space:]])--no-v(e(r(i(f(y)?)?)?)?)?${_tw_end}"; }; }; then
+        && rawhit "$(_tw_raw_no_values)" "(^|[[:space:]])[\"']?--no-v(e(r(i(f(y)?)?)?)?)?${_tw_endq}"; }; }; then
   deny "git reset --hard (uncommitted work loss), clean --force and --no-verify require explicit user approval, and so does any abbreviation git reads as the full option (--ha for --hard, --forc for --force, --no-v for --no-verify)."
 fi
 # `*` and `..` stage as much as `.` (#1783 review).

@@ -197,7 +197,7 @@ GUARD = Guard(
         ),
         Mutation(
             'a quoted `--no-v` is read as an option, so a commit message is refused',
-            'rawhit "$cmd" "(^|[[:space:]])--no-v(e(r(i(f(y)?)?)?)?)?${_tw_end}"',
+            'rawhit "$(_tw_raw_no_values)" "(^|[[:space:]])[\\"\']?--no-v(e(r(i(f(y)?)?)?)?)?${_tw_endq}"',
             'true',
             'CONTROL: `git commit -m "--no-v"',
         ),
@@ -206,6 +206,12 @@ GUARD = Guard(
             "if hit '^([^[:space:]]*/)?(G[iI][tT]|g[I][tT]|gi[T])([[:space:]]|$)'; then",
             'if rawhit "$cmd" \'(^|[[:space:]])(G[iI][tT]|g[I][tT]|gi[T])[[:space:]]\'; then',
             'CONTROL: `git commit -m "$(cat <<\'EOF\'',
+        ),
+        Mutation(
+            'a quote beside the option no longer counts, so a quoted `--no-v` option is allowed',
+            'rawhit "$(_tw_raw_no_values)" "(^|[[:space:]])[\\"\']?--no-v(e(r(i(f(y)?)?)?)?)?${_tw_endq}"',
+            'rawhit "$(_tw_raw_no_values)" "(^|[[:space:]])--no-v(e(r(i(f(y)?)?)?)?)?${_tw_endq}"',
+            'the tripwire refuses `git commit \'--no-v\' -m x`',
         ),
         # #1342: each discarding form goes unblocked again, or its safe twin gets caught with it.
         Mutation(
