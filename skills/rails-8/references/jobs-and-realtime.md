@@ -112,7 +112,8 @@ mount MissionControl::Jobs::Engine, at: "/jobs"
 The outcome is a dashboard only admins reach. mission_control-jobs (1.3.1) ships with HTTP basic
 auth **enabled and closed**, so it is unreachable until you set credentials. To admit your admins
 instead, point `config.mission_control.jobs.base_controller_class` at your authenticated admin
-controller (`ecosystem-gems.md` → mission_control-jobs). (`authenticate :user do … end` is Devise's
+controller **and** set `config.mission_control.jobs.http_basic_auth_enabled = false`; the first
+alone still answers 401 (`ecosystem-gems.md` → mission_control-jobs). (`authenticate :user do … end` is Devise's
 route helper, and the Rails 8 authentication generator has no such method.)
 
 Features are adapter-dependent (full set on Solid Queue): inspect queues and
