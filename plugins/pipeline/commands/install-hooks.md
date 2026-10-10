@@ -1,5 +1,5 @@
 ---
-description: Install the local git hooks: lifecycle nudges that spend no tokens, and the pre-push and pre-commit guards
+description: Install the local git hooks, the pre-push and pre-commit guards and the lifecycle nudges that spend no tokens
 ---
 
 # /pipeline:install-hooks
