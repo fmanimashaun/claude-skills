@@ -90,7 +90,17 @@ class WorkTree:
 
     def files_under(self, relative: str) -> list[str]:
         base = self.repo / relative
-        found = [str(p.relative_to(self.repo)) for p in base.rglob("*") if p.is_file() and "__pycache__" not in p.parts and p.suffix != ".pyc"]
+        if base.is_symlink():
+            return [relative]       # the staged path is itself a link: listed, so `kind` calls it unhashable
+        # os.walk without following links: a symlink to a DIRECTORY is listed as one entry (`kind` = link, so the guard always runs). `rglob` +
+        # `is_file` never saw it, while the runner's copytree stages it as a real directory of files nobody hashed (Fable round 3, #1738).
+        found: list[str] = []
+        for root, dirs, files in os.walk(base, followlinks=False):
+            dirs[:] = [d for d in dirs if d != "__pycache__"]
+            for name in files + [d for d in dirs if (Path(root) / d).is_symlink()]:
+                if name.endswith(".pyc"):
+                    continue
+                found.append(str((Path(root) / name).relative_to(self.repo)))
         return sorted(found)
 
     def read(self, relative: str) -> bytes | None:
@@ -391,6 +401,8 @@ def github_proof_lookup(repo: Path, system: str, run=subprocess.run) -> Callable
             if workflow is None:
                 return False
             # The run is genuine; does it hold a full sweep for this OS? (a release whose `gates` were skipped does not)
+            # LIMIT (Fable round 3, advisory): `filter=latest` lists only each job's newest attempt, so a run whose latest listing holds nothing but re-run
+            # jobs does not show every shard and never serves as a proof. That is fail-safe (the guards run), at the price of re-running a re-run.
             jobs = run(["gh", "api", f"repos/{slug}/actions/runs/{run_id}/jobs?per_page=100&filter=latest"], capture_output=True, text=True,
                        timeout=60, stdin=subprocess.DEVNULL)
             return jobs.returncode == 0 and jobs_prove(jobs.stdout, workflow, system)

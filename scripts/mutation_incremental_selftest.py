@@ -195,6 +195,16 @@ def git_objects() -> None:
         (root / "docs/dir/ln.txt").unlink()
         write(root, "docs/link.md", "real")
         check("symlink: with no symlink left the same files hash the same again", inc.guard_hash(root, g) == inc.guard_hash(root, g))
+        # Fable round 3: a symlink to a DIRECTORY inside a needs directory. `rglob` + `is_file` never listed it, so all 51 guards were skipped
+        # while copytree staged the linked directory as real files. Alone here (the file links above are gone), so only this can fail the line.
+        write(root, "docs/other/b.txt", "b")
+        (root / "docs/dir/evil_dir").symlink_to("../other")
+        check("symlink: a symlink to a DIRECTORY inside a needs directory is unhashable too (the guard always runs)",
+              inc.guard_hash(root, g) != inc.guard_hash(root, g))
+        check("symlink: ...and it is listed as one entry, never walked into",
+              inc.WorkTree(root).files_under("docs/dir") == ["docs/dir/a.txt", "docs/dir/evil_dir"])
+        (root / "docs/dir/evil_dir").unlink()
+        check("symlink: with the directory link gone the same files hash the same again", inc.guard_hash(root, g) == inc.guard_hash(root, g))
 
 
 def first_parents() -> None:

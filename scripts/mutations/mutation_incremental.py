@@ -40,8 +40,8 @@ GUARD = Guard(
         ),
         Mutation(
             'a needs directory is hashed one level deep, so a nested fixture is skipped as unchanged',
-            'for p in base.rglob("*") if',
-            'for p in base.glob("*") if',
+            '            dirs[:] = [d for d in dirs if d != "__pycache__"]',
+            '            dirs[:] = []',
             'a file NESTED under a needs directory',
         ),
         Mutation(
@@ -265,6 +265,18 @@ GUARD = Guard(
             '    if kind == "link":',
             '    if False:',
             'a symlink in a needs path makes the working-tree hash unequal to itself',
+        ),
+        Mutation(
+            'a symlink to a DIRECTORY is not listed, so the guard that stages it as real files is skipped (Fable round 3)',
+            "            for name in files + [d for d in dirs if (Path(root) / d).is_symlink()]:",
+            "            for name in files:",
+            'a symlink to a DIRECTORY inside a needs directory is unhashable too',
+        ),
+        Mutation(
+            'the walk follows symlinked directories, so their files hash as ordinary files and no link is ever seen',
+            "os.walk(base, followlinks=False)",
+            "os.walk(base, followlinks=True)",
+            'and it is listed as one entry, never walked into',
         ),
         Mutation(
             'a symlink in a commit is hashed like a file',
