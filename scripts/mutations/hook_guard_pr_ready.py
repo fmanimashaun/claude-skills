@@ -5,7 +5,7 @@
 """
 from mutation_types import Guard, Mutation  # noqa: F401
 
-_NEEDS = ("plugins/rails-flow/scripts/fixture_git.py",
+_NEEDS = ("plugins/rails-flow/scripts/fixture_git.py", "plugins/rails-flow/scripts/test_preflight.py",
           'plugins/qa-flow/scripts/remote_evidence.py',
           'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py',
           "plugins/rails-flow/hooks/hooks.json",
