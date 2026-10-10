@@ -34,6 +34,31 @@ GUARD = Guard(
            # mutation reads as caught -- the harness reported this guard INERT until it was added (#1173).
            'plugins/rails-flow/scripts/ci_verdict_hint.py', 'plugins/rails-flow/scripts/session_reaper.py', 'plugins/rails-flow/scripts/process_containment.py'),
     mutations=(
+        # #1785. A check's own CPU allowance, and the hook's words in a failed check's detail.
+        Mutation(
+            "a check's own CPU allowance is ignored, so a 4.2-CPU-second denial can never be starved",
+            '    limit = STARVED_MAX_CPU_S if max_cpu_s is None else max_cpu_s',
+            '    limit = STARVED_MAX_CPU_S',
+            "starved: ...but with the 50,000-character fixtures' own allowance the same denial on an oversubscribed machine IS starved",
+        ),
+        Mutation(
+            'the allowance is far above the deadline, so a hang that burned 5.9 CPU seconds reads as starved',
+            'BIG_INPUT_STARVED_CPU_S = 5.0',
+            'BIG_INPUT_STARVED_CPU_S = 50.0',
+            "starved: ...and a hook that hung (burned 5.9 CPU seconds to the 6 s deadline, the #1645 backtracking) is the HOOK's fault even with the allowance",
+        ),
+        Mutation(
+            'check() does not pass the per-check allowance on',
+            '        why = starved_reason(detail, starved_max_cpu_s)',
+            '        why = starved_reason(detail)',
+            'starved: through check(), the default allowance leaves a 4.2 CPU-second denial a FAILURE and the per-check allowance makes it a skip',
+        ),
+        Mutation(
+            'a guard-bash fixture carries a bare constant detail again',
+            '        check(f"guard-bash: `{cmd}` is blocked", run(cmd) == 2, said())',
+            '        check(f"guard-bash: `{cmd}` is blocked", run(cmd) == 2, "exit 0")',
+            'guard-bash fixtures: no check that runs the hook carries a bare constant `exit N` as its detail (it must carry what the hook said)',
+        ),
         # #1664: a timing result the MACHINE decided is a counted SKIP. Each mutation breaks one of the three conditions, the
         # exit code, the counting, or the order of verdicts, so a STARVED result can no longer pass for a pass or hide a failure.
         Mutation(
@@ -56,13 +81,13 @@ GUARD = Guard(
         ),
         Mutation(
             "a quiet machine excuses a deadline denial (the load condition is dropped)",
-            "and cpu_s < STARVED_MAX_CPU_S and load > cores)",
-            "and cpu_s < STARVED_MAX_CPU_S)",
+            "and cpu_s < limit and load > cores)",
+            "and cpu_s < limit)",
             "...and a machine under its cores never excuses a deadline denial",
         ),
         Mutation(
             "a hook that burned CPU is excused (the CPU condition is dropped)",
-            "and cpu_s < STARVED_MAX_CPU_S and load > cores)",
+            "and cpu_s < limit and load > cores)",
             "and load > cores)",
             "...but a hook that burned 5 CPU seconds past its deadline is the HOOK's fault, at any load",
         ),
