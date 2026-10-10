@@ -861,6 +861,14 @@ offline Turbo is being built, by Basecamp, against a real app. Track #1427; adop
 a release. Until then, if a project genuinely needs offline reads, that is a deliberate
 service-worker decision made and owned by the project, not something Hotwire provides.
 
+**If you read #1427 for its service-worker side, its examples conflict with our PWA rule.** The proposal's
+worker API is `TurboOffline.addRule({ match, handler })` then `TurboOffline.start()`, with handlers
+`cacheFirst`, `networkFirst` and `staleWhileRevalidate`. Its examples use `networkFirst`: one matches
+`/\/topics\/\d+/` for 7 days, and one has no `match`, which defaults to `/.*/` and so caches every URL for
+24 hours, signed-in HTML included. The PR says nothing about authentication, cookies or sign-out. Copied as
+written, either rule breaks `skills/rails-8/references/pwa.md` section 3 (a service worker never caches
+signed-in pages). Looked at 2026-10-10: the PR was open, unmerged, last updated 2026-04-13.
+
 This is the most valuable finding in the file precisely because it is negative. Reading Fizzy's
 Gemfile as "37signals do offline Hotwire, so we can" would have put an unreleasable dependency into
 our doctrine.
