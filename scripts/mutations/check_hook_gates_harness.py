@@ -79,6 +79,12 @@ GUARD = Guard(
             "...and the groups that test the timing itself are exempt",
         ),
         Mutation(
+            "every subprocess's CPU is recorded as the hook's, so a git run after the hook overwrites it",
+            '    return isinstance(argv, (list, tuple)) and any("hooks/scripts/" in str(a) for a in argv)',
+            "    return True",
+            "only a hook script's run sets the CPU",
+        ),
+        Mutation(
             "--strict-timing changes nothing, so a mutant that stalls a hook is read as a skip, not a catch",
             "return (not (STRICT_TIMING if strict is None else strict) and",
             "return (True and",

@@ -269,6 +269,12 @@ def _is_hook_run(args) -> bool:
     return isinstance(argv, (list, tuple)) and any("release-gate.sh" in str(a) for a in argv)
 
 
+def _runs_a_hook(args) -> bool:
+    """Any hook script (`.../hooks/scripts/*.sh`) as an argument of the command, in this checkout or in a mutation's staged tree."""
+    argv = args[0] if args else []
+    return isinstance(argv, (list, tuple)) and any("hooks/scripts/" in str(a) for a in argv)
+
+
 def _note_cpu(before) -> None:
     """The CPU seconds (user + system) the children of this process spent since `before`: the hook's own cost for the run that just ended."""
     global LAST_CPU_S
@@ -327,7 +333,8 @@ def _run(*args, **kw):
             empty = "" if kw.get("text") else b""
             return subprocess.CompletedProcess(proc.args, 124, stdout=empty,
                                                stderr=note if kw.get("text") else note.encode())
-        _note_cpu(cpu0)
+        if _runs_a_hook(args):      # the CPU of the HOOK's run, not of the git or gh a fixture ran after it (review of #1775)
+            _note_cpu(cpu0)
         done = subprocess.CompletedProcess(proc.args, proc.returncode, stdout=out, stderr=err)
         if want_check:
             done.check_returncode()
@@ -5272,6 +5279,9 @@ def meta_checks() -> None:
           is_starved(hot, 0.4, 24.0, 10), "not starved")
     check("starved: ...but a hook that burned 5 CPU seconds past its deadline is the HOOK's fault, at any load",
           not is_starved(hot, 5.0, 40.0, 10), "starved")
+    check("starved: only a hook script's run sets the CPU a verdict is judged by, never the git or gh a fixture ran after it",
+          _runs_a_hook((["bash", "/x/plugins/qa-flow/hooks/scripts/release-gate.sh"],)) and _runs_a_hook((["bash", "/x/hooks/scripts/guard-bash.sh"],))
+          and not _runs_a_hook((["git", "status"],)) and not _runs_a_hook((["gh", "pr", "view"],)), "misclassified")
     check("starved: ...and a machine under its cores never excuses a deadline denial", not is_starved(hot, 0.4, 3.0, 10), "starved")
     check("starved: with --strict-timing the same deadline denial is a FAILURE, never a skip (a mutant that stalls a hook is a catch)",
           not is_starved("the gate took longer than 13s", 0.3, 40.0, 4, "release_gate_repos", strict=True)
