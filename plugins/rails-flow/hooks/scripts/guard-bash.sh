@@ -104,7 +104,7 @@ exempt() { [ "$degraded" = 1 ] && return 1; hit "$1"; }
 # runner is `rails` or `rake`, bare or at ANY path that ends in bin/rails or bin/rake (`./bin/rails`, `/app/bin/rails`); `cd app && ./bin/rails db:reset` is split into segments by
 # the normaliser, so its second segment starts with the path. An engine's `app:db:reset` is the same task.
 # A LISTING IS NOT A RESET: `bin/rails -T db:reset` and `rake -T db:reset` print the tasks that match and run nothing, so `-T`/`--tasks` and `-D`/`--describe` anywhere after the runner exempt it
-# (never in degraded mode, where an exemption cannot be trusted).
+# (never in degraded mode, where an exemption cannot be trusted). A `-T` AFTER A BARE `--` is not a listing flag: rails hands it to the task as an argument, so `rails db:reset -- -T` is a reset (#1792, #1762's final check). The exemption reads only the words before the first `--`.
 # THE LIMITS, STATED (#1761). This rule lists spellings, and a list of spellings is never complete. NOT covered, on purpose:
 #   - `db:setup` and `db:migrate:reset` are OTHER tasks (`db:setup` creates, loads the schema and seeds without dropping; `db:migrate:reset` drops, creates and migrates);
 #   - a task name built at run time: `$(echo db:reset)`, a shell alias or function, `bin/rails runner 'Rake::Task["db:reset"].invoke'`;
@@ -120,7 +120,7 @@ hit "^${_wrappers}${_runner_cmd}([[:space:]]+[^[:space:]]+)*[[:space:]]+(app:)?d
 while [ -n "$_rest" ]; do
   seg="${_rest%%$'\n'*}"; _rest="${_rest#*$'\n'}"
   if hit "^${_wrappers}${_runner_cmd}([[:space:]]+[^[:space:]]+)*[[:space:]]+(app:)?db:reset\\b" \
-     && ! exempt "^${_wrappers}${_runner_cmd}([[:space:]]+[^[:space:]]+)*[[:space:]]+(-T|--tasks|-D|--describe)([[:space:]=]|\$)"; then
+     && ! exempt "^${_wrappers}${_runner_cmd}([[:space:]]+([^-[:space:]]|-[^-[:space:]]|--[^[:space:]])[^[:space:]]*)*[[:space:]]+(-T|--tasks|-D|--describe)([[:space:]=]|\$)"; then
     _reset=1; break
   fi
 done
@@ -295,6 +295,78 @@ _dangerous_option() {
 }
 if [[ "$seg" == *git* ]]; then
   _dangerous_option && deny "a force, discard-changes, mirror or prune option (in any unique prefix or bundle, or a wildcard refspec) can overwrite or delete work; it requires explicit user approval."
+fi
+# THE TRIPWIRE (#1792, the owner's decision on #1793). Text matching cannot be complete: a shell gives a command its meaning only when it expands it, so a
+# variable, a brace, a glob, an `eval` or a capital letter (`Git` runs git on a case-insensitive filesystem) put the real command out of this hook's sight. The `git`
+# shim (#1790) judges the command AFTER expansion, and the pre-push and pre-commit hooks (#1789) judge the effect. This hook is the cheap layer
+# above them, and its rule for what it cannot read is to REFUSE, so the agent writes the command out. It adds no parser and no loop over words.
+#   1. A `git` working-tree or ref verb (add, reset, checkout, switch, restore, clean, stash, branch, rm) with `$`, a backtick, `{`, `}`, `*`, `?` or `[` in the SAME segment.
+#      The normaliser deletes a quoted span, so `git checkout "$branch"` and `git stash push -m "wip $x"` pass; a bare `$branch` or `-{A,}` does not. `$'..'` is ANSI-C
+#      quoting, not an expansion. `push`, `commit`, `merge` and `rebase` are NOT here: `git push origin "$BRANCH"` and `git commit -m "$(cat <<EOF ..)"` are everyday commands, and
+#      the pre-push hook and the server own that guarantee.
+#   2. A verb that is itself dynamic (`$g add -A`, `$(which git) reset`) followed by one of those verbs.
+#   3. `eval` anywhere beside `git` and one of those verbs: the text it runs is built at run time.
+#   4. `git` spelled with a capital (`Git`, `GIT`, `gIt`) in command position, before any argument: it is the same program on macOS.
+#   5. The unique prefix of a dangerous long option: `reset --ha`, `clean --forc`, `commit|push|merge|rebase|cherry-pick|pull|am|revert --no-v`. git reads an unambiguous prefix as the
+#      option, so `--ha` is `--hard`; a prefix git calls ambiguous would not run, so refusing it costs nothing. (push/switch/checkout are `_dangerous_option`, above.)
+# DEGRADED MODE keeps the unanchored rules below and refuses more by itself; nothing here can make a degraded command pass.
+_tw_all='(add|reset|checkout|switch|restore|clean|stash|branch|rm)'     # the verbs a dynamic COMMAND WORD or an eval hides
+_tw_verbs='(reset|checkout|switch|restore|clean|stash|branch|rm)'      # `add` is `_add_refused`'s: it allows a plain path and a glob in the last component (#1783), and refuses `$`, a backtick and a brace itself
+_tw_dyn='[`{}*?[]'                      # a backtick, a brace, a glob character
+_tw_dollar="\\\$([^']|\$)"                # a `$` that is not `$'` (ANSI-C quoting, decoded by the normaliser)
+if [[ "$cmd" == *[gG][iI][tT]* ]]; then
+  if [ "$degraded" = 0 ]; then
+    if hit "^git[[:space:]]+${_tw_verbs}([[:space:]]|\$).*(${_tw_dyn}|${_tw_dollar})"; then
+      deny "a git ${_tw_verbs//[()]/} command with \$, a backtick, a brace or a glob in it cannot be read here, so it is refused: the shell decides what it means. Write the command out literally (the branch name, the file paths, the option)."
+    fi
+    if hit "^[^[:space:]]*[\$\`][^[:space:]]*[[:space:]]+(.*[[:space:]])?${_tw_all}([[:space:]]|\$)"; then
+      deny "a command word built at run time (a variable or a substitution) followed by a git working-tree verb cannot be read here, so it is refused. Write 'git' and the command out literally."
+    fi
+  fi
+  # (2, continued) a substitution that names git, straight before the verb: `$(which git) reset`. The normaliser splits it into two segments, neither of which has both words.
+  if rawhit "$cmd" "(\\\$\\(|\`)[^)\`]*[gG][iI][tT][^)\`]*(\\)|\`)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*${_tw_all}([[:space:]]|\$)"; then
+    deny "a command word built by a substitution, followed by a git working-tree verb, cannot be read here, so it is refused. Write 'git' and the command out literally."
+  fi
+  if [ "$degraded" = 0 ] && hit '^eval([[:space:]]|$)' && rawhit "$cmd" "[gG][iI][tT]([[:space:]]+-[^[:space:]]+)*[[:space:]]+${_tw_all}([[:space:]]|\$)"; then
+    deny "eval beside a git working-tree command runs text built at run time, which cannot be read here, so it is refused. Write the git command out literally."
+  fi
+  if rawhit "$cmd" '(^|[;&|(`{][[:space:]]*|^[[:space:]]*)(G[iI][tT]|g[I][tT]|gi[T])[[:space:]]'; then
+    deny "write 'git' in lower case: on a case-insensitive filesystem (macOS) 'Git' runs the same program, and the rules here match the lower-case word."
+  fi
+fi
+# A prefix of a dangerous long option (#1792). Only the segments of the verbs below are walked, never every line of a long command.
+_tw_prefix() {
+  [ "$degraded" = 1 ] && return 1
+  local line w o rest dry
+  if [ "$have_grep" = 1 ]; then rest="$(printf '%s\n' "$seg" | LC_ALL=C grep -E '^git[[:space:]]+(reset|clean|commit|push|merge|rebase|cherry-pick|pull|am|revert)([[:space:]]|$)')"$'\n'; else rest="$seg"$'\n'; fi
+  while [ -n "$rest" ]; do
+    line="${rest%%$'\n'*}"; rest="${rest#*$'\n'}"
+    [[ $line =~ ^git[[:space:]]+(reset|clean|commit|push|merge|rebase|cherry-pick|pull|am|revert)([[:space:]]|$) ]] || continue
+    local verb="${BASH_REMATCH[1]}" d
+    dry=0
+    set -f
+    for w in $line; do   # a dry run (clean -n, a prefix of --dry-run) makes clean's force harmless
+      case "$w" in --dr|--dry|--dry-|--dry-r|--dry-ru|--dry-run) dry=1 ;; -[!-]*n*) dry=1 ;; esac
+    done
+    for w in $line; do
+      case "$w" in
+        --?*)
+          o="${w%%=*}"
+          [ "${#o}" -ge 3 ] || continue
+          case "$verb" in
+            reset) d="--hard" ;;
+            clean) d="--force"; [ "$dry" = 1 ] && continue ;;
+            *) d="--no-verify"; [ "${#o}" -ge 6 ] || continue ;;
+          esac
+          [ "${d#"$o"}" != "$d" ] && { set +f; return 0; } ;;
+      esac
+    done
+    set +f
+  done
+  return 1
+}
+if [[ "$seg" == *git* ]] && _tw_prefix; then
+  deny "an abbreviated dangerous option (--ha for --hard, --forc for --force, --no-v for --no-verify) is read by git as the full option, so it is refused like the full spelling: it can discard work or skip the checks, and requires explicit user approval."
 fi
 # `*` and `..` stage as much as `.` (#1783 review).
 if hit '^git[[:space:]]+add([[:space:]]+-[a-zA-Z-]*)*[[:space:]]+(-[a-zA-Z]*A[a-zA-Z]*\b|--all\b|\.{1,2}/?($|[[:space:]])|:/($|[[:space:]])|\*($|[[:space:]]))'; then

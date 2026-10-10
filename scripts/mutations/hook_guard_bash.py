@@ -116,6 +116,67 @@ GUARD = Guard(
             "_re_verb='gh[[:space:]].*issue[[:space:]]+(create|new)'",
             "guard-bash (#1515): `$(echo gh) issue create",
         ),
+        # #1792: the tripwire.
+        Mutation(
+            "the tripwire's dynamic-argument rule is off, so a variable beside a working-tree verb passes",
+            'if hit "^git[[:space:]]+${_tw_verbs}([[:space:]]|\\$).*(${_tw_dyn}|${_tw_dollar})"; then',
+            'if false; then',
+            'the tripwire refuses `git checkout $BRANCH',
+        ),
+        Mutation(
+            'a `$` no longer counts as dynamic, so only a backtick, a brace or a glob does',
+            '_tw_dollar="\\\\\\$([^\']|\\$)"',
+            '_tw_dollar="NEVERMATCHES_"',
+            'the tripwire refuses `git checkout $BRANCH',
+        ),
+        Mutation(
+            'a command word built at run time is no longer refused before a working-tree verb',
+            'if hit "^[^[:space:]]*[\\$\\`][^[:space:]]*[[:space:]]+(.*[[:space:]])?${_tw_all}([[:space:]]|\\$)"; then',
+            'if false; then',
+            'the tripwire refuses `g=git; $g reset x',
+        ),
+        Mutation(
+            'a substitution naming git before a verb is no longer refused',
+            '[gG][iI][tT][^)\\`]*(\\\\)|\\`)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*${_tw_all}([[:space:]]|\\$)"; then',
+            '[gG][iI][tT][^)\\`]*NEVER(\\\\)|\\`)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*${_tw_all}([[:space:]]|\\$)"; then',
+            'the tripwire refuses `$(which git) reset x',
+        ),
+        Mutation(
+            'eval beside a git working-tree command is no longer refused',
+            "hit '^eval([[:space:]]|$)' && rawhit",
+            "hit '^evalNEVER([[:space:]]|$)' && rawhit",
+            "the tripwire refuses `C='git reset --hard'; eval",
+        ),
+        Mutation(
+            'a capitalised Git in command position is no longer refused',
+            "(G[iI][tT]|g[I][tT]|gi[T])[[:space:]]'; then",
+            "(GNEVER)[[:space:]]'; then",
+            'the tripwire refuses `Git add -A`',
+        ),
+        Mutation(
+            '`add` is treated like the other working-tree verbs, so a glob in `git add src/*.rb` is refused again',
+            "_tw_verbs='(reset|checkout|switch|restore|clean|stash|branch|rm)'",
+            "_tw_verbs='(add|reset|checkout|switch|restore|clean|stash|branch|rm)'",
+            'CONTROL: `git add src/*.rb`',
+        ),
+        Mutation(
+            'an abbreviation of a dangerous option is matched only when written in full',
+            '[ "${d#"$o"}" != "$d" ] && { set +f; return 0; } ;;\n      esac\n    done\n    set +f\n  done\n  return 1\n}\nif [[ "$seg" == *git* ]] && _tw_prefix',
+            '[ "$d" = "$o" ] && { set +f; return 0; } ;;\n      esac\n    done\n    set +f\n  done\n  return 1\n}\nif [[ "$seg" == *git* ]] && _tw_prefix',
+            'the tripwire refuses `git reset --ha`',
+        ),
+        Mutation(
+            'a dry run no longer exempts an abbreviated clean --force',
+            '            clean) d="--force"; [ "$dry" = 1 ] && continue ;;',
+            '            clean) d="--force" ;;',
+            'CONTROL: `git clean --dry-run --forc`',
+        ),
+        Mutation(
+            'the db:reset listing exemption reads a -T after a bare `--` again',
+            '([[:space:]]+([^-[:space:]]|-[^-[:space:]]|--[^[:space:]])[^[:space:]]*)*[[:space:]]+(-T|--tasks|-D|--describe)',
+            '([[:space:]]+[^[:space:]]+)*[[:space:]]+(-T|--tasks|-D|--describe)',
+            'the tripwire refuses `bin/rails db:reset -- -T',
+        ),
         # #1342: each discarding form goes unblocked again, or its safe twin gets caught with it.
         Mutation(
             "git clean -f is allowed",
