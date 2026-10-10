@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import shutil
@@ -66,13 +67,19 @@ def verdict_path(repo: str, sha: str) -> Path:
     CLAUDE_PLUGIN_DATA: Claude Code gives that variable to hook processes and NOT to Bash-tool commands (code.claude.com/docs/en/plugins/manifest-reference.md),
     and the recording runs through Bash while the gate runs as a hook, so the two would have looked in different places. QA_FLOW_VERDICT_DIR is for tests."""
     base = os.environ.get("QA_FLOW_VERDICT_DIR") or str(Path.home() / ".claude" / "qa-flow")
+    if not os.path.isabs(base):
+        # The recording and the gate run from different directories: a relative path would send them to two places.
+        raise Unusable(f"QA_FLOW_VERDICT_DIR must be an absolute path, got {base!r}")
     return Path(base) / "remote-verdicts" / f"{repo.replace('/', '__')}@{sha}.json"
 
 
 def read_verdict(repo: str, sha: str, tree: str, now: float | None = None) -> tuple[str, str]:
     """(kind, detail). kind is "ok" only for a fresh PASS recorded for exactly this repo, commit and evidence tree; detail is then the
     evidence listing the gate lets the stamp's commit carry. Every other kind is a refusal: missing, unparsable, mismatch, stale, FAIL."""
-    path = verdict_path(repo, sha)
+    try:
+        path = verdict_path(repo, sha)
+    except Unusable as exc:
+        return "unparsable", str(exc)
     try:
         text = path.read_text()
     except FileNotFoundError:
@@ -84,6 +91,9 @@ def read_verdict(repo: str, sha: str, tree: str, now: float | None = None) -> tu
         if not isinstance(v, dict) or not all(k in v for k in ("repo", "sha", "tree", "verdict", "at", "evidence")):
             raise ValueError("a field is missing")
         at = float(v["at"])
+        if not math.isfinite(at):
+            # json.loads accepts NaN and Infinity, and every comparison with NaN is false, so a NaN `at` would never read as stale.
+            raise ValueError("the time it was recorded is not a finite number")
     except (ValueError, TypeError) as exc:
         return "unparsable", f"the verdict file is not a verdict: {exc}"
     if v["repo"] != repo or v["sha"] != sha:
@@ -393,6 +403,24 @@ def selftest() -> int:
             vpath.write_text(json.dumps({**json.loads(good_text), field: value}), encoding="utf-8")
             check(f"a verdict whose own `{field}` field names another is a mismatch", read_verdict("o/r", sha2, tree2)[0] == "mismatch",
                   read_verdict("o/r", sha2, tree2))
+        for label, bad_at in (("NaN", float("nan")), ("Infinity", float("inf")), ("-Infinity", float("-inf")), ("the string 'nan'", "nan")):
+            vpath.write_text(json.dumps({**json.loads(good_text), "at": bad_at}), encoding="utf-8")
+            check(f"a verdict whose `at` is {label} is unparsable, not good forever", read_verdict("o/r", sha2, tree2)[0] == "unparsable",
+                  read_verdict("o/r", sha2, tree2))
+        vpath.write_text(good_text, encoding="utf-8")
+        saved_dir = os.environ["QA_FLOW_VERDICT_DIR"]
+        os.environ["QA_FLOW_VERDICT_DIR"] = "relative/dir"
+        try:
+            kind, why = read_verdict("o/r", sha2, tree2)
+            try:
+                verdict_path("o/r", sha2)
+                refused = False
+            except Unusable:
+                refused = True
+        finally:
+            os.environ["QA_FLOW_VERDICT_DIR"] = saved_dir
+        check("a relative QA_FLOW_VERDICT_DIR is refused (reads as unparsable, never resolved against the current directory)",
+              refused and kind == "unparsable" and "absolute" in why, f"{kind} {why!r} refused={refused}")
         vpath.write_text(good_text, encoding="utf-8")
         cli = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--repo", "o/r", "--sha", sha2, "--check-verdict", "--tree", tree2],
                              capture_output=True, text=True, timeout=60)

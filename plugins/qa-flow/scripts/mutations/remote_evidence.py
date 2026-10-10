@@ -110,5 +110,17 @@ GUARD = Guard(
             "os.O_TRUNC, 0o666)",
             "owner-only",
         ),
+        Mutation(
+            "a verdict whose time is NaN passes and never expires, because every comparison with NaN is false",
+            "        if not math.isfinite(at):",
+            "        if False:",
+            "is unparsable, not good forever",
+        ),
+        Mutation(
+            "a relative verdict directory is accepted, so the recording and the gate look in two places",
+            "    if not os.path.isabs(base):",
+            "    if False:",
+            "a relative QA_FLOW_VERDICT_DIR is refused",
+        ),
     ),
 )
