@@ -13,8 +13,11 @@ list, and nobody looked.
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/session_coordinator.py" --sessions sessions.json
 ```
 
-`sessions.json` is the session list as you already have it, plus what each session announced under
-§2 of the skill:
+`sessions.json` is the session list from **`ListAgents`** — it lists the sessions `SendMessage` can reach,
+your other local Claude Code sessions among them, and a session appears only once it binds an inbox socket —
+plus what each session announced under §2 of the skill. Do not rebuild that list by messaging every peer to ask
+who is alive; read the listing. Names are labels: several sessions sharing one get a short identifier in each
+row, so address a session exactly as its row prints it:
 
 ```json
 [
@@ -89,8 +92,24 @@ So `age_minutes` **refuses a naive clock** instead of assuming one, and the self
 
 The skill says **no tmux and no daemon**. That is about not *requiring* infrastructure, and this
 requires none: one command, no state, no server. Re-running it on a timer is supported and is the
-operator's choice — on a Claude Code session, `/loop` or a scheduled wake-up — but nothing here
-depends on that choice, so a machine with no scheduler loses nothing.
+operator's choice, but nothing here depends on that choice, so a machine with no scheduler loses nothing.
+
+## Wait with the native tools, not a hand-built poller (#1682)
+
+On Claude Code, each kind of waiting has a tool. Use it rather than a loop of `sleep` and re-reads:
+
+| waiting for | use | what to know |
+|---|---|---|
+| a local session to finish (a review, a long run) | `SendMessage` with `notify_when_idle: true` | one notice when it next goes idle or exits; main conversation only, sessions on this machine only; dropped after 12 hours with no notice; v2.1.236+ in both sessions |
+| a state that flips (PR checks, a merge, the load average crossing a gate) | the **Monitor** tool, with a command that prints one line when the state changes | every watch has a deadline — 5 minutes by default, at most 30 — and ends with one notice, so re-arm it if still needed |
+| a recurring pass (re-running this command) | dynamic `/loop`, which reschedules itself with `ScheduleWakeup` | it picks a delay between one minute and one hour; an iteration that neither reschedules nor stops gets one fallback wake-up about 20 minutes later |
+| the next session to read the state after a restart | the handoff file | a self-paced `/loop` and a Monitor watch are not restored on resume; `CronCreate` tasks are, but recurring ones expire after 7 days |
+
+**What stays ours, because nothing native does it:** heavy-run slots (nothing in Claude Code limits concurrent
+suites), the durable record of who holds what (keyed by worktree path, since names are not identities), the
+handoff, a board that knows queue order and gates, path and branch collision detection (this command), and
+authority. A cross-session message can never approve anything or change configuration, so a coordinator's
+assignment carries weight only where the owner's own instructions say it does.
 
 ## Then send messages
 
