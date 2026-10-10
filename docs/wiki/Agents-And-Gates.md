@@ -107,6 +107,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | design-flow variant conformance | `design-flow` | `python3 plugins/design-flow/scripts/variant_conformance.py --selftest` | selftest |
 | pipeline apm advisory | `pipeline` | `python3 plugins/pipeline/scripts/apm_advisory.py --selftest` | selftest |
 | pipeline committed-secret scan | `pipeline` | `python3 plugins/pipeline/scripts/scan_committed_secrets.py --selftest` | selftest |
+| pipeline git guards | `pipeline` | `python3 plugins/pipeline/scripts/git_guard_selftest.py` | live check |
 | pipeline hook install | `pipeline` | `python3 plugins/pipeline/scripts/install_git_hooks_selftest.py` | live check |
 | pipeline kamal destination | `pipeline` | `python3 plugins/pipeline/scripts/kamal_destination.py --selftest` | selftest |
 | pipeline status board | `pipeline` | `python3 plugins/pipeline/scripts/status_board.py --selftest` | selftest |
