@@ -215,4 +215,11 @@ if [ -z "${RAILS_FLOW_LANE:-}" ]; then
   fi
 fi
 
+# #1828: Claude Code loads only the first 200 lines or 25KB of the auto-memory index; what is past that is silently dropped. ONE line, and only when
+# the index is within 80% of either limit or past it (silent otherwise, so it costs nothing here: this hook runs again after every compaction).
+# Advisory and fail open. The judgement lives in scripts/check_memory_index.py.
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/check_memory_index.py" ] && command -v python3 >/dev/null 2>&1; then
+  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_memory_index.py" --hook-line 2>/dev/null || true
+fi
+
 exit 0
