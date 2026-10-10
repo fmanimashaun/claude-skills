@@ -380,7 +380,7 @@ against it, and the `inset-viewport` utility
   Stimulus controller shrinks to a **thin opener/closer** (call `showModal()` / `close()`) plus
   **backdrop-click close** — `closedby="any"` does that natively but is **not Baseline** (Chrome 134,
   Firefox 141, no Safari; values `any` | `closerequest` | `none`), so keep the click handler. Under
-  Turbo morph, guard the `open` attribute ([hotwire production.md](../../hotwire/references/production.md)).
+  Turbo morph, guard the `open` attribute (the hotwire skill's `references/production.md` covers it).
   Delete-confirmation = Modal(`sm`) recipe.
 - **Invoker commands (Newly Baseline, 2025-12-12 — Chrome/Edge 135, Firefox 144, Safari 26.2):** a
   button can open and close the dialog with no script. Offer this where the audience is on current
