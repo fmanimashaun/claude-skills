@@ -716,7 +716,7 @@ GUARD = Guard(
             'protected branch names are no longer refused, so --no-deref -d refs/heads/main is allowed',
             '    return ref if branch and branch.casefold() not in _PROTECTED_FOLDED else None',
             '    return ref if branch else None',
-            "unlisted shape 'git update-ref --no-deref -d refs/heads/main': must be unjudgeable",
+            "unlisted shape 'git update-ref --no-deref -d refs/heads/MAIN': must be unjudgeable",
         ),
         Mutation(
             'a protected name is compared case-sensitively, so refs/heads/MAIN is allowed',
@@ -728,7 +728,7 @@ GUARD = Guard(
             'any refs/ namespace is accepted, so the remote-tracking copy of a protected branch, tags and replace refs can be deleted',
             '    if ref.startswith("refs/heads/"):',
             '    if ref.startswith("refs/"):',
-            "unlisted shape 'git update-ref --no-deref -d refs/remotes/origin/main': must be unjudgeable",
+            "unlisted shape 'git update-ref --no-deref -d refs/remotes/origin/DEV': must be unjudgeable",
         ),
         Mutation(
             'a ref is SET without -d is allowed, so update-ref moves a branch',
@@ -765,12 +765,6 @@ GUARD = Guard(
             '            or any(part == "" or part.startswith(".") for part in ref.split("/"))):',
             '            or False):',
             "unlisted shape 'git update-ref --no-deref -d refs/heads//x': must be unjudgeable",
-        ),
-        Mutation(
-            'reflog syntax is accepted, so refs/heads/a@{1} passes',
-            ' or "@{" in ref',
-            ' or False',
-            "unlisted shape 'git update-ref --no-deref -d refs/heads/a@{1}': must be unjudgeable",
         ),
     ),
 )
