@@ -65,6 +65,36 @@ GUARD = Guard(
             '          run("gh pr create --base dev --body-file BODY", NUMERIC) == 2, "exit 0")',
             'guard-claims fixtures: no check that runs the hook carries a bare constant `exit N` as its detail (it must carry what the hook said)',
         ),
+        Mutation(
+            'a release-gate fixture carries a bare constant detail again (#1810)',
+            '              run("git push origin main", marketplace=True, origin=origin) == 2, said())',
+            '              run("git push origin main", marketplace=True, origin=origin) == 2, "exit 0")',
+            'release-gate fixtures: no check that runs the hook carries a bare constant',
+        ),
+        Mutation(
+            'a release-gate fallback fixture carries a bare constant detail again (#1810)',
+            'gate("git branch -D feature/x").returncode == 2, said())',
+            'gate("git branch -D feature/x").returncode == 2, "exit 0")',
+            'release-gate-fallback fixtures: no check that runs the hook carries a bare constant',
+        ),
+        Mutation(
+            'a release-gate adversary fixture carries a bare constant detail again (#1810)',
+            'adversarial `{cmd[:60]}` is refused", gate(cmd).returncode == 2, said())',
+            'adversarial `{cmd[:60]}` is refused", gate(cmd).returncode == 2, "exit 0")',
+            'release-gate-adversary fixtures: no check that runs the hook carries a bare constant',
+        ),
+        Mutation(
+            'the release-gate fixtures no longer record what the hook said, so a failed check carries only an exit code (#1810)',
+            '        last["rc"], last["out"] = done.returncode, f"{done.stdout or \'\'}{done.stderr or \'\'}"',
+            '        last["rc"], last["out"] = done.returncode, ""',
+            'release-gate (#1810): the detail of a failed check carries what the hook said',
+        ),
+        Mutation(
+            'a deadline fixture carries a bare constant detail again (#1810)',
+            '              nosleep("git add -A") == 2, said())',
+            '              nosleep("git add -A") == 2, "exit 0")',
+            'deadline fixtures: no check that runs the hook carries a bare constant',
+        ),
         # #1664: a timing result the MACHINE decided is a counted SKIP. Each mutation breaks one of the three conditions, the
         # exit code, the counting, or the order of verdicts, so a STARVED result can no longer pass for a pass or hide a failure.
         Mutation(

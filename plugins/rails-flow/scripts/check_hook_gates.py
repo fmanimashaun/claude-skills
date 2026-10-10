@@ -2312,10 +2312,27 @@ def _pin(cmd: str, head: str) -> str:
     return cmd
 
 
+def _said_recorder():
+    """(record, said) for a fixture group whose helper runs a hook through a subprocess (#1810, as #1785 did for guard-bash and #1801 for guard-claims).
+    `record(done)` keeps the finished process's exit code and output; `said()` is the detail of a failed check: the exit code AND what the hook said. A
+    constant "exit 0" could not show whether the hook let a command through or failed for another reason, and check() can only call a timing denial
+    STARVED when the denial's own words are in the detail. Arguments are evaluated left to right, so `said()` after the condition reads that run."""
+    last = {"rc": 0, "out": ""}
+
+    def record(done):
+        last["rc"], last["out"] = done.returncode, f"{done.stdout or ''}{done.stderr or ''}"
+        return done
+
+    def said() -> str:
+        return f"exit {last['rc']}: {str(last['out']).strip()[:200]}"
+    return record, said
+
+
 def release_gate_fixtures() -> None:
     if not QA_HOOK.is_file():
         check("release-gate.sh present beside rails-flow", False, str(QA_HOOK))
         return
+    record, said = _said_recorder()
 
     def run(cmd: str, marketplace: bool = False, plugin_root: Path | None = None,
             origin: str | None = "https://github.com/fmanimashaun/claude-skills.git",
@@ -2341,18 +2358,21 @@ def release_gate_fixtures() -> None:
             env["CLAUDE_PLUGIN_ROOT"] = str(plugin_root or QA_HOOK.parents[2]); env.update(extra_env or {})
             done = _run(["bash", str(QA_HOOK)], cwd=td, input=json.dumps({"tool_input": {"command": cmd}}),
                                   env=env, capture_output=True, text=True, timeout=60)
+            record(done)
             return done.returncode
 
+    check("release-gate (#1810): the detail of a failed check carries what the hook said, not just its exit code",
+          run("git push origin main") == 2 and said().startswith("exit 2: ") and len(said()) > len("exit 2: "), said())
     for cmd in ("git push origin main", "FOO=1 git push origin main", "git -C repo push origin main", "git status; git push origin main"):
-        check(f"release-gate: `{cmd}` targets main and is blocked without a certification", run(cmd) == 2, "exit 0")
+        check(f"release-gate: `{cmd}` targets main and is blocked without a certification", run(cmd) == 2, said())
     for cmd in ('git commit -m "push origin main"', 'echo "git push origin main"', "# git push origin main", "git push origin feature/x"):
-        check(f"release-gate: `{cmd}` does not target main and passes", run(cmd) == 0, "exit 2")
+        check(f"release-gate: `{cmd}` does not target main and passes", run(cmd) == 0, said())
     # (#1768) A bare `git config <key>` READS the key, whichever it is: the refusal of `git config core.hooksPath` blocked a session's read-only inspection command.
     for cmd in ("git config core.hooksPath", "git config --local core.hooksPath",
                 "cd /tmp; grep -n 'ref:' ci.yml | head -3; git log -1 --format='%h %cd' --date=short -- ci.yml; git config core.hooksPath; sed -n 3p STATUS.md"):
-        check(f"release-gate (#1768): `{cmd}` is a read-only inspection and passes", run(cmd) == 0, "exit 2")
+        check(f"release-gate (#1768): `{cmd}` is a read-only inspection and passes", run(cmd) == 0, said())
     for cmd in ("git config core.hooksPath /tmp/x", "git config --local core.hooksPath ''", "git config --unset core.hooksPath", "git config --add core.hooksPath /tmp/x"):
-        check(f"release-gate (#1768): `{cmd}` WRITES the key and is still refused", run(cmd) == 2, "exit 0")
+        check(f"release-gate (#1768): `{cmd}` WRITES the key and is still refused", run(cmd) == 2, said())
     # #1803: the LOCAL delete of a non-protected ref (a review namespace ref left behind by a review) merges and publishes nothing, and was refused because the gate refused
     # every `update-ref`. ONLY `--no-deref -d` is allowed: a plain `update-ref -d` FOLLOWS a symbolic ref and deletes its TARGET (`refs/remotes/review/alias` -> `refs/heads/main`,
     # deleted by its own harmless-looking name, takes main with it: measured), and no probe of the repository can prove otherwise (the command can create the symref between
@@ -2360,45 +2380,45 @@ def release_gate_fixtures() -> None:
     alias = (("symbolic-ref", "refs/remotes/review/alias", "refs/heads/main"),)
     for cmd in ("git update-ref --no-deref -d refs/remotes/review/1559", "git -C . update-ref --no-deref -d refs/remotes/review/1559",
                 "git update-ref --no-deref -d refs/heads/feature/old", "git update-ref --no-deref -m done -d refs/remotes/review/7 abc123def"):
-        check(f"release-gate (#1803): `{cmd}` deletes a local non-protected ref without following a symbolic one, and passes", run(cmd) == 0, "exit 2")
+        check(f"release-gate (#1803): `{cmd}` deletes a local non-protected ref without following a symbolic one, and passes", run(cmd) == 0, said())
     check("release-gate (#1803): `update-ref --no-deref -d` of a SYMBOLIC alias of main deletes only the alias and passes",
-          run("git update-ref --no-deref -d refs/remotes/review/alias", git_config=alias) == 0, "exit 2")
+          run("git update-ref --no-deref -d refs/remotes/review/alias", git_config=alias) == 0, said())
     for cmd in ("git update-ref -d refs/remotes/review/1559", "git update-ref -d refs/heads/feature/old"):
-        check(f"release-gate (#1803): a PLAIN `{cmd}` follows a symbolic ref, so it is refused whatever the ref (the remedy is --no-deref)", run(cmd) == 2, "exit 0")
+        check(f"release-gate (#1803): a PLAIN `{cmd}` follows a symbolic ref, so it is refused whatever the ref (the remedy is --no-deref)", run(cmd) == 2, said())
     check("release-gate (#1803): a plain `update-ref -d` of the symbolic alias of main is refused (it would delete main)",
-          run("git update-ref -d refs/remotes/review/alias", git_config=alias) == 2, "exit 0")
+          run("git update-ref -d refs/remotes/review/alias", git_config=alias) == 2, said())
     for cmd in ("git update-ref --no-deref -d refs/heads/main", "git update-ref --no-deref -d refs/heads/master", "git update-ref --no-deref -d refs/heads/dev",
                 "git update-ref --no-deref -d refs/heads/staging", "git update-ref --no-deref -d HEAD", "git update-ref --no-deref -d refs/remotes/origin/main",
                 "git update-ref --no-deref -d refs/remotes/origin/dev", "git update-ref --no-deref -d refs/heads/MAIN", "git update-ref --no-deref -d refs/remotes/origin/DEV",
                 "git update-ref --no-deref -d refs/tags/v1", "git update-ref --no-deref refs/heads/main HEAD", "git update-ref --no-deref -d $REF",
                 "git update-ref --no-deref --stdin", "git update-ref --no-deref -d refs/heads//x", "git update-ref --no-deref -d refs/heads/./x",
                 "GIT_DIR=/x git update-ref --no-deref -d refs/remotes/review/1"):
-        check(f"release-gate (#1803): `{cmd}` is protected or not a plain --no-deref delete and is still refused", run(cmd) == 2, "exit 0")
+        check(f"release-gate (#1803): `{cmd}` is protected or not a plain --no-deref delete and is still refused", run(cmd) == 2, said())
     # #1410: `main`/`master` INSIDE a branch name is not a destination. Both were refused
     # downstream on one day, and both authors renamed the branch to get past the gate.
     for cmd in ("git push -u origin fix/1010-one-main", "git push origin feature/main-menu",
                 "git push origin main-nav", "git push -u origin feat/983-pr2-master-detail"):
         check(f"release-gate (#1410): `{cmd}` names main only inside a branch name, and passes",
-              run(cmd) == 0, "exit 2")
+              run(cmd) == 0, said())
     # ...and every real destination form is still a promotion -- including the QUOTED ones, which
     # the old regex allowed because the normaliser strips quoted spans before it looked.
     for cmd in ("git push origin HEAD:main", "git push origin dev:main", "git push origin refs/heads/main",
                 "git push --all origin", 'git push origin "main"', "git push origin 'HEAD:main'"):
         check(f"release-gate (#1410): `{cmd}` targets main and is blocked without a certification",
-              run(cmd) == 2, "exit 0")
-    check("release-gate (#1410): a bare `git push` from a feature branch passes", run("git push") == 0, "exit 2")
+              run(cmd) == 2, said())
+    check("release-gate (#1410): a bare `git push` from a feature branch passes", run("git push") == 0, said())
     # A here-string (`<<<`) is a word. Its second `<` once opened a heredoc whose "delimiter" was the next word, and the
     # command after it was deleted with the body: each of these was ALLOWED end to end.
     for cmd in ("cat <<< x; git push origin main", "cat <<<x\ngit push origin main", "git push origin main <<< x",
                 "cat <<< x; gh pr merge 5", "cat <<< x\ngh api -X PUT repos/o/r/pulls/5/merge"):
-        check(f"release-gate: a here-string before it hides nothing: `{cmd!r}` is blocked", run(cmd) == 2, "exit 0")
-    check("release-gate: a here-string before a push to a branch still passes", run("cat <<< x; git push origin feature/x") == 0, "exit 2")
+        check(f"release-gate: a here-string before it hides nothing: `{cmd!r}` is blocked", run(cmd) == 2, said())
+    check("release-gate: a here-string before a push to a branch still passes", run("cat <<< x; git push origin feature/x") == 0, said())
     # #1470 review: the five pushes to main the first parser ALLOWED. Each is blocked end to end.
     for cmd in ("git push origin $(echo main)", "git push origin main>/dev/null",
                 "echo done#1; git push origin main", "git push origin HEAD:heads/main",
                 "git push origin {main,dev}", "git -C $(pwd) push origin main",
                 "git push -v$(true) origin main", "git push --receive-pack=$(echo x) origin main"):
-        check(f"release-gate (#1470): `{cmd}` reaches main and is blocked", run(cmd) == 2, "exit 0")
+        check(f"release-gate (#1470): `{cmd}` reaches main and is blocked", run(cmd) == 2, said())
     # 41's delta review of #1470: the hook only handed the parser segments that STARTED with
     # `git push`, so a wrapper, a group, a continuation or a shell string hid the push entirely.
     for cmd in ("timeout 60 git push origin main", "sudo -u bob git push origin main",
@@ -2409,39 +2429,39 @@ def release_gate_fixtures() -> None:
                 "timeout 60 gh pr merge 5", "bash -o pipefail -c 'git push origin main'",
                 "g''it push origin main", "gi\\t push origin main", '"g"it push origin main'):
         check(f"release-gate (#1470): `{cmd!r}` reaches main (or cannot be judged) and is blocked",
-              run(cmd) == 2, "exit 0")
+              run(cmd) == 2, said())
     for cmd in ("bash -c 'git push origin fix/x'", "timeout 60 git push origin fix/x", "gh pr list"):
-        check(f"release-gate (#1470): CONTROL: `{cmd}` passes", run(cmd) == 0, "exit 2")
+        check(f"release-gate (#1470): CONTROL: `{cmd}` passes", run(cmd) == 0, said())
     check("release-gate (#1470): the current-branch idiom on a feature branch passes",
-          run('git push -u origin "$(git branch --show-current)"') == 0, "exit 2")
+          run('git push -u origin "$(git branch --show-current)"') == 0, said())
     # ...and the false refusal that review found: an apostrophe in a heredoc body is not a quote.
     check("release-gate (#1470): a heredoc body with an apostrophe does not block a feature push",
-          run("cat > n.md <<'EOF'\nit's done\nEOF\ngit push -u origin fix/x") == 0, "exit 2")
+          run("cat > n.md <<'EOF'\nit's done\nEOF\ngit push -u origin fix/x") == 0, said())
     # An unbalanced quote cannot be tokenised; "could not judge" must deny, never read as "no".
     check("release-gate (#1410): an unparseable push is treated as a promotion",
-          run('git push origin "feature/x') == 2, "exit 0")
+          run('git push origin "feature/x') == 2, said())
     # FAIL CLOSED without the parser: the whole-word match over the RAW command still sees a quoted
     # main (the pair's control is the feature push beside it, which must still pass).
     with scratch_dir() as bare_root:
         check("release-gate (#1410): parser missing -> a quoted `main` push is still blocked",
-              run('git push origin "main"', plugin_root=Path(bare_root)) == 2, "exit 0")
+              run('git push origin "main"', plugin_root=Path(bare_root)) == 2, said())
         # #1720: without the classifier the gate fails closed BY SHAPE, so a feature push is refused too (reinstall the plugin).
         check("release-gate (#1720): parser missing -> even a feature push is refused (the fallback fails closed by shape)",
-              run("git push origin feature/x", plugin_root=Path(bare_root)) == 2, "exit 0")
+              run("git push origin feature/x", plugin_root=Path(bare_root)) == 2, said())
         # #1472: without the parser the shared normaliser decides, and it now sees inside a shell string.
         for cmd in ("bash -c 'git push origin main'", 'eval "git push origin main"', "command git push origin main"):
             check(f"release-gate (#1472): parser missing -> `{cmd}` is blocked",
-                  run(cmd, plugin_root=Path(bare_root)) == 2, "exit 0")
+                  run(cmd, plugin_root=Path(bare_root)) == 2, said())
         check("release-gate (#1720): parser missing -> `bash -c 'git push origin feature/x'` is refused too",
-              run("bash -c 'git push origin feature/x'", plugin_root=Path(bare_root)) == 2, "exit 0")
+              run("bash -c 'git push origin feature/x'", plugin_root=Path(bare_root)) == 2, said())
         # #1720: the normaliser splits a command substitution into its own segment, so `git -C $(pwd) push` reached the fallback as
         # `git` | `pwd` | `push origin main` and was allowed; the fallback now also reads git and push as words of the RAW command.
         for cmd in ("git -C $(pwd) push origin main", 'git -C "$(pwd)" push origin main', "git --git-dir=$(pwd)/.git push origin main"):
             check(f"release-gate (#1720): parser missing -> `{cmd}` is blocked",
-                  run(cmd, plugin_root=Path(bare_root)) == 2, "exit 0")
+                  run(cmd, plugin_root=Path(bare_root)) == 2, said())
         on_main = (("checkout", "-q", "-B", "main"),)  # -B: the runner's git init may name its first branch master
         check("release-gate (#1720): parser missing -> `git -C $(pwd) merge` with HEAD on main is blocked",
-              run("git -C $(pwd) merge feature/work", plugin_root=Path(bare_root), git_config=on_main) == 2, "exit 0")
+              run("git -C $(pwd) merge feature/work", plugin_root=Path(bare_root), git_config=on_main) == 2, said())
 
     # THE DISCRIMINATING PAIR for the marketplace carve-out. The same command, the same absence of
     # a certification, and the ONLY difference is `.claude-plugin/marketplace.json`. Without the
@@ -2449,16 +2469,16 @@ def release_gate_fixtures() -> None:
     # about correct code; without the second, the carve-out would be indistinguishable from
     # exempting any project that never ran `/qa-flow:setup-qa` -- which is most of them.
     check("release-gate: the marketplace's OWN repo is not a consumer, so promotion passes",
-          run("git push origin main", marketplace=True) == 0, "exit 2")
+          run("git push origin main", marketplace=True) == 0, said())
     check("release-gate: an ordinary repo with no certification is STILL blocked",
-          run("git push origin main") == 2, "exit 0")
+          run("git push origin main") == 2, said())
     # #1569: the file alone proves nothing -- any repo can add one. The exemption needs the marketplace's identity.
     for label, origin in (("no origin at all", None), ("another repository's origin", "https://github.com/acme/app.git"),
                           ("a look-alike name", "https://github.com/acme/claude-skills.git"),
                           ("a look-alike owner", "https://github.com/fmanimashaun-evil/claude-skills.git"),
                           ("a path that merely contains the name", "/home/x/fmanimashaun/claude-skills")):
         check(f"release-gate (#1569): a marketplace.json in a repo with {label} is NOT the marketplace, and stays blocked",
-              run("git push origin main", marketplace=True, origin=origin) == 2, "exit 0")
+              run("git push origin main", marketplace=True, origin=origin) == 2, said())
     # #1571 review: the exemption described the CONFIGURED origin url, but a push, merge or release goes to the
     # EFFECTIVE target. Each of these leaves `remote.origin.url` naming the marketplace while the command acts on
     # the consumer's repository (acme/app here), and each was exempt.
@@ -2482,7 +2502,7 @@ def release_gate_fixtures() -> None:
             ("a GH_REPO that names another repository", (), {"GH_REPO": "acme/app"})):
         for cmd in ("git push origin main", "gh release create v9 --target main"):
             check(f"release-gate (#1571 review): a marketplace tree with {label} is NOT exempt for `{cmd}`",
-                  run(cmd, marketplace=True, git_config=cfg, extra_env=env) == 2, "exit 0")
+                  run(cmd, marketplace=True, git_config=cfg, extra_env=env) == 2, said())
     # The pairs: the same configuration shapes that name the marketplace itself, or only change the transport,
     # keep the exemption, so a broken-open and a broken-shut resolver are told apart.
     for label, cfg, env in (
@@ -2494,7 +2514,7 @@ def release_gate_fixtures() -> None:
              (("config", "remote.origin.gh-resolved", "fmanimashaun/claude-skills"),), None),
             ("GH_REPO naming the marketplace", (), {"GH_REPO": "fmanimashaun/claude-skills"})):
         check(f"release-gate (#1571 review): CONTROL: a marketplace tree with {label} stays exempt",
-              run("git push origin main", marketplace=True, git_config=cfg, extra_env=env) == 0, "exit 2")
+              run("git push origin main", marketplace=True, git_config=cfg, extra_env=env) == 0, said())
 
     # #1337. The stamp is bound to the tested dev sha; committing it to dev by PR moves dev. The gate
     # accepts an ANCESTOR of dev only when the delta since is the stamp itself.
@@ -2835,27 +2855,27 @@ def release_gate_fixtures() -> None:
     check("release-gate (#1542): a push to main after an early-ended heredoc and a `cat <<END` is blocked",
           run(early + "git push origin main") == 2, "exit 0: the gate read the push as heredoc text")
     check("release-gate (#1542): CONTROL: without the `cat <<END` line the same push is blocked",
-          run("x=$(cat <<EOF\n)\nEOF\n)\ngit push origin main") == 2, "exit 0")
+          run("x=$(cat <<EOF\n)\nEOF\n)\ngit push origin main") == 2, said())
     check("release-gate (#1542): CONTROL: the same shape pushing a feature branch is allowed",
-          run(early + "git push origin feature/w") == 0, "exit 2")
+          run(early + "git push origin feature/w") == 0, said())
 
     # #1550: the shell RUNS a substitution, so a push inside one is a push. `--classify` never read the
     # body, and the hook's own comment ("a substitution ... is treated as a promotion") was not true of it.
     for cmd in ("x=$(git push origin main)", 'echo "$(git push origin main)"', "x=`git push origin main`"):
         check(f"release-gate (#1550): {cmd!r} is blocked", run(cmd) == 2, "exit 0: the body was never read")
     check("release-gate (#1550): CONTROL: a harmless substitution beside a feature-branch push is allowed",
-          run("x=$(git rev-parse HEAD)\ngit push origin feature/w") == 0, "exit 2")
+          run("x=$(git rev-parse HEAD)\ngit push origin feature/w") == 0, said())
     check("release-gate (#1550): CONTROL: a commit message heredoc in $( ) naming a push is allowed",
-          run("git commit -m \"$(cat <<'EOF'\nnever git push origin main\nEOF\n)\"") == 0, "exit 2")
+          run("git commit -m \"$(cat <<'EOF'\nnever git push origin main\nEOF\n)\"") == 0, said())
 
     # #1553: an UNQUOTED heredoc delimiter makes the shell expand `$( )` in the body, so the push runs;
     # a QUOTED one makes the body text.
     check("release-gate (#1553): a push in a substitution in an UNQUOTED heredoc body is blocked",
           run("cat <<EOF\n$(git push origin main)\nEOF") == 2, "exit 0: the heredoc body was stripped unread")
     check("release-gate (#1553): CONTROL: the same body under a QUOTED delimiter is text and allowed",
-          run("cat <<'EOF'\n$(git push origin main)\nEOF") == 0, "exit 2")
+          run("cat <<'EOF'\n$(git push origin main)\nEOF") == 0, said())
     check("release-gate (#1553): CONTROL: a harmless substitution in an unquoted body, then a feature push, is allowed",
-          run("cat <<EOF\n$(git rev-parse HEAD)\nEOF\ngit push origin feature/w") == 0, "exit 2")
+          run("cat <<EOF\n$(git rev-parse HEAD)\nEOF\ngit push origin feature/w") == 0, said())
 
 
 
@@ -5034,15 +5054,19 @@ def deadline_fixtures() -> None:
             if real:
                 os.symlink(real, Path(bd) / tool)
         os.symlink(sys.executable, Path(bd) / "python3")
+        record, said = _said_recorder()
+
         def nosleep(cmd: str) -> int:
             with scratch_dir() as td:
-                return _run(["/bin/bash", str(guard)], cwd=td, input=json.dumps({"tool_input": {"command": cmd}}),
+                done = _run(["/bin/bash", str(guard)], cwd=td, input=json.dumps({"tool_input": {"command": cmd}}),
                             env=dict(base_env, PATH=bd, RAILS_FLOW_HOOK_DEADLINE="1"), capture_output=True, text=True,
-                            timeout=60).returncode
+                            timeout=60)
+            record(done)
+            return done.returncode
         check("deadline (#1575): with no `sleep` on PATH an ordinary command still passes (no instant deadline)",
               nosleep("git status") == 0, "denied: the watchdog could not sleep and fired at once")
         check("deadline (#1575): ...and a refused command is still refused (the rules run, only the backstop is gone)",
-              nosleep("git add -A") == 2, "exit 0")
+              nosleep("git add -A") == 2, said())
     # 5. THE KNOB: RAILS_FLOW_HOOK_DEADLINE is an integer >= 1, never above the hook's timeout minus margin.
     def knob(value: str | None, default: int, top: int) -> str:
         env = dict(base_env)
@@ -5276,44 +5300,52 @@ def release_gate_adversary_fixtures() -> None:
     `release_gate_fallback`. The fallback reads no HEAD and no remote, so one repository serves every case."""
     with scratch_dir() as td, scratch_dir() as bare:
         _git_repo(Path(td))
-        gate = _fallback_gate(td, bare)
+        gate_raw = _fallback_gate(td, bare)
+        record, said = _said_recorder()
+
+        def gate(cmd: str, **extra: str):
+            return record(gate_raw(cmd, **extra))
         for cmd in ADVERSARY_1720:
-            check(f"release-gate fallback (#1720): adversarial `{cmd[:60]}` is refused", gate(cmd).returncode == 2, "exit 0")
+            check(f"release-gate fallback (#1720): adversarial `{cmd[:60]}` is refused", gate(cmd).returncode == 2, said())
         for cmd in ("ls", "git log", "git log --oneline -3", "git diff", "git fetch origin", "git branch -a", "git -C repo status",
                     "git-status", "git branch -d dev", "git worktree add ../w main", "gh pr view 5", "gh issue list", "gh run list",
                     "gh api repos/a/b/pulls", "gh api -XGET repos/a/b", "gh auth status", "git checkout main", "git switch main"):
-            check(f"release-gate fallback (#1720): CONTROL: read-only `{cmd}` passes", gate(cmd).returncode == 0, "exit 2")
+            check(f"release-gate fallback (#1720): CONTROL: read-only `{cmd}` passes", gate(cmd).returncode == 0, said())
 
 
 def release_gate_fallback_fixtures() -> None:
     """#1720: WITHOUT ITS CLASSIFIER the release gate fails closed BY SHAPE: one fixture per rule, the controls and the message."""
     with scratch_dir() as td, scratch_dir() as bare:
         _git_repo(Path(td))   # the fallback reads no HEAD, so the first branch's name (main or master) does not matter
-        gate = _fallback_gate(td, bare)
+        gate_raw = _fallback_gate(td, bare)
+        record, said = _said_recorder()
+
+        def gate(cmd: str, **extra: str):
+            return record(gate_raw(cmd, **extra))
         # ONE FIXTURE PER RULE that only that rule catches, so a mutant removing it cannot hide behind the others.
         check("release-gate fallback (#1720): (a) a marker alone refuses: a base64-decoded push run through sh from `git log $(...)`",
-              gate("git log $(echo Z2l0IHB1c2ggb3JpZ2luIG1haW4= | base64 -d | sh)").returncode == 2, "exit 0")
-        check("release-gate fallback (#1720): (b) `fetch` with a `:` refspec refuses", gate("git fetch origin main:main").returncode == 2, "exit 0")
-        check("release-gate fallback (#1720): (b) `branch -f/-D` refuses even without main (`git branch -D feature/x`)", gate("git branch -D feature/x").returncode == 2, "exit 0")
-        check("release-gate fallback (#1720): `gh release create` refuses", gate("gh release create v9.9.9").returncode == 2, "exit 0")
-        check("release-gate fallback (#1720): (c) a git alias, not on the read-only list, refuses", gate("git p origin main").returncode == 2, "exit 0")
+              gate("git log $(echo Z2l0IHB1c2ggb3JpZ2luIG1haW4= | base64 -d | sh)").returncode == 2, said())
+        check("release-gate fallback (#1720): (b) `fetch` with a `:` refspec refuses", gate("git fetch origin main:main").returncode == 2, said())
+        check("release-gate fallback (#1720): (b) `branch -f/-D` refuses even without main (`git branch -D feature/x`)", gate("git branch -D feature/x").returncode == 2, said())
+        check("release-gate fallback (#1720): `gh release create` refuses", gate("gh release create v9.9.9").returncode == 2, said())
+        check("release-gate fallback (#1720): (c) a git alias, not on the read-only list, refuses", gate("git p origin main").returncode == 2, said())
         # #1720 re-attack, in scope: the dashed form, a local rewrite of main, and gh calls outside an allow-list.
-        check("release-gate fallback (#1720): the dashed `git-push origin main` refuses", gate("git-push origin main").returncode == 2, "exit 0")
+        check("release-gate fallback (#1720): the dashed `git-push origin main` refuses", gate("git-push origin main").returncode == 2, said())
         check("release-gate fallback (#1720): a local rewrite of main (`git branch -m dev main`) refuses",
-              gate("git branch -m dev main").returncode == 2, "exit 0")
+              gate("git branch -m dev main").returncode == 2, said())
         check("release-gate fallback (#1720): a gh subcommand off the allow-list (`gh workflow run`) refuses",
-              gate("gh workflow run release.yml").returncode == 2, "exit 0")
-        check("release-gate fallback (#1720): `gh api -X POST` refuses", gate("gh api -X POST repos/a/b/merges").returncode == 2, "exit 0")
+              gate("gh workflow run release.yml").returncode == 2, said())
+        check("release-gate fallback (#1720): `gh api -X POST` refuses", gate("gh api -X POST repos/a/b/merges").returncode == 2, said())
         # #1720 confirm pass: main-rewrite spellings past an option list, so the rule is ANY option token beside main.
         for cmd in ("git checkout -Bmain dev", "git switch --force-create main", "git branch --copy dev main", "git branch -m dev Main"):
-            check(f"release-gate fallback (#1720): `{cmd}` (an option beside main) refuses", gate(cmd).returncode == 2, "exit 0")
+            check(f"release-gate fallback (#1720): `{cmd}` (an option beside main) refuses", gate(cmd).returncode == 2, said())
         # #1720 security review: an option value glued on (`-XPOST`, `-fbase=main`) is still the option.
-        check("release-gate fallback (#1720): `gh api -XPOST` (a glued method) refuses", gate("gh api -XPOST repos/a/b/merges").returncode == 2, "exit 0")
+        check("release-gate fallback (#1720): `gh api -XPOST` (a glued method) refuses", gate("gh api -XPOST repos/a/b/merges").returncode == 2, said())
         check("release-gate fallback (#1720): `gh api ... -fbase=main` (a glued field) refuses",
-              gate("gh api repos/a/b/merges -fbase=main").returncode == 2, "exit 0")
+              gate("gh api repos/a/b/merges -fbase=main").returncode == 2, said())
         # The controls a mutant names stay here; the rest run in `release_gate_adversary`, which no mutant re-runs.
         for cmd in ("git status", "gh api -X GET repos/a/b"):
-            check(f"release-gate fallback (#1720): CONTROL: read-only `{cmd}` passes", gate(cmd).returncode == 0, "exit 2")
+            check(f"release-gate fallback (#1720): CONTROL: read-only `{cmd}` passes", gate(cmd).returncode == 0, said())
         done = gate("git push origin main")
         check("release-gate fallback (#1720): the refusal names the missing classifier and the fix",
               done.returncode == 2 and "classifier missing: restore plugins/qa-flow/scripts/push_targets.py (reinstall the plugin)" in done.stderr,
@@ -5650,10 +5682,11 @@ def meta_checks() -> None:
     # out of time, and check() can only call a timing denial STARVED when the denial's own words are in the detail.
     import inspect
     # #1801: read by AST, not line by line -- a detail on its own continuation line escaped the old regex -- and over every
-    # fixture group that has been given said(): guard-bash (#1785) and guard-claims (#1801).
+    # fixture group that has been given said(): guard-bash (#1785), guard-claims (#1801), and the release-gate, fallback, adversary and deadline groups (#1810).
     import ast as _ast
     import textwrap
-    for group in (guard_bash_fixtures, guard_claims_fixtures):
+    for group in (guard_bash_fixtures, guard_claims_fixtures, release_gate_fixtures, release_gate_fallback_fixtures,
+                  release_gate_adversary_fixtures, deadline_fixtures):
         tree = _ast.parse(textwrap.dedent(inspect.getsource(group)))
         bare = [f"line {n.lineno}: {n.args[2].value}" for n in _ast.walk(tree)
                 if isinstance(n, _ast.Call) and getattr(n.func, "id", None) == "check" and len(n.args) >= 3
