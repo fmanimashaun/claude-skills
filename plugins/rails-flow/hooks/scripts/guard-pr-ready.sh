@@ -57,7 +57,9 @@ fi
 # `^gh pr ready` missed `gh -R o/r pr ready` and `/usr/local/bin/gh pr ready` (security review of #1565).
 _f='([[:space:]]+-[^[:space:]]+([[:space:]]+[^-[:space:]][^[:space:]]*)?)*'
 re="^([^[:space:]]*/)?gh${_f}[[:space:]]+pr${_f}[[:space:]]+ready([[:space:]]|\$)"
-[ "$degraded" = 1 ] && re="(^|[[:space:]])([^[:space:]]*/)?gh${_f}[[:space:]]+pr${_f}[[:space:]]+ready([[:space:]]|\$)"
+# DEGRADED, NO LEFT ANCHOR (shell-adversary on #1831): here `cmd` can be the raw JSON, where gh follows a `"`, so the old
+# `(^|[[:space:]])gh` never matched `{"command":"gh pr ready 5"}` and the hook exited 0 before its deny. Anywhere in the text counts.
+[ "$degraded" = 1 ] && re="gh${_f}[[:space:]]+pr${_f}[[:space:]]+ready([^[:alnum:]_-]|\$)"
 hit=0; args=""; segment=""
 rest="$seg"$'\n'
 while [ -n "$rest" ]; do
@@ -72,6 +74,16 @@ done
 [ "$hit" = 1 ] || exit 0
 
 deny() { echo "BLOCKED by rails-flow pr-ready guard: $1" >&2; echo "Then run, as two commands: python3 \"\${CLAUDE_PLUGIN_ROOT}/scripts/project_gates.py\"  and  gh pr ready$args" >&2; exit 2; }
+# `gh pr ready` MUST BE ITS OWN COMMAND (shell-adversary on #1831): in `git commit -m x && gh pr ready 5` or `git checkout -b zz && …`
+# an earlier segment moves HEAD after this is judged, so the old HEAD's green record would pass a commit nobody swept. Any other
+# segment refuses; only the tail of a redirection the normaliser split on `&` (`2>&1` → `1`, `&>/dev/null` → `>/dev/null`) is not one.
+[ "$degraded" = 1 ] && deny "the command could not be split into its parts, so whether \`gh pr ready\` is its own command cannot be told."
+while IFS= read -r l; do
+  [ "$l" = "$segment" ] && continue
+  [ -z "${l//[[:space:]]/}" ] && continue
+  [[ $l =~ ^[[:space:]]*([0-9]+|[0-9]*[\<\>].*)$ ]] && continue
+  deny "\`gh pr ready\` must be its own command; this one also runs \`${l:0:60}\`, which can move HEAD after the record is judged."
+done <<< "$seg"
 command -v python3 >/dev/null 2>&1 \
   || deny "python3 is not available, so the sweep record for HEAD cannot be read."
 [ -f "$_py" ] || deny "the guard's helper is missing ($_py). Reinstall the rails-flow plugin."

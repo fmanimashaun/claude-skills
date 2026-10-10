@@ -5415,7 +5415,7 @@ def guard_pr_ready_fixtures() -> None:
         expect("guard-pr-ready: the refusal names the sweep command and the two-command retry",
                guard(repo, "gh pr ready 12"), 2, 'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/project_gates.py"', "gh pr ready 12", "TWO separate commands")
         expect("guard-pr-ready: a sweep chained before it in ONE command does not count (no chain parsing)",
-               guard(repo, "python3 project_gates.py && gh pr ready 12"), 2, "cannot be told")
+               guard(repo, "python3 project_gates.py && gh pr ready 12"), 2, "must be its own command")
         expect("guard-pr-ready: `gh pr ready --undo` is always allowed", guard(repo, "gh pr ready 12 --undo"), 0)
         expect("guard-pr-ready: `--undo` after a bare `--` is a positional, not the flag: judged, not exempted",
                guard(repo, "gh pr ready 5 -- --undo"), 2, "argument --undo is not a plain PR number or branch")
@@ -5440,16 +5440,31 @@ def guard_pr_ready_fixtures() -> None:
         # A word outside command_cwd's SAFE list before gh is "cannot tell": the gate FAILS CLOSED rather than guess the session's
         # directory, because an earlier segment can retarget gh (coordinator's call after the review of 7315b31e).
         expect("guard-pr-ready: with a green record, a sweep chained before it in ONE command is still refused (cannot tell, fails closed)",
-               guard(repo, "python3 project_gates.py && gh pr ready 12"), 2, "cannot be told")
+               guard(repo, "python3 project_gates.py && gh pr ready 12"), 2, "must be its own command")
         for cmd in ("gh repo set-default o/r && gh pr ready 5", "git remote set-url origin https://x/o/r && gh pr ready 5"):
             expect(f"guard-pr-ready: with a green record, an earlier segment that can retarget gh refuses: {cmd[:40]}",
-                   guard(repo, cmd), 2, "cannot be told")
-        expect("guard-pr-ready: a `cd` the resolver cannot follow still refuses, even with a green record",
-               guard(repo, "cd $HOME && gh pr ready 12"), 2, "cannot be told")
+                   guard(repo, cmd), 2, "must be its own command")
+        expect("guard-pr-ready: a `cd` before it is another command: refused, even with a green record",
+               guard(repo, "cd $HOME && gh pr ready 12"), 2, "must be its own command")
+        # shell-adversary on #1831: an earlier segment that MOVES HEAD would pass on the old HEAD's green record.
+        for cmd in ("git commit --allow-empty -m x && gh pr ready 5", "git checkout -b zz && gh pr ready 5", "ls; gh pr ready 5",
+                    "gh pr ready 5 | cat"):
+            expect(f"guard-pr-ready: with a green record, `gh pr ready` inside a compound command is refused: {cmd[:40]}",
+                   guard(repo, cmd), 2, "must be its own command")
+        bindir = Path(td) / "only-bash-cat"
+        bindir.mkdir()
+        link_tools(bindir, ("bash", "cat"))
+        res = run_hook("guard-pr-ready.sh", cwd=repo, stdin=json.dumps({"tool_input": {"command": "gh pr ready 5"}, "cwd": str(repo)}),
+                       env_extra={"PATH": str(bindir)}, shell=shutil.which("bash") or "bash")
+        expect("guard-pr-ready: with no python3 on PATH (degraded, raw JSON), `gh pr ready` is still refused, never fails open", res, 2,
+               "BLOCKED by rails-flow pr-ready guard")
         expect("guard-pr-ready: a scheme-less PR URL is an explicit target", guard(repo, "gh pr ready github.com/o/r/pull/5"), 2,
                "explicit repository target")
-        for cmd in ("gh pr ready $PR", 'gh pr ready "$(echo 5)"'):
-            expect(f"guard-pr-ready: a PR argument built by the shell cannot be judged: {cmd}", guard(repo, cmd), 2, "without running it")
+        expect("guard-pr-ready: a PR argument built by the shell cannot be judged: gh pr ready $PR", guard(repo, "gh pr ready $PR"), 2,
+               "without running it")
+        # A command substitution is ANOTHER command to the normaliser, so it is refused one step earlier, as a compound command.
+        expect('guard-pr-ready: a PR argument built by command substitution is refused: gh pr ready "$(echo 5)"',
+               guard(repo, 'gh pr ready "$(echo 5)"'), 2, "BLOCKED by rails-flow pr-ready guard")
         for cmd in ("gh pr ready 5 --rep o/r", "gh pr ready o/r#5", "gh pr ready 5 --hostname x", "gh --help pr ready 5",
                     "gh pr ready 5 --undo=false", "gh pr ready 5 >-R o/r"):
             expect(f"guard-pr-ready: with a green record, a word that is not a plain number or branch is refused: {cmd}",
@@ -5459,13 +5474,14 @@ def guard_pr_ready_fixtures() -> None:
         for cmd in ("gh pr ready 5 -R o/r", "GH_REPO=o/r gh pr ready 5", "gh pr ready https://github.com/o/r/pull/5"):
             expect(f"guard-pr-ready: an explicit remote target is refused even with a green record: {cmd}", guard(repo, cmd), 2,
                    "explicit repository target")
-        expect("guard-pr-ready: ...and so does `cd <same repo> && gh pr ready`", guard(repo, f"cd {repo} && gh pr ready 12"), 0)
-        # The command's own `cd` picks the repository judged: the other repository has no record.
+        expect("guard-pr-ready: `cd <same repo> && gh pr ready` is a compound command: refused", guard(repo, f"cd {repo} && gh pr ready 12"), 2,
+               "must be its own command")
+        # The checkout it runs in picks the repository judged: the other repository has no record.
         other = new_repo(td, "other")
-        expect("guard-pr-ready: `cd <other repo> && gh pr ready` is judged against the OTHER repo's HEAD",
-               guard(repo, f"cd {other} && gh pr ready 3"), 2, head_of(other)[:12])
+        expect("guard-pr-ready: run in ANOTHER checkout, it is judged against THAT repo's HEAD",
+               guard(other, "gh pr ready 3"), 2, head_of(other)[:12])
         record(other, head_of(other))
-        expect("guard-pr-ready: ...and allowed once THAT HEAD has a green record", guard(repo, f"cd {other} && gh pr ready 3"), 0)
+        expect("guard-pr-ready: ...and allowed once THAT HEAD has a green record", guard(other, "gh pr ready 3"), 0)
 
     with scratch_dir() as td:
         plain = new_repo(td, "plain", marker=False)

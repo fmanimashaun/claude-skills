@@ -29,6 +29,18 @@ GUARD = Guard(
     needs=_NEEDS,
     mutations=(
         Mutation(
+            "`gh pr ready` inside a compound command is judged on the old HEAD (no own-command rule)",
+            '  deny "\\`gh pr ready\\` must be its own command;',
+            '  continue; deny "\\`gh pr ready\\` must be its own command;',
+            "`gh pr ready` inside a compound command is refused: git commit --allow-empty",
+        ),
+        Mutation(
+            "the degraded match keeps a left anchor, so the raw JSON never matches and the hook fails open",
+            're="gh${_f}[[:space:]]+pr${_f}[[:space:]]+ready([^[:alnum:]_-]|\\$)"',
+            're="(^|[[:space:]])gh${_f}[[:space:]]+pr${_f}[[:space:]]+ready([^[:alnum:]_-]|\\$)"',
+            "with no python3 on PATH (degraded, raw JSON)",
+        ),
+        Mutation(
             "`--undo` after a bare `--` still exempts",
             'pre=" $a "; pre="${pre%% -- *} "',
             'pre=" $a "',
