@@ -651,15 +651,9 @@ GUARD = Guard(
             "\"git push origin '' main\": expected TARGETS main",
         ),
         Mutation(
-            "a write flag no longer turns `git config <key>` into a write",
-            "        if any(a in CONFIG_WRITE_FLAGS for a in args):\n            return False",
-            "        if False:\n            return False",
-            "unlisted shape 'git config --unset core.hooksPath'",
-        ),
-        Mutation(
             "`git config <key> <value>` is read as a read, so setting core.hooksPath passes",
-            "        if len(words) == 1 and not _opaque(words[0]):",
-            "        if len(words) >= 1 and not _opaque(words[0]):",
+            '        if only_known and len(words) == 1 and "." in words[0] and not _opaque(words[0]):',
+            '        if only_known and len(words) >= 1 and "." in words[0] and not _opaque(words[0]):',
             "unlisted shape 'git config core.hooksPath /tmp/x'",
         ),
         Mutation(
@@ -670,9 +664,21 @@ GUARD = Guard(
         ),
         Mutation(
             "a key the shell has not expanded yet (`git config $KEY`) is read as a read",
-            "        if len(words) == 1 and not _opaque(words[0]):",
-            "        if len(words) == 1:",
-            "unlisted shape 'git config $KEY'",
+            '        if only_known and len(words) == 1 and "." in words[0] and not _opaque(words[0]):',
+            '        if only_known and len(words) == 1 and "." in words[0]:',
+            "unlisted shape 'git config remote.$NAME.url'",
+        ),
+        Mutation(
+            "a one-word `git config edit` (the sub-command that opens the editor on the config) is read as the read of a key",
+            '        if only_known and len(words) == 1 and "." in words[0] and not _opaque(words[0]):',
+            '        if only_known and len(words) == 1 and not _opaque(words[0]):',
+            "unlisted shape 'git config edit'",
+        ),
+        Mutation(
+            "any flag is accepted in a bare read, so an abbreviated write option (`--unset-a`) reads as a read",
+            "                only_known = only_known and a in CONFIG_READ_FLAGS",
+            "                only_known = only_known",
+            "unlisted shape 'git config --unset-a core.hooksPath'",
         ),
     ),
 )

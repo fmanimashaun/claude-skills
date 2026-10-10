@@ -1118,6 +1118,8 @@ BENIGN_CONFIG = re.compile(r"^(user\.|core\.(quotepath|pager|editor|autocrlf|fil
 # (#1768) what turns `git config` into a write, and the options that take a value of their own (so the value is not the key's value)
 CONFIG_WRITE_FLAGS = {"--add", "--unset", "--unset-all", "--replace-all", "-e", "--edit", "--rename-section", "--remove-section"}
 CONFIG_VALUE_FLAGS = {"--file", "-f", "--blob", "--type", "--default"}
+CONFIG_READ_FLAGS = {"--global", "--local", "--system", "--worktree", "--includes", "--no-includes", "--show-origin", "--show-scope", "-z", "--null",
+                     "--name-only", "--bool", "--int", "--bool-or-int", "--path", "--expiry-date", "--fixed-value", "--no-type"}
 GIT_ENV_REDIRECT = re.compile(r"^GIT_(DIR|WORK_TREE|CONFIG\w*|SSH\w*|ALTERNATE\w*|OBJECT_DIRECTORY|INDEX_FILE|NAMESPACE)=")
 INERT = {"echo", "printf", "which", "type", "man", "ls", "cat", "grep", "rg", "head", "tail", "wc", "cut", "tr",
          "sort", "uniq", "test", "[", "[[", "true", "false", ":", "export", "set", "unset", "read", "mkdir", "rm",
@@ -1220,18 +1222,23 @@ def _git_read_only(verb: str, args: list[str]) -> bool:
             return True
         if any(a in CONFIG_WRITE_FLAGS for a in args):
             return False
-        # (#1768) A bare `git config <key>`, ONE positional word and no write flag, READS that key, whichever key it is: `core.hooksPath` is not on the
-        # benign list because SETTING it redirects the hooks, but reading it is how a session asks where they are. A value (a second word), a write flag,
-        # or a word the shell has not expanded yet is a write, or could be, and keeps the rule below.
-        words, skip = [], False
+        # (#1768) A bare `git config <key>`: ONE positional word, no write flag, is a READ of that key, whichever key it is: `core.hooksPath` is not on the benign
+        # list because SETTING it redirects the hooks, but reading it is how a session asks where they are. Three ways this could be a write, each refused:
+        #   - a flag this rule does not KNOW is harmless: git accepts any unambiguous prefix of a long option (`--unset-a`, `--uns`), so a list of the write flags
+        #     is not enough; only the flags that select a file or a value type are allowed;
+        #   - a word that is not a key: `edit`, `set`, `unset` are sub-commands of newer git, and a key always has a dot (`section.name`);
+        #   - a second word (a value), or a word the shell has not expanded yet.
+        words, skip, only_known = [], False, True
         for a in args:
             if skip:
                 skip = False
             elif a in CONFIG_VALUE_FLAGS:
                 skip = True
-            elif not a.startswith("-"):
+            elif a.startswith("-"):
+                only_known = only_known and a in CONFIG_READ_FLAGS
+            else:
                 words.append(a)
-        if len(words) == 1 and not _opaque(words[0]):
+        if only_known and len(words) == 1 and "." in words[0] and not _opaque(words[0]):
             return True
         keys = [a for a in args if not a.startswith("-")]
         return bool(keys) and BENIGN_CONFIG.match(keys[0]) is not None
@@ -2137,7 +2144,10 @@ def selftest() -> int:
         "git config core.hooksPath /tmp/x", "git config --local core.hooksPath ''", "git config --add core.hooksPath /tmp/x",
         "git config --unset core.hooksPath", "git config --unset-all remote.origin.url", "git config --replace-all remote.origin.url x",
         "git config -e", "git config --edit", "git config --rename-section remote.origin remote.up", "git config --remove-section remote.origin",
-        "git config $KEY", "git config core.hooksPath $VALUE",
+        "git config $KEY", "git config core.hooksPath $VALUE", "git config remote.$NAME.url",
+        # (#1768 review) the sub-commands of newer git (`edit` opens the editor on the config), and abbreviated long options (git accepts any unambiguous prefix)
+        "git config edit", "git config set core.hooksPath /tmp/x", "git config unset core.hooksPath", "git config --unset-a core.hooksPath",
+        "git config --edi", "git config --uns core.hooksPath", "git config --remove-s remote.origin", "git config -z -e",
         "git send-pack origin main", "git update-ref refs/heads/main abc", "git symbolic-ref HEAD refs/heads/x",
         "git filter-branch -f", "git fast-import", "git svn dcommit", "git http-push x",
         "gh workflow run release.yml", "gh pr update-branch 7", "gh repo sync", "gh repo delete x --yes", "gh release delete v1",
