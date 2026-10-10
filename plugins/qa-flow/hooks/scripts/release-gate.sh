@@ -792,7 +792,7 @@ sys.exit(done.returncode)' "$@"
 # left of that deadline minus 2 s (never more than 8), so ITS denial speaks first, and a command that has no time left is
 # denied. Several ships in one command share that one deadline.
 judge_remote() {
-  local sha="$1" repo="$2" what="$3" verdict csha why cmp status files evidence budget
+  local sha="$1" repo="$2" what="$3" verdict csha why cmp status files evidence tree rec
   # (#1610) The commit id comes from GitHub's answer, not from the command, and it is joined into a URL below: it is a commit id.
   case "$sha" in ""|*[!0-9a-fA-F]*) JWHY="${repo}: ${what} (${sha:0:20}) is not a commit id, so its certification cannot be read."; return 1 ;; esac
   if ! bounded 4 gh api -H 'Accept: application/vnd.github.raw+json' "repos/${repo}/contents/qa/CERTIFICATION?ref=${sha}" >"$stamp_tmp" 2>/dev/null; then
@@ -822,17 +822,19 @@ judge_remote() {
         JWHY="${repo}: certification is for sha ${csha:0:12}, which is not an ancestor of ${what} (${sha:0:12}). ${what} moved — re-certify before promoting."; return 1 ;;
       esac ;;
   esac
-  # (#1591) The release-only layers (#1428), as for this checkout, judged LAST and inside the time the hook has left
-  # (SECONDS counts from the hook's start). Fail-closed: any error, and no time, denies.
-  budget=$(( ${_deadline_s:-12} - 2 - SECONDS )); [ "$budget" -le 8 ] || budget=8
-  if [ "$budget" -lt 3 ]; then
-    JWHY="${repo}: there is no time left in this hook to judge the release-only layers (#1428) of ${what} (${sha:0:12}): the command acts on too many commits or repositories at once. Split it."; return 1
-  fi
-  if evidence="$(python3 "${CLAUDE_PLUGIN_ROOT:-}/scripts/remote_evidence.py" --repo "$repo" --sha "$sha" --budget "$budget" 2>"$evtmp")"; then
-    grep '^WARNING' "$evtmp" | sed "s|^WARNING |qa-flow: ${repo}: |" >&2
+  # (#1686) The release-only layers (#1428) are judged BEFORE the promotion, by `remote_evidence.py --record`, which writes a verdict
+  # file; this hook only READS it. The judgement needs tens of seconds on a repository with real evidence (35.7 s measured), the hook has 15.
+  # The verdict is keyed by repository, the exact commit and the evidence tree id (recomputed here with one API call), expires after
+  # 30 minutes, and a missing, stale, unparsable, mismatched or FAIL verdict refuses, naming which one it was and the command to run.
+  # THREAT MODEL: this guards against an ACCIDENTAL promotion, not against a session that hand-writes a PASS file.
+  tree="$(bounded 4 gh api "repos/${repo}/git/trees/${sha}:qa" --jq .sha 2>/dev/null || true)"
+  case "$tree" in ""|*[!0-9a-f]*) tree="" ;; esac
+  rec="python3 ${CLAUDE_PLUGIN_ROOT:-<qa-flow>}/scripts/remote_evidence.py --repo ${repo} --sha ${sha} --record"
+  if evidence="$(python3 "${CLAUDE_PLUGIN_ROOT:-}/scripts/remote_evidence.py" --repo "$repo" --sha "$sha" --check-verdict --tree "$tree" 2>"$evtmp")"; then
+    :
   else
-    why="$(grep -E '^(FAIL|unusable)' "$evtmp" 2>/dev/null | head -3 | tr '\n' ' ')"
-    JWHY="${repo}: the release-only layers do not pass (#1428): ${why:-remote_evidence.py could not run.} Fix them and re-certify."; return 1
+    why="$(head -1 "$evtmp" 2>/dev/null | cut -c1-300)"
+    JWHY="${repo}: the release-only layers (#1428) of ${what} (${sha:0:12}) have no usable verdict: ${why:-the verdict could not be read.} Judge them first, which takes a while and is not done inside this hook: ${rec}"; return 1
   fi
   # What changed since the certified commit may be the stamp and the evidence it names, and nothing else.
   files="$(printf '%s\n' "$cmp" | sed 1d | extra_files "$evidence" | head -3 | tr '\n' ' ')"
