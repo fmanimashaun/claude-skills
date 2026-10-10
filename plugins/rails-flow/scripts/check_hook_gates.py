@@ -2283,6 +2283,16 @@ def release_gate_fixtures() -> None:
         check(f"release-gate (#1768): `{cmd}` is a read-only inspection and passes", run(cmd) == 0, "exit 2")
     for cmd in ("git config core.hooksPath /tmp/x", "git config --local core.hooksPath ''", "git config --unset core.hooksPath", "git config --add core.hooksPath /tmp/x"):
         check(f"release-gate (#1768): `{cmd}` WRITES the key and is still refused", run(cmd) == 2, "exit 0")
+    # #1803: the LOCAL delete of a non-protected ref (a review namespace ref left behind by a review) merges and publishes nothing, and was refused
+    # because the gate refused every `update-ref`. The protected branches, HEAD, the remote-tracking copy of a protected branch, tags, any form that SETS a ref
+    # and anything unexpanded stay refused.
+    for cmd in ("git update-ref -d refs/remotes/review/1559", "git -C . update-ref -d refs/remotes/review/1559", "git update-ref -d refs/heads/feature/old",
+                "git update-ref -m done -d refs/remotes/review/7 abc123def"):
+        check(f"release-gate (#1803): `{cmd}` deletes a local non-protected ref and passes", run(cmd) == 0, "exit 2")
+    for cmd in ("git update-ref -d refs/heads/main", "git update-ref -d refs/heads/master", "git update-ref -d refs/heads/dev", "git update-ref -d refs/heads/staging",
+                "git update-ref -d HEAD", "git update-ref -d refs/remotes/origin/main", "git update-ref -d refs/remotes/origin/dev", "git update-ref -d refs/tags/v1",
+                "git update-ref refs/heads/main HEAD", "git update-ref -d $REF", "git update-ref --stdin"):
+        check(f"release-gate (#1803): `{cmd}` is protected or not a plain delete and is still refused", run(cmd) == 2, "exit 0")
     # #1410: `main`/`master` INSIDE a branch name is not a destination. Both were refused
     # downstream on one day, and both authors renamed the branch to get past the gate.
     for cmd in ("git push -u origin fix/1010-one-main", "git push origin feature/main-menu",
