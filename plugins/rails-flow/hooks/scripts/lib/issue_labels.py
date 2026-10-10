@@ -232,10 +232,14 @@ def _names_create(text: str) -> bool:
     """Does TEXT, once run, name a create? Quotes are removed first, because a shell joins
     `gh issue "create"` into the same words (#1462); a backslash-newline joins lines."""
     return bool(CREATE_TEXT.search(" " + text.replace("\\\n", "").replace('"', "").replace("'", "")))
-SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
+# Every shell the hook reads a `-c` string, a script file, a redirect or a heredoc for (#1712). `busybox sh` is peeled to `sh`; `pwsh` takes `-c` for `-Command`.
+SHELLS = {"sh", "bash", "zsh", "dash", "ksh", "fish", "csh", "tcsh", "ash", "mksh", "rbash", "pwsh"}
+# Interpreters whose program text can run `gh issue create` (#1713): refused only when the text has the words `gh issue create|new` adjacent.
+INTERPRETER = re.compile(r"^(?:python[\d.]*|node|nodejs|ruby|perl|awk|gawk|mawk)$")
+INTERPRETED_CREATE = re.compile(r"\bgh\W+issue\W+(?:create|new)\b")
 # A shell reading a redirect, as guard-bash.sh's trigger spells it (#1489): `/bin/bash < f`,
 # `bash --norc < f`, `sh<f`, `bash 0< f`. Coarse on purpose; the parser decides.
-SHELL_REDIRECT = re.compile(r"(?:^|[\s;&|(/])(?:sh|bash|zsh|dash|ksh)(?:\s[^;&|]*)?<(?:[^<(]|$)")
+SHELL_REDIRECT = re.compile(r"(?:^|[\s;&|(/])(?:" + "|".join(sorted(SHELLS)) + r")(?:\s[^;&|]*)?<(?:[^<(]|$)")
 
 
 def _unparseable(cmd: str) -> list:
@@ -482,6 +486,13 @@ def hidden_create(cmd: str, depth: int = 0, cwd: Path | None = None) -> str | No
                 return "a `gh` word built at run time or aliased"
             if head == "issue" and tail[:1] and tail[0] in ("create", "new"):
                 return "a `gh` word built at run time (a substitution before `issue create`)"
+            # (#1712) `env -S 'gh issue create …'`: env splits one string into the command, so its labels are one quoted word here.
+            if xinfo.get("S") and gh_issue_create_at(words, 0)[0] is not None:
+                return "`env -S`, whose string is one word to the label check"
+            # (#1713) a program text for another interpreter that runs `gh issue create`: `python3 -c`, `node -e`, `ruby -e`, `perl -e`, `awk`.
+            # Refused when the text holds the three words side by side (quotes, commas and `qw(` between them count as space); `gh issue list` passes.
+            if INTERPRETER.match(head) and INTERPRETED_CREATE.search(" ".join(words[1:])):
+                return f"a program for `{head}`"
             # `xargs` builds gh's arguments from its input (#1645 R2): `-a FILE`, a file `cat`/`tail` pipes in, or the text `echo` pipes in; with
             # `-I{}` the input replaces `{}` in the command. The verb arriving that way, side by side, is an unlabelled create.
             if "xargs" in peeled and head == "gh":
@@ -644,11 +655,25 @@ def _peel_info(words: list[str]) -> tuple[list[str], list[str], dict]:
             words.pop(0)
             peeled.append(base)
             continue
+        if base == "busybox" and len(words) > 1:      # `busybox sh -c …` runs the applet `sh` (#1712)
+            words.pop(0)
+            peeled.append(base)
+            continue
         if base in WRAPPERS:
             words.pop(0)
             peeled.append(base)
             while words and words[0].startswith("-"):
                 flag = words.pop(0)
+                if base == "env" and (flag in ("-S", "--split-string") or flag.startswith("--split-string=") or (flag.startswith("-S") and len(flag) > 2)):
+                    # `env -S 'gh issue create -t x'`: env splits the string into the command's words (#1712). The create is then a
+                    # real command here, but its labels were one quoted word to the parser, so it is flagged for refusal.
+                    text = words.pop(0) if flag in ("-S", "--split-string") and words else (flag.split("=", 1)[1] if "=" in flag else flag[2:])
+                    try:
+                        words[:0] = shlex.split(text)
+                    except ValueError:
+                        pass
+                    info["S"] = True
+                    continue
                 if base == "xargs":
                     name, eq, value = flag.partition("=")
                     if flag.startswith("-I") and len(flag) > 2:
@@ -1587,6 +1612,41 @@ def selftest() -> int:
                           ("echo issue create | cat", "the verb piped to cat, not to xargs gh"),
                           ("gh issue create -t X --body y --label feature", "a direct labelled create still passes")):
             check(f"(#1515) CONTROL: {cmd!r} is allowed ({why_})", verdict(cmd, bare)[0])
+
+        # #1712: SHELLS THE HOOK DID NOT KNOW read a `-c` string like the rest. Each refused; controls stay allowed.
+        for cmd, why_ in (("fish -c 'gh issue create -t X'", "fish"), ("csh -c 'gh issue create -t X'", "csh"),
+                          ("tcsh -c 'gh issue create -t X'", "tcsh"), ("ash -c 'gh issue create -t X'", "ash"),
+                          ("mksh -c 'gh issue create -t X'", "mksh"), ("rbash -c 'gh issue create -t X'", "rbash"),
+                          ("pwsh -c 'gh issue create -t X'", "pwsh"),
+                          ("busybox sh -c 'gh issue create -t X'", "busybox sh"),
+                          ("env -S 'gh issue create -t X'", "env -S"),
+                          ("env --split-string='gh issue create -t X'", "env --split-string="),
+                          ("echo 'gh issue create -t X' | fish", "a pipe into fish")):
+            ok, why = verdict(cmd, bare)
+            check(f"(#1712) {why_}: {cmd!r} is refused", not ok, why)
+        for cmd, why_ in (("fish -c 'echo hi'", "fish running something else"),
+                          ("busybox ls", "busybox running another applet"),
+                          ("env -S 'gh issue list'", "env -S with a list"),
+                          ("env -S 'echo hi'", "env -S with another command"),
+                          ("echo fish -c 'gh issue create'", "the words in an echo")):
+            check(f"(#1712) CONTROL: {cmd!r} is allowed ({why_})", verdict(cmd, bare)[0])
+
+        # #1713: ANOTHER INTERPRETER'S PROGRAM TEXT that runs the create. Refused when the three words sit side by side; `gh issue list` passes.
+        for cmd, why_ in (("python3 -c \"import os; os.system('gh issue create -t X')\"", "python os.system"),
+                          ("python3 -c \"import subprocess; subprocess.run(['gh','issue','create','-t','X'])\"", "python subprocess list"),
+                          ("python -c \"import os; os.system('gh issue new -t X')\"", "python, the `new` alias"),
+                          ("node -e \"require('child_process').execSync('gh issue create -t X')\"", "node"),
+                          ("ruby -e 'system(\"gh issue create -t X\")'", "ruby"),
+                          ("perl -e 'system(qw(gh issue create -t X))'", "perl"),
+                          ("awk 'BEGIN{system(\"gh issue create -t X\")}'", "awk")):
+            ok, why = verdict(cmd, bare)
+            check(f"(#1713) {why_}: {cmd!r} is refused", not ok, why)
+        for cmd, why_ in (("python3 -c \"print('gh issue list')\"", "a list"),
+                          ("python3 -c \"print('hello')\"", "no gh at all"),
+                          ("node -e \"console.log('gh issue view 3')\"", "a view"),
+                          ("echo \"python3 -c 'gh issue create'\"", "the words in an echo"),
+                          ("python3 script.py", "a script file, not program text")):
+            check(f"(#1713) CONTROL: {cmd!r} is allowed ({why_})", verdict(cmd, bare)[0])
 
         # #1645 R1: A COMMENT LINE MUST NOT SWALLOW THE CREATE AFTER IT (also true on dev). Each refused, with controls that must stay allowed.
         for cmd, why_ in (("# note\ngh issue create -t X --body y", "a comment line, then an unlabelled create"),

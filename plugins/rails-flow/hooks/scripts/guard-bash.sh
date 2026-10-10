@@ -226,14 +226,19 @@ else
   _flat="$cmd"; _fire=1
 fi
 _re_verb='issue[[:space:]]+(create|new)'
-_re_shell_word='(^|[[:space:];&|(/])(sh|bash|zsh|dash|ksh)([[:space:]<>&]|$)'
+# #1712: the other shells the helper reads (fish, csh, tcsh, ash, mksh, rbash, pwsh) and `busybox` (whose applet is a shell).
+_re_shell_word='(^|[[:space:];&|(/])(sh|bash|zsh|dash|ksh|fish|csh|tcsh|ash|mksh|rbash|pwsh|busybox)([[:space:]<>&]|$)'
+# #1713: another interpreter's program text can run the create (`python3 -c`, `node -e`, `ruby -e`, `perl -e`, `awk`); its quotes and commas hide the words
+# from `_re_verb`. Over-triggering costs one parse.
+_re_interp='(^|[[:space:];&|(/])(python[0-9.]*|node|nodejs|ruby|perl|awk|gawk|mawk)([[:space:]]|$)'
 _re_source='(^|[[:space:];&|({!])(source|\.)[[:space:]]+[^[:space:]]'
 # #1645 R2: more ways to run text or build a gh command from data -- `eval`, `xargs`, an `alias`, a function definition. Over-triggering costs one parse.
 _re_runs_text='(^|[[:space:];&|({!])(eval|xargs|alias|function)([[:space:]]|$)|\([[:space:]]*\)[[:space:]]*\{'
 _re_api='[[:space:]]api[[:space:]]([^;&|]*)issues'
 _re_ansi="[\$]'[^']*[\\\\]"
 if [ "$_fire" = 1 ] || rawhit "$_flat" "$_re_verb" || rawhit "$cmd" "$_re_shell_word" \
-   || rawhit "$cmd" "$_re_source" || rawhit "$cmd" "$_re_runs_text" || rawhit "$_flat" "$_re_api" || rawhit "$cmd" "$_re_ansi"; then
+   || rawhit "$cmd" "$_re_source" || rawhit "$cmd" "$_re_runs_text" || rawhit "$_flat" "$_re_api" || rawhit "$cmd" "$_re_ansi" \
+   || rawhit "$cmd" "$_re_interp"; then
   _root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
   _why="$(printf '%s' "$cmd" | python3 "$(dirname "${BASH_SOURCE[0]}")/lib/issue_labels.py" --root "$_root" 2>&1)"
   _rc=$?
