@@ -2341,6 +2341,27 @@ def release_gate_fixtures() -> None:
         check(f"release-gate (#1768): `{cmd}` is a read-only inspection and passes", run(cmd) == 0, "exit 2")
     for cmd in ("git config core.hooksPath /tmp/x", "git config --local core.hooksPath ''", "git config --unset core.hooksPath", "git config --add core.hooksPath /tmp/x"):
         check(f"release-gate (#1768): `{cmd}` WRITES the key and is still refused", run(cmd) == 2, "exit 0")
+    # #1803: the LOCAL delete of a non-protected ref (a review namespace ref left behind by a review) merges and publishes nothing, and was refused because the gate refused
+    # every `update-ref`. ONLY `--no-deref -d` is allowed: a plain `update-ref -d` FOLLOWS a symbolic ref and deletes its TARGET (`refs/remotes/review/alias` -> `refs/heads/main`,
+    # deleted by its own harmless-looking name, takes main with it: measured), and no probe of the repository can prove otherwise (the command can create the symref between
+    # the check and the delete). The protected branches, HEAD, the remote-tracking copy of a protected branch, tags, any form that SETS a ref and anything unexpanded stay refused.
+    alias = (("symbolic-ref", "refs/remotes/review/alias", "refs/heads/main"),)
+    for cmd in ("git update-ref --no-deref -d refs/remotes/review/1559", "git -C . update-ref --no-deref -d refs/remotes/review/1559",
+                "git update-ref --no-deref -d refs/heads/feature/old", "git update-ref --no-deref -m done -d refs/remotes/review/7 abc123def"):
+        check(f"release-gate (#1803): `{cmd}` deletes a local non-protected ref without following a symbolic one, and passes", run(cmd) == 0, "exit 2")
+    check("release-gate (#1803): `update-ref --no-deref -d` of a SYMBOLIC alias of main deletes only the alias and passes",
+          run("git update-ref --no-deref -d refs/remotes/review/alias", git_config=alias) == 0, "exit 2")
+    for cmd in ("git update-ref -d refs/remotes/review/1559", "git update-ref -d refs/heads/feature/old"):
+        check(f"release-gate (#1803): a PLAIN `{cmd}` follows a symbolic ref, so it is refused whatever the ref (the remedy is --no-deref)", run(cmd) == 2, "exit 0")
+    check("release-gate (#1803): a plain `update-ref -d` of the symbolic alias of main is refused (it would delete main)",
+          run("git update-ref -d refs/remotes/review/alias", git_config=alias) == 2, "exit 0")
+    for cmd in ("git update-ref --no-deref -d refs/heads/main", "git update-ref --no-deref -d refs/heads/master", "git update-ref --no-deref -d refs/heads/dev",
+                "git update-ref --no-deref -d refs/heads/staging", "git update-ref --no-deref -d HEAD", "git update-ref --no-deref -d refs/remotes/origin/main",
+                "git update-ref --no-deref -d refs/remotes/origin/dev", "git update-ref --no-deref -d refs/heads/MAIN", "git update-ref --no-deref -d refs/remotes/origin/DEV",
+                "git update-ref --no-deref -d refs/tags/v1", "git update-ref --no-deref refs/heads/main HEAD", "git update-ref --no-deref -d $REF",
+                "git update-ref --no-deref --stdin", "git update-ref --no-deref -d refs/heads//x", "git update-ref --no-deref -d refs/heads/./x",
+                "GIT_DIR=/x git update-ref --no-deref -d refs/remotes/review/1"):
+        check(f"release-gate (#1803): `{cmd}` is protected or not a plain --no-deref delete and is still refused", run(cmd) == 2, "exit 0")
     # #1410: `main`/`master` INSIDE a branch name is not a destination. Both were refused
     # downstream on one day, and both authors renamed the branch to get past the gate.
     for cmd in ("git push -u origin fix/1010-one-main", "git push origin feature/main-menu",
