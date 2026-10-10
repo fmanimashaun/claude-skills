@@ -314,12 +314,13 @@ _tw_all='(add|reset|checkout|switch|restore|clean|stash|branch|rm)'     # the ve
 _tw_verbs='(reset|checkout|switch|restore|clean|stash|branch|rm)'      # `add` is `_add_refused`'s: it allows a plain path and a glob in the last component (#1783), and refuses `$`, a backtick and a brace itself
 _tw_dyn='[`{}*?[]'                      # a backtick, a brace, a glob character
 _tw_dollar="\\\$([^']|\$)"                # a `$` that is not `$'` (ANSI-C quoting, decoded by the normaliser)
-if [[ "$cmd" == *[gG][iI][tT]* ]]; then
+# (a grep, not a `[[ == *[gG]..* ]]` glob: bash matches that pattern superlinearly, and a 10,000-line command took 3.7 s longer)
+if rawhit "$cmd" '[gG][iI][tT]'; then
   if [ "$degraded" = 0 ]; then
-    if hit "^git[[:space:]]+${_tw_verbs}([[:space:]]|\$).*(${_tw_dyn}|${_tw_dollar})"; then
+    if [[ "$seg" == *git* ]] && hit "^git[[:space:]]+${_tw_verbs}([[:space:]]|\$).*(${_tw_dyn}|${_tw_dollar})"; then
       deny "a git ${_tw_verbs//[()]/} command with \$, a backtick, a brace or a glob in it cannot be read here, so it is refused: the shell decides what it means. Write the command out literally (the branch name, the file paths, the option)."
     fi
-    if hit "^[^[:space:]]*[\$\`][^[:space:]]*[[:space:]]+(.*[[:space:]])?${_tw_all}([[:space:]]|\$)"; then
+    if [[ "$seg" == *[\$\`]* ]] && hit "^[^[:space:]]*[\$\`][^[:space:]]*[[:space:]]+(.*[[:space:]])?${_tw_all}([[:space:]]|\$)"; then
       deny "a command word built at run time (a variable or a substitution) followed by a git working-tree verb cannot be read here, so it is refused. Write 'git' and the command out literally."
     fi
   fi
@@ -334,38 +335,15 @@ if [[ "$cmd" == *[gG][iI][tT]* ]]; then
     deny "write 'git' in lower case: on a case-insensitive filesystem (macOS) 'Git' runs the same program, and the rules here match the lower-case word."
   fi
 fi
-# A prefix of a dangerous long option (#1792). Only the segments of the verbs below are walked, never every line of a long command.
-_tw_prefix() {
-  [ "$degraded" = 1 ] && return 1
-  local line w o rest dry
-  if [ "$have_grep" = 1 ]; then rest="$(printf '%s\n' "$seg" | LC_ALL=C grep -E '^git[[:space:]]+(reset|clean|commit|push|merge|rebase|cherry-pick|pull|am|revert)([[:space:]]|$)')"$'\n'; else rest="$seg"$'\n'; fi
-  while [ -n "$rest" ]; do
-    line="${rest%%$'\n'*}"; rest="${rest#*$'\n'}"
-    [[ $line =~ ^git[[:space:]]+(reset|clean|commit|push|merge|rebase|cherry-pick|pull|am|revert)([[:space:]]|$) ]] || continue
-    local verb="${BASH_REMATCH[1]}" d
-    dry=0
-    set -f
-    for w in $line; do   # a dry run (clean -n, a prefix of --dry-run) makes clean's force harmless
-      case "$w" in --dr|--dry|--dry-|--dry-r|--dry-ru|--dry-run) dry=1 ;; -[!-]*n*) dry=1 ;; esac
-    done
-    for w in $line; do
-      case "$w" in
-        --?*)
-          o="${w%%=*}"
-          [ "${#o}" -ge 3 ] || continue
-          case "$verb" in
-            reset) d="--hard" ;;
-            clean) d="--force"; [ "$dry" = 1 ] && continue ;;
-            *) d="--no-verify"; [ "${#o}" -ge 6 ] || continue ;;
-          esac
-          [ "${d#"$o"}" != "$d" ] && { set +f; return 0; } ;;
-      esac
-    done
-    set +f
-  done
-  return 1
-}
-if [[ "$seg" == *git* ]] && _tw_prefix; then
+# A prefix of a dangerous long option (#1792), as three greps over the segments: a bash loop over the words of every `git reset`/`commit` line cost 6 s on a
+# 3,000-line command (measured), past the hook's budget, so nothing here loops. `--h` and longer is a prefix of `--hard`; `--no-v` and longer of `--no-verify`
+# (`--no-` and `--no-e` are other options, which is why the floor is six characters); `--f` and longer of `--force`, which a dry run (`-n`, `--dry-run` or a prefix)
+# makes harmless on `clean`, as it does for the written-out option above. The exemption reads any segment, as the rules above do, and never applies in degraded mode.
+_tw_end='([[:space:]=]|$)'
+if [[ "$seg" == *--* ]] && { hit "^git[[:space:]]+reset([[:space:]].*)?[[:space:]]--h(a(r(d)?)?)?${_tw_end}" \
+   || { hit "^git[[:space:]]+clean([[:space:]].*)?[[:space:]]--f(o(r(c(e)?)?)?)?${_tw_end}" \
+        && ! exempt "^git[[:space:]]+clean([[:space:]].*)?([[:space:]]-[a-zA-Z]*n|[[:space:]]--d(r(y(-(r(u(n)?)?)?)?)?)?${_tw_end})"; } \
+   || hit "^git[[:space:]]+(commit|push|merge|rebase|cherry-pick|pull|am|revert)([[:space:]].*)?[[:space:]]--no-v(e(r(i(f(y)?)?)?)?)?${_tw_end}"; }; then
   deny "an abbreviated dangerous option (--ha for --hard, --forc for --force, --no-v for --no-verify) is read by git as the full option, so it is refused like the full spelling: it can discard work or skip the checks, and requires explicit user approval."
 fi
 # `*` and `..` stage as much as `.` (#1783 review).

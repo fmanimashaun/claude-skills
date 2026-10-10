@@ -119,7 +119,7 @@ GUARD = Guard(
         # #1792: the tripwire.
         Mutation(
             "the tripwire's dynamic-argument rule is off, so a variable beside a working-tree verb passes",
-            'if hit "^git[[:space:]]+${_tw_verbs}([[:space:]]|\\$).*(${_tw_dyn}|${_tw_dollar})"; then',
+            'if [[ "$seg" == *git* ]] && hit "^git[[:space:]]+${_tw_verbs}([[:space:]]|\\$).*(${_tw_dyn}|${_tw_dollar})"; then',
             'if false; then',
             'the tripwire refuses `git checkout $BRANCH',
         ),
@@ -131,7 +131,7 @@ GUARD = Guard(
         ),
         Mutation(
             'a command word built at run time is no longer refused before a working-tree verb',
-            'if hit "^[^[:space:]]*[\\$\\`][^[:space:]]*[[:space:]]+(.*[[:space:]])?${_tw_all}([[:space:]]|\\$)"; then',
+            'if [[ "$seg" == *[\\$\\`]* ]] && hit "^[^[:space:]]*[\\$\\`][^[:space:]]*[[:space:]]+(.*[[:space:]])?${_tw_all}([[:space:]]|\\$)"; then',
             'if false; then',
             'the tripwire refuses `g=git; $g reset x',
         ),
@@ -161,14 +161,14 @@ GUARD = Guard(
         ),
         Mutation(
             'an abbreviation of a dangerous option is matched only when written in full',
-            '[ "${d#"$o"}" != "$d" ] && { set +f; return 0; } ;;\n      esac\n    done\n    set +f\n  done\n  return 1\n}\nif [[ "$seg" == *git* ]] && _tw_prefix',
-            '[ "$d" = "$o" ] && { set +f; return 0; } ;;\n      esac\n    done\n    set +f\n  done\n  return 1\n}\nif [[ "$seg" == *git* ]] && _tw_prefix',
+            'hit "^git[[:space:]]+reset([[:space:]].*)?[[:space:]]--h(a(r(d)?)?)?${_tw_end}"',
+            'hit "^git[[:space:]]+reset([[:space:]].*)?[[:space:]]--hard${_tw_end}"',
             'the tripwire refuses `git reset --ha`',
         ),
         Mutation(
             'a dry run no longer exempts an abbreviated clean --force',
-            '            clean) d="--force"; [ "$dry" = 1 ] && continue ;;',
-            '            clean) d="--force" ;;',
+            '&& ! exempt "^git[[:space:]]+clean([[:space:]].*)?([[:space:]]-[a-zA-Z]*n|[[:space:]]--d(r(y(-(r(u(n)?)?)?)?)?)?${_tw_end})"; }',
+            '&& ! false; }',
             'CONTROL: `git clean --dry-run --forc`',
         ),
         Mutation(
