@@ -470,6 +470,17 @@ def check_words(seg: list[str]) -> None:
         break
 
 
+def _trap_args(seg: list[str]):
+    """#1781: the words after `trap` when this segment RUNS the `trap` builtin, else None. Prefixes are skipped the way `command_indexes` skips them
+    (`builtin`, `command`, `env`, `{`, `then`, `do`, an assignment, an option), and so are the `name ()` and `{` of a function definition, so a trap
+    inside a function body or a compound command is seen as well as a bare one."""
+    for i, w in enumerate(seg):
+        if re.fullmatch(r"[A-Za-z_]\w*=.*", w) or w in WRAPPERS or w.startswith("-") or w in ("()", "(", ")", "}"):
+            continue
+        return seg[i + 1:] if w == "trap" else None
+    return None
+
+
 def all_segments(cmd: str, depth: int = 0):
     """Every command segment, INCLUDING those inside `sh -c '<string>'`, `bash -lc`, and `eval ...`,
     parsed as commands in their own right (41's delta review of #1470)."""
@@ -485,10 +496,10 @@ def all_segments(cmd: str, depth: int = 0):
     deferred: list[str] = []
     for seg in segments(toks):
         check_words(seg)
-        if seg[0] == "trap":
+        if _trap_args(seg) is not None:
             # #1781: `trap '<command>' SIGNAL...` runs a command string later, at exit or on a signal. It is read like `bash -c '<string>'`, and AFTER
             # every other segment (it fires once the rest has run). `trap - SIG`, `trap '' SIG`, `trap -p` and `trap -l` carry no command. A string that IS a variable (`trap "$CMD" EXIT`) is refused by `check_words` once it is read as a segment.
-            targs = [w for w in seg[1:] if w != "--"]
+            targs = [w for w in _trap_args(seg) if w != "--"]
             if targs and targs[0] in ("-p", "-l"):
                 pass
             elif targs and targs[0] not in ("-", ""):
@@ -1344,7 +1355,7 @@ def branch_change(verb: str, args: list[str]):
         # modelled. `git stash` itself does NOT move HEAD or change the current branch (it saves and cleans the working tree, and `stash pop|apply|
         # list|show|drop|push|create|store|clear` leave the branch alone), so it stays allowed; `git stash branch <name>` creates and checks out a branch.
         sub = next((a for a in args if not a.startswith("-")), "")
-        if verb == "bisect" and sub not in BISECT_READ_ONLY:
+        if verb == "bisect" and sub not in BISECT_READ_ONLY and not (not sub and any(a in ("--help", "-h") for a in args)):
             return unknown
         if verb == "worktree" and sub == "add":
             return unknown
@@ -2054,6 +2065,11 @@ def selftest() -> int:
         # #1781 harmless controls: none of these moves HEAD, so a later push is judged as the hook saw it
         ("gh pr checkout 3", []), ("git stash; git status", []), ("git stash; git push origin HEAD", []), ("git stash pop; git push origin HEAD", []),
         ("git bisect log", []), ("git bisect log; git push origin HEAD", []), ("git worktree list; git push origin HEAD", []),
+        ("git bisect --help; git push origin HEAD", []), ("git bisect -h", []),
+        ("builtin trap 'git push origin main' EXIT", ["PUSH_MAIN main"]), ("command trap 'git push origin main' EXIT", ["PUSH_MAIN main"]),
+        ("env trap 'git push origin main' EXIT", ["PUSH_MAIN main"]), ("f(){ trap 'git push origin main' EXIT; }; f", ["PUSH_MAIN main"]),
+        ("{ trap 'git push origin main' EXIT; }", ["PUSH_MAIN main"]), ("if true; then trap 'git push origin main' EXIT; fi", ["PUSH_MAIN main"]),
+        ("( trap 'git push origin main' EXIT )", ["PUSH_MAIN main"]), ("builtin trap - EXIT", []), ("f(){ trap 'echo bye' EXIT; }; f", []),
         ("trap - EXIT", []), ("trap '' INT", []), ("trap -p", []), ("trap 'echo bye' EXIT", []),
         # a trap string is classified like `bash -c`'s
         ("trap 'git push origin main' EXIT", ["PUSH_MAIN main"]), ("trap 'git push origin main' EXIT; git status", ["PUSH_MAIN main"]),

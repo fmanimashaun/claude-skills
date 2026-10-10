@@ -718,7 +718,7 @@ GUARD = Guard(
         ),
         Mutation(
             "#1781: `git bisect start|good|bad|reset|run` is read as not moving HEAD",
-            '        if verb == "bisect" and sub not in BISECT_READ_ONLY:',
+            '        if verb == "bisect" and sub not in BISECT_READ_ONLY and not (not sub and any(a in ("--help", "-h") for a in args)):',
             "        if False:",
             "classify 'git bisect start main; git push origin HEAD': must be unjudgeable",
         ),
@@ -745,6 +745,18 @@ GUARD = Guard(
             "                deferred.append(targs[0])",
             "                pass",
             "expected ['PUSH_MAIN main'], got []",
+        ),
+        Mutation(
+            "#1781: `builtin`, `command`, `env` and the compound-command words (`{`, `then`) are not skipped before `trap`, so a prefixed or nested trap is not read",
+            '        if re.fullmatch(r"[A-Za-z_]\\w*=.*", w) or w in WRAPPERS or w.startswith("-") or w in ("()", "(", ")", "}"):',
+            '        if re.fullmatch(r"[A-Za-z_]\\w*=.*", w) or w.startswith("-") or w in ("()", "(", ")", "}"):',
+            "\"builtin trap 'git push origin main' EXIT\": expected ['PUSH_MAIN main']",
+        ),
+        Mutation(
+            "#1781: `git bisect --help` is refused as HEAD-moving",
+            ' and not (not sub and any(a in ("--help", "-h") for a in args)):',
+            ':',
+            "'git bisect --help; git push origin HEAD': expected []",
         ),
     ),
 )
