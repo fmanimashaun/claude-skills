@@ -248,6 +248,16 @@ def trust() -> None:
             os.environ["GITHUB_REPOSITORY"] = saved
 
     main_env = {"GITHUB_ACTIONS": "true", "GITHUB_REF": "refs/heads/main", "GITHUB_REPOSITORY": "o/r"}
+    check("skip_allowed: CI on main may skip a proven, unchanged guard", inc.skip_allowed(main_env) is True)
+    for label, env in (("a pull request run", dict(main_env, GITHUB_REF="refs/pull/9/merge")),
+                       ("a dispatch on a branch", dict(main_env, GITHUB_REF="refs/heads/feature/x")),
+                       ("CI on dev", dict(main_env, GITHUB_REF="refs/heads/dev")),
+                       ("a tag", dict(main_env, GITHUB_REF="refs/tags/v1.0.0")),
+                       ("a ref that merely starts like main", dict(main_env, GITHUB_REF="refs/heads/main-evil")),
+                       ("a laptop with the ref set", {"GITHUB_REF": "refs/heads/main"}),
+                       ("a laptop", {}),
+                       ("GITHUB_ACTIONS that is not exactly true", dict(main_env, GITHUB_ACTIONS="1"))):
+        check(f"skip_allowed: {label} never skips (the branch's own code decides the skip there)", inc.skip_allowed(env) is False)
     for label, env in (("a pull request run", dict(main_env, GITHUB_REF="refs/pull/9/merge")),
                        ("a dispatch on a branch", dict(main_env, GITHUB_REF="refs/heads/feature/x")),
                        ("a laptop", {"GITHUB_REF": "refs/heads/main", "GITHUB_REPOSITORY": "o/r"}),

@@ -121,6 +121,24 @@ GUARD = Guard(
             'no `gh` on the machine reads as NO proof',
         ),
         Mutation(
+            'a skip is allowed off main, so a branch\'s own code decides what runs',
+            '    return env.get("GITHUB_ACTIONS") == "true" and env.get("GITHUB_REF") == "refs/heads/main"',
+            '    return env.get("GITHUB_ACTIONS") == "true"',
+            'skip_allowed: a dispatch on a branch never skips',
+        ),
+        Mutation(
+            'a laptop may skip, so a local run reads a proof as evidence',
+            '    return env.get("GITHUB_ACTIONS") == "true" and env.get("GITHUB_REF") == "refs/heads/main"',
+            '    return env.get("GITHUB_REF") == "refs/heads/main"',
+            'skip_allowed: a laptop with the ref set never skips',
+        ),
+        Mutation(
+            'a ref that only starts like main may skip',
+            '    return env.get("GITHUB_ACTIONS") == "true" and env.get("GITHUB_REF") == "refs/heads/main"',
+            '    return env.get("GITHUB_ACTIONS") == "true" and env.get("GITHUB_REF", "").startswith("refs/heads/main")',
+            'skip_allowed: a ref that merely starts like main never skips',
+        ),
+        Mutation(
             'a pull request run posts a proof',
             '    if env.get("GITHUB_ACTIONS") != "true" or env.get("GITHUB_REF") != "refs/heads/main":',
             '    if env.get("GITHUB_ACTIONS") != "true":',

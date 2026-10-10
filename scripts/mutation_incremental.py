@@ -44,6 +44,16 @@ LOOKBACK = 40            # main first-parent commits searched for a proof status
 CI_HOST_PREFIX = "github-actions/"
 
 
+def skip_allowed(env: Mapping[str, str]) -> bool:
+    """True only in CI on `refs/heads/main`: a release, the weekly sweep, or a dispatch on main.
+
+    WHERE THE DECIDING CODE RUNS IS PART OF THE TRUST (#1738, second security pass). `trusted_skips` compares hashes, but the comparison is made by
+    the code in the checkout being run. On a pull request, a dispatch on a branch or a laptop that code is the branch's own, which its author can edit
+    to skip any guard (or to print a green result for one) and no hash then proves anything. So off `main` nothing is skipped: every guard runs, the
+    way it did before the incremental proof existed. The proof status itself is posted only from CI on `main` (`post_proof`), for the same reason."""
+    return env.get("GITHUB_ACTIONS") == "true" and env.get("GITHUB_REF") == "refs/heads/main"
+
+
 def os_key() -> str:
     return platform.system().lower() or "unknown"
 

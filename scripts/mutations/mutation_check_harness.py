@@ -505,9 +505,15 @@ GUARD = Guard(
         ),
         Mutation(
             'a skip is never taken, so the incremental path is dead',
-            '    skips = {} if full or wanted else trusted_proof_skips(every, hashes, harness, system)',
+            '    skips = {} if full or wanted or not inc.skip_allowed(os.environ) else trusted_proof_skips(every, hashes, harness, system)',
             '    skips = {}',
             'an unchanged guard must be reported as `skip (unchanged since <sha>)`',
+        ),
+        Mutation(
+            'main() takes a skip off `main` too, so a branch\'s own code decides what runs',
+            '    skips = {} if full or wanted or not inc.skip_allowed(os.environ) else trusted_proof_skips(every, hashes, harness, system)',
+            '    skips = {} if full or wanted else trusted_proof_skips(every, hashes, harness, system)',
+            'a dispatch on a branch must skip NOTHING',
         ),
         Mutation(
             'the trusted proof is read from a file a pull request can write instead of from the proof commit',

@@ -1074,6 +1074,10 @@ def run() -> int:
             return -1, f"raised {exc!r}", ""
         return rc, out.getvalue(), err.getvalue()
 
+    # A skip is allowed only in CI on refs/heads/main (#1738): this block runs as that, and the off-main cases below change the environment.
+    env_saved = {k: os.environ.get(k) for k in ("GITHUB_ACTIONS", "GITHUB_REF")}
+    os.environ["GITHUB_ACTIONS"], os.environ["GITHUB_REF"] = "true", "refs/heads/main"
+
     try:
         fg.init(root, "-b", "main")
         fixture_git("add", "-A")
@@ -1096,6 +1100,20 @@ def run() -> int:
         _tick()
         if "NOT run and not a pass" not in out:
             FAILURES.append(f"#1738: a run with skips must say plainly that a skip is not a pass, got {out}")
+        # THE DECIDING CODE: off `main` the checkout's own code makes the skip decision, and a branch can edit it to skip anything. So a valid proof
+        # and an unchanged guard still run EVERY guard on a branch dispatch, on a pull request and on a laptop.
+        for why, ci, ref in (("a dispatch on a branch", "true", "refs/heads/feature/x"), ("a pull request", "true", "refs/pull/7/merge"),
+                             ("a tag", "true", "refs/tags/v9.9.9"), ("a laptop (no CI)", None, None)):
+            if ci is None:
+                os.environ.pop("GITHUB_ACTIONS", None)
+                os.environ.pop("GITHUB_REF", None)
+            else:
+                os.environ["GITHUB_ACTIONS"], os.environ["GITHUB_REF"] = ci, ref
+            rc, out, _ = drive()
+            _tick()
+            if rc != 0 or "[ok" not in out or "[skip]" in out:
+                FAILURES.append(f"#1738: {why} must skip NOTHING even with a valid proof and an unchanged guard (the branch's own code decides), exit {rc}: {out}")
+        os.environ["GITHUB_ACTIONS"], os.environ["GITHUB_REF"] = "true", "refs/heads/main"
         # THE FORGERY: a pull request writes a hash file and a guard edit together. Nothing it writes is read.
         subject = root / "scripts" / "subject_under_test.py"
         subject.write_text(SUBJECT + "\n# edited by the pull request\n", encoding="utf-8")
@@ -1183,6 +1201,11 @@ def run() -> int:
         if rc != 1 or "SURVIVED" not in err:
             FAILURES.append(f"#1738: in the release a survivor must still FAIL, exit {rc}: {err}")
     finally:
+        for key, value in env_saved.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
         (mc.REPO, mc.GUARDS, mc.COST_BASELINE, mc.load_cost_baseline, mc.RATCHET_SLACK, mc.RATCHET_GROWTH,
          mc.inc.github_proof_lookup) = saved
 

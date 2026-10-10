@@ -826,7 +826,8 @@ def main(argv: list[str] | None = None) -> int:
     full = args.full or args.rebaseline
     # A skip is taken only from a commit of `main` that CI marked proven, with every hash recomputed from that commit's own objects.
     # Nothing a pull request can edit is read, and anything unreadable skips nothing (see scripts/mutation_incremental.py).
-    skips = {} if full or wanted else trusted_proof_skips(every, hashes, harness, system)
+    # And only where the code deciding the skip is trusted: CI on `main`. A branch's own code could skip anything, so off `main` every guard runs.
+    skips = {} if full or wanted or not inc.skip_allowed(os.environ) else trusted_proof_skips(every, hashes, harness, system)
     guards, skipped = inc.select_guards(every, hashes, skips=skips, full=full, named=bool(wanted), shard=shard,
                                         weights=weights, default=RATCHET_FLOOR)
     start_load = five_minute_load()     # BEFORE the pool starts: this run's own work is not the load it ran under (#1652)
