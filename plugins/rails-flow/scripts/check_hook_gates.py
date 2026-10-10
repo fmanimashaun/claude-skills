@@ -1277,6 +1277,144 @@ def guard_bash_fixtures() -> None:
           run("git clean -n -fd") == 0, "exit 2")
 
 
+# ---- guard-bash.sh: db:reset is situational (#1734) ---------------------------------------------------------------------
+# Retask's config/ci.rb REQUIRES a seeded `db:reset` and the guard refused it, recommending a sequence that leaves that project's test DB
+# unseeded (158 specs failed). A project now DECLARES `test-db-seeded: yes` on a line of its own in GUARDRAILS.md. A declaration allows ONE
+# command, `RAILS_ENV=test ... db:reset` run alone; every other reset, and every undeclared project, is refused as before.
+DB_RESET_TEST_FORMS = ("RAILS_ENV=test bin/rails db:reset", "env RAILS_ENV=test bin/rails db:reset", "RAILS_ENV=test bundle exec rails db:reset",
+                       "RAILS_ENV=test rake db:reset", "RAILS_ENV=test bin/rake db:reset", "bin/rails db:reset RAILS_ENV=test",
+                       "  RAILS_ENV=test bin/rails db:reset  ", "RAILS_ENV=test\tbin/rails db:reset")
+# Refused even for a declared project: not the test database, not alone, or not the bare reset.
+DB_RESET_STILL_REFUSED = ("bin/rails db:reset", "RAILS_ENV=development bin/rails db:reset", "RAILS_ENV=production bin/rails db:reset",
+                          "RAILS_ENV=testing bin/rails db:reset", "RAILS_ENV=test bin/rails db:reset && bin/rails db:reset",
+                          "RAILS_ENV=test bin/rails db:reset; bin/rails db:reset", "RAILS_ENV=test bin/rails db:reset | tee log",
+                          "RAILS_ENV=test bin/rails db:reset\nbin/rails db:reset", "RAILS_ENV=test bin/rails db:reset db:seed",
+                          "RAILS_ENV=test RAILS_ENV=development bin/rails db:reset", "RAILS_ENV=development RAILS_ENV=test bin/rails db:reset",
+                          "bin/rails db:reset RAILS_ENV=development", "(RAILS_ENV=test bin/rails db:reset)", "sudo RAILS_ENV=test bin/rails db:reset",
+                          "RAILS_ENV=test bin/rails db:reset\nrm tmp/x", "RAILS_ENV=test bin/rails db:reset\r\nbin/rails db:reset",
+                          "RAILS_ENV=test bin/rails db:reset # then\nbin/rails db:reset", "RAILS_ENV=test bin/rails db:reset `bin/rails db:reset`",
+                          # #1760 review: `[[:space:]]` matched a newline and `=~` anchors only at the ends of the whole string, so a bare assignment on one line and a
+                          # DEVELOPMENT reset on the next was one allowed command.
+                          "RAILS_ENV=test\nbin/rails db:reset", "bin/rails db:reset\nRAILS_ENV=test", "bin/rails db:reset\rRAILS_ENV=test",
+                          "RAILS_ENV=test\n\nbin/rails db:reset", "env RAILS_ENV=test\nbin/rails db:reset", "bundle exec rails db:reset\nRAILS_ENV=test")
+
+
+def guard_bash_db_reset_fixtures() -> None:
+    def project(guardrails: str | None, *, ci_script: bool = False, ci_rb: bool = False) -> Path:
+        root = Path(tempfile.mkdtemp())
+        if guardrails is not None:
+            (root / "GUARDRAILS.md").write_text(guardrails)
+        if ci_script:
+            (root / "bin").mkdir()
+            (root / "bin" / "ci").write_text("#!/bin/sh\n")
+        if ci_rb:
+            (root / "config").mkdir()
+            (root / "config" / "ci.rb").write_text("# CI\n")
+        return root
+
+    def hook(root: Path, stdin: str, cwd: Path | None = None) -> tuple[int, str]:
+        # CLAUDE_PROJECT_DIR is set explicitly: the harness may itself run inside a session whose project is another repository.
+        return run_hook("guard-bash.sh", cwd=cwd or root, stdin=stdin, env_extra={"CLAUDE_PROJECT_DIR": str(root)})
+
+    def run(root: Path, cmd: str, cwd: Path | None = None) -> tuple[int, str]:
+        return hook(root, json.dumps({"tool_input": {"command": cmd}}), cwd)
+
+    seeded = project("# Guardrails\n\n- test-db-seeded: yes\n")
+    plain = project("# Guardrails\n\nNothing declared here.\n")
+    try:
+        for cmd in DB_RESET_TEST_FORMS:
+            rc, out = run(seeded, cmd)
+            check(f"guard-bash (#1734): a project declaring test-db-seeded ALLOWS `{cmd.strip()}`", rc == 0, f"exit {rc}: {out[:120]}")
+        for cmd in DB_RESET_STILL_REFUSED:
+            rc, out = run(seeded, cmd)
+            check(f"guard-bash (#1734): even a declared project is still refused `{cmd!r}`", rc == 2, f"exit {rc}: {out[:120]}")
+        rc, out = run(seeded, "bin/rails db:reset")
+        # Text only the DECLARED message has: the undeclared one also names `RAILS_ENV=test bin/rails db:reset` (as what a declaration would allow).
+        check("guard-bash (#1734): the declared project's refusal says what IS allowed", "this project declares test-db-seeded" in out and "run on its own" in out, out[:200])
+
+        # UNDECLARED: the refusal stays, for every spelling, and a project with a CI script is pointed at it.
+        for cmd in ("bin/rails db:reset", "RAILS_ENV=test bin/rails db:reset", "env RAILS_ENV=test bin/rails db:reset", "bundle exec rails db:reset",
+                    "bundle exec bin/rails db:reset", "RAILS_ENV=test bundle exec rails db:reset", "bundle exec rake db:reset"):
+            rc, out = run(plain, cmd)
+            check(f"guard-bash (#1734): an UNDECLARED project is still refused `{cmd}`", rc == 2 and "db:reset is prohibited" in out, f"exit {rc}: {out[:120]}")
+        check("guard-bash (#1734): CONTROL: the refusal still recommends the unseeded sequence", "db:drop db:create db:schema:load" in out, out[:200])
+        check("guard-bash (#1734): with no CI script the refusal names none", "bin/ci" not in out and "config/ci.rb" not in out, out[:200])
+        check("guard-bash (#1734): the refusal says how to declare the choice", "test-db-seeded: yes" in out, out[:200])
+        check("guard-bash (#1734): the undeclared refusal is not the declared project's message", "this project declares" not in out, out[:200])
+
+        with_ci = project("# Guardrails\n", ci_script=True)
+        with_rb = project("# Guardrails\n", ci_rb=True)
+        both = project("# Guardrails\n", ci_script=True, ci_rb=True)
+        try:
+            rc, out = run(with_ci, "RAILS_ENV=test bin/rails db:reset")
+            check("guard-bash (#1734): an undeclared project WITH bin/ci is told to run bin/ci", rc == 2 and "run bin/ci" in out, f"exit {rc}: {out[:200]}")
+            rc, out = run(with_rb, "RAILS_ENV=test bin/rails db:reset")
+            check("guard-bash (#1734): one with only config/ci.rb is told its CI script", rc == 2 and "config/ci.rb" in out and "run bin/ci" not in out, f"exit {rc}: {out[:200]}")
+            rc, out = run(both, "RAILS_ENV=test bin/rails db:reset")
+            check("guard-bash (#1734): one with both names bin/ci", rc == 2 and "run bin/ci" in out, f"exit {rc}: {out[:200]}")
+        finally:
+            for d in (with_ci, with_rb, both):
+                shutil.rmtree(d, ignore_errors=True)
+
+        # WHAT IS NOT A DECLARATION: a mention, a refusal written as prose, `no`, a different key, a line that continues past the value.
+        not_declared = {
+            "a mention inside a sentence": "# Guardrails\n\nWe never write test-db-seeded: yes here.\n",
+            "a sentence that ENDS with it": "# Guardrails\n\nWe never write test-db-seeded: yes\n",
+            "the value no": "# Guardrails\n\n- test-db-seeded: no\n",
+            "a longer value": "# Guardrails\n\n- test-db-seeded: yes but only on Tuesdays\n",
+            "another key": "# Guardrails\n\n- test-db-seeded-maybe: yes\n",
+            "an empty file": "",
+            "a fenced example": "# Guardrails\n\n```markdown\n- test-db-seeded: yes\n```\n",
+            "a tilde-fenced example": "# Guardrails\n\n~~~\ntest-db-seeded: yes\n~~~\n",
+            "an indented code example": "# Guardrails\n\nAdd this:\n\n    - test-db-seeded: yes\n",
+            "a tab-indented example": "# Guardrails\n\nAdd this:\n\ttest-db-seeded: yes\n",
+            "an unclosed fence": "# Guardrails\n\n```\n- test-db-seeded: yes\n",
+            "an HTML comment spanning lines": "# Guardrails\n\n<!--\n- test-db-seeded: yes\n-->\n",
+            "a one-line HTML comment": "# Guardrails\n\n<!-- - test-db-seeded: yes -->\n",
+            "an unclosed HTML comment": "# Guardrails\n\n<!--\n- test-db-seeded: yes\n",
+        }
+        for why, text in not_declared.items():
+            root = project(text)
+            try:
+                rc, out = run(root, "RAILS_ENV=test bin/rails db:reset")
+                check(f"guard-bash (#1734): {why} does not declare it, so the reset is refused", rc == 2, f"exit {rc}: {out[:120]}")
+            finally:
+                shutil.rmtree(root, ignore_errors=True)
+        # ...and the spellings of a real declaration that ARE one (the line may be bulleted, backticked, or bare).
+        for text in ("- `test-db-seeded: yes`\n", "* test-db-seeded: yes\n", "test-db-seeded: yes\n", "  - test-db-seeded:   yes  \n", "x\r\n- test-db-seeded: yes\n",
+                 "```sh\nexample\n```\n- test-db-seeded: yes\n", "   - test-db-seeded: yes\n",
+                 "<!-- note -->\n- test-db-seeded: yes\n", "<!--\nnote\n-->\n- test-db-seeded: yes\n"):
+            root = project("# Guardrails\n\n" + text)
+            try:
+                rc, out = run(root, "RAILS_ENV=test bin/rails db:reset")
+                check(f"guard-bash (#1734): the declaration {text.strip()!r} is read", rc == 0, f"exit {rc}: {out[:120]}")
+            finally:
+                shutil.rmtree(root, ignore_errors=True)
+
+        # FAIL CLOSED: an unreadable payload cannot show which env the command sets, so even a declared project is refused.
+        rc, out = hook(seeded, "RAILS_ENV=test bin/rails db:reset")
+        check("guard-bash (#1734): a payload the hook cannot parse is refused even for a declared project", rc == 2, f"exit {rc}: {out[:120]}")
+        # The declaration is read from the PROJECT (CLAUDE_PROJECT_DIR), not from wherever the command's shell happens to be.
+        elsewhere = Path(tempfile.mkdtemp())
+        try:
+            rc, out = run(seeded, "RAILS_ENV=test bin/rails db:reset", cwd=elsewhere)
+            check("guard-bash (#1734): the declaration is read from the project directory, not the shell's cwd", rc == 0, f"exit {rc}: {out[:120]}")
+            rc, out = run(plain, "RAILS_ENV=test bin/rails db:reset", cwd=elsewhere)
+            check("guard-bash (#1734): CONTROL: an undeclared project is refused from the same cwd", rc == 2, f"exit {rc}: {out[:120]}")
+            # No CLAUDE_PROJECT_DIR (a plain terminal): the git root or cwd decides.
+            rc, out = run_hook("guard-bash.sh", cwd=seeded, unset=("CLAUDE_PROJECT_DIR",),
+                               stdin=json.dumps({"tool_input": {"command": "RAILS_ENV=test bin/rails db:reset"}}))
+            check("guard-bash (#1734): with no CLAUDE_PROJECT_DIR the working directory's GUARDRAILS.md is read", rc == 0, f"exit {rc}: {out[:120]}")
+        finally:
+            shutil.rmtree(elsewhere, ignore_errors=True)
+        # Other rules are untouched by a declaration.
+        rc, out = run(seeded, "git add -A")
+        check("guard-bash (#1734): CONTROL: a declaration does not relax `git add -A`", rc == 2, f"exit {rc}: {out[:120]}")
+    finally:
+        for d in (seeded, plain):
+            shutil.rmtree(d, ignore_errors=True)
+
+
 # ---- guard-claims.sh (#1106) --------------------------------------------------------------------
 # `claim-verifier` exists, works, covers "any number: counts, ratios, versions, timings", and is
 # named in /maintainer-work -- and it was skipped for a whole working day while two wrong numbers
@@ -1891,6 +2029,9 @@ def guard_claims_fixtures() -> None:
 
 
 # ---- release-gate.sh (qa-flow) shares the normaliser: drive it too, or the "one normaliser" claim is prose (#906) ----
+# #1720: the shell-adversary's inputs against the classifier-missing fallback at cc80da33; every one must be refused.
+ADVERSARY_1720 = ('git -C $(pwd) push origin main', 'git -C "$(pwd)" push origin main', "'git' push origin main", 'git push origin main', 'git -c x=y push origin main', 'git push origin HEAD:main', 'git push origin +main', 'git push origin HEAD:refs/heads/main', 'git push --all', 'git push --mirror', 'git push origin HEAD:heads/main', '\\git push origin main', 'g\\it push origin main', "git $'\\x70ush' origin main", "git pu''sh origin main", 'git "push" origin main', 'env GIT_DIR=. git push origin main', 'command git push origin main', 'echo git push origin main | xargs -0 sh -c', 'echo main | xargs git push origin', 'eval "git push origin main"', "eval 'g''it pu''sh origin main'", "git push origin ma''in", 'git push origin "ma"in', "git push origin $'ma\\x69n'", 'git push origin m\\ain', 'git push origin mai[n]', 'git push origin ma{in,}', 'git push origin $(echo main)', 'git push origin $BR', 'git push', 'git push origin HEAD', 'git checkout main; git merge dev', 'git merge dev', 'git -C . merge origin/dev', 'git "merge" dev', "git me''rge dev", 'git pull origin main', 'git pull', 'git rebase dev', 'git cherry-pick abc', 'git reset --hard origin/main', 'git fetch origin main:main', 'git update-ref refs/heads/main HEAD', 'git branch -f main HEAD', 'git push origin dev:main', 'git push . HEAD:main', 'git push origin :main', 'git push origin HEAD:master', 'git send-pack origin main', 'gh pr merge 5', 'gh pr merge 5 --squash', 'gh api -X PUT repos/a/b/pulls/5/merge', 'git push origin dev', 'git branch -C dev main', 'git branch -m dev main', 'git branch -fm dev main', 'git branch -c -f dev main', 'git checkout -B main dev', 'git switch -C main dev', 'git worktree add -B main ../w2 dev', 'gh api -X POST repos/a/b/merges', 'gh api repos/a/b/merges -f base=main', 'gh workflow run release.yml', 'gh m 5', 'gh alias set m pr merge', 'git-push origin main')
+
 QA_HOOK = HOOKS.parents[2] / "qa-flow" / "hooks" / "scripts" / "release-gate.sh"
 
 
@@ -1991,14 +2132,23 @@ def release_gate_fixtures() -> None:
     with tempfile.TemporaryDirectory() as bare_root:
         check("release-gate (#1410): parser missing -> a quoted `main` push is still blocked",
               run('git push origin "main"', plugin_root=Path(bare_root)) == 2, "exit 0")
-        check("release-gate (#1410): parser missing -> CONTROL: a feature push still passes",
-              run("git push origin feature/x", plugin_root=Path(bare_root)) == 0, "exit 2")
+        # #1720: without the classifier the gate fails closed BY SHAPE, so a feature push is refused too (reinstall the plugin).
+        check("release-gate (#1720): parser missing -> even a feature push is refused (the fallback fails closed by shape)",
+              run("git push origin feature/x", plugin_root=Path(bare_root)) == 2, "exit 0")
         # #1472: without the parser the shared normaliser decides, and it now sees inside a shell string.
         for cmd in ("bash -c 'git push origin main'", 'eval "git push origin main"', "command git push origin main"):
             check(f"release-gate (#1472): parser missing -> `{cmd}` is blocked",
                   run(cmd, plugin_root=Path(bare_root)) == 2, "exit 0")
-        check("release-gate (#1472): parser missing -> CONTROL: `bash -c 'git push origin feature/x'` passes",
-              run("bash -c 'git push origin feature/x'", plugin_root=Path(bare_root)) == 0, "exit 2")
+        check("release-gate (#1720): parser missing -> `bash -c 'git push origin feature/x'` is refused too",
+              run("bash -c 'git push origin feature/x'", plugin_root=Path(bare_root)) == 2, "exit 0")
+        # #1720: the normaliser splits a command substitution into its own segment, so `git -C $(pwd) push` reached the fallback as
+        # `git` | `pwd` | `push origin main` and was allowed; the fallback now also reads git and push as words of the RAW command.
+        for cmd in ("git -C $(pwd) push origin main", 'git -C "$(pwd)" push origin main', "git --git-dir=$(pwd)/.git push origin main"):
+            check(f"release-gate (#1720): parser missing -> `{cmd}` is blocked",
+                  run(cmd, plugin_root=Path(bare_root)) == 2, "exit 0")
+        on_main = (("checkout", "-q", "-B", "main"),)  # -B: the runner's git init may name its first branch master
+        check("release-gate (#1720): parser missing -> `git -C $(pwd) merge` with HEAD on main is blocked",
+              run("git -C $(pwd) merge feature/work", plugin_root=Path(bare_root), git_config=on_main) == 2, "exit 0")
 
     # THE DISCRIMINATING PAIR for the marketplace carve-out. The same command, the same absence of
     # a certification, and the ONLY difference is `.claude-plugin/marketplace.json`. Without the
@@ -2166,8 +2316,9 @@ def release_gate_fixtures() -> None:
             done = _run(["bash", str(QA_HOOK)], cwd=repo, env={**env, "CLAUDE_PLUGIN_ROOT": str(fb_root)},
                         capture_output=True, text=True, timeout=60,
                         input=json.dumps({"tool_input": {"command": "git push origin main"}}))
-        check("release-gate (#1337): without the classifier, dev's tip is read and a missing origin/dev does not poison it",
-              done.returncode == 0, done.stderr)
+        # #1720: without the classifier a push is refused by shape, even a certified one; the audited override is the way through.
+        check("release-gate (#1720): without the classifier, even a certified push is refused, naming the reinstall",
+              done.returncode == 2 and "reinstall the plugin" in done.stderr, done.stderr)
         (repo / "app.rb").write_text("v2\n", encoding="utf-8")
         sh("commit", "-q", "-am", "untested change")
         rc, err = gate()
@@ -3130,6 +3281,11 @@ def release_gate_repos_fixtures() -> None:
         _git_repo(sub)
         _fixture_git(sub, "checkout", "-q", "-B", "main", check=True, capture_output=True)
         _fixture_git(sub, "branch", "dev", check=True, capture_output=True)
+        # a checkout on a feature branch that a command names through the HOME directory (#1764): HOME is this temp dir, so `~/feat` is it
+        feat = Path(td) / "feat"
+        _git_repo(feat)
+        _fixture_git(feat, "checkout", "-q", "-b", "fix/issue-1764-x", check=True, capture_output=True)
+        _fixture_git(feat, "remote", "add", "origin", "https://github.com/o/r.git", check=True, capture_output=True)
         (Path(td) / "bin").mkdir()
         (Path(td) / "bin" / "gh").write_text(FAKE_GH2, encoding="utf-8")
         (Path(td) / "bin" / "gh").chmod(0o755)
@@ -3233,6 +3389,50 @@ def release_gate_repos_fixtures() -> None:
         check("release-gate (#1569): CONTROL: a cd with no merge or push passes", rc == 0, f"rc={rc} {err[:240]!r}")
         rc, err = run("git merge dev")
         check("release-gate (#1569): CONTROL: `git merge dev` off main in this checkout is not a promotion", rc == 0, f"rc={rc} {err[:240]!r}")
+        # (3b) #1764: A DIRECTORY NAMED THROUGH THE HOME DIRECTORY. The hook is handed the RAW command, which no shell has expanded, so `~/feat` and `$HOME/feat`
+        # are text. Read as relative paths they name nothing, the push's HEAD cannot be resolved, and a feature-branch push in another checkout was refused
+        # ("cannot tell which commit or repository"). HOME is this fixture's temp dir, so `~/feat` is the feature checkout and `~/sub` the one on main.
+        home = {"HOME": str(td)}
+        for label, cmd in (
+            ("`git -C ~/feat push -u origin HEAD`", "git -C ~/feat push -u origin HEAD"),
+            ("`cd ~/feat && git push -u origin HEAD 2>&1 | tail -2`", "cd ~/feat && git push -u origin HEAD 2>&1 | tail -2"),
+            ("`git -C $HOME/feat push -u origin HEAD`", "git -C $HOME/feat push -u origin HEAD"),
+            ("`git -C ${HOME}/feat push -u origin HEAD`", "git -C ${HOME}/feat push -u origin HEAD"),
+            ("`cd $HOME/feat && git push -u origin HEAD`", "cd $HOME/feat && git push -u origin HEAD"),
+            ("`git -C \"$HOME/feat\" push -u origin HEAD` (double-quoted: the shell expands `$HOME` inside quotes)", "git -C \"$HOME/feat\" push -u origin HEAD"),
+            ("the same push by absolute path (the control)", f"git -C {feat} push -u origin HEAD"),
+        ):
+            rc, err = run(cmd, **home)
+            check(f"release-gate (#1764): {label} pushes a FEATURE branch of another checkout and passes", rc == 0, f"rc={rc} {err[:240]!r}")
+        for label, cmd in (
+            ("`git -C ~/feat push -u origin main`", "git -C ~/feat push -u origin main"),
+            ("`cd ~/feat && git push origin main`", "cd ~/feat && git push origin main"),
+            ("`git -C $HOME/feat push origin HEAD:main`", "git -C $HOME/feat push origin HEAD:main"),
+            ("`git -C ~/sub push -u origin HEAD` (that checkout is ON main: HEAD must resolve THERE, not in this feature checkout)", "git -C ~/sub push -u origin HEAD"),
+            ("`cd ~/sub && git push`", "cd ~/sub && git push"),
+        ):
+            rc, err = run(cmd, **home)
+            check(f"release-gate (#1764): {label} reaches main and is blocked", rc == 2, f"rc={rc} {err[:240]!r}")
+        for label, cmd in (
+            ("a directory that is not there", "git -C ~/nonexistent push -u origin HEAD"),
+            ("`cd` into a directory that is not there", "cd ~/nonexistent && git push -u origin HEAD"),
+            ("another user's home (`~someone`), which this hook cannot expand", "git -C ~someone/feat push -u origin HEAD"),
+            ("another variable (`$ELSEWHERE`)", "git -C $ELSEWHERE/feat push -u origin HEAD"),
+        ):
+            rc, err = run(cmd, **home)
+            check(f"release-gate (#1764): {label} cannot be read, so the push is blocked", rc == 2, f"rc={rc} {err[:240]!r}")
+        for label, cmd in (
+            ("a single-quoted `~/feat` (the shell does not expand it: git is handed a literal directory named `~`)", "git -C '~/feat' push -u origin HEAD"),
+            ("a double-quoted `\"~/feat\"` (a `~` is not expanded inside quotes)", 'git -C "~/feat" push -u origin HEAD'),
+            ("a backslash-escaped `\\~/feat`", "git -C \\~/feat push -u origin HEAD"),
+            ("a single-quoted `'$HOME/feat'`", "git -C '$HOME/feat' push -u origin HEAD"),
+            ("a `cd` into a quoted `'~/feat'`", "cd '~/feat' && git push -u origin HEAD"),
+            ("an unquoted `~/feat` AND a quoted `'~/feat'` in one command (the spelling is ambiguous)", "git -C ~/feat status; git -C '~/feat' push -u origin HEAD"),
+        ):
+            rc, err = run(cmd, **home)
+            check(f"release-gate (#1764): {label} is not the home directory and the push is blocked", rc == 2, f"rc={rc} {err[:240]!r}")
+        rc, err = run("git -C ~/feat push -u origin HEAD", HOME="")
+        check("release-gate (#1764): with no HOME at all `~/feat` cannot be expanded, so the push is blocked", rc == 2, f"rc={rc} {err[:240]!r}")
         # (4) The ARGUMENT the command acts on, not another one in the command line.
         rc, err = run("gh pr merge -b 8 7", FAKE_PRVIEW_7=f"main {hot}", FAKE_PRVIEW_8=f"dev {stamped}")
         check("release-gate (#1569): `gh pr merge -b 8 7` merges PR 7 (not the 8 that is the body) and is judged on PR 7's head",
@@ -4604,13 +4804,78 @@ def deadline_fixtures() -> None:
               rc == 0 and "audited" in err, f"exit {rc}: {err[:160]!r}")
 
 
+def _fallback_gate(td: str, bare: str):
+    """The release gate with no classifier beside it (CLAUDE_PLUGIN_ROOT names an empty directory), in repository `td`."""
+    env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env.pop("GH_REPO", None); env["CLAUDE_PLUGIN_ROOT"] = bare
+
+    def gate(cmd: str, **extra: str):
+        return _run(["bash", str(QA_HOOK)], cwd=td, input=json.dumps({"tool_input": {"command": cmd}}),
+                    env={**env, **extra}, capture_output=True, text=True, timeout=60)
+    return gate
+
+
+def release_gate_adversary_fixtures() -> None:
+    """#1720: the shell-adversary's inputs against the classifier-missing fallback at cc80da33, every one refused. A regression
+    corpus in its own group, so no mutant re-runs 54 hook calls; each rule that refuses them has its own fixture and mutant in
+    `release_gate_fallback`. The fallback reads no HEAD and no remote, so one repository serves every case."""
+    with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as bare:
+        _git_repo(Path(td))
+        gate = _fallback_gate(td, bare)
+        for cmd in ADVERSARY_1720:
+            check(f"release-gate fallback (#1720): adversarial `{cmd[:60]}` is refused", gate(cmd).returncode == 2, "exit 0")
+        for cmd in ("ls", "git log", "git log --oneline -3", "git diff", "git fetch origin", "git branch -a", "git -C repo status",
+                    "git-status", "git branch -d dev", "git worktree add ../w main", "gh pr view 5", "gh issue list", "gh run list",
+                    "gh api repos/a/b/pulls", "gh api -XGET repos/a/b", "gh auth status", "git checkout main", "git switch main"):
+            check(f"release-gate fallback (#1720): CONTROL: read-only `{cmd}` passes", gate(cmd).returncode == 0, "exit 2")
+
+
+def release_gate_fallback_fixtures() -> None:
+    """#1720: WITHOUT ITS CLASSIFIER the release gate fails closed BY SHAPE: one fixture per rule, the controls and the message."""
+    with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as bare:
+        _git_repo(Path(td))   # the fallback reads no HEAD, so the first branch's name (main or master) does not matter
+        gate = _fallback_gate(td, bare)
+        # ONE FIXTURE PER RULE that only that rule catches, so a mutant removing it cannot hide behind the others.
+        check("release-gate fallback (#1720): (a) a marker alone refuses: a base64-decoded push run through sh from `git log $(...)`",
+              gate("git log $(echo Z2l0IHB1c2ggb3JpZ2luIG1haW4= | base64 -d | sh)").returncode == 2, "exit 0")
+        check("release-gate fallback (#1720): (b) `fetch` with a `:` refspec refuses", gate("git fetch origin main:main").returncode == 2, "exit 0")
+        check("release-gate fallback (#1720): (b) `branch -f/-D` refuses even without main (`git branch -D feature/x`)", gate("git branch -D feature/x").returncode == 2, "exit 0")
+        check("release-gate fallback (#1720): `gh release create` refuses", gate("gh release create v9.9.9").returncode == 2, "exit 0")
+        check("release-gate fallback (#1720): (c) a git alias, not on the read-only list, refuses", gate("git p origin main").returncode == 2, "exit 0")
+        # #1720 re-attack, in scope: the dashed form, a local rewrite of main, and gh calls outside an allow-list.
+        check("release-gate fallback (#1720): the dashed `git-push origin main` refuses", gate("git-push origin main").returncode == 2, "exit 0")
+        check("release-gate fallback (#1720): a local rewrite of main (`git branch -m dev main`) refuses",
+              gate("git branch -m dev main").returncode == 2, "exit 0")
+        check("release-gate fallback (#1720): a gh subcommand off the allow-list (`gh workflow run`) refuses",
+              gate("gh workflow run release.yml").returncode == 2, "exit 0")
+        check("release-gate fallback (#1720): `gh api -X POST` refuses", gate("gh api -X POST repos/a/b/merges").returncode == 2, "exit 0")
+        # #1720 confirm pass: main-rewrite spellings past an option list, so the rule is ANY option token beside main.
+        for cmd in ("git checkout -Bmain dev", "git switch --force-create main", "git branch --copy dev main", "git branch -m dev Main"):
+            check(f"release-gate fallback (#1720): `{cmd}` (an option beside main) refuses", gate(cmd).returncode == 2, "exit 0")
+        # #1720 security review: an option value glued on (`-XPOST`, `-fbase=main`) is still the option.
+        check("release-gate fallback (#1720): `gh api -XPOST` (a glued method) refuses", gate("gh api -XPOST repos/a/b/merges").returncode == 2, "exit 0")
+        check("release-gate fallback (#1720): `gh api ... -fbase=main` (a glued field) refuses",
+              gate("gh api repos/a/b/merges -fbase=main").returncode == 2, "exit 0")
+        # The controls a mutant names stay here; the rest run in `release_gate_adversary`, which no mutant re-runs.
+        for cmd in ("git status", "gh api -X GET repos/a/b"):
+            check(f"release-gate fallback (#1720): CONTROL: read-only `{cmd}` passes", gate(cmd).returncode == 0, "exit 2")
+        done = gate("git push origin main")
+        check("release-gate fallback (#1720): the refusal names the missing classifier and the fix",
+              done.returncode == 2 and "classifier missing: restore plugins/qa-flow/scripts/push_targets.py (reinstall the plugin)" in done.stderr,
+              done.stderr[:200])
+        done = gate("git push origin main", QA_ALLOW_MAIN="1")
+        check("release-gate fallback (#1720): QA_ALLOW_MAIN=1 is honoured and audited, as in the missing-tool path",
+              done.returncode == 0 and "audited" in done.stderr, done.stderr[:200])
+
+
 GROUPS = {
     "stop_gate": stop_gate_fixtures, "guard_lane": guard_lane_fixtures,
     "guard_migrate": guard_migrate_fixtures, "lint_ruby": lint_ruby_fixtures,
     "self_consistency": self_consistency_fixtures, "guard_bash": guard_bash_fixtures,
+    "guard_bash_db_reset": guard_bash_db_reset_fixtures,
     "guard_claims": guard_claims_fixtures, "guard_claims_pipe": guard_claims_pipe_fixtures, "release_gate": release_gate_fixtures,
     "release_gate_effects": release_gate_effects_fixtures, "release_gate_repos": release_gate_repos_fixtures,
-    "release_gate_refs": release_gate_refs_fixtures,
+    "release_gate_refs": release_gate_refs_fixtures, "release_gate_fallback": release_gate_fallback_fixtures,
+    "release_gate_adversary": release_gate_adversary_fixtures,
     "ci_verdict_hint": ci_verdict_hint_fixtures, "session_end": session_end_fixtures, "timeout": timeout_fixtures,
     "guard_worktree": guard_worktree_fixtures, "guard_worktree_parse": guard_worktree_parse_fixtures,
     "guard_worktree_failopen": guard_worktree_failopen_fixtures, "guard_worktree_pointer": guard_worktree_pointer_fixtures,
@@ -4631,10 +4896,10 @@ GROUPS = {
 # repos, refs and deadline groups and the four worktree groups (about 60 CPU-s, about 80 s of wall). EVERY group must be in exactly one part: a group in none
 # would never run in the doctor, which is the vacuous gate this repository keeps finding; the selftest checks it below.
 PARTS = {
-    "a": ["stop_gate", "guard_lane", "guard_migrate", "lint_ruby", "self_consistency", "guard_bash", "guard_claims", "guard_claims_pipe",
+    "a": ["stop_gate", "guard_lane", "guard_migrate", "lint_ruby", "self_consistency", "guard_bash", "guard_bash_db_reset", "guard_claims", "guard_claims_pipe",
           "ci_verdict_hint", "session_end", "timeout"],
     "b": ["release_gate", "release_gate_effects"],
-    "c": ["release_gate_repos", "release_gate_refs", "guard_worktree", "guard_worktree_parse",
+    "c": ["release_gate_repos", "release_gate_refs", "release_gate_fallback", "release_gate_adversary", "guard_worktree", "guard_worktree_parse",
           "guard_worktree_failopen", "guard_worktree_pointer", "deadline", "where_stopped", "fixture_git_binding"],
 }
 

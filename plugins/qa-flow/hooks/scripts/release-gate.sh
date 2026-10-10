@@ -511,23 +511,94 @@ EOF_FOUND
     unresolved_pr=1
   fi
 elif [ "$_mentions" = 1 ]; then
-  # The classifier is missing: the pre-#1410 detection, with the whole-word match over the RAW
-  # command so a quoted `"main"` is still seen. Over-blocks a `-main` branch name; never under-blocks
-  # what it used to catch.
-  # `LC_ALL=C` on each grep: BSD grep stops at an invalid byte in a UTF-8 locale, so a push on a LATER line of the same command read as no match.
-  # The normaliser could not be read (above): over-blocks a command that is only comments, never under-blocks one it lost.
-  [ "$_seg_unread" = 1 ] && { targets_main=1; needs_dev=1; unresolved_pr=1; }
-  LC_ALL=C grep -qE '^[[:space:]]*git[[:space:]]+push\b' <<<"$seg" \
-    && LC_ALL=C grep -qE '\b(main|master)\b' <<<"$cmd" && { targets_main=1; needs_dev=1; }
-  LC_ALL=C grep -qE '^[[:space:]]*git[[:space:]]+merge\b' <<<"$seg" \
-    && LC_ALL=C grep -qE '^(main|master)$' <<<"$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" && { targets_main=1; needs_dev=1; }
-  if LC_ALL=C grep -qE '^[[:space:]]*gh[[:space:]]+pr[[:space:]]+merge\b' <<<"$seg"; then
-    num="$(printf '%s' "$seg" | LC_ALL=C grep -oE '(^|[[:space:]])[0-9]+([[:space:]]|$)' | tr -d ' ' | head -1)"
-    resolve_pr "$num" "-"; note_pr
+  # THE CLASSIFIER IS MISSING (a broken install), and this gate fails closed BY SHAPE, not by understanding (#1720). A raw-text
+  # match cannot be completed: an adversarial pass got `g\it push`, `git $'\x70ush'`, `ma''in`, `mai[n]`, `git push --all`,
+  # `git pull`, `git checkout main; git merge dev`, `git update-ref refs/heads/main` and more past every pattern that tried to
+  # recognise a push to main. So a command that mentions git or gh is refused unless it is plainly harmless:
+  #   (a) no shell-expansion or obfuscation marker: `$`, a backtick, a quote, a backslash, a glob or brace character, `eval`, `xargs`;
+  #   (b) no ref-changing verb anywhere (quotes and backslashes removed first): push, merge, pull, send-pack, update-ref, reset,
+  #       rebase, cherry-pick, revert, commit, `fetch` with a `:` refspec, `branch` with -f/-M/-D, and `gh` writes;
+  #   (c) every `git` call names a read-only subcommand on the list below, so a configured alias (`git p` for push) is refused too.
+  # (`checkout`/`switch` chained with a ref-changing verb is refused by (b), which reads the whole command.)
+  # The over-block is the point: the message names the missing file, and reinstalling the plugin restores the full gate.
+  # SCOPE (coordinator ruling on #1720): like guard-worktree, this guards against ACCIDENT, not a malicious executor, which can run
+  # `./evil` without git at all. Out of scope: arbitrary programs reached through options (`--upload-pack`, `-c core.pager`,
+  # `-c alias.x=!cmd`, GIT_SSH_COMMAND, `--exec-path=`, `grep -O`), file writes through `--output`, and `remote add/set-url`,
+  # `restore` and `stash`. In scope: every way to put commits on main or move a ref, including the dashed `git-push`, a gh write
+  # (gh calls are allow-listed), and a local rewrite of main (`branch -m/-C/-d/-f`, `checkout -B`, `switch -C`, `worktree add -B`).
+  # Builtins plus `grep` and `tr` only, both on the required-tool list above, which refuses when either is missing.
+  _flat="$(LC_ALL=C tr -d "'\"\\\\" <<<"$cmd")"
+  _w='(^|[^[:alnum:]_.-])'; _e='([^[:alnum:]_.-]|$)'
+  _why=""
+  if LC_ALL=C grep -qE "[\$\`'\"\\\\*?{}]|\[|\]|${_w}(eval|xargs)${_e}" <<<"$cmd"; then
+    _why="it uses a shell expansion, quote, backslash, glob or brace, which only the classifier can read"
+  elif LC_ALL=C grep -qE "${_w}(push|merge|pull|send-pack|update-ref|reset|rebase|cherry-pick|revert|commit)${_e}" <<<"$_flat" \
+    || LC_ALL=C grep -qE "${_w}fetch${_e}[^;&|]*:" <<<"$_flat" \
+    || LC_ALL=C grep -qE "${_w}branch[[:space:]][^;&|]*-(f|M|D|-force|-delete|-move)${_e}" <<<"$_flat"; then
+    _why="it changes a ref or a release"
+  else
+    # (c): each `git` call, past its global options, must name a read-only subcommand.
+    _sub="$(printf '%s\n' "$_flat" | LC_ALL=C grep -oE "${_w}git([[:space:]]+(-C|-c|--git-dir|--work-tree|--namespace)[[:space:]]+[^[:space:]]+|[[:space:]]+-[^[:space:]]+)*[[:space:]]+[^[:space:];&|]+" \
+      | LC_ALL=C grep -oE '[^[:space:]]+$')"
+    while IFS= read -r _s; do
+      [ -n "$_s" ] || continue
+      case "$_s" in
+        status|log|diff|show|rev-parse|rev-list|ls-files|ls-tree|ls-remote|branch|fetch|remote|blame|grep|describe|shortlog|\
+        worktree|add|restore|checkout|switch|stash|help|version|--version|--help) ;;
+        *) _why="\`git $_s\` is not on the read-only list"; break ;;
+      esac
+    done <<<"$_sub"
+    if [ -z "$_why" ] && LC_ALL=C grep -qE "${_w}git${_e}" <<<"$_flat" && [ -z "$_sub" ]; then _why="a git call names no subcommand it can read"; fi
+    # The dashed form: `git-push` is `git push` (#1720 re-attack). Only a read-only verb may follow `git-`.
+    if [ -z "$_why" ]; then
+      while IFS= read -r _s; do
+        [ -n "$_s" ] || continue
+        case "$_s" in
+          status|log|diff|show|rev-parse|rev-list|ls-files|ls-tree|ls-remote|blame|grep|describe|shortlog|help|version) ;;
+          *) _why="\`git-$_s\` is not on the read-only list"; break ;;
+        esac
+      done <<<"$(LC_ALL=C grep -oE "${_w}git-[[:alnum:]-]+" <<<"$_flat" | LC_ALL=C grep -oE 'git-[[:alnum:]-]+' | LC_ALL=C sed 's/^git-//')"
+    fi
+    # PER SEGMENT (split at `;`, `&`, `|` and newlines): a LOCAL rewrite of main, and every gh call against an allow-list.
+    if [ -z "$_why" ]; then
+      while IFS= read -r _g; do
+        [ -n "$_g" ] || continue
+        # A RULE, not a list of spellings (`-Bmain`, `--force-create`, `--copy` each got past one): branch, checkout, switch or
+        # worktree with main or master as a word (or glued to a short option, `-Bmain`) AND any option token refuses; a plain `git checkout main` has no option and passes.
+        # `-i`: on a case-insensitive filesystem (macOS by default) `Main` writes the loose ref refs/heads/main (#1720 review).
+        if LC_ALL=C grep -qiE "(${_w}|[[:space:]]-[[:alpha:]]+)(main|master)${_e}" <<<"$_g" \
+           && LC_ALL=C grep -qE "${_w}(branch|checkout|switch|worktree)${_e}" <<<"$_g" \
+           && LC_ALL=C grep -qE "(^|[[:space:]])-" <<<"$_g"; then
+          _why="it creates, moves, copies or deletes a local main or master"; break
+        fi
+        _gh="$(LC_ALL=C grep -oE "${_w}gh([[:space:]]+[^[:space:]]+)*" <<<"$_g" | head -1)"
+        [ -n "$_gh" ] || continue
+        set -- $_gh; while [ $# -gt 0 ] && [ "$1" != gh ]; do shift; done; shift
+        case "${1:-} ${2:-}" in
+          "issue "*|"run "*|"pr list"|"pr view"|"pr checks"|"pr diff"|"pr status"|"repo view"|"auth status") ;;
+          "api "*)
+            # TOKEN BY TOKEN, so a glued value (`-XPOST`, `-fbase=main`) or an `=` form reads as the option it is (#1720 review).
+            _m=GET; _wr=""; shift
+            while [ $# -gt 0 ]; do
+              case "$1" in
+                -X|--method) _m="${2:-}"; shift ;;
+                -X*) _m="${1#-X}"; _m="${_m#=}" ;;
+                --method=*) _m="${1#--method=}" ;;
+                -f*|-F*|--field|--field=*|--raw-field|--raw-field=*|--input|--input=*) _wr=1 ;;
+              esac
+              shift
+            done
+            if [ -n "$_wr" ] || [ "$_m" != GET ]; then _why="\`gh api\` with a method other than GET or with fields writes"; break; fi ;;
+          *) _why="\`gh ${1:-} ${2:-}\` is not on the read-only list"; break ;;
+        esac
+      done <<<"$(LC_ALL=C tr ';&|' '\n\n\n' <<<"$_flat")"
+    fi
   fi
-  # #1569: without the classifier a `gh api` write or a release cannot be read, so it is a promotion.
-  LC_ALL=C grep -qE '^[[:space:]]*gh[[:space:]]+(api|release[[:space:]]+(create|edit))\b' <<<"$seg" \
-    && LC_ALL=C grep -qiE 'merge|refs|releases|release[[:space:]]+(create|edit)|mutation' <<<"$cmd" && { targets_main=1; needs_dev=1; }
+  if [ -n "$_why" ]; then
+    [ "${QA_ALLOW_MAIN:-0}" = "1" ] && { echo "qa-flow: release-gate classifier missing, but QA_ALLOW_MAIN=1 — allowed (audited)." >&2; exit 0; }
+    deny "release-gate classifier missing: restore plugins/qa-flow/scripts/push_targets.py (reinstall the plugin). Until then a command that mentions git or gh is refused unless plainly read-only; this one was refused because ${_why}."
+  fi
+  exit 0
 fi
 [ "$targets_main" -eq 1 ] || [ -n "$releases" ] || exit 0
 
