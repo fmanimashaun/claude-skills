@@ -50,6 +50,39 @@ GUARD = Guard(
             "with no python3 on PATH it exits 0 and says nothing",
         ),
         Mutation(
+            # FOUND BY REVIEW OF #1826: a python3 found through PATH can be one the repository ships.
+            "a python3 inside the repository is run, because the interpreter lookup no longer skips the repository",
+            '  case "$real/" in "$root"/*) continue ;; esac\n',
+            "  :\n",
+            "a python3 and a pg_isready the repository ships in its bin/ are NOT run",
+        ),
+        Mutation(
+            "the repository root is the nearest Gemfile alone, so a subdirectory without one is its own root",
+            '  if [ -e "$probe/Gemfile" ] || [ -e "$probe/.git" ]; then root="$probe"; fi\n',
+            '  if [ -e "$probe/Gemfile" ]; then root="$probe"; fi\n',
+            "a python3 and a pg_isready the repository ships in its bin/ are NOT run",
+        ),
+        Mutation(
+            # The hook must work on a PATH holding nothing but a bash and a python3: an external `dirname` in the root walk is "command not found" there, and (unbounded) it spun forever.
+            "the root walk needs an external dirname, which a minimal PATH does not have",
+            '  probe="${probe%/*}"\n',
+            '  probe="$(dirname "$probe")"\n',
+            "a python3 and a pg_isready the repository ships in its bin/ are NOT run",
+        ),
+        Mutation(
+            # A relative entry means whatever the working directory makes it: one that resolves OUTSIDE the repository is not caught by the rule above.
+            "a relative PATH entry is searched for the interpreter",
+            '  case "$dir" in /*) ;; *) continue ;; esac\n',
+            "  :\n",
+            "a python3 reachable through a RELATIVE PATH entry is NOT run, even when it resolves outside the repository",
+        ),
+        Mutation(
+            "python3 is not run isolated, so PYTHONPATH and the working directory are on its import path",
+            '"$python" -I "${CLAUDE_PLUGIN_ROOT:-}/scripts/test_preflight.py"',
+            '"$python" "${CLAUDE_PLUGIN_ROOT:-}/scripts/test_preflight.py"',
+            "PYTHONPATH cannot make the script import a module the environment supplies",
+        ),
+        Mutation(
             # AN ADVISORY MUST NEVER BLOCK. Exit 2 on PreToolUse blocks the command it was only meant to comment on.
             "the advisory exits non-zero and becomes a gate nobody asked for",
             "\nexit 0\n",

@@ -172,6 +172,13 @@ GUARD = Guard(
             "a pg_isready the repository ships inside its own tree is never run, even FIRST on PATH",
         ),
         Mutation(
+            # FOUND BY REVIEW OF #1826: the root was the nearest Gemfile alone, so from `web/` the repository's own `bin/` read as OUTSIDE the project.
+            "the project root ignores the repository, so a subdirectory without a Gemfile is its own root",
+            "    return min(found, key=lambda c: len(c.parts)) if found else here\n",
+            "    return gemfile or here\n",
+            "a repository's own bin/ is excluded from PATH even when the working directory is a subdirectory with no Gemfile",
+        ),
+        Mutation(
             "a relative PATH entry is searched, so it resolves against wherever the process happens to be",
             "        if not entry or not os.path.isabs(entry):\n            continue\n",
             "        if not entry:\n            continue\n",

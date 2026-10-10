@@ -35,8 +35,9 @@ designs and the threat analysis). What it does run is three fixed system tools, 
 ABSOLUTE `PATH` entries outside the project (`trusted_which`): a `.`, an empty entry or `./bin` resolves into the checkout, and a
 `pg_isready` shipped there would be repository code run before the user is asked. NOT closable here, and the same for
 every plugin hook: anything that can set the environment before the hook starts beats this script (`PATH` itself, which still
-chooses WHICH `pg_isready` runs and cannot be narrowed to world-writable directories only without more code, `PYTHONPATH`,
-`LD_PRELOAD`, `CLAUDE_PLUGIN_ROOT`), which is a harness and workspace-trust question; and `DATABASE_URL` makes
+chooses WHICH `pg_isready` runs and cannot be narrowed to world-writable directories only without more code, `LD_PRELOAD`,
+`CLAUDE_PLUGIN_ROOT`). The WRAPPER picks `python3` by the same rule as `trusted_which` and runs it isolated (`-I`), so `PYTHONPATH`
+and a `python3` shipped in the repository are not in that list, which is a harness and workspace-trust question; and `DATABASE_URL` makes
 `pg_isready` contact the host it names (a connection, not code execution).
 
 CLASSIFIED under `docs/doctrine/harness-doctrine.md` section 10:
@@ -163,12 +164,21 @@ def spec_paths(args: list[str]) -> list[str]:
 
 
 def project_root(cwd: str) -> Path:
-    """The nearest directory at or above `cwd` holding a Gemfile, else `cwd`."""
-    here = Path(cwd)
-    for candidate in (here, *list(here.parents)[:6]):
-        if (candidate / "Gemfile").exists():
-            return candidate
-    return here
+    """The repository: the OUTERMOST of the nearest Gemfile ancestor and the nearest `.git` ancestor, else `cwd`. A `.git` is looked for
+    by existence (a file in a linked worktree, a directory elsewhere) and git is never run. A subdirectory with no Gemfile of its own,
+    like `web/` in a repository whose Gemfile is at the top, is still inside the repository, and so is its `bin/`: reading the root as
+    the nearest Gemfile alone let `<repo>/bin` look like a directory outside the project (found by review of #1826)."""
+    here = Path(os.path.realpath(cwd))
+    gemfile = repository = None
+    for candidate in (here, *here.parents):
+        if gemfile is None and (candidate / "Gemfile").exists():
+            gemfile = candidate
+        if repository is None and (candidate / ".git").exists():
+            repository = candidate
+        if gemfile is not None and repository is not None:
+            break
+    found = [c for c in (gemfile, repository) if c is not None]
+    return min(found, key=lambda c: len(c.parts)) if found else here
 
 
 def database_detected(root: Path, env) -> bool:
@@ -472,6 +482,18 @@ def selftest() -> int:
         finally:
             os.chdir(previous)
         check("a RELATIVE PATH entry is never searched, wherever the process happens to be (only the absolute-path rule stops this one)", not repo_ran.exists() and raw == "", raw[:100])
+        # THE REPOSITORY IS THE OUTERMOST of the Gemfile and .git ancestors (review of #1826): from `web/`, a subdirectory with no Gemfile of its own, the
+        # repository's own `bin/` is still inside the project, even as an ABSOLUTE PATH entry. DATABASE_URL forces the Postgres check to run either way.
+        mono = tmp / "mono"
+        (mono / ".git").mkdir(parents=True)
+        (mono / "bin").mkdir()
+        (mono / "web").mkdir()
+        (mono / "bin" / "pg_isready").write_text(f"#!/bin/sh\ntouch {repo_ran}\nexit 2\n")
+        (mono / "bin" / "pg_isready").chmod(0o755)
+        stub("pg_isready", "exit 0")
+        _, raw = hook(rspec, mono / "web", env_for(DATABASE_URL="postgres://u@db.internal/app", PATH=f"{mono / 'bin'}:{bindir}:/usr/bin:/bin"))
+        check("a repository's own bin/ is excluded from PATH even when the working directory is a subdirectory with no Gemfile", not repo_ran.exists() and raw == "", raw[:100])
+        check("the project root is the outermost of the Gemfile and .git ancestors", project_root(str(mono / "web")) == Path(os.path.realpath(mono)) and project_root(str(root)) == Path(os.path.realpath(root)))
         stub("pg_isready", pg_down)
 
         # 2. A HELD bundler.lock: a real flock held by a real child, a stub `lsof` naming it.
