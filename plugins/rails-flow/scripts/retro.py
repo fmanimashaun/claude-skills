@@ -60,7 +60,7 @@ DATED = re.compile(r"^\d{4}-\d{2}-\d{2}")
 # several one-off groups. Leading or trailing severity words, with or without parentheses, are stripped and the case folded; nothing else
 # is merged (a different phrase is a different category), and the report lists every spelling it merged.
 SEVERITY_WORDS = r"(?:blocking|blocker|suggestion|advisory|major|minor|medium|low|info|p[123])"
-EDGE = re.compile(rf"^(?:\(?{SEVERITY_WORDS}\)?[\s:,-]+)+|(?:[\s:,-]+\(?{SEVERITY_WORDS}\)?)+$", re.IGNORECASE)
+EDGE = re.compile(rf"^(?:\(?{SEVERITY_WORDS}\)?[\s:,]+)+|(?:[\s:,]+\(?{SEVERITY_WORDS}\)?)+$", re.IGNORECASE)
 
 
 class Unusable(Exception):
@@ -377,6 +377,7 @@ def selftest() -> int:
         check("severity-word spellings merge into one recurring category", "### claims-vs-enforcement: 3 record(s) in 3 sources" in text, text)
         check("the merged spellings are listed", "`claims-vs-enforcement`: `Suggestion claims-vs-enforcement` x1, `claims-vs-enforcement` x1, `claims-vs-enforcement (BLOCKING)` x1" in text, text)
         check("a different phrase is not merged", category_of({"category": "BLOCKING mock-up gate evidence"})[0] == "mock-up gate evidence" and category_of({"category": "d-109"})[0] != category_of({"category": "d-109 phone card"})[0])
+        check("a hyphenated category that starts with a severity word is not mangled", category_of({"category": "low-risk-merge"})[0] == "low-risk-merge" and category_of({"category": "info-leak"})[0] == "info-leak", category_of({"category": "low-risk-merge"}))
         check("a category that is only a severity word keeps its own spelling", category_of({"category": "BLOCKING"})[0] == "blocking", category_of({"category": "BLOCKING"}))
         # 7c. single-source categories are summarised, not tabled
         sgl = Path(tmp) / "sgl"

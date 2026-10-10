@@ -52,6 +52,12 @@ GUARD = Guard(
             "severity-word spellings merge into one recurring category",
         ),
         Mutation(
+            "a hyphen counts as a separator, so low-risk-merge becomes risk-merge",
+            'EDGE = re.compile(rf"^(?:\\(?{SEVERITY_WORDS}\\)?[\\s:,]+)+|(?:[\\s:,]+\\(?{SEVERITY_WORDS}\\)?)+$", re.IGNORECASE)',
+            'EDGE = re.compile(rf"^(?:\\(?{SEVERITY_WORDS}\\)?[\\s:,-]+)+|(?:[\\s:,-]+\\(?{SEVERITY_WORDS}\\)?)+$", re.IGNORECASE)',
+            "a hyphenated category that starts with a severity word is not mangled",
+        ),
+        Mutation(
             "a line that is not JSON is dropped without a word",
             'skipped.append((number, "not JSON"))',
             "pass",
