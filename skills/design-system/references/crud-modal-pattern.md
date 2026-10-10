@@ -106,14 +106,12 @@ them into CRUD**.
 
 ## `modal_controller.js` (composes the mixins)
 
-The Modal component's `data-controller="modal"` is this. **As of 2026-10-10 the recommended panel is a
-native `<dialog>` opened with `showModal()`** ([components.md → Modal / Dialog](components.md#modal--dialog)):
-the platform supplies the trap, inert background, `Esc` and focus restore, and the controller is a thin
-opener/closer plus backdrop-click close. The version below composes the hand-written mixins (focus-trap +
-dismissable-layer + restore) and is the fallback. Either way it closes by **emptying the frame** so the
-same frame is reusable. Where invoker commands are available (Newly Baseline, 2025-12-12: Chrome/Edge 135,
-Firefox 144, Safari 26.2) a button can open and close the dialog with no script; keep `data-action` as the
-fallback:
+The Modal component's `data-controller="modal"` is this: a native `<dialog>` opened with `showModal()`
+([components.md → Modal / Dialog](components.md#modal--dialog)). The platform supplies the top layer, inert
+background, `Esc` and focus restore; the controller opens it, closes it on a backdrop click, and closes by
+**emptying the frame** so the same frame is reusable. Where invoker commands are available (Newly Baseline,
+2025-12-12: Chrome/Edge 135, Firefox 144, Safari 26.2) a button can open and close the dialog with no script;
+keep `data-action` as the fallback:
 ```html
 <button command="show-modal" commandfor="my-dialog">Open dialog</button>
 <dialog id="my-dialog"><p>This dialog was opened using an invoker command.</p><button commandfor="my-dialog" command="close">Close</button></dialog>
@@ -121,28 +119,36 @@ fallback:
 
 ```js
 import { Controller } from "@hotwired/stimulus"
-import { focusTrap } from "mixins/focus_trap"
-import { dismissableLayer } from "mixins/dismissable_layer"
 
 export default class extends Controller {
-  static targets = ["panel"]
-  connect() {
-    this.trap = focusTrap(this.panelTarget); this.trap.activate()
-    this.layer = dismissableLayer(this.panelTarget, () => this.close()); this.layer.open()
-  }
-  disconnect() { this.trap.deactivate(); this.layer.close() }   // fires when the frame empties
-  backdrop(e) { if (e.target === e.currentTarget) this.close() }
-  close() {
-    this.trap.deactivate(); this.layer.close()
+  connect() { this.opener = document.activeElement; this.element.showModal() }
+  disconnect() { if (this.opener?.isConnected) this.opener.focus() }   // removal restores nothing
+  backdrop(event) { if (event.target === this.element) this.element.close() }
+  close() { this.element.close() }
+  closed() {
     const frame = this.element.closest("turbo-frame")
-    if (frame) frame.innerHTML = ""; else this.element.remove()   // reset the reusable frame
+    if (frame) frame.innerHTML = ""; else this.element.remove()
+  }
+  preventCloseOnMorphing(event) {
+    if (event.detail?.attributeName === "open") { event.preventDefault(); event.stopPropagation() }
   }
 }
 ```
 
-Because `disconnect()` tears down the trap/layer, a Turbo Stream that does
-`turbo_stream.update("modal", "")` cleans everything up for free — no leaked listeners, focus
-restored to the trigger.
+- `showModal()` throws `InvalidStateError` if the dialog is not connected or is already open non-modally, and is a
+  no-op if already modal; `connect()` runs after connection, so it is safe here (HTML spec, `dialog` element).
+- `close()`, `Esc` and `<form method="dialog">` all end in the `close` event, which is queued after focus has been
+  restored synchronously (HTML spec, "close the dialog"), so emptying the frame in `closed()` is safe.
+- `turbo:before-morph-attribute` is cancelable and carries `detail.attributeName` (Turbo `src/core/morphing.js`);
+  the guard stops a page morph from stripping `open` off a live modal (same guard as basecamp/fizzy `dialog_controller.js`).
+- Fallback (a `div role="dialog"`): compose the `focus_trap` + `dismissable_layer` mixins instead
+  ([reference-implementation.md](reference-implementation.md)).
+
+A Turbo Stream `turbo_stream.update("modal", "")` removes the dialog while it is open. The HTML spec's dialog
+removing steps take it out of the top layer and destroy its close watcher, but fire no `close` event and do
+**not** restore focus, so `closed()` never runs and the browser leaves focus on `<body>`. `disconnect()` closes
+that gap by refocusing the element that opened the dialog, if it is still in the page; on the `close()` path
+the browser has already restored focus, and refocusing the same element changes nothing.
 
 ## Rules
 
@@ -167,7 +173,7 @@ restored to the trigger.
 - **One modal at a time** — the single shared `id="modal"` frame enforces this; the
   dismissable-layer stack handles nested popovers/dropdowns inside the modal.
 - a11y is inherited from the Modal component (native `<dialog>` + `showModal()`, labelled title,
-  trap + Esc + restore from the platform; `aria-modal` only on the `role="dialog"` fallback) — don't re-implement it per screen.
+  inert background + Esc + restore from the platform; `aria-modal` only on the `role="dialog"` fallback) — don't re-implement it per screen.
 
 ### A confirmation is for what cannot be undone
 
