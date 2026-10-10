@@ -64,7 +64,7 @@ WHAT IT DOES NOT
     artifact, so the command states them as prose and labels them as prose (harness-doctrine section
     1). It cannot tell whether the brief STOPPED at the right point: "decidable" is the judgement
     the human owns. It does not grade success criteria for falsifiability -- that is
-    `check_criteria.py`'s job on `docs/acceptance/<slug>.md`, and enforcing the same property twice
+    `check_criteria.py`'s job on `docs/product/acceptance/<slug>.md`, and enforcing the same property twice
     at two fidelities is the second-source-of-truth failure this file exists to prevent. The
     provenance rule proves a Mode B brief distinguishes inference from fact AT ALL; it cannot
     prove every inference is tagged. And a resolving reference is not a RELEVANT one: the locator

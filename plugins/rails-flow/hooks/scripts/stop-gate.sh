@@ -62,11 +62,14 @@ branch="$(git symbolic-ref --short HEAD 2>/dev/null || git rev-parse --abbrev-re
 case "$branch" in
   feature/*|feat/*|fix/*)
     # Flatten nested branch names: `feature/team/foo` -> `team-foo`, not `team/foo`, which
-    # would demand a nested docs/acceptance/team/ directory nobody would think to create and
+    # would demand a nested docs/product/acceptance/team/ directory nobody would think to create and
     # block them with a path they never chose.
     slug="${branch#*/}"
     slug="${slug//\//-}"
-    criteria="docs/acceptance/${slug}.md"
+    # THE LAYOUT'S PATH FIRST (#1700): `/rails-flow:feature` writes the criteria at docs/product/acceptance/, the home `docs_layout.py` accepts.
+    # A project that committed them at the pre-layout docs/acceptance/ keeps working: that path counts when the layout's does not exist.
+    criteria="docs/product/acceptance/${slug}.md"
+    [ -f "$criteria" ] || { [ -f "docs/acceptance/${slug}.md" ] && criteria="docs/acceptance/${slug}.md"; }  # pre-layout path, still read
     if [ -n "$app_changed" ] && [ ! -f "$criteria" ]; then
       {
         echo "rails-flow stop gate: app code changed with no acceptance criteria."
@@ -114,7 +117,8 @@ case "$branch" in
     # is enforced. `command -v python3` decides whether the check RUNS; it never softens
     # the verdict.
     # ---------------------------------------------------------------------------------
-    handoff="docs/handoff/${slug}.md"
+    handoff="docs/product/handoff/${slug}.md"
+    [ -f "$handoff" ] || { [ -f "docs/handoff/${slug}.md" ] && handoff="docs/handoff/${slug}.md"; }  # pre-layout path, still read
     if [ -f "$handoff" ] && command -v python3 >/dev/null 2>&1; then
       hchecker="${CLAUDE_PLUGIN_ROOT:-}/scripts/check_handoff.py"
       if [ -f "$hchecker" ]; then

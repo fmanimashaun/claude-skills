@@ -228,6 +228,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
      ("python3", "plugins/rails-flow/scripts/assign_lanes.py", "--selftest")),
     ("design-flow prompt library selftest",
      ("python3", "plugins/design-flow/scripts/prompt_library.py", "--selftest")),
+    # #1779. The library moved to docs/design/assets/, and a project that still has docs/assets/ must be stopped, not read as empty.
+    ("design-flow asset home selftest",
+     ("python3", "plugins/design-flow/scripts/asset_home.py", "--selftest")),
     # #625/#628/#629. Three modules encode one layout decision and `asset_plan.py` holds its half as
     # literals (it is deliberately standalone). Move one and not the others and `--scaffold` creates
     # a folder nothing writes to while `--run` writes into one the scaffold never made — both halves
