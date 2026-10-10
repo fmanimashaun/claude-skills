@@ -169,6 +169,30 @@ def read_text(path: str) -> str:
         return ""
 
 
+
+# ---------------------------------------------------------------------------- the schema files a project has (#1698)
+# The SAME RULE as `build_project_wiki.schema_files` / `framework_owned` / `app_schema_files`, which is where it is decided (#1695, #1698). This script is vendored ALONE and
+# cannot import that one, so it carries the rule itself, and `lint_self_consistency.py`'s `schema-reader-drift` rule runs both over the same fixture trees and refuses a
+# difference. A Rails app with a second database dumps its schema to another file (`schema_dump: observability_schema.rb`); the Rails 8 Solid trio is framework-owned
+# when it holds nothing but `solid_*` tables.
+SCHEMA_RB = "db/schema.rb"
+FRAMEWORK_SCHEMAS = frozenset({"cache_schema.rb", "queue_schema.rb", "cable_schema.rb"})
+
+
+def app_schema_files(root: str) -> list[str]:
+    """db/schema.rb first, then every other db/*_schema.rb that exists and is the PROJECT's (a Solid trio file holding only `solid_*` tables is the framework's)."""
+    import glob
+    files = [os.path.join(root, *SCHEMA_RB.split("/"))] + sorted(glob.glob(os.path.join(root, "db", "*_schema.rb")))
+    owned = []
+    for path in files:
+        if not os.path.isfile(path):
+            continue
+        tables = re.findall(r'^\s*create_table\s+"([^"]+)"', read_text(path), re.M)
+        if os.path.basename(path) in FRAMEWORK_SCHEMAS and all(t.startswith("solid_") for t in tables):
+            continue
+        owned.append(path)
+    return owned
+
 def walk(root: str, rel: str, exts: tuple[str, ...]) -> list[str]:
     """Every file under root/rel with one of `exts`, sorted for determinism."""
     base = os.path.join(root, rel)
@@ -608,16 +632,20 @@ class GraphBuilder:
         return self.result()
 
     def scan_tables(self) -> None:
-        src = read_text(os.path.join(self.root, "db", "schema.rb"))
-        if not src:
+        # EVERY SCHEMA FILE THE PROJECT OWNS (#1698): a second database dumps to its own file, and its tables are nodes too.
+        if not read_text(os.path.join(self.root, SCHEMA_RB)):
             return
-        rel = "db/schema.rb"
-        for match in re.finditer(
-            r'create_table\s+"([a-z0-9_]+)"(.*?)\n(\s*)end', src, re.S
-        ):
-            name, body = match.group(1), match.group(2)
-            self.table_names.add(name)
-            self.add_node(name, "table", rel, loc=len(body.strip().split("\n")))
+        for path in app_schema_files(self.root):
+            rel = os.path.relpath(path, self.root).replace(os.sep, "/")
+            for match in re.finditer(
+                r'create_table\s+"([a-z0-9_]+)"(.*?)\n(\s*)end', read_text(path), re.S
+            ):
+                name, body = match.group(1), match.group(2)
+                if name in self.table_names:
+                    self.notes.append(f"table '{name}' is in {self.nodes[name]['file']} and in {rel}; the graph keys tables by name, so it is drawn once")
+                    continue
+                self.table_names.add(name)
+                self.add_node(name, "table", rel, loc=len(body.strip().split("\n")))
 
     def scan_stimulus(self) -> None:
         base = "app/javascript/controllers"
@@ -2285,6 +2313,42 @@ def selftest() -> int:
         with _cl3.redirect_stdout(_io3.StringIO()), _cl3.redirect_stderr(_io3.StringIO()):
             rc = main(["--check", "--root", td3])
         check("an added model still is drift (--check exits 1)", rc == 1, f"rc={rc}")
+
+    # ---- #1698: A SECOND DATABASE'S TABLES ARE NODES TOO -------------------------------------------------------------------------------
+    def _schema(*tables: str) -> str:
+        return ("ActiveRecord::Schema[8.1].define(version: 1) do\n"
+                + "".join(f'  create_table "{t}", force: :cascade do |t|\n    t.string "k"\n  end\n' for t in tables) + "end\n")
+
+    def _tables(files: dict[str, str]) -> tuple[dict[str, str], list[str]]:
+        with tempfile.TemporaryDirectory() as app:
+            os.makedirs(os.path.join(app, "db"))
+            for name, text in files.items():
+                with open(os.path.join(app, "db", name), "w", encoding="utf-8") as fh:
+                    fh.write(text)
+            g = build_graph(app, 10)
+            return {n["id"]: n["file"] for n in g["nodes"] if n["type"] == "table"}, g["notes"]
+
+    one, _ = _tables({"schema.rb": _schema("invoices")})
+    check("#1698 one database: its table is a node, in db/schema.rb", one == {"invoices": "db/schema.rb"}, str(one))
+    two, _ = _tables({"schema.rb": _schema("invoices"), "observability_schema.rb": _schema("error_groups")})
+    check("#1698 a second database's table is a node too, with the schema file it is in",
+          two == {"invoices": "db/schema.rb", "error_groups": "db/observability_schema.rb"}, str(two))
+    solid, _ = _tables({"schema.rb": _schema("invoices"), "cache_schema.rb": _schema("solid_cache_entries"),
+                        "queue_schema.rb": _schema("solid_queue_jobs"), "cable_schema.rb": _schema("solid_cable_messages")})
+    check("#1698 the Solid trio, holding only solid_* tables, is the framework's: no table node comes from it", solid == one, str(solid))
+    cache, _ = _tables({"schema.rb": _schema("invoices"), "cache_schema.rb": _schema("cache_notes")})
+    check("#1698 a cache_schema.rb holding a table of the PROJECT's own is the project's (the name alone decides nothing)",
+          cache.get("cache_notes") == "db/cache_schema.rb", str(cache))
+    dup, notes = _tables({"schema.rb": _schema("invoices"), "observability_schema.rb": _schema("invoices")})
+    check("#1698 a table in two schema files is drawn once (the first), and a note says so",
+          dup == {"invoices": "db/schema.rb"} and any("table 'invoices' is in db/schema.rb and in db/observability_schema.rb" in n for n in notes), f"{dup} {notes}")
+    with tempfile.TemporaryDirectory() as app:
+        os.makedirs(os.path.join(app, "db"))
+        for name in ("schema.rb", "zeta_schema.rb", "alpha_schema.rb"):
+            with open(os.path.join(app, "db", name), "w", encoding="utf-8") as fh:
+                fh.write(_schema("t_" + name[:-3]))
+        check("#1698 db/schema.rb comes first, then every other db/*_schema.rb in name order",
+              [os.path.basename(f) for f in app_schema_files(app)] == ["schema.rb", "alpha_schema.rb", "zeta_schema.rb"], str(app_schema_files(app)))
 
     if failures:
         print(f"architecture_graph selftest: {len(failures)} of {checks} checks FAILED", file=sys.stderr)
