@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import ast
 import dataclasses
+import json
 import os
 import shutil
 import subprocess
@@ -911,6 +912,319 @@ def run() -> int:
             pass
         else:
             FAILURES.append("#1599: a malformed record must raise, never read as empty (which would pass everything)")
+
+    # ---- 1h. cost records come from the runner; growth warns in the release; shards and the summary (#1738, #1739) ----
+    import contextlib
+    import io
+
+    def quietly(argv, **env_changes):
+        """`mc.main(argv)` with output swallowed and the environment edited and put back; a crash is exit -1."""
+        saved = {k: os.environ.get(k) for k in env_changes}
+        for key, value in env_changes.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        try:
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                return mc.main(argv)
+        except Exception:               # noqa: BLE001 -- a crash is not an exit code the cases below expect
+            return -1
+        finally:
+            for key, value in saved.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+
+    grown = {"heavy": 400.0 * mc.RATCHET_GROWTH + mc.RATCHET_SLACK + 1, "medium": 100.0}
+    _tick()
+    blocking, warnings = mc.ratchet_outcome(grown, record, {"heavy", "medium"}, warn_only=True)
+    if blocking or not any("heavy" in w for w in warnings):
+        FAILURES.append(f"#1738: in the release, cost growth is a WARNING and does not block, got blocking={blocking} warnings={warnings}")
+    _tick()
+    blocking, warnings = mc.ratchet_outcome(grown, record, {"heavy", "medium"}, warn_only=False)
+    if warnings or not any("heavy" in b for b in blocking):
+        FAILURES.append(f"#1738: outside the release, cost growth still BLOCKS, got blocking={blocking} warnings={warnings}")
+    _tick()
+    try:
+        blocking, _ = mc.ratchet_outcome({"heavy": 400.0}, record, {"heavy"}, warn_only=True)
+    except Exception as exc:        # noqa: BLE001 -- the check below fails by name
+        blocking = [f"raised {exc!r}"]
+    if not any("medium" in b for b in blocking):
+        FAILURES.append(f"#1738: in the release, a record naming a guard that is gone still BLOCKS, got {blocking}")
+    _tick()
+    try:
+        blocking, _ = mc.ratchet_outcome({"heavy": 400.0}, None, {"heavy"}, warn_only=True)
+    except Exception as exc:        # noqa: BLE001 -- the check below fails by name
+        blocking = [f"raised {exc!r}"]
+    if not any("no cost record" in b for b in blocking):
+        FAILURES.append(f"#1738: in the release, a missing cost record still BLOCKS, got {blocking}")
+    _tick()
+    if mc.ratchet_problems({"heavy": 400.0}, record, {"heavy", "medium"}):
+        FAILURES.append("#1738: a guard that was not run this time (another shard, or skipped as unchanged) is not a guard that is gone")
+    _tick()
+    if not any("medium" in x for x in mc.ratchet_problems({"heavy": 400.0}, record)):
+        FAILURES.append("#1738: with no `known` set, a record guard absent from the run is still reported gone")
+    for label, host, want, forbid in (("a record from a named host", "github-actions/Linux", "measured on github-actions/Linux", "names no host"),
+                                      ("a record that names no host", None, "names no host", "measured on")):
+        _tick()
+        text = mc.ratchet_context(3.2, 10, 10, host)
+        if want not in text or forbid in text:
+            FAILURES.append(f"#1738: the ratchet context for {label} must say {want!r}, not {forbid!r}, got {text!r}")
+    with tempfile.TemporaryDirectory() as td:
+        path = Path(td) / "cost.json"
+        mc.write_cost_baseline(path, {"heavy": 400.0}, jobs=4, host="github-actions/Linux")
+        _tick()
+        if (mc.load_cost_baseline(path) or {}).get("host") != "github-actions/Linux":
+            FAILURES.append("#1738: a cost record written with a host must carry it")
+        mc.write_cost_baseline(path, {"heavy": 400.0}, jobs=4)
+        _tick()
+        if "host" in (mc.load_cost_baseline(path) or {}):
+            FAILURES.append("#1738: a cost record written with no host must not invent one")
+
+    real_guards = mc.GUARDS
+    mc.GUARDS = (StandInGuard,)
+    try:
+        for label, argv, env, want in (
+                ("--rebaseline outside CI with no --host is refused", ["--rebaseline"], {"GITHUB_ACTIONS": None}, 2),
+                ("--rebaseline in CI is NOT refused for want of a host (it fails later, on the stand-in guard)",
+                 ["--rebaseline", "--shard", "1/2"], {"GITHUB_ACTIONS": "true"}, 2),
+                ("--shard 5/4 is refused", ["--shard", "5/4"], {}, 2),
+                ("--shard-out without --shard is refused", ["--shard-out", "x.json"], {}, 2),
+                ("--rebaseline with --shard is refused (the summary step records)", ["--rebaseline", "--host", "lab", "--shard", "1/2"], {}, 2),
+                ("--merge-shards without --expect-shards is refused", ["--merge-shards", tempfile.gettempdir()], {}, 2)):
+            _tick()
+            got = quietly(argv, **env)
+            if got != want:
+                FAILURES.append(f"#1738: {label}; got exit {got}")
+        with tempfile.TemporaryDirectory() as td:
+            shards = Path(td) / "shards"
+            shards.mkdir()
+            cost_path = Path(td) / "cost.json"
+            real_state = (mc.COST_BASELINE, mc.commit_id, mc.inc.post_proof)
+            posts: list[tuple] = []
+            mc.COST_BASELINE = cost_path
+            mc.commit_id = lambda: "c1"
+            mc.inc.post_proof = lambda env, system, sha: (posts.append((system, sha)) or (True, "stub"))
+            here = mc.inc.harness_hash(mc.REPO)
+
+            def shard_file(i, skipped=(), commit="c1", harness=None, guards=(StandInGuard.name,)):
+                (shards / f"shard-{i}.json").write_text(json.dumps(
+                    {"shard": i, "of": 2, "os": "linux", "commit": commit, "harness": harness or here, "jobs": 4,
+                     "guards": {g: "h" for g in guards}, "skipped": {g: "old" for g in skipped}, "cost": {g: 5.0 for g in guards}}),
+                    encoding="utf-8")
+
+            def merge():
+                return quietly(["--merge-shards", str(shards), "--expect-shards", "2", "--host", "lab"])
+
+            try:
+                shard_file(1)
+                _tick()
+                got = merge()
+                if got != 1 or cost_path.exists() or posts:
+                    FAILURES.append(f"#1739: a MISSING shard must fail the summary and record and post nothing; got exit {got}, posted {posts}")
+                shard_file(2, guards=())
+                _tick()
+                got = merge()
+                if got != 0 or (mc.load_cost_baseline(cost_path) or {}).get("host") != "lab":
+                    FAILURES.append(f"#1739: every shard present and covering the guard must pass and write the cost record from the runner; got exit {got}")
+                _tick()
+                if posts != [("linux", "c1")]:
+                    FAILURES.append(f"#1738: a complete set with nothing skipped must post the proof once, for its commit; posted {posts}")
+                posts.clear()
+                shard_file(1, skipped=(), guards=())
+                shard_file(2, skipped=(StandInGuard.name,), guards=())
+                _tick()
+                got = merge()
+                if got != 0 or posts:
+                    FAILURES.append(f"#1738: a set in which a guard was SKIPPED passes but must NOT post a proof (a skip is not a pass); got exit {got}, posted {posts}")
+                shard_file(1)
+                shard_file(2, guards=(), commit="c2")
+                _tick()
+                got = merge()
+                if got != 1 or posts:
+                    FAILURES.append(f"#1739: shards for different commits must fail the summary; got exit {got}, posted {posts}")
+                shard_file(2, guards=(), commit="c2")
+                shard_file(1, commit="c2")
+                _tick()
+                got = merge()
+                if got != 1 or posts:
+                    FAILURES.append(f"#1738: shard results for another commit than this checkout's must fail the summary (a stale artifact); got exit {got}, posted {posts}")
+                shard_file(1)
+                shard_file(2, guards=(), harness="OTHER-HARNESS")
+                _tick()
+                got = merge()
+                if got != 1 or posts:
+                    FAILURES.append(f"#1738: shard results for another harness must fail the summary; got exit {got}, posted {posts}")
+                shard_file(2, guards=())
+                (shards / "shard-2.json").write_text("{nope", encoding="utf-8")
+                _tick()
+                got = merge()
+                if got != 1:
+                    FAILURES.append(f"#1739: an unreadable shard result must fail the summary; got exit {got}")
+            finally:
+                mc.COST_BASELINE, mc.commit_id, mc.inc.post_proof = real_state
+    finally:
+        mc.GUARDS = real_guards
+
+    # ---- 1i. THE PATH CI RUNS, end to end: trusted skip, change, --full, harness, shards, release mode (#1738, #1739) ----
+    guard, root = _fixture_guard((mc.Mutation("odd numbers reported even", "n % 2 == 0", "True", "fixture-odd"),))
+    saved = (mc.REPO, mc.GUARDS, mc.COST_BASELINE, mc.load_cost_baseline, mc.RATCHET_SLACK, mc.RATCHET_GROWTH, mc.inc.github_proof_lookup)
+    mc.REPO, mc.GUARDS, mc.COST_BASELINE = root, (guard,), root / "cost.json"
+    mc.load_cost_baseline = lambda path=None: None
+    proof_commits: set[str] = set()
+    mc.inc.github_proof_lookup = lambda repo, system, run=None: (lambda sha: sha in proof_commits)
+
+    sys.path.insert(0, str(original_repo / "plugins" / "rails-flow" / "scripts"))
+    import fixture_git as fg
+
+    def fixture_git(*args: str) -> str:
+        return fg.run(root, *args, check=False).stdout.strip()
+
+    def drive(*argv):
+        out, err = io.StringIO(), io.StringIO()
+        try:
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                rc = mc.main(["--jobs", "2", *argv])
+        except Exception as exc:        # noqa: BLE001 -- a crash is not an exit code the cases below expect
+            return -1, f"raised {exc!r}", ""
+        return rc, out.getvalue(), err.getvalue()
+
+    # A skip is allowed only in CI on refs/heads/main (#1738): this block runs as that, and the off-main cases below change the environment.
+    env_saved = {k: os.environ.get(k) for k in ("GITHUB_ACTIONS", "GITHUB_REF")}
+    os.environ["GITHUB_ACTIONS"], os.environ["GITHUB_REF"] = "true", "refs/heads/main"
+
+    try:
+        fg.init(root, "-b", "main")
+        fixture_git("add", "-A")
+        fixture_git("commit", "-q", "-m", "proven")
+        proven = fixture_git("rev-parse", "HEAD")
+        fixture_git("update-ref", "refs/remotes/origin/main", proven)
+
+        rc, out, _ = drive()
+        _tick()
+        if rc != 0 or "[ok" not in out or "[skip]" in out:
+            FAILURES.append(f"#1738: with NO trusted proof every guard must run, exit {rc}: {out}")
+        proof_commits.add(proven)
+        rc, out, _ = drive()
+        _tick()
+        if rc != 0 or "[skip] fixture: skip (unchanged since " not in out or "[ok" in out:
+            FAILURES.append(f"#1738: an unchanged guard must be reported as `skip (unchanged since <sha>)` and NOT run, exit {rc}: {out}")
+        _tick()
+        if "all caught" in out and "0 mutation(s) across 0 guard(s)" not in out:
+            FAILURES.append(f"#1738: a run that skipped the guard must not claim its mutations were caught, got {out}")
+        _tick()
+        if "NOT run and not a pass" not in out:
+            FAILURES.append(f"#1738: a run with skips must say plainly that a skip is not a pass, got {out}")
+        # THE DECIDING CODE: off `main` the checkout's own code makes the skip decision, and a branch can edit it to skip anything. So a valid proof
+        # and an unchanged guard still run EVERY guard on a branch dispatch, on a pull request and on a laptop.
+        for why, ci, ref in (("a dispatch on a branch", "true", "refs/heads/feature/x"), ("a pull request", "true", "refs/pull/7/merge"),
+                             ("a tag", "true", "refs/tags/v9.9.9"), ("a laptop (no CI)", None, None)):
+            if ci is None:
+                os.environ.pop("GITHUB_ACTIONS", None)
+                os.environ.pop("GITHUB_REF", None)
+            else:
+                os.environ["GITHUB_ACTIONS"], os.environ["GITHUB_REF"] = ci, ref
+            rc, out, _ = drive()
+            _tick()
+            if rc != 0 or "[ok" not in out or "[skip]" in out:
+                FAILURES.append(f"#1738: {why} must skip NOTHING even with a valid proof and an unchanged guard (the branch's own code decides), exit {rc}: {out}")
+        os.environ["GITHUB_ACTIONS"], os.environ["GITHUB_REF"] = "true", "refs/heads/main"
+        # THE FORGERY: a pull request writes a hash file and a guard edit together. Nothing it writes is read.
+        subject = root / "scripts" / "subject_under_test.py"
+        subject.write_text(SUBJECT + "\n# edited by the pull request\n", encoding="utf-8")
+        (root / "docs" / "evidence").mkdir(parents=True, exist_ok=True)
+        (root / "docs" / "evidence" / "mutation-proof.json").write_text('{"systems": {"anything": 1}}', encoding="utf-8")
+        rc, out, _ = drive()
+        _tick()
+        if rc != 0 or "[ok" not in out or "[skip]" in out:
+            FAILURES.append(f"#1738: a guard the pull request changed must re-run whatever hash file it wrote, exit {rc}: {out}")
+        subject.write_text(SUBJECT, encoding="utf-8")
+        rc, out, _ = drive("--full")
+        _tick()
+        if rc != 0 or "[ok" not in out or "[skip]" in out:
+            FAILURES.append(f"#1738: --full must run a guard that is unchanged, exit {rc}: {out}")
+        rc, out, _ = drive("--guard", "fixture")
+        _tick()
+        if rc != 0 or "[ok" not in out:
+            FAILURES.append(f"#1738: a guard named with --guard must run, exit {rc}: {out}")
+        (root / "scripts" / "mutation_check.py").write_text("# a harness edit\n", encoding="utf-8")
+        rc, out, _ = drive()
+        _tick()
+        if rc != 0 or "[ok" not in out or "[skip]" in out:
+            FAILURES.append(f"#1738: a harness edit must force a full run (no skip), exit {rc}: {out}")
+        (root / "scripts" / "mutation_check.py").unlink()
+
+        # A record written outside CI under --host is a LOCAL file nothing reads; only CI writes the committed record.
+        saved_ci = os.environ.pop("GITHUB_ACTIONS", None)
+        try:
+            rc, out, _ = drive("--rebaseline", "--host", "lab")
+            _tick()
+            if rc != 0 or (root / "cost.json").exists() or not (root / "mutation-cost-baseline.local.json").is_file():
+                FAILURES.append(f"#1738: --rebaseline --host outside CI must write a local record and NOT the committed one, exit {rc}: {out}")
+            os.environ["GITHUB_ACTIONS"] = "true"
+            rc, out, _ = drive("--rebaseline")
+            _tick()
+            if rc != 0 or not (root / "cost.json").is_file():
+                FAILURES.append(f"#1738: --rebaseline in CI writes the committed record, exit {rc}: {out}")
+        finally:
+            os.environ.pop("GITHUB_ACTIONS", None)
+            if saved_ci is not None:
+                os.environ["GITHUB_ACTIONS"] = saved_ci
+        # Shards: the guard is in exactly one of two shards; the other runs nothing and still reports.
+        mc.commit_id, real_commit = (lambda: "c1"), mc.commit_id
+        for index in (1, 2):
+            rc, out, _ = drive("--full", "--shard", f"{index}/2", "--shard-out", str(root / f"shard-{index}.json"))
+            _tick()
+            if rc != 0 or not (root / f"shard-{index}.json").is_file():
+                FAILURES.append(f"#1739: shard {index}/2 must pass and write its result, exit {rc}: {out}")
+        owners = [i for i in (1, 2) if (root / f"shard-{i}.json").is_file()
+                  and "fixture" in json.loads((root / f"shard-{i}.json").read_text(encoding="utf-8")).get("guards", {})]
+        _tick()
+        if len(owners) != 1:
+            FAILURES.append(f"#1739: the guard must be in exactly one shard, was in {owners}")
+        try:
+            rc, out, _ = drive("--merge-shards", str(root), "--expect-shards", "2", "--host", "lab")
+            _tick()
+            if rc != 0:
+                FAILURES.append(f"#1739: the two shards together must pass the summary, exit {rc}: {out}")
+            (root / f"shard-{owners[0] if owners else 1}.json").unlink(missing_ok=True)
+            rc, out, _ = drive("--merge-shards", str(root), "--expect-shards", "2", "--host", "lab")
+            _tick()
+            if rc != 1:
+                FAILURES.append(f"#1739: with a shard missing the summary must fail, exit {rc}")
+        finally:
+            mc.commit_id = real_commit
+
+        # Release mode: growth warns, strict mode fails. The limit is zeroed so the fixture's real CPU seconds are growth.
+        mc.RATCHET_SLACK, mc.RATCHET_GROWTH = 0.0, 0.0
+        mc.load_cost_baseline = lambda path=None: {"jobs": 2, "host": "lab", "guards": {"fixture": 0.001}}
+        rc, out, err = drive("--full", "--ratchet")
+        _tick()
+        if rc != 1 or "past" not in err:
+            FAILURES.append(f"#1738: --ratchet outside the release must FAIL on cost growth, exit {rc}: {err}")
+        rc, out, err = drive("--full", "--ratchet-warn")
+        _tick()
+        if rc != 0 or "warning: fixture: costs" not in out:
+            FAILURES.append(f"#1738: --ratchet-warn must print cost growth as a warning and pass, exit {rc}: {out} {err}")
+        _tick()
+        if "measured on lab" not in out:
+            FAILURES.append(f"#1738: the warning's context must name the host the record was measured on, got {out}")
+        # ...and a survivor still fails in the release: the mutation is not caught by this selftest's fixture.
+        mc.GUARDS = (dataclasses.replace(guard, mutations=(mc.Mutation("survives", "n % 2 == 0", "n % 2 == 0 or n == 1000001", "fixture-never"),)),)
+        rc, out, err = drive("--full", "--ratchet-warn")
+        _tick()
+        if rc != 1 or "SURVIVED" not in err:
+            FAILURES.append(f"#1738: in the release a survivor must still FAIL, exit {rc}: {err}")
+    finally:
+        for key, value in env_saved.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        (mc.REPO, mc.GUARDS, mc.COST_BASELINE, mc.load_cost_baseline, mc.RATCHET_SLACK, mc.RATCHET_GROWTH,
+         mc.inc.github_proof_lookup) = saved
 
     # ---- 1d. baselines and mutants start no detached git maintenance (#1510) ----------------
     # The helper APPENDS to a caller's own pairs, never renumbers them over.

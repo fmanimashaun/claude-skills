@@ -177,16 +177,127 @@ if [ "$_reset" = 1 ]; then
   fi
 fi
 
-if hit '^git[[:space:]]+push\b.*(--force\b|[[:space:]]-f\b)' && ! exempt '^git[[:space:]]+push\b.*--force-with-lease'; then
+# `--mirror` always forces (every ref made to match), with or without a lease (#1783 review).
+if hit '^git[[:space:]]+push\b.*[[:space:]]--mirror\b'; then
+  deny "git push --mirror force-updates and deletes every remote branch to match yours; it requires explicit user approval."
+fi
+# #1706: a bundled `-fu` and a `+<ref>` refspec force as surely as `-f`, the `+` leading the refspec or after its colon (`HEAD:+main`).
+if hit '^git[[:space:]]+push\b.*([[:space:]]--force($|[[:space:]]|=)|[[:space:]]-[a-zA-Z]*f[a-zA-Z]*\b|[[:space:]]\+[^[:space:]]|:\+[^[:space:]])' && ! exempt '^git[[:space:]]+push\b.*--force-with-lease'; then
   deny "force-push is prohibited. Use --force-with-lease on your own feature branch only, never on main/dev/staging."
 fi
-if hit '^git[[:space:]]+push\b.*--force-with-lease' && hit '^git[[:space:]]+push\b.*\b(main|master|dev|staging)\b'; then
+# #1708: the protected branch is a whole ref (`main`, `HEAD:main`, `+dev`, `refs/heads/staging`), not the word inside `feature/main-menu`.
+# #1708 scope (#1783 review): deleting a protected branch on the remote, `git push origin :main` or `--delete main`.
+if hit '^git[[:space:]]+push\b.*([[:space:]]:|=)(refs/heads/)?(main|master|dev|staging)([[:space:]]|$)' \
+   || { hit '^git[[:space:]]+push\b.*[[:space:]](--delete|-d)(\b|=)' && hit '^git[[:space:]]+push\b.*[[:space:]](refs/heads/)?(main|master|dev|staging)([[:space:]]|$)'; }; then
+  deny "deleting a protected branch (main/dev/staging) on the remote requires explicit user approval."
+fi
+# `--all` and `--mirror` push every branch, the protected ones included (#1783 review).
+if hit '^git[[:space:]]+push\b.*--force-with-lease' && { hit '^git[[:space:]]+push\b.*([[:space:]]|:|\+)(refs/heads/)?(main|master|dev|staging)([[:space:]]|$)' \
+   || hit '^git[[:space:]]+push\b.*[[:space:]]--(all|mirror)\b'; }; then
   deny "force-pushing a protected branch (main/dev/staging) requires explicit user approval."
 fi
 
 # Leading short flags are allowed through (`-v -A`), `-A` may sit inside a bundle (`-vA`), and the
 # repo-root spellings `./` and `:/` count as `.` (#826). Verb at the START of a segment (#906).
-if hit '^git[[:space:]]+add([[:space:]]+-[a-zA-Z]+)*[[:space:]]+(-[a-zA-Z]*A[a-zA-Z]*\b|--all\b|\./?($|[[:space:]])|:/($|[[:space:]]))'; then
+# #1706: long options and `--` may come first too (`add --verbose -A`, `add -- .`).
+# `git add` IS AN ALLOWLIST (#1783, the coordinator's decision after three review rounds): a list of whole-tree spellings could not
+# be completed (`./.`, `**`, `:(top)`, `:!x`, `$PWD`, `{.,x}`, `--pathspec-from-file` each got past one). So a `git add` passes only
+# when every option is one of -u -p -N -v (and their long forms) or `--`, and every pathspec is a plain relative path: no magic `:`
+# prefix, no `**`, no `..` that reaches the root or above, a glob only in its LAST component and only with a letter or digit in it
+# (`src/*.rb`, `*.md`). Shell expansion (`$`, a backtick, `{`, `}`, `~`) anywhere in a command that holds a `git add` refuses: the
+# normaliser splits a substitution into its own segment, so the pathspec it produces is invisible here. Bash only, over the
+# normalised segments. The degraded path (no normaliser) keeps the spelled rule below, and refusing more there is S9's (#1710).
+_add_refused() {
+  [ "$degraded" = 1 ] && return 1
+  local line w opts p comp depth n last
+  # Only the `git add` lines are walked: a bash loop over every line of a 10k-line command ran past the hook's deadline (#1783).
+  local rest any=0
+  if [ "$have_grep" = 1 ]; then rest="$(printf '%s\n' "$seg" | LC_ALL=C grep -E '^git[[:space:]]+add([[:space:]]|$)')"$'\n'; else rest="$seg"$'\n'; fi
+  while [ -n "$rest" ]; do
+    line="${rest%%$'\n'*}"; rest="${rest#*$'\n'}"
+    [[ $line =~ ^git[[:space:]]+add([[:space:]]|$) ]] || continue
+    any=1
+    opts=1
+    local specs=0 pathless=0
+    set -f
+    for w in ${line#git}; do
+      [ "$w" = add ] && continue
+      if [ "$opts" = 1 ]; then
+        [ "$w" = -- ] && { opts=0; continue; }
+        case "$w" in
+          -u|-p|-N|--update|--patch|--intent-to-add) pathless=1; continue ;;
+          -v|--verbose) continue ;;
+          -*) set +f; return 0 ;;
+        esac
+      fi
+      specs=$((specs + 1))
+      p="$w"
+      case "$p" in
+        :*|*'**'*) set +f; return 0 ;;
+        /*) set +f; return 0 ;;   # absolute: the root as `/abs/repo` stages everything (#1783 final check)
+      esac
+      depth=0; n=0; last=""
+      local IFS=/
+      local comps=($p)
+      unset IFS
+      for comp in "${comps[@]}"; do
+        n=$((n + 1))
+        case "$comp" in
+          ''|.) continue ;;
+          ..) [ "$depth" -gt 0 ] || { set +f; return 0; }; depth=$((depth - 1)) ;;
+          *) depth=$((depth + 1)) ;;
+        esac
+        # a glob in a directory component refuses; the last component is judged below
+        if [ "$n" -lt "${#comps[@]}" ] && [[ $comp == *[\*\?\[\]]* ]]; then set +f; return 0; fi
+        last="$comp"
+      done
+      [ "$depth" -gt 0 ] || { set +f; return 0; }
+      if [[ $last == *[\*\?\[\]]* ]] && ! [[ $last =~ [[:alnum:]] ]]; then set +f; return 0; fi
+    done
+    set +f
+    # The normaliser DELETES a word it cannot keep plain (a quoted `:(top)`, `' .'`, a path with a space), so a `git add` left with no
+    # pathspec had its arguments taken away: refused, unless -u/-p/-N, which act without one.
+    [ "$specs" = 0 ] && [ "$pathless" = 0 ] && return 0
+  done
+  # `$'...'` is ANSI-C QUOTING (decoded by the normaliser), not an expansion, so only a `$` that is not followed by `'` counts.
+  [ "$any" = 1 ] && [[ $cmd =~ \$[^\']|\$$|\`|\{|\}|~ ]] && return 0
+  return 1
+}
+if [[ "$seg" == *add* ]]; then
+  _add_refused && deny "stage specific files by plain relative path, never 'git add -A' / 'git add .' or a pattern that may reach the whole tree (GUARDRAILS: no accidental secrets or stray files). Allowed: -u -p -N -v, a path, or a glob in the last component with a literal in it (src/*.rb)."
+fi
+# A LONG OPTION IS ANY UNIQUE PREFIX, and short flags bundle (#1783): git reads `--mirr`, `--disc`, `--prun` and `-fc` as the full
+# option, so `push`, `switch` and `checkout` refuse any option word that is a prefix of a dangerous one, and a bundle holding `f`
+# (switch/checkout). A wildcard refspec (`refs/*:refs/*`) pushes every ref, like --mirror.
+_dangerous_option() {
+  [ "$degraded" = 1 ] && return 1
+  local line w o rest
+  if [ "$have_grep" = 1 ]; then rest="$(printf '%s\n' "$seg" | LC_ALL=C grep -E '^git[[:space:]]+(push|switch|checkout)([[:space:]]|$)')"$'\n'; else rest="$seg"$'\n'; fi
+  while [ -n "$rest" ]; do
+    line="${rest%%$'\n'*}"; rest="${rest#*$'\n'}"
+    [[ $line =~ ^git[[:space:]]+(push|switch|checkout)([[:space:]]|$) ]] || continue
+    set -f
+    for w in $line; do
+      case "$w" in
+        --force-with-lease*|--force-if-includes*) continue ;;
+        --?*)
+          o="${w%%=*}"
+          for d in --force --discard-changes --mirror --prune; do
+            [ "${#o}" -ge 3 ] && [ "${d#"$o"}" != "$d" ] && { set +f; return 0; }
+          done ;;
+        -[!-]*) [[ $w == *f* ]] && [[ $line =~ ^git[[:space:]]+(switch|checkout) ]] && { set +f; return 0; } ;;
+        *'*'*:*) [[ $line =~ ^git[[:space:]]+push ]] && { set +f; return 0; } ;;
+      esac
+    done
+    set +f
+  done
+  return 1
+}
+if [[ "$seg" == *git* ]]; then
+  _dangerous_option && deny "a force, discard-changes, mirror or prune option (in any unique prefix or bundle, or a wildcard refspec) can overwrite or delete work; it requires explicit user approval."
+fi
+# `*` and `..` stage as much as `.` (#1783 review).
+if hit '^git[[:space:]]+add([[:space:]]+-[a-zA-Z-]*)*[[:space:]]+(-[a-zA-Z]*A[a-zA-Z]*\b|--all\b|\.{1,2}/?($|[[:space:]])|:/($|[[:space:]])|\*($|[[:space:]]))'; then
   deny "stage specific files, never 'git add -A' / 'git add .' (GUARDRAILS: no accidental secrets or stray files)."
 fi
 
@@ -195,7 +306,7 @@ if hit '^git[[:space:]]+(commit|push|merge|rebase|cherry-pick)\b.*[[:space:]]--n
   deny "--no-verify skips pre-commit checks and is prohibited."
 fi
 
-if hit '^git[[:space:]]+reset[[:space:]]+--hard\b'; then
+if hit '^git[[:space:]]+reset\b.*[[:space:]]--hard\b'; then   # #1706: `reset HEAD~1 --hard` too
   deny "git reset --hard requires explicit user approval (uncommitted work loss)."
 fi
 
@@ -207,14 +318,17 @@ if hit '^git[[:space:]]+clean\b.*([[:space:]]-[a-zA-Z]*f|[[:space:]]--force\b)' 
   deny "git clean -f deletes untracked files with no undo. Run 'git clean -n' first and show the user what it would remove; delete named paths with approval."
 fi
 if hit '^git[[:space:]]+checkout\b.*[[:space:]]--([[:space:]]|$)' \
-   || hit '^git[[:space:]]+checkout([[:space:]]+-[a-zA-Z-]+)*[[:space:]]+(\./?|:/)($|[[:space:]])'; then
+   || hit '^git[[:space:]]+checkout([[:space:]]+[^[:space:]]+)*[[:space:]]+(\./?|:/)($|[[:space:]])' \
+   || hit '^git[[:space:]]+(checkout|switch)\b.*[[:space:]](-f|--force|--discard-changes)($|[[:space:]])'; then   # #1706: `checkout HEAD .`; review: `checkout -f` discards too
   deny "git checkout -- <path> / git checkout . overwrites uncommitted edits with no undo. To keep them: git stash push -m <why> -- <path>. To discard ONE file you own: git restore -- <that path>."
 fi
 if hit '^git[[:space:]]+restore\b.*[[:space:]](\./?|:/|\*)($|[[:space:]])' \
    && ! exempt '^git[[:space:]]+restore\b.*--staged\b' ; then
   deny "git restore . discards every uncommitted edit in the tree. Name the one file you mean: git restore -- <path>."
 fi
-if hit '^git[[:space:]]+branch\b.*[[:space:]](-[a-zA-Z]*D\b|--delete[[:space:]]+--force\b|--force[[:space:]]+--delete\b)'; then
+# #1706: a delete flag and a force flag in any spelling (`-d -f`, `-df`, `--delete --force`) are `-D`.
+if hit '^git[[:space:]]+branch\b.*[[:space:]](-[a-zA-Z]*D\b|--delete[[:space:]]+--force\b|--force[[:space:]]+--delete\b)' \
+   || { hit '^git[[:space:]]+branch\b.*[[:space:]](-[a-zA-Z]*d[a-zA-Z]*|--delete)\b' && hit '^git[[:space:]]+branch\b.*[[:space:]](-[a-zA-Z]*f[a-zA-Z]*|--force)\b'; }; then
   deny "git branch -D deletes an unmerged branch. Use 'git branch -d' (refuses unmerged work), or ask the user."
 fi
 if hit '^git[[:space:]]+stash[[:space:]]+(drop|clear)\b'; then
@@ -270,7 +384,9 @@ if [ "$_fire" = 1 ] || rawhit "$_flat" "$_re_verb" || rawhit "$cmd" "$_re_shell_
 fi
 
 if hit '^kamal[[:space:]]+deploy\b' && [ "${RAILS_FLOW_ALLOW_DEPLOY:-0}" != "1" ]; then
-  deny "production deploys require explicit user approval. Ask the user; on approval rerun with RAILS_FLOW_ALLOW_DEPLOY=1 kamal deploy ..."
+  # #1708: the override is read from the HOOK's environment, so an inline assignment in the command (an agent approving itself)
+  # stays blocked; the message no longer tells anyone to write it inline.
+  deny "production deploys require explicit user approval. Ask the user; on approval THEY set RAILS_FLOW_ALLOW_DEPLOY=1 in this session's environment (an assignment written into the command is not read), then rerun kamal deploy."
 fi
 
 exit 0

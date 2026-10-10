@@ -310,5 +310,24 @@ GUARD = Guard(
             "    return returncode",
             "a gate that hits its own deadline reads as 124 to the fixtures",
         ),
+        # #1800: a fixture's temp directory is removed without ever failing the run.
+        Mutation(
+            "the temp directory is removed once, with no retry, so a lost race leaves it behind",
+            "        for attempt in range(5):",
+            "        for attempt in range(1):",
+            "scratch_dir: a removal that loses the race twice is retried until the directory is gone",
+        ),
+        Mutation(
+            "a temp directory that cannot be removed raises out of the fixture again",
+            "            left = sorted(os.listdir(path))[:5] if os.path.isdir(path) else []\n",
+            "            raise OSError(f\"could not remove {path}\")\n",
+            "scratch_dir: a directory that cannot be removed does not raise out of the fixture",
+        ),
+        Mutation(
+            "the leftover is not named, so the writer cannot be found",
+            "(left: {left})",
+            "(left: [])",
+            "scratch_dir: ...and names what was left",
+        ),
     ),
 )

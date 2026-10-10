@@ -49,7 +49,7 @@ GUARD = Guard(
             "a plain double-quoted word is deleted, not read as the word, so `git add \"-A\"` presents as `git add`",
             "w = substr(s, i + 1, j - i - 1); if (simple(w)) out = out w",
             "w = substr(s, i + 1, j - i - 1)",
-            'git add "-A"',
+            'git push "--force" origin main',   # a bare `git add` is refused by the allowlist now (#1783), so this fixture shows it
         ),
         Mutation(
             "an ANSI-C word is never kept, so `git add $'\\x2dA'` presents as `git add`",
@@ -67,7 +67,7 @@ GUARD = Guard(
             "a backslash-newline does not join, so `git add\\<newline> -A` is two commands",
             "if (JOIN) { BUF = substr(raw, 1, length(raw) - 1); next }",
             "if (0) { next }",
-            "git add\\\\\\n -A",
+            "g\\\\\\nit add -A",   # `git add\\` alone is refused by the allowlist now (#1783), so the split word shows it
         ),
         Mutation(
             "an arithmetic `<<` opens a heredoc, so `echo $((1<<2))` hides the command after it",

@@ -292,7 +292,7 @@ the exact APIs, generated-file layouts, and the traps.
 | `references/ai-llm.md` | LLM features via ruby_llm — chat, `acts_as_chat` persistence, streaming with Hotwire, tools, structured output, embeddings + pgvector, testing AI |
 | `references/extending-rails.md` | Application templates (`rails new -m`), custom generators, overriding built-in generator templates, engines/plugins, Rack middleware |
 | `references/deployment-kamal.md` | Kamal 2 (`config/deploy.yml`, secrets, accessories, rollback), Dockerfile, Thruster, SQLite-in-production, production checklist |
-| `references/pwa.md` | **Installable apps** — the installability criteria, how each browser offers installation (only Chromium and Samsung Internet fire `beforeinstallprompt`), and the rule that a service worker never caches signed-in pages |
+| `references/pwa.md` | **Installable apps** — the installability criteria, how each browser offers installation (only Chromium and Samsung Internet fire `beforeinstallprompt`), the rule that a service worker never caches signed-in pages, and the offline page (Rails `main` only), Web Push and the Play Store (Trusted Web Activity) |
 | `references/rails-8-2-readiness.md` | **Rails 8.2 is UNRELEASED**: what is on `main` (CSRF `Sec-Fetch-Site`, Active Job defaults and adapters, Argon2, `Rails.app`, Active Storage `analyze:`/`process:`, Herb), each marked unreleased with its source; read before answering "what changes in 8.2" |
 | `references/mcp-server.md` | **Letting agents pull reporting data**: an MCP server over HTTP (not a CLI), the spec's OAuth resource-server rules, and ours: the agent acts as a real user, the server enforces read-only, one tool per report, every call audited, sensitive data excluded by default |
 
