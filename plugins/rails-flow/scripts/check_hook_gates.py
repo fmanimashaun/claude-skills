@@ -3087,7 +3087,7 @@ def release_gate_refs_fixtures() -> None:
         prog.chmod(0o755)
         evil = f"--upload-pack={prog}"
 
-        def run(cmd: str, **extra) -> tuple[int, str]:
+        def run_once(cmd: str, _env_out: list | None = None, **extra) -> tuple[int, str]:
             marker.unlink(missing_ok=True)
             env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env.pop("GH_REPO", None)
             env["CLAUDE_PLUGIN_ROOT"] = str(QA_HOOK.parents[2])
@@ -3097,10 +3097,26 @@ def release_gate_refs_fixtures() -> None:
             env.update({"GIT_CONFIG_COUNT": "2",
                         "GIT_CONFIG_KEY_0": "url./nonexistent-qa-flow-remote/.insteadOf", "GIT_CONFIG_VALUE_0": "https://github.com/",
                         "GIT_CONFIG_KEY_1": f"url.{bare}.insteadOf", "GIT_CONFIG_VALUE_1": "https://github.com/other/fork.git"})
+            env.update({"CLAUDE_PLUGIN_DATA": str(Path(td) / "plugin-data"), "FAKE_TREE_REPO": str(bare)})
             env.update(extra)
+            if _env_out is not None:
+                _env_out.append(env)
             done = _run(["bash", str(QA_HOOK)], cwd=repo, input=json.dumps({"tool_input": {"command": cmd}}),
                         env=env, capture_output=True, text=True, timeout=60)
             return done.returncode, done.stderr
+
+        def run(cmd: str, _record: bool = True, **extra) -> tuple[int, str]:
+            """As in release_gate_repos_fixtures: a refusal for want of a verdict (#1686) is answered by running the command it names."""
+            tried: set = set()
+            while True:
+                envs: list = []
+                rc, err = run_once(cmd, envs, **extra)
+                found = re.search(r"python3 (\S+remote_evidence\.py) --repo (\S+) --sha ([0-9a-f]{40}) --record", err)
+                if not _record or rc != 2 or not found or found.groups() in tried:
+                    return rc, err
+                tried.add(found.groups())
+                _run([sys.executable, found.group(1), "--repo", found.group(2), "--sha", found.group(3), "--record"],
+                     cwd=repo, env=envs[0], capture_output=True, text=True, timeout=120)
 
         # The proof that the marker is observable: the same program, handed to git the way the hook would have.
         marker.unlink(missing_ok=True)
