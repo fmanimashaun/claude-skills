@@ -33,6 +33,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
 
 # https://docs.docker.com/build/building/variables/ (checked 2026-10-10): the proxy args (case-insensitive) and
 # the platform args are supplied by Docker without a `--build-arg`.
@@ -109,7 +110,7 @@ def read_config(text):
     i = 0
     while i < len(lines):
         raw = _strip_comment(lines[i])
-        match = re.match(r"^(build_args|labels)\s*:(.*)$", raw)
+        match = re.match(r"^[\"']?(build_args|labels)[\"']?\s*:(.*)$", raw)  # a quoted key is the same key: read, never skipped
         i += 1
         if not match:
             continue
@@ -122,7 +123,7 @@ def read_config(text):
                 raise ConfigError(f"{where}: write a mapping, `{{ NAME: value }}` or an indented block; got {rest!r}")
             pairs = _pairs_from_flow(rest[1:-1], where)
         else:
-            pairs = []
+            pairs, indent = [], None
             while i < len(lines):
                 nxt = _strip_comment(lines[i])
                 if not nxt.strip():
@@ -130,6 +131,11 @@ def read_config(text):
                     continue
                 if not nxt.startswith((" ", "\t")):
                     break
+                here = nxt[: len(nxt) - len(nxt.lstrip())]
+                if indent is None:
+                    indent = here
+                elif here != indent:
+                    raise ConfigError(f"{where}: {nxt.strip()!r} is indented differently from the entry above it; a nested mapping is not a build arg or a label")
                 if ":" not in nxt:
                     raise ConfigError(f"{where}: {nxt.strip()!r} is not `key: value`")
                 k, v = nxt.split(":", 1)
@@ -152,7 +158,11 @@ def interpolate(value, variables, where):
         if name not in variables:
             raise ConfigError(f"{where}: unknown {{{{{name}}}}}; the variables are {', '.join('{{' + v + '}}' for v in sorted(variables))}")
         return variables[name]
-    return VAR.sub(sub, value)  # exactly `{{sha}}` / `{{release_name}}`: `{{ sha }}` is unknown, and an error, not text
+    result = VAR.sub(sub, value)  # exactly `{{sha}}` / `{{release_name}}`: `{{ sha }}` is unknown, and an error, not text
+    leftover = VAR.sub("", value)
+    if "{{" in leftover or "}}" in leftover or "{{{" in value or "}}}" in value:
+        raise ConfigError(f"{where}: a stray `{{{{` or `}}}}` in {value!r}; write {{{{sha}}}} or {{{{release_name}}}} exactly, or no double braces at all")
+    return result
 
 
 def build_argv(image, sha, config, release_name, context="."):
@@ -180,7 +190,11 @@ def dockerfile_args(text):
         match = re.match(r"^\s*ARG\s+(.+)$", _strip_comment(line), re.IGNORECASE)
         if not match:
             continue
-        for token in shlex.split(match.group(1), posix=True):
+        try:
+            tokens = shlex.split(match.group(1), posix=True)
+        except ValueError as error:
+            raise ConfigError(f"Dockerfile: the ARG line {line.strip()!r} cannot be read ({error})") from error
+        for token in tokens:
             name, has = (token.split("=", 1)[0], "=" in token)
             seen.append(name)
             if has:
@@ -218,7 +232,11 @@ def run(image, sha, release_name, config_path, dockerfile, context, dry_run, run
         out(f"release build: {error}")
         return 2
     scanned = os.path.exists(dockerfile)
-    unfed = unfed_args(open(dockerfile, encoding="utf-8").read(), set(args)) if scanned else []
+    try:
+        unfed = unfed_args(open(dockerfile, encoding="utf-8").read(), set(args)) if scanned else []
+    except ConfigError as error:
+        out(f"release build: {error}")
+        return 2
     out(report(argv, args, labels, unfed, scanned))
     if dry_run:
         return 0
@@ -259,18 +277,28 @@ def selftest():
                         ("a block line without a colon", "labels:\n  service\n"), ("an unbalanced quote", 'labels: { a: "x }\n'),
                         ("a bad label key", "labels: { -a: x }\n")):
         check(f"{label} is an error", raises(text))
+    # a quoted key is the same key (read, never skipped); a block has one indentation
+    check("a double-quoted key is read", read_config('"build_args": { V: 1 }\n')["build_args"] == {"V": "1"})
+    check("a single-quoted key is read", read_config("'labels': { a: b }\n")["labels"] == {"a": "b"})
+    check("a quoted key is read strictly too", raises('"build_args": APP\n'))
+    check("a nested line under a block key is an error", raises("labels:\n  a: b\n    nested: c\n"))
+    check("a block with one indentation is read", read_config("labels:\n    a: b\n    c: d\n")["labels"] == {"a": "b", "c": "d"})
+    check("a list under a key is an error", raises("labels:\n  - a: b\n"))
+    check("values are kept as text: 1.10, 010 and yes stay as written", read_config("build_args: { V: 1.10, W: 010, X: yes }\n")["build_args"] == {"V": "1.10", "W": "010", "X": "yes"})
     # interpolation and its precedence
     cfg = {"build_args": {"APP_VERSION": "{{release_name}}", "SHA": "{{sha}}"}, "labels": {"service": "app"}}
     argv, args, labels = build_argv("img", "abc1234", cfg, "v1.3.0")
     check("args and labels are passed", argv == ["docker", "build", "--build-arg", "APP_VERSION=v1.3.0", "--build-arg", "SHA=abc1234",
                                                   "--label", "service=app", "-t", "img:abc1234", "-t", "img:latest", "."], argv)
     check("the dicts are what was passed", (args, labels) == ({"APP_VERSION": "v1.3.0", "SHA": "abc1234"}, {"service": "app"}))
-    for bad in ("{{nope}}", "{{ sha }}", "{{}}"):
+    for bad in ("{{nope}}", "{{ sha }}", "{{}}", "{{a{b}}", "{{sha", "x}}y", "{{{sha}}}", "}}{{sha}}"):
         try:
             build_argv("img", "abc1234", {"build_args": {"A": bad}, "labels": {}}, "n")
             check(f"{bad} is an error", False)
         except ConfigError as error:
             check(f"{bad} is named", bad in str(error), str(error))
+    argv, _, _ = build_argv("img", "abc1234", {"build_args": {}, "labels": {"j": '{"a": 1}'}}, "n")
+    check("single braces (a JSON label) are not a placeholder", argv[3] == 'j={"a": 1}', argv)
     # a value is one argument, never evaluated (no shell)
     nasty = 'a b"c$(touch x)\'d'
     argv, _, _ = build_argv("img", "abc1234", {"build_args": {"X": nasty}, "labels": {}}, "n")
@@ -320,12 +348,25 @@ def selftest():
         run("img", "abc1234", "v3", cfgp, dfp, ".", True, fake, out.append)
         check("the flag beats RELEASE_NAME", "APP_VERSION=v3" in out[0], out)
         os.environ.pop("RELEASE_NAME", None)
+        open(dfp, "w").write('FROM scratch\nARG A="x\n')
+        calls_before = len(calls)
+        out.clear()
+        check("an unreadable ARG line is exit 2, names the Dockerfile and builds nothing",
+              run("img", "abc1234", "v2", cfgp, dfp, ".", False, fake, out.append) == 2 and "Dockerfile: the ARG line" in out[0] and len(calls) == calls_before, out)
+        open(dfp, "w").write("FROM scratch\nARG APP_VERSION\nARG OTHER\n")
         open(cfgp, "w").write("build_args: APP\n")
         out.clear()
         check("a bad config is exit 2 and builds nothing", run("img", "abc1234", "v", cfgp, dfp, ".", False, fake, out.append) == 2 and len(calls) == 1, out)
         out.clear()
         check("no config and no keys is the bare build", run("img", "abc1234", "v", os.path.join(tmp, "none.yml"), os.path.join(tmp, "none"), ".", True, fake, out.append) == 0
               and out[0].splitlines()[1].strip() == shlex.join(base), out)
+    # the dormant Actions workflow runs THIS script (one reader of pipeline.yml), and has no process-substitution reader: a failing
+    # `done < <(cmd)` is not seen by `bash -e`, so a reader that aborted would build with no args and push `latest` (#1701 review)
+    example = Path(__file__).resolve().parents[1] / "pipeline.actions.yml.example"
+    text = example.read_text(encoding="utf-8") if example.exists() else ""
+    check("the Actions example exists and was read", "docker push" in text, str(example))
+    check("the Actions example runs release_build.py", "release_build.py" in text, text[:200])
+    check("the Actions example has no process-substitution reader", "< <(" not in text and "<(" not in text.replace("${{", ""), text)
     if failures:
         print("release_build selftest FAILED:")
         for failure in failures:

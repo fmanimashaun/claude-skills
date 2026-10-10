@@ -9,6 +9,7 @@ GUARD = Guard(
     name="release_build",
     subject="scripts/release_build.py",
     selftest="scripts/release_build.py",
+    needs=("pipeline.actions.yml.example",),
     mutations=(
         Mutation(
             "a declared label never reaches docker build",
@@ -59,10 +60,40 @@ GUARD = Guard(
             "",
         ),
         Mutation(
+            "a quoted key is skipped instead of read",
+            'match = re.match(r"^[\\"\']?(build_args|labels)[\\"\']?\\s*:(.*)$", raw)',
+            'match = re.match(r"^(build_args|labels)\\s*:(.*)$", raw)',
+            "a double-quoted key is read",
+        ),
+        Mutation(
+            "a nested line under a block key is accepted as a sibling",
+            "                elif here != indent:",
+            "                elif False:",
+            "a nested line under a block key is an error",
+        ),
+        Mutation(
+            "a stray double brace reaches the value as text",
+            'if "{{" in leftover or "}}" in leftover or "{{{" in value or "}}}" in value:',
+            "if False:",
+            "{{a{b}} is an error",
+        ),
+        Mutation(
+            "an unreadable Dockerfile ARG line is a traceback, not exit 2",
+            "        except ValueError as error:",
+            "        except OSError as error:",
+            "",
+        ),
+        Mutation(
             "a bad config exits 0 instead of 2",
-            '        out(f"release build: {error}")\n        return 2',
-            '        out(f"release build: {error}")\n        return 0',
+            '        out(f"release build: {error}")\n        return 2\n    scanned =',
+            '        out(f"release build: {error}")\n        return 0\n    scanned =',
             "a bad config is exit 2 and builds nothing",
+        ),
+        Mutation(
+            "an unreadable Dockerfile exits 0 and builds",
+            '        out(f"release build: {error}")\n        return 2\n    out(report(',
+            '        out(f"release build: {error}")\n        return 0\n    out(report(',
+            "an unreadable ARG line is exit 2",
         ),
     ),
 )
