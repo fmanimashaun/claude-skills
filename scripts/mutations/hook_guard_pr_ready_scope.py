@@ -29,9 +29,15 @@ GUARD = Guard(
     needs=_NEEDS,
     mutations=(
         Mutation(
-            "`gh pr view` is matched too",
+            "the match reverts to the anchored `^gh pr ready`, so a flag before `pr` slips through",
+            're="^([^[:space:]]*/)?gh${_f}[[:space:]]+pr${_f}[[:space:]]+ready([[:space:]]|\\$)"',
             "re='^gh[[:space:]]+pr[[:space:]]+ready([[:space:]]|$)'",
-            "re='^gh[[:space:]]+pr[[:space:]]+(ready|view)([[:space:]]|$)'",
+            "a flag before `pr`, or gh by path, is still judged: gh -R o/r pr ready 5",
+        ),
+        Mutation(
+            "`gh pr view` is matched too",
+            're="^([^[:space:]]*/)?gh${_f}[[:space:]]+pr${_f}[[:space:]]+ready([[:space:]]|\\$)"',
+            're="^([^[:space:]]*/)?gh${_f}[[:space:]]+pr${_f}[[:space:]]+(ready|view)([[:space:]]|\\$)"',
             "NOT a pr ready, left alone: gh pr view 12",
         ),
         Mutation(

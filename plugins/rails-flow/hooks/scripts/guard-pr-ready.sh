@@ -28,7 +28,8 @@
 # command runs in (lib/command_cwd.py follows its own `cd`s), so a PR whose head is not checked out there
 # is refused unless that HEAD was swept, and a PR whose head differs from a swept local HEAD is not told
 # apart. When the command's directory cannot be told, it is refused only if the session's repository is in
-# force. A record can be hand-written; the guard protects against accident, not forgery. `gh api` calls
+# force. A remote-targeted `gh pr ready` (-R/--repo/GH_REPO/a PR URL) is refused when the command's or the session's repo is
+# in force, and passes from a session and directory where neither repo is in force. A record can be hand-written; the guard protects against accident, not forgery. `gh api` calls
 # that mark a PR ready, and a `gh` reached through a variable, alias or function, are out of reach.
 set -uo pipefail
 input=""; IFS= read -r -d '' input || true
@@ -49,16 +50,19 @@ else
   seg="$cmd"; degraded=1
 fi
 
-re='^gh[[:space:]]+pr[[:space:]]+ready([[:space:]]|$)'
-[ "$degraded" = 1 ] && re='gh[[:space:]]+pr[[:space:]]+ready([[:space:]]|$)'
-hit=0; args=""
+# gh by name or by path, then any global flags (`-R o/r`, `--repo o/r`, `--repo=o/r`), `pr`, any flags again, `ready`. The anchored
+# `^gh pr ready` missed `gh -R o/r pr ready` and `/usr/local/bin/gh pr ready` (security review of #1565).
+_f='([[:space:]]+-[^[:space:]]+([[:space:]]+[^-[:space:]][^[:space:]]*)?)*'
+re="^([^[:space:]]*/)?gh${_f}[[:space:]]+pr${_f}[[:space:]]+ready([[:space:]]|\$)"
+[ "$degraded" = 1 ] && re="(^|[[:space:]])([^[:space:]]*/)?gh${_f}[[:space:]]+pr${_f}[[:space:]]+ready([[:space:]]|\$)"
+hit=0; args=""; segment=""
 rest="$seg"$'\n'
 while [ -n "$rest" ]; do
   line="${rest%%$'\n'*}"; rest="${rest#*$'\n'}"
   if [[ $line =~ $re ]]; then
-    a="${line#*ready}"
+    m="${BASH_REMATCH[0]}"; a="${line#*"$m"}"; a=" ${a}"
     [[ " $a " =~ [[:space:]]--undo[[:space:]] ]] && continue
-    hit=1; args="$a"; break
+    hit=1; args="$a"; segment="$line"; break
   fi
 done
 [ "$hit" = 1 ] || exit 0
@@ -68,7 +72,7 @@ command -v python3 >/dev/null 2>&1 \
   || deny "python3 is not available, so the sweep record for HEAD cannot be read."
 [ -f "$_py" ] || deny "the guard's helper is missing ($_py). Reinstall the rails-flow plugin."
 
-out="$(printf '%s' "$input" | python3 "$_py" "$args" 2>&1)"; rc=$?
+out="$(printf '%s' "$input" | python3 "$_py" "$args" "$segment" 2>&1)"; rc=$?
 case "$rc" in
   0) exit 0 ;;
   2) printf '%s\n' "$out" >&2; exit 2 ;;

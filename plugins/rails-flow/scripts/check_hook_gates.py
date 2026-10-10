@@ -5341,8 +5341,15 @@ def guard_pr_ready_fixtures() -> None:
         expect("guard-pr-ready: a MALFORMED record fails closed", guard(repo, "gh pr ready 12"), 2, "malformed")
         record(repo, head, skips="0")
         expect("guard-pr-ready: a record whose skips is not a number fails closed", guard(repo, "gh pr ready 12"), 2, "malformed")
+        for cmd in ("gh --repo o/r pr ready 5", "gh -R o/r pr ready 5", "/usr/local/bin/gh pr ready 5"):
+            expect(f"guard-pr-ready: a flag before `pr`, or gh by path, is still judged: {cmd}", guard(repo, cmd), 2, "BLOCKED")
+        expect("guard-pr-ready: `gh --repo o/r pr view 5` is left alone", guard(repo, "gh --repo o/r pr view 5"), 0)
+        expect("guard-pr-ready: `gh --repo o/r pr ready --undo 5` is allowed", guard(repo, "gh --repo o/r pr ready --undo 5"), 0)
         record(repo, head)
         expect("guard-pr-ready: a GREEN record with zero skips for HEAD allows it", guard(repo, "gh pr ready 12"), 0)
+        for cmd in ("gh pr ready 5 -R o/r", "GH_REPO=o/r gh pr ready 5", "gh pr ready https://github.com/o/r/pull/5"):
+            expect(f"guard-pr-ready: an explicit remote target is refused even with a green record: {cmd}", guard(repo, cmd), 2,
+                   "explicit repository target")
         expect("guard-pr-ready: ...and so does `cd <same repo> && gh pr ready`", guard(repo, f"cd {repo} && gh pr ready 12"), 0)
         # The command's own `cd` picks the repository judged: the other repository has no record.
         other = new_repo(td, "other")

@@ -29,6 +29,12 @@ GUARD = Guard(
     needs=_NEEDS,
     mutations=(
         Mutation(
+            "an explicit remote target is judged against the local HEAD",
+            '    if explicit_target(segment, str(payload.get("tool_input", {}).get("command", ""))):\n',
+            "    if False:\n",
+            "an explicit remote target is refused even with a green record: gh pr ready 5 -R o/r",
+        ),
+        Mutation(
             "any record in the sweep directory is accepted, whatever HEAD it names",
             '    record = d / f"{head}.json"\n',
             '    record = next(iter(sorted(d.glob("*.json"))), d / f"{head}.json")\n'

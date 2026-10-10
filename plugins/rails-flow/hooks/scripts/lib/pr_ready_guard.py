@@ -13,12 +13,15 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
 
 SWEEP_DIR = "rails-flow/sweep"
 MARKER = "<!-- rails-flow:begin"
+EXPLICIT = ("an explicit repository target (-R/--repo/GH_REPO/URL) cannot be matched to a local sweep record; "
+            "run `gh pr ready` from the PR's own checkout, after its sweep")
 SWEEP_CMD = 'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/project_gates.py"'
 
 
@@ -80,8 +83,19 @@ def resolve_dir(payload: dict, start: str) -> tuple[str | None, str]:
     return None, (done.stderr.strip() or f"lib/command_cwd.py exited {done.returncode}")[:200]
 
 
+def explicit_target(segment: str, raw: str) -> bool:
+    """The PR is named by repository, not by this checkout: its HEAD says nothing about that PR (#1565 review)."""
+    words = segment.split()
+    if any(w in ("-R", "--repo") or w.startswith(("--repo=", "-R")) for w in words):
+        return True
+    if re.search(r"(^|[^A-Za-z0-9_])GH_REPO=", raw):
+        return True
+    return any(re.match(r"https?://\S+/pull/\d+", w.strip("'\"")) for w in words)
+
+
 def main() -> int:
     args = sys.argv[1] if len(sys.argv) > 1 else ""
+    segment = sys.argv[2] if len(sys.argv) > 2 else ""
     try:
         payload = json.loads(sys.stdin.buffer.read().decode("utf-8", "surrogateescape"))
         if not isinstance(payload, dict):
@@ -92,6 +106,11 @@ def main() -> int:
     if not os.path.isdir(start):
         start = os.getcwd()
     where, why = resolve_dir(payload, start)
+    if explicit_target(segment, str(payload.get("tool_input", {}).get("command", ""))):
+        roots = {git(d, "rev-parse", "--show-toplevel") for d in (where, start) if d}
+        if any(r and in_force(r) for r in roots):
+            return refuse(EXPLICIT + ".", args)
+        return 0
     if where is None:
         # Which repository the command targets cannot be told. Refuse only where the session's own repository
         # is in force; a project that does not run project_gates is left alone (stated in the hook header).
