@@ -117,7 +117,11 @@ replacement).
   a `click.esc` event that never fires. The complete filter set is
   `enter tab esc space up down left right home end page_up page_down`, plus
   any single letter `a`–`z` or digit `0`–`9`. **There are no function-key
-  filters.** An unmapped name is not ignored: `keydown.f1` **throws**
+  filters in the default schema.** An app can add keys by starting with its own
+  `keyMappings`: `Application.start(document.documentElement, { ...defaultSchema,
+  keyMappings: { ...defaultSchema.keyMappings, f1: "F1" } })` (`defaultSchema`
+  is exported by `@hotwired/stimulus`), after which `keydown.f1` matches
+  `event.key === "F1"`. Without that, an unmapped name is not ignored: `keydown.f1` **throws**
   `contains unknown key filter` at event time — on the first keystroke whose
   modifier state matches, not just on F1 — and the throw escapes Stimulus'
   error handler, so the action never runs and the page reports an uncaught

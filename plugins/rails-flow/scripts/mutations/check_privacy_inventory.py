@@ -44,15 +44,83 @@ GUARD = Guard(
         ),
         Mutation(
             "stale entries are never reported",
-            "            if (t, c) not in columns:",
+            "            if (t, c) not in present:",
             "            if False:",
             "an entry for a vanished column is a finding",
+        ),
+        # #1695: a second database's schema file.
+        Mutation(
+            "a second db/*_schema.rb is never read",
+            '    return [root / SCHEMA, *sorted((root / "db").glob("*_schema.rb"))]',
+            "    return [root / SCHEMA]",
+            "a new column in the SECOND schema fails until it is classified, and the finding names its file",
+        ),
+        Mutation(
+            "the Solid trio is read as well",
+            "    return path.name in FRAMEWORK_SCHEMAS and _solid_only(path)",
+            "    return False",
+            "the Solid trio is framework-owned: a solid_* table in cache_schema.rb, queue_schema.rb or cable_schema.rb is not reported",
+        ),
+        Mutation(
+            "a trio-named file is skipped by its name alone",
+            "    return path.name in FRAMEWORK_SCHEMAS and _solid_only(path)",
+            "    return path.name in FRAMEWORK_SCHEMAS",
+            "a cache_schema.rb holding a non-solid_* table is read, not skipped by its name",
+        ),
+        Mutation(
+            "a table in two schema files is picked silently",
+            "            if table in tables:\n                duplicates.append(",
+            "            if False:\n                duplicates.append(",
+            "a table in two schema files is a finding, not a silent pick",
+        ),
+        Mutation(
+            "a finding does not say which file a column came from",
+            '        return "" if source[table] == SCHEMA.as_posix() else f" (in {source[table]})"',
+            '        return ""',
+            "a new column in the SECOND schema fails until it is classified, and the finding names its file",
+        ),
+        Mutation(
+            "a stale table is judged against db/schema.rb alone",
+            "        if t not in tables:",
+            "        if t not in {name for name, file in source.items() if file == SCHEMA.as_posix()}:",
+            "CONTROL: a second schema file's columns, classified, are clean and counted",
         ),
         Mutation(
             "an inline { } entry is not parsed",
             '    m = FLOW.match(str(value).strip())\n    if not m:',
             '    m = None\n    if not m:',
             "CONTROL: a complete inventory is clean",
+        ),
+        # #1732: the implicit id, and a Solid file the inventory names.
+        Mutation(
+            "a listed implicit id reads as stale again",
+            '    present = columns | {(t, "id") for t, spec in tables.items() if spec["implicit_id"]}',
+            "    present = columns",
+            "a listed implicit id is not stale",
+        ),
+        Mutation(
+            "every table is treated as having an id, even `id: false`",
+            '    present = columns | {(t, "id") for t, spec in tables.items() if spec["implicit_id"]}',
+            '    present = columns | {(t, "id") for t in tables}',
+            "a listed id on an `id: false` table is still stale",
+        ),
+        Mutation(
+            "a Solid file is skipped even when the inventory names its table",
+            "            if owned and table not in named:",
+            "            if owned:",
+            "a Solid table the inventory names is read: its entry is not stale",
+        ),
+        Mutation(
+            "naming one Solid table reads its whole file",
+            "            if owned and table not in named:",
+            "            if owned and not named:",
+            "an unnamed Solid table beside a named one stays the framework's: not read at all (5 columns, not 6)",
+        ),
+        Mutation(
+            "a named Solid table's every column is required",
+            "        if entry is None and t in framework:\n            continue\n",
+            "",
+            "a named Solid table's unlisted columns are not required (the framework's), only its listed entries judged",
         ),
     ),
 )

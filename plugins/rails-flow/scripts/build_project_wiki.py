@@ -119,7 +119,11 @@ def parse_schema(text: str) -> dict:
                 # Rails can emit `t.index` with options this does not model, and the page must say
                 # so rather than quietly shorten the list.
                 unparsed.append(line.strip())
-        tables[name] = {"columns": cols, "indexes": idx, "id": (re.search(r"id:\s*(:\w+)", opts) or [None, "bigint"])[1]}
+        # `implicit_id`: Rails adds an `id` primary key that the dump never lists as a column, unless the table says `id: false`
+        # or names another key (`primary_key: "code"`, or a composite list) (#1732).
+        pk = re.search(r'\bprimary_key:\s*("[^"]*"|\[[^\]]*\])', opts)
+        tables[name] = {"columns": cols, "indexes": idx, "id": (re.search(r"id:\s*(:\w+)", opts) or [None, "bigint"])[1],
+                        "implicit_id": not re.search(r"\bid:\s*false\b", opts) and (pk is None or pk.group(1) == '"id"')}
     fks = re.findall(r'^\s*add_foreign_key\s+"([^"]+)",\s*"([^"]+)"', text, re.M)
     return {"version": version, "tables": tables, "foreign_keys": fks,
             "unparsed_indexes": unparsed,
@@ -495,6 +499,12 @@ def selftest() -> int:
                       "    t.check_constraint \"(code)::text ~ '^[A-Z]{3}$'::text\", name: \"w_code\"\n  end\n")
     check("schema.rb: a check constraint is not read as a column",
           [c[0] for c in cs["tables"]["w"]["columns"]] == ["code"], str(cs["tables"]["w"]["columns"]))
+    # #1732. THE IMPLICIT `id`: present by default and with `primary_key: "id"`; absent with `id: false` or another named key.
+    pks = parse_schema("".join(f'  create_table "{n}"{o}, force: :cascade do |t|\n    t.string "code"\n  end\n' for n, o in
+                               (("plain", ""), ("noid", ", id: false"), ("coded", ', primary_key: "code"'), ("idkey", ', primary_key: "id"'))))
+    check("schema.rb: a table has an implicit id unless `id: false` or another primary key is named",
+          {n: t["implicit_id"] for n, t in pks["tables"].items()} == {"plain": True, "noid": False, "coded": False, "idkey": True},
+          str({n: t["implicit_id"] for n, t in pks["tables"].items()}))
     check("yaml: a `#` after whitespace starts a comment, as YAML reads it",
           _strip_yaml_comment("  a: b  # note") == "  a: b")
     check("yaml: a `#` with no space before it is part of the value", _strip_yaml_comment("  a: rate#893") == "  a: rate#893")
@@ -565,8 +575,26 @@ def selftest() -> int:
         check("a clean tree passes --check (exit 0)", main(["--check", "--root", str(root)]) == 0)
         # #1233: a locally dirty SOURCE is named, and a clean git tree names nothing (the control).
         import contextlib as _cl, io as _io, subprocess as _sp
-        for cmd in (["init", "-q"], ["add", "-A"], ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "x"]):
-            _sp.run(["git", "-C", str(root), *cmd], check=True, capture_output=True)
+        def _fx(repo, *a):
+            """#1588: a fixture's git, bound to `repo`. Through fixture_git when it ships beside this script; VENDORED ALONE
+            (check_vendored_alone), the same binding inline: no inherited GIT_*, GIT_DIR/GIT_WORK_TREE set to `repo`."""
+            import os as _o, subprocess as _p, sys as _s
+            _s.path.insert(0, _o.path.dirname(_o.path.abspath(__file__)))
+            try:
+                import fixture_git as _fg
+            except ImportError:
+                _fg = None
+            repo = str(repo)
+            if _fg is not None:
+                return _fg.init(repo) if a[:1] == ("init",) else _fg.run(repo, *a)
+            env = {k: v for k, v in _o.environ.items() if not k.startswith("GIT_")}
+            if a[:1] == ("init",):
+                return _p.run(["git", "init", "-q", repo], env=env, check=True, capture_output=True)
+            env.update(GIT_DIR=_o.path.join(repo, ".git"), GIT_WORK_TREE=repo)
+            return _p.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *a], cwd=repo, env=env, check=True, capture_output=True)  # fixture-git: exempt (vendored alone: fixture_git is not shipped beside it; the same GIT_DIR/GIT_WORK_TREE binding, inline)
+        _fx(root, "init")
+        _fx(root, "add", "-A")
+        _fx(root, "commit", "-qm", "x")
         out = _io.StringIO()
         with _cl.redirect_stdout(out):
             main(["--check", "--root", str(root)])

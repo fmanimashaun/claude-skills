@@ -12,13 +12,13 @@ GUARD = Guard(
     name="context_nudge",
     subject="hooks/context-nudge.mjs",
     selftest="scripts/check_mods.py",
-    selftest_args=("context-nudge",),
-    needs=("tests/context-nudge.unit.mjs",),
+    selftest_args=("context-nudge", "budget-guard"),
+    needs=("tests/context-nudge.unit.mjs", "tests/budget-guard.unit.mjs", "hooks/budget-guard.mjs"),
     mutations=(
         Mutation(
             "the once-per-climb flag is never set, so every prompt past the threshold is nagged",
-            "    nudged = true\n    return next({",
-            "    return next({",
+            "      nudged = true\n      lines.push(nudgeLine(percent))",
+            "      lines.push(nudgeLine(percent))",
             "at the threshold one line is added, once",
         ),
         Mutation(
@@ -53,7 +53,7 @@ GUARD = Guard(
         ),
         Mutation(
             "the fill is never pinned under the prompt",
-            "    $.ui.status(percent === null ? undefined : `context ${percent}%`)\n",
+            "    $.ui.status(parts.length ? parts.join(' · ') : undefined)\n",
             "    // no status\n",
             "the fill is pinned under the prompt",
         ),
@@ -86,6 +86,60 @@ GUARD = Guard(
             "'Say this once; do not repeat it.'",
             "'Say this once; do not repeat it. ' + 'x'.repeat(400)",
             "the line is short",
+        ),
+        Mutation(
+            "#1677: the usage line is announced on every prompt, not once per level",
+            "        announced[k] = lvl\n",
+            "",
+            "at the warn level one usage line rides on the next prompt, once",
+        ),
+        Mutation(
+            "#1677: falling below warn never resets, so the next climb is never told",
+            "      if (level(reading[k]?.pct, ...levels) === null) announced[k] = null\n",
+            "",
+            "falling below warn resets, so the next climb is told again",
+        ),
+        Mutation(
+            "#1677: the usage windows never reach the status line",
+            "    const limits = limitsLabel(e.rateLimits)\n",
+            "    const limits = undefined\n",
+            "the status line carries the weekly and 5-hour windows",
+        ),
+        Mutation(
+            "#1677: block after warn is swallowed as already announced",
+            "lvl !== announced[k] && ",
+            "announced[k] === null && ",
+            "reaching block after warn adds the block line, once",
+        ),
+        Mutation(
+            "the auto-resume never fires: the timer is never set",
+            "      if (ms !== null) resume = $.clock.after(",
+            "      if (false) resume = $.clock.after(",
+            "at the 5-hour hard level one resume is scheduled",
+        ),
+        Mutation(
+            "the resume is scheduled on every measurement, not once",
+            "    if (resume === null && level(five?.pct",
+            "    if (level(five?.pct",
+            "at the 5-hour hard level one resume is scheduled",
+        ),
+        Mutation(
+            "RAILS_FLOW_AUTO_RESUME=0 is ignored",
+            " && (await $.env.get('RAILS_FLOW_AUTO_RESUME')) !== '0'",
+            "",
+            "RAILS_FLOW_AUTO_RESUME=0 schedules nothing",
+        ),
+        Mutation(
+            "only the weekly window is announced; the 5-hour window is never watched",
+            "const WINDOWS = ['five_hour', 'seven_day']",
+            "const WINDOWS = ['seven_day']",
+            "the 5-hour warn line tells Claude to write the handoff",
+        ),
+        Mutation(
+            "the nudge offers /compact again, against the owner's decision (#1678)",
+            "tell the user to run /clear (not /compact: the handoff already holds it) before new work.",
+            "tell the user to run /clear or /compact before new work.",
+            "asks for /clear after the handoff, not /compact",
         ),
     ),
 )

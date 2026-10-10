@@ -107,7 +107,7 @@ def paragraphs(text: str) -> list[dict]:
 
 
 # A rule that applies to ONE area of the codebase is a candidate for a path-scoped `.claude/rules/<area>.md`,
-# which loads only when a matching file is read -- the third lever when the ceiling bites (the first two are
+# which loads only when Claude reads, writes or edits a matching file (Write/Edit since Claude Code 2.1.288) -- the third lever when the ceiling bites (the first two are
 # relocating history and raising the ceiling with a reason). Detected by a path or an area noun; the area
 # named is the `paths:` glob the rule would carry.
 AREA_PATHS = re.compile(r"\b((?:app|config|db|spec|test|lib)/[a-z_]+(?:/[a-z_]+)*)\b")
@@ -364,7 +364,7 @@ def print_report(r: dict, history_rel: str) -> None:
     if r.get("scoped"):
         freed = sum(x["line_count"] for x in r["scoped"])
         print(f"  {len(r['scoped'])} rule paragraph(s) apply to ONE area ({freed} lines) — candidates for a path-scoped "
-              f"`.claude/rules/<area>.md` with `paths:`, loaded only when a matching file is read (#927). Not scaffolded: "
+              f"`.claude/rules/<area>.md` with `paths:`, loaded only when Claude reads, writes or edits a matching file (#927). Not scaffolded: "
               "the file may be healthy as it is; this is the lever when it needs room.")
         for x in r["scoped"][:8]:
             print(f"    - {x['section']}  lines {x['lines']}  → .claude/rules/ scoped to {x['area']}/**  {x['first_line']}")

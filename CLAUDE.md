@@ -124,7 +124,7 @@ a promotion must carry no `Unreleased`, and a second arm would leave the first h
 - **It runs `--gates-only`, not `--gates`**: content gates only; the machine diagnostics are about a
   maintainer's clone and would teach people to ignore a red build.
 - **A pull request and a push to `dev` run `--fast`; the full sweep runs before a promotion, on your
-  machine.** `--fast` skips exactly `PR_SKIPPED_GATES` (`mutation coverage`), reported as `skip` (#866).
+  machine.** `--fast` skips exactly `PR_SKIPPED_GATES` (`mutation coverage`, `guard-bash cases (full)`), reported as `skip` (#866).
   Before promoting run `maintainer_doctor.py --gates-only --require-slow --record-proof`: it posts a
   `full-sweep` status for the tree; `release.yml` reuses it for an identical tree, else runs all (#1635).
 - **A gate over its budget is FAIL by name**, its group killed. Guards live one per file, from **two

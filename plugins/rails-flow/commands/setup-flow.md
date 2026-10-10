@@ -41,7 +41,8 @@ Classify every finding into exactly one bucket; act only on the first two:
    - **Contradicts fact**: the App Identity/stack table disagrees with the Gemfile or
      config (says Postgres when the adapter is sqlite3; names Devise when the app uses
      the Rails 8 generator; wrong Ruby/Rails version); a pointer references a path that
-     doesn't exist (`docs/brain/` absent); AGENTS.md routing names an agent the plugin
+     doesn't exist (`docs/brain/` absent; a "Before you change an area" line naming a doc
+     that is not there); AGENTS.md routing names an agent the plugin
      doesn't provide.
    - **Broken safety rule**: a Delegation Rules block missing the anti-recursion role
      check (executors that can spawn executors → runaway subagents); a rule that
@@ -157,6 +158,15 @@ dependency list, NOT "it uses Service Objects" — Claude Code's own /doctor tri
 overviews, and an agent can read the tree. Structure lives in the graph; point there:
 "for what-calls-what, query docs/architecture/graph.json". An empty section is a valid
 answer for a simple CRUD app — say so rather than padding it.>
+
+## Before you change an area, read its doc
+<one line per task area that HAS a deeper doc, naming the file to read before that kind of
+change — e.g. "authorization or a new policy → docs/authorization.md", "billing, plans or
+webhooks → docs/billing.md". List ONLY files that exist (`ls` them); never invent a doc to fill
+a row, and an empty section is a valid answer. The doc holds the detail, this line only routes to
+it, so a CSS change never loads the billing contract. A `.claude/rules/` rule (§2b) fires when a
+matching FILE is read or edited; this line fires on the TASK, before any file is opened —
+use both where an area has both.>
 
 ## Common Commands
 <dev server, console, migrate, targeted + full rspec, rubocop on changed files, brakeman,
@@ -292,7 +302,7 @@ paths:
 ```
 
 Rules live in `.claude/rules/*.md` (committed, team-shared) and a rule with `paths:` loads
-**only when Claude reads a matching file** — so it costs nothing on sessions that never touch
+**only when Claude uses the Read, Write or Edit tool on a matching file** (Write and Edit since Claude Code 2.1.288; before that, only Read) — so it costs nothing on sessions that never touch
 that area. A rule with no `paths:` loads every session, same as `CLAUDE.md`; use that only for
 genuinely global content.
 
@@ -316,6 +326,23 @@ force-push, no `git add -A`, no `--no-verify`, stage specific files, small logic
 **Secrets** (credentials only; never commit .env), **Deploys** (require explicit user
 approval). Note at the top: *the rails-flow hooks enforce these mechanically; this document
 is the human-readable law they implement.*
+
+**Ask, and record the answer: is the test database seeded on purpose? (#1734)** *"Does this project's
+suite expect a seeded test database, with a CI script that resets it (`config/ci.rb` running
+`db:reset`)?"* The default is **no**, and it needs no line: the guard refuses `db:reset` because
+seeds break test isolation for a suite that expects an empty database. A project whose suite needs
+the seed rows (Retask's `Setting` rows are part of its test contract) answers yes, and
+GUARDRAILS.md gets its own line:
+
+```markdown
+- test-db-seeded: yes
+```
+
+`guard-bash.sh` reads exactly that line. It then allows ONE command, `RAILS_ENV=test bin/rails
+db:reset`, run alone. A development or production reset, a compound command, and a payload the
+hook cannot read are still refused, and a project that declares nothing is refused with the name of
+its CI script (`bin/ci`, else `config/ci.rb`) in the message. Prose that merely mentions the key,
+and an example of the line inside a code block or an HTML comment, do not declare it.
 
 **Ask, and record the answer: the mock-up gate (#1376).** *"Does a change a user can see wait for
 your approval of a clickable mock-up before it is built?"* The default is **yes**, and it needs no
@@ -795,8 +822,10 @@ places a regulator reads.
 1. **Build the data inventory from the code, not from memory**, and write it as
    `config/privacy_inventory.yml`: table → column → `{ category, basis, retention }`, with
    `category: none` for a column that holds no personal data. The `privacy-inventory` gate then fails
-   any `db/schema.rb` column left unclassified, so a new personal field cannot slip past the policy
-   (#1310). The inventory covers:
+   any `db/schema.rb` column (and any column of another `db/*_schema.rb`, such as a second database's
+   `db/observability_schema.rb`; not the Solid trio) left unclassified, so a new personal field cannot slip past the policy
+   (#1310, #1695). A Solid table the inventory NAMES is read and its listed entries judged; its unlisted columns are
+   exempt (#1732). The inventory covers:
    - every personal-data field in `db/schema.rb`;
    - what each form collects;
    - what users upload (Active Storage);

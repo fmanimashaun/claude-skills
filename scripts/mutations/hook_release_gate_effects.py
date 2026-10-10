@@ -12,7 +12,7 @@ GUARD = Guard(
     # alongside rails-flow's (#906), so the whole hook tree plus qa-flow's scripts must be staged.
     # DECLARED, not assumed: an undeclared read makes the unmutated baseline die in the tempdir and
     # every mutation then reads as "caught" by an error that has nothing to do with the mutation.
-    needs=(
+    needs=("plugins/rails-flow/scripts/fixture_git.py", 
            'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py',  # session-start.sh runs both (#1581: the harness drives it)
            "plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362
            "plugins/rails-flow/hooks/scripts", "plugins/qa-flow/hooks/scripts",
@@ -99,7 +99,7 @@ GUARD = Guard(
         ),
         Mutation(
             "git merge on main is no longer a promotion",
-            "          if git rev-parse --abbrev-ref HEAD 2>/dev/null | grep -qE '^(main|master)$'; then\n            targets_main=1\n            _refs",
+            "          if grep -qE '^(main|master)$' <<<\"$(git rev-parse --abbrev-ref HEAD 2>/dev/null)\"; then\n            targets_main=1\n            _refs",
             "          if false; then\n            targets_main=1\n            _refs",
             "`git merge` on main of an uncertified hotfix branch is blocked",
         ),

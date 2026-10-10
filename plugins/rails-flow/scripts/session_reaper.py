@@ -5,9 +5,11 @@ THE LEAK. A session that starts a process and then stops it (SIGSTOP, a job-cont
 exits leaves it re-parented to pid 1, stopped, for good: the 2026-10-03 incident left 74 and hit
 `kern.maxprocperuid`. `process_containment.py` stops a fixture leaking; this reaps what a session left anyway.
 
-WHOSE IT IS, DECIDED BY THE ENVIRONMENT, NEVER BY NAME. Claude Code starts every process of a session with
-`CLAUDE_CODE_SESSION_ID=<session id>` in its environment, and the SessionEnd payload names the same id (the
-transcript file is `<id>.jsonl`). A process is reaped only if ALL of these hold:
+WHOSE IT IS, DECIDED BY THE ENVIRONMENT, NEVER BY NAME. Claude Code sets `CLAUDE_CODE_SESSION_ID` in Bash and
+PowerShell tool subprocesses and hook command subprocesses (v2.1.132+) and stdio MCP server subprocesses (v2.1.154+); it
+matches the hook payload's `session_id` and is updated on `/clear` (https://code.claude.com/docs/en/env-vars). A process
+started before a `/clear` carries the old id, and one the docs do not list may carry none. A process is reaped only if
+ALL of these hold:
   1. its environment holds the WHOLE entry `CLAUDE_CODE_SESSION_ID=<this session's id>`;
   2. its parent is pid 1 (an orphan: nothing is waiting on it);
   3. it is STOPPED (state T): a running orphan may be a server the session meant to leave.
@@ -116,6 +118,11 @@ def selftest() -> int:
     # fixtures, so both went inert (#1646 review R2).
     mine, other = str(uuid.uuid4()), str(uuid.uuid4())
     started: list[int] = []
+    # THIS PROCESS CARRIES ANOTHER SESSION'S ID (#1729). The reaper must read the id it is GIVEN, never its own environment. On a maintainer's machine
+    # the selftest runs inside a session, so its environment already held a different id; on the hosted runner it held none, the fallback equalled the
+    # argument, and the mutant that reads its own environment survived. Set explicitly, the check does not depend on where it runs.
+    saved_id = os.environ.get(SESSION_VAR)
+    os.environ[SESSION_VAR] = other
 
     def check(label: str, ok: bool, detail: str = "") -> None:
         if not ok:
@@ -188,6 +195,10 @@ def selftest() -> int:
               f"{value_of(running, SESSION_VAR)!r} {value_of(spoof, SESSION_VAR)!r} {value_of(decoy, SESSION_VAR)!r}")
         check("a second reap finds nothing left to reap", reap(mine) == [], "reaped again")
     finally:
+        if saved_id is None:
+            os.environ.pop(SESSION_VAR, None)
+        else:
+            os.environ[SESSION_VAR] = saved_id
         for pid in started:                     # the safety net, by the pids the fixtures recorded
             for sig in (signal.SIGCONT, signal.SIGKILL):
                 try:

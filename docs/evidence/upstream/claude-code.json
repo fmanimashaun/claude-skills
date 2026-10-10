@@ -1,6 +1,6 @@
 {
-  "changelog_reviewed": "2.1.285",
-  "reviewed_on": "2026-09-30",
+  "changelog_reviewed": "2.1.292",
+  "reviewed_on": "2026-10-07",
   "quotes": [
     {"id": "subagent-model-order", "url": "https://code.claude.com/docs/en/sub-agents",
      "quote": "1. The per-invocation `model` parameter 2. The subagent definition's `model` frontmatter, where `inherit` selects the main conversation's model",
@@ -25,6 +25,12 @@
      "used_by": ["scripts/check_frontmatter.py", "plugins/pipeline/commands/deploy-cloud.md"]},
     {"id": "subagent-skill-tool", "url": "https://code.claude.com/docs/en/sub-agents",
      "quote": "To prevent a subagent from invoking skills entirely, omit `Skill` from the `tools` list or add it to `disallowedTools`.",
+     "used_by": ["scripts/check_frontmatter.py"]},
+    {"id": "skills-run-through-skill-tool", "url": "https://code.claude.com/docs/en/skills",
+     "quote": "To keep Claude from invoking it through the Skill tool, set `disable-model-invocation: true`",
+     "used_by": ["scripts/check_frontmatter.py", "plugins/pipeline/agents/pipeline-coordinator.md"]},
+    {"id": "subagent-skills-field-preloads-only", "url": "https://code.claude.com/docs/en/sub-agents",
+     "quote": "This field controls which skills are preloaded, not which skills the subagent can access",
      "used_by": ["scripts/check_frontmatter.py"]},
     {"id": "plugin-agent-dropped-fields", "url": "https://code.claude.com/docs/en/sub-agents",
      "quote": "plugin subagents don't support the `hooks`, `mcpServers`, or `permissionMode` frontmatter fields",
@@ -112,6 +118,12 @@
      "used_by": ["plugins/rails-flow/hooks/context-nudge.mjs"]},
     {"id": "mods-session-measure-cadence", "url": "https://code.claude.com/docs/en/plugins/mods/reference",
      "quote": "After each turn, and when a plan limit's percent used changes",
-     "used_by": ["plugins/rails-flow/hooks/context-nudge.mjs"]}
+     "used_by": ["plugins/rails-flow/hooks/context-nudge.mjs"]},
+    {"id": "session-id-env", "url": "https://code.claude.com/docs/en/env-vars",
+     "quote": "hook command subprocesses, and stdio MCP server subprocesses",
+     "used_by": ["skills/parallel-session-lane/references/process-hygiene.md", "plugins/rails-flow/scripts/session_reaper.py"]},
+    {"id": "statusline-rate-limits", "url": "https://code.claude.com/docs/en/statusline",
+     "quote": "appears only for claude.ai Pro and Max subscribers",
+     "used_by": ["docs/evidence/audits/2026-10-07-mods-tool-call-ratelimits-2.1.292.md", "plugins/rails-flow/reference/context-budget.md", "plugins/rails-flow/hooks/budget-guard.mjs"]}
   ]
 }

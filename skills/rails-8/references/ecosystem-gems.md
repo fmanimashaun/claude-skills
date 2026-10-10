@@ -524,7 +524,9 @@ end
 ```
 
 A C parser with real bindings, not a regex pass, which is why it can reason about attribute position
-at all. **Two commands matter, and they are not interchangeable.**
+at all. (Rails 8.2, **unreleased**, compiles HTML ERB with Herb itself and ships `bin/rails herb:check`;
+that changes the dev/test gem advice below once it releases: `references/rails-8-2-readiness.md`.)
+**Two commands matter, and they are not interchangeable.**
 
 **`herb analyze <path>`** — pure gem, no network, exits **1** on findings and **0** clean. It catches
 parse- and validation-level errors:

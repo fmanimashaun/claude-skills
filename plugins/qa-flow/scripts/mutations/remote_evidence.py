@@ -10,6 +10,7 @@ GUARD = Guard(
     name="remote_evidence",
     subject="scripts/remote_evidence.py",
     selftest="scripts/remote_evidence.py",
+    needs=("scripts/fixture_git.py",),   # its selftest's git goes through fixture_git (#1588)
     selftest_args=("--selftest",),
     mutations=(
         Mutation(

@@ -40,6 +40,9 @@ import types
 import time
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import fixture_git  # noqa: E402  (#1588: a fixture's git touches only its own temp repo)
+
 HOOKS = Path(__file__).resolve().parents[1] / "hooks" / "scripts"
 
 FAILURES: list[str] = []
@@ -232,9 +235,10 @@ def _sample() -> float:
     with tempfile.TemporaryDirectory() as td:
         began = time.monotonic()
         try:
-            for cmd in (["git", "init", "-q"], ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "i"],
+            for cmd in (["git", "init", "-q"], ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "i"],  # fixture-git: exempt (the timed calibration workload: its argv is what is measured; repo-locating env stripped below)
                         ["bash", "-c", "true"]):
-                subprocess.call(cmd, cwd=td, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=CALIBRATION_TIMEOUT)
+                subprocess.call(cmd, cwd=td, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=CALIBRATION_TIMEOUT,
+                                env=fixture_git.hermetic())     # no inherited GIT_DIR: cwd alone does not bind (#1660 R3)
         except (OSError, subprocess.SubprocessError):
             return CALIBRATION_IDLE * (HOOK_BUDGET_CAP / HOOK_BUDGET_FLOOR)
         return time.monotonic() - began
@@ -266,6 +270,12 @@ def _note_cpu(before) -> None:
     global LAST_CPU_S
     now = resource.getrusage(resource.RUSAGE_CHILDREN)
     LAST_CPU_S = (now.ru_utime - before.ru_utime) + (now.ru_stime - before.ru_stime)
+
+
+def gate_exit(returncode: int, stderr: bytes) -> int:
+    """A release gate's exit code as a FIXTURE should read it. The gate's own deadline also exits 2 ("the gate took longer than 13s"), which on a loaded
+    machine reads as the refusal a fixture is looking for and lets a mutant survive for the wrong reason: it is 124 here, equal to neither 0 nor 2."""
+    return 124 if b"took longer than" in stderr else returncode
 
 
 def _run(*args, **kw):
@@ -336,12 +346,86 @@ fi
 exec "$@"'''
 
 
+def _fixture_git(cwd: Path, *args: str, **kw) -> subprocess.CompletedProcess:
+    """A fixture's git (#1588). In a repo, through fixture_git: bound to that temp repo, refused if its init failed.
+    Anything else -- an `init`, a bare remote, or a linked worktree (whose .git file fixture_git refuses by design) --
+    runs through `_run`, bound by its cwd, with the fixture identity on the one line below."""
+    cwd = Path(cwd)
+    if (cwd / ".git").is_dir():
+        kw.setdefault("check", True)
+        return fixture_git.run(cwd, *args, **kw)
+    kw.setdefault("capture_output", True)
+    kw.setdefault("text", True)
+    kw["env"] = fixture_git.hermetic(kw.get("env"))      # drops an inherited GIT_DIR & co: cwd alone does not bind (#1660 R3)
+    return _run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *args], cwd=cwd, **kw)  # fixture-git: exempt (an init, a bare remote or a linked worktree, which fixture_git refuses by design; repo-locating env stripped)
+
+
 def _git_repo(root: Path) -> None:
     root.mkdir(parents=True, exist_ok=True)
-    for cmd in (["git", "init", "-q"],
-                ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q",
-                 "--allow-empty", "-m", "init"]):
-        _run(cmd, cwd=root, check=True, capture_output=True)
+    _run(["git", "init", "-q"], cwd=root, check=True, capture_output=True)
+    _fixture_git(root, "commit", "-q", "--allow-empty", "-m", "init")
+
+
+# THE INVALID-BYTE FIXTURES MUST NOT DEPEND ON THE HOST'S TEXT TOOLS (#1729). The gate pins `LC_ALL=C` on its `tr`, `grep` and `sed` because BSD's (macOS)
+# stop at an invalid byte in a UTF-8 locale and drop the rest of the command. GNU's do not, so on the hosted Linux runner every mutant that removed one of
+# those pins was an EQUIVALENT mutant and survived (four of them, run 37903416854). These shims go first on PATH for those fixtures only and reproduce the
+# BSD behaviour on STDIN when the locale named in the environment is a UTF-8 one: `tr` keeps the input up to the first invalid byte and exits 1, `grep`
+# sees each line only up to its first invalid byte, `sed` stops at the line that holds one and exits 1. Under `LC_ALL=C` (the gate's pin), or given a file
+# operand, they hand over to the real tool untouched, so the unmutated gate is judged by what it does today and a mutant that drops a pin by what macOS does.
+_BSD_TEXT_PY = r'''import subprocess, sys
+real, tool = sys.argv[1], sys.argv[2]
+args = sys.argv[3:]
+def bad(b):
+    try:
+        b.decode("utf-8")
+        return -1
+    except UnicodeDecodeError as e:
+        return e.start
+data = sys.stdin.buffer.read()
+rc, err = None, b""
+if tool == "tr":
+    k = bad(data)
+    if k >= 0:
+        data, rc, err = data[:k], 1, b"tr: Illegal byte sequence\n"
+elif tool == "grep":
+    data = b"".join(l if bad(l) < 0 else l[:bad(l)] + (b"\n" if l.endswith(b"\n") else b"") for l in data.splitlines(True))
+elif tool == "sed":
+    out = []
+    for l in data.splitlines(True):
+        if bad(l) >= 0:
+            rc, err = 1, b"sed: illegal byte sequence\n"
+            break
+        out.append(l)
+    data = b"".join(out)
+child = subprocess.Popen([real] + args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+out_b, err_b = child.communicate(data)
+sys.stdout.buffer.write(out_b)
+sys.stdout.buffer.flush()
+sys.stderr.buffer.write(err_b + err)
+sys.exit(rc if rc is not None else child.returncode)
+'''
+# The REAL tool is named by absolute path, so the shim never finds itself again however PATH is arranged around it.
+_BSD_TEXT_SH = '''#!/bin/sh
+case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in *[Uu][Tt][Ff]*) ;; *) exec "@REAL@" "$@" ;; esac
+for a in "$@"; do if [ -f "$a" ]; then exec "@REAL@" "$@"; fi; done
+exec "@PY@" "${0%/*}/bsd_text.py" "@REAL@" @TOOL@ "$@"
+'''
+
+
+def bsd_text_shims() -> Path:
+    """A fresh directory holding `tr`, `grep` and `sed` shims that behave like BSD's on invalid UTF-8 (see above)."""
+    import atexit
+    d = Path(tempfile.mkdtemp(prefix="bsd-text-shim-")).resolve()
+    atexit.register(shutil.rmtree, d, True)
+    (d / "bsd_text.py").write_text(_BSD_TEXT_PY, encoding="utf-8")
+    for tool in ("tr", "grep", "sed"):
+        real = shutil.which(tool)
+        if real is None:
+            continue
+        w = d / tool
+        w.write_text(_BSD_TEXT_SH.replace("@TOOL@", tool).replace("@REAL@", real).replace("@PY@", sys.executable), encoding="utf-8")
+        w.chmod(0o755)
+    return d
 
 
 # The text tools the hooks' normaliser (`lib/normalize_cmd.sh`) runs: a fixture that builds a deliberately thin PATH keeps THESE unless it is
@@ -697,6 +781,27 @@ NEGATIVES_1472 = ["bash -c 'git add app/x.rb'", "bash -c 'git push origin featur
                   "git commit -m \"$(cat <<'EOF'\na) first\nb) never `git push --force`\nEOF\n)\"",
                   "echo \"$(cat <<'EOF'\nAdds :) emoji then `git add -A`\nEOF\n)\""]
 
+# #1613: ANSI-C quoting, `$'...'`, spells the verb, the subcommand or the flag; the shell decodes it and runs the command, and the normaliser
+# printed the quotes' CONTENT as it was written, so no rule matched. Each decodes (here, in bash) to a command that stages everything.
+POSITIVES_1613 = ["$'\\x67\\x69\\x74' add -A", "git $'\\x61dd' -A", "git add $'\\x2dA'", "git add $'\\055A'", "git add $'\\u002dA'",
+                  "git $'a\\x64d' -A", "git $'\\x70ush' --force origin main", "git add -$'\\x41'"]
+# #1568: the other spellings of the same words that the sed-based quote strip read as a MENTION, plus the continuation and heredoc shapes
+# the shell reads differently from the normaliser (each measured against bash with git stubbed: bash ran the command, the hook said nothing).
+POSITIVES_1568 = ['git add "-A"', "git add '.'", "git 'add' -A", '"git" add -A', 'git push "--force" origin main', "git 'reset' --hard",
+                  'git add\\\n -A', 'g\\\nit add -A', 'g\\it add -A', 'gi\\t add -A', 'git a\\dd -A', 'git add \\-A', 'git add -\\A',
+                  'echo $((1<<2))\ngit add -A', 'echo $(( 1 << 2 ))\ngit add -A',
+                  'cat <<EOF\r\nx\r\nEOF\r\ngit add -A', "cat <<'EOF'\nfoo\\\nEOF\ngit add -A",
+                  'echo "a\'b"; git add -A; echo "c\'d"']
+# ...and the twins that must stay allowed: the same words only MENTIONED, quoted spans holding spaces, and the shapes bash reads as text.
+NEGATIVES_1568 = ['git add "app/x.rb" "spec/y.rb"', "git add 'x y' app/z.rb", 'git commit -m "git add -A"', "echo $'git add -A'",
+                  "git add $'a\\x20b' app/z.rb", 'echo "$((1<<2))"', 'echo $((1<<2))\ngit status',
+                  'cat <<EOF\nfoo\\\nEOF\ngit add -A\nEOF', 'cat <<-EOF\n\tfoo\\\n\tEOF\ngit add -A\nEOF',
+                  'echo "a\\"; git add -A; echo \\"b"', 'echo "a\'b"; git status; echo "c\'d"', "git commit -m 'it'\"'\"'s'",
+                  'git add "app/models/user.rb"', "git add 'a.rb' 'b.rb'", 'git commit -m "fix"', 'git status "-s"']
+# ANSI-C bodies whose decoding must equal bash's own, byte for byte (compared when the result is one plain word, the only kind kept).
+ANSIC_BODIES_1613 = ["\\x61bc", "a\\x62c", "\\141bc", "\\1411", "a\\x6", "\\x", "a\\u0062c", "a\\U00000062c", "ab\\0cd", "a\\x00b",
+                     "\\x41\\x42", "x\\u00e9y", "x\\xc3\\xa9y", "\\e", "\\q", "\\cA", "a\\\\b", "a\\'b", "a\\?b", "a\\\"b", "\\a\\b\\t"]
+
 
 def normaliser_pipelines(cmd: str) -> int | str:
     """#1504: how many `_normalize_one` pipelines `normalize_segments` runs for `cmd`. The lib is sourced
@@ -753,6 +858,28 @@ def guard_bash_fixtures() -> None:
         check(f"guard-bash (#1472): `{cmd!r}` runs the command and is blocked", run(cmd) == 2, "exit 0")
     for cmd in NEGATIVES_1472:
         check(f"guard-bash (#1472): CONTROL: `{cmd[:60]!r}` passes", run(cmd) == 0, "exit 2")
+    for cmd in POSITIVES_1613:
+        check(f"guard-bash (#1613): ANSI-C `{cmd!r}` is the command it decodes to, and is blocked", run(cmd) == 2, "exit 0")
+    for cmd in POSITIVES_1568:
+        check(f"guard-bash (#1568): `{cmd!r}` is read as the shell reads it, and is blocked", run(cmd) == 2, "exit 0")
+    for cmd in NEGATIVES_1568:
+        check(f"guard-bash (#1568): CONTROL: `{cmd[:60]!r}` passes", run(cmd) == 0, "exit 2")
+    # #1613: the decoder against bash ITSELF. `git $'BODY'` goes through normalize_segments; `printf %s $'BODY'` is what bash makes of it.
+    # Compared only when bash's word is plain (no space or shell character), because only a plain word is kept; any other is deleted.
+    lib = HOOKS / "lib" / "normalize_cmd.sh"
+    # bash 3.2 (macOS /bin/bash) does not decode \\u and \\U at all, so its answer is no reference for them; a newer bash is.
+    unicode_ok = _run(["bash", "-c", "printf '%s' $'\\u0061'"], capture_output=True, text=True).stdout == "a"
+    for body in ANSIC_BODIES_1613:
+        if not unicode_ok and ("\\u" in body or "\\U" in body):
+            continue
+        word = _run(["bash", "-c", "printf '%s' $'" + body + "'"], capture_output=True, text=True).stdout
+        plain = bool(word) and all(ch > " " and ch not in ";|&()<>$`\"\\#'" for ch in word)
+        # Under a UTF-8 locale ON PURPOSE: gawk there turns sprintf("%c", 233) into the two bytes of U+00E9, which the lib's own LC_ALL=C pin must
+        # prevent (release-gate.sh does not pin one). BSD awk (macOS) and mawk are byte-oriented either way, so this can only be red on gawk, i.e. on Linux CI.
+        got = _run(["bash", "-c", f"source {lib}; printf '%s' \"$1\" | normalize_segments", "x", "git $'" + body + "'"],
+                   capture_output=True, text=True, env={**os.environ, "LC_ALL": "C.UTF-8"}).stdout.strip()
+        want = f"git {word}" if plain else "git"
+        check(f"guard-bash (#1613): ANSI-C decoder agrees with bash on `$'{body}'`", got == want, f"bash made {word!r}; normaliser said {got!r}")
     # #1504: a depth's strings are normalised as ONE batch, so each must still be judged on its own.
     for cmd, why in (("bash -c 'cat <<EOF'; bash -c 'git add -A'", "an unclosed heredoc in one string does not swallow the next"),
                      ("bash -c \"echo it's\"; bash -c \"eval 'git add -A'\"", "an unbalanced quote in one string does not stop the next being lexed"),
@@ -821,11 +948,11 @@ def guard_bash_fixtures() -> None:
     groups = {"groups": [{"one_of": ["bug", "feature", "enhancement"]},
                          {"when": "bug", "one_of": ["severity:s1", "severity:s2"]}]}
     def labelled(cmd: str, *, declare: bool = True, drop_helper: bool = False,
-                 files: dict[str, str] | None = None) -> tuple[int, str]:
+                 files: dict[str, str | bytes] | None = None) -> tuple[int, str]:
         with tempfile.TemporaryDirectory() as td:
-            for rel, text in (files or {}).items():     # relative scripts the command reads (#1495)
+            for rel, text in (files or {}).items():     # relative scripts the command reads (#1495); bytes for an encoding a text write cannot make (#1671)
                 (Path(td) / rel).parent.mkdir(parents=True, exist_ok=True)
-                (Path(td) / rel).write_text(text, encoding="utf-8")
+                (Path(td) / rel).write_bytes(text) if isinstance(text, bytes) else (Path(td) / rel).write_text(text, encoding="utf-8")
             if declare:
                 (Path(td) / ".rails-flow").mkdir()
                 (Path(td) / ".rails-flow" / "issue-labels.json").write_text(json.dumps(groups), encoding="utf-8")
@@ -905,8 +1032,8 @@ def guard_bash_fixtures() -> None:
             rc, err = labelled(form)
             check(f"guard-bash (#1489 review): `{form.split(sd)[0]}` with a create is refused through the real hook",
                   rc == 2 and "by redirect" in err, err)
-        check("guard-bash (#1489 review): CONTROL: `bash other.sh < file` hands the file to a script as data, allowed",
-              labelled(f"bash other.sh < {script}")[0] == 0)
+        check("guard-bash (#1489 review): CONTROL: `bash <script> < file` hands the file to a script as data, allowed",
+              labelled(f"bash {plain} < {script}")[0] == 0)
         check("guard-bash (#1489 review): CONTROL: `$'…'` before a harmless redirected script is allowed",
               labelled(f"echo $'it\\'s'; bash < {plain}")[0] == 0)
     # A relative script is read from the cd target (#1489 review, through the real hook).
@@ -927,10 +1054,120 @@ def guard_bash_fixtures() -> None:
                      ("bash &>log < bad.sh", "&> is a redirect, not a background &")):
         rc, err = labelled(cmd, files=tree)
         check(f"guard-bash (#1495): `{cmd}` is refused ({why})", rc == 2 and "by redirect" in err and "cannot follow" not in err, err)
-    for cmd, why in (("(cd sub) && bash < only.sh", "the subshell's cd does not outlive it; only.sh is not here"),
-                     ("bash -eo pipefail ok.sh < bad.sh", "a script operand after -eo VALUE reads stdin as data"),
+    rc, err = labelled("(cd sub) && bash < only.sh", files=tree)
+    check("guard-bash (#1515): `(cd sub) && bash < only.sh` is refused: the subshell's cd does not outlive it, so only.sh is not here and "
+          "a script file that cannot be read fails closed", rc == 2 and "cannot read" in err, err)
+    for cmd, why in (("bash -eo pipefail ok.sh < bad.sh", "a script operand after -eo VALUE reads stdin as data"),
                      ("bash 2>&1 < ok.sh", "a harmless script behind 2>&1")):
         check(f"guard-bash (#1495): CONTROL: `{cmd}` is allowed ({why})", labelled(cmd, files=tree)[0] == 0)
+    # #1515 (a): A SCRIPT THE SHELL RUNS THAT THE HELPER NEVER READ. Each refused through the real hook, with a control. The coordinator's call: a
+    # script file that cannot be read is REFUSED (fail closed).
+    for cmd, why in (("bash bad.sh", "a script operand"), ("sh ./bad.sh", "sh with a relative operand"),
+                     ("source bad.sh", "source"), (". bad.sh", "the dot"),
+                     ("cat bad.sh | bash", "cat into a shell"), ("bash <(cat bad.sh)", "a process substitution"),
+                     ('bash -c "$(cat bad.sh)"', "a command string built from the file"),
+                     ('bash 2>&1 <<<"$(cat bad.sh)"', "a herestring built from the file")):
+        rc, err = labelled(cmd, files=tree)
+        check(f"guard-bash (#1515): `{cmd}` is refused ({why})", rc == 2, err)
+    rc, err = labelled("bash -s <<'EOF'\ngh i\\ssue cr\\eate -t X --body y\nEOF")
+    check("guard-bash (#1515): a quoted heredoc fed to `bash -s` has its escapes decoded before matching",
+          rc == 2 and "heredoc" in err, err)
+    for cmd in ("bash gone.sh", "source gone.sh", "cat gone.sh | bash", "bash <(cat gone.sh)"):
+        rc, err = labelled(cmd, files=tree)
+        check(f"guard-bash (#1515): `{cmd}` (a script file that cannot be read) is REFUSED, fail closed", rc == 2 and "cannot read" in err, err)
+    for cmd, why in (("bash ok.sh", "a harmless script"), ("source ok.sh", "source of a harmless one"),
+                     ("cat ok.sh | bash", "cat of a harmless one into a shell"), ("bash <(cat ok.sh)", "a harmless substitution"),
+                     ('bash -c "$(cat ok.sh)"', "a harmless command string"),
+                     ("cat bad.sh | wc -l", "cat of a create script no shell runs"), ('echo "$(cat bad.sh)"', "a substitution no shell runs"),
+                     ('bash "$DIR/run.sh"', "a path the hook cannot resolve is allowed, as before")):
+        check(f"guard-bash (#1515): CONTROL: `{cmd}` is allowed ({why})", labelled(cmd, files=tree)[0] == 0)
+    # #1515 (b): A CREATE INVOKED INDIRECTLY (decided: the gate claims them). The trigger must reach the helper for each.
+    for cmd, why in (("$(echo gh) issue create -t X --body y", "a gh word from a substitution"),
+                     ("G=gh; $G issue create -t X --body y", "a gh word from a variable"),
+                     ("alias g=gh; g issue create -t X --body y", "an alias"),
+                     ("echo issue create -t X --body y | xargs gh", "the verb arriving through xargs"),
+                     ("gh api -X POST repos/o/r/issues -f title=X", "the API with an explicit POST"),
+                     ("gh api repos/o/r/issues -f title=X", "the API, whose fields imply a POST"),
+                     ("gh api --method POST /repos/o/r/issues --field title=X", "the API with long flags")):
+        rc, err = labelled(cmd)
+        check(f"guard-bash (#1515): `{cmd}` is refused ({why})", rc == 2, err)
+    for cmd, why in (("gh api repos/o/r/issues", "a GET of the collection"),
+                     ("gh api -X POST repos/o/r/issues/12/comments -f body=x", "a comment on an issue, not an issue"),
+                     ("alias g=gh; g issue list", "an alias used for something else"),
+                     ("gh issue create -t X --body y --label bug --label severity:s2", "a direct labelled create")):
+        check(f"guard-bash (#1515): CONTROL: `{cmd}` is allowed ({why})", labelled(cmd)[0] == 0)
+    # #1671: a script's encoding must not hide its create. A UTF-8 BOM made the first word `\ufeffgh`; a UTF-16 file read as no command at all.
+    create = b"gh issue create -t x -b y\n"
+    enc_tree = {"bom.sh": b"\xef\xbb\xbf" + create, "plain.sh": create, "u16.sh": create.decode().encode("utf-16"),
+                "u16le.sh": create.decode().encode("utf-16-le"), "bom_ok.sh": b"\xef\xbb\xbfls -la\n"}
+    rc_plain, err_plain = labelled("bash plain.sh", files=enc_tree)
+    check("guard-bash (#1671): CONTROL: the plain script's unlabelled create is refused", rc_plain == 2 and "inside a script" in err_plain, err_plain)
+    for cmd, why in (("bash bom.sh", "a UTF-8 BOM script"), ("source bom.sh", "a UTF-8 BOM script, sourced"), ("bash < bom.sh", "a UTF-8 BOM script on stdin")):
+        rc, err = labelled(cmd, files=enc_tree)
+        check(f"guard-bash (#1671): `{cmd}` is refused ({why})", rc == 2 and "inside a script" in err, err)
+    for cmd, why in (("bash u16.sh", "UTF-16 with its BOM"), ("bash u16le.sh", "UTF-16LE, NUL-interleaved, no BOM")):
+        rc, err = labelled(cmd, files=enc_tree)
+        check(f"guard-bash (#1671): `{cmd}` is refused as unreadable ({why})", rc == 2 and "cannot read" in err, err)
+    check("guard-bash (#1671): CONTROL: a BOM script with no create is allowed", labelled("bash bom_ok.sh", files=enc_tree)[0] == 0)
+    # CodeQL (#1645): a pathological command must not hang the guard. The old pattern backtracked exponentially on repeated `<&>` after a shell word; the
+    # hook has to DECIDE (allow: nothing is created) within its budget, and a hang is the harness's timeout (rc 124, recorded as a failure).
+    for cmd, want, why in (("bash " + "<&>" * 50000 + " ok", 0, "50,000 x `<&>` after a shell word"),
+                           ("bash " + "<&>" * 50000 + "$(echo hi)", 0, "50,000 x `<&>` before an echo substitution"),
+                           ("bash " * 50000, 2, "50,000 shell words (a script file named `bash` cannot be read: refused)"),
+                           ("bash <(echo " * 200, 0, "200 x `bash <(echo ` (each operand re-read by the next marker: exponential)")):
+        began = time.monotonic()
+        rc, err = labelled(cmd)
+        took = time.monotonic() - began
+        check(f"guard-bash (#1645 CodeQL): {why} is decided, not hung (rc {rc}, {took:.1f}s of at most {10 * max(1.0, machine_slowdown()):.0f}s)",
+              rc == want and took < 10 * max(1.0, machine_slowdown()), err)
+    # #1645 R1: a comment line must not swallow the create after it. Each through the real hook (also true on dev before this).
+    for cmd, why in (("# note\ngh issue create -t X --body y", "a comment line, then an unlabelled create"),
+                     ("echo hi # note\ngh issue create -t X --body y", "a trailing comment, then an unlabelled create"),
+                     ("# note\n\ngh issue create -t X --body y", "a comment, a blank line, then an unlabelled create"),
+                     ("# note \\\ngh issue create -t X --body y", "a comment ending in a backslash, then an unlabelled create")):
+        rc, err = labelled(cmd)
+        check(f"guard-bash (#1645 R1): `{cmd!r}` is refused ({why})", rc == 2 and "no --label" in err, err)
+    for cmd, why in (("# note\ngh issue create -t X --body y --label bug --label severity:s2", "a labelled create after a comment"),
+                     ("# gh issue create is how you file one\necho hi", "the command named only inside a comment"),
+                     ("# note \\\ngh issue create -t X --body y --label bug --label severity:s2", "a labelled create after a comment ending in a backslash"),
+                     ('echo "see #12 and #13"', "a # inside double quotes")):
+        check(f"guard-bash (#1645 R1): CONTROL: `{cmd!r}` is allowed ({why})", labelled(cmd)[0] == 0)
+    # #1645 R2: the shapes the gate claims, one spelling away. The trigger must reach the helper for each, and the helper must judge it.
+    tree3 = {"bad.sh": create, "ok.sh": harmless, "args.txt": "issue create -t X --body y\n", "okargs.txt": "issue list\n",
+             "ind.sh": "G=gh; $G issue create -t X\n", "als.sh": "alias g=gh\ng issue create -t X\n",
+             "fn.sh": 'g() { command gh "$@"; }\ng issue create -t X\n', "chain.sh": ". ./bad.sh\n"}
+    for cmd, why in (("alias g='gh issue'; g create -t X", "an alias whose body is `gh issue`"),
+                     ("alias mk='gh issue create'; mk -t X", "an alias whose body is the create"),
+                     ('g() { command gh "$@"; }; g issue create -t X', "a function wrapper"),
+                     ('function g { gh "$@"; }; g issue create -t X', "a `function` keyword wrapper"),
+                     ("xargs -a args.txt gh", "xargs -a FILE"), ("cat args.txt | xargs gh", "a file piped to xargs gh"),
+                     ("echo create | xargs -I{} gh issue {} -t X", "xargs -I{} replacing the verb"),
+                     ('bash -c "$(<bad.sh)"', "$(<f) in a -c string"), ('bash <<< "$(<bad.sh)"', "$(<f) in a herestring"),
+                     ("bash <(<bad.sh)", "a process substitution that reads the file"),
+                     ('eval "$(cat bad.sh)"', "eval of cat"), ('eval "$(<bad.sh)"', "eval of $(<f)"),
+                     ("bash <(echo 'gh issue create -t X')", "a process substitution that echoes the script"),
+                     ("tail -n +1 bad.sh | sh", "tail into a shell"), ("sed 1d bad.sh | bash", "sed into a shell"),
+                     ("grep . bad.sh | sh", "grep into a shell"), ("xargs sh bad.sh", "xargs sh FILE"),
+                     ("find . -exec sh bad.sh \\;", "find -exec sh FILE"),
+                     ("bash ind.sh", "a script that builds the gh word at run time"), ("bash als.sh", "a script that aliases gh"),
+                     ("bash fn.sh", "a script that wraps gh in a function"),
+                     ("sh <<'EOF'\nG=gh; $G issue create -t X\nEOF", "a heredoc fed to a shell that builds the gh word"),
+                     ("sh -c '. bad.sh'", "a -c string that sources the file"), ("sh -c 'bash bad.sh'", "a -c string that runs a shell on the file"),
+                     ("if true; then . bad.sh; fi", "`then . f`"), ("for i in 1; do . bad.sh; done", "`do . f`"),
+                     ("{ . bad.sh; }", "`{ . f; }`"), ("builtin source bad.sh", "builtin source"),
+                     ("command . bad.sh", "command ."), ("time . bad.sh", "time ."), ("! . bad.sh", "`! . f`"),
+                     ("bash chain.sh", "a script that sources a script")):
+        rc, err = labelled(cmd, files=tree3)
+        check(f"guard-bash (#1645 R2): `{cmd}` is refused ({why})", rc == 2, err)
+    for cmd, why in (("alias g='gh issue'; g list", "an alias of `gh issue` used for a list"),
+                     ('g() { gh "$@"; }; g issue list', "a gh wrapper used for a list"),
+                     ("xargs -a okargs.txt gh", "xargs -a FILE naming a list"), ("echo list | xargs -I{} gh issue {}", "xargs -I{} replacing a list verb"),
+                     ('bash -c "$(<ok.sh)"', "$(<f) of a harmless file"), ('eval "$(cat ok.sh)"', "eval of a harmless file"),
+                     ("tail -n +1 ok.sh | sh", "tail of a harmless file into a shell"), ("tail -n +1 bad.sh | wc -l", "tail of a create script no shell runs"),
+                     ("find . -exec echo bad.sh \\;", "find -exec of a command that is not a shell"),
+                     ("sh -c '. ok.sh'", "a -c string that sources a harmless file"), ("if true; then . ok.sh; fi", "`then . f` of a harmless file"),
+                     ("{ . ok.sh; }", "`{ . f; }` of a harmless file"), ("builtin source ok.sh", "builtin source of a harmless file")):
+        check(f"guard-bash (#1645 R2): CONTROL: `{cmd}` is allowed ({why})", labelled(cmd, files=tree3)[0] == 0)
     # #1513 review: shapes the first #1495 version still let through, each through the real hook.
     tree2 = {**tree, "sub/ok.sh": harmless}
     for cmd, why in (("cd sub &>/dev/null; bash < only.sh", "a cd's own redirect is not an argument"),
@@ -1032,6 +1269,7 @@ def guard_bash_fixtures() -> None:
     no_awk = bindir(base + ("grep",), python=True)
     no_python = bindir(base + ("grep", "sed", "tr", "awk"), python=False)
     no_grep = bindir(base + ("sed", "tr", "awk"), python=True)
+    no_tr = bindir(base + ("grep", "sed", "awk"), python=True)
     try:
         check("guard-bash (#1529 review): with no awk, a COMPOUND `cd x && git add -A` is blocked",
               raw(payload("cd x && git add -A"), no_awk) == 2, "exit 0: the anchored rules missed the raw text")
@@ -1057,8 +1295,32 @@ def guard_bash_fixtures() -> None:
               raw(payload("cd x && git status"), no_grep) == 0, "exit 2")
         check("guard-bash (#1529 r3): CONTROL: with no grep, a dry-run `cd x && git clean -n -fd` passes",
               raw(payload("cd x && git clean -n -fd"), no_grep) == 0, "exit 2")
+        # #1545: THE ISSUE-LABEL TRIGGER USED grep AND tr DIRECTLY. With either missing the pipeline failed, the `if` read false and the helper
+        # never ran, so an unlabelled `gh issue create` passed on a machine where every other rule fails closed. Each case below is the SAME
+        # command through the real hook with the tool absent (absolute /usr/bin symlinks, as above), with a control that must still pass.
+        unlabelled = "gh issue create -t X --body y"
+        for tool, bd in (("grep", no_grep), ("tr", no_tr)):
+            check(f"guard-bash (#1545): with no {tool} on PATH, an unlabelled `gh issue create` is still refused",
+                  raw(payload(unlabelled), bd) == 2, "exit 0: the trigger's pipeline failed and the label check was skipped")
+            check(f"guard-bash (#1545): with no {tool} on PATH, a QUOTED verb `gh issue \"create\"` is still refused",
+                  raw(payload('gh issue "create" -t X --body y'), bd) == 2, "exit 0")
+            check(f"guard-bash (#1545): CONTROL: with no {tool} on PATH, a labelled create passes",
+                  raw(payload(unlabelled + " --label bug"), bd) == 0, "exit 2")
+            check(f"guard-bash (#1545): CONTROL: with no {tool} on PATH, an unrelated command passes",
+                  raw(payload("ls -la"), bd) == 0, "exit 2")
+        # THE FAIL-CLOSED PATH PAST THE 64 KB PIPE BUFFER (the #1570 lesson: `grep -q` quits at the first match, `printf` takes SIGPIPE, and
+        # pipefail read that 141 as "no match"): the create FIRST and 10k lines after it, in each environment, still refused.
+        big = unlabelled + "\n" + "".join(f"echo line {i}\n" for i in range(10000))
+        # No grep has no pipe to overflow, and bash's own line-by-line `=~` is quadratic over 10k lines (hit() has always been), so that
+        # environment is checked with a few hundred lines instead.
+        short = unlabelled + "\n" + "".join(f"echo line {i}\n" for i in range(300))
+        for name, bd, text in (("full PATH", None, big), ("no tr", no_tr, big), ("no grep, 300 lines", no_grep, short)):
+            check(f"guard-bash (#1545): a create followed by a long text is still refused ({name})",
+                  (raw(payload(text)) if bd is None else raw(payload(text), bd)) == 2, "exit 0: the long text hid the create from the trigger")
+        check("guard-bash (#1545): CONTROL: 130 KB of text with no create still passes (full PATH)",
+              raw(payload("echo hi\n" + "".join(f"echo line {i}\n" for i in range(10000)))) == 0, "exit 2")
     finally:
-        for bd in (no_awk, no_python, no_grep):
+        for bd in (no_awk, no_python, no_grep, no_tr):
             shutil.rmtree(bd, ignore_errors=True)
     check("guard-bash (#1529 review): a lone surrogate does not hide `git add -A`",
           raw(b'{"tool_input":{"command":"git add -A \\ud800"}}') == 2, "exit 0")
@@ -1113,6 +1375,144 @@ def guard_bash_fixtures() -> None:
             shutil.rmtree(bd, ignore_errors=True)
     check("guard-bash (#1529 r2): CONTROL: with the full PATH, `git clean -n -fd` is still a dry run",
           run("git clean -n -fd") == 0, "exit 2")
+
+
+# ---- guard-bash.sh: db:reset is situational (#1734) ---------------------------------------------------------------------
+# Retask's config/ci.rb REQUIRES a seeded `db:reset` and the guard refused it, recommending a sequence that leaves that project's test DB
+# unseeded (158 specs failed). A project now DECLARES `test-db-seeded: yes` on a line of its own in GUARDRAILS.md. A declaration allows ONE
+# command, `RAILS_ENV=test ... db:reset` run alone; every other reset, and every undeclared project, is refused as before.
+DB_RESET_TEST_FORMS = ("RAILS_ENV=test bin/rails db:reset", "env RAILS_ENV=test bin/rails db:reset", "RAILS_ENV=test bundle exec rails db:reset",
+                       "RAILS_ENV=test rake db:reset", "RAILS_ENV=test bin/rake db:reset", "bin/rails db:reset RAILS_ENV=test",
+                       "  RAILS_ENV=test bin/rails db:reset  ", "RAILS_ENV=test\tbin/rails db:reset")
+# Refused even for a declared project: not the test database, not alone, or not the bare reset.
+DB_RESET_STILL_REFUSED = ("bin/rails db:reset", "RAILS_ENV=development bin/rails db:reset", "RAILS_ENV=production bin/rails db:reset",
+                          "RAILS_ENV=testing bin/rails db:reset", "RAILS_ENV=test bin/rails db:reset && bin/rails db:reset",
+                          "RAILS_ENV=test bin/rails db:reset; bin/rails db:reset", "RAILS_ENV=test bin/rails db:reset | tee log",
+                          "RAILS_ENV=test bin/rails db:reset\nbin/rails db:reset", "RAILS_ENV=test bin/rails db:reset db:seed",
+                          "RAILS_ENV=test RAILS_ENV=development bin/rails db:reset", "RAILS_ENV=development RAILS_ENV=test bin/rails db:reset",
+                          "bin/rails db:reset RAILS_ENV=development", "(RAILS_ENV=test bin/rails db:reset)", "sudo RAILS_ENV=test bin/rails db:reset",
+                          "RAILS_ENV=test bin/rails db:reset\nrm tmp/x", "RAILS_ENV=test bin/rails db:reset\r\nbin/rails db:reset",
+                          "RAILS_ENV=test bin/rails db:reset # then\nbin/rails db:reset", "RAILS_ENV=test bin/rails db:reset `bin/rails db:reset`",
+                          # #1760 review: `[[:space:]]` matched a newline and `=~` anchors only at the ends of the whole string, so a bare assignment on one line and a
+                          # DEVELOPMENT reset on the next was one allowed command.
+                          "RAILS_ENV=test\nbin/rails db:reset", "bin/rails db:reset\nRAILS_ENV=test", "bin/rails db:reset\rRAILS_ENV=test",
+                          "RAILS_ENV=test\n\nbin/rails db:reset", "env RAILS_ENV=test\nbin/rails db:reset", "bundle exec rails db:reset\nRAILS_ENV=test")
+
+
+def guard_bash_db_reset_fixtures() -> None:
+    def project(guardrails: str | None, *, ci_script: bool = False, ci_rb: bool = False) -> Path:
+        root = Path(tempfile.mkdtemp())
+        if guardrails is not None:
+            (root / "GUARDRAILS.md").write_text(guardrails)
+        if ci_script:
+            (root / "bin").mkdir()
+            (root / "bin" / "ci").write_text("#!/bin/sh\n")
+        if ci_rb:
+            (root / "config").mkdir()
+            (root / "config" / "ci.rb").write_text("# CI\n")
+        return root
+
+    def hook(root: Path, stdin: str, cwd: Path | None = None) -> tuple[int, str]:
+        # CLAUDE_PROJECT_DIR is set explicitly: the harness may itself run inside a session whose project is another repository.
+        return run_hook("guard-bash.sh", cwd=cwd or root, stdin=stdin, env_extra={"CLAUDE_PROJECT_DIR": str(root)})
+
+    def run(root: Path, cmd: str, cwd: Path | None = None) -> tuple[int, str]:
+        return hook(root, json.dumps({"tool_input": {"command": cmd}}), cwd)
+
+    seeded = project("# Guardrails\n\n- test-db-seeded: yes\n")
+    plain = project("# Guardrails\n\nNothing declared here.\n")
+    try:
+        for cmd in DB_RESET_TEST_FORMS:
+            rc, out = run(seeded, cmd)
+            check(f"guard-bash (#1734): a project declaring test-db-seeded ALLOWS `{cmd.strip()}`", rc == 0, f"exit {rc}: {out[:120]}")
+        for cmd in DB_RESET_STILL_REFUSED:
+            rc, out = run(seeded, cmd)
+            check(f"guard-bash (#1734): even a declared project is still refused `{cmd!r}`", rc == 2, f"exit {rc}: {out[:120]}")
+        rc, out = run(seeded, "bin/rails db:reset")
+        # Text only the DECLARED message has: the undeclared one also names `RAILS_ENV=test bin/rails db:reset` (as what a declaration would allow).
+        check("guard-bash (#1734): the declared project's refusal says what IS allowed", "this project declares test-db-seeded" in out and "run on its own" in out, out[:200])
+
+        # UNDECLARED: the refusal stays, for every spelling, and a project with a CI script is pointed at it.
+        for cmd in ("bin/rails db:reset", "RAILS_ENV=test bin/rails db:reset", "env RAILS_ENV=test bin/rails db:reset", "bundle exec rails db:reset",
+                    "bundle exec bin/rails db:reset", "RAILS_ENV=test bundle exec rails db:reset", "bundle exec rake db:reset"):
+            rc, out = run(plain, cmd)
+            check(f"guard-bash (#1734): an UNDECLARED project is still refused `{cmd}`", rc == 2 and "db:reset is prohibited" in out, f"exit {rc}: {out[:120]}")
+        check("guard-bash (#1734): CONTROL: the refusal still recommends the unseeded sequence", "db:drop db:create db:schema:load" in out, out[:200])
+        check("guard-bash (#1734): with no CI script the refusal names none", "bin/ci" not in out and "config/ci.rb" not in out, out[:200])
+        check("guard-bash (#1734): the refusal says how to declare the choice", "test-db-seeded: yes" in out, out[:200])
+        check("guard-bash (#1734): the undeclared refusal is not the declared project's message", "this project declares" not in out, out[:200])
+
+        with_ci = project("# Guardrails\n", ci_script=True)
+        with_rb = project("# Guardrails\n", ci_rb=True)
+        both = project("# Guardrails\n", ci_script=True, ci_rb=True)
+        try:
+            rc, out = run(with_ci, "RAILS_ENV=test bin/rails db:reset")
+            check("guard-bash (#1734): an undeclared project WITH bin/ci is told to run bin/ci", rc == 2 and "run bin/ci" in out, f"exit {rc}: {out[:200]}")
+            rc, out = run(with_rb, "RAILS_ENV=test bin/rails db:reset")
+            check("guard-bash (#1734): one with only config/ci.rb is told its CI script", rc == 2 and "config/ci.rb" in out and "run bin/ci" not in out, f"exit {rc}: {out[:200]}")
+            rc, out = run(both, "RAILS_ENV=test bin/rails db:reset")
+            check("guard-bash (#1734): one with both names bin/ci", rc == 2 and "run bin/ci" in out, f"exit {rc}: {out[:200]}")
+        finally:
+            for d in (with_ci, with_rb, both):
+                shutil.rmtree(d, ignore_errors=True)
+
+        # WHAT IS NOT A DECLARATION: a mention, a refusal written as prose, `no`, a different key, a line that continues past the value.
+        not_declared = {
+            "a mention inside a sentence": "# Guardrails\n\nWe never write test-db-seeded: yes here.\n",
+            "a sentence that ENDS with it": "# Guardrails\n\nWe never write test-db-seeded: yes\n",
+            "the value no": "# Guardrails\n\n- test-db-seeded: no\n",
+            "a longer value": "# Guardrails\n\n- test-db-seeded: yes but only on Tuesdays\n",
+            "another key": "# Guardrails\n\n- test-db-seeded-maybe: yes\n",
+            "an empty file": "",
+            "a fenced example": "# Guardrails\n\n```markdown\n- test-db-seeded: yes\n```\n",
+            "a tilde-fenced example": "# Guardrails\n\n~~~\ntest-db-seeded: yes\n~~~\n",
+            "an indented code example": "# Guardrails\n\nAdd this:\n\n    - test-db-seeded: yes\n",
+            "a tab-indented example": "# Guardrails\n\nAdd this:\n\ttest-db-seeded: yes\n",
+            "an unclosed fence": "# Guardrails\n\n```\n- test-db-seeded: yes\n",
+            "an HTML comment spanning lines": "# Guardrails\n\n<!--\n- test-db-seeded: yes\n-->\n",
+            "a one-line HTML comment": "# Guardrails\n\n<!-- - test-db-seeded: yes -->\n",
+            "an unclosed HTML comment": "# Guardrails\n\n<!--\n- test-db-seeded: yes\n",
+        }
+        for why, text in not_declared.items():
+            root = project(text)
+            try:
+                rc, out = run(root, "RAILS_ENV=test bin/rails db:reset")
+                check(f"guard-bash (#1734): {why} does not declare it, so the reset is refused", rc == 2, f"exit {rc}: {out[:120]}")
+            finally:
+                shutil.rmtree(root, ignore_errors=True)
+        # ...and the spellings of a real declaration that ARE one (the line may be bulleted, backticked, or bare).
+        for text in ("- `test-db-seeded: yes`\n", "* test-db-seeded: yes\n", "test-db-seeded: yes\n", "  - test-db-seeded:   yes  \n", "x\r\n- test-db-seeded: yes\n",
+                 "```sh\nexample\n```\n- test-db-seeded: yes\n", "   - test-db-seeded: yes\n",
+                 "<!-- note -->\n- test-db-seeded: yes\n", "<!--\nnote\n-->\n- test-db-seeded: yes\n"):
+            root = project("# Guardrails\n\n" + text)
+            try:
+                rc, out = run(root, "RAILS_ENV=test bin/rails db:reset")
+                check(f"guard-bash (#1734): the declaration {text.strip()!r} is read", rc == 0, f"exit {rc}: {out[:120]}")
+            finally:
+                shutil.rmtree(root, ignore_errors=True)
+
+        # FAIL CLOSED: an unreadable payload cannot show which env the command sets, so even a declared project is refused.
+        rc, out = hook(seeded, "RAILS_ENV=test bin/rails db:reset")
+        check("guard-bash (#1734): a payload the hook cannot parse is refused even for a declared project", rc == 2, f"exit {rc}: {out[:120]}")
+        # The declaration is read from the PROJECT (CLAUDE_PROJECT_DIR), not from wherever the command's shell happens to be.
+        elsewhere = Path(tempfile.mkdtemp())
+        try:
+            rc, out = run(seeded, "RAILS_ENV=test bin/rails db:reset", cwd=elsewhere)
+            check("guard-bash (#1734): the declaration is read from the project directory, not the shell's cwd", rc == 0, f"exit {rc}: {out[:120]}")
+            rc, out = run(plain, "RAILS_ENV=test bin/rails db:reset", cwd=elsewhere)
+            check("guard-bash (#1734): CONTROL: an undeclared project is refused from the same cwd", rc == 2, f"exit {rc}: {out[:120]}")
+            # No CLAUDE_PROJECT_DIR (a plain terminal): the git root or cwd decides.
+            rc, out = run_hook("guard-bash.sh", cwd=seeded, unset=("CLAUDE_PROJECT_DIR",),
+                               stdin=json.dumps({"tool_input": {"command": "RAILS_ENV=test bin/rails db:reset"}}))
+            check("guard-bash (#1734): with no CLAUDE_PROJECT_DIR the working directory's GUARDRAILS.md is read", rc == 0, f"exit {rc}: {out[:120]}")
+        finally:
+            shutil.rmtree(elsewhere, ignore_errors=True)
+        # Other rules are untouched by a declaration.
+        rc, out = run(seeded, "git add -A")
+        check("guard-bash (#1734): CONTROL: a declaration does not relax `git add -A`", rc == 2, f"exit {rc}: {out[:120]}")
+    finally:
+        for d in (seeded, plain):
+            shutil.rmtree(d, ignore_errors=True)
 
 
 # ---- guard-claims.sh (#1106) --------------------------------------------------------------------
@@ -1595,8 +1995,7 @@ def guard_claims_fixtures() -> None:
                 _run(["git", *args], cwd=root, capture_output=True)
             target.write_text("x\n", encoding="utf-8")
             _run(["git", "add", "-A"], cwd=root, capture_output=True)
-            _run(["git", "-c", "user.email=f@e", "-c", "user.name=f",
-                            "commit", "-qm", "base"], cwd=root, capture_output=True)
+            _fixture_git(root, "commit", "-qm", "base", check=False)
             target.write_text("changed\n", encoding="utf-8")
             return run_hook("guard-claims.sh", cwd=root,
                             stdin=json.dumps({"tool_input": {
@@ -1629,8 +2028,7 @@ def guard_claims_fixtures() -> None:
             (a / "skills" / "x.md").write_text("x\n", encoding="utf-8")
             for d in (a, b):
                 _run(["git", "add", "-A"], cwd=d, capture_output=True)
-                _run(["git", "-c", "user.email=f@e", "-c", "user.name=f", "commit", "-qm", "base"],
-                     cwd=d, capture_output=True)
+                _fixture_git(d, "commit", "-qm", "base", check=False)
             (a / "skills" / "x.md").write_text("changed\n", encoding="utf-8")
             # STAGED, because another repository is read through its staged diff only (no code from the target,
             # #1516): an unstaged change would let a hook that read the wrong repository look right.
@@ -1667,8 +2065,7 @@ def guard_claims_fixtures() -> None:
             (b / "skills" / "x.md").write_text("x\n", encoding="utf-8")
             for d in (a, b):
                 _run(["git", "add", "-A"], cwd=d, capture_output=True)
-                _run(["git", "-c", "user.email=f@e", "-c", "user.name=f", "commit", "-qm", "base"],
-                     cwd=d, capture_output=True)
+                _fixture_git(d, "commit", "-qm", "base", check=False)
             (b / "README.md").write_text("changed\n", encoding="utf-8")        # a working-tree change to hash
             if stage_skills:
                 (b / "skills" / "x.md").write_text("changed\n", encoding="utf-8")
@@ -1704,8 +2101,7 @@ def guard_claims_fixtures() -> None:
                 _run(["git", "init", "-q", "-b", "main"], cwd=d, capture_output=True)
                 (d / "README.md").write_text("x\n", encoding="utf-8")
                 _run(["git", "add", "-A"], cwd=d, capture_output=True)
-                _run(["git", "-c", "user.email=f@e", "-c", "user.name=f", "commit", "-qm", "base"],
-                     cwd=d, capture_output=True)
+                _fixture_git(d, "commit", "-qm", "base", check=False)
             big = a if big_repo == "session" else b
             (big / "skills").mkdir()
             for i in range(2500):
@@ -1733,6 +2129,9 @@ def guard_claims_fixtures() -> None:
 
 
 # ---- release-gate.sh (qa-flow) shares the normaliser: drive it too, or the "one normaliser" claim is prose (#906) ----
+# #1720: the shell-adversary's inputs against the classifier-missing fallback at cc80da33; every one must be refused.
+ADVERSARY_1720 = ('git -C $(pwd) push origin main', 'git -C "$(pwd)" push origin main', "'git' push origin main", 'git push origin main', 'git -c x=y push origin main', 'git push origin HEAD:main', 'git push origin +main', 'git push origin HEAD:refs/heads/main', 'git push --all', 'git push --mirror', 'git push origin HEAD:heads/main', '\\git push origin main', 'g\\it push origin main', "git $'\\x70ush' origin main", "git pu''sh origin main", 'git "push" origin main', 'env GIT_DIR=. git push origin main', 'command git push origin main', 'echo git push origin main | xargs -0 sh -c', 'echo main | xargs git push origin', 'eval "git push origin main"', "eval 'g''it pu''sh origin main'", "git push origin ma''in", 'git push origin "ma"in', "git push origin $'ma\\x69n'", 'git push origin m\\ain', 'git push origin mai[n]', 'git push origin ma{in,}', 'git push origin $(echo main)', 'git push origin $BR', 'git push', 'git push origin HEAD', 'git checkout main; git merge dev', 'git merge dev', 'git -C . merge origin/dev', 'git "merge" dev', "git me''rge dev", 'git pull origin main', 'git pull', 'git rebase dev', 'git cherry-pick abc', 'git reset --hard origin/main', 'git fetch origin main:main', 'git update-ref refs/heads/main HEAD', 'git branch -f main HEAD', 'git push origin dev:main', 'git push . HEAD:main', 'git push origin :main', 'git push origin HEAD:master', 'git send-pack origin main', 'gh pr merge 5', 'gh pr merge 5 --squash', 'gh api -X PUT repos/a/b/pulls/5/merge', 'git push origin dev', 'git branch -C dev main', 'git branch -m dev main', 'git branch -fm dev main', 'git branch -c -f dev main', 'git checkout -B main dev', 'git switch -C main dev', 'git worktree add -B main ../w2 dev', 'gh api -X POST repos/a/b/merges', 'gh api repos/a/b/merges -f base=main', 'gh workflow run release.yml', 'gh m 5', 'gh alias set m pr merge', 'git-push origin main')
+
 QA_HOOK = HOOKS.parents[2] / "qa-flow" / "hooks" / "scripts" / "release-gate.sh"
 
 
@@ -1782,6 +2181,12 @@ def release_gate_fixtures() -> None:
         check(f"release-gate: `{cmd}` targets main and is blocked without a certification", run(cmd) == 2, "exit 0")
     for cmd in ('git commit -m "push origin main"', 'echo "git push origin main"', "# git push origin main", "git push origin feature/x"):
         check(f"release-gate: `{cmd}` does not target main and passes", run(cmd) == 0, "exit 2")
+    # (#1768) A bare `git config <key>` READS the key, whichever it is: the refusal of `git config core.hooksPath` blocked a session's read-only inspection command.
+    for cmd in ("git config core.hooksPath", "git config --local core.hooksPath",
+                "cd /tmp; grep -n 'ref:' ci.yml | head -3; git log -1 --format='%h %cd' --date=short -- ci.yml; git config core.hooksPath; sed -n 3p STATUS.md"):
+        check(f"release-gate (#1768): `{cmd}` is a read-only inspection and passes", run(cmd) == 0, "exit 2")
+    for cmd in ("git config core.hooksPath /tmp/x", "git config --local core.hooksPath ''", "git config --unset core.hooksPath", "git config --add core.hooksPath /tmp/x"):
+        check(f"release-gate (#1768): `{cmd}` WRITES the key and is still refused", run(cmd) == 2, "exit 0")
     # #1410: `main`/`master` INSIDE a branch name is not a destination. Both were refused
     # downstream on one day, and both authors renamed the branch to get past the gate.
     for cmd in ("git push -u origin fix/1010-one-main", "git push origin feature/main-menu",
@@ -1833,14 +2238,23 @@ def release_gate_fixtures() -> None:
     with tempfile.TemporaryDirectory() as bare_root:
         check("release-gate (#1410): parser missing -> a quoted `main` push is still blocked",
               run('git push origin "main"', plugin_root=Path(bare_root)) == 2, "exit 0")
-        check("release-gate (#1410): parser missing -> CONTROL: a feature push still passes",
-              run("git push origin feature/x", plugin_root=Path(bare_root)) == 0, "exit 2")
+        # #1720: without the classifier the gate fails closed BY SHAPE, so a feature push is refused too (reinstall the plugin).
+        check("release-gate (#1720): parser missing -> even a feature push is refused (the fallback fails closed by shape)",
+              run("git push origin feature/x", plugin_root=Path(bare_root)) == 2, "exit 0")
         # #1472: without the parser the shared normaliser decides, and it now sees inside a shell string.
         for cmd in ("bash -c 'git push origin main'", 'eval "git push origin main"', "command git push origin main"):
             check(f"release-gate (#1472): parser missing -> `{cmd}` is blocked",
                   run(cmd, plugin_root=Path(bare_root)) == 2, "exit 0")
-        check("release-gate (#1472): parser missing -> CONTROL: `bash -c 'git push origin feature/x'` passes",
-              run("bash -c 'git push origin feature/x'", plugin_root=Path(bare_root)) == 0, "exit 2")
+        check("release-gate (#1720): parser missing -> `bash -c 'git push origin feature/x'` is refused too",
+              run("bash -c 'git push origin feature/x'", plugin_root=Path(bare_root)) == 2, "exit 0")
+        # #1720: the normaliser splits a command substitution into its own segment, so `git -C $(pwd) push` reached the fallback as
+        # `git` | `pwd` | `push origin main` and was allowed; the fallback now also reads git and push as words of the RAW command.
+        for cmd in ("git -C $(pwd) push origin main", 'git -C "$(pwd)" push origin main', "git --git-dir=$(pwd)/.git push origin main"):
+            check(f"release-gate (#1720): parser missing -> `{cmd}` is blocked",
+                  run(cmd, plugin_root=Path(bare_root)) == 2, "exit 0")
+        on_main = (("checkout", "-q", "-B", "main"),)  # -B: the runner's git init may name its first branch master
+        check("release-gate (#1720): parser missing -> `git -C $(pwd) merge` with HEAD on main is blocked",
+              run("git -C $(pwd) merge feature/work", plugin_root=Path(bare_root), git_config=on_main) == 2, "exit 0")
 
     # THE DISCRIMINATING PAIR for the marketplace carve-out. The same command, the same absence of
     # a certification, and the ONLY difference is `.claude-plugin/marketplace.json`. Without the
@@ -1897,11 +2311,10 @@ def release_gate_fixtures() -> None:
 
     # #1337. The stamp is bound to the tested dev sha; committing it to dev by PR moves dev. The gate
     # accepts an ANCESTOR of dev only when the delta since is the stamp itself.
-    g = ["git", "-c", "user.email=t@t", "-c", "user.name=t"]
     with tempfile.TemporaryDirectory() as td:
         repo = Path(td)
         _git_repo(repo)
-        sh = lambda *a: _run([*g, *a], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+        sh = lambda *a: _fixture_git(repo, *a, check=True, capture_output=True, text=True).stdout.strip()
         (repo / "app.rb").write_text("v1\n", encoding="utf-8")
         sh("add", "app.rb"); sh("commit", "-q", "-m", "app")
         tested = sh("rev-parse", "HEAD")
@@ -1913,7 +2326,7 @@ def release_gate_fixtures() -> None:
         # #1428 cutoff -- so they are committed with an old committer date.
         old_env = {**os.environ, "GIT_COMMITTER_DATE": "2026-09-01T00:00:00+00:00",
                    "GIT_AUTHOR_DATE": "2026-09-01T00:00:00+00:00"}
-        sh_old = lambda *a: _run([*g, *a], cwd=repo, check=True, capture_output=True, text=True,
+        sh_old = lambda *a: _fixture_git(repo, *a, check=True, capture_output=True, text=True,
                                            env=old_env).stdout.strip()
 
         def gate() -> tuple[int, str]:
@@ -1935,6 +2348,67 @@ def release_gate_fixtures() -> None:
         # tell it from the real one (#1571, measured on both). Only stage 1 says to run /qa-flow:certify.
         check("release-gate (#1428): an UNCOMMITTED stamp is denied -- main would not receive it",
               rc == 2 and "no qa/CERTIFICATION is committed at" in err and "Run /qa-flow:certify against staging" in err, err)
+        # #1657 review: the gate's own text tools are not byte-safe in a UTF-8 locale. macOS `tr` (the git/gh pre-check) and BSD `grep` stop at an invalid
+        # byte and drop the REST of the command, and macOS `sed` (inside the normaliser) aborts: `echo \xff` + a newline + a push read as no git at all and
+        # was allowed. The hook pins `LC_ALL=C` itself, whatever the caller's locale; a normaliser that yields nothing for a command that is not empty is
+        # "could not read", which refuses in the degraded (no classifier) path. Run under en_US.UTF-8 ON PURPOSE. GNU tools are byte-safe whatever the
+        # locale, so on Linux these would pass either way and every mutant below would survive (#1729): the shims put BSD's behaviour on PATH there too.
+        import shutil
+
+        bsd_shims = bsd_text_shims()      # #1729: BSD's behaviour on this host too, or a dropped `LC_ALL=C` pin is an equivalent mutant on Linux
+
+        def gate_bytes(payload: bytes, root: Path | None = None, path_prefix: Path | None = None) -> int:
+            e = {**env, "LC_ALL": "en_US.UTF-8"}
+            e["PATH"] = f"{bsd_shims}{os.pathsep}{e['PATH']}"
+            if root is not None:
+                e["CLAUDE_PLUGIN_ROOT"] = str(root)
+            if path_prefix is not None:
+                e["PATH"] = f"{path_prefix}{os.pathsep}{e['PATH']}"
+            done = _run(["bash", str(QA_HOOK)], cwd=repo, env=e, capture_output=True, timeout=60, input=payload)
+            return gate_exit(done.returncode, done.stderr)
+
+        with tempfile.TemporaryDirectory() as ubtd:
+            ub_root = Path(ubtd) / "qa-flow"
+            shutil.copytree(QA_HOOK.parents[2], ub_root, ignore=shutil.ignore_patterns("push_targets.py", "__pycache__"))
+            check("release-gate (#1657): an invalid byte on an EARLIER line does not hide a push to main under a UTF-8 locale",
+                  gate_bytes(b"echo \xff\ngit push origin main\n") == 2, "exit != 2")
+            check("release-gate (#1657): CONTROL: the same push without the invalid byte is refused",
+                  gate_bytes(b"echo ok\ngit push origin main\n") == 2, "exit != 2")
+            check("release-gate (#1657): CONTROL: without the classifier, an invalid byte with no push in the command is not itself a refusal",
+                  gate_bytes(b"echo \xff\ngit status\n", ub_root) == 0, "exit != 0")
+            check("release-gate (#1657): without the classifier, an invalid byte on an earlier line does not hide a push to main",
+                  gate_bytes(b"echo \xff\ngit push origin main\n", ub_root) == 2, "exit != 2")
+            check("release-gate (#1657): without the classifier, a command the normaliser reads as NOTHING (only comments) is refused, not passed",
+                  gate_bytes(b"# git push origin main", ub_root) == 2, "exit != 2")
+            # BSD grep stops matching at an invalid byte EARLIER ON THE SAME LINE under a UTF-8 locale (an earlier LINE is fine), so the fallback's `main|master` match
+            # read `echo \xff; git push origin main` as no main: the greps run under LC_ALL=C. Two spellings of the invalid byte (\xff, and \xe9 which is a valid
+            # Latin-1 letter but not valid UTF-8).
+            check("release-gate (#1657): without the classifier, an invalid byte EARLIER ON THE SAME LINE does not hide a push to main",
+                  gate_bytes(b"echo \xff; git push origin main", ub_root) == 2, "exit != 2")
+            check("release-gate (#1657): without the classifier, a Latin-1 byte before `&& git push origin main` does not hide it",
+                  gate_bytes(b"echo \xe9 && git push origin main", ub_root) == 2, "exit != 2")
+            # The gh api / release promotion check reads the RAW command (unanchored: `merge|refs|releases|...`), and BSD grep stops at an invalid byte earlier on the
+            # same line: `echo \xff; gh api -X PUT repos/o/r/merges -f base=main` merged into main with no classifier (the pin on that grep is what refuses it).
+            check("release-gate (#1657): without the classifier, an invalid byte before a `gh api` merge does not hide it",
+                  gate_bytes(b"echo \xff; gh api -X PUT repos/o/r/merges -f base=main", ub_root) == 2, "exit != 2")
+            # A normaliser that FAILS (an awk that passes its input through and exits 2) is "could not read": refused. The pass-through keeps the output non-empty, so
+            # the empty-output refusal cannot be what refuses; and `FOO=1 git push …` is not anchored without the peel, so the raw text cannot be what refuses either.
+            with tempfile.TemporaryDirectory() as sbtd:
+                stub = Path(sbtd) / "awk"
+                stub.write_text("#!/bin/sh\ncat\nexit 2\n", encoding="utf-8"); stub.chmod(0o755)
+                check("release-gate (#1657): without the classifier, a normaliser that fails (awk exits 2) is refused, not read as nothing to judge",
+                      gate_bytes(b"FOO=1 git push origin main\n", ub_root, stub.parent) == 2, "exit != 2")
+            check("release-gate (#1657): CONTROL: the same command is judged and refused by the real normaliser too",
+                  gate_bytes(b"FOO=1 git push origin main\n", ub_root) == 2, "exit != 2")
+            check("release-gate (#1657): CONTROL: without the classifier, a git command that is not a push passes with the real normaliser",
+                  gate_bytes(b"FOO=1 git status\n", ub_root) == 0, "exit != 0")
+            # The classifier decodes strictly in a UTF-8 locale; an invalid byte made it fail and the gate refused even a `git status`, naming nothing. Under C it judges the command.
+            check("release-gate (#1657): with the classifier, an invalid byte in a command that is not a push does not refuse it",
+                  gate_bytes(b"echo \xff\ngit status\n") == 0, "exit != 0")
+            # `grep -q` closes its pipe at the first match; under `set -o pipefail` a producer still writing (a segment over the pipe buffer, 64 KB) dies of
+            # SIGPIPE and the pipeline reads 141, which skipped the `&&` branch: a push on the FIRST line of a long command was not seen (a fail-open).
+            check("release-gate (#1657): without the classifier, a push on the first line of a 120 KB command is refused (grep -q must not read 141)",
+                  gate_bytes(b"git push origin main\n" + b"x\n" * 60000, ub_root) == 2, "exit != 2")
         sh("add", "qa/CERTIFICATION"); sh_old("commit", "-q", "-m", "stamp")
         rc, err = gate()
         check("release-gate (#1337): the stamp committed on top of the tested sha still permits", rc == 0, err)
@@ -1948,8 +2422,9 @@ def release_gate_fixtures() -> None:
             done = _run(["bash", str(QA_HOOK)], cwd=repo, env={**env, "CLAUDE_PLUGIN_ROOT": str(fb_root)},
                         capture_output=True, text=True, timeout=60,
                         input=json.dumps({"tool_input": {"command": "git push origin main"}}))
-        check("release-gate (#1337): without the classifier, dev's tip is read and a missing origin/dev does not poison it",
-              done.returncode == 0, done.stderr)
+        # #1720: without the classifier a push is refused by shape, even a certified one; the audited override is the way through.
+        check("release-gate (#1720): without the classifier, even a certified push is refused, naming the reinstall",
+              done.returncode == 2 and "reinstall the plugin" in done.stderr, done.stderr)
         (repo / "app.rb").write_text("v2\n", encoding="utf-8")
         sh("commit", "-q", "-am", "untested change")
         rc, err = gate()
@@ -1975,7 +2450,7 @@ def release_gate_fixtures() -> None:
     with tempfile.TemporaryDirectory() as td:
         repo = Path(td)
         _git_repo(repo)
-        sh = lambda *a: _run([*g, *a], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()
+        sh = lambda *a: _fixture_git(repo, *a, check=True, capture_output=True, text=True).stdout.strip()
         (repo / "app.rb").write_text("v1\n", encoding="utf-8")
         sh("add", "app.rb"); sh("commit", "-q", "-m", "app")
         # Work on a branch that is not `main`: main is the last PUBLISHED release, and evidence
@@ -2098,7 +2573,7 @@ def release_gate_fixtures() -> None:
         old_stamp = {k: v for k, v in new_stamp.items() if k in ("date", "verdict", "report")}
         old_stamp["sha"] = sh("rev-parse", "HEAD")
         (repo / "qa" / "CERTIFICATION").write_text(json.dumps(old_stamp), encoding="utf-8")
-        _run([*g, "commit", "-q", "-am", "an old-style stamp"], cwd=repo, check=True, capture_output=True,
+        _fixture_git(repo, "commit", "-q", "-am", "an old-style stamp", check=True, capture_output=True,
                        env={**os.environ, "GIT_COMMITTER_DATE": "2026-09-01T00:00:00+00:00"})
         rc, err = gate2()
         check("release-gate (#1428): an old stamp is grandfathered -- it permits, and says re-certify",
@@ -2220,11 +2695,10 @@ GH_ERROR_BODY = ('{"data":{"node":null},"errors":[{"type":"NOT_FOUND","path":["n
 
 
 def release_gate_effects_fixtures() -> None:
-    g = ["git", "-c", "user.email=t@t", "-c", "user.name=t"]
     with tempfile.TemporaryDirectory() as td:
         repo = Path(td) / "repo"
         _git_repo(repo)
-        sh = lambda *a, **kw: _run([*g, *a], cwd=repo, check=True, capture_output=True, text=True, **kw).stdout.strip()
+        sh = lambda *a, **kw: _fixture_git(repo, *a, check=True, capture_output=True, text=True, **kw).stdout.strip()
         old = {**os.environ, "GIT_COMMITTER_DATE": "2026-09-01T00:00:00+00:00", "GIT_AUTHOR_DATE": "2026-09-01T00:00:00+00:00"}
         # THIS checkout is github.com/o/r (so `repos/o/r/...` and `-R o/r` name it, and nothing else does),
         # and the remote's refs live in a local bare repo behind insteadOf, so `git ls-remote origin`
@@ -2676,11 +3150,10 @@ def release_gate_refs_fixtures() -> None:
     if not QA_HOOK.is_file():
         check("release-gate (#1600): release-gate.sh present beside rails-flow", False, str(QA_HOOK))
         return
-    g = ["git", "-c", "user.email=t@t", "-c", "user.name=t"]
     with tempfile.TemporaryDirectory() as td:
         repo = Path(td) / "repo"
         _git_repo(repo)
-        sh = lambda *a, **kw: _run([*g, *a], cwd=repo, check=True, capture_output=True, text=True, **kw).stdout.strip()
+        sh = lambda *a, **kw: _fixture_git(repo, *a, check=True, capture_output=True, text=True, **kw).stdout.strip()
         old = {**os.environ, "GIT_COMMITTER_DATE": "2026-09-01T00:00:00+00:00", "GIT_AUTHOR_DATE": "2026-09-01T00:00:00+00:00"}
         bare = Path(td) / "origin.git"
         _run(["git", "init", "-q", "--bare", str(bare)], check=True, capture_output=True)
@@ -2756,7 +3229,7 @@ def release_gate_refs_fixtures() -> None:
         # A stamp is data from the repository being promoted: its `sha` is a commit id, never an option.
         bad = Path(td) / "badstamp"
         _git_repo(bad)
-        bsh = lambda *a, **kw: _run([*g, *a], cwd=bad, check=True, capture_output=True, text=True, **kw).stdout.strip()
+        bsh = lambda *a, **kw: _fixture_git(bad, *a, check=True, capture_output=True, text=True, **kw).stdout.strip()
         _run(["git", "checkout", "-q", "-B", "main"], cwd=bad, check=True, capture_output=True)
         (bad / "qa").mkdir()
         (bad / "qa" / "CERTIFICATION").write_text(json.dumps(
@@ -2876,11 +3349,10 @@ def release_gate_refs_fixtures() -> None:
 
 @real_setup
 def release_gate_repos_fixtures() -> None:
-    g = ["git", "-c", "user.email=t@t", "-c", "user.name=t"]
     with tempfile.TemporaryDirectory() as td:
         repo = Path(td) / "repo"
         _git_repo(repo)
-        sh = lambda *a, **kw: _run([*g, *a], cwd=repo, check=True, capture_output=True, text=True, **kw).stdout.strip()
+        sh = lambda *a, **kw: _fixture_git(repo, *a, check=True, capture_output=True, text=True, **kw).stdout.strip()
         old = {**os.environ, "GIT_COMMITTER_DATE": "2026-09-01T00:00:00+00:00", "GIT_AUTHOR_DATE": "2026-09-01T00:00:00+00:00"}
         bare = Path(td) / "origin.git"
         _run(["git", "init", "-q", "--bare", str(bare)], check=True, capture_output=True)
@@ -2913,8 +3385,13 @@ def release_gate_repos_fixtures() -> None:
         # another checkout, on main, whose dev has no stamp at all
         sub = Path(td) / "sub"
         _git_repo(sub)
-        _run([*g, "checkout", "-q", "-B", "main"], cwd=sub, check=True, capture_output=True)
-        _run([*g, "branch", "dev"], cwd=sub, check=True, capture_output=True)
+        _fixture_git(sub, "checkout", "-q", "-B", "main", check=True, capture_output=True)
+        _fixture_git(sub, "branch", "dev", check=True, capture_output=True)
+        # a checkout on a feature branch that a command names through the HOME directory (#1764): HOME is this temp dir, so `~/feat` is it
+        feat = Path(td) / "feat"
+        _git_repo(feat)
+        _fixture_git(feat, "checkout", "-q", "-b", "fix/issue-1764-x", check=True, capture_output=True)
+        _fixture_git(feat, "remote", "add", "origin", "https://github.com/o/r.git", check=True, capture_output=True)
         (Path(td) / "bin").mkdir()
         (Path(td) / "bin" / "gh").write_text(FAKE_GH2, encoding="utf-8")
         (Path(td) / "bin" / "gh").chmod(0o755)
@@ -3018,6 +3495,50 @@ def release_gate_repos_fixtures() -> None:
         check("release-gate (#1569): CONTROL: a cd with no merge or push passes", rc == 0, f"rc={rc} {err[:240]!r}")
         rc, err = run("git merge dev")
         check("release-gate (#1569): CONTROL: `git merge dev` off main in this checkout is not a promotion", rc == 0, f"rc={rc} {err[:240]!r}")
+        # (3b) #1764: A DIRECTORY NAMED THROUGH THE HOME DIRECTORY. The hook is handed the RAW command, which no shell has expanded, so `~/feat` and `$HOME/feat`
+        # are text. Read as relative paths they name nothing, the push's HEAD cannot be resolved, and a feature-branch push in another checkout was refused
+        # ("cannot tell which commit or repository"). HOME is this fixture's temp dir, so `~/feat` is the feature checkout and `~/sub` the one on main.
+        home = {"HOME": str(td)}
+        for label, cmd in (
+            ("`git -C ~/feat push -u origin HEAD`", "git -C ~/feat push -u origin HEAD"),
+            ("`cd ~/feat && git push -u origin HEAD 2>&1 | tail -2`", "cd ~/feat && git push -u origin HEAD 2>&1 | tail -2"),
+            ("`git -C $HOME/feat push -u origin HEAD`", "git -C $HOME/feat push -u origin HEAD"),
+            ("`git -C ${HOME}/feat push -u origin HEAD`", "git -C ${HOME}/feat push -u origin HEAD"),
+            ("`cd $HOME/feat && git push -u origin HEAD`", "cd $HOME/feat && git push -u origin HEAD"),
+            ("`git -C \"$HOME/feat\" push -u origin HEAD` (double-quoted: the shell expands `$HOME` inside quotes)", "git -C \"$HOME/feat\" push -u origin HEAD"),
+            ("the same push by absolute path (the control)", f"git -C {feat} push -u origin HEAD"),
+        ):
+            rc, err = run(cmd, **home)
+            check(f"release-gate (#1764): {label} pushes a FEATURE branch of another checkout and passes", rc == 0, f"rc={rc} {err[:240]!r}")
+        for label, cmd in (
+            ("`git -C ~/feat push -u origin main`", "git -C ~/feat push -u origin main"),
+            ("`cd ~/feat && git push origin main`", "cd ~/feat && git push origin main"),
+            ("`git -C $HOME/feat push origin HEAD:main`", "git -C $HOME/feat push origin HEAD:main"),
+            ("`git -C ~/sub push -u origin HEAD` (that checkout is ON main: HEAD must resolve THERE, not in this feature checkout)", "git -C ~/sub push -u origin HEAD"),
+            ("`cd ~/sub && git push`", "cd ~/sub && git push"),
+        ):
+            rc, err = run(cmd, **home)
+            check(f"release-gate (#1764): {label} reaches main and is blocked", rc == 2, f"rc={rc} {err[:240]!r}")
+        for label, cmd in (
+            ("a directory that is not there", "git -C ~/nonexistent push -u origin HEAD"),
+            ("`cd` into a directory that is not there", "cd ~/nonexistent && git push -u origin HEAD"),
+            ("another user's home (`~someone`), which this hook cannot expand", "git -C ~someone/feat push -u origin HEAD"),
+            ("another variable (`$ELSEWHERE`)", "git -C $ELSEWHERE/feat push -u origin HEAD"),
+        ):
+            rc, err = run(cmd, **home)
+            check(f"release-gate (#1764): {label} cannot be read, so the push is blocked", rc == 2, f"rc={rc} {err[:240]!r}")
+        for label, cmd in (
+            ("a single-quoted `~/feat` (the shell does not expand it: git is handed a literal directory named `~`)", "git -C '~/feat' push -u origin HEAD"),
+            ("a double-quoted `\"~/feat\"` (a `~` is not expanded inside quotes)", 'git -C "~/feat" push -u origin HEAD'),
+            ("a backslash-escaped `\\~/feat`", "git -C \\~/feat push -u origin HEAD"),
+            ("a single-quoted `'$HOME/feat'`", "git -C '$HOME/feat' push -u origin HEAD"),
+            ("a `cd` into a quoted `'~/feat'`", "cd '~/feat' && git push -u origin HEAD"),
+            ("an unquoted `~/feat` AND a quoted `'~/feat'` in one command (the spelling is ambiguous)", "git -C ~/feat status; git -C '~/feat' push -u origin HEAD"),
+        ):
+            rc, err = run(cmd, **home)
+            check(f"release-gate (#1764): {label} is not the home directory and the push is blocked", rc == 2, f"rc={rc} {err[:240]!r}")
+        rc, err = run("git -C ~/feat push -u origin HEAD", HOME="")
+        check("release-gate (#1764): with no HOME at all `~/feat` cannot be expanded, so the push is blocked", rc == 2, f"rc={rc} {err[:240]!r}")
         # (4) The ARGUMENT the command acts on, not another one in the command line.
         rc, err = run("gh pr merge -b 8 7", FAKE_PRVIEW_7=f"main {hot}", FAKE_PRVIEW_8=f"dev {stamped}")
         check("release-gate (#1569): `gh pr merge -b 8 7` merges PR 7 (not the 8 that is the body) and is judged on PR 7's head",
@@ -3117,11 +3638,11 @@ def release_gate_repos_fixtures() -> None:
         # The marketplace exemption needs the marketplace's identity, even after a cd into a directory that has the file.
         spoof = Path(td) / "spoof"
         _git_repo(spoof)
-        _run([*g, "checkout", "-q", "-B", "main"], cwd=spoof, check=True, capture_output=True)
+        _fixture_git(spoof, "checkout", "-q", "-B", "main", check=True, capture_output=True)
         (spoof / ".claude-plugin").mkdir()
         (spoof / ".claude-plugin" / "marketplace.json").write_text('{"name":"x","plugins":[]}', encoding="utf-8")
-        _run([*g, "remote", "add", "origin", "https://github.com/acme/app.git"], cwd=spoof, check=True, capture_output=True)
-        _run([*g, "branch", "dev"], cwd=spoof, check=True, capture_output=True)
+        _fixture_git(spoof, "remote", "add", "origin", "https://github.com/acme/app.git", check=True, capture_output=True)
+        _fixture_git(spoof, "branch", "dev", check=True, capture_output=True)
         rc, err = run(f"cd {spoof} && git merge dev")
         check("release-gate (#1569): a directory with a marketplace.json but another repository's origin is not exempt", rc == 2, f"rc={rc} {err[:240]!r}")
         # (9) `git push origin main` ships the LOCAL main: dev's stamp must not stand in for it.
@@ -3146,7 +3667,7 @@ def release_gate_repos_fixtures() -> None:
         # bare repository, so nothing here touches the network.
         fw = Path(td) / "fw"
         _git_repo(fw)
-        fsh = lambda *a, **kw: _run([*g, *a], cwd=fw, check=True, capture_output=True, text=True, **kw).stdout.strip()
+        fsh = lambda *a, **kw: _fixture_git(fw, *a, check=True, capture_output=True, text=True, **kw).stdout.strip()
         fb_rows = ("Step,Width,Actor,URL,Action,Expected,Actual,Status,Notes,Screenshot,Also,Issue,Env\n"
                    "1.1,1280,root,/login,Sign in,In,In,Pass,,,,,empty db\n"
                    "1.2,390,root,/login,Sign in,In,In,Pass,,,,,empty db\n")
@@ -3404,6 +3925,20 @@ def timeout_fixtures() -> None:
             os.kill(int(pid), 9)
         except (ProcessLookupError, ValueError):
             pass
+    # #1657: the release gate's OWN deadline also exits 2, so a release-gate fixture reads it through `gate_exit`: a refusal under test is 2, a deadline is 124.
+    check("a gate_exit of the gate's deadline message is 124, a real refusal stays 2, an allow stays 0",
+          gate_exit(2, b"BLOCKED by qa-flow release gate: the gate took longer than 13s, and this command looks like a promotion") == 124
+          and gate_exit(2, b"BLOCKED by qa-flow release gate: no qa/CERTIFICATION is committed") == 2 and gate_exit(0, b"") == 0, "mapping wrong")
+    with tempfile.TemporaryDirectory() as dltd:
+        slow = Path(dltd) / "awk"
+        slow.write_text("#!/bin/sh\nsleep 6\n", encoding="utf-8"); slow.chmod(0o755)
+        denv = {k: v for k, v in os.environ.items() if k not in ("QA_ALLOW_MAIN", "RAILS_FLOW_LANE")}
+        denv.update(PATH=f"{slow.parent}{os.pathsep}{denv['PATH']}", RAILS_FLOW_HOOK_DEADLINE="2", CLAUDE_PLUGIN_ROOT=str(QA_HOOK.parents[2]))
+        began = time.monotonic()
+        done = _run(["bash", str(QA_HOOK)], cwd=dltd, env=denv, capture_output=True, timeout=60, input=json.dumps({"tool_input": {"command": "git push origin main"}}).encode())
+        check("release-gate (#1657): a gate that hits its own deadline reads as 124 to the fixtures, not as the refusal under test",
+              done.returncode == 2 and b"took longer than" in done.stderr and gate_exit(done.returncode, done.stderr) == 124 and time.monotonic() - began < 30,
+              f"exit {done.returncode}, {done.stderr[:120]!r}")
     # An UNEXPECTED timeout is a recorded failure (a setup step that times out must not pass).
     before = len(FAILURES)
     os.environ["HOOK_GATES_TIMEOUT"] = "0.2"
@@ -3481,8 +4016,7 @@ def _worktree_kit() -> types.SimpleNamespace:
     coord = HOOKS / "lib" / "coordination.py"
 
     def git(cwd, *a):
-        return _run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *a], cwd=cwd, check=True,
-                    capture_output=True, text=True)
+        return _fixture_git(cwd, *a)
 
     def new_repo(td) -> Path:
         repo = Path(td) / "repo"
@@ -3720,7 +4254,14 @@ def tools_missing_fixtures() -> None:
                       f"exit {rc}: {blocked_lines(out)!r}")
             for cmd in ("git status", "ls"):
                 rc, out = bash_hook(cmd)
-                check(f"tools-missing ({variant}): CONTROL: guard-bash.sh still lets `{cmd}` through", rc == 0, f"exit {rc}: {blocked_lines(out)!r}")
+                if variant == "no text tools at all":
+                    # WITHOUT grep, sed, tr, awk AND dirname the hook cannot tell a `gh issue create` from any other command, so the issue-label check (#1645)
+                    # runs for every command, cannot start (it is found through `dirname`), and REFUSES: fail-closed, for harmless commands too. That is the
+                    # design (a gate that cannot run denies), pinned here so a change to it is a decision and not an accident.
+                    check(f"tools-missing ({variant}): CONTROL: guard-bash.sh fails closed on `{cmd}` and says the label check could not run",
+                          rc == 2 and "could not run" in out, f"exit {rc}: {blocked_lines(out)!r}")
+                else:
+                    check(f"tools-missing ({variant}): CONTROL: guard-bash.sh still lets `{cmd}` through", rc == 0, f"exit {rc}: {blocked_lines(out)!r}")
 
             # The release gate: promotions are refused by the up-front missing-tools rule (QA_ALLOW_MAIN is not set), whatever the normaliser can do.
             gate_env = {k: v for k, v in os.environ.items() if not k.startswith(("GIT_", "GH_")) and k != "QA_ALLOW_MAIN"}
@@ -3963,7 +4504,7 @@ def where_stopped_fixtures() -> None:
     """Where this worktree stopped: the Stop hook writes the facts file and warns ONCE about unsaved work; SessionStart
     points at it. Advisory, so every fixture also proves it fails open (exit 0, silent) rather than stopping a turn."""
     def g(cwd: Path, *args: str) -> None:
-        _run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *args], cwd=cwd, check=True, capture_output=True)
+        _fixture_git(cwd, *args)
 
     def stop(repo: Path, **kw) -> tuple[int, str]:
         return run_hook("stop-where.sh", cwd=repo, stdin=json.dumps({"hook_event_name": "Stop"}), **kw)
@@ -4028,6 +4569,45 @@ def where_stopped_fixtures() -> None:
         check("where-stopped: outside a git repository, silent and exit 0", code == 0 and out.strip() == "", out)
 
 
+# ---- _fixture_git under an inherited GIT_DIR (#1660 review R3) ----------------------------------------------------------
+def fixture_git_binding_fixtures() -> None:
+    """THE #1588 INCIDENT, in the harness's own helper: an inherited GIT_DIR naming another repo must not receive a
+    fixture's commit, through the fixture_git path or through the fallback (an init dir, a linked worktree)."""
+    def count(repo: Path) -> str:
+        return _run(["git", "-C", str(repo), "rev-list", "--count", "--all"], capture_output=True, text=True,
+                    env=fixture_git.hermetic()).stdout.strip()
+
+    with tempfile.TemporaryDirectory() as td:
+        real = Path(td) / "real"                                    # a stand-in for the maintainer's checkout
+        _git_repo(real)
+        before = count(real)
+        check("binding CONTROL: the stand-in repo's commits are countable", before == "1", before)
+        inherited = {**os.environ, "GIT_DIR": str(real / ".git")}
+        repo = Path(td) / "fixture"
+        _git_repo(repo)
+        _fixture_git(repo, "commit", "-q", "--allow-empty", "-m", "m", env=inherited, check=False)
+        check("binding: a fixture commit through fixture_git under an inherited GIT_DIR stays out of the other repo",
+              count(real) == before and count(repo) == "2", f"real {count(real)}, fixture {count(repo)}")
+        plain = Path(td) / "not-a-repo"
+        plain.mkdir()
+        _fixture_git(plain, "commit", "-q", "--allow-empty", "-m", "m", env=inherited, check=False)
+        check("binding: the fallback (no .git here) under an inherited GIT_DIR does not commit into the other repo",
+              count(real) == before, f"real went from {before} to {count(real)}")
+        # The CALIBRATION workload (#1660 review R3): its own `git init` + commit in a throwaway dir, under the same
+        # inherited GIT_DIR, must not reach the other repo either.
+        saved = os.environ.get("GIT_DIR")
+        os.environ["GIT_DIR"] = str(real / ".git")
+        try:
+            _sample()
+        finally:
+            if saved is None:
+                os.environ.pop("GIT_DIR", None)
+            else:
+                os.environ["GIT_DIR"] = saved
+        check("binding: the calibration workload under an inherited GIT_DIR does not commit into the other repo",
+              count(real) == before, f"real went from {before} to {count(real)}")
+
+
 def deadline_fixtures() -> None:
     guard = HOOKS / "guard-bash.sh"
     base_env = {k: v for k, v in os.environ.items() if k not in ("QA_ALLOW_MAIN", "RAILS_FLOW_LANE", "RAILS_FLOW_HOOK_DEADLINE")}
@@ -4061,27 +4641,62 @@ def deadline_fixtures() -> None:
         (d / "awk").chmod(0o755)
         return str(d), pidfile
 
-    def hung(hook: Path, cmd: str, extra: dict[str, str] | None = None, deadline: str = "1"):
-        """The hook with a HANGING awk: (exit, seconds, stderr, sleepers still alive afterwards)."""
+    def hung(hook: Path, cmd: str, extra: dict[str, str] | None = None, deadline: str = "1", must_start: bool = False):
+        """The hook with a HANGING awk: (exit, seconds, stderr, sleepers still alive afterwards).
+
+        `must_start`: THE STUB MUST HAVE STARTED, or the run proves nothing (the controls, where the hook may legitimately never run awk, leave it off): a hook killed at its deadline before its awk was ever launched (a loaded machine,
+        eight mutants at once) leaves an empty pidfile, `survivors` then reports none, and every check below passes over a stub that never ran, so
+        the mutant that kills by pid only was caught by a DIFFERENT fixture. A run whose stub never started is repeated with twice the deadline,
+        up to four times (1, 2, 4, 8 s); if it still did not start, `left` says so, so the checks fail loudly instead of passing vacuously."""
+        hung.deadline_used = deadline       # what the verdict line names, which a retry below changes
+        if not must_start:
+            return hung_once(hook, cmd, extra, deadline)[:4]
+        tries = (int(deadline), int(deadline) * 2, int(deadline) * 4, int(deadline) * 8)
+        for attempt, seconds in enumerate(tries):
+            hung.deadline_used = str(seconds)
+            result = hung_once(hook, cmd, extra, str(seconds))
+            if result[4] or attempt == len(tries) - 1:
+                return result[0], result[1], result[2], result[3] if result[4] else ["the awk stub never started: the hook was killed before it ran it"]
+        raise AssertionError("unreachable")
+
+    def hung_once(hook: Path, cmd: str, extra: dict[str, str] | None, deadline: str):
+        """One run: (exit, seconds, stderr, sleepers still alive afterwards, whether the stub started)."""
         with tempfile.TemporaryDirectory() as td:
             d, pidfile = stubs(td)
             env = dict(base_env, PATH=d + os.pathsep + base_env["PATH"], RAILS_FLOW_HOOK_DEADLINE=deadline, **(extra or {}))
+            # The hook's output goes to FILES and the wait is on the hook's own exit, not on the end of its pipes: a hook whose deadline kills
+            # only the child (the bug this fixture exists to catch) leaves a tree of processes holding the pipes open, and `communicate` would
+            # wait out the whole limit, so that mutant TIMED OUT at 300 s in the mutation harness instead of failing on `survivors` within
+            # seconds. Its own session, so the cleanup below reaches the hook's group, as `_run`'s does.
+            out_path, err_path = Path(td) / "hook.out", Path(td) / "hook.err"
             t0 = time.monotonic()
-            r = _run(["/bin/bash", str(hook)], cwd=td, input=json.dumps({"tool_input": {"command": cmd}}), env=env,
-                     capture_output=True, text=True, timeout=60)
-            took = time.monotonic() - t0
-            return r.returncode, took, r.stderr, survivors(pidfile)
+            with out_path.open("wb") as out, err_path.open("wb") as err:
+                proc = subprocess.Popen(["/bin/bash", str(hook)], cwd=td, env=env, stdin=subprocess.PIPE, stdout=out, stderr=err,
+                                        start_new_session=True)
+                try:
+                    proc.communicate(json.dumps({"tool_input": {"command": cmd}}).encode(), timeout=hook_limit(60, machine_slowdown()))
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
+                took = time.monotonic() - t0
+            started = pidfile.exists() and bool(pidfile.read_text().split())
+            left = survivors(pidfile)         # BEFORE any group kill below, which could take the evidence with it
+            try:
+                os.killpg(proc.pid, int(signal.SIGKILL))   # whatever of the hook's group is left: it must not outlive this fixture
+            except (ProcessLookupError, PermissionError):
+                pass
+            return proc.returncode, took, err_path.read_text(errors="replace"), left, started
 
     # 1. guard-bash: past the deadline the command is DENIED, in about the deadline, with the whole group dead.
-    rc, took, err, left = hung(guard, "git status")
+    rc, took, err, left = hung(guard, "git status", must_start=True)
     check("deadline (#1575): guard-bash refuses a command its normaliser cannot read in time (fails CLOSED)",
           rc == 2, f"exit {rc}: a hung awk was ALLOWED")
-    check("deadline (#1575): ...at the deadline, not at the stub's 300 s", took < 6, f"{took:.1f}s")
+    check("deadline (#1575): ...at the deadline, not at the stub's 300 s", took < int(hung.deadline_used) + 5, f"{took:.1f}s")
     check("deadline (#1575): ...and no process the hook started outlives it (the whole group is killed)",
           not left, f"still running: {left} -- a kill of the parent alone orphans them")
     lines = [x for x in err.strip().splitlines() if x.strip()]
     check("deadline (#1575): ...with ONE line on stderr, the verdict, and no job-control notice (Claude reads stderr)",
-          len(lines) == 1 and lines[0].startswith("BLOCKED by rails-flow guardrails: this command took longer than 1s"),
+          len(lines) == 1 and lines[0].startswith(f"BLOCKED by rails-flow guardrails: this command took longer than {hung.deadline_used}s"),
           repr(err[:200]))
     # 2. CONTROLS: the deadline must not be what denies an ordinary command, and a real rule still says its own reason.
     with tempfile.TemporaryDirectory() as td:
@@ -4096,27 +4711,42 @@ def deadline_fixtures() -> None:
     check("deadline (#1575): CONTROL: a refused command still gives ITS reason, not the deadline's",
           bad.returncode == 2 and "git add -A" in bad.stderr and "took longer" not in bad.stderr, bad.stderr[:160])
     # 3. THE ORPHAN: Claude Code SIGKILLs the hook at its own timeout. The group must not run on for the deadline.
-    with tempfile.TemporaryDirectory() as td:
-        d, pidfile = stubs(td)
-        env = dict(base_env, PATH=d + os.pathsep + base_env["PATH"], RAILS_FLOW_HOOK_DEADLINE="8")
-        proc = subprocess.Popen(["/bin/bash", str(guard)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE, cwd=td, env=env, start_new_session=True)
-        try:
-            proc.stdin.write(json.dumps({"tool_input": {"command": "git status"}}).encode())
-            proc.stdin.close()
-            for _ in range(100):                                  # until the stub has really started
-                if pidfile.exists() and pidfile.read_text().strip():
-                    break
-                time.sleep(0.1)
-            time.sleep(0.3)
-            proc.kill()
-            proc.wait()
-            t0 = time.monotonic()
-            left = survivors(pidfile, within=4.0)
-            gone = time.monotonic() - t0
-        finally:
-            if proc.poll() is None:
+    # THE RUN MUST LEAVE ROOM TO TELL THE TWO APART: a watchdog that notices its parent died ends the group within a poll (about a second); one
+    # that does not ends it at the 8 s deadline, counted from the hook's START. On a loaded machine (eight mutants at once) the stub can start so
+    # late that the deadline falls INSIDE the 4 s look-out, the orphan then dies "in time" for the wrong reason and the broken watchdog is
+    # not caught (measured: the mutant survived 3 runs in 8, on dev's own fixture). So the elapsed time since the hook started is read at the
+    # kill, and a run with less than `need` s left before the deadline is discarded and repeated with a fresh hook; the look-out is shortened to
+    # end a second before the deadline, which is still longer than the watchdog's one-second poll.
+    deadline_s, look_out, need = 8.0, 4.0, 3.5
+    left, gone, margin = [], 0.0, 0.0
+    for _attempt in range(4):
+        with tempfile.TemporaryDirectory() as td:
+            d, pidfile = stubs(td)
+            env = dict(base_env, PATH=d + os.pathsep + base_env["PATH"], RAILS_FLOW_HOOK_DEADLINE=str(int(deadline_s)))
+            started = time.monotonic()
+            proc = subprocess.Popen(["/bin/bash", str(guard)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE, cwd=td, env=env, start_new_session=True)
+            try:
+                proc.stdin.write(json.dumps({"tool_input": {"command": "git status"}}).encode())
+                proc.stdin.close()
+                for _ in range(100):                                  # until the stub has really started
+                    if pidfile.exists() and pidfile.read_text().strip():
+                        break
+                    time.sleep(0.1)
+                time.sleep(0.3)
                 proc.kill()
+                proc.wait()
+                margin = deadline_s - (time.monotonic() - started)
+                t0 = time.monotonic()
+                left = survivors(pidfile, within=min(look_out, margin - 1.0))   # the deadline must still be a second off when the look-out ends
+                gone = time.monotonic() - t0
+            finally:
+                if proc.poll() is None:
+                    proc.kill()
+        if margin >= need:
+            break
+    check("deadline (#1575): the parent-kill run left room before the 8 s deadline to tell a watchdog that notices from one that does not",
+          margin >= need, f"only {margin:.1f}s were left at the kill, after 4 tries: the machine is too slow to judge this")
     check("deadline (#1575): the group dies within a poll of its PARENT being SIGKILLed, not at the 8 s deadline",
           not left and gone < 4, f"still running after {gone:.1f}s: {left}")
     # 4. NO `sleep` ON PATH: a watchdog that cannot wait would reach the deadline at once and deny EVERYTHING.
@@ -4352,17 +4982,83 @@ def deadline_fixtures() -> None:
               rc == 0 and "audited" in err, f"exit {rc}: {err[:160]!r}")
 
 
+def _fallback_gate(td: str, bare: str):
+    """The release gate with no classifier beside it (CLAUDE_PLUGIN_ROOT names an empty directory), in repository `td`."""
+    env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env.pop("GH_REPO", None); env["CLAUDE_PLUGIN_ROOT"] = bare
+
+    def gate(cmd: str, **extra: str):
+        return _run(["bash", str(QA_HOOK)], cwd=td, input=json.dumps({"tool_input": {"command": cmd}}),
+                    env={**env, **extra}, capture_output=True, text=True, timeout=60)
+    return gate
+
+
+def release_gate_adversary_fixtures() -> None:
+    """#1720: the shell-adversary's inputs against the classifier-missing fallback at cc80da33, every one refused. A regression
+    corpus in its own group, so no mutant re-runs 54 hook calls; each rule that refuses them has its own fixture and mutant in
+    `release_gate_fallback`. The fallback reads no HEAD and no remote, so one repository serves every case."""
+    with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as bare:
+        _git_repo(Path(td))
+        gate = _fallback_gate(td, bare)
+        for cmd in ADVERSARY_1720:
+            check(f"release-gate fallback (#1720): adversarial `{cmd[:60]}` is refused", gate(cmd).returncode == 2, "exit 0")
+        for cmd in ("ls", "git log", "git log --oneline -3", "git diff", "git fetch origin", "git branch -a", "git -C repo status",
+                    "git-status", "git branch -d dev", "git worktree add ../w main", "gh pr view 5", "gh issue list", "gh run list",
+                    "gh api repos/a/b/pulls", "gh api -XGET repos/a/b", "gh auth status", "git checkout main", "git switch main"):
+            check(f"release-gate fallback (#1720): CONTROL: read-only `{cmd}` passes", gate(cmd).returncode == 0, "exit 2")
+
+
+def release_gate_fallback_fixtures() -> None:
+    """#1720: WITHOUT ITS CLASSIFIER the release gate fails closed BY SHAPE: one fixture per rule, the controls and the message."""
+    with tempfile.TemporaryDirectory() as td, tempfile.TemporaryDirectory() as bare:
+        _git_repo(Path(td))   # the fallback reads no HEAD, so the first branch's name (main or master) does not matter
+        gate = _fallback_gate(td, bare)
+        # ONE FIXTURE PER RULE that only that rule catches, so a mutant removing it cannot hide behind the others.
+        check("release-gate fallback (#1720): (a) a marker alone refuses: a base64-decoded push run through sh from `git log $(...)`",
+              gate("git log $(echo Z2l0IHB1c2ggb3JpZ2luIG1haW4= | base64 -d | sh)").returncode == 2, "exit 0")
+        check("release-gate fallback (#1720): (b) `fetch` with a `:` refspec refuses", gate("git fetch origin main:main").returncode == 2, "exit 0")
+        check("release-gate fallback (#1720): (b) `branch -f/-D` refuses even without main (`git branch -D feature/x`)", gate("git branch -D feature/x").returncode == 2, "exit 0")
+        check("release-gate fallback (#1720): `gh release create` refuses", gate("gh release create v9.9.9").returncode == 2, "exit 0")
+        check("release-gate fallback (#1720): (c) a git alias, not on the read-only list, refuses", gate("git p origin main").returncode == 2, "exit 0")
+        # #1720 re-attack, in scope: the dashed form, a local rewrite of main, and gh calls outside an allow-list.
+        check("release-gate fallback (#1720): the dashed `git-push origin main` refuses", gate("git-push origin main").returncode == 2, "exit 0")
+        check("release-gate fallback (#1720): a local rewrite of main (`git branch -m dev main`) refuses",
+              gate("git branch -m dev main").returncode == 2, "exit 0")
+        check("release-gate fallback (#1720): a gh subcommand off the allow-list (`gh workflow run`) refuses",
+              gate("gh workflow run release.yml").returncode == 2, "exit 0")
+        check("release-gate fallback (#1720): `gh api -X POST` refuses", gate("gh api -X POST repos/a/b/merges").returncode == 2, "exit 0")
+        # #1720 confirm pass: main-rewrite spellings past an option list, so the rule is ANY option token beside main.
+        for cmd in ("git checkout -Bmain dev", "git switch --force-create main", "git branch --copy dev main", "git branch -m dev Main"):
+            check(f"release-gate fallback (#1720): `{cmd}` (an option beside main) refuses", gate(cmd).returncode == 2, "exit 0")
+        # #1720 security review: an option value glued on (`-XPOST`, `-fbase=main`) is still the option.
+        check("release-gate fallback (#1720): `gh api -XPOST` (a glued method) refuses", gate("gh api -XPOST repos/a/b/merges").returncode == 2, "exit 0")
+        check("release-gate fallback (#1720): `gh api ... -fbase=main` (a glued field) refuses",
+              gate("gh api repos/a/b/merges -fbase=main").returncode == 2, "exit 0")
+        # The controls a mutant names stay here; the rest run in `release_gate_adversary`, which no mutant re-runs.
+        for cmd in ("git status", "gh api -X GET repos/a/b"):
+            check(f"release-gate fallback (#1720): CONTROL: read-only `{cmd}` passes", gate(cmd).returncode == 0, "exit 2")
+        done = gate("git push origin main")
+        check("release-gate fallback (#1720): the refusal names the missing classifier and the fix",
+              done.returncode == 2 and "classifier missing: restore plugins/qa-flow/scripts/push_targets.py (reinstall the plugin)" in done.stderr,
+              done.stderr[:200])
+        done = gate("git push origin main", QA_ALLOW_MAIN="1")
+        check("release-gate fallback (#1720): QA_ALLOW_MAIN=1 is honoured and audited, as in the missing-tool path",
+              done.returncode == 0 and "audited" in done.stderr, done.stderr[:200])
+
+
 GROUPS = {
     "stop_gate": stop_gate_fixtures, "guard_lane": guard_lane_fixtures,
     "guard_migrate": guard_migrate_fixtures, "lint_ruby": lint_ruby_fixtures,
     "self_consistency": self_consistency_fixtures, "guard_bash": guard_bash_fixtures,
+    "guard_bash_db_reset": guard_bash_db_reset_fixtures,
     "guard_claims": guard_claims_fixtures, "guard_claims_pipe": guard_claims_pipe_fixtures, "release_gate": release_gate_fixtures,
     "release_gate_effects": release_gate_effects_fixtures, "release_gate_repos": release_gate_repos_fixtures,
-    "release_gate_refs": release_gate_refs_fixtures,
+    "release_gate_refs": release_gate_refs_fixtures, "release_gate_fallback": release_gate_fallback_fixtures,
+    "release_gate_adversary": release_gate_adversary_fixtures,
     "ci_verdict_hint": ci_verdict_hint_fixtures, "session_end": session_end_fixtures, "timeout": timeout_fixtures,
     "guard_worktree": guard_worktree_fixtures, "guard_worktree_parse": guard_worktree_parse_fixtures,
     "guard_worktree_failopen": guard_worktree_failopen_fixtures, "guard_worktree_pointer": guard_worktree_pointer_fixtures,
     "deadline": deadline_fixtures, "where_stopped": where_stopped_fixtures, "tools_missing": tools_missing_fixtures,
+    "fixture_git_binding": fixture_git_binding_fixtures,
 }
 
 
@@ -4378,11 +5074,11 @@ GROUPS = {
 # repos, refs and deadline groups and the four worktree groups (about 60 CPU-s, about 80 s of wall). EVERY group must be in exactly one part: a group in none
 # would never run in the doctor, which is the vacuous gate this repository keeps finding; the selftest checks it below.
 PARTS = {
-    "a": ["stop_gate", "guard_lane", "guard_migrate", "lint_ruby", "self_consistency", "guard_bash", "guard_claims", "guard_claims_pipe",
+    "a": ["stop_gate", "guard_lane", "guard_migrate", "lint_ruby", "self_consistency", "guard_bash", "guard_bash_db_reset", "guard_claims", "guard_claims_pipe",
           "ci_verdict_hint", "session_end", "timeout"],
     "b": ["release_gate", "release_gate_effects"],
-    "c": ["release_gate_repos", "release_gate_refs", "guard_worktree", "guard_worktree_parse",
-          "guard_worktree_failopen", "guard_worktree_pointer", "deadline", "where_stopped", "tools_missing"],
+    "c": ["release_gate_repos", "release_gate_refs", "release_gate_fallback", "release_gate_adversary", "guard_worktree", "guard_worktree_parse",
+          "guard_worktree_failopen", "guard_worktree_pointer", "deadline", "where_stopped", "tools_missing", "fixture_git_binding"],
 }
 
 

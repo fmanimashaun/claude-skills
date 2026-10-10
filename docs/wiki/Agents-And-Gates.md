@@ -6,10 +6,10 @@
 
 | plugin | version | agents | commands | tier rows |
 |---|---|---|---|---|
-| `design-flow` | 1.45.1 | 5 | 12 | 5 |
-| `pipeline` | 1.4.2 | 2 | 9 | 2 |
-| `qa-flow` | 1.36.0 | 11 | 8 | 11 |
-| `rails-flow` | 1.57.0 | 12 | 22 | 12 |
+| `design-flow` | 1.45.2 | 5 | 12 | 5 |
+| `pipeline` | 1.4.3 | 2 | 9 | 2 |
+| `qa-flow` | 1.36.1 | 11 | 8 | 11 |
+| `rails-flow` | 1.58.0 | 12 | 22 | 12 |
 
 ## Agents
 
@@ -30,7 +30,7 @@
 | agent | tier · model | tools | named by | what proves its output |
 |---|---|---|---|---|
 | `kamal-configurator` | judgement · inherit | Read, Grep, Glob, Write, Edit, Bash | `/pipeline:deploy-cloud` | — |
-| `pipeline-coordinator` | judgement · inherit | Read, Grep, Glob, Bash | `/pipeline:pipeline`, `/pipeline:setup-pipeline`, `/pipeline:status` | — |
+| `pipeline-coordinator` | judgement · inherit | Read, Grep, Glob, Bash, Skill | `/pipeline:pipeline`, `/pipeline:setup-pipeline`, `/pipeline:status` | — |
 
 ### `qa-flow`
 
@@ -197,6 +197,9 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | frontmatter selftest | `repo` | `python3 scripts/check_frontmatter.py --selftest` | selftest |
 | gauntlet core selftest | `repo` | `python3 scripts/gauntlet_core.py --selftest` | selftest |
 | generated artifacts registered | `repo` | `python3 scripts/rebuild_generated.py --selftest` | selftest |
+| guard-bash cases | `repo` | `python3 scripts/check_guard_bash_cases.py --tier fast` | live check |
+| guard-bash cases (full) | `repo` | `python3 scripts/check_guard_bash_cases.py --tier full` | live check · 600s budget |
+| guard-bash cases selftest | `repo` | `python3 scripts/check_guard_bash_cases.py --selftest` | selftest |
 | hook commands selftest | `repo` | `python3 scripts/check_hook_commands.py --selftest` | selftest |
 | hook commands survive a spaced path | `repo` | `python3 scripts/check_hook_commands.py` | live check |
 | hook output budget | `repo` | `python3 scripts/check_hook_output_budget.py` | live check |
@@ -217,7 +220,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | markdown shell selftest | `repo` | `python3 scripts/lint_markdown_shell.py --selftest` | selftest |
 | mutation check | `repo` | `python3 scripts/mutation_check.py --selftest` | selftest |
 | mutation cost record | `repo` | `python3 scripts/mutation_check.py --check-record` | live check |
-| mutation coverage | `repo` | `python3 scripts/mutation_check.py` | live check · 5400s budget |
+| mutation coverage | `repo` | `python3 scripts/mutation_check.py` | live check · 9000s budget |
 | packaging determinism | `repo` | `python3 scripts/package_core.py --selftest` | selftest |
 | page pacing | `repo` | `python3 scripts/check_page_pacing.py` | live check |
 | page pacing selftest | `repo` | `python3 scripts/check_page_pacing.py --selftest` | selftest |

@@ -50,9 +50,15 @@ GUARD = Guard(
         Mutation(
             # #1594 S2
             'an explicit --git-dir/--work-tree in the arguments overrides the binding (#1594 review S2)',
-            '        if a in ("--git-dir", "--work-tree") or a.startswith(("--git-dir=", "--work-tree=")):',
-            '        if False:',
+            'GLOBAL_WITH_VALUE = ("-C", "-c", "--namespace", "--config-env", "--attr-source")',
+            'GLOBAL_WITH_VALUE = ("-C", "-c", "--namespace", "--config-env", "--attr-source", "--git-dir", "--work-tree")',
             'an explicit --git-dir in the arguments is refused',
+        ),
+        Mutation(
+            "an unknown leading option is let through, so `--config-env x=y --git-dir REAL` rebinds the repo (#1660 R2)",
+            '        else:\n            raise NotATempRepo(f"{a!r} before the subcommand',
+            '        else:\n            i += 1; NotATempRepo(f"{a!r} before the subcommand',
+            "a leading --config-env core.x=HOME ... is refused",
         ),
     ),
 )

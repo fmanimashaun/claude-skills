@@ -64,6 +64,35 @@ Guidelines:
   resources :comments, shallow: true end` — collection routes nested,
   member routes top-level.
 
+### A model whose name differs from its resource — polymorphic helpers follow the MODEL
+
+`link_to record.name, record`, `redirect_to record`, `url_for(record)` and `form_with model: record` pick the
+route helper from the record's **`model_name`**, never from the resource name in `config/routes.rb`: a persisted
+record uses `model_name.singular_route_key`, a class or new record `model_name.route_key`
+(`actionpack/lib/action_dispatch/routing/polymorphic_routes.rb`, `handle_model`, Rails 8.1.4). So a model
+`HttpMonitor` served by `resources :monitors` fails with `NoMethodError: undefined method 'http_monitor_path'`
+(reproduced on 8.1.4), and **a green test of the controller will not catch it** if no test renders the link or
+the redirect. Fix it at the route, in this order:
+
+1. **Name the resource after the model** (`resources :http_monitors`, with `path: "monitors"` if the URL must
+   differ): nothing to remember at each call site.
+2. **`as:`** renames the helpers, not the URL: `resources :monitors, as: :http_monitors` makes
+   `polymorphic_path(record)` return `/monitors/5` through `http_monitor_path` (reproduced on 8.1.4).
+3. **`resolve`** is the guide's tool for mapping a model to a URL by hand: `resolve("Basket") { [:basket] }`
+   makes `form_with model: @basket` generate `/basket`; the guide documents it for **singular** resources
+   (<https://guides.rubyonrails.org/routing.html#using-resolve>). **`direct`** only defines custom URL helpers;
+   the guide does not offer it as a polymorphic mapping.
+4. **Overriding `model_name`** (`def self.model_name = ActiveModel::Name.new(self, nil, "Monitor")`) also makes
+   the helpers resolve, but **every name derived from it changes**: `route_key`, `singular_route_key`,
+   `param_key` (so `form_with` and strong params now use the `monitor` key), `i18n_key` (locale lookups move to
+   `activemodel.*.monitor`) and `human` (`naming.rb`, Rails 8.1.4; reproduced). Use it only when you want all of
+   that.
+
+An STI subclass whose parent alone is declared a resource has the same problem in `form_with`: the form helpers
+guide says you "can't rely on record identification on a subclass if only their parent class is declared a
+resource" and must give **`url:` and `scope:` (the model name) explicitly**
+(<https://guides.rubyonrails.org/form_helpers.html#relying-on-record-identification>).
+
 ## 1a. URL design — human paths vs REST resources (doctrine)
 
 The default posture: **user-facing pages get human, readable URLs; records and the

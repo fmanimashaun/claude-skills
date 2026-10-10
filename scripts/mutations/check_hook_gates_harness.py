@@ -16,7 +16,7 @@ GUARD = Guard(
     # The same staging as hook_guard_bash: the suite drives every plugin's hooks. A literal, because
     # lint_self_consistency's harness-dependency-undeclared rule reads it statically -- and that rule is
     # what keeps this copy honest when a hook gains a script (it caught exactly that on #1477).
-    needs=(
+    needs=("plugins/rails-flow/scripts/fixture_git.py", 
            'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py',  # session-start.sh runs both (#1581: the harness drives it)
            "plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362
            'plugins/rails-flow/hooks/scripts', 'plugins/qa-flow/hooks/scripts', 'plugins/qa-flow/scripts',
@@ -161,8 +161,8 @@ GUARD = Guard(
         Mutation(
             # #1497
             '--only runs every group whatever it names',
-            'def run_groups(groups: list[str] | None, table: dict) -> None:\n    for name in (groups or list(table)):',
-            'def run_groups(groups: list[str] | None, table: dict) -> None:\n    for name in list(table):',
+            '    global _CURRENT_GROUP\n    for name in (groups or list(table)):',
+            '    global _CURRENT_GROUP\n    for name in list(table):',
             '--only runs exactly the groups it names',
         ),
         Mutation(
@@ -182,8 +182,8 @@ GUARD = Guard(
         Mutation(
             # review of PR #1506
             "a bare run executes no group, so the doctor's hook gates pass on nothing",
-            'def run_groups(groups: list[str] | None, table: dict) -> None:\n    for name in (groups or list(table)):',
-            'def run_groups(groups: list[str] | None, table: dict) -> None:\n    for name in (groups or []):',
+            '    global _CURRENT_GROUP\n    for name in (groups or list(table)):',
+            '    global _CURRENT_GROUP\n    for name in (groups or []):',
             'a bare run (no --only) runs every group',
         ),
         Mutation(
@@ -257,8 +257,8 @@ GUARD = Guard(
         ),
         Mutation(
             "the calibration's own commands lose their timeout, so a hung calibration is the hang it guards against",
-            "stderr=subprocess.DEVNULL, timeout=CALIBRATION_TIMEOUT)",
-            "stderr=subprocess.DEVNULL)",
+            "stderr=subprocess.DEVNULL, timeout=CALIBRATION_TIMEOUT,",
+            "stderr=subprocess.DEVNULL,",
             "the calibration is itself bounded",
         ),
         Mutation(
@@ -266,6 +266,12 @@ GUARD = Guard(
             "limit = float(override) if override else hook_limit(requested, machine_slowdown())",
             "limit = float(override) if override else max(float(requested or 0), 180.0)",
             "every subprocess's bound goes through hook_limit",
+        ),
+        Mutation(
+            "a release-gate fixture reads the gate's own deadline (which also exits 2) as the refusal under test",
+            '    return 124 if b"took longer than" in stderr else returncode',
+            "    return returncode",
+            "a gate that hits its own deadline reads as 124 to the fixtures",
         ),
     ),
 )

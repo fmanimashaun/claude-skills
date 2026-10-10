@@ -1,0 +1,4 @@
+# Files that make temp directories and run `git commit` WITHOUT a hermetic reference (#1577). A RATCHET: it
+# only shrinks. Measured when the `non-hermetic-fixture-git` rule landed: 11 files; #1660 (#1588 part 2) made every one
+# hermetic before this merged, so the list is empty. A new file that needs a line here is a finding: make it hermetic
+# (`env=hermetic_git.env()` or `fixture_git`) instead.

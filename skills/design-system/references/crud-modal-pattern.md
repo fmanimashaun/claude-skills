@@ -106,9 +106,18 @@ them into CRUD**.
 
 ## `modal_controller.js` (composes the mixins)
 
-The Modal component's `data-controller="modal"` is this — focus-trap + dismissable-layer +
-restore, so the frame-swapped dialog is instantly accessible. It closes by **emptying the
-frame** so the same frame is reusable:
+The Modal component's `data-controller="modal"` is this. **As of 2026-10-10 the recommended panel is a
+native `<dialog>` opened with `showModal()`** ([components.md → Modal / Dialog](components.md#modal--dialog)):
+the platform supplies the trap, inert background, `Esc` and focus restore, and the controller is a thin
+opener/closer plus backdrop-click close. The version below composes the hand-written mixins (focus-trap +
+dismissable-layer + restore) and is the fallback. Either way it closes by **emptying the frame** so the
+same frame is reusable. Where invoker commands are available (Newly Baseline, 2025-12-12: Chrome/Edge 135,
+Firefox 144, Safari 26.2) a button can open and close the dialog with no script; keep `data-action` as the
+fallback:
+```html
+<button command="show-modal" commandfor="my-dialog">Open dialog</button>
+<dialog id="my-dialog"><p>This dialog was opened using an invoker command.</p><button commandfor="my-dialog" command="close">Close</button></dialog>
+```
 
 ```js
 import { Controller } from "@hotwired/stimulus"
@@ -157,8 +166,8 @@ restored to the trigger.
   streams can target them. Host card lists in `grid-auto`.
 - **One modal at a time** — the single shared `id="modal"` frame enforces this; the
   dismissable-layer stack handles nested popovers/dropdowns inside the modal.
-- a11y is inherited from the Modal component (`role="dialog"`, `aria-modal`, labelled title,
-  trap + Esc + restore) — don't re-implement it per screen.
+- a11y is inherited from the Modal component (native `<dialog>` + `showModal()`, labelled title,
+  trap + Esc + restore from the platform; `aria-modal` only on the `role="dialog"` fallback) — don't re-implement it per screen.
 
 ### A confirmation is for what cannot be undone
 

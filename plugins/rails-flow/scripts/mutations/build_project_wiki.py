@@ -8,6 +8,7 @@ GUARD = Guard(
     name="build_project_wiki",
     subject="scripts/build_project_wiki.py",
     selftest="scripts/build_project_wiki.py",   # --selftest lives in the module itself
+    needs=("scripts/fixture_git.py",),   # its selftest's git goes through fixture_git (#1588)
     deps=("scripts/generated_docs.py",),   # #1230: imported for the opt-in branch policy
     mutations=(
         # Constraints read as columns again: the data-model page lists `(code)::text ~ ...` as a column.
@@ -129,6 +130,19 @@ GUARD = Guard(
             "        advisory = drift_is_advisory(root) if drift else None\n",
             "        advisory = None\n",
             "with a policy, wiki drift on fix/1 exits 0",
+        ),
+        # #1732: a table keyed on another column has no implicit id.
+        Mutation(
+            "a table keyed on another column still has an implicit id",
+            "(pk is None or pk.group(1) == '\"id\"')}",
+            "True}",
+            "schema.rb: a table has an implicit id unless `id: false` or another primary key is named",
+        ),
+        Mutation(
+            "`id: false` still has an implicit id",
+            '"implicit_id": not re.search(r"\\bid:\\s*false\\b", opts) and',
+            '"implicit_id":',
+            "schema.rb: a table has an implicit id unless `id: false` or another primary key is named",
         ),
     ),
 )
