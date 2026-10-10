@@ -1285,6 +1285,13 @@ DB_RESET_TEST_FORMS = ("RAILS_ENV=test bin/rails db:reset", "env RAILS_ENV=test 
                        "RAILS_ENV=test rake db:reset", "RAILS_ENV=test bin/rake db:reset", "bin/rails db:reset RAILS_ENV=test",
                        "  RAILS_ENV=test bin/rails db:reset  ", "RAILS_ENV=test\tbin/rails db:reset")
 # Refused even for a declared project: not the test database, not alone, or not the bare reset.
+# #1761, shell-adversary review of 65d1e154: wrappers CHAIN, and the runner may sit at any path ending in bin/rails or bin/rake. Every one resets the database.
+# `--trace` and `-t` are NOT listings (`-T` is), so the exemption for a listing must not reach them.
+DB_RESET_WRAPPED = ("bundle exec spring rails db:reset", "bundle exec spring rake db:reset", "bundle exec bin/spring rails db:reset", "./bin/spring rails db:reset", "bundle exec ruby bin/rails db:reset",
+                    "ruby -S rails db:reset", "bundle exec -- rails db:reset", "./bin/rails db:reset", "/app/bin/rails db:reset", "cd app && ./bin/rails db:reset",
+                    "/usr/bin/env bin/rails db:reset", "/usr/bin/env FOO=1 bin/rails db:reset", "bin/rails db:reset --trace", "rake -t db:reset")
+# A listing prints the matching tasks and runs nothing, so it passes for a declared and an undeclared project alike.
+DB_RESET_LISTING = ("bin/rails -T db:reset", "rake -T db:reset", "bundle exec rake -T db:reset", "bin/rails --tasks db:reset", "rake -D db:reset")
 DB_RESET_STILL_REFUSED = ("bin/rails db:reset", "RAILS_ENV=development bin/rails db:reset", "RAILS_ENV=production bin/rails db:reset",
                           "RAILS_ENV=testing bin/rails db:reset", "RAILS_ENV=test bin/rails db:reset && bin/rails db:reset",
                           "RAILS_ENV=test bin/rails db:reset; bin/rails db:reset", "RAILS_ENV=test bin/rails db:reset | tee log",
@@ -1299,7 +1306,7 @@ DB_RESET_STILL_REFUSED = ("bin/rails db:reset", "RAILS_ENV=development bin/rails
                           "RAILS_ENV=test\n\nbin/rails db:reset", "env RAILS_ENV=test\nbin/rails db:reset", "bundle exec rails db:reset\nRAILS_ENV=test",
                           # Runners the normaliser does not peel, and an engine's namespaced task: the same db:reset.
                           "ruby bin/rails db:reset", "spring rails db:reset", "bin/spring rails db:reset", "bin/rails app:db:reset",
-                          "RAILS_ENV=test ruby bin/rails db:reset", "RAILS_ENV=test spring rails db:reset")
+                          "RAILS_ENV=test ruby bin/rails db:reset", "RAILS_ENV=test spring rails db:reset", *DB_RESET_WRAPPED)
 
 
 def guard_bash_db_reset_fixtures() -> None:
@@ -1338,13 +1345,18 @@ def guard_bash_db_reset_fixtures() -> None:
         # UNDECLARED: the refusal stays, for every spelling, and a project with a CI script is pointed at it.
         for cmd in ("bin/rails db:reset", "RAILS_ENV=test bin/rails db:reset", "env RAILS_ENV=test bin/rails db:reset", "bundle exec rails db:reset",
                     "bundle exec bin/rails db:reset", "RAILS_ENV=test bundle exec rails db:reset", "bundle exec rake db:reset",
-                    "ruby bin/rails db:reset", "spring rails db:reset", "bin/spring rails db:reset", "bin/rails app:db:reset"):
+                    "ruby bin/rails db:reset", "spring rails db:reset", "bin/spring rails db:reset", "bin/rails app:db:reset", *DB_RESET_WRAPPED):
             rc, out = run(plain, cmd)
             check(f"guard-bash (#1734): an UNDECLARED project is still refused `{cmd}`", rc == 2 and "db:reset is prohibited" in out, f"exit {rc}: {out[:120]}")
         check("guard-bash (#1734): CONTROL: the refusal still recommends the unseeded sequence", "db:drop db:create db:schema:load" in out, out[:200])
         check("guard-bash (#1734): with no CI script the refusal names none", "bin/ci" not in out and "config/ci.rb" not in out, out[:200])
         check("guard-bash (#1734): the refusal says how to declare the choice", "test-db-seeded: yes" in out, out[:200])
         check("guard-bash (#1734): the undeclared refusal is not the declared project's message", "this project declares" not in out, out[:200])
+
+        for cmd in DB_RESET_LISTING:
+            for kind, root in (("declared", seeded), ("undeclared", plain)):
+                rc, out = run(root, cmd)
+                check(f"guard-bash (#1761): a listing is not a reset, so a {kind} project may run `{cmd}`", rc == 0, f"exit {rc}: {out[:120]}")
 
         with_ci = project("# Guardrails\n", ci_script=True)
         with_rb = project("# Guardrails\n", ci_rb=True)
@@ -1398,6 +1410,8 @@ def guard_bash_db_reset_fixtures() -> None:
         # FAIL CLOSED: an unreadable payload cannot show which env the command sets, so even a declared project is refused.
         rc, out = hook(seeded, "RAILS_ENV=test bin/rails db:reset")
         check("guard-bash (#1734): a payload the hook cannot parse is refused even for a declared project", rc == 2, f"exit {rc}: {out[:120]}")
+        rc, out = hook(plain, "rake -T db:reset")
+        check("guard-bash (#1761): a listing in a payload the hook cannot parse is refused, because an exemption cannot be trusted there", rc == 2, f"exit {rc}: {out[:120]}")
         # The declaration is read from the PROJECT (CLAUDE_PROJECT_DIR), not from wherever the command's shell happens to be.
         elsewhere = Path(tempfile.mkdtemp())
         try:
