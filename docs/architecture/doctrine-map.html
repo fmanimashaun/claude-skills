@@ -35,8 +35,14 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 <main>
 <h1>Doctrine &rarr; enforcement</h1>
 <p class="lede">One row per doctrinal claim in this repo: where it is stated, and what makes it true. <strong>The unenforced rows are the deliverable.</strong> A claim with no enforcement is not automatically a defect &mdash; plenty are judgement, and gating judgement is worse than not gating it. The value is making the distinction visible instead of discovering it by accident.</p>
-<div class="tally"><b>51 claims</b><b>37 enforced guarantees</b><b>14 advisory</b><b>0 tracked gaps</b></div>
+<div class="tally"><b>52 claims</b><b>36 enforced guarantees</b><b>15 advisory</b><b>1 tracked gaps</b></div>
 <div class="controls"><button data-k="all">all</button><button data-k="guarantee">guarantees</button><button data-k="advice">advisory</button><button data-k="gap">gaps</button></div>
+<div class="row" data-k="gap">
+<h2>No spelling of `git add -A` stages the whole tree: the refusal is made where the effect happens (the `git` wrapper on PATH, which sees the arguments after the shell has expanded them, and a `pre-commit` hook that checks what is staged), not where the command is typed.</h2>
+<div class="meta"><span class="k k-gap">gap</span><span>stated in <code>CLAUDE.md</code> &middot; #1789 &middot; #1790 &middot; #1793</span></div>
+<p class="none">Nothing enforces this.</p>
+<p class="note">Neither layer exists yet: #1790 is the wrapper and #1789 the git hooks. When they land, this row becomes a guarantee citing them, and the `validate` check `resolved gap` fails until it is reclassified.</p>
+</div>
 <div class="row" data-k="guarantee">
 <h2>A SessionStart hook&#x27;s output is charged again after every compaction, so its bytes are budgeted and ratcheted; a shipped agent states a bounded output or returns a path.</h2>
 <div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>AGENTS.md</code></span></div>
@@ -129,14 +135,6 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 </ul>
 </div>
 <div class="row" data-k="guarantee">
-<h2>`git add -A` is refused, even when the payload cannot be parsed.</h2>
-<div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>CLAUDE.md</code></span></div>
-<ul class="enf">
-<li><code>hook:plugins/rails-flow/hooks/scripts/guard-bash.sh</code></li>
-</ul>
-<p class="note">Verified by running it with python3 shadowed by a stub that exits 127: line 7 falls back to the raw JSON payload, which still contains the command text, so every pattern still matches and it still exits 2.</p>
-</div>
-<div class="row" data-k="guarantee">
 <h2>Every plugin in `marketplace.json` is documented, and every entry carries more than a bare name.</h2>
 <div class="meta"><span class="k k-guarantee">guarantee</span><span>stated in <code>CLAUDE.md</code></span></div>
 <ul class="enf">
@@ -185,7 +183,7 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 <li><code>hook:plugins/qa-flow/hooks/scripts/release-gate.sh</code></li>
 <li><code>hook:plugins/rails-flow/hooks/scripts/guard-lane.sh</code></li>
 </ul>
-<p class="note">The rule pins the advisory/gate split by count, so adding a hook without classifying it fails. A gate that failed closed on UNRELATED work would get switched off, which is why scoping is part of the claim rather than a refinement of it.</p>
+<p class="note">The rule pins the advisory/gate split by count, so adding a hook without classifying it fails. A gate that failed closed on UNRELATED work would get switched off, which is why scoping is part of the claim rather than a refinement of it. guard-bash is listed for its fail-closed POSTURE only (a parse failure refuses); what it can recognise is a tripwire, not a guarantee (#1788, #1793).</p>
 </div>
 <div class="row" data-k="guarantee">
 <h2>A generated asset&#x27;s prompt is recorded, so the asset is reproducible rather than merely present.</h2>
@@ -418,6 +416,14 @@ font-size:.85rem;margin:1.5rem 0 0}</style>
 <div class="meta"><span class="k k-advice">advice</span><span>stated in <code>CLAUDE.md</code></span></div>
 <p class="none">Nothing enforces this.</p>
 <p class="note">A stray bump on dev is a loaded gun -- the next promotion publishes whether or not anyone decided to ship. Nothing detects it: the workflow cannot tell an intended bump from an accidental one, and a gate that refused a bump on dev would refuse the arm commit, which is the one place it belongs.</p>
+</div>
+<div class="row" data-k="advice">
+<h2>guard-bash refuses the common spellings of `git add -A`, even when the payload cannot be parsed. It is a tripwire, not a boundary: it matches the command&#x27;s text, and a shell gives that text its meaning only when it expands it.</h2>
+<div class="meta"><span class="k k-advice">advice</span><span>stated in <code>CLAUDE.md</code> &middot; #1788 &middot; #1793</span></div>
+<ul class="enf">
+<li><code>hook:plugins/rails-flow/hooks/scripts/guard-bash.sh</code></li>
+</ul>
+<p class="note">Reclassified from guarantee (owner decision, #1793): a probe of 21 hostile spellings against the hook on dev found 18 allowed (`git add --al`, `X=-A; git add $X`, `printf &#x27;git add -A&#x27; | sh`, `Git add -A` on a case-insensitive filesystem). Still true and worth keeping: with python3 shadowed by a stub that exits 127, line 7 falls back to the raw JSON payload, which still contains the command text, so the common spelling still matches and exits 2. The guarantee is the next row.</p>
 </div>
 <div class="row" data-k="advice">
 <h2>No skill claim is edited until `doctrine-verifier` confirms it against an authoritative source; INCONCLUSIVE leaves doctrine unchanged.</h2>

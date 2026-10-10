@@ -185,7 +185,7 @@ GUARD = Guard(
             'degraded mode keeps the `^` anchor, so a compound command with no awk passes',
             '  [ "$degraded" = 1 ] && re="${re#^}"',
             '',
-            'with no awk, a COMPOUND `cd x && git add -A` is blocked',
+            'with no awk, a COMPOUND literal `cd x && git add -A` is blocked',
         ),
         Mutation(
             # #1529 review
@@ -213,14 +213,14 @@ GUARD = Guard(
             'stdin is read with `cat` again, so no cat means an empty command',
             'input=""; IFS= read -r -d \'\' input || true',
             'input="$(cat)"',
-            'with no cat, `git add -A` is blocked',
+            'with no cat, the literal `git add -A` is blocked',
         ),
         Mutation(
             # #1529 round 3
             'pipefail is dropped, so a failing EARLY stage (no sed) reads as a clean result',
             'set -uo pipefail\n',
             'set -u\n',
-            'with no sed, `git add -A` is blocked',
+            'with no sed, the literal `git add -A` is blocked',
         ),
         Mutation(
             # #1529 round 3

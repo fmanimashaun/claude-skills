@@ -99,8 +99,33 @@ exempt() { [ "$degraded" = 1 ] && return 1; hit "$1"; }
 # WHAT A DECLARATION ALLOWS IS ONE COMMAND: `RAILS_ENV=test bin/rails db:reset` (or the `env`, `bundle exec`, `rake` and trailing-assignment spellings),
 # and nothing else. It is matched against the WHOLE raw command, so a compound command that also resets the development database, `RAILS_ENV=development`,
 # or an unreadable payload (degraded mode: the env prefix the normaliser peels is exactly what this must read) is still refused.
-# `bundle exec` is part of the command (#1760 review): its verb is `bundle`, so a rule anchored on rails or rake never saw `bundle exec rails db:reset` at all.
-if hit '^(bundle[[:space:]]+exec[[:space:]]+)?(bin/)?(rails|rake)([[:space:]]+[^[:space:]]+)*[[:space:]]+db:reset\b'; then
+# A RUNNER IS PART OF THE COMMAND (#1760 review, #1761, shell-adversary review of 65d1e154): `bundle exec [--]`, `spring`, `bin/spring`, `ruby [-S]` and a full-path `env` are not
+# peeled by the normaliser, and they CHAIN (`bundle exec spring rails db:reset`, `bundle exec ruby bin/rails db:reset`), so the rule reads ANY number of them before the runner. The
+# runner is `rails` or `rake`, bare or at ANY path that ends in bin/rails or bin/rake (`./bin/rails`, `/app/bin/rails`); `cd app && ./bin/rails db:reset` is split into segments by
+# the normaliser, so its second segment starts with the path. An engine's `app:db:reset` is the same task.
+# A LISTING IS NOT A RESET: `bin/rails -T db:reset` and `rake -T db:reset` print the tasks that match and run nothing, so `-T`/`--tasks` and `-D`/`--describe` anywhere after the runner exempt it
+# (never in degraded mode, where an exemption cannot be trusted).
+# THE LIMITS, STATED (#1761). This rule lists spellings, and a list of spellings is never complete. NOT covered, on purpose:
+#   - `db:setup` and `db:migrate:reset` are OTHER tasks (`db:setup` creates, loads the schema and seeds without dropping; `db:migrate:reset` drops, creates and migrates);
+#   - a task name built at run time: `$(echo db:reset)`, a shell alias or function, `bin/rails runner 'Rake::Task["db:reset"].invoke'`;
+#   - a wrapper that runs the command SOMEWHERE ELSE: `docker compose exec web bin/rails db:reset`, `ssh host '...'`, a `make` target, a script that runs it.
+# This hook is an accident guard, not a boundary (as guard-worktree says): it stops the command that is typed by habit, not one built to get past it.
+_wrappers='((bundle[[:space:]]+exec([[:space:]]+--)?|ruby([[:space:]]+-S)?|spring|([^[:space:]]*/)?bin/spring|([^[:space:]]*/)?env([[:space:]]+[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*)*)[[:space:]]+)*'
+_runner_cmd='(([^[:space:]]*/)?bin/(rails|rake)|rails|rake)'
+# THE LISTING EXEMPTION IS JUDGED PER SEGMENT (#1761, background review of 1db657ab): hit() and exempt() each match ANY segment, so `rake -T; rake db:reset` and
+# `rake -T | rake db:reset` let the `-T` of one segment exempt the reset in another. Each segment is tested alone, with `seg` swapped for it and restored after.
+# One match over the whole text first (a 10k-line command must not cost a grep per line); the per-segment loop runs only when some segment names the task.
+_seg_all="$seg"; _reset=0; _rest="$seg"$'\n'
+hit "^${_wrappers}${_runner_cmd}([[:space:]]+[^[:space:]]+)*[[:space:]]+(app:)?db:reset\\b" || _rest=""
+while [ -n "$_rest" ]; do
+  seg="${_rest%%$'\n'*}"; _rest="${_rest#*$'\n'}"
+  if hit "^${_wrappers}${_runner_cmd}([[:space:]]+[^[:space:]]+)*[[:space:]]+(app:)?db:reset\\b" \
+     && ! exempt "^${_wrappers}${_runner_cmd}([[:space:]]+[^[:space:]]+)*[[:space:]]+(-T|--tasks|-D|--describe)([[:space:]=]|\$)"; then
+    _reset=1; break
+  fi
+done
+seg="$_seg_all"
+if [ "$_reset" = 1 ]; then
   _root="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
   _tab=$'\t'
   _seeded=0

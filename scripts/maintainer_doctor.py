@@ -228,6 +228,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
      ("python3", "plugins/rails-flow/scripts/assign_lanes.py", "--selftest")),
     ("design-flow prompt library selftest",
      ("python3", "plugins/design-flow/scripts/prompt_library.py", "--selftest")),
+    # #1779. The library moved to docs/design/assets/, and a project that still has docs/assets/ must be stopped, not read as empty.
+    ("design-flow asset home selftest",
+     ("python3", "plugins/design-flow/scripts/asset_home.py", "--selftest")),
     # #625/#628/#629. Three modules encode one layout decision and `asset_plan.py` holds its half as
     # literals (it is deliberately standalone). Move one and not the others and `--scaffold` creates
     # a folder nothing writes to while `--run` writes into one the scaffold never made — both halves
@@ -409,6 +412,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #1204. The installer reported success and wrote a hook git never runs under core.hooksPath
     # or from a linked worktree; the selftest proves each case with a real merge, not a file check.
     ("pipeline hook install", ("python3", "plugins/pipeline/scripts/install_git_hooks_selftest.py")),
+    # #1789. The pre-push and pre-commit guards (a protected branch is only fast-forwarded; the staged content is checked) are proven with real
+    # pushes into a bare remote and real commits, and then a look at what MOVED, not at an exit code.
+    ("pipeline git guards", ("python3", "plugins/pipeline/scripts/git_guard_selftest.py")),
     # #1341. The deploy safety pass is BLOCKING; its "no secret in a committed file" step is this script.
     ("pipeline committed-secret scan", ("python3", "plugins/pipeline/scripts/scan_committed_secrets.py", "--selftest")),
     # #1465. A Kamal destination is carried through whole: `-d` on every command, the destination's
@@ -569,6 +575,7 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("arm window", ("python3", "scripts/check_arm_window.py")),
     ("arm window selftest", ("python3", "scripts/check_arm_window.py", "--selftest")),
     ("close-on-dev-merge selftest", ("python3", "scripts/close_on_dev_merge.py", "--selftest")),
+    ("label-new-issue selftest", ("python3", "plugins/rails-flow/scripts/label_new_issue.py", "--selftest")),
     # #1635. The record a promotion's release reuses instead of re-running the full sweep.
     ("sweep proof selftest", ("python3", "scripts/sweep_proof.py", "--selftest")),
     ("sweep proof wiring", ("python3", "scripts/sweep_proof.py", "check-wiring")),
@@ -654,6 +661,18 @@ SLOW_GATES: dict[str, int] = {
 
 # The gates that also enforce a committed record, and so take `--ratchet` (#1599).
 RATCHETED_GATES = frozenset({"mutation coverage"})
+
+
+def proof_refusal(rc: int, gate_results) -> str | None:
+    """Why a sweep must NOT be recorded as release proof, or None when it may be (#1664).
+
+    A proof says "every gate ran and passed on this exact tree", so any SKIP refuses it, and a gate that exits 3 is a SKIP (the `code == 3`
+    branch of `_check_gates`): `check_hook_gates.py` exits 3 when some timing checks were STARVED, i.e. decided by a machine too loaded
+    to judge the hook. Re-run on a quiet machine; never record around it."""
+    skipped = [r.name for r in gate_results if r.status == SKIP]
+    if rc != 0 or skipped:
+        return f"not recording a sweep proof: {'a gate failed' if rc else 'skipped: ' + ', '.join(skipped)}"
+    return None
 
 
 def slow_gate_command(name: str, cmd: tuple[str, ...], require_slow: bool) -> tuple[str, ...]:
@@ -1350,7 +1369,8 @@ class Doctor:
             elif code == 3:
                 # Exit 3 is a gate's own "I ran but could not check everything" — currently
                 # lint_markdown_code.py with node or ruby absent, which is the normal state of a
-                # cloud container. Reporting `ok` there would let 242 of 276 blocks go unchecked
+                # cloud container, and check_hook_gates.py when some timing checks were STARVED (the machine,
+                # not the hook, decided them: #1664), whose first output line is the reason and lists the labels. Reporting `ok` there would let 242 of 276 blocks go unchecked
                 # behind a green line, so it is a SKIP and the reason comes from the gate itself.
                 reason = out.strip().splitlines()[0] if out.strip() else "incomplete run"
                 self.add(SKIP, f"gate: {name}", reason,
@@ -1493,9 +1513,9 @@ def main(argv: list[str] | None = None) -> int:
     doctor = Doctor(fix=args.fix, require_slow=args.require_slow)
     rc = doctor.diagnose(gates=args.gates or args.gates_only, gates_only=args.gates_only, fast=args.fast)
     if args.record_proof:
-        skipped = [r.name for r in doctor.gate_results() if r.status == SKIP]
-        if rc != 0 or skipped:
-            print(f"not recording a sweep proof: {'a gate failed' if rc else 'skipped: ' + ', '.join(skipped)}")
+        refusal = proof_refusal(rc, doctor.gate_results())
+        if refusal:
+            print(refusal)
             if rc != 0:
                 # A failed full re-run must outrank an older success for the same tree (review of #1636).
                 try:
