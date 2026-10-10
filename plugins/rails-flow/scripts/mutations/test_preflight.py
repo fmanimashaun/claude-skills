@@ -173,10 +173,36 @@ GUARD = Guard(
         ),
         Mutation(
             # FOUND BY REVIEW OF #1826: the root was the nearest Gemfile alone, so from `web/` the repository's own `bin/` read as OUTSIDE the project.
-            "the project root ignores the repository, so a subdirectory without a Gemfile is its own root",
-            "    return min(found, key=lambda c: len(c.parts)) if found else here\n",
-            "    return gemfile or here\n",
-            "a repository's own bin/ is excluded from PATH even when the working directory is a subdirectory with no Gemfile",
+            "the project root stops at the NEAREST Gemfile or .git, so a nested .git hides the parent repository",
+            "            outermost = candidate     # each later candidate is a PARENT, so the last match is the outermost\n",
+            "            outermost = candidate\n            break\n",
+            "a repository's own bin/ is excluded from PATH even when the working directory is a subdirectory with its own nested .git and no Gemfile",
+        ),
+        Mutation(
+            # The directory passes but the FILE is a link into the checkout.
+            "a program that is a symlink into the repository is run from a trusted directory",
+            "            if target == base or target.startswith(base + os.sep):\n",
+            "            if False:\n",
+            "a program that is a symlink into the repository is not run, even from an otherwise trusted directory",
+        ),
+        Mutation(
+            # Free text another process chose must not reach the model's context.
+            "another process's whole command line reaches the context",
+            '    ps = run_quiet([ps_binary, "-o", "pid=,comm=", "-p", ",".join(pids)], env) if ps_binary else None\n',
+            '    ps = run_quiet([ps_binary, "-o", "pid=,command=", "-p", ",".join(pids)], env) if ps_binary else None\n',
+            "only a pid and a sanitised executable NAME reach the context, never another process's command line",
+        ),
+        Mutation(
+            "an executable name is not sanitised",
+            "re.sub(r'[^A-Za-z0-9._+-]', '', os.path.basename(parts[1]))[:24] or '?'",
+            "os.path.basename(parts[1])[:24] or '?'",
+            "only a pid and a sanitised executable NAME reach the context, never another process's command line",
+        ),
+        Mutation(
+            "a path from the command reaches the context with its control characters",
+            '    names = ", ".join(f"`{printable(p)}`" for p in missing[:5])',
+            '    names = ", ".join(f"`{p}`" for p in missing[:5])',
+            "a path taken from the command reaches the context as printable ASCII only",
         ),
         Mutation(
             "a relative PATH entry is searched, so it resolves against wherever the process happens to be",

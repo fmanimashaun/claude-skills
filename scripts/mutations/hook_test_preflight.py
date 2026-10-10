@@ -70,6 +70,13 @@ GUARD = Guard(
             "a python3 and a pg_isready the repository ships in its bin/ are NOT run",
         ),
         Mutation(
+            # A `*` in a PATH entry would be expanded against the filesystem by an unquoted `for dir in $PATH`.
+            "PATH entries are globbed, so one can expand into a directory outside the repository",
+            "set -f    # PATH entries are LITERAL: an unquoted expansion would glob a `*` in an entry against the filesystem\n",
+            "set +f\n",
+            "a PATH entry that is a glob is taken literally",
+        ),
+        Mutation(
             # A relative entry means whatever the working directory makes it: one that resolves OUTSIDE the repository is not caught by the rule above.
             "a relative PATH entry is searched for the interpreter",
             '  case "$dir" in /*) ;; *) continue ;; esac\n',

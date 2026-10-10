@@ -11,7 +11,8 @@
 # "alongside the tool result": it helps read a failure the environment caused, and it cannot stop the run. Plain stdout would NOT
 # reach the model from a PreToolUse hook, which is why the script prints JSON. A missing interpreter or script is silent through the stderr
 # redirect and the unconditional exit, so there is no `command -v python3` or `[ -f ]` guard; the interpreter lookup below is a different thing:
-# it decides WHICH python3 may run at all, and each of its lines has a mutation.
+# it decides WHICH python3 may run at all, and each of its lines has a mutation. A stray `~/.git` or `~/Gemfile` makes the home directory the repository, which
+# silences the hook for a tool installed under it (a Postgres in `~/.local/bin`): quiet, never wrong.
 set -uo pipefail
 
 # THE INTERPRETER IS CHOSEN HERE, NOT BY THE SHELL'S OWN LOOKUP (review of #1826). `python3` found through PATH can be a `python3` the repository ships: an empty
@@ -21,6 +22,8 @@ set -uo pipefail
 # neither the working directory nor the script's directory is put on the import path, so the script cannot be made to import a module from the checkout.
 physical() { (cd -P "$1" 2>/dev/null && pwd -P); }
 
+# The process's own working directory ($PWD), which Claude Code sets to the session's directory; the script reads the payload's `cwd`. They are the same
+# directory when the harness runs the hook, and this lookup chooses the interpreter BEFORE the payload can be read, so it cannot use the payload's.
 here="$(physical "$PWD")" || exit 0
 root="$here"
 probe="$here"
@@ -37,6 +40,7 @@ done
 python=""
 old_ifs="$IFS"
 IFS=:
+set -f    # PATH entries are LITERAL: an unquoted expansion would glob a `*` in an entry against the filesystem
 for dir in ${PATH:-}; do
   case "$dir" in /*) ;; *) continue ;; esac
   real="$(physical "$dir")" || continue
@@ -44,6 +48,7 @@ for dir in ${PATH:-}; do
   if [ -x "$real/python3" ]; then python="$real/python3"; break; fi
 done
 IFS="$old_ifs"
+set +f
 
 # `:-` because this runs under `set -u` and the variable is the harness's to set (#825).
 [ -n "$python" ] && "$python" -I "${CLAUDE_PLUGIN_ROOT:-}/scripts/test_preflight.py" 2>/dev/null

@@ -4219,6 +4219,7 @@ def test_preflight_fixtures() -> None:
         (mono / ".git").mkdir(parents=True)
         (mono / "bin").mkdir()
         (mono / "web").mkdir()
+        (mono / "web" / ".git").write_text("gitdir: /elsewhere/.git/modules/web\n")     # a NESTED .git (a submodule's, a worktree's): the repository is still the outer one
         (base / "outside" / "bin").mkdir(parents=True)
         py_ran, outside_ran = base / "ran-repo-python3", base / "ran-outside-python3"
         for where, witness_file in ((mono / "bin", py_ran), (mono / "web", py_ran), (base / "outside" / "bin", outside_ran)):
@@ -4237,6 +4238,9 @@ def test_preflight_fixtures() -> None:
               code == 0 and not py_ran.exists() and "Postgres is not accepting connections" in out, out.strip()[:160])
         code, out = hook(mono / "web", rspec, PATH=os.pathsep.join(["../../outside/bin", path]), **db_url)
         check("test-preflight: a python3 reachable through a RELATIVE PATH entry is NOT run, even when it resolves outside the repository, and the hook still speaks",
+              code == 0 and not outside_ran.exists() and "Postgres is not accepting connections" in out, out.strip()[:160])
+        code, out = hook(mono / "web", rspec, PATH=os.pathsep.join([str(base / "outsi*" / "bin"), path]), **db_url)
+        check("test-preflight: a PATH entry that is a glob is taken literally, so it cannot expand into a directory holding a python3, and the hook still speaks",
               code == 0 and not outside_ran.exists() and "Postgres is not accepting connections" in out, out.strip()[:160])
         shim = base / "shim"
         shim.mkdir()
