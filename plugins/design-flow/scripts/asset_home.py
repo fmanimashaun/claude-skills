@@ -81,6 +81,7 @@ def selftest() -> int:
         ran[0] += 1
         if not ok:
             failures.append(label)
+            print(f"FAIL: {label}", flush=True)   # at once: a later step that crashes on the broken state must not hide which check died first
 
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
@@ -115,8 +116,6 @@ def selftest() -> int:
         code, _ = migrate(root)
         check("--migrate refuses to merge two libraries", code == 1 and (root / "docs/assets/plan.json").is_file())
 
-    for label in failures:
-        print(f"FAIL: {label}")
     print(f"asset_home selftest: {ran[0]} checks passed" if not failures else f"asset_home selftest: {len(failures)} of {ran[0]} FAILED")
     return 1 if failures else 0
 
