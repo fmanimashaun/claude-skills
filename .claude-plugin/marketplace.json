@@ -127,7 +127,7 @@
     {
       "name": "flow-suite",
       "description": "One install for rails-flow, qa-flow and pipeline: a bundle whose manifest declares the three as dependencies (a manifest only, no components of its own).",
-      "source": "./bundles/flow-suite",
+      "source": "./plugins/flow-suite",
       "author": {
         "name": "Fisayo Animashaun",
         "url": "https://github.com/fmanimashaun/claude-skills"

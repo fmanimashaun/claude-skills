@@ -7,6 +7,7 @@
 | plugin | version | agents | commands | tier rows |
 |---|---|---|---|---|
 | `design-flow` | 1.45.2 | 5 | 12 | 5 |
+| `flow-suite` | 1.0.0 | — | — | — |
 | `pipeline` | 1.4.3 | 2 | 9 | 2 |
 | `qa-flow` | 1.36.1 | 11 | 8 | 11 |
 | `rails-flow` | 1.58.0 | 12 | 22 | 12 |
@@ -179,6 +180,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | changelog coverage selftest | `repo` | `python3 scripts/check_changelog_coverage.py --selftest` | selftest |
 | checks.json paths | `repo` | `python3 scripts/check_manifest_paths.py` | live check |
 | checks.json paths selftest | `repo` | `python3 scripts/check_manifest_paths.py --selftest` | selftest |
+| claude plugin validate --strict | `repo` | `python3 scripts/check_plugin_validate.py` | live check |
 | close-on-dev-merge selftest | `repo` | `python3 scripts/close_on_dev_merge.py --selftest` | selftest |
 | component passthrough | `repo` | `python3 scripts/check_component_passthrough.py` | live check |
 | component passthrough selftest | `repo` | `python3 scripts/check_component_passthrough.py --selftest` | selftest |
@@ -231,6 +233,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | page pacing | `repo` | `python3 scripts/check_page_pacing.py` | live check |
 | page pacing selftest | `repo` | `python3 scripts/check_page_pacing.py --selftest` | selftest |
 | pid record selftest | `repo` | `python3 scripts/pid_record_selftest.py` | live check |
+| plugin validate selftest | `repo` | `python3 scripts/check_plugin_validate.py --selftest` | selftest |
 | published blocks | `repo` | `python3 scripts/check_published_blocks.py` | live check |
 | published blocks selftest | `repo` | `python3 scripts/check_published_blocks.py --selftest` | selftest |
 | python floor selftest | `repo` | `python3 scripts/check_python_floor.py --selftest` | selftest |
@@ -319,4 +322,4 @@ Parsed by `check_handoff.parse_tiers`, the arbiter four shipped gates trust.
 | `design-auditor` | mechanical | the mandated greps must come back empty (`form_with`, `f.label`) |
 | `doc-updater` | mechanical | `architecture_graph.py` regenerates and its digest guard fails on drift |
 
-Manifest cross-check: the 4 plugin directories inventoried are exactly the ones marketplace.json installs.
+Manifest cross-check: the 5 plugin directories inventoried are exactly the ones marketplace.json installs.
