@@ -378,7 +378,7 @@ def segments(toks: list[str]) -> list[list[str]]:
         if skip:
             skip = False
             continue
-        if set(t) <= SEPARATOR_CHARS:
+        if t and set(t) <= SEPARATOR_CHARS:    # a NON-EMPTY run of separator characters: `set("") <= anything`, so an empty-string argument (`''`) used to END the command (#1768)
             out.append([])
         elif set(t) <= set("<>&") and set(t) & set("<>"):
             skip = True               # `>`, `>>`, `2>&` ... : the next token is its target
@@ -1115,6 +1115,12 @@ GIT_FLAGS = {"--no-pager", "-p", "--paginate", "-P", "--bare", "--no-replace-obj
 BENIGN_CONFIG = re.compile(r"^(user\.|core\.(quotepath|pager|editor|autocrlf|filemode|ignorecase|precomposeunicode|"
                            r"longpaths|abbrev|whitespace|fsmonitor)$|color\.|advice\.|gc\.auto$|safe\.directory$|"
                            r"init\.defaultbranch$|commit\.gpgsign$|diff\.|log\.)", re.I)
+# (#1768) what turns `git config` into a write, and the options that take a value of their own (so the value is not the key's value)
+CONFIG_WRITE_FLAGS = {"--add", "--unset", "--unset-all", "--replace-all", "-e", "--edit", "--rename-section", "--remove-section"}
+CONFIG_READ_ACTIONS = {"--get", "--get-all", "--get-regexp", "--list", "-l", "--get-urlmatch"}
+CONFIG_VALUE_FLAGS = {"--file", "-f", "--blob", "--type", "--default"}
+CONFIG_READ_FLAGS = {"--global", "--local", "--system", "--worktree", "--includes", "--no-includes", "--show-origin", "--show-scope", "-z", "--null",
+                     "--name-only", "--bool", "--int", "--bool-or-int", "--path", "--expiry-date", "--fixed-value", "--no-type"}
 GIT_ENV_REDIRECT = re.compile(r"^GIT_(DIR|WORK_TREE|CONFIG\w*|SSH\w*|ALTERNATE\w*|OBJECT_DIRECTORY|INDEX_FILE|NAMESPACE)=")
 INERT = {"echo", "printf", "which", "type", "man", "ls", "cat", "grep", "rg", "head", "tail", "wc", "cut", "tr",
          "sort", "uniq", "test", "[", "[[", "true", "false", ":", "export", "set", "unset", "read", "mkdir", "rm",
@@ -1213,7 +1219,31 @@ def _git_read_only(verb: str, args: list[str]) -> bool:
         sub = next((a for a in args if not a.startswith("-")), "")
         return sub in ("", "show", "get-url", "add")       # `add` cannot repoint an existing remote
     if verb == "config":
-        if any(a in ("--get", "--get-all", "--get-regexp", "--list", "-l", "--get-urlmatch", "get", "list") for a in args):
+        # `--get`, `--list` and the like are read FLAGS; `get` and `list` are the read SUB-COMMANDS of newer git, and only in the FIRST position:
+        # anywhere else they are a VALUE (`git config core.hooksPath get` points the hooks at ./get; #1768 review).
+        if any(a in CONFIG_READ_ACTIONS for a in args):
+            return True
+        if any(a in CONFIG_WRITE_FLAGS for a in args):
+            return False
+        # (#1768) A bare `git config <key>`: ONE positional word, no write flag, is a READ of that key, whichever key it is: `core.hooksPath` is not on the benign
+        # list because SETTING it redirects the hooks, but reading it is how a session asks where they are. Three ways this could be a write, each refused:
+        #   - a flag this rule does not KNOW is harmless: git accepts any unambiguous prefix of a long option (`--unset-a`, `--uns`), so a list of the write flags
+        #     is not enough; only the flags that select a file or a value type are allowed;
+        #   - a word that is not a key: `edit`, `set`, `unset` are sub-commands of newer git, and a key always has a dot (`section.name`);
+        #   - a second word (a value), or a word the shell has not expanded yet.
+        words, skip, only_known = [], False, True
+        for a in args:
+            if skip:
+                skip = False
+            elif a in CONFIG_VALUE_FLAGS:
+                skip = True
+            elif a.startswith("-"):
+                only_known = only_known and a in CONFIG_READ_FLAGS
+            else:
+                words.append(a)
+        if only_known and words and words[0] in ("get", "list"):
+            return True
+        if only_known and len(words) == 1 and "." in words[0] and not _opaque(words[0]):
             return True
         keys = [a for a in args if not a.startswith("-")]
         return bool(keys) and BENIGN_CONFIG.match(keys[0]) is not None
@@ -1729,6 +1759,8 @@ def selftest() -> int:
         ("cd other && git push", fake("topic", by_dir={"other": "main"}), True),
         ("cd other\ngit push", fake("topic", by_dir={"other": "main"}), True),
         ("git -C other push", fake("topic", by_dir={"other": "main"}), True),
+        # (#1768) an empty-string argument does not end the command: the refspecs after it are still read
+        ("git push origin '' main", on_feature, True),
         # (#1764) a directory named through HOME is expanded BEFORE the push's HEAD is resolved there: the hook is handed the raw command
         ("git -C ~/proj push", fake("topic", by_dir={"/home/selftest/proj": "main"}), True),
         ("git -C ~/proj push", fake("main", by_dir={"/home/selftest/proj": "topic"}), False),
@@ -2087,6 +2119,10 @@ def selftest() -> int:
         "git status", "git log --oneline -5", "git diff HEAD~1 -- app.rb", "git fetch origin", "git add -A", "git commit -m 'x y'",
         "git checkout -b feature/x", "git push -u origin feature/x", "git branch -D old", "git -c user.name=x -c user.email=y commit -m z",
         "git -C /tmp/x status", "git config --get remote.origin.url", "git config user.email a@b", "git remote -v",
+        # (#1768) a bare `git config <key>` is a READ of that key, whichever key it is
+        "git config get core.hooksPath", "git config list", "git config get --local remote.origin.url",
+        "git config core.hooksPath", "git config --local core.hooksPath", "git config --global core.hooksPath", "git config --file .git/config core.hooksPath",
+        "git config remote.origin.url", "git config --local url.x.insteadOf",
         "git remote add up https://github.com/o/r", "git stash pop", "git rebase dev", "git reset --hard HEAD~1",
         "git cherry-pick abc123", "git rev-parse HEAD", "git --no-pager log", "git --version", "git",
         "gh pr view 7", "gh pr list --state open", "gh pr create --title t --body b", "gh pr checks 7", "gh pr checkout 7",
@@ -2110,6 +2146,16 @@ def selftest() -> int:
         "git ci -m x", "git -c core.sshCommand=x push origin feature/x", "git -c url.x.insteadOf=y push origin feature/x",
         "git --weird-option status", "git $V push origin feature/x", "git remote set-url origin https://github.com/x/y",
         "git remote remove origin", "git config remote.origin.url https://github.com/x/y", "git config url.x.insteadOf y",
+        # (#1768) ...but a value, a write flag, or a word the hook cannot read is a WRITE (or could be): still refused
+        "git config core.hooksPath /tmp/x", "git config --local core.hooksPath ''", "git config --add core.hooksPath /tmp/x",
+        "git config --unset core.hooksPath", "git config --unset-all remote.origin.url", "git config --replace-all remote.origin.url x",
+        "git config -e", "git config --edit", "git config --rename-section remote.origin remote.up", "git config --remove-section remote.origin",
+        "git config $KEY", "git config core.hooksPath $VALUE", "git config remote.$NAME.url",
+        # (#1768 review) the sub-commands of newer git (`edit` opens the editor on the config), and abbreviated long options (git accepts any unambiguous prefix)
+        # (#1768 review) `get` and `list` are sub-commands only in the FIRST position: as a VALUE they are a write (`git config core.hooksPath get` points the hooks at ./get)
+        "git config core.hooksPath get", "git config core.hooksPath list", "git config remote.origin.url list",
+        "git config edit", "git config set core.hooksPath /tmp/x", "git config unset core.hooksPath", "git config --unset-a core.hooksPath",
+        "git config --edi", "git config --uns core.hooksPath", "git config --remove-s remote.origin", "git config -z -e",
         "git send-pack origin main", "git update-ref refs/heads/main abc", "git symbolic-ref HEAD refs/heads/x",
         "git filter-branch -f", "git fast-import", "git svn dcommit", "git http-push x",
         "gh workflow run release.yml", "gh pr update-branch 7", "gh repo sync", "gh repo delete x --yes", "gh release delete v1",

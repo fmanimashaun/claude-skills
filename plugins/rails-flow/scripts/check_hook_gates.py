@@ -2081,6 +2081,12 @@ def release_gate_fixtures() -> None:
         check(f"release-gate: `{cmd}` targets main and is blocked without a certification", run(cmd) == 2, "exit 0")
     for cmd in ('git commit -m "push origin main"', 'echo "git push origin main"', "# git push origin main", "git push origin feature/x"):
         check(f"release-gate: `{cmd}` does not target main and passes", run(cmd) == 0, "exit 2")
+    # (#1768) A bare `git config <key>` READS the key, whichever it is: the refusal of `git config core.hooksPath` blocked a session's read-only inspection command.
+    for cmd in ("git config core.hooksPath", "git config --local core.hooksPath",
+                "cd /tmp; grep -n 'ref:' ci.yml | head -3; git log -1 --format='%h %cd' --date=short -- ci.yml; git config core.hooksPath; sed -n 3p STATUS.md"):
+        check(f"release-gate (#1768): `{cmd}` is a read-only inspection and passes", run(cmd) == 0, "exit 2")
+    for cmd in ("git config core.hooksPath /tmp/x", "git config --local core.hooksPath ''", "git config --unset core.hooksPath", "git config --add core.hooksPath /tmp/x"):
+        check(f"release-gate (#1768): `{cmd}` WRITES the key and is still refused", run(cmd) == 2, "exit 0")
     # #1410: `main`/`master` INSIDE a branch name is not a destination. Both were refused
     # downstream on one day, and both authors renamed the branch to get past the gate.
     for cmd in ("git push -u origin fix/1010-one-main", "git push origin feature/main-menu",
