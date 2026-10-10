@@ -9,7 +9,7 @@ GUARD = Guard(
     name="prompt_library",
     subject="scripts/prompt_library.py",
     selftest="scripts/prompt_library.py",  # --selftest lives in the module
-    needs=(),  # stdlib only, and every fixture builds its own tempdir project
+    needs=("scripts/asset_home.py",),  # #1779: a leaf the entry point asks first; every fixture still builds its own tempdir project
     mutations=(
         Mutation(
             # The whole reason the model column can be trusted. `agent` names WHO did the work;

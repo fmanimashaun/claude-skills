@@ -66,7 +66,7 @@ mandated (#142).
 |---|---|---|---|
 | Dropdown/Menu | trigger `aria-haspopup aria-expanded aria-controls`; `role=menu/menuitem` | Enter/Space/↓ open · ↑↓ · Home/End · type-ahead · Esc | list-nav + dismissable + anchored |
 | Dialog/Modal | native `<dialog>` + `showModal()` + `aria-labelledby` (`aria-modal` redundant); fallback `role=dialog aria-modal` | Esc close · rest of page inert (native, no scripted trap); fallback Tab trapped | native; fallback focus-trap + dismissable |
-| Drawer (overlay) | as Dialog — no APG pattern of its own | Esc · Tab trapped | focus-trap + dismissable |
+| Drawer (overlay) | as Dialog — no APG pattern of its own | Esc (native) · rest of page inert | as Dialog (native `<dialog>`) + dismissable |
 | Drawer (persistent / push) | **not a dialog** — see the contract below | none | none |
 | Carousel | `role=region` **or** `group` + `aria-roledescription=carousel` | prev/next buttons | carousel |
 | Mega menu / Flyout | **disclosure, NOT a menu** — `aria-expanded` + `aria-controls` on a button; no `role=menu`, no `aria-haspopup` | Tab · **Esc required** (WCAG 1.4.13) · arrows **optional** | disclosure + dismissable |
@@ -74,7 +74,7 @@ mandated (#142).
 | Slider, custom (multi-thumb only) | one `role=slider` **per thumb**, each with its own name + `aria-valuenow` | as above, per thumb | none — test on touch AT first |
 | Date / Time input | native `input[type=date\|time]` — **"No corresponding role"** in ARIA in HTML | the platform picker's own | none |
 | Date picker, custom | **no APG pattern**: Dialog **or** Combobox + `role=grid`; `aria-selected` = chosen, `aria-current="date"` = today | grid navigation; month/year heading is a live region | focus-trap + dismissable |
-| Lightbox / gallery viewer | Dialog **containing** a Carousel | Esc · Tab trapped · prev/next | focus-trap + dismissable + carousel |
+| Lightbox / gallery viewer | Dialog **containing** a Carousel | Esc (native) · rest of page inert · prev/next | as Dialog (native `<dialog>`) + carousel |
 | Tabs | `role=tablist/tab/tabpanel` `aria-selected aria-controls`; the **panel** carries `aria-labelledby` back to its tab, and the tablist is named; see the contract below | ←→ · ↑↓ **only** when `aria-orientation=vertical` · Space/Enter when activation is manual · **Home/End are `(Optional)`** | list-nav |
 | Tooltip | `role=tooltip` `aria-describedby` (`popover="hint"`: Chrome/Edge 151, Firefox 153, no Safari; `interestfor`: Chrome/Edge 142 only — neither Baseline as of 2026-10-10, so the controller stays) | show on focus+hover · Esc | anchored + dismissable |
 | Popover | trigger `aria-expanded aria-controls` | Esc · focus moves in | anchored + dismissable + focus-trap(soft) |
@@ -104,7 +104,7 @@ the Dialog contract, the lightbox is the composition already precedented by the 
 qualifier, and applied to the wrong shape that is actively harmful.
 
 - **Overlay drawer** (slides in over content, backdrop, dismissible) → **is** a modal dialog. Full
-  Dialog contract: `role="dialog"`, `aria-modal="true"`, an accessible name via `aria-labelledby` or
+  Dialog contract: a native `<dialog>` opened with `showModal()` (implicit dialog role; `aria-modal` implied by `showModal()`; the `role="dialog"` + `aria-modal="true"` contract applies only to the div fallback), an accessible name via `aria-labelledby` or
   `aria-label`, **initial focus inside** (generally the first focusable element), **focus returns to the
   invoking element** on close, and **`Esc` closes** — APG lists Escape unconditionally.
 - **Persistent / push drawer** (the ordinary Rails app sidebar: always visible at `lg`, pushes content,

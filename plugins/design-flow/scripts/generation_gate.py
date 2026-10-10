@@ -55,6 +55,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import asset_home  # noqa: E402
+
 CONFIG_PATH = Path(".design-flow/generation.json")
 
 # The tiers that are satisfiable WITHOUT paying anyone. Kept here rather than in config because it
@@ -141,7 +144,7 @@ def check_library(root: Path, request: dict) -> None:
     manifest for and why nothing fit. Without that, "generate a hero illustration" quietly re-buys
     an asset the project already owns, and the library grows duplicates instead of coverage.
     """
-    manifest_path = root / (request.get("library") or "docs/assets/manifest.json")
+    manifest_path = root / (request.get("library") or "docs/design/assets/manifest.json")
     if not manifest_path.is_file():
         return  # No library yet — the first asset has nothing to miss against.
     miss = request.get("library_miss")
@@ -316,7 +319,7 @@ def compose_prompt(request: dict, brief: dict, pack: dict) -> str:
             f"  Put it in the BRIEF for this surface — `.design-flow/generation.json` → "
             f"`briefs.{surface}.palette` — which is where a per-surface constraint belongs and what "
             f"overrides everything else.\n"
-            f"  Or in the plan row's `pack.palette` (`docs/assets/plan.json`), which is where the "
+            f"  Or in the plan row's `pack.palette` (`docs/design/assets/plan.json`), which is where the "
             f"request's `pack` actually comes from. NOT the brand pack's brand.json: nothing in this "
             f"path reads it, and saying so would send you to edit a file that cannot help.\n"
             f"  Nothing was spent.")
@@ -446,6 +449,9 @@ def provenance_row(surface: str, kind: str, model: dict, prompt: str, pack: dict
 
 
 def decide(root: Path, request: dict) -> dict:
+    moved = asset_home.refusal(root)  # #1779: a library still at the old place is never read as an empty one
+    if moved:
+        raise Refusal(moved)
     config = load_config(root)
     check_precondition(request)
     check_library(root, request)
@@ -559,7 +565,8 @@ def selftest() -> int:
                 (root / CONFIG_PATH).write_text(json.dumps(config), encoding="utf-8")
             if library is not None:
                 (root / "docs" / "assets").mkdir(parents=True)
-                (root / "docs/assets/manifest.json").write_text(json.dumps(library), encoding="utf-8")
+                (root / "docs/design/assets").mkdir(parents=True, exist_ok=True)
+                (root / "docs/design/assets/manifest.json").write_text(json.dumps(library), encoding="utf-8")
             try:
                 decide(root, request)
                 got = True

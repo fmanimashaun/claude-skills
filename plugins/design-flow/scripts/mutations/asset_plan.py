@@ -5,8 +5,9 @@ GUARD = Guard(
     name="asset_plan",
     subject="scripts/asset_plan.py",
     selftest="scripts/asset_plan.py",   # --selftest lives in the module
-    # No `needs`: the fixtures are literals and tempdirs, and the one run_plan fixture points at
-    # a NONEXISTENT executor on purpose, so no mutation can reach a provider from here.
+    # The fixtures are literals and tempdirs, and the one run_plan fixture points at a NONEXISTENT executor on purpose, so no
+    # mutation can reach a provider from here. The one need is the leaf it asks first (#1779).
+    needs=("scripts/asset_home.py",),
     mutations=(
         Mutation(
             # #642. `subject: "x"` composed into a paid prompt. The floor needs no taxonomy

@@ -152,6 +152,12 @@ GUARD = Guard(
         ),
         # #1599: a mutant runs only the fixture its `expects` names, after a control run of the unmutated code.
         Mutation(
+            "a STARVED run (exit 3) quotes the expected label and counts as a catch though nothing was judged",
+            "        if result.returncode == EXIT_STARVED:",
+            "        if False:",
+            "#1775: an un-narrowed mutant whose run exits 3 (STARVED)",
+        ),
+        Mutation(
             "a narrowed mutant that is refused (exit 2) counts as caught, because the refusal quotes its label",
             "        if narrow and result.returncode != 1:",
             "        if False:",
