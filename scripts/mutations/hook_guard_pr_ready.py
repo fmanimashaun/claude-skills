@@ -29,6 +29,12 @@ GUARD = Guard(
     needs=_NEEDS,
     mutations=(
         Mutation(
+            "a target it cannot tell is guessed as the session's directory (fail open)",
+            "        root = git(start, \"rev-parse\", \"--show-toplevel\")\n        if root and in_force(root):\n            return refuse(f\"which repository",
+            "        where = start\n        root = None\n        if root and in_force(root):\n            return refuse(f\"which repository",
+            "an earlier segment that can retarget gh refuses: gh repo set-default",
+        ),
+        Mutation(
             "the allowlist accepts any word",
             "        if not seen_ready or not plain_word(w):\n",
             "        if False:\n",
