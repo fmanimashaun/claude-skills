@@ -81,13 +81,13 @@ GUARD = Guard(
         ),
         Mutation(
             "a quiet machine excuses a deadline denial (the load condition is dropped)",
-            "and cpu_s < STARVED_MAX_CPU_S and load > cores)",
-            "and cpu_s < STARVED_MAX_CPU_S)",
+            "and cpu_s < limit and load > cores)",
+            "and cpu_s < limit)",
             "...and a machine under its cores never excuses a deadline denial",
         ),
         Mutation(
             "a hook that burned CPU is excused (the CPU condition is dropped)",
-            "and cpu_s < STARVED_MAX_CPU_S and load > cores)",
+            "and cpu_s < limit and load > cores)",
             "and load > cores)",
             "...but a hook that burned 5 CPU seconds past its deadline is the HOOK's fault, at any load",
         ),
