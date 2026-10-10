@@ -69,6 +69,20 @@ if [ "$degraded" = 1 ]; then
   fi
   exit 0
 fi
+# A COMMAND WORD BUILT BY THE SHELL (`$(echo gh) pr ready 5`, `G=gh; $G pr ready 5`) cannot be matched to gh without running it.
+# A substring test, not detection (coordinator's call on #1831): a segment whose FIRST word holds `$` or a backtick, in a command
+# that mentions `ready` anywhere (any case), refuses. `$HOME/bin/ls` passes: no `ready`.
+shopt -s nocasematch
+if [[ $input == *ready* ]]; then
+  while IFS= read -r l; do
+    l="${l#"${l%%[![:space:]]*}"}"; w="${l%%[[:space:]]*}"
+    if [[ $w == *'$'* || $w == *'`'* ]]; then
+      echo "BLOCKED by rails-flow pr-ready guard: the command word \`${w:0:40}\` is built by the shell, so whether it runs \`gh pr ready\` cannot be told without running it. Run \`gh pr ready <number>\` literally, as its own command." >&2
+      exit 2
+    fi
+  done <<< "$seg"
+fi
+shopt -u nocasematch
 hit=0; args=""; segment=""
 rest="$seg"$'\n'
 while [ -n "$rest" ]; do

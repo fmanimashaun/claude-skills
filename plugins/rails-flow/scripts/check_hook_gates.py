@@ -5466,6 +5466,9 @@ def guard_pr_ready_fixtures() -> None:
             expect(f"guard-pr-ready: with no python3 on PATH (degraded), any `ready` refuses: {cmd!r}", degraded(cmd), 2,
                    "could not be read")
         expect("guard-pr-ready: with no python3 on PATH (degraded), a command without `ready` passes: ls", degraded("ls"), 0)
+        for cmd in ("$(echo gh) pr ready 5", "G=gh; $G pr ready 5"):
+            expect(f"guard-pr-ready: a command word built by the shell refuses: {cmd}", guard(repo, cmd), 2, "built by the shell")
+        expect("guard-pr-ready: a `$` command word with no `ready` is left alone: $HOME/bin/ls", guard(repo, "$HOME/bin/ls"), 0)
         expect("guard-pr-ready: a scheme-less PR URL is an explicit target", guard(repo, "gh pr ready github.com/o/r/pull/5"), 2,
                "explicit repository target")
         expect("guard-pr-ready: a PR argument built by the shell cannot be judged: gh pr ready $PR", guard(repo, "gh pr ready $PR"), 2,

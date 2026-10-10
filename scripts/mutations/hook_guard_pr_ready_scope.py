@@ -29,6 +29,12 @@ GUARD = Guard(
     needs=_NEEDS,
     mutations=(
         Mutation(
+            "a command word built by the shell is not refused",
+            "    if [[ $w == *'$'* || $w == *'`'* ]]; then",
+            "    if false; then",
+            "a command word built by the shell refuses: $(echo gh) pr ready 5",
+        ),
+        Mutation(
             "`gh pr ready` inside a compound command is judged on the old HEAD (no own-command rule)",
             '  deny "\\`gh pr ready\\` must be its own command;',
             '  continue; deny "\\`gh pr ready\\` must be its own command;',
