@@ -36,7 +36,7 @@ holds the harness-neutral rules (measure before you assert; write the mechanism 
 5. Every check you add must be able to fail: a `--selftest`, and a guard (see the two roots below).
 6. Edited a command or skill? `python3 scripts/lint_markdown_shell.py` and `lint_markdown_code.py`.
    Edited `skills/**`? `python3 scripts/package_core.py`, commit the `dist/` change → *Packaging*.
-7. CHANGELOG **fragment** `changelog.d/<issue>-<slug>.md` (never an edit to `CHANGELOG.md`), naming a path in backticks → *Versioning*.
+7. CHANGELOG **fragment** `changelog.d/<issue>-<slug>.md` (preferred; a bullet added straight to `### Unreleased` still passes this release), naming a path in backticks → *Versioning*.
 8. Run the sweep locally — `python3 scripts/maintainer_doctor.py --gates-only --fast` (~45 s) — and
    review your own diff against `skills/code-review/SKILL.md` → *Verify our own claims*.
 9. PR **into `dev`**, a line `Fixes #n` per issue it completes (`Refs #n` if partial), **no version bump** → *Git flow*.

@@ -31,8 +31,8 @@ GUARD = Guard(
         ),
         Mutation(
             "an ambiguous section prefix is resolved to the first heading",
-            "    if len(hits) > 1:\n        live",
-            "    if False:\n        live",
+            "    if len(hits) > 1:\n        pool = [s for s in hits if s[2]] or hits",
+            "    if False:\n        pool = [s for s in hits if s[2]] or hits",
             "an ambiguous prefix is an error",
         ),
         Mutation(
@@ -88,6 +88,30 @@ GUARD = Guard(
             "    new = fold_text(cl.read_text(encoding=\"utf-8\"), frags, into)\n",
             "    try:\n        new = fold_text(cl.read_text(encoding=\"utf-8\"), frags, into)\n    except FragmentError:\n        new = cl.read_text(encoding=\"utf-8\")\n",
             "a fold with one unplaceable fragment is refused",
+        ),
+        Mutation(
+            'identical headings are no longer treated as one, so `## Repository hygiene` twice is ambiguous again',
+            '        if len(pool) == 1 or len({s[1] for s in pool}) == 1:',
+            '        if len(pool) == 1:',
+            'two IDENTICAL headings with no Unreleased resolve',
+        ),
+        Mutation(
+            '--into does not look for the heading that holds the armed block',
+            '            pool = [s for s in pool if into in s[3]] or pool\n',
+            '            pass\n',
+            '--into on identical headings goes to the one holding the release block',
+        ),
+        Mutation(
+            'a fragment saved with CRLF endings is read with a stray carriage return',
+            '    lines = text.replace("\\r\\n", "\\n").replace("\\r", "\\n").rstrip("\\n").split("\\n")',
+            '    lines = text.rstrip("\\n").split("\\n")',
+            'a fragment with CRLF endings parses',
+        ),
+        Mutation(
+            'a git failure is read as a clean CHANGELOG',
+            '    return r.returncode != 0 or bool(r.stdout.strip())',
+            '    return r.returncode == 0 and bool(r.stdout.strip())',
+            'a git failure is treated as a dirty CHANGELOG',
         ),
     ),
 )

@@ -67,7 +67,7 @@ def parse(text: str, name: str) -> tuple[str, list[str]]:
     """(the section prefix, the bullet's lines) of one fragment."""
     if not NAME.match(name):
         raise FragmentError(f"{name}: the name must be `<issue number>-<slug>.md` (lower case, digits and hyphens)")
-    lines = text.rstrip("\n").split("\n")
+    lines = text.replace("\r\n", "\n").replace("\r", "\n").rstrip("\n").split("\n")      # a fragment saved with CRLF endings parses the same
     first = next((i for i, l in enumerate(lines) if l.strip()), None)
     if first is None:
         raise FragmentError(f"{name}: empty")
@@ -91,26 +91,35 @@ def parse(text: str, name: str) -> tuple[str, list[str]]:
     return m.group(1), body
 
 
-def sections(changelog: str) -> list[tuple[int, str, bool]]:
-    """(line index, heading, has a `### Unreleased`) for every `## ` section."""
-    lines = changelog.split("\n")
+_RELEASE = re.compile(r"\(release (v\d+\.\d+\.\d+)\)")
+
+
+def sections(changelog: str) -> list[tuple[int, str, bool, frozenset]]:
+    """(line index, heading, has a `### Unreleased`, the `(release vX)` tags its blocks carry) for every `## ` section."""
     out: list[list] = []
-    for i, line in enumerate(lines):
+    for i, line in enumerate(changelog.split("\n")):
         if line.startswith("## "):
-            out.append([i, line[3:].strip(), False])
-        elif line.strip() == UNRELEASED and out:
+            out.append([i, line[3:].strip(), False, set()])
+        elif out and line.strip() == UNRELEASED:
             out[-1][2] = True
-    return [(i, h, u) for i, h, u in out]
+        elif out and line.startswith("### "):
+            out[-1][3].update(_RELEASE.findall(line))
+    return [(i, h, u, frozenset(t)) for i, h, u, t in out]
 
 
-def resolve(prefix: str, secs: list[tuple[int, str, bool]], name: str) -> tuple[int, str]:
+def resolve(prefix: str, secs: list[tuple[int, str, bool, frozenset]], name: str, into: str | None = None) -> tuple[int, str]:
+    """The `## ` section a prefix names. Where several share it: the one with a `### Unreleased`; else, for `--into`, the one holding that release block;
+    else, if they are the SAME heading (`## Repository hygiene` appears twice), the first, which is the live one at the top. Different headings with
+    nothing to tell them apart are an error: guessing which rails-stack section is live would file a note under a dead one."""
     hits = [s for s in secs if s[1].startswith(prefix)]
     if not hits:
         raise FragmentError(f"{name}: no `## ` heading of the CHANGELOG starts with {prefix!r}")
     if len(hits) > 1:
-        live = [s for s in hits if s[2]]
-        if len(live) == 1:
-            hits = live
+        pool = [s for s in hits if s[2]] or hits
+        if into is not None:
+            pool = [s for s in pool if into in s[3]] or pool
+        if len(pool) == 1 or len({s[1] for s in pool}) == 1:
+            hits = [pool[0]]
         else:
             raise FragmentError(f"{name}: {prefix!r} starts {len(hits)} headings ({'; '.join(repr(s[1]) for s in hits)}): write more of the heading")
     return hits[0][0], hits[0][1]
@@ -139,7 +148,7 @@ def fold_text(changelog: str, frags: list[tuple[str, str, list[str]]], into: str
     secs = sections(changelog)
     placed: dict[int, list[list[str]]] = {}
     for name, prefix, bullet in frags:
-        start, _ = resolve(prefix, secs, name)
+        start, _ = resolve(prefix, secs, name, into)
         placed.setdefault(start, []).append(bullet)
     lines = changelog.split("\n")
     # bottom-up, so an insertion does not move the sections still to be done
@@ -229,7 +238,7 @@ def check(root: Path = ROOT) -> list[str]:
 
 def _dirty(root: Path) -> bool:
     r = subprocess.run(["git", "status", "--porcelain", "--", "CHANGELOG.md"], cwd=root, capture_output=True, text=True)
-    return r.returncode == 0 and bool(r.stdout.strip())
+    return r.returncode != 0 or bool(r.stdout.strip())      # a git failure (not a repository, no git) is treated as dirty: refuse, never write blind
 
 
 def fold(root: Path = ROOT, into: str | None = None, dry_run: bool = False, require_clean: bool = True) -> int:
@@ -316,6 +325,16 @@ def selftest() -> int:
     ck("an unknown section is an error", err(fold_text, cl, [("1-x.md", "nope", ["- x"])]) is not None)
     ck("an ambiguous prefix is an error",
        "starts 2 headings" in (err(fold_text, "## rails-flow a\n\n## rails-flow b\n", [("1-x.md", "rails-flow", ["- x"])]) or ""))
+    dup = "## Repository hygiene\n\n### 2026-10-08 (release v1.155.0)\n\n- a\n\n## rails-flow x\n\n## Repository hygiene\n\n### 2026-09-01 (release v1.100.0)\n\n- b\n"
+    ck("two IDENTICAL headings with no Unreleased resolve to the first (the live one at the top)",
+       "### Unreleased" in (folded(dup, [("1-x.md", "Repository hygiene", ["- n (#1)"])]) or "") and folded(dup, [("1-x.md", "Repository hygiene", ["- n (#1)"])]).index("### Unreleased") < dup.index("## rails-flow") + 40)
+    armed_dup = "## Repository hygiene\n\n### 2026-09-01 (release v1.100.0)\n\n- a (#1)\n\n## rails-flow x\n\n## Repository hygiene\n\n### 2026-10-10 (release v9.0.0)\n\n- b (#2)\n"
+    ck("--into on identical headings goes to the one holding the release block (the SECOND here, not the first)",
+       in_order(folded(armed_dup, [("3-x.md", "Repository hygiene", ["- n (#3)"])], "v9.0.0"), "(release v9.0.0)", "- n (#3)", "- b (#2)"))
+    two_rs = "## rails-stack (old)\n\n### 1.0 (release v1.0.0)\n\n- a\n\n## rails-stack (live)\n\n### 2.0 (release v9.0.0)\n\n- b\n"
+    ck("DIFFERENT headings with nothing to tell them apart are still an error", "write more of the heading" in (err(fold_text, two_rs, [("1-x.md", "rails-stack", ["- n"])]) or ""))
+    ck("...but --into picks the one holding the armed block", in_order(folded(two_rs, [("1-x.md", "rails-stack", ["- n (#1)"])], "v9.0.0"), "(release v9.0.0)", "- n (#1)", "- b"))
+    ck("a fragment with CRLF endings parses", parse(good.replace("\n", "\r\n"), "12-a-thing.md")[0] == "rails-flow")
     ck("...unless exactly one has an Unreleased",
        err(fold_text, "## rails-flow a\n\n### Unreleased\n\n- o\n\n## rails-flow b\n", [("1-x.md", "rails-flow", ["- x (#1)"])]) is None)
     armed = cl.replace("### Unreleased\n\nThe release number is assigned at promotion.\n\n- **old repo", "### 2026-10-10 (release v1.156.0)\n\n- **old repo")
@@ -377,6 +396,11 @@ def selftest() -> int:
         before = (g / "CHANGELOG.md").read_text()
         rc = fold(g)
         ck("a dry-run fold of a clean CHANGELOG works", clean == 0)
+        with tempfile.TemporaryDirectory() as notrepo:
+            (Path(notrepo) / "CHANGELOG.md").write_text("## Repository hygiene\n")
+            (Path(notrepo) / "changelog.d").mkdir()
+            (Path(notrepo) / "changelog.d" / "2-y.md").write_text("section: Repository hygiene\n- **y — `scripts/a.py`** (#2). a note long enough to be one, here.\n")
+            ck("a git failure is treated as a dirty CHANGELOG (refused, nothing written)", fold(Path(notrepo)) == 2 and (Path(notrepo) / "changelog.d" / "2-y.md").exists())
         ck("a fold refuses a CHANGELOG with uncommitted changes", rc == 2, rc)
         ck("...and changes nothing", (g / "CHANGELOG.md").read_text() == before and (g / "changelog.d" / "2-y.md").exists())
     if failures:
