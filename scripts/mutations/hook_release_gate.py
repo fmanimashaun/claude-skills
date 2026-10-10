@@ -47,10 +47,10 @@ GUARD = Guard(
         # #1657 made the normaliser READ a quoted `main` as the shell does, so `git push origin "main"` is no longer lost on the normalised
         # segment and cannot tell the two apart; what the normaliser still drops is a command substitution's words and a `-C` argument.
         Mutation(
-            "the classifier reads the command with each substitution split onto its own line, so a push whose option holds a substitution is no longer read as a push to main",
+            "the classifier reads the normalised segment, so a substitution in the push is dropped and the push allowed",
             """  if _found="$(printf '%s' "$cmd" | LC_ALL=C python3 "$_pt" --classify 2>/dev/null)"; then""",
-            """  if _found="$(printf '%s' "$cmd" | tr '()' '\\n\\n' | LC_ALL=C python3 "$_pt" --classify 2>/dev/null)"; then""",
-            '`git push -v$(true) origin main` reaches main and is blocked',
+            """  if _found="$(printf '%s' "$seg" | LC_ALL=C python3 "$_pt" --classify 2>/dev/null)"; then""",
+            '`git -C $(pwd) push origin main` reaches main and is blocked',
         ),
         Mutation(
             "an unjudgeable command is allowed instead of treated as a promotion",

@@ -177,9 +177,29 @@ fi
 _gate_main() {
 cmd="$(printf '%s' "$input" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("tool_input",{}).get("command",""))' 2>/dev/null || printf '%s' "$input")"
 
-# --- The command is read by `push_targets.py --classify` over the RAW text (below); there is no normalised copy ---
-# #1729: the shared normaliser (`lib/normalize_cmd.sh`) used to run here and fill `seg`, which nothing read once the fallback
-# began refusing by shape (#1759), so a mutation on it could not fail. `lib/` stays: rails-flow's guard-bash.sh uses it (#906).
+# --- Normalize the command so promotion detection can't be fooled (must fail CLOSED) ---
+# One normaliser, shared with rails-flow's guard-bash.sh: `lib/normalize_cmd.sh` beside this script
+# (plugins install alone, so each ships a copy; the maintainer lint `hook-lib-drift` keeps the two
+# byte-identical, #906). It strips quoted spans, comments and heredoc bodies, splits on ; | && ||
+# and newlines, and peels env/sudo/git-global-option prefixes, so the verb is at the START of a
+# segment. FAIL CLOSED if the lib is missing: match the raw text, as before #3/#7/#48.
+_here="${BASH_SOURCE[0]%/*}"; [ "$_here" = "${BASH_SOURCE[0]}" ] && _here=.
+_lib="$_here/lib/normalize_cmd.sh"
+# `LC_ALL=C` and a fail-closed reading (#1657 review): sed and the lib's other stages are not byte-safe in a UTF-8 locale, and
+# macOS's sed aborts on an invalid byte ("illegal byte sequence"), which left the line, or the whole command, with NO segments:
+# `git push origin main \xff` read as nothing and passed. The caller's locale is not ours to trust, and an output the normaliser
+# could not produce (a non-zero status, or nothing for a command that is not empty) is "could not read", never "nothing to judge".
+# #1729: since #1759 the fallback refuses by shape, so NOTHING reads `seg` or `_seg_unread`. The pass stays on purpose: it is the
+# external process the #1575 deadline fixtures hang (a stubbed `awk`) to prove the watchdog denies a promotion it cannot finish
+# reading, and without it those fixtures refuse as "classifier missing" and every deadline guard reads INERT. Mutants on its
+# output cannot fail and are not declared.
+_seg_unread=0
+if [ -f "$_lib" ] && . "$_lib" 2>/dev/null && type normalize_segments >/dev/null 2>&1; then
+  seg="$(printf '%s' "$cmd" | LC_ALL=C normalize_segments)" || { seg="$cmd"; _seg_unread=1; }
+  [ -n "$seg" ] || [ -z "$cmd" ] || _seg_unread=1
+else
+  seg="$cmd"
+fi
 targets_main=0
 # #1410 / #1470. The destination is decided by `push_targets.py --classify`, over the RAW command:
 # the normaliser answers only for a segment that STARTS with the verb, so `timeout 60 git push origin
