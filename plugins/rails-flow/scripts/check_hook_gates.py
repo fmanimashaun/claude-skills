@@ -5290,6 +5290,76 @@ def release_gate_fallback_fixtures() -> None:
               done.returncode == 0 and "audited" in done.stderr, done.stderr[:200])
 
 
+# ---- guard-pr-ready.sh (#1565) ------------------------------------------------------------------
+def guard_pr_ready_fixtures() -> None:
+    """`gh pr ready` only on a GREEN sweep record with zero skips for HEAD; chains are not parsed (#1565)."""
+    def head_of(repo: Path) -> str:
+        done = _fixture_git(repo, "rev-parse", "HEAD", check=False)
+        return (getattr(done, "stdout", "") or "").strip() or "0" * 40     # a `--match` survey stubs git
+
+    def new_repo(td: str, name: str = "repo", marker: bool = True) -> Path:
+        repo = Path(td) / name
+        _git_repo(repo)
+        if marker:
+            (repo / "CLAUDE.md").write_text("# x\n<!-- rails-flow:begin -->\n<!-- rails-flow:end -->\n", encoding="utf-8")
+        return repo
+
+    def record(repo: Path, head: str, **over) -> Path:
+        d = repo / ".git" / "rails-flow" / "sweep"
+        d.mkdir(parents=True, exist_ok=True)
+        rec = {"head": head, "tree": "t", "verdict": "green", "passed": 3, "failed": 0, "errored": 0, "not_applicable": 2,
+               "manifest_problems": 0, "skips": 0, "at": "2026-10-10T00:00:00Z", "project_gates": "0"}
+        rec.update(over)
+        f = d / f"{head}.json"
+        f.write_text(json.dumps(rec), encoding="utf-8")
+        return f
+
+    def guard(repo: Path, cmd: str) -> tuple[int, str]:
+        return run_hook("guard-pr-ready.sh", cwd=repo, stdin=json.dumps({"tool_input": {"command": cmd}, "cwd": str(repo)}))
+
+    def expect(label: str, res: tuple[int, str], code: int, *needles: str) -> None:
+        check(label, res[0] == code and all(n in res[1] for n in needles), f"exit {res[0]}: {blocked_lines(res[1])!r}")
+
+    with scratch_dir() as td:
+        repo = new_repo(td)
+        head = head_of(repo)
+        expect("guard-pr-ready: in force with NO record, `gh pr ready` is refused", guard(repo, "gh pr ready 12"), 2, "no sweep record")
+        expect("guard-pr-ready: the refusal names the sweep command and the two-command retry",
+               guard(repo, "gh pr ready 12"), 2, 'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/project_gates.py"', "gh pr ready 12", "TWO separate commands")
+        expect("guard-pr-ready: a sweep chained before it in ONE command does not count (no chain parsing)",
+               guard(repo, "python3 project_gates.py && gh pr ready 12"), 2, "no sweep record")
+        expect("guard-pr-ready: `gh pr ready --undo` is always allowed", guard(repo, "gh pr ready 12 --undo"), 0)
+        for cmd in ("gh pr view 12", "gh pr create --title x --body y", "ls", 'echo "gh pr ready 12"'):
+            expect(f"guard-pr-ready: NOT a pr ready, left alone: {cmd[:40]}", guard(repo, cmd), 0)
+        record(repo, "f" * 40)
+        expect("guard-pr-ready: a green record for ANOTHER HEAD is stale and refused", guard(repo, "gh pr ready 12"), 2, head[:12])
+        f = record(repo, head, verdict="red", failed=2)
+        expect("guard-pr-ready: a RED record is refused, with its verdict and counts", guard(repo, "gh pr ready 12"), 2, "RED", "failed 2")
+        record(repo, head, errored=1, skips=1)
+        expect("guard-pr-ready: a green record with skips > 0 is refused", guard(repo, "gh pr ready 12"), 2, "skips 1")
+        f.write_text("{not json", encoding="utf-8")
+        expect("guard-pr-ready: a MALFORMED record fails closed", guard(repo, "gh pr ready 12"), 2, "malformed")
+        record(repo, head, skips="0")
+        expect("guard-pr-ready: a record whose skips is not a number fails closed", guard(repo, "gh pr ready 12"), 2, "malformed")
+        record(repo, head)
+        expect("guard-pr-ready: a GREEN record with zero skips for HEAD allows it", guard(repo, "gh pr ready 12"), 0)
+        expect("guard-pr-ready: ...and so does `cd <same repo> && gh pr ready`", guard(repo, f"cd {repo} && gh pr ready 12"), 0)
+        # The command's own `cd` picks the repository judged: the other repository has no record.
+        other = new_repo(td, "other")
+        expect("guard-pr-ready: `cd <other repo> && gh pr ready` is judged against the OTHER repo's HEAD",
+               guard(repo, f"cd {other} && gh pr ready 3"), 2, head_of(other)[:12])
+        record(other, head_of(other))
+        expect("guard-pr-ready: ...and allowed once THAT HEAD has a green record", guard(repo, f"cd {other} && gh pr ready 3"), 0)
+
+    with scratch_dir() as td:
+        plain = new_repo(td, "plain", marker=False)
+        expect("guard-pr-ready: NOT in force (no marker, no workflow, no record dir): allowed", guard(plain, "gh pr ready 12"), 0)
+        wf = plain / ".github" / "workflows"
+        wf.mkdir(parents=True)
+        (wf / "ci.yml").write_text("run: python3 project_gates.py\n", encoding="utf-8")
+        expect("guard-pr-ready: a workflow naming project_gates.py puts it in force", guard(plain, "gh pr ready 12"), 2, "no sweep record")
+
+
 GROUPS = {
     "stop_gate": stop_gate_fixtures, "guard_lane": guard_lane_fixtures,
     "guard_migrate": guard_migrate_fixtures, "lint_ruby": lint_ruby_fixtures,
@@ -5303,7 +5373,7 @@ GROUPS = {
     "guard_worktree": guard_worktree_fixtures, "guard_worktree_parse": guard_worktree_parse_fixtures,
     "guard_worktree_failopen": guard_worktree_failopen_fixtures, "guard_worktree_pointer": guard_worktree_pointer_fixtures,
     "deadline": deadline_fixtures, "where_stopped": where_stopped_fixtures, "tools_missing": tools_missing_fixtures,
-    "fixture_git_binding": fixture_git_binding_fixtures,
+    "fixture_git_binding": fixture_git_binding_fixtures, "guard_pr_ready": guard_pr_ready_fixtures,
 }
 
 
@@ -5323,7 +5393,8 @@ PARTS = {
           "ci_verdict_hint", "session_end", "timeout"],
     "b": ["release_gate", "release_gate_effects"],
     "c": ["release_gate_repos", "release_gate_refs", "release_gate_fallback", "release_gate_adversary", "guard_worktree", "guard_worktree_parse",
-          "guard_worktree_failopen", "guard_worktree_pointer", "deadline", "where_stopped", "tools_missing", "fixture_git_binding"],
+          "guard_worktree_failopen", "guard_worktree_pointer", "deadline", "where_stopped", "tools_missing", "fixture_git_binding",
+          "guard_pr_ready"],
 }
 
 
