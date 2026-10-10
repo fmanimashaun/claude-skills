@@ -87,12 +87,12 @@ def promoted_versions(tags: set[str], main_changelog: str) -> set[str]:
 
 
 def run(base_changelog: str, head_changelog: str, main_changelog: str, tags: set[str],
-        promotion_body: str | None = None) -> tuple[list[str], str | None]:
+        promotion_body: str | None = None, new_fragments: tuple[str, ...] = ()) -> tuple[list[str], str | None]:
     """The whole decision, minus I/O -- main() and the selftest both come through here."""
     promoted = promoted_versions(tags, main_changelog)
     if promotion_body is not None:
         return promotion_closes(base_changelog, promotion_body, promoted), armed_for(base_changelog, promoted)
-    return check(base_changelog, head_changelog, promoted), armed_for(base_changelog, promoted)
+    return check(base_changelog, head_changelog, promoted, new_fragments), armed_for(base_changelog, promoted)
 
 
 def armed_for(changelog: str, tags: set[str]) -> str | None:
@@ -118,10 +118,18 @@ def _sections_with_unreleased(text: str) -> set[str]:
     return found
 
 
-def check(base_changelog: str, head_changelog: str, tags: set[str]) -> list[str]:
+def check(base_changelog: str, head_changelog: str, tags: set[str], new_fragments: tuple[str, ...] = ()) -> list[str]:
     version = armed_for(base_changelog, tags)
     if version is None:
         return []                         # not in the window; nothing to say
+    if new_fragments:
+        # #1825: a PR adds `changelog.d/<issue>.md` instead of an `### Unreleased` bullet, so the window now shows as a fragment arriving while dev is armed.
+        return [
+            f"dev is ARMED for {version} (its tag does not exist yet), and this branch adds a CHANGELOG fragment: {', '.join(new_fragments)}.",
+            f"  Merging it would leave an unfolded fragment on dev, and the promotion PR would be refused by `extract_release_notes.py --promotion`.",
+            f"  After the merge, FOLD it into the armed block: `python3 scripts/changelog_fragments.py --fold --into {version}`, commit, and make sure the "
+            f"promotion's `Closes #n` list gains this issue.",
+        ]
     reopened = sorted(reopens_unreleased(base_changelog, head_changelog))
     if not reopened:
         return []
@@ -192,6 +200,13 @@ def selftest() -> int:
     check_that("...even when the branch itself adds an Unreleased section",
                check(OPEN, OPEN + "\n## qa-flow\n\n### Unreleased\n\n- x (#2)\n", tags) == [])
 
+    # A FRAGMENT ARRIVING IN THE WINDOW (#1825): the same defect, in the form the new flow gives it.
+    ff = check(ARMED, ARMED, tags, ("changelog.d/1999-x.md",))
+    check_that("a fragment added while dev is ARMED is refused, naming the version and the repair",
+               bool(ff) and "v9.9.9" in ff[0] and "--fold --into v9.9.9" in ff[2], str(ff))
+    check_that("...but a fragment added to an UNARMED dev is silent", check(OPEN, OPEN, tags, ("changelog.d/1999-x.md",)) == [])
+    check_that("...and an armed dev with no new fragment is silent", check(ARMED, ARMED, tags, ()) == [])
+
     # THE WINDOW CLOSES BY ITSELF. Tag exists -> promoted -> not armed. This is why the tag list is
     # read from git and never from the CHANGELOG: using the file as its own evidence would leave a
     # promoted dev armed forever.
@@ -252,8 +267,10 @@ def main() -> int:
     # Unreadable -> "" -> tags alone, which errs toward ARMED (a refusal), never toward silence.
     main_cl = git("show", f"{args.main}:CHANGELOG.md")
     body = Path(args.promotion_closes).read_text(encoding="utf-8") if args.promotion_closes else None
+    added = git("diff", "--name-only", "--diff-filter=A", f"{args.base}...HEAD", "--", "changelog.d")
+    frags = tuple(f for f in added.split() if f.endswith(".md") and not f.endswith("README.md"))
     findings, version = run(base_cl, (REPO / "CHANGELOG.md").read_text(encoding="utf-8"), main_cl,
-                            existing_tags(), body)
+                            existing_tags(), body, frags)
 
     if findings:
         print("arm window:")
