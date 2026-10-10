@@ -36,7 +36,7 @@ caller of what changed.
 4. A finding without the input or steps that got through, and a `file:line`, is not a finding. Do not report style, naming or
    anything a linter says; do not repeat what the other reviewers can see on the diff.
 
-## What you answer
+## Output
 
 Bounded: at most 60 lines, no preamble, no narration of the search. Exactly this shape, because the caller saves it as the record
 and `risky_diff.py --record` reads the first and last lines:
