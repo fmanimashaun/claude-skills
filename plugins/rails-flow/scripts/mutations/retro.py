@@ -70,6 +70,12 @@ GUARD = Guard(
             "an issue's newlines cannot start a heading",
         ),
         Mutation(
+            "the mechanical line is not escaped, so a signature's newline can start a heading",
+            "**mechanical candidate**: {esc(group['mechanical'])}.",
+            "**mechanical candidate**: {group['mechanical']}.",
+            "a signature with a newline cannot start a heading in the mechanical line",
+        ),
+        Mutation(
             "a finding's tags are not neutralised",
             '.replace("<", "&lt;")',
             '.replace("<", "<")',

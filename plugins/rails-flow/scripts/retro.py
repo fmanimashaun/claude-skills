@@ -245,7 +245,7 @@ def render(day, root, min_prs, filters, files, items, skipped, excluded_undated,
             members = group["records"]
             lines += [f"### {esc(group['category'])}: {len(members)} record(s) in {len(group['sources'])} sources", ""]
             if group["mechanical"]:
-                lines += [f"- **mechanical candidate**: {group['mechanical']}.",
+                lines += [f"- **mechanical candidate**: {esc(group['mechanical'])}.",
                           "- Propose a deterministic check, in order of preference: a rubocop cop, a repo lint, a spec helper, a hook. A person decides whether the pattern is fixed enough."]
                 for sig in group["repeated"][:2]:
                     seen = [(s, esc(text_of(r.get("issue")))[:110]) for s, r in members if (text_of(r.get("signature")) or text_of(r.get("rule"))) == sig][:3]
@@ -457,6 +457,14 @@ def selftest() -> int:
         check("pipes, backticks and tags are neutralised", "| a | `b`" not in text and "<script>" not in text and "&lt;script&gt;" in text, text)
         check("a non-string severity is shown as written, in unmapped", "`1` x3" in text and '`["P1"]` x3' in text, text)
         check("esc collapses whitespace", esc("a\n\n  b\t|c") == "a b /c")
+        # 7g2. S3, the mechanical line: a signature or a file pattern with a newline cannot start a heading there either
+        sig_inj = Path(tmp) / "sig_inj"
+        for n in (1, 2, 3):
+            write(sig_inj, f"prs/pr-{n}/x-findings.jsonl", [rec(f"S{n}", category="alpha", file=f"d{n}/x/y.rb", sig="SIGHEAD\n## X" if n < 3 else "z"),
+                                                            rec(f"T{n}", category="alpha", file="z/q/\n## FILEHEAD.rb", sig=f"t{n}")])
+        _, text = go(sig_inj)
+        check("a signature with a newline cannot start a heading in the mechanical line", "recurs in 2+ sources: SIGHEAD ## X." in text and not any(line.startswith(("## X", "## SIGHEAD")) for line in text.splitlines()), text)
+        check("a file pattern with a newline cannot start a heading either", not any(line.startswith("## FILEHEAD") for line in text.splitlines()), text)
         # 7h. S1: --out may not overwrite a findings file, anything under the root, or a file that is not a retro report
         outroot = Path(tmp) / "outroot"
         write(outroot, "prs/pr-1/x-findings.jsonl", [rec("A1")])
