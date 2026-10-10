@@ -29,6 +29,12 @@ GUARD = Guard(
     needs=_NEEDS,
     mutations=(
         Mutation(
+            "`--undo` after a bare `--` still exempts",
+            'pre=" $a "; pre="${pre%% -- *} "',
+            'pre=" $a "',
+            "`--undo` after a bare `--` is a positional, not the flag",
+        ),
+        Mutation(
             "the match reverts to the anchored `^gh pr ready`, so a flag before `pr` slips through",
             're="^([^[:space:]]*/)?gh${_f}[[:space:]]+pr${_f}[[:space:]]+ready([[:space:]]|\\$)"',
             "re='^gh[[:space:]]+pr[[:space:]]+ready([[:space:]]|$)'",
@@ -42,7 +48,7 @@ GUARD = Guard(
         ),
         Mutation(
             "`--undo` is judged like a ready",
-            '    [[ " $a " =~ [[:space:]]--undo[[:space:]] ]] && continue\n',
+            '    [[ $pre =~ [[:space:]]--undo[[:space:]] ]] && continue\n',
             "",
             "`gh pr ready --undo` is always allowed",
         ),

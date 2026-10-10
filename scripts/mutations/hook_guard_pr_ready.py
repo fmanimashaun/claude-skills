@@ -29,6 +29,18 @@ GUARD = Guard(
     needs=_NEEDS,
     mutations=(
         Mutation(
+            "a scheme-less PR URL is not an explicit target",
+            '    return any("/pull/" in w for w in words)    # a PR URL, with or without a scheme\n',
+            '    return any(w.startswith("http") and "/pull/" in w for w in words)\n',
+            "a scheme-less PR URL is an explicit target",
+        ),
+        Mutation(
+            "a PR argument built by the shell is judged against the local HEAD",
+            "    if dynamic_target(raw):\n",
+            "    if False:\n",
+            "a PR argument built by the shell cannot be judged: gh pr ready $PR",
+        ),
+        Mutation(
             "an explicit remote target is judged against the local HEAD",
             '    if explicit_target(segment, str(payload.get("tool_input", {}).get("command", ""))):\n',
             "    if False:\n",

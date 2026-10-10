@@ -90,7 +90,18 @@ def explicit_target(segment: str, raw: str) -> bool:
         return True
     if re.search(r"(^|[^A-Za-z0-9_])GH_REPO=", raw):
         return True
-    return any(re.match(r"https?://\S+/pull/\d+", w.strip("'\"")) for w in words)
+    return any("/pull/" in w for w in words)    # a PR URL, with or without a scheme
+
+
+DYNAMIC = ("the PR argument cannot be judged without running it (a variable or command substitution); "
+           "pass the PR number or URL literally")
+GH_READY = re.compile(r"(?:^|[\s;&|(])(?:\S*/)?gh\b([^;&|\n]*?)\bready\b([^;&|\n]*)")
+
+
+def dynamic_target(raw: str) -> bool:
+    """A `$` or backtick in the flags before `ready` or the arguments after it, read from the RAW command (the
+    normaliser deletes a quoted `"$(...)"`, so the segment alone cannot show it)."""
+    return any("$" in m.group(1) + m.group(2) or "`" in m.group(1) + m.group(2) for m in GH_READY.finditer(raw))
 
 
 def main() -> int:
@@ -106,6 +117,12 @@ def main() -> int:
     if not os.path.isdir(start):
         start = os.getcwd()
     where, why = resolve_dir(payload, start)
+    raw = str(payload.get("tool_input", {}).get("command", ""))
+    if dynamic_target(raw):
+        roots = {git(d, "rev-parse", "--show-toplevel") for d in (where, start) if d}
+        if any(r and in_force(r) for r in roots):
+            return refuse(DYNAMIC + ".", args)
+        return 0
     if explicit_target(segment, str(payload.get("tool_input", {}).get("command", ""))):
         roots = {git(d, "rev-parse", "--show-toplevel") for d in (where, start) if d}
         if any(r and in_force(r) for r in roots):
