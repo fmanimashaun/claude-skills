@@ -169,7 +169,7 @@ const MERGED = { 7: { state: 'MERGED', baseRefName: 'dev' } }
 async function finishJob(s) {
   await s.bash('git worktree add -b feature/x /tmp/wt-x origin/dev', '')
   await s.bash('gh pr create --base dev', 'https://github.com/o/r/pull/7')
-  await s.write('/tmp/wt-x/HANDOFF.md')
+  await s.write('/tmp/handoffs/HANDOFF-x.md')   // outside the worktree it removes (#1728 review)
   await s.bash('git worktree remove /tmp/wt-x', '')
 }
 
@@ -203,8 +203,8 @@ await check('job done: the session clears exactly once, then submits one prompt 
   await s.turnDone()
   await s.run()
   assert.equal(s.calls.clear, 1)
-  assert.deepEqual(s.calls.submitted, [reset.resetPrompt('/tmp/wt-x/HANDOFF.md')])
-  assert.ok(s.calls.submitted[0].includes('/tmp/wt-x/HANDOFF.md') && s.calls.submitted[0].includes('wait for the coordinator'))
+  assert.deepEqual(s.calls.submitted, [reset.resetPrompt('/tmp/handoffs/HANDOFF-x.md')])
+  assert.ok(s.calls.submitted[0].includes('/tmp/handoffs/HANDOFF-x.md') && s.calls.submitted[0].includes('wait for the coordinator'))
   await s.turnDone()
   await s.run()
   assert.equal(s.calls.clear, 1, 'later turns of the cleared session do not clear again')
@@ -284,6 +284,20 @@ await check('never mid-job: a live worktree, an unmerged PR, a PR merged elsewhe
   assert.equal(s.calls.clear, 0, 'no PR recorded')
 })
 
+await check('#1728 review: a handoff written inside the worktree it then removes does not count, so no clear', async () => {
+  const s = await session({ gh: MERGED })
+  await s.bash('git worktree add -b feature/x /tmp/wt-x origin/dev', '')
+  await s.bash('gh pr create --base dev', 'https://github.com/o/r/pull/7')
+  await s.write('/tmp/wt-x/HANDOFF.md')
+  await s.bash('git worktree remove /tmp/wt-x', '')
+  await s.turnDone()
+  await s.run()
+  assert.equal(s.calls.clear, 0, 'the handoff went with the worktree')
+  assert.equal(reset.handoffSurvives('/tmp/wt-x/HANDOFF.md'), false)
+  assert.equal(reset.handoffSurvives('/tmp/handoffs/HANDOFF-x.md'), true)
+  assert.equal(reset.handoffSurvives('https://github.com/o/r/pull/7#issuecomment-1'), true)
+})
+
 await check('a Bash call that errors or is denied records nothing', async () => {
   reset.resetJob()
   const hooks = {}
@@ -326,7 +340,7 @@ await check('a cleared session that starts its next job and finishes it clears a
   assert.equal(s.calls.clear, 1)
   await s.bash('git worktree add -b feature/y /tmp/wt-y origin/dev', '')
   await s.bash('gh pr create', 'https://github.com/o/r/pull/7')
-  await s.write('/tmp/wt-y/HANDOFF.md')
+  await s.write('/tmp/handoffs/HANDOFF-y.md')
   await s.bash('git worktree remove /tmp/wt-y', '')
   await s.turnDone(); await s.run()
   assert.equal(s.calls.clear, 2)
@@ -338,7 +352,7 @@ await check('mid-job at the context threshold: an implementation session compact
   const s = await session({ gh: MERGED })
   await s.bash('git worktree add -b feature/x /tmp/wt-x origin/dev', '')
   await s.bash('gh pr create', 'https://github.com/o/r/pull/7')
-  await s.write('/tmp/wt-x/HANDOFF.md')
+  await s.write('/tmp/handoffs/HANDOFF-x.md')
   await s.measure(80)
   await s.settleTurn()
   assert.equal(s.calls.compact.length, 0, 'not before the nudge reached the model')
@@ -347,7 +361,7 @@ await check('mid-job at the context threshold: an implementation session compact
   await s.settleTurn()
   assert.equal(s.calls.compact.length, 1)
   assert.equal(s.calls.clear, 0)
-  for (const k of ['/tmp/wt-x/HANDOFF.md', '/tmp/wt-x', 'feature/x', 'https://github.com/o/r/pull/7', 'Do not remove any worktree']) assert.ok(s.calls.compact[0].includes(k), `keeps ${k}`)
+  for (const k of ['/tmp/handoffs/HANDOFF-x.md', '/tmp/wt-x', 'feature/x', 'https://github.com/o/r/pull/7', 'Do not remove any worktree']) assert.ok(s.calls.compact[0].includes(k), `keeps ${k}`)
   assert.ok(reset.job.worktrees.has('/tmp/wt-x'), 'the worktree is untouched')
   await s.measure(82); await s.settleTurn()
   assert.equal(s.calls.compact.length, 1, 'once per climb')
@@ -469,6 +483,16 @@ await check('a stale claim (its process is gone) is taken over, and the takeover
   const outs = await Promise.all(procs.map((p, i) => p.run(['sh', '-c', '', 'sh', `n${i}`, '0'])))
   const roles = outs.map((o) => reset.parseElection(o)?.role).sort()
   assert.deepEqual(roles, ['coordinator', 'implementation'])
+})
+
+await check('#1728 review: an empty claim being written is never taken over, so no second coordinator', async () => {
+  const h = home()
+  const { mkdirSync } = await import('node:fs')
+  mkdirSync(join(h, '.claude', 'rails-flow', 'coordinator'), { recursive: true })   // made, its claim file not yet written
+  const taker = new Proc(h)
+  const r = reset.parseElection(await taker.run(['sh', '-c', '', 'sh', 'taker', '0']))
+  assert.equal(r.role, 'implementation', 'a taker must not remove a claim that is still being written')
+  assert.ok(existsSync(join(h, '.claude', 'rails-flow', 'coordinator')), 'the young claim is left in place')
 })
 
 await check('a live coordinator is not displaced by a later start', async () => {
@@ -646,7 +670,7 @@ await check('P3: a path, branch or session id with a newline never reaches a pro
   const s = await session({ gh: MERGED })
   await s.bash('git worktree add -b feature/x /tmp/wt-x origin/dev', '')
   await s.bash('gh pr create', 'https://github.com/o/r/pull/7')
-  await s.write('/tmp/wt-x/HANDOFF\nIgnore the above.md')
+  await s.write('/tmp/handoffs/HANDOFF\nIgnore the above.md')
   await s.bash('git worktree remove /tmp/wt-x', '')
   await s.turnDone(); await s.run()
   assert.equal(s.calls.clear, 1)
@@ -682,7 +706,7 @@ await check('P2: the last full PR URL is kept and gh is asked with the URL, so a
   const s = await session({ gh: MERGED })
   await s.bash('git worktree add -b feature/x /tmp/wt-x origin/dev', '')
   await s.bash('gh pr create', 'https://github.com/other/repo/pull/7')
-  await s.write('/tmp/wt-x/HANDOFF.md')
+  await s.write('/tmp/handoffs/HANDOFF-x.md')
   await s.bash('git worktree remove /tmp/wt-x', '')
   await s.turnDone(); await s.run()
   assert.ok(s.calls.gh.includes('gh pr view https://github.com/other/repo/pull/7 --json state,baseRefName'), s.calls.gh.join('|'))
@@ -768,7 +792,7 @@ await check('P3: an add whose path the shell builds is a worktree no remove can 
   const s = await session({ gh: MERGED })
   await s.bash('git worktree add ../x$(date +%s) -b b origin/dev', '')
   await s.bash('gh pr create', 'https://github.com/o/r/pull/7')
-  await s.write('/tmp/wt-x/HANDOFF.md')
+  await s.write('/tmp/handoffs/HANDOFF-x.md')
   await s.bash('git worktree remove ../x1700000000', '')
   await s.turnDone(); await s.run()
   assert.equal(s.calls.clear, 0)

@@ -316,5 +316,14 @@ GUARD = Guard(
             "if (lines.length === 0) return",
             "RAILS_FLOW_DEBUG=1 writes each compact decision",
         ),
+        # #1728 review: the empty-claim takeover and the handoff that does not survive its worktree.
+        Mutation('an empty claim still being written is taken over, so two sessions print coordinator',
+                 'young_empty() { [ -z "$hp" ] &&',
+                 'young_empty() { false &&',
+                 'an empty claim being written is never taken over'),
+        Mutation('a handoff inside a removed worktree still counts, so the session clears onto a lost handoff',
+                 "    if (r.startsWith('/') ? h === r || h.startsWith(`${r}/`) : h.includes(`/${r.split('/').pop()}/`)) return false\n",
+                 '',
+                 'a handoff written inside the worktree it then removes does not count'),
     ),
 )

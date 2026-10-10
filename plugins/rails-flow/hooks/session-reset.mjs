@@ -92,7 +92,11 @@ function queueCompact($, due) {
 // The claim is a directory made with mkdir, which is atomic: of two simultaneous starts exactly one makes it.
 // A claim is live only while its pid exists AND its process start time matches (a recycled pid after a
 // reboot is not the coordinator). A stale claim is replaced under a second mkdir lock, so two takers cannot
-// both win; a taker that finds the lock held reports implementation (fewer coordinators, never more).
+// both win; a taker that finds the lock held reports implementation (fewer coordinators, never more). A claim directory
+// exists a moment before its `claim` file is written, so an EMPTY claim younger than a minute is one being made, and is
+// never taken over (#1728 review: a taker that removed it let both sessions print coordinator). A coordinator that dies is
+// replaced only at the NEXT session start, and RAILS_FLOW_ROLE=coordinator (force) takes the claim without telling the
+// live holder, which keeps believing it coordinates until it next starts.
 export const ELECT_SCRIPT = `
 d="$HOME/.claude/rails-flow"; c="$d/coordinator"; lk="$d/lock"; me="$PPID"; sid="$1"; force="$2"; resumed="$3"
 mkdir -p "$d" || { echo error; exit 0; }
@@ -112,12 +116,14 @@ fi
 if claim; then echo coordinator; exit 0; fi
 read_claim
 if [ -z "$hp" ]; then sleep 1; read_claim; fi
+young_empty() { [ -z "$hp" ] && [ -d "$c" ] && [ -z "$(find "$c" -maxdepth 0 -mmin +1 2>/dev/null)" ]; }
+if young_empty; then report; fi
 if [ "$hp" = "$me" ] && [ "$hl" = "$(start "$me")" ]; then echo coordinator; exit 0; fi
 if alive "$hp" "$hl"; then report; fi
 if [ -n "$(find "$lk" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then rmdir "$lk" 2>/dev/null; fi
 mkdir "$lk" 2>/dev/null || report
 read_claim
-if alive "$hp" "$hl"; then rmdir "$lk"; report; fi
+if alive "$hp" "$hl" || young_empty; then rmdir "$lk"; report; fi
 rm -rf "$c"
 if claim; then rmdir "$lk"; echo coordinator; exit 0; fi
 rmdir "$lk"; read_claim; report
@@ -170,7 +176,7 @@ export async function electRole($) {
 // What this session has done in its current job. Reset after a clear.
 export const job = freshJob()
 function freshJob(epoch = 0) {
-  return { epoch, touched: false, checked: null, turnEnd: null, worktrees: new Map(), prs: new Set(), handoff: null, removed: false, background: 0, pending: false, cleared: false }
+  return { epoch, touched: false, checked: null, turnEnd: null, worktrees: new Map(), removedPaths: new Set(), prs: new Set(), handoff: null, removed: false, background: 0, pending: false, cleared: false }
 }
 export function resetJob() {
   Object.assign(job, freshJob(job.epoch)) // the epoch only ever grows, so a timer from before a reset can never match
@@ -392,8 +398,21 @@ async function allMerged($) {
 }
 
 // Does the job look finished? Cheap checks first, then the live pull-request state.
+// A HANDOFF THAT SURVIVES the job (#1728 review): a comment URL, or a file outside every worktree this job removed.
+// A handoff written inside a worktree that is then removed is gone, and the session must not clear onto it.
+// A relative removal path is matched by its last directory name anywhere in the handoff's path, so it errs towards
+// not counting the handoff (no clear) rather than counting a lost one.
+export function handoffSurvives(h = job.handoff) {
+  if (h === null) return false
+  if (isCommentUrl(h)) return true
+  for (const r of job.removedPaths) {
+    if (r.startsWith('/') ? h === r || h.startsWith(`${r}/`) : h.includes(`/${r.split('/').pop()}/`)) return false
+  }
+  return true
+}
+
 export function jobDoneShape(ignorePending = false) {
-  return job.removed && job.handoff !== null && job.worktrees.size === 0 && job.background === 0 && (ignorePending || !job.pending) && !job.cleared
+  return job.removed && handoffSurvives() && job.worktrees.size === 0 && job.background === 0 && (ignorePending || !job.pending) && !job.cleared
 }
 
 // The slow part, done EARLY: `gh pr view` for every PR, once the job looks finished (a worktree removed, a handoff
@@ -485,6 +504,7 @@ export function register(on) {
       const rm = parseWorktreeRemove(cmd)
       if (rm) {
         job.worktrees.delete(rm)
+        job.removedPaths.add(rm.replace(/\/+$/, ''))
         job.removed = true
       }
       const out = r?.text ?? r?.result?.stdout
