@@ -5349,6 +5349,12 @@ def guard_pr_ready_fixtures() -> None:
         expect("guard-pr-ready: `gh --repo o/r pr ready --undo 5` is allowed", guard(repo, "gh --repo o/r pr ready --undo 5"), 0)
         record(repo, head)
         expect("guard-pr-ready: a GREEN record with zero skips for HEAD allows it", guard(repo, "gh pr ready 12"), 0)
+        # A word outside command_cwd's SAFE list before gh is "cannot tell" there; with no `cd` in the command the target is
+        # the session's directory, judged on its record (the decision: a chained sweep passes only on an EXISTING green record).
+        expect("guard-pr-ready: with a green record, a sweep chained before it in ONE command is judged on the record and allowed",
+               guard(repo, "python3 project_gates.py && gh pr ready 12"), 0)
+        expect("guard-pr-ready: a `cd` the resolver cannot follow still refuses, even with a green record",
+               guard(repo, "cd $HOME && gh pr ready 12"), 2, "cannot be told")
         expect("guard-pr-ready: a scheme-less PR URL is an explicit target", guard(repo, "gh pr ready github.com/o/r/pull/5"), 2,
                "explicit repository target")
         for cmd in ("gh pr ready $PR", 'gh pr ready "$(echo 5)"'):
