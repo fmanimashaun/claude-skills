@@ -5329,6 +5329,8 @@ def guard_pr_ready_fixtures() -> None:
         expect("guard-pr-ready: a sweep chained before it in ONE command does not count (no chain parsing)",
                guard(repo, "python3 project_gates.py && gh pr ready 12"), 2, "no sweep record")
         expect("guard-pr-ready: `gh pr ready --undo` is always allowed", guard(repo, "gh pr ready 12 --undo"), 0)
+        expect("guard-pr-ready: `--undo` after a bare `--` is a positional, not the flag: judged, not exempted",
+               guard(repo, "gh pr ready 5 -- --undo"), 2, "no sweep record")
         for cmd in ("gh pr view 12", "gh pr create --title x --body y", "ls", 'echo "gh pr ready 12"'):
             expect(f"guard-pr-ready: NOT a pr ready, left alone: {cmd[:40]}", guard(repo, cmd), 0)
         record(repo, "f" * 40)
@@ -5349,7 +5351,6 @@ def guard_pr_ready_fixtures() -> None:
         expect("guard-pr-ready: a GREEN record with zero skips for HEAD allows it", guard(repo, "gh pr ready 12"), 0)
         expect("guard-pr-ready: a scheme-less PR URL is an explicit target", guard(repo, "gh pr ready github.com/o/r/pull/5"), 2,
                "explicit repository target")
-        expect("guard-pr-ready: `--undo` after a bare `--` is a positional, not the flag", guard(repo, "gh pr ready 5 -- --undo"), 2)
         for cmd in ("gh pr ready $PR", 'gh pr ready "$(echo 5)"'):
             expect(f"guard-pr-ready: a PR argument built by the shell cannot be judged: {cmd}", guard(repo, cmd), 2, "without running it")
         for cmd in ("gh pr ready 5", "gh pr ready -- 5", "gh pr ready 5 --undo=false", "gh pr ready 5 > /dev/null", "gh pr ready --undo"):
