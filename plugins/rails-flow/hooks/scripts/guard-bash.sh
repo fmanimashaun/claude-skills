@@ -99,8 +99,10 @@ exempt() { [ "$degraded" = 1 ] && return 1; hit "$1"; }
 # WHAT A DECLARATION ALLOWS IS ONE COMMAND: `RAILS_ENV=test bin/rails db:reset` (or the `env`, `bundle exec`, `rake` and trailing-assignment spellings),
 # and nothing else. It is matched against the WHOLE raw command, so a compound command that also resets the development database, `RAILS_ENV=development`,
 # or an unreadable payload (degraded mode: the env prefix the normaliser peels is exactly what this must read) is still refused.
-if hit '^(bin/)?(rails|rake)([[:space:]]+[^[:space:]]+)*[[:space:]]+db:reset\b'; then
+# `bundle exec` is part of the command (#1760 review): its verb is `bundle`, so a rule anchored on rails or rake never saw `bundle exec rails db:reset` at all.
+if hit '^(bundle[[:space:]]+exec[[:space:]]+)?(bin/)?(rails|rake)([[:space:]]+[^[:space:]]+)*[[:space:]]+db:reset\b'; then
   _root="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+  _tab=$'\t'
   _seeded=0
   if [ -f "$_root/GUARDRAILS.md" ]; then
     # LINE BY LINE, SKIPPING CODE: a GUARDRAILS.md that EXPLAINS the declaration inside a fenced block (```, ~~~) or an indented one would otherwise
@@ -108,19 +110,33 @@ if hit '^(bin/)?(rails|rake)([[:space:]]+[^[:space:]]+)*[[:space:]]+db:reset\b';
     # of the file, which is the safe side. Pure bash, so it needs no grep and no awk.
     _guardrails="$(<"$_root/GUARDRAILS.md")" || _guardrails=""
     _re_fence='^[[:space:]]{0,3}(```|~~~)'
-    _tab=$'\t'; _re_indented="^([[:space:]]{4,}|${_tab})"
+    _re_indented="^([[:space:]]{4,}|${_tab})"
     _re_declares='^[[:space:]]*([-*+][[:space:]]*)?`?test-db-seeded:[[:space:]]*yes`?[[:space:]]*$'
-    _fenced=0
+    _fenced=0; _commented=0
     while IFS= read -r _line || [ -n "$_line" ]; do
+      # An HTML comment hides what is inside it, across lines: `<!--` opens it, the first `-->` closes it, and an unclosed one hides the rest.
+      if [ "$_commented" = 1 ]; then
+        [[ $_line == *'-->'* ]] && _commented=0
+        continue
+      fi
       if [[ $_line =~ $_re_fence ]]; then _fenced=$((1 - _fenced)); continue; fi
       [ "$_fenced" = 1 ] && continue
+      if [[ $_line == *'<!--'* ]]; then
+        _after_open="${_line#*<!--}"
+        [[ $_after_open == *'-->'* ]] || _commented=1
+        continue
+      fi
       [[ $_line =~ $_re_indented ]] && continue
       if [[ $_line =~ $_re_declares ]]; then _seeded=1; break; fi
     done <<< "$_guardrails"
   fi
-  _runner='((bundle[[:space:]]+exec[[:space:]]+)?(bin/)?(rails|rake))'
-  _env_first="^[[:space:]]*(env[[:space:]]+)?RAILS_ENV=test[[:space:]]+${_runner}[[:space:]]+db:reset[[:space:]]*$"
-  _env_last="^[[:space:]]*${_runner}[[:space:]]+db:reset[[:space:]]+RAILS_ENV=test[[:space:]]*$"
+  # A SPACE OR A TAB, NEVER [[:space:]]: it matches a newline, and `=~` anchors only at the ends of the whole string, so `RAILS_ENV=test` + newline +
+  # `bin/rails db:reset` (a bare assignment, then a DEVELOPMENT reset) matched as one command (#1760 review). With a space or a tab only, a newline or a return
+  # can match no part of the pattern, so a command that holds one is refused.
+  _s="[ ${_tab}]"
+  _runner="((bundle${_s}+exec${_s}+)?(bin/)?(rails|rake))"
+  _env_first="^${_s}*(env${_s}+)?RAILS_ENV=test${_s}+${_runner}${_s}+db:reset${_s}*\$"
+  _env_last="^${_s}*${_runner}${_s}+db:reset${_s}+RAILS_ENV=test${_s}*\$"
   if [ "$_seeded" = 1 ] && [ "$degraded" = 0 ] && { [[ $cmd =~ $_env_first ]] || [[ $cmd =~ $_env_last ]]; }; then
     :   # declared, and exactly the test-database reset: allowed
   elif [ "$_seeded" = 1 ]; then

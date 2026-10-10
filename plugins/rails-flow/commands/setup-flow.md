@@ -332,7 +332,7 @@ GUARDRAILS.md gets its own line:
 db:reset`, run alone. A development or production reset, a compound command, and a payload the
 hook cannot read are still refused, and a project that declares nothing is refused with the name of
 its CI script (`bin/ci`, else `config/ci.rb`) in the message. Prose that merely mentions the key,
-and an example of the line inside a code block, do not declare it.
+and an example of the line inside a code block or an HTML comment, do not declare it.
 
 **Ask, and record the answer: the mock-up gate (#1376).** *"Does a change a user can see wait for
 your approval of a clickable mock-up before it is built?"* The default is **yes**, and it needs no

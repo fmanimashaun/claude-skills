@@ -52,20 +52,20 @@ GUARD = Guard(
         ),
         Mutation(
             'the end anchor of the env-first form is dropped, so a compound command that also resets the development database is allowed',
-            'db:reset[[:space:]]*$"\n  _env_last=',
+            'db:reset${_s}*\\$"\n  _env_last=',
             'db:reset"\n  _env_last=',
             'even a declared project is still refused',
         ),
         Mutation(
             'the start anchor of the env-first form is dropped, so RAILS_ENV=development followed by RAILS_ENV=test is allowed',
-            '_env_first="^[[:space:]]*(env[[:space:]]+)?RAILS_ENV=test',
-            '_env_first="[[:space:]]*(env[[:space:]]+)?RAILS_ENV=test',
+            '_env_first="^${_s}*(env${_s}+)?RAILS_ENV=test',
+            '_env_first="${_s}*(env${_s}+)?RAILS_ENV=test',
             'even a declared project is still refused',
         ),
         Mutation(
             'the environment is not pinned to test, so a declared project may reset the development database',
-            '(env[[:space:]]+)?RAILS_ENV=test[[:space:]]+${_runner}',
-            '(env[[:space:]]+)?RAILS_ENV=[a-z]+[[:space:]]+${_runner}',
+            '(env${_s}+)?RAILS_ENV=test${_s}+${_runner}',
+            '(env${_s}+)?RAILS_ENV=[a-z]+${_s}+${_runner}',
             'even a declared project is still refused',
         ),
         Mutation(
@@ -88,8 +88,8 @@ GUARD = Guard(
         ),
         Mutation(
             'the project root ignores CLAUDE_PROJECT_DIR, so the declaration is read from wherever the shell is',
-            '_root="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"\n  _seeded=0',
-            '_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"\n  _seeded=0',
+            '_root="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"\n  _tab=$\'\\t\'',
+            '_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"\n  _tab=$\'\\t\'',
             "the declaration is read from the project directory, not the shell's cwd",
         ),
         Mutation(
@@ -121,6 +121,36 @@ GUARD = Guard(
             '"^([[:space:]]{4,}|${_tab})"',
             '"^([[:space:]]{4,})"',
             'a tab-indented example does not declare it',
+        ),
+        Mutation(
+            'the separator is [[:space:]] again, so a newline between the assignment and the command is one allowed command',
+            '_s="[ ${_tab}]"',
+            '_s="[[:space:]]"',
+            'RAILS_ENV=test\\nbin/rails db:reset',
+        ),
+        Mutation(
+            'an HTML comment is not recognised, so the declaration inside a multi-line comment declares it',
+            '      if [[ $_line == *\'<!--\'* ]]; then\n        _after_open="${_line#*<!--}"\n        [[ $_after_open == *\'-->\'* ]] || _commented=1\n        continue\n      fi\n',
+            '',
+            'an HTML comment spanning lines does not declare it',
+        ),
+        Mutation(
+            'a comment never closes, so a declaration after a closed multi-line comment is not read',
+            "        [[ $_line == *'-->'* ]] && _commented=0\n",
+            '        :\n',
+            'note\\n-->\\n- test-db-seeded: yes',
+        ),
+        Mutation(
+            'a one-line comment opens a comment that never closes, so a declaration after it is not read',
+            "        [[ $_after_open == *'-->'* ]] || _commented=1\n",
+            '        _commented=1\n',
+            '<!-- note -->\\n- test-db-seeded: yes',
+        ),
+        Mutation(
+            'the db:reset rule ignores a bundle exec prefix, so bundle exec rails db:reset is never refused',
+            "if hit '^(bundle[[:space:]]+exec[[:space:]]+)?(bin/)?(rails|rake)([[:space:]]+[^[:space:]]+)*[[:space:]]+db:reset\\b'; then",
+            "if hit '^(bin/)?(rails|rake)([[:space:]]+[^[:space:]]+)*[[:space:]]+db:reset\\b'; then",
+            'still refused `bundle exec rails db:reset`',
         ),
     ),
 )

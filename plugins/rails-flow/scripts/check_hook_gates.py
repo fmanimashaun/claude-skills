@@ -1283,7 +1283,7 @@ def guard_bash_fixtures() -> None:
 # command, `RAILS_ENV=test ... db:reset` run alone; every other reset, and every undeclared project, is refused as before.
 DB_RESET_TEST_FORMS = ("RAILS_ENV=test bin/rails db:reset", "env RAILS_ENV=test bin/rails db:reset", "RAILS_ENV=test bundle exec rails db:reset",
                        "RAILS_ENV=test rake db:reset", "RAILS_ENV=test bin/rake db:reset", "bin/rails db:reset RAILS_ENV=test",
-                       "  RAILS_ENV=test bin/rails db:reset  ")
+                       "  RAILS_ENV=test bin/rails db:reset  ", "RAILS_ENV=test\tbin/rails db:reset")
 # Refused even for a declared project: not the test database, not alone, or not the bare reset.
 DB_RESET_STILL_REFUSED = ("bin/rails db:reset", "RAILS_ENV=development bin/rails db:reset", "RAILS_ENV=production bin/rails db:reset",
                           "RAILS_ENV=testing bin/rails db:reset", "RAILS_ENV=test bin/rails db:reset && bin/rails db:reset",
@@ -1292,7 +1292,11 @@ DB_RESET_STILL_REFUSED = ("bin/rails db:reset", "RAILS_ENV=development bin/rails
                           "RAILS_ENV=test RAILS_ENV=development bin/rails db:reset", "RAILS_ENV=development RAILS_ENV=test bin/rails db:reset",
                           "bin/rails db:reset RAILS_ENV=development", "(RAILS_ENV=test bin/rails db:reset)", "sudo RAILS_ENV=test bin/rails db:reset",
                           "RAILS_ENV=test bin/rails db:reset\nrm tmp/x", "RAILS_ENV=test bin/rails db:reset\r\nbin/rails db:reset",
-                          "RAILS_ENV=test bin/rails db:reset # then\nbin/rails db:reset", "RAILS_ENV=test bin/rails db:reset `bin/rails db:reset`")
+                          "RAILS_ENV=test bin/rails db:reset # then\nbin/rails db:reset", "RAILS_ENV=test bin/rails db:reset `bin/rails db:reset`",
+                          # #1760 review: `[[:space:]]` matched a newline and `=~` anchors only at the ends of the whole string, so a bare assignment on one line and a
+                          # DEVELOPMENT reset on the next was one allowed command.
+                          "RAILS_ENV=test\nbin/rails db:reset", "bin/rails db:reset\nRAILS_ENV=test", "bin/rails db:reset\rRAILS_ENV=test",
+                          "RAILS_ENV=test\n\nbin/rails db:reset", "env RAILS_ENV=test\nbin/rails db:reset", "bundle exec rails db:reset\nRAILS_ENV=test")
 
 
 def guard_bash_db_reset_fixtures() -> None:
@@ -1329,7 +1333,8 @@ def guard_bash_db_reset_fixtures() -> None:
         check("guard-bash (#1734): the declared project's refusal says what IS allowed", "this project declares test-db-seeded" in out and "run on its own" in out, out[:200])
 
         # UNDECLARED: the refusal stays, for every spelling, and a project with a CI script is pointed at it.
-        for cmd in ("bin/rails db:reset", "RAILS_ENV=test bin/rails db:reset", "env RAILS_ENV=test bin/rails db:reset"):
+        for cmd in ("bin/rails db:reset", "RAILS_ENV=test bin/rails db:reset", "env RAILS_ENV=test bin/rails db:reset", "bundle exec rails db:reset",
+                    "bundle exec bin/rails db:reset", "RAILS_ENV=test bundle exec rails db:reset", "bundle exec rake db:reset"):
             rc, out = run(plain, cmd)
             check(f"guard-bash (#1734): an UNDECLARED project is still refused `{cmd}`", rc == 2 and "db:reset is prohibited" in out, f"exit {rc}: {out[:120]}")
         check("guard-bash (#1734): CONTROL: the refusal still recommends the unseeded sequence", "db:drop db:create db:schema:load" in out, out[:200])
@@ -1364,6 +1369,9 @@ def guard_bash_db_reset_fixtures() -> None:
             "an indented code example": "# Guardrails\n\nAdd this:\n\n    - test-db-seeded: yes\n",
             "a tab-indented example": "# Guardrails\n\nAdd this:\n\ttest-db-seeded: yes\n",
             "an unclosed fence": "# Guardrails\n\n```\n- test-db-seeded: yes\n",
+            "an HTML comment spanning lines": "# Guardrails\n\n<!--\n- test-db-seeded: yes\n-->\n",
+            "a one-line HTML comment": "# Guardrails\n\n<!-- - test-db-seeded: yes -->\n",
+            "an unclosed HTML comment": "# Guardrails\n\n<!--\n- test-db-seeded: yes\n",
         }
         for why, text in not_declared.items():
             root = project(text)
@@ -1374,7 +1382,8 @@ def guard_bash_db_reset_fixtures() -> None:
                 shutil.rmtree(root, ignore_errors=True)
         # ...and the spellings of a real declaration that ARE one (the line may be bulleted, backticked, or bare).
         for text in ("- `test-db-seeded: yes`\n", "* test-db-seeded: yes\n", "test-db-seeded: yes\n", "  - test-db-seeded:   yes  \n", "x\r\n- test-db-seeded: yes\n",
-                 "```sh\nexample\n```\n- test-db-seeded: yes\n", "   - test-db-seeded: yes\n"):
+                 "```sh\nexample\n```\n- test-db-seeded: yes\n", "   - test-db-seeded: yes\n",
+                 "<!-- note -->\n- test-db-seeded: yes\n", "<!--\nnote\n-->\n- test-db-seeded: yes\n"):
             root = project("# Guardrails\n\n" + text)
             try:
                 rc, out = run(root, "RAILS_ENV=test bin/rails db:reset")
