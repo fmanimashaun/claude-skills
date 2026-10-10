@@ -1709,6 +1709,14 @@ def guard_claims_pipe_fixtures() -> None:
 
 
 def guard_claims_fixtures() -> None:
+    last = {"rc": 0, "out": ""}
+
+    def said() -> str:
+        """The detail of a failed check: the exit code AND what the hook said (#1801, as #1785 did for guard-bash). A constant
+        "exit 0" could not show whether the hook let the command through or failed for another reason, and check() can only
+        call a timing denial STARVED when the denial's own words are in the detail."""
+        return f"exit {last['rc']}: {str(last['out']).strip()[:200]}"
+
     def run(cmd: str, body: str | None = None, env_extra=None, template: str | None = None,
             with_output: bool = False):
         with scratch_dir() as td:
@@ -1723,6 +1731,7 @@ def guard_claims_fixtures() -> None:
                             stdin=json.dumps({"tool_input": {"command": cmd}}),
                             env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1]),
                                        **(env_extra or {})})
+            last["rc"], last["out"] = done[0], done[1]
             return done if with_output else done[0]
 
     NUMERIC = "The selftest reports **292 assertions**, up from 285.\n"
@@ -1731,23 +1740,23 @@ def guard_claims_fixtures() -> None:
 
     # MUST BLOCK: the exact shape that shipped wrong, twice, on the day this was written.
     check("guard-claims: an unchecked numeric claim in a PR body is blocked",
-          run("gh pr create --base dev --body-file BODY", NUMERIC) == 2, "exit 0")
+          run("gh pr create --base dev --body-file BODY", NUMERIC) == 2, said())
 
     # `gh issue comment` IS THE SAME ARTIFACT (#1141). This guard is the only thing that has ever
     # actually stopped a wrong number here, and it watched PRs alone -- so on the day it fired on a
     # PR body carrying eight unverified claims, four issue comments carrying counts went out
     # unchecked. An issue comment is durable, read by someone else and quoted onward.
     check("guard-claims: an unchecked numeric claim in an ISSUE COMMENT is blocked",
-          run("gh issue comment 1141 --body-file BODY", NUMERIC) == 2, "exit 0")
+          run("gh issue comment 1141 --body-file BODY", NUMERIC) == 2, said())
     check("guard-claims: ...and the same comment passes once it shows it was verified",
-          run("gh issue comment 1141 --body-file BODY", CHECKED) == 0, "exit 2")
+          run("gh issue comment 1141 --body-file BODY", CHECKED) == 0, said())
 
     # MUST PASS -- and these are the half that keeps the guard alive. A hook that blocked every
     # `gh pr create` would be switched off within a day, and then nothing is checked at all.
     check("guard-claims: the same claim passes once the body shows it was verified",
-          run("gh pr create --base dev --body-file BODY", CHECKED) == 0, "exit 2")
+          run("gh pr create --base dev --body-file BODY", CHECKED) == 0, said())
     check("guard-claims: a PR body with no load-bearing claim passes",
-          run("gh pr create --base dev --body-file BODY", PROSE) == 0, "exit 2")
+          run("gh pr create --base dev --body-file BODY", PROSE) == 0, said())
 
     # THE REPO'S PR TEMPLATE (#1389), driven through the real hook: 5 of 5 downstream PRs were
     # BLOCKED by a reviewer for missing template sections that a rule in prose never stopped.
@@ -1755,24 +1764,24 @@ def guard_claims_fixtures() -> None:
     FULL = "## What changed\nTidy the README.\n## How to test\nN/A — copy only.\n"
     check("guard-claims: a PR body missing a template section is blocked",
           run("gh pr create --base dev --body-file BODY", "## What changed\nTidy the README.\n",
-              template=TPL) == 2, "exit 0")
+              template=TPL) == 2, said())
     check("guard-claims: ...and `gh pr edit` with the same body is blocked too",
           run("gh pr edit 12 --body-file BODY", "## What changed\nTidy the README.\n", template=TPL) == 2,
-          "exit 0")
+          said())
     check("guard-claims: a PR body carrying every template section passes (an If-section may be left out)",
-          run("gh pr create --base dev --body-file BODY", FULL, template=TPL) == 0, "exit 2")
+          run("gh pr create --base dev --body-file BODY", FULL, template=TPL) == 0, said())
     check("guard-claims: a repo with no PR template is not held to one",
           run("gh pr create --base dev --body-file BODY", "## What changed\nTidy the README.\n") == 0,
-          "exit 2")
+          said())
     # Pre-release review of #1398: a crash or a foreign repository must be said out loud, never pass silently.
     check("guard-claims: a template-optional section ('(optional)') may be left out",
           run("gh pr create --base dev --body-file BODY", "## What changed\nx\n## How to test\nN/A.\n",
-              template=TPL + "## Screenshots (optional)\n") == 0, "exit 2")
+              template=TPL + "## Screenshots (optional)\n") == 0, said())
     check("guard-claims: -R targets another repo, so its template is not judged here",
           run("gh pr create -R other/repo --base dev --body-file BODY", "## What changed\nx\n",
-              template=TPL) == 0, "exit 2")
+              template=TPL) == 0, said())
     check("guard-claims: ...and without -R the same body is blocked (control)",
-          run("gh pr create --base dev --body-file BODY", "## What changed\nx\n", template=TPL) == 2, "exit 0")
+          run("gh pr create --base dev --body-file BODY", "## What changed\nx\n", template=TPL) == 2, said())
     # Second pre-release review: a crash is said out loud, and -R is read from the gh segment only.
     rc, out = run("gh pr create --base dev --body-file BODYDIR", None, template=TPL, with_output=True)
     # FAIL CLOSED (owner decision on #1435): a checker that cannot judge has not checked anything.
@@ -1780,10 +1789,10 @@ def guard_claims_fixtures() -> None:
           rc == 2 and "crashed" in out, f"exit {rc}: {out[-120:]}")
     check("guard-claims: an unrelated `grep -R` earlier in the chain does not switch the check off",
           run("grep -R TODO . >/dev/null; gh pr create --base dev --body-file BODY", "## What changed\nx\n",
-              template=TPL) == 2, "exit 0")
+              template=TPL) == 2, said())
     check("guard-claims: the attached form -Rother/repo is another repository too",
           run("gh pr create -Rother/repo --base dev --body-file BODY", "## What changed\nx\n",
-              template=TPL) == 0, "exit 2")
+              template=TPL) == 0, said())
     # Third pre-release review: a helper that dies AT IMPORT exits 1 with nothing listed. Run a COPY of
     # the hook whose helper cannot import, so the branch that says so is proven reachable.
     with scratch_dir() as hd:
@@ -1833,19 +1842,19 @@ def guard_claims_fixtures() -> None:
               f"exit {broke.returncode}: {(broke.stdout + broke.stderr)[-120:]}")
     check("guard-claims: `-R` in a double-quoted title with an apostrophe is still text (#1435)",
           run("gh pr create --title \"it's the -R fix\" --base dev --body-file BODY", "## What changed\nx\n",
-              template=TPL) == 2, "exit 0")
+              template=TPL) == 2, said())
     check("guard-claims: ...and an escaped quote inside the title does not end it early",
           run("gh pr create --title \"say \\\"hi -R\\\" now\" --base dev --body-file BODY", "## What changed\nx\n",
-              template=TPL) == 2, "exit 0")
+              template=TPL) == 2, said())
     check("guard-claims: `-R` inside a quoted --title is text, so the body is still judged",
           run("gh pr create --title 'fix grep -R bug' --base dev --body-file BODY", "## What changed\nx\n",
-              template=TPL) == 2, "exit 0")
+              template=TPL) == 2, said())
     check("guard-claims: GH_REPO=other/repo targets another repository",
           run("GH_REPO=o/r gh pr create --base dev --body-file BODY", "## What changed\nx\n", template=TPL) == 0,
-          "exit 2")
+          said())
     check("guard-claims: a | inside a quoted title does not hide a later -R",
           run("gh pr create --title 'a|b' -R o/r --body-file BODY", "## What changed\nx\n", template=TPL) == 0,
-          "exit 2")
+          said())
 
     # ---- the COMMAND's directory, not the session's (#1509) ----
     # A hook runs in the session's directory. A session rooted in repo A ran `cd <repo B> && gh pr
@@ -1886,14 +1895,15 @@ def guard_claims_fixtures() -> None:
                 payload["cwd"] = str({"a": a, "b": b}[payload_cwd])
             done = run_hook("guard-claims.sh", cwd=a, stdin=json.dumps(payload),
                             env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1]), "HOME": str(a), **extra})
+            last["rc"], last["out"] = done[0], done[1]
             return done if with_output else done[0]
 
     check("guard-claims: a `cd <other repo>` is judged against that repo's template (#1509)",
-          run_in("cd B_DIR && gh pr create --base dev --body-file BODY", FULL) == 2, "exit 0")
+          run_in("cd B_DIR && gh pr create --base dev --body-file BODY", FULL) == 2, said())
     check("guard-claims: ...and a body fitting the cd target's template passes there",
-          run_in("cd B_DIR && gh pr create --base dev --body-file BODY", FITS_B) == 0, "exit 2")
+          run_in("cd B_DIR && gh pr create --base dev --body-file BODY", FITS_B) == 0, said())
     check("guard-claims: no cd is the session repo's template (control)",
-          run_in("gh pr create --base dev --body-file BODY", FITS_B) == 2, "exit 0")
+          run_in("gh pr create --base dev --body-file BODY", FITS_B) == 2, said())
     rc, out = run_in("cd B_DIR && gh pr create -R o/r --base dev --body-file BODY", FULL, with_output=True)
     check("guard-claims: -R after a cd is still another repository, NOT checked (control)",
           rc == 0 and "NOT checked (-R" in out, f"exit {rc}: {out[-120:]}")
@@ -1902,7 +1912,7 @@ def guard_claims_fixtures() -> None:
           and run_in("cd B_DIR && gh pr create --base dev --body-file body.md", FULL, body_in="b") == 2,
           "the relative body was not read from B")
     check("guard-claims: an issue comment's relative body is read from the cd target too, and its claims checked",
-          run_in("cd B_DIR && gh issue comment 5 --body-file body.md", NUMERIC, body_in="b") == 2, "exit 0")
+          run_in("cd B_DIR && gh issue comment 5 --body-file body.md", NUMERIC, body_in="b") == 2, said())
     check("guard-claims: `--body-file b.md; echo done` reads b.md, not `b.md;` (#1516)",
           run_in("cd B_DIR && gh pr create --body-file body.md; echo done", FULL, body_in="b") == 2
           and run_in("cd B_DIR && gh pr create --body-file body.md; echo done", FITS_B, body_in="b") == 0,
@@ -1950,9 +1960,9 @@ def guard_claims_fixtures() -> None:
         check(f"guard-claims: {label} is followed to the cd target's template (#1516 allowlist)",
               rc == 2 and "## Risk" in out, f"exit {rc}: {out[-140:]}")
     check("guard-claims: `cd B && env gh` with a body fitting B passes there (control)",
-          run_in("cd B_DIR && env gh pr create --body-file BODY", FITS_B) == 0, "exit 2")
+          run_in("cd B_DIR && env gh pr create --body-file BODY", FITS_B) == 0, said())
     check("guard-claims: with no cd, a command before gh leaves it in the starting repo (control)",
-          run_in("git push -u origin x && gh pr create --body-file BODY", FITS_B) == 2, "exit 0")
+          run_in("git push -u origin x && gh pr create --body-file BODY", FITS_B) == 2, said())
     for label, cmd in (("known-safe commands and an assignment before gh", "X=1 git status && echo ok | head -1; gh pr create --body-file BODY"),
                        ("a `[ ... ]` test before gh: a lone `[` is not a glob (#1605)", "[ -d . ] && gh pr create --body-file BODY"),
                        ("a logical `cd link/..`, as bash resolves it", "cd linkSub/.. && gh pr create --body-file BODY")):
@@ -2115,7 +2125,7 @@ def guard_claims_fixtures() -> None:
     check("guard-claims: an unlocatable relative body still says NOT checked, and why (#1516 S-a)",
           rc == 0 and NOTICE in out and "template" in out, f"exit {rc}: {out[-140:]}")
     check("guard-claims: an issue comment is not held to the PR template",
-          run("gh issue comment 5 --body-file BODY", "Tidy the README.\n", template=TPL) == 0, "exit 2")
+          run("gh issue comment 5 --body-file BODY", "Tidy the README.\n", template=TPL) == 0, said())
     # OUT OF SCOPE, AND THE BODY MUST CARRY A CLAIM. A first draft passed a claim-FREE body here,
     # so these could not reach the check at all: deleting the `gh pr create` scope test left them
     # green, and the mutation SURVIVED. A control that cannot reach the code it guards proves
@@ -2127,13 +2137,13 @@ def guard_claims_fixtures() -> None:
                 "gh issue list --limit 5",
                 "gh release create v1.0.0 --notes-file BODY"):
         check(f"guard-claims: `{cmd[:34]}` is out of scope even with a numeric body",
-              run(cmd, NUMERIC) == 0, "exit 2")
+              run(cmd, NUMERIC) == 0, said())
 
     # The audited escape. A fail-closed guard with no visible way past it gets disabled the first
     # time it is wrong, and then it protects nothing.
     check("guard-claims: RAILS_FLOW_CLAIMS_OK=1 overrides, and says so",
           run("gh pr create --base dev --body-file BODY", NUMERIC,
-              env_extra={"RAILS_FLOW_CLAIMS_OK": "1"}) == 0, "exit 2")
+              env_extra={"RAILS_FLOW_CLAIMS_OK": "1"}) == 0, said())
 
     # ---- the change-type declaration (doctrine-map's one tracked gap, #1106) ----
     # The map carried this as a GAP whose recorded reason was "it would live in CI against the PR
@@ -2151,24 +2161,26 @@ def guard_claims_fixtures() -> None:
             _run(["git", "add", "-A"], cwd=root, capture_output=True)
             _fixture_git(root, "commit", "-qm", "base", check=False)
             target.write_text("changed\n", encoding="utf-8")
-            return run_hook("guard-claims.sh", cwd=root,
+            done = run_hook("guard-claims.sh", cwd=root,
                             stdin=json.dumps({"tool_input": {
                                 "command": cmd.replace("BODY", str(root / "body.md"))}}),
-                            env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])})[0]
+                            env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])})
+            last["rc"], last["out"] = done[0], done[1]
+            return done[0]
 
     CREATE = "gh pr create --base dev --body-file BODY"
     check("guard-claims: a skills/** PR naming no change type is blocked",
-          run_in_repo(CREATE, "Tidy the wording.\n", "skills/rails-8/references/x.md") == 2, "exit 0")
+          run_in_repo(CREATE, "Tidy the wording.\n", "skills/rails-8/references/x.md") == 2, said())
     # MUST PASS, both declarations. A rule that accepted neither would block every skill PR.
     check("guard-claims: ...unless it says framework claim",
           run_in_repo(CREATE, "Change type: a framework claim, verified against the docs.\n",
-                      "skills/rails-8/references/x.md") == 0, "exit 2")
+                      "skills/rails-8/references/x.md") == 0, said())
     check("guard-claims: ...or architecture decision",
           run_in_repo(CREATE, "Our own design — an architecture decision.\n",
-                      "skills/rails-8/references/x.md") == 0, "exit 2")
+                      "skills/rails-8/references/x.md") == 0, said())
     # SCOPE: a PR touching no skill is not subject to the rule, whatever its body says.
     check("guard-claims: a PR touching no skill needs no change type",
-          run_in_repo(CREATE, "Tidy the wording.\n", "scripts/x.py") == 0, "exit 2")
+          run_in_repo(CREATE, "Tidy the wording.\n", "scripts/x.py") == 0, said())
     # #1516 review: the change-type check ran `git diff` in the SESSION's repo. A session with a modified
     # skills/ file blocked `cd <other repo> && gh pr create` for a PR that touches nothing there.
     def run_skills_cd(cmd: str) -> int:
@@ -2193,9 +2205,9 @@ def guard_claims_fixtures() -> None:
                 env_extra={"CLAUDE_PLUGIN_ROOT": str(HOOKS.parents[1])})[0]
 
     check("guard-claims: the skills/** change-type check reads the cd target's diff, not the session's (#1516)",
-          run_skills_cd("cd B_DIR && gh pr create --base dev --body-file body.md") == 0, "exit 2")
+          run_skills_cd("cd B_DIR && gh pr create --base dev --body-file body.md") == 0, said())
     check("guard-claims: ...and without the cd the session's skills/ change is still held to it (control)",
-          run_skills_cd("gh pr create --base dev --body-file B_DIR/body.md") == 2, "exit 0")
+          run_skills_cd("gh pr create --base dev --body-file B_DIR/body.md") == 2, said())
 
     # NO CODE RUNS BEFORE PERMISSION (#1516, push security reviews). The hook reads `git diff` in the directory
     # the command `cd`s into, and a hook runs BEFORE the person is asked about the command. A repository's own
@@ -2269,17 +2281,17 @@ def guard_claims_fixtures() -> None:
 
     check("guard-claims: a large staged skills/ list in the session's repository is still held to the change-type rule "
           "(no SIGPIPE fail-open, #1516)",
-          run_big_skills_diff("gh pr create --base dev --body-file B_DIR/body.md", "session") == 2, "exit 0")
+          run_big_skills_diff("gh pr create --base dev --body-file B_DIR/body.md", "session") == 2, said())
     check("guard-claims: a large staged skills/ list in the cd target is still held to the change-type rule "
           "(no SIGPIPE fail-open, #1516)",
-          run_big_skills_diff("cd B_DIR && gh pr create --base dev --body-file body.md", "target") == 2, "exit 0")
+          run_big_skills_diff("cd B_DIR && gh pr create --base dev --body-file body.md", "target") == 2, said())
 
     # FAILS OPEN when it cannot read the body. This guard's job is to make the check happen where
     # it can, never to block opening a PR because a path could not be resolved.
     check("guard-claims: an unreadable body file fails OPEN rather than blocking",
-          run("gh pr create --base dev --body-file /nonexistent/body.md") == 0, "exit 2")
+          run("gh pr create --base dev --body-file /nonexistent/body.md") == 0, said())
     check("guard-claims: an inline --body fails open too",
-          run('gh pr create --base dev --body "292 assertions, up from 285"') == 0, "exit 2")
+          run('gh pr create --base dev --body "292 assertions, up from 285"') == 0, said())
 
 
 # ---- release-gate.sh (qa-flow) shares the normaliser: drive it too, or the "one normaliser" claim is prose (#906) ----
@@ -5637,10 +5649,19 @@ def meta_checks() -> None:
     # #1785: every guard-bash fixture that runs the hook says what the hook SAID when it fails. A constant "exit 2" hid whether the hook refused the command or ran
     # out of time, and check() can only call a timing denial STARVED when the denial's own words are in the detail.
     import inspect
-    gb_src = inspect.getsource(guard_bash_fixtures)
-    bare = [l.strip()[:100] for l in gb_src.splitlines() if re.search(r"(?:run|raw)\(", l) and re.search(r',\s*"exit [02]"\)\s*$', l)]
-    check("guard-bash fixtures: no check that runs the hook carries a bare constant `exit N` as its detail (it must carry what the hook said)",
-          not bare, f"{len(bare)} left, e.g. {bare[:2]}")
+    # #1801: read by AST, not line by line -- a detail on its own continuation line escaped the old regex -- and over every
+    # fixture group that has been given said(): guard-bash (#1785) and guard-claims (#1801).
+    import ast as _ast
+    import textwrap
+    for group in (guard_bash_fixtures, guard_claims_fixtures):
+        tree = _ast.parse(textwrap.dedent(inspect.getsource(group)))
+        bare = [f"line {n.lineno}: {n.args[2].value}" for n in _ast.walk(tree)
+                if isinstance(n, _ast.Call) and getattr(n.func, "id", None) == "check" and len(n.args) >= 3
+                and isinstance(n.args[2], _ast.Constant) and isinstance(n.args[2].value, str)
+                and re.fullmatch(r"exit \d+", n.args[2].value)]
+        name = group.__name__.replace("_fixtures", "").replace("_", "-")
+        check(f"{name} fixtures: no check that runs the hook carries a bare constant `exit N` as its detail (it must carry what the hook said)",
+              not bare, f"{len(bare)} left, e.g. {bare[:2]}")
 
 
 def selftest(groups: list[str] | None = None, match: str | None = None, fail_fast: bool = False) -> int:
