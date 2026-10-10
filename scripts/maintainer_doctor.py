@@ -423,6 +423,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #1465. A Kamal destination is carried through whole: `-d` on every command, the destination's
     # secrets file and overlay, and the credentials environment read from the MERGED config.
     ("pipeline kamal destination", ("python3", "plugins/pipeline/scripts/kamal_destination.py", "--selftest")),
+    # #1701. The release image build passes the build args and labels pipeline.yml declares (a bare build when it declares
+    # none), reads the two keys strictly, and names a Dockerfile ARG nothing feeds.
+    ("pipeline release build", ("python3", "plugins/pipeline/scripts/release_build.py", "--selftest")),
     # #1585. The status board: every panel measured, UNKNOWN never 0, one drawing sheet with no network,
     # and every sentence it writes inside the ASD-STE100 limits. The selftest answers gh/git/ps from canned output.
     ("pipeline status board", ("python3", "plugins/pipeline/scripts/status_board.py", "--selftest")),
@@ -470,6 +473,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("design-flow setup cross-check selftest", ("python3", "plugins/design-flow/scripts/setup_doctrine_crosscheck.py", "--selftest")),
     ("design-flow rendered conformance", ("python3", "plugins/design-flow/scripts/rendered_conformance.py", "--selftest")),
     ("rails-flow findings records", ("python3", "plugins/rails-flow/scripts/findings.py", "--selftest")),
+    # #1339. The retro counts which review findings recur across PRs; a report over nothing must be exit 2, never "nothing recurs".
+    ("rails-flow retro", ("python3", "plugins/rails-flow/scripts/retro.py", "--selftest")),
     # #1391. Tables are master-detail with no horizontal scroll: a scroller around a table, a fixed
     # min-width, and a table with no details target. Driven against a real app on its first run.
     ("design-flow table layout", ("python3", "plugins/design-flow/scripts/check_table_layout.py", "--selftest")),
