@@ -68,61 +68,47 @@ filling in forms with no signal, needs data stored deliberately: encrypted, scop
 wiped at sign-out. A response cache is not that design. Record the decision in the project's
 CLAUDE.md before building it.
 
-## 4. An offline page, where the scaffold has one
+## 4. A failed navigation shows an offline page
 
-**Unreleased: this is on Rails `main` only.** `rails/rails` `main` (`gem_version` 8.2.0 at the time of
-writing) added an offline fallback to the PWA scaffold ([#57184](https://github.com/rails/rails/pull/57184)):
-`app/views/pwa/offline.html.erb`, a commented `get "offline" => "rails/pwa#offline", as: :pwa_offline`
-route, `Rails::PwaController#offline`, and **commented** service-worker examples that precache
-`/offline` and answer a failed navigation with it. It is absent from `8-1-stable` and v8.1.4: a Rails
-8.1 app has none of it and builds the offline page itself. Even on `main` nothing is active until the
-developer uncomments it.
+The outcome is the one in section 3: a signed-in navigation that fails shows a static, content-free
+offline page, and nothing signed-in is cached.
 
-The outcome for any version is the one in section 3: a signed-in navigation that fails shows a static,
-content-free offline page, and nothing signed-in is cached.
+**Do not assume the scaffold provides it.** A scaffolded offline page exists on `rails/rails` `main`
+only (`gem_version` 8.2.0, [#57184](https://github.com/rails/rails/pull/57184)), and even there its
+service-worker part is commented out. It is in no released 8.1.x (`8-1-stable`, v8.1.4): an 8.1 app
+builds the page itself.
 
 ## 5. Web Push
 
-Use a Web Push gem rather than hand-rolling the protocol: `web-push` is Pushpad's maintained fork of
-`webpush` (MIT, Ruby 3.0 or later; 3.1.0 released 2025-12-18). `webpush` has had no release since
-2020-11 and no commit since 2022-11; that is dates, not a notice in its README.
+The outcomes:
 
-- **VAPID** ([RFC 8292](https://www.rfc-editor.org/rfc/rfc8292)) identifies the application server with a
-  P-256 key pair. The RFC makes it voluntary; Chrome and Edge require the public key as
-  `applicationServerKey` at `pushManager.subscribe`, with `userVisibleOnly: true`
-  ([MDN](https://developer.mozilla.org/en-US/docs/Web/API/PushManager/subscribe)). Keep the private
-  key in credentials.
-- **The 8.1 scaffold ships the two handlers commented out** in `service-worker.js`: `push` reads
-  `{ title, options }` from `event.data.json()` and shows the notification, and `notificationclick`
-  focuses a window whose path equals `event.notification.data.path`, else opens it. A payload therefore
-  carries `options.data.path`.
-- **iPhone and iPad:** Web Push works from iOS and iPadOS 16.4, **only for an app added to the Home Screen**,
-  and the permission request must come from a direct user action such as tapping a subscribe button
+- Notification permission is asked for only from a user action, on every platform. This is our rule;
+  iOS makes it a requirement.
+- Where a browser requires the server to identify itself, it does. Chrome and Edge require the VAPID
+  public key as `applicationServerKey` and `userVisibleOnly: true` at subscribe
+  ([MDN](https://developer.mozilla.org/en-US/docs/Web/API/PushManager/subscribe)); the protocol itself,
+  [RFC 8292](https://www.rfc-editor.org/rfc/rfc8292), makes VAPID voluntary. The private key is a secret.
+- On iPhone and iPad, push works from iOS and iPadOS 16.4 **only for an app added to the Home Screen**
   ([WebKit](https://webkit.org/blog/13878/web-push-for-web-apps-on-ios-and-ipados/)). Safari on macOS has
-  had it since 16.1, without installing. This pass did not check whether Safari needs
-  `applicationServerKey`.
+  had Web Push since 16.1.
 
-Our rule, not a browser's: ask for notification permission only from a user action, on every platform, not
-only where iOS forces it.
+Two facts to start from: the Ruby gem that is maintained is `web-push` (Pushpad's fork of `webpush`; 3.1.0
+released 2025-12-18), while `webpush` has had no release since 2020-11 and no commit since 2022-11; and the
+8.1 scaffold's service worker ships its `push` and `notificationclick` handlers commented out.
 
 ## 6. The Play Store
 
-A PWA reaches Google Play as a **Trusted Web Activity** (TWA): an Android app that opens the site in
-Chrome without browser UI ([Chrome](https://developer.chrome.com/docs/android/trusted-web-activity),
-Chrome 72 and later on Android). Bubblewrap, a Chrome Labs CLI, generates and builds the Android project
-([repo](https://github.com/GoogleChromeLabs/bubblewrap)); PWABuilder wraps it.
+A PWA reaches Google Play as a **Trusted Web Activity**: an Android app that opens the site in Chrome
+without browser UI ([Chrome](https://developer.chrome.com/docs/android/trusted-web-activity), Chrome 72 and
+later). The outcomes:
 
-- The app and the site are tied by **Digital Asset Links**: the site serves
-  `https://<domain>/.well-known/assetlinks.json`, and "statement lists in any other location, or with any
-  other name, are not valid" ([Google](https://developers.google.com/digital-asset-links/v1/getting-started)).
-  An entry names `"relation": ["delegate_permission/common.handle_all_urls"]` and a `target` of
-  `"namespace": "android_app"` with the `package_name` and `sha256_cert_fingerprints`. It uses the key
-  the APK is signed with, and Play may re-sign, so include the Play signing fingerprint too.
+- The site proves it belongs to the app: it serves `/.well-known/assetlinks.json` at the root of the
+  domain, naming the app's package and signing-certificate fingerprints, and "statement lists in any other
+  location, or with any other name, are not valid"
+  ([Google](https://developers.google.com/digital-asset-links/v1/getting-started)). Play may re-sign the
+  app, so the Play signing fingerprint is needed too.
 - Without a valid link the app falls back to a Custom Tab with browser UI.
-- An Android app must be signed to upload to Play. Current Play target-API and account policy was not
-  checked in this pass: read Play's own pages, not this file.
-- Serving the file from Rails is ordinary static-file serving (`public/.well-known/`), subject to
-  `config.public_file_server.enabled` or the proxy in front. No official Rails source says more.
+- Play's own current policy (target API, developer account) is not stated here: read Play's pages.
 
 ## Proving it
 
