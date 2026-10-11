@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# `qa/seed/image-e2e [playwright args]` (qa-flow #1837, lifted from Retask #826): the QA robot's corpus, run against the RELEASE IMAGE
+# started on this machine (its own database and Mailpit), not a dev server. It boots nothing and mints nothing: the stack must be up and
+# the project's seed must have run, and it runs the specs tagged @qa-image (QA_GREP to change) from the browser states the seed kept.
+#
+#   QA_BASE_URL   required; must dial 127.0.0.1, localhost or ::1 (parsed, no userinfo) -- exit 2 otherwise
+#   QA_UP_PATH    health path that must answer before anything runs (default /up)
+#   QA_SEED_DIR   where the seed wrote personas.json and records.json (default qa/.qa-seed)
+set -euo pipefail
+cd "$(dirname "$0")/.."
+: "${QA_BASE_URL:?QA_BASE_URL is required: the release image started on this machine, e.g. http://127.0.0.1:3000}"
+# THE PARSED HOSTNAME, not a prefix of the text: `https://127.0.0.1:x@prod.example.com/` names the production host.
+node --experimental-strip-types --no-warnings seed/assert-local-target.ts "$QA_BASE_URL" >/dev/null || exit 2
+if [ -n "${QA_MAILPIT_URL:-}" ]; then node --experimental-strip-types --no-warnings seed/assert-local-target.ts "$QA_MAILPIT_URL" >/dev/null || exit 2; fi
+curl -sk -o /dev/null -f --max-time 5 "${QA_BASE_URL%/}${QA_UP_PATH:-/up}" \
+  || { echo "image-e2e: nothing answers at ${QA_BASE_URL%/}${QA_UP_PATH:-/up} -- start the release image first" >&2; exit 1; }
+seed="${QA_SEED_DIR:-.qa-seed}"
+[ -s "$seed/personas.json" ] && [ -s "$seed/records.json" ] \
+  || { echo "image-e2e: no QA seed in $seed (personas.json and records.json are both needed) -- run the project's seed first" >&2; exit 1; }
+# A MISSING SEED MUST FAIL THE RUN, not skip it: a run in which every test skipped exits 0. Specs read QA_REQUIRE_SEED and fail instead
+# of skipping. `--retries=0`: a retry can turn a real failure into a pass.
+export QA_REQUIRE_SEED=1
+exec npx playwright test --grep "${QA_GREP:-@qa-image}" --workers=1 --retries=0 "$@"
