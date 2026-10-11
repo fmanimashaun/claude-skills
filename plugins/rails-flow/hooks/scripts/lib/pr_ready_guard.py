@@ -257,7 +257,7 @@ def shim_judge(argv: list[str], cwd: str, gh_repo: str = "") -> int:
     hook's: in force only where project_gates runs; `--undo` passes; a repository named by flag, URL or GH_REPO cannot be matched to a local record; every other word must be a plain PR
     number or branch; then the record for HEAD must be green with zero skips. Returns 0 to allow, 2 to refuse (the reason is on stderr)."""
     root = git(cwd, "rev-parse", "--show-toplevel") if os.path.isdir(cwd) else None
-    if not root or not in_force(root):
+    if not (root and in_force(root)):
         return 0
     i = next((k for k, w in enumerate(argv) if w == "pr" and _next_word(argv[k + 1:]) == "ready"), None)
     if i is None:
@@ -266,18 +266,21 @@ def shim_judge(argv: list[str], cwd: str, gh_repo: str = "") -> int:
     j = next(k for k, w in enumerate(rest) if w == "ready")
     between, after = rest[:j], rest[j + 1:]
     shown = " ".join(after)
-    if "--undo" in after and "--" not in after[:after.index("--undo")]:
-        return 0                                    # marking a PR draft again needs no sweep
     words = before + between + after
     if any(w in SHIM_FLAGS or w.startswith(("--repo=", "-R")) or "/pull/" in w for w in words) or gh_repo:
         return refuse(EXPLICIT + ".", shown)
-    cut = False
+    undo = cut = False
     for w in between + after:
         if w == "--" and not cut and w in after:
             cut = True
             continue
+        if w == "--undo" and not cut:
+            undo = True
+            continue
         if not plain_word(w):
             return refuse(f"argument {w} is not a plain PR number or branch; run `gh pr ready <number>` from the PR's own checkout, after its sweep.", shown)
+    if undo:
+        return 0                                    # marking a PR draft again needs no sweep, but only AFTER every argument has been judged like any other
     return judge_record(root, shown)
 
 

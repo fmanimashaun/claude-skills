@@ -123,6 +123,9 @@ def _no_record(base: Path) -> None:
     check("shim: CONTROL: the words `pr ready` inside one argument are not a `pr ready`", ok, why)
     ok, why = allowed(fx, "gh pr ready --undo 5")
     check("shim: `gh pr ready --undo` passes (marking a PR draft again needs no sweep)", ok, why)
+    for cmd in ("gh pr ready --undo --web 5", "gh pr ready 5 --undo -R o/r", "gh pr ready --undo=false 5"):
+        ok, why = refused(fx, cmd)
+        check(f"shim: `{cmd}`: `--undo` does not excuse the other arguments, and `--undo=false` is not `--undo`", ok, why)
 
 
 @case("green record")
