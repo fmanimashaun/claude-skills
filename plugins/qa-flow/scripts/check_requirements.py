@@ -223,7 +223,7 @@ def base_ref(root: Path, flag: str | None) -> tuple[str, bool]:
     ref = flag or (str(section["base"]) if section.get("base") else "")
     # The ref comes from a file a pull request can change and reaches `git fetch`: a component git would read as an option
     # (`origin/--upload-pack=...`) is command execution, so only a plain ref is accepted (and `--` ends git's options below).
-    if ref and (not REF.match(ref) or any(part.startswith("-") for part in ref.split("/"))):
+    if ref and (not REF.fullmatch(ref) or any(part.startswith("-") for part in ref.split("/"))):
         raise ValueError(f"the base ref {ref!r} must be a plain ref: letters, digits and . _ @ + ~ ^ /, no component starting with `-`")
     return (ref, True) if ref else (DEFAULT_BASE, False)
 
@@ -245,7 +245,9 @@ def base_baseline(ref: str, root: Path, baseline: str | None = None, default_bas
 
     if git("rev-parse", "--verify", "-q", f"{ref}^{{commit}}").returncode != 0:
         remote, _, branch = ref.partition("/")
-        subprocess.run(["git", "-C", str(root), "fetch", "-q", "--", remote, branch], capture_output=True, timeout=120, stdin=subprocess.DEVNULL)
+        # Only a configured remote is fetched from: `git fetch somedir main` would read `somedir` as a PATH to some other repository.
+        if remote in git("remote").stdout.split():
+            subprocess.run(["git", "-C", str(root), "fetch", "-q", "--", remote, branch], capture_output=True, timeout=120, stdin=subprocess.DEVNULL)
         if git("rev-parse", "--verify", "-q", f"{ref}^{{commit}}").returncode != 0:
             return "unreadable", []
     baselines = [t for t in (at_ref(path) for path in dict.fromkeys((baseline, default_baseline))) if t is not None]
@@ -261,8 +263,18 @@ def base_baseline(ref: str, root: Path, baseline: str | None = None, default_bas
 # ---- selftest ---------------------------------------------------------------------------------------------------------------------------------
 
 
-def selftest() -> int:
+def selftest(match: str | None = None) -> int:
+    """`match` runs only the scenario rows whose label contains it (the mutation harness runs each mutant on the one row it names, #1599); when no scenario row
+    carries it, the whole real-ref and CLI part runs, because the row it names is one of those."""
     failures: list[str] = []
+    matched: list[str] = []
+
+    def report() -> int:
+        if failures:
+            print("check_requirements selftest FAILED --\n" + "\n".join(f"  - {f}" for f in failures))
+            return 1
+        print("check_requirements selftest: ok (0 failure(s))")
+        return 0
 
     def entry(rid: str, status: str = "done", extra: str = "") -> str:
         return f'- id: "{rid}"\n  area: "A"\n  requirement: "text of {rid}"\n  status: "{status}"\n{extra}'
@@ -271,6 +283,9 @@ def selftest() -> int:
         return "Test ID,Title,Area,Type,Priority,Status,Source,Notes\n" + "".join(f'{tid},t,A,Functional,P1,{st},"{src}",\n' for tid, st, src in rows)
 
     def scenario(label: str, files: dict[str, str], want_code: int, want: str | None, base: list[str] | None = None, raw: bool = False) -> None:
+        if match and match not in label:
+            return
+        matched.append(label)
         files = dict(files)
         if REGISTRY in files and not raw and "# rows:" not in files[REGISTRY]:     # every fixture states its row count unless it is testing that header
             files[REGISTRY] = f"# rows: {files[REGISTRY].count('- id:')}\n" + files[REGISTRY]
@@ -342,6 +357,8 @@ def selftest() -> int:
     scenario("a requirements path outside the project is exit 2 (absolute)", {"qa/qa.config.yml": 'requirements:\n  cases: "/etc/hosts"\n', REGISTRY: reg2}, 2, "inside the project")
     scenario("a slash-joined Source names neither id", {REGISTRY: entry("REQ-001") + entry("REQ-002"), CASES: csv_text(("TC-1", "Active", "REQ-001/REQ-002")), BASELINE: base0},
              1, "REQ-001 is named by no ACTIVE case")
+    if match and matched:
+        return report()
     # --base against real refs: a baseline at the ref, no baseline at the ref (first adoption), a ref that does not exist
     import fixture_git
     with tempfile.TemporaryDirectory() as td:
@@ -450,6 +467,16 @@ def selftest() -> int:
         done = cli()
         if done.returncode != 2 or "must be a plain ref" not in done.stderr:
             failures.append(f"a base ref with a component starting with `-` is refused: got {done.returncode} {done.stderr[:160]!r}")
+        done = cli("--base", "origin/dev\n")
+        if done.returncode != 2 or "must be a plain ref" not in done.stderr:
+            failures.append(f"a base ref with a trailing newline is refused (a `$` anchor would accept it): got {done.returncode} {done.stderr[:160]!r}")
+        elsewhere = repo / "somedir"
+        elsewhere.mkdir()
+        fixture_git.init(elsewhere)
+        fixture_git.run(elsewhere, "commit", "-q", "--allow-empty", "-m", "elsewhere")
+        done = cli("--base", "somedir/main")
+        if done.returncode != 2 or (repo / ".git" / "FETCH_HEAD").exists():
+            failures.append(f"a base whose first component is not a configured remote is exit 2 and is never fetched from as a path: got {done.returncode} fetched={(repo / '.git' / 'FETCH_HEAD').exists()}")
         done = cli("--base=-x")
         if done.returncode != 2 or "must be a plain ref" not in done.stderr:
             failures.append(f"a base ref that starts with `-` is refused, git would read it as an option: got {done.returncode} {done.stderr[:200]!r}")
@@ -482,11 +509,7 @@ def selftest() -> int:
         done = subprocess.run([sys.executable, __file__, "--root", td, "--base", "no-such-remote/no-such-branch"], capture_output=True, text=True, timeout=120)
         if done.returncode != 2:
             failures.append(f"an unreadable --base ref exits 2, never a pass: got {done.returncode} {done.stdout[:120]!r}")
-    if failures:
-        print("check_requirements selftest FAILED --\n" + "\n".join(f"  - {f}" for f in failures))
-        return 1
-    print("check_requirements selftest: ok (0 failure(s))")
-    return 0
+    return report()
 
 
 def main(argv: list[str]) -> int:
@@ -495,9 +518,10 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--uncased", action="store_true", help="list the requirement ids with no active case, one per line, and exit 0")
     parser.add_argument("--base", metavar="REF", help="refuse a baseline line that is not in REF's baseline; default: `requirements: base:` in qa/qa.config.yml, else origin/dev (fetches REF)")
     parser.add_argument("--selftest", action="store_true", help="prove each rule fires on a violation and stays silent on conforming input")
+    parser.add_argument("--match", metavar="TEXT", help="with --selftest: run only the scenario rows whose label contains TEXT (the mutation harness)")
     args = parser.parse_args(argv)
     if args.selftest:
-        return selftest()
+        return selftest(args.match)
     root = Path(args.root).resolve()
     try:
         if args.uncased:
@@ -508,7 +532,7 @@ def main(argv: list[str]) -> int:
         state, lines = base_baseline(ref, root)
         if state == "unreadable":
             if explicit:
-                print(f"check_requirements: cannot read {ref} (exit 2, not a pass)", file=sys.stderr)
+                print(f"check_requirements: cannot read {ref}, which is not a commit here and is not on a configured remote (exit 2, not a pass)", file=sys.stderr)
                 return 2
             print(f"check_requirements: note: the default base {ref} cannot be read, so growth was not checked; set `base:` under `requirements:` in qa/qa.config.yml")
             unchecked = True
