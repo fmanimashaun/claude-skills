@@ -5639,6 +5639,152 @@ def guard_pr_ready_fixtures() -> None:
         expect("guard-pr-ready: a workflow naming project_gates.py puts it in force", guard(plain, "gh pr ready 12"), 2, "no sweep record")
 
 
+# ---- every hook, under an environment a repository's settings can set (#1850, P1 of #1843) ----------------------------------------
+def hostile_env_fixtures() -> None:
+    """Run EVERY hook, discovered from `plugins/*/hooks/hooks.json`, the way the harness runs it, in the environment a project's checked-in
+    `.claude/settings.json` can set (measured on #1843): fake `python3`, `git`, `gh` and `bash` first on PATH, a PYTHONPATH with a `sitecustomize`,
+    GIT_CONFIG_* naming an fsmonitor program, a BASH_ENV. Each fake appends a line to a witness file and then runs the real tool, so nothing breaks;
+    a hook has hardened its start when its witness directory is empty afterwards. Discovered, not listed: a hook added next month is driven too.
+
+    The command is run through `/bin/sh -c` with CLAUDE_PLUGIN_ROOT set, because the harness resolves a command's first word through PATH: a bare
+    `bash` starts the repository's program, `/bin/bash -p` cannot. The control run proves the rig can SEE each way in, so an empty witness
+    directory means the hook did not run the fake, not that the rig was blind. Then the lib is driven directly: what it unsets, what it keeps, and the
+    PATH shapes (a link into the repository, a repository inside a repository, nothing trusted left) that a hook's own run cannot tell apart."""
+    plugins = HOOKS.parents[2]
+    lib = HOOKS / "lib" / "trusted-env.sh"
+    real = {t: shutil.which(t) or "" for t in ("python3", "git", "gh")}
+
+    def rig(td: str, nested: bool = False) -> tuple[Path, Path, dict[str, str]]:
+        """(working directory, witness directory, environment). `nested`: the working directory is a repository INSIDE the repository that holds the fakes."""
+        base = Path(td)
+        outer, witness, trusted = base / "repo", base / "witness", base / "trusted"
+        for d in (outer / "bin", outer / "pylib", witness, trusted):
+            d.mkdir(parents=True)
+        for name in ("python3", "git", "gh", "bash"):
+            target = "/bin/bash" if name == "bash" else real.get(name, "")
+            body = f'echo "$0 $*" >> "{witness}/fake-{name}"\n' + (f'exec "{target}" "$@"' if target else "exit 0")
+            _stub(outer / "bin", name, body)
+            _stub(outer, name, body)      # also in the repository's ROOT, which an EMPTY PATH (the current directory) would find
+        _stub(outer / "bin", "fsmon", f'echo "$0" >> "{witness}/git-fsmonitor"\nexit 0')
+        (outer / "pylib" / "sitecustomize.py").write_text(f"open({str(witness / 'pythonpath-sitecustomize')!r}, 'a').write('ran\\n')\n", encoding="utf-8")
+        (outer / "bashenv.sh").write_text(f'echo ran >> "{witness}/bash-env"\n', encoding="utf-8")
+        link_tools(trusted, ("bash", "python3", "git"))
+        (base / "link-into-repo").symlink_to(outer / "bin")      # a trusted-looking PATH entry that IS the repository's bin
+        _git_repo(outer)
+        work = outer
+        if nested:
+            work = outer / "sub"
+            _git_repo(work)
+        env = {k: v for k, v in os.environ.items() if not k.startswith(("GIT_", "GH_", "PYTHON", "BASH_ENV", "LD_", "DYLD_", "NODE_OPTIONS"))}
+        env.update({
+            "PATH": os.pathsep.join([str(outer / "bin"), str(base / "link-into-repo"), str(trusted), "/usr/bin", "/bin"]),
+            "PYTHONPATH": str(outer / "pylib"), "BASH_ENV": str(outer / "bashenv.sh"),
+            "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.fsmonitor", "GIT_CONFIG_VALUE_0": str(outer / "bin" / "fsmon"),
+            "HOME": str(base), "CLAUDE_PROJECT_DIR": str(work),
+        })
+        return work, witness, env
+
+    def witnessed(witness: Path) -> list[str]:
+        return sorted(f.name for f in witness.iterdir())
+
+    def probe(work: Path, env: dict[str, str], script: str) -> subprocess.CompletedProcess:
+        """`/bin/bash -p -c <script>` in `work`, the lib's own caller shape. `$1` is the lib."""
+        return _run(["/bin/bash", "-p", "-c", script, "probe", str(lib)], cwd=work, env=env, capture_output=True, text=True, timeout=60)
+
+    # CONTROL: an unhardened `bash` hook with a bare `bash` and bare tools. Every way in must show, or the rig is blind.
+    with scratch_dir() as td:
+        work, witness, env = rig(td)
+        env["CLAUDE_PLUGIN_ROOT"] = str(plugins / "rails-flow")
+        (work / "unhardened.sh").write_text("python3 -c pass\ngit status >/dev/null 2>&1\nexit 0\n", encoding="utf-8")
+        done = _run(["/bin/sh", "-c", 'bash "$0"', str(work / "unhardened.sh")], cwd=work, input="{}", env=env, capture_output=True, text=True, timeout=60)
+        seen = witnessed(witness)
+        for way in ("fake-bash", "fake-python3", "fake-git", "pythonpath-sitecustomize", "git-fsmonitor", "bash-env"):
+            check(f"hostile environment: CONTROL: an unhardened `bash` hook shows `{way}`", way in seen,
+                  f"exit {done.returncode}; witnessed {seen}; {(done.stdout + done.stderr).strip()[:160]!r}")
+        # `-p` is half of the fix: it is why BASH_ENV is not read by a hook that starts as `/bin/bash -p`.
+        for f in witness.iterdir():
+            f.unlink()
+        done = _run(["/bin/sh", "-c", '/bin/bash -p "$0"', str(work / "unhardened.sh")], cwd=work, input="{}", env=env, capture_output=True, text=True, timeout=60)
+        check("hostile environment: CONTROL: `/bin/bash -p` does not read BASH_ENV, and does not start the repository's `bash`",
+              "bash-env" not in witnessed(witness) and "fake-bash" not in witnessed(witness), f"witnessed {witnessed(witness)}")
+
+    hooks = []
+    for manifest in sorted(plugins.glob("*/hooks/hooks.json")):
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        for event, entries in data.get("hooks", {}).items():
+            for entry in entries:
+                for hook in entry.get("hooks", []):
+                    if hook.get("type") == "command":
+                        hooks.append((manifest.parent.parent, event, hook["command"]))
+    check("hostile environment: the hooks.json files name hooks to drive (a rig that found none would pass)", len(hooks) >= 18, f"found {len(hooks)}")
+
+    for plugin, event, command in hooks:
+        script = re.search(r"hooks/scripts/([\w.-]+\.sh)", command)
+        name = f"{plugin.name}/{script.group(1) if script else command[:40]} ({event})"
+        with scratch_dir() as td:
+            work, witness, env = rig(td)
+            payload = json.dumps({"hook_event_name": event, "tool_name": "Bash", "session_id": "s1", "transcript_path": "", "stop_hook_active": False, "cwd": str(work),
+                                  "tool_input": {"command": "git push origin main && gh pr merge 1", "file_path": "app/models/a.rb"}})
+            env["CLAUDE_PLUGIN_ROOT"] = str(plugin)
+            done = _run(["/bin/sh", "-c", command], cwd=work, input=payload, env=env, capture_output=True, text=True, timeout=90)
+            seen = witnessed(witness)
+            check(f"hostile environment: {name} starts no program the repository chose", not seen,
+                  f"exit {done.returncode}; witnessed {seen}; {(done.stdout + done.stderr).strip()[:160]!r}")
+
+    # THE LIB, DRIVEN DIRECTLY.
+    with scratch_dir() as td:
+        work, witness, env = rig(td)
+        env.update({"PYTHONHOME": "/x", "LD_PRELOAD": "/x", "LD_LIBRARY_PATH": "/x", "DYLD_INSERT_LIBRARIES": "/x", "DYLD_LIBRARY_PATH": "/x", "NODE_OPTIONS": "--x",
+                    "ENV": "/x", "CDPATH": "/x", "GLOBIGNORE": "*", "GIT_EXEC_PATH": "/x", "GIT_ASKPASS": "/x", "GIT_SSH_COMMAND": "/x",
+                    "GIT_DIR": str(work / ".git"), "GIT_WORK_TREE": str(work), "GIT_AUTHOR_NAME": "a", "GIT_TERMINAL_PROMPT": "0", "KEEP_ME": "1"})
+        done = probe(work, env, '. "$1"; env')
+        left = {ln.split("=", 1)[0] for ln in done.stdout.splitlines() if "=" in ln}
+        for gone in ("PYTHONPATH", "PYTHONHOME", "LD_PRELOAD", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH", "NODE_OPTIONS", "BASH_ENV", "ENV", "CDPATH",
+                     "GLOBIGNORE", "GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0", "GIT_EXEC_PATH", "GIT_ASKPASS", "GIT_SSH_COMMAND"):
+            check(f"hostile environment: trusted-env.sh unsets {gone}", gone not in left, f"exit {done.returncode}; left {sorted(n for n in left if n.isupper())[:30]}; {done.stderr.strip()[:120]!r}")
+        for kept in ("GIT_DIR", "GIT_WORK_TREE", "GIT_AUTHOR_NAME", "GIT_TERMINAL_PROMPT", "KEEP_ME", "HOME"):
+            check(f"hostile environment: trusted-env.sh keeps {kept}", kept in left, f"left {sorted(left)[:30]}")
+
+        def path_after(w: Path, e: dict[str, str]) -> list[str]:
+            return probe(w, e, '. "$1"; printf "%s" "$PATH"').stdout.split(":")
+
+        outer = Path(work)
+        after = path_after(work, env)
+        check("hostile environment: PATH drops the repository's bin, a link INTO it, and keeps the system's",
+              str(outer / "bin") not in after and not any("link-into-repo" in d for d in after) and "/usr/bin" in after and "/bin" in after, f"PATH {after}")
+        # An unquoted `for dir in $PATH` globs a `*` against the filesystem: the entry must stay one LITERAL name.
+        globbed = Path(td) / "globdir"
+        globbed.mkdir()
+        env_glob = dict(env, PATH=os.pathsep.join([str(Path(td) / "glob*"), "/usr/bin"]))
+        check("hostile environment: a `*` in a PATH entry is not globbed (it names no directory, and is never expanded to one that exists)",
+              str(globbed) not in path_after(work, env_glob) and "/usr/bin" in path_after(work, env_glob), f"PATH {path_after(work, env_glob)}")
+        env_only = dict(env, PATH=str(work / "bin"))
+        check("hostile environment: with NOTHING trusted left, PATH finds no program, and is never empty (empty means the current directory)",
+              probe(work, env_only, '. "$1"; [ -n "$PATH" ] && ! type -P python3 >/dev/null 2>&1 && echo ok').stdout.strip() == "ok", f"PATH {path_after(work, env_only)}")
+    # A repository INSIDE a repository (a submodule, a monorepo): the OUTERMOST ancestor with a Gemfile or .git is the repository.
+    with scratch_dir() as td:
+        work, witness, env = rig(td, nested=True)
+        check("hostile environment: the repository is the OUTERMOST .git or Gemfile ancestor, so a repository inside one cannot make its parent's bin trusted",
+              str(work.parent / "bin") not in probe(work, env, '. "$1"; printf "%s" "$PATH"').stdout.split(":"), f"cwd {work}")
+
+    # rf_trusted_python: a python3 whose directory is outside the repository but whose link target is INSIDE it is refused.
+    with scratch_dir() as td:
+        work, witness, env = rig(td)
+        base = Path(td)
+        linkdir, cleandir = base / "linkdir", base / "cleandir"
+        for d in (linkdir, cleandir):
+            d.mkdir()
+        (linkdir / "python3").symlink_to(work / "bin" / "python3")
+        if real["python3"]:
+            (cleandir / "python3").symlink_to(real["python3"])
+        script = '. "$1"; PATH="' + str(linkdir) + ':' + str(cleandir) + ':/bin"; rf_trusted_python; printf "%s" "$RF_PYTHON"'
+        got = probe(work, env, script).stdout
+        check("hostile environment: rf_trusted_python skips a python3 whose link target is inside the repository, and finds the next one",
+              bool(real["python3"]) and got == str(cleandir.resolve() / "python3"), f"RF_PYTHON {got!r}")
+        none = probe(work, env, '. "$1"; PATH="' + str(linkdir) + '"; rf_trusted_python; printf "[%s]" "$RF_PYTHON"').stdout
+        check("hostile environment: rf_trusted_python finds nothing when the only python3 links into the repository", none == "[]", f"RF_PYTHON {none!r}")
+
+
 GROUPS = {
     "stop_gate": stop_gate_fixtures, "guard_lane": guard_lane_fixtures,
     "guard_migrate": guard_migrate_fixtures, "lint_ruby": lint_ruby_fixtures,
@@ -5653,6 +5799,7 @@ GROUPS = {
     "guard_worktree_failopen": guard_worktree_failopen_fixtures, "guard_worktree_pointer": guard_worktree_pointer_fixtures,
     "deadline": deadline_fixtures, "where_stopped": where_stopped_fixtures, "tools_missing": tools_missing_fixtures,
     "fixture_git_binding": fixture_git_binding_fixtures, "guard_pr_ready": guard_pr_ready_fixtures,
+    "hostile_env": hostile_env_fixtures,
 }
 
 
@@ -5669,7 +5816,7 @@ GROUPS = {
 # would never run in the doctor, which is the vacuous gate this repository keeps finding; the selftest checks it below.
 PARTS = {
     "a": ["stop_gate", "guard_lane", "guard_migrate", "lint_ruby", "self_consistency", "guard_bash", "guard_bash_db_reset", "guard_claims", "guard_claims_pipe",
-          "ci_verdict_hint", "session_end", "timeout"],
+          "ci_verdict_hint", "session_end", "timeout", "hostile_env"],
     "b": ["release_gate", "release_gate_effects"],
     "c": ["release_gate_repos", "release_gate_refs", "release_gate_fallback", "release_gate_adversary", "guard_worktree", "guard_worktree_parse",
           "guard_worktree_failopen", "guard_worktree_pointer", "deadline", "where_stopped", "tools_missing", "fixture_git_binding", "test_preflight",

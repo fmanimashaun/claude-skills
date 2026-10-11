@@ -18,13 +18,14 @@
 #
 # REQUIREMENTS, each of which cost a review round on #1826:
 #   * shell BUILTINS only (a `dirname` is "command not found" on a PATH holding a bash and a python3 and nothing else);
-#   * every loop BOUNDED (an unbounded `while` once spun forever);
+#   * every loop BOUNDED (an unbounded `while` once spun forever): `for` loops run over a finite expansion, the one `while` stops at depth 64;
 #   * `set -f` around any `for dir in $PATH`, so a `*` in an entry is not globbed against the filesystem;
 #   * `readlink` only from /usr/bin or /bin, never found through PATH;
 #   * bash 3.2 only (macOS ships it as /bin/bash): no `mapfile`, `declare -A`, `${x,,}`, `&>>`, `coproc`;
 #   * a symlink whose TARGET is inside the repository is refused;
 #   * a stray `~/.git` or `~/Gemfile` makes the home directory the repository, which drops the tools installed under it: QUIET, never wrong.
 
+# SHELLOPTS and BASHOPTS are read-only once bash has imported them, so unsetting them is best effort; the hook's own bash ignores them under `-p`.
 # GIT_* names a hook may keep: they select a repository or an identity and run no program.
 RF_GIT_ALLOW=" GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_CEILING_DIRECTORIES GIT_DISCOVERY_ACROSS_FILESYSTEM GIT_CONFIG_NOSYSTEM GIT_TERMINAL_PROMPT GIT_OPTIONAL_LOCKS GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_AUTHOR_DATE GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL GIT_COMMITTER_DATE "
 
@@ -66,14 +67,12 @@ rf_scrub_env() {
 }
 
 rf_trusted_path() {
-  local old_ifs="$IFS" had_f=1 dir real out="" n=0
+  local old_ifs="$IFS" had_f=1 dir real out=""
   case $- in *f*) ;; *) had_f=0 ;; esac
   rf_repo_root
   IFS=:
   set -f
   for dir in ${PATH:-}; do
-    n=$((n + 1))
-    [ "$n" -le 256 ] || break
     case "$dir" in /*) ;; *) continue ;; esac
     real="$(rf_physical "$dir")" || continue
     if rf_inside "$real"; then continue; fi
@@ -107,15 +106,13 @@ rf_target_of() {
 
 # RF_PYTHON: the first python3 on PATH whose directory AND link target are outside the repository, or empty.
 rf_trusted_python() {
-  local old_ifs="$IFS" had_f=1 dir real target n=0
+  local old_ifs="$IFS" had_f=1 dir real target
   RF_PYTHON=""
   case $- in *f*) ;; *) had_f=0 ;; esac
   [ -n "${RF_REPO_ROOT+x}" ] || rf_repo_root
   IFS=:
   set -f
   for dir in ${PATH:-}; do
-    n=$((n + 1))
-    [ "$n" -le 256 ] || break
     case "$dir" in /*) ;; *) continue ;; esac
     real="$(rf_physical "$dir")" || continue
     if rf_inside "$real"; then continue; fi
