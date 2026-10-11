@@ -441,6 +441,20 @@
       "requires": [
         "python3"
       ]
+    },
+    {
+      "id": "registry-closed",
+      "why": "A requirement registry row that still points at a closed issue as partial or missing makes the status report show fixed gaps as open (#1853); the PR that closes an issue updates the rows that point at it.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_registry_closed.py"
+      ],
+      "applies_when": [
+        "qa/requirements.yml"
+      ],
+      "requires": [
+        "python3"
+      ]
     }
   ]
 }

@@ -76,6 +76,12 @@ GUARD = Guard(
             "a repeated id is a finding",
         ),
         Mutation(
+            "a key repeated within an entry is accepted, so the last value hides the first",
+            "        if key in entries[-1]:",
+            "        if False:",
+            "a key repeated within an entry is a finding",
+        ),
+        Mutation(
             "an unknown status is accepted",
             '        if entry.get("status") not in STATUSES:',
             "        if False:",

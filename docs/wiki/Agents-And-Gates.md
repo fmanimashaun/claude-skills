@@ -165,6 +165,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | rails-flow mock-up gate | `rails-flow` | `python3 plugins/rails-flow/scripts/check_mockup_gate.py --selftest` | selftest |
 | rails-flow one-way door classifier | `rails-flow` | `python3 plugins/rails-flow/scripts/classify_door.py --selftest` | selftest |
 | rails-flow product brief | `rails-flow` | `python3 plugins/rails-flow/scripts/check_brief.py --selftest` | selftest |
+| rails-flow registry closed gate | `rails-flow` | `python3 plugins/rails-flow/scripts/check_registry_closed.py --selftest` | selftest |
 | rails-flow retro | `rails-flow` | `python3 plugins/rails-flow/scripts/retro.py --selftest` | selftest |
 | rails-flow self-consistency | `rails-flow` | `python3 plugins/rails-flow/scripts/self_consistency.py --selftest` | selftest |
 | rails-flow simple-form-only gate | `rails-flow` | `python3 plugins/rails-flow/scripts/check_simple_form_only.py --selftest` | selftest |
@@ -247,6 +248,8 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | published blocks | `repo` | `python3 scripts/check_published_blocks.py` | live check |
 | published blocks selftest | `repo` | `python3 scripts/check_published_blocks.py --selftest` | selftest |
 | python floor selftest | `repo` | `python3 scripts/check_python_floor.py --selftest` | selftest |
+| registry reader parity | `repo` | `python3 scripts/check_registry_reader_parity.py` | live check |
+| registry reader parity selftest | `repo` | `python3 scripts/check_registry_reader_parity.py --selftest` | selftest |
 | release notes complete | `repo` | `python3 scripts/extract_release_notes.py --check --all-tags` | live check |
 | release notes selftest | `repo` | `python3 scripts/extract_release_notes.py --selftest` | selftest |
 | section landmarks | `repo` | `python3 scripts/check_section_landmarks.py` | live check |
