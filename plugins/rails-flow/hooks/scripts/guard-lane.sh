@@ -17,6 +17,7 @@
 #
 # FAILS CLOSED. If python3 is missing the payload is scanned raw, so the path still matches.
 set -uo pipefail
+. "${BASH_SOURCE[0]%/*}/lib/trusted-env.sh" 2>/dev/null   # #1850: scrub PYTHON*/GIT_*/BASH_ENV and rebuild PATH from outside the repository, before any python3, git or gh
 
 # The lane is assigned by whatever launched this session. No lane, no opinion.
 lane="${RAILS_FLOW_LANE:-}"

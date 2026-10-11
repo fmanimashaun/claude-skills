@@ -10,6 +10,7 @@
 # Findings go to stderr with exit 2, which surfaces them to the model without failing the edit —
 # the same shape as lint-ruby.sh.
 set -uo pipefail
+. "${BASH_SOURCE[0]%/*}/lib/trusted-env.sh" 2>/dev/null   # #1850: scrub PYTHON*/GIT_*/BASH_ENV and rebuild PATH from outside the repository, before any python3, git or gh
 
 input="$(cat)"
 file="$(printf '%s' "$input" \

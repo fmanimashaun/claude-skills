@@ -3,6 +3,7 @@
 #  1. Uncommitted app code without an accompanying spec change → block once.
 #  2. Uncommitted spec changes → run just those specs; red suite → block.
 set -uo pipefail
+. "${BASH_SOURCE[0]%/*}/lib/trusted-env.sh" 2>/dev/null   # #1850: scrub PYTHON*/GIT_*/BASH_ENV and rebuild PATH from outside the repository, before any python3, git or gh
 
 # Portable timeout: prefer `timeout`, fall back to macOS `gtimeout`, else run bare.
 # A MISSING timeout must never be misread as a failing suite (the exit-127 trap).

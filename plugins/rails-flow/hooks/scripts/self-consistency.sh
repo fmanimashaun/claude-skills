@@ -10,6 +10,7 @@
 # able to fail. Fails OPEN on a missing dependency (no python3): a guard decides
 # whether to RUN a check, it must never soften the verdict.
 set -uo pipefail
+. "${BASH_SOURCE[0]%/*}/lib/trusted-env.sh" 2>/dev/null   # #1850: scrub PYTHON*/GIT_*/BASH_ENV and rebuild PATH from outside the repository, before any python3, git or gh
 
 input="$(cat)"
 file="$(printf '%s' "$input" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("tool_input",{}).get("file_path",""))' 2>/dev/null || true)"

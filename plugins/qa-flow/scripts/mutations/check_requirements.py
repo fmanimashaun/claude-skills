@@ -76,6 +76,12 @@ GUARD = Guard(
             "a repeated id is a finding",
         ),
         Mutation(
+            "a key repeated within an entry is accepted, so the last value hides the first",
+            "        if key in entries[-1]:",
+            "        if False:",
+            "a key repeated within an entry is a finding",
+        ),
+        Mutation(
             "an unknown status is accepted",
             '        if entry.get("status") not in STATUSES:',
             "        if False:",
@@ -125,7 +131,7 @@ GUARD = Guard(
         ),
         Mutation(
             "the base's baseline is read at the configured path only, so moving the file reads as growth",
-            "dict.fromkeys((baseline, BASELINE))",
+            "dict.fromkeys((baseline, default_baseline))",
             "dict.fromkeys((baseline,))",
             "moving the baseline file with the same lines is clean",
         ),

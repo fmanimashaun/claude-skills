@@ -30,6 +30,7 @@
 # repository is refused for the same reason (which repository it targets cannot be judged); from a cwd INSIDE one it is
 # judged against that cwd's repository, like `git -C`.
 set -uo pipefail
+. "${BASH_SOURCE[0]%/*}/lib/trusted-env.sh" 2>/dev/null   # #1850: scrub PYTHON*/GIT_*/BASH_ENV and rebuild PATH from outside the repository, before any python3, git or gh
 input=""; IFS= read -r -d '' input || true
 
 parsed=1

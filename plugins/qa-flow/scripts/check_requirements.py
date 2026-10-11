@@ -109,6 +109,9 @@ def load(root: Path, registry: str) -> tuple[list[dict], list[str]]:
         if not entries:
             problems.append(f"{registry}:{number}: a field before the first `- id:` entry")
             continue
+        if key in entries[-1]:
+            problems.append(f"{registry}:{number}: `{key}` is repeated within the entry that starts at line {entries[-1]['_line']} (the last one would hide the first)")
+            continue
         entries[-1][key] = value
     return entries, problems
 
@@ -228,12 +231,13 @@ def base_ref(root: Path, flag: str | None) -> tuple[str, bool]:
     return (ref, True) if ref else (DEFAULT_BASE, False)
 
 
-def base_baseline(ref: str, root: Path) -> tuple[str, list[str]]:
+def base_baseline(ref: str, root: Path, baseline: str | None = None, default_baseline: str | None = None) -> tuple[str, list[str]]:
     """(state, lines). `ok`: the baseline lines at `ref` (the union of the configured path and the default path, so moving the file is not growth;
     fetched if the checkout lacks `ref`); a registry with no baseline anywhere at the base is `ok` with NO lines, so every baseline line is growth.
     `none`: `ref` holds neither a registry nor a baseline at either path, which is the first adoption (nothing to grow against; the caller prints a note).
-    `unreadable`: `ref` itself cannot be read."""
-    registry, _, baseline = paths(root)
+    `unreadable`: `ref` itself cannot be read. `baseline` and `default_baseline` let another check (check_e2e_paths) ratchet its own file the same way."""
+    registry, _, configured = paths(root)
+    baseline, default_baseline = baseline or configured, default_baseline or BASELINE
 
     def git(*args: str) -> subprocess.CompletedProcess:
         return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
@@ -249,7 +253,7 @@ def base_baseline(ref: str, root: Path) -> tuple[str, list[str]]:
             subprocess.run(["git", "-C", str(root), "fetch", "-q", "--", remote, branch], capture_output=True, timeout=120, stdin=subprocess.DEVNULL)
         if git("rev-parse", "--verify", "-q", f"{ref}^{{commit}}").returncode != 0:
             return "unreadable", []
-    baselines = [t for t in (at_ref(path) for path in dict.fromkeys((baseline, BASELINE))) if t is not None]
+    baselines = [t for t in (at_ref(path) for path in dict.fromkeys((baseline, default_baseline))) if t is not None]
     registries = [t for t in (at_ref(path) for path in dict.fromkeys((registry, REGISTRY))) if t is not None]
     if not baselines and not registries:
         return "none", []
@@ -341,6 +345,8 @@ def selftest(match: str | None = None) -> int:
     scenario("a malformed id is a finding", {REGISTRY: entry("req 1"), CASES: csv_text(("TC-1", "Active", "x")), BASELINE: base0}, 1, "malformed")
     scenario("an unknown status is a finding", {REGISTRY: entry("REQ-001", "wip"), CASES: csv_text(("TC-1", "Active", "REQ-001")), BASELINE: base0}, 1, "status 'wip'")
     scenario("a line that is not key: JSON is a finding", {REGISTRY: "- id: REQ-001\n", CASES: cases2, BASELINE: base0}, 1, "is not JSON")
+    scenario("a key repeated within an entry is a finding (the last would hide the first)", {REGISTRY: entry("REQ-001") + '  status: "missing"\n', CASES: csv_text(("TC-1", "Active", "REQ-001")),
+             BASELINE: base0}, 1, "`status` is repeated within the entry")
     scenario("a requirement with no text is a finding", {REGISTRY: '- id: "REQ-001"\n  status: "done"\n', CASES: csv_text(("TC-1", "Active", "REQ-001")), BASELINE: base0}, 1,
              "no `requirement` text")
     scenario("paths come from the requirements section of qa.config.yml", {"qa/qa.config.yml": 'requirements:\n  registry: "docs/reqs.yml"   # trailing comment\n  cases: "docs/cases.csv"\n',

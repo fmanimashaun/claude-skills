@@ -34,6 +34,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 PLACEHOLDER = "${CLAUDE_PLUGIN_ROOT}"
+# How a hook command starts its script. `/bin/bash -p` is the shape every shipped hook has since #1850; an unrecognised prefix is NOT read, so this list must
+# name every shape the manifests use (a command that starts otherwise is "not a bash command" and is not expanded).
+BASH_PREFIXES = ("/bin/bash -p ", "bash ")
 QUOTED = re.compile(r'"[^"]*\$\{CLAUDE_PLUGIN_ROOT\}[^"]*"')
 
 
@@ -55,12 +58,16 @@ def unquoted(command: str) -> bool:
 
 def expands_to_one_file(command: str, plugin: Path) -> tuple[bool, str]:
     """Expand the command's words under bash from a spaced copy of the plugin; run nothing."""
-    if not command.startswith("bash "):
+    for prefix in BASH_PREFIXES:
+        if command.startswith(prefix):
+            rest = command[len(prefix):]
+            break
+    else:
         return True, "not a bash command"
     with tempfile.TemporaryDirectory() as td:
         spaced = Path(td) / "Application Support" / plugin.name
         shutil.copytree(plugin, spaced)
-        probe = "printf '%s\\n' " + command[len("bash "):]
+        probe = "printf '%s\\n' " + rest
         proc = subprocess.run(["bash", "-c", probe], capture_output=True, text=True,
                               env={"CLAUDE_PLUGIN_ROOT": str(spaced), "PATH": "/usr/bin:/bin"})
         words = proc.stdout.splitlines()
@@ -124,6 +131,13 @@ def selftest() -> int:
                code == 1 and any("[unquoted-plugin-root]" in l for l in out), str(out))
         expect("...and the spaced-path expansion catches it on its own",
                any("[splits-on-space]" in l for l in out), str(out))
+        write('/bin/bash -p "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/a.sh"')
+        expect("CONTROL: a `/bin/bash -p` command with a quoted placeholder survives a spaced path", check(root)[0] == 0, str(check(root)[1]))
+        write('/bin/bash -p "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/missing.sh"')
+        expect("a `/bin/bash -p` command naming a script that does not exist is refused (the prefix is read, not skipped)",
+               any("[splits-on-space]" in l for l in check(root)[1]))
+        write('/bin/bash -p ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/a.sh')
+        expect("a `/bin/bash -p` command with an unquoted placeholder is refused", any("[unquoted-plugin-root]" in l for l in check(root)[1]))
         write('bash "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/missing.sh"')
         expect("a quoted path to a script that does not exist is refused",
                any("[splits-on-space]" in l for l in check(root)[1]))
