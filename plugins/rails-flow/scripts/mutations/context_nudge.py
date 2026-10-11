@@ -53,8 +53,8 @@ GUARD = Guard(
         ),
         Mutation(
             "the fill is never pinned under the prompt",
-            "    $.ui.status(parts.length ? parts.join(' · ') : undefined)\n",
-            "    // no status\n",
+            "    limitsText = limitsLabel(e.rateLimits, now) ?? null\n    $.ui.status(statusText())\n",
+            "    limitsText = limitsLabel(e.rateLimits, now) ?? null\n    // no status\n",
             "the fill is pinned under the prompt",
         ),
         Mutation(
@@ -101,8 +101,8 @@ GUARD = Guard(
         ),
         Mutation(
             "#1677: the usage windows never reach the status line",
-            "    const limits = limitsLabel(e.rateLimits, now)\n",
-            "    const limits = undefined\n",
+            "    limitsText = limitsLabel(e.rateLimits, now) ?? null\n",
+            "    limitsText = null\n",
             "the status line carries the weekly and 5-hour windows",
         ),
         Mutation(
@@ -140,6 +140,31 @@ GUARD = Guard(
             "tell the user to run /clear (not /compact: the handoff already holds it) before new work.",
             "tell the user to run /clear or /compact before new work.",
             "asks for /clear after the handoff, not /compact",
+        ),
+        # #1884: the cache-hit meter.
+        Mutation(
+            "the hit rate leaves out what was written to the cache, so it reads too high",
+            "  const total = read + written + uncached",
+            "  const total = read + uncached",
+            "cacheHit: read / (read + written + uncached)",
+        ),
+        Mutation(
+            "a missing reading shows as 0% instead of none",
+            "  return total === 0 ? null : Math.round((100 * read) / total)",
+            "  return total === 0 ? 0 : Math.round((100 * read) / total)",
+            "cacheHit: no reading when usage is missing",
+        ),
+        Mutation(
+            "a subagent's request moves the main conversation's meter",
+            "      if (!e.agentId) {",
+            "      if (true) {",
+            "a subagent's request does not move the main conversation's meter",
+        ),
+        Mutation(
+            "a session.measure redraw drops the cache share",
+            "  const parts = [percent === null ? null : `context ${percent}%`, cache === null ? null : `cache ${cache}%`, limitsText].filter(Boolean)",
+            "  const parts = [percent === null ? null : `context ${percent}%`, limitsText].filter(Boolean)",
+            "the cache share joins the status line",
         ),
     ),
 )
