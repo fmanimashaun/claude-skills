@@ -59,7 +59,9 @@ yours to write, or the tokens come from an external identity provider.
    annotations explicitly, because the defaults describe the opposite tool.** Unset, a tool is
    `readOnlyHint: false`, `destructiveHint: true` and `openWorldHint: true` (the 2026-07-28 schema's
    `ToolAnnotations`). A reporting tool therefore declares `readOnlyHint: true` and
-   `openWorldHint: false`. Do not rely on either. The spec says clients **MUST** treat tool
+   `openWorldHint: false`. Do not rely on either: the rails-flow `mcp-annotations` check fails a tool
+   whose source does not state both (it reads the source, because the gem emits all four hints once any
+   one is set). The spec says clients **MUST** treat tool
    annotations as untrusted ([tools][spec-tools]), so the hint describes the tool and guarantees
    nothing. The guarantee is that no tool's code path writes. Write tools are a separate, later
    decision.
