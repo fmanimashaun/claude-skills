@@ -14,7 +14,7 @@ GUARD = Guard(
         # #1336: a heredoc body is tokenised again, so prose apostrophes refuse a labelled create.
         Mutation(
             "heredoc bodies are no longer stripped before tokenising",
-            "        cmd = _ansi_c(strip_heredocs(cmd))\n    except ValueError:",
+            "        cmd = _ansi_c(strip_heredocs(cmd, heredocs))\n    except ValueError:",
             "        cmd = _ansi_c(cmd)\n    except ValueError:",
             "a heredoc body with apostrophes does not break a labelled create",
         ),
@@ -192,7 +192,7 @@ GUARD = Guard(
         ),
         Mutation(
             "sh -c strings are not refused",
-            '            if head in SHELLS and runs_string:\n                c_operand = _first_operand(unsplit[1:])[0]',
+            '            if is_shell and runs_string:\n                c_operand = _first_operand(unsplit[1:])[0]',
             '            if False:\n                c_operand = _first_operand(unsplit[1:])[0]',
             "a create inside `sh -c` is refused",
         ),
@@ -457,8 +457,8 @@ GUARD = Guard(
         ),
         Mutation(
             "ANSI-C quoting is not decoded, so valid bash is refused as unparseable",
-            "        cmd = _ansi_c(strip_heredocs(cmd))",
-            "        cmd = strip_heredocs(cmd)",
+            "        cmd = _ansi_c(strip_heredocs(cmd, heredocs))",
+            "        cmd = strip_heredocs(cmd, heredocs)",
             "before a harmless redirected script is allowed",
         ),
         Mutation(
@@ -506,8 +506,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a command between the cd and the create is trusted",
-            '    if len(prefix) != 3 or prefix[2] != "&&":',
-            '    if len(prefix) < 3 or prefix[2] != "&&":',
+            '    if len(prefix) < 3 or prefix[2] != "&&":\n        return None\n    # #1851:',
+            '    if len(prefix) < 3 or prefix[2] != "&&":\n        return None\n    return prefix[1]\n    # #1851:',
             "refused: a command between the cd and the create",
         ),
         Mutation(
@@ -736,6 +736,91 @@ GUARD = Guard(
             "_MAX_DEPTH = 3 ",
             "_MAX_DEPTH = 10 ** 9 ",
             "RecursionError",
+        ),
+        # #1851: a create after a cd, a quoted heredoc body before it, an unfollowed cd, and `bash -n`.
+        Mutation(
+            'a cd is followed only when nothing sits between it and the create (the session-cwd read is restored for a heredoc body)',
+            '    if len(prefix) < 3 or prefix[2] != "&&":\n        return None\n    # #1851:',
+            '    if len(prefix) != 3 or prefix[2] != "&&":\n        return None\n    # #1851:',
+            "cd into another repo, a heredoc writes the body, then the create: that repo's declaration applies, and passes",
+        ),
+        Mutation(
+            'no file-writing segment is ever accepted between the cd and the create',
+            '    if cur or not all(_file_writer(sg) for sg in segs):',
+            '    if cur or segs:',
+            "cd into another repo, a heredoc writes the body, then the create: that repo's declaration applies, and passes",
+        ),
+        Mutation(
+            'any segment between the cd and the create is accepted',
+            '    if cur or not all(_file_writer(sg) for sg in segs):',
+            '    if cur:',
+            'a command that is not a file write between the cd and the create does not keep the cd',
+        ),
+        Mutation(
+            'a file in a directory, the home directory or another absolute path keeps the cd',
+            ' and "/" not in path and',
+            ' and',
+            'a heredoc that writes to another absolute path',
+        ),
+        Mutation(
+            'a file whose name starts .GIT in another case keeps the cd',
+            'and not path.lower().startswith(".git")',
+            'and not path.startswith(".git")',
+            '.GIT, in any case',
+        ),
+        Mutation(
+            '`..` as the file keeps the cd',
+            ' and ".." not in path and',
+            ' and',
+            'a heredoc that writes to `..`',
+        ),
+        Mutation(
+            'a $VAR file name keeps the cd',
+            ' and "$" not in path and',
+            ' and',
+            '$VAR path',
+        ),
+        Mutation(
+            'an unquoted heredoc keeps the cd',
+            'if cd is not None and unquoted_body and len(items[:start]) != 3:',
+            'if False:',
+            'an UNQUOTED heredoc',
+        ),
+        Mutation(
+            "an unfollowed cd is refused with the session's taxonomy again",
+            '                if cd_unfollowed:',
+            '                if False:',
+            'does not keep the cd, and the refusal says it cannot tell which repository',
+        ),
+        Mutation(
+            'a + option before the script does not turn noexec off',
+            '        if w.startswith("+") or (not w.startswith("--") and "o" in w[1:]):',
+            '        if (not w.startswith("--") and "o" in w[1:]):',
+            'turns noexec off or names an option',
+        ),
+        Mutation(
+            'an option set by name (-o) does not turn noexec off',
+            '        if w.startswith("+") or (not w.startswith("--") and "o" in w[1:]):',
+            '        if w.startswith("+"):',
+            'turns noexec off or names an option',
+        ),
+        Mutation(
+            '-n is not read as noexec',
+            '        if not w.startswith("--") and "n" in w[1:]:\n            noexec = True',
+            '        if not w.startswith("--") and "n" in w[1:]:\n            noexec = False',
+            'bash -n of a script that holds a create parses it and runs nothing',
+        ),
+        Mutation(
+            'an -n after the script name is read as noexec',
+            '        if w == "--" or w == "-" or not w.startswith(("-", "+")):\n            break',
+            '        if w == "--" or w == "-":\n            break',
+            'an -n AFTER the script name',
+        ),
+        Mutation(
+            'any shell option is read as noexec',
+            '        if not w.startswith("--") and "n" in w[1:]:\n            noexec = True',
+            '        if not w.startswith("--"):\n            noexec = True',
+            'bash -x of the same script still runs it',
         ),
     ),
 )
