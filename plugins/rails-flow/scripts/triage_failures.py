@@ -227,10 +227,13 @@ def _selftest() -> int:
         load_error = ("An error occurred while loading ./spec/x_spec.rb.\n"
                       "0 examples, 0 failures, 1 error occurred outside of examples\n")
         try:
-            text_lo, _ = triage(load_error, Path(tmp) / "none.json", "main", good, 2, tmp)
+            text_lo, why_lo = triage(load_error, Path(tmp) / "none.json", "main", good, 2, tmp)
         except Exception:
-            text_lo = "crashed"
-        expect("a run with errors outside of examples is refused, not triaged as clean", text_lo is None)
+            text_lo, why_lo = "crashed", ""
+        # #1893: the REASON is the assertion. "could not read an RSpec result" also returns None, so `is None` alone let the
+        # outside-errors branch be deleted unnoticed.
+        expect("a run with errors outside of examples is refused, not triaged as clean",
+               text_lo is None and "errors outside of examples" in str(why_lo))
         one = "Failed examples:\n\nrspec ./spec/e_spec.rb:2 # e\n"
         _, code_new = triage(one, Path(tmp) / "none.json", "main", exits_one, 2, tmp)
         _, code_alone = triage(one, Path(tmp) / "none.json", "main", good, 2, tmp)
