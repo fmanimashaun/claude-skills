@@ -173,7 +173,37 @@ def command_text(source: str, start: int) -> str:
     return source[start:i]
 
 
-CLEAN_PREFIX = re.compile(r"^\s*(?:(?:exec|env|cross-env|npx(?:\s+(?:--no-install|-y|--yes))*|pnpm(?:\s+exec)?|yarn(?:\s+run)?|bunx|npm\s+exec(?:\s+--)?|[A-Za-z_][A-Za-z0-9_]*=\S*)\s+)*$")
+class _CleanPrefix:
+    """The launcher words and literal assignments that may sit before `playwright test` (#1856). A word-by-word scan, not a regular expression: the
+    alternation `exec|...|pnpm(?:\\s+exec)?` backtracks exponentially on `pnpm exec pnpm exec ...` (CodeQL py/redos on #1879). Accepts exactly what that
+    pattern accepted: each item followed by whitespace, items being exec, env, cross-env, bunx, `npx` with --no-install/-y/--yes flags, `pnpm [exec]`,
+    `yarn [run]`, `npm exec [--]`, or NAME=value with no whitespace in the value."""
+    _ASSIGN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=\S*")
+    _SIMPLE = frozenset({"exec", "env", "cross-env", "bunx"})
+    _NPX_FLAGS = frozenset({"--no-install", "-y", "--yes"})
+
+    def match(self, prefix):
+        if prefix.strip() and not prefix[-1].isspace():
+            return None
+        words, i = prefix.split(), 0
+        while i < len(words):
+            w = words[i]
+            if w in self._SIMPLE or self._ASSIGN.fullmatch(w):
+                i += 1
+            elif w == "npx":
+                i += 1
+                while i < len(words) and words[i] in self._NPX_FLAGS:
+                    i += 1
+            elif w in ("pnpm", "yarn"):
+                i += 2 if i + 1 < len(words) and words[i + 1] == ("exec" if w == "pnpm" else "run") else 1
+            elif w == "npm" and i + 1 < len(words) and words[i + 1] == "exec":
+                i += 3 if i + 2 < len(words) and words[i + 2] == "--" else 2
+            else:
+                return None
+        return True
+
+
+CLEAN_PREFIX = _CleanPrefix()
 ASSIGNMENT = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$")
 NOT_LITERAL = re.compile(r"[$`*?\[~()\\]")
 ODD_ASSIGNMENT = re.compile(r"^[A-Za-z_][\w.+\[\]-]*\+?=")      # `NAME+=x`, `a[0]=x`, `a=(x)`: an assignment form other than the exact NAME=literal
