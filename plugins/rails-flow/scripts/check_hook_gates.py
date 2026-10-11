@@ -5691,22 +5691,24 @@ def hostile_env_fixtures() -> None:
         """`/bin/bash -p -c <script>` in `work`, the lib's own caller shape. `$1` is the lib."""
         return _run(["/bin/bash", "-p", "-c", script, "probe", str(lib)], cwd=work, env=env, capture_output=True, text=True, timeout=60)
 
-    # CONTROL: an unhardened `bash` hook with a bare `bash` and bare tools. Every way in must show, or the rig is blind.
-    with scratch_dir() as td:
-        work, witness, env = rig(td)
-        env["CLAUDE_PLUGIN_ROOT"] = str(plugins / "rails-flow")
-        (work / "unhardened.sh").write_text("python3 -c pass\ngit status >/dev/null 2>&1\nexit 0\n", encoding="utf-8")
-        done = _run(["/bin/sh", "-c", 'bash "$0"', str(work / "unhardened.sh")], cwd=work, input="{}", env=env, capture_output=True, text=True, timeout=60)
-        seen = witnessed(witness)
-        for way in ("fake-bash", "fake-python3", "fake-git", "pythonpath-sitecustomize", "git-fsmonitor", "bash-env"):
-            check(f"hostile environment: CONTROL: an unhardened `bash` hook shows `{way}`", way in seen,
-                  f"exit {done.returncode}; witnessed {seen}; {(done.stdout + done.stderr).strip()[:160]!r}")
-        # `-p` is half of the fix: it is why BASH_ENV is not read by a hook that starts as `/bin/bash -p`.
-        for f in witness.iterdir():
-            f.unlink()
-        done = _run(["/bin/sh", "-c", '/bin/bash -p "$0"', str(work / "unhardened.sh")], cwd=work, input="{}", env=env, capture_output=True, text=True, timeout=60)
-        check("hostile environment: CONTROL: `/bin/bash -p` does not read BASH_ENV, and does not start the repository's `bash`",
-              "bash-env" not in witnessed(witness) and "fake-bash" not in witnessed(witness), f"witnessed {witnessed(witness)}")
+    # CONTROL: an unhardened `bash` hook with a bare `bash` and bare tools. Every way in must show, or the rig is blind. (Each check runs its own probe
+    # right before it: under `--match` only the code just before a wanted check runs for real.)
+    def unhardened(flag: str) -> tuple[list[str], subprocess.CompletedProcess]:
+        with scratch_dir() as td:
+            work, witness, env = rig(td)
+            env["CLAUDE_PLUGIN_ROOT"] = str(plugins / "rails-flow")
+            (work / "unhardened.sh").write_text("python3 -c pass\ngit status >/dev/null 2>&1\nexit 0\n", encoding="utf-8")
+            done = _run(["/bin/sh", "-c", f'{flag} "$0"', str(work / "unhardened.sh")], cwd=work, input="{}", env=env, capture_output=True, text=True, timeout=60)
+            return witnessed(witness), done
+
+    for way in ("fake-bash", "fake-python3", "fake-git", "pythonpath-sitecustomize", "git-fsmonitor", "bash-env"):
+        seen, done = unhardened("bash")
+        check(f"hostile environment: CONTROL: an unhardened `bash` hook shows `{way}`", way in seen,
+              f"exit {done.returncode}; witnessed {seen}; {(done.stdout + done.stderr).strip()[:160]!r}")
+    # `-p` is half of the fix: it is why BASH_ENV is not read by a hook that starts as `/bin/bash -p`.
+    seen, done = unhardened("/bin/bash -p")
+    check("hostile environment: CONTROL: `/bin/bash -p` does not read BASH_ENV, and does not start the repository's `bash`",
+          "bash-env" not in seen and "fake-bash" not in seen, f"witnessed {seen}")
 
     hooks = []
     for manifest in sorted(plugins.glob("*/hooks/hooks.json")):
@@ -5731,41 +5733,59 @@ def hostile_env_fixtures() -> None:
             check(f"hostile environment: {name} starts no program the repository chose", not seen,
                   f"exit {done.returncode}; witnessed {seen}; {(done.stdout + done.stderr).strip()[:160]!r}")
 
-    # THE LIB, DRIVEN DIRECTLY.
-    with scratch_dir() as td:
-        work, witness, env = rig(td)
-        env.update({"PYTHONHOME": "/x", "LD_PRELOAD": "/x", "LD_LIBRARY_PATH": "/x", "DYLD_INSERT_LIBRARIES": "/x", "DYLD_LIBRARY_PATH": "/x", "NODE_OPTIONS": "--x",
+    # THE LIB, DRIVEN DIRECTLY. Paths are compared PHYSICALLY: the lib resolves symlinks, and a temp directory is itself one on macOS (/var -> /private/var).
+    def lib_env(td: str, nested: bool = False) -> tuple[Path, dict[str, str]]:
+        work, _, env = rig(td, nested=nested)
+        env.update({"PYTHONHOME": "/x", "LD_PRELOAD": "/x", "LD_LIBRARY_PATH": "/x", "NODE_OPTIONS": "--x",
                     "ENV": "/x", "CDPATH": "/x", "GLOBIGNORE": "*", "GIT_EXEC_PATH": "/x", "GIT_ASKPASS": "/x", "GIT_SSH_COMMAND": "/x",
                     "GIT_DIR": str(work / ".git"), "GIT_WORK_TREE": str(work), "GIT_AUTHOR_NAME": "a", "GIT_TERMINAL_PROMPT": "0", "KEEP_ME": "1"})
-        done = probe(work, env, '. "$1"; env')
-        left = {ln.split("=", 1)[0] for ln in done.stdout.splitlines() if "=" in ln}
-        for gone in ("PYTHONPATH", "PYTHONHOME", "LD_PRELOAD", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH", "NODE_OPTIONS", "BASH_ENV", "ENV", "CDPATH",
-                     "GLOBIGNORE", "GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0", "GIT_EXEC_PATH", "GIT_ASKPASS", "GIT_SSH_COMMAND"):
-            check(f"hostile environment: trusted-env.sh unsets {gone}", gone not in left, f"exit {done.returncode}; left {sorted(n for n in left if n.isupper())[:30]}; {done.stderr.strip()[:120]!r}")
-        for kept in ("GIT_DIR", "GIT_WORK_TREE", "GIT_AUTHOR_NAME", "GIT_TERMINAL_PROMPT", "KEEP_ME", "HOME"):
-            check(f"hostile environment: trusted-env.sh keeps {kept}", kept in left, f"left {sorted(left)[:30]}")
+        return work, env
 
-        def path_after(w: Path, e: dict[str, str]) -> list[str]:
-            return probe(w, e, '. "$1"; printf "%s" "$PATH"').stdout.split(":")
+    def env_left() -> tuple[set[str], subprocess.CompletedProcess]:
+        with scratch_dir() as td:
+            work, env = lib_env(td)
+            # DYLD_* is exported INSIDE the script, and read back with the builtin `export -p`: macOS strips it from the environment of a SIP-protected
+            # `/bin/bash` before the script starts, and from that of a SIP-protected `/usr/bin/env` before it prints.
+            done = probe(work, env, 'export DYLD_INSERT_LIBRARIES=/x DYLD_LIBRARY_PATH=/x; . "$1"; export -p')
+            return set(re.findall(r"^declare -x (\w+)", done.stdout, re.M)), done
 
-        outer = Path(work)
-        after = path_after(work, env)
-        check("hostile environment: PATH drops the repository's bin, a link INTO it, and keeps the system's",
-              str(outer / "bin") not in after and not any("link-into-repo" in d for d in after) and "/usr/bin" in after and "/bin" in after, f"PATH {after}")
-        # An unquoted `for dir in $PATH` globs a `*` against the filesystem: the entry must stay one LITERAL name.
-        globbed = Path(td) / "globdir"
+    for gone in ("PYTHONPATH", "PYTHONHOME", "LD_PRELOAD", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH", "NODE_OPTIONS", "BASH_ENV", "ENV", "CDPATH",
+                 "GLOBIGNORE", "GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0", "GIT_EXEC_PATH", "GIT_ASKPASS", "GIT_SSH_COMMAND"):
+        left, done = env_left()
+        check(f"hostile environment: trusted-env.sh unsets {gone}", gone not in left and "HOME" in left, f"exit {done.returncode}; left {sorted(left)[:40]}; {done.stderr.strip()[:120]!r}")
+    for kept in ("GIT_DIR", "GIT_WORK_TREE", "GIT_AUTHOR_NAME", "GIT_TERMINAL_PROMPT", "KEEP_ME", "HOME"):
+        left, done = env_left()
+        check(f"hostile environment: trusted-env.sh keeps {kept}", kept in left, f"left {sorted(left)[:40]}")
+
+    def path_of(td: str, mutate=None, nested: bool = False) -> tuple[Path, list[str]]:
+        work, env = lib_env(td, nested=nested)
+        if mutate:
+            env = mutate(Path(td), work, env)
+        return work, probe(work, env, '. "$1"; printf "%s" "$PATH"').stdout.split(":")
+
+    with scratch_dir() as td:
+        work, after = path_of(td)
+        outer = work.resolve()
+        check("hostile environment: PATH drops the repository's bin and a link INTO it, and keeps the system's",
+              str(outer / "bin") not in after and not any(d.endswith("link-into-repo") for d in after) and "/usr/bin" in after and "/bin" in after, f"PATH {after}")
+    # An unquoted `for dir in $PATH` globs a `*` against the filesystem: the entry must stay one LITERAL name.
+    with scratch_dir() as td:
+        globbed = Path(td).resolve() / "globdir"
         globbed.mkdir()
-        env_glob = dict(env, PATH=os.pathsep.join([str(Path(td) / "glob*"), "/usr/bin"]))
+        work, after = path_of(td, lambda base, w, e: dict(e, PATH=os.pathsep.join([str(base / "glob*"), "/usr/bin"])))
         check("hostile environment: a `*` in a PATH entry is not globbed (it names no directory, and is never expanded to one that exists)",
-              str(globbed) not in path_after(work, env_glob) and "/usr/bin" in path_after(work, env_glob), f"PATH {path_after(work, env_glob)}")
-        env_only = dict(env, PATH=str(work / "bin"))
+              str(globbed) not in after and "/usr/bin" in after, f"PATH {after}")
+    with scratch_dir() as td:
+        work, env = lib_env(td)
+        env["PATH"] = str(work / "bin")
+        done = probe(work, env, '. "$1"; [ -n "$PATH" ] && ! type -P python3 >/dev/null 2>&1 && echo ok')
         check("hostile environment: with NOTHING trusted left, PATH finds no program, and is never empty (empty means the current directory)",
-              probe(work, env_only, '. "$1"; [ -n "$PATH" ] && ! type -P python3 >/dev/null 2>&1 && echo ok').stdout.strip() == "ok", f"PATH {path_after(work, env_only)}")
+              done.stdout.strip() == "ok", f"exit {done.returncode}: {done.stdout!r} {done.stderr[:120]!r}")
     # A repository INSIDE a repository (a submodule, a monorepo): the OUTERMOST ancestor with a Gemfile or .git is the repository.
     with scratch_dir() as td:
-        work, witness, env = rig(td, nested=True)
+        work, after = path_of(td, nested=True)
         check("hostile environment: the repository is the OUTERMOST .git or Gemfile ancestor, so a repository inside one cannot make its parent's bin trusted",
-              str(work.parent / "bin") not in probe(work, env, '. "$1"; printf "%s" "$PATH"').stdout.split(":"), f"cwd {work}")
+              str(work.resolve().parent / "bin") not in after, f"cwd {work}; PATH {after}")
 
     # rf_trusted_python: a python3 whose directory is outside the repository but whose link target is INSIDE it is refused.
     with scratch_dir() as td:
