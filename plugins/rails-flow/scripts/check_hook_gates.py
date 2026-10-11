@@ -1148,6 +1148,30 @@ def guard_bash_fixtures() -> None:
         check("guard-bash (#1400): ...and that repo's rules still refuse", rc == 2 and "severity:s1" in err, err)
         rc, err = cross("gh issue create -t X --label enhancement --body-file b.md")
         check("guard-bash (#1400): CONTROL: without the cd, the session's own rules apply", rc == 2 and "comp:*" in err, err)
+        # #1851: the doctrine's own shape (a heredoc writes the body, then the create) after a cd; an unfollowed cd says so; -R; `bash -n`.
+        body = "cat > b.md <<'EOF'\nthe body\nEOF\n"
+        rc, err = cross(f"cd {other} && {body}gh issue create -t X --label enhancement --body-file b.md")
+        check("guard-bash (#1851): `cd <other repo> && <heredoc body> <newline> gh issue create` answers to THAT repo's labels", rc == 0, err)
+        rc, err = cross(f"cd {other} && {body}gh issue create -t X --label bug --body-file b.md")
+        check("guard-bash (#1851): ...and that repo's rules still refuse it after the heredoc", rc == 2 and "severity:s1" in err, err)
+        rc, err = cross(f"cd {other} && echo hi && gh issue create -t X --label enhancement --body-file b.md")
+        check("guard-bash (#1851): a cd followed by something else is refused, and the refusal says it cannot tell which repository (not the session's taxonomy)",
+              rc == 2 and "cannot tell which repository" in err and "comp:*" not in err, err)
+        rc, err = cross("gh issue create -R other/repo -t X --label enhancement --body-file b.md")
+        check("guard-bash (#1851): `-R other/repo` names the repository, so the session's rules do not apply", rc == 0, err)
+        runner = Path(td) / "make-issue.sh"
+        runner.write_text("#!/bin/bash\ngh issue create -t X --label enhancement\n", encoding="utf-8")
+        rc, err = cross(f"bash -n {runner}")
+        check("guard-bash (#1851): `bash -n` of a script that holds a create executes nothing and is allowed", rc == 0, err)
+        rc, err = cross(f"bash {runner}")
+        check("guard-bash (#1851): CONTROL: `bash` of the same script runs the create and is still refused", rc == 2 and "bash" in err, err)
+        rc, err = cross(f"bash -n +n {runner}")
+        check("guard-bash (#1851): `bash -n +n` turns noexec back off and EXECUTES the script, so it is refused (the fail-open db found)", rc == 2, err)
+        rc, err = cross(f"cd {other} && cat > b.md <<EOF\n$(git remote set-url origin https://github.com/o/x.git)\nEOF\ngh issue create -t X --label enhancement --body-file b.md")
+        check("guard-bash (#1851): an UNQUOTED heredoc body substitutes, so the cd is not kept across it, and the refusal says it cannot tell which repository",
+              rc == 2 and "cannot tell which repository" in err, err)
+        rc, err = cross(f"cd {other} && cat > ~/.gitconfig <<'EOF'\nx\nEOF\ngh issue create -t X --label enhancement --body-file b.md")
+        check("guard-bash (#1851): a heredoc that writes outside the directory (`~/.gitconfig`) does not keep the cd", rc == 2 and "cannot tell which repository" in err, err)
     # #1423: the hook must CALL the helper for a create that never starts a segment.
     rc, err = labelled("sh -c 'gh issue create -t X --label feature'")
     check("guard-bash (#1423): a create inside `sh -c` is refused through the real hook",
@@ -2140,7 +2164,12 @@ def guard_claims_fixtures() -> None:
           rc == 2 and "## What changed" in out, f"exit {rc}: {out[-140:]}")
     rc, out = run_in("cd sub && gh pr create --body-file BODY", NEITHER, with_output=True,
                      env_extra={"CDPATH": "B_DIR"})
-    check("guard-claims: a relative cd with CDPATH set is NOT checked, with the notice (#1516 allowlist)",
+    # #1850: the lib unsets CDPATH before the hook reads anything, so an inherited CDPATH can no longer make a relative cd unknown: the cd is judged like any other.
+    rc_plain, out_plain = run_in("cd sub && gh pr create --body-file BODY", NEITHER, with_output=True)
+    check("guard-claims: an inherited CDPATH changes nothing about a relative cd: trusted-env.sh unsets it before the hook reads it (#1850; was the #1516 allowlist)",
+          (rc, out) == (rc_plain, out_plain), f"with CDPATH: exit {rc}: {out[-100:]!r}; without: exit {rc_plain}: {out_plain[-100:]!r}")
+    rc, out = run_in("CDPATH=B_DIR cd sub && gh pr create --body-file BODY", NEITHER, with_output=True)
+    check("guard-claims: a relative cd with CDPATH set IN THE COMMAND is NOT checked, with the notice (#1516 allowlist)",
           rc == 0 and NOTICE in out, f"exit {rc}: {out[-140:]}")
     # S-a: a RELATIVE body with an unresolved directory cannot be located. The message still says the template
     # and the change type were NOT checked, and why.
@@ -4381,7 +4410,8 @@ def timeout_fixtures() -> None:
         denv = {k: v for k, v in os.environ.items() if k not in ("QA_ALLOW_MAIN", "RAILS_FLOW_LANE")}
         denv.update(PATH=f"{slow.parent}{os.pathsep}{denv['PATH']}", RAILS_FLOW_HOOK_DEADLINE="2", CLAUDE_PLUGIN_ROOT=str(QA_HOOK.parents[2]))
         began = time.monotonic()
-        done = _run(["bash", str(QA_HOOK)], cwd=dltd, env=denv, capture_output=True, timeout=60, input=json.dumps({"tool_input": {"command": "git push origin main"}}).encode())
+        (Path(dltd) / "work").mkdir()          # the slow `awk` is a SIBLING of the working directory: a stub inside the repository is dropped from PATH (#1850)
+        done = _run(["bash", str(QA_HOOK)], cwd=Path(dltd) / "work", env=denv, capture_output=True, timeout=60, input=json.dumps({"tool_input": {"command": "git push origin main"}}).encode())
         check("release-gate (#1657): a gate that hits its own deadline reads as 124 to the fixtures, not as the refusal under test",
               done.returncode == 2 and b"took longer than" in done.stderr and gate_exit(done.returncode, done.stderr) == 124 and time.monotonic() - began < 30,
               f"exit {done.returncode}, {done.stderr[:120]!r}")
@@ -5205,6 +5235,8 @@ def deadline_fixtures() -> None:
         """One run: (exit, seconds, stderr, sleepers still alive afterwards, whether the stub started)."""
         with scratch_dir() as td:
             d, pidfile = stubs(td)
+            work = Path(td) / "work"          # the hook runs in a directory of its own: the stub directory is a SIBLING, outside the repository trusted-env.sh drops from PATH (#1850)
+            work.mkdir()
             env = dict(base_env, PATH=d + os.pathsep + base_env["PATH"], RAILS_FLOW_HOOK_DEADLINE=deadline, **(extra or {}))
             # The hook's output goes to FILES and the wait is on the hook's own exit, not on the end of its pipes: a hook whose deadline kills
             # only the child (the bug this fixture exists to catch) leaves a tree of processes holding the pipes open, and `communicate` would
@@ -5213,7 +5245,7 @@ def deadline_fixtures() -> None:
             out_path, err_path = Path(td) / "hook.out", Path(td) / "hook.err"
             t0 = time.monotonic()
             with out_path.open("wb") as out, err_path.open("wb") as err:
-                proc = subprocess.Popen(["/bin/bash", str(hook)], cwd=td, env=env, stdin=subprocess.PIPE, stdout=out, stderr=err,
+                proc = subprocess.Popen(["/bin/bash", str(hook)], cwd=work, env=env, stdin=subprocess.PIPE, stdout=out, stderr=err,
                                         start_new_session=True)
                 try:
                     proc.communicate(json.dumps({"tool_input": {"command": cmd}}).encode(), timeout=hook_limit(60, machine_slowdown()))
@@ -5264,10 +5296,12 @@ def deadline_fixtures() -> None:
     for _attempt in range(4):
         with scratch_dir() as td:
             d, pidfile = stubs(td)
+            work = Path(td) / "work"          # the hook runs in a directory of its own: the stub directory is a SIBLING, outside the repository trusted-env.sh drops from PATH (#1850)
+            work.mkdir()
             env = dict(base_env, PATH=d + os.pathsep + base_env["PATH"], RAILS_FLOW_HOOK_DEADLINE=str(int(deadline_s)))
             started = time.monotonic()
             proc = subprocess.Popen(["/bin/bash", str(guard)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE, cwd=td, env=env, start_new_session=True)
+                                    stderr=subprocess.PIPE, cwd=work, env=env, start_new_session=True)
             try:
                 proc.stdin.write(json.dumps({"tool_input": {"command": "git status"}}).encode())
                 proc.stdin.close()
@@ -5750,8 +5784,10 @@ def hostile_env_fixtures() -> None:
     lib = HOOKS / "lib" / "trusted-env.sh"
     real = {t: shutil.which(t) or "" for t in ("python3", "git", "gh")}
 
-    def rig(td: str, nested: bool = False) -> tuple[Path, Path, dict[str, str]]:
-        """(working directory, witness directory, environment). `nested`: the working directory is a repository INSIDE the repository that holds the fakes."""
+    def rig(td: str, nested: bool = False, home: str = "") -> tuple[Path, Path, dict[str, str]]:
+        """(working directory, witness directory, environment). `nested`: the working directory is a repository INSIDE the repository that holds the fakes.
+        `home`: "in", "out", "root" (the repository root itself) or "dot" (a relative HOME of `.`) puts HOME in, outside or AT the repository, with a `usercustomize.py` in the user site python would read and a `.gitconfig` whose
+        `core.fsmonitor` is a witness; the GIT_CONFIG_* pair is then left out, because it would take precedence over the .gitconfig."""
         base = Path(td)
         outer, witness, trusted = base / "repo", base / "witness", base / "trusted"
         for d in (outer / "bin", outer / "pylib", witness, trusted):
@@ -5778,6 +5814,20 @@ def hostile_env_fixtures() -> None:
             "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.fsmonitor", "GIT_CONFIG_VALUE_0": str(outer / "bin" / "fsmon"),
             "HOME": str(base), "CLAUDE_PROJECT_DIR": str(work),
         })
+        if home:
+            home_dir = {"in": outer / "hostile-home", "out": base / "hostile-home", "root": outer, "dot": outer}[home]
+            home_dir.mkdir(exist_ok=True)
+            _stub(outer / "bin", "fsmon-home", f'echo "$0" >> "{witness}/home-gitconfig-fsmonitor"\nexit 0')
+            (home_dir / ".gitconfig").write_text(f"[core]\n\tfsmonitor = {outer / 'bin' / 'fsmon-home'}\n", encoding="utf-8")
+            if real["python3"]:      # the user site python3 would read from THIS home, asked of the real python3 (subprocess, not `_run`: no hook is involved)
+                site = subprocess.run([real["python3"], "-c", "import site; print(site.getusersitepackages())"], capture_output=True, text=True,
+                                      env={"PATH": "/usr/bin:/bin", "HOME": str(home_dir)}, timeout=60).stdout.strip()
+                if site:
+                    Path(site).mkdir(parents=True, exist_ok=True)
+                    (Path(site) / "usercustomize.py").write_text(f"open({str(witness / 'home-usercustomize')!r}, 'a').write('ran\\n')\n", encoding="utf-8")
+            for k in ("GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0", "PYTHONPATH"):
+                env.pop(k)
+            env["HOME"] = "." if home == "dot" else str(home_dir)      # `.`: read against the working directory, which is the repository
         return work, witness, env
 
     def witnessed(witness: Path) -> list[str]:
@@ -5805,6 +5855,37 @@ def hostile_env_fixtures() -> None:
     seen, done = unhardened("/bin/bash -p")
     check("hostile environment: CONTROL: `/bin/bash -p` does not read BASH_ENV, and does not start the repository's `bash`",
           "bash-env" not in seen and "fake-bash" not in seen, f"witnessed {seen}")
+
+    # THE HOME THE REPOSITORY CHOSE. `unhardened(...)` with HOME inside the repository: python reads a usercustomize.py from that home's user site, git reads its .gitconfig.
+    def unhardened_home(home: str) -> list[str]:
+        with scratch_dir() as td:
+            work, witness, env = rig(td, home=home)
+            env["CLAUDE_PLUGIN_ROOT"] = str(plugins / "rails-flow")
+            (work / "unhardened.sh").write_text("python3 -c pass\ngit status >/dev/null 2>&1\nexit 0\n", encoding="utf-8")
+            _run(["/bin/sh", "-c", 'bash "$0"', str(work / "unhardened.sh")], cwd=work, input="{}", env=env, capture_output=True, text=True, timeout=60)
+            return witnessed(witness)
+
+    for way in ("home-usercustomize", "home-gitconfig-fsmonitor"):
+        check(f"hostile environment: CONTROL: a HOME inside the repository shows `{way}` to an unhardened hook", way in unhardened_home("in"), "witnessed nothing of the kind")
+        for at in ("root", "dot"):
+            check(f"hostile environment: CONTROL: a HOME that is the repository's root ({at}) shows `{way}` to an unhardened hook", way in unhardened_home(at), "witnessed nothing of the kind")
+    check("hostile environment: CONTROL: a HOME OUTSIDE the repository, with a usercustomize.py, also shows it to an unhardened hook (only PYTHONNOUSERSITE stops this one)",
+          "home-usercustomize" in unhardened_home("out"), "witnessed nothing of the kind")
+
+    for home in ("in", "out", "root", "dot"):
+        for hook in ("stop-where.sh", "guard-bash.sh", "ci-verdict-hint.sh"):     # three that call python3 early and write nothing to HOME, so the real run touches no real home
+            command = next(c for pl, ev, c in [(m.parent.parent, e, h["command"]) for m in [plugins / "rails-flow" / "hooks" / "hooks.json"]
+                                               for e, entries in json.loads(m.read_text(encoding="utf-8"))["hooks"].items() for en in entries for h in en["hooks"]] if hook in c)
+            with scratch_dir() as td:
+                work, witness, env = rig(td, home=home)
+                env["CLAUDE_PLUGIN_ROOT"] = str(plugins / "rails-flow")
+                payload = json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "s1", "cwd": str(work), "tool_input": {"command": "echo probe"}})
+                done = _run(["/bin/sh", "-c", command], cwd=work, input=payload, env=env, capture_output=True, text=True, timeout=90)
+                # Outside the repository the HOME is the user's own, and its .gitconfig is theirs to set: only the python user site is refused there (PYTHONNOUSERSITE).
+                seen = [w for w in witnessed(witness) if w.startswith("home-") and (home != "out" or w == "home-usercustomize")]
+                check(f"hostile environment: rails-flow/{hook} ignores " + ({"in": "a HOME inside the repository that holds a usercustomize.py and a core.fsmonitor .gitconfig", "out": "the user site of a HOME outside the repository",
+                                                                           "root": "a HOME that is the repository root, holding a usercustomize.py and a core.fsmonitor .gitconfig", "dot": "a relative HOME (`.`), which is the repository"}[home]),
+                      not seen, f"exit {done.returncode}; witnessed {seen}; {(done.stdout + done.stderr).strip()[:160]!r}")
 
     hooks = []
     for manifest in sorted(plugins.glob("*/hooks/hooks.json")):
@@ -5834,7 +5915,9 @@ def hostile_env_fixtures() -> None:
         work, _, env = rig(td, nested=nested)
         env.update({"PYTHONHOME": "/x", "LD_PRELOAD": "/x", "LD_LIBRARY_PATH": "/x", "NODE_OPTIONS": "--x",
                     "ENV": "/x", "CDPATH": "/x", "GLOBIGNORE": "*", "GIT_EXEC_PATH": "/x", "GIT_ASKPASS": "/x", "GIT_SSH_COMMAND": "/x",
-                    "GIT_DIR": str(work / ".git"), "GIT_WORK_TREE": str(work), "GIT_AUTHOR_NAME": "a", "GIT_TERMINAL_PROMPT": "0", "KEEP_ME": "1"})
+                    "GIT_DIR": str(work / ".git"), "GIT_WORK_TREE": str(work), "GIT_AUTHOR_NAME": "a", "GIT_TERMINAL_PROMPT": "0", "KEEP_ME": "1",
+                    "RUBYOPT": "-rx", "RUBYLIB": "/x", "NODE_PATH": "/x", "PERL5LIB": "/x", "PERL5OPT": "-Mx", "GEM_HOME": "/x", "GEM_PATH": "/x", "BUNDLE_GEMFILE": "/x",
+                    "BUNDLE_PATH": "/x", "GH_HOST": "evil.example", "GH_REPO": "evil/repo", "GH_ENTERPRISE_TOKEN": "t", "GH_ENTERPRISE_HOST": "evil.example", "GITHUB_ENTERPRISE_TOKEN": "t", "PAGER": "/x", "LESSOPEN": "|/x", "GH_TOKEN": "t"})
         return work, env
 
     def env_left() -> tuple[set[str], subprocess.CompletedProcess]:
@@ -5846,12 +5929,83 @@ def hostile_env_fixtures() -> None:
             return set(re.findall(r"^declare -x (\w+)", done.stdout, re.M)), done
 
     for gone in ("PYTHONPATH", "PYTHONHOME", "LD_PRELOAD", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH", "NODE_OPTIONS", "BASH_ENV", "ENV", "CDPATH",
-                 "GLOBIGNORE", "GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0", "GIT_EXEC_PATH", "GIT_ASKPASS", "GIT_SSH_COMMAND"):
+                 "GLOBIGNORE", "RUBYOPT", "RUBYLIB", "NODE_PATH", "PERL5LIB", "PERL5OPT", "GEM_HOME", "GEM_PATH", "BUNDLE_GEMFILE", "BUNDLE_PATH", "GH_HOST", "GH_REPO", "GH_ENTERPRISE_TOKEN", "GH_ENTERPRISE_HOST", "GITHUB_ENTERPRISE_TOKEN", "PAGER", "LESSOPEN", "GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0", "GIT_EXEC_PATH", "GIT_ASKPASS", "GIT_SSH_COMMAND"):
         left, done = env_left()
         check(f"hostile environment: trusted-env.sh unsets {gone}", gone not in left and "HOME" in left, f"exit {done.returncode}; left {sorted(left)[:40]}; {done.stderr.strip()[:120]!r}")
-    for kept in ("GIT_DIR", "GIT_WORK_TREE", "GIT_AUTHOR_NAME", "GIT_TERMINAL_PROMPT", "KEEP_ME", "HOME"):
+    for kept in ("GIT_DIR", "GIT_WORK_TREE", "GIT_AUTHOR_NAME", "GIT_TERMINAL_PROMPT", "KEEP_ME", "HOME", "GH_TOKEN"):
         left, done = env_left()
         check(f"hostile environment: trusted-env.sh keeps {kept}", kept in left, f"left {sorted(left)[:40]}")
+
+    # `gh` must not be pointed at ANOTHER host or repository (it could feed release-gate.sh and guard-pr-ready.sh forged answers). A stub `gh`, first on a trusted PATH,
+    # records what it was started with: the witness is the recorded name.
+    for name in ("GH_HOST", "GH_REPO", "GH_ENTERPRISE_TOKEN", "GH_ENTERPRISE_HOST", "GITHUB_ENTERPRISE_TOKEN"):
+        with scratch_dir() as td:
+            work, witness, env = rig(td)
+            ghdir = Path(td) / "trusted-gh"
+            ghdir.mkdir()
+            _stub(ghdir, "gh", f'echo "${{{name}-unset}}" > "{witness}/gh-saw-{name}"')
+            env["PATH"] = f"{ghdir}:/usr/bin:/bin"
+            env[name] = "evil.example"
+            _run(["/bin/bash", "-p", "-c", '. "$1"; gh pr view', "probe", str(lib)], cwd=work, env=env, capture_output=True, text=True, timeout=60)
+            f = witness / f"gh-saw-{name}"
+            saw = f.read_text(encoding="utf-8").strip() if f.exists() else "gh never ran"
+            check(f"hostile environment: gh is not pointed elsewhere by {name}", saw == "unset", f"gh saw {name}={saw!r}")
+
+    def _made(d: Path) -> Path:
+        d.mkdir(exist_ok=True)
+        return d.resolve()
+
+    def left_with(name: str, value_of) -> tuple[bool, str]:
+        """Is `name` still exported after the lib, when it is set to `value_of(base, work)`? (the probe runs right before the check that reads it)"""
+        with scratch_dir() as td:
+            work, env = lib_env(td)
+            for k in ("HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "GH_CONFIG_DIR"):
+                env.pop(k, None)
+            env["HOME"] = str(Path(td) / "trusted")
+            env[name] = value_of(Path(td), work)
+            done = probe(work, env, '. "$1"; export -p')
+            return name in set(re.findall(r"^declare -x (\w+)", done.stdout, re.M)), f"exit {done.returncode}; {done.stderr.strip()[:120]!r}"
+
+    for name in ("HOME", "XDG_CONFIG_HOME", "GH_CONFIG_DIR"):
+        for why, value_of, expect_kept in (
+            ("a value inside the repository", lambda base, work: str(_made(work / "hostile-home")), False),
+            ("a link outside the repository that points INTO it", lambda base, work: str(base / "link-into-repo"), False),
+            ("a value that does not exist (it cannot be proved outside)", lambda base, work: str(base / "no-such-dir"), False),
+            ("a list-shaped value with an empty entry (the current directory)", lambda base, work: str(base / "trusted") + ":", False),
+            ("a value with a newline", lambda base, work: str(base / "trusted") + "\n" + str(base / "trusted"), False),
+            ("a relative value (`.`)", lambda base, work: ".", False),
+            ("a relative value naming a directory", lambda base, work: "trusted", False),
+            ("a value outside the repository", lambda base, work: str(base / "trusted"), True),
+            ("the repository root itself (a stray ~/.git makes the home directory the repository)", lambda base, work: str(work.resolve()), name == "HOME"),
+        ):
+            kept, detail = left_with(name, value_of)
+            check(f"hostile environment: trusted-env.sh {'keeps' if expect_kept else 'unsets'} {name} when it is {why}", kept == expect_kept, detail)
+    # A `filter.<name>.clean` in a HOME .gitconfig runs when git ADDS a file the repository's .gitattributes routes to it (a program, run by `git add`, `git status`, `git diff`).
+    def filter_witnessed(sourced: bool) -> bool:
+        with scratch_dir() as td:
+            work, witness, env = rig(td, home="root")
+            _stub(work / "bin", "clean-witness", f'echo "$0" >> "{witness}/home-gitconfig-filter"\ncat')
+            (work / ".gitconfig").write_text(f"[filter \"evil\"]\n\tclean = {work / 'bin' / 'clean-witness'}\n", encoding="utf-8")
+            (work / ".gitattributes").write_text("*.txt filter=evil\n", encoding="utf-8")
+            (work / "f.txt").write_text("x\n", encoding="utf-8")
+            for k in ("PATH",):
+                env[k] = "/usr/bin:/bin"
+            _run(["/bin/bash", "-p", "-c", ('. "$1"; ' if sourced else "") + 'git add f.txt', "probe", str(lib)], cwd=work, env=env, capture_output=True, text=True, timeout=60)
+            return "home-gitconfig-filter" in witnessed(witness)
+
+    check("hostile environment: CONTROL: with HOME at the repository root, a `filter.evil.clean` in its .gitconfig runs when an UNHARDENED hook's git adds a file", filter_witnessed(False),
+          "no witness: the rig cannot see this way in")
+    check("hostile environment: trusted-env.sh stops a `filter.evil.clean` in a HOME .gitconfig at the repository root from running when git adds a file", not filter_witnessed(True), "the filter ran")
+    for why, home_of, expected in (("is the repository root", lambda base, work: str(work.resolve()), "/dev/null"), ("is outside the repository", lambda base, work: str(base / "trusted"), "unset")):
+        with scratch_dir() as td:
+            work, env = lib_env(td)
+            env["HOME"] = home_of(Path(td), work)
+            got = probe(work, env, '. "$1"; printf "%s" "${GIT_CONFIG_GLOBAL-unset}"').stdout
+            check(f"hostile environment: trusted-env.sh {'sets GIT_CONFIG_GLOBAL=/dev/null' if expected == '/dev/null' else 'leaves GIT_CONFIG_GLOBAL alone'} when HOME {why}", got == expected, f"GIT_CONFIG_GLOBAL={got!r}")
+    with scratch_dir() as td:
+        work, env = lib_env(td)
+        got = probe(work, env, '. "$1"; printf "%s" "${PYTHONNOUSERSITE-unset}"').stdout
+        check("hostile environment: trusted-env.sh sets PYTHONNOUSERSITE=1 (python's -s), even if the environment said 0", got == "1", f"PYTHONNOUSERSITE={got!r}")
 
     def path_of(td: str, mutate=None, nested: bool = False) -> tuple[Path, list[str]]:
         work, env = lib_env(td, nested=nested)
