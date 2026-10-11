@@ -33,7 +33,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 SIGN_IN = {"password+totp", "password+email-code", "email-link"}
-SLUG = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+SLUG = re.compile(r"[a-z0-9][a-z0-9_-]*")   # used with fullmatch: `$` alone also matches before a trailing newline
 LOCAL = {"127.0.0.1", "localhost", "::1"}
 RUNNER = Path(__file__).resolve().parents[1] / "scaffold" / "qa" / "seed" / "image-e2e"
 
@@ -45,8 +45,9 @@ def local_url(raw: object) -> str | None:
     try:
         parts = urlsplit(raw)
         host = parts.hostname or ""
-    except ValueError:
-        return "is not a URL"
+        parts.port   # raises ValueError for a port outside 0-65535 or not a number
+    except ValueError as exc:
+        return f"is not a valid URL ({exc})"
     if parts.scheme not in ("http", "https"):
         return "must be http or https"
     if parts.username is not None or parts.password is not None:
@@ -60,7 +61,7 @@ def check(doc: object) -> list[str]:
     f: list[str] = []
     if not isinstance(doc, dict):
         return ["the descriptor is not a JSON object"]
-    if not isinstance(doc.get("stack"), str) or not SLUG.match(doc["stack"]):
+    if not isinstance(doc.get("stack"), str) or not SLUG.fullmatch(doc["stack"]):
         f.append("stack: a compose project name (lower-case letters, digits, - and _) is required")
     for key in ("base_url", "mailpit_url"):
         if key == "mailpit_url" and key not in doc:
@@ -77,7 +78,7 @@ def check(doc: object) -> list[str]:
         if not isinstance(r, dict):
             f.append(f"roles[{i}] is not an object"); continue
         h = r.get("handle")
-        if not isinstance(h, str) or not SLUG.match(h):
+        if not isinstance(h, str) or not SLUG.fullmatch(h):
             f.append(f"roles[{i}].handle must be a slug (it becomes qa+<handle>@...)")
         elif h in handles:
             f.append(f"roles[{i}].handle {h!r} appears twice")
@@ -117,8 +118,9 @@ def check(doc: object) -> list[str]:
     return f
 
 
-def run_runner(env_extra: dict[str, str], seed: bool) -> tuple[int, str, list[str]]:
-    """Run the real image-e2e in a temp qa/ tree with stub curl and npx on PATH. Returns (exit, stderr, npx argv + QA_REQUIRE_SEED)."""
+def run_runner(env_extra: dict[str, str], seed: bool, args: tuple[str, ...] = ()) -> tuple[int, str, list[str], list[str]]:
+    """Run the real image-e2e from a temp project root, stub curl and npx on PATH.
+    Returns (exit, stderr, npx argv + QA_REQUIRE_SEED, curl argv)."""
     with tempfile.TemporaryDirectory() as td:
         qa = Path(td) / "qa"
         shutil.copytree(RUNNER.parents[1], qa)
@@ -129,15 +131,17 @@ def run_runner(env_extra: dict[str, str], seed: bool) -> tuple[int, str, list[st
         bindir = Path(td) / "bin"
         bindir.mkdir()
         log = Path(td) / "npx.log"
-        for name, body in (("curl", "exit 0\n"),
+        clog = Path(td) / "curl.log"
+        for name, body in (("curl", f'printf "%s\\n" "$@" > "{clog}"\nexit 0\n'),
                            ("npx", f'printf "%s\\n" "QA_REQUIRE_SEED=$QA_REQUIRE_SEED" "$@" > "{log}"\n')):
             p = bindir / name
             p.write_text("#!/usr/bin/env bash\n" + body)
             p.chmod(p.stat().st_mode | stat.S_IXUSR)
         node = shutil.which("node")
         env = {"PATH": f"{bindir}:{Path(node).parent if node else ''}:/usr/bin:/bin", "HOME": td, **env_extra}
-        r = subprocess.run(["bash", str(qa / "seed" / "image-e2e")], env=env, capture_output=True, text=True, timeout=60)
-        return r.returncode, r.stderr, (log.read_text().splitlines() if log.exists() else [])
+        r = subprocess.run(["bash", str(qa / "seed" / "image-e2e"), *args], env=env, cwd=td, capture_output=True, text=True, timeout=60)
+        return (r.returncode, r.stderr, log.read_text().splitlines() if log.exists() else [],
+                clog.read_text().splitlines() if clog.exists() else [])
 
 
 def selftest() -> int:
@@ -166,26 +170,40 @@ def selftest() -> int:
     expect("descriptor: a journey as an undeclared role is refused", {**good, "journeys": [{**good["journeys"][0], "as": "ghost"}]}, "must name a declared role")
     expect("descriptor: an empty boundary needs a stated reason", {**good, "boundary": []}, "boundary_none_reason")
     expect("descriptor: an empty boundary with a reason is valid", {**good, "boundary": [], "boundary_none_reason": "every flow is in-app"}, None)
+    expect("descriptor: a stack name with a trailing newline is refused (fullmatch)", {**good, "stack": "myapp\n"}, "stack:")
+    expect("descriptor: a port over 65535 is refused", {**good, "base_url": "http://127.0.0.1:70000"}, "not a valid URL")
     expect("descriptor: a boundary entry needs what and why", {**good, "boundary": [{"what": "x"}]}, "needs what and why")
 
     if not shutil.which("node"):
         bad.append("runner: node is not on PATH, so the image-e2e fixtures did not run")
     else:
-        code, err, _ = run_runner({}, seed=True)
+        code, err, _, _ = run_runner({}, seed=True)
         if code == 0 or "QA_BASE_URL is required" not in err:
             bad.append(f"runner: no QA_BASE_URL must fail naming it (exit {code}: {err[-200:]})")
-        code, err, npx = run_runner({"QA_BASE_URL": "https://127.0.0.1:x@prod.example.com"}, seed=True)
+        code, err, npx, curl = run_runner({"QA_BASE_URL": "https://127.0.0.1:x@prod.example.com"}, seed=True)
         if code != 2 or npx:
             bad.append(f"runner: a non-local QA_BASE_URL must exit 2 before anything runs (exit {code}, npx {npx})")
-        code, err, npx = run_runner({"QA_BASE_URL": "http://127.0.0.1:3000", "QA_MAILPIT_URL": "https://mail.example.com"}, seed=True)
+        code, err, npx, curl = run_runner({"QA_BASE_URL": "http://127.0.0.1:3000", "QA_MAILPIT_URL": "https://mail.example.com"}, seed=True)
         if code != 2 or npx:
             bad.append(f"runner: a remote QA_MAILPIT_URL must exit 2 (exit {code}, npx {npx})")
-        code, err, npx = run_runner({"QA_BASE_URL": "http://127.0.0.1:3000"}, seed=False)
+        code, err, npx, curl = run_runner({"QA_BASE_URL": "http://127.0.0.1:3000"}, seed=False)
         if code != 1 or npx or "no QA seed" not in err:
             bad.append(f"runner: a missing seed must FAIL the run, not skip it (exit {code}, npx {npx})")
-        code, err, npx = run_runner({"QA_BASE_URL": "http://127.0.0.1:3000"}, seed=True)
+        code, err, npx, curl = run_runner({"QA_BASE_URL": "http://127.0.0.1:3000"}, seed=True)
         if code != 0 or "QA_REQUIRE_SEED=1" not in npx or "--retries=0" not in npx or "@qa-image" not in npx:
             bad.append(f"runner: a ready stack runs playwright with QA_REQUIRE_SEED=1, --retries=0 and the @qa-image grep (exit {code}, npx {npx})")
+        code, err, npx, curl = run_runner({"QA_BASE_URL": "http://localhost:3000/some/page?x=1"}, seed=True)
+        if code != 0 or "http://localhost:3000/up" not in curl:
+            bad.append(f"runner: curl asks the ORIGIN the guard printed plus the health path, never the raw text (exit {code}, curl {curl})")
+        code, err, npx, curl = run_runner({"QA_BASE_URL": "http://127.0.0.1:3000", "QA_UP_PATH": "@evil.example.com"}, seed=True)
+        if code != 2 or curl or npx:
+            bad.append(f"runner: a QA_UP_PATH that would change the host is refused (exit {code}, curl {curl})")
+        code, err, npx, curl = run_runner({"QA_BASE_URL": "http://127.0.0.1:3000"}, seed=True, args=("--retries=3",))
+        if code != 2 or npx:
+            bad.append(f"runner: a caller's --retries is refused, so --retries=0 holds (exit {code}, npx {npx})")
+        code, err, npx, curl = run_runner({"QA_BASE_URL": "http://127.0.0.1:3000", "QA_SEED_DIR": "elsewhere"}, seed=True)
+        if code != 1 or "no QA seed" not in err:
+            bad.append(f"runner: a relative QA_SEED_DIR is read from where the runner is run, not from qa/ (exit {code})")
     for b in bad:
         print(f"FAIL {b}")
     print(f"robot_descriptor selftest: {'FAILED ' + str(len(bad)) if bad else 'ok'}")

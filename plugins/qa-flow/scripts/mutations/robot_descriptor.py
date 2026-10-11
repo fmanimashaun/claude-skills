@@ -33,5 +33,11 @@ GUARD = Guard(
             "        if False:",
             "descriptor: a role created by something other than a screen is refused",
         ),
+        Mutation(
+            "a port over 65535 is accepted",
+            "        parts.port   # raises ValueError for a port outside 0-65535 or not a number\n",
+            "",
+            "descriptor: a port over 65535 is refused",
+        ),
     ),
 )
