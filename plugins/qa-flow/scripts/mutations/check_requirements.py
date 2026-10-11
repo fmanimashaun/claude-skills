@@ -8,6 +8,9 @@ GUARD = Guard(
     name="check_requirements",
     subject="scripts/check_requirements.py",
     selftest="scripts/check_requirements.py",   # --selftest lives in the module itself
+    # Each mutant runs only the scenario row its `expects` names (#1599); a row that lives in the real-ref/CLI part runs that whole part. The unnarrowed
+    # guard cost 113 s of work for 28 mutants, close to the 120 s new-guard limit.
+    narrow_with="--match",
     # the subject imports qa_config to read the `requirements:` section of qa/qa.config.yml, and its selftest builds real refs with fixture_git;
     # unstaged, the unmutated selftest dies at the import
     needs=("scripts/qa_config.py", "scripts/fixture_git.py"),
@@ -128,14 +131,26 @@ GUARD = Guard(
         ),
         Mutation(
             "a base ref that starts with `-` is passed to git, which reads it as an option",
-            '    if ref and (not REF.match(ref) or any(part.startswith("-") for part in ref.split("/"))):',
+            '    if ref and (not REF.fullmatch(ref) or any(part.startswith("-") for part in ref.split("/"))):',
             "    if False:",
             "a base ref that starts with `-` is refused",
         ),
         Mutation(
-            "a base ref whose later component starts with `-` is accepted, so `origin/--upload-pack=...` reaches git fetch as an option",
+            "the plain-ref pattern is matched with `match`, so a trailing newline is accepted",
+            '    if ref and (not REF.fullmatch(ref) or any(part.startswith("-") for part in ref.split("/"))):',
             '    if ref and (not REF.match(ref) or any(part.startswith("-") for part in ref.split("/"))):',
-            "    if ref and not REF.match(ref):",
+            "a base ref with a trailing newline is refused",
+        ),
+        Mutation(
+            "a first component that is not a configured remote is fetched from as a path",
+            "        if remote in git(\"remote\").stdout.split():",
+            "        if True:",
+            "a base whose first component is not a configured remote is exit 2",
+        ),
+        Mutation(
+            "a base ref whose later component starts with `-` is accepted, so `origin/--upload-pack=...` reaches git fetch as an option",
+            '    if ref and (not REF.fullmatch(ref) or any(part.startswith("-") for part in ref.split("/"))):',
+            "    if ref and not REF.fullmatch(ref):",
             "a base ref with a component starting with `-` is refused",
         ),
         Mutation(
