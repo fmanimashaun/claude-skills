@@ -820,5 +820,30 @@ GUARD = Guard(
             ':',
             "'git bisect --help; git push origin HEAD': expected []",
         ),
+        # #1875: a command the gate cannot read is judged by what it does.
+        Mutation(
+            'an arithmetic expansion is read as a subshell again, so `$2` is a command word',
+            '    nested = arithmetic_parts(body)\n    if nested is not None:',
+            '    nested = None\n    if nested is not None:',
+            'safe shape \'sed -n "$2,$(( $2 + 14 ))p" "$f"\': must be allowed with no effect',
+        ),
+        Mutation(
+            'the substitutions nested in an arithmetic expansion are not read',
+            '        if bodies is not None:\n            bodies.extend(nested)\n        return SUBST',
+            '        return SUBST',
+            "classify (context) 'echo $(( $(git push origin main) + 1 ))'",
+        ),
+        Mutation(
+            'anything in `$(( ))` is arithmetic, so `$((git push origin main))` is not read',
+            '    if not ARITH_SHAPE.fullmatch(squeezed) or re.search(r"N\\s+N", squeezed):\n        return None',
+            '    if not ARITH_SHAPE.fullmatch(squeezed):\n        return None',
+            "classify (context) 'echo $(( git push origin main ))'",
+        ),
+        Mutation(
+            'a function defined after a cd is refused although it runs no git or gh',
+            '    if FUNCS[0] and any(command_indexes(seg) for seg in every):',
+            '    if FUNCS[0]:',
+            "safe shape 'cd /tmp && f() { echo hi; }; f': must be allowed with no effect",
+        ),
     ),
 )

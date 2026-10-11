@@ -219,6 +219,46 @@ def ansi_c_end(cmd: str, i: int) -> tuple[str, int]:
     raise Unjudgeable("an unterminated ANSI-C $'...' string")
 
 
+ARITH_OPERAND = re.compile(r"\$\{[^}]*\}|\$[A-Za-z_0-9@#?*!$-]+|0[xX][0-9a-fA-F]+|[A-Za-z_][A-Za-z_0-9]*|[0-9]+(?:#[0-9A-Za-z]+)?")
+ARITH_SHAPE = re.compile(r"[N\s+*/%<>&|^!~?:=,()\[\]-]*")
+
+
+def arithmetic_parts(body: str) -> list[str] | None:
+    """The `$( )` bodies NESTED in an arithmetic expansion, when the body of a `$( ... )` is one (`$(( $2 + 14 ))` has the body `( $2 + 14 )`), else None.
+
+    The shell runs NOTHING in `$(( ))` except the substitutions nested in it: its words are variables and numbers, not commands. Reading `( $2 + 14 )` as a subshell made `$2` a
+    command word "built by the shell and could be git or gh", and a `sed -n "$2,$(( $2 + 14 ))p"` was refused by the release gate (#1875). It is arithmetic only if the inside
+    LOOKS like it: operands (numbers, names, `$x`, `${x}`, a nested substitution) joined by operators, never two operands side by side (`git push origin main` and `$g push`
+    are commands) and no `;` or newline. What bash does with `$((git push))` is arithmetic too (the variable `git`), which is why a lone name is accepted."""
+    if not (body.startswith("(") and body.endswith(")")):
+        return None
+    inner = body[1:-1]
+    if ";" in inner or "\n" in inner:
+        return None
+    nested: list[str] = []
+    try:
+        flat = strip_comments_and_heredocs(inner, nested)
+    except Unjudgeable:
+        return None
+    squeezed = ARITH_OPERAND.sub("N", flat)
+    if not ARITH_SHAPE.fullmatch(squeezed) or re.search(r"N\s+N", squeezed):
+        return None
+    return nested
+
+
+def note_substitution(body: str, bodies: list[str] | None) -> str:
+    """Record what a `$( )` runs and return its placeholder word. An arithmetic expansion runs only what is nested in it (`arithmetic_parts`): those bodies are read, and its own
+    text is not a command."""
+    nested = arithmetic_parts(body)
+    if nested is not None:
+        if bodies is not None:
+            bodies.extend(nested)
+        return SUBST
+    if bodies is not None:
+        bodies.append(body)
+    return _placeholder(body)
+
+
 def strip_comments_and_heredocs(cmd: str, bodies: list[str] | None = None) -> str:
     """Bash's rules, not shlex's: `#` opens a comment only at the start of a word, outside quotes;
     a heredoc's body runs from the next newline to its delimiter line.
@@ -243,9 +283,12 @@ def strip_comments_and_heredocs(cmd: str, bodies: list[str] | None = None) -> st
             if end <= 0:
                 raise Unjudgeable("an unterminated backtick substitution")
             body = cmd[i + 2:end - 1] if c == "$" else cmd[i + 1:end - 1]
-            if bodies is not None:
-                bodies.append(body)
-            out.append(_placeholder(body))
+            if c == "$":
+                out.append(note_substitution(body, bodies))
+            else:
+                if bodies is not None:
+                    bodies.append(body)
+                out.append(_placeholder(body))
             i = end
             continue
         if quote:
@@ -268,9 +311,12 @@ def strip_comments_and_heredocs(cmd: str, bodies: list[str] | None = None) -> st
             # it land in another "segment" nobody reads -- `git -C $(pwd) push origin main` passed.
             end, carried = _subst_scan(cmd, i + 1)
             owed.extend(carried)
-            if bodies is not None:
-                bodies.append(cmd[i + 2:end - 1])
-            out.append(_placeholder(cmd[i + 2:end - 1]) if c == "$" else SUBST)
+            if c == "$":
+                out.append(note_substitution(cmd[i + 2:end - 1], bodies))
+            else:
+                if bodies is not None:
+                    bodies.append(cmd[i + 2:end - 1])
+                out.append(SUBST)
             i = end
             continue
         if c == "`":
@@ -1680,7 +1726,9 @@ def effects(cmd: str, current) -> list[tuple[str, str, str]]:
     flow = _Flow()
     lits, known = literal_vars(cmd), {}
     every = list(all_segments(cmd))
-    if FUNCS[0]:
+    # #1875: a function's body runs where and when it is CALLED, which only matters to a git or gh command in it. A command that defines a function and runs neither (`cd /tmp &&
+    # f() { echo hi; }; f`) has nothing to mis-place, so it is not refused for the `cd`.
+    if FUNCS[0] and any(command_indexes(seg) for seg in every):
         for seg in every:
             _function_state_check(seg)
     for seg, cwd, env_repo in ctx_segments(cmd):
@@ -2261,6 +2309,9 @@ def selftest() -> int:
         ("gh pr merge 7 -Ro/r", ["CTX o/r -", "PR_MERGE 7"]),
         ("GH_REPO=o/r gh pr merge 7", ["CTX o/r -", "PR_MERGE 7"]), ("env GH_REPO=o/r gh pr merge 7", ["CTX o/r -", "PR_MERGE 7"]),
         ("export GH_REPO=a/b; gh release create v1", ["CTX a/b -", "RELEASE v1 -"]),
+        # (#1875) the substitutions NESTED in an arithmetic expansion still run, and are read; an expansion that is not arithmetic (two operands side by side) is a subshell
+        ("echo $(( $(git push origin main) + 1 ))", ["CTX remote:origin -", "PUSH_MAIN main"]), ("echo $((git push origin main))", ["CTX remote:origin -", "PUSH_MAIN main"]),
+        ("echo $(( git push origin main ))", ["CTX remote:origin -", "PUSH_MAIN main"]),
         ("GH_REPO=a/b; gh release create v1", ["CTX a/b -", "RELEASE v1 -"]),
         ("gh release create v1 -R x/y --target main", ["CTX x/y -", "RELEASE v1 main"]),
         ("gh release edit v1 --draft=false -R x/y", ["CTX x/y -", "RELEASE_EDIT v1 -"]),
@@ -2302,7 +2353,9 @@ def selftest() -> int:
     for cmd in ("cd; gh pr merge 7", "cd - && git merge dev", "cd $D && git merge dev", "GH_REPO=$R gh pr merge 7",
                 "GH_REPO=https://github.com/o/r gh pr merge 7", "gh pr merge 7 -R github.example.com/o/r",
                 "gh api --hostname ghe.example.com -X PUT repos/o/r/pulls/7/merge", "gh api -X PATCH",
-                "git push $REMOTE hot:main"):
+                "git push $REMOTE hot:main",
+                # (#1875) arithmetic is read as arithmetic, nothing more: what looks like a command stays one
+                "cd /tmp && f() { git push origin main; }; f", "git $(( 1 )) origin main", "git push origin $(( $2 + 1 ))", "$(( 1 )) pr merge 7", "$g pr merge 7"):
         ctx_total += 1
         try:
             classify(cmd, on_feature)
@@ -2329,6 +2382,10 @@ def selftest() -> int:
         "gh api graphql -f query='mutation{addComment(input:{subjectId:\"x\",body:\"y\"}){clientMutationId}}'",
         "echo git push origin main", "which gh", "grep -r git .", "type -a git", "ls git", "python3 x.py git", "make gh",
         "cd /tmp && git status",
+        # (#1875) a command the gate could not read is not "may publish": these read, list and define. The first is the command a session was refused with, verbatim.
+        'cd ~/projects/retask-wt/rv-1636 && for p in "admin-reports.spec.ts 350" "journey-first-boot-staff.spec.ts 53" "requests.spec.ts 507"; do set -- ${=p}; '
+        'f=$(ls qa/e2e/$1 2>/dev/null || git ls-files "qa/e2e/*$1" | head -1); echo "== $f:$2"; sed -n "$2,$(( $2 + 14 ))p" "$f" | cut -c1-170; done',
+        'sed -n "$2,$(( $2 + 14 ))p" "$f"', 'echo $(( $2 + 1 ))', 'x=$(( $2 + 1 ))', 'echo "$(( ${n} * 2 ))"', "cd /tmp && f() { echo hi; }; f", "cd /tmp && f() { ls; }; f",
     ]
     for cmd in safe_cases:
         api_total += 1
