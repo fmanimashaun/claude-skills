@@ -174,12 +174,48 @@ def runner_commands(relpath: str, text: str) -> list[dict]:
         except ValueError:
             return [{"file": relpath, "unreadable": "the file is not JSON", "grep": [], "invert": [], "files": [], "open": False}]
     else:
-        sources = [text.replace("\\\n", " ")]
+        sources = [strip_shell_comments(text).replace("\\\n", " ")]
     found = []
     for source in sources:
-        for m in re.finditer(r"\bplaywright\s+test\b([^\n;&|]*)", source):
-            found.append(_command(relpath, m.group(1)))
+        for m in re.finditer(r"\bplaywright\s+test\b", source):
+            found.append(_command(relpath, command_text(source, m.end())))
     return found
+
+
+def strip_shell_comments(text: str) -> str:
+    """`text` without shell comments: a `#` at the start of a word, outside quotes, ends the line. A comment that says `playwright test` is not a runner."""
+    lines = []
+    for line in text.split("\n"):
+        quote, cut = "", len(line)
+        for i, ch in enumerate(line):
+            if quote:
+                if ch == quote:
+                    quote = ""
+            elif ch in "\"'":
+                quote = ch
+            elif ch == "#" and (i == 0 or line[i - 1] in " \t"):
+                cut = i
+                break
+        lines.append(line[:cut])
+    return "\n".join(lines)
+
+
+def command_text(source: str, start: int) -> str:
+    """The rest of a shell command from `start`: up to a newline, `;`, `&&`, `||` or `|` that is NOT inside a quote (a grep pattern holds `|`)."""
+    quote, i, n = "", start, len(source)
+    while i < n:
+        ch = source[i]
+        if quote:
+            if ch == "\\" and quote == '"':
+                i += 1
+            elif ch == quote:
+                quote = ""
+        elif ch in "\"'":
+            quote = ch
+        elif ch in "\n;|" or source.startswith("&&", i):
+            break
+        i += 1
+    return source[start:i]
 
 
 def _command(relpath: str, argument_text: str) -> dict:
@@ -240,14 +276,15 @@ def config_filters(text: str) -> dict:
         m = re.search(r"\b" + key + r"\s*:\s*(.+)", text)
         if not m:
             continue
-        value = m.group(1).strip().rstrip(",")
-        literal = re.fullmatch(r"/((?:[^/\\\n]|\\.)+)/([a-z]*)", value) or re.fullmatch(r"([\"'])(.*)\1", value)
-        if not literal:
-            out["unreadable"].append(f"the config's {key} ({value[:40]!r}) is not a string or regex literal")
-        elif value.startswith("/"):
-            out[slot] = (literal.group(1), literal.group(2))
+        value = m.group(1).strip()
+        regex = re.match(r"/((?:[^/\\\n]|\\.)+)/([a-z]*)(?=\s*(?:[,}\]]|$))", value)
+        string = re.match(r"([\"'])((?:[^\\\n]|\\.)*?)\1(?=\s*(?:[,}\]]|$))", value)
+        if regex:
+            out[slot] = (regex.group(1), regex.group(2))
+        elif string:
+            out[slot] = (string.group(2), "")
         else:
-            out[slot] = (literal.group(2), "")
+            out["unreadable"].append(f"the config's {key} ({value[:40]!r}) is not a string or regex literal")
     return out
 
 
@@ -266,8 +303,6 @@ def selects(command: dict, config: dict, test: dict, root: Path) -> tuple[bool, 
             return False, why
         if not compiled.search(absolute):
             return False, None
-    if command["files"] and False:
-        return False, None
     filters = []
     for raw, config_value, invert in ((command["grep"], config["grep"], False), (command["invert"], config["invert"], True)):
         source = (raw[0], "") if raw else config_value
@@ -286,7 +321,6 @@ def selects(command: dict, config: dict, test: dict, root: Path) -> tuple[bool, 
 
 
 def settings(root: Path) -> dict:
-    section = cr.requirements_section(root) if False else None
     config = root / "qa" / "qa.config.yml"
     values: dict = {}
     if config.is_file():
@@ -304,7 +338,6 @@ def settings(root: Path) -> dict:
         if not (root / str(value)).resolve().is_relative_to(root.resolve()):
             raise ValueError(f"e2e_paths.runners {value!r} must be a path inside the project")
     chosen["runners"] = [str(v) for v in runners]
-    del section
     return chosen
 
 
@@ -332,12 +365,10 @@ def check(root: Path, base: list[str] | None = None) -> tuple[int, list[str], li
         return (1 if findings else 0), findings, notes
     if not conf["runners"]:
         return 3, findings, ["no runner files are declared: list them under `e2e_paths: runners:` in qa/qa.config.yml (a shell script or a package.json that runs `playwright test`)"]
-    web = None
-    qa_config_path = root / "qa" / "qa.config.yml"
-    if qa_config_path.is_file():
-        import qa_config
-        web = str(qa_config.load_section(qa_config_path, "web_e2e") or "") if False else None
-    del web
+    config_yml = root / "qa" / "qa.config.yml"
+    declared = re.search(r"^web_e2e:\s*([A-Za-z][A-Za-z0-9-]*)", config_yml.read_text(encoding="utf-8-sig"), re.M) if config_yml.is_file() else None
+    if declared and declared.group(1) not in ("playwright", "none"):
+        return 3, findings, [f"web_e2e is {declared.group(1)}: only Playwright's runner filters are read (could not check, never a pass)"]
     tests: list[dict] = []
     for spec in sorted((root / conf["specs"]).rglob("*")):
         if spec.is_file() and SPEC.search(spec.name):
@@ -401,7 +432,8 @@ def check(root: Path, base: list[str] | None = None) -> tuple[int, list[str], li
 # ---- selftest ---------------------------------------------------------------------------------------------------------------------------------------
 
 
-def selftest() -> int:
+def selftest(match: str | None = None) -> int:
+    """`match` runs only the scenario rows whose label contains it (the mutation harness runs each mutant on the one row it names)."""
     failures: list[str] = []
 
     def entry(rid: str, extra: str = '  feature: true\n', status: str = "done") -> str:
@@ -415,6 +447,8 @@ def selftest() -> int:
     RUN = '#!/bin/sh\nexec npx playwright test --project=chromium --grep "@REQ-001|@smoke" --workers=1 "$@"\n'
 
     def scenario(label: str, files: dict[str, str], want_code: int, want: str | None, base: list[str] | None = None) -> None:
+        if match and match not in label:
+            return
         files = {"qa/requirements.yml": project(entry("REQ-001")), "qa/test-cases.csv": "Test ID,Status,Source\n", "qa/qa.config.yml": CONFIG, "bin/e2e": RUN,
                  "qa/e2e/auth.spec.ts": SPEC_OK, "qa/playwright.config.ts": "export default defineConfig({ testDir: './e2e' });\n", **files}
         with tempfile.TemporaryDirectory() as td:
@@ -426,7 +460,7 @@ def selftest() -> int:
                 (root / name).write_text(text, encoding="utf-8")
             code, found, notes = check(root, base)
         joined = "\n".join([*found, *notes])
-        ok = code == want_code and ((want is None and not found and (code != 0 or not notes or True)) if want is None else want in joined)
+        ok = code == want_code and (not found if want is None else want in joined)
         if not ok:
             failures.append(f"{label}: wanted exit {want_code} {want!r}, got exit {code}: {joined[:240]!r}")
 
@@ -441,6 +475,9 @@ def selftest() -> int:
     scenario("a positional file filter that does not match the spec leaves it out", {"bin/e2e": '#!/bin/sh\nnpx playwright test billing\n'}, 1, "no runner selects")
     scenario("a positional file filter that matches the spec file selects it", {"bin/e2e": '#!/bin/sh\nnpx playwright test auth\n'}, 0, None)
     scenario("a second runner that selects the spec is enough", {"bin/e2e": '#!/bin/sh\nnpx playwright test --grep "@qa-image"\nnpx playwright test --grep @REQ-001\n'}, 0, None)
+    scenario("a comment that says playwright test is not a runner (it would select everything)", {"bin/e2e": '#!/bin/sh\n# npx playwright test\nnpx playwright test --grep "@qa-image"   # not @REQ-001\n'}, 1,
+             "no runner selects")
+    scenario("a # inside a quoted grep is part of the pattern, not a comment", {"bin/e2e": '#!/bin/sh\nnpx playwright test --grep "#x|@REQ-001"\n'}, 0, None)
     scenario("a line continuation joins the command", {"bin/e2e": '#!/bin/sh\nnpx playwright test \\\n  --grep "@REQ-001"\n'}, 0, None)
     scenario("a package.json script is a runner", {"qa/package.json": json.dumps({"scripts": {"smoke": "playwright test --grep @qa-image"}}),
              "qa/qa.config.yml": 'e2e_paths:\n  runners:\n    - qa/package.json\n'}, 1, "no runner selects")
@@ -484,6 +521,8 @@ def selftest() -> int:
     scenario("a runner file that is missing is exit 2", {"qa/qa.config.yml": 'e2e_paths:\n  runners:\n    - bin/gone\n'}, 2, "listed under e2e_paths: runners but missing")
     scenario("a runner path outside the project is exit 2", {"qa/qa.config.yml": 'e2e_paths:\n  runners:\n    - ../outside\n'}, 2, "inside the project")
     scenario("a registry with no features needs no runners", {"qa/requirements.yml": project(entry("REQ-001", extra="")), "qa/qa.config.yml": ""}, 0, None)
+    scenario("a web_e2e other than playwright is exit 3, not a pass", {"qa/qa.config.yml": "web_e2e: cypress-cucumber\ne2e_paths:\n  runners:\n    - bin/e2e\n"}, 3,
+             "only Playwright's runner filters are read")
     scenario("a runner file with no playwright command says so", {"bin/e2e": "#!/bin/sh\necho hi\n"}, 1, "no `playwright test` command found")
     scenario("a skipped title mentioned only in a template string still parses the rest", {"qa/e2e/auth.spec.ts": 'const a = `x // not a comment`;\ntest("@REQ-001 ok", async () => {});\n'}, 0, None)
     if failures:
@@ -498,9 +537,10 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--root", default=".", help="the project root (default: the current directory)")
     parser.add_argument("--base", metavar="REF", help="refuse a baseline line not in REF's baseline (default: `requirements: base:` in qa/qa.config.yml, else origin/dev)")
     parser.add_argument("--selftest", action="store_true", help="prove each rule fires on a violation and stays silent on conforming input")
+    parser.add_argument("--match", metavar="TEXT", help="with --selftest: run only the scenario rows whose label contains TEXT (the mutation harness)")
     args = parser.parse_args(argv)
     if args.selftest:
-        return selftest()
+        return selftest(args.match)
     root = Path(args.root).resolve()
     base, unchecked = None, False
     try:
