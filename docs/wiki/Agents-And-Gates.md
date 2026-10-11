@@ -143,6 +143,8 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | mod unit tests | `rails-flow` | `python3 plugins/rails-flow/scripts/check_mods.py` | live check |
 | pipeline tiers | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --agents plugins/pipeline/agents --tiers plugins/pipeline/reference/model-tiers.md` | live check |
 | project gates | `rails-flow` | `python3 plugins/rails-flow/scripts/project_gates.py --selftest` | selftest |
+| project settings dead config | `rails-flow` | `python3 plugins/rails-flow/scripts/check_project_settings.py --root . --markdown plugins/rails-flow/commands` | live check |
+| project settings selftest | `rails-flow` | `python3 plugins/rails-flow/scripts/check_project_settings.py --selftest` | selftest |
 | qa-flow tiers | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --agents plugins/qa-flow/agents --tiers plugins/qa-flow/reference/model-tiers.md` | live check |
 | rails-flow PR-template sections | `rails-flow` | `python3 plugins/rails-flow/hooks/scripts/lib/pr_template.py --selftest` | selftest |
 | rails-flow ci runs tests | `rails-flow` | `python3 plugins/rails-flow/scripts/check_ci_runs_tests.py --selftest` | selftest |

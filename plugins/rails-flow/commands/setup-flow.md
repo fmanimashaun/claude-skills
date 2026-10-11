@@ -505,6 +505,11 @@ tools silently. For code-review-graph, wire it to coexist with the rails-flow ho
    `git status` and restore any hand-authored file it clobbered
    (`git restore -- AGENTS.md`). Never gitignore an authored AGENTS.md.
 2. **Three-file settings pattern.** Keep `.claude/settings.json` permissions-only.
+   **Never template `autoMode`, or a `permissions.defaultMode` of `auto` or `bypassPermissions`, into any of these
+   project files** (#1827): the auto-mode page says the classifier "doesn't read `autoMode` from project settings",
+   and the permission-modes page says such a `defaultMode` "doesn't take effect". They belong in the owner's
+   `~/.claude/settings.json`; recommend `/auto-mode-setup` as an owner step. A project can check itself with
+   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_project_settings.py"`.
    Replace any installer-written PostToolUse graph hooks with a PID-guarded Stop hook in
    `.claude/settings.example.json` (committed; teammates copy to gitignored
    `.claude/settings.local.json`):
