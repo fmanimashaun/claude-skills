@@ -175,7 +175,8 @@ def command_text(source: str, start: int) -> str:
 
 CLEAN_PREFIX = re.compile(r"^\s*(?:(?:exec|env|cross-env|npx(?:\s+(?:--no-install|-y|--yes))*|pnpm(?:\s+exec)?|yarn(?:\s+run)?|bunx|npm\s+exec(?:\s+--)?|[A-Za-z_][A-Za-z0-9_]*=\S*)\s+)*$")
 ASSIGNMENT = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$")
-NOT_LITERAL = re.compile(r"[$`*?\[]")
+NOT_LITERAL = re.compile(r"[$`*?\[~()\\]")
+ODD_ASSIGNMENT = re.compile(r"^[A-Za-z_][\w.+\[\]-]*\+?=")      # `NAME+=x`, `a[0]=x`, `a=(x)`: an assignment form other than the exact NAME=literal
 # A PINNED COPY of the words a shell treats as its own (bash 3.2 and 5, dash, zsh): builtins and keywords. A statement whose first word is one of these runs IN the
 # runner's shell and can change what the runner sees (`eval`, `declare -x`, `source`, `command export`, `alias`, a function); any other first word is a child process,
 # which cannot. The selftest asserts the pinned set covers `bash -c 'compgen -b; compgen -k'` of the bash it runs on, so a newer shell's builtin fails the selftest here.
@@ -248,6 +249,8 @@ def statement_refusal(statement: str, allow_cd: bool) -> str | None:
     if i == len(words):
         return None
     command, args = words[i], words[i + 1:]
+    if ODD_ASSIGNMENT.match(command):
+        return f"an assignment form other than the exact NAME=literal ({command[:30]!r}): `+=`, an array or an indexed name"
     if re.match(r"^[A-Za-z_][\w-]*\s*\(\)", stmt):
         return "a function definition"
     if command == "set":
@@ -345,6 +348,8 @@ def exported(prior: str) -> tuple[dict[str, str], str | None]:
                 return env, "an `export` sits inside shell control flow"
             for word in stripped.split(None, 1)[1].split() if len(stripped.split(None, 1)) > 1 else []:
                 if "=" in word:
+                    if not ASSIGNMENT.match(word):
+                        return env, f"an assignment form other than the exact NAME=literal ({word[:30]!r}): `+=`, an array or an indexed name"
                     got, why = assignments(word)
                     if why:
                         return env, why
@@ -747,6 +752,12 @@ def selftest(match: str | None = None, real: str | None = None) -> int:
         ("a `read` before the command is refused", "#!/bin/sh\nread x\nnpx playwright test --grep @REQ-001\n", "`read` is a shell builtin or keyword"),
         ("a `local` before the command is refused", "#!/bin/sh\nlocal x=1\nnpx playwright test --grep @REQ-001\n", "`local` is a shell builtin or keyword"),
         ("an `alias` before the command is refused", "#!/bin/sh\nalias npx=true\nnpx playwright test --grep @REQ-001\n", "`alias` is a shell builtin or keyword"),
+        ("an exported `NAME+=value` before the command is refused", "#!/bin/bash\nexport QA_TARGET+=image\nnpx playwright test --grep @REQ-001\n", "an assignment form other than the exact NAME=literal"),
+        ("a bare `NAME+=value` before the command is refused", "#!/bin/bash\nQA_TARGET+=image\nnpx playwright test --grep @REQ-001\n", "an assignment form other than the exact NAME=literal"),
+        ("an array assignment before the command is refused", "#!/bin/bash\nTARGETS=(image dev)\nnpx playwright test --grep @REQ-001\n", "is not a plain literal"),
+        ("an indexed assignment before the command is refused", "#!/bin/bash\nTARGETS[0]=image\nnpx playwright test --grep @REQ-001\n", "an assignment form other than the exact NAME=literal"),
+        ("an exported array element before the command is refused", "#!/bin/bash\nexport TARGETS[0]=image\nnpx playwright test --grep @REQ-001\n", "an assignment form other than the exact NAME=literal"),
+        ("a tilde in an assignment value is not a literal (it expands)", "#!/bin/sh\nQA_HOME=~/qa\nnpx playwright test --grep @REQ-001\n", "is not a plain literal"),
         ("a function defined with a subshell body is refused", "#!/bin/sh\nsetup() ( docker compose up -d )\nsetup\nnpx playwright test --grep @REQ-001\n", "a function definition"),
         ("a builtin after a NAME=value prefix is refused", "#!/bin/sh\nFOO=bar eval x\nnpx playwright test --grep @REQ-001\n", "`eval` is a shell builtin or keyword"),
         ("a non-literal NAME=value prefix before a child process is refused", "#!/bin/sh\nFOO=$X docker run app\nnpx playwright test --grep @REQ-001\n", "is not a plain literal"),
@@ -895,6 +906,7 @@ def real_battery(modules: Path) -> list[str]:
          {"bin/e2e": sh("echo 'export QA_TARGET=image' > qa/image.env\n. qa/image.env\nnpx playwright test"), "qa/playwright.config.ts": ENVCONFIG}),
         ("an env file sourced with `source file` before the command is refused", 2,
          {"bin/e2e": sh("source qa/image.env\nnpx playwright test"), "qa/image.env": "export QA_TARGET=image\n", "qa/playwright.config.ts": ENVCONFIG}),
+        ("an exported NAME+=value before the command is refused", 2, {"bin/e2e": sh("export QA_TARGET+=image\nnpx playwright test"), "qa/playwright.config.ts": ENVCONFIG}),
         ("an `eval export` before the command is refused", 2, {"bin/e2e": sh('eval "export QA_TARGET=image"\nnpx playwright test'), "qa/playwright.config.ts": ENVCONFIG}),
         ("a `declare -x` before the command is refused", 2, {"bin/e2e": sh("declare -x QA_TARGET=image\nnpx playwright test"), "qa/playwright.config.ts": ENVCONFIG}),
         ("a `typeset -x` before the command is refused", 2, {"bin/e2e": sh("typeset -x QA_TARGET=image\nnpx playwright test"), "qa/playwright.config.ts": ENVCONFIG}),

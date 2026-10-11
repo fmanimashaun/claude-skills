@@ -463,5 +463,29 @@ GUARD = Guard(
             '    while False:',
             'a builtin after a NAME=value prefix is refused',
         ),
+        Mutation(
+            'an exported assignment of another form is skipped silently',
+            '                    if not ASSIGNMENT.match(word):',
+            '                    if False:',
+            'an exported `NAME+=value` before the command is refused',
+        ),
+        Mutation(
+            'a statement whose first word is an odd assignment is a child process',
+            '    if ODD_ASSIGNMENT.match(command):',
+            '    if False:',
+            'a bare `NAME+=value` before the command is refused',
+        ),
+        Mutation(
+            'an array value is read as a literal',
+            'NOT_LITERAL = re.compile(r"[$`*?\\[~()\\\\]")',
+            'NOT_LITERAL = re.compile(r"[$`*?\\[~\\\\]")',
+            'an array assignment before the command is refused',
+        ),
+        Mutation(
+            'a tilde in a value is read as a literal',
+            'NOT_LITERAL = re.compile(r"[$`*?\\[~()\\\\]")',
+            'NOT_LITERAL = re.compile(r"[$`*?\\[()\\\\]")',
+            'a tilde in an assignment value is not a literal',
+        ),
     ),
 )
