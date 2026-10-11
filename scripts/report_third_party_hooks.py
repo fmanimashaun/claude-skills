@@ -11,9 +11,10 @@ maintainer, not a gate: it cannot be made red by a change in this repository, an
 act on gets switched off.
 
 It reads the plugins this user has enabled (`enabledPlugins` in `~/.claude/settings.json`) other than this marketplace's, takes the
-newest installed version of each under `~/.claude/plugins/cache/<marketplace>/<plugin>/`, and runs each SessionStart command from
-its `hooks/hooks.json` inside the same fixed fixture project the ratchet uses, with `CLAUDE_PLUGIN_ROOT` set, a startup payload on
-stdin and a 20-second limit. It measures the bytes printed on stdout -- what the hook injects -- and reports a token estimate at 4
+newest installed version of each under `~/.claude/plugins/cache/<marketplace>/<plugin>/` (a numbered directory such as 0.33.0;
+a commit-hash directory is never taken for a version), and runs each SessionStart command from its `hooks/hooks.json` inside the
+same fixed fixture project the ratchet uses, once for EACH source its matcher selects (startup, resume, clear, compact), with
+`CLAUDE_PLUGIN_ROOT` set, that source's payload on stdin, a 20-second limit, and its own process group, killed whole on timeout. It measures the bytes printed on stdout -- what the hook injects -- and reports a token estimate at 4
 bytes per token (an estimate, labelled as one). It RUNS THIRD-PARTY CODE: only plugins you already enabled, in a temp project.
 A hook that fails, times out or needs something the fixture lacks is reported with its status, never as 0 bytes.
 
@@ -26,6 +27,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -35,6 +37,8 @@ REPO = Path(__file__).resolve().parents[1]
 OURS = "claude-skills"
 BYTES_PER_TOKEN = 4
 TIMEOUT = 20
+SOURCES = ("startup", "resume", "clear", "compact")   # the SessionStart `source` values a matcher selects among
+VERSION = re.compile(r"^\d+(\.\d+)+$")               # 0.33.0, not a commit-hash directory such as 5bf4e7801107
 
 
 def _version_key(name: str) -> tuple:
@@ -60,29 +64,50 @@ def enabled_plugins(settings: Path) -> list[tuple[str, str]]:
 def newest_install(cache: Path, plugin: str, market: str) -> Path | None:
     base = cache / market / plugin
     versions = [d for d in base.iterdir() if d.is_dir()] if base.is_dir() else []
-    numbered = [d for d in versions if re.match(r"^\d+(\.\d+)*", d.name)]
+    numbered = [d for d in versions if VERSION.match(d.name)]
     pick = sorted(numbered or versions, key=lambda d: (_version_key(d.name), d.stat().st_mtime))
     return pick[-1] if pick else None
 
 
-def session_start_commands(install: Path) -> list[str]:
+def fires_on(matcher: object) -> tuple[str, ...]:
+    """The SessionStart sources an entry's matcher selects: none, "" or "*" means all; otherwise a regex matched in full."""
+    if matcher in (None, "", "*"):
+        return SOURCES
+    try:
+        rx = re.compile(str(matcher))
+    except re.error:
+        return SOURCES
+    return tuple(s for s in SOURCES if rx.fullmatch(s))
+
+
+def session_start_commands(install: Path) -> list[tuple[str, tuple[str, ...]]]:
+    """(command, sources it fires on) for each SessionStart command hook."""
     try:
         data = json.loads((install / "hooks" / "hooks.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return []
-    return [h["command"] for e in data.get("hooks", {}).get("SessionStart", []) for h in e.get("hooks", [])
-            if h.get("type", "command") == "command" and h.get("command")]
+    return [(h["command"], fires_on(e.get("matcher"))) for e in data.get("hooks", {}).get("SessionStart", [])
+            for h in e.get("hooks", []) if h.get("type", "command") == "command" and h.get("command")]
 
 
-def run_one(command: str, install: Path, project: Path) -> dict:
+def run_one(command: str, install: Path, project: Path, source: str = "startup") -> dict:
+    """Run one hook for one SessionStart source. It gets its own process group, and a timeout kills the whole group, so a
+    grandchild the hook started (a daemon, a backgrounded fetch) is never left running."""
     env = {**os.environ, "CLAUDE_PLUGIN_ROOT": str(install), "CLAUDE_PROJECT_DIR": str(project)}
-    payload = json.dumps({"hook_event_name": "SessionStart", "source": "startup", "cwd": str(project), "session_id": "report"}).encode()
+    payload = json.dumps({"hook_event_name": "SessionStart", "source": source, "cwd": str(project), "session_id": "report"}).encode()
+    proc = subprocess.Popen(["bash", "-c", command], cwd=project, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, start_new_session=True)
     try:
-        r = subprocess.run(["bash", "-c", command], cwd=project, env=env, input=payload, capture_output=True, timeout=TIMEOUT)
+        out, err = proc.communicate(payload, timeout=TIMEOUT)
     except subprocess.TimeoutExpired:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        proc.communicate()
         return {"status": f"timed out after {TIMEOUT}s", "bytes": None}
-    status = "ok" if r.returncode == 0 else f"exit {r.returncode}: {r.stderr.decode(errors='replace').strip()[:120]}"
-    return {"status": status, "bytes": len(r.stdout) if r.returncode == 0 else None}
+    status = "ok" if proc.returncode == 0 else f"exit {proc.returncode}: {err.decode(errors='replace').strip()[:120]}"
+    return {"status": status, "bytes": len(out) if proc.returncode == 0 else None}
 
 
 def report(settings: Path, cache: Path, project_factory) -> list[dict]:
@@ -93,8 +118,10 @@ def report(settings: Path, cache: Path, project_factory) -> list[dict]:
             install = newest_install(cache, plugin, market)
             if install is None:
                 continue
-            for cmd in session_start_commands(install):
-                rows.append({"plugin": f"{plugin}@{market}", "version": install.name, "command": cmd, **run_one(cmd, install, project)})
+            for cmd, sources in session_start_commands(install):
+                for source in sources:
+                    rows.append({"plugin": f"{plugin}@{market}", "version": install.name, "source": source, "command": cmd,
+                                 **run_one(cmd, install, project, source)})
     return sorted(rows, key=lambda r: -(r["bytes"] or 0))
 
 
@@ -114,40 +141,67 @@ def selftest() -> int:
     with tempfile.TemporaryDirectory() as td:
         t = Path(td)
         cache = t / "cache"
-        def plugin(market, name, version, script):
+        marker = t / "orphan-alive"
+
+        def plugin(market, name, version, script, matcher=None):
             d = cache / market / name / version
             (d / "hooks").mkdir(parents=True)
-            (d / "hooks" / "hooks.json").write_text(json.dumps({"hooks": {"SessionStart": [{"hooks": [
-                {"type": "command", "command": 'bash "${CLAUDE_PLUGIN_ROOT}/s.sh"'}]}]}}))
+            entry = {"hooks": [{"type": "command", "command": 'bash "${CLAUDE_PLUGIN_ROOT}/s.sh"'}]}
+            if matcher is not None:
+                entry["matcher"] = matcher
+            (d / "hooks" / "hooks.json").write_text(json.dumps({"hooks": {"SessionStart": [entry]}}))
             (d / "s.sh").write_text(script)
         plugin("mk", "loud", "0.9.0", "printf old\n")
         plugin("mk", "loud", "0.10.0", "head -c 4000 /dev/zero | tr '\\0' x\n")
+        plugin("mk", "loud", "9f3e1c2a7b55", "printf hash-dir\n")            # a commit-hash cache dir must never win
+        plugin("mk", "picky", "1.0.0", 'case "$(cat)" in *\"compact\"*) printf cc ;; *) printf startup-text ;; esac\n', "startup|compact")
         plugin("mk", "broken", "1.0.0", "echo nope >&2; exit 3\n")
-        plugin("mk", "slow", "1.0.0", "sleep 30\n")
+        plugin("mk", "slow", "1.0.0", f"(sleep 4; touch '{marker}') & sleep 30\n")
         plugin("mk", "off", "1.0.0", "printf zzz\n")
         plugin(OURS, "rails-flow", "1.0.0", "printf ours\n")
         settings = t / "settings.json"
-        settings.write_text(json.dumps({"enabledPlugins": {"loud@mk": True, "broken@mk": True, "slow@mk": True, "off@mk": False,
-                                                           "rails-flow@" + OURS: True, "missing@mk": True}}))
+        settings.write_text(json.dumps({"enabledPlugins": {"loud@mk": True, "picky@mk": True, "broken@mk": True, "slow@mk": True,
+                                                           "off@mk": False, "rails-flow@" + OURS: True, "missing@mk": True}}))
         global TIMEOUT
         saved, TIMEOUT = TIMEOUT, 2
         try:
-            rows = {r["plugin"]: r for r in report(settings, cache, lambda p: (p / "proj").mkdir() or (p / "proj"))}
+            rows = report(settings, cache, lambda p: (p / "proj").mkdir() or (p / "proj"))
         finally:
             TIMEOUT = saved
+        by = {(r["plugin"], r["source"]): r for r in rows}
+        plugins = {r["plugin"] for r in rows}
         check("report: a disabled plugin, our own marketplace and a plugin not installed are left out",
-              set(rows) == {"loud@mk", "broken@mk", "slow@mk"}, sorted(rows))
-        check("report: the NEWEST version is run (0.10.0 over 0.9.0, numerically)", rows.get("loud@mk", {}).get("version") == "0.10.0", rows.get("loud@mk"))
-        check("report: bytes printed on stdout are measured", rows.get("loud@mk", {}).get("bytes") == 4000, rows.get("loud@mk"))
+              plugins == {"loud@mk", "picky@mk", "broken@mk", "slow@mk"}, sorted(plugins))
+        loud = by.get(("loud@mk", "startup"), {})
+        check("report: the NEWEST numbered version is run (0.10.0 over 0.9.0), never a sha-named dir starting with 9",
+              loud.get("version") == "0.10.0", loud)
+        check("report: bytes printed on stdout are measured", loud.get("bytes") == 4000, loud)
+        check("report: a hook with no matcher fires on all four sources", {s for (p, s) in by if p == "loud@mk"} == set(SOURCES), "")
+        check("report: a matcher limits the sources, and each source gets its own payload",
+              {s for (p, s) in by if p == "picky@mk"} == {"startup", "compact"}
+              and by[("picky@mk", "compact")]["bytes"] == 2 and by[("picky@mk", "startup")]["bytes"] == len("startup-text"),
+              {k: v.get("bytes") for k, v in by.items() if k[0] == "picky@mk"})
+        broken = by.get(("broken@mk", "startup"), {})
         check("report: a failing hook is reported with its status, never as 0 bytes",
-              rows.get("broken@mk", {}).get("bytes") is None and "exit 3" in rows.get("broken@mk", {}).get("status", ""), rows.get("broken@mk"))
+              broken.get("bytes") is None and "exit 3" in broken.get("status", ""), broken)
+        slow = by.get(("slow@mk", "startup"), {})
         check("report: a hung hook is stopped and reported, never as 0 bytes",
-              rows.get("slow@mk", {}).get("bytes") is None and "timed out" in rows.get("slow@mk", {}).get("status", ""), rows.get("slow@mk"))
-        check("report: largest first", list(rows)[0] == "loud@mk", list(rows))
+              slow.get("bytes") is None and "timed out" in slow.get("status", ""), slow)
+        import time
+        time.sleep(5)
+        check("report: a timed-out hook's grandchild is killed with its process group, not orphaned", not marker.exists(), "marker written")
+        check("report: largest first", rows[0]["plugin"] == "loud@mk", rows[0])
+        totals = per_source(rows)
+        check("report: start and compaction are totalled separately",
+              totals["startup"] == 4000 + len("startup-text") and totals["compact"] == 4000 + 2, totals)
     for b in bad:
         print(f"FAIL {b}")
     print(f"report_third_party_hooks selftest: {'FAILED ' + str(len(bad)) if bad else 'ok'}")
     return 1 if bad else 0
+
+
+def per_source(rows: list[dict]) -> dict[str, int]:
+    return {src: sum(r["bytes"] or 0 for r in rows if r["source"] == src) for src in SOURCES}
 
 
 def main() -> int:
@@ -161,11 +215,13 @@ def main() -> int:
     if not rows:
         print("no enabled third-party plugin declares a SessionStart hook")
         return 0
-    total = sum(r["bytes"] or 0 for r in rows)
-    print(f"third-party SessionStart hooks: {len(rows)}, {total} bytes (~{total // BYTES_PER_TOKEN} tok estimate) on every start and compaction")
+    totals = per_source(rows)
+    print("third-party SessionStart hooks, bytes added per event (~tokens at 4 bytes each, an estimate):")
+    for src in SOURCES:
+        print(f"  {src:8} {totals[src]:>7} B  ~{totals[src] // BYTES_PER_TOKEN:>5} tok")
     for r in rows:
         size = f"{r['bytes']:>7} B ~{r['bytes'] // BYTES_PER_TOKEN:>5} tok" if r["bytes"] is not None else f"{'?':>7}   {'':>9}"
-        print(f"  {size}  {r['plugin']} {r['version']}  [{r['status']}]")
+        print(f"  {size}  {r['source']:8} {r['plugin']} {r['version']}  [{r['status']}]")
     return 0
 
 
