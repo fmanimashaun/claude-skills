@@ -2140,7 +2140,12 @@ def guard_claims_fixtures() -> None:
           rc == 2 and "## What changed" in out, f"exit {rc}: {out[-140:]}")
     rc, out = run_in("cd sub && gh pr create --body-file BODY", NEITHER, with_output=True,
                      env_extra={"CDPATH": "B_DIR"})
-    check("guard-claims: a relative cd with CDPATH set is NOT checked, with the notice (#1516 allowlist)",
+    # #1850: the lib unsets CDPATH before the hook reads anything, so an inherited CDPATH can no longer make a relative cd unknown: the cd is judged like any other.
+    rc_plain, out_plain = run_in("cd sub && gh pr create --body-file BODY", NEITHER, with_output=True)
+    check("guard-claims: an inherited CDPATH changes nothing about a relative cd: trusted-env.sh unsets it before the hook reads it (#1850; was the #1516 allowlist)",
+          (rc, out) == (rc_plain, out_plain), f"with CDPATH: exit {rc}: {out[-100:]!r}; without: exit {rc_plain}: {out_plain[-100:]!r}")
+    rc, out = run_in("CDPATH=B_DIR cd sub && gh pr create --body-file BODY", NEITHER, with_output=True)
+    check("guard-claims: a relative cd with CDPATH set IN THE COMMAND is NOT checked, with the notice (#1516 allowlist)",
           rc == 0 and NOTICE in out, f"exit {rc}: {out[-140:]}")
     # S-a: a RELATIVE body with an unresolved directory cannot be located. The message still says the template
     # and the change type were NOT checked, and why.
@@ -4381,7 +4386,8 @@ def timeout_fixtures() -> None:
         denv = {k: v for k, v in os.environ.items() if k not in ("QA_ALLOW_MAIN", "RAILS_FLOW_LANE")}
         denv.update(PATH=f"{slow.parent}{os.pathsep}{denv['PATH']}", RAILS_FLOW_HOOK_DEADLINE="2", CLAUDE_PLUGIN_ROOT=str(QA_HOOK.parents[2]))
         began = time.monotonic()
-        done = _run(["bash", str(QA_HOOK)], cwd=dltd, env=denv, capture_output=True, timeout=60, input=json.dumps({"tool_input": {"command": "git push origin main"}}).encode())
+        (Path(dltd) / "work").mkdir()          # the slow `awk` is a SIBLING of the working directory: a stub inside the repository is dropped from PATH (#1850)
+        done = _run(["bash", str(QA_HOOK)], cwd=Path(dltd) / "work", env=denv, capture_output=True, timeout=60, input=json.dumps({"tool_input": {"command": "git push origin main"}}).encode())
         check("release-gate (#1657): a gate that hits its own deadline reads as 124 to the fixtures, not as the refusal under test",
               done.returncode == 2 and b"took longer than" in done.stderr and gate_exit(done.returncode, done.stderr) == 124 and time.monotonic() - began < 30,
               f"exit {done.returncode}, {done.stderr[:120]!r}")
@@ -5109,6 +5115,8 @@ def deadline_fixtures() -> None:
         """One run: (exit, seconds, stderr, sleepers still alive afterwards, whether the stub started)."""
         with scratch_dir() as td:
             d, pidfile = stubs(td)
+            work = Path(td) / "work"          # the hook runs in a directory of its own: the stub directory is a SIBLING, outside the repository trusted-env.sh drops from PATH (#1850)
+            work.mkdir()
             env = dict(base_env, PATH=d + os.pathsep + base_env["PATH"], RAILS_FLOW_HOOK_DEADLINE=deadline, **(extra or {}))
             # The hook's output goes to FILES and the wait is on the hook's own exit, not on the end of its pipes: a hook whose deadline kills
             # only the child (the bug this fixture exists to catch) leaves a tree of processes holding the pipes open, and `communicate` would
@@ -5117,7 +5125,7 @@ def deadline_fixtures() -> None:
             out_path, err_path = Path(td) / "hook.out", Path(td) / "hook.err"
             t0 = time.monotonic()
             with out_path.open("wb") as out, err_path.open("wb") as err:
-                proc = subprocess.Popen(["/bin/bash", str(hook)], cwd=td, env=env, stdin=subprocess.PIPE, stdout=out, stderr=err,
+                proc = subprocess.Popen(["/bin/bash", str(hook)], cwd=work, env=env, stdin=subprocess.PIPE, stdout=out, stderr=err,
                                         start_new_session=True)
                 try:
                     proc.communicate(json.dumps({"tool_input": {"command": cmd}}).encode(), timeout=hook_limit(60, machine_slowdown()))
@@ -5168,10 +5176,12 @@ def deadline_fixtures() -> None:
     for _attempt in range(4):
         with scratch_dir() as td:
             d, pidfile = stubs(td)
+            work = Path(td) / "work"          # the hook runs in a directory of its own: the stub directory is a SIBLING, outside the repository trusted-env.sh drops from PATH (#1850)
+            work.mkdir()
             env = dict(base_env, PATH=d + os.pathsep + base_env["PATH"], RAILS_FLOW_HOOK_DEADLINE=str(int(deadline_s)))
             started = time.monotonic()
             proc = subprocess.Popen(["/bin/bash", str(guard)], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE, cwd=td, env=env, start_new_session=True)
+                                    stderr=subprocess.PIPE, cwd=work, env=env, start_new_session=True)
             try:
                 proc.stdin.write(json.dumps({"tool_input": {"command": "git status"}}).encode())
                 proc.stdin.close()
