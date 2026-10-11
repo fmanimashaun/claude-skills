@@ -8,8 +8,9 @@ GUARD = Guard(
     name="check_requirements",
     subject="scripts/check_requirements.py",
     selftest="scripts/check_requirements.py",   # --selftest lives in the module itself
-    # the subject imports qa_config to read the `requirements:` section of qa/qa.config.yml; unstaged, the unmutated selftest dies at the import
-    needs=("scripts/qa_config.py",),
+    # the subject imports qa_config to read the `requirements:` section of qa/qa.config.yml, and its selftest builds real refs with fixture_git;
+    # unstaged, the unmutated selftest dies at the import
+    needs=("scripts/qa_config.py", "scripts/fixture_git.py"),
     mutations=(
         Mutation(
             "a deprecated or draft case counts as coverage",
@@ -84,10 +85,52 @@ GUARD = Guard(
             "paths come from the requirements section of qa.config.yml",
         ),
         Mutation(
-            "an unreadable --base ref reads as an empty baseline, so the check passes without a comparison",
-            "        return [] if probe.returncode == 0 else None",
-            "        return []",
+            "an unreadable --base ref reads as a ref with no baseline, so the check passes without a comparison",
+            '    return ("none", []) if probe.returncode == 0 else ("unreadable", [])',
+            '    return ("none", [])',
+            "a ref that does not exist is unreadable",
+        ),
+        Mutation(
+            "a base with no baseline file reads as an empty baseline, so the adoption PR itself fails the growth check",
+            '    return ("none", []) if probe.returncode == 0 else ("unreadable", [])',
+            '    return ("ok", []) if probe.returncode == 0 else ("unreadable", [])',
+            "a ref with no baseline file is `none`, not an empty baseline",
+        ),
+        Mutation(
+            "main no longer exits 2 on an unreadable base ref",
+            '            if state == "unreadable":',
+            "            if False:",
             "an unreadable --base ref exits 2, never a pass",
+        ),
+        Mutation(
+            "main no longer skips the growth check, with a note, when the base has no baseline file",
+            '            if state == "none":',
+            "            if False:",
+            "a base with no baseline file skips the growth check with a printed note",
+        ),
+        Mutation(
+            "a registry with no `# rows: N` header is accepted, so a requirement can be deleted with its baseline line unseen",
+            "        if rows is None:",
+            "        if False:",
+            "a registry with no rows header is a finding",
+        ),
+        Mutation(
+            "the rows header is not compared with the entry count",
+            "        elif rows != len(entries):",
+            "        elif False:",
+            "a registry whose rows header is not its entry count is a finding",
+        ),
+        Mutation(
+            "the catalogue is read without tolerating a BOM, so an Excel save reads as a missing column",
+            '    with path.open(newline="", encoding="utf-8-sig") as handle:',
+            '    with path.open(newline="", encoding="utf-8") as handle:',
+            "a catalogue saved with a BOM is read",
+        ),
+        Mutation(
+            "a requirements path outside the project is accepted",
+            "        if not (root / value).resolve().is_relative_to(root.resolve()):",
+            "        if False:",
+            "a requirements path outside the project is exit 2 (..)",
         ),
     ),
 )

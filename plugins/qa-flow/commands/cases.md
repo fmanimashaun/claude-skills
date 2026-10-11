@@ -34,6 +34,10 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_requirements.py" --uncased   # the 
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_requirements.py"             # the gate: exit 0 when none are missing
 ```
 
+Put ids in `Source` separated by a space, comma, semicolon or pipe; `REQ-001/REQ-002` (a slash) names neither. The catalogue may be saved from Excel (a BOM is read).
+The registry's `# rows: N` header must equal its entry count and the baseline's `# size: N` its line count, so a requirement or a baseline line cannot be added or
+dropped unseen; the shipped check runs `--base origin/dev`, so the baseline cannot grow against it (a base with no baseline yet skips that check with a printed note).
+
 A case for a requirement states how to prove its intent by hand; it is not a copy of the requirement. Never put an id in `Source` for a case that does
 not prove it, and never delete a baseline line to make the gate pass: the line goes when a case names the requirement.
 

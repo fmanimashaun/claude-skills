@@ -18,22 +18,26 @@ THE FILES (paths may be set under a `requirements:` section of `qa/qa.config.yml
                                                 requirement: "A visitor can sign in with an email and password"
                                                 status: "done"        # done | partial | missing | deviates | owner-decision
   qa/test-cases.csv                         the catalogue (`Test ID,Title,Area,Type,Priority,Status,Source,Notes`); a requirement is cased when a case
-                                            whose Status is Active has its id as a whole token of the Source cell (separators: space , ; |)
+                                            whose Status is Active has its id as a whole token of the Source cell (separators: space , ; | but NOT `/`: `REQ-001/REQ-002` names neither)
   qa/requirements-uncased-baseline.txt      a RATCHET, not a threshold: the requirements with no case today, one id per line, `# size: N` in its header
 
 THE GATE FAILS WHEN
-  1. the registry is missing or unreadable, an id is malformed or repeated, a status is unknown, or `id`, `requirement` or `status` is missing;
+  1. the registry is missing or unreadable, an id is malformed or repeated, a status is unknown, or `id`, `requirement` or `status` is missing, or
+     its `# rows: N` header is absent or not its entry count (a requirement cannot be deleted, with its baseline line, unseen);
   2. a requirement that is not an owner-decision is named by no ACTIVE case and is not on the baseline;
   3. a baseline line names a requirement that is now cased, is an owner-decision, or is not in the registry (the list only shrinks), or the baseline's
      `# size: N` is not its line count (a line cannot be added or dropped without a visible edit of that number);
   4. given `--base REF`, a baseline line is not in REF's baseline (it cannot grow against the branch it merges into); a REF it cannot read is exit 2;
+     a REF with NO baseline file (the first adoption) skips this rule with a printed note;
   5. an ACTIVE case's Source names an id that looks like one of the registry's (same prefix) but is not in it: a typo that would cover nothing.
 An owner-decision requirement is exempt only by that status, never by absence. A deprecated or draft case covers nothing.
 
 WHAT IT CANNOT DO. It reads text. It cannot tell that a case really proves the requirement it names; that is the review of the case (and the manual
 run). It proves the link exists and that the list of uncovered requirements cannot quietly grow.
 
-Exit codes: 0 clean, 1 findings, 2 could not check (a missing catalogue, an unreadable base ref).
+Files are read as UTF-8 with a BOM tolerated (an Excel save adds one). A `requirements:` path must stay inside the project.
+
+Exit codes: 0 clean, 1 findings, 2 could not check (a missing catalogue, an unreadable base ref, a path outside the project).
 """
 from __future__ import annotations
 
@@ -63,7 +67,11 @@ def paths(root: Path) -> tuple[str, str, str]:
     if config.is_file():
         import qa_config
         section = qa_config.load_section(config, "requirements")
-    pick = lambda key, default: str(section[key]) if section.get(key) else default  # noqa: E731
+    def pick(key: str, default: str) -> str:
+        value = str(section[key]) if section.get(key) else default
+        if not (root / value).resolve().is_relative_to(root.resolve()):     # an absolute path, `..` and a symlink out all resolve outside
+            raise ValueError(f"requirements.{key} {value!r} must be a path inside the project")
+        return value
     return pick("registry", REGISTRY), pick("cases", CASES), pick("baseline", BASELINE)
 
 
@@ -72,7 +80,7 @@ def load(root: Path, registry: str) -> tuple[list[dict], list[str]]:
     path, problems, entries = root / registry, [], []
     if not path.is_file():
         return [], [f"{registry}: missing"]
-    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+    for number, raw in enumerate(path.read_text(encoding="utf-8-sig").splitlines(), 1):
         if not raw.strip() or raw.lstrip().startswith("#"):
             continue
         match = re.match(r"^(- |  )([a-z_]+): (.*)$", raw)
@@ -98,8 +106,8 @@ def baseline_lines(text: str) -> list[str]:
     return [ln.strip() for ln in text.splitlines() if ln.strip() and not ln.lstrip().startswith("#")]
 
 
-def header_size(text: str) -> int | None:
-    match = re.search(r"^#\s*size:\s*(\d+)\s*$", text, re.M)
+def header_number(text: str, key: str) -> int | None:
+    match = re.search(rf"^#\s*{key}:\s*(\d+)\s*$", text, re.M)
     return int(match.group(1)) if match else None
 
 
@@ -109,7 +117,7 @@ def active_sources(root: Path, cases: str) -> tuple[dict[str, list[str]] | None,
     if not path.is_file():
         return None, [f"{cases}: missing, so no requirement can be shown to have a case"]
     named: dict[str, list[str]] = {}
-    with path.open(newline="", encoding="utf-8") as handle:
+    with path.open(newline="", encoding="utf-8-sig") as handle:
         reader = csv.DictReader(handle)
         missing = {"Test ID", "Status", "Source"} - set(reader.fieldnames or [])
         if missing:
@@ -126,8 +134,17 @@ def active_sources(root: Path, cases: str) -> tuple[dict[str, list[str]] | None,
 
 def check(root: Path, base: list[str] | None = None) -> tuple[int, list[str]]:
     """(exit code, findings)."""
-    registry, cases, baseline = paths(root)
+    try:
+        registry, cases, baseline = paths(root)
+    except ValueError as exc:
+        return 2, [str(exc)]
     entries, problems = load(root, registry)
+    if (root / registry).is_file():
+        rows = header_number((root / registry).read_text(encoding="utf-8-sig"), "rows")
+        if rows is None:
+            problems.append(f"{registry}: no `# rows: N` header, so a requirement could be deleted unseen; add `# rows: {len(entries)}`")
+        elif rows != len(entries):
+            problems.append(f"{registry}: the header says `# rows: {rows}` but it holds {len(entries)} entr(ies); edit the number on purpose, where a reviewer sees it")
     by_id: dict[str, dict] = {}
     for entry in entries:
         rid, where = entry.get("id"), f"{registry}:{entry['_line']}"
@@ -146,14 +163,14 @@ def check(root: Path, base: list[str] | None = None) -> tuple[int, list[str]]:
     if named is None:
         return 2, problems + case_problems
     base_path = root / baseline
-    base_text = base_path.read_text(encoding="utf-8") if base_path.is_file() else ""
+    base_text = base_path.read_text(encoding="utf-8-sig") if base_path.is_file() else ""
     listed = baseline_lines(base_text)
     seen: set[str] = set()
     for line in listed:
         if line in seen:
             problems.append(f"{baseline}: {line} is listed twice")
         seen.add(line)
-    size = header_size(base_text)
+    size = header_number(base_text, "size")
     if listed or size is not None:
         if size != len(listed):
             problems.append(f"{baseline}: the header says `# size: {size}` but it holds {len(listed)} line(s); edit the number on purpose, where a reviewer sees it")
@@ -182,14 +199,15 @@ def check(root: Path, base: list[str] | None = None) -> tuple[int, list[str]]:
 
 def uncased(root: Path) -> list[str]:
     """Requirement ids, in registry order, that no ACTIVE case names and that are not owner decisions (whether or not baselined)."""
-    registry, cases, _ = paths(root)
+    registry, cases, _ = paths(root)     # a ValueError here is reported by main
     entries, _ = load(root, registry)
     named, _ = active_sources(root, cases)
     return [e["id"] for e in entries if isinstance(e.get("id"), str) and e.get("status") != "owner-decision" and e["id"] not in (named or {})]
 
 
-def base_baseline(ref: str, root: Path) -> list[str] | None:
-    """The baseline as it is at `ref`; fetched if the checkout lacks it. None when it still cannot be read (the caller exits 2, never passes)."""
+def base_baseline(ref: str, root: Path) -> tuple[str, list[str]]:
+    """(state, lines): `ok` with the baseline as it is at `ref` (fetched if the checkout lacks it); `none` when `ref` exists but holds no baseline file
+    (the first adoption: nothing to grow against, so the caller prints a note); `unreadable` when `ref` itself cannot be read (the caller exits 2)."""
     _, _, baseline = paths(root)
 
     def show() -> subprocess.CompletedProcess:
@@ -200,12 +218,11 @@ def base_baseline(ref: str, root: Path) -> list[str] | None:
         remote, _, branch = ref.partition("/")
         subprocess.run(["git", "-C", str(root), "fetch", "-q", remote, branch], capture_output=True, timeout=120, stdin=subprocess.DEVNULL)
         done = show()
-    if done.returncode != 0:
-        # the base has no baseline at all: it is the first one, nothing is grandfathered
-        probe = subprocess.run(["git", "-C", str(root), "rev-parse", "--verify", "-q", f"{ref}^{{commit}}"], capture_output=True, text=True, timeout=30,
-                               stdin=subprocess.DEVNULL)
-        return [] if probe.returncode == 0 else None
-    return baseline_lines(done.stdout)
+    if done.returncode == 0:
+        return "ok", baseline_lines(done.stdout)
+    probe = subprocess.run(["git", "-C", str(root), "rev-parse", "--verify", "-q", f"{ref}^{{commit}}"], capture_output=True, text=True, timeout=30,
+                           stdin=subprocess.DEVNULL)
+    return ("none", []) if probe.returncode == 0 else ("unreadable", [])
 
 
 # ---- selftest ---------------------------------------------------------------------------------------------------------------------------------
@@ -220,7 +237,10 @@ def selftest() -> int:
     def csv_text(*rows: tuple[str, str, str]) -> str:
         return "Test ID,Title,Area,Type,Priority,Status,Source,Notes\n" + "".join(f'{tid},t,A,Functional,P1,{st},"{src}",\n' for tid, st, src in rows)
 
-    def scenario(label: str, files: dict[str, str], want_code: int, want: str | None, base: list[str] | None = None) -> None:
+    def scenario(label: str, files: dict[str, str], want_code: int, want: str | None, base: list[str] | None = None, raw: bool = False) -> None:
+        files = dict(files)
+        if REGISTRY in files and not raw and "# rows:" not in files[REGISTRY]:     # every fixture states its row count unless it is testing that header
+            files[REGISTRY] = f"# rows: {files[REGISTRY].count('- id:')}\n" + files[REGISTRY]
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             for name, text in files.items():
@@ -277,12 +297,59 @@ def selftest() -> int:
     scenario("a requirement with no text is a finding", {REGISTRY: '- id: "REQ-001"\n  status: "done"\n', CASES: csv_text(("TC-1", "Active", "REQ-001")), BASELINE: base0}, 1,
              "no `requirement` text")
     scenario("paths come from the requirements section of qa.config.yml", {"qa/qa.config.yml": 'requirements:\n  registry: "docs/reqs.yml"   # trailing comment\n  cases: "docs/cases.csv"\n',
-             "docs/reqs.yml": entry("REQ-001"), "docs/cases.csv": csv_text(("TC-1", "Active", "REQ-001"))}, 0, None)
+             "docs/reqs.yml": "# rows: 1\n" + entry("REQ-001"), "docs/cases.csv": csv_text(("TC-1", "Active", "REQ-001"))}, 0, None)
+    # the rows header (a requirement cannot be deleted, with its baseline line, unseen)
+    scenario("a registry with no rows header is a finding", {REGISTRY: reg2, CASES: cases2, BASELINE: base0}, 1, "no `# rows: N` header", raw=True)
+    scenario("a registry whose rows header is not its entry count is a finding", {REGISTRY: "# rows: 5\n" + reg2, CASES: cases2, BASELINE: base0}, 1, "header says `# rows: 5`")
+    scenario("a requirement deleted from the registry together with its baseline line is a finding, not 100%",
+             {REGISTRY: "# rows: 2\n" + entry("REQ-001"), CASES: csv_text(("TC-1", "Active", "REQ-001")), BASELINE: base0}, 1, "header says `# rows: 2` but it holds 1")
+    # a catalogue saved from Excel starts with a BOM; paths stay inside the project; ids are not split on a slash
+    scenario("a catalogue saved with a BOM is read", {REGISTRY: reg2, CASES: "\ufeff" + cases2, BASELINE: base0}, 0, None)
+    scenario("a requirements path outside the project is exit 2 (..)", {"qa/qa.config.yml": 'requirements:\n  registry: "../elsewhere.yml"\n', CASES: cases2}, 2, "inside the project")
+    scenario("a requirements path outside the project is exit 2 (absolute)", {"qa/qa.config.yml": 'requirements:\n  cases: "/etc/hosts"\n', REGISTRY: reg2}, 2, "inside the project")
+    scenario("a slash-joined Source names neither id", {REGISTRY: entry("REQ-001") + entry("REQ-002"), CASES: csv_text(("TC-1", "Active", "REQ-001/REQ-002")), BASELINE: base0},
+             1, "REQ-001 is named by no ACTIVE case")
+    # --base against real refs: a baseline at the ref, no baseline at the ref (first adoption), a ref that does not exist
+    import fixture_git
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td) / "repo"
+        repo.mkdir()
+        fixture_git.init(repo)
+        (repo / "qa").mkdir()
+        fixture_git.run(repo, "commit", "-q", "--allow-empty", "-m", "no baseline yet")
+        none_sha = fixture_git.run(repo, "rev-parse", "HEAD").stdout.strip()
+        (repo / BASELINE).write_text("# size: 1\nREQ-002\n")
+        fixture_git.run(repo, "add", "qa")
+        fixture_git.run(repo, "commit", "-q", "-m", "baseline")
+        with_sha = fixture_git.run(repo, "rev-parse", "HEAD").stdout.strip()
+        got = base_baseline(with_sha, repo)
+        if got != ("ok", ["REQ-002"]):
+            failures.append(f"base_baseline reads the baseline at the ref: got {got!r}")
+        got = base_baseline(none_sha, repo)
+        if got != ("none", []):
+            failures.append(f"a ref with no baseline file is `none`, not an empty baseline: got {got!r}")
+        got = base_baseline("no-such-ref", repo)
+        if got[0] != "unreadable":
+            failures.append(f"a ref that does not exist is unreadable: got {got!r}")
+        (repo / REGISTRY).write_text("# rows: 2\n" + reg2)
+        (repo / CASES).write_text(csv_text(("TC-1", "Active", "REQ-001")))
+        (repo / BASELINE).write_text("# size: 1\nREQ-002\n")
+        done = subprocess.run([sys.executable, __file__, "--root", str(repo), "--base", none_sha], capture_output=True, text=True, timeout=120)
+        if done.returncode != 0 or "has no baseline file, so growth against it was not checked" not in done.stdout:
+            failures.append(f"a base with no baseline file skips the growth check with a printed note and exits 0: got {done.returncode} {done.stdout[:160]!r}")
+        done = subprocess.run([sys.executable, __file__, "--root", str(repo), "--base", with_sha], capture_output=True, text=True, timeout=120)
+        if done.returncode != 0:
+            failures.append(f"a baseline line already at the base is clean under --base: got {done.returncode} {done.stdout[:160]!r}")
+        (repo / BASELINE).write_text("# size: 2\nREQ-002\nREQ-003\n")
+        (repo / REGISTRY).write_text("# rows: 3\n" + reg2 + entry("REQ-003", "missing"))
+        done = subprocess.run([sys.executable, __file__, "--root", str(repo), "--base", with_sha], capture_output=True, text=True, timeout=120)
+        if done.returncode != 1 or "REQ-003 is not in the base branch's baseline" not in done.stdout:
+            failures.append(f"an uncased requirement plus its baseline line plus a bumped size is refused under --base: got {done.returncode} {done.stdout[:200]!r}")
     # the CLI end to end: exit codes and --uncased
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         (root / "qa").mkdir()
-        (root / REGISTRY).write_text(reg2)
+        (root / REGISTRY).write_text("# rows: 2\n" + reg2)
         (root / CASES).write_text(csv_text(("TC-1", "Active", "REQ-001")))
         (root / BASELINE).write_text("# size: 1\nREQ-002\n")
         done = subprocess.run([sys.executable, __file__, "--root", td, "--uncased"], capture_output=True, text=True, timeout=60)
@@ -324,15 +391,23 @@ def main(argv: list[str]) -> int:
     if args.selftest:
         return selftest()
     root = Path(args.root).resolve()
-    if args.uncased:
-        print("\n".join(uncased(root)))
-        return 0
-    base = None
-    if args.base:
-        base = base_baseline(args.base, root)
-        if base is None:
-            print(f"check_requirements: cannot read {args.base}'s baseline (exit 2, not a pass)", file=sys.stderr)
-            return 2
+    try:
+        if args.uncased:
+            print("\n".join(uncased(root)))
+            return 0
+        base = None
+        if args.base:
+            state, lines = base_baseline(args.base, root)
+            if state == "unreadable":
+                print(f"check_requirements: cannot read {args.base} (exit 2, not a pass)", file=sys.stderr)
+                return 2
+            if state == "none":
+                print(f"check_requirements: note: {args.base} has no baseline file, so growth against it was not checked (first adoption)")
+            else:
+                base = lines
+    except ValueError as exc:
+        print(f"check_requirements: {exc} (exit 2, not a pass)", file=sys.stderr)
+        return 2
     code, found = check(root, base)
     for line in found:
         print(line)

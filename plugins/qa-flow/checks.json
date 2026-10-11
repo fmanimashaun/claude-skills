@@ -190,10 +190,12 @@
     },
     {
       "id": "qa-requirements",
-      "why": "A requirement no ACTIVE test case names has no way to be tested in QA, so it cannot be shown to work (#1853).",
+      "why": "A requirement no ACTIVE test case names has no way to be tested in QA, so it cannot be shown to work (#1853). --base origin/dev makes the uncased baseline only shrink; a project whose integration branch is not dev edits this entry.",
       "command": [
         "python3",
-        "{plugin}/scripts/check_requirements.py"
+        "{plugin}/scripts/check_requirements.py",
+        "--base",
+        "origin/dev"
       ],
       "applies_when": [
         "qa/requirements.yml"
