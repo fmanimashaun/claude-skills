@@ -154,7 +154,7 @@ GUARD = Guard(
             'an unreadable base is reported clean',
             '        return (1 if in_ci else 3), [f"cannot read',
             '        return 0, [f"cannot read',
-            'a base that does not exist is a SKIP (3), never clean',
+            'a base that does not exist is a SKIP (3)',
         ),
         Mutation(
             'deleted fragments are not read, so a fold is refused',
