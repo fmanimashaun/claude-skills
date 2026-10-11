@@ -77,10 +77,10 @@ GUARD = Guard(
             "an unchecked tool list with no tool found exits 2, not 3",
         ),
         Mutation(
-            "a commented-out annotations call counts as a declaration",
+            "whole-line comments are scanned as code",
             '        lines = ["" if ln.lstrip().startswith("#") else ln for ln in text.split("\\n")]',
             '        lines = text.split("\\n")',
-            "a commented-out annotations call is not a declaration",
+            "a commented-out server.tools = is not a mutation",
         ),
         Mutation(
             "a base that defines call is exempted as abstract",
