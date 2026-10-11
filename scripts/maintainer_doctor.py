@@ -473,6 +473,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #1447. A TypeScript e2e suite is strict, type-checked in CI, and has no explicit `any`.
     ("qa-flow ts strict", ("python3", "plugins/qa-flow/scripts/check_ts_strict.py", "--selftest")),
     ("qa-flow route crawl", ("python3", "plugins/qa-flow/scripts/crawl_report.py", "--selftest")),
+    # #1855. Every requirement is named, by id, in an ACTIVE catalogue case (slice 1 of #1853); the shipped gate's own selftest.
+    ("qa-flow requirements gate", ("python3", "plugins/qa-flow/scripts/check_requirements.py", "--selftest")),
     ("qa-flow theme parity", ("python3", "plugins/qa-flow/scripts/theme_parity.py", "--selftest")),
     # #953. What a page hides INSIDE the viewport, which every boundary assertion passes on.
     ("qa-flow layout fit", ("python3", "plugins/qa-flow/scripts/layout_fit.py", "--selftest")),

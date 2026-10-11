@@ -177,6 +177,10 @@ core**:
   example) — the catalogue `/qa-flow:cases` authors/maintains.
 - `qa/manual-tests/` + `screenshots/` (`.gitkeep`) — where `/qa-flow:functional` writes its
   Markdown + CSV report.
+- `qa/requirements.yml` + `qa/requirements-uncased-baseline.txt` — copy `${CLAUDE_PLUGIN_ROOT}/scaffold/qa/requirements.yml` and
+  `.../requirements-uncased-baseline.txt` (an empty registry with `# rows: 0` and an empty baseline with `# size: 0`). Requirements go here, one per entry; the gate
+  `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_requirements.py"` fails a requirement that no ACTIVE case names (#1855). If the project already
+  keeps its own registry, point `requirements:` in `qa/qa.config.yml` at it (`registry`, `cases`, `baseline`) instead of scaffolding one.
 
 Per `web_e2e` (scaffold ONE):
 - **playwright** — `qa/package.json` (@playwright/test, @axe-core/playwright, typescript — the typecheck needs `tsc`), `qa/playwright.config.ts`
