@@ -530,6 +530,34 @@ tools silently. For code-review-graph, wire it to coexist with the rails-flow ho
    query_graph_tool(callers_of) · blast radius → get_impact_radius_tool · review
    context → get_review_context_tool · CRG 0 results → graphify query '<term>' →
    grep · skip graph for .md/.yml/configs.`
+2b. **Optional: a status line and owner checkpoints** (#1829; never edit a real settings file, a project opts in). **Status line:** vendor the one file and point
+   `statusLine` at the copy. `${CLAUDE_PLUGIN_ROOT}` resolves only in a plugin's own hook, monitor, MCP and LSP fields, never in a `statusLine` command, so the
+   command cannot name the plugin:
+
+   ```bash
+   mkdir -p .claude/scripts && cp "${CLAUDE_PLUGIN_ROOT}/scripts/statusline.py" .claude/scripts/statusline.py
+   ```
+
+   then, in `.claude/settings.example.json` (teammates copy it to the gitignored `.claude/settings.local.json`):
+
+   ```json
+   {"statusLine": {"type": "command", "command": "python3 \"$(git rev-parse --show-toplevel)/.claude/scripts/statusline.py\"", "refreshInterval": 30}}
+   ```
+
+   It prints `5h N% · 7d N% · ctx N% · $N · effort` and the branch and worktree, amber from 80%, and leaves out any field the payload lacks. A window whose `resets_at` has
+   passed is left out (#1854). The status line page says a script that exits non-zero or prints nothing "cause[s] the status line to go blank", so a failure costs one blank
+   line. `refreshInterval` 30 keeps the figures current while the session is idle (the page: "The minimum is `1`").
+   **Owner checkpoints:** `permissions.ask` rules force a prompt for the owner-only actions, even in auto mode (the auto-mode page: they are "evaluated before the
+   classifier and always force a permission prompt"):
+
+   ```json
+   {"permissions": {"ask": ["Bash(gh pr merge *)", "Bash(kamal deploy *)"]}}
+   ```
+
+   The page states the limit, and so do we: a rule matches commands that BEGIN with its text, so a merge or deploy written another way (`gh -R x pr merge`, a `bash -c`
+   string) "doesn't match the rule, so it isn't checkpointed"; the guard hooks and the git shim stay the backstop. `gh pr merge *` and `kamal deploy *` are our own
+   examples in the page's shape, not rules the page lists.
+   **A lane denied by auto mode:** open `/permissions`, select the **Recently denied** tab, and "Press `r` on a denied action to mark it for retry" (the page continues: when you exit the dialog, Claude Code tells the model it may retry that tool call).
 3. **Trim MCP schema.** In the project's mcp server config for code-review-graph, set
    `CRG_TOOLS` to the 8-tool working set (semantic_search_nodes_tool, query_graph_tool,
    get_impact_radius_tool, traverse_graph_tool, list_communities_tool, get_community_tool,
