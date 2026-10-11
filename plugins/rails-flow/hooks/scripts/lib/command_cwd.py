@@ -82,6 +82,15 @@ REPO_ENV = re.compile(r"\A((GIT|GH)_[A-Za-z0-9_]*|HOME|XDG_CONFIG_HOME)=")
 # Proven not to change gh's target, with real gh (`gh browse -n` names the same repository with and without it),
 # and set by the Claude Code harness itself: without the exemption every PR would go unchecked.
 INHERITED_EXEMPT = {"GIT_EDITOR"}
+
+
+def _inherited() -> dict[str, str]:
+    """The GIT_*, GH_* and CDPATH variables the COMMAND will inherit. A hook runs `lib/trusted-env.sh` first, which unsets them for the hook's own git and gh and keeps a copy as
+    RF_INHERITED_<NAME> (#1850); run directly (a selftest, a person), there is no copy and the process's own environment is the answer."""
+    copies = {k[len("RF_INHERITED_"):]: v for k, v in os.environ.items() if k.startswith("RF_INHERITED_")}
+    if copies or "RF_TRUSTED_ENV" in os.environ:
+        return copies
+    return {k: v for k, v in os.environ.items() if k.startswith(("GIT_", "GH_")) or k == "CDPATH"}
 OPS = re.compile(r"&&|\|\||;;&|;;|;&|<<<|&>>|&>|>>|>&|<&|<<|<>|>\||[;&|()<>]")
 SEPS = {"&&", ";"}
 CD_REDIRECTS = {">", ">>", ">&"}
@@ -166,7 +175,7 @@ def _target(args: list[str], here: str, home: str) -> str:
         a = home + a[1:]
     elif a.startswith("~"):
         raise Unresolved(f"cd {a}")
-    if os.environ.get("CDPATH") and not a.startswith(("/", "./", "../")) and a not in (".", ".."):
+    if "CDPATH" in _inherited() and not a.startswith(("/", "./", "../")) and a not in (".", ".."):
         raise Unresolved(f"cd {a} with CDPATH set")
     path = os.path.normpath(os.path.join(here, a))
     if not os.path.isdir(path):
@@ -252,7 +261,7 @@ def _judge(done: list[tuple[list[str], bool, str, bool]], start: str, home: str)
 
 
 def resolve(cmd: str, start: str, home: str) -> str:
-    if any(k.startswith(("GIT_", "GH_")) and k not in INHERITED_EXEMPT for k in os.environ):
+    if any(k.startswith(("GIT_", "GH_")) and k not in INHERITED_EXEMPT for k in _inherited()):
         raise Unresolved("a GIT_* / GH_* variable in the environment can pick gh's repository")
     lex = shlex.shlex(prepare(cmd).replace("\n", " ; "), posix=True, punctuation_chars=";&|()<>")
     lex.whitespace_split = True

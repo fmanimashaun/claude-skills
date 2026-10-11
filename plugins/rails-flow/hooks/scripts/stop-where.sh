@@ -8,5 +8,6 @@
 # the cost is work a later kill could lose, never a stopped turn. A missing interpreter or script is silent through
 # the stderr redirect and the unconditional exit.
 set -uo pipefail
+. "${BASH_SOURCE[0]%/*}/lib/trusted-env.sh" 2>/dev/null   # #1850: scrub PYTHON*/GIT_*/BASH_ENV and rebuild PATH from outside the repository, before any python3, git or gh
 python3 "${BASH_SOURCE[0]%/*}/lib/where_stopped.py" stop 2>/dev/null
 exit 0

@@ -39,6 +39,7 @@
 # check whether the file already exists), which is the accepted cost of failing closed rather
 # than open in a degraded environment.
 set -uo pipefail
+. "${BASH_SOURCE[0]%/*}/lib/trusted-env.sh" 2>/dev/null   # #1850: scrub PYTHON*/GIT_*/BASH_ENV and rebuild PATH from outside the repository, before any python3, git or gh
 
 DENY_MSG='Creating files under db/migrate/ directly is blocked in this project. Use the Rails generator instead:
 

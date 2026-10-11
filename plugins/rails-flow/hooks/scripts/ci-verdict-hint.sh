@@ -14,6 +14,7 @@
 # the stderr redirect and the unconditional exit, and a guard no fixture can distinguish from its
 # absence is a line that proves nothing. Each line left is one a mutation breaks.
 set -uo pipefail
+. "${BASH_SOURCE[0]%/*}/lib/trusted-env.sh" 2>/dev/null   # #1850: scrub PYTHON*/GIT_*/BASH_ENV and rebuild PATH from outside the repository, before any python3, git or gh
 
 # `:-` because this runs under `set -u` and the variable is the harness's to set (#825).
 python3 "${CLAUDE_PLUGIN_ROOT:-}/scripts/ci_verdict_hint.py" 2>/dev/null

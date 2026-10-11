@@ -2,6 +2,7 @@
 # PreToolUse[Bash] — block dev->main promotion unless QA certified the exact dev sha.
 # Independent of rails-flow's guard; both can run. Exit 2 blocks with a reason.
 set -uo pipefail
+. "${BASH_SOURCE[0]%/*}/lib/trusted-env.sh" 2>/dev/null   # #1850: scrub PYTHON*/GIT_*/BASH_ENV and rebuild PATH from outside the repository, before any python3, git or gh
 # The whole payload, read with a BUILTIN: `cat` missing would leave it empty, and an empty command
 # is never a promotion -- a fail-open (#1437 review, round 3).
 IFS= read -r -d '' input || true
@@ -272,7 +273,7 @@ ctx_repo() {
       [ "$u" = "$orig" ] && return 0
       r="$(repo_of_url "$u")"
       [ -n "$r" ] || { unresolved_pr=1; return 0; } ;;
-    -) f="${GH_REPO:-}"
+    -) f="${RF_INHERITED_GH_REPO:-}"
        [ -n "$f" ] || return 0
        r="$(printf '%s' "$f" | tr 'A-Z' 'a-z')" ;;
     *) r="$(printf '%s' "$f" | tr 'A-Z' 'a-z')" ;;
@@ -652,7 +653,7 @@ EOF
   done <<EOF
 $(git config --get-regexp '^remote\..*\.gh-resolved$' 2>/dev/null | awk '{print $2}')
 EOF
-  [ -z "${GH_REPO:-}" ] || [ "$(printf '%s' "$GH_REPO" | tr 'A-Z' 'a-z')" = "$MARKETPLACE_REPO" ] || return 1
+  [ -z "${RF_INHERITED_GH_REPO:-}" ] || [ "$(printf '%s' "$RF_INHERITED_GH_REPO" | tr 'A-Z' 'a-z')" = "$MARKETPLACE_REPO" ] || return 1
   return 0
 }
 if [ -f ".claude-plugin/marketplace.json" ] && [ -z "$_foreign" ] && only_marketplace_targets; then

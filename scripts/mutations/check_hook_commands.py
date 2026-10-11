@@ -45,5 +45,11 @@ GUARD = Guard(
             '        return 0, ["nothing to check"]',
             "no hooks.json anywhere is UNUSABLE, never clean",
         ),
+        Mutation(
+            "a `/bin/bash -p` command is not recognised as a bash command, so it is never expanded",
+            'BASH_PREFIXES = ("/bin/bash -p ", "bash ")',
+            'BASH_PREFIXES = ("bash ",)',
+            "a `/bin/bash -p` command naming a script that does not exist is refused",
+        ),
     ),
 )

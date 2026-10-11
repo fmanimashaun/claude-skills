@@ -10,6 +10,7 @@
 # the script. Deliberately no `command -v python3` guard, as in ci-verdict-hint.sh: a missing interpreter is
 # already silent through the redirect and the unconditional exit.
 set -uo pipefail
+. "${BASH_SOURCE[0]%/*}/lib/trusted-env.sh" 2>/dev/null   # #1850: scrub PYTHON*/GIT_*/BASH_ENV and rebuild PATH from outside the repository, before any python3, git or gh
 
 python3 "${CLAUDE_PLUGIN_ROOT:-}/scripts/session_reaper.py" 2>/dev/null
 exit 0
