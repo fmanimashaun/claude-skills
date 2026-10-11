@@ -10,8 +10,9 @@
 # one (a project's settings can still set `disableAllHooks`); the trust decision stays the boundary, and docs/doctrine/harness-doctrine.md says so.
 #
 # WHAT IT DOES, once, at source time:
-#   rf_scrub_env      unsets PYTHON*, LD_*, DYLD_*, NODE_OPTIONS, NODE_PATH, RUBY*, PERL5*, GEM_*, BUNDLE_*, GH_HOST, PAGER, LESSOPEN, BASH_ENV, ENV, SHELLOPTS, BASHOPTS, CDPATH,
-#                     GLOBIGNORE and every GIT_* (GH_TOKEN stays: it changes who `gh` acts as, and loads no code)
+#   rf_scrub_env      unsets PYTHON*, LD_*, DYLD_*, NODE_OPTIONS, NODE_PATH, RUBY*, PERL5*, GEM_*, BUNDLE_*, GH_HOST, GH_REPO, GH_ENTERPRISE_TOKEN, GH_ENTERPRISE_HOST, GITHUB_ENTERPRISE_TOKEN, PAGER, LESSOPEN, BASH_ENV, ENV, SHELLOPTS, BASHOPTS, CDPATH,
+#                     GLOBIGNORE and every GIT_* (GH_TOKEN stays: against the real host it only changes who `gh` acts as, and a token without access makes `gh` fail, so a gate fails closed;
+#                     GH_HOST, GH_REPO and the GH_ENTERPRISE_* names are gone because they point `gh` at ANOTHER host or repository, which could feed a gate forged answers)
 #                     outside RF_GIT_ALLOW (GIT_CONFIG_*, GIT_EXEC_PATH, GIT_ASKPASS, GIT_SSH* are dropped).
 #   PYTHONNOUSERSITE  is set to 1 (python's `-s`), after PYTHON* is unset.
 #   rf_trusted_path   rebuilds PATH from ABSOLUTE entries that are not at or inside the repository (the OUTERMOST of the Gemfile and .git
@@ -62,7 +63,7 @@ rf_scrub_env() {
   local name
   for name in $(compgen -v); do
     case "$name" in
-      PYTHON*|LD_*|DYLD_*|NODE_OPTIONS|NODE_PATH|RUBY*|PERL5*|GEM_*|BUNDLE_*|GH_HOST|PAGER|LESSOPEN|BASH_ENV|ENV|SHELLOPTS|BASHOPTS|CDPATH|GLOBIGNORE) unset "$name" 2>/dev/null ;;
+      PYTHON*|LD_*|DYLD_*|NODE_OPTIONS|NODE_PATH|RUBY*|PERL5*|GEM_*|BUNDLE_*|GH_HOST|GH_REPO|GH_ENTERPRISE_TOKEN|GH_ENTERPRISE_HOST|GITHUB_ENTERPRISE_TOKEN|PAGER|LESSOPEN|BASH_ENV|ENV|SHELLOPTS|BASHOPTS|CDPATH|GLOBIGNORE) unset "$name" 2>/dev/null ;;
       GIT_*) case "$RF_GIT_ALLOW" in *" $name "*) ;; *) unset "$name" 2>/dev/null ;; esac ;;
     esac
   done
@@ -73,9 +74,9 @@ rf_scrub_env() {
 rf_list_inside() {
   local old_ifs="$IFS" had_f=1 entry real hit=1
   case $- in *f*) ;; *) had_f=0 ;; esac
-  # FAIL CLOSED: a value no tool could use safely is "inside". A newline is split by no tool the way this loop splits it; an empty or relative entry means the current directory (the repository);
+  # FAIL CLOSED: a value no tool could use safely is "inside". An empty or relative entry means the current directory (the repository);
   # an entry that cannot be resolved (a dangling link, a directory made after this check) cannot be proved outside.
-  case "$1" in *$'\n'*|:*|*:|*::*) return 0 ;; esac
+  case "$1" in :*|*:|*::*) return 0 ;; esac
   IFS=:
   set -f
   for entry in $1; do

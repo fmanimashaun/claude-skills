@@ -5787,7 +5787,7 @@ def hostile_env_fixtures() -> None:
                     "ENV": "/x", "CDPATH": "/x", "GLOBIGNORE": "*", "GIT_EXEC_PATH": "/x", "GIT_ASKPASS": "/x", "GIT_SSH_COMMAND": "/x",
                     "GIT_DIR": str(work / ".git"), "GIT_WORK_TREE": str(work), "GIT_AUTHOR_NAME": "a", "GIT_TERMINAL_PROMPT": "0", "KEEP_ME": "1",
                     "RUBYOPT": "-rx", "RUBYLIB": "/x", "NODE_PATH": "/x", "PERL5LIB": "/x", "PERL5OPT": "-Mx", "GEM_HOME": "/x", "GEM_PATH": "/x", "BUNDLE_GEMFILE": "/x",
-                    "BUNDLE_PATH": "/x", "GH_HOST": "evil.example", "PAGER": "/x", "LESSOPEN": "|/x", "GH_TOKEN": "t"})
+                    "BUNDLE_PATH": "/x", "GH_HOST": "evil.example", "GH_REPO": "evil/repo", "GH_ENTERPRISE_TOKEN": "t", "GH_ENTERPRISE_HOST": "evil.example", "GITHUB_ENTERPRISE_TOKEN": "t", "PAGER": "/x", "LESSOPEN": "|/x", "GH_TOKEN": "t"})
         return work, env
 
     def env_left() -> tuple[set[str], subprocess.CompletedProcess]:
@@ -5799,12 +5799,27 @@ def hostile_env_fixtures() -> None:
             return set(re.findall(r"^declare -x (\w+)", done.stdout, re.M)), done
 
     for gone in ("PYTHONPATH", "PYTHONHOME", "LD_PRELOAD", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH", "NODE_OPTIONS", "BASH_ENV", "ENV", "CDPATH",
-                 "GLOBIGNORE", "RUBYOPT", "RUBYLIB", "NODE_PATH", "PERL5LIB", "PERL5OPT", "GEM_HOME", "GEM_PATH", "BUNDLE_GEMFILE", "BUNDLE_PATH", "GH_HOST", "PAGER", "LESSOPEN", "GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0", "GIT_EXEC_PATH", "GIT_ASKPASS", "GIT_SSH_COMMAND"):
+                 "GLOBIGNORE", "RUBYOPT", "RUBYLIB", "NODE_PATH", "PERL5LIB", "PERL5OPT", "GEM_HOME", "GEM_PATH", "BUNDLE_GEMFILE", "BUNDLE_PATH", "GH_HOST", "GH_REPO", "GH_ENTERPRISE_TOKEN", "GH_ENTERPRISE_HOST", "GITHUB_ENTERPRISE_TOKEN", "PAGER", "LESSOPEN", "GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0", "GIT_EXEC_PATH", "GIT_ASKPASS", "GIT_SSH_COMMAND"):
         left, done = env_left()
         check(f"hostile environment: trusted-env.sh unsets {gone}", gone not in left and "HOME" in left, f"exit {done.returncode}; left {sorted(left)[:40]}; {done.stderr.strip()[:120]!r}")
     for kept in ("GIT_DIR", "GIT_WORK_TREE", "GIT_AUTHOR_NAME", "GIT_TERMINAL_PROMPT", "KEEP_ME", "HOME", "GH_TOKEN"):
         left, done = env_left()
         check(f"hostile environment: trusted-env.sh keeps {kept}", kept in left, f"left {sorted(left)[:40]}")
+
+    # `gh` must not be pointed at ANOTHER host or repository (it could feed release-gate.sh and guard-pr-ready.sh forged answers). A stub `gh`, first on a trusted PATH,
+    # records what it was started with: the witness is the recorded name.
+    for name in ("GH_HOST", "GH_REPO", "GH_ENTERPRISE_TOKEN", "GH_ENTERPRISE_HOST", "GITHUB_ENTERPRISE_TOKEN"):
+        with scratch_dir() as td:
+            work, witness, env = rig(td)
+            ghdir = Path(td) / "trusted-gh"
+            ghdir.mkdir()
+            _stub(ghdir, "gh", f'echo "${{{name}-unset}}" > "{witness}/gh-saw-{name}"')
+            env["PATH"] = f"{ghdir}:/usr/bin:/bin"
+            env[name] = "evil.example"
+            _run(["/bin/bash", "-p", "-c", '. "$1"; gh pr view', "probe", str(lib)], cwd=work, env=env, capture_output=True, text=True, timeout=60)
+            f = witness / f"gh-saw-{name}"
+            saw = f.read_text(encoding="utf-8").strip() if f.exists() else "gh never ran"
+            check(f"hostile environment: gh is not pointed elsewhere by {name}", saw == "unset", f"gh saw {name}={saw!r}")
 
     def _made(d: Path) -> Path:
         d.mkdir(exist_ok=True)
@@ -5835,6 +5850,22 @@ def hostile_env_fixtures() -> None:
         ):
             kept, detail = left_with(name, value_of)
             check(f"hostile environment: trusted-env.sh {'keeps' if expect_kept else 'unsets'} {name} when it is {why}", kept == expect_kept, detail)
+    # A `filter.<name>.clean` in a HOME .gitconfig runs when git ADDS a file the repository's .gitattributes routes to it (a program, run by `git add`, `git status`, `git diff`).
+    def filter_witnessed(sourced: bool) -> bool:
+        with scratch_dir() as td:
+            work, witness, env = rig(td, home="root")
+            _stub(work / "bin", "clean-witness", f'echo "$0" >> "{witness}/home-gitconfig-filter"\ncat')
+            (work / ".gitconfig").write_text(f"[filter \"evil\"]\n\tclean = {work / 'bin' / 'clean-witness'}\n", encoding="utf-8")
+            (work / ".gitattributes").write_text("*.txt filter=evil\n", encoding="utf-8")
+            (work / "f.txt").write_text("x\n", encoding="utf-8")
+            for k in ("PATH",):
+                env[k] = "/usr/bin:/bin"
+            _run(["/bin/bash", "-p", "-c", ('. "$1"; ' if sourced else "") + 'git add f.txt', "probe", str(lib)], cwd=work, env=env, capture_output=True, text=True, timeout=60)
+            return "home-gitconfig-filter" in witnessed(witness)
+
+    check("hostile environment: CONTROL: with HOME at the repository root, a `filter.evil.clean` in its .gitconfig runs when an UNHARDENED hook's git adds a file", filter_witnessed(False),
+          "no witness: the rig cannot see this way in")
+    check("hostile environment: trusted-env.sh stops a `filter.evil.clean` in a HOME .gitconfig at the repository root from running when git adds a file", not filter_witnessed(True), "the filter ran")
     for why, home_of, expected in (("is the repository root", lambda base, work: str(work.resolve()), "/dev/null"), ("is outside the repository", lambda base, work: str(base / "trusted"), "unset")):
         with scratch_dir() as td:
             work, env = lib_env(td)
