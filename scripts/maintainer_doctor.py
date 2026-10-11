@@ -220,6 +220,11 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # gates; `claude plugin validate --strict` stays the authority and needs the CLI, which CI may lack.
     ("hook commands survive a spaced path", ("python3", "scripts/check_hook_commands.py")),
     ("hook commands selftest", ("python3", "scripts/check_hook_commands.py", "--selftest")),
+    # #1684. `claude plugin validate --strict --json` over the marketplace and every plugin directory: the CLI is the authority on what Claude Code
+    # accepts. It exits 3 (a SKIP, never a pass) when the CLI is absent or older than 2.1.259, as it is on a runner without it. It also passed an
+    # unterminated frontmatter list in #1679, so `frontmatter is valid YAML` above stays.
+    ("claude plugin validate --strict", ("python3", "scripts/check_plugin_validate.py")),
+    ("plugin validate selftest", ("python3", "scripts/check_plugin_validate.py", "--selftest")),
     # #1597. Hooks run as `python3` on the user's machine, which on stock macOS is 3.9, and CI pins 3.12: two
     # shipped scripts were a SyntaxError there (a backslash in an f-string expression) and nothing caught it.
     ("shipped python parses on 3.9", ("python3", "scripts/check_python_floor.py")),
@@ -359,6 +364,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #1790. The git shim (put first on PATH by the SessionStart hook) refuses whole-tree add, reset --hard, tree checkout/restore, clean -f and
     # --no-verify by what git is asked to do; proven with real git on real repositories and a look at what MOVED.
     ("git shim", ("python3", "plugins/rails-flow/scripts/git_shim_selftest.py")),
+    # #1828. The auto-memory index limit check: its boundaries (200 lines, 25KB read as KiB), the ratchet baseline and the one-line SessionStart output.
+    ("memory index limit", ("python3", "plugins/rails-flow/scripts/check_memory_index.py", "--selftest")),
     # #1827. Settings that do nothing where they are set: `autoMode` and a `defaultMode` of auto or bypassPermissions in a PROJECT's settings files (read, never
     # written), and in the setup-flow templates a project would copy.
     ("project settings dead config", ("python3", "plugins/rails-flow/scripts/check_project_settings.py", "--root", ".", "--markdown", "plugins/rails-flow/commands")),
