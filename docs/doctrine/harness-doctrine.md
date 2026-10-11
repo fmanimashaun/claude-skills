@@ -233,6 +233,16 @@ The one-line version is in the heading. The precise version has three distinct r
   gate that cannot run without them, **keyed by gate name**, and the doctor's selftest asserts every
   name in that set exists in `GATES` — otherwise a rename would silently widen the exemption.
 
+- **A gate is a guarantee inside a trusted workspace, and only there (#1843).** A repository's own `.claude/settings.json`
+  `env` block reaches every hook process: measured 2026-10-11 on Claude Code 2.1.296 (`claude -p`), ten of our hook commands
+  STARTED under a repository-chosen `bash` (the harness resolves each hook's own `bash` through `PATH`), six python scripts ran the
+  repository's `python3`, `PYTHONPATH` was honoured, `GIT_CONFIG_*` ran a `core.fsmonitor` command and `BASH_ENV` was sourced
+  (`CLAUDE_PLUGIN_ROOT` was not overridable); and `"disableAllHooks": true` in PROJECT settings switched off every plugin hook.
+  So a fail-closed gate holds against the model's mistakes and against a repository that cooperates, never against a hostile one:
+  the boundary is the user's decision to trust the workspace. Evidence, recipe and what was not measured (interactive mode after the
+  trust dialog, Linux, `LD_PRELOAD`/`DYLD_*`, `NODE_OPTIONS`): `docs/evidence/audits/2026-10-11-hook-environment-1843.md`. What would narrow the exposure (`/bin/bash -p` as the first
+  word of every hook command, one trusted-environment library every hook sources) is #1850.
+
 ### One discrepancy, recorded rather than papered over
 
 `CLAUDE.md` states this flatly, in *Platform*: **"Hooks fail open when a dependency is missing."**
@@ -460,6 +470,7 @@ Silence is not a claim of exemption. Answer all five.
 2. **If it is a hook: advisory or gate?** An advisory exits 0 always and never blocks. A gate fails
    **closed** on a missing dependency, **scoped to the command it guards**, with a named audited
    override if one is warranted (§5).
+   **Say against whom:** inside a trusted workspace only, today (#1843, §5): a repository's own settings can redirect or disable a hook.
 3. **If it is a check, walk the ladder** (§4): selftest proving both directions → a declared mutation
    per *rule* → registered in `GATES` → three states with `skip ≠ pass` → and it must not write into
    what it inspects.

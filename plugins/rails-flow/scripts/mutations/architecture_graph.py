@@ -106,5 +106,36 @@ GUARD = Guard(
             "    return why\n",
             "...and still FAILS on an enforcing branch",
         ),
+        # #1698: which schema files the graph's table nodes come from (the vendored-alone copy of the rule in build_project_wiki.py).
+        Mutation(
+            "only db/schema.rb is scanned, so a second database's tables are missing",
+            '        for path in app_schema_files(self.root):',
+            '        for path in [os.path.join(self.root, SCHEMA_RB)]:',
+            "#1698 a second database's table is a node too, with the schema file it is in",
+        ),
+        Mutation(
+            'the Solid trio is read as well',
+            '        if os.path.basename(path) in FRAMEWORK_SCHEMAS and all(t.startswith("solid_") for t in tables):',
+            '        if False:',
+            "#1698 the Solid trio, holding only solid_* tables, is the framework's: no table node comes from it",
+        ),
+        Mutation(
+            'a trio-named file is skipped by its name alone',
+            '        if os.path.basename(path) in FRAMEWORK_SCHEMAS and all(t.startswith("solid_") for t in tables):',
+            '        if os.path.basename(path) in FRAMEWORK_SCHEMAS:',
+            "#1698 a cache_schema.rb holding a table of the PROJECT's own is the project's",
+        ),
+        Mutation(
+            'a table in two schema files is drawn silently',
+            '                if name in self.table_names:',
+            '                if False:',
+            '#1698 a table in two schema files is drawn once (the first), and a note says so',
+        ),
+        Mutation(
+            'the Solid prefix loses its underscore',
+            'all(t.startswith("solid_") for t in tables)',
+            'all(t.startswith("solid") for t in tables)',
+            "#1698 a project table that merely BEGINS `solid` (solidarity_votes) keeps its cache_schema.rb the project's",
+        ),
     ),
 )

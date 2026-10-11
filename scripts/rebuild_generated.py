@@ -58,6 +58,9 @@ NOT_REBUILT = {
     "build_coverage.py": "needs the licensed corpora; its own gate skips without them",
     # Validates the CHANGELOG's release headings. Writes nothing — `grep -c write_text` is 0.
     "extract_release_notes.py": "a validator, not a generator — it writes no file",
+    # Folds `changelog.d/` fragments into CHANGELOG.md, by hand, at the arm (#1825). CHANGELOG.md is authored text, not a generated page: there is nothing to
+    # rebuild and drift-check, and running the fold in a sweep would consume the fragments.
+    "changelog_fragments.py": "folds fragments into the authored CHANGELOG.md at the arm; nothing to regenerate",
 }
 
 

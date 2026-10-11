@@ -359,6 +359,10 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #1790. The git shim (put first on PATH by the SessionStart hook) refuses whole-tree add, reset --hard, tree checkout/restore, clean -f and
     # --no-verify by what git is asked to do; proven with real git on real repositories and a look at what MOVED.
     ("git shim", ("python3", "plugins/rails-flow/scripts/git_shim_selftest.py")),
+    # #1827. Settings that do nothing where they are set: `autoMode` and a `defaultMode` of auto or bypassPermissions in a PROJECT's settings files (read, never
+    # written), and in the setup-flow templates a project would copy.
+    ("project settings dead config", ("python3", "plugins/rails-flow/scripts/check_project_settings.py", "--root", ".", "--markdown", "plugins/rails-flow/commands")),
+    ("project settings selftest", ("python3", "plugins/rails-flow/scripts/check_project_settings.py", "--selftest")),
     # #1667. The adversarial cases that found #1645's bypasses, through the REAL guard-bash.sh with a stub `gh` that must
     # never be called. The fast tier (~50 cases, ~10 s) runs in every sweep; the full tier (~300 cases, ~90 s at load 35)
     # is in PR_SKIPPED_GATES, so only the full sweep (the release proof) pays for it.
@@ -423,6 +427,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #1465. A Kamal destination is carried through whole: `-d` on every command, the destination's
     # secrets file and overlay, and the credentials environment read from the MERGED config.
     ("pipeline kamal destination", ("python3", "plugins/pipeline/scripts/kamal_destination.py", "--selftest")),
+    # #1701. The release image build passes the build args and labels pipeline.yml declares (a bare build when it declares
+    # none), reads the two keys strictly, and names a Dockerfile ARG nothing feeds.
+    ("pipeline release build", ("python3", "plugins/pipeline/scripts/release_build.py", "--selftest")),
     # #1585. The status board: every panel measured, UNKNOWN never 0, one drawing sheet with no network,
     # and every sentence it writes inside the ASD-STE100 limits. The selftest answers gh/git/ps from canned output.
     ("pipeline status board", ("python3", "plugins/pipeline/scripts/status_board.py", "--selftest")),
@@ -454,6 +461,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #993: the walk refuses to start without personas, sign-in recipes and journey documents.
     ("qa-flow walkthrough plan", ("python3", "plugins/qa-flow/scripts/walkthrough_plan.py", "--selftest")),
     ("qa-flow evidence manifest", ("python3", "plugins/qa-flow/scripts/evidence_manifest.py", "--selftest")),
+    # #1835. The release-image robot's scaffolded TypeScript helpers ship into projects; their node:test files run here.
+    ("qa-flow robot helpers", ("python3", "plugins/qa-flow/scripts/scaffold_ts_tests.py", "--selftest")),
     # #1447. A TypeScript e2e suite is strict, type-checked in CI, and has no explicit `any`.
     ("qa-flow ts strict", ("python3", "plugins/qa-flow/scripts/check_ts_strict.py", "--selftest")),
     ("qa-flow route crawl", ("python3", "plugins/qa-flow/scripts/crawl_report.py", "--selftest")),
@@ -470,6 +479,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("design-flow setup cross-check selftest", ("python3", "plugins/design-flow/scripts/setup_doctrine_crosscheck.py", "--selftest")),
     ("design-flow rendered conformance", ("python3", "plugins/design-flow/scripts/rendered_conformance.py", "--selftest")),
     ("rails-flow findings records", ("python3", "plugins/rails-flow/scripts/findings.py", "--selftest")),
+    # #1339. The retro counts which review findings recur across PRs; a report over nothing must be exit 2, never "nothing recurs".
+    ("rails-flow retro", ("python3", "plugins/rails-flow/scripts/retro.py", "--selftest")),
     # #1391. Tables are master-detail with no horizontal scroll: a scroller around a table, a fixed
     # min-width, and a table with no details target. Driven against a real app on its first run.
     ("design-flow table layout", ("python3", "plugins/design-flow/scripts/check_table_layout.py", "--selftest")),
@@ -583,6 +594,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("arm window selftest", ("python3", "scripts/check_arm_window.py", "--selftest")),
     ("close-on-dev-merge selftest", ("python3", "scripts/close_on_dev_merge.py", "--selftest")),
     ("label-new-issue selftest", ("python3", "plugins/rails-flow/scripts/label_new_issue.py", "--selftest")),
+    ("changelog fragments", ("python3", "scripts/changelog_fragments.py", "--check")),
+    ("changelog fragments selftest", ("python3", "scripts/changelog_fragments.py", "--selftest")),
     # #1635. The record a promotion's release reuses instead of re-running the full sweep.
     ("sweep proof selftest", ("python3", "scripts/sweep_proof.py", "--selftest")),
     ("sweep proof wiring", ("python3", "scripts/sweep_proof.py", "check-wiring")),

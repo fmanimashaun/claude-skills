@@ -27,7 +27,7 @@ GUARD = Guard(
            "plugins/qa-flow/scripts/remote_evidence.py",   # the release gate runs it (#1591)
            "plugins/rails-flow/scripts/self_consistency.py",
            "plugins/rails-flow/scripts/extract_claims.py",
-           "plugins/rails-flow/scripts/ci_verdict_hint.py", "plugins/rails-flow/scripts/session_reaper.py", "plugins/rails-flow/scripts/process_containment.py"),
+           "plugins/rails-flow/scripts/ci_verdict_hint.py", "plugins/rails-flow/scripts/test_preflight.py", "plugins/rails-flow/scripts/session_reaper.py", "plugins/rails-flow/scripts/process_containment.py"),
     mutations=(
         Mutation(
             "a failed normaliser reads as an empty clean command, so nothing matches and the command is allowed",

@@ -46,8 +46,9 @@ Components version **independently** — bump only what changed.
 
 ## 2. CHANGELOG — convert `Unreleased` into the release block
 
-Work merged to `dev` left its notes under `### Unreleased` headings. Your job is to give
-them numbers, not to write them from scratch:
+Work merged to `dev` left its notes as `changelog.d/<issue>-<slug>.md` fragments and under `### Unreleased` headings. First run
+`python3 scripts/changelog_fragments.py --fold` (after the arm, a late fragment is `--fold --into <tag>`), then give
+the notes numbers, not write them from scratch:
 
 1. In each component section, rename `### Unreleased — <topic>` to `### X.Y.Z — <date>` and
    drop the "version assigned at promotion" line.

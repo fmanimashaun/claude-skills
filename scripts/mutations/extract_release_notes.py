@@ -195,5 +195,17 @@ GUARD = Guard(
         Mutation("--full is shortened like the default, so the issue notifier loses its citations",
                  "    if a.full:\n        sys.stdout.write(render(text, tag)[0])", "    if False:\n        sys.stdout.write(render(text, tag)[0])",
                  "--full is never shortened"),
+        Mutation(
+            'the README counts as an unfolded fragment',
+            'for p in sorted(d.glob("*.md")) if p.name != "README.md"]',
+            'for p in sorted(d.glob("*.md"))]',
+            'promotion: the README is not a fragment',
+        ),
+        Mutation(
+            'an unfolded fragment is not a finding at promotion',
+            '    if not d.is_dir():\n        return []\n    return [f"changelog.d/',
+            '    if True:\n        return []\n    return [f"changelog.d/',
+            'promotion: an unfolded fragment is a finding that names the repair',
+        ),
     ),
 )

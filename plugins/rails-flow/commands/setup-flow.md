@@ -188,6 +188,16 @@ job shape (idempotent `perform`; the argument convention THIS codebase actually 
 <grep one-liners that mechanically check the overrides, e.g. no raw form_with in views,
 no unguarded .unscoped, no raw palette colors>
 
+<!-- emit-if: database -->
+## Test-run preflight
+Before a full suite or e2e run, check the environment, because it fails as a red suite that is not the code's fault:
+the database is up (`pg_isready` for Postgres; start it and re-check if it is not), `ls` every spec path you name,
+no held `bundler.lock` (a Ruby LSP `bundle update` holds it), and read `uptime` — under high load run in the
+foreground or in smaller shards, never many background runs. Never swap hooks or config from another branch while
+a sweep runs. *Advice, not enforced: the rails-flow `test-preflight` hook reports the first four as an advisory;
+run the project's own checks yourself before the suite: the hook never runs a script from the repository.*
+<!-- /emit-if -->
+
 ## How to work with me
 Act as an advisor, not an assistant. Default to scrutiny.
 - **Scope.** Full protocol for decisions, architecture, root-cause claims, estimates, plans, and
@@ -252,8 +262,15 @@ the tree; walk `edges` backwards from a node for its blast radius. Regenerate wi
 `/rails-flow:graph`; `index.html` is the human view. Generated — never hand-edit.
 
 ## See Also
-AGENTS routing → the rails-flow plugin agents · GUARDRAILS.md · docs/brain/MEMORY.md
+AGENTS routing → the rails-flow plugin agents · GUARDRAILS.md · docs/brain/MEMORY.md · `/rails-flow:handoff` (the work order for another session or an executor)
 ```
+
+**The test-run preflight block is conditional (#1561).** The block between `<!-- emit-if: database -->` and `<!-- /emit-if -->` is written only when
+the project has a database (Step 1's inspection finds `config/database.yml` or a database gem); with none, write nothing for it. Either way the two
+marker lines are dropped, never copied into the project's CLAUDE.md. It is advice (tier 1); the `test-preflight` hook (#1566) is its advisory,
+deterministic half, and a project's own preflight is the project's to run before the suite: a PreToolUse hook runs before the user is asked about the command, so the hook
+executes nothing a repository supplies (#1821 keeps the removed project hook point). Every line of it is
+re-read every session, so it stays this short.
 
 ## 2b. Area- or mode-specific instructions belong in `.claude/rules/`
 
@@ -322,9 +339,10 @@ loads in full every session.
 Sections: **Database migrations** (safe vs prohibited-without-approval, the migration
 checklist with rollback proof, required patterns incl. money `decimal(15,2)`), **Git**
 (branch model `main ← staging ← dev ← feature/*` adapted to this repo's real branches; no
-force-push, no `git add -A`, no `--no-verify`, stage specific files, small logical commits),
+force-push, no `git add -A`, no `--no-verify`, stage specific files, small logical commits; never report a placeholder SHA — after pushing run
+`git rev-parse HEAD` and report that exact value; make `gh pr ready` and any merge depend on the sweep result with `&&` (`run_sweep && gh pr ready`), never `;`),
 **Secrets** (credentials only; never commit .env), **Deploys** (require explicit user
-approval). Note at the top: *the rails-flow hooks enforce these mechanically; this document
+approval). Note at the top: *the rails-flow hooks enforce these mechanically inside a trusted workspace (a repository's own settings can switch hooks off, #1843); this document
 is the human-readable law they implement.*
 
 **Ask, and record the answer: is the test database seeded on purpose? (#1734)** *"Does this project's
@@ -487,6 +505,11 @@ tools silently. For code-review-graph, wire it to coexist with the rails-flow ho
    `git status` and restore any hand-authored file it clobbered
    (`git restore -- AGENTS.md`). Never gitignore an authored AGENTS.md.
 2. **Three-file settings pattern.** Keep `.claude/settings.json` permissions-only.
+   **Never template `autoMode`, or a `permissions.defaultMode` of `auto` or `bypassPermissions`, into any of these
+   project files** (#1827): the auto-mode page says the classifier "doesn't read `autoMode` from project settings",
+   and the permission-modes page says such a `defaultMode` "doesn't take effect". They belong in the owner's
+   `~/.claude/settings.json`; recommend `/auto-mode-setup` as an owner step. A project can check itself with
+   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_project_settings.py"`.
    Replace any installer-written PostToolUse graph hooks with a PID-guarded Stop hook in
    `.claude/settings.example.json` (committed; teammates copy to gitignored
    `.claude/settings.local.json`):
@@ -600,7 +623,7 @@ now runs this on an interval; pair with `--expires` for bounded sessions.
 ## 6b. Architecture graph (`docs/architecture/`)
 
 Tell the user about `/rails-flow:graph`: it extracts `{nodes, edges, flows}` from
-`config/routes.rb`, `app/**` and `db/schema.rb` into `docs/architecture/graph.json`, a
+`config/routes.rb`, `app/**` and `db/schema.rb` (and every other project-owned `db/*_schema.rb`) into `docs/architecture/graph.json`, a
 self-contained `index.html` (inline CSS/JS, zero external requests — opens from disk
 offline) and a mermaid `graph.md` for GitHub. One artefact, three consumers: humans get a
 picture, agents get structural context without reading the whole codebase, and qa-flow gets
@@ -614,7 +637,7 @@ fails when the code moves and the graph does not.
 ## 6c. The project wiki (`docs/wiki/`) — generated reference, rebuilt at ship (#887)
 
 A hand-written reference is a transcription, and transcriptions rot. The reference pages are a join
-over structured sources — the architecture graph, `db/schema.rb`, `config/queue.yml`,
+over structured sources — the architecture graph, `db/schema.rb` (and every other project-owned `db/*_schema.rb`), `config/queue.yml`,
 `config/recurring.yml`, `Gemfile.lock`, `package.json` — so they cannot drift silently: every count on
 a page is asserted against its source's total, every page names the graph's commit, and `--check`
 fails the `project-wiki-drift` check when a source moved and the pages did not.

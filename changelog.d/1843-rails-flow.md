@@ -1,0 +1,2 @@
+section: rails-flow
+- **The GUARDRAILS.md that `/rails-flow:setup-flow` scaffolds no longer says the hooks enforce its rules without saying where — `plugins/rails-flow/commands/setup-flow.md`** (#1843; our own wording, same decision and measurement as the Repository hygiene entry). The note every project's GUARDRAILS.md carries now reads "the rails-flow hooks enforce these mechanically inside a trusted workspace (a repository's own settings can switch hooks off)".

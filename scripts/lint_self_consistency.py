@@ -32,6 +32,8 @@ WHAT IT CHECKS
                               fails the plugin's own docs-layout gate (#1700)
   undocumented-command        a plugins/<p>/commands/<c>.md that README.md (as `c`) or the
                               plugin's README (as /p:c) never names — same defect, one level down
+  schema-reader-drift         `architecture_graph.py` (vendored alone) carries its own copy of the rule that decides which db/*_schema.rb files are the project's;
+                              this runs it and `build_project_wiki.py`'s over the same fixture trees and refuses a difference (#1698)
   hook-lib-drift              the two shipped copies of hooks/scripts/lib/normalize_cmd.sh, or of lib/deadline.sh,
                               differ, or one is missing -- one normaliser is a claim only while they are identical
   fixture-git-drift           the three shipped copies of scripts/fixture_git.py (rails-flow, qa-flow,
@@ -639,6 +641,61 @@ def check_fixture_git_drift() -> tuple[list[Finding], int]:
     return findings, len(FIXTURE_GIT_COPIES)
 
 
+# Rule: schema-reader-drift (#1698)
+# WHICH schema files are the project's (db/schema.rb, every other db/*_schema.rb a second database dumps, minus a Solid trio file that holds only `solid_*` tables) is decided in
+# `build_project_wiki.py` and imported by `check_privacy_inventory.py`. `architecture_graph.py` is vendored ALONE and cannot import it, so it carries a copy of the rule. Two
+# implementations of one rule differ on the first edge nobody tested, and the graph would then draw a different set of tables from the page beside it. Not a text diff (the copies
+# differ where they must: the wiki parses a file, the graph reads its table names): BEHAVIOUR, over the same fixture trees.
+SCHEMA_TREES = (
+    {"schema.rb": ["invoices"]},
+    {"schema.rb": ["invoices"], "observability_schema.rb": ["error_groups"]},
+    {"schema.rb": ["invoices"], "cache_schema.rb": ["solid_cache_entries"], "queue_schema.rb": ["solid_queue_jobs"], "cable_schema.rb": ["solid_cable_messages"]},
+    {"schema.rb": ["invoices"], "cache_schema.rb": ["cache_notes"]},
+    {"schema.rb": ["invoices"], "cache_schema.rb": ["solid_cache_entries", "cache_notes"]},
+    {"schema.rb": ["invoices"], "cache_schema.rb": []},
+    {"schema.rb": ["invoices"], "zeta_schema.rb": ["z"], "alpha_schema.rb": ["a"], "queue_schema.rb": ["solid_queue_jobs"]},
+    {"observability_schema.rb": ["error_groups"]},
+    {"schema.rb": ["invoices"], "cache_schema.rb": ["solidarity_votes"]},        # a project table that merely BEGINS "solid": `startswith("solid")` would call the file the framework's
+)
+
+
+def check_schema_reader_drift() -> tuple[list[Finding], int]:
+    import importlib.util
+    import tempfile
+    wiki_rel, graph_rel = "plugins/rails-flow/scripts/build_project_wiki.py", "plugins/rails-flow/scripts/architecture_graph.py"
+    if not (ROOT / wiki_rel).is_file() or not (ROOT / graph_rel).is_file():
+        return [], 0        # a tree without both scripts has no two copies to disagree
+
+    def load(rel: str, name: str):
+        spec = importlib.util.spec_from_file_location(name, ROOT / rel)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        try:
+            spec.loader.exec_module(module)
+        finally:
+            sys.modules.pop(name, None)
+        return module
+
+    findings: list[Finding] = []
+    try:
+        wiki, graph = load(wiki_rel, "_sr_wiki"), load(graph_rel, "_sr_graph")
+        wiki_fn, graph_fn = wiki.app_schema_files, graph.app_schema_files
+    except Exception as exc:        # a script that cannot load, or lost the function, is a finding, never a silent pass
+        return [Finding("schema-reader-drift", wiki_rel, 0, f"cannot compare the schema-file rule in {wiki_rel} and {graph_rel}: {type(exc).__name__}: {exc}")], 0
+    for tree in SCHEMA_TREES:
+        with tempfile.TemporaryDirectory() as td:
+            (Path(td) / "db").mkdir()
+            for name, tables in tree.items():
+                (Path(td) / "db" / name).write_text("".join(f'  create_table "{t}", force: :cascade do |t|\n  end\n' for t in tables), encoding="utf-8")
+            wiki_files = [Path(f).relative_to(td).as_posix() for f in wiki_fn(Path(td))]
+            graph_files = [Path(f).relative_to(td).as_posix() for f in graph_fn(td)]
+            if wiki_files != graph_files:
+                findings.append(Finding("schema-reader-drift", graph_rel, 0,
+                                        f"over db/{{{', '.join(sorted(tree))}}} the wiki builder reads {wiki_files} and the graph reads {graph_files}: one rule, two copies, and they "
+                                        f"disagree. The wiki's (build_project_wiki.py `app_schema_files`) is the one decided in #1695/#1698; bring the graph's copy back to it"))
+    return findings, len(SCHEMA_TREES)
+
+
 # Rule: findings-script-drift (#1680)
 # qa-reporter validates its findings records with findings.py, which rails-flow owns. It used to call
 # `../rails-flow/scripts/findings.py`, which resolves only in this repo's checkout: an install puts each
@@ -932,7 +989,7 @@ def check_bare_plugin_entries() -> tuple[list[Finding], int]:
 _COUNT_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
                 "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13,
                 "fourteen": 14, "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18,
-                "nineteen": 19, "twenty": 20}
+                "nineteen": 19, "twenty": 20, "twenty-one": 21}
 _NUMBER_WORDS = {n: w for w, n in _COUNT_WORDS.items()}
 
 
@@ -2411,7 +2468,7 @@ def check_hook_script_count() -> tuple[list[Finding], int]:
         return [], 0
     WORDS = _NUMBER_WORDS
     body = read(doc)
-    m = re.search(r"Of the (\w+) hook scripts, (\w+) are advisory", body)
+    m = re.search(r"Of the ([\w-]+) hook scripts, ([\w-]+) are advisory", body)
     if not m:
         return [Finding(
             "hook-count-drift", "CLAUDE.md", 0,
@@ -2450,6 +2507,65 @@ def check_hook_script_count() -> tuple[list[Finding], int]:
             f"says {m.group(2)!r} are advisory; {total} scripts minus {gates} named gates is "
             f"{total - gates}"))
     return findings, total
+
+
+SETUP_FLOW_TEMPLATE = "plugins/rails-flow/commands/setup-flow.md"
+_EMIT_IF = re.compile(r"<!--\s*emit-if:\s*database\s*-->\n(.*?)<!--\s*/emit-if\s*-->\n?", re.S)
+# What the preflight block has to say, and the words that prove it says it (#1561): the issue's five rules, each by a phrase a
+# reviewer would look for. A block that lost one of them is a template whose advice quietly got shorter.
+_PREFLIGHT_NEEDLES = (("pg_isready", "the database check"), ("spec path", "the spec-path check"), ("bundler.lock", "the held-lock check"),
+                      ("uptime", "the load check"), ("swap hooks or config", "the no-swap-mid-sweep rule"), ("Advice, not enforced", "its label as advice"))
+_GUARDRAILS_NEEDLES = (("placeholder SHA", "the placeholder-SHA rule"), ("git rev-parse HEAD", "the command that replaces it"),
+                       ("gh pr ready", "the `gh pr ready` rule"), ("&&", "chaining it to the sweep with `&&`"))
+
+
+def emit_claude_md(setup_text: str, has_database: bool) -> str:
+    """What `/rails-flow:setup-flow` writes into a project's CLAUDE.md template, for a project with or without a database.
+
+    A block wrapped in `emit-if: database` markers is written only for a project that has one, and the marker lines are never
+    written. The command is prose a model follows, so this is the rule it states, run both ways: the only way to see that
+    the condition is wired to the block rather than merely described.
+    """
+    return _EMIT_IF.sub(lambda m: m.group(1) if has_database else "", setup_text)
+
+
+def check_setup_flow_preflight() -> tuple[list[Finding], int]:
+    """The setup-flow template's test-run preflight, the two git-hygiene rules and the handoff pointer (#1561).
+
+    The preflight belongs only in a project that has a database, so a template that writes it into every project spends
+    always-loaded lines on advice that cannot apply, and one that never writes it ships nothing. "Absent without a database"
+    and "the markers are never written" are properties of the EMITTER, so the selftest drives `emit_claude_md` both ways
+    (a repo-state check could not fail them); the checks here are what a template edit can break. A root HANDOFF.md is refused outright: `commands/handoff.md` decided against
+    it on #127 (concurrent branches overwrite one root file).
+    """
+    path = ROOT / SETUP_FLOW_TEMPLATE
+    if not path.is_file():
+        return [], 0
+    text = read(path)
+    found: list[Finding] = []
+
+    def bad(message: str) -> None:
+        found.append(Finding("setup-flow-preflight", SETUP_FLOW_TEMPLATE, 0, message))
+
+    blocks = _EMIT_IF.findall(text)
+    if len(blocks) != 1:
+        bad(f"the template has {len(blocks)} `emit-if: database` blocks; it needs exactly one, the test-run preflight")
+    else:
+        if "## Test-run preflight" not in emit_claude_md(text, True):
+            bad("a project WITH a database would get no test-run preflight: the conditional block is not the preflight")
+        for needle, what in _PREFLIGHT_NEEDLES:
+            if needle not in blocks[0]:
+                bad(f"the test-run preflight block lost {what} (no `{needle}`)")
+    guardrails = re.search(r"## 3\. Create `GUARDRAILS\.md`(.*?)\n## 4\.", text, re.S)
+    for needle, what in _GUARDRAILS_NEEDLES:
+        if guardrails is None or needle not in guardrails.group(1):
+            bad(f"the GUARDRAILS.md section lost {what} (no `{needle}`)")
+    see_also = re.search(r"## See Also\n(.*?)```", text, re.S)
+    if see_also is None or "/rails-flow:handoff" not in see_also.group(1):
+        bad("the template's See Also line no longer points at `/rails-flow:handoff`")
+    if "HANDOFF.md" in text:
+        bad("the template names a root `HANDOFF.md`; the shipped answer is the work order `/rails-flow:handoff` writes")
+    return found, 1
 
 
 def check_duplicate_unreleased() -> tuple[list[Finding], int]:
@@ -3864,6 +3980,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     growth, claude_md_lines = check_claude_md_growth()
     hook_lib, hook_lib_copies = check_hook_lib_drift()
     fixture_git, fixture_git_copies = check_fixture_git_drift()
+    schema_drift, schema_drift_examined = check_schema_reader_drift()
     findings_copy, findings_copies = check_findings_script_drift()
     rel_xplugin, rel_xplugin_examined = check_cross_plugin_relative_path()
     fixture_bypass, fixture_bypass_examined = check_fixture_git_bypass(python_sources)
@@ -3909,6 +4026,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     bullet_sec, bullet_sec_examined = check_changelog_bullet_section()
     cl_sections, cl_sections_examined = check_changelog_section_missing()
     hook_cnt, hook_cnt_examined = check_hook_script_count()
+    setup_pre, setup_pre_examined = check_setup_flow_preflight()
     dangling, dangling_examined = check_dangling_conditional_floor()
     flat_role, flat_role_examined = check_flattened_conditional_role()
     unowned, unowned_examined = check_adopts_an_unowned_server()
@@ -3925,6 +4043,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "claude_md_lines": claude_md_lines,
         "hook_lib_copies": hook_lib_copies,
         "fixture_git_copies": fixture_git_copies,
+        "schema_trees_compared": schema_drift_examined,
         "findings_script_copies": findings_copies,
         "shipped_markdown_checked_for_cross_plugin_paths": rel_xplugin_examined,
         "fixture_git_identity_lines": fixture_bypass_examined,
@@ -3967,6 +4086,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "unreleased_changelog_bullets_placed": bullet_sec_examined,
         "plugins_with_a_changelog_section": cl_sections_examined,
         "hook_scripts_counted": hook_cnt_examined,
+        "setup_flow_templates_checked_for_the_preflight": setup_pre_examined,
         "rails_flow_files_checked_for_docs_paths_outside_layout": docs_paths_examined,
         "conditional_floor_claims": dangling_examined,
         "plugin_paragraphs_naming_a_role": flat_role_examined,
@@ -3978,10 +4098,10 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "scaffolded_boolean_toggles": toggles_examined,
         **call_coverage,
     }
-    return (dead + unenforced + undocumented + undoc_cmds + docs_paths + growth + hook_lib + fixture_git + fixture_bypass + bare + misdesc + unbounded + author_me + components + call_sites + invisible
+    return (dead + unenforced + undocumented + undoc_cmds + docs_paths + growth + hook_lib + fixture_git + schema_drift + fixture_bypass + bare + misdesc + unbounded + author_me + components + call_sites + invisible
             + markers + uncontained + nonhermetic + pointers + rel_links + leaving + outlines + uninstallable + plugin_root + mkt_ver + coercions + topologies + schema + unwired
             + ci_gates + cl_ignore + controllers + labels + comp_labels + orphans + keyfilter
-            + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
+            + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + setup_pre + dangling + flat_role
             + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref + action_pins
             + findings_copy + rel_xplugin
             + xplugin + unowned + toggles + ci_step + promo_ctx + bothways + harness_dep,
@@ -4524,6 +4644,34 @@ def selftest() -> int:
     scenario("a correct count past thirteen, in words, is silent", rule=HC, expect_finding=False,
              files=fourteen)
 
+    # -- setup-flow-preflight ---------------------------------------------
+    SP = "setup-flow-preflight"
+    def _setup_flow(*, wrap=True, block=None, guard=None, handoff=True, extra="", second_block=False):
+        """A minimal setup-flow.md carrying everything the rule reads; each scenario breaks exactly one piece."""
+        body = block if block is not None else ("## Test-run preflight\npg_isready; every spec path; no held bundler.lock; uptime; "
+                                                "never swap hooks or config mid-sweep. Advice, not enforced.\n")
+        open_, close = ("<!-- emit-if: database -->\n", "<!-- /emit-if -->\n") if wrap else ("", "")
+        git = guard if guard is not None else "Git: never report a placeholder SHA, run `git rev-parse HEAD`; `run_sweep && gh pr ready`, never `;`.\n"
+        see = "GUARDRAILS.md" + (" · `/rails-flow:handoff`" if handoff else "")
+        return {SETUP_FLOW_TEMPLATE: ("# /rails-flow:setup-flow\n## 2. CLAUDE.md\n```markdown\n# CLAUDE.md\n" + open_ + body + close
+                                      + (open_ + "## Another\n" + close if second_block else "")
+                                      + "## See Also\n" + see + "\n```\n## 3. Create `GUARDRAILS.md`\n" + git + "\n## 4. Seed the memory system\n" + extra)}
+    spf = lambda label, files, expect: scenario(label, rule=SP, expect_finding=expect, files=files, only=check_setup_flow_preflight)
+    spf("CONTROL: a template with the conditional preflight, both git rules and the pointer is silent", _setup_flow(), False)
+    spf("a preflight written into EVERY project, with no condition around it", _setup_flow(wrap=False), True)
+    spf("a conditional block that is not the preflight, so a project with a database gets none", _setup_flow(block="## Something else\npg_isready; spec path; bundler.lock; uptime; swap hooks or config. Advice, not enforced.\n"), True)
+    spf("a preflight block that lost the held-lock check", _setup_flow(block="## Test-run preflight\npg_isready; spec path; uptime; swap hooks or config. Advice, not enforced.\n"), True)
+    spf("two conditional blocks where the template promises one", _setup_flow(second_block=True), True)
+    spf("a GUARDRAILS section with no placeholder-SHA rule", _setup_flow(guard="Git: `git rev-parse HEAD`; `run_sweep && gh pr ready`.\n"), True)
+    spf("a GUARDRAILS section that chains `gh pr ready` with nothing", _setup_flow(guard="Git: placeholder SHA, `git rev-parse HEAD`; gh pr ready after the sweep.\n"), True)
+    spf("a See Also line with no pointer to /rails-flow:handoff", _setup_flow(handoff=False), True)
+    spf("a template that names a root HANDOFF.md", _setup_flow(extra="Write HANDOFF.md at the root.\n"), True)
+    # DRIVEN BOTH WAYS, directly: the emitter itself, so a rule that only read the block's words could not pass for the wiring.
+    sample = next(iter(_setup_flow().values()))
+    checks += 1
+    if "## Test-run preflight" not in emit_claude_md(sample, True) or "## Test-run preflight" in emit_claude_md(sample, False) \
+            or "emit-if" in emit_claude_md(sample, True):
+        failures.append("setup-flow-preflight / the emitter: the preflight must be present with a database, absent without, and the markers never written")
     # -- duplicate-unreleased ---------------------------------------------
     DUP = "duplicate-unreleased"
     scenario("two Unreleased headings in one section", rule=DUP, expect_finding=True,
@@ -5191,6 +5339,34 @@ def selftest() -> int:
              only=check_docs_path_outside_layout, files={"plugins/rails-flow/commands/handoff.md": "docs/handoff/<slug>.md\n"})
     scenario("a LAYOUT that is not a literal dict is itself a finding", rule=DP, expect_finding=True, only=check_docs_path_outside_layout,
              files={"plugins/rails-flow/scripts/docs_layout.py": "LAYOUT = build()\n"})
+
+    # -- schema-reader-drift (#1698) --------------------------------------
+    SR = "schema-reader-drift"
+    WIKI_REL, GRAPH_REL = "plugins/rails-flow/scripts/build_project_wiki.py", "plugins/rails-flow/scripts/architecture_graph.py"
+    WIKI_OK = "from pathlib import Path\ndef app_schema_files(root):\n    return [p for p in sorted(Path(root).glob('db/*.rb'))]\n"
+    GRAPH_OK = "from pathlib import Path\ndef app_schema_files(root):\n    return [str(p) for p in sorted(Path(root).glob('db/*.rb'))]\n"
+    scenario("the wiki builder and the graph read the same schema files over every fixture tree: silent", rule=SR, expect_finding=False,
+             only=check_schema_reader_drift, files={WIKI_REL: WIKI_OK, GRAPH_REL: GRAPH_OK})
+    scenario("the graph's copy reads fewer schema files than the wiki builder: a finding", rule=SR, expect_finding=True,
+             only=check_schema_reader_drift, files={WIKI_REL: WIKI_OK, GRAPH_REL: "def app_schema_files(root):\n    return []\n"})
+    scenario("a graph copy that lost the function is a finding, never a silent pass", rule=SR, expect_finding=True,
+             only=check_schema_reader_drift, files={WIKI_REL: WIKI_OK, GRAPH_REL: "x = 1\n"})
+    scenario("a script that cannot even load is a finding", rule=SR, expect_finding=True,
+             only=check_schema_reader_drift, files={WIKI_REL: WIKI_OK, GRAPH_REL: "this is not python (\n"})
+    scenario("a tree without both scripts has no two copies to disagree, and is silent", rule=SR, expect_finding=False,
+             only=check_schema_reader_drift, files={WIKI_REL: WIKI_OK})
+    # The rule's own edge: a Solid trio file is the framework's only when EVERY table starts `solid_`. Stub copies that differ in exactly that prefix must disagree over the tree
+    # holding `solidarity_votes`; deleting that tree from SCHEMA_TREES turns this scenario silent.
+    def solid_copy(prefix: str, returns_str: bool) -> str:
+        wrap = "str(p)" if returns_str else "p"
+        return ("import re\nfrom pathlib import Path\ndef app_schema_files(root):\n    out = []\n    for p in sorted(Path(root).glob('db/*.rb')):\n"
+                "        tables = re.findall(r'create_table \"([^\"]+)\"', p.read_text())\n"
+                f"        if p.name.endswith('_schema.rb') and p.name != 'schema.rb' and tables and all(t.startswith({prefix!r}) for t in tables):\n            continue\n"
+                f"        out.append({wrap})\n    return out\n")
+    scenario("a graph copy whose Solid prefix is `solid`, not `solid_`, disagrees over a project table named solidarity_votes: a finding", rule=SR, expect_finding=True,
+             only=check_schema_reader_drift, files={WIKI_REL: solid_copy("solid_", False), GRAPH_REL: solid_copy("solid", True)})
+    scenario("copies with the same Solid prefix agree over every tree: silent", rule=SR, expect_finding=False,
+             only=check_schema_reader_drift, files={WIKI_REL: solid_copy("solid_", False), GRAPH_REL: solid_copy("solid_", True)})
 
     # -- undocumented-command (#835) --------------------------------------
     # Four shipped commands were in neither README; design-flow's listed six of twelve.

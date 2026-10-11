@@ -46,7 +46,7 @@ sentences, not a defence.
 Nothing in the 14 blocks is a quadratic loop (#1519 fixed a dev regression, nobody blocked on it), a
 mutation-check grep that misses singular output, or an ungated `gh pr ready`. They came from a
 model-written usage report, not from our reviews, so they have no row here and no agent. `gh pr ready`
-is #1565, which measures it first.
+is now gated (#1565): `guard-pr-ready.sh` refuses it without a green sweep record for HEAD.
 
 ## Replay set
 

@@ -96,7 +96,7 @@ The fenced blocks are what an agent pastes verbatim into a user's project.
 
 ## CHANGELOG
 
-- [ ] **One bullet per issue** under the component's `### Unreleased` — never one bullet for a
+- [ ] **One fragment per issue and component**, `changelog.d/<issue>-<slug>.md` (not an edit to `CHANGELOG.md`) — never one bullet for a
       group.
 - [ ] No version assigned. Versions are assigned at the promotion; a number on `dev` is a claim a
       user can install it, and that claim is false.
