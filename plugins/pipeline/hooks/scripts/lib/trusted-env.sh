@@ -62,7 +62,7 @@ rf_inside() {
 # THE GATES READ THE ENVIRONMENT AS THE COMMAND'S. A PreToolUse hook judges a command that will inherit the session's environment, and its own environment is that proxy: the
 # release gate reads GH_REPO (a `gh release create` with GH_REPO=other/fork acts on ANOTHER repository), and command_cwd.py refuses to follow a `cd` while any GIT_*, GH_* or
 # CDPATH is set, because each can change where gh and git act. Scrubbing those names for the hook's OWN git and gh must not blind the judgement, so every such variable is
-# first copied to RF_INHERITED_<NAME>, which is what a gate reads for "what will the command see" (the lib's own additions, such as GIT_CONFIG_GLOBAL below, are not copied).
+# first copied to RF_INHERITED_<NAME>, which is what a gate reads for "what will the command see" (the lib's own additions, such as GIT_CONFIG_GLOBAL below, are not copied; nor is any credential, `GH_*TOKEN*`: a copy only puts a token in front of more child processes).
 # Stale RF_INHERITED_* from the caller are dropped first: only what this process really inherited counts.
 rf_snapshot_inherited() {
   local name
@@ -71,6 +71,7 @@ rf_snapshot_inherited() {
   done
   for name in $(compgen -v); do
     case "$name" in
+      GH_*TOKEN*) ;;      # a credential is never copied: it is not scrubbed either (GH_TOKEN), or no gate reads it
       GIT_*|GH_*|CDPATH) export "RF_INHERITED_$name=${!name}" ;;
     esac
   done

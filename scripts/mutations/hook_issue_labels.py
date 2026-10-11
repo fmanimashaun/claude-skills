@@ -76,19 +76,19 @@ GUARD = Guard(
         ),
         Mutation(
             "a repo named with -R on the create is ignored when following a cd",
-            '        if cd is not None and repo is None and env_repo is None and not os.environ.get("GH_REPO"):',
-            '        if cd is not None and env_repo is None and not os.environ.get("GH_REPO"):',
+            '        if cd is not None and repo is None and env_repo is None and not _inherited_gh_repo():',
+            '        if cd is not None and env_repo is None and not _inherited_gh_repo():',
             "refused: a repo named with -R after the cd",
         ),
         Mutation(
             "a GH_REPO prefix on the create is ignored when following a cd",
-            '        if cd is not None and repo is None and env_repo is None and not os.environ.get("GH_REPO"):',
-            '        if cd is not None and repo is None and not os.environ.get("GH_REPO"):',
+            '        if cd is not None and repo is None and env_repo is None and not _inherited_gh_repo():',
+            '        if cd is not None and repo is None and not _inherited_gh_repo():',
             "refused: GH_REPO on the create after the cd",
         ),
         Mutation(
             "GH_REPO in the hook's environment is ignored when following a cd",
-            '        if cd is not None and repo is None and env_repo is None and not os.environ.get("GH_REPO"):',
+            '        if cd is not None and repo is None and env_repo is None and not _inherited_gh_repo():',
             '        if cd is not None and repo is None and env_repo is None:',
             "GH_REPO in the environment keeps the session's rules",
         ),
@@ -821,6 +821,12 @@ GUARD = Guard(
             '        if not w.startswith("--") and "n" in w[1:]:\n            noexec = True',
             '        if not w.startswith("--"):\n            noexec = True',
             'bash -x of the same script still runs it',
+        ),
+        Mutation(
+            "the GH_REPO the command inherits is read from the hook's scrubbed environment, so it is always empty",
+            '        return os.environ.get("RF_INHERITED_GH_REPO", "")',
+            '        return ""',
+            "GH_REPO inherited by the command (the lib's copy) keeps the session's rules",
         ),
     ),
 )

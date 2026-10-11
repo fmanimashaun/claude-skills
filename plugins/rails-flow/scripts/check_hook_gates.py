@@ -1138,9 +1138,9 @@ def guard_bash_fixtures() -> None:
         _run(["git", "-C", str(session), "remote", "add", "origin", "https://github.com/me/session.git"], check=True)
         _run(["git", "init", "-q", str(other)], check=True)
         _run(["git", "-C", str(other), "remote", "add", "origin", "https://github.com/other/repo.git"], check=True)
-        def cross(cmd: str) -> tuple[int, str]:
+        def cross(cmd: str, env_extra: dict[str, str] | None = None) -> tuple[int, str]:
             r = _run(["bash", str(HOOKS / "guard-bash.sh")], input=json.dumps({"tool_input": {"command": cmd}}),
-                               capture_output=True, text=True, cwd=session)
+                               capture_output=True, text=True, cwd=session, **({"env": dict(os.environ, **env_extra)} if env_extra else {}))
             return r.returncode, r.stderr
         rc, err = cross(f"cd {other} && gh issue create -t X --label enhancement --body-file b.md")
         check("guard-bash (#1400): a create after `cd <other repo>` answers to THAT repo's labels", rc == 0, err)
@@ -1148,6 +1148,10 @@ def guard_bash_fixtures() -> None:
         check("guard-bash (#1400): ...and that repo's rules still refuse", rc == 2 and "severity:s1" in err, err)
         rc, err = cross("gh issue create -t X --label enhancement --body-file b.md")
         check("guard-bash (#1400): CONTROL: without the cd, the session's own rules apply", rc == 2 and "comp:*" in err, err)
+        # #1850: GH_REPO in the hook's environment (settings `env`, a launcher) redirects gh, so the cd is NOT certain and the session's rules apply. trusted-env.sh unsets GH_REPO for
+        # the hook's own gh and keeps a copy; issue_labels.py must read the copy, or the cd is followed to the other repository's looser rules and this create is let through.
+        rc, err = cross(f"cd {other} && gh issue create -t X --label enhancement --body-file b.md", {"GH_REPO": "me/session"})
+        check("guard-bash (#1850): GH_REPO in the environment keeps the session's rules for a create after `cd <other repo>` (read from the lib's copy)", rc == 2 and "comp:*" in err, f"exit {rc}: {err[-160:]}")
         # #1851: the doctrine's own shape (a heredoc writes the body, then the create) after a cd; an unfollowed cd says so; -R; `bash -n`.
         body = "cat > b.md <<'EOF'\nthe body\nEOF\n"
         rc, err = cross(f"cd {other} && {body}gh issue create -t X --label enhancement --body-file b.md")
@@ -5723,8 +5727,8 @@ def hostile_env_fixtures() -> None:
             _stub(outer / "bin", "fsmon-home", f'echo "$0" >> "{witness}/home-gitconfig-fsmonitor"\nexit 0')
             (home_dir / ".gitconfig").write_text(f"[core]\n\tfsmonitor = {outer / 'bin' / 'fsmon-home'}\n", encoding="utf-8")
             if real["python3"]:      # the user site python3 would read from THIS home, asked of the real python3 (subprocess, not `_run`: no hook is involved)
-                site = subprocess.run([real["python3"], "-c", "import site; print(site.getusersitepackages())"], capture_output=True, text=True,
-                                      env={"PATH": "/usr/bin:/bin", "HOME": str(home_dir)}, timeout=60).stdout.strip()
+                site = _run([real["python3"], "-c", "import site; print(site.getusersitepackages())"], capture_output=True, text=True,
+                            env={"PATH": "/usr/bin:/bin", "HOME": str(home_dir)}, timeout=60).stdout.strip()
                 if site:
                     Path(site).mkdir(parents=True, exist_ok=True)
                     (Path(site) / "usercustomize.py").write_text(f"open({str(witness / 'home-usercustomize')!r}, 'a').write('ran\\n')\n", encoding="utf-8")
@@ -5856,12 +5860,14 @@ def hostile_env_fixtures() -> None:
 
     # THE GATES' VIEW OF THE COMMAND'S ENVIRONMENT. A gate reads its own environment as the one the command will inherit (the release gate reads GH_REPO, command_cwd.py refuses to
     # follow a `cd` while a GIT_*, GH_* or CDPATH is set), so scrubbing those names for the hook's own git and gh keeps a copy: RF_INHERITED_<NAME>.
-    def inherited_view(forged: bool = False) -> str:
+    def inherited_view(forged: bool = False, creds: bool = False) -> str:
         with scratch_dir() as td:
             work, env = lib_env(td)
             env.update({"GH_REPO": "evil/repo", "CDPATH": "/x", "HOME": str(work.resolve())})
             if forged:
                 env["RF_INHERITED_GIT_FORGED"] = "forged.example"
+            if creds:
+                return probe(work, env, '. "$1"; printf "%s|%s" "${RF_INHERITED_GH_TOKEN-unset}" "${RF_INHERITED_GH_ENTERPRISE_TOKEN-unset}"').stdout
             done = probe(work, env, '. "$1"; printf "%s|%s|%s|%s|%s" "${GH_REPO-unset}" "${RF_INHERITED_GH_REPO-unset}" "${RF_INHERITED_CDPATH-unset}" '
                                     '"${RF_INHERITED_GIT_CONFIG_GLOBAL-unset}" "${RF_INHERITED_GIT_FORGED-unset}"')
             return done.stdout
@@ -5870,6 +5876,8 @@ def hostile_env_fixtures() -> None:
     check("hostile environment: trusted-env.sh keeps a copy of an inherited GH_REPO as RF_INHERITED_GH_REPO for the gates, and unsets the variable itself", got.startswith("unset|evil/repo|"), f"got {got!r}")
     check("hostile environment: ...and of an inherited CDPATH", got.split("|")[2:3] == ["/x"], f"got {got!r}")
     check("hostile environment: ...but not of what the lib sets itself (GIT_CONFIG_GLOBAL when HOME is the repository root)", got.split("|")[3:4] == ["unset"], f"got {got!r}")
+    check("hostile environment: ...and a credential (GH_TOKEN, GH_ENTERPRISE_TOKEN) is not copied, so it is in front of no more child processes than before",
+          inherited_view(creds=True) == "unset|unset", f"got {inherited_view(creds=True)!r}")
     got = inherited_view(forged=True)
     check("hostile environment: ...and a forged RF_INHERITED_* the caller set, for a variable it did not inherit, is dropped", got.split("|")[4:5] == ["unset"], f"got {got!r}")
 

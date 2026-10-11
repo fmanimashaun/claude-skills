@@ -276,5 +276,11 @@ GUARD = Guard(
             ':',
             "a forged RF_INHERITED_* the caller set",
         ),
+        Mutation(
+            "a credential (GH_TOKEN) is copied too",
+            '      GH_*TOKEN*) ;;      #',
+            '      GH_NO_SUCH_NAME) ;;      #',
+            "a credential (GH_TOKEN, GH_ENTERPRISE_TOKEN) is not copied",
+        ),
     ),
 )
