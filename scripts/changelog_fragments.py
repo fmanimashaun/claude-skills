@@ -34,10 +34,12 @@ count after is the count before plus the fragments. A fragment is deleted only a
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import subprocess
 import sys
 import tempfile
+from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -297,12 +299,17 @@ def direct_bullets(base: str, head: str, folded: list[str] | None = None) -> lis
     A bullet a PR needs goes in `changelog.d/<issue>-<slug>.md`; the arm folds it. Three things are NOT a direct bullet: a bullet whose headline `base` already has in the same
     section (an edit of a note that is already there), a bullet that is the folded copy of a fragment this same change deletes (`--fold` moves a note, and says so by deleting the
     file), and anything under a release block (`--fold --into` puts a late note there). Each finding names the fragment to write instead."""
-    have = {(h, _headline(t)) for h, t in unreleased_bullets(base)}
-    moved = {_headline(b) for b in (folded or [])}
+    have = Counter((h, _headline(t)) for h, t in unreleased_bullets(base))
+    moved = Counter(_headline(b) for b in (folded or []))
+    seen: Counter = Counter()
     findings: list[str] = []
     for heading, text in unreleased_bullets(head):
         name = _headline(text)
-        if (heading, name) in have or name in moved:
+        seen[(heading, name)] += 1
+        if seen[(heading, name)] <= have[(heading, name)]:
+            continue                                   # base already has this many with this headline here: an edit, not an addition
+        if moved[name] > 0:
+            moved[name] -= 1                           # one deleted fragment excuses ONE bullet
             continue
         m = _CITATION.search(text)
         issue = m.group(1) if m else "<issue>"
@@ -319,17 +326,23 @@ def _git_out(root: Path, *args: str) -> str | None:
     return r.stdout if r.returncode == 0 else None
 
 
-def check_direct(root: Path = ROOT, base_ref: str = "origin/dev") -> tuple[int, list[str]]:
-    """(exit code, findings). 0 clean, 1 a direct bullet, 3 SKIP: the base cannot be read, so nothing was compared (never reported as clean)."""
-    base = _git_out(root, "show", f"{base_ref}:CHANGELOG.md")
+def check_direct(root: Path = ROOT, base_ref: str = "origin/dev", ci: bool | None = None) -> tuple[int, list[str]]:
+    """(exit code, findings). 0 clean, 1 a direct bullet, 3 SKIP: the base cannot be read, so nothing was compared.
+
+    The comparison is against `git merge-base HEAD <base_ref>`, not the base's tip: a branch cut before a promotion would otherwise be charged with every bullet dev gained since.
+    In CI (`GITHUB_ACTIONS` set, or `ci=True`) an unreadable base is a FAILURE (1), not a skip: the gate runs on a runner with the base fetched, so "cannot read it" means the checkout is
+    wrong, and a pass or a skip there would read as a branch that was checked. On a maintainer's machine it stays a SKIP (3), as for the other gates that read git."""
+    in_ci = bool(os.environ.get("GITHUB_ACTIONS")) if ci is None else ci
+    mb = (_git_out(root, "merge-base", "HEAD", base_ref) or "").strip()
+    base = _git_out(root, "show", f"{mb}:CHANGELOG.md") if mb else None
     cl = root / "CHANGELOG.md"
     if base is None or not cl.is_file():
-        return 3, [f"cannot read CHANGELOG.md at {base_ref} (or in the working tree): nothing was compared"]
-    gone = _git_out(root, "diff", "--name-only", "--diff-filter=D", base_ref, "--", FRAG_DIR) or ""
+        return (1 if in_ci else 3), [f"cannot read CHANGELOG.md at the merge-base of HEAD and {base_ref} (or in the working tree): nothing was compared" + (" (in CI that is a failure, not a skip)" if in_ci else "")]
+    gone = _git_out(root, "diff", "--name-only", "--diff-filter=D", mb, "--", FRAG_DIR) or ""
     folded: list[str] = []
     for path in gone.split():
         if path.endswith(".md") and not path.endswith("README.md"):
-            text = _git_out(root, "show", f"{base_ref}:{path}")
+            text = _git_out(root, "show", f"{mb}:{path}")
             if text:
                 try:
                     folded.append(parse(text, Path(path).name)[1][0])
@@ -519,10 +532,30 @@ def selftest() -> int:
         ck("a bullet added straight to CHANGELOG.md exits 1 through git", code == 1 and len(found) == 1, (code, found))
         fixture_git.run(g, "rm", "-q", "changelog.d/30-repository-hygiene.md")
         ck("the same bullet, with the fragment it came from deleted (a fold), exits 0", check_direct(g, "base")[0] == 0, check_direct(g, "base"))
-        ck("a base that does not exist is a SKIP (3), never clean", check_direct(g, "no-such-ref")[0] == 3)
+        ck("a base that does not exist is a SKIP (3) on a maintainer's machine, never clean", check_direct(g, "no-such-ref", ci=False)[0] == 3)
+        ck("...and in CI an unreadable base is a FAILURE (1): the runner has the base fetched, so a skip there would read as a branch that was checked", check_direct(g, "no-such-ref", ci=True)[0] == 1)
         with tempfile.TemporaryDirectory() as notrepo:
             (Path(notrepo) / "CHANGELOG.md").write_text(base_cl)
-            ck("a directory that is not a repository is a SKIP (3), never clean", check_direct(Path(notrepo), "origin/dev")[0] == 3)
+            ck("a directory that is not a repository is a SKIP (3), never clean", check_direct(Path(notrepo), "origin/dev", ci=False)[0] == 3)
+            ck("...and a FAILURE in CI", check_direct(Path(notrepo), "origin/dev", ci=True)[0] == 1)
+    dup = base_cl.replace("### Unreleased\n\n", "### Unreleased\n\n- **old repo — `scripts/a.py`** (#1). a second bullet with the same headline.\n\n", 1)
+    ck("a SECOND bullet with a headline the section already has is a finding (counted, not looked up)", len(direct_bullets(base_cl, dup)) == 1, direct_bullets(base_cl, dup))
+    ck("one deleted fragment excuses ONE of two bullets with the same headline", len(direct_bullets(base_cl, dup, ["- **old repo — `scripts/a.py`** (#1). a second bullet with the same headline."])) == 0
+       and len(direct_bullets(base_cl, dup.replace("### Unreleased\n\n", "### Unreleased\n\n- **old repo — `scripts/a.py`** (#1). a third.\n\n", 1), ["- **old repo — `scripts/a.py`** (#1). x."])) == 1)
+    with tempfile.TemporaryDirectory() as td:
+        # A branch cut BEFORE a promotion: dev's tip has converted `### Unreleased` into a release block, so against the tip every bullet the branch still has under Unreleased looks added.
+        g = Path(td)
+        fixture_git.init(g)
+        (g / "CHANGELOG.md").write_text(base_cl)
+        fixture_git.run(g, "add", "CHANGELOG.md")
+        fixture_git.run(g, "commit", "-qm", "A")
+        fixture_git.run(g, "branch", "dev2")
+        fixture_git.run(g, "checkout", "-q", "dev2")
+        (g / "CHANGELOG.md").write_text(base_cl.replace("### Unreleased\n\nThe release number is assigned at promotion.\n\n", "### 2026-10-12 (release v1.156.0)\n\n"))
+        fixture_git.run(g, "commit", "-qam", "arm")
+        fixture_git.run(g, "checkout", "-q", "-b", "feature", "HEAD~1")
+        code, found = check_direct(g, "dev2", ci=False)
+        ck("a branch cut before the base armed is compared with the commit it was cut from (the merge-base), so it gets no false finding", code == 0, (code, found))
     if failures:
         print(f"changelog_fragments selftest: {len(failures)} failure(s) of {total}")
         for x in failures:
