@@ -187,6 +187,20 @@
       "requires": [
         "python3"
       ]
+    },
+    {
+      "id": "qa-requirements",
+      "why": "A requirement no ACTIVE test case names has no way to be tested in QA, so it cannot be shown to work (#1853). The uncased baseline may only shrink against the base branch: `base:` under `requirements:` in qa/qa.config.yml (default origin/dev; a project on main sets it, and a missing default base is a skip, exit 3, never an error).",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_requirements.py"
+      ],
+      "applies_when": [
+        "qa/requirements.yml"
+      ],
+      "requires": [
+        "python3"
+      ]
     }
   ]
 }
