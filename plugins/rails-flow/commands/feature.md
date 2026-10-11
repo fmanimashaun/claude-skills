@@ -284,6 +284,7 @@ gh pr create --base <base> --title "feat: <summary>" --body "<the PR Documentati
   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_mockup_gate.py" --base <base>`. Exit 1 means the
   diff changes what a user sees and no approved mock-up is recorded: stop, and run the Phase 1
   mock-up gate. Exit 2 means it could not classify; stop and hand the merge to the user.
+- On CLEAN, **check the requirement registry**: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_registry_closed.py" --closes <the issue numbers the PR's `Fixes` lines name>` when `qa/requirements.yml` exists (#1857): a registry row that points at an issue this PR closes must be updated in this same PR (status `done` and `closed: true`, with its proving spec). Exit 1: update those rows, push, run it again. Exit 3: say what it could not read; an unchecked registry is not a clean one. Exit 0, or no registry, continues.
 - On CLEAN, **classify the door** (#1338):
   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/classify_door.py" --base <base>`. Exit 1 (ONE-WAY: a
   destructive migration, an auth or permission change, a removed route or API field, a new outside

@@ -208,7 +208,7 @@
     },
     {
       "id": "mandated-gems",
-      "why": "A gem the doctrine marks Always, with no installer and no gate, is a preference — it landed missing twice on two clean runs.",
+      "why": "A gem the doctrine marks Always, with no installer and no gate, is a preference \u2014 it landed missing twice on two clean runs.",
       "command": [
         "python3",
         "{plugin}/scripts/check_mandated_gems.py"
@@ -279,7 +279,7 @@
     },
     {
       "id": "claude-md-structure",
-      "why": "CLAUDE.md is loaded by every session and accretes incident narrative until an agent skims it; past its recorded ceiling, or with none recorded, the check says which paragraphs to relocate — verbatim, never summarised.",
+      "why": "CLAUDE.md is loaded by every session and accretes incident narrative until an agent skims it; past its recorded ceiling, or with none recorded, the check says which paragraphs to relocate \u2014 verbatim, never summarised.",
       "command": [
         "python3",
         "{plugin}/scripts/claude_md_structure.py",
@@ -413,7 +413,7 @@
     },
     {
       "id": "branch-ruleset",
-      "why": "A dev → main promotion must be a merge commit: a squash keeps the content and drops the ancestry, and the NEXT promotion cannot merge. `gh pr merge --merge` is doctrine a human can forget at the Merge button; a GitHub ruleset on the release branch (PRs merge only, no deletion, no force-push) is the mechanism. n/a without gh, unauthenticated, or off GitHub.",
+      "why": "A dev \u2192 main promotion must be a merge commit: a squash keeps the content and drops the ancestry, and the NEXT promotion cannot merge. `gh pr merge --merge` is doctrine a human can forget at the Merge button; a GitHub ruleset on the release branch (PRs merge only, no deletion, no force-push) is the mechanism. n/a without gh, unauthenticated, or off GitHub.",
       "command": [
         "python3",
         "{plugin}/scripts/branch_rulesets.py",
@@ -437,6 +437,20 @@
       ],
       "applies_when": [
         "docs/product/help/registry.json"
+      ],
+      "requires": [
+        "python3"
+      ]
+    },
+    {
+      "id": "registry-closed",
+      "why": "A requirement registry row that still points at a closed issue as partial or missing makes the status report show fixed gaps as open (#1853); the PR that closes an issue updates the rows that point at it.",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_registry_closed.py"
+      ],
+      "applies_when": [
+        "qa/requirements.yml"
       ],
       "requires": [
         "python3"
