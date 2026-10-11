@@ -342,7 +342,7 @@ checklist with rollback proof, required patterns incl. money `decimal(15,2)`), *
 force-push, no `git add -A`, no `--no-verify`, stage specific files, small logical commits; never report a placeholder SHA — after pushing run
 `git rev-parse HEAD` and report that exact value; make `gh pr ready` and any merge depend on the sweep result with `&&` (`run_sweep && gh pr ready`), never `;`),
 **Secrets** (credentials only; never commit .env), **Deploys** (require explicit user
-approval). Note at the top: *the rails-flow hooks enforce these mechanically; this document
+approval). Note at the top: *the rails-flow hooks enforce these mechanically inside a trusted workspace (a repository's own settings can switch hooks off, #1843); this document
 is the human-readable law they implement.*
 
 **Ask, and record the answer: is the test database seeded on purpose? (#1734)** *"Does this project's
