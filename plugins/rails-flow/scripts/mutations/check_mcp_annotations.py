@@ -102,7 +102,7 @@ GUARD = Guard(
         ),
         Mutation(
             "server.tools[name] = is never noticed",
-            "|\\[[^\\]]*\\]\\s*=(?![=~>])",
+            "|\\[[^\\]]*\\]\\s*(?:\\|\\||&&)?=(?![=~>])",
             "",
             "server.tools[name] = could not be checked",
         ),
@@ -129,6 +129,48 @@ GUARD = Guard(
             "(?:store|update|replace)\\b",
             "(?:store|update)\\b",
             "server.tools.replace could not be checked",
+        ),
+        Mutation(
+            "server.tools[name] ||= is never noticed",
+            "(?:\\|\\||&&)?=(?![=~>])",
+            "(?:&&)?=(?![=~>])",
+            "server.tools[name] ||= could not be checked",
+        ),
+        Mutation(
+            "server.tools[name] &&= is never noticed",
+            "(?:\\|\\||&&)?=(?![=~>])",
+            "(?:\\|\\|)?=(?![=~>])",
+            "server.tools[name] &&= could not be checked",
+        ),
+        Mutation(
+            "a .rake file is not read",
+            'name.endswith((".rake", ".ru"))',
+            'name.endswith((".ru",))',
+            "a .rake task naming MCP could not be checked",
+        ),
+        Mutation(
+            "a .ru file is not read",
+            'name.endswith((".rake", ".ru"))',
+            'name.endswith((".rake",))',
+            "config.ru naming MCP could not be checked",
+        ),
+        Mutation(
+            "a ruby shebang is not looked for",
+            'return line.startswith(b"#!") and b"ruby" in line',
+            "return False",
+            "an entry script in bin/ could not be checked",
+        ),
+        Mutation(
+            "any shebang is read as Ruby",
+            'return line.startswith(b"#!") and b"ruby" in line',
+            'return line.startswith(b"#!")',
+            "an extensionless file that is not Ruby is not read",
+        ),
+        Mutation(
+            ".rb files under app/ and lib/ are scanned a second time as outside",
+            "                if top in SCAN_DIRS:\n                    continue",
+            "                if False:\n                    continue",
+            "explicit class macro is clean",
         ),
         Mutation(
             "MCP code outside app/ and lib/ is never looked for",

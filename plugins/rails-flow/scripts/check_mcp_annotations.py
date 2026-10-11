@@ -31,15 +31,17 @@ COULD NOT CHECK, never a pass (exit 2): a place this scan cannot read.
     server.rb:217/222; `@tools[tool_name] = tool`, :302/307; `@tools.values`, :555/560), so the late forms are Hash forms:
     `server.tools = {...}`, `server.tools['name'] = T`, `.tools.merge!/store/update/replace(...)`. (`<<`, `.push` and `.concat` raise on a Hash and
     register nothing.) The gem has no add_tool.
-  * MCP code outside `app/` and `lib/`: any `.rb` file there naming `MCP::Tool`, `MCP::Server` or `define_tool` (a `config/initializers/mcp.rb`,
-    a top-level `mcp/`). A Gemfile that merely names the `mcp` gem is NOT enough: an app that is only an MCP client depends on it too.
-    `spec/`, `test/`, `vendor/`, `node_modules/`, `tmp/`, `log/`, `db/`, `coverage/` and `public/` are skipped.
+  * MCP code this scan does not parse as tools: any `.rb` file outside `app/` and `lib/` naming `MCP::Tool`, `MCP::Server` or `define_tool` (a
+    `config/initializers/mcp.rb`, a top-level `mcp/`), and any non-`.rb` Ruby anywhere (`config.ru`, `*.rake`, a Rakefile,
+    a script whose first line is a ruby shebang, such as `bin/mcp_server`). A Gemfile that merely names the `mcp` gem is NOT enough: an app that is only an MCP client depends on it too.
+    `spec/`, `test/`, `vendor/`, `node_modules/`, `tmp/`, `log/`, `db/`, `coverage/` and `public/` are skipped by design, so a served tool kept
+    under one of them is not seen.
 A tool registered that way may be defined anywhere, so a clean run would claim more than was looked at.
 
 LIMITS, stated: a class body ends at the next `end` at the class line's indent (so `end # A` and a one-line
 `class A < MCP::Tool; end` are read right), and code that is not indented that way is not read right; whole-line `#`
-comments are ignored, a trailing one is not; string literals are blanked before a hint is looked for, so a hint named inside a string
-does not count; only a statement-start `annotations(` in a class body counts (not `meta.annotations(...)`, not a word in a description); a
+comments are ignored, a trailing one is not; quote-delimited string literals are blanked before a hint is looked for, so a hint named inside one
+does not count (a heredoc body or a `%q(...)` literal is NOT blanked and can still forge both keys); only a statement-start `annotations(` in a class body counts (not `meta.annotations(...)`, not a word in a description); a
 base named relative to a namespace (`module MCP; class A < Tool`) is not recognised and reads as "not applicable"; a tool built by other
 metaprogramming is invisible here; and `read_only_hint: nil` or `false` counts as stated, since the gate asks for an explicit declaration, not
 a particular value. The check proves the declaration exists, not that the value is TRUE: a tool whose code writes while declaring
@@ -65,7 +67,7 @@ CALL = re.compile(r"(?:(?P<recv>[\w:]+)\.define(?!\w)|\.define_tool(?!\w))\s*\(?
 CLASS_NEW = re.compile(r"\bClass\.new\(\s*(?P<base>[\w:]+)\s*\)")
 SERVER_NEW = re.compile(r"MCP::Server\.new\s*\(")
 # `Server#tools` is a Hash keyed by tool name: these are the ways to put a tool into it after construction
-TOOLS_MUTATED = re.compile(r"\.tools\s*(?:=(?![=~>])|\[[^\]]*\]\s*=(?![=~>])|\.(?:merge!|(?:store|update|replace)\b))")
+TOOLS_MUTATED = re.compile(r"\.tools\s*(?:=(?![=~>])|\[[^\]]*\]\s*(?:\|\||&&)?=(?![=~>])|\.(?:merge!|(?:store|update|replace)\b))")
 CALLS = re.compile(r"\bdef\s+(?:self\.)?call\b")
 MCP_TOOL = {"MCP::Tool", "::MCP::Tool"}
 MCP_TEXT = re.compile(r"\bMCP::(?:Tool|Server)\b|\bdefine_tool\b")
@@ -234,23 +236,42 @@ def scan(root: Path) -> tuple[int, list[str], list[str]]:
     return found, findings, unchecked
 
 
+def _rubyish(name: str, path: Path) -> bool:
+    """A Ruby file this scan does not parse as `.rb`: a `.rake` or `.ru`, a Rakefile, or any file whose first line is a ruby shebang."""
+    if name.endswith((".rake", ".ru")) or name == "Rakefile":
+        return True
+    try:
+        with open(path, "rb") as fh:
+            line = fh.readline(200)
+            return line.startswith(b"#!") and b"ruby" in line
+    except OSError:
+        return False
+
+
 def _outside(root: Path) -> list[str]:
-    """`.rb` files outside app/ and lib/ that name MCP tooling: this scan does not read them, so it must not call the run clean."""
+    """Ruby outside what `scan` parses that names MCP tooling: not read as tools here, so it must not make the run clean.
+    That is every `.rb` outside app/ and lib/, and the non-`.rb` Ruby anywhere (`config.ru`, `*.rake`, a Rakefile, a script with a ruby shebang such as `bin/mcp_server`)."""
     out = []
     for dirpath, dirs, names in os.walk(root):
         here = Path(dirpath).relative_to(root)
-        dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS and not (not here.parts and d in SCAN_DIRS))
+        dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS)
+        top = here.parts[0] if here.parts else ""
         for n in sorted(names):
-            if not n.endswith(".rb"):
-                continue
             p = Path(dirpath) / n
+            if n.endswith(".rb"):
+                if top in SCAN_DIRS:
+                    continue
+            elif not _rubyish(n, p):
+                continue
             try:
                 text = p.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError) as e:
-                raise Unusable(f"{p}: {e}") from e
+                if n.endswith(".rb"):
+                    raise Unusable(f"{p}: {e}") from e
+                continue
             code = "\n".join("" if ln.lstrip().startswith("#") else ln for ln in text.split("\n"))
             if MCP_TEXT.search(code):
-                out.append(f"{here / n}: names MCP tooling outside app/ and lib/, which this scan does not read")
+                out.append(f"{here / n}: names MCP tooling this scan does not read as tools (outside app/ and lib/, or not a .rb file)")
     return out
 
 
@@ -341,6 +362,19 @@ CASES: list[tuple[str, dict[str, str], int, int, str, int]] = [
     ("a commented-out server.tools = is not a mutation", {"app/mcp/a.rb": GOOD + "# server.tools = []\n"}, 1, 0, "", 0),
     ("a commented-out MCP::Server.new(tools: X) is not an unreadable list", {"app/mcp/a.rb": "# S = MCP::Server.new(tools: TOOLS)\n"}, 0, 0, "", 0),
     ("a commented-out Tool.define is not a tool", {"app/mcp/a.rb": "# T = MCP::Tool.define(name: 'a')\n"}, 0, 0, "", 0),
+    ("server.tools[name] ||= could not be checked", {"app/mcp/a.rb": GOOD + "server.tools[:a] ||= SalesReport\n"}, 1, 0, "", 1),
+    ("server.tools[name] &&= could not be checked", {"app/mcp/a.rb": GOOD + "server.tools[:a] &&= SalesReport\n"}, 1, 0, "", 1),
+    ("an entry script in bin/ could not be checked",
+     {"app/mcp/a.rb": GOOD, "bin/mcp_server": "#!/usr/bin/env ruby\nMCP::Server.new(tools: [SalesReport]).run\n"}, 1, 0, "", 1),
+    ("config.ru naming MCP could not be checked", {"app/mcp/a.rb": GOOD, "config.ru": "run MCP::Server.new(tools: [SalesReport])\n"}, 1, 0, "", 1),
+    ("a .rake task naming MCP could not be checked",
+     {"app/mcp/a.rb": GOOD, "lib/tasks/mcp.rake": "task(:serve) { MCP::Server.new(tools: [SalesReport]) }\n"}, 1, 0, "", 1),
+    ("an extensionless ruby-shebang script elsewhere could not be checked",
+     {"app/mcp/a.rb": GOOD, "script/serve": "#!/usr/bin/env ruby\nMCP::Server.new(tools: [SalesReport])\n"}, 1, 0, "", 1),
+    ("a Ruby script that does not name MCP is not a place to check",
+     {"app/mcp/a.rb": GOOD, "bin/setup": "#!/usr/bin/env ruby\nputs 'setup'\n", "lib/tasks/x.rake": "task(:x) { }\n"}, 1, 0, "", 0),
+    ("an extensionless file that is not Ruby is not read",
+     {"app/mcp/a.rb": GOOD, "NOTES": "MCP::Server is mentioned here\n", "script/other": "#!/bin/sh\necho MCP::Server\n"}, 1, 0, "", 0),
     ("a comparison of tools is not a mutation", {"app/mcp/a.rb": GOOD + "ok = server.tools == []\n"}, 1, 0, "", 0),
     ("reading tools, or a non-mutating merge, is not a mutation",
      {"app/mcp/a.rb": GOOD + "n = server.tools.keys\nm = server.tools.merge('a' => SalesReport)\n"}, 1, 0, "", 0),
