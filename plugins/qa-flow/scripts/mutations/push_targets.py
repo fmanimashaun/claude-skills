@@ -116,8 +116,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a double-quoted substitution's body is not collected",
-            "            if bodies is not None:\n                bodies.append(body)",
-            "            if False:\n                bodies.append(body)",
+            "    if bodies is not None:\n        bodies.append(body)\n    return _placeholder(body)",
+            "    if False:\n        bodies.append(body)\n    return _placeholder(body)",
             "'echo \"$(git push origin main)\"': expected TARGETS main",
         ),
         Mutation(
@@ -128,8 +128,8 @@ GUARD = Guard(
         ),
         Mutation(
             "an unquoted $( ), <( ) or >( ) body is not collected",
-            "            if bodies is not None:\n                bodies.append(cmd[i + 2:end - 1])",
-            "            if False:\n                bodies.append(cmd[i + 2:end - 1])",
+            "                if bodies is not None:\n                    bodies.append(cmd[i + 2:end - 1])",
+            "                if False:\n                    bodies.append(cmd[i + 2:end - 1])",
             "'diff <(git push origin main) /dev/null': expected TARGETS main",
         ),
         Mutation(
@@ -222,7 +222,7 @@ GUARD = Guard(
         ),
         Mutation(
             "unquoted $( is no longer one word, so shlex splits at ( and the refspecs vanish",
-            "            out.append(_placeholder(cmd[i + 2:end - 1]) if c == \"$\" else SUBST)\n            i = end\n            continue",
+            "            if c == \"$\":\n                out.append(note_substitution(cmd[i + 2:end - 1], bodies))\n            else:\n                if bodies is not None:\n                    bodies.append(cmd[i + 2:end - 1])\n                out.append(SUBST)\n            i = end\n            continue",
             "            out.append(c)\n            i += 1\n            continue",
             "'git -C $(pwd) push origin main': expected TARGETS main",
         ),
@@ -701,7 +701,7 @@ GUARD = Guard(
         ),
         Mutation(
             "#1770: a cd (or a branch change) in a command that defines a function is followed instead of refused, so the call site's directory is misjudged",
-            "    if FUNCS[0]:\n",
+            "    if FUNCS[0] and any(command_indexes(seg) for seg in every):\n",
             "    if False:\n",
             "function fixture 'f(){ cd /tmp; }; git push': expected None",
         ),
@@ -819,6 +819,37 @@ GUARD = Guard(
             ' and not (not sub and any(a in ("--help", "-h") for a in args)):',
             ':',
             "'git bisect --help; git push origin HEAD': expected []",
+        ),
+        # #1875: a command the gate cannot read is judged by what it does.
+        Mutation(
+            'an arithmetic expansion is read as a subshell again, so `$2` is a command word',
+            '    nested = arithmetic_parts(body)\n    if nested is not None:',
+            '    nested = None\n    if nested is not None:',
+            'safe shape \'sed -n "$2,$(( $2 + 14 ))p" "$f"\': must be allowed with no effect',
+        ),
+        Mutation(
+            'the substitutions nested in an arithmetic expansion are not read',
+            '        if bodies is not None:\n            bodies.extend(nested)\n        return SUBST',
+            '        return SUBST',
+            "classify (context) 'echo $(( $(git push origin main) + 1 ))'",
+        ),
+        Mutation(
+            'anything in `$(( ))` is arithmetic, so `$((git push origin main))` is not read',
+            '    if not ARITH_SHAPE.fullmatch(squeezed) or re.search(r"N\\s+N", squeezed):\n        return None',
+            '    if not ARITH_SHAPE.fullmatch(squeezed):\n        return None',
+            "classify (context) 'echo $(( git push origin main ))'",
+        ),
+        Mutation(
+            'a function defined after a cd is refused although it runs no git or gh',
+            '    if FUNCS[0] and any(command_indexes(seg) for seg in every):',
+            '    if FUNCS[0]:',
+            "safe shape 'cd /tmp && f() { echo hi; }; f': must be allowed with no effect",
+        ),
+        Mutation(
+            "a named variable is accepted as an arithmetic operand, though bash evaluates its value as an expression",
+            'r"\\$__SUBST__|\\$\\{[0-9]+\\}|\\$[0-9]+|\\$[#?]|',
+            'r"\\$__SUBST__|\\$\\{[0-9A-Za-z_]+\\}|\\$[0-9A-Za-z_]+|\\$[#?]|',
+            "classify 'echo $(( $x + 1 ))': must be unjudgeable",
         ),
     ),
 )
