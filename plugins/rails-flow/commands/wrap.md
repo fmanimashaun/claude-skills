@@ -1,5 +1,6 @@
 ---
 description: The coordinator's handoff round, end to end — send it to every implementation session, wait out heavy runs instead of interrupting them, check every reply against git, then write the board rows and the coordinator handoff. Coordinator only.
+disable-model-invocation: true
 ---
 
 # /rails-flow:wrap

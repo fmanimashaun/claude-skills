@@ -1,5 +1,6 @@
 ---
 description: Dismiss the post-merge QA-verify nudge marker (.git/pipeline-pending) without another merge or a manual rm. Nudge-only — never spends tokens or invokes anything.
+disable-model-invocation: true
 ---
 
 # /pipeline:ack
