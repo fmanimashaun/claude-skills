@@ -1,0 +1,9 @@
+# The requirements registry (#1855). One entry per requirement; every line is `key: <JSON value>`, so the file is valid YAML and needs no YAML library.
+# Each requirement must be named, by id, in the Source column of an ACTIVE case in qa/test-cases.csv, or be on qa/requirements-uncased-baseline.txt.
+#
+# - id: "REQ-001"
+#   area: "Auth"
+#   requirement: "A visitor can sign in with an email and password"
+#   status: "done"          # done | partial | missing | deviates | owner-decision
+#
+# Check it: python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_requirements.py"

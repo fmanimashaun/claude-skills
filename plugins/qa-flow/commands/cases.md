@@ -24,6 +24,19 @@ cases (next stable `TC-###` ID), **updates** changed ones in place, and **deprec
 re-run any time; the change shows up as a reviewable `git diff` of `qa/test-cases.csv`
 (and the optional `qa/test-cases.md` human view).
 
+## Requirements get a case (the owner's rule, #1853)
+
+When `qa/requirements.yml` exists, every requirement that is not an owner decision must be named, by id, in the `Source` column of an **Active**
+case, or sit on the shrinking baseline. List what is missing, then author a case for each and put the requirement id in its `Source`:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_requirements.py" --uncased   # the ids with no active case
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_requirements.py"             # the gate: exit 0 when none are missing
+```
+
+A case for a requirement states how to prove its intent by hand; it is not a copy of the requirement. Never put an id in `Source` for a case that does
+not prove it, and never delete a baseline line to make the gate pass: the line goes when a case names the requirement.
+
 ## Notes
 
 - **Free & repo-local** — the catalogue is a CSV in the repo (opens in Excel); no Testmo or

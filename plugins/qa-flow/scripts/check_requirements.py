@@ -11,7 +11,7 @@ link is the catalogue's own `Source` column, which `/qa-flow:cases` already fill
     python3 check_requirements.py --base origin/dev  # also refuse a baseline line that is not in the base branch's baseline
     python3 check_requirements.py --selftest
 
-THE FILES (paths may be set under a `requirements:` section of `qa/qa.config.yml` with keys `registry`, `cases`, `baseline`; or by flag):
+THE FILES (paths may be set under a `requirements:` section of `qa/qa.config.yml` with keys `registry`, `cases`, `baseline`; there is no path flag, only `--root`):
   qa/requirements.yml                       the registry. One entry per requirement, every line `key: <JSON value>` (valid YAML, no YAML library needed):
                                               - id: "REQ-001"
                                                 area: "Auth"

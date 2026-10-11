@@ -187,6 +187,20 @@
       "requires": [
         "python3"
       ]
+    },
+    {
+      "id": "qa-requirements",
+      "why": "A requirement no ACTIVE test case names has no way to be tested in QA, so it cannot be shown to work (#1853).",
+      "command": [
+        "python3",
+        "{plugin}/scripts/check_requirements.py"
+      ],
+      "applies_when": [
+        "qa/requirements.yml"
+      ],
+      "requires": [
+        "python3"
+      ]
     }
   ]
 }
