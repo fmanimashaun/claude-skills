@@ -25,6 +25,12 @@ Then add the flows you want:
 /plugin install pipeline@claude-skills        # release lifecycle
 ```
 
+Or take rails-flow, qa-flow and pipeline in one step. `flow-suite` is a bundle whose manifest only declares them as dependencies, and installing a plugin installs its dependencies ([docs](https://code.claude.com/docs/en/plugins/dependencies#bundle-plugins-for-a-team)):
+
+```bash
+/plugin install flow-suite@claude-skills      # rails-flow + qa-flow + pipeline
+```
+
 Verify:
 
 ```bash

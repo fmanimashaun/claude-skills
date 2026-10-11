@@ -15,7 +15,8 @@ GUARD = Guard(
     needs=(".claude-plugin", ".github", "CHANGELOG.md", "scripts/release_local.sh",
            # #1520: component_versions() reads each plugin's own version.
            "plugins/rails-flow/.claude-plugin/plugin.json", "plugins/qa-flow/.claude-plugin/plugin.json",
-           "plugins/pipeline/.claude-plugin/plugin.json", "plugins/design-flow/.claude-plugin/plugin.json"),
+           "plugins/pipeline/.claude-plugin/plugin.json", "plugins/design-flow/.claude-plugin/plugin.json",
+           "plugins/flow-suite/.claude-plugin/plugin.json"),
     mutations=(
         Mutation(
             "the tag being armed loses its exemption, so every arm reports its own release as a ghost",

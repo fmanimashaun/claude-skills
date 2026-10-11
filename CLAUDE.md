@@ -14,7 +14,7 @@ holds the harness-neutral rules (measure before you assert; write the mechanism 
 - **Distributed (what users install):** the plugins in `.claude-plugin/marketplace.json` —
   `rails-stack` (bundling the `rails-8`, `hotwire`, `design-system`, `code-review`, `quality-pass`,
   `derived-artifacts` and `parallel-session-lane` skills), `rails-flow`, `qa-flow`, `pipeline`,
-  `design-flow` — plus `dist/*.skill` for claude.ai upload. Keep this list in step with the manifest;
+  `design-flow`, `flow-suite` (a manifest-only bundle of the first three flows) — plus `dist/*.skill` for claude.ai upload. Keep this list in step with the manifest;
   `lint_self_consistency.py`'s `undocumented-plugin` rule catches a plugin named **nowhere**, and
   cannot tell that the mention is in this list rather than in prose.
 - **Not distributed (maintainer tooling):** everything under `.claude/` — commands, agents, one skill

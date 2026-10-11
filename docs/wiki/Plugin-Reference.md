@@ -11,5 +11,6 @@ Marketplace **1.155.0**.
 | `qa-flow` | 1.36.1 | 8 | Independent, stack-agnostic QA engineering flow. The QA engineer picks the stack in qa/q |
 | `pipeline` | 1.4.3 | 9 | Lifecycle orchestrator over rails-flow and qa-flow |
 | `design-flow` | 1.45.2 | 12 | Agentic UI/design flow for Rails 8 + Hotwire + Tailwind v4 |
+| `flow-suite` | 1.0.0 | — | One install for rails-flow, qa-flow and pipeline: a bundle whose manifest declares the t |
 
 `rails-stack` ships **no commands** — it is doctrine only, which is why installing it changes what Claude writes without adding anything to type.
