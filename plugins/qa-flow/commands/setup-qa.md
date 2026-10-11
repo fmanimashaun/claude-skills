@@ -186,6 +186,17 @@ Per `web_e2e` (scaffold ONE):
   `typecheck` script (`tsc --noEmit -p e2e/tsconfig.json`), and a CI step running it —
   `npm --prefix qa run typecheck`. Playwright does not type-check, so without that step `strict`
   checks nothing, and the `ts-strict` gate refuses a script CI never runs (#1447; `agents/e2e-tester.md`).
+  **Release-image robot helpers (#1835)**, when the project will run real-flow personas on its release image: copy
+  `${CLAUDE_PLUGIN_ROOT}/scaffold/qa/e2e/support/{local-target,totp,qa-marker,mail-reader}.ts` into `qa/e2e/support/`
+  (not the `*.test.ts` beside them — those test the templates, in this plugin's CI). They import each other with an
+  explicit `.ts` extension, so add `"allowImportingTsExtensions": true` and `"noEmit": true` to `qa/e2e/tsconfig.json`,
+  and `@types/node` to `qa/package.json` (they use `node:crypto`, `Buffer` and `process.env`). **Unproven under
+  Playwright until #1837 runs it:** Node's own runner resolves those `.ts` imports (this plugin's CI proves that), but no
+  Playwright run has loaded these helpers yet, and Playwright's TypeScript docs do not cover explicit extensions — if the
+  suite fails to import them, report it rather than rewriting the imports. What each refuses: `assertLocalTarget` — any
+  URL that does not dial 127.0.0.1, localhost or ::1, and any URL with userinfo (this, with the local catcher, is what
+  keeps the robot off real systems); the mail reader — any address not of the `qa+<handle>@<domain>` shape (the shape,
+  not the domain), before a request, and any catcher not on this machine.
 - **cypress-cucumber** — `qa/package.json` (cypress, `@badeball/cypress-cucumber-preprocessor`,
   `@testing-library/cypress`), `qa/cypress.config.js`, `qa/e2e/features/*.feature` (+ `step_definitions/`),
   `cy.session()` auth, `@smoke`/`@regression` tags.
