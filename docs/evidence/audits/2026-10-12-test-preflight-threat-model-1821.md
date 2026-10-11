@@ -36,6 +36,7 @@ Each row above is a **doctrine-verifier** verdict against the official Claude Co
 | 3 | `PATH`, `PYTHONPATH`, `LD_PRELOAD`, `DYLD_*` are not on the ignored-variables list | **INCONCLUSIVE** — absent from the list, but the list says "They include", so it is not stated to be exhaustive | https://code.claude.com/docs/en/settings-reference (section "Variables Claude Code ignores in `env`") |
 | 4 | PreToolUse hooks run before the permission prompt | CONFIRMED | https://code.claude.com/docs/en/permissions |
 | 5 | `CLAUDE_ENV_FILE` lets a project hook change later HOOKS' environment | REFUTED (it feeds later Bash/PowerShell tool commands only) | https://code.claude.com/docs/en/hooks |
+| 6 | `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1` strips variables from hook processes | CONFIRMED but narrow: it strips **credentials only** (by name or value shape) from every subprocess, keeps GitHub tokens, proxies and `GIT_CONFIG_*`, and leaves `PATH`/loader variables alone — so it does not address this record's residuals | https://code.claude.com/docs/en/hooks ("…when `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` is set to `1`, the variables it strips") ; https://code.claude.com/docs/en/env-vars ("strip credentials from the environments of the subprocesses Claude Code starts, such as Bash commands, hooks, and stdio MCP servers") |
 
 The decision does not rest on row 3: rows 1, 2 and 4 alone mean a repository chooses the hook's environment before the user
 approves the command, and the issue's acceptance rule turns on that question, not on which variables are listed. Row 3 only
@@ -89,8 +90,10 @@ whom it holds: inside a trusted workspace, and in `-p`/SDK runs, a repository's 
 ## If this is ever retried
 
 (a) should not be retried as a plugin feature while a project's own settings file can declare the same hook: that is the home.
-(b) and any residual above are retried from the harness, not the script: examine `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` (hooks page:
-when set to `1`, Claude Code strips variables from hook processes) and whether a plugin hook can be given an environment the
-project cannot set. Re-read the two pages above first. The abandoned design survives as commits `d740cd81` and `c6d90fc4`
+(b) and any residual above are retried from the harness, not the script: whether a plugin hook can be given an environment the
+project cannot set. **`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` is not that mechanism:** when set to `1` it strips *credential-looking*
+variables (matched by name or value shape) from every subprocess Claude Code starts — Bash, hooks, stdio MCP servers — and leaves
+GitHub tokens, proxy settings and `GIT_CONFIG_*` in place (env-vars page). It does not touch `PATH`, `PYTHONPATH` or loader
+variables, so it narrows credential exposure and leaves every residual above as it is. Re-read the two pages above first. The abandoned design survives as commits `d740cd81` and `c6d90fc4`
 (reachable from `chore/arm-v1.156.0` and `chore/integrate-1893`; the original branch is gone), with a negative fixture per hole
 and a shell-adversary pass if any of it is reused.
