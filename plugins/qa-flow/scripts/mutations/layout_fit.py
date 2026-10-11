@@ -147,5 +147,11 @@ GUARD = Guard(
             "            if False:",
             "grouping keeps the WORST ratio",
         ),
+        Mutation(  # #1872
+            "an unusable document exits 3, which the runner grades n/a",
+            "before this script runs at all.\n        return 2",
+            "before this script runs at all.\n        return 3",
+            "an unusable document exits 2",
+        ),
     ),
 )

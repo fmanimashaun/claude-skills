@@ -439,7 +439,9 @@ def main(argv: list[str] | None = None) -> int:
         result = judge(doc, min_hidden=threshold, exclude=exclude)
     except Unusable as err:
         print(f"UNUSABLE: {err}", file=sys.stderr)
-        return 3
+        # #1872: 2, not 3. The runner grades 3 as n/a, and a document it cannot read is an input it
+        # could not check -- "no document" is graded n/a by the runner before this script runs at all.
+        return 2
 
     viewport = str(doc.get("viewport") or "?")
     if args.json:
@@ -728,7 +730,7 @@ def selftest() -> int:
         check("a finding exits 1", code([str(dirty)]) == 1)
         unusable = Path(tmp) / "bad.json"
         unusable.write_text("{[", encoding="utf-8")
-        check("an unusable document exits 3", code([str(unusable)]) == 3)
+        check("an unusable document exits 2 (could not check), never the runner's n/a 3 (#1872)", code([str(unusable)]) == 2)
         # UNVERIFIED MUST FAIL TOO, or a probe that never ran reads as a pass.
         nulled = Path(tmp) / "null.json"
         nulled.write_text(json.dumps(null_probe), encoding="utf-8")

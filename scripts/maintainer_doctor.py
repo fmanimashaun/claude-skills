@@ -366,6 +366,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("git shim", ("python3", "plugins/rails-flow/scripts/git_shim_selftest.py")),
     # #1828. The auto-memory index limit check: its boundaries (200 lines, 25KB read as KiB), the ratchet baseline and the one-line SessionStart output.
     ("memory index limit", ("python3", "plugins/rails-flow/scripts/check_memory_index.py", "--selftest")),
+    # #1829. The status line a project vendors: every payload field optional, a window that has reset left out (#1854), amber from 80%, never a traceback.
+    ("status line", ("python3", "plugins/rails-flow/scripts/statusline.py", "--selftest")),
     # #1827. Settings that do nothing where they are set: `autoMode` and a `defaultMode` of auto or bypassPermissions in a PROJECT's settings files (read, never
     # written), and in the setup-flow templates a project would copy.
     ("project settings dead config", ("python3", "plugins/rails-flow/scripts/check_project_settings.py", "--root", ".", "--markdown", "plugins/rails-flow/commands")),
@@ -470,9 +472,20 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("qa-flow evidence manifest", ("python3", "plugins/qa-flow/scripts/evidence_manifest.py", "--selftest")),
     # #1835. The release-image robot's scaffolded TypeScript helpers ship into projects; their node:test files run here.
     ("qa-flow robot helpers", ("python3", "plugins/qa-flow/scripts/scaffold_ts_tests.py", "--selftest")),
+    # #1837. The robot descriptor's rules, and the image runner driven end to end with stub curl/npx (fails closed).
+    ("qa-flow robot descriptor", ("python3", "plugins/qa-flow/scripts/robot_descriptor.py", "--selftest")),
     # #1447. A TypeScript e2e suite is strict, type-checked in CI, and has no explicit `any`.
     ("qa-flow ts strict", ("python3", "plugins/qa-flow/scripts/check_ts_strict.py", "--selftest")),
     ("qa-flow route crawl", ("python3", "plugins/qa-flow/scripts/crawl_report.py", "--selftest")),
+    # #1855. Every requirement is named, by id, in an ACTIVE catalogue case (slice 1 of #1853); the shipped gate's own selftest.
+    ("qa-flow requirements gate", ("python3", "plugins/qa-flow/scripts/check_requirements.py", "--selftest")),
+    # #1856. Every feature requirement has a spec that a runner actually selects (slice 2 of #1853); the shipped gate's own selftest.
+    ("qa-flow e2e paths gate", ("python3", "plugins/qa-flow/scripts/check_e2e_paths.py", "--selftest")),
+    # #1857. No registry row points at a closed issue without being updated (slice 3 of #1853); the shipped gate's own selftest, and the parity of the
+    # two readers of the registry (qa-flow's and rails-flow's: plugins install alone, so each has its own).
+    ("rails-flow registry closed gate", ("python3", "plugins/rails-flow/scripts/check_registry_closed.py", "--selftest")),
+    ("registry reader parity", ("python3", "scripts/check_registry_reader_parity.py")),
+    ("registry reader parity selftest", ("python3", "scripts/check_registry_reader_parity.py", "--selftest")),
     ("qa-flow theme parity", ("python3", "plugins/qa-flow/scripts/theme_parity.py", "--selftest")),
     # #953. What a page hides INSIDE the viewport, which every boundary assertion passes on.
     ("qa-flow layout fit", ("python3", "plugins/qa-flow/scripts/layout_fit.py", "--selftest")),

@@ -142,6 +142,10 @@ hypothesis that turned out to be the cause, so the next reader learns it.
 6. CLOSEOUT:  /rails-flow:pr-comments <n> — every review thread fixed on-branch or
               folded into a tracked repo issue; re-run the gate if code changed.
               A PR must close clean before the next phase starts.
+6b. REGISTRY:  if qa/requirements.yml exists, save the PR body to a file and run check_registry_closed.py --closes-from-body <file> (#1857): it reads every
+              closing keyword GitHub honours (Closes, fixes, Resolved, any case). A registry row pointing at an issue this PR closes is updated in this same
+              PR (status done and closed: true with its proving spec; for an issue closed as not planned owner-decision or deviates, never done); exit 1
+              means update the rows and run it again, exit 2 means it could not check (say what it could not read, never call the registry clean)
 7. MERGE:     on CLEAN, run check_mockup_gate.py --base <base> (#1376) and
               classify_door.py --base <base> (#1338); exit 1 or 2 from either stops
               for the user with its reasons. Then risky_diff.py --base <base> --record
