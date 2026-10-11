@@ -45,7 +45,7 @@ Playwright test, and some runner actually selects that test (`python3 "${CLAUDE_
 `e2e_paths: runners:` in `qa/qa.config.yml` (a shell script or a `package.json` that runs `playwright test`). The check does not re-implement Playwright's filtering: it runs each
 runner's command with `--list --reporter=json` (the project's own `npx --no-install playwright`, from the config's directory or `e2e_paths: cwd:`) and reads which tests Playwright
 says it would run. A command it cannot execute safely (an argument built from a shell variable, one inside an `if` or a function, one after an `exit`, a heredoc or an unexplained
-`cd`) or a Playwright that cannot be run makes the verdict "could not check" (exit 3), never a pass. A feature with no selected test is on
+`cd`) or a Playwright that cannot be run makes the verdict "could not check" (exit 2, which the project gate runner grades ERROR; exit 3 would be graded not applicable and never fail), never a pass. A feature with no selected test is on
 `qa/e2e-unselected-baseline.txt` (shrink-only, like the uncased baseline) or a finding.
 
 A case for a requirement states how to prove its intent by hand; it is not a copy of the requirement. Never put an id in `Source` for a case that does

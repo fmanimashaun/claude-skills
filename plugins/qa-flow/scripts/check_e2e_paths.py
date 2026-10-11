@@ -22,7 +22,7 @@ THIS IS A PROJECT GATE, run in the project's own CI or on its developer's machin
 (which loads the project's playwright config and spec files, as its own test run does) is in scope. It never installs anything. The arguments are passed as an
 argument list (no shell), and only `playwright test` is ever run.
 
-WHAT IT READS (Playwright only; any other `web_e2e` is exit 3, never a pass):
+WHAT IT READS (Playwright only; any other `web_e2e` is exit 2, never a pass):
   qa/requirements.yml        the registry of slice 1; an entry with `feature: true` (a JSON boolean) needs an end-to-end path (an owner-decision is exempt)
   the runners                the files listed under `e2e_paths: runners:` in qa/qa.config.yml (a shell script, a package.json)
   the listings               `playwright test --list --reporter=json`, once with no filter (every test Playwright finds) and once per runner command
@@ -31,10 +31,10 @@ marks skipped (`test.skip`, `test.fixme`) names nothing. Paths and the runner li
 `cwd`, `runners`); defaults qa/playwright.config.ts and qa/e2e-unselected-baseline.txt. The listings run from the directory of the playwright config (`qa/`), or
 from `cwd` when it is set; a runner file that `cd`s somewhere else needs `cwd` to say so.
 
-WHAT IT REFUSES TO EXECUTE (exit 3, with the reason, never a pass): a command whose arguments are built from a shell variable or a substitution; one that sits in
+WHAT IT REFUSES TO EXECUTE (exit 2, with the reason, never a pass): a command whose arguments are built from a shell variable or a substitution; one that sits in
 shell control flow (`if`, `for`, `while`, `case`, a function body); one with anything else on its line before it (`[ ... ] && cmd`, `a || cmd`, `x | cmd`); one after
 a heredoc, an `exit` or a `return`; one after a `cd` unless `cwd` is set; a package.json script that pipes or uses `||`. A runner command that is only a listing
-(`--list`) runs nothing and is not a runner. If Playwright cannot be run (not installed, a config error, a timeout, no JSON on stdout) the verdict is "could not check".
+(`--list`) runs nothing and is not a runner. If Playwright cannot be run (not installed, a config error, a timeout, no JSON on stdout) the verdict is "could not check" (exit 2).
 A `--project` filter is passed through, so Playwright applies it.
 
 THE GATE FAILS WHEN
@@ -42,7 +42,9 @@ THE GATE FAILS WHEN
      baseline (`qa/e2e-unselected-baseline.txt`, a ratchet that may only shrink, with a `# size: N` header and `--base` as in slice 1);
   2. a baseline line names a requirement that is now selected, is not a feature, is an owner-decision, or is not in the registry, or the size header is wrong.
 
-Exit codes: 0 clean, 1 findings, 2 could not read the registry or a path, 3 could not check (said, and why).
+EXIT CODES. 0 clean; 1 findings; 2 COULD NOT CHECK (a registry or path that cannot be read, no runner declared, a non-Playwright runner, a Playwright that cannot be run,
+a command refused as unsafe to execute): the project gate runner (project_gates.py) grades 2 as ERROR and 3 as "not applicable", which never fails a run, so a check that
+could not look must not say 3; 3 only when the DEFAULT base ref is missing (a project on `main`) and nothing else is wrong, the #1029 precedent where the project chooses.
 """
 from __future__ import annotations
 
@@ -290,11 +292,11 @@ def check(root: Path, base: list[str] | None = None, lister: Lister | None = Non
     if not features and not listed:
         return (1 if findings else 0), findings, notes
     if features and not conf["runners"]:
-        return 3, findings, ["no runner files are declared: list them under `e2e_paths: runners:` in qa/qa.config.yml (a shell script or a package.json that runs `playwright test`)"]
+        return 2, findings, ["no runner files are declared: list them under `e2e_paths: runners:` in qa/qa.config.yml (a shell script or a package.json that runs `playwright test`)"]
     config_yml = root / "qa" / "qa.config.yml"
     declared = re.search(r"^web_e2e:\s*([A-Za-z][A-Za-z0-9-]*)", config_yml.read_text(encoding="utf-8-sig"), re.M) if config_yml.is_file() else None
     if features and declared and declared.group(1) not in ("playwright", "none"):
-        return 3, findings, [f"web_e2e is {declared.group(1)}: only Playwright is read (could not check, never a pass)"]
+        return 2, findings, [f"web_e2e is {declared.group(1)}: only Playwright is read (could not check, never a pass)"]
     commands: list[dict] = []
     for runner in (conf["runners"] if features else []):
         path = root / runner
@@ -307,7 +309,7 @@ def check(root: Path, base: list[str] | None = None, lister: Lister | None = Non
     cwd = root / conf["cwd"]
     everything, why = lister.list(cwd, []) if features else ([], None)      # no feature, nothing to list
     if everything is None:
-        return 3, findings, notes + [f"could not list the tests Playwright finds: {why}"]
+        return 2, findings, notes + [f"could not list the tests Playwright finds: {why}"]
     selections: list[list[dict]] = []
     uncertain: list[str] = []
     for command in commands:
@@ -352,7 +354,7 @@ def check(root: Path, base: list[str] | None = None, lister: Lister | None = Non
     if findings:
         return 1, findings, notes + more
     if undecided:
-        return 3, findings, notes + more
+        return 2, findings, notes + more
     return 0, findings, notes
 
 
@@ -456,24 +458,24 @@ def selftest(match: str | None = None, real: str | None = None) -> int:
         ("a command piped into is not executed", '#!/bin/sh\necho x | npx playwright test --grep @REQ-001\n', "something else runs on the same line"),
         ("a command after a cd is not executed unless cwd is set", '#!/bin/sh\ncd somewhere\nnpx playwright test --grep @REQ-001\n', "a `cd` comes before it"),
     ):
-        lister = row(label, {"bin/e2e": script}, {(): [NAMED]}, 3, reason)
+        lister = row(label, {"bin/e2e": script}, {(): [NAMED]}, 2, reason)
         if lister is not None and any(call[1] for call in lister.calls):
             failures.append(f"{label}: Playwright was run for a command that must not be executed: {lister.calls}")
     row("a command after a cd is executed when cwd is set", {"bin/e2e": "#!/bin/sh\ncd somewhere\nnpx playwright test --grep @REQ-001\n", "qa/qa.config.yml": "e2e_paths:\n  cwd: qa/e2e\n  runners:\n    - bin/e2e\n"},
         {(): [NAMED], ("--grep", "@REQ-001"): [NAMED]}, 0, None)
     row("a package.json script with || before it is not executed", {"qa/package.json": json.dumps({"scripts": {"e2e": "a || playwright test --grep @REQ-001"}}), "qa/qa.config.yml": "e2e_paths:\n  runners:\n    - qa/package.json\n"},
-        {(): [NAMED]}, 3, "a `||` or a pipe comes before it")
+        {(): [NAMED]}, 2, "a `||` or a pipe comes before it")
     row("a refused command does not hide a runner that selects the feature", {"bin/e2e": '#!/bin/sh\nnpx playwright test --grep "$X"\nnpx playwright test --grep @REQ-001\n'},
         {(): [NAMED], ("--grep", "@REQ-001"): [NAMED]}, 0, None)
     row("a finding is still reported when another feature cannot be decided", {"qa/requirements.yml": project(entry("REQ-001"), entry("REQ-002")), "bin/e2e": '#!/bin/sh\nnpx playwright test --grep "$X"\n'},
         {(): [NAMED]}, 1, "REQ-002: a feature, but no active test names it")
-    row("a listing that fails for a runner is exit 3, never a pass", {}, {(): [NAMED], ARGS: "boom"}, 3, "could not list")
-    row("the unfiltered listing failing is exit 3, never a pass", {}, {(): "no JSON"}, 3, "could not list the tests Playwright finds")
+    row("a listing that fails for a runner is exit 2, never a pass", {}, {(): [NAMED], ARGS: "boom"}, 2, "could not list")
+    row("the unfiltered listing failing is exit 2, never a pass", {}, {(): "no JSON"}, 2, "could not list the tests Playwright finds")
     lister = row("the cwd of a listing is the config's directory", {}, selected, 0, None)
     if lister is not None and {call[0] for call in lister.calls} != {"qa"}:
         failures.append(f"the cwd of a listing is the config's directory: {lister.calls}")
-    row("no runner files declared is exit 3, not a pass", {"qa/qa.config.yml": ""}, {}, 3, "no runner files are declared")
-    row("a web_e2e other than playwright is exit 3, not a pass", {"qa/qa.config.yml": "web_e2e: cypress-cucumber\ne2e_paths:\n  runners:\n    - bin/e2e\n"}, {}, 3, "only Playwright is read")
+    row("no runner files declared is exit 2, not a pass", {"qa/qa.config.yml": ""}, {}, 2, "no runner files are declared")
+    row("a web_e2e other than playwright is exit 2, not a pass", {"qa/qa.config.yml": "web_e2e: cypress-cucumber\ne2e_paths:\n  runners:\n    - bin/e2e\n"}, {}, 2, "only Playwright is read")
     row("a runner file that is missing is exit 2", {"qa/qa.config.yml": "e2e_paths:\n  runners:\n    - bin/gone\n"}, {}, 2, "listed under e2e_paths: runners but missing")
     row("a runner path outside the project is exit 2", {"qa/qa.config.yml": "e2e_paths:\n  runners:\n    - ../outside\n"}, {}, 2, "inside the project")
     row("a registry with no features lists nothing and needs no runners", {"qa/requirements.yml": project(entry("REQ-001", extra="")), "qa/qa.config.yml": ""}, {}, 0, None)
@@ -556,11 +558,11 @@ def real_battery(modules: Path) -> list[str]:
         ("the only config is playwright.config.js with a grepInvert", 1, {"qa/playwright.config.ts": None, "qa/playwright.config.js": "module.exports = { testDir: './e2e', grepInvert: /@REQ-001/ };\n"}),
         ("config testDir points elsewhere: the spec is never loaded", 1, {"qa/playwright.config.ts": "export default { testDir: './elsewhere' };\n"}),
         ("--list only runs nothing", 1, {"bin/e2e": sh('npx playwright test --list --grep "@REQ-001"')}),
-        ("a command after an unconditional exit is refused, not executed: exit 3", 3, {"bin/e2e": sh('npx playwright test --grep "@qa-image"\nexit 0\nnpx playwright test --grep "@REQ-001"')}),
-        ("a command in a branch that is never taken is refused, not executed: exit 3", 3, {"bin/e2e": sh('npx playwright test --grep "@qa-image"\nif false; then\n  npx playwright test --grep "@REQ-001"\nfi')}),
-        ("a command inside a heredoc is refused, not executed: exit 3", 3, {"bin/e2e": sh('npx playwright test --grep "@qa-image"\ncat <<EOF\nnpx playwright test --grep "@REQ-001"\nEOF')}),
+        ("a command after an unconditional exit is refused, not executed: exit 2", 2, {"bin/e2e": sh('npx playwright test --grep "@qa-image"\nexit 0\nnpx playwright test --grep "@REQ-001"')}),
+        ("a command in a branch that is never taken is refused, not executed: exit 2", 2, {"bin/e2e": sh('npx playwright test --grep "@qa-image"\nif false; then\n  npx playwright test --grep "@REQ-001"\nfi')}),
+        ("a command inside a heredoc is refused, not executed: exit 2", 2, {"bin/e2e": sh('npx playwright test --grep "@qa-image"\ncat <<EOF\nnpx playwright test --grep "@REQ-001"\nEOF')}),
         ("control: a grep that leaves it out", 1, {"bin/e2e": sh('npx playwright test --grep "@qa-image"')}),
-        ("control: a grep from a shell variable is exit 3", 3, {"bin/e2e": sh('npx playwright test --grep "$TAGS"')}),
+        ("control: a grep from a shell variable is exit 2", 2, {"bin/e2e": sh('npx playwright test --grep "$TAGS"')}),
         ("control: a skipped test names nothing", 1, {"qa/e2e/auth.spec.ts": 'import { test } from "@playwright/test";\ntest.skip("@REQ-001 signs in", async () => {});\n'}),
         ("control: a lookbehind grep is Playwright's to read", 1, {"bin/e2e": sh('npx playwright test --grep "(?<=@)qa-image"')}),
     ]
@@ -619,7 +621,7 @@ def main(argv: list[str]) -> int:
     if code == 0 and unchecked:
         print("check_e2e_paths: nothing found, but growth was not checked: exit 3 (a skip, not a pass)")
         return 3
-    print(f"check_e2e_paths: {'ok' if code == 0 else 'could not check (exit 3, not a pass)' if code == 3 else 'could not read an input' if code == 2 else str(len(found)) + ' finding(s)'}")
+    print(f"check_e2e_paths: {'ok' if code == 0 else 'could not check (exit 2, not a pass)' if code == 2 else str(len(found)) + ' finding(s)'}")
     return code
 
 

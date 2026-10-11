@@ -111,15 +111,15 @@ GUARD = Guard(
         ),
         Mutation(
             'a failing runner listing is a pass instead of a skip',
-            '    if undecided:\n        return 3, findings, notes + more',
+            '    if undecided:\n        return 2, findings, notes + more',
             '    if undecided:\n        return 0, findings, notes + more',
-            'a listing that fails for a runner is exit 3',
+            'a listing that fails for a runner is exit 2',
         ),
         Mutation(
             'a failing unfiltered listing is a pass instead of a skip',
-            '    if everything is None:\n        return 3, findings,',
+            '    if everything is None:\n        return 2, findings,',
             '    if everything is None:\n        return 0, findings,',
-            'the unfiltered listing failing is exit 3',
+            'the unfiltered listing failing is exit 2',
         ),
         Mutation(
             'a refused command makes a feature a definite finding instead of undecided',
@@ -159,15 +159,15 @@ GUARD = Guard(
         ),
         Mutation(
             'no declared runner is a pass instead of a skip',
-            '    if features and not conf["runners"]:\n        return 3, findings,',
+            '    if features and not conf["runners"]:\n        return 2, findings,',
             '    if features and not conf["runners"]:\n        return 0, findings,',
-            'no runner files declared is exit 3',
+            'no runner files declared is exit 2',
         ),
         Mutation(
             'a web_e2e other than playwright is read as playwright',
             '    if features and declared and declared.group(1) not in ("playwright", "none"):',
             '    if False:',
-            'a web_e2e other than playwright is exit 3',
+            'a web_e2e other than playwright is exit 2',
         ),
         Mutation(
             'a baseline line for a now-selected feature is not reported',
@@ -216,6 +216,24 @@ GUARD = Guard(
             '    cwd = root / conf["cwd"]',
             '    cwd = root',
             "the cwd of a listing is the config's directory",
+        ),
+        Mutation(
+            'a failing runner listing is graded not applicable (exit 3) instead of an error',
+            '    if undecided:\n        return 2, findings, notes + more',
+            '    if undecided:\n        return 3, findings, notes + more',
+            'a listing that fails for a runner is exit 2',
+        ),
+        Mutation(
+            'a failing unfiltered listing is graded not applicable instead of an error',
+            '    if everything is None:\n        return 2, findings,',
+            '    if everything is None:\n        return 3, findings,',
+            'the unfiltered listing failing is exit 2',
+        ),
+        Mutation(
+            'no declared runner is graded not applicable instead of an error',
+            '    if features and not conf["runners"]:\n        return 2, findings,',
+            '    if features and not conf["runners"]:\n        return 3, findings,',
+            'no runner files declared is exit 2',
         ),
     ),
 )
