@@ -10,7 +10,7 @@
 # one (a project's settings can still set `disableAllHooks`); the trust decision stays the boundary, and docs/doctrine/harness-doctrine.md says so.
 #
 # WHAT IT DOES, once, at source time:
-#   rf_scrub_env      unsets PYTHON*, LD_*, DYLD_*, NODE_OPTIONS, BASH_ENV, ENV, SHELLOPTS, BASHOPTS, CDPATH, GLOBIGNORE and every GIT_*
+#   rf_scrub_env      unsets PYTHON*, LD_*, DYLD_*, NODE_OPTIONS, RUBYOPT, PERL5OPT, BASH_ENV, ENV, SHELLOPTS, BASHOPTS, CDPATH, GLOBIGNORE and every GIT_*
 #                     outside RF_GIT_ALLOW (GIT_CONFIG_*, GIT_EXEC_PATH, GIT_ASKPASS, GIT_SSH* are dropped).
 #   rf_trusted_path   rebuilds PATH from ABSOLUTE entries that are not at or inside the repository (the OUTERMOST of the Gemfile and .git
 #                     ancestors of $PWD), each resolved through its symlinks, so the bare-name calls below it find the system's tools.
@@ -59,9 +59,39 @@ rf_scrub_env() {
   local name
   for name in $(compgen -v); do
     case "$name" in
-      PYTHON*|LD_*|DYLD_*|NODE_OPTIONS|BASH_ENV|ENV|SHELLOPTS|BASHOPTS|CDPATH|GLOBIGNORE) unset "$name" 2>/dev/null ;;
+      PYTHON*|LD_*|DYLD_*|NODE_OPTIONS|BASH_ENV|ENV|SHELLOPTS|BASHOPTS|CDPATH|GLOBIGNORE|RUBYOPT|PERL5OPT) unset "$name" 2>/dev/null ;;
       GIT_*) case "$RF_GIT_ALLOW" in *" $name "*) ;; *) unset "$name" 2>/dev/null ;; esac ;;
     esac
+  done
+  return 0
+}
+
+# Is any entry of the colon-separated list $1 at or inside the repository? With $2 = 1 an entry that IS the repository root does not count (see rf_scrub_paths).
+rf_list_inside() {
+  local old_ifs="$IFS" had_f=1 entry real hit=1
+  case $- in *f*) ;; *) had_f=0 ;; esac
+  IFS=:
+  set -f
+  for entry in $1; do
+    real="$(rf_physical "$entry")" || continue
+    if rf_inside "$real" && { [ "${2:-0}" != 1 ] || [ "$real" != "$RF_REPO_ROOT" ]; }; then hit=0; break; fi
+  done
+  IFS="$old_ifs"
+  [ "$had_f" = 1 ] || set +f
+  return "$hit"
+}
+
+# A variable that names where a tool reads its CONFIGURATION or LIBRARIES from is the repository's to set only if the repository is not where it points: python's user site
+# (usercustomize.py) and git's ~/.gitconfig (core.fsmonitor) both run code, and both are found through HOME. A value at or inside the repository is unset, so the tool falls
+# back to its own default. HOME alone keeps a value that IS the repository root: a stray `~/.git` makes the home directory the repository, and unsetting it would break every tool.
+rf_scrub_paths() {
+  local name value allow
+  for name in HOME XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME GH_CONFIG_DIR RUBYLIB NODE_PATH PERL5LIB GEM_HOME GEM_PATH BUNDLE_GEMFILE BUNDLE_PATH BUNDLE_APP_CONFIG; do
+    value="${!name:-}"
+    [ -n "$value" ] || continue
+    allow=0
+    [ "$name" = HOME ] && allow=1
+    if rf_list_inside "$value" "$allow"; then unset "$name"; fi
   done
   return 0
 }
@@ -128,6 +158,8 @@ rf_trusted_python() {
   return 0
 }
 
+rf_repo_root
 rf_scrub_env
+rf_scrub_paths
 rf_trusted_path
 RF_TRUSTED_ENV=1
