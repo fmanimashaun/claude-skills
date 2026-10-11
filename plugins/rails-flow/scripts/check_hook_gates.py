@@ -499,7 +499,7 @@ def blocked_lines(out: str) -> str:
 
 def run_hook(name: str, *, cwd: Path, stdin: str, path_prefix: list[Path] = (),
              env_extra: dict[str, str] | None = None, unset: tuple[str, ...] = (),
-             shell: str = "bash") -> tuple[int, str]:
+             shell: str | tuple[str, ...] = "bash") -> tuple[int, str]:
     env = dict(os.environ)
     for k in unset:
         env.pop(k, None)
@@ -510,7 +510,7 @@ def run_hook(name: str, *, cwd: Path, stdin: str, path_prefix: list[Path] = (),
         env["PATH"] = os.pathsep.join(str(p) for p in path_prefix) + os.pathsep + env["PATH"]
     if env_extra:
         env.update(env_extra)
-    done = _run([shell, str(HOOKS / name)], cwd=cwd, input=stdin, env=env,
+    done = _run([*((shell,) if isinstance(shell, str) else shell), str(HOOKS / name)], cwd=cwd, input=stdin, env=env,
                           capture_output=True, text=True, timeout=60)
     return done.returncode, done.stdout + done.stderr
 
@@ -4945,6 +4945,102 @@ def guard_worktree_pointer_fixtures() -> None:
 # killing the hook's descendants: orphaned awk processes ran 51 minutes, one 23 hours, and the load hit 348.
 # `lib/deadline.sh` runs each hook's work in its own process group under a wall-clock deadline and kills the whole
 # group. The stub below is the incident: an `awk` that hangs and leaves a sleeper behind, every pid recorded.
+# ---- wip-commit.sh (#1564) ----------------------------------------------------------------------------------------------------
+def wip_commit_fixtures() -> None:
+    """The Stop hook that commits a lane's tracked changes as WIP, driven the way the harness drives it, in the environment a project's own
+    settings can set (#1843). Advisory, so every fixture also proves it exits 0. The judgement is proved by `wip_commit.py --selftest` (70 checks,
+    hostile environments and every refusal); this group proves the HOOK: registered with the hardened start, sourcing the lib first, committing
+    through the real wrapper, not running a program the repository chose, and failing open."""
+    hooks = json.loads((HOOKS.parent / "hooks.json").read_text())["hooks"]
+    entries = [h["command"] for e in hooks.get("Stop", []) for h in e["hooks"] if "wip-commit.sh" in h["command"]]
+    check("wip-commit: wip-commit.sh is registered on Stop", len(entries) == 1, entries)
+    check("wip-commit: ...and registered with the hardened start `/bin/bash -p`", bool(entries) and entries[0].startswith("/bin/bash -p "), entries)
+    check("wip-commit: it is NOT registered on PreToolUse (a PreToolUse hook runs before the user is asked, #1843)",
+          not any("wip-commit.sh" in h["command"] for e in hooks.get("PreToolUse", []) for h in e["hooks"]))
+    text = (HOOKS / "wip-commit.sh").read_text()
+    first = next((l.strip() for l in text.splitlines() if l.strip() and not l.strip().startswith("#") and not l.strip().startswith("set ")), "")
+    check("wip-commit: the first executable line sources lib/trusted-env.sh", first.startswith('. "${BASH_SOURCE[0]%/*}/lib/trusted-env.sh"'), first)
+
+    real_python = shutil.which("python3") or ""
+
+    def lane(td: str, branch: str = "feature/x") -> tuple[Path, Path, Path]:
+        """(repo, witness dir, home with a git identity): a repository on `branch` holding one tracked file."""
+        base = Path(td).resolve()
+        repo, witness, home = base / "repo", base / "witness", base / "home"
+        for d in (repo / "bin", witness, home):
+            d.mkdir(parents=True)
+        (home / ".gitconfig").write_text("[user]\n\tname = Lane Tester\n\temail = lane@example.com\n", encoding="utf-8")
+        _git_repo(repo)
+        (repo / "a.txt").write_text("one\n", encoding="utf-8")
+        _fixture_git(repo, "add", "a.txt")
+        _fixture_git(repo, "commit", "-q", "-m", "base")
+        if branch != "dev":
+            _fixture_git(repo, "checkout", "-q", "-B", branch)
+        return repo, witness, home
+
+    def stop(repo: Path, home: Path, **kw) -> tuple[int, str]:
+        env = dict(kw.pop("env_extra", None) or {})
+        env["HOME"] = str(home)
+        return run_hook("wip-commit.sh", cwd=repo, stdin=json.dumps({"hook_event_name": "Stop", "cwd": str(repo)}), env_extra=env,
+                        shell=("/bin/bash", "-p"), **kw)      # exactly as the registration starts it: an absolute shell (a PATH with no bash must not matter), and -p (BASH_ENV is not read)
+
+    def commits(repo: Path) -> int:
+        return int(_fixture_git(repo, "rev-list", "--count", "HEAD", capture_output=True, text=True).stdout.strip())
+
+    with scratch_dir() as td:
+        repo, witness, home = lane(td)
+        (repo / "a.txt").write_text("two\n", encoding="utf-8")
+        (repo / "untracked.txt").write_text("x\n", encoding="utf-8")
+        before = commits(repo)
+        rc, out = stop(repo, home)
+        check("wip-commit: a dirty tracked change on a feature lane is committed through the real wrapper, exit 0, silent",
+              rc == 0 and out.strip() == "" and commits(repo) == before + 1, f"rc={rc} out={out[:120]!r} commits={commits(repo)} before={before}")
+        listed = _fixture_git(repo, "ls-tree", "-r", "--name-only", "HEAD", capture_output=True, text=True).stdout
+        check("wip-commit: ...and never the untracked file", "untracked.txt" not in listed, listed)
+    with scratch_dir() as td:
+        repo, witness, home = lane(td, "dev")
+        (repo / "a.txt").write_text("two\n", encoding="utf-8")
+        before = commits(repo)
+        rc, out = stop(repo, home)
+        check("wip-commit: on dev nothing is committed, and the exit is still 0", rc == 0 and commits(repo) == before, f"rc={rc} commits={commits(repo)} before={before}")
+
+    # THE HOSTILE ENVIRONMENT through the wrapper: a fake python3 FIRST on a relative PATH, the settings' PYTHONPATH and BASH_ENV, and a
+    # GIT_CONFIG_* clean filter. The witness stays empty and the lane is still committed.
+    with scratch_dir() as td:
+        repo, witness, home = lane(td)
+        fake = repo / "bin" / "python3"
+        fake.write_text(f'#!/bin/sh\necho "$0 $*" >> "{witness}/fake-python3"\nexec "{real_python}" "$@"\n', encoding="utf-8")
+        fake.chmod(0o755)
+        (repo / "pylib").mkdir()
+        (repo / "pylib" / "sitecustomize.py").write_text(f"open({str(witness / 'pythonpath')!r}, 'a').write('ran\\n')\n", encoding="utf-8")
+        (repo / "bashenv.sh").write_text(f'echo ran >> "{witness}/bash-env"\n', encoding="utf-8")
+        clean = repo / "bin" / "clean"
+        clean.write_text(f'#!/bin/sh\necho ran >> "{witness}/clean-filter"\ncat\n', encoding="utf-8")
+        clean.chmod(0o755)
+        (repo / ".gitattributes").write_text("*.txt filter=evil\n", encoding="utf-8")
+        _fixture_git(repo, "add", ".gitattributes")
+        _fixture_git(repo, "commit", "-q", "-m", "attributes")
+        (repo / "a.txt").write_text("two\n", encoding="utf-8")
+        before = commits(repo)
+        rc, out = stop(repo, home, env_extra={
+            "PATH": "bin" + os.pathsep + os.environ["PATH"], "PYTHONPATH": str(repo / "pylib"), "BASH_ENV": str(repo / "bashenv.sh"),
+            "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "filter.evil.clean", "GIT_CONFIG_VALUE_0": str(clean)})
+        ran = sorted(p.name for p in witness.iterdir())
+        check("wip-commit: a repository-chosen python3 (relative PATH), PYTHONPATH, BASH_ENV and a GIT_CONFIG_* filter ran nothing", ran == [], ran)
+        check("wip-commit: ...and the lane was still committed", rc == 0 and commits(repo) == before + 1, f"rc={rc} commits={commits(repo)} before={before}")
+
+    # FAILS OPEN: no python3 at all on PATH, a payload that is not JSON, and a directory that is not a repository
+    with scratch_dir() as td:
+        repo, witness, home = lane(td)
+        (repo / "a.txt").write_text("two\n", encoding="utf-8")
+        before = commits(repo)
+        rc, out = stop(repo, home, env_extra={"PATH": "/nonexistent"})
+        check("wip-commit: with no python3 on PATH it exits 0, silently, committing nothing", rc == 0 and out.strip() == "" and commits(repo) == before, f"rc={rc} out={out[:120]!r}")
+        done = _run(["/bin/bash", "-p", str(HOOKS / "wip-commit.sh")], cwd=Path(td), input="not json", env={**os.environ, "HOME": str(home)}, capture_output=True, text=True, timeout=60)
+        check("wip-commit: a garbage payload outside any repository exits 0, silently", done.returncode == 0 and (done.stdout + done.stderr).strip() == "",
+              f"rc={done.returncode} {done.stdout + done.stderr!r}")
+
+
 # ---- stop-where.sh + session-start.sh's where-stopped lines (#1639) -----------------------------------------------------
 def where_stopped_fixtures() -> None:
     """Where this worktree stopped: the Stop hook writes the facts file and warns ONCE about unsaved work; SessionStart
@@ -5817,7 +5913,7 @@ GROUPS = {
     "ci_verdict_hint": ci_verdict_hint_fixtures, "test_preflight": test_preflight_fixtures, "session_end": session_end_fixtures, "timeout": timeout_fixtures,
     "guard_worktree": guard_worktree_fixtures, "guard_worktree_parse": guard_worktree_parse_fixtures,
     "guard_worktree_failopen": guard_worktree_failopen_fixtures, "guard_worktree_pointer": guard_worktree_pointer_fixtures,
-    "deadline": deadline_fixtures, "where_stopped": where_stopped_fixtures, "tools_missing": tools_missing_fixtures,
+    "deadline": deadline_fixtures, "where_stopped": where_stopped_fixtures, "wip_commit": wip_commit_fixtures, "tools_missing": tools_missing_fixtures,
     "fixture_git_binding": fixture_git_binding_fixtures, "guard_pr_ready": guard_pr_ready_fixtures,
     "hostile_env": hostile_env_fixtures,
 }
@@ -5839,7 +5935,7 @@ PARTS = {
           "ci_verdict_hint", "session_end", "timeout", "hostile_env"],
     "b": ["release_gate", "release_gate_effects"],
     "c": ["release_gate_repos", "release_gate_refs", "release_gate_fallback", "release_gate_adversary", "guard_worktree", "guard_worktree_parse",
-          "guard_worktree_failopen", "guard_worktree_pointer", "deadline", "where_stopped", "tools_missing", "fixture_git_binding", "test_preflight",
+          "guard_worktree_failopen", "guard_worktree_pointer", "deadline", "where_stopped", "wip_commit", "tools_missing", "fixture_git_binding", "test_preflight",
           "guard_pr_ready"],
 }
 
