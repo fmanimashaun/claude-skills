@@ -54,8 +54,8 @@ GUARD = Guard(
         ),
         Mutation(
             "an unjudgeable command is allowed instead of treated as a promotion",
-            "  else\n    targets_main=1; needs_dev=1\n",
-            "  else\n    :\n",
+            "  elif ( _unjudged_may_promote ); then\n    targets_main=1; needs_dev=1\n",
+            "  elif ( _unjudged_may_promote ); then\n    :\n",
             "release-gate (#1410): an unparseable push is treated as a promotion",
         ),
         Mutation(
@@ -252,6 +252,31 @@ GUARD = Guard(
             'u="$(git remote get-url $mode --all "$r" 2>/dev/null)"',
             'u="$(git config --get-all "remote.$r.url" 2>/dev/null)"',
             "a pushInsteadOf that rewrites the push target",
+        ),
+        # #1875. A command the classifier cannot read is judged by what it does first.
+        Mutation(
+            'an unreadable command is refused whatever it does (the old order)',
+            '  elif ( _unjudged_may_promote ); then',
+            '  else',
+            'release-gate (#1875): a for loop over sed and git ls-files',
+        ),
+        Mutation(
+            'the verb words no longer decide for an unreadable command',
+            '  [[ $_in =~ ${_b}(push|merge|pull|release|api|dispatches|update-ref|mergePullRequest|updateRef|createRef)${_e} ]] && return 0\n',
+            '',
+            'CONTROL: a merge whose command word the shell builds',
+        ),
+        Mutation(
+            'a verb or command built by the shell after git or gh is not a reason to refuse',
+            '  [[ $_in =~ ${_b}(git|gh)[[:space:]]+[\\$\\`] ]] && return 0\n',
+            '',
+            'CONTROL: a push whose verb the shell builds',
+        ),
+        Mutation(
+            'the coarse detector no longer decides for an unreadable command',
+            '  _coarse_looks_promotion\n  [ "$_looks_promotion" = "1" ] && return 0\n',
+            '',
+            'CONTROL: a gh verb the gate cannot place',
         ),
     ),
 )

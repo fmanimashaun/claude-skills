@@ -152,6 +152,21 @@ _coarse_looks_promotion() {
   [[ $_in =~ ${_b}gh${_e} ]] && [[ $_in =~ ${_b}api${_e} ]] && [[ $_in =~ ${_b}graphql${_e} ]] && [[ $_in =~ mutation ]] && _looks_promotion=1
 }
 
+# #1875. The question this gate exists to answer is "does this command merge or publish?", and only THEN "which commit or repository?". When the classifier cannot
+# read a command (a `$(( ))` in a sed script, a function defined after a `cd`) the old answer was "so it might", whatever the command was: a `for` loop over `sed` and
+# `git ls-files` was refused, and a gate that refuses read-only work teaches sessions to work around it. So a command the classifier could not read is still judged
+# by WORDS: it may promote only if the coarse detector says so (the timeout path's own question), or it names a verb that merges, publishes or pushes (`push`, `merge`,
+# `pull`, `release`, `api`, `dispatches`, `update-ref`), or it builds the verb or the command word by the shell (`git $v`, `gh $v`). Builtins only, and run in a
+# subshell by its caller: it must not disturb the temporaries the caller still reads. A command that merges or publishes and cannot be read is refused exactly as before.
+_unjudged_may_promote() {
+  _coarse_looks_promotion
+  [ "$_looks_promotion" = "1" ] && return 0
+  _b='(^|[^[:alnum:]_])'; _e='([^[:alnum:]_]|$)'
+  [[ $_in =~ ${_b}(push|merge|pull|release|api|dispatches|update-ref|mergePullRequest|updateRef|createRef)${_e} ]] && return 0
+  [[ $_in =~ ${_b}(git|gh)[[:space:]]+[\$\`] ]] && return 0
+  return 1
+}
+
 _missing=""
 for _t in python3 git sed awk tr grep head; do
   type -P "$_t" >/dev/null 2>&1 || _missing="$_missing $_t"
@@ -507,7 +522,7 @@ if [ "$_mentions" = 1 ] && [ -f "$_pt" ]; then
     done <<EOF_FOUND
 $_found
 EOF_FOUND
-  else
+  elif ( _unjudged_may_promote ); then
     targets_main=1; needs_dev=1
     # #1569: a command the classifier could not read (a body file that is missing or on stdin, a path
     # or command word built by the shell, an ANSI-C string it cannot decode) may merge ANY commit in ANY
