@@ -8,6 +8,7 @@ GUARD = Guard(
     name="check_registry_closed",
     subject="scripts/check_registry_closed.py",
     selftest="scripts/check_registry_closed.py",   # --selftest lives in the module itself
+    needs=("scripts/fixture_git.py",),              # the end-to-end row builds a throwaway repository with a remote (#1588)
     narrow_with="--match",                          # each mutant runs only the row its `expects` names (#1599)
     mutations=(
         Mutation(
@@ -162,14 +163,14 @@ GUARD = Guard(
         ),
         Mutation(
             'closing keywords are matched case-sensitively',
-            'CLOSING = re.compile(r"(?<![\\w-])(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?):?\\s+#(\\d+)\\b", re.I)',
-            'CLOSING = re.compile(r"(?<![\\w-])(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?):?\\s+#(\\d+)\\b")',
+            '/issues/(\\d+)\\b)", re.I)',
+            '/issues/(\\d+)\\b)")',
             'closing keywords in any case and every form',
         ),
         Mutation(
             'the colon form of a closing keyword is missed',
-            'resolve[sd]?):?\\s+#(\\d+)\\b", re.I)',
-            'resolve[sd]?)\\s+#(\\d+)\\b", re.I)',
+            'resolve[sd]?):?\\s+(?:#(\\d+)',
+            'resolve[sd]?)\\s+(?:#(\\d+)',
             'closing keywords in any case and every form',
         ),
         Mutation(
@@ -195,6 +196,60 @@ GUARD = Guard(
             '    body = re.sub(r"`[^`\\n]*`", " ", body)',
             '    pass',
             'a closing keyword in a code fence or a code span closes nothing',
+        ),
+        Mutation(
+            'a same-repository qualified reference is not collected',
+            '        elif m.group(3) and repo and m.group(2).lower() == repo.lower():',
+            '        elif False:',
+            'a same-repository qualified reference closes the issue',
+        ),
+        Mutation(
+            'a same-repository issue URL is not collected',
+            '        elif m.group(5) and repo and m.group(4).lower() == repo.lower():',
+            '        elif False:',
+            'a same-repository full issue URL closes the issue',
+        ),
+        Mutation(
+            "another repository's qualified reference is collected",
+            '        elif m.group(3) and repo and m.group(2).lower() == repo.lower():',
+            '        elif m.group(3) and repo:',
+            "another repository's qualified reference and URL close nothing",
+        ),
+        Mutation(
+            "another repository's issue URL is collected",
+            '        elif m.group(5) and repo and m.group(4).lower() == repo.lower():',
+            '        elif m.group(5) and repo:',
+            "another repository's qualified reference and URL close nothing",
+        ),
+        Mutation(
+            'the repository name is compared case-sensitively',
+            'm.group(2).lower() == repo.lower()',
+            'm.group(2) == repo',
+            'a same-repository qualified reference closes the issue',
+        ),
+        Mutation(
+            'a github remote URL is not parsed',
+            '    return f"{m.group(1)}/{m.group(2)}" if m else None',
+            '    return None',
+            'an https remote names this repository',
+        ),
+        Mutation(
+            'the .git suffix of a remote is kept in the repository name',
+            '([\\w.-]+?)(?:\\.git)?/?$',
+            '([\\w.-]+?)/?$',
+            'an https remote names this repository',
+        ),
+        Mutation(
+            'this repository is never told from the origin remote',
+            '    return slug_from_remote(done.stdout) if done.returncode == 0 else None',
+            '    return None',
+            'the origin remote tells this repository',
+        ),
+        Mutation(
+            "the body's closing keywords are read without this repository's name",
+            'closing_numbers(Path(args.closes_from_body).read_text(encoding="utf-8-sig"), repo_slug(Path(args.root).resolve()))',
+            'closing_numbers(Path(args.closes_from_body).read_text(encoding="utf-8-sig"), None)',
+            'the origin remote tells this repository',
         ),
     ),
 )

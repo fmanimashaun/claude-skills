@@ -22,7 +22,8 @@ A row that says `closed: true` while its issue is still open is also a finding: 
 200. A row may name ONE issue and a key may appear once per entry (a repeated key is refused: the last one would win and hide the first).
 
 `--closes-from-body FILE` reads the PR's closing keywords as GitHub does (close, closes, closed, fix, fixes, fixed, resolve, resolves, resolved, any case, an optional
-colon, `#12` in this repository; `owner/repo#12` is another repository's; text in code fences and code spans closes nothing), so `Closes #12` is not missed.
+colon; `#12`, and for THIS repository `owner/repo#12` and a full issue URL; another repository's references close nothing here, and neither does text in code fences or
+code spans), so `Closes #12` is not missed. This repository is told from the `origin` remote; with none, only `#12` is collected.
 
 EXIT CODES. 0 clean (or no row carries an issue); 1 findings; 2 COULD NOT CHECK (the registry is unreadable or a key repeats, `gh` is missing or failing, more than 200
 distinct issues): the project gate runner (project_gates.py) grades 2 as ERROR and 3 as "not applicable", which never fails a run, so a check that could not look must
@@ -63,15 +64,40 @@ class Gh:
         return (data.get("state") or None), str(data.get("stateReason") or "")
 
 
-CLOSING = re.compile(r"(?<![\w-])(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?):?\s+#(\d+)\b", re.I)
+CLOSING = re.compile(r"(?<![\w-])(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?):?\s+(?:#(\d+)\b|([\w.-]+/[\w.-]+)#(\d+)\b|https?://github\.com/([\w.-]+/[\w.-]+)/issues/(\d+)\b)", re.I)
 NOT_FIXED = ("NOT_PLANNED", "DUPLICATE")
+REMOTE = re.compile(r"github\.com[:/]([\w.-]+)/([\w.-]+?)(?:\.git)?/?$")
 
 
-def closing_numbers(body: str) -> set[int]:
-    """The issues a PR body closes, as GitHub reads closing keywords: any case, an optional colon, `#N` in this repository; code fences and code spans close nothing."""
+def slug_from_remote(url: str) -> str | None:
+    """`owner/repo` from a github.com remote URL (https or ssh), else None."""
+    m = REMOTE.search(url.strip())
+    return f"{m.group(1)}/{m.group(2)}" if m else None
+
+
+def repo_slug(root: Path) -> str | None:
+    """This repository's `owner/repo`, from the `origin` remote (no network), or None when it cannot be told."""
+    try:
+        done = subprocess.run(["git", "-C", str(root), "remote", "get-url", "origin"], capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return slug_from_remote(done.stdout) if done.returncode == 0 else None
+
+
+def closing_numbers(body: str, repo: str | None = None) -> set[int]:
+    """The issues a PR body closes, as GitHub reads closing keywords: any case, an optional colon, `#N`, and (when `repo` is this repository's `owner/repo`) `owner/repo#N`
+    and a full issue URL of this repository; another repository's references close nothing here. Code fences and code spans close nothing."""
     body = re.sub(r"```.*?```|~~~.*?~~~", " ", body, flags=re.S)
     body = re.sub(r"`[^`\n]*`", " ", body)
-    return {int(n) for n in CLOSING.findall(body)}
+    found: set[int] = set()
+    for m in CLOSING.finditer(body):
+        if m.group(1):
+            found.add(int(m.group(1)))
+        elif m.group(3) and repo and m.group(2).lower() == repo.lower():
+            found.add(int(m.group(3)))
+        elif m.group(5) and repo and m.group(4).lower() == repo.lower():
+            found.add(int(m.group(5)))
+    return found
 
 
 def registry_path(root: Path, flag: str | None) -> str:
@@ -260,14 +286,49 @@ def selftest(match: str | None = None) -> int:
         ("closing keywords in any case and every form", "Fixes #1\nCLOSES #2\nresolved #3\nFixed: #4\nclose #5\nCloses #6 and resolves #7", {1, 2, 3, 4, 5, 6, 7}),
         ("a Refs line closes nothing", "Refs #8\nSee #9\nrelated to #10", set()),
         ("another repository's reference closes nothing here", "Fixes octo/repo#11 and fixes #12", {12}),
+        ("a same-repository qualified reference closes the issue", "Fixes me/mine#21 and Closes ME/Mine#22", {21, 22}),
+        ("a same-repository full issue URL closes the issue", "Fixes https://github.com/me/mine/issues/23 and resolves HTTP://github.com/Me/Mine/issues/24", {23, 24}),
+        ("another repository's qualified reference and URL close nothing", "Fixes other/mine#25 and fixes https://github.com/other/mine/issues/26 and fixes #27", {27}),
+        ("a qualified reference is not collected when this repository is not known", "Fixes me/mine#28", set()),
         ("a closing keyword in a code fence or a code span closes nothing", "```\nFixes #13\n```\nand `Closes #14` but Fixes #15", {15}),
         ("a word that only ends in a keyword is not a keyword", "prefix #16 and unfixes #17", set()),
         ("a keyword with no issue number closes nothing", "Closes the loop. Fixes bugs.", set()),
     ):
         if not match or label in match:
-            got = closing_numbers(body)
+            got = closing_numbers(body, None if "is not known" in label else "me/mine")
             if got != want:
                 failures.append(f"{label}: wanted {sorted(want)}, got {sorted(got)}")
+    for label, url, want in (
+        ("an https remote names this repository", "https://github.com/me/mine.git", "me/mine"),
+        ("an ssh remote names this repository", "git@github.com:me/mine.git", "me/mine"),
+        ("a remote without .git names this repository", "https://github.com/me/mine", "me/mine"),
+        ("a remote that is not on github.com names nothing", "https://example.com/me/mine.git", None),
+    ):
+        if not match or label in match:
+            if slug_from_remote(url) != want:
+                failures.append(f"{label}: wanted {want!r}, got {slug_from_remote(url)!r}")
+    if not match or "the origin remote tells this repository" in match:
+        import contextlib
+        import io
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import fixture_git
+        with tempfile.TemporaryDirectory() as td:
+            repo = Path(td) / "repo"
+            repo.mkdir()
+            fixture_git.init(repo)
+            (repo / "qa").mkdir()
+            (repo / REGISTRY).write_text("# rows: 1\n" + entry("R-1", "partial", "  issue: 5\n"))
+            (repo / "body.md").write_text("Fixes me/mine#5\n")
+            if repo_slug(repo) is not None:
+                failures.append(f"the origin remote tells this repository: a repository with no origin is {repo_slug(repo)!r}")
+            fixture_git.run(repo, "remote", "add", "origin", "git@github.com:me/mine.git")
+            if repo_slug(repo) != "me/mine":
+                failures.append(f"the origin remote tells this repository: got {repo_slug(repo)!r}")
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                code = main(["--root", str(repo), "--closes-from-body", str(repo / "body.md")], gh=FakeGh({}, absent=True))
+            if code != 1 or "closed by this PR" not in out.getvalue():
+                failures.append(f"the origin remote tells this repository: a qualified closing keyword in the body reaches the check (exit {code}) {out.getvalue()[:160]!r}")
     many = "".join(entry(f"R-{i}", "done", f"  issue: {1000 + i}\n  closed: true\n") for i in range(LIMIT + 1))
     row("more than the limit of distinct issues is exit 2", many, FakeGh({}), 2, "more than the 200")
     if not match or "the registry path must stay inside the project" in match:
@@ -284,7 +345,7 @@ def selftest(match: str | None = None) -> int:
     return 0
 
 
-def main(argv: list[str]) -> int:
+def main(argv: list[str], gh: Gh | None = None) -> int:
     parser = argparse.ArgumentParser(description="No registry row points at a closed issue without being updated (#1857).")
     parser.add_argument("--root", default=".", help="the project root (default: the current directory)")
     parser.add_argument("--registry", metavar="PATH", help="the registry (default: `requirements: registry:` in qa/qa.config.yml, else qa/requirements.yml)")
@@ -298,13 +359,13 @@ def main(argv: list[str]) -> int:
     try:
         closes = {int(x) for x in re.split(r"[,\s]+", args.closes.strip()) if x}
         if args.closes_from_body:
-            closes |= closing_numbers(Path(args.closes_from_body).read_text(encoding="utf-8-sig"))
+            closes |= closing_numbers(Path(args.closes_from_body).read_text(encoding="utf-8-sig"), repo_slug(Path(args.root).resolve()))
         root = Path(args.root).resolve()
         registry = registry_path(root, args.registry)
     except (ValueError, OSError) as exc:
         print(f"check_registry_closed: {exc} (exit 2)", file=sys.stderr)
         return 2
-    code, found, notes = check(root, registry, closes, Gh())
+    code, found, notes = check(root, registry, closes, gh or Gh())
     for line in found:
         print(line)
     for note in notes:
