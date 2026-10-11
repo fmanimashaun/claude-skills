@@ -491,7 +491,11 @@ def run() -> int:
     (moderoot / "bin" / "tool").chmod(0o755)
     (moderoot / "bin" / "plain").write_text("data\n", encoding="utf-8")
     (moderoot / "bin" / "plain").chmod(0o644)
-    modeguard = mc.Guard(name="fixture-mode", subject=modeguard.subject, selftest=modeguard.selftest, needs=("bin/tool", "bin/plain"))
+    (moderoot / modeguard.subject).chmod(0o755)
+    (moderoot / modeguard.selftest).chmod(0o755)
+    modeguard = mc.Guard(name="fixture-mode", subject=modeguard.subject, selftest=modeguard.selftest, needs=("bin/tool", "bin/plain"), deps=("bin/dep",))
+    (moderoot / "bin" / "dep").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    (moderoot / "bin" / "dep").chmod(0o755)
     saved_repo = mc.REPO
     mc.REPO = moderoot
     try:
@@ -500,6 +504,10 @@ def run() -> int:
         _tick()
         if not os.access(stagedir / "bin" / "tool", os.X_OK):
             FAILURES.append("a staged `needs` file that is executable in the repo is not executable once staged (shutil.copyfile drops the mode): a fixture that runs or tests it reads it as missing")
+        for rel, what in ((modeguard.subject, "subject"), (modeguard.selftest, "selftest"), ("bin/dep", "dep")):
+            _tick()
+            if not os.access(stagedir / rel, os.X_OK):
+                FAILURES.append(f"a staged {what} that is executable in the repo is not executable once staged: write_text keeps the bytes and not the mode")
         _tick()
         if os.access(stagedir / "bin" / "plain", os.X_OK):
             FAILURES.append("a staged `needs` file that is NOT executable in the repo became executable once staged")

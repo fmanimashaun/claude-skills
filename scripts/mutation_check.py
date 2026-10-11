@@ -205,6 +205,7 @@ def stage(guard: Guard, workdir: Path) -> Path:
         target = workdir / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text((REPO / guard.base / relative).read_text(encoding="utf-8"), encoding="utf-8")
+        shutil.copymode(REPO / guard.base / relative, target)     # a subject, selftest or dep that is executable in the repo is executable staged (#1893, the same defect as `needs`)
     for relative in guard.needs:
         source, target = REPO / guard.base / relative, workdir / relative
         target.parent.mkdir(parents=True, exist_ok=True)
