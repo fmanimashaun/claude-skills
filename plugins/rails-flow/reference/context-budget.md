@@ -168,6 +168,11 @@ budget, and the work carries on after a reset.
   idle, telling Claude to read the handoff and continue. Timers live in the session: a hot reload or the end of
   the session cancels them, so a closed session does not resume. `RAILS_FLOW_AUTO_RESUME=0` turns it off. The
   weekly window gets no resume, because it does not reset within a session.
+- **A reading is the last API response's, and a window that has reset is no reading** (#1854). The harness reports each window's `percentUsed` and
+  `resetsAt` from the session's last response and gives it no measurement time, so a session that has had no response since the weekly reset still holds
+  the old figure: on 2026-10-11 eight long-running sessions refused all new work on a weekly 90-96% while `/usage` showed 6%. The hook is advisory, so it
+  fails open: a window whose `resetsAt` has passed is ignored (by the guard and by the usage view), and the refusal names the reset time, how long the hook
+  has seen the same figure, and the override (`/usage`, then say so and continue, or `RAILS_FLOW_BUDGET_ALLOW=1`).
 - **Thresholds and override:** `RAILS_FLOW_BUDGET_WARN_PCT` (default 80) and `RAILS_FLOW_BUDGET_BLOCK_PCT`
   (default 90), whole percents from 1 to 100. `RAILS_FLOW_BUDGET_ALLOW=1` lifts the weekly fan-out refusal, but
   not the relay refusal.
