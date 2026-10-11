@@ -289,6 +289,15 @@ gh pr create --base <base> --title "feat: <summary>" --body "<the PR Documentati
   destructive migration, an auth or permission change, a removed route or API field, a new outside
   call) or exit 2 (could not classify) means stop and hand the merge to the user, quoting the
   reasons it printed. A dropped column's data does not come back with `git revert`. Exit 0 continues.
+- On CLEAN, **check whether the diff is risky** (#1819):
+  `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/risky_diff.py" --base <base> --record docs/evidence/reviews/prs/<branch-slug>/adversary.md`.
+  A diff that touches authentication, sessions, access rules, input parsing or a privacy filter needs one **adversarial pass** before
+  the PR is marked ready: exit 1 means run the `adversary` agent (it runs on Fable, the owner's model for attack passes) with the
+  printed reasons and the base, **save its answer verbatim** to that path (its first line is `Head: <sha>`, its last is
+  `VERDICT: CLEAN` or `VERDICT: BLOCKED`), and run the check again. Exit 0 continues. Exit 3 means the pass recorded BLOCKED: that is
+  a finding for the user, so stop, quote the findings and hand the merge over; it is not an automatic stop of the work, and you do
+  not decide its disposition. Exit 2 means it could not classify: stop. Mark the PR ready with `risky_diff.py ... && gh pr ready`,
+  never `;`. A record is tied to the commit it names, so a push after the pass needs a new one.
 - On CLEAN and a two-way door: if the base is `dev`, merge (`gh pr merge --squash`), then post a summary
   comment citing the gate's findings. If the base is the default branch (no `dev`), stop
   after CLEAN and hand the merge decision to the user — and offer them a PR babysitter:

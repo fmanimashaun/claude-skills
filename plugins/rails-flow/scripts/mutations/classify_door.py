@@ -12,7 +12,7 @@ GUARD = Guard(
     mutations=(
         Mutation(
             "untracked files are invisible again, so a brand-new destructive migration is two-way",
-            '    for rel in _git(root, "ls-files", "--others", "--exclude-standard").splitlines():',
+            '    for rel in filter(None, _git(root, "ls-files", "-z", "--others", "--exclude-standard").split("\\0")):   # -z: exact names, never octal-quoted',
             "    for rel in []:",
             "remove_column is one-way",
         ),
@@ -57,6 +57,18 @@ GUARD = Guard(
             '    _git(root, "rev-parse", "--verify", "-q", f"{base}^{{commit}}")',
             "    return {}",
             "an unresolvable base is UNUSABLE, never two-way",
+        ),
+        Mutation(
+            "renames are paired again, so a policy moved out of app/policies reads as a change to its new path only",
+            '"diff", "--no-color", "--no-renames", "-U0", merge_base',
+            '"diff", "--no-color", "-U0", merge_base',
+            "a policy renamed out of app/policies is one-way",
+        ),
+        Mutation(
+            "a header git quotes is skipped again, so its changes are never classified",
+            '            if rest.startswith(\'"\') or \' "b/\' in rest or rest.count(" b/") != 1:',
+            "            if False:",
+            "a path git quotes is UNUSABLE",
         ),
     ),
 )

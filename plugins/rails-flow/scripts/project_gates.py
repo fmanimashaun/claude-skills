@@ -66,13 +66,25 @@ maintainer-side gate upstream and is not re-derived here.
 
 Exit codes:  0 all applicable checks passed · 1 at least one FAIL or ERROR · 2 nothing discovered
 
+THE SWEEP RECORD (#1565). After a run (never `--list` or `--selftest`) this writes
+`<git dir>/rails-flow/sweep/<HEAD sha>.json`, which `hooks/scripts/guard-pr-ready.sh` reads before it lets
+`gh pr ready` through. The record vouches for COMMITTED bytes, so it is written only when
+`git status --porcelain` is empty; a dirty worktree gets one line saying no record was written. It lives
+under the git directory (`git rev-parse --git-path`, so a linked worktree has its own), never in the tree:
+this script still never mutates the project's TRACKED or untracked content, which is the contract the
+`tree_state` check holds every check to. Writing it can never change the verdict or the exit code: a
+failure to write is a printed warning. green = exit 0; skips = ERROR count + manifest problems (a check
+that applied and produced no verdict); n/a is recorded but is not a skip.
+
 Stdlib only, no network.
 """
 
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -674,6 +686,65 @@ def exit_code(results: list[Result], problems: list[str]) -> int:
     return 1 if problems or any(r.status in (FAIL, ERROR) for r in results) else 0
 
 
+SWEEP_DIR = "rails-flow/sweep"
+
+
+def _git(project: Path, *args: str) -> str | None:
+    try:
+        done = subprocess.run(["git", *args], cwd=project, capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return done.stdout.strip() if done.returncode == 0 else None
+
+
+def sweep_record(results: list[Result], problems: list[str], code: int, head: str, tree: str) -> dict:
+    """The record `guard-pr-ready.sh` reads (#1565). green is exit 0; a skip is a check that applied and
+    produced no verdict (ERROR, or a manifest problem). n/a is fixed by the repo's shape: recorded, not a skip."""
+    count = lambda status: sum(1 for r in results if r.status == status)  # noqa: E731
+    errored = count(ERROR)
+    na = sorted(f"{r.check.plugin}/{r.check.id}" for r in results if r.status == NA)
+    return {"head": head, "tree": tree, "verdict": "green" if code == 0 else "red",
+            "passed": count(PASS), "failed": count(FAIL), "errored": errored,
+            "not_applicable": len(na), "not_applicable_checks": na,
+            "manifest_problems": len(problems), "skips": errored + len(problems),
+            "at": datetime.datetime.now(datetime.timezone.utc)
+                  .strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "project_gates": ".".join(map(str, plugin_identity(Path(__file__).resolve().parent.parent)[1]))}
+
+
+def write_sweep_record(project: Path, results: list[Result], problems: list[str], code: int) -> str:
+    """Write the record for HEAD and return the one line to print. NEVER raises and never touches `code`."""
+    try:
+        if _git(project, "rev-parse", "--is-inside-work-tree") != "true":
+            return "rails-flow: not a git worktree, so no sweep record was written."
+        status = _git(project, "status", "--porcelain")
+        if status is None:
+            return "WARNING: rails-flow: git status failed, so no sweep record was written."
+        if status:
+            return ("rails-flow: no sweep record was written: the worktree is dirty, and a record vouches "
+                    "only for committed bytes. Commit, then re-run to unlock `gh pr ready`.")
+        head, tree = _git(project, "rev-parse", "HEAD"), _git(project, "rev-parse", "HEAD^{tree}")
+        where = _git(project, "rev-parse", "--git-path", SWEEP_DIR)
+        if not head or not tree or not where:
+            return "WARNING: rails-flow: HEAD or the git directory could not be read, so no sweep record was written."
+        folder = Path(where) if Path(where).is_absolute() else project / where
+        folder.mkdir(parents=True, exist_ok=True)
+        target = folder / f"{head}.json"
+        tmp = folder / f".{head}.json.{os.getpid()}.tmp"
+        tmp.write_text(json.dumps(sweep_record(results, problems, code, head, tree), indent=2) + "\n",
+                       encoding="utf-8")
+        tmp.replace(target)
+        verdict = "green" if code == 0 else "red"
+        return f"rails-flow: sweep record ({verdict}) written to {target}"
+    except Exception as exc:  # noqa: BLE001 -- the record is a side effect; it must never change the verdict
+        return f"WARNING: rails-flow: the sweep record could not be written ({type(exc).__name__}: {exc}); the verdict above stands."
+
+
+def finish(project: Path, results: list[Result], problems: list[str], code: int, stream=None) -> int:
+    print(write_sweep_record(project, results, problems, code), file=stream or sys.stdout)
+    return code
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Run every shipped check that applies to this project.")
     ap.add_argument("--project", type=Path, default=Path.cwd(), help="repo to check (default: cwd)")
@@ -700,8 +771,9 @@ def main(argv: list[str] | None = None) -> int:
     results = [run_check(c, project) for c in checks]
     if args.json:
         print(as_json(results, problems))
-        return exit_code(results, problems)
-    return report(results, problems)
+        # stderr: stdout is the JSON document an agent parses.
+        return finish(project, results, problems, exit_code(results, problems), sys.stderr)
+    return finish(project, results, problems, report(results, problems))
 
 
 def selftest() -> int:
@@ -1191,6 +1263,56 @@ def selftest() -> int:
         (orphan / "checks.json").write_text("{}", encoding="utf-8")
         check("a missing manifest degrades to the directory name",
               plugin_identity(orphan) == ("0.0.1", (0,)), f"{plugin_identity(orphan)}")
+
+    # THE SWEEP RECORD (#1565): what guard-pr-ready.sh reads. Built in a real git repo.
+    with tempfile.TemporaryDirectory() as tmp:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import fixture_git  # #1588: a fixture's git touches only its own temp repo
+        repo = fixture_git.init(Path(tmp) / "repo")
+        fixture_git.run(repo, "commit", "-q", "--allow-empty", "-m", "x")
+        head = _git(repo, "rev-parse", "HEAD")
+        rec_path = repo / ".git" / "rails-flow" / "sweep" / f"{head}.json"
+        c = Check(plugin="p", id="c", why="w", command=[], applies_when=[], requires=[], root=repo)
+        ok, bad, err, na = Result(c, PASS), Result(c, FAIL, "x"), Result(c, ERROR, "x"), Result(c, NA, "x")
+
+        def rec() -> dict:
+            try:
+                return json.loads(rec_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                return {}
+
+        check("a green run returns its exit code unchanged", finish(repo, [ok, na], [], 0, open(os.devnull, "w")) == 0)
+        r = rec()
+        check("a green run writes a green record for HEAD", (r.get("verdict"), r.get("head"), r.get("skips")) ==
+              ("green", head, 0), f"{r}")
+        check("the record carries the tree and the n/a names, and n/a is not a skip",
+              r.get("tree") == _git(repo, "rev-parse", "HEAD^{tree}") and r.get("not_applicable") == 1
+              and r.get("not_applicable_checks") == ["p/c"], f"{r}")
+        check("no temp file is left beside the record", sorted(p.name for p in rec_path.parent.iterdir()) ==
+              [rec_path.name], f"{list(rec_path.parent.iterdir())}")
+        check("a FAIL run writes red", finish(repo, [ok, bad], [], 1, open(os.devnull, "w")) == 1 and
+              (rec().get("verdict"), rec().get("failed")) == ("red", 1), f"{rec()}")
+        finish(repo, [ok, err], [], 1, open(os.devnull, "w"))
+        check("an ERROR counts as a skip", (rec().get("verdict"), rec().get("errored"), rec().get("skips")) ==
+              ("red", 1, 1), f"{rec()}")
+        check("a manifest problem counts as a skip",
+              sweep_record([ok], ["boom"], 1, head, "t")["skips"] == 1)
+        rec_path.unlink()
+        (repo / "dirty.txt").write_text("x", encoding="utf-8")
+        line = write_sweep_record(repo, [ok], [], 0)
+        check("a dirty tree writes no record, and says so", not rec_path.exists() and "dirty" in line, line)
+        (repo / "dirty.txt").unlink()
+        import contextlib, io
+        with contextlib.redirect_stdout(io.StringIO()):
+            listed = main(["--list", "--project", str(repo)])
+        check("--list writes no record", listed == 0 and not rec_path.exists(), f"exit {listed}")
+        shutil.rmtree(repo / ".git" / "rails-flow")
+        (repo / ".git" / "rails-flow").write_text("not a directory", encoding="utf-8")
+        out = io.StringIO()
+        code = finish(repo, [ok, bad], [], 1, out)
+        check("an unwritable git dir warns and keeps the exit code", code == 1 and "WARNING" in out.getvalue()
+              and not rec_path.exists(), f"exit {code}: {out.getvalue()!r}")
+        check("...and a green verdict stays 0", finish(repo, [ok], [], 0, io.StringIO()) == 0)
 
     if failures:
         print(f"SELFTEST FAILED -- {len(failures)} of {n} checks:", file=sys.stderr)

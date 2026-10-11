@@ -5,6 +5,7 @@ GUARD = Guard(
     name="check_guide",
     subject="scripts/check_guide.py",
     selftest="scripts/check_guide_selftest.py",
+    needs=("scripts/fixture_git.py",),   # its selftest's pin fixtures run git through fixture_git (#1588)
     mutations=(
         Mutation(
             "subgraph depth stops deciding whether a bare `end` is legal",
@@ -41,6 +42,90 @@ GUARD = Guard(
             "                if any(w in haystack for w in DIAGRAM_WORDS):",
             "                if True:",
             "a screenshot is legitimate",
+        ),
+        Mutation(
+            'a short sha is accepted as a pin commit',
+            'SHA_RE = re.compile(r"^[0-9a-f]{40}$")',
+            'SHA_RE = re.compile(r"^[0-9a-f]+$")',
+            'a short sha is refused',
+        ),
+        Mutation(
+            'a pin naming no commit in the repository passes',
+            'if _git(repo, "cat-file", "-t", f"{sha}^{{commit}}").returncode != 0:',
+            'if False:',
+            'a commit that does not exist is a finding',
+        ),
+        Mutation(
+            'a line past the end of the file passes',
+            '            if end > total:',
+            '            if False:',
+            'a range past the end is a finding',
+        ),
+        Mutation(
+            'a path with .. is accepted',
+            'if path.startswith("/") or ".." in path.split("/"):',
+            'if path.startswith("/"):',
+            'a path with .. is refused',
+        ),
+        Mutation(
+            'a file deleted at HEAD passes',
+            'if _blob_lines(repo, "HEAD", path) is None:',
+            'if False:',
+            'a file deleted at HEAD is a finding',
+        ),
+        Mutation(
+            'one pinned diagram no longer obliges the others',
+            '    if not any_pin and not require:',
+            '    if not require:',
+            'one pinned diagram makes an unpinned one a finding',
+        ),
+        Mutation(
+            '--require-pins is ignored',
+            '    if not any_pin and not require:',
+            '    if not any_pin:',
+            '--require-pins refuses a guide with no pins',
+        ),
+        Mutation(
+            'an orphan pin comment is ignored',
+            '            if PIN_RE.search(line) and line_no not in pinned_lines:',
+            '            if False:',
+            'a pin above no mermaid block pins nothing',
+        ),
+        Mutation(
+            'line 0 is accepted',
+            '            if start < 1 or end < start:',
+            '            if end < start:',
+            'line 0 is not a line',
+        ),
+        Mutation(
+            'a backwards range is accepted',
+            '            if start < 1 or end < start:',
+            '            if start < 1:',
+            'a backwards range is refused',
+        ),
+        Mutation(
+            'outside a git work tree the pins pass unverified',
+            '    if inside.returncode != 0:',
+            '    if False:',
+            'outside a git work tree the pins cannot be verified',
+        ),
+        Mutation(
+            'a file edited since the pin stops being noted',
+            '            elif _git(repo, "rev-parse", f"{sha}:{path}").stdout != _git(repo, "rev-parse", f"HEAD:{path}").stdout:',
+            '            elif False:',
+            'a file edited since the pin is a note',
+        ),
+        Mutation(
+            'the entry point drops the pin findings',
+            '    findings += pin_findings\n',
+            '',
+            'main() with a pin past the end of its file exited',
+        ),
+        Mutation(
+            "the edited-since note looks the path up relative to the guide's folder",
+            '            elif _git(repo, "rev-parse", f"{sha}:{path}").stdout != _git(repo, "rev-parse", f"HEAD:{path}").stdout:',
+            '            elif _git(repo, "diff", "--quiet", sha, "HEAD", "--", path).returncode != 0:',
+            "an edit since the pin is noted when the repo given is a subfolder of it",
         ),
     ),
 )
