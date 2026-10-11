@@ -224,7 +224,7 @@ def selftest(match: str | None = None) -> int:
         {CATALOGUE: HEADER + 'TC-1,t,A,Functional,P1,Active,"defect:#5",edited\n', SPEC: "it\n"}, 0, None)
     row("a deleted spec is not a spec this change brings", {**base, SPEC: "it\n"}, {CATALOGUE: HEADER + case("TC-1", "REQ-1") + case("TC-2", "defect:#5"), SPEC: None}, 1, "the spec that fails without it")
     row("a renamed spec counts", {**base, SPEC: "it\n"}, {CATALOGUE: HEADER + case("TC-1", "REQ-1") + case("TC-2", "defect:#5"), SPEC: None, "spec/app_renamed_spec.rb": "it\n"}, 0, None)
-    row("a note under a test directory is not a spec (N2)", base, {CATALOGUE: HEADER + case("TC-1", "REQ-1") + case("TC-2", "defect:#5"), "docs/test/notes.md": "x\n"}, 1,
+    row("a note under a test directory is not a spec (N2)", base, {CATALOGUE: HEADER + case("TC-1", "REQ-1") + case("TC-2", "defect:#5"), "docs/product/test/notes.md": "x\n"}, 1,
         "the spec that fails without it")
     row("a fixture file under spec/ is not a spec", base, {CATALOGUE: HEADER + case("TC-1", "REQ-1") + case("TC-2", "defect:#5"), "spec/fixtures/data.json": "{}\n"}, 1,
         "the spec that fails without it")
