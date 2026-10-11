@@ -2168,6 +2168,12 @@ def guard_claims_fixtures() -> None:
     rc_plain, out_plain = run_in("cd sub && gh pr create --body-file BODY", NEITHER, with_output=True)
     check("guard-claims: an inherited CDPATH changes nothing about a relative cd: trusted-env.sh unsets it before the hook reads it (#1850; was the #1516 allowlist)",
           (rc, out) == (rc_plain, out_plain), f"with CDPATH: exit {rc}: {out[-100:]!r}; without: exit {rc_plain}: {out_plain[-100:]!r}")
+    # trusted-env.sh sets GIT_CONFIG_GLOBAL=/dev/null itself when HOME is the repository root; the resolver must not take that for a variable that picks gh's repository (#1850).
+    cwd_lib = HOOKS / "lib" / "command_cwd.py"
+    for value, expected, label in (("/dev/null", 0, "guard-claims: the resolver accepts an inherited GIT_CONFIG_GLOBAL=/dev/null"),
+                                   (str(HOOKS / "guard-claims.sh"), 3, "guard-claims: the resolver refuses a GIT_CONFIG_GLOBAL that names a file")):
+        done = _run([sys.executable, str(cwd_lib), str(NEITHER)], input="gh pr create --body-file BODY", env=dict(os.environ, GIT_CONFIG_GLOBAL=value), capture_output=True, text=True, timeout=60)
+        check(label, done.returncode == expected, f"exit {done.returncode}: {(done.stdout + done.stderr)[-120:]!r}")
     rc, out = run_in("CDPATH=B_DIR cd sub && gh pr create --body-file BODY", NEITHER, with_output=True)
     check("guard-claims: a relative cd with CDPATH set IN THE COMMAND is NOT checked, with the notice (#1516 allowlist)",
           rc == 0 and NOTICE in out, f"exit {rc}: {out[-140:]}")
@@ -5821,7 +5827,7 @@ def hostile_env_fixtures() -> None:
                     "ENV": "/x", "CDPATH": "/x", "GLOBIGNORE": "*", "GIT_EXEC_PATH": "/x", "GIT_ASKPASS": "/x", "GIT_SSH_COMMAND": "/x",
                     "GIT_DIR": str(work / ".git"), "GIT_WORK_TREE": str(work), "GIT_AUTHOR_NAME": "a", "GIT_TERMINAL_PROMPT": "0", "KEEP_ME": "1",
                     "RUBYOPT": "-rx", "RUBYLIB": "/x", "NODE_PATH": "/x", "PERL5LIB": "/x", "PERL5OPT": "-Mx", "GEM_HOME": "/x", "GEM_PATH": "/x", "BUNDLE_GEMFILE": "/x",
-                    "BUNDLE_PATH": "/x", "GH_HOST": "evil.example", "GH_REPO": "evil/repo", "GH_ENTERPRISE_TOKEN": "t", "GH_ENTERPRISE_HOST": "evil.example", "GITHUB_ENTERPRISE_TOKEN": "t", "PAGER": "/x", "LESSOPEN": "|/x", "GH_TOKEN": "t"})
+                    "BUNDLE_PATH": "/x", "GH_HOST": "evil.example", "GH_REPO": "evil/repo", "GH_ENTERPRISE_TOKEN": "t", "GH_ENTERPRISE_HOST": "evil.example", "GITHUB_ENTERPRISE_TOKEN": "t", "GH_PAGER": "/x", "GH_FORCE_TTY": "1", "GH_BROWSER": "/x", "GH_EDITOR": "/x", "GH_DEBUG": "api", "GH_CONFIG_DIR": "/x", "PAGER": "/x", "LESSOPEN": "|/x", "GH_TOKEN": "t"})
         return work, env
 
     def env_left() -> tuple[set[str], subprocess.CompletedProcess]:
@@ -5833,7 +5839,7 @@ def hostile_env_fixtures() -> None:
             return set(re.findall(r"^declare -x (\w+)", done.stdout, re.M)), done
 
     for gone in ("PYTHONPATH", "PYTHONHOME", "LD_PRELOAD", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH", "NODE_OPTIONS", "BASH_ENV", "ENV", "CDPATH",
-                 "GLOBIGNORE", "RUBYOPT", "RUBYLIB", "NODE_PATH", "PERL5LIB", "PERL5OPT", "GEM_HOME", "GEM_PATH", "BUNDLE_GEMFILE", "BUNDLE_PATH", "GH_HOST", "GH_REPO", "GH_ENTERPRISE_TOKEN", "GH_ENTERPRISE_HOST", "GITHUB_ENTERPRISE_TOKEN", "PAGER", "LESSOPEN", "GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0", "GIT_EXEC_PATH", "GIT_ASKPASS", "GIT_SSH_COMMAND"):
+                 "GLOBIGNORE", "RUBYOPT", "RUBYLIB", "NODE_PATH", "PERL5LIB", "PERL5OPT", "GEM_HOME", "GEM_PATH", "BUNDLE_GEMFILE", "BUNDLE_PATH", "GH_HOST", "GH_REPO", "GH_ENTERPRISE_TOKEN", "GH_ENTERPRISE_HOST", "GITHUB_ENTERPRISE_TOKEN", "GH_PAGER", "GH_FORCE_TTY", "GH_BROWSER", "GH_EDITOR", "GH_DEBUG", "GH_CONFIG_DIR", "PAGER", "LESSOPEN", "GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0", "GIT_EXEC_PATH", "GIT_ASKPASS", "GIT_SSH_COMMAND"):
         left, done = env_left()
         check(f"hostile environment: trusted-env.sh unsets {gone}", gone not in left and "HOME" in left, f"exit {done.returncode}; left {sorted(left)[:40]}; {done.stderr.strip()[:120]!r}")
     for kept in ("GIT_DIR", "GIT_WORK_TREE", "GIT_AUTHOR_NAME", "GIT_TERMINAL_PROMPT", "KEEP_ME", "HOME", "GH_TOKEN"):
@@ -5842,7 +5848,7 @@ def hostile_env_fixtures() -> None:
 
     # `gh` must not be pointed at ANOTHER host or repository (it could feed release-gate.sh and guard-pr-ready.sh forged answers). A stub `gh`, first on a trusted PATH,
     # records what it was started with: the witness is the recorded name.
-    for name in ("GH_HOST", "GH_REPO", "GH_ENTERPRISE_TOKEN", "GH_ENTERPRISE_HOST", "GITHUB_ENTERPRISE_TOKEN"):
+    for name in ("GH_HOST", "GH_REPO", "GH_ENTERPRISE_TOKEN", "GH_ENTERPRISE_HOST", "GITHUB_ENTERPRISE_TOKEN", "GH_PAGER", "GH_FORCE_TTY", "GH_BROWSER", "GH_EDITOR", "GH_DEBUG"):
         with scratch_dir() as td:
             work, witness, env = rig(td)
             ghdir = Path(td) / "trusted-gh"
@@ -5853,7 +5859,7 @@ def hostile_env_fixtures() -> None:
             _run(["/bin/bash", "-p", "-c", '. "$1"; gh pr view', "probe", str(lib)], cwd=work, env=env, capture_output=True, text=True, timeout=60)
             f = witness / f"gh-saw-{name}"
             saw = f.read_text(encoding="utf-8").strip() if f.exists() else "gh never ran"
-            check(f"hostile environment: gh is not pointed elsewhere by {name}", saw == "unset", f"gh saw {name}={saw!r}")
+            check(f"hostile environment: gh is not pointed elsewhere by {name}" if "PAGER" not in name and name not in ("GH_FORCE_TTY", "GH_BROWSER", "GH_EDITOR", "GH_DEBUG") else f"hostile environment: gh is not made to run a program or log by {name}", saw == "unset", f"gh saw {name}={saw!r}")
 
     def _made(d: Path) -> Path:
         d.mkdir(exist_ok=True)
@@ -5863,14 +5869,14 @@ def hostile_env_fixtures() -> None:
         """Is `name` still exported after the lib, when it is set to `value_of(base, work)`? (the probe runs right before the check that reads it)"""
         with scratch_dir() as td:
             work, env = lib_env(td)
-            for k in ("HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "GH_CONFIG_DIR"):
+            for k in ("HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "SSL_CERT_FILE", "SSL_CERT_DIR"):
                 env.pop(k, None)
             env["HOME"] = str(Path(td) / "trusted")
             env[name] = value_of(Path(td), work)
             done = probe(work, env, '. "$1"; export -p')
             return name in set(re.findall(r"^declare -x (\w+)", done.stdout, re.M)), f"exit {done.returncode}; {done.stderr.strip()[:120]!r}"
 
-    for name in ("HOME", "XDG_CONFIG_HOME", "GH_CONFIG_DIR"):
+    for name in ("HOME", "XDG_CONFIG_HOME", "SSL_CERT_DIR"):
         for why, value_of, expect_kept in (
             ("a value inside the repository", lambda base, work: str(_made(work / "hostile-home")), False),
             ("a link outside the repository that points INTO it", lambda base, work: str(base / "link-into-repo"), False),
@@ -5906,6 +5912,19 @@ def hostile_env_fixtures() -> None:
             env["HOME"] = home_of(Path(td), work)
             got = probe(work, env, '. "$1"; printf "%s" "${GIT_CONFIG_GLOBAL-unset}"').stdout
             check(f"hostile environment: trusted-env.sh {'sets GIT_CONFIG_GLOBAL=/dev/null' if expected == '/dev/null' else 'leaves GIT_CONFIG_GLOBAL alone'} when HOME {why}", got == expected, f"GIT_CONFIG_GLOBAL={got!r}")
+    def _file(path: Path) -> Path:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("cert\n", encoding="utf-8")
+        return path.resolve()
+
+    for why, value_of, expect_kept in (
+        ("a file inside the repository", lambda base, work: str(_file(work / "ca" / "ca.pem")), False),
+        ("a link outside the repository that points to a file INSIDE it", lambda base, work: (base / "ca-link").symlink_to(_file(work / "ca" / "ca2.pem")) or str(base / "ca-link"), False),
+        ("a file that does not exist", lambda base, work: str(base / "no-such.pem"), False),
+        ("a file outside the repository", lambda base, work: str(_file(base / "trusted" / "ca.pem")), True),
+    ):
+        kept, detail = left_with("SSL_CERT_FILE", value_of)
+        check(f"hostile environment: trusted-env.sh {'keeps' if expect_kept else 'unsets'} SSL_CERT_FILE when it is {why}", kept == expect_kept, detail)
     with scratch_dir() as td:
         work, env = lib_env(td)
         got = probe(work, env, '. "$1"; printf "%s" "${PYTHONNOUSERSITE-unset}"').stdout

@@ -252,7 +252,8 @@ def _judge(done: list[tuple[list[str], bool, str, bool]], start: str, home: str)
 
 
 def resolve(cmd: str, start: str, home: str) -> str:
-    if any(k.startswith(("GIT_", "GH_")) and k not in INHERITED_EXEMPT for k in os.environ):
+    # GIT_CONFIG_GLOBAL=/dev/null is trusted-env.sh's own doing when HOME is the repository root (#1850): it reads NO global config, so it cannot rewrite a remote.
+    if any(k.startswith(("GIT_", "GH_")) and k not in INHERITED_EXEMPT and not (k == "GIT_CONFIG_GLOBAL" and os.environ[k] == "/dev/null") for k in os.environ):
         raise Unresolved("a GIT_* / GH_* variable in the environment can pick gh's repository")
     lex = shlex.shlex(prepare(cmd).replace("\n", " ; "), posix=True, punctuation_chars=";&|()<>")
     lex.whitespace_split = True
