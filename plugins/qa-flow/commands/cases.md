@@ -36,7 +36,9 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_requirements.py"             # the 
 
 Put ids in `Source` separated by a space, comma, semicolon or pipe; `REQ-001/REQ-002` (a slash) names neither. The catalogue may be saved from Excel (a BOM is read).
 The registry's `# rows: N` header must equal its entry count and the baseline's `# size: N` its line count, so a requirement or a baseline line cannot be added or
-dropped unseen; the shipped check runs `--base origin/dev`, so the baseline cannot grow against it (a base with no baseline yet skips that check with a printed note).
+dropped unseen; the shipped check compares the baseline with the base branch, so it cannot grow against it. The base is `base:` under `requirements:` in `qa/qa.config.yml`
+(default `origin/dev`; a project on `main` sets `base: origin/main`). A missing default base is a printed note and exit 3 (a skip), a configured one that cannot be
+read is exit 2, and a base with no registry and no baseline yet (the first adoption) skips the growth check with a note.
 
 A case for a requirement states how to prove its intent by hand; it is not a copy of the requirement. Never put an id in `Source` for a case that does
 not prove it, and never delete a baseline line to make the gate pass: the line goes when a case names the requirement.

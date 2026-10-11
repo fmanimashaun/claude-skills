@@ -8,7 +8,7 @@ link is the catalogue's own `Source` column, which `/qa-flow:cases` already fill
 
     python3 check_requirements.py                    # the gate
     python3 check_requirements.py --uncased          # the requirement ids with no active case, one per line (what /qa-flow:cases should author)
-    python3 check_requirements.py --base origin/dev  # also refuse a baseline line that is not in the base branch's baseline
+    python3 check_requirements.py --base origin/dev  # the base to compare the baseline with (default: origin/dev, or `requirements: base:`)
     python3 check_requirements.py --selftest
 
 THE FILES (paths may be set under a `requirements:` section of `qa/qa.config.yml` with keys `registry`, `cases`, `baseline`; there is no path flag, only `--root`):
@@ -27,8 +27,11 @@ THE GATE FAILS WHEN
   2. a requirement that is not an owner-decision is named by no ACTIVE case and is not on the baseline;
   3. a baseline line names a requirement that is now cased, is an owner-decision, or is not in the registry (the list only shrinks), or the baseline's
      `# size: N` is not its line count (a line cannot be added or dropped without a visible edit of that number);
-  4. given `--base REF`, a baseline line is not in REF's baseline (it cannot grow against the branch it merges into); a REF it cannot read is exit 2;
-     a REF with NO baseline file (the first adoption) skips this rule with a printed note;
+  4. a baseline line is not in the base branch's baseline (it cannot grow against the branch it merges into). The base is `--base REF`, else `base:` under
+     `requirements:` in qa/qa.config.yml, else the default origin/dev. A base set by flag or config that cannot be read is exit 2. The DEFAULT base missing
+     (a project on `main`) is a printed note and exit 3, a skip, and only when nothing else is wrong. A base that holds neither a registry nor a baseline at
+     the configured or the default path is the first adoption and skips this rule with a printed note; a base with a registry and no baseline is an EMPTY
+     baseline, so every baseline line is growth. The base's baseline is the union of the two paths, so moving the file is not growth;
   5. an ACTIVE case's Source names an id that looks like one of the registry's (same prefix) but is not in it: a typo that would cover nothing.
 An owner-decision requirement is exempt only by that status, never by absence. A deprecated or draft case covers nothing.
 
@@ -55,18 +58,25 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 REGISTRY = "qa/requirements.yml"
 CASES = "qa/test-cases.csv"
 BASELINE = "qa/requirements-uncased-baseline.txt"
+DEFAULT_BASE = "origin/dev"
 STATUSES = ("done", "partial", "missing", "deviates", "owner-decision")
 ID = re.compile(r"^[A-Za-z][A-Za-z0-9]*(?:[-.][A-Za-z0-9]+)+$")
 SEPARATORS = re.compile(r"[\s,;|]+")
 
 
+def requirements_section(root: Path) -> dict:
+    """The `requirements:` section of qa/qa.config.yml (`registry`, `cases`, `baseline`, `base`), or {} when there is none."""
+    config = root / "qa" / "qa.config.yml"
+    if not config.is_file():
+        return {}
+    import qa_config
+    section = qa_config.load_section(config, "requirements")
+    return section
+
+
 def paths(root: Path) -> tuple[str, str, str]:
     """Registry, catalogue and baseline paths: the `requirements:` section of qa/qa.config.yml, else the defaults."""
-    config = root / "qa" / "qa.config.yml"
-    section: dict = {}
-    if config.is_file():
-        import qa_config
-        section = qa_config.load_section(config, "requirements")
+    section = requirements_section(root)
     def pick(key: str, default: str) -> str:
         value = str(section[key]) if section.get(key) else default
         if not (root / value).resolve().is_relative_to(root.resolve()):     # an absolute path, `..` and a symlink out all resolve outside
@@ -205,24 +215,43 @@ def uncased(root: Path) -> list[str]:
     return [e["id"] for e in entries if isinstance(e.get("id"), str) and e.get("status") != "owner-decision" and e["id"] not in (named or {})]
 
 
+def base_ref(root: Path, flag: str | None) -> tuple[str, bool]:
+    """(ref, explicit): the `--base` flag, else `requirements: base:` in qa/qa.config.yml (both explicit), else the default `origin/dev`. A ref that starts with
+    `-` is refused: it would be read by git as an option."""
+    section = requirements_section(root)
+    ref = flag or (str(section["base"]) if section.get("base") else "")
+    if ref.startswith("-"):
+        raise ValueError(f"the base ref {ref!r} must not start with `-`")
+    return (ref, True) if ref else (DEFAULT_BASE, False)
+
+
 def base_baseline(ref: str, root: Path) -> tuple[str, list[str]]:
-    """(state, lines): `ok` with the baseline as it is at `ref` (fetched if the checkout lacks it); `none` when `ref` exists but holds no baseline file
-    (the first adoption: nothing to grow against, so the caller prints a note); `unreadable` when `ref` itself cannot be read (the caller exits 2)."""
-    _, _, baseline = paths(root)
+    """(state, lines). `ok`: the baseline lines at `ref` (the union of the configured path and the default path, so moving the file is not growth;
+    fetched if the checkout lacks `ref`); a registry with no baseline anywhere at the base is `ok` with NO lines, so every baseline line is growth.
+    `none`: `ref` holds neither a registry nor a baseline at either path, which is the first adoption (nothing to grow against; the caller prints a note).
+    `unreadable`: `ref` itself cannot be read."""
+    registry, _, baseline = paths(root)
 
-    def show() -> subprocess.CompletedProcess:
-        return subprocess.run(["git", "-C", str(root), "show", f"{ref}:{baseline}"], capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
+    def git(*args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
 
-    done = show()
-    if done.returncode != 0:
+    def at_ref(path: str) -> str | None:
+        done = git("show", f"{ref}:{path}")
+        return done.stdout if done.returncode == 0 else None
+
+    if git("rev-parse", "--verify", "-q", f"{ref}^{{commit}}").returncode != 0:
         remote, _, branch = ref.partition("/")
         subprocess.run(["git", "-C", str(root), "fetch", "-q", remote, branch], capture_output=True, timeout=120, stdin=subprocess.DEVNULL)
-        done = show()
-    if done.returncode == 0:
-        return "ok", baseline_lines(done.stdout)
-    probe = subprocess.run(["git", "-C", str(root), "rev-parse", "--verify", "-q", f"{ref}^{{commit}}"], capture_output=True, text=True, timeout=30,
-                           stdin=subprocess.DEVNULL)
-    return ("none", []) if probe.returncode == 0 else ("unreadable", [])
+        if git("rev-parse", "--verify", "-q", f"{ref}^{{commit}}").returncode != 0:
+            return "unreadable", []
+    baselines = [t for t in (at_ref(path) for path in dict.fromkeys((baseline, BASELINE))) if t is not None]
+    registries = [t for t in (at_ref(path) for path in dict.fromkeys((registry, REGISTRY))) if t is not None]
+    if not baselines and not registries:
+        return "none", []
+    lines: list[str] = []
+    for text in baselines:
+        lines += baseline_lines(text)
+    return "ok", lines
 
 
 # ---- selftest ---------------------------------------------------------------------------------------------------------------------------------
@@ -335,8 +364,8 @@ def selftest() -> int:
         (repo / CASES).write_text(csv_text(("TC-1", "Active", "REQ-001")))
         (repo / BASELINE).write_text("# size: 1\nREQ-002\n")
         done = subprocess.run([sys.executable, __file__, "--root", str(repo), "--base", none_sha], capture_output=True, text=True, timeout=120)
-        if done.returncode != 0 or "has no baseline file, so growth against it was not checked" not in done.stdout:
-            failures.append(f"a base with no baseline file skips the growth check with a printed note and exits 0: got {done.returncode} {done.stdout[:160]!r}")
+        if done.returncode != 0 or "holds no registry or baseline, so growth against it was not checked" not in done.stdout:
+            failures.append(f"a base with no registry or baseline skips the growth check with a printed note and exits 0: got {done.returncode} {done.stdout[:160]!r}")
         done = subprocess.run([sys.executable, __file__, "--root", str(repo), "--base", with_sha], capture_output=True, text=True, timeout=120)
         if done.returncode != 0:
             failures.append(f"a baseline line already at the base is clean under --base: got {done.returncode} {done.stdout[:160]!r}")
@@ -345,6 +374,72 @@ def selftest() -> int:
         done = subprocess.run([sys.executable, __file__, "--root", str(repo), "--base", with_sha], capture_output=True, text=True, timeout=120)
         if done.returncode != 1 or "REQ-003 is not in the base branch's baseline" not in done.stdout:
             failures.append(f"an uncased requirement plus its baseline line plus a bumped size is refused under --base: got {done.returncode} {done.stdout[:200]!r}")
+    # the base ratchet, against real refs
+    with tempfile.TemporaryDirectory() as td:
+        repo = Path(td) / "repo"
+        repo.mkdir()
+        fixture_git.init(repo)
+        (repo / "qa").mkdir()
+
+        def put(name: str, text: str) -> None:
+            (repo / name).parent.mkdir(parents=True, exist_ok=True)
+            (repo / name).write_text(text, encoding="utf-8")
+
+        def cli(*args: str) -> subprocess.CompletedProcess:
+            return subprocess.run([sys.executable, __file__, "--root", str(repo), *args], capture_output=True, text=True, timeout=120)
+
+        def commit(message: str) -> str:
+            fixture_git.run(repo, "add", "qa")
+            fixture_git.run(repo, "commit", "-q", "-m", message)
+            return fixture_git.run(repo, "rev-parse", "HEAD").stdout.strip()
+
+        put(REGISTRY, "# rows: 2\n" + reg2)
+        put(CASES, csv_text(("TC-1", "Active", "REQ-001")))
+        put(BASELINE, "# size: 1\nREQ-002\n")
+        with_registry = commit("registry and a size-1 baseline")
+        # the bypass: a base that HAS a registry, and a config that moves the baseline to a path the base lacks
+        put("qa/qa.config.yml", 'requirements:\n  baseline: "qa/b2.txt"\n')
+        put(REGISTRY, "# rows: 4\n" + reg2 + entry("REQ-003", "missing") + entry("REQ-004", "missing"))
+        put("qa/b2.txt", "# size: 3\nREQ-002\nREQ-003\nREQ-004\n")
+        done = cli("--base", with_registry)
+        if done.returncode != 1 or "not in the base branch's baseline" not in done.stdout:
+            failures.append(f"a baseline moved to a new path with grown lines is refused when the base has a registry: got {done.returncode} {done.stdout[:200]!r}")
+        # moving the file with the same lines is not growth (the base's baseline is the union of the two paths)
+        put(REGISTRY, "# rows: 2\n" + reg2)
+        put("qa/b2.txt", "# size: 1\nREQ-002\n")
+        done = cli("--base", with_registry)
+        if done.returncode != 0:
+            failures.append(f"moving the baseline file with the same lines is clean: got {done.returncode} {done.stdout[:200]!r}")
+        (repo / "qa" / "qa.config.yml").unlink()
+        # a base with a registry and NO baseline is an empty baseline: adding lines is growth
+        fixture_git.run(repo, "rm", "-q", "--cached", BASELINE)
+        (repo / BASELINE).unlink()
+        registry_only = commit("a registry and no baseline")
+        put(BASELINE, "# size: 1\nREQ-002\n")
+        done = cli("--base", registry_only)
+        if done.returncode != 1 or "REQ-002 is not in the base branch's baseline" not in done.stdout:
+            failures.append(f"a base with a registry and no baseline is an empty baseline, so a baseline line is growth: got {done.returncode} {done.stdout[:200]!r}")
+        # the default base (origin/dev) is missing here: findings are still reported, and only a clean tree is a skip
+        done = cli()
+        if done.returncode != 3 or "default base origin/dev cannot be read" not in done.stdout:
+            failures.append(f"a clean tree whose default base is missing is a skip (3) with a note: got {done.returncode} {done.stdout[:200]!r}")
+        put(CASES, csv_text(("TC-9", "Active", "other")))
+        done = cli()
+        if done.returncode != 1 or "REQ-001 is named by no ACTIVE case" not in done.stdout:
+            failures.append(f"findings are reported, not hidden, when the default base is missing: got {done.returncode} {done.stdout[:200]!r}")
+        put(CASES, csv_text(("TC-1", "Active", "REQ-001")))
+        # the base is a project setting: `base:` under requirements: is read; a missing configured base is exit 2
+        put("qa/qa.config.yml", f'requirements:\n  base: "{with_registry}"\n')
+        done = cli()
+        if done.returncode != 0:
+            failures.append(f"a base set in qa.config.yml is used (no origin/dev needed): got {done.returncode} {done.stdout[:200]!r}")
+        put("qa/qa.config.yml", 'requirements:\n  base: "no-such-ref"\n')
+        done = cli()
+        if done.returncode != 2:
+            failures.append(f"a configured base that cannot be read is exit 2, not a skip: got {done.returncode} {done.stdout[:200]!r}")
+        done = cli("--base=-x")
+        if done.returncode != 2 or "must not start with" not in done.stderr:
+            failures.append(f"a base ref that starts with `-` is refused, git would read it as an option: got {done.returncode} {done.stderr[:200]!r}")
     # the CLI end to end: exit codes and --uncased
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
@@ -356,8 +451,8 @@ def selftest() -> int:
         if done.returncode != 0 or done.stdout.split() != ["REQ-002"]:
             failures.append(f"--uncased lists the uncased ids and exits 0: got exit {done.returncode} {done.stdout!r}")
         done = subprocess.run([sys.executable, __file__, "--root", td], capture_output=True, text=True, timeout=60)
-        if done.returncode != 0:
-            failures.append(f"the gate exits 0 on a conforming tree: got {done.returncode} {done.stdout[:120]!r}")
+        if done.returncode != 3 or "the default base origin/dev cannot be read" not in done.stdout:
+            failures.append(f"a conforming tree whose DEFAULT base cannot be read is a skip (3) with a note, never a pass: got {done.returncode} {done.stdout[:160]!r}")
         (root / BASELINE).write_text("# size: 0\n")
         done = subprocess.run([sys.executable, __file__, "--root", td], capture_output=True, text=True, timeout=60)
         if done.returncode != 1 or "REQ-002" not in done.stdout:
@@ -369,8 +464,8 @@ def selftest() -> int:
         (root / CASES).write_text(csv_text(("TC-1", "Active", "REQ-001")))     # a conforming tree again, so only the ref can fail
         (root / BASELINE).write_text("# size: 1\nREQ-002\n")
         done = subprocess.run([sys.executable, __file__, "--root", td], capture_output=True, text=True, timeout=60)
-        if done.returncode != 0:
-            failures.append(f"control: the restored tree is clean without --base: got {done.returncode} {done.stdout[:120]!r}")
+        if done.returncode != 3:
+            failures.append(f"control: the restored tree, outside a git repository, is only a skip because the default base cannot be read: got {done.returncode} {done.stdout[:120]!r}")
         done = subprocess.run([sys.executable, __file__, "--root", td, "--base", "no-such-remote/no-such-branch"], capture_output=True, text=True, timeout=120)
         if done.returncode != 2:
             failures.append(f"an unreadable --base ref exits 2, never a pass: got {done.returncode} {done.stdout[:120]!r}")
@@ -385,7 +480,7 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="Every requirement is named, by id, in an ACTIVE catalogue case (#1855).")
     parser.add_argument("--root", default=".", help="the project root (default: the current directory)")
     parser.add_argument("--uncased", action="store_true", help="list the requirement ids with no active case, one per line, and exit 0")
-    parser.add_argument("--base", metavar="REF", help="also refuse a baseline line that is not in REF's baseline (fetches REF; exit 2 if unreadable)")
+    parser.add_argument("--base", metavar="REF", help="refuse a baseline line that is not in REF's baseline; default: `requirements: base:` in qa/qa.config.yml, else origin/dev (fetches REF)")
     parser.add_argument("--selftest", action="store_true", help="prove each rule fires on a violation and stays silent on conforming input")
     args = parser.parse_args(argv)
     if args.selftest:
@@ -395,22 +490,28 @@ def main(argv: list[str]) -> int:
         if args.uncased:
             print("\n".join(uncased(root)))
             return 0
-        base = None
-        if args.base:
-            state, lines = base_baseline(args.base, root)
-            if state == "unreadable":
-                print(f"check_requirements: cannot read {args.base} (exit 2, not a pass)", file=sys.stderr)
+        base, unchecked = None, False
+        ref, explicit = base_ref(root, args.base)
+        state, lines = base_baseline(ref, root)
+        if state == "unreadable":
+            if explicit:
+                print(f"check_requirements: cannot read {ref} (exit 2, not a pass)", file=sys.stderr)
                 return 2
-            if state == "none":
-                print(f"check_requirements: note: {args.base} has no baseline file, so growth against it was not checked (first adoption)")
-            else:
-                base = lines
+            print(f"check_requirements: note: the default base {ref} cannot be read, so growth was not checked; set `base:` under `requirements:` in qa/qa.config.yml")
+            unchecked = True
+        elif state == "none":
+            print(f"check_requirements: note: {ref} holds no registry or baseline, so growth against it was not checked (first adoption)")
+        else:
+            base = lines
     except ValueError as exc:
         print(f"check_requirements: {exc} (exit 2, not a pass)", file=sys.stderr)
         return 2
     code, found = check(root, base)
     for line in found:
         print(line)
+    if code == 0 and unchecked:
+        print("check_requirements: the findings above are all there is, but growth was not checked: exit 3 (a skip, not a pass)")
+        return 3
     print(f"check_requirements: {'ok' if code == 0 else 'could not check' if code == 2 else str(len(found)) + ' finding(s)'}")
     return code
 
