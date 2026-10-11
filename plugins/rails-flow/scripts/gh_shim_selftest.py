@@ -21,11 +21,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fixture_git  # noqa: E402  (#1588: a fixture's git touches only its own temp repo)
 
+for _k, _v in (("GIT_AUTHOR_NAME", "t"), ("GIT_AUTHOR_EMAIL", "t@t"), ("GIT_COMMITTER_NAME", "t"), ("GIT_COMMITTER_EMAIL", "t@t")):  # fixture-git: exempt (an identity for fixture_git.run's own commit; it names no repository)
+    os.environ[_k] = _v
+
 PLUGIN = Path(__file__).resolve().parent.parent
 SHIM_DIR = PLUGIN / "git-shim"
 HOOK = PLUGIN / "hooks" / "scripts" / "guard-pr-ready.sh"
 FAILURES: list[str] = []
 CHECKS = 0
+CURRENT = ""          # the label of the case running: every failure names it, which is what the mutation runner's `expects` (a case label) looks for
 CASES: list[tuple[str, object]] = []
 
 STUB = """#!/bin/sh
@@ -48,7 +52,7 @@ def check(label: str, ok: bool, detail: str = "") -> None:
     global CHECKS
     CHECKS += 1
     if not ok:
-        FAILURES.append(f"{label}: {detail}" if detail else label)
+        FAILURES.append(f"[{CURRENT}] {label}: {detail}" if detail else f"[{CURRENT}] {label}")
 
 
 class Fixture:
@@ -58,8 +62,6 @@ class Fixture:
         self.base = base
         self.repo = base / "repo"
         fixture_git.init(self.repo, "-b", "main")
-        fixture_git.run(self.repo, "config", "user.email", "t@t")
-        fixture_git.run(self.repo, "config", "user.name", "t")
         (self.repo / "a.txt").write_text("one\n")
         if in_force:
             wf = self.repo / ".github" / "workflows"
@@ -236,7 +238,9 @@ def main(argv: list[str]) -> int:
     if not chosen:
         print(f"SELFTEST FAILED -- no case's label contains {match!r}", file=sys.stderr)
         return 1
+    global CURRENT
     for label, fn in chosen:
+        CURRENT = label
         td = tempfile.mkdtemp(prefix="ghshim-")
         try:
             fn(Path(td))

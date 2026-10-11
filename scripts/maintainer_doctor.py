@@ -364,6 +364,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #1790. The git shim (put first on PATH by the SessionStart hook) refuses whole-tree add, reset --hard, tree checkout/restore, clean -f and
     # --no-verify by what git is asked to do; proven with real git on real repositories and a look at what MOVED.
     ("git shim", ("python3", "plugins/rails-flow/scripts/git_shim_selftest.py")),
+    # #1839. The gh shim: `gh pr ready` from the argv the shell finally hands gh, against the sweep record for HEAD.
+    ("gh shim", ("python3", "plugins/rails-flow/scripts/gh_shim_selftest.py")),
     # #1828. The auto-memory index limit check: its boundaries (200 lines, 25KB read as KiB), the ratchet baseline and the one-line SessionStart output.
     ("memory index limit", ("python3", "plugins/rails-flow/scripts/check_memory_index.py", "--selftest")),
     # #1829. The status line a project vendors: every payload field optional, a window that has reset left out (#1854), amber from 80%, never a traceback.
