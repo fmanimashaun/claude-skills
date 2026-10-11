@@ -10,7 +10,7 @@ WHAT THE SOURCE IS, NOT THE WIRE. The `mcp` gem omits `annotations` from `tools/
 ANY is declared it fills every other hint with the spec defaults and emits all four (lib/mcp/tool/annotations.rb:8 and
 `to_h`, v1.6.0 and v1.7.0). The wire therefore cannot tell "stated" from "defaulted", so this reads the Ruby source.
 
-HOW (ruby-sdk v1.6.0 / v1.7.0, identical for all of it; verdicts in docs/evidence/audits/):
+HOW (ruby-sdk v1.6.0 / v1.7.0, identical for all of it; the real doctrine-verifier's verdicts are recorded in PR 1892):
   * `class X < MCP::Tool` ... `annotations(read_only_hint: true, open_world_hint: false)`: the macro takes ONE positional
     Hash splatted into `Annotations.new`, which accepts five keys (destructive_hint, idempotent_hint, open_world_hint,
     read_only_hint, title) and raises on any other (tool.rb:121-127). This gate requires TWO of them, explicit.
@@ -19,7 +19,9 @@ HOW (ruby-sdk v1.6.0 / v1.7.0, identical for all of it; verdicts in docs/evidenc
   * `Class.new(MCP::Tool) { annotations(...) }`, an anonymous subclass.
 A class that inherits an application base tool class (`class X < ApplicationTool`, itself `< MCP::Tool`) is a tool too.
 Annotations are NOT inherited: `Tool.inherited` resets them (tool.rb:37-47), so each concrete tool states its own. A class
-that other scanned classes inherit from is treated as an abstract base and not judged.
+that other scanned classes inherit from is treated as an abstract base and not judged, UNLESS it defines `call`: a tool that
+implements `call` is served, whoever inherits from it, so it is judged too. A name declared twice (`Admin::Report`, `Api::Report`)
+is judged per declaration, by that declaration's own base.
 The hint must be a literal key (`read_only_hint:` or `:read_only_hint =>`). An `annotations(SOME_CONSTANT)` cannot be read
 statically and is a finding, never a pass.
 
@@ -27,8 +29,10 @@ COULD NOT CHECK, never a pass (exit 2): a tool list this scan cannot read. `MCP:
 a literal `[...]`, and `server.tools = ...`, `server.tools << t`, `.tools.push/.concat` (`attr_accessor :tools`, server.rb:184/185;
 the gem has no add_tool). A tool registered that way may be defined anywhere, so a clean run would claim more than was looked at.
 
-LIMITS, stated: a class body ends at the first `end` at the class line's indent (rubocop-formatted code), and a tool built by other
-metaprogramming is invisible here. The check proves the declaration exists, not that the value is TRUE: a tool whose code writes
+LIMITS, stated: only `app/` and `lib/` are read, so a tool kept elsewhere (`config/`, an engine) reads as "not applicable"; a class
+body ends at the first `end` at the class line's indent (rubocop-formatted code); whole-line `#` comments are ignored, a trailing one
+is not; a tool built by other metaprogramming is invisible here; and `read_only_hint: nil` or `false` counts as stated, since the
+gate asks for an explicit declaration, not a particular value. The check proves the declaration exists, not that the value is TRUE: a tool whose code writes
 while declaring `read_only_hint: true` is the request spec's job ("No tool writes", mcp-server.md §4).
 
 Run:  check_mcp_annotations.py [--root DIR]
@@ -50,6 +54,7 @@ CALL = re.compile(r"(?:(?P<recv>[\w:]+)\.define(?!\w)|\.define_tool(?!\w))\s*\(?
 CLASS_NEW = re.compile(r"\bClass\.new\(\s*(?P<base>[\w:]+)\s*\)")
 SERVER_NEW = re.compile(r"MCP::Server\.new\s*\(")
 TOOLS_MUTATED = re.compile(r"\.tools\s*(?:=(?![=~>])|<<|\.(?:push|concat|append)\b)")
+CALLS = re.compile(r"\bdef\s+(?:self\.)?call\b")
 MCP_TOOL = {"MCP::Tool", "::MCP::Tool"}
 
 
@@ -125,28 +130,36 @@ def scan(root: Path) -> tuple[int, list[str], list[str]]:
             text = p.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as e:
             raise Unusable(f"{p}: {e}") from e
-        parsed.append((p, text, text.split("\n")))
-    classes: dict[str, str] = {}
+        # a commented-out declaration is not one: blank whole-line comments (line numbers stay)
+        lines = ["" if ln.lstrip().startswith("#") else ln for ln in text.split("\n")]
+        parsed.append((p, "\n".join(lines), lines))
+    # one name may be declared twice (`Admin::Report`, `Api::Report`): keep every base it has, so no declaration hides another
+    classes: dict[str, set[str]] = {}
+    served: set[str] = set()
     for _, _, lines in parsed:
-        for line in lines:
+        for i, line in enumerate(lines):
             m = CLASS.match(line)
             if m:
-                classes[m["name"].split("::")[-1]] = m["base"]
-    tools = {n for n, b in classes.items() if b in MCP_TOOL}
+                name = m["name"].split("::")[-1]
+                classes.setdefault(name, set()).add(m["base"])
+                if CALLS.search(_class_body(lines, i, m["indent"])):
+                    served.add(name)
+    tools = {n for n, bs in classes.items() if bs & MCP_TOOL}
     grew = True
     while grew:
         grew = False
-        for n, b in classes.items():
-            if n not in tools and b.split("::")[-1] in tools:
+        for n, bs in classes.items():
+            if n not in tools and any(b.split("::")[-1] in tools for b in bs):
                 tools.add(n)
                 grew = True
-    bases = {classes[n].split("::")[-1] for n in tools}
+    # a base is abstract (not judged) only when it has a tool subclass AND defines no `call`: a tool that implements `call` is served
+    bases = {b.split("::")[-1] for n in tools for b in classes[n]} - served
     found, findings, unchecked = 0, [], []
     for p, text, lines in parsed:
         rel = p.relative_to(root)
         for i, line in enumerate(lines):
             m = CLASS.match(line)
-            if m and m["name"].split("::")[-1] in tools and m["name"].split("::")[-1] not in bases:
+            if m and _is_tool(m["base"], tools) and m["name"].split("::")[-1] not in bases:
                 found += 1
                 why = _judge(_class_body(lines, i, m["indent"]))
                 if why:
@@ -266,6 +279,17 @@ CASES: list[tuple[str, dict[str, str], int, int, str, int]] = [
     ("server.tools = could not be checked", {"app/mcp/a.rb": GOOD + "server.tools = [SalesReport]\n"}, 1, 0, "", 1),
     ("server.tools << could not be checked", {"app/mcp/a.rb": GOOD + "server.tools << SalesReport\n"}, 1, 0, "", 1),
     ("a comparison of tools is not a mutation", {"app/mcp/a.rb": GOOD + "ok = server.tools == []\n"}, 1, 0, "", 0),
+    ("a commented-out annotations call is not a declaration",
+     {"app/mcp/a.rb": "class A < MCP::Tool\n  # annotations(read_only_hint: true, open_world_hint: false)\nend\n"}, 1, 1, "declares no annotations", 0),
+    ("a base that defines call is a served tool, and judged",
+     {"app/mcp/base.rb": "class Report < MCP::Tool\n  def self.call(**)\n  end\nend\n", "app/mcp/b.rb": "class Sub < Report\n  annotations(read_only_hint: true, open_world_hint: false)\nend\n"},
+     2, 1, "tool Report", 0),
+    ("a name declared in two places is judged per declaration",
+     {"app/a/tool.rb": "module Admin\n  class Report < MCP::Tool\n    description 'x'\n  end\nend\n", "app/b/other.rb": "module Api\n  class Report < Struct\n  end\nend\n"},
+     1, 1, "tool Report", 0),
+    ("a name declared in two places still passes its tool-ness to a subclass",
+     {"app/a/tool.rb": "module Admin\n  class Report < MCP::Tool\n  end\nend\n", "app/b/other.rb": "module Api\n  class Report < Struct\n  end\nend\n",
+      "app/c/x.rb": "class X < Report\n  description 'x'\nend\n"}, 1, 1, "tool X", 0),
     ("a file with no tool is not applicable", {"app/models/user.rb": "class User < ApplicationRecord\nend\n"}, 0, 0, "", 0),
     ("a class that is not a tool is ignored", {"app/mcp/a.rb": "class A < Struct\nend\n" + GOOD}, 1, 0, "", 0),
 ]

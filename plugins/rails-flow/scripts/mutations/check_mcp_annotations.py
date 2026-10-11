@@ -30,7 +30,7 @@ GUARD = Guard(
         ),
         Mutation(
             "a subclass of an application base is never judged",
-            "            if n not in tools and b.split(\"::\")[-1] in tools:",
+            "            if n not in tools and any(b.split(\"::\")[-1] in tools for b in bs):",
             "            if n not in tools and False:",
             "a subclass of an application base is judged, the base is not",
         ),
@@ -75,6 +75,30 @@ GUARD = Guard(
             "    if unchecked:\n",
             "    if unchecked and found:\n",
             "an unchecked tool list with no tool found exits 2, not 3",
+        ),
+        Mutation(
+            "a commented-out annotations call counts as a declaration",
+            '        lines = ["" if ln.lstrip().startswith("#") else ln for ln in text.split("\\n")]',
+            '        lines = text.split("\\n")',
+            "a commented-out annotations call is not a declaration",
+        ),
+        Mutation(
+            "a base that defines call is exempted as abstract",
+            "for b in classes[n]} - served",
+            "for b in classes[n]}",
+            "a base that defines call is a served tool, and judged",
+        ),
+        Mutation(
+            "a later declaration of a name overwrites an earlier one",
+            "                classes.setdefault(name, set()).add(m[\"base\"])",
+            "                classes[name] = {m[\"base\"]}",
+            "a name declared in two places still passes its tool-ness to a subclass",
+        ),
+        Mutation(
+            "a declaration is judged by its name, not its own base",
+            '            if m and _is_tool(m["base"], tools) and m["name"].split("::")[-1] not in bases:',
+            '            if m and m["name"].split("::")[-1] in tools and m["name"].split("::")[-1] not in bases:',
+            "a name declared in two places is judged per declaration",
         ),
         Mutation(
             "Tool.define is not scanned",

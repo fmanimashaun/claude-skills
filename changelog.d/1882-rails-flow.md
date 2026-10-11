@@ -4,5 +4,4 @@ section: rails-flow
   defaults once any one is declared, so the check reads the Ruby source (`class X < MCP::Tool`, `MCP::Tool.define`, `Sub.define`, `define_tool`,
   `Class.new(MCP::Tool)`) rather than the wire. Annotations are not inherited, so each concrete tool states its own. A tool list it cannot read
   (`tools:` not a literal list, `server.tools =`, `<<`) exits 2, never a pass. Registered as the `mcp-annotations` check in `plugins/rails-flow/checks.json`.
-  Verified by the real `doctrine-verifier` against ruby-sdk v1.6.0 and v1.7.0 and the schema defaults at the draft and the tagged 2025-11-25:
-  `docs/evidence/audits/2026-10-11-mcp-annotations-gate-1882.md`. Gates 3 and 4 of #1306 wait on a built MCP instance (#1885).
+  The gem and schema facts it reads are the real `doctrine-verifier`'s verdicts at ruby-sdk v1.6.0 and v1.7.0, recorded with the doctrine sentence in #1892. Gates 3 and 4 of #1306 wait on a built MCP instance (#1885).
