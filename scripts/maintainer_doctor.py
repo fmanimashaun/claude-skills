@@ -475,6 +475,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("qa-flow route crawl", ("python3", "plugins/qa-flow/scripts/crawl_report.py", "--selftest")),
     # #1855. Every requirement is named, by id, in an ACTIVE catalogue case (slice 1 of #1853); the shipped gate's own selftest.
     ("qa-flow requirements gate", ("python3", "plugins/qa-flow/scripts/check_requirements.py", "--selftest")),
+    # #1856. Every feature requirement has a spec that a runner actually selects (slice 2 of #1853); the shipped gate's own selftest.
+    ("qa-flow e2e paths gate", ("python3", "plugins/qa-flow/scripts/check_e2e_paths.py", "--selftest")),
     # #1857. No registry row points at a closed issue without being updated (slice 3 of #1853); the shipped gate's own selftest, and the parity of the
     # two readers of the registry (qa-flow's and rails-flow's: plugins install alone, so each has its own).
     ("rails-flow registry closed gate", ("python3", "plugins/rails-flow/scripts/check_registry_closed.py", "--selftest")),

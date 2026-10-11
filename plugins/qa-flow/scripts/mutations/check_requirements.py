@@ -131,7 +131,7 @@ GUARD = Guard(
         ),
         Mutation(
             "the base's baseline is read at the configured path only, so moving the file reads as growth",
-            "dict.fromkeys((baseline, BASELINE))",
+            "dict.fromkeys((baseline, default_baseline))",
             "dict.fromkeys((baseline,))",
             "moving the baseline file with the same lines is clean",
         ),
