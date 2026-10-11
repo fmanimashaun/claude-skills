@@ -2,14 +2,14 @@
      Rebuild:  python3 scripts/build_wiki.py
      Drift:    python3 scripts/build_wiki.py --check  (runs in the gate sweep) -->
 # Agents and gates
-**31 shipped agents · 52 shipped commands · 4 tier tables**, plus 7 maintainer agents and 7 maintainer commands that are not installed.
+**31 shipped agents · 53 shipped commands · 4 tier tables**, plus 7 maintainer agents and 7 maintainer commands that are not installed.
 
 | plugin | version | agents | commands | tier rows |
 |---|---|---|---|---|
 | `design-flow` | 1.45.2 | 5 | 12 | 5 |
 | `pipeline` | 1.4.3 | 2 | 9 | 2 |
 | `qa-flow` | 1.36.1 | 11 | 8 | 11 |
-| `rails-flow` | 1.58.0 | 13 | 23 | 13 |
+| `rails-flow` | 1.58.0 | 13 | 24 | 13 |
 
 ## Agents
 
@@ -180,6 +180,8 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | blocked catalogue | `repo` | `python3 scripts/check_blocked_catalogue.py` | live check |
 | blocked catalogue selftest | `repo` | `python3 scripts/check_blocked_catalogue.py --selftest` | selftest |
 | changelog coverage selftest | `repo` | `python3 scripts/check_changelog_coverage.py --selftest` | selftest |
+| changelog fragments | `repo` | `python3 scripts/changelog_fragments.py --check` | live check |
+| changelog fragments selftest | `repo` | `python3 scripts/changelog_fragments.py --selftest` | selftest |
 | checks.json paths | `repo` | `python3 scripts/check_manifest_paths.py` | live check |
 | checks.json paths selftest | `repo` | `python3 scripts/check_manifest_paths.py --selftest` | selftest |
 | close-on-dev-merge selftest | `repo` | `python3 scripts/close_on_dev_merge.py --selftest` | selftest |
