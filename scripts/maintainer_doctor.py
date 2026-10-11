@@ -486,6 +486,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("rails-flow registry closed gate", ("python3", "plugins/rails-flow/scripts/check_registry_closed.py", "--selftest")),
     ("registry reader parity", ("python3", "scripts/check_registry_reader_parity.py")),
     ("registry reader parity selftest", ("python3", "scripts/check_registry_reader_parity.py", "--selftest")),
+    ("exit-3 rows", ("python3", "scripts/check_exit3_rows.py")),                                  # #1873
+    ("exit-3 rows selftest", ("python3", "scripts/check_exit3_rows.py", "--selftest")),
+    ("design-flow port fidelity gate", ("python3", "plugins/design-flow/scripts/port_fidelity_gate.py", "--selftest")),
     ("qa-flow theme parity", ("python3", "plugins/qa-flow/scripts/theme_parity.py", "--selftest")),
     # #953. What a page hides INSIDE the viewport, which every boundary assertion passes on.
     ("qa-flow layout fit", ("python3", "plugins/qa-flow/scripts/layout_fit.py", "--selftest")),

@@ -97,6 +97,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | design-flow palette candidates | `design-flow` | `python3 plugins/design-flow/scripts/palette_candidates.py --check` | live check |
 | design-flow palette candidates selftest | `design-flow` | `python3 plugins/design-flow/scripts/palette_candidates.py --selftest` | selftest |
 | design-flow palette gates selftest | `design-flow` | `python3 plugins/design-flow/scripts/palette_gates.py --selftest` | selftest |
+| design-flow port fidelity gate | `design-flow` | `python3 plugins/design-flow/scripts/port_fidelity_gate.py --selftest` | selftest |
 | design-flow prompt library selftest | `design-flow` | `python3 plugins/design-flow/scripts/prompt_library.py --selftest` | selftest |
 | design-flow rendered conformance | `design-flow` | `python3 plugins/design-flow/scripts/rendered_conformance.py --selftest` | selftest |
 | design-flow scale contiguity | `design-flow` | `python3 plugins/design-flow/scripts/check_scale_contiguity.py` | live check |
@@ -213,6 +214,8 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | doctrine map selftest | `repo` | `python3 scripts/doctrine_map.py --selftest` | selftest |
 | evals compare | `repo` | `python3 evals/compare.py --selftest` | selftest |
 | evals gates | `repo` | `python3 evals/selftest.py` | live check |
+| exit-3 rows | `repo` | `python3 scripts/check_exit3_rows.py` | live check |
+| exit-3 rows selftest | `repo` | `python3 scripts/check_exit3_rows.py --selftest` | selftest |
 | frontmatter is valid YAML | `repo` | `python3 scripts/check_frontmatter.py` | live check |
 | frontmatter selftest | `repo` | `python3 scripts/check_frontmatter.py --selftest` | selftest |
 | gauntlet core selftest | `repo` | `python3 scripts/gauntlet_core.py --selftest` | selftest |

@@ -267,7 +267,7 @@ def selftest(match: str | None = None) -> int:
     if not match or "one read per distinct issue" in match:
         if twice.asked != [10]:
             failures.append(f"one read per distinct issue: asked {twice.asked}")
-    row("no registry is exit 3, never a pass", "", FakeGh({}), 3, "no registry here", files={REGISTRY: None})
+    row("no registry is n/a (exit 3), never a pass", "", FakeGh({}), 3, "no registry here", files={REGISTRY: None})
     row("a broken registry line is exit 2", "- id: R-1\n", FakeGh({}), 2, "is not JSON")
     row("gh missing is exit 2 (ERROR in the gate runner, which grades 3 as not applicable), never a pass", entry("R-1", "partial", "  issue: 10\n"), FakeGh({}, absent=True), 2, "`gh` is not on PATH")
     row("gh failing is exit 2, never a pass", entry("R-1", "partial", "  issue: 10\n"), FakeGh({}, broken=True), 2, "could not read an issue's state")
