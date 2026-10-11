@@ -34,6 +34,8 @@ WHAT IT CHECKS
                               plugin's README (as /p:c) never names — same defect, one level down
   schema-reader-drift         `architecture_graph.py` (vendored alone) carries its own copy of the rule that decides which db/*_schema.rb files are the project's;
                               this runs it and `build_project_wiki.py`'s over the same fixture trees and refuses a difference (#1698)
+  hook-start-hardened         a hook command in plugins/*/hooks/hooks.json that does not start with `/bin/bash -p`, a hook script whose first executable line is
+                              not the source of lib/trusted-env.sh, or a plugin whose copy of that lib is missing or differs from rails-flow's (#1850)
   hook-lib-drift              the two shipped copies of hooks/scripts/lib/normalize_cmd.sh, or of lib/deadline.sh,
                               differ, or one is missing -- one normaliser is a claim only while they are identical
   fixture-git-drift           the three shipped copies of scripts/fixture_git.py (rails-flow, qa-flow,
@@ -694,6 +696,72 @@ def check_schema_reader_drift() -> tuple[list[Finding], int]:
                                         f"over db/{{{', '.join(sorted(tree))}}} the wiki builder reads {wiki_files} and the graph reads {graph_files}: one rule, two copies, and they "
                                         f"disagree. The wiki's (build_project_wiki.py `app_schema_files`) is the one decided in #1695/#1698; bring the graph's copy back to it"))
     return findings, len(SCHEMA_TREES)
+
+
+# Rule: hook-start-hardened (#1850, P1 of #1843)
+# A project's checked-in `.claude/settings.json` `env` reaches every hook process, and the harness resolves a command's first word through PATH. So a hook
+# started as a bare `bash` can start the repository's `bash` before any of our code runs, and one whose script calls `python3`, `git` or `gh` before
+# `lib/trusted-env.sh` has rebuilt PATH and unset PYTHON*/GIT_CONFIG_*/BASH_ENV runs whatever the repository chose. Three clauses, each with a fixture and a
+# mutation: every command hook starts `/bin/bash -p` (which also ignores BASH_ENV); every hook script's first executable line sources the lib; every plugin
+# that has hooks ships a copy of the lib, identical to rails-flow's (plugins install alone, so one copy each).
+HOOK_START = "/bin/bash -p "
+TRUSTED_ENV_LIB = "hooks/scripts/lib/trusted-env.sh"
+TRUSTED_ENV_SOURCE = '. "${BASH_SOURCE[0]%/*}/lib/trusted-env.sh"'
+_SET_LINE = re.compile(r"^set [-+][A-Za-z]+( [A-Za-z]+)*$")
+
+
+def _first_executable_line(text: str) -> str:
+    """The first line of a shell script that is not blank, a comment (the shebang included) or a `set` option line."""
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or _SET_LINE.match(stripped):
+            continue
+        return stripped
+    return ""
+
+
+def check_hook_start_hardened() -> tuple[list[Finding], int]:
+    findings: list[Finding] = []
+    examined = 0
+    canonical: tuple[str, bytes] | None = None
+    for manifest in sorted((ROOT / "plugins").glob("*/hooks/hooks.json")):
+        plugin = manifest.parent.parent
+        rel = manifest.relative_to(ROOT).as_posix()
+        try:
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+        except ValueError as exc:
+            findings.append(Finding("hook-start-hardened", rel, 0, f"cannot read the hook commands: {exc}"))
+            continue
+        commands = [h.get("command", "") for entries in data.get("hooks", {}).values() for entry in entries for h in entry.get("hooks", []) if h.get("type") == "command"]
+        for command in commands:
+            examined += 1
+            if not command.startswith(HOOK_START):
+                findings.append(Finding("hook-start-hardened", rel, 0,
+                                        f"hook command {command!r} does not start with `{HOOK_START.strip()}`: the harness resolves a bare `bash` through PATH, which a repository's "
+                                        "settings can set, so its own `bin/bash` runs instead, and a plain `/bin/bash` reads BASH_ENV. Start every hook command with `/bin/bash -p` (#1850)"))
+            named = re.search(r"hooks/scripts/([\w.-]+\.sh)", command)
+            script = plugin / "hooks" / "scripts" / named.group(1) if named else None
+            if script is None or not script.is_file():
+                continue
+            first = _first_executable_line(script.read_text(encoding="utf-8"))
+            if not first.startswith(TRUSTED_ENV_SOURCE):
+                findings.append(Finding("hook-start-hardened", script.relative_to(ROOT).as_posix(), 0,
+                                        f"the first executable line is {first[:80]!r}, not the source of lib/trusted-env.sh: any `python3`, `git` or `gh` before it runs with the PATH, "
+                                        f"PYTHONPATH and GIT_CONFIG_* the repository chose. Make `{TRUSTED_ENV_SOURCE} ...` the first line after the `set` options (#1850)"))
+        if not commands:
+            continue
+        lib = plugin / TRUSTED_ENV_LIB
+        lib_rel = lib.relative_to(ROOT).as_posix()
+        if not lib.is_file():
+            findings.append(Finding("hook-start-hardened", lib_rel, 0, "missing -- this plugin's hooks source it first, and plugins install alone, so each ships its own copy; copy it from plugins/rails-flow"))
+            continue
+        text = lib.read_bytes()
+        if canonical is None:
+            canonical = (lib_rel, text)
+        elif text != canonical[1]:
+            findings.append(Finding("hook-start-hardened", lib_rel, 0,
+                                    f"differs from {canonical[0]} -- one lib, one copy per plugin: a fix landed in one and not the others. Make them identical (cp) and re-run"))
+    return findings, examined
 
 
 # Rule: findings-script-drift (#1680)
@@ -3981,6 +4049,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     hook_lib, hook_lib_copies = check_hook_lib_drift()
     fixture_git, fixture_git_copies = check_fixture_git_drift()
     schema_drift, schema_drift_examined = check_schema_reader_drift()
+    hook_start, hook_start_examined = check_hook_start_hardened()
     findings_copy, findings_copies = check_findings_script_drift()
     rel_xplugin, rel_xplugin_examined = check_cross_plugin_relative_path()
     fixture_bypass, fixture_bypass_examined = check_fixture_git_bypass(python_sources)
@@ -4044,6 +4113,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "hook_lib_copies": hook_lib_copies,
         "fixture_git_copies": fixture_git_copies,
         "schema_trees_compared": schema_drift_examined,
+        "hook_commands_checked_for_a_hardened_start": hook_start_examined,
         "findings_script_copies": findings_copies,
         "shipped_markdown_checked_for_cross_plugin_paths": rel_xplugin_examined,
         "fixture_git_identity_lines": fixture_bypass_examined,
@@ -4098,7 +4168,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "scaffolded_boolean_toggles": toggles_examined,
         **call_coverage,
     }
-    return (dead + unenforced + undocumented + undoc_cmds + docs_paths + growth + hook_lib + fixture_git + schema_drift + fixture_bypass + bare + misdesc + unbounded + author_me + components + call_sites + invisible
+    return (dead + unenforced + undocumented + undoc_cmds + docs_paths + growth + hook_lib + hook_start + fixture_git + schema_drift + fixture_bypass + bare + misdesc + unbounded + author_me + components + call_sites + invisible
             + markers + uncontained + nonhermetic + pointers + rel_links + leaving + outlines + uninstallable + plugin_root + mkt_ver + coercions + topologies + schema + unwired
             + ci_gates + cl_ignore + controllers + labels + comp_labels + orphans + keyfilter
             + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + setup_pre + dangling + flat_role
@@ -5367,6 +5437,31 @@ def selftest() -> int:
              only=check_schema_reader_drift, files={WIKI_REL: solid_copy("solid_", False), GRAPH_REL: solid_copy("solid", True)})
     scenario("copies with the same Solid prefix agree over every tree: silent", rule=SR, expect_finding=False,
              only=check_schema_reader_drift, files={WIKI_REL: solid_copy("solid_", False), GRAPH_REL: solid_copy("solid_", True)})
+
+    # -- hook-start-hardened (#1850) --------------------------------------
+    HS = "hook-start-hardened"
+    HS_JSON = '{"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "/bin/bash -p \\"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/a.sh\\""}]}]}}\n'
+    HS_SRC = '. "${BASH_SOURCE[0]%/*}/lib/trusted-env.sh" 2>/dev/null\n'
+    HS_OK = "#!/usr/bin/env bash\n# a hook\n\nset -uo pipefail\n" + HS_SRC + "python3 -c pass\n"
+    HS_LIB = "rf_scrub_env() { :; }\n"
+    HS_FILES = {"plugins/p/hooks/hooks.json": HS_JSON, "plugins/p/hooks/scripts/a.sh": HS_OK, "plugins/p/hooks/scripts/lib/trusted-env.sh": HS_LIB}
+    scenario("a hook started /bin/bash -p, sourcing the lib first, with the lib shipped: silent", rule=HS, expect_finding=False, only=check_hook_start_hardened, files=HS_FILES)
+    scenario("a hook command that starts with a bare `bash` is a finding", rule=HS, expect_finding=True, only=check_hook_start_hardened,
+             files={**HS_FILES, "plugins/p/hooks/hooks.json": HS_JSON.replace("/bin/bash -p ", "bash ")})
+    scenario("a hook command that starts /bin/bash WITHOUT -p is a finding", rule=HS, expect_finding=True, only=check_hook_start_hardened,
+             files={**HS_FILES, "plugins/p/hooks/hooks.json": HS_JSON.replace("/bin/bash -p ", "/bin/bash ")})
+    scenario("a hook script that calls python3 before it sources the lib is a finding", rule=HS, expect_finding=True, only=check_hook_start_hardened,
+             files={**HS_FILES, "plugins/p/hooks/scripts/a.sh": "#!/usr/bin/env bash\nset -uo pipefail\npython3 -c pass\n" + HS_SRC})
+    scenario("a hook script that never sources the lib is a finding", rule=HS, expect_finding=True, only=check_hook_start_hardened,
+             files={**HS_FILES, "plugins/p/hooks/scripts/a.sh": "#!/usr/bin/env bash\nset -uo pipefail\nexit 0\n"})
+    scenario("a plugin with hooks and no copy of the lib is a finding", rule=HS, expect_finding=True, only=check_hook_start_hardened,
+             files={k: v for k, v in HS_FILES.items() if not k.endswith("trusted-env.sh")})
+    scenario("two plugins whose copies of the lib differ are a finding", rule=HS, expect_finding=True, only=check_hook_start_hardened,
+             files={**HS_FILES, "plugins/q/hooks/hooks.json": HS_JSON, "plugins/q/hooks/scripts/a.sh": HS_OK, "plugins/q/hooks/scripts/lib/trusted-env.sh": HS_LIB + "\n"})
+    scenario("a plugin whose hooks.json holds no command hook needs no lib: silent", rule=HS, expect_finding=False, only=check_hook_start_hardened,
+             files={"plugins/p/hooks/hooks.json": '{"hooks": {}}\n'})
+    scenario("two plugins with identical copies of the lib are silent", rule=HS, expect_finding=False, only=check_hook_start_hardened,
+             files={**HS_FILES, "plugins/q/hooks/hooks.json": HS_JSON, "plugins/q/hooks/scripts/a.sh": HS_OK, "plugins/q/hooks/scripts/lib/trusted-env.sh": HS_LIB})
 
     # -- undocumented-command (#835) --------------------------------------
     # Four shipped commands were in neither README; design-flow's listed six of twelve.
