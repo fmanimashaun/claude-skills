@@ -6,7 +6,7 @@ Run:  resume_lanes.py [--root DIR] [--handoff-dir docs/product/handoff] ...
 Exit: 0 every work order is done (or there is none), 1 at least one lane is unfinished and is listed, 2 cannot read (no such root)
 
 WHAT IT READS. The committed work orders (`/rails-flow:handoff`, `docs/product/handoff/<slug>.md`; the pre-layout
-`docs/handoff/<slug>.md` too). An order is UNFINISHED when its `## Progress` section says a Status other than `done`, or when it has
+`docs/handoff/<slug>.md` too, a pre-layout fallback). An order is UNFINISHED when its `## Progress` section says a Status other than `done`, or when it has
 no Progress section at all (nothing is recorded, so nothing says it finished). For each it checks, with read-only git and no network:
 the branch named on the Base commit line exists locally (else as `refs/remotes/origin/<branch>`, recoverable with `git fetch`, else
 MISSING), the worktree that has it checked out, and that Last green is a commit here. It prints the Progress fields and the one command to

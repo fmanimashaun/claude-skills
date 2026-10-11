@@ -66,9 +66,9 @@ GUARD = Guard(
             "a merge in progress is never committed over",
         ),
         Mutation(
-            "a repository with no identity gets one invented",
-            '    args = ["commit", "-a", "--no-verify", "-q", "-m", message]',
-            '    args = ["-c", "user.name=wip", "-c", "user.email=wip@wip", "commit", "-a", "--no-verify", "-q", "-m", message]',
+            "a repository with no identity gets one invented (through the environment, which the scrub otherwise drops)",
+            '    out = {"PATH": os.path.dirname(git), "LC_ALL": "C", "GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0"}',
+            '    out = {"PATH": os.path.dirname(git), "LC_ALL": "C", "GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0",\n           "GIT_AUTHOR_NAME": "wip", "GIT_AUTHOR_EMAIL": "wip@wip", "GIT_COMMITTER_NAME": "wip", "GIT_COMMITTER_EMAIL": "wip@wip"}',  # fixture-git: exempt (a mutation's replacement text: it is patched into wip_commit.py, never run as a fixture git)
             "invents none",
         ),
         Mutation(
