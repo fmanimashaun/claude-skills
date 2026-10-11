@@ -220,6 +220,11 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # gates; `claude plugin validate --strict` stays the authority and needs the CLI, which CI may lack.
     ("hook commands survive a spaced path", ("python3", "scripts/check_hook_commands.py")),
     ("hook commands selftest", ("python3", "scripts/check_hook_commands.py", "--selftest")),
+    # #1684. `claude plugin validate --strict --json` over the marketplace and every plugin directory: the CLI is the authority on what Claude Code
+    # accepts. It exits 3 (a SKIP, never a pass) when the CLI is absent or older than 2.1.259, as it is on a runner without it. It also passed an
+    # unterminated frontmatter list in #1679, so `frontmatter is valid YAML` above stays.
+    ("claude plugin validate --strict", ("python3", "scripts/check_plugin_validate.py")),
+    ("plugin validate selftest", ("python3", "scripts/check_plugin_validate.py", "--selftest")),
     # #1597. Hooks run as `python3` on the user's machine, which on stock macOS is 3.9, and CI pins 3.12: two
     # shipped scripts were a SyntaxError there (a backslash in an f-string expression) and nothing caught it.
     ("shipped python parses on 3.9", ("python3", "scripts/check_python_floor.py")),
