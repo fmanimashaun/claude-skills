@@ -32,7 +32,7 @@ GUARD = Guard(
             "a target it cannot tell is guessed as the session's directory (fail open)",
             "        root = git(start, \"rev-parse\", \"--show-toplevel\")\n        if root and in_force(root):\n            return refuse(f\"which repository",
             "        where = start\n        root = None\n        if root and in_force(root):\n            return refuse(f\"which repository",
-            "an earlier segment that can retarget gh refuses: gh repo set-default",
+            "a command whose directory cannot be told refuses, it does not guess the session's: HOME=/x gh pr ready 5",
         ),
         Mutation(
             "the allowlist accepts any word",

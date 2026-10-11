@@ -5624,6 +5624,11 @@ def guard_pr_ready_fixtures() -> None:
         for cmd in ("gh repo set-default o/r && gh pr ready 5", "git remote set-url origin https://x/o/r && gh pr ready 5"):
             expect(f"guard-pr-ready: with a green record, an earlier segment that can retarget gh refuses: {cmd[:40]}",
                    guard(repo, cmd), 2, "must be its own command")
+        # #1906: the one place the python judge FAILS CLOSED on a directory it cannot tell (lib/command_cwd.py exits 3). These are single commands, so the shell hook's own chain
+        # check lets them through to it; with a GREEN record for the session's HEAD a guess of the session's directory would allow each, so a refusal proves it does not guess.
+        for cmd in ("HOME=/x gh pr ready 5", "GIT_DIR=/x gh pr ready 5", "sudo gh pr ready 5"):
+            expect(f"guard-pr-ready: with a green record, a command whose directory cannot be told refuses, it does not guess the session's: {cmd}",
+                   guard(repo, cmd), 2, "cannot be told")
         expect("guard-pr-ready: a `cd` before it is another command: refused, even with a green record",
                guard(repo, "cd $HOME && gh pr ready 12"), 2, "must be its own command")
         # shell-adversary on #1831: an earlier segment that MOVES HEAD would pass on the old HEAD's green record.
