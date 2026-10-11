@@ -5767,7 +5767,7 @@ def hostile_env_fixtures() -> None:
         work, after = path_of(td)
         outer = work.resolve()
         check("hostile environment: PATH drops the repository's bin and a link INTO it, and keeps the system's",
-              str(outer / "bin") not in after and not any(d.endswith("link-into-repo") for d in after) and "/usr/bin" in after and "/bin" in after, f"PATH {after}")
+              str(outer / "bin") not in after and not any(d.endswith("link-into-repo") for d in after) and "/usr/bin" in after, f"PATH {after}")       # not /bin: it is /usr/bin's link on Linux, and PATH keeps each directory once
     # An unquoted `for dir in $PATH` globs a `*` against the filesystem: the entry must stay one LITERAL name.
     with scratch_dir() as td:
         globbed = Path(td).resolve() / "globdir"
