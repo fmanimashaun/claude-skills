@@ -6,11 +6,11 @@
 
 | plugin | version | agents | commands | tier rows |
 |---|---|---|---|---|
-| `design-flow` | 1.45.2 | 5 | 12 | 5 |
+| `design-flow` | 1.46.0 | 5 | 12 | 5 |
 | `flow-suite` | 1.0.0 | — | — | — |
-| `pipeline` | 1.4.3 | 2 | 9 | 2 |
-| `qa-flow` | 1.36.1 | 11 | 8 | 11 |
-| `rails-flow` | 1.58.0 | 13 | 24 | 13 |
+| `pipeline` | 1.5.0 | 2 | 9 | 2 |
+| `qa-flow` | 1.37.0 | 11 | 8 | 11 |
+| `rails-flow` | 1.59.0 | 13 | 24 | 13 |
 
 ## Agents
 
@@ -125,6 +125,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | qa-flow interaction sweep | `qa-flow` | `python3 plugins/qa-flow/scripts/interaction_report.py --selftest` | selftest |
 | qa-flow layout fit | `qa-flow` | `python3 plugins/qa-flow/scripts/layout_fit.py --selftest` | selftest |
 | qa-flow link audit | `qa-flow` | `python3 plugins/qa-flow/scripts/link_audit.py --selftest` | selftest |
+| qa-flow requirements gate | `qa-flow` | `python3 plugins/qa-flow/scripts/check_requirements.py --selftest` | selftest |
 | qa-flow robot descriptor | `qa-flow` | `python3 plugins/qa-flow/scripts/robot_descriptor.py --selftest` | selftest |
 | qa-flow robot helpers | `qa-flow` | `python3 plugins/qa-flow/scripts/scaffold_ts_tests.py --selftest` | selftest |
 | qa-flow route coverage | `qa-flow` | `python3 plugins/qa-flow/scripts/route_coverage.py --selftest` | selftest |
