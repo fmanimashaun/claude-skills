@@ -77,6 +77,10 @@ missing, apply `needs-info`, and stop — never fix a guess.
 
 ## Phase 3 — Verify the fix
 
+**The case (owner rule, #1853).** No fix, feature, gap or bug is done without a case that proves it and keeps it from regressing. This repository has no QA catalogue, so the case
+is a `--selftest` fixture that FAILS without your change plus a mutation guard mutant that breaks it (house rule 5). Write the fixture first, see it fail on the pre-fix tree, then
+make it pass; name both in the PR's *The case that proves it* section. A change with nothing to prove (docs only) says N/A and why.
+
 Doctrine: citation recorded, `dist/*.skill` repackaged and valid. Plugin: `bash -n` +
 behavior reproduction + other paths intact. Nothing proceeds without evidence.
 
