@@ -171,7 +171,7 @@ GUARD = Guard(
         ),
         Mutation(
             'CDPATH is ignored',
-            '    if os.environ.get("CDPATH") and',
+            '    if "CDPATH" in _inherited() and',
             '    if False and',
             'a relative cd with CDPATH set',
         ),
@@ -294,7 +294,7 @@ GUARD = Guard(
         ),
         Mutation(
             'an inherited GIT_DIR is ignored (round 5)',
-            '    if any(k.startswith(("GIT_", "GH_")) and k not in INHERITED_EXEMPT and not (k == "GIT_CONFIG_GLOBAL" and os.environ[k] == "/dev/null") for k in os.environ):',
+            '    if any(k.startswith(("GIT_", "GH_")) and k not in INHERITED_EXEMPT for k in _inherited()):',
             '    if False:',
             'GIT_DIR inherited by the hook is NOT checked',
         ),
@@ -313,15 +313,15 @@ GUARD = Guard(
         ),
         Mutation(
             'the inherited test narrows to GIT_ only (round 6)',
-            '    if any(k.startswith(("GIT_", "GH_")) and k not in INHERITED_EXEMPT and not (k == "GIT_CONFIG_GLOBAL" and os.environ[k] == "/dev/null") for k in os.environ):',
-            '    if any(k.startswith(("GIT_",)) and k not in INHERITED_EXEMPT and not (k == "GIT_CONFIG_GLOBAL" and os.environ[k] == "/dev/null") for k in os.environ):',
+            '    if any(k.startswith(("GIT_", "GH_")) and k not in INHERITED_EXEMPT for k in _inherited()):',
+            '    if any(k.startswith(("GIT_",)) and k not in INHERITED_EXEMPT for k in _inherited()):',
             'GH_HOST inherited by the hook is NOT checked',
         ),
         Mutation(
             "the harness's GIT_EDITOR is not exempt (round 6)",
-            ' and k not in INHERITED_EXEMPT and not (k == "GIT_CONFIG_GLOBAL"',
-            ' and not (k == "GIT_CONFIG_GLOBAL"',
-            'the resolver itself exempts an inherited GIT_EDITOR (the harness sets it)',
+            ' and k not in INHERITED_EXEMPT for k in _inherited()):',
+            ' for k in _inherited()):',
+            'an inherited GIT_EDITOR (the harness sets it) is still judged',
         ),
         Mutation(
             # Round 7: the config-redirecting family.
@@ -383,18 +383,6 @@ GUARD = Guard(
             '"mkdir", "touch", "jq"}',
             '"mkdir", "touch", "jq", "sed"}',
             'R7 `sed -i` on .git/config before gh is NOT checked, with the notice',
-        ),
-        Mutation(
-            "an inherited GIT_CONFIG_GLOBAL=/dev/null (trusted-env.sh's own, when HOME is the repository root) stops the cd being followed",
-            'if any(k.startswith(("GIT_", "GH_")) and k not in INHERITED_EXEMPT and not (k == "GIT_CONFIG_GLOBAL" and os.environ[k] == "/dev/null") for k in os.environ):',
-            'if any(k.startswith(("GIT_", "GH_")) and k not in INHERITED_EXEMPT for k in os.environ):',
-            "the resolver accepts an inherited GIT_CONFIG_GLOBAL=/dev/null",
-        ),
-        Mutation(
-            "any inherited GIT_CONFIG_GLOBAL is accepted, so a global config that rewrites the remote is not refused",
-            'k == "GIT_CONFIG_GLOBAL" and os.environ[k] == "/dev/null"',
-            'k == "GIT_CONFIG_GLOBAL"',
-            "the resolver refuses a GIT_CONFIG_GLOBAL that names a file",
         ),
     ),
 )

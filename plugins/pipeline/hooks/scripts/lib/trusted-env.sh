@@ -59,6 +59,24 @@ rf_inside() {
   return 1
 }
 
+# THE GATES READ THE ENVIRONMENT AS THE COMMAND'S. A PreToolUse hook judges a command that will inherit the session's environment, and its own environment is that proxy: the
+# release gate reads GH_REPO (a `gh release create` with GH_REPO=other/fork acts on ANOTHER repository), and command_cwd.py refuses to follow a `cd` while any GIT_*, GH_* or
+# CDPATH is set, because each can change where gh and git act. Scrubbing those names for the hook's OWN git and gh must not blind the judgement, so every such variable is
+# first copied to RF_INHERITED_<NAME>, which is what a gate reads for "what will the command see" (the lib's own additions, such as GIT_CONFIG_GLOBAL below, are not copied).
+# Stale RF_INHERITED_* from the caller are dropped first: only what this process really inherited counts.
+rf_snapshot_inherited() {
+  local name
+  for name in $(compgen -v); do
+    case "$name" in RF_INHERITED_*) unset "$name" 2>/dev/null ;; esac
+  done
+  for name in $(compgen -v); do
+    case "$name" in
+      GIT_*|GH_*|CDPATH) export "RF_INHERITED_$name=${!name}" ;;
+    esac
+  done
+  return 0
+}
+
 rf_scrub_env() {
   local name
   for name in $(compgen -v); do
@@ -179,6 +197,7 @@ rf_trusted_python() {
 }
 
 rf_repo_root
+rf_snapshot_inherited
 rf_scrub_env
 rf_scrub_paths
 # No user site: python reads a `usercustomize.py` from the user's site directory at every start. Exactly `python3 -s`, for every python3 a hook (or a script it starts) runs,
@@ -187,3 +206,4 @@ PYTHONNOUSERSITE=1
 export PYTHONNOUSERSITE
 rf_trusted_path
 RF_TRUSTED_ENV=1
+export RF_TRUSTED_ENV

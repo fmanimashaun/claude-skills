@@ -2164,18 +2164,9 @@ def guard_claims_fixtures() -> None:
           rc == 2 and "## What changed" in out, f"exit {rc}: {out[-140:]}")
     rc, out = run_in("cd sub && gh pr create --body-file BODY", NEITHER, with_output=True,
                      env_extra={"CDPATH": "B_DIR"})
-    # #1850: the lib unsets CDPATH before the hook reads anything, so an inherited CDPATH can no longer make a relative cd unknown: the cd is judged like any other.
-    rc_plain, out_plain = run_in("cd sub && gh pr create --body-file BODY", NEITHER, with_output=True)
-    check("guard-claims: an inherited CDPATH changes nothing about a relative cd: trusted-env.sh unsets it before the hook reads it (#1850; was the #1516 allowlist)",
-          (rc, out) == (rc_plain, out_plain), f"with CDPATH: exit {rc}: {out[-100:]!r}; without: exit {rc_plain}: {out_plain[-100:]!r}")
-    # trusted-env.sh sets GIT_CONFIG_GLOBAL=/dev/null itself when HOME is the repository root; the resolver must not take that for a variable that picks gh's repository (#1850).
-    cwd_lib = HOOKS / "lib" / "command_cwd.py"
-    # (The lib unsets GIT_EDITOR and every other GIT_* before the resolver runs, so the resolver's own exemptions are reached only by running it directly.)
-    for var, value, expected, label in (("GIT_CONFIG_GLOBAL", "/dev/null", 0, "guard-claims: the resolver accepts an inherited GIT_CONFIG_GLOBAL=/dev/null"),
-                                        ("GIT_CONFIG_GLOBAL", str(HOOKS / "guard-claims.sh"), 3, "guard-claims: the resolver refuses a GIT_CONFIG_GLOBAL that names a file"),
-                                        ("GIT_EDITOR", "true", 0, "guard-claims: the resolver itself exempts an inherited GIT_EDITOR (the harness sets it)")):
-        done = _run([sys.executable, str(cwd_lib), str(NEITHER)], input="gh pr create --body-file BODY", env=dict(os.environ, **{var: value}), capture_output=True, text=True, timeout=60)
-        check(label, done.returncode == expected, f"exit {done.returncode}: {(done.stdout + done.stderr)[-120:]!r}")
+    check("guard-claims: a relative cd with CDPATH set is NOT checked, with the notice (#1516 allowlist)",
+          rc == 0 and NOTICE in out, f"exit {rc}: {out[-140:]}")
+    # #1850: trusted-env.sh unsets CDPATH for the hook's own tools but keeps a copy the resolver reads, so the allowlist still holds for an INHERITED CDPATH (checked above).
     rc, out = run_in("CDPATH=B_DIR cd sub && gh pr create --body-file BODY", NEITHER, with_output=True)
     check("guard-claims: a relative cd with CDPATH set IN THE COMMAND is NOT checked, with the notice (#1516 allowlist)",
           rc == 0 and NOTICE in out, f"exit {rc}: {out[-140:]}")
