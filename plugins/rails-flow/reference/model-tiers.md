@@ -73,13 +73,19 @@ Six facts decide this whole document, and four of them contradict the shape #127
    *"capped at Opus on the Claude API, so Explore never runs on a more expensive model than the one
    you already chose for the session"* ([cc-agents]). The platform moved a built-in from a cheap
    pin to inherit-with-a-ceiling. Our seven `sonnet` pins are the pattern it left behind.
+   **Today's wording** (re-read 2026-10-10, #1681): *"the main conversation's model. When the main conversation runs Fable,
+   Explore's model depends on how you connect"*: on a Claude subscription, an Anthropic Console account or an LLM gateway
+   reached through `ANTHROPIC_BASE_URL`, *"Explore runs on the Opus model that the `opus` alias resolves to"*; on Amazon
+   Bedrock, Google Cloud's Agent Platform, Microsoft Foundry, Claude Platform on AWS or a Claude apps gateway, *"Explore stays
+   on the main conversation's model"* ([cc-agents]). The direction is unchanged; the ceiling is now written per access path.
 
 **So the axis is not "which model is this agent worth".** It is: *does this agent need whatever
 judgement the user is paying for, or is its output proven by something outside itself?*
 
 ## The policy (ours)
 
-Two tiers, because two is what the mechanism can express honestly.
+Two tiers, because two is what the mechanism can express honestly, and ONE named exception to them: the `adversarial` tier, for
+`adversary` only (see *`adversary` is the one deliberate pin up*, below).
 
 - **judgement → `model: inherit`.** The session model is the user's declared ceiling. `inherit`
   tracks it up when they upgrade and never overrides it downward. Anything whose output is a
@@ -110,11 +116,24 @@ not a nicety — and why the mechanical column below has to name the proof for e
 | `test-runner` | mechanical | `haiku` | `bundle exec rspec` exit status — 0 failures or the gate blocks |
 | `design-auditor` | mechanical | `haiku` | the mandated greps must come back empty (`form_with`, `f.label`) |
 | `doc-updater` | mechanical | `haiku` | `architecture_graph.py` regenerates and its digest guard fails on drift |
+| `adversary` | adversarial | `fable` | — |
 <!-- rails-flow:tiers:end -->
 
 The markers are load-bearing: `check_handoff.py --agents <dir> --tiers <this file>` parses **that**
 table and fails when an agent's frontmatter disagrees with it, so this document cannot quietly
 become folklore again. A stale row naming an agent that no longer exists fails too.
+
+**`adversary` is the one deliberate pin up, and it is `fable` (#1819).** Everything above says a shipped agent must not pin a more
+expensive model than the user chose, because a pin spends their money on our authority. The owner's rule of 2026-10-08 (on #1702)
+is the exception: *Fable is the model for adversarial attack passes, the ones that try to break a change*, and ordinary reviews stay
+on the default. So the table has a third tier, `adversarial`, and `check_handoff.py --tiers` accepts it for exactly the agents in
+its `PINNED_UP` list (today `adversary`), pinned to exactly the model named there; any other agent claiming it, and any other pin
+of `fable` or `opus`, is still refused. The reasons it is safe enough to be the exception: the agent runs only on a **risky**
+diff (`risky_diff.py` decides, #1819), once per PR head, not on every review; and `fable` is a documented subagent alias
+(https://code.claude.com/docs/en/sub-agents, "Choose a model"). What is **not claimed**: what happens for a user whose plan or
+organization cannot use Fable beyond what fact 4 records for a blocked family alias (newest permitted version of that family on
+the Anthropic API and Claude Platform on AWS, the inherited model elsewhere). The agent is read-only and a `VERDICT: BLOCKED`
+from it is a finding for a human, never an automatic stop.
 
 **`claim-verifier` is `inherit`, and that deserves a sentence because it looks wrong.** Its whole
 value is being a *different* model from the one that wrote the change — a second opinion that shares
@@ -227,6 +246,38 @@ is a server-executed tool. It is not available on Amazon Bedrock, Claude Platfor
 Cloud's Agent Platform, or Microsoft Foundry"*, and *"In a session where a variable that turns flag
 fetching off is set, such as `DISABLE_TELEMETRY`, the advisor stays off"* ([cc-advisor]).
 
+## Choose at spawn; never switch mid-session (#1681)
+
+A model and an effort level are chosen when a session or an agent **starts**, because changing either afterwards can cost the
+whole prompt cache. Claude Code's prompt-caching page (https://code.claude.com/docs/en/prompt-caching, re-read 2026-10-10)
+says it exactly, and the two halves differ:
+
+- **A model switch always costs a miss:** *"Model: each model has its own cache. Switching models recomputes the entire
+  request even when the content is identical."*
+- **An effort change costs a miss on most models, not on all:** *"Effort level: on most models, each effort level has its own
+  cache, so changing effort mid-session recomputes the entire request. On Opus 5.5, Sonnet 5.5, Haiku 5.5, and Fable 5.1 with
+  an API key or a Claude subscription, the cache stays intact by default."* The exceptions named on the page are Amazon Bedrock,
+  Google Cloud's Agent Platform, a Claude apps gateway, `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS` and HIPAA organizations, and
+  before v2.1.260 a Fable 5.1 effort change also invalidated the cache. So do not teach "every effort change costs a miss".
+- The page's own advice: *"Pick your model and effort level at the top of a session..."*
+
+What this means for our agents (policy, ours): an agent's model is fixed by its frontmatter at spawn, which is what this record
+is about; nothing in rails-flow switches the session's model or effort part-way, and a flow that wants a different model for a
+stage spawns a subagent for it instead of switching.
+
+**Agents that fan out share a cache only when they match.** *"Two agents that run with the same model, effort level, agent type,
+tools, output schema, and working directory build the same tools-and-system-prompt prefix, so an agent that starts after a matching
+sibling's response has begun reads that sibling's cache on its first request"* (https://code.claude.com/docs/en/workflows,
+re-read 2026-10-10). So the agents of one workflow run should agree on all six.
+
+**Levers that exist and that we do not use** (each re-read 2026-10-10, #1681; none adopted here, each needs a measured case first):
+`omitClaudeMd: true` launches a subagent *"without the user, project, and local CLAUDE.md files"*, *"Requires Claude Code v2.1.271
+or later"* ([cc-agents]); `/tasks` *"names the model on the subagent's row, and adds the effort level set for that subagent, if
+any"*, *"Requires Claude Code v2.1.242 or later"* ([cc-agents]); *"By default, a subagent can spawn subagents of its own, up to
+three layers below the main conversation"* ([cc-agents]). What a workflow script may name per stage (`model`, `effort`,
+`meta.phases[].model`) is **not claimed**: the workflows page documents *"A model the script names for a stage counts as the
+per-invocation model"* and no option names, and the verifier left it INCONCLUSIVE.
+
 ## Overriding this in a project (both mechanisms are documented)
 
 **Per agent — a same-named file in `.claude/agents/`.** Plugin agents are the *lowest* priority
@@ -271,8 +322,9 @@ per-agent file above.
 - **A full model ID.** It pins a version that ages, and `claude-opus-5` is meaningless on Bedrock,
   Google Cloud's Agent Platform, and Microsoft Foundry, which *"use provider-specific deployment
   IDs rather than Anthropic model IDs"* ([cc-model]).
-- **A third tier.** The two values the table permits are the two the mechanism can defend. A
-  project that wants more forks the table and points the checker at its own copy.
+- **A third tier.** The two values the table permits are the two the mechanism can defend, plus the one named exception for
+  `adversary` (#1819), which the checker accepts for that agent and no other. A project that wants more forks the table and points
+  the checker at its own copy.
 
 ## What this does not cover
 

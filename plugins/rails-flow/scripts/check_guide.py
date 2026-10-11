@@ -2,6 +2,7 @@
 """Reject a human guide that cannot be re-run safely, or whose diagrams will not render.
 
 Run:  python3 check_guide.py docs/GUIDE.md
+      python3 check_guide.py docs/GUIDE.md --require-pins      # every diagram must be pinned (#1640)
       python3 check_guide.py docs/GUIDE.md --decisions docs/brain/DECISIONS.md
       python3 check_guide.py --selftest
 
@@ -30,7 +31,16 @@ WHAT THIS GUARANTEES
     characters), and carries no deprecated `%%{init}%%` directive. Diagrams are mermaid rather
     than ASCII art or a picture. Verification steps name something runnable.
 
+    Pins (#1640). A diagram may carry `<!-- rails-flow:pin <40-hex commit> path:12-30 ... -->` on
+    the line(s) just above its fence. The check reads git: the commit exists, every cited file
+    exists at it, every cited line is inside the file at it, and the file still exists at HEAD.
+    A guide in which any diagram is pinned must pin them all; `--require-pins` demands it of a
+    guide with none.
+
 WHAT IT DOES NOT
+    A pin proves the cited lines EXIST at that commit. It does not prove the diagram is a correct
+    picture of them, and it does not notice a diagram that drifted while its pin stayed true --
+    only a reader comparing the two can, which is what the pin makes cheap (the lines are named).
     It cannot tell whether the prose is TRUE, or whether an explanation is any good -- the whole
     reason the guide is bounded and dated instead of exhaustive. It cannot render mermaid, so it
     catches the documented syntax traps and an unverified diagram type, not every possible
@@ -74,6 +84,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -81,6 +92,11 @@ from pathlib import Path
 BEGIN_RE = re.compile(r"<!--\s*rails-flow:begin\s+(?P<slug>[A-Za-z0-9:_\-./]+)\s*-->")
 END_RE = re.compile(r"<!--\s*rails-flow:end\s+(?P<slug>[A-Za-z0-9:_\-./]+)\s*-->")
 FENCE_RE = re.compile(r"^\s*(?P<ticks>`{3,})\s*(?P<lang>[A-Za-z0-9_+-]*)\s*$")
+
+# A pin is one HTML comment, on one line, directly above the mermaid fence it vouches for (#1640).
+PIN_RE = re.compile(r"<!--\s*rails-flow:pin\b(?P<body>.*?)-->")
+SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+SOURCE_RE = re.compile(r"^(?P<path>[^:\s]+):(?P<start>[0-9]+)(?:-(?P<end>[0-9]+))?$")
 
 # The two fixed sections plus at least one area. Areas are separately marked
 # (`guide:area:<slug>`) precisely so `/rails-flow:explain billing` rewrites billing and nothing
@@ -491,6 +507,132 @@ def check(sections: list[Section], decisions: Path | None = None) -> list[str]:
     return findings
 
 
+# ---- pins: a diagram's claim about the code, tied to a commit (#1640) ---------------------------
+
+def _git(repo: Path, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["git", "-C", str(repo), *args], capture_output=True, text=True, check=False,
+    )
+
+
+def _blob_lines(repo: Path, sha: str, path: str) -> int | None:
+    """Number of lines of `path` at `sha`, or None when there is no such file at that commit."""
+    kind = _git(repo, "cat-file", "-t", f"{sha}:{path}")
+    if kind.returncode != 0 or kind.stdout.strip() != "blob":
+        return None
+    blob = _git(repo, "cat-file", "-p", f"{sha}:{path}")
+    return len(blob.stdout.splitlines()) if blob.returncode == 0 else None
+
+
+def _pin_above(section: Section, diagram: Diagram) -> tuple[int, str] | None:
+    """(line number, text) of the pin comment directly above the fence, skipping blank lines."""
+    index = diagram.line - section.first_body_line - 1
+    while index >= 0 and not section.lines[index].strip():
+        index -= 1
+    if index >= 0 and PIN_RE.search(section.lines[index]):
+        return section.first_body_line + index, section.lines[index]
+    return None
+
+
+def check_pins(sections: list[Section], repo: Path, require: bool = False) -> tuple[list[str], list[str]]:
+    """(findings, notes). Pins are optional until one exists, then every mermaid diagram needs one."""
+    findings: list[str] = []
+    notes: list[str] = []
+    pinned_lines: set[int] = set()
+    placed: list[tuple[Section, Diagram, tuple[int, str] | None]] = []
+    for section in sections:
+        for diagram in diagrams_in(section):
+            if diagram.lang != "mermaid":
+                continue
+            pin = _pin_above(section, diagram)
+            placed.append((section, diagram, pin))
+            if pin:
+                pinned_lines.add(pin[0])
+    any_pin = any(pin for _, _, pin in placed)
+
+    # A pin comment that sits above no mermaid fence vouches for nothing.
+    for section in sections:
+        for offset, line in enumerate(section.lines):
+            line_no = section.first_body_line + offset
+            if PIN_RE.search(line) and line_no not in pinned_lines:
+                findings.append(
+                    f"{section.slug} line {line_no}: a `rails-flow:pin` comment that is not directly "
+                    "above a mermaid block pins nothing -- move it onto the line above the fence"
+                )
+
+    if not any_pin and not require:
+        if placed:
+            notes.append(f"{len(placed)} mermaid diagram(s), none pinned to code (rails-flow:pin); "
+                         "pass --require-pins to demand it")
+        return findings, notes
+
+    inside = _git(repo, "rev-parse", "--is-inside-work-tree")
+    if inside.returncode != 0:
+        findings.append(f"cannot verify pins: {repo} is not inside a git work tree (pass --repo DIR)")
+        return findings, notes
+
+    for section, diagram, pin in placed:
+        where = f"{section.slug} line {diagram.line}"
+        if pin is None:
+            findings.append(
+                f"{where}: mermaid diagram has no pin -- "
+                + ("pins are required here (--require-pins)" if require else "another diagram in this guide is pinned, so every one must be")
+                + ". Add `<!-- rails-flow:pin <40-hex commit> path:start-end -->` above the fence"
+            )
+            continue
+        pin_line, text = pin
+        where = f"{section.slug} line {pin_line}"
+        words = PIN_RE.search(text).group("body").split()
+        if not words:
+            findings.append(f"{where}: empty pin -- name a 40-hex commit and at least one path:start-end")
+            continue
+        sha, sources = words[0], words[1:]
+        if not SHA_RE.match(sha):
+            findings.append(
+                f"{where}: pin commit {sha!r} is not a full 40-character lowercase hex sha -- a branch "
+                "name or a short sha moves or becomes ambiguous, so the pin would prove nothing later"
+            )
+            continue
+        if _git(repo, "cat-file", "-t", f"{sha}^{{commit}}").returncode != 0:
+            findings.append(
+                f"{where}: commit {sha} does not exist in {repo} -- a rebased-away or never-pushed "
+                "commit, or a shallow clone; re-pin to a commit the repository keeps"
+            )
+            continue
+        if not sources:
+            findings.append(f"{where}: pin names commit {sha[:12]} but no `path:start-end` source")
+            continue
+        for source in sources:
+            match = SOURCE_RE.match(source)
+            if not match:
+                findings.append(f"{where}: source {source!r} is not `path:start` or `path:start-end`")
+                continue
+            path = match.group("path")
+            start = int(match.group("start"))
+            end = int(match.group("end") or start)
+            if path.startswith("/") or ".." in path.split("/"):
+                findings.append(f"{where}: source path {path!r} must be relative to the repository, with no `..`")
+                continue
+            if start < 1 or end < start:
+                findings.append(f"{where}: {source} is not a valid line range (lines start at 1, end >= start)")
+                continue
+            total = _blob_lines(repo, sha, path)
+            if total is None:
+                findings.append(f"{where}: {path} does not exist at {sha[:12]}")
+                continue
+            if end > total:
+                findings.append(f"{where}: {source} runs past the end of {path} at {sha[:12]}, which has {total} line(s)")
+                continue
+            if _blob_lines(repo, "HEAD", path) is None:
+                findings.append(
+                    f"{where}: {path} no longer exists at HEAD -- the diagram describes code that was removed or renamed; "
+                    "re-draw it from the current file and re-pin"
+                )
+            elif _git(repo, "rev-parse", f"{sha}:{path}").stdout != _git(repo, "rev-parse", f"HEAD:{path}").stdout:
+                notes.append(f"{where}: {path} has changed since {sha[:12]} -- compare lines {start}-{end} with the diagram")
+    return findings, notes
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Validate a rails-flow human guide: markers, coverage, and mermaid diagrams."
@@ -500,6 +642,15 @@ def main(argv: list[str] | None = None) -> int:
         "--decisions", metavar="FILE",
         help="the project's decision log (usually docs/brain/DECISIONS.md); when it exists, the "
              "guide's decisions section must cite it rather than restate it",
+    )
+    parser.add_argument(
+        "--require-pins", action="store_true",
+        help="every mermaid diagram must carry a `rails-flow:pin` comment (default: pins are "
+             "optional until one diagram has one, then all must)",
+    )
+    parser.add_argument(
+        "--repo", metavar="DIR",
+        help="the repository the pins cite (default: the guide's own directory)",
     )
     parser.add_argument(
         "--selftest", action="store_true", help="prove the rules fire AND stay silent"
@@ -522,6 +673,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     findings = check(sections, Path(args.decisions) if args.decisions else None)
+    repo = Path(args.repo) if args.repo else Path(args.guide_path).resolve().parent
+    pin_findings, pin_notes = check_pins(sections, repo, args.require_pins)
+    findings += pin_findings
 
     if findings:
         print(
@@ -537,6 +691,8 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
+    for note in pin_notes:
+        print(f"NOTE: {note}")
     areas = sum(1 for s in sections if s.is_area)
     diagrams = sum(
         1 for s in sections for d in diagrams_in(s) if d.lang == "mermaid"

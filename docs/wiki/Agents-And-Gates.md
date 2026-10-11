@@ -2,14 +2,14 @@
      Rebuild:  python3 scripts/build_wiki.py
      Drift:    python3 scripts/build_wiki.py --check  (runs in the gate sweep) -->
 # Agents and gates
-**30 shipped agents · 53 shipped commands · 4 tier tables**, plus 7 maintainer agents and 7 maintainer commands that are not installed.
+**31 shipped agents · 53 shipped commands · 4 tier tables**, plus 7 maintainer agents and 7 maintainer commands that are not installed.
 
 | plugin | version | agents | commands | tier rows |
 |---|---|---|---|---|
 | `design-flow` | 1.45.2 | 5 | 12 | 5 |
 | `pipeline` | 1.4.3 | 2 | 9 | 2 |
 | `qa-flow` | 1.36.1 | 11 | 8 | 11 |
-| `rails-flow` | 1.58.0 | 12 | 24 | 12 |
+| `rails-flow` | 1.58.0 | 13 | 24 | 13 |
 
 ## Agents
 
@@ -52,6 +52,7 @@
 
 | agent | tier · model | tools | named by | what proves its output |
 |---|---|---|---|---|
+| `adversary` | adversarial · fable | Read, Grep, Glob, Bash | `/rails-flow:feature`, `/rails-flow:fix` | — |
 | `claim-verifier` | judgement · inherit | Read, Grep, Glob, Bash | `/rails-flow:issues` | — |
 | `claude-skills-reporter` | judgement · inherit | Read, Grep, Glob, Bash, Write, Skill | `/rails-flow:report`, `/rails-flow:setup-flow` | — |
 | `code-reviewer` | judgement · inherit | Read, Grep, Glob, Bash, Skill | `/rails-flow:feature`, `/rails-flow:fix`, `/rails-flow:issues`, `/rails-flow:retro` | — |
@@ -69,7 +70,7 @@
 
 | agent | tier · model | tools | named by | what proves its output |
 |---|---|---|---|---|
-| `doctrine-verifier` | sonnet | Read, Grep, Glob, Bash, WebFetch, WebSearch | `/maintainer-audit`, `/maintainer-onboard`, `/maintainer-setup-intake`, `/maintainer-upstream`, `/maintainer-work` | — |
+| `doctrine-verifier` | inherit | Read, Grep, Glob, Bash, WebFetch, WebSearch | `/maintainer-audit`, `/maintainer-onboard`, `/maintainer-setup-intake`, `/maintainer-upstream`, `/maintainer-work` | — |
 | `issue-triager` | sonnet | Read, Grep, Glob, Bash | `/maintainer-triage` | — |
 | `mutation-verifier` | haiku | Read, Grep, Glob, Bash | `/gauntlet` | — |
 | `plugin-doctor` | sonnet | Read, Grep, Glob, Edit, Write, Bash | `/maintainer-work` | — |
@@ -142,6 +143,8 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | mod unit tests | `rails-flow` | `python3 plugins/rails-flow/scripts/check_mods.py` | live check |
 | pipeline tiers | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --agents plugins/pipeline/agents --tiers plugins/pipeline/reference/model-tiers.md` | live check |
 | project gates | `rails-flow` | `python3 plugins/rails-flow/scripts/project_gates.py --selftest` | selftest |
+| project settings dead config | `rails-flow` | `python3 plugins/rails-flow/scripts/check_project_settings.py --root . --markdown plugins/rails-flow/commands` | live check |
+| project settings selftest | `rails-flow` | `python3 plugins/rails-flow/scripts/check_project_settings.py --selftest` | selftest |
 | qa-flow tiers | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --agents plugins/qa-flow/agents --tiers plugins/qa-flow/reference/model-tiers.md` | live check |
 | rails-flow PR-template sections | `rails-flow` | `python3 plugins/rails-flow/hooks/scripts/lib/pr_template.py --selftest` | selftest |
 | rails-flow ci runs tests | `rails-flow` | `python3 plugins/rails-flow/scripts/check_ci_runs_tests.py --selftest` | selftest |
@@ -322,5 +325,6 @@ Parsed by `check_handoff.parse_tiers`, the arbiter four shipped gates trust.
 | `test-runner` | mechanical | `bundle exec rspec` exit status — 0 failures or the gate blocks |
 | `design-auditor` | mechanical | the mandated greps must come back empty (`form_with`, `f.label`) |
 | `doc-updater` | mechanical | `architecture_graph.py` regenerates and its digest guard fails on drift |
+| `adversary` | adversarial | — |
 
 Manifest cross-check: the 4 plugin directories inventoried are exactly the ones marketplace.json installs.

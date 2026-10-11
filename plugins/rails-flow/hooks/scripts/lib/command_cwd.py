@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """The directory a claim-carrying `gh` command will actually run in (#1509).
 
-Usage: command_cwd.py [START]. stdin is the raw Bash tool command. START is the directory the command
+Usage: command_cwd.py [--pr-ready] [START]. With `--pr-ready` (guard-pr-ready.sh, #1565) the gh segment is
+`gh pr ready ...` instead of the three claim-carrying commands; the grammar is otherwise the same. stdin is the raw Bash tool command. START is the directory the command
 starts in: the hook payload's `cwd`, or this process's cwd when it is absent. stdout is an absolute
 directory. Exit 0 when it is known; exit 3 when it cannot be told, so the caller says "NOT checked"
 instead of judging against the wrong repository (the maintainer's decision on #1509: allow, loudly).
@@ -103,6 +104,10 @@ GLOB_CHARS = "*?[]{}"
 GLOB_MARK = "\ue000"
 
 
+# The gh commands whose directory is resolved. `--pr-ready` swaps in ("pr", "ready") for guard-pr-ready.sh (#1565).
+GH_TARGETS = {("pr", "create"), ("pr", "edit"), ("issue", "comment")}
+
+
 class Unresolved(Exception):
     pass
 
@@ -202,8 +207,7 @@ def _gh_segment(words: list[str]) -> bool:
                 w.pop(0)
         else:
             break
-    found = len(w) >= 3 and os.path.basename(w[0]) == "gh" and (
-        (w[1] == "pr" and w[2] in ("create", "edit")) or (w[1] == "issue" and w[2] == "comment"))
+    found = len(w) >= 3 and os.path.basename(w[0]) == "gh" and (w[1], w[2]) in GH_TARGETS
     if found and any(REPO_ENV.match(x) for x in words[:len(words) - len(w)]):
         raise Unresolved("a GIT_* / GH_* / HOME / XDG_CONFIG_HOME set on the gh command can pick another repository")
     return found
@@ -282,7 +286,12 @@ def resolve(cmd: str, start: str, home: str) -> str:
 
 
 def main() -> int:
-    start = sys.argv[1] if len(sys.argv) > 1 and os.path.isdir(sys.argv[1]) else os.getcwd()
+    global GH_TARGETS
+    args = sys.argv[1:]
+    if args and args[0] == "--pr-ready":
+        GH_TARGETS = {("pr", "ready")}
+        args = args[1:]
+    start = args[0] if args and os.path.isdir(args[0]) else os.getcwd()
     try:
         print(resolve(sys.stdin.read(), os.path.abspath(start), os.environ.get("HOME", "")))
     except Unresolved as e:

@@ -26,7 +26,7 @@ GUARD = Guard(
            'plugins/qa-flow/scripts/release_evidence.py',
            'plugins/rails-flow/scripts/self_consistency.py',
            'plugins/rails-flow/scripts/extract_claims.py',
-           'plugins/rails-flow/scripts/ci_verdict_hint.py', 'plugins/rails-flow/scripts/session_reaper.py', 'plugins/rails-flow/scripts/process_containment.py'),
+           'plugins/rails-flow/scripts/ci_verdict_hint.py', 'plugins/rails-flow/scripts/test_preflight.py', 'plugins/rails-flow/scripts/session_reaper.py', 'plugins/rails-flow/scripts/process_containment.py'),
     mutations=(
         # The mutation "quoted words are never matched, so 'git' worktree add never reaches the helper" was dropped: since #1657 the normaliser reads a
         # quoted word as the shell does, so the raw-text fallback it disabled changes no exit code (8 shapes probed, see the CHANGELOG).

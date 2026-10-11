@@ -32,7 +32,7 @@ GUARD = Guard(
            'plugins/rails-flow/scripts/extract_claims.py',
            # ci-verdict-hint.sh runs ci_verdict_hint.py; unstaged, its fixtures fail and every
            # mutation reads as caught -- the harness reported this guard INERT until it was added (#1173).
-           'plugins/rails-flow/scripts/ci_verdict_hint.py', 'plugins/rails-flow/scripts/session_reaper.py', 'plugins/rails-flow/scripts/process_containment.py'),   # the harness drives release-gate.sh too (#906)
+           'plugins/rails-flow/scripts/ci_verdict_hint.py', 'plugins/rails-flow/scripts/test_preflight.py', 'plugins/rails-flow/scripts/session_reaper.py', 'plugins/rails-flow/scripts/process_containment.py'),   # the harness drives release-gate.sh too (#906)
     mutations=(
         Mutation(
             'the declaration is not required, so an undeclared project may run the test-database reset',
