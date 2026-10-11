@@ -138,7 +138,12 @@ export function register(on) {
   // Runs after each turn, and whenever the fill moved: the figure is pushed, not polled
   on('session.measure', async ($, e, next) => {
     percent = e.context.percent ?? null
-    const now = typeof $.clock?.now === 'function' ? await $.clock.now() : undefined      // a window that has already reset is no reading (#1854); no clock, no filter
+    let now        // a window that has already reset is no reading (#1854); no clock, no filter
+    try {
+      now = await $.clock.now()       // called, never read as a value: the validator rejects `$.clock` used as one (#1893)
+    } catch {
+      now = undefined
+    }
     const levels = await budgetLevels($)
     for (const k of WINDOWS) {
       reading[k] = windowOf(e.rateLimits, k, now)
