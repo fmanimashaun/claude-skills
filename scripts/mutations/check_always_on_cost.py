@@ -37,5 +37,11 @@ GUARD = Guard(
             "\"\"",
             "measure: a folded description and when_to_use are both counted",
         ),
+        Mutation(
+            "agents are capped at 1,536 like skills (sub-agents.md gives them no cap)",
+            "    if agent:\n        return len(name) + len(fm.get(\"description\", \"\"))\n",
+            "    if agent:\n        return len(name) + len(fm.get(\"description\", \"\")[:LISTING_CAP])\n",
+            "measure: an agent's description is NOT capped at 1,536",
+        ),
     ),
 )

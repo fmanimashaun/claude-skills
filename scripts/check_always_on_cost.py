@@ -9,7 +9,10 @@ What is always on: the listing Claude Code puts in context at session start — 
 and `when_to_use`, and each agent's name with its `description`. The skills page: "Every skill in the skill listing adds to your
 context on every turn"; the two fields are "truncated at 1,536 characters in the skill listing"; and `disable-model-invocation:
 true` means "Description not in context" (https://code.claude.com/docs/en/skills.md, read 2026-10-11). Bodies load only when
-invoked, so they are not counted. Hooks cost no model context.
+invoked, so they are not counted. Hooks cost no model context. Agents: sub-agents.md says their descriptions "take up context"
+and that Claude Code "still loads every subagent" past a 15,000-token warning -- no cap, no disable flag. One limit this does not
+model: the skill listing has a budget (1% of the context window) past which Claude Code drops descriptions; a ratchet on growth is
+still right below that budget.
 
 The ratchet counts CHARACTERS, which are exact and need no CLI (CI has none). Tokens are reported as an estimate: calibrated against
 `claude plugin details` 2.1.296 on 2026-10-11, the CLI charges about one token per 2.9-3.1 characters of name + description per
@@ -57,34 +60,39 @@ def frontmatter(text: str) -> dict[str, str]:
     return out
 
 
-def component_chars(path: Path, name: str) -> int:
+def component_chars(path: Path, name: str, agent: bool = False) -> int:
+    """A command/skill: name + description + when_to_use, capped at the listing's 1,536, 0 when model invocation is disabled.
+    An agent: name + description, uncapped -- sub-agents.md gives agents no cap and no disable flag, only a startup warning past
+    15,000 tokens of combined descriptions, and "still loads every subagent"."""
     fm = frontmatter(path.read_text(encoding="utf-8"))
+    if agent:
+        return len(name) + len(fm.get("description", ""))
     if fm.get("disable-model-invocation", "").lower() == "true":
         return 0
     listed = (fm.get("description", "") + (" " + fm["when_to_use"] if fm.get("when_to_use") else ""))[:LISTING_CAP]
     return len(name) + len(listed)
 
 
-def plugin_sources(root: Path) -> dict[str, list[tuple[str, Path]]]:
+def plugin_sources(root: Path) -> dict[str, list[tuple[str, Path, bool]]]:
     """name -> [(component name, file)] for every plugin in the marketplace manifest."""
     manifest = json.loads((root / ".claude-plugin" / "marketplace.json").read_text(encoding="utf-8"))
     out: dict[str, list[tuple[str, Path]]] = {}
     for p in manifest["plugins"]:
         base = (root / p.get("source", "./")).resolve()
-        comps: list[tuple[str, Path]] = []
-        for sub in ("commands", "agents"):
-            comps += [(f.stem, f) for f in sorted((base / sub).glob("*.md"))]
+        comps: list[tuple[str, Path, bool]] = []
+        comps += [(f.stem, f, False) for f in sorted((base / "commands").glob("*.md"))]
+        comps += [(f.stem, f, True) for f in sorted((base / "agents").glob("*.md"))]
         for s in p.get("skills", []) or []:
             skill = (root / s / "SKILL.md")
             if skill.is_file():
-                comps.append((Path(s).name, skill))
-        comps += [(f.parent.name, f) for f in sorted((base / "skills").glob("*/SKILL.md"))] if (base / "skills").is_dir() and not p.get("skills") else []
+                comps.append((Path(s).name, skill, False))
+        comps += [(f.parent.name, f, False) for f in sorted((base / "skills").glob("*/SKILL.md"))] if (base / "skills").is_dir() and not p.get("skills") else []
         out[p["name"]] = comps
     return out
 
 
 def measure(root: Path = ROOT) -> dict[str, int]:
-    return {name: sum(component_chars(f, n) for n, f in comps) for name, comps in plugin_sources(root).items()}
+    return {name: sum(component_chars(f, n, a) for n, f, a in comps) for name, comps in plugin_sources(root).items()}
 
 
 def gate(measured: dict[str, int], baseline: dict) -> list[str]:
@@ -121,6 +129,7 @@ def selftest() -> int:
         (cmd / "folded.md").write_text("---\ndescription: >\n  first line\n  second line\nwhen_to_use: \"when asked\"\n---\n")
         (cmd / "huge.md").write_text("---\ndescription: " + "x" * 3000 + "\n---\n")
         (agent / "helper.md").write_text("---\nname: helper\ndescription: 'Helps'\n---\n")
+        (agent / "big.md").write_text("---\nname: big\ndescription: " + "y" * 2000 + "\n---\n")
         (r / "skills" / "one").mkdir(parents=True)
         (r / "skills" / "one" / "SKILL.md").write_text("---\nname: one\ndescription: A skill\n---\n")
         m = measure(r)
@@ -132,8 +141,11 @@ def selftest() -> int:
               component_chars(cmd / "folded.md", "folded"))
         check("measure: the listing truncates at 1,536 characters", component_chars(cmd / "huge.md", "huge") == len("huge") + 1536)
         check("measure: agents and a manifest-listed skill are counted",
-              m["alpha"] == sum(component_chars(f, f.stem) for f in [cmd / "go.md", cmd / "folded.md", cmd / "huge.md", agent / "helper.md"])
+              m["alpha"] == sum(component_chars(f, f.stem) for f in [cmd / "go.md", cmd / "folded.md", cmd / "huge.md"])
+              + sum(component_chars(f, f.stem, agent=True) for f in [agent / "helper.md", agent / "big.md"])
               and m["stack"] == len("one") + len("A skill"), m)
+        check("measure: an agent's description is NOT capped at 1,536 (no cap for agents in sub-agents.md)",
+              component_chars(agent / "big.md", "big", agent=True) == len("big") + 2000)
         base = {"plugins": {k: {"chars": v} for k, v in m.items()}}
         check("gate: at the baseline passes", gate(m, base) == [], gate(m, base))
         check("gate: one character of growth fails, naming the plugin",
