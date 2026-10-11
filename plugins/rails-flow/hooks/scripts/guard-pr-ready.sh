@@ -46,6 +46,7 @@
 # in force, and passes from a session and directory where neither repo is in force. A record can be hand-written; the guard protects against accident, not forgery. `gh api` calls
 # that mark a PR ready, and a `gh` reached through a variable, alias or function, are out of reach.
 set -uo pipefail
+. "${BASH_SOURCE[0]%/*}/lib/trusted-env.sh" 2>/dev/null   # #1850: scrub PYTHON*/GIT_*/BASH_ENV and rebuild PATH from outside the repository, before any python3, git or gh
 input=""; IFS= read -r -d '' input || true
 
 parsed=1

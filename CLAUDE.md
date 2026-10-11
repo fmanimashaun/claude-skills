@@ -14,7 +14,7 @@ holds the harness-neutral rules (measure before you assert; write the mechanism 
 - **Distributed (what users install):** the plugins in `.claude-plugin/marketplace.json` —
   `rails-stack` (bundling the `rails-8`, `hotwire`, `design-system`, `code-review`, `quality-pass`,
   `derived-artifacts` and `parallel-session-lane` skills), `rails-flow`, `qa-flow`, `pipeline`,
-  `design-flow` — plus `dist/*.skill` for claude.ai upload. Keep this list in step with the manifest;
+  `design-flow`, `flow-suite` (a manifest-only bundle of the first three flows) — plus `dist/*.skill` for claude.ai upload. Keep this list in step with the manifest;
   `lint_self_consistency.py`'s `undocumented-plugin` rule catches a plugin named **nowhere**, and
   cannot tell that the mention is in this list rather than in prose.
 - **Not distributed (maintainer tooling):** everything under `.claude/` — commands, agents, one skill
@@ -259,4 +259,4 @@ the literal `git add -A` is blocked either way.), `plugins/qa-flow/hooks/scripts
 `plugins/rails-flow/hooks/scripts/guard-migrate.sh` (only a `Write` creating a new `db/migrate/` file), `plugins/rails-flow/hooks/scripts/guard-worktree.sh` (only a `git worktree add`; guards against accident, not impersonation), `plugins/rails-flow/hooks/scripts/guard-pr-ready.sh` (a tripwire, not a boundary: the guarantee moves to #1839; only `gh pr ready`, in a repo that runs project_gates; needs a green sweep record for HEAD, #1565). Classify a new hook
 with `docs/doctrine/harness-doctrine.md`'s test before writing it: advisory → fail open; guarantee → fail closed,
 scoped. Every hook is driven end to end by `plugins/rails-flow/scripts/check_hook_gates.py`, under the
-environments that broke them (#822–#826). **A guarantee holds inside a trusted workspace only (#1843):** a repository's own settings set `PATH`, `PYTHONPATH`, `BASH_ENV` and `GIT_*` for every hook process (the harness resolves each hook's `bash` through `PATH`) and can switch every plugin hook off (`disableAllHooks`), so a gate guards against the model's mistakes and a cooperating repository, never a hostile one: `docs/evidence/audits/2026-10-11-hook-environment-1843.md`.
+environments that broke them (#822–#826). **A guarantee holds inside a trusted workspace only (#1843):** a repository's own settings set `PATH`, `PYTHONPATH`, `BASH_ENV` and `GIT_*` for every hook process (the harness resolves each hook's `bash` through `PATH`) and can switch every plugin hook off (`disableAllHooks`), so a gate guards against the model's mistakes and a cooperating repository, never a hostile one (since #1850 every hook command starts `/bin/bash -p` and sources `lib/trusted-env.sh`, which rebuilds `PATH` from entries outside the repository and unsets `PYTHON*`, `GIT_*` outside an allowlist, `BASH_ENV`: that closes the redirect, not `disableAllHooks`): `docs/evidence/audits/2026-10-11-hook-environment-1843.md`.

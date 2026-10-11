@@ -2,6 +2,7 @@
 # PreToolUse[Bash] — block dev->main promotion unless QA certified the exact dev sha.
 # Independent of rails-flow's guard; both can run. Exit 2 blocks with a reason.
 set -uo pipefail
+. "${BASH_SOURCE[0]%/*}/lib/trusted-env.sh" 2>/dev/null   # #1850: scrub PYTHON*/GIT_*/BASH_ENV and rebuild PATH from outside the repository, before any python3, git or gh
 # The whole payload, read with a BUILTIN: `cat` missing would leave it empty, and an empty command
 # is never a promotion -- a fail-open (#1437 review, round 3).
 IFS= read -r -d '' input || true

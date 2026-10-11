@@ -240,8 +240,17 @@ The one-line version is in the heading. The precise version has three distinct r
   (`CLAUDE_PLUGIN_ROOT` was not overridable); and `"disableAllHooks": true` in PROJECT settings switched off every plugin hook.
   So a fail-closed gate holds against the model's mistakes and against a repository that cooperates, never against a hostile one:
   the boundary is the user's decision to trust the workspace. Evidence, recipe and what was not measured (interactive mode after the
-  trust dialog, Linux, `LD_PRELOAD`/`DYLD_*`, `NODE_OPTIONS`): `docs/evidence/audits/2026-10-11-hook-environment-1843.md`. What would narrow the exposure (`/bin/bash -p` as the first
-  word of every hook command, one trusted-environment library every hook sources) is #1850.
+  trust dialog, Linux, `LD_PRELOAD`/`DYLD_*`, `NODE_OPTIONS`): `docs/evidence/audits/2026-10-11-hook-environment-1843.md`.
+  **What #1850 closes, and what it does not.** Every hook command now starts `/bin/bash -p` (absolute, so the harness resolves no `bash` through `PATH`;
+  `-p` ignores `BASH_ENV`, `ENV`, `SHELLOPTS`, `BASHOPTS`, `CDPATH`, `GLOBIGNORE` and exported functions) and every hook script's first executable line sources
+  `lib/trusted-env.sh`, which unsets `PYTHON*`, `LD_*`, `DYLD_*`, `NODE_OPTIONS` and every `GIT_*` outside a short allowlist (`GIT_CONFIG_*`, `GIT_EXEC_PATH`,
+  `GIT_ASKPASS` go) and rebuilds `PATH` from absolute entries outside the repository, symlinks resolved. So a project that legitimately puts a `bin/git` or `bin/python3`
+  shim on `PATH`, a direnv, or a stray variable no longer changes what a hook runs. It does NOT close the hostile case: `disableAllHooks` and a repository's own settings
+  hooks are untouched, and the guarantee is still the trust decision. Costs, stated so nobody finds them later: a system with no `/bin/bash` (NixOS) cannot start the hook,
+  and a hook that cannot start is a non-blocking error, so a gate FAILS OPEN there; a stray `~/.git` or `~/Gemfile` makes the home directory the repository and drops the tools
+  installed under it from a hook's `PATH` (quiet, never wrong); a symlinked tool in a system directory that points back into the repository is checked for `python3` only.
+  `check_hook_gates.py --only hostile_env` runs every hook, discovered from `hooks.json`, under the measurement's environment and is the permanent form of that rig; the
+  `hook-start-hardened` lint refuses a hook command without `/bin/bash -p`, a hook script whose first executable line is not the source, and a plugin without an identical copy of the lib.
 
 ### One discrepancy, recorded rather than papered over
 

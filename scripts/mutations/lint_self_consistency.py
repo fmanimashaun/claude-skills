@@ -1499,5 +1499,54 @@ GUARD = Guard(
             "    if False:\n",
             "a template that names a root HANDOFF.md",
         ),
+        # #1850. The hook-start-hardened rule: each clause of a three-clause rule needs its own fixture and mutation.
+        Mutation(
+            'a bare `bash` hook command stops being a finding',
+            '            if not command.startswith(HOOK_START):',
+            '            if False:',
+            'a hook command that starts with a bare `bash` is a finding',
+        ),
+        Mutation(
+            '-p stops being required',
+            'HOOK_START = "/bin/bash -p "',
+            'HOOK_START = "/bin/bash "',
+            'a hook command that starts /bin/bash WITHOUT -p is a finding',
+        ),
+        Mutation(
+            'a hook script that calls python3 before the lib stops being a finding',
+            '            if not first.startswith(TRUSTED_ENV_SOURCE):',
+            '            if False:',
+            'a hook script that calls python3 before it sources the lib is a finding',
+        ),
+        Mutation(
+            'a comment counts as an executable line',
+            '        if not stripped or stripped.startswith("#") or _SET_LINE.match(stripped):',
+            '        if not stripped or _SET_LINE.match(stripped):',
+            'a hook started /bin/bash -p, sourcing the lib first, with the lib shipped: silent',
+        ),
+        Mutation(
+            'a `set` option line counts as an executable line',
+            '        if not stripped or stripped.startswith("#") or _SET_LINE.match(stripped):',
+            '        if not stripped or stripped.startswith("#"):',
+            'a hook started /bin/bash -p, sourcing the lib first, with the lib shipped: silent',
+        ),
+        Mutation(
+            'a differing copy of the lib stops being a finding',
+            '        elif text != canonical[1]:',
+            '        elif False:',
+            'two plugins whose copies of the lib differ are a finding',
+        ),
+        Mutation(
+            'a missing copy of the lib stops being a finding',
+            '            findings.append(Finding("hook-start-hardened", lib_rel, 0, "missing',
+            '            _ = (Finding("hook-start-hardened", lib_rel, 0, "missing',
+            'a plugin with hooks and no copy of the lib is a finding',
+        ),
+        Mutation(
+            'a plugin with no command hook is asked for a lib',
+            '        if not commands:\n            continue',
+            '        if False:\n            continue',
+            'a plugin whose hooks.json holds no command hook needs no lib: silent',
+        ),
     ),
 )

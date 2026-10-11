@@ -30,8 +30,8 @@ GUARD = Guard(
     mutations=(
         Mutation(
             'the matcher is widened to also route Edit and MultiEdit into the creation-only guard',
-            '      {\n        "matcher": "Write",\n        "hooks": [\n          {\n            "type": "command",\n            "command": "bash \\"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/guard-migrate.sh\\"",',
-            '      {\n        "matcher": "Edit|Write|MultiEdit",\n        "hooks": [\n          {\n            "type": "command",\n            "command": "bash \\"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/guard-migrate.sh\\"",',
+            '      {\n        "matcher": "Write",\n        "hooks": [\n          {\n            "type": "command",\n            "command": "/bin/bash -p \\"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/guard-migrate.sh\\"",',
+            '      {\n        "matcher": "Edit|Write|MultiEdit",\n        "hooks": [\n          {\n            "type": "command",\n            "command": "/bin/bash -p \\"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/guard-migrate.sh\\"",',
             "hooks.json wires it to exactly one PreToolUse entry, matcher `Write`",
         ),
     ),

@@ -11,6 +11,7 @@
 # own 15 s timeout (hooks.json). It READS only; nothing here writes the coordination record, and nothing takes
 # its lock. Silent: the collector's one-line summary is discarded, because a Stop hook's output is not for the model.
 set -uo pipefail
+. "${BASH_SOURCE[0]%/*}/lib/trusted-env.sh" 2>/dev/null   # #1850: scrub PYTHON*/GIT_*/BASH_ENV and rebuild PATH from outside the repository, before any python3, git or gh
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
 type -P python3 >/dev/null 2>&1 || exit 0
 [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/status_board.py" ] || exit 0

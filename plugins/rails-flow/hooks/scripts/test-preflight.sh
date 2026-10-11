@@ -14,6 +14,7 @@
 # it decides WHICH python3 may run at all, and each of its lines has a mutation. A stray `~/.git` or `~/Gemfile` makes the home directory the repository, which
 # silences the hook for a tool installed under it (a Postgres in `~/.local/bin`): quiet, never wrong.
 set -uo pipefail
+. "${BASH_SOURCE[0]%/*}/lib/trusted-env.sh" 2>/dev/null   # #1850: scrub PYTHON*/GIT_*/BASH_ENV and rebuild PATH from outside the repository, before any python3, git or gh
 
 # THE INTERPRETER IS CHOSEN HERE, NOT BY THE SHELL'S OWN LOOKUP (review of #1826). `python3` found through PATH can be a `python3` the repository ships: an empty
 # or `.` entry resolves into the checkout, and so does an absolute entry that points inside it. So it is taken only from an ABSOLUTE PATH entry that is not at or
