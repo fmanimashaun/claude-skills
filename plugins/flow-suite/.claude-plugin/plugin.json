@@ -1,0 +1,13 @@
+{
+  "name": "flow-suite",
+  "description": "One install for the three flow plugins: rails-flow, qa-flow and pipeline. A manifest only; it ships no commands, agents or hooks of its own.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Fisayo Animashaun"
+  },
+  "dependencies": [
+    "rails-flow",
+    "qa-flow",
+    "pipeline"
+  ]
+}

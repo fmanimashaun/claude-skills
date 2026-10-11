@@ -6,10 +6,11 @@
 
 | plugin | version | agents | commands | tier rows |
 |---|---|---|---|---|
-| `design-flow` | 1.45.2 | 5 | 12 | 5 |
-| `pipeline` | 1.4.3 | 2 | 9 | 2 |
-| `qa-flow` | 1.36.1 | 11 | 8 | 11 |
-| `rails-flow` | 1.58.0 | 13 | 24 | 13 |
+| `design-flow` | 1.46.0 | 5 | 12 | 5 |
+| `flow-suite` | 1.0.0 | — | — | — |
+| `pipeline` | 1.5.0 | 2 | 9 | 2 |
+| `qa-flow` | 1.37.0 | 11 | 8 | 11 |
+| `rails-flow` | 1.59.0 | 13 | 24 | 13 |
 
 ## Agents
 
@@ -142,6 +143,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | hook gates (worktree) | `rails-flow` | `python3 plugins/rails-flow/scripts/check_hook_gates.py --selftest --part c` | selftest · 600s budget |
 | issue readiness | `rails-flow` | `python3 plugins/rails-flow/scripts/check_issue_ready.py --selftest` | selftest |
 | label-new-issue selftest | `rails-flow` | `python3 plugins/rails-flow/scripts/label_new_issue.py --selftest` | selftest |
+| memory index limit | `rails-flow` | `python3 plugins/rails-flow/scripts/check_memory_index.py --selftest` | selftest |
 | mod unit tests | `rails-flow` | `python3 plugins/rails-flow/scripts/check_mods.py` | live check |
 | pipeline tiers | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --agents plugins/pipeline/agents --tiers plugins/pipeline/reference/model-tiers.md` | live check |
 | project gates | `rails-flow` | `python3 plugins/rails-flow/scripts/project_gates.py --selftest` | selftest |
@@ -189,6 +191,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | changelog fragments selftest | `repo` | `python3 scripts/changelog_fragments.py --selftest` | selftest |
 | checks.json paths | `repo` | `python3 scripts/check_manifest_paths.py` | live check |
 | checks.json paths selftest | `repo` | `python3 scripts/check_manifest_paths.py --selftest` | selftest |
+| claude plugin validate --strict | `repo` | `python3 scripts/check_plugin_validate.py` | live check |
 | close-on-dev-merge selftest | `repo` | `python3 scripts/close_on_dev_merge.py --selftest` | selftest |
 | component passthrough | `repo` | `python3 scripts/check_component_passthrough.py` | live check |
 | component passthrough selftest | `repo` | `python3 scripts/check_component_passthrough.py --selftest` | selftest |
@@ -241,6 +244,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | page pacing | `repo` | `python3 scripts/check_page_pacing.py` | live check |
 | page pacing selftest | `repo` | `python3 scripts/check_page_pacing.py --selftest` | selftest |
 | pid record selftest | `repo` | `python3 scripts/pid_record_selftest.py` | live check |
+| plugin validate selftest | `repo` | `python3 scripts/check_plugin_validate.py --selftest` | selftest |
 | published blocks | `repo` | `python3 scripts/check_published_blocks.py` | live check |
 | published blocks selftest | `repo` | `python3 scripts/check_published_blocks.py --selftest` | selftest |
 | python floor selftest | `repo` | `python3 scripts/check_python_floor.py --selftest` | selftest |
@@ -332,4 +336,4 @@ Parsed by `check_handoff.parse_tiers`, the arbiter four shipped gates trust.
 | `doc-updater` | mechanical | `architecture_graph.py` regenerates and its digest guard fails on drift |
 | `adversary` | adversarial | — |
 
-Manifest cross-check: the 4 plugin directories inventoried are exactly the ones marketplace.json installs.
+Manifest cross-check: the 5 plugin directories inventoried are exactly the ones marketplace.json installs.

@@ -21,7 +21,16 @@ WHAT IS DEAD, from the official pages (read live by `doctrine-verifier` on 2026-
     `"bypassPermissions"` in those two files, it doesn't take effect either, and the session starts in Manual mode. The other values apply
     from any settings file."
 
-The pages say "doesn't read" and "doesn't take effect", not "ignored", and so do the messages here. `.claude/settings.example.json` is read too: it
+The pages say "doesn't read" and "doesn't take effect", not "ignored", and so do the messages here (registry row
+`project-settings-bypasspermissions-manual` pins the bypassPermissions sentence too).
+
+LIMITS, stated (from the review of #1848): a settings file with JSONC comments, a trailing comma or a BOM exits 2 ("not valid JSON"), which fails
+safe but is a false "unusable" if Claude Code tolerates comments (not verified); `--markdown` judges a json block by its keys, so a block that
+correctly says "put this in ~/.claude/settings.json" is flagged too (point `--markdown` at project templates only); a json block inside a longer
+outer fence (four backticks) is not read; `defaultMode: "dontAsk"` is NOT flagged (it works in a local session), but the permission-modes page, read live on
+2026-10-11, says "Cloud sessions don't honor `defaultMode: "bypassPermissions"` or `"dontAsk"` from your settings files ... The setting is ignored silently and the
+session starts in the permission mode shown in the mode dropdown instead", so a project relying on `dontAsk` from a settings file gets that mode only locally
+(registry row `project-settings-cloud-ignores-dontask`). `.claude/settings.example.json` is read too: it
 is the file teammates copy to `.claude/settings.local.json`, so a dead key there is dead once copied. The check reads files only; it never writes
 one, and the selftest uses temp directories, never a real settings file.
 """
