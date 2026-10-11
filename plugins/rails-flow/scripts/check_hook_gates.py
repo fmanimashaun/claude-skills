@@ -1165,6 +1165,13 @@ def guard_bash_fixtures() -> None:
         check("guard-bash (#1851): `bash -n` of a script that holds a create executes nothing and is allowed", rc == 0, err)
         rc, err = cross(f"bash {runner}")
         check("guard-bash (#1851): CONTROL: `bash` of the same script runs the create and is still refused", rc == 2 and "bash" in err, err)
+        rc, err = cross(f"bash -n +n {runner}")
+        check("guard-bash (#1851): `bash -n +n` turns noexec back off and EXECUTES the script, so it is refused (the fail-open db found)", rc == 2, err)
+        rc, err = cross(f"cd {other} && cat > b.md <<EOF\n$(git remote set-url origin https://github.com/o/x.git)\nEOF\ngh issue create -t X --label enhancement --body-file b.md")
+        check("guard-bash (#1851): an UNQUOTED heredoc body substitutes, so the cd is not kept across it, and the refusal says it cannot tell which repository",
+              rc == 2 and "cannot tell which repository" in err, err)
+        rc, err = cross(f"cd {other} && cat > ~/.gitconfig <<'EOF'\nx\nEOF\ngh issue create -t X --label enhancement --body-file b.md")
+        check("guard-bash (#1851): a heredoc that writes outside the directory (`~/.gitconfig`) does not keep the cd", rc == 2 and "cannot tell which repository" in err, err)
     # #1423: the hook must CALL the helper for a create that never starts a segment.
     rc, err = labelled("sh -c 'gh issue create -t X --label feature'")
     check("guard-bash (#1423): a create inside `sh -c` is refused through the real hook",

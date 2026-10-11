@@ -14,7 +14,7 @@ GUARD = Guard(
         # #1336: a heredoc body is tokenised again, so prose apostrophes refuse a labelled create.
         Mutation(
             "heredoc bodies are no longer stripped before tokenising",
-            "        cmd = _ansi_c(strip_heredocs(cmd))\n    except ValueError:",
+            "        cmd = _ansi_c(strip_heredocs(cmd, heredocs))\n    except ValueError:",
             "        cmd = _ansi_c(cmd)\n    except ValueError:",
             "a heredoc body with apostrophes does not break a labelled create",
         ),
@@ -457,8 +457,8 @@ GUARD = Guard(
         ),
         Mutation(
             "ANSI-C quoting is not decoded, so valid bash is refused as unparseable",
-            "        cmd = _ansi_c(strip_heredocs(cmd))",
-            "        cmd = strip_heredocs(cmd)",
+            "        cmd = _ansi_c(strip_heredocs(cmd, heredocs))",
+            "        cmd = strip_heredocs(cmd, heredocs)",
             "before a harmless redirected script is allowed",
         ),
         Mutation(
@@ -737,11 +737,11 @@ GUARD = Guard(
             "_MAX_DEPTH = 10 ** 9 ",
             "RecursionError",
         ),
-        # #1851: a create after a cd, a heredoc body before it, an unfollowed cd, and `bash -n`.
+        # #1851: a create after a cd, a quoted heredoc body before it, an unfollowed cd, and `bash -n`.
         Mutation(
             'a cd is followed only when nothing sits between it and the create (the session-cwd read is restored for a heredoc body)',
-            '    if len(prefix) < 3 or prefix[2] != "&&":',
-            '    if len(prefix) != 3 or prefix[2] != "&&":',
+            '    if len(prefix) < 3 or prefix[2] != "&&":\n        return None\n    # #1851:',
+            '    if len(prefix) != 3 or prefix[2] != "&&":\n        return None\n    # #1851:',
             "cd into another repo, a heredoc writes the body, then the create: that repo's declaration applies, and passes",
         ),
         Mutation(
@@ -757,16 +757,34 @@ GUARD = Guard(
             'a command that is not a file write between the cd and the create does not keep the cd',
         ),
         Mutation(
-            'a heredoc that writes under .git keeps the cd',
-            ' or "$" in path or "`" in path or ".git" in path.split("/"):',
-            ' or "$" in path or "`" in path:',
-            'a heredoc that writes under .git does not keep the cd',
+            'a file in a directory, the home directory or another absolute path keeps the cd',
+            ' and "/" not in path and',
+            ' and',
+            'a heredoc that writes to another absolute path',
         ),
         Mutation(
-            'a heredoc that writes to a $VAR path keeps the cd',
-            'if not path or path.startswith("-") or "$" in path or "`" in path or',
-            'if not path or path.startswith("-") or "`" in path or',
-            'a heredoc that writes to a $VAR path does not keep the cd',
+            'a file whose name starts .GIT in another case keeps the cd',
+            'and not path.lower().startswith(".git")',
+            'and not path.startswith(".git")',
+            '.GIT, in any case',
+        ),
+        Mutation(
+            '`..` as the file keeps the cd',
+            ' and ".." not in path and',
+            ' and',
+            'a heredoc that writes to `..`',
+        ),
+        Mutation(
+            'a $VAR file name keeps the cd',
+            ' and "$" not in path and',
+            ' and',
+            '$VAR path',
+        ),
+        Mutation(
+            'an unquoted heredoc keeps the cd',
+            'if cd is not None and unquoted_body and len(items[:start]) != 3:',
+            'if False:',
+            'an UNQUOTED heredoc',
         ),
         Mutation(
             "an unfollowed cd is refused with the session's taxonomy again",
@@ -775,21 +793,33 @@ GUARD = Guard(
             'does not keep the cd, and the refusal says it cannot tell which repository',
         ),
         Mutation(
-            'bash -n is read as a shell run',
-            '        if not w.startswith("--") and "n" in w[1:]:\n            return True',
-            '        if not w.startswith("--") and "n" in w[1:]:\n            return False',
+            'a + option before the script does not turn noexec off',
+            '        if w.startswith("+") or (not w.startswith("--") and "o" in w[1:]):',
+            '        if (not w.startswith("--") and "o" in w[1:]):',
+            'turns noexec off or names an option',
+        ),
+        Mutation(
+            'an option set by name (-o) does not turn noexec off',
+            '        if w.startswith("+") or (not w.startswith("--") and "o" in w[1:]):',
+            '        if w.startswith("+"):',
+            'turns noexec off or names an option',
+        ),
+        Mutation(
+            '-n is not read as noexec',
+            '        if not w.startswith("--") and "n" in w[1:]:\n            noexec = True',
+            '        if not w.startswith("--") and "n" in w[1:]:\n            noexec = False',
             'bash -n of a script that holds a create parses it and runs nothing',
         ),
         Mutation(
             'an -n after the script name is read as noexec',
-            '        if w == "--" or not w.startswith("-") or w == "-":\n            return False\n',
-            '        if w == "--" or w == "-":\n            return False\n',
-            "an -n AFTER the script name is the script's argument",
+            '        if w == "--" or w == "-" or not w.startswith(("-", "+")):\n            break',
+            '        if w == "--" or w == "-":\n            break',
+            'an -n AFTER the script name',
         ),
         Mutation(
             'any shell option is read as noexec',
-            '        if not w.startswith("--") and "n" in w[1:]:\n            return True',
-            '        if not w.startswith("--"):\n            return True',
+            '        if not w.startswith("--") and "n" in w[1:]:\n            noexec = True',
+            '        if not w.startswith("--"):\n            noexec = True',
             'bash -x of the same script still runs it',
         ),
     ),
