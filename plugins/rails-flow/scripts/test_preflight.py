@@ -502,7 +502,9 @@ def selftest() -> int:
         (mono / ".git").mkdir(parents=True)
         (mono / "bin").mkdir()
         (mono / "web").mkdir()
-        (mono / "web" / ".git").write_text("gitdir: /elsewhere/.git/modules/web\n")     # a NESTED .git (a submodule's, a worktree's): the repository is still the outer one
+        (mono / "web" / ".git").write_text("gitdir: /elsewhere/.git/modules/web\n")
+        (mono / "web" / "spec").mkdir()
+        (mono / "web" / "spec" / "a_spec.rb").write_text("")     # #1893: the spec the command names exists, so only a Postgres advisory could break the silence     # a NESTED .git (a submodule's, a worktree's): the repository is still the outer one
         (mono / "bin" / "pg_isready").write_text(f"#!/bin/sh\ntouch {repo_ran}\nexit 2\n")
         (mono / "bin" / "pg_isready").chmod(0o755)
         stub("pg_isready", "exit 0")
