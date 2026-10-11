@@ -62,6 +62,7 @@ DEFAULT_BASE = "origin/dev"
 STATUSES = ("done", "partial", "missing", "deviates", "owner-decision")
 ID = re.compile(r"^[A-Za-z][A-Za-z0-9]*(?:[-.][A-Za-z0-9]+)+$")
 SEPARATORS = re.compile(r"[\s,;|]+")
+REF = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._@+~^/-]*$")
 
 
 def requirements_section(root: Path) -> dict:
@@ -220,8 +221,10 @@ def base_ref(root: Path, flag: str | None) -> tuple[str, bool]:
     `-` is refused: it would be read by git as an option."""
     section = requirements_section(root)
     ref = flag or (str(section["base"]) if section.get("base") else "")
-    if ref.startswith("-"):
-        raise ValueError(f"the base ref {ref!r} must not start with `-`")
+    # The ref comes from a file a pull request can change and reaches `git fetch`: a component git would read as an option
+    # (`origin/--upload-pack=...`) is command execution, so only a plain ref is accepted (and `--` ends git's options below).
+    if ref and (not REF.match(ref) or any(part.startswith("-") for part in ref.split("/"))):
+        raise ValueError(f"the base ref {ref!r} must be a plain ref: letters, digits and . _ @ + ~ ^ /, no component starting with `-`")
     return (ref, True) if ref else (DEFAULT_BASE, False)
 
 
@@ -241,7 +244,7 @@ def base_baseline(ref: str, root: Path) -> tuple[str, list[str]]:
 
     if git("rev-parse", "--verify", "-q", f"{ref}^{{commit}}").returncode != 0:
         remote, _, branch = ref.partition("/")
-        subprocess.run(["git", "-C", str(root), "fetch", "-q", remote, branch], capture_output=True, timeout=120, stdin=subprocess.DEVNULL)
+        subprocess.run(["git", "-C", str(root), "fetch", "-q", "--", remote, branch], capture_output=True, timeout=120, stdin=subprocess.DEVNULL)
         if git("rev-parse", "--verify", "-q", f"{ref}^{{commit}}").returncode != 0:
             return "unreadable", []
     baselines = [t for t in (at_ref(path) for path in dict.fromkeys((baseline, BASELINE))) if t is not None]
@@ -437,8 +440,17 @@ def selftest() -> int:
         done = cli()
         if done.returncode != 2:
             failures.append(f"a configured base that cannot be read is exit 2, not a skip: got {done.returncode} {done.stdout[:200]!r}")
+        marker = repo / "pwned"
+        put("qa/qa.config.yml", f'requirements:\n  base: "origin/--upload-pack=touch {marker}"\n')
+        done = cli()
+        if done.returncode != 2 or "must be a plain ref" not in done.stderr or marker.exists():
+            failures.append(f"a configured base with a component that git would read as an option is refused and runs nothing: got {done.returncode} {done.stderr[:160]!r} ran={marker.exists()}")
+        put("qa/qa.config.yml", 'requirements:\n  base: "origin/--tags"\n')
+        done = cli()
+        if done.returncode != 2 or "must be a plain ref" not in done.stderr:
+            failures.append(f"a base ref with a component starting with `-` is refused: got {done.returncode} {done.stderr[:160]!r}")
         done = cli("--base=-x")
-        if done.returncode != 2 or "must not start with" not in done.stderr:
+        if done.returncode != 2 or "must be a plain ref" not in done.stderr:
             failures.append(f"a base ref that starts with `-` is refused, git would read it as an option: got {done.returncode} {done.stderr[:200]!r}")
     # the CLI end to end: exit codes and --uncased
     with tempfile.TemporaryDirectory() as td:

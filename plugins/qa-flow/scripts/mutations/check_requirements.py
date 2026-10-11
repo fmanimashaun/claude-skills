@@ -128,9 +128,15 @@ GUARD = Guard(
         ),
         Mutation(
             "a base ref that starts with `-` is passed to git, which reads it as an option",
-            '    if ref.startswith("-"):',
+            '    if ref and (not REF.match(ref) or any(part.startswith("-") for part in ref.split("/"))):',
             "    if False:",
             "a base ref that starts with `-` is refused",
+        ),
+        Mutation(
+            "a base ref whose later component starts with `-` is accepted, so `origin/--upload-pack=...` reaches git fetch as an option",
+            '    if ref and (not REF.match(ref) or any(part.startswith("-") for part in ref.split("/"))):',
+            "    if ref and not REF.match(ref):",
+            "a base ref with a component starting with `-` is refused",
         ),
         Mutation(
             "the base set in qa.config.yml is ignored, so a project on main cannot choose its base",
