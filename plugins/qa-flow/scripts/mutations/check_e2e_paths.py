@@ -487,5 +487,41 @@ GUARD = Guard(
             'NOT_LITERAL = re.compile(r"[$`*?\\[()\\\\]")',
             'a tilde in an assignment value is not a literal',
         ),
+        Mutation(
+            'a prefix with no trailing space reads as clean',
+            '        if prefix.strip() and not prefix[-1].isspace():',
+            '        if False:',
+            'prefix: no trailing space is refused',
+        ),
+        Mutation(
+            'bare npm is accepted as a launcher',
+            '            elif w == "npm" and i + 1 < len(words) and words[i + 1] == "exec":',
+            '            elif w == "npm":',
+            'prefix: bare npm is refused',
+        ),
+        Mutation(
+            'npx flags are not recognised',
+            '    _NPX_FLAGS = frozenset({"--no-install", "-y", "--yes"})',
+            '    _NPX_FLAGS = frozenset()',
+            'prefix: npx with two flags',
+        ),
+        Mutation(
+            'bunx is dropped from the launchers',
+            '    _SIMPLE = frozenset({"exec", "env", "cross-env", "bunx"})',
+            '    _SIMPLE = frozenset({"exec", "env", "cross-env"})',
+            'prefix: bunx',
+        ),
+        Mutation(
+            'an assignment with an empty name is accepted',
+            '    _ASSIGN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=\\S*")',
+            '    _ASSIGN = re.compile(r"[A-Za-z0-9_]*=\\S*")',
+            'prefix: an empty name is refused',
+        ),
+        Mutation(
+            'a stray `run` is accepted as a launcher word, so yarn run run reads as clean',
+            '    _SIMPLE = frozenset({"exec", "env", "cross-env", "bunx"})',
+            '    _SIMPLE = frozenset({"exec", "env", "cross-env", "bunx", "run"})',
+            'prefix: yarn run run is refused',
+        ),
     ),
 )

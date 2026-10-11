@@ -896,6 +896,22 @@ def selftest(match: str | None = None, real: str | None = None) -> int:
             failures.append(f"a real listing is flattened: got {got!r}")
     if real:
         failures += real_battery(Path(real))
+    # THE PREFIX SCAN'S OWN BRANCHES (#1879 review): each accepted launcher form and each refused near-miss, one row each, so a changed branch fails here.
+    for label, prefix, want in (
+        ("prefix: empty is clean", "", True), ("prefix: whitespace only is clean", "  ", True), ("prefix: exec", "exec ", True),
+        ("prefix: env with an assignment", "env A=1 ", True), ("prefix: npx -y", "npx -y ", True), ("prefix: npx with two flags", "npx --no-install --yes ", True),
+        ("prefix: pnpm exec", "pnpm exec ", True), ("prefix: bare pnpm", "pnpm ", True), ("prefix: yarn run", "yarn run ", True), ("prefix: bare yarn", "yarn ", True),
+        ("prefix: npm exec --", "npm exec -- ", True), ("prefix: bunx", "bunx ", True), ("prefix: cross-env with = in the value", "cross-env A=b=c ", True),
+        ("prefix: an empty value", "A= ", True),
+        ("prefix: no trailing space is refused", "exec", False), ("prefix: bare npm is refused", "npm ", False), ("prefix: yarn run run is refused", "yarn run run ", False),
+        ("prefix: an empty name is refused", "=x ", False), ("prefix: a name starting with a digit is refused", "1A=2 ", False),
+        ("prefix: a quoted value with a space is refused", 'A="x y" ', False), ("prefix: an unknown word is refused", "playwright ", False),
+        ("prefix: npx followed by an unknown flag is refused", "npx --other ", False),
+    ):
+        if match and match not in label:
+            continue
+        if bool(CLEAN_PREFIX.match(prefix)) is not want:
+            failures.append(f"{label}: CLEAN_PREFIX.match({prefix!r}) should be {want}")
     if failures:
         print("check_e2e_paths selftest FAILED --\n" + "\n".join(f"  - {f}" for f in failures))
         return 1
