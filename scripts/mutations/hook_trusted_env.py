@@ -258,5 +258,23 @@ GUARD = Guard(
             '  while false; do',
             'rf_trusted_python skips a python3 whose link target is inside the repository',
         ),
+        Mutation(
+            "no copy of the inherited GIT_*, GH_* and CDPATH is kept, so the gates are blind to what the command inherits",
+            'rf_repo_root\nrf_snapshot_inherited\n',
+            'rf_repo_root\n',
+            "keeps a copy of an inherited GH_REPO as RF_INHERITED_GH_REPO",
+        ),
+        Mutation(
+            "CDPATH is not copied",
+            '      GIT_*|GH_*|CDPATH) export',
+            '      GIT_*|GH_*) export',
+            "...and of an inherited CDPATH",
+        ),
+        Mutation(
+            "a stale RF_INHERITED_* from the caller is kept",
+            'case "$name" in RF_INHERITED_*) unset "$name" 2>/dev/null ;; esac',
+            ':',
+            "a forged RF_INHERITED_* the caller set",
+        ),
     ),
 )

@@ -5854,6 +5854,25 @@ def hostile_env_fixtures() -> None:
             saw = f.read_text(encoding="utf-8").strip() if f.exists() else "gh never ran"
             check(f"hostile environment: gh is not pointed elsewhere by {name}" if "PAGER" not in name and name not in ("GH_FORCE_TTY", "GH_BROWSER", "GH_EDITOR", "GH_DEBUG") else f"hostile environment: gh is not made to run a program or log by {name}", saw == "unset", f"gh saw {name}={saw!r}")
 
+    # THE GATES' VIEW OF THE COMMAND'S ENVIRONMENT. A gate reads its own environment as the one the command will inherit (the release gate reads GH_REPO, command_cwd.py refuses to
+    # follow a `cd` while a GIT_*, GH_* or CDPATH is set), so scrubbing those names for the hook's own git and gh keeps a copy: RF_INHERITED_<NAME>.
+    def inherited_view(forged: bool = False) -> str:
+        with scratch_dir() as td:
+            work, env = lib_env(td)
+            env.update({"GH_REPO": "evil/repo", "CDPATH": "/x", "HOME": str(work.resolve())})
+            if forged:
+                env["RF_INHERITED_GIT_FORGED"] = "forged.example"
+            done = probe(work, env, '. "$1"; printf "%s|%s|%s|%s|%s" "${GH_REPO-unset}" "${RF_INHERITED_GH_REPO-unset}" "${RF_INHERITED_CDPATH-unset}" '
+                                    '"${RF_INHERITED_GIT_CONFIG_GLOBAL-unset}" "${RF_INHERITED_GIT_FORGED-unset}"')
+            return done.stdout
+
+    got = inherited_view()
+    check("hostile environment: trusted-env.sh keeps a copy of an inherited GH_REPO as RF_INHERITED_GH_REPO for the gates, and unsets the variable itself", got.startswith("unset|evil/repo|"), f"got {got!r}")
+    check("hostile environment: ...and of an inherited CDPATH", got.split("|")[2:3] == ["/x"], f"got {got!r}")
+    check("hostile environment: ...but not of what the lib sets itself (GIT_CONFIG_GLOBAL when HOME is the repository root)", got.split("|")[3:4] == ["unset"], f"got {got!r}")
+    got = inherited_view(forged=True)
+    check("hostile environment: ...and a forged RF_INHERITED_* the caller set, for a variable it did not inherit, is dropped", got.split("|")[4:5] == ["unset"], f"got {got!r}")
+
     def _made(d: Path) -> Path:
         d.mkdir(exist_ok=True)
         return d.resolve()
