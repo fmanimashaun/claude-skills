@@ -1,0 +1,2 @@
+section: rails-flow
+- **Three `risky_diff` mutants no fixture reached, and one `classify_door` mutant caught by the wrong fixture, now fail on the row that names them — `plugins/rails-flow/scripts/risky_diff.py`, `plugins/rails-flow/scripts/classify_door.py`** (#1893). The spec-path control used paths no pattern matched, the `author_names` control could not tell a substring from a word (a `coauth` initializer now does), and the quoted-verdict row ended in prose so the mutant never matched; the quoted-path row now fails instead of crashing the selftest.
