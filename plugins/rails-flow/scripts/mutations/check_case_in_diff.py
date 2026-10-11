@@ -31,10 +31,16 @@ GUARD = Guard(
             'every closed issue needs its own case',
         ),
         Mutation(
-            'a CSV row is split on commas, so a quoted Source is cut',
-            '            values = next(csv.reader(io.StringIO(line[1:])))',
-            '            values = line[1:].split(",")',
-            'a quoted Source with a comma is read as one field',
+            'the catalogue is parsed line by line, so a quoted field that spans lines forges a row',
+            '        return list(csv.DictReader(io.StringIO(done.stdout.lstrip("\\ufeff"))))',
+            '        return [dict(zip(next(csv.reader([done.stdout.splitlines()[0]])), next(csv.reader([ln])))) for ln in done.stdout.splitlines()[1:]]',
+            'a multi-line quoted field cannot forge a Source',
+        ),
+        Mutation(
+            'every row at HEAD counts as changed, so an untouched or moved row satisfies the rule',
+            '        return [r for r in rows_at(root, "HEAD", catalogue) if fingerprint(r) not in before], None',
+            '        return rows_at(root, "HEAD", catalogue), None',
+            'a row that already named the issue at the base and is untouched does not count',
         ),
         Mutation(
             'a test or spec directory is not recognised',
@@ -59,6 +65,18 @@ GUARD = Guard(
             'TEST_FILE = re.compile(r"(?:(?:^|/)(?:spec|test|tests|e2e)/|_spec\\.|\\.spec\\.|\\.test\\.|_test\\.)")',
             'TEST_FILE = re.compile(r"spec")',
             'a docs file named spec is not a spec',
+        ),
+        Mutation(
+            'a note under a test directory counts as a spec (N2)',
+            'TEST_FILE.search(p) and CODE.search(p)',
+            'TEST_FILE.search(p)',
+            'a note under a test directory is not a spec',
+        ),
+        Mutation(
+            'a deleted spec counts as a spec this change brings (N1)',
+            '"--name-only", "--diff-filter=ACMR", f"{base}...HEAD")',
+            '"--name-only", f"{base}...HEAD")',
+            'a deleted spec is not a spec this change brings',
         ),
         Mutation(
             "a feature is held to the fix's spec rule",
@@ -88,7 +106,37 @@ GUARD = Guard(
             'no catalogue is a pass instead of not applicable',
             '        return 3, [], [f"{catalogue}: no catalogue here',
             '        return 0, [], [f"{catalogue}: no catalogue here',
-            'no catalogue is exit 3',
+            'the default catalogue absent everywhere is still exit 3',
+        ),
+        Mutation(
+            'a removed or moved catalogue reads as a pass',
+            '        return 1, [f"{catalogue} exists at {base} but not in this change',
+            '        return 0, [f"{catalogue} exists at {base} but not in this change',
+            'a catalogue renamed in this change is a finding',
+        ),
+        Mutation(
+            'a removed or moved catalogue is not looked for',
+            '    if not at_head:\n',
+            '    if False:\n',
+            'a catalogue renamed in this change is a finding',
+        ),
+        Mutation(
+            'an explicitly named catalogue that exists nowhere reads as no catalogue (N3)',
+            '        if explicit:\n',
+            '        if False:\n',
+            'a catalogue named with --catalogue that exists nowhere is exit 2',
+        ),
+        Mutation(
+            "the catalogue's existence is read from the working tree (N4)",
+            '    at_head, at_base = exists_at(root, "HEAD", catalogue), exists_at(root, base, catalogue)',
+            '    at_head, at_base = (root / catalogue).is_file(), exists_at(root, base, catalogue)',
+            'a catalogue that exists only in the working tree is not read',
+        ),
+        Mutation(
+            'existence at a ref is read from the working tree (N4)',
+            '    return git(root, "cat-file", "-e", f"{ref}:{path}").returncode == 0',
+            '    return (root / path).is_file()',
+            'a catalogue deleted in the commit but still in the working tree is still a removal',
         ),
         Mutation(
             'an unreadable base is a pass',

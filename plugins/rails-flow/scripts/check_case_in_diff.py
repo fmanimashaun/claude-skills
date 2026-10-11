@@ -12,13 +12,19 @@ or bug closes without a manual catalogue case that proves its intent. Downstream
 WHAT IT CHECKS, over the diff `BASE...HEAD` (refs only: no working-tree file is hashed, fsmonitor and external diff are off, so no repository config runs a program):
   1. for EVERY issue the PR closes, at least one catalogue row (`qa/test-cases.csv`, or `--catalogue`) that the diff ADDS OR CHANGES names that issue in its `Source`
      column (`#12`, `defect:#12`, `issue #12`, any separator of space , ; |). A row that already existed at the base and is untouched does not count: the case is for THIS
-     change. `#123` is not `#12`.
-  2. for `--kind fix` (a fix, a gap or a bug), the diff also adds or changes a spec or test file (a `spec/`, `test/`, `tests/` or `e2e/` directory, or a `_spec`,
-     `.spec.`, `.test.`, `_test` file name): the regression spec. With `--body-file`, the PR body must also carry a `Red/green` section saying the spec failed without the
+     change. Rows are compared as whole CSV records between the catalogue at BASE and at HEAD, not as diff lines, so a quoted field that spans lines cannot forge a row and a row that
+     only moved is not a change; a cosmetic edit to a row that already names the issue DOES count as a change (a re-opened issue may satisfy the rule that way: the reviewer reads the case). `#123` is not `#12`.
+  2. for `--kind fix` (a fix, a gap or a bug), the diff also ADDS, COPIES, MODIFIES or RENAMES (never deletes) a spec or test SOURCE file: a path in a `spec/`, `test/`,
+     `tests/` or `e2e/` directory or with a `_spec`, `.spec.`, `.test.` or `_test` file name, AND a source extension (rb py js jsx ts tsx mjs cjs go java kt rs php ex exs cs swift
+     sh bash feature robot erb), so a note or a fixture under test/ is not a spec: the regression spec. With `--body-file`, the PR body must also carry a `Red/green` section saying the spec failed without the
      fix (red) and passes with it (green). Presence only: a script cannot run the spec against the pre-fix tree, so the flow command does that and records the result here.
   A PR that closes no issue has nothing to require (a docs change, a refactor): exit 0 and said.
 
 THE PR BODY IS READ for its closing keywords by `check_registry_closed.closing_numbers` (every GitHub keyword, any case, `#N` and this repository's qualified forms).
+
+A catalogue that exists at BASE but not at HEAD (renamed or deleted) is a FINDING when the change closes an issue, never "no catalogue". A catalogue NAMED with `--catalogue`
+that exists neither at BASE nor at HEAD is exit 2 (a typo or a move), not 3. Whether the catalogue exists, and its rows, are read from the committed trees (`git cat-file`, `git show`
+at BASE and at HEAD): nothing in the working tree decides the verdict.
 
 Exit codes: 0 clean; 1 findings; 2 COULD NOT CHECK (the base cannot be read, git fails, a body file is missing): the gate runner grades 2 ERROR and 3 not applicable, which
 never fails a run, so a check that could not look must not say 3; 3 only when the project has no catalogue (nothing to check against).
@@ -40,6 +46,7 @@ import check_registry_closed as crc  # noqa: E402
 CATALOGUE = "qa/test-cases.csv"
 SEPARATORS = re.compile(r"[\s,;|]+")
 TEST_FILE = re.compile(r"(?:(?:^|/)(?:spec|test|tests|e2e)/|_spec\.|\.spec\.|\.test\.|_test\.)")
+CODE = re.compile(r"\.(?:rb|py|js|jsx|ts|tsx|mjs|cjs|go|java|kt|rs|php|ex|exs|cs|swift|sh|bash|feature|robot|erb)$")     # a spec is SOURCE: a note under test/ is not one
 GIT = ["git", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null"]
 
 
@@ -47,27 +54,33 @@ def git(root: Path, *args: str) -> subprocess.CompletedProcess:
     return subprocess.run([*GIT, "-C", str(root), *args], capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL)
 
 
-def changed_rows(root: Path, base: str, catalogue: str) -> tuple[list[dict] | None, str | None]:
-    """The catalogue rows that `base...HEAD` adds or changes, as {column: value}; (None, why) when git cannot say."""
-    header_text = (root / catalogue).read_text(encoding="utf-8-sig").splitlines()[:1]
-    if not header_text:
-        return None, f"{catalogue} is empty"
-    header = next(csv.reader(header_text))
-    done = git(root, "diff", "--no-ext-diff", "--no-color", "--unified=0", f"{base}...HEAD", "--", catalogue)
+def exists_at(root: Path, ref: str, path: str) -> bool:
+    return git(root, "cat-file", "-e", f"{ref}:{path}").returncode == 0
+
+
+def rows_at(root: Path, ref: str, path: str) -> list[dict]:
+    """The catalogue as it is at `ref`, parsed as CSV RECORDS over the whole file (a quoted field may span lines), never line by line."""
+    done = git(root, "show", f"{ref}:{path}")
     if done.returncode != 0:
-        return None, f"git diff {base}...HEAD failed: {done.stderr.strip()[:160]}"
-    rows = []
-    for line in done.stdout.splitlines():
-        if not line.startswith("+") or line.startswith("+++"):
-            continue
-        try:
-            values = next(csv.reader(io.StringIO(line[1:])))
-        except (StopIteration, csv.Error):
-            continue
-        if values == header:
-            continue
-        rows.append(dict(zip(header, values)))
-    return rows, None
+        raise RuntimeError(f"git show {ref}:{path} failed: {done.stderr.strip()[:160]}")
+    try:
+        return list(csv.DictReader(io.StringIO(done.stdout.lstrip("\ufeff"))))
+    except csv.Error as exc:
+        raise RuntimeError(f"{path} at {ref} is not readable CSV: {exc}") from exc
+
+
+def fingerprint(row: dict) -> tuple:
+    return tuple(sorted((str(key), repr(value)) for key, value in row.items()))
+
+
+def changed_rows(root: Path, base: str, catalogue: str) -> tuple[list[dict] | None, str | None]:
+    """The catalogue records at HEAD that are not, whole, in the catalogue at `base`: added or changed. Comparing whole records (not diff lines) means a multi-line quoted field
+    cannot forge a row, and a row that only moved is not a change. (None, why) when git or the CSV cannot say."""
+    try:
+        before = {fingerprint(r) for r in rows_at(root, base, catalogue)} if exists_at(root, base, catalogue) else set()
+        return [r for r in rows_at(root, "HEAD", catalogue) if fingerprint(r) not in before], None
+    except RuntimeError as exc:
+        return None, str(exc)
 
 
 def names_issue(row: dict, number: int) -> bool:
@@ -76,10 +89,11 @@ def names_issue(row: dict, number: int) -> bool:
 
 
 def test_files(root: Path, base: str) -> tuple[list[str] | None, str | None]:
-    done = git(root, "diff", "--no-ext-diff", "--name-only", f"{base}...HEAD")
+    # ACMR: added, copied, modified, renamed. A DELETED spec is not a spec this change brings.
+    done = git(root, "diff", "--no-ext-diff", "--name-only", "--diff-filter=ACMR", f"{base}...HEAD")
     if done.returncode != 0:
         return None, f"git diff --name-only {base}...HEAD failed: {done.stderr.strip()[:160]}"
-    return [p for p in done.stdout.splitlines() if TEST_FILE.search(p)], None
+    return [p for p in done.stdout.splitlines() if TEST_FILE.search(p) and CODE.search(p)], None
 
 
 def red_green(body: str) -> bool:
@@ -92,14 +106,21 @@ def red_green(body: str) -> bool:
     return False
 
 
-def check(root: Path, base: str, closes: set[int], kind: str, catalogue: str, body: str | None) -> tuple[int, list[str], list[str]]:
+def check(root: Path, base: str, closes: set[int], kind: str, catalogue: str, body: str | None, explicit: bool = False) -> tuple[int, list[str], list[str]]:
     """(exit code, findings, notes)."""
-    if not (root / catalogue).is_file():
-        return 3, [], [f"{catalogue}: no catalogue here, so there is no case to require"]
     if git(root, "rev-parse", "--verify", "-q", f"{base}^{{commit}}").returncode != 0:
         return 2, [], [f"the base {base} cannot be read: fetch it, or name another with --base"]
+    at_head, at_base = exists_at(root, "HEAD", catalogue), exists_at(root, base, catalogue)
+    if not at_head and not at_base:
+        if explicit:
+            # a catalogue the caller NAMED that exists nowhere is a typo or a move, not "this project has none"
+            return 2, [], [f"{catalogue}: named with --catalogue, but it exists neither at {base} nor in this change"]
+        return 3, [], [f"{catalogue}: no catalogue here, so there is no case to require"]
     if not closes:
         return 0, [], ["this change closes no issue, so no case is required"]
+    if not at_head:
+        # a rename or a delete must not read as "no catalogue": the case a closing change owes would then be required of nothing
+        return 1, [f"{catalogue} exists at {base} but not in this change: it removes or moves the catalogue, so no case could be required. Keep it at {catalogue}, or name its new path with --catalogue"], []
     rows, why = changed_rows(root, base, catalogue)
     if rows is None:
         return 2, [], [why or "could not read the diff"]
@@ -132,7 +153,7 @@ def selftest(match: str | None = None) -> int:
         return f'{tid},t,A,Functional,P1,Active,"{source}",\n'
 
     def row(label: str, base_files: dict[str, str], change: dict[str, str | None], want_code: int, want: str | None, closes: set[int] | None = None, kind: str = "fix",
-            body: str | None = None, base_ref: str = "base") -> None:
+            body: str | None = None, base_ref: str = "base", catalogue: str = CATALOGUE, explicit: bool = False, untracked: dict[str, str] | None = None) -> None:
         if match and match not in label:
             return
         with tempfile.TemporaryDirectory() as td:
@@ -154,7 +175,10 @@ def selftest(match: str | None = None) -> int:
                     (repo / name).write_text(text, encoding="utf-8")
             fixture_git.run(repo, "add", "-A")
             fixture_git.run(repo, "commit", "-q", "--allow-empty", "-m", "change")
-            code, found, notes = check(repo, base_ref, closes if closes is not None else {5}, kind, CATALOGUE, body)
+            for name, text in (untracked or {}).items():      # in the working tree only: never committed
+                (repo / name).parent.mkdir(parents=True, exist_ok=True)
+                (repo / name).write_text(text, encoding="utf-8")
+            code, found, notes = check(repo, base_ref, closes if closes is not None else {5}, kind, catalogue, body, explicit)
         joined = "\n".join([*found, *notes])
         if code != want_code or (want is None and found) or (want is not None and want not in joined):
             failures.append(f"{label}: wanted exit {want_code} {want!r}, got exit {code}: {joined[:240]!r}")
@@ -185,6 +209,33 @@ def selftest(match: str | None = None) -> int:
     row("a change that closes no issue needs no case", base, {"app.rb": "y\n"}, 0, None, closes=set())
     row("no catalogue is exit 3, nothing to check against", {"app.rb": "x\n"}, {SPEC: "it\n"}, 3, "no catalogue here")
     row("an unreadable base is exit 2, never a pass", base, ok_change, 2, "cannot be read", base_ref="no-such-base")
+    row("a catalogue renamed in this change is a finding, never no catalogue", base, {CATALOGUE: None, "qa/cases.csv": HEADER + case("TC-1", "REQ-1") + case("TC-2", "defect:#5"), SPEC: "it\n"}, 1,
+        "removes or moves the catalogue")
+    row("a catalogue deleted in this change is a finding", base, {CATALOGUE: None, SPEC: "it\n"}, 1, "removes or moves the catalogue")
+    row("a catalogue deleted by a change that closes no issue needs no case", base, {CATALOGUE: None}, 0, None, closes=set())
+    row("a catalogue added in this change: every row is a change", {"app.rb": "x\n"}, {CATALOGUE: HEADER + case("TC-2", "defect:#5"), SPEC: "it\n"}, 0, None)
+    row("a multi-line quoted field cannot forge a Source", base,
+        {CATALOGUE: HEADER + case("TC-1", "REQ-1") + 'TC-2,t,A,F,P1,Active,REQ-2,"line one\n,,,,,,#5,\n"\n', SPEC: "it\n"}, 1, "#5: no catalogue case")
+    row("a genuine multi-line quoted Notes field whose real Source names the issue counts", base,
+        {CATALOGUE: HEADER + case("TC-1", "REQ-1") + 'TC-2,t,A,F,P1,Active,defect:#5,"line one\nline two"\n', SPEC: "it\n"}, 0, None)
+    row("a row that only moved is not a change", {CATALOGUE: HEADER + case("TC-1", "defect:#5") + case("TC-2", "REQ-2"), "app.rb": "x\n"},
+        {CATALOGUE: HEADER + case("TC-2", "REQ-2") + case("TC-1", "defect:#5"), SPEC: "it\n"}, 1, "#5: no catalogue case")
+    row("a cosmetic edit to a row that already names the issue counts as a change (documented)", {CATALOGUE: HEADER + case("TC-1", "defect:#5"), "app.rb": "x\n"},
+        {CATALOGUE: HEADER + 'TC-1,t,A,Functional,P1,Active,"defect:#5",edited\n', SPEC: "it\n"}, 0, None)
+    row("a deleted spec is not a spec this change brings", {**base, SPEC: "it\n"}, {CATALOGUE: HEADER + case("TC-1", "REQ-1") + case("TC-2", "defect:#5"), SPEC: None}, 1, "the spec that fails without it")
+    row("a renamed spec counts", {**base, SPEC: "it\n"}, {CATALOGUE: HEADER + case("TC-1", "REQ-1") + case("TC-2", "defect:#5"), SPEC: None, "spec/app_renamed_spec.rb": "it\n"}, 0, None)
+    row("a note under a test directory is not a spec (N2)", base, {CATALOGUE: HEADER + case("TC-1", "REQ-1") + case("TC-2", "defect:#5"), "docs/test/notes.md": "x\n"}, 1,
+        "the spec that fails without it")
+    row("a fixture file under spec/ is not a spec", base, {CATALOGUE: HEADER + case("TC-1", "REQ-1") + case("TC-2", "defect:#5"), "spec/fixtures/data.json": "{}\n"}, 1,
+        "the spec that fails without it")
+    row("a catalogue named with --catalogue that exists nowhere is exit 2, not no catalogue (N3)", base, {SPEC: "it\n"}, 2, "named with --catalogue", catalogue="qa/cases-typo.csv", explicit=True)
+    row("the default catalogue absent everywhere is still exit 3", {"app.rb": "x\n"}, {SPEC: "it\n"}, 3, "no catalogue here", explicit=False)
+    row("a named catalogue that exists is used", {"qa/cases.csv": HEADER + case("TC-1", "REQ-1"), "app.rb": "x\n"}, {"qa/cases.csv": HEADER + case("TC-1", "REQ-1") + case("TC-2", "defect:#5"), SPEC: "it\n"}, 0, None,
+        catalogue="qa/cases.csv", explicit=True)
+    row("a catalogue that exists only in the working tree is not read: nothing committed decides the verdict (N4)", {"app.rb": "x\n"}, {SPEC: "it\n"}, 3, "no catalogue here",
+        untracked={CATALOGUE: HEADER + case("TC-2", "defect:#5")})
+    row("a catalogue deleted in the commit but still in the working tree is still a removal (N4)", base, {CATALOGUE: None, SPEC: "it\n"}, 1, "removes or moves the catalogue",
+        untracked={CATALOGUE: HEADER + case("TC-2", "defect:#5")})
     row("a quoted Source with a comma is read as one field", base, {CATALOGUE: HEADER + case("TC-1", "REQ-1") + '"TC-2","a, b",A,F,P1,Active,"defect:#5, REQ-2",\n', SPEC: "it\n"}, 0, None)
     if not match or "closing keywords are read from a body" in match:
         for body, want in (("Fixes #5 and closes #6", {5, 6}), ("Refs #7", set()), ("RESOLVED #8", {8})):
@@ -204,7 +255,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--closes", default="", metavar="N,M", help="the issues this change closes")
     parser.add_argument("--closes-from-body", metavar="FILE", help="read the issues from the PR body's closing keywords")
     parser.add_argument("--kind", choices=("fix", "feature"), default="feature", help="`fix` (a fix, gap or bug) also needs a spec and, with --body-file, a Red/green section")
-    parser.add_argument("--catalogue", default=CATALOGUE, help=f"the catalogue (default {CATALOGUE})")
+    parser.add_argument("--catalogue", default=None, help=f"the catalogue (default {CATALOGUE}); a catalogue named here that exists nowhere is exit 2, not 'no catalogue'")
     parser.add_argument("--body-file", metavar="FILE", help="the PR body, for the Red/green section of a fix")
     parser.add_argument("--selftest", action="store_true", help="prove each rule fires on a violation and stays silent on conforming input")
     parser.add_argument("--match", metavar="TEXT", help="with --selftest: run only the rows whose label contains TEXT (the mutation harness)")
@@ -225,7 +276,7 @@ def main(argv: list[str]) -> int:
     if not base:
         print("check_case_in_diff: no --base and no GITHUB_BASE_REF: name the branch this change merges into (exit 2, not a pass)", file=sys.stderr)
         return 2
-    code, found, notes = check(root, base, closes, args.kind, args.catalogue, body)
+    code, found, notes = check(root, base, closes, args.kind, args.catalogue or CATALOGUE, body, explicit=args.catalogue is not None)
     for line in found:
         print(line)
     for note in notes:
