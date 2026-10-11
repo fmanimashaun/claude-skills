@@ -40,6 +40,12 @@ dropped unseen; the shipped check compares the baseline with the base branch, so
 (default `origin/dev`; a project on `main` sets `base: origin/main`). A missing default base is a printed note and exit 3 (a skip), a configured one that cannot be
 read is exit 2, and a base with no registry and no baseline yet (the first adoption) skips the growth check with a note.
 
+A requirement that is a **feature** carries `feature: true` in the registry and needs an end-to-end spec too: its id appears in a test title, a describe title or a
+`tag` option of an active Playwright spec, and some runner actually selects that test (`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_e2e_paths.py"`). The runners are the files
+listed under `e2e_paths: runners:` in `qa/qa.config.yml` (a shell script or a `package.json` that runs `playwright test`), and their `--grep`, `--grep-invert` and file filters
+are read as Playwright documents them. A runner it cannot read (a grep built from a shell variable, a repeated `--grep`) makes the verdict "could not check" (exit 3), never a
+pass. A feature with no selected spec is on `qa/e2e-unselected-baseline.txt` (shrink-only, like the uncased baseline) or a finding.
+
 A case for a requirement states how to prove its intent by hand; it is not a copy of the requirement. Never put an id in `Source` for a case that does
 not prove it, and never delete a baseline line to make the gate pass: the line goes when a case names the requirement.
 

@@ -468,6 +468,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("qa-flow route crawl", ("python3", "plugins/qa-flow/scripts/crawl_report.py", "--selftest")),
     # #1855. Every requirement is named, by id, in an ACTIVE catalogue case (slice 1 of #1853); the shipped gate's own selftest.
     ("qa-flow requirements gate", ("python3", "plugins/qa-flow/scripts/check_requirements.py", "--selftest")),
+    # #1856. Every feature requirement has a spec that a runner actually selects (slice 2 of #1853); the shipped gate's own selftest.
+    ("qa-flow e2e paths gate", ("python3", "plugins/qa-flow/scripts/check_e2e_paths.py", "--selftest")),
     ("qa-flow theme parity", ("python3", "plugins/qa-flow/scripts/theme_parity.py", "--selftest")),
     # #953. What a page hides INSIDE the viewport, which every boundary assertion passes on.
     ("qa-flow layout fit", ("python3", "plugins/qa-flow/scripts/layout_fit.py", "--selftest")),

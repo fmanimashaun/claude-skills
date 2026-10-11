@@ -119,6 +119,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | qa-flow certification reader | `qa-flow` | `python3 plugins/qa-flow/scripts/read_certification.py --selftest` | selftest |
 | qa-flow config reader | `qa-flow` | `python3 plugins/qa-flow/scripts/qa_config.py --selftest` | selftest |
 | qa-flow crawl collector | `qa-flow` | `python3 plugins/qa-flow/scripts/interaction_report.py --check-collector` | live check |
+| qa-flow e2e paths gate | `qa-flow` | `python3 plugins/qa-flow/scripts/check_e2e_paths.py --selftest` | selftest |
 | qa-flow evidence | `qa-flow` | `python3 plugins/qa-flow/scripts/validate_evidence.py --selftest` | selftest |
 | qa-flow evidence manifest | `qa-flow` | `python3 plugins/qa-flow/scripts/evidence_manifest.py --selftest` | selftest |
 | qa-flow interaction sweep | `qa-flow` | `python3 plugins/qa-flow/scripts/interaction_report.py --selftest` | selftest |

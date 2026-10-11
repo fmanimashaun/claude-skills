@@ -7,5 +7,6 @@
 #   area: "Auth"
 #   requirement: "A visitor can sign in with an email and password"
 #   status: "done"          # done | partial | missing | deviates | owner-decision
+#   feature: true           # optional: a feature needs an end-to-end spec that a runner selects (check_e2e_paths.py); name the id in a test title or tag
 #
 # Check it: python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_requirements.py"
