@@ -273,7 +273,7 @@ ctx_repo() {
       [ "$u" = "$orig" ] && return 0
       r="$(repo_of_url "$u")"
       [ -n "$r" ] || { unresolved_pr=1; return 0; } ;;
-    -) f="${GH_REPO:-}"
+    -) f="${RF_INHERITED_GH_REPO:-}"
        [ -n "$f" ] || return 0
        r="$(printf '%s' "$f" | tr 'A-Z' 'a-z')" ;;
     *) r="$(printf '%s' "$f" | tr 'A-Z' 'a-z')" ;;
@@ -653,7 +653,7 @@ EOF
   done <<EOF
 $(git config --get-regexp '^remote\..*\.gh-resolved$' 2>/dev/null | awk '{print $2}')
 EOF
-  [ -z "${GH_REPO:-}" ] || [ "$(printf '%s' "$GH_REPO" | tr 'A-Z' 'a-z')" = "$MARKETPLACE_REPO" ] || return 1
+  [ -z "${RF_INHERITED_GH_REPO:-}" ] || [ "$(printf '%s' "$RF_INHERITED_GH_REPO" | tr 'A-Z' 'a-z')" = "$MARKETPLACE_REPO" ] || return 1
   return 0
 }
 if [ -f ".claude-plugin/marketplace.json" ] && [ -z "$_foreign" ] && only_marketplace_targets; then

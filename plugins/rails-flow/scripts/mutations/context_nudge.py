@@ -101,7 +101,7 @@ GUARD = Guard(
         ),
         Mutation(
             "#1677: the usage windows never reach the status line",
-            "    const limits = limitsLabel(e.rateLimits)\n",
+            "    const limits = limitsLabel(e.rateLimits, now)\n",
             "    const limits = undefined\n",
             "the status line carries the weekly and 5-hour windows",
         ),

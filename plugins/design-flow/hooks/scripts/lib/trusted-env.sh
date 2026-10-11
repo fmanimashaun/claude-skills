@@ -10,9 +10,9 @@
 # one (a project's settings can still set `disableAllHooks`); the trust decision stays the boundary, and docs/doctrine/harness-doctrine.md says so.
 #
 # WHAT IT DOES, once, at source time:
-#   rf_scrub_env      unsets PYTHON*, LD_*, DYLD_*, NODE_OPTIONS, NODE_PATH, RUBY*, PERL5*, GEM_*, BUNDLE_*, GH_HOST, GH_REPO, GH_ENTERPRISE_TOKEN, GH_ENTERPRISE_HOST, GITHUB_ENTERPRISE_TOKEN, PAGER, LESSOPEN, BASH_ENV, ENV, SHELLOPTS, BASHOPTS, CDPATH,
+#   rf_scrub_env      unsets PYTHON*, LD_*, DYLD_*, NODE_OPTIONS, NODE_PATH, RUBY*, PERL5*, GEM_*, BUNDLE_*, every GH_* except GH_TOKEN, GITHUB_ENTERPRISE_TOKEN, PAGER, LESSOPEN, BASH_ENV, ENV, SHELLOPTS, BASHOPTS, CDPATH,
 #                     GLOBIGNORE and every GIT_* (GH_TOKEN stays: against the real host it only changes who `gh` acts as, and a token without access makes `gh` fail, so a gate fails closed;
-#                     GH_HOST, GH_REPO and the GH_ENTERPRISE_* names are gone because they point `gh` at ANOTHER host or repository, which could feed a gate forged answers)
+#                     every other GH_* is gone: GH_HOST, GH_REPO and GH_ENTERPRISE_* point `gh` at ANOTHER host or repository, which could feed a gate forged answers, and GH_PAGER with GH_FORCE_TTY makes `gh` run a program)
 #                     outside RF_GIT_ALLOW (GIT_CONFIG_*, GIT_EXEC_PATH, GIT_ASKPASS, GIT_SSH* are dropped).
 #   PYTHONNOUSERSITE  is set to 1 (python's `-s`), after PYTHON* is unset.
 #   rf_trusted_path   rebuilds PATH from ABSOLUTE entries that are not at or inside the repository (the OUTERMOST of the Gemfile and .git
@@ -59,11 +59,31 @@ rf_inside() {
   return 1
 }
 
+# THE GATES READ THE ENVIRONMENT AS THE COMMAND'S. A PreToolUse hook judges a command that will inherit the session's environment, and its own environment is that proxy: the
+# release gate reads GH_REPO (a `gh release create` with GH_REPO=other/fork acts on ANOTHER repository), and command_cwd.py refuses to follow a `cd` while any GIT_*, GH_* or
+# CDPATH is set, because each can change where gh and git act. Scrubbing those names for the hook's OWN git and gh must not blind the judgement, so every such variable is
+# first copied to RF_INHERITED_<NAME>, which is what a gate reads for "what will the command see" (the lib's own additions, such as GIT_CONFIG_GLOBAL below, are not copied; nor is any credential, `GH_*TOKEN*`: a copy only puts a token in front of more child processes).
+# Stale RF_INHERITED_* from the caller are dropped first: only what this process really inherited counts.
+rf_snapshot_inherited() {
+  local name
+  for name in $(compgen -v); do
+    case "$name" in RF_INHERITED_*) unset "$name" 2>/dev/null ;; esac
+  done
+  for name in $(compgen -v); do
+    case "$name" in
+      GH_*TOKEN*) ;;      # a credential is never copied: it is not scrubbed either (GH_TOKEN), or no gate reads it
+      GIT_*|GH_*|CDPATH) export "RF_INHERITED_$name=${!name}" ;;
+    esac
+  done
+  return 0
+}
+
 rf_scrub_env() {
   local name
   for name in $(compgen -v); do
     case "$name" in
-      PYTHON*|LD_*|DYLD_*|NODE_OPTIONS|NODE_PATH|RUBY*|PERL5*|GEM_*|BUNDLE_*|GH_HOST|GH_REPO|GH_ENTERPRISE_TOKEN|GH_ENTERPRISE_HOST|GITHUB_ENTERPRISE_TOKEN|PAGER|LESSOPEN|BASH_ENV|ENV|SHELLOPTS|BASHOPTS|CDPATH|GLOBIGNORE) unset "$name" 2>/dev/null ;;
+      GH_TOKEN) ;;
+      PYTHON*|LD_*|DYLD_*|NODE_OPTIONS|NODE_PATH|RUBY*|PERL5*|GEM_*|BUNDLE_*|GH_*|GITHUB_ENTERPRISE_TOKEN|PAGER|LESSOPEN|BASH_ENV|ENV|SHELLOPTS|BASHOPTS|CDPATH|GLOBIGNORE) unset "$name" 2>/dev/null ;;
       GIT_*) case "$RF_GIT_ALLOW" in *" $name "*) ;; *) unset "$name" 2>/dev/null ;; esac ;;
     esac
   done
@@ -82,7 +102,11 @@ rf_list_inside() {
   for entry in $1; do
     # A relative value (`.`, `sub`) is read against whatever directory the tool runs in, which is the repository: refused without asking where it points.
     case "$entry" in /*) ;; *) hit=0; break ;; esac
-    real="$(rf_physical "$entry")" || { hit=0; break; }
+    if [ -f "$entry" ] || [ -L "$entry" ]; then
+      real="$(rf_target_of "$entry")" || { hit=0; break; }      # a FILE (SSL_CERT_FILE): where its link chain ends
+    else
+      real="$(rf_physical "$entry")" || { hit=0; break; }
+    fi
     if rf_inside "$real" && { [ "${2:-0}" != 1 ] || [ "$real" != "$RF_REPO_ROOT" ]; }; then hit=0; break; fi
   done
   IFS="$old_ifs"
@@ -90,12 +114,12 @@ rf_list_inside() {
   return "$hit"
 }
 
-# A variable that names where a tool reads its CONFIGURATION or LIBRARIES from is the repository's to set only if the repository is not where it points: python's user site
+# A variable that names where a tool reads its CONFIGURATION, LIBRARIES or CERTIFICATES from (a repository-shipped CA lets a proxy forge `gh`'s answers; HTTPS_PROXY itself stays) is the repository's to set only if the repository is not where it points: python's user site
 # (usercustomize.py) and git's ~/.gitconfig (core.fsmonitor) both run code, and both are found through HOME. A value at or inside the repository is unset, so the tool falls
 # back to its own default. HOME alone keeps a value that IS the repository root: a stray `~/.git` makes the home directory the repository, and unsetting it would break every tool.
 rf_scrub_paths() {
   local name value allow
-  for name in HOME XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME GH_CONFIG_DIR; do
+  for name in HOME XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME SSL_CERT_FILE SSL_CERT_DIR; do
     value="${!name:-}"
     [ -n "$value" ] || continue
     allow=0
@@ -174,6 +198,7 @@ rf_trusted_python() {
 }
 
 rf_repo_root
+rf_snapshot_inherited
 rf_scrub_env
 rf_scrub_paths
 # No user site: python reads a `usercustomize.py` from the user's site directory at every start. Exactly `python3 -s`, for every python3 a hook (or a script it starts) runs,
@@ -182,3 +207,4 @@ PYTHONNOUSERSITE=1
 export PYTHONNOUSERSITE
 rf_trusted_path
 RF_TRUSTED_ENV=1
+export RF_TRUSTED_ENV

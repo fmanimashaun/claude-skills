@@ -1112,6 +1112,15 @@ def api_issue_post(cmd: str) -> str | None:
     return None
 
 
+
+def _inherited_gh_repo() -> str:
+    """The GH_REPO the COMMAND will inherit. A hook runs `lib/trusted-env.sh` first, which unsets GH_REPO for the hook's own gh and keeps a copy as RF_INHERITED_GH_REPO (#1850);
+    run directly (a selftest, a person) there is no copy and the process's own environment is the answer."""
+    if "RF_TRUSTED_ENV" in os.environ or any(k.startswith("RF_INHERITED_") for k in os.environ):
+        return os.environ.get("RF_INHERITED_GH_REPO", "")
+    return os.environ.get("GH_REPO", "")
+
+
 def verdict(cmd: str, root: Path) -> tuple[bool, str]:
     shape = hidden_create(cmd)
     if shape:
@@ -1140,7 +1149,7 @@ def verdict(cmd: str, root: Path) -> tuple[bool, str]:
         target = root
         # GH_REPO in the hook's own environment (settings `env`) redirects gh too. One set only via
         # CLAUDE_ENV_FILE is invisible here -- a known limit, recorded in #1400.
-        if cd is not None and repo is None and env_repo is None and not os.environ.get("GH_REPO"):
+        if cd is not None and repo is None and env_repo is None and not _inherited_gh_repo():
             found, _ = target_root(cd, root)
             if found is not None:
                 theirs, ours = remotes(found), remotes(root)
@@ -1151,7 +1160,7 @@ def verdict(cmd: str, root: Path) -> tuple[bool, str]:
         followed = target != root
         # A `cd` is in the command but its SHAPE was not one this hook follows (`cd` is None here): the check fell back to the session's rules. A cd that WAS
         # followed and then fell back for want of a certain target (a shared remote, none, GH_REPO) is a different case and keeps its own message.
-        cd_unfollowed = (cd is None and repo is None and env_repo is None and not os.environ.get("GH_REPO") and _names_cd(cmd))
+        cd_unfollowed = (cd is None and repo is None and env_repo is None and not _inherited_gh_repo() and _names_cd(cmd))
         groups, why = load_groups(target)
         if why:
             return False, why
@@ -1441,6 +1450,20 @@ def selftest() -> int:
                 os.environ.pop("GH_REPO", None)
             else:
                 os.environ["GH_REPO"] = saved
+        # #1850: in a hook, trusted-env.sh has unset GH_REPO and kept a copy; the copy is what the command will inherit.
+        saved_env = {k: os.environ.pop(k) for k in ("GH_REPO", "RF_TRUSTED_ENV", "RF_INHERITED_GH_REPO") if k in os.environ}
+        os.environ["RF_TRUSTED_ENV"] = "1"
+        os.environ["RF_INHERITED_GH_REPO"] = "me/skills"
+        try:
+            ok, why = verdict(f"cd {r} && {rt}", s)
+            check("GH_REPO inherited by the command (the lib's copy) keeps the session's rules", not ok and "comp:*" in why, why)
+            del os.environ["RF_INHERITED_GH_REPO"]
+            ok, why = verdict(f"cd {r} && {rt}", s)
+            check("...and with the lib's copy empty the cd is followed as before", "comp:*" not in why, why)
+        finally:
+            for k in ("RF_TRUSTED_ENV", "RF_INHERITED_GH_REPO"):
+                os.environ.pop(k, None)
+            os.environ.update(saved_env)
         # A session whose origin is a fork and whose UPSTREAM is the real repo: gh files upstream.
         s2 = Path(td) / "session-fork"
         (s2 / ".rails-flow").mkdir(parents=True)

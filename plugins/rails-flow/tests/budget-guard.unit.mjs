@@ -31,14 +31,19 @@ const echo = async (e) => ({ passed: e })
 const RELAY = "await parallel(peers.map(p => () => agent(`Load SendMessage and send this to ${p}`)))"
 const WORK = "const r = await agent('read the controller and list the routes')"
 
-// The guard's two hooks, with a host answering the given usage and environment.
-async function guard(week, env = {}) {
+// The guard's two hooks, with a host answering the given usage and environment. The clock starts at NOW and moves with `advance`; the weekly figure moves
+// with `setWeek`; `resetsAt` is the window's reset time (#1854: a past one makes the reading no reading).
+async function guard(week, env = {}, resetsAt = RESET) {
   const mod = await import(`../hooks/budget-guard.mjs?fresh=${++fresh}`)
   const hooks = {}
   mod.register((event, matcher, hook) => { hooks[`${event}:${matcher.tool}`] = hook })
-  const $ = { env: { get: async (k) => env[k] }, session: { usage: async () => ({ rateLimits: win(week) }) } }
+  let clock = NOW
+  let figure = week
+  const $ = { env: { get: async (k) => env[k] }, clock: { now: async () => clock }, session: { usage: async () => ({ rateLimits: win(figure, undefined, resetsAt) }) } }
   return {
     mod,
+    advance: (ms) => { clock += ms },
+    setWeek: (w) => { figure = w },
     workflow: (script) => hooks['tool.call:Workflow']($, { script }, echo),
     agent: () => hooks['tool.call:Agent']($, { prompt: 'x' }, echo),
   }
@@ -210,4 +215,57 @@ await check('the context nudge asks for /clear after the handoff, not /compact (
 await check('the usage line is short (it is billed on every later request)', async () => {
   const { budgetLine } = (await guard(0)).mod
   assert.ok(budgetLine('seven_day', 96, 'block', RESET).length <= 260 && budgetLine('five_hour', 85, 'warn', RESET).length <= 260)
+})
+
+// ---- #1854: a reading from a window that has already reset is no reading ------------------------------------------------------------------------
+const PAST = '2026-10-07T12:00:00.000Z'                                // before NOW
+await check('a weekly reading whose resetsAt has passed is no reading, so fan-out is not refused (#1854)', async () => {
+  const g = await guard(96, {}, PAST)
+  assert.ok((await g.agent()).passed, 'an agent')
+  assert.ok((await g.workflow(WORK)).passed, 'a workflow')
+})
+await check('a weekly reading is expired at exactly resetsAt', async () => {
+  assert.ok((await (await guard(96, {}, new Date(NOW).toISOString())).agent()).passed)
+})
+await check('a weekly reading one millisecond before resetsAt is still a reading, and refuses', async () => {
+  assert.ok((await (await guard(96, {}, new Date(NOW + 1).toISOString())).agent()).deny)
+})
+await check('a reading with no resetsAt cannot be shown stale, and still refuses', async () => {
+  assert.ok((await (await guard(96, {}, null)).agent()).deny)
+})
+await check('a reading with an unparsable resetsAt cannot be shown stale, and still refuses', async () => {
+  assert.ok((await (await guard(96, {}, 'soon')).agent()).deny)
+})
+await check('the refusal names the reset time, says the harness gives the reading no timestamp, and names the override', async () => {
+  const r = await (await guard(96)).agent()
+  assert.ok(r.deny.includes('resets 14:05 UTC, in 1 h 0 min'), r.deny)
+  assert.ok(r.deny.includes('no timestamp'), r.deny)
+  assert.ok(r.deny.includes('Run /usage; if it disagrees, say so and continue'), r.deny)
+  assert.ok(r.deny.includes('RAILS_FLOW_BUDGET_ALLOW=1'), r.deny)
+  assert.ok((await (await guard(96)).workflow(WORK)).deny.includes('new workflows are refused'))
+})
+await check('the refusal names how long this hook has seen the same reading', async () => {
+  const g = await guard(96, {}, '2026-10-09T00:00:00.000Z')
+  assert.ok((await g.agent()).deny.includes('under a minute'))
+  g.advance(190 * 60000)
+  assert.ok((await g.agent()).deny.includes('3 h 10 min'))
+})
+await check('a new figure restarts the age', async () => {
+  const g = await guard(96, {}, '2026-10-09T00:00:00.000Z')
+  await g.agent()
+  g.advance(190 * 60000)
+  g.setWeek(97)
+  assert.ok((await g.agent()).deny.includes('under a minute'))
+})
+await check('the usage view leaves out a window that has already reset (#1854)', async () => {
+  const n = await nudge()
+  await n.measure(96, 40, 30, PAST)
+  assert.equal(n.status.at(-1), 'context 30%')
+  await n.measure(96, 40, 30)
+  assert.equal(n.status.at(-1), 'context 30% · week 96% · 5h 40%')
+})
+await check('a 5-hour reading that has already reset schedules no resume prompt', async () => {
+  const n = await nudge()
+  await n.measure(10, 96, 30, PAST)
+  assert.equal(n.timers.length, 0)
 })

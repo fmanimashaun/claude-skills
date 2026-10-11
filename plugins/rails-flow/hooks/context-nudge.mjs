@@ -138,12 +138,13 @@ export function register(on) {
   // Runs after each turn, and whenever the fill moved: the figure is pushed, not polled
   on('session.measure', async ($, e, next) => {
     percent = e.context.percent ?? null
+    const now = typeof $.clock?.now === 'function' ? await $.clock.now() : undefined      // a window that has already reset is no reading (#1854); no clock, no filter
     const levels = await budgetLevels($)
     for (const k of WINDOWS) {
-      reading[k] = windowOf(e.rateLimits, k)
+      reading[k] = windowOf(e.rateLimits, k, now)
       if (level(reading[k]?.pct, ...levels) === null) announced[k] = null
     }
-    const limits = limitsLabel(e.rateLimits)
+    const limits = limitsLabel(e.rateLimits, now)
     const parts = [percent === null ? null : `context ${percent}%`, limits ?? null].filter(Boolean)
     $.ui.status(parts.length ? parts.join(' · ') : undefined)
     // At the 5-hour hard level, schedule one prompt for just after the reset, so the work resumes by itself.

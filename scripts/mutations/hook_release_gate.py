@@ -242,7 +242,7 @@ GUARD = Guard(
         Mutation(
             # GH_REPO from the hook's own environment makes every gh command act on that repository.
             "a GH_REPO naming another repository does not withdraw the exemption",
-            '[ -z "${GH_REPO:-}" ] || [ "$(printf \'%s\' "$GH_REPO" | tr \'A-Z\' \'a-z\')" = "$MARKETPLACE_REPO" ] || return 1',
+            '[ -z "${RF_INHERITED_GH_REPO:-}" ] || [ "$(printf \'%s\' "$RF_INHERITED_GH_REPO" | tr \'A-Z\' \'a-z\')" = "$MARKETPLACE_REPO" ] || return 1',
             'true',
             "a GH_REPO that names another repository",
         ),

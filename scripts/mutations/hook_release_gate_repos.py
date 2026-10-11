@@ -54,7 +54,7 @@ GUARD = Guard(
         ),
         Mutation(
             "GH_REPO in the hook's environment is ignored",
-            '    -) f="${GH_REPO:-}"',
+            '    -) f="${RF_INHERITED_GH_REPO:-}"',
             '    -) f=""',
             "GH_REPO ALONE sends a release",
         ),

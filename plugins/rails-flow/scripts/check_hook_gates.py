@@ -1138,9 +1138,9 @@ def guard_bash_fixtures() -> None:
         _run(["git", "-C", str(session), "remote", "add", "origin", "https://github.com/me/session.git"], check=True)
         _run(["git", "init", "-q", str(other)], check=True)
         _run(["git", "-C", str(other), "remote", "add", "origin", "https://github.com/other/repo.git"], check=True)
-        def cross(cmd: str) -> tuple[int, str]:
+        def cross(cmd: str, env_extra: dict[str, str] | None = None) -> tuple[int, str]:
             r = _run(["bash", str(HOOKS / "guard-bash.sh")], input=json.dumps({"tool_input": {"command": cmd}}),
-                               capture_output=True, text=True, cwd=session)
+                               capture_output=True, text=True, cwd=session, **({"env": dict(os.environ, **env_extra)} if env_extra else {}))
             return r.returncode, r.stderr
         rc, err = cross(f"cd {other} && gh issue create -t X --label enhancement --body-file b.md")
         check("guard-bash (#1400): a create after `cd <other repo>` answers to THAT repo's labels", rc == 0, err)
@@ -1148,6 +1148,10 @@ def guard_bash_fixtures() -> None:
         check("guard-bash (#1400): ...and that repo's rules still refuse", rc == 2 and "severity:s1" in err, err)
         rc, err = cross("gh issue create -t X --label enhancement --body-file b.md")
         check("guard-bash (#1400): CONTROL: without the cd, the session's own rules apply", rc == 2 and "comp:*" in err, err)
+        # #1850: GH_REPO in the hook's environment (settings `env`, a launcher) redirects gh, so the cd is NOT certain and the session's rules apply. trusted-env.sh unsets GH_REPO for
+        # the hook's own gh and keeps a copy; issue_labels.py must read the copy, or the cd is followed to the other repository's looser rules and this create is let through.
+        rc, err = cross(f"cd {other} && gh issue create -t X --label enhancement --body-file b.md", {"GH_REPO": "me/session"})
+        check("guard-bash (#1850): GH_REPO in the environment keeps the session's rules for a create after `cd <other repo>` (read from the lib's copy)", rc == 2 and "comp:*" in err, f"exit {rc}: {err[-160:]}")
         # #1851: the doctrine's own shape (a heredoc writes the body, then the create) after a cd; an unfollowed cd says so; -R; `bash -n`.
         body = "cat > b.md <<'EOF'\nthe body\nEOF\n"
         rc, err = cross(f"cd {other} && {body}gh issue create -t X --label enhancement --body-file b.md")
@@ -2164,10 +2168,9 @@ def guard_claims_fixtures() -> None:
           rc == 2 and "## What changed" in out, f"exit {rc}: {out[-140:]}")
     rc, out = run_in("cd sub && gh pr create --body-file BODY", NEITHER, with_output=True,
                      env_extra={"CDPATH": "B_DIR"})
-    # #1850: the lib unsets CDPATH before the hook reads anything, so an inherited CDPATH can no longer make a relative cd unknown: the cd is judged like any other.
-    rc_plain, out_plain = run_in("cd sub && gh pr create --body-file BODY", NEITHER, with_output=True)
-    check("guard-claims: an inherited CDPATH changes nothing about a relative cd: trusted-env.sh unsets it before the hook reads it (#1850; was the #1516 allowlist)",
-          (rc, out) == (rc_plain, out_plain), f"with CDPATH: exit {rc}: {out[-100:]!r}; without: exit {rc_plain}: {out_plain[-100:]!r}")
+    check("guard-claims: a relative cd with CDPATH set is NOT checked, with the notice (#1516 allowlist)",
+          rc == 0 and NOTICE in out, f"exit {rc}: {out[-140:]}")
+    # #1850: trusted-env.sh unsets CDPATH for the hook's own tools but keeps a copy the resolver reads, so the allowlist still holds for an INHERITED CDPATH (checked above).
     rc, out = run_in("CDPATH=B_DIR cd sub && gh pr create --body-file BODY", NEITHER, with_output=True)
     check("guard-claims: a relative cd with CDPATH set IN THE COMMAND is NOT checked, with the notice (#1516 allowlist)",
           rc == 0 and NOTICE in out, f"exit {rc}: {out[-140:]}")
@@ -5820,8 +5823,8 @@ def hostile_env_fixtures() -> None:
             _stub(outer / "bin", "fsmon-home", f'echo "$0" >> "{witness}/home-gitconfig-fsmonitor"\nexit 0')
             (home_dir / ".gitconfig").write_text(f"[core]\n\tfsmonitor = {outer / 'bin' / 'fsmon-home'}\n", encoding="utf-8")
             if real["python3"]:      # the user site python3 would read from THIS home, asked of the real python3 (subprocess, not `_run`: no hook is involved)
-                site = subprocess.run([real["python3"], "-c", "import site; print(site.getusersitepackages())"], capture_output=True, text=True,
-                                      env={"PATH": "/usr/bin:/bin", "HOME": str(home_dir)}, timeout=60).stdout.strip()
+                site = _run([real["python3"], "-c", "import site; print(site.getusersitepackages())"], capture_output=True, text=True,
+                            env={"PATH": "/usr/bin:/bin", "HOME": str(home_dir)}, timeout=60).stdout.strip()
                 if site:
                     Path(site).mkdir(parents=True, exist_ok=True)
                     (Path(site) / "usercustomize.py").write_text(f"open({str(witness / 'home-usercustomize')!r}, 'a').write('ran\\n')\n", encoding="utf-8")
@@ -5917,7 +5920,7 @@ def hostile_env_fixtures() -> None:
                     "ENV": "/x", "CDPATH": "/x", "GLOBIGNORE": "*", "GIT_EXEC_PATH": "/x", "GIT_ASKPASS": "/x", "GIT_SSH_COMMAND": "/x",
                     "GIT_DIR": str(work / ".git"), "GIT_WORK_TREE": str(work), "GIT_AUTHOR_NAME": "a", "GIT_TERMINAL_PROMPT": "0", "KEEP_ME": "1",
                     "RUBYOPT": "-rx", "RUBYLIB": "/x", "NODE_PATH": "/x", "PERL5LIB": "/x", "PERL5OPT": "-Mx", "GEM_HOME": "/x", "GEM_PATH": "/x", "BUNDLE_GEMFILE": "/x",
-                    "BUNDLE_PATH": "/x", "GH_HOST": "evil.example", "GH_REPO": "evil/repo", "GH_ENTERPRISE_TOKEN": "t", "GH_ENTERPRISE_HOST": "evil.example", "GITHUB_ENTERPRISE_TOKEN": "t", "PAGER": "/x", "LESSOPEN": "|/x", "GH_TOKEN": "t"})
+                    "BUNDLE_PATH": "/x", "GH_HOST": "evil.example", "GH_REPO": "evil/repo", "GH_ENTERPRISE_TOKEN": "t", "GH_ENTERPRISE_HOST": "evil.example", "GITHUB_ENTERPRISE_TOKEN": "t", "GH_PAGER": "/x", "GH_FORCE_TTY": "1", "GH_BROWSER": "/x", "GH_EDITOR": "/x", "GH_DEBUG": "api", "GH_CONFIG_DIR": "/x", "PAGER": "/x", "LESSOPEN": "|/x", "GH_TOKEN": "t"})
         return work, env
 
     def env_left() -> tuple[set[str], subprocess.CompletedProcess]:
@@ -5929,7 +5932,7 @@ def hostile_env_fixtures() -> None:
             return set(re.findall(r"^declare -x (\w+)", done.stdout, re.M)), done
 
     for gone in ("PYTHONPATH", "PYTHONHOME", "LD_PRELOAD", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH", "NODE_OPTIONS", "BASH_ENV", "ENV", "CDPATH",
-                 "GLOBIGNORE", "RUBYOPT", "RUBYLIB", "NODE_PATH", "PERL5LIB", "PERL5OPT", "GEM_HOME", "GEM_PATH", "BUNDLE_GEMFILE", "BUNDLE_PATH", "GH_HOST", "GH_REPO", "GH_ENTERPRISE_TOKEN", "GH_ENTERPRISE_HOST", "GITHUB_ENTERPRISE_TOKEN", "PAGER", "LESSOPEN", "GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0", "GIT_EXEC_PATH", "GIT_ASKPASS", "GIT_SSH_COMMAND"):
+                 "GLOBIGNORE", "RUBYOPT", "RUBYLIB", "NODE_PATH", "PERL5LIB", "PERL5OPT", "GEM_HOME", "GEM_PATH", "BUNDLE_GEMFILE", "BUNDLE_PATH", "GH_HOST", "GH_REPO", "GH_ENTERPRISE_TOKEN", "GH_ENTERPRISE_HOST", "GITHUB_ENTERPRISE_TOKEN", "GH_PAGER", "GH_FORCE_TTY", "GH_BROWSER", "GH_EDITOR", "GH_DEBUG", "GH_CONFIG_DIR", "PAGER", "LESSOPEN", "GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0", "GIT_EXEC_PATH", "GIT_ASKPASS", "GIT_SSH_COMMAND"):
         left, done = env_left()
         check(f"hostile environment: trusted-env.sh unsets {gone}", gone not in left and "HOME" in left, f"exit {done.returncode}; left {sorted(left)[:40]}; {done.stderr.strip()[:120]!r}")
     for kept in ("GIT_DIR", "GIT_WORK_TREE", "GIT_AUTHOR_NAME", "GIT_TERMINAL_PROMPT", "KEEP_ME", "HOME", "GH_TOKEN"):
@@ -5938,7 +5941,7 @@ def hostile_env_fixtures() -> None:
 
     # `gh` must not be pointed at ANOTHER host or repository (it could feed release-gate.sh and guard-pr-ready.sh forged answers). A stub `gh`, first on a trusted PATH,
     # records what it was started with: the witness is the recorded name.
-    for name in ("GH_HOST", "GH_REPO", "GH_ENTERPRISE_TOKEN", "GH_ENTERPRISE_HOST", "GITHUB_ENTERPRISE_TOKEN"):
+    for name in ("GH_HOST", "GH_REPO", "GH_ENTERPRISE_TOKEN", "GH_ENTERPRISE_HOST", "GITHUB_ENTERPRISE_TOKEN", "GH_PAGER", "GH_FORCE_TTY", "GH_BROWSER", "GH_EDITOR", "GH_DEBUG"):
         with scratch_dir() as td:
             work, witness, env = rig(td)
             ghdir = Path(td) / "trusted-gh"
@@ -5949,7 +5952,30 @@ def hostile_env_fixtures() -> None:
             _run(["/bin/bash", "-p", "-c", '. "$1"; gh pr view', "probe", str(lib)], cwd=work, env=env, capture_output=True, text=True, timeout=60)
             f = witness / f"gh-saw-{name}"
             saw = f.read_text(encoding="utf-8").strip() if f.exists() else "gh never ran"
-            check(f"hostile environment: gh is not pointed elsewhere by {name}", saw == "unset", f"gh saw {name}={saw!r}")
+            check(f"hostile environment: gh is not pointed elsewhere by {name}" if "PAGER" not in name and name not in ("GH_FORCE_TTY", "GH_BROWSER", "GH_EDITOR", "GH_DEBUG") else f"hostile environment: gh is not made to run a program or log by {name}", saw == "unset", f"gh saw {name}={saw!r}")
+
+    # THE GATES' VIEW OF THE COMMAND'S ENVIRONMENT. A gate reads its own environment as the one the command will inherit (the release gate reads GH_REPO, command_cwd.py refuses to
+    # follow a `cd` while a GIT_*, GH_* or CDPATH is set), so scrubbing those names for the hook's own git and gh keeps a copy: RF_INHERITED_<NAME>.
+    def inherited_view(forged: bool = False, creds: bool = False) -> str:
+        with scratch_dir() as td:
+            work, env = lib_env(td)
+            env.update({"GH_REPO": "evil/repo", "CDPATH": "/x", "HOME": str(work.resolve())})
+            if forged:
+                env["RF_INHERITED_GIT_FORGED"] = "forged.example"
+            if creds:
+                return probe(work, env, '. "$1"; printf "%s|%s" "${RF_INHERITED_GH_TOKEN-unset}" "${RF_INHERITED_GH_ENTERPRISE_TOKEN-unset}"').stdout
+            done = probe(work, env, '. "$1"; printf "%s|%s|%s|%s|%s" "${GH_REPO-unset}" "${RF_INHERITED_GH_REPO-unset}" "${RF_INHERITED_CDPATH-unset}" '
+                                    '"${RF_INHERITED_GIT_CONFIG_GLOBAL-unset}" "${RF_INHERITED_GIT_FORGED-unset}"')
+            return done.stdout
+
+    got = inherited_view()
+    check("hostile environment: trusted-env.sh keeps a copy of an inherited GH_REPO as RF_INHERITED_GH_REPO for the gates, and unsets the variable itself", got.startswith("unset|evil/repo|"), f"got {got!r}")
+    check("hostile environment: ...and of an inherited CDPATH", got.split("|")[2:3] == ["/x"], f"got {got!r}")
+    check("hostile environment: ...but not of what the lib sets itself (GIT_CONFIG_GLOBAL when HOME is the repository root)", got.split("|")[3:4] == ["unset"], f"got {got!r}")
+    check("hostile environment: ...and a credential (GH_TOKEN, GH_ENTERPRISE_TOKEN) is not copied, so it is in front of no more child processes than before",
+          inherited_view(creds=True) == "unset|unset", f"got {inherited_view(creds=True)!r}")
+    got = inherited_view(forged=True)
+    check("hostile environment: ...and a forged RF_INHERITED_* the caller set, for a variable it did not inherit, is dropped", got.split("|")[4:5] == ["unset"], f"got {got!r}")
 
     def _made(d: Path) -> Path:
         d.mkdir(exist_ok=True)
@@ -5959,14 +5985,14 @@ def hostile_env_fixtures() -> None:
         """Is `name` still exported after the lib, when it is set to `value_of(base, work)`? (the probe runs right before the check that reads it)"""
         with scratch_dir() as td:
             work, env = lib_env(td)
-            for k in ("HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "GH_CONFIG_DIR"):
+            for k in ("HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "SSL_CERT_FILE", "SSL_CERT_DIR"):
                 env.pop(k, None)
             env["HOME"] = str(Path(td) / "trusted")
             env[name] = value_of(Path(td), work)
             done = probe(work, env, '. "$1"; export -p')
             return name in set(re.findall(r"^declare -x (\w+)", done.stdout, re.M)), f"exit {done.returncode}; {done.stderr.strip()[:120]!r}"
 
-    for name in ("HOME", "XDG_CONFIG_HOME", "GH_CONFIG_DIR"):
+    for name in ("HOME", "XDG_CONFIG_HOME", "SSL_CERT_DIR"):
         for why, value_of, expect_kept in (
             ("a value inside the repository", lambda base, work: str(_made(work / "hostile-home")), False),
             ("a link outside the repository that points INTO it", lambda base, work: str(base / "link-into-repo"), False),
@@ -6002,6 +6028,19 @@ def hostile_env_fixtures() -> None:
             env["HOME"] = home_of(Path(td), work)
             got = probe(work, env, '. "$1"; printf "%s" "${GIT_CONFIG_GLOBAL-unset}"').stdout
             check(f"hostile environment: trusted-env.sh {'sets GIT_CONFIG_GLOBAL=/dev/null' if expected == '/dev/null' else 'leaves GIT_CONFIG_GLOBAL alone'} when HOME {why}", got == expected, f"GIT_CONFIG_GLOBAL={got!r}")
+    def _file(path: Path) -> Path:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("cert\n", encoding="utf-8")
+        return path.resolve()
+
+    for why, value_of, expect_kept in (
+        ("a file inside the repository", lambda base, work: str(_file(work / "ca" / "ca.pem")), False),
+        ("a link outside the repository that points to a file INSIDE it", lambda base, work: (base / "ca-link").symlink_to(_file(work / "ca" / "ca2.pem")) or str(base / "ca-link"), False),
+        ("a file that does not exist", lambda base, work: str(base / "no-such.pem"), False),
+        ("a file outside the repository", lambda base, work: str(_file(base / "trusted" / "ca.pem")), True),
+    ):
+        kept, detail = left_with("SSL_CERT_FILE", value_of)
+        check(f"hostile environment: trusted-env.sh {'keeps' if expect_kept else 'unsets'} SSL_CERT_FILE when it is {why}", kept == expect_kept, detail)
     with scratch_dir() as td:
         work, env = lib_env(td)
         got = probe(work, env, '. "$1"; printf "%s" "${PYTHONNOUSERSITE-unset}"').stdout
