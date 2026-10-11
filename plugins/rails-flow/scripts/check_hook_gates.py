@@ -2895,6 +2895,23 @@ def release_gate_fixtures() -> None:
         code, out = bare_gate(cmd)
         check(f"release-gate: CONTROL: with ONLY bash on PATH, `{cmd}` is allowed", code == 0, f"exit {code}: {out[:160]!r}")
 
+    # #1875: a command that reads, lists and defines is allowed although it is full of shell syntax: `$(( $2 + 14 ))` is arithmetic, not a subshell whose command word `$2` "could be git or
+    # gh", and a function that runs no git or gh has no state to mis-place after a `cd`. The first row is the command a session was refused with on 2026-10-11, verbatim. The rows after
+    # them are the same shapes with a merge, a push or a release in them, refused as before (the classifier reads what is NESTED in arithmetic and what only looks like it).
+    ISSUE_1875 = ('cd ~/projects/retask-wt/rv-1636 && for p in "admin-reports.spec.ts 350" "journey-first-boot-staff.spec.ts 53" "requests.spec.ts 507"; do set -- ${=p}; '
+                  'f=$(ls qa/e2e/$1 2>/dev/null || git ls-files "qa/e2e/*$1" | head -1); echo "== $f:$2"; sed -n "$2,$(( $2 + 14 ))p" "$f" | cut -c1-170; done')
+    for label, cmd in (("a for loop over sed and git ls-files, with a $(( )) in the sed script (the command of #1875, verbatim)", ISSUE_1875),
+                       ("a for loop over sed with a $(( )) in its script", 'for p in "a 1"; do sed -n "$2,$(( $2 + 14 ))p" "$f" | cut -c1-170; done'),
+                       ("a shell function defined after a cd", "cd /tmp && f() { echo hi; }; f")):
+        rc = run(cmd)
+        check(f"release-gate (#1875): {label} is allowed: it merges and publishes nothing, so there is no target to resolve", rc == 0, said())
+    for label, cmd in (("a merge whose command word the shell builds, inside a loop with a $(( ))", 'for p in "a 1"; do sed -n "$(( $2 + 1 ))p" x; $g pr merge 7; done'),
+                       ("a push to main inside a function defined after a cd", "cd /tmp && f() { git push origin main; }; f"),
+                       ("a push whose verb the shell builds, next to a $(( ))", "git $v origin main $(( 1 + 2 ))"),
+                       ("a push to main inside an arithmetic expansion", "echo $(( $(git push origin main) + 1 ))")):
+        rc = run(cmd)
+        check(f"release-gate (#1875): CONTROL: {label} is still refused", rc == 2, said())
+
     # #1542: a heredoc a `$( )` ended early still owes its delimiter, and no new heredoc opens until it
     # is seen. Otherwise a body line naming `cat <<END` opened a heredoc that never closed, and
     # `git push origin main` after the `)` read as heredoc text: the gate allowed a push it must refuse.

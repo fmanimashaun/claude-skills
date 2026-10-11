@@ -845,5 +845,11 @@ GUARD = Guard(
             '    if FUNCS[0]:',
             "safe shape 'cd /tmp && f() { echo hi; }; f': must be allowed with no effect",
         ),
+        Mutation(
+            "a named variable is accepted as an arithmetic operand, though bash evaluates its value as an expression",
+            'r"\\$__SUBST__|\\$\\{[0-9]+\\}|\\$[0-9]+|\\$[#?]|',
+            'r"\\$__SUBST__|\\$\\{[0-9A-Za-z_]+\\}|\\$[0-9A-Za-z_]+|\\$[#?]|',
+            "classify 'echo $(( $x + 1 ))': must be unjudgeable",
+        ),
     ),
 )

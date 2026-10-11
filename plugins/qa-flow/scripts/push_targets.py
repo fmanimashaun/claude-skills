@@ -37,7 +37,9 @@ KNOWN LIMITS -- the threat model is an agent's HONEST mistake, not deliberate ob
 coordinator's ruling on #1470). These are not read, and pass: `bash -c $'...'` (ANSI-C quoting of
 the whole string), `eval "$(...)"`, a verb or command produced at run time (`$(echo git) push`,
 `$g push`), here-strings and anything piped into a shell (`... | bash`), shells outside
-sh/bash/zsh/dash/ksh (`fish -c`), and aliases defined in git CONFIG rather than inline with `-c`.
+sh/bash/zsh/dash/ksh (`fish -c`), and aliases defined in git CONFIG rather than inline with `-c`. Arithmetic (#1875): `$(( ))` runs only what is NESTED in it, and that is read; but bash also
+evaluates the VALUE of a variable it names there as an expression, a `[$(git push origin main)]` subscript included (`a='x[$(...)]'; echo $(( a ))`), and that is not read. A `$name` in
+arithmetic is therefore still a word the shell builds and is refused; a bare name, a number and a positional (`$2`, `${2}`, `$#`) are accepted.
 
 What counts as a destination, per `git help push`:
   * a refspec `<src>:<dst>` names `<dst>` (a leading `+` only forces); `:<dst>` deletes `<dst>`;
@@ -219,7 +221,10 @@ def ansi_c_end(cmd: str, i: int) -> tuple[str, int]:
     raise Unjudgeable("an unterminated ANSI-C $'...' string")
 
 
-ARITH_OPERAND = re.compile(r"\$\{[^}]*\}|\$[A-Za-z_0-9@#?*!$-]+|0[xX][0-9a-fA-F]+|[A-Za-z_][A-Za-z_0-9]*|[0-9]+(?:#[0-9A-Za-z]+)?")
+# Operands of an arithmetic expansion the gate reads as arithmetic: numbers, names, a nested substitution (its placeholder), and the POSITIONAL parameters `$1`, `${2}`, `$#`, `$?`. NOT `$name`:
+# bash evaluates the VALUE of a variable it finds in `$(( ))` as an expression, a subscript's `$( )` included (`a='x[$(git push origin main)]'; echo $(( $a ))`), so `$name` stays a word
+# the shell builds, refused as before (#1875 review). The positionals are what the loops in the issue use; a value they hold is the command's own argument.
+ARITH_OPERAND = re.compile(r"\$__SUBST__|\$\{[0-9]+\}|\$[0-9]+|\$[#?]|0[xX][0-9a-fA-F]+|[A-Za-z_][A-Za-z_0-9]*|[0-9]+(?:#[0-9A-Za-z]+)?")
 ARITH_SHAPE = re.compile(r"[N\s+*/%<>&|^!~?:=,()\[\]-]*")
 
 
@@ -228,7 +233,7 @@ def arithmetic_parts(body: str) -> list[str] | None:
 
     The shell runs NOTHING in `$(( ))` except the substitutions nested in it: its words are variables and numbers, not commands. Reading `( $2 + 14 )` as a subshell made `$2` a
     command word "built by the shell and could be git or gh", and a `sed -n "$2,$(( $2 + 14 ))p"` was refused by the release gate (#1875). It is arithmetic only if the inside
-    LOOKS like it: operands (numbers, names, `$x`, `${x}`, a nested substitution) joined by operators, never two operands side by side (`git push origin main` and `$g push`
+    LOOKS like it: operands (numbers, names, `$1`, a nested substitution) joined by operators, never two operands side by side (`git push origin main` and `$g push`
     are commands) and no `;` or newline. What bash does with `$((git push))` is arithmetic too (the variable `git`), which is why a lone name is accepted."""
     if not (body.startswith("(") and body.endswith(")")):
         return None
@@ -2355,7 +2360,9 @@ def selftest() -> int:
                 "gh api --hostname ghe.example.com -X PUT repos/o/r/pulls/7/merge", "gh api -X PATCH",
                 "git push $REMOTE hot:main",
                 # (#1875) arithmetic is read as arithmetic, nothing more: what looks like a command stays one
-                "cd /tmp && f() { git push origin main; }; f", "git $(( 1 )) origin main", "git push origin $(( $2 + 1 ))", "$(( 1 )) pr merge 7", "$g pr merge 7"):
+                "cd /tmp && f() { git push origin main; }; f", "git $(( 1 )) origin main", "git push origin $(( $2 + 1 ))", "$(( 1 )) pr merge 7", "$g pr merge 7",
+                # a VARIABLE in the arithmetic is evaluated as an expression by bash, a `[$( )]` subscript included: it is still a word the shell builds
+                "echo $(( $x + 1 ))", "a='x[$(git push origin main)]'; echo $(( $a ))"):
         ctx_total += 1
         try:
             classify(cmd, on_feature)
@@ -2385,7 +2392,7 @@ def selftest() -> int:
         # (#1875) a command the gate could not read is not "may publish": these read, list and define. The first is the command a session was refused with, verbatim.
         'cd ~/projects/retask-wt/rv-1636 && for p in "admin-reports.spec.ts 350" "journey-first-boot-staff.spec.ts 53" "requests.spec.ts 507"; do set -- ${=p}; '
         'f=$(ls qa/e2e/$1 2>/dev/null || git ls-files "qa/e2e/*$1" | head -1); echo "== $f:$2"; sed -n "$2,$(( $2 + 14 ))p" "$f" | cut -c1-170; done',
-        'sed -n "$2,$(( $2 + 14 ))p" "$f"', 'echo $(( $2 + 1 ))', 'x=$(( $2 + 1 ))', 'echo "$(( ${n} * 2 ))"', "cd /tmp && f() { echo hi; }; f", "cd /tmp && f() { ls; }; f",
+        'sed -n "$2,$(( $2 + 14 ))p" "$f"', 'echo $(( $2 + 1 ))', 'x=$(( $2 + 1 ))', 'echo "$(( ${2} * 2 + $# ))"', "cd /tmp && f() { echo hi; }; f", "cd /tmp && f() { ls; }; f",
     ]
     for cmd in safe_cases:
         api_total += 1
