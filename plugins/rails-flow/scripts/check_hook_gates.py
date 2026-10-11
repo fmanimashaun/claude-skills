@@ -1148,6 +1148,23 @@ def guard_bash_fixtures() -> None:
         check("guard-bash (#1400): ...and that repo's rules still refuse", rc == 2 and "severity:s1" in err, err)
         rc, err = cross("gh issue create -t X --label enhancement --body-file b.md")
         check("guard-bash (#1400): CONTROL: without the cd, the session's own rules apply", rc == 2 and "comp:*" in err, err)
+        # #1851: the doctrine's own shape (a heredoc writes the body, then the create) after a cd; an unfollowed cd says so; -R; `bash -n`.
+        body = "cat > b.md <<'EOF'\nthe body\nEOF\n"
+        rc, err = cross(f"cd {other} && {body}gh issue create -t X --label enhancement --body-file b.md")
+        check("guard-bash (#1851): `cd <other repo> && <heredoc body> <newline> gh issue create` answers to THAT repo's labels", rc == 0, err)
+        rc, err = cross(f"cd {other} && {body}gh issue create -t X --label bug --body-file b.md")
+        check("guard-bash (#1851): ...and that repo's rules still refuse it after the heredoc", rc == 2 and "severity:s1" in err, err)
+        rc, err = cross(f"cd {other} && echo hi && gh issue create -t X --label enhancement --body-file b.md")
+        check("guard-bash (#1851): a cd followed by something else is refused, and the refusal says it cannot tell which repository (not the session's taxonomy)",
+              rc == 2 and "cannot tell which repository" in err and "comp:*" not in err, err)
+        rc, err = cross("gh issue create -R other/repo -t X --label enhancement --body-file b.md")
+        check("guard-bash (#1851): `-R other/repo` names the repository, so the session's rules do not apply", rc == 0, err)
+        runner = Path(td) / "make-issue.sh"
+        runner.write_text("#!/bin/bash\ngh issue create -t X --label enhancement\n", encoding="utf-8")
+        rc, err = cross(f"bash -n {runner}")
+        check("guard-bash (#1851): `bash -n` of a script that holds a create executes nothing and is allowed", rc == 0, err)
+        rc, err = cross(f"bash {runner}")
+        check("guard-bash (#1851): CONTROL: `bash` of the same script runs the create and is still refused", rc == 2 and "bash" in err, err)
     # #1423: the hook must CALL the helper for a create that never starts a segment.
     rc, err = labelled("sh -c 'gh issue create -t X --label feature'")
     check("guard-bash (#1423): a create inside `sh -c` is refused through the real hook",

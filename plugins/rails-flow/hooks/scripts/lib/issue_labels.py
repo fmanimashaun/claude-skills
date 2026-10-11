@@ -19,9 +19,13 @@ checkout runs `cd /path/to/other-repo && gh issue create ...`; the issue lands i
 its labels answer to the other repo's declaration. The hook used to read the session's file, refused
 a correctly labelled issue, and asked for labels the other repo does not have. So a create written
 `cd <literal path> && gh issue create …` is judged by that directory's git toplevel, which
-supplies both the declaration and the "is this our repo" answer for `-R`. Any OTHER shape with a
-`cd` in it is refused rather than guessed (see `issue_creates`), because a guess applies one repo's
-rules to another's issue -- the defect itself, in a different direction.
+supplies both the declaration and the "is this our repo" answer for `-R`. The cd stays in force across
+segments that only write a file with `cat > PATH` (the doctrine's own shape: a heredoc body, then the
+create on a later line, #1851). Any OTHER shape with a `cd` in it is refused rather than guessed (see
+`issue_creates`), because a guess applies one repo's rules to another's issue -- the defect itself, in
+a different direction -- and the refusal SAYS it cannot tell which repository, instead of quoting the
+session's label taxonomy as if it were the target's (#1851). `bash -n script.sh` executes nothing, so a
+create inside the script it only parses is text, not a create.
 
 Called by guard-bash.sh with the RAW command on stdin (the normalised form strips quotes, and a label
 value is usually quoted). Prints the refusal and exits 1; exits 0 to allow. The hook fails closed on
@@ -143,8 +147,8 @@ def issue_creates(cmd: str) -> list[tuple[list[str], str | None, str | None]]:
 
         cd <literal path> && gh issue create …
 
-    `cd` is the command's first word, `&&` joins it DIRECTLY to the create, and the create is its
-    segment's first word (a `GH_REPO=` prefix aside, which `verdict` treats as naming a repo).
+    `cd` is the command's first word, `&&` joins it DIRECTLY to the create (or to segments that only write a file with
+    `cat > PATH`, #1851), and the create is its segment's first word (a `GH_REPO=` prefix aside, which `verdict` treats as naming a repo).
     Every other shape -- no cd, or a cd anywhere else -- is None: the session's rules, exactly as
     before #1400. Why so narrow: five independent reviews of broader versions each found a shape
     where ANOTHER repo's rules were applied to a create that did not land there (a subshell `cd`,
@@ -215,11 +219,48 @@ def _cd_in_force(prefix: list[str]) -> str | None:
     """
     # That the first word IS `cd`, with an unquoted `&&` after its operand, is checked on the raw text
     # (`raw_cd_shape`), which sees quotes; here only the token shape of the prefix remains.
-    if len(prefix) != 3 or prefix[2] != "&&":
+    if len(prefix) < 3 or prefix[2] != "&&":
+        return None
+    # #1851: the cd stays in force across SEGMENTS THAT ONLY WRITE A FILE: `cd repo && cat > body.md <<'EOF' ... EOF` and then the create on
+    # a later line. `cat > PATH` cannot move gh's target. Any other segment between the cd and the create is the old answer: None.
+    segs: list[list[str]] = []
+    cur: list[str] = []
+    for tok in prefix[3:]:
+        if tok in (";", "&&"):
+            if not cur:
+                return None
+            segs.append(cur)
+            cur = []
+        else:
+            cur.append(tok)
+    if cur or not all(_file_writer(sg) for sg in segs):
         return None
     # A `-`, `$VAR` or backtick operand names no directory the text can see, so target_root finds
     # nothing there and the session's rules apply -- no special case needed.
     return prefix[1]
+
+
+def _file_writer(seg: list[str]) -> bool:
+    """`cat > PATH`, `cat >> PATH`, with or without the heredoc operator (`<<EOF`, in either order): a segment that only writes a file (#1851).
+
+    The path is one plain word: no `$` or backtick (it names no file the text can see) and no `.git` component (a write into a repository's own
+    config could redirect gh)."""
+    if not seg or seg[0] != "cat":
+        return False
+    i, wrote = 1, False
+    while i < len(seg):
+        t = seg[i]
+        if t in (">", ">>") and i + 1 < len(seg):
+            path = seg[i + 1]
+            if not path or path.startswith("-") or "$" in path or "`" in path or ".git" in path.split("/"):
+                return False
+            wrote = True
+            i += 2
+        elif re.fullmatch(r"<<-?\S+", t):
+            i += 1
+        else:
+            return False
+    return wrote
 
 
 # `gh [global flags] issue create|new`, quote characters removed first (see `_names_create`).
@@ -233,6 +274,19 @@ def _names_create(text: str) -> bool:
     `gh issue "create"` into the same words (#1462); a backslash-newline joins lines."""
     return bool(CREATE_TEXT.search(" " + text.replace("\\\n", "").replace('"', "").replace("'", "")))
 SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
+
+
+def _shell_noexec(args: list[str]) -> bool:
+    """Is this shell invocation `-n` (noexec)? `bash -n script.sh` reads the script and runs NOTHING, so a `gh issue create` in it is text, not a create (#1851).
+
+    Only the shell's own options count: they end at the first word that is not one. A cluster such as `-nv` is read as bash reads it; `--` and long options
+    are not clusters. A `-o noexec` is not recognised and stays a shell run (fail closed)."""
+    for w in args:
+        if w == "--" or not w.startswith("-") or w == "-":
+            return False
+        if not w.startswith("--") and "n" in w[1:]:
+            return True
+    return False
 # A shell reading a redirect, as guard-bash.sh's trigger spells it (#1489): `/bin/bash < f`,
 # `bash --norc < f`, `sh<f`, `bash 0< f`. Coarse on purpose; the parser decides.
 SHELL_REDIRECT = re.compile(r"(?:^|[\s;&|(/])(?:sh|bash|zsh|dash|ksh)(?:\s[^;&|]*)?<(?:[^<(]|$)")
@@ -515,7 +569,8 @@ def hidden_create(cmd: str, depth: int = 0, cwd: Path | None = None) -> str | No
             rest = " ".join(words[1:])
             # `-c` may be bundled with other short flags: `bash -lc '…'`.
             runs_string = any(w.startswith("-") and not w.startswith("--") and "c" in w for w in words[1:])
-            if head in SHELLS and runs_string:
+            is_shell = head in SHELLS and not _shell_noexec(words[1:])      # `bash -n` executes nothing (#1851)
+            if is_shell and runs_string:
                 c_operand = _first_operand(unsplit[1:])[0]
                 if _names_create(rest) or (c_operand and _runs(c_operand, depth, here_dir)):    # the string is a script: `sh -c '. f'`, `sh -c 'bash f'` (#1645 R2)
                     return f"`{head} -c`"
@@ -524,7 +579,7 @@ def hidden_create(cmd: str, depth: int = 0, cwd: Path | None = None) -> str | No
             # A script the shell runs from a FILE (#1515): `bash f`, `sh ./f`, `source f`, `. f`. The file is read; one that cannot be
             # read is refused (the coordinator's call: fail closed), as is a relative one after a cd this parser cannot follow.
             operand = None
-            if head in SHELLS and not runs_string and not any(w.startswith("<<<") for w in words[1:]):
+            if is_shell and not runs_string and not any(w.startswith("<<<") for w in words[1:]):
                 operand, has_s = _first_operand(words[1:])
                 operand = None if has_s else operand
             elif head in ("source", ".") and len(words) > 1:
@@ -538,7 +593,7 @@ def hidden_create(cmd: str, depth: int = 0, cwd: Path | None = None) -> str | No
                 if fed is not None and _runs(fed, depth, here_dir):
                     return f"a script run by `{head}`"
             # A shell reading its SCRIPT from stdin (#1462): a pipe into it, or a herestring.
-            if head in SHELLS and not runs_string:
+            if is_shell and not runs_string:
                 if prev_op in ("|", "|&") and _runs(prev_text, depth, here_dir):
                     return f"a pipe into `{head}`"
                 # `cat f | bash` (#1515): the files `cat` read are the script.
@@ -1069,6 +1124,10 @@ def verdict(cmd: str, root: Path) -> tuple[bool, str]:
                 if theirs and ours and ours.isdisjoint(theirs):
                     target = found
         followed = target != root
+        # A `cd` is in the command but its SHAPE was not one this hook follows (`cd` is None here): the check fell back to the session's rules. A cd that WAS
+        # followed and then fell back for want of a certain target (a shared remote, none, GH_REPO) is a different case and keeps its own message.
+        cd_unfollowed = (cd is None and repo is None and env_repo is None and not os.environ.get("GH_REPO")
+                         and bool(re.search(r"(?:^|[;&|(\n])\s*(?:cd|pushd|popd)\s", strip_heredocs(cmd))))
         groups, why = load_groups(target)
         if why:
             return False, why
@@ -1084,6 +1143,11 @@ def verdict(cmd: str, root: Path) -> tuple[bool, str]:
                 continue
             allowed = g.get("one_of") or []
             if not any(matches(l, p) for l in labels for p in allowed):
+                if cd_unfollowed:
+                    # The refusal must not quote the SESSION's taxonomy as if it were the target's (#1851): the create may land in another repository.
+                    return False, ("cannot tell which repository this `gh issue create` lands in: there is a `cd` in the command that this hook cannot "
+                                   "follow, and it will not judge the create by this session's label rules. Run it as `cd <repo> && gh issue create ...` "
+                                   "on one line, or name the repository with -R owner/name.")
                 scope = f" (because it is `{g['when']}`)" if g.get("when") else ""
                 decl = target / CONFIG if followed else CONFIG
                 return False, (f"`gh issue create` needs one of {', '.join(allowed)}{scope}; it has "
@@ -1188,6 +1252,31 @@ def selftest() -> int:
         check("a cd into a SUBDIRECTORY finds the repo's toplevel declaration",
               not ok and "severity:s1" in why, why)
         check("...and passes what the toplevel allows", verdict(f"cd {r}/app/models && {rt}", s)[0])
+        # ---- #1851: a heredoc that writes the body, THEN the create; an unfollowed cd says it cannot tell; `bash -n` runs nothing ----
+        body_cat = f"cat > {td}/body.md <<'EOF'\nthe body\nEOF\n"
+        ok, why = verdict(f"cd {r} && {body_cat}{rt}", s)
+        check("cd into another repo, a heredoc writes the body, then the create: that repo's declaration applies, and passes", ok, why)
+        ok, why = verdict(f"cd {r} && {body_cat}gh issue create -t X --label bug", s)
+        check("...and that repo's rules still refuse it after the heredoc, naming its file", not ok and "severity:s1" in why and str(r) in why, why)
+        for label, tail in (("a command that is not a file write between the cd and the create", "echo hi && "),
+                            ("a heredoc that writes under .git", "cat > .git/config <<'EOF'\nx\nEOF\n"),
+                            ("a heredoc that writes to a $VAR path", "cat > $OUT <<'EOF'\nx\nEOF\n")):
+            ok, why = verdict(f"cd {r} && {tail}{rt}", s)
+            check(f"{label} does not keep the cd, and the refusal says it cannot tell which repository",
+                  not ok and "cannot tell which repository" in why and "comp:*" not in why, why)
+        ok, why = verdict(f"(cd {r} && {rt})", s)
+        check("a subshell cd is not followed, and the refusal says it cannot tell which repository", not ok and "cannot tell which repository" in why, why)
+        ok, why = verdict("gh issue create -t X --label enhancement", s)
+        check("CONTROL: with no cd at all the session's rules are quoted as before", not ok and "comp:*" in why and "cannot tell" not in why, why)
+        check("-R names the repository, so the session's rules do not apply", verdict("gh issue create -R other/retask -t X --label whatever", s)[0])
+        script = Path(td) / "make-issue.sh"
+        script.write_text("#!/bin/bash\ngh issue create -t X --label bug\n", encoding="utf-8")
+        check("bash -n of a script that holds a create parses it and runs nothing, so it is allowed", verdict(f"bash -n {script}", s)[0],
+              verdict(f"bash -n {script}", s)[1])
+        check("a clustered -nv is noexec too", verdict(f"bash -nv {script}", s)[0])
+        check("bash of the same script still runs it, and is refused", not verdict(f"bash {script}", s)[0])
+        check("bash -x of the same script still runs it, and is refused", not verdict(f"bash -x {script}", s)[0])
+        check("an -n AFTER the script name is the script's argument, so it is still refused", not verdict(f"bash {script} -n", s)[0])
         here = Path.cwd()
         try:
             os.chdir(td)
@@ -1213,10 +1302,16 @@ def selftest() -> int:
         u = Path(td) / "undeclared"
         u.mkdir()
         one = "gh issue create -t X --label comp:x"     # one label: passes an undeclared dir, fails skills
-        # "Refused" here means judged by the SESSION's rules: the labels pass the target's rules and
-        # fail the session's, so a refusal proves the cd was NOT followed -- the safe default.
-        def refused(name: str, cmd: str, needle: str = "comp:*") -> None:
+        # "Refused" here means the cd was NOT followed -- the safe default: the labels pass the target's rules and fail the session's, so a refusal
+        # proves the session's rules were applied. Where the cd's SHAPE is not one this hook follows, the refusal says it cannot tell which repository
+        # (#1851) instead of quoting the session's taxonomy; where the shape was followed and a certain target was missing, or a repo is named, or the
+        # `cd` is not a command at all (`builtin cd`, backticks, a variable operand), the session's rules are still quoted.
+        quotes_session = {"a cd to a variable", "builtin cd", "a cd inside backticks", "a cd behind time",
+                          "a repo named with -R after the cd", "GH_REPO on the create after the cd"}
+
+        def refused(name: str, cmd: str, needle: str | None = None) -> None:
             ok, why = verdict(cmd, s)
+            needle = needle or ("comp:*" if name in quotes_session else "cannot tell which repository")
             check(f"refused: {name}", not ok and needle in why, why)
         for name, shape in (
                 ("a cd separated by ;", f"cd {r}; {rt}"),
@@ -1337,7 +1432,7 @@ def selftest() -> int:
                   verdict(shape, s)[0], verdict(shape, s)[1])
         # ---- #1440: a QUOTED `&&` is an argument, not the separator ----------------------------
         ok, why = verdict(f"cd {r} '&&' {rt}", s)
-        check("a quoted '&&' does not make the followed cd shape", not ok and "comp:*" in why, why)
+        check("a quoted '&&' does not make the followed cd shape", not ok and "cannot tell which repository" in why, why)
         check("CONTROL: a quoted cd OPERAND still makes it", verdict(f"cd '{r}' && {rt}", s)[0],
               verdict(f"cd '{r}' && {rt}", s)[1])
 

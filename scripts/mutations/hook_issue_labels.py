@@ -192,7 +192,7 @@ GUARD = Guard(
         ),
         Mutation(
             "sh -c strings are not refused",
-            '            if head in SHELLS and runs_string:\n                c_operand = _first_operand(unsplit[1:])[0]',
+            '            if is_shell and runs_string:\n                c_operand = _first_operand(unsplit[1:])[0]',
             '            if False:\n                c_operand = _first_operand(unsplit[1:])[0]',
             "a create inside `sh -c` is refused",
         ),
@@ -506,8 +506,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a command between the cd and the create is trusted",
-            '    if len(prefix) != 3 or prefix[2] != "&&":',
-            '    if len(prefix) < 3 or prefix[2] != "&&":',
+            '    if len(prefix) < 3 or prefix[2] != "&&":\n        return None\n    # #1851:',
+            '    if len(prefix) < 3 or prefix[2] != "&&":\n        return None\n    return prefix[1]\n    # #1851:',
             "refused: a command between the cd and the create",
         ),
         Mutation(
@@ -736,6 +736,61 @@ GUARD = Guard(
             "_MAX_DEPTH = 3 ",
             "_MAX_DEPTH = 10 ** 9 ",
             "RecursionError",
+        ),
+        # #1851: a create after a cd, a heredoc body before it, an unfollowed cd, and `bash -n`.
+        Mutation(
+            'a cd is followed only when nothing sits between it and the create (the session-cwd read is restored for a heredoc body)',
+            '    if len(prefix) < 3 or prefix[2] != "&&":',
+            '    if len(prefix) != 3 or prefix[2] != "&&":',
+            "cd into another repo, a heredoc writes the body, then the create: that repo's declaration applies, and passes",
+        ),
+        Mutation(
+            'no file-writing segment is ever accepted between the cd and the create',
+            '    if cur or not all(_file_writer(sg) for sg in segs):',
+            '    if cur or segs:',
+            "cd into another repo, a heredoc writes the body, then the create: that repo's declaration applies, and passes",
+        ),
+        Mutation(
+            'any segment between the cd and the create is accepted',
+            '    if cur or not all(_file_writer(sg) for sg in segs):',
+            '    if cur:',
+            'a command that is not a file write between the cd and the create does not keep the cd',
+        ),
+        Mutation(
+            'a heredoc that writes under .git keeps the cd',
+            ' or "$" in path or "`" in path or ".git" in path.split("/"):',
+            ' or "$" in path or "`" in path:',
+            'a heredoc that writes under .git does not keep the cd',
+        ),
+        Mutation(
+            'a heredoc that writes to a $VAR path keeps the cd',
+            'if not path or path.startswith("-") or "$" in path or "`" in path or',
+            'if not path or path.startswith("-") or "`" in path or',
+            'a heredoc that writes to a $VAR path does not keep the cd',
+        ),
+        Mutation(
+            "an unfollowed cd is refused with the session's taxonomy again",
+            '                if cd_unfollowed:',
+            '                if False:',
+            'does not keep the cd, and the refusal says it cannot tell which repository',
+        ),
+        Mutation(
+            'bash -n is read as a shell run',
+            '        if not w.startswith("--") and "n" in w[1:]:\n            return True',
+            '        if not w.startswith("--") and "n" in w[1:]:\n            return False',
+            'bash -n of a script that holds a create parses it and runs nothing',
+        ),
+        Mutation(
+            'an -n after the script name is read as noexec',
+            '        if w == "--" or not w.startswith("-") or w == "-":\n            return False\n',
+            '        if w == "--" or w == "-":\n            return False\n',
+            "an -n AFTER the script name is the script's argument",
+        ),
+        Mutation(
+            'any shell option is read as noexec',
+            '        if not w.startswith("--") and "n" in w[1:]:\n            return True',
+            '        if not w.startswith("--"):\n            return True',
+            'bash -x of the same script still runs it',
         ),
     ),
 )
