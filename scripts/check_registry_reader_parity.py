@@ -27,6 +27,8 @@ SAMPLES = {
     "a field before the first entry": '  status: "done"\n- id: "R-1"\n',
     "a BOM": '\ufeff- id: "R-1"\n  status: "done"\n',
     "an empty file": "",
+    "a repeated key": '- id: "R-1"\n  issue: 1\n  issue: null\n',
+    "a repeated id key": '- id: "R-1"\n  id: "R-2"\n',
     "uppercase key": '- id: "R-1"\n  Status: "done"\n',
     "a nested value": '- id: "R-1"\n  specs: ["a", "b"]\n  issue: null\n',
 }

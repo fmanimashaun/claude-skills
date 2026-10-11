@@ -109,6 +109,9 @@ def load(root: Path, registry: str) -> tuple[list[dict], list[str]]:
         if not entries:
             problems.append(f"{registry}:{number}: a field before the first `- id:` entry")
             continue
+        if key in entries[-1]:
+            problems.append(f"{registry}:{number}: `{key}` is repeated within the entry that starts at line {entries[-1]['_line']} (the last one would hide the first)")
+            continue
         entries[-1][key] = value
     return entries, problems
 
@@ -341,6 +344,8 @@ def selftest(match: str | None = None) -> int:
     scenario("a malformed id is a finding", {REGISTRY: entry("req 1"), CASES: csv_text(("TC-1", "Active", "x")), BASELINE: base0}, 1, "malformed")
     scenario("an unknown status is a finding", {REGISTRY: entry("REQ-001", "wip"), CASES: csv_text(("TC-1", "Active", "REQ-001")), BASELINE: base0}, 1, "status 'wip'")
     scenario("a line that is not key: JSON is a finding", {REGISTRY: "- id: REQ-001\n", CASES: cases2, BASELINE: base0}, 1, "is not JSON")
+    scenario("a key repeated within an entry is a finding (the last would hide the first)", {REGISTRY: entry("REQ-001") + '  status: "missing"\n', CASES: csv_text(("TC-1", "Active", "REQ-001")),
+             BASELINE: base0}, 1, "`status` is repeated within the entry")
     scenario("a requirement with no text is a finding", {REGISTRY: '- id: "REQ-001"\n  status: "done"\n', CASES: csv_text(("TC-1", "Active", "REQ-001")), BASELINE: base0}, 1,
              "no `requirement` text")
     scenario("paths come from the requirements section of qa.config.yml", {"qa/qa.config.yml": 'requirements:\n  registry: "docs/reqs.yml"   # trailing comment\n  cases: "docs/cases.csv"\n',

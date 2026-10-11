@@ -1,6 +1,6 @@
 """Mutation guard: check_registry_closed. Declared here, run by scripts/mutation_check.py (#1857).
 
-Each mutation lets a registry row that points at a closed issue read as up to date, or turns a check that could not be made into a pass.
+Each mutation lets a registry row that points at a closed issue read as up to date, or turns a check that could not be made into a pass or into "not applicable".
 """
 from mutation_types import Guard, Mutation  # noqa: F401
 
@@ -30,8 +30,8 @@ GUARD = Guard(
         ),
         Mutation(
             'the issues the PR closes are not treated as closed',
-            '    state: dict[int, str | None] = {n: "CLOSED" for n in numbers if n in closes}',
-            '    state: dict[int, str | None] = {}',
+            '    state: dict[int, tuple[str | None, str]] = {n: ("CLOSED", "") for n in numbers if n in closes}',
+            '    state: dict[int, tuple[str | None, str]] = {}',
             'a row pointing at an issue this PR closes must already be updated',
         ),
         Mutation(
@@ -48,7 +48,7 @@ GUARD = Guard(
         ),
         Mutation(
             'a row pointing at an issue that does not exist is not reported',
-            '        if state.get(issue) is None:',
+            '        if current is None:',
             '        if False:',
             'a row whose issue does not exist is a finding',
         ),
@@ -65,16 +65,28 @@ GUARD = Guard(
             'an issue that is not a number is a finding',
         ),
         Mutation(
-            'gh missing is a pass instead of a skip',
+            'gh missing is graded not applicable (exit 3) instead of an error',
+            '    if asked and not gh.available():\n        return 2,',
             '    if asked and not gh.available():\n        return 3,',
-            '    if asked and not gh.available():\n        return 0,',
-            'gh missing is exit 3',
+            'gh missing is exit 2',
         ),
         Mutation(
-            'gh failing is a pass instead of a skip',
+            'gh missing is a pass',
+            '    if asked and not gh.available():\n        return 2,',
+            '    if asked and not gh.available():\n        return 0,',
+            'gh missing is exit 2',
+        ),
+        Mutation(
+            'gh failing is graded not applicable (exit 3) instead of an error',
+            '    except (RuntimeError, OSError, subprocess.SubprocessError) as exc:\n        return 2, findings,',
             '    except (RuntimeError, OSError, subprocess.SubprocessError) as exc:\n        return 3, findings,',
-            '    except (RuntimeError, OSError, subprocess.SubprocessError) as exc:\n        return 0, findings,',
-            'gh failing is exit 3',
+            'gh failing is exit 2',
+        ),
+        Mutation(
+            'the limit of distinct issues is graded not applicable instead of an error',
+            '    if len(asked) > LIMIT:\n        return 2,',
+            '    if len(asked) > LIMIT:\n        return 3,',
+            'more than the limit of distinct issues is exit 2',
         ),
         Mutation(
             'a missing registry is a pass instead of a skip',
@@ -92,7 +104,7 @@ GUARD = Guard(
             'the limit of distinct issues is not applied',
             '    if len(asked) > LIMIT:',
             '    if False:',
-            'more than the limit of distinct issues is exit 3',
+            'more than the limit of distinct issues is exit 2',
         ),
         Mutation(
             'the registry key of qa.config.yml is ignored',
@@ -111,6 +123,78 @@ GUARD = Guard(
             '    numbers = sorted({issue for _, issue in rows})',
             '    numbers = [issue for _, issue in rows]',
             'one read per distinct issue',
+        ),
+        Mutation(
+            'an issue closed as not planned is treated like any closed issue',
+            '        elif closed and reason in NOT_FIXED:',
+            '        elif False:',
+            'an issue closed as not planned: a done row cannot stand',
+        ),
+        Mutation(
+            'a not-planned issue accepts any status',
+            '            if entry.get("status") not in ("owner-decision", "deviates"):',
+            '            if False:',
+            'a partial row is stale and the remedy is a decision, never done',
+        ),
+        Mutation(
+            'an owner-decision row is rejected for a not-planned issue',
+            '            if entry.get("status") not in ("owner-decision", "deviates"):',
+            '            if entry.get("status") not in ("deviates",):',
+            'an owner-decision row is up to date',
+        ),
+        Mutation(
+            'a deviates row is rejected for a not-planned issue',
+            '            if entry.get("status") not in ("owner-decision", "deviates"):',
+            '            if entry.get("status") not in ("owner-decision",):',
+            'a deviates row is up to date',
+        ),
+        Mutation(
+            'a duplicate-closed issue is treated as completed',
+            'NOT_FIXED = ("NOT_PLANNED", "DUPLICATE")',
+            'NOT_FIXED = ("NOT_PLANNED",)',
+            'an issue closed as a duplicate is treated like not planned',
+        ),
+        Mutation(
+            'a key repeated within an entry is accepted, so the last value hides the first',
+            '        if key in entries[-1]:',
+            '        if False:',
+            'a repeated key within an entry is refused',
+        ),
+        Mutation(
+            'closing keywords are matched case-sensitively',
+            'CLOSING = re.compile(r"(?<![\\w-])(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?):?\\s+#(\\d+)\\b", re.I)',
+            'CLOSING = re.compile(r"(?<![\\w-])(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?):?\\s+#(\\d+)\\b")',
+            'closing keywords in any case and every form',
+        ),
+        Mutation(
+            'the colon form of a closing keyword is missed',
+            'resolve[sd]?):?\\s+#(\\d+)\\b", re.I)',
+            'resolve[sd]?)\\s+#(\\d+)\\b", re.I)',
+            'closing keywords in any case and every form',
+        ),
+        Mutation(
+            'the resolve keywords are missed',
+            '(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?):?',
+            '(?:close[sd]?|fix(?:e[sd])?):?',
+            'closing keywords in any case and every form',
+        ),
+        Mutation(
+            'a keyword inside another word is matched',
+            'CLOSING = re.compile(r"(?<![\\w-])',
+            'CLOSING = re.compile(r"',
+            'a word that only ends in a keyword is not a keyword',
+        ),
+        Mutation(
+            'a closing keyword in a code fence closes the issue',
+            '    body = re.sub(r"```.*?```|~~~.*?~~~", " ", body, flags=re.S)',
+            '    pass',
+            'a closing keyword in a code fence or a code span closes nothing',
+        ),
+        Mutation(
+            'a closing keyword in a code span closes the issue',
+            '    body = re.sub(r"`[^`\\n]*`", " ", body)',
+            '    pass',
+            'a closing keyword in a code fence or a code span closes nothing',
         ),
     ),
 )

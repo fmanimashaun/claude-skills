@@ -7,6 +7,7 @@ as true as the last PR that touched it: the PR that closes an issue must update 
 
     python3 check_registry_closed.py                    # rows that point at a closed issue and have not been updated
     python3 check_registry_closed.py --closes 12,14     # a PR that will close #12 and #14: rows pointing at them must already be updated
+    python3 check_registry_closed.py --closes-from-body FILE   # the same, read from the PR body: every GitHub closing keyword, any case
     python3 check_registry_closed.py --selftest
 
 THE REGISTRY is the project's `qa/requirements.yml` (or the `registry:` key under `requirements:` in qa/qa.config.yml, or `--registry PATH`), the file qa-flow's
@@ -15,11 +16,17 @@ THE REGISTRY is the project's `qa/requirements.yml` (or the `registry:` key unde
 install alone and rails-flow cannot import qa-flow; the maintainer gate `registry reader parity` keeps the two readers answering the same.
 
 A ROW IS STALE when its `issue` is closed (on GitHub, or named by `--closes`) and the row is not `status: "done"` with `closed: true`. The fix is to update the
-row in the closing PR: flip the status and add `closed: true` once the requirement is proven, or point `issue` at the issue that now tracks the rest. A row that
-says `closed: true` while its issue is still open is also a finding: the row claims what GitHub does not. One `gh issue view` per distinct issue, at most 200.
+row in the closing PR: flip the status and add `closed: true` once the requirement is proven, or point `issue` at the issue that now tracks the rest. An issue
+closed AS NOT PLANNED (or as a duplicate) was never fixed, so its rows are never `done`: they must say `owner-decision` or `deviates`, or point `issue` elsewhere.
+A row that says `closed: true` while its issue is still open is also a finding: the row claims what GitHub does not. One `gh issue view` per distinct issue, at most
+200. A row may name ONE issue and a key may appear once per entry (a repeated key is refused: the last one would win and hide the first).
 
-Exit codes: 0 clean (or no row carries an issue), 1 findings, 2 the registry is unreadable, 3 could not check (no registry, `gh` missing or failing, more than
-200 distinct issues): said, and never a pass.
+`--closes-from-body FILE` reads the PR's closing keywords as GitHub does (close, closes, closed, fix, fixes, fixed, resolve, resolves, resolved, any case, an optional
+colon, `#12` in this repository; `owner/repo#12` is another repository's; text in code fences and code spans closes nothing), so `Closes #12` is not missed.
+
+EXIT CODES. 0 clean (or no row carries an issue); 1 findings; 2 COULD NOT CHECK (the registry is unreadable or a key repeats, `gh` is missing or failing, more than 200
+distinct issues): the project gate runner (project_gates.py) grades 2 as ERROR and 3 as "not applicable", which never fails a run, so a check that could not look must
+not say 3; 3 only when there is no registry, which is the one case where there is nothing to check.
 """
 from __future__ import annotations
 
@@ -42,15 +49,29 @@ class Gh:
     def available(self) -> bool:
         return shutil.which("gh") is not None
 
-    def state(self, number: int) -> str | None:
-        """OPEN, CLOSED, or None when the issue does not exist; RuntimeError when GitHub could not be read."""
-        done = subprocess.run(["gh", "issue", "view", str(number), "--json", "state", "-q", ".state"], capture_output=True, text=True, timeout=60,
-                              stdin=subprocess.DEVNULL)
+    def state(self, number: int) -> tuple[str | None, str]:
+        """(OPEN or CLOSED or None when the issue does not exist, the state reason such as COMPLETED or NOT_PLANNED); RuntimeError when GitHub could not be read."""
+        done = subprocess.run(["gh", "issue", "view", str(number), "--json", "state,stateReason"], capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
         if done.returncode != 0:
             if "Could not resolve" in done.stderr or "not found" in done.stderr.lower():
-                return None
+                return None, ""
             raise RuntimeError(f"gh issue view {number} failed: {done.stderr.strip()[:160]}")
-        return done.stdout.strip() or None
+        try:
+            data = json.loads(done.stdout)
+        except ValueError as exc:
+            raise RuntimeError(f"gh issue view {number} printed no JSON: {exc}") from exc
+        return (data.get("state") or None), str(data.get("stateReason") or "")
+
+
+CLOSING = re.compile(r"(?<![\w-])(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?):?\s+#(\d+)\b", re.I)
+NOT_FIXED = ("NOT_PLANNED", "DUPLICATE")
+
+
+def closing_numbers(body: str) -> set[int]:
+    """The issues a PR body closes, as GitHub reads closing keywords: any case, an optional colon, `#N` in this repository; code fences and code spans close nothing."""
+    body = re.sub(r"```.*?```|~~~.*?~~~", " ", body, flags=re.S)
+    body = re.sub(r"`[^`\n]*`", " ", body)
+    return {int(n) for n in CLOSING.findall(body)}
 
 
 def registry_path(root: Path, flag: str | None) -> str:
@@ -95,6 +116,9 @@ def load(root: Path, registry: str) -> tuple[list[dict], list[str]]:
         if not entries:
             problems.append(f"{registry}:{number}: a field before the first `- id:` entry")
             continue
+        if key in entries[-1]:
+            problems.append(f"{registry}:{number}: `{key}` is repeated within the entry that starts at line {entries[-1]['_line']} (the last one would hide the first)")
+            continue
         entries[-1][key] = value
     return entries, problems
 
@@ -122,21 +146,26 @@ def check(root: Path, registry: str, closes: set[int], gh: Gh) -> tuple[int, lis
         return (1 if findings else 0), findings, []
     asked = [n for n in numbers if n not in closes]
     if len(asked) > LIMIT:
-        return 3, findings, [f"{len(asked)} distinct issues, more than the {LIMIT} one `gh` read each is allowed"]
+        return 2, findings, [f"{len(asked)} distinct issues, more than the {LIMIT} one `gh` read each is allowed"]
     if asked and not gh.available():
-        return 3, findings, ["`gh` is not on PATH, so whether the issues the rows point at are closed could not be read"]
-    state: dict[int, str | None] = {n: "CLOSED" for n in numbers if n in closes}
+        return 2, findings, ["`gh` is not on PATH, so whether the issues the rows point at are closed could not be read"]
+    state: dict[int, tuple[str | None, str]] = {n: ("CLOSED", "") for n in numbers if n in closes}
     try:
         for n in asked:
             state[n] = gh.state(n)
     except (RuntimeError, OSError, subprocess.SubprocessError) as exc:
-        return 3, findings, [f"could not read an issue's state: {exc}"]
+        return 2, findings, [f"could not read an issue's state: {exc}"]
     for entry, issue in rows:
         rid, where = entry.get("id"), f"{registry}:{entry['_line']}"
-        closed = state.get(issue) == "CLOSED"
+        current, reason = state.get(issue, (None, ""))
+        closed = current == "CLOSED"
         updated = entry.get("status") == "done" and entry.get("closed") is True
-        if state.get(issue) is None:
+        if current is None:
             findings.append(f"{where}: {rid} points at #{issue}, which does not exist")
+        elif closed and reason in NOT_FIXED:
+            if entry.get("status") not in ("owner-decision", "deviates"):
+                findings.append(f"{where}: {rid} points at #{issue}, which was closed as {reason.lower().replace('_', ' ')}, so it was never fixed and the row's status {entry.get('status')!r} "
+                                "cannot stand: record the decision (status `owner-decision` or `deviates`) or point `issue` at the issue that tracks the requirement; never `done`")
         elif closed and not updated:
             by = " (closed by this PR)" if issue in closes else ""
             findings.append(f"{where}: {rid} points at #{issue}, which is closed{by}, but the row says status {entry.get('status')!r}"
@@ -150,17 +179,20 @@ def check(root: Path, registry: str, closes: set[int], gh: Gh) -> tuple[int, lis
 
 
 class FakeGh(Gh):
-    def __init__(self, states: dict[int, str | None], broken: bool = False, absent: bool = False):
+    """`states` maps an issue to OPEN, CLOSED, (CLOSED, REASON) or None (it does not exist)."""
+
+    def __init__(self, states: dict[int, str | tuple[str, str] | None], broken: bool = False, absent: bool = False):
         self.states, self.broken, self.absent, self.asked = states, broken, absent, []
 
     def available(self) -> bool:
         return not self.absent
 
-    def state(self, number: int) -> str | None:
+    def state(self, number: int) -> tuple[str | None, str]:
         self.asked.append(number)
         if self.broken:
             raise RuntimeError("gh issue view failed: HTTP 502")
-        return self.states.get(number)
+        value = self.states.get(number)
+        return value if isinstance(value, tuple) else (value, "COMPLETED" if value == "CLOSED" else "")
 
 
 def selftest(match: str | None = None) -> int:
@@ -211,13 +243,33 @@ def selftest(match: str | None = None) -> int:
             failures.append(f"one read per distinct issue: asked {twice.asked}")
     row("no registry is exit 3, never a pass", "", FakeGh({}), 3, "no registry here", files={REGISTRY: None})
     row("a broken registry line is exit 2", "- id: R-1\n", FakeGh({}), 2, "is not JSON")
-    row("gh missing is exit 3, never a pass", entry("R-1", "partial", "  issue: 10\n"), FakeGh({}, absent=True), 3, "`gh` is not on PATH")
-    row("gh failing is exit 3, never a pass", entry("R-1", "partial", "  issue: 10\n"), FakeGh({}, broken=True), 3, "could not read an issue's state")
+    row("gh missing is exit 2 (ERROR in the gate runner, which grades 3 as not applicable), never a pass", entry("R-1", "partial", "  issue: 10\n"), FakeGh({}, absent=True), 2, "`gh` is not on PATH")
+    row("gh failing is exit 2, never a pass", entry("R-1", "partial", "  issue: 10\n"), FakeGh({}, broken=True), 2, "could not read an issue's state")
     row("gh is not needed when --closes names every issue", entry("R-1", "partial", "  issue: 10\n"), FakeGh({}, absent=True), 1, "closed by this PR", closes={10})
     row("the registry path comes from qa.config.yml", entry("R-1", "partial", "  issue: 10\n"), gh, 1, "R-1 points at #10",
         files={REGISTRY: None, "qa/qa.config.yml": 'requirements:\n  registry: "docs/reqs.yml"   # mine\n', "docs/reqs.yml": "# rows: 1\n" + entry("R-1", "partial", "  issue: 10\n")})
+    notplanned = FakeGh({10: ("CLOSED", "NOT_PLANNED"), 11: ("CLOSED", "DUPLICATE")})
+    row("an issue closed as not planned: a done row cannot stand", entry("R-1", "done", "  issue: 10\n  closed: true\n"), notplanned, 1, "closed as not planned")
+    row("an issue closed as not planned: a partial row is stale and the remedy is a decision, never done", entry("R-1", "partial", "  issue: 10\n"), notplanned, 1, "never `done`")
+    row("an issue closed as not planned: an owner-decision row is up to date", entry("R-1", "owner-decision", "  issue: 10\n"), notplanned, 0, None)
+    row("an issue closed as not planned: a deviates row is up to date", entry("R-1", "deviates", "  issue: 10\n"), notplanned, 0, None)
+    row("an issue closed as a duplicate is treated like not planned", entry("R-1", "done", "  issue: 11\n  closed: true\n"), notplanned, 1, "closed as duplicate")
+    row("a repeated key within an entry is refused (the last would hide the first)", entry("R-1", "partial", "  issue: 1\n  issue: null\n"), FakeGh({1: "CLOSED"}), 2, "`issue` is repeated")
+    row("a repeated key is refused even when --closes names the issue", entry("R-1", "partial", "  issue: 1\n  issue: null\n"), FakeGh({}), 2, "is repeated", closes={1})
+    for label, body, want in (
+        ("closing keywords in any case and every form", "Fixes #1\nCLOSES #2\nresolved #3\nFixed: #4\nclose #5\nCloses #6 and resolves #7", {1, 2, 3, 4, 5, 6, 7}),
+        ("a Refs line closes nothing", "Refs #8\nSee #9\nrelated to #10", set()),
+        ("another repository's reference closes nothing here", "Fixes octo/repo#11 and fixes #12", {12}),
+        ("a closing keyword in a code fence or a code span closes nothing", "```\nFixes #13\n```\nand `Closes #14` but Fixes #15", {15}),
+        ("a word that only ends in a keyword is not a keyword", "prefix #16 and unfixes #17", set()),
+        ("a keyword with no issue number closes nothing", "Closes the loop. Fixes bugs.", set()),
+    ):
+        if not match or label in match:
+            got = closing_numbers(body)
+            if got != want:
+                failures.append(f"{label}: wanted {sorted(want)}, got {sorted(got)}")
     many = "".join(entry(f"R-{i}", "done", f"  issue: {1000 + i}\n  closed: true\n") for i in range(LIMIT + 1))
-    row("more than the limit of distinct issues is exit 3", many, FakeGh({}), 3, "more than the 200")
+    row("more than the limit of distinct issues is exit 2", many, FakeGh({}), 2, "more than the 200")
     if not match or "the registry path must stay inside the project" in match:
         with tempfile.TemporaryDirectory() as td:
             try:
@@ -237,6 +289,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--root", default=".", help="the project root (default: the current directory)")
     parser.add_argument("--registry", metavar="PATH", help="the registry (default: `requirements: registry:` in qa/qa.config.yml, else qa/requirements.yml)")
     parser.add_argument("--closes", metavar="N,M", default="", help="the issues the PR will close (its `Fixes #n` lines): rows pointing at them must already be updated")
+    parser.add_argument("--closes-from-body", metavar="FILE", help="read the issues the PR closes from its body (GitHub's closing keywords, any case)")
     parser.add_argument("--selftest", action="store_true", help="prove each rule fires on a violation and stays silent on conforming input")
     parser.add_argument("--match", metavar="TEXT", help="with --selftest: run only the rows whose label contains TEXT (the mutation harness)")
     args = parser.parse_args(argv)
@@ -244,9 +297,11 @@ def main(argv: list[str]) -> int:
         return selftest(args.match)
     try:
         closes = {int(x) for x in re.split(r"[,\s]+", args.closes.strip()) if x}
+        if args.closes_from_body:
+            closes |= closing_numbers(Path(args.closes_from_body).read_text(encoding="utf-8-sig"))
         root = Path(args.root).resolve()
         registry = registry_path(root, args.registry)
-    except ValueError as exc:
+    except (ValueError, OSError) as exc:
         print(f"check_registry_closed: {exc} (exit 2)", file=sys.stderr)
         return 2
     code, found, notes = check(root, registry, closes, Gh())
@@ -254,7 +309,7 @@ def main(argv: list[str]) -> int:
         print(line)
     for note in notes:
         print(f"note: {note}")
-    print(f"check_registry_closed: {'ok' if code == 0 else 'could not check (exit 3, not a pass)' if code == 3 else 'could not read the registry' if code == 2 else str(len(found)) + ' finding(s)'}")
+    print(f"check_registry_closed: {'ok' if code == 0 else 'no registry (exit 3, nothing to check)' if code == 3 else 'could not check (exit 2, not a pass)' if code == 2 else str(len(found)) + ' finding(s)'}")
     return code
 
 
