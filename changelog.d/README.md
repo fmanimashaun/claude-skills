@@ -1,6 +1,6 @@
 # changelog.d: one file per change
 
-A PR does **not** edit `CHANGELOG.md`. It adds `changelog.d/<issue>-<slug>.md`, and the arm folds it into the component's `### Unreleased`.
+A PR does **not** edit `CHANGELOG.md`. It adds `changelog.d/<issue>-<slug>.md`, and the arm folds it into the component's `### Unreleased`. A bullet added straight to `### Unreleased` is refused (`python3 scripts/changelog_fragments.py --check-direct`, #1841), except an edit of a bullet that is already there, a late fold under a release block, and the fold's own move (the fragment is deleted in the same change).
 Two PRs open at once can then never conflict on the CHANGELOG (79% of merges into `dev` on 2026-10-09 and 10 touched it, #1825).
 
 ```

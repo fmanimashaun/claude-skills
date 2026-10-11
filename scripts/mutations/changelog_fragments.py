@@ -113,5 +113,54 @@ GUARD = Guard(
             '    return r.returncode == 0 and bool(r.stdout.strip())',
             'a git failure is treated as a dirty CHANGELOG',
         ),
+        # #1841: a bullet added directly under `### Unreleased` is refused; each path of the rule has a mutant.
+        Mutation(
+            'no bullet is ever a direct bullet',
+            '        if (heading, name) in have or name in moved:\n            continue',
+            '        if True:\n            continue',
+            'a bullet added directly under `### Unreleased` is a finding',
+        ),
+        Mutation(
+            'an edit of a bullet base already has is refused',
+            '        if (heading, name) in have or name in moved:',
+            '        if name in moved:',
+            'an EDIT of a bullet base already has',
+        ),
+        Mutation(
+            'the folded copy of a deleted fragment is refused',
+            '        if (heading, name) in have or name in moved:',
+            '        if (heading, name) in have:',
+            'the folded copy of a fragment this change deletes',
+        ),
+        Mutation(
+            'any deleted fragment excuses any bullet',
+            '        if (heading, name) in have or name in moved:',
+            '        if (heading, name) in have or bool(moved):',
+            'a deleted fragment for a DIFFERENT bullet does not excuse it',
+        ),
+        Mutation(
+            'a bullet under a release block counts as direct',
+            '            inside, cur = line.strip() == UNRELEASED, None',
+            '            inside, cur = True, None',
+            'added under a RELEASE block',
+        ),
+        Mutation(
+            'the finding no longer names the fragment path',
+            'add changelog.d/{issue}-{slug}.md, whose first line is',
+            'add a fragment, whose first line is',
+            'that names the fragment path to use',
+        ),
+        Mutation(
+            'an unreadable base is reported clean',
+            '        return 3, [f"cannot read CHANGELOG.md at {base_ref}',
+            '        return 0, [f"cannot read CHANGELOG.md at {base_ref}',
+            'a base that does not exist is a SKIP (3), never clean',
+        ),
+        Mutation(
+            'deleted fragments are not read, so a fold is refused',
+            '"--diff-filter=D"',
+            '"--diff-filter=A"',
+            'with the fragment it came from deleted',
+        ),
     ),
 )

@@ -616,6 +616,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("label-new-issue selftest", ("python3", "plugins/rails-flow/scripts/label_new_issue.py", "--selftest")),
     ("changelog fragments", ("python3", "scripts/changelog_fragments.py", "--check")),
     ("changelog fragments selftest", ("python3", "scripts/changelog_fragments.py", "--selftest")),
+    # #1841 (phase 2 of #1825). A bullet this branch adds straight to `### Unreleased` is refused, and the finding names the fragment to write. Reads git, so it needs `origin/dev` (a SKIP without it).
+    ("changelog direct bullets", ("python3", "scripts/changelog_fragments.py", "--check-direct")),
     # #1635. The record a promotion's release reuses instead of re-running the full sweep.
     ("sweep proof selftest", ("python3", "scripts/sweep_proof.py", "--selftest")),
     ("sweep proof wiring", ("python3", "scripts/sweep_proof.py", "check-wiring")),
