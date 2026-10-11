@@ -191,7 +191,7 @@ Per `web_e2e` (scaffold ONE):
   `npm --prefix qa run typecheck`. Playwright does not type-check, so without that step `strict`
   checks nothing, and the `ts-strict` gate refuses a script CI never runs (#1447; `agents/e2e-tester.md`).
   **Release-image robot helpers (#1835)**, when the project will run real-flow personas on its release image: copy
-  `${CLAUDE_PLUGIN_ROOT}/scaffold/qa/e2e/support/{local-target,totp,qa-marker,mail-reader}.ts` into `qa/e2e/support/`
+  `${CLAUDE_PLUGIN_ROOT}/scaffold/qa/e2e/support/{local-target,totp,qa-marker,mail-reader,personas,teardown}.ts` into `qa/e2e/support/`
   (not the `*.test.ts` beside them — those test the templates, in this plugin's CI). They import each other with an
   explicit `.ts` extension, so add `"allowImportingTsExtensions": true` and `"noEmit": true` to `qa/e2e/tsconfig.json`,
   and `@types/node` to `qa/package.json` (they use `node:crypto`, `Buffer` and `process.env`). **Unproven under
@@ -200,7 +200,7 @@ Per `web_e2e` (scaffold ONE):
   suite fails to import them, report it rather than rewriting the imports. What each refuses: `assertLocalTarget` — any
   URL that does not dial 127.0.0.1, localhost or ::1, and any URL with userinfo (this, with the local catcher, is what
   keeps the robot off real systems); the mail reader — any address not of the `qa+<handle>@<domain>` shape (the shape,
-  not the domain), before a request, and any catcher not on this machine.
+  not the domain), before a request, and any catcher not on this machine. `personas.ts` keeps the persona and records manifests in `QA_SEED_DIR` (default `qa/.qa-seed`, owner-only files — **gitignore it**) and refuses a non-QA address on write and on read; `teardown.ts`'s `proveNothingLeft(<compose project>)` runs after the stack's own `down` and fails if any container or volume of that project is left, **or if docker cannot be asked** — an unanswered "is anything left?" is a failure, not a pass.
 - **cypress-cucumber** — `qa/package.json` (cypress, `@badeball/cypress-cucumber-preprocessor`,
   `@testing-library/cypress`), `qa/cypress.config.js`, `qa/e2e/features/*.feature` (+ `step_definitions/`),
   `cy.session()` auth, `@smoke`/`@regression` tags.
