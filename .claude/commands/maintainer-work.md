@@ -116,8 +116,8 @@ Two hard rules, both the opposite of what feels natural:
   fix answered which report. Keep closing keywords out of commit messages.
 - **Bump NO versions.** Not `metadata.version`, not the plugin's `plugin.json`, not the
   rails-stack entry. A version is a claim about what a user can install, and nothing on
-  `dev` is installable. Add the CHANGELOG notes under a **`### Unreleased`** heading in the
-  component's section instead, with a line saying the number is assigned at promotion.
+  `dev` is installable. Add the CHANGELOG notes as a fragment, `changelog.d/<issue>-<slug>.md` (see
+  `changelog.d/README.md`), which the arm folds under the component's **`### Unreleased`**; never edit `CHANGELOG.md`.
   (A stray bump on `dev` is a loaded gun: the next promotion publishes a release the moment
   it merges, decided by nobody. This is exactly what #143 did and #144 undid.)
 

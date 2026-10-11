@@ -588,6 +588,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("arm window selftest", ("python3", "scripts/check_arm_window.py", "--selftest")),
     ("close-on-dev-merge selftest", ("python3", "scripts/close_on_dev_merge.py", "--selftest")),
     ("label-new-issue selftest", ("python3", "plugins/rails-flow/scripts/label_new_issue.py", "--selftest")),
+    ("changelog fragments", ("python3", "scripts/changelog_fragments.py", "--check")),
+    ("changelog fragments selftest", ("python3", "scripts/changelog_fragments.py", "--selftest")),
     # #1635. The record a promotion's release reuses instead of re-running the full sweep.
     ("sweep proof selftest", ("python3", "scripts/sweep_proof.py", "--selftest")),
     ("sweep proof wiring", ("python3", "scripts/sweep_proof.py", "check-wiring")),

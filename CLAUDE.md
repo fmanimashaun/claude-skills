@@ -36,7 +36,7 @@ holds the harness-neutral rules (measure before you assert; write the mechanism 
 5. Every check you add must be able to fail: a `--selftest`, and a guard (see the two roots below).
 6. Edited a command or skill? `python3 scripts/lint_markdown_shell.py` and `lint_markdown_code.py`.
    Edited `skills/**`? `python3 scripts/package_core.py`, commit the `dist/` change → *Packaging*.
-7. CHANGELOG bullet under the component's **`### Unreleased`**, naming a path in backticks → *Versioning*.
+7. CHANGELOG **fragment** `changelog.d/<issue>-<slug>.md` (preferred; a bullet added straight to `### Unreleased` still passes this release), naming a path in backticks → *Versioning*.
 8. Run the sweep locally — `python3 scripts/maintainer_doctor.py --gates-only --fast` (~45 s) — and
    review your own diff against `skills/code-review/SKILL.md` → *Verify our own claims*.
 9. PR **into `dev`**, a line `Fixes #n` per issue it completes (`Refs #n` if partial), **no version bump** → *Git flow*.
@@ -109,7 +109,7 @@ ancestry* check asserts both halves; `--gates-only` skips it, so run the full do
 
 | # | Step | Branch / PR | Publishes? |
 |---|---|---|---|
-| 1 | **Arm** — assign versions, convert `Unreleased` headings, `python3 scripts/rebuild_generated.py` | `chore/arm-vX.Y.Z` → **`dev`** | **No** |
+| 1 | **Arm** — assign versions, `scripts/changelog_fragments.py --fold`, convert `Unreleased` headings, `scripts/rebuild_generated.py` | `chore/arm-vX.Y.Z` → **`dev`** | **No** |
 | 2 | **Promote** — merge dev into main | `dev` → **`main`** | **Yes** — the push fires the workflow |
 
 Name step 1 `chore/arm-vX.Y.Z`, never `release/*`; title it "arm vX.Y.Z — version assignment (does not
@@ -148,8 +148,8 @@ same failure conditions.
 
 - **Versions are assigned at the promotion, never on a merge into `dev`** — a version is a claim about
   what a user can install (#143/#144).
-- Notes for unshipped work go under **`### Unreleased`** in the component's CHANGELOG section; the
-  bullet names a path it changed in backticks (`changelog-bullet-unplaceable`).
+- Notes for unshipped work are a fragment, `changelog.d/<issue>-<slug>.md`, that the arm folds under **`### Unreleased`**; the
+  bullet names a path it changed in backticks (`changelog-bullet-unplaceable`); a late one is `--fold --into <tag>`.
 - At the arm: components version **independently** — skill content → the rails-stack `version` in
   `marketplace.json`; a plugin's code → its `plugin.json`; always `metadata.version`. Patch for fixes,
   minor for capabilities. **Every bump gets a CHANGELOG entry**.

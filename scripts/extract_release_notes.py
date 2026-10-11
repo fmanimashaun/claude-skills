@@ -497,6 +497,19 @@ def _check_no_unreleased(text: str) -> list[str]:
     ]
 
 
+def _check_no_fragments(root: Path = REPO) -> list[str]:
+    """A promotion must carry no unfolded `changelog.d/<issue>.md` fragment (#1825): the arm folds them into CHANGELOG.md.
+
+    A fragment that is still a file at the promotion would reach `main` with its note unpublished, the way a stray `### Unreleased` did. Repair: run
+    `python3 scripts/changelog_fragments.py --fold --into <the armed tag>` and commit."""
+    d = root / "changelog.d"
+    if not d.is_dir():
+        return []
+    return [f"changelog.d/{p.name}: an unfolded CHANGELOG fragment at promotion time — its note would reach `main` unpublished. "
+            f"Fold it into the armed block: `python3 scripts/changelog_fragments.py --fold --into <tag>`."
+            for p in sorted(d.glob("*.md")) if p.name != "README.md"]
+
+
 # ---------------------------------------------------------------------------------------------
 # Selftest
 # ---------------------------------------------------------------------------------------------
@@ -610,6 +623,18 @@ def _selftest() -> int:
     check("promotion: an Unreleased heading is a finding", len(found) == 1 and "unversioned" in found[0])
     check("promotion: prose mentioning Unreleased is not a heading",
           _check_no_unreleased("## s\n\n- notes go under `### Unreleased` until the arm\n") == [])
+
+    # NO UNFOLDED FRAGMENT AT PROMOTION (#1825).
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        troot = Path(td)
+        check("promotion: no changelog.d directory is clean", _check_no_fragments(troot) == [])
+        (troot / "changelog.d").mkdir()
+        (troot / "changelog.d" / "README.md").write_text("how fragments work\n")
+        check("promotion: the README is not a fragment", _check_no_fragments(troot) == [])
+        (troot / "changelog.d" / "1825-x.md").write_text("section: rails-flow\n- x\n")
+        left = _check_no_fragments(troot)
+        check("promotion: an unfolded fragment is a finding that names the repair", len(left) == 1 and "1825-x.md" in left[0] and "--fold --into" in left[0])
 
     # ONE LIVE SECTION PER COMPONENT (#1520). The shape #1518 shipped: an Unreleased block under the
     # DEAD rails-stack section, which every rule above passed.
@@ -1022,6 +1047,7 @@ def main(argv: list[str] | None = None) -> int:
             findings += _check_order(text)
         if a.promotion:
             findings += _check_no_unreleased(text)
+            findings += _check_no_fragments()
         if findings:
             print(f"{len(findings)} finding(s) for {tag}:", file=sys.stderr)
             for f in findings:

@@ -7,7 +7,7 @@ Marketplace **1.155.0**.
 | plugin | version | commands | what it does |
 |---|---|---|---|
 | `rails-stack` | 1.72.0 | — | Rails 8.1 + Hotwire development doctrine: vanilla-first stack, pure RSpec testing, Turbo |
-| `rails-flow` | 1.58.0 | 23 | Agentic development flow for Rails 8 projects |
+| `rails-flow` | 1.58.0 | 24 | Agentic development flow for Rails 8 projects |
 | `qa-flow` | 1.36.1 | 8 | Independent, stack-agnostic QA engineering flow. The QA engineer picks the stack in qa/q |
 | `pipeline` | 1.4.3 | 9 | Lifecycle orchestrator over rails-flow and qa-flow |
 | `design-flow` | 1.45.2 | 12 | Agentic UI/design flow for Rails 8 + Hotwire + Tailwind v4 |
