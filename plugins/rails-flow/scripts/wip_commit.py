@@ -20,7 +20,8 @@ WHAT IT DOES, in order, and each step has a fixture that goes red without it:
   6. ROLLS: when HEAD is already an unpushed `WIP(auto):` commit it amends that one rather than stacking a commit per turn; once any
      remote-tracking ref contains it, the next change is a new commit (it never rewrites what was pushed);
   7. never pushes, never merges, never touches another branch;
-  8. SKIPS a repository whose OWN config (`.git/config`, local or worktree scope) names a program for git to run: `filter.<name>.clean`,
+  8. SKIPS a repository that contains HOME (git would read the repository's `.gitconfig` as the user's own global config), and
+  9. SKIPS a repository whose OWN config (`.git/config`, local or worktree scope) names a program for git to run: `filter.<name>.clean`,
      `diff.<name>.textconv`, `core.sshCommand`, `core.editor`, `credential.helper`, an `include` and the rest of `RUNS_PROGRAMS`. `-c` can
      force off the keys we name, not the ones whose name the repository chooses, so such a repository is not committed to at all.
 
@@ -114,6 +115,13 @@ def decide(root: Path, parent_env=None, now: float | None = None, dry_run: bool 
     if top is None or top.returncode != 0:
         return "skip:not-a-repository", "no repository here"
     toplevel = Path(top.stdout.strip())
+    home = env.get("HOME")
+    if home:
+        # git reads `$HOME/.gitconfig`, and treats it as the USER's own: a HOME inside the repository makes the repository's file the global
+        # config, so a `filter.<n>.clean` in it runs (measured 2026-10-11 on db's HOME attack). Refuse a repository that contains HOME.
+        real_home, real_top = os.path.realpath(home), os.path.realpath(str(toplevel))
+        if real_home == real_top or real_home.startswith(real_top + os.sep):
+            return "skip:home-inside-repository", "HOME is at or inside the repository, so its global git config is the repository's"
     gitdir_out = g("rev-parse", "--git-dir")
     if gitdir_out is None or gitdir_out.returncode != 0:
         return "skip:no-git-dir", "git-dir unreadable"
@@ -383,6 +391,34 @@ def selftest() -> int:
         git(ctrl, "config", "branch.feature/x.remote", "origin")
         (ctrl / "a.txt").write_text("changed\n")
         expect("CONTROL: harmless repo-local keys (core.autocrlf, a branch's remote) do not skip the commit", run(ctrl)[0] == "committed", run(ctrl))
+        # HOME INSIDE THE REPOSITORY (db's attack, 2026-10-11): the repository's `.gitconfig` becomes the "global" config, which no scope filter may
+        # distrust (a user's own global filters, such as git-lfs, are theirs). The only safe answer is to refuse a repository that contains HOME.
+        def home_in_repo(label: str, gitconfig_body: str) -> None:
+            repo = make_repo("hr-" + re.sub(r"\W", "_", label))
+            (repo / ".gitattributes").write_text("*.txt filter=evil\n")
+            git(repo, "add", ".gitattributes")
+            git(repo, "commit", "-q", "-m", "attributes")
+            inner = repo / ".home"
+            inner.mkdir()
+            prog = inner / "clean.sh"
+            prog.write_text(f"#!/bin/sh\necho ran >> {marker}\ncat\n")
+            prog.chmod(0o755)
+            (inner / ".gitconfig").write_text(gitconfig_body.replace("@PROG@", str(prog)) + "\n[user]\n\tname = T\n\temail = t@t\n")
+            (repo / "a.txt").write_text("changed\n")
+            marker.unlink(missing_ok=True)
+            before = count(repo)
+            action, detail = decide(repo, clean_env({"HOME": str(inner)}))
+            expect(f"HOME in the repository: {label}: nothing is committed", action == "skip:home-inside-repository" and count(repo) == before, (action, detail))
+            expect(f"HOME in the repository: {label}: the program never ran", not marker.exists(), (action, detail))
+
+        home_in_repo("a clean filter in the repository's .gitconfig", '[filter "evil"]\n\tclean = @PROG@')
+        home_in_repo("a harmless .gitconfig (still refused: HOME is the repository's)", "[core]\n\tautocrlf = false")
+        repo_h = make_repo("hr-equal")
+        (repo_h / "a.txt").write_text("changed\n")
+        expect("HOME equal to the repository root is refused too", decide(repo_h, clean_env({"HOME": str(repo_h)}))[0] == "skip:home-inside-repository")
+        ctrl2 = make_repo("hr-control2")
+        (ctrl2 / "a.txt").write_text("changed\n")
+        expect("CONTROL: a HOME outside the repository (the user's own) commits as before", run(ctrl2)[0] == "committed", run(ctrl2))
         # no trusted git at all: silence, no commit
         norepo = make_repo("notrusted")
         (norepo / "a.txt").write_text("changed\n")

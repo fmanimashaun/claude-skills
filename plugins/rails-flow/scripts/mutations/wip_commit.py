@@ -89,5 +89,11 @@ GUARD = Guard(
             r'    r"^(?:NEVER\..+\.(?:clean|smudge|process)|diff\..+\.(?:textconv|command)|',
             "repo-local config: a clean filter: nothing is committed",
         ),
+        Mutation(
+            "a repository that contains HOME is committed to, so its .gitconfig runs as the user's global config",
+            "        if real_home == real_top or real_home.startswith(real_top + os.sep):",
+            "        if False:",
+            "HOME in the repository: a clean filter in the repository's .gitconfig: nothing is committed",
+        ),
     ),
 )
