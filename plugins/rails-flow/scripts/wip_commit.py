@@ -73,7 +73,8 @@ RUNS_PROGRAMS = re.compile(
     r"^(?:filter\..+\.(?:clean|smudge|process)|diff\..+\.(?:textconv|command)|merge\..+\.driver|mergetool\..+\.cmd|"
     r"core\.(?:sshcommand|editor|askpass|gitproxy|alternaterefscommand|attributesfile|excludesfile|fsmonitor|hookspath|pager)|"
     r"sequence\.editor|gpg\..*program|credential\..*helper|include\.path|includeif\..+\.path|url\..+\.insteadof|"
-    r"submodule\..+\.update|protocol\..+\.allow|http\.proxy|remote\..+\.(?:uploadpack|receivepack|vcs|proxy))$", re.I)
+    r"submodule\..+\.update|protocol\..+\.allow|http\.proxy|remote\..+\.(?:uploadpack|receivepack|vcs|proxy)|"
+    r"diff\.external|difftool\..+\.cmd|pager\..+|trailer\..+\.cmd|core\.worktree|extensions\.worktreeconfig)$", re.I)
 
 
 def risky_local_config(git: str, root: Path, env: dict[str, str]) -> list[str]:
@@ -90,6 +91,37 @@ def risky_local_config(git: str, root: Path, env: dict[str, str]) -> list[str]:
         if RUNS_PROGRAMS.match(key):
             out.append(key)
     return out
+
+
+def contains(root: Path, path: str) -> bool:
+    """Is `path` the directory `root` or inside it, by file identity (`os.path.samefile`), walking `path`'s parents (bounded)? Unreadable means yes."""
+    try:
+        here = os.path.realpath(path)
+        for _ in range(64):
+            if os.path.samefile(here, str(root)):
+                return True
+            parent = os.path.dirname(here)
+            if parent == here:
+                return False
+            here = parent
+        return True      # deeper than any real path: do not trust it
+    except OSError:
+        return True      # a path whose identity cannot be read is not shown to be outside
+
+
+def outermost_root(toplevel: Path) -> Path:
+    """The outermost ancestor of the repository that holds a `.git` or a `Gemfile` (looked for by existence; git is never run): the same
+    definition of "the project" that `lib/trusted-env.sh` uses, so a nested repository is judged against the project around it."""
+    best = toplevel
+    here = toplevel
+    for _ in range(64):
+        parent = here.parent
+        if parent == here:
+            break
+        here = parent
+        if (here / ".git").exists() or (here / "Gemfile").exists():
+            best = here
+    return best
 
 
 def run_git(git: str, root: Path, env: dict[str, str], *args: str) -> subprocess.CompletedProcess | None:
@@ -118,10 +150,12 @@ def decide(root: Path, parent_env=None, now: float | None = None, dry_run: bool 
     home = env.get("HOME")
     if home:
         # git reads `$HOME/.gitconfig`, and treats it as the USER's own: a HOME inside the repository makes the repository's file the global
-        # config, so a `filter.<n>.clean` in it runs (measured 2026-10-11 on db's HOME attack). Refuse a repository that contains HOME.
-        real_home, real_top = os.path.realpath(home), os.path.realpath(str(toplevel))
-        if real_home == real_top or real_home.startswith(real_top + os.sep):
-            return "skip:home-inside-repository", "HOME is at or inside the repository, so its global git config is the repository's"
+        # config, so a `filter.<n>.clean` in it runs (measured 2026-10-11 on db's HOME attack). Refuse a repository that contains HOME, judged by
+        # FILE IDENTITY (a case-insensitive volume, a symlink and a bind all spell one directory two ways, and a string prefix test is fooled by
+        # each), against the repository AND the outermost project root above it (a nested repository inside a project that holds the HOME).
+        for top in (toplevel, outermost_root(toplevel)):
+            if contains(top, home):
+                return "skip:home-inside-repository", "HOME is at or inside the repository or its project, so its global git config is the project's"
     gitdir_out = g("rev-parse", "--git-dir")
     if gitdir_out is None or gitdir_out.returncode != 0:
         return "skip:no-git-dir", "git-dir unreadable"
@@ -419,6 +453,47 @@ def selftest() -> int:
         ctrl2 = make_repo("hr-control2")
         (ctrl2 / "a.txt").write_text("changed\n")
         expect("CONTROL: a HOME outside the repository (the user's own) commits as before", run(ctrl2)[0] == "committed", run(ctrl2))
+        # (review of ea9edc57) HOME is judged by FILE IDENTITY, not by a string prefix, and against the PROJECT around a nested repository
+        sym_repo = make_repo("hr-symlink")
+        (sym_repo / "a.txt").write_text("changed\n")
+        (sym_repo / ".home").mkdir()
+        link_home = base / "link-to-home"
+        link_home.symlink_to(sym_repo / ".home")
+        expect("HOME reached through a symlink into the repository is refused", decide(sym_repo, clean_env({"HOME": str(link_home)}))[0] == "skip:home-inside-repository")
+        # contains() directly, with the ROOT spelled through a symlink: only a comparison by file identity says these are one directory
+        spelled = base / "root-spelled-through-a-link"
+        spelled.symlink_to(sym_repo)
+        expect("contains() compares by file identity: a root spelled through a symlink still contains its own subdirectory",
+               contains(spelled, str(sym_repo / ".home")) and contains(spelled, str(sym_repo)) and not contains(spelled, str(base)))
+        case_repo = make_repo("hrCase")
+        (case_repo / "a.txt").write_text("changed\n")
+        (case_repo / ".home").mkdir()
+        swapped = str(case_repo / ".home").replace("hrCase", "HRcASE")
+        if os.path.isdir(swapped):       # a case-insensitive volume (the default on macOS): one directory, two spellings
+            expect("HOME spelled in another case (a case-insensitive volume) is still the repository's, and is refused",
+                   decide(case_repo, clean_env({"HOME": swapped}))[0] == "skip:home-inside-repository", decide(case_repo, clean_env({"HOME": swapped})))
+        else:
+            expect("(case-sensitive volume: the case-spelling row does not apply)", True)
+        outer = base / "outerproj"
+        outer.mkdir()
+        git(outer, "init", "-q", "-b", "dev")
+        nested = outer / "vendor" / "inner"
+        nested.mkdir(parents=True)
+        git(nested, "init", "-q", "-b", "dev")
+        (nested / "a.txt").write_text("one\n")
+        git(nested, "add", "a.txt")
+        git(nested, "commit", "-q", "-m", "base")
+        git(nested, "checkout", "-q", "-b", "feature/x")
+        (nested / "a.txt").write_text("changed\n")
+        (outer / ".home").mkdir()
+        expect("a nested repository is refused when HOME is inside the PROJECT around it, not only inside the repository itself",
+               decide(nested, clean_env({"HOME": str(outer / ".home")}))[0] == "skip:home-inside-repository", decide(nested, clean_env({"HOME": str(outer / ".home")})))
+        expect("CONTROL: the same nested repository commits when HOME is outside the project", decide(nested, clean_env())[0] == "committed", decide(nested, clean_env()))
+        # more keys that run a program or redirect git
+        local_config("diff.external", "diff.external", "@PROG@")
+        local_config("a difftool command", "difftool.evil.cmd", "@PROG@")
+        local_config("a pager for a command", "pager.log", "@PROG@")
+        local_config("core.worktree redirecting git elsewhere", "core.worktree", "/tmp")
         # no trusted git at all: silence, no commit
         norepo = make_repo("notrusted")
         (norepo / "a.txt").write_text("changed\n")

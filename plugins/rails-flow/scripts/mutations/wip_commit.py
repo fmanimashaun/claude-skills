@@ -91,9 +91,27 @@ GUARD = Guard(
         ),
         Mutation(
             "a repository that contains HOME is committed to, so its .gitconfig runs as the user's global config",
-            "        if real_home == real_top or real_home.startswith(real_top + os.sep):",
-            "        if False:",
+            "            if contains(top, home):",
+            "            if False:",
             "HOME in the repository: a clean filter in the repository's .gitconfig: nothing is committed",
+        ),
+        Mutation(
+            "containment is a string prefix test again, so a symlink or a case-insensitive spelling of HOME escapes it",
+            "            if os.path.samefile(here, str(root)):",
+            "            if here == str(root):",
+            "contains() compares by file identity",
+        ),
+        Mutation(
+            "a nested repository is judged only against itself, not the project around it",
+            "        for top in (toplevel, outermost_root(toplevel)):",
+            "        for top in (toplevel,):",
+            "a nested repository is refused when HOME is inside the PROJECT",
+        ),
+        Mutation(
+            "diff.external is not on the list of keys that run a program",
+            "diff\\.external|difftool",
+            "NEVER\\.external|difftool",
+            "repo-local config: diff.external: nothing is committed",
         ),
     ),
 )
