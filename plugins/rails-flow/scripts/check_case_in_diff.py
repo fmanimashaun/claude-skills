@@ -13,11 +13,11 @@ WHAT IT CHECKS, over the diff `BASE...HEAD` (refs only: no working-tree file is 
   1. for EVERY issue the PR closes, at least one catalogue row (`qa/test-cases.csv`, or `--catalogue`) that the diff ADDS OR CHANGES names that issue in its `Source`
      column (`#12`, `defect:#12`, `issue #12`, any separator of space , ; |). A row that already existed at the base and is untouched does not count: the case is for THIS
      change. Rows are compared as whole CSV records between the catalogue at BASE and at HEAD, not as diff lines, so a quoted field that spans lines cannot forge a row and a row that
-     only moved is not a change; a cosmetic edit to a row that already names the issue DOES count as a change (a re-opened issue may satisfy the rule that way: the reviewer reads the case). `#123` is not `#12`.
+     only moved is not a change; a row is the same row when its Test ID and Source (whitespace-normalised) are unchanged, so a new column, an edited Title or Notes, or a cosmetic edit is not a change and cannot satisfy the rule for an issue the row already named. `#123` is not `#12`.
   2. for `--kind fix` (a fix, a gap or a bug), the diff also ADDS, COPIES, MODIFIES or RENAMES (never deletes) a spec or test SOURCE file: a path in a `spec/`, `test/`,
      `tests/` or `e2e/` directory or with a `_spec`, `.spec.`, `.test.` or `_test` file name, AND a source extension (rb py js jsx ts tsx mjs cjs go java kt rs php ex exs cs swift
      sh bash feature robot erb), so a note or a fixture under test/ is not a spec: the regression spec. With `--body-file`, the PR body must also carry a `Red/green` section saying the spec failed without the
-     fix (red) and passes with it (green). Presence only: a script cannot run the spec against the pre-fix tree, so the flow command does that and records the result here.
+     fix (red) and passes with it (green). Presence only: any such file that is not deleted counts, even a helper or an empty spec, and a script cannot run the spec against the pre-fix tree, so the flow command does that and records the result here; the reviewer reads the spec.
   A PR that closes no issue has nothing to require (a docs change, a refactor): exit 0 and said.
 
 THE PR BODY IS READ for its closing keywords by `check_registry_closed.closing_numbers` (every GitHub keyword, any case, `#N` and this repository's qualified forms).
@@ -70,7 +70,9 @@ def rows_at(root: Path, ref: str, path: str) -> list[dict]:
 
 
 def fingerprint(row: dict) -> tuple:
-    return tuple(sorted((str(key), repr(value)) for key, value in row.items()))
+    """What makes a catalogue row 'the same row' between BASE and HEAD: its Test ID and its Source (whitespace-normalised). A new column, an edited Title or Notes does not turn an
+    old row into a change, so a header-only change cannot make an old row that already names the issue satisfy the rule."""
+    return (repr(row.get("Test ID")), repr(" ".join((row.get("Source") or "").split())))
 
 
 def changed_rows(root: Path, base: str, catalogue: str) -> tuple[list[dict] | None, str | None]:
@@ -202,6 +204,10 @@ def selftest(match: str | None = None) -> int:
     for label, path, want_code in (("a test/ directory file is a spec", "test/helper.rb", 0), ("an e2e/ directory file is a spec", "qa/e2e/login.rb", 0),
                                    ("a _spec file is a spec", "lib/thing_spec.rb", 0), ("a docs file named spec is not a spec", "docs/spec.md", 1)):
         row(label, base, {CATALOGUE: HEADER + case("TC-1", "REQ-1") + case("TC-2", "defect:#5"), path: "x\n"}, want_code, None if want_code == 0 else "the spec that fails without it")
+    for label, path in (("a source file whose name merely contains inspect-or is not a spec (near miss)", "lib/inspector.rb"),
+                        ("a source file named specification is not a spec (near miss)", "app/specification_parser.rb"),
+                        ("a source file under a respec directory is not a spec (near miss)", "respec/helper.rb")):
+        row(label, base, {CATALOGUE: HEADER + case("TC-1", "REQ-1") + case("TC-2", "defect:#5"), path: "x\n"}, 1, "the spec that fails without it")
     BODY_OK = "## Red/green proof\nred: the spec failed on the base (exit 1)\ngreen: it passes on the head\n"
     row("a fix body with a red/green section is clean", base, ok_change, 0, None, body="## What\nx\n\n" + BODY_OK)
     row("a fix body with no red/green section is a finding", base, ok_change, 1, "no `Red/green` section", body="## What\nx\n")
@@ -220,8 +226,12 @@ def selftest(match: str | None = None) -> int:
         {CATALOGUE: HEADER + case("TC-1", "REQ-1") + 'TC-2,t,A,F,P1,Active,defect:#5,"line one\nline two"\n', SPEC: "it\n"}, 0, None)
     row("a row that only moved is not a change", {CATALOGUE: HEADER + case("TC-1", "defect:#5") + case("TC-2", "REQ-2"), "app.rb": "x\n"},
         {CATALOGUE: HEADER + case("TC-2", "REQ-2") + case("TC-1", "defect:#5"), SPEC: "it\n"}, 1, "#5: no catalogue case")
-    row("a cosmetic edit to a row that already names the issue counts as a change (documented)", {CATALOGUE: HEADER + case("TC-1", "defect:#5"), "app.rb": "x\n"},
-        {CATALOGUE: HEADER + 'TC-1,t,A,Functional,P1,Active,"defect:#5",edited\n', SPEC: "it\n"}, 0, None)
+    row("a cosmetic edit (Notes) to a row that already names the issue is not a change", {CATALOGUE: HEADER + case("TC-1", "defect:#5"), "app.rb": "x\n"},
+        {CATALOGUE: HEADER + 'TC-1,t,A,Functional,P1,Active,"defect:#5",edited\n', SPEC: "it\n"}, 1, "#5: no catalogue case")
+    row("a header-only change (a new column) cannot make an old row that already names the issue satisfy the rule", {CATALOGUE: HEADER + case("TC-1", "defect:#5"), "app.rb": "x\n"},
+        {CATALOGUE: "Test ID,Title,Area,Type,Priority,Status,Source,Notes,Owner\n" + 'TC-1,t,A,Functional,P1,Active,"defect:#5",,me\n', SPEC: "it\n"}, 1, "#5: no catalogue case")
+    row("whitespace in a Source is not a change", {CATALOGUE: HEADER + case("TC-1", "defect:#5 REQ-1"), "app.rb": "x\n"},
+        {CATALOGUE: HEADER + case("TC-1", "defect:#5   REQ-1"), SPEC: "it\n"}, 1, "#5: no catalogue case")
     row("a deleted spec is not a spec this change brings", {**base, SPEC: "it\n"}, {CATALOGUE: HEADER + case("TC-1", "REQ-1") + case("TC-2", "defect:#5"), SPEC: None}, 1, "the spec that fails without it")
     row("a renamed spec counts", {**base, SPEC: "it\n"}, {CATALOGUE: HEADER + case("TC-1", "REQ-1") + case("TC-2", "defect:#5"), SPEC: None, "spec/app_renamed_spec.rb": "it\n"}, 0, None)
     row("a note under a test directory is not a spec (N2)", base, {CATALOGUE: HEADER + case("TC-1", "REQ-1") + case("TC-2", "defect:#5"), "docs/product/test/notes.md": "x\n"}, 1,

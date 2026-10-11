@@ -64,7 +64,7 @@ GUARD = Guard(
             'any path containing spec is a spec',
             'TEST_FILE = re.compile(r"(?:(?:^|/)(?:spec|test|tests|e2e)/|_spec\\.|\\.spec\\.|\\.test\\.|_test\\.)")',
             'TEST_FILE = re.compile(r"spec")',
-            'a docs file named spec is not a spec',
+            'a source file named specification is not a spec (near miss)',
         ),
         Mutation(
             'a note under a test directory counts as a spec (N2)',
@@ -149,6 +149,24 @@ GUARD = Guard(
             '        return 2, [], [f"the base {base} cannot be read',
             '        return 3, [], [f"the base {base} cannot be read',
             'an unreadable base is exit 2',
+        ),
+        Mutation(
+            'a row is the same row only when the WHOLE record is unchanged, so a header-only change counts every old row as changed',
+            '    return (repr(row.get("Test ID")), repr(" ".join((row.get("Source") or "").split())))',
+            '    return tuple(sorted((str(key), repr(value)) for key, value in row.items()))',
+            'a header-only change (a new column) cannot make an old row that already names the issue satisfy the rule',
+        ),
+        Mutation(
+            'a Source is compared with its whitespace, so a cosmetic edit counts as a change',
+            '    return (repr(row.get("Test ID")), repr(" ".join((row.get("Source") or "").split())))',
+            '    return (repr(row.get("Test ID")), repr(row.get("Source") or ""))',
+            'whitespace in a Source is not a change',
+        ),
+        Mutation(
+            'a Notes edit counts as a change (the row is compared by its Title too)',
+            '    return (repr(row.get("Test ID")), repr(" ".join((row.get("Source") or "").split())))',
+            '    return (repr(row.get("Test ID")), repr(row.get("Notes")), repr(" ".join((row.get("Source") or "").split())))',
+            'a cosmetic edit (Notes) to a row that already names the issue is not a change',
         ),
     ),
 )

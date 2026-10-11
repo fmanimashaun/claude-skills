@@ -29,9 +29,10 @@ green: the same spec passing with the change.
 
 It reads the diff `BASE...HEAD` (refs only; fsmonitor and external diff off) and requires, for EVERY issue the PR closes, a catalogue row that the diff adds or changes naming that
 issue in `Source`; for `--kind fix` also an added, copied, modified or renamed spec or test SOURCE file (a path in a `spec/`, `test/`, `tests/` or `e2e/` directory or named `_spec`, `.spec.`,
-`.test.` or `_test`, with a source extension: a note or fixture there is not one; a deleted spec does not count) and, with `--body-file`, the `Red/green` section. Rows are compared as whole CSV records
-between the catalogue at BASE and at HEAD: a row that already existed and is untouched does not count (the case is for THIS change), a moved row is not a change, and a cosmetic edit to a row that
-already names the issue does count, so a reviewer reads the case. A catalogue renamed or deleted by a change that closes an issue is a finding, and one named with `--catalogue` that exists nowhere is exit 2. Exit 1 findings; 2 could not check (the gate runner grades 2 ERROR); 3 only when the project has no catalogue.
+`.test.` or `_test`, with a source extension: a note or fixture there is not one, a deleted spec does not count, and presence only: a helper or an empty spec in that path counts, so the
+reviewer reads the spec) and, with `--body-file`, the `Red/green` section. Rows are compared as whole CSV records
+between the catalogue at BASE and at HEAD: a row that already existed and is untouched does not count (the case is for THIS change), a moved row is not a change, and a row is the same row when its Test ID and Source are unchanged, so a new column or an edit to its Title or Notes is
+not a change either. A catalogue renamed or deleted by a change that closes an issue is a finding, and one named with `--catalogue` that exists nowhere is exit 2. Exit 1 findings; 2 could not check (the gate runner grades 2 ERROR); 3 only when the project has no catalogue.
 
 It checks that the case and the spec are IN THE DIFF. It cannot run the spec against the pre-fix tree, so the red/green section is a statement the reviewer checks, and the flow
 command is what actually runs it.
