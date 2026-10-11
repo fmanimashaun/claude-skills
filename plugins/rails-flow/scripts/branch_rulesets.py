@@ -118,6 +118,18 @@ def ruleset_body(branch: str) -> dict:
                         "required_review_thread_resolution": False}}]}
 
 
+# #1872: the one read failure that IS "not applicable". Measured 2026-10-11 against a private repository
+# owned by a GitHub Free organization (API version 2022-11-28, gh 2.102.0): HTTP 403, body message
+# "Upgrade to GitHub Pro or make this repository public to enable this feature.", which gh prints as
+# `gh: <message> (HTTP 403)`. Rulesets on private repositories need a paid plan, so the project has nothing
+# to configure. BOTH halves must match: any other 403 or 404 is a read that failed, exit 2.
+PLAN_LIMITED_MESSAGE = "Upgrade to GitHub Pro or make this repository public to enable this feature."
+
+
+def plan_limited(why: str) -> bool:
+    return PLAN_LIMITED_MESSAGE in why and "(HTTP 403)" in why
+
+
 def fetch_rulesets(slug: str, gh: Runner) -> tuple[list[dict] | None, str]:
     """The full rulesets (the list endpoint omits rules; each is fetched by id). None + reason on n/a."""
     code, out = gh(["api", f"repos/{slug}/rulesets"])
@@ -174,6 +186,9 @@ def main(argv: list[str], gh: Runner = _gh, post: Callable[[str, str, Runner], t
             return 2
         branch = a.branch or ("main" if gh(["api", f"repos/{slug}/branches/main", "--jq", ".name"])[0] == 0 else default_branch(slug, gh))
         rulesets, why = fetch_rulesets(slug, gh)
+        if rulesets is None and plan_limited(why):
+            print(f"n/a: {slug} is private on a plan without rulesets — GitHub answered: {why}")
+            return 3
         if rulesets is None:
             print(f"error: could not read rulesets for {slug}: {why}", file=sys.stderr)
             return 2
@@ -283,6 +298,19 @@ def selftest() -> int:
             return (1, "HTTP 502")
         check("a ruleset read that fails is an error (exit 2), not n/a (#1872)",
               main(["--check", "--repo", "o/n"], gh=gh_unreadable) == 2)
+        def gh_answering(code: int, text: str):
+            def stub(args):
+                if args[:2] == ["auth", "status"]: return (0, "ok")
+                if args[1].endswith("/branches/main"): return (0, "main")
+                return (code, text)
+            return stub
+        plan_answer = "gh: Upgrade to GitHub Pro or make this repository public to enable this feature. (HTTP 403)\n"
+        check("a private repo on a plan without rulesets is n/a (exit 3): the measured 403 answer (#1872)",
+              main(["--check", "--repo", "o/n"], gh=gh_answering(1, plan_answer)) == 3)
+        check("a plain 403 is still an error (exit 2), not the plan's n/a (#1872)",
+              main(["--check", "--repo", "o/n"], gh=gh_answering(1, "gh: Resource not accessible by integration (HTTP 403)\n")) == 2)
+        check("the plan message with another status is still an error (exit 2) (#1872)",
+              main(["--check", "--repo", "o/n"], gh=gh_answering(1, plan_answer.replace("403", "404"))) == 2)
         real_which = shutil.which
         shutil.which = lambda name, *a, **k: None if name == "gh" else real_which(name, *a, **k)
         try:

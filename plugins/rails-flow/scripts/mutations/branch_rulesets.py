@@ -59,6 +59,24 @@ GUARD = Guard(
             "gh not installed is an error",
         ),
         Mutation(
+            "any 403 counts as the plan answer, so a refused read is graded n/a",
+            '    return PLAN_LIMITED_MESSAGE in why and "(HTTP 403)" in why',
+            '    return "(HTTP 403)" in why',
+            "a plain 403 is still an error",
+        ),
+        Mutation(
+            "the plan message with any status counts as the plan answer",
+            '    return PLAN_LIMITED_MESSAGE in why and "(HTTP 403)" in why',
+            '    return PLAN_LIMITED_MESSAGE in why',
+            "the plan message with another status is still an error",
+        ),
+        Mutation(
+            "the plan answer is an error, so a free private repo is red forever",
+            '        if rulesets is None and plan_limited(why):',
+            '        if False:',
+            "a private repo on a plan without rulesets is n/a",
+        ),
+        Mutation(
             "a failed ruleset read is graded n/a again",
             '            print(f"error: could not read rulesets for {slug}: {why}", file=sys.stderr)\n            return 2',
             '            print(f"error: could not read rulesets for {slug}: {why}", file=sys.stderr)\n            return 3',
