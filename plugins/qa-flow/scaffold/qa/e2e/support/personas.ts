@@ -2,7 +2,7 @@
 // screens (password, then a TOTP from the app's own enrol key, or an emailed code read through the MailReader) and keeps each persona's
 // browser state in the seed directory. A spec that wants to be one uses `personaState(handle)` with `test.use({ storageState })`, so no
 // session is minted and no app code runs. Every address carries the QA marker; the manifests REFUSE one that does not, on write and on read.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { assertQaAddress } from "./qa-marker.ts";
 
@@ -25,9 +25,21 @@ function checked(m: PersonaManifest): PersonaManifest {
   return m;
 }
 
+/** Write owner-only. `mode` applies only when the file is CREATED, so an existing wider file is narrowed explicitly. */
+function writePrivate(file: string, body: string): void {
+  writeFileSync(file, body, { mode: 0o600 });
+  chmodSync(file, 0o600);
+}
+
+function checkedRecord(rec: SeededRecord): SeededRecord {
+  assertQaAddress(rec.by, "record a record made by");
+  if (!String(rec.kind ?? "").trim() || !String(rec.id ?? "").trim()) throw new Error(`a record needs a kind and an id (got ${JSON.stringify(rec)})`);
+  return rec;
+}
+
 export function writePersonas(m: PersonaManifest, dir = seedDir()): void {
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, "personas.json"), JSON.stringify(checked(m), null, 2) + "\n", { mode: 0o600 });
+  writePrivate(join(dir, "personas.json"), JSON.stringify(checked(m), null, 2) + "\n");
 }
 
 export function readPersonas(dir = seedDir()): PersonaManifest | null {
@@ -44,15 +56,14 @@ export function personaState(handle: string, dir = seedDir()): string {
 
 /** Add a record to the records manifest. `by` must be a QA persona's address: a record nobody can attribute to the robot is not ours. */
 export function recordCreated(rec: SeededRecord, dir = seedDir()): void {
-  assertQaAddress(rec.by, "record a record made by");
-  if (!rec.kind.trim() || !rec.id.trim()) throw new Error(`a record needs a kind and an id (got ${JSON.stringify(rec)})`);
+  checkedRecord(rec);
   const all = readRecords(dir);
   all.push(rec);
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, "records.json"), JSON.stringify(all, null, 2) + "\n", { mode: 0o600 });
+  writePrivate(join(dir, "records.json"), JSON.stringify(all, null, 2) + "\n");
 }
 
 export function readRecords(dir = seedDir()): SeededRecord[] {
   const file = join(dir, "records.json");
-  return existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as SeededRecord[]) : [];
+  return existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as SeededRecord[]).map(checkedRecord) : [];
 }

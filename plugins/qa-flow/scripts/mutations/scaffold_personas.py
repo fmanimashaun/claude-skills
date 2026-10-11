@@ -26,10 +26,22 @@ GUARD = Guard(
             'a duplicate handle is refused',
         ),
         Mutation(
-            'the manifests are written world-readable',
-            '  writeFileSync(join(dir, "personas.json"), JSON.stringify(checked(m), null, 2) + "\\n", { mode: 0o600 });',
-            '  writeFileSync(join(dir, "personas.json"), JSON.stringify(checked(m), null, 2) + "\\n");',
-            'files are owner-only',
+            'a hand-edited records.json with a non-QA author is returned on read',
+            '  return existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as SeededRecord[]).map(checkedRecord) : [];',
+            '  return existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as SeededRecord[]) : [];',
+            'a hand-edited records.json with a non-QA author, or no id, is refused on read',
+        ),
+        Mutation(
+            'an existing wider manifest keeps its mode on overwrite (no chmod)',
+            '  chmodSync(file, 0o600);',
+            '',
+            'an existing WIDER file is narrowed to owner-only on overwrite',
+        ),
+        Mutation(
+            'a new manifest is created with the default (world-readable) mode',
+            '  writeFileSync(file, body, { mode: 0o600 });\n  chmodSync(file, 0o600);',
+            '  writeFileSync(file, body);',
+            'a new records.json is created owner-only',
         ),
     ),
 )
