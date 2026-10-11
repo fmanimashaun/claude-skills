@@ -5654,8 +5654,10 @@ def hostile_env_fixtures() -> None:
     lib = HOOKS / "lib" / "trusted-env.sh"
     real = {t: shutil.which(t) or "" for t in ("python3", "git", "gh")}
 
-    def rig(td: str, nested: bool = False) -> tuple[Path, Path, dict[str, str]]:
-        """(working directory, witness directory, environment). `nested`: the working directory is a repository INSIDE the repository that holds the fakes."""
+    def rig(td: str, nested: bool = False, home: str = "") -> tuple[Path, Path, dict[str, str]]:
+        """(working directory, witness directory, environment). `nested`: the working directory is a repository INSIDE the repository that holds the fakes.
+        `home`: "in", "out", "root" (the repository root itself) or "dot" (a relative HOME of `.`) puts HOME in, outside or AT the repository, with a `usercustomize.py` in the user site python would read and a `.gitconfig` whose
+        `core.fsmonitor` is a witness; the GIT_CONFIG_* pair is then left out, because it would take precedence over the .gitconfig."""
         base = Path(td)
         outer, witness, trusted = base / "repo", base / "witness", base / "trusted"
         for d in (outer / "bin", outer / "pylib", witness, trusted):
@@ -5682,6 +5684,20 @@ def hostile_env_fixtures() -> None:
             "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.fsmonitor", "GIT_CONFIG_VALUE_0": str(outer / "bin" / "fsmon"),
             "HOME": str(base), "CLAUDE_PROJECT_DIR": str(work),
         })
+        if home:
+            home_dir = {"in": outer / "hostile-home", "out": base / "hostile-home", "root": outer, "dot": outer}[home]
+            home_dir.mkdir(exist_ok=True)
+            _stub(outer / "bin", "fsmon-home", f'echo "$0" >> "{witness}/home-gitconfig-fsmonitor"\nexit 0')
+            (home_dir / ".gitconfig").write_text(f"[core]\n\tfsmonitor = {outer / 'bin' / 'fsmon-home'}\n", encoding="utf-8")
+            if real["python3"]:      # the user site python3 would read from THIS home, asked of the real python3 (subprocess, not `_run`: no hook is involved)
+                site = subprocess.run([real["python3"], "-c", "import site; print(site.getusersitepackages())"], capture_output=True, text=True,
+                                      env={"PATH": "/usr/bin:/bin", "HOME": str(home_dir)}, timeout=60).stdout.strip()
+                if site:
+                    Path(site).mkdir(parents=True, exist_ok=True)
+                    (Path(site) / "usercustomize.py").write_text(f"open({str(witness / 'home-usercustomize')!r}, 'a').write('ran\\n')\n", encoding="utf-8")
+            for k in ("GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0", "PYTHONPATH"):
+                env.pop(k)
+            env["HOME"] = "." if home == "dot" else str(home_dir)      # `.`: read against the working directory, which is the repository
         return work, witness, env
 
     def witnessed(witness: Path) -> list[str]:
@@ -5709,6 +5725,37 @@ def hostile_env_fixtures() -> None:
     seen, done = unhardened("/bin/bash -p")
     check("hostile environment: CONTROL: `/bin/bash -p` does not read BASH_ENV, and does not start the repository's `bash`",
           "bash-env" not in seen and "fake-bash" not in seen, f"witnessed {seen}")
+
+    # THE HOME THE REPOSITORY CHOSE. `unhardened(...)` with HOME inside the repository: python reads a usercustomize.py from that home's user site, git reads its .gitconfig.
+    def unhardened_home(home: str) -> list[str]:
+        with scratch_dir() as td:
+            work, witness, env = rig(td, home=home)
+            env["CLAUDE_PLUGIN_ROOT"] = str(plugins / "rails-flow")
+            (work / "unhardened.sh").write_text("python3 -c pass\ngit status >/dev/null 2>&1\nexit 0\n", encoding="utf-8")
+            _run(["/bin/sh", "-c", 'bash "$0"', str(work / "unhardened.sh")], cwd=work, input="{}", env=env, capture_output=True, text=True, timeout=60)
+            return witnessed(witness)
+
+    for way in ("home-usercustomize", "home-gitconfig-fsmonitor"):
+        check(f"hostile environment: CONTROL: a HOME inside the repository shows `{way}` to an unhardened hook", way in unhardened_home("in"), "witnessed nothing of the kind")
+        for at in ("root", "dot"):
+            check(f"hostile environment: CONTROL: a HOME that is the repository's root ({at}) shows `{way}` to an unhardened hook", way in unhardened_home(at), "witnessed nothing of the kind")
+    check("hostile environment: CONTROL: a HOME OUTSIDE the repository, with a usercustomize.py, also shows it to an unhardened hook (only PYTHONNOUSERSITE stops this one)",
+          "home-usercustomize" in unhardened_home("out"), "witnessed nothing of the kind")
+
+    for home in ("in", "out", "root", "dot"):
+        for hook in ("stop-where.sh", "guard-bash.sh", "ci-verdict-hint.sh"):     # three that call python3 early and write nothing to HOME, so the real run touches no real home
+            command = next(c for pl, ev, c in [(m.parent.parent, e, h["command"]) for m in [plugins / "rails-flow" / "hooks" / "hooks.json"]
+                                               for e, entries in json.loads(m.read_text(encoding="utf-8"))["hooks"].items() for en in entries for h in en["hooks"]] if hook in c)
+            with scratch_dir() as td:
+                work, witness, env = rig(td, home=home)
+                env["CLAUDE_PLUGIN_ROOT"] = str(plugins / "rails-flow")
+                payload = json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "s1", "cwd": str(work), "tool_input": {"command": "echo probe"}})
+                done = _run(["/bin/sh", "-c", command], cwd=work, input=payload, env=env, capture_output=True, text=True, timeout=90)
+                # Outside the repository the HOME is the user's own, and its .gitconfig is theirs to set: only the python user site is refused there (PYTHONNOUSERSITE).
+                seen = [w for w in witnessed(witness) if w.startswith("home-") and (home != "out" or w == "home-usercustomize")]
+                check(f"hostile environment: rails-flow/{hook} ignores " + ({"in": "a HOME inside the repository that holds a usercustomize.py and a core.fsmonitor .gitconfig", "out": "the user site of a HOME outside the repository",
+                                                                           "root": "a HOME that is the repository root, holding a usercustomize.py and a core.fsmonitor .gitconfig", "dot": "a relative HOME (`.`), which is the repository"}[home]),
+                      not seen, f"exit {done.returncode}; witnessed {seen}; {(done.stdout + done.stderr).strip()[:160]!r}")
 
     hooks = []
     for manifest in sorted(plugins.glob("*/hooks/hooks.json")):
@@ -5738,7 +5785,9 @@ def hostile_env_fixtures() -> None:
         work, _, env = rig(td, nested=nested)
         env.update({"PYTHONHOME": "/x", "LD_PRELOAD": "/x", "LD_LIBRARY_PATH": "/x", "NODE_OPTIONS": "--x",
                     "ENV": "/x", "CDPATH": "/x", "GLOBIGNORE": "*", "GIT_EXEC_PATH": "/x", "GIT_ASKPASS": "/x", "GIT_SSH_COMMAND": "/x",
-                    "GIT_DIR": str(work / ".git"), "GIT_WORK_TREE": str(work), "GIT_AUTHOR_NAME": "a", "GIT_TERMINAL_PROMPT": "0", "KEEP_ME": "1"})
+                    "GIT_DIR": str(work / ".git"), "GIT_WORK_TREE": str(work), "GIT_AUTHOR_NAME": "a", "GIT_TERMINAL_PROMPT": "0", "KEEP_ME": "1",
+                    "RUBYOPT": "-rx", "RUBYLIB": "/x", "NODE_PATH": "/x", "PERL5LIB": "/x", "PERL5OPT": "-Mx", "GEM_HOME": "/x", "GEM_PATH": "/x", "BUNDLE_GEMFILE": "/x",
+                    "BUNDLE_PATH": "/x", "GH_HOST": "evil.example", "PAGER": "/x", "LESSOPEN": "|/x", "GH_TOKEN": "t"})
         return work, env
 
     def env_left() -> tuple[set[str], subprocess.CompletedProcess]:
@@ -5750,12 +5799,52 @@ def hostile_env_fixtures() -> None:
             return set(re.findall(r"^declare -x (\w+)", done.stdout, re.M)), done
 
     for gone in ("PYTHONPATH", "PYTHONHOME", "LD_PRELOAD", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH", "NODE_OPTIONS", "BASH_ENV", "ENV", "CDPATH",
-                 "GLOBIGNORE", "GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0", "GIT_EXEC_PATH", "GIT_ASKPASS", "GIT_SSH_COMMAND"):
+                 "GLOBIGNORE", "RUBYOPT", "RUBYLIB", "NODE_PATH", "PERL5LIB", "PERL5OPT", "GEM_HOME", "GEM_PATH", "BUNDLE_GEMFILE", "BUNDLE_PATH", "GH_HOST", "PAGER", "LESSOPEN", "GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0", "GIT_EXEC_PATH", "GIT_ASKPASS", "GIT_SSH_COMMAND"):
         left, done = env_left()
         check(f"hostile environment: trusted-env.sh unsets {gone}", gone not in left and "HOME" in left, f"exit {done.returncode}; left {sorted(left)[:40]}; {done.stderr.strip()[:120]!r}")
-    for kept in ("GIT_DIR", "GIT_WORK_TREE", "GIT_AUTHOR_NAME", "GIT_TERMINAL_PROMPT", "KEEP_ME", "HOME"):
+    for kept in ("GIT_DIR", "GIT_WORK_TREE", "GIT_AUTHOR_NAME", "GIT_TERMINAL_PROMPT", "KEEP_ME", "HOME", "GH_TOKEN"):
         left, done = env_left()
         check(f"hostile environment: trusted-env.sh keeps {kept}", kept in left, f"left {sorted(left)[:40]}")
+
+    def _made(d: Path) -> Path:
+        d.mkdir(exist_ok=True)
+        return d.resolve()
+
+    def left_with(name: str, value_of) -> tuple[bool, str]:
+        """Is `name` still exported after the lib, when it is set to `value_of(base, work)`? (the probe runs right before the check that reads it)"""
+        with scratch_dir() as td:
+            work, env = lib_env(td)
+            for k in ("HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME", "GH_CONFIG_DIR"):
+                env.pop(k, None)
+            env["HOME"] = str(Path(td) / "trusted")
+            env[name] = value_of(Path(td), work)
+            done = probe(work, env, '. "$1"; export -p')
+            return name in set(re.findall(r"^declare -x (\w+)", done.stdout, re.M)), f"exit {done.returncode}; {done.stderr.strip()[:120]!r}"
+
+    for name in ("HOME", "XDG_CONFIG_HOME", "GH_CONFIG_DIR"):
+        for why, value_of, expect_kept in (
+            ("a value inside the repository", lambda base, work: str(_made(work / "hostile-home")), False),
+            ("a link outside the repository that points INTO it", lambda base, work: str(base / "link-into-repo"), False),
+            ("a value that does not exist (it cannot be proved outside)", lambda base, work: str(base / "no-such-dir"), False),
+            ("a list-shaped value with an empty entry (the current directory)", lambda base, work: str(base / "trusted") + ":", False),
+            ("a value with a newline", lambda base, work: str(base / "trusted") + "\n" + str(base / "trusted"), False),
+            ("a relative value (`.`)", lambda base, work: ".", False),
+            ("a relative value naming a directory", lambda base, work: "trusted", False),
+            ("a value outside the repository", lambda base, work: str(base / "trusted"), True),
+            ("the repository root itself (a stray ~/.git makes the home directory the repository)", lambda base, work: str(work.resolve()), name == "HOME"),
+        ):
+            kept, detail = left_with(name, value_of)
+            check(f"hostile environment: trusted-env.sh {'keeps' if expect_kept else 'unsets'} {name} when it is {why}", kept == expect_kept, detail)
+    for why, home_of, expected in (("is the repository root", lambda base, work: str(work.resolve()), "/dev/null"), ("is outside the repository", lambda base, work: str(base / "trusted"), "unset")):
+        with scratch_dir() as td:
+            work, env = lib_env(td)
+            env["HOME"] = home_of(Path(td), work)
+            got = probe(work, env, '. "$1"; printf "%s" "${GIT_CONFIG_GLOBAL-unset}"').stdout
+            check(f"hostile environment: trusted-env.sh {'sets GIT_CONFIG_GLOBAL=/dev/null' if expected == '/dev/null' else 'leaves GIT_CONFIG_GLOBAL alone'} when HOME {why}", got == expected, f"GIT_CONFIG_GLOBAL={got!r}")
+    with scratch_dir() as td:
+        work, env = lib_env(td)
+        got = probe(work, env, '. "$1"; printf "%s" "${PYTHONNOUSERSITE-unset}"').stdout
+        check("hostile environment: trusted-env.sh sets PYTHONNOUSERSITE=1 (python's -s), even if the environment said 0", got == "1", f"PYTHONNOUSERSITE={got!r}")
 
     def path_of(td: str, mutate=None, nested: bool = False) -> tuple[Path, list[str]]:
         work, env = lib_env(td, nested=nested)
