@@ -25,15 +25,25 @@ is judged per declaration, by that declaration's own base.
 The hint must be a literal key (`read_only_hint:` or `:read_only_hint =>`). An `annotations(SOME_CONSTANT)` cannot be read
 statically and is a finding, never a pass.
 
-COULD NOT CHECK, never a pass (exit 2): a tool list this scan cannot read. `MCP::Server.new(tools: SOMETHING)` where the value is not
-a literal `[...]`, and `server.tools = ...`, `server.tools << t`, `.tools.push/.concat` (`attr_accessor :tools`, server.rb:184/185;
-the gem has no add_tool). A tool registered that way may be defined anywhere, so a clean run would claim more than was looked at.
+COULD NOT CHECK, never a pass (exit 2): a place this scan cannot read.
+  * `MCP::Server.new(tools: SOMETHING)` where the value is not a literal `[...]`.
+  * A tool added after construction. `Server#tools` is an `attr_accessor` over a HASH keyed by tool name (`@tools = tools.to_h { |t| [t.name_value, t] }`,
+    server.rb:217/222; `@tools[tool_name] = tool`, :302/307; `@tools.values`, :555/560), so the late forms are Hash forms:
+    `server.tools = {...}`, `server.tools['name'] = T`, `.tools.merge!/store/update/replace(...)`. (`<<`, `.push` and `.concat` raise on a Hash and
+    register nothing.) The gem has no add_tool.
+  * MCP code outside `app/` and `lib/`: any `.rb` file there naming `MCP::Tool`, `MCP::Server` or `define_tool` (a `config/initializers/mcp.rb`,
+    a top-level `mcp/`). A Gemfile that merely names the `mcp` gem is NOT enough: an app that is only an MCP client depends on it too.
+    `spec/`, `test/`, `vendor/`, `node_modules/`, `tmp/`, `log/`, `db/`, `coverage/` and `public/` are skipped.
+A tool registered that way may be defined anywhere, so a clean run would claim more than was looked at.
 
-LIMITS, stated: only `app/` and `lib/` are read, so a tool kept elsewhere (`config/`, an engine) reads as "not applicable"; a class
-body ends at the first `end` at the class line's indent (rubocop-formatted code); whole-line `#` comments are ignored, a trailing one
-is not; a tool built by other metaprogramming is invisible here; and `read_only_hint: nil` or `false` counts as stated, since the
-gate asks for an explicit declaration, not a particular value. The check proves the declaration exists, not that the value is TRUE: a tool whose code writes
-while declaring `read_only_hint: true` is the request spec's job ("No tool writes", mcp-server.md §4).
+LIMITS, stated: a class body ends at the next `end` at the class line's indent (so `end # A` and a one-line
+`class A < MCP::Tool; end` are read right), and code that is not indented that way is not read right; whole-line `#`
+comments are ignored, a trailing one is not; string literals are blanked before a hint is looked for, so a hint named inside a string
+does not count; only a statement-start `annotations(` in a class body counts (not `meta.annotations(...)`, not a word in a description); a
+base named relative to a namespace (`module MCP; class A < Tool`) is not recognised and reads as "not applicable"; a tool built by other
+metaprogramming is invisible here; and `read_only_hint: nil` or `false` counts as stated, since the gate asks for an explicit declaration, not
+a particular value. The check proves the declaration exists, not that the value is TRUE: a tool whose code writes while declaring
+`read_only_hint: true` is the request spec's job ("No tool writes", mcp-server.md §4).
 
 Run:  check_mcp_annotations.py [--root DIR]
       check_mcp_annotations.py --selftest
@@ -42,6 +52,7 @@ Exit: 0 clean · 1 finding(s) · 2 unusable (a source file unreadable, or a tool
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 import tempfile
@@ -53,9 +64,13 @@ CLASS = re.compile(r"^(?P<indent>[ \t]*)class\s+(?P<name>[\w:]+)\s*<\s*(?P<base>
 CALL = re.compile(r"(?:(?P<recv>[\w:]+)\.define(?!\w)|\.define_tool(?!\w))\s*\(?")
 CLASS_NEW = re.compile(r"\bClass\.new\(\s*(?P<base>[\w:]+)\s*\)")
 SERVER_NEW = re.compile(r"MCP::Server\.new\s*\(")
-TOOLS_MUTATED = re.compile(r"\.tools\s*(?:=(?![=~>])|<<|\.(?:push|concat|append)\b)")
+# `Server#tools` is a Hash keyed by tool name: these are the ways to put a tool into it after construction
+TOOLS_MUTATED = re.compile(r"\.tools\s*(?:=(?![=~>])|\[[^\]]*\]\s*=(?![=~>])|\.(?:merge!|(?:store|update|replace)\b))")
 CALLS = re.compile(r"\bdef\s+(?:self\.)?call\b")
 MCP_TOOL = {"MCP::Tool", "::MCP::Tool"}
+MCP_TEXT = re.compile(r"\bMCP::(?:Tool|Server)\b|\bdefine_tool\b")
+STRING = re.compile(r"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'")
+SKIP_DIRS = {"vendor", "node_modules", "tmp", "log", "spec", "test", "db", ".git", "coverage", "public"}
 
 
 class Unusable(RuntimeError):
@@ -92,13 +107,29 @@ def _keys(chunk: str) -> set[str]:
     return {k for k in REQUIRED if re.search(rf"(?:\b{k}\s*:|:{k}\s*=>)", chunk)}
 
 
-def _judge(scope: str) -> str:
+def _blank_strings(text: str) -> str:
+    """Every string literal's contents as spaces (offsets and newlines kept), so a hint named inside a string is not a hint."""
+    return STRING.sub(lambda m: m.group(0)[0] + re.sub(r"[^\n]", " ", m.group(0)[1:-1]) + m.group(0)[-1], text)
+
+
+# a class body declares annotations as a statement; a define call passes them as a keyword, after `(` or `,`
+BODY_DECL = re.compile(r"(?m)(?:^|[{;])[ \t]*annotations\b(?:\s*(?P<open>\()|(?=[ \t]+\w+[ \t]*:)(?P<bare>))")
+ARGS_DECL = re.compile(r"(?:\A|[(,])\s*annotations\b\s*(?P<open>:)")
+
+
+def _judge(scope: str, decl: re.Pattern = BODY_DECL) -> str:
     """'' when `scope` declares both hints; otherwise what is wrong with it."""
-    m = re.search(r"\bannotations\b\s*(?P<open>[(:])", scope)
+    scope = _blank_strings(scope)
+    m = decl.search(scope)
     if not m:
         return "declares no annotations, so a client reads it as destructive and open-world"
-    if m["open"] == "(":
+    if m.groupdict().get("open") == "(":
         args = _balanced(scope, m.end() - 1, "(", ")")
+    elif m.groupdict().get("bare") is not None:
+        # `annotations read_only_hint: true, ...`: the statement runs on while a line ends in a comma
+        rows = scope[m.end() :].split("\n")
+        n = next((k for k, r in enumerate(rows) if not r.rstrip().endswith(",")), len(rows) - 1)
+        args = "\n".join(rows[: n + 1])
     else:
         rest = scope[m.end() :].lstrip()
         args = _balanced(rest, 0, "{", "}") if rest.startswith("{") else rest.split("\n", 1)[0]
@@ -109,7 +140,11 @@ def _judge(scope: str) -> str:
 
 
 def _class_body(lines: list[str], i: int, indent: str) -> str:
-    end = next((j for j in range(i + 1, len(lines)) if lines[j].rstrip() == f"{indent}end"), len(lines))
+    """The class (or block) starting at line `i`: to the next `end` at its indent (`end # A` counts), or the line itself for `class A < MCP::Tool; end`."""
+    if re.search(r";\s*end\s*$", lines[i]):
+        return lines[i]
+    stop = re.compile(rf"^{indent}end\b")
+    end = next((j for j in range(i + 1, len(lines)) if stop.match(lines[j])), len(lines))
     return "\n".join(lines[i:end])
 
 
@@ -170,7 +205,7 @@ def scan(root: Path) -> tuple[int, list[str], list[str]]:
             open_at = m.end() - 1 if m.group(0).endswith("(") else None
             args = _balanced(text, open_at, "(", ")") if open_at is not None else text[m.end() : text.find("\n", m.end())]
             found += 1
-            why = _judge(args)
+            why = _judge(args, ARGS_DECL)
             if why:
                 findings.append(f"{rel}:{_line_of(text, m.start())}: a tool defined by {m.group(0).strip('( ')} {why}")
         for m in CLASS_NEW.finditer(text):
@@ -195,7 +230,28 @@ def scan(root: Path) -> tuple[int, list[str], list[str]]:
                 unchecked.append(f"{rel}:{_line_of(text, m.start())}: MCP::Server.new(tools: ...) is not a literal list, so the tools it serves cannot be found")
         for m in TOOLS_MUTATED.finditer(text):
             unchecked.append(f"{rel}:{_line_of(text, m.start())}: tools are added to a server after construction ({m.group(0).strip()}), so they cannot be found")
+    unchecked.extend(_outside(root))
     return found, findings, unchecked
+
+
+def _outside(root: Path) -> list[str]:
+    """`.rb` files outside app/ and lib/ that name MCP tooling: this scan does not read them, so it must not call the run clean."""
+    out = []
+    for dirpath, dirs, names in os.walk(root):
+        here = Path(dirpath).relative_to(root)
+        dirs[:] = sorted(d for d in dirs if d not in SKIP_DIRS and not (not here.parts and d in SCAN_DIRS))
+        for n in sorted(names):
+            if not n.endswith(".rb"):
+                continue
+            p = Path(dirpath) / n
+            try:
+                text = p.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as e:
+                raise Unusable(f"{p}: {e}") from e
+            code = "\n".join("" if ln.lstrip().startswith("#") else ln for ln in text.split("\n"))
+            if MCP_TEXT.search(code):
+                out.append(f"{here / n}: names MCP tooling outside app/ and lib/, which this scan does not read")
+    return out
 
 
 def main(argv: list[str]) -> int:
@@ -277,8 +333,37 @@ CASES: list[tuple[str, dict[str, str], int, int, str, int]] = [
     ("tools: with a method call could not be checked",
      {"app/mcp/a.rb": "S = MCP::Server.new(name: 'x', tools: Registry.tools)\n"}, 0, 0, "", 1),
     ("server.tools = could not be checked", {"app/mcp/a.rb": GOOD + "server.tools = [SalesReport]\n"}, 1, 0, "", 1),
-    ("server.tools << could not be checked", {"app/mcp/a.rb": GOOD + "server.tools << SalesReport\n"}, 1, 0, "", 1),
+    ("server.tools[name] = could not be checked", {"app/mcp/a.rb": GOOD + "server.tools['sales'] = SalesReport\n"}, 1, 0, "", 1),
+    ("server.tools.merge! could not be checked", {"app/mcp/a.rb": GOOD + "server.tools.merge!('a' => SalesReport)\n"}, 1, 0, "", 1),
+    ("server.tools.store could not be checked", {"app/mcp/a.rb": GOOD + "server.tools.store('a', SalesReport)\n"}, 1, 0, "", 1),
+    ("server.tools.update could not be checked", {"app/mcp/a.rb": GOOD + "server.tools.update('a' => SalesReport)\n"}, 1, 0, "", 1),
+    ("server.tools.replace could not be checked", {"app/mcp/a.rb": GOOD + "server.tools.replace({})\n"}, 1, 0, "", 1),
     ("a comparison of tools is not a mutation", {"app/mcp/a.rb": GOOD + "ok = server.tools == []\n"}, 1, 0, "", 0),
+    ("reading tools, or a non-mutating merge, is not a mutation",
+     {"app/mcp/a.rb": GOOD + "n = server.tools.keys\nm = server.tools.merge('a' => SalesReport)\n"}, 1, 0, "", 0),
+    ("MCP code in config/ could not be checked",
+     {"app/mcp/a.rb": GOOD, "config/initializers/mcp.rb": "server.define_tool(name: 'x') { }\n"}, 1, 0, "", 1),
+    ("MCP code in a top-level mcp/ with no tool found could not be checked",
+     {"mcp/bad.rb": "class Bad < MCP::Tool\nend\n"}, 0, 0, "", 1),
+    ("MCP code in spec/ is not read", {"app/mcp/a.rb": GOOD, "spec/mcp/a_spec.rb": "MCP::Tool\n"}, 1, 0, "", 0),
+    ("a comment naming MCP outside app/ is not MCP code", {"app/mcp/a.rb": GOOD, "config/x.rb": "# MCP::Server is not used here\n"}, 1, 0, "", 0),
+    ("a hint named inside a string is not a hint",
+     {"app/mcp/a.rb": "class A < MCP::Tool\n  annotations(title: 'read_only_hint: true, open_world_hint: false')\nend\n"}, 1, 1, "does not set", 0),
+    ("a description naming annotations is not a declaration",
+     {"app/mcp/a.rb": "class A < MCP::Tool\n  description 'annotations(read_only_hint: true, open_world_hint: false)'\nend\n"}, 1, 1, "declares no annotations", 0),
+    ("annotations on another receiver is not this tool's declaration",
+     {"app/mcp/a.rb": "class A < MCP::Tool\n  def self.call(**)\n    meta.annotations(read_only_hint: true, open_world_hint: false)\n  end\nend\n"}, 1, 1, "declares no annotations", 0),
+    ("a one-line class does not borrow the next class's annotations",
+     {"app/mcp/a.rb": "class A < MCP::Tool; end\n" + GOOD}, 2, 1, "tool A", 0),
+    ("an end with a trailing comment closes the class",
+     {"app/mcp/a.rb": "class A < MCP::Tool\n  description 'x'\nend # A\n" + GOOD}, 2, 1, "tool A", 0),
+    ("paren-less annotations are read", {"app/mcp/a.rb": "class A < MCP::Tool\n  annotations read_only_hint: true, open_world_hint: false\nend\n"}, 1, 0, "", 0),
+    ("paren-less annotations continue over lines ending in a comma",
+     {"app/mcp/a.rb": "class A < MCP::Tool\n  annotations read_only_hint: true,\n    open_world_hint: false\nend\n"}, 1, 0, "", 0),
+    ("paren-less annotations with one hint are a finding",
+     {"app/mcp/a.rb": "class A < MCP::Tool\n  annotations read_only_hint: true\nend\n"}, 1, 1, "open_world_hint", 0),
+    ("a one-line class with its own hints is clean",
+     {"app/mcp/a.rb": "class A < MCP::Tool; annotations(read_only_hint: true, open_world_hint: false); end\n"}, 1, 0, "", 0),
     ("a commented-out annotations call is not a declaration",
      {"app/mcp/a.rb": "class A < MCP::Tool\n  # annotations(read_only_hint: true, open_world_hint: false)\nend\n"}, 1, 1, "declares no annotations", 0),
     ("a base that defines call is a served tool, and judged",

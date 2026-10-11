@@ -2,6 +2,7 @@ section: rails-flow
 - **A gate that every MCP tool declares `read_only_hint` and `open_world_hint` — `plugins/rails-flow/scripts/check_mcp_annotations.py`** (#1882, umbrella #1306).
   Unset, the 2026-07-28 schema's defaults describe a destructive, open-world tool, and the `mcp` gem emits all four hints with those
   defaults once any one is declared, so the check reads the Ruby source (`class X < MCP::Tool`, `MCP::Tool.define`, `Sub.define`, `define_tool`,
-  `Class.new(MCP::Tool)`) rather than the wire. Annotations are not inherited, so each concrete tool states its own. A tool list it cannot read
-  (`tools:` not a literal list, `server.tools =`, `<<`) exits 2, never a pass. Registered as the `mcp-annotations` check in `plugins/rails-flow/checks.json`.
+  `Class.new(MCP::Tool)`) rather than the wire. Annotations are not inherited, so each concrete tool states its own. A place it cannot read exits 2,
+  never a pass: `tools:` that is not a literal list, a tool added to `Server#tools` (a Hash) after construction, and MCP code outside `app/` and `lib/`.
+  Registered as the `mcp-annotations` check in `plugins/rails-flow/checks.json`.
   The gem and schema facts it reads are the real `doctrine-verifier`'s verdicts at ruby-sdk v1.6.0 and v1.7.0, recorded with the doctrine sentence in #1892. Gates 3 and 4 of #1306 wait on a built MCP instance (#1885).
