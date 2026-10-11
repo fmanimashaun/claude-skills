@@ -38,7 +38,16 @@ applied to the listing's environment: `NAME=value` before the command, `env NAME
 `> file`, `>> file`, `&> file`, `< file`) are shell, not Playwright, and are stripped. `--only-changed` and `--last-failed` narrow the run by git or last-run state a
 listing cannot see, so a command that uses them is refused, never listed wider than it runs.
 
-WHAT IT REFUSES TO EXECUTE (exit 2, with the reason, never a pass): a command whose arguments are built from a shell variable or a substitution; one that sits in
+THE STATEMENTS BEFORE THE COMMAND are an ALLOWLIST, because the shell has too many builtins to deny one by one (the first denylist missed `eval "export ..."`, `declare -x`,
+`typeset -x`, `command export` and a function that sources a file). Before the runner command a script may have only: the shebang, comments and blank lines; `set -e`,
+`set -u`, `set -o pipefail` (and combinations); a literal `NAME=value` or `export NAME=value` (applied to the listing, above); a literal `cd DIR` when `cwd` is set;
+and CHILD PROCESSES, a simple command whose first word is not a shell builtin or keyword (docker, curl, ./setup.sh, another `npx playwright test`): a child process
+cannot change the runner's environment. Everything else runs in the runner's own shell and is refused (exit 2): any other builtin or keyword (eval, declare, typeset,
+command, builtin, source, `.`, read, printf, echo, local, alias, unset, `set` with any other option), a function definition or call, a group `{ }` or subshell `( )`,
+a chain or pipeline with such a part, and a `$( )` or backtick anywhere. The builtin and keyword set is PINNED in this file (bash 3.2 and 5, dash, zsh) and the selftest
+asserts it covers `bash -c 'compgen -b; compgen -k'` of the bash it runs on, so a newer shell's builtin fails the selftest here instead of slipping through.
+
+WHAT ELSE IT REFUSES TO EXECUTE (exit 2, with the reason, never a pass): a command whose arguments are built from a shell variable or a substitution; one that sits in
 shell control flow (`if`, `for`, `while`, `case`, a function body); one with anything else on its line before it (`[ ... ] && cmd`, `a || cmd`, `x | cmd`); one after
 a heredoc, an `exit` or a `return`; one after a `cd` unless `cwd` is set; a package.json script that pipes or uses `||`. A runner command that is only a listing
 (`--list`) runs nothing and is not a runner. If Playwright cannot be run (not installed, a config error, a timeout, no JSON on stdout) the verdict is "could not check" (exit 2).
@@ -167,9 +176,110 @@ def command_text(source: str, start: int) -> str:
 CLEAN_PREFIX = re.compile(r"^\s*(?:(?:exec|env|cross-env|npx(?:\s+(?:--no-install|-y|--yes))*|pnpm(?:\s+exec)?|yarn(?:\s+run)?|bunx|npm\s+exec(?:\s+--)?|[A-Za-z_][A-Za-z0-9_]*=\S*)\s+)*$")
 ASSIGNMENT = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$")
 NOT_LITERAL = re.compile(r"[$`*?\[]")
+# A PINNED COPY of the words a shell treats as its own (bash 3.2 and 5, dash, zsh): builtins and keywords. A statement whose first word is one of these runs IN the
+# runner's shell and can change what the runner sees (`eval`, `declare -x`, `source`, `command export`, `alias`, a function); any other first word is a child process,
+# which cannot. The selftest asserts the pinned set covers `bash -c 'compgen -b; compgen -k'` of the bash it runs on, so a newer shell's builtin fails the selftest here.
+SHELL_WORDS = frozenset("""
+! . : [ [[ ]] { } - alias autoload bg bind bindkey break builtin bye caller case cd chdir command compadd compcall compctl compdescribe compgen complete compopt compset continue
+coproc declare dirs disable disown do done echo elif else emulate enable esac eval exec exit export false fc fg fi float for function functions getln getopts hash help history
+if in integer jobs kill let limit local log logout mapfile noglob popd print printf private pushd pushln pwd read readarray readonly rehash return sched select set setopt shift
+shopt source suspend test then time times trap true ttyctl type typeset ulimit umask unalias unfunction unhash unlimit unset unsetopt until vared wait whence where which while
+zcompile zformat zle zmodload zparseopts zstyle
+""".split())
+SET_OPTIONS = re.compile(r"^-[eu]+$")
 SOURCED = re.compile(r"(?:^|[;&|(])[ \t]*(?:source|\.)[ \t]+\S", re.M)           # `source f` and `. f`; `./script` is a path, not the dot command
 OPENERS = re.compile(r"(?:^|[;&|(]|\bthen\b|\bdo\b|\belse\b|\bin\b)\s*(if|for|while|until|case|select)\b", re.M)
 CLOSERS = re.compile(r"\b(fi|done|esac)\b")
+
+
+def top_level_split(text: str) -> list[str]:
+    """The statements of a shell fragment: split at a newline, `;`, `&&`, `||`, a single `|` (each pipeline stage is judged alone) and a background `&`, outside quotes.
+    A `&` that is part of a redirection (`2>&1`, `&>file`) does not split."""
+    parts: list[str] = []
+    cur: list[str] = []
+    quote = ""
+    i, n = 0, len(text)
+
+    def flush() -> None:
+        parts.append("".join(cur))
+        cur.clear()
+
+    while i < n:
+        ch = text[i]
+        if quote:
+            cur.append(ch)
+            if ch == quote and text[i - 1] != "\\":
+                quote = ""
+        elif ch in "\"'":
+            quote = ch
+            cur.append(ch)
+        elif ch in "\n;|":
+            flush()
+        elif text.startswith("&&", i):
+            flush()
+            i += 1
+        elif ch == "&" and not (i > 0 and text[i - 1] in "<>") and not (i + 1 < n and text[i + 1] == ">"):
+            flush()
+        else:
+            cur.append(ch)
+        i += 1
+    flush()
+    return parts
+
+
+def statement_refusal(statement: str, allow_cd: bool) -> str | None:
+    """Why one statement before the runner command cannot be accounted for, or None. UNDERSTOOD: `set -e -u -o pipefail`, a literal `NAME=value`, `export` (its values are
+    judged by `exported`), `cd <literal>` when `cwd` is set. A CHILD PROCESS (a first word that is not a shell word: docker, curl, ./setup.sh) cannot change the runner's
+    environment. Everything else, a builtin or a keyword, a function or a group, runs in the runner's shell and is refused."""
+    stmt = statement.strip()
+    if not stmt:
+        return None
+    if stmt[0] in "({":
+        return "a group or a function body"
+    try:
+        words = shlex.split(stmt)
+    except ValueError as exc:
+        return f"it cannot be split ({exc})"
+    i = 0
+    while i < len(words) and ASSIGNMENT.match(words[i]):
+        if NOT_LITERAL.search(words[i].partition("=")[2]):
+            return f"the value of {words[i].partition('=')[0]} is not a plain literal"
+        i += 1
+    if i == len(words):
+        return None
+    command, args = words[i], words[i + 1:]
+    if re.match(r"^[A-Za-z_][\w-]*\s*\(\)", stmt):
+        return "a function definition"
+    if command == "set":
+        k = 0
+        while k < len(args):
+            if SET_OPTIONS.match(args[k]):
+                k += 1
+            elif re.match(r"^-[eu]*o$", args[k]) and k + 1 < len(args) and args[k + 1] == "pipefail":
+                k += 2
+            else:
+                return f"`set {args[k]}` is not one of -e, -u, -o pipefail"
+        return None
+    if command == "export":
+        return None
+    if command == "cd":
+        if allow_cd and len(args) == 1 and not NOT_LITERAL.search(args[0]):
+            return None
+        return "a `cd` that is not to a literal directory with `cwd` set"
+    if command in SHELL_WORDS:
+        return f"`{command}` is a shell builtin or keyword, which runs in the runner's own shell"
+    return None
+
+
+def unaccounted(prior: str, allow_cd: bool) -> str | None:
+    """Why the text before a runner command (a shell script's earlier statements) cannot be fully accounted for, or None."""
+    if "$(" in prior or "`" in prior:
+        return "a command substitution comes before it, so what runs is not knowable here"
+    for statement in top_level_split(prior):
+        why = statement_refusal(statement, allow_cd)
+        if why:
+            return f"a statement before it cannot be accounted for ({statement.strip()[:40]!r}): {why}. Only `set -e/-u/-o pipefail`, literal assignments and exports, `cd <literal>` (with `cwd` set) and child processes may come before it"
+    return None
 
 
 def shell_refusal(prior: str, prefix: str, allow_cd: bool) -> str | None:
@@ -186,7 +296,7 @@ def shell_refusal(prior: str, prefix: str, allow_cd: bool) -> str | None:
         return "a `source` or `.` comes before it, and an env file can export anything the config reads, so the environment it runs in is not knowable here"
     if not allow_cd and re.search(r"(?:^|[;&|(\s])cd\s", prior):
         return "a `cd` comes before it, so the directory it runs in is unknown (set `cwd` under `e2e_paths:` to say which)"
-    return None
+    return unaccounted(prior, allow_cd)
 
 
 def script_refusal(prefix: str, allow_cd: bool) -> str | None:
@@ -199,7 +309,8 @@ def script_refusal(prefix: str, allow_cd: bool) -> str | None:
         return "a `source` or `.` comes before it, and an env file can export anything the config reads, so the environment it runs in is not knowable here"
     if not allow_cd and re.search(r"(?:^|[;&|(\s])cd\s", prefix):
         return "a `cd` comes before it, so the directory it runs in is unknown (set `cwd` under `e2e_paths:` to say which)"
-    return None
+    parts = re.split(r"&&|;", prefix)
+    return unaccounted("\n".join(parts[:-1]), allow_cd)
 
 
 def assignments(words: str) -> tuple[dict[str, str], str | None]:
@@ -285,7 +396,7 @@ def runner_commands(relpath: str, text: str, allow_cd: bool = False) -> list[dic
         if not why:
             got, why = assignments(prefix)
             env.update(got)
-        found.append(_command(relpath, command_text(source, m.end()), refusal or why, env))
+        found.append(_command(relpath, command_text(source, m.end()), why or refusal, env))
     return found
 
 
@@ -623,6 +734,58 @@ def selftest(match: str | None = None, real: str | None = None) -> int:
             failures.append(f"a redirection ({label}) is shell, not a Playwright argument: the listing arguments were {[c[1] for c in lister.calls]}")
     row("a feature named only by a runner's own listing (its environment changes what Playwright finds) is named, not missing",
         {"bin/e2e": "#!/bin/sh\nQA_TARGET=image npx playwright test --grep @REQ-001\n"}, {(): [OTHER], (GREP, ENV): [NAMED]}, 0, None)
+    # the statements before the command: an allowlist (understood, or a child process); every other builtin or keyword runs in the runner's own shell and is refused
+    for label, script, reason in (
+        ('an `eval "export ..."` before the command is refused', '#!/bin/sh\neval "export QA_TARGET=image"\nnpx playwright test --grep @REQ-001\n', "`eval` is a shell builtin or keyword"),
+        ("a `declare -x` before the command is refused", "#!/bin/bash\ndeclare -x QA_TARGET=image\nnpx playwright test --grep @REQ-001\n", "`declare` is a shell builtin or keyword"),
+        ("a `typeset -x` before the command is refused", "#!/bin/bash\ntypeset -x QA_TARGET=image\nnpx playwright test --grep @REQ-001\n", "`typeset` is a shell builtin or keyword"),
+        ("a `command export` before the command is refused", "#!/bin/sh\ncommand export QA_TARGET=image\nnpx playwright test --grep @REQ-001\n", "`command` is a shell builtin or keyword"),
+        ("a `builtin export` before the command is refused", "#!/bin/bash\nbuiltin export QA_TARGET=image\nnpx playwright test --grep @REQ-001\n", "`builtin` is a shell builtin or keyword"),
+        ("a function that sources an env file, then called, is refused", "#!/bin/sh\nsetup() { . qa/image.env; }\nsetup\nnpx playwright test --grep @REQ-001\n", "a statement before it cannot be accounted for"),
+        ("a `printf` before the command is refused", "#!/bin/sh\nprintf x\nnpx playwright test --grep @REQ-001\n", "`printf` is a shell builtin or keyword"),
+        ("an `echo` before the command is refused (a builtin)", "#!/bin/sh\necho hi\nnpx playwright test --grep @REQ-001\n", "`echo` is a shell builtin or keyword"),
+        ("a `read` before the command is refused", "#!/bin/sh\nread x\nnpx playwright test --grep @REQ-001\n", "`read` is a shell builtin or keyword"),
+        ("a `local` before the command is refused", "#!/bin/sh\nlocal x=1\nnpx playwright test --grep @REQ-001\n", "`local` is a shell builtin or keyword"),
+        ("an `alias` before the command is refused", "#!/bin/sh\nalias npx=true\nnpx playwright test --grep @REQ-001\n", "`alias` is a shell builtin or keyword"),
+        ("a function defined with a subshell body is refused", "#!/bin/sh\nsetup() ( docker compose up -d )\nsetup\nnpx playwright test --grep @REQ-001\n", "a function definition"),
+        ("a builtin after a NAME=value prefix is refused", "#!/bin/sh\nFOO=bar eval x\nnpx playwright test --grep @REQ-001\n", "`eval` is a shell builtin or keyword"),
+        ("a non-literal NAME=value prefix before a child process is refused", "#!/bin/sh\nFOO=$X docker run app\nnpx playwright test --grep @REQ-001\n", "is not a plain literal"),
+        ("a group `{ ...; }` before the command is refused", "#!/bin/sh\n{ true; }\nnpx playwright test --grep @REQ-001\n", "a group or a function body"),
+        ("a subshell `( ... )` before the command is refused", "#!/bin/sh\n(true)\nnpx playwright test --grep @REQ-001\n", "a group or a function body"),
+        ("a chain with a builtin part before the command is refused", "#!/bin/sh\ndocker compose up -d && eval x\nnpx playwright test --grep @REQ-001\n", "`eval` is a shell builtin or keyword"),
+        ("a pipe into a builtin before the command is refused", "#!/bin/sh\ncat tags | read first\nnpx playwright test --grep @REQ-001\n", "`read` is a shell builtin or keyword"),
+        ("a command substitution anywhere before the command is refused", "#!/bin/sh\ndocker run $(cat image)\nnpx playwright test --grep @REQ-001\n", "a command substitution comes before it"),
+        ("a backtick substitution before the command is refused", "#!/bin/sh\ndocker run `cat image`\nnpx playwright test --grep @REQ-001\n", "a command substitution comes before it"),
+        ("`set +e` before the command is refused", "#!/bin/sh\nset +e\nnpx playwright test --grep @REQ-001\n", "is not one of -e, -u, -o pipefail"),
+        ("`set -x` before the command is refused", "#!/bin/sh\nset -x\nnpx playwright test --grep @REQ-001\n", "is not one of -e, -u, -o pipefail"),
+        ("`set -o noglob` before the command is refused", "#!/bin/sh\nset -o noglob\nnpx playwright test --grep @REQ-001\n", "is not one of -e, -u, -o pipefail"),
+        ("a `cd` to a variable is refused even when cwd is set", "#!/bin/sh\ncd $DIR\nnpx playwright test --grep @REQ-001\n", "a `cd` that is not to a literal directory"),
+    ):
+        lister = row(label, {"bin/e2e": script, "qa/qa.config.yml": "e2e_paths:\n  cwd: qa\n  runners:\n    - bin/e2e\n" if "$DIR" in script else CONFIG}, {(): [NAMED]}, 2, reason)
+        if lister is not None and any(call[1] for call in lister.calls):
+            failures.append(f"{label}: Playwright was run for a command that must not be executed: {lister.calls}")
+    row("a package.json script with an eval before the command is refused", {"qa/package.json": json.dumps({"scripts": {"e2e": "eval x && playwright test --grep @REQ-001"}}),
+        "qa/qa.config.yml": "e2e_paths:\n  runners:\n    - qa/package.json\n"}, {(): [NAMED]}, 2, "`eval` is a shell builtin or keyword")
+    for label, script in (
+        ("child processes before the command are allowed (docker, curl, ./setup.sh)", "#!/bin/sh\ndocker compose up -d\ncurl -sf http://localhost:3000/up\n./setup.sh\nnpx playwright test --grep @REQ-001\n"),
+        ("`set -euo pipefail` and literal assignments and exports before the command are understood", "#!/bin/sh\nset -euo pipefail\nset -e\nPORT=3000\nexport PORT\nQA_TARGET=image\nexport QA_TARGET\ndocker compose up -d\nnpx playwright test --grep @REQ-001\n"),
+        ("a child process with its own NAME=value prefix and redirections is allowed", "#!/bin/sh\nFOO=bar docker run --rm app 2>&1\nnpx playwright test --grep @REQ-001\n"),
+        ("a child process in a pipeline is allowed", "#!/bin/sh\ndocker logs app | tail -n 5\nnpx playwright test --grep @REQ-001\n"),
+        ("a chain of child processes is allowed", "#!/bin/sh\ndocker compose up -d && curl -sf http://localhost:3000/up; ./setup.sh\nnpx playwright test --grep @REQ-001\n"),
+    ):
+        lister = row(label, {"bin/e2e": script}, {(): [NAMED], (GREP, ENV): [NAMED], GREP: [NAMED]}, 0, None)
+    row("a literal cd is allowed when cwd is set", {"bin/e2e": "#!/bin/sh\ncd qa\nnpx playwright test --grep @REQ-001\n", "qa/qa.config.yml": "e2e_paths:\n  cwd: qa\n  runners:\n    - bin/e2e\n"},
+        {(): [NAMED], GREP: [NAMED]}, 0, None)
+    row("a child process before a NAME=value prefix: the environment is still applied", {"bin/e2e": "#!/bin/sh\ndocker compose up -d\nQA_TARGET=image npx playwright test --grep @REQ-001\n"},
+        {(): [NAMED], (GREP, ENV): [NAMED], GREP: [OTHER]}, 0, None)
+    if not match or "the pinned shell words cover the live shell" in match:
+        try:
+            live = subprocess.run(["bash", "-c", "compgen -b; compgen -k"], capture_output=True, text=True, timeout=30, stdin=subprocess.DEVNULL).stdout.split()
+        except (OSError, subprocess.SubprocessError):
+            live = []
+        missing = sorted(set(live) - SHELL_WORDS)
+        if missing:
+            failures.append(f"the pinned shell words cover the live shell: this bash has builtins or keywords the check does not know: {missing}")
     # the baseline ratchet
     base_files = {"qa/e2e-unselected-baseline.txt": "# size: 1\nREQ-001\n"}
     row("a baselined feature that is named nowhere is clean", base_files, {(): [OTHER], ARGS: [OTHER]}, 0, None)
@@ -732,6 +895,16 @@ def real_battery(modules: Path) -> list[str]:
          {"bin/e2e": sh("echo 'export QA_TARGET=image' > qa/image.env\n. qa/image.env\nnpx playwright test"), "qa/playwright.config.ts": ENVCONFIG}),
         ("an env file sourced with `source file` before the command is refused", 2,
          {"bin/e2e": sh("source qa/image.env\nnpx playwright test"), "qa/image.env": "export QA_TARGET=image\n", "qa/playwright.config.ts": ENVCONFIG}),
+        ("an `eval export` before the command is refused", 2, {"bin/e2e": sh('eval "export QA_TARGET=image"\nnpx playwright test'), "qa/playwright.config.ts": ENVCONFIG}),
+        ("a `declare -x` before the command is refused", 2, {"bin/e2e": sh("declare -x QA_TARGET=image\nnpx playwright test"), "qa/playwright.config.ts": ENVCONFIG}),
+        ("a `typeset -x` before the command is refused", 2, {"bin/e2e": sh("typeset -x QA_TARGET=image\nnpx playwright test"), "qa/playwright.config.ts": ENVCONFIG}),
+        ("a `command export` before the command is refused", 2, {"bin/e2e": sh("command export QA_TARGET=image\nnpx playwright test"), "qa/playwright.config.ts": ENVCONFIG}),
+        ("a function that sources an env file, then called, is refused", 2,
+         {"bin/e2e": sh("setup() { . qa/image.env; }\nsetup\nnpx playwright test"), "qa/image.env": "export QA_TARGET=image\n", "qa/playwright.config.ts": ENVCONFIG}),
+        ("docker and ./setup.sh before the command are allowed; the env prefix still decides: not selected under image", 1,
+         {"bin/e2e": sh("docker compose up -d\n./setup.sh\nQA_TARGET=image npx playwright test"), "qa/playwright.config.ts": ENVCONFIG}),
+        ("docker before the command with no environment set: the spec is selected", 0,
+         {"bin/e2e": sh("docker compose up -d\nnpx playwright test"), "qa/playwright.config.ts": ENVCONFIG}),
         ("--only-changed is refused", 2, {"bin/e2e": sh('npx playwright test --only-changed --grep "@REQ-001"')}),
         ("--last-failed is refused", 2, {"bin/e2e": sh("npx playwright test --last-failed")}),
         ("a 2>&1 redirect is shell, not a file filter", 0, {"bin/e2e": sh('npx playwright test --grep "@REQ-001" 2>&1')}),
