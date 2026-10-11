@@ -482,6 +482,30 @@ def run() -> int:
                     f"shipped guard's paths are plugin-relative; if it cannot be expressed that "
                     f"way the guard belongs in scripts/mutations/")
 
+    # ---- 0b. A STAGED `needs` FILE KEEPS ITS MODE (#1893) ---------------------------------
+    # `shutil.copyfile` drops the executable bit. A guard whose fixture runs a staged script by path, or tests it with `-x`, then fails its UNMUTATED selftest and reads INERT
+    # (git_shim and git_shim_hook, v1.156.0 sweep: "env file NOT written", "THE REPOSITORY CHANGED") although nothing was wrong with the shim.
+    modeguard, moderoot = _fixture_guard(())
+    (moderoot / "bin").mkdir()
+    (moderoot / "bin" / "tool").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    (moderoot / "bin" / "tool").chmod(0o755)
+    (moderoot / "bin" / "plain").write_text("data\n", encoding="utf-8")
+    (moderoot / "bin" / "plain").chmod(0o644)
+    modeguard = mc.Guard(name="fixture-mode", subject=modeguard.subject, selftest=modeguard.selftest, needs=("bin/tool", "bin/plain"))
+    saved_repo = mc.REPO
+    mc.REPO = moderoot
+    try:
+        stagedir = Path(tempfile.mkdtemp(prefix="mutcheck-selftest-stage-"))
+        mc.stage(modeguard, stagedir)
+        _tick()
+        if not os.access(stagedir / "bin" / "tool", os.X_OK):
+            FAILURES.append("a staged `needs` file that is executable in the repo is not executable once staged (shutil.copyfile drops the mode): a fixture that runs or tests it reads it as missing")
+        _tick()
+        if os.access(stagedir / "bin" / "plain", os.X_OK):
+            FAILURES.append("a staged `needs` file that is NOT executable in the repo became executable once staged")
+    finally:
+        mc.REPO = saved_repo
+
     # ---- 1. a real break must be CAUGHT, and attributed to the right fixture ------------
     guard, root = _fixture_guard((
         mc.Mutation("odd numbers reported even", "n % 2 == 0", "True", "fixture-odd"),

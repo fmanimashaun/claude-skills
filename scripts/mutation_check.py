@@ -215,6 +215,9 @@ def stage(guard: Guard, workdir: Path) -> Path:
             shutil.copytree(source, target, dirs_exist_ok=True)
         else:
             shutil.copyfile(source, target)
+            # `copyfile` copies the BYTES and nothing else: a script a fixture runs by path (`git-shim/git`, a hook) would lose its executable bit, and a fixture that tests for
+            # `-x` or execs it reads that as "the thing is absent". git_shim and git_shim_hook went INERT in the v1.156.0 sweep for exactly this (#1893).
+            shutil.copymode(source, target)
     return workdir / guard.selftest
 
 
