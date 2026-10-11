@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+# rails-flow gh shim (#1839, the guarantee behind #1565's tripwire; the owner's ruling on #1793). Put FIRST on PATH for the Bash tool by the SessionStart hook, beside the git shim,
+# so it sees gh's arguments AFTER the shell has expanded them: `x=ready; gh pr $x 5`, `/usr/bin/env gh pr ready 5`, `gh pr rea{d,}y 5`, `echo 'gh pr ready 5' | sh`,
+# `bash <<< 'gh pr ready 5'` and `git -c alias.x='!gh pr ready 5' x` all arrive here as the same argv. The text match in `guard-pr-ready.sh` cannot settle those spellings and is a
+# tripwire; this is where the effect happens. Everything it does not guard is exec'd with its argv unchanged.
+#
+# REFUSES `gh pr ready` (not `--undo`) unless the sweep record for the HEAD of the checkout it runs in is green with zero skips, by the SAME judgement as the hook
+# (`hooks/scripts/lib/pr_ready_guard.py`, called with `--shim`): in force only where project_gates runs; a repository named by -R/--repo, a URL or GH_REPO is refused (a local
+# record cannot stand for it); any argument that is not a plain PR number or branch is refused.
+# ALIASES: a gh alias (`gh alias set`) hides `pr ready` behind a name gh expands itself, so an argument that is not a gh command is resolved with `gh alias list` and judged.
+#
+# FAILS CLOSED, for `pr ready` only: where python3 or the judge is missing the command is refused, because a guarantee that cannot be checked is not a pass. Every other
+# gh command is exec'd untouched, so a missing python3 never blocks `gh pr list`.
+# LIMITS, stated (a tripwire, not a boundary; the server's required checks are the backstop): an absolute /usr/bin/gh, `command gh`, `env -i gh` or a non-shell exec of gh
+# never reach this file (PATH is not consulted); a session where the SessionStart hook did not run; any process that is not the Bash tool; GitHub's own web UI and API.
+# AUDITED ESCAPE: RAILS_FLOW_GH_OK=1 runs the real gh and says so.
+# bash 3.2 compatible; needs only bash (and python3 for a `pr ready`).
+set -f
+ORIG=("$@")      # the arguments as given
+
+# The shim's own directory, without `dirname`.
+self="${BASH_SOURCE[0]}"
+case "$self" in */*) self_dir="$(cd "${self%/*}" 2>/dev/null && pwd -P)" ;; *) self_dir="$(pwd -P)" ;; esac
+
+# The real gh: the first executable `gh` on PATH that is not this directory.
+real=""
+old_ifs="$IFS"; IFS=:
+for d in $PATH; do
+  [ -n "$d" ] || d="."
+  [ -x "$d/gh" ] && [ ! -d "$d/gh" ] || continue
+  dd="$(cd "$d" 2>/dev/null && pwd -P)" || continue
+  [ "$dd" = "$self_dir" ] && continue
+  real="$d/gh"; break
+done
+IFS="$old_ifs"
+[ -n "$real" ] || { echo "gh-shim (rails-flow): no real gh found on PATH" >&2; exit 127; }
+
+if [ "${RAILS_FLOW_GH_OK:-}" = 1 ]; then
+  echo "gh-shim (rails-flow): RAILS_FLOW_GH_OK=1, so this gh command is not checked." >&2
+  exec "$real" "${ORIG[@]}"
+fi
+
+# Does this argv run `pr ready`? `pr`, then (past any flags) `ready`.
+has_pr_ready() {
+  local seen_pr=0 a
+  for a in "$@"; do
+    if [ "$seen_pr" = 1 ]; then
+      case "$a" in -*) continue ;; esac
+      [ "$a" = ready ] && return 0
+      seen_pr=0
+    fi
+    [ "$a" = pr ] && seen_pr=1
+  done
+  return 1
+}
+
+# The first argument that is not a flag, when it is not one of gh's own commands: it may be an alias. Its expansion is read from `gh alias list` ("name: expansion").
+alias_hides_pr_ready() {
+  local first="" a
+  for a in "$@"; do case "$a" in -*) ;; *) first="$a"; break ;; esac; done
+  [ -n "$first" ] || return 1
+  case "$first" in
+    pr|issue|repo|release|run|workflow|api|auth|config|alias|browse|codespace|completion|extension|gist|gpg-key|label|org|project|search|secret|ssh-key|status|variable|cache|attestation|agent-task|licenses|preview|ruleset|help|version) return 1 ;;
+  esac
+  local line expansion
+  while IFS= read -r line; do
+    case "$line" in "$first: "*) expansion="${line#"$first": }"; break ;; esac
+  done < <("$real" alias list 2>/dev/null)
+  [ -n "${expansion:-}" ] || return 1
+  # shellcheck disable=SC2086
+  has_pr_ready $expansion
+}
+
+judge=0
+if has_pr_ready "${ORIG[@]}" || alias_hides_pr_ready "${ORIG[@]}"; then judge=1; fi
+[ "$judge" = 1 ] || exec "$real" "${ORIG[@]}"
+
+# An alias's own arguments are not in ORIG: judge the EXPANDED words when the shim came through an alias.
+argv=("${ORIG[@]}")
+if ! has_pr_ready "${ORIG[@]}"; then
+  first=""; for a in "${ORIG[@]}"; do case "$a" in -*) ;; *) first="$a"; break ;; esac; done
+  while IFS= read -r line; do case "$line" in "$first: "*) argv=(${line#"$first": }); break ;; esac; done < <("$real" alias list 2>/dev/null)
+  rest=("${ORIG[@]}"); for i in "${!rest[@]}"; do [ "${rest[$i]}" = "$first" ] && { unset "rest[$i]"; break; }; done
+  argv=("${argv[@]}" "${rest[@]}")
+fi
+
+lib="$self_dir/../hooks/scripts/lib/pr_ready_guard.py"
+py=""
+old_ifs="$IFS"; IFS=:
+for d in $PATH; do [ -n "$d" ] || d="."; [ -x "$d/python3" ] && [ ! -d "$d/python3" ] && { py="$d/python3"; break; }; done
+IFS="$old_ifs"
+if [ -z "$py" ] || [ ! -f "$lib" ]; then
+  echo "gh-shim (rails-flow): refused \`gh ${ORIG[*]}\`: python3 or lib/pr_ready_guard.py is missing, so the sweep record for HEAD cannot be checked (RAILS_FLOW_GH_OK=1 to override, audited)." >&2
+  exit 1
+fi
+if "$py" "$lib" --shim "${argv[@]}"; then
+  exec "$real" "${ORIG[@]}"
+fi
+echo "gh-shim (rails-flow): refused \`gh ${ORIG[*]}\`. A deliberate exception: RAILS_FLOW_GH_OK=1 gh ... (audited)." >&2
+exit 1

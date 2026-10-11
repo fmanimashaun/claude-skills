@@ -198,6 +198,11 @@ def main() -> int:
     root = git(where, "rev-parse", "--show-toplevel")
     if not root or not in_force(root):
         return 0
+    return judge_record(root, args)
+
+
+def judge_record(root: str, args: str) -> int:
+    """The sweep record for the HEAD of `root`: 0 when it is green with zero skips, else a refusal. One judgement for the hook and for the `gh` shim (#1839)."""
     head = git(root, "rev-parse", "HEAD")
     if not head:
         return refuse(f"HEAD of {root} could not be read.", args)
@@ -227,5 +232,42 @@ def main() -> int:
     return 0
 
 
+SHIM_FLAGS = ("-R", "--repo")
+
+
+def shim_judge(argv: list[str], cwd: str, gh_repo: str = "") -> int:
+    """Judge one `gh pr ready` from its FINAL argv, which is what `git-shim/gh` receives after the shell has expanded the command (#1839, the guarantee behind #1565's tripwire).
+
+    `argv` is everything after `gh`. The directory is where gh will run (the shim's own cwd), so no `cd` has to be followed and nothing is parsed from shell text. The rules are the
+    hook's: in force only where project_gates runs; `--undo` passes; a repository named by flag, URL or GH_REPO cannot be matched to a local record; every other word must be a plain PR
+    number or branch; then the record for HEAD must be green with zero skips. Returns 0 to allow, 2 to refuse (the reason is on stderr)."""
+    root = git(cwd, "rev-parse", "--show-toplevel") if os.path.isdir(cwd) else None
+    if not root or not in_force(root):
+        return 0
+    try:
+        i = next(k for k, w in enumerate(argv) if w == "pr" and next((x for x in argv[k + 1:] if not x.startswith("-")), None) == "ready")
+    except StopIteration:
+        return refuse("a `gh pr ready` this shim could not place in its arguments.", " ".join(argv))
+    before, rest = argv[:i], argv[i + 1:]
+    j = next(k for k, w in enumerate(rest) if w == "ready")
+    between, after = rest[:j], rest[j + 1:]
+    shown = " ".join(after)
+    if "--undo" in after and "--" not in after[:after.index("--undo")]:
+        return 0                                    # marking a PR draft again needs no sweep
+    words = before + between + after
+    if any(w in SHIM_FLAGS or w.startswith(("--repo=", "-R")) or "/pull/" in w for w in words) or gh_repo:
+        return refuse(EXPLICIT + ".", shown)
+    cut = False
+    for w in between + after:
+        if w == "--" and not cut and w in after:
+            cut = True
+            continue
+        if not plain_word(w):
+            return refuse(f"argument {w} is not a plain PR number or branch; run `gh pr ready <number>` from the PR's own checkout, after its sweep.", shown)
+    return judge_record(root, shown)
+
+
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "--shim":
+        sys.exit(shim_judge(sys.argv[2:], os.getcwd(), os.environ.get("RF_INHERITED_GH_REPO") or os.environ.get("GH_REPO", "")))
     sys.exit(main())
