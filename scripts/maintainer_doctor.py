@@ -470,6 +470,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("qa-flow evidence manifest", ("python3", "plugins/qa-flow/scripts/evidence_manifest.py", "--selftest")),
     # #1835. The release-image robot's scaffolded TypeScript helpers ship into projects; their node:test files run here.
     ("qa-flow robot helpers", ("python3", "plugins/qa-flow/scripts/scaffold_ts_tests.py", "--selftest")),
+    # #1837. The robot descriptor's rules, and the image runner driven end to end with stub curl/npx (fails closed).
+    ("qa-flow robot descriptor", ("python3", "plugins/qa-flow/scripts/robot_descriptor.py", "--selftest")),
     # #1447. A TypeScript e2e suite is strict, type-checked in CI, and has no explicit `any`.
     ("qa-flow ts strict", ("python3", "plugins/qa-flow/scripts/check_ts_strict.py", "--selftest")),
     ("qa-flow route crawl", ("python3", "plugins/qa-flow/scripts/crawl_report.py", "--selftest")),
