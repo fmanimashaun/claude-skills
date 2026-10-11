@@ -478,6 +478,7 @@ def selftest(match: str | None = None) -> int:
     scenario("a comment that says playwright test is not a runner (it would select everything)", {"bin/e2e": '#!/bin/sh\n# npx playwright test\nnpx playwright test --grep "@qa-image"   # not @REQ-001\n'}, 1,
              "no runner selects")
     scenario("a # inside a quoted grep is part of the pattern, not a comment", {"bin/e2e": '#!/bin/sh\nnpx playwright test --grep "#x|@REQ-001"\n'}, 0, None)
+    scenario("a # in the middle of a word is not a comment", {"bin/e2e": '#!/bin/sh\nnpx playwright test --grep @REQ-001#frag\n'}, 1, "no runner selects")
     scenario("a line continuation joins the command", {"bin/e2e": '#!/bin/sh\nnpx playwright test \\\n  --grep "@REQ-001"\n'}, 0, None)
     scenario("a package.json script is a runner", {"qa/package.json": json.dumps({"scripts": {"smoke": "playwright test --grep @qa-image"}}),
              "qa/qa.config.yml": 'e2e_paths:\n  runners:\n    - qa/package.json\n'}, 1, "no runner selects")
@@ -492,8 +493,8 @@ def selftest(match: str | None = None) -> int:
              "bin/e2e": '#!/bin/sh\nnpx playwright test\n'}, 1, "no runner selects")
     scenario("a project-level grep in the config cannot be read", {"qa/playwright.config.ts": "export default defineConfig({ projects: [{ name: 'a', grep: /@x/ }] });\n",
              "bin/e2e": '#!/bin/sh\nnpx playwright test --grep "@qa-image"\n'}, 3, "project in the config")
-    scenario("a finding is still reported when another runner cannot be read", {"qa/e2e/auth.spec.ts": 'test("@REQ-009 other", async () => {});\n',
-             "bin/e2e": '#!/bin/sh\nnpx playwright test --grep "$X"\n'}, 1, "no active spec test names it")
+    scenario("a finding is still reported when another feature cannot be decided", {"qa/requirements.yml": project(entry("REQ-001"), entry("REQ-002")),
+             "bin/e2e": '#!/bin/sh\nnpx playwright test --grep "$X"\n'}, 1, "REQ-002: a feature, but no active spec test names it")
     scenario("a skipped test names nothing", {"qa/e2e/auth.spec.ts": 'test.skip("@REQ-001 signs in", async () => {});\n'}, 1, "no active spec test names it")
     scenario("a fixme test names nothing", {"qa/e2e/auth.spec.ts": 'test.fixme("@REQ-001 signs in", async () => {});\n'}, 1, "no active spec test names it")
     scenario("a skipped describe skips every test inside it", {"qa/e2e/auth.spec.ts": 'test.describe.skip("group", () => {\n test("@REQ-001 in", async () => {});\n});\n'}, 1,
@@ -503,9 +504,10 @@ def selftest(match: str | None = None) -> int:
     scenario("a tag option array on a test names it", {"qa/e2e/auth.spec.ts": 'test("works", { tag: ["@a", "@REQ-001"] }, async ({ page }) => {});\n'}, 0, None)
     scenario("an id inside a longer token is not named (REQ-0011 is not REQ-001)", {"qa/e2e/auth.spec.ts": 'test("@REQ-0011 other", async () => {});\n'}, 1,
              "no active spec test names it")
-    scenario("the id in a comment names nothing", {"qa/e2e/auth.spec.ts": '// @REQ-001 todo\ntest("other", async () => {});\n'}, 1, "no active spec test names it")
-    scenario("an id only in the file path is not named", {"qa/e2e/REQ-001.spec.ts": 'test("works", async () => {});\n', "qa/e2e/auth.spec.ts": 'test("x", async () => {});\n'}, 1,
+    scenario("a commented-out test names nothing", {"qa/e2e/auth.spec.ts": '// test("@REQ-001 old", async () => {});\n/* test("@REQ-001 older", async () => {}); */\ntest("other", async () => {});\n'}, 1,
              "no active spec test names it")
+    scenario("an id only in the file path is not named", {"qa/e2e/REQ-001/login.spec.ts": 'test("works", async () => {});\n', "qa/e2e/auth.spec.ts": 'test("x", async () => {});\n',
+             "bin/e2e": '#!/bin/sh\nnpx playwright test\n'}, 1, "no active spec test names it")
     scenario("a requirement that is not a feature needs no spec", {"qa/requirements.yml": project(entry("REQ-001", extra=""))}, 0, None)
     scenario("an owner-decision feature needs no spec", {"qa/requirements.yml": project(entry("REQ-001", status="owner-decision"))}, 0, None)
     scenario("a baselined feature with no spec is clean", {"qa/e2e/auth.spec.ts": 'test("x", async () => {});\n', "qa/e2e-unselected-baseline.txt": "# size: 1\nREQ-001\n"}, 0, None)
