@@ -91,3 +91,114 @@ in either `ENV` or the encrypted credentials file (the edge guide lists `require
   follow the new default.
 - The 8.2 release notes page names none of the above; the evidence is the pull requests and `main`'s
   `actionview/CHANGELOG.md`. Do not cite the Herb site's "ships with Rails 8.2" line as a release claim.
+
+# Round 2 (#1756) — read on 2026-10-12 from `main` at `d05a45b41edf679d2dfba4e40366af80628626ff`
+
+Everything below is **[On main, unreleased]** unless a row says *[Released in 8.1]*, and each item was checked against
+`v8.1.4` and `8-1-stable` for its absence there. The verdict tables are in
+`docs/evidence/audits/2026-10-12-rails-8-2-readiness-round-2.md`. The 8.2 release notes page names almost none of
+these: the evidence is the pull requests, `main`'s CHANGELOGs and `guides/source`. Do not put any of it in an app that
+runs a released Rails.
+
+## Floors and removals
+
+- **Ruby >= 3.3.5** (`rails.gemspec`; 8.1 requires >= 3.2.0; rails/rails#58908). **PostgreSQL 10.0** is the adapter's
+  documented minimum (8.1: 9.5; #55282).
+- **A dynamic `:controller` or `:action` route segment raises `ArgumentError` at draw time** (deprecated since Rails 5.0;
+  #58893). A Regexp for either also raises, `get "show", to: PhotosController` now needs `action: "show"`, and
+  `Request#controller_class` raises `ActionDispatch::MissingController` with no `:controller` param. 8.1 still draws
+  such routes. With `config.eager_load` on, boot **logs a warning** (not an error) for each route that references a
+  missing controller.
+- **The Rails 6.1 Active Record Marshal format is removed** (#57382): `ActiveRecord::Marshalling.format_version` is
+  `7.1`, the only value accepted; 6.1 raises `ArgumentError`. 8.1.4 still defaults to 6.1 and accepts both. Main's
+  `activerecord/CHANGELOG.md` has no entry for it.
+- **An enum's `not_<value>` scope includes rows where the column is NULL** (`IS DISTINCT FROM`; #55912, #55954); in 8.1
+  it is `where.not` and excludes them. Read an upgraded `Product.not_active` as "everything but active, NULLs too".
+
+## HTTP `QUERY` and `bin/rails query`
+
+- **`QUERY` verb** (#57973): `query "search", to: "search#index"` (or `via: :query`), `request.query?`, an
+  integration-test `query` helper. QUERY requests are **exempt from CSRF forgery protection** only when the method
+  really is QUERY (a `_method=query` override through a form POST is still verified), and the database selector sends
+  them to the **replica** like GET and HEAD. `via: :all` routes now receive QUERY. The app server must accept the
+  method (Puma needs `supported_http_methods`).
+- **`bin/rails query`** (#57156) runs read-only queries (Active Record expressions or `--sql`), prints JSON, connects
+  to the reading role by default and prevents writes; subcommands `schema <table>`, `models`, `explain`. The JSON
+  output comes from the changelog text; the command was not run.
+
+## `load_defaults "8.2"` (and two options that are not defaults)
+
+Set by the 8.2 defaults (`railties/lib/rails/application/configuration.rb`, `when "8.2"`; `configuring.md`):
+
+| setting | what it does | default before 8.2 | 8.2 default |
+|---|---|---|---|
+| `ActiveSupport.raise_on_invalid_time_zone_parse` (a module setting, not under `config.`; #57211) | `TimeZone#parse` raises `ArgumentError` for a string with no recognisable date (`"foobar"` was `nil`) | `false` | `true` |
+| `config.action_dispatch.strict_accept_header` (#57579) | an `Accept` that also holds `*/*` keeps its specific types (`application/json, */*` returns JSON) instead of forcing HTML | `false` | `true` |
+| `config.active_record.postgresql_adapter_decode_bytea` / `..._decode_money` | manual queries (`select_value`) return bytea as a binary String and money as `BigDecimal` instead of a UTF-8 String | `false` | `true` |
+| `config.active_storage.analyze` | `:immediately` analyses before validation (metadata such as width is available to validations); `:later`, `:lazily` | not set | `:immediately` |
+| `config.active_storage.s3_public_uploads_via_acl` | S3 sets `public-read` on `public: true` uploads | `true` | `false`: declare `upload: { acl: "public-read" }` on the service where you rely on it |
+| `config.action_dispatch.default_headers` (#56564) | `X-XSS-Protection` is no longer in the defaults | sent as `"0"` since 7.0 | absent |
+
+- **Not `load_defaults` items:** `config.active_record.shuffle_unordered_selects` (#58548) is opt-in and `false`; when on
+  (meant for test and development) it shuffles the rows of generated `SELECT`s that have no `ORDER BY`, best effort:
+  raw SQL, `find`, `find_by`, association loads and `LIMIT 1` are unaffected. `config.active_storage.draw_direct_upload_route`
+  (#58377, default `true`) turns off only the direct-upload route; with it `false`, `rich_textarea` omits
+  `data-direct-upload-url` unless given and Trix hides its attach button and ignores dropped files.
+- **`ActiveJob::Attributes`** adds `ActiveModel::Attributes`-style typed `attribute` declarations to jobs: values are
+  serialised into the job data and restored on deserialisation, so they survive retries and `ActiveJob::Continuation`
+  steps. Included by `ActiveJob::Continuable`, usable alone; custom types must serialise as job arguments. Not a config
+  default.
+
+## Secrets and hardening
+
+- **Rotating `secret_key_base`** (the Security guide on `main`, ~lines 331-386; the guide section is new, **the API is not**):
+  `app.message_verifiers.rotate(secret_key_base: old)` in a `config.before_initialize` block is *[Released in 8.1]*
+  (the `Application#message_verifiers` API comment in 8.1.4). The recipe puts the new value in `secret_key_base`, keeps
+  the old one in credentials (`old_secret_key_base`), rotates before any verifier is built, and removes the rotation
+  once old messages have expired. Cookies rotate **separately**: derive the old signed and encrypted cookie secrets from
+  the old key with `app.key_generator(old)` and the `action_dispatch.signed_cookie_salt` /
+  `encrypted_cookie_salt` salts, then `config.action_dispatch.cookies_rotations.rotate :signed, secret` and
+  `.rotate :encrypted, secret` in an `after_initialize` block. `cookies_rotations` itself is in 8.1 (its 8.1 guide
+  example is the SHA1 to SHA256 digest change); the old-secret recipe is main's. The guide warns against keeping an
+  exposed secret as a fallback.
+- **ffmpeg and ffprobe input arguments** (Active Storage): `config.active_storage.video_preview_input_arguments`
+  (passed to ffmpeg before `-i`) and `config.active_storage.ffprobe_arguments` (passed to ffprobe before the path),
+  both default `""`; neither exists in 8.1. Main's Security guide ("Media Processing of File Uploads") says to name the
+  allowed codecs, for example `"-codec_whitelist h264,aac"` for both, to force one demuxer with `-f` and to restrict
+  input protocols with `-protocol_whitelist`. Every codec in a stored file, audio included, must be listed or analysis
+  raises `JSON::ParserError`; check names with `ffmpeg -decoders`. Rails does not ship ffmpeg.
+- **Active Record encryption keys from ENV** (#57311): `ACTIVE_RECORD_ENCRYPTION__PRIMARY_KEY`,
+  `ACTIVE_RECORD_ENCRYPTION__DETERMINISTIC_KEY` and `ACTIVE_RECORD_ENCRYPTION__KEY_DERIVATION_SALT` (double
+  underscore). ENV is read first (in development `.env` next), then the encrypted credentials; values set under
+  `config.active_record.encryption` are applied last and override. In 8.1: credentials or explicit config only.
+
+## `Rails.app` and other CHANGELOG-only additions
+
+- **`Rails.app.credentials`** is the ordinary `Rails.application.credentials` (long-standing, *[Released in 8.1]*)
+  reached through the new `Rails.app` alias; **`Rails.app.creds`** is a different, new object (ENV, then in development
+  `.env`, then the encrypted credentials, with `require` and `option`). Main's own comment says credentials are best used
+  via `creds` so ENV can override. **`Rails.app.envs`** reads ENV by symbol path (`envs.require(:aws, :access_key_id)`
+  reads `AWS__ACCESS_KEY_ID`) with `require` / `option(default:)`; **`Rails.app.dotenvs`** reads a `.env` file (default
+  `Rails.root.join(".env")`) the same way and supports `${VAR}` and `$(command)` interpolation (#56455).
+- **`frozen_string_literal` on by default** (#57252) has a narrow scope: **newly generated apps** get a
+  `config/bootsnap.rb` with `Bootsnap.enable_frozen_string_literal(app_only: true)`, which freezes literals in
+  **application code, not dependencies**, and `.rubocop.yml` is set to match. It is not framework-wide, not an existing-app
+  change, and needs bootsnap (the generator skips it with `--skip-bootsnap`, `--dev` or on JRuby).
+- `ActionDispatch::Request#bearer_token` (#56474) returns the token of an `Authorization: Bearer ...` header, `nil` when
+  absent or not Bearer.
+- **`default_order`** (#57632, #57936) is a query method and a `has_many` option (`has_many :comments, default_order:
+  :likes`) that orders only when no other order is given; an explicit `.order` replaces it.
+- `rate_limit`'s `to:` and `within:` accept a lambda or a method-name symbol: `rate_limit to: :max_requests, within:
+  :time_window, by: -> { current_user.id }`.
+- `f.datalist` renders a `<datalist>` whose id is `f.field_id(:country, :datalist)`, wired to an input with `list:`.
+  Active Storage `attach!` raises if the attachment is not saved. `ActiveSupport::TestCase.around do |test_case,
+  block| ... end` runs between setup and teardown.
+- **`RedisCacheStore` is rewritten on `redis-client >= 0.28.0`**: configure with `:url`, put advanced options in a custom
+  `RedisClient::Config` passed as `:client`; the `:redis` argument still works but warns and `DEFAULT_REDIS_OPTIONS` is
+  deprecated.
+- **`validates` conditions now combine** (`activemodel/CHANGELOG.md`, fixes #55761): `validates :title, presence: { if:
+  :local? }, if: :global?` needs both; the per-validator option used to replace the top-level one silently, for `:if`,
+  `:unless` and `:on`. **A behaviour change on upgrade**: validations that ignored the top-level condition now respect it.
+- Pull request numbers for `rate_limit`, `f.datalist`, `attach!`, `TestCase.around`, the Redis cache store and the
+  `validates` change were not looked up: the CHANGELOG entries on `main` are the source. `f.datalist` also lists a
+  `datalist_tag` helper whose release status was not checked.
