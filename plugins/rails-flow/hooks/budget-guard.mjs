@@ -106,7 +106,7 @@ async function blockAt($) {
 
 async function nowOf($) {
   try {
-    return typeof $.clock?.now === 'function' ? await $.clock.now() : Date.now()
+    return await $.clock.now()      // called, never read as a value: the validator rejects `$.clock` used as one (#1893)
   } catch {
     return Date.now()
   }
