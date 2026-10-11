@@ -30,12 +30,6 @@ GUARD = Guard(
             "hostile: a repository-local hook",
         ),
         Mutation(
-            "core.fsmonitor is not forced off, so a repository-local fsmonitor command runs",
-            '"-c", "core.fsmonitor=false", "-c", "commit.gpgsign=false"',
-            '"-c", "commit.gpgsign=false"',
-            "hostile: a repository-local core.fsmonitor",
-        ),
-        Mutation(
             "the hook is skipped for nothing: every branch is a lane, so main and dev get WIP commits",
             '    if not LANE.match(name):',
             '    if False:',
@@ -76,6 +70,24 @@ GUARD = Guard(
             '    message = f"{MARK}{name} {stamp}"',
             '    message = f"{MARK}{name} {stamp} Fixes #1"',
             "no closing keyword",
+        ),
+        Mutation(
+            "a repository whose own config names a program is committed to anyway",
+            "    if risky:",
+            "    if False:",
+            "repo-local config: a clean filter: nothing is committed",
+        ),
+        Mutation(
+            "the user's own global config is read as the repository's, so a credential helper of theirs skips every lane",
+            '        if scope not in ("local", "worktree"):',
+            "        if False:",
+            "a dirty tracked change on a feature lane is committed",
+        ),
+        Mutation(
+            "filter drivers are not on the list of keys that run a program",
+            r'    r"^(?:filter\..+\.(?:clean|smudge|process)|diff\..+\.(?:textconv|command)|',
+            r'    r"^(?:NEVER\..+\.(?:clean|smudge|process)|diff\..+\.(?:textconv|command)|',
+            "repo-local config: a clean filter: nothing is committed",
         ),
     ),
 )

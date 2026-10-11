@@ -19,15 +19,18 @@ WHAT IT DOES, in order, and each step has a fixture that goes red without it:
      (no identity configured means no commit: it never invents one);
   6. ROLLS: when HEAD is already an unpushed `WIP(auto):` commit it amends that one rather than stacking a commit per turn; once any
      remote-tracking ref contains it, the next change is a new commit (it never rewrites what was pushed);
-  7. never pushes, never merges, never touches another branch.
+  7. never pushes, never merges, never touches another branch;
+  8. SKIPS a repository whose OWN config (`.git/config`, local or worktree scope) names a program for git to run: `filter.<name>.clean`,
+     `diff.<name>.textconv`, `core.sshCommand`, `core.editor`, `credential.helper`, an `include` and the rest of `RUNS_PROGRAMS`. `-c` can
+     force off the keys we name, not the ones whose name the repository chooses, so such a repository is not committed to at all.
 
 WHY A STOP HOOK AND NOT PreToolUse. A `PreToolUse` hook runs BEFORE the user is asked about the command, under an environment a
 project's own settings can set (`docs/evidence/audits/2026-10-11-hook-environment-1843.md`, `...2026-10-10-hook-environment-1821.md`).
 Running `git` there would run whatever the repository chose before the user answered. `Stop` runs after the turn the user already
 allowed. The #1564 proposal's `PreToolUse[Bash]` WIP commit on `git push`, `gh pr merge` and `gh pr ready` is deliberately not built.
 
-LIMITS. A filter driver or a global hook the USER configured still runs, as it does for any git command they run; this scrubs what a
-repository or the environment can add, it does not turn git into a sandbox. It cannot recover work a session lost before the turn ended.
+LIMITS. A filter driver or hook the USER configured in their OWN (global or system) git config still runs, as it does for any git command
+they run; this scrubs what a repository or the environment can add, it does not turn git into a sandbox. It cannot recover work a session lost before the turn ended.
 Stdlib only.
 """
 from __future__ import annotations
@@ -62,6 +65,32 @@ def scrubbed_env(git: str, env=None) -> dict[str, str]:
     return out
 
 
+# A key in the REPOSITORY'S OWN config (scope local or worktree) that makes git run a program. `-c` can force off the ones we name
+# (`core.hooksPath`, `core.fsmonitor`, the pager) but not the ones whose NAME the repository chooses (`filter.<name>.clean`), so a
+# repository that defines any of these is skipped, not committed to. Reading the config runs nothing.
+RUNS_PROGRAMS = re.compile(
+    r"^(?:filter\..+\.(?:clean|smudge|process)|diff\..+\.(?:textconv|command)|merge\..+\.driver|mergetool\..+\.cmd|"
+    r"core\.(?:sshcommand|editor|askpass|gitproxy|alternaterefscommand|attributesfile|excludesfile|fsmonitor|hookspath|pager)|"
+    r"sequence\.editor|gpg\..*program|credential\..*helper|include\.path|includeif\..+\.path|url\..+\.insteadof|"
+    r"submodule\..+\.update|protocol\..+\.allow|http\.proxy|remote\..+\.(?:uploadpack|receivepack|vcs|proxy))$", re.I)
+
+
+def risky_local_config(git: str, root: Path, env: dict[str, str]) -> list[str]:
+    """Keys in the repository's own config (local or worktree scope) that make git run a program. Empty means none; None-safe."""
+    done = run_git(git, root, env, "config", "--list", "-z", "--show-scope")
+    if done is None or done.returncode != 0:
+        return ["(the repository's config could not be read)"]
+    tokens = done.stdout.split("\0")
+    out: list[str] = []
+    for scope, entry in zip(tokens[0::2], tokens[1::2]):
+        if scope not in ("local", "worktree"):
+            continue
+        key = entry.split("\n", 1)[0]
+        if RUNS_PROGRAMS.match(key):
+            out.append(key)
+    return out
+
+
 def run_git(git: str, root: Path, env: dict[str, str], *args: str) -> subprocess.CompletedProcess | None:
     try:
         return subprocess.run([git, *HARD_CONFIG, "-C", str(root), *args], env=env, capture_output=True, text=True,
@@ -91,6 +120,9 @@ def decide(root: Path, parent_env=None, now: float | None = None, dry_run: bool 
     gitdir = Path(gitdir_out.stdout.strip())
     if not gitdir.is_absolute():
         gitdir = toplevel / gitdir
+    risky = risky_local_config(git, root, env)
+    if risky:
+        return "skip:local-config-runs-programs", "the repository's own config sets " + ", ".join(sorted(set(risky))[:4])
     branch = g("symbolic-ref", "--short", "-q", "HEAD")
     if branch is None or branch.returncode != 0 or not branch.stdout.strip():
         return "skip:detached-head", "HEAD is not on a branch"
@@ -177,7 +209,8 @@ def selftest() -> int:
         base = Path(td).resolve()
         home = base / "home"
         home.mkdir()
-        (home / ".gitconfig").write_text("[user]\n\tname = Lane Tester\n\temail = lane@example.com\n")
+        # the USER's own global config may name programs (a credential helper): that is theirs, and must not skip a lane
+        (home / ".gitconfig").write_text("[user]\n\tname = Lane Tester\n\temail = lane@example.com\n[credential]\n\thelper = store\n")
         marker = base / "MARKER"
 
         def clean_env(extra: dict[str, str] | None = None) -> dict[str, str]:
@@ -188,7 +221,10 @@ def selftest() -> int:
         def git(repo: Path, *args: str, check: bool = True) -> str:
             done = subprocess.run([real_git, "-C", str(repo), *args], env=clean_env(), capture_output=True, text=True)
             if check and done.returncode != 0:
-                raise RuntimeError(f"git {args}: {done.stderr}")
+                # A fixture whose earlier step failed must report THAT, not crash: a crash is not a verdict, and a mutant that makes
+                # the first lane check fail would otherwise end the run before the label naming it was ever printed.
+                failures.append(f"fixture git {args} failed: {done.stderr.strip()[:120]}")
+                return ""
             return done.stdout.strip()
 
         def make_repo(name: str, branch: str = "feature/x") -> Path:
@@ -256,7 +292,7 @@ def selftest() -> int:
         expect("a merge in progress is never committed over", run(merging)[0] == "skip:operation-in-progress")
 
         # ---- HOSTILE ENVIRONMENT (#1843): every row below must leave the marker absent AND still commit
-        def hostile(label: str, extra: dict[str, str], setup=None) -> None:
+        def hostile(label: str, extra: dict[str, str], setup=None, skipped: bool = False) -> None:
             repo = make_repo("h-" + re.sub(r"\W", "_", label))
             (repo / "bin").mkdir()
             fake = repo / "bin" / "fakegit"
@@ -273,7 +309,10 @@ def selftest() -> int:
             finally:
                 os.chdir(here)
             expect(f"hostile: {label}: the marker never ran", not marker.exists(), (action, detail))
-            expect(f"hostile: {label}: the lane is still committed", action == "committed", (action, detail))
+            if skipped:
+                expect(f"hostile: {label}: the repository is skipped, not committed to", action == "skip:local-config-runs-programs", (action, detail))
+            else:
+                expect(f"hostile: {label}: the lane is still committed", action == "committed", (action, detail))
 
         hostile("GIT_CONFIG_COUNT core.fsmonitor", {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.fsmonitor", "GIT_CONFIG_VALUE_0": "@REPO@/bin/fakegit"})
         hostile("GIT_CONFIG_COUNT core.hooksPath", {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.hooksPath", "GIT_CONFIG_VALUE_0": "@REPO@/bin"},
@@ -302,11 +341,48 @@ def selftest() -> int:
                 setup=lambda repo, fake: [((repo / ".git" / "hooks" / n).write_text(f"#!/bin/sh\necho ran >> {marker}\n"),
                                            (repo / ".git" / "hooks" / n).chmod(0o755)) for n in ("pre-commit", "post-commit", "commit-msg")])
         hostile("a repository-local core.fsmonitor in .git/config", {},
-                setup=lambda repo, fake: git(repo, "config", "core.fsmonitor", str(fake)))
+                setup=lambda repo, fake: git(repo, "config", "core.fsmonitor", str(fake)), skipped=True)
         hostile("a repository-local core.hooksPath in .git/config", {},
                 setup=lambda repo, fake: (git(repo, "config", "core.hooksPath", str(repo / "bin")),
                                           (repo / "bin" / "pre-commit").write_text(f"#!/bin/sh\necho ran >> {marker}\n"),
-                                          (repo / "bin" / "pre-commit").chmod(0o755)))
+                                          (repo / "bin" / "pre-commit").chmod(0o755)), skipped=True)
+        # (review of the commit) the repository's OWN config can name a program `-c` cannot switch off: every such key is a skip
+        def local_config(label: str, key: str, value_template: str, setup=None) -> None:
+            repo = make_repo("lc-" + re.sub(r"\W", "_", label))
+            (repo / "bin").mkdir()
+            prog = repo / "bin" / "prog"
+            prog.write_text(f"#!/bin/sh\necho ran >> {marker}\ncat\n")
+            prog.chmod(0o755)
+            git(repo, "config", key, value_template.replace("@PROG@", str(prog)))
+            if setup:
+                setup(repo)
+            (repo / "a.txt").write_text("changed\n")
+            marker.unlink(missing_ok=True)
+            before = count(repo)
+            action, detail = decide(repo, clean_env())
+            expect(f"repo-local config: {label}: nothing is committed", action == "skip:local-config-runs-programs" and count(repo) == before, (action, detail))
+            expect(f"repo-local config: {label}: the program never ran", not marker.exists(), (action, detail))
+
+        def attr(repo: Path) -> None:
+            (repo / ".gitattributes").write_text("*.txt filter=evil diff=evil\n")
+            git(repo, "add", ".gitattributes")
+            git(repo, "commit", "-q", "-m", "attributes")
+
+        local_config("a clean filter", "filter.evil.clean", "@PROG@", attr)
+        local_config("a smudge filter", "filter.evil.smudge", "@PROG@", attr)
+        local_config("a filter process", "filter.evil.process", "@PROG@", attr)
+        local_config("a diff textconv", "diff.evil.textconv", "@PROG@", attr)
+        local_config("core.sshCommand", "core.sshCommand", "@PROG@")
+        local_config("core.editor", "core.editor", "@PROG@")
+        local_config("a credential helper", "credential.helper", "!@PROG@")
+        (base / "extra.cfg").write_text("[core]\n\tautocrlf = false\n")
+        local_config("an include", "include.path", str(base / "extra.cfg"))
+        local_config("a merge driver", "merge.evil.driver", "@PROG@ %A")
+        ctrl = make_repo("lc-control")
+        git(ctrl, "config", "core.autocrlf", "false")
+        git(ctrl, "config", "branch.feature/x.remote", "origin")
+        (ctrl / "a.txt").write_text("changed\n")
+        expect("CONTROL: harmless repo-local keys (core.autocrlf, a branch's remote) do not skip the commit", run(ctrl)[0] == "committed", run(ctrl))
         # no trusted git at all: silence, no commit
         norepo = make_repo("notrusted")
         (norepo / "a.txt").write_text("changed\n")
