@@ -116,8 +116,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a double-quoted substitution's body is not collected",
-            "            if bodies is not None:\n                bodies.append(body)",
-            "            if False:\n                bodies.append(body)",
+            "    if bodies is not None:\n        bodies.append(body)\n    return _placeholder(body)",
+            "    if False:\n        bodies.append(body)\n    return _placeholder(body)",
             "'echo \"$(git push origin main)\"': expected TARGETS main",
         ),
         Mutation(
@@ -128,8 +128,8 @@ GUARD = Guard(
         ),
         Mutation(
             "an unquoted $( ), <( ) or >( ) body is not collected",
-            "            if bodies is not None:\n                bodies.append(cmd[i + 2:end - 1])",
-            "            if False:\n                bodies.append(cmd[i + 2:end - 1])",
+            "                if bodies is not None:\n                    bodies.append(cmd[i + 2:end - 1])",
+            "                if False:\n                    bodies.append(cmd[i + 2:end - 1])",
             "'diff <(git push origin main) /dev/null': expected TARGETS main",
         ),
         Mutation(
@@ -222,7 +222,7 @@ GUARD = Guard(
         ),
         Mutation(
             "unquoted $( is no longer one word, so shlex splits at ( and the refspecs vanish",
-            "            out.append(_placeholder(cmd[i + 2:end - 1]) if c == \"$\" else SUBST)\n            i = end\n            continue",
+            "            if c == \"$\":\n                out.append(note_substitution(cmd[i + 2:end - 1], bodies))\n            else:\n                if bodies is not None:\n                    bodies.append(cmd[i + 2:end - 1])\n                out.append(SUBST)\n            i = end\n            continue",
             "            out.append(c)\n            i += 1\n            continue",
             "'git -C $(pwd) push origin main': expected TARGETS main",
         ),
@@ -701,7 +701,7 @@ GUARD = Guard(
         ),
         Mutation(
             "#1770: a cd (or a branch change) in a command that defines a function is followed instead of refused, so the call site's directory is misjudged",
-            "    if FUNCS[0]:\n",
+            "    if FUNCS[0] and any(command_indexes(seg) for seg in every):\n",
             "    if False:\n",
             "function fixture 'f(){ cd /tmp; }; git push': expected None",
         ),
