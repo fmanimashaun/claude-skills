@@ -156,7 +156,7 @@ def _explicit(base: Path) -> None:
     fx = Fixture(base)
     fx.record()
     for label, cmd, env in (("-R", "gh pr ready 5 -R o/r", None), ("--repo", "gh pr ready 5 --repo o/r", None), ("--repo=", "gh pr ready 5 --repo=o/r", None),
-                            ("a flag before pr", "gh -R o/r pr ready 5", None), ("a PR URL", "gh pr ready https://github.com/o/r/pull/5", None),
+                            ("a flag before pr", "gh -R o/r pr ready 5", None), ("-R between pr and ready", "gh pr -R o/r ready 5", None), ("--repo= between pr and ready", "gh pr --repo=o/r ready 5", None), ("a PR URL", "gh pr ready https://github.com/o/r/pull/5", None),
                             ("GH_REPO", "gh pr ready 5", {"GH_REPO": "o/r"})):
         ok, why = refused(fx, cmd, env)
         check(f"shim: a repository named by {label} is refused even with a green record (it cannot be matched to a local one)", ok, why)

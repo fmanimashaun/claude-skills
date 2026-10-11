@@ -42,10 +42,11 @@ fi
 
 # Does this argv run `pr ready`? `pr`, then (past any flags) `ready`.
 has_pr_ready() {
-  local seen_pr=0 a
+  local seen_pr=0 skip=0 a
   for a in "$@"; do
     if [ "$seen_pr" = 1 ]; then
-      case "$a" in -*) continue ;; esac
+      if [ "$skip" = 1 ]; then skip=0; continue; fi
+      case "$a" in -R|--repo) skip=1; continue ;; -*) continue ;; esac
       [ "$a" = ready ] && return 0
       seen_pr=0
     fi

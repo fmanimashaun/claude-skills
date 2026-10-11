@@ -235,6 +235,21 @@ def judge_record(root: str, args: str) -> int:
 SHIM_FLAGS = ("-R", "--repo")
 
 
+def _next_word(args: list[str]) -> str | None:
+    """The first word of `args` that is not a flag, where `-R`/`--repo` also take the word after them: the one command-line shape that puts a value between `pr` and `ready`."""
+    skip = False
+    for w in args:
+        if skip:
+            skip = False
+            continue
+        if w in SHIM_FLAGS:
+            skip = True
+            continue
+        if not w.startswith("-"):
+            return w
+    return None
+
+
 def shim_judge(argv: list[str], cwd: str, gh_repo: str = "") -> int:
     """Judge one `gh pr ready` from its FINAL argv, which is what `git-shim/gh` receives after the shell has expanded the command (#1839, the guarantee behind #1565's tripwire).
 
@@ -244,9 +259,8 @@ def shim_judge(argv: list[str], cwd: str, gh_repo: str = "") -> int:
     root = git(cwd, "rev-parse", "--show-toplevel") if os.path.isdir(cwd) else None
     if not root or not in_force(root):
         return 0
-    try:
-        i = next(k for k, w in enumerate(argv) if w == "pr" and next((x for x in argv[k + 1:] if not x.startswith("-")), None) == "ready")
-    except StopIteration:
+    i = next((k for k, w in enumerate(argv) if w == "pr" and _next_word(argv[k + 1:]) == "ready"), None)
+    if i is None:
         return refuse("a `gh pr ready` this shim could not place in its arguments.", " ".join(argv))
     before, rest = argv[:i], argv[i + 1:]
     j = next(k for k, w in enumerate(rest) if w == "ready")
