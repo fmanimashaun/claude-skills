@@ -5558,6 +5558,7 @@ def release_gate_fallback_fixtures() -> None:
 
 
 # ---- guard-pr-ready.sh (#1565) ------------------------------------------------------------------
+@real_setup     # #1906: the repository, its HEAD and each sweep record are built by code that runs BEFORE the check that reads them; under `--match` that code is stubbed unless it is real setup
 def guard_pr_ready_fixtures() -> None:
     """`gh pr ready` only on a GREEN sweep record with zero skips for HEAD; chains are not parsed (#1565)."""
     def head_of(repo: Path) -> str:
