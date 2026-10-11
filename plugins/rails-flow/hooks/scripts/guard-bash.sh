@@ -2,6 +2,7 @@
 # PreToolUse[Bash] guardrails — mechanical enforcement of GUARDRAILS.md.
 # Exit 2 blocks the command; stderr is shown to Claude with the reason.
 set -uo pipefail
+. "${BASH_SOURCE[0]%/*}/lib/trusted-env.sh" 2>/dev/null   # #1850: scrub PYTHON*/GIT_*/BASH_ENV and rebuild PATH from outside the repository, before any python3, git or gh
 # The `read` BUILTIN, never `cat`: with no `cat` on PATH, `$(cat)` read nothing and every rule passed
 # (#1529 review). Stops at a NUL, which JSON cannot contain.
 input=""; IFS= read -r -d '' input || true

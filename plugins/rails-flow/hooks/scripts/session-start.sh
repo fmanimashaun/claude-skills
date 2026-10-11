@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # SessionStart — inject repo state as context (stdout becomes context).
 set -uo pipefail
+. "${BASH_SOURCE[0]%/*}/lib/trusted-env.sh" 2>/dev/null   # #1850: scrub PYTHON*/GIT_*/BASH_ENV and rebuild PATH from outside the repository, before any python3, git or gh
 # The hook payload (JSON, on stdin): read with a BUILTIN and a 2 s limit, so a caller that leaves stdin open (a hand run, a
 # harness) never holds the session start; a payload that does not arrive is an empty one.
 _payload=""
