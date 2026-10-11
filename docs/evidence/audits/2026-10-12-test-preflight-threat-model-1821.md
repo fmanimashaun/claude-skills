@@ -24,6 +24,23 @@ can, no design in this issue is safe and it should not be built.*
 URLs: https://code.claude.com/docs/en/settings-reference#env, https://code.claude.com/docs/en/hooks,
 https://code.claude.com/docs/en/permissions#what-runs-before-you-trust-a-folder.
 
+### Verification
+
+Each row above is a **doctrine-verifier** verdict against the official Claude Code docs, fetched 2026-10-12 (agent run in the
+#1821 session; the verdicts and quotes are reproduced here so they survive the session):
+
+| # | claim | verdict | official source |
+|---|---|---|---|
+| 1 | project `env` (`.claude/settings.json`, `.claude/settings.local.json`) reaches hook processes | CONFIRMED | https://code.claude.com/docs/en/settings-reference#env ; https://code.claude.com/docs/en/hooks ; file table at https://code.claude.com/docs/en/env-vars |
+| 2 | applies after trust, and always under `-p` / the SDK; trust is per git repository root | CONFIRMED | https://code.claude.com/docs/en/settings-reference#env ; https://code.claude.com/docs/en/permissions#what-runs-before-you-trust-a-folder |
+| 3 | `PATH`, `PYTHONPATH`, `LD_PRELOAD`, `DYLD_*` are not on the ignored-variables list | **INCONCLUSIVE** — absent from the list, but the list says "They include", so it is not stated to be exhaustive | https://code.claude.com/docs/en/settings-reference (section "Variables Claude Code ignores in `env`") |
+| 4 | PreToolUse hooks run before the permission prompt | CONFIRMED | https://code.claude.com/docs/en/permissions |
+| 5 | `CLAUDE_ENV_FILE` lets a project hook change later HOOKS' environment | REFUTED (it feeds later Bash/PowerShell tool commands only) | https://code.claude.com/docs/en/hooks |
+
+The decision does not rest on row 3: rows 1, 2 and 4 alone mean a repository chooses the hook's environment before the user
+approves the command, and the issue's acceptance rule turns on that question, not on which variables are listed. Row 3 only
+says the docs give no assurance that the dangerous ones are filtered.
+
 So a repository the user has trusted — or any repository, in a `claude -p` or SDK run — chooses environment variables for the
 hook process before the user approves the command it fires on. Every hardening the abandoned design added (#1821 body: a pinned
 SHA-256 in `~/.claude/rails-flow-preflight.json`, a private 0700 copy, refusing a pin file inside the project) sits downstream of
