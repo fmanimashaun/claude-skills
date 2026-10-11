@@ -19,7 +19,7 @@ GUARD = Guard(
         ),
         Mutation(
             "git is found by the bare name, so a relative or in-repository PATH entry is used",
-            '    git = trusted_which("git", parent_env, root)',
+            '    git = trusted_which("git", parent_env, project_root(root.resolve() if root.exists() else root))',
             '    git = __import__("shutil").which("git", path=parent_env.get("PATH"))',
             "hostile: a relative `./bin` first on PATH",
         ),
@@ -112,6 +112,12 @@ GUARD = Guard(
             "diff\\.external|difftool",
             "NEVER\\.external|difftool",
             "repo-local config: diff.external: nothing is committed",
+        ),
+        Mutation(
+            "the trusted-git resolver is given the hook's working directory, not the project root, so a fake git in repo/bin is trusted from repo/app",
+            '    git = trusted_which("git", parent_env, project_root(root.resolve() if root.exists() else root))',
+            '    git = trusted_which("git", parent_env, root)',
+            "a fake git at an ABSOLUTE PATH entry inside the project",
         ),
     ),
 )

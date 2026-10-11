@@ -109,11 +109,18 @@ def contains(root: Path, path: str) -> bool:
         return True      # a path whose identity cannot be read is not shown to be outside
 
 
+def project_root(start: Path) -> Path:
+    """The outermost ancestor of `start`, `start` included, that holds a `.git` or a `Gemfile` (by existence; git is never run), else `start`."""
+    return outermost_root(start)
+
+
 def outermost_root(toplevel: Path) -> Path:
     """The outermost ancestor of the repository that holds a `.git` or a `Gemfile` (looked for by existence; git is never run): the same
     definition of "the project" that `lib/trusted-env.sh` uses, so a nested repository is judged against the project around it."""
     best = toplevel
     here = toplevel
+    if (here / ".git").exists() or (here / "Gemfile").exists():
+        best = here
     for _ in range(64):
         parent = here.parent
         if parent == here:
@@ -135,7 +142,9 @@ def run_git(git: str, root: Path, env: dict[str, str], *args: str) -> subprocess
 def decide(root: Path, parent_env=None, now: float | None = None, dry_run: bool = False) -> tuple[str, str]:
     """(action, detail). action is `committed`, `amended`, or a `skip:<why>`; a skip is never an error."""
     parent_env = os.environ if parent_env is None else parent_env
-    git = trusted_which("git", parent_env, root)
+    # The resolver excludes PATH entries at or inside the directory it is GIVEN. Given the hook's working directory, which may be a subdirectory
+    # (`repo/app`), an absolute entry `repo/bin` is "outside" it and its fake `git` is trusted: give it the PROJECT root instead (review of 0aa91844).
+    git = trusted_which("git", parent_env, project_root(root.resolve() if root.exists() else root))
     if git is None:
         return "skip:no-trusted-git", "no git in an absolute PATH entry outside the repository"
     env = scrubbed_env(git, parent_env)
@@ -494,6 +503,19 @@ def selftest() -> int:
         local_config("a difftool command", "difftool.evil.cmd", "@PROG@")
         local_config("a pager for a command", "pager.log", "@PROG@")
         local_config("core.worktree redirecting git elsewhere", "core.worktree", "/tmp")
+        # (review of 0aa91844) the hook's working directory may be a SUBDIRECTORY: an absolute PATH entry at repo/bin is outside repo/app but inside the project
+        sub_repo = make_repo("sub-cwd")
+        (sub_repo / "app").mkdir()
+        (sub_repo / "bin").mkdir()
+        fakebin = sub_repo / "bin" / "git"
+        fakebin.write_text(f"#!/bin/sh\necho ran >> {marker}\nexec {real_git} \"$@\"\n")
+        fakebin.chmod(0o755)
+        (sub_repo / "a.txt").write_text("changed\n")
+        marker.unlink(missing_ok=True)
+        before = count(sub_repo)
+        action, detail = decide(sub_repo / "app", clean_env({"PATH": str(sub_repo / "bin") + os.pathsep + git_dir}))
+        expect("a fake git at an ABSOLUTE PATH entry inside the project, with the hook run from a subdirectory, never ran", not marker.exists(), (action, detail))
+        expect("...and the lane was still committed with the real git", action == "committed" and count(sub_repo) == before + 1, (action, detail))
         # no trusted git at all: silence, no commit
         norepo = make_repo("notrusted")
         (norepo / "a.txt").write_text("changed\n")
