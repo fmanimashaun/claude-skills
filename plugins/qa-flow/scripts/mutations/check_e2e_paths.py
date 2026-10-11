@@ -331,5 +331,29 @@ GUARD = Guard(
             '        named = [s for s in everything if s["active"] and names(s, rid)]',
             "a feature named only by a runner's own listing",
         ),
+        Mutation(
+            'a source or . line before the command is not refused',
+            '    if SOURCED.search(prior):',
+            '    if False:',
+            'a `. file` before the command is refused',
+        ),
+        Mutation(
+            'a source line is read but a dot line is not',
+            '(?:source|\\.)[ \\t]+\\S", re.M)',
+            '(?:source)[ \\t]+\\S", re.M)',
+            'a `. file` before the command is refused',
+        ),
+        Mutation(
+            'a source inside a function is not seen',
+            'SOURCED = re.compile(r"(?:^|[;&|(])[ \\t]*',
+            'SOURCED = re.compile(r"(?:^)',
+            'a source inside a function before the command is refused',
+        ),
+        Mutation(
+            'a package.json script that sources an env file is not refused',
+            '    if SOURCED.search(prefix):',
+            '    if False:',
+            'a package.json script that sources an env file before the command is refused',
+        ),
     ),
 )

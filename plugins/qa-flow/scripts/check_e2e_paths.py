@@ -34,7 +34,7 @@ from `cwd` when it is set; a runner file that `cd`s somewhere else needs `cwd` t
 THE RUNNER'S ENVIRONMENT is part of its selection (a config can read it: `grep: process.env.QA_TARGET === "image" ? ... : undefined`), so literal assignments are
 applied to the listing's environment: `NAME=value` before the command, `env NAME=value`, `cross-env NAME=value`, an earlier top-level `export NAME=value`, and
 `export NAME` of an earlier literal `NAME=value`. A value that is not a plain literal (a `$`, a backtick, a glob), an `export` inside control flow, an `unset`,
-`set -a` and an `export NAME` with no literal value are refused (exit 2), because the environment the run sees is then not knowable here. Redirections (`2>&1`,
+`set -a`, a `source` or `.` line (an env file can export anything the config reads) and an `export NAME` with no literal value are refused (exit 2), because the environment the run sees is then not knowable here. Redirections (`2>&1`,
 `> file`, `>> file`, `&> file`, `< file`) are shell, not Playwright, and are stripped. `--only-changed` and `--last-failed` narrow the run by git or last-run state a
 listing cannot see, so a command that uses them is refused, never listed wider than it runs.
 
@@ -167,6 +167,7 @@ def command_text(source: str, start: int) -> str:
 CLEAN_PREFIX = re.compile(r"^\s*(?:(?:exec|env|cross-env|npx(?:\s+(?:--no-install|-y|--yes))*|pnpm(?:\s+exec)?|yarn(?:\s+run)?|bunx|npm\s+exec(?:\s+--)?|[A-Za-z_][A-Za-z0-9_]*=\S*)\s+)*$")
 ASSIGNMENT = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$")
 NOT_LITERAL = re.compile(r"[$`*?\[]")
+SOURCED = re.compile(r"(?:^|[;&|(])[ \t]*(?:source|\.)[ \t]+\S", re.M)           # `source f` and `. f`; `./script` is a path, not the dot command
 OPENERS = re.compile(r"(?:^|[;&|(]|\bthen\b|\bdo\b|\belse\b|\bin\b)\s*(if|for|while|until|case|select)\b", re.M)
 CLOSERS = re.compile(r"\b(fi|done|esac)\b")
 
@@ -181,6 +182,8 @@ def shell_refusal(prior: str, prefix: str, allow_cd: bool) -> str | None:
         return "an `exit` or `return` comes before it"
     if len(OPENERS.findall(prior)) - len(CLOSERS.findall(prior)) > 0 or prior.count("{") - prior.count("}") > 0:
         return "it sits inside shell control flow (an `if`, `for`, `while`, `case` or a function body)"
+    if SOURCED.search(prior):
+        return "a `source` or `.` comes before it, and an env file can export anything the config reads, so the environment it runs in is not knowable here"
     if not allow_cd and re.search(r"(?:^|[;&|(\s])cd\s", prior):
         return "a `cd` comes before it, so the directory it runs in is unknown (set `cwd` under `e2e_paths:` to say which)"
     return None
@@ -192,6 +195,8 @@ def script_refusal(prefix: str, allow_cd: bool) -> str | None:
         return "a `||` or a pipe comes before it"
     if re.search(r"(?:^|[;&|(\s])(?:exit|return)\b", prefix):
         return "an `exit` comes before it"
+    if SOURCED.search(prefix):
+        return "a `source` or `.` comes before it, and an env file can export anything the config reads, so the environment it runs in is not knowable here"
     if not allow_cd and re.search(r"(?:^|[;&|(\s])cd\s", prefix):
         return "a `cd` comes before it, so the directory it runs in is unknown (set `cwd` under `e2e_paths:` to say which)"
     return None
@@ -548,6 +553,9 @@ def selftest(match: str | None = None, real: str | None = None) -> int:
         ("a command guarded by && on its line is not executed", '#!/bin/sh\n[ -n "$CI" ] && npx playwright test --grep @REQ-001\n', "something else runs on the same line"),
         ("a command after || on its line is not executed", '#!/bin/sh\ntrue || npx playwright test --grep @REQ-001\n', "something else runs on the same line"),
         ("a command piped into is not executed", '#!/bin/sh\necho x | npx playwright test --grep @REQ-001\n', "something else runs on the same line"),
+        ("a `. file` before the command is refused (an env file can export what the config reads)", '#!/bin/sh\n. qa/image.env\nnpx playwright test --grep @REQ-001\n', "a `source` or `.` comes before it"),
+        ("a `source file` before the command is refused", '#!/bin/sh\nsource qa/image.env\nnpx playwright test --grep @REQ-001\n', "a `source` or `.` comes before it"),
+        ("a source inside a function before the command is refused", '#!/bin/sh\nload() {\n  source qa/image.env\n}\nnpx playwright test --grep @REQ-001\n', "a `source` or `.` comes before it"),
         ("a command after a cd is not executed unless cwd is set", '#!/bin/sh\ncd somewhere\nnpx playwright test --grep @REQ-001\n', "a `cd` comes before it"),
     ):
         lister = row(label, {"bin/e2e": script}, {(): [NAMED]}, 2, reason)
@@ -555,6 +563,9 @@ def selftest(match: str | None = None, real: str | None = None) -> int:
             failures.append(f"{label}: Playwright was run for a command that must not be executed: {lister.calls}")
     row("a command after a cd is executed when cwd is set", {"bin/e2e": "#!/bin/sh\ncd somewhere\nnpx playwright test --grep @REQ-001\n", "qa/qa.config.yml": "e2e_paths:\n  cwd: qa/e2e\n  runners:\n    - bin/e2e\n"},
         {(): [NAMED], ("--grep", "@REQ-001"): [NAMED]}, 0, None)
+    row("a package.json script that sources an env file before the command is refused", {"qa/package.json": json.dumps({"scripts": {"e2e": ". qa/image.env && playwright test --grep @REQ-001"}}),
+        "qa/qa.config.yml": "e2e_paths:\n  runners:\n    - qa/package.json\n"}, {(): [NAMED]}, 2, "a `source` or `.` comes before it")
+    row("a ./script before the command is not a source and does not refuse", {"bin/e2e": "#!/bin/sh\n./setup.sh\nnpx playwright test --grep @REQ-001\n"}, {(): [NAMED], ("--grep", "@REQ-001"): [NAMED]}, 0, None)
     row("a package.json script with || before it is not executed", {"qa/package.json": json.dumps({"scripts": {"e2e": "a || playwright test --grep @REQ-001"}}), "qa/qa.config.yml": "e2e_paths:\n  runners:\n    - qa/package.json\n"},
         {(): [NAMED]}, 2, "a `||` or a pipe comes before it")
     row("a refused command does not hide a runner that selects the feature", {"bin/e2e": '#!/bin/sh\nnpx playwright test --grep "$X"\nnpx playwright test --grep @REQ-001\n'},
@@ -717,6 +728,10 @@ def real_battery(modules: Path) -> list[str]:
         ("env-dependent config, an earlier export QA_TARGET=image", 1, {"bin/e2e": sh("export QA_TARGET=image\nnpx playwright test"), "qa/playwright.config.ts": ENVCONFIG}),
         ("env-dependent config, no environment set: the spec IS selected", 0, {"bin/e2e": sh("npx playwright test"), "qa/playwright.config.ts": ENVCONFIG}),
         ("env-dependent config, env set to another target: the spec IS selected", 0, {"bin/e2e": sh("QA_TARGET=dev npx playwright test"), "qa/playwright.config.ts": ENVCONFIG}),
+        ("an env file sourced with `. file` before the command is refused (the config reads QA_TARGET)", 2,
+         {"bin/e2e": sh("echo 'export QA_TARGET=image' > qa/image.env\n. qa/image.env\nnpx playwright test"), "qa/playwright.config.ts": ENVCONFIG}),
+        ("an env file sourced with `source file` before the command is refused", 2,
+         {"bin/e2e": sh("source qa/image.env\nnpx playwright test"), "qa/image.env": "export QA_TARGET=image\n", "qa/playwright.config.ts": ENVCONFIG}),
         ("--only-changed is refused", 2, {"bin/e2e": sh('npx playwright test --only-changed --grep "@REQ-001"')}),
         ("--last-failed is refused", 2, {"bin/e2e": sh("npx playwright test --last-failed")}),
         ("a 2>&1 redirect is shell, not a file filter", 0, {"bin/e2e": sh('npx playwright test --grep "@REQ-001" 2>&1')}),
