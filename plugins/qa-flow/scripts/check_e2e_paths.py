@@ -31,6 +31,13 @@ marks skipped (`test.skip`, `test.fixme`) names nothing. Paths and the runner li
 `cwd`, `runners`); defaults qa/playwright.config.ts and qa/e2e-unselected-baseline.txt. The listings run from the directory of the playwright config (`qa/`), or
 from `cwd` when it is set; a runner file that `cd`s somewhere else needs `cwd` to say so.
 
+THE RUNNER'S ENVIRONMENT is part of its selection (a config can read it: `grep: process.env.QA_TARGET === "image" ? ... : undefined`), so literal assignments are
+applied to the listing's environment: `NAME=value` before the command, `env NAME=value`, `cross-env NAME=value`, an earlier top-level `export NAME=value`, and
+`export NAME` of an earlier literal `NAME=value`. A value that is not a plain literal (a `$`, a backtick, a glob), an `export` inside control flow, an `unset`,
+`set -a` and an `export NAME` with no literal value are refused (exit 2), because the environment the run sees is then not knowable here. Redirections (`2>&1`,
+`> file`, `>> file`, `&> file`, `< file`) are shell, not Playwright, and are stripped. `--only-changed` and `--last-failed` narrow the run by git or last-run state a
+listing cannot see, so a command that uses them is refused, never listed wider than it runs.
+
 WHAT IT REFUSES TO EXECUTE (exit 2, with the reason, never a pass): a command whose arguments are built from a shell variable or a substitution; one that sits in
 shell control flow (`if`, `for`, `while`, `case`, a function body); one with anything else on its line before it (`[ ... ] && cmd`, `a || cmd`, `x | cmd`); one after
 a heredoc, an `exit` or a `return`; one after a `cd` unless `cwd` is set; a package.json script that pipes or uses `||`. A runner command that is only a listing
@@ -64,7 +71,8 @@ import check_requirements as cr  # noqa: E402
 E2E_BASELINE = "qa/e2e-unselected-baseline.txt"
 DEFAULTS = {"config": "qa/playwright.config.ts", "baseline": E2E_BASELINE}
 TIMEOUT = 180
-DROP_FLAGS = {"--list", "--ui", "--debug", "--headed", "--last-failed", "--only-changed"}
+DROP_FLAGS = {"--list", "--ui", "--debug", "--headed"}
+NARROWING = ("--only-changed", "--last-failed")     # narrow by git or last-run state a listing cannot see: the command is unreadable, never dropped
 DROP_WITH_VALUE = {"--reporter"}
 
 
@@ -95,10 +103,11 @@ def flatten(data: dict) -> list[dict]:
 class Lister:
     """Runs `npx --no-install playwright test <args> --list --reporter=json` and returns its specs. Subclassed by the selftest, never mocked at the subprocess."""
 
-    def list(self, cwd: Path, args: list[str]) -> tuple[list[dict] | None, str | None]:
+    def list(self, cwd: Path, args: list[str], env: dict[str, str] | None = None) -> tuple[list[dict] | None, str | None]:
+        """`env` is the runner's own literal assignments (`QA_TARGET=image npx playwright test`, an earlier `export`), layered on this process's environment."""
         argv = ["npx", "--no-install", "playwright", "test", *args, "--list", "--reporter=json"]
         try:
-            done = subprocess.run(argv, cwd=str(cwd), capture_output=True, text=True, timeout=TIMEOUT, stdin=subprocess.DEVNULL)
+            done = subprocess.run(argv, cwd=str(cwd), capture_output=True, text=True, timeout=TIMEOUT, stdin=subprocess.DEVNULL, env={**os.environ, **(env or {})})
         except FileNotFoundError:
             return None, "`npx` is not installed, so Playwright could not be run"
         except subprocess.TimeoutExpired:
@@ -155,7 +164,9 @@ def command_text(source: str, start: int) -> str:
     return source[start:i]
 
 
-CLEAN_PREFIX = re.compile(r"^\s*(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)*(?:exec\s+)?(?:npx(?:\s+(?:--no-install|-y|--yes))*\s+|pnpm\s+(?:exec\s+)?|yarn\s+(?:run\s+)?|bunx\s+|npm\s+exec\s+(?:--\s+)?)?$")
+CLEAN_PREFIX = re.compile(r"^\s*(?:(?:exec|env|cross-env|npx(?:\s+(?:--no-install|-y|--yes))*|pnpm(?:\s+exec)?|yarn(?:\s+run)?|bunx|npm\s+exec(?:\s+--)?|[A-Za-z_][A-Za-z0-9_]*=\S*)\s+)*$")
+ASSIGNMENT = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$")
+NOT_LITERAL = re.compile(r"[$`*?\[]")
 OPENERS = re.compile(r"(?:^|[;&|(]|\bthen\b|\bdo\b|\belse\b|\bin\b)\s*(if|for|while|until|case|select)\b", re.M)
 CLOSERS = re.compile(r"\b(fi|done|esac)\b")
 
@@ -186,6 +197,55 @@ def script_refusal(prefix: str, allow_cd: bool) -> str | None:
     return None
 
 
+def assignments(words: str) -> tuple[dict[str, str], str | None]:
+    """The literal `NAME=value` words of a command prefix, and the reason one of them cannot be applied (a `$`, a backtick or a glob in the value)."""
+    found: dict[str, str] = {}
+    try:
+        raw_words = shlex.split(words, posix=False)
+    except ValueError as exc:
+        return found, f"an assignment cannot be split ({exc})"
+    for raw in raw_words:
+        m = ASSIGNMENT.match(raw)
+        if not m:
+            continue
+        if NOT_LITERAL.search(m.group(2)):
+            return found, f"the value of {m.group(1)} is not a plain literal ({m.group(2)[:30]!r}): a variable, a substitution or a glob"
+        found[m.group(1)] = (shlex.split(raw)[0].partition("=")[2]) if raw else ""
+    return found, None
+
+
+def exported(prior: str) -> tuple[dict[str, str], str | None]:
+    """The environment an earlier part of a shell script exports: literal `export NAME=value` lines at the top level. A conditional export, an `unset`, `set -a`,
+    and an `export NAME` with no literal value are refused, because the value the runner sees is then not knowable here."""
+    env: dict[str, str] = {}
+    shell_vars: dict[str, str] = {}
+    depth = 0
+    for line in prior.split("\n"):
+        stripped = line.strip()
+        if re.match(r"(?:unset|set\s+-\w*a)\b", stripped):
+            return env, f"an `{stripped.split()[0]}` comes before it, so the environment it runs in is not knowable here"
+        if re.match(r"export\b", stripped):
+            if depth > 0:
+                return env, "an `export` sits inside shell control flow"
+            for word in stripped.split(None, 1)[1].split() if len(stripped.split(None, 1)) > 1 else []:
+                if "=" in word:
+                    got, why = assignments(word)
+                    if why:
+                        return env, why
+                    env.update(got)
+                elif word in shell_vars:
+                    env[word] = shell_vars[word]
+                else:
+                    return env, f"`export {word}` has no literal value here"
+        elif depth == 0 and ASSIGNMENT.match(stripped.split()[0] if stripped.split() else "") and len(stripped.split()) == 1:
+            got, why = assignments(stripped)
+            if why:
+                return env, why
+            shell_vars.update(got)
+        depth += len(OPENERS.findall(stripped)) - len(CLOSERS.findall(stripped)) + stripped.count("{") - stripped.count("}")
+    return env, None
+
+
 def runner_commands(relpath: str, text: str, allow_cd: bool = False) -> list[dict]:
     """Every `playwright test ...` command in a runner file: {file, args, listing_only, unsafe}. `args` are what to hand Playwright to list the same selection."""
     found = []
@@ -196,17 +256,40 @@ def runner_commands(relpath: str, text: str, allow_cd: bool = False) -> list[dic
             return [{"file": relpath, "args": [], "listing_only": False, "unsafe": "the file is not JSON"}]
         for source in scripts:
             for m in re.finditer(r"\bplaywright\s+test\b", source):
-                found.append(_command(relpath, command_text(source, m.end()), script_refusal(source[:m.start()], allow_cd)))
+                prefix = source[:m.start()]
+                env: dict[str, str] = {}
+                why = None
+                parts = re.split(r"&&|;", prefix)
+                for part in parts[:-1]:
+                    if part.strip().startswith("export "):
+                        got, why = assignments(part.strip()[len("export "):])
+                        env.update(got)
+                        if why:
+                            break
+                if not why:
+                    got, why = assignments(parts[-1])
+                    env.update(got)
+                found.append(_command(relpath, command_text(source, m.end()), script_refusal(prefix, allow_cd) or why, env))
         return found
     source = strip_shell_comments(text).replace("\\\n", " ")
     for m in re.finditer(r"\bplaywright\s+test\b", source):
         line_start = source.rfind("\n", 0, m.start()) + 1
-        found.append(_command(relpath, command_text(source, m.end()), shell_refusal(source[:line_start], source[line_start:m.start()], allow_cd)))
+        prior, prefix = source[:line_start], source[line_start:m.start()]
+        refusal = shell_refusal(prior, prefix, allow_cd)
+        env, why = exported(prior)
+        if not why:
+            got, why = assignments(prefix)
+            env.update(got)
+        found.append(_command(relpath, command_text(source, m.end()), refusal or why, env))
     return found
 
 
-def _command(relpath: str, argument_text: str, refusal: str | None) -> dict:
-    command = {"file": relpath, "args": [], "listing_only": False, "unsafe": refusal}
+REDIRECT = re.compile(r"^(?:\d*|&)(?:>>?|<)(?:&\d+|&-|[^\s<>]\S*)$")          # 2>&1  >file  >>file  &>file  <file  2>/dev/null
+REDIRECT_OPERATOR = re.compile(r"^(?:\d*|&)(?:>>?|<)$")                  # > file  (the file is the next word)
+
+
+def _command(relpath: str, argument_text: str, refusal: str | None, env: dict[str, str] | None = None) -> dict:
+    command = {"file": relpath, "args": [], "listing_only": False, "unsafe": refusal, "env": dict(env or {})}
     try:
         tokens = shlex.split(argument_text.rstrip(") "), posix=True)
     except ValueError as exc:
@@ -217,6 +300,12 @@ def _command(relpath: str, argument_text: str, refusal: str | None) -> dict:
         token = tokens[i]
         if token in ("$@", "$*"):
             pass                                   # the runner's own extra arguments: not part of its default selection
+        elif REDIRECT.match(token):
+            pass                                   # shell, not Playwright
+        elif REDIRECT_OPERATOR.match(token):
+            i += 1                                 # `> file`: the next word is the target
+        elif token in NARROWING or token.startswith("--only-changed="):
+            command["unsafe"] = command["unsafe"] or f"{token.split('=')[0]} narrows the run by git or last-run state that a listing cannot see"
         elif "$" in token or "`" in token:
             command["unsafe"] = command["unsafe"] or f"an argument is built from a shell variable or substitution ({token!r})"
         elif token == "--list":
@@ -318,7 +407,7 @@ def check(root: Path, base: list[str] | None = None, lister: Lister | None = Non
         elif command["unsafe"]:
             uncertain.append(f"{command['file']}: not executed, {command['unsafe']}")
         else:
-            specs, why = lister.list(cwd, command["args"])
+            specs, why = lister.list(cwd, command["args"], command["env"])
             if specs is None:
                 uncertain.append(f"{command['file']}: could not list `{' '.join(command['args'])}`: {why}")
             else:
@@ -326,7 +415,8 @@ def check(root: Path, base: list[str] | None = None, lister: Lister | None = Non
     selected_ids: set[str] = set()
     undecided: dict[str, str] = {}
     for rid in features:
-        named = [s for s in everything if s["active"] and names(s, rid)]
+        # named by ANY listing: a runner's environment can change which tests Playwright finds (a config that reads it), so the unfiltered listing alone is not the whole set
+        named = [s for s in [*everything, *[x for specs in selections for x in specs]] if s["active"] and names(s, rid)]
         if not named:
             if rid not in listed:
                 findings.append(f"{rid}: a feature, but no active test names it (an id in a test title, a describe title or a tag): add an end-to-end spec")
@@ -371,9 +461,11 @@ class FakeLister(Lister):
     def __init__(self, table: dict[tuple, list[dict] | str]):
         self.table, self.calls = table, []
 
-    def list(self, cwd: Path, args: list[str]):
-        self.calls.append((cwd.name, tuple(args)))
-        answer = self.table.get(tuple(args), f"no canned listing for {tuple(args)}")
+    def list(self, cwd: Path, args: list[str], env: dict[str, str] | None = None):
+        """The table is keyed by the argument list, or by (arguments, sorted environment items) for a listing that depends on the runner's environment."""
+        self.calls.append((cwd.name, tuple(args), tuple(sorted((env or {}).items()))))
+        key = (tuple(args), tuple(sorted((env or {}).items())))
+        answer = self.table[key] if key in self.table else self.table.get(tuple(args), f"no canned listing for {tuple(args)} {sorted((env or {}).items())}")
         return (None, answer) if isinstance(answer, str) else (answer, None)
 
 
@@ -480,6 +572,46 @@ def selftest(match: str | None = None, real: str | None = None) -> int:
     row("a runner path outside the project is exit 2", {"qa/qa.config.yml": "e2e_paths:\n  runners:\n    - ../outside\n"}, {}, 2, "inside the project")
     row("a registry with no features lists nothing and needs no runners", {"qa/requirements.yml": project(entry("REQ-001", extra="")), "qa/qa.config.yml": ""}, {}, 0, None)
     row("a runner file with no playwright command says so", {"bin/e2e": "#!/bin/sh\necho hi\n"}, {(): [NAMED]}, 1, "no `playwright test` command found")
+    # the runner's environment: a config can read it, so a literal assignment must reach the listing (and a value that is not literal must be refused)
+    ENV = (("QA_TARGET", "image"),)
+    GREP = ("--grep", "@REQ-001")
+    env_table = {(): [NAMED], (GREP, ENV): [NAMED], GREP: [OTHER]}      # without the environment the listing leaves the feature out: only an applied environment selects it
+    for label, script, files in (
+        ("a NAME=value prefix reaches the listing's environment", '#!/bin/sh\nQA_TARGET=image npx playwright test --grep @REQ-001\n', {}),
+        ("an earlier export reaches the listing's environment", '#!/bin/sh\nexport QA_TARGET=image\nnpx playwright test --grep @REQ-001\n', {}),
+        ("an env NAME=value prefix reaches the listing's environment", '#!/bin/sh\nenv QA_TARGET=image npx playwright test --grep @REQ-001\n', {}),
+        ("an exported shell variable reaches the listing's environment", '#!/bin/sh\nQA_TARGET=image\nexport QA_TARGET\nnpx playwright test --grep @REQ-001\n', {}),
+        ("a quoted literal value reaches the listing's environment", '#!/bin/sh\nQA_TARGET="image" npx playwright test --grep @REQ-001\n', {}),
+        ("a cross-env prefix in a package.json script reaches the listing's environment", None,
+         {"qa/package.json": json.dumps({"scripts": {"e2e": "cross-env QA_TARGET=image playwright test --grep @REQ-001"}}), "qa/qa.config.yml": "e2e_paths:\n  runners:\n    - qa/package.json\n"}),
+        ("an export before && in a package.json script reaches the listing's environment", None,
+         {"qa/package.json": json.dumps({"scripts": {"e2e": "export QA_TARGET=image && playwright test --grep @REQ-001"}}), "qa/qa.config.yml": "e2e_paths:\n  runners:\n    - qa/package.json\n"}),
+    ):
+        lister = row(label, {"bin/e2e": script, **files} if script else files, env_table, 0, None)
+        if lister is not None and not any(call[2] == ENV for call in lister.calls):
+            failures.append(f"{label}: no listing carried the environment: {lister.calls}")
+    for label, script, reason in (
+        ("an assignment whose value is a variable is refused", '#!/bin/sh\nQA_TARGET=$X npx playwright test --grep @REQ-001\n', "not a plain literal"),
+        ("an assignment whose value is a substitution is refused", '#!/bin/sh\nexport QA_TARGET=$(cat target)\nnpx playwright test --grep @REQ-001\n', "not a plain literal"),
+        ("an assignment whose value is a glob is refused", '#!/bin/sh\nQA_TARGET=im* npx playwright test --grep @REQ-001\n', "not a plain literal"),
+        ("an assignment whose value is a backtick substitution is refused", '#!/bin/sh\nexport QA_TARGET=`cat target`\nnpx playwright test --grep @REQ-001\n', "not a plain literal"),
+        ("an export inside an if is refused", '#!/bin/sh\nif [ -n "$CI" ]; then\n  export QA_TARGET=image\nfi\nnpx playwright test --grep @REQ-001\n', "inside shell control flow"),
+        ("an unset before the command is refused", '#!/bin/sh\nunset QA_TARGET\nnpx playwright test --grep @REQ-001\n', "comes before it, so the environment"),
+        ("set -a before the command is refused", '#!/bin/sh\nset -a\nnpx playwright test --grep @REQ-001\n', "comes before it, so the environment"),
+        ("an export of a variable with no literal value is refused", '#!/bin/sh\nexport QA_TARGET\nnpx playwright test --grep @REQ-001\n', "has no literal value"),
+        ("--only-changed narrows by state a listing cannot see and is refused", '#!/bin/sh\nnpx playwright test --only-changed --grep @REQ-001\n', "narrows the run by git or last-run state"),
+        ("--only-changed=REF is refused too", '#!/bin/sh\nnpx playwright test --only-changed=origin/main --grep @REQ-001\n', "narrows the run by git or last-run state"),
+        ("--last-failed narrows by state a listing cannot see and is refused", '#!/bin/sh\nnpx playwright test --last-failed --grep @REQ-001\n', "narrows the run by git or last-run state"),
+    ):
+        lister = row(label, {"bin/e2e": script}, {(): [NAMED]}, 2, reason)
+        if lister is not None and any(call[1] for call in lister.calls):
+            failures.append(f"{label}: Playwright was run for a command that must not be executed: {lister.calls}")
+    for label, tail in (("2>&1", "2>&1"), ("> out.log", "> out.log"), (">> out.log", ">> out.log"), ("&>log", "&>log"), ("< in.txt", "< in.txt"), ("2>/dev/null", "2>/dev/null")):
+        lister = row(f"a redirection ({label}) is shell, not a Playwright argument", {"bin/e2e": f"#!/bin/sh\nnpx playwright test --grep @REQ-001 {tail}\n"}, {(): [NAMED], GREP: [NAMED]}, 0, None)
+        if lister is not None and not any(call[1] == GREP for call in lister.calls):
+            failures.append(f"a redirection ({label}) is shell, not a Playwright argument: the listing arguments were {[c[1] for c in lister.calls]}")
+    row("a feature named only by a runner's own listing (its environment changes what Playwright finds) is named, not missing",
+        {"bin/e2e": "#!/bin/sh\nQA_TARGET=image npx playwright test --grep @REQ-001\n"}, {(): [OTHER], (GREP, ENV): [NAMED]}, 0, None)
     # the baseline ratchet
     base_files = {"qa/e2e-unselected-baseline.txt": "# size: 1\nREQ-001\n"}
     row("a baselined feature that is named nowhere is clean", base_files, {(): [OTHER], ARGS: [OTHER]}, 0, None)
@@ -506,6 +638,21 @@ def selftest(match: str | None = None, real: str | None = None) -> int:
         if (specs is not None) != want_specs or (want is not None and want not in (why or "")):
             failures.append(f"{label}: wanted specs={want_specs} {want!r}, got {specs!r} {why!r}")
 
+    if not match or "the Lister applies the runner's environment" in match:
+        body = ("if [ \"$QA_TARGET\" = image ]; then echo '{\"errors\":[],\"suites\":[{\"title\":\"a.spec.ts\",\"file\":\"a.spec.ts\",\"specs\":[{\"title\":\"t\",\"tags\":[],"
+                "\"file\":\"a.spec.ts\",\"tests\":[{\"expectedStatus\":\"passed\"}]}]}]}'; else echo '{\"errors\":[],\"suites\":[]}'; fi")
+        with tempfile.TemporaryDirectory() as td:
+            stub_npx(Path(td), body)
+            old = os.environ["PATH"]
+            os.environ["PATH"] = td + os.pathsep + old
+            os.environ.pop("QA_TARGET", None)
+            try:
+                with_env, _ = Lister().list(Path(td), [], {"QA_TARGET": "image"})
+                without, _ = Lister().list(Path(td), [], None)
+            finally:
+                os.environ["PATH"] = old
+        if not with_env or without:
+            failures.append(f"the Lister applies the runner's environment to the subprocess: with {with_env!r}, without {without!r}")
     if not match or "no npx on PATH" in match:
         with tempfile.TemporaryDirectory() as td:
             old = os.environ["PATH"]
@@ -549,6 +696,7 @@ def real_battery(modules: Path) -> list[str]:
     BASE = {"qa/requirements.yml": "# rows: 1\n" + entry("REQ-001"), "qa/test-cases.csv": "Test ID,Status,Source\n", "qa/qa.config.yml": "e2e_paths:\n  runners:\n    - bin/e2e\n",
             "bin/e2e": '#!/bin/sh\nnpx playwright test --grep "@REQ-001"\n', "qa/e2e/auth.spec.ts": SPEC, "qa/playwright.config.ts": "export default { testDir: './e2e' };\n"}
     sh = lambda c: "#!/bin/sh\n" + c + "\n"  # noqa: E731
+    ENVCONFIG = "export default { testDir: './e2e', grep: process.env.QA_TARGET === 'image' ? /@qa-image/ : undefined };\n"
     battery = [
         ("CLI --grep-invert is case-insensitive: @req-001 excludes the @REQ-001 test", 1, {"bin/e2e": sh('npx playwright test --grep-invert "@req-001"')}),
         ("CLI --grep is case-insensitive: @req-001 selects the @REQ-001 test", 0, {"bin/e2e": sh('npx playwright test --grep "@req-001"')}),
@@ -564,6 +712,14 @@ def real_battery(modules: Path) -> list[str]:
         ("control: a grep that leaves it out", 1, {"bin/e2e": sh('npx playwright test --grep "@qa-image"')}),
         ("control: a grep from a shell variable is exit 2", 2, {"bin/e2e": sh('npx playwright test --grep "$TAGS"')}),
         ("control: a skipped test names nothing", 1, {"qa/e2e/auth.spec.ts": 'import { test } from "@playwright/test";\ntest.skip("@REQ-001 signs in", async () => {});\n'}),
+        ("env-dependent config, runner QA_TARGET=image prefix: the real run greps @qa-image, so the spec is NOT selected", 1,
+         {"bin/e2e": sh("QA_TARGET=image npx playwright test"), "qa/playwright.config.ts": ENVCONFIG}),
+        ("env-dependent config, an earlier export QA_TARGET=image", 1, {"bin/e2e": sh("export QA_TARGET=image\nnpx playwright test"), "qa/playwright.config.ts": ENVCONFIG}),
+        ("env-dependent config, no environment set: the spec IS selected", 0, {"bin/e2e": sh("npx playwright test"), "qa/playwright.config.ts": ENVCONFIG}),
+        ("env-dependent config, env set to another target: the spec IS selected", 0, {"bin/e2e": sh("QA_TARGET=dev npx playwright test"), "qa/playwright.config.ts": ENVCONFIG}),
+        ("--only-changed is refused", 2, {"bin/e2e": sh('npx playwright test --only-changed --grep "@REQ-001"')}),
+        ("--last-failed is refused", 2, {"bin/e2e": sh("npx playwright test --last-failed")}),
+        ("a 2>&1 redirect is shell, not a file filter", 0, {"bin/e2e": sh('npx playwright test --grep "@REQ-001" 2>&1')}),
         ("control: a lookbehind grep is Playwright's to read", 1, {"bin/e2e": sh('npx playwright test --grep "(?<=@)qa-image"')}),
     ]
     for label, want, over in battery:
