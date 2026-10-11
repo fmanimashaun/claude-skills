@@ -5050,7 +5050,7 @@ def where_stopped_fixtures() -> None:
         out = start(repo)
         check("where-stopped: SessionStart states the unsaved work and points at the file",
               "- unsaved work: 1 commit not on any remote, 1 uncommitted file" in out
-              and f"where this worktree stopped (last turn, " in out and str(files[0] if files else "?") in out, out[-400:])
+              and f"where this worktree stopped (last turn): " in out and str(files[0] if files else "?") in out, out[-400:])
 
         # FAIL OPEN: a python3 that fails never stops the turn (a hung git is bounded by the lib's own deadline, which
         # where_stopped.py --selftest proves; the harness does not hang a real git here).

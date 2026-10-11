@@ -49,6 +49,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -61,6 +62,29 @@ BASELINE = REPO / "docs/evidence/hook-output-baseline.json"
 # Growth under this many bytes is noise (a commit subject one word longer). Above it, somebody
 # decided to print more and should say so in a review.
 TOLERANCE = 64
+
+
+# A value that moves on its own, with nothing having happened, rewrites the text a hook injects each time it runs and
+# makes every compaction's copy differ from the last (#1886, slice 4 of #1683). A relative age ("14d ago") or a clock time
+# ticks; a DATE a threshold was crossed on ("due since 2026-01-08") does not. Counters of real state (uncommitted files,
+# open issues) change only when something changed, so they are not matched here.
+TICKING: tuple[tuple[str, re.Pattern], ...] = (
+    ("a relative age", re.compile(r"\b\d+\s*(?:s|sec|secs|seconds?|m|min|mins|minutes?|h|hr|hrs|hours?|d|days?|w|weeks?|mo|months?|y|years?)\s+ago\b", re.I)),
+    ("a time of day", re.compile(r"\b\d{1,2}:\d{2}(?::\d{2})?\b")),
+    ("an ISO timestamp", re.compile(r"\b\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}")),
+    ("an epoch", re.compile(r"\b1[5-9]\d{8}\b")),
+    ("a load or uptime reading", re.compile(r"\b(?:load averages?|uptime)\b", re.I)),
+)
+
+
+def ticking(text: str) -> list[str]:
+    """Each ticking value in `text`, as `<what>: <the line>` (one per line and kind)."""
+    found = []
+    for line in text.splitlines():
+        for what, pattern in TICKING:
+            if pattern.search(line):
+                found.append(f"{what}: {line.strip()[:100]}")
+    return found
 
 
 def _declared(data: dict, label: str, script_dir: Path) -> list[tuple[str, Path]]:
@@ -128,6 +152,8 @@ def _fixture(tmp: Path, lessons: int = 20) -> Path:
                 f"long enough to be representative of a real one\n" for i in range(lessons)),
         encoding="utf-8")
     (project / "GUARDRAILS.md").write_text("# GUARDRAILS\n", encoding="utf-8")
+    # A sweep stamped long ago, so the "due" line prints: it is the line whose age used to tick (#1886).
+    (project / "docs/brain/.last-review").write_text("1700000000\n", encoding="utf-8")
     env = dict(os.environ)
     import sys as _sys; _sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "plugins" / "rails-flow" / "scripts")); import fixture_git as _fg  # #1588
     _fg.init(project, "-b", "main")                             # bound to this temp repo (#1588)
@@ -137,16 +163,23 @@ def _fixture(tmp: Path, lessons: int = 20) -> Path:
     # includes what SessionStart prints with one on disk, rather than the empty case a brand-new clone is in (#1643 D1).
     stopped = REPO / "plugins/rails-flow/hooks/scripts/lib/where_stopped.py"
     if stopped.is_file():
+        (project / "unsaved.txt").write_text("work in progress\n", encoding="utf-8")   # so the pointer prints (#1886)
         subprocess.run([sys.executable, str(stopped), "stop", "--cwd", str(project)], input="{}", env=env,
                        capture_output=True, text=True, timeout=30)
     return project
 
 
 def measure(root: Path = REPO, lessons: int = 20) -> dict[str, int] | None:
+    outputs = run_hooks(root, lessons)
+    return None if outputs is None else {label: len(out) for label, out in outputs.items()}
+
+
+def run_hooks(root: Path = REPO, lessons: int = 20) -> dict[str, bytes] | None:
+    """What each SessionStart hook prints against the fixture project, by owner."""
     hooks = session_start_hooks(root)
     if not hooks:
         return None
-    sizes: dict[str, int] = {}
+    sizes: dict[str, bytes] = {}
     tmp = Path(tempfile.mkdtemp(prefix="hook-budget-"))
     try:
         project = _fixture(tmp, lessons)
@@ -160,7 +193,7 @@ def measure(root: Path = REPO, lessons: int = 20) -> dict[str, int] | None:
                    "GH_TOKEN": "", "PATH": os.environ.get("PATH", "")}
             proc = subprocess.run(["bash", str(path)], cwd=project, env=env,
                                   capture_output=True, timeout=30)
-            sizes[plugin] = len(proc.stdout)
+            sizes[plugin] = proc.stdout
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     return sizes
@@ -244,6 +277,21 @@ def _selftest() -> int:
            small is not None and large is not None
            and sum(small.values()) < sum(large.values()))
 
+    # TICKING VALUES (#1886). Each row is a shape a hook printed or could print; the controls are the stable forms.
+    for text in ("brain-review due: last swept 14d ago", "last swept 3 hours ago", "synced 5 minutes ago", "stopped (last turn, 2026-10-11T22:48Z)",
+                 "measured at 14:03", "stamp 1700000000", "load averages: 24.30 24.52", "idle 2 weeks ago"):
+        expect(f"a ticking value is reported: {text}", ticking(text))
+    for text in ("brain-review due since 2026-01-08 (cadence 7d)", "uncommitted files: 12", "5 finished worktree(s)",
+                 "- memory: 20 lesson(s) in docs/brain/MEMORY.md", "HEAD has moved (abc12345 -> def67890)", "wait 3 days before retrying"):
+        expect(f"a stable value is not reported: {text}", not ticking(text))
+    outputs = run_hooks()
+    expect("every SessionStart hook's output, against the fixture, holds no ticking value",
+           outputs is not None and not [t for out in outputs.values() for t in ticking(out.decode("utf-8", "replace"))],
+           )
+    expect("the fixture makes the aged review line and the where-stopped pointer print, so the scan reads them",
+           outputs is not None and b"brain-review due" in outputs.get("rails-flow", b"")
+           and b"where this worktree stopped" in outputs.get("rails-flow", b""))
+
     if bad:
         print(f"ran {ok + len(bad)} assertion(s)\n\n{len(bad)} FAILED:", file=sys.stderr)
         for b in bad:
@@ -282,6 +330,9 @@ def main() -> int:
     if BASELINE.is_file():
         baseline = json.loads(BASELINE.read_text(encoding="utf-8"))
     findings = compare(sizes, baseline)
+    for owner, out in sorted((run_hooks() or {}).items()):
+        findings += [f"{owner}: injects {t} -- it changes with the clock, not with the work. State the date a threshold "
+                     f"was crossed, not an age (#1886)" for t in ticking(out.decode("utf-8", "replace"))]
     for f in findings:
         print(f"  {f}")
     total = sum(sizes.values())

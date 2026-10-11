@@ -194,7 +194,9 @@ def pointer(cwd: Path) -> str:
     # ONLY WHEN THERE IS SOMETHING TO RESUME (#1643 review D1, the coordinator's decision): unsaved work or a HEAD that
     # moved. A clean, pushed worktree has nothing to recover, and this hook runs again after every compaction.
     if rec and (phrase or drift):
-        line = f"- where this worktree stopped (last turn, {rec.get('written', '?')}): {path}"
+        # NO TIMESTAMP IN THE LINE (#1886): the file records when it was written, and printing it made this line differ at every
+        # turn. The path is stable for a worktree; the file holds the time for whoever opens it.
+        line = f"- where this worktree stopped (last turn): {path}"
         if drift:
             line += f" — HEAD has moved since ({rec['head'][:8]} → {f['head'][:8]}): it describes the older state"
         out.append(line)
