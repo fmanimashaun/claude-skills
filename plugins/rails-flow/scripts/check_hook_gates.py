@@ -2170,9 +2170,11 @@ def guard_claims_fixtures() -> None:
           (rc, out) == (rc_plain, out_plain), f"with CDPATH: exit {rc}: {out[-100:]!r}; without: exit {rc_plain}: {out_plain[-100:]!r}")
     # trusted-env.sh sets GIT_CONFIG_GLOBAL=/dev/null itself when HOME is the repository root; the resolver must not take that for a variable that picks gh's repository (#1850).
     cwd_lib = HOOKS / "lib" / "command_cwd.py"
-    for value, expected, label in (("/dev/null", 0, "guard-claims: the resolver accepts an inherited GIT_CONFIG_GLOBAL=/dev/null"),
-                                   (str(HOOKS / "guard-claims.sh"), 3, "guard-claims: the resolver refuses a GIT_CONFIG_GLOBAL that names a file")):
-        done = _run([sys.executable, str(cwd_lib), str(NEITHER)], input="gh pr create --body-file BODY", env=dict(os.environ, GIT_CONFIG_GLOBAL=value), capture_output=True, text=True, timeout=60)
+    # (The lib unsets GIT_EDITOR and every other GIT_* before the resolver runs, so the resolver's own exemptions are reached only by running it directly.)
+    for var, value, expected, label in (("GIT_CONFIG_GLOBAL", "/dev/null", 0, "guard-claims: the resolver accepts an inherited GIT_CONFIG_GLOBAL=/dev/null"),
+                                        ("GIT_CONFIG_GLOBAL", str(HOOKS / "guard-claims.sh"), 3, "guard-claims: the resolver refuses a GIT_CONFIG_GLOBAL that names a file"),
+                                        ("GIT_EDITOR", "true", 0, "guard-claims: the resolver itself exempts an inherited GIT_EDITOR (the harness sets it)")):
+        done = _run([sys.executable, str(cwd_lib), str(NEITHER)], input="gh pr create --body-file BODY", env=dict(os.environ, **{var: value}), capture_output=True, text=True, timeout=60)
         check(label, done.returncode == expected, f"exit {done.returncode}: {(done.stdout + done.stderr)[-120:]!r}")
     rc, out = run_in("CDPATH=B_DIR cd sub && gh pr create --body-file BODY", NEITHER, with_output=True)
     check("guard-claims: a relative cd with CDPATH set IN THE COMMAND is NOT checked, with the notice (#1516 allowlist)",

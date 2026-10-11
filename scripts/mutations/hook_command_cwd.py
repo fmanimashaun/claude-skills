@@ -321,7 +321,7 @@ GUARD = Guard(
             "the harness's GIT_EDITOR is not exempt (round 6)",
             ' and k not in INHERITED_EXEMPT and not (k == "GIT_CONFIG_GLOBAL"',
             ' and not (k == "GIT_CONFIG_GLOBAL"',
-            'an inherited GIT_EDITOR (the harness sets it) is still judged',
+            'the resolver itself exempts an inherited GIT_EDITOR (the harness sets it)',
         ),
         Mutation(
             # Round 7: the config-redirecting family.
