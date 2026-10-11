@@ -165,17 +165,18 @@ def main(argv: list[str], gh: Runner = _gh, post: Callable[[str, str, Runner], t
             print("n/a: `origin` is not a github.com remote (or there is none) — rulesets live on GitHub")
             return 3
         if shutil.which("gh") is None:
-            print("n/a: `gh` is not installed — the ruleset cannot be read; install gh and `gh auth login`")
-            return 3
+            # #1872: could not LOOK, which is not "nothing to look at" -- exit 2, graded ERROR, never n/a.
+            print("error: `gh` is not installed — the ruleset cannot be read; install gh and `gh auth login`", file=sys.stderr)
+            return 2
         code, out = gh(["auth", "status"])
         if code != 0:
-            print("n/a: `gh` is not authenticated — `gh auth login`")
-            return 3
+            print("error: `gh` is not authenticated — `gh auth login`", file=sys.stderr)
+            return 2
         branch = a.branch or ("main" if gh(["api", f"repos/{slug}/branches/main", "--jq", ".name"])[0] == 0 else default_branch(slug, gh))
         rulesets, why = fetch_rulesets(slug, gh)
         if rulesets is None:
-            print(f"n/a: could not read rulesets for {slug}: {why}")
-            return 3
+            print(f"error: could not read rulesets for {slug}: {why}", file=sys.stderr)
+            return 2
     v = verdict(rulesets, branch)
     if a.apply and not v["ok"]:
         if v["covering"]:
@@ -274,7 +275,21 @@ def selftest() -> int:
             if args[:2] == ["auth", "status"]: return (1, "not logged in")
             if args[1].endswith("/branches/main"): return (0, "main")
             return (0, "[]")                                  # the API would answer -- only auth is the reason for n/a
-        check("gh unauthenticated is n/a (exit 3), not the exit-1 the empty rulesets would give", main(["--check", "--repo", "o/n"], gh=gh_unauth) == 3)
+        check("gh unauthenticated is an error (exit 2), not n/a and not the exit-1 the empty rulesets would give (#1872)",
+              main(["--check", "--repo", "o/n"], gh=gh_unauth) == 2)
+        def gh_unreadable(args):
+            if args[:2] == ["auth", "status"]: return (0, "ok")
+            if args[1].endswith("/branches/main"): return (0, "main")
+            return (1, "HTTP 502")
+        check("a ruleset read that fails is an error (exit 2), not n/a (#1872)",
+              main(["--check", "--repo", "o/n"], gh=gh_unreadable) == 2)
+        real_which = shutil.which
+        shutil.which = lambda name, *a, **k: None if name == "gh" else real_which(name, *a, **k)
+        try:
+            check("gh not installed is an error (exit 2), not n/a (#1872)",
+                  main(["--check", "--repo", "o/n"], gh=gh_any) == 2)   # gh_any answers, so only the missing binary can give 2
+        finally:
+            shutil.which = real_which
         def gh_ok(args):
             calls.append(args)
             if args[:2] == ["auth", "status"]: return (0, "ok")

@@ -107,5 +107,11 @@ GUARD = Guard(
             "    return 1 if result.findings else 0",
             "an unverified run exits 1",
         ),
+        Mutation(  # #1872
+            "an unusable document exits 3, which the runner grades n/a",
+            "        return 2  # #1872:",
+            "        return 3  # #1872:",
+            "a document of the wrong schema exits 2",
+        ),
     ),
 )

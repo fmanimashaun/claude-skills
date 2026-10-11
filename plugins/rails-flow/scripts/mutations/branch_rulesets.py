@@ -40,10 +40,29 @@ GUARD = Guard(
             "a missing deletion rule is named",
         ),
         Mutation(
-            "gh unauthenticated reads as a pass instead of n/a",
-            '        code, out = gh(["auth", "status"])\n        if code != 0:\n            print("n/a: `gh` is not authenticated — `gh auth login`")\n            return 3',
-            '        code, out = gh(["auth", "status"])\n        if False:\n            return 3',
-            "gh unauthenticated is n/a",
+            "gh unauthenticated reads as a pass instead of an error",
+            '        if code != 0:\n            print("error: `gh` is not authenticated — `gh auth login`", file=sys.stderr)\n            return 2',
+            '        if False:\n            return 2',
+            "gh unauthenticated is an error",
+        ),
+        # #1872: each could-not-check path exits 2. Back at 3 the runner grades it n/a and the run passes.
+        Mutation(
+            "gh unauthenticated is graded n/a again",
+            '            print("error: `gh` is not authenticated — `gh auth login`", file=sys.stderr)\n            return 2',
+            '            print("error: `gh` is not authenticated — `gh auth login`", file=sys.stderr)\n            return 3',
+            "gh unauthenticated is an error",
+        ),
+        Mutation(
+            "gh not installed is graded n/a again",
+            "install gh and `gh auth login`\", file=sys.stderr)\n            return 2",
+            "install gh and `gh auth login`\", file=sys.stderr)\n            return 3",
+            "gh not installed is an error",
+        ),
+        Mutation(
+            "a failed ruleset read is graded n/a again",
+            '            print(f"error: could not read rulesets for {slug}: {why}", file=sys.stderr)\n            return 2',
+            '            print(f"error: could not read rulesets for {slug}: {why}", file=sys.stderr)\n            return 3',
+            "a ruleset read that fails is an error",
         ),
         Mutation(
             "a non-GitHub origin reads as a pass instead of n/a",
