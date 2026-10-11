@@ -18,9 +18,10 @@ the first 25KB, whichever comes first, are loaded at the start of every conversa
 start." And: "If the file is over a limit, the write still succeeds, but Claude Code returns an error telling Claude to rewrite the index, because
 everything past the limit is dropped on the next load."
 
-THE UNIT IS INFERRED. The page says "25KB" and does not say whether that is 25,000 or 25,600 bytes. Measured on one index (157 lines, 25,248 bytes):
-its last entry was loaded in full, which a 25,000-byte cut would have dropped. One data point, so this is an inference, and it is why the limit
-here is 25,600 and why a file between the two readings is reported with both.
+THE UNIT, CONFIRMED BY THE HARNESS. The page says "25KB" and gives no byte unit. This session's own harness printed, at start-up, "MEMORY.md is
+24.5KB (limit: 24.4KB) ... 1 of 159 lines were cut off": 24.4 KB in 1024-byte units is 25,000 bytes, so the limit is 25,000 bytes. (An earlier
+version of this script inferred 25,600 bytes from one index that appeared to load whole at 25,248 bytes, and was wrong; the harness's own warning is
+the evidence, the inference was not.)
 
 A RATCHET, NOT A FIXED RED. An index that is already over the limit would fail on day one, so `--baseline FILE` records the size and the check fails
 only when the index GROWS past it. It never writes a file unless `--record` is given.
@@ -37,10 +38,9 @@ import tempfile
 from pathlib import Path
 
 MAX_LINES = 200
-MAX_BYTES = 25 * 1024          # "25KB", read as KiB (see THE UNIT IS INFERRED)
-STRICT_BYTES = 25_000          # the other reading of "25KB"
+MAX_BYTES = 25_000             # "25KB": 25,000 bytes, per the harness's own warning (see THE UNIT)
 WARN_LINES = 160               # 80% of each limit
-WARN_BYTES = 20_480
+WARN_BYTES = 20_000
 
 
 class Unusable(Exception):
@@ -112,8 +112,6 @@ def describe(m: dict, index: Path) -> str:
     extra = ""
     if m["past_cut"]:
         extra = f"; {m['past_cut']} line(s) past the cut are NOT loaded at session start"
-    if STRICT_BYTES < m["bytes"] <= MAX_BYTES:
-        extra += f"; if 25KB means {STRICT_BYTES:,} bytes it is already over"
     return f"{index}: {base}{extra}"
 
 
@@ -206,17 +204,16 @@ def selftest() -> int:
         check("200 lines is still loaded whole: a warning, not over", go(index("l200", 200))[:2] == (0, "warn"))
         code, status, msg = go(index("l201", 201))
         check("201 lines is over, exit 1, and says how many lines are not loaded", (code, status) == (1, "over") and "1 line(s) past the cut" in msg, msg)
-        check("20,479 bytes is ok", go(index("b1", exact_bytes=20_479))[1] == "ok")
-        check("20,480 bytes is a warning", go(index("b2", exact_bytes=20_480))[1] == "warn")
-        check("25,600 bytes is still loaded whole: a warning", go(index("b3", exact_bytes=25_600))[1] == "warn")
-        check("25,601 bytes is over", go(index("b4", exact_bytes=25_601))[:2] == (1, "over"))
+        check("19,999 bytes is ok", go(index("b1", exact_bytes=19_999))[1] == "ok")
+        check("20,000 bytes is a warning", go(index("b2", exact_bytes=20_000))[1] == "warn")
+        check("25,000 bytes is still loaded whole: a warning", go(index("b3", exact_bytes=25_000))[1] == "warn")
+        check("25,001 bytes is over", go(index("b4", exact_bytes=25_001))[:2] == (1, "over"))
         code, status, msg = go(index("b5", exact_bytes=25_248))
-        check("a file between the two readings of 25KB says it may already be over", status == "warn" and "25,000 bytes" in msg, msg)
-        check("a file under 25,000 bytes does not carry that note", "25,000 bytes" not in go(index("b6", exact_bytes=24_000))[2])
+        check("an index of 25,248 bytes (one the harness itself reported as over) is over, exit 1", (code, status) == (1, "over") and "25,248 bytes" in msg, msg)
         wide = base / "wide"
-        wide.write_text(("w" * 199 + "\n") * 150, encoding="utf-8")     # 150 lines of 200 bytes: the BYTE limit binds first, at 128 lines
+        wide.write_text(("w" * 199 + "\n") * 150, encoding="utf-8")     # 150 lines of 200 bytes: the BYTE limit binds first, at 125 lines
         code, status, msg = go(wide)
-        check("a byte-bound index counts the lines past the byte cut", (code, status) == (1, "over") and "22 line(s) past the cut" in msg, msg)
+        check("a byte-bound index counts the lines past the byte cut", (code, status) == (1, "over") and "25 line(s) past the cut" in msg, msg)
         check("no index is not an error", go(base / "absent")[:2] == (0, "none"))
         try:
             go(base)
