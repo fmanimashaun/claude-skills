@@ -16,9 +16,9 @@ can, no design in this issue is safe and it should not be built.*
 | claim | verdict | source |
 |---|---|---|
 | A committed `.claude/settings.json` (and `.claude/settings.local.json`) may set `env`, and it reaches hook processes | CONFIRMED | settings-reference#env: "Values here are plain text in the settings file and reach every subprocess Claude Code starts." hooks: "A hook process inherits the parent environment, apart from the `OTEL_*` exporter variables …" |
-| It applies after the workspace is trusted, and **always** in `-p` / SDK runs, which never show the trust dialog | CONFIRMED | settings-reference#env: "From project and local settings: after you trust the workspace, or at startup in `-p` mode, which never shows the trust dialog". permissions#what-runs-before-you-trust-a-folder: the `env` block is "Used" when only a parent folder was trusted, and under `claude -p` or the SDK |
+| It applies after the workspace is trusted, and in `-p` / SDK runs, which never show the trust dialog, unless the user opts out (`--bare` and `--setting-sources user` are documented opt-outs) | CONFIRMED | settings-reference#env: "From project and local settings: after you trust the workspace, or at startup in `-p` mode, which never shows the trust dialog". permissions#what-runs-before-you-trust-a-folder: the `env` block is "Used" when only a parent folder was trusted, and under `claude -p` or the SDK |
 | Trust is one decision per repository root, not per tool call | CONFIRMED | permissions: "In a repository, Claude Code keys the trust on the git repository root, so the trust covers the whole repository …" |
-| `PATH`, `PYTHONPATH`, `LD_PRELOAD`, `DYLD_*` are not protected from project `env` | not on the docs' list (the list says "They include", so not exhaustive) | settings-reference, "Variables Claude Code ignores in `env`": `HOME`, `TMPDIR`, `XDG_*`, `CLAUDE_CONFIG_DIR`, `CLAUDE_CODE_PROCESS_WRAPPER` and others; the four above are absent |
+| `PATH`, `PYTHONPATH`, `LD_PRELOAD`, `DYLD_*` are not protected from project `env` | **INCONCLUSIVE** — absent from the list, but the list says "They include", so it is not stated to be exhaustive | settings-reference, "Variables Claude Code ignores in `env`": `HOME`, `TMPDIR`, `XDG_*`, `CLAUDE_CONFIG_DIR`, `CLAUDE_CODE_PROCESS_WRAPPER` and others; the four above are absent |
 | A PreToolUse hook runs before the user is asked about the command | CONFIRMED | permissions: "PreToolUse hooks run before the permission prompt, for every tool except `EndConversation`." |
 
 URLs: https://code.claude.com/docs/en/settings-reference#env, https://code.claude.com/docs/en/hooks,
@@ -41,18 +41,25 @@ The decision does not rest on row 3: rows 1, 2 and 4 alone mean a repository cho
 approves the command, and the issue's acceptance rule turns on that question, not on which variables are listed. Row 3 only
 says the docs give no assurance that the dangerous ones are filtered.
 
-So a repository the user has trusted — or any repository, in a `claude -p` or SDK run — chooses environment variables for the
-hook process before the user approves the command it fires on. Every hardening the abandoned design added (#1821 body: a pinned
-SHA-256 in `~/.claude/rails-flow-preflight.json`, a private 0700 copy, refusing a pin file inside the project) sits downstream of
-an interpreter, a `PATH` and a dynamic loader the repository can choose. The script cannot defend a decision the environment
-made before its first line ran.
+So a repository the user has trusted — or any repository, in a `claude -p` or SDK run the user has not opted out of — chooses
+environment variables for the hook process before the user approves the command it fires on.
+
+**But that is not, by itself, a new exposure.** The same permissions table marks "Hooks in settings files" as "Used" in exactly the
+same two situations as `env` (a parent folder trusted; `claude -p`/the SDK). A repository that wants its own preflight to run before
+the prompt already has a documented, trust-gated way to do it: a PreToolUse hook in its own `.claude/settings.json`. So the reason
+not to build (a) is not that the plugin would newly expose users to repository code; it is that **the plugin must not become a
+second execution vector for repository code** — one home per concern, and the project's own settings file is that home, under
+the trust decision the user already makes for it. A plugin feature that runs `.claude/test-preflight` duplicates that route with
+weaker visibility (the user approves a plugin, not the script it would run) and adds the pinning machinery the abandoned design
+needed to make it safe.
 
 ## Decision
 
 **Neither feature is built.** This follows the acceptance rule the issue set before any code, not a new judgement:
 
-- **(a) a project preflight run by the hook:** not built. A project that wants one runs it itself, before the suite (the shipped
-  hook already only reports).
+- **(a) a project preflight run by the hook:** not built — the plugin will not be a second execution vector for repository code.
+  A project that wants one declares its own PreToolUse hook in its settings file (trust-gated, the documented route), or runs it
+  itself before the suite; the shipped hook only reports.
 - **(b) an automatic Postgres restart:** not built. Restarting a service is a side effect on a command the user has not yet
   approved, and the command or its environment would be repository-reachable in both forms considered.
 
@@ -68,8 +75,9 @@ Remaining, and a harness question shared by every plugin hook, not something thi
 1. **An absolute `PATH` entry outside the repository that the repository's `env` names** (for example a directory under `/tmp`)
    is accepted by `trusted_which`. Exploiting it needs a writable location the repository can populate; under trust, project
    hooks can already run code, so this adds no new capability there. Not tested.
-2. **`DYLD_*` / `LD_PRELOAD` set by project `env`** act on the `/bin/bash` that starts the hook (on macOS, SIP strips `DYLD_*`
-   for protected binaries such as `/bin/bash`, but not for every interpreter). Not tested.
+2. **Loader variables set by project `env`.** On macOS this is closed for the hook: SIP strips `DYLD_INSERT_LIBRARIES` for the
+   protected `/bin/bash` that starts it (measured in the #1903 review), and `lib/trusted-env.sh` (line 86) unsets every `LD_*` and
+   `DYLD_*` before any child runs. **Open on Linux:** `LD_PRELOAD` acts on `/bin/bash` itself, before the library's scrub runs.
 3. **`DATABASE_URL`** makes `pg_isready` connect to a host the repository names: a connection, not code execution.
 
 ## Classification (harness-doctrine §10)
@@ -80,7 +88,9 @@ whom it holds: inside a trusted workspace, and in `-p`/SDK runs, a repository's 
 
 ## If this is ever retried
 
-Start from the docs' model, not from the script: it is buildable only if Claude Code gives a plugin hook an environment the
-project cannot set (for example, `PATH` and loader variables added to the ignored list, or a per-plugin environment the user
-alone configures). Re-read the two pages above first; then the abandoned design in git history (`d740cd81`, `c6d90fc4` on
-`feature/1561-test-run-preflight`) is the starting point, with a negative fixture per hole and a shell-adversary pass.
+(a) should not be retried as a plugin feature while a project's own settings file can declare the same hook: that is the home.
+(b) and any residual above are retried from the harness, not the script: examine `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` (hooks page:
+when set to `1`, Claude Code strips variables from hook processes) and whether a plugin hook can be given an environment the
+project cannot set. Re-read the two pages above first. The abandoned design survives as commits `d740cd81` and `c6d90fc4`
+(reachable from `chore/arm-v1.156.0` and `chore/integrate-1893`; the original branch is gone), with a negative fixture per hole
+and a shell-adversary pass if any of it is reused.
