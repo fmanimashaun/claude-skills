@@ -53,7 +53,7 @@ leaf). Twenty identical cards share one ref, so if ANY of them clipped as served
 another is read as pre-existing. That errs toward silence on a page that already has a
 `layout_fit.py` finding for the same ref, never toward a false report.
 
-Exit: 0 clean · 1 findings or unverified · 3 unusable.
+Exit: 0 clean · 1 findings or unverified · 2 unusable (could not check; #1872).
 """
 
 from __future__ import annotations
@@ -320,7 +320,7 @@ def main(argv: list[str] | None = None) -> int:
         result = judge(doc, min_hidden=threshold, exclude=exclude)
     except Unusable as err:  # layout_fit's class, so its config reader's refusals land here too
         print(f"UNUSABLE: {err}", file=sys.stderr)
-        return 3
+        return 2  # #1872: could not check, which the runner grades ERROR; 3 would read as n/a
     viewport = str(doc.get("viewport") or "?")
     if args.json:
         print(json.dumps({"viewport": viewport, **{k: v for k, v in result.__dict__.items() if k != "findings"},
@@ -485,7 +485,7 @@ def selftest() -> int:  # noqa: PLR0915 -- a fixture list; each firing case sits
         check("a clean run exits 0", code(doc()) == 0)
         check("a finding exits 1", code(doc(scaled=mode(clip, grew=100))) == 1)
         check("an unverified run exits 1", code(doc(scaled=mode(texts=0))) == 1)
-        check("a document of the wrong schema exits 3", code({"schema": "other", "routes": []}) == 3)
+        check("a document of the wrong schema exits 2 (could not check), never n/a 3 (#1872)", code({"schema": "other", "routes": []}) == 2)
 
     # ---- THE COLLECTOR MUST EMIT WHAT THIS FILE READS, and apply the verified values --------------
     js_path = Path(__file__).with_name(COLLECTOR)
