@@ -5,7 +5,8 @@
     python3 statusline.py --selftest
 
 VENDOR IT: a project copies this ONE file to `.claude/scripts/statusline.py` and points `statusLine` at the copy (setup-flow carries the snippet). `${CLAUDE_PLUGIN_ROOT}`
-resolves only in a plugin's own hook, monitor, MCP and LSP fields, never in a user's or project's `statusLine` command, so the command cannot name the plugin. The file has
+resolves only in the fields the plugins reference lists under "Where each variable resolves" (a plugin's hook and monitor commands, MCP and LSP server fields, and skill, command and agent
+content), and a user's or project's `statusLine` command is not among them, so the command cannot name the plugin (registry row `plugin-variables-resolve-in-listed-fields`). The file has
 no imports from its siblings and passes `--selftest` alone. The setup-flow snippet runs it as `python3 "$(git rev-parse --show-toplevel)/.claude/scripts/statusline.py"`: the page says a
 `statusLine` may be set in project settings and that its command is "a script path or an inline shell command", but not what a relative path is relative to, so the command
 finds the repository root itself; a command that fails prints nothing, and the page says a script that exits non-zero or prints nothing blanks the line.
@@ -26,6 +27,7 @@ AMBER FROM 80%: a window or the context fill at or past 80 is drawn in amber (AN
 from __future__ import annotations
 
 import json
+import math
 import os
 import subprocess
 import sys
@@ -37,9 +39,25 @@ AMBER = "\033[33m"
 RESET = "\033[0m"
 
 
-def pct(value) -> int | None:
-    """A whole percent from a number, or None (bool, string and null are not a percent)."""
+def finite(value) -> bool:
+    """A real, finite number: not a bool, not NaN or Infinity (JSON `NaN` and `Infinity` parse to floats here), and not an integer too large for a float."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
+def clean(text: str) -> str:
+    """`text` without C0 control characters, DEL and lone surrogates: a value from the payload is drawn into the footer, so an escape sequence in it must not
+    reach the terminal, and a lone surrogate would make `print` raise."""
+    return "".join(c for c in text if ord(c) >= 32 and ord(c) != 127 and not 0xD800 <= ord(c) <= 0xDFFF)
+
+
+def pct(value) -> int | None:
+    """A whole percent from a finite number, or None (bool, string, null, NaN and Infinity are not a percent)."""
+    if not finite(value):
         return None
     return int(value + 0.5)
 
@@ -66,7 +84,7 @@ def branch(cwd: str | None = None) -> str | None:
     """The current git branch of `cwd`, or None (no repository, detached, git missing, or slow)."""
     try:
         done = subprocess.run(["git", "branch", "--show-current"], cwd=cwd or None, capture_output=True, text=True, timeout=2)
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, ValueError, subprocess.SubprocessError):     # ValueError: a NUL in the directory name
         return None
     name = done.stdout.strip()
     return name if done.returncode == 0 and name else None
@@ -96,15 +114,15 @@ def render(data, now: float, git_branch: str | None, color: bool = True) -> str:
     if ctx is not None:
         parts.append(tint(f"ctx {ctx}%", ctx, color))
     cost = (data.get("cost") or {}).get("total_cost_usd") if isinstance(data.get("cost"), dict) else None
-    if isinstance(cost, (int, float)) and not isinstance(cost, bool):
+    if finite(cost):
         parts.append(f"${cost:.2f}")
     effort = (data.get("effort") or {}).get("level") if isinstance(data.get("effort"), dict) else None
-    if isinstance(effort, str) and effort:
-        parts.append(effort)
-    where = git_branch or ""
+    if isinstance(effort, str) and clean(effort):
+        parts.append(clean(effort))
+    where = clean(git_branch or "")
     tree = (data.get("workspace") or {}).get("git_worktree") if isinstance(data.get("workspace"), dict) else None
-    if isinstance(tree, str) and tree:
-        where = f"{where} ({tree})" if where else f"({tree})"
+    if isinstance(tree, str) and clean(tree):
+        where = f"{where} ({clean(tree)})" if where else f"({clean(tree)})"
     if where:
         parts.append(where)
     return " · ".join(parts)
@@ -113,13 +131,15 @@ def render(data, now: float, git_branch: str | None, color: bool = True) -> str:
 def main(argv: list[str]) -> int:
     if argv == ["--selftest"]:
         return selftest()
+    # A status line must never crash or print a traceback into the footer: whatever the payload holds (NaN, Infinity, a lone surrogate, a NUL, nesting deep enough to
+    # exhaust the stack), the worst outcome is a blank line, which is what the page says a failing script gives.
     try:
         data = json.loads(sys.stdin.read())
-    except (ValueError, OSError):
+        line = render(data, time.time(), branch(cwd_of(data)), color="NO_COLOR" not in os.environ)
+        if line:
+            print(line)
+    except Exception:
         return 0
-    line = render(data, time.time(), branch(cwd_of(data)), color="NO_COLOR" not in os.environ)
-    if line:
-        print(line)
     return 0
 
 
@@ -188,6 +208,64 @@ def selftest() -> int:
     done = subprocess.run([sys.executable, os.path.abspath(__file__)], input=json.dumps({"context_window": {"used_percentage": 85}}), capture_output=True, text=True,
                           env={k: v for k, v in os.environ.items() if k != "NO_COLOR"})
     check("without NO_COLOR the entry point colours an amber figure", AMBER in done.stdout, repr(done.stdout))
+    # hostile payloads (found in review of #1869): none may crash, print a traceback, or take the rest of the line with it
+    plain = {**os.environ, "NO_COLOR": "1"}
+    empty = tempfile.mkdtemp(prefix="statusline-")       # a directory that is no repository, so no branch is appended to the expected lines
+
+    def run(payload: str):
+        return subprocess.run([sys.executable, os.path.abspath(__file__)], input=payload, capture_output=True, text=True, env=plain, cwd=empty)
+
+    def survives(label: str, payload: str, want: str) -> None:
+        done = run(payload)
+        check(label, done.returncode == 0 and done.stdout == want and done.stderr == "", repr((done.returncode, done.stdout, done.stderr[-120:])))
+
+    survives("a NaN percentage is not a percent, and the rest of the line survives", '{"context_window":{"used_percentage":NaN},"cost":{"total_cost_usd":2}}', "$2.00\n")
+    survives("an Infinity percentage is not a percent", '{"context_window":{"used_percentage":Infinity},"cost":{"total_cost_usd":2}}', "$2.00\n")
+    survives("a -Infinity percentage is not a percent", '{"rate_limits":{"five_hour":{"used_percentage":-Infinity}},"cost":{"total_cost_usd":2}}', "$2.00\n")
+    survives("a percentage past float range (1e999) is not a percent", '{"context_window":{"used_percentage":1e999},"cost":{"total_cost_usd":2}}', "$2.00\n")
+    survives("an integer too large for a float is not a percent", '{"context_window":{"used_percentage":1' + "0" * 400 + '},"cost":{"total_cost_usd":2}}', "$2.00\n")
+    survives("a NaN cost is left out, and the rest survives", '{"context_window":{"used_percentage":50},"cost":{"total_cost_usd":NaN}}', "ctx 50%\n")
+    survives("an Infinity cost is left out, and the rest survives", '{"context_window":{"used_percentage":50},"cost":{"total_cost_usd":Infinity}}', "ctx 50%\n")
+    survives("a lone surrogate in a printed value is dropped, and the rest prints", '{"effort":{"level":"hi\\ud800there"},"cost":{"total_cost_usd":1}}', "$1.00 · hithere\n")
+    survives("a lone surrogate in the worktree name is dropped", '{"workspace":{"git_worktree":"wt\\udc00x"},"cost":{"total_cost_usd":1}}', "$1.00 · (wtx)\n")
+    survives("a lone surrogate in the working directory does not take the line down", '{"cwd":"\\ud800","context_window":{"used_percentage":50}}', "ctx 50%\n")
+    survives("a NUL in the working directory does not take the line down", '{"cwd":"a\\u0000b","context_window":{"used_percentage":50}}', "ctx 50%\n")
+    survives("a NUL in workspace.current_dir does not take the line down", '{"workspace":{"current_dir":"a\\u0000b"},"context_window":{"used_percentage":50}}', "ctx 50%\n")
+    survives("nesting deep enough to exhaust the stack prints nothing and exits 0", "[" * 100000 + "]" * 100000, "")
+    survives("deep nesting inside a field prints nothing and exits 0", '{"cwd":' + "[" * 100000 + "]" * 100000 + "}", "")
+    survives("C0 control characters and DEL in a printed value are stripped", '{"effort":{"level":"hi\\u001b[31mred\\u0007\\u007f"}}', "hi[31mred\n")
+    check("clean drops C0 controls, DEL and lone surrogates and keeps text", clean("a\x00b\x1bc\x7fd\ud800e") == "abcde" and clean("caf\u00e9 \u2713") == "caf\u00e9 \u2713")
+    check("a branch name with an escape sequence is cleaned before it is printed", "\x1b" not in render({}, NOW, "feat\x1b[2Jx", False) and render({}, NOW, "feat\x1b[2Jx", False) == "feat[2Jx")
+    try:
+        ok = finite(1) and finite(1.5) and finite(0) and not any(finite(v) for v in (float("nan"), float("inf"), -float("inf"), True, "1", None, 10 ** 400))
+    except Exception as exc:            # a crash here is a failed check, not a crashed selftest
+        ok = False
+        print(f"finite() raised {exc!r}", file=sys.stderr)
+    check("finite() accepts real numbers only, and an integer too large for a float is not one", ok)
+    # The catch-all, deterministically: nesting deep enough to exhaust the stack raises RecursionError on older Pythons (a JSONDecodeError on newer), so inject the
+    # exception instead of relying on the interpreter. Whatever main() meets, it prints nothing and returns 0.
+    import io
+    from contextlib import redirect_stdout
+
+    class Boom:
+        def __init__(self, exc):
+            self.exc = exc
+
+        def read(self):
+            raise self.exc
+
+    for exc in (RecursionError("deep"), RuntimeError("boom"), MemoryError(), UnicodeEncodeError("utf-8", "x", 0, 1, "lone surrogate")):
+        saved_in, out = sys.stdin, io.StringIO()
+        sys.stdin = Boom(exc)
+        try:
+            with redirect_stdout(out):
+                rc = main([])
+        except Exception as raised:
+            rc = f"raised {raised!r}"
+        finally:
+            sys.stdin = saved_in
+        check(f"an unexpected {type(exc).__name__} anywhere in main prints nothing and exits 0", rc == 0 and out.getvalue() == "", repr((rc, out.getvalue())))
+    os.rmdir(empty)
     if failures:
         print(f"SELFTEST FAILED -- {len(failures)} of {checks} checks:", file=sys.stderr)
         for failure in failures:

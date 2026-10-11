@@ -531,8 +531,8 @@ tools silently. For code-review-graph, wire it to coexist with the rails-flow ho
    context → get_review_context_tool · CRG 0 results → graphify query '<term>' →
    grep · skip graph for .md/.yml/configs.`
 2b. **Optional: a status line and owner checkpoints** (#1829; never edit a real settings file, a project opts in). **Status line:** vendor the one file and point
-   `statusLine` at the copy. `${CLAUDE_PLUGIN_ROOT}` resolves only in a plugin's own hook, monitor, MCP and LSP fields, never in a `statusLine` command, so the
-   command cannot name the plugin:
+   `statusLine` at the copy. `${CLAUDE_PLUGIN_ROOT}` resolves only in the fields the plugins reference lists under "Where each variable resolves" (a plugin's hook and
+   monitor commands, MCP and LSP server fields, and skill, command and agent content); a `statusLine` command is not among them, so it cannot name the plugin:
 
    ```bash
    mkdir -p .claude/scripts && cp "${CLAUDE_PLUGIN_ROOT}/scripts/statusline.py" .claude/scripts/statusline.py
