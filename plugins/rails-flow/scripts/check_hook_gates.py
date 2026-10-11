@@ -4148,6 +4148,131 @@ def ci_verdict_hint_fixtures() -> None:
               code == 0 and out.strip() == "", f"exit {code}: {out.strip()[:120]!r}")
 
 
+def test_preflight_fixtures() -> None:
+    """test-preflight.sh: the advisory test-run preflight, driven end to end with the REAL script and stub binaries (#1561, #1566)."""
+    root = str(HOOKS.parents[1])
+    with scratch_dir() as td:
+        base = Path(td)
+        stubs = base / "stubs"
+        stubs.mkdir()
+        # A PATH holding the stubs and a directory with SYMLINKS to bash and python3, and nothing else (not even `dirname` or `touch`): a real Ruby on the
+        # machine running the sweep, someone else's held `bundler.lock` and the load of a busy runner must not make a fixture speak, and a wrapper that needs
+        # any other program fails here on every machine, not only on one whose bash and python3 live outside /usr/bin (a `dirname` in the wrapper hung exactly there).
+        tools = base / "tools"
+        tools.mkdir()
+        (tools / "bash").symlink_to(shutil.which("bash"))
+        (tools / "python3").symlink_to(os.path.realpath(sys.executable))
+        path = os.pathsep.join([str(stubs), str(tools)])
+        env = {"CLAUDE_PLUGIN_ROOT": root, "PATH": path, "RAILS_FLOW_PREFLIGHT_LOAD_MAX": "1000000"}
+
+        def stub(name: str, body: str) -> None:
+            (stubs / name).write_text("#!/bin/sh\n" + body + "\n")
+            (stubs / name).chmod(0o755)
+
+        def project(name: str, adapter: str = "postgresql") -> Path:
+            proj = base / name
+            (proj / "config").mkdir(parents=True)
+            (proj / "spec").mkdir()
+            (proj / "Gemfile").write_text("")
+            (proj / "spec" / "a_spec.rb").write_text("")
+            (proj / "config" / "database.yml").write_text(f"default: &default\n  adapter: {adapter}\n")
+            return proj
+
+        def hook(proj: Path, command: str, **extra: str) -> tuple[int, str]:
+            payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": str(proj)})
+            return run_hook("test-preflight.sh", cwd=proj, stdin=payload, env_extra=dict(env, **extra))
+
+        rspec = "bundle exec rspec spec/a_spec.rb"
+        app = project("app")
+        stub("pg_isready", "echo '/tmp:5432 - no response'; exit 2")        # a simulated Postgres outage, with the real tool's exit status
+        code, out = hook(app, rspec)
+        check("test-preflight: a Postgres outage before an rspec run is named, and the hook still exits 0",
+              code == 0 and "Postgres is not accepting connections" in out and "exit 2" in out, f"exit {code}: {out.strip()[:160]!r}")
+        check("test-preflight: ...as PreToolUse additionalContext, the channel documented as reaching the model",
+              '"hookEventName": "PreToolUse"' in out and '"additionalContext"' in out, out.strip()[:140])
+        check("test-preflight: ...and it decides no permission (an advisory cannot block or allow a call)", "permissionDecision" not in out)
+        stub("pg_isready", "exit 0")
+        code, out = hook(app, rspec)
+        check("test-preflight: Postgres up, everything fine: silent and exits 0", code == 0 and out.strip() == "", f"exit {code}: {out.strip()[:120]!r}")
+        stub("pg_isready", "exit 2")
+        for label, command in (("a `git status`", "git status"), ("a commit message that says rspec", 'git commit -m "fix rspec"')):
+            code, out = hook(app, command)
+            check(f"test-preflight: {label} is not a suite run, so it is silent even with Postgres down", code == 0 and out.strip() == "", out.strip()[:120])
+        code, out = hook(project("lite", "sqlite3"), rspec)
+        check("test-preflight: a project whose database is not Postgres is not probed (dormant without one)", code == 0 and out.strip() == "", out.strip()[:120])
+        stub("pg_isready", "exit 0")
+        code, out = hook(app, "bundle exec rspec spec/a_spec.rb spec/missing_spec.rb")
+        check("test-preflight: a spec path that does not exist is named", code == 0 and "spec/missing_spec.rb" in out and "a_spec.rb`" not in out, out.strip()[:160])
+        # A PROGRAM THE REPOSITORY SHIPS must not run: with the project as the working directory, a relative or empty PATH entry resolves INTO the checkout.
+        repo_ran = base / "ran-repo-pg_isready"
+        (app / "bin").mkdir()
+        (app / "bin" / "pg_isready").write_text(f"#!/bin/sh\n: > {repo_ran}\nexit 2\n")
+        (app / "bin" / "pg_isready").chmod(0o755)
+        stub("pg_isready", "exit 0")                                      # the trusted one: Postgres is up, so a correct hook is silent about it
+        code, out = hook(app, rspec, PATH=os.pathsep.join(["bin", "", ".", path]))
+        check("test-preflight: a pg_isready the repository ships, reachable through a relative or empty PATH entry, is NOT run",
+              code == 0 and not repo_ran.exists() and "Postgres" not in out, out.strip()[:160])
+        stub("pg_isready", "exit 2")
+        # THE INTERPRETER (review of #1826). The wrapper picks python3 itself: from an ABSOLUTE PATH entry outside the repository, the repository being the outermost of
+        # the Gemfile and .git ancestors, and runs it isolated. A python3 or pg_isready the repository ships must not run however it reaches PATH.
+        mono = base / "mono"
+        (mono / ".git").mkdir(parents=True)
+        (mono / "bin").mkdir()
+        (mono / "web").mkdir()
+        (mono / "web" / ".git").write_text("gitdir: /elsewhere/.git/modules/web\n")     # a NESTED .git (a submodule's, a worktree's): the repository is still the outer one
+        (base / "outside" / "bin").mkdir(parents=True)
+        py_ran, outside_ran = base / "ran-repo-python3", base / "ran-outside-python3"
+        for where, witness_file in ((mono / "bin", py_ran), (mono / "web", py_ran), (base / "outside" / "bin", outside_ran)):
+            (where / "python3").write_text(f"#!/bin/sh\n: > {witness_file}\nexit 0\n")
+            (where / "python3").chmod(0o755)
+        (mono / "bin" / "pg_isready").write_text(f"#!/bin/sh\n: > {repo_ran}\nexit 2\n")
+        (mono / "bin" / "pg_isready").chmod(0o755)
+        stub("pg_isready", "exit 2")                                      # the trusted one: an outage, so a hook that really ran SPEAKS
+        db_url = {"DATABASE_URL": "postgres://u@db.internal/app"}           # detection must not depend on where the root is
+        repo_ran.unlink(missing_ok=True)
+        code, out = hook(mono / "web", rspec, PATH=f"{mono / 'bin'}:{path}", **db_url)
+        check("test-preflight: a python3 and a pg_isready the repository ships in its bin/ are NOT run (absolute PATH entry, working directory a subdirectory with no Gemfile), and the hook still speaks",
+              code == 0 and not py_ran.exists() and not repo_ran.exists() and "Postgres is not accepting connections" in out, out.strip()[:160])
+        code, out = hook(mono / "web", rspec, PATH=os.pathsep.join(["", ".", path]), **db_url)
+        check("test-preflight: a python3 in the working directory, reachable through an empty or `.` PATH entry, is NOT run, and the hook still speaks",
+              code == 0 and not py_ran.exists() and "Postgres is not accepting connections" in out, out.strip()[:160])
+        code, out = hook(mono / "web", rspec, PATH=os.pathsep.join(["../../outside/bin", path]), **db_url)
+        check("test-preflight: a python3 reachable through a RELATIVE PATH entry is NOT run, even when it resolves outside the repository, and the hook still speaks",
+              code == 0 and not outside_ran.exists() and "Postgres is not accepting connections" in out, out.strip()[:160])
+        code, out = hook(mono / "web", rspec, PATH=os.pathsep.join([str(base / "outsi*" / "bin"), path]), **db_url)
+        check("test-preflight: a PATH entry that is a glob is taken literally, so it cannot expand into a directory holding a python3, and the hook still speaks",
+              code == 0 and not outside_ran.exists() and "Postgres is not accepting connections" in out, out.strip()[:160])
+        link_dir = base / "links"
+        link_dir.mkdir()
+        (link_dir / "python3").symlink_to(mono / "bin" / "python3")          # in a directory OUTSIDE the repository, but a link INTO it
+        py_ran.unlink(missing_ok=True)
+        code, out = hook(mono / "web", rspec, PATH=os.pathsep.join([str(link_dir), path]), **db_url)
+        check("test-preflight: a python3 that is a symlink into the repository is NOT run, even from a directory outside it, and the hook still speaks",
+              code == 0 and not py_ran.exists() and "Postgres is not accepting connections" in out, out.strip()[:160])
+        shim = base / "shim"
+        shim.mkdir()
+        (shim / "json.py").write_text(f"import pathlib\npathlib.Path({str(base / 'ran-shim')!r}).touch()\n")
+        code, out = hook(app, rspec, PYTHONPATH=str(shim))
+        check("test-preflight: PYTHONPATH cannot make the script import a module the environment supplies (it runs isolated), and the hook still speaks",
+              code == 0 and not (base / "ran-shim").exists() and "Postgres is not accepting connections" in out, out.strip()[:160])
+        # #825's environment: the harness sets the variable; a person driving the script does not. A missing script is python's exit 2, which the wrapper must not pass on.
+        code, out = run_hook("test-preflight.sh", cwd=app, stdin=json.dumps({"tool_name": "Bash", "tool_input": {"command": rspec}, "cwd": str(app)}),
+                             env_extra={"PATH": path}, unset=("CLAUDE_PLUGIN_ROOT",))
+        check("test-preflight: with CLAUDE_PLUGIN_ROOT unset it exits 0 silently, not `unbound variable` and not python's exit 2",
+              code == 0 and "unbound" not in out and out.strip() == "", f"exit {code}: {out.strip()[:120]!r}")
+        # No python3 on PATH: only a `bash` survives. Proved by a PATH that genuinely lacks it.
+        bare = base / "bare-bin"
+        bare.mkdir()
+        (bare / "bash").symlink_to(shutil.which("bash"))
+        done = _run([str(bare / "bash"), str(HOOKS / "test-preflight.sh")], cwd=app,
+                    input=json.dumps({"tool_name": "Bash", "tool_input": {"command": rspec}, "cwd": str(app)}),
+                    capture_output=True, text=True, timeout=60, env={"PATH": str(bare), "CLAUDE_PLUGIN_ROOT": root, "HOME": td})
+        check("test-preflight: with no python3 on PATH it exits 0 and says nothing",
+              done.returncode == 0 and (done.stdout + done.stderr).strip() == "", f"exit {done.returncode}: {(done.stdout + done.stderr).strip()[:120]!r}")
+        code, out = run_hook("test-preflight.sh", cwd=app, stdin="not json", env_extra=env)
+        check("test-preflight: an unreadable payload exits 0 silently", code == 0 and out.strip() == "", f"exit {code}: {out.strip()[:120]!r}")
+
+
 def session_end_fixtures() -> None:
     """#1582 slice C: session-end.sh reaps the session's own stopped orphans, fails open, and never blocks.
 
@@ -5378,6 +5503,142 @@ def release_gate_fallback_fixtures() -> None:
               done.returncode == 0 and "audited" in done.stderr, done.stderr[:200])
 
 
+# ---- guard-pr-ready.sh (#1565) ------------------------------------------------------------------
+def guard_pr_ready_fixtures() -> None:
+    """`gh pr ready` only on a GREEN sweep record with zero skips for HEAD; chains are not parsed (#1565)."""
+    def head_of(repo: Path) -> str:
+        done = _fixture_git(repo, "rev-parse", "HEAD", check=False)
+        return (getattr(done, "stdout", "") or "").strip() or "0" * 40     # a `--match` survey stubs git
+
+    def new_repo(td: str, name: str = "repo", marker: bool = True) -> Path:
+        repo = Path(td) / name
+        _git_repo(repo)
+        if marker:
+            (repo / "CLAUDE.md").write_text("# x\n<!-- rails-flow:begin -->\n<!-- rails-flow:end -->\n", encoding="utf-8")
+        return repo
+
+    def record(repo: Path, head: str, **over) -> Path:
+        d = repo / ".git" / "rails-flow" / "sweep"
+        d.mkdir(parents=True, exist_ok=True)
+        rec = {"head": head, "tree": "t", "verdict": "green", "passed": 3, "failed": 0, "errored": 0, "not_applicable": 2,
+               "manifest_problems": 0, "skips": 0, "at": "2026-10-10T00:00:00Z", "project_gates": "0"}
+        rec.update(over)
+        f = d / f"{head}.json"
+        f.write_text(json.dumps(rec), encoding="utf-8")
+        return f
+
+    def guard(repo: Path, cmd: str) -> tuple[int, str]:
+        return run_hook("guard-pr-ready.sh", cwd=repo, stdin=json.dumps({"tool_input": {"command": cmd}, "cwd": str(repo)}))
+
+    def expect(label: str, res: tuple[int, str], code: int, *needles: str) -> None:
+        check(label, res[0] == code and all(n in res[1] for n in needles), f"exit {res[0]}: {blocked_lines(res[1])!r}")
+
+    with scratch_dir() as td:
+        repo = new_repo(td)
+        head = head_of(repo)
+        expect("guard-pr-ready: in force with NO record, `gh pr ready` is refused", guard(repo, "gh pr ready 12"), 2, "no sweep record")
+        expect("guard-pr-ready: the refusal names the sweep command and the two-command retry",
+               guard(repo, "gh pr ready 12"), 2, 'python3 "${CLAUDE_PLUGIN_ROOT}/scripts/project_gates.py"', "gh pr ready 12", "TWO separate commands")
+        expect("guard-pr-ready: a sweep chained before it in ONE command does not count (no chain parsing)",
+               guard(repo, "python3 project_gates.py && gh pr ready 12"), 2, "must be its own command")
+        expect("guard-pr-ready: `gh pr ready --undo` is always allowed", guard(repo, "gh pr ready 12 --undo"), 0)
+        expect("guard-pr-ready: `--undo` after a bare `--` is a positional, not the flag: judged, not exempted",
+               guard(repo, "gh pr ready 5 -- --undo"), 2, "argument --undo is not a plain PR number or branch")
+        for cmd in ("gh pr view 12", "gh pr create --title x --body y", "ls", 'echo "gh pr ready 12"'):
+            expect(f"guard-pr-ready: NOT a pr ready, left alone: {cmd[:40]}", guard(repo, cmd), 0)
+        record(repo, "f" * 40)
+        expect("guard-pr-ready: a green record for ANOTHER HEAD is stale and refused", guard(repo, "gh pr ready 12"), 2, head[:12])
+        f = record(repo, head, verdict="red", failed=2)
+        expect("guard-pr-ready: a RED record is refused, with its verdict and counts", guard(repo, "gh pr ready 12"), 2, "RED", "failed 2")
+        record(repo, head, errored=1, skips=1)
+        expect("guard-pr-ready: a green record with skips > 0 is refused", guard(repo, "gh pr ready 12"), 2, "skips 1")
+        f.write_text("{not json", encoding="utf-8")
+        expect("guard-pr-ready: a MALFORMED record fails closed", guard(repo, "gh pr ready 12"), 2, "malformed")
+        record(repo, head, skips="0")
+        expect("guard-pr-ready: a record whose skips is not a number fails closed", guard(repo, "gh pr ready 12"), 2, "malformed")
+        for cmd in ("gh --repo o/r pr ready 5", "gh -R o/r pr ready 5", "/usr/local/bin/gh pr ready 5"):
+            expect(f"guard-pr-ready: a flag before `pr`, or gh by path, is still judged: {cmd}", guard(repo, cmd), 2, "BLOCKED")
+        expect("guard-pr-ready: `gh --repo o/r pr view 5` is left alone", guard(repo, "gh --repo o/r pr view 5"), 0)
+        expect("guard-pr-ready: `gh --repo o/r pr ready --undo 5` is allowed", guard(repo, "gh --repo o/r pr ready --undo 5"), 0)
+        record(repo, head)
+        expect("guard-pr-ready: a GREEN record with zero skips for HEAD allows it", guard(repo, "gh pr ready 12"), 0)
+        # A word outside command_cwd's SAFE list before gh is "cannot tell": the gate FAILS CLOSED rather than guess the session's
+        # directory, because an earlier segment can retarget gh (coordinator's call after the review of 7315b31e).
+        expect("guard-pr-ready: with a green record, a sweep chained before it in ONE command is still refused (cannot tell, fails closed)",
+               guard(repo, "python3 project_gates.py && gh pr ready 12"), 2, "must be its own command")
+        for cmd in ("gh repo set-default o/r && gh pr ready 5", "git remote set-url origin https://x/o/r && gh pr ready 5"):
+            expect(f"guard-pr-ready: with a green record, an earlier segment that can retarget gh refuses: {cmd[:40]}",
+                   guard(repo, cmd), 2, "must be its own command")
+        expect("guard-pr-ready: a `cd` before it is another command: refused, even with a green record",
+               guard(repo, "cd $HOME && gh pr ready 12"), 2, "must be its own command")
+        # shell-adversary on #1831: an earlier segment that MOVES HEAD would pass on the old HEAD's green record.
+        for cmd in ("git commit --allow-empty -m x && gh pr ready 5", "git checkout -b zz && gh pr ready 5", "ls; gh pr ready 5",
+                    "gh pr ready 5 | cat"):
+            expect(f"guard-pr-ready: with a green record, `gh pr ready` inside a compound command is refused: {cmd[:40]}",
+                   guard(repo, cmd), 2, "must be its own command")
+        bindir = Path(td) / "only-bash-cat"
+        bindir.mkdir()
+        link_tools(bindir, ("bash", "cat"))
+        res = run_hook("guard-pr-ready.sh", cwd=repo, stdin=json.dumps({"tool_input": {"command": "gh pr ready 5"}, "cwd": str(repo)}),
+                       env_extra={"PATH": str(bindir)}, shell=shutil.which("bash") or "bash")
+        expect("guard-pr-ready: with no python3 on PATH (degraded, raw JSON), `gh pr ready` is still refused, never fails open", res, 2,
+               "BLOCKED by rails-flow pr-ready guard")
+        # Degraded mode does no parsing (coordinator's ruling after two adversary rounds): any `ready` in the raw payload refuses.
+        def degraded(cmd: str) -> tuple[int, str]:
+            return run_hook("guard-pr-ready.sh", cwd=repo, stdin=json.dumps({"tool_input": {"command": cmd}, "cwd": str(repo)}),
+                            env_extra={"PATH": str(bindir)}, shell=shutil.which("bash") or "bash")
+        for cmd in ('gh pr "ready" 5', 'g""h pr ready 5', "gh pr \\\nready 5", "GH PR READY 5"):
+            expect(f"guard-pr-ready: with no python3 on PATH (degraded), any `ready` refuses: {cmd!r}", degraded(cmd), 2,
+                   "could not be read")
+        expect("guard-pr-ready: with no python3 on PATH (degraded), a command without `ready` passes: ls", degraded("ls"), 0)
+        # DOCUMENTED LIMITS (#1831's third adversary round; the coordinator's ruling, as for guard-bash, #1793): this hook is a
+        # TRIPWIRE, not a boundary. Each class below is pinned at TODAY's behaviour, so a change in either direction is seen. The
+        # guarantee moves to the gh shim, where argv is final. NOT a statement that these are acceptable forever.
+        expect("guard-pr-ready LIMIT (degraded): a quote-split word is not seen: gh pr re\"\"ady 5", degraded('gh pr re""ady 5'), 0)
+        # A FRESH repo, in force with NO record: here exit 0 can only mean "not seen" (with a green record a seen command passes too).
+        lim = new_repo(td, "limits")
+        expect("guard-pr-ready: the limits repo has no record, so a plain `gh pr ready` there IS refused", guard(lim, "gh pr ready 5"), 2,
+               "no sweep record")
+        for cmd, cls in (("x=ready; gh pr $x 5", "a variable"), ("/usr/bin/env gh pr ready 5", "an env or absolute wrapper"),
+                         ("gh pr rea{d,}y 5", "brace expansion"), ("echo 'gh pr ready 5' | sh", "an sh/bash/script/xargs/git-alias wrapper")):
+            expect(f"guard-pr-ready LIMIT: {cls} is not seen (tripwire): {cmd}", guard(lim, cmd), 0)
+        for cmd in ("$(echo gh) pr ready 5", "G=gh; $G pr ready 5"):
+            expect(f"guard-pr-ready: a command word built by the shell refuses: {cmd}", guard(repo, cmd), 2, "built by the shell")
+        expect("guard-pr-ready: a `$` command word with no `ready` is left alone: $HOME/bin/ls", guard(repo, "$HOME/bin/ls"), 0)
+        expect("guard-pr-ready: a scheme-less PR URL is an explicit target", guard(repo, "gh pr ready github.com/o/r/pull/5"), 2,
+               "explicit repository target")
+        expect("guard-pr-ready: a PR argument built by the shell cannot be judged: gh pr ready $PR", guard(repo, "gh pr ready $PR"), 2,
+               "without running it")
+        # A command substitution is ANOTHER command to the normaliser, so it is refused one step earlier, as a compound command.
+        expect('guard-pr-ready: a PR argument built by command substitution is refused: gh pr ready "$(echo 5)"',
+               guard(repo, 'gh pr ready "$(echo 5)"'), 2, "BLOCKED by rails-flow pr-ready guard")
+        for cmd in ("gh pr ready 5 --rep o/r", "gh pr ready o/r#5", "gh pr ready 5 --hostname x", "gh --help pr ready 5",
+                    "gh pr ready 5 --undo=false", "gh pr ready 5 >-R o/r"):
+            expect(f"guard-pr-ready: with a green record, a word that is not a plain number or branch is refused: {cmd}",
+                   guard(repo, cmd), 2, "is not a plain PR number or branch")
+        for cmd in ("gh pr ready 5 2>/dev/null", "gh pr ready 5 >/tmp/out", "gh pr ready 5 &>/dev/null", "gh pr ready my-branch", "gh pr ready feature/x-1", "gh pr ready 5", "gh pr ready -- 5", "gh pr ready 5 > /dev/null", "gh pr ready --undo"):
+            expect(f"guard-pr-ready: with a green record, allowed: {cmd}", guard(repo, cmd), 0)
+        for cmd in ("gh pr ready 5 -R o/r", "GH_REPO=o/r gh pr ready 5", "gh pr ready https://github.com/o/r/pull/5"):
+            expect(f"guard-pr-ready: an explicit remote target is refused even with a green record: {cmd}", guard(repo, cmd), 2,
+                   "explicit repository target")
+        expect("guard-pr-ready: `cd <same repo> && gh pr ready` is a compound command: refused", guard(repo, f"cd {repo} && gh pr ready 12"), 2,
+               "must be its own command")
+        # The checkout it runs in picks the repository judged: the other repository has no record.
+        other = new_repo(td, "other")
+        expect("guard-pr-ready: run in ANOTHER checkout, it is judged against THAT repo's HEAD",
+               guard(other, "gh pr ready 3"), 2, head_of(other)[:12])
+        record(other, head_of(other))
+        expect("guard-pr-ready: ...and allowed once THAT HEAD has a green record", guard(other, "gh pr ready 3"), 0)
+
+    with scratch_dir() as td:
+        plain = new_repo(td, "plain", marker=False)
+        expect("guard-pr-ready: NOT in force (no marker, no workflow, no record dir): allowed", guard(plain, "gh pr ready 12"), 0)
+        wf = plain / ".github" / "workflows"
+        wf.mkdir(parents=True)
+        (wf / "ci.yml").write_text("run: python3 project_gates.py\n", encoding="utf-8")
+        expect("guard-pr-ready: a workflow naming project_gates.py puts it in force", guard(plain, "gh pr ready 12"), 2, "no sweep record")
+
+
 GROUPS = {
     "stop_gate": stop_gate_fixtures, "guard_lane": guard_lane_fixtures,
     "guard_migrate": guard_migrate_fixtures, "lint_ruby": lint_ruby_fixtures,
@@ -5387,11 +5648,11 @@ GROUPS = {
     "release_gate_effects": release_gate_effects_fixtures, "release_gate_repos": release_gate_repos_fixtures,
     "release_gate_refs": release_gate_refs_fixtures, "release_gate_fallback": release_gate_fallback_fixtures,
     "release_gate_adversary": release_gate_adversary_fixtures,
-    "ci_verdict_hint": ci_verdict_hint_fixtures, "session_end": session_end_fixtures, "timeout": timeout_fixtures,
+    "ci_verdict_hint": ci_verdict_hint_fixtures, "test_preflight": test_preflight_fixtures, "session_end": session_end_fixtures, "timeout": timeout_fixtures,
     "guard_worktree": guard_worktree_fixtures, "guard_worktree_parse": guard_worktree_parse_fixtures,
     "guard_worktree_failopen": guard_worktree_failopen_fixtures, "guard_worktree_pointer": guard_worktree_pointer_fixtures,
     "deadline": deadline_fixtures, "where_stopped": where_stopped_fixtures, "tools_missing": tools_missing_fixtures,
-    "fixture_git_binding": fixture_git_binding_fixtures,
+    "fixture_git_binding": fixture_git_binding_fixtures, "guard_pr_ready": guard_pr_ready_fixtures,
 }
 
 
@@ -5411,7 +5672,8 @@ PARTS = {
           "ci_verdict_hint", "session_end", "timeout"],
     "b": ["release_gate", "release_gate_effects"],
     "c": ["release_gate_repos", "release_gate_refs", "release_gate_fallback", "release_gate_adversary", "guard_worktree", "guard_worktree_parse",
-          "guard_worktree_failopen", "guard_worktree_pointer", "deadline", "where_stopped", "tools_missing", "fixture_git_binding"],
+          "guard_worktree_failopen", "guard_worktree_pointer", "deadline", "where_stopped", "tools_missing", "fixture_git_binding", "test_preflight",
+          "guard_pr_ready"],
 }
 
 

@@ -33,7 +33,7 @@ GUARD = Guard(
            "plugins/rails-flow/scripts/self_consistency.py",
            "plugins/rails-flow/scripts/extract_claims.py",
            # ci-verdict-hint.sh runs it; unstaged, every mutation here read as caught (#1173).
-           "plugins/rails-flow/scripts/ci_verdict_hint.py", "plugins/rails-flow/scripts/session_reaper.py", "plugins/rails-flow/scripts/process_containment.py"),
+           "plugins/rails-flow/scripts/ci_verdict_hint.py", "plugins/rails-flow/scripts/test_preflight.py", "plugins/rails-flow/scripts/session_reaper.py", "plugins/rails-flow/scripts/process_containment.py"),
     mutations=(
         # #1516, push security reviews: NO CODE RUNS BEFORE PERMISSION. The hook reads a diff in the directory the
         # command `cd`s into, before the person is asked, and a repository's own config can name a program that

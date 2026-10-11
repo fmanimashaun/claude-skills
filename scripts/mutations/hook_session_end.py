@@ -20,7 +20,7 @@ GUARD = Guard(
            "plugins/qa-flow/scripts/remote_evidence.py",
            "plugins/rails-flow/scripts/self_consistency.py",
            "plugins/rails-flow/scripts/extract_claims.py",
-           "plugins/rails-flow/scripts/ci_verdict_hint.py",
+           "plugins/rails-flow/scripts/ci_verdict_hint.py", "plugins/rails-flow/scripts/test_preflight.py",
            "plugins/rails-flow/scripts/session_reaper.py",
            "plugins/rails-flow/scripts/process_containment.py"),
     mutations=(

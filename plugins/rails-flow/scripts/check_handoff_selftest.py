@@ -595,6 +595,21 @@ def run() -> int:  # noqa: PLR0915 -- a flat list of fixtures reads better than 
     ok_agents = agents_dir({"code-reviewer": "inherit", "test-runner": "haiku"})
     expect_tiers_clean("a table that agrees with its agents", tiers_doc(ok_rows), ok_agents)
     expect_tiers_clean("...and the table alone, with no agents to reconcile", tiers_doc(ok_rows))
+    # #1819: the ONE named exception. `adversary` is `adversarial` and pins `fable`; nothing else may, and nothing else may pin
+    # an expensive alias. Each row below fails for a different reason, so none is "caught" by another's.
+    adv_row = "| `adversary` | adversarial | `fable` | — |\n"
+    adv_agents = agents_dir({"code-reviewer": "inherit", "test-runner": "haiku", "adversary": "fable"})
+    expect_tiers_clean("the adversary on fable is the named exception", tiers_doc(ok_rows + adv_row), adv_agents)
+    expect_tiers_clean("...and the table alone, with no agents to reconcile", tiers_doc(ok_rows + adv_row))
+    expect_tiers_findings("a judgement agent pinning fable is still refused", tiers_doc(
+        ok_rows + "| `spec-reviewer` | judgement | `fable` | — |\n"), None, contains="more expensive model than")
+    expect_tiers_findings("another agent claiming the adversarial tier is refused", tiers_doc(
+        ok_rows + "| `spec-reviewer` | adversarial | `fable` | — |\n"), None, contains="named exception")
+    expect_tiers_findings("the adversary pinned to opus instead of fable is refused", tiers_doc(
+        ok_rows + "| `adversary` | adversarial | `opus` | — |\n"), None, contains="instead of `fable`")
+    expect_tiers_findings("the adversary's frontmatter must say fable too", tiers_doc(ok_rows + adv_row),
+                          agents_dir({"code-reviewer": "inherit", "test-runner": "haiku", "adversary": "inherit"}),
+                          contains="pins `model: inherit` while the tier table")
     # #1326: effort is inherited like model; a pin in a shipped agent is refused.
     pinned = agents_dir({"code-reviewer": "inherit", "test-runner": "haiku"})
     reviewer = pinned / "code-reviewer.md"

@@ -361,6 +361,10 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("git shim", ("python3", "plugins/rails-flow/scripts/git_shim_selftest.py")),
     # #1828. The auto-memory index limit check: its boundaries (200 lines, 25KB read as KiB), the ratchet baseline and the one-line SessionStart output.
     ("memory index limit", ("python3", "plugins/rails-flow/scripts/check_memory_index.py", "--selftest")),
+    # #1827. Settings that do nothing where they are set: `autoMode` and a `defaultMode` of auto or bypassPermissions in a PROJECT's settings files (read, never
+    # written), and in the setup-flow templates a project would copy.
+    ("project settings dead config", ("python3", "plugins/rails-flow/scripts/check_project_settings.py", "--root", ".", "--markdown", "plugins/rails-flow/commands")),
+    ("project settings selftest", ("python3", "plugins/rails-flow/scripts/check_project_settings.py", "--selftest")),
     # #1667. The adversarial cases that found #1645's bypasses, through the REAL guard-bash.sh with a stub `gh` that must
     # never be called. The fast tier (~50 cases, ~10 s) runs in every sweep; the full tier (~300 cases, ~90 s at load 35)
     # is in PR_SKIPPED_GATES, so only the full sweep (the release proof) pays for it.
@@ -459,6 +463,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #993: the walk refuses to start without personas, sign-in recipes and journey documents.
     ("qa-flow walkthrough plan", ("python3", "plugins/qa-flow/scripts/walkthrough_plan.py", "--selftest")),
     ("qa-flow evidence manifest", ("python3", "plugins/qa-flow/scripts/evidence_manifest.py", "--selftest")),
+    # #1835. The release-image robot's scaffolded TypeScript helpers ship into projects; their node:test files run here.
+    ("qa-flow robot helpers", ("python3", "plugins/qa-flow/scripts/scaffold_ts_tests.py", "--selftest")),
     # #1447. A TypeScript e2e suite is strict, type-checked in CI, and has no explicit `any`.
     ("qa-flow ts strict", ("python3", "plugins/qa-flow/scripts/check_ts_strict.py", "--selftest")),
     ("qa-flow route crawl", ("python3", "plugins/qa-flow/scripts/crawl_report.py", "--selftest")),

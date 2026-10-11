@@ -1453,5 +1453,51 @@ GUARD = Guard(
             '',
             'a graph copy whose Solid prefix is `solid`, not `solid_`, disagrees over a project table named solidarity_votes',
         ),
+        # #1561. The setup-flow template is prose a model follows, so its preflight is checked by DRIVING the emitter both ways and by what a
+        # template edit can break: each mutation below removes one of those, and names the scenario that exists for it.
+        Mutation(
+            # THE WIRING. An emitter that writes the block for every project spends always-loaded lines on advice that cannot apply.
+            "the emitter writes the preflight into every project, with a database or not",
+            '    return _EMIT_IF.sub(lambda m: m.group(1) if has_database else "", setup_text)\n',
+            "    return _EMIT_IF.sub(lambda m: m.group(1), setup_text)\n",
+            "the emitter",
+        ),
+        Mutation(
+            "a conditional block that is not the preflight stops being a finding",
+            '        if "## Test-run preflight" not in emit_claude_md(text, True):\n',
+            "        if False:\n",
+            "a conditional block that is not the preflight, so a project with a database gets none",
+        ),
+        Mutation(
+            "the preflight block losing one of its rules stops being a finding",
+            '        for needle, what in _PREFLIGHT_NEEDLES:\n',
+            "        for needle, what in ():\n",
+            "a preflight block that lost the held-lock check",
+        ),
+        Mutation(
+            "a second conditional block stops being a finding",
+            '    if len(blocks) != 1:\n',
+            "    if len(blocks) == 0:\n",
+            "two conditional blocks where the template promises one",
+        ),
+        Mutation(
+            "the GUARDRAILS git rules losing a piece stops being a finding",
+            '    for needle, what in _GUARDRAILS_NEEDLES:\n',
+            "    for needle, what in ():\n",
+            "a GUARDRAILS section with no placeholder-SHA rule",
+        ),
+        Mutation(
+            "a lost pointer to /rails-flow:handoff stops being a finding",
+            '    if see_also is None or "/rails-flow:handoff" not in see_also.group(1):\n',
+            "    if False:\n",
+            "a See Also line with no pointer to /rails-flow:handoff",
+        ),
+        Mutation(
+            # #127: concurrent branches overwrite one root file; the shipped answer is the work order the command writes.
+            "a root HANDOFF.md in the template stops being a finding",
+            '    if "HANDOFF.md" in text:\n',
+            "    if False:\n",
+            "a template that names a root HANDOFF.md",
+        ),
     ),
 )
