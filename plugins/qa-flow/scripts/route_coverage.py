@@ -612,7 +612,7 @@ def _git(*args: str) -> str | None:
 def enumeration_provenance() -> dict:
     """What tree and environment this enumeration is a measurement of."""
     commit = _git("rev-parse", "HEAD")
-    status = _git("status", "--porcelain", "--ignore-submodules=all")
+    status = _git("status", "--porcelain", "--ignore-submodules=dirty")
     return {
         "commit": commit,
         # A dirty tree means the inventory may include routes that are in no commit, so the

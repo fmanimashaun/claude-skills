@@ -477,7 +477,7 @@ def collect_worktrees(env: Env, root: Path, integration: str) -> dict:
             continue
         mrc = env.sh(["git", "merge-base", "--is-ancestor", head, f"origin/{integration}"], root)[0] if head else None
         merged = True if mrc == 0 else False if mrc == 1 else None     # 128 (no such ref) is UNKNOWN, not "not merged"
-        src, status = env.sh(["git", "-C", path, "status", "--porcelain", "--ignore-submodules=all"], None)
+        src, status = env.sh(["git", "-C", path, "status", "--porcelain", "--ignore-submodules=dirty"], None)
         clean = (src == 0 and status.strip() == "")
         items.append({"path": path, "branch": r.get("branch", "(detached)").replace("refs/heads/", ""),
                       "head": head[:7], "merged": merged, "clean": clean if src == 0 else None,

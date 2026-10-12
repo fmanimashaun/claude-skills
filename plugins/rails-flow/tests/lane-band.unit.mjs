@@ -88,7 +88,7 @@ const PASSTHROUGH = (e) => ({ passed: e })
 const REPO = {
   'rev-parse --show-toplevel': '/work/lane-band-1537',
   'branch --show-current': 'feature/1537-lane-band',
-  '--no-optional-locks status --porcelain --ignore-submodules=all': ' M a.rb\n?? b.rb',
+  '--no-optional-locks status --porcelain --ignore-submodules=dirty': ' M a.rb\n?? b.rb',
 }
 const textOf = (tree) => JSON.stringify(tree)
 
@@ -114,12 +114,12 @@ const textOf = (tree) => JSON.stringify(tree)
   check('session.start starts one 2000 ms repeating timer', h.timers.length === 1 && h.timers[0].ms === 2000, JSON.stringify(h.timers.map((t) => t.ms)))
   await h.runTimers()
   check('the refresh runs exactly the three read-only git calls',
-    h.argvs.join(' | ') === 'git rev-parse --show-toplevel | git branch --show-current | git --no-optional-locks status --porcelain --ignore-submodules=all',
+    h.argvs.join(' | ') === 'git rev-parse --show-toplevel | git branch --show-current | git --no-optional-locks status --porcelain --ignore-submodules=dirty',
     h.argvs.join(' | '))
   check('git status takes no optional locks (the flag precedes the subcommand)',
-    h.argvs.some((a) => a === 'git --no-optional-locks status --porcelain --ignore-submodules=all'))
+    h.argvs.some((a) => a === 'git --no-optional-locks status --porcelain --ignore-submodules=dirty'))
   check('git status never recurses into a submodule, so its own clean filter never runs (#1919)',
-    h.argvs.some((a) => a.startsWith('git --no-optional-locks status') && a.endsWith(' --ignore-submodules=all')))
+    h.argvs.some((a) => a.startsWith('git --no-optional-locks status') && a.endsWith(' --ignore-submodules=dirty')))
   check('only documented calls were made', [...h.used].every((u) => !u.startsWith('UNEXPECTED')), [...h.used].join())
   check('the refresh asks for a redraw', h.used.has('ui.invalidate'))
 }
@@ -135,7 +135,7 @@ const textOf = (tree) => JSON.stringify(tree)
   check('band keeps what the mods after it draw', s.includes('"type":"engine"'), s)
 }
 {
-  const h = await started({ git: { ...REPO, '--no-optional-locks status --porcelain --ignore-submodules=all': '' } })
+  const h = await started({ git: { ...REPO, '--no-optional-locks status --porcelain --ignore-submodules=dirty': '' } })
   await h.runTimers()
   const s = textOf(await h.find('ui.render').fn(h.$, {}, async () => null))
   check('a clean tree with no lane says clean and omits the lane', s.includes('feature/1537-lane-band · lane-band-1537 · clean'), s)
@@ -195,7 +195,7 @@ for (const [name, git] of [
 // 8. READ-ONLY, from the source: reviewed mods API calls only, the three reviewed git calls, and no
 // await of the refresh in a hook (it would delay the first prompt or the end of a turn).
 const ALLOWED_CALLS = new Set(['process.run', 'env.get', 'ui.invalidate', 'ui.resolve', 'clock.every'])
-const ALLOWED_GIT = new Set(['rev-parse --show-toplevel', 'branch --show-current', '--no-optional-locks status --porcelain --ignore-submodules=all'])
+const ALLOWED_GIT = new Set(['rev-parse --show-toplevel', 'branch --show-current', '--no-optional-locks status --porcelain --ignore-submodules=dirty'])
 function staticFindings(js) {
   const findings = []
   for (const call of new Set([...js.matchAll(/\$\.([a-z]+\.[a-zA-Z]+)\b/g)].map((m) => m[1]))) {
@@ -220,7 +220,7 @@ function staticFindings(js) {
   const clean =
     "const a = await git($, ['rev-parse', '--show-toplevel'])\n" +
     "const b = await git($, ['branch', '--show-current'])\n" +
-    "const c = await git($, ['--no-optional-locks', 'status', '--porcelain', '--ignore-submodules=all'])\n" +
+    "const c = await git($, ['--no-optional-locks', 'status', '--porcelain', '--ignore-submodules=dirty'])\n" +
     "$.process.run($.env.get('X'))\n$.ui.invalidate('ui.render')\n$.ui.resolve(e)\n$.clock.every(2000, f)\n" +
     'async function tick($) {\n  try {\n    await refresh($)\n  } catch {}\n}\n'
   check('selftest: the reviewed shape is clean', staticFindings(clean).length === 0)
@@ -230,7 +230,7 @@ function staticFindings(js) {
   check('selftest: status without the flag is refused',
     staticFindings(clean.replace("'--no-optional-locks', ", '')).some((f) => f.includes('status --porcelain')))
   check('selftest: status that recurses into submodules is refused (#1919)',
-    staticFindings(clean.replace(", '--ignore-submodules=all'", '')).some((f) => f.includes('status --porcelain')))
+    staticFindings(clean.replace(", '--ignore-submodules=dirty'", '')).some((f) => f.includes('status --porcelain')))
   check('selftest: an awaited refresh in a hook is refused', staticFindings(clean + 'await refresh($)\n').length > 0)
   check('selftest: an awaited tick in a hook is refused', staticFindings(clean + 'await tick($)\n').length > 0)
 }

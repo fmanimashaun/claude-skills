@@ -17,7 +17,7 @@ fi
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
 
 branch="$(git branch --show-current 2>/dev/null)"
-dirty="$(git status --porcelain --ignore-submodules=all 2>/dev/null | wc -l | tr -d ' ')"
+dirty="$(git status --porcelain --ignore-submodules=dirty 2>/dev/null | wc -l | tr -d ' ')"
 last="$(git log -1 --oneline 2>/dev/null)"
 base="main"; git show-ref --verify --quiet refs/heads/dev && base="dev"
 

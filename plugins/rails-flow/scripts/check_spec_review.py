@@ -63,7 +63,7 @@ def changed_files(root: Path, base: str) -> set[str]:
         return out.stdout
     git("rev-parse", "--verify", "-q", f"{base}^{{commit}}")
     files = set(git("diff", "--name-only", f"{base}...HEAD").split("\n"))  # submodule-safe: base...HEAD compares commits, no worktree read
-    files |= set(git("diff", "--name-only", "--ignore-submodules=all", "HEAD").split("\n"))
+    files |= set(git("diff", "--name-only", "--ignore-submodules=dirty", "HEAD").split("\n"))
     files |= set(git("ls-files", "--others", "--exclude-standard").split("\n"))
     return {f for f in files if f}
 

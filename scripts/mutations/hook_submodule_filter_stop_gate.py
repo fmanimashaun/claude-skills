@@ -2,7 +2,7 @@
 from mutation_types import Guard, Mutation  # noqa: F401
 
 GUARD = Guard(
-    # #1919. Without --ignore-submodules=all, git recurses into a submodule and runs a clean filter named in ITS config.
+    # #1919. Without --ignore-submodules=dirty, git recurses into a submodule and runs a clean filter named in ITS config.
     name="hook_submodule_filter_stop_gate",
     subject="plugins/rails-flow/hooks/scripts/stop-gate.sh",
     selftest="plugins/rails-flow/scripts/check_hook_gates.py",
@@ -25,7 +25,7 @@ GUARD = Guard(
     mutations=(
         Mutation(
             "stop-gate.sh reads status through a submodule and runs its own clean filter",
-            'git status --porcelain -uall --ignore-submodules=all 2>/dev/null',
+            'git status --porcelain -uall --ignore-submodules=dirty 2>/dev/null',
             'git status --porcelain -uall 2>/dev/null',
             "submodule filter: stop-gate.sh never runs a submodule's own clean filter",
         ),

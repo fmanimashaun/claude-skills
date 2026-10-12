@@ -60,8 +60,8 @@ GUARD = Guard(
         ),
         Mutation(
             "renames are paired again, so a policy moved out of app/policies reads as a change to its new path only",
-            '"diff", "--no-color", "--no-renames", "--ignore-submodules=all", "-U0", merge_base',
-            '"diff", "--no-color", "--ignore-submodules=all", "-U0", merge_base',
+            '"diff", "--no-color", "--no-renames", "--ignore-submodules=dirty", "-U0", merge_base',
+            '"diff", "--no-color", "--ignore-submodules=dirty", "-U0", merge_base',
             "a policy renamed out of app/policies is one-way",
         ),
         Mutation(

@@ -44,7 +44,7 @@ GUARD = Guard(
         ),
         Mutation(
             'a merged worktree with uncommitted work is listed as finished',
-            '\n                and not git(w["path"], "status", "--porcelain", "--ignore-submodules=all")[1].strip()]',
+            '\n                and not git(w["path"], "status", "--porcelain", "--ignore-submodules=dirty")[1].strip()]',
             ']',
             'a merged worktree with uncommitted work is NOT listed',
             narrow=False,

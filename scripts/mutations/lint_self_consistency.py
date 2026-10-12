@@ -1551,7 +1551,7 @@ GUARD = Guard(
         # #1919: a worktree git status/diff in shipped code recurses into a submodule and runs ITS clean filter.
         Mutation(
             "a git status without the flag is not reported",
-            '            if "--ignore-submodules=all" in line or _SUBMODULE_SAFE.search(line):\n                continue',
+            '            if "--ignore-submodules=dirty" in line or _SUBMODULE_SAFE.search(line):\n                continue',
             '            continue',
             "git-status-recurses-submodules: a hook's `git status --porcelain` is a finding",
         ),
@@ -1590,6 +1590,12 @@ GUARD = Guard(
             'r"""\\b_?(?:run_)?g(?:it)?\\([^()\\n]*?',
             'r"""\\bgit\\([^()\\n]*?',
             "git-status-recurses-submodules: a `_git(` helper's status (#1920 review) is a finding",
+        ),
+        Mutation(
+            "--ignore-submodules=all is accepted, so a gate's diff hides a moved gitlink (#1920 security review)",
+            '            if "--ignore-submodules=dirty" in line or _SUBMODULE_SAFE.search(line):',
+            '            if "--ignore-submodules=" in line or _SUBMODULE_SAFE.search(line):',
+            "git-status-recurses-submodules: =all, which hides a moved gitlink from a gate is a finding",
         ),
     ),
 )

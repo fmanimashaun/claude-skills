@@ -891,7 +891,7 @@ def _hook_scope(root: Path) -> list[Path]:
 
 
 def check_git_status_recurses_submodules() -> tuple[list[Finding], int]:
-    """A `git status` or worktree `git diff` in shipped code without `--ignore-submodules=all` is a finding (#1919).
+    """A `git status` or worktree `git diff` in shipped code without `--ignore-submodules=dirty` is a finding (#1919).
 
     Measured on git 2.50.1: `status` (also with `-uall` or `--no-optional-locks`) and `diff HEAD` recurse into a submodule
     and run a `filter.<name>.clean` named in THAT repository's own config when a same-size change makes git hash a file.
@@ -901,7 +901,22 @@ def check_git_status_recurses_submodules() -> tuple[list[Finding], int]:
     Not seen, stated: `git add -u` and `git commit -a` also hash the worktree and run the filter (measured in the #1920
     review); no shipped code runs them in a user's worktree today. The scan is per LINE: a flag or marker anywhere on the
     line passes it, and an argv list split across lines whose flag sits on a continuation line is reported (put the flag,
-    or the marker, on the line that names the subcommand)."""
+    or the marker, on the line that names the subcommand).
+
+    Why a per-call flag and not one config setting (measured on git 2.50.1, #1920 review; `RAN` = the submodule's filter ran):
+
+        command               plain   --ignore-submodules=dirty   --ignore-submodules=all   -c diff.ignoreSubmodules=all
+        status [-uall]        RAN     clean                       clean                     clean
+        diff HEAD / diff <c>  RAN     clean                       clean                     clean
+        commit -a             RAN     -                           clean                     clean
+        diff-files            RAN     clean                       clean                     RAN
+        diff-index HEAD       RAN     clean                       clean                     RAN
+        add -u                RAN     (no such option)            (no such option)          RAN
+        diff --cached / A B   clean   -                           -                         -
+
+    The config misses three commands, so a helper setting it would not be a single guarantee. `=dirty`, not `=all`: both
+    stop the filter, but `=all` also hides a MOVED GITLINK (committed or not) from status and diff, so a gate such as
+    classify_door would miss a submodule bump; `=dirty` still reports it (measured, #1920 security review)."""
     findings: list[Finding] = []
     examined = 0
     for f in _hook_scope(ROOT):
@@ -919,11 +934,17 @@ def check_git_status_recurses_submodules() -> tuple[list[Finding], int]:
             if not hit:
                 continue
             examined += 1
-            if "--ignore-submodules=all" in line or _SUBMODULE_SAFE.search(line):
+            if "--ignore-submodules=dirty" in line or _SUBMODULE_SAFE.search(line):
+                continue
+            if "--ignore-submodules=all" in line:
+                findings.append(Finding("git-status-recurses-submodules", str(rel), n,
+                                        "--ignore-submodules=all also hides a MOVED GITLINK, committed or not, so a gate "
+                                        "reading this diff misses a submodule bump: use --ignore-submodules=dirty, which "
+                                        "stops the clean filter and still reports the gitlink (#1920 security review)"))
                 continue
             findings.append(Finding("git-status-recurses-submodules", str(rel), n,
                                     "git status/diff here recurses into a submodule and runs a clean filter named in ITS "
-                                    "config: pass --ignore-submodules=all, or mark a diff that reads no worktree "
+                                    "config: pass --ignore-submodules=dirty, or mark a diff that reads no worktree "
                                     "(`--cached`, ref to ref) `submodule-safe: <reason>` (#1919)"))
     return findings, examined
 
@@ -5443,7 +5464,8 @@ def selftest() -> int:
         ("a diff-files call", "plugins/x/scripts/x.py", 'subprocess.run(["git", "diff-files", "--name-only"])\n', True),
         ("CONTROL: a helper named otherwise (`log(`) is not git", "plugins/x/scripts/x.py", 'log("status", "--porcelain")\n', False),
         ("a marker with no reason", "plugins/x/hooks/scripts/h.sh", "git status  # submodule-safe:\n", True),
-        ("CONTROL: the flag", "plugins/x/hooks/scripts/h.sh", 'd="$(git status --porcelain --ignore-submodules=all)"\n', False),
+        ("CONTROL: the flag", "plugins/x/hooks/scripts/h.sh", 'd="$(git status --porcelain --ignore-submodules=dirty)"\n', False),
+        ("=all, which hides a moved gitlink from a gate", "plugins/x/scripts/x.py", 'git("diff", "--name-only", "--ignore-submodules=all", base)\n', True),
         ("CONTROL: a reasoned marker", "plugins/x/hooks/scripts/h.sh", 'git diff --cached --name-only  # submodule-safe: --cached reads the index\n', False),
         ("CONTROL: a test string naming git status is not a call", "plugins/x/scripts/x.py", '("git status && git push origin main", ["PUSH"]),\n', False),
         ("CONTROL: a comment line", "plugins/x/hooks/scripts/h.sh", "# git status --porcelain would recurse\n", False),

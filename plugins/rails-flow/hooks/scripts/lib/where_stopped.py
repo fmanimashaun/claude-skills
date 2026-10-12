@@ -90,9 +90,9 @@ def facts(cwd: Path) -> dict | None:
     if head and has_remote:
         n = git(cwd, "rev-list", "--count", "HEAD", "--not", "--remotes")
         unpushed = int(n) if n and n.isdigit() else None
-    # --ignore-submodules=all (#1916): status would recurse into a submodule and run a clean filter named in ITS OWN config, every
+    # --ignore-submodules=dirty (#1916): status would recurse into a submodule and run a clean filter named in ITS OWN config, every
     # turn. A submodule's state is not unsaved work in this worktree that the hook can act on.
-    status = git(cwd, "status", "--porcelain", "-uall", "--ignore-submodules=all")
+    status = git(cwd, "status", "--porcelain", "-uall", "--ignore-submodules=dirty")
     # UNKNOWN, NEVER CLEAN (#1643 review N2): a `git status` that failed or timed out has said nothing about the tree, and
     # reading its silence as "0 uncommitted files" is the false all-clear this file exists to prevent.
     dirty = None if status is None else [line[3:] for line in status.splitlines()]
