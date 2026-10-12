@@ -5742,6 +5742,76 @@ def release_gate_fallback_fixtures() -> None:
               done.returncode == 0 and "audited" in done.stderr, done.stderr[:200])
 
 
+# ---- release-gate.sh on a large command, and its fallback (#1952) -----------------------------------------------------
+def release_gate_large_fixtures() -> None:
+    """#1952: the release gate ANSWERS a large command quickly, and so does its fallback. Measured on dev before the fix: 195 KB took 3.1 s, 390 KB
+    8.2 s, 683 KB gave no answer in 70 s, and the fallback alone took 2 s at 2 KB, 22 s at 6 KB and over 40 s at 11 KB (bash 3.2: the `${x//a/b}`
+    passes are quadratic). The hook is killed at 15 s and a killed hook lets the command run, so a slow answer is no answer. Every answer here
+    must arrive within SECONDS, whatever the size; the limit is far above the fixed cost and far below the old behaviour."""
+    if not QA_HOOK.is_file():
+        check("release-gate present beside rails-flow (large)", False, str(QA_HOOK))
+        return
+    SECONDS_MAX = 8.0
+    PUSH = "git push origin main\n"
+
+    def run(cmd: str, extra_env: dict[str, str] | None = None, path_without_python: bool = False) -> tuple[int | None, float, str]:
+        """(exit code or None when it timed out, seconds, stderr). The gate in a repository with an origin and no certification."""
+        with scratch_dir() as td, scratch_dir() as nopy:
+            _git_repo(Path(td))
+            env = dict(os.environ); env.pop("QA_ALLOW_MAIN", None); env.pop("GH_REPO", None)
+            env["CLAUDE_PLUGIN_ROOT"] = str(QA_HOOK.parents[2]); env.update(extra_env or {})
+            if path_without_python:
+                # python3 missing: the builtins-only fallback judges alone. The tools below stay; python3 does not.
+                for tool in ("git", "cat", "sed", "grep", "awk", "tr", "cut", "head", "dirname", "basename", "env", "mktemp", "rm", "wc", "sort",
+                             "printf", "date", "uname", "ls", "readlink", "pwd", "stat", "sleep", "bash"):
+                    src = shutil.which(tool)
+                    if src and not (Path(nopy) / tool).exists():
+                        os.symlink(src, Path(nopy) / tool)
+                env["PATH"] = nopy
+            t0 = time.monotonic()
+            # Its OWN session, killed as a whole on a timeout: the hook starts child groups of its own (`set -m`), and a plain kill of the
+            # shell leaves them burning, with the pipes open, so a mutant that makes every case slow would hold this fixture for minutes.
+            proc = subprocess.Popen(["/bin/bash", str(QA_HOOK)], cwd=td, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE, text=True, start_new_session=True)
+            try:
+                _out, err = proc.communicate(json.dumps({"tool_input": {"command": cmd}}), timeout=12)   # the answer is well under 1 s
+            except subprocess.TimeoutExpired:
+                subprocess.run(["pkill", "-KILL", "-s", str(proc.pid)], capture_output=True)            # by SESSION id: only what this fixture started
+                proc.kill()
+                proc.communicate()
+                return None, time.monotonic() - t0, "timed out after 12 s"
+            return proc.returncode, time.monotonic() - t0, (err or "").strip()[:400]
+
+    def fast(label: str, got: tuple[int | None, float, str], want_rc: int, says: str = "") -> None:
+        rc, secs, err = got
+        check(label, rc == want_rc and secs <= SECONDS_MAX and says in err, f"exit {rc} in {secs:.1f}s (want {want_rc} within {SECONDS_MAX:.0f}s): {err!r}")
+
+    big_push = PUSH + "echo line\n" * 70000                       # ~770 KB of payload: the full path gave no answer in 70 s
+    fast("release-gate (#1952): a 700 KB command with a push to main is refused within seconds, not left to the harness's timeout",
+         run(big_push), 2, "too large to read")
+    fast("release-gate (#1952): a 60 KB command through the DEADLINE fallback (1 s deadline) is refused within seconds",
+         run(PUSH + "echo line\n" * 6000, {"RAILS_FLOW_HOOK_DEADLINE": "1"}), 2)
+    fast("release-gate (#1952): a 100 KB command through the DEADLINE fallback (1 s deadline) is refused within seconds, not after minutes",
+         run(PUSH + "echo line\n" * 9000, {"RAILS_FLOW_HOOK_DEADLINE": "1"}), 2)
+    fast("release-gate (#1952): python3 missing, a 6 KB command with a push to main is refused by the fallback within seconds (it took 22 s)",
+         run(PUSH + "echo line\n" * 600, path_without_python=True), 2)
+    fast("release-gate (#1952): a large command that merges through the gh CLI is refused within seconds",
+         run("gh pr merge 5\n" + "x\n" * 200000), 2, "too large to read")
+    fast("release-gate (#1952): a large command with a gh merge on a LATER line is refused within seconds (a JSON-escaped newline does not hide the verb)",
+         run("echo start\ngh pr merge 5\n" + "x\n" * 200000), 2, "too large to read")
+    fast("release-gate (#1952): CONTROL: a large command that names neither git nor gh passes within seconds",
+         run("cat > f <<EOF\n" + "some words about nothing\n" * 60000 + "EOF\n"), 0)
+    fast("release-gate (#1952): a large command that merely documents `git push` is refused too (the accepted cost) and says what to do",
+         run("cat > f <<EOF\n" + "git push origin main in a doc\n" * 40000 + "EOF\n"), 2, "Write tool")
+    fast("release-gate (#1952): QA_ALLOW_MAIN=1 is honoured for a large command and audited",
+         run(big_push, {"QA_ALLOW_MAIN": "1"}), 0, "audited")
+    rc, secs, err = run("git push origin main")
+    check("release-gate (#1952): CONTROL: a small push to main is still refused by the full path (its own reason, not the size rule)",
+          rc == 2 and secs <= SECONDS_MAX and "BLOCKED by qa-flow release gate" in err and "too large to read" not in err,
+          f"exit {rc} in {secs:.1f}s: {err!r}")
+    fast("release-gate (#1952): CONTROL: a small read-only command still passes", run("git status"), 0)
+
+
 # ---- guard-pr-ready.sh (#1565) ------------------------------------------------------------------
 @real_setup     # #1906: the repository, its HEAD and each sweep record are built by code that runs BEFORE the check that reads them; under `--match` that code is stubbed unless it is real setup
 def guard_pr_ready_fixtures() -> None:
@@ -6253,7 +6323,7 @@ GROUPS = {
     "guard_migrate": guard_migrate_fixtures, "lint_ruby": lint_ruby_fixtures,
     "self_consistency": self_consistency_fixtures, "guard_bash": guard_bash_fixtures,
     "guard_bash_db_reset": guard_bash_db_reset_fixtures,
-    "guard_claims": guard_claims_fixtures, "guard_claims_pipe": guard_claims_pipe_fixtures, "release_gate": release_gate_fixtures,
+    "guard_claims": guard_claims_fixtures, "guard_claims_pipe": guard_claims_pipe_fixtures, "release_gate": release_gate_fixtures, "release_gate_large": release_gate_large_fixtures,
     "release_gate_effects": release_gate_effects_fixtures, "release_gate_repos": release_gate_repos_fixtures,
     "release_gate_refs": release_gate_refs_fixtures, "release_gate_fallback": release_gate_fallback_fixtures,
     "release_gate_adversary": release_gate_adversary_fixtures,
@@ -6284,7 +6354,7 @@ GROUPS = {
 PARTS = {
     "a": ["stop_gate", "guard_lane", "guard_migrate", "lint_ruby", "self_consistency", "guard_bash_db_reset", "guard_claims", "guard_claims_pipe",
           "ci_verdict_hint", "session_end", "timeout", "hostile_env"],
-    "b": ["release_gate", "release_gate_effects"],
+    "b": ["release_gate", "release_gate_effects", "release_gate_large"],
     "c": ["release_gate_repos", "release_gate_refs", "release_gate_fallback", "release_gate_adversary", "guard_worktree", "guard_worktree_parse",
           "guard_worktree_failopen", "guard_worktree_pointer", "deadline", "where_stopped", "wip_commit", "tools_missing", "fixture_git_binding", "test_preflight",
           "guard_pr_ready", "submodule_filter"],
