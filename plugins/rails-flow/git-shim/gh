@@ -18,6 +18,8 @@
 # not consulted); a session where the SessionStart hook did not run; any process that is not the Bash tool; GitHub's own web UI and any API call this shim does not read. IN FORCE ONLY where
 # project_gates runs: from a directory outside any repository, or in one that does not run it, nothing is checked, a repository named by -R or GH_REPO included.
 # AUDITED ESCAPE: RAILS_FLOW_GH_OK=1 runs the real gh and says so.
+# THIS IS A TRIPWIRE WITH AN ALLOWLIST SHAPE, NOT A PARSER: what it recognises it judges, and what it cannot read as plain words (an alias expansion with a quote or a substitution) it refuses
+# where in force instead of un-quoting it.
 # bash 3.2 compatible; needs only bash (and python3 for a `pr ready`).
 set -f
 ORIG=("$@")      # the arguments as given
@@ -125,10 +127,19 @@ elif name="$(alias_word "${ORIG[@]}")" && exp="$(alias_expansion "$name")" && [ 
     fi
     rest+=("$a")
   done
-  # PARSER DIFFERENTIAL (the commit's security review): gh splits an expansion like a shell, quotes honoured; this splits on blanks. An expansion with a quote or a backslash that also
-  # mentions `ready` or `api` is judged as an unplaceable `pr ready` (the judge refuses it), never read as innocent words.
+  # AN ALLOWLIST, NOT A PARSER (the coordinator's design change after two review rounds): an expansion is read only when it is PLAIN words, split on blanks; a quoted placeholder
+  # (`"$1"`) is the placeholder. Anything else (a quote, a backslash, a substitution, a glob, a brace) is not un-quoted here, because a second split that can differ from gh's is how
+  # `pr "rea"dy` hid; where in force it is refused by the judge (and runs where it is not).
+  for n in 1 2 3 4 5 6 7 8 9; do exp="${exp//\"\$$n\"/\$$n}"; exp="${exp//\'\$$n\'/\$$n}"; done
   case "$exp" in
-    *[\'\"\\]*) case "$exp" in *ready*|*api*) judge=1; argv=(pr ready "$exp") ;; esac ;;
+    *[!A-Za-z0-9\ \	_./:@=,+%\$-]*)
+      lib="$self_dir/../hooks/scripts/lib/pr_ready_guard.py"
+      py=""; old_ifs="$IFS"; IFS=:
+      for d in $PATH; do [ -n "$d" ] || d="."; [ -x "$d/python3" ] && [ ! -d "$d/python3" ] && { py="$d/python3"; break; }; done
+      IFS="$old_ifs"
+      if [ -n "$py" ] && [ -f "$lib" ] && "$py" "$lib" --shim-unreadable "$exp"; then exec "$real" "${ORIG[@]}"; fi
+      echo "gh-shim (rails-flow): refused \`gh ${ORIG[*]}\`: the alias expands to something that is not plain words (or the judge is missing). A deliberate exception: RAILS_FLOW_GH_OK=1 gh ... (audited)." >&2
+      exit 1 ;;
   esac
   words=($exp); expanded=(); used=0
   for w in "${words[@]}"; do
@@ -137,10 +148,8 @@ elif name="$(alias_word "${ORIG[@]}")" && exp="$(alias_expansion "$name")" && [ 
       *) expanded+=("$w") ;;
     esac
   done
-  if [ "$judge" != 1 ]; then
-    argv=("${fresh_before[@]}" "${expanded[@]}" "${rest[@]:$used}")
-    if has_pr_ready "${argv[@]}" || has_api_ready "${argv[@]}"; then judge=1; fi
-  fi
+  argv=("${fresh_before[@]}" "${expanded[@]}" "${rest[@]:$used}")
+  if has_pr_ready "${argv[@]}" || has_api_ready "${argv[@]}"; then judge=1; fi
 fi
 [ "$judge" = 1 ] || exec "$real" "${ORIG[@]}"
 

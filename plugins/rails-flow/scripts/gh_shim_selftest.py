@@ -78,7 +78,8 @@ class Fixture:
         home = base / "home"
         home.mkdir()
         self.env = {k: v for k, v in os.environ.items() if not k.startswith(("GIT_", "RAILS_FLOW_", "GH_")) and k not in {"HOME", "STUB_LOG", "STUB_ALIASES"}}
-        self.env.update(HOME=str(home), STUB_LOG=str(self.log), PATH=f"{SHIM_DIR}{os.pathsep}{self.bin}{os.pathsep}{os.environ['PATH']}")
+        import pwd
+        self.env.update(HOME=pwd.getpwuid(os.getuid()).pw_dir, STUB_LOG=str(self.log), PATH=f"{SHIM_DIR}{os.pathsep}{self.bin}{os.pathsep}{os.environ['PATH']}")
 
     def record(self, verdict: str = "green", skips: int = 0, head: str | None = None) -> None:
         d = Path(fixture_git.run(self.repo, "rev-parse", "--git-path", "rails-flow/sweep").stdout.strip())
@@ -125,6 +126,9 @@ def _no_record(base: Path) -> None:
     check("shim: CONTROL: the words `pr ready` inside one argument are not a `pr ready`", ok, why)
     ok, why = allowed(fx, "gh pr ready --undo 5")
     check("shim: `gh pr ready --undo` passes (marking a PR draft again needs no sweep)", ok, why)
+    for cmd, env in (("gh --repo o/r pr ready --undo 5", None), ("gh pr ready --undo 5", {"GH_REPO": "o/r"})):
+        ok, why = allowed(fx, cmd, env)
+        check(f"shim: `{cmd}`{' with GH_REPO' if env else ''}: --undo harms no repository, so it is judged before the explicit-target refusal (as the hook does)", ok, why)
     for cmd in ("gh pr ready --undo --web 5", "gh pr ready 5 --undo -R o/r", "gh pr ready --undo=false 5"):
         ok, why = refused(fx, cmd)
         check(f"shim: `{cmd}`: `--undo` does not excuse the other arguments, and `--undo=false` is not `--undo`", ok, why)
@@ -238,6 +242,9 @@ def _redirecting(base: Path) -> None:
         for how, cmd in (("a prefix", f"{var} gh pr ready 5"), ("env in front", f"/usr/bin/env {var} gh pr ready 5")):
             ok, why = refused(fx, cmd)
             check(f"shim: {var} as {how} is refused even with a green record (it can point gh elsewhere)", ok, why)
+    for var in ("HOME=/tmp", "XDG_CONFIG_HOME=/tmp", "GH_CONFIG_DIR=/tmp"):
+        ok, why = refused(fx, f"{var} gh pr ready 5")
+        check(f"shim: {var}: git and gh read their config from it (a `url.insteadOf` there retargets a PR), so a HOME that is not the account's, or an XDG_CONFIG_HOME, is refused where in force", ok, why)
     for var in ("GH_ENTERPRISE_HOST=x", "GH_CONFIG_DIR=/x", "GIT_NAMESPACE=x", "GIT_ALTERNATE_OBJECT_DIRECTORIES=/x", "GH_SOMETHING_NEW=1"):
         ok, why = refused(fx, f"{var} gh pr ready 5")
         check(f"shim: {var}: an allowlist of the harmless, not a list of the dangerous: any other GIT_*/GH_* variable is refused where in force", ok, why)
@@ -279,11 +286,14 @@ def _alias_flags(base: Path) -> None:
     check("shim: an alias whose expansion follows the colon after a TAB is read", ok, why)
     ok, why = refused(fx, "gh rdy 5", {"STUB_ALIASES": "rdy:    pr ready"})
     check("shim: ...or after several spaces", ok, why)
-    for exp in ("'pr' ready", 'pr "ready"', "pr\\ ready"):
+    for exp in ("'pr' ready", 'pr "ready"', "pr\\ ready", 'pr "rea"dy', "pr re\\ady", "pr 'rea'dy", 'a"p"i graphql -f query=mutation{markPullRequestReadyForReview(input:{pullRequestId:"x"}){clientMutationId}}'):
         ok, why = refused(fx, "gh rdy 5", {"STUB_ALIASES": f"rdy: {exp}"})
-        check(f"shim: an alias expansion with a quote or backslash that mentions `ready` is judged, not read as innocent words (gh splits it like a shell, this splits on blanks): {exp}", ok, why)
-    ok, why = allowed(fx, "gh mine", {"STUB_ALIASES": "mine: pr list --search \"a b\""})
-    check("shim: CONTROL: a quoted alias expansion that mentions neither `ready` nor `api` is untouched", ok, why)
+        check(f"shim: an alias expansion that is not plain words is refused where in force, whatever it mentions, and never un-quoted: {exp[:40]}", ok, why)
+    ok, why = refused(fx, "gh mine", {"STUB_ALIASES": "mine: pr list --search \"a b\""})
+    check("shim: ...so even a harmless quoted expansion is refused where in force (the stated cost of an allowlist; RAILS_FLOW_GH_OK=1 is the escape)", ok, why)
+    nof = Fixture(base / "nf2", in_force=False)
+    ok, why = allowed(nof, "gh mine", {"STUB_ALIASES": "mine: pr list --search \"a b\""})
+    check("shim: CONTROL: ...and it runs where project_gates does not", ok, why)
 
 
 @case("alias placeholder")
@@ -292,6 +302,8 @@ def _alias_placeholder(base: Path) -> None:
     fx.record()
     ok, why = allowed(fx, "gh rdy 5", {"STUB_ALIASES": "rdy: pr ready $1"})
     check("shim: an alias with a `$1` placeholder is judged by what gh will RUN (`pr ready 5`): a green record lets it through", ok, why)
+    ok, why = allowed(fx, "gh rdy 5", {"STUB_ALIASES": 'rdy: pr ready "$1"'})
+    check("shim: a quoted placeholder (`\"$1\"`) is the placeholder", ok, why)
     ok, why = refused(fx, "gh rdy 5 -R o/r", {"STUB_ALIASES": "rdy: pr ready $1"})
     check("shim: ...and the arguments after the placeholder are appended and judged (`-R o/r` is refused)", ok, why)
     fx2 = Fixture(base / "nr")
@@ -309,6 +321,12 @@ def _api(base: Path) -> None:
     check("shim: a `gh api` whose body comes from a file cannot be judged, so it is refused where in force", ok, why)
     ok, why = refused(fx, "gh api graphql -F query=@q.graphql")
     check("shim: ...also as `-F field=@file`", ok, why)
+    fxr = Fixture(base / "r2")
+    fxr.record()
+    ok, why = refused(fxr, "gh -R o/r api graphql -f query='mutation{markPullRequestReadyForReview(input:{pullRequestId:\"x\"}){clientMutationId}}'")
+    check("shim: a `gh api` naming a repository or host is refused where in force even with a green record", ok, why)
+    ok, why = refused(fxr, "gh api --hostname ghe.example.com graphql -f query='mutation{markPullRequestReadyForReview(input:{pullRequestId:\"x\"}){clientMutationId}}'")
+    check("shim: ...also --hostname", ok, why)
     ok, why = allowed(fx, "gh api user")
     check("shim: CONTROL: `gh api user` is untouched", ok, why)
     ok, why = allowed(fx, "gh api repos/o/r/pulls/5 -f title=x")
