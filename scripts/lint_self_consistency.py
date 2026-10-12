@@ -5423,6 +5423,23 @@ def selftest() -> int:
              expect_finding=False, files={FIXTURE_GIT_COPIES[0]: 'IDENTITY = ("-c", "user.email=t@t")\n'})
     scenario("fixture-git-bypass: a file with no fixture identity is silent", rule="fixture-git-bypass",
              expect_finding=False, files={"plugins/x/scripts/x.py": 'subprocess.run(["git", "status"])\n'})
+    # #1919: a worktree git status/diff in shipped code needs --ignore-submodules=all, or a reasoned submodule-safe marker.
+    for label, path, body, want in (
+        ("a hook's `git status --porcelain`", "plugins/x/hooks/scripts/h.sh", 'd="$(git status --porcelain)"\n', True),
+        ("a hook's `git diff --name-only HEAD`", "plugins/x/hooks/scripts/h.sh", 'n="$(git -C "$r" diff --name-only HEAD)"\n', True),
+        ("a git hook's status", "plugins/x/git-hooks/pre-commit", "git status --porcelain\n", True),
+        ("a plugin script's argv status", "plugins/x/scripts/x.py", 'subprocess.run(["git", "status", "--porcelain"])\n', True),
+        ("a plugin script's git() helper diff", "plugins/x/scripts/x.py", 'names = git("diff", "--name-only", base)\n', True),
+        ("a JS hook's git($, [status])", "plugins/x/hooks/band.js", "const s = await git($, ['status', '--porcelain'])\n", True),
+        ("a marker with no reason", "plugins/x/hooks/scripts/h.sh", "git status  # submodule-safe:\n", True),
+        ("CONTROL: the flag", "plugins/x/hooks/scripts/h.sh", 'd="$(git status --porcelain --ignore-submodules=all)"\n', False),
+        ("CONTROL: a reasoned marker", "plugins/x/hooks/scripts/h.sh", 'git diff --cached --name-only  # submodule-safe: --cached reads the index\n', False),
+        ("CONTROL: a test string naming git status is not a call", "plugins/x/scripts/x.py", '("git status && git push origin main", ["PUSH"]),\n', False),
+        ("CONTROL: a comment line", "plugins/x/hooks/scripts/h.sh", "# git status --porcelain would recurse\n", False),
+        ("CONTROL: a selftest builds its own repository", "plugins/x/scripts/x_selftest.py", 'subprocess.run(["git", "status"])\n', False),
+        ("CONTROL: git stash status is not git status", "plugins/x/hooks/scripts/h.sh", "echo status; git stash list\n", False),
+    ):
+        scenario(f"git-status-recurses-submodules: {label} is {'a finding' if want else 'silent'}", rule="git-status-recurses-submodules", expect_finding=want, files={path: body})
     scenario(
         "the history file CLAUDE.md points at is missing", rule="claude-md-growth", expect_finding=True,
         files={"CLAUDE.md": "@AGENTS.md\n<!-- claude-md: max-lines 10 -->\nrule\n"},
