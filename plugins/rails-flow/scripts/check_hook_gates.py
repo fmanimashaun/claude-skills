@@ -48,6 +48,11 @@ import fixture_git  # noqa: E402  (#1588: a fixture's git touches only its own t
 HOOKS = Path(__file__).resolve().parents[1] / "hooks" / "scripts"
 
 
+# The prefix of every fixture directory. The `--match` mask (`_TEMP_PATH`) is built from it, so a label that embeds a scratch path compares equal in the survey and the run
+# (#1893: the prefix changed in #1800 and the mask, which only knew `tmp...`, did not follow: 9 worktree guards read "cannot be narrowed").
+SCRATCH_PREFIX = "hookgates-"
+
+
 @contextlib.contextmanager
 def scratch_dir():
     """A temp directory a fixture owns, removed on exit WITHOUT ever failing the run (#1800).
@@ -57,7 +62,7 @@ def scratch_dir():
     escaped the fixture group, failed the whole selftest, and read in the mutation harness as "the UNMUTATED selftest fails" (run 38054049242):
     a cleanup problem reported as a verdict. A leftover temp directory is harmless; a raised cleanup is not. So: retry a few times, then give
     up, and say what was left on stderr so the next occurrence names its writer instead of being a bare traceback."""
-    path = tempfile.mkdtemp(prefix="hookgates-")
+    path = tempfile.mkdtemp(prefix=SCRATCH_PREFIX)
     try:
         yield path
     finally:
@@ -95,7 +100,7 @@ class MatchSequenceError(Exception):
 # `--match` would refuse the group. The path is MASKED for the comparison, including a name a label cut short (`cmd[:40]` in
 # a label ends mid-name when the directory is short, as `/tmp` is on a Linux runner and `/private/var/folders/...` is not on
 # a Mac: a group that surveyed clean on a laptop was refused in CI, #1596). Failures still print the label as written.
-_TEMP_PATH = re.compile(r"/\S*?/tmp\w+")
+_TEMP_PATH = re.compile(r"/\S*?/(?:tmp\w+|" + re.escape(SCRATCH_PREFIX) + r"\w*)")
 
 
 def _stable(label: str) -> str:
@@ -6035,8 +6040,10 @@ def hostile_env_fixtures() -> None:
 
     got = inherited_view()
     check("hostile environment: trusted-env.sh keeps a copy of an inherited GH_REPO as RF_INHERITED_GH_REPO for the gates, and unsets the variable itself", got.startswith("unset|evil/repo|"), f"got {got!r}")
-    check("hostile environment: ...and of an inherited CDPATH", got.split("|")[2:3] == ["/x"], f"got {got!r}")
-    check("hostile environment: ...but not of what the lib sets itself (GIT_CONFIG_GLOBAL when HOME is the repository root)", got.split("|")[3:4] == ["unset"], f"got {got!r}")
+    got_cd = inherited_view()      # its own view: `--match` skips the code before an unwanted check, so a view computed above this one would be empty (#1893)
+    check("hostile environment: ...and of an inherited CDPATH", got_cd.split("|")[2:3] == ["/x"], f"got {got_cd!r}")
+    got_own = inherited_view()
+    check("hostile environment: ...but not of what the lib sets itself (GIT_CONFIG_GLOBAL when HOME is the repository root)", got_own.split("|")[3:4] == ["unset"], f"got {got_own!r}")
     check("hostile environment: ...and a credential (GH_TOKEN, GH_ENTERPRISE_TOKEN) is not copied, so it is in front of no more child processes than before",
           inherited_view(creds=True) == "unset|unset", f"got {inherited_view(creds=True)!r}")
     got = inherited_view(forged=True)
@@ -6321,6 +6328,10 @@ def meta_checks() -> None:
           and _stable("no path in this label") == "no path in this label"
           and _stable("a /tmp/tmpAbCd1234/x") != _stable("b /tmp/tmpAbCd1234/x"),
           repr([_stable("x: git worktree remove /tmp/tmpAbCd1234/a"), _stable("x /private/tmp/tmpp47g")]))
+    with scratch_dir() as made:
+        masked, cut = _stable(f"x: {made}/a"), _stable(f"x: {made[:made.index(SCRATCH_PREFIX) + len(SCRATCH_PREFIX)]}")
+    check("a label's path under a REAL scratch directory is masked, whole or cut right after its prefix, so --match works for the labels that embed one (#1893)",
+          masked == "x: <tmp>/a" and cut == "x: <tmp>", repr([masked, cut]))
     check("--part a, --part b and --part c name groups; any other part is refused, never an empty pass",
           all(parse_part(k) == PARTS[k] for k in ("a", "b", "c")) and all(parse_part(x) is None for x in ("", "d", "ab", "A")),
           repr([parse_part(x) for x in ("a", "b", "c", "", "d")]))

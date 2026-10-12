@@ -253,6 +253,13 @@ GUARD = Guard(
             "a label's temp path is masked",
         ),
         Mutation(
+            # #1893
+            "the mask does not know the scratch prefix, so a label that embeds a fixture directory differs between the survey and the run and --match refuses the group",
+            r'''(?:tmp\w+|" + re.escape(SCRATCH_PREFIX) + r"\w*)''',
+            r'''tmp\w+''',
+            "a label's path under a REAL scratch directory is masked",
+        ),
+        Mutation(
             # review of PR #1506
             "a bare run executes no group, so the doctor's hook gates pass on nothing",
             '    global _CURRENT_GROUP\n    for name in (groups or list(table)):',
