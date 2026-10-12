@@ -31,15 +31,27 @@ GUARD = Guard(
     mutations=(
         Mutation(
             "the date form of the evidence is gone, so the 'measured 2026-..-..' the refusal asks for keeps the PR blocked",
-            r"""|measured[[:space:]]+[0-9]{4}-[0-9]{2}-[0-9]{2}|verified""",
-            r"""|verified""",
+            r"""|measured[[:space:]]+[0-9]{4}-[0-9]{2}-[0-9]{2}|(^|[^a-z])verified""",
+            r"""|(^|[^a-z])verified""",
             "the evidence phrase 'measured 2026-10-11' is accepted",
         ),
         Mutation(
             "the date form of 'verified' is gone, so 'Verified 2026-..-.. against ...' alone keeps the PR blocked (#1936)",
-            r"""|verified[[:space:]]+(on[[:space:]]+)?[0-9]{4}-[0-9]{2}-[0-9]{2}|CONFIRMED""",
+            r"""|(^|[^a-z])verified[[:space:]]+(on[[:space:]]+)?[0-9]{4}-[0-9]{2}-[0-9]{2}|CONFIRMED""",
             r"""|CONFIRMED""",
             "the evidence phrase 'Verified 2026-10-12 against Retask dev' is accepted",
+        ),
+        Mutation(
+            "'verified' may sit inside a longer word, so 'unverified 2026-10-12' counts as evidence (#1936, a0's review)",
+            r"""|(^|[^a-z])verified[[:space:]]+(on[[:space:]]+)?[0-9]{4}-[0-9]{2}-[0-9]{2}|CONFIRMED""",
+            r"""|verified[[:space:]]+(on[[:space:]]+)?[0-9]{4}-[0-9]{2}-[0-9]{2}|CONFIRMED""",
+            "guard-claims (#1936) control: 'unverified 2026-10-12' is not evidence",
+        ),
+        Mutation(
+            "'verified against' may sit inside a longer word, so 'unverified against the spec' counts as evidence (#1936, a0's review)",
+            r"""'(^|[^a-z])verified against|""",
+            r"""'verified against|""",
+            "guard-claims (#1936) control: 'unverified against the spec' is not evidence",
         ),
         Mutation(
             "the optional word between 'measured' and on/against is gone, so 'measured live on dev' is not evidence",

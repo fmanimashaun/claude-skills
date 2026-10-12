@@ -248,7 +248,10 @@ n="$(printf '%s' "$claims" | sed -nE 's/^([0-9]+) load-bearing claim.*/\1/p' | h
 
 # A body that already shows its working is what we are asking for, so recognise it and stand aside.
 # Every phrase the refusal below suggests must match here (#1877: 'measured 2026-..-..' did not, and the PR stayed blocked), and so must its date-in-the-middle twin, 'Verified 2026-..-.. against ...' (#1936).
-if grep -qiE 'verified against|re-verified|measured[[:space:]]+([a-z]+[[:space:]]+)?(on|against)|measured[[:space:]]+[0-9]{4}-[0-9]{2}-[0-9]{2}|verified[[:space:]]+(on[[:space:]]+)?[0-9]{4}-[0-9]{2}-[0-9]{2}|CONFIRMED' "$body"; then
+# `verified` must START a word (`(^|[^a-z])`), so `unverified 2026-10-12` and `unverified against the spec` are not evidence (a0's review of #1937). KNOWN LIMIT, stated: a separate negation
+# (`not verified against`, `could not be verified`) still matches, because refusing it needs the negation's reach, which has no bound (`has yet to be verified against`); this is a prompt
+# for the author to show their working, not a proof that they did (#1936).
+if grep -qiE '(^|[^a-z])verified against|(^|[^a-z])re-verified|measured[[:space:]]+([a-z]+[[:space:]]+)?(on|against)|measured[[:space:]]+[0-9]{4}-[0-9]{2}-[0-9]{2}|(^|[^a-z])verified[[:space:]]+(on[[:space:]]+)?[0-9]{4}-[0-9]{2}-[0-9]{2}|CONFIRMED' "$body"; then
   exit 0
 fi
 

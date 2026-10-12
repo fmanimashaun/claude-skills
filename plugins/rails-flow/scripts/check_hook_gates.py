@@ -1848,6 +1848,9 @@ def guard_claims_fixtures() -> None:
           run("gh issue comment 1724 -R fmanimashaun/Retask-platform --body-file BODY", NUMERIC + "Verified 2026-10-12 against Retask dev.\n") == 0, said())
     check("guard-claims (#1936) control: 'verified' with no date and no `against` is not evidence",
           run("gh pr create --base dev --body-file BODY", NUMERIC + "Verified, I think.\n") == 2, said())
+    for phrase in ("unverified 2026-10-12", "unverified against the spec", "unverified on 2026-10-12", "re-unverified 2026-10-12"):
+        check(f"guard-claims (#1936) control: '{phrase}' is not evidence (the word must start with `verified`)",
+              run("gh pr create --base dev --body-file BODY", NUMERIC + phrase + ".\n") == 2, said())
     check("guard-claims (#1936) control: a year alone ('verified 2026') is not a date",
           run("gh pr create --base dev --body-file BODY", NUMERIC + "verified 2026.\n") == 2, said())
     check("guard-claims (#1877) control: 'measured' with no date and no on/against is not evidence",
