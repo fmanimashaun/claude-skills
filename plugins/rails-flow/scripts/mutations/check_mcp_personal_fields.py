@@ -83,5 +83,9 @@ GUARD = Guard(
                  ' and f"{table}.{column}" not in allowed:',
                  ' and not any(a.startswith(f"{table}.") for a in allowed):',
                  "a column entry admits ONLY that column"),
+        Mutation("a malformed allow-list is used as it is (a traceback, or a string read as characters)",
+                 "            if not isinstance(allow, dict) or not all(isinstance(v, list) and all(isinstance(e, str) for e in v) for v in allow.values()):",
+                 "            if False:",
+                 "a malformed allow-list"),
     ),
 )

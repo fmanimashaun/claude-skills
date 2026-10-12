@@ -158,6 +158,9 @@ def check(root: Path) -> tuple[int, list[str]]:
                 allow = json.loads(_read(root / DECLARATION)).get("allow", {}) or {}
             except (json.JSONDecodeError, AttributeError) as exc:
                 raise CouldNotCheck(f"{DECLARATION} is not a JSON object ({exc})") from exc
+            # an allow-list it cannot read is could-not-check, never a traceback and never a silent string-of-characters (#1941 review)
+            if not isinstance(allow, dict) or not all(isinstance(v, list) and all(isinstance(e, str) for e in v) for v in allow.values()):
+                raise CouldNotCheck(f'{DECLARATION}: `allow` must map each tool to a list of strings, {{"tool": ["category" | "table.column"]}}')
         found_tools = tools(root)
         unjudged = unjudged_forms(root)
     except CouldNotCheck as exc:
@@ -285,6 +288,15 @@ def selftest() -> int:
         failures.append("no privacy inventory must be n/a (exit 3): nothing to hold the tools to")
     if run({**base, ".rails-flow/mcp.json": "not json"})[0] != 2:
         failures.append("a declaration that is not JSON is could-not-check (exit 2), never a pass")
+    # A malformed allow-list is could-not-check (exit 2), not a crash and not a quiet string of characters (#1941 review).
+    for bad in ('{"allow": {"countries": [["users.email_address"]]}}', '{"allow": {"countries": null}}',
+                '{"allow": {"countries": "users.email_address"}}', '{"allow": ["countries"]}'):
+        try:
+            got = run({**base, T: tool("countries", "%w[users.email_address]"), ".rails-flow/mcp.json": bad})[0]
+        except Exception as exc:  # noqa: BLE001  a traceback is the defect this row exists for
+            got = f"crashed: {exc!r}"
+        if got != 2:
+            failures.append(f"a malformed allow-list {bad} is could-not-check (exit 2), got {got}")
     for f in failures:
         print(f"selftest FAIL: {f}")
     print(f"check_mcp_personal_fields selftest: {'FAILED' if failures else 'ok'} ({len(failures)} failure(s))")
