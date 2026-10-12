@@ -909,7 +909,7 @@ def check_git_status_recurses_submodules() -> tuple[list[Finding], int]:
         command               plain   --ignore-submodules=dirty   --ignore-submodules=all   -c diff.ignoreSubmodules=all
         status [-uall]        RAN     clean                       clean                     clean
         diff HEAD / diff <c>  RAN     clean                       clean                     clean
-        commit -a             RAN     -                           clean                     clean
+        commit -a             RAN     clean                       clean                     clean
         diff-files            RAN     clean                       clean                     RAN
         diff-index HEAD       RAN     clean                       clean                     RAN
         add -u                RAN     (no such option)            (no such option)          RAN
