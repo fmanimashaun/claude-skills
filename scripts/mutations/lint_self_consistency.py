@@ -1379,5 +1379,223 @@ GUARD = Guard(
             '''                               r"""|GIT_NEVER_MATCHES"""''',
             'fixture-git-bypass: a GIT_AUTHOR_EMAIL env entry outside fixture_git is a finding',
         ),
+        # #1700. A path the plugin prescribes that its own docs-layout gate fails.
+        Mutation(
+            "a docs/<dir>/ outside LAYOUT stops being a finding",
+            "                if directory not in allowed and directory not in OWN_REPO_DOCS:",
+            "                if False:",
+            "a command that writes docs/handoff/<slug>.md, a directory the layout lacks",
+        ),
+        Mutation(
+            "design-flow is no longer scanned for docs paths outside the layout",
+            '    for plugin in (ROOT / "plugins" / "rails-flow", ROOT / "plugins" / "design-flow"):   # design-flow since #1779: it prescribed docs/assets/ and docs/design-system/',
+            '    for plugin in (ROOT / "plugins" / "rails-flow",):',
+            "design-flow's command that writes docs/assets/<x> is a finding too (#1779)",
+        ),
+        Mutation(
+            "design-flow's migration module is scanned, so it is flagged for naming its old places",
+            'MIGRATIONS = {"asset_home.py"}',
+            "MIGRATIONS = set()",
+            "design-flow's own migration module names its old places on purpose, and is silent",
+        ),
+        Mutation(
+            "reference documents are not scanned",
+            '*sorted(plugin.glob("reference/*.md")),',
+            "",
+            "a reference document that names docs/acceptance/<slug>.md (model-tiers.md did, by hand-fix only)",
+        ),
+        Mutation(
+            "a line that names the path as pre-layout is flagged too",
+            '            if "pre-layout" in line:',
+            "            if False:",
+            "a line that says pre-layout is a fallback, not a prescription, and silent",
+        ),
+        Mutation(
+            "a pointer to this repository's own doctrine docs is flagged",
+            'OWN_REPO_DOCS = {"doctrine"}',
+            "OWN_REPO_DOCS = set()",
+            "a pointer to this repository's own docs/doctrine/ is silent",
+        ),
+        Mutation(
+            "selftests and fixtures are scanned too",
+            '                 if not p.name.endswith("_selftest.py")',
+            "                 if True",
+            "a selftest, docs_layout.py's own tables and another plugin's docs are out of scope, and silent",
+        ),
+        Mutation(
+            "a LAYOUT nobody can read stops being a finding",
+            "    if not allowed:",
+            "    if False:",
+            "a LAYOUT that is not a literal dict is itself a finding",
+        ),
+        # #1698. The graph's vendored-alone copy of the schema-file rule must read the same files as the wiki builder's.
+        Mutation(
+            'the two copies are no longer compared',
+            '            if wiki_files != graph_files:',
+            '            if False:',
+            "the graph's copy reads fewer schema files than the wiki builder: a finding",
+        ),
+        Mutation(
+            'a script that cannot load is swallowed',
+            '        return [Finding("schema-reader-drift", wiki_rel, 0, f"cannot compare the schema-file rule in {wiki_rel} and {graph_rel}: {type(exc).__name__}: {exc}")], 0',
+            '        return [], 0',
+            'a graph copy that lost the function is a finding, never a silent pass',
+        ),
+        Mutation(
+            'a tree without both scripts is compared anyway',
+            '        return [], 0        # a tree without both scripts has no two copies to disagree',
+            '        pass',
+            'a tree without both scripts has no two copies to disagree, and is silent',
+        ),
+        Mutation(
+            'the project-table-that-begins-solid tree is dropped',
+            '    {"schema.rb": ["invoices"], "cache_schema.rb": ["solidarity_votes"]},',
+            '',
+            'a graph copy whose Solid prefix is `solid`, not `solid_`, disagrees over a project table named solidarity_votes',
+        ),
+        # #1561. The setup-flow template is prose a model follows, so its preflight is checked by DRIVING the emitter both ways and by what a
+        # template edit can break: each mutation below removes one of those, and names the scenario that exists for it.
+        Mutation(
+            # THE WIRING. An emitter that writes the block for every project spends always-loaded lines on advice that cannot apply.
+            "the emitter writes the preflight into every project, with a database or not",
+            '    return _EMIT_IF.sub(lambda m: m.group(1) if has_database else "", setup_text)\n',
+            "    return _EMIT_IF.sub(lambda m: m.group(1), setup_text)\n",
+            "the emitter",
+        ),
+        Mutation(
+            "a conditional block that is not the preflight stops being a finding",
+            '        if "## Test-run preflight" not in emit_claude_md(text, True):\n',
+            "        if False:\n",
+            "a conditional block that is not the preflight, so a project with a database gets none",
+        ),
+        Mutation(
+            "the preflight block losing one of its rules stops being a finding",
+            '        for needle, what in _PREFLIGHT_NEEDLES:\n',
+            "        for needle, what in ():\n",
+            "a preflight block that lost the held-lock check",
+        ),
+        Mutation(
+            "a second conditional block stops being a finding",
+            '    if len(blocks) != 1:\n',
+            "    if len(blocks) == 0:\n",
+            "two conditional blocks where the template promises one",
+        ),
+        Mutation(
+            "the GUARDRAILS git rules losing a piece stops being a finding",
+            '    for needle, what in _GUARDRAILS_NEEDLES:\n',
+            "    for needle, what in ():\n",
+            "a GUARDRAILS section with no placeholder-SHA rule",
+        ),
+        Mutation(
+            "a lost pointer to /rails-flow:handoff stops being a finding",
+            '    if see_also is None or "/rails-flow:handoff" not in see_also.group(1):\n',
+            "    if False:\n",
+            "a See Also line with no pointer to /rails-flow:handoff",
+        ),
+        Mutation(
+            # #127: concurrent branches overwrite one root file; the shipped answer is the work order the command writes.
+            "a root HANDOFF.md in the template stops being a finding",
+            '    if "HANDOFF.md" in text:\n',
+            "    if False:\n",
+            "a template that names a root HANDOFF.md",
+        ),
+        # #1850. The hook-start-hardened rule: each clause of a three-clause rule needs its own fixture and mutation.
+        Mutation(
+            'a bare `bash` hook command stops being a finding',
+            '            if not command.startswith(HOOK_START):',
+            '            if False:',
+            'a hook command that starts with a bare `bash` is a finding',
+        ),
+        Mutation(
+            '-p stops being required',
+            'HOOK_START = "/bin/bash -p "',
+            'HOOK_START = "/bin/bash "',
+            'a hook command that starts /bin/bash WITHOUT -p is a finding',
+        ),
+        Mutation(
+            'a hook script that calls python3 before the lib stops being a finding',
+            '            if not first.startswith(TRUSTED_ENV_SOURCE):',
+            '            if False:',
+            'a hook script that calls python3 before it sources the lib is a finding',
+        ),
+        Mutation(
+            'a comment counts as an executable line',
+            '        if not stripped or stripped.startswith("#") or _SET_LINE.match(stripped):',
+            '        if not stripped or _SET_LINE.match(stripped):',
+            'a hook started /bin/bash -p, sourcing the lib first, with the lib shipped: silent',
+        ),
+        Mutation(
+            'a `set` option line counts as an executable line',
+            '        if not stripped or stripped.startswith("#") or _SET_LINE.match(stripped):',
+            '        if not stripped or stripped.startswith("#"):',
+            'a hook started /bin/bash -p, sourcing the lib first, with the lib shipped: silent',
+        ),
+        Mutation(
+            'a differing copy of the lib stops being a finding',
+            '        elif text != canonical[1]:',
+            '        elif False:',
+            'two plugins whose copies of the lib differ are a finding',
+        ),
+        Mutation(
+            'a missing copy of the lib stops being a finding',
+            '            findings.append(Finding("hook-start-hardened", lib_rel, 0, "missing',
+            '            _ = (Finding("hook-start-hardened", lib_rel, 0, "missing',
+            'a plugin with hooks and no copy of the lib is a finding',
+        ),
+        Mutation(
+            'a plugin with no command hook is asked for a lib',
+            '        if not commands:\n            continue',
+            '        if False:\n            continue',
+            'a plugin whose hooks.json holds no command hook needs no lib: silent',
+        ),
+        # #1919: a worktree git status/diff in shipped code recurses into a submodule and runs ITS clean filter.
+        Mutation(
+            "a git status without the flag is not reported",
+            '            if "--ignore-submodules=dirty" in line or _SUBMODULE_SAFE.search(line):\n                continue',
+            '            continue',
+            "git-status-recurses-submodules: a hook's `git status --porcelain` is a finding",
+        ),
+        Mutation(
+            "a submodule-safe marker with no reason exempts the line",
+            '_SUBMODULE_SAFE = re.compile(r"submodule-safe:\\s*\\S")',
+            '_SUBMODULE_SAFE = re.compile(r"submodule-safe:")',
+            "git-status-recurses-submodules: a marker with no reason is a finding",
+        ),
+        Mutation(
+            "a JS hook's git($, [status]) is not read",
+            '        python_like = f.suffix in (".py", ".js", ".mjs", ".ts")',
+            '        python_like = f.suffix in (".py",)',
+            "git-status-recurses-submodules: a JS hook's git($, [status]) is a finding",
+        ),
+        Mutation(
+            "a comment line counts as a call",
+            '            if code.startswith(("#", "//")):\n                continue\n            hit = any(',
+            '            hit = any(',
+            "git-status-recurses-submodules: CONTROL: a comment line is silent",
+        ),
+        Mutation(
+            "selftests are in scope, so a fixture's own repository is reported",
+            'f.name.endswith(("_selftest.py", ".md", ".json"))',
+            'f.name.endswith((".md", ".json"))',
+            "git-status-recurses-submodules: CONTROL: a selftest builds its own repository is silent",
+        ),
+        Mutation(
+            "a git hook outside hooks/ is not in scope",
+            '        if "hooks" in parts or "git-hooks" in parts or',
+            '        if "hooks" in parts or',
+            "git-status-recurses-submodules: a git hook's status is a finding",
+        ),
+        Mutation(
+            "only a helper named exactly git( is read, so _git( and run_git( escape (#1920 review)",
+            'r"""\\b_?(?:run_)?g(?:it)?\\([^()\\n]*?',
+            'r"""\\bgit\\([^()\\n]*?',
+            "git-status-recurses-submodules: a `_git(` helper's status (#1920 review) is a finding",
+        ),
+        Mutation(
+            "--ignore-submodules=all is accepted, so a gate's diff hides a moved gitlink (#1920 security review)",
+            '            if "--ignore-submodules=dirty" in line or _SUBMODULE_SAFE.search(line):',
+            '            if "--ignore-submodules=" in line or _SUBMODULE_SAFE.search(line):',
+            "git-status-recurses-submodules: =all, which hides a moved gitlink from a gate is a finding",
+        ),
     ),
 )

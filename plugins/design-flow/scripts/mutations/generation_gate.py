@@ -10,7 +10,8 @@ GUARD = Guard(
     # mutation caught by the wrong fixture would mean some other check is doing the work.
     # The reference pack: a fixture asserts the SHIPPED brand satisfies the palette
     # contract its own composer depends on — it did not, which is the bug.
-    needs=("brands/fidara/brand.json",),
+    needs=("brands/fidara/brand.json",
+           "scripts/asset_home.py"),   # #1779
     mutations=(
         Mutation(
             # #629. The crafted-prompt path replaced a flat refusal, so the ONLY thing now

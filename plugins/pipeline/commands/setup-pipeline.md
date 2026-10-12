@@ -27,7 +27,16 @@ mode: local                          # local (pull-and-run) | cloud (kamal deplo
 dev_branch: dev
 main_branch: main
 certify_target: local                # local prod-mode boot | staging URL
+# Optional, for the release image build (#1701). Left out, `/pipeline:release` runs a bare `docker build`:
+# build_args: { APP_VERSION: "{{release_name}}" }   # one --build-arg per entry
+# labels:     { service: <app> }                    # one --label per entry (Kamal reads `service`)
 ```
+
+Write the two optional keys as COMMENTS, never live: a project that has not asked for them gets the
+build it always had. When the Dockerfile has an `ARG` with no default (an app that reads its version
+from `ARG APP_VERSION`), say so and offer the entry: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/release_build.py"
+--image x --sha y --dry-run` names each such ARG as `UNFED ARG`, without building. On re-run, leave a
+declared `build_args` or `labels` exactly as the user wrote it.
 
 Infer `image` from the git remote. Confirm owner/repo with the user.
 

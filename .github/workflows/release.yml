@@ -63,6 +63,11 @@ jobs:
   gates:
     needs: proof
     if: needs.proof.outputs.found != 'true'
+    # A called workflow cannot hold more than its caller grants. The `mutation coverage` job inside posts the `mutation-proof/<os>` commit
+    # status after a complete full run, and the shard jobs read it (#1738): `statuses` and nothing else beyond read.
+    permissions:
+      contents: read
+      statuses: write
     uses: ./.github/workflows/gates.yml
 
   release:

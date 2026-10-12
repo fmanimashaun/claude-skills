@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """The directory a claim-carrying `gh` command will actually run in (#1509).
 
-Usage: command_cwd.py [START]. stdin is the raw Bash tool command. START is the directory the command
+Usage: command_cwd.py [--pr-ready] [START]. With `--pr-ready` (guard-pr-ready.sh, #1565) the gh segment is
+`gh pr ready ...` instead of the three claim-carrying commands; the grammar is otherwise the same. stdin is the raw Bash tool command. START is the directory the command
 starts in: the hook payload's `cwd`, or this process's cwd when it is absent. stdout is an absolute
 directory. Exit 0 when it is known; exit 3 when it cannot be told, so the caller says "NOT checked"
 instead of judging against the wrong repository (the maintainer's decision on #1509: allow, loudly).
@@ -81,6 +82,15 @@ REPO_ENV = re.compile(r"\A((GIT|GH)_[A-Za-z0-9_]*|HOME|XDG_CONFIG_HOME)=")
 # Proven not to change gh's target, with real gh (`gh browse -n` names the same repository with and without it),
 # and set by the Claude Code harness itself: without the exemption every PR would go unchecked.
 INHERITED_EXEMPT = {"GIT_EDITOR"}
+
+
+def _inherited() -> dict[str, str]:
+    """The GIT_*, GH_* and CDPATH variables the COMMAND will inherit. A hook runs `lib/trusted-env.sh` first, which unsets them for the hook's own git and gh and keeps a copy as
+    RF_INHERITED_<NAME> (#1850); run directly (a selftest, a person), there is no copy and the process's own environment is the answer."""
+    copies = {k[len("RF_INHERITED_"):]: v for k, v in os.environ.items() if k.startswith("RF_INHERITED_")}
+    if copies or "RF_TRUSTED_ENV" in os.environ:
+        return copies
+    return {k: v for k, v in os.environ.items() if k.startswith(("GIT_", "GH_")) or k == "CDPATH"}
 OPS = re.compile(r"&&|\|\||;;&|;;|;&|<<<|&>>|&>|>>|>&|<&|<<|<>|>\||[;&|()<>]")
 SEPS = {"&&", ";"}
 CD_REDIRECTS = {">", ">>", ">&"}
@@ -101,6 +111,10 @@ META = set(" \t\n;&|()<>")
 # `_target` refuses a path carrying it. A lone `[` or `]` is the `test` command and its closing word, not a glob: left as they are.
 GLOB_CHARS = "*?[]{}"
 GLOB_MARK = "\ue000"
+
+
+# The gh commands whose directory is resolved. `--pr-ready` swaps in ("pr", "ready") for guard-pr-ready.sh (#1565).
+GH_TARGETS = {("pr", "create"), ("pr", "edit"), ("issue", "comment")}
 
 
 class Unresolved(Exception):
@@ -161,7 +175,7 @@ def _target(args: list[str], here: str, home: str) -> str:
         a = home + a[1:]
     elif a.startswith("~"):
         raise Unresolved(f"cd {a}")
-    if os.environ.get("CDPATH") and not a.startswith(("/", "./", "../")) and a not in (".", ".."):
+    if "CDPATH" in _inherited() and not a.startswith(("/", "./", "../")) and a not in (".", ".."):
         raise Unresolved(f"cd {a} with CDPATH set")
     path = os.path.normpath(os.path.join(here, a))
     if not os.path.isdir(path):
@@ -202,8 +216,7 @@ def _gh_segment(words: list[str]) -> bool:
                 w.pop(0)
         else:
             break
-    found = len(w) >= 3 and os.path.basename(w[0]) == "gh" and (
-        (w[1] == "pr" and w[2] in ("create", "edit")) or (w[1] == "issue" and w[2] == "comment"))
+    found = len(w) >= 3 and os.path.basename(w[0]) == "gh" and (w[1], w[2]) in GH_TARGETS
     if found and any(REPO_ENV.match(x) for x in words[:len(words) - len(w)]):
         raise Unresolved("a GIT_* / GH_* / HOME / XDG_CONFIG_HOME set on the gh command can pick another repository")
     return found
@@ -248,7 +261,7 @@ def _judge(done: list[tuple[list[str], bool, str, bool]], start: str, home: str)
 
 
 def resolve(cmd: str, start: str, home: str) -> str:
-    if any(k.startswith(("GIT_", "GH_")) and k not in INHERITED_EXEMPT for k in os.environ):
+    if any(k.startswith(("GIT_", "GH_")) and k not in INHERITED_EXEMPT for k in _inherited()):
         raise Unresolved("a GIT_* / GH_* variable in the environment can pick gh's repository")
     lex = shlex.shlex(prepare(cmd).replace("\n", " ; "), posix=True, punctuation_chars=";&|()<>")
     lex.whitespace_split = True
@@ -282,7 +295,12 @@ def resolve(cmd: str, start: str, home: str) -> str:
 
 
 def main() -> int:
-    start = sys.argv[1] if len(sys.argv) > 1 and os.path.isdir(sys.argv[1]) else os.getcwd()
+    global GH_TARGETS
+    args = sys.argv[1:]
+    if args and args[0] == "--pr-ready":
+        GH_TARGETS = {("pr", "ready")}
+        args = args[1:]
+    start = args[0] if args and os.path.isdir(args[0]) else os.getcwd()
     try:
         print(resolve(sys.stdin.read(), os.path.abspath(start), os.environ.get("HOME", "")))
     except Unresolved as e:

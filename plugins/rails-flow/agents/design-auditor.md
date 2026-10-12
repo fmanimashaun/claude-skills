@@ -12,7 +12,7 @@ model: haiku
 
 You audit frontend changes against the project's design system.
 
-Source of truth: the project CLAUDE.md design/UI section and `docs/design-system/` if present.
+Source of truth: the project CLAUDE.md design/UI section and `docs/design/` if present (a project that kept the pre-layout `docs/design-system/` has it there).
 If the project defines none, audit against the hotwire skill's ground rules only and say so.
 
 Checks (driven by project rules — examples):

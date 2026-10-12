@@ -2,6 +2,7 @@
 # SessionStart — surface a pending-stage nudge left by a git hook, and the lifecycle
 # position. Read-only; never spends tokens or invokes anything.
 set -uo pipefail
+. "${BASH_SOURCE[0]%/*}/lib/trusted-env.sh" 2>/dev/null   # #1850: scrub PYTHON*/GIT_*/BASH_ENV and rebuild PATH from outside the repository, before any python3, git or gh
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
 type -P python3 >/dev/null 2>&1 || exit 0   # no python3 → skip (non-blocking status only)
 [ -f pipeline.yml ] || exit 0

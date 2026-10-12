@@ -53,16 +53,67 @@ Guidelines:
   or at least a `member` route — never a bespoke non-REST verb sprawl.
 - `only:`/`except:` keep the route table honest. Inspect with
   `bin/rails routes -g orders` or `--expanded`.
-- Constraints: `resources :photos, constraints: { id: /[A-Z]\d{5}/ }`;
-  authenticated sections via request constraints
-  (`constraints ->(req) { req.session[:user_id] } do ... end`) or custom
-  constraint classes.
+- Constraints: `resources :photos, constraints: { id: /[A-Z]\d{5}/ }`, or a
+  lambda / an object with `matches?(request)`; either receives the request.
+  An **authenticated section** must resolve the session the way the
+  controller does. The Rails 8 authentication generator stores a signed
+  `:session_id` cookie pointing at a `Session` row and never sets
+  `session[:user_id]`, so a constraint testing `req.session[:user_id]`
+  matches no signed-in user. Read the same cookie, with the same lookup
+  the generated `Authentication` concern uses:
+
+  ```ruby
+  class AuthenticatedConstraint
+    def matches?(request)
+      Session.exists?(id: request.cookie_jar.signed[:session_id])
+    end
+  end
+
+  constraints AuthenticatedConstraint.new do
+    resources :reports
+  end
+  ```
+
+  If your `Authentication` concern adds checks (an expiry, a locked
+  account), extract the lookup into one object both call, or the route and
+  the controller disagree about who is signed in. A request the constraint
+  refuses finds no route: Rails raises `ActionController::RoutingError`,
+  which production renders as the same 404 as any unknown path.
 - Path customization: `path:`, `as:`, `param: :slug` (pair with
   `to_param`/`find_by!` in the model). Redirect routes:
   `get "/old", to: redirect("/new", status: 301)`.
 - Shallow nesting for deep hierarchies: `resources :posts do
   resources :comments, shallow: true end` — collection routes nested,
   member routes top-level.
+
+### A model whose name differs from its resource — polymorphic helpers follow the MODEL
+
+`link_to record.name, record`, `redirect_to record`, `url_for(record)` and `form_with model: record` pick the
+route helper from the record's **`model_name`**, never from the resource name in `config/routes.rb`: a persisted
+record uses `model_name.singular_route_key`, a class or new record `model_name.route_key`
+(`actionpack/lib/action_dispatch/routing/polymorphic_routes.rb`, `handle_model`, Rails 8.1.4). So a model
+`HttpMonitor` served by `resources :monitors` fails with `NoMethodError: undefined method 'http_monitor_path'`
+(reproduced on 8.1.4), and **a green test of the controller will not catch it** if no test renders the link or
+the redirect. Fix it at the route, in this order:
+
+1. **Name the resource after the model** (`resources :http_monitors`, with `path: "monitors"` if the URL must
+   differ): nothing to remember at each call site.
+2. **`as:`** renames the helpers, not the URL: `resources :monitors, as: :http_monitors` makes
+   `polymorphic_path(record)` return `/monitors/5` through `http_monitor_path` (reproduced on 8.1.4).
+3. **`resolve`** is the guide's tool for mapping a model to a URL by hand: `resolve("Basket") { [:basket] }`
+   makes `form_with model: @basket` generate `/basket`; the guide documents it for **singular** resources
+   (<https://guides.rubyonrails.org/routing.html#using-resolve>). **`direct`** only defines custom URL helpers;
+   the guide does not offer it as a polymorphic mapping.
+4. **Overriding `model_name`** (`def self.model_name = ActiveModel::Name.new(self, nil, "Monitor")`) also makes
+   the helpers resolve, but **every name derived from it changes**: `route_key`, `singular_route_key`,
+   `param_key` (so `form_with` and strong params now use the `monitor` key), `i18n_key` (locale lookups move to
+   `activemodel.*.monitor`) and `human` (`naming.rb`, Rails 8.1.4; reproduced). Use it only when you want all of
+   that.
+
+An STI subclass whose parent alone is declared a resource has the same problem in `form_with`: the form helpers
+guide says you "can't rely on record identification on a subclass if only their parent class is declared a
+resource" and must give **`url:` and `scope:` (the model name) explicitly**
+(<https://guides.rubyonrails.org/form_helpers.html#relying-on-record-identification>).
 
 ## 1a. URL design — human paths vs REST resources (doctrine)
 

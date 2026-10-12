@@ -48,24 +48,19 @@ GUARD = Guard(
             "            if False:",
             "an entry for a vanished column is a finding",
         ),
-        # #1695: a second database's schema file.
+        # #1695: a second database's schema file. The RULE (`schema_files`, `framework_owned`) is shared and decided in build_project_wiki.py since #1698, with its own
+        # mutants there; these two break this gate's USE of it.
         Mutation(
-            "a second db/*_schema.rb is never read",
-            '    return [root / SCHEMA, *sorted((root / "db").glob("*_schema.rb"))]',
-            "    return [root / SCHEMA]",
+            "the gate reads only db/schema.rb, ignoring the shared list of schema files",
+            "    for path in schema_files(root):",
+            "    for path in [root / SCHEMA]:",
             "a new column in the SECOND schema fails until it is classified, and the finding names its file",
         ),
         Mutation(
-            "the Solid trio is read as well",
-            "    return path.name in FRAMEWORK_SCHEMAS and _solid_only(path)",
-            "    return False",
+            "the gate reads the Solid trio too, ignoring the shared framework rule",
+            "        owned = framework_owned(path)",
+            "        owned = False",
             "the Solid trio is framework-owned: a solid_* table in cache_schema.rb, queue_schema.rb or cable_schema.rb is not reported",
-        ),
-        Mutation(
-            "a trio-named file is skipped by its name alone",
-            "    return path.name in FRAMEWORK_SCHEMAS and _solid_only(path)",
-            "    return path.name in FRAMEWORK_SCHEMAS",
-            "a cache_schema.rb holding a non-solid_* table is read, not skipped by its name",
         ),
         Mutation(
             "a table in two schema files is picked silently",

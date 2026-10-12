@@ -3,9 +3,11 @@
 import { register as contextNudge } from './context-nudge.mjs'
 import { register as laneBand } from './lane-band.js'
 import { register as budgetGuard } from './budget-guard.mjs'
+import { register as sessionReset } from './session-reset.mjs'
 
 export function register(on, options) {
   contextNudge(on, options)
   laneBand(on, options)
   budgetGuard(on, options)
+  sessionReset(on, options)
 }

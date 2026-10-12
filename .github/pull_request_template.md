@@ -70,6 +70,17 @@ paste here
 
 </details>
 
+## The case that proves it
+
+The owner's rule (#1853): every fix, feature, gap or bug has a case that proves it and keeps it from regressing; nothing is built without a way to test it. This repository has no
+`qa/test-cases.csv`, so its case is a **`--selftest` fixture that FAILS without the change**, plus a **mutation guard mutant** that breaks it. Name both.
+
+- **Fixture** (the file and the row's label that fails without this change):
+- **Mutant** (the guard file under `scripts/mutations/` or `plugins/<name>/scripts/mutations/` and the mutant's name):
+- **Red/green**: how you saw the fixture fail without the change, and pass with it:
+
+Not a fix, feature, gap or bug (a docs-only change, a rename, a regenerated page)? Say N/A and why.
+
 ## If this adds or changes a check
 
 A new guard without these is a **gate that cannot fail**.
@@ -96,7 +107,7 @@ The fenced blocks are what an agent pastes verbatim into a user's project.
 
 ## CHANGELOG
 
-- [ ] **One bullet per issue** under the component's `### Unreleased` — never one bullet for a
+- [ ] **One fragment per issue and component**, `changelog.d/<issue>-<slug>.md` (not an edit to `CHANGELOG.md`) — never one bullet for a
       group.
 - [ ] No version assigned. Versions are assigned at the promotion; a number on `dev` is a claim a
       user can install it, and that claim is false.

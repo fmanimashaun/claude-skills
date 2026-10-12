@@ -12,7 +12,8 @@ GUARD = Guard(
     name="proc_group",
     subject="scripts/proc_group.py",
     selftest="scripts/mutation_check_selftest.py",
-    deps=("scripts/mutation_check.py", "scripts/mutation_types.py", "scripts/hermetic_git.py", "plugins/rails-flow/scripts/process_containment.py",),
+    deps=("scripts/mutation_check.py", "scripts/mutation_incremental.py", "scripts/mutation_types.py", "scripts/hermetic_git.py", "plugins/rails-flow/scripts/process_containment.py",),
+    needs=("plugins/rails-flow/scripts/fixture_git.py",),   # the selftest builds throwaway repos through it (#1588, #1738)
     mutations=(
         # #1635: a backgrounded process inherits SIGINT ignored; the reset is only for that case.
         Mutation(

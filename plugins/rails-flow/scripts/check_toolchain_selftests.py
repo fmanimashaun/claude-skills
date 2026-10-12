@@ -174,6 +174,18 @@ def _selftest() -> int:
     finally:
         shutil.rmtree(root, ignore_errors=True)
 
+    # #1873: main()'s EXIT CODE when no selftest ran at all: not applicable (3), never a pass.
+    import contextlib, io
+    g, argv = globals(), sys.argv
+    real_check = g["check"]
+    g["check"], sys.argv = (lambda *a, **k: ([], 0, 0)), ["check_toolchain_selftests.py"]
+    try:
+        with contextlib.redirect_stdout(io.StringIO()):
+            code = main()
+    finally:
+        g["check"], sys.argv = real_check, argv
+    expect("no shipped selftest found is not applicable (exit 3), never a pass", code == 3)
+
     if bad:
         print(f"ran {ok + len(bad)} assertion(s)\n\n{len(bad)} FAILED:", file=sys.stderr)
         for b in bad:

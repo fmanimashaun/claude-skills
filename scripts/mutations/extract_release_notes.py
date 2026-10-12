@@ -15,7 +15,8 @@ GUARD = Guard(
     needs=(".claude-plugin", ".github", "CHANGELOG.md", "scripts/release_local.sh",
            # #1520: component_versions() reads each plugin's own version.
            "plugins/rails-flow/.claude-plugin/plugin.json", "plugins/qa-flow/.claude-plugin/plugin.json",
-           "plugins/pipeline/.claude-plugin/plugin.json", "plugins/design-flow/.claude-plugin/plugin.json"),
+           "plugins/pipeline/.claude-plugin/plugin.json", "plugins/design-flow/.claude-plugin/plugin.json",
+           "plugins/flow-suite/.claude-plugin/plugin.json"),
     mutations=(
         Mutation(
             "the tag being armed loses its exemption, so every arm reports its own release as a ghost",
@@ -195,5 +196,17 @@ GUARD = Guard(
         Mutation("--full is shortened like the default, so the issue notifier loses its citations",
                  "    if a.full:\n        sys.stdout.write(render(text, tag)[0])", "    if False:\n        sys.stdout.write(render(text, tag)[0])",
                  "--full is never shortened"),
+        Mutation(
+            'the README counts as an unfolded fragment',
+            'for p in sorted(d.glob("*.md")) if p.name != "README.md"]',
+            'for p in sorted(d.glob("*.md"))]',
+            'promotion: the README is not a fragment',
+        ),
+        Mutation(
+            'an unfolded fragment is not a finding at promotion',
+            '    if not d.is_dir():\n        return []\n    return [f"changelog.d/',
+            '    if True:\n        return []\n    return [f"changelog.d/',
+            'promotion: an unfolded fragment is a finding that names the repair',
+        ),
     ),
 )

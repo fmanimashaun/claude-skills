@@ -1,5 +1,6 @@
 ---
 description: Prepare cloud deployment — generate the .kamal/deploy.env.example briefing-sheet template (every value the deploy agent needs, annotated by destination) and README setup docs
+disable-model-invocation: true
 ---
 
 # /pipeline:setup-cloud

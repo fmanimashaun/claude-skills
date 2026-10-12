@@ -32,6 +32,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import check_guide as cg  # noqa: E402
+import fixture_git  # noqa: E402
 
 FAILURES: list[str] = []
 CHECKS = 0
@@ -442,6 +443,94 @@ def run() -> int:
         "a screenshot is legitimate -- the rule is about diagrams, not images",
         with_diagram(FLOW_OK + "\n![The invoice page](docs/img/invoice-page.png)\n"),
     )
+
+
+    # ---- pins: a diagram's cited lines must exist at a commit (#1640) -----------------------
+    repo = Path(tempfile.mkdtemp(prefix="railsflow-pins-"))
+    fixture_git.init(repo)
+    (repo / "app").mkdir()
+    (repo / "app" / "invoice.rb").write_text("".join(f"line {n}\n" for n in range(1, 11)), encoding="utf-8")
+    (repo / "app" / "job.rb").write_text("a\nb\n", encoding="utf-8")
+    fixture_git.run(repo, "add", "app/invoice.rb", "app/job.rb")
+    fixture_git.run(repo, "commit", "-q", "-m", "first")
+    sha = fixture_git.run(repo, "rev-parse", "HEAD").stdout.strip()
+
+    def pins(*pin_lines: str) -> str:
+        """A guide whose billing area holds one flow diagram per pin line ('' = no pin above it)."""
+        blocks = "\n".join((f"{p}\n" if p else "") + FLOW_OK for p in pin_lines)
+        return OVERVIEW + DECISIONS + sec(
+            "guide:area:billing",
+            "### Billing\n\n#### What it does\n\nBills things.\n\n#### How it flows\n\n" + blocks
+            + "\n#### Check it yourself\n\n1. Run `bin/rails c`.\n",
+        )
+
+    def pin(*sources: str, commit: str = sha) -> str:
+        return f"<!-- rails-flow:pin {commit} {' '.join(sources)} -->".replace("  ", " ")
+
+    def pin_check(label: str, body: str, *, contains: str | None, require: bool = False,
+                  repo_dir: Path = repo, note: str | None = None) -> None:
+        _tick()
+        try:
+            sections = cg.parse(_write(body))
+        except cg.Unusable as exc:
+            FAILURES.append(f"{label}: UNUSABLE ({exc})")
+            return
+        findings, notes = cg.check_pins(sections, repo_dir, require)
+        blob = " | ".join(findings)
+        if contains is None and findings:
+            FAILURES.append(f"{label}: expected clean, got {blob}")
+        if contains is not None and contains.lower() not in blob.lower():
+            FAILURES.append(f"{label}: expected a finding with {contains!r}, got {blob or 'clean'}")
+        if note is not None and not any(note.lower() in n.lower() for n in notes):
+            FAILURES.append(f"{label}: expected a note with {note!r}, got {notes}")
+        if note is None and contains is None and notes and any("changed since" in n for n in notes):
+            FAILURES.append(f"{label}: unexpected note {notes}")
+
+    pin_check("a pin whose lines exist at its commit is clean", pins(pin("app/invoice.rb:3-10", "app/job.rb:2")), contains=None)
+    pin_check("a range ending exactly on the last line is in range", pins(pin("app/invoice.rb:10-10")), contains=None)
+    pin_check("a guide with no pins is valid, with a note saying so", pins(""), contains=None, note="none pinned")
+    pin_check("--require-pins refuses a guide with no pins", pins(""), contains="no pin", require=True)
+    pin_check("one pinned diagram makes an unpinned one a finding", pins(pin("app/job.rb:1"), ""), contains="every one must be")
+    pin_check("a short sha is refused", pins(pin("app/job.rb:1", commit=sha[:12])), contains="40-character")
+    pin_check("a branch name is refused", pins(pin("app/job.rb:1", commit="main")), contains="40-character")
+    pin_check("a commit that does not exist is a finding", pins(pin("app/job.rb:1", commit="0" * 40)), contains="does not exist in")
+    pin_check("a path that is not in the commit is a finding", pins(pin("app/missing.rb:1")), contains="does not exist at")
+    pin_check("a directory is not a file", pins(pin("app:1")), contains="does not exist at")
+    pin_check("a line past the end is a finding", pins(pin("app/job.rb:3")), contains="runs past the end")
+    pin_check("a range past the end is a finding", pins(pin("app/invoice.rb:5-11")), contains="runs past the end")
+    pin_check("line 0 is not a line", pins(pin("app/job.rb:0")), contains="not a valid line range")
+    pin_check("a backwards range is refused", pins(pin("app/invoice.rb:5-3")), contains="not a valid line range")
+    pin_check("a path with .. is refused", pins(pin("../outside.rb:1")), contains="no `..`")
+    pin_check("an absolute path is refused", pins(pin("/etc/passwd:1")), contains="relative to the repository")
+    pin_check("a source with no line is refused", pins(pin("app/job.rb")), contains="is not `path:start")
+    pin_check("an empty pin is refused", pins("<!-- rails-flow:pin -->"), contains="empty pin")
+    pin_check("a pin with a commit and no source is refused", pins(pin()), contains="no `path:start-end` source")
+    pin_check("a pin above no mermaid block pins nothing",
+              pins(pin("app/job.rb:1")) .replace("#### Check it yourself", f"{pin('app/job.rb:1')}\n\nprose\n\n#### Check it yourself"),
+              contains="pins nothing")
+    pin_check("outside a git work tree the pins cannot be verified, never silently pass",
+              pins(pin("app/job.rb:1")), contains="not inside a git work tree", repo_dir=Path(tempfile.mkdtemp(prefix="railsflow-nogit-")))
+    # The entry point wires the pin check in: a guide that passes check() alone must still exit 1 here.
+    _tick()
+    import contextlib
+    import io
+    with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):
+        wired = cg.main([str(_write(pins(pin("app/job.rb:3")))), "--repo", str(repo)])
+    if wired != 1:
+        FAILURES.append(f"main() with a pin past the end of its file exited {wired}, expected 1")
+    # The file changes after the pin: still true at the pinned commit, so a note and not a finding.
+    (repo / "app" / "job.rb").write_text("a\nb\nc\n", encoding="utf-8")
+    fixture_git.run(repo, "add", "app/job.rb")
+    fixture_git.run(repo, "commit", "-q", "-m", "grow job")
+    pin_check("a file edited since the pin is a note, not a finding", pins(pin("app/job.rb:2")), contains=None, note="changed since")
+    # The guide sits in docs/, so the default repo is docs/: the path in a pin is the REPOSITORY's, not
+    # docs/'s. A pathspec diff run from there looked app/job.rb up as docs/app/job.rb and never saw the edit.
+    (repo / "docs").mkdir()
+    pin_check("an edit since the pin is noted when the repo given is a subfolder of it",
+              pins(pin("app/job.rb:2")), contains=None, repo_dir=repo / "docs", note="changed since")
+    fixture_git.run(repo, "rm", "-q", "app/job.rb")
+    fixture_git.run(repo, "commit", "-q", "-m", "drop job")
+    pin_check("a file deleted at HEAD is a finding", pins(pin("app/job.rb:1")), contains="no longer exists at HEAD")
 
     if FAILURES:
         print(f"SELFTEST FAILED -- {len(FAILURES)} of {CHECKS} checks:", file=sys.stderr)

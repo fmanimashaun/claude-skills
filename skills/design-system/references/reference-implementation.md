@@ -114,7 +114,16 @@ export function listNavigation(controller, { itemsTarget = "item", orientation =
 }
 ```
 
-### `focus_trap.js` — trap + restore (modal, drawer only)
+### `focus_trap.js` — trap + restore (fallback; a native `<dialog>` needs none of it)
+
+**As of 2026-10-10 the Modal is a native `<dialog>` opened with `showModal()`** (Baseline Widely,
+2024-09-14; available since 2022-03). It supplies the top layer and `::backdrop`, makes the rest of the
+document inert, moves focus to the dialog's focus delegate (MDN: "focus is set on the first nested focusable element"; `autofocus` decides it; with nothing focusable the spec falls back to the dialog itself), closes on `Esc`
+(a cancelable `cancel` event fires first), and returns focus to the previously focused element on close
+— so none of the mixin below is wired for it, and `aria-modal` is redundant. The Stimulus controller is a thin
+opener/closer calling `showModal()` / `close()`, plus backdrop-click close (`closedby="any"` is **not**
+Baseline: Chrome 134, Firefox 141, no Safari). Keep this mixin only for a hand-rolled overlay that cannot
+be a `<dialog>`, and for the reasoning below, which still explains what `aria-modal` promises.
 
 ```js
 const SEL = 'a[href],button:not([disabled]),input:not([disabled]),select,textarea,[tabindex]:not([tabindex="-1"])'
@@ -174,7 +183,10 @@ if it was the one to lock it.
 ```js
 const stack = []
 export function dismissableLayer(el, onDismiss) {
-  function onKey(e) { if (e.key === "Escape" && stack.at(-1) === layer) { e.stopPropagation(); onDismiss() } }
+  // preventDefault on the Escape keydown stops the browser's close request, so an open dropdown inside a modal
+  // <dialog> closes alone; stopPropagation does not (HTML spec close requests: "If event is not null, and its
+  // canceled flag is set, then return").
+  function onKey(e) { if (e.key === "Escape" && stack.at(-1) === layer) { e.preventDefault(); e.stopPropagation(); onDismiss() } }
   function onClick(e) { if (stack.at(-1) === layer && !el.contains(e.target)) onDismiss() }
   const layer = {
     open() { stack.push(layer); document.addEventListener("keydown", onKey, true)

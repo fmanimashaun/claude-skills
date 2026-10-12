@@ -89,7 +89,16 @@ def problems(text: str) -> list[tuple[int, str]]:
     return found
 
 
-USER_ONLY = frozenset({"plugins/pipeline/commands/deploy-cloud.md"})
+USER_ONLY = frozenset({
+    "plugins/pipeline/commands/deploy-cloud.md",
+    # #1883: run deliberately by a person, invoked by nothing as a step (reference search recorded on #1883).
+    "plugins/pipeline/commands/ack.md",
+    "plugins/pipeline/commands/setup-cloud.md",
+    "plugins/design-flow/commands/mobile.md",
+    "plugins/design-flow/commands/tokens.md",
+    "plugins/rails-flow/commands/toolchain-audit.md",
+    "plugins/rails-flow/commands/wrap.md",
+})
 
 OUR_SKILLS = ("rails-8", "hotwire", "design-system", "code-review", "quality-pass", "derived-artifacts",
               "parallel-session-lane")

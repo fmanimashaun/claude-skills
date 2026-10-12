@@ -282,6 +282,49 @@ def repo_untouched_fixtures() -> None:
         md.GATES, md.REPO = saved_gates, real
 
 
+def starved_gate_fixtures() -> None:
+    """#1664: a gate that RAN but whose timing checks were STARVED exits 3, which is a `skip`, never `ok`, and refuses a release proof.
+
+    A skip inside a total has hidden a real failure here before, so the three consequences are asserted: the verdict, the reason (the
+    gate's own first line, with the labels it lists), and that `--record-proof` refuses; with CONTROLS that a clean gate still passes
+    and a proof of a clean sweep is still allowed."""
+    work = fixture()
+    saved_gates, real = md.GATES, md.REPO
+    try:
+        md.REPO = work
+        scripts = work / "scripts"
+        scripts.mkdir(parents=True, exist_ok=True)
+        (scripts / "_starved.py").write_text(
+            "import sys\n"
+            "print('check_hook_gates selftest: 90 checks passed, 2 STARVED and NOT judged (the machine, not the hook, decided)')\n"
+            "print('  - STARVED release-gate (#1569): gh pr merge -R acts on ANOTHER repository')\n"
+            "sys.exit(3)\n", encoding="utf-8")
+        (scripts / "_clean.py").write_text("print('check_hook_gates selftest: 92 checks passed')\n", encoding="utf-8")
+        md.GATES = (("selftest starved", ("python3", "scripts/_starved.py")),)
+        d = md.Doctor()
+        d.check_gates()
+        r = expect("a gate that exits 3 because its timing checks were STARVED is a SKIP, never ok", d, "gate: selftest starved", md.SKIP)
+        _tick()
+        if r is not None and "STARVED" not in r.detail:
+            FAILURES.append(f"#1664: the skip's reason must be the gate's own first line (it says STARVED), got {r.detail!r}")
+        refusal = md.proof_refusal(0, d.gate_results())
+        _tick()
+        if not refusal or "gate: selftest starved" not in refusal:
+            FAILURES.append(f"#1664: a sweep with a STARVED gate must REFUSE to be recorded as a proof, naming the gate, got {refusal!r}")
+        md.GATES = (("selftest clean", ("python3", "scripts/_clean.py")),)
+        d = md.Doctor()
+        d.check_gates()
+        expect("CONTROL: a clean gate still passes", d, "gate: selftest clean", md.PASS)
+        _tick()
+        if md.proof_refusal(0, d.gate_results()) is not None:
+            FAILURES.append("#1664: CONTROL: a clean sweep must still be recordable as a proof")
+        _tick()
+        if "a gate failed" not in (md.proof_refusal(1, d.gate_results()) or ""):
+            FAILURES.append("#1664: a failed sweep must still refuse a proof, as a failure")
+    finally:
+        md.GATES, md.REPO = saved_gates, real
+
+
 def timeout_fixtures() -> None:
     """A gate that is KILLED did not run -- so it is a skip, and a real failure is still a FAIL.
 
@@ -416,18 +459,26 @@ def timeout_fixtures() -> None:
         # is passed the flag, so each direction is read off a verdict: a ratchet on every local run reads a busy laptop as
         # growth; one on no run enforces nothing; one on every gate hands an unknown flag to scripts that refuse it.
         (scripts / "_ratchet_probe.py").write_text(
-            "import sys\nprint('ratcheted' if '--ratchet' in sys.argv else 'plain')\n"
-            "sys.exit(1 if '--ratchet' in sys.argv else 0)\n", encoding="utf-8")
+            "import sys\nprint('ratcheted' if '--ratchet-warn' in sys.argv else 'plain')\n"
+            "sys.exit(1 if '--ratchet-warn' in sys.argv else 0)\n", encoding="utf-8")
         md.GATES = (("mutation coverage", ("python3", "scripts/_ratchet_probe.py")),
                     ("selftest other", ("python3", "scripts/_ratchet_probe.py")))
         md.SLOW_GATES = {"mutation coverage": 60}
         on, off = md.Doctor(require_slow=True), md.Doctor()
         on.check_gates()
         off.check_gates()
-        expect("under --require-slow, `mutation coverage` is run with --ratchet (the probe fails on it)", on,
+        expect("under --require-slow, `mutation coverage` is run with --ratchet-warn (the probe fails on it)", on,
                "mutation coverage", md.FAIL)
-        expect("without --require-slow, `mutation coverage` is run without --ratchet", off, "mutation coverage", md.PASS)
-        expect("under --require-slow, no OTHER gate is handed --ratchet", on, "selftest other", md.PASS)
+        expect("without --require-slow, `mutation coverage` is run without --ratchet-warn", off, "mutation coverage", md.PASS)
+        expect("under --require-slow, no OTHER gate is handed --ratchet-warn", on, "selftest other", md.PASS)
+        # #1739: `--mutation-shards` reports `mutation coverage` as a skip (the shard jobs run it) and reaches no other gate.
+        md.GATES = (("mutation coverage", ("python3", "scripts/_ratchet_probe.py")),
+                    ("selftest other", ("python3", "scripts/_ratchet_probe.py")))
+        shards = md.Doctor(shards_external=True)
+        shards.check_gates()
+        expect("under --mutation-shards, `mutation coverage` is a skip (the shard jobs run it)", shards, "mutation coverage", md.SKIP)
+        expect("under --mutation-shards, no OTHER gate is skipped", shards, "selftest other", md.PASS)
+
     finally:
         md.GATES, md.SLOW_GATES, md.REPO = saved_gates, saved_slow, real
 
@@ -435,6 +486,7 @@ def timeout_fixtures() -> None:
 def run() -> int:
     md.restore_sigint()   # #1635: a backgrounded run inherits SIGINT ignored; the Ctrl-C fixtures below need it
     timeout_fixtures()
+    starved_gate_fixtures()
     repo_untouched_fixtures()
     ruleset_fixtures()
     # ---- healthy machine: nothing may FAIL ---------------------------------------------
@@ -825,7 +877,7 @@ def run() -> int:
     # #1635: the two hook-gate parts that run whole hook fixture groups took 190 to 203 s at the maintainer's machine load, past the
     # 180 s default, and are measured in SLOW_GATES' comment. #1667: the full tier of the guard-bash cases is about 300 real-hook runs (94 s at a load of
     # 35, measured in SLOW_GATES' comment). Exactly these five; a sixth needs its own measurement.
-    expected_slow = {"mutation coverage", "hook gates", "hook gates (release)", "hook gates (worktree)", "guard-bash cases (full)"}
+    expected_slow = {"mutation coverage", "hook gates", "hook gates (release)", "hook gates (worktree)", "hook gates (guard-bash)", "guard-bash cases (full)"}
     if set(md.SLOW_GATES) != expected_slow:
         FAILURES.append(
             f"SLOW_GATES is {sorted(md.SLOW_GATES)}, expected {sorted(expected_slow)} — only "

@@ -17,7 +17,7 @@ GUARD = Guard(
     narrow_with="--match",
     # The same staging as hook_guard_claims: the harness runs every hook from the whole directory.
     needs=("plugins/rails-flow/scripts/fixture_git.py", 
-           'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py',  # session-start.sh runs both (#1581: the harness drives it)
+           'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py', 'plugins/rails-flow/scripts/check_memory_index.py',  # session-start.sh runs all three (#1581, #1828: the harness drives it)
            "plugins/rails-flow/hooks/hooks.json",
            "plugins/rails-flow/hooks/scripts", "plugins/qa-flow/hooks/scripts",
            "plugins/qa-flow/scripts",
@@ -29,7 +29,7 @@ GUARD = Guard(
            "plugins/qa-flow/scripts/remote_evidence.py",   # the release gate runs it (#1591)
            "plugins/rails-flow/scripts/self_consistency.py",
            "plugins/rails-flow/scripts/extract_claims.py",
-           "plugins/rails-flow/scripts/ci_verdict_hint.py", "plugins/rails-flow/scripts/session_reaper.py", "plugins/rails-flow/scripts/process_containment.py"),
+           "plugins/rails-flow/scripts/ci_verdict_hint.py", "plugins/rails-flow/scripts/test_preflight.py", "plugins/rails-flow/scripts/wip_commit.py", "plugins/rails-flow/scripts/session_reaper.py", "plugins/rails-flow/scripts/process_containment.py"),
     mutations=(
         Mutation(
             'the explicit refusal of a marked cd path is dropped: normpath then collapses it (#1605 review)',
@@ -171,7 +171,7 @@ GUARD = Guard(
         ),
         Mutation(
             'CDPATH is ignored',
-            '    if os.environ.get("CDPATH") and',
+            '    if "CDPATH" in _inherited() and',
             '    if False and',
             'a relative cd with CDPATH set',
         ),
@@ -294,7 +294,7 @@ GUARD = Guard(
         ),
         Mutation(
             'an inherited GIT_DIR is ignored (round 5)',
-            '    if any(k.startswith(("GIT_", "GH_")) and k not in INHERITED_EXEMPT for k in os.environ):',
+            '    if any(k.startswith(("GIT_", "GH_")) and k not in INHERITED_EXEMPT for k in _inherited()):',
             '    if False:',
             'GIT_DIR inherited by the hook is NOT checked',
         ),
@@ -313,14 +313,14 @@ GUARD = Guard(
         ),
         Mutation(
             'the inherited test narrows to GIT_ only (round 6)',
-            '    if any(k.startswith(("GIT_", "GH_")) and k not in INHERITED_EXEMPT for k in os.environ):',
-            '    if any(k.startswith(("GIT_",)) and k not in INHERITED_EXEMPT for k in os.environ):',
+            '    if any(k.startswith(("GIT_", "GH_")) and k not in INHERITED_EXEMPT for k in _inherited()):',
+            '    if any(k.startswith(("GIT_",)) and k not in INHERITED_EXEMPT for k in _inherited()):',
             'GH_HOST inherited by the hook is NOT checked',
         ),
         Mutation(
             "the harness's GIT_EDITOR is not exempt (round 6)",
-            ' and k not in INHERITED_EXEMPT for k in os.environ):',
-            ' for k in os.environ):',
+            ' and k not in INHERITED_EXEMPT for k in _inherited()):',
+            ' for k in _inherited()):',
             'an inherited GIT_EDITOR (the harness sets it) is still judged',
         ),
         Mutation(

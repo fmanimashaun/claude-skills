@@ -8,7 +8,7 @@ GUARD = Guard(
     selftest="plugins/rails-flow/scripts/check_hook_gates.py",
     selftest_args=("--only", "session_end"),
     needs=("plugins/rails-flow/scripts/fixture_git.py", 
-           'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py',
+           'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py', 'plugins/rails-flow/scripts/check_memory_index.py',
            "plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362
            "plugins/rails-flow/hooks/scripts", "plugins/qa-flow/hooks/scripts",
            "plugins/qa-flow/scripts",
@@ -20,7 +20,7 @@ GUARD = Guard(
            "plugins/qa-flow/scripts/remote_evidence.py",
            "plugins/rails-flow/scripts/self_consistency.py",
            "plugins/rails-flow/scripts/extract_claims.py",
-           "plugins/rails-flow/scripts/ci_verdict_hint.py",
+           "plugins/rails-flow/scripts/ci_verdict_hint.py", "plugins/rails-flow/scripts/test_preflight.py", "plugins/rails-flow/scripts/wip_commit.py",
            "plugins/rails-flow/scripts/session_reaper.py",
            "plugins/rails-flow/scripts/process_containment.py"),
     mutations=(

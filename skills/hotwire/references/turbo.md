@@ -47,6 +47,17 @@ instant from cache).
 <button data-turbo-submits-with="Saving…">Save</button>           <!-- submitter's label while submitting -->
 ```
 
+- **Prefetch opt-outs differ in reach.** `<meta name="turbo-prefetch" content="false">`
+  turns hover prefetch off for the **whole page, and no link can turn it back
+  on** (Turbo checks the meta before any per-link attribute). Under an element
+  with `data-turbo-prefetch="false"`, a link (or a nearer wrapper) with
+  `data-turbo-prefetch="true"` **does** turn it back on: the nearest
+  `[data-turbo-prefetch]`, the link itself included, decides.
+- **Known defect in 8.0.23: links inside `<svg>`.** Clicking an `<a>` inside
+  `<svg>` throws in Turbo's click handling (`link.href.startsWith` on an
+  `SVGAnimatedString`; hotwired/turbo issue #1510). It is fixed on `main` and
+  unreleased as of 8.0.23.
+
 - **Disabling the submitter is global config, not an attribute.** Turbo sets
   `submitter.disabled` for the duration of every submit and clears it after;
   the only knob is `Turbo.config.forms.submitter`, which takes `"disabled"`
@@ -72,9 +83,17 @@ instant from cache).
   `<head>` does not carry it**. Turbo's head merge is otherwise purely
   additive, so stylesheets accumulate across visits and are never taken away;
   `dynamic` is the opt-in that lets page-specific CSS go when you leave.
-- **View transitions**: add
-  `<meta name="view-transition" content="same-origin">` and Turbo uses the
-  browser View Transitions API for animated page changes where supported.
+- **View transitions**: add `<meta name="turbo-view-transition" content="true">`
+  (Turbo 8.0.14+; the older `<meta name="view-transition" content="same-origin">`
+  is still accepted in 8.0.23) and Turbo uses the browser View Transitions API
+  for animated page changes where supported. **Both** the current and the new
+  page must carry the tag. Since 8.0.14 Turbo skips the transition when
+  `matchMedia("(prefers-reduced-motion: reduce)")` matches.
+- **Visit direction** (8.0.0+): from the start of a visit until it completes,
+  `<html>` carries `data-turbo-visit-direction` = `forward` (advance), `back`
+  (restore) or `none` (replace), so CSS can animate by direction
+  (`html[data-turbo-visit-direction="back"]::view-transition-old(root) { … }`).
+  It is not set for a visit that accepts a stream response.
 
 ## 3. Morphing page refreshes (Turbo 8)
 

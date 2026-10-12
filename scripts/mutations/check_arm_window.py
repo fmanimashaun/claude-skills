@@ -79,5 +79,11 @@ GUARD = Guard(
             'RELEASE_BLOCK = re.compile(r"^### .*\\(release (v\\d+\\.\\d+\\.\\d+)\\)\\s*$", re.M)',
             "armed is detected when both halves hold",
         ),
+        Mutation(
+            'a fragment added while dev is armed passes',
+            '    if new_fragments:\n        # #1825',
+            '    if False:\n        # #1825',
+            'a fragment added while dev is ARMED is refused',
+        ),
     ),
 )

@@ -14,7 +14,7 @@ holds the harness-neutral rules (measure before you assert; write the mechanism 
 - **Distributed (what users install):** the plugins in `.claude-plugin/marketplace.json` —
   `rails-stack` (bundling the `rails-8`, `hotwire`, `design-system`, `code-review`, `quality-pass`,
   `derived-artifacts` and `parallel-session-lane` skills), `rails-flow`, `qa-flow`, `pipeline`,
-  `design-flow` — plus `dist/*.skill` for claude.ai upload. Keep this list in step with the manifest;
+  `design-flow`, `flow-suite` (a manifest-only bundle of the first three flows) — plus `dist/*.skill` for claude.ai upload. Keep this list in step with the manifest;
   `lint_self_consistency.py`'s `undocumented-plugin` rule catches a plugin named **nowhere**, and
   cannot tell that the mention is in this list rather than in prose.
 - **Not distributed (maintainer tooling):** everything under `.claude/` — commands, agents, one skill
@@ -36,7 +36,7 @@ holds the harness-neutral rules (measure before you assert; write the mechanism 
 5. Every check you add must be able to fail: a `--selftest`, and a guard (see the two roots below).
 6. Edited a command or skill? `python3 scripts/lint_markdown_shell.py` and `lint_markdown_code.py`.
    Edited `skills/**`? `python3 scripts/package_core.py`, commit the `dist/` change → *Packaging*.
-7. CHANGELOG bullet under the component's **`### Unreleased`**, naming a path in backticks → *Versioning*.
+7. CHANGELOG **fragment** `changelog.d/<issue>-<slug>.md` (required: a bullet added straight to `### Unreleased` is refused by the `changelog direct bullets` gate, #1841), naming a path in backticks → *Versioning*.
 8. Run the sweep locally — `python3 scripts/maintainer_doctor.py --gates-only --fast` (~45 s) — and
    review your own diff against `skills/code-review/SKILL.md` → *Verify our own claims*.
 9. PR **into `dev`**, a line `Fixes #n` per issue it completes (`Refs #n` if partial), **no version bump** → *Git flow*.
@@ -109,7 +109,7 @@ ancestry* check asserts both halves; `--gates-only` skips it, so run the full do
 
 | # | Step | Branch / PR | Publishes? |
 |---|---|---|---|
-| 1 | **Arm** — assign versions, convert `Unreleased` headings, `python3 scripts/rebuild_generated.py` | `chore/arm-vX.Y.Z` → **`dev`** | **No** |
+| 1 | **Arm** — assign versions, `scripts/changelog_fragments.py --fold`, convert `Unreleased` headings, `scripts/rebuild_generated.py` | `chore/arm-vX.Y.Z` → **`dev`** | **No** |
 | 2 | **Promote** — merge dev into main | `dev` → **`main`** | **Yes** — the push fires the workflow |
 
 Name step 1 `chore/arm-vX.Y.Z`, never `release/*`; title it "arm vX.Y.Z — version assignment (does not
@@ -128,7 +128,7 @@ a promotion must carry no `Unreleased`, and a second arm would leave the first h
   Before promoting run `maintainer_doctor.py --gates-only --require-slow --record-proof`: it posts a
   `full-sweep` status for the tree; `release.yml` reuses it for an identical tree, else runs all (#1635).
 - **A gate over its budget is FAIL by name**, its group killed. Guards live one per file, from **two
-  roots**: `scripts/mutations/` (maintainer-only) and `plugins/<name>/scripts/mutations/` (ships, #1109).
+  roots**: `scripts/mutations/` (maintainer-only) and `plugins/<name>/scripts/mutations/` (ships, #1109). Before pushing a change to a guard, run it on Linux: `scripts/linux_check.sh <guard>` (docker; fails closed without it, #1738).
 - **It asserts `node` and `ruby` are present**; without them `lint_markdown_code.py` exits 3 and a skip
   is indistinguishable from a pass. `dist/` drift is checked here **and** in `release.yml`; change one,
   change the other — same for `scripts/release_local.sh`.
@@ -148,8 +148,8 @@ same failure conditions.
 
 - **Versions are assigned at the promotion, never on a merge into `dev`** — a version is a claim about
   what a user can install (#143/#144).
-- Notes for unshipped work go under **`### Unreleased`** in the component's CHANGELOG section; the
-  bullet names a path it changed in backticks (`changelog-bullet-unplaceable`).
+- Notes for unshipped work are a fragment, `changelog.d/<issue>-<slug>.md`, that the arm folds under **`### Unreleased`**; the
+  bullet names a path it changed in backticks (`changelog-bullet-unplaceable`); a late one is `--fold --into <tag>`.
 - At the arm: components version **independently** — skill content → the rails-stack `version` in
   `marketplace.json`; a plugin's code → its `plugin.json`; always `metadata.version`. Patch for fixes,
   minor for capabilities. **Every bump gets a CHANGELOG entry**.
@@ -251,12 +251,12 @@ Tracked `.claude/settings.json` holds a narrow allowlist every worktree gets; fo
 ## Platform
 
 Hooks are **bash + `python3`**; the flow drives `gh`. Windows: WSL or Git Bash. **Hooks do not all fail
-open.** Of the nineteen hook scripts, thirteen are advisory and fail open — an advisory that blocks work on a
-missing dependency gets disabled. Six **gates fail closed**, each scoped to what it guards:
-`plugins/rails-flow/hooks/scripts/guard-bash.sh` (falls back to the raw payload;
-`git add -A` is blocked either way.), `plugins/qa-flow/hooks/scripts/release-gate.sh` (only for commands targeting `main`),
-`plugins/rails-flow/hooks/scripts/guard-lane.sh` (only when a lane is assigned), `plugins/rails-flow/hooks/scripts/guard-claims.sh` (only `gh pr create/edit` carrying a body, in a repo it can resolve),
-`plugins/rails-flow/hooks/scripts/guard-migrate.sh` (only a `Write` creating a new `db/migrate/` file), `plugins/rails-flow/hooks/scripts/guard-worktree.sh` (only a `git worktree add`; guards against accident, not impersonation). Classify a new hook
+open.** Of the twenty-two hook scripts, fifteen are advisory and fail open — an advisory that blocks work on a
+missing dependency gets disabled. Seven **gates fail closed**, each scoped to what it guards:
+`plugins/rails-flow/hooks/scripts/guard-bash.sh` (a tripwire for the common spellings, not a boundary: the stated-limit guarantee is the `git` shim and the `pre-commit` hook, #1789/#1790, #1793; falls back to the raw payload;
+the literal `git add -A` is blocked either way.), `plugins/qa-flow/hooks/scripts/release-gate.sh` (only for commands targeting `main`),
+`plugins/rails-flow/hooks/scripts/guard-lane.sh` (only when a lane is assigned), `plugins/rails-flow/hooks/scripts/guard-claims.sh` (only `gh pr create/edit` and `gh issue comment` carrying a body, in a repo it can resolve; #1141, #1877),
+`plugins/rails-flow/hooks/scripts/guard-migrate.sh` (only a `Write` creating a new `db/migrate/` file), `plugins/rails-flow/hooks/scripts/guard-worktree.sh` (only a `git worktree add`; guards against accident, not impersonation), `plugins/rails-flow/hooks/scripts/guard-pr-ready.sh` (a tripwire, not a boundary: the guarantee is `git-shim/gh`, #1839; only `gh pr ready` (or a `gh api` marking a PR ready), in a repo that runs project_gates, a named repository from a directory that does not run it is not checked; needs a green sweep record for HEAD, #1565). Classify a new hook
 with `docs/doctrine/harness-doctrine.md`'s test before writing it: advisory → fail open; guarantee → fail closed,
 scoped. Every hook is driven end to end by `plugins/rails-flow/scripts/check_hook_gates.py`, under the
-environments that broke them (#822–#826).
+environments that broke them (#822–#826). **A guarantee holds inside a trusted workspace only (#1843):** a repository's own settings set `PATH`, `PYTHONPATH`, `BASH_ENV` and `GIT_*` for every hook process (the harness resolves each hook's `bash` through `PATH`) and can switch every plugin hook off (`disableAllHooks`), so a gate guards against the model's mistakes and a cooperating repository, never a hostile one (since #1850 every hook command starts `/bin/bash -p` and sources `lib/trusted-env.sh`, which rebuilds `PATH` from entries outside the repository and unsets `PYTHON*`, `GIT_*` outside an allowlist, `BASH_ENV`: that closes the redirect, not `disableAllHooks`): `docs/evidence/audits/2026-10-11-hook-environment-1843.md`.

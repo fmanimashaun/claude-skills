@@ -127,7 +127,8 @@ majestic monolith.
   ```
 
   A released version has **both** a gem and a tag. Absent either, it is not out,
-  whatever any page is titled.
+  whatever any page is titled. What `main` already holds for 8.2 is recorded, marked
+  unreleased and cited, in `references/rails-8-2-readiness.md`.
 - New apps get `config.load_defaults 8.1` in `config/application.rb`.
 - If the user's app is on an older Rails, upgrade one minor version at a time
   (7.2 → 8.0 → 8.1) with `bin/rails app:update` and the framework-defaults
@@ -213,7 +214,8 @@ generate, then trim what isn't needed.
 - **Credentials, not ENV, for app secrets:** `Rails.application.credentials.dig(:stripe, :secret_key)`;
   edit via `bin/rails credentials:edit`.
 - Run `bin/rubocop` mentally: 2-space indent, `frozen_string_literal` not
-  required (omakase), double quotes, no `and/or` for control flow.
+  required (omakase; Rails `main` changes this for new apps, see
+  `references/rails-8-2-readiness.md`), double quotes, no `and/or` for control flow.
 
 ## New in 8.1 — reach for these when relevant
 
@@ -278,20 +280,21 @@ the exact APIs, generated-file layouts, and the traps.
 | `references/views-hotwire.md` | ERB, layouts, partials, helpers, forms (simple_form; Turbo contract), Turbo Drive/Frames/Streams, morphing, Stimulus, importmap/Propshaft, markdown rendering |
 | `references/jobs-and-realtime.md` | Active Job, Solid Queue, recurring jobs, 8.1 continuations, concurrency limits, Action Cable / Solid Cable |
 | `references/mail-storage-richtext.md` | Action Mailer, Action Mailbox, Active Storage (uploads/variants/direct upload), Action Text |
-| `references/auth-security.md` | `bin/rails g authentication`, sessions, password reset, authorization patterns, CSRF/XSS/SQLi, CSP, the security checklist |
+| `references/auth-security.md` | `bin/rails g authentication`, sessions, password reset, authorization patterns, CSRF/XSS/SQLi, CSP, outbound requests to user URLs (SSRF), the security checklist |
 | `references/multi-tenancy.md` | **Isolation vs identification** (the two axes) — row-level isolation via association traversal, session-selected tenant (never in the URL), subdomain per *plane*, why not `default_scope`, the GlobalID/job-boundary hole, PostgreSQL RLS and its owner-bypass trap, opaque public ids vs UUID PKs |
 | `references/sso.md` | Enterprise SSO: multi-tenant OIDC (default) + SAML hatch, identities keyed [provider, issuer, uid], JIT roles, enabled-vs-enforced, tenant dashboard, cert rotation, SLO, audit, RSpec proving set |
 | `references/testing.md` | RSpec (pure — no matcher add-ons), FactoryBot/Faker, request/system specs, Capybara, WebMock/VCR, SimpleCov, `bin/ci`, `--skip-test` scaffolding |
 | `references/i18n.md` | **Internationalisation** — declared once (`config.x.locales`), `around_action` + `I18n.with_locale` (a `before_action` leaks across threads), lazy lookup, `lang`/`dir`, what must NOT be translated. **Situational**: `/rails-flow:setup-flow` asks. |
 | `references/performance-caching.md` | Solid Cache, fragment/russian-doll caching, HTTP caching/ETags, N+1s, `load_async`, counter caches, YJIT/jemalloc/Puma/Thruster, profiling |
-| `references/observability.md` | Active Support Instrumentation (hook catalog, subscribers, custom events), 8.1 `Rails.event`, `Rails.error`, log tagging, APM/OpenTelemetry wiring, self-hosted APM (Rails Pulse) |
+| `references/observability.md` | Active Support Instrumentation (hook catalog, subscribers, custom events), 8.1 `Rails.event`, `Rails.error`, log tagging, what `Rails.error` reports automatically (and what it does not), APM/OpenTelemetry wiring, self-hosted APM (Rails Pulse), an in-house OpenTelemetry store |
 | `references/advanced-active-record.md` | Composite primary keys, multiple databases (replicas, role switching, sharding), Active Record encryption + key rotation |
 | `references/ecosystem-gems.md` | simple_form, tailwindcss-rails, OmniAuth, Pundit/CanCanCan, Pagy, Ransack/pg_search, mission_control-jobs, friendly_id, paper_trail, bullet, ViewComponent, strong_migrations, and when to prefer the defaults |
 | `references/api-documentation.md` | OpenAPI/Swagger for JSON APIs — rswag (test-driven docs), rspec-openapi, apipie, Swagger UI/Redoc, CI drift gates |
 | `references/ai-llm.md` | LLM features via ruby_llm — chat, `acts_as_chat` persistence, streaming with Hotwire, tools, structured output, embeddings + pgvector, testing AI |
 | `references/extending-rails.md` | Application templates (`rails new -m`), custom generators, overriding built-in generator templates, engines/plugins, Rack middleware |
 | `references/deployment-kamal.md` | Kamal 2 (`config/deploy.yml`, secrets, accessories, rollback), Dockerfile, Thruster, SQLite-in-production, production checklist |
-| `references/pwa.md` | **Installable apps** — the installability criteria, how each browser offers installation (only Chromium and Samsung Internet fire `beforeinstallprompt`), and the rule that a service worker never caches signed-in pages |
+| `references/pwa.md` | **Installable apps** — the installability criteria, how each browser offers installation (only Chromium and Samsung Internet fire `beforeinstallprompt`), the rule that a service worker never caches signed-in pages, and the offline page (Rails `main` only), Web Push and the Play Store (Trusted Web Activity) |
+| `references/rails-8-2-readiness.md` | **Rails 8.2 is UNRELEASED**: what is on `main` (CSRF `Sec-Fetch-Site`, Active Job defaults and adapters, Argon2, `Rails.app`, Active Storage `analyze:`/`process:`, Herb), each marked unreleased with its source; read before answering "what changes in 8.2" |
 | `references/mcp-server.md` | **Letting agents pull reporting data**: an MCP server over HTTP (not a CLI), the spec's OAuth resource-server rules, and ours: the agent acts as a real user, the server enforces read-only, one tool per report, every call audited, sensitive data excluded by default |
 
 Companion skill: **`hotwire`** goes deeper than `views-hotwire.md` on Turbo,

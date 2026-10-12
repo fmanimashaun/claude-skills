@@ -27,8 +27,15 @@ WHAT IT CHECKS
   undocumented-plugin         a plugin declared in marketplace.json that CLAUDE.md or
                               README.md never names — it ships while the doc describing
                               what ships omits it
+  docs-path-outside-layout    a `docs/<dir>/` that rails-flow's commands, agents, hooks, checks or scripts name,
+                              where `<dir>` is not in `docs_layout.py`'s LAYOUT: the path the plugin prescribes
+                              fails the plugin's own docs-layout gate (#1700)
   undocumented-command        a plugins/<p>/commands/<c>.md that README.md (as `c`) or the
                               plugin's README (as /p:c) never names — same defect, one level down
+  schema-reader-drift         `architecture_graph.py` (vendored alone) carries its own copy of the rule that decides which db/*_schema.rb files are the project's;
+                              this runs it and `build_project_wiki.py`'s over the same fixture trees and refuses a difference (#1698)
+  hook-start-hardened         a hook command in plugins/*/hooks/hooks.json that does not start with `/bin/bash -p`, a hook script whose first executable line is
+                              not the source of lib/trusted-env.sh, or a plugin whose copy of that lib is missing or differs from rails-flow's (#1850)
   hook-lib-drift              the two shipped copies of hooks/scripts/lib/normalize_cmd.sh, or of lib/deadline.sh,
                               differ, or one is missing -- one normaliser is a claim only while they are identical
   fixture-git-drift           the three shipped copies of scripts/fixture_git.py (rails-flow, qa-flow,
@@ -636,6 +643,127 @@ def check_fixture_git_drift() -> tuple[list[Finding], int]:
     return findings, len(FIXTURE_GIT_COPIES)
 
 
+# Rule: schema-reader-drift (#1698)
+# WHICH schema files are the project's (db/schema.rb, every other db/*_schema.rb a second database dumps, minus a Solid trio file that holds only `solid_*` tables) is decided in
+# `build_project_wiki.py` and imported by `check_privacy_inventory.py`. `architecture_graph.py` is vendored ALONE and cannot import it, so it carries a copy of the rule. Two
+# implementations of one rule differ on the first edge nobody tested, and the graph would then draw a different set of tables from the page beside it. Not a text diff (the copies
+# differ where they must: the wiki parses a file, the graph reads its table names): BEHAVIOUR, over the same fixture trees.
+SCHEMA_TREES = (
+    {"schema.rb": ["invoices"]},
+    {"schema.rb": ["invoices"], "observability_schema.rb": ["error_groups"]},
+    {"schema.rb": ["invoices"], "cache_schema.rb": ["solid_cache_entries"], "queue_schema.rb": ["solid_queue_jobs"], "cable_schema.rb": ["solid_cable_messages"]},
+    {"schema.rb": ["invoices"], "cache_schema.rb": ["cache_notes"]},
+    {"schema.rb": ["invoices"], "cache_schema.rb": ["solid_cache_entries", "cache_notes"]},
+    {"schema.rb": ["invoices"], "cache_schema.rb": []},
+    {"schema.rb": ["invoices"], "zeta_schema.rb": ["z"], "alpha_schema.rb": ["a"], "queue_schema.rb": ["solid_queue_jobs"]},
+    {"observability_schema.rb": ["error_groups"]},
+    {"schema.rb": ["invoices"], "cache_schema.rb": ["solidarity_votes"]},        # a project table that merely BEGINS "solid": `startswith("solid")` would call the file the framework's
+)
+
+
+def check_schema_reader_drift() -> tuple[list[Finding], int]:
+    import importlib.util
+    import tempfile
+    wiki_rel, graph_rel = "plugins/rails-flow/scripts/build_project_wiki.py", "plugins/rails-flow/scripts/architecture_graph.py"
+    if not (ROOT / wiki_rel).is_file() or not (ROOT / graph_rel).is_file():
+        return [], 0        # a tree without both scripts has no two copies to disagree
+
+    def load(rel: str, name: str):
+        spec = importlib.util.spec_from_file_location(name, ROOT / rel)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        try:
+            spec.loader.exec_module(module)
+        finally:
+            sys.modules.pop(name, None)
+        return module
+
+    findings: list[Finding] = []
+    try:
+        wiki, graph = load(wiki_rel, "_sr_wiki"), load(graph_rel, "_sr_graph")
+        wiki_fn, graph_fn = wiki.app_schema_files, graph.app_schema_files
+    except Exception as exc:        # a script that cannot load, or lost the function, is a finding, never a silent pass
+        return [Finding("schema-reader-drift", wiki_rel, 0, f"cannot compare the schema-file rule in {wiki_rel} and {graph_rel}: {type(exc).__name__}: {exc}")], 0
+    for tree in SCHEMA_TREES:
+        with tempfile.TemporaryDirectory() as td:
+            (Path(td) / "db").mkdir()
+            for name, tables in tree.items():
+                (Path(td) / "db" / name).write_text("".join(f'  create_table "{t}", force: :cascade do |t|\n  end\n' for t in tables), encoding="utf-8")
+            wiki_files = [Path(f).relative_to(td).as_posix() for f in wiki_fn(Path(td))]
+            graph_files = [Path(f).relative_to(td).as_posix() for f in graph_fn(td)]
+            if wiki_files != graph_files:
+                findings.append(Finding("schema-reader-drift", graph_rel, 0,
+                                        f"over db/{{{', '.join(sorted(tree))}}} the wiki builder reads {wiki_files} and the graph reads {graph_files}: one rule, two copies, and they "
+                                        f"disagree. The wiki's (build_project_wiki.py `app_schema_files`) is the one decided in #1695/#1698; bring the graph's copy back to it"))
+    return findings, len(SCHEMA_TREES)
+
+
+# Rule: hook-start-hardened (#1850, P1 of #1843)
+# A project's checked-in `.claude/settings.json` `env` reaches every hook process, and the harness resolves a command's first word through PATH. So a hook
+# started as a bare `bash` can start the repository's `bash` before any of our code runs, and one whose script calls `python3`, `git` or `gh` before
+# `lib/trusted-env.sh` has rebuilt PATH and unset PYTHON*/GIT_CONFIG_*/BASH_ENV runs whatever the repository chose. Three clauses, each with a fixture and a
+# mutation: every command hook starts `/bin/bash -p` (which also ignores BASH_ENV); every hook script's first executable line sources the lib; every plugin
+# that has hooks ships a copy of the lib, identical to rails-flow's (plugins install alone, so one copy each).
+HOOK_START = "/bin/bash -p "
+TRUSTED_ENV_LIB = "hooks/scripts/lib/trusted-env.sh"
+TRUSTED_ENV_SOURCE = '. "${BASH_SOURCE[0]%/*}/lib/trusted-env.sh"'
+_SET_LINE = re.compile(r"^set [-+][A-Za-z]+( [A-Za-z]+)*$")
+
+
+def _first_executable_line(text: str) -> str:
+    """The first line of a shell script that is not blank, a comment (the shebang included) or a `set` option line."""
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or _SET_LINE.match(stripped):
+            continue
+        return stripped
+    return ""
+
+
+def check_hook_start_hardened() -> tuple[list[Finding], int]:
+    findings: list[Finding] = []
+    examined = 0
+    canonical: tuple[str, bytes] | None = None
+    for manifest in sorted((ROOT / "plugins").glob("*/hooks/hooks.json")):
+        plugin = manifest.parent.parent
+        rel = manifest.relative_to(ROOT).as_posix()
+        try:
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+        except ValueError as exc:
+            findings.append(Finding("hook-start-hardened", rel, 0, f"cannot read the hook commands: {exc}"))
+            continue
+        commands = [h.get("command", "") for entries in data.get("hooks", {}).values() for entry in entries for h in entry.get("hooks", []) if h.get("type") == "command"]
+        for command in commands:
+            examined += 1
+            if not command.startswith(HOOK_START):
+                findings.append(Finding("hook-start-hardened", rel, 0,
+                                        f"hook command {command!r} does not start with `{HOOK_START.strip()}`: the harness resolves a bare `bash` through PATH, which a repository's "
+                                        "settings can set, so its own `bin/bash` runs instead, and a plain `/bin/bash` reads BASH_ENV. Start every hook command with `/bin/bash -p` (#1850)"))
+            named = re.search(r"hooks/scripts/([\w.-]+\.sh)", command)
+            script = plugin / "hooks" / "scripts" / named.group(1) if named else None
+            if script is None or not script.is_file():
+                continue
+            first = _first_executable_line(script.read_text(encoding="utf-8"))
+            if not first.startswith(TRUSTED_ENV_SOURCE):
+                findings.append(Finding("hook-start-hardened", script.relative_to(ROOT).as_posix(), 0,
+                                        f"the first executable line is {first[:80]!r}, not the source of lib/trusted-env.sh: any `python3`, `git` or `gh` before it runs with the PATH, "
+                                        f"PYTHONPATH and GIT_CONFIG_* the repository chose. Make `{TRUSTED_ENV_SOURCE} ...` the first line after the `set` options (#1850)"))
+        if not commands:
+            continue
+        lib = plugin / TRUSTED_ENV_LIB
+        lib_rel = lib.relative_to(ROOT).as_posix()
+        if not lib.is_file():
+            findings.append(Finding("hook-start-hardened", lib_rel, 0, "missing -- this plugin's hooks source it first, and plugins install alone, so each ships its own copy; copy it from plugins/rails-flow"))
+            continue
+        text = lib.read_bytes()
+        if canonical is None:
+            canonical = (lib_rel, text)
+        elif text != canonical[1]:
+            findings.append(Finding("hook-start-hardened", lib_rel, 0,
+                                    f"differs from {canonical[0]} -- one lib, one copy per plugin: a fix landed in one and not the others. Make them identical (cp) and re-run"))
+    return findings, examined
+
+
 # Rule: findings-script-drift (#1680)
 # qa-reporter validates its findings records with findings.py, which rails-flow owns. It used to call
 # `../rails-flow/scripts/findings.py`, which resolves only in this repo's checkout: an install puts each
@@ -739,6 +867,89 @@ def check_fixture_git_bypass(python_sources: dict[Path, str]) -> tuple[list[Find
     return findings, examined
 
 
+_SUBMODULE_SAFE = re.compile(r"submodule-safe:\s*\S")
+_GIT_STATUS_DIFF = (
+    re.compile(r"""["']git["']\s*,[^\n]*?["'](?:status|diff(?:-files|-index)?)["']"""),     # ["git", ..., "status", ...]
+    # Any git-named helper: git(, _git(, run_git(, g( -- a helper named anything else was invisible (#1920 review).
+    re.compile(r"""\b_?(?:run_)?g(?:it)?\([^()\n]*?["'](?:status|diff(?:-files|-index)?)["']"""),
+)
+_SHELL_GIT_STATUS_DIFF = re.compile(r"""(?:^|[\s;&|(`])git\b[^;&|`#\n]*?\s(?:status|diff)\b""")
+
+
+def _hook_scope(root: Path) -> list[Path]:
+    """The shipped code that runs git in a USER'S worktree: hook scripts and git hooks, and plugin scripts. Selftests,
+    tests and mutation guards build their own repositories, so they are out of scope."""
+    out: list[Path] = []
+    for f in sorted((root / "plugins").glob("*/**/*")):
+        rel = f.relative_to(root)
+        parts = rel.parts
+        if not f.is_file() or "mutations" in parts or "tests" in parts or f.name.endswith(("_selftest.py", ".md", ".json")):
+            continue
+        if "hooks" in parts or "git-hooks" in parts or (len(parts) == 4 and parts[2] == "scripts" and f.suffix == ".py"):
+            out.append(f)
+    return out
+
+
+def check_git_status_recurses_submodules() -> tuple[list[Finding], int]:
+    """A `git status` or worktree `git diff` in shipped code without `--ignore-submodules=dirty` is a finding (#1919).
+
+    Measured on git 2.50.1: `status` (also with `-uall` or `--no-optional-locks`) and `diff HEAD` recurse into a submodule
+    and run a `filter.<name>.clean` named in THAT repository's own config when a same-size change makes git hash a file.
+    `diff --cached` and a diff between two refs do not; such a line says why with `# submodule-safe: <reason>`, so the
+    lint never guesses which side of a diff is the worktree. `diff-files` and `diff-index HEAD` are read too.
+
+    Not seen, stated: `git add -u` and `git commit -a` also hash the worktree and run the filter (measured in the #1920
+    review); no shipped code runs them in a user's worktree today. The scan is per LINE: a flag or marker anywhere on the
+    line passes it, and an argv list split across lines whose flag sits on a continuation line is reported (put the flag,
+    or the marker, on the line that names the subcommand). A command built as text is not read either: `"git status".split()`,
+    an f-string or a variable holding the argv (#1920 review); such a call needs the flag by hand.
+
+    Why a per-call flag and not one config setting (measured on git 2.50.1, #1920 review; `RAN` = the submodule's filter ran):
+
+        command               plain   --ignore-submodules=dirty   --ignore-submodules=all   -c diff.ignoreSubmodules=all
+        status [-uall]        RAN     clean                       clean                     clean
+        diff HEAD / diff <c>  RAN     clean                       clean                     clean
+        commit -a             RAN     clean                       clean                     clean
+        diff-files            RAN     clean                       clean                     RAN
+        diff-index HEAD       RAN     clean                       clean                     RAN
+        add -u                RAN     (no such option)            (no such option)          RAN
+        diff --cached / A B   clean   -                           -                         -
+
+    The config misses three commands, so a helper setting it would not be a single guarantee. `=dirty`, not `=all`: both
+    stop the filter, but `=all` also hides a MOVED GITLINK (committed or not) from status and diff, so a gate such as
+    classify_door would miss a submodule bump; `=dirty` still reports it (measured, #1920 security review)."""
+    findings: list[Finding] = []
+    examined = 0
+    for f in _hook_scope(ROOT):
+        try:
+            text = f.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        rel = f.relative_to(ROOT)
+        python_like = f.suffix in (".py", ".js", ".mjs", ".ts")
+        for n, line in enumerate(text.splitlines(), 1):
+            code = line.strip()
+            if code.startswith(("#", "//")):
+                continue
+            hit = any(p.search(line) for p in _GIT_STATUS_DIFF) if python_like else bool(_SHELL_GIT_STATUS_DIFF.search(line))
+            if not hit:
+                continue
+            examined += 1
+            if "--ignore-submodules=dirty" in line or _SUBMODULE_SAFE.search(line):
+                continue
+            if "--ignore-submodules=all" in line:
+                findings.append(Finding("git-status-recurses-submodules", str(rel), n,
+                                        "--ignore-submodules=all also hides a MOVED GITLINK, committed or not, so a gate "
+                                        "reading this diff misses a submodule bump: use --ignore-submodules=dirty, which "
+                                        "stops the clean filter and still reports the gitlink (#1920 security review)"))
+                continue
+            findings.append(Finding("git-status-recurses-submodules", str(rel), n,
+                                    "git status/diff here recurses into a submodule and runs a clean filter named in ITS "
+                                    "config: pass --ignore-submodules=dirty, or mark a diff that reads no worktree "
+                                    "(`--cached`, ref to ref) `submodule-safe: <reason>` (#1919)"))
+    return findings, examined
+
+
 def check_claude_md_growth() -> tuple[list[Finding], int]:
     """CLAUDE.md must not grow past its ceiling, and the file its reasoning was routed to must exist.
 
@@ -775,6 +986,63 @@ def check_claude_md_growth() -> tuple[list[Finding], int]:
             f"`{CLAUDE_MD_HISTORY}` is missing -- CLAUDE.md's rules point at it for their reasoning, and a "
             "pointer to a file that does not exist reads as authoritative while resolving to nothing"))
     return findings, count
+
+
+DOCS_DIR = re.compile(r"(?<![\w/.-])docs/([A-Za-z0-9_-]+)/")
+# THIS REPOSITORY'S OWN DOCS, cited by the plugins as pointers (`docs/doctrine/harness-doctrine.md`): they live in the marketplace repo, not in the
+# project the plugin runs in, so no project's layout gate ever reads them.
+OWN_REPO_DOCS = {"doctrine"}
+# THE MODULE THAT MOVES A PLUGIN'S OWN FILES out of the old places exists to name them (`docs/assets/`, `docs/design-system/`), so it is not scanned (#1779).
+MIGRATIONS = {"asset_home.py"}
+
+
+def check_docs_path_outside_layout() -> tuple[list[Finding], int]:
+    """Every `docs/<dir>/` rails-flow tells an agent to write or read is a directory its own layout gate accepts (#1700).
+
+    `/rails-flow:handoff` and `/rails-flow:feature` told the agent to commit `docs/handoff/<slug>.md`, and `docs_layout.py` (run by
+    `bin/doctrine` as `rails-flow/docs-layout`) failed that very path because `handoff` is not in its LAYOUT. #910 was the same defect
+    for `docs/acceptance/`. Two parts of one plugin disagreeing about where a file lives is invisible to each part alone, so this reads
+    LAYOUT and every place the plugin names a `docs/<dir>/`.
+
+    A MENTION OF A PRE-LAYOUT PATH THAT SAYS SO IS NOT A PRESCRIPTION: a project that committed `docs/handoff/` before the layout keeps
+    working because the Stop gate and `checks.json` still read it, and the line that reads it says "pre-layout". Any other line naming a
+    directory outside LAYOUT is a finding. Out of scope, deliberately: `docs_layout.py` itself (its migration tables name the old
+    directories), `asset_home.py` (design-flow's own migration, which exists to name its old places), selftests and the hook fixtures (they
+    build trees on purpose), and the other plugins, which keep their own docs. design-flow is in scope since #1779, when it was found
+    prescribing `docs/assets/` and `docs/design-system/`.
+    """
+    layout_file = ROOT / "plugins" / "rails-flow" / "scripts" / "docs_layout.py"
+    if not layout_file.is_file():
+        return [], 0  # a tree without the layout gate has nothing to disagree with
+    allowed: set[str] = set()
+    for node in ast.walk(ast.parse(read(layout_file))):
+        if isinstance(node, (ast.Assign, ast.AnnAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            if any(isinstance(t, ast.Name) and t.id == "LAYOUT" for t in targets) and isinstance(node.value, ast.Dict):
+                allowed = {k.value for k in node.value.keys if isinstance(k, ast.Constant) and isinstance(k.value, str)}
+    if not allowed:
+        return [Finding("docs-path-outside-layout", layout_file.relative_to(ROOT).as_posix(), 0,
+                        "LAYOUT is not a literal dict of directory names, so no path the plugin prescribes can be checked against it")], 0
+    scanned: list[Path] = []
+    for plugin in (ROOT / "plugins" / "rails-flow", ROOT / "plugins" / "design-flow"):   # design-flow since #1779: it prescribed docs/assets/ and docs/design-system/
+        scanned += [*sorted(plugin.glob("commands/*.md")), *sorted(plugin.glob("agents/*.md")), *sorted(plugin.glob("reference/*.md")),
+                    *sorted(plugin.glob("hooks/scripts/**/*.sh")),
+                    *sorted(plugin.glob("checks.json")),
+                    *(p for p in sorted(plugin.glob("scripts/*.py"))
+                      if not p.name.endswith("_selftest.py") and not p.name.startswith(("docs_layout", "check_hook_gates")) and p.name not in MIGRATIONS)]
+    findings: list[Finding] = []
+    for path in scanned:
+        for number, line in enumerate(read(path).splitlines(), 1):
+            if "pre-layout" in line:
+                continue
+            for directory in DOCS_DIR.findall(line):
+                if directory not in allowed and directory not in OWN_REPO_DOCS:
+                    findings.append(Finding(
+                        "docs-path-outside-layout", path.relative_to(ROOT).as_posix(), number,
+                        f"names `docs/{directory}/`, which is not in docs_layout.py's LAYOUT ({', '.join(sorted(allowed))}): the path the plugin "
+                        f"prescribes fails its own docs-layout gate. Put it under a LAYOUT directory (docs/product/{directory}/), or, for a "
+                        f"fallback that reads the old path, say \"pre-layout\" on that line"))
+    return findings, len(scanned)
 
 
 def check_undocumented_commands() -> tuple[list[Finding], int]:
@@ -872,7 +1140,7 @@ def check_bare_plugin_entries() -> tuple[list[Finding], int]:
 _COUNT_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7,
                 "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13,
                 "fourteen": 14, "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18,
-                "nineteen": 19, "twenty": 20}
+                "nineteen": 19, "twenty": 20, "twenty-one": 21, "twenty-two": 22, "twenty-three": 23}
 _NUMBER_WORDS = {n: w for w, n in _COUNT_WORDS.items()}
 
 
@@ -2351,7 +2619,7 @@ def check_hook_script_count() -> tuple[list[Finding], int]:
         return [], 0
     WORDS = _NUMBER_WORDS
     body = read(doc)
-    m = re.search(r"Of the (\w+) hook scripts, (\w+) are advisory", body)
+    m = re.search(r"Of the ([\w-]+) hook scripts, ([\w-]+) are advisory", body)
     if not m:
         return [Finding(
             "hook-count-drift", "CLAUDE.md", 0,
@@ -2390,6 +2658,65 @@ def check_hook_script_count() -> tuple[list[Finding], int]:
             f"says {m.group(2)!r} are advisory; {total} scripts minus {gates} named gates is "
             f"{total - gates}"))
     return findings, total
+
+
+SETUP_FLOW_TEMPLATE = "plugins/rails-flow/commands/setup-flow.md"
+_EMIT_IF = re.compile(r"<!--\s*emit-if:\s*database\s*-->\n(.*?)<!--\s*/emit-if\s*-->\n?", re.S)
+# What the preflight block has to say, and the words that prove it says it (#1561): the issue's five rules, each by a phrase a
+# reviewer would look for. A block that lost one of them is a template whose advice quietly got shorter.
+_PREFLIGHT_NEEDLES = (("pg_isready", "the database check"), ("spec path", "the spec-path check"), ("bundler.lock", "the held-lock check"),
+                      ("uptime", "the load check"), ("swap hooks or config", "the no-swap-mid-sweep rule"), ("Advice, not enforced", "its label as advice"))
+_GUARDRAILS_NEEDLES = (("placeholder SHA", "the placeholder-SHA rule"), ("git rev-parse HEAD", "the command that replaces it"),
+                       ("gh pr ready", "the `gh pr ready` rule"), ("&&", "chaining it to the sweep with `&&`"))
+
+
+def emit_claude_md(setup_text: str, has_database: bool) -> str:
+    """What `/rails-flow:setup-flow` writes into a project's CLAUDE.md template, for a project with or without a database.
+
+    A block wrapped in `emit-if: database` markers is written only for a project that has one, and the marker lines are never
+    written. The command is prose a model follows, so this is the rule it states, run both ways: the only way to see that
+    the condition is wired to the block rather than merely described.
+    """
+    return _EMIT_IF.sub(lambda m: m.group(1) if has_database else "", setup_text)
+
+
+def check_setup_flow_preflight() -> tuple[list[Finding], int]:
+    """The setup-flow template's test-run preflight, the two git-hygiene rules and the handoff pointer (#1561).
+
+    The preflight belongs only in a project that has a database, so a template that writes it into every project spends
+    always-loaded lines on advice that cannot apply, and one that never writes it ships nothing. "Absent without a database"
+    and "the markers are never written" are properties of the EMITTER, so the selftest drives `emit_claude_md` both ways
+    (a repo-state check could not fail them); the checks here are what a template edit can break. A root HANDOFF.md is refused outright: `commands/handoff.md` decided against
+    it on #127 (concurrent branches overwrite one root file).
+    """
+    path = ROOT / SETUP_FLOW_TEMPLATE
+    if not path.is_file():
+        return [], 0
+    text = read(path)
+    found: list[Finding] = []
+
+    def bad(message: str) -> None:
+        found.append(Finding("setup-flow-preflight", SETUP_FLOW_TEMPLATE, 0, message))
+
+    blocks = _EMIT_IF.findall(text)
+    if len(blocks) != 1:
+        bad(f"the template has {len(blocks)} `emit-if: database` blocks; it needs exactly one, the test-run preflight")
+    else:
+        if "## Test-run preflight" not in emit_claude_md(text, True):
+            bad("a project WITH a database would get no test-run preflight: the conditional block is not the preflight")
+        for needle, what in _PREFLIGHT_NEEDLES:
+            if needle not in blocks[0]:
+                bad(f"the test-run preflight block lost {what} (no `{needle}`)")
+    guardrails = re.search(r"## 3\. Create `GUARDRAILS\.md`(.*?)\n## 4\.", text, re.S)
+    for needle, what in _GUARDRAILS_NEEDLES:
+        if guardrails is None or needle not in guardrails.group(1):
+            bad(f"the GUARDRAILS.md section lost {what} (no `{needle}`)")
+    see_also = re.search(r"## See Also\n(.*?)```", text, re.S)
+    if see_also is None or "/rails-flow:handoff" not in see_also.group(1):
+        bad("the template's See Also line no longer points at `/rails-flow:handoff`")
+    if "HANDOFF.md" in text:
+        bad("the template names a root `HANDOFF.md`; the shipped answer is the work order `/rails-flow:handoff` writes")
+    return found, 1
 
 
 def check_duplicate_unreleased() -> tuple[list[Finding], int]:
@@ -3800,12 +4127,16 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     unenforced, flag_examined = check_unenforced_mandatory_flags(python_sources)
     undocumented, plugins_examined = check_undocumented_plugins()
     undoc_cmds, commands_examined = check_undocumented_commands()
+    docs_paths, docs_paths_examined = check_docs_path_outside_layout()
     growth, claude_md_lines = check_claude_md_growth()
     hook_lib, hook_lib_copies = check_hook_lib_drift()
     fixture_git, fixture_git_copies = check_fixture_git_drift()
+    schema_drift, schema_drift_examined = check_schema_reader_drift()
+    hook_start, hook_start_examined = check_hook_start_hardened()
     findings_copy, findings_copies = check_findings_script_drift()
     rel_xplugin, rel_xplugin_examined = check_cross_plugin_relative_path()
     fixture_bypass, fixture_bypass_examined = check_fixture_git_bypass(python_sources)
+    submod, submod_examined = check_git_status_recurses_submodules()
     bare, bare_examined = check_bare_plugin_entries()
     misdesc, agent_descs_examined = check_misdescribed_agents()
     unbounded, queries_examined = check_unbounded_issue_queries()
@@ -3848,6 +4179,7 @@ def run() -> tuple[list[Finding], dict[str, int]]:
     bullet_sec, bullet_sec_examined = check_changelog_bullet_section()
     cl_sections, cl_sections_examined = check_changelog_section_missing()
     hook_cnt, hook_cnt_examined = check_hook_script_count()
+    setup_pre, setup_pre_examined = check_setup_flow_preflight()
     dangling, dangling_examined = check_dangling_conditional_floor()
     flat_role, flat_role_examined = check_flattened_conditional_role()
     unowned, unowned_examined = check_adopts_an_unowned_server()
@@ -3864,9 +4196,12 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "claude_md_lines": claude_md_lines,
         "hook_lib_copies": hook_lib_copies,
         "fixture_git_copies": fixture_git_copies,
+        "schema_trees_compared": schema_drift_examined,
+        "hook_commands_checked_for_a_hardened_start": hook_start_examined,
         "findings_script_copies": findings_copies,
         "shipped_markdown_checked_for_cross_plugin_paths": rel_xplugin_examined,
         "fixture_git_identity_lines": fixture_bypass_examined,
+        "git_status_diff_calls_in_shipped_code": submod_examined,
         "plugin_entries_checked_for_metadata": bare_examined,
         "plugin_descriptions_reconciled_against_agents": agent_descs_examined,
         "gh_list_calls_examined": queries_examined,
@@ -3906,6 +4241,8 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "unreleased_changelog_bullets_placed": bullet_sec_examined,
         "plugins_with_a_changelog_section": cl_sections_examined,
         "hook_scripts_counted": hook_cnt_examined,
+        "setup_flow_templates_checked_for_the_preflight": setup_pre_examined,
+        "rails_flow_files_checked_for_docs_paths_outside_layout": docs_paths_examined,
         "conditional_floor_claims": dangling_examined,
         "plugin_paragraphs_naming_a_role": flat_role_examined,
         "shipped_docs_contemplating_a_running_server": unowned_examined,
@@ -3916,10 +4253,10 @@ def run() -> tuple[list[Finding], dict[str, int]]:
         "scaffolded_boolean_toggles": toggles_examined,
         **call_coverage,
     }
-    return (dead + unenforced + undocumented + undoc_cmds + growth + hook_lib + fixture_git + fixture_bypass + bare + misdesc + unbounded + author_me + components + call_sites + invisible
+    return (dead + unenforced + undocumented + undoc_cmds + docs_paths + growth + hook_lib + hook_start + fixture_git + schema_drift + fixture_bypass + submod + bare + misdesc + unbounded + author_me + components + call_sites + invisible
             + markers + uncontained + nonhermetic + pointers + rel_links + leaving + outlines + uninstallable + plugin_root + mkt_ver + coercions + topologies + schema + unwired
             + ci_gates + cl_ignore + controllers + labels + comp_labels + orphans + keyfilter
-            + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + dangling + flat_role
+            + findings_paths + pw_floor + skill_dep + dup_unrel + hook_cnt + setup_pre + dangling + flat_role
             + agents_md + undoc_skill + cl_sections + rel_extract + bullet_sec + pinned_ref + action_pins
             + findings_copy + rel_xplugin
             + xplugin + unowned + toggles + ci_step + promo_ctx + bothways + harness_dep,
@@ -4462,6 +4799,34 @@ def selftest() -> int:
     scenario("a correct count past thirteen, in words, is silent", rule=HC, expect_finding=False,
              files=fourteen)
 
+    # -- setup-flow-preflight ---------------------------------------------
+    SP = "setup-flow-preflight"
+    def _setup_flow(*, wrap=True, block=None, guard=None, handoff=True, extra="", second_block=False):
+        """A minimal setup-flow.md carrying everything the rule reads; each scenario breaks exactly one piece."""
+        body = block if block is not None else ("## Test-run preflight\npg_isready; every spec path; no held bundler.lock; uptime; "
+                                                "never swap hooks or config mid-sweep. Advice, not enforced.\n")
+        open_, close = ("<!-- emit-if: database -->\n", "<!-- /emit-if -->\n") if wrap else ("", "")
+        git = guard if guard is not None else "Git: never report a placeholder SHA, run `git rev-parse HEAD`; `run_sweep && gh pr ready`, never `;`.\n"
+        see = "GUARDRAILS.md" + (" · `/rails-flow:handoff`" if handoff else "")
+        return {SETUP_FLOW_TEMPLATE: ("# /rails-flow:setup-flow\n## 2. CLAUDE.md\n```markdown\n# CLAUDE.md\n" + open_ + body + close
+                                      + (open_ + "## Another\n" + close if second_block else "")
+                                      + "## See Also\n" + see + "\n```\n## 3. Create `GUARDRAILS.md`\n" + git + "\n## 4. Seed the memory system\n" + extra)}
+    spf = lambda label, files, expect: scenario(label, rule=SP, expect_finding=expect, files=files, only=check_setup_flow_preflight)
+    spf("CONTROL: a template with the conditional preflight, both git rules and the pointer is silent", _setup_flow(), False)
+    spf("a preflight written into EVERY project, with no condition around it", _setup_flow(wrap=False), True)
+    spf("a conditional block that is not the preflight, so a project with a database gets none", _setup_flow(block="## Something else\npg_isready; spec path; bundler.lock; uptime; swap hooks or config. Advice, not enforced.\n"), True)
+    spf("a preflight block that lost the held-lock check", _setup_flow(block="## Test-run preflight\npg_isready; spec path; uptime; swap hooks or config. Advice, not enforced.\n"), True)
+    spf("two conditional blocks where the template promises one", _setup_flow(second_block=True), True)
+    spf("a GUARDRAILS section with no placeholder-SHA rule", _setup_flow(guard="Git: `git rev-parse HEAD`; `run_sweep && gh pr ready`.\n"), True)
+    spf("a GUARDRAILS section that chains `gh pr ready` with nothing", _setup_flow(guard="Git: placeholder SHA, `git rev-parse HEAD`; gh pr ready after the sweep.\n"), True)
+    spf("a See Also line with no pointer to /rails-flow:handoff", _setup_flow(handoff=False), True)
+    spf("a template that names a root HANDOFF.md", _setup_flow(extra="Write HANDOFF.md at the root.\n"), True)
+    # DRIVEN BOTH WAYS, directly: the emitter itself, so a rule that only read the block's words could not pass for the wiring.
+    sample = next(iter(_setup_flow().values()))
+    checks += 1
+    if "## Test-run preflight" not in emit_claude_md(sample, True) or "## Test-run preflight" in emit_claude_md(sample, False) \
+            or "emit-if" in emit_claude_md(sample, True):
+        failures.append("setup-flow-preflight / the emitter: the preflight must be present with a database, absent without, and the markers never written")
     # -- duplicate-unreleased ---------------------------------------------
     DUP = "duplicate-unreleased"
     scenario("two Unreleased headings in one section", rule=DUP, expect_finding=True,
@@ -5086,10 +5451,125 @@ def selftest() -> int:
              expect_finding=False, files={FIXTURE_GIT_COPIES[0]: 'IDENTITY = ("-c", "user.email=t@t")\n'})
     scenario("fixture-git-bypass: a file with no fixture identity is silent", rule="fixture-git-bypass",
              expect_finding=False, files={"plugins/x/scripts/x.py": 'subprocess.run(["git", "status"])\n'})
+    # #1919: a worktree git status/diff in shipped code needs --ignore-submodules=all, or a reasoned submodule-safe marker.
+    for label, path, body, want in (
+        ("a hook's `git status --porcelain`", "plugins/x/hooks/scripts/h.sh", 'd="$(git status --porcelain)"\n', True),
+        ("a hook's `git diff --name-only HEAD`", "plugins/x/hooks/scripts/h.sh", 'n="$(git -C "$r" diff --name-only HEAD)"\n', True),
+        ("a git hook's status", "plugins/x/git-hooks/pre-commit", "git status --porcelain\n", True),
+        ("a plugin script's argv status", "plugins/x/scripts/x.py", 'subprocess.run(["git", "status", "--porcelain"])\n', True),
+        ("a plugin script's git() helper diff", "plugins/x/scripts/x.py", 'names = git("diff", "--name-only", base)\n', True),
+        ("a JS hook's git($, [status])", "plugins/x/hooks/band.js", "const s = await git($, ['status', '--porcelain'])\n", True),
+        ("a `_git(` helper's status (#1920 review)", "plugins/x/scripts/x.py", '    status = _git(project, "status", "--porcelain")\n', True),
+        ("a `run_git(` helper's diff", "plugins/x/scripts/x.py", 'names = run_git(root, "diff", "--name-only", base)\n', True),
+        ("a `g(` helper's status", "plugins/x/scripts/x.py", 'if g(repo, "status", "--porcelain"):\n', True),
+        ("a diff-files call", "plugins/x/scripts/x.py", 'subprocess.run(["git", "diff-files", "--name-only"])\n', True),
+        ("CONTROL: a helper named otherwise (`log(`) is not git", "plugins/x/scripts/x.py", 'log("status", "--porcelain")\n', False),
+        ("a marker with no reason", "plugins/x/hooks/scripts/h.sh", "git status  # submodule-safe:\n", True),
+        ("CONTROL: the flag", "plugins/x/hooks/scripts/h.sh", 'd="$(git status --porcelain --ignore-submodules=dirty)"\n', False),
+        ("=all, which hides a moved gitlink from a gate", "plugins/x/scripts/x.py", 'git("diff", "--name-only", "--ignore-submodules=all", base)\n', True),
+        ("CONTROL: a reasoned marker", "plugins/x/hooks/scripts/h.sh", 'git diff --cached --name-only  # submodule-safe: --cached reads the index\n', False),
+        ("CONTROL: a test string naming git status is not a call", "plugins/x/scripts/x.py", '("git status && git push origin main", ["PUSH"]),\n', False),
+        ("CONTROL: a comment line", "plugins/x/hooks/scripts/h.sh", "# git status --porcelain would recurse\n", False),
+        ("CONTROL: a selftest builds its own repository", "plugins/x/scripts/x_selftest.py", 'subprocess.run(["git", "status"])\n', False),
+        ("CONTROL: git stash status is not git status", "plugins/x/hooks/scripts/h.sh", "echo status; git stash list\n", False),
+    ):
+        scenario(f"git-status-recurses-submodules: {label} is {'a finding' if want else 'silent'}", rule="git-status-recurses-submodules", expect_finding=want, files={path: body})
     scenario(
         "the history file CLAUDE.md points at is missing", rule="claude-md-growth", expect_finding=True,
         files={"CLAUDE.md": "@AGENTS.md\n<!-- claude-md: max-lines 10 -->\nrule\n"},
     )
+
+    # -- docs-path-outside-layout (#1700) ---------------------------------
+    DL = {"plugins/rails-flow/scripts/docs_layout.py": 'LAYOUT: dict[str, tuple[str, str]] = {"product": ("a", "b"), "design": ("e", "f"), "brain": ("c", "d")}\n'}
+    DP = "docs-path-outside-layout"
+    scenario("a command that writes docs/handoff/<slug>.md, a directory the layout lacks", rule=DP, expect_finding=True,
+             only=check_docs_path_outside_layout, files={**DL, "plugins/rails-flow/commands/handoff.md": "Write `docs/handoff/<slug>.md`.\n"}, line=1)
+    scenario("a reference document that names docs/acceptance/<slug>.md (model-tiers.md did, by hand-fix only)", rule=DP, expect_finding=True,
+             only=check_docs_path_outside_layout,
+             files={**DL, "plugins/rails-flow/reference/model-tiers.md": "is why `docs/acceptance/<slug>.md` is a precondition\n"}, line=1)
+    scenario("a hook script that reads docs/acceptance/<slug>.md", rule=DP, expect_finding=True, only=check_docs_path_outside_layout,
+             files={**DL, "plugins/rails-flow/hooks/scripts/stop-gate.sh": 'criteria="docs/acceptance/${slug}.md"\n'})
+    scenario("a checks.json glob that names a directory outside the layout", rule=DP, expect_finding=True, only=check_docs_path_outside_layout,
+             files={**DL, "plugins/rails-flow/checks.json": '{"match": "{match:docs/handoff/*.md}"}\n'})
+    scenario("a script docstring that names one", rule=DP, expect_finding=True, only=check_docs_path_outside_layout,
+             files={**DL, "plugins/rails-flow/scripts/check_x.py": '"""Run: python3 check_x.py docs/handoff/<slug>.md"""\n'})
+    scenario("a path under a LAYOUT directory is silent", rule=DP, expect_finding=False, only=check_docs_path_outside_layout,
+             files={**DL, "plugins/rails-flow/commands/handoff.md": "Write `docs/product/handoff/<slug>.md` and `docs/brain/STATUS.md`.\n"})
+    scenario("a line that says pre-layout is a fallback, not a prescription, and silent", rule=DP, expect_finding=False,
+             only=check_docs_path_outside_layout,
+             files={**DL, "plugins/rails-flow/hooks/scripts/stop-gate.sh": '[ -f "docs/handoff/${slug}.md" ] && h=1  # pre-layout path, still read\n'})
+    scenario("a selftest, docs_layout.py's own tables and another plugin's docs are out of scope, and silent", rule=DP, expect_finding=False,
+             only=check_docs_path_outside_layout,
+             files={**DL, "plugins/rails-flow/scripts/check_x_selftest.py": "docs/handoff/x.md\n",
+                    "plugins/qa-flow/commands/assets.md": "docs/assets/x\n"})
+    scenario("design-flow's command that writes docs/assets/<x> is a finding too (#1779)", rule=DP, expect_finding=True, only=check_docs_path_outside_layout,
+             files={**DL, "plugins/design-flow/commands/assets.md": "Write `docs/assets/manifest.json`.\n"}, line=1)
+    scenario("design-flow's script that names docs/design-system/prompts/ is a finding", rule=DP, expect_finding=True, only=check_docs_path_outside_layout,
+             files={**DL, "plugins/design-flow/scripts/x.py": 'PROMPTS = "docs/design-system/prompts"\n'})
+    scenario("design-flow's paths under docs/design/ are silent", rule=DP, expect_finding=False, only=check_docs_path_outside_layout,
+             files={**DL, "plugins/design-flow/commands/assets.md": "Write `docs/design/assets/manifest.json`.\n"})
+    scenario("design-flow's own migration module names its old places on purpose, and is silent", rule=DP, expect_finding=False,
+             only=check_docs_path_outside_layout,
+             files={**DL, "plugins/design-flow/scripts/asset_home.py": 'LEGACY = "docs/assets/"\n'})
+    scenario("a pointer to this repository's own docs/doctrine/ is silent", rule=DP, expect_finding=False, only=check_docs_path_outside_layout,
+             files={**DL, "plugins/rails-flow/hooks/scripts/x.sh": "# see docs/doctrine/harness-doctrine.md\n"})
+    scenario("a tree without docs_layout.py has nothing to disagree with, and is silent", rule=DP, expect_finding=False,
+             only=check_docs_path_outside_layout, files={"plugins/rails-flow/commands/handoff.md": "docs/handoff/<slug>.md\n"})
+    scenario("a LAYOUT that is not a literal dict is itself a finding", rule=DP, expect_finding=True, only=check_docs_path_outside_layout,
+             files={"plugins/rails-flow/scripts/docs_layout.py": "LAYOUT = build()\n"})
+
+    # -- schema-reader-drift (#1698) --------------------------------------
+    SR = "schema-reader-drift"
+    WIKI_REL, GRAPH_REL = "plugins/rails-flow/scripts/build_project_wiki.py", "plugins/rails-flow/scripts/architecture_graph.py"
+    WIKI_OK = "from pathlib import Path\ndef app_schema_files(root):\n    return [p for p in sorted(Path(root).glob('db/*.rb'))]\n"
+    GRAPH_OK = "from pathlib import Path\ndef app_schema_files(root):\n    return [str(p) for p in sorted(Path(root).glob('db/*.rb'))]\n"
+    scenario("the wiki builder and the graph read the same schema files over every fixture tree: silent", rule=SR, expect_finding=False,
+             only=check_schema_reader_drift, files={WIKI_REL: WIKI_OK, GRAPH_REL: GRAPH_OK})
+    scenario("the graph's copy reads fewer schema files than the wiki builder: a finding", rule=SR, expect_finding=True,
+             only=check_schema_reader_drift, files={WIKI_REL: WIKI_OK, GRAPH_REL: "def app_schema_files(root):\n    return []\n"})
+    scenario("a graph copy that lost the function is a finding, never a silent pass", rule=SR, expect_finding=True,
+             only=check_schema_reader_drift, files={WIKI_REL: WIKI_OK, GRAPH_REL: "x = 1\n"})
+    scenario("a script that cannot even load is a finding", rule=SR, expect_finding=True,
+             only=check_schema_reader_drift, files={WIKI_REL: WIKI_OK, GRAPH_REL: "this is not python (\n"})
+    scenario("a tree without both scripts has no two copies to disagree, and is silent", rule=SR, expect_finding=False,
+             only=check_schema_reader_drift, files={WIKI_REL: WIKI_OK})
+    # The rule's own edge: a Solid trio file is the framework's only when EVERY table starts `solid_`. Stub copies that differ in exactly that prefix must disagree over the tree
+    # holding `solidarity_votes`; deleting that tree from SCHEMA_TREES turns this scenario silent.
+    def solid_copy(prefix: str, returns_str: bool) -> str:
+        wrap = "str(p)" if returns_str else "p"
+        return ("import re\nfrom pathlib import Path\ndef app_schema_files(root):\n    out = []\n    for p in sorted(Path(root).glob('db/*.rb')):\n"
+                "        tables = re.findall(r'create_table \"([^\"]+)\"', p.read_text())\n"
+                f"        if p.name.endswith('_schema.rb') and p.name != 'schema.rb' and tables and all(t.startswith({prefix!r}) for t in tables):\n            continue\n"
+                f"        out.append({wrap})\n    return out\n")
+    scenario("a graph copy whose Solid prefix is `solid`, not `solid_`, disagrees over a project table named solidarity_votes: a finding", rule=SR, expect_finding=True,
+             only=check_schema_reader_drift, files={WIKI_REL: solid_copy("solid_", False), GRAPH_REL: solid_copy("solid", True)})
+    scenario("copies with the same Solid prefix agree over every tree: silent", rule=SR, expect_finding=False,
+             only=check_schema_reader_drift, files={WIKI_REL: solid_copy("solid_", False), GRAPH_REL: solid_copy("solid_", True)})
+
+    # -- hook-start-hardened (#1850) --------------------------------------
+    HS = "hook-start-hardened"
+    HS_JSON = '{"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "/bin/bash -p \\"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/a.sh\\""}]}]}}\n'
+    HS_SRC = '. "${BASH_SOURCE[0]%/*}/lib/trusted-env.sh" 2>/dev/null\n'
+    HS_OK = "#!/usr/bin/env bash\n# a hook\n\nset -uo pipefail\n" + HS_SRC + "python3 -c pass\n"
+    HS_LIB = "rf_scrub_env() { :; }\n"
+    HS_FILES = {"plugins/p/hooks/hooks.json": HS_JSON, "plugins/p/hooks/scripts/a.sh": HS_OK, "plugins/p/hooks/scripts/lib/trusted-env.sh": HS_LIB}
+    scenario("a hook started /bin/bash -p, sourcing the lib first, with the lib shipped: silent", rule=HS, expect_finding=False, only=check_hook_start_hardened, files=HS_FILES)
+    scenario("a hook command that starts with a bare `bash` is a finding", rule=HS, expect_finding=True, only=check_hook_start_hardened,
+             files={**HS_FILES, "plugins/p/hooks/hooks.json": HS_JSON.replace("/bin/bash -p ", "bash ")})
+    scenario("a hook command that starts /bin/bash WITHOUT -p is a finding", rule=HS, expect_finding=True, only=check_hook_start_hardened,
+             files={**HS_FILES, "plugins/p/hooks/hooks.json": HS_JSON.replace("/bin/bash -p ", "/bin/bash ")})
+    scenario("a hook script that calls python3 before it sources the lib is a finding", rule=HS, expect_finding=True, only=check_hook_start_hardened,
+             files={**HS_FILES, "plugins/p/hooks/scripts/a.sh": "#!/usr/bin/env bash\nset -uo pipefail\npython3 -c pass\n" + HS_SRC})
+    scenario("a hook script that never sources the lib is a finding", rule=HS, expect_finding=True, only=check_hook_start_hardened,
+             files={**HS_FILES, "plugins/p/hooks/scripts/a.sh": "#!/usr/bin/env bash\nset -uo pipefail\nexit 0\n"})
+    scenario("a plugin with hooks and no copy of the lib is a finding", rule=HS, expect_finding=True, only=check_hook_start_hardened,
+             files={k: v for k, v in HS_FILES.items() if not k.endswith("trusted-env.sh")})
+    scenario("two plugins whose copies of the lib differ are a finding", rule=HS, expect_finding=True, only=check_hook_start_hardened,
+             files={**HS_FILES, "plugins/q/hooks/hooks.json": HS_JSON, "plugins/q/hooks/scripts/a.sh": HS_OK, "plugins/q/hooks/scripts/lib/trusted-env.sh": HS_LIB + "\n"})
+    scenario("a plugin whose hooks.json holds no command hook needs no lib: silent", rule=HS, expect_finding=False, only=check_hook_start_hardened,
+             files={"plugins/p/hooks/hooks.json": '{"hooks": {}}\n'})
+    scenario("two plugins with identical copies of the lib are silent", rule=HS, expect_finding=False, only=check_hook_start_hardened,
+             files={**HS_FILES, "plugins/q/hooks/hooks.json": HS_JSON, "plugins/q/hooks/scripts/a.sh": HS_OK, "plugins/q/hooks/scripts/lib/trusted-env.sh": HS_LIB})
 
     # -- undocumented-command (#835) --------------------------------------
     # Four shipped commands were in neither README; design-flow's listed six of twelve.

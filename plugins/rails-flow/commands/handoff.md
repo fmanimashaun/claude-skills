@@ -6,7 +6,7 @@ argument-hint: "[blank to infer from the branch | <slug>]"
 # /rails-flow:handoff — $ARGUMENTS
 
 Everything an executor needs today is spread across `CLAUDE.md`, `GUARDRAILS.md`, the phase plan,
-`docs/brain/`, `docs/acceptance/<slug>.md` — and the conversation. That last one is the problem.
+`docs/brain/`, `docs/product/acceptance/<slug>.md` — and the conversation. That last one is the problem.
 Context that lives in chat evaporates on a fresh session, on a resume after a crash, on a second
 machine, and when the work is delegated to a subagent that never saw the discussion. What survives
 is what was written down.
@@ -15,10 +15,12 @@ So: **one file per unit of work**, holding everything needed to execute it and n
 
 ## Where it lives, and why not `HANDOFF.md`
 
-`docs/handoff/<slug>.md`, **committed**. The slug is the branch name after `feature/` or `fix/`
+`docs/product/handoff/<slug>.md`, **committed**. The slug is the branch name after `feature/` or `fix/`
 with any remaining `/` flattened to `-` — byte-identical to the rule
-`/rails-flow:feature` uses for `docs/acceptance/<slug>.md`, so a unit of work is one slug with two
-files: what "done" means, and how to get there.
+`/rails-flow:feature` uses for `docs/product/acceptance/<slug>.md`, so a unit of work is one slug with two
+files: what "done" means, and how to get there. It sits under `docs/product/` because that is where
+`docs_layout.py` homes a work order (a directory of its own fails that gate, #1700). A project that
+committed the pre-layout `docs/handoff/<slug>.md` is still read by the Stop gate and `checks.json`.
 
 [#127](https://github.com/fmanimashaun/claude-skills/issues/127) proposed a root `HANDOFF.md` and
 left committed-vs-gitignored open. Both halves are decided here, against the issue:
@@ -45,7 +47,7 @@ specific, observed failure — not for symmetry.
 One paragraph: what is being built and the outcome that makes it worth doing. No implementation.
 
 ## Acceptance criteria
-Graded by `docs/acceptance/<slug>.md` — AC-1, AC-2, AC-3. Cite the ids; do not restate them.
+Graded by `docs/product/acceptance/<slug>.md` — AC-1, AC-2, AC-3. Cite the ids; do not restate them.
 
 ## Scope
 ### In
@@ -72,7 +74,7 @@ clinic-scoped, no `Model.find(params[:id])`, 422 on invalid and 303 on redirect 
 
 ## Verify
 1. `bundle exec rspec spec/models/invoice_spec.rb` — 0 failures.
-2. `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_criteria.py" docs/acceptance/<slug>.md --specs spec`
+2. `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_criteria.py" docs/product/acceptance/<slug>.md --specs spec`
 3. `bundle exec rspec` — full suite, 0 failures.
 
 ## Executor
@@ -147,25 +149,58 @@ mechanical backstop for delegated work, and a per-agent one. It bounds turns, no
 complements the attempt cap rather than replacing it: an agent can burn three attempts inside one
 turn, or spend twenty turns making real progress on one.
 
+## Progress — what a cut-off session leaves behind (optional, #1564)
+
+The nine sections are the contract; they do not say how far the run got. A session cut off by a spend limit, an expired login or a
+reboot leaves a branch and a work order and no record of the step it was on, so the next session starts over. An executor therefore
+keeps one more section current, and it is **optional** (an order written before this still validates):
+
+```markdown
+## Progress
+Status: in-progress
+Last green: `a1b2c3d`
+Current step: AC-2, the 422 path
+Next step: run the full suite
+Pending gates: code-reviewer, test-runner
+```
+
+`Status` is `not-started`, `in-progress`, `stopped` or `done`; `Last green` is the last commit every gate passed on, or `none`; the
+other three are one line each (`Pending gates: none` once nothing is left, which a `done` order must say). The checker validates a
+Progress section when there is one, as it does the base commit: a Status it does not list, a missing line, or a Last green that is not a
+commit in this repository is a finding, because a plausible value nobody can resolve is worse than an absent one.
+
+**Update it at each gate and each commit, and set `Status: done` when the order is finished.** Commit it with the work.
+
+**Resuming.** `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/resume_lanes.py"` lists every order that is not `done` (or that records no Progress
+at all), checks that its branch exists locally or as `origin/<branch>` and which worktree has it, and prints the recorded steps and the one
+command to start with. It is read-only and fetches nothing. A resumed lane re-runs only its `Pending gates`.
+
+**The WIP commit.** The plugin's `Stop` hook commits tracked changes to a lane branch (`feature/*` or `fix/*`; never `main`,
+`master`, `dev` or the default branch) when a turn ends with the tree dirty, so a cut-off loses at most one turn. It is advisory: it
+fails open, runs only an absolute `git` found outside the project with a scrubbed environment, never `git add -A`, and never runs a hook
+the repository supplies. There is deliberately no hook on `git push`, `gh pr merge` or `gh pr ready`: a `PreToolUse` hook runs before the
+user is asked, under an environment a project's settings can set, so it must not execute anything the repository or the environment chose
+(the threat model is `docs/evidence/audits/2026-10-12-test-preflight-threat-model-1821.md`).
+
 ## Run
 
 **1. Resolve the slug.** `$ARGUMENTS` if given, else the current branch after `feature/`|`fix/`
 with `/` flattened to `-`. Not on such a branch and no argument: say so and stop — a work order
 with no slug has nothing to pair with.
 
-**2. Read before writing.** `docs/acceptance/<slug>.md` (the criteria — they are the graded
+**2. Read before writing.** `docs/product/acceptance/<slug>.md` (the criteria — they are the graded
 contract, and the work order cites their ids), `CLAUDE.md`, `GUARDRAILS.md`, and the plan for this
 unit. Do not invent criteria here: if the acceptance file is missing, write it first
 (`/rails-flow:feature` Phase 1) — a work order that grades itself is not a work order.
 
-**3. Write `docs/handoff/<slug>.md`.** Fill every section. Resolve every placeholder. Nothing may
+**3. Write `docs/product/handoff/<slug>.md`.** Fill every section. Resolve every placeholder. Nothing may
 depend on this conversation.
 
 **4. Verify — this gate does not get skipped.**
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_handoff.py" "docs/handoff/<slug>.md" \
-  --criteria "docs/acceptance/<slug>.md"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_handoff.py" "docs/product/handoff/<slug>.md" \
+  --criteria "docs/product/acceptance/<slug>.md"
 ```
 
 Exit `0` clean · `1` findings · `2` unusable (no file, or not a work order at all). On findings, fix
@@ -176,7 +211,7 @@ What the checker cannot do: judge whether the goal is the *right* goal, whether 
 enough*, or whether the stop conditions are *wise*. It checks that each is present, numeric where a
 number is the only falsifiable form, and free of dangling references. The judgement stays yours.
 
-**5. Commit** `docs/handoff/<slug>.md` by name, in the same commit as the criteria where possible.
+**5. Commit** `docs/product/handoff/<slug>.md` by name, in the same commit as the criteria where possible.
 Never `git add -A`.
 
 ## Reconciling the agents with the tier doctrine

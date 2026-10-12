@@ -7,18 +7,33 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/guard-bash.sh\"",
+            "command": "/bin/bash -p \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/guard-bash.sh\"",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/guard-claims.sh\"",
+            "command": "/bin/bash -p \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/guard-claims.sh\"",
             "timeout": 15
           },
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/guard-worktree.sh\"",
+            "command": "/bin/bash -p \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/guard-worktree.sh\"",
             "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "/bin/bash -p \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/guard-pr-ready.sh\"",
+            "timeout": 15
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/bash -p \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/test-preflight.sh\"",
+            "timeout": 30
           }
         ]
       },
@@ -27,7 +42,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/guard-lane.sh\"",
+            "command": "/bin/bash -p \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/guard-lane.sh\"",
             "timeout": 10
           }
         ]
@@ -37,7 +52,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/guard-migrate.sh\"",
+            "command": "/bin/bash -p \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/guard-migrate.sh\"",
             "timeout": 10
           }
         ]
@@ -49,12 +64,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/lint-ruby.sh\"",
+            "command": "/bin/bash -p \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/lint-ruby.sh\"",
             "timeout": 60
           },
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/self-consistency.sh\"",
+            "command": "/bin/bash -p \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/self-consistency.sh\"",
             "timeout": 20
           }
         ]
@@ -64,7 +79,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/ci-verdict-hint.sh\"",
+            "command": "/bin/bash -p \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/ci-verdict-hint.sh\"",
             "timeout": 10
           }
         ]
@@ -76,7 +91,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/ci-verdict-hint.sh\"",
+            "command": "/bin/bash -p \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/ci-verdict-hint.sh\"",
             "timeout": 10
           }
         ]
@@ -87,13 +102,18 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/stop-gate.sh\"",
+            "command": "/bin/bash -p \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/stop-gate.sh\"",
             "timeout": 150
           },
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/stop-where.sh\"",
+            "command": "/bin/bash -p \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/stop-where.sh\"",
             "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "/bin/bash -p \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/wip-commit.sh\"",
+            "timeout": 30
           }
         ]
       }
@@ -103,7 +123,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-end.sh\"",
+            "command": "/bin/bash -p \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-end.sh\"",
             "timeout": 5
           }
         ]
@@ -114,7 +134,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-start.sh\"",
+            "command": "/bin/bash -p \"${CLAUDE_PLUGIN_ROOT}/hooks/scripts/session-start.sh\"",
             "timeout": 10
           }
         ]

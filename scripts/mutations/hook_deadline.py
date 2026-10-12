@@ -8,7 +8,7 @@ GUARD = Guard(
     # Only the deadline fixtures drive this subject; the whole harness per mutant is ~90 CPU-seconds.
     selftest_args=("--only", "deadline"),
     needs=("plugins/rails-flow/scripts/fixture_git.py", "plugins/rails-flow/hooks/hooks.json", "plugins/qa-flow/hooks/hooks.json",
-           'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py',  # session-start.sh runs both (#1581: the harness drives it)
+           'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py', 'plugins/rails-flow/scripts/check_memory_index.py',  # session-start.sh runs all three (#1581, #1828: the harness drives it)
            "plugins/rails-flow/hooks/scripts", "plugins/qa-flow/hooks/scripts", "plugins/qa-flow/scripts",
            # release-gate.sh and guard-bash.sh run these; unstaged, the harness's other fixtures fail in the staged
            # tempdir and every mutation reads as caught for an environmental reason (#1109, #1173).
@@ -16,7 +16,7 @@ GUARD = Guard(
            "plugins/qa-flow/scripts/read_certification.py", "plugins/qa-flow/scripts/push_targets.py",
            "plugins/qa-flow/scripts/release_evidence.py", "plugins/rails-flow/scripts/self_consistency.py",
            "plugins/qa-flow/scripts/remote_evidence.py",   # the release gate runs it (#1591)
-           "plugins/rails-flow/scripts/extract_claims.py", "plugins/rails-flow/scripts/ci_verdict_hint.py", "plugins/rails-flow/scripts/session_reaper.py", "plugins/rails-flow/scripts/process_containment.py"),
+           "plugins/rails-flow/scripts/extract_claims.py", "plugins/rails-flow/scripts/ci_verdict_hint.py", "plugins/rails-flow/scripts/test_preflight.py", "plugins/rails-flow/scripts/wip_commit.py", "plugins/rails-flow/scripts/session_reaper.py", "plugins/rails-flow/scripts/process_containment.py"),
     mutations=(
         # THE REASON THE HELPER EXISTS: killing only the parent left awk computing for 51 minutes and, once, 23 hours.
         Mutation(

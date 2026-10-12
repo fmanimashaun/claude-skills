@@ -1,0 +1,30 @@
+name: label new issues
+
+# Installed by /rails-flow:setup-flow. An issue missing a label group declared in `.rails-flow/issue-labels.json` gets the
+# `needs-labels` label and ONE comment naming what is missing; the label is removed when the groups are complete. It guesses
+# no label. The script is copied from rails-flow's `scripts/label_new_issue.py` to `.github/scripts/`.
+#
+# `issues` workflows run from the DEFAULT branch, so this starts working when it is merged there.
+on:
+  issues:
+    types: [opened, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Flag the missing label groups
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+        # The number is read from the environment, never interpolated into this script.
+        run: python3 .github/scripts/label_new_issue.py --issue "$ISSUE"

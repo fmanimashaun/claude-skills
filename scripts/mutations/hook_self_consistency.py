@@ -12,7 +12,7 @@ GUARD = Guard(
     # The harness resolves every hook from the selftest's own location, so the whole
     # directory is staged -- one hook's fixtures may exercise another's shape.
     needs=("plugins/rails-flow/scripts/fixture_git.py", 
-           'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py',  # session-start.sh runs both (#1581: the harness drives it)
+           'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py', 'plugins/rails-flow/scripts/check_memory_index.py',  # session-start.sh runs all three (#1581, #1828: the harness drives it)
            "plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362
            'plugins/rails-flow/hooks/scripts', 'plugins/qa-flow/hooks/scripts', 'plugins/qa-flow/scripts',
            # guard-claims.sh runs extract_claims.py; without it the harness's two claim
@@ -26,7 +26,7 @@ GUARD = Guard(
            'plugins/rails-flow/scripts/extract_claims.py',
            # ci-verdict-hint.sh runs ci_verdict_hint.py; unstaged, its fixtures fail and every
            # mutation reads as caught -- the harness reported this guard INERT until it was added (#1173).
-           'plugins/rails-flow/scripts/ci_verdict_hint.py', 'plugins/rails-flow/scripts/session_reaper.py', 'plugins/rails-flow/scripts/process_containment.py'),   # check_hook_gates drives BOTH plugins' hooks (#906)
+           'plugins/rails-flow/scripts/ci_verdict_hint.py', 'plugins/rails-flow/scripts/test_preflight.py', 'plugins/rails-flow/scripts/wip_commit.py', 'plugins/rails-flow/scripts/session_reaper.py', 'plugins/rails-flow/scripts/process_containment.py'),   # check_hook_gates drives BOTH plugins' hooks (#906)
     mutations=(
         Mutation(
             'the expansion loses its default and aborts the shell when the variable is unset',

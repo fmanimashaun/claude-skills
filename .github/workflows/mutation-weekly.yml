@@ -1,0 +1,112 @@
+name: Mutation weekly
+
+# WHY THIS EXISTS (#1738). Ten guard findings appeared only on Linux (#1729) and the v1.155.0 release failed five times on them, because the guards
+# were only ever run on macOS first and the release was the first Linux run. This runs EVERY guard, with no incremental skip (`--full`), on both
+# operating systems once a week, so a guard that only fails on one OS fails here, on a Monday, and not in a release. It is also the forced
+# re-proof the incremental skip relies on: a guard skipped for being unchanged was last proven by a full run, and this is how often that is at most.
+#
+# The sweep is sharded exactly as gates.yml shards it (#1739): the same cost-balanced `--shard I/4`, per OS, with a summary per OS that fails when a
+# shard failed, was cancelled or is missing. Cost growth is a WARNING here (`--ratchet-warn`), as in the release. Each OS's summary uploads the
+# proof and cost record its full run produced, for a person to commit; nothing here writes to a branch.
+
+on:
+  schedule:
+    # Mondays 03:17 UTC: off the hour, so it does not queue with every other job scheduled on the hour.
+    - cron: '17 3 * * 1'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  mutation:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        shard: [1, 2, 3, 4]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      # A guard whose fixtures need node, ruby or Kamal reads INERT without them, and this step FAILS rather than skipping.
+      - name: Interpreters and Kamal the guards shell out to
+        run: |
+          set -euo pipefail
+          for bin in node ruby; do
+            command -v "$bin" >/dev/null || { echo "::error::$bin is not on PATH"; exit 1; }
+            echo "$bin: $("$bin" --version)"
+          done
+          gem install --user-install --no-document kamal -v 2.12.0
+          ruby -e 'require "kamal"; puts "kamal: #{Kamal::VERSION}"'
+
+      - name: Mutation guards, every one, one shard of 4
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          set -euo pipefail
+          mkdir -p shard-out
+          python3 scripts/mutation_check.py --full --shard "${SHARD}/4" --ratchet-warn --shard-out "shard-out/shard-${SHARD}.json"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mutation-shard-${{ matrix.os }}-${{ matrix.shard }}
+          path: shard-out/shard-${{ matrix.shard }}.json
+          if-no-files-found: error
+          retention-days: 14
+
+  # One summary per OS, each `if: always()` so a failed shard cannot skip it into a pass. `needs.mutation.result` aggregates every OS and shard, so one
+  # OS's failure fails both summaries: the weekly is red when either OS is, which is the point.
+  summary:
+    needs: mutation
+    if: ${{ always() }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    # `statuses: write` ONLY to post `mutation-proof/<os>` on the commit of `main` this run proved (#1738).
+    permissions:
+      contents: read
+      statuses: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Every shard succeeded
+        env:
+          SHARDS_RESULT: ${{ needs.mutation.result }}
+        run: python3 scripts/mutation_incremental.py verdict "$SHARDS_RESULT" full
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: mutation-shard-${{ matrix.os }}-*
+          path: shard-in
+          merge-multiple: true
+
+      - name: Every shard present, every guard covered once
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/mutation_check.py --merge-shards shard-in --expect-shards 4
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mutation-records-${{ matrix.os }}
+          path: docs/evidence/mutation-cost-baseline.json
+          if-no-files-found: error
+          retention-days: 30

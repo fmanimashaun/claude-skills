@@ -1,5 +1,6 @@
 ---
 description: Audit an existing project's whole claude-skills setup — update the toolchain, verify the scaffolding, run every check that applies, and report in three states. The broad sibling of /rails-flow:toolchain-check, which only resolves versions.
+disable-model-invocation: true
 ---
 
 # /rails-flow:toolchain-audit

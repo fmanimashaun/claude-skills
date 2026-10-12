@@ -41,5 +41,11 @@ GUARD = Guard(
             '    left = GIT_TIMEOUT',
             "past the overall deadline git is not called at all",
         ),
+        Mutation(  # #1916
+            "status recurses into a submodule and runs the submodule's own clean filter every turn",
+            '"status", "--porcelain", "-uall", "--ignore-submodules=dirty")',
+            '"status", "--porcelain", "-uall")',
+            "a submodule's own clean filter never runs when the hook reads status",
+        ),
     ),
 )

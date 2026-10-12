@@ -11,7 +11,7 @@ GUARD = Guard(
     # The harness resolves every hook from the selftest's own location, so the whole
     # directory is staged -- one hook's fixtures may exercise another's shape.
     needs=("plugins/rails-flow/scripts/fixture_git.py", 
-           'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py',  # session-start.sh runs both (#1581: the harness drives it)
+           'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py', 'plugins/rails-flow/scripts/check_memory_index.py',  # session-start.sh runs all three (#1581, #1828: the harness drives it)
            'plugins/rails-flow/hooks/scripts', 'plugins/rails-flow/hooks/hooks.json',
            'plugins/qa-flow/hooks/scripts', 'plugins/qa-flow/scripts',
            # guard-claims.sh runs extract_claims.py; without it the harness's two claim
@@ -27,7 +27,7 @@ GUARD = Guard(
            # ci-verdict-hint.sh runs ci_verdict_hint.py; unstaged, its fixtures fail and every
            # mutation reads as caught -- the harness reported guard hook_guard_lane INERT until
            # this dependency was added (#1173).
-           'plugins/rails-flow/scripts/ci_verdict_hint.py', 'plugins/rails-flow/scripts/session_reaper.py', 'plugins/rails-flow/scripts/process_containment.py'),
+           'plugins/rails-flow/scripts/ci_verdict_hint.py', 'plugins/rails-flow/scripts/test_preflight.py', 'plugins/rails-flow/scripts/wip_commit.py', 'plugins/rails-flow/scripts/session_reaper.py', 'plugins/rails-flow/scripts/process_containment.py'),
     mutations=(
         Mutation(
             'the EXISTENCE check is dropped, so overwriting an existing migration is denied too',

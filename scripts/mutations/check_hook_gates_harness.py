@@ -17,7 +17,7 @@ GUARD = Guard(
     # lint_self_consistency's harness-dependency-undeclared rule reads it statically -- and that rule is
     # what keeps this copy honest when a hook gains a script (it caught exactly that on #1477).
     needs=("plugins/rails-flow/scripts/fixture_git.py", 
-           'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py',  # session-start.sh runs both (#1581: the harness drives it)
+           'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py', 'plugins/rails-flow/scripts/check_memory_index.py',  # session-start.sh runs all three (#1581, #1828: the harness drives it)
            "plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362
            'plugins/rails-flow/hooks/scripts', 'plugins/qa-flow/hooks/scripts', 'plugins/qa-flow/scripts',
            # guard-claims.sh runs extract_claims.py; without it the harness's two claim
@@ -32,8 +32,131 @@ GUARD = Guard(
            'plugins/rails-flow/scripts/extract_claims.py',
            # ci-verdict-hint.sh runs ci_verdict_hint.py; unstaged, its fixtures fail and every
            # mutation reads as caught -- the harness reported this guard INERT until it was added (#1173).
-           'plugins/rails-flow/scripts/ci_verdict_hint.py', 'plugins/rails-flow/scripts/session_reaper.py', 'plugins/rails-flow/scripts/process_containment.py'),
+           'plugins/rails-flow/scripts/ci_verdict_hint.py', 'plugins/rails-flow/scripts/test_preflight.py', 'plugins/rails-flow/scripts/wip_commit.py', 'plugins/rails-flow/scripts/session_reaper.py', 'plugins/rails-flow/scripts/process_containment.py'),
     mutations=(
+        # #1785. A check's own CPU allowance, and the hook's words in a failed check's detail.
+        Mutation(
+            "a check's own CPU allowance is ignored, so a 4.2-CPU-second denial can never be starved",
+            '    limit = STARVED_MAX_CPU_S if max_cpu_s is None else max_cpu_s',
+            '    limit = STARVED_MAX_CPU_S',
+            "starved: ...but with the 50,000-character fixtures' own allowance the same denial on an oversubscribed machine IS starved",
+        ),
+        Mutation(
+            'the allowance is far above the deadline, so a hang that burned 5.9 CPU seconds reads as starved',
+            'BIG_INPUT_STARVED_CPU_S = 5.0',
+            'BIG_INPUT_STARVED_CPU_S = 50.0',
+            "starved: ...and a hook that hung (burned 5.9 CPU seconds to the 6 s deadline, the #1645 backtracking) is the HOOK's fault even with the allowance",
+        ),
+        Mutation(
+            'check() does not pass the per-check allowance on',
+            '        why = starved_reason(detail, starved_max_cpu_s)',
+            '        why = starved_reason(detail)',
+            'starved: through check(), the default allowance leaves a 4.2 CPU-second denial a FAILURE and the per-check allowance makes it a skip',
+        ),
+        Mutation(
+            'a guard-bash fixture carries a bare constant detail again',
+            '        check(f"guard-bash: `{cmd}` is blocked", run(cmd) == 2, said())',
+            '        check(f"guard-bash: `{cmd}` is blocked", run(cmd) == 2, "exit 0")',
+            'guard-bash fixtures: no check that runs the hook carries a bare constant `exit N` as its detail (it must carry what the hook said)',
+        ),
+        Mutation(
+            'a guard-claims fixture carries a bare constant detail again (#1801)',
+            '          run("gh pr create --base dev --body-file BODY", NUMERIC) == 2, said())',
+            '          run("gh pr create --base dev --body-file BODY", NUMERIC) == 2, "exit 0")',
+            'guard-claims fixtures: no check that runs the hook carries a bare constant `exit N` as its detail (it must carry what the hook said)',
+        ),
+        Mutation(
+            'a release-gate fixture carries a bare constant detail again (#1810)',
+            '              run("git push origin main", marketplace=True, origin=origin) == 2, said())',
+            '              run("git push origin main", marketplace=True, origin=origin) == 2, "exit 0")',
+            'release-gate fixtures: no check that runs the hook carries a bare constant',
+        ),
+        Mutation(
+            'a release-gate fallback fixture carries a bare constant detail again (#1810)',
+            'gate("git branch -D feature/x").returncode == 2, said())',
+            'gate("git branch -D feature/x").returncode == 2, "exit 0")',
+            'release-gate-fallback fixtures: no check that runs the hook carries a bare constant',
+        ),
+        Mutation(
+            'a release-gate adversary fixture carries a bare constant detail again (#1810)',
+            'adversarial `{cmd[:60]}` is refused", gate(cmd).returncode == 2, said())',
+            'adversarial `{cmd[:60]}` is refused", gate(cmd).returncode == 2, "exit 0")',
+            'release-gate-adversary fixtures: no check that runs the hook carries a bare constant',
+        ),
+        Mutation(
+            'the release-gate fixtures no longer record what the hook said, so a failed check carries only an exit code (#1810)',
+            '        last["rc"], last["out"] = done.returncode, f"{done.stdout or \'\'}{done.stderr or \'\'}"',
+            '        last["rc"], last["out"] = done.returncode, ""',
+            'release-gate (#1810): the detail of a failed check carries what the hook said',
+        ),
+        Mutation(
+            'a deadline fixture carries a bare constant detail again (#1810)',
+            '              nosleep("git add -A") == 2, said())',
+            '              nosleep("git add -A") == 2, "exit 0")',
+            'deadline fixtures: no check that runs the hook carries a bare constant',
+        ),
+        # #1664: a timing result the MACHINE decided is a counted SKIP. Each mutation breaks one of the three conditions, the
+        # exit code, the counting, or the order of verdicts, so a STARVED result can no longer pass for a pass or hide a failure.
+        Mutation(
+            "a STARVED result is counted as a pass",
+            '            STARVED.append(f"{label}: {why}")      # NOT counted in CHECKS: a skip is not a pass (#1664)\n            return',
+            '            CHECKS += 1\n            return',
+            "starved: through check(), a STARVED result is NOT counted as a pass and NOT recorded as a failure, only listed",
+        ),
+        Mutation(
+            "a run with a STARVED skip exits 0, so the doctor reads it as ok",
+            "        return EXIT_STARVED, [f\"check_hook_gates selftest",
+            "        return 0, [f\"check_hook_gates selftest",
+            "finish: a STARVED skip with no failure exits EXIT_STARVED (3), never 0, and says so on its FIRST line",
+        ),
+        Mutation(
+            "a skip outranks a failure",
+            "    if failures:\n        return 1,",
+            "    if starved:\n        return EXIT_STARVED, [f\"STARVED {len(starved)}\"], []\n    if failures:\n        return 1,",
+            "finish: a failure outranks a skip",
+        ),
+        Mutation(
+            "a quiet machine excuses a deadline denial (the load condition is dropped)",
+            "and cpu_s < limit and load > cores)",
+            "and cpu_s < limit)",
+            "...and a machine under its cores never excuses a deadline denial",
+        ),
+        Mutation(
+            "a hook that burned CPU is excused (the CPU condition is dropped)",
+            "and cpu_s < limit and load > cores)",
+            "and load > cores)",
+            "...but a hook that burned 5 CPU seconds past its deadline is the HOOK's fault, at any load",
+        ),
+        Mutation(
+            "any failure is STARVED on a loaded machine (the marker condition is dropped)",
+            "and any(m in text for m in STARVED_MARKERS)",
+            "and True",
+            "...and a failure that is not a deadline or budget message is never STARVED",
+        ),
+        Mutation(
+            "the groups that test the timing itself are not exempt",
+            "and group not in STARVED_EXEMPT_GROUPS and any(m in text",
+            "and any(m in text",
+            "...and the groups that test the timing itself are exempt",
+        ),
+        Mutation(
+            "every subprocess's CPU is recorded as the hook's, so a git run after the hook overwrites it",
+            '    return isinstance(argv, (list, tuple)) and any("hooks/scripts/" in str(a) for a in argv)',
+            "    return True",
+            "only a hook script's run sets the CPU",
+        ),
+        Mutation(
+            "--strict-timing changes nothing, so a mutant that stalls a hook is read as a skip, not a catch",
+            "return (not (STRICT_TIMING if strict is None else strict) and",
+            "return (True and",
+            "with --strict-timing the same deadline denial is a FAILURE",
+        ),
+        Mutation(
+            "the core count is assumed, not read from os.cpu_count()",
+            "    return load, os.cpu_count() or 1",
+            "    return load, 1",
+            "starved: the core count comes from os.cpu_count()",
+        ),
         # #1599: `--match` runs only the fixtures a label names. Each mutation undoes one half of that.
         Mutation(
             "--match selects every check, so a narrowed mutant still runs the whole group",
@@ -111,8 +234,8 @@ GUARD = Guard(
         Mutation(
             # #1497
             '--only runs every group whatever it names',
-            'def run_groups(groups: list[str] | None, table: dict) -> None:\n    for name in (groups or list(table)):',
-            'def run_groups(groups: list[str] | None, table: dict) -> None:\n    for name in list(table):',
+            '    global _CURRENT_GROUP\n    for name in (groups or list(table)):',
+            '    global _CURRENT_GROUP\n    for name in list(table):',
             '--only runs exactly the groups it names',
         ),
         Mutation(
@@ -130,10 +253,17 @@ GUARD = Guard(
             "a label's temp path is masked",
         ),
         Mutation(
+            # #1893
+            "the mask does not know the scratch prefix, so a label that embeds a fixture directory differs between the survey and the run and --match refuses the group",
+            r'''(?:tmp\w+|" + re.escape(SCRATCH_PREFIX) + r"\w*)''',
+            r'''tmp\w+''',
+            "a label's path under a REAL scratch directory is masked",
+        ),
+        Mutation(
             # review of PR #1506
             "a bare run executes no group, so the doctor's hook gates pass on nothing",
-            'def run_groups(groups: list[str] | None, table: dict) -> None:\n    for name in (groups or list(table)):',
-            'def run_groups(groups: list[str] | None, table: dict) -> None:\n    for name in (groups or []):',
+            '    global _CURRENT_GROUP\n    for name in (groups or list(table)):',
+            '    global _CURRENT_GROUP\n    for name in (groups or []):',
             'a bare run (no --only) runs every group',
         ),
         Mutation(
@@ -222,6 +352,25 @@ GUARD = Guard(
             '    return 124 if b"took longer than" in stderr else returncode',
             "    return returncode",
             "a gate that hits its own deadline reads as 124 to the fixtures",
+        ),
+        # #1800: a fixture's temp directory is removed without ever failing the run.
+        Mutation(
+            "the temp directory is removed once, with no retry, so a lost race leaves it behind",
+            "        for attempt in range(5):",
+            "        for attempt in range(1):",
+            "scratch_dir: a removal that loses the race twice is retried until the directory is gone",
+        ),
+        Mutation(
+            "a temp directory that cannot be removed raises out of the fixture again",
+            "            left = sorted(os.listdir(path))[:5] if os.path.isdir(path) else []\n",
+            "            raise OSError(f\"could not remove {path}\")\n",
+            "scratch_dir: a directory that cannot be removed does not raise out of the fixture",
+        ),
+        Mutation(
+            "the leftover is not named, so the writer cannot be found",
+            "(left: {left})",
+            "(left: [])",
+            "scratch_dir: ...and names what was left",
         ),
     ),
 )

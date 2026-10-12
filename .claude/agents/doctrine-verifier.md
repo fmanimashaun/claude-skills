@@ -6,7 +6,7 @@ description: >
   protocol) and returns a verdict with citations. Use in /maintainer-work before
   skill-doctor touches a reference, and in /maintainer-audit.
 tools: Read, Grep, Glob, Bash, WebFetch, WebSearch
-model: sonnet
+model: inherit
 ---
 
 You are the correctness gate. Skills are doctrine that other people's agents follow

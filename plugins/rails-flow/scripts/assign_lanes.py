@@ -8,7 +8,7 @@ hand. We wrote the coordination rules and skipped the assignment.
 
 WHAT THIS IS NOT, stated first because the borrowed design gets this wrong for us. `swarm-forge`
 runs tmux panes and a handoff daemon, because its roles cannot see each other's state. Ours can:
-`compose_state.py` already derives the driver's state FROM THE REPOSITORY and `docs/handoff/<slug>.md`
+`compose_state.py` already derives the driver's state FROM THE REPOSITORY and `docs/product/handoff/<slug>.md`
 is already a committed, validated work order. Git is our handoff medium and it survives a reboot,
 which a tmux session does not. A daemon here would re-solve a solved problem worse.
 
@@ -99,7 +99,7 @@ def plan(lanes: list[str], base: str, total_usd: float | None) -> dict:
                       "this.")
     check_guard_present()
     check_no_overlap(lanes)
-    if _git("status", "--porcelain"):
+    if _git("status", "--porcelain", "--ignore-submodules=dirty"):
         raise Refusal("the working tree is dirty. A worktree branched from an uncommitted state "
                       "hands each session a different idea of the baseline, and the handoff medium "
                       "here is git.")

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Reject acceptance criteria that cannot fail, and specs that do not prove them.
 
-Run:  python3 check_criteria.py docs/acceptance/<branch-slug>.md
-      python3 check_criteria.py docs/acceptance/<slug>.md --specs spec
+Run:  python3 check_criteria.py docs/product/acceptance/<branch-slug>.md
+      python3 check_criteria.py docs/product/acceptance/<slug>.md --specs spec
       python3 check_criteria.py --selftest
 
 WHY (rails-flow #125). The Stop gate enforces "no behavioural change without a proving spec",
@@ -291,7 +291,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Validate acceptance criteria, and that specs cite them."
     )
-    parser.add_argument("criteria_path", nargs="?", help="docs/acceptance/<branch-slug>.md")
+    parser.add_argument("criteria_path", nargs="?", help="docs/product/acceptance/<branch-slug>.md")
     parser.add_argument(
         "--specs", metavar="DIR",
         help="also require every AC-n to be cited by a spec under DIR (usually `spec`)",

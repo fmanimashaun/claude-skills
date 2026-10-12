@@ -12,7 +12,7 @@ GUARD = Guard(
     subject="plugins/qa-flow/hooks/scripts/release-gate.sh",
     selftest="plugins/rails-flow/scripts/check_hook_gates.py",
     # Only the group that drives this subject, as the two other release-gate guards do (#1497).
-    selftest_args=("--only", "release_gate_repos"),
+    selftest_args=("--only", "release_gate_repos", "--strict-timing"),   # its stall mutants are STARVED-shaped by design (#1664)
     # Each mutant runs only the fixture its `expects` names (#1599), after a control run of the unmutated hook with the same
     # flag: seventeen mutants of a 150-check group would otherwise cost seventeen whole groups.
     narrow_with="--match",
@@ -20,13 +20,13 @@ GUARD = Guard(
     # rails-flow's, so the hook trees and qa-flow's scripts are staged. DECLARED, not assumed: an undeclared
     # read kills the unmutated baseline and every mutation then reads as "caught" by that error.
     needs=("plugins/rails-flow/scripts/fixture_git.py", "plugins/rails-flow/hooks/hooks.json",
-           'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py',  # #1581 merge: run by session-start.sh / release-gate.sh
+           'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py', 'plugins/rails-flow/scripts/check_memory_index.py',  # #1581 merge: run by session-start.sh / release-gate.sh
            "plugins/rails-flow/hooks/scripts", "plugins/qa-flow/hooks/scripts",
            "plugins/qa-flow/scripts",
            'plugins/rails-flow/scripts/check_criteria.py',
            'plugins/rails-flow/scripts/check_handoff.py',
            'plugins/rails-flow/scripts/extract_claims.py',
-           'plugins/rails-flow/scripts/ci_verdict_hint.py', 'plugins/rails-flow/scripts/session_reaper.py', 'plugins/rails-flow/scripts/process_containment.py',
+           'plugins/rails-flow/scripts/ci_verdict_hint.py', 'plugins/rails-flow/scripts/test_preflight.py', 'plugins/rails-flow/scripts/wip_commit.py', 'plugins/rails-flow/scripts/session_reaper.py', 'plugins/rails-flow/scripts/process_containment.py',
            'plugins/qa-flow/scripts/read_certification.py',
            'plugins/qa-flow/scripts/push_targets.py',
            'plugins/qa-flow/scripts/release_evidence.py',
@@ -54,7 +54,7 @@ GUARD = Guard(
         ),
         Mutation(
             "GH_REPO in the hook's environment is ignored",
-            '    -) f="${GH_REPO:-}"',
+            '    -) f="${RF_INHERITED_GH_REPO:-}"',
             '    -) f=""',
             "GH_REPO ALONE sends a release",
         ),
@@ -104,8 +104,8 @@ GUARD = Guard(
         # ---- the release-only layers of another repository (#1591) --------------------------------------------
         Mutation(
             "another repository's release-only layers are not enforced, so a HOLE still promotes",
-            '--repo "$repo" --sha "$sha" --budget "$budget" 2>"$evtmp")"; then',
-            '--repo "$repo" --sha "$sha" --budget "$budget" 2>"$evtmp")" || true; then',
+            '--check-verdict --tree "$tree" 2>"$evtmp")"; then',
+            '--check-verdict --tree "$tree" 2>"$evtmp")" || true; then',
             "committed HOLE in the sweep is denied",
         ),
         Mutation(
@@ -116,10 +116,10 @@ GUARD = Guard(
         ),
         # ---- the hook's own time (#1591): a hook that outlives its 15 s timeout does not deny -------------------------
         Mutation(
-            "the evidence judge is given 600 s, so a stalled fetch outlives the hook's timeout and the command goes through",
-            '--sha "$sha" --budget "$budget" 2>"$evtmp")"; then',
-            '--sha "$sha" --budget 600 2>"$evtmp")"; then',
-            "a fetch that stalls past the hook's own 15 s",
+            "a refused verdict does not stop the gate, so a promotion with no usable verdict goes through",
+            'Judge them first, which takes a while and is not done inside this hook: ${rec}"; return 1',
+            'Judge them first, which takes a while and is not done inside this hook: ${rec}"; true',
+            "no verdict at all denies",
         ),
         Mutation(
             "the compare call is not bounded, so a stalled gh outlives the hook's timeout and the command goes through",
@@ -132,12 +132,6 @@ GUARD = Guard(
             "if ! bounded 4 gh api -H 'Accept: application/vnd.github.raw+json'",
             "if ! gh api -H 'Accept: application/vnd.github.raw+json'",
             "a gh that stalls is cut short",
-        ),
-        Mutation(
-            "a hook with no time left still starts the evidence judge",
-            '  if [ "$budget" -lt 3 ]; then',
-            '  if false; then',
-            "too little time left for the evidence judge",
         ),
     ),
 )

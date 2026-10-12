@@ -15,6 +15,7 @@ GUARD = Guard(
         "hooks/context-nudge.mjs",
         "hooks/lane-band.js",
         "hooks/budget-guard.mjs",
+        "hooks/session-reset.mjs",
     ),
     mutations=(
         Mutation(

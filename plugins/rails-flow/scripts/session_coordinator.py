@@ -51,8 +51,8 @@ from pathlib import Path
 # (binary, subcommand, sub-subcommand or None). Exact tuples, hand-declared: a prefix rule like
 # "any `gh pr`" would admit `gh pr merge`, which is precisely the authority this must not have.
 READ_ONLY: frozenset[tuple[str, ...]] = frozenset({
-    ("git", "log"), ("git", "diff"), ("git", "show"), ("git", "rev-parse"), ("git", "merge-base"),
-    ("git", "for-each-ref"), ("git", "grep"), ("git", "status"), ("git", "ls-files"),
+    ("git", "log"), ("git", "diff"), ("git", "show"), ("git", "rev-parse"), ("git", "merge-base"),  # submodule-safe: command names in an allowlist, not calls
+    ("git", "for-each-ref"), ("git", "grep"), ("git", "status"), ("git", "ls-files"),  # submodule-safe: command names in an allowlist, not calls
     ("gh", "pr", "list"), ("gh", "pr", "view"), ("gh", "pr", "checks"), ("gh", "pr", "diff"),
     ("gh", "issue", "list"), ("gh", "issue", "view"), ("gh", "run", "list"),
 })
@@ -547,7 +547,7 @@ def migration_findings(repo_root: Path, base: str = "origin/dev") -> list[Findin
     if not match:
         return []
     version = match.group(1).replace("_", "")
-    added = run(["git", "diff", "--name-only", f"{base}...HEAD", "--", "db/migrate/"],
+    added = run(["git", "diff", "--name-only", f"{base}...HEAD", "--", "db/migrate/"],  # submodule-safe: base...HEAD compares commits, no worktree read
                 repo_root).split()
     return migration_ordering(added, version)
 

@@ -41,7 +41,8 @@ Classify every finding into exactly one bucket; act only on the first two:
    - **Contradicts fact**: the App Identity/stack table disagrees with the Gemfile or
      config (says Postgres when the adapter is sqlite3; names Devise when the app uses
      the Rails 8 generator; wrong Ruby/Rails version); a pointer references a path that
-     doesn't exist (`docs/brain/` absent); AGENTS.md routing names an agent the plugin
+     doesn't exist (`docs/brain/` absent; a "Before you change an area" line naming a doc
+     that is not there); AGENTS.md routing names an agent the plugin
      doesn't provide.
    - **Broken safety rule**: a Delegation Rules block missing the anti-recursion role
      check (executors that can spawn executors → runaway subagents); a rule that
@@ -158,6 +159,15 @@ overviews, and an agent can read the tree. Structure lives in the graph; point t
 "for what-calls-what, query docs/architecture/graph.json". An empty section is a valid
 answer for a simple CRUD app — say so rather than padding it.>
 
+## Before you change an area, read its doc
+<one line per task area that HAS a deeper doc, naming the file to read before that kind of
+change — e.g. "authorization or a new policy → docs/authorization.md", "billing, plans or
+webhooks → docs/billing.md". List ONLY files that exist (`ls` them); never invent a doc to fill
+a row, and an empty section is a valid answer. The doc holds the detail, this line only routes to
+it, so a CSS change never loads the billing contract. A `.claude/rules/` rule (§2b) fires when a
+matching FILE is read or edited; this line fires on the TASK, before any file is opened —
+use both where an area has both.>
+
 ## Common Commands
 <dev server, console, migrate, targeted + full rspec, rubocop on changed files, brakeman,
 bundler-audit, deploy — the project's real commands>
@@ -177,6 +187,16 @@ job shape (idempotent `perform`; the argument convention THIS codebase actually 
 ## Verification Commands
 <grep one-liners that mechanically check the overrides, e.g. no raw form_with in views,
 no unguarded .unscoped, no raw palette colors>
+
+<!-- emit-if: database -->
+## Test-run preflight
+Before a full suite or e2e run, check the environment, because it fails as a red suite that is not the code's fault:
+the database is up (`pg_isready` for Postgres; start it and re-check if it is not), `ls` every spec path you name,
+no held `bundler.lock` (a Ruby LSP `bundle update` holds it), and read `uptime` — under high load run in the
+foreground or in smaller shards, never many background runs. Never swap hooks or config from another branch while
+a sweep runs. *Advice, not enforced: the rails-flow `test-preflight` hook reports the first four as an advisory;
+run the project's own checks yourself before the suite: the hook never runs a script from the repository.*
+<!-- /emit-if -->
 
 ## How to work with me
 Act as an advisor, not an assistant. Default to scrutiny.
@@ -242,8 +262,15 @@ the tree; walk `edges` backwards from a node for its blast radius. Regenerate wi
 `/rails-flow:graph`; `index.html` is the human view. Generated — never hand-edit.
 
 ## See Also
-AGENTS routing → the rails-flow plugin agents · GUARDRAILS.md · docs/brain/MEMORY.md
+AGENTS routing → the rails-flow plugin agents · GUARDRAILS.md · docs/brain/MEMORY.md · `/rails-flow:handoff` (the work order for another session or an executor)
 ```
+
+**The test-run preflight block is conditional (#1561).** The block between `<!-- emit-if: database -->` and `<!-- /emit-if -->` is written only when
+the project has a database (Step 1's inspection finds `config/database.yml` or a database gem); with none, write nothing for it. Either way the two
+marker lines are dropped, never copied into the project's CLAUDE.md. It is advice (tier 1); the `test-preflight` hook (#1566) is its advisory,
+deterministic half, and a project's own preflight is the project's to run before the suite: a PreToolUse hook runs before the user is asked about the command, so the hook
+executes nothing a repository supplies (#1821 keeps the removed project hook point). Every line of it is
+re-read every session, so it stays this short.
 
 ## 2b. Area- or mode-specific instructions belong in `.claude/rules/`
 
@@ -312,10 +339,28 @@ loads in full every session.
 Sections: **Database migrations** (safe vs prohibited-without-approval, the migration
 checklist with rollback proof, required patterns incl. money `decimal(15,2)`), **Git**
 (branch model `main ← staging ← dev ← feature/*` adapted to this repo's real branches; no
-force-push, no `git add -A`, no `--no-verify`, stage specific files, small logical commits),
+force-push, no `git add -A`, no `--no-verify`, stage specific files, small logical commits; never report a placeholder SHA — after pushing run
+`git rev-parse HEAD` and report that exact value; make `gh pr ready` and any merge depend on the sweep result with `&&` (`run_sweep && gh pr ready`), never `;`),
 **Secrets** (credentials only; never commit .env), **Deploys** (require explicit user
-approval). Note at the top: *the rails-flow hooks enforce these mechanically; this document
+approval). Note at the top: *the rails-flow hooks enforce these mechanically inside a trusted workspace (a repository's own settings can switch hooks off, #1843); this document
 is the human-readable law they implement.*
+
+**Ask, and record the answer: is the test database seeded on purpose? (#1734)** *"Does this project's
+suite expect a seeded test database, with a CI script that resets it (`config/ci.rb` running
+`db:reset`)?"* The default is **no**, and it needs no line: the guard refuses `db:reset` because
+seeds break test isolation for a suite that expects an empty database. A project whose suite needs
+the seed rows (Retask's `Setting` rows are part of its test contract) answers yes, and
+GUARDRAILS.md gets its own line:
+
+```markdown
+- test-db-seeded: yes
+```
+
+`guard-bash.sh` reads exactly that line. It then allows ONE command, `RAILS_ENV=test bin/rails
+db:reset`, run alone. A development or production reset, a compound command, and a payload the
+hook cannot read are still refused, and a project that declares nothing is refused with the name of
+its CI script (`bin/ci`, else `config/ci.rb`) in the message. Prose that merely mentions the key,
+and an example of the line inside a code block or an HTML comment, do not declare it.
 
 **Ask, and record the answer: the mock-up gate (#1376).** *"Does a change a user can see wait for
 your approval of a clickable mock-up before it is built?"* The default is **yes**, and it needs no
@@ -388,7 +433,8 @@ STATUS are the repo side of memory, not lost in chat history.
 
 The brain is one of up to **three** memory systems that inject into every session, and none knows
 about the others: Claude Code's **auto-memory** (on by default; its `MEMORY.md` index, first 200
-lines or 25KB), the **`remember`** plugin (a day's log and a handoff), and this brain. Each costs
+lines or 25KB, whichever comes first, and nothing past that is loaded; `python3
+"${CLAUDE_PLUGIN_ROOT}/scripts/check_memory_index.py"` measures it, and the SessionStart hook says so when it is near), the **`remember`** plugin (a day's log and a handoff), and this brain. Each costs
 tokens at every session start and again after every compaction. Measured on one repository they were
 ~3,800, ~5,700 and ~520 tokens — and the largest was a handoff another session had written.
 
@@ -460,6 +506,11 @@ tools silently. For code-review-graph, wire it to coexist with the rails-flow ho
    `git status` and restore any hand-authored file it clobbered
    (`git restore -- AGENTS.md`). Never gitignore an authored AGENTS.md.
 2. **Three-file settings pattern.** Keep `.claude/settings.json` permissions-only.
+   **Never template `autoMode`, or a `permissions.defaultMode` of `auto` or `bypassPermissions`, into any of these
+   project files** (#1827): the auto-mode page says the classifier "doesn't read `autoMode` from project settings",
+   and the permission-modes page says such a `defaultMode` "doesn't take effect". They belong in the owner's
+   `~/.claude/settings.json`; recommend `/auto-mode-setup` as an owner step. A project can check itself with
+   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_project_settings.py"`.
    Replace any installer-written PostToolUse graph hooks with a PID-guarded Stop hook in
    `.claude/settings.example.json` (committed; teammates copy to gitignored
    `.claude/settings.local.json`):
@@ -479,6 +530,34 @@ tools silently. For code-review-graph, wire it to coexist with the rails-flow ho
    query_graph_tool(callers_of) · blast radius → get_impact_radius_tool · review
    context → get_review_context_tool · CRG 0 results → graphify query '<term>' →
    grep · skip graph for .md/.yml/configs.`
+2b. **Optional: a status line and owner checkpoints** (#1829; never edit a real settings file, a project opts in). **Status line:** vendor the one file and point
+   `statusLine` at the copy. `${CLAUDE_PLUGIN_ROOT}` resolves only in the fields the plugins reference lists under "Where each variable resolves" (a plugin's hook and
+   monitor commands, MCP and LSP server fields, and skill, command and agent content); a `statusLine` command is not among them, so it cannot name the plugin:
+
+   ```bash
+   mkdir -p .claude/scripts && cp "${CLAUDE_PLUGIN_ROOT}/scripts/statusline.py" .claude/scripts/statusline.py
+   ```
+
+   then, in `.claude/settings.example.json` (teammates copy it to the gitignored `.claude/settings.local.json`):
+
+   ```json
+   {"statusLine": {"type": "command", "command": "python3 \"$(git rev-parse --show-toplevel)/.claude/scripts/statusline.py\"", "refreshInterval": 30}}
+   ```
+
+   It prints `5h N% · 7d N% · ctx N% · $N · effort` and the branch and worktree, amber from 80%, and leaves out any field the payload lacks. A window whose `resets_at` has
+   passed is left out (#1854). The status line page says a script that exits non-zero or prints nothing "cause[s] the status line to go blank", so a failure costs one blank
+   line. `refreshInterval` 30 keeps the figures current while the session is idle (the page: "The minimum is `1`").
+   **Owner checkpoints:** `permissions.ask` rules force a prompt for the owner-only actions, even in auto mode (the auto-mode page: they are "evaluated before the
+   classifier and always force a permission prompt"):
+
+   ```json
+   {"permissions": {"ask": ["Bash(gh pr merge *)", "Bash(kamal deploy *)"]}}
+   ```
+
+   The page states the limit, and so do we: a rule matches commands that BEGIN with its text, so a merge or deploy written another way (`gh -R x pr merge`, a `bash -c`
+   string) "doesn't match the rule, so it isn't checkpointed"; the guard hooks and the git shim stay the backstop. `gh pr merge *` and `kamal deploy *` are our own
+   examples in the page's shape, not rules the page lists.
+   **A lane denied by auto mode:** open `/permissions`, select the **Recently denied** tab, and "Press `r` on a denied action to mark it for retry" (the page continues: when you exit the dialog, Claude Code tells the model it may retry that tool call).
 3. **Trim MCP schema.** In the project's mcp server config for code-review-graph, set
    `CRG_TOOLS` to the 8-tool working set (semantic_search_nodes_tool, query_graph_tool,
    get_impact_radius_tool, traverse_graph_tool, list_communities_tool, get_community_tool,
@@ -573,7 +652,7 @@ now runs this on an interval; pair with `--expires` for bounded sessions.
 ## 6b. Architecture graph (`docs/architecture/`)
 
 Tell the user about `/rails-flow:graph`: it extracts `{nodes, edges, flows}` from
-`config/routes.rb`, `app/**` and `db/schema.rb` into `docs/architecture/graph.json`, a
+`config/routes.rb`, `app/**` and `db/schema.rb` (and every other project-owned `db/*_schema.rb`) into `docs/architecture/graph.json`, a
 self-contained `index.html` (inline CSS/JS, zero external requests — opens from disk
 offline) and a mermaid `graph.md` for GitHub. One artefact, three consumers: humans get a
 picture, agents get structural context without reading the whole codebase, and qa-flow gets
@@ -587,7 +666,7 @@ fails when the code moves and the graph does not.
 ## 6c. The project wiki (`docs/wiki/`) — generated reference, rebuilt at ship (#887)
 
 A hand-written reference is a transcription, and transcriptions rot. The reference pages are a join
-over structured sources — the architecture graph, `db/schema.rb`, `config/queue.yml`,
+over structured sources — the architecture graph, `db/schema.rb` (and every other project-owned `db/*_schema.rb`), `config/queue.yml`,
 `config/recurring.yml`, `Gemfile.lock`, `package.json` — so they cannot drift silently: every count on
 a page is asserted against its source's total, every page names the graph's commit, and `--check`
 fails the `project-wiki-drift` check when a source moved and the pages did not.
@@ -863,6 +942,13 @@ one type (`bug` / `feature` / `enhancement`), and a severity when it is a bug. R
 Save it as `.rails-flow/issue-labels.json`. A value ending in `*` is a prefix (`comp:*`). rails-flow's
 `guard-bash` hook then refuses a `gh issue create` that misses a group, and names what is allowed.
 Undeclared, it still refuses an issue with no label at all.
+
+**Then install the server-side labeller, which sees the issue however it was filed (#1791).** The hook reads command text, which a
+shell only gives meaning when it expands it, so it cannot catch every spelling; GitHub sees the issue itself. Copy
+`${CLAUDE_PLUGIN_ROOT}/scripts/label_new_issue.py` to `.github/scripts/` and `${CLAUDE_PLUGIN_ROOT}/templates/label-new-issues.yml` to
+`.github/workflows/` (its `actions/checkout` is already pinned to a commit SHA; keep it pinned when you update it), and commit both. An issue missing a declared group then gets a
+`needs-labels` label and one comment naming what is missing (it guesses no label). An `issues` workflow runs from the default
+branch, so it starts when that commit is on it. Ask first: it adds a workflow and a label to the repository.
 
 ### Multi-tenant? Install the tenancy cop, and record the answer (#1361)
 

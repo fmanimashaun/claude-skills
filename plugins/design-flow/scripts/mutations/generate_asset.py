@@ -11,7 +11,8 @@ GUARD = Guard(
     # #625 added the second import, and the rule is the one above rather than a new one: a
     # guard's `needs` is EVERYTHING the subject opens, so an added import is an added need.
     needs=("scripts/generation_gate.py",
-           "scripts/prompt_library.py"),
+           "scripts/prompt_library.py",
+           "scripts/asset_home.py"),   # #1779: every entry point stops on a library left at the old place
     # Every fixture is a tempdir and NOTHING reaches the network. A test that needed
     # a provider would not be a test -- it would be a bill. Each mutation removes one thing that
     # stands between a request and someone's card.
@@ -94,7 +95,7 @@ GUARD = Guard(
         Mutation(
             # #628. `--from-url` takes a string an agent read out of a tool result, so the
             # scheme check is the only thing between that string and `urlopen` reading this
-            # machine. A `file:` URL would be fetched, sniffed, written into docs/assets and
+            # machine. A `file:` URL would be fetched, sniffed, written into docs/design/assets and
             # committed as though a model had made it -- a local secret laundered into art.
             "any URL scheme is fetched, so file: reads this machine into the asset folder",
             '    if scheme not in ("http", "https"):',

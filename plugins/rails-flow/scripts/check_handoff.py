@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Reject a work order an executor cannot run from -- and an agent whose model contradicts doctrine.
 
-Run:  python3 check_handoff.py docs/handoff/<slug>.md
-      python3 check_handoff.py docs/handoff/<slug>.md --criteria docs/acceptance/<slug>.md
+Run:  python3 check_handoff.py docs/product/handoff/<slug>.md
+      python3 check_handoff.py docs/product/handoff/<slug>.md --criteria docs/product/acceptance/<slug>.md
       python3 check_handoff.py --agents <plugin>/agents --tiers <plugin>/reference/model-tiers.md
       python3 check_handoff.py --selftest
 
 WHY (rails-flow #127, and the rails-flow half of #128). `/rails-flow:handoff` writes
-`docs/handoff/<slug>.md`: the one file an executor reads instead of the conversation. It makes three
+`docs/product/handoff/<slug>.md`: the one file an executor reads instead of the conversation. It makes three
 promises a reader cannot check by reading it, and each has a way of failing that looks fine:
 
   1. **"Self-contained by construction."** A work order saying "the scope we discussed" reads as
@@ -67,8 +67,11 @@ EXTERNAL CLAIMS THIS ENCODES, AND THEIR SOURCES (verified 2026-07-31)
 
     NOT claimed, because checking said otherwise: there is no "mid" model tier to select. #127's
     three-row table (strongest/mid/cheapest) has no mechanism -- the middle row is `effort`
-    (`low`..`max`), a separate field. And no effort level is asserted for any model, because
-    "available levels depend on the model" and Claude Code does not publish which.
+    (`low`..`max`), a separate field. And this file asserts no effort level for any model. Claude Code
+    DOES publish which models support effort: "The available effort levels depend on the model. Models
+    not listed here do not support effort:", followed by a per-model table that changes with every model
+    release (https://code.claude.com/docs/en/model-config, re-read 2026-10-10, #1670). The current
+    reading of that table is `reference/model-tiers.md`'s, not this docstring's.
 
 Exit codes:  0 clean · 1 findings · 2 unusable input (no file / not a work order / no tier table)
 
@@ -196,6 +199,12 @@ TIERS_END = "<!-- rails-flow:tiers:end -->"
 TIERS_BEGIN_RE = re.compile(r"<!--\s*([a-z0-9-]+):tiers:begin\s*-->")
 TIERS_END_RE = re.compile(r"<!--\s*([a-z0-9-]+):tiers:end\s*-->")
 TIER_MODELS: dict[str, str] = {"judgement": "inherit", "mechanical": "haiku"}
+# THE ONE DELIBERATE EXCEPTION to "never pin up on the user's behalf" (#1819, the owner's rule of 2026-10-08 on #1702: Fable is
+# the model for adversarial ATTACK passes). It is a named list, not a third tier word that any agent may claim: an agent is
+# `adversarial` only if it is a key here, and its `model:` must be exactly the value here. Work orders stay two-valued
+# (TIER_MODELS); this is a table-row tier and nothing else.
+ADVERSARIAL_TIER = "adversarial"
+PINNED_UP: dict[str, str] = {"adversary": "fable"}
 # Aliases that select a MORE expensive model than the session already chose. Shipping one spends a
 # stranger's money on our authority. Where their availableModels allowlist blocks it, a family alias
 # (`opus`, `sonnet`, `haiku`, `fable`) runs on the newest version of that family the allowlist permits,
@@ -602,6 +611,61 @@ def _check_base_commit(section: Section, findings: list[str],
                 f"them, because a moved branch is where a self-contained order stops being one.")
 
 
+# ---- the optional `## Progress` section (#1564) ----------------------------------------------------------------------------------
+# A work order is the contract; what a session leaves behind when it is CUT OFF (a spend limit, an expired login, a reboot) is the
+# state of the run, and the next session needs it to resume instead of starting over. Optional, so every order written before
+# this still validates; when present it is checked like the base commit is: present-but-unusable is not passable.
+PROGRESS_ALIASES = ("progress", "run state", "resume state")
+PROGRESS_STATUSES = ("not-started", "in-progress", "stopped", "done")
+PROGRESS_FIELDS = ("status", "last green", "current step", "next step", "pending gates")
+PROGRESS_LINE_RE = re.compile(r"^\s*(?:[-*]\s+)?[*_]*([A-Za-z][A-Za-z ]*?)[*_]*\s*:\s*[*_]*\s*(.*?)\s*$")
+
+
+def parse_progress(lines: list[str]) -> dict[str, str]:
+    """`Field: value` lines of a Progress section -> {lower-cased field: value without backticks}; the first occurrence of a field wins."""
+    out: dict[str, str] = {}
+    for line in lines:
+        m = PROGRESS_LINE_RE.match(line)
+        if not m:
+            continue
+        key = " ".join(m.group(1).lower().split())
+        if key in PROGRESS_FIELDS and key not in out:
+            out[key] = m.group(2).strip().strip("`").strip()
+    return out
+
+
+def progress_status(value: str) -> str:
+    return value.strip().strip("`*_ ").lower().replace(" ", "-").replace("_", "-")
+
+
+def _check_progress(section: Section, findings: list[str], resolve=None) -> None:
+    resolve = resolve or _resolve
+    fields = parse_progress(section.lines)
+    for name in PROGRESS_FIELDS:
+        if not fields.get(name):
+            findings.append(
+                f"`## progress` has no `{name.title()}:` value -- a resume reads these five lines first, and one missing is a guess."
+            )
+    status = progress_status(fields.get("status", ""))
+    if fields.get("status") and status not in PROGRESS_STATUSES:
+        findings.append(
+            f"`## progress` Status is {fields['status']!r}, not one of {', '.join(PROGRESS_STATUSES)} -- `resume_lanes.py` lists "
+            "every order that is not `done`, so a spelling it does not know is a lane that is never resumed."
+        )
+    green = fields.get("last green", "")
+    if green and green.lower() != "none":
+        shas = SHA_RE.findall(green.lower())
+        if not shas or not any(resolve(sha) for sha in shas):
+            findings.append(
+                f"`## progress` Last green is {green!r}, which is not `none` and not a commit in this repository. A plausible hex string "
+                "is worse than an absent one: the resume will start from it."
+            )
+    if status == "done" and fields.get("pending gates", "none").strip().lower() not in ("none", ""):
+        findings.append(
+            "`## progress` says Status: done but still lists Pending gates -- a finished order has none. Finish them or change the status."
+        )
+
+
 def check(sections: list[Section], criteria: Path | None = None,
           resolve=None, ahead=None) -> list[str]:
     findings: list[str] = []
@@ -628,6 +692,9 @@ def check(sections: list[Section], criteria: Path | None = None,
         _check_criteria(found["acceptance criteria"], criteria, tier, findings)
     if "base commit" in found:
         _check_base_commit(found["base commit"], findings, resolve, ahead)
+    progress = next((sec for sec in sections if sec.matches(PROGRESS_ALIASES)), None)
+    if progress is not None:
+        _check_progress(progress, findings, resolve)
 
     # ---- self-containment: the promise that makes the file worth writing --------------------
     for section in sections:
@@ -770,11 +837,25 @@ def check_tiers(rows: list[TierRow], agents: dict[str, tuple[Path, str | None]] 
             )
         seen[row.agent] = row.line
 
+        if row.tier == ADVERSARIAL_TIER:
+            pinned = PINNED_UP.get(row.agent)
+            if pinned is None:
+                findings.append(
+                    f"tier table line {row.line}: `{row.agent}` claims the `{ADVERSARIAL_TIER}` tier, which is the owner's "
+                    f"named exception for {', '.join(f'`{a}`' for a in sorted(PINNED_UP))} only (#1819) -- any other pin up "
+                    "spends a stranger's money on our authority. Use `judgement` and `inherit`."
+                )
+            elif row.model != pinned:
+                findings.append(
+                    f"tier table line {row.line}: `{row.agent}` is `{ADVERSARIAL_TIER}` but pins `{row.model}` instead of "
+                    f"`{pinned}` -- the exception exists to run attack passes on exactly that model."
+                )
+            continue
         if row.tier not in TIER_MODELS:
             findings.append(
                 f"tier table line {row.line}: `{row.agent}` has tier {row.tier!r}, not one of "
-                f"{', '.join(sorted(TIER_MODELS))} -- the two values are the two the mechanism can "
-                "defend; a third tier needs its own doctrine, not a new word."
+                f"{', '.join(sorted(TIER_MODELS))} or the named `{ADVERSARIAL_TIER}` exception -- the values are the ones "
+                "the mechanism can defend; another tier needs its own doctrine, not a new word."
             )
             continue
         want = TIER_MODELS[row.tier]
@@ -814,7 +895,8 @@ def check_tiers(rows: list[TierRow], agents: dict[str, tuple[Path, str | None]] 
             findings.append(
                 f"{path}: agent `{name}` pins `effort: {effort}` -- a shipped agent inherits the "
                 "session's effort (model-tiers.md, #1326): a pin below the session caps a user who "
-                "chose more, and Haiku 4.5 supports no effort level at all. A project that wants one "
+                "chose more, and `haiku` takes every level on Haiku 5.5 (Anthropic API) but none on Haiku 4.5 "
+                "(every other provider), so a pin means something different per user. A project that wants one "
                 "overrides the agent in its own .claude/agents/."
             )
         row = next((r for r in rows if r.agent == name), None)
@@ -855,10 +937,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Validate a rails-flow work order, and reconcile agents with the tier table."
     )
-    parser.add_argument("handoff_path", nargs="?", help="docs/handoff/<slug>.md")
+    parser.add_argument("handoff_path", nargs="?", help="docs/product/handoff/<slug>.md")
     parser.add_argument(
         "--criteria", metavar="FILE",
-        help="the acceptance criteria this work order is graded by (docs/acceptance/<slug>.md); "
+        help="the acceptance criteria this work order is graded by (docs/product/acceptance/<slug>.md); "
              "every cited AC-n must exist there",
     )
     parser.add_argument(

@@ -84,6 +84,27 @@ A failing layer is a FAIL verdict like any open S1/S2. What the checks do NOT ju
 database was really empty, which roles the app has, and whether the sweep lists every action. Those
 belong to `qa-lead`'s plan and to review.
 
+## Phase 3c — Real-flow personas on the release image (when the project has `qa/robot.json`, #1693)
+
+The QA robot runs the project's personas through the REAL screens of the EXACT release image, started on this machine with its own
+database and a local mail catcher (Mailpit): no minted session, no backdoor, no forged outside-party webhook, no mailbox but the
+catcher, no retries. It is opt-in by file: a project without `qa/robot.json` records this layer as **not applicable (no
+descriptor)** in the report; a project with one runs it, and a failure is a FAIL verdict like any layer.
+
+1. Validate the descriptor — roles, the screen that creates each, how each signs in, the record-creating journeys, and the
+   documented **boundary** (what real flows cannot reach, each with why):
+   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/robot_descriptor.py" --check qa/robot.json`
+2. Start the release image (its compose project is the descriptor's `stack`) and run the project's seed, which signs each persona
+   in through the real screens and writes the persona and records manifests (`qa/e2e/support/personas.ts`).
+3. Run the corpus: `QA_BASE_URL=<descriptor base_url> qa/seed/image-e2e`. It refuses any target not on this machine (exit 2),
+   fails without a seed (a run where every test skipped is not a pass), and passes `--retries=0`.
+4. Tear down with the stack's own `down`, then prove it: `proveNothingLeft(<stack>)` from `qa/e2e/support/teardown.ts` fails
+   on anything left **and** when docker cannot be asked.
+
+Record the run's output, the boundary as declared, and the teardown proof with the other evidence. The helpers, runner and
+globalSetup come from `${CLAUDE_PLUGIN_ROOT}/scaffold/qa/` via `/qa-flow:setup-qa`. Proven loadable by Playwright 1.56.1 and
+TypeScript 5.9.3 (strict, `allowImportingTsExtensions`, `noEmit`) on 2026-10-11 (#1837).
+
 ## Phase 4 — Certify or reject
 
 `qa-reporter` consolidates. ANY S1/S2 open, any layer failing its bar, or either release-only

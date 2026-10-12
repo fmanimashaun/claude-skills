@@ -6,7 +6,7 @@ GUARD = Guard(
     subject="scripts/audit_assertion_reachability.py",
     selftest="scripts/audit_assertion_reachability.py",   # --selftest lives in the module itself
     needs=("plugins/rails-flow/scripts/fixture_git.py",),   # #1588
-    deps=("scripts/mutation_check.py", "scripts/mutation_types.py", "scripts/hermetic_git.py", "scripts/proc_group.py"),
+    deps=("scripts/mutation_check.py", "scripts/mutation_incremental.py", "scripts/mutation_types.py", "scripts/hermetic_git.py", "scripts/proc_group.py"),
     mutations=(
         Mutation(
             # The whole claim. If every label counted as reached, the report is empty forever and

@@ -27,6 +27,7 @@
 #
 # Exit 2 blocks the command; stderr is shown to Claude with the reason.
 set -uo pipefail
+. "${BASH_SOURCE[0]%/*}/lib/trusted-env.sh" 2>/dev/null   # #1850: scrub PYTHON*/GIT_*/BASH_ENV and rebuild PATH from outside the repository, before any python3, git or gh
 input="$(cat)"
 
 cmd="$(printf '%s' "$input" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("tool_input",{}).get("command",""))' 2>/dev/null || printf '%s' "$input")"
@@ -38,7 +39,18 @@ cmd="$(printf '%s' "$input" | python3 -c 'import json,sys;print(json.load(sys.st
 has() { ( set +o pipefail; printf '%s' "$1" | grep -qE "$2" ); }
 
 # Not a claim-carrying command -- nothing to say. This is the common case and it must be silent.
-has "$cmd" '\bgh[[:space:]]+(pr[[:space:]]+(create|edit)|issue[[:space:]]+comment)\b' || exit 0
+# WHERE the `gh` is matters (#1877). A bare substring match blocked an issue create whose --title named `gh pr create`,
+# and any command with `# gh pr edit` after it: the words were prose, not a command. So `gh` must sit in its own simple
+# command: after the start of a line, a separator (; & | ( ` {) or the quote of a `-c`/`eval` string (so `bash -c "gh pr create"`
+# is still seen), with only WORDS before it: plain words, a whole quoted string (`env -C "$d" gh`, `VAR="a b" gh`), or a `$(...)` / backtick
+# substitution (`FOO=$(date) gh`; a backtick substitution needs no alternative of its own, its closing backtick is already a command start). A quoted string is consumed whole, so a `gh pr create` NAMED inside one is prose and
+# is not seen; an unquoted separator, quote or `#` ends the prefix (#1877 review: the first draft allowed plain words only and
+# let `env -C "$d" gh pr create` and `FOO=$(date) gh pr create` through). That is what lets `timeout 60 gh`,
+# `nice -n 5 gh`, `env -C dir gh`, `FOO=1 gh` and `/opt/homebrew/bin/gh` through the gate without a list of wrapper words to
+# keep current. A tripwire for honest commands, not a parser (#1793): `echo gh pr create`, or a quote that opens with
+# `gh pr create`, is still matched, which fails closed.
+GH_AT_COMMAND='(^|[;&|(`{]|[[:space:]]-[a-z]*c[[:space:]]+["'"'"']|eval[[:space:]]+["'"'"'])([^;&|()`"'"'"'#]|"[^"]*"|'"'"'[^'"'"']*'"'"'|\$\([^()]*\))*\bgh[[:space:]]+'
+has "$cmd" "${GH_AT_COMMAND}(pr[[:space:]]+(create|edit)|issue[[:space:]]+comment)\\b" || exit 0
 has "$cmd" '(--body-file|--body)\b' || exit 0
 
 # The audited escape. A fail-closed guard with no visible way past it gets disabled the first time
@@ -208,9 +220,9 @@ fi
 skills_in_diff() {
   local names
   if [ "$root" = "$session_root" ]; then
-    names="$(git -C "$root" diff --name-only HEAD 2>/dev/null; git -C "$root" diff --name-only --cached HEAD 2>/dev/null)"
+    names="$(git -C "$root" diff --name-only --ignore-submodules=dirty HEAD 2>/dev/null; git -C "$root" diff --name-only --ignore-submodules=dirty --cached HEAD 2>/dev/null)"
   else
-    names="$(GIT_OPTIONAL_LOCKS=0 git -c core.fsmonitor=false -C "$root" diff --no-ext-diff --name-only --cached HEAD 2>/dev/null)"
+    names="$(GIT_OPTIONAL_LOCKS=0 git -c core.fsmonitor=false -C "$root" diff --no-ext-diff --name-only --cached HEAD 2>/dev/null)"  # submodule-safe: --cached reads the index, never the worktree (measured, #1919)
   fi
   case $'\n'"$names" in *$'\n'skills/*) return 0 ;; esac
   return 1
@@ -235,11 +247,12 @@ n="$(printf '%s' "$claims" | sed -nE 's/^([0-9]+) load-bearing claim.*/\1/p' | h
 [ -n "${n:-}" ] && [ "$n" -gt 0 ] 2>/dev/null || exit 0
 
 # A body that already shows its working is what we are asking for, so recognise it and stand aside.
-if grep -qiE 'verified against|re-verified|measured [a-z]*[[:space:]]*(on|against)|CONFIRMED' "$body"; then
+# Every phrase the refusal below suggests must match here (#1877: 'measured 2026-..-..' did not, and the PR stayed blocked).
+if grep -qiE 'verified against|re-verified|measured[[:space:]]+([a-z]+[[:space:]]+)?(on|against)|measured[[:space:]]+[0-9]{4}-[0-9]{2}-[0-9]{2}|CONFIRMED' "$body"; then
   exit 0
 fi
 
-echo "BLOCKED by rails-flow claim guard: this PR body makes ${n} load-bearing claim(s) and shows no evidence any were checked." >&2
+echo "BLOCKED by rails-flow claim guard: this body makes ${n} load-bearing claim(s) and shows no evidence any were checked." >&2
 echo "" >&2
 printf '%s\n' "$claims" >&2
 echo "" >&2

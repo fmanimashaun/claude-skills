@@ -131,8 +131,9 @@ Key defaults worth knowing (new 8.1 app):
   allowed hostnames when using tunnels/containers; verbose query logs +
   verbose redirect logs (8.1) on; mailer deliveries not sent
   (`:test`-like — check `letter` via mailer previews, §mail reference).
-- **test**: eager_load off, cache `:null_store`, deliveries collected in
-  `ActionMailer::Base.deliveries`.
+- **test**: `eager_load` on only when `CI` is set (`config.eager_load =
+  ENV["CI"].present?`, the generated default since Rails 7.0), off locally;
+  cache `:null_store`, deliveries collected in `ActionMailer::Base.deliveries`.
 - **production**: `config.force_ssl = true` + `config.assume_ssl = true`
   (Thruster/kamal-proxy terminates TLS); log to STDOUT, tagged with
   `request_id`; `/up` health checks silenced; cache store

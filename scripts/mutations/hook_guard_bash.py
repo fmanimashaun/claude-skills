@@ -12,7 +12,7 @@ GUARD = Guard(
     # The harness resolves every hook from the selftest's own location, so the whole
     # directory is staged -- one hook's fixtures may exercise another's shape.
     needs=("plugins/rails-flow/scripts/fixture_git.py", 
-           'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py',  # session-start.sh runs both (#1581: the harness drives it)
+           'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py', 'plugins/rails-flow/scripts/check_memory_index.py',  # session-start.sh runs all three (#1581, #1828: the harness drives it)
            "plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362
            'plugins/rails-flow/hooks/scripts', 'plugins/qa-flow/hooks/scripts', 'plugins/qa-flow/scripts',
            # guard-claims.sh runs extract_claims.py; without it the harness's two claim
@@ -27,7 +27,7 @@ GUARD = Guard(
            'plugins/rails-flow/scripts/extract_claims.py',
            # ci-verdict-hint.sh runs ci_verdict_hint.py; unstaged, its fixtures fail and every
            # mutation reads as caught -- the harness reported this guard INERT until it was added (#1173).
-           'plugins/rails-flow/scripts/ci_verdict_hint.py', 'plugins/rails-flow/scripts/session_reaper.py', 'plugins/rails-flow/scripts/process_containment.py'),   # the harness drives release-gate.sh too (#906)
+           'plugins/rails-flow/scripts/ci_verdict_hint.py', 'plugins/rails-flow/scripts/test_preflight.py', 'plugins/rails-flow/scripts/wip_commit.py', 'plugins/rails-flow/scripts/session_reaper.py', 'plugins/rails-flow/scripts/process_containment.py'),   # the harness drives release-gate.sh too (#906)
     mutations=(
         # #1570: grep -q quits at the first match, printf takes SIGPIPE once the text outgrows the pipe
         # buffer, and pipefail read that 141 as "no match". `git add -A` plus 10k lines was allowed.
@@ -35,7 +35,7 @@ GUARD = Guard(
             "hit() runs under pipefail again, so a long command that matches is read as no match",
             '( set +o pipefail; printf \'%s\\n\' "$seg" | grep -qE "$re" )',
             'printf \'%s\\n\' "$seg" | grep -qE "$re"',
-            "followed by 10k lines is still blocked",
+            "`git reset --hard` followed by 16k lines (~240 KB) is still blocked",
         ),
         # #1489: `bash < file` names no create, so the trigger must fire on the redirect itself.
         Mutation(
@@ -116,6 +116,103 @@ GUARD = Guard(
             "_re_verb='gh[[:space:]].*issue[[:space:]]+(create|new)'",
             "guard-bash (#1515): `$(echo gh) issue create",
         ),
+        # #1792: the tripwire.
+        Mutation(
+            "the tripwire's dynamic-argument rule is off, so a variable beside a working-tree verb passes",
+            'if [[ "$seg" == *git* ]] && hit "^git[[:space:]]+${_tw_verbs}([[:space:]]|\\$).*(${_tw_dyn}|${_tw_dollar})"; then',
+            'if false; then',
+            'the tripwire refuses `git checkout $BRANCH',
+        ),
+        Mutation(
+            'a `$` no longer counts as dynamic, so only a backtick, a brace or a glob does',
+            '_tw_dollar="\\\\\\$([^\']|\\$)"',
+            '_tw_dollar="NEVERMATCHES_"',
+            'the tripwire refuses `git checkout $BRANCH',
+        ),
+        Mutation(
+            'a command word built at run time is no longer refused before a working-tree verb',
+            'if [[ "$seg" == *[\\$\\`]* ]] && hit "^[^[:space:]]*[\\$\\`][^[:space:]]*[[:space:]]+(.*[[:space:]])?${_tw_all}([[:space:]]|\\$)"; then',
+            'if false; then',
+            'the tripwire refuses `g=git; $g reset x',
+        ),
+        Mutation(
+            'a substitution naming git before a verb is no longer refused',
+            '[gG][iI][tT][^)\\`]*(\\\\)|\\`)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*${_tw_all}([[:space:]]|\\$)"; then',
+            '[gG][iI][tT][^)\\`]*NEVER(\\\\)|\\`)[[:space:]]+(-[^[:space:]]+[[:space:]]+)*${_tw_all}([[:space:]]|\\$)"; then',
+            'the tripwire refuses `$(which git) reset x',
+        ),
+        Mutation(
+            'eval beside a git working-tree command is no longer refused',
+            "hit '^eval([[:space:]]|$)' && rawhit",
+            "hit '^evalNEVER([[:space:]]|$)' && rawhit",
+            "the tripwire refuses `C='git reset --hard'; eval",
+        ),
+        Mutation(
+            'a capitalised Git in command position is no longer refused',
+            "if hit '^([^[:space:]]*/)?(G[iI][tT]|g[I][tT]|gi[T])([[:space:]]|$)'; then",
+            'if false; then',
+            'the tripwire refuses `Git add -A`',
+        ),
+        Mutation(
+            '`add` is treated like the other working-tree verbs, so a glob in `git add src/*.rb` is refused again',
+            "_tw_verbs='(reset|checkout|switch|restore|clean|stash|branch|rm)'",
+            "_tw_verbs='(add|reset|checkout|switch|restore|clean|stash|branch|rm)'",
+            'CONTROL: `git add src/*.rb`',
+        ),
+        Mutation(
+            'an abbreviation of a dangerous option is matched only when written in full',
+            'hit "^git[[:space:]]+reset${_tw_nodd}[[:space:]]+--h(a(r(d)?)?)?${_tw_end}"',
+            'hit "^git[[:space:]]+reset${_tw_nodd}[[:space:]]+--hard${_tw_end}"',
+            'the tripwire refuses `git reset --ha`',
+        ),
+        Mutation(
+            'a dry run no longer exempts an abbreviated clean --force',
+            '&& ! exempt "^git[[:space:]]+clean([[:space:]].*)?([[:space:]]-[a-zA-Z]*n|[[:space:]]--d(r(y(-(r(u(n)?)?)?)?)?)?${_tw_end})"; }',
+            '&& ! false; }',
+            'CONTROL: `git clean --dry-run --forc`',
+        ),
+        Mutation(
+            'the db:reset listing exemption reads a -T after a bare `--` again',
+            '([[:space:]]+([^-[:space:]]|-[^-[:space:]]|--[^[:space:]])[^[:space:]]*)*[[:space:]]+(-T|--tasks|-D|--describe)',
+            '([[:space:]]+[^[:space:]]+)*[[:space:]]+(-T|--tasks|-D|--describe)',
+            'the tripwire refuses `bin/rails db:reset -- -T',
+        ),
+        Mutation(
+            'clean --force written as a prefix is no longer refused',
+            'hit "^git[[:space:]]+clean${_tw_nodd}[[:space:]]+--f(o(r(c(e)?)?)?)?${_tw_end}"',
+            'false',
+            'the tripwire refuses `git clean --forc`',
+        ),
+        Mutation(
+            'an abbreviated --no-verify is no longer refused',
+            'hit "^git[[:space:]]+(commit|push|merge|rebase|cherry-pick|pull|am|revert)${_tw_nodd}[[:space:]]+--no-v(e(r(i(f(y)?)?)?)?)?${_tw_end}"',
+            'false',
+            'the tripwire refuses `git commit --no-v -m x`',
+        ),
+        Mutation(
+            'a path after `--` is read as an option, so `git reset -- --ha` is refused',
+            "_tw_nodd='([[:space:]]+([^-[:space:]]|-[^-[:space:]]|--[^[:space:]])[^[:space:]]*)*'",
+            "_tw_nodd='([[:space:]]+[^[:space:]]+)*'",
+            'CONTROL: `git reset -- --ha`',
+        ),
+        Mutation(
+            'a quoted `--no-v` is read as an option, so a commit message is refused',
+            'rawhit "$(_tw_raw_no_values)" "(^|[[:space:]])[\\"\']?--no-v(e(r(i(f(y)?)?)?)?)?${_tw_endq}"',
+            'true',
+            'CONTROL: `git commit -m "--no-v"',
+        ),
+        Mutation(
+            'a capitalised Git is read in the raw lines, so a body line that starts `Git hygiene` is refused',
+            "if hit '^([^[:space:]]*/)?(G[iI][tT]|g[I][tT]|gi[T])([[:space:]]|$)'; then",
+            'if rawhit "$cmd" \'(^|[[:space:]])(G[iI][tT]|g[I][tT]|gi[T])[[:space:]]\'; then',
+            'CONTROL: `git commit -m "$(cat <<\'EOF\'',
+        ),
+        Mutation(
+            'a quote beside the option no longer counts, so a quoted `--no-v` option is allowed',
+            'rawhit "$(_tw_raw_no_values)" "(^|[[:space:]])[\\"\']?--no-v(e(r(i(f(y)?)?)?)?)?${_tw_endq}"',
+            'rawhit "$(_tw_raw_no_values)" "(^|[[:space:]])--no-v(e(r(i(f(y)?)?)?)?)?${_tw_endq}"',
+            'the tripwire refuses `git commit \'--no-v\' -m x`',
+        ),
         # #1342: each discarding form goes unblocked again, or its safe twin gets caught with it.
         Mutation(
             "git clean -f is allowed",
@@ -159,12 +256,7 @@ GUARD = Guard(
             "  : \"git stash drop/clear is refused",
             "`git stash drop` is blocked",
         ),
-        Mutation(
-            "the `git add` pattern goes back to first-argument anchoring",
-            "if hit '^git[[:space:]]+add([[:space:]]+-[a-zA-Z]+)*[[:space:]]+(-[a-zA-Z]*A[a-zA-Z]*\\b|--all\\b|\\./?($|[[:space:]])|:/($|[[:space:]]))'; then",
-            "if hit '^git[[:space:]]+add[[:space:]]+(-A\\b|--all\\b|\\.($|[[:space:]]))'; then",
-            "`git add -v -A` is blocked",
-        ),
+        # (No mutant for first-argument anchoring of the spelled `git add` rule: the allowlist refuses `git add -v -A` on its own (#1783).)
         # #906. The normaliser is what separates "mentions the rule" from "stages everything".
         Mutation(
             "the normaliser is bypassed and the raw text is matched, so a prefixed `FOO=1 git add -A` fails OPEN",
@@ -190,14 +282,14 @@ GUARD = Guard(
             'degraded mode keeps the `^` anchor, so a compound command with no awk passes',
             '  [ "$degraded" = 1 ] && re="${re#^}"',
             '',
-            'with no awk, a COMPOUND `cd x && git add -A` is blocked',
+            'with no awk, a COMPOUND literal `cd x && git add -A` is blocked',
         ),
         Mutation(
             # #1529 review
             'with no grep, hit() matches nothing, so every rule passes',
             '    local rest="$seg"$\'\\n\' line\n    while [ -n "$rest" ]; do\n      line="${rest%%$\'\\n\'*}"; rest="${rest#*$\'\\n\'}"\n      [[ $line =~ $re ]] && return 0',
             '    local rest="$seg"$\'\\n\' line\n    while [ -n "$rest" ]; do\n      line="${rest%%$\'\\n\'*}"; rest="${rest#*$\'\\n\'}"\n      false',
-            'with no grep, `git add -A` is blocked',
+            'with no grep, a LATER segment `cd x && git clean -fd` is blocked',   # `git add` is the allowlist's now (#1783)
         ),
         Mutation(
             # #1529 round 2
@@ -218,14 +310,14 @@ GUARD = Guard(
             'stdin is read with `cat` again, so no cat means an empty command',
             'input=""; IFS= read -r -d \'\' input || true',
             'input="$(cat)"',
-            'with no cat, `git add -A` is blocked',
+            'with no cat, the literal `git add -A` is blocked',
         ),
         Mutation(
             # #1529 round 3
             'pipefail is dropped, so a failing EARLY stage (no sed) reads as a clean result',
             'set -uo pipefail\n',
             'set -u\n',
-            'with no sed, `git add -A` is blocked',
+            'with no sed, the literal `git add -A` is blocked',
         ),
         Mutation(
             # #1529 round 3
@@ -234,5 +326,100 @@ GUARD = Guard(
             '    [[ $seg =~ $re ]]',
             'with no grep, a LATER segment',
         ),
+        # #1706 / #1708: each widened git rule, put back to its narrower spelling.
+        Mutation("a bundled -fu is not a force again",
+                 "[[:space:]]-[a-zA-Z]*f[a-zA-Z]*\\b|[[:space:]]\\+",
+                 "[[:space:]]-f\\b|[[:space:]]\\+",
+                 "guard-bash (#1706): `git push -fu origin dev` is blocked like its plain sibling"),
+        Mutation("a +<ref> refspec is not a force again",
+                 "|[[:space:]]\\+[^[:space:]]|:\\+[^[:space:]])' && ! exempt",
+                 "|:\\+[^[:space:]])' && ! exempt",
+                 "guard-bash (#1706): `git push origin +dev` is blocked like its plain sibling"),
+        Mutation("a protected branch is matched as a word again, so feature/main-menu is blocked",
+                 "([[:space:]]|:|\\+)(refs/heads/)?(main|master|dev|staging)([[:space:]]|$)'",
+                 "\\b(main|master|dev|staging)\\b'",
+                 "guard-bash (#1706/#1708): CONTROL: `git push --force-with-lease origin feature/main-menu` passes"),
+        Mutation("a tree-ish before . hides checkout . again",
+                 "checkout([[:space:]]+[^[:space:]]+)*[[:space:]]+(\\./?|:/)",
+                 "checkout([[:space:]]+-[a-zA-Z-]+)*[[:space:]]+(\\./?|:/)",
+                 "guard-bash (#1706): `git checkout HEAD .` is blocked like its plain sibling"),
+        Mutation("a separate -d and -f are not -D again",
+                 "   || { hit '^git[[:space:]]+branch\\b.*[[:space:]](-[a-zA-Z]*d[a-zA-Z]*|--delete)\\b'",
+                 "   || { false",
+                 "guard-bash (#1706): `git branch -d -f x` is blocked like its plain sibling"),
+        Mutation("the deploy message tells the agent to write the override inline again",
+                 "on approval THEY set RAILS_FLOW_ALLOW_DEPLOY=1 in this session's environment (an assignment written into the command is not read), then rerun kamal deploy.",
+                 "on approval rerun with RAILS_FLOW_ALLOW_DEPLOY=1 kamal deploy ...",
+                 "guard-bash (#1708): an inline RAILS_FLOW_ALLOW_DEPLOY=1 is still blocked, and the message says it is not read"),
+        # #1783 review: the near spellings the adversary found next to the widened rules.
+        # (`git add *` / `..` in the SPELLED add rule have no mutant: `_add_whole_tree` resolves them too, so dropping them from the
+        #  pattern is an equivalent mutant on the normal path; the spellings stay for the degraded path, which has no resolver.)
+        Mutation("--all and --mirror are not a push of the protected branches again",
+                 "   || hit '^git[[:space:]]+push\\b.*[[:space:]]--(all|mirror)\\b'; }; then",
+                 "   || false; }; then",
+                 "guard-bash (#1706): `git push --force-with-lease --all origin` is blocked like its plain sibling"),
+        Mutation("a + after the refspec's colon is not a force again",
+                 "|:\\+[^[:space:]])' && ! exempt",
+                 ")' && ! exempt",
+                 "guard-bash (#1706): `git push origin HEAD:+main` is blocked like its plain sibling"),
+        Mutation("deleting a protected branch on the remote passes again",
+                 "if hit '^git[[:space:]]+push\\b.*([[:space:]]:|=)(refs/heads/)?(main|master|dev|staging)([[:space:]]|$)' \\",
+                 "if false \\",
+                 "guard-bash (#1706): `git push origin :main` is blocked like its plain sibling"),
+        Mutation("--delete of a protected branch passes again",
+                 "   || { hit '^git[[:space:]]+push\\b.*[[:space:]](--delete|-d)(\\b|=)' && hit",
+                 "   || { false && hit",
+                 "guard-bash (#1706): `git push origin --delete main` is blocked like its plain sibling"),
+        # #1783 round 4: `git add` is an allowlist and long options a unique prefix (the coordinator's decision).
+        # (Equivalent on the normal path, so no mutant: the spelled `add -A`, `checkout/switch -f` and `--mirror` rules, which the
+        #  allowlist and the prefix/bundle check now also refuse. The spelled rules stay for the degraded path, which has neither.)
+        Mutation('an option off the git-add allowlist passes',
+                 '          -*) set +f; return 0 ;;',
+                 '          -*) continue ;;',
+                 'guard-bash (#1706): `git add -f x.rb` is blocked like its plain sibling'),
+        Mutation('a magic or ** pathspec passes',
+                 "        :*|*'**'*) set +f; return 0 ;;",
+                 '        __none__) ;;',
+                 'guard-bash (#1706): `git add :/src/x.rb` is blocked like its plain sibling'),
+        Mutation('a pathspec at or above the root passes',
+                 '      [ "$depth" -gt 0 ] || { set +f; return 0; }',
+                 '      :',
+                 'guard-bash (#1706): `git add ./.` is blocked like its plain sibling'),
+        Mutation('a last-component glob with no literal passes',
+                 '      if [[ $last == *[\\*\\?\\[\\]]* ]] && ! [[ $last =~ [[:alnum:]] ]]; then set +f; return 0; fi',
+                 '      :',
+                 "guard-bash (#1706): `git add '*.*'` is blocked like its plain sibling"),
+        Mutation('a glob in a directory component passes',
+                 '        if [ "$n" -lt "${#comps[@]}" ] && [[ $comp == *[\\*\\?\\[\\]]* ]]; then set +f; return 0; fi',
+                 '        :',
+                 "guard-bash (#1706): `git add 'src/*/x.rb'` is blocked like its plain sibling"),
+        Mutation('a git add whose pathspec the normaliser deleted passes',
+                 '    [ "$specs" = 0 ] && [ "$pathless" = 0 ] && return 0',
+                 '    :',
+                 "guard-bash (#1706): `git add 'my file.rb'` is blocked like its plain sibling"),
+        Mutation('shell expansion beside a git add passes',
+                 '  [ "$any" = 1 ] && [[ $cmd =~',
+                 '  false && [[ $cmd =~',
+                 'guard-bash (#1706): `git add $PWD` is blocked like its plain sibling'),
+        Mutation('a unique prefix of a dangerous long option passes',
+                 '            [ "${#o}" -ge 3 ] && [ "${d#"$o"}" != "$d" ] && { set +f; return 0; }',
+                 '            :',
+                 'guard-bash (#1706): `git switch --disc dev` is blocked like its plain sibling'),
+        Mutation('a bundled -f in switch/checkout passes',
+                 '[[ $w == *f* ]] && [[ $line',
+                 'false && [[ $line',
+                 'guard-bash (#1706): `git switch -fc x` is blocked like its plain sibling'),
+        Mutation('a wildcard refspec push passes',
+                 "        *'*'*:*) [[ $line =~ ^git[[:space:]]+push ]] && { set +f; return 0; } ;;",
+                 "        *'*'*:*) ;;",
+                 "guard-bash (#1706): `git push origin 'refs/*:refs/*'` is blocked like its plain sibling"),
+        Mutation("an absolute git-add pathspec passes",
+                 "        /*) set +f; return 0 ;;",
+                 "        /*) ;;",
+                 "guard-bash (#1706): `git add /abs/path` is blocked like its plain sibling"),
+        Mutation("--force-if-includes is read as --force again",
+                 "[[:space:]]--force($|[[:space:]]|=)|",
+                 "[[:space:]]--force\\b|",
+                 "guard-bash (#1706/#1708): CONTROL: `git push --force-if-includes origin x` passes"),
     ),
 )

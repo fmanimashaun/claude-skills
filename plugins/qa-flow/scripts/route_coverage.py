@@ -612,7 +612,7 @@ def _git(*args: str) -> str | None:
 def enumeration_provenance() -> dict:
     """What tree and environment this enumeration is a measurement of."""
     commit = _git("rev-parse", "HEAD")
-    status = _git("status", "--porcelain")
+    status = _git("status", "--porcelain", "--ignore-submodules=dirty")
     return {
         "commit": commit,
         # A dirty tree means the inventory may include routes that are in no commit, so the
@@ -718,7 +718,7 @@ def route_sources_changed(recorded: str, head: str) -> bool | None:
     than "any commit at all", not a blind one, and the alternative measured at 0 verdicts in 11
     commits.
     """
-    changed = _git("diff", "--name-only", f"{recorded}..{head}")
+    changed = _git("diff", "--name-only", f"{recorded}..{head}")  # submodule-safe: two commits, no worktree read
     if changed is None:
         return None
     return names_a_route_source(changed.splitlines())

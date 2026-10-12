@@ -1,14 +1,23 @@
 #!/usr/bin/env bash
 # SessionStart — inject repo state as context (stdout becomes context).
 set -uo pipefail
+. "${BASH_SOURCE[0]%/*}/lib/trusted-env.sh" 2>/dev/null   # #1850: scrub PYTHON*/GIT_*/BASH_ENV and rebuild PATH from outside the repository, before any python3, git or gh
 # The hook payload (JSON, on stdin): read with a BUILTIN and a 2 s limit, so a caller that leaves stdin open (a hand run, a
 # harness) never holds the session start; a payload that does not arrive is an empty one.
 _payload=""
 [ -t 0 ] || IFS= read -r -t 2 -d '' _payload || true
+# #1790: put the git shim FIRST on PATH for the Bash tool. A plugin's own `bin/` is appended to PATH (measured: entry 27, after /usr/bin), so a
+# `git` there would never run; `CLAUDE_ENV_FILE` (documented for SessionStart) is how a hook prepends. Advisory and SILENT, and FAIL OPEN: with no
+# env file, no plugin root or no shim it does nothing, and an env file it cannot write is ignored. Rewritten every start (the plugin root moves on
+# update), once per distinct line (this hook runs again after every compaction). Before the git check below: a session outside a repository gets it too.
+if [ -n "${CLAUDE_ENV_FILE:-}" ] && [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -x "${CLAUDE_PLUGIN_ROOT}/git-shim/git" ]; then
+  _shim_line="$(printf 'export PATH=%q:"$PATH"' "${CLAUDE_PLUGIN_ROOT}/git-shim")"
+  grep -qxF -- "$_shim_line" "$CLAUDE_ENV_FILE" 2>/dev/null || printf '%s\n' "$_shim_line" >> "$CLAUDE_ENV_FILE" 2>/dev/null || true
+fi
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
 
 branch="$(git branch --show-current 2>/dev/null)"
-dirty="$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
+dirty="$(git status --porcelain --ignore-submodules=dirty 2>/dev/null | wc -l | tr -d ' ')"
 last="$(git log -1 --oneline 2>/dev/null)"
 base="main"; git show-ref --verify --quiet refs/heads/dev && base="dev"
 
@@ -63,7 +72,13 @@ if [ -f docs/brain/STATUS.md ]; then
     _ts="$(tr -dc 0-9 < docs/brain/.last-review 2>/dev/null)"
     if [ -n "$_ts" ]; then
       _age=$(( ( $(date +%s) - _ts ) / 86400 ))
-      [ "$_age" -ge "$_days" ] && echo "- brain-review due: last swept ${_age}d ago (cadence ${_days}d) — run /rails-flow:brain-review"
+      # THE DATE IT BECAME DUE, never the age (#1886): "swept 14d ago" is a different string every day, so the text this hook injects
+      # changed with the clock alone. The due date is fixed once the cadence has passed. GNU date takes -d, BSD date takes -r.
+      if [ "$_age" -ge "$_days" ]; then
+        _due=$(( _ts + _days * 86400 ))
+        _due_date="$(date -u -d "@$_due" +%F 2>/dev/null || date -u -r "$_due" +%F 2>/dev/null)"
+        echo "- brain-review due since ${_due_date:-the cadence passed} (cadence ${_days}d) — run /rails-flow:brain-review"
+      fi
     fi
   else
     echo "- brain-review: no sweep on record — run /rails-flow:brain-review to start the maintenance cadence"
@@ -205,6 +220,13 @@ if [ -z "${RAILS_FLOW_LANE:-}" ]; then
       fi
     fi
   fi
+fi
+
+# #1828: Claude Code loads only the first 200 lines or 25KB of the auto-memory index; what is past that is silently dropped. ONE line, and only when
+# the index is within 80% of either limit or past it (silent otherwise, so it costs nothing here: this hook runs again after every compaction).
+# Advisory and fail open. The judgement lives in scripts/check_memory_index.py.
+if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -f "${CLAUDE_PLUGIN_ROOT}/scripts/check_memory_index.py" ] && command -v python3 >/dev/null 2>&1; then
+  python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_memory_index.py" --hook-line 2>/dev/null || true
 fi
 
 exit 0

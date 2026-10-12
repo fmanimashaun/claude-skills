@@ -75,7 +75,7 @@ schema impact. Then produce a short plan:
 
 ### Acceptance criteria — write them BEFORE any code
 
-Every unit gets criteria, recorded in `docs/product/acceptance/<branch-slug>.md` (the layout's home for WHAT we are building; a pre-layout `docs/acceptance/` is still recognised by the gate, #910) — the slug is the
+Every unit gets criteria, recorded in `docs/product/acceptance/<branch-slug>.md` (the layout's home for WHAT we are building; a pre-layout `docs/product/acceptance/` is still recognised by the gate, #910) — the slug is the
 branch name after `feature/`, with any remaining `/` flattened to `-` (so `feature/team/foo`
 → `docs/product/acceptance/team-foo.md`). One `##` section per unit:
 
@@ -123,13 +123,13 @@ spec truly asserts the observable, so that judgement stays yours.
 
 ### The work order — write it once the criteria exist
 
-Run `/rails-flow:handoff` (or write `docs/handoff/<slug>.md` in its shape) before Phase 3. It is the
+Run `/rails-flow:handoff` (or write `docs/product/handoff/<slug>.md` in its shape) before Phase 3. It is the
 one file an executor can work from with **no** conversation history: the goal, the criteria ids it is
 graded by, the files in and explicitly out of scope, the guardrails in play, the **stop conditions**,
 how to verify, and what to record on completion.
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_handoff.py" "docs/handoff/<slug>.md" \
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_handoff.py" "docs/product/handoff/<slug>.md" \
   --criteria "docs/product/acceptance/<slug>.md"
 ```
 
@@ -202,6 +202,8 @@ as complete is worse than a stop, because it spends the reviewer's trust as well
    behavior (wrong-role rejection for new filters, concern behavior, state transitions), not
    merely execute the code. Run it; confirm it fails for the right reason.
    A criterion no spec cites is an unproven criterion, and the Stop gate says so.
+   **A project with a QA catalogue (`qa/test-cases.csv`) also gets the manual case** that proves the new behaviour, in this same PR: add or update the case, and put the issue
+   in its `Source` (`defect:#n`). No feature is built without a way to test it in QA (owner rule, #1853); see `reference/case-per-change.md`.
 2. Implement — delegate substantial units to `rails-developer`; schema changes to
    `migration-writer` (round-trip proven). Small edits you may do directly.
 3. Run the unit's specs to green, then `git add <specific files>` and commit with an
@@ -284,11 +286,29 @@ gh pr create --base <base> --title "feat: <summary>" --body "<the PR Documentati
   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_mockup_gate.py" --base <base>`. Exit 1 means the
   diff changes what a user sees and no approved mock-up is recorded: stop, and run the Phase 1
   mock-up gate. Exit 2 means it could not classify; stop and hand the merge to the user.
+- On CLEAN, **check the requirement registry** when `qa/requirements.yml` exists (#1857): save the PR body to a file (the draft you gave `gh pr create --body-file`, or
+  `gh pr view <n> --json body -q .body > <file>`) and run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_registry_closed.py" --closes-from-body <file>`. It reads every closing
+  keyword GitHub honours (`Closes #12`, `fixes #12`, `Resolved #12`, any case), not only `Fixes`. A registry row that points at an issue this PR closes must be updated in this
+  same PR: status `done` and `closed: true` once its spec proves it, or, for an issue closed as not planned, `owner-decision` or `deviates` (never `done`), or `issue` pointed at
+  the issue that tracks the rest. Exit 1: update those rows, push, run it again. Exit 2: it could not check (no `gh`, GitHub unreadable, a repeated key in the registry): say what
+  it could not read; an unchecked registry is not a clean one. Exit 3 is only "no registry", and exit 0 continues.
+- On CLEAN, **check the case is in the diff** when `qa/test-cases.csv` exists (#1858): `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_case_in_diff.py" --base <base> --closes-from-body <PR body file> --kind feature`.
+  Every issue the PR closes needs a catalogue case that THIS diff adds or changes, with the issue in its `Source`. Exit 1: add the case, push, run it again. Exit 2: it could
+  not check (say what); exit 3: no catalogue, nothing to check against.
 - On CLEAN, **classify the door** (#1338):
   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/classify_door.py" --base <base>`. Exit 1 (ONE-WAY: a
   destructive migration, an auth or permission change, a removed route or API field, a new outside
   call) or exit 2 (could not classify) means stop and hand the merge to the user, quoting the
   reasons it printed. A dropped column's data does not come back with `git revert`. Exit 0 continues.
+- On CLEAN, **check whether the diff is risky** (#1819):
+  `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/risky_diff.py" --base <base> --record docs/evidence/reviews/prs/<branch-slug>/adversary.md`.
+  A diff that touches authentication, sessions, access rules, input parsing or a privacy filter needs one **adversarial pass** before
+  the PR is marked ready: exit 1 means run the `adversary` agent (it runs on Fable, the owner's model for attack passes) with the
+  printed reasons and the base, **save its answer verbatim** to that path (its first line is `Head: <sha>`, its last is
+  `VERDICT: CLEAN` or `VERDICT: BLOCKED`), and run the check again. Exit 0 continues. Exit 3 means the pass recorded BLOCKED: that is
+  a finding for the user, so stop, quote the findings and hand the merge over; it is not an automatic stop of the work, and you do
+  not decide its disposition. Exit 2 means it could not classify: stop. Mark the PR ready with `risky_diff.py ... && gh pr ready`,
+  never `;`. A record is tied to the commit it names, so a push after the pass needs a new one.
 - On CLEAN and a two-way door: if the base is `dev`, merge (`gh pr merge --squash`), then post a summary
   comment citing the gate's findings. If the base is the default branch (no `dev`), stop
   after CLEAN and hand the merge decision to the user — and offer them a PR babysitter:

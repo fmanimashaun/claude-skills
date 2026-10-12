@@ -721,6 +721,19 @@ def run() -> int:
         rc_exit = rc.cmd_report(args)
     if rc_exit != 0:
         FAILURES.append("report: a gap is the deliverable, not a failure -- exit must be 0")
+    # #1873: the stale-inventory refusal, driven through cmd_report's EXIT CODE, not only stale_inventory.
+    stale_json = work / "stale-routes.json"
+    stale_json.write_text(json.dumps({"routes": [], "provenance": {"commit": "0" * 40}}) + "\n", encoding="utf-8")
+    stale_args = _a.Namespace(**{**vars(args), "routes": str(stale_json)})
+    # stale_inventory is stubbed: its own verdicts are checked above, and the staged mutation tempdir has no git.
+    real_stale, rc.stale_inventory = rc.stale_inventory, (lambda prov, *a, **k: "recorded at another commit")
+    try:
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            stale_exit = rc.cmd_report(stale_args)
+    finally:
+        rc.stale_inventory = real_stale
+    check("report: an inventory from another commit is n/a (exit 3), never a percentage (#1129)",
+          stale_exit == 3, True)
     shown = captured.getvalue()
     # The gap report must NAME the untested route and say why it ranks first, or it is a number
     # nobody can act on -- and the excluded count must print even when it is zero.

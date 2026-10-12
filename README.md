@@ -25,6 +25,12 @@ Then add the flows you want:
 /plugin install pipeline@claude-skills        # release lifecycle
 ```
 
+Or take rails-flow, qa-flow and pipeline in one step. `flow-suite` is a bundle whose manifest only declares them as dependencies, and installing a plugin installs its dependencies ([docs](https://code.claude.com/docs/en/plugins/dependencies#bundle-plugins-for-a-team)):
+
+```bash
+/plugin install flow-suite@claude-skills      # rails-flow + qa-flow + pipeline
+```
+
 Verify:
 
 ```bash
@@ -102,8 +108,8 @@ Steps 1–2 are once per project. Steps 3–4 are the loop.
 <summary><b>rails-flow</b> — build, fix, review, remember</summary>
 
 `feature` `fix` `review` `issues` `brief` `spec` `slice` `curate` `explain` `graph` `handoff` `pr-comments`
-`report` `setup-flow` `toolchain-audit` · **memory:** `brain` `brain-review` `brain-sync` ·
-**autonomous:** `drive` `escalate` `toolchain-check` · **parallel sessions:** `coordinate`
+`retro` `report` `setup-flow` `toolchain-audit` · **memory:** `brain` `brain-review` `brain-sync` ·
+**autonomous:** `drive` `escalate` `toolchain-check` · **parallel sessions:** `coordinate` `wrap`
 
 </details>
 

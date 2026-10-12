@@ -114,7 +114,7 @@ def changed_paths(root: Path, base: str) -> list[str] | None:
         return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, timeout=60)
     if git("rev-parse", "--verify", "--quiet", base + "^{commit}").returncode != 0:
         return None
-    done = git("diff", "--name-only", f"{base}...HEAD")
+    done = git("diff", "--name-only", f"{base}...HEAD")  # submodule-safe: base...HEAD compares commits, no worktree read
     return [ln for ln in done.stdout.splitlines() if ln.strip()] if done.returncode == 0 else None
 
 
@@ -159,9 +159,19 @@ def selftest() -> int:
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
-        import sys as _sys; _sys.path.insert(0, str(Path(__file__).resolve().parent)); import fixture_git as _fg  # #1588
-        _fg.init(root, "-b", "dev")
-        _g = lambda *a: _fg.run(root, *a)
+        import sys as _sys; _sys.path.insert(0, str(Path(__file__).resolve().parent))
+        try:
+            import fixture_git as _fg  # #1588
+        except ImportError:
+            _fg = None   # VENDORED ALONE (check_vendored_alone, #1767): fixture_git is not beside this copy, so the same binding is made inline
+        if _fg is not None:
+            _fg.init(root, "-b", "dev")
+            _g = lambda *a: _fg.run(root, *a)
+        else:
+            _env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+            subprocess.run(["git", "init", "-q", "-b", "dev", str(root)], env=_env, check=True, capture_output=True)  # fixture-git: exempt (vendored alone: fixture_git is not shipped beside it; the same GIT_* scrub and GIT_DIR/GIT_WORK_TREE binding inline)
+            _env.update(GIT_DIR=str(root / ".git"), GIT_WORK_TREE=str(root))
+            _g = lambda *a: subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *a], cwd=root, env=_env, check=True, capture_output=True)  # fixture-git: exempt (vendored alone: the same binding inline)
         (root / "docs/architecture").mkdir(parents=True)
         (root / "docs/architecture/graph.json").write_text("{}\n")
         (root / "app.rb").write_text("x\n")

@@ -20,7 +20,7 @@ GUARD = Guard(
     # staged; `extract_claims.py` is what this hook shells out to, and without it every mutation
     # reads as caught against an unrun check (#1109).
     needs=("plugins/rails-flow/scripts/fixture_git.py", 
-           'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py',  # session-start.sh runs both (#1581: the harness drives it)
+           'plugins/rails-flow/scripts/assign_lanes.py', 'plugins/rails-flow/scripts/brain_local_sync.py', 'plugins/rails-flow/scripts/check_memory_index.py',  # session-start.sh runs all three (#1581, #1828: the harness drives it)
            "plugins/rails-flow/hooks/hooks.json",  # read by check_hook_gates since #1362
            "plugins/rails-flow/hooks/scripts", "plugins/qa-flow/hooks/scripts",
            "plugins/qa-flow/scripts",
@@ -33,7 +33,7 @@ GUARD = Guard(
            "plugins/rails-flow/scripts/self_consistency.py",
            "plugins/rails-flow/scripts/extract_claims.py",
            # ci-verdict-hint.sh runs it; unstaged, every mutation here read as caught (#1173).
-           "plugins/rails-flow/scripts/ci_verdict_hint.py", "plugins/rails-flow/scripts/session_reaper.py", "plugins/rails-flow/scripts/process_containment.py"),
+           "plugins/rails-flow/scripts/ci_verdict_hint.py", "plugins/rails-flow/scripts/test_preflight.py", "plugins/rails-flow/scripts/wip_commit.py", "plugins/rails-flow/scripts/session_reaper.py", "plugins/rails-flow/scripts/process_containment.py"),
     mutations=(
         # #1516, push security reviews: NO CODE RUNS BEFORE PERMISSION. The hook reads a diff in the directory the
         # command `cd`s into, before the person is asked, and a repository's own config can name a program that
@@ -129,8 +129,8 @@ GUARD = Guard(
             # body carrying eight unverified claims, four ISSUE COMMENTS carrying counts went out
             # unchecked -- the same artifact, durable and read by someone else, through a hole.
             "an issue comment is out of scope again, so its claims go unchecked",
-            'has "$cmd" \'\\bgh[[:space:]]+(pr[[:space:]]+(create|edit)|issue[[:space:]]+comment)\\b\' || exit 0',
-            'has "$cmd" \'\\bgh[[:space:]]+pr[[:space:]]+(create|edit)\\b\' || exit 0',
+            r'''has "$cmd" "${GH_AT_COMMAND}(pr[[:space:]]+(create|edit)|issue[[:space:]]+comment)\\b" || exit 0''',
+            r'''has "$cmd" "${GH_AT_COMMAND}pr[[:space:]]+(create|edit)\\b" || exit 0''',
             "guard-claims: an unchecked numeric claim in an ISSUE COMMENT is blocked",
         ),
         Mutation(

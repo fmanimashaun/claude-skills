@@ -705,6 +705,13 @@ def _selftest() -> int:
     expect("catch (err: unknown) is the fix, and clean",
            rules({**base, "qa/e2e/b.spec.ts": "try { f() } catch (err: unknown) { g(err) }\n"}) == [])
 
+    # #1873: the EXIT CODE the runner grades, driven end to end: no TypeScript under qa/ is n/a.
+    import subprocess
+    with tempfile.TemporaryDirectory() as d:
+        done = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--root", d], capture_output=True, text=True)
+    expect(f"no TypeScript under qa/ is not applicable (exit 3), never a pass: got {done.returncode}",
+           done.returncode == 3)
+
     for f in fails:
         print(f"selftest FAIL: {f}")
     print(f"check_ts_strict selftest: {'FAILED' if fails else 'ok'} ({len(fails)} failure(s))")

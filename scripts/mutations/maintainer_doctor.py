@@ -15,6 +15,19 @@ GUARD = Guard(
         "plugins",
         "evals", "plugins/rails-flow/scripts/process_containment.py"),
     mutations=(
+        # #1664: a gate that exits 3 because its timing checks were STARVED is a skip, and a skip refuses a release proof.
+        Mutation(
+            "a STARVED gate (exit 3) is read as a failure-free ok instead of a skip",
+            "            elif code == 3:\n",
+            "            elif code == 99:\n",
+            "a gate that exits 3 because its timing checks were STARVED is a SKIP, never ok",
+        ),
+        Mutation(
+            "a skip no longer refuses a release proof",
+            "    skipped = [r.name for r in gate_results if r.status == SKIP]\n    if rc != 0 or skipped:",
+            "    skipped = []\n    if rc != 0 or skipped:",
+            "a sweep with a STARVED gate must REFUSE to be recorded as a proof",
+        ),
         # #1635: a backgrounded doctor inherits SIGINT ignored; it must reset it, and only then.
         Mutation(
             "main never takes the SIGINT reset",
@@ -266,27 +279,40 @@ GUARD = Guard(
         # #1599: `--ratchet` is for the run that proves the record, and for `mutation coverage` alone.
         Mutation(
             "every run is ratcheted, so a laptop's load reads as growth",
-            '    return (*cmd, "--ratchet") if require_slow and name in RATCHETED_GATES else cmd',
-            '    return (*cmd, "--ratchet") if name in RATCHETED_GATES else cmd',
-            "without --require-slow, `mutation coverage` is run without --ratchet",
+            '    return (*cmd, "--ratchet-warn") if require_slow and name in RATCHETED_GATES else cmd',
+            '    return (*cmd, "--ratchet-warn") if name in RATCHETED_GATES else cmd',
+            "without --require-slow, `mutation coverage` is run without --ratchet-warn",
         ),
         Mutation(
             "no run is ratcheted, so the cost record enforces nothing",
-            '    return (*cmd, "--ratchet") if require_slow and name in RATCHETED_GATES else cmd',
+            '    return (*cmd, "--ratchet-warn") if require_slow and name in RATCHETED_GATES else cmd',
             '    return cmd',
-            "under --require-slow, `mutation coverage` is run with --ratchet",
+            "under --require-slow, `mutation coverage` is run with --ratchet-warn",
         ),
         Mutation(
             "every gate is handed --ratchet under --require-slow",
-            '    return (*cmd, "--ratchet") if require_slow and name in RATCHETED_GATES else cmd',
-            '    return (*cmd, "--ratchet") if require_slow else cmd',
-            "under --require-slow, no OTHER gate is handed --ratchet",
+            '    return (*cmd, "--ratchet-warn") if require_slow and name in RATCHETED_GATES else cmd',
+            '    return (*cmd, "--ratchet-warn") if require_slow else cmd',
+            "under --require-slow, no OTHER gate is handed --ratchet-warn",
         ),
         Mutation(
             "the gate runner ignores slow_gate_command and runs the bare command",
             "            code, out = self.run(*slow_gate_command(name, cmd, self.require_slow),",
             "            code, out = self.run(*cmd,",
-            "under --require-slow, `mutation coverage` is run with --ratchet",
+            "under --require-slow, `mutation coverage` is run with --ratchet-warn",
+        ),
+        # #1738, #1739: the shard and record flags.
+        Mutation(
+            "--mutation-shards is ignored, so the sweep runs the whole mutation gate again beside the shard jobs",
+            "            if self.shards_external and name in RATCHETED_GATES:",
+            "            if False and name in RATCHETED_GATES:",
+            "under --mutation-shards, `mutation coverage` is a skip",
+        ),
+        Mutation(
+            "--mutation-shards skips every gate, not just mutation coverage",
+            "            if self.shards_external and name in RATCHETED_GATES:",
+            "            if self.shards_external:",
+            "under --mutation-shards, no OTHER gate is skipped",
         ),
     ),
 )

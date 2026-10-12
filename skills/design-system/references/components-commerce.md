@@ -143,7 +143,10 @@ each entry. `coverage.md` counts both files as the catalogue.
   inert subtree *"Hit-testing must act as if the 'pointer-events' CSS property were set to 'none'"*, and
   *"user agents do not expose the inert nodes to accessibility APIs or assistive technologies"*. APG's
   pattern text never mentions `inert` — it discusses `aria-modal` replacing `aria-hidden` — so pairing
-  the two is **ours**, and it is what makes APG's own precondition true.
+  the two is **ours**, and it is what makes APG's own precondition true. **With the native Modal
+  (`<dialog>` + `showModal()`) the browser does both**: MDN — *"When using `<dialog>` along with the
+  `HTMLDialogElement.showModal()` method, this behavior is provided by the browser"*, and the dialog
+  implicitly has `aria-modal="true"`. Setting `inert` by hand is for the `div role="dialog"` fallback only.
 - **The total is a live region, and WCAG's Understanding document uses a shopping cart as its worked
   example — this is not an analogy we invented.** 4.1.3 (**AA**): *"An example would be a shopping cart
   which updates text from reading '0 items' to '3 items'… where only the number in this string was coded

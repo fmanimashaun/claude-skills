@@ -16,6 +16,7 @@ const failures = []
 let checks = 0
 let inFlight = '' // the check running right now, named if it never settles
 let fresh = 0
+const reset = await import('../hooks/session-reset.mjs')
 
 // Report from an 'exit' handler registered BEFORE the first await (so it exists when a check never settles): a check that never settles ends the process (exit
 // code 13, an unsettled top-level await) before any line below would run, and the failures would vanish.
@@ -33,14 +34,17 @@ process.on('exit', (code) => {
 
 // A new copy of the module each time: it keeps its state in module variables, as a mod does.
 async function harness(env) {
+  reset.state.role = 'implementation'
+  reset.state.line = null
   const mod = await import(`../hooks/context-nudge.mjs?fresh=${++fresh}`)
   const hooks = {}
   mod.register((event, ...rest) => {
     hooks[event] = rest[rest.length - 1]
   })
   const status = []
-  const $ = { env: { get: async () => env }, ui: { status: (t) => status.push(t) } }
+  const $ = { env: { get: async (k) => env }, ui: { status: (t) => status.push(t) } }
   const echo = async (e) => e
+  await hooks['prompt.submit']($, { text: 'prime' }, echo) // the one role line, so the checks below see only their own
   return {
     mod,
     status,
@@ -55,6 +59,14 @@ async function harness(env) {
         echo,
       ),
     submit: (text, origin) => hooks['prompt.submit']($, { text, ...(origin ? { origin } : {}) }, echo),
+    // One model request (#1884): the hook is an async generator that forwards the response, then reads its usage.
+    step: async (usage, agentId) => {
+      async function* nextStep() { return { usage } }
+      const gen = hooks['turn.step']($, agentId ? { agentId } : {}, nextStep)
+      let r = await gen.next()
+      while (!r.done) r = await gen.next()
+      return r.value
+    },
   }
 }
 
@@ -102,6 +114,11 @@ await check('the line is short, because it is billed again on every later reques
   await h.measure(99)
   const r = await h.submit('x')
   assert.ok(r.context[0].length <= 400, `length ${r.context[0].length}`)
+})
+
+await check('every variant of the line is short: undeclared, implementation and coordinator', async () => {
+  const { nudgeLine } = await import(`../hooks/context-nudge.mjs?fresh=${++fresh}`)
+  for (const role of [null, 'implementation', 'coordinator']) assert.ok(nudgeLine(99, role).length <= 400, `${role}: ${nudgeLine(99, role).length}`)
 })
 
 await check('a compaction resets it: the next climb past the threshold is told again', async () => {
@@ -166,4 +183,51 @@ await check('a Remote Control prompt counts as the person', async () => {
   await h.measure(90)
   const r = await h.submit('from a phone', { kind: 'bridge' })
   assert.equal(r.context.length, 1)
+})
+
+// #1884: the cache-hit meter.
+await check('cacheHit: read / (read + written + uncached), whole percent', async () => {
+  const h = await harness(undefined)
+  assert.equal(h.mod.cacheHit({ input_tokens: 10, cache_creation_input_tokens: 90, cache_read_input_tokens: 900 }), 90)
+  assert.equal(h.mod.cacheHit({ input_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 5 }), 100)
+  assert.equal(h.mod.cacheHit({ input_tokens: 500, cache_read_input_tokens: 0 }), 0)
+})
+
+await check('cacheHit: no reading when usage is missing, empty or malformed (never a fake 0%)', async () => {
+  const h = await harness(undefined)
+  for (const u of [undefined, null, {}, { input_tokens: 5 }, { cache_read_input_tokens: -1, input_tokens: 1 },
+                   { cache_read_input_tokens: 'x', input_tokens: 1 }, { input_tokens: 0, cache_read_input_tokens: 0 }])
+    assert.equal(h.mod.cacheHit(u), null, JSON.stringify(u))
+})
+
+await check('the cache share joins the status line after the context fill, and the response passes through unchanged', async () => {
+  const h = await harness(undefined)
+  await h.measure(42)
+  const usage = { input_tokens: 20, cache_creation_input_tokens: 0, cache_read_input_tokens: 180 }
+  const out = await h.step(usage)
+  assert.deepEqual(out, { usage })
+  assert.equal(h.status.at(-1), 'context 42% · cache 90%')
+  await h.measure(43)
+  assert.equal(h.status.at(-1), 'context 43% · cache 90%')
+})
+
+await check("a subagent's request does not move the main conversation's meter", async () => {
+  const h = await harness(undefined)
+  await h.measure(42)
+  await h.step({ input_tokens: 20, cache_read_input_tokens: 180 })
+  const before = h.status.length
+  await h.step({ input_tokens: 200, cache_read_input_tokens: 0 }, 'agent-1')
+  assert.equal(h.status.length, before)
+  await h.measure(42)
+  assert.equal(h.status.at(-1), 'context 42% · cache 90%')
+})
+
+await check('a request with no usage keeps the last reading, and adds no context line', async () => {
+  const h = await harness(undefined)
+  await h.measure(10)
+  await h.step({ input_tokens: 1, cache_read_input_tokens: 3 })
+  await h.step(undefined)
+  await h.measure(10)
+  assert.equal(h.status.at(-1), 'context 10% · cache 75%')
+  assert.deepEqual((await h.submit('x')).context ?? [], [])
 })

@@ -285,6 +285,30 @@ def run() -> int:  # noqa: PLR0915 -- a flat list of fixtures reads better than 
             contains=f"no `## {label}` section",
         )
 
+    # ---- #1564: the optional `## Progress` section -----------------------------------------------------------------
+    good_progress = (f"## Progress\nStatus: in-progress\nLast green: `{_HEAD}`\nCurrent step: AC-2, the 422 path\n"
+                     "Next step: run the full suite\nPending gates: code-reviewer, test-runner\n")
+    expect_clean("an order with no Progress section still validates (it is optional)", GOOD)
+    expect_clean("a complete Progress section", GOOD + "\n" + good_progress)
+    expect_clean("Last green: none is allowed (nothing has passed yet)",
+                 GOOD + "\n" + good_progress.replace(f"`{_HEAD}`", "none"))
+    expect_clean("a DONE order with no pending gates",
+                 GOOD + "\n" + good_progress.replace("in-progress", "done").replace("code-reviewer, test-runner", "none"))
+    expect_findings("a Progress section with no Status", GOOD + "\n" + good_progress.replace("Status: in-progress\n", ""),
+                    contains="no `Status:` value")
+    expect_findings("a Progress section with no Next step", GOOD + "\n" + good_progress.replace("Next step: run the full suite\n", ""),
+                    contains="no `Next Step:` value")
+    expect_findings("a Status this tool does not list", GOOD + "\n" + good_progress.replace("in-progress", "wip"),
+                    contains="not one of")
+    expect_findings("a Last green that is not a commit here", GOOD + "\n" + good_progress.replace(_HEAD, "deadbeef"),
+                    contains="not a commit in this repository")
+    expect_findings("a Last green with no hex at all", GOOD + "\n" + good_progress.replace(f"`{_HEAD}`", "the green one"),
+                    contains="not a commit in this repository")
+    expect_findings("DONE while gates are still pending", GOOD + "\n" + good_progress.replace("in-progress", "done"),
+                    contains="still lists Pending gates")
+    expect_findings("a progress section with a placeholder is still caught by the self-containment rule",
+                    GOOD + "\n" + good_progress.replace("run the full suite", "TBD"), contains="TBD")
+
     # ---- #659: the base commit must be a commit THIS repository has ----------------------
     # PRESENT-BUT-UNUSABLE IS NOT PASSABLE. A plausible hex string tells an executor where to start
     # and is worse than an absent one, because it will be trusted -- the rule this file already
@@ -595,6 +619,21 @@ def run() -> int:  # noqa: PLR0915 -- a flat list of fixtures reads better than 
     ok_agents = agents_dir({"code-reviewer": "inherit", "test-runner": "haiku"})
     expect_tiers_clean("a table that agrees with its agents", tiers_doc(ok_rows), ok_agents)
     expect_tiers_clean("...and the table alone, with no agents to reconcile", tiers_doc(ok_rows))
+    # #1819: the ONE named exception. `adversary` is `adversarial` and pins `fable`; nothing else may, and nothing else may pin
+    # an expensive alias. Each row below fails for a different reason, so none is "caught" by another's.
+    adv_row = "| `adversary` | adversarial | `fable` | — |\n"
+    adv_agents = agents_dir({"code-reviewer": "inherit", "test-runner": "haiku", "adversary": "fable"})
+    expect_tiers_clean("the adversary on fable is the named exception", tiers_doc(ok_rows + adv_row), adv_agents)
+    expect_tiers_clean("...and the table alone, with no agents to reconcile", tiers_doc(ok_rows + adv_row))
+    expect_tiers_findings("a judgement agent pinning fable is still refused", tiers_doc(
+        ok_rows + "| `spec-reviewer` | judgement | `fable` | — |\n"), None, contains="more expensive model than")
+    expect_tiers_findings("another agent claiming the adversarial tier is refused", tiers_doc(
+        ok_rows + "| `spec-reviewer` | adversarial | `fable` | — |\n"), None, contains="named exception")
+    expect_tiers_findings("the adversary pinned to opus instead of fable is refused", tiers_doc(
+        ok_rows + "| `adversary` | adversarial | `opus` | — |\n"), None, contains="instead of `fable`")
+    expect_tiers_findings("the adversary's frontmatter must say fable too", tiers_doc(ok_rows + adv_row),
+                          agents_dir({"code-reviewer": "inherit", "test-runner": "haiku", "adversary": "inherit"}),
+                          contains="pins `model: inherit` while the tier table")
     # #1326: effort is inherited like model; a pin in a shipped agent is refused.
     pinned = agents_dir({"code-reviewer": "inherit", "test-runner": "haiku"})
     reviewer = pinned / "code-reviewer.md"

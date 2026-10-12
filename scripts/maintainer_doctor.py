@@ -220,6 +220,11 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # gates; `claude plugin validate --strict` stays the authority and needs the CLI, which CI may lack.
     ("hook commands survive a spaced path", ("python3", "scripts/check_hook_commands.py")),
     ("hook commands selftest", ("python3", "scripts/check_hook_commands.py", "--selftest")),
+    # #1684. `claude plugin validate --strict --json` over the marketplace and every plugin directory: the CLI is the authority on what Claude Code
+    # accepts. It exits 3 (a SKIP, never a pass) when the CLI is absent or older than 2.1.259, as it is on a runner without it. It also passed an
+    # unterminated frontmatter list in #1679, so `frontmatter is valid YAML` above stays.
+    ("claude plugin validate --strict", ("python3", "scripts/check_plugin_validate.py")),
+    ("plugin validate selftest", ("python3", "scripts/check_plugin_validate.py", "--selftest")),
     # #1597. Hooks run as `python3` on the user's machine, which on stock macOS is 3.9, and CI pins 3.12: two
     # shipped scripts were a SyntaxError there (a backslash in an f-string expression) and nothing caught it.
     ("shipped python parses on 3.9", ("python3", "scripts/check_python_floor.py")),
@@ -228,6 +233,9 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
      ("python3", "plugins/rails-flow/scripts/assign_lanes.py", "--selftest")),
     ("design-flow prompt library selftest",
      ("python3", "plugins/design-flow/scripts/prompt_library.py", "--selftest")),
+    # #1779. The library moved to docs/design/assets/, and a project that still has docs/assets/ must be stopped, not read as empty.
+    ("design-flow asset home selftest",
+     ("python3", "plugins/design-flow/scripts/asset_home.py", "--selftest")),
     # #625/#628/#629. Three modules encode one layout decision and `asset_plan.py` holds its half as
     # literals (it is deliberately standalone). Move one and not the others and `--scaffold` creates
     # a folder nothing writes to while `--run` writes into one the scaffold never made — both halves
@@ -353,6 +361,20 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("hook gates", ("python3", "plugins/rails-flow/scripts/check_hook_gates.py", "--selftest", "--part", "a")),
     ("hook gates (release)", ("python3", "plugins/rails-flow/scripts/check_hook_gates.py", "--selftest", "--part", "b")),
     ("hook gates (worktree)", ("python3", "plugins/rails-flow/scripts/check_hook_gates.py", "--selftest", "--part", "c")),
+    ("hook gates (guard-bash)", ("python3", "plugins/rails-flow/scripts/check_hook_gates.py", "--selftest", "--part", "d")),
+    # #1790. The git shim (put first on PATH by the SessionStart hook) refuses whole-tree add, reset --hard, tree checkout/restore, clean -f and
+    # --no-verify by what git is asked to do; proven with real git on real repositories and a look at what MOVED.
+    ("git shim", ("python3", "plugins/rails-flow/scripts/git_shim_selftest.py")),
+    # #1839. The gh shim: `gh pr ready` from the argv the shell finally hands gh, against the sweep record for HEAD.
+    ("gh shim", ("python3", "plugins/rails-flow/scripts/gh_shim_selftest.py")),
+    # #1828. The auto-memory index limit check: its boundaries (200 lines, 25KB read as KiB), the ratchet baseline and the one-line SessionStart output.
+    ("memory index limit", ("python3", "plugins/rails-flow/scripts/check_memory_index.py", "--selftest")),
+    # #1829. The status line a project vendors: every payload field optional, a window that has reset left out (#1854), amber from 80%, never a traceback.
+    ("status line", ("python3", "plugins/rails-flow/scripts/statusline.py", "--selftest")),
+    # #1827. Settings that do nothing where they are set: `autoMode` and a `defaultMode` of auto or bypassPermissions in a PROJECT's settings files (read, never
+    # written), and in the setup-flow templates a project would copy.
+    ("project settings dead config", ("python3", "plugins/rails-flow/scripts/check_project_settings.py", "--root", ".", "--markdown", "plugins/rails-flow/commands")),
+    ("project settings selftest", ("python3", "plugins/rails-flow/scripts/check_project_settings.py", "--selftest")),
     # #1667. The adversarial cases that found #1645's bypasses, through the REAL guard-bash.sh with a stub `gh` that must
     # never be called. The fast tier (~50 cases, ~10 s) runs in every sweep; the full tier (~300 cases, ~90 s at load 35)
     # is in PR_SKIPPED_GATES, so only the full sweep (the release proof) pays for it.
@@ -409,11 +431,17 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #1204. The installer reported success and wrote a hook git never runs under core.hooksPath
     # or from a linked worktree; the selftest proves each case with a real merge, not a file check.
     ("pipeline hook install", ("python3", "plugins/pipeline/scripts/install_git_hooks_selftest.py")),
+    # #1789. The pre-push and pre-commit guards (a protected branch is only fast-forwarded; the staged content is checked) are proven with real
+    # pushes into a bare remote and real commits, and then a look at what MOVED, not at an exit code.
+    ("pipeline git guards", ("python3", "plugins/pipeline/scripts/git_guard_selftest.py")),
     # #1341. The deploy safety pass is BLOCKING; its "no secret in a committed file" step is this script.
     ("pipeline committed-secret scan", ("python3", "plugins/pipeline/scripts/scan_committed_secrets.py", "--selftest")),
     # #1465. A Kamal destination is carried through whole: `-d` on every command, the destination's
     # secrets file and overlay, and the credentials environment read from the MERGED config.
     ("pipeline kamal destination", ("python3", "plugins/pipeline/scripts/kamal_destination.py", "--selftest")),
+    # #1701. The release image build passes the build args and labels pipeline.yml declares (a bare build when it declares
+    # none), reads the two keys strictly, and names a Dockerfile ARG nothing feeds.
+    ("pipeline release build", ("python3", "plugins/pipeline/scripts/release_build.py", "--selftest")),
     # #1585. The status board: every panel measured, UNKNOWN never 0, one drawing sheet with no network,
     # and every sentence it writes inside the ASD-STE100 limits. The selftest answers gh/git/ps from canned output.
     ("pipeline status board", ("python3", "plugins/pipeline/scripts/status_board.py", "--selftest")),
@@ -445,9 +473,27 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #993: the walk refuses to start without personas, sign-in recipes and journey documents.
     ("qa-flow walkthrough plan", ("python3", "plugins/qa-flow/scripts/walkthrough_plan.py", "--selftest")),
     ("qa-flow evidence manifest", ("python3", "plugins/qa-flow/scripts/evidence_manifest.py", "--selftest")),
+    # #1835. The release-image robot's scaffolded TypeScript helpers ship into projects; their node:test files run here.
+    ("qa-flow robot helpers", ("python3", "plugins/qa-flow/scripts/scaffold_ts_tests.py", "--selftest")),
+    # #1837. The robot descriptor's rules, and the image runner driven end to end with stub curl/npx (fails closed).
+    ("qa-flow robot descriptor", ("python3", "plugins/qa-flow/scripts/robot_descriptor.py", "--selftest")),
     # #1447. A TypeScript e2e suite is strict, type-checked in CI, and has no explicit `any`.
     ("qa-flow ts strict", ("python3", "plugins/qa-flow/scripts/check_ts_strict.py", "--selftest")),
     ("qa-flow route crawl", ("python3", "plugins/qa-flow/scripts/crawl_report.py", "--selftest")),
+    # #1855. Every requirement is named, by id, in an ACTIVE catalogue case (slice 1 of #1853); the shipped gate's own selftest.
+    ("qa-flow requirements gate", ("python3", "plugins/qa-flow/scripts/check_requirements.py", "--selftest")),
+    # #1856. Every feature requirement has a spec that a runner actually selects (slice 2 of #1853); the shipped gate's own selftest.
+    ("qa-flow e2e paths gate", ("python3", "plugins/qa-flow/scripts/check_e2e_paths.py", "--selftest")),
+    # #1857. No registry row points at a closed issue without being updated (slice 3 of #1853); the shipped gate's own selftest, and the parity of the
+    # two readers of the registry (qa-flow's and rails-flow's: plugins install alone, so each has its own).
+    ("rails-flow registry closed gate", ("python3", "plugins/rails-flow/scripts/check_registry_closed.py", "--selftest")),
+    ("registry reader parity", ("python3", "scripts/check_registry_reader_parity.py")),
+    # #1858. A change that closes an issue brings its catalogue case, and a fix its spec (slice 4 of #1853); the shipped check's own selftest.
+    ("rails-flow case in diff", ("python3", "plugins/rails-flow/scripts/check_case_in_diff.py", "--selftest")),
+    ("registry reader parity selftest", ("python3", "scripts/check_registry_reader_parity.py", "--selftest")),
+    ("exit-3 rows", ("python3", "scripts/check_exit3_rows.py")),                                  # #1873
+    ("exit-3 rows selftest", ("python3", "scripts/check_exit3_rows.py", "--selftest")),
+    ("design-flow port fidelity gate", ("python3", "plugins/design-flow/scripts/port_fidelity_gate.py", "--selftest")),
     ("qa-flow theme parity", ("python3", "plugins/qa-flow/scripts/theme_parity.py", "--selftest")),
     # #953. What a page hides INSIDE the viewport, which every boundary assertion passes on.
     ("qa-flow layout fit", ("python3", "plugins/qa-flow/scripts/layout_fit.py", "--selftest")),
@@ -461,6 +507,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("design-flow setup cross-check selftest", ("python3", "plugins/design-flow/scripts/setup_doctrine_crosscheck.py", "--selftest")),
     ("design-flow rendered conformance", ("python3", "plugins/design-flow/scripts/rendered_conformance.py", "--selftest")),
     ("rails-flow findings records", ("python3", "plugins/rails-flow/scripts/findings.py", "--selftest")),
+    # #1339. The retro counts which review findings recur across PRs; a report over nothing must be exit 2, never "nothing recurs".
+    ("rails-flow retro", ("python3", "plugins/rails-flow/scripts/retro.py", "--selftest")),
     # #1391. Tables are master-detail with no horizontal scroll: a scroller around a table, a fixed
     # min-width, and a table with no details target. Driven against a real app on its first run.
     ("design-flow table layout", ("python3", "plugins/design-flow/scripts/check_table_layout.py", "--selftest")),
@@ -509,6 +557,10 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # #1599. The committed cost record exists, parses and names no guard that is gone. Runs no guard, so a pull
     # request pays for it; the ratchet itself (`mutation coverage --ratchet`) runs only where the record was measured.
     ("mutation cost record", ("python3", "scripts/mutation_check.py", "--check-record")),
+    # #1738, #1739. What the harness skips and which shard owns a guard; its own cases, driven without running a guard.
+    ("mutation incremental selftest", ("python3", "scripts/mutation_incremental_selftest.py")),
+    # #1738. The Linux container check fails closed with no docker; proven with a stub docker, so no container is needed.
+    ("linux check selftest", ("python3", "scripts/linux_check_selftest.py")),
     # #1040. The REPORT this tool produces is advisory and deliberately gates nothing -- an
     # unreached assertion is either vacuous or merely unguarded, and nothing here can tell those
     # apart. Its SELFTEST is a gate like any other, because a reachability auditor that silently
@@ -533,7 +585,12 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # each time the context is reclaimed -- exactly when it is scarcest. One hook was 98% of the
     # cost and 85% of that was one file printed verbatim. A ratchet against a fixture project, so
     # the baseline cannot drift on an unrelated commit.
+    # #1881 (slice 1 of #1683): what each shipped plugin costs every session before anything is invoked, ratcheted.
+    ("always-on cost", ("python3", "scripts/check_always_on_cost.py")),
+    ("always-on cost selftest", ("python3", "scripts/check_always_on_cost.py", "--selftest")),
     ("hook output budget", ("python3", "scripts/check_hook_output_budget.py")),
+    # #1887. Third-party SessionStart hooks are reported, not gated (we do not ship them); the report's own logic is a gate.
+    ("third-party hooks report selftest", ("python3", "scripts/report_third_party_hooks.py", "--selftest")),
     ("hook output budget selftest",
      ("python3", "scripts/check_hook_output_budget.py", "--selftest")),
     # #1575. A hook that spins blocks every Bash call, and a timeout that kills only the parent bash left
@@ -569,6 +626,11 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("arm window", ("python3", "scripts/check_arm_window.py")),
     ("arm window selftest", ("python3", "scripts/check_arm_window.py", "--selftest")),
     ("close-on-dev-merge selftest", ("python3", "scripts/close_on_dev_merge.py", "--selftest")),
+    ("label-new-issue selftest", ("python3", "plugins/rails-flow/scripts/label_new_issue.py", "--selftest")),
+    ("changelog fragments", ("python3", "scripts/changelog_fragments.py", "--check")),
+    ("changelog fragments selftest", ("python3", "scripts/changelog_fragments.py", "--selftest")),
+    # #1841 (phase 2 of #1825). A bullet this branch adds straight to `### Unreleased` is refused, and the finding names the fragment to write. Reads git, so it needs `origin/dev` (a SKIP without it).
+    ("changelog direct bullets", ("python3", "scripts/changelog_fragments.py", "--check-direct")),
     # #1635. The record a promotion's release reuses instead of re-running the full sweep.
     ("sweep proof selftest", ("python3", "scripts/sweep_proof.py", "--selftest")),
     ("sweep proof wiring", ("python3", "scripts/sweep_proof.py", "check-wiring")),
@@ -648,6 +710,9 @@ SLOW_GATES: dict[str, int] = {
     "hook gates": 400,
     "hook gates (release)": 600,
     "hook gates (worktree)": 600,
+    # #1893 (v1.156.0 sweep): part a reached 468 s wall at load 11-27, past its 400 s, so guard_bash moved to part d rather than the
+    # budget growing. MEASURED alone: guard_bash 196 s wall (137 CPU-s) at load 19-28; part a without it 273 s. 400 s is 2x part d.
+    "hook gates (guard-bash)": 400,
     # #1667, MEASURED: the full tier took 94 s wall at a load of 35 (about 300 real-hook runs, four at a time). 600 s is 6x that.
     "guard-bash cases (full)": 600,
 }
@@ -656,11 +721,25 @@ SLOW_GATES: dict[str, int] = {
 RATCHETED_GATES = frozenset({"mutation coverage"})
 
 
+def proof_refusal(rc: int, gate_results) -> str | None:
+    """Why a sweep must NOT be recorded as release proof, or None when it may be (#1664).
+
+    A proof says "every gate ran and passed on this exact tree", so any SKIP refuses it, and a gate that exits 3 is a SKIP (the `code == 3`
+    branch of `_check_gates`): `check_hook_gates.py` exits 3 when some timing checks were STARVED, i.e. decided by a machine too loaded
+    to judge the hook. Re-run on a quiet machine; never record around it."""
+    skipped = [r.name for r in gate_results if r.status == SKIP]
+    if rc != 0 or skipped:
+        return f"not recording a sweep proof: {'a gate failed' if rc else 'skipped: ' + ', '.join(skipped)}"
+    return None
+
+
 def slow_gate_command(name: str, cmd: tuple[str, ...], require_slow: bool) -> tuple[str, ...]:
-    """The command a gate runs. `mutation coverage` gets `--ratchet` only on the run whose job is to prove it
-    (`--require-slow`: CI's push and promotion runs). A seconds figure measured on a laptop under other sessions' load
+    """The command a gate runs. `mutation coverage` gets `--ratchet-warn` only on the run whose job is to prove it
+    (`--require-slow`: CI's push and promotion runs): cost growth there is a WARNING, because the release must not fail on a cost the
+    pull request that added it could have re-recorded; a survivor, an inert guard and a wrong-fixture catch still fail it (#1738).
+    A bare `mutation_check.py --ratchet` is strict, which is what a pull request's author runs. A seconds figure measured on a laptop under other sessions' load
     or on a PR runner is not growth, and the record is measured on the runner (#1599)."""
-    return (*cmd, "--ratchet") if require_slow and name in RATCHETED_GATES else cmd
+    return (*cmd, "--ratchet-warn") if require_slow and name in RATCHETED_GATES else cmd
 
 
 # A failing gate's output exists NOWHERE else on a runner: the doctor is the only thing that
@@ -724,6 +803,8 @@ class Doctor:
     # A push to dev and the promotion must PROVE the slow gates, not report them unknown (#1444).
     # Set by --require-slow, which only CI's non-PR runs pass: there, a SLOW_GATES timeout is FAIL.
     require_slow: bool = False
+    # The mutation guards run as separate shard jobs in CI (#1739), so this sweep reports `mutation coverage` as a skip, with the reason.
+    shards_external: bool = False
     results: list[Result] = field(default_factory=list)
     fixed: list[str] = field(default_factory=list)
 
@@ -1287,6 +1368,13 @@ class Doctor:
                     " ".join(cmd),
                 )
                 continue
+            if self.shards_external and name in RATCHETED_GATES:
+                self.add(
+                    SKIP, f"gate: {name}",
+                    "run by the `mutation` shard jobs and the `mutation coverage` summary job of this workflow, not in this step",
+                    " ".join(cmd),
+                )
+                continue
             code, out = self.run(*slow_gate_command(name, cmd, self.require_slow),
                                  timeout=SLOW_GATES.get(name, DEFAULT_TIMEOUT))
             if code == 0:
@@ -1350,7 +1438,8 @@ class Doctor:
             elif code == 3:
                 # Exit 3 is a gate's own "I ran but could not check everything" — currently
                 # lint_markdown_code.py with node or ruby absent, which is the normal state of a
-                # cloud container. Reporting `ok` there would let 242 of 276 blocks go unchecked
+                # cloud container, and check_hook_gates.py when some timing checks were STARVED (the machine,
+                # not the hook, decided them: #1664), whose first output line is the reason and lists the labels. Reporting `ok` there would let 242 of 276 blocks go unchecked
                 # behind a green line, so it is a SKIP and the reason comes from the gate itself.
                 reason = out.strip().splitlines()[0] if out.strip() else "incomplete run"
                 self.add(SKIP, f"gate: {name}", reason,
@@ -1471,6 +1560,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--record-proof", action="store_true",
                    help="with --gates-only --require-slow: when the whole sweep passed with nothing skipped, record that "
                         "against this exact tree (scripts/sweep_proof.py) so the release can reuse it (#1635)")
+    p.add_argument("--mutation-shards", action="store_true",
+                   help="`mutation coverage` is run by separate shard jobs (gates.yml): report it as a skip here (#1739)")
     p.add_argument("--selftest", action="store_true", help="prove the checks fire and stay silent")
     args = p.parse_args(argv)
 
@@ -1490,12 +1581,12 @@ def main(argv: list[str] | None = None) -> int:
         if before is None:
             print("--record-proof needs a clean worktree at the start: the sweep must run on committed bytes", file=sys.stderr)
             return 2
-    doctor = Doctor(fix=args.fix, require_slow=args.require_slow)
+    doctor = Doctor(fix=args.fix, require_slow=args.require_slow, shards_external=args.mutation_shards)
     rc = doctor.diagnose(gates=args.gates or args.gates_only, gates_only=args.gates_only, fast=args.fast)
     if args.record_proof:
-        skipped = [r.name for r in doctor.gate_results() if r.status == SKIP]
-        if rc != 0 or skipped:
-            print(f"not recording a sweep proof: {'a gate failed' if rc else 'skipped: ' + ', '.join(skipped)}")
+        refusal = proof_refusal(rc, doctor.gate_results())
+        if refusal:
+            print(refusal)
             if rc != 0:
                 # A failed full re-run must outrank an older success for the same tree (review of #1636).
                 try:

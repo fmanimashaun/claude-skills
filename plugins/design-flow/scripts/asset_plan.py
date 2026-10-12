@@ -49,15 +49,18 @@ import subprocess
 import sys
 from pathlib import Path
 
-PLAN_PATH = Path("docs/assets/plan.json")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import asset_home  # noqa: E402  (a leaf: imports nothing from design-flow, so this module stays standalone)
+
+PLAN_PATH = Path("docs/design/assets/plan.json")
 CONFIG_PATH = Path(".design-flow/generation.json")
-RENDER_PATH = Path("docs/assets/plan.md")
+RENDER_PATH = Path("docs/design/assets/plan.md")
 # #625/#628/#629. The two destinations the scaffold creates up front. Kept as literals rather than
 # imported from `generate_asset`/`prompt_library`, because those import `generation_gate` and this
 # module is deliberately standalone -- but `check_asset_layout.py` asserts all three agree, so the
 # duplication cannot rot into a disagreement.
-LIBRARY_DIR = Path("docs/assets/assets-library")
-PROMPTS_DIR = Path("docs/assets/prompts-library")
+LIBRARY_DIR = Path("docs/design/assets/assets-library")
+PROMPTS_DIR = Path("docs/design/assets/prompts-library")
 
 # A planned row must say enough to be GENERATED and enough to be REVIEWED. `why` is the one that
 # looks optional and is not: a row nobody can justify is a row nobody should pay for, and it is the
@@ -132,7 +135,7 @@ def scaffold(root: Path, prd: str = "") -> list[str]:
                 # rung here by an order of magnitude and the gate should refuse until you choose.
                 "video": [{"name": "minimax/hailuo-3", "cost_usd": None}],
             },
-            "style_reference": "docs/assets/reference.png",
+            "style_reference": "docs/design/assets/reference.png",
             "briefs": {},
             "acceptance": {},
         }, indent=2) + "\n", encoding="utf-8")
@@ -385,13 +388,13 @@ def reconcile(root: Path, rows: list[dict]) -> list[str]:
     between them stops meaning "remaining work". So an unplanned asset is reported here, and the fix
     is to add the row with its rationale and use cases, not to delete the asset.
     """
-    manifest = root / "docs/assets/manifest.json"
+    manifest = root / "docs/design/assets/manifest.json"
     if not manifest.is_file():
         return []
     try:
         owned = json.loads(manifest.read_text(encoding="utf-8")).get("assets", [])
     except ValueError as exc:
-        return [f"docs/assets/manifest.json is not valid JSON ({exc})"]
+        return [f"docs/design/assets/manifest.json is not valid JSON ({exc})"]
     planned = {(r.get("surface"), r.get("kind", "static")) for r in rows}
     return [f"{e.get('name') or e.get('file')}: in the manifest with no plan row "
             f"({e.get('surface')!r}/{e.get('kind', 'static')!r}). An asset generated ad-hoc must be "
@@ -434,7 +437,7 @@ def save_plan(root: Path, rows: list[dict]) -> None:
         (root / RENDER_PATH).write_text(render_plan(rows, load_config(root)), encoding="utf-8")
 
 
-RENDER_BANNER = ("<!-- GENERATED from docs/assets/plan.json by asset_plan.py --render.\n"
+RENDER_BANNER = ("<!-- GENERATED from docs/design/assets/plan.json by asset_plan.py --render.\n"
                  "     Do not hand-edit: the plan is the source, this is a view of it.\n"
                  "     Rebuild:  python3 <plugin>/scripts/asset_plan.py --render\n"
                  "     Staleness is reported by --check once this file exists. -->\n")
@@ -863,6 +866,9 @@ def main(argv: list[str]) -> int:
         return selftest()
 
     root = Path.cwd()
+    moved = asset_home.refusal(root)  # #1779: stop, loudly, rather than scaffold or read beside a library at the old place
+    if moved:
+        raise SystemExit(moved)
     if args.scaffold:
         made = scaffold(root, args.prd)
         print("\n".join(f"created {m}" for m in made) or "nothing to create — already scaffolded")
@@ -1227,8 +1233,8 @@ def selftest() -> int:
         # because either check passing alone still leaves the asset untrackable.
         _research([PRISM])
         _briefs({"hero": "3d-render"})
-        (root / "docs/assets").mkdir(parents=True)
-        (root / "docs/assets/manifest.json").write_text(json.dumps({"assets": [
+        (root / "docs/design/assets").mkdir(parents=True)
+        (root / "docs/design/assets/manifest.json").write_text(json.dumps({"assets": [
             {"name": "Luminous prism", "surface": "hero", "kind": "static"}]}), encoding="utf-8")
         rows = [{"surface": "hero", "kind": "static", "why": "the signature device"}]
         check("the exception asset passes the style check", check_research(root) == [])
@@ -1332,7 +1338,7 @@ def selftest() -> int:
     def fake(kind_out):
         return lambda *a, **k: _sp.CompletedProcess(a[0] if a else [], 0, json.dumps(kind_out), "")
     try:
-        _sp.run = fake({"author": "agent", "write_to": "docs/assets/x.svg", "prompt": "p"})
+        _sp.run = fake({"author": "agent", "write_to": "docs/design/assets/x.svg", "prompt": "p"})
         with tempfile.TemporaryDirectory() as td:
             rows = run_plan(Path(td), [{"surface": "s", "kind": "vector", "why": "w"}],
                             Path("exec.py"), 1)
@@ -1340,7 +1346,7 @@ def selftest() -> int:
         check("...and it carries where to write and what to write",
               rows[0].get("write_to") and rows[0].get("prompt"))
         # Success reported with no file on disk is a FAILURE, not a completion.
-        _sp.run = fake({"produced": "docs/assets/missing.svg"})
+        _sp.run = fake({"produced": "docs/design/assets/missing.svg"})
         with tempfile.TemporaryDirectory() as td:
             rows = run_plan(Path(td), [{"surface": "s", "kind": "static", "why": "w"}],
                             Path("exec.py"), 1)
@@ -1373,8 +1379,8 @@ def selftest() -> int:
     # between them stops meaning "remaining work" and starts meaning nothing.
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
-        (root / "docs/assets").mkdir(parents=True)
-        (root / "docs/assets/manifest.json").write_text(json.dumps({"assets": [
+        (root / "docs/design/assets").mkdir(parents=True)
+        (root / "docs/design/assets/manifest.json").write_text(json.dumps({"assets": [
             {"name": "Ad-hoc spot", "surface": "pricing", "kind": "static"}]}), encoding="utf-8")
         check("an unplanned asset is reported",
               any("no plan row" in m for m in reconcile(root, [])))

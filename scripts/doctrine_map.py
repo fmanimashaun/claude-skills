@@ -515,17 +515,39 @@ CLAIMS: tuple[Claim, ...] = (
                      "hook:plugins/rails-flow/hooks/scripts/guard-lane.sh"),
         note="The rule pins the advisory/gate split by count, so adding a hook without classifying it "
              "fails. A gate that failed closed on UNRELATED work would get switched off, which is why "
-             "scoping is part of the claim rather than a refinement of it.",
+             "scoping is part of the claim rather than a refinement of it. guard-bash is listed for its "
+             "fail-closed POSTURE only (a parse failure refuses); what it can recognise is a tripwire, "
+             "not a guarantee (#1788, #1793).",
     ),
     Claim(
-        claim="`git add -A` is refused, even when the payload cannot be parsed.",
+        claim="guard-bash refuses the common spellings of `git add -A`, even when the payload cannot be parsed. It is a tripwire, "
+              "not a boundary: it matches the command's text, and a shell gives that text its meaning only when it expands it.",
         stated_in="CLAUDE.md",
         anchor="`git add -A` is blocked either way.",
-        kind=GUARANTEE,
+        kind=ADVICE,
         enforced_by=("hook:plugins/rails-flow/hooks/scripts/guard-bash.sh",),
-        note="Verified by running it with python3 shadowed by a stub that exits 127: line 7 falls back "
-             "to the raw JSON payload, which still contains the command text, so every pattern still "
-             "matches and it still exits 2.",
+        refs=(1788, 1793),
+        note="Reclassified from guarantee (owner decision, #1793): a probe of 21 hostile spellings against the hook on dev found 18 allowed "
+             "(`git add --al`, `X=-A; git add $X`, `printf 'git add -A' | sh`, `Git add -A` on a case-insensitive filesystem). "
+             "Still true and worth keeping: with python3 shadowed by a stub that exits 127, line 7 falls back to the raw JSON payload, "
+             "which still contains the command text, so the common spelling still matches and exits 2. The guarantee is the next row.",
+    ),
+    Claim(
+        claim="In a session with the rails-flow `git` shim first on PATH, no spelling of `git add -A` stages the whole tree: the refusal is "
+              "made where the effect happens (the shim sees the arguments after the shell has expanded them), and a `pre-commit` hook, "
+              "where the project has installed it, refuses a stray file in the index however the add was spelled. This is a stated-limit "
+              "guarantee, not a boundary: an absolute `/usr/bin/git`, `env -i git`, a non-shell exec and a session where the SessionStart "
+              "hook did not run never reach the shim (its header lists them), the hook recognises a stray file by name and size, so a secret under "
+              "an unlisted name is not caught, and the server's branch protection is the backstop.",
+        stated_in="CLAUDE.md",
+        anchor="**Never `git add -A`.** Stage what you authored",
+        kind=GUARANTEE,
+        enforced_by=("gate:git shim", "mutation:git_shim", "gate:pipeline git guards", "mutation:git_guard_pre_commit"),
+        refs=(1789, 1790, 1793, 1910),
+        note="Reclassified from gap now that both layers have merged (#1789 the git hooks, #1790 the wrapper). The shim refuses `add -A`, "
+             "`--all` and every unique prefix of it, any pathspec that is not a plain relative path (the repository root in any spelling, "
+             "a glob, magic) and `--pathspec-from-file`; the pre-commit hook judges the staged CONTENT (a new `.env*`, a key, a file over "
+             "5 MiB, more than 100 newly added files in one commit), so a route the shim cannot see is still caught at commit. Each layer has a selftest gate and a mutation guard.",
     ),
     Claim(
         claim="The maintainer copy of a shipped skill cannot drift from the skill it is derived from.",

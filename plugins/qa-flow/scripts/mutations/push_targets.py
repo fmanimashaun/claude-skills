@@ -7,6 +7,7 @@ GUARD = Guard(
     name="push_targets",
     subject="scripts/push_targets.py",
     selftest="scripts/push_targets.py",
+    needs=("scripts/fixture_git.py",),   # the selftest builds a real repo with a symbolic alias (#1803) through the shared fixture helper
     mutations=(
         Mutation(
             "the substring match comes back, so fix/1010-one-main is a promotion again",
@@ -115,8 +116,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a double-quoted substitution's body is not collected",
-            "            if bodies is not None:\n                bodies.append(body)",
-            "            if False:\n                bodies.append(body)",
+            "    if bodies is not None:\n        bodies.append(body)\n    return _placeholder(body)",
+            "    if False:\n        bodies.append(body)\n    return _placeholder(body)",
             "'echo \"$(git push origin main)\"': expected TARGETS main",
         ),
         Mutation(
@@ -127,8 +128,8 @@ GUARD = Guard(
         ),
         Mutation(
             "an unquoted $( ), <( ) or >( ) body is not collected",
-            "            if bodies is not None:\n                bodies.append(cmd[i + 2:end - 1])",
-            "            if False:\n                bodies.append(cmd[i + 2:end - 1])",
+            "                if bodies is not None:\n                    bodies.append(cmd[i + 2:end - 1])",
+            "                if False:\n                    bodies.append(cmd[i + 2:end - 1])",
             "'diff <(git push origin main) /dev/null': expected TARGETS main",
         ),
         Mutation(
@@ -189,7 +190,7 @@ GUARD = Guard(
         ),
         Mutation(
             "a prior cd is ignored, so a bare push is resolved in the wrong clone",
-            "            cwd = seg[1] if cwd is None or os.path.isabs",
+            "            cwd = target if cwd is None or os.path.isabs",
             "            cwd = None if cwd is None or os.path.isabs",
             "'cd other && git push': expected TARGETS main",
         ),
@@ -221,7 +222,7 @@ GUARD = Guard(
         ),
         Mutation(
             "unquoted $( is no longer one word, so shlex splits at ( and the refspecs vanish",
-            "            out.append(_placeholder(cmd[i + 2:end - 1]) if c == \"$\" else SUBST)\n            i = end\n            continue",
+            "            if c == \"$\":\n                out.append(note_substitution(cmd[i + 2:end - 1], bodies))\n            else:\n                if bodies is not None:\n                    bodies.append(cmd[i + 2:end - 1])\n                out.append(SUBST)\n            i = end\n            continue",
             "            out.append(c)\n            i += 1\n            continue",
             "'git -C $(pwd) push origin main': expected TARGETS main",
         ),
@@ -296,7 +297,7 @@ GUARD = Guard(
         # of that classification, and the selftest must go red.
         Mutation(
             "gh api / gh release are never classified, so every API merge and release passes",
-            "                out += gh_effects_for(seg, j, cwd, env_repo, known)",
+            "                out += gh_effects_for(seg, j, cwd, env_repo, known, flow)",
             "                pass",
             "classify 'gh api -X PUT repos/{owner}/{repo}/pulls/1200/merge",
         ),
@@ -523,8 +524,8 @@ GUARD = Guard(
         ),
         Mutation(
             "a prefix assignment is read by its own command's arguments",
-            "                out += gh_effects_for(seg, j, cwd, env_repo, known)",
-            "                out += gh_effects_for(seg, j, cwd, env_repo, {**known, **{k: v for k, v in lits.items() if any(w.startswith(k + '=') for w in seg)}})",
+            "                out += gh_effects_for(seg, j, cwd, env_repo, known, flow)",
+            "                out += gh_effects_for(seg, j, cwd, env_repo, {**known, **{k: v for k, v in lits.items() if any(w.startswith(k + '=') for w in seg)}}, flow)",
             r"""Q=\'query{a}\' gh api graphql -f query="$Q"': must be unjudgeable or main-ward""",
         ),
         Mutation(
@@ -575,6 +576,280 @@ GUARD = Guard(
             '        if not quote and c == "<" and cmd.startswith("<<", i) and not cmd.startswith("<<<", i) \\\n                and (i == 0 or cmd[i - 1] != "<"):',
             '        if not quote and c == "<" and cmd.startswith("<<", i) and not cmd.startswith("<<<", i):',
             "'y=$(cat <<< x)\\ncat <<EOF\\ngit push origin main\\nEOF\\ngit push origin fix/x': expected does not target main",
+        ),
+        # ---- #1764: a directory named through the home directory (the hook is handed the RAW command) ----
+        Mutation(
+            "`~` is no longer expanded, so `git -C ~/proj push` resolves HEAD in a directory that does not exist (refused as unjudgeable, or judged in the wrong checkout)",
+            '    for prefix in ("${HOME}", "$HOME", "~"):',
+            '    for prefix in ("${HOME}", "$HOME"):',
+            "'git -C ~/proj push': expected TARGETS main",
+        ),
+        Mutation(
+            "`${HOME}` is no longer expanded",
+            '    for prefix in ("${HOME}", "$HOME", "~"):',
+            '    for prefix in ("$HOME", "~"):',
+            "'git -C ${HOME}/proj push': expected TARGETS main",
+        ),
+        Mutation(
+            "`$HOME` is no longer expanded",
+            '    for prefix in ("${HOME}", "$HOME", "~"):',
+            '    for prefix in ("${HOME}", "~"):',
+            "'git -C $HOME/proj push': expected TARGETS main",
+        ),
+        Mutation(
+            "another user's home (`~someone`) is expanded as if it were this one, so a directory the hook cannot know is judged as if it were read",
+            '        if word == prefix or word.startswith(prefix + "/"):',
+            '        if word.startswith(prefix):',
+            "'git -C ~someone/proj merge dev'",
+        ),
+        Mutation(
+            "a `cd` into the home directory is not expanded, so a push after it resolves HEAD in the wrong place",
+            '            target = home_expanded(seg[1])\n            cwd = target if cwd is None or os.path.isabs(target) else os.path.join(cwd, target)',
+            '            target = seg[1]\n            cwd = target if cwd is None or os.path.isabs(target) else os.path.join(cwd, target)',
+            "'cd ~/proj && git push': expected TARGETS main",
+        ),
+        Mutation(
+            "a `cd` into the home directory is not expanded where the context is read, so the stamp is read in the wrong place",
+            '            target = home_expanded(seg[1]) if len(seg) == 2 else ""',
+            '            target = seg[1] if len(seg) == 2 else ""',
+            "'cd $HOME/proj && git merge dev'",
+        ),
+        Mutation(
+            "`git -C ~/dir` is not expanded where the global option is parsed",
+            '            v = seg[i + 1] if a == "-c" else home_expanded(seg[i + 1])',
+            '            v = seg[i + 1]',
+            "'git -C ~/proj push origin hot:main'",
+        ),
+        Mutation(
+            "`git -C ~/dir` is not expanded where the verb is found",
+            '                    workdir = home_expanded(seg[i + 1])',
+            '                    workdir = seg[i + 1]',
+            "'git -C ~/proj push': expected TARGETS main",
+        ),
+        Mutation(
+            "a word is expanded even when one of its spellings is quoted, so `'~/proj'` is judged in the home directory when git runs in a literal directory named `~`",
+            '    if not home or not os.path.isabs(home) or word not in HOME_GOOD or word in HOME_BAD:',
+            '    if not home or not os.path.isabs(home) or word not in HOME_GOOD:',
+            "\"git -C '~/proj' push; git -C ~/proj push\": expected does not target main",
+        ),
+        Mutation(
+            "a double-quoted `\"$HOME/proj\"` (which the shell expands) is no longer expanded",
+            '        (HOME_GOOD if plain or double else HOME_BAD).add(word)',
+            '        (HOME_GOOD if plain else HOME_BAD).add(word)',
+            "'git -C \"$HOME/proj\" push': expected TARGETS main",
+        ),
+        Mutation(
+            "a quoted or escaped spelling is read as unquoted",
+            '        plain = not re.search(r"""["\'\\\\]""", raw)',
+            '        plain = True',
+            "\"git -C '~/proj' push\": expected does not target main",
+        ),
+        # ---- #1768: a bare `git config <key>` is a read; an empty-string argument does not end the command ----
+        Mutation(
+            "an empty-string argument ends the command again, so the words after it are read as a command of their own",
+            "        if t and set(t) <= SEPARATOR_CHARS:",
+            "        if set(t) <= SEPARATOR_CHARS:",
+            "\"git push origin '' main\": expected TARGETS main",
+        ),
+        Mutation(
+            "`git config <key> <value>` is read as a read, so setting core.hooksPath passes",
+            '        if only_known and len(words) == 1 and "." in words[0] and not _opaque(words[0]):',
+            '        if only_known and len(words) >= 1 and "." in words[0] and not _opaque(words[0]):',
+            "unlisted shape 'git config core.hooksPath /tmp/x'",
+        ),
+        Mutation(
+            "an option's own value (`--file <path>`) is counted as a positional word, so the read of that key is refused",
+            "            elif a in CONFIG_VALUE_FLAGS:\n                skip = True",
+            "            elif False:\n                skip = True",
+            "safe shape 'git config --file .git/config core.hooksPath'",
+        ),
+        Mutation(
+            "a key the shell has not expanded yet (`git config $KEY`) is read as a read",
+            '        if only_known and len(words) == 1 and "." in words[0] and not _opaque(words[0]):',
+            '        if only_known and len(words) == 1 and "." in words[0]:',
+            "unlisted shape 'git config remote.$NAME.url'",
+        ),
+        Mutation(
+            "a one-word `git config edit` (the sub-command that opens the editor on the config) is read as the read of a key",
+            '        if only_known and len(words) == 1 and "." in words[0] and not _opaque(words[0]):',
+            '        if only_known and len(words) == 1 and not _opaque(words[0]):',
+            "unlisted shape 'git config edit'",
+        ),
+        Mutation(
+            "any flag is accepted in a bare read, so an abbreviated write option (`--unset-a`) reads as a read",
+            "                only_known = only_known and a in CONFIG_READ_FLAGS",
+            "                only_known = only_known",
+            "unlisted shape 'git config --unset-a core.hooksPath'",
+        ),
+        Mutation(
+            "`get`/`list` count as a read sub-command in ANY position, so `git config core.hooksPath get` (a write of the value `get`) reads as a read",
+            '        if only_known and words and words[0] in ("get", "list"):',
+            '        if only_known and any(w in ("get", "list") for w in words):',
+            "unlisted shape 'git config core.hooksPath get'",
+        ),
+        Mutation(
+            "#1770: a `name() body` definition is a no-op, so the body is never classified and a function that pushes to main is allowed",
+            '    if "()" in toks:\n',
+            '    if "()" in toks:\n        return\n    if False:\n',
+            "function fixture 'f(){ git push origin main; }; f': expected ['PUSH_MAIN main']",
+        ),
+        Mutation(
+            "#1770: the body of a `function NAME { ... }` definition is dropped with the keyword, so it is never classified",
+            "            seg = seg[2:]\n",
+            "            seg = []\n",
+            "function fixture 'function f { git push origin main; }; f': expected ['PUSH_MAIN main']",
+        ),
+        Mutation(
+            "#1770: a cd (or a branch change) in a command that defines a function is followed instead of refused, so the call site's directory is misjudged",
+            "    if FUNCS[0] and any(command_indexes(seg) for seg in every):\n",
+            "    if False:\n",
+            "function fixture 'f(){ cd /tmp; }; git push': expected None",
+        ),
+        Mutation(
+            "#1770: a GIT_DIR redirect on a call to a function that pushes is not refused",
+            "    if head in (\"cd\", \"pushd\", \"popd\") or any(GIT_ENV_REDIRECT.match(w) for w in seg):",
+            "    if head in (\"cd\", \"pushd\", \"popd\"):",
+            "function fixture 'f(){ git push; }; GIT_DIR=/x f': expected None",
+        ),
+        # #1803. ONLY `update-ref --no-deref -d` of a literal, non-protected local ref is allowed (a plain delete follows a symbolic ref and removes its target).
+        Mutation(
+            'protected branch names are no longer refused, so --no-deref -d refs/heads/main is allowed',
+            '    return ref if branch and branch.casefold() not in _PROTECTED_FOLDED else None',
+            '    return ref if branch else None',
+            "unlisted shape 'git update-ref --no-deref -d refs/heads/MAIN': must be unjudgeable",
+        ),
+        Mutation(
+            'a protected name is compared case-sensitively, so refs/heads/MAIN is allowed',
+            '    return ref if branch and branch.casefold() not in _PROTECTED_FOLDED else None',
+            '    return ref if branch and branch not in UPDATE_REF_PROTECTED else None',
+            "unlisted shape 'git update-ref --no-deref -d refs/heads/MAIN': must be unjudgeable",
+        ),
+        Mutation(
+            'any refs/ namespace is accepted, so the remote-tracking copy of a protected branch, tags and replace refs can be deleted',
+            '    if ref.startswith("refs/heads/"):',
+            '    if ref.startswith("refs/"):',
+            "unlisted shape 'git update-ref --no-deref -d refs/remotes/origin/DEV': must be unjudgeable",
+        ),
+        Mutation(
+            'a ref is SET without -d is allowed, so update-ref moves a branch',
+            '    if not delete or not no_deref or not 1 <= len(positional) <= 2:',
+            '    if not no_deref or not 1 <= len(positional) <= 2:',
+            "unlisted shape 'git update-ref --no-deref refs/heads/x abc123def': must be unjudgeable",
+        ),
+        Mutation(
+            'a word the shell has not expanded is read literally, so --no-deref -d refs/heads/$B is allowed',
+            '        elif a.startswith("-") or _opaque(a):',
+            '        elif a.startswith("-"):',
+            "unlisted shape 'git update-ref --no-deref -d refs/heads/$B': must be unjudgeable",
+        ),
+        Mutation(
+            '--no-deref is no longer required, so a plain delete follows a symbolic ref and removes its target',
+            '    if not delete or not no_deref or not 1 <= len(positional) <= 2:',
+            '    if not delete or not 1 <= len(positional) <= 2:',
+            "unlisted shape 'git update-ref -d refs/remotes/review/1559': must be unjudgeable",
+        ),
+        Mutation(
+            'the allowance is switched off, so the review ref is refused again',
+            '        if _local_ref_delete(args) and not redirected and not envs and not any(w == "xargs" for w in seg[:j]):',
+            '        if False:',
+            "classify 'git update-ref --no-deref -d refs/remotes/review/1559': expected []",
+        ),
+        Mutation(
+            'a GIT_DIR or a redirected git dir is not refused for update-ref',
+            '        if _local_ref_delete(args) and not redirected and not envs and not any(w == "xargs" for w in seg[:j]):',
+            '        if _local_ref_delete(args):',
+            "unlisted shape 'GIT_DIR=/x git update-ref --no-deref -d refs/remotes/review/1': must be unjudgeable",
+        ),
+        Mutation(
+            'empty and dot components are accepted, so refs/heads//x passes',
+            '            or any(part == "" or part.startswith(".") for part in ref.split("/"))):',
+            '            or False):',
+            "unlisted shape 'git update-ref --no-deref -d refs/heads//x': must be unjudgeable",
+        ),
+        Mutation(
+            "#1781: `gh pr checkout` is not a HEAD-moving subcommand, so a HEAD push after it is judged against the branch the hook saw",
+            'GH_HEAD_MOVING = (["pr", "checkout"],)',
+            "GH_HEAD_MOVING = ()",
+            "classify 'gh pr checkout main; git push origin HEAD': must be unjudgeable",
+        ),
+        Mutation(
+            "#1781: `git bisect start|good|bad|reset|run` is read as not moving HEAD",
+            '        if verb == "bisect" and sub not in BISECT_READ_ONLY and not (not sub and any(a in ("--help", "-h") for a in args)):',
+            "        if False:",
+            "classify 'git bisect start main; git push origin HEAD': must be unjudgeable",
+        ),
+        Mutation(
+            "#1781: `git worktree add` is read as not changing where a later command acts",
+            '        if verb == "worktree" and sub == "add":',
+            "        if False:",
+            "classify 'git worktree add -f x main; git push origin HEAD': must be unjudgeable",
+        ),
+        Mutation(
+            "#1781: `git stash branch <name>` (creates and checks out a branch) is read as a plain stash",
+            '        if verb == "stash" and sub == "branch":',
+            "        if False:",
+            "classify 'git stash branch b; git push origin HEAD': must be unjudgeable",
+        ),
+        Mutation(
+            "#1781: every `git stash` is refused as HEAD-moving, though a plain stash leaves the branch alone",
+            '        if verb == "stash" and sub == "branch":',
+            '        if verb == "stash":',
+            "'git stash; git push origin HEAD': expected []",
+        ),
+        Mutation(
+            "#1781: a trap's command string is ignored, so a deferred push to main is allowed",
+            "            out.append(rest[0])",
+            "            pass",
+            "expected ['PUSH_MAIN main'], got []",
+        ),
+        Mutation(
+            "#1781: `trap` is only read at the first word of a segment, so a prefixed one (`sudo -u r trap ...`) is not read",
+            '    for k, w in enumerate(seg):\n        if w.rsplit("/", 1)[-1] != "trap":',
+            '    for k, w in enumerate(seg[:1]):\n        if w.rsplit("/", 1)[-1] != "trap":',
+            "\"sudo -u r trap 'git push origin main' EXIT\": expected ['PUSH_MAIN main']",
+        ),
+        Mutation(
+            "#1781: the trap scan runs only after the `function` keyword is dropped from a segment, so a `function f { trap ...; }` body is missed",
+            "        deferred += _trap_strings(seg)\n",
+            "        deferred += _trap_strings(seg) if seg[0] != \"function\" else []\n",
+            "\"function f { trap 'git push origin main' EXIT; }; f\": expected ['PUSH_MAIN main']",
+        ),
+        Mutation(
+            "#1781: `git bisect --help` is refused as HEAD-moving",
+            ' and not (not sub and any(a in ("--help", "-h") for a in args)):',
+            ':',
+            "'git bisect --help; git push origin HEAD': expected []",
+        ),
+        # #1875: a command the gate cannot read is judged by what it does.
+        Mutation(
+            'an arithmetic expansion is read as a subshell again, so `$2` is a command word',
+            '    nested = arithmetic_parts(body)\n    if nested is not None:',
+            '    nested = None\n    if nested is not None:',
+            'safe shape \'sed -n "$2,$(( $2 + 14 ))p" "$f"\': must be allowed with no effect',
+        ),
+        Mutation(
+            'the substitutions nested in an arithmetic expansion are not read',
+            '        if bodies is not None:\n            bodies.extend(nested)\n        return SUBST',
+            '        return SUBST',
+            "classify (context) 'echo $(( $(git push origin main) + 1 ))'",
+        ),
+        Mutation(
+            'anything in `$(( ))` is arithmetic, so `$((git push origin main))` is not read',
+            '    if not ARITH_SHAPE.fullmatch(squeezed) or re.search(r"N\\s+N", squeezed):\n        return None',
+            '    if not ARITH_SHAPE.fullmatch(squeezed):\n        return None',
+            "classify (context) 'echo $(( git push origin main ))'",
+        ),
+        Mutation(
+            'a function defined after a cd is refused although it runs no git or gh',
+            '    if FUNCS[0] and any(command_indexes(seg) for seg in every):',
+            '    if FUNCS[0]:',
+            "safe shape 'cd /tmp && f() { echo hi; }; f': must be allowed with no effect",
+        ),
+        Mutation(
+            "a named variable is accepted as an arithmetic operand, though bash evaluates its value as an expression",
+            'r"\\$__SUBST__|\\$\\{[0-9]+\\}|\\$[0-9]+|\\$[#?]|',
+            'r"\\$__SUBST__|\\$\\{[0-9A-Za-z_]+\\}|\\$[0-9A-Za-z_]+|\\$[#?]|',
+            "classify 'echo $(( $x + 1 ))': must be unjudgeable",
         ),
     ),
 )

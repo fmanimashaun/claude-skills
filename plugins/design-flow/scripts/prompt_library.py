@@ -14,8 +14,8 @@ claims-vs-enforcement, in the path with a bill attached.
 
 This module is the missing store. Two files, one source:
 
-    docs/assets/prompts-library/prompts.json   the source -- agents read this
-    docs/assets/prompts-library/prompts.md     a VIEW of it -- humans read this, and it is generated
+    docs/design/assets/prompts-library/prompts.json   the source -- agents read this
+    docs/design/assets/prompts-library/prompts.md     a VIEW of it -- humans read this, and it is generated
 
 The markdown is derived, never hand-kept, for the reason `docs/evidence/coverage.html` records: a
 hand-maintained second copy disagrees with the first within a week and disagrees SILENTLY, because
@@ -48,10 +48,13 @@ import json
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import asset_home  # noqa: E402
+
 # #625 — MAINTAINER DECISION on the issue: the prompt library gets its own folder under the assets
 # dir, mirroring `assets-library/` for the finished artefacts. Kebab rather than the space the layout
 # was drawn with, because a path with a space breaks every unquoted shell one-liner in our own docs.
-PROMPT_DIR = Path("docs/assets/prompts-library")
+PROMPT_DIR = Path("docs/design/assets/prompts-library")
 LIBRARY_PATH = PROMPT_DIR / "prompts.json"
 RENDER_PATH = PROMPT_DIR / "prompts.md"
 
@@ -263,7 +266,7 @@ def tally(rows: list[dict]) -> dict:
     }
 
 
-BANNER = ("<!-- GENERATED from docs/assets/prompts-library/prompts.json by prompt_library.py --render.\n"
+BANNER = ("<!-- GENERATED from docs/design/assets/prompts-library/prompts.json by prompt_library.py --render.\n"
           "     Do not hand-edit: the JSON is the source, this is a view of it.\n"
           "     Rebuild:  python3 <plugin>/scripts/prompt_library.py --render\n"
           "     Staleness is reported by --check once this file exists. -->\n")
@@ -303,7 +306,7 @@ def render(rows: list[dict]) -> str:
     out = [BANNER, "# Prompt library\n",
            "Every prompt that reached a provider — what it asked for, which model answered, what it "
            "cost, and whether the result was kept. **This file is generated**; edit "
-           "`docs/assets/prompts-library/prompts.json` or re-run the flow.\n",
+           "`docs/design/assets/prompts-library/prompts.json` or re-run the flow.\n",
            f"**{t['prompts']} prompt(s)** — {t['accepted']} accepted · {t['rejected']} rejected · "
            f"{t['pending']} pending. **${t['spent_total_usd']:.2f} spent in total.**\n"]
     if t["surfaces"]:
@@ -410,6 +413,9 @@ def main(argv: list[str]) -> int:
     if args.selftest:
         return selftest()
     root = Path.cwd()
+    moved = asset_home.refusal(root)  # #1779
+    if moved:
+        raise SystemExit(moved)
     try:
         if args.check:
             problems = check(root)
@@ -503,7 +509,7 @@ def selftest() -> int:
         ok("the re-spend is counted", tally(rows)["re_spent"] == 1)
 
         print("a later run cannot erase what an earlier one knew")
-        upsert(root, build_entry(prov, "draw a thing", brief, asset="docs/assets/hero.png",
+        upsert(root, build_entry(prov, "draw a thing", brief, asset="docs/design/assets/hero.png",
                                  model="gemini-2.5-flash-image", actual_cost_usd=0.02))
         upsert(root, build_entry(prov, "draw a thing", brief, asset=None, model=None,
                                  actual_cost_usd=0.02))
@@ -511,7 +517,7 @@ def selftest() -> int:
         ok("a null model does not overwrite a known one",
            rows[0]["model"] == "gemini-2.5-flash-image")
         ok("a null asset does not overwrite a known one",
-           rows[0]["asset"] == "docs/assets/hero.png")
+           rows[0]["asset"] == "docs/design/assets/hero.png")
         ok("the note cleared with the model", rows[0]["model_note"] is None)
 
         print("the verdict is the latest judgement")

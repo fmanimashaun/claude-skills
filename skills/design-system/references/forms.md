@@ -71,6 +71,17 @@ focus-visible:ring-ring/30 focus-visible:border-ring disabled:opacity-50 min-h-t
 ## Controls
 
 - **text/email/number/search/textarea** — the recipe above (textarea `min-h-[…]`, no fixed height).
+  Optional: `field-sizing: content` auto-grows a textarea (Newly Baseline, 2026-06-16 — Chrome 123,
+  Safari 26.2, Firefox 152; as of 2026-10-10).
+  ```css
+  input, textarea { field-sizing: content; min-width: 50px; max-width: 350px; }
+  ```
+  `:user-invalid` / `:user-valid` (Baseline Widely, 2026-05-02) match only after the user has interacted
+  or tried to submit, unlike `:invalid`. Use them for **client-side constraint validation only**; they
+  say nothing about server-rendered Rails errors, which keep the error styling above.
+  ```css
+  input:user-invalid { border: 2px solid red; }
+  ```
 - **select** — native first, styled to match; custom combobox only when search/async is needed.
   This is **our judgement**, not a Combobox-pattern requirement — the pattern never says it. The
   nearest authority is the *First Rule of ARIA Use* ("if you can use a native HTML element…then

@@ -37,7 +37,9 @@ KNOWN LIMITS -- the threat model is an agent's HONEST mistake, not deliberate ob
 coordinator's ruling on #1470). These are not read, and pass: `bash -c $'...'` (ANSI-C quoting of
 the whole string), `eval "$(...)"`, a verb or command produced at run time (`$(echo git) push`,
 `$g push`), here-strings and anything piped into a shell (`... | bash`), shells outside
-sh/bash/zsh/dash/ksh (`fish -c`), and aliases defined in git CONFIG rather than inline with `-c`.
+sh/bash/zsh/dash/ksh (`fish -c`), and aliases defined in git CONFIG rather than inline with `-c`. Arithmetic (#1875): `$(( ))` runs only what is NESTED in it, and that is read; but bash also
+evaluates the VALUE of a variable it names there as an expression, a `[$(git push origin main)]` subscript included (`a='x[$(...)]'; echo $(( a ))`), and that is not read. A `$name` in
+arithmetic is therefore still a word the shell builds and is refused; a bare name, a number and a positional (`$2`, `${2}`, `$#`) are accepted.
 
 What counts as a destination, per `git help push`:
   * a refspec `<src>:<dst>` names `<dst>` (a leading `+` only forces); `:<dst>` deletes `<dst>`;
@@ -52,6 +54,7 @@ What counts as a destination, per `git help push`:
 from __future__ import annotations
 
 import fnmatch
+from pathlib import Path
 import os
 import re
 import shlex
@@ -218,6 +221,49 @@ def ansi_c_end(cmd: str, i: int) -> tuple[str, int]:
     raise Unjudgeable("an unterminated ANSI-C $'...' string")
 
 
+# Operands of an arithmetic expansion the gate reads as arithmetic: numbers, names, a nested substitution (its placeholder), and the POSITIONAL parameters `$1`, `${2}`, `$#`, `$?`. NOT `$name`:
+# bash evaluates the VALUE of a variable it finds in `$(( ))` as an expression, a subscript's `$( )` included (`a='x[$(git push origin main)]'; echo $(( $a ))`), so `$name` stays a word
+# the shell builds, refused as before (#1875 review). The positionals are what the loops in the issue use; a value they hold is the command's own argument.
+ARITH_OPERAND = re.compile(r"\$__SUBST__|\$\{[0-9]+\}|\$[0-9]+|\$[#?]|0[xX][0-9a-fA-F]+|[A-Za-z_][A-Za-z_0-9]*|[0-9]+(?:#[0-9A-Za-z]+)?")
+ARITH_SHAPE = re.compile(r"[N\s+*/%<>&|^!~?:=,()\[\]-]*")
+
+
+def arithmetic_parts(body: str) -> list[str] | None:
+    """The `$( )` bodies NESTED in an arithmetic expansion, when the body of a `$( ... )` is one (`$(( $2 + 14 ))` has the body `( $2 + 14 )`), else None.
+
+    The shell runs NOTHING in `$(( ))` except the substitutions nested in it: its words are variables and numbers, not commands. Reading `( $2 + 14 )` as a subshell made `$2` a
+    command word "built by the shell and could be git or gh", and a `sed -n "$2,$(( $2 + 14 ))p"` was refused by the release gate (#1875). It is arithmetic only if the inside
+    LOOKS like it: operands (numbers, names, `$1`, a nested substitution) joined by operators, never two operands side by side (`git push origin main` and `$g push`
+    are commands) and no `;` or newline. What bash does with `$((git push))` is arithmetic too (the variable `git`), which is why a lone name is accepted."""
+    if not (body.startswith("(") and body.endswith(")")):
+        return None
+    inner = body[1:-1]
+    if ";" in inner or "\n" in inner:
+        return None
+    nested: list[str] = []
+    try:
+        flat = strip_comments_and_heredocs(inner, nested)
+    except Unjudgeable:
+        return None
+    squeezed = ARITH_OPERAND.sub("N", flat)
+    if not ARITH_SHAPE.fullmatch(squeezed) or re.search(r"N\s+N", squeezed):
+        return None
+    return nested
+
+
+def note_substitution(body: str, bodies: list[str] | None) -> str:
+    """Record what a `$( )` runs and return its placeholder word. An arithmetic expansion runs only what is nested in it (`arithmetic_parts`): those bodies are read, and its own
+    text is not a command."""
+    nested = arithmetic_parts(body)
+    if nested is not None:
+        if bodies is not None:
+            bodies.extend(nested)
+        return SUBST
+    if bodies is not None:
+        bodies.append(body)
+    return _placeholder(body)
+
+
 def strip_comments_and_heredocs(cmd: str, bodies: list[str] | None = None) -> str:
     """Bash's rules, not shlex's: `#` opens a comment only at the start of a word, outside quotes;
     a heredoc's body runs from the next newline to its delimiter line.
@@ -242,9 +288,12 @@ def strip_comments_and_heredocs(cmd: str, bodies: list[str] | None = None) -> st
             if end <= 0:
                 raise Unjudgeable("an unterminated backtick substitution")
             body = cmd[i + 2:end - 1] if c == "$" else cmd[i + 1:end - 1]
-            if bodies is not None:
-                bodies.append(body)
-            out.append(_placeholder(body))
+            if c == "$":
+                out.append(note_substitution(body, bodies))
+            else:
+                if bodies is not None:
+                    bodies.append(body)
+                out.append(_placeholder(body))
             i = end
             continue
         if quote:
@@ -267,9 +316,12 @@ def strip_comments_and_heredocs(cmd: str, bodies: list[str] | None = None) -> st
             # it land in another "segment" nobody reads -- `git -C $(pwd) push origin main` passed.
             end, carried = _subst_scan(cmd, i + 1)
             owed.extend(carried)
-            if bodies is not None:
-                bodies.append(cmd[i + 2:end - 1])
-            out.append(_placeholder(cmd[i + 2:end - 1]) if c == "$" else SUBST)
+            if c == "$":
+                out.append(note_substitution(cmd[i + 2:end - 1], bodies))
+            else:
+                if bodies is not None:
+                    bodies.append(cmd[i + 2:end - 1])
+                out.append(SUBST)
             i = end
             continue
         if c == "`":
@@ -324,11 +376,46 @@ def strip_comments_and_heredocs(cmd: str, bodies: list[str] | None = None) -> st
     return "".join(out)               # an unterminated quote is left for shlex to refuse
 
 
-def tokens(cmd: str, bodies: list[str] | None = None) -> list[str]:
-    lex = shlex.shlex(strip_comments_and_heredocs(cmd, bodies), posix=True, punctuation_chars=";&|()<>\n")
+def tokens_lexer(text: str, posix: bool):
+    """The one lexer: `tokens` reads words with it, and `note_home_words` reads the SAME text with `posix=False` to keep the quotes."""
+    lex = shlex.shlex(text, posix=posix, punctuation_chars=";&|()<>\n")
     lex.whitespace = " \t\r"          # a newline separates commands; it is not mere whitespace
     lex.whitespace_split = True
     lex.commenters = ""               # removed above, by bash's rule
+    return lex
+
+
+# WHICH HOME-DIRECTORY WORDS THE SHELL WILL REALLY EXPAND (#1764 review). shlex drops quotes, so `~/x`, `'~/x'`, `"~/x"` and `\\~/x` all arrive as the word `~/x`, but only the
+# unquoted one is expanded by the shell: git is handed a literal directory named `~` for the others, and a hook that expanded them anyway would judge HEAD in a checkout the push
+# never touches. `note_home_words` reads the RAW text with its quotes: a word is expandable only if EVERY spelling of it is: `~` and `$HOME` unquoted, or `$HOME` inside double
+# quotes (which the shell expands); a single-quoted, backslash-escaped or `"~..."` spelling makes the word unexpandable wherever else it appears.
+HOME_WORD = re.compile(r"(~|\$HOME|\$\{HOME\})")
+HOME_GOOD: set[str] = set()
+HOME_BAD: set[str] = set()
+
+
+def note_home_words(text: str) -> None:
+    try:
+        raw_tokens = list(tokens_lexer(text, posix=False))
+    except ValueError:
+        return
+    for raw in raw_tokens:
+        try:
+            parts = shlex.split(raw)
+        except ValueError:
+            continue
+        if len(parts) != 1 or not HOME_WORD.match(parts[0]):
+            continue
+        word = parts[0]
+        plain = not re.search(r"""["'\\]""", raw)
+        double = len(raw) >= 2 and raw[0] == '"' and raw[-1] == '"' and not re.search(r"""["'\\]""", raw[1:-1]) and word.startswith("$")
+        (HOME_GOOD if plain or double else HOME_BAD).add(word)
+
+
+def tokens(cmd: str, bodies: list[str] | None = None) -> list[str]:
+    stripped = strip_comments_and_heredocs(cmd, bodies)
+    note_home_words(stripped)
+    lex = tokens_lexer(stripped, posix=True)
     try:
         return list(lex)
     except ValueError as exc:
@@ -343,7 +430,7 @@ def segments(toks: list[str]) -> list[list[str]]:
         if skip:
             skip = False
             continue
-        if set(t) <= SEPARATOR_CHARS:
+        if t and set(t) <= SEPARATOR_CHARS:    # a NON-EMPTY run of separator characters: `set("") <= anything`, so an empty-string argument (`''`) used to END the command (#1768)
             out.append([])
         elif set(t) <= set("<>&") and set(t) & set("<>"):
             skip = True               # `>`, `>>`, `2>&` ... : the next token is its target
@@ -358,6 +445,23 @@ def is_command(word: str, names: set[str]) -> bool:
     return base in names or (base.endswith(".exe") and base[:-4] in names)
 
 
+def home_expanded(word: str) -> str:
+    """A directory word with a LEADING `~`, `$HOME` or `${HOME}` expanded, as the shell will have by the time git runs (#1764).
+
+    The hook is handed the RAW command, which nothing has expanded yet, so `git -C ~/proj push` and `cd ~/proj && git push` name a directory
+    that does not exist when read as text: HEAD could not be resolved there and the gate refused a feature-branch push. Only the home
+    directory is expanded, and only at the start of the word (`~`, `~/x`, `$HOME`, `$HOME/x`, `${HOME}/x`): `~user`, any other variable, a
+    substitution, and a `~` inside a word are left exactly as they were, so they stay unresolved and the caller still fails closed. With no
+    HOME in the environment nothing is expanded, for the same reason."""
+    home = os.environ.get("HOME")
+    if not home or not os.path.isabs(home) or word not in HOME_GOOD or word in HOME_BAD:
+        return word
+    for prefix in ("${HOME}", "$HOME", "~"):
+        if word == prefix or word.startswith(prefix + "/"):
+            return home + word[len(prefix):]
+    return word
+
+
 def git_verb(seg: list[str], verb: str) -> tuple[list[str], str | None] | None:
     """The arguments after `git <verb>` and any `git -C <dir>`, wherever git appears in the segment
     (after `sudo -u x`, `timeout 60`, `command`, `{`, a substitution ...); None if there is none."""
@@ -370,7 +474,7 @@ def git_verb(seg: list[str], verb: str) -> tuple[list[str], str | None] | None:
                 if seg[i] == "-c" and i + 1 < len(seg) and seg[i + 1].startswith("alias."):
                     raise Unjudgeable("a git alias defined inline can be any verb, push included")
                 if seg[i] == "-C" and i + 1 < len(seg):
-                    workdir = seg[i + 1]
+                    workdir = home_expanded(seg[i + 1])
                 i += 2
             else:
                 i += 1
@@ -390,6 +494,9 @@ SHELLS = {"sh", "bash", "zsh", "dash", "ksh"}
 # `bash -o pipefail -c 'git push origin main'` stopped at `-o` and passed).
 SHELL_OPTS_WITH_VALUE = {"-o", "+o", "-O", "+O", "--rcfile", "--init-file"}
 MAX_DEPTH = 4
+# #1770: set while `all_segments` reads a command that DEFINES a shell function. A body is judged where it is written, as if it ran there, whether or
+# not (or when, or how often) the name is called; `effects` then refuses the state a call site could change under that model.
+FUNCS = [False]
 
 
 WRAPPERS = {"sudo", "doas", "env", "command", "exec", "nohup", "time", "timeout", "nice", "builtin", "stdbuf",
@@ -415,19 +522,49 @@ def check_words(seg: list[str]) -> None:
         break
 
 
+def _trap_strings(seg: list[str]) -> list[str]:
+    """#1781: the command string of EVERY `trap` word in `seg`, wherever it stands. `trap '<command>' SIGNAL...` runs the string later, at exit or on a
+    signal. An allowlist of the prefixes that may come before `trap` (`sudo -u r`, `exec -a x`, `nice -n 5`, `timeout 5`, `builtin`, `{` ...) cannot be
+    completed, so no position is assumed: a word that is `trap` is read as the builtin, and `echo trap 'git push origin main'` is over-blocked on
+    purpose (a release gate fails closed). `-p`, `-l` and `--` are options; `-` and `''` carry no command."""
+    out: list[str] = []
+    for k, w in enumerate(seg):
+        if w.rsplit("/", 1)[-1] != "trap":
+            continue
+        rest = [a for a in seg[k + 1:] if a not in ("--", "-p", "-l")]
+        if rest and rest[0] not in ("-", ""):
+            out.append(rest[0])
+    return out
+
+
 def all_segments(cmd: str, depth: int = 0):
     """Every command segment, INCLUDING those inside `sh -c '<string>'`, `bash -lc`, and `eval ...`,
     parsed as commands in their own right (41's delta review of #1470)."""
     if depth > MAX_DEPTH:
         raise Unjudgeable("shell strings nested too deeply to read")
+    if depth == 0:
+        HOME_GOOD.clear(); HOME_BAD.clear()
+        FUNCS[0] = False
     bodies: list[str] = []
     toks = tokens(cmd, bodies)
     if "()" in toks:
-        raise Unjudgeable("a function definition: what its name runs later is not read")
+        FUNCS[0] = True       # `name() body`: the name is its own segment and the body's commands are segments below, judged as written (#1770)
+    deferred: list[str] = []
     for seg in segments(toks):
         check_words(seg)
-        if seg[0] in ("alias", "function", "coproc"):
+        # `trap` is read BEFORE the function-keyword handling below, from the whole segment, so a `function f {` body and a compound body are seen
+        # by the same path as a bare one. The strings run after every other segment (a trap fires last).
+        deferred += _trap_strings(seg)
+        if seg[0] in ("alias", "coproc"):
             raise Unjudgeable(f"`{seg[0]}` defines a name that can run any command later")
+        if seg[0] == "function":
+            # `function NAME { body }` / `function NAME() { body }`: drop the keyword and the name, judge the rest as written (#1770)
+            if len(seg) < 2 or not re.fullmatch(r"[A-Za-z_][\w.:+@-]*", seg[1]):
+                raise Unjudgeable("a function definition whose name cannot be read")
+            FUNCS[0] = True
+            seg = seg[2:]
+            if not seg:
+                continue
         yield seg
         for k, word in enumerate(seg):
             if is_command(word, SHELLS):
@@ -449,6 +586,8 @@ def all_segments(cmd: str, depth: int = 0):
     # After the outer segments, so a `cd` inside a substitution (a subshell) cannot move where the
     # outer command's bare `git push` resolves.
     for body in bodies:
+        yield from all_segments(body, depth + 1)
+    for body in deferred:
         yield from all_segments(body, depth + 1)
 
 
@@ -551,7 +690,8 @@ def targets_detail(cmd: str, current: Callable[[bool, str | None], str | None]) 
     cwd: str | None = None                    # a prior `cd <dir>` moves where a bare push resolves
     for seg in all_segments(cmd):
         if seg[0] == "cd" and len(seg) == 2:
-            cwd = seg[1] if cwd is None or os.path.isabs(seg[1]) else os.path.join(cwd, seg[1])
+            target = home_expanded(seg[1])
+            cwd = target if cwd is None or os.path.isabs(target) else os.path.join(cwd, target)
             continue
         hits += [(d, src) for d, src, _, _ in _push_hits(seg, cwd, current)]
     return hits
@@ -986,8 +1126,9 @@ def ctx_segments(cmd: str):
                 if seg[0] in ("export",) or all(re.fullmatch(r"[A-Za-z_]\w*=.*", x) for x in seg):
                     env_repo = seg_repo
         if seg[0] in ("cd", "pushd"):
-            if len(seg) == 2 and seg[1] != "-" and not _expanded(seg[1]):
-                cwd = seg[1] if cwd is None or cwd is UNKNOWN_DIR or os.path.isabs(seg[1]) else os.path.join(cwd, seg[1])
+            target = home_expanded(seg[1]) if len(seg) == 2 else ""
+            if len(seg) == 2 and seg[1] != "-" and not _expanded(target):
+                cwd = target if cwd is None or cwd is UNKNOWN_DIR or os.path.isabs(target) else os.path.join(cwd, target)
             else:
                 cwd = UNKNOWN_DIR
             continue
@@ -1059,6 +1200,12 @@ GIT_FLAGS = {"--no-pager", "-p", "--paginate", "-P", "--bare", "--no-replace-obj
 BENIGN_CONFIG = re.compile(r"^(user\.|core\.(quotepath|pager|editor|autocrlf|filemode|ignorecase|precomposeunicode|"
                            r"longpaths|abbrev|whitespace|fsmonitor)$|color\.|advice\.|gc\.auto$|safe\.directory$|"
                            r"init\.defaultbranch$|commit\.gpgsign$|diff\.|log\.)", re.I)
+# (#1768) what turns `git config` into a write, and the options that take a value of their own (so the value is not the key's value)
+CONFIG_WRITE_FLAGS = {"--add", "--unset", "--unset-all", "--replace-all", "-e", "--edit", "--rename-section", "--remove-section"}
+CONFIG_READ_ACTIONS = {"--get", "--get-all", "--get-regexp", "--list", "-l", "--get-urlmatch"}
+CONFIG_VALUE_FLAGS = {"--file", "-f", "--blob", "--type", "--default"}
+CONFIG_READ_FLAGS = {"--global", "--local", "--system", "--worktree", "--includes", "--no-includes", "--show-origin", "--show-scope", "-z", "--null",
+                     "--name-only", "--bool", "--int", "--bool-or-int", "--path", "--expiry-date", "--fixed-value", "--no-type"}
 GIT_ENV_REDIRECT = re.compile(r"^GIT_(DIR|WORK_TREE|CONFIG\w*|SSH\w*|ALTERNATE\w*|OBJECT_DIRECTORY|INDEX_FILE|NAMESPACE)=")
 INERT = {"echo", "printf", "which", "type", "man", "ls", "cat", "grep", "rg", "head", "tail", "wc", "cut", "tr",
          "sort", "uniq", "test", "[", "[[", "true", "false", ":", "export", "set", "unset", "read", "mkdir", "rm",
@@ -1128,7 +1275,7 @@ def git_parse(seg: list[str], j: int):
         if a in ("-C", "-c"):
             if i + 1 >= len(seg):
                 raise Unjudgeable(f"git {a} with no value")
-            v = seg[i + 1]
+            v = seg[i + 1] if a == "-c" else home_expanded(seg[i + 1])
             if a == "-c":
                 if v.startswith("alias."):
                     raise Unjudgeable("a git alias defined inline can be any verb, push included")
@@ -1151,13 +1298,90 @@ def git_parse(seg: list[str], j: int):
     return verb, seg[i + 1:], workdir, redirected
 
 
+# #1803. `git update-ref --no-deref -d refs/remotes/review/1559` deletes a LOCAL ref in a review namespace: it merges and publishes nothing, and the ref was left
+# behind because the gate refused every `update-ref`. ONLY THIS FORM IS ALLOWED, and `--no-deref` is the point of it: a plain `update-ref -d <ref>` FOLLOWS a
+# symbolic ref and deletes its TARGET (measured: `symbolic-ref refs/remotes/review/alias refs/heads/main`, then `update-ref -d refs/remotes/review/alias`, and
+# refs/heads/main is gone), so the name the classifier reads is not the ref git deletes. Probing the repository for "is it symbolic?" is no answer: the command
+# can create the symref between the check and the delete (`echo 'ref: refs/heads/main' > .git/refs/remotes/review/a && git update-ref -d ...`), and the probe
+# has to be run in the directory, with the environment, that git will really use. `--no-deref` removes the whole class: it deletes the NAMED ref itself and never
+# follows a symbolic one. The ref must be LITERAL and fully qualified, under `refs/heads/` or `refs/remotes/`, and its branch name must not be one of these.
+# `HEAD`, the tags, `refs/replace/`, a symbolic or stdin form, and any command that SETS a ref stay refused: those move what main, dev or staging point at.
+UPDATE_REF_PROTECTED = {"main", "master", "dev", "staging", "HEAD"}
+# COMPARED CASE-INSENSITIVELY: on a case-insensitive filesystem (macOS by default) the loose ref `refs/heads/MAIN` is the FILE `main`, so a delete named
+# `MAIN` is a delete of main. The name the classifier reads must not differ from the ref git acts on.
+_PROTECTED_FOLDED = {n.casefold() for n in UPDATE_REF_PROTECTED}
+UPDATE_REF_REFUSED = ("git 'update-ref' is refused unless it is `git update-ref --no-deref -d <ref>` of a literal, non-protected ref under refs/heads/ or refs/remotes/: "
+                      "a plain `update-ref -d` follows a symbolic ref and deletes its target (#1803)")
+
+
+def _local_ref_delete(args: list[str]):
+    """The ref of `git update-ref --no-deref [-m <reason>] -d <ref> [<oldvalue>]` when it is a non-protected local ref, else None."""
+    delete, no_deref, positional, i = False, False, [], 0
+    while i < len(args):
+        a = args[i]
+        if a == "-d":
+            delete = True
+        elif a == "--no-deref":
+            no_deref = True
+        elif a == "-m":
+            i += 1
+            if i >= len(args) or _opaque(args[i]):
+                return None
+        elif a.startswith("-") or _opaque(a):
+            return None           # --stdin, -z, --create-reflog, an unknown flag, or a word the shell has not expanded yet
+        else:
+            positional.append(a)
+        i += 1
+    if not delete or not no_deref or not 1 <= len(positional) <= 2:
+        return None
+    ref = positional[0]
+    if len(positional) == 2 and not re.fullmatch(r"[0-9a-fA-F]{4,64}", positional[1]):
+        return None
+    if (ref.casefold() in _PROTECTED_FOLDED or any(c in ref for c in "*?[\\ ~^:") or ".." in ref or "@{" in ref or ref.endswith(("/", ".lock"))
+            or any(part == "" or part.startswith(".") for part in ref.split("/"))):
+        return None
+    if ref.startswith("refs/heads/"):
+        branch = ref[len("refs/heads/"):]
+    elif ref.startswith("refs/remotes/"):
+        remote, _, branch = ref[len("refs/remotes/"):].partition("/")
+        if not remote or not branch:
+            return None
+    else:
+        return None
+    return ref if branch and branch.casefold() not in _PROTECTED_FOLDED else None
+
+
 def _git_read_only(verb: str, args: list[str]) -> bool:
     """`git remote` and `git config` can repoint where a later push goes: only their read forms are safe."""
     if verb == "remote":
         sub = next((a for a in args if not a.startswith("-")), "")
         return sub in ("", "show", "get-url", "add")       # `add` cannot repoint an existing remote
     if verb == "config":
-        if any(a in ("--get", "--get-all", "--get-regexp", "--list", "-l", "--get-urlmatch", "get", "list") for a in args):
+        # `--get`, `--list` and the like are read FLAGS; `get` and `list` are the read SUB-COMMANDS of newer git, and only in the FIRST position:
+        # anywhere else they are a VALUE (`git config core.hooksPath get` points the hooks at ./get; #1768 review).
+        if any(a in CONFIG_READ_ACTIONS for a in args):
+            return True
+        if any(a in CONFIG_WRITE_FLAGS for a in args):
+            return False
+        # (#1768) A bare `git config <key>`: ONE positional word, no write flag, is a READ of that key, whichever key it is: `core.hooksPath` is not on the benign
+        # list because SETTING it redirects the hooks, but reading it is how a session asks where they are. Three ways this could be a write, each refused:
+        #   - a flag this rule does not KNOW is harmless: git accepts any unambiguous prefix of a long option (`--unset-a`, `--uns`), so a list of the write flags
+        #     is not enough; only the flags that select a file or a value type are allowed;
+        #   - a word that is not a key: `edit`, `set`, `unset` are sub-commands of newer git, and a key always has a dot (`section.name`);
+        #   - a second word (a value), or a word the shell has not expanded yet.
+        words, skip, only_known = [], False, True
+        for a in args:
+            if skip:
+                skip = False
+            elif a in CONFIG_VALUE_FLAGS:
+                skip = True
+            elif a.startswith("-"):
+                only_known = only_known and a in CONFIG_READ_FLAGS
+            else:
+                words.append(a)
+        if only_known and words and words[0] in ("get", "list"):
+            return True
+        if only_known and len(words) == 1 and "." in words[0] and not _opaque(words[0]):
             return True
         keys = [a for a in args if not a.startswith("-")]
         return bool(keys) and BENIGN_CONFIG.match(keys[0]) is not None
@@ -1180,6 +1404,8 @@ CHECKOUT_FLAGS = {"-q", "--quiet", "-f", "--force", "-m", "--merge", "--guess", 
                   "--no-overlay", "-t", "--track", "--no-track", "-l"}
 REF_MOVING_VERBS = {"commit", "reset", "cherry-pick", "am", "revert", "update-ref", "symbolic-ref", "merge",
                     "pull", "replace"}
+GH_HEAD_MOVING = (["pr", "checkout"],)       # #1781: the gh subcommands that move HEAD, as the `[group, name]` prefix of the subcommand
+BISECT_READ_ONLY = {"log", "visualize", "view", "terms", "help"}      # #1781: every other `git bisect` sub-command may check a commit out
 BRANCH_WRITE_FLAGS = {"-f", "--force", "-d", "-D", "--delete", "-m", "-M", "--move", "-c", "-C", "--copy",
                       "-u", "--set-upstream-to", "--unset-upstream", "--edit-description"}
 
@@ -1226,6 +1452,19 @@ def branch_change(verb: str, args: list[str]):
             return {positional[0]}, True, False
         if len(positional) == 1:
             return ({UNKNOWN_BRANCH} if _opaque(positional[0]) else {HOOK_HEAD, positional[0]}), True, False
+        return None, False, False
+    if verb in ("bisect", "worktree", "stash"):
+        # #1781. Verbs that may check a commit or branch out, in THIS directory (`bisect start|good|bad|skip|reset|run|replay`) or in a new one a later
+        # `cd` enters (`worktree add`), so a later HEAD-relative push is judged against the wrong branch. Anything not named read-only is refused, not
+        # modelled. `git stash` itself does NOT move HEAD or change the current branch (it saves and cleans the working tree, and `stash pop|apply|
+        # list|show|drop|push|create|store|clear` leave the branch alone), so it stays allowed; `git stash branch <name>` creates and checks out a branch.
+        sub = next((a for a in args if not a.startswith("-")), "")
+        if verb == "bisect" and sub not in BISECT_READ_ONLY and not (not sub and any(a in ("--help", "-h") for a in args)):
+            return unknown
+        if verb == "worktree" and sub == "add":
+            return unknown
+        if verb == "stash" and sub == "branch":
+            return unknown
         return None, False, False
     if verb == "rebase":
         positional = [a for a in args if not a.startswith("-")]
@@ -1277,6 +1516,13 @@ class _Flow:
         if self.refs_moved or (head_relative and self.head_moved):
             raise Unjudgeable("a push to main after a command that moves refs or HEAD: the commit it ships "
                               "is not the one the hook can read; run them as separate commands")
+
+    def after_gh(self, names: list[str]) -> None:
+        """#1781: `gh pr checkout` switches HEAD to the pull request's branch, which is unknown here (no `gh` call is made)."""
+        if names[:2] in GH_HEAD_MOVING:
+            self.head_moved = True
+            self.tainted.add(UNKNOWN_BRANCH)
+            self.unknown_dir = True
 
     def after(self, verb: str, args: list[str], key: str | None) -> None:
         """Fold one `git` segment into the state."""
@@ -1362,16 +1608,24 @@ def _git_effects_core(seg, j, cwd, current, flow, key):
         for kind in flow.promotion_kinds(key, "GIT_PULL"):
             out.append((kind, "-", _dir_word(cwd, workdir)))
         return out
-    if verb in GIT_SAFE and _git_read_only(verb, args):
+    if verb == "update-ref":
+        # #1803: ONLY `--no-deref -d` of a literal, non-protected local ref (see UPDATE_REF_REFUSED). Which repository it runs in does not matter for safety: the
+        # protected names are refused in every repository, and `--no-deref` never follows a symbolic ref out of the one it names.
+        if _local_ref_delete(args) and not redirected and not envs and not any(w == "xargs" for w in seg[:j]):
+            return []
+        raise Unjudgeable(UPDATE_REF_REFUSED)
+    elif verb in GIT_SAFE and _git_read_only(verb, args):
         return []
     raise Unjudgeable(f"git {verb!r} is not on the list of commands that cannot merge into main or publish")
 
 
-def gh_effects_for(seg, j, cwd, env_repo, known=None):
+def gh_effects_for(seg, j, cwd, env_repo, known=None, flow=None):
     """`[(line, repo, dir)]` for one `gh` invocation, or Unjudgeable when it is neither a modelled effect
     nor on the safe list."""
     names, rest, repo = gh_parts(seg, j)
     d = _dir_word(cwd)
+    if flow is not None:
+        flow.after_gh(names)
     if names and (_expanded(names[0]) or EXPANDS & set(names[0]) or (len(names) > 1 and (_expanded(names[1]) or EXPANDS & set(names[1])))):
         raise Unjudgeable("the gh subcommand is built by the shell")
     if names == ["pr", "merge"]:
@@ -1447,6 +1701,28 @@ def literal_vars(cmd: str) -> dict[str, str]:
     return {n: vs[0] for n, vs in bound.items() if len(vs) == 1 and vs[0] is not None and n not in bare}
 
 
+def _function_state_check(seg: list[str]) -> None:
+    """#1770. A function body is judged where it is written, but it RUNS where it is called, which may be before the definition, after a `cd`, or after a
+    branch change. So in a command that defines a function, anything that changes where or on what a later git runs is refused rather than modelled: a
+    `cd`/`pushd`, a GIT_DIR-style environment redirect, and any git verb that moves HEAD or a ref."""
+    head = next((w for w in seg if w not in WRAPPERS and not re.fullmatch(r"[A-Za-z_]\w*=.*", w)), "")
+    if head in ("cd", "pushd", "popd") or any(GIT_ENV_REDIRECT.match(w) for w in seg):
+        raise Unjudgeable("a command that defines a function and also changes directory or redirects git: where the body runs cannot be read")
+    for tool, j in command_indexes(seg):
+        if tool == "gh":
+            scratch = _Flow()
+            scratch.after_gh(gh_parts(seg, j)[0])
+            if scratch.head_moved:
+                raise Unjudgeable("a command that defines a function and also moves HEAD (gh pr checkout): when the body runs cannot be read")
+        if tool == "git":
+            verb, args, _, _ = git_parse(seg, j)
+            if verb:
+                scratch = _Flow()
+                scratch.after(verb, args, None)
+                if scratch.head_moved or scratch.refs_moved or scratch.tainted or scratch.unknown_dir:
+                    raise Unjudgeable("a command that defines a function and also moves HEAD or a ref: when the body runs cannot be read")
+
+
 def effects(cmd: str, current) -> list[tuple[str, str, str]]:
     """`(line, repo, dir)` for everything in `cmd` that merges into main or publishes. `repo` is the
     repository the command acts on when it says so (`-R`, GH_REPO, a `repos/o/r/` path, a git remote as
@@ -1454,12 +1730,18 @@ def effects(cmd: str, current) -> list[tuple[str, str, str]]:
     out: list[tuple[str, str, str]] = []
     flow = _Flow()
     lits, known = literal_vars(cmd), {}
+    every = list(all_segments(cmd))
+    # #1875: a function's body runs where and when it is CALLED, which only matters to a git or gh command in it. A command that defines a function and runs neither (`cd /tmp &&
+    # f() { echo hi; }; f`) has nothing to mis-place, so it is not refused for the `cd`.
+    if FUNCS[0] and any(command_indexes(seg) for seg in every):
+        for seg in every:
+            _function_state_check(seg)
     for seg, cwd, env_repo in ctx_segments(cmd):
         for tool, j in command_indexes(seg):
             if tool == "git":
                 out += git_effects(seg, j, cwd, current, flow)
             else:
-                out += gh_effects_for(seg, j, cwd, env_repo, known)
+                out += gh_effects_for(seg, j, cwd, env_repo, known, flow)
         # AFTER the segment: `Q=x gh api ... "$Q"` expands $Q before the prefix assignment takes effect.
         for w in seg:
             m = re.match(r"([A-Za-z_]\w*)=", w)
@@ -1496,7 +1778,7 @@ def git_current(push: bool, workdir: str | None) -> str | None:
 
 def selftest() -> int:
     failures: list[str] = []
-
+    os.environ["HOME"] = "/home/selftest"    # the cases below name directories through it (#1764); a real HOME would make them depend on the machine
     def cls(cmd, cur):
         return [ln for ln in classify(cmd, cur) if not ln.startswith("CTX ")]
 
@@ -1672,6 +1954,23 @@ def selftest() -> int:
         ("cd other && git push", fake("topic", by_dir={"other": "main"}), True),
         ("cd other\ngit push", fake("topic", by_dir={"other": "main"}), True),
         ("git -C other push", fake("topic", by_dir={"other": "main"}), True),
+        # (#1768) an empty-string argument does not end the command: the refspecs after it are still read
+        ("git push origin '' main", on_feature, True),
+        # (#1764) a directory named through HOME is expanded BEFORE the push's HEAD is resolved there: the hook is handed the raw command
+        ("git -C ~/proj push", fake("topic", by_dir={"/home/selftest/proj": "main"}), True),
+        ("git -C ~/proj push", fake("main", by_dir={"/home/selftest/proj": "topic"}), False),
+        ("cd ~/proj && git push", fake("topic", by_dir={"/home/selftest/proj": "main"}), True),
+        ("cd ~/proj && git push", fake("main", by_dir={"/home/selftest/proj": "topic"}), False),
+        ("git -C $HOME/proj push", fake("topic", by_dir={"/home/selftest/proj": "main"}), True),
+        ("git -C ${HOME}/proj push", fake("topic", by_dir={"/home/selftest/proj": "main"}), True),
+        ("cd $HOME/proj && git push", fake("topic", by_dir={"/home/selftest/proj": "main"}), True),
+        ("cd ~ && git push", fake("topic", by_dir={"/home/selftest": "main"}), True),
+        ('git -C "$HOME/proj" push', fake("topic", by_dir={"/home/selftest/proj": "main"}), True),
+        # ...but only a spelling the shell WILL expand: quoted or escaped, `~/proj` is a literal directory name to git, and expanding it would judge HEAD in a checkout the push never touches
+        ("git -C '~/proj' push", fake("topic", by_dir={"/home/selftest/proj": "main"}), False),
+        ('git -C "~/proj" push', fake("topic", by_dir={"/home/selftest/proj": "main"}), False),
+        ("git -C \\~/proj push", fake("topic", by_dir={"/home/selftest/proj": "main"}), False),
+        ("git -C '~/proj' push; git -C ~/proj push", fake("topic", by_dir={"/home/selftest/proj": "main"}), False),
     ]
     for cmd, cur, want in cases:
         try:
@@ -1699,7 +1998,16 @@ def selftest() -> int:
                       ("bash -c 'gh pr merge 7 --merge'", ["PR_MERGE 7"]),
                       ("git merge dev", ["GIT_MERGE dev"]), ("sudo git merge dev", ["GIT_MERGE dev"]),
                       ('git commit -m "merge it" && gh pr list', []),
-                      ("git push origin main", ["PUSH_MAIN main"])):
+                      ("git push origin main", ["PUSH_MAIN main"]),
+                      # #1803: `--no-deref -d` of a non-protected local ref merges and publishes nothing, and is allowed
+                      ("git update-ref --no-deref -d refs/remotes/review/1559", []),
+                      ("git -C /tmp/r update-ref --no-deref -d refs/remotes/review/1559", []),
+                      ("git update-ref --no-deref -d refs/heads/feature/x", []),
+                      ("git update-ref --no-deref -m gone -d refs/remotes/origin/feature/x abc123def", []),
+                      ("git update-ref -d --no-deref refs/heads/old", []),
+                      # an alias is fine WITH --no-deref: it deletes the symbolic ref itself, never its target
+                      ("git update-ref --no-deref -d refs/remotes/review/alias", []),
+                      ("cd /other && git update-ref --no-deref -d refs/remotes/review/1", [])):
         try:
             got = cls(cmd, on_feature)
         except Unjudgeable as exc:
@@ -1712,6 +2020,25 @@ def selftest() -> int:
             failures.append(f"classify {cmd!r}: must be unjudgeable (the hook denies)")
         except Unjudgeable:
             pass
+    # #1803: against REAL git. `--no-deref -d` of a symbolic alias of main deletes the alias and main survives; a plain `-d` of the same alias deletes main, which is why only
+    # the first is allowed.
+    import fixture_git      # (#1588) the fixture's git touches only its own temp repo
+    import tempfile as _tf
+    with _tf.TemporaryDirectory() as _td:
+        work = fixture_git.init(Path(_td) / "work", "-b", "main")
+        fixture_git.run(work, "commit", "-q", "--allow-empty", "-m", "i")
+        fixture_git.run(work, "symbolic-ref", "refs/remotes/review/alias", "refs/heads/main")
+        main_alive = lambda: fixture_git.run(work, "show-ref", "--verify", "-q", "refs/heads/main", check=False).returncode == 0   # noqa: E731
+        fixture_git.run(work, "update-ref", "--no-deref", "-d", "refs/remotes/review/alias")
+        if not main_alive():
+            failures.append("real git: `update-ref --no-deref -d` of a symbolic alias of main deleted main")
+        if fixture_git.run(work, "show-ref", "--verify", "-q", "refs/remotes/review/alias", check=False).returncode == 0:
+            failures.append("real git: `update-ref --no-deref -d` of a symbolic alias left the alias behind")
+        fixture_git.run(work, "symbolic-ref", "refs/remotes/review/alias", "refs/heads/main")
+        fixture_git.run(work, "update-ref", "-d", "refs/remotes/review/alias")
+        if main_alive():
+            failures.append("premise: a plain update-ref -d of a symbolic alias no longer deletes its target; --no-deref may be unnecessary")
+
     # #1569: `gh api` and `gh release create`, classified by EFFECT.
     import tempfile
     with tempfile.TemporaryDirectory() as td:
@@ -1874,6 +2201,25 @@ def selftest() -> int:
         ("git fetch origin && git push origin dev:main", ["PUSH_REF dev"]),
         ("git switch topic && git push origin dev:main", ["PUSH_REF dev"]),
         ("git commit --allow-empty -m x && git push origin feature/x", []),
+        # #1781 harmless controls: none of these moves HEAD, so a later push is judged as the hook saw it
+        ("gh pr checkout 3", []), ("git stash; git status", []), ("git stash; git push origin HEAD", []), ("git stash pop; git push origin HEAD", []),
+        ("git bisect log", []), ("git bisect log; git push origin HEAD", []), ("git worktree list; git push origin HEAD", []),
+        ("git bisect --help; git push origin HEAD", []), ("git bisect -h", []),
+        ("builtin trap 'git push origin main' EXIT", ["PUSH_MAIN main"]), ("command trap 'git push origin main' EXIT", ["PUSH_MAIN main"]),
+        ("env trap 'git push origin main' EXIT", ["PUSH_MAIN main"]), ("f(){ trap 'git push origin main' EXIT; }; f", ["PUSH_MAIN main"]),
+        ("{ trap 'git push origin main' EXIT; }", ["PUSH_MAIN main"]), ("if true; then trap 'git push origin main' EXIT; fi", ["PUSH_MAIN main"]),
+        ("( trap 'git push origin main' EXIT )", ["PUSH_MAIN main"]), ("builtin trap - EXIT", []), ("f(){ trap 'echo bye' EXIT; }; f", []),
+        # #1781: `trap` is found at ANY position, so no prefix list can leak; the echo case is a documented over-block (fail closed)
+        ("function f { trap 'git push origin main' EXIT; }; f", ["PUSH_MAIN main"]), ("function f { { trap 'git push origin main' EXIT; }; }; f", ["PUSH_MAIN main"]),
+        ("function f() { trap 'git push origin main' EXIT; }; f", ["PUSH_MAIN main"]),
+        ("sudo -u r trap 'git push origin main' EXIT", ["PUSH_MAIN main"]), ("exec -a x trap 'git push origin main' EXIT", ["PUSH_MAIN main"]),
+        ("nice -n 5 trap 'git push origin main' EXIT", ["PUSH_MAIN main"]), ("timeout 5 trap 'git push origin main' EXIT", ["PUSH_MAIN main"]),
+        ("echo trap 'git push origin main'", ["PUSH_MAIN main"]), ("trap -- 'git push origin main' EXIT", ["PUSH_MAIN main"]),
+        ("sudo trap -p", []), ("echo trap", []), ("trap -l", []),
+        ("trap - EXIT", []), ("trap '' INT", []), ("trap -p", []), ("trap 'echo bye' EXIT", []),
+        # a trap string is classified like `bash -c`'s
+        ("trap 'git push origin main' EXIT", ["PUSH_MAIN main"]), ("trap 'git push origin main' EXIT; git status", ["PUSH_MAIN main"]),
+        ("trap 'gh pr merge 7' EXIT", ["PR_MERGE 7"]),
     ]
     for cmd, want in ref_cases:
         try:
@@ -1882,7 +2228,14 @@ def selftest() -> int:
             got = [f"unjudgeable: {exc}"]
         if got != want:
             failures.append(f"classify {cmd!r}: expected {want}, got {got}")
-    for cmd in ("git switch $B && git merge hotfix", "git checkout - && git merge hotfix",
+    for cmd in ("gh pr checkout main; git push origin HEAD", "gh pr checkout 3; git push origin HEAD", "gh pr checkout 3 && git push origin HEAD",
+                "git bisect start main; git push origin HEAD", "git bisect good; git push origin HEAD", "git bisect reset; git push origin HEAD",
+                "git bisect run make; git push origin HEAD", "git worktree add -f x main; git push origin HEAD",
+                "git worktree add -f x main; cd x; git push origin HEAD", "git stash branch b; git push origin HEAD",
+                "trap 'git push origin $B' EXIT", "trap \"$CMD\" EXIT", "trap 'git push origin main' EXIT; echo 'unbalanced",
+                "f(){ gh pr checkout 3; }; git push origin HEAD", "f(){ git bisect start main; }; f; git push origin HEAD",
+                "f(){ git worktree add x main; }; f; git push origin HEAD", "f(){ git stash branch b; }; f; git push origin HEAD",
+                "git switch $B && git merge hotfix", "git checkout - && git merge hotfix",
                 "git switch main && git merge dev && git push origin main",
                 "git commit --allow-empty -m x && git push origin main",
                 "git fetch origin hotfix:main && git push origin main",
@@ -1896,7 +2249,7 @@ def selftest() -> int:
             failures.append(f"classify {cmd!r}: must be unjudgeable (the hook denies)")
         except Unjudgeable:
             pass
-    api_total += len(ref_cases) + 15
+    api_total += len(ref_cases) + 15 + 17
     # #1569 -- the parser differential. The same command, spelled the way bash reads it differently from
     # shlex: every transformation must give the SAME effects as the plain spelling, or be unjudgeable
     # (the hook denies). Never "no effect".
@@ -1961,6 +2314,9 @@ def selftest() -> int:
         ("gh pr merge 7 -Ro/r", ["CTX o/r -", "PR_MERGE 7"]),
         ("GH_REPO=o/r gh pr merge 7", ["CTX o/r -", "PR_MERGE 7"]), ("env GH_REPO=o/r gh pr merge 7", ["CTX o/r -", "PR_MERGE 7"]),
         ("export GH_REPO=a/b; gh release create v1", ["CTX a/b -", "RELEASE v1 -"]),
+        # (#1875) the substitutions NESTED in an arithmetic expansion still run, and are read; an expansion that is not arithmetic (two operands side by side) is a subshell
+        ("echo $(( $(git push origin main) + 1 ))", ["CTX remote:origin -", "PUSH_MAIN main"]), ("echo $((git push origin main))", ["CTX remote:origin -", "PUSH_MAIN main"]),
+        ("echo $(( git push origin main ))", ["CTX remote:origin -", "PUSH_MAIN main"]),
         ("GH_REPO=a/b; gh release create v1", ["CTX a/b -", "RELEASE v1 -"]),
         ("gh release create v1 -R x/y --target main", ["CTX x/y -", "RELEASE v1 main"]),
         ("gh release edit v1 --draft=false -R x/y", ["CTX x/y -", "RELEASE_EDIT v1 -"]),
@@ -1974,6 +2330,12 @@ def selftest() -> int:
         ("cd /a/b; cd ../c; gh pr merge 7", ["CTX - /a/b/../c", "PR_MERGE 7"]),
         ("git -C ../x merge dev", ["CTX - ../x", "GIT_MERGE dev"]),
         ("git -C /abs push origin hot:main", ["CTX remote:origin /abs", "PUSH_REF hot"]),
+        # (#1764) the home directory is expanded; another user's (`~someone`) and any other variable are not, so they stay unresolved
+        ("git -C ~/proj push origin hot:main", ["CTX remote:origin /home/selftest/proj", "PUSH_REF hot"]),
+        ("cd $HOME/proj && git merge dev", ["CTX - /home/selftest/proj", "GIT_MERGE dev"]),
+        ("git -C ~someone/proj merge dev", ["CTX - ~someone/proj", "GIT_MERGE dev"]),
+        ('git -C "$HOME/proj" push origin hot:main', ["CTX remote:origin /home/selftest/proj", "PUSH_REF hot"]),
+        ("git -C '~/proj' push origin hot:main", ["CTX remote:origin ~/proj", "PUSH_REF hot"]),
         ("git merge dev", ["CTX - -", "GIT_MERGE dev"]),
         ("gh api repos/o/r/merges -f base=main -f head=dev", ["CTX o/r -", "API_MERGE dev"]),
         ("gh api -iXPUT repos/o/r/pulls/7/merge", ["CTX o/r -", "API_PR_MERGE 7"]),
@@ -1996,7 +2358,11 @@ def selftest() -> int:
     for cmd in ("cd; gh pr merge 7", "cd - && git merge dev", "cd $D && git merge dev", "GH_REPO=$R gh pr merge 7",
                 "GH_REPO=https://github.com/o/r gh pr merge 7", "gh pr merge 7 -R github.example.com/o/r",
                 "gh api --hostname ghe.example.com -X PUT repos/o/r/pulls/7/merge", "gh api -X PATCH",
-                "git push $REMOTE hot:main"):
+                "git push $REMOTE hot:main",
+                # (#1875) arithmetic is read as arithmetic, nothing more: what looks like a command stays one
+                "cd /tmp && f() { git push origin main; }; f", "git $(( 1 )) origin main", "git push origin $(( $2 + 1 ))", "$(( 1 )) pr merge 7", "$g pr merge 7",
+                # a VARIABLE in the arithmetic is evaluated as an expression by bash, a `[$( )]` subscript included: it is still a word the shell builds
+                "echo $(( $x + 1 ))", "a='x[$(git push origin main)]'; echo $(( $a ))"):
         ctx_total += 1
         try:
             classify(cmd, on_feature)
@@ -2009,6 +2375,10 @@ def selftest() -> int:
         "git status", "git log --oneline -5", "git diff HEAD~1 -- app.rb", "git fetch origin", "git add -A", "git commit -m 'x y'",
         "git checkout -b feature/x", "git push -u origin feature/x", "git branch -D old", "git -c user.name=x -c user.email=y commit -m z",
         "git -C /tmp/x status", "git config --get remote.origin.url", "git config user.email a@b", "git remote -v",
+        # (#1768) a bare `git config <key>` is a READ of that key, whichever key it is
+        "git config get core.hooksPath", "git config list", "git config get --local remote.origin.url",
+        "git config core.hooksPath", "git config --local core.hooksPath", "git config --global core.hooksPath", "git config --file .git/config core.hooksPath",
+        "git config remote.origin.url", "git config --local url.x.insteadOf",
         "git remote add up https://github.com/o/r", "git stash pop", "git rebase dev", "git reset --hard HEAD~1",
         "git cherry-pick abc123", "git rev-parse HEAD", "git --no-pager log", "git --version", "git",
         "gh pr view 7", "gh pr list --state open", "gh pr create --title t --body b", "gh pr checks 7", "gh pr checkout 7",
@@ -2019,6 +2389,10 @@ def selftest() -> int:
         "gh api graphql -f query='mutation{addComment(input:{subjectId:\"x\",body:\"y\"}){clientMutationId}}'",
         "echo git push origin main", "which gh", "grep -r git .", "type -a git", "ls git", "python3 x.py git", "make gh",
         "cd /tmp && git status",
+        # (#1875) a command the gate could not read is not "may publish": these read, list and define. The first is the command a session was refused with, verbatim.
+        'cd ~/projects/retask-wt/rv-1636 && for p in "admin-reports.spec.ts 350" "journey-first-boot-staff.spec.ts 53" "requests.spec.ts 507"; do set -- ${=p}; '
+        'f=$(ls qa/e2e/$1 2>/dev/null || git ls-files "qa/e2e/*$1" | head -1); echo "== $f:$2"; sed -n "$2,$(( $2 + 14 ))p" "$f" | cut -c1-170; done',
+        'sed -n "$2,$(( $2 + 14 ))p" "$f"', 'echo $(( $2 + 1 ))', 'x=$(( $2 + 1 ))', 'echo "$(( ${2} * 2 + $# ))"', "cd /tmp && f() { echo hi; }; f", "cd /tmp && f() { ls; }; f",
     ]
     for cmd in safe_cases:
         api_total += 1
@@ -2032,7 +2406,44 @@ def selftest() -> int:
         "git ci -m x", "git -c core.sshCommand=x push origin feature/x", "git -c url.x.insteadOf=y push origin feature/x",
         "git --weird-option status", "git $V push origin feature/x", "git remote set-url origin https://github.com/x/y",
         "git remote remove origin", "git config remote.origin.url https://github.com/x/y", "git config url.x.insteadOf y",
+        # (#1768) ...but a value, a write flag, or a word the hook cannot read is a WRITE (or could be): still refused
+        "git config core.hooksPath /tmp/x", "git config --local core.hooksPath ''", "git config --add core.hooksPath /tmp/x",
+        "git config --unset core.hooksPath", "git config --unset-all remote.origin.url", "git config --replace-all remote.origin.url x",
+        "git config -e", "git config --edit", "git config --rename-section remote.origin remote.up", "git config --remove-section remote.origin",
+        "git config $KEY", "git config core.hooksPath $VALUE", "git config remote.$NAME.url",
+        # (#1768 review) the sub-commands of newer git (`edit` opens the editor on the config), and abbreviated long options (git accepts any unambiguous prefix)
+        # (#1768 review) `get` and `list` are sub-commands only in the FIRST position: as a VALUE they are a write (`git config core.hooksPath get` points the hooks at ./get)
+        "git config core.hooksPath get", "git config core.hooksPath list", "git config remote.origin.url list",
+        "git config edit", "git config set core.hooksPath /tmp/x", "git config unset core.hooksPath", "git config --unset-a core.hooksPath",
+        "git config --edi", "git config --uns core.hooksPath", "git config --remove-s remote.origin", "git config -z -e",
         "git send-pack origin main", "git update-ref refs/heads/main abc", "git symbolic-ref HEAD refs/heads/x",
+        # #1803: only the local delete of a non-protected ref is allowed. The protected branches and HEAD, the remote-tracking copy of a protected branch (the
+        # hook reads origin/dev), tags and replace refs, any command that SETS a ref, the stdin form, and anything the shell has not expanded yet stay refused.
+        "git update-ref -d refs/heads/main", "git update-ref -d refs/heads/master", "git update-ref -d refs/heads/dev", "git update-ref -d refs/heads/staging",
+        "git update-ref -d HEAD", "git update-ref -d refs/remotes/origin/main", "git update-ref -d refs/remotes/origin/dev", "git update-ref -d refs/remotes/origin/HEAD",
+        "git update-ref -d refs/tags/v1", "git update-ref -d refs/replace/abc", "git update-ref refs/heads/x abc", "git update-ref refs/heads/x abc123def", "git update-ref refs/remotes/review/1 abc123def", "git update-ref -d $REF",
+        # a plain delete FOLLOWS a symbolic ref and deletes its TARGET (`symbolic-ref refs/remotes/review/alias refs/heads/main; update-ref -d refs/remotes/review/alias`
+        # removed main), and no probe of the repository can prove it safe: refused, even for the review ref of the issue; the remedy is `--no-deref`
+        "git update-ref -d refs/remotes/review/1559", "git update-ref -d refs/heads/feature/x", "git update-ref -d refs/remotes/review/alias", "git update-ref -d refs/heads/alias",
+        "git update-ref -m gone -d refs/remotes/origin/feature/x abc123def", "git -C /tmp/r update-ref -d refs/remotes/review/1559",
+        # the name the classifier reads must be the ref git acts on: case (a case-insensitive filesystem), reflog syntax, empty and dot components
+        "git update-ref --no-deref -d refs/heads/MAIN", "git update-ref --no-deref -d refs/heads/Dev", "git update-ref --no-deref -d refs/remotes/origin/DEV",
+        "git update-ref --no-deref -d refs/heads//x", "git update-ref --no-deref -d refs/heads/./x", "git update-ref --no-deref -d refs/heads/.hidden",
+        "git update-ref --no-deref -d refs/heads/a@{1}",
+        # a redirected git dir or GIT_* environment, and arguments from xargs, stay refused as for push, merge and pull
+        "GIT_DIR=/x git update-ref --no-deref -d refs/remotes/review/1", "git --git-dir=/x update-ref --no-deref -d refs/remotes/review/1",
+        "echo refs/heads/x | xargs git update-ref --no-deref -d",
+        "git update-ref -d refs/heads/$B", "git update-ref --stdin", "git update-ref -d refs/heads/*", "git update-ref -d", "git update-ref -d refs/heads/x a b",
+        # ...and a delete in a CHAIN still counts as a command that moves refs (#1571), so a push to main after it in the same command is refused: split the command.
+        "git update-ref -d refs/remotes/review/1559 && git push origin main",
+        # THE SAME REFUSALS WITH `--no-deref`, so each is exercised for its own reason and not for the missing flag
+        "git update-ref --no-deref -d refs/heads/main", "git update-ref --no-deref -d refs/heads/master", "git update-ref --no-deref -d refs/heads/dev",
+        "git update-ref --no-deref -d refs/heads/staging", "git update-ref --no-deref -d HEAD", "git update-ref --no-deref -d refs/remotes/origin/main",
+        "git update-ref --no-deref -d refs/remotes/origin/dev", "git update-ref --no-deref -d refs/remotes/origin/HEAD", "git update-ref --no-deref -d refs/tags/v1",
+        "git update-ref --no-deref -d refs/replace/abc", "git update-ref --no-deref refs/heads/x abc123def", "git update-ref --no-deref -d $REF",
+        "git update-ref --no-deref -d refs/heads/$B", "git update-ref --no-deref --stdin", "git update-ref --no-deref -d refs/heads/*", "git update-ref --no-deref -d",
+        "git update-ref --no-deref -d refs/heads/x a b", "git update-ref --no-deref -d refs/heads/x zzzz",
+        "git update-ref --no-deref -d refs/remotes/review/1559 && git push origin main",
         "git filter-branch -f", "git fast-import", "git svn dcommit", "git http-push x",
         "gh workflow run release.yml", "gh pr update-branch 7", "gh repo sync", "gh repo delete x --yes", "gh release delete v1",
         "gh foo", "gh $x", "gh pr $verb 7", "gh api -X POST repos/o/r/dispatches -f event_type=x",
@@ -2040,7 +2451,7 @@ def selftest() -> int:
         "gh api -X POST repos/o/r/merge-upstream -f branch=main", "gh api -X POST repos/o/r/transfer",
         "gh api graphql -f query='mutation{mergeBranch(input:{}){x}}'",
         "gh api graphql -f query='mutation{createDeployment(input:{}){x}}'",
-        "foo() { gh pr merge 7; }; foo", "alias gm='git merge'", "function f { git merge x; }",
+        "alias gm='git merge'",
         "git merge $((1+1))", "git push origin $((1+1))",
     ]
     for cmd in unlisted:
@@ -2062,6 +2473,49 @@ def selftest() -> int:
             got = [f"unjudgeable: {exc}"]
         if got != want:
             failures.append(f"classify {cmd!r}: expected {want}, got {got}")
+    # (#1770) A function body is judged where it is written, as the same commands would be inline; what a call site could change under that model is refused.
+    # want None = Unjudgeable (the gate refuses); a list = the effect lines.
+    push_main = ["PUSH_MAIN main"]
+    for cmd, want in (
+            ("g(){ echo hi; }; g", []), ("g(){ git grep -n \"$1\" HEAD; }; g x", []),
+            ("g() { echo hi; } && g", []), ("g(){\n  echo hi\n}\ng", []), ("function g { echo hi; }; g", []), ("function g() { echo hi; }; g", []),
+            ("f(){ git push origin main; }; f", push_main), ("f(){ git push origin main; }", push_main),         # never called: judged as if called, since a call can come from anywhere
+            ("f(){\n  git push origin main\n}\nf", push_main), ("function f { git push origin main; }; f", push_main),
+            ("function f() { git push origin main; }; f", push_main), ("f; f(){ git push origin main; }", push_main),
+            ("git(){ command git push origin main; }; git status", push_main), ("g(){ echo hi; }; g(){ git push origin main; }; g", push_main),
+            ("g(){ git push origin main; }; g(){ echo hi; }; g", push_main),                                        # the first body may have run: both are judged
+            ("a(){ b(){ git push origin main; }; b; }; a", push_main), ("f(){ f; git push origin main; }; f", push_main),
+            ("f(){ ( git push origin main ); }; f", push_main), ("f() ( git push origin main ); f", push_main),
+            ("f(){ git merge x; }; f", None), ("foo() { gh pr merge 7; }; foo", ["PR_MERGE 7"]),
+            ("f(){ git push origin feat/x; }; f", []), ("function f", []),
+            ("f(){ git push \"$@\"; }; f origin main", None), ("f(){ git push origin $1; }; f main", None), ("f(){ git push origin \"${1}\"; }; f main", None),
+            ("f(){ git push origin \"$*\"; }; f main", None), ("f(){ shift; git push origin \"$1\"; }; f x main", None),
+            ("f(){ git \"$@\"; }; f push origin main", None), ("f(){ \"$@\"; }; f git push origin main", None), ("f(){ $1 push origin main; }; f git", None),
+            ("f(){ eval \"$1\"; }; f 'git push origin main'", None), ("f(){ eval git push origin main; }; f", push_main),
+            ("f(){ bash -c 'git push origin main'; }; f", push_main), ("f(){ cd /tmp; }; git push", None), ("f(){ git push; }; cd /x; f", None),
+            ("f(){ git checkout dev; }; f; git push", None), ("git checkout dev; f(){ git push; }; f", None), ("f(){ git push; }; GIT_DIR=/x f", None),
+            ("function $x { echo; }", None), ("alias g='git push origin main'; g", None)):
+        api_total += 1
+        try:
+            got = cls(cmd.replace("\\n", "\n"), on_feature)
+        except Unjudgeable as exc:
+            got = None
+        if got != want:
+            failures.append(f"function fixture {cmd!r}: expected {want}, got {got}")
+    # #1781: the inline model and the function check read ONE definition of what moves HEAD (the function check folds each verb through `_Flow`),
+    # so every verb the inline model refuses must be refused when a function is defined too.
+    for names in GH_HEAD_MOVING:
+        probe = f"f(){{ gh {' '.join(names)} 3; }}; f"
+        try:
+            cls(probe, on_feature)
+            failures.append(f"function check does not refuse the HEAD-moving gh subcommand {names}")
+        except Unjudgeable:
+            pass
+    for verb, args in (("bisect", ["start"]), ("worktree", ["add", "x"]), ("stash", ["branch", "b"])):
+        flow = _Flow()
+        flow.after(verb, args, None)
+        if not (flow.head_moved and flow.unknown_dir):
+            failures.append(f"git {verb} {' '.join(args)} must move HEAD in the flow model")
     # "no" must not share an exit code with a crash: python's uncaught-exception exit is 1.
     if NO in (0, 1) or UNJUDGEABLE == NO:
         failures.append(f"exit codes: NO={NO} must differ from 0, 1 (a crash) and UNJUDGEABLE")

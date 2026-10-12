@@ -309,7 +309,7 @@ def _selftest() -> int:
         # closes that, which is exactly what the reporter did by hand.
         import subprocess
         for mod in ("design_prompt.py", "doctrine_path.py", "compose_brief.py",
-                    "palette_candidates.py"):
+                    "palette_candidates.py", "asset_home.py"):   # asset_home: compose_brief imports it (#1779)
             src_mod = HERE / mod
             if src_mod.is_file():
                 (scripts / mod).write_text(src_mod.read_text(encoding="utf-8"), encoding="utf-8")

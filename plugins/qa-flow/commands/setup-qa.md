@@ -177,6 +177,10 @@ core**:
   example) — the catalogue `/qa-flow:cases` authors/maintains.
 - `qa/manual-tests/` + `screenshots/` (`.gitkeep`) — where `/qa-flow:functional` writes its
   Markdown + CSV report.
+- `qa/requirements.yml` + `qa/requirements-uncased-baseline.txt` — copy `${CLAUDE_PLUGIN_ROOT}/scaffold/qa/requirements.yml` and
+  `.../requirements-uncased-baseline.txt` (an empty registry with `# rows: 0` and an empty baseline with `# size: 0`). For features, also copy `.../e2e-unselected-baseline.txt` and list the runner files under `e2e_paths: runners:` in `qa/qa.config.yml` (see `/qa-flow:cases`). Requirements go here, one per entry; the gate
+  `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_requirements.py"` fails a requirement that no ACTIVE case names (#1855). If the project already
+  keeps its own registry, point `requirements:` in `qa/qa.config.yml` at it (`registry`, `cases`, `baseline`) instead of scaffolding one.
 
 Per `web_e2e` (scaffold ONE):
 - **playwright** — `qa/package.json` (@playwright/test, @axe-core/playwright, typescript — the typecheck needs `tsc`), `qa/playwright.config.ts`
@@ -186,6 +190,20 @@ Per `web_e2e` (scaffold ONE):
   `typecheck` script (`tsc --noEmit -p e2e/tsconfig.json`), and a CI step running it —
   `npm --prefix qa run typecheck`. Playwright does not type-check, so without that step `strict`
   checks nothing, and the `ts-strict` gate refuses a script CI never runs (#1447; `agents/e2e-tester.md`).
+  **Release-image robot helpers (#1835)**, when the project will run real-flow personas on its release image: copy
+  `${CLAUDE_PLUGIN_ROOT}/scaffold/qa/e2e/support/{local-target,totp,qa-marker,mail-reader,personas,teardown}.ts` into `qa/e2e/support/`
+  (not the `*.test.ts` beside them — those test the templates, in this plugin's CI). They import each other with an
+  explicit `.ts` extension, so add `"allowImportingTsExtensions": true` and `"noEmit": true` to `qa/e2e/tsconfig.json`,
+  and `@types/node` to `qa/package.json` (they use `node:crypto`, `Buffer` and `process.env`). Proven on 2026-10-11 (#1837): Playwright 1.56.1 loads and runs
+  all six helpers through those `.ts` imports, and TypeScript 5.9.3 typechecks them clean under `strict`,
+  `noUncheckedIndexedAccess`, `allowImportingTsExtensions` and `noEmit`; Playwright's docs do not cover explicit
+  extensions, so if a newer version fails to import them, report it rather than rewriting the imports. For the
+  release-image robot also copy `${CLAUDE_PLUGIN_ROOT}/scaffold/qa/seed/{image-e2e,assert-local-target.ts,local-target.setup.ts}`
+  into `qa/seed/` (point the image project's `globalSetup` at `local-target.setup.ts`) and write `qa/robot.json`
+  (`robot_descriptor.py --check` documents and validates it). What each refuses: `assertLocalTarget` — any
+  URL that does not dial 127.0.0.1, localhost or ::1, and any URL with userinfo (this, with the local catcher, is what
+  keeps the robot off real systems); the mail reader — any address not of the `qa+<handle>@<domain>` shape (the shape,
+  not the domain), before a request, and any catcher not on this machine. `personas.ts` keeps the persona and records manifests in `QA_SEED_DIR` (default `qa/.qa-seed`, owner-only files — **gitignore it**) and refuses a non-QA address on write and on read; `teardown.ts`'s `proveNothingLeft(<compose project>)` runs after the stack's own `down` and fails if any container or volume of that project is left, **or if docker cannot be asked** — an unanswered "is anything left?" is a failure, not a pass.
 - **cypress-cucumber** — `qa/package.json` (cypress, `@badeball/cypress-cucumber-preprocessor`,
   `@testing-library/cypress`), `qa/cypress.config.js`, `qa/e2e/features/*.feature` (+ `step_definitions/`),
   `cy.session()` auth, `@smoke`/`@regression` tags.

@@ -14,5 +14,24 @@ GUARD = Guard(
             "    if False:",
             "an edge outranks severity",
         ),
+        # #1689: a list or object where an id belongs is refused at load, naming the field, not left to crash.
+        Mutation(
+            "an id-shaped field holding a list is let through, so the command dies with a TypeError",
+            '            if isinstance(record.get(field), (list, dict)):',
+            "            if False:",
+            "a list id is UNUSABLE (2) for validate, not a TypeError",
+        ),
+        Mutation(
+            "a list inside `blocks` is let through, so the command dies with a TypeError",
+            "                if isinstance(target, (list, dict)):",
+            "                if False:",
+            "a list inside blocks is UNUSABLE (2) for validate, not a TypeError",
+        ),
+        Mutation(
+            "a `blocks` that is not a list is let through, so `order` reads an object's keys as edges and exits 0",
+            '        if "blocks" in record and not isinstance(record["blocks"], list):',
+            "        if False:",
+            "a blocks that is an object is UNUSABLE (2) for order, not a TypeError",
+        ),
     ),
 )

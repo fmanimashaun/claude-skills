@@ -217,5 +217,11 @@ GUARD = Guard(
         Mutation("no TypeScript reads as clean instead of not applicable",
                  "    if not ts:\n        return None\n", "    if not ts:\n        return [], 0\n",
                  "no TypeScript under qa/ is NOT APPLICABLE, not a pass"),
+        Mutation(  # #1873: the n/a row reaches its site
+            'no TypeScript under qa/ is a pass instead of n/a',
+            'this check examined nothing.")\n        return 3',
+            'this check examined nothing.")\n        return 0',
+            'no TypeScript under qa/ is not applicable (exit 3)',
+        ),
     ),
 )

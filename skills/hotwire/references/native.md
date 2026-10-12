@@ -72,6 +72,17 @@ Hotwire.registerBridgeComponents([FormComponent.self])
 // Optional knobs: Hotwire.config.applicationUserAgentPrefix,
 // Hotwire.config.showDoneButtonOnModals, Hotwire.config.debugLoggingEnabled, etc.
 // (debugLoggingEnabled is iOS-only — Android dropped it in 1.3.0, see §3.)
+// Hotwire.config.backButtonDisplayMode — back-button display mode of HotwireWebViewController
+Hotwire.config.hideTabBarWhenPushed = true        // default false; 1.3.0, renamed from hidesTabBarWhenPushed
+Hotwire.config.animateReplaceActions = true       // default false; 1.3.0 (#166)
+Hotwire.config.redirectResolutionTimeout = 30     // seconds (default 30)
+// Hotwire.config.makeCustomWebView — customise each session's web view; return a NEW instance each time
+Hotwire.config.makeCustomErrorView = { error, handler in  // 1.3.0 (#158/#163)
+  MyErrorView(error: error, handler: handler)             // returns an ErrorPresentableView
+}
+Hotwire.config.log = MyAppLogger()                // used only when debugLoggingEnabled; 1.3.0 (#156)
+Hotwire.config.pathConfiguration.matchQueryStrings = true
+// Full option list: native.hotwired.dev/ios/configuration
 ```
 
 `.file` is the bundled fallback; `.server` fetches (and caches) the live
@@ -143,6 +154,10 @@ Hotwire.registerBridgeComponents(
 // Hotwire.config.logger — pluggable since 1.3.0, which removed
 // Hotwire.config.debugLoggingEnabled; for debug output set
 // Hotwire.config.logger.logLevel = HotwireLogLevel.DEBUG.
+Hotwire.config.webViewDebuggingEnabled = BuildConfig.DEBUG
+Hotwire.config.jsonConverter = KotlinXJsonConverter()   // needed by @Serializable bridge data (§7)
+Hotwire.defaultFragmentDestination = HotwireWebFragment::class
+// Full option list: native.hotwired.dev/android/configuration
 ```
 
 ## 4. Navigation: the routing table and server-driven stack control
@@ -385,13 +400,59 @@ configuration:
 
 - **iOS** — rule sets `"view_controller": "numbers"`; your
   `UIViewController` conforms to `PathConfigurationIdentifiable` with
-  `static var pathConfigurationIdentifier: String { "numbers" }`. Handle
-  unknown identifiers/routes in your `Navigator` delegate if customizing.
+  `static var pathConfigurationIdentifier: String { "numbers" }`. The rule
+  only sets `proposal.viewController`; the screen **requires** a
+  `NavigatorDelegate` implementing `handle(proposal:from:)` that returns
+  `.acceptCustom(vc)`:
+
+  ```swift
+  extension SceneDelegate: NavigatorDelegate {
+      func handle(proposal: VisitProposal, from navigator: Navigator) -> ProposalResult {
+          switch proposal.viewController {
+          case NumbersViewController.pathConfigurationIdentifier:
+              let numbersViewController = NumbersViewController(url: proposal.url)
+              return .acceptCustom(numbersViewController)
+          default:
+              return .accept
+          }
+      }
+  }
+  ```
+
+  (Source: native.hotwired.dev/ios/native-screens.)
 - **Android** — rule sets `"uri": "hotwire://fragment/numbers"`; your
   `HotwireFragment` subclass is annotated
   `@HotwireDestinationDeepLink(uri = "hotwire://fragment/numbers")` and
-  registered via `Hotwire.registerFragmentDestinations(...)`. `fallback_uri`
+  registered via `Hotwire.registerFragmentDestinations(HotwireWebFragment::class,
+  MyCustomFragment::class)` — the list **must include `HotwireWebFragment`**
+  ("Don't forget to register this for regular destinations"). `fallback_uri`
   covers app versions that lack the destination; `title` sets the toolbar.
+
+### Tabs
+
+- **iOS** — `HotwireTabBarController`: define
+  `HotwireTab(title:image:url:)` values and call `load(tabs)`. Set
+  `isSearchTab` on a tab for a system `UISearchTab` (iOS 18+). Tabs load
+  lazily with `HotwireTabBarController(lazyLoadTabs: true)` — as of 1.3.0
+  `lazyLoadTabs` is an initializer argument and defaults to `false`
+  (#250/#252). Source: native.hotwired.dev/ios/tabs.
+- **Android** — define `HotwireBottomTab`s, give each tab a
+  `NavigatorConfiguration`, and drive them with a
+  `HotwireBottomNavigationController` inside a `HotwireActivity`; tabs load
+  lazily as of 1.3.0 (#202). Source: native.hotwired.dev/android/tabs.
+
+### Patch notes (1.3.0 / 1.3.1)
+
+- iOS 1.3.1 (#261): a redirect from a modal to a default-context URL routes
+  after the dismissal completes.
+- Android 1.3.1 (#207): the cold-boot reload happens only when already on
+  that location.
+- Android 1.3.1 (#205): fixes a crash on `mailto:` / `tel:` links introduced
+  in 1.3.0 — avoid 1.3.0 for apps with such links.
+- iOS 1.3.0 (#191): the default `SafariViewControllerRouteDecisionHandler`
+  first tries the URL as a universal link (`universalLinksOnly`), so a link
+  claimed by an installed app opens in that app; no configuration (its only
+  initializer is `init()`).
 
 The web app still owns the URL: `/numbers` renders HTML for browsers, while
 apps intercept it natively. Keep both in sync or redirect web users

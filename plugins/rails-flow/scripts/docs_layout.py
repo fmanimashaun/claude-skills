@@ -167,7 +167,8 @@ def home_for(p: Path, docs: Path, kind: str, declared: set[str] = frozenset(), r
         return None, True, ""
     for pat, dest, sure in DIR_HOMES:                                 # an unknown top-level directory
         if pat.match(top):
-            return dest.format(name=RENAMES.get(top, top)) + "/" + "/".join(parts[1:]), sure, f"`{top}/` is not a layout directory; its name says {dest.split('/')[0]}/"
+            base = "design/assets" if top.lower() == "assets" else dest.format(name=RENAMES.get(top, top))   # `assets/` IS design/assets/, not a folder in it (#1779)
+            return base + "/" + "/".join(parts[1:]), sure, f"`{top}/` is not a layout directory; its name says {dest.split('/')[0]}/"
     return f"product/{'/'.join(parts)}", False, f"`{top}/` is not a layout directory and its name says nothing -- product/ unless you know better"
 
 
@@ -624,6 +625,8 @@ def selftest() -> int:
             (root / rel).parent.mkdir(parents=True, exist_ok=True); (root / rel).write_text(text, encoding="utf-8")
         (d / "brand-assets" / "RH Global Logo").mkdir(parents=True)
         (d / "brand-assets" / "RH Global Logo" / "logo.png").write_bytes(b"\x89PNG\r\n\x1a\n\0\0fake")
+        (d / "assets").mkdir()
+        (d / "assets" / "manifest.json").write_text('{"assets": []}\n', encoding="utf-8")   # design-flow's library, before #1779
         (d / "Retask-Sitemap.png").write_bytes(b"\x89PNG\r\n\x1a\n\0\0fake")
         subprocess.run(["git", "init", "-q"], cwd=root, check=True)
         subprocess.run(["git", "add", "-A"], cwd=root, check=True)   # a fixture repo, not this one
@@ -663,6 +666,8 @@ def selftest() -> int:
               rows["docs/brain/memos/feedback/x.md"]["dest"] is None and rows["docs/brain/STATUS.md"]["dest"] is None)
         check("brand-assets/ with a space in a subfolder name moves under design/assets/",
               rows["docs/brand-assets/RH Global Logo/logo.png"]["dest"] == "docs/design/assets/brand/RH Global Logo/logo.png")
+        check("assets/ IS design/assets/ (#1779), not a folder inside it: no design/assets/assets/",
+              rows["docs/assets/manifest.json"]["dest"] == "docs/design/assets/manifest.json")
         check("design/ content stays", rows["docs/design/home-page-prompt.md"]["dest"] is None)
         f = findings(root, classify(root))
         check("the report names the missing map and the code in docs",

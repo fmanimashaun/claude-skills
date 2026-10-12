@@ -30,7 +30,10 @@
       "Bash(pg_isready)",
       "Bash(python3 scripts/lint_self_consistency.py)",
       "Bash(gh search *)",
-      "Bash(python3 scripts/maintainer_doctor.py --gates-only --fast)"
+      "Bash(python3 scripts/maintainer_doctor.py --gates-only --fast)",
+      "Bash(gh pr merge:*)",
+      "Bash(docker push:*)",
+      "Bash(bin/kamal:*)"
     ]
   }
 }
