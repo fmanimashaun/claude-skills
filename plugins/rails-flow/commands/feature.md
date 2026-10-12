@@ -202,6 +202,8 @@ as complete is worse than a stop, because it spends the reviewer's trust as well
    behavior (wrong-role rejection for new filters, concern behavior, state transitions), not
    merely execute the code. Run it; confirm it fails for the right reason.
    A criterion no spec cites is an unproven criterion, and the Stop gate says so.
+   **A project with a QA catalogue (`qa/test-cases.csv`) also gets the manual case** that proves the new behaviour, in this same PR: add or update the case, and put the issue
+   in its `Source` (`defect:#n`). No feature is built without a way to test it in QA (owner rule, #1853); see `reference/case-per-change.md`.
 2. Implement — delegate substantial units to `rails-developer`; schema changes to
    `migration-writer` (round-trip proven). Small edits you may do directly.
 3. Run the unit's specs to green, then `git add <specific files>` and commit with an
@@ -290,6 +292,9 @@ gh pr create --base <base> --title "feat: <summary>" --body "<the PR Documentati
   same PR: status `done` and `closed: true` once its spec proves it, or, for an issue closed as not planned, `owner-decision` or `deviates` (never `done`), or `issue` pointed at
   the issue that tracks the rest. Exit 1: update those rows, push, run it again. Exit 2: it could not check (no `gh`, GitHub unreadable, a repeated key in the registry): say what
   it could not read; an unchecked registry is not a clean one. Exit 3 is only "no registry", and exit 0 continues.
+- On CLEAN, **check the case is in the diff** when `qa/test-cases.csv` exists (#1858): `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_case_in_diff.py" --base <base> --closes-from-body <PR body file> --kind feature`.
+  Every issue the PR closes needs a catalogue case that THIS diff adds or changes, with the issue in its `Source`. Exit 1: add the case, push, run it again. Exit 2: it could
+  not check (say what); exit 3: no catalogue, nothing to check against.
 - On CLEAN, **classify the door** (#1338):
   `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/classify_door.py" --base <base>`. Exit 1 (ONE-WAY: a
   destructive migration, an auth or permission change, a removed route or API field, a new outside

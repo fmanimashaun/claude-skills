@@ -485,6 +485,8 @@ GATES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # two readers of the registry (qa-flow's and rails-flow's: plugins install alone, so each has its own).
     ("rails-flow registry closed gate", ("python3", "plugins/rails-flow/scripts/check_registry_closed.py", "--selftest")),
     ("registry reader parity", ("python3", "scripts/check_registry_reader_parity.py")),
+    # #1858. A change that closes an issue brings its catalogue case, and a fix its spec (slice 4 of #1853); the shipped check's own selftest.
+    ("rails-flow case in diff", ("python3", "plugins/rails-flow/scripts/check_case_in_diff.py", "--selftest")),
     ("registry reader parity selftest", ("python3", "scripts/check_registry_reader_parity.py", "--selftest")),
     ("qa-flow theme parity", ("python3", "plugins/qa-flow/scripts/theme_parity.py", "--selftest")),
     # #953. What a page hides INSIDE the viewport, which every boundary assertion passes on.

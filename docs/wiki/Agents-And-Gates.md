@@ -153,6 +153,7 @@ Every entry in `maintainer_doctor.GATES`: what it runs, whether it is a selftest
 | project settings selftest | `rails-flow` | `python3 plugins/rails-flow/scripts/check_project_settings.py --selftest` | selftest |
 | qa-flow tiers | `rails-flow` | `python3 plugins/rails-flow/scripts/check_handoff.py --agents plugins/qa-flow/agents --tiers plugins/qa-flow/reference/model-tiers.md` | live check |
 | rails-flow PR-template sections | `rails-flow` | `python3 plugins/rails-flow/hooks/scripts/lib/pr_template.py --selftest` | selftest |
+| rails-flow case in diff | `rails-flow` | `python3 plugins/rails-flow/scripts/check_case_in_diff.py --selftest` | selftest |
 | rails-flow ci runs tests | `rails-flow` | `python3 plugins/rails-flow/scripts/check_ci_runs_tests.py --selftest` | selftest |
 | rails-flow claim extraction | `rails-flow` | `python3 plugins/rails-flow/scripts/extract_claims.py --selftest` | selftest |
 | rails-flow coordination record | `rails-flow` | `python3 plugins/rails-flow/hooks/scripts/lib/coordination.py --selftest` | selftest |

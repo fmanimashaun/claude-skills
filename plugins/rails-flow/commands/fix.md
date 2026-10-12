@@ -130,7 +130,9 @@ hypothesis that turned out to be the cause, so the next reader learns it.
 1b. MOCK-UP:  a fix that changes what a user sees waits for an approved mock-up (#1376):
               check_mockup_gate.py --paths <files the fix will touch>; exit 1 → the mock-up
               gate in /rails-flow:feature Phase 1 (build, publish, STOP for approval, record)
-2. IMPLEMENT: the loop above, one issue per commit; delegate big items to rails-developer,
+2. IMPLEMENT: the loop above, one issue per commit; the spec that FAILS without the fix comes first (#1858). Run it on the pre-fix tree (RED), then
+              with the fix (GREEN), and record both under `## Red/green proof` in the PR body. A project with a QA catalogue also adds or updates the
+              manual case that proves the fix, with the issue in its Source (owner rule, #1853; reference/case-per-change.md); delegate big items to rails-developer,
               schema changes to migration-writer
 3. VERIFY:    test-runner → FULL suite, 0 failures; code-reviewer → VERDICT: CLEAN;
               spec-reviewer against the phase's acceptance file → VERDICT: CLEAN with
@@ -142,6 +144,9 @@ hypothesis that turned out to be the cause, so the next reader learns it.
 6. CLOSEOUT:  /rails-flow:pr-comments <n> — every review thread fixed on-branch or
               folded into a tracked repo issue; re-run the gate if code changed.
               A PR must close clean before the next phase starts.
+6a. CASE:      if qa/test-cases.csv exists, check_case_in_diff.py --base <base> --closes-from-body <PR body file> --kind fix --body-file <the same file> (#1858):
+              a catalogue case this diff adds or changes names every issue the PR closes, a spec or test file is in the diff, and the body has the Red/green
+              section; exit 1 means add what it names and run it again, exit 2 means it could not check (say what), exit 3 means no catalogue
 6b. REGISTRY:  if qa/requirements.yml exists, save the PR body to a file and run check_registry_closed.py --closes-from-body <file> (#1857): it reads every
               closing keyword GitHub honours (Closes, fixes, Resolved, any case). A registry row pointing at an issue this PR closes is updated in this same
               PR (status done and closed: true with its proving spec; for an issue closed as not planned owner-decision or deviates, never done); exit 1
