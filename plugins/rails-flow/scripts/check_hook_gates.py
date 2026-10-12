@@ -53,6 +53,19 @@ HOOKS = Path(__file__).resolve().parents[1] / "hooks" / "scripts"
 SCRATCH_PREFIX = "hookgates-"
 
 
+def repo_marker_above(path) -> str | None:
+    """The first directory at or above `path` that holds a `.git` or a `Gemfile`, or None (#1929). The hook rebuilds PATH from absolute entries OUTSIDE the repository, which it takes to be the
+    OUTERMOST such ancestor of its working directory (`lib/trusted-env.sh`, `rf_repo_root`); "/" is never the repository. A fixture whose tool directory sits under a scratch directory is therefore
+    only testing a PATH while nothing above that directory is one, and `$TMPDIR` is the machine's, not ours."""
+    probe = Path(os.path.realpath(path))
+    while True:
+        if str(probe) != "/" and ((probe / ".git").exists() or (probe / "Gemfile").exists()):
+            return str(probe)
+        if probe.parent == probe:
+            return None
+        probe = probe.parent
+
+
 @contextlib.contextmanager
 def scratch_dir():
     """A temp directory a fixture owns, removed on exit WITHOUT ever failing the run (#1800).
@@ -2928,6 +2941,10 @@ def release_gate_fixtures() -> None:
                                   env={"PATH": str(only)}, capture_output=True, text=True, timeout=60)
             return done.returncode, done.stdout + done.stderr
 
+    with scratch_dir() as probe_td:
+        above = repo_marker_above(probe_td)
+    check("release-gate: the degraded-PATH fixtures run where no .git or Gemfile is above their scratch directory (else the hook drops their tool directory and every tool reads as missing)",
+          above is None, f"{above} holds a .git or a Gemfile above {tempfile.gettempdir()}: set TMPDIR to a directory outside it")
     code, out = bare_gate("git push origin main")
     check("release-gate: with ONLY bash on PATH, a push to main is still blocked", code == 2, f"exit {code}: {out[:160]!r}")
     code, out = bare_gate("gh pr merge 12")
@@ -6361,6 +6378,16 @@ def meta_checks() -> None:
     """The checks about `--only` and `--match` themselves. Cheap, but not free (about 2.5 s), so a `--match` run
     skips them: the baseline run of the same file has already shown them pass (#1599)."""
     global CHECKS, LAST_CPU_S, _CURRENT_GROUP, machine_load
+    # #1929: the degraded-PATH precondition is decided by `repo_marker_above`, so it is driven with each marker above a scratch directory, and with none.
+    with scratch_dir() as marker_td:
+        deep = Path(marker_td) / "a" / "b"
+        deep.mkdir(parents=True)
+        check("bare_gate precondition: a scratch directory with no .git or Gemfile above it is clear", repo_marker_above(deep) is None, str(repo_marker_above(deep)))
+        (Path(marker_td) / ".git").mkdir()
+        check("bare_gate precondition: a .git above the scratch directory is found", repo_marker_above(deep) == os.path.realpath(marker_td), str(repo_marker_above(deep)))
+        (Path(marker_td) / ".git").rmdir()
+        (Path(marker_td) / "Gemfile").write_text("")
+        check("bare_gate precondition: a Gemfile above the scratch directory is found", repo_marker_above(deep) == os.path.realpath(marker_td), str(repo_marker_above(deep)))
     # --only REFUSES what it cannot run (#1497), checked on every run whatever the selection: a
     # silently empty selection is how a mutant would "survive" with no fixture ever consulted.
     for bad in ("nope", "", ",", "release_gate,nope", "release_gate,", " release_gate", "timeout,timeout"):
