@@ -5570,6 +5570,7 @@ def release_gate_fallback_fixtures() -> None:
 
 
 # ---- guard-pr-ready.sh (#1565) ------------------------------------------------------------------
+@real_setup     # #1906: the repository, its HEAD and each sweep record are built by code that runs BEFORE the check that reads them; under `--match` that code is stubbed unless it is real setup
 def guard_pr_ready_fixtures() -> None:
     """`gh pr ready` only on a GREEN sweep record with zero skips for HEAD; chains are not parsed (#1565)."""
     def head_of(repo: Path) -> str:
@@ -5635,6 +5636,11 @@ def guard_pr_ready_fixtures() -> None:
         for cmd in ("gh repo set-default o/r && gh pr ready 5", "git remote set-url origin https://x/o/r && gh pr ready 5"):
             expect(f"guard-pr-ready: with a green record, an earlier segment that can retarget gh refuses: {cmd[:40]}",
                    guard(repo, cmd), 2, "must be its own command")
+        # #1906: the one place the python judge FAILS CLOSED on a directory it cannot tell (lib/command_cwd.py exits 3). These are single commands, so the shell hook's own chain
+        # check lets them through to it; with a GREEN record for the session's HEAD a guess of the session's directory would allow each, so a refusal proves it does not guess.
+        for cmd in ("HOME=/x gh pr ready 5", "GIT_DIR=/x gh pr ready 5", "sudo gh pr ready 5"):
+            expect(f"guard-pr-ready: with a green record, a command whose directory cannot be told refuses, it does not guess the session's: {cmd}",
+                   guard(repo, cmd), 2, "cannot be told")
         expect("guard-pr-ready: a `cd` before it is another command: refused, even with a green record",
                guard(repo, "cd $HOME && gh pr ready 12"), 2, "must be its own command")
         # shell-adversary on #1831: an earlier segment that MOVES HEAD would pass on the old HEAD's green record.
